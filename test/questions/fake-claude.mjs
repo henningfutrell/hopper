@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/* global process, setInterval */
 // Fake `claude` executable. Records argv, stdin, env and cwd to $FAKE_CLAUDE_OUT (JSON), then
 // behaves per $FAKE_CLAUDE_MODE: ok (default) | malformed | invalid | exit1 | hang.
 import { writeFileSync } from 'node:fs';
