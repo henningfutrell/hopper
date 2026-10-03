@@ -14,11 +14,11 @@ describe('openStore', () => {
     s.close();
     const raw = new DatabaseSync(path);
     expect(raw.prepare('PRAGMA journal_mode').get()).toMatchObject({ journal_mode: 'wal' });
-    expect(raw.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 1 });
+    expect(raw.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 2 });
     raw.close();
   });
 
-  it('reopening an existing file does not re-run or lose migration 1', () => {
+  it('reopening an existing file does not re-run or lose migrations', () => {
     const path = t.path();
     const s = t.open(path);
     const j = s.jobs.create({ executor: 'x', payload: {} }, 5);
