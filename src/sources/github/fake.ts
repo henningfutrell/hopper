@@ -1,5 +1,7 @@
 // In-memory GitHub implementing GitHubApi, plus helpers for tests to play the owner (or a
 // stranger) on the other side: create issues, reply, close, unlabel, delete, set project items.
+// Default identity: gh (writes appear as `login`). With `app`, writes appear as the bot and the
+// app-only methods exist: the installed repos and repo-scoped token minting.
 
 import { GitHubApiError } from './api.ts';
 import type { GitHubApi, GitHubComment, GitHubIssue, GitHubProjectItem } from './api.ts';
@@ -19,13 +21,27 @@ export interface FakeGitHub extends GitHubApi {
   issue(repo: string, number: number): GitHubIssue;
   commentsOn(repo: string, number: number): GitHubComment[];
   labelsIn(repo: string): string[];
+  /** App identity only: replace the repos the app is installed on. */
+  setInstalledRepos(repos: string[]): void;
   readonly calls: { method: Method; args: unknown[] }[];
+}
+
+export interface FakeAppIdentity {
+  botLogin: string;
+  installedRepos?: string[];
+  /** Clock for minted tokens' expiresAt (default: the real clock). */
+  now?: () => Date;
+  /** Lifetime of a minted token (default 1 h, like GitHub). */
+  tokenTtlMs?: number;
 }
 
 const notFound = (what: string) => new GitHubApiError(`gh: Not Found (HTTP 404): ${what}`, true, 404);
 
-export function createFakeGitHub(o: { login?: string } = {}): FakeGitHub {
-  const login = o.login ?? 'owner';
+export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = {}): FakeGitHub {
+  const human = o.login ?? 'owner';
+  const login = o.app?.botLogin ?? human;
+  let installed = [...(o.app?.installedRepos ?? [])];
+  let minted = 0;
   const issues = new Map<string, GitHubIssue>();
   const comments = new Map<string, GitHubComment[]>();
   const labels = new Map<string, Set<string>>();
@@ -100,15 +116,27 @@ export function createFakeGitHub(o: { login?: string } = {}): FakeGitHub {
     },
   };
 
+  if (o.app) {
+    const app = o.app;
+    api.botLogin = async () => { enter('botLogin', []); return app.botLogin; };
+    api.listInstalledRepos = async () => { enter('listInstalledRepos', []); return installed.map((repo, i) => ({ repo, installationId: 100 + i })); };
+    api.mintRepoToken = async (repo) => {
+      enter('mintRepoToken', [repo]);
+      const now = app.now?.() ?? new Date();
+      return { token: `ghs_fake_${++minted}`, expiresAt: new Date(now.getTime() + (app.tokenTtlMs ?? 3_600_000)).toISOString() };
+    };
+  }
+
   const fake: FakeGitHub = {
     ...api,
+    setInstalledRepos(repos) { installed = [...repos]; },
     calls,
     createIssue({ repo, title, body, author, labels: ls }) {
       const number = [...issues.values()].filter((i) => i.repo === repo).length + 1;
       for (const l of ls ?? []) repoLabels(repo).add(l);
       const issue: GitHubIssue = {
         repo, number, url: `https://github.com/${repo}/issues/${number}`, title: title ?? `Issue ${number}`,
-        body: body ?? `Do thing ${number}.`, author: author ?? login, labels: [...(ls ?? [])], state: 'open', updatedAt: stamp(),
+        body: body ?? `Do thing ${number}.`, author: author ?? human, labels: [...(ls ?? [])], state: 'open', updatedAt: stamp(),
       };
       issues.set(key(repo, number), issue);
       return copy(issue);
@@ -119,7 +147,7 @@ export function createFakeGitHub(o: { login?: string } = {}): FakeGitHub {
       comments.set(key(repo, n), [...(comments.get(key(repo, n)) ?? []), c]);
       return { ...c };
     },
-    closeIssue(repo, n, closedBy) { const i = find(repo, n); i.state = 'closed'; i.closedBy = closedBy ?? login; },
+    closeIssue(repo, n, closedBy) { const i = find(repo, n); i.state = 'closed'; i.closedBy = closedBy ?? human; },
     deleteIssue(repo, n) { find(repo, n); issues.delete(key(repo, n)); },
     addLabel(repo, n, label) { repoLabels(repo).add(label); const i = find(repo, n); if (!i.labels.includes(label)) i.labels.push(label); },
     removeLabel(repo, n, label) { const i = find(repo, n); i.labels = i.labels.filter((l) => l !== label); },

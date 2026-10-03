@@ -4,6 +4,8 @@
 import type { GitHubApi, GitHubIssue, GitHubProjectItem } from './api.ts';
 import type { GitHubProjectConfig, GitHubSourceConfig } from '../config.ts';
 
+type PriorityConfig = Pick<GitHubSourceConfig, 'projects' | 'priorityLabels' | 'defaultPriority'>;
+
 export interface ProjectView {
   /** e.g. "owner/projects/3" */
   label: string;
@@ -21,7 +23,7 @@ export interface Priority {
 }
 
 /** Read each configured project once. A failing project is an error for its repos, never fatal. */
-export async function readProjects(api: GitHubApi, config: GitHubSourceConfig, issues: GitHubIssue[]):
+export async function readProjects(api: GitHubApi, config: PriorityConfig, issues: GitHubIssue[]):
 Promise<{ views: Map<string, ProjectView>; errors: Record<string, string> }> {
   const eligible = new Set(issues.map((i) => i.url));
   const repos = new Set(issues.map((i) => i.repo));
@@ -80,7 +82,7 @@ function fromProject(issue: GitHubIssue, view: ProjectView): Priority | { projec
   return { priority: n, reason: `project:${field}=${value}`, projectItem };
 }
 
-export function priorityOf(issue: GitHubIssue, config: GitHubSourceConfig, view: ProjectView | undefined): Priority {
+export function priorityOf(issue: GitHubIssue, config: PriorityConfig, view: ProjectView | undefined): Priority {
   let projectItem = 'none';
   if (view) {
     const p = fromProject(issue, view);

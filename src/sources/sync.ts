@@ -203,10 +203,16 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
 
   async function syncOnce(slot: Slot) {
     const st = slot.status;
+    // Paused: nothing new is pulled, but the source's own active jobs are still checked and reported.
+    const paused = slot.source.paused?.();
     try {
-      const { seen, created } = await pull(slot);
-      st.itemsSeen = seen;
-      st.jobsCreated += created;
+      if (paused === undefined) {
+        const { seen, created } = await pull(slot);
+        st.itemsSeen = seen;
+        st.jobsCreated += created;
+      } else {
+        st.itemsSeen = 0;
+      }
       await applySignals(slot, jobsOf(slot).filter((j) => !isTerminal(j)));
       await Promise.all(jobsOf(slot)
         .filter((j) => !isTerminal(j) || !flagsOf(j).finalReported || !flagsOf(j).claimReported)
@@ -222,8 +228,10 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     const jobs = jobsOf(slot);
     st.lastSyncAt = clock.now().toISOString();
     st.activeJobs = jobs.filter((j) => !isTerminal(j)).length;
+    if (paused !== undefined && st.state === 'ok' && st.activeJobs === 0) st.state = 'disabled';
     st.detail = {
       ...slot.source.describe(),
+      ...(paused !== undefined ? { paused } : {}),
       permanentErrors: jobs.filter((j) => flagsOf(j).permanentErrors?.length).length,
       reportRetries: slot.retrying.size,
     };
