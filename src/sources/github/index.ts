@@ -3,3 +3,8 @@ export type { GitHubApi, GitHubComment, GitHubIssue, GitHubProjectItem } from '.
 export { createGhCliApi } from './gh-cli.ts';
 export { createFakeGitHub } from './fake.ts';
 export type { FakeGitHub } from './fake.ts';
+export { createGitHubSource } from './source.ts';
+export type { GitHubSourceOptions } from './source.ts';
+export { JOB_COMMENT_MARKER, MARKER_LINE_RE, markerFor } from './markers.ts';
+export { HOPPER_LABELS, LABEL_CLAIMED, LABEL_DONE, LABEL_FAILED } from './labels.ts';
+export { findAnswer } from './check.ts';

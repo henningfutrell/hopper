@@ -1,0 +1,119 @@
+// report(): what happened to a job, as comments and labels on its issue. Returns the WHOLE
+// new source state: { claimCommentId, progressCommentId, questionComments, answeredComments,
+// finalCommentId }.
+
+import { SourceError } from '../../domain/ports.ts';
+import type { SourceReport } from '../../domain/ports.ts';
+import type { Job, Question } from '../../domain/types.ts';
+import { GitHubApiError } from './api.ts';
+import type { GitHubApi } from './api.ts';
+import { commentBody, postOnce, upsert } from './comments.ts';
+import { HOPPER_LABELS, LABEL_CLAIMED, LABEL_DONE, LABEL_FAILED } from './labels.ts';
+import { markerFor } from './markers.ts';
+
+export interface ReportContext {
+  api: GitHubApi;
+  /** Repos whose hopper labels were ensured by this process. */
+  labelledRepos: Set<string>;
+}
+
+type State = Record<string, unknown>;
+
+function issueOf(job: Job): { repo: string; number: number } {
+  const { repo, number } = job.source ?? {};
+  if (!repo || !number) throw new SourceError(`job ${job.id} has no GitHub issue reference`, true);
+  return { repo, number };
+}
+
+function idMap(state: State, key: string): Record<string, number> {
+  return { ...((state[key] as Record<string, number> | undefined) ?? {}) };
+}
+
+function trail(q: Question): string {
+  if (q.attempts.length === 0) return '(no model tier tried it)';
+  return q.attempts.map((a) => {
+    const yn = (b: boolean | undefined) => (b ? 'yes' : 'no');
+    const rules = a.riskRules?.length ? ` · rules: ${a.riskRules.join(', ')}` : '';
+    return `- ${a.tier} · confident=${yn(a.confident)} · risky=${yn(a.risky)}${rules}${a.error ? ` · error: ${a.error}` : ''}`;
+  }).join('\n');
+}
+
+function resultText(result: unknown): string {
+  if (result === undefined || result === null) return '(no result)';
+  if (typeof result === 'string') return result;
+  return '```json\n' + JSON.stringify(result, null, 2) + '\n```';
+}
+
+async function ensureLabels(ctx: ReportContext, repo: string): Promise<void> {
+  if (ctx.labelledRepos.has(repo)) return;
+  for (const l of HOPPER_LABELS) await ctx.api.ensureLabel(repo, l.name, l.color, l.description);
+  ctx.labelledRepos.add(repo);
+}
+
+async function final(ctx: ReportContext, r: SourceReport, state: State, text: string, add: string[]): Promise<State> {
+  const { job } = r;
+  const { repo, number } = issueOf(job);
+  const marker = markerFor(r.kind as 'finished', job.id);
+  const id = await postOnce(ctx.api, repo, number, marker, commentBody(marker, text, job.id), state.finalCommentId as number | undefined);
+  await ctx.api.removeLabels(repo, number, [LABEL_CLAIMED]);
+  if (add.length) {
+    await ensureLabels(ctx, repo);
+    await ctx.api.addLabels(repo, number, add);
+  }
+  return { ...state, finalCommentId: id };
+}
+
+async function apply(ctx: ReportContext, r: SourceReport, state: State): Promise<State> {
+  const { job } = r;
+  const { repo, number } = issueOf(job);
+  const post = (marker: string, text: string, known: number | undefined) =>
+    postOnce(ctx.api, repo, number, marker, commentBody(marker, text, job.id), known);
+  switch (r.kind) {
+    case 'claimed': {
+      await ensureLabels(ctx, repo);
+      await ctx.api.addLabels(repo, number, [LABEL_CLAIMED]);
+      const cwd = String(job.spec.payload.cwd ?? '(default)');
+      const text = `🦘 job-hopper claimed this as job \`${job.id}\` (priority ${job.priority}, executor ${job.spec.executor}, cwd ${cwd})`;
+      return { ...state, claimCommentId: await post(markerFor('claimed', job.id), text, state.claimCommentId as number | undefined) };
+    }
+    case 'progress': {
+      const marker = markerFor('progress', job.id);
+      const pct = job.progress === undefined ? '' : `${Math.round(job.progress * 100)}% — `;
+      const text = `⏳ progress: ${pct}${r.message}\n\n_updated ${job.updatedAt}_`;
+      const id = await upsert(ctx.api, repo, number, marker, commentBody(marker, text, job.id), state.progressCommentId as number | undefined);
+      return { ...state, progressCommentId: id };
+    }
+    case 'question': {
+      if (r.question.tier !== 'human') return state;
+      const map = idMap(state, 'questionComments');
+      const text = `❓ job \`${job.id}\` needs a human answer:\n\n${r.question.text}\n\nEscalation so far:\n${trail(r.question)}\n\nReply to this issue to answer.`;
+      map[r.question.id] = await post(markerFor('question', job.id, r.question.id), text, map[r.question.id]);
+      return { ...state, questionComments: map };
+    }
+    case 'answered': {
+      const map = idMap(state, 'answeredComments');
+      const text = `Answered by ${r.question.answeredBy ?? r.question.tier}: ${r.question.answer ?? ''}`;
+      map[r.question.id] = await post(markerFor('answered', job.id, r.question.id), text, map[r.question.id]);
+      return { ...state, answeredComments: map };
+    }
+    case 'finished':
+      return final(ctx, r, state, `✅ job \`${job.id}\` finished.\n\n${resultText(job.result)}`, [LABEL_DONE]);
+    case 'failed':
+      return final(ctx, r, state, `❌ job \`${job.id}\` failed: ${job.error ?? '(no error recorded)'}`, [LABEL_FAILED]);
+    case 'cancelled': {
+      const reason = (job.sourceState?.sync?.cancelReason as string | undefined) ?? job.error ?? 'cancelled';
+      return final(ctx, r, state, `🛑 job \`${job.id}\` cancelled (${reason})`, []);
+    }
+  }
+}
+
+export async function reportToGitHub(ctx: ReportContext, r: SourceReport): Promise<State> {
+  const state: State = { ...(r.job.sourceState?.source ?? {}) };
+  try {
+    return await apply(ctx, r, state);
+  } catch (err) {
+    if (err instanceof SourceError) throw err;
+    if (err instanceof GitHubApiError) throw new SourceError(err.message, err.permanent, err.status);
+    throw new SourceError((err as Error).message, false);
+  }
+}
