@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { DuplicateSourceKeyError } from '../../src/store/index.ts';
 import { fixedClock, spec, useTempStore } from './helpers.ts';
 
 const t = useTempStore();
@@ -100,5 +101,39 @@ describe('lanes', () => {
     expect(s2.lanes.list('m1')).toHaveLength(2);
     expect(s2.lanes.list('m1').find((x) => x.id === l.id)).toEqual(l);
     s2.close();
+  });
+});
+
+describe('jobs pulled from a source', () => {
+  const ref = (key: string) => ({ source: 'github', kind: 'github', key, url: key, repo: 'o/r', number: 1 });
+
+  it('stores the source and finds the job by key, across reopen', () => {
+    const path = t.path();
+    const s = t.open(path);
+    const j = s.jobs.create(spec, 5, ref('https://x/1'));
+    expect(j.source).toEqual(ref('https://x/1'));
+    expect(s.jobs.getBySourceKey('https://x/1')).toEqual(j);
+    expect(s.jobs.getBySourceKey('nope')).toBeUndefined();
+    s.close();
+    const s2 = t.open(path);
+    expect(s2.jobs.getBySourceKey('https://x/1')).toEqual(j);
+    s2.close();
+  });
+
+  it('refuses a duplicate key with DuplicateSourceKeyError and creates nothing', () => {
+    const s = t.open(t.path());
+    s.jobs.create(spec, 5, ref('k'));
+    expect(() => s.jobs.create(spec, 5, ref('k'))).toThrow(DuplicateSourceKeyError);
+    expect(s.jobs.list()).toHaveLength(1);
+    s.close();
+  });
+
+  it('allows many jobs without a source', () => {
+    const s = t.open(t.path());
+    s.jobs.create(spec, 5);
+    s.jobs.create(spec, 5);
+    expect(s.jobs.list()).toHaveLength(2);
+    expect(s.jobs.list()[0]!.source).toBeUndefined();
+    s.close();
   });
 });

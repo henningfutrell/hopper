@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { DomainEvent } from '../../src/domain/types.ts';
+import { EVENT_SCHEMA_VERSIONS } from '../../src/domain/types.ts';
 import { useTempStore } from './helpers.ts';
 
 const t = useTempStore();
@@ -100,6 +101,29 @@ describe('tx', () => {
     expect(s.lanes.list()).toEqual([]);
     s.tx(() => s.tx(() => { s.jobs.create({ executor: 'x', payload: {} }, 1); }));
     expect(s.jobs.list()).toHaveLength(1);
+    s.close();
+  });
+});
+
+describe('event schema version', () => {
+  it('is stamped from EVENT_SCHEMA_VERSIONS, round-trips, survives reopen', () => {
+    const path = t.path();
+    const s = t.open(path);
+    const a = s.events.append(ev());
+    expect(a.schemaVersion).toBe(EVENT_SCHEMA_VERSIONS['job.queued']);
+    expect(s.events.since(0)[0]!.schemaVersion).toBe(a.schemaVersion);
+    s.close();
+    const s2 = t.open(path);
+    expect(s2.events.recent(1)).toEqual([a]);
+    s2.close();
+  });
+
+  it('notifies listeners with the stamped version', () => {
+    const s = t.open(t.path());
+    const seen: number[] = [];
+    s.events.subscribe((e) => seen.push(e.schemaVersion));
+    s.events.append(ev());
+    expect(seen).toEqual([1]);
     s.close();
   });
 });

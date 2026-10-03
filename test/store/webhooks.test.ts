@@ -3,12 +3,12 @@ import type { DomainEvent } from '../../src/domain/types.ts';
 import { fixedClock, useTempStore } from './helpers.ts';
 
 const t = useTempStore();
-const input = { url: 'http://127.0.0.1:9/h', events: ['*'], secret: 's3' };
+const input = { name: 'hook', url: 'http://127.0.0.1:9/h', events: ['*'], secret: 's3', active: true };
 
 describe('webhook subscriptions', () => {
   it('creates active, gets, lists, deletes', () => {
     const s = t.open(t.path());
-    const w = s.webhooks.create(input);
+    const w = s.webhooks.upsertByName(input);
     expect(w).toMatchObject({ ...input, active: true, createdAt: '2026-10-02T10:00:00.000Z' });
     expect(s.webhooks.get(w.id)).toEqual(w);
     expect(s.webhooks.list()).toEqual([w]);
@@ -20,10 +20,25 @@ describe('webhook subscriptions', () => {
   });
 });
 
+describe('webhook upsertByName', () => {
+  it('inserts, then replaces by name keeping the id stable', () => {
+    const s = t.open(t.path());
+    const a = s.webhooks.upsertByName(input);
+    expect(a).toMatchObject({ ...input, createdAt: '2026-10-02T10:00:00.000Z' });
+    const b = s.webhooks.upsertByName({ ...input, url: 'http://127.0.0.1:9/new', secret: 'z', active: false });
+    expect(b).toMatchObject({ id: a.id, name: 'hook', url: 'http://127.0.0.1:9/new', secret: 'z', active: false });
+    const c = s.webhooks.upsertByName({ ...input, name: 'second' });
+    expect(c.id).not.toBe(a.id);
+    expect(s.webhooks.list()).toEqual([b, c]);
+    expect(s.webhooks.get(a.id)).toEqual(b);
+    s.close();
+  });
+});
+
 describe('webhook deliveries', () => {
   function setup(path = t.path(), clock = fixedClock()) {
     const s = t.open(path, clock);
-    const w = s.webhooks.create(input);
+    const w = s.webhooks.upsertByName(input);
     const e: DomainEvent = s.events.append({ type: 'job.queued', jobId: 'j', data: {} });
     return { s, w, e, clock, path };
   }
@@ -55,7 +70,7 @@ describe('webhook deliveries', () => {
 
   it('lists newest first, filtered by subscription, with limit', () => {
     const { s, w, e, clock } = setup();
-    const w2 = s.webhooks.create(input);
+    const w2 = s.webhooks.upsertByName({ ...input, name: 'other' });
     const ids: string[] = [];
     for (let i = 1; i <= 3; i++) { clock.set(`2026-10-02T10:0${i}:00.000Z`); ids.push(s.webhooks.createDelivery(w.id, e).id); }
     clock.set('2026-10-02T10:09:00.000Z');
