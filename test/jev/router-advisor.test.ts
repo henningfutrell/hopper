@@ -71,7 +71,7 @@ describe('router advisor, real shim', () => {
     scratch.push(copy);
     cpSync(JEV_SRC, copy, { recursive: true });
     const cfg = join(copy, 'config.yaml');
-    writeFileSync(cfg, readFileSync(cfg, 'utf8').replace('enabled: false', 'enabled: true'));
+    writeFileSync(cfg, readFileSync(cfg, 'utf8').replace(/^enabled: false/m, 'enabled: true'));
     const advice = await advisor({ jevSrc: copy }).advise(makeJob({ goal: 'research x', kind: 'research' }));
     expect(advice).toMatchObject({ action: 'proceed_full', source: 'fallback', jevUsed: false, details: {} });
     expect(advice.reason).toMatch(/^jev unavailable: .*typesafe_sdk not installed/);
