@@ -4,7 +4,7 @@
 import type {
   Advice, DomainEvent, Decision, EventType, Job, JobId, JobSpec, JobStatus, Lane, PluginsReport, RouterMode, RouterStatus,
   JobSourceRef, LaneId, MachineId, MachineSnapshot, NewEvent, Question, QuestionAttempt, QuestionStatus,
-  AnswerTier, SourceStatus, UsageReading, WebhookDelivery, WebhookSubscription,
+  SourceStatus, UsageReading, WebhookDelivery, WebhookSubscription,
 } from './types.ts';
 
 // ---- Execution -----------------------------------------------------------------------
@@ -103,7 +103,7 @@ export interface Clock {
 
 // ---- Questions -----------------------------------------------------------------------
 
-/** Everything an answering tier is given. */
+/** Everything the answerer is given, and (with the draft) the assessor. */
 export interface AnswerRequest {
   question: Question;
   /** The job's full prompt. */
@@ -111,24 +111,45 @@ export interface AnswerRequest {
   jobGoal?: string;
   /** the owner's standing rules, read from the rules file at ask time. */
   rules: string;
-  /** Earlier tiers' attempts, so a later tier sees why it was escalated. */
+  /** The question's trail so far (attempts of earlier runs), so a stage sees what was tried. */
   previous: QuestionAttempt[];
 }
 
-/** The structured contract every model tier returns. */
-export interface AnswerVerdict {
+/** The answerer's draft: the text to type into the job, whether the rules and context settle it, why. */
+export interface AnswerDraft {
   answer: string;
   confident: boolean;
-  risky: boolean;
   reason: string;
 }
 
-/** One model tier (opus, fable). Never throws: failures come back as `{ error }`. */
+/**
+ * The answerer role: drafts an answer. Never throws by contract; the question service still
+ * treats a throw, a timeout or a malformed draft as an error, which sends the question to the human.
+ */
 export interface Answerer {
-  readonly tier: Exclude<AnswerTier, 'human'>;
-  /** The model name it runs, for the log. */
-  readonly model: string;
-  answer(req: AnswerRequest, signal: AbortSignal): Promise<AnswerVerdict | { error: string }>;
+  /** The instance name (plugins.yaml), which is also the question's stage while it drafts. */
+  readonly name: string;
+  /** The model it runs, for the trail. */
+  readonly model?: string;
+  answer(req: AnswerRequest, signal: AbortSignal): Promise<AnswerDraft | { error: string }>;
+}
+
+/** The assessor's verdict on a draft: must the owner see this question? */
+export interface Assessment {
+  escalate: boolean;
+  reason: string;
+}
+
+/**
+ * The assessor role: decides whether a question escalates to the human; it never answers. The
+ * question service fails closed on its result: only a schema-valid `escalate: false` accepts;
+ * an error, a throw, a timeout or anything malformed escalates.
+ */
+export interface Assessor {
+  /** The instance name (plugins.yaml), which is also the question's stage while it assesses. */
+  readonly name: string;
+  readonly model?: string;
+  assess(req: AnswerRequest, draft: AnswerDraft, signal: AbortSignal): Promise<Assessment | { error: string }>;
 }
 
 export type IdGen = () => string;
@@ -158,18 +179,21 @@ export type AnswerByHumanResult =
   | { ok: false; reason: 'not_found' | 'not_open' };
 
 /**
- * Runs the escalation chain. Every write is one store.tx and compare-and-set: it applies only
- * if the question is still `open` and (for a model result) its `tier` is the tier that
- * produced it. `onAnswered` / `onExpired` (constructor options) are synchronous and called
- * INSIDE that same tx, so question and job change together or not at all.
+ * Runs the question pipeline: answer → assess → risk rules → accepted or human. Every write is
+ * one store.tx and compare-and-set: it applies only if the question is still `open` and (for a
+ * stage result) its `tier` is the stage that produced it. `onAnswered` / `onExpired`
+ * (constructor options) are synchronous and called INSIDE that same tx, so question and job
+ * change together or not at all.
  */
 export interface QuestionService {
-  /** Start the chain for a newly asked question (tier opus). */
+  /** The stage a new question starts at: the configured answerer's instance name, or `human`. */
+  firstStage(): string;
+  /** Start the pipeline for a newly asked question (created at `firstStage()`). */
   handle(questionId: string): void;
   answerByHuman(questionId: string, answer: string): AnswerByHumanResult;
-  /** Synchronous; call inside the caller's tx. Aborts an in-flight tier, clears timers. */
+  /** Synchronous; call inside the caller's tx. Aborts an in-flight stage, clears timers. */
   cancel(questionId: string): void;
-  /** Startup: re-run open model tiers, re-arm human timers, expire overdue ones. */
+  /** Startup: every open non-human question restarts at the answer stage; re-arm human timers, expire overdue ones. */
   recover(): void;
   stop(): Promise<void>;
 }
@@ -353,13 +377,14 @@ export interface WebhookRepository {
 }
 
 export interface QuestionRepository {
-  create(input: { jobId: JobId; text: string; recentOutput: string; detectedBy: string }): Question;
+  /** `tier`: the stage it starts at (the answerer's instance name, or `human`). */
+  create(input: { jobId: JobId; text: string; recentOutput: string; detectedBy: string; tier: string }): Question;
   get(id: string): Question | undefined;
   /** Newest first. */
   list(filter?: { status?: QuestionStatus[]; jobId?: JobId; limit?: number }): Question[];
   /** Shallow-merge; `undefined` clears. Bumps updatedAt. */
   update(id: string, patch: Partial<Omit<Question, 'id' | 'jobId' | 'createdAt' | 'attempts'>>): Question;
-  /** Append one tier attempt to the question's trail. */
+  /** Append one attempt to the question's trail. */
   addAttempt(id: string, attempt: QuestionAttempt): Question;
 }
 

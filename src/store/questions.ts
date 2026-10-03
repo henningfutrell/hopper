@@ -20,7 +20,7 @@ export function createQuestionRepository(c: StoreContext): QuestionRepository {
   return {
     create(input) {
       const at = c.clock.now().toISOString();
-      const q: Question = { id: c.idGen(), ...input, status: 'open', tier: 'opus', attempts: [], notifyCount: 0, createdAt: at, updatedAt: at };
+      const q: Question = { id: c.idGen(), ...input, status: 'open', attempts: [], notifyCount: 0, createdAt: at, updatedAt: at };
       c.db.prepare('INSERT INTO questions (id, job_id, status, created_at, body) VALUES (?, ?, ?, ?, ?)')
         .run(q.id, q.jobId, q.status, at, JSON.stringify(q));
       return q;

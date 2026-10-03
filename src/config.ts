@@ -25,7 +25,7 @@ export interface Config {
   herdrBin: string;
   herdrSession: string;
   herdrPollMs: number;
-  /** The `claude` CLI the answer tiers run. */
+  /** The `claude` CLI the env-derived answerer and assessor run (plugin option `bin`). */
   claudeBin: string;
   /** Extra args for Claude in a pane, split on whitespace. */
   claudeArgs: string[];

@@ -1,12 +1,12 @@
-// The router role's one slot: build an instance (resolve → options → detect → create), fall back to
-// pass-through when it cannot run, and answer through a live Router whose instance can be swapped
-// between calls (design.md "Failure").
+// Building a role's instance (resolve → options → detect → create; `instantiate`, shared by every
+// role), and the router role's one slot: fall back to pass-through when it cannot run, and answer
+// through a live Router whose instance can be swapped between calls (design.md "Failure").
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Advice, Detection, InstanceSpec, RouterStatus } from '../domain/types.ts';
 import { parseOptions } from './options.ts';
 import passThrough from './router/pass-through/index.ts';
-import type { Clock, DetectionKit, PluginContext, PluginDefinition, Router, RouterMode } from './sdk.ts';
+import type { Clock, DetectionKit, PluginContext, PluginDefinition, Role, RoleContext, RoleInstance, Router, RouterMode } from './sdk.ts';
 
 export interface SlotDeps {
   kit: DetectionKit;
@@ -40,39 +40,50 @@ export async function safeDetect(def: PluginDefinition, kit: DetectionKit, optio
 
 const reasonOf = (d: Detection): string => (d.status === 'available' ? '' : d.status === 'needs-setup' ? `${d.reason} (run: ${d.command})` : d.reason);
 
-export async function buildRouter(spec: InstanceSpec, deps: SlotDeps): Promise<BuiltRouter> {
-  const ctx = (id: string) => {
-    const scratchDir = join(deps.dataDir, 'plugin-data', id);
-    mkdirSync(scratchDir, { recursive: true, mode: 0o700 });
-    return { clock: deps.clock, logger: deps.logger, dataDir: deps.dataDir, scratchDir, routerMode: deps.routerMode };
-  };
-  const fallBack = async (why: string, detection: Detection): Promise<BuiltRouter> => {
-    deps.logger.warn(`job-hopper: router ${spec.name} (${spec.plugin}) unavailable, using pass-through: ${why}`);
-    const inner = await passThrough.create(ctx(passThrough.id), {});
-    const router: Router = {
-      name: spec.name,
-      async advise(job): Promise<Advice> {
-        return { ...(await inner.advise(job)), source: 'fallback', reason: `router ${spec.name} unavailable: ${why}` };
-      },
-    };
-    return { spec, router, plugin: passThrough.id, detection, fallback: why };
-  };
+/** An instance of one role, or why it cannot run here (with the detection that said so, if any). */
+export type Instantiated<R extends Role> =
+  | { ok: true; instance: RoleInstance[R]; plugin: string; detection: Detection }
+  | { ok: false; why: string; detection: Detection };
 
+/** The context `create` gets: base fields plus every role's own (the router's mode). */
+function contextFor(deps: SlotDeps, id: string) {
+  const scratchDir = join(deps.dataDir, 'plugin-data', id);
+  mkdirSync(scratchDir, { recursive: true, mode: 0o700 });
+  return { clock: deps.clock, logger: deps.logger, dataDir: deps.dataDir, scratchDir, routerMode: deps.routerMode };
+}
+
+/** Resolve → options → detect → create, for any role. Never throws. */
+export async function instantiate<R extends Role>(role: R, spec: InstanceSpec, deps: SlotDeps): Promise<Instantiated<R>> {
   const def = deps.find(spec.plugin);
-  if (!def || def.role !== 'router') {
-    const why = `unknown router plugin ${spec.plugin}`;
-    return fallBack(why, { status: 'unavailable', reason: why });
+  if (!def || def.role !== role) {
+    const why = `unknown ${role} plugin ${spec.plugin}`;
+    return { ok: false, why, detection: { status: 'unavailable', reason: why } };
   }
   const parsed = parseOptions(def, spec.options);
-  if (!parsed.ok) return fallBack(parsed.error, { status: 'unavailable', reason: parsed.error });
+  if (!parsed.ok) return { ok: false, why: parsed.error, detection: { status: 'unavailable', reason: parsed.error } };
   const detection = await safeDetect(def, deps.kit, parsed.options);
-  if (detection.status !== 'available') return fallBack(reasonOf(detection), detection);
+  if (detection.status !== 'available') return { ok: false, why: reasonOf(detection), detection };
   try {
-    const router = await (def as PluginDefinition<'router'>).create(ctx(def.id), parsed.options);
-    return { spec, router, plugin: def.id, detection };
+    const instance = await (def as PluginDefinition<R>).create(contextFor(deps, def.id) as PluginContext & RoleContext[R], parsed.options);
+    return { ok: true, instance, plugin: def.id, detection };
   } catch (e) {
-    return fallBack(`cannot create: ${message(e)}`, detection);
+    return { ok: false, why: `cannot create: ${message(e)}`, detection };
   }
+}
+
+export async function buildRouter(spec: InstanceSpec, deps: SlotDeps): Promise<BuiltRouter> {
+  const built = await instantiate('router', spec, deps);
+  if (built.ok) return { spec, router: built.instance, plugin: built.plugin, detection: built.detection };
+  const why = built.why;
+  deps.logger.warn(`job-hopper: router ${spec.name} (${spec.plugin}) unavailable, using pass-through: ${why}`);
+  const inner = await passThrough.create(contextFor(deps, passThrough.id), {});
+  const router: Router = {
+    name: spec.name,
+    async advise(job): Promise<Advice> {
+      return { ...(await inner.advise(job)), source: 'fallback', reason: `router ${spec.name} unavailable: ${why}` };
+    },
+  };
+  return { spec, router, plugin: passThrough.id, detection: built.detection, fallback: why };
 }
 
 export interface LiveRouter {

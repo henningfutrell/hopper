@@ -1,4 +1,7 @@
-import type { AnswerRequest } from '../domain/ports.ts';
+// The claude-cli answerer's prompt: draft an answer on the owner's behalf. Judging whether the owner
+// must see the question is the assessor's job, not this one's.
+import { attemptLine } from '../../claude-print.ts';
+import type { AnswerRequest } from '../../sdk.ts';
 
 const OUTPUT_LINES = 120;
 
@@ -7,13 +10,12 @@ export const IDLE_HINT =
   'If the job is complete, end your message with JOB_HOPPER_DONE';
 
 const CONTRACT = `Reply with one JSON object only:
-{"answer": string, "confident": boolean, "risky": boolean, "reason": string}
+{"answer": string, "confident": boolean, "reason": string}
 "answer" is exactly the text to type to the agent.`;
 
-const RISK_GUIDANCE =
-  'Mark "risky": true for anything that deletes, deploys, force-pushes, spends money, ' +
-  'touches credentials, sends messages, or is otherwise irreversible. ' +
-  'Mark "confident": true only if the standing rules and the context settle the question.';
+const GUIDANCE =
+  'Mark "confident": true only if the standing rules and the context settle the question. ' +
+  'A separate assessor reviews your draft before anything is typed.';
 
 function lastLines(text: string, n: number): string {
   return text.split('\n').slice(-n).join('\n');
@@ -21,14 +23,10 @@ function lastLines(text: string, n: number): string {
 
 function previousSection(req: AnswerRequest): string {
   if (req.previous.length === 0) return '';
-  const rows = req.previous.map((a) => {
-    const why = a.error ? `error: ${a.error}` : (a.reason ?? 'no reason given');
-    return `- ${a.tier}${a.model ? ` (${a.model})` : ''}: ${a.answer ?? '(no answer)'} — ${why}`;
-  });
-  return `## Earlier attempts (escalated to you)\n${rows.join('\n')}\n\n`;
+  return `## Earlier attempts\n${req.previous.map(attemptLine).join('\n')}\n\n`;
 }
 
-export function buildPrompt(req: AnswerRequest): string {
+export function buildAnswerPrompt(req: AnswerRequest): string {
   const q = req.question;
   const rules = req.rules.trim() === '' ? '(no standing rules file; rely on the context alone)' : req.rules.trim();
   const idle = q.detectedBy === 'idle' ? `## Note\n${IDLE_HINT}\n\n` : '';
@@ -41,6 +39,6 @@ export function buildPrompt(req: AnswerRequest): string {
     `## Question\n${q.text}\n\n` +
     previousSection(req) +
     idle +
-    `## Guidance\n${RISK_GUIDANCE}\n\n${CONTRACT}\n`
+    `## Guidance\n${GUIDANCE}\n\n${CONTRACT}\n`
   );
 }

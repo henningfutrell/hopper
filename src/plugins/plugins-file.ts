@@ -1,5 +1,5 @@
-// plugins.yaml: which instance fills which role (design.md "Configuration — plugins.yaml"). Slice 1
-// reads the router section; the other sections are allowed so the file can be written whole, but
+// plugins.yaml: which instance fills which role (design.md "Configuration — plugins.yaml"). Read:
+// router, answerer, assessor. The other sections are allowed so the file can be written whole, but
 // nothing reads them yet.
 import { readFileSync, statSync } from 'node:fs';
 import { parse } from 'yaml';
@@ -8,7 +8,8 @@ import type { InstanceSpec } from '../domain/types.ts';
 
 export type PluginsFileResult =
   | { missing: true }
-  | { router?: InstanceSpec; warnings: string[] }
+  /** `answerer: null` = no answerer configured; absent = derive it. */
+  | { router?: InstanceSpec; answerer?: InstanceSpec | null; assessor?: InstanceSpec; warnings: string[] }
   | { error: string };
 
 const instance = z.strictObject({
@@ -17,17 +18,25 @@ const instance = z.strictObject({
   options: z.record(z.string(), z.unknown()).default({}),
 });
 
+/** A question role's instance name is also a question stage, so `human` is taken. */
+const stageInstance = instance.extend({
+  name: z.string().min(1).refine((n) => n !== 'human', 'human is the human stage; name the instance something else'),
+});
+
 const FILE = z.strictObject({
   version: z.literal(1),
   router: instance.optional(),
-  // Read by later slices (questions, executors, sources, notifiers).
-  answerer: z.unknown().optional(),
-  assessor: z.unknown().optional(),
+  answerer: stageInstance.nullable().optional(),
+  assessor: stageInstance.optional(),
+  // Read by later slices (executors, sources, notifiers).
   executors: z.unknown().optional(),
   jobSources: z.unknown().optional(),
   machines: z.unknown().optional(),
   usageSources: z.unknown().optional(),
   notifiers: z.unknown().optional(),
+}).refine((f) => !f.answerer || !f.assessor || f.answerer.name !== f.assessor.name, {
+  message: 'answerer and assessor have the same name; a question stage must say which one holds it',
+  path: ['assessor', 'name'],
 });
 
 export function loadPluginsFile(path: string): PluginsFileResult {
@@ -47,5 +56,11 @@ export function loadPluginsFile(path: string): PluginsFileResult {
     return { error: `${path}: ${parsed.error.issues.map((i) => `${i.path.join('.') || 'file'}: ${i.message}`).join('; ')}` };
   }
   const warnings = mode & 0o077 ? [`${path} is readable by group/other; options may hold secrets (chmod 600 ${path})`] : [];
-  return { ...(parsed.data.router ? { router: parsed.data.router } : {}), warnings };
+  const { router, answerer, assessor } = parsed.data;
+  return {
+    ...(router ? { router } : {}),
+    ...(answerer !== undefined ? { answerer } : {}),
+    ...(assessor ? { assessor } : {}),
+    warnings,
+  };
 }

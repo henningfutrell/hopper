@@ -10,7 +10,8 @@ import { advice, adviceAction, holdPlan, jobSourceRef, jobSpec, jobStatus, laneP
 
 const strict = z.strictObject;
 const routerMode = z.enum(['shadow', 'active']);
-const answerTier = z.enum(['opus', 'fable', 'human']);
+/** A question stage: the answerer's or assessor's instance name, or `human`. */
+const stage = z.string().min(1);
 
 const divergence = strict({
   jobId: z.string(), advice: adviceAction,
@@ -41,12 +42,14 @@ export const EVENT_SCHEMAS = {
   }),
   'router.mode_changed': strict({ from: routerMode, to: routerMode }),
   'question.asked': strict({ questionId: z.string(), text: z.string(), detectedBy: z.string() }),
+  // v2: `target` is the stage entered (an instance name or `human`), no longer opus | fable | human.
   'question.escalated': strict({
-    questionId: z.string(), target: answerTier, reason: z.string(), text: z.string(), jobId: z.string(),
+    questionId: z.string(), target: stage, reason: z.string(), text: z.string(), jobId: z.string(),
     goal: z.string().optional(), answerUrl: z.string().optional(),
     notifyCount: z.number().int().optional(), renotify: z.boolean().optional(),
   }),
-  'question.answered': strict({ questionId: z.string(), by: answerTier, answer: z.string() }),
+  // v2: `by` is the answerer instance whose draft was accepted, or `human`.
+  'question.answered': strict({ questionId: z.string(), by: stage, answer: z.string() }),
   'question.expired': strict({ questionId: z.string(), after_ms: z.number() }),
 } satisfies Record<EventType, z.ZodType>;
 

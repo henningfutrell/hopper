@@ -82,7 +82,7 @@ export function createEngine(o: EngineOptions): Engine {
         }
         if (TRIGGERS.has(event.type)) setImmediate(() => c.trigger(event.type));
       });
-      // Re-run open model tiers, re-arm human timers, expire overdue questions.
+      // Restart open questions at the answer stage, re-arm human timers, expire overdue ones.
       o.questions.recover();
       timer = setInterval(() => {
         classifier.sweep();

@@ -1,13 +1,15 @@
-// The plugin host (design.md "Phase 5"): built-in + custom plugins, plugins.yaml (router section)
-// watched by mtime, detection of every plugin, and the live router.
+// The plugin host (design.md "Phase 5"): built-in + custom plugins, plugins.yaml (router, answerer,
+// assessor sections) watched by mtime, detection of every plugin, and the live roles: the router,
+// the answerer and the assessor, each swapped between calls.
 import { statSync } from 'node:fs';
-import type { Clock } from '../domain/ports.ts';
+import type { Answerer, Assessor, Clock } from '../domain/ports.ts';
 import { ROLES, type Detection, type InstanceSpec, type PluginsReport, type RouterMode, type RouterStatus } from '../domain/types.ts';
 import { BUILTIN_PLUGINS } from './builtin.ts';
 import { createDetectionKit } from './detect.ts';
 import { loadCustomPlugins, type LoadedPlugin, type LoadResult } from './loader.ts';
 import { optionsJsonSchema, parseOptions } from './options.ts';
 import { loadPluginsFile } from './plugins-file.ts';
+import { answererStatus, assessorStatus, buildAnswerer, buildAssessor, type BuiltAnswerer, type BuiltAssessor } from './question-slots.ts';
 import { buildRouter, createLiveRouter, safeDetect, type LiveRouter, type SlotDeps } from './router-slot.ts';
 import type { DetectionKit, PluginDefinition, PluginLogger, Router } from './sdk.ts';
 
@@ -16,8 +18,12 @@ export type { PluginDefinition } from './sdk.ts';
 export interface PluginHostOptions {
   pluginDir: string;
   pluginsFile: string;
-  /** The router instance when plugins.yaml names none (slice 1: derived from the env). */
+  /** The router instance when plugins.yaml names none (derived from the env). */
   defaultRouter: InstanceSpec;
+  /** The answerer instance when plugins.yaml has no `answerer` section; null = none. */
+  defaultAnswerer: InstanceSpec | null;
+  /** The assessor instance when plugins.yaml has no `assessor` section. */
+  defaultAssessor: InstanceSpec;
   dataDir: string;
   clock: Clock;
   logger: PluginLogger;
@@ -37,6 +43,10 @@ export interface PluginHost {
   /** Live: swaps between calls when plugins.yaml changes. Valid after start(). */
   readonly router: Router;
   routerStatus(): RouterStatus;
+  /** The answerer now, or undefined (none configured, or it cannot run). Valid after start(). */
+  answerer(): Answerer | undefined;
+  /** The assessor now (always-escalate standing in when the configured one cannot run). Valid after start(). */
+  assessor(): Assessor;
   report(): PluginsReport;
   /** Re-read plugins.yaml now, whatever the mtime; resolves when the router is in place. */
   reload(): Promise<void>;
@@ -50,6 +60,8 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
   let loaded: LoadResult = { plugins: [], errors: [], warnings: [] };
   let entries: Entry[] = [];
   let live: LiveRouter | undefined;
+  let answerer: BuiltAnswerer | undefined;
+  let assessor: BuiltAssessor | undefined;
   let timer: NodeJS.Timeout | undefined;
   let signature: string | undefined;
   let chain: Promise<void> = Promise.resolve();
@@ -63,30 +75,49 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
 
   async function catalogueDetection(def: PluginDefinition): Promise<Detection> {
     const parsed = parseOptions(def, {});
-    if (!parsed.ok) return { status: 'needs-setup', reason: parsed.error, command: `set router options for ${def.id} in ${o.pluginsFile}` };
+    if (!parsed.ok) return { status: 'needs-setup', reason: parsed.error, command: `set ${def.role} options for ${def.id} in ${o.pluginsFile}` };
     return safeDetect(def, kit, parsed.options);
   }
 
   async function configure(): Promise<void> {
     signature = sign();
     const r = loadPluginsFile(o.pluginsFile);
-    if ('error' in r) {
-      config.error = r.error;
-      o.logger.warn(`job-hopper: ${r.error}`);
-      if (live) return; // keep the last good router
+    const file = 'error' in r || 'missing' in r ? undefined : r;
+    let spec = {
+      router: file?.router ?? o.defaultRouter,
+      answerer: file?.answerer !== undefined ? file.answerer : o.defaultAnswerer,
+      assessor: file?.assessor ?? o.defaultAssessor,
+    };
+    let error = 'error' in r ? r.error : undefined;
+    if (!error && spec.answerer && spec.answerer.name === spec.assessor.name) {
+      error = `${o.pluginsFile}: answerer and assessor have the same name (${spec.answerer.name}); a question stage must say which one holds it`;
+    }
+    if (error) {
+      config.error = error;
+      o.logger.warn(`job-hopper: ${error}`);
+      if (live) return; // keep the last good instances
+      spec = { router: o.defaultRouter, answerer: o.defaultAnswerer, assessor: o.defaultAssessor };
     } else {
       delete config.error;
+      config.loadedAt = o.clock.now().toISOString();
     }
-    const fromFile = 'router' in r && r.router ? r.router : undefined;
-    const spec = fromFile ?? o.defaultRouter;
-    config.source = fromFile ? 'file' : 'env';
+    config.source = file && !error ? 'file' : 'env';
     config.warnings = 'warnings' in r ? r.warnings : [];
-    if (!('error' in r)) config.loadedAt = o.clock.now().toISOString();
-    if (live && JSON.stringify(live.current().spec) === JSON.stringify(spec)) return;
-    const built = await buildRouter(spec, deps);
-    if (live) live.swap(built);
-    else live = createLiveRouter(built, o.clock);
-    o.logger.info(`job-hopper: router ${spec.name} (${built.plugin}${built.fallback ? ', fallback' : ''})`);
+    const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+    if (!live || !same(live.current().spec, spec.router)) {
+      const built = await buildRouter(spec.router, deps);
+      if (live) live.swap(built);
+      else live = createLiveRouter(built, o.clock);
+      o.logger.info(`job-hopper: router ${spec.router.name} (${built.plugin}${built.fallback ? ', fallback' : ''})`);
+    }
+    if (!answerer || !same(answerer.spec, spec.answerer)) {
+      answerer = await buildAnswerer(spec.answerer, deps);
+      o.logger.info(`job-hopper: answerer ${spec.answerer ? `${spec.answerer.name} (${answerer.plugin ?? 'unavailable'})` : 'none'}`);
+    }
+    if (!assessor || !same(assessor.spec, spec.assessor)) {
+      assessor = await buildAssessor(spec.assessor, deps);
+      o.logger.info(`job-hopper: assessor ${spec.assessor.name} (${assessor.plugin}${assessor.fallback ? ', fallback' : ''})`);
+    }
   }
 
   const enqueue = (): Promise<void> => {
@@ -119,6 +150,11 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
     },
     get router() { return need().router; },
     routerStatus: () => need().status(),
+    answerer: () => answerer?.answerer,
+    assessor() {
+      if (!assessor) throw new Error('plugin host not started');
+      return assessor.assessor;
+    },
     reload: enqueue,
     report() {
       const current = need().current();
@@ -130,6 +166,8 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
           instance: current.spec, detection: current.detection, active: current.plugin, fallback: status.fallback,
           ...(status.reason === undefined ? {} : { reason: status.reason }),
         },
+        answerer: answerer ? answererStatus(answerer) : { instance: null, active: null, fallback: false },
+        assessor: assessor ? assessorStatus(assessor) : { instance: o.defaultAssessor, active: null, fallback: false },
         plugins: entries.map((e) => ({
           id: e.definition.id, role: e.definition.role, describe: e.definition.describe, builtin: e.builtin,
           ...(e.path ? { path: e.path } : {}), detection: e.detection, options: optionsJsonSchema(e.definition),

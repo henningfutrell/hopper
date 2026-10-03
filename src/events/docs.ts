@@ -22,9 +22,9 @@ const WHEN: Record<EventType, string> = {
   'decision.made': 'The engine recorded a Decision.',
   'router.mode_changed': 'The router mode was switched.',
   'question.asked': 'A running job paused on a question.',
-  'question.escalated': 'A question was passed to a tier (opus, fable, human), or a human was re-notified.',
-  'question.answered': 'A tier or a human answered a question.',
-  'question.expired': 'The human tier timed out and the job fails.',
+  'question.escalated': 'A question entered a stage — `target` is the answerer\'s instance name, the assessor\'s, or `human` — or the human was re-notified.',
+  'question.answered': 'An answer was accepted: an answerer\'s draft the assessor let through (`by` = the answerer instance), or the human\'s.',
+  'question.expired': 'The human stage timed out and the job fails.',
 };
 
 type Prop = Record<string, unknown>;
@@ -59,7 +59,8 @@ export function renderEventsMarkdown(): string {
     'Events stored before phase 3 read as v1 and are not re-validated.',
     '',
     `Stored events are never rewritten. Superseded versions stay readable and documented: ${Object.keys(LEGACY_EVENT_SCHEMAS).map((k) => `\`${k}\``).join(', ')}`,
-    '(phase 5 renamed Jev → router: `jev.mode_changed` is now `router.mode_changed`).',
+    '(phase 5 renamed Jev → router: `jev.mode_changed` is now `router.mode_changed`; slice 2 made question',
+    'stages instance names: `question.escalated.target` and `question.answered.by` were `opus | fable | human` in v1).',
     '',
     '```json',
     '{ "schemaVersion": 1, "seq": 1, "id": "uuid", "type": "job.queued", "at": "ISO",',

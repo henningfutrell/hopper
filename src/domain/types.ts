@@ -259,8 +259,8 @@ export const EVENT_SCHEMA_VERSIONS: Readonly<Record<EventType, number>> = {
   'job.queued': 1, 'job.prioritized': 2, 'job.held': 1, 'job.approved': 1, 'job.claimed': 1,
   'job.started': 1, 'job.progressed': 1, 'job.finished': 1, 'job.failed': 1, 'job.cancelled': 1,
   'job.requeued': 1, 'job.reprioritized': 1, 'lane.opened': 1, 'lane.closed': 1,
-  'decision.made': 2, 'router.mode_changed': 1, 'question.asked': 1, 'question.escalated': 1,
-  'question.answered': 1, 'question.expired': 1,
+  'decision.made': 2, 'router.mode_changed': 1, 'question.asked': 1, 'question.escalated': 2,
+  'question.answered': 2, 'question.expired': 1,
 };
 
 export const EVENT_TYPES: readonly EventType[] = [
@@ -322,28 +322,38 @@ export interface WebhookDelivery {
 
 // ---- Questions ---------------------------------------------------------------------
 
-/** Who can answer, in escalation order. */
-export type AnswerTier = 'opus' | 'fable' | 'human';
-export const ANSWER_TIERS: readonly AnswerTier[] = ['opus', 'fable', 'human'];
-
-/** open: being answered (tier = who has it now). answered/expired/cancelled are terminal. */
+/** open: being worked on (tier = the stage holding it). answered/expired/cancelled are terminal. */
 export type QuestionStatus = 'open' | 'answered' | 'expired' | 'cancelled';
 
-/** One tier's try at a question, with its reasoning. Human attempts carry only the answer. */
+/** Who made an attempt. Absent on attempts stored before slice 2, when every model attempt was an answer. */
+export type AttemptRole = 'answerer' | 'assessor' | 'human';
+
+/**
+ * One entry in a question's trail: an answerer's draft, an assessor's assessment, or the human's
+ * answer. Human attempts carry only the answer.
+ */
 export interface QuestionAttempt {
-  tier: AnswerTier;
+  /** Who: the answerer's or assessor's instance name, or `human` (before slice 2: `opus` / `fable`). */
+  tier: string;
+  role?: AttemptRole;
   model?: string;
   startedAt: string;
   finishedAt?: string;
   answer?: string;
   confident?: boolean;
+  /** Before slice 2 only: the answerer judged risk itself. Judging risk is now the assessor's job. */
   risky?: boolean;
-  /** Risk patterns that matched the question or the answer, independent of the model. */
+  /** Assessor: its verdict, when it returned a schema-valid one. */
+  escalate?: boolean;
+  /** Risk patterns that matched the question or the draft, independent of any model. */
   riskRules?: string[];
   reason?: string;
   error?: string;
-  /** accepted: its answer was typed into the job. escalated: passed to the next tier. */
-  outcome: 'accepted' | 'escalated';
+  /**
+   * drafted: an answerer's draft passed to the assessor. accepted: its answer was typed into the
+   * job. escalated: the question went to the human (or, before slice 2, to the next tier).
+   */
+  outcome: 'drafted' | 'accepted' | 'escalated';
 }
 
 export interface Question {
@@ -353,11 +363,15 @@ export interface Question {
   recentOutput: string;
   detectedBy: string;
   status: QuestionStatus;
-  /** The tier holding the question now (or the one that answered it). */
-  tier: AnswerTier;
+  /**
+   * The stage holding the question (or the last one that held it): the answerer's instance name,
+   * the assessor's, or `human`. Stored before slice 2: `opus` / `fable` / `human`.
+   */
+  tier: string;
   attempts: QuestionAttempt[];
   answer?: string;
-  answeredBy?: AnswerTier;
+  /** The answerer instance whose draft was accepted, or `human`. */
+  answeredBy?: string;
   /** Human tier: when it was first and last notified, and how often. */
   escalatedToHumanAt?: string;
   lastNotifiedAt?: string;
@@ -392,4 +406,4 @@ export interface SourceStatus {
 // ---- Plugins: src/domain/plugins.ts (re-exported here, one vocabulary) ------------------
 
 export { ROLES } from './plugins.ts';
-export type { Detection, InstanceSpec, PluginsReport, Role, RouterStatus } from './plugins.ts';
+export type { Detection, InstanceSpec, PluginsReport, QuestionRoleStatus, Role, RouterStatus } from './plugins.ts';

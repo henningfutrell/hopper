@@ -6,6 +6,7 @@ import { adviceAction, holdPlan, jobStatus, lanePlan, startPlan } from './parts.
 
 const strict = z.strictObject;
 const jevMode = z.enum(['shadow', 'active']);
+const answerTier = z.enum(['opus', 'fable', 'human']);
 
 const jevAdvice = strict({
   action: adviceAction,
@@ -28,4 +29,10 @@ export const LEGACY_EVENT_SCHEMAS: Readonly<Record<string, z.ZodType>> = {
     starts: z.array(startPlan), holds: z.array(holdPlan), lanes: z.array(lanePlan), divergences: z.array(jevDivergence),
   }),
   'jev.mode_changed.v1': strict({ from: jevMode, to: jevMode }),
+  'question.escalated.v1': strict({
+    questionId: z.string(), target: answerTier, reason: z.string(), text: z.string(), jobId: z.string(),
+    goal: z.string().optional(), answerUrl: z.string().optional(),
+    notifyCount: z.number().int().optional(), renotify: z.boolean().optional(),
+  }),
+  'question.answered.v1': strict({ questionId: z.string(), by: answerTier, answer: z.string() }),
 };

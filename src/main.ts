@@ -3,8 +3,8 @@
 import { readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { AnswerRequest, AnswerVerdict, Answerer, Clock, Executor, JobSource, PluginsView, Router, SourceRegistry, Store } from './domain/ports.ts';
-import type { Question } from './domain/types.ts';
+import type { Answerer, Assessor, Clock, Executor, JobSource, PluginsView, Router, SourceRegistry, Store } from './domain/ports.ts';
+import type { InstanceSpec, Question } from './domain/types.ts';
 import { loadConfig, type Config } from './config.ts';
 import { createEngine, type Engine } from './engine/index.ts';
 import { createExecutorRegistry, createTestExecutor } from './executors/index.ts';
@@ -13,7 +13,7 @@ import { createGrokBotNotifier } from './grokbot/index.ts';
 import { createServer } from './http/index.ts';
 import { createLocalMachineSource } from './machines/index.ts';
 import { createPluginHost } from './plugins/index.ts';
-import { createClaudeCliAnswerer, createFakeAnswerer, createQuestionService } from './questions/index.ts';
+import { createFakeAnswerer, createFakeAssessor, createQuestionService } from './questions/index.ts';
 import { createSourceSync, withFixedStatuses, type GitHubApi, type SourceSync } from './sources/index.ts';
 import { composeSources } from './sources/compose.ts';
 import { openStore } from './store/index.ts';
@@ -53,6 +53,10 @@ export interface AppSeams {
   grokbotBaseMs?: number;
   /** Replaces the configured router (the plugin host still loads, for /api/plugins). */
   router?: Router;
+  /** Replaces the configured answerer; null = no answerer. The report stays the host's. */
+  answerer?: Answerer | null;
+  /** Replaces the configured assessor. The report stays the host's. */
+  assessor?: Assessor;
   /** How often plugins.yaml's mtime is checked; default PLUGINS_FILE_CHECK_MS. */
   pluginsFileIntervalMs?: number;
 }
@@ -67,24 +71,38 @@ const HOPPER_COMMENT_CMD = fileURLToPath(new URL('../scripts/hopper-comment', im
 const VERSION = (JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }).version;
 
 /**
- * `JOB_HOPPER_ANSWERER=fake`: deterministic tiers for tests and demos, no model is called.
- * Answer `fake <tier> answer`. Opus is confident unless the question says "hard" or "unsure";
- * fable unless it says "unsure". Both mark a question risky when it says "risky". The risk
- * rules apply on top, as for real tiers (a question about deleting reaches the human).
+ * `JOB_HOPPER_ANSWERER=fake`: doubles at the Answerer and Assessor seams for tests and demos; no
+ * model is called and nothing in plugins.yaml selects them. The answerer `opus` drafts
+ * `fake opus answer`, confident unless the question says "unsure". The assessor `fable` escalates
+ * when the question says "risky" or "hard". The risk rules apply on top, as for real plugins (a
+ * question about deleting reaches the human).
  */
-function fakeVerdict(tier: Answerer['tier'], req: AnswerRequest): AnswerVerdict {
-  const text = req.question.text;
-  const unsure = tier === 'opus' ? /\b(hard|unsure)\b/i : /\bunsure\b/i;
-  const confident = !unsure.test(text);
-  const risky = /\brisky\b/i.test(text);
-  return { answer: `fake ${tier} answer`, confident, risky, reason: `fake ${tier}: confident=${confident} risky=${risky}` };
+function fakeQuestionRoles(): { answerer: Answerer; assessor: Assessor } {
+  return {
+    answerer: createFakeAnswerer({
+      name: 'opus',
+      script: (req) => {
+        const confident = !/\bunsure\b/i.test(req.question.text);
+        return { answer: 'fake opus answer', confident, reason: `fake opus: confident=${confident}` };
+      },
+    }),
+    assessor: createFakeAssessor({
+      name: 'fable',
+      script: (req) => {
+        const escalate = /\b(risky|hard)\b/i.test(req.question.text);
+        return { escalate, reason: `fake fable: escalate=${escalate}` };
+      },
+    }),
+  };
 }
 
-function answerersFor(config: Config, cwd: string): Answerer[] {
-  const tiers = [['opus', config.answerModelA], ['fable', config.answerModelB]] as const;
-  return tiers.map(([tier, model]) => (config.answerer === 'fake'
-    ? createFakeAnswerer({ tier, script: (req) => fakeVerdict(tier, req) })
-    : createClaudeCliAnswerer({ tier, model, bin: config.claudeBin, cwd, timeoutMs: config.answerTimeoutMs })));
+/** The question instances plugins.yaml falls back to: what the env described before plugins existed. */
+function questionDefaults(config: Config): { answerer: InstanceSpec; assessor: InstanceSpec } {
+  const common = { bin: config.claudeBin, timeoutMs: config.answerTimeoutMs };
+  return {
+    answerer: { name: 'opus', plugin: 'claude-cli', options: { ...common, model: config.answerModelA } },
+    assessor: { name: 'fable', plugin: 'claude-cli-assessor', options: { ...common, model: config.answerModelB } },
+  };
 }
 
 function executorsFor(config: Config, clock: Clock, seams: AppSeams): Executor[] {
@@ -113,11 +131,18 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     logger: { info: (l) => console.log(l), warn: (l) => console.warn(l) },
     // Without a router in plugins.yaml: the jev-router the env described before plugins existed.
     defaultRouter: { name: 'jev', plugin: 'jev-router', options: { jevSrc: config.jevSrc, python: config.python } },
+    defaultAnswerer: questionDefaults(config).answerer,
+    defaultAssessor: questionDefaults(config).assessor,
     intervalMs: seams.pluginsFileIntervalMs ?? PLUGINS_FILE_CHECK_MS,
   });
   await host.start();
   const plugins: PluginsView = seams.router ? seamPlugins(seams.router, host.report) : host;
   const router = seams.router ?? host.router;
+  // Seam doubles win, then the env's fake doubles, then the host's live instances (looked up per question).
+  const fake = config.answerer === 'fake' ? fakeQuestionRoles() : undefined;
+  const answerer = (): Answerer | undefined =>
+    (seams.answerer !== undefined ? (seams.answerer ?? undefined) : (fake?.answerer ?? host.answerer()));
+  const assessor = (): Assessor => seams.assessor ?? fake?.assessor ?? host.assessor();
   const dispatcher = createWebhookDispatcher({ store, clock, baseMs: config.webhookBaseMs });
   const grokbot = createGrokBotNotifier({ store, path: config.grokbotWebhookFile, info: (l) => console.log(l), ...(seams.grokbotBaseMs ? { baseMs: seams.grokbotBaseMs } : {}) });
   // The service calls the engine and the engine calls the service: the engine's handlers are
@@ -125,7 +150,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   // contract added").
   let port = config.port;
   const questions = createQuestionService({
-    store, clock, answerers: answerersFor(config, dataDir), rulesFile: config.rulesFile,
+    store, clock, answerer, assessor, stageTimeoutMs: config.answerTimeoutMs, rulesFile: config.rulesFile,
     renotifyMs: config.humanRenotifyMs, humanTimeoutMs: config.humanTimeoutMs,
     answerUrl: (id) => `http://${config.host}:${port}/#question-${id}`,
     onAnswered: (q: Question) => engine.onAnswered(q),
@@ -204,7 +229,9 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
 async function main(): Promise<void> {
   const app = await startApp(loadConfig(process.env));
   const r = app.plugins.routerStatus();
-  console.log(`job-hopper listening on ${app.url} (router ${r.name} [${r.plugin}${r.fallback ? ', fallback' : ''}] ${app.routerMode()}, executors ${app.config.executors.join(',')}, answerer ${app.config.answerer})`);
+  const { answerer, assessor } = app.plugins.report();
+  const q = `answerer ${answerer.instance ? `${answerer.instance.name} [${answerer.active ?? 'unavailable'}]` : 'none'}, assessor ${assessor.instance?.name} [${assessor.active}${assessor.fallback ? ', fallback' : ''}]`;
+  console.log(`job-hopper listening on ${app.url} (router ${r.name} [${r.plugin}${r.fallback ? ', fallback' : ''}] ${app.routerMode()}, executors ${app.config.executors.join(',')}, ${q}${app.config.answerer === 'fake' ? ' (fake doubles answer)' : ''})`);
   for (const s of app.sources.statuses()) console.log(`job-hopper: source ${s.name} (${s.kind}) ${s.state}`);
   console.log('job-hopper: UI login code written; open the UI with: bash ~/.local/lib/job-hopper/scripts/open-ui.sh');
   const shutdown = (signal: string): void => {

@@ -37,11 +37,18 @@ function idMap(state: State, key: string): Record<string, number> {
 }
 
 function trail(q: Question): string {
-  if (q.attempts.length === 0) return '(no model tier tried it)';
+  if (q.attempts.length === 0) return '(no answerer tried it)';
+  const yn = (b: boolean | undefined) => (b ? 'yes' : 'no');
   return q.attempts.map((a) => {
-    const yn = (b: boolean | undefined) => (b ? 'yes' : 'no');
     const rules = a.riskRules?.length ? ` · rules: ${a.riskRules.join(', ')}` : '';
-    return `- ${a.tier} · confident=${yn(a.confident)} · risky=${yn(a.risky)}${rules}${a.error ? ` · error: ${a.error}` : ''}`;
+    const error = a.error ? ` · error: ${a.error}` : '';
+    if (a.role === 'answerer') return `- ${a.tier} (answerer) · confident=${yn(a.confident)} · ${a.outcome}${error}`;
+    if (a.role === 'assessor') {
+      const verdict = a.escalate === undefined ? 'no verdict' : `escalate=${yn(a.escalate)}`;
+      return `- ${a.tier} (assessor) · ${verdict}${a.reason ? ` · ${a.reason}` : ''}${rules}${error}`;
+    }
+    // Attempts stored before the assessor: both model tiers answered and judged risk themselves.
+    return `- ${a.tier} · confident=${yn(a.confident)} · risky=${yn(a.risky)}${rules}${error}`;
   }).join('\n');
 }
 

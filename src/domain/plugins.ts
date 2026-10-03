@@ -1,8 +1,8 @@
 // Plugin vocabulary (design.md "Phase 5 — every part is a plugin"; docs/glossary.md).
 
-/** A slot the engine calls through one port. Slice 1 has the router; later slices add roles. */
-export type Role = 'router';
-export const ROLES: readonly Role[] = ['router'];
+/** A slot the engine calls through one port. Each slice adds the roles it builds. */
+export type Role = 'router' | 'answerer' | 'assessor';
+export const ROLES: readonly Role[] = ['router', 'answerer', 'assessor'];
 
 /** A plugin's cheap check of whether it can run on this machine. */
 export type Detection =
@@ -28,11 +28,26 @@ export interface RouterStatus {
   reason?: string;
 }
 
+/**
+ * A question role in GET /api/plugins. `instance` null: no answerer configured (plugins.yaml
+ * `answerer: null`). `active` is the plugin answering now: null for an answerer that cannot run
+ * (questions go to the human), `always-escalate` for an assessor that cannot (`fallback` true).
+ */
+export interface QuestionRoleStatus {
+  instance: InstanceSpec | null;
+  detection?: Detection;
+  active: string | null;
+  fallback: boolean;
+  reason?: string;
+}
+
 /** GET /api/plugins. */
 export interface PluginsReport {
   roles: Role[];
   config: { path: string; source: 'file' | 'env'; loadedAt?: string; error?: string; warnings: string[] };
   router: { instance: InstanceSpec; detection: Detection; active: string; fallback: boolean; reason?: string };
+  answerer: QuestionRoleStatus;
+  assessor: QuestionRoleStatus;
   plugins: {
     id: string; role: Role; describe: string; builtin: boolean; path?: string;
     detection: Detection;

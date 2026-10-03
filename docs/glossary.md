@@ -24,7 +24,7 @@ synonyms. Rename here first, in the same commit as everything else.
 | **Claim** | A Decision assigning a job to a lane, before the executor runs. | |
 | **Executor** | Runs one job on one lane: `test` (built in) or `herdr-claude` (Claude Code in a herdr pane). | runner |
 | **Plugin** | One module implementing one role: built in (`src/plugins/<role>/<id>/`) or custom (one directory under the plugin dir). Default export a `PluginDefinition`. | extension, addon, adapter (an adapter is the code behind a port; a plugin is the swappable unit) |
-| **Role** | A slot the engine calls through one port. Today: `router`. | slot type, kind |
+| **Role** | A slot the engine calls through one port. Today: `router`, `answerer`, `assessor`. | slot type, kind |
 | **Plugin instance** | A plugin plus validated options, under a name (`jev`), chosen in `plugins.yaml`. | config, profile |
 | **Detection** | A plugin's cheap check that it can run here: `available`, `unavailable` + reason, or `needs-setup` + the command to run. | health check |
 | **Plugin dir** | `~/.config/job-hopper/plugins` (`JOB_HOPPER_PLUGIN_DIR`): custom plugins, one directory each. | |
@@ -36,11 +36,15 @@ synonyms. Rename here first, in the same commit as everything else.
 | **Divergence** | A job where the advice's verdict differs from the native one. Recorded in both modes. | |
 | **Waiting answer** | Status `waiting_answer`: a job stopped on a question. Holds no lane; its pane stays open. | blocked, paused (a *paused* source is something else) |
 | **Question** | What a running job needs answered before it continues, with its escalation trail. | prompt, query |
-| **Answer tier** | Who may answer, in order: `opus`, `fable`, `human`. | level |
-| **Escalation** | Passing a question to the next tier because the last was not confident or the question is risky. | |
-| **Attempt** | One tier's try at a question: answer, confident, risky, risk rules, reason. | |
-| **Risk rule** | A named pattern (delete, deploy, force-push, spend, credentials, send-message) that makes a question risky regardless of the model. | |
-| **Rules file** | the owner's standing rules, given to every model tier. | policy |
+| **Answerer** | The role that drafts an answer to a question: `{ answer, confident, reason }` (`Answerer` port). 0..1 instance; built-in `claude-cli`. None, or not confident, or failing → the question goes straight to the human. | answer tier, opus (`opus` is one instance name) |
+| **Draft** | The answerer's proposed answer. Typed into the job only if the assessor does not escalate and no risk rule matches. | suggestion |
+| **Assessor** | The role that decides whether the owner must see a question, given the request and the draft: `{ escalate, reason }` (`Assessor` port). Never answers. Fails closed: anything but a schema-valid `escalate: false` escalates. Built-in `claude-cli-assessor`; `always-escalate` stands in when the configured one cannot run. | reviewer, judge, fable (`fable` is one instance name) |
+| **Assessment** | The assessor's verdict on one draft: `escalate` + `reason`; recorded as an attempt with `role: assessor`. | review, verdict |
+| **Stage** | Where an open question is: the answerer's instance name (drafting), the assessor's (assessing), or `human`. Stored as the question's `tier`; `question.escalated.target` names the stage entered. | tier, level |
+| **Escalation** | Sending a question to the human: no answerer, answerer not confident or failing, assessor escalating or failing, or a risk rule hit. (`question.escalated` also announces the answer and assess stages.) | |
+| **Attempt** | One entry in a question's trail: an answerer's draft, an assessor's assessment, or the human's answer. `tier` = who, `role`, `outcome` `drafted` / `accepted` / `escalated`. Rows before slice 2 have no `role` and may carry `risky`. | try |
+| **Risk rule** | A named pattern (delete, deploy, force-push, spend, credentials, send-message) over question and draft; a hit after the assessor escalates to the human whatever it said. Code, not configuration. | |
+| **Rules file** | the owner's standing rules, given to the answerer and the assessor. | policy |
 | **Resume** | Delivering an accepted answer to a job's parked pane and continuing it. | restart |
 | **herdr session** | The named herdr server (`job-hopper`) that hosts job panes. Never the user's default session. | |
 | **Pane** | The herdr terminal a herdr-claude job runs in; one tab per job run. | window |
@@ -88,6 +92,6 @@ synonyms. Rename here first, in the same commit as everything else.
 | DecisionMade | `decision.made` |
 | RouterModeChanged | `router.mode_changed` (was `jev.mode_changed`; stored ones keep that type) |
 | QuestionAsked | `question.asked` |
-| QuestionEscalated (to a tier) | `question.escalated` |
-| QuestionAnswered (by a tier) | `question.answered` |
+| QuestionEscalated (to a stage) | `question.escalated` |
+| QuestionAnswered (by an answerer instance, or the human) | `question.answered` |
 | QuestionExpired | `question.expired` |

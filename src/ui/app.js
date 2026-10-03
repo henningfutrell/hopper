@@ -185,9 +185,10 @@ function countdown(iso) {
 }
 function attemptRow(a) {
   return el('div', { class: 'attempt' },
-    pill(a.tier, 'tier-' + a.tier), a.model && mono(a.model),
+    pill(a.tier, 'tier-' + a.tier), a.role && pill(a.role), a.model && mono(a.model),
     pill(a.outcome, a.outcome === 'accepted' ? 'ok' : 'warn'),
     a.confident != null && el('span', null, 'confident ', mark(a.confident)),
+    a.escalate != null && el('span', null, 'escalate ', mark(a.escalate)),
     a.risky != null && el('span', null, 'risky ', mark(a.risky)),
     (a.riskRules ?? []).map((r) => pill(r, 'bad')),
     a.finishedAt && el('span', { class: 'muted' }, duration(a)),

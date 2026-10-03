@@ -2,10 +2,13 @@
 // Out-of-tree plugins import it type-only as `job-hopper/plugin` (package.json `exports`), which
 // type stripping erases, so a plugin needs nothing of job-hopper at runtime. Types only here.
 import type { z } from 'zod';
-import type { Clock, Router } from '../domain/ports.ts';
-import type { Advice, AdviceAction, Detection, Job, Role, RouterMode } from '../domain/types.ts';
+import type { AnswerDraft, AnswerRequest, Answerer, Assessment, Assessor, Clock, Router } from '../domain/ports.ts';
+import type { Advice, AdviceAction, Detection, Job, Question, QuestionAttempt, Role, RouterMode } from '../domain/types.ts';
 
-export type { Advice, AdviceAction, Clock, Detection, Job, Role, Router, RouterMode };
+export type {
+  Advice, AdviceAction, AnswerDraft, AnswerRequest, Answerer, Assessment, Assessor, Clock, Detection, Job, Question,
+  QuestionAttempt, Role, Router, RouterMode,
+};
 
 /** What `detect` may use. Cheap; never a paid model call; never runs a GUI binary. */
 export interface DetectionKit {
@@ -30,18 +33,25 @@ export interface PluginContext {
   logger: PluginLogger;
   /** job-hopper's data dir (next to its database). */
   dataDir: string;
-  /** This plugin's own scratch dir (`<dataDir>/plugins/<id>`), created before `create`. */
+  /** This plugin's own scratch dir (`<dataDir>/plugin-data/<id>`), created before `create`. */
   scratchDir: string;
 }
 
-/** What each role's `create` returns. */
+/**
+ * What each role's `create` returns. The core names the instance after plugins.yaml (`name` is
+ * overridden), validates every answerer draft and assessor result, and fails closed on them.
+ */
 export interface RoleInstance {
   router: Router;
+  answerer: Answerer;
+  assessor: Assessor;
 }
 
 /** What each role adds to the context. The router passes job-hopper's router mode on (Jev reads it). */
 export interface RoleContext {
   router: { routerMode(): RouterMode };
+  answerer: object;
+  assessor: object;
 }
 
 /** The zod the core passes to `options` — authors need not import zod. */

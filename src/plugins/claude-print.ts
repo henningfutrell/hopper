@@ -1,0 +1,102 @@
+// The `claude` CLI in print mode, locked down, for the built-in question plugins (claude-cli and
+// claude-cli-assessor; design.md "Question pipeline"): no tools, no MCP, no settings, no session,
+// output bound to a JSON Schema, prompt on stdin, cwd = job-hopper's data dir (so no project
+// CLAUDE.md loads), env scrubbed of the Claude Code markers. Never throws.
+import { spawn } from 'node:child_process';
+import type { z } from 'zod';
+import type { DetectionKit, QuestionAttempt } from './sdk.ts';
+
+export interface ClaudePrintOptions {
+  bin: string;
+  model: string;
+  /** `--effort`, when set. */
+  effort?: string;
+  cwd: string;
+  timeoutMs: number;
+  /**
+   * The literal draft-07 JSON Schema for `--json-schema`. Not z.toJSONSchema: that stamps
+   * `$schema` draft 2020-12, which the claude CLI's validator rejects ("no schema with key or ref").
+   */
+  jsonSchema: Record<string, unknown>;
+}
+
+/** Default `timeoutMs` of the claude plugins. */
+export const CLAUDE_TIMEOUT_MS = 180_000;
+
+function scrubbedEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  for (const key of Object.keys(env)) {
+    if (key === 'CLAUDECODE' || key.startsWith('CLAUDE_CODE_')) delete env[key];
+  }
+  return env;
+}
+
+export function claudeArgv(o: Pick<ClaudePrintOptions, 'model' | 'effort' | 'jsonSchema'>): string[] {
+  // --tools is last so its variadic list cannot swallow another flag.
+  return [
+    '-p', '--model', o.model, ...(o.effort ? ['--effort', o.effort] : []),
+    '--output-format', 'json', '--json-schema', JSON.stringify(o.jsonSchema),
+    '--no-session-persistence', '--setting-sources', '', '--strict-mcp-config', '--tools', '',
+  ];
+}
+
+function parse<T>(stdout: string, schema: z.ZodType<T>): T | { error: string } {
+  let json: unknown;
+  try {
+    json = JSON.parse(stdout);
+  } catch {
+    return { error: 'claude output is not JSON' };
+  }
+  const out = (json as { structured_output?: unknown } | null)?.structured_output;
+  const parsed = schema.safeParse(out);
+  return parsed.success ? parsed.data : { error: 'claude structured_output missing or invalid' };
+}
+
+/** Run one prompt; resolve the schema-valid structured_output, or `{ error }`. */
+export function claudePrint<T>(o: ClaudePrintOptions, schema: z.ZodType<T>, prompt: string, signal: AbortSignal): Promise<T | { error: string }> {
+  return new Promise((resolve) => {
+    const timeout = AbortSignal.timeout(o.timeoutMs);
+    const stop = AbortSignal.any([signal, timeout]);
+    const reasonOf = () => (timeout.aborted ? `timeout after ${o.timeoutMs}ms` : 'aborted');
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+    const finish = (r: T | { error: string }) => {
+      if (settled) return;
+      settled = true;
+      stop.removeEventListener('abort', onAbort);
+      resolve(r);
+    };
+    const child = spawn(o.bin, claudeArgv(o), { cwd: o.cwd, env: scrubbedEnv(), stdio: ['pipe', 'pipe', 'pipe'] });
+    const onAbort = () => {
+      child.kill('SIGKILL');
+      finish({ error: reasonOf() });
+    };
+    if (stop.aborted) return onAbort();
+    stop.addEventListener('abort', onAbort);
+    child.on('error', (err) => finish({ error: `claude spawn failed: ${err.message}` }));
+    child.stdout.setEncoding('utf8').on('data', (c: string) => { stdout += c; });
+    child.stderr.setEncoding('utf8').on('data', (c: string) => { stderr += c; });
+    child.on('close', (code) => {
+      if (code !== 0) return finish({ error: `claude exited ${code}: ${stderr.trim().slice(0, 300)}` });
+      finish(parse(stdout, schema));
+    });
+    child.stdin.on('error', () => {});
+    child.stdin.end(prompt);
+  });
+}
+
+/** `which` the bin, then `<bin> --version`. Cheap; never a model call. */
+export async function detectClaude(sys: DetectionKit, bin: string) {
+  if (!(await sys.which(bin))) return { status: 'unavailable' as const, reason: `claude not found: ${bin}` };
+  const version = await sys.version(bin, ['--version']);
+  if (!version) return { status: 'unavailable' as const, reason: `${bin} --version failed` };
+  return { status: 'available' as const, detail: version };
+}
+
+/** One trail entry as a prompt line (both claude prompts list earlier attempts). */
+export function attemptLine(a: QuestionAttempt): string {
+  const why = a.error ? `error: ${a.error}` : (a.reason ?? 'no reason given');
+  const what = a.answer ?? (a.escalate === undefined ? '(no answer)' : `escalate=${a.escalate}`);
+  return `- ${a.tier}${a.role ? ` [${a.role}]` : ''}${a.model ? ` (${a.model})` : ''}: ${what} — ${why}`;
+}

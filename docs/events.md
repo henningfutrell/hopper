@@ -9,8 +9,9 @@ An additive (optional) field keeps the version; a removed, renamed or retyped fi
 
 Events stored before phase 3 read as v1 and are not re-validated.
 
-Stored events are never rewritten. Superseded versions stay readable and documented: `job.prioritized.v1`, `decision.made.v1`, `jev.mode_changed.v1`
-(phase 5 renamed Jev → router: `jev.mode_changed` is now `router.mode_changed`).
+Stored events are never rewritten. Superseded versions stay readable and documented: `job.prioritized.v1`, `decision.made.v1`, `jev.mode_changed.v1`, `question.escalated.v1`, `question.answered.v1`
+(phase 5 renamed Jev → router: `jev.mode_changed` is now `router.mode_changed`; slice 2 made question
+stages instance names: `question.escalated.target` and `question.answered.by` were `opus | fable | human` in v1).
 
 ```json
 { "schemaVersion": 1, "seq": 1, "id": "uuid", "type": "job.queued", "at": "ISO",
@@ -343,12 +344,12 @@ Version 1 (`docs/schemas/question.asked.v1.json`). A running job paused on a que
 
 ## `question.escalated`
 
-Version 1 (`docs/schemas/question.escalated.v1.json`). A question was passed to a tier (opus, fable, human), or a human was re-notified.
+Version 2 (`docs/schemas/question.escalated.v2.json`). A question entered a stage — `target` is the answerer's instance name, the assessor's, or `human` — or the human was re-notified.
 
 | field | type | required |
 |---|---|---|
 | `questionId` | string | yes |
-| `target` | `opus` \| `fable` \| `human` | yes |
+| `target` | string | yes |
 | `reason` | string | yes |
 | `text` | string | yes |
 | `jobId` | string | yes |
@@ -373,12 +374,12 @@ Version 1 (`docs/schemas/question.escalated.v1.json`). A question was passed to 
 
 ## `question.answered`
 
-Version 1 (`docs/schemas/question.answered.v1.json`). A tier or a human answered a question.
+Version 2 (`docs/schemas/question.answered.v2.json`). An answer was accepted: an answerer's draft the assessor let through (`by` = the answerer instance), or the human's.
 
 | field | type | required |
 |---|---|---|
 | `questionId` | string | yes |
-| `by` | `opus` \| `fable` \| `human` | yes |
+| `by` | string | yes |
 | `answer` | string | yes |
 
 ```json
@@ -391,7 +392,7 @@ Version 1 (`docs/schemas/question.answered.v1.json`). A tier or a human answered
 
 ## `question.expired`
 
-Version 1 (`docs/schemas/question.expired.v1.json`). The human tier timed out and the job fails.
+Version 1 (`docs/schemas/question.expired.v1.json`). The human stage timed out and the job fails.
 
 | field | type | required |
 |---|---|---|

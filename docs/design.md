@@ -31,7 +31,7 @@ Fastify for HTTP, `node:sqlite` for storage, zod for request validation.
 | `src/store/` | SQLite schema, migrations, repositories, event log | engine, http, decider |
 | `src/webhooks/` | signing, dispatcher, retry/backoff | engine, http, decider |
 | `src/grokbot/` | the Grok Bot routine webhook: env-file reader, notifier (event log → POST) | engine, http, decider |
-| `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `job-hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, `plugins.yaml` + watch, the router slot; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim) | engine, http, store, decider |
+| `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `job-hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, `plugins.yaml` + watch, the role slots (`router-slot.ts` with the shared `instantiate`, `question-slots.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`); built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `answerer/claude-cli/`, `assessor/claude-cli-assessor/`, `assessor/always-escalate/` hold their prompts) | engine, http, store, decider, questions |
 | `src/executors/` | `Executor` adapters: `test` | engine, http, store |
 | `src/machines/` | `MachineSource` adapters: `local` | engine, http, store |
 | `src/usage/` | `UsageSource` adapters: `fake` | engine, http, store |
@@ -334,7 +334,7 @@ The usage-change trigger is named `usage.changed`; it is a trigger, not an event
 | dir | owns | must not import |
 |-----|------|-----------------|
 | `src/executors/herdr/` | `herdr-claude` executor: herdr CLI client (port + real adapter), screen protocol parser, pane lifecycle | engine, http, store, questions |
-| `src/questions/` | answer chain: `Answerer` adapters (`claude` CLI, `fake`), risk rules, rules-file loader, `QuestionService` (escalation, timers, recovery) | engine internals, http, executors |
+| `src/questions/` | the question pipeline: `QuestionService` (answer → assess → risk rules → accepted or human; timers, recovery), risk rules, rules-file loader, the fake doubles at the `Answerer`/`Assessor` seams. The answerer and assessor themselves are plugins (`src/plugins/`, phase 5 slice 2) | engine internals, http, executors, plugins |
 
 ## herdr-claude executor
 
@@ -414,48 +414,60 @@ per `run`/`resume` call; time spent waiting for an answer does not count.
 
 ## Questions
 
-Lifecycle: executor returns `question` → engine, in one tx: question created (`open`,
-tier `opus`), job `waiting_answer` + `questionId`, `resumeOn` = its machine, lane idle (or
-closed if draining), events `question.asked`. Then `QuestionService.handle(questionId)`
-runs the chain off the decision path:
+Lifecycle: executor returns `question` → engine, in one tx: question created (`open`, `tier` =
+`QuestionService.firstStage()`: the configured answerer's instance name, or `human` with none),
+job `waiting_answer` + `questionId`, `resumeOn` = its machine, lane idle (or closed if
+draining), events `question.asked`. Then `QuestionService.handle(questionId)` runs the
+pipeline off the decision path (phase 5 slice 2 replaced the opus → fable → human chain; full
+contract in "Question pipeline" under Phase 5):
 
-1. **opus** — `question.escalated {target: "opus"}`; `Answerer` opus.
-2. accepted iff `confident && !risky && no risk rule matched`; else `fable`:
-   `question.escalated {target: "fable", reason}`; `Answerer` fable with `previous`.
-3. accepted iff the same test; else **human**: question `tier: human`,
+1. **answer** — `question.escalated {target: <answerer>}`; the answerer drafts
+   `{ answer, confident, reason }`. No answerer, an error, a timeout, a malformed draft or
+   `confident` not `true` → human; the assessor is not called.
+2. **assess** — `question.escalated {target: <assessor>, reason: "drafted by <answerer>"}`; the
+   assessor returns `{ escalate, reason }`. Fails closed: anything but a schema-valid
+   `escalate: false` → human.
+3. **risk rules** over question + draft; a hit → human, whatever the assessor said.
+4. **accepted** → the draft is the answer. **human**: question `tier: human`,
    `escalatedToHumanAt`, `expiresAt = now + JOB_HOPPER_HUMAN_TIMEOUT_MS`,
    `question.escalated {target: "human", reason, text, jobId, goal, answerUrl, notifyCount: 1}`.
    Every `JOB_HOPPER_HUMAN_RENOTIFY_MS` while open: same event, `renotify: true`,
    `notifyCount` +1. At `expiresAt`: question `expired`, `question.expired`, job `failed`
-   (`question unanswered`), executor `cleanup`.
+   (`question unanswered`), executor `cleanup`. An expiry beyond the timer limit (~24.8 days)
+   re-arms instead of firing early.
 
-An `Answerer` error counts as not confident (logged with `error`) and escalates.
-**Accepted answer** (any tier, incl. human via API): question `answered`, `answer`,
-`answeredBy`; `question.answered {by, answer}`; job → `queued` with `pendingAnswer`,
-`questionId` kept, so the decider re-admits it (pinned to `resumeOn`, priority
-`+ policy.resumeBoost`). Claim of a job with `pendingAnswer` calls `executor.resume(ctx,
-answer)` and clears `pendingAnswer`. A human answer while a model tier is in flight wins;
-the late model result is logged (`outcome: escalated`, reason `superseded`) and ignored.
+Every answerer or assessor call is bounded by `JOB_HOPPER_ANSWER_TIMEOUT_MS` in the service
+(a custom plugin may hang), on top of the plugin's own `timeoutMs`; a throw counts as an error.
+**Accepted answer** (the draft, or the human's via API): question `answered`, `answer`,
+`answeredBy` (the answerer instance, or `human`); `question.answered {by, answer}`; job →
+`queued` with `pendingAnswer`, `questionId` kept, so the decider re-admits it (pinned to
+`resumeOn`, priority `+ policy.resumeBoost`). Claim of a job with `pendingAnswer` calls
+`executor.resume(ctx, answer)` and clears `pendingAnswer`. A human answer while a stage is in
+flight wins; the late result is logged (`outcome: escalated`, reason `superseded`) and ignored.
 
-**Every attempt is appended** (`questions.addAttempt`) with tier, model, timestamps,
-answer, confident, risky, riskRules, reason, error, outcome — the escalation trail.
+**Every attempt is appended** (`questions.addAttempt`) — the trail: `tier` (who: instance name
+or `human`), `role` (`answerer` | `assessor` | `human`; absent on rows before slice 2), model,
+timestamps, and per role: answerer `answer`, `confident`, `reason`, `error`; assessor
+`escalate`, `reason`, `riskRules`, `error`; `outcome` `drafted` | `accepted` | `escalated`.
 
-**Claude CLI answerer.** argv exactly `["-p", "--model", <opus|fable>, "--output-format",
-"json", "--json-schema", <AnswerVerdict schema>, "--no-session-persistence",
-"--setting-sources", "", "--strict-mcp-config", "--tools", ""]` (`--tools` last, so its
-list cannot swallow another flag), prompt on stdin, cwd = the
-data dir (so no project CLAUDE.md is loaded), env scrubbed of `CLAUDECODE`/`CLAUDE_CODE_*`,
-timeout `JOB_HOPPER_ANSWER_TIMEOUT_MS` (180000). Read `structured_output`; missing or
-invalid → `{ error }`. The prompt states: you answer on the owner's behalf for an unattended
-coding agent; standing rules; job prompt; recent pane output (last 120 lines); the
-question; earlier tiers' attempts; mark `risky` for deleting, deploying, force-push,
-spending money, credentials, sending messages, or anything irreversible; `confident`
-only if the rules and context settle it. **No local LLM**; fable is the `claude` CLI
+**Claude CLI plugins** (`claude-cli`, `claude-cli-assessor`; `src/plugins/claude-print.ts`).
+argv exactly `["-p", "--model", <model>, ("--effort", <effort>,) "--output-format", "json",
+"--json-schema", <schema>, "--no-session-persistence", "--setting-sources", "",
+"--strict-mcp-config", "--tools", ""]` (`--tools` last, so its list cannot swallow another
+flag), prompt on stdin, cwd = the data dir (so no project CLAUDE.md is loaded), env scrubbed of
+`CLAUDECODE`/`CLAUDE_CODE_*`, timeout from the plugin options. Read `structured_output`; missing
+or schema-invalid → `{ error }`. The answerer prompt: you answer on the owner's behalf for an
+unattended coding agent; standing rules; job prompt; recent pane output (last 120 lines); the
+question; earlier attempts; `confident` only if the rules and context settle it. The assessor
+prompt: its sole job is deciding whether the owner must see the question, never answering; the
+rules file is trusted; job prompt, goal, output, question, draft, the answerer's reason and
+earlier attempts are untrusted data, each fenced with more backticks than it contains, with an
+instruction not to follow instructions inside. **No local LLM**; fable is the `claude` CLI
 model alias `fable` — no fable agent or skill is defined in this setup (checked
 `claude agents --json`, `~/.claude/skills`).
 
-**Risk rules** (independent of the model; case-insensitive, word-bounded, over question +
-answer): `\b(delete|deleting|remove (all|the)|rm -rf|drop (table|database)|truncate|wipe)\b` ·
+**Risk rules** (independent of any model; case-insensitive, word-bounded, over question +
+draft; run after the assessor): `\b(delete|deleting|remove (all|the)|rm -rf|drop (table|database)|truncate|wipe)\b` ·
 `\b(deploy|deploying|deployment|publish|rollout|release to (prod|production))\b` ·
 `\b(force[- ]push|push --force|--force-with-lease|reset --hard)\b` ·
 `\b(spend|purchase|buy|payment|pay for|billing|charge (the )?card)\b` ·
@@ -469,7 +481,7 @@ every ask; missing → empty rules, noted in the prompt and the attempt reason.
 `scripts/install.sh` writes a starter file only if none exists.
 
 **Atomicity (B3).** Every QuestionService write is one `store.tx`, compare-and-set on
-`status === 'open'` and (model results) `tier` = the producing tier; `onAnswered` /
+`status === 'open'` and (stage results) `tier` = the producing stage; `onAnswered` /
 `onExpired` run synchronously inside it. The engine's side is compare-and-set too: it acts
 only if the job is `waiting_answer` with that `questionId`.
 
@@ -484,8 +496,9 @@ is "If the job is complete, end your message with JOB_HOPPER_DONE".
   daemon restart`, `job.failed`. Never re-run: a second run repeats real side effects.
   Reattaching to the live pane is carried work.
 - `waiting_answer` jobs, by their question: `open` → leave it (QuestionService.recover
-  re-runs a model tier or re-arms human timers; a human question past `expiresAt` expires
-  now); `answered` → requeue with that answer; `expired`/`cancelled`/missing → job `failed`,
+  restarts every open non-human question at the answer stage, whatever its `tier`, and re-arms
+  human timers; a human question past `expiresAt` expires now; one created at `human` but never
+  announced goes to the human now); `answered` → requeue with that answer; `expired`/`cancelled`/missing → job `failed`,
   `cleanup`.
 - `pendingAnswer` is cleared in the same tx that records the resume's outcome (not at claim),
   so a restart mid-resume does not lose the answer — but a restart mid-resume of a
@@ -523,8 +536,8 @@ The events table gains a `question_id` column (migration 2).
 | type | `data` |
 |------|--------|
 | `question.asked` | `{ questionId, text, detectedBy }` (event `jobId`, `questionId` set) |
-| `question.escalated` | `{ questionId, target: "opus"\|"fable"\|"human", reason, text, jobId, goal?, answerUrl?, notifyCount?, renotify? }` |
-| `question.answered` | `{ questionId, by: tier, answer }` |
+| `question.escalated` | `{ questionId, target: <stage>, reason, text, jobId, goal?, answerUrl?, notifyCount?, renotify? }` — v2: `target` is the answerer's or assessor's instance name, or `human` (v1: `"opus"\|"fable"\|"human"`) |
+| `question.answered` | `{ questionId, by: <answerer instance>\|"human", answer }` — v2 (v1: `by` from `opus\|fable\|human`) |
 | `question.expired` | `{ questionId, after_ms }` |
 
 ## Configuration added (env)
@@ -540,9 +553,9 @@ The events table gains a `question_id` column (migration 2).
 | `JOB_HOPPER_CLAUDE_CWD` | `~/workbench/app-workflows` |
 | `JOB_HOPPER_TRUST_WORKDIR` | `true` |
 | `JOB_HOPPER_IDLE_QUESTION_MS` | `20000` |
-| `JOB_HOPPER_ANSWERER` | `claude` (`fake` for tests) |
-| `JOB_HOPPER_ANSWER_MODEL_A` / `_B` | `opus` / `fable` |
-| `JOB_HOPPER_ANSWER_TIMEOUT_MS` | `180000` |
+| `JOB_HOPPER_ANSWERER` | `claude` (`fake` for tests: the fake doubles at the seams) |
+| `JOB_HOPPER_ANSWER_MODEL_A` / `_B` | `opus` / `fable` — the answerer's / assessor's model when plugins.yaml has no section |
+| `JOB_HOPPER_ANSWER_TIMEOUT_MS` | `180000` — plugin `timeoutMs` default from the env, and the service's per-stage ceiling |
 | `JOB_HOPPER_RULES_FILE` | `~/.config/job-hopper/rules.md` |
 | `JOB_HOPPER_HUMAN_RENOTIFY_MS` | `900000` (15 min) |
 | `JOB_HOPPER_HUMAN_TIMEOUT_MS` | `86400000` (24 h) |
@@ -556,10 +569,11 @@ src/executors/herdr/index.ts  createHerdrClaudeExecutor(o: { herdr: HerdrClient;
                                 defaultCwd: string; claudeArgs: string[]; trustWorkdir: boolean;
                                 pollMs: number; idleQuestionMs: number }): Executor
                               createHerdrCliClient(o: { bin: string; session: string }): HerdrClient
-src/questions/index.ts        createClaudeCliAnswerer(o: { tier: 'opus'|'fable'; model: string;
-                                bin: string; cwd: string; timeoutMs: number }): Answerer
-                              createFakeAnswerer(o: { tier; script: (req) => AnswerVerdict | { error } }): Answerer
-                              createQuestionService(o: { store: Store; clock: Clock; answerers: Answerer[];
+src/questions/index.ts        createFakeAnswerer(o: { name; model?; script: (req, signal) => AnswerDraft | { error } }): Answerer
+                              createFakeAssessor(o: { name; model?; script: (req, draft, signal) => Assessment | { error } }): Assessor
+                              createQuestionService(o: { store: Store; clock: Clock;
+                                answerer: () => Answerer | undefined; assessor: () => Assessor;
+                                stageTimeoutMs: number;
                                 rulesFile: string; renotifyMs: number; humanTimeoutMs: number;
                                 answerUrl: (id: string) => string;
                                 onAnswered: (q: Question) => void;   // engine: requeue with pendingAnswer
@@ -603,9 +617,9 @@ Op `ask`: `{ op: "ask", message?: string }` → outcome `question` (text = `mess
   could not see it.
 - **Screen chrome** that is never progress: the status/spinner line, user echo, `⏵` mode
   line, the effort indicator (`… · /effort`), and spinner tips (`⎿  Tip: …`).
-- **The fake answerer** (`JOB_HOPPER_ANSWERER=fake`, tests only): answer `fake <tier>
-  answer`; opus confident unless the question says "hard" or "unsure", fable unless
-  "unsure"; both risky if it says "risky"; real risk rules still apply.
+- **The fake doubles** (`JOB_HOPPER_ANSWERER=fake`, tests only; slice 2 policy): answerer
+  `opus` drafts `fake opus answer`, confident unless the question says "unsure"; assessor
+  `fable` escalates when it says "risky" or "hard"; real risk rules still apply.
 - **Models read the job's goal label.** In the demo both tiers cited a goal reading "chain
   to human". Goals are context the models weigh; write them as plain descriptions.
 - **Fable is the `claude` model alias `fable`** — no fable agent or skill exists in this
@@ -852,8 +866,8 @@ and truncated to 60 000 characters with a "(truncated)" note (GitHub's limit is 
 |--------|-----------|
 | claimed | ensure labels `hopper:claimed`, `hopper:done`, `hopper:failed` exist (`gh label create --force`, once per repo per process); add `hopper:claimed`; comment "🦘 job-hopper claimed this as job `<id>` (priority N, executor X, cwd …)" |
 | progress | one progress comment per job, **edited in place** (`editComment`), throttled |
-| question (human tier only) | comment with the question, the escalation trail summary (tier · confident · risky · rules), and "Reply to this issue to answer." |
-| answered | comment "Answered by <tier>: …" (also for opus/fable answers, so the issue tells the whole story) |
+| question (human tier only) | comment with the question, the escalation trail summary (answerer: name · confident · outcome; assessor: name · escalate · reason · rules; rows from before slice 2: tier · confident · risky · rules), and "Reply to this issue to answer." |
+| answered | comment "Answered by <tier>: …" (`answeredBy`: the answerer instance or `human`; also for answers the assessor let through, so the issue tells the whole story) |
 | finished | comment with the result summary; remove `hopper:claimed`, add `hopper:done` |
 | failed | comment with the error; remove `hopper:claimed`, add `hopper:failed` |
 | cancelled | comment "cancelled (<reason>)"; remove `hopper:claimed` |
@@ -1518,7 +1532,8 @@ stored old events are not rewritten (read raw by version; v1 schemas stay in doc
    detection kit, `plugins.yaml` (router section) + watch, `GET /api/plugins`, `Router` port,
    `jev-router`, `pass-through`, Jev→router renames and store migrations, `/api/health` shows
    fallback. Glossary first.
-2. **Questions**: answerer + assessor roles, pipeline, fail-closed assessor, recovery.
+2. **Questions** (landed; "Settled in slice 2" below): answerer + assessor roles, pipeline,
+   fail-closed assessor, recovery.
 3. **Executors** as plugins; `EXECUTOR_NAMES` removed; held-when-unavailable.
 4. **Job, machine, usage sources** as plugins; `sources.yaml` + env migration in the daemon;
    unit file updated.
@@ -1569,6 +1584,62 @@ stored old events are not rewritten (read raw by version; v1 schemas stay in doc
 - **Custom plugin ids** match `^[a-z0-9][a-z0-9-]*$`; a second custom plugin with a taken id
   is refused like a built-in collision. A plugin module that throws on import is an error in
   `/api/plugins`, never a boot failure.
+
+### Settled in slice 2 (2026-10-03)
+
+- **Roles:** `ROLES` is `router`, `answerer`, `assessor`. Built-ins `claude-cli` (answerer;
+  options `bin` `claude`, `model` `opus`, `timeoutMs` 180000, `effort` optional:
+  low|medium|high|xhigh|max → `--effort`), `claude-cli-assessor` (`bin`, `model` `fable`,
+  `timeoutMs`), `always-escalate`. Detection: `which bin`, then `<bin> --version`; a failing
+  version is `unavailable`. Never a model call.
+- **The core validates, never trusts.** The question service parses every draft (`answer`
+  string, `confident` boolean, `reason` string) and every assessment (`escalate` boolean,
+  `reason` string) with zod. A malformed draft is an answerer error; `{"escalate": "false"}`,
+  a missing field, `null`, a string, `{ error }`, a throw or the stage timeout is an assessor
+  error — both go to the human. Each call is bounded by `JOB_HOPPER_ANSWER_TIMEOUT_MS` in the
+  service (and aborted), whatever the plugin's own timeout.
+- **Attempt shape.** One flat `QuestionAttempt`, so old rows type-check: `tier` = who (instance
+  name or `human`), new optional `role` (`answerer` | `assessor` | `human`; absent before slice
+  2) and `escalate` (assessor), `outcome` gains `drafted`. The draft is appended (`drafted`) in
+  the tx that hands the question to the assessor, so the trail shows what was assessed. The
+  assessment attempt carries `escalate` (only when schema-valid), `reason`, `riskRules` (the
+  risk rules run in its tx) and `error`; its `outcome` is the final one (`accepted` or
+  `escalated`). `risky` stays optional, written only by pre-slice-2 rows.
+- **Who answered.** `answeredBy` and `question.answered.by` = the answerer instance (it wrote the
+  text that was typed); `tier` stays at the assessor (the last stage that held it).
+- **Every stage is announced.** `question.escalated.target` = the stage entered: the answerer
+  (`reason: asked`, or `restarted after a daemon restart`), the assessor (`drafted by <answerer>`),
+  `human`. `question.escalated` and `question.answered` are v2 (`target`/`by` free strings);
+  their v1 schemas stay in `src/events/legacy.ts` for stored events.
+- **Stage names are unambiguous.** plugins.yaml refuses an answerer or assessor named `human`,
+  and the two with one name; the host refuses the same collision when one comes from the env
+  (config error, last good instances kept). `answerer: null` = no answerer (questions go
+  straight to the human; `/api/plugins` shows `instance: null`); absent = the env-derived one;
+  `assessor: null` is refused (the slot is never empty).
+- **Env-derived instances** (no section in plugins.yaml): answerer `{ name: opus, plugin:
+  claude-cli, options: { bin: JOB_HOPPER_CLAUDE_BIN, model: JOB_HOPPER_ANSWER_MODEL_A, timeoutMs:
+  JOB_HOPPER_ANSWER_TIMEOUT_MS } }`, assessor `{ name: fable, plugin: claude-cli-assessor,
+  options: { bin, model: JOB_HOPPER_ANSWER_MODEL_B, timeoutMs } }`. `JOB_HOPPER_ANSWERER=fake`
+  puts the fake doubles (`src/questions/fake-answerer.ts`) at the seams; `AppSeams.answerer` /
+  `.assessor` (tests) win over both. Neither is a plugin; `/api/plugins` still reports the host.
+- **Failure, as built.** Answerer unknown, invalid options, not detected or failing `create` →
+  no answerer (`/api/plugins` `answerer.active: null`, `fallback: true`, `reason`). Assessor →
+  always-escalate stands in under the instance's name (`active: always-escalate`, `fallback:
+  true`), every assessment `{ escalate: true, reason: "assessor <name> unavailable: …" }`. The
+  instance name from plugins.yaml overrides whatever the plugin calls itself (as for the router).
+- **The assessor prompt** (`src/plugins/assessor/claude-cli-assessor/prompt.ts`) fences each
+  untrusted part (job prompt, goal, output, question, draft, the answerer's reason, earlier
+  attempts) with one more backtick than its longest run, so text inside cannot close its block;
+  the rules file is the only trusted section. The prompt is the first line; fail-closed parsing
+  and the risk rules are the containment.
+- **Built-in plugins may import zod** (in-tree, a dependency); custom plugins still get it only
+  as the `z` passed to `options`.
+- **No store migration.** Question rows are read as they are; `test/store/fixtures/
+  pre-assessor.sqlite` (written by 7d9d4e0's own repositories) reads, validates and restarts.
+  Recovery also sends to the human a question created at `human` (no answerer) whose
+  announcement a restart cut off.
+- **Human expiry past the timer limit** (found by that fixture): `setTimeout` fires a delay over
+  2^31−1 ms (~24.8 days) after 1 ms, so such an expiry now re-arms instead of expiring at once.
 
 ### Configuration added (env)
 
