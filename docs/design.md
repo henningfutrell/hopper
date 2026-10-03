@@ -1450,12 +1450,43 @@ notifiers: [ { name: grok-bot, plugin: grokbot-routine, options: { envFile: ~/.c
 ### UI and mutation
 
 A **Plugins** panel: per role, the configured instance, its detection status, and every
-plugin for that role (built-in and custom) with its detection result; **Rescan**.
-`POST /ui/api/plugins` (session-guarded) may only **select** a detected-available plugin for a
-role, or enable/disable an instance, writing `plugins.yaml` atomically. It **never edits
-options** — `bin`, `args`, `cwd` would make a UI session arbitrary command execution; options
-are edited in the file. This amends "No route creates or changes a … setting": plugin
-selection joins router mode as a UI-session mutation.
+plugin for that role (built-in and custom) with its detection result; **Rescan**. Each
+instance has its own options form, independent of every other instance's: changing one
+never touches another's section of `plugins.yaml`.
+
+`POST /ui/api/plugins` (session-guarded) may **select** a detected-available plugin for a
+role, enable/disable an instance, or **edit one instance's options** — except its
+**command-bearing options**, writing `plugins.yaml` atomically (mode 600). This amends "No
+route creates or changes a … setting": plugin selection and option editing join router mode
+as UI-session mutations.
+
+**Command-bearing options** (owner decision, owner decision, 2026-10-03, issue #6 option (a)): an
+option that names a program, its arguments, a working directory, an interpreter, or a file
+that is sourced or executed — `bin`, `args`, `cwd`, `python`, `jevSrc`, `envFile` and their
+kind. A plugin marks each in its schema with `.meta({ commandBearing: true })`; zod 4 carries
+the mark into `z.toJSONSchema()`, so `/api/plugins` and the UI see it. The UI shows these
+read-only; they are edited only in `plugins.yaml`. Why: a UI session is readable by jobs
+running with `--dangerously-skip-permissions` (see "UI session and mutations"), and a job
+that can rewrite an executor's `cwd`/`args` runs its own commands on the next restart.
+
+An options edit:
+- carries `{ role, name, options }` — one instance, its whole options object;
+- is refused (409) if any command-bearing value differs from the file's current value
+  (compared after parsing both with the plugin's schema), or if the file changed since the
+  form was read (`mtime` round-tripped as `version`);
+- is validated with the plugin's own schema before the write; invalid → 400 with zod's issues,
+  nothing written;
+- applies like a file edit: live roles swap between calls, restart roles show `changed —
+  restart pending`.
+
+Per piece, in the words of issue #6: "task" is an **executor** instance ("task" is not a
+glossary word); "connector" is a **job source** or **notifier** instance; a **lane** has no
+options of its own — lane count is the **machine** instance's `lanes` option.
+
+Residual risk: a session holder can still change non-command options — a router's
+thresholds, an answerer's model, a source's labels or authors allowlist. Each can change
+which jobs are pulled or how a question is drafted; none can run a command, and the
+assessor's fail-closed contract and the risk rules (code, not options) still stand.
 
 ### Failure
 
@@ -1493,7 +1524,8 @@ stored old events are not rewritten (read raw by version; v1 schemas stay in doc
    unit file updated.
 5. **Notifier** port + `grokbot-routine`.
 6. **Examples + `plugin:check`** + plugin tsconfig from `install.sh`.
-7. **UI Plugins panel** + `POST /ui/api/plugins` (select only) + rescan.
+7. **UI Plugins panel** + `POST /ui/api/plugins` (select, enable/disable, per-instance option
+   editing except command-bearing options) + rescan. Issue #6.
 8. **Install on server** (when no herdr-claude job runs) and live verification.
 
 ### Settled in slice 1 (2026-10-03)
