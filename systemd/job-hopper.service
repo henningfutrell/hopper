@@ -13,8 +13,10 @@ Environment=JOB_HOPPER_JEV_MODE=shadow
 Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin
 Environment=JOB_HOPPER_CLAUDE_CWD=%h/workbench/workflow-personal-app-management
 Environment=JOB_HOPPER_HERDR_SESSION=job-hopper
-# The hopper pulls jobs (sources.yaml, via the gh CLI and its keyring login) and sends webhooks
-# (webhooks.yaml). The UI login code is written to %h/.local/share/job-hopper/ui-login-code.
+# The hopper pulls jobs (sources.yaml: the GitHub App via %h/.config/job-hopper/github-app.json, or
+# the gh CLI and its keyring login while no app exists) and sends webhooks (webhooks.yaml). The UI
+# login code is written to %h/.local/share/job-hopper/ui-login-code; job token files to
+# %h/.local/share/job-hopper/job-tokens (outside PrivateTmp, so herdr panes can read them).
 Environment=JOB_HOPPER_SOURCES_FILE=%h/.config/job-hopper/sources.yaml
 Environment=JOB_HOPPER_WEBHOOKS_FILE=%h/.config/job-hopper/webhooks.yaml
 Environment=JOB_HOPPER_GH_BIN=gh

@@ -85,7 +85,7 @@ describe('events', () => {
     const a = await start();
     sse = await openSse(`${a.url}/api/events/stream`);
     await a.sync();
-    const m = await waitFor(() => sse!.messages.find((x) => x.event === 'source.updated'));
+    const m = await waitFor(() => sse!.messages.find((x) => x.event === 'source.updated' && JSON.parse(x.data).name === 'manual'));
     expect(m.id).toBeUndefined();
     expect(JSON.parse(m.data)).toMatchObject({ name: 'manual', kind: 'manual', state: 'ok' });
   });

@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Install or upgrade job-hopper as systemd --user services: the daemon (job-hopper) and its
 # own headless herdr session (job-hopper-herdr). Re-running upgrades in place. Config starters
-# (rules.md, sources.yaml, webhooks.yaml) are written only when absent — never overwritten.
+# (rules.md, sources.yaml, webhooks.yaml) are written only when absent. An existing sources.yaml
+# is migrated in place by scripts/migrate-sources-yaml.ts (phase-3 starter line → enabled: auto,
+# a githubApp: block appended once); anything else in it is kept.
 set -euo pipefail
 
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -19,7 +21,7 @@ step "copy src/, scripts/, package.json, package-lock.json to $DEST (replacing o
 mkdir -p "$DEST"
 rm -rf "$DEST/src" "$DEST/scripts"
 cp -r "$APP_DIR/src" "$DEST/src"
-cp -r "$APP_DIR/scripts" "$DEST/scripts"
+cp -r --preserve=mode "$APP_DIR/scripts" "$DEST/scripts"   # keeps hopper-comment and create-github-app.sh executable
 cp "$APP_DIR/package.json" "$APP_DIR/package-lock.json" "$DEST/"
 
 step "npm ci --omit=dev --prefix $DEST"
@@ -51,40 +53,12 @@ RULES_EOF
 fi
 
 if [ -e "$SOURCES" ]; then
-  step "keep existing sources file $SOURCES"
+  step "migrate existing sources file $SOURCES (only the phase-3 starter line and a missing githubApp: block)"
 else
   step "write starter sources file $SOURCES (mode 600; edit it, the daemon reads it at start)"
   mkdir -p "$CONFIG_DIR"
-  (umask 077; cat > "$SOURCES" <<'SOURCES_EOF'
-# job-hopper job sources. The hopper PULLS jobs; nothing posts them. Read at daemon start:
-# after editing, run: systemctl --user restart job-hopper
-version: 1
-github:
-  enabled: true              # false: pull nothing from GitHub
-  pollSeconds: 60            # how often to sync (discover issues, check jobs, retry reports)
-  owners: []                 # discover across repos owned by these; empty -> the `gh` user
-  repos: []                  # allowlist owner/repo; when non-empty ONLY these repos are acted on
-  authors: [owner]  # only issues and replies by these authors are ever acted on
-  label: hopper              # an open issue with this label becomes a job
-  priorityLabels: { "hopper:p0": 100, "hopper:p1": 75, "hopper:p2": 50, "hopper:p3": 25 }
-  defaultPriority: 50        # priority when no project value and no priority label applies
-  repoPaths: {}              # owner/repo -> local path, the job's working directory
-  defaultCwd: ~/workbench/workflow-personal-app-management   # cwd for repos not in repoPaths
-  executor: herdr-claude     # executor for issue jobs
-  model: null                # optional claude model for issue jobs
-  progressCommentSeconds: 300  # at most one progress-comment edit per job per this many seconds
-  recentComments: 10         # allowlisted comments passed into the job's context
-  projects: {}               # optional GitHub Projects (v2) priority per repo; the project wins over labels
-  # projects:                # needs the read:project scope: gh auth refresh -s read:project
-  #   owner/job-hopper-sandbox:
-  #     owner: owner
-  #     number: 3
-  #     mode: field          # field | rank
-  #     field: Priority      # field mode: single-select or number field name
-  #     map: { P0: 100, P1: 75, P2: 50, P3: 25 }   # single-select option -> priority
-SOURCES_EOF
-  )
 fi
+(umask 077; node "$APP_DIR/scripts/migrate-sources-yaml.ts" "$SOURCES")
 
 if [ -e "$WEBHOOKS" ]; then
   step "keep existing webhooks file $WEBHOOKS"
@@ -129,6 +103,9 @@ for i in $(seq 1 20); do
     printf 'executors: %s\n' "$(printf '%s' "$health" | node -e 'let s="";process.stdin.on("data",(c)=>s+=c).on("end",()=>console.log((JSON.parse(s).executors??[]).join(", ")))')"
     printf 'UI: %s/ (read-only until you log in)\n' "$URL"
     echo 'open the UI: bash ~/.local/lib/job-hopper/scripts/open-ui.sh'
+    if [ ! -e "$CONFIG_DIR/github-app.json" ]; then
+      echo 'next: create the GitHub App (one click in the browser): bash ~/.local/lib/job-hopper/scripts/create-github-app.sh'
+    fi
     exit 0
   fi
   printf '  try %s/20: not up yet\n' "$i"

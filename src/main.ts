@@ -2,8 +2,9 @@
 // are constructed (besides integration tests, which call startApp).
 import { readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { AnswerRequest, AnswerVerdict, Answerer, Clock, Executor, JevAdvisor, JobSource, SourceRegistry, Store } from './domain/ports.ts';
-import type { Question, SourceStatus } from './domain/types.ts';
+import type { Question } from './domain/types.ts';
 import { loadConfig, type Config } from './config.ts';
 import { createEngine, type Engine } from './engine/index.ts';
 import { createExecutorRegistry, createTestExecutor } from './executors/index.ts';
@@ -12,10 +13,8 @@ import { createServer } from './http/index.ts';
 import { createFakeAdvisor, createRouterAdvisor } from './jev/index.ts';
 import { createLocalMachineSource } from './machines/index.ts';
 import { createClaudeCliAnswerer, createFakeAnswerer, createQuestionService } from './questions/index.ts';
-import {
-  createGhCliApi, createGitHubSource, createSourceSync, idleStatus, loadSourcesFile, withFixedStatuses,
-  type GitHubApi, type SourceSync,
-} from './sources/index.ts';
+import { createSourceSync, withFixedStatuses, type GitHubApi, type SourceSync } from './sources/index.ts';
+import { composeSources } from './sources/compose.ts';
 import { openStore } from './store/index.ts';
 import { createFakeUsageSource } from './usage/index.ts';
 import { createWebhookConfigWatcher, type WebhookConfigWatcher } from './webhooks/config.ts';
@@ -41,8 +40,10 @@ export interface AppSeams {
   herdr?: HerdrClient;
   /** Registered after the configured executors. */
   executors?: Executor[];
-  /** Replaces the `gh` CLI adapter of the GitHub source. */
+  /** Replaces the `gh` CLI adapter of the `github` source. */
   github?: GitHubApi;
+  /** Replaces the GitHub App adapter of the `github-app` source (its paused() still follows the app file). */
+  githubApp?: GitHubApi;
   /** Run after the configured sources, polled every SEAM_SOURCE_POLL_MS. */
   sources?: JobSource[];
   /** How often webhooks.yaml's mtime is checked; default WEBHOOKS_FILE_CHECK_MS. */
@@ -51,6 +52,9 @@ export interface AppSeams {
 
 const WEBHOOKS_FILE_CHECK_MS = 5000;
 const SEAM_SOURCE_POLL_MS = 1000;
+
+/** The jobs' comment helper, next to this file's install: <install dir>/scripts/hopper-comment. */
+const HOPPER_COMMENT_CMD = fileURLToPath(new URL('../scripts/hopper-comment', import.meta.url));
 
 const VERSION = (JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }).version;
 
@@ -82,31 +86,6 @@ function executorsFor(config: Config, clock: Clock, seams: AppSeams): Executor[]
     pollMs: config.herdrPollMs, idleQuestionMs: config.idleQuestionMs,
   })));
   return [...built, ...(seams.executors ?? [])];
-}
-
-interface ComposedSources { sources: JobSource[]; fixed: SourceStatus[]; pollMs: Map<string, number>; throttleMs: Map<string, number> }
-
-/** sources.yaml → the sources that run, plus fixed statuses for the ones that do not. */
-function sourcesFor(config: Config, clock: Clock, store: Store, seams: AppSeams): ComposedSources {
-  const out: ComposedSources = { sources: [], fixed: [], pollMs: new Map(), throttleMs: new Map() };
-  const file = loadSourcesFile(config.sourcesFile);
-  if ('error' in file) {
-    console.error(`job-hopper: ${file.error} — no source runs from it`);
-    out.fixed.push(idleStatus('github', 'github', 'error', { error: file.error, detail: { path: config.sourcesFile } }));
-  } else if (!file.github?.enabled) {
-    out.fixed.push(idleStatus('github', 'github', 'disabled', { detail: { path: config.sourcesFile, ...(file.note ? { note: file.note } : {}) } }));
-  } else {
-    const gh = file.github;
-    out.sources.push(createGitHubSource({
-      name: 'github', config: gh, clock,
-      api: seams.github ?? createGhCliApi({ bin: config.ghBin }),
-      knownKeys: (keys) => new Set(keys.filter((k) => store.jobs.getBySourceKey(k))),
-    }));
-    out.pollMs.set('github', gh.pollSeconds * 1000);
-    out.throttleMs.set('github', gh.progressCommentSeconds * 1000);
-  }
-  out.sources.push(...(seams.sources ?? []));
-  return out;
 }
 
 export async function startApp(config: Config, seams: AppSeams = {}): Promise<App> {
@@ -144,7 +123,14 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     maxQuestions: config.maxQuestions,
     keepPanes: config.keepPanes,
   });
-  const composed = sourcesFor(config, clock, store, seams);
+  const composed = composeSources({
+    sourcesFile: config.sourcesFile, ghBin: config.ghBin, dataDir, commentCmd: HOPPER_COMMENT_CMD, clock,
+    ...(config.githubApiUrl ? { githubApiUrl: config.githubApiUrl } : {}),
+    knownKeys: (keys) => new Set(keys.filter((k) => store.jobs.getBySourceKey(k))),
+    ...(seams.github ? { github: seams.github } : {}),
+    ...(seams.githubApp ? { githubApp: seams.githubApp } : {}),
+  });
+  composed.sources.push(...(seams.sources ?? []));
   const sync = createSourceSync({
     sources: composed.sources, host: engine.sourceHost, clock,
     pollMs: (name) => composed.pollMs.get(name) ?? SEAM_SOURCE_POLL_MS,

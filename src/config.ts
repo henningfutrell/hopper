@@ -50,6 +50,8 @@ export interface Config {
   ghBin: string;
   /** Lifetime of a UI session, in hours. */
   uiSessionHours: number;
+  /** GitHub API base for the App adapter and the jobs' hopper-comment; unset → https://api.github.com. Tests point it at a fake. */
+  githubApiUrl?: string;
 }
 
 export const EXECUTOR_NAMES = ['test', 'herdr-claude'] as const;
@@ -110,6 +112,7 @@ const schema = z.object({
   JOB_HOPPER_WEBHOOKS_FILE: path('~/.config/job-hopper/webhooks.yaml'),
   JOB_HOPPER_GH_BIN: z.string().min(1).default('gh'),
   JOB_HOPPER_UI_SESSION_HOURS: z.coerce.number().finite().positive().default(12),
+  JOB_HOPPER_GITHUB_API: z.url({ protocol: /^https?$/ }).transform((u) => u.replace(/\/+$/, '')).optional(),
 }).refine((e) => e.JOB_HOPPER_SOFT_LIMIT < e.JOB_HOPPER_HARD_LIMIT, {
   message: 'must be below JOB_HOPPER_HARD_LIMIT',
   path: ['JOB_HOPPER_SOFT_LIMIT'],
@@ -164,5 +167,6 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     webhooksFile: e.JOB_HOPPER_WEBHOOKS_FILE,
     ghBin: e.JOB_HOPPER_GH_BIN,
     uiSessionHours: e.JOB_HOPPER_UI_SESSION_HOURS,
+    ...(e.JOB_HOPPER_GITHUB_API ? { githubApiUrl: e.JOB_HOPPER_GITHUB_API } : {}),
   };
 }

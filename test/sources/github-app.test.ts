@@ -165,6 +165,6 @@ describe('describe (B4 fields)', () => {
   it('gh source: mode gh and the enabled setting', () => {
     const { source } = setup();
     expect(source.kind).toBe('github');
-    expect(source.describe()).toMatchObject({ mode: 'gh', enabledSetting: 'true' });
+    expect(source.describe()).toMatchObject({ mode: 'gh', enabledSetting: 'auto' }); // sources.yaml default (phase 4)
   });
 });

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Remove the job-hopper services (daemon + its herdr session) and code. Keeps the queue
-# database (data dir) and every config file (rules.md, sources.yaml, webhooks.yaml).
+# database (data dir) and every config file (rules.md, sources.yaml, webhooks.yaml, and the
+# GitHub App's github-app.json, github-app.pem, github-app-webhook.secret).
 set -euo pipefail
 
 DEST="$HOME/.local/lib/job-hopper"
@@ -26,6 +27,10 @@ systemctl --user daemon-reload
 step "remove $DEST"
 rm -rf "$DEST"
 
+step "remove job token files $DATA/job-tokens (short-lived installation tokens of running jobs)"
+rm -rf "$DATA/job-tokens"
+
 echo "Kept $DATA — the queue database is your data. Delete it by hand to discard the queue."
-echo "Kept $CONFIG_DIR — your rules.md, sources.yaml and webhooks.yaml."
+echo "Kept $CONFIG_DIR — your rules.md, sources.yaml, webhooks.yaml and the GitHub App files (github-app.json, .pem, webhook secret)."
+echo "The GitHub App itself stays on GitHub; delete it at https://github.com/settings/apps if you no longer want it."
 echo "The herdr session directory ~/.config/herdr/sessions/job-hopper is kept; remove it with: herdr session delete job-hopper"
