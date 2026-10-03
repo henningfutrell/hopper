@@ -8,6 +8,7 @@ import { createDecisionRepository } from './decisions.ts';
 import { createEventLog } from './events.ts';
 import { createJobRepository } from './jobs.ts';
 import { createLaneRepository } from './lanes.ts';
+import { createQuestionRepository } from './questions.ts';
 import { migrate } from './migrations.ts';
 import { createSettingsRepository } from './settings.ts';
 import { createWebhookRepository } from './webhooks.ts';
@@ -56,6 +57,7 @@ export function openStore(o: { path: string; clock: Clock; idGen?: IdGen }): Sto
     decisions: createDecisionRepository(ctx),
     events,
     webhooks: createWebhookRepository(ctx),
+    questions: createQuestionRepository(ctx),
     settings: createSettingsRepository(ctx),
     tx: ctx.tx,
     close: () => db.close(),

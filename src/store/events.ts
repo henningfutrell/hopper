@@ -10,6 +10,7 @@ const toEvent = (r: Record<string, unknown>): DomainEvent => {
   if (r.lane_id !== null) e.laneId = r.lane_id as string;
   if (r.machine_id !== null) e.machineId = r.machine_id as string;
   if (r.decision_id !== null) e.decisionId = r.decision_id as string;
+  if (r.question_id !== null) e.questionId = r.question_id as string;
   return e;
 };
 
@@ -36,8 +37,8 @@ export function createEventLog(c: StoreContext, inTx: () => boolean): EventLogIn
       const id = c.idGen();
       const at = n.at ?? c.clock.now().toISOString();
       const r = c.db.prepare(
-        'INSERT INTO events (id, type, at, job_id, lane_id, machine_id, decision_id, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      ).run(id, n.type, at, n.jobId ?? null, n.laneId ?? null, n.machineId ?? null, n.decisionId ?? null, JSON.stringify(n.data));
+        'INSERT INTO events (id, type, at, job_id, lane_id, machine_id, decision_id, question_id, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      ).run(id, n.type, at, n.jobId ?? null, n.laneId ?? null, n.machineId ?? null, n.decisionId ?? null, n.questionId ?? null, JSON.stringify(n.data));
       const event: DomainEvent = { ...n, seq: Number(r.lastInsertRowid), id, at };
       if (inTx()) pending.push(event);
       else notify([event]);

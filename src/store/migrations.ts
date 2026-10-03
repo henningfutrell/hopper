@@ -53,6 +53,19 @@ const MIGRATIONS: readonly string[] = [
   CREATE INDEX deliveries_due ON deliveries (status, next_attempt_at);
   CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
   `,
+  `
+  CREATE TABLE questions (
+    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    id TEXT NOT NULL UNIQUE,
+    job_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    body TEXT NOT NULL            -- the Question as JSON (attempts inside)
+  );
+  CREATE INDEX questions_status ON questions (status);
+  CREATE INDEX questions_job ON questions (job_id);
+  ALTER TABLE events ADD COLUMN question_id TEXT;
+  `,
 ];
 
 export function migrate(db: DatabaseSync): void {
