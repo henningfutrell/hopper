@@ -3,8 +3,8 @@
 
 const CAP = { events: 500, decisions: 100, deliveries: 100 };
 const state = {
-  health: null, queue: { waiting: [], running: [], counts: {} }, machines: [],
-  decisions: [], events: [], deliveries: [], subscriptions: [], conn: 'reconnecting', filter: '',
+  health: null, queue: { waiting: [], running: [], waitingAnswer: [], counts: {} }, machines: [],
+  decisions: [], questions: [], drafts: {}, sending: {}, qerrors: {}, events: [], deliveries: [], subscriptions: [], conn: 'reconnecting', filter: '',
 };
 const $ = (id) => document.getElementById(id);
 
@@ -99,7 +99,15 @@ function renderQueue() {
       !j.approved && el('button', { onclick: () => act(`/api/jobs/${j.id}/approve`, { method: 'POST' }).then(refreshLive) }, 'Approve'), ' ',
       el('button', { class: 'danger', onclick: () => act(`/api/jobs/${j.id}/cancel`, { method: 'POST' }).then(refreshLive) }, 'Cancel')))),
   'nothing waiting');
-  count('queue', state.queue.waiting.length);
+  const wa = state.queue.waitingAnswer ?? [];
+  if (wa.length) {
+    const body = $('queue').querySelector('.body');
+    if (body.querySelector('.empty')) body.replaceChildren();
+    body.append(el('div', { class: 'sec' }, el('h3', null, 'waiting for answer'),
+      wa.map((j) => el('div', { class: 'row' }, jobLabel(j), pill('waiting_answer', 'warn'), j.questionId && mono(j.questionId),
+        el('button', { class: 'danger', onclick: () => act(`/api/jobs/${j.id}/cancel`, { method: 'POST' }).then(refreshLive) }, 'Cancel')))));
+  }
+  count('queue', state.queue.waiting.length + wa.length);
 }
 function renderRunning() {
   fill('running', state.queue.running.map((j) => el('div', { class: 'row' },
@@ -110,6 +118,91 @@ function renderRunning() {
   'nothing running');
   count('running', state.queue.running.length);
 }
+
+// ---- questions ---------------------------------------------------------------------
+
+const mark = (ok) => el('span', { class: ok ? 'ok-t' : 'bad-t' }, ok ? '✓' : '✗');
+function duration(a) {
+  if (!a.finishedAt) return '';
+  const s = Math.max(0, (new Date(a.finishedAt) - new Date(a.startedAt)) / 1000);
+  return s < 60 ? s.toFixed(1) + 's' : Math.floor(s / 60) + 'm ' + Math.floor(s % 60) + 's';
+}
+function countdown(iso) {
+  const s = Math.floor((new Date(iso) - Date.now()) / 1000);
+  if (s <= 0) return 'expired';
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+  return 'in ' + (h ? `${h}h ${m}m` : m ? `${m}m ${s % 60}s` : `${s}s`);
+}
+function attemptRow(a) {
+  return el('div', { class: 'attempt' },
+    pill(a.tier, 'tier-' + a.tier), a.model && mono(a.model),
+    pill(a.outcome, a.outcome === 'accepted' ? 'ok' : 'warn'),
+    a.confident != null && el('span', null, 'confident ', mark(a.confident)),
+    a.risky != null && el('span', null, 'risky ', mark(a.risky)),
+    (a.riskRules ?? []).map((r) => pill(r, 'bad')),
+    a.finishedAt && el('span', { class: 'muted' }, duration(a)),
+    a.answer && el('pre', { class: 'ans' }, a.answer),
+    a.reason && el('span', { class: 'muted' }, a.reason),
+    a.error && el('span', { class: 'err' }, a.error));
+}
+async function sendAnswer(q) {
+  const text = (state.drafts[q.id] ?? '').trim();
+  if (!text || state.sending[q.id]) return;
+  state.sending[q.id] = true; delete state.qerrors[q.id]; renderQuestions();
+  try {
+    await api(`/api/questions/${encodeURIComponent(q.id)}/answer`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ answer: text }) });
+    delete state.drafts[q.id];
+  } catch (e) { state.qerrors[q.id] = e.message; }
+  delete state.sending[q.id];
+  await refreshQuestions().catch(() => {});
+  refreshSoon();
+}
+function questionCard(q, job) {
+  const sending = !!state.sending[q.id];
+  const box = el('textarea', { rows: 3, placeholder: 'Answer to type into the job (Ctrl/Cmd+Enter to send)', disabled: sending,
+    'data-qid': q.id, oninput: (ev) => { state.drafts[q.id] = ev.target.value; },
+    onkeydown: (ev) => { if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); sendAnswer(q); } } });
+  box.value = state.drafts[q.id] ?? '';
+  const lines = q.recentOutput.split('\n');
+  const tail = lines.slice(-40).join('\n');
+  return el('div', { class: 'question', 'data-qid': q.id },
+    el('div', { class: 'row' }, mono(q.jobId), job?.spec.goal && el('b', null, job.spec.goal), mono(q.id),
+      pill(q.tier, 'tier-' + q.tier), pill('detected: ' + q.detectedBy),
+      el('span', { class: 'muted' }, 'asked ' + time(q.createdAt)),
+      q.tier === 'human' && el('span', null, `notified ${q.notifyCount}×`),
+      q.tier === 'human' && q.expiresAt && el('span', { class: 'warn-t', title: q.expiresAt }, 'expires ', el('span', { class: 'cd', 'data-exp': q.expiresAt }, countdown(q.expiresAt)))),
+    el('pre', { class: 'qtext' }, q.text),
+    el('details', { class: 'sec', 'data-key': 'out-' + q.id },
+      el('summary', { class: 'muted' }, `recent output (${Math.min(lines.length, 40)} of ${lines.length} lines)`), el('pre', null, tail)),
+    q.attempts.length ? el('div', { class: 'sec' }, el('h3', null, 'escalation trail'), q.attempts.map(attemptRow)) : null,
+    el('div', { class: 'answerbox' }, box,
+      el('button', { class: 'primary', disabled: sending, onclick: () => sendAnswer(q) }, sending ? 'Sending…' : 'Send answer'),
+      state.qerrors[q.id] && el('span', { class: 'err' }, state.qerrors[q.id])));
+}
+function renderQuestions() {
+  const panel = $('questions');
+  const active = document.activeElement;
+  const focus = active?.matches?.('#questions textarea') ? { id: active.dataset.qid, s: active.selectionStart, e: active.selectionEnd } : null;
+  const openOut = new Set([...panel.querySelectorAll('details[open]')].map((n) => n.dataset.key));
+  const jobs = new Map([...(state.queue.waitingAnswer ?? []), ...state.queue.running, ...state.queue.waiting].map((j) => [j.id, j]));
+  const open = state.questions;
+  panel.classList.toggle('attention', open.length > 0);
+  count('questions', open.length);
+  const body = panel.querySelector('.body');
+  if (!open.length) { body.replaceChildren(el('div', { class: 'empty' }, 'no open questions')); return; }
+  body.replaceChildren(...open.map((q) => {
+    const c = questionCard(q, jobs.get(q.jobId));
+    for (const d of c.querySelectorAll('details')) if (openOut.has(d.dataset.key)) d.open = true;
+    return c;
+  }));
+  if (focus) {
+    const t = body.querySelector(`textarea[data-qid="${CSS.escape(focus.id)}"]`);
+    if (t && !t.disabled) { t.focus(); t.setSelectionRange(focus.s, focus.e); }
+  }
+}
+setInterval(() => {
+  for (const n of document.querySelectorAll('#questions .cd')) n.textContent = countdown(n.dataset.exp);
+}, 1000);
 
 function section(title, nodes) {
   return nodes.length ? el('div', { class: 'sec' }, el('h3', null, title), nodes) : null;
@@ -159,17 +252,23 @@ function renderDeliveries() {
   count('deliveries', state.deliveries.length);
 }
 
-const renderAll = () => { renderHeader(); renderMachines(); renderQueue(); renderRunning(); renderDecisions(); renderEvents(); renderDeliveries(); };
+const renderAll = () => { renderHeader(); renderMachines(); renderQueue(); renderRunning(); renderQuestions(); renderDecisions(); renderEvents(); renderDeliveries(); };
 
 // ---- data --------------------------------------------------------------------------
 
 async function refreshHealth() { state.health = await api('/api/health'); renderHeader(); }
+async function refreshQuestions() {
+  state.questions = (await api('/api/questions?status=open')).questions;
+  renderQuestions();
+}
 async function refreshLive() {
   const [queue, machines] = await Promise.all([api('/api/queue'), api('/api/machines')]);
   state.queue = queue; state.machines = machines.machines;
-  renderHeader(); renderMachines(); renderQueue(); renderRunning();
+  renderHeader(); renderMachines(); renderQueue(); renderRunning(); renderQuestions();
 }
 let timer = null;
+let qtimer = null;
+const refreshQuestionsSoon = () => { clearTimeout(qtimer); qtimer = setTimeout(() => refreshQuestions().catch(() => {}), 150); };
 const refreshSoon = () => { clearTimeout(timer); timer = setTimeout(() => refreshLive().catch(() => {}), 150); };
 const prepend = (list, item, cap) => { list.unshift(item); if (list.length > cap) list.length = cap; };
 
@@ -185,6 +284,7 @@ function onDomainEvent(msg) {
   prepend(state.events, e, CAP.events);
   renderEvents();
   refreshSoon();
+  if (e.type.startsWith('question.')) refreshQuestionsSoon();
   if (e.type === 'jev.mode_changed') refreshHealth().catch(() => {});
   if (e.type === 'decision.made') {
     const id = e.decisionId ?? e.data.decisionId;
@@ -199,10 +299,10 @@ function onDomainEvent(msg) {
 function connect(afterSeq) {
   let last = afterSeq;
   const es = new EventSource('/api/events/stream?after=' + last);
-  es.onopen = () => { state.conn = 'live'; renderHeader(); refreshLive().catch(() => {}); };
+  es.onopen = () => { state.conn = 'live'; renderHeader(); refreshLive().catch(() => {}); refreshQuestions().catch(() => {}); };
   es.onerror = () => { state.conn = 'reconnecting'; renderHeader(); };
   es.addEventListener('delivery.updated', (m) => upsertDelivery(JSON.parse(m.data)));
-  const types = ['job.queued', 'job.prioritized', 'job.held', 'job.approved', 'job.claimed', 'job.started', 'job.progressed', 'job.finished', 'job.failed', 'job.cancelled', 'job.requeued', 'lane.opened', 'lane.closed', 'decision.made', 'jev.mode_changed'];
+  const types = ['job.queued', 'job.prioritized', 'job.held', 'job.approved', 'job.claimed', 'job.started', 'job.progressed', 'job.finished', 'job.failed', 'job.cancelled', 'job.requeued', 'lane.opened', 'lane.closed', 'decision.made', 'jev.mode_changed', 'question.asked', 'question.escalated', 'question.answered', 'question.expired'];
   for (const t of types) es.addEventListener(t, onDomainEvent);
   setInterval(() => refreshHealth().catch(() => {}), 10000);
 }
@@ -210,12 +310,12 @@ function connect(afterSeq) {
 async function init() {
   $('event-filter').addEventListener('input', (ev) => { state.filter = ev.target.value; renderEvents(); });
   renderAll();
-  const [health, queue, machines, decisions, events, subs, deliveries] = await Promise.all([
+  const [health, queue, machines, decisions, events, subs, deliveries, questions] = await Promise.all([
     api('/api/health'), api('/api/queue'), api('/api/machines'), api('/api/decisions?limit=50'),
-    api('/api/events?limit=200'), api('/api/webhooks'), api('/api/webhooks/deliveries?limit=100'),
+    api('/api/events?limit=200'), api('/api/webhooks'), api('/api/webhooks/deliveries?limit=100'), api('/api/questions?status=open'),
   ]);
   state.health = health; state.queue = queue; state.machines = machines.machines;
-  state.decisions = decisions.decisions;
+  state.decisions = decisions.decisions; state.questions = questions.questions;
   state.events = events.events.slice().sort((a, b) => b.seq - a.seq);
   state.subscriptions = subs.subscriptions; state.deliveries = deliveries.deliveries;
   renderAll();
