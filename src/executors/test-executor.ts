@@ -2,14 +2,14 @@
 //
 // Executor contract, for a future "herdr-claude" executor: it implements the same
 // interface. run() spawns the process, maps ctx.signal to killing it, derives
-// ctx.progress from the process output, and resolves { ok:false, error } on any failure.
+// ctx.progress from the process output, and resolves { kind: 'failed', error } on any failure.
 // It never rejects.
 
 import type { ExecutionContext, ExecutionOutcome, Executor } from '../domain/ports.ts';
 
 const OPS = ['sleep', 'echo', 'fail'] as const;
 const MAX_MS = 600000;
-const ABORTED: ExecutionOutcome = { ok: false, error: 'aborted' };
+const ABORTED: ExecutionOutcome = { kind: 'failed', error: 'aborted' };
 
 /** Resolves true after ms, or false as soon as the signal fires. */
 function wait(ms: number, signal: AbortSignal): Promise<boolean> {
@@ -33,7 +33,7 @@ async function runSleep(ctx: ExecutionContext, ms: number): Promise<ExecutionOut
     if (!(await wait(step, ctx.signal))) return ABORTED;
     ctx.progress(i / 10);
   }
-  return { ok: true, result: { slept: ms } };
+  return { kind: 'finished', result: { slept: ms } };
 }
 
 export function createTestExecutor(): Executor {
@@ -51,8 +51,8 @@ export function createTestExecutor(): Executor {
       const { op, ms, message } = ctx.job.spec.payload as { op: string; ms?: number; message?: string };
       if (op === 'sleep') return runSleep(ctx, ms ?? 1000);
       if (!(await wait(ms ?? 0, ctx.signal))) return ABORTED;
-      if (op === 'echo') return { ok: true, result: { echo: message } };
-      return { ok: false, error: message ?? 'failed on purpose' };
+      if (op === 'echo') return { kind: 'finished', result: { echo: message } };
+      return { kind: 'failed', error: message ?? 'failed on purpose' };
     },
   };
 }

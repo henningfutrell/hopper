@@ -24,7 +24,7 @@ export function createQueries(c: EngineContext): Queries {
     getQueue() {
       const all = c.store.jobs.list();
       const counts: Record<JobStatus, number> = {
-        queued: 0, held: 0, claimed: 0, running: 0, finished: 0, failed: 0, cancelled: 0,
+        queued: 0, held: 0, claimed: 0, running: 0, waiting_answer: 0, finished: 0, failed: 0, cancelled: 0,
       };
       for (const j of all) counts[j.status] += 1;
       const active = c.jevMode() === 'active';

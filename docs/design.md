@@ -311,3 +311,217 @@ The usage-change trigger is named `usage.changed`; it is a trigger, not an event
 | `JOB_HOPPER_JEV_CHEAP_BOOST` | `10` |
 | `JOB_HOPPER_WEBHOOK_BASE_MS` | `1000` |
 | `JOB_HOPPER_LANE_IDLE_GRACE_MS` | `5000` |
+
+---
+
+# Phase 2 — Claude in herdr, and questions (2026-10-02)
+
+## Directories added
+
+| dir | owns | must not import |
+|-----|------|-----------------|
+| `src/executors/herdr/` | `herdr-claude` executor: herdr CLI client (port + real adapter), screen protocol parser, pane lifecycle | engine, http, store, questions |
+| `src/questions/` | answer chain: `Answerer` adapters (`claude` CLI, `fake`), risk rules, rules-file loader, `QuestionService` (escalation, timers, recovery) | engine internals, http, executors |
+
+## herdr-claude executor
+
+Job: `executor: "herdr-claude"`, payload
+`{ prompt: string (required, non-empty), cwd?: string (absolute or ~; default config
+JOB_HOPPER_CLAUDE_CWD), model?: string, expectedMs?: number, timeoutMs?: number }`.
+
+**herdr session.** job-hopper owns the named session `JOB_HOPPER_HERDR_SESSION`
+(default `job-hopper`), run headless by its own unit `job-hopper-herdr.service`
+(`herdr --session job-hopper server`). Every herdr call is `herdr --session <s> …`, JSON on
+stdout, errors JSON on stderr with exit 1. Never the default session — herdr's own doctrine
+forbids driving a user's session from outside it. Spawned processes get an environment with
+`CLAUDECODE` and every `CLAUDE_CODE_*` variable removed.
+
+**Lanes → panes.** One herdr workspace labelled `job-hopper` (found by label, else created
+`--no-focus`). One **tab per job run**, created with `--cwd <job cwd>` and labelled
+`<laneId> · <jobId first 8>`; its root pane hosts Claude. The executor keeps `laneId →
+paneId` for the job now on that lane and saves `{ session, workspaceId, tabId, paneId,
+agentName, cwd }` with `ctx.saveState` the moment the pane exists. A job in
+`waiting_answer` keeps its pane ("parked") while its lane is freed; on resume the lane it
+is claimed onto maps to the parked pane.
+
+**Start.** `agent start jh-<jobId first 8> --kind claude --pane <pane> --timeout 60000 --
+<JOB_HOPPER_CLAUDE_ARGS> [--model <payload.model>]`, default args
+`--dangerously-skip-permissions`. `agent_not_ready` (blocked at startup): read the visible
+screen; if it is Claude's folder-trust dialog (contains `trust this folder`) **and the
+dialog names the job's cwd** and `JOB_HOPPER_TRUST_WORKDIR` is true → send `down enter`,
+log it via progress message `trusted workdir <cwd>`, wait for `idle`. Anything else blocking
+startup → `failed` with the screen text.
+
+**Prompt, once.** `agent prompt <agent> <prompt + protocol footer>` (no `--wait`). Footer:
+
+```
+[job-hopper protocol] When you need an answer from the user, ask exactly one question and end your message with a line containing only: JOB_HOPPER_QUESTION
+When the job is completely finished, end your final message with a line containing only: JOB_HOPPER_DONE
+If the job cannot be done, end with a line containing only: JOB_HOPPER_FAILED followed by the reason.
+```
+
+**Monitor** every `JOB_HOPPER_HERDR_POLL_MS` (1000): `agent get` (status, `state_change_seq`)
+and `agent read --source recent-unwrapped --lines 200`. After a prompt or answer is sent,
+judge only once the agent has been seen `working` (or `state_change_seq` advanced) — so the
+previous turn's marker is never re-read as the new outcome. Then:
+
+| observed | outcome |
+|----------|---------|
+| marker line `JOB_HOPPER_DONE` is the last marker (whole line, trimmed) and status idle/done | `finished`, result `{ summary: <assistant text of the final turn, ≤ 4000 chars>, paneId }` |
+| last marker `JOB_HOPPER_FAILED` | `failed`, error = text after the marker on that line or the next line |
+| last marker `JOB_HOPPER_QUESTION` | `question`, `detectedBy: marker`, text = the assistant message before the marker |
+| status `blocked` (question/approval UI) | `question`, `detectedBy: blocked`, text = the visible dialog |
+| idle/done with no new marker for `JOB_HOPPER_IDLE_QUESTION_MS` (20000) | `question`, `detectedBy: idle`, text = last assistant message ("stopped waiting for input") |
+| agent gone (`agent get` error / pane closed) | `failed`, `claude exited` + last output |
+| `timeoutMs` (default 3600000) exceeded | interrupt, `failed` `timed out` |
+
+Marker matching: a line equal to the marker after trimming whitespace and the `●`/`⎿`
+gutter. The prompt echo contains the markers mid-line only, never as a whole line.
+Progress: on change of the last non-empty assistant line, `ctx.progress(min(0.9,
+elapsed / expectedMs), line)` (`expectedMs` default 600000).
+
+**Resume** (`resume(ctx, answer)`): `agent get` the saved agent; gone → `failed` `pane lost`.
+If `blocked` → `send-keys esc` first. `agent prompt <agent> <answer>`; then the same monitor.
+
+**Cancel** (`ctx.signal`): `send-keys esc`, then `ctrl+c` twice, then `pane close`; outcome
+`failed` `aborted`. **cleanup(job)**: same exit-and-close from `job.executorState`;
+swallow errors; idempotent.
+
+## Questions
+
+Lifecycle: executor returns `question` → engine, in one tx: question created (`open`,
+tier `opus`), job `waiting_answer` + `questionId`, `resumeOn` = its machine, lane idle (or
+closed if draining), events `question.asked`. Then `QuestionService.handle(questionId)`
+runs the chain off the decision path:
+
+1. **opus** — `question.escalated {target: "opus"}`; `Answerer` opus.
+2. accepted iff `confident && !risky && no risk rule matched`; else `fable`:
+   `question.escalated {target: "fable", reason}`; `Answerer` fable with `previous`.
+3. accepted iff the same test; else **human**: question `tier: human`,
+   `escalatedToHumanAt`, `expiresAt = now + JOB_HOPPER_HUMAN_TIMEOUT_MS`,
+   `question.escalated {target: "human", reason, text, jobId, goal, answerUrl, notifyCount: 1}`.
+   Every `JOB_HOPPER_HUMAN_RENOTIFY_MS` while open: same event, `renotify: true`,
+   `notifyCount` +1. At `expiresAt`: question `expired`, `question.expired`, job `failed`
+   (`question unanswered`), executor `cleanup`.
+
+An `Answerer` error counts as not confident (logged with `error`) and escalates.
+**Accepted answer** (any tier, incl. human via API): question `answered`, `answer`,
+`answeredBy`; `question.answered {by, answer}`; job → `queued` with `pendingAnswer`,
+`questionId` kept, so the decider re-admits it (pinned to `resumeOn`, priority
+`+ policy.resumeBoost`). Claim of a job with `pendingAnswer` calls `executor.resume(ctx,
+answer)` and clears `pendingAnswer`. A human answer while a model tier is in flight wins;
+the late model result is logged (`outcome: escalated`, reason `superseded`) and ignored.
+
+**Every attempt is appended** (`questions.addAttempt`) with tier, model, timestamps,
+answer, confident, risky, riskRules, reason, error, outcome — the escalation trail.
+
+**Claude CLI answerer.** `claude -p --model <opus|fable> --tools "" --output-format json
+--json-schema <AnswerVerdict schema> --no-session-persistence`, prompt on stdin, cwd = the
+data dir (so no project CLAUDE.md is loaded), env scrubbed of `CLAUDECODE`/`CLAUDE_CODE_*`,
+timeout `JOB_HOPPER_ANSWER_TIMEOUT_MS` (180000). Read `structured_output`; missing or
+invalid → `{ error }`. The prompt states: you answer on the owner's behalf for an unattended
+coding agent; standing rules; job prompt; recent pane output (last 120 lines); the
+question; earlier tiers' attempts; mark `risky` for deleting, deploying, force-push,
+spending money, credentials, sending messages, or anything irreversible; `confident`
+only if the rules and context settle it. **No local LLM**; fable is the `claude` CLI
+model alias `fable` — no fable agent or skill is defined in this setup (checked
+`claude agents --json`, `~/.claude/skills`).
+
+**Risk rules** (independent of the model; case-insensitive, over question + answer):
+`delet|rm -rf|drop (table|database)|truncate` · `deploy|release|publish|rollout` ·
+`force[- ]push|push --force|--force-with-lease|reset --hard` ·
+`spend|purchase|buy|pay(ment)?|billing|invoice|charge` ·
+`credential|secret|token|password|api[ _-]?key|private key|ssh key` ·
+`send (an? )?(email|message|sms)|email|slack|post to|tweet|notify (the )?(customer|client)`.
+Each rule has a name (`delete`, `deploy`, `force-push`, `spend`, `credentials`,
+`send-message`); matches are recorded in `riskRules`.
+
+**Rules file** `JOB_HOPPER_RULES_FILE` (default `~/.config/job-hopper/rules.md`), read on
+every ask; missing → empty rules, noted in the prompt and the attempt reason.
+`scripts/install.sh` writes a starter file only if none exists.
+
+**Recovery at startup:** open questions at tier opus/fable re-run that tier; human-tier
+questions resume their renotify/expiry timers from the stored times. `waiting_answer` jobs
+are left as they are (their panes live in the herdr session, which outlives the daemon).
+Jobs that were `claimed`/`running` are requeued as before **and** `executor.cleanup(job)`
+closes their stale pane first.
+
+**Cancel** of a `waiting_answer` job: question `cancelled`, `executor.cleanup`, job
+`cancelled`.
+
+## Decider changes
+
+`waiting_answer` jobs are in neither `waiting` nor `running`, hold no lane, and are not
+inputs. A waiting job with `pendingAnswer`: effective priority `+ policy.resumeBoost` in
+both modes; pinned to `job.resumeOn ?? spec.machineId`; Jev holds do not apply to it (the
+job was already admitted once) — it is never re-held for Jev.
+
+## API additions
+
+| method | path | returns |
+|--------|------|---------|
+| GET | `/api/questions?status=open\|answered\|expired\|cancelled\|all&limit=100` | `{ questions: Question[] }` newest first, default `open` |
+| GET | `/api/questions/:id` | `Question` (with attempts) · 404 |
+| POST | `/api/questions/:id/answer` | body `{ answer: string (non-empty) }` → `Question` · 404 · 409 not open |
+
+`POST /api/jobs` with `executor: "herdr-claude"` validates the payload above.
+`GET /api/queue` `counts` gains `waiting_answer`; `/api/queue` gains `waitingAnswer: Job[]`.
+
+## Events added
+
+| type | `data` |
+|------|--------|
+| `question.asked` | `{ questionId, text, detectedBy }` (event `jobId`, `questionId` set) |
+| `question.escalated` | `{ questionId, target: "opus"\|"fable"\|"human", reason, text, jobId, goal?, answerUrl?, notifyCount?, renotify? }` |
+| `question.answered` | `{ questionId, by: tier, answer }` |
+| `question.expired` | `{ questionId, after_ms }` |
+
+## Configuration added (env)
+
+| var | default |
+|-----|---------|
+| `JOB_HOPPER_EXECUTORS` | `test,herdr-claude` |
+| `JOB_HOPPER_HERDR_BIN` | `herdr` |
+| `JOB_HOPPER_HERDR_SESSION` | `job-hopper` |
+| `JOB_HOPPER_HERDR_POLL_MS` | `1000` |
+| `JOB_HOPPER_CLAUDE_BIN` | `claude` |
+| `JOB_HOPPER_CLAUDE_ARGS` | `--dangerously-skip-permissions` |
+| `JOB_HOPPER_CLAUDE_CWD` | `~/workbench/workflow-personal-app-management` |
+| `JOB_HOPPER_TRUST_WORKDIR` | `true` |
+| `JOB_HOPPER_IDLE_QUESTION_MS` | `20000` |
+| `JOB_HOPPER_ANSWERER` | `claude` (`fake` for tests) |
+| `JOB_HOPPER_ANSWER_MODEL_A` / `_B` | `opus` / `fable` |
+| `JOB_HOPPER_ANSWER_TIMEOUT_MS` | `180000` |
+| `JOB_HOPPER_RULES_FILE` | `~/.config/job-hopper/rules.md` |
+| `JOB_HOPPER_HUMAN_RENOTIFY_MS` | `900000` (15 min) |
+| `JOB_HOPPER_HUMAN_TIMEOUT_MS` | `86400000` (24 h) |
+| `JOB_HOPPER_RESUME_BOOST` | `20` |
+
+## Construction contract added
+
+```text
+src/executors/herdr/index.ts  createHerdrClaudeExecutor(o: { herdr: HerdrClient; clock: Clock;
+                                defaultCwd: string; claudeArgs: string[]; trustWorkdir: boolean;
+                                pollMs: number; idleQuestionMs: number }): Executor
+                              createHerdrCliClient(o: { bin: string; session: string }): HerdrClient
+src/questions/index.ts        createClaudeCliAnswerer(o: { tier: 'opus'|'fable'; model: string;
+                                bin: string; cwd: string; timeoutMs: number }): Answerer
+                              createFakeAnswerer(o: { tier; script: (req) => AnswerVerdict | { error } }): Answerer
+                              createQuestionService(o: { store: Store; clock: Clock; answerers: Answerer[];
+                                rulesFile: string; renotifyMs: number; humanTimeoutMs: number;
+                                answerUrl: (id: string) => string;
+                                onAnswered: (q: Question) => void;   // engine: requeue with pendingAnswer
+                                onExpired: (q: Question) => void }): QuestionService
+                              riskRules(text: string): string[]
+```
+
+`HerdrClient` is defined in `src/executors/herdr/client.ts` (the executor's own port; the
+real adapter shells out, the fake simulates a Claude screen). `QuestionService`:
+`{ handle(questionId): void; answerByHuman(id, answer): Question; cancel(questionId): void;
+recover(): void; stop(): void }`.
+
+## Test executor additions
+
+Op `ask`: `{ op: "ask", message?: string }` → outcome `question` (text = `message` ??
+"Which option?", `detectedBy: "test"`), saveState `{ asked: true }`. `resume(ctx, answer)` →
+`finished` `{ answer }`; resume on a job whose payload op is `fail-after-answer` → `failed`.

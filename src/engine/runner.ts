@@ -54,12 +54,14 @@ export function createRunner(c: EngineContext): Runner {
       if (cancelled) {
         store.jobs.update(job.id, { status: 'cancelled', finishedAt: at });
         store.events.append({ type: 'job.cancelled', jobId: job.id, laneId, data: { reason: 'cancelled while running' } });
-      } else if (outcome.ok) {
+      } else if (outcome.kind === 'finished') {
         store.jobs.update(job.id, { status: 'finished', result: outcome.result, finishedAt: at });
         store.events.append({ type: 'job.finished', jobId: job.id, laneId, data: { result: outcome.result } });
       } else {
-        store.jobs.update(job.id, { status: 'failed', error: outcome.error, finishedAt: at });
-        store.events.append({ type: 'job.failed', jobId: job.id, laneId, data: { error: outcome.error } });
+        // `question` is handled by the questions phase; until then it ends the job.
+        const error = outcome.kind === 'failed' ? outcome.error : `unanswered question: ${outcome.question.text}`;
+        store.jobs.update(job.id, { status: 'failed', error, finishedAt: at });
+        store.events.append({ type: 'job.failed', jobId: job.id, laneId, data: { error } });
       }
       const lane = store.lanes.list().find((l) => l.id === laneId);
       if (!lane) return;
@@ -89,9 +91,10 @@ export function createRunner(c: EngineContext): Runner {
       outcome = await executor.run({
         job: started, laneId: claim.laneId, signal: entry.controller.signal,
         progress: (f, m) => progress.report(f, m),
+        saveState: (state) => { store.jobs.update(job.id, { executorState: state }); },
       });
     } catch (e) {
-      outcome = { ok: false, error: e instanceof Error ? e.message : String(e) };
+      outcome = { kind: 'failed', error: e instanceof Error ? e.message : String(e) };
     }
     // Shutdown: leave the job running in the store; restart recovery requeues it.
     if (c.stopping() && !entry.cancelled) return;

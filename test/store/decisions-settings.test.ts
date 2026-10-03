@@ -10,7 +10,7 @@ function decision(id: string, at: string): Decision {
     reasons: ['r'],
     inputs: {
       at, trigger: 'tick', jevMode: 'shadow', machines: [], lanes: [], usage: [], waiting: [], running: [],
-      policy: { softLimit: 0.7, hardLimit: 0.95, jevCheapBoost: 10, laneIdleGraceMs: 1000 },
+      policy: { softLimit: 0.7, hardLimit: 0.95, jevCheapBoost: 10, laneIdleGraceMs: 1000, resumeBoost: 20 },
     },
   };
 }

@@ -9,7 +9,7 @@ function ctxFor(payload: Record<string, unknown>, signal = new AbortController()
     id: 'j1', spec: { executor: 'test', payload }, priority: 50, status: 'running', approved: false,
     createdAt: '', updatedAt: '', attempts: 1,
   };
-  const ctx: ExecutionContext = { job, laneId: 'local/lane-1', signal, progress: (f) => progress.push(f) };
+  const ctx: ExecutionContext = { job, laneId: 'local/lane-1', signal, progress: (f) => progress.push(f), saveState: () => {} };
   return { ctx, progress };
 }
 
@@ -19,17 +19,17 @@ describe('test executor', () => {
   it('is named test', () => expect(ex.name).toBe('test'));
 
   it('echo returns the message', async () => {
-    expect(await ex.run(ctxFor({ op: 'echo', message: 'hi' }).ctx)).toEqual({ ok: true, result: { echo: 'hi' } });
+    expect(await ex.run(ctxFor({ op: 'echo', message: 'hi' }).ctx)).toEqual({ kind: 'finished', result: { echo: 'hi' } });
   });
 
   it('fail reports the message, or a default', async () => {
-    expect(await ex.run(ctxFor({ op: 'fail', message: 'boom' }).ctx)).toEqual({ ok: false, error: 'boom' });
-    expect(await ex.run(ctxFor({ op: 'fail' }).ctx)).toEqual({ ok: false, error: 'failed on purpose' });
+    expect(await ex.run(ctxFor({ op: 'fail', message: 'boom' }).ctx)).toEqual({ kind: 'failed', error: 'boom' });
+    expect(await ex.run(ctxFor({ op: 'fail' }).ctx)).toEqual({ kind: 'failed', error: 'failed on purpose' });
   });
 
   it('sleep reports increasing progress and its result', async () => {
     const { ctx, progress } = ctxFor({ op: 'sleep', ms: 100 });
-    expect(await ex.run(ctx)).toEqual({ ok: true, result: { slept: 100 } });
+    expect(await ex.run(ctx)).toEqual({ kind: 'finished', result: { slept: 100 } });
     expect(progress.length).toBeGreaterThanOrEqual(3);
     expect([...progress].sort((a, b) => a - b)).toEqual(progress);
     expect(progress.every((p) => p > 0 && p <= 1)).toBe(true);
@@ -42,14 +42,14 @@ describe('test executor', () => {
     await new Promise((r) => setTimeout(r, 50));
     const t0 = Date.now();
     ac.abort();
-    expect(await p).toEqual({ ok: false, error: 'aborted' });
+    expect(await p).toEqual({ kind: 'failed', error: 'aborted' });
     expect(Date.now() - t0).toBeLessThan(100);
   });
 
   it('an already-aborted signal resolves aborted', async () => {
     const ac = new AbortController();
     ac.abort();
-    expect(await ex.run(ctxFor({ op: 'echo', ms: 1000 }, ac.signal).ctx)).toEqual({ ok: false, error: 'aborted' });
+    expect(await ex.run(ctxFor({ op: 'echo', ms: 1000 }, ac.signal).ctx)).toEqual({ kind: 'failed', error: 'aborted' });
   });
 
   it('validate rejects bad op and bad ms', () => {

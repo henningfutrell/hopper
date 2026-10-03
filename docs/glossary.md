@@ -22,12 +22,23 @@ synonyms. Rename here first, in the same commit as everything else.
 | **Hold** | A Decision keeping a waiting job out, with a reason. Status `held`. | block, defer |
 | **Waiting** | Status `queued` or `held`. | pending |
 | **Claim** | A Decision assigning a job to a lane, before the executor runs. | |
-| **Executor** | Runs one job on one lane (`test` today; `herdr-claude` later). | runner |
+| **Executor** | Runs one job on one lane: `test` (built in) or `herdr-claude` (Claude Code in a herdr pane). | runner |
 | **Jev** | grok-bot-jev's usage router: classifies a request and returns an action. | |
 | **Jev advice** | Jev's action + reason + details for one job. | |
 | **Advisor** | The adapter producing Jev advice: `router` (the real one) or `fake`. | |
 | **Jev mode** | `shadow`: advice recorded, never applied. `active`: advice shapes admission and order. | |
 | **Divergence** | A job where the Jev verdict differs from the native one. Recorded in both modes. | |
+| **Waiting answer** | Status `waiting_answer`: a job paused on a question. Holds no lane; its pane stays open. | blocked, paused |
+| **Question** | What a running job needs answered before it continues, with its escalation trail. | prompt, query |
+| **Answer tier** | Who may answer, in order: `opus`, `fable`, `human`. | level |
+| **Escalation** | Passing a question to the next tier because the last was not confident or the question is risky. | |
+| **Attempt** | One tier's try at a question: answer, confident, risky, risk rules, reason. | |
+| **Risk rule** | A named pattern (delete, deploy, force-push, spend, credentials, send-message) that makes a question risky regardless of the model. | |
+| **Rules file** | the owner's standing rules, given to every model tier. | policy |
+| **Resume** | Delivering an accepted answer to a job's parked pane and continuing it. | restart |
+| **herdr session** | The named herdr server (`job-hopper`) that hosts job panes. Never the user's default session. | |
+| **Pane** | The herdr terminal a herdr-claude job runs in; one tab per job run. | window |
+| **Parked pane** | The pane of a job waiting on an answer. | |
 | **Event** | One recorded state change, `seq`-ordered, in the event log. Wire type dotted (`job.queued`). | message |
 | **Webhook subscription** | A URL + event filter + HMAC secret that receives events. | hook |
 | **Delivery** | One attempt series sending one event to one subscription. `pending`, `retrying`, `delivered`, `failed`. | |
@@ -51,3 +62,7 @@ synonyms. Rename here first, in the same commit as everything else.
 | LaneClosed | `lane.closed` |
 | DecisionMade | `decision.made` |
 | JevModeChanged | `jev.mode_changed` |
+| QuestionAsked | `question.asked` |
+| QuestionEscalated (to a tier) | `question.escalated` |
+| QuestionAnswered (by a tier) | `question.answered` |
+| QuestionExpired | `question.expired` |

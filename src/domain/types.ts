@@ -10,6 +10,7 @@ export type JobStatus =
   | 'held' // the last Decision held it; still waiting, with a reason
   | 'claimed' // a Decision assigned it to a Lane; executor not yet running
   | 'running'
+  | 'waiting_answer' // paused on a question; holds no lane; its pane stays open
   | 'finished'
   | 'failed'
   | 'cancelled';
@@ -56,6 +57,14 @@ export interface Job {
   finishedAt?: string;
   /** Incremented on every claim. */
   attempts: number;
+  /** Executor-owned state (e.g. herdr pane/agent ids), written via ExecutionContext.saveState. */
+  executorState?: Record<string, unknown>;
+  /** The open question this job waits on (status waiting_answer). */
+  questionId?: string;
+  /** An answer to deliver on the next claim: the job resumes instead of starting fresh. */
+  pendingAnswer?: string;
+  /** Machine a resuming job must return to (its pane lives there). */
+  resumeOn?: MachineId;
 }
 
 /** The actions grok-bot-jev's router can return (src/router.py). */
@@ -143,6 +152,8 @@ export interface DeciderPolicy {
   jevCheapBoost: number;
   /** An idle lane with no work for it closes only after being idle this long (ms). */
   laneIdleGraceMs: number;
+  /** Priority added to a job resuming with an answer — it is part done. Both modes. */
+  resumeBoost: number;
 }
 
 export interface LanePlan {
@@ -210,12 +221,17 @@ export type EventType =
   | 'lane.opened'
   | 'lane.closed'
   | 'decision.made'
-  | 'jev.mode_changed';
+  | 'jev.mode_changed'
+  | 'question.asked'
+  | 'question.escalated'
+  | 'question.answered'
+  | 'question.expired';
 
 export const EVENT_TYPES: readonly EventType[] = [
   'job.queued', 'job.prioritized', 'job.held', 'job.approved', 'job.claimed', 'job.started',
   'job.progressed', 'job.finished', 'job.failed', 'job.cancelled', 'job.requeued',
   'lane.opened', 'lane.closed', 'decision.made', 'jev.mode_changed',
+  'question.asked', 'question.escalated', 'question.answered', 'question.expired',
 ];
 
 export interface DomainEvent<T = Record<string, unknown>> {
@@ -229,6 +245,7 @@ export interface DomainEvent<T = Record<string, unknown>> {
   laneId?: LaneId;
   machineId?: MachineId;
   decisionId?: string;
+  questionId?: string;
   data: T;
 }
 
@@ -259,6 +276,54 @@ export interface WebhookDelivery {
   lastStatusCode?: number;
   lastError?: string;
   nextAttemptAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ---- Questions ---------------------------------------------------------------------
+
+/** Who can answer, in escalation order. */
+export type AnswerTier = 'opus' | 'fable' | 'human';
+export const ANSWER_TIERS: readonly AnswerTier[] = ['opus', 'fable', 'human'];
+
+/** open: being answered (tier = who has it now). answered/expired/cancelled are terminal. */
+export type QuestionStatus = 'open' | 'answered' | 'expired' | 'cancelled';
+
+/** One tier's try at a question, with its reasoning. Human attempts carry only the answer. */
+export interface QuestionAttempt {
+  tier: AnswerTier;
+  model?: string;
+  startedAt: string;
+  finishedAt?: string;
+  answer?: string;
+  confident?: boolean;
+  risky?: boolean;
+  /** Risk patterns that matched the question or the answer, independent of the model. */
+  riskRules?: string[];
+  reason?: string;
+  error?: string;
+  /** accepted: its answer was typed into the job. escalated: passed to the next tier. */
+  outcome: 'accepted' | 'escalated';
+}
+
+export interface Question {
+  id: string;
+  jobId: JobId;
+  text: string;
+  recentOutput: string;
+  detectedBy: string;
+  status: QuestionStatus;
+  /** The tier holding the question now (or the one that answered it). */
+  tier: AnswerTier;
+  attempts: QuestionAttempt[];
+  answer?: string;
+  answeredBy?: AnswerTier;
+  /** Human tier: when it was first and last notified, and how often. */
+  escalatedToHumanAt?: string;
+  lastNotifiedAt?: string;
+  notifyCount: number;
+  /** Human tier: when the question expires and the job fails. */
+  expiresAt?: string;
   createdAt: string;
   updatedAt: string;
 }

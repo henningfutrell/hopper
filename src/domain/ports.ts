@@ -3,8 +3,8 @@
 
 import type {
   DomainEvent, Decision, EventType, Job, JobId, JobSpec, JobStatus, JevAdvice, JevMode, Lane,
-  LaneId, MachineId, MachineSnapshot, NewEvent, UsageReading, WebhookDelivery,
-  WebhookSubscription,
+  LaneId, MachineId, MachineSnapshot, NewEvent, Question, QuestionAttempt, QuestionStatus,
+  AnswerTier, UsageReading, WebhookDelivery, WebhookSubscription,
 } from './types.ts';
 
 // ---- Execution -----------------------------------------------------------------------
@@ -16,23 +16,51 @@ export interface ExecutionContext {
   signal: AbortSignal;
   /** Report progress 0..1 with an optional message. Emits job.progressed. */
   progress(fraction: number, message?: string): void;
+  /**
+   * Persist executor-owned state on the job (`job.executorState`) as soon as it exists — e.g.
+   * the herdr pane a job runs in — so restart recovery and resume can find it.
+   */
+  saveState(state: Record<string, unknown>): void;
+}
+
+/** What the executor needs answered before the job can continue. */
+export interface ExecutionQuestion {
+  /** The question as the agent asked it. */
+  text: string;
+  /** Recent output of the job (pane tail), for whoever answers. */
+  recentOutput: string;
+  /** How it was detected: "marker" | "blocked" | "idle". */
+  detectedBy: string;
 }
 
 export type ExecutionOutcome =
-  | { ok: true; result: unknown }
-  | { ok: false; error: string };
+  | { kind: 'finished'; result: unknown }
+  | { kind: 'failed'; error: string }
+  /** The job is paused on a question. Its executor state (saveState) must allow resume. */
+  | { kind: 'question'; question: ExecutionQuestion };
 
 /**
- * Runs one job on one lane. `name` matches JobSpec.executor. The built-in is "test";
- * a future "herdr-claude" executor implements the same contract.
- * Must resolve (never reject) — a thrown error is converted to { ok: false } by the engine,
- * but adapters should report their own failures.
+ * Runs one job on one lane. `name` matches JobSpec.executor: "test" (built in) and
+ * "herdr-claude" (Claude Code in a herdr pane).
+ * Must resolve (never reject) — a thrown error is converted to { kind: 'failed' } by the
+ * engine, but adapters should report their own failures.
  */
 export interface Executor {
   readonly name: string;
   /** Validate a payload at push time; return an error string or null. */
   validate(payload: Record<string, unknown>): string | null;
   run(ctx: ExecutionContext): Promise<ExecutionOutcome>;
+  /**
+   * Continue a job that returned `question`: deliver `answer` (from `ctx.job.executorState`)
+   * and run until the next outcome. Absent → the executor never asks questions.
+   */
+  resume?(ctx: ExecutionContext, answer: string): Promise<ExecutionOutcome>;
+  /**
+   * Release whatever a job holds outside the process (close its pane). Called when a
+   * waiting_answer job is cancelled or expires, and by restart recovery for jobs that were
+   * running. Must not throw; idempotent.
+   */
+  cleanup?(job: Job): Promise<void>;
 }
 
 // ---- Inputs the decider is made over ---------------------------------------------------
@@ -56,6 +84,36 @@ export interface JevAdvisor {
 
 export interface Clock {
   now(): Date;
+}
+
+// ---- Questions -----------------------------------------------------------------------
+
+/** Everything an answering tier is given. */
+export interface AnswerRequest {
+  question: Question;
+  /** The job's full prompt. */
+  jobPrompt: string;
+  jobGoal?: string;
+  /** the owner's standing rules, read from the rules file at ask time. */
+  rules: string;
+  /** Earlier tiers' attempts, so a later tier sees why it was escalated. */
+  previous: QuestionAttempt[];
+}
+
+/** The structured contract every model tier returns. */
+export interface AnswerVerdict {
+  answer: string;
+  confident: boolean;
+  risky: boolean;
+  reason: string;
+}
+
+/** One model tier (opus, fable). Never throws: failures come back as `{ error }`. */
+export interface Answerer {
+  readonly tier: Exclude<AnswerTier, 'human'>;
+  /** The model name it runs, for the log. */
+  readonly model: string;
+  answer(req: AnswerRequest, signal: AbortSignal): Promise<AnswerVerdict | { error: string }>;
 }
 
 export type IdGen = () => string;
@@ -139,6 +197,17 @@ export interface WebhookRepository {
   listDeliveries(filter?: { subscriptionId?: string; limit?: number }): WebhookDelivery[];
 }
 
+export interface QuestionRepository {
+  create(input: { jobId: JobId; text: string; recentOutput: string; detectedBy: string }): Question;
+  get(id: string): Question | undefined;
+  /** Newest first. */
+  list(filter?: { status?: QuestionStatus[]; jobId?: JobId; limit?: number }): Question[];
+  /** Shallow-merge; `undefined` clears. Bumps updatedAt. */
+  update(id: string, patch: Partial<Omit<Question, 'id' | 'jobId' | 'createdAt' | 'attempts'>>): Question;
+  /** Append one tier attempt to the question's trail. */
+  addAttempt(id: string, attempt: QuestionAttempt): Question;
+}
+
 export interface SettingsRepository {
   getJevMode(): JevMode | undefined;
   setJevMode(mode: JevMode): void;
@@ -151,6 +220,7 @@ export interface Store {
   decisions: DecisionRepository;
   events: EventLog;
   webhooks: WebhookRepository;
+  questions: QuestionRepository;
   settings: SettingsRepository;
   /** Run fn in one transaction. Re-entrant: a nested tx joins the outer one. Throw = rollback. */
   tx<T>(fn: () => T): T;

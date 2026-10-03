@@ -5,7 +5,7 @@ import type {
 export const NOW = '2026-10-02T12:00:00.000Z';
 
 export const policy: DeciderPolicy = {
-  softLimit: 0.7, hardLimit: 0.95, jevCheapBoost: 10, laneIdleGraceMs: 5000,
+  softLimit: 0.7, hardLimit: 0.95, jevCheapBoost: 10, laneIdleGraceMs: 5000, resumeBoost: 20,
 };
 
 export function machine(over: Partial<MachineSnapshot> = {}): MachineSnapshot {

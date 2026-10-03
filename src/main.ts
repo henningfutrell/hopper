@@ -40,7 +40,7 @@ export async function startApp(config: Config): Promise<App> {
     usage: [fakeUsage],
     policy: {
       softLimit: config.softLimit, hardLimit: config.hardLimit,
-      jevCheapBoost: config.jevCheapBoost, laneIdleGraceMs: config.laneIdleGraceMs,
+      jevCheapBoost: config.jevCheapBoost, laneIdleGraceMs: config.laneIdleGraceMs, resumeBoost: 20,
     },
     tickMs: config.tickMs,
     initialJevMode: config.jevMode,
