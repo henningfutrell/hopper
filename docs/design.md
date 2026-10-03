@@ -252,6 +252,48 @@ own test directory.
 - Abort at any point → `{ ok: false, error: "aborted" }` promptly (within 50 ms).
 - `validate` rejects an unknown `op`, a non-number or negative `ms`, `ms` above the max.
 
+## Event payloads
+
+Every event: `{ seq, id, type, at, jobId?, laneId?, machineId?, decisionId?, data }`.
+
+| type | `data` |
+|------|--------|
+| `job.queued` | `{ spec, priority }` |
+| `job.prioritized` | `{ advice: JevAdvice, mode, statusAtAdvice }` — emitted once per job, whatever its status when Jev answered |
+| `job.held` | `{ reason }` — only when the reason changes |
+| `job.approved` | `{}` |
+| `job.claimed` | `{ attempts, effectivePriority, reason }` |
+| `job.started` | `{ attempts }` |
+| `job.progressed` | `{ progress, message? }` — at most one per job per 500 ms |
+| `job.finished` | `{ result }` |
+| `job.failed` | `{ error }` |
+| `job.cancelled` | `{ reason }` |
+| `job.requeued` | `{ from, reason: "daemon restart" }` |
+| `lane.opened` | `{}` |
+| `lane.closed` | `{ reason }` — the lane plan's reason, `drained`, or `daemon restart` |
+| `decision.made` | `{ decisionId, trigger, jevMode, starts, holds, lanes, divergences }` |
+| `jev.mode_changed` | `{ from, to }` |
+
+The usage-change trigger is named `usage.changed`; it is a trigger, not an event.
+
+## Settled in the founding session (2026-10-02)
+
+- **Jev is not a usage source.** It classifies one request; it knows no machines, lanes or
+  budgets. It is the per-job admission and prioritization layer; budgets come from a
+  `UsageSource`.
+- **Jev advice is recorded for every job.** In shadow mode a job may start, or finish,
+  before Jev answers; the advice still lands on the job and in `job.prioritized`
+  (`statusAtAdvice` says when). Classification starts when a job is queued; a sweep of
+  waiting jobs without advice is the retry path.
+- **Divergence is recorded only for jobs Jev had classified at decision time.** A shadow
+  job that started before its advice arrived has advice but no divergence record.
+- **Soft-limit scaling floors.** `floor(maxLanes × (hard − used)/(hard − soft))`: with 2
+  lanes, 85 % usage gives 0 lanes, not 1. Conservative by choice.
+- **Only `127.0.0.1` is accepted** for `JOB_HOPPER_HOST`; config refuses anything else.
+- **Static UI files are read once at startup**; a UI change needs a daemon restart.
+- **The installed daemon runs from a copy** (`~/.local/lib/job-hopper`, made by
+  `scripts/install.sh`), so switching branches in the source checkout never breaks it.
+
 ## Configuration (env)
 
 | var | default |
