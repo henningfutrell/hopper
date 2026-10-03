@@ -6,7 +6,7 @@ import type { JobSource, SourceItem } from '../../../src/domain/ports.ts';
 import { parseSourcesConfig } from '../../../src/sources/config.ts';
 import type { GitHubSourceConfig } from '../../../src/sources/config.ts';
 import { createFakeGitHub, createGitHubSource } from '../../../src/sources/github/index.ts';
-import type { FakeGitHub } from '../../../src/sources/github/index.ts';
+import type { FakeGitHub, GitHubSourceOptions, JobTokenKeeper } from '../../../src/sources/github/index.ts';
 
 export const REPO = 'owner/sandbox';
 
@@ -20,7 +20,34 @@ export function setup(over: Record<string, unknown> = {}, o: { knownKeys?: (keys
   const gh = createFakeGitHub();
   const config = githubConfig(over);
   const clock = { now: () => new Date('2026-10-02T10:00:00.000Z') };
-  const source = createGitHubSource({ name: 'github', config, api: gh, clock, ...o });
+  const source = createGitHubSource({ name: 'github', kind: 'github', mode: 'gh', config, api: gh, clock, ...o });
+  return { gh, config, source };
+}
+
+export const BOT = 'job-hopper-owner[bot]';
+export const APP_INFO = { slug: 'job-hopper-owner', htmlUrl: 'https://github.com/apps/job-hopper-owner' };
+
+export interface AppSetupOptions {
+  installed?: string[];
+  knownKeys?: (keys: string[]) => Set<string>;
+  paused?: () => string | undefined;
+  tokens?: JobTokenKeeper;
+  appInfo?: GitHubSourceOptions['appInfo'];
+}
+
+/** A source in app mode over the fake GitHub with the app identity (comments post as BOT). */
+export function setupApp(over: Record<string, unknown> = {}, o: AppSetupOptions = {}) {
+  const gh = createFakeGitHub({ app: { botLogin: BOT, installedRepos: o.installed ?? [REPO] } });
+  const config = githubConfig({ repos: [], ...over });
+  const clock = { now: () => new Date('2026-10-02T10:00:00.000Z') };
+  const source = createGitHubSource({
+    name: 'github-app', kind: 'github-app', mode: 'app', config, api: gh, clock,
+    commentCmd: '/opt/hopper/hopper-comment', apiBase: 'http://127.0.0.1:9/api',
+    appInfo: o.appInfo ?? (() => APP_INFO),
+    ...(o.knownKeys ? { knownKeys: o.knownKeys } : {}),
+    ...(o.paused ? { paused: o.paused } : {}),
+    ...(o.tokens ? { tokens: o.tokens } : {}),
+  });
   return { gh, config, source };
 }
 
@@ -36,7 +63,7 @@ function expect1(ok: boolean, msg: string): void {
 
 let seq = 0;
 
-export function jobFor(item: Pick<SourceItem, 'key' | 'url' | 'repo' | 'number' | 'author' | 'title'>, over: Partial<Job> = {}): Job {
+export function jobFor(item: Pick<SourceItem, 'key' | 'url' | 'repo' | 'number' | 'author' | 'title'>, over: Partial<Job> = {}, source = 'github'): Job {
   seq += 1;
   return {
     id: `job-${seq}`,
@@ -48,7 +75,7 @@ export function jobFor(item: Pick<SourceItem, 'key' | 'url' | 'repo' | 'number' 
     updatedAt: '2026-10-02T10:00:00.000Z',
     attempts: 1,
     source: {
-      source: 'github', kind: 'github', key: item.key, url: item.url, title: item.title,
+      source, kind: source, key: item.key, url: item.url, title: item.title,
       ...(item.repo ? { repo: item.repo } : {}), ...(item.number ? { number: item.number } : {}), author: item.author,
     },
     ...over,
@@ -56,9 +83,9 @@ export function jobFor(item: Pick<SourceItem, 'key' | 'url' | 'repo' | 'number' 
 }
 
 /** A job for issue #n of REPO without going through discover. */
-export function jobForIssue(n: number, over: Partial<Job> = {}, repo = REPO): Job {
+export function jobForIssue(n: number, over: Partial<Job> = {}, repo = REPO, source = 'github'): Job {
   const url = `https://github.com/${repo}/issues/${n}`;
-  return jobFor({ key: url, url, repo, number: n, author: 'owner', title: `Issue ${n}` }, over);
+  return jobFor({ key: url, url, repo, number: n, author: 'owner', title: `Issue ${n}` }, over, source);
 }
 
 export function question(jobId: string, over: Partial<Question> = {}): Question {
