@@ -84,7 +84,7 @@ describe('usage limits', () => {
     const running = [job('r1', { status: 'running' }), job('r2', { status: 'running' })];
     const d = decide(inputs({ usage: [reading(96)], lanes, running, waiting: [job('a')] }), 'd1');
     expect(d.start).toEqual([]);
-    expect(d.hold[0]!.reason).toMatch(/usage/);
+    expect(d.hold[0]!.reason).toMatch(/usage hard limit/);
     expect(plan(d)).toMatchObject({ target: 0, open: 0, close: ['local/lane-1'], drain: ['local/lane-3', 'local/lane-2'] });
   });
 
