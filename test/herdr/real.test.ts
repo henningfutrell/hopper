@@ -52,10 +52,13 @@ describe.skipIf(!REAL)('herdr-claude against a real herdr and Claude (opt-in)', 
     const first = contextFor(jobWith(payload, { id }));
     const asked = await executor.run(first.ctx);
     expect(asked.kind, JSON.stringify(asked)).toBe('question');
+    console.warn('real herdr: question', JSON.stringify(asked.kind === 'question' ? asked.question.text : asked));
+    console.warn('real herdr: progress', JSON.stringify(first.progress.map((p) => p.message)));
 
     const second = contextFor(jobWith(payload, { id, executorState: first.saved.at(-1) }));
     const done = await executor.resume!(second.ctx, 'pineapple');
     expect(done.kind, JSON.stringify(done)).toBe('finished');
+    console.warn('real herdr: finished', JSON.stringify(done));
     const file = join(dir, 'answer.txt');
     expect(existsSync(file)).toBe(true);
     expect(readFileSync(file, 'utf8')).toContain('pineapple');

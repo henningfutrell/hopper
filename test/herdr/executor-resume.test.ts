@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { ExecutionOutcome } from '../../src/domain/ports.ts';
+import type { FakeTurn } from '../../src/executors/herdr/index.ts';
 import { CWD, LANE, contextFor, jobWith, setup, until } from './support.ts';
 
 const ASK = { output: ['● Which language should the greeting be in?', '  JOB_HOPPER_QUESTION'] };
 const DONE_FR = { steps: ['● Writing greeting.txt'], output: ['● I wrote greeting.txt in French.', '  JOB_HOPPER_DONE'] };
 
 /** Run to the first question; returns the job as the engine would hand it to resume. */
-async function parked(turns: Parameters<typeof setup>[0]['turns']) {
+async function parked(turns: FakeTurn[]) {
   const s = setup({ turns });
   const first = contextFor(jobWith({ prompt: 'Write a greeting' }));
   const out = await s.executor.run(first.ctx);
@@ -32,7 +33,7 @@ describe('herdr-claude executor: resume', () => {
   });
 
   it('maps the new lane to the parked pane and saves state with that lane', async () => {
-    const { herdr, executor, job } = await parked([ASK, { steps: ['● a', '● b', '● c'], ...DONE_FR }]);
+    const { herdr, executor, job } = await parked([ASK, { ...DONE_FR, steps: ['● a', '● b', '● c'] }]);
     const { ctx, saved } = contextFor(job, 'local/lane-2');
     const resuming = executor.resume!(ctx, 'French.');
     await until(() => herdr.prompts.length === 2);

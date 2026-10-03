@@ -79,6 +79,11 @@ describe('herdr-claude executor: run', () => {
     expect(executor.lanePanes().has(LANE)).toBe(false);
   });
 
+  it('a marker printed while Claude is still working is not an outcome (turn must end)', async () => {
+    const { executor } = setup({ turns: [{ steps: ['● I will end with', '  JOB_HOPPER_DONE', '● Bash(make)'], output: ['● Which target?', '  JOB_HOPPER_QUESTION'] }] });
+    expect(await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx)).toMatchObject({ kind: 'question', question: { text: 'Which target?' } });
+  });
+
   it('asks when Claude shows a question dialog (blocked)', async () => {
     const { executor } = setup({ turns: [{ output: ['● Pick one', '  ❯ 1. Red', '    2. Blue'], end: 'blocked' }] });
     const out = await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx);

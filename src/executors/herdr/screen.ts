@@ -19,7 +19,7 @@ export interface TurnView {
   failedReason?: string;
   /** The assistant message holding the last marker (marker removed), else the last message. */
   assistantText: string;
-  /** Last non-empty output line after the anchor, gutter stripped. Drives progress. */
+  /** Last non-empty, non-marker output line after the anchor, gutter stripped. Drives progress. */
   lastLine: string;
   anchorFound: boolean;
 }
@@ -119,7 +119,7 @@ export function readTurn(text: string, anchor: string): TurnView {
   const lines = turnLines(all, at);
   let markerIndex = -1;
   lines.forEach((l, i) => { if (markerOf(l)) markerIndex = i; });
-  const nonEmpty = lines.map(stripGutter).filter((l) => l !== '');
+  const nonEmpty = lines.filter((l) => markerOf(l) === null).map(stripGutter).filter((l) => l !== '');
   const view: TurnView = {
     lastMarker: markerIndex >= 0 ? markerOf(lines[markerIndex]!) : null,
     assistantText: lines.length ? blockText(lines, markerIndex >= 0 ? markerIndex : lines.length - 1) : '',
