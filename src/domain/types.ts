@@ -54,6 +54,7 @@ export interface Job {
   updatedAt: string;
   startedAt?: string;
   finishedAt?: string;
+  /** Incremented on every claim. */
   attempts: number;
 }
 
@@ -90,6 +91,8 @@ export interface Lane {
   state: 'idle' | 'busy' | 'draining';
   jobId?: JobId;
   openedAt: string;
+  /** Set when the lane last became idle; cleared when busy. */
+  idleSince?: string;
 }
 
 /** Point-in-time view of one machine, as polled by the engine. */
@@ -138,13 +141,16 @@ export interface DeciderPolicy {
   hardLimit: number;
   /** Priority added in active mode for cheap Jev classes (chat_only, run_deterministic). */
   jevCheapBoost: number;
+  /** An idle lane with no work for it closes only after being idle this long (ms). */
+  laneIdleGraceMs: number;
 }
 
 export interface LanePlan {
   machineId: MachineId;
   current: number; // lanes open now (idle + busy + draining)
   target: number;
-  open: number; // lanes to open
+  /** Lanes to open. Invariant: equals the number of this machine's starts with laneId null. */
+  open: number;
   close: LaneId[]; // idle lanes to close now
   drain: LaneId[]; // busy lanes to close when their job ends
   reason: string;

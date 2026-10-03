@@ -58,6 +58,28 @@ export interface Clock {
   now(): Date;
 }
 
+export type IdGen = () => string;
+
+export interface ExecutorRegistry {
+  get(name: string): Executor | undefined;
+  names(): string[];
+}
+
+/** A usage source whose readings can be set by hand — the fake, driven by PUT /api/usage/fake. */
+export interface SettableUsageSource extends UsageSource {
+  /** Replace the reading for (machineId ?? global); returns all current readings. */
+  set(reading: Omit<UsageReading, 'source' | 'at'>): UsageReading[];
+}
+
+export interface WebhookDispatcher {
+  /** Subscribe to the EventLog (create deliveries) and start the due-delivery sweep. */
+  start(): void;
+  /** Stop the sweep; wait for in-flight requests (bounded by their timeout). */
+  stop(): Promise<void>;
+  /** Called on every delivery state change. Feeds SSE `delivery.updated`. */
+  onDeliveryUpdated(listener: (delivery: WebhookDelivery) => void): () => void;
+}
+
 // ---- Persistence -----------------------------------------------------------------------
 
 export interface JobFilter {
@@ -69,7 +91,7 @@ export interface JobRepository {
   create(spec: JobSpec, priority: number): Job;
   get(id: JobId): Job | undefined;
   list(filter?: JobFilter): Job[];
-  /** Shallow-merge patch; bumps updatedAt. Returns the updated job. */
+  /** Shallow-merge patch; a key present with value `undefined` clears that field. Bumps updatedAt. */
   update(id: JobId, patch: Partial<Omit<Job, 'id' | 'spec' | 'createdAt'>>): Job;
 }
 
@@ -88,7 +110,12 @@ export interface DecisionRepository {
   list(limit?: number): Decision[];
 }
 
-/** Append-only event log; append assigns seq/id/at and notifies subscribers synchronously after commit. */
+/**
+ * Append-only event log. append assigns seq/id/at. Listeners are notified only after the
+ * OUTERMOST transaction commits (immediately when no transaction is open), and never for a
+ * rolled-back append. Listeners must not re-enter the engine synchronously — schedule work
+ * with setImmediate/queueMicrotask.
+ */
 export interface EventLog {
   append(event: NewEvent): DomainEvent;
   /** Events with seq > afterSeq, oldest first. */
@@ -102,7 +129,9 @@ export interface WebhookRepository {
   create(input: { url: string; events: string[]; secret: string }): WebhookSubscription;
   get(id: string): WebhookSubscription | undefined;
   list(): WebhookSubscription[];
+  /** Deletes the subscription and marks its pending/retrying deliveries `failed`. */
   delete(id: string): boolean;
+  /** status `pending`, attempts 0, nextAttemptAt = now. */
   createDelivery(subscriptionId: string, event: DomainEvent): WebhookDelivery;
   updateDelivery(id: string, patch: Partial<Omit<WebhookDelivery, 'id' | 'subscriptionId' | 'eventSeq' | 'eventType' | 'createdAt'>>): WebhookDelivery;
   /** Deliveries due at or before `now`: status pending|retrying and nextAttemptAt <= now. */
@@ -123,7 +152,7 @@ export interface Store {
   events: EventLog;
   webhooks: WebhookRepository;
   settings: SettingsRepository;
-  /** Run fn in one transaction. */
+  /** Run fn in one transaction. Re-entrant: a nested tx joins the outer one. Throw = rollback. */
   tx<T>(fn: () => T): T;
   close(): void;
 }

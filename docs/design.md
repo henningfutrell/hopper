@@ -53,10 +53,12 @@ same Decision. Algorithm, in order:
    - `usedFrac >= hard` → `0` (stop: close idle lanes, drain busy ones, start nothing)
    - between → `floor(maxLanes * (hard - usedFrac) / (hard - soft))` (linear scale-down)
 3. **Jev verdict per waiting job** — always computed, in both modes:
-   - no advice yet → proceed (note "awaiting Jev classification")
-   - `ask_human` and not `approved` → hold `jev ask_human: awaiting approval`
-   - `stop_retry` → hold `jev stop_retry: ...`
-   - `reuse_cache` → hold `jev reuse_cache: ...`
+   - no advice yet → hold `awaiting Jev classification` (so in active mode nothing starts
+     before Jev has spoken; in shadow mode the native verdict ignores it)
+   - `approved` → proceed, whatever the advice (a human override ends every Jev hold)
+   - `ask_human` → hold `jev ask_human: awaiting approval`
+   - `stop_retry` → hold `jev stop_retry: …`
+   - `reuse_cache` → hold `jev reuse_cache: …`
    - `chat_only`, `run_deterministic` → proceed, priority `+ policy.jevCheapBoost`
    - anything else → proceed
    A `JevDivergence` is recorded for every job where the Jev verdict (start/hold or order)
@@ -72,10 +74,14 @@ same Decision. Algorithm, in order:
    (tie: machine id). Use an existing idle, non-draining lane if one is unassigned, else
    `laneId: null` (a lane this Decision opens). No candidate → hold with the reason
    (`all lanes busy (cap N)` / `usage hard limit` / `usage soft limit caps lanes at N`).
-8. **Lane plan per machine.** `target = min(cap, busy + assigned)`. Opens
-   `max(0, target - (busy + idle))`. Closes idle lanes not assigned, above target. If
-   `busy > target`, drains `busy - target` busy lanes (newest first). Every plan carries a
-   one-line `reason`.
+8. **Lane plan per machine.** `occupied` = lanes `busy` or `draining`. `target =
+   min(cap, occupied + assigned)`. `open` = number of this machine's starts with
+   `laneId: null` — **invariant**, the engine opens lanes only for those starts.
+   Idle lanes not assigned: kept while `occupied + assigned + kept < cap` and the lane has
+   been idle less than `policy.laneIdleGraceMs` (from `idleSince` and `inputs.at`);
+   otherwise closed. Always closed at cap 0. Drains `max(0, occupied - target -
+   alreadyDraining)` **busy** lanes, newest first. `current` counts idle + busy + draining.
+   Every plan carries a one-line `reason`.
 9. **Reasons.** Plain sentences in the order reached. The Decision carries `inputs`
    verbatim.
 
@@ -89,14 +95,22 @@ an idle tick every 2 s would bury the decision log. Every recorded Decision emit
 - **Triggers:** interval tick (`JOB_HOPPER_TICK_MS`, default 2000) plus the events
   `job.queued`, `job.prioritized`, `job.approved`, `job.finished`, `job.failed`,
   `job.cancelled`, `jev.mode_changed`, and a usage change. Decisions are serialized; triggers
-  arriving mid-decision coalesce into one follow-up.
-- **Jev classification:** on `job.queued` the engine calls `advisor.advise(job)` off the
-  decision path, stores `jevAdvice`, emits `job.prioritized` with `{ advice, mode }`.
+  arriving mid-decision coalesce into one follow-up. Event listeners schedule triggers with
+  `setImmediate`; they never run a decision synchronously inside `append`.
+- **Jev classification:** on `job.queued`, on every tick, and at startup, the engine calls
+  `advisor.advise(job)` for each waiting job with no `jevAdvice` that is not already in its
+  in-memory in-flight set — off the decision path. It stores `jevAdvice` and emits
+  `job.prioritized` with `{ advice, mode }`. A crash or requeue mid-classification is
+  therefore retried, never lost.
+- **Claim** increments `attempts`. `job.progressed` is throttled to one event per job per
+  500 ms (the last one before finish is always emitted).
 - **Apply:** close idle lanes (`lane.closed`), mark drains, open lanes (`lane.opened`),
   then for each start: claim (`job.claimed`, lane busy), run executor (`job.started`),
   progress (`job.progressed`), outcome (`job.finished` / `job.failed`). Lane returns idle, or
   closes if draining. Holds: set `status: held`, `holdReason`, emit `job.held` only when the
   reason changed.
+- **Approve:** `POST /api/jobs/:id/approve` sets `approved: true` on a waiting job; it overrides
+  every Jev hold (not only `ask_human`).
 - **Cancel:** waiting → `cancelled` at once. Claimed/running → abort the executor's signal;
   the job ends `cancelled`. Terminal → HTTP 409.
 - **Restart recovery:** at startup, every `claimed`/`running` job returns to `queued`
@@ -118,7 +132,13 @@ budgets**, so it cannot be the usage source. job-hopper uses it for what it is: 
   the Jev repo on `sys.path`, loads Jev's **own** `config.yaml` (its kill switch is
   honoured), overrides only `mode` (job-hopper's) and `logging.path` (job-hopper's data
   dir), sets `PYTHONDONTWRITEBYTECODE=1`, calls `route_task(state)`, prints the result.
-  Nothing is written under the Jev repo. Any failure (missing `typesafe_sdk`, missing
+  Nothing is written under the Jev repo. `router.py` imports `typesafe_sdk` at module
+  load (via `src.jev_client`); when that package is absent the shim installs a stub module
+  in `sys.modules` so the kill-switch path still runs — with Jev enabled the stub raises
+  and the call falls back. The shim patches `src.router.load_config` and
+  `src.router.resolve_log_path` (the names the router imported) and catches
+  `BaseException` (`secrets.py` raises `SystemExit`). Advice from a real router run has
+  `source: "jev-router"`; `jevUsed` mirrors the router's own `jev_used`. Any failure (missing `typesafe_sdk`, missing
   `TYPESAFE_API_KEY`, timeout 10 s, bad JSON) → advice `{ action: proceed_full, source:
   fallback, jevUsed: false, reason: "jev unavailable: …" }` — the router's own documented
   safe fallback.
@@ -187,10 +207,50 @@ x-jobhopper-signature: sha256=<hex HMAC-SHA256(secret, "<timestamp>.<raw body>")
 <DomainEvent JSON>
 ```
 
+Delivery is **at-least-once**; receivers dedupe on `x-jobhopper-delivery`. Before each POST
+the dispatcher moves `nextAttemptAt` past the timeout and keeps the id in an in-memory
+in-flight set, so the sweep never sends one delivery twice concurrently. Deleting a
+subscription marks its pending/retrying deliveries `failed`.
+
 2xx within 5 s = delivered. Otherwise attempt `n` schedules the next at
 `now + min(base * 2^(n-1), 300 s)`, `base` = 1 s (configurable for tests); after 6 attempts
 the delivery is `failed`. Due deliveries are swept every 500 ms and on enqueue; pending
 deliveries survive a restart. Secrets: generated (32 random bytes hex) if not supplied.
+
+## Construction contract
+
+One factory per module. `src/main.ts` and the integration tests wire these; nothing else
+constructs adapters.
+
+```text
+src/store/index.ts      openStore(o: { path: string; clock: Clock; idGen?: IdGen }): Store
+src/webhooks/index.ts   createWebhookDispatcher(o: { store: Store; clock: Clock; baseMs: number;
+                          timeoutMs?: number; maxAttempts?: number; sweepMs?: number }): WebhookDispatcher
+src/jev/index.ts        createRouterAdvisor(o: { jevSrc: string; python: string; dataDir: string;
+                          mode: () => JevMode; clock: Clock; timeoutMs?: number }): JevAdvisor
+                        createFakeAdvisor(o: { clock: Clock }): JevAdvisor
+src/executors/index.ts  createTestExecutor(): Executor
+                        createExecutorRegistry(executors: Executor[]): ExecutorRegistry
+src/machines/index.ts   createLocalMachineSource(o: { maxLanes: number; executors: string[];
+                          id?: string; label?: string }): MachineSource
+src/usage/index.ts      createFakeUsageSource(clock: Clock): SettableUsageSource
+src/decider/index.ts    decide(inputs: DecisionInputs, decisionId: string): Decision
+src/engine/index.ts     createEngine(...)  — T009 defines
+src/http/index.ts       createServer(...)  — T009 defines
+```
+
+`test/support/` belongs to the engine/HTTP task only; every other task keeps helpers in its
+own test directory.
+
+## Test executor
+
+`executor: "test"`, payload `{ op: "sleep" | "echo" | "fail", ms?: number, message?: string }`.
+
+- `sleep` — waits `ms` (default 1000, max 600000), progress every ~10%, result `{ slept: ms }`.
+- `echo` — waits `ms` (default 0), result `{ echo: message }`.
+- `fail` — waits `ms` (default 0), outcome `{ ok: false, error: message ?? "failed on purpose" }`.
+- Abort at any point → `{ ok: false, error: "aborted" }` promptly (within 50 ms).
+- `validate` rejects an unknown `op`, a non-number or negative `ms`, `ms` above the max.
 
 ## Configuration (env)
 
@@ -208,3 +268,4 @@ deliveries survive a restart. Secrets: generated (32 random bytes hex) if not su
 | `JOB_HOPPER_SOFT_LIMIT` / `HARD_LIMIT` | `0.7` / `0.95` |
 | `JOB_HOPPER_JEV_CHEAP_BOOST` | `10` |
 | `JOB_HOPPER_WEBHOOK_BASE_MS` | `1000` |
+| `JOB_HOPPER_LANE_IDLE_GRACE_MS` | `5000` |
