@@ -16,6 +16,8 @@ const V1 = `
   CREATE INDEX events_type ON events (type, seq);
   CREATE TABLE webhooks (seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE, url TEXT NOT NULL,
     events TEXT NOT NULL, secret TEXT NOT NULL, active INTEGER NOT NULL, created_at TEXT NOT NULL);
+  CREATE TABLE decisions (seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE, body TEXT NOT NULL);
+  CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 `;
 
 describe('migration 2 (questions)', () => {
@@ -38,7 +40,7 @@ describe('migration 2 (questions)', () => {
     s.close();
 
     const after = new DatabaseSync(path);
-    expect(after.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 3 });
+    expect(after.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 4 });
     after.close();
   });
 });

@@ -14,7 +14,7 @@ describe('openStore', () => {
     s.close();
     const raw = new DatabaseSync(path);
     expect(raw.prepare('PRAGMA journal_mode').get()).toMatchObject({ journal_mode: 'wal' });
-    expect(raw.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 3 });
+    expect(raw.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 4 });
     raw.close();
   });
 
