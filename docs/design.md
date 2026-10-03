@@ -597,3 +597,237 @@ Op `ask`: `{ op: "ask", message?: string }` → outcome `question` (text = `mess
   to human". Goals are context the models weigh; write them as plain descriptions.
 - **Fable is the `claude` model alias `fable`** — no fable agent or skill exists in this
   setup.
+
+---
+
+# Phase 3 — the hopper pulls (2026-10-02)
+
+Direction: **nothing posts jobs to the hopper; it pulls them.** No inbound mutation API
+remains. The only mutations are the owner's actions in the local UI, behind a UI session.
+
+## Directories added
+
+| dir | owns | must not import |
+|-----|------|-----------------|
+| `src/sources/` | `JobSource` adapters (`github`), the GitHub API port + `gh` CLI adapter + in-memory fake, `sources.yaml` loader, the sync loop | engine internals (uses the narrow `SourceHost` it is given), http |
+| `src/events/` | versioned payload schemas (zod) per event type, the envelope, JSON Schema export | everything but `domain/` and `zod` |
+| `src/http/ui/` | UI session: login codes, session cookie, CSRF, origin/host guard, the UI-only mutation routes | engine internals beyond the engine's public commands |
+
+`src/webhooks/` gains the `webhooks.yaml` loader + reconciler.
+
+## Removed (no compatibility shims)
+
+`POST /api/jobs`, `POST /api/jobs/:id/cancel`, `POST /api/jobs/:id/approve`,
+`POST /api/questions/:id/answer`, `POST /api/webhooks`, `DELETE /api/webhooks/:id`,
+`PUT /api/jev`, `PUT /api/usage/fake`, and `scripts/demo.ts` (it pushed jobs). Any request
+to a removed route is 404. The fake usage source stays (static 0 %); tests set it through
+the engine.
+
+## Read-only API (unchanged unless noted)
+
+`GET /api/health` · `/api/jobs` · `/api/jobs/:id` · `/api/queue` · `/api/machines` ·
+`/api/decisions[/:id]` · `/api/events` · `/api/events/stream` (SSE) · `/api/jev` ·
+`/api/usage` · `/api/questions[/:id]` · `/api/webhooks` (from `webhooks.yaml`, secrets
+omitted, plus `config: { path, loadedAt, error? }`) · `/api/webhooks/deliveries` ·
+**new** `GET /api/sources` → `{ sources: SourceStatus[] }`.
+
+Every request (GET included) must carry `Host: 127.0.0.1:<port>` or `localhost:<port>`;
+anything else is 421 — DNS-rebinding guard.
+
+SSE adds non-domain `event: source.updated` (`data: SourceStatus`), like `delivery.updated`.
+
+## UI session and mutations
+
+Same-origin plus a CSRF token alone does not stop another local process: it can fetch the
+token and send any `Origin` header a browser would. So the UI session starts from a secret
+on disk:
+
+1. **Login code.** At startup and after every use the daemon writes a fresh random code
+   (32 bytes, hex) to `<dataDir>/ui-login-code`, mode `0600`. `scripts/open-ui.sh` reads it
+   and opens `http://127.0.0.1:<port>/ui/login?code=<code>`.
+2. **`GET /ui/login?code=…`** — constant-time compare; on match: create a session (random
+   id, random CSRF token, expiry `JOB_HOPPER_UI_SESSION_HOURS`, default 12), set cookie
+   `jh_session=<id>; HttpOnly; SameSite=Strict; Path=/`, rotate the code, `303 → /`.
+   Mismatch → 403. Sessions live in memory (a restart logs the UI out).
+3. **`GET /ui/api/session`** → `{ authenticated: boolean, csrfToken?, expiresAt? }`
+   (token only with a valid cookie). Without a session the page is read-only and shows how to
+   log in (`bash apps/job-hopper/scripts/open-ui.sh`).
+4. **Mutations** — `POST` only, JSON body, all of: valid `jh_session` cookie; header
+   `x-jobhopper-csrf` equal to that session's token (constant-time); `Origin` exactly
+   `http://127.0.0.1:<port>` or `http://localhost:<port>`; `Sec-Fetch-Site`, when present,
+   `same-origin`; `content-type: application/json`. Any failure → 403 `{ error }`, logged.
+
+| method | path | body | effect |
+|--------|------|------|--------|
+| POST | `/ui/api/jobs/:id/cancel` | `{}` | engine cancel (the source is told: `cancelled`) |
+| POST | `/ui/api/jobs/:id/approve` | `{}` | engine approve |
+| POST | `/ui/api/questions/:id/answer` | `{ answer }` | `QuestionService.answerByHuman` (404/409) |
+| POST | `/ui/api/jev` | `{ mode }` | set Jev mode |
+| POST | `/ui/api/logout` | `{}` | drop the session |
+
+**Residual risk, stated:** a process running as the owner that reads `ui-login-code` (or the
+browser's cookie store) can still act. That includes Claude jobs running with
+`--dangerously-skip-permissions`. What this blocks: other OS users, any web page
+(cross-site, DNS rebinding), and local processes that do not deliberately read
+job-hopper's files.
+
+## Job sources
+
+`JobSource` port (`src/domain/ports.ts`). The **sync loop** (`createSourceSync`) runs per
+source every `pollSeconds`:
+
+1. `discover()` → for each item whose `key` has no job: create one via the host's
+   `ingest(item)` — spec `{ executor: <source executor>, payload: { prompt: body, cwd,
+   model? }, priority, goal: title, submittedBy: "<source>:<author>", kind: "coding" }`,
+   `source: JobSourceRef` — then `report({kind:'claimed'})`, merge the returned patch into
+   `sourceState`. Duplicate key → skip (dedupe by store unique index).
+2. `check(active)` for this source's non-terminal jobs → `cancel` signal → engine cancel
+   (reason recorded); `answer` signal → `QuestionService.answerByHuman(questionId, answer)`
+   (ignored if not open).
+3. **Outbound reports** are event-driven and retried: on `job.progressed` (throttled to one
+   per `progressCommentSeconds` per job), `question.escalated {target: human}`,
+   `question.answered`, `job.finished`, `job.failed`, `job.cancelled` for a job with a
+   `source`, call `report(...)`. A failed report is retried on later syncs from
+   `sourceState` flags (`claimReported`, `reportedQuestions[]`, `finalReported`), so a
+   final result is never silently lost.
+4. Status → `SourceStatus` (state, last sync, last error, counts, detail) → `/api/sources`,
+   SSE `source.updated`.
+
+A source error never stops the daemon or other sources; it is shown in status and retried.
+
+## GitHub source
+
+Config `~/.config/job-hopper/sources.yaml` (`JOB_HOPPER_SOURCES_FILE`), validated with zod;
+invalid → the source is `error` with the message, nothing is pulled.
+
+```yaml
+version: 1
+github:
+  enabled: true
+  pollSeconds: 60
+  owners: []            # discover across repos owned by these; empty → the `gh` user
+  repos: []             # allowlist: when non-empty, ONLY these owner/repo are acted on
+  authors: [owner]
+  label: hopper
+  priorityLabels: { "hopper:p0": 100, "hopper:p1": 75, "hopper:p2": 50, "hopper:p3": 25 }
+  defaultPriority: 50
+  repoPaths: {}         # owner/repo → local path (cwd); default defaultCwd
+  defaultCwd: ~/workbench/workflow-personal-app-management
+  executor: herdr-claude
+  model: null           # optional claude model for jobs
+  progressCommentSeconds: 300
+```
+
+**GitHubApi port** (`src/sources/github/api.ts`) — the adapter's seam: `whoami()`,
+`searchOpenIssues({ owners, label })`, `listOpenIssues(repo, label)`, `getIssue(repo,
+number)` → `{ state, labels, author, title, body, url, updatedAt }`,
+`listComments(repo, number)` → `{ id, author, body, createdAt, url }[]`,
+`ensureLabel(repo, name, color, description)`, `addLabels`, `removeLabels`,
+`comment(repo, number, body)` → `{ id, url, createdAt }`, `editComment(repo, id, body)`.
+Real adapter: `gh` CLI via `execFile` (no shell), JSON output, `gh api` for comments/labels,
+timeouts, typed errors; env passes through (gh's keyring auth). Fake: an in-memory GitHub
+(issues, labels, comments, authors) used by unit and integration tests.
+
+**Discovery:** `repos` non-empty → `listOpenIssues` per repo (no search lag). Else
+`searchOpenIssues` over `owners` (or `whoami()`), restricted to repos owned by them —
+GitHub search can lag new issues by up to about a minute. Eligible: open, has `label`,
+author in `authors`, no `hopper:done` / `hopper:failed`, repo allowed. Already-claimed
+issues with no job here (another machine, a wiped database) are **not** re-run: an issue
+labelled `hopper:claimed` with no local job is skipped and shown in status detail.
+
+**Item → job:** key = issue URL; title → goal; body → prompt (empty body → claimed, then
+failed with a comment "empty issue body"); priority = highest matching `priorityLabels`
+value, else `defaultPriority`; cwd = `repoPaths[repo]` (expanded) else `defaultCwd`.
+
+**Comments.** Every hopper comment starts with a hidden marker line
+`<!-- job-hopper v1 kind=<kind> job=<jobId>[ question=<questionId>] -->` — the hopper posts
+as the owner, so the marker is how its own comments are told apart from his replies.
+
+| report | on GitHub |
+|--------|-----------|
+| claimed | ensure labels `hopper:claimed`, `hopper:done`, `hopper:failed` exist; add `hopper:claimed`; comment "🦘 job-hopper claimed this as job `<id>` (priority N, executor X, cwd …)" |
+| progress | one progress comment per job, **edited in place** (`editComment`), throttled |
+| question (human tier only) | comment with the question, the escalation trail summary (tier · confident · risky · rules), and "Reply to this issue to answer." |
+| answered | comment "Answered by <tier>: …" (also for opus/fable answers, so the issue tells the whole story) |
+| finished | comment with the result summary; remove `hopper:claimed`, add `hopper:done` |
+| failed | comment with the error; remove `hopper:claimed`, add `hopper:failed` |
+| cancelled | comment "cancelled (<reason>)"; remove `hopper:claimed` |
+
+**Signals (check):** per active job, `getIssue` + `listComments`:
+- issue `closed`, or `label` removed → `cancel` (reason `issue closed` / `label removed`);
+- job `waiting_answer` and its question was posted (`sourceState.questionComments[qid]`):
+  the first comment created after that question comment, **without** the hopper marker, by
+  an author in `authors` → `answer` (body trimmed). Comments by anyone else are ignored.
+
+**Authors outside the allowlist are never acted on** — not as issues, not as answers.
+
+## Webhooks from a file
+
+`~/.config/job-hopper/webhooks.yaml` (`JOB_HOPPER_WEBHOOKS_FILE`):
+
+```yaml
+version: 1
+webhooks:
+  - name: grok-bot
+    url: http://127.0.0.1:4795/hook
+    events: ["question.escalated", "job.finished", "job.failed"]   # or ["*"]
+    secret: "<hex>"              # or secretFile: ~/.config/job-hopper/grok-bot.secret
+    active: true
+```
+
+Loaded at startup and re-read when its mtime changes (checked every 5 s). Reconcile by
+`name` into the store (`upsertByName`; names absent from the file are deleted, their
+pending deliveries failed). Invalid file → previous subscriptions kept, error shown in
+`GET /api/webhooks` `config.error`. Inline `secret` in a file readable by group/other →
+loaded, with a warning in `config.warnings`. Signing, retries, backoff, delivery log: as
+phase 1.
+
+## Versioned event payloads
+
+Every event — stored, SSE, `/api/events`, webhook body — is the envelope:
+
+```json
+{ "schemaVersion": 1, "seq": 1, "id": "uuid", "type": "job.queued", "at": "ISO",
+  "jobId": "…", "laneId": "…", "machineId": "…", "decisionId": "…", "questionId": "…",
+  "data": { … } }
+```
+
+`schemaVersion` is the version of **that type's** payload schema. `src/events/schemas.ts`
+holds one zod schema per event type (`data`) plus the envelope, and `EVENT_SCHEMA_VERSIONS`
+(all `1` today). `npm run schemas` writes `docs/schemas/envelope.v1.json` and
+`docs/schemas/<type>.v1.json`, and `docs/events.md` documents each type. Tests: every
+`EVENT_TYPES` entry has a schema; committed JSON Schema files equal a fresh export;
+**every event emitted during the integration suite validates** against its schema. A
+breaking payload change bumps that type's version and adds `<type>.v2.json`; the old file
+stays as documentation of what older consumers received.
+
+Migration 3: `events.schema_version` (existing rows → 1), `jobs.source_key` (unique,
+nullable), `webhook_subscriptions.name` (unique; existing rows get `legacy-<id>` and are
+removed at the first reconcile since no file names them).
+
+## Configuration added (env)
+
+| var | default |
+|-----|---------|
+| `JOB_HOPPER_SOURCES_FILE` | `~/.config/job-hopper/sources.yaml` |
+| `JOB_HOPPER_WEBHOOKS_FILE` | `~/.config/job-hopper/webhooks.yaml` |
+| `JOB_HOPPER_GH_BIN` | `gh` |
+| `JOB_HOPPER_UI_SESSION_HOURS` | `12` |
+
+## Construction contract added
+
+```text
+src/sources/index.ts   createGitHubSource(o: { name: string; config: GitHubSourceConfig;
+                         api: GitHubApi; clock: Clock }): JobSource
+                       createGhCliApi(o: { bin: string; timeoutMs?: number }): GitHubApi
+                       createFakeGitHub(o?): FakeGitHub  (implements GitHubApi + test helpers)
+                       loadSourcesFile(path): { github?: GitHubSourceConfig } | { error }
+                       createSourceSync(o: { sources: JobSource[]; host: SourceHost; clock: Clock;
+                         pollMs: (s) => number }): SourceRegistry & { start(); stop(): Promise<void>; syncNow(name?) }
+                       SourceHost = { store: Store; ingest(item, source): Job | null;
+                         cancel(jobId, reason): void; answer(questionId, answer): AnswerByHumanResult }
+src/events/index.ts    EVENT_SCHEMAS, ENVELOPE_SCHEMA, EVENT_SCHEMA_VERSIONS, validateEvent(e) → { ok } | { ok:false, issues }
+                       exportJsonSchemas(): Record<filename, object>
+src/webhooks/config.ts loadWebhooksFile(path), createWebhookConfigWatcher(o: { path; store; clock; intervalMs })
+src/http/ui/index.ts   registerUiRoutes(app, o: { engine; questions; port; dataDir; clock; sessionHours })
+```

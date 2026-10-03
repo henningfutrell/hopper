@@ -39,6 +39,16 @@ synonyms. Rename here first, in the same commit as everything else.
 | **herdr session** | The named herdr server (`job-hopper`) that hosts job panes. Never the user's default session. | |
 | **Pane** | The herdr terminal a herdr-claude job runs in; one tab per job run. | window |
 | **Parked pane** | The pane of a job waiting on an answer. | |
+| **Job source** | Where the hopper pulls jobs from (`github` today). Nothing pushes jobs. | inbox, feed |
+| **Source item** | One eligible thing a source offers — for GitHub, an open issue labelled `hopper` by an allowlisted author. | |
+| **Source key** | The unique id of a source item (the issue URL); dedupes jobs. | |
+| **Claim** (of an issue) | Labelling it `hopper:claimed` and commenting, when the hopper takes it. Distinct from a lane claim. | |
+| **Sync** | One pass of a source: discover, check active jobs, retry reports. | poll |
+| **Report** | Telling the source what happened to its job (comments, labels). | |
+| **Signal** | What a source tells the hopper: cancel, or a human answer. | |
+| **Hopper marker** | The hidden first line of every hopper comment; tells its comments from the owner's replies. | |
+| **UI session** | A browser session created from the one-time login code; the only way to mutate. | |
+| **Payload version** | `schemaVersion` on every event: the version of that event type's payload schema. | |
 | **Event** | One recorded state change, `seq`-ordered, in the event log. Wire type dotted (`job.queued`). | message |
 | **Webhook subscription** | A URL + event filter + HMAC secret that receives events. | hook |
 | **Delivery** | One attempt series sending one event to one subscription. `pending`, `retrying`, `delivered`, `failed`. | |

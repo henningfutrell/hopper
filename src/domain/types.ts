@@ -65,6 +65,25 @@ export interface Job {
   pendingAnswer?: string;
   /** Machine a resuming job must return to (its pane lives there). */
   resumeOn?: MachineId;
+  /** Where the job was pulled from. Absent only for jobs created before phase 3. */
+  source?: JobSourceRef;
+  /** Source-owned bookkeeping (comment ids, what was already reported). */
+  sourceState?: Record<string, unknown>;
+}
+
+/** The item a job was pulled from. `key` is unique across all jobs (dedupe). */
+export interface JobSourceRef {
+  /** The configured source name, e.g. "github". */
+  source: string;
+  kind: string;
+  /** Stable unique key — for GitHub, the issue URL. */
+  key: string;
+  url?: string;
+  title?: string;
+  /** owner/repo for GitHub. */
+  repo?: string;
+  number?: number;
+  author?: string;
 }
 
 /** The actions grok-bot-jev's router can return (src/router.py). */
@@ -237,6 +256,8 @@ export const EVENT_TYPES: readonly EventType[] = [
 export interface DomainEvent<T = Record<string, unknown>> {
   /** Monotonic, assigned by the store on append. */
   seq: number;
+  /** Payload schema version of this event type (docs/schemas/<type>.v<N>.json). */
+  schemaVersion: number;
   id: string; // uuid
   type: EventType;
   at: string;
@@ -249,12 +270,14 @@ export interface DomainEvent<T = Record<string, unknown>> {
   data: T;
 }
 
-export type NewEvent = Omit<DomainEvent, 'seq' | 'id' | 'at'> & { at?: string };
+export type NewEvent = Omit<DomainEvent, 'seq' | 'id' | 'at' | 'schemaVersion'> & { at?: string };
 
 // ---- Webhooks ----------------------------------------------------------------------
 
 export interface WebhookSubscription {
   id: string;
+  /** Name from webhooks.yaml — the reconcile key. */
+  name: string;
   url: string;
   /** Event types to deliver; ['*'] = all. */
   events: string[];
@@ -326,4 +349,25 @@ export interface Question {
   expiresAt?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+// ---- Sources -----------------------------------------------------------------------
+
+export interface SourceStatus {
+  name: string;
+  kind: string;
+  /** ok: last sync succeeded. error: last sync failed. disabled: configured off. starting: no sync yet. */
+  state: 'ok' | 'error' | 'disabled' | 'starting';
+  lastSyncAt?: string;
+  lastOkAt?: string;
+  lastError?: string;
+  nextSyncAt?: string;
+  /** Eligible items seen by the last discover. */
+  itemsSeen: number;
+  /** Jobs this source created since the daemon started. */
+  jobsCreated: number;
+  /** Non-terminal jobs from this source. */
+  activeJobs: number;
+  /** Source-specific facts for the UI, e.g. { owners, repos, authors, label }. */
+  detail: Record<string, unknown>;
 }

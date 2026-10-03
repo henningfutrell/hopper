@@ -3,8 +3,8 @@
 
 import type {
   DomainEvent, Decision, EventType, Job, JobId, JobSpec, JobStatus, JevAdvice, JevMode, Lane,
-  LaneId, MachineId, MachineSnapshot, NewEvent, Question, QuestionAttempt, QuestionStatus,
-  AnswerTier, UsageReading, WebhookDelivery, WebhookSubscription,
+  JobSourceRef, LaneId, MachineId, MachineSnapshot, NewEvent, Question, QuestionAttempt, QuestionStatus,
+  AnswerTier, SourceStatus, UsageReading, WebhookDelivery, WebhookSubscription,
 } from './types.ts';
 
 // ---- Execution -----------------------------------------------------------------------
@@ -168,6 +168,61 @@ export interface QuestionService {
   stop(): Promise<void>;
 }
 
+// ---- Job sources (the hopper pulls; nothing pushes) -----------------------------------
+
+/** One eligible item a source offers. Becomes at most one job, deduped by `key`. */
+export interface SourceItem {
+  key: string;
+  url: string;
+  title: string;
+  /** The prompt. */
+  body: string;
+  author: string;
+  priority: number;
+  /** Working directory for the job (absolute). */
+  cwd: string;
+  labels: string[];
+  repo?: string;
+  number?: number;
+}
+
+/** What a source observed about a job it owns. */
+export type SourceSignal =
+  | { kind: 'cancel'; jobId: JobId; reason: string }
+  | { kind: 'answer'; jobId: JobId; questionId: string; answer: string; author: string; url?: string };
+
+/** What happened to a job, reported back to its source. */
+export type SourceReport =
+  | { kind: 'claimed'; job: Job }
+  | { kind: 'progress'; job: Job; message: string }
+  | { kind: 'question'; job: Job; question: Question }
+  | { kind: 'answered'; job: Job; question: Question }
+  | { kind: 'finished'; job: Job }
+  | { kind: 'failed'; job: Job }
+  | { kind: 'cancelled'; job: Job };
+
+export interface JobSource {
+  readonly name: string;
+  readonly kind: string;
+  /** Facts for SourceStatus.detail. */
+  describe(): Record<string, unknown>;
+  /** Eligible open items (allowlisted author, labelled, not already done/failed). */
+  discover(): Promise<SourceItem[]>;
+  /** Signals for this source's non-terminal jobs: cancellations and human answers. */
+  check(active: Job[]): Promise<SourceSignal[]>;
+  /**
+   * Tell the source what happened. Returns a patch merged into `job.sourceState` (e.g.
+   * comment ids). Throws on failure; the sync loop retries what must be retried.
+   */
+  report(report: SourceReport): Promise<Record<string, unknown>>;
+}
+
+/** The sync loop's view, for /api/sources and SSE `source.updated`. */
+export interface SourceRegistry {
+  statuses(): SourceStatus[];
+  onStatus(listener: (status: SourceStatus) => void): () => void;
+}
+
 // ---- Persistence -----------------------------------------------------------------------
 
 export interface JobFilter {
@@ -176,8 +231,10 @@ export interface JobFilter {
 }
 
 export interface JobRepository {
-  create(spec: JobSpec, priority: number): Job;
+  /** With `source`, its key must be unique: a duplicate key throws DuplicateSourceKeyError. */
+  create(spec: JobSpec, priority: number, source?: JobSourceRef): Job;
   get(id: JobId): Job | undefined;
+  getBySourceKey(key: string): Job | undefined;
   list(filter?: JobFilter): Job[];
   /** Shallow-merge patch; a key present with value `undefined` clears that field. Bumps updatedAt. */
   update(id: JobId, patch: Partial<Omit<Job, 'id' | 'spec' | 'createdAt'>>): Job;
@@ -214,7 +271,8 @@ export interface EventLog {
 }
 
 export interface WebhookRepository {
-  create(input: { url: string; events: string[]; secret: string }): WebhookSubscription;
+  /** Insert or replace by `name` (webhooks.yaml is the source of truth). */
+  upsertByName(input: { name: string; url: string; events: string[]; secret: string; active: boolean }): WebhookSubscription;
   get(id: string): WebhookSubscription | undefined;
   list(): WebhookSubscription[];
   /** Deletes the subscription and marks its pending/retrying deliveries `failed`. */
