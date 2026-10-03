@@ -1248,3 +1248,30 @@ src/sources/github/source.ts     createGitHubSource(o: { …phase 3…, name, ki
 src/sources/sync.ts              honours JobSource.paused() (T004)
 main.ts seams                    AppSeams.githubApp?: GitHubApi (tests) beside .github
 ```
+
+## Settled in phase 4 (2026-10-03)
+
+- **Composition:** `src/sources/compose.ts` (`composeSources(o)`) builds both GitHub sources
+  from `sources.yaml`. `scripts/migrate-sources-yaml.ts` is install's sources step: it writes
+  the starter when the file is absent, and migrates the phase-3 starter line to `auto`.
+- **`appFile` default:** `github-app.json` next to `sources.yaml` (the same
+  `~/.config/job-hopper/github-app.json` once installed; tests never see the real one).
+- **`JOB_HOPPER_GITHUB_API`** (env, optional) is the API base for the App adapter, the manifest
+  helper and the jobs' `HOPPER_GITHUB_API`. One name for one concept. `createGitHubAppApi`
+  takes `clock` as well.
+- **Pause rules, as built:**
+  - gh pauses (`GitHub App configured`) only while `githubApp.enabled` is true and the app
+    file is readable. With the app source set to `false`, gh keeps running.
+  - The app source pauses only on a missing or unreadable app file. An invalid file or a
+    rejected key still syncs, so the error shows in `appError`/`lastError` and is retried.
+- **Bot in `githubApp.authors`:** refused at startup when the app file loads (the source shows
+  `error`), otherwise at discover.
+- **Invalid `sources.yaml`:** both GitHub sources show `error`. A missing file: `githubApp`
+  defaults, waiting for the app file.
+- **Bot-author identity in answers and context is defence in depth.** Config refuses the bot
+  in `authors`, so the author allowlist already excludes bot comments there. A reviewer
+  mutation removing the bot check therefore survives as an equivalent mutant. Where bot
+  identity is load-bearing — comment reuse (author is bot **and** marker) — the
+  planted-marker test pins it.
+- **Switch latency:** with the default `pollSeconds: 60`, the gh→app switch happens within
+  one poll of `github-app.json` appearing.
