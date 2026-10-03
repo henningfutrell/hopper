@@ -130,7 +130,8 @@ function issueLink(job) {
   const s = job?.source;
   if (!s?.url) return null;
   const text = s.repo && s.number != null ? `${s.repo}#${s.number}` : (s.title || s.key);
-  return el('a', { class: 'issue', href: s.url, target: '_blank', rel: 'noopener noreferrer', title: s.title }, text);
+  const link = el('a', { class: 'issue', href: s.url, target: '_blank', rel: 'noopener noreferrer', title: s.title }, text);
+  return s.source === 'github-app' ? el('span', { class: 'issue-wrap' }, link, el('span', { class: 'tag', title: 'from the GitHub App source' }, 'app')) : link;
 }
 function jobLabel(j) {
   return [mono(j.id), issueLink(j), j.spec.goal && el('span', null, j.spec.goal), el('span', { class: 'muted' }, j.spec.executor + (j.spec.submittedBy ? ' · ' + j.spec.submittedBy : ''))];
@@ -288,8 +289,30 @@ function ago(iso) {
   if (s < 3600) return Math.floor(s / 60) + 'm ago';
   return Math.floor(s / 3600) + 'h ago';
 }
-const SOURCE_PILL = { ok: 'ok', error: 'bad', disabled: '', starting: 'warn' };
+const SOURCE_PILL = { ok: 'ok', error: 'bad', disabled: 'neutral', starting: 'warn' };
 const list = (v) => (Array.isArray(v) ? v.join(', ') : String(v));
+const GITHUB = 'https://github.com/';
+// Only https://github.com/ URLs become links; anything else renders as plain text.
+function ghLink(url, text, cls) {
+  if (typeof url !== 'string' || !url.startsWith(GITHUB)) return url ? el('span', { class: 'muted' }, text) : null;
+  return el('a', { class: cls || 'ext', href: url, target: '_blank', rel: 'noopener noreferrer' }, text);
+}
+function appDetail(d) {
+  const repos = Array.isArray(d.installedRepos) ? d.installedRepos : [];
+  return [
+    d.setup && el('div', { class: 'setup' }, el('b', null, 'Setup needed: '), mono(d.setup)),
+    d.appError && el('div', { class: 'err wrap' }, 'app error: ' + d.appError),
+    el('div', { class: 'row detail' },
+      d.slug && el('span', null, 'app ', ghLink(d.htmlUrl, d.slug) ?? mono(d.slug)),
+      ghLink(d.installUrl, 'install / add repos'), ghLink(d.configUrl, 'configure')),
+    d.slug && el('div', { class: 'repos' }, el('span', { class: 'muted' }, `installed on ${repos.length} repo${repos.length === 1 ? '' : 's'}`),
+      repos.map((r) => mono(r))),
+  ];
+}
+function ghDetail(d) {
+  return el('div', { class: 'row detail' },
+    d.enabledSetting != null && el('span', { class: 'muted' }, 'enabled: ', mono(String(d.enabledSetting))));
+}
 function sourceDetail(d) {
   const rows = [];
   for (const k of ['owners', 'repos', 'authors', 'label']) {
@@ -300,15 +323,18 @@ function sourceDetail(d) {
     const empty = v == null || v === 0 || (typeof v === 'object' && Object.keys(v).length === 0);
     if (!empty) rows.push(el('span', { class: 'err' }, `${k}: ${typeof v === 'object' ? compact(v) : v}`));
   }
+  if (d.paused) rows.push(el('span', { class: 'muted' }, 'paused: ' + d.paused));
   return rows;
 }
 function sourceRow(s) {
   return el('div', { class: 'src', 'data-name': s.name },
-    el('div', { class: 'row' }, el('b', null, s.name), mono(s.kind), pill(s.state, SOURCE_PILL[s.state] ?? ''),
+    el('div', { class: 'row' }, el('b', null, s.name), mono(s.kind), s.detail?.mode && pill(s.detail.mode, 'mode'), pill(s.state, SOURCE_PILL[s.state] ?? ''),
       el('span', { class: 'muted' }, 'last sync ', el('span', { title: s.lastSyncAt }, ago(s.lastSyncAt))),
       s.nextSyncAt && el('span', { class: 'muted' }, 'next ', el('span', { class: 'cd', 'data-exp': s.nextSyncAt }, countdown(s.nextSyncAt))),
       el('span', null, `${s.itemsSeen} seen · ${s.jobsCreated} created · ${s.activeJobs} active`)),
     s.lastError && el('div', { class: 'err wrap' }, s.lastError),
+    s.detail?.mode === 'app' && appDetail(s.detail),
+    s.detail?.mode === 'gh' && ghDetail(s.detail),
     el('div', { class: 'row detail' }, sourceDetail(s.detail ?? {})));
 }
 function renderSources() {

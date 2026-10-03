@@ -92,3 +92,10 @@ button:disabled, textarea:disabled { opacity: .55; cursor: default; }
 .cfg { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; padding: 4px 0; border-bottom: 1px solid var(--line); }
 a.issue { color: var(--accent); font-family: var(--mono); font-size: 12px; }
 .sv { font-size: 11px; }
+.pill.mode { color: var(--accent); border-color: var(--accent); }
+.pill.neutral { color: var(--muted); border-style: dashed; }
+.tag { margin-left: 4px; padding: 0 5px; font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: var(--accent); border: 1px solid var(--accent); border-radius: 4px; }
+a.ext { color: var(--accent); }
+.setup { width: 100%; margin: 4px 0; padding: 6px 10px; color: var(--warn); background: var(--hl); border: 1px solid var(--warn); border-radius: 6px; overflow-wrap: anywhere; }
+.setup code { font-weight: 600; }
+.repos { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: center; padding: 2px 0 4px; }
