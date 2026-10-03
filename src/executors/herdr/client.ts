@@ -43,6 +43,8 @@ export interface HerdrClient {
   prompt(name: string, text: string): Promise<void>;
   /** Logical keys (`esc`, `enter`, `down`, `ctrl+c`) to the pane. */
   sendKeys(paneId: string, keys: string[]): Promise<void>;
+  /** Write raw text to the pane (e.g. an escape sequence herdr has no key name for). */
+  sendText(paneId: string, text: string): Promise<void>;
   /** Rejects `pane_not_found` for a pane already gone. */
   closePane(paneId: string): Promise<void>;
 }

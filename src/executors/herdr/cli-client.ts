@@ -93,6 +93,7 @@ export function createHerdrCliClient(o: { bin: string; session: string; timeoutM
     read: (paneId, { source, lines }) => exec(['pane', 'read', paneId, '--source', source, '--lines', String(lines)]),
     async prompt(name, text) { await run(['agent', 'prompt', name, text]); },
     async sendKeys(paneId, keys) { await exec(['pane', 'send-keys', paneId, ...keys]); },
+    async sendText(paneId, text) { await exec(['pane', 'send-text', paneId, text]); },
     async closePane(paneId) { await run(['pane', 'close', paneId]); },
   };
 }

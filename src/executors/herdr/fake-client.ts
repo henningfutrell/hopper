@@ -3,6 +3,7 @@
 // appends one `steps` line per `getAgent` poll, then the turn's `output`, and settles in `end`.
 
 import { HerdrError } from './client.ts';
+import { CTRL_END } from './screen.ts';
 import type { AgentInfo, AgentStatus, HerdrClient } from './client.ts';
 
 export interface FakeTurn {
@@ -19,8 +20,7 @@ export interface FakeTurn {
   hiddenUntilScrolled?: boolean;
 }
 
-/** The xterm sequence for Ctrl+End. */
-export const CTRL_END = '\x1b[1;5F';
+export { CTRL_END };
 
 export interface FakeHerdrOptions {
   turns?: FakeTurn[];

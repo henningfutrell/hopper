@@ -3,7 +3,7 @@
 
 import type { Clock, ExecutionContext, ExecutionOutcome } from '../../domain/ports.ts';
 import type { HerdrClient } from './client.ts';
-import { readTurn } from './screen.ts';
+import { CTRL_END, isScrolledUp, readTurn } from './screen.ts';
 
 export const RECENT_LINES = 200;
 const OUTPUT_LINES = 120;
@@ -68,7 +68,12 @@ export async function watchTurn(w: TurnWatch): Promise<ExecutionOutcome | Interr
       const agent = await herdr.getAgent(w.agentName);
       if (ctx.signal.aborted) continue;
       if (!agent) return { kind: 'failed', error: await exitedError(w) };
-      const recent = await herdr.read(w.paneId, { source: 'recent-unwrapped', lines: RECENT_LINES });
+      let recent = await herdr.read(w.paneId, { source: 'recent-unwrapped', lines: RECENT_LINES });
+      if (isScrolledUp(recent)) {
+        // The reply sits below the viewport (seen after long prompts): scroll, then read again.
+        await herdr.sendText(w.paneId, CTRL_END);
+        recent = await herdr.read(w.paneId, { source: 'recent-unwrapped', lines: RECENT_LINES });
+      }
       const turn = readTurn(recent, w.anchor);
       if (turn.lastLine && turn.lastLine !== lastLine) {
         lastLine = turn.lastLine;

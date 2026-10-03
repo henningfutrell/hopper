@@ -85,9 +85,19 @@ function anchorLine(lines: string[], anchor: string): number {
 const EFFORT_LINE = /·\s*\/effort\s*$/;
 /** A spinner tip under the status line, e.g. "⎿  Tip: Run /install-github-app …". */
 const TIP_LINE = /^\s*(⎿\s*)?Tip:\s/;
+/** Claude Code's transcript is scrolled up: "1 new message (ctrl+End) ↓". */
+const NEW_MESSAGES_LINE = /\d+ new messages? \(ctrl\+End\)/;
+
+/** The xterm sequence for Ctrl+End: scrolls Claude Code's transcript to the end. */
+export const CTRL_END = '\x1b[1;5F';
+
+/** True when the screen shows the new-message indicator, i.e. the reply is out of view. */
+export function isScrolledUp(text: string): boolean {
+  return NEW_MESSAGES_LINE.test(text);
+}
 
 function isChrome(line: string): boolean {
-  return STATUS_LINE.test(line) || USER_ECHO.test(line) || /^\s*⏵/.test(line) || EFFORT_LINE.test(line) || TIP_LINE.test(line);
+  return STATUS_LINE.test(line) || USER_ECHO.test(line) || /^\s*⏵/.test(line) || EFFORT_LINE.test(line) || TIP_LINE.test(line) || NEW_MESSAGES_LINE.test(line);
 }
 
 /** Output lines of the turn: after the anchor, up to the input box. */
