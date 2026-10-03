@@ -3,7 +3,9 @@ import type { Job } from '../domain/types.ts';
 import type { EngineContext } from './context.ts';
 
 export interface Classifier {
-  /** Start classifying every waiting job without advice that is not already in flight. */
+  /** Classify one job as soon as it is queued, whatever its status by the time Jev answers. */
+  classifyJob(jobId: string): void;
+  /** Retry path: classify every waiting job without advice that is not already in flight. */
   sweep(): void;
   /** Resolves when no classification is in flight. */
   idle(): Promise<void>;
@@ -28,16 +30,21 @@ export function createClassifier(c: EngineContext): Classifier {
     });
   }
 
+  function launch(job: Job): void {
+    if (c.stopping() || job.jevAdvice || inFlight.has(job.id)) return;
+    const p = classify(job)
+      .catch((e) => console.error('jev classification failed', job.id, e))
+      .finally(() => inFlight.delete(job.id));
+    inFlight.set(job.id, p);
+  }
+
   return {
+    classifyJob(jobId) {
+      const job = c.store.jobs.get(jobId);
+      if (job) launch(job);
+    },
     sweep() {
-      if (c.stopping()) return;
-      for (const job of c.store.jobs.list({ status: ['queued', 'held'] })) {
-        if (job.jevAdvice || inFlight.has(job.id)) continue;
-        const p = classify(job)
-          .catch((e) => console.error('jev classification failed', job.id, e))
-          .finally(() => inFlight.delete(job.id));
-        inFlight.set(job.id, p);
-      }
+      for (const job of c.store.jobs.list({ status: ['queued', 'held'] })) launch(job);
     },
     async idle() {
       await Promise.all(inFlight.values());

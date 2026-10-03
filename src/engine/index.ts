@@ -62,7 +62,10 @@ export function createEngine(o: EngineOptions): Engine {
       recover(store);
       unsubscribe = store.events.subscribe((event) => {
         // Never decide inside append: schedule.
-        if (event.type === 'job.queued') setImmediate(() => classifier.sweep());
+        if (event.type === 'job.queued' && event.jobId) {
+          const jobId = event.jobId;
+          setImmediate(() => classifier.classifyJob(jobId));
+        }
         if (TRIGGERS.has(event.type)) setImmediate(() => c.trigger(event.type));
       });
       timer = setInterval(() => {
