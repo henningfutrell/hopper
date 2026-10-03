@@ -1306,3 +1306,185 @@ schema change, no domain event; in-memory only.
 | var | default |
 |-----|---------|
 | `JOB_HOPPER_GROKBOT_WEBHOOK_FILE` | `~/.config/job-hopper/grokbot-webhook.env` |
+
+## Phase 5 — every part is a plugin (2026-10-03, in progress)
+
+Owner direction (owner decision, 2026-10-03): the **router** (Jev) decides admission; **Fable
+assesses questions** — it decides whether a question escalates to the owner, nothing else.
+Every part is broken out as a **plugin**: any piece can be swapped, writing a custom plugin is
+easy, and the choices offered come from what is detected on the machine. Consultant-reviewed
+(approve-with-changes, all changes folded in below). Glossary terms land with the slice that
+introduces them in code.
+
+### Roles, plugins, instances
+
+A **role** is a slot the engine calls through one port. A **plugin** implements one role. A
+**plugin instance** is a plugin plus validated options, under a name.
+
+| role | port | slots | built-in plugins | reload |
+|---|---|---|---|---|
+| `router` | `Router { name; advise(job) → Advice }` (was `JevAdvisor`) | 1 | `jev-router`, `pass-through` | live |
+| `answerer` | `Answerer { name; answer(req, signal) → { answer, confident, reason } }` | 0..1 | `claude-cli` | live |
+| `assessor` | `Assessor { name; assess(req, draft, signal) → { escalate, reason } }` | 1 | `claude-cli-assessor`, `always-escalate` | live |
+| `executor` | `Executor` (unchanged) | 1..n | `herdr-claude`, `test` | restart |
+| `job-source` | `JobSource` (unchanged) | 0..n | `github-gh`, `github-app` | restart |
+| `machine-source` | `MachineSource` (unchanged) | 1 | `local` | restart |
+| `usage-source` | `UsageSource` (unchanged) | 0..n | none in production; `fake` stays a test fake at the `ports.ts` seam | restart |
+| `notifier` | `Notifier { name; start(events); stop() }` (new) | 0..n | `grokbot-routine` | restart |
+
+A new agent CLI (codex, cursor-agent, opencode, hermes — all present on server) is a new
+`executor` plugin; nothing is generic over CLIs.
+
+**Not plugins — invariants:** the decider, store, engine loop, HTTP guard and UI session, the
+event log, **webhook subscriptions** (`webhooks.yaml` stays: a core subsystem with stored
+deliveries and signing, not a swappable part), the **risk rules** (`src/questions/risk.ts`,
+code, not config — no setting can weaken the guard), the **rules file** (the owner's standing
+rules, given to answerer and assessor), and the human as the last question stop.
+
+### Question pipeline
+
+1. The answerer (if configured) drafts: `{ answer, confident, reason }`. Not confident, error,
+   or no answerer → straight to the human.
+2. The assessor gets the full request (question, job prompt, rules file, previous attempts)
+   plus the draft and the answerer's reason, and returns `{ escalate, reason }`.
+   **Fails closed:** timeout, error, parse failure or a missing field → escalate. Only an
+   explicit, schema-valid `escalate: false` accepts. The question text comes from a job that
+   reads issue bodies and runs with `--dangerously-skip-permissions`; it may try to talk the
+   assessor out of escalating — the fail-closed contract and the risk rules are the
+   containment.
+3. Risk rules run on question and draft after the assessor; a hit escalates regardless.
+4. Accepted → the draft is the answer (typed into the pane). Escalated → the human.
+
+`claude-cli-assessor` runs with the answerer's lockdown (`--tools ''`, `--strict-mcp-config`,
+`--setting-sources ''`, `--json-schema`). Default instances: answerer `opus` (`claude-cli`,
+model `opus`), assessor `fable` (`claude-cli-assessor`, model `fable`). `risky` leaves the
+answerer contract (judging risk is the assessor's job); it stays optional on stored attempts.
+
+Stage owner: `questions.body.tier` holds the answerer's instance name, the assessor's, or
+`human`. Created with the configured answerer's name (or `human` with none) — replacing the
+hard-coded `'opus'` in `src/store/questions.ts`. **Recovery** restarts every open non-human
+question from the answer stage whatever its `tier` (drafts are not persisted mid-flight; the
+cost is one repeated call), so old rows at `tier: fable` (meaning "Fable answering") are safe.
+
+### Plugin contract
+
+A plugin is one ES module — `.ts` run by Node's type stripping (erasable syntax only;
+relative imports carry `.ts`) or `.js` — with a default export:
+
+```ts
+import type { PluginDefinition } from 'job-hopper/plugin'; // type-only, erased at runtime
+export default {
+  id: 'always-proceed',
+  role: 'router',
+  describe: 'Admits every job as proceed_full',
+  options: (z) => z.object({ note: z.string().default('') }),
+  async detect(sys) { return { status: 'available' }; },
+  create(ctx, options) {
+    return { name: 'always-proceed', async advise() { return { action: 'proceed_full', reason: options.note || 'always', details: {} }; } };
+  },
+} satisfies PluginDefinition<'router'>;
+```
+
+- **Options are a zod schema** built from the `z` the core passes in (established library:
+  zod 4, already a dependency — no hand-rolled validator). The core validates with
+  `safeParse` before `create`; `z.toJSONSchema()` renders options in `/api/plugins` and the UI.
+  Plugin authors need not import zod.
+- **Detection** `detect(sys)` → `available` | `unavailable` + reason | `needs-setup` + the
+  command to run. Cheap; never a paid model call; **never executes a GUI binary** (`grokbot`
+  is Electron: `which` only). Kit: `which(bin)`, `version(bin, args)` (5 s timeout, CLIs
+  only), `exists(path)`, `pythonImports(python, module)`, `env(name)`. Models cannot be listed
+  offline: `claude` model options are free strings, with `opus`, `sonnet`, `fable` as
+  suggestions. `github-gh` reports `needs-setup` when `gh auth status` fails.
+- `create(ctx, options)`: `ctx` = clock, logger, dataDir, the plugin's own scratch dir.
+- A plugin can import only `node:` builtins unless it ships its own `node_modules` in its
+  directory.
+
+### Where plugins live, and loading
+
+- Built-in: `src/plugins/<role>/<id>/index.ts`, listed in `src/plugins/builtin.ts`.
+- Custom: `~/.config/job-hopper/plugins/<id>/index.ts` (`JOB_HOPPER_PLUGIN_DIR`), loaded by
+  dynamic `import()` at start and on rescan. Same contract and validation. A custom id equal
+  to a built-in id is refused. Plugin dir readable by group/other → warning.
+- Types for out-of-tree authors: `install.sh` writes `~/.config/job-hopper/plugins/tsconfig.json`
+  mapping `job-hopper/plugin` to `<install>/src/plugins/sdk.ts`. `npm run plugin:check <dir>`
+  type-checks with that mapping, then runs the real loader and `detect`.
+  `examples/plugins/<role>/` holds one minimal runnable plugin per role.
+
+### Configuration — `~/.config/job-hopper/plugins.yaml`
+
+The truth for which instance fills which role. Mode 600, owner-editable, mtime-watched (5 s).
+Live roles (router, answerer, assessor) swap between calls; restart roles show
+`changed — restart pending` in `/api/plugins`.
+
+```yaml
+version: 1
+router:    { name: jev, plugin: jev-router, options: { jevSrc: ~/workbench/jev-src/grok-bot-jev, python: python3 } }
+answerer:  { name: opus, plugin: claude-cli, options: { model: opus } }
+assessor:  { name: fable, plugin: claude-cli-assessor, options: { model: fable } }
+executors: [ { name: herdr-claude, plugin: herdr-claude, options: { cwd: ~/workbench/app-workflows } }, { name: test, plugin: test } ]
+jobSources: [ { name: github, plugin: github-gh, options: { } }, { name: github-app, plugin: github-app, options: { } } ]
+machines:  { name: local, plugin: local, options: { lanes: 4 } }
+usageSources: []
+notifiers: [ { name: grok-bot, plugin: grokbot-routine, options: { envFile: ~/.config/job-hopper/grokbot-webhook.env } } ]
+```
+
+- **Job-source instance names stay exactly `github` and `github-app`**: sync state and
+  `jobs.source_key` dedup are keyed by them; a rename would re-pull or drop items.
+- `sources.yaml` folds into `jobSources[].options`. Part-choosing env vars are removed (no
+  compatibility path); env keeps process settings only (host, port, db, tick, plugin dir,
+  plugins file, herdr session, UI session hours).
+- **Migration runs in the daemon, in the slice that removes each input:** on boot with no
+  `plugins.yaml`, build it from `sources.yaml` and the current env, write it 600, rename the
+  inputs `*.migrated`. Any leftover `JOB_HOPPER_*` var no longer read → a loud boot warning.
+  `systemd/job-hopper.service` changes in the same slice.
+- **Router mode** (shadow/active) is decider state, not a plugin option: stays live in the
+  store, `settings.jevMode` → `routerMode` by store migration; toggled in the UI as today.
+
+### UI and mutation
+
+A **Plugins** panel: per role, the configured instance, its detection status, and every
+plugin for that role (built-in and custom) with its detection result; **Rescan**.
+`POST /ui/api/plugins` (session-guarded) may only **select** a detected-available plugin for a
+role, or enable/disable an instance, writing `plugins.yaml` atomically. It **never edits
+options** — `bin`, `args`, `cwd` would make a UI session arbitrary command execution; options
+are edited in the file. This amends "No route creates or changes a … setting": plugin
+selection joins Jev mode as a UI-session mutation.
+
+### Failure
+
+| role | on create failure or unavailable |
+|---|---|
+| router | `pass-through`; advice `source: fallback`; shown in `/api/health` (today it says `jev-router` while advice is fallback) |
+| answerer | none → questions go to the assessor-less human path |
+| assessor | `always-escalate` (fail safe) |
+| executor | jobs naming it `held`, reason `executor <name> unavailable`; never failed or re-routed |
+| job source / notifier | dropped; error in `/api/plugins` |
+
+### Persisted-state migrations
+
+Store (`src/store/migrations.ts`) rewrites rows; changed event types bump `schemaVersion`;
+stored old events are not rewritten (read raw by version; v1 schemas stay in docs/export).
+
+- `jobs.body.jevAdvice` → `advice` `{ action, reason, details, source, at }`; `jevUsed` →
+  `details.jevUsed` (jev-router only). `job.prioritized` v2.
+- `decisions.body.jevMode` → `routerMode`; `Decision.jev[]` → `advice[]`, `withJev` →
+  `withAdvice`; `decision.made` v2; `divergence` schema to match.
+- `settings.jevMode` → `routerMode`; `jev.mode_changed` → `router.mode_changed` v1.
+- `DeciderPolicy.jevCheapBoost` → `routerCheapBoost`.
+- `AnswerTier`/`ANSWER_TIERS` → `string` (instance names); `question.escalated.target` and
+  `question.answered.by` `z.enum` → `z.string()`, v2. Question rows unchanged.
+
+### Slices (each test-first, each lands runnable)
+
+1. **Plugin core through the router**: SDK + contract, registry, loader (built-in + custom),
+   detection kit, `plugins.yaml` (router section) + watch, `GET /api/plugins`, `Router` port,
+   `jev-router`, `pass-through`, Jev→router renames and store migrations, `/api/health` shows
+   fallback. Glossary first.
+2. **Questions**: answerer + assessor roles, pipeline, fail-closed assessor, recovery.
+3. **Executors** as plugins; `EXECUTOR_NAMES` removed; held-when-unavailable.
+4. **Job, machine, usage sources** as plugins; `sources.yaml` + env migration in the daemon;
+   unit file updated.
+5. **Notifier** port + `grokbot-routine`.
+6. **Examples + `plugin:check`** + plugin tsconfig from `install.sh`.
+7. **UI Plugins panel** + `POST /ui/api/plugins` (select only) + rescan.
+8. **Install on server** (when no herdr-claude job runs) and live verification.
