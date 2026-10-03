@@ -1023,11 +1023,21 @@ later optional webhook; the app's webhook is created **inactive** and nothing li
 - `projectItems(owner, number)`: GraphQL `projectV2(number)` items with field values.
   - Tried as `organization(login)`, then `user(login)`.
   - GitHub Apps can read **organization** Projects (v2) with `organization_projects: read`.
-    Whether an installation token can read a **user-owned** project is unverified here. A
-    failure falls back to labels with `projectErrors`, as in phase 3.
+    **Projects (v2) owned by a personal account cannot be read with an installation token**
+    (GitHub's docs: user-owned projects need a personal token). the owner's repos are
+    user-owned, so in app mode priority comes from labels. A project lookup failure still
+    falls back to labels with `projectErrors`. `organization_projects: read` stays in the
+    manifest because the directive asks for project read, and it is what enables project
+    priority for any org-owned repo.
 - `botLogin()` = config `botLogin`. `whoami()` = the same.
 - `mintRepoToken(repo)`: `auth({ type: 'installation', installationId, repositoryNames:
-  [repoName], permissions: { issues: 'write' } })`.
+  [repoName], permissions: { issues: 'write' }, refresh: true })`. `refresh: true` matters:
+  the library caches installation tokens for 59 min, so without it a refresh hands back the
+  same token, about to expire (B2).
+- **Cold installation lookup (B6):** on a repo whose installation id is not cached, it calls
+  `GET /repos/{o}/{r}/installation` with the JWT. A 404 is a permanent "app not installed on
+  <repo>".
+- `searchOpenIssues` throws a permanent error. App mode never searches (B7).
 - Errors → `GitHubApiError` with the phase-3 classification (401 from a bad key → permanent,
   message names the app config).
 
@@ -1038,34 +1048,65 @@ optional methods:
 
 | | gh adapter (`github`) | App adapter (`github-app`) |
 |---|---|---|
-| repos scanned | `repos` allowlist, else search over `owners` | `listInstalledRepos()`; if config `repos` is non-empty, the intersection |
+| repos scanned | `repos` allowlist, else search over `owners` | `listInstalledRepos()`; if config `repos` is non-empty, the intersection. Empty → `[]` and `detail.setup = "install the app: <installUrl>"`, **never** a search (B7) |
 | hopper's own comments | first line matches the marker | **author == `botLogin()`**, or the marker (secondary) |
 | a human answer | first comment after the question, allowlisted author, no marker | first comment after the question, allowlisted author, **author ≠ bot**, no marker |
 | job comments | `gh issue comment` (as the owner) with `$HOPPER_COMMENT_MARKER` | `"$HOPPER_COMMENT_CMD" "<text>"` (as the app) |
 
 `isHopperComment(c)` = `(botLogin && c.author === botLogin) || hasMarker(c.body)`. It is
-used for context filtering, comment reuse on retry, and answer detection. Comment reuse looks
-for the bot's earlier comment carrying the same marker; hopper comments still carry the
-marker line.
+used for context filtering and answer detection. **Comment reuse on retry** (app mode)
+requires author == bot **and** the same marker: a stranger planting a marker comment can
+never be "reused", which would end in a 403 edit (N2). Config refuses an `authors` list
+containing the bot login. Hopper comments still carry the marker line.
+
+**Names and detail fields (B4), fixed now:**
+- App source: name and kind `github-app`.
+- gh source: name `github`, kind `github`. `source.ts` takes `kind` from its options.
+
+| field | app | gh |
+|-------|-----|----|
+| `mode` | `app` | `gh` |
+| `slug`, `htmlUrl`, `installUrl` (`https://github.com/apps/<slug>/installations/new`), `configUrl` (`https://github.com/settings/installations`) | yes | — |
+| `installedRepos` (string[]) | yes | — |
+| `setup` (what the owner must do next, or absent) | yes | — |
+| `appError` (app file unreadable or key rejected) | yes | — |
+| `enabledSetting` (`auto`/`true`/`false`) | — | yes |
+| `paused` (reason, when paused) | yes | yes |
+| phase-3 fields (`authors`, `label`, `repos`, `projectErrors`, `repoErrors`, `checkErrors`, `permanentErrors`, `skippedClaimedWithoutJob`) | yes | yes |
 
 **Enablement.** `sources.yaml` gains `githubApp:` (same keys as `github:` minus `owners`,
 plus `appFile`). `github.enabled` becomes `auto | true | false`, default `auto`. `auto`
 means enabled exactly when no app config file exists, **checked on every sync**. So creating
-the app switches new pulls from gh to the app with no restart. A disabled-by-auto gh source
-keeps checking and reporting its own active jobs, and only stops discovering. `githubApp.enabled`
-defaults to `true`. While `github-app.json` is absent its status is `disabled` with
-`detail.setup: "run bash ~/.local/lib/job-hopper/scripts/create-github-app.sh"`, re-checked
-every sync, so the app source starts on its own once the file appears.
+the app switches new pulls from gh to the app with no restart. Mechanism (B3): both sources
+are always constructed unless set to `false`, and each has `paused()`. Paused, a source only
+checks and reports its own active jobs. The gh source pauses while `auto` and the app file
+exists. The app source pauses while the file is missing or unreadable, with
+`detail.setup: "run bash ~/.local/lib/job-hopper/scripts/create-github-app.sh"`. It starts
+on its own once the file appears, and re-reads it when its mtime changes (so a `--force`
+recreate needs no restart).
+
+**the owner's live file (B1).** The installed `~/.config/job-hopper/sources.yaml` says
+`enabled: true` (phase-3 starter). `install.sh` rewrites that exact starter line
+(`  enabled: true              # false: pull nothing from GitHub`) to `enabled: auto` once
+and says so. Any other value is left alone with a printed warning. The phase-4 starter
+writes `auto` and a `githubApp:` block.
 
 ## Jobs comment as the app — the per-job token file
 
 A job must comment on its issue as the app without holding the app's private key, because
 the key can mint tokens for every installed repo. The source's **token keeper** handles it:
 - On `claimed` it mints `mintRepoToken(repo)`: one repo, `issues: write` only. It writes
-  `<dataDir>/job-tokens/<sha256(issueUrl)[0..16]>.json` (`{ token, expiresAt, repo, issue }`,
-  directory 700, file 600, written atomically via rename).
-- Every sync it refreshes files of this source's non-terminal jobs that expire within 15 min.
-- It deletes the file on the final report, and at sync for any terminal job.
+  `<dataDir>/job-tokens/<sha256(issueUrl)[0..16]>.json` as
+  `{ "version": 1, "token", "expiresAt", "repo": "owner/repo", "issue": <number> }`.
+  - The directory is 700 (chmod again if it already exists).
+  - The file is written 600 to a temp name with `O_EXCL`, then renamed into place.
+  - A failed mint never fails the claim report. The next refresh retries.
+- `refresh(activeJobs)`, called from `check()`: mints for any active job whose file is
+  missing or has under 15 min left, and **deletes orphan files** (no active job of this
+  source). This is how terminal jobs' files go away (B5).
+- It also deletes the file on the final report.
+- `<dataDir>` is `~/.local/share/job-hopper`, outside the daemon's `PrivateTmp` and readable
+  by the herdr panes.
 
 The path is deterministic from the issue URL, so it is in the job's env at ingest:
 
@@ -1081,14 +1122,17 @@ The path is deterministic from the issue URL, so it is in the job's env at inges
 **`hopper-comment`** (`scripts/hopper-comment`, a bash wrapper running
 `scripts/hopper-comment.ts` with Node): `hopper-comment "text"` or text on stdin.
 - Reads `HOPPER_TOKEN_FILE`, waiting up to 30 s for it to appear. Refuses an expired token,
-  saying so.
+  saying so, and refuses a file whose `repo`/`issue` differ from `HOPPER_REPO` /
+  `HOPPER_ISSUE_NUMBER`.
 - `POST {HOPPER_GITHUB_API}/repos/{HOPPER_REPO}/issues/{HOPPER_ISSUE_NUMBER}/comments` with
   body `HOPPER_COMMENT_MARKER + "\n" + text`, truncated to 60 000 chars.
 - Prints the comment URL. Exit 0 on success, 1 on any failure (message on stderr).
 - Node built-ins only.
 
 The App source's context block replaces the `gh issue comment` instruction with: "To comment
-on your issue: `"$HOPPER_COMMENT_CMD" "<your text>"` (posts as the job-hopper app)."
+on your issue: `"$HOPPER_COMMENT_CMD" "<your text>"` (posts as the job-hopper app). **Never
+comment with `gh`**: it posts as the owner, and a comment from him after a question reads as
+his answer." (N5: panes are still logged in to `gh` as the owner.)
 
 **Residual, stated:** the token file is readable by any process running as the owner, for at
 most about an hour, and covers only that repo's issues. That is far narrower than the gh
@@ -1111,9 +1155,15 @@ source, whose job comments ran on the owner's full `gh` login.
 6. The callback checks `state` (mismatch → 400, nothing stored) and runs
    `POST https://api.github.com/app-manifests/{code}/conversions` (unauthenticated, code
    valid for 1 h).
-7. It writes the three files (umask 077, refuses to follow symlinks) and answers with a page
-   holding the **install link** `https://github.com/apps/<slug>/installations/new`. The
-   script prints the same link and exits 0.
+7. It writes the files (umask 077, temp file + rename, refuses symlinks; a null
+   `webhook_secret` → no secret file and `webhookSecretFile: null`). `slug`, `botLogin`
+   (`<slug>[bot]`) and `htmlUrl` come **from the conversion response**, never from the
+   manifest name: names are global and at most 34 characters, so the owner may have renamed it on
+   GitHub's page. It answers with a page holding the **install link**
+   `https://github.com/apps/<slug>/installations/new`. The script prints the same link and
+   exits 0.
+   - The local server rejects any request whose `Host` is not `127.0.0.1:<port>` (DNS
+     rebinding) and accepts the callback once only (N4).
 8. It times out after 15 min (exit 1, nothing written).
 
 Manifest:
@@ -1147,6 +1197,7 @@ whole flow against a fake GitHub. `--no-open` skips `xdg-open`.
 2. Click **Create GitHub App for owner**. The browser returns to `127.0.0.1` with
    "App created" and an **Install** link; the terminal prints the same link.
 3. Click the link → **Install** → **Only select repositories** → pick the repos → **Install**.
+   (A private app owned by owner installs only on owner's own account.)
 4. Nothing else: within one sync (60 s) the `github-app` source shows `ok` with the
    installed repos, and the `gh` source stops discovering (auto). Restarting is not needed.
 
@@ -1184,11 +1235,14 @@ unchanged.
 ```text
 src/sources/github/app/index.ts  loadGitHubAppFile(path) → { ok: true, app } | { ok: false, reason: 'missing' | string }
                                  createGitHubAppApi(o: { appFile: string; baseUrl?: string; clock: Clock }): GitHubApi
+                                   & { appStatus(): { ok: true; slug; botLogin; htmlUrl } | { ok: false; reason } }
                                    (lazy: reads the file on first use; a missing file → permanent GitHubApiError 'no app configured')
                                  createFakeGitHubServer(o) — node:http fake of the endpoints above + JWT/installation
                                    token verification, for tests (test/support or src/…/app/fake-server.ts)
 src/sources/github/tokens.ts     createJobTokenKeeper(o: { dir: string; api: GitHubApi; clock: Clock }) →
                                    { pathFor(issueUrl): string; ensure(job): Promise<void>; refresh(jobs): Promise<void>; drop(job): void }
-src/sources/github/source.ts     createGitHubSource(o: { …phase 3…, mode?: 'gh' | 'app', enabled?: () => boolean,
+src/sources/github/source.ts     createGitHubSource(o: { …phase 3…, name, kind, mode: 'gh' | 'app', paused?: () => string | undefined,
                                    tokens?: JobTokenKeeper, commentCmd?: string, apiBase?: string })
+src/sources/sync.ts              honours JobSource.paused() (T004)
+main.ts seams                    AppSeams.githubApp?: GitHubApi (tests) beside .github
 ```

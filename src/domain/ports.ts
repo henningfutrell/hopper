@@ -226,6 +226,13 @@ export interface JobSource {
   readonly kind: string;
   /** Facts for SourceStatus.detail. */
   describe(): Record<string, unknown>;
+  /**
+   * A reason the source must not discover new items right now (e.g. the gh source while a
+   * GitHub App is configured, or the app source while none is). While paused the sync loop
+   * skips `discover` but still runs `check` and reports for the source's own active jobs;
+   * status `disabled` when it has none, with `detail.paused` = the reason. Absent → never paused.
+   */
+  paused?(): string | undefined;
   /** Eligible open items (allowlisted author, labelled, not already done/failed). */
   discover(): Promise<SourceItem[]>;
   /** Signals for this source's non-terminal jobs: cancellations and human answers. */
