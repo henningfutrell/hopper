@@ -131,6 +131,13 @@ describe('readTurn', () => {
     expect(t.lastLine).toBe('Writing hello.txt');
   });
 
+  it('does not report a Claude Code tip line as progress', () => {
+    // Real capture from the live demo: a spinner tip became the progress message.
+    const lines = ['❯ go', '● Writing hello.txt', '✻ Cooking… (3s)', '  ⎿  Tip: Run /install-github-app to tag @claude right from your Github issues and PRs'];
+    const t = readTurn(screen(lines, CHROME), 'go');
+    expect(t.lastLine).toBe('Writing hello.txt');
+  });
+
   it('counts every line when the anchor scrolled out', () => {
     const t = readTurn(screen(['● Done all.', '  JOB_HOPPER_DONE'], CHROME), 'gone anchor');
     expect(t.anchorFound).toBe(false);
