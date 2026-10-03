@@ -48,6 +48,7 @@ describe('configuration from env', () => {
     ['JOB_HOPPER_JEV_ADVISOR', 'magic'],
     ['JOB_HOPPER_LOCAL_LANES', '-1'],
     ['JOB_HOPPER_SOFT_LIMIT', '1.5'],
+    ['JOB_HOPPER_HOST', '0.0.0.0'],
   ])('fails loudly on %s=%s', (name, value) => {
     expect(() => loadConfig({ [name]: value })).toThrow(name);
   });
