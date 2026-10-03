@@ -26,6 +26,10 @@ export interface TurnView {
 
 const GUTTER = /^[\s●⎿▎]+/;
 const STATUS_LINE = /^\s*[✻✶✳✢✽]\s/; // Claude Code spinner / "Cooked for 5s" line
+/** Spinner frames drawn with plain glyphs: "· Symbioting… (20s · ↓ 121 tokens)". */
+const SPINNER_VARIANT = /^\s*[·*•∗]\s+\S.*…\s*\(\d+s\b/;
+/** The hint under a running Bash call. */
+const BACKGROUND_HINT = /^\s*\(ctrl\+b to run in background\)\s*$/;
 const SEPARATOR = /^\s*─{3,}/;
 const USER_ECHO = /^\s*❯/;
 const ASSISTANT_START = /^\s*●/;
@@ -97,7 +101,8 @@ export function isScrolledUp(text: string): boolean {
 }
 
 function isChrome(line: string): boolean {
-  return STATUS_LINE.test(line) || USER_ECHO.test(line) || /^\s*⏵/.test(line) || EFFORT_LINE.test(line) || TIP_LINE.test(line) || NEW_MESSAGES_LINE.test(line);
+  return STATUS_LINE.test(line) || USER_ECHO.test(line) || /^\s*⏵/.test(line) || EFFORT_LINE.test(line) || TIP_LINE.test(line) || NEW_MESSAGES_LINE.test(line)
+    || SPINNER_VARIANT.test(line) || BACKGROUND_HINT.test(line);
 }
 
 /** Output lines of the turn: after the anchor, up to the input box. */
