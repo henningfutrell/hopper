@@ -640,37 +640,52 @@ SSE adds non-domain `event: source.updated` (`data: SourceStatus`), like `delive
 ## UI session and mutations
 
 Same-origin plus a CSRF token alone does not stop another local process: it can fetch the
-token and send any `Origin` header a browser would. So the UI session starts from a secret
-on disk:
+token and send any `Origin`. Cookies are no better here: they ignore ports, so a cookie for
+`127.0.0.1` is sent to every server on `127.0.0.1`, any user's. So (consultant B8):
 
 1. **Login code.** At startup and after every use the daemon writes a fresh random code
-   (32 bytes, hex) to `<dataDir>/ui-login-code`, mode `0600`. `scripts/open-ui.sh` reads it
-   and opens `http://127.0.0.1:<port>/ui/login?code=<code>`.
-2. **`GET /ui/login?code=…`** — constant-time compare; on match: create a session (random
-   id, random CSRF token, expiry `JOB_HOPPER_UI_SESSION_HOURS`, default 12), set cookie
-   `jh_session=<id>; HttpOnly; SameSite=Strict; Path=/`, rotate the code, `303 → /`.
-   Mismatch → 403. Sessions live in memory (a restart logs the UI out).
-3. **`GET /ui/api/session`** → `{ authenticated: boolean, csrfToken?, expiresAt? }`
-   (token only with a valid cookie). Without a session the page is read-only and shows how to
-   log in (`bash apps/job-hopper/scripts/open-ui.sh`).
-4. **Mutations** — `POST` only, JSON body, all of: valid `jh_session` cookie; header
-   `x-jobhopper-csrf` equal to that session's token (constant-time); `Origin` exactly
-   `http://127.0.0.1:<port>` or `http://localhost:<port>`; `Sec-Fetch-Site`, when present,
-   `same-origin`; `content-type: application/json`. Any failure → 403 `{ error }`, logged.
+   (32 bytes, hex) to `<dataDir>/ui-login-code`, mode `0600`.
+2. **`scripts/open-ui.sh`** reads the code and writes `<dataDir>/ui-login.html` (mode
+   `0600`): a page that auto-submits a form `POST http://127.0.0.1:<port>/ui/login` with the
+   code in the body. It opens that **file** with `xdg-open`, so only a file path, never the
+   code, appears on any command line (`/proc` is readable by every user).
+3. **`POST /ui/login`** (form body `code`; Origin may be `null` — the code is the
+   credential) — constant-time compare; on match: create a session (random 32-byte token,
+   expiry `JOB_HOPPER_UI_SESSION_HOURS`, default 12), rotate the code, and answer with a
+   same-origin HTML page whose inline script stores the token in `localStorage`
+   (`jh_session`) and goes to `/`. Mismatch → 403. `localStorage` is scoped to the exact
+   origin incl. port, so no other server on `127.0.0.1` can read it. Sessions live in memory
+   (a restart logs the UI out).
+4. **`GET /ui/api/session`** with header `x-jobhopper-session` → `{ authenticated,
+   expiresAt? }`. Without a valid session the page is read-only and says how to log in:
+   `bash ~/.local/lib/job-hopper/scripts/open-ui.sh`.
+5. **Mutations** — `POST` only, JSON body, all of: header `x-jobhopper-session` = a live
+   session token (constant-time); `Origin` exactly `http://127.0.0.1:<port>` or
+   `http://localhost:<port>`; `Sec-Fetch-Site`, when present, `same-origin`;
+   `content-type: application/json`. The custom header is the CSRF defence (a cross-site
+   page cannot set it or read the token). Any failure → 403 `{ error }`, logged.
 
 | method | path | body | effect |
 |--------|------|------|--------|
-| POST | `/ui/api/jobs/:id/cancel` | `{}` | engine cancel (the source is told: `cancelled`) |
+| POST | `/ui/api/jobs/:id/cancel` | `{}` | engine `cancel(id, "cancelled in UI")` (the source is told) |
 | POST | `/ui/api/jobs/:id/approve` | `{}` | engine approve |
 | POST | `/ui/api/questions/:id/answer` | `{ answer }` | `QuestionService.answerByHuman` (404/409) |
 | POST | `/ui/api/jev` | `{ mode }` | set Jev mode |
 | POST | `/ui/api/logout` | `{}` | drop the session |
 
-**Residual risk, stated:** a process running as the owner that reads `ui-login-code` (or the
-browser's cookie store) can still act. That includes Claude jobs running with
-`--dangerously-skip-permissions`. What this blocks: other OS users, any web page
-(cross-site, DNS rebinding), and local processes that do not deliberately read
-job-hopper's files.
+**Residual risk, stated.** Still able to act or read:
+- A process running **as the owner** that reads `ui-login-code`/`ui-login.html` or the
+  browser profile's `localStorage`. That includes Claude jobs running with
+  `--dangerously-skip-permissions`.
+- A job (or any script using the owner's `gh` token) that posts an issue comment without the
+  hopper marker. That comment counts as the owner's answer, so a job can answer its own
+  question.
+- Every local user can **read** the GET API, which exposes prompts, issue context and job
+  environment.
+
+Blocked: other OS users acting, any web page (cross-site, DNS rebinding via the Host
+guard), and local processes that do not deliberately read job-hopper's or the browser's
+files.
 
 ## Job sources
 
@@ -678,8 +693,11 @@ job-hopper's files.
 source every `pollSeconds`:
 
 1. `discover()` → for each item whose `key` has no job: create one via the host's
-   `ingest(item)` — spec `{ executor: <source executor>, payload: { prompt: body, cwd,
-   model? }, priority, goal: title, submittedBy: "<source>:<author>", kind: "coding" }`,
+   `ingest(item)` — spec `{ executor: item.executor, payload: { prompt, cwd, model?, env },
+   priority, goal: title, submittedBy: "<source>:<author>", kind: "coding" }`; `item.invalid`
+   or a payload the executor rejects → job created and failed in one tx (`job.queued` +
+   `job.failed`); for items that already have a job: `host.reprioritize(jobId,
+   item.priority, item.priorityReason)` (re-sort; applies only to queued/held),
    `source: JobSourceRef`, with `payload.prompt = item.prompt`, `payload.env = item.env` —
    then `report({kind:'claimed'})`, merge the returned patch into
    `sourceState`. Duplicate key → skip (dedupe by store unique index).
@@ -687,11 +705,17 @@ source every `pollSeconds`:
    (reason recorded); `answer` signal → `QuestionService.answerByHuman(questionId, answer)`
    (ignored if not open).
 3. **Outbound reports** are event-driven and retried: on `job.progressed` (throttled to one
-   per `progressCommentSeconds` per job), `question.escalated {target: human}`,
+   per `progressCommentSeconds` per job), the **first** `question.escalated {target: human}`
+   of a question (re-notifies are ignored — one question comment per question),
    `question.answered`, `job.finished`, `job.failed`, `job.cancelled` for a job with a
-   `source`, call `report(...)`. A failed report is retried on later syncs from
-   `sourceState` flags (`claimReported`, `reportedQuestions[]`, `finalReported`), so a
-   final result is never silently lost.
+   `source`, call `report(...)`. Reports for one job are serialized (a per-job promise
+   chain). The returned `source` state replaces `sourceState.source` via
+   `host.setSourceState` in a tx that re-reads the job. `sourceState.sync` (owned here)
+   records `claimReported`, `reportedQuestions: string[]`, `finalReported`, `cancelReason`.
+   **Retry scan** each sync: claim not reported; open human-tier questions not reported;
+   terminal jobs (finished/failed/cancelled) whose final report did not go out — so a crash
+   right after a job ends still reports. A `SourceError` with `permanent: true` marks the
+   report done-with-error (status `detail.permanentErrors`) and is never retried.
 4. Status → `SourceStatus` (state, last sync, last error, counts, detail) → `/api/sources`,
    SSE `source.updated`.
 
@@ -737,7 +761,9 @@ github:
      directly (clamped 0..100).
    - `mode: rank` — the item's position in the project's item order:
      `priority = max(0, 100 − index)`, so the top item is 100.
-   - Read with `gh project item-list <number> --owner <owner> --format json`. That needs
+   - Read with `gh project item-list <number> --owner <owner> --format json --limit 1000
+     --query "is:issue is:open"`; field keys come back lowercased, so the configured field
+     name matches case-insensitively; rank counts only eligible items. That needs
      the `read:project` token scope. Without it, or on any project error, the source falls
      back to labels and shows the error in status `detail.projectErrors`. It never blocks.
 2. Labels: the highest matching `priorityLabels` value.
@@ -758,14 +784,17 @@ repo: owner/repo · issue: #N · url: …
 title: …
 labels: a, b · author: owner
 priority: 75 (label:hopper:p1) · project item: <project title> · Priority=P1 (or "none")
-recent comments (oldest first, up to recentComments, hopper status comments excluded):
+recent comments (oldest first, up to recentComments; only allowlisted authors, no hopper-marked comments — anyone else's text never reaches the job):
 - <author> at <ISO>: <body, ≤ 1000 chars>
 ...
 [how to report on your issue]
 Your issue is $HOPPER_ISSUE_URL (repo $HOPPER_REPO, number $HOPPER_ISSUE_NUMBER).
 To comment on it: gh issue comment "$HOPPER_ISSUE_NUMBER" -R "$HOPPER_REPO" --body "$(printf '%s\n%s' "$HOPPER_COMMENT_MARKER" "<your text>")"
 Always start your comments with $HOPPER_COMMENT_MARKER. job-hopper posts your status, questions and result for you.
+Do not close this issue and do not use "Closes #N" — closing the issue cancels you.
 ```
+
+Size caps: body ≤ 64 000 chars, context block ≤ 16 000 chars (comments truncated to fit).
 
 Job environment, set on the job's herdr tab with `herdr tab create --env`:
 - `HOPPER_ISSUE_URL`, `HOPPER_REPO`, `HOPPER_ISSUE_NUMBER`, `HOPPER_ISSUE_TITLE`
@@ -802,11 +831,14 @@ above; empty body → claimed, then failed with a comment "empty issue body"; pr
 
 **Comments.** Every hopper comment starts with a hidden marker line
 `<!-- job-hopper v1 kind=<kind> job=<jobId>[ question=<questionId>] -->` — the hopper posts
-as the owner, so the marker is how its own comments are told apart from his replies.
+as the owner, so the marker is how its own comments are told apart from his replies. Before
+posting, the adapter lists comments and reuses one already carrying the identical marker
+(idempotent retries). Bodies are sent on stdin (`gh api … -X POST --input -`), never argv,
+and truncated to 60 000 characters with a "(truncated)" note (GitHub's limit is 65 536).
 
 | report | on GitHub |
 |--------|-----------|
-| claimed | ensure labels `hopper:claimed`, `hopper:done`, `hopper:failed` exist; add `hopper:claimed`; comment "🦘 job-hopper claimed this as job `<id>` (priority N, executor X, cwd …)" |
+| claimed | ensure labels `hopper:claimed`, `hopper:done`, `hopper:failed` exist (`gh label create --force`, once per repo per process); add `hopper:claimed`; comment "🦘 job-hopper claimed this as job `<id>` (priority N, executor X, cwd …)" |
 | progress | one progress comment per job, **edited in place** (`editComment`), throttled |
 | question (human tier only) | comment with the question, the escalation trail summary (tier · confident · risky · rules), and "Reply to this issue to answer." |
 | answered | comment "Answered by <tier>: …" (also for opus/fable answers, so the issue tells the whole story) |
@@ -814,11 +846,18 @@ as the owner, so the marker is how its own comments are told apart from his repl
 | failed | comment with the error; remove `hopper:claimed`, add `hopper:failed` |
 | cancelled | comment "cancelled (<reason>)"; remove `hopper:claimed` |
 
-**Signals (check):** per active job, `getIssue` + `listComments`:
+**Signals (check):** per active job, `getIssue` + `listComments` (all pages:
+`gh api --paginate --slurp "repos/O/R/issues/N/comments?per_page=100"`):
 - issue `closed`, or `label` removed → `cancel` (reason `issue closed` / `label removed`);
-- job `waiting_answer` and its question was posted (`sourceState.questionComments[qid]`):
-  the first comment created after that question comment, **without** the hopper marker, by
-  an author in `authors` → `answer` (body trimmed). Comments by anyone else are ignored.
+  issue 404/410 → `cancel` (`issue gone`). Jobs are told not to close their own issue.
+- job `waiting_answer` and its question comment id is in `sourceState.source`: the answer is
+  the first comment with a **numeric id greater than the question comment's id**, by an
+  author in `authors`, whose first line does not match `^<!-- job-hopper v1 ` (that also
+  covers the jobs' own `HOPPER_COMMENT_MARKER`), body trimmed and non-empty. Edits are
+  ignored. Comments by anyone else are ignored.
+- **Error classes:** `GitHubApi` errors carry `permanent` (404/410/403/422) vs transient
+  (network, 5xx, rate limit, timeout); `check` turns a permanent error on one job into the
+  `issue gone` cancel and never fails the whole sync for it.
 
 **Authors outside the allowlist are never acted on** — not as issues, not as answers.
 
@@ -862,9 +901,16 @@ holds one zod schema per event type (`data`) plus the envelope, and `EVENT_SCHEM
 breaking payload change bumps that type's version and adds `<type>.v2.json`; the old file
 stays as documentation of what older consumers received.
 
-Migration 3: `events.schema_version` (existing rows → 1), `jobs.source_key` (unique,
-nullable), `webhook_subscriptions.name` (unique; existing rows get `legacy-<id>` and are
-removed at the first reconcile since no file names them).
+Migration 3: `events.schema_version` (existing rows → 1), `jobs.source_key` (nullable;
+`CREATE UNIQUE INDEX` — SQLite cannot `ADD COLUMN … UNIQUE`), the webhooks table's `name`
+(existing rows get `legacy-<id>` first, then the unique index; they are removed at the first
+reconcile since no file names them). `EVENT_SCHEMA_VERSIONS` lives in `src/domain/types.ts`
+(the store stamps it; `src/events/` imports it). Payload schemas are **strict** (unknown
+keys rejected) so an undeclared field fails the conformance test; additive changes keep the
+version, removals/renames/retypes bump it. `job.requeued.reason` is a free string. Events
+stored before phase 3 read as v1 and are not re-validated (stated in `docs/events.md`).
+A shared test helper (`test/support/conformance.ts`) subscribes to the event log and
+validates every event a test emits.
 
 ## Configuration added (env)
 
@@ -885,10 +931,14 @@ src/sources/index.ts   createGitHubSource(o: { name: string; config: GitHubSourc
                        loadSourcesFile(path): { github?: GitHubSourceConfig } | { error }
                        createSourceSync(o: { sources: JobSource[]; host: SourceHost; clock: Clock;
                          pollMs: (s) => number }): SourceRegistry & { start(); stop(): Promise<void>; syncNow(name?) }
-                       SourceHost = { store: Store; ingest(item, source): Job | null;
-                         cancel(jobId, reason): void; answer(questionId, answer): AnswerByHumanResult }
+                       SourceHost — the interface in src/domain/ports.ts (ingest, cancel, answer,
+                         reprioritize, setSourceState); the engine implements it
 src/events/index.ts    EVENT_SCHEMAS, ENVELOPE_SCHEMA, EVENT_SCHEMA_VERSIONS, validateEvent(e) → { ok } | { ok:false, issues }
                        exportJsonSchemas(): Record<filename, object>
 src/webhooks/config.ts loadWebhooksFile(path), createWebhookConfigWatcher(o: { path; store; clock; intervalMs })
 src/http/ui/index.ts   registerUiRoutes(app, o: { engine; questions; port; dataDir; clock; sessionHours })
+
+Engine changes (T008): `cancel(id, reason)` (reason no longer hard-coded); `ingest`,
+`reprioritize`, `setSourceState` implementing SourceHost; `job.reprioritized` joins the
+decision TRIGGERS; `src/ui/app.js` learns `job.reprioritized`.
 ```

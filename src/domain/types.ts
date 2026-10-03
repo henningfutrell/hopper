@@ -67,8 +67,12 @@ export interface Job {
   resumeOn?: MachineId;
   /** Where the job was pulled from. Absent only for jobs created before phase 3. */
   source?: JobSourceRef;
-  /** Source-owned bookkeeping (comment ids, what was already reported). */
-  sourceState?: Record<string, unknown>;
+  /**
+   * `sync`: owned by the sync loop (claimReported, reportedQuestions, finalReported,
+   * cancelReason). `source`: owned by the adapter; `report()` returns its whole new value,
+   * which replaces the old one (never a shallow merge of nested maps).
+   */
+  sourceState?: { sync?: Record<string, unknown>; source?: Record<string, unknown> };
 }
 
 /** The item a job was pulled from. `key` is unique across all jobs (dedupe). */
@@ -246,6 +250,18 @@ export type EventType =
   | 'question.escalated'
   | 'question.answered'
   | 'question.expired';
+
+/**
+ * Payload schema version per event type (docs/schemas/<type>.v<N>.json). Additive field →
+ * same version; removed/renamed/retyped field → bump. The store stamps it on append.
+ */
+export const EVENT_SCHEMA_VERSIONS: Readonly<Record<EventType, number>> = {
+  'job.queued': 1, 'job.prioritized': 1, 'job.held': 1, 'job.approved': 1, 'job.claimed': 1,
+  'job.started': 1, 'job.progressed': 1, 'job.finished': 1, 'job.failed': 1, 'job.cancelled': 1,
+  'job.requeued': 1, 'job.reprioritized': 1, 'lane.opened': 1, 'lane.closed': 1,
+  'decision.made': 1, 'jev.mode_changed': 1, 'question.asked': 1, 'question.escalated': 1,
+  'question.answered': 1, 'question.expired': 1,
+};
 
 export const EVENT_TYPES: readonly EventType[] = [
   'job.queued', 'job.prioritized', 'job.held', 'job.approved', 'job.claimed', 'job.started',

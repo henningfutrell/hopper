@@ -194,6 +194,16 @@ export interface SourceItem {
   labels: string[];
   repo?: string;
   number?: number;
+  /** Executor for the job (from source config), and an optional model. */
+  executor: string;
+  model?: string;
+  /**
+   * Set when the item cannot become a runnable job (e.g. "empty issue body"). `ingest` then
+   * creates the job and fails it in one tx (job.queued + job.failed), so it is claimed and
+   * reported failed once — never retried every poll. An executor rejecting the payload is
+   * treated the same way.
+   */
+  invalid?: string;
 }
 
 /** What a source observed about a job it owns. */
@@ -221,10 +231,40 @@ export interface JobSource {
   /** Signals for this source's non-terminal jobs: cancellations and human answers. */
   check(active: Job[]): Promise<SourceSignal[]>;
   /**
-   * Tell the source what happened. Returns a patch merged into `job.sourceState` (e.g.
-   * comment ids). Throws on failure; the sync loop retries what must be retried.
+   * Tell the source what happened. Returns the WHOLE new `job.sourceState.source` object
+   * (it replaces the old one). Idempotent: before posting, the adapter looks for its own
+   * earlier comment with the same hidden marker and reuses it, so a retry after a crash never
+   * duplicates. Throws SourceError; `permanent: true` means never retry (404/410/403 on the
+   * item, oversized body), `false` means retry on a later sync.
    */
   report(report: SourceReport): Promise<Record<string, unknown>>;
+}
+
+export class SourceError extends Error {
+  readonly permanent: boolean;
+  readonly status?: number;
+  constructor(message: string, permanent: boolean, status?: number) {
+    super(message);
+    this.name = 'SourceError';
+    this.permanent = permanent;
+    if (status !== undefined) this.status = status;
+  }
+}
+
+/**
+ * What the sync loop may do to the hopper. Engine-owned: every method is one store.tx with
+ * compare-and-set on the job's current status.
+ */
+export interface SourceHost {
+  store: Store;
+  /** Create the job for an item (dedupe by key). null when the key already has a job. */
+  ingest(item: SourceItem, source: { name: string; kind: string }): Job | null;
+  cancel(jobId: JobId, reason: string): void;
+  answer(questionId: string, answer: string): AnswerByHumanResult;
+  /** Apply only if the job is queued/held and the priority differs; emits job.reprioritized. */
+  reprioritize(jobId: JobId, to: number, reason: string): boolean;
+  /** Replace sourceState in one tx that re-reads the job. */
+  setSourceState(jobId: JobId, state: { sync?: Record<string, unknown>; source?: Record<string, unknown> }): void;
 }
 
 /**
