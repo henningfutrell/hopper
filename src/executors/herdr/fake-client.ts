@@ -12,7 +12,15 @@ export interface FakeTurn {
   output: string[];
   /** State after the turn. Default `idle`. `exit`: Claude quits. `working`: never ends. */
   end?: 'idle' | 'blocked' | 'exit' | 'working';
+  /**
+   * Claude Code's transcript stays scrolled up (seen live after a long prompt): the output is
+   * hidden behind "N new message (ctrl+End) ↓" until Ctrl+End (ESC [1;5F) is sent as text.
+   */
+  hiddenUntilScrolled?: boolean;
 }
+
+/** The xterm sequence for Ctrl+End. */
+export const CTRL_END = '\x1b[1;5F';
 
 export interface FakeHerdrOptions {
   turns?: FakeTurn[];
@@ -37,12 +45,14 @@ interface Pane {
   step: number;
   ctrlC: number;
   sawDown: boolean;
+  hidden?: string[];
 }
 
 export interface FakeHerdrClient extends HerdrClient {
   readonly calls: { method: string; args: unknown[] }[];
   readonly prompts: { name: string; text: string }[];
   readonly keys: { paneId: string; keys: string[] }[];
+  readonly texts: { paneId: string; text: string }[];
   readonly closed: string[];
   readonly agentStarts: { name: string; paneId: string; args: string[]; timeoutMs: number }[];
   addTurns(...turns: FakeTurn[]): void;
@@ -113,7 +123,8 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
       p.lines.push(t.steps![p.step++]!);
       return;
     }
-    p.lines.push(...t.output, '✻ Cooked for 1s');
+    if (t.hiddenUntilScrolled) p.hidden = [...t.output, '✻ Cooked for 1s'];
+    else p.lines.push(...t.output, '✻ Cooked for 1s');
     p.turn = undefined;
     if (t.end === 'exit') exit(p);
     else settle(p, t.end === 'blocked' ? 'blocked' : 'idle');
@@ -121,11 +132,15 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
 
   const fake: FakeHerdrClient = {
     session: o.session,
-    calls: [], prompts: [], keys: [], closed: [], agentStarts: [],
+    calls: [], prompts: [], keys: [], texts: [], closed: [], agentStarts: [],
     addTurns: (...more) => { turns.push(...more); },
     killAgent(name) { const p = byAgent(name); if (p) exit(p); },
     failNext(method, code) { failures.set(method, code); },
-    screen: (id) => [...(panes.get(id)?.lines ?? []), ...CHROME].join('\n'),
+    screen: (id) => {
+      const p = panes.get(id);
+      const indicator = p?.hidden ? ['                                               1 new message (ctrl+End) ↓'] : [];
+      return [...(p?.lines ?? []), ...indicator, ...CHROME].join('\n');
+    },
 
     async ensureWorkspace(label, cwd) {
       record('ensureWorkspace', label, cwd);
@@ -177,6 +192,12 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
       p.turn = turns.shift() ?? { output: [] };
       p.step = 0;
       settle(p, 'working');
+    },
+    async sendText(paneId, text) {
+      record('sendText', paneId, text);
+      const p = livePane(paneId);
+      fake.texts.push({ paneId, text });
+      if (text === CTRL_END && p.hidden) { p.lines.push(...p.hidden); p.hidden = undefined; }
     },
     async sendKeys(paneId, keys) {
       record('sendKeys', paneId, keys);

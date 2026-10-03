@@ -9,5 +9,5 @@ export type { HerdrClaudeExecutor, HerdrClaudeExecutorOptions } from './executor
 export type { Sleep } from './monitor.ts';
 export type { PaneState } from './start.ts';
 export { validatePayload } from './payload.ts';
-export { createFakeHerdrClient } from './fake-client.ts';
+export { CTRL_END, createFakeHerdrClient } from './fake-client.ts';
 export type { FakeHerdrClient, FakeHerdrOptions, FakeTurn } from './fake-client.ts';
