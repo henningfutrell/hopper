@@ -124,6 +124,13 @@ describe('readTurn', () => {
     expect(t.lastLine).toBe('a.txt');
   });
 
+  it('does not report the effort indicator above the input box as progress', () => {
+    // Real capture from the live demo: the right-aligned effort line became the progress message.
+    const lines = ['❯ go', '● Writing hello.txt', '', '                                     ◐ medium · /effort'];
+    const t = readTurn(screen(lines, CHROME), 'go');
+    expect(t.lastLine).toBe('Writing hello.txt');
+  });
+
   it('counts every line when the anchor scrolled out', () => {
     const t = readTurn(screen(['● Done all.', '  JOB_HOPPER_DONE'], CHROME), 'gone anchor');
     expect(t.anchorFound).toBe(false);
