@@ -49,6 +49,12 @@ synonyms. Rename here first, in the same commit as everything else.
 | **Hopper marker** | The hidden first line of every hopper comment; tells its comments from the owner's replies. | |
 | **UI session** | A browser session created from the one-time login code; the only way to mutate. | |
 | **Payload version** | `schemaVersion` on every event: the version of that event type's payload schema. | |
+| **GitHub App** | job-hopper's own GitHub identity (`job-hopper-<owner>[bot]`), created by the owner via the manifest flow. | bot account |
+| **Installation** | Where the owner installed the app; its repos are the only ones the `github-app` source scans. | |
+| **Bot login** | The app's author name on GitHub; how hopper comments are identified (the marker is secondary). | |
+| **Job token file** | A per-job file holding a short-lived installation token scoped to one repo, `issues: write`. | |
+| **hopper-comment** | The helper a job runs to comment on its own issue as the app. | |
+| **Manifest flow** | GitHub's create-app-from-a-manifest flow, driven by `create-github-app.sh`. | |
 | **Event** | One recorded state change, `seq`-ordered, in the event log. Wire type dotted (`job.queued`). | message |
 | **Webhook subscription** | A URL + event filter + HMAC secret that receives events. | hook |
 | **Delivery** | One attempt series sending one event to one subscription. `pending`, `retrying`, `delivered`, `failed`. | |

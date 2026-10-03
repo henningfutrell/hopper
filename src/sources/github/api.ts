@@ -1,5 +1,6 @@
 // The GitHubApi port: everything the GitHub source asks of GitHub. Adapters: the `gh` CLI
-// (gh-cli.ts) and the in-memory fake (fake.ts). Errors are GitHubApiError, classified
+// (gh-cli.ts, posts as the owner), the GitHub App (app/, posts as the app bot), and the in-memory
+// fake (fake.ts, either identity). Errors are GitHubApiError, classified
 // permanent (403/404/410/422, missing scope) or transient (network, 5xx, rate limit, timeout).
 
 export interface GitHubIssue {
@@ -48,6 +49,18 @@ export interface GitHubApi {
   removeLabels(repo: string, number: number, labels: string[]): Promise<void>;
   comment(repo: string, number: number, body: string): Promise<{ id: number; url: string; createdAt: string }>;
   editComment(repo: string, id: number, body: string): Promise<void>;
+
+  // ---- GitHub App mode only (absent on the gh-CLI adapter) ----------------------------
+
+  /**
+   * The login the adapter's writes appear under — the app bot, e.g. "job-hopper-owner[bot]".
+   * Present ⇒ hopper comments are identified by this author (the marker is a secondary check).
+   */
+  botLogin?(): Promise<string>;
+  /** Every repo (owner/repo) the app is installed on, across installations: the allowlist. */
+  listInstalledRepos?(): Promise<{ repo: string; installationId: number }[]>;
+  /** A fresh installation token scoped to `repo` with `issues: write` only (≈1 h). */
+  mintRepoToken?(repo: string): Promise<{ token: string; expiresAt: string }>;
 }
 
 export class GitHubApiError extends Error {
