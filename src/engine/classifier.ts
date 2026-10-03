@@ -15,12 +15,16 @@ export function createClassifier(c: EngineContext): Classifier {
   async function classify(job: Job): Promise<void> {
     const advice = await c.advisor.advise(job);
     if (c.stopping()) return;
+    // Advice is recorded whatever the job's status now: in shadow mode a job may start, or
+    // even finish, before Jev answers, and shadow mode exists to measure every job.
     const current = c.store.jobs.get(job.id);
-    if (!current || (current.status !== 'queued' && current.status !== 'held')) return;
+    if (!current || current.jevAdvice) return;
     const mode = c.jevMode();
     c.store.tx(() => {
       c.store.jobs.update(job.id, { jevAdvice: advice });
-      c.store.events.append({ type: 'job.prioritized', jobId: job.id, data: { advice, mode } });
+      c.store.events.append({
+        type: 'job.prioritized', jobId: job.id, data: { advice, mode, statusAtAdvice: current.status },
+      });
     });
   }
 
