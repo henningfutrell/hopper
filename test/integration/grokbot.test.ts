@@ -44,7 +44,8 @@ const SRC = { title: 'Fix the shed', url: 'https://example.invalid/issues/7' };
 afterEach(async () => {
   await t?.stop();
   t = undefined;
-  await new Promise<void>((r) => { server?.closeAllConnections(); server ? server.close(() => r()) : r(); });
+  const s = server;
+  if (s) await new Promise<void>((r) => { s.closeAllConnections(); s.close(() => r()); });
   server = undefined;
   cleanup?.();
 });

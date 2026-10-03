@@ -30,6 +30,7 @@ Fastify for HTTP, `node:sqlite` for storage, zod for request validation.
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock | everything but `domain/` |
 | `src/store/` | SQLite schema, migrations, repositories, event log | engine, http, decider |
 | `src/webhooks/` | signing, dispatcher, retry/backoff | engine, http, decider |
+| `src/grokbot/` | the Grok Bot routine webhook: env-file reader, notifier (event log → POST) | engine, http, decider |
 | `src/jev/` | `JevAdvisor` adapters: `router` (shim over grok-bot-jev), `fake` | engine, http, store |
 | `src/executors/` | `Executor` adapters: `test` | engine, http, store |
 | `src/machines/` | `MachineSource` adapters: `local` | engine, http, store |
@@ -1275,3 +1276,33 @@ main.ts seams                    AppSeams.githubApp?: GitHubApi (tests) beside .
   planted-marker test pins it.
 - **Switch latency:** with the default `pollSeconds: 60`, the gh→app switch happens within
   one poll of `github-app.json` appearing.
+
+## Grok Bot routine webhook
+
+`src/grokbot/` POSTs to a Grok Bot routine (https://cursor.com/help/grok-bot/routines) in
+addition to the GitHub issue comments. Not a **Webhook subscription**: no store row, no
+schema change, no domain event; in-memory only.
+
+- Events: `question.escalated` with `data.target === 'human'` and not `data.renotify`;
+  `job.finished`; `job.failed`.
+- Config: `~/.config/job-hopper/grokbot-webhook.env` (`JOB_HOPPER_GROKBOT_WEBHOOK_FILE`),
+  `GROKBOT_WEBHOOK_URL=` and `GROKBOT_WEBHOOK_KEY=`, parsed with `util.parseEnv`. Read at
+  each matching event, so a file created later applies without a restart.
+  Absent: silent no-op. Present but missing a variable or unreadable: one `console.error`
+  per event, skipped. Mode readable by group/other: one `console.warn` per process.
+- Request: `Authorization: Bearer <key>`, JSON body `{ source: 'job-hopper', kind, at, jobId,
+  issueTitle, issueUrl, question?, questionId?, answerUrl?, error? }` (`question*`/`answerUrl`
+  for escalations, `error` for failures; title/url from the job's source ref, else null).
+  200 = a run started.
+- Delivery: 10 s timeout; 3 attempts, backoff `base * 2^(n-1)` (base 1000 ms), retried only on
+  network error, 429, 5xx; other non-2xx is final. Success logs kind, jobId, status; final
+  failure logs an error. The key is never logged. Work runs deferred, off the event listener;
+  `stop()` unsubscribes and awaits in-flight posts.
+- `createGrokBotNotifier({ store, path, baseMs?, timeoutMs? })` → `{ start(); stop() }`;
+  `AppSeams.grokbotBaseMs` lets tests shorten the backoff.
+
+### Configuration added (env)
+
+| var | default |
+|-----|---------|
+| `JOB_HOPPER_GROKBOT_WEBHOOK_FILE` | `~/.config/job-hopper/grokbot-webhook.env` |

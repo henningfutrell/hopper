@@ -46,6 +46,8 @@ export interface Config {
   sourcesFile: string;
   /** webhooks.yaml: the webhook subscriptions. */
   webhooksFile: string;
+  /** Env file with GROKBOT_WEBHOOK_URL / GROKBOT_WEBHOOK_KEY (the Grok Bot routine webhook). */
+  grokbotWebhookFile: string;
   /** The `gh` CLI the GitHub source runs. */
   ghBin: string;
   /** Lifetime of a UI session, in hours. */
@@ -110,6 +112,7 @@ const schema = z.object({
   JOB_HOPPER_KEEP_PANES: flag(false),
   JOB_HOPPER_SOURCES_FILE: path('~/.config/job-hopper/sources.yaml'),
   JOB_HOPPER_WEBHOOKS_FILE: path('~/.config/job-hopper/webhooks.yaml'),
+  JOB_HOPPER_GROKBOT_WEBHOOK_FILE: path('~/.config/job-hopper/grokbot-webhook.env'),
   JOB_HOPPER_GH_BIN: z.string().min(1).default('gh'),
   JOB_HOPPER_UI_SESSION_HOURS: z.coerce.number().finite().positive().default(12),
   JOB_HOPPER_GITHUB_API: z.url({ protocol: /^https?$/ }).transform((u) => u.replace(/\/+$/, '')).optional(),
@@ -165,6 +168,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     keepPanes: e.JOB_HOPPER_KEEP_PANES,
     sourcesFile: e.JOB_HOPPER_SOURCES_FILE,
     webhooksFile: e.JOB_HOPPER_WEBHOOKS_FILE,
+    grokbotWebhookFile: e.JOB_HOPPER_GROKBOT_WEBHOOK_FILE,
     ghBin: e.JOB_HOPPER_GH_BIN,
     uiSessionHours: e.JOB_HOPPER_UI_SESSION_HOURS,
     ...(e.JOB_HOPPER_GITHUB_API ? { githubApiUrl: e.JOB_HOPPER_GITHUB_API } : {}),

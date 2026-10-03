@@ -59,6 +59,7 @@ synonyms. Rename here first, in the same commit as everything else.
 | **Manifest flow** | GitHub's create-app-from-a-manifest flow, driven by `create-github-app.sh`. | |
 | **Event** | One recorded state change, `seq`-ordered, in the event log. Wire type dotted (`job.queued`). | message |
 | **Webhook subscription** | A URL + event filter + HMAC secret that receives events. | hook |
+| **Grok Bot routine webhook** | The one POST (bearer key, from `grokbot-webhook.env`) to a Grok Bot routine when a question reaches the human or a job finishes or fails. Not a *Webhook subscription*; nothing stored. | |
 | **Delivery** | One attempt series sending one event to one subscription. `pending`, `retrying`, `delivered`, `failed`. | |
 
 ## Events

@@ -42,6 +42,7 @@ describe('configuration from env', () => {
       keepPanes: false,
       sourcesFile: join(homedir(), '.config/job-hopper/sources.yaml'),
       webhooksFile: join(homedir(), '.config/job-hopper/webhooks.yaml'),
+      grokbotWebhookFile: join(homedir(), '.config/job-hopper/grokbot-webhook.env'),
       ghBin: 'gh',
       uiSessionHours: 12,
     });

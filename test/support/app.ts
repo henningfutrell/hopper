@@ -78,6 +78,7 @@ export async function startTestApp(o: {
     JOB_HOPPER_RULES_FILE: '/nonexistent/job-hopper-rules.md',
     JOB_HOPPER_SOURCES_FILE: join(dataDir, 'sources.yaml'),
     JOB_HOPPER_WEBHOOKS_FILE: join(dataDir, 'webhooks.yaml'),
+    JOB_HOPPER_GROKBOT_WEBHOOK_FILE: join(dataDir, 'grokbot-webhook.env'),
     JOB_HOPPER_GH_BIN: '/nonexistent/gh',
     ...o.env,
   });

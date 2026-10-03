@@ -9,6 +9,7 @@ import { loadConfig, type Config } from './config.ts';
 import { createEngine, type Engine } from './engine/index.ts';
 import { createExecutorRegistry, createTestExecutor } from './executors/index.ts';
 import { createHerdrClaudeExecutor, createHerdrCliClient, type HerdrClient } from './executors/herdr/index.ts';
+import { createGrokBotNotifier } from './grokbot/index.ts';
 import { createServer } from './http/index.ts';
 import { createFakeAdvisor, createRouterAdvisor } from './jev/index.ts';
 import { createLocalMachineSource } from './machines/index.ts';
@@ -48,6 +49,8 @@ export interface AppSeams {
   sources?: JobSource[];
   /** How often webhooks.yaml's mtime is checked; default WEBHOOKS_FILE_CHECK_MS. */
   webhookConfigIntervalMs?: number;
+  /** First retry delay of the Grok Bot routine webhook; default 1000. */
+  grokbotBaseMs?: number;
 }
 
 const WEBHOOKS_FILE_CHECK_MS = 5000;
@@ -99,6 +102,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     ? createFakeAdvisor({ clock })
     : createRouterAdvisor({ jevSrc: config.jevSrc, python: config.python, dataDir, mode: jevMode, clock });
   const dispatcher = createWebhookDispatcher({ store, clock, baseMs: config.webhookBaseMs });
+  const grokbot = createGrokBotNotifier({ store, path: config.grokbotWebhookFile, info: (l) => console.log(l), ...(seams.grokbotBaseMs ? { baseMs: seams.grokbotBaseMs } : {}) });
   // The service calls the engine and the engine calls the service: the engine's handlers are
   // reached through closures that run only after `engine` exists (design.md "Construction
   // contract added").
@@ -147,6 +151,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
 
   webhookConfig.start();
   dispatcher.start();
+  grokbot.start();
   await server.listen({ host: config.host, port: config.port });
   port = (server.server.address() as { port: number }).port;
   engine.start();
@@ -169,6 +174,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
         await questions.stop();
         await engine.stop();
         await dispatcher.stop();
+        await grokbot.stop();
         webhookConfig.stop();
         store.close();
       })();
