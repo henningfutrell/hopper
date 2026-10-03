@@ -50,57 +50,61 @@ afterEach(async () => {
   cleanup?.();
 });
 
+const humanQuestion = async (a: TestApp, text = 'Is this risky?') => {
+  const job = await a.pull(ask(text), SRC);
+  const q = await a.waitForQuestion(job.id, (x) => x.tier === 'human');
+  return { job, q };
+};
+const settle = () => new Promise((x) => setTimeout(x, 200));
+
 describe('Grok Bot routine webhook', () => {
-  it('file absent: a finished job sends nothing', async () => {
+  it('file absent: a human question sends nothing', async () => {
     const r = await receiver();
     const { a } = await start();
-    const job = await a.pull({ op: 'echo' }, SRC);
-    await a.waitForStatus(job.id, 'finished');
-    await new Promise((x) => setTimeout(x, 200));
+    await humanQuestion(a);
+    await settle();
     expect(r.hits).toHaveLength(0);
   });
 
-  it('job.finished posts once with bearer key and the payload', async () => {
+  it('a finished job sends nothing', async () => {
     const r = await receiver();
     const { a, file } = await start();
     writeEnv(file, r.url);
     const job = await a.pull({ op: 'echo' }, SRC);
-    await waitFor(() => r.hits.length >= 1, { what: 'a post' });
-    await new Promise((x) => setTimeout(x, 150));
-    expect(r.hits).toHaveLength(1);
-    const [h] = r.hits;
-    expect(h!.headers.authorization).toBe('Bearer sekrit');
-    expect(h!.headers['content-type']).toMatch(/application\/json/);
-    expect(h!.body).toMatchObject({ source: 'job-hopper', kind: 'job.finished', jobId: job.id, issueTitle: SRC.title, issueUrl: SRC.url });
-    expect(typeof h!.body.at).toBe('string');
-    expect(h!.body).not.toHaveProperty('question');
+    await a.waitForStatus(job.id, 'finished');
+    await settle();
+    expect(r.hits).toHaveLength(0);
   });
 
-  it('job.failed posts the error', async () => {
+  it('a failed job sends nothing', async () => {
     const r = await receiver();
     const { a, file } = await start();
     writeEnv(file, r.url);
     const job = await a.pull({ op: 'fail', message: 'boom' }, SRC);
-    await waitFor(() => r.hits.find((h) => h.body.kind === 'job.failed'), { what: 'failed post' });
-    expect(r.hits.find((h) => h.body.kind === 'job.failed')!.body).toMatchObject({ jobId: job.id, error: 'boom', issueTitle: SRC.title });
+    await a.waitForStatus(job.id, 'failed');
+    await settle();
+    expect(r.hits).toHaveLength(0);
   });
 
-  it('a question escalated to the human posts question text and id; model tiers do not', async () => {
+  it('a question escalated to the human posts once with bearer key, question text and id; model tiers do not', async () => {
     const r = await receiver();
     const { a, file } = await start();
     writeEnv(file, r.url);
     const hard = await a.pull(ask('This is hard to say'), { title: 'one' });
     await a.waitForStatus(hard.id, 'finished'); // opus/fable answer; escalation opus->fable only
-    const human = await a.pull(ask('Is this risky?'), SRC);
-    const q = await a.waitForQuestion(human.id, (x) => x.tier === 'human');
+    const { job: human, q } = await humanQuestion(a);
     const hit = await waitFor(() => r.hits.find((h) => h.body.kind === 'question.escalated'), { what: 'escalation post' });
-    expect(hit.body).toMatchObject({ jobId: human.id, question: 'Is this risky?', questionId: q.id, issueTitle: SRC.title, issueUrl: SRC.url });
+    await settle();
+    expect(hit.headers.authorization).toBe('Bearer sekrit');
+    expect(hit.headers['content-type']).toMatch(/application\/json/);
+    expect(hit.body).toMatchObject({ source: 'job-hopper', jobId: human.id, question: 'Is this risky?', questionId: q.id, issueTitle: SRC.title, issueUrl: SRC.url });
+    expect(typeof hit.body.at).toBe('string');
     expect(typeof hit.body.answerUrl).toBe('string');
-    expect(r.hits.filter((h) => h.body.kind === 'question.escalated')).toHaveLength(1);
-    expect(r.hits.some((h) => h.body.jobId === hard.id && h.body.kind === 'question.escalated')).toBe(false);
+    expect(r.hits).toHaveLength(1);
+    expect(r.hits.some((h) => h.body.jobId === hard.id)).toBe(false);
   });
 
-  it('re-notifications do not post again', async () => {
+  it('re-notifications do not post again, and the failure that ends the wait posts nothing', async () => {
     const r = await receiver();
     const { a, file } = await start({ JOB_HOPPER_HUMAN_RENOTIFY_MS: '100', JOB_HOPPER_HUMAN_TIMEOUT_MS: '450' });
     writeEnv(file, r.url);
@@ -108,19 +112,19 @@ describe('Grok Bot routine webhook', () => {
     await a.waitForStatus(job.id, 'failed');
     const events = (await a.events()).filter((e) => e.jobId === job.id && e.type === 'question.escalated' && e.data.target === 'human');
     expect(events.length).toBeGreaterThanOrEqual(3);
-    await waitFor(() => r.hits.some((h) => h.body.kind === 'job.failed'), { what: 'failed post' });
+    await settle();
     expect(r.hits.filter((h) => h.body.kind === 'question.escalated')).toHaveLength(1);
+    expect(r.hits).toHaveLength(1);
   });
 
   it('a file created after start is honoured', async () => {
     const r = await receiver();
     const { a, file } = await start();
-    const first = await a.pull({ op: 'echo' }, SRC);
-    await a.waitForStatus(first.id, 'finished');
-    await new Promise((x) => setTimeout(x, 100));
+    await humanQuestion(a, 'first risky?');
+    await settle();
     expect(r.hits).toHaveLength(0);
     writeEnv(file, r.url);
-    const second = await a.pull({ op: 'echo' }, SRC);
+    const { job: second } = await humanQuestion(a, 'second risky?');
     await waitFor(() => r.hits.find((h) => h.body.jobId === second.id), { what: 'post for second job' });
   });
 
@@ -128,8 +132,9 @@ describe('Grok Bot routine webhook', () => {
     const r = await receiver([500]);
     const { a, file } = await start();
     writeEnv(file, r.url);
-    await a.pull({ op: 'echo' }, SRC);
+    await humanQuestion(a);
     await waitFor(() => r.hits.length >= 2, { what: 'retry' });
+    await settle();
     expect(r.hits).toHaveLength(2);
   });
 
@@ -137,8 +142,7 @@ describe('Grok Bot routine webhook', () => {
     const r = await receiver([401, 200]);
     const { a, file } = await start();
     writeEnv(file, r.url);
-    const job = await a.pull({ op: 'echo' }, SRC);
-    await a.waitForStatus(job.id, 'finished');
+    await humanQuestion(a);
     await waitFor(() => r.hits.length >= 1, { what: 'first post' });
     await new Promise((x) => setTimeout(x, 300));
     expect(r.hits).toHaveLength(1);
