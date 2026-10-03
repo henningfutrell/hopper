@@ -6,7 +6,7 @@ import { spec, useTempStore } from './helpers.ts';
 
 const t = useTempStore();
 
-// Schema v1 as shipped: only the tables migration 2 touches or the test reads.
+// Schema v1 as shipped: only the tables later migrations touch or the test reads.
 const V1 = `
   CREATE TABLE jobs (seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE, status TEXT NOT NULL,
     created_at TEXT NOT NULL, body TEXT NOT NULL);
@@ -14,6 +14,8 @@ const V1 = `
   CREATE TABLE events (seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE, type TEXT NOT NULL,
     at TEXT NOT NULL, job_id TEXT, lane_id TEXT, machine_id TEXT, decision_id TEXT, data TEXT NOT NULL);
   CREATE INDEX events_type ON events (type, seq);
+  CREATE TABLE webhooks (seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE, url TEXT NOT NULL,
+    events TEXT NOT NULL, secret TEXT NOT NULL, active INTEGER NOT NULL, created_at TEXT NOT NULL);
 `;
 
 describe('migration 2 (questions)', () => {
@@ -36,7 +38,7 @@ describe('migration 2 (questions)', () => {
     s.close();
 
     const after = new DatabaseSync(path);
-    expect(after.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 2 });
+    expect(after.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 3 });
     after.close();
   });
 });

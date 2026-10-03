@@ -66,6 +66,14 @@ const MIGRATIONS: readonly string[] = [
   CREATE INDEX questions_job ON questions (job_id);
   ALTER TABLE events ADD COLUMN question_id TEXT;
   `,
+  `
+  ALTER TABLE events ADD COLUMN schema_version INTEGER NOT NULL DEFAULT 1;
+  ALTER TABLE jobs ADD COLUMN source_key TEXT;
+  CREATE UNIQUE INDEX jobs_source_key ON jobs (source_key);
+  ALTER TABLE webhooks ADD COLUMN name TEXT;
+  UPDATE webhooks SET name = 'legacy-' || id;
+  CREATE UNIQUE INDEX webhooks_name ON webhooks (name);
+  `,
 ];
 
 export function migrate(db: DatabaseSync): void {

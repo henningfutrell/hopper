@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { vi } from 'vitest';
 import type { Answerer, QuestionService, Store } from '../../src/domain/ports.ts';
 import type { AnswerVerdict } from '../../src/domain/ports.ts';
-import type { DomainEvent, Job, NewEvent, Question, QuestionAttempt } from '../../src/domain/types.ts';
+import { EVENT_SCHEMA_VERSIONS, type DomainEvent, type Job, type NewEvent, type Question, type QuestionAttempt } from '../../src/domain/types.ts';
 import { createFakeAnswerer, createQuestionService } from '../../src/questions/index.ts';
 
 export interface MemoryStore {
@@ -28,7 +28,7 @@ export function createMemoryStore(): MemoryStore {
     jobs: { get: (id: string) => jobs.get(id) },
     events: {
       append(e: NewEvent) {
-        const ev = { ...e, seq: events.length + 1, id: `e${events.length + 1}`, at: e.at ?? now(), txDepth: depth };
+        const ev = { ...e, schemaVersion: EVENT_SCHEMA_VERSIONS[e.type], seq: events.length + 1, id: `e${events.length + 1}`, at: e.at ?? now(), txDepth: depth };
         events.push(structuredClone(ev));
         return ev;
       },

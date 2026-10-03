@@ -1,11 +1,11 @@
 import type { EventLog } from '../domain/ports.ts';
-import type { DomainEvent, EventType } from '../domain/types.ts';
+import { EVENT_SCHEMA_VERSIONS, type DomainEvent, type EventType } from '../domain/types.ts';
 import { parse, type StoreContext } from './context.ts';
 
 type Listener = (event: DomainEvent) => void;
 
 const toEvent = (r: Record<string, unknown>): DomainEvent => {
-  const e: DomainEvent = { seq: r.seq as number, id: r.id as string, type: r.type as EventType, at: r.at as string, data: parse(r.data) };
+  const e: DomainEvent = { schemaVersion: r.schema_version as number, seq: r.seq as number, id: r.id as string, type: r.type as EventType, at: r.at as string, data: parse(r.data) };
   if (r.job_id !== null) e.jobId = r.job_id as string;
   if (r.lane_id !== null) e.laneId = r.lane_id as string;
   if (r.machine_id !== null) e.machineId = r.machine_id as string;
@@ -36,10 +36,11 @@ export function createEventLog(c: StoreContext, inTx: () => boolean): EventLogIn
     append(n) {
       const id = c.idGen();
       const at = n.at ?? c.clock.now().toISOString();
+      const schemaVersion = EVENT_SCHEMA_VERSIONS[n.type];
       const r = c.db.prepare(
-        'INSERT INTO events (id, type, at, job_id, lane_id, machine_id, decision_id, question_id, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      ).run(id, n.type, at, n.jobId ?? null, n.laneId ?? null, n.machineId ?? null, n.decisionId ?? null, n.questionId ?? null, JSON.stringify(n.data));
-      const event: DomainEvent = { ...n, seq: Number(r.lastInsertRowid), id, at };
+        'INSERT INTO events (id, type, at, job_id, lane_id, machine_id, decision_id, question_id, data, schema_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      ).run(id, n.type, at, n.jobId ?? null, n.laneId ?? null, n.machineId ?? null, n.decisionId ?? null, n.questionId ?? null, JSON.stringify(n.data), schemaVersion);
+      const event: DomainEvent = { ...n, schemaVersion, seq: Number(r.lastInsertRowid), id, at };
       if (inTx()) pending.push(event);
       else notify([event]);
       return event;

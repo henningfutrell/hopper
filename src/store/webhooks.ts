@@ -3,7 +3,7 @@ import type { WebhookDelivery, WebhookSubscription } from '../domain/types.ts';
 import { applyPatch, parse, type StoreContext } from './context.ts';
 
 const toSub = (r: Record<string, unknown>): WebhookSubscription => ({
-  id: r.id as string, url: r.url as string, events: parse(r.events), secret: r.secret as string,
+  id: r.id as string, name: r.name as string, url: r.url as string, events: parse(r.events), secret: r.secret as string,
   active: r.active === 1, createdAt: r.created_at as string,
 });
 
@@ -24,11 +24,13 @@ export function createWebhookRepository(c: StoreContext): WebhookRepository {
   };
 
   return {
-    create(input) {
-      const sub: WebhookSubscription = { id: c.idGen(), ...input, active: true, createdAt: c.clock.now().toISOString() };
-      c.db.prepare('INSERT INTO webhooks (id, url, events, secret, active, created_at) VALUES (?, ?, ?, ?, 1, ?)')
-        .run(sub.id, sub.url, JSON.stringify(sub.events), sub.secret, sub.createdAt);
-      return sub;
+    upsertByName(input) {
+      c.db.prepare(
+        `INSERT INTO webhooks (id, name, url, events, secret, active, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (name) DO UPDATE SET url = excluded.url, events = excluded.events,
+           secret = excluded.secret, active = excluded.active`,
+      ).run(c.idGen(), input.name, input.url, JSON.stringify(input.events), input.secret, input.active ? 1 : 0, c.clock.now().toISOString());
+      return toSub(c.db.prepare('SELECT * FROM webhooks WHERE name = ?').get(input.name)!);
     },
     get(id) {
       const r = c.db.prepare('SELECT * FROM webhooks WHERE id = ?').get(id);
