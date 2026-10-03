@@ -28,4 +28,19 @@ describe('Jev advice that arrives after the job left the queue', () => {
     expect(prioritized).toHaveLength(1);
     expect(prioritized[0]!.data).toMatchObject({ mode: 'shadow', statusAtAdvice: 'finished' });
   });
+
+  it('reaches every job pushed in a burst, even ones a Decision claimed before any sweep', async () => {
+    const tmp = tempDbPath();
+    cleanup = tmp.cleanup;
+    t = await startTestApp({ dbPath: tmp.dbPath, env: { JOB_HOPPER_JEV_ADVISOR: 'router' } });
+
+    const jobs = await Promise.all(Array.from({ length: 8 }, (_, i) =>
+      t!.push({ executor: 'test', payload: { op: 'echo', message: `burst ${i}` }, priority: 10 * i })));
+    for (const job of jobs) await t.waitForStatus(job.id, 'finished');
+
+    await waitFor(async () => {
+      const all = await Promise.all(jobs.map((j) => t!.job(j.id)));
+      return all.every((j) => j.jevAdvice?.source === 'jev-router');
+    }, { timeoutMs: 12000, what: 'advice on every burst job' });
+  });
 });
