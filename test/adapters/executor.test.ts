@@ -5,12 +5,13 @@ import type { Job } from '../../src/domain/types.ts';
 
 function ctxFor(payload: Record<string, unknown>, signal = new AbortController().signal) {
   const progress: number[] = [];
+  const saved: Record<string, unknown>[] = [];
   const job: Job = {
     id: 'j1', spec: { executor: 'test', payload }, priority: 50, status: 'running', approved: false,
     createdAt: '', updatedAt: '', attempts: 1,
   };
-  const ctx: ExecutionContext = { job, laneId: 'local/lane-1', signal, progress: (f) => progress.push(f), saveState: () => {} };
-  return { ctx, progress };
+  const ctx: ExecutionContext = { job, laneId: 'local/lane-1', signal, progress: (f) => progress.push(f), saveState: (s) => saved.push(s) };
+  return { ctx, progress, saved };
 }
 
 describe('test executor', () => {
@@ -52,7 +53,39 @@ describe('test executor', () => {
     expect(await ex.run(ctxFor({ op: 'echo', ms: 1000 }, ac.signal).ctx)).toEqual({ kind: 'failed', error: 'aborted' });
   });
 
+  it('is idempotent and can resume', () => {
+    expect(ex.idempotent ?? true).toBe(true);
+    expect(typeof ex.resume).toBe('function');
+  });
+
+  it('ask returns a question with the message, or a default, and saves its state', async () => {
+    const { ctx, saved } = ctxFor({ op: 'ask', message: 'Red or blue?' });
+    expect(await ex.run(ctx)).toEqual({
+      kind: 'question', question: { text: 'Red or blue?', recentOutput: '', detectedBy: 'test' },
+    });
+    expect(saved).toEqual([{ asked: true }]);
+    const plain = await ex.run(ctxFor({ op: 'ask' }).ctx);
+    expect(plain).toMatchObject({ kind: 'question', question: { text: 'Which option?' } });
+  });
+
+  it('resume finishes with the answer; fail-after-answer fails on resume', async () => {
+    expect(await ex.resume!(ctxFor({ op: 'ask' }).ctx, 'blue')).toEqual({ kind: 'finished', result: { answer: 'blue' } });
+    const asked = await ex.run(ctxFor({ op: 'fail-after-answer' }).ctx);
+    expect(asked.kind).toBe('question');
+    const failed = await ex.resume!(ctxFor({ op: 'fail-after-answer' }).ctx, 'blue');
+    expect(failed.kind).toBe('failed');
+  });
+
+  it('resume honours ms and abort', async () => {
+    const ac = new AbortController();
+    const p = ex.resume!(ctxFor({ op: 'ask', ms: 5000 }, ac.signal).ctx, 'x');
+    ac.abort('cancel');
+    expect(await p).toEqual({ kind: 'failed', error: 'aborted' });
+  });
+
   it('validate rejects bad op and bad ms', () => {
+    expect(ex.validate({ op: 'ask' })).toBeNull();
+    expect(ex.validate({ op: 'fail-after-answer' })).toBeNull();
     expect(ex.validate({ op: 'echo' })).toBeNull();
     expect(ex.validate({ op: 'sleep', ms: 600000 })).toBeNull();
     expect(ex.validate({ op: 'nope' })).toEqual(expect.any(String));

@@ -119,7 +119,8 @@ describe('jobs over HTTP', () => {
     expect(queue.running).toEqual([]);
     expect(queue.counts.queued + queue.counts.held).toBe(3);
     expect(Object.keys(queue.counts).sort()).toEqual(
-      ['cancelled', 'claimed', 'failed', 'finished', 'held', 'queued', 'running']);
+      ['cancelled', 'claimed', 'failed', 'finished', 'held', 'queued', 'running', 'waiting_answer']);
+    expect(queue.waitingAnswer).toEqual([]);
   });
 
   it('serves health and the UI', async () => {
@@ -127,6 +128,7 @@ describe('jobs over HTTP', () => {
     expect(health).toMatchObject({ ok: true, jevMode: 'shadow', advisor: 'fake' });
     expect(typeof health.version).toBe('string');
     expect(typeof health.uptimeS).toBe('number');
+    expect(health.executors).toEqual(['test']);
     const page = await fetch(t.url + '/');
     expect(page.headers.get('content-type')).toMatch(/text\/html/);
     expect(await page.text()).toContain('/ui/app.js');
