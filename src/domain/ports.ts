@@ -12,7 +12,11 @@ import type {
 export interface ExecutionContext {
   job: Job;
   laneId: LaneId;
-  /** Aborted on cancel or daemon shutdown. An executor must stop promptly when it fires. */
+  /**
+   * Aborted on cancel or daemon shutdown; `signal.reason` is the string `'cancel'` or
+   * `'shutdown'`. On cancel an executor stops the work and releases it; on shutdown it
+   * returns promptly and leaves external work (a herdr pane) as it is.
+   */
   signal: AbortSignal;
   /** Report progress 0..1 with an optional message. Emits job.progressed. */
   progress(fraction: number, message?: string): void;
@@ -47,6 +51,11 @@ export type ExecutionOutcome =
  */
 export interface Executor {
   readonly name: string;
+  /**
+   * Safe to run again from scratch after a daemon restart? Default true. A non-idempotent
+   * job interrupted by a restart is cleaned up and failed, never re-run.
+   */
+  readonly idempotent?: boolean;
   /** Validate a payload at push time; return an error string or null. */
   validate(payload: Record<string, unknown>): string | null;
   run(ctx: ExecutionContext): Promise<ExecutionOutcome>;
@@ -136,6 +145,27 @@ export interface WebhookDispatcher {
   stop(): Promise<void>;
   /** Called on every delivery state change. Feeds SSE `delivery.updated`. */
   onDeliveryUpdated(listener: (delivery: WebhookDelivery) => void): () => void;
+}
+
+export type AnswerByHumanResult =
+  | { ok: true; question: Question }
+  | { ok: false; reason: 'not_found' | 'not_open' };
+
+/**
+ * Runs the escalation chain. Every write is one store.tx and compare-and-set: it applies only
+ * if the question is still `open` and (for a model result) its `tier` is the tier that
+ * produced it. `onAnswered` / `onExpired` (constructor options) are synchronous and called
+ * INSIDE that same tx, so question and job change together or not at all.
+ */
+export interface QuestionService {
+  /** Start the chain for a newly asked question (tier opus). */
+  handle(questionId: string): void;
+  answerByHuman(questionId: string, answer: string): AnswerByHumanResult;
+  /** Synchronous; call inside the caller's tx. Aborts an in-flight tier, clears timers. */
+  cancel(questionId: string): void;
+  /** Startup: re-run open model tiers, re-arm human timers, expire overdue ones. */
+  recover(): void;
+  stop(): Promise<void>;
 }
 
 // ---- Persistence -----------------------------------------------------------------------

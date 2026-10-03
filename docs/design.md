@@ -361,9 +361,18 @@ If the job cannot be done, end with a line containing only: JOB_HOPPER_FAILED fo
 ```
 
 **Monitor** every `JOB_HOPPER_HERDR_POLL_MS` (1000): `agent get` (status, `state_change_seq`)
-and `agent read --source recent-unwrapped --lines 200`. After a prompt or answer is sent,
-judge only once the agent has been seen `working` (or `state_change_seq` advanced) — so the
-previous turn's marker is never re-read as the new outcome. Then:
+and `agent read --source recent-unwrapped --lines 200`.
+
+**Turn anchor (B1).** At every send record `{ seq: state_change_seq, anchor }` where
+`anchor` is the last line of what was sent as Claude echoes it — the footer's last line
+(`If the job cannot be done, …`) on the first turn, the answer's last line on a resume.
+Only output lines **after the last occurrence of the anchor** count. **Every** outcome
+below except `blocked`, agent gone and timeout requires status `idle`/`done` **and**
+`state_change_seq` greater than at send. Marker normalisation: strip the Claude Code gutter
+(`●`, `⎿`), whitespace, and surrounding `` ` `` / `*`; `JOB_HOPPER_DONE` and
+`JOB_HOPPER_QUESTION` must then equal the whole line; `JOB_HOPPER_FAILED` is a prefix match
+(after the anchor only). Parser tests cover: a wrapped echoed footer, the previous turn's
+marker still on screen, a marker in backticks or bold. Then:
 
 | observed | outcome |
 |----------|---------|
@@ -371,7 +380,7 @@ previous turn's marker is never re-read as the new outcome. Then:
 | last marker `JOB_HOPPER_FAILED` | `failed`, error = text after the marker on that line or the next line |
 | last marker `JOB_HOPPER_QUESTION` | `question`, `detectedBy: marker`, text = the assistant message before the marker |
 | status `blocked` (question/approval UI) | `question`, `detectedBy: blocked`, text = the visible dialog |
-| idle/done with no new marker for `JOB_HOPPER_IDLE_QUESTION_MS` (20000) | `question`, `detectedBy: idle`, text = last assistant message ("stopped waiting for input") |
+| idle/done with no marker after the anchor for `JOB_HOPPER_IDLE_QUESTION_MS` (20000) | `question`, `detectedBy: idle`, text = last assistant message ("stopped waiting for input") |
 | agent gone (`agent get` error / pane closed) | `failed`, `claude exited` + last output |
 | `timeoutMs` (default 3600000) exceeded | interrupt, `failed` `timed out` |
 
@@ -383,9 +392,12 @@ elapsed / expectedMs), line)` (`expectedMs` default 600000).
 **Resume** (`resume(ctx, answer)`): `agent get` the saved agent; gone → `failed` `pane lost`.
 If `blocked` → `send-keys esc` first. `agent prompt <agent> <answer>`; then the same monitor.
 
-**Cancel** (`ctx.signal`): `send-keys esc`, then `ctrl+c` twice, then `pane close`; outcome
-`failed` `aborted`. **cleanup(job)**: same exit-and-close from `job.executorState`;
-swallow errors; idempotent.
+**Cancel** (`ctx.signal`, reason `'cancel'`): `send-keys esc`, then `ctrl+c` twice, then
+`pane close`; outcome `failed` `aborted`. **Shutdown** (reason `'shutdown'`): return
+`failed` `shutdown` at once, pane untouched (the engine discards outcomes during shutdown).
+**cleanup(job)**: same exit-and-close from `job.executorState`; swallow errors; idempotent.
+The executor is `idempotent: false`. `timeoutMs` and the `expectedMs` progress clock apply
+per `run`/`resume` call; time spent waiting for an answer does not count.
 
 ## Questions
 
@@ -415,8 +427,10 @@ the late model result is logged (`outcome: escalated`, reason `superseded`) and 
 **Every attempt is appended** (`questions.addAttempt`) with tier, model, timestamps,
 answer, confident, risky, riskRules, reason, error, outcome — the escalation trail.
 
-**Claude CLI answerer.** `claude -p --model <opus|fable> --tools "" --output-format json
---json-schema <AnswerVerdict schema> --no-session-persistence`, prompt on stdin, cwd = the
+**Claude CLI answerer.** argv exactly `["-p", "--model", <opus|fable>, "--output-format",
+"json", "--json-schema", <AnswerVerdict schema>, "--no-session-persistence",
+"--setting-sources", "", "--strict-mcp-config", "--tools", ""]` (`--tools` last, so its
+list cannot swallow another flag), prompt on stdin, cwd = the
 data dir (so no project CLAUDE.md is loaded), env scrubbed of `CLAUDECODE`/`CLAUDE_CODE_*`,
 timeout `JOB_HOPPER_ANSWER_TIMEOUT_MS` (180000). Read `structured_output`; missing or
 invalid → `{ error }`. The prompt states: you answer on the owner's behalf for an unattended
@@ -427,12 +441,13 @@ only if the rules and context settle it. **No local LLM**; fable is the `claude`
 model alias `fable` — no fable agent or skill is defined in this setup (checked
 `claude agents --json`, `~/.claude/skills`).
 
-**Risk rules** (independent of the model; case-insensitive, over question + answer):
-`delet|rm -rf|drop (table|database)|truncate` · `deploy|release|publish|rollout` ·
-`force[- ]push|push --force|--force-with-lease|reset --hard` ·
-`spend|purchase|buy|pay(ment)?|billing|invoice|charge` ·
-`credential|secret|token|password|api[ _-]?key|private key|ssh key` ·
-`send (an? )?(email|message|sms)|email|slack|post to|tweet|notify (the )?(customer|client)`.
+**Risk rules** (independent of the model; case-insensitive, word-bounded, over question +
+answer): `\b(delete|deleting|remove (all|the)|rm -rf|drop (table|database)|truncate|wipe)\b` ·
+`\b(deploy|deploying|deployment|publish|rollout|release to (prod|production))\b` ·
+`\b(force[- ]push|push --force|--force-with-lease|reset --hard)\b` ·
+`\b(spend|purchase|buy|payment|pay for|billing|charge (the )?card)\b` ·
+`\b(credentials?|secrets?|passwords?|api[ _-]?keys?|private key|ssh key|access token)\b` ·
+`\b(send (an? |the )?(email|message|sms|dm)|post to (slack|twitter|x)|tweet|notify (the )?(customer|client|team))\b`.
 Each rule has a name (`delete`, `deploy`, `force-push`, `spend`, `credentials`,
 `send-message`); matches are recorded in `riskRules`.
 
@@ -440,11 +455,28 @@ Each rule has a name (`delete`, `deploy`, `force-push`, `spend`, `credentials`,
 every ask; missing → empty rules, noted in the prompt and the attempt reason.
 `scripts/install.sh` writes a starter file only if none exists.
 
-**Recovery at startup:** open questions at tier opus/fable re-run that tier; human-tier
-questions resume their renotify/expiry timers from the stored times. `waiting_answer` jobs
-are left as they are (their panes live in the herdr session, which outlives the daemon).
-Jobs that were `claimed`/`running` are requeued as before **and** `executor.cleanup(job)`
-closes their stale pane first.
+**Atomicity (B3).** Every QuestionService write is one `store.tx`, compare-and-set on
+`status === 'open'` and (model results) `tier` = the producing tier; `onAnswered` /
+`onExpired` run synchronously inside it. The engine's side is compare-and-set too: it acts
+only if the job is `waiting_answer` with that `questionId`.
+
+**Question budget (B6).** At most `JOB_HOPPER_MAX_QUESTIONS` (5) questions per job; the
+next question fails the job `too many questions` (and cleans up). When `detectedBy` is
+`idle`, the answerer prompt says the agent may simply have finished and that a valid answer
+is "If the job is complete, end your message with JOB_HOPPER_DONE".
+
+**Recovery at startup (B2, B3).**
+- `claimed`/`running` jobs: idempotent executor → requeued (`job.requeued`) as before;
+  non-idempotent (herdr-claude) → `executor.cleanup(job)`, job `failed` `interrupted by
+  daemon restart`, `job.failed`. Never re-run: a second run repeats real side effects.
+  Reattaching to the live pane is carried work.
+- `waiting_answer` jobs, by their question: `open` → leave it (QuestionService.recover
+  re-runs a model tier or re-arms human timers; a human question past `expiresAt` expires
+  now); `answered` → requeue with that answer; `expired`/`cancelled`/missing → job `failed`,
+  `cleanup`.
+- `pendingAnswer` is cleared in the same tx that records the resume's outcome (not at claim),
+  so a restart mid-resume does not lose the answer — but a restart mid-resume of a
+  herdr-claude job fails it per the first rule.
 
 **Cancel** of a `waiting_answer` job: question `cancelled`, `executor.cleanup`, job
 `cancelled`.
@@ -465,6 +497,12 @@ job was already admitted once) — it is never re-held for Jev.
 | POST | `/api/questions/:id/answer` | body `{ answer: string (non-empty) }` → `Question` · 404 · 409 not open |
 
 `POST /api/jobs` with `executor: "herdr-claude"` validates the payload above.
+
+**Events and triggers (B5).** Going to `waiting_answer` is announced by `question.asked`
+(subject `jobId`; no separate job event); resuming appends `job.requeued { from: "waiting_answer", reason: "answered" }`; expiry
+appends `question.expired` **and** `job.failed`. `question.asked`, `question.answered`,
+`question.expired` are engine triggers (a lane freed or a job requeued is decided at once).
+The events table gains a `question_id` column (migration 2).
 `GET /api/queue` `counts` gains `waiting_answer`; `/api/queue` gains `waitingAnswer: Job[]`.
 
 ## Events added
@@ -496,6 +534,7 @@ job was already admitted once) — it is never re-held for Jev.
 | `JOB_HOPPER_HUMAN_RENOTIFY_MS` | `900000` (15 min) |
 | `JOB_HOPPER_HUMAN_TIMEOUT_MS` | `86400000` (24 h) |
 | `JOB_HOPPER_RESUME_BOOST` | `20` |
+| `JOB_HOPPER_MAX_QUESTIONS` | `5` |
 
 ## Construction contract added
 
@@ -516,9 +555,13 @@ src/questions/index.ts        createClaudeCliAnswerer(o: { tier: 'opus'|'fable';
 ```
 
 `HerdrClient` is defined in `src/executors/herdr/client.ts` (the executor's own port; the
-real adapter shells out, the fake simulates a Claude screen). `QuestionService`:
-`{ handle(questionId): void; answerByHuman(id, answer): Question; cancel(questionId): void;
-recover(): void; stop(): void }`.
+real adapter shells out, the fake simulates a Claude screen). `QuestionService` is the interface in `src/domain/ports.ts`. `main` passes
+`onAnswered`/`onExpired` as closures filled in after `createEngine` (breaks the
+engine ↔ service cycle).
+
+**Settled reading of "map lanes to panes":** one tab per job run, labelled with its lane;
+the lane→pane map is in the executor's memory and in `job.executorState`. After a resume on
+another lane the tab label is stale; the job's `laneId` is authoritative.
 
 ## Test executor additions
 
