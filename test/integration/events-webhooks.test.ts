@@ -3,7 +3,7 @@
 import { createHmac } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { DomainEvent, WebhookDelivery } from '../../src/domain/types.ts';
+import { EVENT_SCHEMA_VERSIONS, type DomainEvent, type WebhookDelivery } from '../../src/domain/types.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { writeWebhooksFile } from '../support/files.ts';
 import { startReceiver, type Receiver } from '../support/receiver.ts';
@@ -44,7 +44,7 @@ describe('events', () => {
     await a.waitForStatus(job.id, 'finished');
     const all = await a.events('after=0&limit=1000');
     expect(all.map((e) => e.seq)).toEqual([...all.map((e) => e.seq)].sort((x, y) => x - y));
-    expect(all.every((e) => e.schemaVersion === 1)).toBe(true);
+    expect(all.every((e) => e.schemaVersion === EVENT_SCHEMA_VERSIONS[e.type])).toBe(true);
     const after = await a.events(`after=${all[1]!.seq}&limit=1`);
     expect(after.map((e) => e.seq)).toEqual([all[2]!.seq]);
     const some = await a.events('types=job.finished,job.queued');
