@@ -1,0 +1,34 @@
+import type { Lane, LanePlan, StartPlan } from '../domain/types.ts';
+import type { MachineState } from './assign.ts';
+
+/** Step 8: per-machine lane plan. `unassignedIdle` = idle lanes no start took. */
+export function planLanes(
+  s: MachineState, unassignedIdle: Lane[], lanes: Lane[], starts: StartPlan[], at: string, graceMs: number,
+): LanePlan {
+  const mine = lanes.filter((l) => l.machineId === s.machine.id);
+  const opening = starts.filter((st) => st.machineId === s.machine.id && st.laneId === null).length;
+  const target = Math.min(s.cap, s.occupied + s.assigned);
+
+  const now = Date.parse(at);
+  const idleFor = (l: Lane): number => (l.idleSince ? now - Date.parse(l.idleSince) : Infinity);
+  // Freshest idle lanes first: they are the ones worth keeping.
+  const candidates = [...unassignedIdle].sort((a, b) => idleFor(a) - idleFor(b) || a.id.localeCompare(b.id));
+  const close: string[] = [];
+  let kept = 0;
+  for (const l of candidates) {
+    if (s.occupied + s.assigned + kept < s.cap && idleFor(l) < graceMs) kept += 1;
+    else close.push(l.id);
+  }
+
+  const draining = mine.filter((l) => l.state === 'draining').length;
+  const toDrain = Math.max(0, s.occupied - target - draining);
+  const drain = mine
+    .filter((l) => l.state === 'busy')
+    .sort((a, b) => b.openedAt.localeCompare(a.openedAt) || b.id.localeCompare(a.id))
+    .slice(0, toDrain)
+    .map((l) => l.id);
+
+  const reason = `${s.machine.id}: cap ${s.cap} (${s.band}), occupied ${s.occupied}, starting ${s.assigned}`
+    + `; open ${opening}, close ${close.length}, drain ${drain.length}, keep ${kept}`;
+  return { machineId: s.machine.id, current: mine.length, target, open: opening, close, drain, reason };
+}

@@ -29,23 +29,23 @@ describe.each(['ask_human', 'reuse_cache', 'stop_retry'] as const)('jev %s', (ac
 
 it('ask_human reason says awaiting approval', () => {
   const d = decide(inputs({ jevMode: 'active', waiting: [adv('a', 'ask_human')] }), 'd1');
-  expect(d.hold[0].reason).toBe('jev ask_human: awaiting approval');
+  expect(d.hold[0]!.reason).toBe('jev ask_human: awaiting approval');
 });
 
 describe.each(['chat_only', 'run_deterministic'] as const)('jev %s boost', (action) => {
   it('shadow: priority unchanged, order divergence recorded', () => {
-    const waiting = [job('plain', { priority: 55 }), adv('cheap', action, { priority: 50 })];
+    const waiting = [adv('plain', 'proceed_full', { priority: 55 }), adv('cheap', action, { priority: 50 })];
     const d = decide(inputs({ jevMode: 'shadow', waiting }), 'd1');
     expect(d.start.map((s) => s.jobId)).toEqual(['plain', 'cheap']);
-    expect(d.start[1].effectivePriority).toBe(50);
+    expect(d.start[1]!.effectivePriority).toBe(50);
     expect(d.jev).toEqual([expect.objectContaining({ jobId: 'cheap', advice: action, native: 'start', withJev: 'start' })]);
   });
 
   it('active: boosted by jevCheapBoost and runs first', () => {
-    const waiting = [job('plain', { priority: 55 }), adv('cheap', action, { priority: 50 })];
+    const waiting = [adv('plain', 'proceed_full', { priority: 55 }), adv('cheap', action, { priority: 50 })];
     const d = decide(inputs({ jevMode: 'active', waiting }), 'd1');
     expect(d.start.map((s) => s.jobId)).toEqual(['cheap', 'plain']);
-    expect(d.start[0].effectivePriority).toBe(60);
+    expect(d.start[0]!.effectivePriority).toBe(60);
   });
 });
 

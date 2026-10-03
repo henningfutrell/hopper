@@ -24,7 +24,7 @@ describe('assignment and native holds', () => {
   it('holds a job whose executor no online machine runs', () => {
     const d = decide(inputs({ waiting: [job('a', { executor: 'nope' })] }), 'd1');
     expect(d.start).toEqual([]);
-    expect(d.hold[0].reason).toContain('nope');
+    expect(d.hold[0]!.reason).toContain('nope');
   });
 
   it('honours a pinned machine, holds when it is unknown or offline', () => {
@@ -34,7 +34,7 @@ describe('assignment and native holds', () => {
       waiting: [job('p', { machineId: 'm2' }), job('u', { machineId: 'ghost' }), job('o', { machineId: 'm3' })],
     }), 'd1');
     expect(d.start).toHaveLength(1);
-    expect(d.start[0]).toMatchObject({ jobId: 'p', machineId: 'm2' });
+    expect(d.start[0]!).toMatchObject({ jobId: 'p', machineId: 'm2' });
     expect(d.hold.map((h) => h.jobId).sort()).toEqual(['o', 'u']);
     expect(d.hold.find((h) => h.jobId === 'u')!.reason).toContain('ghost');
   });

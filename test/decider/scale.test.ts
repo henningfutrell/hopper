@@ -34,7 +34,7 @@ describe('lane scaling', () => {
   it('uses an existing idle lane instead of opening one', () => {
     const l = lane(1);
     const d = decide(inputs({ lanes: [l], waiting: [job('a')] }), 'd1');
-    expect(d.start[0]).toMatchObject({ jobId: 'a', laneId: l.id });
+    expect(d.start[0]!).toMatchObject({ jobId: 'a', laneId: l.id });
     expect(plan(d)).toMatchObject({ open: 0, close: [] });
   });
 
@@ -66,7 +66,7 @@ describe('usage limits', () => {
     const d = decide(inputs({ usage: [reading(82.5)], waiting: ['a', 'b', 'c'].map((i) => job(i)) }), 'd1');
     expect(d.start).toHaveLength(2);
     expect(plan(d).target).toBe(2);
-    expect(d.hold[0].reason).toContain('usage soft limit caps lanes at 2');
+    expect(d.hold[0]!.reason).toContain('usage soft limit caps lanes at 2');
   });
 
   it('below soft keeps maxLanes; max over readings applies; machine-scoped readings only hit that machine', () => {
@@ -75,7 +75,7 @@ describe('usage limits', () => {
       usage: [reading(10), reading(99, 100, { machineId: 'other' })],
       waiting: [job('a')],
     }), 'd1');
-    expect(d.start[0].machineId).toBe('local');
+    expect(d.start[0]!.machineId).toBe('local');
     expect(plan(d, 'other').target).toBe(0);
   });
 
@@ -84,7 +84,7 @@ describe('usage limits', () => {
     const running = [job('r1', { status: 'running' }), job('r2', { status: 'running' })];
     const d = decide(inputs({ usage: [reading(96)], lanes, running, waiting: [job('a')] }), 'd1');
     expect(d.start).toEqual([]);
-    expect(d.hold[0].reason).toMatch(/usage/);
+    expect(d.hold[0]!.reason).toMatch(/usage/);
     expect(plan(d)).toMatchObject({ target: 0, open: 0, close: ['local/lane-1'], drain: ['local/lane-3', 'local/lane-2'] });
   });
 
@@ -112,6 +112,6 @@ describe('draining', () => {
     const lanes = [busy(1, 'r1', { state: 'draining' })];
     const d = decide(inputs({ machines: [machine({ maxLanes: 1 })], lanes, running: [job('r1', { status: 'running' })], waiting: [job('a')] }), 'd1');
     expect(d.start).toEqual([]);
-    expect(d.hold[0].reason).toContain('all lanes busy (cap 1)');
+    expect(d.hold[0]!.reason).toContain('all lanes busy (cap 1)');
   });
 });
