@@ -44,6 +44,17 @@ describe('createClaudeCliAnswerer', () => {
     const schemaAt = argv.indexOf('--json-schema') + 1;
     const schema = JSON.parse(argv[schemaAt]!);
     expect(Object.keys(schema.properties).sort()).toEqual(['answer', 'confident', 'reason', 'risky']);
+    // The claude CLI validates --json-schema with a draft-07 validator and rejects a
+    // `$schema` it does not know (found live: draft 2020-12 made every tier exit 1).
+    expect(schema).toEqual({
+      type: 'object',
+      properties: {
+        answer: { type: 'string' }, confident: { type: 'boolean' },
+        risky: { type: 'boolean' }, reason: { type: 'string' },
+      },
+      required: ['answer', 'confident', 'risky', 'reason'],
+      additionalProperties: false,
+    });
     const withoutSchema = argv.map((a, i) => (i === schemaAt ? '<schema>' : a));
     expect(withoutSchema).toEqual([
       '-p', '--model', 'opus', '--output-format', 'json', '--json-schema', '<schema>',
