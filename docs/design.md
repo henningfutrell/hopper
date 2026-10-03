@@ -1283,16 +1283,16 @@ main.ts seams                    AppSeams.githubApp?: GitHubApi (tests) beside .
 addition to the GitHub issue comments. Not a **Webhook subscription**: no store row, no
 schema change, no domain event; in-memory only.
 
-- Events: `question.escalated` with `data.target === 'human'` and not `data.renotify`;
-  `job.finished`; `job.failed`.
+- Events: questions only — `question.escalated` with `data.target === 'human'` and not
+  `data.renotify`. Never `job.finished` or `job.failed`.
 - Config: `~/.config/job-hopper/grokbot-webhook.env` (`JOB_HOPPER_GROKBOT_WEBHOOK_FILE`),
   `GROKBOT_WEBHOOK_URL=` and `GROKBOT_WEBHOOK_KEY=`, parsed with `util.parseEnv`. Read at
   each matching event, so a file created later applies without a restart.
   Absent: silent no-op. Present but missing a variable or unreadable: one `console.error`
   per event, skipped. Mode readable by group/other: one `console.warn` per process.
 - Request: `Authorization: Bearer <key>`, JSON body `{ source: 'job-hopper', kind, at, jobId,
-  issueTitle, issueUrl, question?, questionId?, answerUrl?, error? }` (`question*`/`answerUrl`
-  for escalations, `error` for failures; title/url from the job's source ref, else null).
+  issueTitle, issueUrl, question, questionId, answerUrl? }` (title/url from the job's source
+  ref, else null).
   200 = a run started.
 - Delivery: 10 s timeout; 3 attempts, backoff `base * 2^(n-1)` (base 1000 ms), retried only on
   network error, 429, 5xx; other non-2xx is final. Success logs kind, jobId, status; final

@@ -22,7 +22,6 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const retriable = (status: number) => status === 429 || status >= 500;
 
 function wanted(e: DomainEvent): boolean {
-  if (e.type === 'job.finished' || e.type === 'job.failed') return true;
   return e.type === 'question.escalated' && e.data.target === 'human' && !e.data.renotify;
 }
 
@@ -38,7 +37,6 @@ export function createGrokBotNotifier(o: GrokBotNotifierOptions): GrokBotNotifie
   function payload(e: DomainEvent): Record<string, unknown> {
     const source = e.jobId ? store.jobs.get(e.jobId)?.source : undefined;
     const base = { source: 'job-hopper', kind: e.type, at: e.at, jobId: e.jobId ?? null, issueTitle: source?.title ?? null, issueUrl: source?.url ?? null };
-    if (e.type === 'job.failed') return { ...base, error: e.data.error };
     if (e.type === 'question.escalated') {
       return { ...base, question: e.data.text, questionId: e.data.questionId, ...(e.data.answerUrl ? { answerUrl: e.data.answerUrl } : {}) };
     }
