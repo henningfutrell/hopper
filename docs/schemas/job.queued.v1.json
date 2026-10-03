@@ -36,43 +36,6 @@
             "type": "string"
           },
           "additionalProperties": {}
-        },
-        "source": {
-          "type": "object",
-          "properties": {
-            "source": {
-              "type": "string"
-            },
-            "kind": {
-              "type": "string"
-            },
-            "key": {
-              "type": "string"
-            },
-            "url": {
-              "type": "string"
-            },
-            "title": {
-              "type": "string"
-            },
-            "repo": {
-              "type": "string"
-            },
-            "number": {
-              "type": "integer",
-              "minimum": -9007199254740991,
-              "maximum": 9007199254740991
-            },
-            "author": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "source",
-            "kind",
-            "key"
-          ],
-          "additionalProperties": false
         }
       },
       "required": [
@@ -83,6 +46,43 @@
     },
     "priority": {
       "type": "number"
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "repo": {
+          "type": "string"
+        },
+        "number": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "author": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "kind",
+        "key"
+      ],
+      "additionalProperties": false
     }
   },
   "required": [

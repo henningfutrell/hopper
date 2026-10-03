@@ -1,7 +1,8 @@
-// What the HTTP edge asks of the engine. Each command validates, writes in one transaction,
-// emits its event, and lets the event listener schedule the next Decision.
+// What the UI session routes (and the sync loop, through the SourceHost) ask of the engine.
+// Each command validates, writes in one transaction, emits its event, and lets the event
+// listener schedule the next Decision. Jobs are created only by ingest (source-host.ts).
 import { TERMINAL_STATUSES } from '../domain/types.ts';
-import type { Job, JobSpec, JevMode, UsageReading } from '../domain/types.ts';
+import type { Job, JevMode, UsageReading } from '../domain/types.ts';
 import { nowIso, type EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
 import type { Cleanup } from './cleanup.ts';
@@ -17,43 +18,29 @@ function existing(c: EngineContext, id: string): Job {
 }
 
 export interface Commands {
-  pushJob(spec: JobSpec): Job;
-  cancel(id: string): Job;
+  /** Cancel a non-terminal job; `reason` is recorded on job.cancelled (and told to its source). */
+  cancel(id: string, reason: string): Job;
   approve(id: string): Job;
   setJevMode(mode: JevMode): JevMode;
+  /** Tests only: the fake usage source has no HTTP route. */
   setFakeUsage(reading: Omit<UsageReading, 'source' | 'at'>): UsageReading[];
 }
 
 export function createCommands(c: EngineContext, runner: Runner, cleanup: Cleanup): Commands {
   const { store } = c;
   return {
-    pushJob(spec) {
-      const executor = c.executors.get(spec.executor);
-      if (!executor) {
-        throw new EngineError('invalid', `unknown executor ${spec.executor} (known: ${c.executors.names().join(', ')})`);
-      }
-      const problem = executor.validate(spec.payload);
-      if (problem) throw new EngineError('invalid', `invalid payload for executor ${spec.executor}: ${problem}`);
-      const priority = Math.max(0, Math.min(100, spec.priority ?? 50));
-      return store.tx(() => {
-        const job = store.jobs.create(spec, priority);
-        store.events.append({ type: 'job.queued', jobId: job.id, data: { spec, priority } });
-        return job;
-      });
-    },
-
-    cancel(id) {
+    cancel(id, reason) {
       const job = existing(c, id);
       if (job.status === 'claimed' || job.status === 'running') {
         // The runner ends it `cancelled` once the executor has stopped.
-        if (runner.cancel(id)) return job;
+        if (runner.cancel(id, reason)) return job;
       }
       // A waiting_answer job's question is cancelled in the same tx; a job parked or about to
       // resume holds a pane, released after the commit.
       const next = store.tx(() => {
         if (job.status === 'waiting_answer' && job.questionId) c.questions.cancel(job.questionId);
         const cancelled = store.jobs.update(id, { status: 'cancelled', finishedAt: nowIso(c), pendingAnswer: undefined });
-        store.events.append({ type: 'job.cancelled', jobId: id, data: { reason: `cancelled while ${job.status}` } });
+        store.events.append({ type: 'job.cancelled', jobId: id, data: { reason } });
         return cancelled;
       });
       void cleanup(id);

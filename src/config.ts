@@ -1,4 +1,4 @@
-// Configuration from env, per docs/design.md "Configuration (env)" and "Configuration added".
+// Configuration from env, per docs/design.md "Configuration (env)" and both "Configuration added".
 // Invalid values fail loudly.
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -42,6 +42,14 @@ export interface Config {
   maxQuestions: number;
   /** Keep panes open after a job ends (for inspection); default false: every terminal outcome cleans up. */
   keepPanes: boolean;
+  /** sources.yaml: which job sources the hopper pulls from. */
+  sourcesFile: string;
+  /** webhooks.yaml: the webhook subscriptions. */
+  webhooksFile: string;
+  /** The `gh` CLI the GitHub source runs. */
+  ghBin: string;
+  /** Lifetime of a UI session, in hours. */
+  uiSessionHours: number;
 }
 
 export const EXECUTOR_NAMES = ['test', 'herdr-claude'] as const;
@@ -98,6 +106,10 @@ const schema = z.object({
   JOB_HOPPER_RESUME_BOOST: z.coerce.number().finite().default(20),
   JOB_HOPPER_MAX_QUESTIONS: int(0).default(5),
   JOB_HOPPER_KEEP_PANES: flag(false),
+  JOB_HOPPER_SOURCES_FILE: path('~/.config/job-hopper/sources.yaml'),
+  JOB_HOPPER_WEBHOOKS_FILE: path('~/.config/job-hopper/webhooks.yaml'),
+  JOB_HOPPER_GH_BIN: z.string().min(1).default('gh'),
+  JOB_HOPPER_UI_SESSION_HOURS: z.coerce.number().finite().positive().default(12),
 }).refine((e) => e.JOB_HOPPER_SOFT_LIMIT < e.JOB_HOPPER_HARD_LIMIT, {
   message: 'must be below JOB_HOPPER_HARD_LIMIT',
   path: ['JOB_HOPPER_SOFT_LIMIT'],
@@ -148,5 +160,9 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     resumeBoost: e.JOB_HOPPER_RESUME_BOOST,
     maxQuestions: e.JOB_HOPPER_MAX_QUESTIONS,
     keepPanes: e.JOB_HOPPER_KEEP_PANES,
+    sourcesFile: e.JOB_HOPPER_SOURCES_FILE,
+    webhooksFile: e.JOB_HOPPER_WEBHOOKS_FILE,
+    ghBin: e.JOB_HOPPER_GH_BIN,
+    uiSessionHours: e.JOB_HOPPER_UI_SESSION_HOURS,
   };
 }

@@ -1,4 +1,4 @@
-// Read routes over engine state, plus the two settings the API may change: Jev mode, fake usage.
+// Read routes over engine state. Nothing here changes anything (Jev mode is a UI mutation).
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { Clock, Store } from '../domain/ports.ts';
@@ -68,20 +68,6 @@ export function stateRoutes(app: FastifyInstance, o: { engine: Engine; store: St
   });
 
   app.get('/api/jev', async () => jev());
-  app.put('/api/jev', async (req) => {
-    const { mode } = parseWith(z.object({ mode: z.enum(['shadow', 'active']) }), req.body);
-    engine.setJevMode(mode);
-    return jev();
-  });
 
   app.get('/api/usage', async () => ({ readings: await engine.getUsage() }));
-  app.put('/api/usage/fake', async (req) => {
-    const r = parseWith(z.object({
-      used: z.number().finite().min(0),
-      limit: z.number().finite(),
-      unit: z.string().min(1).default('%'),
-      machineId: z.string().min(1).optional(),
-    }), req.body);
-    return { readings: engine.setFakeUsage(r) };
-  });
 }

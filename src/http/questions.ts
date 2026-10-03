@@ -1,8 +1,8 @@
-// Question routes (design.md "API additions"): list, read with its escalation trail, and the
-// human answer, which the QuestionService applies compare-and-set.
+// Question routes (design.md "API additions"): list, and read with its escalation trail. The
+// human answer is a UI session mutation (src/http/ui/).
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import type { QuestionService, Store } from '../domain/ports.ts';
+import type { Store } from '../domain/ports.ts';
 import type { QuestionStatus } from '../domain/types.ts';
 import { HttpError, parseWith } from './errors.ts';
 
@@ -13,10 +13,9 @@ const listQuery = z.object({
   limit: z.coerce.number().int().min(1).max(1000).default(100),
 });
 const idParams = z.object({ id: z.string() });
-const answerBody = z.object({ answer: z.string().trim().min(1, 'answer must not be empty') });
 
-export function questionRoutes(app: FastifyInstance, o: { store: Store; questions: QuestionService }): void {
-  const { store, questions } = o;
+export function questionRoutes(app: FastifyInstance, o: { store: Store }): void {
+  const { store } = o;
 
   app.get('/api/questions', async (req) => {
     const q = parseWith(listQuery, req.query);
@@ -28,14 +27,5 @@ export function questionRoutes(app: FastifyInstance, o: { store: Store; question
     const q = store.questions.get(id);
     if (!q) throw new HttpError(404, `question ${id} not found`);
     return q;
-  });
-
-  app.post('/api/questions/:id/answer', async (req) => {
-    const { id } = parseWith(idParams, req.params);
-    const { answer } = parseWith(answerBody, req.body);
-    const r = questions.answerByHuman(id, answer);
-    if (r.ok) return r.question;
-    if (r.reason === 'not_found') throw new HttpError(404, `question ${id} not found`);
-    throw new HttpError(409, `question ${id} is not open`);
   });
 }

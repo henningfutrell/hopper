@@ -7,7 +7,7 @@ const start = { jobId: 'j1', laneId: 'm/lane-1', machineId: 'm', effectivePriori
 const lanePlan = { machineId: 'm', current: 0, target: 1, open: 1, close: [], drain: [], reason: 'work waiting' };
 
 export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
-  'job.queued': { spec: { executor: 'test', payload: { op: 'echo' }, priority: 60, goal: 'g', source: { source: 'github', kind: 'github', key: 'https://x/1', number: 1 } }, priority: 60 },
+  'job.queued': { spec: { executor: 'test', payload: { op: 'echo' }, priority: 60, goal: 'g' }, priority: 60, source: { source: 'github', kind: 'github', key: 'https://x/1', number: 1 } },
   'job.prioritized': { advice, mode: 'shadow', statusAtAdvice: 'queued' },
   'job.held': { reason: 'budget' },
   'job.approved': {},

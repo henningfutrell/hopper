@@ -24,7 +24,6 @@ const jobSpec = strict({
   submittedBy: z.string().optional(),
   machineId: z.string().optional(),
   meta: z.record(z.string(), z.unknown()).optional(),
-  source: jobSourceRef.optional(),
 });
 
 const jevAdvice = strict({
@@ -51,7 +50,8 @@ const divergence = strict({
 });
 
 export const EVENT_SCHEMAS = {
-  'job.queued': strict({ spec: jobSpec, priority: z.number() }),
+  // `source`: the item the job was pulled from (phase 3; additive, so still v1).
+  'job.queued': strict({ spec: jobSpec, priority: z.number(), source: jobSourceRef.optional() }),
   'job.prioritized': strict({
     advice: jevAdvice, mode: jevMode,
     statusAtAdvice: z.enum(['queued', 'held', 'claimed', 'running', 'waiting_answer', 'finished', 'failed', 'cancelled']),

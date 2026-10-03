@@ -1,9 +1,9 @@
-// GET /api/events/stream (design.md "SSE"): replay after a seq, then live; delivery updates
-// interleaved without an id; a comment ping every 15 s.
+// GET /api/events/stream (design.md "SSE"): replay after a seq, then live; delivery updates and
+// source status updates (`source.updated`) interleaved without an id; a comment ping every 15 s.
 import type { ServerResponse } from 'node:http';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import type { Store, WebhookDispatcher } from '../domain/ports.ts';
+import type { SourceRegistry, Store, WebhookDispatcher } from '../domain/ports.ts';
 import type { DomainEvent } from '../domain/types.ts';
 import { parseWith } from './errors.ts';
 
@@ -12,7 +12,7 @@ const REPLAY_PAGE = 1000;
 
 const seq = z.coerce.number().int().min(0);
 
-export function sseRoutes(app: FastifyInstance, o: { store: Store; dispatcher: WebhookDispatcher }): void {
+export function sseRoutes(app: FastifyInstance, o: { store: Store; dispatcher: WebhookDispatcher; sources: SourceRegistry }): void {
   const open = new Set<ServerResponse>();
   app.addHook('onClose', async () => {
     for (const res of open) res.end();
@@ -45,6 +45,9 @@ export function sseRoutes(app: FastifyInstance, o: { store: Store; dispatcher: W
     const offDelivery = o.dispatcher.onDeliveryUpdated((d) => {
       res.write(`event: delivery.updated\ndata: ${JSON.stringify(d)}\n\n`);
     });
+    const offSource = o.sources.onStatus((st) => {
+      res.write(`event: source.updated\ndata: ${JSON.stringify(st)}\n\n`);
+    });
     if (after !== undefined) {
       for (let page = o.store.events.since(lastSeq, REPLAY_PAGE); page.length > 0; page = o.store.events.since(lastSeq, REPLAY_PAGE)) {
         for (const e of page) send(e);
@@ -58,6 +61,7 @@ export function sseRoutes(app: FastifyInstance, o: { store: Store; dispatcher: W
       clearInterval(ping);
       unsubscribe();
       offDelivery();
+      offSource();
       open.delete(res);
     });
   });

@@ -12,7 +12,7 @@ export interface EngineOptions {
   machines: MachineSource;
   /** Every usage source the decider reads. Include `fakeUsage` here too when present. */
   usage: UsageSource[];
-  /** The hand-settable source behind PUT /api/usage/fake, when one is composed. */
+  /** The hand-settable source tests drive through `setFakeUsage`, when one is composed. */
   fakeUsage?: SettableUsageSource;
   advisor: JevAdvisor;
   policy: DeciderPolicy;

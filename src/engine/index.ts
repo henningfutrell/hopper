@@ -1,5 +1,6 @@
 // The engine: gather → decide → apply, on a tick and on the events that change admission.
 import { randomUUID } from 'node:crypto';
+import type { SourceHost } from '../domain/ports.ts';
 import type { EventType, JevMode } from '../domain/types.ts';
 import { createAnswerHandlers, type AnswerHandlers } from './answers.ts';
 import { createClassifier } from './classifier.ts';
@@ -11,6 +12,7 @@ import { createQueries, type Queries } from './queries.ts';
 import { recover } from './recovery.ts';
 import { createRunner } from './runner.ts';
 import { createSerial } from './serial.ts';
+import { createSourceHost } from './source-host.ts';
 
 export { EngineError } from './errors.ts';
 export type { EngineOptions } from './context.ts';
@@ -19,9 +21,9 @@ export type { MachineView, QueueView } from './queries.ts';
 const SHUTDOWN_WAIT_MS = 5000;
 
 /** Events that can change admission, so they wake the engine. A question frees a lane; an
- * answer requeues a job; an expiry fails one. */
+ * answer requeues a job; an expiry fails one; a source re-sort changes the order. */
 const TRIGGERS: ReadonlySet<EventType> = new Set<EventType>([
-  'job.queued', 'job.prioritized', 'job.approved', 'job.finished', 'job.failed', 'job.cancelled', 'jev.mode_changed',
+  'job.queued', 'job.prioritized', 'job.reprioritized', 'job.approved', 'job.finished', 'job.failed', 'job.cancelled', 'jev.mode_changed',
   'question.asked', 'question.answered', 'question.expired',
 ]);
 
@@ -29,6 +31,8 @@ export interface Engine extends Commands, Queries, AnswerHandlers {
   readonly advisorName: string;
   /** Registered executor names. */
   readonly executorNames: string[];
+  /** What the sync loop may do to the hopper (ingest, cancel, answer, reprioritize, setSourceState). */
+  readonly sourceHost: SourceHost;
   jevMode(): JevMode;
   /** Recover from a previous run (jobs, then questions), classify, take the first Decision, start the tick. */
   start(): void;
@@ -60,12 +64,14 @@ export function createEngine(o: EngineOptions): Engine {
   const cleanup = createCleanup(c);
   const runner = createRunner(c, cleanup);
   const classifier = createClassifier(c);
+  const commands = createCommands(c, runner, cleanup);
 
   return {
     advisorName: o.advisor.name,
     executorNames: o.executors.names(),
+    sourceHost: createSourceHost(c, commands),
     jevMode: c.jevMode,
-    ...createCommands(c, runner, cleanup),
+    ...commands,
     ...createQueries(c),
     ...createAnswerHandlers(c, cleanup),
     start() {

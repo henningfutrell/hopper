@@ -11,14 +11,15 @@ const PROGRESS_EVERY_MS = 500;
 
 interface Running {
   controller: AbortController;
-  cancelled: boolean;
+  /** Set by cancel(): the reason recorded on job.cancelled. */
+  cancelReason?: string;
   done: Promise<void>;
 }
 
 export interface Runner {
   start(claim: Claim): void;
-  /** Abort a claimed/running job as a cancel. False when it is not running here. */
-  cancel(jobId: string): boolean;
+  /** Abort a claimed/running job as a cancel, recorded with `reason`. False when it is not running here. */
+  cancel(jobId: string, reason: string): boolean;
   /** Abort everything for shutdown and wait up to `ms`. Nothing is written afterwards. */
   stopAll(ms: number): Promise<void>;
 }
@@ -83,25 +84,25 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
       outcome = { kind: 'failed', error: e instanceof Error ? e.message : String(e) };
     }
     // Shutdown: leave the job running in the store; restart recovery decides its fate.
-    if (c.stopping() && !entry.cancelled) return;
+    if (c.stopping() && entry.cancelReason === undefined) return;
     progress.flush();
-    const recorded = recordOutcome(c, started, claim.laneId, outcome, entry.cancelled);
+    const recorded = recordOutcome(c, started, claim.laneId, outcome, entry.cancelReason);
     if (recorded.kind === 'question') c.questions.handle(recorded.questionId);
     else await cleanup(job.id);
   }
 
   return {
     start(claim) {
-      const entry: Running = { controller: new AbortController(), cancelled: false, done: Promise.resolve() };
+      const entry: Running = { controller: new AbortController(), done: Promise.resolve() };
       running.set(claim.jobId, entry);
       entry.done = run(claim, entry)
         .catch((e) => console.error('job runner failed', claim.jobId, e))
         .finally(() => { if (running.get(claim.jobId) === entry) running.delete(claim.jobId); });
     },
-    cancel(jobId) {
+    cancel(jobId, reason) {
       const entry = running.get(jobId);
       if (!entry) return false;
-      entry.cancelled = true;
+      entry.cancelReason = reason;
       entry.controller.abort(CANCEL);
       return true;
     },

@@ -44,15 +44,16 @@ function releaseLane(c: EngineContext, lane: Lane | undefined, at: string): void
 }
 
 /** The pending answer (if any) is cleared here, in the tx recording the resume's outcome (B2). */
-export function recordOutcome(c: EngineContext, job: Job, laneId: LaneId, outcome: ExecutionOutcome, cancelled: boolean): Recorded {
+/** `cancelReason` set: the job was cancelled while running; the outcome is discarded. */
+export function recordOutcome(c: EngineContext, job: Job, laneId: LaneId, outcome: ExecutionOutcome, cancelReason: string | undefined): Recorded {
   const { store } = c;
   return store.tx(() => {
     const at = nowIso(c);
     const lane = store.lanes.list().find((l) => l.id === laneId);
     let recorded: Recorded = TERMINAL;
-    if (cancelled) {
+    if (cancelReason !== undefined) {
       store.jobs.update(job.id, { status: 'cancelled', finishedAt: at, pendingAnswer: undefined });
-      store.events.append({ type: 'job.cancelled', jobId: job.id, laneId, data: { reason: 'cancelled while running' } });
+      store.events.append({ type: 'job.cancelled', jobId: job.id, laneId, data: { reason: cancelReason } });
     } else if (outcome.kind === 'finished') {
       store.jobs.update(job.id, { status: 'finished', result: outcome.result, finishedAt: at, pendingAnswer: undefined });
       store.events.append({ type: 'job.finished', jobId: job.id, laneId, data: { result: outcome.result } });

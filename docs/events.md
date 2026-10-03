@@ -24,6 +24,7 @@ Version 1 (`docs/schemas/job.queued.v1.json`). A job was accepted (pushed, or pu
 |---|---|---|
 | `spec` | object | yes |
 | `priority` | number | yes |
+| `source` | object | no |
 
 ```json
 {
@@ -33,15 +34,15 @@ Version 1 (`docs/schemas/job.queued.v1.json`). A job was accepted (pushed, or pu
       "op": "echo"
     },
     "priority": 60,
-    "goal": "g",
-    "source": {
-      "source": "github",
-      "kind": "github",
-      "key": "https://x/1",
-      "number": 1
-    }
+    "goal": "g"
   },
-  "priority": 60
+  "priority": 60,
+  "source": {
+    "source": "github",
+    "kind": "github",
+    "key": "https://x/1",
+    "number": 1
+  }
 }
 ```
 

@@ -1,24 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { Store } from '../domain/ports.ts';
-import type { JobSpec, JobStatus } from '../domain/types.ts';
-import type { Engine } from '../engine/index.ts';
+import type { JobStatus } from '../domain/types.ts';
 import { HttpError, parseWith } from './errors.ts';
 
 const STATUSES = [
   'queued', 'held', 'claimed', 'running', 'waiting_answer', 'finished', 'failed', 'cancelled',
 ] as const satisfies JobStatus[];
-
-const jobSpec = z.object({
-  executor: z.string().min(1),
-  payload: z.record(z.string(), z.unknown()),
-  priority: z.number().finite().optional(),
-  goal: z.string().optional(),
-  kind: z.string().optional(),
-  submittedBy: z.string().optional(),
-  machineId: z.string().min(1).optional(),
-  meta: z.record(z.string(), z.unknown()).optional(),
-});
 
 const listQuery = z.object({
   status: z.string().optional().transform((s, ctx) => {
@@ -34,13 +22,9 @@ const listQuery = z.object({
 
 const idParams = z.object({ id: z.string() });
 
-export function jobRoutes(app: FastifyInstance, o: { engine: Engine; store: Store }): void {
-  const { engine, store } = o;
-
-  app.post('/api/jobs', async (req, reply) => {
-    const spec = parseWith(jobSpec, req.body) as JobSpec;
-    return reply.code(201).send(engine.pushJob(spec));
-  });
+// Read-only: jobs are pulled from sources, never posted (design.md "Phase 3").
+export function jobRoutes(app: FastifyInstance, o: { store: Store }): void {
+  const { store } = o;
 
   app.get('/api/jobs', async (req) => {
     const q = parseWith(listQuery, req.query);
@@ -53,7 +37,4 @@ export function jobRoutes(app: FastifyInstance, o: { engine: Engine; store: Stor
     if (!job) throw new HttpError(404, `job ${id} not found`);
     return job;
   });
-
-  app.post('/api/jobs/:id/cancel', async (req) => engine.cancel(parseWith(idParams, req.params).id));
-  app.post('/api/jobs/:id/approve', async (req) => engine.approve(parseWith(idParams, req.params).id));
 }
