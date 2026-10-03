@@ -66,8 +66,9 @@ export function createHerdrCliClient(o: { bin: string; session: string; timeoutM
       const created = await run(['workspace', 'create', '--label', label, '--cwd', cwd, '--no-focus']);
       return (created.workspace as { workspace_id: string }).workspace_id;
     },
-    async createTab({ workspaceId, cwd, label }) {
-      const r = await run(['tab', 'create', '--workspace', workspaceId, '--cwd', cwd, '--label', label, '--no-focus']);
+    async createTab({ workspaceId, cwd, label, env }) {
+      const envArgs = Object.entries(env).flatMap(([k, v]) => ['--env', `${k}=${v}`]);
+      const r = await run(['tab', 'create', '--workspace', workspaceId, '--cwd', cwd, '--label', label, ...envArgs, '--no-focus']);
       return { tabId: (r.tab as { tab_id: string }).tab_id, paneId: (r.root_pane as { pane_id: string }).pane_id };
     },
     async startAgent({ name, paneId, args, timeoutMs }) {

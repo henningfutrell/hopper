@@ -34,9 +34,13 @@ export interface StartDeps {
 export const agentNameFor = (jobId: string): string => `jh-${jobId.slice(0, 8)}`;
 
 /** Create the tab and record it at once, before anything can fail in it. */
-export async function openPane(d: StartDeps, ctx: ExecutionContext, cwd: string): Promise<PaneState> {
+export async function openPane(d: StartDeps, ctx: ExecutionContext, cwd: string, env: Record<string, string>): Promise<PaneState> {
   const workspaceId = await d.herdr.ensureWorkspace(WORKSPACE_LABEL, cwd);
-  const { tabId, paneId } = await d.herdr.createTab({ workspaceId, cwd, label: `${ctx.laneId} · ${ctx.job.id.slice(0, 8)}` });
+  const { tabId, paneId } = await d.herdr.createTab({
+    workspaceId, cwd, label: `${ctx.laneId} · ${ctx.job.id.slice(0, 8)}`,
+    // HOPPER_JOB_ID comes from the job itself; a payload cannot forge it.
+    env: { ...env, HOPPER_JOB_ID: ctx.job.id },
+  });
   const state: PaneState = {
     ...(d.herdr.session ? { session: d.herdr.session } : {}),
     workspaceId, tabId, paneId, agentName: agentNameFor(ctx.job.id), cwd, laneId: ctx.laneId,

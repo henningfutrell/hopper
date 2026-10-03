@@ -108,7 +108,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       const p = resolvePayload(ctx.job.spec.payload, o.defaultCwd);
       let state: PaneState | undefined;
       return onLane(ctx, () => state?.paneId, async () => {
-        state = await openPane(deps, ctx, p.cwd);
+        state = await openPane(deps, ctx, p.cwd, p.env);
         lanes.set(ctx.laneId, state.paneId);
         if (ctx.signal.aborted) return { interrupt: abortReason(ctx.signal) };
         const failed = await startClaude(deps, ctx, state, p);

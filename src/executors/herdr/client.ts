@@ -31,7 +31,8 @@ export interface HerdrClient {
   readonly session?: string;
   /** Workspace id of the workspace with this label; created without focus when absent. */
   ensureWorkspace(label: string, cwd: string): Promise<string>;
-  createTab(o: { workspaceId: string; cwd: string; label: string }): Promise<{ tabId: string; paneId: string }>;
+  /** `env`: variables for the process launched in the tab (`herdr tab create --env K=V`). */
+  createTab(o: { workspaceId: string; cwd: string; label: string; env: Record<string, string> }): Promise<{ tabId: string; paneId: string }>;
   /** Start Claude in the pane. `notReady`: blocked at startup (e.g. the folder-trust dialog). */
   startAgent(o: { name: string; paneId: string; args: string[]; timeoutMs: number }): Promise<StartAgentResult>;
   /** null when no live agent has that name. */
