@@ -1,0 +1,20 @@
+[Unit]
+Description=job-hopper's own herdr session (headless server hosting job panes; never the default session)
+After=default.target
+
+[Service]
+Type=simple
+# A server for this session started by hand would make ExecStart exit 1 ("already
+# running") and Restart= loop. Skip the start instead: the running server is used as is.
+ExecCondition=/bin/sh -c '! %h/.local/bin/herdr --session job-hopper status server 2>/dev/null | grep -q "^status: running"'
+ExecStart=%h/.local/bin/herdr --session job-hopper server
+# Panes inherit this environment: no Claude child-session markers may leak into job panes.
+UnsetEnvironment=CLAUDECODE CLAUDE_CODE_ENTRYPOINT CLAUDE_CODE_SSE_PORT CLAUDE_CODE_CHILD_SESSION
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin
+Restart=on-failure
+RestartSec=2
+KillSignal=SIGTERM
+TimeoutStopSec=10
+
+[Install]
+WantedBy=default.target

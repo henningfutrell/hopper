@@ -1,18 +1,24 @@
 #!/usr/bin/env bash
-# Remove the job-hopper service and code. Keeps the queue database.
+# Remove the job-hopper services (daemon + its herdr session) and code. Keeps the queue
+# database and the rules file.
 set -euo pipefail
 
 DEST="$HOME/.local/lib/job-hopper"
-UNIT="$HOME/.config/systemd/user/job-hopper.service"
+UNIT_DIR="$HOME/.config/systemd/user"
 DATA="$HOME/.local/share/job-hopper"
+RULES="$HOME/.config/job-hopper/rules.md"
 
 step() { printf '==> %s\n' "$*"; }
 
 step "systemctl --user disable --now job-hopper"
 systemctl --user disable --now job-hopper || echo "  (not enabled or not running)"
 
-step "remove $UNIT"
-rm -f "$UNIT"
+echo "WARNING: stopping job-hopper-herdr closes every pane in herdr session 'job-hopper' (running and parked Claude jobs)."
+step "systemctl --user disable --now job-hopper-herdr"
+systemctl --user disable --now job-hopper-herdr || echo "  (not enabled or not running)"
+
+step "remove $UNIT_DIR/job-hopper.service and $UNIT_DIR/job-hopper-herdr.service"
+rm -f "$UNIT_DIR/job-hopper.service" "$UNIT_DIR/job-hopper-herdr.service"
 
 step "systemctl --user daemon-reload"
 systemctl --user daemon-reload
@@ -21,3 +27,5 @@ step "remove $DEST"
 rm -rf "$DEST"
 
 echo "Kept $DATA — the queue database is your data. Delete it by hand to discard the queue."
+echo "Kept $RULES — your standing rules."
+echo "The herdr session directory ~/.config/herdr/sessions/job-hopper is kept; remove it with: herdr session delete job-hopper"
