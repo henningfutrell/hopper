@@ -26,7 +26,7 @@ const sharedKeys = {
   priorityLabels: z.record(z.string(), z.number()).default({ 'hopper:p0': 100, 'hopper:p1': 75, 'hopper:p2': 50, 'hopper:p3': 25 }),
   defaultPriority: z.number().min(0).max(100).default(50),
   repoPaths: z.record(z.string(), z.string()).default({}),
-  defaultCwd: z.string().min(1).default('~/workbench/workflow-personal-app-management'),
+  defaultCwd: z.string().min(1).default('~/workbench/app-workflows'),
   executor: z.string().min(1).default('herdr-claude'),
   model: z.string().min(1).nullable().default(null),
   progressCommentSeconds: z.number().int().positive().default(300),

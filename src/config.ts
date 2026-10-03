@@ -95,7 +95,7 @@ const schema = z.object({
   JOB_HOPPER_HERDR_POLL_MS: int(1).default(1000),
   JOB_HOPPER_CLAUDE_BIN: z.string().min(1).default('claude'),
   JOB_HOPPER_CLAUDE_ARGS: z.string().default('--dangerously-skip-permissions').transform((s) => s.split(/\s+/).filter(Boolean)),
-  JOB_HOPPER_CLAUDE_CWD: path('~/workbench/workflow-personal-app-management'),
+  JOB_HOPPER_CLAUDE_CWD: path('~/workbench/app-workflows'),
   JOB_HOPPER_TRUST_WORKDIR: flag(true),
   JOB_HOPPER_IDLE_QUESTION_MS: int(1).default(20000),
   JOB_HOPPER_ANSWERER: z.enum(['claude', 'fake']).default('claude'),

@@ -27,7 +27,7 @@ describe('configuration from env', () => {
       herdrPollMs: 1000,
       claudeBin: 'claude',
       claudeArgs: ['--dangerously-skip-permissions'],
-      claudeCwd: join(homedir(), 'workbench/workflow-personal-app-management'),
+      claudeCwd: join(homedir(), 'workbench/app-workflows'),
       trustWorkdir: true,
       idleQuestionMs: 20000,
       answerer: 'claude',

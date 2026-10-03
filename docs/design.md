@@ -529,7 +529,7 @@ The events table gains a `question_id` column (migration 2).
 | `JOB_HOPPER_HERDR_POLL_MS` | `1000` |
 | `JOB_HOPPER_CLAUDE_BIN` | `claude` |
 | `JOB_HOPPER_CLAUDE_ARGS` | `--dangerously-skip-permissions` |
-| `JOB_HOPPER_CLAUDE_CWD` | `~/workbench/workflow-personal-app-management` |
+| `JOB_HOPPER_CLAUDE_CWD` | `~/workbench/app-workflows` |
 | `JOB_HOPPER_TRUST_WORKDIR` | `true` |
 | `JOB_HOPPER_IDLE_QUESTION_MS` | `20000` |
 | `JOB_HOPPER_ANSWERER` | `claude` (`fake` for tests) |
@@ -742,7 +742,7 @@ github:
   priorityLabels: { "hopper:p0": 100, "hopper:p1": 75, "hopper:p2": 50, "hopper:p3": 25 }
   defaultPriority: 50
   repoPaths: {}         # owner/repo → local path (cwd); default defaultCwd
-  defaultCwd: ~/workbench/workflow-personal-app-management
+  defaultCwd: ~/workbench/app-workflows
   executor: herdr-claude
   model: null           # optional claude model for jobs
   progressCommentSeconds: 300
@@ -1222,7 +1222,7 @@ githubApp:
   priorityLabels: { "hopper:p0": 100, "hopper:p1": 75, "hopper:p2": 50, "hopper:p3": 25 }
   defaultPriority: 50
   repoPaths: {}
-  defaultCwd: ~/workbench/workflow-personal-app-management
+  defaultCwd: ~/workbench/app-workflows
   executor: herdr-claude
   model: null
   progressCommentSeconds: 300

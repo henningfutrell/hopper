@@ -22,7 +22,7 @@ ${AUTO_LINE}
   priorityLabels: { "hopper:p0": 100, "hopper:p1": 75, "hopper:p2": 50, "hopper:p3": 25 }
   defaultPriority: 50        # priority when no project value and no priority label applies
   repoPaths: {}              # owner/repo -> local path, the job's working directory
-  defaultCwd: ~/workbench/workflow-personal-app-management   # cwd for repos not in repoPaths
+  defaultCwd: ~/workbench/app-workflows   # cwd for repos not in repoPaths
   executor: herdr-claude     # executor for issue jobs
   model: null                # optional claude model for issue jobs
   progressCommentSeconds: 300  # at most one progress-comment edit per job per this many seconds
@@ -50,7 +50,7 @@ githubApp:
   priorityLabels: { "hopper:p0": 100, "hopper:p1": 75, "hopper:p2": 50, "hopper:p3": 25 }
   defaultPriority: 50
   repoPaths: {}              # owner/repo -> local path, the job's working directory
-  defaultCwd: ~/workbench/workflow-personal-app-management
+  defaultCwd: ~/workbench/app-workflows
   executor: herdr-claude
   model: null
   progressCommentSeconds: 300
