@@ -269,6 +269,7 @@ Every event: `{ seq, id, type, at, jobId?, laneId?, machineId?, decisionId?, dat
 | `job.failed` | `{ error }` |
 | `job.cancelled` | `{ reason }` |
 | `job.requeued` | `{ from, reason: "daemon restart" }` |
+| `job.reprioritized` | `{ from, to, reason }` — phase 3, source re-sort |
 | `lane.opened` | `{}` |
 | `lane.closed` | `{ reason }` — the lane plan's reason, `drained`, or `daemon restart` |
 | `decision.made` | `{ decisionId, trigger, jevMode, starts, holds, lanes, divergences }` |
@@ -679,7 +680,8 @@ source every `pollSeconds`:
 1. `discover()` → for each item whose `key` has no job: create one via the host's
    `ingest(item)` — spec `{ executor: <source executor>, payload: { prompt: body, cwd,
    model? }, priority, goal: title, submittedBy: "<source>:<author>", kind: "coding" }`,
-   `source: JobSourceRef` — then `report({kind:'claimed'})`, merge the returned patch into
+   `source: JobSourceRef`, with `payload.prompt = item.prompt`, `payload.env = item.env` —
+   then `report({kind:'claimed'})`, merge the returned patch into
    `sourceState`. Duplicate key → skip (dedupe by store unique index).
 2. `check(active)` for this source's non-terminal jobs → `cancel` signal → engine cancel
    (reason recorded); `answer` signal → `QuestionService.answerByHuman(questionId, answer)`
@@ -716,9 +718,68 @@ github:
   executor: herdr-claude
   model: null           # optional claude model for jobs
   progressCommentSeconds: 300
+  recentComments: 10    # comments passed into the job's context
+  projects: {}          # per repo, optional — see "Priority"
+  # projects:
+  #   owner/job-hopper-sandbox:
+  #     owner: owner
+  #     number: 3
+  #     mode: field         # field | rank
+  #     field: Priority     # field mode: single-select or number field name
+  #     map: { P0: 100, P1: 75, P2: 50, P3: 25 }   # single-select option → priority
 ```
 
+**Priority** (the owner, phase 3 addition). Both sources are supported, configurable per repo;
+**when both are present, the project wins**:
+
+1. Project (repos listed under `projects`): the issue's item in that Projects (v2) board.
+   - `mode: field` — a single-select value mapped through `map`, or a number field used
+     directly (clamped 0..100).
+   - `mode: rank` — the item's position in the project's item order:
+     `priority = max(0, 100 − index)`, so the top item is 100.
+   - Read with `gh project item-list <number> --owner <owner> --format json`. That needs
+     the `read:project` token scope. Without it, or on any project error, the source falls
+     back to labels and shows the error in status `detail.projectErrors`. It never blocks.
+2. Labels: the highest matching `priorityLabels` value.
+3. `defaultPriority`.
+
+`priorityReason` records which one applied, e.g. `project:Priority=P1`, `project:rank=2`,
+`label:hopper:p0` or `default`. **Re-sorted on every poll:** discovery recomputes the
+priority of every eligible item. When a waiting (`queued`/`held`) job's priority changed,
+the sync loop updates it and emits `job.reprioritized { from, to, reason }`, then
+triggers a decision. Running jobs keep their priority.
+
+**Full issue context into the job** (the owner, phase 3 addition). The prompt is the issue
+body, then a block:
+
+```
+[job-hopper issue context]
+repo: owner/repo · issue: #N · url: …
+title: …
+labels: a, b · author: owner
+priority: 75 (label:hopper:p1) · project item: <project title> · Priority=P1 (or "none")
+recent comments (oldest first, up to recentComments, hopper status comments excluded):
+- <author> at <ISO>: <body, ≤ 1000 chars>
+...
+[how to report on your issue]
+Your issue is $HOPPER_ISSUE_URL (repo $HOPPER_REPO, number $HOPPER_ISSUE_NUMBER).
+To comment on it: gh issue comment "$HOPPER_ISSUE_NUMBER" -R "$HOPPER_REPO" --body "$(printf '%s\n%s' "$HOPPER_COMMENT_MARKER" "<your text>")"
+Always start your comments with $HOPPER_COMMENT_MARKER. job-hopper posts your status, questions and result for you.
+```
+
+Job environment, set on the job's herdr tab with `herdr tab create --env`:
+- `HOPPER_ISSUE_URL`, `HOPPER_REPO`, `HOPPER_ISSUE_NUMBER`, `HOPPER_ISSUE_TITLE`
+- `HOPPER_COMMENT_MARKER` = `<!-- job-hopper v1 kind=job-comment -->`
+- `HOPPER_JOB_ID`, added by the herdr-claude executor from `ctx.job.id`
+
+The herdr-claude payload gains `env?: Record<string, string>`: keys must match
+`^[A-Z_][A-Z0-9_]*$`, values contain no newline. The marker matters because the job
+comments as the owner: the answer detector skips marked comments, and a job is paused (Claude
+idle) while it waits for an answer anyway.
+
 **GitHubApi port** (`src/sources/github/api.ts`) — the adapter's seam: `whoami()`,
+`projectItems(owner, number)` → `{ url (issue url), index, fields: Record<string, string |
+number> }[]` (throws `missing read:project scope` distinctly),
 `searchOpenIssues({ owners, label })`, `listOpenIssues(repo, label)`, `getIssue(repo,
 number)` → `{ state, labels, author, title, body, url, updatedAt }`,
 `listComments(repo, number)` → `{ id, author, body, createdAt, url }[]`,
@@ -735,9 +796,9 @@ author in `authors`, no `hopper:done` / `hopper:failed`, repo allowed. Already-c
 issues with no job here (another machine, a wiped database) are **not** re-run: an issue
 labelled `hopper:claimed` with no local job is skipped and shown in status detail.
 
-**Item → job:** key = issue URL; title → goal; body → prompt (empty body → claimed, then
-failed with a comment "empty issue body"); priority = highest matching `priorityLabels`
-value, else `defaultPriority`; cwd = `repoPaths[repo]` (expanded) else `defaultCwd`.
+**Item → job:** key = issue URL; title → goal; prompt = body + issue context (above); env as
+above; empty body → claimed, then failed with a comment "empty issue body"; priority per
+"Priority"; cwd = `repoPaths[repo]` (expanded) else `defaultCwd`.
 
 **Comments.** Every hopper comment starts with a hidden marker line
 `<!-- job-hopper v1 kind=<kind> job=<jobId>[ question=<questionId>] -->` — the hopper posts

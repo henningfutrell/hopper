@@ -175,10 +175,20 @@ export interface SourceItem {
   key: string;
   url: string;
   title: string;
-  /** The prompt. */
+  /** The raw item text (issue body). */
   body: string;
+  /**
+   * The full prompt sent to the job: `body` followed by the item context (repo, number, URL,
+   * title, labels, author, priority and where it came from, project item, recent comments)
+   * and instructions for commenting back. Built by the source.
+   */
+  prompt: string;
+  /** Environment for the job's process, e.g. HOPPER_ISSUE_URL, HOPPER_REPO, HOPPER_ISSUE_NUMBER. */
+  env: Record<string, string>;
   author: string;
   priority: number;
+  /** Where `priority` came from, e.g. "project:Priority=P1", "label:hopper:p0", "default". */
+  priorityReason: string;
   /** Working directory for the job (absolute). */
   cwd: string;
   labels: string[];
@@ -217,6 +227,10 @@ export interface JobSource {
   report(report: SourceReport): Promise<Record<string, unknown>>;
 }
 
+/**
+ * Discovery is re-run every poll; for items that already have a waiting job the sync loop
+ * compares `priority` and re-prioritizes the job (event `job.reprioritized`).
+ */
 /** The sync loop's view, for /api/sources and SSE `source.updated`. */
 export interface SourceRegistry {
   statuses(): SourceStatus[];

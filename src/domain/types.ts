@@ -237,6 +237,7 @@ export type EventType =
   | 'job.failed'
   | 'job.cancelled'
   | 'job.requeued'
+  | 'job.reprioritized'
   | 'lane.opened'
   | 'lane.closed'
   | 'decision.made'
@@ -248,7 +249,7 @@ export type EventType =
 
 export const EVENT_TYPES: readonly EventType[] = [
   'job.queued', 'job.prioritized', 'job.held', 'job.approved', 'job.claimed', 'job.started',
-  'job.progressed', 'job.finished', 'job.failed', 'job.cancelled', 'job.requeued',
+  'job.progressed', 'job.finished', 'job.failed', 'job.cancelled', 'job.requeued', 'job.reprioritized',
   'lane.opened', 'lane.closed', 'decision.made', 'jev.mode_changed',
   'question.asked', 'question.escalated', 'question.answered', 'question.expired',
 ];
