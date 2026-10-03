@@ -10,7 +10,17 @@ const verdictSchema = z.object({
   reason: z.string(),
 });
 const outputSchema = z.object({ structured_output: verdictSchema });
-const JSON_SCHEMA = JSON.stringify(z.toJSONSchema(verdictSchema));
+// Literal, not z.toJSONSchema: that stamps `$schema` draft 2020-12, which the claude CLI's
+// draft-07 validator rejects ("no schema with key or ref").
+const JSON_SCHEMA = JSON.stringify({
+  type: 'object',
+  properties: {
+    answer: { type: 'string' }, confident: { type: 'boolean' },
+    risky: { type: 'boolean' }, reason: { type: 'string' },
+  },
+  required: ['answer', 'confident', 'risky', 'reason'],
+  additionalProperties: false,
+});
 
 function scrubbedEnv(): NodeJS.ProcessEnv {
   const env = { ...process.env };
