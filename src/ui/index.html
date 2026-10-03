@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>job-hopper</title>
+<link rel="stylesheet" href="/ui/style.css">
+</head>
+<body>
+<header id="header"></header>
+<main>
+  <section class="panel" id="machines"><h2>Machines &amp; lanes</h2><div class="body"></div></section>
+  <section class="panel" id="queue"><h2>Queue <span class="count"></span></h2><div class="body"></div></section>
+  <section class="panel" id="running"><h2>Running <span class="count"></span></h2><div class="body"></div></section>
+  <section class="panel wide" id="decisions"><h2>Decisions <span class="count"></span></h2><div class="body"></div></section>
+  <section class="panel wide" id="events">
+    <h2>Event stream <span class="count"></span>
+      <input id="event-filter" type="search" placeholder="filter by type" autocomplete="off"></h2>
+    <div class="body"></div>
+  </section>
+  <section class="panel wide" id="deliveries"><h2>Webhook deliveries <span class="count"></span></h2><div class="body"></div></section>
+</main>
+<script type="module" src="/ui/app.js"></script>
+</body>
+</html>
