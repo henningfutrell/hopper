@@ -57,10 +57,13 @@ describe('herdr CLI client', () => {
     expect(calls()).toHaveLength(1);
   });
 
-  it('createTab returns tab and root pane ids', async () => {
-    expect(await herdr().createTab({ workspaceId: 'w7', cwd: '/tmp/a', label: 'local/lane-1 · abcd1234' }))
+  it('createTab returns tab and root pane ids and passes each env var as --env K=V', async () => {
+    expect(await herdr().createTab({ workspaceId: 'w7', cwd: '/tmp/a', label: 'local/lane-1 · abcd1234', env: { HOPPER_JOB_ID: 'j1', HOPPER_REPO: 'o/r' } }))
       .toEqual({ tabId: 'w7:t3', paneId: 'w7:p5' });
-    expect(calls()[0]!.argv.slice(2)).toEqual(['tab', 'create', '--workspace', 'w7', '--cwd', '/tmp/a', '--label', 'local/lane-1 · abcd1234', '--no-focus']);
+    expect(calls()[0]!.argv.slice(2)).toEqual([
+      'tab', 'create', '--workspace', 'w7', '--cwd', '/tmp/a', '--label', 'local/lane-1 · abcd1234',
+      '--env', 'HOPPER_JOB_ID=j1', '--env', 'HOPPER_REPO=o/r', '--no-focus',
+    ]);
   });
 
   it('startAgent passes claude args after -- and maps agent_not_ready', async () => {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { homedir } from 'node:os';
 import { PROTOCOL_FOOTER } from '../../src/executors/herdr/index.ts';
-import { CWD, LANE, contextFor, jobWith, setup, until } from './support.ts';
+import { CWD, JOB_ID, LANE, contextFor, jobWith, setup, until } from './support.ts';
 
 const DONE = { output: ['● Wrote hello.txt.', '  JOB_HOPPER_DONE'] };
 
@@ -29,6 +29,15 @@ describe('herdr-claude executor: shape and validation', () => {
     [{ prompt: 'go', expectedMs: 0 }, 'expectedMs must be a positive number'],
     [{ prompt: 'go', timeoutMs: -1 }, 'timeoutMs must be a positive number'],
     [{ prompt: 'go', timeoutMs: 'x' }, 'timeoutMs must be a positive number'],
+    [{ prompt: 'go', env: { HOPPER_REPO: 'o/r', _X1: '' } }, null],
+    [{ prompt: 'go', env: 'x' }, 'env must be an object of string values'],
+    [{ prompt: 'go', env: { A: 1 } }, 'env must be an object of string values'],
+    [{ prompt: 'go', env: ['A=b'] }, 'env must be an object of string values'],
+    [{ prompt: 'go', env: { 'bad-key': 'x' } }, 'env key bad-key must match ^[A-Z_][A-Z0-9_]*$'],
+    [{ prompt: 'go', env: { '1A': 'x' } }, 'env key 1A must match ^[A-Z_][A-Z0-9_]*$'],
+    [{ prompt: 'go', env: { lower: 'x' } }, 'env key lower must match ^[A-Z_][A-Z0-9_]*$'],
+    [{ prompt: 'go', env: { A: 'x\ny' } }, 'env value of A must not contain a newline'],
+    [{ prompt: 'go', env: { A: 'x\ry' } }, 'env value of A must not contain a newline'],
   ])('validate(%j) → %s', (payload, expected) => {
     expect(executor.validate(payload)).toBe(expected);
   });
@@ -40,11 +49,17 @@ describe('herdr-claude executor: run', () => {
     const { ctx, saved } = contextFor(jobWith({ prompt: 'Write hello.txt', model: 'opus' }));
     await executor.run(ctx);
     expect(herdr.calls.find((c) => c.method === 'ensureWorkspace')!.args).toEqual(['job-hopper', CWD]);
-    expect(herdr.calls.find((c) => c.method === 'createTab')!.args).toEqual([{ workspaceId: 'w1', cwd: CWD, label: `${LANE} · abcdef12` }]);
+    expect(herdr.calls.find((c) => c.method === 'createTab')!.args).toEqual([{ workspaceId: 'w1', cwd: CWD, label: `${LANE} · abcdef12`, env: { HOPPER_JOB_ID: JOB_ID } }]);
     expect(herdr.agentStarts).toEqual([{ name: 'jh-abcdef12', paneId: 'w1:p1', args: ['--dangerously-skip-permissions', '--model', 'opus'], timeoutMs: 60000 }]);
     expect(saved[0]).toEqual({ session: 'jh-test', workspaceId: 'w1', tabId: 'w1:t1', paneId: 'w1:p1', agentName: 'jh-abcdef12', cwd: CWD, laneId: LANE });
     const order = herdr.calls.map((c) => c.method);
     expect(order.indexOf('createTab')).toBeLessThan(order.indexOf('startAgent'));
+  });
+
+  it('sets the payload env on the tab plus HOPPER_JOB_ID from the job, which a payload cannot override', async () => {
+    const { herdr, executor } = setup({ turns: [DONE] });
+    await executor.run(contextFor(jobWith({ prompt: 'go', env: { HOPPER_REPO: 'o/r', HOPPER_JOB_ID: 'forged' } })).ctx);
+    expect(herdr.calls.find((c) => c.method === 'createTab')!.args[0]).toMatchObject({ env: { HOPPER_REPO: 'o/r', HOPPER_JOB_ID: JOB_ID } });
   });
 
   it('expands ~ in the cwd', async () => {
