@@ -16,12 +16,19 @@ export interface MachineState {
 export interface Candidate {
   job: Job;
   effectivePriority: number;
+  /** Appended to the start reason (e.g. a resume boost). */
+  note?: string;
+}
+
+/** The machine a job is pinned to: a resuming job returns to the one holding its pane. */
+export function pinOf(job: Job): string | undefined {
+  return job.pendingAnswer === undefined ? job.spec.machineId : (job.resumeOn ?? job.spec.machineId);
 }
 
 /** Step 5: a hold that applies regardless of Jev, or undefined. */
 export function nativeHold(job: Job, machines: MachineSnapshot[]): string | undefined {
   const executor = job.spec.executor;
-  const pin = job.spec.machineId;
+  const pin = pinOf(job);
   if (!machines.some((m) => m.online && m.executors.includes(executor))) {
     return `no online machine runs executor ${executor}`;
   }
@@ -46,14 +53,14 @@ function room(s: MachineState): number {
 }
 
 function fits(s: MachineState, job: Job): boolean {
-  const pin = job.spec.machineId;
+  const pin = pinOf(job);
   return s.machine.online && s.machine.executors.includes(job.spec.executor)
     && (pin === undefined || pin === s.machine.id) && room(s) > 0;
 }
 
 function noRoomReason(job: Job, states: MachineState[]): string {
   const eligible = states.filter((s) => s.machine.online && s.machine.executors.includes(job.spec.executor)
-    && (job.spec.machineId === undefined || job.spec.machineId === s.machine.id));
+    && (pinOf(job) === undefined || pinOf(job) === s.machine.id));
   const best = eligible.reduce((a, b) => (b.cap > a.cap ? b : a));
   if (best.band === 'hard') return `usage hard limit: no lanes (used ${Math.round(best.usedFrac * 100)}%)`;
   if (best.band === 'soft') return `usage soft limit caps lanes at ${best.cap} (used ${Math.round(best.usedFrac * 100)}%)`;
@@ -64,7 +71,7 @@ function noRoomReason(job: Job, states: MachineState[]): string {
 export function assign(ordered: Candidate[], states: MachineState[]): { start: StartPlan[]; hold: HoldPlan[] } {
   const start: StartPlan[] = [];
   const hold: HoldPlan[] = [];
-  for (const { job, effectivePriority } of ordered) {
+  for (const { job, effectivePriority, note } of ordered) {
     const options = states.filter((s) => fits(s, job));
     if (options.length === 0) {
       hold.push({ jobId: job.id, reason: noRoomReason(job, states) });
@@ -75,7 +82,7 @@ export function assign(ordered: Candidate[], states: MachineState[]): { start: S
     pick.assigned += 1;
     start.push({
       jobId: job.id, laneId: lane?.id ?? null, machineId: pick.machine.id, effectivePriority,
-      reason: `${lane ? `idle lane ${lane.id}` : 'new lane'} on ${pick.machine.id}, ${room(pick)} room left (cap ${pick.cap})`,
+      reason: `${lane ? `idle lane ${lane.id}` : 'new lane'} on ${pick.machine.id}, ${room(pick)} room left (cap ${pick.cap})${note ? `, ${note}` : ''}`,
     });
   }
   return { start, hold };

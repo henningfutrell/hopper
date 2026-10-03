@@ -7,8 +7,12 @@ import { laneCap, machineUsage } from './usage.ts';
 
 /** Pure: same inputs, same Decision. `inputs.at` is the clock; `decisionId` is supplied. */
 export function decide(inputs: DecisionInputs, decisionId: string): Decision {
-  const { policy, machines, lanes, waiting } = inputs;
+  const { policy, machines, lanes } = inputs;
   const reasons: string[] = [];
+
+  const parked = [...inputs.waiting, ...inputs.running].filter((j) => j.status === 'waiting_answer');
+  for (const j of parked) reasons.push(`ignored ${j.id}: status waiting_answer is not an input`);
+  const waiting = inputs.waiting.filter((j) => j.status !== 'waiting_answer');
 
   const states: MachineState[] = machines.map((machine) => {
     const { usedFrac, ignored } = machineUsage(machine.id, inputs.usage);
@@ -29,6 +33,13 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
   const candidates: Candidate[] = [];
   for (const job of waiting) {
     const native = nativeHold(job, machines);
+    if (!native && job.pendingAnswer !== undefined) {
+      // Admitted once already: Jev neither holds nor reorders it.
+      candidates.push({
+        job, effectivePriority: job.priority + policy.resumeBoost, note: `resume boost +${policy.resumeBoost}`,
+      });
+      continue;
+    }
     const verdict = jevVerdict(job, policy.jevCheapBoost);
     if (native) {
       hold.push({ jobId: job.id, reason: native });
