@@ -14,7 +14,7 @@ async function gather(c: EngineContext, trigger: string): Promise<() => Decision
   return () => ({
     at: nowIso(c),
     trigger,
-    jevMode: c.jevMode(),
+    routerMode: c.routerMode(),
     machines,
     lanes: c.store.lanes.list(),
     usage: readings.flat(),
@@ -39,7 +39,7 @@ function apply(c: EngineContext, d: Decision): Claim[] {
   store.decisions.save(d);
   store.events.append({
     type: 'decision.made', decisionId: d.id,
-    data: { decisionId: d.id, trigger: d.trigger, jevMode: d.jevMode, starts: d.start, holds: d.hold, lanes: d.lanes, divergences: d.jev },
+    data: { decisionId: d.id, trigger: d.trigger, routerMode: d.routerMode, starts: d.start, holds: d.hold, lanes: d.lanes, divergences: d.advice },
   });
   for (const plan of d.lanes) {
     for (const laneId of plan.close) {

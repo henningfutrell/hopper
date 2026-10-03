@@ -13,7 +13,7 @@ The contract every module is built against. Types: `src/domain/types.ts`; seams:
                       │                 │
                       ▼                 │
    tick / trigger ─► engine ── gather inputs ──► decide() (pure) ──► Decision
-                      │   machines · lanes · usage · waiting · running · jev mode
+                      │   machines · lanes · usage · waiting · running · router mode
                       └── apply: lanes open/close/drain, claim+start jobs, holds
                                  │
                               executors (test; herdr-claude later)
@@ -31,14 +31,14 @@ Fastify for HTTP, `node:sqlite` for storage, zod for request validation.
 | `src/store/` | SQLite schema, migrations, repositories, event log | engine, http, decider |
 | `src/webhooks/` | signing, dispatcher, retry/backoff | engine, http, decider |
 | `src/grokbot/` | the Grok Bot routine webhook: env-file reader, notifier (event log → POST) | engine, http, decider |
-| `src/jev/` | `JevAdvisor` adapters: `router` (shim over grok-bot-jev), `fake` | engine, http, store |
+| `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `job-hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, `plugins.yaml` + watch, the router slot; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim) | engine, http, store, decider |
 | `src/executors/` | `Executor` adapters: `test` | engine, http, store |
 | `src/machines/` | `MachineSource` adapters: `local` | engine, http, store |
 | `src/usage/` | `UsageSource` adapters: `fake` | engine, http, store |
 | `src/engine/` | the loop: gather → decide → apply; job lifecycle; restart recovery | http |
-| `src/http/` | Fastify routes, SSE, static UI | executors, jev internals |
+| `src/http/` | Fastify routes, SSE, static UI | executors, plugins (reads them through the `PluginsView` port) |
 | `src/ui/` | static `index.html`, `app.js`, `style.css` — browser only | all of `src/` (talks HTTP/SSE only) |
-| `src/main.ts` | composition root: config → adapters → store → engine → server | — |
+| `src/main.ts` | composition root: config → plugin host → adapters → store → engine → server | — |
 
 ## The decider
 
@@ -53,20 +53,20 @@ same Decision. Algorithm, in order:
    - `usedFrac < soft` → `maxLanes`
    - `usedFrac >= hard` → `0` (stop: close idle lanes, drain busy ones, start nothing)
    - between → `floor(maxLanes * (hard - usedFrac) / (hard - soft))` (linear scale-down)
-3. **Jev verdict per waiting job** — always computed, in both modes:
-   - no advice yet → hold `awaiting Jev classification` (so in active mode nothing starts
-     before Jev has spoken; in shadow mode the native verdict ignores it)
-   - `approved` → proceed, whatever the advice (a human override ends every Jev hold)
-   - `ask_human` → hold `jev ask_human: awaiting approval`
-   - `stop_retry` → hold `jev stop_retry: …`
-   - `reuse_cache` → hold `jev reuse_cache: …`
-   - `chat_only`, `run_deterministic` → proceed, priority `+ policy.jevCheapBoost`
+3. **Router verdict per waiting job** (from `job.advice`) — always computed, in both modes:
+   - no advice yet → hold `awaiting router advice` (so in active mode nothing starts
+     before the router has spoken; in shadow mode the native verdict ignores it)
+   - `approved` → proceed, whatever the advice (a human override ends every router hold)
+   - `ask_human` → hold `router ask_human: awaiting approval`
+   - `stop_retry` → hold `router stop_retry: …`
+   - `reuse_cache` → hold `router reuse_cache: …`
+   - `chat_only`, `run_deterministic` → proceed, priority `+ policy.routerCheapBoost`
    - anything else → proceed
-   A `JevDivergence` is recorded for every job where the Jev verdict (start/hold or order)
+   A `Divergence` is recorded for every job where the router verdict (start/hold or order)
    differs from the native one.
-4. **Mode.** `active`: admission and effective priority use the Jev verdict. `shadow`:
-   native verdict (everything admissible, priority = `job.priority`); Jev's verdict appears
-   only in `decision.jev`.
+4. **Mode** (router mode). `active`: admission and effective priority use the router
+   verdict. `shadow`: native verdict (everything admissible, priority = `job.priority`); the
+   router's verdict appears only in `decision.advice`.
 5. **Native holds.** No online machine runs the job's executor → hold. Pinned machine
    unknown or offline → hold.
 6. **Order.** Admissible jobs by effective priority desc, then `createdAt` asc, then `id`.
@@ -89,18 +89,18 @@ same Decision. Algorithm, in order:
 **A no-op decision is not recorded.** The engine discards a Decision with no lane change,
 no start, and no hold whose reason differs from the job's current `holdReason`. Otherwise
 an idle tick every 2 s would bury the decision log. Every recorded Decision emits
-`decision.made` with `{ decisionId, starts, holds, lanes, jevMode, divergences }`.
+`decision.made` with `{ decisionId, starts, holds, lanes, routerMode, divergences }` (v2).
 
 ## The engine
 
 - **Triggers:** interval tick (`JOB_HOPPER_TICK_MS`, default 2000) plus the events
   `job.queued`, `job.prioritized`, `job.approved`, `job.finished`, `job.failed`,
-  `job.cancelled`, `jev.mode_changed`, and a usage change. Decisions are serialized; triggers
+  `job.cancelled`, `router.mode_changed`, and a usage change. Decisions are serialized; triggers
   arriving mid-decision coalesce into one follow-up. Event listeners schedule triggers with
   `setImmediate`; they never run a decision synchronously inside `append`.
-- **Jev classification:** on `job.queued`, on every tick, and at startup, the engine calls
-  `advisor.advise(job)` for each waiting job with no `jevAdvice` that is not already in its
-  in-memory in-flight set — off the decision path. It stores `jevAdvice` and emits
+- **Router advice:** on `job.queued`, on every tick, and at startup, the engine calls
+  `router.advise(job)` for each waiting job with no `advice` that is not already in its
+  in-memory in-flight set — off the decision path. It stores `advice` and emits
   `job.prioritized` with `{ advice, mode }`. A crash or requeue mid-classification is
   therefore retried, never lost.
 - **Claim** increments `attempts`. `job.progressed` is throttled to one event per job per
@@ -111,7 +111,7 @@ an idle tick every 2 s would bury the decision log. Every recorded Decision emit
   closes if draining. Holds: set `status: held`, `holdReason`, emit `job.held` only when the
   reason changed.
 - **Approve:** `POST /api/jobs/:id/approve` sets `approved: true` on a waiting job; it overrides
-  every Jev hold (not only `ask_human`).
+  every router hold (not only `ask_human`).
 - **Cancel:** waiting → `cancelled` at once. Claimed/running → abort the executor's signal;
   the job ends `cancelled`. Terminal → HTTP 409.
 - **Restart recovery:** at startup, every `claimed`/`running` job returns to `queued`
@@ -129,7 +129,13 @@ Jev (`~/workbench/jev-src/grok-bot-jev`, Python) is a per-request classifier: Ty
 budgets**, so it cannot be the usage source. job-hopper uses it for what it is: the
 **admission and prioritization layer** per job. Usage budgets come from `UsageSource`.
 
-- `router` advisor: spawns `python3 src/jev/jev_shim.py` with JSON on stdin. The shim puts
+> **Phase 5:** Jev is one **router plugin**, `jev-router` (`src/plugins/router/jev-router/`);
+> the `JevAdvisor` port is the `Router` port; `fake` is a test double at that seam
+> (`test/support/fake-router.ts`), never configured. Advice no longer has `jevUsed` at top
+> level: jev-router puts it in `details.jevUsed`. Mode is the **router mode**
+> (`settings.routerMode`, `POST /ui/api/router-mode`). The text below describes the shim.
+
+- `jev-router`: spawns `<python> src/plugins/router/jev-router/jev_shim.py` with JSON on stdin. The shim puts
   the Jev repo on `sys.path`, loads Jev's **own** `config.yaml` (its kill switch is
   honoured), overrides only `mode` (job-hopper's) and `logging.path` (job-hopper's data
   dir), sets `PYTHONDONTWRITEBYTECODE=1`, calls `route_task(state)`, prints the result.
@@ -139,21 +145,22 @@ budgets**, so it cannot be the usage source. job-hopper uses it for what it is: 
   and the call falls back. The shim patches `src.router.load_config` and
   `src.router.resolve_log_path` (the names the router imported) and catches
   `BaseException` (`secrets.py` raises `SystemExit`). Advice from a real router run has
-  `source: "jev-router"`; `jevUsed` mirrors the router's own `jev_used`. Any failure (missing `typesafe_sdk`, missing
+  `source: "jev-router"`; `details.jevUsed` mirrors the router's own `jev_used`. Any failure (missing `typesafe_sdk`, missing
   `TYPESAFE_API_KEY`, timeout 10 s, bad JSON) → advice `{ action: proceed_full, source:
-  fallback, jevUsed: false, reason: "jev unavailable: …" }` — the router's own documented
+  fallback, details: { jevUsed: false }, reason: "jev unavailable: …" }` — the router's own documented
   safe fallback.
 - Job → Jev state: `goal` ← `spec.goal`, `kind` ← `spec.kind`, plus `spec.meta` keys
   `cached_artifact`, `cached_note`, `prior_error`, `same_error_count`, `sources_found`,
   `constraints`.
-- `fake` advisor: deterministic, no network, mirrors the router's precedence from job
+- `fake` router (test double): deterministic, no network, mirrors the router's precedence from job
   metadata: bypass marker → `proceed_full` (jevUsed false); `meta.cached_artifact` →
   `reuse_cache`; `meta.prior_error` and `same_error_count >= 1` → `stop_retry`; kind
   `lookup` → `run_deterministic`; `chat` → `chat_only`; `account` → `ask_human`;
   `meta.needs_subagent` → `allow_subagent`; `research`/`browser` → `research_capped`; else
   `proceed_full`.
-- **Mode** is job-hopper's, persisted in the store (`settings`), initialised from
-  `JOB_HOPPER_JEV_MODE` (default `shadow`), switched at runtime by `PUT /api/jev`.
+- **Mode** (router mode) is job-hopper's, persisted in the store (`settings.routerMode`),
+  initialised from `JOB_HOPPER_JEV_MODE` (default `shadow`), switched at runtime in the UI
+  (`POST /ui/api/router-mode`).
 
 ## HTTP API
 
@@ -166,7 +173,7 @@ Loopback only (`127.0.0.1`), no auth — see profile. JSON everywhere; errors ar
 
 | method | path | body / query | returns |
 |--------|------|--------------|---------|
-| GET | `/api/health` | | `{ ok, version, jevMode, advisor, uptimeS }` |
+| GET | `/api/health` | | `{ ok, version, routerMode, router, fallback, executors, uptimeS }` (phase 5) |
 | POST | `/api/jobs` | `JobSpec` | 201 `Job` · 400 unknown executor / invalid payload |
 | GET | `/api/jobs` | `?status=queued,held&limit=100` | `{ jobs: Job[] }` newest first |
 | GET | `/api/jobs/:id` | | `Job` · 404 |
@@ -178,8 +185,8 @@ Loopback only (`127.0.0.1`), no auth — see profile. JSON everywhere; errors ar
 | GET | `/api/decisions/:id` | | `Decision` · 404 |
 | GET | `/api/events` | `?after=0&limit=200&types=job.queued,…` | `{ events: DomainEvent[] }` |
 | GET | `/api/events/stream` | `?after=<seq>` or `Last-Event-ID` | SSE (below) |
-| GET | `/api/jev` | | `{ mode, advisor }` |
-| PUT | `/api/jev` | `{ mode: "shadow" \| "active" }` | `{ mode, advisor }` (emits `jev.mode_changed`) |
+| GET | `/api/router` | | `{ mode, router, plugin, fallback, reason? }` (phase 5; was `GET /api/jev`) |
+| GET | `/api/plugins` | | `PluginsReport` (phase 5): roles, config, router instance + detection + fallback, every plugin |
 | GET | `/api/usage` | | `{ readings: UsageReading[] }` |
 | PUT | `/api/usage/fake` | `{ used, limit, unit?, machineId? }` | `{ readings }` · 404 if no fake source |
 | POST | `/api/webhooks` | `{ url, events?: string[], secret?: string }` | 201 `WebhookSubscription` (secret shown once) |
@@ -231,9 +238,9 @@ constructs adapters.
 src/store/index.ts      openStore(o: { path: string; clock: Clock; idGen?: IdGen }): Store
 src/webhooks/index.ts   createWebhookDispatcher(o: { store: Store; clock: Clock; baseMs: number;
                           timeoutMs?: number; maxAttempts?: number; sweepMs?: number }): WebhookDispatcher
-src/jev/index.ts        createRouterAdvisor(o: { jevSrc: string; python: string; dataDir: string;
-                          mode: () => JevMode; clock: Clock; timeoutMs?: number }): JevAdvisor
-                        createFakeAdvisor(o: { clock: Clock }): JevAdvisor
+src/plugins/index.ts    createPluginHost(o: { pluginDir; pluginsFile; defaultRouter: InstanceSpec; dataDir;
+                          clock; logger; routerMode(); kit?; builtins?; intervalMs? }): PluginHost
+                          — start(), stop(), router (live), routerStatus(), report(), reload()
 src/executors/index.ts  createTestExecutor(): Executor
                         createExecutorRegistry(executors: Executor[]): ExecutorRegistry
 src/machines/index.ts   createLocalMachineSource(o: { maxLanes: number; executors: string[];
@@ -264,7 +271,7 @@ Every event: `{ seq, id, type, at, jobId?, laneId?, machineId?, decisionId?, dat
 | type | `data` |
 |------|--------|
 | `job.queued` | `{ spec, priority }` |
-| `job.prioritized` | `{ advice: JevAdvice, mode, statusAtAdvice }` — emitted once per job, whatever its status when Jev answered |
+| `job.prioritized` | v2 `{ advice: Advice, mode, statusAtAdvice }` — emitted once per job, whatever its status when the router answered |
 | `job.held` | `{ reason }` — only when the reason changes |
 | `job.approved` | `{}` |
 | `job.claimed` | `{ attempts, effectivePriority, reason }` |
@@ -277,8 +284,8 @@ Every event: `{ seq, id, type, at, jobId?, laneId?, machineId?, decisionId?, dat
 | `job.reprioritized` | `{ from, to, reason }` — phase 3, source re-sort |
 | `lane.opened` | `{}` |
 | `lane.closed` | `{ reason }` — the lane plan's reason, `drained`, or `daemon restart` |
-| `decision.made` | `{ decisionId, trigger, jevMode, starts, holds, lanes, divergences }` |
-| `jev.mode_changed` | `{ from, to }` |
+| `decision.made` | v2 `{ decisionId, trigger, routerMode, starts, holds, lanes, divergences }` |
+| `router.mode_changed` | `{ from, to }` (was `jev.mode_changed`) |
 
 The usage-change trigger is named `usage.changed`; it is a trigger, not an event.
 
@@ -308,8 +315,8 @@ The usage-change trigger is named `usage.changed`; it is a trigger, not an event
 | `JOB_HOPPER_PORT` | `4790` |
 | `JOB_HOPPER_DB` | `~/.local/share/job-hopper/job-hopper.db` |
 | `JOB_HOPPER_TICK_MS` | `2000` |
-| `JOB_HOPPER_JEV_MODE` | `shadow` (initial only; the stored setting wins once set) |
-| `JOB_HOPPER_JEV_ADVISOR` | `router` (`fake` for tests and demos) |
+| `JOB_HOPPER_JEV_MODE` | `shadow` (initial router mode only; the stored setting wins once set) |
+| `JOB_HOPPER_JEV_ADVISOR` | `router`, the only value (phase 5: `fake` is a test double; other routers come from `plugins.yaml`) |
 | `JOB_HOPPER_JEV_SRC` | `~/workbench/jev-src/grok-bot-jev` |
 | `JOB_HOPPER_PYTHON` | `python3` |
 | `JOB_HOPPER_LOCAL_LANES` | `4` |
@@ -491,8 +498,8 @@ is "If the job is complete, end your message with JOB_HOPPER_DONE".
 
 `waiting_answer` jobs are in neither `waiting` nor `running`, hold no lane, and are not
 inputs. A waiting job with `pendingAnswer`: effective priority `+ policy.resumeBoost` in
-both modes; pinned to `job.resumeOn ?? spec.machineId`; Jev holds do not apply to it (the
-job was already admitted once) — it is never re-held for Jev.
+both modes; pinned to `job.resumeOn ?? spec.machineId`; router holds do not apply to it (the
+job was already admitted once) — it is never re-held for the router.
 
 ## API additions
 
@@ -632,7 +639,7 @@ the engine.
 ## Read-only API (unchanged unless noted)
 
 `GET /api/health` · `/api/jobs` · `/api/jobs/:id` · `/api/queue` · `/api/machines` ·
-`/api/decisions[/:id]` · `/api/events` · `/api/events/stream` (SSE) · `/api/jev` ·
+`/api/decisions[/:id]` · `/api/events` · `/api/events/stream` (SSE) · `/api/router` (was `/api/jev`) ·
 `/api/usage` · `/api/questions[/:id]` · `/api/webhooks` (from `webhooks.yaml`, secrets
 omitted, plus `config: { path, loadedAt, error? }`) · `/api/webhooks/deliveries` ·
 **new** `GET /api/sources` → `{ sources: SourceStatus[] }`.
@@ -675,7 +682,7 @@ token and send any `Origin`. Cookies are no better here: they ignore ports, so a
 | POST | `/ui/api/jobs/:id/cancel` | `{}` | engine `cancel(id, "cancelled in UI")` (the source is told) |
 | POST | `/ui/api/jobs/:id/approve` | `{}` | engine approve |
 | POST | `/ui/api/questions/:id/answer` | `{ answer }` | `QuestionService.answerByHuman` (404/409) |
-| POST | `/ui/api/jev` | `{ mode }` | set Jev mode |
+| POST | `/ui/api/router-mode` | `{ mode }` | set router mode (phase 5; was `/ui/api/jev`) |
 | POST | `/ui/api/logout` | `{}` | drop the session |
 
 **Residual risk, stated.** Still able to act or read:
@@ -1448,13 +1455,13 @@ plugin for that role (built-in and custom) with its detection result; **Rescan**
 role, or enable/disable an instance, writing `plugins.yaml` atomically. It **never edits
 options** — `bin`, `args`, `cwd` would make a UI session arbitrary command execution; options
 are edited in the file. This amends "No route creates or changes a … setting": plugin
-selection joins Jev mode as a UI-session mutation.
+selection joins router mode as a UI-session mutation.
 
 ### Failure
 
 | role | on create failure or unavailable |
 |---|---|
-| router | `pass-through`; advice `source: fallback`; shown in `/api/health` (today it says `jev-router` while advice is fallback) |
+| router | `pass-through`; advice `source: fallback`; `/api/health` says `fallback: true` (also while the router's own advice is `source: fallback`) |
 | answerer | none → questions go to the assessor-less human path |
 | assessor | `always-escalate` (fail safe) |
 | executor | jobs naming it `held`, reason `executor <name> unavailable`; never failed or re-routed |
@@ -1476,7 +1483,7 @@ stored old events are not rewritten (read raw by version; v1 schemas stay in doc
 
 ### Slices (each test-first, each lands runnable)
 
-1. **Plugin core through the router**: SDK + contract, registry, loader (built-in + custom),
+1. **Plugin core through the router** (landed; "Settled in slice 1" below): SDK + contract, registry, loader (built-in + custom),
    detection kit, `plugins.yaml` (router section) + watch, `GET /api/plugins`, `Router` port,
    `jev-router`, `pass-through`, Jev→router renames and store migrations, `/api/health` shows
    fallback. Glossary first.
@@ -1488,3 +1495,52 @@ stored old events are not rewritten (read raw by version; v1 schemas stay in doc
 6. **Examples + `plugin:check`** + plugin tsconfig from `install.sh`.
 7. **UI Plugins panel** + `POST /ui/api/plugins` (select only) + rescan.
 8. **Install on server** (when no herdr-claude job runs) and live verification.
+
+### Settled in slice 1 (2026-10-03)
+
+- **Roles are what exists.** `Role` is `'router'` only; each later slice adds its role to
+  `ROLES` (`src/domain/plugins.ts`) with its port. No role is declared before its code.
+- **`detect(sys, options)`.** Detection gets the validated options: whether jev-router can run
+  depends on its `jevSrc` and `python`. The catalogue in `/api/plugins` detects each plugin
+  with its default options (`{}` parsed); a plugin whose options have no defaults shows
+  `needs-setup`. The configured instance is detected with its own options.
+- **Router context carries the router mode.** `create(ctx, options)` gets
+  `ctx.routerMode()` for the router role (`RoleContext` in `sdk.ts`): Jev is told job-hopper's
+  mode, as before. Other roles will add their own context fields.
+- **Fallback, all paths:** unknown plugin, invalid options, detection not `available`,
+  `create` throwing → `pass-through` stands in (advice `source: fallback`, reason `router
+  <name> unavailable: …`). A router whose `advise` throws (custom plugins may break the
+  contract) → fallback advice for that call. `fallback: true` in `/api/health` and
+  `/api/router` while either holds, or while the router's own last advice was `source:
+  fallback` (jev-router's shim failing); it clears on the next real advice.
+- **plugins.yaml in slice 1:** no file, or a file without `router` → the env-derived instance
+  `{ name: jev, plugin: jev-router, options: { jevSrc: JOB_HOPPER_JEV_SRC, python:
+  JOB_HOPPER_PYTHON } }`. An invalid file → the last good router is kept (at start: the
+  env-derived one) and the error is in `/api/plugins` `config.error` — the `webhooks.yaml`
+  rule. Nothing is written; the daemon-side migration is slice 4. File readable by
+  group/other → warning. Unknown top-level keys are refused; the later sections are accepted
+  unread.
+- **`JOB_HOPPER_JEV_ADVISOR`** accepts only `router` (the installed unit sets it). `fake` is a
+  test double at the `Router` seam (`AppSeams.router`), not a plugin and not configurable.
+  `JOB_HOPPER_JEV_MODE` and `JOB_HOPPER_JEV_CHEAP_BOOST` keep their names until slice 4 removes
+  part-choosing env; they feed `routerMode` and `routerCheapBoost`.
+- **Scratch dir** is `<dataDir>/plugin-data/<id>` — not under the plugin dir, which holds only
+  plugin code. jev-router keeps writing `jev-runs.jsonl` in the data dir.
+- **Migration 4** (`src/store/migrate-router.ts`, a function migration — the runner now takes
+  SQL or a function): `jevUsed` moves into `details.jevUsed` for **every** stored advice
+  (fake and fallback rows too), so no field is lost. Decision bodies are renamed including
+  the jobs inside `inputs`. Hold reasons and divergence notes already stored keep their old
+  text; the next Decision rewrites a held job's reason (`router …`) and emits `job.held`.
+- **Superseded payloads stay readable:** `src/events/legacy.ts` keeps `job.prioritized` v1,
+  `decision.made` v1 and `jev.mode_changed` v1; `validateEvent` checks an event against the
+  schema of its own type and version; the envelope accepts the retired `jev.mode_changed`.
+- **Custom plugin ids** match `^[a-z0-9][a-z0-9-]*$`; a second custom plugin with a taken id
+  is refused like a built-in collision. A plugin module that throws on import is an error in
+  `/api/plugins`, never a boot failure.
+
+### Configuration added (env)
+
+| var | default |
+|-----|---------|
+| `JOB_HOPPER_PLUGIN_DIR` | `~/.config/job-hopper/plugins` |
+| `JOB_HOPPER_PLUGINS_FILE` | `~/.config/job-hopper/plugins.yaml` |

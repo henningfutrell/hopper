@@ -9,6 +9,9 @@ An additive (optional) field keeps the version; a removed, renamed or retyped fi
 
 Events stored before phase 3 read as v1 and are not re-validated.
 
+Stored events are never rewritten. Superseded versions stay readable and documented: `job.prioritized.v1`, `decision.made.v1`, `jev.mode_changed.v1`
+(phase 5 renamed Jev → router: `jev.mode_changed` is now `router.mode_changed`).
+
 ```json
 { "schemaVersion": 1, "seq": 1, "id": "uuid", "type": "job.queued", "at": "ISO",
   "jobId": "…", "laneId": "…", "machineId": "…", "decisionId": "…", "questionId": "…", "data": { … } }
@@ -48,7 +51,7 @@ Version 1 (`docs/schemas/job.queued.v1.json`). A job was accepted (pushed, or pu
 
 ## `job.prioritized`
 
-Version 1 (`docs/schemas/job.prioritized.v1.json`). Jev advice arrived for a job; once per job, whatever its status then.
+Version 2 (`docs/schemas/job.prioritized.v2.json`). The router's advice arrived for a job; once per job, whatever its status then.
 
 | field | type | required |
 |---|---|---|
@@ -61,9 +64,9 @@ Version 1 (`docs/schemas/job.prioritized.v1.json`). Jev advice arrived for a job
   "advice": {
     "action": "proceed_full",
     "reason": "ok",
-    "jevUsed": true,
     "details": {
-      "intent": "x"
+      "intent": "x",
+      "jevUsed": true
     },
     "source": "fake",
     "at": "2026-10-02T00:00:00.000Z"
@@ -89,7 +92,7 @@ Version 1 (`docs/schemas/job.held.v1.json`). A Decision held a job and its hold 
 
 ## `job.approved`
 
-Version 1 (`docs/schemas/job.approved.v1.json`). A human approved a job Jev routed to `ask_human`.
+Version 1 (`docs/schemas/job.approved.v1.json`). A human approved a job the router held (e.g. `ask_human`).
 
 `data` is `{}`.
 
@@ -249,13 +252,13 @@ Version 1 (`docs/schemas/lane.closed.v1.json`). A lane closed (decision reason, 
 
 ## `decision.made`
 
-Version 1 (`docs/schemas/decision.made.v1.json`). The engine recorded a Decision.
+Version 2 (`docs/schemas/decision.made.v2.json`). The engine recorded a Decision.
 
 | field | type | required |
 |---|---|---|
 | `decisionId` | string | yes |
 | `trigger` | string | yes |
-| `jevMode` | `shadow` \| `active` | yes |
+| `routerMode` | `shadow` \| `active` | yes |
 | `starts` | object[] | yes |
 | `holds` | object[] | yes |
 | `lanes` | object[] | yes |
@@ -265,7 +268,7 @@ Version 1 (`docs/schemas/decision.made.v1.json`). The engine recorded a Decision
 {
   "decisionId": "d1",
   "trigger": "tick",
-  "jevMode": "shadow",
+  "routerMode": "shadow",
   "starts": [
     {
       "jobId": "j1",
@@ -297,16 +300,16 @@ Version 1 (`docs/schemas/decision.made.v1.json`). The engine recorded a Decision
       "jobId": "j1",
       "advice": "ask_human",
       "native": "start",
-      "withJev": "hold",
+      "withAdvice": "hold",
       "note": "n"
     }
   ]
 }
 ```
 
-## `jev.mode_changed`
+## `router.mode_changed`
 
-Version 1 (`docs/schemas/jev.mode_changed.v1.json`). The Jev mode was switched.
+Version 1 (`docs/schemas/router.mode_changed.v1.json`). The router mode was switched.
 
 | field | type | required |
 |---|---|---|

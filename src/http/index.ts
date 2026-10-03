@@ -1,7 +1,7 @@
 // The HTTP edge: read-only routes, SSE, the static UI, and the UI session — the only way to
 // mutate (design.md "Phase 3"). Loopback only; every request passes the Host guard (AGENTS.md).
 import Fastify, { type FastifyInstance } from 'fastify';
-import type { Clock, QuestionService, SourceRegistry, Store, WebhookDispatcher } from '../domain/ports.ts';
+import type { Clock, PluginsView, QuestionService, SourceRegistry, Store, WebhookDispatcher } from '../domain/ports.ts';
 import type { Engine } from '../engine/index.ts';
 import type { WebhookConfigStatus } from '../webhooks/config.ts';
 import { installErrorHandling } from './errors.ts';
@@ -21,6 +21,8 @@ export interface ServerOptions {
   dispatcher: WebhookDispatcher;
   questions: QuestionService;
   sources: SourceRegistry;
+  /** The router's status and GET /api/plugins. */
+  plugins: PluginsView;
   webhookConfig: { status(): WebhookConfigStatus };
   clock: Clock;
   version: string;
@@ -44,6 +46,6 @@ export function createServer(o: ServerOptions): FastifyInstance {
   sourceRoutes(app, o);
   sseRoutes(app, o);
   staticRoutes(app);
-  registerUiRoutes(app, { engine: o.engine, questions: o.questions, port: o.port, dataDir: o.dataDir, clock: o.clock, sessionHours: o.sessionHours });
+  registerUiRoutes(app, { engine: o.engine, questions: o.questions, plugins: o.plugins, port: o.port, dataDir: o.dataDir, clock: o.clock, sessionHours: o.sessionHours });
   return app;
 }

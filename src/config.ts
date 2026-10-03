@@ -9,14 +9,15 @@ export interface Config {
   port: number;
   dbPath: string;
   tickMs: number;
-  jevMode: 'shadow' | 'active';
-  jevAdvisor: 'router' | 'fake';
+  /** Router mode used only until the store has one. */
+  routerMode: 'shadow' | 'active';
+  /** With `python`: the jev-router instance used when plugins.yaml names no router. */
   jevSrc: string;
   python: string;
   localLanes: number;
   softLimit: number;
   hardLimit: number;
-  jevCheapBoost: number;
+  routerCheapBoost: number;
   webhookBaseMs: number;
   laneIdleGraceMs: number;
   /** Executors to register, by name. */
@@ -52,6 +53,10 @@ export interface Config {
   ghBin: string;
   /** Lifetime of a UI session, in hours. */
   uiSessionHours: number;
+  /** Custom plugins, one directory each. */
+  pluginDir: string;
+  /** plugins.yaml: which plugin instance fills which role. */
+  pluginsFile: string;
   /** GitHub API base for the App adapter and the jobs' hopper-comment; unset → https://api.github.com. Tests point it at a fake. */
   githubApiUrl?: string;
 }
@@ -81,7 +86,9 @@ const schema = z.object({
   JOB_HOPPER_DB: path('~/.local/share/job-hopper/job-hopper.db'),
   JOB_HOPPER_TICK_MS: int(1).default(2000),
   JOB_HOPPER_JEV_MODE: z.enum(['shadow', 'active']).default('shadow'),
-  JOB_HOPPER_JEV_ADVISOR: z.enum(['router', 'fake']).default('router'),
+  // Slice 1 of phase 5: the router is chosen in plugins.yaml; without one, `router` (jev-router
+  // from JEV_SRC / PYTHON) is the only value. The fake router is a test double, never configured.
+  JOB_HOPPER_JEV_ADVISOR: z.literal('router', { error: 'must be router (choose another router in plugins.yaml)' }).default('router'),
   JOB_HOPPER_JEV_SRC: path('~/workbench/jev-src/grok-bot-jev'),
   JOB_HOPPER_PYTHON: z.string().min(1).default('python3'),
   JOB_HOPPER_LOCAL_LANES: int(0).default(4),
@@ -115,6 +122,8 @@ const schema = z.object({
   JOB_HOPPER_GROKBOT_WEBHOOK_FILE: path('~/.config/job-hopper/grokbot-webhook.env'),
   JOB_HOPPER_GH_BIN: z.string().min(1).default('gh'),
   JOB_HOPPER_UI_SESSION_HOURS: z.coerce.number().finite().positive().default(12),
+  JOB_HOPPER_PLUGIN_DIR: path('~/.config/job-hopper/plugins'),
+  JOB_HOPPER_PLUGINS_FILE: path('~/.config/job-hopper/plugins.yaml'),
   JOB_HOPPER_GITHUB_API: z.url({ protocol: /^https?$/ }).transform((u) => u.replace(/\/+$/, '')).optional(),
 }).refine((e) => e.JOB_HOPPER_SOFT_LIMIT < e.JOB_HOPPER_HARD_LIMIT, {
   message: 'must be below JOB_HOPPER_HARD_LIMIT',
@@ -137,14 +146,13 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     port: e.JOB_HOPPER_PORT,
     dbPath: e.JOB_HOPPER_DB,
     tickMs: e.JOB_HOPPER_TICK_MS,
-    jevMode: e.JOB_HOPPER_JEV_MODE,
-    jevAdvisor: e.JOB_HOPPER_JEV_ADVISOR,
+    routerMode: e.JOB_HOPPER_JEV_MODE,
     jevSrc: e.JOB_HOPPER_JEV_SRC,
     python: e.JOB_HOPPER_PYTHON,
     localLanes: e.JOB_HOPPER_LOCAL_LANES,
     softLimit: e.JOB_HOPPER_SOFT_LIMIT,
     hardLimit: e.JOB_HOPPER_HARD_LIMIT,
-    jevCheapBoost: e.JOB_HOPPER_JEV_CHEAP_BOOST,
+    routerCheapBoost: e.JOB_HOPPER_JEV_CHEAP_BOOST,
     webhookBaseMs: e.JOB_HOPPER_WEBHOOK_BASE_MS,
     laneIdleGraceMs: e.JOB_HOPPER_LANE_IDLE_GRACE_MS,
     executors: e.JOB_HOPPER_EXECUTORS,
@@ -171,6 +179,8 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     grokbotWebhookFile: e.JOB_HOPPER_GROKBOT_WEBHOOK_FILE,
     ghBin: e.JOB_HOPPER_GH_BIN,
     uiSessionHours: e.JOB_HOPPER_UI_SESSION_HOURS,
+    pluginDir: e.JOB_HOPPER_PLUGIN_DIR,
+    pluginsFile: e.JOB_HOPPER_PLUGINS_FILE,
     ...(e.JOB_HOPPER_GITHUB_API ? { githubApiUrl: e.JOB_HOPPER_GITHUB_API } : {}),
   };
 }

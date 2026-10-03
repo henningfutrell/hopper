@@ -1,15 +1,17 @@
 import type { DatabaseSync } from 'node:sqlite';
+import { migrateRouterNames } from './migrate-router.ts';
 
 // Schema changes append a migration here; they never drop a queue (persisted state is the
-// user's). `PRAGMA user_version` is the applied-migration count.
-const MIGRATIONS: readonly string[] = [
+// user's). `PRAGMA user_version` is the applied-migration count. A migration is SQL, or a
+// function for a rewrite SQL cannot say plainly (JSON bodies); both run in one transaction.
+const MIGRATIONS: readonly (string | ((db: DatabaseSync) => void))[] = [
   `
   CREATE TABLE jobs (
     seq INTEGER PRIMARY KEY AUTOINCREMENT,
     id TEXT NOT NULL UNIQUE,
     status TEXT NOT NULL,
     created_at TEXT NOT NULL,
-    body TEXT NOT NULL            -- the Job as JSON (spec, jevAdvice, result inside)
+    body TEXT NOT NULL            -- the Job as JSON (spec, advice, result inside)
   );
   CREATE INDEX jobs_status ON jobs (status);
   CREATE TABLE lanes (
@@ -74,6 +76,8 @@ const MIGRATIONS: readonly string[] = [
   UPDATE webhooks SET name = 'legacy-' || id;
   CREATE UNIQUE INDEX webhooks_name ON webhooks (name);
   `,
+  // 4: Jev → router names in jobs, decisions and settings (phase 5).
+  migrateRouterNames,
 ];
 
 export function migrate(db: DatabaseSync): void {
@@ -81,7 +85,9 @@ export function migrate(db: DatabaseSync): void {
   for (let v = row.user_version; v < MIGRATIONS.length; v++) {
     db.exec('BEGIN IMMEDIATE');
     try {
-      db.exec(MIGRATIONS[v]!);
+      const m = MIGRATIONS[v]!;
+      if (typeof m === 'string') db.exec(m);
+      else m(db);
       db.exec(`PRAGMA user_version = ${v + 1}`);
       db.exec('COMMIT');
     } catch (e) {

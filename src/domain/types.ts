@@ -23,15 +23,15 @@ export interface JobSpec {
   payload: Record<string, unknown>;
   /** 0..100, higher runs first. Default 50. */
   priority?: number;
-  /** Short human goal; fed to Jev as `goal`. */
+  /** Short human goal; given to the router (Jev reads it as `goal`). */
   goal?: string;
-  /** Jev `kind` hint: chat | lookup | research | browser | coding | write | account. */
+  /** Kind hint for the router (Jev's `kind`): chat | lookup | research | browser | coding | write | account. */
   kind?: string;
   /** Who pushed it (e.g. "grok-bot"). */
   submittedBy?: string;
   /** Pin to a machine; absent = any. */
   machineId?: MachineId;
-  /** Free metadata passed to Jev state (cached_artifact, prior_error, same_error_count, ...). */
+  /** Free metadata for the router (Jev state: cached_artifact, prior_error, same_error_count, ...). */
   meta?: Record<string, unknown>;
 }
 
@@ -40,11 +40,11 @@ export interface Job {
   spec: JobSpec;
   priority: number; // resolved from spec, default 50
   status: JobStatus;
-  /** Latest Jev advice for this job, absent until Jev has classified it. */
-  jevAdvice?: JevAdvice;
+  /** The router's advice for this job, absent until the router has answered. */
+  advice?: Advice;
   /** Set while held: the reason from the last Decision. */
   holdReason?: string;
-  /** True once a human approved a job Jev routed to `ask_human`. */
+  /** True once a human approved a job the router held (`ask_human` and the other router holds). */
   approved: boolean;
   laneId?: LaneId;
   progress?: number; // 0..1
@@ -90,8 +90,8 @@ export interface JobSourceRef {
   author?: string;
 }
 
-/** The actions grok-bot-jev's router can return (src/router.py). */
-export type JevAction =
+/** The actions a router can advise — grok-bot-jev's router actions (src/router.py). */
+export type AdviceAction =
   | 'proceed_full'
   | 'reuse_cache'
   | 'stop_retry'
@@ -101,20 +101,19 @@ export type JevAction =
   | 'allow_subagent'
   | 'research_capped';
 
-export interface JevAdvice {
-  action: JevAction;
+/** A router's answer for one job. */
+export interface Advice {
+  action: AdviceAction;
   reason: string;
-  /** Whether Jev's classifier actually ran (false: kill switch / bypass / fallback). */
-  jevUsed: boolean;
-  /** Router `details` verbatim: intent, confidences, complexity_0_1, ... */
+  /** The router's own details verbatim (jev-router: intent, confidences, jevUsed, ...). */
   details: Record<string, unknown>;
-  /** Which advisor produced it: "jev-router" | "fake" | "fallback". */
+  /** Who produced it: the router plugin ("jev-router", "pass-through", ...), or "fallback". */
   source: string;
   at: string;
 }
 
 /** shadow: advice is recorded, never changes a Decision. active: advice shapes admission and order. */
-export type JevMode = 'shadow' | 'active';
+export type RouterMode = 'shadow' | 'active';
 
 export interface Lane {
   id: LaneId;
@@ -155,7 +154,7 @@ export interface UsageReading {
 export interface DecisionInputs {
   at: string;
   trigger: string; // "tick" | "job.queued" | "job.finished" | ... — what woke the engine
-  jevMode: JevMode;
+  routerMode: RouterMode;
   machines: MachineSnapshot[];
   lanes: Lane[];
   usage: UsageReading[];
@@ -171,8 +170,8 @@ export interface DeciderPolicy {
   softLimit: number;
   /** Fraction used at which every idle lane closes and no job starts (0..1). */
   hardLimit: number;
-  /** Priority added in active mode for cheap Jev classes (chat_only, run_deterministic). */
-  jevCheapBoost: number;
+  /** Priority added in active mode for cheap advice (chat_only, run_deterministic). */
+  routerCheapBoost: number;
   /** An idle lane with no work for it closes only after being idle this long (ms). */
   laneIdleGraceMs: number;
   /** Priority added to a job resuming with an answer — it is part done. Both modes. */
@@ -203,12 +202,12 @@ export interface HoldPlan {
   reason: string;
 }
 
-/** What Jev would have changed. Always computed; only applied in active mode. */
-export interface JevDivergence {
+/** What the router's advice would have changed. Always computed; only applied in active mode. */
+export interface Divergence {
   jobId: JobId;
-  advice: JevAction;
+  advice: AdviceAction;
   native: 'start' | 'hold';
-  withJev: 'start' | 'hold';
+  withAdvice: 'start' | 'hold';
   note: string;
 }
 
@@ -216,11 +215,12 @@ export interface Decision {
   id: string;
   at: string;
   trigger: string;
-  jevMode: JevMode;
+  routerMode: RouterMode;
   lanes: LanePlan[];
   start: StartPlan[];
   hold: HoldPlan[];
-  jev: JevDivergence[];
+  /** Divergences: jobs where the advice differs from the native verdict. */
+  advice: Divergence[];
   /** Plain-language reasons, in the order the decider reached them. */
   reasons: string[];
   inputs: DecisionInputs;
@@ -245,7 +245,7 @@ export type EventType =
   | 'lane.opened'
   | 'lane.closed'
   | 'decision.made'
-  | 'jev.mode_changed'
+  | 'router.mode_changed'
   | 'question.asked'
   | 'question.escalated'
   | 'question.answered'
@@ -256,17 +256,17 @@ export type EventType =
  * same version; removed/renamed/retyped field → bump. The store stamps it on append.
  */
 export const EVENT_SCHEMA_VERSIONS: Readonly<Record<EventType, number>> = {
-  'job.queued': 1, 'job.prioritized': 1, 'job.held': 1, 'job.approved': 1, 'job.claimed': 1,
+  'job.queued': 1, 'job.prioritized': 2, 'job.held': 1, 'job.approved': 1, 'job.claimed': 1,
   'job.started': 1, 'job.progressed': 1, 'job.finished': 1, 'job.failed': 1, 'job.cancelled': 1,
   'job.requeued': 1, 'job.reprioritized': 1, 'lane.opened': 1, 'lane.closed': 1,
-  'decision.made': 1, 'jev.mode_changed': 1, 'question.asked': 1, 'question.escalated': 1,
+  'decision.made': 2, 'router.mode_changed': 1, 'question.asked': 1, 'question.escalated': 1,
   'question.answered': 1, 'question.expired': 1,
 };
 
 export const EVENT_TYPES: readonly EventType[] = [
   'job.queued', 'job.prioritized', 'job.held', 'job.approved', 'job.claimed', 'job.started',
   'job.progressed', 'job.finished', 'job.failed', 'job.cancelled', 'job.requeued', 'job.reprioritized',
-  'lane.opened', 'lane.closed', 'decision.made', 'jev.mode_changed',
+  'lane.opened', 'lane.closed', 'decision.made', 'router.mode_changed',
   'question.asked', 'question.escalated', 'question.answered', 'question.expired',
 ];
 
@@ -388,3 +388,8 @@ export interface SourceStatus {
   /** Source-specific facts for the UI, e.g. { owners, repos, authors, label }. */
   detail: Record<string, unknown>;
 }
+
+// ---- Plugins: src/domain/plugins.ts (re-exported here, one vocabulary) ------------------
+
+export { ROLES } from './plugins.ts';
+export type { Detection, InstanceSpec, PluginsReport, Role, RouterStatus } from './plugins.ts';

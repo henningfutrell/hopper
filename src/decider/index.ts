@@ -1,7 +1,7 @@
-import type { Decision, DecisionInputs, JevDivergence, Lane } from '../domain/types.ts';
+import type { Decision, DecisionInputs, Divergence, Lane } from '../domain/types.ts';
 import { assign, nativeHold, order } from './assign.ts';
 import type { Candidate, MachineState } from './assign.ts';
-import { divergence, jevVerdict } from './jev-verdict.ts';
+import { divergence, routerVerdict } from './router-verdict.ts';
 import { planLanes } from './lanes.ts';
 import { laneCap, machineUsage } from './usage.ts';
 
@@ -29,25 +29,25 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
   const idleByMachine = new Map<string, Lane[]>(states.map((s) => [s.machine.id, [...s.freeIdle]]));
 
   const hold: Decision['hold'] = [];
-  const jev: JevDivergence[] = [];
+  const advice: Divergence[] = [];
   const candidates: Candidate[] = [];
   for (const job of waiting) {
     const native = nativeHold(job, machines);
     if (!native && job.pendingAnswer !== undefined) {
-      // Admitted once already: Jev neither holds nor reorders it.
+      // Admitted once already: the router neither holds nor reorders it.
       candidates.push({
         job, effectivePriority: job.priority + policy.resumeBoost, note: `resume boost +${policy.resumeBoost}`,
       });
       continue;
     }
-    const verdict = jevVerdict(job, policy.jevCheapBoost);
+    const verdict = routerVerdict(job, policy.routerCheapBoost);
     if (native) {
       hold.push({ jobId: job.id, reason: native });
       continue;
     }
     const d = divergence(job, verdict);
-    if (d) jev.push(d);
-    if (inputs.jevMode === 'active') {
+    if (d) advice.push(d);
+    if (inputs.routerMode === 'active') {
       if (verdict.admit) candidates.push({ job, effectivePriority: job.priority + verdict.boost });
       else hold.push({ jobId: job.id, reason: verdict.reason });
     } else {
@@ -65,11 +65,11 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
   });
 
   reasons.push(
-    `${inputs.jevMode} mode: ${waiting.length} waiting, ${placed.start.length} start, ${hold.length} held`,
-    ...jev.map((d) => `jev ${d.advice} on ${d.jobId}: native ${d.native}, with jev ${d.withJev}`),
+    `${inputs.routerMode} mode: ${waiting.length} waiting, ${placed.start.length} start, ${hold.length} held`,
+    ...advice.map((d) => `advice ${d.advice} on ${d.jobId}: native ${d.native}, with advice ${d.withAdvice}`),
   );
   return {
-    id: decisionId, at: inputs.at, trigger: inputs.trigger, jevMode: inputs.jevMode,
-    lanes: plans, start: placed.start, hold, jev, reasons, inputs,
+    id: decisionId, at: inputs.at, trigger: inputs.trigger, routerMode: inputs.routerMode,
+    lanes: plans, start: placed.start, hold, advice, reasons, inputs,
   };
 }

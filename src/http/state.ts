@@ -1,7 +1,7 @@
-// Read routes over engine state. Nothing here changes anything (Jev mode is a UI mutation).
+// Read routes over engine state. Nothing here changes anything (router mode is a UI mutation).
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import type { Clock, Store } from '../domain/ports.ts';
+import type { Clock, PluginsView, Store } from '../domain/ports.ts';
 import { EVENT_TYPES } from '../domain/types.ts';
 import type { DomainEvent, EventType } from '../domain/types.ts';
 import type { Engine } from '../engine/index.ts';
@@ -37,15 +37,23 @@ function eventsAfter(store: Store, after: number, limit: number, types?: EventTy
   }
 }
 
-export function stateRoutes(app: FastifyInstance, o: { engine: Engine; store: Store; clock: Clock; version: string }): void {
-  const { engine, store } = o;
-  const startedAt = o.clock.now().getTime();
-  const jev = () => ({ mode: engine.jevMode(), advisor: engine.advisorName });
+/** GET /api/router and the UI's POST /ui/api/router-mode answer: mode plus the router's status. */
+export function routerView(engine: Engine, plugins: PluginsView) {
+  const s = plugins.routerStatus();
+  return { mode: engine.routerMode(), router: s.name, plugin: s.plugin, fallback: s.fallback, ...(s.reason === undefined ? {} : { reason: s.reason }) };
+}
 
-  app.get('/api/health', async () => ({
-    ok: true, version: o.version, jevMode: engine.jevMode(), advisor: engine.advisorName, executors: engine.executorNames,
-    uptimeS: Math.floor((o.clock.now().getTime() - startedAt) / 1000),
-  }));
+export function stateRoutes(app: FastifyInstance, o: { engine: Engine; store: Store; clock: Clock; version: string; plugins: PluginsView }): void {
+  const { engine, store, plugins } = o;
+  const startedAt = o.clock.now().getTime();
+
+  app.get('/api/health', async () => {
+    const r = plugins.routerStatus();
+    return {
+      ok: true, version: o.version, routerMode: engine.routerMode(), router: r.name, fallback: r.fallback, executors: engine.executorNames,
+      uptimeS: Math.floor((o.clock.now().getTime() - startedAt) / 1000),
+    };
+  });
   app.get('/api/queue', async () => engine.getQueue());
   app.get('/api/machines', async () => ({ machines: await engine.getMachines() }));
 
@@ -67,7 +75,8 @@ export function stateRoutes(app: FastifyInstance, o: { engine: Engine; store: St
     return { events: eventsAfter(store, q.after, q.limit, q.types) };
   });
 
-  app.get('/api/jev', async () => jev());
+  app.get('/api/router', async () => routerView(engine, plugins));
+  app.get('/api/plugins', async () => plugins.report());
 
   app.get('/api/usage', async () => ({ readings: await engine.getUsage() }));
 }

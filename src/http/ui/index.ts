@@ -4,9 +4,10 @@
 // refusal is a logged 403.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import type { Clock, QuestionService } from '../../domain/ports.ts';
+import type { Clock, PluginsView, QuestionService } from '../../domain/ports.ts';
 import type { Engine } from '../../engine/index.ts';
 import { HttpError, parseWith } from '../errors.ts';
+import { routerView } from '../state.ts';
 import { SESSION_HEADER, mutationRefusal } from './guard.ts';
 import { createLoginCode } from './login-code.ts';
 import { createUiSessions } from './sessions.ts';
@@ -16,6 +17,7 @@ export { LOGIN_CODE_FILE } from './login-code.ts';
 export interface UiRouteOptions {
   engine: Engine;
   questions: QuestionService;
+  plugins: PluginsView;
   /** The bound port (known only after listen). */
   port: () => number;
   dataDir: string;
@@ -25,7 +27,7 @@ export interface UiRouteOptions {
 
 const idParams = z.object({ id: z.string() });
 const answerBody = z.object({ answer: z.string().trim().min(1, 'answer must not be empty') });
-const jevBody = z.object({ mode: z.enum(['shadow', 'active']) });
+const routerModeBody = z.object({ mode: z.enum(['shadow', 'active']) });
 const loginBody = z.object({ code: z.string() });
 
 const refuse = (req: FastifyRequest, reply: FastifyReply, why: string) => {
@@ -80,9 +82,9 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     throw new HttpError(409, `question ${id} is not open`);
   });
 
-  app.post('/ui/api/jev', guarded, async (req) => {
-    o.engine.setJevMode(parseWith(jevBody, req.body).mode);
-    return { mode: o.engine.jevMode(), advisor: o.engine.advisorName };
+  app.post('/ui/api/router-mode', guarded, async (req) => {
+    o.engine.setRouterMode(parseWith(routerModeBody, req.body).mode);
+    return routerView(o.engine, o.plugins);
   });
 
   app.post('/ui/api/logout', guarded, async (req) => {

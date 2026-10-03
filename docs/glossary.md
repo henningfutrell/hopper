@@ -7,7 +7,7 @@ synonyms. Rename here first, in the same commit as everything else.
 |------|---------|-----|
 | **Job** | One unit of work pushed through the API: an executor name, a payload, a priority. | task, run |
 | **Priority** | `0..100` on the job, higher first. Default 50. | rank |
-| **Effective priority** | Priority after Jev's boost, which applies only in active mode. | score |
+| **Effective priority** | Priority after the router's boost (cheap advice), which applies only in active mode. | score |
 | **Machine** | A host that can run jobs. Today: this laptop (`local`). Supplied by a `MachineSource`. | node, worker |
 | **Lane** | One concurrent job slot on a machine. Opened and closed by Decisions. `idle`, `busy`, `draining`. | slot, worker, thread |
 | **Draining** | A busy lane the Decision wants gone; it closes when its job ends. | |
@@ -17,17 +17,23 @@ synonyms. Rename here first, in the same commit as everything else.
 | **Decider** | The pure function `decide()`: inputs in, one Decision out. | scheduler |
 | **Engine** | The loop that gathers inputs, calls the decider, applies the Decision. | daemon (the daemon is the whole process) |
 | **Trigger** | What woke the engine: `tick` or an event type. | |
-| **Decision** | The decider's single answer over all inputs: lane plans, starts, holds, Jev divergences, reasons, and the inputs themselves. | plan |
+| **Decision** | The decider's single answer over all inputs: lane plans, starts, holds, divergences (`advice`), reasons, and the inputs themselves. | plan |
 | **Admission** | Whether a waiting job may start now. | |
 | **Hold** | A Decision keeping a waiting job out, with a reason. Status `held`. | block, defer |
 | **Waiting** | Status `queued` or `held`. | pending |
 | **Claim** | A Decision assigning a job to a lane, before the executor runs. | |
 | **Executor** | Runs one job on one lane: `test` (built in) or `herdr-claude` (Claude Code in a herdr pane). | runner |
-| **Jev** | grok-bot-jev's usage router: classifies a request and returns an action. | |
-| **Jev advice** | Jev's action + reason + details for one job. | |
-| **Advisor** | The adapter producing Jev advice: `router` (the real one) or `fake`. | |
-| **Jev mode** | `shadow`: advice recorded, never applied. `active`: advice shapes admission and order. | |
-| **Divergence** | A job where the Jev verdict differs from the native one. Recorded in both modes. | |
+| **Plugin** | One module implementing one role: built in (`src/plugins/<role>/<id>/`) or custom (one directory under the plugin dir). Default export a `PluginDefinition`. | extension, addon, adapter (an adapter is the code behind a port; a plugin is the swappable unit) |
+| **Role** | A slot the engine calls through one port. Today: `router`. | slot type, kind |
+| **Plugin instance** | A plugin plus validated options, under a name (`jev`), chosen in `plugins.yaml`. | config, profile |
+| **Detection** | A plugin's cheap check that it can run here: `available`, `unavailable` + reason, or `needs-setup` + the command to run. | health check |
+| **Plugin dir** | `~/.config/job-hopper/plugins` (`JOB_HOPPER_PLUGIN_DIR`): custom plugins, one directory each. | |
+| **Plugins file** | `~/.config/job-hopper/plugins.yaml` (`JOB_HOPPER_PLUGINS_FILE`): which instance fills which role. Re-read on change. | |
+| **Router** | The role that advises admission and order per job (`Router` port). Built-in plugins `jev-router` and `pass-through`. When the configured one cannot run, `pass-through` answers and its advice is `source: fallback`. | advisor, classifier |
+| **Advice** | A router's action + reason + details for one job; `source` names the plugin, or `fallback`. | classification, verdict |
+| **Router mode** | `shadow`: advice recorded, never applied. `active`: advice shapes admission and order. Decider state, in the store. | Jev mode |
+| **Jev** | grok-bot-jev's usage router; one router plugin (`jev-router`). | |
+| **Divergence** | A job where the advice's verdict differs from the native one. Recorded in both modes. | |
 | **Waiting answer** | Status `waiting_answer`: a job stopped on a question. Holds no lane; its pane stays open. | blocked, paused (a *paused* source is something else) |
 | **Question** | What a running job needs answered before it continues, with its escalation trail. | prompt, query |
 | **Answer tier** | Who may answer, in order: `opus`, `fable`, `human`. | level |
@@ -67,7 +73,7 @@ synonyms. Rename here first, in the same commit as everything else.
 | domain name | wire type |
 |-------------|-----------|
 | JobQueued | `job.queued` |
-| JobPrioritized (by Jev) | `job.prioritized` |
+| JobPrioritized (by the router) | `job.prioritized` |
 | JobHeld | `job.held` |
 | JobApproved | `job.approved` |
 | JobClaimed | `job.claimed` |
@@ -80,7 +86,7 @@ synonyms. Rename here first, in the same commit as everything else.
 | LaneOpened | `lane.opened` |
 | LaneClosed | `lane.closed` |
 | DecisionMade | `decision.made` |
-| JevModeChanged | `jev.mode_changed` |
+| RouterModeChanged | `router.mode_changed` (was `jev.mode_changed`; stored ones keep that type) |
 | QuestionAsked | `question.asked` |
 | QuestionEscalated (to a tier) | `question.escalated` |
 | QuestionAnswered (by a tier) | `question.answered` |

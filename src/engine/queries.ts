@@ -1,6 +1,6 @@
 // Read models for the HTTP edge.
 import { order } from '../decider/assign.ts';
-import { jevVerdict } from '../decider/jev-verdict.ts';
+import { routerVerdict } from '../decider/router-verdict.ts';
 import type { Job, JobStatus, Lane, MachineSnapshot, UsageReading } from '../domain/types.ts';
 import type { EngineContext } from './context.ts';
 
@@ -29,10 +29,10 @@ export function createQueries(c: EngineContext): Queries {
         queued: 0, held: 0, claimed: 0, running: 0, waiting_answer: 0, finished: 0, failed: 0, cancelled: 0,
       };
       for (const j of all) counts[j.status] += 1;
-      const active = c.jevMode() === 'active';
-      // The decider's own order: effective priority (Jev boost only in active mode), then age.
+      const active = c.routerMode() === 'active';
+      // The decider's own order: effective priority (router boost only in active mode), then age.
       const waiting = order(all.filter((j) => j.status === 'queued' || j.status === 'held').map((job) => {
-        const v = jevVerdict(job, c.policy.jevCheapBoost);
+        const v = routerVerdict(job, c.policy.routerCheapBoost);
         return { job, effectivePriority: job.priority + (active && v.admit ? v.boost : 0) };
       })).map((x) => x.job);
       const running = all.filter((j) => j.status === 'claimed' || j.status === 'running').reverse();

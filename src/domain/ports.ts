@@ -1,8 +1,8 @@
 // Seams. Everything the engine talks to that is not pure domain logic sits behind one of
-// these. Adapters live in src/{executors,machines,usage,jev,store,webhooks}.
+// these. Adapters live in src/{executors,machines,usage,plugins,store,webhooks}.
 
 import type {
-  DomainEvent, Decision, EventType, Job, JobId, JobSpec, JobStatus, JevAdvice, JevMode, Lane,
+  Advice, DomainEvent, Decision, EventType, Job, JobId, JobSpec, JobStatus, Lane, PluginsReport, RouterMode, RouterStatus,
   JobSourceRef, LaneId, MachineId, MachineSnapshot, NewEvent, Question, QuestionAttempt, QuestionStatus,
   AnswerTier, SourceStatus, UsageReading, WebhookDelivery, WebhookSubscription,
 } from './types.ts';
@@ -85,10 +85,16 @@ export interface UsageSource {
   poll(): Promise<UsageReading[]>;
 }
 
-/** Jev, as job-hopper consumes it: classify one job, return advice. Never throws. */
-export interface JevAdvisor {
+/** The router role: advise on one job. Never throws (a failure is advice with `source: fallback`). */
+export interface Router {
   readonly name: string;
-  advise(job: Job): Promise<JevAdvice>;
+  advise(job: Job): Promise<Advice>;
+}
+
+/** What the HTTP edge reads about plugins: the router's status and GET /api/plugins. */
+export interface PluginsView {
+  routerStatus(): RouterStatus;
+  report(): PluginsReport;
 }
 
 export interface Clock {
@@ -358,8 +364,8 @@ export interface QuestionRepository {
 }
 
 export interface SettingsRepository {
-  getJevMode(): JevMode | undefined;
-  setJevMode(mode: JevMode): void;
+  getRouterMode(): RouterMode | undefined;
+  setRouterMode(mode: RouterMode): void;
 }
 
 /** The whole store. One SQLite file; repositories share one connection. */

@@ -2,7 +2,7 @@
 // Used by docs/events.md and by the schema tests.
 import type { EventType } from '../domain/types.ts';
 
-const advice = { action: 'proceed_full', reason: 'ok', jevUsed: true, details: { intent: 'x' }, source: 'fake', at: '2026-10-02T00:00:00.000Z' };
+const advice = { action: 'proceed_full', reason: 'ok', details: { intent: 'x', jevUsed: true }, source: 'fake', at: '2026-10-02T00:00:00.000Z' };
 const start = { jobId: 'j1', laneId: 'm/lane-1', machineId: 'm', effectivePriority: 50, reason: 'idle lane' };
 const lanePlan = { machineId: 'm', current: 0, target: 1, open: 1, close: [], drain: [], reason: 'work waiting' };
 
@@ -21,8 +21,8 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'job.reprioritized': { from: 50, to: 80, reason: 'project:Priority=P1' },
   'lane.opened': {},
   'lane.closed': { reason: 'drained' },
-  'decision.made': { decisionId: 'd1', trigger: 'tick', jevMode: 'shadow', starts: [start], holds: [{ jobId: 'j2', reason: 'full' }], lanes: [lanePlan], divergences: [{ jobId: 'j1', advice: 'ask_human', native: 'start', withJev: 'hold', note: 'n' }] },
-  'jev.mode_changed': { from: 'shadow', to: 'active' },
+  'decision.made': { decisionId: 'd1', trigger: 'tick', routerMode: 'shadow', starts: [start], holds: [{ jobId: 'j2', reason: 'full' }], lanes: [lanePlan], divergences: [{ jobId: 'j1', advice: 'ask_human', native: 'start', withAdvice: 'hold', note: 'n' }] },
+  'router.mode_changed': { from: 'shadow', to: 'active' },
   'question.asked': { questionId: 'q1', text: 'which?', detectedBy: 'marker' },
   'question.escalated': { questionId: 'q1', target: 'human', reason: 'asked', text: 'which?', jobId: 'j1', goal: 'g', answerUrl: 'http://127.0.0.1/q', notifyCount: 0, renotify: true },
   'question.answered': { questionId: 'q1', by: 'human', answer: 'yes' },

@@ -2,12 +2,13 @@
 import { EVENT_SCHEMA_VERSIONS, EVENT_TYPES, type EventType } from '../domain/types.ts';
 import { EVENT_EXAMPLES } from './examples.ts';
 import { exportJsonSchemas } from './export.ts';
+import { LEGACY_EVENT_SCHEMAS } from './legacy.ts';
 
 const WHEN: Record<EventType, string> = {
   'job.queued': 'A job was accepted (pushed, or pulled from a source).',
-  'job.prioritized': 'Jev advice arrived for a job; once per job, whatever its status then.',
+  'job.prioritized': 'The router\'s advice arrived for a job; once per job, whatever its status then.',
   'job.held': 'A Decision held a job and its hold reason changed.',
-  'job.approved': 'A human approved a job Jev routed to `ask_human`.',
+  'job.approved': 'A human approved a job the router held (e.g. `ask_human`).',
   'job.claimed': 'A Decision assigned a job to a lane.',
   'job.started': 'The executor began running a claimed job.',
   'job.progressed': 'An executor reported progress; at most one per job per 500 ms.',
@@ -19,7 +20,7 @@ const WHEN: Record<EventType, string> = {
   'lane.opened': 'A Decision opened a lane.',
   'lane.closed': 'A lane closed (decision reason, `drained`, or `daemon restart`).',
   'decision.made': 'The engine recorded a Decision.',
-  'jev.mode_changed': 'The Jev mode was switched.',
+  'router.mode_changed': 'The router mode was switched.',
   'question.asked': 'A running job paused on a question.',
   'question.escalated': 'A question was passed to a tier (opus, fable, human), or a human was re-notified.',
   'question.answered': 'A tier or a human answered a question.',
@@ -56,6 +57,9 @@ export function renderEventsMarkdown(): string {
     '`<type>.v<N+1>.json` — the old file stays as documentation of what older consumers received.',
     '',
     'Events stored before phase 3 read as v1 and are not re-validated.',
+    '',
+    `Stored events are never rewritten. Superseded versions stay readable and documented: ${Object.keys(LEGACY_EVENT_SCHEMAS).map((k) => `\`${k}\``).join(', ')}`,
+    '(phase 5 renamed Jev → router: `jev.mode_changed` is now `router.mode_changed`).',
     '',
     '```json',
     '{ "schemaVersion": 1, "seq": 1, "id": "uuid", "type": "job.queued", "at": "ISO",',

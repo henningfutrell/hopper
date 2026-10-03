@@ -35,11 +35,12 @@
         "lane.opened",
         "lane.closed",
         "decision.made",
-        "jev.mode_changed",
+        "router.mode_changed",
         "question.asked",
         "question.escalated",
         "question.answered",
-        "question.expired"
+        "question.expired",
+        "jev.mode_changed"
       ]
     },
     "at": {

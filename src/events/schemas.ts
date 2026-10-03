@@ -1,61 +1,27 @@
 // Payload (`data`) schema per event type, plus the envelope. Strict: an undeclared key fails,
 // so a field an emitter adds without declaring it breaks the conformance test.
 // Additive (optional) field → same version; removed/renamed/retyped → bump
-// EVENT_SCHEMA_VERSIONS in src/domain/types.ts and keep the old docs/schemas file.
+// EVENT_SCHEMA_VERSIONS in src/domain/types.ts and move the old schema to legacy.ts (its
+// docs/schemas file stays, re-exported from there).
 import { z } from 'zod';
 import { EVENT_SCHEMA_VERSIONS, EVENT_TYPES, type EventType } from '../domain/types.ts';
+import { LEGACY_EVENT_SCHEMAS, LEGACY_EVENT_TYPES } from './legacy.ts';
+import { advice, adviceAction, holdPlan, jobSourceRef, jobSpec, jobStatus, lanePlan, startPlan } from './parts.ts';
 
 const strict = z.strictObject;
-const jevMode = z.enum(['shadow', 'active']);
+const routerMode = z.enum(['shadow', 'active']);
 const answerTier = z.enum(['opus', 'fable', 'human']);
 
-const jobSourceRef = strict({
-  source: z.string(), kind: z.string(), key: z.string(),
-  url: z.string().optional(), title: z.string().optional(), repo: z.string().optional(),
-  number: z.number().int().optional(), author: z.string().optional(),
-});
-
-const jobSpec = strict({
-  executor: z.string(),
-  payload: z.record(z.string(), z.unknown()),
-  priority: z.number().optional(),
-  goal: z.string().optional(),
-  kind: z.string().optional(),
-  submittedBy: z.string().optional(),
-  machineId: z.string().optional(),
-  meta: z.record(z.string(), z.unknown()).optional(),
-});
-
-const jevAdvice = strict({
-  action: z.enum([
-    'proceed_full', 'reuse_cache', 'stop_retry', 'run_deterministic',
-    'chat_only', 'ask_human', 'allow_subagent', 'research_capped',
-  ]),
-  reason: z.string(), jevUsed: z.boolean(), details: z.record(z.string(), z.unknown()),
-  source: z.string(), at: z.string(),
-});
-
-const startPlan = strict({
-  jobId: z.string(), laneId: z.string().nullable(), machineId: z.string(),
-  effectivePriority: z.number(), reason: z.string(),
-});
-const holdPlan = strict({ jobId: z.string(), reason: z.string() });
-const lanePlan = strict({
-  machineId: z.string(), current: z.number(), target: z.number(), open: z.number(),
-  close: z.array(z.string()), drain: z.array(z.string()), reason: z.string(),
-});
 const divergence = strict({
-  jobId: z.string(), advice: jevAdvice.shape.action,
-  native: z.enum(['start', 'hold']), withJev: z.enum(['start', 'hold']), note: z.string(),
+  jobId: z.string(), advice: adviceAction,
+  native: z.enum(['start', 'hold']), withAdvice: z.enum(['start', 'hold']), note: z.string(),
 });
 
 export const EVENT_SCHEMAS = {
   // `source`: the item the job was pulled from (phase 3; additive, so still v1).
   'job.queued': strict({ spec: jobSpec, priority: z.number(), source: jobSourceRef.optional() }),
-  'job.prioritized': strict({
-    advice: jevAdvice, mode: jevMode,
-    statusAtAdvice: z.enum(['queued', 'held', 'claimed', 'running', 'waiting_answer', 'finished', 'failed', 'cancelled']),
-  }),
+  // v2: advice without top-level `jevUsed` (jev-router puts it in `details`).
+  'job.prioritized': strict({ advice, mode: routerMode, statusAtAdvice: jobStatus }),
   'job.held': strict({ reason: z.string() }),
   'job.approved': strict({}),
   'job.claimed': strict({ attempts: z.number().int(), effectivePriority: z.number(), reason: z.string() }),
@@ -69,10 +35,11 @@ export const EVENT_SCHEMAS = {
   'lane.opened': strict({}),
   'lane.closed': strict({ reason: z.string() }),
   'decision.made': strict({
-    decisionId: z.string(), trigger: z.string(), jevMode,
+    // v2: `routerMode` (was jevMode), divergences carry `withAdvice` (was withJev).
+    decisionId: z.string(), trigger: z.string(), routerMode,
     starts: z.array(startPlan), holds: z.array(holdPlan), lanes: z.array(lanePlan), divergences: z.array(divergence),
   }),
-  'jev.mode_changed': strict({ from: jevMode, to: jevMode }),
+  'router.mode_changed': strict({ from: routerMode, to: routerMode }),
   'question.asked': strict({ questionId: z.string(), text: z.string(), detectedBy: z.string() }),
   'question.escalated': strict({
     questionId: z.string(), target: answerTier, reason: z.string(), text: z.string(), jobId: z.string(),
@@ -87,7 +54,8 @@ export const ENVELOPE_SCHEMA = strict({
   schemaVersion: z.number().int().min(1),
   seq: z.number().int(),
   id: z.uuid(),
-  type: z.enum(EVENT_TYPES as [EventType, ...EventType[]]),
+  // Stored events of retired types (jev.mode_changed) still read; nothing emits them.
+  type: z.enum([...EVENT_TYPES, ...LEGACY_EVENT_TYPES] as unknown as [string, ...string[]]),
   at: z.iso.datetime(),
   jobId: z.string().optional(),
   laneId: z.string().optional(),
@@ -102,16 +70,23 @@ export type ValidationResult = { ok: true } | { ok: false; issues: string[] };
 const issuesOf = (prefix: string, e: z.ZodError): string[] =>
   e.issues.map((i) => `${prefix}${i.path.length ? `${i.path.join('.')}: ` : ''}${i.message}`);
 
-/** Envelope, then `data` for its type, then schemaVersion equals the type's current version. */
+/** The payload schema for (type, version): the current one, or a superseded one kept for stored events. */
+function schemaFor(type: string, version: number): z.ZodType | undefined {
+  const current = EVENT_SCHEMA_VERSIONS[type as EventType];
+  if (current === version) return EVENT_SCHEMAS[type as EventType];
+  return LEGACY_EVENT_SCHEMAS[`${type}.v${version}`];
+}
+
+/** Envelope, then `data` against the schema of its own type and schemaVersion (current or superseded). */
 export function validateEvent(event: unknown): ValidationResult {
   const env = ENVELOPE_SCHEMA.safeParse(event);
   if (!env.success) return { ok: false, issues: issuesOf('envelope ', env.error) };
   const { type, schemaVersion, data } = env.data;
-  const issues: string[] = [];
-  if (schemaVersion !== EVENT_SCHEMA_VERSIONS[type]) {
-    issues.push(`envelope schemaVersion: ${schemaVersion} but ${type} is v${EVENT_SCHEMA_VERSIONS[type]}`);
+  const schema = schemaFor(type, schemaVersion);
+  if (!schema) {
+    const current = EVENT_SCHEMA_VERSIONS[type as EventType];
+    return { ok: false, issues: [`envelope schemaVersion: ${schemaVersion} but ${type} is ${current ? `v${current}` : 'retired'}`] };
   }
-  const d = EVENT_SCHEMAS[type].safeParse(data);
-  if (!d.success) issues.push(...issuesOf(`${type} data `, d.error));
-  return issues.length ? { ok: false, issues } : { ok: true };
+  const d = schema.safeParse(data);
+  return d.success ? { ok: true } : { ok: false, issues: issuesOf(`${type} data `, d.error) };
 }

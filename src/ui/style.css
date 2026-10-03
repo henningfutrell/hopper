@@ -1,14 +1,14 @@
 :root {
   --bg: #f5f6f8; --panel: #fff; --fg: #1b1e24; --muted: #6a7280; --line: #dde1e7;
   --accent: #2563eb; --ok: #15803d; --warn: #b45309; --bad: #b91c1c; --hl: #fef3c7;
-  --f-job: #2563eb; --f-lane: #7c3aed; --f-decision: #0f766e; --f-jev: #b45309; --f-question: #be185d; --qbg: #fdf2f8;
+  --f-job: #2563eb; --f-lane: #7c3aed; --f-decision: #0f766e; --f-router: #b45309; --f-question: #be185d; --qbg: #fdf2f8;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #12141a; --panel: #1b1e26; --fg: #e4e7ec; --muted: #8b93a3; --line: #2c303b;
     --accent: #6ea0ff; --ok: #4ade80; --warn: #fbbf24; --bad: #f87171; --hl: #3b2f0b;
-    --f-job: #6ea0ff; --f-lane: #b79cff; --f-decision: #2dd4bf; --f-jev: #fbbf24; --f-question: #f472b6; --qbg: #2a1722;
+    --f-job: #6ea0ff; --f-lane: #b79cff; --f-decision: #2dd4bf; --f-router: #fbbf24; --f-question: #f472b6; --qbg: #2a1722;
   }
 }
 * { box-sizing: border-box; }
@@ -50,7 +50,7 @@ button.danger:hover { border-color: var(--bad); color: var(--bad); }
 .lane.busy { border-color: var(--accent); color: var(--accent); }
 .lane.draining { border-color: var(--warn); color: var(--warn); }
 .fam-job { color: var(--f-job); } .fam-lane { color: var(--f-lane); }
-.fam-question { color: var(--f-question); } .fam-decision { color: var(--f-decision); } .fam-jev { color: var(--f-jev); }
+.fam-question { color: var(--f-question); } .fam-decision { color: var(--f-decision); } .fam-router { color: var(--f-router); }
 .ev { display: grid; grid-template-columns: 4em 6.5em 13em 12em 1fr; gap: 8px; padding: 2px 0; border-bottom: 1px solid var(--line); }
 .ev .data { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 11px; }
 details.decision { border-bottom: 1px solid var(--line); padding: 3px 0; }

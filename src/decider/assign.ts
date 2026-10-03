@@ -25,7 +25,7 @@ export function pinOf(job: Job): string | undefined {
   return job.pendingAnswer === undefined ? job.spec.machineId : (job.resumeOn ?? job.spec.machineId);
 }
 
-/** Step 5: a hold that applies regardless of Jev, or undefined. */
+/** Step 5: a hold that applies regardless of the router, or undefined. */
 export function nativeHold(job: Job, machines: MachineSnapshot[]): string | undefined {
   const executor = job.spec.executor;
   const pin = pinOf(job);

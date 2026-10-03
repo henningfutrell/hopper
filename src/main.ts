@@ -3,7 +3,7 @@
 import { readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { AnswerRequest, AnswerVerdict, Answerer, Clock, Executor, JevAdvisor, JobSource, SourceRegistry, Store } from './domain/ports.ts';
+import type { AnswerRequest, AnswerVerdict, Answerer, Clock, Executor, JobSource, PluginsView, Router, SourceRegistry, Store } from './domain/ports.ts';
 import type { Question } from './domain/types.ts';
 import { loadConfig, type Config } from './config.ts';
 import { createEngine, type Engine } from './engine/index.ts';
@@ -11,8 +11,8 @@ import { createExecutorRegistry, createTestExecutor } from './executors/index.ts
 import { createHerdrClaudeExecutor, createHerdrCliClient, type HerdrClient } from './executors/herdr/index.ts';
 import { createGrokBotNotifier } from './grokbot/index.ts';
 import { createServer } from './http/index.ts';
-import { createFakeAdvisor, createRouterAdvisor } from './jev/index.ts';
 import { createLocalMachineSource } from './machines/index.ts';
+import { createPluginHost } from './plugins/index.ts';
 import { createClaudeCliAnswerer, createFakeAnswerer, createQuestionService } from './questions/index.ts';
 import { createSourceSync, withFixedStatuses, type GitHubApi, type SourceSync } from './sources/index.ts';
 import { composeSources } from './sources/compose.ts';
@@ -24,9 +24,9 @@ import { createWebhookDispatcher } from './webhooks/index.ts';
 export interface App {
   url: string;
   config: Config;
-  advisor: string;
-  jevMode(): string;
+  routerMode(): string;
   /** For tests: the store, the engine (setFakeUsage), the sync loop (syncNow), the webhooks.yaml watcher. */
+  plugins: PluginsView;
   store: Store;
   engine: Engine;
   sources: SourceSync;
@@ -51,9 +51,14 @@ export interface AppSeams {
   webhookConfigIntervalMs?: number;
   /** First retry delay of the Grok Bot routine webhook; default 1000. */
   grokbotBaseMs?: number;
+  /** Replaces the configured router (the plugin host still loads, for /api/plugins). */
+  router?: Router;
+  /** How often plugins.yaml's mtime is checked; default PLUGINS_FILE_CHECK_MS. */
+  pluginsFileIntervalMs?: number;
 }
 
 const WEBHOOKS_FILE_CHECK_MS = 5000;
+const PLUGINS_FILE_CHECK_MS = 5000;
 const SEAM_SOURCE_POLL_MS = 1000;
 
 /** The jobs' comment helper, next to this file's install: <install dir>/scripts/hopper-comment. */
@@ -91,16 +96,28 @@ function executorsFor(config: Config, clock: Clock, seams: AppSeams): Executor[]
   return [...built, ...(seams.executors ?? [])];
 }
 
+/** A seam router (tests) answers as itself; the report stays the host's. */
+function seamPlugins(router: Router, report: PluginsView['report']): PluginsView {
+  return { routerStatus: () => ({ name: router.name, plugin: router.name, fallback: false }), report };
+}
+
 export async function startApp(config: Config, seams: AppSeams = {}): Promise<App> {
   const clock: Clock = { now: () => new Date() };
   const store = openStore({ path: config.dbPath, clock });
   const dataDir = dirname(config.dbPath);
   const executors = createExecutorRegistry(executorsFor(config, clock, seams));
   const fakeUsage = createFakeUsageSource(clock);
-  const jevMode = () => store.settings.getJevMode() ?? config.jevMode;
-  const advisor: JevAdvisor = config.jevAdvisor === 'fake'
-    ? createFakeAdvisor({ clock })
-    : createRouterAdvisor({ jevSrc: config.jevSrc, python: config.python, dataDir, mode: jevMode, clock });
+  const routerMode = () => store.settings.getRouterMode() ?? config.routerMode;
+  const host = createPluginHost({
+    pluginDir: config.pluginDir, pluginsFile: config.pluginsFile, dataDir, clock, routerMode,
+    logger: { info: (l) => console.log(l), warn: (l) => console.warn(l) },
+    // Without a router in plugins.yaml: the jev-router the env described before plugins existed.
+    defaultRouter: { name: 'jev', plugin: 'jev-router', options: { jevSrc: config.jevSrc, python: config.python } },
+    intervalMs: seams.pluginsFileIntervalMs ?? PLUGINS_FILE_CHECK_MS,
+  });
+  await host.start();
+  const plugins: PluginsView = seams.router ? seamPlugins(seams.router, host.report) : host;
+  const router = seams.router ?? host.router;
   const dispatcher = createWebhookDispatcher({ store, clock, baseMs: config.webhookBaseMs });
   const grokbot = createGrokBotNotifier({ store, path: config.grokbotWebhookFile, info: (l) => console.log(l), ...(seams.grokbotBaseMs ? { baseMs: seams.grokbotBaseMs } : {}) });
   // The service calls the engine and the engine calls the service: the engine's handlers are
@@ -115,15 +132,15 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     onExpired: (q: Question) => engine.onExpired(q),
   });
   const engine: Engine = createEngine({
-    store, clock, executors, advisor, fakeUsage, questions,
+    store, clock, executors, router, fakeUsage, questions,
     machines: createLocalMachineSource({ maxLanes: config.localLanes, executors: executors.names() }),
     usage: [fakeUsage],
     policy: {
-      softLimit: config.softLimit, hardLimit: config.hardLimit, jevCheapBoost: config.jevCheapBoost,
+      softLimit: config.softLimit, hardLimit: config.hardLimit, routerCheapBoost: config.routerCheapBoost,
       laneIdleGraceMs: config.laneIdleGraceMs, resumeBoost: config.resumeBoost,
     },
     tickMs: config.tickMs,
-    initialJevMode: config.jevMode,
+    initialRouterMode: config.routerMode,
     maxQuestions: config.maxQuestions,
     keepPanes: config.keepPanes,
   });
@@ -145,7 +162,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     path: config.webhooksFile, store, clock, intervalMs: seams.webhookConfigIntervalMs ?? WEBHOOKS_FILE_CHECK_MS,
   });
   const server = createServer({
-    engine, store, dispatcher, questions, clock, version: VERSION, sources: registry, webhookConfig,
+    engine, store, dispatcher, questions, clock, version: VERSION, sources: registry, webhookConfig, plugins,
     port: () => port, dataDir, sessionHours: config.uiSessionHours,
   });
 
@@ -161,8 +178,8 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   return {
     url: `http://${config.host}:${port}`,
     config,
-    advisor: advisor.name,
-    jevMode,
+    routerMode,
+    plugins,
     store,
     engine,
     sources: sync,
@@ -176,6 +193,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
         await dispatcher.stop();
         await grokbot.stop();
         webhookConfig.stop();
+        host.stop();
         store.close();
       })();
       return stopped;
@@ -185,7 +203,8 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
 
 async function main(): Promise<void> {
   const app = await startApp(loadConfig(process.env));
-  console.log(`job-hopper listening on ${app.url} (jev ${app.jevMode()}, advisor ${app.advisor}, executors ${app.config.executors.join(',')}, answerer ${app.config.answerer})`);
+  const r = app.plugins.routerStatus();
+  console.log(`job-hopper listening on ${app.url} (router ${r.name} [${r.plugin}${r.fallback ? ', fallback' : ''}] ${app.routerMode()}, executors ${app.config.executors.join(',')}, answerer ${app.config.answerer})`);
   for (const s of app.sources.statuses()) console.log(`job-hopper: source ${s.name} (${s.kind}) ${s.state}`);
   console.log('job-hopper: UI login code written; open the UI with: bash ~/.local/lib/job-hopper/scripts/open-ui.sh');
   const shutdown = (signal: string): void => {

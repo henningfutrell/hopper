@@ -24,7 +24,7 @@ const pill = (t, cls) => el('span', { class: 'pill ' + (cls || '') }, t);
 const time = (iso) => (iso ? new Date(iso).toLocaleTimeString() : '');
 const pct = (f) => Math.max(0, Math.min(100, f * 100));
 const compact = (v) => JSON.stringify(v ?? {});
-const family = (type) => 'fam-' + String(type).split('.')[0].replace('jev_mode', 'jev');
+const family = (type) => 'fam-' + String(type).split('.')[0].replace('jev', 'router');
 const fill = (id, nodes, empty) => {
   const body = $(id).querySelector('.body');
   body.replaceChildren(...(nodes.length ? nodes : [el('div', { class: 'empty' }, empty)]));
@@ -87,14 +87,14 @@ function renderBanner() {
 
 function renderHeader() {
   const h = state.health;
-  const mode = h?.jevMode;
+  const mode = h?.routerMode;
   const next = mode === 'active' ? 'shadow' : 'active';
   const counts = Object.entries(state.queue.counts || {}).filter(([, n]) => n > 0);
   $('header').replaceChildren(
     el('span', { class: 'title' }, 'job-hopper'),
-    el('span', { class: 'kv' }, 'Jev mode ', el('b', null, mode ?? '?'), ' ',
-      mode && state.authed && el('button', { onclick: () => act('/ui/api/jev', { mode: next }).then(refreshHealth) }, 'switch to ' + next)),
-    el('span', { class: 'kv' }, 'advisor ', el('b', null, h?.advisor ?? '?')),
+    el('span', { class: 'kv' }, 'router mode ', el('b', null, mode ?? '?'), ' ',
+      mode && state.authed && el('button', { onclick: () => act('/ui/api/router-mode', { mode: next }).then(refreshHealth) }, 'switch to ' + next)),
+    el('span', { class: 'kv' }, 'router ', el('b', null, h?.router ?? '?'), ' ', h?.fallback && pill('fallback', 'warn')),
     el('span', { class: 'kv' }, 'uptime ', el('b', null, h ? fmtUptime(h.uptimeS) : '?')),
     el('span', { class: 'kv' }, counts.length ? counts.map(([s, n]) => `${s} ${n}`).join(' · ') : 'no jobs'),
     ...(state.authed ? [el('button', { onclick: logout }, 'logout')] : []),
@@ -144,7 +144,7 @@ function renderQueue() {
     el('span', null, 'prio ' + j.priority + (effective.has(j.id) ? ' (eff ' + effective.get(j.id) + ')' : '')),
     j.approved && pill('approved', 'ok'),
     j.holdReason && el('span', { class: 'muted' }, j.holdReason),
-    j.jevAdvice && el('span', { title: j.jevAdvice.reason }, 'jev: ', el('b', null, j.jevAdvice.action), el('span', { class: 'muted' }, ' ' + j.jevAdvice.source)),
+    j.advice && el('span', { title: j.advice.reason }, 'advice: ', el('b', null, j.advice.action), el('span', { class: 'muted' }, ' ' + j.advice.source)),
     el('span', { style: 'margin-left:auto' },
       state.authed && !j.approved && el('button', { onclick: () => act(`/ui/api/jobs/${j.id}/approve`).then(refreshLive) }, 'Approve'), ' ',
       state.authed && el('button', { class: 'danger', onclick: () => act(`/ui/api/jobs/${j.id}/cancel`).then(refreshLive) }, 'Cancel')))),
@@ -258,15 +258,15 @@ function section(title, nodes) {
   return nodes.length ? el('div', { class: 'sec' }, el('h3', null, title), nodes) : null;
 }
 function renderDecision(d) {
-  const div = d.jev.length > 0;
+  const div = d.advice.length > 0;
   const jobs = new Map([...(state.queue.waitingAnswer ?? []), ...state.queue.running, ...state.queue.waiting].map((j) => [j.id, j]));
   return el('details', { class: 'decision' + (div ? ' div' : ''), 'data-id': d.id },
-    el('summary', null, mono(d.id), el('span', { class: 'muted' }, time(d.at)), pill(d.trigger), pill(d.jevMode, d.jevMode === 'active' ? 'warn' : ''),
-      el('span', null, `${d.start.length} start · ${d.hold.length} hold`), div && pill(d.jev.length + ' jev divergence', 'warn')),
+    el('summary', null, mono(d.id), el('span', { class: 'muted' }, time(d.at)), pill(d.trigger), pill(d.routerMode, d.routerMode === 'active' ? 'warn' : ''),
+      el('span', null, `${d.start.length} start · ${d.hold.length} hold`), div && pill(d.advice.length + ' divergence', 'warn')),
     section('Lane plans', d.lanes.map((p) => el('div', null, mono(p.machineId), ` current ${p.current} → target ${p.target}, open ${p.open}, close ${p.close.length}, drain ${p.drain.length} — `, p.reason))),
     section('Starts', d.start.map((s) => el('div', null, mono(s.jobId), ' ', issueLink(jobs.get(s.jobId)), ` → ${s.machineId}/${s.laneId ?? 'new lane'} eff ${s.effectivePriority} — `, s.reason))),
     section('Holds', d.hold.map((h) => el('div', null, mono(h.jobId), ' — ', h.reason))),
-    section('Jev divergences', d.jev.map((j) => el('div', { class: 'diverge' }, mono(j.jobId), ` ${j.advice}: native ${j.native}, with Jev ${j.withJev} — `, j.note))),
+    section('Divergences', d.advice.map((j) => el('div', { class: 'diverge' }, mono(j.jobId), ` ${j.advice}: native ${j.native}, with advice ${j.withAdvice} — `, j.note))),
     section('Reasons', d.reasons.map((r) => el('div', null, '· ' + r))),
     el('details', { class: 'sec' }, el('summary', { class: 'muted' }, 'raw inputs'), el('pre', null, JSON.stringify(d.inputs, null, 2))));
 }
@@ -415,7 +415,7 @@ function onDomainEvent(msg) {
   renderEvents();
   refreshSoon();
   if (e.type.startsWith('question.')) refreshQuestionsSoon();
-  if (e.type === 'jev.mode_changed') refreshHealth().catch(() => {});
+  if (e.type === 'router.mode_changed') refreshHealth().catch(() => {});
   if (e.type === 'decision.made') {
     const id = e.decisionId ?? e.data.decisionId;
     api('/api/decisions/' + encodeURIComponent(id)).then((d) => {
@@ -433,7 +433,7 @@ function connect(afterSeq) {
   es.onerror = () => { state.conn = 'reconnecting'; renderHeader(); };
   es.addEventListener('delivery.updated', (m) => upsertDelivery(JSON.parse(m.data)));
   es.addEventListener('source.updated', (m) => upsertSource(JSON.parse(m.data)));
-  const types = ['job.queued', 'job.prioritized', 'job.reprioritized', 'job.held', 'job.approved', 'job.claimed', 'job.started', 'job.progressed', 'job.finished', 'job.failed', 'job.cancelled', 'job.requeued', 'lane.opened', 'lane.closed', 'decision.made', 'jev.mode_changed', 'question.asked', 'question.escalated', 'question.answered', 'question.expired'];
+  const types = ['job.queued', 'job.prioritized', 'job.reprioritized', 'job.held', 'job.approved', 'job.claimed', 'job.started', 'job.progressed', 'job.finished', 'job.failed', 'job.cancelled', 'job.requeued', 'lane.opened', 'lane.closed', 'decision.made', 'router.mode_changed', 'question.asked', 'question.escalated', 'question.answered', 'question.expired'];
   for (const t of types) es.addEventListener(t, onDomainEvent);
   setInterval(() => refreshHealth().catch(() => {}), 10000);
   setInterval(renderSources, 15000);

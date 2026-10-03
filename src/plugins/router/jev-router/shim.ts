@@ -1,23 +1,25 @@
+// Running grok-bot-jev's router once per job through jev_shim.py (design.md "Jev"). Any failure is
+// advice with `source: fallback` — the router's own documented safe fallback — never a throw.
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Clock, JevAdvisor } from '../domain/ports.ts';
-import type { Job, JevAction, JevAdvice, JevMode } from '../domain/types.ts';
+import type { Advice, AdviceAction, Clock, Job, Router, RouterMode } from '../../sdk.ts';
 
 const SHIM = fileURLToPath(new URL('./jev_shim.py', import.meta.url));
 const ACTIONS: readonly string[] = [
   'proceed_full', 'reuse_cache', 'stop_retry', 'run_deterministic',
   'chat_only', 'ask_human', 'allow_subagent', 'research_capped',
-] satisfies JevAction[];
+] satisfies AdviceAction[];
 const META_KEYS = ['cached_artifact', 'cached_note', 'prior_error', 'same_error_count', 'sources_found', 'constraints'];
 
-export interface RouterAdvisorOptions {
+export interface JevShimOptions {
+  /** The Jev checkout (absolute). */
   jevSrc: string;
   python: string;
   dataDir: string;
-  mode: () => JevMode;
+  mode: () => RouterMode;
   clock: Clock;
-  timeoutMs?: number;
+  timeoutMs: number;
 }
 
 interface Route {
@@ -35,7 +37,7 @@ function jevState(job: Job): Record<string, unknown> {
 }
 
 /** Spawn the shim, feed it the request, resolve with its stdout. Rejects on any failure. */
-function runShim(o: RouterAdvisorOptions, request: unknown): Promise<string> {
+function runShim(o: JevShimOptions, request: unknown): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn(o.python, [SHIM], {
       env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' },
@@ -49,11 +51,10 @@ function runShim(o: RouterAdvisorOptions, request: unknown): Promise<string> {
       clearTimeout(timer);
       fn();
     };
-    const timeoutMs = o.timeoutMs ?? 10_000;
     const timer = setTimeout(() => {
       child.kill('SIGKILL');
-      settle(() => reject(new Error(`timed out after ${timeoutMs} ms`)));
-    }, timeoutMs);
+      settle(() => reject(new Error(`timed out after ${o.timeoutMs} ms`)));
+    }, o.timeoutMs);
     child.stdout.on('data', (d: Buffer) => (stdout += d.toString()));
     child.stdin.on('error', () => {}); // a dead child surfaces via 'error' / 'close'
     child.on('error', (e) => settle(() => reject(e)));
@@ -73,11 +74,12 @@ function parseRoute(stdout: string): Route {
   return out.route;
 }
 
-export function createRouterAdvisor(o: RouterAdvisorOptions): JevAdvisor {
+/** `name` is the plugin id; the host reports the instance name. */
+export function createJevShimRouter(o: JevShimOptions): Router {
   const at = () => o.clock.now().toISOString();
   return {
     name: 'jev-router',
-    async advise(job: Job): Promise<JevAdvice> {
+    async advise(job: Job): Promise<Advice> {
       try {
         const stdout = await runShim(o, {
           jevSrc: o.jevSrc,
@@ -87,23 +89,16 @@ export function createRouterAdvisor(o: RouterAdvisorOptions): JevAdvisor {
         });
         const route = parseRoute(stdout);
         return {
-          action: route.action as JevAction,
+          action: route.action as AdviceAction,
           reason: route.reason,
-          jevUsed: route.jev_used,
-          details: route.details ?? {},
+          // `jevUsed` mirrors the router's own `jev_used` (false: kill switch / bypass).
+          details: { ...(route.details ?? {}), jevUsed: route.jev_used },
           source: 'jev-router',
           at: at(),
         };
       } catch (e) {
         const why = e instanceof Error ? e.message : String(e);
-        return {
-          action: 'proceed_full',
-          reason: `jev unavailable: ${why}`,
-          jevUsed: false,
-          details: {},
-          source: 'fallback',
-          at: at(),
-        };
+        return { action: 'proceed_full', reason: `jev unavailable: ${why}`, details: { jevUsed: false }, source: 'fallback', at: at() };
       }
     },
   };
