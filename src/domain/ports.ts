@@ -132,7 +132,7 @@ export interface ExecutorRegistry {
   names(): string[];
 }
 
-/** A usage source whose readings can be set by hand — the fake, driven by PUT /api/usage/fake. */
+/** A usage source whose readings can be set by hand — the fake; set through the engine (tests). */
 export interface SettableUsageSource extends UsageSource {
   /** Replace the reading for (machineId ?? global); returns all current readings. */
   set(reading: Omit<UsageReading, 'source' | 'at'>): UsageReading[];

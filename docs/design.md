@@ -156,6 +156,10 @@ budgets**, so it cannot be the usage source. job-hopper uses it for what it is: 
 
 ## HTTP API
 
+> **Superseded in part by Phase 3:** every `POST`/`PUT`/`DELETE` route in this table is
+> removed (404); jobs come from job sources, mutations go through `/ui/api/*` behind a UI
+> session. The `GET` routes stand. See "Phase 3 — the hopper pulls".
+
 Loopback only (`127.0.0.1`), no auth — see profile. JSON everywhere; errors are
 `{ error: string }` with 400/404/409.
 
@@ -936,7 +940,10 @@ src/sources/index.ts   createGitHubSource(o: { name: string; config: GitHubSourc
 src/events/index.ts    EVENT_SCHEMAS, ENVELOPE_SCHEMA, EVENT_SCHEMA_VERSIONS, validateEvent(e) → { ok } | { ok:false, issues }
                        exportJsonSchemas(): Record<filename, object>
 src/webhooks/config.ts loadWebhooksFile(path), createWebhookConfigWatcher(o: { path; store; clock; intervalMs })
-src/http/ui/index.ts   registerUiRoutes(app, o: { engine; questions; port; dataDir; clock; sessionHours })
+src/http/ui/index.ts   registerUiRoutes(app, o: { engine; questions; port: () => number; dataDir; clock; sessionHours })
+                       (port is a getter: known only after listen)
+main.ts                startApp(config, seams?) — seams { herdr?, executors?, github?: GitHubApi,
+                         sources?: JobSource[], webhookConfigIntervalMs? } for tests only
 
 Engine changes (T008): `cancel(id, reason)` (reason no longer hard-coded); `ingest`,
 `reprioritize`, `setSourceState` implementing SourceHost; `job.reprioritized` joins the
