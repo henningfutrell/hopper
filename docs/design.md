@@ -568,3 +568,32 @@ another lane the tab label is stale; the job's `laneId` is authoritative.
 Op `ask`: `{ op: "ask", message?: string }` → outcome `question` (text = `message` ??
 "Which option?", `detectedBy: "test"`), saveState `{ asked: true }`. `resume(ctx, answer)` →
 `finished` `{ answer }`; resume on a job whose payload op is `fail-after-answer` → `failed`.
+
+## Settled in phase 2 (2026-10-02)
+
+- **Construction, as built:** `createEngine` also takes `questions`, `maxQuestions`,
+  `keepPanes`; `createServer` takes `questions`; `startApp(config, seams?)` accepts
+  `{ herdr?, executors? }` for tests (production passes nothing). The engine starts after
+  `server.listen` so `answerUrl` carries the real port. `/api/health` lists `executors`.
+- **`job.requeued`** `data.from`/`reason` also take `waiting_answer` / `answered`.
+- **Panes close on every terminal outcome** (finished, failed, cancelled, restart failure)
+  via `executor.cleanup`, unless `JOB_HOPPER_KEEP_PANES=true`. Timeouts and failed startups
+  close their pane too.
+- **herdr unit:** a second `herdr --session X server` exits 1, so
+  `job-hopper-herdr.service` has an `ExecCondition` that skips the start when that
+  session's server already runs; it unsets `CLAUDECODE` and the `CLAUDE_CODE_*` markers
+  because panes inherit the server's environment. `install.sh` never restarts an active
+  herdr unit — that would kill every parked pane.
+- **Answerer schema is a literal draft-07 object.** zod's `toJSONSchema` stamps `$schema`
+  draft 2020-12, which the claude CLI rejects ("no schema with key or ref"); every tier then
+  exits 1 and every question reaches the human. Found live; the unit tests' fake `claude`
+  could not see it.
+- **Screen chrome** that is never progress: the status/spinner line, user echo, `⏵` mode
+  line, the effort indicator (`… · /effort`), and spinner tips (`⎿  Tip: …`).
+- **The fake answerer** (`JOB_HOPPER_ANSWERER=fake`, tests only): answer `fake <tier>
+  answer`; opus confident unless the question says "hard" or "unsure", fable unless
+  "unsure"; both risky if it says "risky"; real risk rules still apply.
+- **Models read the job's goal label.** In the demo both tiers cited a goal reading "chain
+  to human". Goals are context the models weigh; write them as plain descriptions.
+- **Fable is the `claude` model alias `fable`** — no fable agent or skill exists in this
+  setup.
