@@ -138,6 +138,15 @@ describe('readTurn', () => {
     expect(t.lastLine).toBe('Writing hello.txt');
   });
 
+  it.each([
+    ['· Symbioting… (20s · ↓ 121 tokens)'],
+    ['* Coalescing… (8s · ↓ 296 tokens · thought for 1s)'],
+    ['  (ctrl+b to run in background)'],
+  ])('does not report spinner variant %j as progress (seen live)', (chrome) => {
+    const t = readTurn(screen(['❯ go', '● Bash(sleep 90)', chrome], CHROME), 'go');
+    expect(t.lastLine).toBe('Bash(sleep 90)');
+  });
+
   it('counts every line when the anchor scrolled out', () => {
     const t = readTurn(screen(['● Done all.', '  JOB_HOPPER_DONE'], CHROME), 'gone anchor');
     expect(t.anchorFound).toBe(false);
