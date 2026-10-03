@@ -1,5 +1,5 @@
 import type {
-  Clock, ExecutorRegistry, IdGen, JevAdvisor, MachineSource, SettableUsageSource, Store, UsageSource,
+  Clock, ExecutorRegistry, IdGen, JevAdvisor, MachineSource, QuestionService, SettableUsageSource, Store, UsageSource,
 } from '../domain/ports.ts';
 import type { DeciderPolicy, JevMode } from '../domain/types.ts';
 
@@ -19,6 +19,12 @@ export interface EngineOptions {
   tickMs: number;
   /** Jev mode used only when the store has none yet. */
   initialJevMode: JevMode;
+  /** The answer chain. Its onAnswered/onExpired must call the engine's (see main.ts). */
+  questions: QuestionService;
+  /** At most this many questions per job; the next one fails it (design.md B6). */
+  maxQuestions: number;
+  /** Skip executor cleanup on terminal outcomes (JOB_HOPPER_KEEP_PANES). */
+  keepPanes: boolean;
 }
 
 /** What the engine's modules share. */

@@ -7,6 +7,8 @@ import type { EngineContext } from './context.ts';
 export interface QueueView {
   waiting: Job[];
   running: Job[];
+  /** Jobs paused on a question, oldest first. They hold no lane. */
+  waitingAnswer: Job[];
   counts: Record<JobStatus, number>;
 }
 
@@ -34,7 +36,8 @@ export function createQueries(c: EngineContext): Queries {
         return { job, effectivePriority: job.priority + (active && v.admit ? v.boost : 0) };
       })).map((x) => x.job);
       const running = all.filter((j) => j.status === 'claimed' || j.status === 'running').reverse();
-      return { waiting, running, counts };
+      const waitingAnswer = all.filter((j) => j.status === 'waiting_answer').reverse();
+      return { waiting, running, waitingAnswer, counts };
     },
     async getMachines() {
       const [machines, usage] = await Promise.all([c.machines.list(), getUsage()]);

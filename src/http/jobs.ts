@@ -5,7 +5,9 @@ import type { JobSpec, JobStatus } from '../domain/types.ts';
 import type { Engine } from '../engine/index.ts';
 import { HttpError, parseWith } from './errors.ts';
 
-const STATUSES = ['queued', 'held', 'claimed', 'running', 'finished', 'failed', 'cancelled'] as const satisfies JobStatus[];
+const STATUSES = [
+  'queued', 'held', 'claimed', 'running', 'waiting_answer', 'finished', 'failed', 'cancelled',
+] as const satisfies JobStatus[];
 
 const jobSpec = z.object({
   executor: z.string().min(1),

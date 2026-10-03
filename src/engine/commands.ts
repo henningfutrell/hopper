@@ -4,6 +4,7 @@ import { TERMINAL_STATUSES } from '../domain/types.ts';
 import type { Job, JobSpec, JevMode, UsageReading } from '../domain/types.ts';
 import { nowIso, type EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
+import type { Cleanup } from './cleanup.ts';
 import type { Runner } from './runner.ts';
 
 const isTerminal = (job: Job): boolean => TERMINAL_STATUSES.includes(job.status);
@@ -23,7 +24,7 @@ export interface Commands {
   setFakeUsage(reading: Omit<UsageReading, 'source' | 'at'>): UsageReading[];
 }
 
-export function createCommands(c: EngineContext, runner: Runner): Commands {
+export function createCommands(c: EngineContext, runner: Runner, cleanup: Cleanup): Commands {
   const { store } = c;
   return {
     pushJob(spec) {
@@ -47,11 +48,16 @@ export function createCommands(c: EngineContext, runner: Runner): Commands {
         // The runner ends it `cancelled` once the executor has stopped.
         if (runner.cancel(id)) return job;
       }
-      return store.tx(() => {
-        const next = store.jobs.update(id, { status: 'cancelled', finishedAt: nowIso(c) });
+      // A waiting_answer job's question is cancelled in the same tx; a job parked or about to
+      // resume holds a pane, released after the commit.
+      const next = store.tx(() => {
+        if (job.status === 'waiting_answer' && job.questionId) c.questions.cancel(job.questionId);
+        const cancelled = store.jobs.update(id, { status: 'cancelled', finishedAt: nowIso(c), pendingAnswer: undefined });
         store.events.append({ type: 'job.cancelled', jobId: id, data: { reason: `cancelled while ${job.status}` } });
-        return next;
+        return cancelled;
       });
+      void cleanup(id);
+      return next;
     },
 
     approve(id) {

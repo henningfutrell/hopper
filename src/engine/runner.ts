@@ -1,8 +1,11 @@
-// Job lifecycle after a claim: started → progressed (throttled) → finished | failed | cancelled.
-import type { ExecutionOutcome } from '../domain/ports.ts';
+// Job lifecycle after a claim: started → progressed (throttled) → finished | failed |
+// cancelled | waiting_answer. A claim of a job with a pending answer resumes it.
+import type { ExecutionContext, ExecutionOutcome, Executor } from '../domain/ports.ts';
 import type { Job, LaneId } from '../domain/types.ts';
+import type { Cleanup } from './cleanup.ts';
 import { nowIso, type EngineContext } from './context.ts';
 import type { Claim } from './decision-step.ts';
+import { recordOutcome } from './outcome.ts';
 
 const PROGRESS_EVERY_MS = 500;
 
@@ -20,7 +23,18 @@ export interface Runner {
   stopAll(ms: number): Promise<void>;
 }
 
-export function createRunner(c: EngineContext): Runner {
+/** Abort reasons the executor reads from `ctx.signal.reason` (ports.ts ExecutionContext). */
+const CANCEL = 'cancel';
+const SHUTDOWN = 'shutdown';
+
+async function execute(executor: Executor | undefined, job: Job, ctx: ExecutionContext): Promise<ExecutionOutcome> {
+  if (!executor) return { kind: 'failed', error: `executor ${job.spec.executor} is not registered` };
+  if (job.pendingAnswer === undefined) return executor.run(ctx);
+  if (!executor.resume) return { kind: 'failed', error: `executor ${executor.name} cannot resume` };
+  return executor.resume(ctx, job.pendingAnswer);
+}
+
+export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
   const running = new Map<string, Running>();
 
   function progressReporter(jobId: string, laneId: LaneId) {
@@ -47,33 +61,6 @@ export function createRunner(c: EngineContext): Runner {
     };
   }
 
-  function finish(job: Job, laneId: LaneId, outcome: ExecutionOutcome, cancelled: boolean): void {
-    const at = nowIso(c);
-    const { store } = c;
-    store.tx(() => {
-      if (cancelled) {
-        store.jobs.update(job.id, { status: 'cancelled', finishedAt: at });
-        store.events.append({ type: 'job.cancelled', jobId: job.id, laneId, data: { reason: 'cancelled while running' } });
-      } else if (outcome.kind === 'finished') {
-        store.jobs.update(job.id, { status: 'finished', result: outcome.result, finishedAt: at });
-        store.events.append({ type: 'job.finished', jobId: job.id, laneId, data: { result: outcome.result } });
-      } else {
-        // `question` is handled by the questions phase; until then it ends the job.
-        const error = outcome.kind === 'failed' ? outcome.error : `unanswered question: ${outcome.question.text}`;
-        store.jobs.update(job.id, { status: 'failed', error, finishedAt: at });
-        store.events.append({ type: 'job.failed', jobId: job.id, laneId, data: { error } });
-      }
-      const lane = store.lanes.list().find((l) => l.id === laneId);
-      if (!lane) return;
-      if (lane.state === 'draining') {
-        store.lanes.close(laneId);
-        store.events.append({ type: 'lane.closed', laneId, machineId: lane.machineId, data: { reason: 'drained' } });
-      } else {
-        store.lanes.update(laneId, { state: 'idle', jobId: undefined, idleSince: at });
-      }
-    });
-  }
-
   async function run(claim: Claim, entry: Running): Promise<void> {
     const { store } = c;
     const job = store.jobs.get(claim.jobId);
@@ -87,19 +74,20 @@ export function createRunner(c: EngineContext): Runner {
     const progress = progressReporter(job.id, claim.laneId);
     let outcome: ExecutionOutcome;
     try {
-      if (!executor) throw new Error(`executor ${job.spec.executor} is not registered`);
-      outcome = await executor.run({
+      outcome = await execute(executor, started, {
         job: started, laneId: claim.laneId, signal: entry.controller.signal,
         progress: (f, m) => progress.report(f, m),
-        saveState: (state) => { store.jobs.update(job.id, { executorState: state }); },
+        saveState: (state) => { if (!c.stopping()) store.jobs.update(job.id, { executorState: state }); },
       });
     } catch (e) {
       outcome = { kind: 'failed', error: e instanceof Error ? e.message : String(e) };
     }
-    // Shutdown: leave the job running in the store; restart recovery requeues it.
+    // Shutdown: leave the job running in the store; restart recovery decides its fate.
     if (c.stopping() && !entry.cancelled) return;
     progress.flush();
-    finish(started, claim.laneId, outcome, entry.cancelled);
+    const recorded = recordOutcome(c, started, claim.laneId, outcome, entry.cancelled);
+    if (recorded.kind === 'question') c.questions.handle(recorded.questionId);
+    else await cleanup(job.id);
   }
 
   return {
@@ -108,18 +96,18 @@ export function createRunner(c: EngineContext): Runner {
       running.set(claim.jobId, entry);
       entry.done = run(claim, entry)
         .catch((e) => console.error('job runner failed', claim.jobId, e))
-        .finally(() => running.delete(claim.jobId));
+        .finally(() => { if (running.get(claim.jobId) === entry) running.delete(claim.jobId); });
     },
     cancel(jobId) {
       const entry = running.get(jobId);
       if (!entry) return false;
       entry.cancelled = true;
-      entry.controller.abort(new Error('cancelled'));
+      entry.controller.abort(CANCEL);
       return true;
     },
     async stopAll(ms) {
       const all = [...running.values()];
-      for (const r of all) r.controller.abort(new Error('daemon shutdown'));
+      for (const r of all) r.controller.abort(SHUTDOWN);
       let timer: NodeJS.Timeout | undefined;
       const timeout = new Promise<void>((r) => { timer = setTimeout(r, ms); });
       await Promise.race([Promise.all(all.map((r) => r.done)), timeout]);

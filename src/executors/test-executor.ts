@@ -1,15 +1,13 @@
-// The built-in "test" executor: sleep / echo / fail, per docs/design.md "Test executor".
-//
-// Executor contract, for a future "herdr-claude" executor: it implements the same
-// interface. run() spawns the process, maps ctx.signal to killing it, derives
-// ctx.progress from the process output, and resolves { kind: 'failed', error } on any failure.
-// It never rejects.
+// The built-in "test" executor: sleep / echo / fail / ask / fail-after-answer, per
+// docs/design.md "Test executor" and "Test executor additions". Idempotent; never rejects.
 
 import type { ExecutionContext, ExecutionOutcome, Executor } from '../domain/ports.ts';
 
-const OPS = ['sleep', 'echo', 'fail'] as const;
+const OPS = ['sleep', 'echo', 'fail', 'ask', 'fail-after-answer'] as const;
 const MAX_MS = 600000;
 const ABORTED: ExecutionOutcome = { kind: 'failed', error: 'aborted' };
+
+interface TestPayload { op: (typeof OPS)[number]; ms?: number; message?: string }
 
 /** Resolves true after ms, or false as soon as the signal fires. */
 function wait(ms: number, signal: AbortSignal): Promise<boolean> {
@@ -39,6 +37,7 @@ async function runSleep(ctx: ExecutionContext, ms: number): Promise<ExecutionOut
 export function createTestExecutor(): Executor {
   return {
     name: 'test',
+    idempotent: true,
     validate(payload) {
       if (!OPS.includes(payload.op as (typeof OPS)[number])) return `op must be one of ${OPS.join(', ')}`;
       const { ms } = payload;
@@ -48,11 +47,19 @@ export function createTestExecutor(): Executor {
       return null;
     },
     async run(ctx) {
-      const { op, ms, message } = ctx.job.spec.payload as { op: string; ms?: number; message?: string };
+      const { op, ms, message } = ctx.job.spec.payload as unknown as TestPayload;
       if (op === 'sleep') return runSleep(ctx, ms ?? 1000);
       if (!(await wait(ms ?? 0, ctx.signal))) return ABORTED;
       if (op === 'echo') return { kind: 'finished', result: { echo: message } };
-      return { kind: 'failed', error: message ?? 'failed on purpose' };
+      if (op === 'fail') return { kind: 'failed', error: message ?? 'failed on purpose' };
+      ctx.saveState({ asked: true });
+      return { kind: 'question', question: { text: message ?? 'Which option?', recentOutput: '', detectedBy: 'test' } };
+    },
+    async resume(ctx, answer) {
+      const { op, ms } = ctx.job.spec.payload as unknown as TestPayload;
+      if (!(await wait(ms ?? 0, ctx.signal))) return ABORTED;
+      if (op === 'fail-after-answer') return { kind: 'failed', error: `failed after answer: ${answer}` };
+      return { kind: 'finished', result: { answer } };
     },
   };
 }

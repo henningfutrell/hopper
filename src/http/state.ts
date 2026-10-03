@@ -43,7 +43,7 @@ export function stateRoutes(app: FastifyInstance, o: { engine: Engine; store: St
   const jev = () => ({ mode: engine.jevMode(), advisor: engine.advisorName });
 
   app.get('/api/health', async () => ({
-    ok: true, version: o.version, jevMode: engine.jevMode(), advisor: engine.advisorName,
+    ok: true, version: o.version, jevMode: engine.jevMode(), advisor: engine.advisorName, executors: engine.executorNames,
     uptimeS: Math.floor((o.clock.now().getTime() - startedAt) / 1000),
   }));
   app.get('/api/queue', async () => engine.getQueue());
