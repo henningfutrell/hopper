@@ -1,5 +1,5 @@
 // Starts the real composition root (src/main.ts) on port 0 against a temp SQLite file, with the
-// fake advisor, fake usage source, fake answerers (src/main.ts documents their policy), a fast
+// fake router at the Router seam (unless `realRouter`: then the plugin host's router runs), fake usage source, fake answerers (src/main.ts documents their policy), a fast
 // tick, and temp sources/webhooks files (never the user's ~/.config). Jobs are PULLED: a
 // manual JobSource (manual-source.ts) offers items, run by the "scripted" executor
 // (scripted-executor.ts). Every event the app emits is validated against its schema; stop()
@@ -14,6 +14,7 @@ import type { DomainEvent, Job, Question } from '../../src/domain/types.ts';
 import { validateEvent } from '../../src/events/index.ts';
 import { assertAllConform, trackConformance } from './conformance.ts';
 import { rawRequest } from './http.ts';
+import { createFakeRouter } from './fake-router.ts';
 import { createManualSource, manualItem, type ManualSource } from './manual-source.ts';
 import { createScriptedExecutor, type ScriptedExecutor } from './scripted-executor.ts';
 import { waitFor } from './wait.ts';
@@ -64,13 +65,14 @@ export const TOKEN_RE = /localStorage\.setItem\(\s*['"]jh_session['"]\s*,\s*['"]
 
 export async function startTestApp(o: {
   dbPath: string; env?: Record<string, string>; seams?: AppSeams; source?: ManualSource;
+  /** Run the configured router (plugins.yaml / env through the plugin host) instead of the fake. */
+  realRouter?: boolean;
 }): Promise<TestApp> {
   const dataDir = dirname(o.dbPath);
   const config = loadConfig({
     JOB_HOPPER_PORT: '0',
     JOB_HOPPER_DB: o.dbPath,
     JOB_HOPPER_TICK_MS: '50',
-    JOB_HOPPER_JEV_ADVISOR: 'fake',
     JOB_HOPPER_WEBHOOK_BASE_MS: '20',
     JOB_HOPPER_LANE_IDLE_GRACE_MS: '200',
     JOB_HOPPER_EXECUTORS: 'test',
@@ -80,11 +82,15 @@ export async function startTestApp(o: {
     JOB_HOPPER_WEBHOOKS_FILE: join(dataDir, 'webhooks.yaml'),
     JOB_HOPPER_GROKBOT_WEBHOOK_FILE: join(dataDir, 'grokbot-webhook.env'),
     JOB_HOPPER_GH_BIN: '/nonexistent/gh',
+    JOB_HOPPER_PLUGIN_DIR: join(dataDir, 'plugins'),
+    JOB_HOPPER_PLUGINS_FILE: join(dataDir, 'plugins.yaml'),
     ...o.env,
   });
   const source = o.source ?? createManualSource();
   const scripted = createScriptedExecutor();
   const app = await startApp(config, {
+    pluginsFileIntervalMs: 50,
+    ...(o.realRouter ? {} : { router: createFakeRouter({ clock: { now: () => new Date() } }) }),
     ...o.seams,
     executors: [scripted, ...(o.seams?.executors ?? [])],
     sources: [source, ...(o.seams?.sources ?? [])],

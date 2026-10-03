@@ -69,16 +69,16 @@ describe('login', () => {
     const token = await t.login();
     expect((await t.ui('/ui/api/logout', {}, { token })).status).toBe(200);
     expect(JSON.parse((await session(token)).text)).toEqual({ authenticated: false });
-    expect((await t.ui('/ui/api/jev', { mode: 'active' }, { token })).status).toBe(403);
+    expect((await t.ui('/ui/api/router-mode', { mode: 'active' }, { token })).status).toBe(403);
   });
 });
 
 describe('UI mutations', () => {
   it('succeed with a session, exact Origin (127.0.0.1 or localhost), same-origin fetch and JSON', async () => {
     const token = await t.login();
-    expect((await t.ui('/ui/api/jev', { mode: 'active' }, { token, headers: { 'sec-fetch-site': 'same-origin' } })).status).toBe(200);
+    expect((await t.ui('/ui/api/router-mode', { mode: 'active' }, { token, headers: { 'sec-fetch-site': 'same-origin' } })).status).toBe(200);
     const port = new URL(t.url).port;
-    expect((await t.ui('/ui/api/jev', { mode: 'shadow' }, { token, headers: { origin: `http://localhost:${port}`, host: `localhost:${port}` } })).status).toBe(200);
+    expect((await t.ui('/ui/api/router-mode', { mode: 'shadow' }, { token, headers: { origin: `http://localhost:${port}`, host: `localhost:${port}` } })).status).toBe(200);
   });
 
   it.each([
@@ -94,14 +94,14 @@ describe('UI mutations', () => {
     ['a form body', { headers: { 'content-type': 'application/x-www-form-urlencoded' }, rawBody: 'mode=active' }, true],
   ])('are 403 with %s, and change nothing', async (_name, o, withToken) => {
     const token = await t.login();
-    const res = await t.ui('/ui/api/jev', { mode: 'active' }, { ...(withToken ? { token } : {}), ...o });
+    const res = await t.ui('/ui/api/router-mode', { mode: 'active' }, { ...(withToken ? { token } : {}), ...o });
     expect(res.status).toBe(403);
     expect((res.body as { error: string }).error).toEqual(expect.any(String));
-    expect((await t.api('GET', '/api/jev')).body.mode).toBe('shadow');
+    expect((await t.api('GET', '/api/router')).body.mode).toBe('shadow');
   });
 
   it('every mutation route refuses a request without a session', async () => {
-    for (const path of ['/ui/api/jobs/x/cancel', '/ui/api/jobs/x/approve', '/ui/api/questions/x/answer', '/ui/api/jev', '/ui/api/logout']) {
+    for (const path of ['/ui/api/jobs/x/cancel', '/ui/api/jobs/x/approve', '/ui/api/questions/x/answer', '/ui/api/router-mode', '/ui/api/logout']) {
       expect((await t.ui(path, {})).status, path).toBe(403);
     }
   });
@@ -116,6 +116,6 @@ describe('UI mutations', () => {
     expect(JSON.parse((await session(token)).text).authenticated).toBe(true);
     await new Promise((r) => setTimeout(r, 300));
     expect(JSON.parse((await session(token)).text)).toEqual({ authenticated: false });
-    expect((await t.ui('/ui/api/jev', { mode: 'active' }, { token })).status).toBe(403);
+    expect((await t.ui('/ui/api/router-mode', { mode: 'active' }, { token })).status).toBe(403);
   });
 });

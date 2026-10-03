@@ -32,13 +32,16 @@ describe('removed inbound routes', () => {
     ['POST', '/api/webhooks', { url: 'http://127.0.0.1:9/x' }],
     ['DELETE', '/api/webhooks/x', undefined],
     ['PUT', '/api/jev', { mode: 'active' }],
+    ['GET', '/api/jev', undefined],
+    ['PUT', '/api/router', { mode: 'active' }],
+    ['POST', '/api/router', { mode: 'active' }],
     ['PUT', '/api/usage/fake', { used: 1, limit: 2 }],
   ])('%s %s is 404', async (method, path, body) => {
     const a = await start();
     const res = await a.api(method, path, body);
     expect(res.status).toBe(404);
     expect((await a.api('GET', '/api/jobs')).body.jobs).toEqual([]);
-    expect((await a.api('GET', '/api/jev')).body.mode).toBe('shadow');
+    expect((await a.api('GET', '/api/router')).body.mode).toBe('shadow');
   });
 });
 

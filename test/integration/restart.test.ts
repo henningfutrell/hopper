@@ -15,7 +15,7 @@ afterEach(async () => {
 });
 
 describe('persistence across restart', () => {
-  it('requeues the interrupted job, keeps queued jobs, file webhooks and the Jev mode, and never re-ingests an item', async () => {
+  it('requeues the interrupted job, keeps queued jobs, file webhooks and the router mode, and never re-ingests an item', async () => {
     const db = tempDbPath();
     cleanup = db.cleanup;
     writeWebhooksFile(db.dbPath, [{ name: 'h', url: 'http://127.0.0.1:9/h', events: ['lane.opened'], secret: 's' }]);
@@ -23,7 +23,7 @@ describe('persistence across restart', () => {
     const env = { JOB_HOPPER_LOCAL_LANES: '1' };
     const first = await startTestApp({ dbPath: db.dbPath, env, source });
     apps.push(first);
-    expect((await first.ui('/ui/api/jev', { mode: 'active' }, { token: await first.login() })).status).toBe(200);
+    expect((await first.ui('/ui/api/router-mode', { mode: 'active' }, { token: await first.login() })).status).toBe(200);
     const hook = (await first.api('GET', '/api/webhooks')).body.subscriptions[0];
     const running = await first.pull({ op: 'sleep', ms: 1500 });
     await first.waitForStatus(running.id, 'running');
@@ -33,7 +33,7 @@ describe('persistence across restart', () => {
 
     const second = await startTestApp({ dbPath: db.dbPath, env: { ...env, JOB_HOPPER_JEV_MODE: 'shadow' }, source });
     apps.push(second);
-    expect((await second.api('GET', '/api/jev')).body.mode).toBe('active');
+    expect((await second.api('GET', '/api/router')).body.mode).toBe('active');
     expect((await second.api('GET', '/api/webhooks')).body.subscriptions.map((s: { id: string; name: string }) => [s.id, s.name])).toEqual([[hook.id, 'h']]);
     const requeued = await waitFor(async () => (await second.events()).find((e) => e.type === 'job.requeued' && e.jobId === running.id));
     expect(requeued.data).toMatchObject({ from: 'running' });

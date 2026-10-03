@@ -1,0 +1,120 @@
+// Phase 5 slice 1 through the real composition root: the plugin host, plugins.yaml, custom
+// plugins from the plugin dir, GET /api/plugins, the router fallback in /api/health, and a store
+// written before plugins existed.
+import { copyFileSync, cpSync, mkdirSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
+import type { Job } from '../../src/domain/types.ts';
+import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
+import { waitFor } from '../support/wait.ts';
+import { ALWAYS_PROCEED_DIR } from '../plugins/support.ts';
+
+let t: TestApp | undefined;
+let cleanup: (() => void) | undefined;
+
+afterEach(async () => {
+  await t?.stop();
+  t = undefined;
+  cleanup?.();
+});
+
+async function start(o: { before?: (dataDir: string) => void; env?: Record<string, string>; realRouter?: boolean } = {}): Promise<TestApp> {
+  const db = tempDbPath();
+  cleanup = db.cleanup;
+  o.before?.(dirname(db.dbPath));
+  t = await startTestApp({ dbPath: db.dbPath, realRouter: o.realRouter ?? true, ...(o.env ? { env: o.env } : {}) });
+  return t;
+}
+
+const installAlwaysProceed = (dataDir: string) => cpSync(ALWAYS_PROCEED_DIR, join(dataDir, 'plugins', 'always-proceed'), { recursive: true });
+const writePluginsYaml = (dataDir: string, text: string) => writeFileSync(join(dataDir, 'plugins.yaml'), text, { mode: 0o600 });
+
+describe('router from the environment, Jev checkout absent', () => {
+  it('falls back to pass-through; /api/health and /api/router say so; advice is source fallback', async () => {
+    const a = await start({ env: { JOB_HOPPER_JEV_SRC: '/nonexistent/grok-bot-jev' } });
+    const health = (await a.api('GET', '/api/health')).body;
+    expect(health).toMatchObject({ ok: true, routerMode: 'shadow', router: 'jev', fallback: true });
+    expect((await a.api('GET', '/api/router')).body).toEqual({
+      mode: 'shadow', router: 'jev', plugin: 'pass-through', fallback: true, reason: expect.stringContaining('/nonexistent/grok-bot-jev/src/router.py'),
+    });
+
+    const job = await a.pull({ op: 'echo' });
+    const advised = await waitFor(async () => (await a.job(job.id)).advice, { what: 'advice' });
+    expect(advised).toMatchObject({ action: 'proceed_full', source: 'fallback', reason: expect.stringMatching(/^router jev unavailable: /) });
+    const prioritized = (await a.events('types=job.prioritized')).find((e) => e.jobId === job.id)!;
+    expect(prioritized.schemaVersion).toBe(2);
+    expect(prioritized.data).toMatchObject({ advice: { source: 'fallback' }, mode: 'shadow' });
+  });
+
+  it('GET /api/plugins: roles, the configured instance with detection and fallback, and every router plugin', async () => {
+    const a = await start({ env: { JOB_HOPPER_JEV_SRC: '/nonexistent/grok-bot-jev', JOB_HOPPER_PYTHON: 'python3' }, before: installAlwaysProceed });
+    const body = (await a.api('GET', '/api/plugins')).body;
+    expect(body.roles).toEqual(['router']);
+    expect(body.config).toMatchObject({ source: 'env', path: join(a.dataDir, 'plugins.yaml') });
+    expect(body.router).toMatchObject({
+      instance: { name: 'jev', plugin: 'jev-router', options: { jevSrc: '/nonexistent/grok-bot-jev', python: 'python3' } },
+      detection: { status: 'unavailable' }, active: 'pass-through', fallback: true,
+    });
+    const ids = body.plugins.map((p: { id: string; builtin: boolean }) => [p.id, p.builtin]).sort();
+    expect(ids).toEqual([['always-proceed', false], ['jev-router', true], ['pass-through', true]]);
+    const jev = body.plugins.find((p: { id: string }) => p.id === 'jev-router');
+    expect(jev).toMatchObject({ role: 'router', describe: expect.any(String), options: { type: 'object', properties: { jevSrc: {}, python: {} } } });
+    expect(body.errors).toEqual([]);
+  });
+});
+
+describe('plugins.yaml and a custom plugin', () => {
+  it('a custom router selected in plugins.yaml advises real jobs', async () => {
+    const a = await start({
+      before: (d) => { installAlwaysProceed(d); writePluginsYaml(d, 'version: 1\nrouter: { name: mine, plugin: always-proceed, options: { note: from-yaml } }\n'); },
+    });
+    expect((await a.api('GET', '/api/health')).body).toMatchObject({ router: 'mine', fallback: false });
+    expect((await a.api('GET', '/api/plugins')).body.config).toMatchObject({ source: 'file' });
+    const job = await a.pull({ op: 'echo' });
+    const advised = await waitFor(async () => (await a.job(job.id)).advice, { what: 'advice' });
+    expect(advised).toMatchObject({ action: 'proceed_full', reason: 'from-yaml', source: 'always-proceed' });
+  });
+
+  it('editing plugins.yaml swaps the router while the daemon runs', async () => {
+    const a = await start({
+      before: (d) => { installAlwaysProceed(d); writePluginsYaml(d, 'version: 1\nrouter: { name: open, plugin: pass-through }\n'); },
+    });
+    const first = await a.pull({ op: 'echo' });
+    expect(await waitFor(async () => (await a.job(first.id)).advice, { what: 'advice' })).toMatchObject({ source: 'pass-through' });
+
+    writePluginsYaml(a.dataDir, 'version: 1\nrouter: { name: mine, plugin: always-proceed, options: { note: swapped } }\n');
+    await waitFor(async () => (await a.api('GET', '/api/router')).body.router === 'mine', { what: 'the swapped router' });
+    const second = await a.pull({ op: 'echo' });
+    expect(await waitFor(async () => (await a.job(second.id)).advice, { what: 'advice' })).toMatchObject({ source: 'always-proceed', reason: 'swapped' });
+  });
+
+  it('an invalid plugins.yaml at start: env router, error shown', async () => {
+    const a = await start({
+      env: { JOB_HOPPER_JEV_SRC: '/nonexistent/grok-bot-jev' },
+      before: (d) => writePluginsYaml(d, 'version: 1\nrouter: { plugin: x }\n'),
+    });
+    const body = (await a.api('GET', '/api/plugins')).body;
+    expect(body.config.error).toMatch(/router\.name/);
+    expect(body.router.instance).toMatchObject({ name: 'jev', plugin: 'jev-router' });
+  });
+});
+
+describe('a store written before plugins', () => {
+  it('migrates and runs: router mode kept, advice renamed, old decisions readable, old events still conform', async () => {
+    const db = tempDbPath();
+    cleanup = db.cleanup;
+    mkdirSync(dirname(db.dbPath), { recursive: true });
+    copyFileSync(join(import.meta.dirname, '..', 'store', 'fixtures', 'pre-plugins.sqlite'), db.dbPath);
+    t = await startTestApp({ dbPath: db.dbPath });
+    expect((await t.api('GET', '/api/router')).body.mode).toBe('active');
+    const held = await t.job('00000000-0000-4000-8000-000000000002');
+    expect(held.advice).toMatchObject({ action: 'ask_human', details: { jevUsed: true } });
+    expect(held).not.toHaveProperty('jevAdvice');
+    const old = (await t.api('GET', '/api/decisions/decision-1')).body;
+    expect(old).toMatchObject({ routerMode: 'active', advice: [{ withAdvice: 'hold' }, { withAdvice: 'start' }] });
+    // The held job stays held by the router (active mode) under the new reason.
+    await waitFor(async () => (await t!.job(held.id)).holdReason === 'router ask_human: awaiting approval', { what: 'the renamed hold reason' });
+    const jobs = (await t.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=100')).body.jobs;
+    expect(jobs.filter((j) => j.advice)).toHaveLength(4); // the unclassified one is advised by the fake on startup
+  });
+});

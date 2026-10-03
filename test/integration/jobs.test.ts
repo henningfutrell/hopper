@@ -148,7 +148,8 @@ describe('jobs pulled from a source', () => {
 
   it('serves health and the UI', async () => {
     const health = (await t.api('GET', '/api/health')).body;
-    expect(health).toMatchObject({ ok: true, jevMode: 'shadow', advisor: 'fake' });
+    expect(health).toMatchObject({ ok: true, routerMode: 'shadow', router: 'fake', fallback: false });
+    expect(health).not.toHaveProperty('advisor');
     expect(health.executors).toEqual(['test', 'scripted']);
     const page = await fetch(t.url + '/');
     expect(page.headers.get('content-type')).toMatch(/text\/html/);

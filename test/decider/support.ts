@@ -1,19 +1,19 @@
 import type {
-  DecisionInputs, DeciderPolicy, Job, JevAction, JevAdvice, Lane, MachineSnapshot, UsageReading,
+  DecisionInputs, DeciderPolicy, Job, AdviceAction, Advice, Lane, MachineSnapshot, UsageReading,
 } from '../../src/domain/types.ts';
 
 export const NOW = '2026-10-02T12:00:00.000Z';
 
 export const policy: DeciderPolicy = {
-  softLimit: 0.7, hardLimit: 0.95, jevCheapBoost: 10, laneIdleGraceMs: 5000, resumeBoost: 20,
+  softLimit: 0.7, hardLimit: 0.95, routerCheapBoost: 10, laneIdleGraceMs: 5000, resumeBoost: 20,
 };
 
 export function machine(over: Partial<MachineSnapshot> = {}): MachineSnapshot {
   return { id: 'local', label: 'local', maxLanes: 4, online: true, executors: ['test'], ...over };
 }
 
-export function advice(action: JevAction): JevAdvice {
-  return { action, reason: `because ${action}`, jevUsed: true, details: {}, source: 'fake', at: NOW };
+export function advice(action: AdviceAction): Advice {
+  return { action, reason: `because ${action}`, details: {}, source: 'fake', at: NOW };
 }
 
 export function job(id: string, over: Partial<Job> & { executor?: string; machineId?: string } = {}): Job {
@@ -45,7 +45,7 @@ export function reading(used: number, limit = 100, over: Partial<UsageReading> =
 
 export function inputs(over: Partial<DecisionInputs> = {}): DecisionInputs {
   return {
-    at: NOW, trigger: 'tick', jevMode: 'shadow', machines: [machine()], lanes: [], usage: [],
+    at: NOW, trigger: 'tick', routerMode: 'shadow', machines: [machine()], lanes: [], usage: [],
     waiting: [], running: [], policy, ...over,
   };
 }

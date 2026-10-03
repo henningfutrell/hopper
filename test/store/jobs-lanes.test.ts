@@ -51,12 +51,12 @@ describe('jobs', () => {
     s.close();
   });
 
-  it('stores jevAdvice, and everything survives reopen', () => {
+  it('stores advice, and everything survives reopen', () => {
     const path = t.path();
     const s = t.open(path);
     const j = s.jobs.create(spec, 70);
-    const advice = { action: 'chat_only' as const, reason: 'r', jevUsed: true, details: { x: 1 }, source: 'fake', at: 'a' };
-    const u = s.jobs.update(j.id, { jevAdvice: advice, status: 'finished', result: { ok: [1] }, approved: true });
+    const advice = { action: 'chat_only' as const, reason: 'r', details: { x: 1, jevUsed: true }, source: 'fake', at: 'a' };
+    const u = s.jobs.update(j.id, { advice: advice, status: 'finished', result: { ok: [1] }, approved: true });
     s.close();
     const s2 = t.open(path);
     expect(s2.jobs.get(j.id)).toEqual(u);

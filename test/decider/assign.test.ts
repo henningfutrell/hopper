@@ -51,14 +51,14 @@ describe('assignment and native holds', () => {
 
 describe('decision shape', () => {
   it('is deterministic, carries inputs verbatim, and has reasons', () => {
-    const i = inputs({ waiting: [job('a'), job('b')], jevMode: 'active' });
+    const i = inputs({ waiting: [job('a'), job('b')], routerMode: 'active' });
     const snapshot = structuredClone(i);
     const d1 = decide(i, 'd1');
     const d2 = decide(i, 'd1');
     expect(d2).toEqual(d1);
     expect(d1.inputs).toEqual(snapshot);
     expect(i).toEqual(snapshot);
-    expect(d1).toMatchObject({ id: 'd1', at: i.at, trigger: 'tick', jevMode: 'active' });
+    expect(d1).toMatchObject({ id: 'd1', at: i.at, trigger: 'tick', routerMode: 'active' });
     expect(d1.reasons.length).toBeGreaterThan(0);
     expect(d1.reasons.every((r) => r.length > 0)).toBe(true);
     expect(d1.lanes.every((l) => l.reason.length > 0)).toBe(true);

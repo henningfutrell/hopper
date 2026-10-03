@@ -6,11 +6,11 @@ const t = useTempStore();
 
 function decision(id: string, at: string): Decision {
   return {
-    id, at, trigger: 'tick', jevMode: 'shadow', lanes: [], start: [], hold: [], jev: [],
+    id, at, trigger: 'tick', routerMode: 'shadow', lanes: [], start: [], hold: [], advice: [],
     reasons: ['r'],
     inputs: {
-      at, trigger: 'tick', jevMode: 'shadow', machines: [], lanes: [], usage: [], waiting: [], running: [],
-      policy: { softLimit: 0.7, hardLimit: 0.95, jevCheapBoost: 10, laneIdleGraceMs: 1000, resumeBoost: 20 },
+      at, trigger: 'tick', routerMode: 'shadow', machines: [], lanes: [], usage: [], waiting: [], running: [],
+      policy: { softLimit: 0.7, hardLimit: 0.95, routerCheapBoost: 10, laneIdleGraceMs: 1000, resumeBoost: 20 },
     },
   };
 }
@@ -33,16 +33,16 @@ describe('decisions', () => {
 });
 
 describe('settings', () => {
-  it('jev mode is undefined until set, then survives reopen', () => {
+  it('router mode is undefined until set, then survives reopen', () => {
     const path = t.path();
     const s = t.open(path);
-    expect(s.settings.getJevMode()).toBeUndefined();
-    s.settings.setJevMode('active');
-    s.settings.setJevMode('shadow');
-    s.settings.setJevMode('active');
+    expect(s.settings.getRouterMode()).toBeUndefined();
+    s.settings.setRouterMode('active');
+    s.settings.setRouterMode('shadow');
+    s.settings.setRouterMode('active');
     s.close();
     const s2 = t.open(path);
-    expect(s2.settings.getJevMode()).toBe('active');
+    expect(s2.settings.getRouterMode()).toBe('active');
     s2.close();
   });
 });

@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { createFakeAdvisor } from '../../src/jev/index.ts';
-import { fixedClock, makeJob } from './support.ts';
-import type { JobSpec } from '../../src/domain/types.ts';
+import type { Job, JobSpec } from '../../src/domain/types.ts';
+import { createFakeRouter } from './fake-router.ts';
 
-const advisor = createFakeAdvisor({ clock: fixedClock });
+const router = createFakeRouter({ clock: { now: () => new Date('2026-10-02T12:00:00.000Z') } });
+
+const makeJob = (spec: Partial<JobSpec> = {}): Job => ({
+  id: 'job-1', spec: { executor: 'noop', payload: {}, ...spec }, priority: 50, status: 'queued', approved: false,
+  createdAt: '2026-10-02T12:00:00.000Z', updatedAt: '2026-10-02T12:00:00.000Z', attempts: 0,
+});
 
 const table: [string, Partial<JobSpec>, string, boolean][] = [
   ['bypass marker in goal', { goal: 'Please BYPASS JEV now', kind: 'account' }, 'proceed_full', false],
@@ -23,13 +27,13 @@ const table: [string, Partial<JobSpec>, string, boolean][] = [
   ['no kind', {}, 'proceed_full', true],
 ];
 
-describe('fake advisor precedence', () => {
-  it('is named fake', () => expect(advisor.name).toBe('fake'));
+describe('fake router precedence (test double at the Router seam)', () => {
+  it('is named fake', () => expect(router.name).toBe('fake'));
 
   it.each(table)('%s', async (_name, spec, action, jevUsed) => {
-    const advice = await advisor.advise(makeJob(spec));
+    const advice = await router.advise(makeJob(spec));
     expect(advice.action).toBe(action);
-    expect(advice.jevUsed).toBe(jevUsed);
+    expect(advice.details.jevUsed).toBe(jevUsed);
     expect(advice.source).toBe('fake');
     expect(advice.at).toBe('2026-10-02T12:00:00.000Z');
     expect(advice.reason).not.toBe('');

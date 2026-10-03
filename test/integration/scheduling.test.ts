@@ -71,16 +71,17 @@ describe('machines, lanes and decisions', () => {
   });
 });
 
-describe('Jev mode and approval through the UI session', () => {
-  it('the UI switches Jev mode (jev.mode_changed) and refuses an unknown mode', async () => {
+describe('router mode and approval through the UI session', () => {
+  it('the UI switches router mode (router.mode_changed) and refuses an unknown mode', async () => {
     const token = await t.login();
-    expect((await t.api('GET', '/api/jev')).body).toEqual({ mode: 'shadow', advisor: 'fake' });
-    const res = await t.ui('/ui/api/jev', { mode: 'active' }, { token });
+    expect((await t.api('GET', '/api/router')).body).toEqual({ mode: 'shadow', router: 'fake', plugin: 'fake', fallback: false });
+    const res = await t.ui('/ui/api/router-mode', { mode: 'active' }, { token });
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ mode: 'active', advisor: 'fake' });
-    expect((await t.ui('/ui/api/jev', { mode: 'loud' }, { token })).status).toBe(400);
-    expect((await t.events()).filter((e) => e.type === 'jev.mode_changed')).toEqual([expect.objectContaining({ data: { from: 'shadow', to: 'active' } })]);
-    expect((await t.api('GET', '/api/health')).body.jevMode).toBe('active');
+    expect(res.body).toEqual({ mode: 'active', router: 'fake', plugin: 'fake', fallback: false });
+    expect((await t.ui('/ui/api/router-mode', { mode: 'loud' }, { token })).status).toBe(400);
+    expect((await t.ui('/ui/api/jev', { mode: 'shadow' }, { token })).status).toBe(404);
+    expect((await t.events()).filter((e) => e.type === 'router.mode_changed')).toEqual([expect.objectContaining({ data: { from: 'shadow', to: 'active' } })]);
+    expect((await t.api('GET', '/api/health')).body.routerMode).toBe('active');
   });
 
   it('the UI approves a waiting job (job.approved); terminal and unknown jobs are refused', async () => {

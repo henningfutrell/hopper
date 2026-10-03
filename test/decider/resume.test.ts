@@ -5,11 +5,11 @@ import { advice, inputs, job, lane, machine, policy } from './support.ts';
 const resuming = (id: string, over = {}) => job(id, { pendingAnswer: 'yes', ...over });
 const twoMachines = [machine({ id: 'a', maxLanes: 1 }), machine({ id: 'b', maxLanes: 1 })];
 
-describe.each(['shadow', 'active'] as const)('resume boost (%s)', (jevMode) => {
+describe.each(['shadow', 'active'] as const)('resume boost (%s)', (routerMode) => {
   it('adds resumeBoost and runs ahead of a higher plain priority', () => {
-    const plain = job('plain', { priority: 60, jevAdvice: advice('proceed_full') });
-    const back = resuming('back', { priority: 50, jevAdvice: advice('proceed_full') });
-    const d = decide(inputs({ jevMode, machines: [machine({ maxLanes: 1 })], waiting: [plain, back] }), 'd1');
+    const plain = job('plain', { priority: 60, advice: advice('proceed_full') });
+    const back = resuming('back', { priority: 50, advice: advice('proceed_full') });
+    const d = decide(inputs({ routerMode, machines: [machine({ maxLanes: 1 })], waiting: [plain, back] }), 'd1');
     expect(d.start.map((s) => s.jobId)).toEqual(['back']);
     expect(d.start[0]!.effectivePriority).toBe(50 + policy.resumeBoost);
     expect(d.start[0]!.reason).toContain(`resume boost +${policy.resumeBoost}`);
@@ -19,7 +19,7 @@ describe.each(['shadow', 'active'] as const)('resume boost (%s)', (jevMode) => {
 describe('resume pin', () => {
   it('goes to resumeOn, over spec.machineId', () => {
     const d = decide(inputs({
-      jevMode: 'shadow', machines: twoMachines,
+      routerMode: 'shadow', machines: twoMachines,
       waiting: [resuming('r', { resumeOn: 'b', machineId: 'a' })],
     }), 'd1');
     expect(d.start.map((s) => s.machineId)).toEqual(['b']);
@@ -53,28 +53,28 @@ describe('resume pin', () => {
   });
 });
 
-describe('jev never holds a resuming job', () => {
+describe('the router never holds a resuming job', () => {
   it.each(['ask_human', 'reuse_cache', 'stop_retry'] as const)('active %s: starts, no divergence', (action) => {
-    const d = decide(inputs({ jevMode: 'active', waiting: [resuming('r', { jevAdvice: advice(action) })] }), 'd1');
+    const d = decide(inputs({ routerMode: 'active', waiting: [resuming('r', { advice: advice(action) })] }), 'd1');
     expect(d.start.map((s) => s.jobId)).toEqual(['r']);
     expect(d.hold).toEqual([]);
-    expect(d.jev).toEqual([]);
+    expect(d.advice).toEqual([]);
   });
 
-  it('active: starts without any Jev advice', () => {
-    const d = decide(inputs({ jevMode: 'active', waiting: [resuming('r')] }), 'd1');
+  it('active: starts without any advice', () => {
+    const d = decide(inputs({ routerMode: 'active', waiting: [resuming('r')] }), 'd1');
     expect(d.start.map((s) => s.jobId)).toEqual(['r']);
   });
 
   it('shadow: no divergence either', () => {
-    const d = decide(inputs({ jevMode: 'shadow', waiting: [resuming('r', { jevAdvice: advice('ask_human') })] }), 'd1');
-    expect(d.jev).toEqual([]);
+    const d = decide(inputs({ routerMode: 'shadow', waiting: [resuming('r', { advice: advice('ask_human') })] }), 'd1');
+    expect(d.advice).toEqual([]);
   });
 
-  it('does not boost the priority of a cheap Jev class', () => {
-    const d = decide(inputs({ jevMode: 'active', waiting: [resuming('r', { jevAdvice: advice('chat_only') })] }), 'd1');
+  it('does not boost the priority of a cheap advice class', () => {
+    const d = decide(inputs({ routerMode: 'active', waiting: [resuming('r', { advice: advice('chat_only') })] }), 'd1');
     expect(d.start[0]!.effectivePriority).toBe(50 + policy.resumeBoost);
-    expect(d.jev).toEqual([]);
+    expect(d.advice).toEqual([]);
   });
 });
 
@@ -96,6 +96,6 @@ describe('waiting_answer in inputs is ignored', () => {
 });
 
 it('is deterministic with resuming jobs', () => {
-  const i = inputs({ jevMode: 'active', machines: twoMachines, waiting: [resuming('r', { resumeOn: 'a' }), job('q')] });
+  const i = inputs({ routerMode: 'active', machines: twoMachines, waiting: [resuming('r', { resumeOn: 'a' }), job('q')] });
   expect(decide(i, 'd1')).toEqual(decide(i, 'd1'));
 });
