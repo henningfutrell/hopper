@@ -949,3 +949,26 @@ Engine changes (T008): `cancel(id, reason)` (reason no longer hard-coded); `inge
 `reprioritize`, `setSourceState` implementing SourceHost; `job.reprioritized` joins the
 decision TRIGGERS; `src/ui/app.js` learns `job.reprioritized`.
 ```
+
+## Settled in phase 3 (2026-10-02)
+
+- **Claude Code can leave its transcript scrolled up** after a long prompt (an issue body
+  plus context): the reply and its marker sit below the viewport behind `N new message
+  (ctrl+End) ↓`. The monitor detects the indicator, sends Ctrl+End as raw text
+  (`herdr pane send-text <pane> ESC[1;5F` — herdr has no key name for it) and reads again
+  before judging. Found live: it had produced false `idle` questions whose text was the
+  indicator, posted to the issue.
+- **Screen chrome, full list:** status/spinner line (`✻ ✶ ✳ ✢ ✽`), plain-glyph spinner frames
+  (`· Symbioting… (20s …)`), `(ctrl+b to run in background)`, the new-message indicator, user
+  echo, `⏵` mode line, effort indicator, spinner tips. Each was found live; expect more after
+  a Claude Code upgrade.
+- **`job.queued.data.source`** carries the job's `JobSourceRef` (top level of `data`).
+- **Tests drive jobs through sources**: a test-only manual `JobSource` plus a `scripted`
+  executor that reads `{"op": …}` from the first prompt line (so a fake GitHub issue body
+  drives the same ops); every integration test checks event conformance on stop.
+- **The daemon unit runs with `PrivateTmp=true`**, so a `/tmp` path in `sources.yaml` /
+  `webhooks.yaml` (e.g. `secretFile`) is invisible to it. Keep referenced files under
+  `$HOME`. The herdr unit has no `PrivateTmp`, so job working directories under `/tmp` work.
+- **Projects priority is unverified live**: the `gh` token lacks `read:project`; the source
+  falls back to labels and reports `projectErrors`. Rank mode assumes `gh project item-list`
+  returns project order — check when the scope exists.
