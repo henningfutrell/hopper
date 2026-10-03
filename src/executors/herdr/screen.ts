@@ -83,9 +83,11 @@ function anchorLine(lines: string[], anchor: string): number {
 
 /** The right-aligned effort indicator above the input box, e.g. "◐ medium · /effort". */
 const EFFORT_LINE = /·\s*\/effort\s*$/;
+/** A spinner tip under the status line, e.g. "⎿  Tip: Run /install-github-app …". */
+const TIP_LINE = /^\s*(⎿\s*)?Tip:\s/;
 
 function isChrome(line: string): boolean {
-  return STATUS_LINE.test(line) || USER_ECHO.test(line) || /^\s*⏵/.test(line) || EFFORT_LINE.test(line);
+  return STATUS_LINE.test(line) || USER_ECHO.test(line) || /^\s*⏵/.test(line) || EFFORT_LINE.test(line) || TIP_LINE.test(line);
 }
 
 /** Output lines of the turn: after the anchor, up to the input box. */
