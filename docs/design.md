@@ -1117,6 +1117,7 @@ The path is deterministic from the issue URL, so it is in the job's env at inges
 | `HOPPER_TOKEN_FILE` | the job's token file (App source only) |
 | `HOPPER_COMMENT_CMD` | `~/.local/lib/job-hopper/scripts/hopper-comment` (App source only, absolute path) |
 | `HOPPER_GITHUB_API` | API base URL (default `https://api.github.com`; tests point it at a fake) |
+| `HOPPER_TOKEN_WAIT_MS` | how long `hopper-comment` waits for the token file (default 30000; tests) |
 | `HOPPER_JOB_ID` | added by the herdr executor |
 
 **`hopper-comment`** (`scripts/hopper-comment`, a bash wrapper running
@@ -1184,8 +1185,9 @@ Manifest:
   `--no-webhook` omits it, in case GitHub refuses the placeholder.
 - Contents permission: **not requested**. Jobs work on local clones, and the hopper never
   reads repo contents through the API.
-- `--owner <org>` posts to `https://github.com/organizations/<org>/settings/apps/new`
-  instead.
+- `--org <name>` posts to `https://github.com/organizations/<name>/settings/apps/new`
+  instead (as built; `--owner` only sets the owner login used in the name and homepage).
+- `privateKeyFile` / `webhookSecretFile` are written as absolute paths.
 
 Base URLs are overridable (`JOB_HOPPER_GITHUB_WEB`, `JOB_HOPPER_GITHUB_API`) so tests run the
 whole flow against a fake GitHub. `--no-open` skips `xdg-open`.

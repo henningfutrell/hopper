@@ -28,7 +28,7 @@ synonyms. Rename here first, in the same commit as everything else.
 | **Advisor** | The adapter producing Jev advice: `router` (the real one) or `fake`. | |
 | **Jev mode** | `shadow`: advice recorded, never applied. `active`: advice shapes admission and order. | |
 | **Divergence** | A job where the Jev verdict differs from the native one. Recorded in both modes. | |
-| **Waiting answer** | Status `waiting_answer`: a job paused on a question. Holds no lane; its pane stays open. | blocked, paused |
+| **Waiting answer** | Status `waiting_answer`: a job stopped on a question. Holds no lane; its pane stays open. | blocked, paused (a *paused* source is something else) |
 | **Question** | What a running job needs answered before it continues, with its escalation trail. | prompt, query |
 | **Answer tier** | Who may answer, in order: `opus`, `fable`, `human`. | level |
 | **Escalation** | Passing a question to the next tier because the last was not confident or the question is risky. | |
@@ -52,6 +52,8 @@ synonyms. Rename here first, in the same commit as everything else.
 | **GitHub App** | job-hopper's own GitHub identity (`job-hopper-<owner>[bot]`), created by the owner via the manifest flow. | bot account |
 | **Installation** | Where the owner installed the app; its repos are the only ones the `github-app` source scans. | |
 | **Bot login** | The app's author name on GitHub; how hopper comments are identified (the marker is secondary). | |
+| **Paused** (source) | A job source that must not discover new items right now — the gh source while a GitHub App is configured, the app source while none is. It still checks and reports its own active jobs. Only for sources; a job waiting on a question is *waiting answer*, never "paused". | |
+| **Token keeper** | The part of the app source that mints, refreshes and deletes job token files. | |
 | **Job token file** | A per-job file holding a short-lived installation token scoped to one repo, `issues: write`. | |
 | **hopper-comment** | The helper a job runs to comment on its own issue as the app. | |
 | **Manifest flow** | GitHub's create-app-from-a-manifest flow, driven by `create-github-app.sh`. | |
