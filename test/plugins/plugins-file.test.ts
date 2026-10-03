@@ -13,7 +13,7 @@ function file(text: string, mode = 0o600): string {
   return path;
 }
 
-describe('plugins.yaml (router section)', () => {
+describe('plugins.yaml (router, answerer and assessor sections)', () => {
   it('absent file → missing, so the caller derives the router', () => {
     expect(loadPluginsFile(join(temp(), 'none.yaml'))).toEqual({ missing: true });
   });
@@ -33,7 +33,7 @@ describe('plugins.yaml (router section)', () => {
     expect(loadPluginsFile(file('version: 1\n'))).toEqual({ warnings: [] });
   });
 
-  it('allows the sections later slices read (nothing reads them yet)', () => {
+  it('reads the answerer and assessor instances; the later sections are allowed, unread', () => {
     const r = loadPluginsFile(file([
       'version: 1',
       'router: { name: jev, plugin: jev-router }',
@@ -45,7 +45,19 @@ describe('plugins.yaml (router section)', () => {
       'usageSources: []',
       'notifiers: []',
     ].join('\n')));
-    expect(r).toMatchObject({ router: { name: 'jev' } });
+    expect(r).toEqual({
+      router: { name: 'jev', plugin: 'jev-router', options: {} },
+      answerer: { name: 'opus', plugin: 'claude-cli', options: { model: 'opus' } },
+      assessor: { name: 'fable', plugin: 'claude-cli-assessor', options: {} },
+      warnings: [],
+    });
+  });
+
+  it('answerer: null means no answerer (questions go straight to the human); absent means derive it', () => {
+    expect(loadPluginsFile(file('version: 1\nanswerer: null\n'))).toEqual({ answerer: null, warnings: [] });
+    expect(loadPluginsFile(file('version: 1\nassessor: { name: a, plugin: always-escalate }\n'))).toEqual({
+      assessor: { name: 'a', plugin: 'always-escalate', options: {} }, warnings: [],
+    });
   });
 
   it.each([
@@ -55,6 +67,10 @@ describe('plugins.yaml (router section)', () => {
     ['router without a plugin', 'version: 1\nrouter: { name: jev }\n', /router\.plugin/],
     ['router with an empty name', 'version: 1\nrouter: { name: "", plugin: x }\n', /router\.name/],
     ['options not a map', 'version: 1\nrouter: { name: a, plugin: b, options: 3 }\n', /router\.options/],
+    ['assessor: null (the assessor slot is never empty)', 'version: 1\nassessor: null\n', /assessor/],
+    ['answerer named human (the human stage)', 'version: 1\nanswerer: { name: human, plugin: claude-cli }\n', /answerer\.name.*human/],
+    ['assessor named human', 'version: 1\nassessor: { name: human, plugin: always-escalate }\n', /assessor\.name.*human/],
+    ['answerer and assessor with one name', 'version: 1\nanswerer: { name: x, plugin: claude-cli }\nassessor: { name: x, plugin: always-escalate }\n', /same name/],
   ])('%s is an error naming the problem', (_name, text, why) => {
     const r = loadPluginsFile(file(text));
     expect(r).toEqual({ error: expect.stringMatching(why) });

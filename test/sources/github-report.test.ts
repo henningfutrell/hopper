@@ -75,6 +75,18 @@ describe('GitHub source report', () => {
     expect(state).toEqual({ questionComments: { 'q-1': c!.id } });
   });
 
+  it('question: the trail shows the answerer draft and the assessment (role, escalate, reason)', async () => {
+    const { gh, source } = withIssue();
+    const job = jobForIssue(1, { status: 'waiting_answer', questionId: 'q-1' });
+    await source.report({ kind: 'question', job, question: question(job.id, { attempts: [
+      { tier: 'opus', role: 'answerer', model: 'opus', startedAt: 'a', answer: 'sqlite', confident: true, reason: 'rules', outcome: 'drafted' },
+      { tier: 'fable', role: 'assessor', model: 'fable', startedAt: 'b', escalate: true, reason: 'drops a table', riskRules: [], outcome: 'escalated' },
+    ] }) });
+    const [c] = gh.commentsOn(REPO, 1);
+    expect(c!.body).toContain('- opus (answerer) · confident=yes · drafted');
+    expect(c!.body).toContain('- fable (assessor) · escalate=yes · drops a table');
+  });
+
   it('a second question keeps the first question comment id (whole state returned)', async () => {
     const { source } = withIssue();
     const job = jobForIssue(1);

@@ -35,7 +35,7 @@ describe('migration 2 (questions)', () => {
     const s = t.open(path);
     expect(s.jobs.get('j1')).toEqual(job);
     expect(s.events.since(0)).toEqual([{ schemaVersion: 1, seq: 1, id: 'e1', type: 'job.queued', at: 'at', jobId: 'j1', data: { k: 1 } }]);
-    const q = s.questions.create({ jobId: 'j1', text: 't', recentOutput: '', detectedBy: 'idle' });
+    const q = s.questions.create({ jobId: 'j1', text: 't', recentOutput: '', detectedBy: 'idle', tier: 'opus' });
     expect(s.questions.get(q.id)).toEqual(q);
     s.close();
 

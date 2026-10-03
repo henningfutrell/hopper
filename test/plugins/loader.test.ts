@@ -16,8 +16,10 @@ const routerJs = (id: string) => `export default {
 `;
 
 describe('built-in plugins', () => {
-  it('are jev-router and pass-through, both routers', () => {
-    expect(BUILTIN_PLUGINS.map((p) => [p.id, p.role]).sort()).toEqual([['jev-router', 'router'], ['pass-through', 'router']]);
+  it('are the routers jev-router and pass-through, the answerer claude-cli, the assessors claude-cli-assessor and always-escalate', () => {
+    expect(BUILTIN_PLUGINS.map((p) => [p.id, p.role]).sort()).toEqual([
+      ['always-escalate', 'assessor'], ['claude-cli', 'answerer'], ['claude-cli-assessor', 'assessor'], ['jev-router', 'router'], ['pass-through', 'router'],
+    ]);
   });
 });
 

@@ -2,10 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { fixedClock, spec, useTempStore } from './helpers.ts';
 
 const t = useTempStore();
-const input = (jobId: string, text = 'proceed?') => ({ jobId, text, recentOutput: 'tail', detectedBy: 'marker' });
+const input = (jobId: string, text = 'proceed?', tier = 'opus') => ({ jobId, text, recentOutput: 'tail', detectedBy: 'marker', tier });
 
 describe('questions repository', () => {
-  it('creates an open opus question with empty trail from the store clock and idGen', () => {
+  it('creates an open question at the stage it is given (the answerer instance, or human), empty trail, from the store clock and idGen', () => {
     const s = t.open(t.path());
     const j = s.jobs.create(spec, 5);
     const q = s.questions.create(input(j.id));
@@ -17,6 +17,8 @@ describe('questions repository', () => {
     expect(q.id).toMatch(/^[0-9a-f-]{36}$/);
     expect(s.questions.get(q.id)).toEqual(q);
     expect(s.questions.get('nope')).toBeUndefined();
+    expect(s.questions.create(input(j.id, 'no answerer', 'human')).tier).toBe('human');
+    expect(s.questions.create(input(j.id, 'renamed', 'sonnet')).tier).toBe('sonnet');
     s.close();
   });
 

@@ -22,7 +22,7 @@ export const INVALID_DATA: Partial<Record<EventType, Record<string, unknown>>> =
   'decision.made': { decisionId: 'd1' },
   'router.mode_changed': { from: 'shadow', to: 'loud' },
   'question.asked': { questionId: 'q1' },
-  'question.escalated': { questionId: 'q1', target: 'nobody', reason: 'r', text: 't', jobId: 'j' },
-  'question.answered': { questionId: 'q1', by: 'robot', answer: 'a' },
+  'question.escalated': { questionId: 'q1', target: 7, reason: 'r', text: 't', jobId: 'j' },
+  'question.answered': { questionId: 'q1', by: '', answer: 'a' },
   'question.expired': { questionId: 'q1' },
 };

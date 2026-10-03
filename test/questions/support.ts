@@ -5,10 +5,9 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { vi } from 'vitest';
-import type { Answerer, QuestionService, Store } from '../../src/domain/ports.ts';
-import type { AnswerVerdict } from '../../src/domain/ports.ts';
+import type { AnswerDraft, AnswerRequest, Answerer, Assessment, Assessor, QuestionService, Store } from '../../src/domain/ports.ts';
 import { EVENT_SCHEMA_VERSIONS, type DomainEvent, type Job, type NewEvent, type Question, type QuestionAttempt } from '../../src/domain/types.ts';
-import { createFakeAnswerer, createQuestionService } from '../../src/questions/index.ts';
+import { createQuestionService } from '../../src/questions/index.ts';
 
 export interface MemoryStore {
   store: Store;
@@ -34,9 +33,9 @@ export function createMemoryStore(): MemoryStore {
       },
     },
     questions: {
-      create(input: { jobId: string; text: string; recentOutput: string; detectedBy: string }): Question {
+      create(input: { jobId: string; text: string; recentOutput: string; detectedBy: string; tier: string }): Question {
         const q: Question = {
-          id: `q${++qn}`, ...input, status: 'open', tier: 'opus', attempts: [], notifyCount: 0,
+          id: `q${++qn}`, ...input, status: 'open', attempts: [], notifyCount: 0,
           createdAt: now(), updatedAt: now(),
         };
         questions.set(q.id, q);
@@ -84,24 +83,48 @@ export function createMemoryStore(): MemoryStore {
   } as MemoryStore;
 }
 
-export const SAFE: AnswerVerdict = { answer: 'use postgres', confident: true, risky: false, reason: 'rules say so' };
+export const SAFE: AnswerDraft = { answer: 'use postgres', confident: true, reason: 'rules say so' };
+export const PROCEED: Assessment = { escalate: false, reason: 'routine, the rules settle it' };
+
+type Result<T> = T | { error: string };
+/** A scripted answerer stage: may throw, hang, or return anything (the service must cope). */
+export type AnswerScript = (req: AnswerRequest, signal: AbortSignal) => Result<AnswerDraft> | Promise<Result<AnswerDraft>>;
+export type AssessScript = (req: AnswerRequest, draft: AnswerDraft, signal: AbortSignal) => unknown;
+
+/** Answerer double at the Answerer seam. No safety net: a throw reaches the service. */
+export function scriptedAnswerer(name: string, script: AnswerScript, model = `${name}-m`): Answerer {
+  return { name, model, answer: async (req, signal) => script(req, signal) };
+}
+
+/** Assessor double at the Assessor seam. Returns whatever the script returns, garbage included. */
+export function scriptedAssessor(name: string, script: AssessScript, model = `${name}-m`): Assessor {
+  return { name, model, assess: async (req, draft, signal) => (await script(req, draft, signal)) as Assessment };
+}
 
 export interface Rig {
   mem: MemoryStore;
   svc: QuestionService;
   answered: Array<{ q: Question; depth: number }>;
   expired: Array<{ q: Question; depth: number }>;
+  /** Calls the assessor received, in order. */
+  assessed: Array<{ req: AnswerRequest; draft: AnswerDraft }>;
+  /** Create a question the way the engine does: at the service's first stage. */
   question(text?: string): Question;
   eventsOf(type: string): DomainEvent[];
+  /** Swap the live answerer / assessor (plugins.yaml reload). `null` → no answerer. */
+  setAnswerer(a: Answerer | null): void;
+  setAssessor(a: Assessor): void;
 }
 
 export interface RigOptions {
-  opus?: Parameters<typeof createFakeAnswerer>[0]['script'];
-  fable?: Parameters<typeof createFakeAnswerer>[0]['script'];
+  /** Script of the answerer instance `opus`; `null` → no answerer configured. */
+  answer?: AnswerScript | null;
+  /** Script of the assessor instance `fable`. */
+  assess?: AssessScript;
   rules?: string | null;
   renotifyMs?: number;
   humanTimeoutMs?: number;
-  answerers?: Answerer[];
+  stageTimeoutMs?: number;
 }
 
 export function rig(o: RigOptions = {}): Rig {
@@ -113,14 +136,19 @@ export function rig(o: RigOptions = {}): Rig {
   }
   const answered: Rig['answered'] = [];
   const expired: Rig['expired'] = [];
-  const answerers = o.answerers ?? [
-    createFakeAnswerer({ tier: 'opus', model: 'opus-m', script: o.opus ?? (() => SAFE) }),
-    createFakeAnswerer({ tier: 'fable', model: 'fable-m', script: o.fable ?? (() => SAFE) }),
-  ];
+  const assessed: Rig['assessed'] = [];
+  let answerer: Answerer | undefined = o.answer === null ? undefined : scriptedAnswerer('opus', o.answer ?? (() => SAFE));
+  const script = o.assess ?? (() => PROCEED);
+  let assessor: Assessor = scriptedAssessor('fable', (req, draft, signal) => {
+    assessed.push({ req, draft });
+    return script(req, draft, signal);
+  });
   const svc = createQuestionService({
     store: mem.store,
     clock: { now: () => new Date() },
-    answerers,
+    answerer: () => answerer,
+    assessor: () => assessor,
+    stageTimeoutMs: o.stageTimeoutMs ?? 60_000,
     rulesFile,
     renotifyMs: o.renotifyMs ?? 1000,
     humanTimeoutMs: o.humanTimeoutMs ?? 10_000,
@@ -130,10 +158,12 @@ export function rig(o: RigOptions = {}): Rig {
   });
   const job = mem.addJob('build the thing', 'ship it');
   return {
-    mem, svc, answered, expired,
+    mem, svc, answered, expired, assessed,
     question: (text = 'Which database?') =>
-      mem.store.questions.create({ jobId: job.id, text, recentOutput: 'line1\nline2', detectedBy: 'marker' }),
+      mem.store.questions.create({ jobId: job.id, text, recentOutput: 'line1\nline2', detectedBy: 'marker', tier: svc.firstStage() }),
     eventsOf: (type) => mem.events.filter((e) => e.type === type),
+    setAnswerer: (a) => { answerer = a ?? undefined; },
+    setAssessor: (a) => { assessor = a; },
   };
 }
 

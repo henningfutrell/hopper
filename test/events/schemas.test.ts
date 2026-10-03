@@ -71,7 +71,9 @@ describe('superseded payload versions (stored events are never rewritten)', () =
     expect(EVENT_SCHEMA_VERSIONS['decision.made']).toBe(2);
     expect(EVENT_SCHEMA_VERSIONS['router.mode_changed']).toBe(1);
     expect(EVENT_TYPES).not.toContain('jev.mode_changed');
-    expect(Object.keys(LEGACY_EVENT_SCHEMAS).sort()).toEqual(['decision.made.v1', 'jev.mode_changed.v1', 'job.prioritized.v1']);
+    expect(Object.keys(LEGACY_EVENT_SCHEMAS).sort()).toEqual([
+      'decision.made.v1', 'jev.mode_changed.v1', 'job.prioritized.v1', 'question.answered.v1', 'question.escalated.v1',
+    ]);
   });
 
   it('a stored v1 job.prioritized, decision.made and jev.mode_changed validate against their v1 schemas', () => {
@@ -113,5 +115,23 @@ describe('exported JSON Schema', () => {
     const md = readFileSync(join(APP, 'docs', 'events.md'), 'utf8');
     for (const t of EVENT_TYPES) expect(md, t).toContain(`\`${t}\``);
     expect(md).toMatch(/before phase 3/i);
+  });
+});
+
+describe('question events name stages by instance (slice 2)', () => {
+  const old = (type: EventType, data: Record<string, unknown>) => event(type, data, { schemaVersion: 1 });
+  const escalated = { questionId: 'q1', reason: 'r', text: 't', jobId: 'j' };
+
+  it('question.escalated and question.answered are v2: target and by are any instance name', () => {
+    expect(EVENT_SCHEMA_VERSIONS['question.escalated']).toBe(2);
+    expect(EVENT_SCHEMA_VERSIONS['question.answered']).toBe(2);
+    expect(validateEvent(event('question.escalated', { ...escalated, target: 'my-assessor' }))).toEqual({ ok: true });
+    expect(validateEvent(event('question.answered', { questionId: 'q1', by: 'sonnet', answer: 'a' }))).toEqual({ ok: true });
+  });
+
+  it('stored v1 events (target and by from opus | fable | human) still validate against v1', () => {
+    for (const target of ['opus', 'fable', 'human']) expect(validateEvent(old('question.escalated', { ...escalated, target }))).toEqual({ ok: true });
+    expect(validateEvent(old('question.answered', { questionId: 'q1', by: 'fable', answer: 'a' }))).toEqual({ ok: true });
+    expect(validateEvent(old('question.escalated', { ...escalated, target: 'my-assessor' })).ok).toBe(false);
   });
 });

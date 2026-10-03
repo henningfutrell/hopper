@@ -49,14 +49,16 @@ describe('router from the environment, Jev checkout absent', () => {
   it('GET /api/plugins: roles, the configured instance with detection and fallback, and every router plugin', async () => {
     const a = await start({ env: { JOB_HOPPER_JEV_SRC: '/nonexistent/grok-bot-jev', JOB_HOPPER_PYTHON: 'python3' }, before: installAlwaysProceed });
     const body = (await a.api('GET', '/api/plugins')).body;
-    expect(body.roles).toEqual(['router']);
+    expect(body.roles).toEqual(['router', 'answerer', 'assessor']);
     expect(body.config).toMatchObject({ source: 'env', path: join(a.dataDir, 'plugins.yaml') });
     expect(body.router).toMatchObject({
       instance: { name: 'jev', plugin: 'jev-router', options: { jevSrc: '/nonexistent/grok-bot-jev', python: 'python3' } },
       detection: { status: 'unavailable' }, active: 'pass-through', fallback: true,
     });
     const ids = body.plugins.map((p: { id: string; builtin: boolean }) => [p.id, p.builtin]).sort();
-    expect(ids).toEqual([['always-proceed', false], ['jev-router', true], ['pass-through', true]]);
+    expect(ids).toEqual([
+      ['always-escalate', true], ['always-proceed', false], ['claude-cli', true], ['claude-cli-assessor', true], ['jev-router', true], ['pass-through', true],
+    ]);
     const jev = body.plugins.find((p: { id: string }) => p.id === 'jev-router');
     expect(jev).toMatchObject({ role: 'router', describe: expect.any(String), options: { type: 'object', properties: { jevSrc: {}, python: {} } } });
     expect(body.errors).toEqual([]);
@@ -116,5 +118,60 @@ describe('a store written before plugins', () => {
     await waitFor(async () => (await t!.job(held.id)).holdReason === 'router ask_human: awaiting approval', { what: 'the renamed hold reason' });
     const jobs = (await t.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=100')).body.jobs;
     expect(jobs.filter((j) => j.advice)).toHaveLength(4); // the unclassified one is advised by the fake on startup
+  });
+});
+
+describe('question roles in /api/plugins (slice 2)', () => {
+  it('derived from the env: answerer opus (claude-cli), assessor fable (claude-cli-assessor), models and timeout from the env', async () => {
+    const a = await start({ env: {
+      JOB_HOPPER_CLAUDE_BIN: process.execPath, JOB_HOPPER_ANSWER_MODEL_A: 'sonnet', JOB_HOPPER_ANSWER_MODEL_B: 'haiku', JOB_HOPPER_ANSWER_TIMEOUT_MS: '1234',
+    } });
+    const body = (await a.api('GET', '/api/plugins')).body;
+    expect(body.answerer).toEqual({
+      instance: { name: 'opus', plugin: 'claude-cli', options: { bin: process.execPath, model: 'sonnet', timeoutMs: 1234 } },
+      detection: { status: 'available', detail: expect.any(String) }, active: 'claude-cli', fallback: false,
+    });
+    expect(body.assessor).toEqual({
+      instance: { name: 'fable', plugin: 'claude-cli-assessor', options: { bin: process.execPath, model: 'haiku', timeoutMs: 1234 } },
+      detection: { status: 'available', detail: expect.any(String) }, active: 'claude-cli-assessor', fallback: false,
+    });
+  });
+
+  it('claude not installed: no answerer, and the assessor falls back to always-escalate — shown', async () => {
+    const a = await start({ env: { JOB_HOPPER_CLAUDE_BIN: '/nonexistent/claude' } });
+    const body = (await a.api('GET', '/api/plugins')).body;
+    expect(body.answerer).toMatchObject({ instance: { name: 'opus' }, detection: { status: 'unavailable' }, active: null, fallback: true, reason: expect.stringContaining('/nonexistent/claude') });
+    expect(body.assessor).toMatchObject({ instance: { name: 'fable' }, detection: { status: 'unavailable' }, active: 'always-escalate', fallback: true });
+  });
+
+  it('plugins.yaml sections win over the env', async () => {
+    const a = await start({ before: (d) => writePluginsYaml(d, 'version: 1\nanswerer: null\nassessor: { name: wall, plugin: always-escalate }\n') });
+    const body = (await a.api('GET', '/api/plugins')).body;
+    expect(body.answerer).toEqual({ instance: null, active: null, fallback: false });
+    expect(body.assessor).toMatchObject({ instance: { name: 'wall', plugin: 'always-escalate' }, active: 'always-escalate', fallback: false });
+  });
+});
+
+describe('a store written before the assessor', () => {
+  const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+
+  it('open questions at opus and at fable both restart at the answer stage; the human one stays with the human', async () => {
+    const db = tempDbPath();
+    cleanup = db.cleanup;
+    mkdirSync(dirname(db.dbPath), { recursive: true });
+    copyFileSync(join(import.meta.dirname, '..', 'store', 'fixtures', 'pre-assessor.sqlite'), db.dbPath);
+    t = await startTestApp({ dbPath: db.dbPath });
+    for (const jobId of [id(1), id(5)]) {
+      expect((await t.waitForStatus(jobId, 'finished')).result).toEqual({ answer: 'fake opus answer' });
+      const [q] = await t.questionsOf(jobId);
+      expect(q).toMatchObject({ status: 'answered', answeredBy: 'opus' });
+      expect(q!.attempts.slice(-2).map((a) => [a.tier, a.role, a.outcome])).toEqual([['opus', 'answerer', 'drafted'], ['fable', 'assessor', 'accepted']]);
+    }
+    const restarted = (await t.events()).filter((e) => e.type === 'question.escalated' && e.schemaVersion === 2 && e.questionId === id(6));
+    expect(restarted.map((e) => e.data.target)).toEqual(['opus', 'fable']);
+    expect(await t.job(id(10))).toMatchObject({ status: 'waiting_answer' });
+    expect((await t.api('GET', `/api/questions/${id(11)}`)).body).toMatchObject({ status: 'open', tier: 'human', notifyCount: 1 });
+    expect((await t.api('GET', `/api/questions/${id(16)}`)).body).toMatchObject({ status: 'answered', answeredBy: 'fable' });
+    // stop() validates every stored event, the v1 question events included.
   });
 });
