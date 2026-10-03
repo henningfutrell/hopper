@@ -55,9 +55,10 @@ describe('accepted: the assessor does not escalate and no risk rule matches', ()
 });
 
 describe('escalated to the human', () => {
+  /** At the human stage, expiring humanTimeoutMs (10 s) after it got there (now, under fake timers). */
   const human = (r: ReturnType<typeof rig>, id: string) => {
     const got = r.mem.store.questions.get(id)!;
-    expect(got).toMatchObject({ status: 'open', tier: 'human', notifyCount: 1, expiresAt: '2026-10-02T10:00:10.000Z' });
+    expect(got).toMatchObject({ status: 'open', tier: 'human', notifyCount: 1, expiresAt: new Date(Date.now() + 10_000).toISOString() });
     expect(r.answered).toHaveLength(0);
     return got;
   };
@@ -341,6 +342,21 @@ describe('recover: every open non-human question restarts at the answer stage', 
     await vi.advanceTimersByTimeAsync(2);
     expect(r.eventsOf('question.escalated')[0]!.data).toMatchObject({ renotify: true, notifyCount: 2 });
     await vi.advanceTimersByTimeAsync(2000);
+    expect(r.mem.store.questions.get(q.id)!.status).toBe('expired');
+  });
+
+  it('an expiry further away than a timer can wait (2^31-1 ms, ~24.8 days) does not fire early', async () => {
+    const r = rig({ renotifyMs: 1000, humanTimeoutMs: 2500 });
+    const q = r.question();
+    const now = Date.now();
+    const expiresAt = new Date(now + 40 * 86_400_000).toISOString();
+    r.mem.store.questions.update(q.id, {
+      tier: 'human', notifyCount: 1, escalatedToHumanAt: new Date(now).toISOString(), lastNotifiedAt: '2099-01-01T00:00:00.000Z', expiresAt,
+    });
+    r.svc.recover();
+    await vi.advanceTimersByTimeAsync(30 * 86_400_000);
+    expect(r.mem.store.questions.get(q.id)!.status).toBe('open');
+    await vi.advanceTimersByTimeAsync(10 * 86_400_000);
     expect(r.mem.store.questions.get(q.id)!.status).toBe('expired');
   });
 

@@ -48,10 +48,11 @@ const ctx = () => ({ clock: fixedClock, logger: { info() {}, warn() {} }, dataDi
 const signal = () => new AbortController().signal;
 const rec = () => JSON.parse(readFileSync(out, 'utf8')) as { argv: string[]; stdin: string; env: Record<string, string>; cwd: string };
 
-function opts(def: typeof claudeCli | typeof claudeCliAssessor, raw: Record<string, unknown>) {
+/** The plugin's options as the core validates them (defaults applied). */
+function opts(def: typeof claudeCli | typeof claudeCliAssessor, raw: Record<string, unknown>): never {
   const p = parseOptions(def, raw);
   if (!p.ok) throw new Error(p.error);
-  return p.options;
+  return p.options as never;
 }
 const answerer = (raw: Record<string, unknown> = {}) => claudeCli.create(ctx(), opts(claudeCli, { bin: BIN, timeoutMs: 5000, ...raw }));
 const assessor = (raw: Record<string, unknown> = {}) => claudeCliAssessor.create(ctx(), opts(claudeCliAssessor, { bin: BIN, timeoutMs: 5000, ...raw }));

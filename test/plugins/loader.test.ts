@@ -1,6 +1,7 @@
 import { chmodSync, cpSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import type { PluginDefinition } from '../../src/plugins/sdk.ts';
 import { BUILTIN_PLUGINS } from '../../src/plugins/builtin.ts';
 import { loadCustomPlugins } from '../../src/plugins/loader.ts';
 import { ALWAYS_PROCEED_DIR, fixedClock, useTempDirs, writePlugin } from './support.ts';
@@ -34,7 +35,7 @@ describe('custom plugin loader', () => {
       ['always-proceed', join(dir, 'always-proceed', 'index.ts')],
       ['js-router', join(dir, 'js-router', 'index.js')],
     ]);
-    const def = r.plugins.find((p) => p.definition.id === 'always-proceed')!.definition;
+    const def = r.plugins.find((p) => p.definition.id === 'always-proceed')!.definition as PluginDefinition<'router'>;
     const router = await def.create({ clock: fixedClock, logger: { info() {}, warn() {} }, dataDir: dir, scratchDir: dir, routerMode: () => 'shadow' }, { note: 'hi' });
     expect(await router.advise({} as never)).toMatchObject({ action: 'proceed_full', reason: 'hi', source: 'always-proceed' });
   });

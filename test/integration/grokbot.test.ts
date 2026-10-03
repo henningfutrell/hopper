@@ -86,12 +86,12 @@ describe('Grok Bot routine webhook', () => {
     expect(r.hits).toHaveLength(0);
   });
 
-  it('a question escalated to the human posts once with bearer key, question text and id; model tiers do not', async () => {
+  it('a question escalated to the human posts once with bearer key, question text and id; the answer and assess stages do not', async () => {
     const r = await receiver();
     const { a, file } = await start();
     writeEnv(file, r.url);
-    const hard = await a.pull(ask('This is hard to say'), { title: 'one' });
-    await a.waitForStatus(hard.id, 'finished'); // opus/fable answer; escalation opus->fable only
+    const hard = await a.pull(ask('Which colour?'), { title: 'one' });
+    await a.waitForStatus(hard.id, 'finished'); // opus drafts, fable lets it through: escalated to opus and fable only
     const { job: human, q } = await humanQuestion(a);
     const hit = await waitFor(() => r.hits.find((h) => h.body.kind === 'question.escalated'), { what: 'escalation post' });
     await settle();
