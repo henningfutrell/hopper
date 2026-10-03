@@ -40,7 +40,19 @@ describe('configuration from env', () => {
       resumeBoost: 20,
       maxQuestions: 5,
       keepPanes: false,
+      sourcesFile: join(homedir(), '.config/job-hopper/sources.yaml'),
+      webhooksFile: join(homedir(), '.config/job-hopper/webhooks.yaml'),
+      ghBin: 'gh',
+      uiSessionHours: 12,
     });
+  });
+
+  it('reads every phase-3 variable', () => {
+    const c = loadConfig({
+      JOB_HOPPER_SOURCES_FILE: '~/s.yaml', JOB_HOPPER_WEBHOOKS_FILE: '/etc/w.yaml', JOB_HOPPER_GH_BIN: '/opt/gh',
+      JOB_HOPPER_UI_SESSION_HOURS: '1.5',
+    });
+    expect(c).toMatchObject({ sourcesFile: join(homedir(), 's.yaml'), webhooksFile: '/etc/w.yaml', ghBin: '/opt/gh', uiSessionHours: 1.5 });
   });
 
   it('reads every phase-2 variable', () => {
@@ -96,6 +108,8 @@ describe('configuration from env', () => {
     ['JOB_HOPPER_MAX_QUESTIONS', '-1'],
     ['JOB_HOPPER_HUMAN_TIMEOUT_MS', '0'],
     ['JOB_HOPPER_HERDR_POLL_MS', 'x'],
+    ['JOB_HOPPER_UI_SESSION_HOURS', '0'],
+    ['JOB_HOPPER_UI_SESSION_HOURS', 'soon'],
   ])('fails loudly on %s=%s', (name, value) => {
     expect(() => loadConfig({ [name]: value })).toThrow(name);
   });

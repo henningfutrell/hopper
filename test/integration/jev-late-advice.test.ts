@@ -1,7 +1,9 @@
 // Shadow mode exists to measure Jev. A job that starts before Jev answers must still have
 // its advice recorded, or shadow mode measures only the jobs that happened to wait.
 import { afterEach, describe, expect, it } from 'vitest';
+import type { Job } from '../../src/domain/types.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
+import { manualItem } from '../support/manual-source.ts';
 import { waitFor } from '../support/wait.ts';
 
 describe('Jev advice that arrives after the job left the queue', () => {
@@ -18,7 +20,7 @@ describe('Jev advice that arrives after the job left the queue', () => {
     cleanup = tmp.cleanup;
     t = await startTestApp({ dbPath: tmp.dbPath, env: { JOB_HOPPER_JEV_ADVISOR: 'router' } });
 
-    const job = await t.push({ executor: 'test', payload: { op: 'echo', message: 'fast' }, goal: 'say hi', kind: 'chat' });
+    const job = await t.pull({ op: 'echo', message: 'fast' }, { title: 'say hi' });
     const done = await t.waitForStatus(job.id, 'finished');
     expect(done.jevAdvice).toBeUndefined(); // the python spawn is slower than an echo job
 
@@ -29,13 +31,15 @@ describe('Jev advice that arrives after the job left the queue', () => {
     expect(prioritized[0]!.data).toMatchObject({ mode: 'shadow', statusAtAdvice: 'finished' });
   });
 
-  it('reaches every job pushed in a burst, even ones a Decision claimed before any sweep', async () => {
+  it('reaches every job pulled in a burst, even ones a Decision claimed before any sweep', async () => {
     const tmp = tempDbPath();
     cleanup = tmp.cleanup;
     t = await startTestApp({ dbPath: tmp.dbPath, env: { JOB_HOPPER_JEV_ADVISOR: 'router' } });
 
-    const jobs = await Promise.all(Array.from({ length: 8 }, (_, i) =>
-      t!.push({ executor: 'test', payload: { op: 'echo', message: `burst ${i}` }, priority: 10 * i })));
+    for (let i = 0; i < 8; i++) t.source.add(manualItem({ prompt: JSON.stringify({ op: 'echo', message: `burst ${i}` }), priority: 10 * i }));
+    await t.sync();
+    const jobs = (await t.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=100')).body.jobs;
+    expect(jobs).toHaveLength(8);
     for (const job of jobs) await t.waitForStatus(job.id, 'finished');
 
     await waitFor(async () => {
