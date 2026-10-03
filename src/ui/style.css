@@ -60,5 +60,7 @@ details.decision .sec { margin: 4px 0 4px 14px; }
 details.decision .sec h3 { margin: 0; font-size: 11px; color: var(--muted); text-transform: uppercase; }
 .diverge { background: var(--hl); outline: 1px solid var(--warn); border-radius: 3px; padding: 1px 6px; margin: 2px 0; }
 pre { margin: 2px 0; padding: 6px; background: var(--bg); border: 1px solid var(--line); border-radius: 4px; max-height: 240px; overflow: auto; white-space: pre-wrap; word-break: break-all; }
-.dl { display: grid; grid-template-columns: 9em 9em 6em 6em 4em 1fr 11em; gap: 8px; padding: 2px 0; border-bottom: 1px solid var(--line); }
+.dl { display: grid; grid-template-columns: 10em 10em 6.5em 6em 4em 1fr 11em; gap: 8px; padding: 2px 0; border-bottom: 1px solid var(--line); }
+.ev > *, .dl > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; align-self: center; }
+.ev > .pill, .dl > .pill { justify-self: start; }
 @media (max-width: 1000px) { main { grid-template-columns: 1fr; } .ev, .dl { grid-template-columns: 1fr 1fr; } }
