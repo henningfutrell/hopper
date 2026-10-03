@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "questionId": {
+      "type": "string"
+    },
+    "by": {
+      "type": "string",
+      "enum": [
+        "opus",
+        "fable",
+        "human"
+      ]
+    },
+    "answer": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "questionId",
+    "by",
+    "answer"
+  ],
+  "additionalProperties": false
+}
