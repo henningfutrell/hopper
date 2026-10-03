@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { TOKEN_RE, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { rawRequest } from '../support/http.ts';
+import { waitFor } from '../support/wait.ts';
 
 const SCRIPT = fileURLToPath(new URL('../../scripts/open-ui.sh', import.meta.url));
 let t: TestApp | undefined;
@@ -59,7 +60,7 @@ describe('scripts/open-ui.sh', () => {
     expect(html).toMatch(/method="post"/i);
     expect(html).toContain(`value="${code}"`);
     expect(html).toMatch(/\.submit\(\)/);
-    const argv = JSON.parse(readFileSync(argvFile, 'utf8')) as string[];
+    const argv = await waitFor(() => existsSync(argvFile) && JSON.parse(readFileSync(argvFile, 'utf8')) as string[], { what: 'xdg-open to run' });
     expect(argv).toEqual([page]);
     expect(r.stdout + r.stderr).not.toContain(code);
 

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Remove the job-hopper services (daemon + its herdr session) and code. Keeps the queue
-# database and the rules file.
+# database (data dir) and every config file (rules.md, sources.yaml, webhooks.yaml).
 set -euo pipefail
 
 DEST="$HOME/.local/lib/job-hopper"
 UNIT_DIR="$HOME/.config/systemd/user"
 DATA="$HOME/.local/share/job-hopper"
-RULES="$HOME/.config/job-hopper/rules.md"
+CONFIG_DIR="$HOME/.config/job-hopper"
 
 step() { printf '==> %s\n' "$*"; }
 
@@ -27,5 +27,5 @@ step "remove $DEST"
 rm -rf "$DEST"
 
 echo "Kept $DATA — the queue database is your data. Delete it by hand to discard the queue."
-echo "Kept $RULES — your standing rules."
+echo "Kept $CONFIG_DIR — your rules.md, sources.yaml and webhooks.yaml."
 echo "The herdr session directory ~/.config/herdr/sessions/job-hopper is kept; remove it with: herdr session delete job-hopper"

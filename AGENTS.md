@@ -1,6 +1,6 @@
 # job-hopper — repo law
 
-Local job-queue daemon. One maintainer, loopback only, TypeScript run directly by Node ≥ 24.
+Local job-queue daemon that pulls its jobs. One maintainer, loopback only, TypeScript run directly by Node ≥ 24.
 
 Acknowledge before working here: you have read this file, `docs/design.md`, and
 `docs/glossary.md`.
@@ -17,8 +17,13 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   use the real SQLite file and the real HTTP server; fakes only at `ports.ts` seams.
 - **Erasable TypeScript only** (`erasableSyntaxOnly`): no enums, no namespaces, no
   parameter properties. Relative imports carry `.ts`.
-- **Loopback only.** Binding anything but `127.0.0.1` makes authentication mandatory and
-  is a different application.
+- **Loopback only, and the hopper pulls.** Binding anything but `127.0.0.1` is a different
+  application. No route creates or changes a job, question, webhook or setting: jobs come only
+  from job sources, webhooks only from `webhooks.yaml`. Every request passes the Host guard
+  (`127.0.0.1:<port>` / `localhost:<port>`, else 421). The only mutations are the UI's
+  `POST /ui/api/*`, behind a UI session from the one-time login code (`x-jobhopper-session`,
+  exact Origin, same-origin, JSON — else 403); a new mutation goes there and nowhere else.
+  `docs/design.md` "UI session and mutations" states the residual risk.
 - **Never write into the Jev repo.** The shim reads it; logs go to job-hopper's data dir.
 - **Persisted state is the user's.** A schema change ships a migration in
   `src/store/migrations.ts`; it never drops a queue.
