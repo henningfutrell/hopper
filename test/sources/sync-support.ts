@@ -2,9 +2,9 @@
 // a SourceHost over a minimal store (events, jobs, questions). Only what the sync loop reads.
 
 import type {
-  Clock, JobSource, SourceHost, Store,
+  Clock, JobSource, SourceHost, SourceItem, SourceReport, SourceSignal, Store,
 } from '../../src/domain/ports.ts';
-import type { DomainEvent, EventType, Job, Question, SourceItem, SourceReport, SourceSignal } from '../../src/domain/types.ts';
+import type { DomainEvent, EventType, Job, Question } from '../../src/domain/types.ts';
 import { TERMINAL_STATUSES } from '../../src/domain/types.ts';
 
 export function item(key: string, over: Partial<SourceItem> = {}): SourceItem {

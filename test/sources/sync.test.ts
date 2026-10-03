@@ -6,14 +6,14 @@ import { createFakeSource, createWorld, item, settle, type FakeSource, type Worl
 let sync: ReturnType<typeof createSourceSync> | undefined;
 afterEach(async () => { await sync?.stop(); sync = undefined; });
 
-function setup(over: { throttleMs?: number; sources?: FakeSource[] } = {}) {
+async function setup(over: { throttleMs?: number; sources?: FakeSource[]; start?: boolean } = {}) {
   const world: World = createWorld();
   const source = createFakeSource();
   sync = createSourceSync({
     sources: over.sources ?? [source], host: world.host, clock: world.clock,
     pollMs: () => 60_000, progressThrottleMs: () => over.throttleMs ?? 0,
   });
-  sync.start();
+  if (over.start !== false) { sync.start(); await sync.syncNow(); } // initial sync (no items) done
   return { world, source, sync };
 }
 
@@ -21,18 +21,18 @@ const kinds = (s: FakeSource) => s.reports.map((r) => r.kind);
 
 describe('discover and ingest', () => {
   it('ingests each key once across polls and counts it', async () => {
-    const { world, source, sync } = setup();
+    const { world, source, sync } = await setup();
     source.items = [item('k1'), item('k2')];
     await sync.syncNow();
     await sync.syncNow();
     expect(world.jobs.size).toBe(2);
-    expect(world.calls.ingest.map((i) => i.key)).toEqual(['k1', 'k2', 'k1', 'k2']);
+    expect(world.calls.ingest.map((i) => i.key)).toEqual(['k1', 'k2']);
     const st = sync.statuses()[0]!;
     expect(st).toMatchObject({ itemsSeen: 2, jobsCreated: 2, activeJobs: 2, state: 'ok' });
   });
 
   it('hands an invalid item to the host, then reports claimed and failed once, in order', async () => {
-    const { source, sync } = setup();
+    const { source, sync } = await setup();
     source.items = [item('bad', { invalid: 'empty issue body' })];
     await sync.syncNow();
     await sync.syncNow();
@@ -40,7 +40,7 @@ describe('discover and ingest', () => {
   });
 
   it('re-sorts every discovered item that already has a job', async () => {
-    const { world, source, sync } = setup();
+    const { world, source, sync } = await setup();
     source.items = [item('k1', { priority: 50 })];
     await sync.syncNow();
     source.items = [item('k1', { priority: 90, priorityReason: 'label:p0' })];
@@ -51,7 +51,7 @@ describe('discover and ingest', () => {
 
 describe('reports', () => {
   it('reports the claim once and replaces the source state rather than merging', async () => {
-    const { world, source, sync } = setup();
+    const { world, source, sync } = await setup();
     source.items = [item('k1')];
     await sync.syncNow();
     await sync.syncNow();
@@ -66,7 +66,7 @@ describe('reports', () => {
   });
 
   it('retries a transient report failure on the next sync', async () => {
-    const { source, sync } = setup();
+    const { source, sync } = await setup();
     source.reportErrors = [new SourceError('boom', false, 502)];
     source.items = [item('k1')];
     await sync.syncNow();
@@ -76,7 +76,7 @@ describe('reports', () => {
   });
 
   it('never retries a permanent report failure and shows it in status detail', async () => {
-    const { source, sync } = setup();
+    const { source, sync } = await setup();
     source.reportErrors = [new SourceError('issue gone', true, 404)];
     source.items = [item('k1')];
     await sync.syncNow();
@@ -86,7 +86,7 @@ describe('reports', () => {
   });
 
   it('reports a job that ended while the daemon was down (crash after finish)', async () => {
-    const { world, source, sync } = setup();
+    const { world, source, sync } = await setup();
     source.items = [item('k1')];
     await sync.syncNow();
     world.patchJob('job-1', { status: 'finished' });
@@ -96,7 +96,7 @@ describe('reports', () => {
   });
 
   it('throttles progress reports per job', async () => {
-    const { world, source, sync } = setup({ throttleMs: 1000 });
+    const { world, source, sync } = await setup({ throttleMs: 1000 });
     source.items = [item('k1')];
     await sync.syncNow();
     world.patchJob('job-1', { status: 'running', progressMessage: 'a' });
@@ -111,7 +111,7 @@ describe('reports', () => {
   });
 
   it('sends one question report however often the human tier renotifies', async () => {
-    const { world, source, sync } = setup();
+    const { world, source, sync } = await setup();
     source.items = [item('k1')];
     await sync.syncNow();
     world.patchJob('job-1', { status: 'waiting_answer' });
@@ -124,7 +124,7 @@ describe('reports', () => {
   });
 
   it('does not report a question escalated to a model tier', async () => {
-    const { world, source, sync } = setup();
+    const { world, source, sync } = await setup();
     source.items = [item('k1')];
     await sync.syncNow();
     const q = world.addQuestion('job-1', { tier: 'opus' });
@@ -134,7 +134,7 @@ describe('reports', () => {
   });
 
   it('reports answered, finished, failed and cancelled', async () => {
-    const { world, source, sync } = setup();
+    const { world, source, sync } = await setup();
     source.items = [item('a'), item('b'), item('c')];
     await sync.syncNow();
     const q = world.addQuestion('job-1', { status: 'answered', answer: 'yes', answeredBy: 'human' });
@@ -154,7 +154,7 @@ describe('reports', () => {
   });
 
   it('ignores events for jobs of another source', async () => {
-    const { world, source, sync } = setup();
+    const { world, source, sync } = await setup();
     source.items = [item('k1')];
     await sync.syncNow();
     world.jobs.set('x', { ...world.jobs.get('job-1')!, id: 'x', source: { source: 'other', kind: 'o', key: 'z' }, status: 'finished' });
@@ -164,7 +164,7 @@ describe('reports', () => {
   });
 
   it('serializes reports for one job', async () => {
-    const { world, source, sync } = setup();
+    const { world, source, sync } = await setup();
     source.items = [item('k1')];
     await sync.syncNow();
     let release!: () => void;
@@ -185,7 +185,7 @@ describe('reports', () => {
 
 describe('signals', () => {
   it('calls host.cancel and records the reason before the cancelled report', async () => {
-    const { world, source, sync } = setup();
+    const { world, source, sync } = await setup();
     source.items = [item('k1')];
     await sync.syncNow();
     source.signals = [{ kind: 'cancel', jobId: 'job-1', reason: 'issue closed' }];
@@ -196,7 +196,7 @@ describe('signals', () => {
   });
 
   it('calls host.answer for an answer signal', async () => {
-    const { world, source, sync } = setup();
+    const { world, source, sync } = await setup();
     source.items = [item('k1')];
     await sync.syncNow();
     world.patchJob('job-1', { status: 'waiting_answer' });
@@ -210,7 +210,7 @@ describe('status and lifecycle', () => {
   it('goes ok → error → ok and isolates a throwing source', async () => {
     const good = createFakeSource('good');
     const bad = createFakeSource('bad');
-    const { sync } = setup({ sources: [good, bad] });
+    const { sync } = await setup({ sources: [good, bad] });
     const seen: string[] = [];
     sync.onStatus((s) => seen.push(`${s.name}:${s.state}`));
     bad.discoverError = new Error('network down');
@@ -227,13 +227,13 @@ describe('status and lifecycle', () => {
     expect(seen.at(-1)).toBe('bad:ok');
   });
 
-  it('starts as "starting" with describe() detail', () => {
-    const { sync } = setup();
+  it('starts as "starting" with describe() detail', async () => {
+    const { sync } = await setup({ start: false });
     expect(sync.statuses()[0]).toMatchObject({ name: 'fake', kind: 'fake', state: 'starting', detail: { label: 'x' } });
   });
 
   it('never overlaps two syncs of one source', async () => {
-    const { source, sync } = setup();
+    const { source, sync } = await setup();
     let active = 0; let max = 0;
     const orig = source.discover;
     source.discover = async () => { active++; max = Math.max(max, active); await settle(2); const r = await orig(); active--; return r; };
