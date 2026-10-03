@@ -97,7 +97,7 @@ function renderHeader() {
     el('span', { class: 'kv' }, 'advisor ', el('b', null, h?.advisor ?? '?')),
     el('span', { class: 'kv' }, 'uptime ', el('b', null, h ? fmtUptime(h.uptimeS) : '?')),
     el('span', { class: 'kv' }, counts.length ? counts.map(([s, n]) => `${s} ${n}`).join(' · ') : 'no jobs'),
-    state.authed && el('button', { onclick: logout }, 'logout'),
+    ...(state.authed ? [el('button', { onclick: logout }, 'logout')] : []),
     el('span', { class: 'pill ' + state.conn, style: 'margin-left:auto' }, el('span', { class: 'dot' }), state.conn === 'live' ? 'live' : 'reconnecting'),
   );
 }
@@ -297,7 +297,7 @@ function sourceDetail(d) {
   }
   for (const k of ['projectErrors', 'permanentErrors']) {
     const v = d[k];
-    const empty = v == null || (typeof v === 'object' && Object.keys(v).length === 0);
+    const empty = v == null || v === 0 || (typeof v === 'object' && Object.keys(v).length === 0);
     if (!empty) rows.push(el('span', { class: 'err' }, `${k}: ${typeof v === 'object' ? compact(v) : v}`));
   }
   return rows;
