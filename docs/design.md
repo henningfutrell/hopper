@@ -359,7 +359,14 @@ is claimed onto maps to the parked pane.
 
 **Start.** `agent start jh-<jobId first 8> --kind claude --pane <pane> --timeout 60000 --
 <JOB_HOPPER_CLAUDE_ARGS> [--model <payload.model>]`, default args
-`--dangerously-skip-permissions`. `agent_not_ready` (blocked at startup): read the visible
+`--dangerously-skip-permissions`. **Readiness wait:** herdr refuses `agent start` until the new pane is at its shell
+prompt, answering `agent_pane_busy` ("agent target pane … is not an available shell") when
+it is sent a few ms after `tab create` — seen live with 4 jobs claimed at once. The CLI
+client maps that code to `paneBusy`; the executor retries `agent start` every 100 ms on
+exactly that code until the 60000 ms start deadline, then fails the job
+(`pane … never reached its shell prompt`). Any other error fails at once. **One pane per
+lane:** the executor refuses to map a pane already held by another lane (job `failed`,
+pane left untouched). `agent_not_ready` (blocked at startup): read the visible
 screen; if it is Claude's folder-trust dialog (contains `trust this folder`) **and the
 dialog names the job's cwd** and `JOB_HOPPER_TRUST_WORKDIR` is true → send `down enter`,
 log it via progress message `trusted workdir <cwd>`, wait for `idle`. Anything else blocking

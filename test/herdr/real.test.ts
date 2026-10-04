@@ -8,6 +8,7 @@ import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHerdrClaudeExecutor, createHerdrCliClient, scrubbedEnv } from '../../src/executors/herdr/index.ts';
+import { openPane, startClaude } from '../../src/executors/herdr/start.ts';
 import { contextFor, jobWith } from './support.ts';
 
 const REAL = process.env.JOB_HOPPER_REAL_HERDR === '1';
@@ -65,4 +66,30 @@ describe.skipIf(!REAL)('herdr-claude against a real herdr and Claude (opt-in)', 
 
     await executor.cleanup!(second.ctx.job);
   }, 600000);
+
+  it('8 jobs started at once in fresh tabs all reach Claude ready (no start race)', async () => {
+    const herdr = createHerdrCliClient({ bin: BIN, session: SESSION });
+    const deps = {
+      herdr, clock: { now: () => new Date() }, pollMs: 500, claudeArgs: ['--dangerously-skip-permissions'], trustWorkdir: true,
+      sleep: (ms: number) => new Promise<void>((r) => setTimeout(r, ms)),
+    };
+    const ids = [0, 1, 2, 3, 4, 5, 6, 7].map((i) => `${i}0000000-0000-0000-0000-000000000000`);
+    const panes: string[] = [];
+    try {
+      const outcomes = await Promise.all(ids.map(async (id, i) => {
+        const { ctx } = contextFor(jobWith({ prompt: 'unused' }, { id }), `local/lane-${i}`);
+        const state = await openPane(deps, ctx, dir, {});
+        panes.push(state.paneId);
+        return startClaude(deps, ctx, state, { prompt: 'unused', cwd: dir, env: {}, expectedMs: 1, timeoutMs: 1 });
+      }));
+      expect(outcomes).toEqual(ids.map(() => null));
+      expect(new Set(panes).size).toBe(ids.length);
+      for (const paneId of panes) {
+        const a = JSON.parse(herdrSync(['pane', 'get', paneId])) as { result: { pane: { agent_status: string } } };
+        expect(['idle', 'done']).toContain(a.result.pane.agent_status);
+      }
+    } finally {
+      for (const paneId of panes) { try { herdrSync(['pane', 'close', paneId]); } catch { /* gone */ } }
+    }
+  }, 180000);
 });

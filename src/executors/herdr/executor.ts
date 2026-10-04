@@ -51,6 +51,14 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
   const deps: StartDeps = { herdr, clock, sleep, pollMs: o.pollMs, claudeArgs: o.claudeArgs, trustWorkdir: o.trustWorkdir };
   const lanes = new Map<LaneId, string>();
 
+  /** The refusal when `paneId` is already mapped to another lane; a lane never shares a pane. */
+  function heldElsewhere(laneId: LaneId, paneId: string): ExecutionOutcome | null {
+    for (const [lane, pane] of lanes) {
+      if (pane === paneId && lane !== laneId) return { kind: 'failed', error: `herdr: pane ${paneId} is already held by lane ${lane}` };
+    }
+    return null;
+  }
+
   /** esc, ctrl+c twice, close. Swallows every error: the pane may already be gone. */
   async function exitAndClose(paneId: string): Promise<void> {
     await herdr.sendKeys(paneId, ['esc']).catch(() => {});
@@ -108,7 +116,10 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       const p = resolvePayload(ctx.job.spec.payload, o.defaultCwd);
       let state: PaneState | undefined;
       return onLane(ctx, () => state?.paneId, async () => {
-        state = await openPane(deps, ctx, p.cwd, p.env);
+        const opened = await openPane(deps, ctx, p.cwd, p.env);
+        const refused = heldElsewhere(ctx.laneId, opened.paneId);
+        if (refused) return refused;
+        state = opened;
         lanes.set(ctx.laneId, state.paneId);
         if (ctx.signal.aborted) return { interrupt: abortReason(ctx.signal) };
         const failed = await startClaude(deps, ctx, state, p);
@@ -125,6 +136,8 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       const state = paneStateOf(ctx.job);
       if (!state) return Promise.resolve({ kind: 'failed', error: 'pane lost' });
       const p = resolvePayload(ctx.job.spec.payload, o.defaultCwd);
+      const refused = heldElsewhere(ctx.laneId, state.paneId);
+      if (refused) return Promise.resolve(refused);
       return onLane(ctx, () => state.paneId, async () => {
         if (!(await herdr.getAgent(state.agentName))) return { kind: 'failed', error: 'pane lost' };
         lanes.set(ctx.laneId, state.paneId);

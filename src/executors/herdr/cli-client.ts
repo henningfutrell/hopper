@@ -77,6 +77,7 @@ export function createHerdrCliClient(o: { bin: string; session: string; timeoutM
         return { ok: true };
       } catch (err) {
         if (err instanceof HerdrError && err.code === 'agent_not_ready') return { ok: false, notReady: true };
+        if (err instanceof HerdrError && err.code === 'agent_pane_busy') return { ok: false, paneBusy: true };
         throw err;
       }
     },
