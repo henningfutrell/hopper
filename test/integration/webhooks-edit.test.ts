@@ -62,6 +62,7 @@ describe('GET /api/webhooks: what the UI edits', () => {
     expect(body.config.version).toBe(sha(read(file)));
     expect(JSON.stringify(body)).not.toContain('s-grok');
     expect(body.subscriptions.every((s: object) => !('secret' in s) && !('secretFile' in s))).toBe(true);
+    expect(body.subscriptions.map((s: { secretSource: string }) => s.secretSource)).toEqual(body.subscriptions.map(() => 'inline'));
   });
 
   it('is missing when there is no webhooks.yaml', async () => {
@@ -215,6 +216,9 @@ describe('POST /ui/api/webhooks — rotate-secret', () => {
     expect(r.status).toBe(409);
     expect(r.body.error).toContain('secretFile');
     expect(read(file)).toBe(yaml);
+    // The view says where each secret lives (never the path), so the UI offers Rotate only inline.
+    expect((await list(a)).subscriptions.find((s: { name: string }) => s.name === 'f').secretSource).toBe('file');
+    expect(JSON.stringify(await list(a))).not.toContain(secretPath);
     // Editing other fields of it keeps secretFile as written.
     const e = await edit(a, token, { action: 'edit', name: 'f', active: false, version: await version(a) });
     expect(e.status).toBe(200);
