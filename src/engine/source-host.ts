@@ -3,7 +3,8 @@
 // job a Decision has just claimed. design.md "Job sources".
 import type { SourceHost, SourceItem } from '../domain/ports.ts';
 import { isRerunnable } from '../domain/types.ts';
-import type { Job, JobSourceRef, JobSpec } from '../domain/types.ts';
+import type { Job, JobSourceRef, JobSpec, RoutedBy } from '../domain/types.ts';
+import { routeItem } from '../routing/index.ts';
 import type { Commands } from './commands.ts';
 import { nowIso, type EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
@@ -18,9 +19,27 @@ function refFor(item: SourceItem, source: { name: string; kind: string }): JobSo
   };
 }
 
-function specFor(item: SourceItem, source: { name: string }, priority: number): JobSpec {
+function specFor(item: SourceItem, source: { name: string }, priority: number, routedBy: RoutedBy | undefined): JobSpec {
   const payload = { prompt: item.prompt, cwd: item.cwd, ...(item.model ? { model: item.model } : {}), env: item.env };
-  return { executor: item.executor, payload, priority, goal: item.title, submittedBy: `${source.name}:${item.author}`, kind: 'coding' };
+  return {
+    executor: routedBy?.set.executor ?? item.executor, payload, priority, goal: item.title, submittedBy: `${source.name}:${item.author}`, kind: 'coding',
+    ...(routedBy?.set.machine !== undefined ? { machineId: routedBy.set.machine } : {}),
+    ...(routedBy ? { routedBy } : {}),
+  };
+}
+
+/**
+ * The first routing rule matching the item (design.md "Routing rules (issue #18)"). A matching rule
+ * whose machine or executor is not configured is skipped with a warning; intake never fails on one.
+ */
+function route(c: EngineContext, item: SourceItem, source: { name: string }): RoutedBy | undefined {
+  const rules = c.routing.rules();
+  if (rules.length === 0) return undefined;
+  const executors = [...c.executors.names(), ...c.executors.unavailable().map((u) => u.name)];
+  const r = routeItem(rules, { source: source.name, ...(item.repo !== undefined ? { repo: item.repo } : {}), labels: item.labels, author: item.author, title: item.title },
+    { machines: c.routing.machines(), executors });
+  for (const s of r.skipped) console.warn(`job-hopper: routing rule ${s.rule} skipped for ${item.key}: ${s.reason}`);
+  return r.routedBy;
 }
 
 /**
@@ -45,9 +64,10 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
     ingest(item, source) {
       const known = store.jobs.getBySourceKey(item.key);
       if (known && !isRerunnable(known)) return null;
-      const priority = clamp(item.priority);
+      const routedBy = route(c, item, source);
+      const priority = clamp(routedBy?.set.priority ?? item.priority);
       const ref = refFor(item, source);
-      const spec = specFor(item, source, priority);
+      const spec = specFor(item, source, priority, routedBy);
       const invalid = problemWith(c, item, spec);
       return store.tx((): Job => {
         const job = store.jobs.create(spec, priority, ref);
@@ -73,6 +93,8 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
         const job = store.jobs.get(jobId);
         const next = clamp(to);
         if (!job || (job.status !== 'queued' && job.status !== 'held') || job.priority === next) return false;
+        // A routing rule set this job's priority at intake: the source's re-sort does not undo it.
+        if (job.spec.routedBy?.set.priority !== undefined) return false;
         store.jobs.update(jobId, { priority: next });
         store.events.append({ type: 'job.reprioritized', jobId, data: { from: job.priority, to: next, reason } });
         return true;

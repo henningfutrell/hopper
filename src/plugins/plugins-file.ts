@@ -1,12 +1,13 @@
 // plugins.yaml: which instance fills which role (design.md "Configuration — plugins.yaml"). Read:
-// router, queueSorter, answerer, assessor, executors, jobSources, machines, usageSources, notifiers, attachedMachines. A UI edit
+// router, queueSorter, answerer, assessor, executors, jobSources, machines, usageSources, notifiers, attachedMachines, routing. A UI edit
 // (edit.ts) writes it through writePluginsFile.
 import { createHash } from 'node:crypto';
 import { chmodSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { parse } from 'yaml';
 import { z } from 'zod';
-import type { AttachedMachine, InstanceSpec } from '../domain/types.ts';
+import type { AttachedMachine, InstanceSpec, RoutingRule } from '../domain/types.ts';
+import { ROUTING_RULES } from '../routing/index.ts';
 
 export type PluginsFileResult =
   | { missing: true }
@@ -14,7 +15,7 @@ export type PluginsFileResult =
   | {
     router?: InstanceSpec; queueSorter?: InstanceSpec; answerer?: InstanceSpec | null; assessor?: InstanceSpec; executors?: InstanceSpec[];
     jobSources?: InstanceSpec[]; machines?: InstanceSpec; usageSources?: InstanceSpec[]; notifiers?: InstanceSpec[];
-    attachedMachines?: AttachedMachine[]; warnings: string[];
+    attachedMachines?: AttachedMachine[]; routing?: RoutingRule[]; warnings: string[];
   }
   | { error: string };
 
@@ -69,6 +70,8 @@ const FILE = z.strictObject({
       seen.add(m.name);
     }
   }).optional(),
+  // Routing rules, in order (issue #18); absent: none.
+  routing: ROUTING_RULES.optional(),
 }).refine((f) => !f.answerer || !f.assessor || f.answerer.name !== f.assessor.name, {
   message: 'answerer and assessor have the same name; a question stage must say which one holds it',
   path: ['assessor', 'name'],
@@ -121,7 +124,7 @@ export function loadPluginsFile(path: string): PluginsFileResult {
   const parsed = FILE.safeParse(raw);
   if (!parsed.success) return { error: `${path}: ${pluginsFileProblem(raw)}` };
   const warnings = mode & 0o077 ? [`${path} is readable by group/other; options may hold secrets (chmod 600 ${path})`] : [];
-  const { router, queueSorter, answerer, assessor, executors, jobSources, machines, usageSources, notifiers, attachedMachines } = parsed.data;
+  const { router, queueSorter, answerer, assessor, executors, jobSources, machines, usageSources, notifiers, attachedMachines, routing } = parsed.data;
   return {
     ...(router ? { router } : {}),
     ...(queueSorter ? { queueSorter } : {}),
@@ -133,6 +136,7 @@ export function loadPluginsFile(path: string): PluginsFileResult {
     ...(usageSources ? { usageSources } : {}),
     ...(notifiers ? { notifiers } : {}),
     ...(attachedMachines ? { attachedMachines } : {}),
+    ...(routing ? { routing } : {}),
     warnings,
   };
 }

@@ -36,6 +36,34 @@
             "type": "string"
           },
           "additionalProperties": {}
+        },
+        "routedBy": {
+          "type": "object",
+          "properties": {
+            "rule": {
+              "type": "string"
+            },
+            "set": {
+              "type": "object",
+              "properties": {
+                "machine": {
+                  "type": "string"
+                },
+                "executor": {
+                  "type": "string"
+                },
+                "priority": {
+                  "type": "number"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "rule",
+            "set"
+          ],
+          "additionalProperties": false
         }
       },
       "required": [

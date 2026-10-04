@@ -19,6 +19,11 @@ export const jobSpec = strict({
   submittedBy: z.string().optional(),
   machineId: z.string().optional(),
   meta: z.record(z.string(), z.unknown()).optional(),
+  // The routing rule that set the machine, executor or priority at intake (issue #18; additive).
+  routedBy: strict({
+    rule: z.string(),
+    set: strict({ machine: z.string().optional(), executor: z.string().optional(), priority: z.number().optional() }),
+  }).optional(),
 });
 
 export const adviceAction = z.enum([

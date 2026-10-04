@@ -3,6 +3,7 @@
 
 import type {
   Advice, DomainEvent, Decision, EventType, ExecutorUnavailable, Job, JobId, JobSpec, JobStatus, Lane, PluginsEdit, PluginsEditOutcome, PluginsReport, RouterMode, RouterStatus,
+  RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule,
   JobSourceRef, LaneId, MachineId, MachineSnapshot, NewEvent, Question, QuestionAttempt, QuestionStatus,
   SourceStatus, UsageReading, WebhookDelivery, WebhookSubscription,
 } from './types.ts';
@@ -153,6 +154,16 @@ export interface PluginsView {
   report(): PluginsReport;
   /** A UI edit of plugins.yaml (or a rescan); applied like a file edit before it resolves. */
   edit(e: PluginsEdit): Promise<PluginsEditOutcome>;
+  /** GET /api/routing: plugins.yaml `routing:` and what a rule may name. */
+  routing(): RoutingReport;
+  /** POST /ui/api/routing: the whole ordered list; applied before it resolves. */
+  editRouting(e: RoutingEdit): Promise<RoutingEditOutcome>;
+}
+
+/** What intake reads to route a source item (design.md "Routing rules (issue #18)"): the rules now, and the machine ids running. */
+export interface RoutingView {
+  rules(): readonly RoutingRule[];
+  machines(): readonly string[];
 }
 
 export interface Clock {

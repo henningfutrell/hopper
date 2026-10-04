@@ -119,7 +119,10 @@ function splitSources(built: BuiltJobSource[]): { running: RunningSource[]; fixe
 
 /** A seam router (tests) answers as itself; the report stays the host's. */
 function seamPlugins(router: Router, host: PluginsView): PluginsView {
-  return { routerStatus: () => ({ name: router.name, plugin: router.name, fallback: false }), report: host.report, edit: host.edit };
+  return {
+    routerStatus: () => ({ name: router.name, plugin: router.name, fallback: false }), report: host.report, edit: host.edit,
+    routing: host.routing, editRouting: host.editRouting,
+  };
 }
 
 export async function startApp(config: Config, seams: AppSeams = {}): Promise<App> {
@@ -171,6 +174,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   });
   const engine: Engine = createEngine({
     store, clock, executors, router, questions, queueSorter: host.queueSorter,
+    routing: { rules: () => host.routingRules(), machines: () => host.machineIds() },
     ...(seams.fakeUsage ? { fakeUsage: seams.fakeUsage } : {}),
     machines: combineMachineSources([
       host.machines(),

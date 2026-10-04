@@ -2,7 +2,8 @@
 // filling a one-instance role. Each edit rewrites only that instance's part of the file; comments
 // and every other section stay as written. Command-bearing options are never changed from here.
 import { isMap, isSeq, parseDocument, type Document } from 'yaml';
-import type { ConfiguredInstance, Detection, InstanceSpec, PluginsEdit, Role } from '../domain/types.ts';
+import type { ConfiguredInstance, Detection, InstanceSpec, PluginsEdit, Role, RoutingEdit, RoutingRule } from '../domain/types.ts';
+import { parseRoutingRules } from '../routing/index.ts';
 import { optionsJsonSchema, parseOptions } from './options.ts';
 import { pluginsFileProblem, pluginsFileVersion, readPluginsText, writePluginsFile } from './plugins-file.ts';
 import type { PluginDefinition } from './sdk.ts';
@@ -34,6 +35,8 @@ const SECTIONS: Record<Role, { key: string; many: boolean }> = {
 export interface Configured {
   router?: InstanceSpec; queueSorter: InstanceSpec; answerer: InstanceSpec | null; assessor: InstanceSpec; executors: InstanceSpec[];
   jobSources: InstanceSpec[]; machines: InstanceSpec; usageSources: InstanceSpec[]; notifiers: InstanceSpec[];
+  /** plugins.yaml `routing:`, in order; absent: none. */
+  routing: RoutingRule[];
 }
 
 /** Every configured instance by role; with no `router` section, the router chosen by detection. */
@@ -97,18 +100,31 @@ function place(doc: Document, role: Role, name: string, next: InstanceSpec | nul
   doc.set(key, doc.createNode(all.map(specNode)));
 }
 
-function write(ctx: EditContext, text: string | undefined, version: string, change: (doc: Document) => void): EditResult {
-  if (pluginsFileVersion(text) !== version) return refuse('conflict', `${ctx.path} changed since it was read; reload and edit again`);
+function write(path: string, text: string | undefined, version: string, change: (doc: Document) => void): EditResult {
+  if (pluginsFileVersion(text) !== version) return refuse('conflict', `${path} changed since it was read; reload and edit again`);
   const doc = text === undefined ? parseDocument('version: 1\n') : parseDocument(text);
-  if (doc.errors.length) return refuse('conflict', `${ctx.path} is not valid YAML; fix it by hand: ${doc.errors[0]!.message}`);
+  if (doc.errors.length) return refuse('conflict', `${path} is not valid YAML; fix it by hand: ${doc.errors[0]!.message}`);
   const before = pluginsFileProblem(doc.toJS());
-  if (before) return refuse('conflict', `${ctx.path} is invalid; fix it by hand: ${before}`);
+  if (before) return refuse('conflict', `${path} is invalid; fix it by hand: ${before}`);
   change(doc);
   const problem = pluginsFileProblem(doc.toJS());
   if (problem) return refuse('invalid', problem);
   // lineWidth 0: never refold lines the owner wrote long.
-  writePluginsFile(ctx.path, doc.toString({ lineWidth: 0 }));
+  writePluginsFile(path, doc.toString({ lineWidth: 0 }));
   return { ok: true, changed: true };
+}
+
+/**
+ * POST /ui/api/routing (design.md "Routing rules (issue #18)"): the whole ordered list replaces the
+ * `routing` node; nothing else in the file changes. `targetProblem`: why a rule names a machine or
+ * executor that is not configured, refused like an invalid rule.
+ */
+export function applyRoutingEdit(e: RoutingEdit, path: string, targetProblem: (rules: RoutingRule[]) => string | undefined): EditResult {
+  const parsed = parseRoutingRules(e.rules);
+  if (!parsed.ok) return refuse('invalid', parsed.error);
+  const problem = targetProblem(parsed.rules);
+  if (problem) return refuse('invalid', problem);
+  return write(path, readPluginsText(path), e.version, (doc) => { doc.set('routing', doc.createNode(parsed.rules)); });
 }
 
 export function applyEdit(e: Exclude<PluginsEdit, { action: 'rescan' }>, ctx: EditContext): EditResult {
@@ -125,14 +141,14 @@ export function applyEdit(e: Exclude<PluginsEdit, { action: 'rescan' }>, ctx: Ed
       return refuse('conflict', `${changed.join(', ')} ${changed.length === 1 ? 'is' : 'are'} command-bearing: edit ${changed.length === 1 ? 'it' : 'them'} in ${ctx.path}, not from the UI`);
     }
     const next = { ...current.instance, options: e.options };
-    return write(ctx, text, e.version, (doc) => place(doc, e.role, e.name, next, ctx.configured));
+    return write(ctx.path, text, e.version, (doc) => place(doc, e.role, e.name, next, ctx.configured));
   }
 
   const current = ctx.configured.find((c) => c.role === e.role);
   if (e.plugin === null) {
     if (e.role !== 'answerer') return refuse('invalid', `the ${e.role} is never empty; select a plugin`);
     if (!current) return { ok: true, changed: false };
-    return write(ctx, text, e.version, (doc) => place(doc, 'answerer', current.instance.name, null, ctx.configured));
+    return write(ctx.path, text, e.version, (doc) => place(doc, 'answerer', current.instance.name, null, ctx.configured));
   }
   const found = ctx.find(e.plugin);
   if (!found) return refuse('not_found', `no plugin ${e.plugin}`);
@@ -141,5 +157,5 @@ export function applyEdit(e: Exclude<PluginsEdit, { action: 'rescan' }>, ctx: Ed
     return refuse('conflict', `${e.plugin} is ${found.detection.status} here: ${found.detection.reason}`);
   }
   if (current?.instance.plugin === e.plugin) return { ok: true, changed: false };
-  return write(ctx, text, e.version, (doc) => place(doc, e.role, current?.instance.name ?? e.plugin!, { name: e.plugin!, plugin: e.plugin! }, ctx.configured));
+  return write(ctx.path, text, e.version, (doc) => place(doc, e.role, current?.instance.name ?? e.plugin!, { name: e.plugin!, plugin: e.plugin! }, ctx.configured));
 }

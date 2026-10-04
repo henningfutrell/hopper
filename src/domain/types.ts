@@ -1,6 +1,7 @@
 // The job-hopper domain vocabulary. Every name here is defined in docs/glossary.md;
 // change the glossary in the same commit as any rename.
 import type { ExecutorUnavailable, QueueOrder } from './plugins.ts';
+import type { RoutedBy } from './routing.ts';
 
 export type JobId = string;
 export type MachineId = string;
@@ -44,6 +45,8 @@ export interface JobSpec {
   machineId?: MachineId;
   /** Free metadata for the router (Jev state: cached_artifact, prior_error, same_error_count, ...). */
   meta?: Record<string, unknown>;
+  /** The routing rule that set this job's machine, executor or priority at intake (issue #18). */
+  routedBy?: RoutedBy;
 }
 
 export interface Job {
@@ -440,10 +443,8 @@ export interface SourceStatus {
   detail: Record<string, unknown>;
 }
 
-// ---- Plugins: src/domain/plugins.ts (re-exported here, one vocabulary) ------------------
+// ---- Routing rules: src/domain/routing.ts; plugins: src/domain/plugins.ts (re-exported here, one vocabulary) ----
 
+export type * from './routing.ts';
 export { ROLES, SELECTABLE_ROLES } from './plugins.ts';
-export type {
-  ConfiguredInstance, Detection, ExecutorUnavailable, InstanceSpec, InstanceStatus, PluginsEdit, PluginsEditOutcome, PluginsReport, QuestionRoleStatus, QueueOrder, QueueSorterStatus, RestartRole,
-  RestartRoleStatus, Role, RouterSelection, RouterStatus, SelectableRole,
-} from './plugins.ts';
+export type * from './plugins.ts';
