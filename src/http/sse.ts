@@ -20,8 +20,10 @@ export function sseRoutes(app: FastifyInstance, o: { store: Store; dispatcher: W
 
   app.get('/api/events/stream', (req, reply) => {
     const q = parseWith(z.object({ after: seq.optional() }), req.query);
+    // An EventSource reconnects to the URL it opened, stale `after` included; Last-Event-ID is
+    // where it actually is, so the header wins.
     const header = req.headers['last-event-id'];
-    const after = q.after ?? (typeof header === 'string' && header !== '' ? parseWith(seq, header) : undefined);
+    const after = (typeof header === 'string' && header !== '' ? parseWith(seq, header) : undefined) ?? q.after;
 
     reply.hijack();
     const res = reply.raw;
