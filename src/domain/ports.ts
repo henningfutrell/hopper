@@ -5,7 +5,7 @@ import type {
   Advice, DomainEvent, Decision, EventType, ExecutorUnavailable, Job, JobId, JobSpec, JobStatus, Lane, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit, PluginsEditOutcome, PluginsReport, RouterMode, RouterStatus,
   RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule,
   JobSourceRef, LaneId, MachineId, MachineSnapshot, NewEvent, Question, QuestionAttempt, QuestionStatus,
-  SourceStatus, UsageReading, UsageSourceState, WebhookDelivery, WebhookSubscription,
+  Identity, SourceStatus, UiRole, UsageReading, UsageSourceState, WebhookDelivery, WebhookSubscription,
   InstallInfo, UpdateSettings, UpdateStatus,
 } from './types.ts';
 
@@ -512,10 +512,16 @@ export interface Updater {
 
 /** The whole store. One SQLite file; repositories share one connection. */
 /** UI sessions, keyed by the SHA-256 of the token; the token itself is never stored. */
+/** A stored UI session: never the token, only its SHA-256. */
+export interface UiSessionRow { tokenHash: string; expiresAt: string; role: UiRole; identity: Identity }
+
 export interface UiSessionRepository {
-  create(tokenHash: string, expiresAt: string): void;
-  /** The expiry of the live session with this hash, or undefined. Expired rows (`expires_at <= now`) are deleted first. */
-  find(tokenHash: string, now: string): string | undefined;
+  create(row: UiSessionRow): void;
+  /** The live session with this hash, or undefined. Expired rows (`expires_at <= now`) are deleted first. */
+  find(tokenHash: string, now: string): UiSessionRow | undefined;
+  /** Every stored session, expired or not. */
+  all(): UiSessionRow[];
+  setRole(tokenHash: string, role: UiRole): void;
   drop(tokenHash: string): void;
 }
 

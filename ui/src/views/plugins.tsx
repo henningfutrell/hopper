@@ -10,6 +10,7 @@ import { StatusBadge } from '@/components/status';
 import { instanceState, isListRole, isSelectable, ROLE_TITLES } from '@/model/plugins';
 import type { PluginsReport, Role } from '@/model/wire';
 import { refreshPlugins, useHopper } from '@/store';
+import { useCanAdmin } from '@/store/selectors';
 
 const REFRESH_MS = 15000;
 
@@ -31,7 +32,7 @@ function RoleBlock({ role, report }: { role: Role; report: PluginsReport }) {
 }
 
 export function Plugins() {
-  const authed = useHopper((s) => s.authed);
+  const authed = useCanAdmin();
   const report = useHopper((s) => s.plugins);
   const error = useHopper((s) => s.pluginsError);
   const [busy, setBusy] = useState(false);

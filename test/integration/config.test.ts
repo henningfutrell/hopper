@@ -28,6 +28,8 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
       uiSessionHours: 12,
       pluginDir: join(homedir(), '.config/job-hopper/plugins'),
       pluginsFile: join(homedir(), '.config/job-hopper/plugins.yaml'),
+      authFile: join(homedir(), '.config/job-hopper/auth.yaml'),
+      publicUrl: undefined,
       lanNames: [],
       lanPeers: [],
       updateCheckMs: 900000,
@@ -44,6 +46,7 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
       JOB_HOPPER_RESUME_BOOST: '7', JOB_HOPPER_MAX_QUESTIONS: '1', JOB_HOPPER_KEEP_PANES: 'true',
       JOB_HOPPER_WEBHOOKS_FILE: '/etc/w.yaml', JOB_HOPPER_UI_SESSION_HOURS: '1.5',
       JOB_HOPPER_PLUGIN_DIR: '~/p', JOB_HOPPER_PLUGINS_FILE: '/etc/p.yaml',
+      JOB_HOPPER_AUTH_FILE: '~/a.yaml', JOB_HOPPER_PUBLIC_URL: 'https://Hopper.Example.com/',
       JOB_HOPPER_LAN_NAMES: ' Server , 192.0.2.29', JOB_HOPPER_LAN_PEERS: '192.0.2.0/24, 100.64.0.0/10',
       JOB_HOPPER_UPDATE_CHECK_MS: '0', JOB_HOPPER_RESTART: 'respawn',
     });
@@ -53,8 +56,23 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
       rulesFile: join(homedir(), 'r.md'), humanRenotifyMs: 10, humanTimeoutMs: 20, resumeBoost: 7, maxQuestions: 1, keepPanes: true,
       webhooksFile: '/etc/w.yaml', uiSessionHours: 1.5,
       pluginDir: join(homedir(), 'p'), pluginsFile: '/etc/p.yaml',
+      authFile: join(homedir(), 'a.yaml'), publicUrl: 'https://hopper.example.com',
       lanNames: ['server', '192.0.2.29'], lanPeers: ['192.0.2.0/24', '100.64.0.0/10'], updateCheckMs: 0, restart: 'respawn', leftoverEnv: {},
     });
+  });
+
+  it('a public URL alone keeps the loopback bind (a reverse proxy on this host); with LAN peers it binds every interface', () => {
+    expect(loadConfig({ JOB_HOPPER_PUBLIC_URL: 'https://hopper.example.com' })).toMatchObject({ host: '127.0.0.1', publicUrl: 'https://hopper.example.com' });
+    expect(loadConfig({ JOB_HOPPER_PUBLIC_URL: 'https://hopper.example.com:8443', JOB_HOPPER_LAN_PEERS: '10.0.0.0/8' }))
+      .toMatchObject({ host: '::', publicUrl: 'https://hopper.example.com:8443', lanNames: [] });
+  });
+
+  it.each([
+    ['a path', 'https://example.com/hopper', /origin only/],
+    ['loopback', 'http://localhost:4790', /loopback/],
+    ['another scheme', 'ftp://example.com', /http/],
+  ])('refuses a public URL with %s', (_what, url, msg) => {
+    expect(() => loadConfig({ JOB_HOPPER_PUBLIC_URL: url })).toThrow(msg);
   });
 
   it('a part-choosing variable is no longer read: it lands in leftoverEnv with every other unread JOB_HOPPER_* variable, unvalidated', () => {

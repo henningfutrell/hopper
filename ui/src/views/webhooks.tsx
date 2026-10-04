@@ -17,6 +17,7 @@ import { clock } from '@/model/format';
 import { EVENT_CHOICES, lastDelivery, toggleEvent } from '@/model/webhooks';
 import type { WebhooksEdit, WebhookView, WebhooksView } from '@/model/wire';
 import { refreshWebhooks, setWebhooks, useHopper } from '@/store';
+import { useCanAdmin } from '@/store/selectors';
 
 /** A new secret to show once: whose, and why. */
 interface Shown { name: string; secret: string; why: 'added' | 'rotated' }
@@ -190,7 +191,7 @@ export function Webhooks() {
   const subs = useHopper((s) => s.subscriptions);
   const deliveries = useHopper((s) => s.deliveries);
   const cfg = useHopper((s) => s.webhookConfig);
-  const authed = useHopper((s) => s.authed);
+  const authed = useCanAdmin();
   const { send, busy } = useSend();
   const [adding, setAdding] = useState(false);
   const [shown, setShown] = useState<Shown | null>(null);

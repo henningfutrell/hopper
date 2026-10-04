@@ -14,6 +14,7 @@ import { compareUrl, headline, showNotice } from '@/model/update';
 import type { UpdateStatus } from '@/model/wire';
 import { cn } from '@/lib/utils';
 import { updateAct, useHopper } from '@/store';
+import { useCanAdmin } from '@/store/selectors';
 
 const short = (sha: string | undefined) => sha?.slice(0, 7) ?? '…';
 const TONE: Record<UpdateStatus['state'], Tone> = { available: 'busy', applying: 'warn', error: 'bad', current: 'ok', unavailable: 'muted' };
@@ -38,10 +39,10 @@ function Changes({ s }: { s: UpdateStatus }) {
 }
 
 function ApplyButton({ s }: { s: UpdateStatus }) {
-  const authed = useHopper((st) => st.authed);
+  const authed = useCanAdmin();
   if (s.state !== 'available') return null;
   return (
-    <Button size="xs" disabled={!authed} title={authed ? 'Build the update beside the running hopper, then restart; running jobs keep running' : 'Log in to update'}
+    <Button size="xs" disabled={!authed} title={authed ? 'Build the update beside the running hopper, then restart; running jobs keep running' : 'An admin can update: sign in as one'}
       onClick={() => void updateAct({ action: 'apply' }, 'Updating: running jobs keep running')}>
       <ArrowUpCircle />Update now
     </Button>
@@ -74,7 +75,7 @@ export function UpdateNotice() {
 /** The header's version: opens the update panel; a dot when an update is available. */
 export function UpdateButton({ version }: { version: string | undefined }) {
   const s = useHopper((st) => st.update);
-  const authed = useHopper((st) => st.authed);
+  const authed = useCanAdmin();
   const now = useNow();
   const [checking, setChecking] = useState(false);
   const check = async () => { setChecking(true); await updateAct({ action: 'check' }); setChecking(false); };
@@ -127,7 +128,7 @@ export function UpdateButton({ version }: { version: string | undefined }) {
               </div>
             </div>
             {s.changes.length > 0 && <div className="space-y-1 border-t pt-3"><h3 className="text-xs font-medium">What changed</h3><Changes s={s} /></div>}
-            {!authed && <p className="text-xs text-muted-foreground">Read-only: log in to update or change these settings.</p>}
+            {!authed && <p className="text-xs text-muted-foreground">Read-only: an admin can update or change these settings.</p>}
           </div>
         )}
       </SheetContent>

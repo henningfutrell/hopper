@@ -3,6 +3,7 @@ import { useMemo } from 'react';
 import { jobBoard, type JobBoard } from '@/model/board';
 import { laneSpans, type LaneSpan } from '@/model/history';
 import { goalOf, issueRef } from '@/model/job';
+import { allows } from '@/model/roles';
 import { awaitsOwner } from '@/model/questions';
 import type { Job } from '@/model/wire';
 import { useHopper } from './index';
@@ -40,3 +41,8 @@ export function useJobName(): (jobId: string) => string {
     return ref ? `${ref} · ${goalOf(j)}` : goalOf(j);
   }, [jobs]);
 }
+
+/** The session may cancel and approve jobs, and answer and close questions. */
+export const useCanOperate = (): boolean => useHopper((s) => s.authed && allows(s.user, 'operator'));
+/** The session may change configuration (plugins, machines, routing, webhooks, rules, router mode). */
+export const useCanAdmin = (): boolean => useHopper((s) => s.authed && allows(s.user, 'admin'));

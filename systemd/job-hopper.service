@@ -16,7 +16,9 @@ Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin
 Environment=JOB_HOPPER_PLUGINS_FILE=%h/.config/job-hopper/plugins.yaml
 Environment=JOB_HOPPER_WEBHOOKS_FILE=%h/.config/job-hopper/webhooks.yaml
 # Optional, this machine's: JOB_HOPPER_LAN_NAMES and JOB_HOPPER_LAN_PEERS to reach the UI across the
-# LAN (docs/design.md "Reaching the UI across the LAN"). Absent: loopback only.
+# LAN (docs/design.md "Reaching the UI across the LAN"), JOB_HOPPER_PUBLIC_URL behind a reverse proxy.
+# Absent: loopback only. Sign-in (login code, OIDC, GitHub, SAML): %h/.config/job-hopper/auth.yaml,
+# read at start (docs/sign-in.md).
 EnvironmentFile=-%h/.config/job-hopper/daemon.env
 Restart=on-failure
 RestartSec=2

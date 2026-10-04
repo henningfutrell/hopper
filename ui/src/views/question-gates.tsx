@@ -16,6 +16,7 @@ import { get, post, SessionRejected } from '@/lib/api';
 import { DRAFT_KEY, gateChain, readDraft, rulesEditor, RULES_FILE_MAX_BYTES, type Gate, type StoredDraft } from '@/model/question-gates';
 import type { QuestionGatesView, RulesFileView } from '@/model/wire';
 import { refreshPlugins, useHopper } from '@/store';
+import { useCanAdmin } from '@/store/selectors';
 
 const REFRESH_MS = 15000;
 const STAGE_TITLE: Record<Gate['stage'], string> = { answerer: 'Answerer', assessor: 'Assessor', 'risk-rules': 'Risk rules', human: 'Owner' };
@@ -53,7 +54,7 @@ function Stage({ n, title, what, children }: { n?: number; title: string; what: 
 }
 
 function RulesFileEditor({ server, onSaved }: { server: RulesFileView; onSaved: (v: RulesFileView) => void }) {
-  const authed = useHopper((s) => s.authed);
+  const authed = useCanAdmin();
   const [stored, setStored] = useState<StoredDraft | undefined>(loadStored);
   const [busy, setBusy] = useState(false);
   const ed = rulesEditor(server, stored);

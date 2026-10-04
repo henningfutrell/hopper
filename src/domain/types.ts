@@ -443,6 +443,11 @@ export type * from './plugins.ts';
 
 export type { QuestionGatesView, RiskRuleView, RulesFileView } from './question-gates.ts';
 
+// ---- Sign-in: src/domain/sign-in.ts (re-exported here) ------------------------------------
+
+export type { Identity, IdentityProviderType, SessionUser, SessionView, SignInProviderView, UiRole } from './sign-in.ts';
+export { UI_ROLES, roleAllows } from './sign-in.ts';
+
 // ---- Self-update (issue #44) ------------------------------------------------------------
 
 export type { InstallInfo, UpdateApply, UpdateChange, UpdateChannel, UpdateRelease, UpdateSettings, UpdateState, UpdateStatus } from './update.ts';

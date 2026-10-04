@@ -1,5 +1,6 @@
-// The top bar: version (opens the update panel), connection, router mode (switchable with a
-// session), router health, uptime, login, and a device link for another browser.
+// The top bar: version (opens the update panel), connection, router mode (switchable by an admin),
+// router health, uptime, who is signed in and with which role, logout, and a device link for another
+// browser.
 import { LogOut, Moon, Rabbit, Sun } from 'lucide-react';
 import { setTheme, useTheme } from '@/hooks/use-theme';
 import { Button } from '@/components/ui/button';
@@ -7,6 +8,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { Dot, StatusBadge } from '@/components/status';
 import { duration } from '@/model/format';
 import { act, logout, refreshHealth, useHopper } from '@/store';
+import { useCanAdmin } from '@/store/selectors';
 import { DeviceLink } from './device-link';
 import { UpdateButton } from './update';
 
@@ -14,6 +16,9 @@ export function Header({ nav }: { nav?: React.ReactNode }) {
   const health = useHopper((s) => s.health);
   const conn = useHopper((s) => s.conn);
   const authed = useHopper((s) => s.authed);
+  const user = useHopper((s) => s.user);
+  const local = useHopper((s) => s.signIn?.local ?? false);
+  const canAdmin = useCanAdmin();
   const theme = useTheme();
   const mode = health?.routerMode;
   const next = mode === 'active' ? 'shadow' : 'active';
@@ -35,12 +40,12 @@ export function Header({ nav }: { nav?: React.ReactNode }) {
           {mode && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="outline" size="xs" disabled={!authed} className="gap-1.5"
+                <Button variant="outline" size="xs" disabled={!canAdmin} className="gap-1.5"
                   onClick={() => act('/ui/api/router-mode', { mode: next }, `Router mode: ${next}`).then(() => refreshHealth())}>
                   <span className={mode === 'active' ? 'text-warn' : 'text-muted-foreground'}>{mode}</span>
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>{authed ? `Router mode. Click to switch to ${next}.` : 'Router mode. Log in to switch.'}</TooltipContent>
+              <TooltipContent>{canAdmin ? `Router mode. Click to switch to ${next}.` : authed ? 'Router mode. Only an admin can switch it.' : 'Router mode. Log in to switch.'}</TooltipContent>
             </Tooltip>
           )}
           <span className="num hidden text-muted-foreground sm:inline">up {health ? duration(health.uptimeS) : '…'}</span>
@@ -49,7 +54,12 @@ export function Header({ nav }: { nav?: React.ReactNode }) {
           </span>
           <Button variant="ghost" size="icon-sm" aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
             onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <Sun /> : <Moon />}</Button>
-          {authed && <DeviceLink />}
+          {user && (
+            <span className="hidden items-center gap-1.5 md:flex" title={`Signed in with ${user.provider}`}>
+              <span className="max-w-40 truncate">{user.name}</span><StatusBadge status={user.role} tone="muted" />
+            </span>
+          )}
+          {canAdmin && local && <DeviceLink />}
           {authed && <Button variant="ghost" size="icon-sm" aria-label="Log out" onClick={() => void logout()}><LogOut /></Button>}
         </div>
       </div>

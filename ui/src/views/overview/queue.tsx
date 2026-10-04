@@ -9,13 +9,13 @@ import { useNow } from '@/hooks/use-now';
 import { waitingRows } from '@/model/board';
 import { ago, between } from '@/model/format';
 import { act, useHopper } from '@/store';
-import { useJobBoard } from '@/store/selectors';
+import { useCanOperate, useJobBoard } from '@/store/selectors';
 import { CancelButton } from './lanes';
 
 export function WaitingPanel() {
   const board = useJobBoard();
   const latest = useHopper((s) => s.decisions[0]);
-  const authed = useHopper((s) => s.authed);
+  const authed = useCanOperate();
   const rows = waitingRows(board, latest);
   return (
     <Panel title="Waiting" icon={Hourglass} count={rows.length || ''} bodyClassName="divide-y p-0">

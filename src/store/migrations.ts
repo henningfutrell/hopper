@@ -87,6 +87,12 @@ const MIGRATIONS: readonly (string | ((db: DatabaseSync) => void))[] = [
   `
   CREATE TABLE ui_sessions (token_hash TEXT PRIMARY KEY, expires_at TEXT NOT NULL);
   `,
+  // 7: a session belongs to someone (issue #39): the role it acts with and the identity behind it.
+  // Sessions from before were all made from the login code: admin, provider local.
+  `
+  ALTER TABLE ui_sessions ADD COLUMN role TEXT NOT NULL DEFAULT 'admin';
+  ALTER TABLE ui_sessions ADD COLUMN identity TEXT NOT NULL DEFAULT '{"provider":"local","subject":"local","name":"login code","groups":[]}';
+  `,
 ];
 
 export function migrate(db: DatabaseSync): void {

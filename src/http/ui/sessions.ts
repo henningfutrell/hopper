@@ -1,35 +1,55 @@
 // UI sessions, kept in the store so a daemon restart does not log the UI out. A session is a
-// random token with an expiry; only the token's SHA-256 is stored, and lookups go by that hash
-// (the hash of a 32-byte random token leaks nothing through timing).
+// random token with an expiry, a role and the identity it was made for; only the token's SHA-256 is
+// stored, and lookups go by that hash (the hash of a 32-byte random token leaks nothing through timing).
 import { createHash } from 'node:crypto';
 import type { Clock, UiSessionRepository } from '../../domain/ports.ts';
+import type { Identity, SessionUser, UiRole } from '../../domain/types.ts';
 import { randomSecret } from './secret.ts';
 
-export interface UiSession { token: string; expiresAt: string }
+export interface UiSession { token: string; expiresAt: string; role: UiRole; identity: Identity }
 
 export interface UiSessions {
-  create(): UiSession;
+  create(o: { role: UiRole; identity: Identity }): UiSession;
   /** The live session for this token, or undefined (unknown or expired). */
   find(token: string | undefined): UiSession | undefined;
   drop(token: string): void;
+  /**
+   * Apply auth.yaml as it is now to every stored session (at start): `roleOf` null drops it (its
+   * provider is gone, or no rule grants it a role any more); another role replaces the stored one.
+   */
+  reconcile(roleOf: (who: Identity) => UiRole | null): { dropped: number; changed: number };
 }
 
 const hashOf = (token: string): string => createHash('sha256').update(token, 'utf8').digest('hex');
 
+/** The user a session shows: the first name the provider gave. */
+export const sessionUser = (s: UiSession): SessionUser => ({
+  role: s.role, provider: s.identity.provider, name: s.identity.name ?? s.identity.username ?? s.identity.email ?? s.identity.subject,
+});
+
 export function createUiSessions(o: { repo: UiSessionRepository; clock: Clock; hours: number }): UiSessions {
   return {
-    create() {
-      const s = { token: randomSecret(), expiresAt: new Date(o.clock.now().getTime() + o.hours * 3_600_000).toISOString() };
-      o.repo.create(hashOf(s.token), s.expiresAt);
+    create({ role, identity }) {
+      const s = { token: randomSecret(), expiresAt: new Date(o.clock.now().getTime() + o.hours * 3_600_000).toISOString(), role, identity };
+      o.repo.create({ tokenHash: hashOf(s.token), expiresAt: s.expiresAt, role, identity });
       return s;
     },
     find(token) {
       if (!token) return undefined;
-      const expiresAt = o.repo.find(hashOf(token), o.clock.now().toISOString());
-      return expiresAt ? { token, expiresAt } : undefined;
+      const r = o.repo.find(hashOf(token), o.clock.now().toISOString());
+      return r ? { token, expiresAt: r.expiresAt, role: r.role, identity: r.identity } : undefined;
     },
     drop(token) {
       o.repo.drop(hashOf(token));
+    },
+    reconcile(roleOf) {
+      let dropped = 0;
+      let changed = 0;
+      for (const r of o.repo.all()) {
+        const role = roleOf(r.identity);
+        if (role === null) { o.repo.drop(r.tokenHash); dropped++; } else if (role !== r.role) { o.repo.setRole(r.tokenHash, role); changed++; }
+      }
+      return { dropped, changed };
     },
   };
 }

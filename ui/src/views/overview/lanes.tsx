@@ -11,9 +11,10 @@ import type { Job } from '@/model/wire';
 import { act, useHopper } from '@/store';
 import { useJobBoard } from '@/store/selectors';
 import { cn } from '@/lib/utils';
+import { useCanOperate } from '@/store/selectors';
 
 export function CancelButton({ job }: { job: Job }) {
-  const authed = useHopper((s) => s.authed);
+  const authed = useCanOperate();
   if (!authed) return null;
   return (
     <Confirm title="Cancel this job?" action="Cancel job" onConfirm={() => act(`/ui/api/jobs/${job.id}/cancel`, {}, 'Job cancelled')}

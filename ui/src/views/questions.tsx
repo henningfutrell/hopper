@@ -2,8 +2,9 @@
 // with Send answer, Close and Dismiss. Logged out, the box is a notice naming the login command; a
 // 403 on a mutation drops the UI to logged out, so the notice replaces the box. Shown, the owner's
 // questions are marked seen (the nav badge clears). Below them, the handled questions as a compact
-// history, then the question gates (views/question-gates.tsx).
-import { Archive, ChevronRight, History, LogIn, MessageCircleQuestion, Send, X } from 'lucide-react';
+// history, then the question gates (views/question-gates.tsx). A session whose UI role cannot act
+// (viewer) sees a notice instead of the box.
+import { Archive, ChevronRight, History, Lock, LogIn, MessageCircleQuestion, Send, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -19,7 +20,7 @@ import type { Question, QuestionAttempt, QuestionStatus } from '@/model/wire';
 import type { Tone } from '@/components/status';
 import { awaitsOwner } from '@/model/questions';
 import { act, markSeen, refreshQuestions, useHopper } from '@/store';
-import { useJobIndex } from '@/store/selectors';
+import { useCanOperate, useJobIndex } from '@/store/selectors';
 
 const Mark = ({ ok }: { ok: boolean }) => <span className={ok ? 'text-ok' : 'text-bad'}>{ok ? '✓' : '✗'}</span>;
 
@@ -46,6 +47,8 @@ function Attempt({ a }: { a: QuestionAttempt }) {
 function QuestionCard({ q }: { q: Question }) {
   const job = useJobIndex().get(q.jobId);
   const authed = useHopper((s) => s.authed);
+  const role = useHopper((s) => s.user?.role);
+  const canAnswer = useCanOperate();
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const lines = q.recentOutput.split('\n');
@@ -80,7 +83,7 @@ function QuestionCard({ q }: { q: Question }) {
         <CollapsibleContent><pre className="mt-2 max-h-80 overflow-auto rounded-md bg-muted/40 p-3 font-mono text-[11px] leading-relaxed">{lines.slice(-40).join('\n')}</pre></CollapsibleContent>
       </Collapsible>
       {q.attempts.length > 0 && <div className="space-y-1.5"><div className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">Escalation trail</div>{q.attempts.map((a, i) => <Attempt key={i} a={a} />)}</div>}
-      {authed && (
+      {canAnswer && (
         <div className="space-y-2">
           <Textarea rows={3} value={draft} disabled={sending} placeholder="Answer to type into the job (Ctrl/Cmd+Enter sends)"
             onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); void send(); } }} />
@@ -100,6 +103,11 @@ function QuestionCard({ q }: { q: Question }) {
       {!authed && (
         <div data-slot="login-notice" className="flex flex-wrap items-center gap-2 rounded-md border border-warn/40 bg-warn/5 p-3 text-sm text-warn">
           <LogIn className="size-4" />Log in to answer or close: <span className="break-all text-foreground">{loginHint()}</span>
+        </div>
+      )}
+      {authed && !canAnswer && (
+        <div data-slot="login-notice" className="flex flex-wrap items-center gap-2 rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+          <Lock className="size-4" />Your role ({role}) cannot answer, close or dismiss questions; an operator or admin can.
         </div>
       )}
     </Panel>
@@ -150,9 +158,10 @@ function Handled() {
 
 export function Questions() {
   const questions = useHopper((s) => s.questions);
-  const authed = useHopper((s) => s.authed);
+  // Seen is shared state: only a session that can act on the questions marks them.
+  const canAnswer = useCanOperate();
   const unseen = questions.filter(awaitsOwner).map((q) => q.id).join(',');
-  useEffect(() => { if (authed && unseen) void markSeen(unseen.split(',')); }, [authed, unseen]);
+  useEffect(() => { if (canAnswer && unseen) void markSeen(unseen.split(',')); }, [canAnswer, unseen]);
   return (
     <div className="space-y-3">
       {questions.length

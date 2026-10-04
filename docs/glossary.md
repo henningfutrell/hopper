@@ -91,7 +91,14 @@ synonyms. Rename here first, in the same commit as everything else.
 | **Closing pull request** | The merged pull request whose merge closed an issue (the closer of the issue's last close event, `closingPullRequest`). Opened at or after the job's creation, it is the job's own: its close is no cancel signal, and the job runs on to its own end. | closer PR, linked PR |
 | **Hopper marker** | The hidden first line of a comment the hopper once posted (it posts none now); lets the context filter tell old ones from the owner's text. | |
 | **Leftover variable** | A `JOB_HOPPER_*` variable that is set but read by nothing (a removed part-choosing one, or a typo). One loud warning at boot names them all. | |
-| **UI session** | A browser session created from the one-time login code; the only way to mutate. | |
+| **UI session** | A browser session created by a sign-in; the only way to mutate. Carries a UI role and the identity it was made for. | |
+| **Sign-in** | Starting a UI session: with the one-time login code (**local sign-in**, always `admin`; `auth.yaml` `local.enabled`) or through an identity provider. The login code's own path keeps its words (login code, `POST /ui/login`, "Log in"). | authentication |
+| **Identity provider** | One `auth.yaml` `providers:` entry: a named `oidc`, `github` or `saml` service that vouches for who signs in. Not a plugin. | IdP (in prose only), SSO provider |
+| **Identity** | Who signed in, as every identity provider reports it: provider, subject, verified email, username, name, groups. | user, principal |
+| **UI role** | What a UI session may do: `viewer` (read), `operator` (+ jobs and questions), `admin` (+ configuration, device links). Granted by an identity provider's **role rules** (subjects, usernames, emails, email domains, groups; the highest match wins, else `defaultRole`, else no session). Not a plugin role. | permission, role (alone: that is a plugin role) |
+| **Sign-in origin** | Where provider sign-in starts and ends: `JOB_HOPPER_PUBLIC_URL`, else `http://localhost:<port>`. Callback: `<origin>/ui/auth/<name>/callback`. | redirect host |
+| **Binding** | A random value the browser keeps in `localStorage` when a provider sign-in begins and posts at the end with the ticket; a sign-in completes only in the browser that began it. | nonce (that is OIDC's) |
+| **Public URL** | `JOB_HOPPER_PUBLIC_URL`: the origin people reach the UI at through a reverse proxy. Its host passes the Host guard (a **public request**: `/api/` only with a UI session), its origin may mutate, and it is the sign-in origin. | external URL |
 | **LAN name** | A host name or address the UI answers to from other machines (`JOB_HOPPER_LAN_NAMES`), with the port. A request naming one is a **LAN request**: it reads `/api/` only with a UI session. | remote host |
 | **LAN peer** | A CIDR range a LAN request may come from (`JOB_HOPPER_LAN_PEERS`). Any other non-loopback peer is refused. | allowlist |
 | **Device link** | `http://<LAN name>:<port>/#login=<code>`: the current login code as a link a logged-in browser hands another device. Works once. | pairing link, invite |

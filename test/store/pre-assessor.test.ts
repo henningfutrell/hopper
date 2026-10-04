@@ -53,7 +53,7 @@ describe('a store written before the assessor', () => {
     const path = copyFixture();
     t.open(path).close();
     const db = new DatabaseSync(path);
-    expect(db.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 6 });
+    expect(db.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 7 });
     db.close();
   });
 });
