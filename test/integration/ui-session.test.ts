@@ -3,6 +3,7 @@
 // token in x-jobhopper-session plus exact Origin, same-origin Sec-Fetch-Site and a JSON body.
 import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { TOKEN_RE, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { rawRequest } from '../support/http.ts';
@@ -104,6 +105,35 @@ describe('UI mutations', () => {
     for (const path of ['/ui/api/jobs/x/cancel', '/ui/api/jobs/x/approve', '/ui/api/questions/x/answer', '/ui/api/router-mode', '/ui/api/logout']) {
       expect((await t.ui(path, {})).status, path).toBe(403);
     }
+  });
+
+  it('a session survives a daemon restart: same token, still authenticated, still mutates', async () => {
+    const token = await t.login();
+    const before = JSON.parse((await session(token)).text);
+    await t.stop();
+    t = await startTestApp({ dbPath: t.dbPath });
+    expect(JSON.parse((await session(token)).text)).toEqual(before);
+    expect((await t.ui('/ui/api/router-mode', { mode: 'active' }, { token })).status).toBe(200);
+  });
+
+  it('the store keeps only a hash of the session token, never the token', async () => {
+    const token = await t.login();
+    const raw = new DatabaseSync(t.dbPath, { readOnly: true });
+    try {
+      const rows = raw.prepare('SELECT * FROM ui_sessions').all();
+      expect(rows).toHaveLength(1);
+      expect(JSON.stringify(rows)).not.toContain(token);
+    } finally {
+      raw.close();
+    }
+  });
+
+  it('logout survives a restart too: a dropped token stays dropped', async () => {
+    const token = await t.login();
+    expect((await t.ui('/ui/api/logout', {}, { token })).status).toBe(200);
+    await t.stop();
+    t = await startTestApp({ dbPath: t.dbPath });
+    expect(JSON.parse((await session(token)).text)).toEqual({ authenticated: false });
   });
 
   it('a session expires after JOB_HOPPER_UI_SESSION_HOURS', async () => {
