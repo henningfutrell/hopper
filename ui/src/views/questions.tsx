@@ -1,9 +1,10 @@
 // Open questions: what the job asked, its recent output, the escalation trail, and the answer box
-// with Send answer and Close. Logged out, the box is a notice naming the login command; a 403 on
-// either mutation drops the UI to logged out, so the notice replaces the box. Below them, the
-// question gates (views/question-gates.tsx).
-import { ChevronRight, LogIn, MessageCircleQuestion, Send, X } from 'lucide-react';
-import { useState } from 'react';
+// with Send answer, Close and Dismiss. Logged out, the box is a notice naming the login command; a
+// 403 on a mutation drops the UI to logged out, so the notice replaces the box. Shown, the owner's
+// questions are marked seen (the nav badge clears). Below them, the handled questions as a compact
+// history, then the question gates (views/question-gates.tsx).
+import { Archive, ChevronRight, History, LogIn, MessageCircleQuestion, Send, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Textarea } from '@/components/ui/textarea';
@@ -14,8 +15,9 @@ import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
 import { QuestionGates } from '@/views/question-gates';
 import { between, clock } from '@/model/format';
-import type { Question, QuestionAttempt } from '@/model/wire';
-import { act, refreshQuestions, useHopper } from '@/store';
+import type { Question, QuestionAttempt, QuestionStatus } from '@/model/wire';
+import type { Tone } from '@/components/status';
+import { act, markSeen, refreshQuestions, useHopper } from '@/store';
 import { useJobIndex } from '@/store/selectors';
 
 const Mark = ({ ok }: { ok: boolean }) => <span className={ok ? 'text-ok' : 'text-bad'}>{ok ? '✓' : '✗'}</span>;
@@ -54,19 +56,21 @@ function QuestionCard({ q }: { q: Question }) {
     setSending(false);
     refreshQuestions().catch(() => {});
   };
-  const close = async () => {
+  const end = async (how: 'close' | 'dismiss') => {
     if (sending) return;
     setSending(true);
-    if (await act(`/ui/api/questions/${encodeURIComponent(q.id)}/close`, {}, 'Question closed')) setDraft('');
+    if (await act(`/ui/api/questions/${encodeURIComponent(q.id)}/${how}`, {}, how === 'close' ? 'Question closed' : 'Question dismissed')) setDraft('');
     setSending(false);
     refreshQuestions().catch(() => {});
   };
+  const movedOn = job && (job.status !== 'waiting_answer' || job.questionId !== q.id);
   return (
     <Panel title={q.tier === 'human' ? 'For you' : `With ${q.tier}`} icon={MessageCircleQuestion} className={q.tier === 'human' ? 'border-question/40' : ''}
       action={<span className="num text-xs text-muted-foreground">asked {clock(q.createdAt)}{q.tier === 'human' && <> · notified {q.notifyCount}×</>}
         {q.tier === 'human' && q.expiresAt && <> · expires <Countdown iso={q.expiresAt} className="text-warn" /></>}</span>}
       bodyClassName="space-y-3">
-      {job && <JobTitle job={job} />}
+      {job && <div className="flex items-start gap-2"><JobTitle job={job} className="flex-1" />
+        {movedOn && <StatusBadge status={`job ${job.status}`} tone="warn" label={`job moved on: ${job.status}`} />}</div>}
       <pre className="rounded-md border-l-2 border-question bg-question/5 p-3 font-mono text-sm whitespace-pre-wrap">{q.text}</pre>
       <Collapsible>
         <CollapsibleTrigger className="group flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
@@ -82,8 +86,12 @@ function QuestionCard({ q }: { q: Question }) {
           <div className="flex flex-wrap gap-2">
             <Button onClick={() => void send()} disabled={sending || !draft.trim()}><Send />{sending ? 'Sending…' : 'Send answer'}</Button>
             <Confirm title="Close this question without answering?" description="The job continues on its own judgement, or fails."
-              action="Close question" onConfirm={() => void close()}>
+              action="Close question" onConfirm={() => void end('close')}>
               <Button variant="outline" disabled={sending} title="End the question without answering"><X />Close</Button>
+            </Confirm>
+            <Confirm title="Dismiss this question?" description="It needs no action any more. Nothing is typed into the job; a job still waiting on it is cancelled."
+              action="Dismiss question" onConfirm={() => void end('dismiss')}>
+              <Button variant="ghost" disabled={sending} title="Drop a question that needs no action"><Archive />Dismiss</Button>
             </Confirm>
           </div>
         </div>
@@ -97,13 +105,59 @@ function QuestionCard({ q }: { q: Question }) {
   );
 }
 
+const OUTCOME: Record<Exclude<QuestionStatus, 'open'>, Tone> = { answered: 'ok', closed: 'warn', dismissed: 'muted', expired: 'bad', cancelled: 'muted' };
+const firstLine = (s: string) => s.split('\n').find((l) => l.trim())?.trim() ?? '';
+
+/** One handled question, one line: when, outcome, the question's first line. Opens to the question, the answer and the job. */
+function HandledRow({ q }: { q: Question }) {
+  const job = useJobIndex().get(q.jobId);
+  const status = q.status as Exclude<QuestionStatus, 'open'>;
+  return (
+    <Collapsible data-slot="handled-question" className="border-b last:border-b-0">
+      <CollapsibleTrigger className="group flex w-full min-w-0 items-center gap-2 px-4 py-2 text-left text-sm hover:bg-muted/40">
+        <ChevronRight className="size-3.5 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
+        <span className="num shrink-0 text-xs text-muted-foreground">{clock(q.updatedAt)}</span>
+        <StatusBadge status={status} tone={OUTCOME[status]} className="shrink-0" />
+        <span className="min-w-0 flex-1 truncate">{firstLine(q.text)}</span>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="space-y-2 px-4 pb-3 pl-9">
+        {job && <JobTitle job={job} />}
+        <pre className="rounded-md border-l-2 border-question bg-question/5 p-2 font-mono text-xs whitespace-pre-wrap">{q.text}</pre>
+        {q.answer && <div className="space-y-1">
+          <div className="text-[11px] text-muted-foreground">{q.status === 'closed' ? 'closed without answering' : 'answer'} · by {q.answeredBy ?? 'unknown'}</div>
+          <pre className="rounded-md bg-muted/50 p-2 font-mono text-xs whitespace-pre-wrap">{q.answer}</pre>
+        </div>}
+        {q.status === 'dismissed' && <div className="text-xs text-muted-foreground">dismissed: nothing was typed into the job</div>}
+        {q.status === 'expired' && <div className="text-xs text-bad">expired unanswered: the job failed</div>}
+        {q.status === 'cancelled' && <div className="text-xs text-muted-foreground">cancelled with its job</div>}
+        <div className="num text-[11px] text-muted-foreground">asked {clock(q.createdAt)} · {q.attempts.length} attempt{q.attempts.length === 1 ? '' : 's'}</div>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
+function Handled() {
+  const handled = useHopper((s) => s.handled);
+  return (
+    <Panel title="Handled" icon={History} count={handled.length} bodyClassName="p-0">
+      {handled.length
+        ? <div data-slot="handled-questions">{handled.map((q) => <HandledRow key={q.id} q={q} />)}</div>
+        : <Empty>no handled questions yet</Empty>}
+    </Panel>
+  );
+}
+
 export function Questions() {
   const questions = useHopper((s) => s.questions);
+  const authed = useHopper((s) => s.authed);
+  const unseen = questions.filter((q) => q.tier === 'human' && !q.seenAt).map((q) => q.id).join(',');
+  useEffect(() => { if (authed && unseen) void markSeen(unseen.split(',')); }, [authed, unseen]);
   return (
     <div className="space-y-3">
       {questions.length
         ? questions.map((q) => <QuestionCard key={q.id} q={q} />)
         : <Panel title="Questions" icon={MessageCircleQuestion}><Empty>no open questions</Empty></Panel>}
+      <Handled />
       <QuestionGates />
     </div>
   );

@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils';
 const TYPE_TONE: Record<string, Tone> = {
   'job.started': 'busy', 'job.claimed': 'busy', 'job.reattached': 'busy', 'job.finished': 'ok', 'job.failed': 'bad',
   'job.held': 'warn', 'job.requeued': 'warn', 'question.asked': 'question', 'question.escalated': 'question',
-  'question.answered': 'ok', 'question.closed': 'warn', 'question.expired': 'bad', 'lane.opened': 'busy', 'router.mode_changed': 'warn',
+  'question.answered': 'ok', 'question.closed': 'warn', 'question.dismissed': 'muted', 'question.expired': 'bad', 'lane.opened': 'busy', 'router.mode_changed': 'warn',
 };
 export const eventTone = (type: string): Tone => TYPE_TONE[type] ?? 'muted';
 

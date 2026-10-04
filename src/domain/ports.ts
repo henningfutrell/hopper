@@ -265,7 +265,7 @@ export type AnswerByHumanResult =
 /**
  * Runs the question pipeline: answer → assess → risk rules → accepted or human. Every write is
  * one store.tx and compare-and-set: it applies only if the question is still `open` and (for a
- * stage result) its `tier` is the stage that produced it. `onAnswered` / `onExpired`
+ * stage result) its `tier` is the stage that produced it. `onAnswered` / `onExpired` / `onDismissed`
  * (constructor options) are synchronous and called INSIDE that same tx, so question and job
  * change together or not at all.
  */
@@ -277,6 +277,10 @@ export interface QuestionService {
   answerByHuman(questionId: string, answer: string): AnswerByHumanResult;
   /** The owner ends an open question without answering: status `closed`, the close text becomes its answer, `question.closed`, then onAnswered resumes the job. */
   closeByHuman(questionId: string): AnswerByHumanResult;
+  /** The owner drops an open question: status `dismissed`, no answer, `question.dismissed`, then onDismissed (the engine cancels a job still waiting on it). */
+  dismissByHuman(questionId: string): AnswerByHumanResult;
+  /** The owner saw the question in the UI: `seenAt` is set once and kept. Any status. */
+  markSeen(questionId: string): { ok: true; question: Question } | { ok: false; reason: 'not_found' };
   /**
    * The owner answered in the job's pane, not the UI. Synchronous; call inside the caller's tx.
    * Aborts an in-flight stage, clears timers, marks it answered by `human`, `question.answered

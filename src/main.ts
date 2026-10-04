@@ -177,6 +177,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     answerUrl,
     onAnswered: (q: Question) => engine.onAnswered(q),
     onExpired: (q: Question) => engine.onExpired(q),
+    onDismissed: (q: Question) => engine.onDismissed(q),
   });
   const engine: Engine = createEngine({
     store, clock, executors, router, questions, queueSorter: host.queueSorter,

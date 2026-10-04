@@ -633,6 +633,30 @@ same `onAnswered` as an answer: job → `queued` with `pendingAnswer` = the clos
 Continue on your own judgement; if you cannot, end with JOB_HOPPER_FAILED and say why."
 Recovery treats a `closed` question like an `answered` one (requeue with its answer).
 
+**Dismiss** (`POST /ui/api/questions/:id/dismiss`, the card's Dismiss button; issue #37): the owner
+drops an open question that needs no action any more — typically one whose job has moved on, or
+whose work was done elsewhere. `QuestionService.dismissByHuman`, one tx: an in-flight stage call
+aborted (`superseded`), timers cleared (no re-notify, no expiry), question `dismissed` with no
+answer and no attempt, `question.dismissed { questionId }`, then `onDismissed`: a job still
+`waiting_answer` on that question is `cancelled` (`job.cancelled { reason: "question dismissed" }`,
+its source told as for any cancel) and its pane cleaned up after the commit; a job that has moved
+on is left alone (compare-and-set, no log line). Nothing is typed into any pane. Close lets the job
+go on; Dismiss ends it. The card marks a job that has moved on (`job moved on: <status>`).
+
+**Seen** (`POST /ui/api/questions/:id/seen`; issue #37): `seenAt` set once on the question, kept
+after; any status. The Questions view posts it for every open question at the human stage without
+`seenAt` while it is shown with a UI session. The nav badge counts open questions at the human stage
+without `seenAt`, so it clears once they are seen, answered, closed or dismissed. No event: seen
+changes no job and nothing outside the UI reads it. Only human-stage questions are marked, so a
+question seen while still with the answerer or the assessor badges when it reaches the owner.
+
+**Question history** (issue #37): every question stays in the `questions` table with its text,
+trail, answer and status; nothing prunes it. The Questions view lists handled ones (status not
+`open`, newest first, the last 200 from `GET /api/questions?status=all&limit=200`) as one compact
+line each — time, outcome, first line of the question — that opens to the question, the answer
+and who gave it, and the job. The history is local to the hopper's SQLite file: no route sends it
+anywhere, and the hopper writes nothing of a question to GitHub (it writes only labels).
+
 **Answered in the pane.** The owner may type the answer straight into a parked pane instead of
 the UI. On every engine tick, `src/engine/pane-answers.ts` asks the executor of each
 `waiting_answer` job `answeredInPane(job)` (port method; herdr-claude implements it; the decider
@@ -863,6 +887,8 @@ token and send any `Origin`. Cookies are no better here: they ignore ports, so a
 | POST | `/ui/api/jobs/:id/approve` | `{}` | engine approve |
 | POST | `/ui/api/questions/:id/answer` | `{ answer }` | `QuestionService.answerByHuman` (404/409) |
 | POST | `/ui/api/questions/:id/close` | `{}` | `QuestionService.closeByHuman` (404/409): close without answering ("Questions" → Close) |
+| POST | `/ui/api/questions/:id/dismiss` | `{}` | `QuestionService.dismissByHuman` (404/409): drop the question; a job still waiting on it is cancelled ("Questions" → Dismiss) |
+| POST | `/ui/api/questions/:id/seen` | `{}` | `QuestionService.markSeen` (404): `seenAt` once; clears the nav badge |
 | POST | `/ui/api/router-mode` | `{ mode }` | set router mode (phase 5; was `/ui/api/jev`) |
 | POST | `/ui/api/plugins` | `{ action, … }` | edit plugins.yaml: one instance's options, select a plugin, add or remove a list role's instance, rescan (phase 5 slice 7, issue #4; "Settled in slice 7") |
 | POST | `/ui/api/rules-file` | `{ text, version }` | replace the rules file whole (issue #18, "Question gates"): 400 over 64 KiB, 409 stale `version` |

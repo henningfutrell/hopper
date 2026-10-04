@@ -26,6 +26,8 @@ export interface QuestionServiceOptions {
   onAnswered: (q: Question) => void;
   /** Synchronous, called inside the tx that marks the question expired. */
   onExpired: (q: Question) => void;
+  /** Synchronous, called inside the tx that marks the question dismissed. */
+  onDismissed: (q: Question) => void;
 }
 
 export const HUMAN = 'human';
@@ -62,7 +64,7 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
   let stopped = false;
   const iso = () => clock.now().toISOString();
 
-  function emit(q: Question, type: 'question.escalated' | 'question.answered' | 'question.closed' | 'question.expired', data: Record<string, unknown>) {
+  function emit(q: Question, type: 'question.escalated' | 'question.answered' | 'question.closed' | 'question.dismissed' | 'question.expired', data: Record<string, unknown>) {
     store.events.append({ type, jobId: q.jobId, questionId: q.id, data: { questionId: q.id, ...data } });
   }
 
@@ -313,6 +315,26 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
 
     answerByHuman: (id, answer) => byHuman(id, answer, 'answered'),
     closeByHuman: (id) => byHuman(id, CLOSED_ANSWER, 'closed'),
+
+    dismissByHuman(id) {
+      return store.tx(() => {
+        const q = store.questions.get(id);
+        if (!q) return { ok: false as const, reason: 'not_found' as const };
+        if (q.status !== 'open') return { ok: false as const, reason: 'not_open' as const };
+        abortStage(id, 'superseded');
+        clearTimers(id);
+        const updated = store.questions.update(id, { status: 'dismissed' });
+        emit(updated, 'question.dismissed', {});
+        o.onDismissed(updated);
+        return { ok: true as const, question: updated };
+      });
+    },
+
+    markSeen(id) {
+      const q = store.questions.get(id);
+      if (!q) return { ok: false as const, reason: 'not_found' as const };
+      return { ok: true as const, question: q.seenAt ? q : store.questions.update(id, { seenAt: iso() }) };
+    },
 
     answeredInPane(id, answer) {
       return store.tx(() => {

@@ -19,7 +19,10 @@ export interface HopperState {
   queue: Queue;
   machines: MachineView[];
   decisions: Decision[];
+  /** Open questions, every stage. */
   questions: Question[];
+  /** The question history: every question no longer open, newest first (GET /api/questions?status=all). */
+  handled: Question[];
   /** Newest first, every type: the live log. */
   events: DomainEvent[];
   /** Oldest first, HISTORY_TYPES only: the charts. */
@@ -44,7 +47,7 @@ const EMPTY_QUEUE: Queue = { waiting: [], running: [], waitingAnswer: [], ended:
 
 export const useHopper = create<HopperState>(() => ({
   loaded: false, loadError: null, conn: 'connecting', authed: false, health: null, queue: EMPTY_QUEUE, machines: [],
-  decisions: [], questions: [], events: [], history: [], sources: [], deliveries: [], subscriptions: [], webhookConfig: null,
+  decisions: [], questions: [], handled: [], events: [], history: [], sources: [], deliveries: [], subscriptions: [], webhookConfig: null,
   plugins: null, pluginsError: null, usage: null, accounts: [], routing: null, routingError: null,
 }));
 const set = useHopper.setState;
@@ -66,7 +69,25 @@ export async function refreshRouting() {
   try { set({ routing: await get<RoutingReport>('/api/routing'), routingError: null }); } catch (e) { set({ routingError: (e as Error).message }); }
 }
 export const setRouting = (routing: RoutingReport) => set({ routing, routingError: null });
-export async function refreshQuestions() { set({ questions: (await get<{ questions: Question[] }>('/api/questions?status=open')).questions }); }
+export const HANDLED_LIMIT = 200;
+const handledOf = (all: Question[]) => all.filter((q) => q.status !== 'open');
+export async function refreshQuestions() {
+  const [open, all] = await Promise.all([
+    get<{ questions: Question[] }>('/api/questions?status=open'), get<{ questions: Question[] }>(`/api/questions?status=all&limit=${HANDLED_LIMIT}`),
+  ]);
+  set({ questions: open.questions, handled: handledOf(all.questions) });
+}
+/** The owner has the questions in front of them: mark each seen (POST /ui/api/questions/:id/seen), which clears the nav badge. Quiet: no toast. */
+export async function markSeen(ids: string[]) {
+  for (const id of ids) {
+    try {
+      const q = await post<Question>(`/ui/api/questions/${encodeURIComponent(id)}/seen`);
+      set({ questions: state().questions.map((x) => (x.id === q.id ? q : x)) });
+    } catch (e) {
+      if (e instanceof SessionRejected) { set({ authed: false }); return; }
+    }
+  }
+}
 export async function refreshLive() {
   const [queue, machines, usage] = await Promise.all([get<Queue>('/api/queue'), get<{ machines: MachineView[] }>('/api/machines'), get<UsageReport>('/api/usage')]);
   set({ queue, machines: machines.machines, usage });
@@ -133,20 +154,21 @@ export const setConn = (conn: Conn) => set({ conn });
 export async function load() {
   await checkSession();
   const since = encodeURIComponent(HISTORY_TYPES.join(','));
-  const [health, queue, machines, decisions, events, history, subs, deliveries, questions, sources, usage, accounts] = await Promise.all([
+  const [health, queue, machines, decisions, events, history, subs, deliveries, questions, allQuestions, sources, usage, accounts] = await Promise.all([
     get<Health>('/api/health'), get<Queue>('/api/queue'), get<{ machines: MachineView[] }>('/api/machines'),
     get<{ decisions: Decision[] }>('/api/decisions?limit=50'), get<{ events: DomainEvent[] }>('/api/events?limit=200'),
     get<{ events: DomainEvent[] }>(`/api/events?limit=${CAP.history}&types=${since}`),
     get<WebhooksView>('/api/webhooks'),
     get<{ deliveries: WebhookDelivery[] }>('/api/webhooks/deliveries?limit=100'),
-    get<{ questions: Question[] }>('/api/questions?status=open'), get<{ sources: SourceStatus[] }>('/api/sources'),
+    get<{ questions: Question[] }>('/api/questions?status=open'), get<{ questions: Question[] }>(`/api/questions?status=all&limit=${HANDLED_LIMIT}`),
+    get<{ sources: SourceStatus[] }>('/api/sources'),
     get<UsageReport>('/api/usage'), get<{ accounts: PartAccount[] }>('/api/accounts'),
   ]);
   set({
     loaded: true, loadError: null, health, queue, machines: machines.machines, decisions: decisions.decisions,
     events: events.events.slice().sort((a, b) => b.seq - a.seq), history: history.events.slice().sort((a, b) => a.seq - b.seq),
     subscriptions: subs.subscriptions, webhookConfig: subs.config ?? null, deliveries: deliveries.deliveries,
-    questions: questions.questions, sources: sources.sources, usage, accounts: accounts.accounts,
+    questions: questions.questions, handled: handledOf(allQuestions.questions), sources: sources.sources, usage, accounts: accounts.accounts,
   });
 }
 export const setLoadError = (loadError: string) => set({ loadError });
