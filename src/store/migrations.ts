@@ -164,7 +164,12 @@ const POSTGRES_BASE = `
 `;
 
 /** Migrations 7 on, for both databases. */
-const SHARED: readonly Migration[] = [];
+const SHARED: readonly Migration[] = [
+  // 7: config documents (plugins.yaml, webhooks.yaml, rules.md) live in the store, not in files.
+  `
+  CREATE TABLE IF NOT EXISTS config_documents (name TEXT PRIMARY KEY, text TEXT NOT NULL, updated_at TEXT NOT NULL);
+  `,
+];
 
 /** The schema version a store is at once migrated. */
 export const SCHEMA_VERSION = SQLITE_HISTORY.length + SHARED.length;

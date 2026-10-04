@@ -3,6 +3,7 @@ import type { Clock, IdGen, Store } from '../domain/ports.ts';
 import type { StoreContext } from './context.ts';
 import { openDb, parseDatabaseUrl } from './db.ts';
 import { createDecisionRepository } from './decisions.ts';
+import { createConfigDocuments } from './documents.ts';
 import { createEventLog } from './events.ts';
 import { createJobRepository } from './jobs.ts';
 import { createLaneRepository } from './lanes.ts';
@@ -64,6 +65,7 @@ export function openStore(o: { url: string; clock: Clock; idGen?: IdGen }): Stor
     questions: createQuestionRepository(ctx),
     settings: createSettingsRepository(ctx),
     uiSessions: createUiSessionRepository(ctx),
+    documents: createConfigDocuments(ctx),
     tx: ctx.tx,
     close: () => db.close(),
   };

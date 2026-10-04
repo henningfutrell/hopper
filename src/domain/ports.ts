@@ -494,6 +494,21 @@ export interface UiSessionRepository {
   drop(tokenHash: string): void;
 }
 
+/** The config documents the store holds (design.md "Config documents"). */
+export const CONFIG_DOCUMENTS = ['plugins.yaml', 'webhooks.yaml', 'rules.md'] as const;
+export type ConfigDocumentName = (typeof CONFIG_DOCUMENTS)[number];
+
+/**
+ * Config documents: named texts, each edited whole against its `version` — the sha-256 of its
+ * text, or `missing` while there is none.
+ */
+export interface ConfigDocuments {
+  read(name: ConfigDocumentName): string | undefined;
+  version(name: ConfigDocumentName): string;
+  /** Replace the text if the document is still at `version`; false (nothing written) when it moved. */
+  write(name: ConfigDocumentName, text: string, version: string): boolean;
+}
+
 /** The whole store: one database (SQLite or Postgres); repositories share one connection. */
 export interface Store {
   jobs: JobRepository;
@@ -504,6 +519,7 @@ export interface Store {
   questions: QuestionRepository;
   settings: SettingsRepository;
   uiSessions: UiSessionRepository;
+  documents: ConfigDocuments;
   /** Run fn in one transaction. Re-entrant: a nested tx joins the outer one. Throw = rollback. */
   tx<T>(fn: () => T): T;
   close(): void;
