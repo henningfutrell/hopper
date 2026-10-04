@@ -2909,7 +2909,9 @@ the new one. No install.json (a checkout run with `npm start`, a clone without `
 `unavailable` with the reason; nothing else changes.
 
 **Detecting.** A bare mirror at `<data dir>/update/repo.git`, fetched from install.json's `repo` on
-every check — the git CLI, never prompting (`GIT_TERMINAL_PROMPT=0`, ssh `BatchMode=yes`), so any
+every check — the git CLI, never prompting (`GIT_TERMINAL_PROMPT=0`, ssh `BatchMode=yes`, and
+only the user's ssh config: `-F ~/.ssh/config`, since the unit's `PrivateTmp` puts the daemon in a
+user namespace where root-owned `/etc/ssh` files show as owned by nobody and ssh refuses them), so any
 git URL the daemon's user can fetch works: GitHub by ssh or https, another host, a local path. A
 check runs 10 s after start, then every `JOB_HOPPER_UPDATE_CHECK_MS` (default 900000; 0: only when
 asked), and from the UI's Check now. The **update channel** decides the target: `main` → the head
