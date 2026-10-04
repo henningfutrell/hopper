@@ -5,6 +5,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import type { Clock, PluginsView, QuestionService, SourceRegistry, Store, WebhookDispatcher } from '../domain/ports.ts';
 import type { Engine } from '../engine/index.ts';
 import type { WebhookConfigStatus } from '../webhooks/config.ts';
+import type { WebhooksEditor } from '../webhooks/edit.ts';
 import { installErrorHandling } from './errors.ts';
 import { installHostGuard } from './host-guard.ts';
 import type { Lan } from './reach.ts';
@@ -27,6 +28,8 @@ export interface ServerOptions {
   /** The router's status and GET /api/plugins. */
   plugins: PluginsView;
   webhookConfig: { status(): WebhookConfigStatus };
+  /** UI edits of webhooks.yaml (POST /ui/api/webhooks). */
+  webhooksEditor: WebhooksEditor;
   clock: Clock;
   version: string;
   /** The bound port, for the Host guard and the UI Origin check (known only after listen). */
@@ -54,6 +57,9 @@ export function createServer(o: ServerOptions): FastifyInstance {
   sourceRoutes(app, o);
   sseRoutes(app, o);
   staticRoutes(app, o.uiDir);
-  registerUiRoutes(app, { engine: o.engine, questions: o.questions, sessions, plugins: o.plugins, port: o.port, lan: o.lan, dataDir: o.dataDir });
+  registerUiRoutes(app, {
+    engine: o.engine, questions: o.questions, sessions, plugins: o.plugins, port: o.port, lan: o.lan, dataDir: o.dataDir,
+    store: o.store, webhookConfig: o.webhookConfig, webhooksEditor: o.webhooksEditor,
+  });
   return app;
 }

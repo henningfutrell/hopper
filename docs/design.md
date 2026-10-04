@@ -39,7 +39,7 @@ Fastify for HTTP, `node:sqlite` for storage, zod for request validation.
 | `src/domain/` | types, ports | anything else in `src/` |
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock | everything but `domain/` |
 | `src/store/` | SQLite schema, migrations, repositories, event log | engine, http, decider |
-| `src/webhooks/` | signing, dispatcher, retry/backoff | engine, http, decider |
+| `src/webhooks/` | signing, dispatcher, retry/backoff, `webhooks.yaml` load + watch (`config.ts`), the UI edit of it (`edit.ts`) | engine, http, decider |
 | `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `job-hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, `plugins.yaml` + watch, the role slots (`router-slot.ts` with the shared `instantiate`, `question-slots.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `answerer/claude-cli/`, `assessor/claude-cli-assessor/`, `assessor/always-escalate/` hold their prompts; `executor/herdr-claude/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-gh/` and `job-source/github-app/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `notifier/grokbot-routine/` is the Grok Bot routine webhook — env-file reader and notifier) | engine, http, store, decider, questions |
 | `src/executors/` | `Executor` adapters (`test`, `herdr/`) and the registry; reached through the executor plugins | engine, http, store, plugins |
 | `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (ssh probe through the herdr CLI client), `combineMachineSources` | engine, http, store, plugins |
@@ -779,7 +779,7 @@ the engine.
 `GET /api/health` · `/api/jobs` · `/api/jobs/:id` · `/api/queue` · `/api/machines` ·
 `/api/decisions[/:id]` · `/api/events` · `/api/events/stream` (SSE) · `/api/router` (was `/api/jev`) ·
 `/api/usage` · `/api/questions[/:id]` · `/api/webhooks` (from `webhooks.yaml`, secrets
-omitted, plus `config: { path, loadedAt, error? }`) · `/api/webhooks/deliveries` ·
+omitted, plus `config: { path, loadedAt, error?, warnings, version }`; `version` since issue #18) · `/api/webhooks/deliveries` ·
 **new** `GET /api/sources` → `{ sources: SourceStatus[] }`.
 
 Every request (GET included) must carry `Host: 127.0.0.1:<port>` or `localhost:<port>`, or a
@@ -826,6 +826,7 @@ token and send any `Origin`. Cookies are no better here: they ignore ports, so a
 | POST | `/ui/api/questions/:id/close` | `{}` | `QuestionService.closeByHuman` (404/409): close without answering ("Questions" → Close) |
 | POST | `/ui/api/router-mode` | `{ mode }` | set router mode (phase 5; was `/ui/api/jev`) |
 | POST | `/ui/api/plugins` | `{ action, … }` | edit plugins.yaml: one instance's options, select a plugin, rescan (phase 5 slice 7; "Settled in slice 7") |
+| POST | `/ui/api/webhooks` | `{ action, name, … }` | edit webhooks.yaml: add, edit (url, events, active), rotate-secret, remove one entry; answers `GET /api/webhooks` plus a new `secret` once (issue #18, "Webhook subscriptions in the UI") |
 | POST | `/ui/api/device-link` | `{}` | `{ links }`: the current login code as `http://<LAN name>:<port>/#login=<code>`, one per LAN name; 409 without LAN names ("Reaching the UI across the LAN") |
 | POST | `/ui/api/logout` | `{}` | drop the session |
 
@@ -1048,7 +1049,8 @@ webhooks:
     active: true
 ```
 
-Loaded at startup and re-read when its mtime changes (checked every 5 s). Reconcile by
+Loaded at startup and re-read when its mtime changes (checked every 5 s), and at once after a
+UI edit of it (issue #18, "Webhook subscriptions in the UI"). Reconcile by
 `name` into the store (`upsertByName`; names absent from the file are deleted, their
 pending deliveries failed). Invalid file → previous subscriptions kept, error shown in
 `GET /api/webhooks` `config.error`. Inline `secret` in a file readable by group/other →
@@ -2204,6 +2206,10 @@ has one caller today; build it plain first, extract on a second real caller.
 
 ### 6b. Webhook subscription in the UI
 
+**Settled and built in issue #18** — "Webhook subscriptions in the UI" at the end of this file.
+The open questions below are answered there; the plugin tie is not taken (a subscription is not a
+notifier instance: glossary *Notifier*).
+
 Owner request: subscriptions are visible and configurable in the UI.
 
 Meaning: the UI shows each subscription (name, url, events, active, last delivery state) and
@@ -2360,3 +2366,47 @@ session still expires after `JOB_HOPPER_UI_SESSION_HOURS` (12).
 token or a device link in flight. Accepted for a home LAN; the peer list keeps the VPN and container
 networks out. A device link is as strong as the login code file and works once.
 
+## UI manages everything (issue #18, 2026-10-03)
+
+### Webhook subscriptions in the UI (issue #18)
+
+Owner request: edit webhook subscriptions from the UI. Settles 6b.
+
+- **Source of truth.** `webhooks.yaml` stays the only source of subscriptions; the UI session
+  edits it. Not the store (the file would become a seed nobody trusts), not the notifier editor of
+  slice 7 (a subscription has a store row and deliveries; a notifier has neither).
+- **`POST /ui/api/webhooks`** (session-guarded, "UI session and mutations"), body by `action`,
+  each with the file's `version`:
+  `{ action: 'add', name, url, events, active?, version }` ·
+  `{ action: 'edit', name, url?, events?, active?, version }` ·
+  `{ action: 'rotate-secret', name, version }` · `{ action: 'remove', name, version }`.
+  Answers the new `GET /api/webhooks` view; after `add` and `rotate-secret` it adds `secret`.
+  400: body shape (a `secret`, `secretFile` or new name in the body included) or content invalid —
+  the content is checked with webhooks.yaml's own schema, so the messages are the file's
+  (`webhooks.N.url: …`, `must be an event type or "*"`); 404: no such name; 409: stale `version`,
+  `add` of a name already there, `rotate-secret` of a `secretFile` entry, an unparseable or invalid
+  webhooks.yaml (never edited from the UI — fix it by hand).
+- **`name`** is the reconcile key and never changes from the UI; renaming is remove + add.
+- **Secrets.** The daemon makes every secret (32 random bytes, hex) and writes it inline as
+  `secret`. It leaves the daemon once: in the answer to the add or rotate-secret that made it. No
+  GET carries a secret or a `secretFile` path. An entry with `secretFile` keeps that path as written;
+  its other fields are editable, its secret is rotated in that file only (409 says so).
+- **The write.** Version = sha-256 of the file's bytes, or `missing` (then an add writes
+  `version: 1` and the one entry). The change is spliced into the text at the entry's source
+  ranges (`yaml` Document API), so comments, spacing and every other entry stay byte for byte; the
+  result is re-parsed and must mean exactly what the Document edit means, else the Document is
+  written instead (comments kept, spacing normalised) — the case for a flow-style or empty
+  `webhooks` list. Validated against the file schema, written atomically (temp, rename, mode 600),
+  then the watcher's `reload()` runs before the answer, so the store and the dispatcher already
+  use the new entry (the 5 s mtime check is not waited for).
+- **Residual risk.** A UI session holder can point a subscription at any http(s) URL and receive
+  events (prompts, issue context) there. Same holder as "UI session and mutations"; no command can
+  be run through a subscription.
+- **UI.** The Webhooks view (`ui/src/views/webhooks.tsx`; model `ui/src/model/webhooks.ts`, tested
+  from `test/ui/webhooks.test.ts`): a card per subscription — name, active switch, url, events,
+  last delivery — with Edit (url, events picker over every event type and `*`, which stands alone,
+  active), Rotate secret and Remove, each destructive one behind a confirm; an Add subscription
+  form. A new secret is shown once in a dialog with a copy button; where the clipboard API is
+  missing (plain HTTP on a LAN name) the readonly field is selected for the device's own copy. The
+  dialog states the check a subscriber makes (`x-jobhopper-signature`, "Webhooks"). A refused edit
+  re-reads `GET /api/webhooks`, so a stale version is one retry. Vendored `ui/src/components/ui/switch.tsx`.

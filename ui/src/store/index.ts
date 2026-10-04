@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import { create } from 'zustand';
 import { get, post, SessionRejected, clearToken, sessionIsLive } from '@/lib/api';
 import { HISTORY_TYPES } from '@/model/event-types';
-import type { Decision, DomainEvent, Health, MachineView, PluginsReport, Question, Queue, SourceStatus, WebhookConfig, WebhookDelivery, WebhookSubscription } from '@/model/wire';
+import type { Decision, DomainEvent, Health, MachineView, PluginsReport, Question, Queue, SourceStatus, WebhookConfig, WebhookDelivery, WebhookSubscription, WebhooksView } from '@/model/wire';
 
 export const CAP = { events: 500, history: 5000, decisions: 100, deliveries: 100 };
 export type Conn = 'connecting' | 'live' | 'reconnecting';
@@ -51,6 +51,9 @@ export async function refreshHealth() { set({ health: await get<Health>('/api/he
 export async function refreshPlugins() {
   try { set({ plugins: await get<PluginsReport>('/api/plugins'), pluginsError: null }); } catch (e) { set({ pluginsError: (e as Error).message }); }
 }
+/** GET /api/webhooks, or the answer to a webhooks edit: the subscriptions (never a secret) and the file's status. */
+export const setWebhooks = (v: WebhooksView) => set({ subscriptions: v.subscriptions, webhookConfig: v.config ?? null });
+export async function refreshWebhooks() { setWebhooks(await get<WebhooksView>('/api/webhooks')); }
 export const setPlugins = (plugins: PluginsReport) => set({ plugins, pluginsError: null });
 export async function refreshQuestions() { set({ questions: (await get<{ questions: Question[] }>('/api/questions?status=open')).questions }); }
 export async function refreshLive() {
@@ -118,7 +121,7 @@ export async function load() {
     get<Health>('/api/health'), get<Queue>('/api/queue'), get<{ machines: MachineView[] }>('/api/machines'),
     get<{ decisions: Decision[] }>('/api/decisions?limit=50'), get<{ events: DomainEvent[] }>('/api/events?limit=200'),
     get<{ events: DomainEvent[] }>(`/api/events?limit=${CAP.history}&types=${since}`),
-    get<{ subscriptions: WebhookSubscription[]; config?: WebhookConfig }>('/api/webhooks'),
+    get<WebhooksView>('/api/webhooks'),
     get<{ deliveries: WebhookDelivery[] }>('/api/webhooks/deliveries?limit=100'),
     get<{ questions: Question[] }>('/api/questions?status=open'), get<{ sources: SourceStatus[] }>('/api/sources'),
   ]);

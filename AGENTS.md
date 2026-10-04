@@ -27,8 +27,9 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
 - **Loopback plus the LAN names, and the hopper pulls.** The daemon binds `127.0.0.1`, or every
   interface only when `JOB_HOPPER_LAN_NAMES` and `JOB_HOPPER_LAN_PEERS` are set; a peer outside
   loopback and the LAN peers is refused, and a LAN request reads `/api/` only with a UI session
-  (`docs/design.md` "Reaching the UI across the LAN", issue #16). No route creates or changes a job, question, webhook or setting: jobs come only
-  from job sources, webhooks only from `webhooks.yaml`. Every request passes the Host guard
+  (`docs/design.md` "Reaching the UI across the LAN", issue #16). No route creates or changes a job, question, webhook or setting except
+  through the UI session below: jobs come only from job sources; webhooks come only from
+  `webhooks.yaml`, which the UI session may edit (`POST /ui/api/webhooks`, issue #18). Every request passes the Host guard
   (`127.0.0.1:<port>` / `localhost:<port>` / a LAN name with the port, else 421). The only mutations are the UI's
   `POST /ui/api/*`, behind a UI session from the one-time login code (`x-jobhopper-session`,
   exact Origin, same-origin, JSON — else 403); a new mutation goes there and nowhere else.

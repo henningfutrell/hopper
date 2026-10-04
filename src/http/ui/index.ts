@@ -5,12 +5,15 @@
 // (design.md "Reaching the UI across the LAN").
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import type { PluginsView, QuestionService } from '../../domain/ports.ts';
+import type { PluginsView, QuestionService, Store } from '../../domain/ports.ts';
 import { ROLES, SELECTABLE_ROLES } from '../../domain/types.ts';
 import type { Engine } from '../../engine/index.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { lanHosts, type Lan } from '../reach.ts';
 import { routerView } from '../state.ts';
+import { webhooksView } from '../webhooks.ts';
+import type { WebhookConfigStatus } from '../../webhooks/config.ts';
+import type { WebhooksEditor } from '../../webhooks/edit.ts';
 import { SESSION_HEADER, mutationRefusal } from './guard.ts';
 import { createLoginCode } from './login-code.ts';
 import type { UiSessions } from './sessions.ts';
@@ -26,6 +29,9 @@ export interface UiRouteOptions {
   port: () => number;
   lan: Lan;
   dataDir: string;
+  store: Pick<Store, 'webhooks'>;
+  webhookConfig: { status(): WebhookConfigStatus };
+  webhooksEditor: WebhooksEditor;
 }
 
 const idParams = z.object({ id: z.string() });
@@ -36,6 +42,15 @@ const pluginsEditBody = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('options'), role: z.enum(ROLES), name: z.string().min(1), options: z.record(z.string(), z.unknown()), version: z.string().min(1) }),
   z.strictObject({ action: z.literal('select'), role: z.enum(SELECTABLE_ROLES), plugin: z.string().min(1).nullable(), version: z.string().min(1) }),
   z.strictObject({ action: z.literal('rescan') }),
+]);
+// The content (url, events) is checked against webhooks.yaml's own schema in the editor, so the UI
+// shows the file's messages; here only the shape. No secret, no secretFile, no new name.
+const webhookFields = { name: z.string().min(1), version: z.string().min(1) };
+const webhooksEditBody = z.discriminatedUnion('action', [
+  z.strictObject({ action: z.literal('add'), ...webhookFields, url: z.string(), events: z.array(z.string()), active: z.boolean().optional() }),
+  z.strictObject({ action: z.literal('edit'), ...webhookFields, url: z.string().optional(), events: z.array(z.string()).optional(), active: z.boolean().optional() }),
+  z.strictObject({ action: z.literal('rotate-secret'), ...webhookFields }),
+  z.strictObject({ action: z.literal('remove'), ...webhookFields }),
 ]);
 const EDIT_STATUS = { invalid: 400, not_found: 404, conflict: 409 } as const;
 
@@ -110,6 +125,15 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     const r = await o.plugins.edit(parseWith(pluginsEditBody, req.body));
     if (!r.ok) throw new HttpError(EDIT_STATUS[r.code], r.error);
     return r.report;
+  });
+
+  // Issue #18: one webhooks.yaml entry added, edited, its secret rotated, or removed. Answers the
+  // new GET /api/webhooks view, plus the new secret after add or rotate-secret — the only time a
+  // secret leaves the daemon.
+  app.post('/ui/api/webhooks', guarded, async (req) => {
+    const r = o.webhooksEditor.edit(parseWith(webhooksEditBody, req.body));
+    if (!r.ok) throw new HttpError(EDIT_STATUS[r.code], r.error);
+    return { ...webhooksView(o.store, o.webhookConfig), ...(r.secret === undefined ? {} : { secret: r.secret }) };
   });
 
   // The current login code as a link per LAN name, in the fragment (never sent to a server). It
