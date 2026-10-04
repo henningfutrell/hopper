@@ -20,6 +20,8 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
 - **Tests are sealed off from the real machine.** `test/support/isolate.ts` (vitest setup) gives
   every worker a throwaway HOME and refuses any non-loopback `fetch`. Never point a test at
   `~/.config/job-hopper` or a real URL; a test daemon once sent real Grok Bot webhooks.
+  An ad-hoc daemon (own port) gets a copy of the config with `grokbot-webhook.env` and webhook
+  subscribers removed, and runs network-isolated (`unshare -rn`).
 - **Erasable TypeScript only** (`erasableSyntaxOnly`): no enums, no namespaces, no
   parameter properties. Relative imports carry `.ts`.
 - **Loopback only, and the hopper pulls.** Binding anything but `127.0.0.1` is a different
