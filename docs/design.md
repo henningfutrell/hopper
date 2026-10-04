@@ -1853,7 +1853,7 @@ must fit (`~/.local/share/job-hopper/ssh/…` does).
 
 **Online.** `herdr --session <session> status server` over ssh says `status: running`. Probed in the
 background at most every 30 s; `list()` never waits, so a machine that is off or asleep never stalls
-a Decision (see "Scheduler loose ends": every Decision awaits every machine source). Offline until
+a Decision (every Decision awaits every machine source). Offline until
 the first probe answers. Transitions are logged once per reason (`job-hopper: attached machine
 laptop online (ssh laptop)` / `… offline: <reason>`). Offline → the decider gives it nothing; a
 waiting-answer job whose pane is there stays pinned (`resumeOn`) and waits.
