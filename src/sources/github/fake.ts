@@ -98,11 +98,6 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
       const i = find(repo, n);
       i.labels = i.labels.filter((l) => !names.includes(l));
     },
-    async comment(repo, n, body) {
-      enter('comment', [repo, n, body]);
-      const c = fake.addComment(repo, n, login, body);
-      return { id: c.id, url: c.url, createdAt: c.createdAt };
-    },
   };
 
   if (o.app) {

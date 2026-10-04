@@ -1,9 +1,8 @@
 // report(): what happened to a job, written to its issue. The hopper's only issue writes are
-// labels (state) and one completion comment: claimed → `hopper:claimed`; finished → one status
-// comment (one fixed line of hopper facts, never the job's result) + `hopper:done`; failed → `hopper:failed`; cancelled → the claim
-// label goes. Nothing else is posted: no claim, progress, question, answer, failure or cancel
-// comment (owner decision, 2026-10-03). Returns the WHOLE new source state: { finalCommentId }. Rows
-// written before that rule may still carry claimCommentId, progressCommentId,
+// labels (state); it posts no comment at all (owner decision, 2026-10-04: a finished issue needs
+// labels only): claimed → `hopper:claimed`; finished → `hopper:done`; failed → `hopper:failed`;
+// cancelled → the claim label goes. Returns the source state unchanged. Rows written under
+// earlier rules may still carry finalCommentId, claimCommentId, progressCommentId,
 // questionComments and answeredComments; they are kept as stored and never read.
 
 import { SourceError } from '../../domain/ports.ts';
@@ -11,18 +10,12 @@ import type { SourceReport } from '../../domain/ports.ts';
 import type { Job } from '../../domain/types.ts';
 import { GitHubApiError } from './api.ts';
 import type { GitHubApi } from './api.ts';
-import { commentBody, postOnce } from './comments.ts';
-import type { CommentTarget } from './comments.ts';
-import type { BotLogin } from './identity.ts';
 import { HOPPER_LABELS, LABEL_CLAIMED, LABEL_DONE, LABEL_FAILED } from './labels.ts';
-import { finishedMarker } from './markers.ts';
 
 export interface ReportContext {
   api: GitHubApi;
   /** Repos whose hopper labels were ensured by this process. */
   labelledRepos: Set<string>;
-  /** The bot login in app mode (comment reuse requires the bot author); undefined in gh mode. */
-  botLogin: () => Promise<BotLogin>;
 }
 
 type State = Record<string, unknown>;
@@ -31,16 +24,6 @@ function issueOf(job: Job): { repo: string; number: number } {
   const { repo, number } = job.source ?? {};
   if (!repo || !number) throw new SourceError(`job ${job.id} has no GitHub issue reference`, true);
   return { repo, number };
-}
-
-/** `4m12s`, `42s`, `1h3m5s` from startedAt to finishedAt (whole seconds); `duration unknown` without both. */
-function duration(job: Job): string {
-  if (!job.startedAt || !job.finishedAt) return 'duration unknown';
-  const total = Math.max(0, Math.floor((Date.parse(job.finishedAt) - Date.parse(job.startedAt)) / 1000));
-  const h = Math.floor(total / 3600);
-  const m = Math.floor((total % 3600) / 60);
-  const sec = total % 60;
-  return `${h ? `${h}h` : ''}${h || m ? `${m}m` : ''}${sec}s`;
 }
 
 async function ensureLabels(ctx: ReportContext, repo: string): Promise<void> {
@@ -58,17 +41,6 @@ async function settle(ctx: ReportContext, repo: string, number: number, add: str
   }
 }
 
-/** The one comment the hopper posts: a completion status, once (idempotent via its marker). */
-async function finished(ctx: ReportContext, job: Job, repo: string, number: number, state: State): Promise<State> {
-  const t: CommentTarget = { api: ctx.api, repo, number, botLogin: await ctx.botLogin() };
-  const marker = finishedMarker(job.id);
-  // Hopper facts only: no model-written text ever reaches the issue (owner decision, 2026-10-03).
-  const text = `job-hopper: finished (job ${job.id.slice(0, 8)}, ${duration(job)})`;
-  const id = await postOnce(t, marker, commentBody(marker, text, job.id), state.finalCommentId as number | undefined);
-  await settle(ctx, repo, number, [LABEL_DONE]);
-  return { ...state, finalCommentId: id };
-}
-
 async function apply(ctx: ReportContext, r: SourceReport, state: State): Promise<State> {
   const { job } = r;
   const { repo, number } = issueOf(job);
@@ -78,7 +50,8 @@ async function apply(ctx: ReportContext, r: SourceReport, state: State): Promise
       await ctx.api.addLabels(repo, number, [LABEL_CLAIMED]);
       return state;
     case 'finished':
-      return finished(ctx, job, repo, number, state);
+      await settle(ctx, repo, number, [LABEL_DONE]);
+      return state;
     case 'failed':
       await settle(ctx, repo, number, [LABEL_FAILED]);
       return state;

@@ -124,9 +124,5 @@ export function createGhCliApi(o: { bin: string; timeoutMs?: number }): GitHubAp
     async removeLabels(repo, number, labels) {
       await exec(['issue', 'edit', String(number), '-R', repo, '--remove-label', labels.join(',')]);
     },
-    async comment(repo, number, body) {
-      const c = await json<RestComment>(['api', `repos/${repo}/issues/${number}/comments`, '-X', 'POST', '--input', '-'], JSON.stringify({ body }));
-      return { id: c.id, url: c.html_url, createdAt: c.created_at };
-    },
   };
 }

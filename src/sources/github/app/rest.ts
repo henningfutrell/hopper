@@ -1,4 +1,4 @@
-// Issue, comment and label calls of the App adapter, each with an installation token for the
+// Issue, comment-read and label calls of the App adapter, each with an installation token for the
 // issue's repo. REST shapes mapped onto the GitHubApi port's types.
 
 import type { GitHubComment, GitHubIssue } from '../api.ts';
@@ -42,13 +42,6 @@ export async function listComments(req: Request, token: string, repo: string, nu
   const comments = await paginate(req, 'GET /repos/{owner}/{repo}/issues/{issue_number}/comments',
     { ...splitRepo(repo), issue_number: number, per_page: 100 }, `token ${token}`, (d) => d as RestComment[]);
   return comments.map(commentFrom).sort((a, b) => a.id - b.id);
-}
-
-export async function comment(req: Request, token: string, repo: string, number: number, body: string):
-Promise<{ id: number; url: string; createdAt: string }> {
-  const r = await req('POST /repos/{owner}/{repo}/issues/{issue_number}/comments', { ...splitRepo(repo), issue_number: number, body, headers: auth(token) });
-  const c = r.data as RestComment;
-  return { id: c.id, url: c.html_url, createdAt: c.created_at };
 }
 
 /** Creates the label; one that already exists (422 already_exists) is fine. */

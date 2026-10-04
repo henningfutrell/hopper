@@ -1,5 +1,5 @@
 // The GitHub JobSource: open issues labelled `hopper` by allowlisted authors become jobs;
-// what happens to them goes back as labels and one completion comment; closes and unlabels come
+// what happens to them goes back as labels only (no comment); closes and unlabels come
 // back as cancel signals. `knownKeys` (wired by the sync loop) tells discover which claimed issues already have
 // a local job; without it every claimed issue is skipped, so nothing is ever re-run blind.
 //
@@ -170,7 +170,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       return r.signals;
     },
     report(r) {
-      return reportToGitHub({ api, labelledRepos, botLogin }, r);
+      return reportToGitHub({ api, labelledRepos }, r);
     },
   };
 }

@@ -112,7 +112,7 @@ an idle tick every 2 s would bury the decision log. Every recorded Decision emit
 - **Parallel by default.** One Decision claims every admissible waiting job that has room: N free
   lanes and N admissible jobs → N claims in that Decision, N executors started at once (the
   runner never awaits one job before starting the next). A source sync ingests every new item in
-  one pass, so they reach the same Decision; the source's claim report (label, comment) runs off
+  one pass, so they reach the same Decision; the source's claim report (label) runs off
   the decision path and never gates a start. A question frees its lane in the transaction that
   parks the job; `question.asked` wakes the Decision that hands the lane to the next waiting job,
   while the answer pipeline runs. The only things that keep an admissible job waiting:
@@ -468,7 +468,7 @@ draining), events `question.asked`.
 refreshes both on `question.asked` and shows the answer box at every stage, not only `human`.
 The owner may answer while the answerer drafts or the assessor assesses: his answer wins, the
 in-flight stage call is aborted (`superseded`), the assessor is never called, and nothing is
-pushed. **Push is gated:** the source's question report (issue comment) and the Grok Bot routine
+pushed. **Push is gated:** the Grok Bot routine
 webhook fire only on `question.escalated {target: "human"}` — after the assessor escalates, a
 stage fails, or a risk rule hits. Worst case between ask and push: the answerer's and the
 assessor's stage timeouts back to back (`2 × JOB_HOPPER_ANSWER_TIMEOUT_MS`, 6 min by default). Then `QuestionService.handle(questionId)` runs the
@@ -920,7 +920,7 @@ number> }[]` (throws `missing read:project scope` distinctly),
 number)` → `{ state, labels, author, title, body, url, updatedAt }`,
 `listComments(repo, number)` → `{ id, author, body, createdAt, url }[]`,
 `ensureLabel(repo, name, color, description)`, `addLabels`, `removeLabels`,
-`comment(repo, number, body)` → `{ id, url, createdAt }`, `editComment(repo, id, body)`.
+No comment write: the port has none.
 Real adapter: `gh` CLI via `execFile` (no shell), JSON output, `gh api` for comments/labels,
 timeouts, typed errors; env passes through (gh's keyring auth). Fake: an in-memory GitHub
 (issues, labels, comments, authors) used by unit and integration tests.
@@ -936,31 +936,29 @@ labelled `hopper:claimed` with no local job is skipped and shown in status detai
 above; empty body → claimed, then failed with error "empty issue body"; priority per
 "Priority"; cwd = `repoPaths[repo]` (expanded) else `defaultCwd`.
 
-**Write criteria (owner decision, 2026-10-03: the bot does not post to issues)** The
-hopper's only issue writes are labels (state) and one completion comment. Nothing else: no
-claim, progress, question, answered, failure or cancel comment; no reactions, issue edits,
-closes, or PR comments. Jobs get no way to write to their issue (no token, no helper), and their
-prompt says nothing about commenting (owner direction: the job does not talk on the
-issue): the issue context block ends at the comments list, with no footer. A question goes to the owner through the UI and the Grok Bot routine
-webhook, never onto the issue; a reply on the issue is not an answer.
+**Write criteria.** The hopper's only issue writes are labels (state); it posts no comments at
+all (owner decision, 2026-10-04: a finished issue needs labels only). No claim, progress, question,
+answered, failure, cancel or completion comment; no reactions, issue edits, closes, or PR
+comments. Jobs get no way to write to their issue (no token, no helper), and their prompt says
+nothing about commenting (Owner direction: the job does not talk on the issue.): the
+issue context block ends at the comments list, with no footer. A question goes to the owner through
+the UI and the Grok Bot routine webhook, never onto the issue; a reply on the issue is not an
+answer.
 
-The completion comment starts with a hidden marker line
-`<!-- job-hopper v1 kind=finished job=<jobId> -->` (older hopper comments carry the same
-`<!-- job-hopper v1 ` prefix, so the context filter still drops them). Before posting, the
-adapter lists comments and reuses one already carrying the identical marker (idempotent
-retries). Bodies are sent on stdin (`gh api … -X POST --input -`), never argv, and truncated to
-60 000 characters with a "(truncated)" note (GitHub's limit is 65 536).
+Comments the hopper posted before this rule start with a hidden marker line (`<!-- job-hopper v1
+kind=… -->`). They remain on issues, so the context filter still drops any comment carrying the
+`<!-- job-hopper v1 ` prefix (and, in app mode, any by the bot).
 
 | report | on GitHub |
 |--------|-----------|
 | claimed | ensure labels `hopper:claimed`, `hopper:done`, `hopper:failed` exist (`gh label create --force`, once per repo per process); add `hopper:claimed`. **No comment** |
-| finished | **the one comment**, one fixed line of hopper facts: `job-hopper: finished (job <first 8 of id>, <startedAt→finishedAt, e.g. 4m12s>)`. No result, no summary, no model-written text; remove `hopper:claimed`, add `hopper:done` |
+| finished | **no comment**; remove `hopper:claimed`, add `hopper:done` |
 | failed | **no comment**; remove `hopper:claimed`, add `hopper:failed` (removing it is the re-run gesture) |
 | cancelled | **no comment**; remove `hopper:claimed` |
 
 Progress and questions are not reported to the source at all (`SourceReport` has no such kinds).
 Stored `sourceState.source` keys from before this rule (`claimCommentId`, `progressCommentId`,
-`questionComments`, `answeredComments`) and `sourceState.sync` keys (`reportedQuestions`,
+`questionComments`, `answeredComments`, `finalCommentId`) and `sourceState.sync` keys (`reportedQuestions`,
 `answeredQuestions`, `lastProgressAt`) stay in the JSON and are never read; no column changed, no
 migration. `progressCommentSeconds` left `sources.yaml`: `migrate-sources-yaml.ts` (install) dropped
 its lines; since phase 5 slice 4 the daemon's plugins-file migration drops the key instead (that
@@ -1134,7 +1132,7 @@ later optional webhook; the app's webhook is created **inactive** and nothing li
   → `owner/repo`. The installation id is kept per repo for later calls.
 - Issues: `GET /repos/{o}/{r}/issues?labels=<label>&state=open&per_page=100` (paginated,
   pull requests skipped), `GET /repos/{o}/{r}/issues/{n}`.
-- Comments: paginated, oldest first. Create, edit, labels add/remove, label create (422
+- Comments: read only, paginated, oldest first. Labels add/remove, label create (422
   "already_exists" → ok).
 - `projectItems(owner, number)`: GraphQL `projectV2(number)` items with field values.
   - Tried as `organization(login)`, then `user(login)`.
@@ -1170,9 +1168,7 @@ optional methods:
 | job comments | `gh issue comment` (as the owner) with `$HOPPER_COMMENT_MARKER` | `"$HOPPER_COMMENT_CMD" "<text>"` (as the app) |
 
 `isHopperComment(c)` = `(botLogin && c.author === botLogin) || hasMarker(c.body)`. It is
-used for context filtering and answer detection. **Comment reuse on retry** (app mode)
-requires author == bot **and** the same marker: a stranger planting a marker comment can
-never be "reused", which would end in a 403 edit (N2). Config refuses an `authors` list
+used for context filtering and answer detection. Config refuses an `authors` list
 containing the bot login. Hopper comments still carry the marker line.
 
 **Names and detail fields (B4), fixed now:**
@@ -1301,7 +1297,7 @@ Manifest:
   "default_events": [] }
 ```
 
-- `issues: write` now covers only labels and the one completion comment (write criteria). The
+- `issues: write` now covers only labels (write criteria). The
   app could later drop to fewer permissions; not changed here.
 
 - `hook_attributes` exists only to make GitHub issue a webhook secret for later. The URL uses
@@ -1394,9 +1390,8 @@ main.ts seams                    AppSeams.githubApp?: GitHubApi (tests) beside .
   defaults, waiting for the app file.
 - **Bot-author identity in answers and context is defence in depth.** Config refuses the bot
   in `authors`, so the author allowlist already excludes bot comments there. A reviewer
-  mutation removing the bot check therefore survives as an equivalent mutant. Where bot
-  identity is load-bearing — comment reuse (author is bot **and** marker) — the
-  planted-marker test pins it.
+  mutation removing the bot check therefore survives as an equivalent mutant. The bot
+  check also filters old bot comments out of the job's context.
 - **Switch latency:** with the default `pollSeconds: 60`, the gh→app switch happens within
   one poll of `github-app.json` appearing.
 

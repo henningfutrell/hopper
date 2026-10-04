@@ -298,8 +298,8 @@ export interface JobSource {
   check(active: Job[]): Promise<SourceSignal[]>;
   /**
    * Tell the source what happened. Returns the WHOLE new `job.sourceState.source` object
-   * (it replaces the old one). Idempotent: a retry after a crash never writes twice (the
-   * GitHub source looks for its own completion comment by its hidden marker). Throws
+   * (it replaces the old one). Idempotent: a retry after a crash never writes twice (label
+   * writes are idempotent). Throws
    * SourceError; `permanent: true` means never retry (404/410/403 on the item, oversized
    * body), `false` means retry on a later sync.
    */

@@ -47,7 +47,6 @@ export interface GitHubApi {
   ensureLabel(repo: string, name: string, color: string, description: string): Promise<void>;
   addLabels(repo: string, number: number, labels: string[]): Promise<void>;
   removeLabels(repo: string, number: number, labels: string[]): Promise<void>;
-  comment(repo: string, number: number, body: string): Promise<{ id: number; url: string; createdAt: string }>;
 
   // ---- GitHub App mode only (absent on the gh-CLI adapter) ----------------------------
 
