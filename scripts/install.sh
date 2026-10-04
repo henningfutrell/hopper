@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Install or upgrade job-hopper as systemd --user services: the daemon (job-hopper) and its
 # own headless herdr session (job-hopper-herdr). Re-running upgrades in place. Config starters
-# (rules.md, sources.yaml, webhooks.yaml) are written only when absent. An existing sources.yaml
-# is migrated in place by scripts/migrate-sources-yaml.ts (phase-3 starter line → enabled: auto,
-# a githubApp: block appended once); anything else in it is kept.
+# (rules.md, webhooks.yaml) are written only when absent. plugins.yaml is the daemon's: it writes
+# it on the first boot without one, from sources.yaml and the unit's environment of that boot (so
+# an upgrade restarts once on the new code under the OLD unit before installing the new one).
 set -euo pipefail
 
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -12,7 +12,7 @@ UNIT_DIR="$HOME/.config/systemd/user"
 URL="http://127.0.0.1:4790"
 CONFIG_DIR="$HOME/.config/job-hopper"
 RULES="$CONFIG_DIR/rules.md"
-SOURCES="$CONFIG_DIR/sources.yaml"
+PLUGINS="$CONFIG_DIR/plugins.yaml"
 WEBHOOKS="$CONFIG_DIR/webhooks.yaml"
 
 step() { printf '==> %s\n' "$*"; }
@@ -26,6 +26,22 @@ cp "$APP_DIR/package.json" "$APP_DIR/package-lock.json" "$DEST/"
 
 step "npm ci --omit=dev --prefix $DEST"
 npm ci --omit=dev --prefix "$DEST"
+
+if [ ! -e "$PLUGINS" ] && [ -e "$UNIT_DIR/job-hopper.service" ]; then
+  step "no $PLUGINS yet: restart job-hopper once on the new code under the OLD unit, so the daemon folds sources.yaml and that unit's environment into it"
+  systemctl --user restart job-hopper
+  for i in $(seq 1 20); do
+    [ -e "$PLUGINS" ] && break
+    printf '  try %s/20: %s not written yet\n' "$i" "$PLUGINS"
+    sleep 0.5
+  done
+  if [ -e "$PLUGINS" ]; then
+    step "wrote $PLUGINS (sources.yaml, if any, is now sources.yaml.migrated)"
+  else
+    echo "job-hopper did not write $PLUGINS in 10 s. Inspect: journalctl --user -u job-hopper -n 50" >&2
+    exit 1
+  fi
+fi
 
 step "install units to $UNIT_DIR: job-hopper.service, job-hopper-herdr.service"
 mkdir -p "$UNIT_DIR"
@@ -52,14 +68,6 @@ Every model tier answering a question from an unattended job reads this file.
 RULES_EOF
 fi
 
-if [ -e "$SOURCES" ]; then
-  step "migrate existing sources file $SOURCES (only the phase-3 starter line and a missing githubApp: block)"
-else
-  step "write starter sources file $SOURCES (mode 600; edit it, the daemon reads it at start)"
-  mkdir -p "$CONFIG_DIR"
-fi
-(umask 077; node "$APP_DIR/scripts/migrate-sources-yaml.ts" "$SOURCES")
-
 if [ -e "$WEBHOOKS" ]; then
   step "keep existing webhooks file $WEBHOOKS"
 else
@@ -78,7 +86,7 @@ webhooks: []
 WEBHOOKS_EOF
   )
 fi
-chmod 600 "$SOURCES" "$WEBHOOKS"
+chmod 600 "$WEBHOOKS"
 
 step "systemctl --user daemon-reload"
 systemctl --user daemon-reload

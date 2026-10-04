@@ -7,7 +7,9 @@ import { join } from 'node:path';
 import type { Advice, Detection, InstanceSpec, RouterStatus } from '../domain/types.ts';
 import { parseOptions } from './options.ts';
 import passThrough from './router/pass-through/index.ts';
-import type { Clock, DetectionKit, PluginContext, PluginDefinition, Role, RoleContext, RoleInstance, Router, RouterMode } from './sdk.ts';
+import type {
+  Clock, DetectionKit, JobSourceContext, PluginContext, PluginDefinition, Role, RoleContext, RoleInstance, Router, RouterMode,
+} from './sdk.ts';
 
 export interface SlotDeps {
   kit: DetectionKit;
@@ -15,6 +17,10 @@ export interface SlotDeps {
   logger: PluginContext['logger'];
   dataDir: string;
   routerMode(): RouterMode;
+  /** What a job source is told (RoleContext['job-source']). */
+  jobSource: JobSourceContext;
+  /** The executors a machine source names (RoleContext['machine-source']). */
+  executors(): string[];
   find(id: string): PluginDefinition | undefined;
 }
 
@@ -46,15 +52,22 @@ export type Instantiated<R extends Role> =
   | { ok: true; instance: RoleInstance[R]; plugin: string; detection: Detection }
   | { ok: false; why: string; detection: Detection };
 
-/** The context `create` gets: base fields plus every role's own (the router's mode). */
-function contextFor(deps: SlotDeps, id: string) {
+/** The context `create` gets: base fields plus every role's own (the router's mode, a job source's store view, …). */
+function contextFor(deps: SlotDeps, id: string, instanceName: string) {
   const scratchDir = join(deps.dataDir, 'plugin-data', id);
   mkdirSync(scratchDir, { recursive: true, mode: 0o700 });
-  return { clock: deps.clock, logger: deps.logger, dataDir: deps.dataDir, scratchDir, routerMode: deps.routerMode };
+  return {
+    clock: deps.clock, logger: deps.logger, dataDir: deps.dataDir, scratchDir, instanceName, routerMode: deps.routerMode,
+    ...deps.jobSource, executors: deps.executors,
+  };
 }
 
-/** Resolve → options → detect → create, for any role. Never throws. */
-export async function instantiate<R extends Role>(role: R, spec: InstanceSpec, deps: SlotDeps): Promise<Instantiated<R>> {
+/**
+ * Resolve → options → detect → create, for any role. Never throws. `needsSetupRuns`: a plugin whose
+ * detection says needs-setup is still created (a job source that waits for its setup, then works
+ * without a restart); the detection is reported as it is.
+ */
+export async function instantiate<R extends Role>(role: R, spec: InstanceSpec, deps: SlotDeps, needsSetupRuns = false): Promise<Instantiated<R>> {
   const def = deps.find(spec.plugin);
   if (!def || def.role !== role) {
     const why = `unknown ${role} plugin ${spec.plugin}`;
@@ -63,9 +76,9 @@ export async function instantiate<R extends Role>(role: R, spec: InstanceSpec, d
   const parsed = parseOptions(def, spec.options);
   if (!parsed.ok) return { ok: false, why: parsed.error, detection: { status: 'unavailable', reason: parsed.error } };
   const detection = await safeDetect(def, deps.kit, parsed.options);
-  if (detection.status !== 'available') return { ok: false, why: reasonOf(detection), detection };
+  if (detection.status === 'unavailable' || (detection.status === 'needs-setup' && !needsSetupRuns)) return { ok: false, why: reasonOf(detection), detection };
   try {
-    const instance = await (def as PluginDefinition<R>).create(contextFor(deps, def.id) as PluginContext & RoleContext[R], parsed.options);
+    const instance = await (def as PluginDefinition<R>).create(contextFor(deps, def.id, spec.name) as PluginContext & RoleContext[R], parsed.options);
     return { ok: true, instance, plugin: def.id, detection };
   } catch (e) {
     return { ok: false, why: `cannot create: ${message(e)}`, detection };
@@ -77,7 +90,7 @@ export async function buildRouter(spec: InstanceSpec, deps: SlotDeps): Promise<B
   if (built.ok) return { spec, router: built.instance, plugin: built.plugin, detection: built.detection };
   const why = built.why;
   deps.logger.warn(`job-hopper: router ${spec.name} (${spec.plugin}) unavailable, using pass-through: ${why}`);
-  const inner = await passThrough.create(contextFor(deps, passThrough.id), {});
+  const inner = await passThrough.create(contextFor(deps, passThrough.id, spec.name), {});
   const router: Router = {
     name: spec.name,
     async advise(job): Promise<Advice> {
@@ -100,7 +113,7 @@ export async function detectRouter(catalogue: readonly PluginDefinition[], deps:
     if (built.ok) return { spec, router: built.instance, plugin: built.plugin, detection: built.detection };
   }
   const spec = { name: passThrough.id, plugin: passThrough.id };
-  const router = await passThrough.create(contextFor(deps, passThrough.id), {});
+  const router = await passThrough.create(contextFor(deps, passThrough.id, spec.name), {});
   return { spec, router, plugin: passThrough.id, detection: { status: 'available' } };
 }
 

@@ -1,10 +1,11 @@
-// Composition root: config → adapters → store → engine → server. The only place adapters
-// are constructed (besides integration tests, which call startApp).
-import { readFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+// Composition root: config → plugins.yaml (written on the first boot without one) → plugin host
+// (every part) → store → engine → server. Adapters are built by their plugins, here through the
+// host (integration tests call startApp, with doubles at the seams).
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Answerer, Assessor, Clock, Executor, JobSource, PluginsView, Router, SourceRegistry, Store } from './domain/ports.ts';
-import type { InstanceSpec, Question } from './domain/types.ts';
+import type { Answerer, Assessor, Clock, Executor, JobSource, PluginsView, Router, SettableUsageSource, SourceRegistry, Store } from './domain/ports.ts';
+import type { Question, SourceStatus } from './domain/types.ts';
 import { isRerunnable } from './domain/types.ts';
 import { loadConfig, type Config } from './config.ts';
 import { createEngine, type Engine } from './engine/index.ts';
@@ -12,17 +13,18 @@ import { createExecutorRegistry } from './executors/index.ts';
 import type { HerdrClient } from './executors/herdr/index.ts';
 import { createGrokBotNotifier } from './grokbot/index.ts';
 import { createServer } from './http/index.ts';
-import { createLocalMachineSource } from './machines/index.ts';
 import { BUILTIN_PLUGINS } from './plugins/builtin.ts';
 import { herdrClaudePlugin } from './plugins/executor/herdr-claude/index.ts';
-import { createPluginHost } from './plugins/index.ts';
+import { createPluginHost, type BuiltJobSource } from './plugins/index.ts';
+import type { JobSourceInstance } from './plugins/sdk.ts';
 import { unavailableExecutors } from './plugins/executor-slot.ts';
-import { createFakeAnswerer, createFakeAssessor, createQuestionService } from './questions/index.ts';
+import { githubAppPlugin } from './plugins/job-source/github-app/index.ts';
+import { githubGhPlugin } from './plugins/job-source/github-gh/index.ts';
+import { ensurePluginsFile } from './plugins/migrate.ts';
+import { createQuestionService } from './questions/index.ts';
 import { logFailures } from './engine/failure-log.ts';
-import { createSourceSync, withFixedStatuses, type GitHubApi, type SourceSync } from './sources/index.ts';
-import { composeSources } from './sources/compose.ts';
+import { createSourceSync, idleStatus, withFixedStatuses, type GitHubApi, type SourceSync } from './sources/index.ts';
 import { openStore } from './store/index.ts';
-import { createFakeUsageSource } from './usage/index.ts';
 import { createWebhookConfigWatcher, type WebhookConfigWatcher } from './webhooks/config.ts';
 import { createWebhookDispatcher } from './webhooks/index.ts';
 
@@ -46,10 +48,12 @@ export interface AppSeams {
   herdr?: HerdrClient;
   /** Registered after the configured executor instances. */
   executors?: Executor[];
-  /** Replaces the `gh` CLI adapter of the `github` source. */
+  /** Replaces the `gh` CLI adapter of every github-gh job source (detection then says available). */
   github?: GitHubApi;
-  /** Replaces the GitHub App adapter of the `github-app` source (its paused() still follows the app file). */
+  /** Replaces the App adapter of every github-app job source (detection says available; paused() still follows the app file). */
   githubApp?: GitHubApi;
+  /** A hand-settable usage source the decider reads, set through `engine.setFakeUsage` (tests). */
+  fakeUsage?: SettableUsageSource;
   /** Run after the configured sources, polled every SEAM_SOURCE_POLL_MS. */
   sources?: JobSource[];
   /** How often webhooks.yaml's mtime is checked; default WEBHOOKS_FILE_CHECK_MS. */
@@ -75,57 +79,35 @@ const HOPPER_COMMENT_CMD = fileURLToPath(new URL('../scripts/hopper-comment', im
 
 const VERSION = (JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }).version;
 
-/**
- * `JOB_HOPPER_ANSWERER=fake`: doubles at the Answerer and Assessor seams for tests and demos; no
- * model is called and nothing in plugins.yaml selects them. The answerer `opus` drafts
- * `fake opus answer`, confident unless the question says "unsure". The assessor `fable` escalates
- * when the question says "risky" or "hard". The risk rules apply on top, as for real plugins (a
- * question about deleting reaches the human).
- */
-function fakeQuestionRoles(): { answerer: Answerer; assessor: Assessor } {
-  return {
-    answerer: createFakeAnswerer({
-      name: 'opus',
-      script: (req) => {
-        const confident = !/\bunsure\b/i.test(req.question.text);
-        return { answer: 'fake opus answer', confident, reason: `fake opus: confident=${confident}` };
-      },
-    }),
-    assessor: createFakeAssessor({
-      name: 'fable',
-      script: (req) => {
-        const escalate = /\b(risky|hard)\b/i.test(req.question.text);
-        return { escalate, reason: `fake fable: escalate=${escalate}` };
-      },
-    }),
-  };
+/** The built-in plugins with the seams (tests) in place of the herdr CLI and the GitHub adapters. */
+function withSeams(seams: AppSeams) {
+  return BUILTIN_PLUGINS.map((p) => {
+    if (p.id === 'herdr-claude' && seams.herdr) return herdrClaudePlugin(seams.herdr);
+    if (p.id === 'github-gh' && seams.github) return githubGhPlugin(seams.github);
+    if (p.id === 'github-app' && seams.githubApp) return githubAppPlugin(seams.githubApp);
+    return p;
+  });
 }
 
-/** The question instances plugins.yaml falls back to: what the env described before plugins existed. */
-function questionDefaults(config: Config): { answerer: InstanceSpec; assessor: InstanceSpec } {
-  const common = { bin: config.claudeBin, timeoutMs: config.answerTimeoutMs };
-  return {
-    answerer: { name: 'opus', plugin: 'claude-cli', options: { ...common, model: config.answerModelA } },
-    assessor: { name: 'fable', plugin: 'claude-cli-assessor', options: { ...common, model: config.answerModelB } },
-  };
+/** JOB_HOPPER_* variables that are set but read by nothing: one loud line. */
+function warnLeftoverEnv(config: Config): void {
+  const names = Object.keys(config.leftoverEnv).sort();
+  if (names.length === 0) return;
+  console.warn(`job-hopper: WARNING: set but no longer read (plugins.yaml configures every part; remove them from the unit): ${names.join(', ')}`);
 }
 
-/**
- * The executor instances plugins.yaml falls back to: one per JOB_HOPPER_EXECUTORS name, an
- * instance of the plugin with that id; herdr-claude takes the herdr/claude env settings.
- */
-function executorDefaults(config: Config): InstanceSpec[] {
-  return config.executors.map((name) => (name === 'herdr-claude' ? {
-    name, plugin: name, options: {
-      bin: config.herdrBin, claudeBin: config.claudeBin, session: config.herdrSession, args: config.claudeArgs,
-      cwd: config.claudeCwd, trustWorkdir: config.trustWorkdir, pollMs: config.herdrPollMs, idleQuestionMs: config.idleQuestionMs,
-    },
-  } : { name, plugin: name }));
-}
+/** The job sources the sync loop runs, and fixed /api/sources entries for the ones that do not. */
+type RunningSource = Extract<JobSourceInstance, { source: JobSource }>;
 
-/** The built-in plugins with herdr-claude driving a HerdrClient seam (tests) instead of the herdr CLI. */
-function withHerdrSeam(herdr: HerdrClient) {
-  return BUILTIN_PLUGINS.map((p) => (p.id === 'herdr-claude' ? herdrClaudePlugin(herdr) : p));
+function splitSources(built: BuiltJobSource[]): { running: RunningSource[]; fixed: SourceStatus[] } {
+  const running: RunningSource[] = [];
+  const fixed: SourceStatus[] = [];
+  for (const b of built) {
+    if (!b.instance) fixed.push(idleStatus(b.spec.name, b.spec.plugin, 'error', { error: b.reason }));
+    else if ('disabled' in b.instance) fixed.push(idleStatus(b.spec.name, b.instance.disabled.kind, 'disabled', { detail: b.instance.disabled.detail }));
+    else running.push(b.instance);
+  }
+  return { running, fixed };
 }
 
 /** A seam router (tests) answers as itself; the report stays the host's. */
@@ -135,17 +117,25 @@ function seamPlugins(router: Router, report: PluginsView['report']): PluginsView
 
 export async function startApp(config: Config, seams: AppSeams = {}): Promise<App> {
   const clock: Clock = { now: () => new Date() };
+  const logger = { info: (l: string) => console.log(l), warn: (l: string) => console.warn(l) };
+  warnLeftoverEnv(config);
+  // plugins.yaml is the one truth: written from sources.yaml and the removed env vars on the boot that finds none.
+  const ensured = ensurePluginsFile({ pluginsFile: config.pluginsFile, env: config.leftoverEnv, answerTimeoutMs: config.answerTimeoutMs, logger });
+  const staleSources = join(dirname(config.pluginsFile), 'sources.yaml');
+  if (ensured.action === 'kept' && existsSync(staleSources)) console.warn(`job-hopper: WARNING: ${staleSources} is no longer read; plugins.yaml jobSources configures the job sources`);
   const store = openStore({ path: config.dbPath, clock });
   const dataDir = dirname(config.dbPath);
-  const fakeUsage = createFakeUsageSource(clock);
   const routerMode = () => store.settings.getRouterMode() ?? config.routerMode;
+  let executorNames = (): string[] => [];
   const host = createPluginHost({
-    pluginDir: config.pluginDir, pluginsFile: config.pluginsFile, dataDir, clock, routerMode,
-    logger: { info: (l) => console.log(l), warn: (l) => console.warn(l) },
-    defaultAnswerer: questionDefaults(config).answerer,
-    defaultAssessor: questionDefaults(config).assessor,
-    defaultExecutors: executorDefaults(config),
-    ...(seams.herdr ? { builtins: withHerdrSeam(seams.herdr) } : {}),
+    pluginDir: config.pluginDir, pluginsFile: config.pluginsFile, dataDir, clock, routerMode, logger,
+    builtins: withSeams(seams),
+    jobSourceContext: {
+      commentCmd: HOPPER_COMMENT_CMD,
+      knownKeys: (keys) => new Set(keys.filter((k) => store.jobs.getBySourceKey(k))),
+      rerunnable: (keys) => new Set(keys.filter((k) => { const j = store.jobs.getBySourceKey(k); return j !== undefined && isRerunnable(j); })),
+    },
+    machineContext: { executors: () => executorNames() },
     intervalMs: seams.pluginsFileIntervalMs ?? PLUGINS_FILE_CHECK_MS,
   });
   await host.start();
@@ -154,13 +144,12 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     [...built.flatMap((b): Executor[] => (b.executor ? [b.executor] : [])), ...(seams.executors ?? [])],
     unavailableExecutors(built),
   );
+  executorNames = () => executors.names();
   const plugins: PluginsView = seams.router ? seamPlugins(seams.router, host.report) : host;
   const router = seams.router ?? host.router;
-  // Seam doubles win, then the env's fake doubles, then the host's live instances (looked up per question).
-  const fake = config.answerer === 'fake' ? fakeQuestionRoles() : undefined;
-  const answerer = (): Answerer | undefined =>
-    (seams.answerer !== undefined ? (seams.answerer ?? undefined) : (fake?.answerer ?? host.answerer()));
-  const assessor = (): Assessor => seams.assessor ?? fake?.assessor ?? host.assessor();
+  // Seam doubles win over the host's live instances (looked up per question).
+  const answerer = (): Answerer | undefined => (seams.answerer !== undefined ? (seams.answerer ?? undefined) : host.answerer());
+  const assessor = (): Assessor => seams.assessor ?? host.assessor();
   const dispatcher = createWebhookDispatcher({ store, clock, baseMs: config.webhookBaseMs });
   const grokbot = createGrokBotNotifier({ store, path: config.grokbotWebhookFile, info: (l) => console.log(l), ...(seams.grokbotBaseMs ? { baseMs: seams.grokbotBaseMs } : {}) });
   // The service calls the engine and the engine calls the service: the engine's handlers are
@@ -175,9 +164,10 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     onExpired: (q: Question) => engine.onExpired(q),
   });
   const engine: Engine = createEngine({
-    store, clock, executors, router, fakeUsage, questions,
-    machines: createLocalMachineSource({ maxLanes: config.localLanes, executors: executors.names() }),
-    usage: [fakeUsage],
+    store, clock, executors, router, questions,
+    ...(seams.fakeUsage ? { fakeUsage: seams.fakeUsage } : {}),
+    machines: host.machines(),
+    usage: [...host.usageSources(), ...(seams.fakeUsage ? [seams.fakeUsage] : [])],
     policy: {
       softLimit: config.softLimit, hardLimit: config.hardLimit, routerCheapBoost: config.routerCheapBoost,
       laneIdleGraceMs: config.laneIdleGraceMs, resumeBoost: config.resumeBoost,
@@ -187,22 +177,14 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     maxQuestions: config.maxQuestions,
     keepPanes: config.keepPanes,
   });
-  const composed = composeSources({
-    sourcesFile: config.sourcesFile, ghBin: config.ghBin, dataDir, commentCmd: HOPPER_COMMENT_CMD, clock,
-    ...(config.githubApiUrl ? { githubApiUrl: config.githubApiUrl } : {}),
-    knownKeys: (keys) => new Set(keys.filter((k) => store.jobs.getBySourceKey(k))),
-    rerunnable: (keys) => new Set(keys.filter((k) => { const j = store.jobs.getBySourceKey(k); return j !== undefined && isRerunnable(j); })),
-    ...(seams.github ? { github: seams.github } : {}),
-    ...(seams.githubApp ? { githubApp: seams.githubApp } : {}),
-  });
-  composed.sources.push(...(seams.sources ?? []));
+  const { running, fixed } = splitSources(host.jobSources());
   const stopFailureLog = logFailures(store);
   const sync = createSourceSync({
-    sources: composed.sources, host: engine.sourceHost, clock,
-    pollMs: (name) => composed.pollMs.get(name) ?? SEAM_SOURCE_POLL_MS,
-    progressThrottleMs: (name) => composed.throttleMs.get(name) ?? 0,
+    sources: [...running.map((r) => r.source), ...(seams.sources ?? [])], host: engine.sourceHost, clock,
+    pollMs: (name) => running.find((r) => r.source.name === name)?.pollMs ?? SEAM_SOURCE_POLL_MS,
+    progressThrottleMs: (name) => running.find((r) => r.source.name === name)?.progressThrottleMs ?? 0,
   });
-  const registry: SourceRegistry = withFixedStatuses(sync, composed.fixed);
+  const registry: SourceRegistry = withFixedStatuses(sync, fixed);
   const webhookConfig = createWebhookConfigWatcher({
     path: config.webhooksFile, store, clock, intervalMs: seams.webhookConfigIntervalMs ?? WEBHOOKS_FILE_CHECK_MS,
   });
@@ -257,7 +239,7 @@ async function main(): Promise<void> {
   const r = app.plugins.routerStatus();
   const { answerer, assessor } = app.plugins.report();
   const q = `answerer ${answerer.instance ? `${answerer.instance.name} [${answerer.active ?? 'unavailable'}]` : 'none'}, assessor ${assessor.instance?.name} [${assessor.active}${assessor.fallback ? ', fallback' : ''}]`;
-  console.log(`job-hopper listening on ${app.url} (router ${r.name} [${r.plugin}${r.fallback ? ', fallback' : ''}] ${app.routerMode()}, executors ${app.engine.executorNames.join(',') || 'none'}${unavailableNote(app.plugins)}, ${q}${app.config.answerer === 'fake' ? ' (fake doubles answer)' : ''})`);
+  console.log(`job-hopper listening on ${app.url} (router ${r.name} [${r.plugin}${r.fallback ? ', fallback' : ''}] ${app.routerMode()}, executors ${app.engine.executorNames.join(',') || 'none'}${unavailableNote(app.plugins)}, ${q})`);
   for (const s of app.sources.statuses()) console.log(`job-hopper: source ${s.name} (${s.kind}) ${s.state}`);
   console.log('job-hopper: UI login code written; open the UI with: bash ~/.local/lib/job-hopper/scripts/open-ui.sh');
   const shutdown = (signal: string): void => {

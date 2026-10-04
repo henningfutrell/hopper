@@ -3,7 +3,7 @@
 // has no executor and a reason: the engine holds the jobs naming it. The instance is named after
 // plugins.yaml whatever the plugin calls itself: jobs name the instance (`spec.executor`).
 import type { Executor } from '../domain/ports.ts';
-import type { Detection, ExecutorInstanceStatus, ExecutorUnavailable, InstanceSpec } from '../domain/types.ts';
+import type { Detection, InstanceStatus, ExecutorUnavailable, InstanceSpec } from '../domain/types.ts';
 import { instantiate, type SlotDeps } from './router-slot.ts';
 
 /** One executor instance: running (`executor`, `plugin`), or not (`reason`). */
@@ -24,7 +24,7 @@ export async function buildExecutors(specs: InstanceSpec[], deps: SlotDeps): Pro
   }));
 }
 
-export function executorStatus(b: BuiltExecutor): ExecutorInstanceStatus {
+export function executorStatus(b: BuiltExecutor): InstanceStatus {
   return b.executor ? { instance: b.spec, detection: b.detection, active: b.plugin } : { instance: b.spec, detection: b.detection, active: null, reason: b.reason };
 }
 
