@@ -24,6 +24,11 @@ export interface SshMachine extends AttachedBase {
   /** Its herdr session (never `default`) and herdr binary, as the remote login shell finds it. */
   session: string;
   herdrBin: string;
+  /**
+   * Its pinned host key, `<type> <base64>` (design.md "Target authentication", issue #59): the only
+   * key the hopper accepts from it. Absent → the hopper does not connect to it.
+   */
+  hostKey?: string;
 }
 
 /** A container target (issue #58): a running container on this machine's docker, no agent in it. */

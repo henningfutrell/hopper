@@ -6,6 +6,7 @@
 import { join } from 'node:path';
 import type { HerdrClient, RemoteHerdr } from '../../../executors/herdr/index.ts';
 import { createHerdrClaudeExecutor, createHerdrCliClient } from '../../../executors/herdr/index.ts';
+import { hopperSshAuth } from '../../../executors/ssh.ts';
 import { expandHome } from '../../expand-home.ts';
 import type { PluginDefinition } from '../../sdk.ts';
 
@@ -59,7 +60,10 @@ export function herdrClaudePlugin(seam?: HerdrClient): PluginDefinition<'executo
         const key = JSON.stringify(there);
         let client = remotes.get(key);
         if (!client) {
-          client = seam ?? createHerdrCliClient({ bin: there.bin, session: there.session, ssh: { target: there.ssh, controlDir: join(ctx.dataDir, 'ssh') } });
+          client = seam ?? createHerdrCliClient({
+            bin: there.bin, session: there.session,
+            ssh: { target: there.ssh, controlDir: join(ctx.dataDir, 'ssh'), auth: () => hopperSshAuth({ env: ctx.env, dataDir: ctx.dataDir }) },
+          });
           remotes.set(key, client);
         }
         return client;

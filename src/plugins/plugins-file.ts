@@ -6,6 +6,7 @@ import { parse } from 'yaml';
 import { z } from 'zod';
 import type { AttachedMachine, InstanceSpec, RoutingRule } from '../domain/types.ts';
 import { ROUTING_RULES } from '../routing/index.ts';
+import { HOST_KEY } from '../executors/ssh.ts';
 
 export type PluginsFileResult =
   | { missing: true }
@@ -50,16 +51,20 @@ const attachedMachine = z.strictObject({
   executors: z.array(z.string().min(1)).optional(),
   session: z.string().min(1).refine((s) => s !== 'default', 'must not be the default herdr session').optional(),
   herdrBin: z.string().min(1).optional(),
+  hostKey: z.string().regex(HOST_KEY, 'hostKey must be a public host key, `<type> <base64>`, as ssh_host_*_key.pub holds it (comment dropped)').optional(),
 }).superRefine((m, ctx) => {
   if (m.ssh === undefined && m.docker === undefined) ctx.addIssue({ code: 'custom', message: 'name how it is reached: ssh or docker' });
   if (m.ssh !== undefined && m.docker !== undefined) ctx.addIssue({ code: 'custom', message: 'ssh or docker, not both' });
-  if (m.docker !== undefined && (m.session !== undefined || m.herdrBin !== undefined)) {
-    ctx.addIssue({ code: 'custom', message: 'session and herdrBin are for ssh targets; a container target has no herdr' });
+  if (m.docker !== undefined && (m.session !== undefined || m.herdrBin !== undefined || m.hostKey !== undefined)) {
+    ctx.addIssue({ code: 'custom', message: 'session, herdrBin and hostKey are for ssh targets; a container target has no herdr and no sshd' });
   }
 }).transform((m): AttachedMachine => {
   const base = { name: m.name, ...(m.label !== undefined ? { label: m.label } : {}), lanes: m.lanes };
   if (m.docker !== undefined) return { ...base, docker: m.docker, executors: m.executors ?? ['command'] };
-  return { ...base, ssh: m.ssh!, executors: m.executors ?? ['herdr-claude'], session: m.session ?? 'job-hopper', herdrBin: m.herdrBin ?? 'herdr' };
+  return {
+    ...base, ssh: m.ssh!, executors: m.executors ?? ['herdr-claude'], session: m.session ?? 'job-hopper', herdrBin: m.herdrBin ?? 'herdr',
+    ...(m.hostKey !== undefined ? { hostKey: m.hostKey } : {}),
+  };
 });
 
 const FILE = z.strictObject({

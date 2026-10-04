@@ -6,14 +6,18 @@ import { PLUGINS } from './plugins-file.ts';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { AttachedMachine, InstanceSpec, MachineEdit, MachineEditOutcome, MachinesConfig } from '../domain/types.ts';
-import { readSshTargets, resolveHerdrBinOverSsh } from '../machines/index.ts';
+import type { SshAuth } from '../executors/ssh.ts';
+import { readSshTargets, resolveSshTarget } from '../machines/index.ts';
 import { applyMachineEdit } from './attached-edit.ts';
 import type { PluginLogger } from './sdk.ts';
 
-/** What a machine edit needs. Defaults: ~/.ssh/config, herdr resolved over ssh, no job in use. */
+/** What a machine edit needs. Defaults: ~/.ssh/config, the target resolved over ssh, no job in use. */
 export interface AttachedEditOptions {
   sshConfig?: string;
-  resolveHerdrBin?(ssh: string): Promise<string>;
+  /** How the hopper authenticates to an ssh target (design.md "Target authentication"). */
+  sshAuth?: () => SshAuth;
+  /** A new ssh target's pinned host key and herdr path; default: resolveSshTarget with `sshAuth`. */
+  resolveTarget?(ssh: string): Promise<{ herdrBin: string; hostKey: string }>;
   /** Jobs that need the machine (busy lanes there, panes parked there): a removal is refused while any do. */
   inUse?(name: string): string[];
 }
@@ -30,7 +34,8 @@ export function createMachinesEditor(o: AttachedEditOptions & {
   reload(): Promise<void>;
 }) {
   const sshConfig = o.sshConfig ?? join(homedir(), '.ssh', 'config');
-  const resolveHerdrBin = o.resolveHerdrBin ?? ((ssh: string) => resolveHerdrBinOverSsh({ target: ssh, controlDir: join(o.dataDir, 'ssh') }));
+  const noKey = (): SshAuth => { throw new Error('no ssh key for the hopper'); };
+  const resolveTarget = o.resolveTarget ?? ((ssh: string) => resolveSshTarget({ target: ssh, controlDir: join(o.dataDir, 'ssh'), auth: o.sshAuth ?? noKey }));
   const inUse = o.inUse ?? (() => []);
 
   function config(): MachinesConfig {
@@ -46,7 +51,7 @@ export function createMachinesEditor(o: AttachedEditOptions & {
     const c = o.configured();
     const r = await applyMachineEdit(e, {
       documents: o.documents, machineName: c.machines.name, executors: c.executors.map((x) => x.name),
-      sshTargets: () => readSshTargets(sshConfig), resolveHerdrBin, inUse,
+      sshTargets: () => readSshTargets(sshConfig), resolveTarget, inUse,
     });
     if (!r.ok) return r;
     if (r.changed) {

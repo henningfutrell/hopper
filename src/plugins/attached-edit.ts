@@ -3,7 +3,8 @@
 // range, so every other byte — other sections, other entries, comments — stays as written. The
 // result is parsed and checked against the plugins.yaml schema before it replaces the document,
 // against the version the edit was read at.
-// The ssh target must be a detected one; herdrBin is resolved over ssh here, never sent.
+// The ssh target must be a detected one; herdrBin is resolved over ssh here and its host key pinned
+// from the user's known_hosts (design.md "Target authentication"), neither ever sent.
 import { isMap, isScalar, isSeq, parseDocument, stringify, type Document, type Node, type YAMLMap, type YAMLSeq } from 'yaml';
 import type { ConfigDocuments } from '../domain/ports.ts';
 import type { MachineEdit } from '../domain/types.ts';
@@ -17,8 +18,8 @@ export interface MachineEditContext {
   /** The configured executor instance names. */
   executors: readonly string[];
   sshTargets(): { targets: string[] };
-  /** herdr's absolute path on that ssh target; rejects with the reason. */
-  resolveHerdrBin(ssh: string): Promise<string>;
+  /** herdr's absolute path on that ssh target and the host key it is pinned to; rejects with the reason. */
+  resolveTarget(ssh: string): Promise<{ herdrBin: string; hostKey: string }>;
   /** Jobs that need the machine: on a busy or draining lane there, or parked in a pane there. */
   inUse(name: string): string[];
 }
@@ -99,7 +100,7 @@ function spliceEntry(text: string, doc: Document, seq: YAMLSeq, at: number, next
 }
 
 /** Plain fields, in the order the owner writes them; absent ones left out. */
-const FIELDS = ['name', 'label', 'ssh', 'docker', 'lanes', 'executors', 'session', 'herdrBin'] as const;
+const FIELDS = ['name', 'label', 'ssh', 'docker', 'lanes', 'executors', 'session', 'herdrBin', 'hostKey'] as const;
 
 function entryOf(m: Partial<Record<(typeof FIELDS)[number], unknown>>): Record<string, unknown> {
   const order = FIELDS;
@@ -149,16 +150,16 @@ export async function applyMachineEdit(e: MachineEdit, ctx: MachineEditContext):
     const draft = entryOf({ name: e.name, label: e.label, ssh: e.ssh, lanes: e.lanes, executors: e.executors });
     const early = pluginsFileProblem({ ...r.doc.toJS(), [KEY]: [...r.entries, draft] });
     if (early) return refuse('invalid', early);
-    let herdrBin: string;
+    let resolved: { herdrBin: string; hostKey: string };
     try {
-      herdrBin = await ctx.resolveHerdrBin(e.ssh);
+      resolved = await ctx.resolveTarget(e.ssh);
     } catch (err) {
-      return refuse('conflict', `cannot resolve herdr on ${e.ssh}, machine not added: ${err instanceof Error ? err.message : String(err)}`);
+      return refuse('conflict', `cannot reach ${e.ssh} as the hopper, machine not added: ${err instanceof Error ? err.message : String(err)}`);
     }
     // The probe takes seconds: the document may have changed meanwhile.
     const again = readFile(ctx, e.version);
     if ('ok' in again) return again;
-    return writeChecked(ctx, spliceAdd(again.text, again.doc, { ...draft, herdrBin }), e.version);
+    return writeChecked(ctx, spliceAdd(again.text, again.doc, { ...draft, herdrBin: resolved.herdrBin, hostKey: resolved.hostKey }), e.version);
   }
 
   if (at < 0 || !r.seq) return refuse('not_found', `no attached machine named ${e.name}`);

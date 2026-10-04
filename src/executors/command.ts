@@ -6,7 +6,8 @@ import { execFile } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import type { ExecutionContext, ExecutionOutcome, Executor } from '../domain/ports.ts';
 import type { MachineSnapshot } from '../domain/types.ts';
-import { scrubbedEnv, shellQuote, sshArgv } from './herdr/cli-client.ts';
+import { scrubbedEnv } from './env.ts';
+import { shellQuote, sshArgv, type SshAuth } from './ssh.ts';
 
 /** Per stream, the tail kept in the job's result. */
 const OUTPUT_CAP = 16000;
@@ -20,6 +21,8 @@ export interface CommandExecutorOptions {
   sshBin?: string;
   /** Where ssh's shared connection sockets live; absent → no sharing. */
   sshControlDir?: string;
+  /** How the hopper proves itself to an ssh target (design.md "Target authentication"); throws when it cannot. */
+  sshAuth: () => SshAuth;
 }
 
 /** The script a body carries: its first fenced code block when it has one, else the whole body. */
@@ -31,10 +34,11 @@ export function scriptOf(body: string): string {
 const tail = (s: string): string => (s.length > OUTPUT_CAP ? s.slice(-OUTPUT_CAP) : s);
 
 /** The program and argv that run `argv` on the machine, by its connection. */
-export function commandOn(machine: MachineSnapshot, argv: string[], o: Pick<CommandExecutorOptions, 'dockerBin' | 'sshBin' | 'sshControlDir'>): [string, string[]] {
+export function commandOn(machine: MachineSnapshot, argv: string[], o: Pick<CommandExecutorOptions, 'dockerBin' | 'sshBin' | 'sshControlDir' | 'sshAuth'>): [string, string[]] {
   if (machine.docker) return [o.dockerBin ?? 'docker', ['exec', '--', machine.docker, ...argv]];
   if (machine.ssh) {
-    return [o.sshBin ?? 'ssh', sshArgv({ target: machine.ssh, ...(o.sshControlDir ? { controlDir: o.sshControlDir } : {}) }, argv.map(shellQuote).join(' '))];
+    const t = { target: machine.ssh, auth: o.sshAuth, ...(o.sshBin ? { bin: o.sshBin } : {}), ...(o.sshControlDir ? { controlDir: o.sshControlDir } : {}) };
+    return [o.sshBin ?? 'ssh', sshArgv(t, argv.map(shellQuote).join(' '))];
   }
   return [argv[0]!, argv.slice(1)];
 }
@@ -67,9 +71,9 @@ export function createCommandExecutor(o: CommandExecutorOptions): Executor {
     async run(ctx: ExecutionContext): Promise<ExecutionOutcome> {
       const { body, env } = ctx.job.spec.payload as { body: string; env?: Record<string, string> };
       const vars = Object.entries({ ...env, HOPPER_JOB_ID: ctx.job.id }).map(([k, v]) => `${k}=${v}`);
-      const [file, args] = commandOn(ctx.machine, ['env', ...vars, 'sh', '-c', scriptOf(body)], o);
       const where = ctx.machine.id;
       try {
+        const [file, args] = commandOn(ctx.machine, ['env', ...vars, 'sh', '-c', scriptOf(body)], o);
         const r = await run(file, args, o.timeoutMs, ctx.signal);
         if (r === 'aborted') return ABORTED;
         if (r === 'timeout') return { kind: 'failed', error: `command on ${where} timed out after ${o.timeoutMs} ms` };
