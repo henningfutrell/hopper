@@ -7,7 +7,7 @@ import type { Cleanup } from './cleanup.ts';
 import { nowIso, type EngineContext } from './context.ts';
 
 export interface AnswerHandlers {
-  /** Requeue the job with the answer pending; the next claim resumes it. */
+  /** Requeue the job with the answer (or, for a closed question, the close text) pending; the next claim resumes it. */
   onAnswered(q: Question): void;
   /** Fail the job; its pane is cleaned up after the commit. */
   onExpired(q: Question): void;
@@ -25,7 +25,7 @@ export function createAnswerHandlers(c: EngineContext, cleanup: Cleanup): Answer
     onAnswered(q) {
       if (!waitingOn(q)) return;
       store.jobs.update(q.jobId, { status: 'queued', pendingAnswer: q.answer ?? '', holdReason: undefined });
-      store.events.append({ type: 'job.requeued', jobId: q.jobId, questionId: q.id, data: { from: 'waiting_answer', reason: 'answered' } });
+      store.events.append({ type: 'job.requeued', jobId: q.jobId, questionId: q.id, data: { from: 'waiting_answer', reason: q.status === 'closed' ? 'closed' : 'answered' } });
     },
     onExpired(q) {
       if (!waitingOn(q)) return;

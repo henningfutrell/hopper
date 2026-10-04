@@ -208,6 +208,19 @@ async function sendAnswer(q) {
   await refreshQuestions().catch(() => {});
   refreshSoon();
 }
+async function closeQuestion(q) {
+  if (state.sending[q.id] || !state.authed) return;
+  if (!window.confirm('Close this question without answering? The job continues on its own judgement, or fails.')) return;
+  state.sending[q.id] = true; delete state.qerrors[q.id]; renderQuestions();
+  try {
+    await mutate(`/ui/api/questions/${encodeURIComponent(q.id)}/close`, {});
+    delete state.drafts[q.id];
+  } catch (e) { state.qerrors[q.id] = e.message; }
+  delete state.sending[q.id];
+  await refreshQuestions().catch(() => {});
+  refreshSoon();
+}
+const loginNotice = () => el('div', { class: 'login-notice' }, 'Log in to answer or close: ', mono(LOGIN_CMD));
 function questionCard(q, job) {
   const sending = !!state.sending[q.id];
   const box = el('textarea', { rows: 3, placeholder: 'Answer to type into the job (Ctrl/Cmd+Enter to send)', disabled: sending,
@@ -228,7 +241,8 @@ function questionCard(q, job) {
     q.attempts.length ? el('div', { class: 'sec' }, el('h3', null, 'escalation trail'), q.attempts.map(attemptRow)) : null,
     state.authed ? el('div', { class: 'answerbox' }, box,
       el('button', { class: 'primary', disabled: sending, onclick: () => sendAnswer(q) }, sending ? 'Sending…' : 'Send answer'),
-      state.qerrors[q.id] && el('span', { class: 'err' }, state.qerrors[q.id])) : null);
+      el('button', { disabled: sending, title: 'End the question without answering', onclick: () => closeQuestion(q) }, 'Close'),
+      state.qerrors[q.id] && el('span', { class: 'err' }, state.qerrors[q.id])) : loginNotice());
 }
 function renderQuestions() {
   const panel = $('questions');
@@ -434,7 +448,7 @@ function connect(afterSeq) {
   es.onerror = () => { state.conn = 'reconnecting'; renderHeader(); };
   es.addEventListener('delivery.updated', (m) => upsertDelivery(JSON.parse(m.data)));
   es.addEventListener('source.updated', (m) => upsertSource(JSON.parse(m.data)));
-  const types = ['job.queued', 'job.prioritized', 'job.reprioritized', 'job.held', 'job.approved', 'job.claimed', 'job.started', 'job.progressed', 'job.finished', 'job.failed', 'job.cancelled', 'job.requeued', 'job.reattached', 'lane.opened', 'lane.closed', 'decision.made', 'router.mode_changed', 'question.asked', 'question.escalated', 'question.answered', 'question.expired'];
+  const types = ['job.queued', 'job.prioritized', 'job.reprioritized', 'job.held', 'job.approved', 'job.claimed', 'job.started', 'job.progressed', 'job.finished', 'job.failed', 'job.cancelled', 'job.requeued', 'job.reattached', 'lane.opened', 'lane.closed', 'decision.made', 'router.mode_changed', 'question.asked', 'question.escalated', 'question.answered', 'question.closed', 'question.expired'];
   for (const t of types) es.addEventListener(t, onDomainEvent);
   setInterval(() => refreshHealth().catch(() => {}), 10000);
   setInterval(renderSources, 15000);

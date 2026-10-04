@@ -51,6 +51,8 @@ export const EVENT_SCHEMAS = {
   }),
   // v2: `by` is the answerer instance whose draft was accepted, or `human`.
   'question.answered': strict({ questionId: z.string(), by: stage, answer: z.string() }),
+  // `answer` is the close text typed into the job in place of an answer.
+  'question.closed': strict({ questionId: z.string(), answer: z.string() }),
   'question.expired': strict({ questionId: z.string(), after_ms: z.number() }),
 } satisfies Record<EventType, z.ZodType>;
 

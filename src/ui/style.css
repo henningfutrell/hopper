@@ -79,6 +79,7 @@ pre { margin: 2px 0; padding: 6px; background: var(--bg); border: 1px solid var(
 .ok-t { color: var(--ok); } .bad-t, .err { color: var(--bad); } .warn-t { color: var(--warn); }
 .answerbox { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: flex-start; margin-top: 6px; }
 .answerbox textarea { flex: 1 1 320px; font: inherit; font-family: var(--mono); padding: 4px 6px; background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; resize: vertical; }
+.login-notice { margin-top: 6px; padding: 6px 10px; border: 1px solid var(--warn); border-radius: 6px; color: var(--warn); background: var(--panel); }
 button.primary { background: var(--accent); border-color: var(--accent); color: var(--bg); }
 button:disabled, textarea:disabled { opacity: .55; cursor: default; }
 #sources { margin: 10px 10px 0; }

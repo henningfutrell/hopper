@@ -44,6 +44,7 @@ synonyms. Rename here first, in the same commit as everything else.
 | **Assessment** | The assessor's verdict on one draft: `escalate` + `reason`; recorded as an attempt with `role: assessor`. | review, verdict |
 | **Stage** | Where an open question is: the answerer's instance name (drafting), the assessor's (assessing), or `human`. Stored as the question's `tier`; `question.escalated.target` names the stage entered. | tier, level |
 | **Escalation** | Sending a question to the human: no answerer, answerer not confident or failing, assessor escalating or failing, or a risk rule hit. (`question.escalated` also announces the answer and assess stages.) | |
+| **Closed** (question) | Status `closed`: The owner ended an open question without answering (UI Close). The **close text** ("The owner closed this question without answering. Continue on your own judgement; if you cannot, end with JOB_HOPPER_FAILED and say why.") is typed into the job in place of an answer; any stage in flight is aborted. `question.closed`. | dismissed, skipped |
 | **Attempt** | One entry in a question's trail: an answerer's draft, an assessor's assessment, or the human's answer. `tier` = who, `role`, `outcome` `drafted` / `accepted` / `escalated`. Rows before slice 2 have no `role` and may carry `risky`. | try |
 | **Risk rule** | A named pattern (delete, deploy, force-push, spend, credentials, send-message) over question and draft; a hit after the assessor escalates to the human whatever it said. Code, not configuration. | |
 | **Rules file** | the owner's standing rules, given to the answerer and the assessor. | policy |
@@ -98,4 +99,5 @@ synonyms. Rename here first, in the same commit as everything else.
 | QuestionAsked | `question.asked` |
 | QuestionEscalated (to a stage) | `question.escalated` |
 | QuestionAnswered (by an answerer instance, or the human) | `question.answered` |
+| QuestionClosed (by the human, without an answer) | `question.closed` |
 | QuestionExpired | `question.expired` |

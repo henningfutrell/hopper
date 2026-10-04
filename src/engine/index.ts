@@ -21,10 +21,10 @@ export type { MachineView, QueueView } from './queries.ts';
 const SHUTDOWN_WAIT_MS = 5000;
 
 /** Events that can change admission, so they wake the engine. A question frees a lane; an
- * answer requeues a job; an expiry fails one; a source re-sort changes the order. */
+ * answer or a close requeues a job; an expiry fails one; a source re-sort changes the order. */
 const TRIGGERS: ReadonlySet<EventType> = new Set<EventType>([
   'job.queued', 'job.prioritized', 'job.reprioritized', 'job.approved', 'job.finished', 'job.failed', 'job.cancelled', 'router.mode_changed',
-  'question.asked', 'question.answered', 'question.expired',
+  'question.asked', 'question.answered', 'question.closed', 'question.expired',
 ]);
 
 export interface Engine extends Commands, Queries, AnswerHandlers {

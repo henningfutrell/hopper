@@ -263,6 +263,7 @@ export type EventType =
   | 'question.asked'
   | 'question.escalated'
   | 'question.answered'
+  | 'question.closed'
   | 'question.expired';
 
 /**
@@ -274,14 +275,14 @@ export const EVENT_SCHEMA_VERSIONS: Readonly<Record<EventType, number>> = {
   'job.started': 1, 'job.progressed': 1, 'job.finished': 1, 'job.failed': 1, 'job.cancelled': 1,
   'job.requeued': 1, 'job.reattached': 1, 'job.reprioritized': 1, 'lane.opened': 1, 'lane.closed': 1,
   'decision.made': 2, 'router.mode_changed': 1, 'question.asked': 1, 'question.escalated': 2,
-  'question.answered': 2, 'question.expired': 1,
+  'question.answered': 2, 'question.closed': 1, 'question.expired': 1,
 };
 
 export const EVENT_TYPES: readonly EventType[] = [
   'job.queued', 'job.prioritized', 'job.held', 'job.approved', 'job.claimed', 'job.started',
   'job.progressed', 'job.finished', 'job.failed', 'job.cancelled', 'job.requeued', 'job.reattached', 'job.reprioritized',
   'lane.opened', 'lane.closed', 'decision.made', 'router.mode_changed',
-  'question.asked', 'question.escalated', 'question.answered', 'question.expired',
+  'question.asked', 'question.escalated', 'question.answered', 'question.closed', 'question.expired',
 ];
 
 export interface DomainEvent<T = Record<string, unknown>> {
@@ -337,7 +338,8 @@ export interface WebhookDelivery {
 // ---- Questions ---------------------------------------------------------------------
 
 /** open: being worked on (tier = the stage holding it). answered/expired/cancelled are terminal. */
-export type QuestionStatus = 'open' | 'answered' | 'expired' | 'cancelled';
+/** `closed`: The owner ended it without answering; the job resumes with the close text (questions/service.ts CLOSED_ANSWER). */
+export type QuestionStatus = 'open' | 'answered' | 'closed' | 'expired' | 'cancelled';
 
 /** Who made an attempt. Absent on attempts stored before slice 2, when every model attempt was an answer. */
 export type AttemptRole = 'answerer' | 'assessor' | 'human';
@@ -384,7 +386,7 @@ export interface Question {
   tier: string;
   attempts: QuestionAttempt[];
   answer?: string;
-  /** The answerer instance whose draft was accepted, or `human`. */
+  /** The answerer instance whose draft was accepted, or `human` (also for a closed question). */
   answeredBy?: string;
   /** Human tier: when it was first and last notified, and how often. */
   escalatedToHumanAt?: string;

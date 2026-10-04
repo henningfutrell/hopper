@@ -195,7 +195,7 @@ Version 1 (`docs/schemas/job.cancelled.v1.json`). A job was cancelled.
 
 ## `job.requeued`
 
-Version 1 (`docs/schemas/job.requeued.v1.json`). A job went back to the queue (restart recovery, or a question answered). `reason` is a free string.
+Version 1 (`docs/schemas/job.requeued.v1.json`). A job went back to the queue (restart recovery, or a question answered or closed). `reason` is a free string.
 
 | field | type | required |
 |---|---|---|
@@ -401,6 +401,22 @@ Version 2 (`docs/schemas/question.answered.v2.json`). An answer was accepted: an
   "questionId": "q1",
   "by": "human",
   "answer": "yes"
+}
+```
+
+## `question.closed`
+
+Version 1 (`docs/schemas/question.closed.v1.json`). The owner closed an open question without answering (UI Close). The job resumes with `answer`, the fixed close text, typed in; any answerer or assessor call in flight is aborted.
+
+| field | type | required |
+|---|---|---|
+| `questionId` | string | yes |
+| `answer` | string | yes |
+
+```json
+{
+  "questionId": "q1",
+  "answer": "The owner closed this question without answering. Continue on your own judgement; if you cannot, end with JOB_HOPPER_FAILED and say why."
 }
 ```
 

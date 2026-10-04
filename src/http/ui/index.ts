@@ -83,6 +83,14 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     throw new HttpError(409, `question ${id} is not open`);
   });
 
+  app.post('/ui/api/questions/:id/close', guarded, async (req) => {
+    const { id } = parseWith(idParams, req.params);
+    const r = o.questions.closeByHuman(id);
+    if (r.ok) return r.question;
+    if (r.reason === 'not_found') throw new HttpError(404, `question ${id} not found`);
+    throw new HttpError(409, `question ${id} is not open`);
+  });
+
   app.post('/ui/api/router-mode', guarded, async (req) => {
     o.engine.setRouterMode(parseWith(routerModeBody, req.body).mode);
     return routerView(o.engine, o.plugins);

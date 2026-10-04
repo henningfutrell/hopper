@@ -15,7 +15,7 @@ const WHEN: Record<EventType, string> = {
   'job.finished': 'A job ended successfully.',
   'job.failed': 'A job ended with an error.',
   'job.cancelled': 'A job was cancelled.',
-  'job.requeued': 'A job went back to the queue (restart recovery, or a question answered). `reason` is a free string.',
+  'job.requeued': 'A job went back to the queue (restart recovery, or a question answered or closed). `reason` is a free string.',
   'job.reattached': 'Restart recovery kept a running job running on its lane: its external work (the herdr pane and Claude) outlived the daemon, and the executor watches it again. `reason` is `daemon restart`.',
   'job.reprioritized': 'A source re-sorted a waiting job.',
   'lane.opened': 'A Decision opened a lane.',
@@ -25,6 +25,7 @@ const WHEN: Record<EventType, string> = {
   'question.asked': 'A running job paused on a question.',
   'question.escalated': 'A question entered a stage — `target` is the answerer\'s instance name, the assessor\'s, or `human` — or the human was re-notified.',
   'question.answered': 'An answer was accepted: an answerer\'s draft the assessor let through (`by` = the answerer instance), or the human\'s.',
+  'question.closed': 'the owner closed an open question without answering (UI Close). The job resumes with `answer`, the fixed close text, typed in; any answerer or assessor call in flight is aborted.',
   'question.expired': 'The human stage timed out and the job fails.',
 };
 

@@ -568,7 +568,7 @@ so a running job's pane and Claude outlive a restart.
 - `waiting_answer` jobs, by their question: `open` → leave it (QuestionService.recover
   restarts every open non-human question at the answer stage, whatever its `tier`, and re-arms
   human timers; a human question past `expiresAt` expires now; one created at `human` but never
-  announced goes to the human now); `answered` → requeue with that answer; `expired`/`cancelled`/missing → job `failed`,
+  announced goes to the human now); `answered` or `closed` → requeue with that answer (the close text for `closed`); `expired`/`cancelled`/missing → job `failed`,
   `cleanup`.
 - `pendingAnswer` is cleared in the same tx that records the resume's outcome (not at claim),
   so a restart mid-resume does not lose the answer; a herdr-claude job mid-resume is
@@ -576,6 +576,22 @@ so a running job's pane and Claude outlive a restart.
 
 **Cancel** of a `waiting_answer` job: question `cancelled`, `executor.cleanup`, job
 `cancelled`.
+
+**Close** (`POST /ui/api/questions/:id/close`, the card's Close button): The owner ends an open
+question, at any stage, without answering. `QuestionService.closeByHuman`, one tx as for a human
+answer: an in-flight stage call aborted (`superseded`), timers cleared, attempt `{ tier: human,
+role: human, outcome: accepted, reason: "closed without answering" }`, question `closed` with
+`answer` = the close text and `answeredBy: human`, `question.closed { questionId, answer }`
+(not `question.answered`: no answer was given, and a consumer must be able to tell). Then the
+same `onAnswered` as an answer: job → `queued` with `pendingAnswer` = the close text,
+`job.requeued { reason: "closed" }`; the resume types it into the pane. Close text
+(`CLOSED_ANSWER`, `src/questions/service.ts`): "The owner closed this question without answering.
+Continue on your own judgement; if you cannot, end with JOB_HOPPER_FAILED and say why."
+Recovery treats a `closed` question like an `answered` one (requeue with its answer).
+
+**Logged out** the card shows, where the answer box would be, "Log in to answer or close:
+`bash ~/.local/lib/job-hopper/scripts/open-ui.sh`". A 403 on any mutation drops the stored
+token and every card shows the same notice.
 
 ## Decider changes
 
@@ -771,6 +787,7 @@ token and send any `Origin`. Cookies are no better here: they ignore ports, so a
 | POST | `/ui/api/jobs/:id/cancel` | `{}` | engine `cancel(id, "cancelled in UI")` (the source is told) |
 | POST | `/ui/api/jobs/:id/approve` | `{}` | engine approve |
 | POST | `/ui/api/questions/:id/answer` | `{ answer }` | `QuestionService.answerByHuman` (404/409) |
+| POST | `/ui/api/questions/:id/close` | `{}` | `QuestionService.closeByHuman` (404/409): close without answering ("Questions" → Close) |
 | POST | `/ui/api/router-mode` | `{ mode }` | set router mode (phase 5; was `/ui/api/jev`) |
 | POST | `/ui/api/logout` | `{}` | drop the session |
 

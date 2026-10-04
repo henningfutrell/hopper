@@ -4,7 +4,7 @@
 // question (live roles), and every result is validated here: a plugin that breaks its contract
 // escalates, it never answers.
 import { z } from 'zod';
-import type { AnswerDraft, AnswerRequest, Answerer, Assessor, Clock, QuestionService, Store } from '../domain/ports.ts';
+import type { AnswerByHumanResult, AnswerDraft, AnswerRequest, Answerer, Assessor, Clock, QuestionService, Store } from '../domain/ports.ts';
 import type { AttemptRole, Question, QuestionAttempt } from '../domain/types.ts';
 import { riskRules } from './risk.ts';
 import { readRulesFile } from './rules-file.ts';
@@ -22,13 +22,16 @@ export interface QuestionServiceOptions {
   renotifyMs: number;
   humanTimeoutMs: number;
   answerUrl: (questionId: string) => string;
-  /** Synchronous, called inside the tx that marks the question answered. */
+  /** Synchronous, called inside the tx that marks the question answered or closed. */
   onAnswered: (q: Question) => void;
   /** Synchronous, called inside the tx that marks the question expired. */
   onExpired: (q: Question) => void;
 }
 
 export const HUMAN = 'human';
+
+/** Typed into the job in place of an answer when the owner closes its question. */
+export const CLOSED_ANSWER = 'the owner closed this question without answering. Continue on your own judgement; if you cannot, end with JOB_HOPPER_FAILED and say why.';
 
 const DRAFT = z.object({ answer: z.string(), confident: z.boolean(), reason: z.string() });
 // Only this accepts: a boolean `escalate` and a string `reason`. `"false"`, a missing field or
@@ -59,7 +62,7 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
   let stopped = false;
   const iso = () => clock.now().toISOString();
 
-  function emit(q: Question, type: 'question.escalated' | 'question.answered' | 'question.expired', data: Record<string, unknown>) {
+  function emit(q: Question, type: 'question.escalated' | 'question.answered' | 'question.closed' | 'question.expired', data: Record<string, unknown>) {
     store.events.append({ type, jobId: q.jobId, questionId: q.id, data: { questionId: q.id, ...data } });
   }
 
@@ -276,6 +279,27 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
     running.add(p);
   }
 
+  /** the owner settles an open question: his answer, or the close text. Wins over any stage in flight. */
+  function byHuman(id: string, answer: string, status: 'answered' | 'closed'): AnswerByHumanResult {
+    return store.tx(() => {
+      const q = store.questions.get(id);
+      if (!q) return { ok: false as const, reason: 'not_found' as const };
+      if (q.status !== 'open') return { ok: false as const, reason: 'not_open' as const };
+      abortStage(id, 'superseded');
+      clearTimers(id);
+      const at = iso();
+      store.questions.addAttempt(id, {
+        tier: HUMAN, role: 'human', startedAt: at, finishedAt: at, answer, outcome: 'accepted',
+        ...(status === 'closed' ? { reason: 'closed without answering' } : {}),
+      });
+      const updated = store.questions.update(id, { status, answer, answeredBy: HUMAN });
+      if (status === 'closed') emit(updated, 'question.closed', { answer });
+      else emit(updated, 'question.answered', { by: HUMAN, answer });
+      o.onAnswered(updated);
+      return { ok: true as const, question: updated };
+    });
+  }
+
   return {
     firstStage: () => o.answerer()?.name ?? HUMAN,
 
@@ -283,21 +307,8 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
       start(id, 'asked');
     },
 
-    answerByHuman(id, answer) {
-      return store.tx(() => {
-        const q = store.questions.get(id);
-        if (!q) return { ok: false as const, reason: 'not_found' as const };
-        if (q.status !== 'open') return { ok: false as const, reason: 'not_open' as const };
-        abortStage(id, 'superseded');
-        clearTimers(id);
-        const at = iso();
-        store.questions.addAttempt(id, { tier: HUMAN, role: 'human', startedAt: at, finishedAt: at, answer, outcome: 'accepted' });
-        const updated = store.questions.update(id, { status: 'answered', answer, answeredBy: HUMAN });
-        emit(updated, 'question.answered', { by: HUMAN, answer });
-        o.onAnswered(updated);
-        return { ok: true as const, question: updated };
-      });
-    },
+    answerByHuman: (id, answer) => byHuman(id, answer, 'answered'),
+    closeByHuman: (id) => byHuman(id, CLOSED_ANSWER, 'closed'),
 
     cancel(id) {
       store.tx(() => {
