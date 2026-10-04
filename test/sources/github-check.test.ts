@@ -80,6 +80,32 @@ describe('GitHub source check', () => {
     expect(source.describe().checkErrors).toEqual({ [j1.id]: 'gh: Bad Gateway (HTTP 502)' });
   });
 
+  // Issue #52: the boot after an install read an unparsable app key, every check failed
+  // permanently, and every active job was cancelled as "issue gone".
+  it.each([
+    ['the app is not configured', new GitHubApiError('get owner/repo#1: no app configured: no private key', true)],
+    ['the app credentials are refused (401)', new GitHubApiError("get owner/repo#1: GitHub rejected the app's credentials (401: Bad credentials)", true, 401)],
+    ['the app is not installed on the repo', new GitHubApiError('app not installed on owner/repo', true)],
+    ['access is forbidden (403)', new GitHubApiError('gh: Resource not accessible by integration (HTTP 403)', true, 403)],
+    ['a token scope is missing', new GitHubApiError('gh: missing required scopes [repo]', true)],
+  ])('a permanent error that does not say the issue is gone (%s) cancels nothing: the job is skipped and shown', async (_what, error) => {
+    const { gh, source } = setup();
+    gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:claimed'] });
+    gh.failNext('getIssue', error);
+    gh.failNext('getIssue', error);
+    const [running, waiting] = [jobForIssue(1), jobForIssue(1, { status: 'waiting_answer', questionId: 'q-1' })];
+    expect(await source.check([running, waiting])).toEqual([]);
+    expect(source.describe().checkErrors).toEqual({ [running.id]: error.message, [waiting.id]: error.message });
+  });
+
+  it('a 410 on the issue cancels with "issue gone"', async () => {
+    const { gh, source } = setup();
+    gh.createIssue({ repo: REPO, labels: ['hopper'] });
+    gh.failNext('getIssue', new GitHubApiError('gh: This issue was deleted (HTTP 410)', true, 410));
+    const job = jobForIssue(1);
+    expect(await source.check([job])).toEqual([{ kind: 'cancel', jobId: job.id, reason: 'issue gone' }]);
+  });
+
   it('an open, labelled issue for a running job gives no signal and reads no comments', async () => {
     const { gh, source } = setup();
     gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:claimed'] });
