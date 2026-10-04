@@ -1,12 +1,13 @@
 // An attached machine: another host that runs jobs in its own herdr session, reached over ssh
-// (design.md "Attached machines"). Online while that session answers. The probe runs in the
+// (design.md "Attached machines"), or a container target reached over docker exec that only runs
+// commands (issue #58, "Container targets"). Online while that session answers, or that container runs. The probe runs in the
 // background, at most once per `probeEveryMs`; list() never waits for it, so a machine that is off
 // or asleep never stalls a Decision. Offline until the first probe says otherwise. The set follows
 // plugins.yaml without a restart (issue #18): createAttachedMachines reads it on every list().
 import { execFile } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import type { Clock, MachineSource } from '../domain/ports.ts';
-import type { AttachedMachine } from '../domain/types.ts';
+import type { AttachedMachine, MachineSnapshot } from '../domain/types.ts';
 import { SSH_FAILED, createHerdrCliClient, scrubbedEnv, sshArgv } from '../executors/herdr/index.ts';
 
 const PROBE_EVERY_MS = 30000;
@@ -25,7 +26,8 @@ export function createAttachedMachineSource(o: AttachedOptions & {
   probe: () => Promise<boolean>;
 }): MachineSource {
   const name = o.machine().name;
-  const target = (): string => o.machine().ssh;
+  const reached = (): string => { const m = o.machine(); return 'docker' in m ? `docker ${m.docker}` : `ssh ${m.ssh}`; };
+  const down = (): string => ('docker' in o.machine() ? 'its container is not running' : 'its herdr session is not running');
   const now = (): number => (o.clock ? o.clock.now().getTime() : Date.now());
   const every = o.probeEveryMs ?? PROBE_EVERY_MS;
   let online = false;
@@ -45,7 +47,7 @@ export function createAttachedMachineSource(o: AttachedOptions & {
     inFlight = true;
     lastProbe = now();
     o.probe().then(
-      (up) => { online = up; say(up ? `job-hopper: attached machine ${name} online (ssh ${target()})` : `job-hopper: attached machine ${name} offline: its herdr session is not running`); },
+      (up) => { online = up; say(up ? `job-hopper: attached machine ${name} online (${reached()})` : `job-hopper: attached machine ${name} offline: ${down()}`); },
       (e: unknown) => { online = false; say(`job-hopper: attached machine ${name} offline: ${e instanceof Error ? e.message : String(e)}`); },
     ).finally(() => { inFlight = false; });
   }
@@ -54,10 +56,8 @@ export function createAttachedMachineSource(o: AttachedOptions & {
     async list() {
       probe();
       const m = o.machine();
-      return [{
-        id: m.name, label: m.label ?? m.name, maxLanes: m.lanes, online, executors: [...m.executors], ssh: m.ssh,
-        herdr: { bin: m.herdrBin, session: m.session },
-      }];
+      const base: MachineSnapshot = { id: m.name, label: m.label ?? m.name, maxLanes: m.lanes, online, executors: [...m.executors] };
+      return [('docker' in m ? { ...base, docker: m.docker } : { ...base, ssh: m.ssh, herdr: { bin: m.herdrBin, session: m.session } })];
     },
   };
 }
@@ -71,17 +71,32 @@ export async function probeHerdrOverSsh(o: { target: string; herdrBin: string; s
   return /^status: running$/m.test(await herdr.exec(['status', 'server']));
 }
 
+/** Whether a container target runs: `docker container inspect` says it is running. A missing container is not. */
+export function probeContainer(o: { container: string; dockerBin?: string; timeoutMs?: number }): Promise<boolean> {
+  return new Promise((resolve, reject) => {
+    execFile(o.dockerBin ?? 'docker', ['container', 'inspect', '--format', '{{.State.Running}}', '--', o.container], {
+      env: scrubbedEnv(), timeout: o.timeoutMs ?? 15000, killSignal: 'SIGKILL', encoding: 'utf8',
+    }, (err, stdout, stderr) => {
+      const e = err as (Error & { killed?: boolean; code?: number | string }) | null;
+      if (e?.killed) return reject(new Error(`docker: no answer within ${o.timeoutMs ?? 15000} ms`));
+      if (e && typeof e.code !== 'number') return reject(new Error(`docker: ${e.message}`));
+      if (e) return /No such container/i.test(stderr) ? resolve(false) : reject(new Error(`docker: ${stderr.trim() || e.message}`));
+      resolve(stdout.trim() === 'true');
+    });
+  });
+}
+
 /**
  * Every attached machine plugins.yaml names now, in its order. A machine keeps what its probe knows
- * while only its lanes, executors or label change; another ssh target, herdr binary or session is
- * another machine (probed afresh). A removed machine is dropped and logged.
+ * while only its lanes, executors or label change; another ssh target, herdr binary, session or container
+ * is another machine (probed afresh). A removed machine is dropped and logged.
  */
 export function createAttachedMachines(o: AttachedOptions & {
   machines: () => AttachedMachine[];
   probe: (machine: AttachedMachine) => Promise<boolean>;
 }): MachineSource {
   const known = new Map<string, { source: MachineSource; current: AttachedMachine }>();
-  const identity = (m: AttachedMachine): string => JSON.stringify([m.name, m.ssh, m.herdrBin, m.session]);
+  const identity = (m: AttachedMachine): string => JSON.stringify('docker' in m ? [m.name, 'docker', m.docker] : [m.name, m.ssh, m.herdrBin, m.session]);
   return {
     async list() {
       const now = o.machines();

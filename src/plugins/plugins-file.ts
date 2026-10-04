@@ -37,14 +37,29 @@ const uniqueList = (section: string, keyedBy: string) => z.array(instance).super
   }
 });
 
+/**
+ * One attached machine: a target reached over `ssh` (with its herdr) or a container target reached
+ * over `docker` exec (issue #58: commands only, no herdr). Exactly one of the two.
+ */
 const attachedMachine = z.strictObject({
   name: z.string().min(1).refine((n) => n !== 'local', 'local is this machine; name an attached machine something else'),
   label: z.string().min(1).optional(),
-  ssh: z.string().min(1).refine((s) => !s.startsWith('-'), 'ssh must be a destination, not an option'),
+  ssh: z.string().min(1).refine((s) => !s.startsWith('-'), 'ssh must be a destination, not an option').optional(),
+  docker: z.string().min(1).refine((s) => !s.startsWith('-'), 'docker must be a container, not an option').optional(),
   lanes: z.number().int().min(1, 'lanes must be at least 1'),
-  executors: z.array(z.string().min(1)).default(['herdr-claude']),
-  session: z.string().min(1).refine((s) => s !== 'default', 'must not be the default herdr session').default('job-hopper'),
-  herdrBin: z.string().min(1).default('herdr'),
+  executors: z.array(z.string().min(1)).optional(),
+  session: z.string().min(1).refine((s) => s !== 'default', 'must not be the default herdr session').optional(),
+  herdrBin: z.string().min(1).optional(),
+}).superRefine((m, ctx) => {
+  if (m.ssh === undefined && m.docker === undefined) ctx.addIssue({ code: 'custom', message: 'name how it is reached: ssh or docker' });
+  if (m.ssh !== undefined && m.docker !== undefined) ctx.addIssue({ code: 'custom', message: 'ssh or docker, not both' });
+  if (m.docker !== undefined && (m.session !== undefined || m.herdrBin !== undefined)) {
+    ctx.addIssue({ code: 'custom', message: 'session and herdrBin are for ssh targets; a container target has no herdr' });
+  }
+}).transform((m): AttachedMachine => {
+  const base = { name: m.name, ...(m.label !== undefined ? { label: m.label } : {}), lanes: m.lanes };
+  if (m.docker !== undefined) return { ...base, docker: m.docker, executors: m.executors ?? ['command'] };
+  return { ...base, ssh: m.ssh!, executors: m.executors ?? ['herdr-claude'], session: m.session ?? 'job-hopper', herdrBin: m.herdrBin ?? 'herdr' };
 });
 
 const FILE = z.strictObject({
@@ -60,7 +75,7 @@ const FILE = z.strictObject({
   machines: instance.optional(),
   usageSources: uniqueList('usageSources', 'readings name their source').optional(),
   notifiers: uniqueList('notifiers', 'logs and /api/plugins name a notifier by it').optional(),
-  // Other hosts that run jobs over ssh, beside the machine source's machine; ids unique.
+  // Other machines that run jobs, over ssh or docker exec, beside the machine source's machine; ids unique.
   attachedMachines: z.array(attachedMachine).superRefine((list, ctx) => {
     const seen = new Set<string>();
     for (const m of list) {

@@ -20,7 +20,8 @@ function refFor(item: SourceItem, source: { name: string; kind: string }): JobSo
 }
 
 function specFor(item: SourceItem, source: { name: string }, priority: number, routedBy: RoutedBy | undefined): JobSpec {
-  const payload = { prompt: item.prompt, cwd: item.cwd, ...(item.model ? { model: item.model } : {}), env: item.env };
+  // `body` is the item's own text, without the context block: what the command executor runs.
+  const payload = { prompt: item.prompt, body: item.body, cwd: item.cwd, ...(item.model ? { model: item.model } : {}), env: item.env };
   return {
     executor: routedBy?.set.executor ?? item.executor, payload, priority, goal: item.title, submittedBy: `${source.name}:${item.author}`, kind: 'coding',
     ...(routedBy?.set.machine !== undefined ? { machineId: routedBy.set.machine } : {}),

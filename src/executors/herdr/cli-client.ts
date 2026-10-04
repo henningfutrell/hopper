@@ -42,7 +42,7 @@ export interface SshTransport {
 }
 
 /** POSIX single quoting: the remote login shell (sh, bash, zsh) reads it back as one word. */
-const shellQuote = (arg: string): string => `'${arg.replaceAll("'", "'\\''")}'`;
+export const shellQuote = (arg: string): string => `'${arg.replaceAll("'", "'\\''")}'`;
 
 /** ssh's exit status for its own failures (connection, authentication). */
 export const SSH_FAILED = 255;
