@@ -1,4 +1,4 @@
-import type { Job, Lane, MachineSnapshot, StartPlan, HoldPlan } from '../domain/types.ts';
+import type { ExecutorUnavailable, Job, Lane, MachineSnapshot, StartPlan, HoldPlan } from '../domain/types.ts';
 import type { CapBand } from './usage.ts';
 
 export interface MachineState {
@@ -25,9 +25,14 @@ export function pinOf(job: Job): string | undefined {
   return job.pendingAnswer === undefined ? job.spec.machineId : (job.resumeOn ?? job.spec.machineId);
 }
 
-/** Step 5: a hold that applies regardless of the router, or undefined. */
-export function nativeHold(job: Job, machines: MachineSnapshot[]): string | undefined {
+/**
+ * Step 5: a hold that applies regardless of the router, or undefined. An unavailable executor
+ * comes first: its reason says what to fix.
+ */
+export function nativeHold(job: Job, machines: MachineSnapshot[], unavailable: ExecutorUnavailable[]): string | undefined {
   const executor = job.spec.executor;
+  const down = unavailable.find((u) => u.name === executor);
+  if (down) return `executor ${executor} unavailable: ${down.reason}`;
   const pin = pinOf(job);
   if (!machines.some((m) => m.online && m.executors.includes(executor))) {
     return `no online machine runs executor ${executor}`;

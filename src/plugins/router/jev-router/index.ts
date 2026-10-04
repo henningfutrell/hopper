@@ -1,7 +1,7 @@
 // jev-router: grok-bot-jev's usage router, run through jev_shim.py (design.md "Jev"). Reads the
 // Jev checkout; never writes into it.
-import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { expandHome } from '../../expand-home.ts';
 import type { PluginDefinition } from '../../sdk.ts';
 import { createJevShimRouter } from './shim.ts';
 
@@ -11,15 +11,13 @@ export interface JevRouterOptions {
   timeoutMs: number;
 }
 
-const expandHome = (p: string): string => (p === '~' ? homedir() : p.startsWith('~/') ? join(homedir(), p.slice(2)) : p);
-
 const jevRouter: PluginDefinition<'router', JevRouterOptions> = {
   id: 'jev-router',
   role: 'router',
   describe: "grok-bot-jev's usage router (Python, via a shim): admission and priority per job",
   options: (z) => z.object({
-    jevSrc: z.string().min(1).default('~/workbench/jev-src/grok-bot-jev'),
-    python: z.string().min(1).default('python3'),
+    jevSrc: z.string().min(1).default('~/workbench/jev-src/grok-bot-jev').meta({ commandBearing: true }),
+    python: z.string().min(1).default('python3').meta({ commandBearing: true }),
     timeoutMs: z.number().int().positive().default(10_000),
   }),
   async detect(sys, o) {

@@ -1,10 +1,15 @@
 import type { Executor, ExecutorRegistry } from '../domain/ports.ts';
+import type { ExecutorUnavailable } from '../domain/types.ts';
 
-export function createExecutorRegistry(executors: Executor[]): ExecutorRegistry {
+/** The runnable executors, plus the configured ones that cannot run (their jobs are held). Names are unique across both. */
+export function createExecutorRegistry(executors: Executor[], unavailable: ExecutorUnavailable[]): ExecutorRegistry {
   const byName = new Map<string, Executor>();
-  for (const e of executors) {
-    if (byName.has(e.name)) throw new Error(`duplicate executor name: ${e.name}`);
-    byName.set(e.name, e);
+  const seen = new Set<string>();
+  for (const name of [...executors.map((e) => e.name), ...unavailable.map((u) => u.name)]) {
+    if (seen.has(name)) throw new Error(`duplicate executor name: ${name}`);
+    seen.add(name);
   }
-  return { get: (name) => byName.get(name), names: () => [...byName.keys()] };
+  for (const e of executors) byName.set(e.name, e);
+  const down = unavailable.map((u) => ({ ...u }));
+  return { get: (name) => byName.get(name), names: () => [...byName.keys()], unavailable: () => down.map((u) => ({ ...u })) };
 }

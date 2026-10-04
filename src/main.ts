@@ -8,12 +8,15 @@ import type { InstanceSpec, Question } from './domain/types.ts';
 import { isRerunnable } from './domain/types.ts';
 import { loadConfig, type Config } from './config.ts';
 import { createEngine, type Engine } from './engine/index.ts';
-import { createExecutorRegistry, createTestExecutor } from './executors/index.ts';
-import { createHerdrClaudeExecutor, createHerdrCliClient, type HerdrClient } from './executors/herdr/index.ts';
+import { createExecutorRegistry } from './executors/index.ts';
+import type { HerdrClient } from './executors/herdr/index.ts';
 import { createGrokBotNotifier } from './grokbot/index.ts';
 import { createServer } from './http/index.ts';
 import { createLocalMachineSource } from './machines/index.ts';
+import { BUILTIN_PLUGINS } from './plugins/builtin.ts';
+import { herdrClaudePlugin } from './plugins/executor/herdr-claude/index.ts';
 import { createPluginHost } from './plugins/index.ts';
+import { unavailableExecutors } from './plugins/executor-slot.ts';
 import { createFakeAnswerer, createFakeAssessor, createQuestionService } from './questions/index.ts';
 import { logFailures } from './engine/failure-log.ts';
 import { createSourceSync, withFixedStatuses, type GitHubApi, type SourceSync } from './sources/index.ts';
@@ -39,9 +42,9 @@ export interface App {
 
 /** Doubles at ports.ts seams, for integration tests. Production passes none. */
 export interface AppSeams {
-  /** Replaces the herdr CLI client of the herdr-claude executor. */
+  /** Replaces the herdr CLI client of every herdr-claude executor instance (detection then says available). */
   herdr?: HerdrClient;
-  /** Registered after the configured executors. */
+  /** Registered after the configured executor instances. */
   executors?: Executor[];
   /** Replaces the `gh` CLI adapter of the `github` source. */
   github?: GitHubApi;
@@ -107,13 +110,22 @@ function questionDefaults(config: Config): { answerer: InstanceSpec; assessor: I
   };
 }
 
-function executorsFor(config: Config, clock: Clock, seams: AppSeams): Executor[] {
-  const built = config.executors.map((name): Executor => (name === 'test' ? createTestExecutor() : createHerdrClaudeExecutor({
-    herdr: seams.herdr ?? createHerdrCliClient({ bin: config.herdrBin, session: config.herdrSession }),
-    clock, defaultCwd: config.claudeCwd, claudeArgs: config.claudeArgs, trustWorkdir: config.trustWorkdir,
-    pollMs: config.herdrPollMs, idleQuestionMs: config.idleQuestionMs,
-  })));
-  return [...built, ...(seams.executors ?? [])];
+/**
+ * The executor instances plugins.yaml falls back to: one per JOB_HOPPER_EXECUTORS name, an
+ * instance of the plugin with that id; herdr-claude takes the herdr/claude env settings.
+ */
+function executorDefaults(config: Config): InstanceSpec[] {
+  return config.executors.map((name) => (name === 'herdr-claude' ? {
+    name, plugin: name, options: {
+      bin: config.herdrBin, claudeBin: config.claudeBin, session: config.herdrSession, args: config.claudeArgs,
+      cwd: config.claudeCwd, trustWorkdir: config.trustWorkdir, pollMs: config.herdrPollMs, idleQuestionMs: config.idleQuestionMs,
+    },
+  } : { name, plugin: name }));
+}
+
+/** The built-in plugins with herdr-claude driving a HerdrClient seam (tests) instead of the herdr CLI. */
+function withHerdrSeam(herdr: HerdrClient) {
+  return BUILTIN_PLUGINS.map((p) => (p.id === 'herdr-claude' ? herdrClaudePlugin(herdr) : p));
 }
 
 /** A seam router (tests) answers as itself; the report stays the host's. */
@@ -125,7 +137,6 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   const clock: Clock = { now: () => new Date() };
   const store = openStore({ path: config.dbPath, clock });
   const dataDir = dirname(config.dbPath);
-  const executors = createExecutorRegistry(executorsFor(config, clock, seams));
   const fakeUsage = createFakeUsageSource(clock);
   const routerMode = () => store.settings.getRouterMode() ?? config.routerMode;
   const host = createPluginHost({
@@ -133,9 +144,16 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     logger: { info: (l) => console.log(l), warn: (l) => console.warn(l) },
     defaultAnswerer: questionDefaults(config).answerer,
     defaultAssessor: questionDefaults(config).assessor,
+    defaultExecutors: executorDefaults(config),
+    ...(seams.herdr ? { builtins: withHerdrSeam(seams.herdr) } : {}),
     intervalMs: seams.pluginsFileIntervalMs ?? PLUGINS_FILE_CHECK_MS,
   });
   await host.start();
+  const built = host.executors();
+  const executors = createExecutorRegistry(
+    [...built.flatMap((b): Executor[] => (b.executor ? [b.executor] : [])), ...(seams.executors ?? [])],
+    unavailableExecutors(built),
+  );
   const plugins: PluginsView = seams.router ? seamPlugins(seams.router, host.report) : host;
   const router = seams.router ?? host.router;
   // Seam doubles win, then the env's fake doubles, then the host's live instances (looked up per question).
@@ -229,12 +247,17 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   };
 }
 
+function unavailableNote(plugins: PluginsView): string {
+  const down = plugins.report().executors.instances.filter((i) => i.active === null).map((i) => i.instance.name);
+  return down.length ? ` (unavailable, jobs held: ${down.join(',')})` : '';
+}
+
 async function main(): Promise<void> {
   const app = await startApp(loadConfig(process.env));
   const r = app.plugins.routerStatus();
   const { answerer, assessor } = app.plugins.report();
   const q = `answerer ${answerer.instance ? `${answerer.instance.name} [${answerer.active ?? 'unavailable'}]` : 'none'}, assessor ${assessor.instance?.name} [${assessor.active}${assessor.fallback ? ', fallback' : ''}]`;
-  console.log(`job-hopper listening on ${app.url} (router ${r.name} [${r.plugin}${r.fallback ? ', fallback' : ''}] ${app.routerMode()}, executors ${app.config.executors.join(',')}, ${q}${app.config.answerer === 'fake' ? ' (fake doubles answer)' : ''})`);
+  console.log(`job-hopper listening on ${app.url} (router ${r.name} [${r.plugin}${r.fallback ? ', fallback' : ''}] ${app.routerMode()}, executors ${app.engine.executorNames.join(',') || 'none'}${unavailableNote(app.plugins)}, ${q}${app.config.answerer === 'fake' ? ' (fake doubles answer)' : ''})`);
   for (const s of app.sources.statuses()) console.log(`job-hopper: source ${s.name} (${s.kind}) ${s.state}`);
   console.log('job-hopper: UI login code written; open the UI with: bash ~/.local/lib/job-hopper/scripts/open-ui.sh');
   const shutdown = (signal: string): void => {

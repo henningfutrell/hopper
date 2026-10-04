@@ -77,6 +77,7 @@ function start(o: {
     builtins: o.builtins ?? [...BUILTIN_PLUGINS, tagging, brokenCreate, throwingAdvise, selfFallingBack, cannedAnswerer, cannedAssessor],
     defaultAnswerer: o.defaultAnswerer === undefined ? { name: 'opus', plugin: 'claude-cli', options: { model: 'opus' } } : o.defaultAnswerer,
     defaultAssessor: o.defaultAssessor ?? { name: 'fable', plugin: 'claude-cli-assessor', options: { model: 'fable' } },
+    defaultExecutors: [{ name: 'test', plugin: 'test' }],
     intervalMs: 30,
   });
   return { host, pluginsFile };
@@ -204,7 +205,7 @@ describe('custom plugins through the host', () => {
     const { host } = start({ pluginDir, kit: fakeKit({ exists: async () => false }) });
     await host.start();
     const r = host.report();
-    expect(r.roles).toEqual(['router', 'answerer', 'assessor']);
+    expect(r.roles).toEqual(['router', 'answerer', 'assessor', 'executor']);
     const byId = new Map(r.plugins.map((p) => [p.id, p]));
     expect(byId.get('jev-router')).toMatchObject({
       role: 'router', builtin: true, detection: { status: 'unavailable' },

@@ -99,12 +99,20 @@ describe('test executor', () => {
 describe('executor registry', () => {
   it('gets by name and lists names', () => {
     const ex = createTestExecutor();
-    const reg = createExecutorRegistry([ex]);
+    const reg = createExecutorRegistry([ex], []);
     expect(reg.get('test')).toBe(ex);
     expect(reg.get('x')).toBeUndefined();
     expect(reg.names()).toEqual(['test']);
+    expect(reg.unavailable()).toEqual([]);
   });
-  it('throws on a duplicate name', () => {
-    expect(() => createExecutorRegistry([createTestExecutor(), createTestExecutor()])).toThrow(/duplicate/i);
+  it('knows the configured executors that cannot run, and why; they are not gettable', () => {
+    const reg = createExecutorRegistry([createTestExecutor()], [{ name: 'herdr-claude', reason: 'herdr not found: herdr' }]);
+    expect(reg.get('herdr-claude')).toBeUndefined();
+    expect(reg.names()).toEqual(['test']);
+    expect(reg.unavailable()).toEqual([{ name: 'herdr-claude', reason: 'herdr not found: herdr' }]);
+  });
+  it('throws on a duplicate name, available or not', () => {
+    expect(() => createExecutorRegistry([createTestExecutor(), createTestExecutor()], [])).toThrow(/duplicate/i);
+    expect(() => createExecutorRegistry([createTestExecutor()], [{ name: 'test', reason: 'x' }])).toThrow(/duplicate/i);
   });
 });

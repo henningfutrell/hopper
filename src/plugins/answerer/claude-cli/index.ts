@@ -26,7 +26,7 @@ const claudeCli: PluginDefinition<'answerer', ClaudeCliOptions> = {
   role: 'answerer',
   describe: "Drafts answers with the claude CLI (print mode, no tools); a model alias such as opus, sonnet or fable",
   options: (zod) => zod.object({
-    bin: zod.string().min(1).default('claude'),
+    bin: zod.string().min(1).default('claude').meta({ commandBearing: true }),
     model: zod.string().min(1).default('opus'),
     timeoutMs: zod.number().int().positive().default(CLAUDE_TIMEOUT_MS),
     effort: zod.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional(),

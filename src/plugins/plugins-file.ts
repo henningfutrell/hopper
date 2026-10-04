@@ -1,6 +1,6 @@
 // plugins.yaml: which instance fills which role (design.md "Configuration — plugins.yaml"). Read:
-// router, answerer, assessor. The other sections are allowed so the file can be written whole, but
-// nothing reads them yet.
+// router, answerer, assessor, executors. The other sections are allowed so the file can be written
+// whole, but nothing reads them yet.
 import { readFileSync, statSync } from 'node:fs';
 import { parse } from 'yaml';
 import { z } from 'zod';
@@ -9,7 +9,7 @@ import type { InstanceSpec } from '../domain/types.ts';
 export type PluginsFileResult =
   | { missing: true }
   /** `answerer: null` = no answerer configured; absent = derive it. */
-  | { router?: InstanceSpec; answerer?: InstanceSpec | null; assessor?: InstanceSpec; warnings: string[] }
+  | { router?: InstanceSpec; answerer?: InstanceSpec | null; assessor?: InstanceSpec; executors?: InstanceSpec[]; warnings: string[] }
   | { error: string };
 
 const instance = z.strictObject({
@@ -28,8 +28,15 @@ const FILE = z.strictObject({
   router: instance.optional(),
   answerer: stageInstance.nullable().optional(),
   assessor: stageInstance.optional(),
-  // Read by later slices (executors, sources, notifiers).
-  executors: z.unknown().optional(),
+  // 1..n; jobs name an executor instance, so a name is one instance.
+  executors: z.array(instance).min(1, 'name at least one executor').superRefine((list, ctx) => {
+    const seen = new Set<string>();
+    for (const e of list) {
+      if (seen.has(e.name)) ctx.addIssue({ code: 'custom', message: `executor ${e.name} named twice; jobs name their executor` });
+      seen.add(e.name);
+    }
+  }).optional(),
+  // Read by later slices (sources, notifiers).
   jobSources: z.unknown().optional(),
   machines: z.unknown().optional(),
   usageSources: z.unknown().optional(),
@@ -56,11 +63,12 @@ export function loadPluginsFile(path: string): PluginsFileResult {
     return { error: `${path}: ${parsed.error.issues.map((i) => `${i.path.join('.') || 'file'}: ${i.message}`).join('; ')}` };
   }
   const warnings = mode & 0o077 ? [`${path} is readable by group/other; options may hold secrets (chmod 600 ${path})`] : [];
-  const { router, answerer, assessor } = parsed.data;
+  const { router, answerer, assessor, executors } = parsed.data;
   return {
     ...(router ? { router } : {}),
     ...(answerer !== undefined ? { answerer } : {}),
     ...(assessor ? { assessor } : {}),
+    ...(executors ? { executors } : {}),
     warnings,
   };
 }

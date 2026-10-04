@@ -20,6 +20,7 @@ async function gather(c: EngineContext, trigger: string): Promise<() => Decision
     usage: readings.flat(),
     waiting: oldestFirst(c.store.jobs.list({ status: [...WAITING] })),
     running: oldestFirst(c.store.jobs.list({ status: [...RUNNING] })),
+    unavailableExecutors: c.executors.unavailable(),
     policy: c.policy,
   });
 }

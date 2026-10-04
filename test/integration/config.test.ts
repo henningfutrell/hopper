@@ -67,6 +67,10 @@ describe('configuration from env', () => {
     expect(() => loadConfig({ JOB_HOPPER_GITHUB_API: 'not a url' })).toThrow(/JOB_HOPPER_GITHUB_API/);
   });
 
+  it('JOB_HOPPER_EXECUTORS names env-derived executor instances, any plugin id: an unknown one is unavailable at start, not a boot failure', () => {
+    expect(loadConfig({ JOB_HOPPER_EXECUTORS: 'test, nope ,test' }).executors).toEqual(['test', 'nope']);
+  });
+
   it('reads every phase-2 variable', () => {
     const c = loadConfig({
       JOB_HOPPER_EXECUTORS: 'herdr-claude', JOB_HOPPER_HERDR_BIN: '/opt/herdr', JOB_HOPPER_HERDR_SESSION: 'jh-x',
@@ -109,7 +113,7 @@ describe('configuration from env', () => {
     ['JOB_HOPPER_LOCAL_LANES', '-1'],
     ['JOB_HOPPER_SOFT_LIMIT', '1.5'],
     ['JOB_HOPPER_HOST', '0.0.0.0'],
-    ['JOB_HOPPER_EXECUTORS', 'test,nope'],
+    ['JOB_HOPPER_EXECUTORS', 'test,Not A Name'],
     ['JOB_HOPPER_EXECUTORS', ','],
     ['JOB_HOPPER_HERDR_SESSION', 'default'],
     ['JOB_HOPPER_TRUST_WORKDIR', 'yes'],

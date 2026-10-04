@@ -52,7 +52,7 @@ describe.skipIf(JEV_PRESENT)('router chosen from what is detected, no Jev checko
   it('GET /api/plugins: roles, the detected instance, and every plugin; a custom router that can run is chosen', async () => {
     const a = await start({ before: installAlwaysProceed });
     const body = (await a.api('GET', '/api/plugins')).body;
-    expect(body.roles).toEqual(['router', 'answerer', 'assessor']);
+    expect(body.roles).toEqual(['router', 'answerer', 'assessor', 'executor']);
     expect(body.config).toMatchObject({ source: 'env', path: join(a.dataDir, 'plugins.yaml') });
     expect(body.router).toMatchObject({
       instance: { name: 'always-proceed', plugin: 'always-proceed' }, selection: 'detected',
@@ -60,7 +60,8 @@ describe.skipIf(JEV_PRESENT)('router chosen from what is detected, no Jev checko
     });
     const ids = body.plugins.map((p: { id: string; builtin: boolean }) => [p.id, p.builtin]).sort();
     expect(ids).toEqual([
-      ['always-escalate', true], ['always-proceed', false], ['claude-cli', true], ['claude-cli-assessor', true], ['jev-router', true], ['pass-through', true],
+      ['always-escalate', true], ['always-proceed', false], ['claude-cli', true], ['claude-cli-assessor', true], ['herdr-claude', true], ['jev-router', true],
+      ['pass-through', true], ['test', true],
     ]);
     const jev = body.plugins.find((p: { id: string }) => p.id === 'jev-router');
     expect(jev).toMatchObject({ role: 'router', describe: expect.any(String), detection: { status: 'unavailable' }, options: { type: 'object', properties: { jevSrc: {}, python: {} } } });

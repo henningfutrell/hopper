@@ -13,7 +13,7 @@ function file(text: string, mode = 0o600): string {
   return path;
 }
 
-describe('plugins.yaml (router, answerer and assessor sections)', () => {
+describe('plugins.yaml (router, answerer, assessor and executors sections)', () => {
   it('absent file → missing, so the caller derives the router', () => {
     expect(loadPluginsFile(join(temp(), 'none.yaml'))).toEqual({ missing: true });
   });
@@ -33,7 +33,7 @@ describe('plugins.yaml (router, answerer and assessor sections)', () => {
     expect(loadPluginsFile(file('version: 1\n'))).toEqual({ warnings: [] });
   });
 
-  it('reads the answerer and assessor instances; the later sections are allowed, unread', () => {
+  it('reads the answerer, assessor and executor instances; the later sections are allowed, unread', () => {
     const r = loadPluginsFile(file([
       'version: 1',
       'router: { name: jev, plugin: jev-router }',
@@ -49,6 +49,23 @@ describe('plugins.yaml (router, answerer and assessor sections)', () => {
       router: { name: 'jev', plugin: 'jev-router', options: {} },
       answerer: { name: 'opus', plugin: 'claude-cli', options: { model: 'opus' } },
       assessor: { name: 'fable', plugin: 'claude-cli-assessor', options: {} },
+      executors: [{ name: 'test', plugin: 'test', options: {} }],
+      warnings: [],
+    });
+  });
+
+  it('executors: 1..n instances in order, each with its options', () => {
+    const r = loadPluginsFile(file([
+      'version: 1',
+      'executors:',
+      '  - { name: herdr-claude, plugin: herdr-claude, options: { cwd: ~/w, args: [--x] } }',
+      '  - { name: test, plugin: test }',
+    ].join('\n')));
+    expect(r).toEqual({
+      executors: [
+        { name: 'herdr-claude', plugin: 'herdr-claude', options: { cwd: '~/w', args: ['--x'] } },
+        { name: 'test', plugin: 'test', options: {} },
+      ],
       warnings: [],
     });
   });
@@ -70,6 +87,10 @@ describe('plugins.yaml (router, answerer and assessor sections)', () => {
     ['assessor: null (the assessor slot is never empty)', 'version: 1\nassessor: null\n', /assessor/],
     ['answerer named human (the human stage)', 'version: 1\nanswerer: { name: human, plugin: claude-cli }\n', /answerer\.name.*human/],
     ['assessor named human', 'version: 1\nassessor: { name: human, plugin: always-escalate }\n', /assessor\.name.*human/],
+    ['executors: [] (at least one executor)', 'version: 1\nexecutors: []\n', /executors/],
+    ['executors: null', 'version: 1\nexecutors: null\n', /executors/],
+    ['two executors with one name (jobs name their executor)', 'version: 1\nexecutors: [ { name: t, plugin: test }, { name: t, plugin: herdr-claude } ]\n', /executors.*t.*twice|twice/],
+    ['executor without a plugin', 'version: 1\nexecutors: [ { name: t } ]\n', /executors\.0\.plugin/],
     ['answerer and assessor with one name', 'version: 1\nanswerer: { name: x, plugin: claude-cli }\nassessor: { name: x, plugin: always-escalate }\n', /same name/],
   ])('%s is an error naming the problem', (_name, text, why) => {
     const r = loadPluginsFile(file(text));
