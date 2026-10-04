@@ -46,6 +46,7 @@ Fastify for HTTP, `node:sqlite` for storage, zod for request validation.
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin) | engine, http, store, plugins |
 | `src/routing/` | routing rules: the plugins.yaml `routing:` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
 | `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`); job lifecycle; routing at intake (`source-host.ts`); restart recovery | http |
+| `src/update/` | self-update ("Self-update"): install.json, the git mirror of the update repository, the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers | engine, http, plugins, decider |
 | `src/http/` | Fastify routes, SSE, static UI | executors, plugins (reads them through the `PluginsView` port) |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
 | `examples/plugins/` | one minimal runnable custom plugin per role, for authors (`docs/plugins.md`); imports only `job-hopper/plugin` types and `node:` builtins | everything in `src/` at runtime |
@@ -2078,6 +2079,8 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
 | `JOB_HOPPER_UI_SESSION_HOURS` | `12` |
 | `JOB_HOPPER_PLUGIN_DIR` | `~/.config/job-hopper/plugins` |
 | `JOB_HOPPER_PLUGINS_FILE` | `~/.config/job-hopper/plugins.yaml` |
+| `JOB_HOPPER_UPDATE_CHECK_MS` | `900000` — self-update check interval; `0` only when asked ("Self-update") |
+| `JOB_HOPPER_RESTART` | unset (detected) — `exit` or `respawn` after an update ("Self-update") |
 
 ### Settled in slice 5 (2026-10-03)
 
@@ -2768,3 +2771,87 @@ and Routing rules (ordered list; each rule is a stacked form with match and set 
 up/down, delete; one Save for the whole list). The machine select uses `/api/machines` plus the
 routing targets; the executor select uses the configured executors. Forms stack at 390 px width;
 there is no horizontal page scroll.
+
+## Self-update (issue #44, 2026-10-04)
+
+The hopper knows when a newer version exists, says what changed, and applies it without losing a
+job, a lane or a question: from the UI, or on its own with auto-update. Code: `src/update/`
+(`updater.ts` the loop, `git.ts` the mirror, `install.ts` install.json and the swap, `build.ts` the
+build, `restart.ts` the restart, `blockers.ts`); routes `GET /api/update`, `POST /ui/api/update`.
+
+**The install knows where it came from.** `install.json` in the install (beside `src/`):
+`{ repo, branch, commit, installedAt }`. `scripts/install.sh` writes it from the clone's `origin`
+and `HEAD`; the branch is `main` unless `JOB_HOPPER_UPDATE_BRANCH` names another. An update writes
+the new one. No install.json (a checkout run with `npm start`, a clone without `origin`) → state
+`unavailable` with the reason; nothing else changes.
+
+**Detecting.** A bare mirror at `<data dir>/update/repo.git`, fetched from install.json's `repo` on
+every check — the git CLI, never prompting (`GIT_TERMINAL_PROMPT=0`, ssh `BatchMode=yes`), so any
+git URL the daemon's user can fetch works: GitHub by ssh or https, another host, a local path. A
+check runs 10 s after start, then every `JOB_HOPPER_UPDATE_CHECK_MS` (default 900000; 0: only when
+asked), and from the UI's Check now. The **update channel** decides the target: `main` → the head
+of the tracked branch; `release` → the newest `v<major>.<minor>.<patch>` tag. An update is
+**available** when the installed commit does not contain the target (an install ahead of it, e.g.
+from a feature branch, is `current`). What changed: `git log installed..target`, newest first,
+capped at 100 (`truncated`). The newest release is reported on either channel (`release.newer`).
+`update.available` is appended once per target.
+
+**Applying, in flight.** `POST /ui/api/update { action: "apply" }` answers at once; then:
+
+1. The target's tree (`git archive`) is unpacked to `<data dir>/update/source`.
+2. The **next install** `<install>.next` is built by the target's own `scripts/install.sh` in
+   **build-only mode** (`JOB_HOPPER_INSTALL_INTO=<dir>` + `_REPO`, `_BRANCH`, `_COMMIT`): UI bundle,
+   production dependencies, install.json — no service, unit or config touched. Log:
+   `<data dir>/update/build.log`. The running daemon is not touched: jobs keep running.
+3. Proof it loads: a child `node` imports the next install's `src/main.ts`. A module that fails to
+   load fails here.
+4. Wait while there is a **restart blocker**: a running job whose executor is non-idempotent and
+   cannot reattach, which restart recovery would fail. herdr-claude jobs reattach and idempotent
+   jobs re-run, so neither blocks. The status says which jobs it waits for.
+5. Swap: `<install>` → `<install>.prev` (the previous `.prev` removed), `<install>.next` →
+   `<install>`; `<data dir>/update/pending.json` names from, to and ref.
+6. Restart (below).
+
+A failure in steps 1-3 or the swap → `update.failed`, the install unchanged, state `error` with the
+reason until the next check.
+
+**Restarting.** Under a supervisor — systemd (`INVOCATION_ID` set) or a container's PID 1 — the
+daemon stops cleanly (the same `app.stop()` as SIGTERM) and exits 75. The unit has
+`SuccessExitStatus=75` and `RestartForceExitStatus=75`; an older unit's `Restart=on-failure`
+restarts a 75 too, so the first update needs no unit change. A container restarts it by its restart
+policy. Unsupervised, it stops, starts its successor detached, and exits. `JOB_HOPPER_RESTART=exit|
+respawn` forces either. Under systemd the units the new install ships (`systemd/`, now copied into
+the install) are written over installed ones that differ, then `systemctl --user daemon-reload`;
+`job-hopper-herdr` is never restarted (that would kill every pane).
+
+**What survives the restart** — restart recovery, unchanged ("Recovery at startup"): herdr panes
+live in `job-hopper-herdr`, not the daemon, so running herdr-claude jobs are reattached on their
+lanes (`job.reattached`); idempotent jobs are requeued; `waiting_answer` jobs keep their question;
+an open question in the answer or assess stage restarts there, one at the human stage keeps its
+timers; UI sessions are in SQLite; schema migrations run at boot as on any start.
+
+**The boot after** reads pending.json: install.json on `to` → `update.applied`; otherwise (rolled back
+by hand) → `update.failed`. The UI reloads itself when `GET /api/update` names another installed
+commit than the page was loaded with — the new UI bundle.
+
+**Settings** in the store's `settings` table (`updateChannel`, `autoUpdate`; key/value, no
+migration): `POST /ui/api/update { action: "settings", channel?, autoUpdate? }`. Auto-update applies
+an available update as soon as a check finds it, and at once when switched on with one available.
+
+**UI.** A notice above the views while an update is available, applying or failed — headline,
+"What changed" (the commits, and the GitHub compare link for a GitHub repo), Update now. The header's
+version (with the installed commit) opens the Updates panel: installed, newest, release, last check,
+Check now, Update now, auto-update, channel (`commits` / `releases`).
+
+**Any deployment.** The updater needs: install.json, git and network access to the repository,
+npm (the build), write access to the install's parent directory (the swap), and a supervisor or the
+respawn. A container must keep its install on a volume, or the update lasts only until the
+container is recreated from its image; its recipe writes install.json (build args for repo, branch,
+commit). Assumption about issue #40 (a deploy recipe and a database, in parallel): it keeps an
+install directory with `src/` and install.json, and keeps `scripts/install.sh` build-only mode
+working — #40 depends on this section, not the other way round.
+
+**Not built.** Automatic rollback: a next install that loads but crashes after start leaves the
+supervisor restarting it; recovery by hand is swapping `<install>.prev` back and restarting (the boot
+records `update.failed`). Signature checks on the fetched code: the repository the owner installed
+from is trusted as the install itself was.

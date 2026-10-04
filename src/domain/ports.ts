@@ -6,6 +6,7 @@ import type {
   RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule,
   JobSourceRef, LaneId, MachineId, MachineSnapshot, NewEvent, Question, QuestionAttempt, QuestionStatus,
   SourceStatus, UsageReading, UsageSourceState, WebhookDelivery, WebhookSubscription,
+  InstallInfo, UpdateSettings, UpdateStatus,
 } from './types.ts';
 
 // ---- Execution -----------------------------------------------------------------------
@@ -484,6 +485,29 @@ export interface QuestionRepository {
 export interface SettingsRepository {
   getRouterMode(): RouterMode | undefined;
   setRouterMode(mode: RouterMode): void;
+  /** Self-update settings the owner chose; absent fields were never set. */
+  getUpdateSettings(): Partial<UpdateSettings>;
+  setUpdateSettings(patch: Partial<UpdateSettings>): void;
+}
+
+// ---- Self-update (issue #44) ------------------------------------------------------------
+
+/** Builds an install of the source tree `sourceDir` into `targetDir` (scripts/install.sh build-only mode in production). */
+export interface UpdateBuilder {
+  build(sourceDir: string, targetDir: string, info: InstallInfo): Promise<void>;
+}
+
+/** Ends this process so it starts again on the install now in place (exit for the supervisor, or respawn). Never returns in production. */
+export type Restarter = () => Promise<void>;
+
+/** The daemon's self-update: GET /api/update, POST /ui/api/update. */
+export interface Updater {
+  status(): UpdateStatus;
+  /** Fetch the repository and compare; answers the new status. */
+  check(): Promise<UpdateStatus>;
+  /** Start applying the target; answers at once with `apply` set. Refuses (`error`) when nothing is available or an apply runs. */
+  apply(): { ok: true; status: UpdateStatus } | { ok: false; error: string };
+  settings(patch: Partial<UpdateSettings>): UpdateStatus;
 }
 
 /** The whole store. One SQLite file; repositories share one connection. */

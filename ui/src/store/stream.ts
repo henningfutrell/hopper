@@ -3,7 +3,7 @@
 import { readToken } from '@/lib/api';
 import { EVENT_TYPES } from '@/model/event-types';
 import type { DomainEvent } from '@/model/wire';
-import { onDelivery, onDomainEvent, onSource, refreshHealth, refreshLive, refreshQuestions, setConn, useHopper } from './index';
+import { onDelivery, onDomainEvent, onSource, refreshHealth, refreshLive, refreshQuestions, refreshUpdate, setConn, useHopper } from './index';
 
 export function connect(): () => void {
   const after = useHopper.getState().events[0]?.seq ?? 0;
@@ -14,11 +14,12 @@ export function connect(): () => void {
     setConn('live');
     refreshLive().catch(() => {});
     refreshQuestions().catch(() => {});
+    refreshUpdate().catch(() => {});
   };
   es.onerror = () => setConn('reconnecting');
   es.addEventListener('delivery.updated', (m) => onDelivery(JSON.parse(m.data)));
   es.addEventListener('source.updated', (m) => onSource(JSON.parse(m.data)));
   for (const t of EVENT_TYPES) es.addEventListener(t, (m) => onDomainEvent(JSON.parse(m.data) as DomainEvent));
-  const health = setInterval(() => refreshHealth().catch(() => {}), 10_000);
+  const health = setInterval(() => { refreshHealth().catch(() => {}); refreshUpdate().catch(() => {}); }, 10_000);
   return () => { clearInterval(health); es.close(); };
 }

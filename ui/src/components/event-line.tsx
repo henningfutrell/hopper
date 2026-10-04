@@ -8,6 +8,7 @@ const TYPE_TONE: Record<string, Tone> = {
   'job.started': 'busy', 'job.claimed': 'busy', 'job.reattached': 'busy', 'job.finished': 'ok', 'job.failed': 'bad',
   'job.held': 'warn', 'job.requeued': 'warn', 'question.asked': 'question', 'question.escalated': 'question',
   'question.answered': 'ok', 'question.closed': 'warn', 'question.dismissed': 'muted', 'question.expired': 'bad', 'lane.opened': 'busy', 'router.mode_changed': 'warn',
+  'update.available': 'warn', 'update.started': 'busy', 'update.applied': 'ok', 'update.failed': 'bad',
 };
 export const eventTone = (type: string): Tone => TYPE_TONE[type] ?? 'muted';
 
@@ -19,6 +20,7 @@ export function subjectOf(e: DomainEvent, nameOf: (jobId: string) => string): st
 export function detailOf(e: DomainEvent): string {
   const d = e.data as Record<string, unknown>;
   for (const k of ['error', 'reason', 'message', 'target', 'by', 'mode']) if (typeof d[k] === 'string' && d[k]) return String(d[k]);
+  if (e.type.startsWith('update.') && typeof d.to === 'string') return `${typeof d.ref === 'string' ? `${d.ref} ` : ''}${d.to.slice(0, 7)}`;
   return '';
 }
 
