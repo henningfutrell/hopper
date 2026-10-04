@@ -41,6 +41,8 @@ synonyms. Rename here first, in the same commit as everything else.
 | **Advice** | A router's action + reason + details for one job; `source` names the plugin, or `fallback`. | classification, verdict |
 | **Router mode** | `shadow`: advice recorded, never applied. `active`: advice shapes admission and order. Decider state, in the store (`JOB_HOPPER_ROUTER_MODE` only seeds it). | Jev mode |
 | **Jev** | grok-bot-jev's usage router; one router plugin (`jev-router`). | |
+| **Jev gate** | One named judgement Jev's router asks about a job (`intent`, `reuse_cache`, `needs_subagent`, `stop_retry`, `complexity`), answered by TypeSafe or Haiku; `details.gatesBy` says which. Jev's own code calls them questions; here **question** is a job's question to a human. | question, classification |
+| **TypeSafe** | Jev's own gate service (`typesafe_sdk`, `TYPESAFE_API_KEY`); answers the gates in `typesafeGates` when its key is set. The owner calls it "the decider"; here **Decider** is `decide()`. | decider |
 | **Divergence** | A job where the advice's verdict differs from the native one. Recorded in both modes. | |
 | **Waiting answer** | Status `waiting_answer`: a job stopped on a question. Holds no lane; its pane stays open. | blocked, paused (a *paused* source is something else) |
 | **Question** | What a running job needs answered before it continues, with its escalation trail. | prompt, query |

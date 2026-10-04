@@ -23,7 +23,8 @@ export interface ClaudePrintOptions {
 /** Default `timeoutMs` of the claude plugins. */
 export const CLAUDE_TIMEOUT_MS = 180_000;
 
-function scrubbedEnv(): NodeJS.ProcessEnv {
+/** The environment without the Claude Code markers, for a `claude` run outside this session. */
+export function scrubbedEnv(): NodeJS.ProcessEnv {
   const env = { ...process.env };
   for (const key of Object.keys(env)) {
     if (key === 'CLAUDECODE' || key.startsWith('CLAUDE_CODE_')) delete env[key];
