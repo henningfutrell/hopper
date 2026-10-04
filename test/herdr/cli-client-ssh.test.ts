@@ -1,11 +1,12 @@
 // The herdr CLI client on an attached machine: every call goes through `ssh`, and the remote
 // shell must hand herdr exactly the argv the local client would (design.md "Attached machines").
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { chmodSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { HerdrError, createHerdrCliClient } from '../../src/executors/herdr/index.ts';
+import { userSshConfig } from '../../src/executors/herdr/cli-client.ts';
 
 const HERDR = fileURLToPath(new URL('./fake-herdr-bin.mjs', import.meta.url));
 const SSH = fileURLToPath(new URL('./fake-ssh-bin.mjs', import.meta.url));
@@ -49,6 +50,17 @@ describe('herdr CLI client over ssh', () => {
     ]));
     expect(opts.some((o) => o.startsWith('ControlPersist='))).toBe(true);
     expect(opts.some((o) => o.startsWith('ConnectTimeout='))).toBe(true);
+  });
+
+  it('reads only the user\'s ssh config, never /etc/ssh: under the unit those files look foreign-owned and ssh refuses them', async () => {
+    await remote().getAgent('jh-a');
+    const argv = lines('ssh-calls.jsonl')[0]!.argv;
+    expect(argv.slice(0, 2)).toEqual(['-F', userSshConfig()]);
+    const home = join(dir, 'home');
+    expect(userSshConfig(home)).toBe('/dev/null');
+    mkdirSync(join(home, '.ssh'), { recursive: true });
+    writeFileSync(join(home, '.ssh', 'config'), 'Host laptop\n');
+    expect(userSshConfig(home)).toBe(join(home, '.ssh', 'config'));
   });
 
   it('remote herdr results and errors come back as they do locally', async () => {

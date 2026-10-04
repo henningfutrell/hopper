@@ -4,7 +4,9 @@
 // argv runs there through `ssh`, quoted for the remote login shell (design.md "Attached machines").
 
 import { execFile } from 'node:child_process';
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { HerdrError } from './client.ts';
 import type { AgentInfo, AgentStatus, HerdrClient } from './client.ts';
 
@@ -47,12 +49,21 @@ export const shellQuote = (arg: string): string => `'${arg.replaceAll("'", "'\\'
 /** ssh's exit status for its own failures (connection, authentication). */
 export const SSH_FAILED = 255;
 
-/** ssh's argv running one remote shell command: batch mode, a 10 s connect timeout, the shared connection. */
+/**
+ * The user's ssh config, or none: never /etc/ssh. Under the job-hopper unit (PrivateTmp, a user
+ * namespace) root-owned files look foreign-owned and ssh refuses them ("Bad owner or permissions").
+ */
+export function userSshConfig(home = homedir()): string {
+  const config = join(home, '.ssh', 'config');
+  return existsSync(config) ? config : '/dev/null';
+}
+
+/** ssh's argv running one remote shell command: batch mode, the user's config only, a 10 s connect timeout, the shared connection. */
 export function sshArgv(t: SshTransport, command: string): string[] {
   const shared = t.controlDir
     ? ['-o', 'ControlMaster=auto', '-o', `ControlPath=${t.controlDir}/%C`, '-o', 'ControlPersist=60']
     : [];
-  return ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', ...shared, '--', t.target, command];
+  return ['-F', userSshConfig(), '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', ...shared, '--', t.target, command];
 }
 
 export function createHerdrCliClient(o: { bin: string; session: string; timeoutMs?: number; ssh?: SshTransport }): HerdrCliClient {
