@@ -13,5 +13,5 @@ export const HARDENED_SSH_OPTIONS: readonly string[] = [
   // Pinned host keys only.
   'StrictHostKeyChecking=yes', 'GlobalKnownHostsFile=/dev/null', 'UpdateHostKeys=no', 'CheckHostIP=no', 'VerifyHostKeyDNS=no',
   // Nothing forwarded, nothing run here.
-  'ForwardAgent=no', 'ForwardX11=no', 'ClearAllForwardings=yes', 'PermitLocalCommand=no',
+  'ForwardAgent=no', 'ForwardX11=no', 'ClearAllForwardings=yes', 'PermitLocalCommand=no', 'RequestTTY=no',
 ];
