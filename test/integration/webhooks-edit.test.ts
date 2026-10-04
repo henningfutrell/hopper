@@ -2,10 +2,17 @@
 // truth: POST /ui/api/webhooks rewrites one entry of it (comments and every other entry as written,
 // against the document's version), and the store reflects it before the answer.
 // A secret leaves the daemon once, in the answer to add or rotate-secret; no GET carries one.
+// Inline secrets are stored sealed (issue #53, design.md "Secrets at rest"): in the document and in
+// the store's subscriptions alike.
 import { createHash, createHmac } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
+import { parse } from 'yaml';
+import { createSecretBox } from '../../src/secrets/box.ts';
+import { openDb } from '../../src/store/db.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
+import { databaseUrlFor } from '../support/database.ts';
 import { readDocument, writeDocument } from '../support/files.ts';
+import { TEST_SECRET_KEY } from '../support/secret-key.ts';
 import { startReceiver, type Receiver } from '../support/receiver.ts';
 import { waitFor } from '../support/wait.ts';
 
@@ -20,6 +27,10 @@ afterEach(async () => {
   cleanup?.();
 });
 
+const box = createSecretBox(TEST_SECRET_KEY);
+const S_GROK = box.seal('s-grok');
+const S_OTHER = box.seal('s-other');
+
 const COMMENTED = `version: 1
 # The owner's note: kept across UI edits
 webhooks:
@@ -27,12 +38,12 @@ webhooks:
   - name: grok-bot
     url: http://127.0.0.1:4795/hook   # loopback only
     events: ["question.escalated", "job.finished"]
-    secret: "s-grok"
+    secret: "${S_GROK}"
     active: true
   - name: other
     url: http://127.0.0.1:4796/other
     events: ["*"]
-    secret: s-other
+    secret: ${S_OTHER}
 `;
 const GROK_BLOCK = COMMENTED.slice(COMMENTED.indexOf('  # the bot, first'), COMMENTED.indexOf('  - name: other'));
 
@@ -47,6 +58,18 @@ async function start(webhooksYaml?: string, secrets?: Record<string, string>): P
 }
 
 const read = (a: TestApp) => readDocument(a.dbPath, 'webhooks.yaml') as string;
+/** The secret column of the store's subscriptions, as stored. */
+const storedSecrets = (a: TestApp): Record<string, string> => {
+  const db = openDb(databaseUrlFor(a.dbPath));
+  try {
+    return Object.fromEntries(db.all('SELECT name, secret FROM webhooks').map((r) => [r.name as string, r.secret as string]));
+  } finally {
+    db.close();
+  }
+};
+/** The `secret` of entry `name` in the stored document, unsealed. */
+const documentSecret = (a: TestApp, name: string): string =>
+  box.unseal((parse(read(a)) as { webhooks: { name: string; secret: string }[] }).webhooks.find((w) => w.name === name)!.secret);
 const sha = (text: string) => createHash('sha256').update(text).digest('hex');
 const list = async (a: TestApp) => (await a.api('GET', '/api/webhooks')).body;
 const version = async (a: TestApp) => (await list(a)).config.version as string;
@@ -68,6 +91,33 @@ describe('GET /api/webhooks: what the UI edits', () => {
   });
 });
 
+describe('secrets at rest (issue #53)', () => {
+  const CLEAR = 'version: 1\n# kept\nwebhooks:\n  - name: rx\n    url: URL\n    events: ["job.finished"]\n    secret: s-clear   # set by hand\n';
+
+  it('a secret written in clear (by hand, through the CLI) is sealed in the stored document at load; deliveries still sign with it', async () => {
+    const rx = await startReceiver();
+    receivers.push(rx);
+    const { a } = await start(CLEAR.replace('URL', rx.url));
+    const text = read(a);
+    expect(text).not.toContain('s-clear');
+    expect(text).toBe(CLEAR.replace('URL', rx.url).replace('s-clear', text.match(/sealed:v1:[A-Za-z0-9_-]+/)![0]));
+    expect(documentSecret(a, 'rx')).toBe('s-clear');
+    expect(JSON.stringify(storedSecrets(a))).not.toContain('s-clear');
+    const job = await a.pull({ op: 'echo' });
+    await a.waitForStatus(job.id, 'finished');
+    const got = await waitFor(() => rx.received[0]);
+    const ts = String(got.headers['x-jobhopper-timestamp']);
+    expect(got.headers['x-jobhopper-signature']).toBe(`sha256=${createHmac('sha256', 's-clear').update(`${ts}.${got.body}`).digest('hex')}`);
+  });
+
+  it('a secretEnv secret is sealed in the store too, and stays in the environment only', async () => {
+    const yaml = 'version: 1\nwebhooks:\n  - name: f\n    url: http://127.0.0.1:1/f\n    events: ["*"]\n    secretEnv: WH_SECRET\n';
+    const { a } = await start(yaml, { WH_SECRET: 'from-env' });
+    expect(read(a)).toBe(yaml);
+    expect(box.unseal(storedSecrets(a).f!)).toBe('from-env');
+  });
+});
+
 describe('POST /ui/api/webhooks — add', () => {
   it('appends the entry with a generated secret, returns the secret once, reflects it at once', async () => {
     const { a, token } = await start(COMMENTED);
@@ -79,11 +129,13 @@ describe('POST /ui/api/webhooks — add', () => {
     expect(sub).not.toHaveProperty('secret');
     // The store, not only the answer, has it before the watcher could have looked.
     expect((await list(a)).subscriptions.map((s: { name: string }) => s.name)).toEqual(['grok-bot', 'other', 'phone']);
-    expect(a.app.store.webhooks.list().find((s) => s.name === 'phone')?.secret).toBe(r.body.secret);
-    // Inline in the document, everything else as written.
+    expect(box.unseal(storedSecrets(a).phone!)).toBe(r.body.secret);
+    // Inline in the document, sealed; everything else as written.
     const text = read(a);
     expect(text.startsWith(COMMENTED)).toBe(true);
-    expect(text).toContain(`secret: ${r.body.secret}`);
+    expect(text).not.toContain(r.body.secret);
+    expect(documentSecret(a, 'phone')).toBe(r.body.secret);
+    expect(JSON.stringify(storedSecrets(a))).not.toContain(r.body.secret);
     expect(JSON.stringify(await list(a))).not.toContain(r.body.secret);
   });
 
@@ -149,8 +201,9 @@ describe('POST /ui/api/webhooks — edit', () => {
     const text = read(a);
     expect(text).toContain("# The owner's note: kept across UI edits");
     expect(text).toContain(GROK_BLOCK);
-    expect(text).toContain('secret: s-other');
-    expect(a.app.store.webhooks.list().find((s) => s.name === 'other')).toMatchObject({ active: false, secret: 's-other' });
+    expect(text).toContain(`secret: ${S_OTHER}`);
+    expect(a.app.store.webhooks.list().find((s) => s.name === 'other')).toMatchObject({ active: false });
+    expect(box.unseal(storedSecrets(a).other!)).toBe('s-other');
   });
 
   it('only the fields sent change', async () => {
@@ -163,7 +216,7 @@ describe('POST /ui/api/webhooks — edit', () => {
   it('a stale version: 409, nothing written', async () => {
     const { a, token } = await start(COMMENTED);
     const v = await version(a);
-    const changed = COMMENTED.replace('s-other', 's-other-2');
+    const changed = COMMENTED.replace('4796/other', '4796/other-2');
     writeDocument(a.dbPath, 'webhooks.yaml', changed);
     const r = await edit(a, token, { action: 'edit', name: 'other', active: false, version: v });
     expect(r.status).toBe(409);
@@ -193,8 +246,11 @@ describe('POST /ui/api/webhooks — rotate-secret', () => {
     const r = await edit(a, token, { action: 'rotate-secret', name: 'grok-bot', version: await version(a) });
     expect(r.status).toBe(200);
     expect(r.body.secret).toMatch(/^[0-9a-f]{64}$/);
-    expect(read(a)).toBe(COMMENTED.replace('"s-grok"', r.body.secret));
-    expect(a.app.store.webhooks.list().find((s) => s.name === 'grok-bot')?.secret).toBe(r.body.secret);
+    const text = read(a);
+    expect(text).not.toContain(r.body.secret);
+    expect(text.replace(/secret: sealed:v1:[A-Za-z0-9_-]+/, 'secret: X')).toBe(COMMENTED.replace(`secret: "${S_GROK}"`, 'secret: X'));
+    expect(documentSecret(a, 'grok-bot')).toBe(r.body.secret);
+    expect(box.unseal(storedSecrets(a)['grok-bot']!)).toBe(r.body.secret);
     expect(JSON.stringify(await list(a))).not.toContain(r.body.secret);
   });
 

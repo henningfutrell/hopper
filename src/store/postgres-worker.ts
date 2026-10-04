@@ -1,7 +1,6 @@
 // The Postgres side of db.ts: a worker thread answering one call at a time while the calling
 // thread waits (synckit). synckit starts one worker per process, so the worker keeps one pg client
-// per open Db, by handle: a transaction's statements share their Db's client, as they share the
-// one SQLite connection. A dropped connection fails the call it broke; the next call outside a
+// per open Db, by handle: a transaction's statements share their Db's client. A dropped connection fails the call it broke; the next call outside a
 // transaction connects again.
 import pg from 'pg';
 import { runAsWorker } from 'synckit';

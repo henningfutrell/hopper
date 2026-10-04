@@ -5,6 +5,7 @@
 import { toast } from 'sonner';
 import { create } from 'zustand';
 import { get, post, SessionRejected, clearToken, readSession } from '@/lib/api';
+import { signInWithoutCredential, wantsNoSignIn } from '@/lib/login';
 import { HISTORY_TYPES } from '@/model/event-types';
 import { reloadNeeded } from '@/model/update';
 import type { SessionUser, SessionView } from '@/model/wire';
@@ -142,7 +143,9 @@ const refreshQuestionsSoon = debounced(refreshQuestions);
 
 export async function checkSession() {
   try {
-    const s = await readSession();
+    let s = await readSession();
+    // auth.yaml `none`: nobody signs in; take the session at once (design.md "Sign-in", issue #53).
+    if (wantsNoSignIn(s.authenticated, s.signIn) && (await signInWithoutCredential()) === null) s = await readSession();
     set({ authed: s.authenticated, user: s.user ?? null, signIn: s.signIn });
   } catch { /* daemon unreachable: keep the current mode */ }
 }

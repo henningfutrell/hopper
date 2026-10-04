@@ -1,4 +1,4 @@
-// What a UI session's role lets it do (design.md "Sign-in: local, OIDC and SAML" — Roles). The
+// What a UI session's role lets it do (design.md "Sign-in: none, password, local, OIDC and SAML" — Roles). The
 // daemon decides; this only hides what it would refuse. Each role includes the ones before it.
 import type { SessionUser, UiRole } from './wire';
 

@@ -9,8 +9,7 @@
 //   job-hopper config set <document> --if-version <v>     replace it from stdin, if still at <v>
 //   job-hopper config edit <document>                     $EDITOR on it, written back against the version read
 //   job-hopper login-code [--link <base url>]             mint a one-time UI login code (stdout)
-//   job-hopper migrate-local --from-sqlite <file> [--config-dir <dir>] --secrets-out <file>
-//                                                         a local install into this (empty) database
+//   job-hopper password-hash                              an argon2id hash of a password (stdin) for auth.yaml
 //
 // <document>: plugins.yaml, webhooks.yaml, rules.md or auth.yaml. A document that would not load is refused.
 import { spawnSync } from 'node:child_process';
@@ -18,11 +17,11 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
+import { read } from 'read';
 import { parse } from 'yaml';
 import { CONFIG_DOCUMENTS, type ConfigDocumentName, type Store } from './domain/ports.ts';
-import { authDocumentProblem } from './auth/index.ts';
+import { authDocumentProblem, hashPassword } from './auth/index.ts';
 import { LOGIN_CODE_MINUTES, mintLoginCode } from './http/ui/login-code.ts';
-import { MigrateRefusal, migrateLocal, secretsEnvFile } from './migrate/local.ts';
 import { pluginsFileProblem } from './plugins/plugins-file.ts';
 import { RULES_MAX_BYTES } from './questions/index.ts';
 import { openStore } from './store/index.ts';
@@ -35,6 +34,8 @@ export interface CliIo {
   err(text: string): void;
   /** Run the editor on a file; resolves when it exits. Default: $VISUAL / $EDITOR / vi on the terminal. */
   edit?(file: string): number;
+  /** The password for password-hash. Default: the first line of stdin. */
+  password?(): Promise<string>;
 }
 
 const USAGE = `usage:
@@ -43,7 +44,7 @@ const USAGE = `usage:
   job-hopper config set <document> --if-version <version>   (text on stdin; version "missing" for a new one)
   job-hopper config edit <document>
   job-hopper login-code [--link <base url>]
-  job-hopper migrate-local --from-sqlite <file> [--config-dir <dir>] --secrets-out <file>
+  job-hopper password-hash   (the password on stdin, or typed without echo; prints the hash for auth.yaml password.users)
 documents: ${CONFIG_DOCUMENTS.join(', ')}`;
 
 class CliError extends Error {}
@@ -124,41 +125,38 @@ function loginCode(store: Store, args: string[], io: CliIo): void {
   io.err(`login code minted: works once, for ${LOGIN_CODE_MINUTES} minutes\n`);
 }
 
-function migrateCommand(url: string, args: string[], io: CliIo): void {
-  const { values } = parseArgs({ args, options: { 'from-sqlite': { type: 'string' }, 'config-dir': { type: 'string' }, 'secrets-out': { type: 'string' } } });
-  const sqlite = values['from-sqlite'];
-  const secretsOut = values['secrets-out'];
-  if (!sqlite || !secretsOut) throw new CliError(`migrate-local needs --from-sqlite <file> and --secrets-out <file>\n${USAGE}`);
-  // Written before anything moves, never over a file: the secrets have nowhere else to go.
-  writeFileSync(secretsOut, '', { mode: 0o600, flag: 'wx' });
+/** An argon2id hash of one password on stdout, for auth.yaml `password.users` (design.md "Sign-in"). Needs no database. */
+async function passwordHash(io: CliIo): Promise<number> {
+  let password: string;
   try {
-    const r = migrateLocal({ sqlite, target: url, ...(values['config-dir'] ? { configDir: values['config-dir'] } : {}), log: (l) => io.err(`${l}\n`) });
-    writeFileSync(secretsOut, secretsEnvFile(r.secrets), { mode: 0o600 });
-    io.err(`migrate: ${Object.keys(r.secrets).length} secret(s) written to ${secretsOut}: give them to the daemon's environment\n`);
+    password = io.password ? await io.password() : (io.stdin().split(/\r?\n/)[0] ?? '');
   } catch (e) {
-    rmSync(secretsOut, { force: true });
-    throw e instanceof MigrateRefusal ? new CliError(e.message) : e;
+    io.err(`job-hopper: ${(e as Error).message}\n`);
+    return 2;
   }
+  if (password === '') {
+    io.err('job-hopper: the password is empty; nothing hashed\n');
+    return 2;
+  }
+  io.out(`${await hashPassword(password)}\n`);
+  return 0;
 }
 
-/** Run one command; the exit code. */
-export function runCli(argv: string[], io: CliIo): number {
+/** Run one command; the exit code (a promise for password-hash, the one command that hashes). */
+export function runCli(argv: string[], io: CliIo): number | Promise<number> {
   const [command, ...rest] = argv;
-  if (command !== 'config' && command !== 'migrate-local' && command !== 'login-code') {
+  if (command === 'password-hash') return passwordHash(io);
+  if (command !== 'config' && command !== 'login-code') {
     io.err(`${USAGE}\n`);
     return 2;
   }
   const url = io.env.JOB_HOPPER_DATABASE_URL;
   if (!url) {
-    io.err('JOB_HOPPER_DATABASE_URL is not set: the database the daemon uses (sqlite:<path> or postgres://…)\n');
+    io.err('JOB_HOPPER_DATABASE_URL is not set: the database the daemon uses (postgres://…)\n');
     return 2;
   }
   let store: Store | undefined;
   try {
-    if (command === 'migrate-local') {
-      migrateCommand(url, rest, io);
-      return 0;
-    }
     store = openStore({ url, clock: { now: () => new Date() } });
     if (command === 'login-code') loginCode(store, rest, io);
     else config(store, rest, io);
@@ -171,11 +169,21 @@ export function runCli(argv: string[], io: CliIo): number {
   }
 }
 
+/** A password typed on the terminal without echo, asked twice; from a pipe, its first line. */
+async function terminalPassword(): Promise<string> {
+  if (!process.stdin.isTTY) return readFileSync(0, 'utf8').split(/\r?\n/)[0] ?? '';
+  const first = await read({ prompt: 'password: ', silent: true, output: process.stderr });
+  const again = await read({ prompt: 'again: ', silent: true, output: process.stderr });
+  if (first !== again) throw new CliError('the two passwords differ; nothing hashed');
+  return first;
+}
+
 if (import.meta.main) {
-  process.exitCode = runCli(process.argv.slice(2), {
+  process.exitCode = await runCli(process.argv.slice(2), {
     env: process.env,
     stdin: () => readFileSync(0, 'utf8'),
     out: (t) => process.stdout.write(t),
     err: (t) => process.stderr.write(t),
+    password: terminalPassword,
   });
 }

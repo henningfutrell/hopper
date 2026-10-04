@@ -4,6 +4,7 @@
 import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { testDatabaseUrl } from '../support/database.ts';
 import type { Store } from '../../src/domain/ports.ts';
 import type { UpdateStatus } from '../../src/domain/types.ts';
 import { openStore } from '../../src/store/index.ts';
@@ -27,7 +28,7 @@ function world(): World {
   const root = tempDir('jh-update-');
   dirs.push(root);
   const dataDir = join(root, 'data');
-  const store = openStore({ url: `sqlite:${join(dataDir, 'db.sqlite')}`, clock: { now: () => new Date() } });
+  const store = openStore({ url: testDatabaseUrl(), clock: { now: () => new Date() } });
   stores.push(store);
   return { root, up: createUpstream(root), store, dataDir };
 }

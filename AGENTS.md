@@ -1,6 +1,6 @@
 # job-hopper — repo law
 
-Local job-queue daemon that pulls its jobs. Loopback plus an opt-in LAN or public URL behind a reverse proxy, sign-in through the login code or identity providers (OIDC, GitHub, SAML). TypeScript run directly by Node ≥ 24.
+Local job-queue daemon that pulls its jobs. Loopback plus an opt-in LAN or public URL behind a reverse proxy, sign-in through the login code, password sign-in, no sign-in, or identity providers (OIDC, GitHub, SAML). TypeScript run directly by Node ≥ 24.
 
 North star (owner decision): an extendable and plugin architecture; every part must serve it. `docs/design.md` "North star".
 
@@ -16,13 +16,14 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
 - **The decider stays pure.** No I/O, no clock, no randomness in `src/decider/`. The
   Decision id is passed in.
 - **Test first.** Failing test committed before the code that passes it. Integration tests
-  use the real database and the real HTTP server; fakes only at `ports.ts` seams. The suite runs on
-  SQLite (`npm test`) and on Postgres (`bash scripts/test-postgres.sh`); a store change passes both.
+  use the real database and the real HTTP server; fakes only at `ports.ts` seams. Postgres is the only
+  store (issue #53): `npm test` starts a throwaway Postgres container (testcontainers; needs docker),
+  each test in its own schema, unless `JOB_HOPPER_TEST_POSTGRES_URL` names one.
 - **Tests are sealed off from the real machine.** `test/support/isolate.ts` (vitest setup) gives
   every worker a throwaway HOME and refuses any non-loopback `fetch`. Never point a test at
   the owner's database, env file or a real URL; a test daemon once sent real Grok Bot webhooks.
-  An ad-hoc daemon (own port) gets its own database (a copy, by `migrate-local`, with the Grok Bot
-  variables and webhook subscribers removed), and runs network-isolated (`unshare -rn`).
+  An ad-hoc daemon (own port) gets its own database (a copy, by `pg_dump` into a fresh
+  database, with the Grok Bot variables and webhook subscribers removed), and runs network-isolated (`unshare -rn`).
 - **Erasable TypeScript only** (`erasableSyntaxOnly`): no enums, no namespaces, no
   parameter properties. Relative imports carry `.ts`.
 - **Loopback plus the LAN names and the public URL, and the hopper pulls.** The daemon binds `127.0.0.1`, or every
@@ -35,16 +36,20 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   `POST /ui/api/*`, behind a UI session (`x-jobhopper-session`,
   exact Origin, same-origin, JSON — else 403) whose UI role allows it; a new mutation goes there and
   nowhere else, and names its least UI role. `docs/design.md` "UI session and mutations" and
-  "Sign-in: local, OIDC and SAML" state the residual risk.
+  "Sign-in: none, password, local, OIDC and SAML" state the residual risk.
 - **Sign-in fails closed.** An invalid `auth.yaml` stops the daemon; an identity no role rule
-  matches gets no session; sign-in is never a plugin (`docs/design.md` "Sign-in").
+  matches gets no session; sign-in is never a plugin (`docs/design.md` "Sign-in"). Every sign-in
+  kind uses an established library for its protocol or hash (openid-client, @node-saml/node-saml,
+  argon2); no hand-rolled protocol or password code. No sign-in (`none`) is only ever explicit.
 - **GitHub text is neutral.** Text the hopper or a job writes to GitHub names no person and
   carries no personal or machine details. The hopper writes only labels to issues, closes the
   issue of a finished job, and posts no comments. The job prompt carries the rule (`src/executors/herdr/screen.ts` `PUBLISHING_RULE`).
 - **Nothing leans on the machine** (issue #40, `docs/design.md` "Deployable"). Everything the daemon
   keeps is in the database `JOB_HOPPER_DATABASE_URL` names; config is config documents in it
   (`plugins.yaml`, `webhooks.yaml`, `rules.md`, `auth.yaml`); a secret is an environment variable,
-  named by a command-bearing option — never a file the daemon reads. No default names a path on one
+  named by a command-bearing option — never a file the daemon reads. A secret the hopper keeps itself
+  is stored sealed under `JOB_HOPPER_SECRET_KEY` (`src/secrets/box.ts`), a token or code only hashed
+  (`docs/design.md` "Secrets at rest"). No default names a path on one
   machine; the work dir (`JOB_HOPPER_WORK_DIR`) is scratch only. The operator CLI (`src/cli.ts`,
   `job-hopper`) writes the database directly: whoever runs it holds its credentials.
 - **Never write into the Jev repo.** The shim reads it; logs go to job-hopper's work dir.
@@ -55,4 +60,4 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
 - **The UI is the one built part.** `ui/` → `npm run build:ui` → `ui/dist` (gitignored), served
   by the daemon. It imports nothing of `src/` at runtime; types only, from `src/domain/types.ts`.
 - Gates: `npm run typecheck`, `npm run lint`, `npm test`, `npm run build:ui` — all exit 0
-  (`npm run check` runs all four); `bash scripts/test-postgres.sh` exits 0 for any store change.
+  (`npm run check` runs all four).

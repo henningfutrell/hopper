@@ -1,12 +1,10 @@
 // Phase 5 slice 1 through the real composition root: the plugin host, plugins.yaml, custom
 // plugins from the plugin dir, GET /api/plugins, the router fallback in /api/health, and a store
 // written before plugins existed.
-import { copyFileSync, cpSync, mkdirSync } from 'node:fs';
+import { cpSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { Job } from '../../src/domain/types.ts';
 import { startTestApp, tempDbPath, writePluginsYaml, type TestApp } from '../support/app.ts';
-import { testPostgres } from '../support/database.ts';
 import { waitFor } from '../support/wait.ts';
 import { ALWAYS_PROCEED_DIR } from '../plugins/support.ts';
 
@@ -108,27 +106,6 @@ describe('plugins.yaml and a custom plugin', () => {
   });
 });
 
-// SQLite fixtures: the SQLite migration history (a Postgres store starts at its end).
-describe.skipIf(testPostgres())('a store written before plugins', () => {
-  it('migrates and runs: router mode kept, advice renamed, old decisions readable, old events still conform', async () => {
-    const db = tempDbPath();
-    cleanup = db.cleanup;
-    mkdirSync(dirname(db.dbPath), { recursive: true });
-    copyFileSync(join(import.meta.dirname, '..', 'store', 'fixtures', 'pre-plugins.sqlite'), db.dbPath);
-    t = await startTestApp({ dbPath: db.dbPath });
-    expect((await t.api('GET', '/api/router')).body.mode).toBe('active');
-    const held = await t.job('00000000-0000-4000-8000-000000000002');
-    expect(held.advice).toMatchObject({ action: 'ask_human', details: { jevUsed: true } });
-    expect(held).not.toHaveProperty('jevAdvice');
-    const old = (await t.api('GET', '/api/decisions/decision-1')).body;
-    expect(old).toMatchObject({ routerMode: 'active', advice: [{ withAdvice: 'hold' }, { withAdvice: 'start' }] });
-    // The held job stays held by the router (active mode) under the new reason.
-    await waitFor(async () => (await t!.job(held.id)).holdReason === 'router ask_human: awaiting approval', { what: 'the renamed hold reason' });
-    const jobs = (await t.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=100')).body.jobs;
-    expect(jobs.filter((j) => j.advice)).toHaveLength(4); // the unclassified one is advised by the fake on startup
-  });
-});
-
 describe('question roles in /api/plugins (slice 2)', () => {
   it('no section: the built-in instances, answerer opus (claude-cli), assessor fable (claude-cli-assessor)', async () => {
     const a = await start();
@@ -171,26 +148,3 @@ describe('question roles in /api/plugins (slice 2)', () => {
   });
 });
 
-describe.skipIf(testPostgres())('a store written before the assessor', () => {
-  const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
-
-  it('open questions at opus and at fable both restart at the answer stage; the human one stays with the human', async () => {
-    const db = tempDbPath();
-    cleanup = db.cleanup;
-    mkdirSync(dirname(db.dbPath), { recursive: true });
-    copyFileSync(join(import.meta.dirname, '..', 'store', 'fixtures', 'pre-assessor.sqlite'), db.dbPath);
-    t = await startTestApp({ dbPath: db.dbPath });
-    for (const jobId of [id(1), id(5)]) {
-      expect((await t.waitForStatus(jobId, 'finished')).result).toEqual({ answer: 'fake opus answer' });
-      const [q] = await t.questionsOf(jobId);
-      expect(q).toMatchObject({ status: 'answered', answeredBy: 'opus' });
-      expect(q!.attempts.slice(-2).map((a) => [a.tier, a.role, a.outcome])).toEqual([['opus', 'answerer', 'drafted'], ['fable', 'assessor', 'accepted']]);
-    }
-    const restarted = (await t.events()).filter((e) => e.type === 'question.escalated' && e.schemaVersion === 2 && e.questionId === id(6));
-    expect(restarted.map((e) => e.data.target)).toEqual(['opus', 'fable']);
-    expect(await t.job(id(10))).toMatchObject({ status: 'waiting_answer' });
-    expect((await t.api('GET', `/api/questions/${id(11)}`)).body).toMatchObject({ status: 'open', tier: 'human', notifyCount: expect.any(Number) });
-    expect((await t.api('GET', `/api/questions/${id(16)}`)).body).toMatchObject({ status: 'answered', answeredBy: 'fable' });
-    // stop() validates every stored event, the v1 question events included.
-  });
-});

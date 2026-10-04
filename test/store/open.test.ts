@@ -1,21 +1,17 @@
 import { SCHEMA_VERSION } from '../../src/store/migrations.ts';
-import { existsSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { DatabaseSync } from 'node:sqlite';
+import { openDb } from '../../src/store/db.ts';
 import { openStore } from '../../src/store/index.ts';
 import { fixedClock, useTempStore } from './helpers.ts';
 
 const t = useTempStore();
 
 describe('openStore', () => {
-  it('creates the parent directory, uses WAL, records the schema version', () => {
-    const path = t.path();
-    const s = t.open(path);
-    expect(existsSync(path)).toBe(true);
-    s.close();
-    const raw = new DatabaseSync(path);
-    expect(raw.prepare('PRAGMA journal_mode').get()).toMatchObject({ journal_mode: 'wal' });
-    expect(raw.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: SCHEMA_VERSION });
+  it('records the schema version', () => {
+    const url = t.url();
+    t.open(url).close();
+    const raw = openDb(url);
+    expect(raw.get('SELECT version FROM schema_version')).toEqual({ version: SCHEMA_VERSION });
     raw.close();
   });
 

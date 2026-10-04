@@ -1,4 +1,4 @@
-// Signing in through an identity provider (design.md "Sign-in: local, OIDC and SAML"). Three steps,
+// Signing in through an identity provider (design.md "Sign-in: none, password, local, OIDC and SAML"). Three steps,
 // no cookies (they ignore ports; see "UI session and mutations"):
 //   1. begin: the browser keeps a random binding in localStorage and asks for /ui/auth/<name>/start;
 //      a flow (provider secrets, the binding's hash) is kept here and the browser goes to the provider.
@@ -13,11 +13,13 @@ import type { Identity, SignInProviderView, UiRole } from '../domain/types.ts';
 import type { AuthConfig, ProviderConfig } from './config.ts';
 import { createGithubProvider } from './github.ts';
 import { createOidcProvider } from './oidc.ts';
+import { checkPassword, passwordRoleOf } from './password.ts';
 import type { FlowSecrets, IdentityProvider, ProviderCallback } from './provider.ts';
 import { roleFor } from './roles.ts';
 import { createSamlProvider } from './saml.ts';
 
 export { AUTH, authDocumentProblem, loadAuthDocument, type AuthConfig } from './config.ts';
+export { hashPassword } from './password.ts';
 
 const FLOW_MS = 10 * 60_000;
 const TICKET_MS = 2 * 60_000;
@@ -30,6 +32,8 @@ const MAX_FLOWS = 10_000;
 const BINDING = /^[A-Za-z0-9_-]{32,128}$/;
 
 export const LOCAL_IDENTITY: Identity = { provider: 'local', subject: 'local', name: 'login code', groups: [] };
+/** Who a no-sign-in session belongs to: nobody in particular. */
+export const NO_SIGN_IN_IDENTITY: Identity = { provider: 'none', subject: 'anonymous', name: 'no sign-in', groups: [] };
 
 export type CallbackOutcome =
   | { ok: true; ticket: string; who: Identity; role: UiRole }
@@ -38,6 +42,12 @@ export type CallbackOutcome =
 export interface SignIn {
   /** The one-time login code works. */
   readonly local: boolean;
+  /** No sign-in: the role everyone gets; null when off. */
+  readonly none: UiRole | null;
+  /** Password sign-in is on. */
+  readonly password: boolean;
+  /** The identity and role of a password sign-in account, or undefined (off, unknown, wrong). */
+  checkPassword(username: string, password: string): Promise<{ who: Identity; role: UiRole } | undefined>;
   /** Where provider sign-in starts and ends (known once the daemon listens). */
   origin(): string;
   providers(): SignInProviderView[];
@@ -84,12 +94,17 @@ export function createSignIn(o: { config: AuthConfig; origin: () => string; cloc
   };
   const roleOf = (who: Identity): UiRole | null => {
     if (who.provider === 'local') return o.config.local.enabled ? 'admin' : null;
+    if (who.provider === 'none') return o.config.none?.role ?? null;
+    if (who.provider === 'password') return o.config.password ? passwordRoleOf(o.config.password.users, who.subject) : null;
     const c = configs.get(who.provider);
     return c ? roleFor(who, c.roles) : null;
   };
 
   return {
     local: o.config.local.enabled,
+    none: o.config.none?.role ?? null,
+    password: o.config.password !== null,
+    checkPassword: async (username, password) => (o.config.password ? checkPassword(o.config.password.users, username, password) : undefined),
     origin: o.origin,
     providers: () => o.config.providers.map((p) => ({ name: p.name, label: p.label, type: p.type })),
     provider: (name) => built().get(name),

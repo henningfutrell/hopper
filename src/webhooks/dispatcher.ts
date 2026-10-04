@@ -1,10 +1,12 @@
-import type { Clock, Store, WebhookDispatcher } from '../domain/ports.ts';
+import type { Clock, SecretBox, Store, WebhookDispatcher } from '../domain/ports.ts';
 import type { DomainEvent, WebhookDelivery, WebhookSubscription } from '../domain/types.ts';
 import { sign } from './signer.ts';
 
 export interface WebhookDispatcherOptions {
   store: Store;
   clock: Clock;
+  /** Unseals a subscription's stored secret to sign with (design.md "Secrets at rest"). */
+  box: SecretBox;
   baseMs: number;
   timeoutMs?: number;
   maxAttempts?: number;
@@ -53,6 +55,7 @@ export function createWebhookDispatcher(o: WebhookDispatcherOptions): WebhookDis
     let statusCode: number | undefined;
     let error: string | undefined;
     try {
+      const signature = sign(o.box.unseal(sub.secret), timestamp, body);
       const res = await fetch(sub.url, {
         method: 'POST',
         headers: {
@@ -60,7 +63,7 @@ export function createWebhookDispatcher(o: WebhookDispatcherOptions): WebhookDis
           'x-jobhopper-event': event.type,
           'x-jobhopper-delivery': d.id,
           'x-jobhopper-timestamp': timestamp,
-          'x-jobhopper-signature': sign(sub.secret, timestamp, body),
+          'x-jobhopper-signature': signature,
         },
         body,
         signal: AbortSignal.timeout(timeoutMs),

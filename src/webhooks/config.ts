@@ -1,9 +1,11 @@
 // webhooks.yaml: the source of truth for webhook subscriptions, a config document in the store
 // (design.md "Config documents"). Loaded at startup and re-read when its version changes;
-// reconciled by `name` into the store's subscriptions.
-import { parse } from 'yaml';
+// reconciled by `name` into the store's subscriptions. Secrets at rest (design.md, issue #53): an
+// inline `secret` is kept sealed in the document — one written in clear is sealed in place at load —
+// and every subscription's secret is sealed in the store.
+import { isMap, isScalar, isSeq, parse, parseDocument } from 'yaml';
 import { z } from 'zod';
-import type { Clock, ConfigDocuments, Store } from '../domain/ports.ts';
+import type { Clock, ConfigDocuments, SecretBox, Store } from '../domain/ports.ts';
 import { EVENT_TYPES } from '../domain/types.ts';
 
 export interface WebhookConfig { name: string; url: string; events: string[]; secret: string; active: boolean }
@@ -40,8 +42,29 @@ export function webhooksFileProblem(raw: unknown): string | undefined {
 
 export const WEBHOOKS = 'webhooks.yaml';
 
-/** The webhooks document's text (undefined: none yet) as subscriptions; a `secretEnv` secret read from `env`. */
-export function loadWebhooksFile(text: string | undefined, env: (name: string) => string | undefined): LoadResult {
+/**
+ * `text` with every inline `secret` written in clear replaced by its sealed form, byte for byte
+ * otherwise; undefined when there is none to seal, or the text does not parse.
+ */
+export function sealInlineSecrets(text: string, box: SecretBox): string | undefined {
+  const doc = parseDocument(text);
+  const seq = doc.errors.length ? undefined : doc.get('webhooks', true);
+  if (!isSeq(seq)) return undefined;
+  const clear: [number, number, string][] = [];
+  for (const item of seq.items) {
+    const value = isMap(item) ? item.get('secret', true) : undefined;
+    if (isScalar(value) && typeof value.value === 'string' && value.range && !box.isSealed(value.value)) {
+      clear.push([value.range[0], value.range[1], value.value]);
+    }
+  }
+  if (clear.length === 0) return undefined;
+  let out = text;
+  for (const [start, end, secret] of clear.reverse()) out = out.slice(0, start) + box.seal(secret) + out.slice(end);
+  return out;
+}
+
+/** The webhooks document's text (undefined: none yet) as subscriptions, secrets in clear: an inline one unsealed, a `secretEnv` one read from `env`. */
+export function loadWebhooksFile(text: string | undefined, env: (name: string) => string | undefined, box: SecretBox): LoadResult {
   if (text === undefined) return { webhooks: [], warnings: [`no ${WEBHOOKS} yet`], secretSources: {} };
   let raw: unknown;
   try { raw = parse(text); } catch (e) { return { error: `${WEBHOOKS}: ${(e as Error).message}` }; }
@@ -52,6 +75,9 @@ export function loadWebhooksFile(text: string | undefined, env: (name: string) =
   for (const w of parsed.data.webhooks) {
     secretSources[w.name] = w.secretEnv === undefined ? 'inline' : 'env';
     let secret = w.secret;
+    if (secret !== undefined && box.isSealed(secret)) {
+      try { secret = box.unseal(secret); } catch (e) { return { error: `webhook "${w.name}": ${(e as Error).message}` }; }
+    }
     if (w.secretEnv !== undefined) {
       secret = env(w.secretEnv)?.trim();
       if (!secret) return { error: `webhook "${w.name}": ${w.secretEnv} is not set` };
@@ -79,7 +105,7 @@ export interface WebhookConfigWatcher {
 }
 
 export function createWebhookConfigWatcher(o: {
-  documents: ConfigDocuments; store: Pick<Store, 'webhooks'>; clock: Clock; intervalMs: number;
+  documents: ConfigDocuments; store: Pick<Store, 'webhooks'>; clock: Clock; intervalMs: number; box: SecretBox;
   /** Where a `secretEnv` secret is read; default the daemon's environment. */
   env?: (name: string) => string | undefined;
 }): WebhookConfigWatcher {
@@ -94,10 +120,14 @@ export function createWebhookConfigWatcher(o: {
 
   function reload(): void {
     signature = sign();
-    const r = loadWebhooksFile(documents.read(WEBHOOKS), env);
+    let text = documents.read(WEBHOOKS);
+    const sealed = text === undefined ? undefined : sealInlineSecrets(text, o.box);
+    // A document that moved meanwhile is read again on the next poll, and sealed then.
+    if (sealed !== undefined && documents.write(WEBHOOKS, sealed, signature)) { text = sealed; signature = sign(); }
+    const r = loadWebhooksFile(text, env, o.box);
     if ('error' in r) { state.error = r.error; return; }
     const names = new Set(r.webhooks.map((w) => w.name));
-    for (const w of r.webhooks) store.webhooks.upsertByName(w);
+    for (const w of r.webhooks) store.webhooks.upsertByName({ ...w, secret: o.box.seal(w.secret) });
     for (const s of store.webhooks.list()) if (!names.has(s.name)) store.webhooks.delete(s.id);
     delete state.error;
     state.warnings = r.warnings;

@@ -1,11 +1,12 @@
 // A UI edit of webhooks.yaml (design.md "Webhook subscriptions in the UI", issue #18): add, edit,
 // rotate-secret or remove one entry. The document stays the source of truth: each edit rewrites only
 // that entry's part of it (comments and every other entry as written), against the document's
-// version, then reloads it into the store before answering.
+// version, then reloads it into the store before answering. A new secret is written sealed (design.md
+// "Secrets at rest") and given out in clear this once.
 import { randomBytes } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { isMap, isScalar, isSeq, parse, parseDocument, stringify, type Document, type Scalar, type YAMLMap } from 'yaml';
-import type { ConfigDocuments } from '../domain/ports.ts';
+import type { ConfigDocuments, SecretBox } from '../domain/ports.ts';
 import type { WebhooksEdit } from '../domain/types.ts';
 import { WEBHOOKS, webhooksFileProblem } from './config.ts';
 
@@ -100,6 +101,7 @@ const BY_HAND = 'job-hopper config edit webhooks.yaml';
 
 export function createWebhooksEditor(o: {
   documents: ConfigDocuments;
+  box: SecretBox;
   /** Re-read the document into the store; runs after every write, before the answer. */
   reload(): void;
 }): WebhooksEditor {
@@ -119,7 +121,7 @@ export function createWebhooksEditor(o: {
     if (e.action === 'add') {
       if (at >= 0) return refuse('conflict', `webhook "${e.name}" is already in ${path}`);
       secret = newSecret();
-      changes.push({ kind: 'append', entry: { name: e.name, url: e.url, events: e.events, secret, active: e.active ?? true } });
+      changes.push({ kind: 'append', entry: { name: e.name, url: e.url, events: e.events, secret: o.box.seal(secret), active: e.active ?? true } });
     } else {
       if (at < 0) return refuse('not_found', `no webhook "${e.name}" in ${path}`);
       if (e.action === 'edit') {
@@ -132,7 +134,7 @@ export function createWebhooksEditor(o: {
           return refuse('conflict', `webhook "${e.name}" reads its secret from ${String(secretEnv)}; rotate it in the environment, not from the UI`);
         }
         secret = newSecret();
-        changes.push({ kind: 'set', at, key: 'secret', value: secret });
+        changes.push({ kind: 'set', at, key: 'secret', value: o.box.seal(secret) });
       } else {
         changes.push({ kind: 'delete', at });
       }

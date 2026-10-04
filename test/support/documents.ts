@@ -22,7 +22,7 @@ export function useTempDocuments(): () => TempDocuments {
   });
   return () => {
     const dir = mkdtempSync(`${tmpdir()}/jh-docs-`);
-    const store = openStore({ url: testDatabaseUrl(dir), clock: { now: () => new Date() } });
+    const store = openStore({ url: testDatabaseUrl(), clock: { now: () => new Date() } });
     open.push({ store, dir });
     const d = store.documents;
     return {

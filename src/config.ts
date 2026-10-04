@@ -5,14 +5,17 @@
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';
+import { secretKeyProblem } from './secrets/box.ts';
 import { parseDatabaseUrl } from './store/db.ts';
 
 export interface Config {
   /** The bind address: `127.0.0.1`, or `::` (every interface) when LAN names are set. */
   host: string;
   port: number;
-  /** JOB_HOPPER_DATABASE_URL: `sqlite:<path>` or `postgres://…` (design.md "Database"). Required. */
+  /** JOB_HOPPER_DATABASE_URL: `postgres://…` (design.md "Database"). Required. */
   databaseUrl: string;
+  /** JOB_HOPPER_SECRET_KEY: the key secrets the hopper keeps are sealed under (design.md "Secrets at rest"). Required. */
+  secretKey: string;
   /** Scratch only — claude's working directory, ssh control sockets, probes; nothing kept. */
   workDir: string;
   tickMs: number;
@@ -74,8 +77,10 @@ const schema = z.object({
   JOB_HOPPER_LAN_NAMES: list(lanName),
   JOB_HOPPER_LAN_PEERS: list(lanPeer),
   JOB_HOPPER_PORT: int(0, 65535).default(4790),
-  JOB_HOPPER_DATABASE_URL: z.string({ error: 'required: sqlite:<path> or postgres://user:password@host:port/database' })
+  JOB_HOPPER_DATABASE_URL: z.string({ error: 'required: postgres://user:password@host:port/database' })
     .superRefine((v, ctx) => { try { parseDatabaseUrl(v); } catch (e) { ctx.addIssue({ code: 'custom', message: (e as Error).message }); } }),
+  JOB_HOPPER_SECRET_KEY: z.string({ error: 'required: 32 bytes, base64 (openssl rand -base64 32)' })
+    .superRefine((v, ctx) => { const p = secretKeyProblem(v); if (p) ctx.addIssue({ code: 'custom', message: p }); }),
   JOB_HOPPER_WORK_DIR: z.string().min(1).default(join(tmpdir(), 'job-hopper')),
   JOB_HOPPER_TICK_MS: int(1).default(2000),
   JOB_HOPPER_ROUTER_MODE: z.enum(['shadow', 'active']).default('shadow'),
@@ -126,6 +131,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     host: e.JOB_HOPPER_LAN_PEERS.length > 0 ? '::' : '127.0.0.1',
     port: e.JOB_HOPPER_PORT,
     databaseUrl: e.JOB_HOPPER_DATABASE_URL,
+    secretKey: e.JOB_HOPPER_SECRET_KEY,
     workDir: e.JOB_HOPPER_WORK_DIR,
     tickMs: e.JOB_HOPPER_TICK_MS,
     routerMode: e.JOB_HOPPER_ROUTER_MODE,

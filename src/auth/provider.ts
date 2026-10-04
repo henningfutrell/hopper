@@ -1,4 +1,4 @@
-// The identity provider port (design.md "Sign-in: local, OIDC and SAML"): send the browser to the
+// The identity provider port (design.md "Sign-in: none, password, local, OIDC and SAML"): send the browser to the
 // provider, then turn what comes back into an Identity. One implementation per auth.yaml type.
 import type { Identity, IdentityProviderType } from '../domain/types.ts';
 

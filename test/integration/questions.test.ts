@@ -1,4 +1,4 @@
-// Questions over the real HTTP server and SQLite file: the scripted executor's `ask` op and the
+// Questions over the real HTTP server and database: the scripted executor's `ask` op and the
 // fake question doubles (policy in test/support/fake-questions.ts: the answerer `opus`
 // is confident unless the question says "unsure"; the assessor `fable` escalates when it says
 // "risky" or "hard"; the risk rules apply on top), or scripted doubles at the Answerer / Assessor

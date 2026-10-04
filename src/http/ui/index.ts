@@ -2,23 +2,23 @@
 // login code (when auth.yaml leaves local sign-in on) or an identity provider (sign-in.ts) → a page
 // that keeps the session token in localStorage → POST /ui/api/* with that token in
 // x-jobhopper-session, exact Origin, same-origin, JSON, and a role that allows it (design.md
-// "Sign-in: local, OIDC and SAML"). Every refusal is a logged 403. A logged-in admin hands another
+// "Sign-in: none, password, local, OIDC and SAML"). Every refusal is a logged 403. A logged-in admin hands another
 // device a login link per LAN name (design.md "Reaching the UI across the LAN").
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { LOCAL_IDENTITY, type SignIn } from '../../auth/index.ts';
+import type { SignIn } from '../../auth/index.ts';
 import type { Clock, PluginsView, QuestionService, Store, Updater } from '../../domain/ports.ts';
 import { LIST_ROLES, ROLES, SELECTABLE_ROLES, UPDATE_CHANNELS, type SessionView, type UiRole } from '../../domain/types.ts';
 import type { Engine } from '../../engine/index.ts';
 import { HttpError, parseWith } from '../errors.ts';
-import { lanHosts, type Lan } from '../reach.ts';
+import { lanHosts, uiOrigins, type Lan } from '../reach.ts';
 import { writeRules } from '../../questions/index.ts';
 import { routerView } from '../state.ts';
 import { webhooksView } from '../webhooks.ts';
 import type { WebhookConfigView } from '../webhooks.ts';
 import type { WebhooksEditor } from '../../webhooks/edit.ts';
 import { SESSION_HEADER, mutationRefusal } from './guard.ts';
-import { mintLoginCode, useLoginCode } from './login-code.ts';
+import { mintLoginCode } from './login-code.ts';
 import { sessionUser, type UiSessions } from './sessions.ts';
 import { registerSignInRoutes } from './sign-in.ts';
 
@@ -42,7 +42,6 @@ export interface UiRouteOptions {
 const idParams = z.object({ id: z.string() });
 const answerBody = z.object({ answer: z.string().trim().min(1, 'answer must not be empty') });
 const routerModeBody = z.object({ mode: z.enum(['shadow', 'active']) });
-const loginBody = z.object({ code: z.string() });
 const pluginsEditBody = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('options'), role: z.enum(ROLES), name: z.string().min(1), options: z.record(z.string(), z.unknown()), version: z.string().min(1) }),
   z.strictObject({ action: z.literal('select'), role: z.enum(SELECTABLE_ROLES), plugin: z.string().min(1).nullable(), version: z.string().min(1) }),
@@ -84,38 +83,19 @@ const refuse = (req: FastifyRequest, reply: FastifyReply, why: string, needs?: U
   return reply.code(403).send(needs ? { error: why, needs } : { error: why });
 };
 
-/** The login answer: store the token (hex, safe inline) for this exact origin, then go to the UI. */
-const loginPage = (token: string): string => `<!doctype html><meta charset="utf-8"><title>job-hopper</title>
-<script>try { localStorage.setItem('jh_session', '${token}'); } catch (e) {} location.replace('/');</script>
-<noscript>JavaScript is needed to keep the UI session.</noscript>
-`;
-
 export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void {
   const { sessions, signIn } = o;
-
-  app.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string' }, (_req, body, done) => {
-    done(null, Object.fromEntries(new URLSearchParams(body as string)));
-  });
-
-  // Origin may be null (a local file posts it); the code is the credential.
-  app.post('/ui/login', async (req, reply) => {
-    const parsed = loginBody.safeParse(req.body);
-    if (!signIn.local) return refuse(req, reply, 'local sign-in is off in auth.yaml');
-    if (!parsed.success || !useLoginCode(o.store, o.clock, parsed.data.code)) return refuse(req, reply, 'wrong, used, expired or missing login code');
-    const s = sessions.create({ role: 'admin', identity: LOCAL_IDENTITY });
-    console.warn('job-hopper: UI session started: local login code, role admin');
-    return reply.type('text/html; charset=utf-8').header('cache-control', 'no-store').header('referrer-policy', 'no-referrer')
-      .send(loginPage(s.token));
-  });
 
   app.get('/ui/api/session', async (req): Promise<SessionView> => {
     const header = req.headers[SESSION_HEADER];
     const s = sessions.find(typeof header === 'string' ? header : undefined);
-    const offer = { local: signIn.local, origin: signIn.origin(), providers: signIn.providers() };
+    const offer = { local: signIn.local, none: signIn.none, password: signIn.password, origin: signIn.origin(), providers: signIn.providers() };
     return s ? { authenticated: true, expiresAt: s.expiresAt, user: sessionUser(s), signIn: offer } : { authenticated: false, signIn: offer };
   });
 
-  registerSignInRoutes(app, { sessions, signIn, refuse });
+  registerSignInRoutes(app, {
+    sessions, signIn, refuse, store: o.store, clock: o.clock, isUiOrigin: (origin) => uiOrigins(o.port(), o.lan).includes(origin),
+  });
 
   // Each mutation names the least role that may make it (design.md "Sign-in" Roles).
   const allow = (needs: UiRole) => ({ onRequest: async (req: FastifyRequest, reply: FastifyReply) => {

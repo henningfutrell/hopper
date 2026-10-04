@@ -1,4 +1,5 @@
 // In-memory stand-in for the parts of Store the webhook dispatcher uses.
+import { testBox } from '../support/secret-key.ts';
 import type { Store } from '../../src/domain/ports.ts';
 import { EVENT_SCHEMA_VERSIONS, type DomainEvent, type NewEvent, type WebhookDelivery, type WebhookSubscription } from '../../src/domain/types.ts';
 
@@ -63,7 +64,7 @@ export function createFakeStore(): FakeStore {
     store,
     subscribe(i) {
       const s: WebhookSubscription = {
-        id: `s-${subs.size + 1}`, name: i.name ?? `hook-${subs.size + 1}`, url: i.url, events: i.events, secret: i.secret ?? 'shh',
+        id: `s-${subs.size + 1}`, name: i.name ?? `hook-${subs.size + 1}`, url: i.url, events: i.events, secret: i.secret ?? testBox().seal('shh'),
         active: i.active ?? true, createdAt: iso(),
       };
       subs.set(s.id, s);

@@ -175,12 +175,12 @@ describe('create-github-app.ts', () => {
   });
 
   it('keeps the env file\'s other lines', async () => {
-    writeFileSync(envFile(), 'JOB_HOPPER_DATABASE_URL=sqlite:/x\nOTHER=1\n');
+    writeFileSync(envFile(), 'JOB_HOPPER_DATABASE_URL=postgres://u@db/x\nOTHER=1\n');
     const r = await go([]);
     await callback(r);
     expect(await r.exited).toBe(0);
     const lines = read().split('\n');
-    expect(lines).toContain('JOB_HOPPER_DATABASE_URL=sqlite:/x');
+    expect(lines).toContain('JOB_HOPPER_DATABASE_URL=postgres://u@db/x');
     expect(lines).toContain('OTHER=1');
     expect(lineOf('GITHUB_APP_PRIVATE_KEY')).toBeDefined();
     expect(read().endsWith('\n')).toBe(true);

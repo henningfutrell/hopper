@@ -30,7 +30,7 @@ plugin" is its current enactment; Phase 6 items are judged against it.
 One process. Node ≥ 24 runs the TypeScript directly (type stripping) — the daemon has no build
 step. The UI is the one built part: `ui/` (React, shadcn/ui, Tailwind, d3) → `npm run build:ui`
 → `ui/dist`, which the daemon serves (issue #14, "UI rework" below).
-Fastify for HTTP, SQLite (`node:sqlite`) or Postgres (`pg`) for storage ("Deployable" below), zod for request validation.
+Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Deployable" below), zod for request validation.
 
 ## Directories and what each must not know
 
@@ -38,7 +38,7 @@ Fastify for HTTP, SQLite (`node:sqlite`) or Postgres (`pg`) for storage ("Deploy
 |-----|------|-----------------|
 | `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts; `machines.ts` attached machines and their edit; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`), ports | anything else in `src/` |
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock | everything but `domain/` |
-| `src/store/` | the database seam (`db.ts`: SQLite or Postgres through `postgres-worker.ts`), schema, migrations, repositories, event log, config documents, login codes | engine, http, decider |
+| `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations, repositories, event log, config documents, login codes | engine, http, decider |
 | `src/webhooks/` | signing, dispatcher, retry/backoff, `webhooks.yaml` load + watch (`config.ts`), the UI edit of it (`edit.ts`) | engine, http, decider |
 | `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `job-hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, `plugins.yaml` + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `question-slots.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), a machine edit of `attachedMachines:` (`attached-edit.ts`, spliced into the file; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `answerer/claude-cli/`, `assessor/claude-cli-assessor/`, `assessor/always-escalate/` hold their prompts; `executor/herdr-claude/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-gh/` and `job-source/github-app/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser, runner, background refresh); `notifier/grokbot-routine/` is the Grok Bot routine webhook — env-file reader and notifier; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`) | engine, http, store, decider, questions |
 | `src/executors/` | `Executor` adapters (`test`, `herdr/`) and the registry; reached through the executor plugins | engine, http, store, plugins |
@@ -46,14 +46,14 @@ Fastify for HTTP, SQLite (`node:sqlite`) or Postgres (`pg`) for storage ("Deploy
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin) | engine, http, store, plugins |
 | `src/routing/` | routing rules: the plugins.yaml `routing:` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
 | `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`); job lifecycle; routing at intake (`source-host.ts`); restart recovery | http |
-| `src/auth/` | sign-in through identity providers (issue #39): `auth.yaml` load (`config.ts`), the role rules (`roles.ts`, pure), the identity provider port (`provider.ts`) and its adapters `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), the sign-in flow — flows, tickets, bindings (`index.ts`) | engine, http, store, plugins, decider, questions |
+| `src/auth/` | sign-in through identity providers (issue #39): `auth.yaml` load (`config.ts`), the role rules (`roles.ts`, pure), the identity provider port (`provider.ts`) and its adapters `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), password sign-in (`password.ts`, argon2), the sign-in flow — flows, tickets, bindings, no sign-in (`index.ts`) | engine, http, store, plugins, decider, questions |
+| `src/secrets/` | the secret box (`box.ts`): seal and unseal under `JOB_HOPPER_SECRET_KEY`, AES-256-GCM through `node:crypto` ("Secrets at rest") | everything but `domain/` |
 | `src/update/` | self-update ("Self-update"): install.json, the git mirror of the update repository, the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers | engine, http, plugins, decider |
 | `src/http/` | Fastify routes, SSE, static UI; the UI session, its role check and the sign-in routes (`ui/`) | executors, plugins (reads them through the `PluginsView` port) |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
 | `examples/plugins/` | one minimal runnable custom plugin per role, for authors (`docs/plugins.md`); imports only `job-hopper/plugin` types and `node:` builtins | everything in `src/` at runtime |
 | `src/main.ts` | composition root: config → store → plugins.yaml (written when absent) → plugin host (every part) → engine → server | — |
-| `src/cli.ts` | the operator CLI `job-hopper`: config documents, login codes, migrate-local — against the daemon's database | engine, executors |
-| `src/migrate/` | `migrate-local`: a SQLite install and its config dir into an empty database ("Migrating a local install") | http, engine |
+| `src/cli.ts` | the operator CLI `job-hopper`: config documents, login codes — against the daemon's database | engine, executors |
 
 ## The decider
 
@@ -873,7 +873,7 @@ token and send any `Origin`. Cookies are no better here: they ignore ports, so a
    expiry `JOB_HOPPER_UI_SESSION_HOURS`, default 12), rotate the code, and answer with a
    same-origin HTML page whose inline script stores the token in `localStorage`
    (`jh_session`) and goes to `/`. Mismatch → 403. `localStorage` is scoped to the exact
-   origin incl. port, so no other server on `127.0.0.1` can read it. Sessions live in SQLite
+   origin incl. port, so no other server on `127.0.0.1` can read it. Sessions live in the store
    (`ui_sessions`, migration 6), so a daemon restart does not log the UI out; the row holds
    only the token's SHA-256 and the expiry, never the token. Expired rows are deleted on
    lookup. Logout deletes the row.
@@ -903,7 +903,7 @@ token and send any `Origin`. Cookies are no better here: they ignore ports, so a
 | POST | `/ui/api/logout` | `{}` | drop the session |
 
 Since issue #39 a session may also come from an identity provider, and each mutation needs a UI
-role: "Sign-in: local, OIDC and SAML" (Roles).
+role: "Sign-in: none, password, local, OIDC and SAML" (Roles).
 
 **Residual risk, stated.** Still able to act or read:
 - A process running **as the owner** that reads `ui-login-code`/`ui-login.html` or the
@@ -2090,7 +2090,7 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
 | `JOB_HOPPER_UI_SESSION_HOURS` | `12` |
 | `JOB_HOPPER_PLUGIN_DIR` | `~/.config/job-hopper/plugins` |
 | `JOB_HOPPER_PLUGINS_FILE` | `~/.config/job-hopper/plugins.yaml` |
-| `JOB_HOPPER_AUTH_FILE` | `~/.config/job-hopper/auth.yaml` (issue #39, "Sign-in: local, OIDC and SAML") |
+| `JOB_HOPPER_AUTH_FILE` | `~/.config/job-hopper/auth.yaml` (issue #39, "Sign-in: none, password, local, OIDC and SAML") |
 | `JOB_HOPPER_PUBLIC_URL` | unset (issue #39) |
 | `JOB_HOPPER_UPDATE_CHECK_MS` | `900000` — self-update check interval; `0` only when asked ("Self-update") |
 | `JOB_HOPPER_RESTART` | unset (detected) — `exit` or `respawn` after an update ("Self-update") |
@@ -2488,7 +2488,7 @@ the same one-time login code (`POST /ui/login`; using it rotates it):
    browser never sends; the page strips it from the address bar and history, then posts it.
 2. **Paste a login code** into the logged-out banner (from `ui-login-code` on this machine).
 
-Sessions are already in SQLite (migration 6), so a daemon restart does not log a device out; a
+Sessions are already in the store (migration 6), so a daemon restart does not log a device out; a
 session still expires after `JOB_HOPPER_UI_SESSION_HOURS` (12).
 
 **Residual risk, stated.** Plain HTTP: a host on the LAN that can sniff traffic can take a session
@@ -2785,7 +2785,7 @@ up/down, delete; one Save for the whole list). The machine select uses `/api/mac
 routing targets; the executor select uses the configured executors. Forms stack at 390 px width;
 there is no horizontal page scroll.
 
-## Sign-in: local, OIDC and SAML (issue #39, 2026-10-04)
+## Sign-in: none, password, local, OIDC and SAML (issues #39, #53, 2026-10-04)
 
 Owner request: the hopper deployable by anyone, plugged into a personal or enterprise identity
 setup — any OIDC provider (Google, Microsoft Entra ID, Okta, Auth0, Keycloak, …), GitHub, and SAML
@@ -2879,6 +2879,39 @@ reconciled with `auth.yaml`: a removed provider (or local sign-in turned off) or
 grants a role any more loses its session; a changed rule changes the stored role. Audit: one journal
 line per sign-in, refusal and logout (no domain event: webhook subscribers would receive identities).
 
+### No sign-in and password sign-in (issue #53)
+
+Owner requirement: as a self-hosted service the hopper supports no auth, simple auth, OIDC and SAML,
+each through an established library. Both new kinds are built in beside `local`, not identity
+providers (no redirect, no flow, no ticket); `none` and `password` are reserved provider names.
+
+- **No sign-in** — `auth.yaml` `none: { role }`, absent: off. `POST /ui/auth/none` → `{ token,
+  expiresAt, user }`, identity `{ provider: none, subject: anonymous, name: "no sign-in" }`. The
+  session still exists because the mutation guard needs it: the session header is the CSRF defence
+  and the role check. The UI takes the session by itself when logged out (`wantsNoSignIn`). A
+  startup warning names the role. Composes with everything else (anonymous `viewer`, sign in to act).
+- **Password sign-in** — `auth.yaml` `password.users: [{ username, passwordHash, role }]`. The hash
+  is argon2id through the `argon2` package (`src/auth/password.ts`), made by `job-hopper
+  password-hash` (stdin, or a no-echo prompt asked twice, through `read`); anything not starting
+  `$argon2id$` is refused at load. `POST /ui/auth/password { username, password }` → the same
+  answer as above; identity `{ provider: password, subject: username, username }`. Usernames compare
+  case-insensitively and are unique. An unknown username is verified against a fixed hash of a
+  random password, so it costs a wrong password's time; every failure is one 403, logged.
+- **Origin.** Both need the exact Origin of a UI page — `uiOrigins` (loopback, LAN names, public
+  URL), the set mutations accept — not only the sign-in origin: nothing comes back from a provider,
+  so a LAN page can sign in where it stands.
+- **Stored sessions** follow `auth.yaml` at start like provider sessions: `roleOf` gives `none`'s
+  role (null when off) and the account's current role (null when removed).
+- **Rate limit.** Every route that needs no session to start one — `POST /ui/login`, `/ui/auth/*`
+  — is registered in one Fastify child context behind `@fastify/rate-limit`: 20 requests a minute
+  per client address (`SIGN_IN_RATE`, in memory), then 429. Behind a reverse proxy every client is
+  the proxy's address, so the limit is shared there (`trustProxy` stays off: a forwarded header
+  would let a client pick its own key); a public deploy limits per client at the proxy.
+
+**Residual risk, stated.** `none` with `operator` or `admin` hands those powers to whoever reaches
+the port or the proxy; it is only as safe as what stands in front. Password sign-in has no lockout
+beyond the rate limit and no password policy: the operator chooses the password and hashes it.
+
 ### Local sign-in off
 
 `local: { enabled: false }`: no `ui-login-code` is written (a stale one is deleted), `POST /ui/login`
@@ -2960,7 +2993,7 @@ the install) are written over installed ones that differ, then `systemctl --user
 live in `job-hopper-herdr`, not the daemon, so running herdr-claude jobs are reattached on their
 lanes (`job.reattached`); idempotent jobs are requeued; `waiting_answer` jobs keep their question;
 an open question in the answer or assess stage restarts there, one at the human stage keeps its
-timers; UI sessions are in SQLite; schema migrations run at boot as on any start.
+timers; UI sessions are in the database; schema migrations run at boot as on any start.
 
 **The boot after** reads pending.json: install.json on `to` → `update.applied`; otherwise (rolled back
 by hand) → `update.failed`. The UI reloads itself when `GET /api/update` names another installed
@@ -2997,29 +3030,34 @@ names a path on one machine. Operator path: `docs/deploy.md`.
 
 ### Database
 
-`JOB_HOPPER_DATABASE_URL`, required (no default: a database is never assumed): `postgres://…` for
-a deploy, `sqlite:<path>` for local use. `JOB_HOPPER_DB` is gone. The URL may name a schema with
+`JOB_HOPPER_DATABASE_URL`, required (no default: a database is never assumed): `postgres://…`, the
+only store (issue #53 — a local SQLite file is no different from a local JSON file; it keeps the
+hopper on one machine). The hopper is given a database; it never creates its own file. TLS to a
+managed Postgres: the driver's `sslmode` in the URL. `JOB_HOPPER_DB` is gone. The URL may name a schema with
 job-hopper's own `?schema=<name>` (created when absent; stripped before the driver sees the URL).
 
 **The Store port stays synchronous.** The engine relies on it: store reads happen after the awaits,
 synchronously with decide and apply (`src/engine/decision-step.ts`), so no read-modify-write is ever
 interleaved. Postgres is reached through one worker thread (`synckit`, `src/store/postgres-worker.ts`)
 the calling thread blocks on; the worker holds one `pg` client per open store, so a transaction's
-statements share a connection exactly as they share the one SQLite connection. A call fails after
+statements share one connection. A call fails after
 30 s rather than hanging the daemon; a dropped connection fails the call it broke and the next call
 outside a transaction connects again. Cost: every query blocks the event loop for one round trip —
 sub-millisecond to a database on the same host or LAN, but put Postgres near the hopper (a 20 ms
 link × ~50 queries a tick is a second of stall). An async Store was rejected: ~230 call sites, and a
 new class of interleaving bug between the tick and the UI's mutations.
 
-One SQL text for both (`src/store/db.ts`): `?` placeholders (numbered `$n` for Postgres), `RETURNING`
-for generated keys, `ON CONFLICT … DO UPDATE` for upserts — never `INSERT OR REPLACE`. Postgres
-returns a BIGINT seq as a number. One schema version for both: SQLite's `PRAGMA user_version`,
-Postgres's `schema_version` table. SQLite keeps its six-migration history (`SQLITE_HISTORY`); a
-Postgres store starts at the shape that history ends at (`POSTGRES_BASE`, version 6); every
-migration after it is in `SHARED`, in SQL both databases mean the same way (7 session role and
-identity, 8 config documents, 9 login codes). A Postgres sequence is not transactional, so a
+SQL (`src/store/db.ts`): `?` placeholders, numbered `$n` before sending; `RETURNING` for generated
+keys; `ON CONFLICT … DO UPDATE` for upserts. A BIGINT seq comes back as a number. The schema version
+is the `schema_version` table: a new store is created at `BASE` (version 6 — versions 1-6 were the
+SQLite history, gone with it), and every later migration is appended to `MIGRATIONS` (7 session role
+and identity, 8 config documents, 9 login codes, …). A Postgres sequence is not transactional, so a
 rolled-back append can leave a gap in `seq`: seq only rises.
+
+**Tests and local development** run against Postgres too: `npm test` starts a throwaway container
+through `testcontainers` (vitest globalSetup, `test/support/postgres.ts`), each test in its own
+schema; `JOB_HOPPER_TEST_POSTGRES_URL` points the suite at an existing database instead. A local
+hopper uses `deploy/compose.yaml`'s Postgres (optional: any Postgres it is given will do).
 
 ### Config documents
 
@@ -3056,10 +3094,37 @@ by a command-bearing option, so a UI session cannot redirect a credential:
 
 The App's bot is `<slug>[bot]`, its page `https://github.com/apps/<slug>`. `create-github-app.sh`
 writes the key (and webhook secret) as lines of an env file (`--secrets-file`, default the host
-unit's `daemon.env`) and prints the `appId` and `slug` to set. Exceptions, both the hopper's own
-data rather than a credential it is given: a webhook subscription's generated inline `secret`, and
-UI session token hashes. The gh and claude CLIs sign in from their own variables (`GH_TOKEN`,
+unit's `daemon.env`) and prints the `appId` and `slug` to set. What the hopper keeps itself rather
+than is given is stored sealed or hashed ("Secrets at rest"). The gh and claude CLIs sign in from their own variables (`GH_TOKEN`,
 `CLAUDE_CODE_OAUTH_TOKEN`) where their login state is not on the machine.
+
+### Secrets at rest (issue #53)
+
+Owner requirement: secrets and all other sensitive data are stored securely. The database is a
+service of its own (backups, dumps, an operator with `psql`), so nothing in it is a usable
+credential in clear:
+
+| kept | how |
+|------|-----|
+| a webhook subscription's secret (generated by the UI, or written inline by hand) | **sealed**: AES-256-GCM under `JOB_HOPPER_SECRET_KEY` (`src/secrets/box.ts`, `node:crypto`), `sealed:v1:<base64url nonce‖tag‖ciphertext>`, a fresh nonce each time — in the `webhooks.yaml` document and in the `webhooks` table alike; a `secretEnv` secret is sealed in the table too |
+| UI session tokens, login codes | SHA-256 only (32 random bytes: no dictionary to try) |
+| password sign-in passwords | argon2id hashes in `auth.yaml` ("Sign-in") |
+| credentials the hopper is given (GitHub App key, Grok Bot, TypeSafe, client secrets, the database URL) | the environment only ("Secrets" above), never the database |
+
+`JOB_HOPPER_SECRET_KEY` (32 bytes, base64) is required: a missing or malformed key stops the daemon
+before the store opens. `install.sh` writes one into `daemon.env` when there is none and never
+replaces it. A secret written in clear (`job-hopper config set webhooks.yaml`, an old document) is
+sealed in place by the next load, byte for byte otherwise; the clear value is used meanwhile.
+Migration 10 blanks a clear secret left in the `webhooks` table (a projection of the document, which
+re-seals it at load). The UI hands a new secret out once, in clear, as before. A delivery signs with
+the unsealed secret; one that will not unseal (a changed key, a blanked row) fails that delivery and
+retries, naming the key. No key rotation: a new key means rotating each inline secret in the UI.
+Deliberately not encrypted: job bodies, events, questions (prompts and answers, the hopper's working
+data, read by every UI view) and identities in sessions (needed to reconcile roles).
+
+**Residual risk, stated.** The key sits beside the database URL in the same environment, so whoever
+holds the hopper's environment holds both; sealing protects the database's own copies (backups,
+dumps, a read-only role), not the running process. Keep the key out of the backups it protects.
 
 ### Login codes
 
@@ -3091,33 +3156,24 @@ about the daemon's surface; the CLI is beside it, like editing a file was.
   `config edit <document>` ($EDITOR, written back against the version read). A document that would
   not load (plugins/webhooks/auth schema, rules size) is refused; a moved one is refused.
 - `login-code [--link <base url>]`.
-- `migrate-local` (below).
 
 Residual risk, unchanged in kind: a job on the hopper host runs as the daemon's user and can read
 the env file and so the database URL, as it could read the 0600 yaml files before.
 
-### Migrating a local install
+### Migrating a local install — done, and removed (issue #53)
 
-`job-hopper migrate-local --from-sqlite <file> [--config-dir <dir>] --secrets-out <file>`, into the
-database `JOB_HOPPER_DATABASE_URL` names, which must be empty (run it before the daemon first starts
-there). `src/migrate/local.ts`:
-
-- The SQLite file is read through a `VACUUM INTO` snapshot, migrated to the current schema, and
-  copied table by table in one transaction, every row with its seq; Postgres's sequences are then
-  moved past the copied rows. The source is never written.
-- From the config dir: plugins.yaml, webhooks.yaml, rules.md, auth.yaml become documents, every
-  file-path option rewritten as the table above says (github-app.json's id and slug become options),
-  comments kept; each must load after the rewrite or nothing is copied.
-- The secrets those files pointed at are written as `NAME=value` lines (one line each, a PEM's
-  newlines as `\n`) to `--secrets-out`, mode 600, never over an existing file: the deploy's
-  environment takes them from there.
+`migrate-local` moved the one SQLite install there was (rows with their seq, config files as
+documents, secrets to env lines) into Postgres, once, on 2026-10-04; the live database has run on
+Postgres since. With SQLite gone it had nothing left to read, so it went too (`src/migrate/`, the
+CLI command, install.sh's old-config guard). An install still on SQLite moves with a release that
+has it (`git log -- src/migrate/local.ts`).
 
 ### Deploy recipes
 
 - **This host** (`scripts/install.sh`, systemd `--user`): `daemon.env` (the unit's EnvironmentFile,
   now required) holds `JOB_HOPPER_DATABASE_URL` and the secrets; install.sh refuses to finish without
   the database and says how to set it. Postgres from `deploy/compose.yaml` (`up -d postgres`,
-  published on loopback), or SQLite for local use.
+  published on loopback), or any Postgres the host can reach.
 - **A container** (`Dockerfile`, `deploy/compose.yaml` profile `container`): node 26, git, ssh,
   python3 + PyYAML, gh, the claude CLI; the UI built in a first stage. No herdr in the image: jobs run
   on attached machines over ssh (their keys and `~/.ssh/config` mounted, or the machine source

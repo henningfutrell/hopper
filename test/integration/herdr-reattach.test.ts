@@ -1,5 +1,5 @@
 // A daemon restart while a herdr-claude job runs (design.md "Recovery at startup"): two app
-// instances over one SQLite file and ONE fake herdr, which stands for the herdr server that
+// instances over one database and ONE fake herdr, which stands for the herdr server that
 // outlives the daemon. The job's pane and Claude survive, so the job is reattached, not failed.
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Job } from '../../src/domain/types.ts';

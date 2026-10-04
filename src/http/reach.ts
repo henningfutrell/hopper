@@ -1,4 +1,4 @@
-// Who is asking (design.md "Reaching the UI across the LAN", "Sign-in: local, OIDC and SAML"). A
+// Who is asking (design.md "Reaching the UI across the LAN", "Sign-in: none, password, local, OIDC and SAML"). A
 // request is local (loopback peer, Host 127.0.0.1:<port> or localhost:<port>), LAN (Host a LAN name
 // with the port) or public (Host the public URL's host, as a reverse proxy passes it on); a LAN or
 // public request comes from loopback or a LAN peer range. Anything else is refused: another Host is

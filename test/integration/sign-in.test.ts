@@ -1,4 +1,4 @@
-// Sign-in (issue #39, design.md "Sign-in: local, OIDC and SAML"): local sign-in, and OIDC end to end
+// Sign-in (issue #39, design.md "Sign-in: none, password, local, OIDC and SAML"): local sign-in, and OIDC end to end
 // through the daemon's HTTP routes against a loopback issuer.
 import { afterEach, describe, expect, it } from 'vitest';
 import { rawRequest } from '../support/http.ts';
@@ -13,7 +13,7 @@ const oidc = (o?: Parameters<typeof oidcIdp>[1]) => oidcIdp(h, o);
 describe('no auth.yaml: local sign-in only', () => {
   it('the session view offers the login code and no providers', async () => {
     const { app, origin } = await start(undefined);
-    expect(await session(app)).toEqual({ authenticated: false, signIn: { local: true, origin, providers: [] } });
+    expect(await session(app)).toEqual({ authenticated: false, signIn: { local: true, none: null, password: false, origin, providers: [] } });
   });
 
   it('the login code signs in as admin, provider local', async () => {
