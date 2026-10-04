@@ -54,7 +54,7 @@ export function createEngine(o: EngineOptions): Engine {
 
   const c: EngineContext = {
     store, clock: o.clock, idGen: o.idGen ?? randomUUID, executors: o.executors, machines: o.machines,
-    usage: o.usage, router: o.router, policy: o.policy,
+    usage: o.usage, router: o.router, queueSorter: o.queueSorter, routing: o.routing, policy: o.policy,
     questions: o.questions, maxQuestions: o.maxQuestions, keepPanes: o.keepPanes,
     ...(o.fakeUsage ? { fakeUsage: o.fakeUsage } : {}),
     routerMode: () => store.settings.getRouterMode() ?? o.initialRouterMode,

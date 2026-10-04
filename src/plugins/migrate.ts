@@ -44,6 +44,7 @@ type Legacy = z.output<typeof LEGACY>;
 
 /** Every plugins.yaml section the builder writes. */
 export interface PluginsDoc {
+  queueSorter: InstanceSpec;
   answerer: InstanceSpec;
   assessor: InstanceSpec;
   executors: InstanceSpec[];
@@ -64,6 +65,7 @@ function buildDoc(e: Legacy, answerTimeoutMs: number, configDir: string, sources
   const app = blocks.githubApp;
   const appFile = typeof app?.appFile === 'string' ? app.appFile : join(sourcesDir, 'github-app.json');
   return {
+    queueSorter: { name: 'priority', plugin: 'priority' },
     answerer: { name: 'opus', plugin: 'claude-cli', options: { ...question, model: e.JOB_HOPPER_ANSWER_MODEL_A } },
     assessor: { name: 'fable', plugin: 'claude-cli-assessor', options: { ...question, model: e.JOB_HOPPER_ANSWER_MODEL_B } },
     executors: e.JOB_HOPPER_EXECUTORS.map((name) => (name === 'herdr-claude' ? {

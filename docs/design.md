@@ -36,15 +36,16 @@ Fastify for HTTP, `node:sqlite` for storage, zod for request validation.
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/domain/` | types (`usage.ts`: usage readings, usage report, accounts), ports | anything else in `src/` |
+| `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts; `machines.ts` attached machines and their edit; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`), ports | anything else in `src/` |
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock | everything but `domain/` |
 | `src/store/` | SQLite schema, migrations, repositories, event log | engine, http, decider |
-| `src/webhooks/` | signing, dispatcher, retry/backoff | engine, http, decider |
-| `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `job-hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, `plugins.yaml` + watch, the role slots (`router-slot.ts` with the shared `instantiate`, `question-slots.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `answerer/claude-cli/`, `assessor/claude-cli-assessor/`, `assessor/always-escalate/` hold their prompts; `executor/herdr-claude/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-gh/` and `job-source/github-app/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser, runner, background refresh); `notifier/grokbot-routine/` is the Grok Bot routine webhook — env-file reader and notifier) | engine, http, store, decider, questions |
+| `src/webhooks/` | signing, dispatcher, retry/backoff, `webhooks.yaml` load + watch (`config.ts`), the UI edit of it (`edit.ts`) | engine, http, decider |
+| `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `job-hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, `plugins.yaml` + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `question-slots.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), a machine edit of `attachedMachines:` (`attached-edit.ts`, spliced into the file; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `answerer/claude-cli/`, `assessor/claude-cli-assessor/`, `assessor/always-escalate/` hold their prompts; `executor/herdr-claude/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-gh/` and `job-source/github-app/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser, runner, background refresh); `notifier/grokbot-routine/` is the Grok Bot routine webhook — env-file reader and notifier; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`) | engine, http, store, decider, questions |
 | `src/executors/` | `Executor` adapters (`test`, `herdr/`) and the registry; reached through the executor plugins | engine, http, store, plugins |
-| `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (ssh probe through the herdr CLI client), `combineMachineSources` | engine, http, store, plugins |
+| `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following plugins.yaml; ssh probe and herdr path resolution through the herdr CLI client's ssh argv), the detected ssh targets (`ssh-config.ts`), `combineMachineSources` | engine, http, store, plugins |
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin) | engine, http, store, plugins |
-| `src/engine/` | the loop: gather → decide → apply; job lifecycle; restart recovery | http |
+| `src/routing/` | routing rules: the plugins.yaml `routing:` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
+| `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`); job lifecycle; routing at intake (`source-host.ts`); restart recovery | http |
 | `src/http/` | Fastify routes, SSE, static UI | executors, plugins (reads them through the `PluginsView` port) |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
 | `examples/plugins/` | one minimal runnable custom plugin per role, for authors (`docs/plugins.md`); imports only `job-hopper/plugin` types and `node:` builtins | everything in `src/` at runtime |
@@ -235,6 +236,7 @@ Loopback (`127.0.0.1`), plus the LAN names when set — "Reaching the UI across 
 | GET | `/api/events/stream` | `?after=<seq>` or `Last-Event-ID` | SSE (below) |
 | GET | `/api/router` | | `{ mode, router, plugin, fallback, reason? }` (phase 5; was `GET /api/jev`) |
 | GET | `/api/plugins` | | `PluginsReport` (phase 5): roles, config, router instance + selection + detection + fallback, every plugin |
+| GET | `/api/question-gates` | | `QuestionGatesView` (issue #18): `{ rulesFile: { path, text, version, missing }, riskRules: { name, describe }[] }` |
 | GET | `/api/usage` | | `{ readings: UsageReading[] }` |
 | PUT | `/api/usage/fake` | `{ used, limit, unit?, machineId? }` | `{ readings }` · 404 if no fake source |
 | POST | `/api/webhooks` | `{ url, events?: string[], secret?: string }` | 201 `WebhookSubscription` (secret shown once) |
@@ -557,7 +559,8 @@ Each rule has a name (`delete`, `deploy`, `force-push`, `spend`, `credentials`,
 `send-message`); matches are recorded in `riskRules`.
 
 **Rules file** `JOB_HOPPER_RULES_FILE` (default `~/.config/job-hopper/rules.md`), read on
-every ask; missing → empty rules, noted in the prompt and the attempt reason.
+every ask; missing → empty rules, noted in the prompt and the attempt reason. Editable from the
+UI since issue #18 ("Question gates" at the end); an edit applies to the next question.
 `scripts/install.sh` writes a starter file only if none exists.
 
 **Atomicity (B3).** Every QuestionService write is one `store.tx`, compare-and-set on
@@ -797,8 +800,11 @@ the engine.
 `GET /api/health` · `/api/jobs` · `/api/jobs/:id` · `/api/queue` · `/api/machines` ·
 `/api/decisions[/:id]` · `/api/events` · `/api/events/stream` (SSE) · `/api/router` (was `/api/jev`) ·
 `/api/usage` · `/api/questions[/:id]` · `/api/webhooks` (from `webhooks.yaml`, secrets
-omitted, plus `config: { path, loadedAt, error? }`) · `/api/webhooks/deliveries` ·
+omitted, plus `config: { path, loadedAt, error?, warnings, version }`; `version` since issue #18) · `/api/webhooks/deliveries` ·
 **new** `GET /api/sources` → `{ sources: SourceStatus[] }`.
+omitted, plus `config: { path, loadedAt, error? }`) · `/api/webhooks/deliveries` ·
+**new** `GET /api/sources` → `{ sources: SourceStatus[] }` · `GET /api/machines/config` (issue #18,
+"Machines from the UI").
 
 Every request (GET included) must carry `Host: 127.0.0.1:<port>` or `localhost:<port>`, or a
 LAN name with the port; anything else is 421 — DNS-rebinding guard. A LAN request reads `/api/`
@@ -844,6 +850,9 @@ token and send any `Origin`. Cookies are no better here: they ignore ports, so a
 | POST | `/ui/api/questions/:id/close` | `{}` | `QuestionService.closeByHuman` (404/409): close without answering ("Questions" → Close) |
 | POST | `/ui/api/router-mode` | `{ mode }` | set router mode (phase 5; was `/ui/api/jev`) |
 | POST | `/ui/api/plugins` | `{ action, … }` | edit plugins.yaml: one instance's options, select a plugin, rescan (phase 5 slice 7; "Settled in slice 7") |
+| POST | `/ui/api/rules-file` | `{ text, version }` | replace the rules file whole (issue #18, "Question gates"): 400 over 64 KiB, 409 stale `version` |
+| POST | `/ui/api/webhooks` | `{ action, name, … }` | edit webhooks.yaml: add, edit (url, events, active), rotate-secret, remove one entry; answers `GET /api/webhooks` plus a new `secret` once (issue #18, "Webhook subscriptions in the UI") |
+| POST | `/ui/api/machines` | `{ action, … }` | add, edit or remove one attached machine in plugins.yaml, applied without a restart (issue #18; "Machines from the UI") |
 | POST | `/ui/api/device-link` | `{}` | `{ links }`: the current login code as `http://<LAN name>:<port>/#login=<code>`, one per LAN name; 409 without LAN names ("Reaching the UI across the LAN") |
 | POST | `/ui/api/logout` | `{}` | drop the session |
 
@@ -1066,7 +1075,8 @@ webhooks:
     active: true
 ```
 
-Loaded at startup and re-read when its mtime changes (checked every 5 s). Reconcile by
+Loaded at startup and re-read when its mtime changes (checked every 5 s), and at once after a
+UI edit of it (issue #18, "Webhook subscriptions in the UI"). Reconcile by
 `name` into the store (`upsertByName`; names absent from the file are deleted, their
 pending deliveries failed). Invalid file → previous subscriptions kept, error shown in
 `GET /api/webhooks` `config.error`. Inline `secret` in a file readable by group/other →
@@ -1518,7 +1528,7 @@ A **role** is a slot the engine calls through one port. A **plugin** implements 
 | `assessor` | `Assessor { name; assess(req, draft, signal) → { escalate, reason } }` | 1 | `claude-cli-assessor`, `always-escalate` | live |
 | `executor` | `Executor` (unchanged) | 1..n | `herdr-claude`, `test` | restart |
 | `job-source` | `JobSource` (unchanged) | 0..n | `github-gh`, `github-app` | restart |
-| `machine-source` | `MachineSource` (unchanged) | 1 | `local` | restart |
+| `machine-source` | `MachineSource` (unchanged) | 1 | `local` | restart (an options change is live since issue #18) |
 | `usage-source` | `UsageSource` (unchanged) | 0..n | none in production; `fake` stays a test fake at the `ports.ts` seam | restart |
 | `notifier` | `Notifier { name; start(events); stop() }` (new) | 0..n | `grokbot-routine` | restart |
 
@@ -2075,7 +2085,8 @@ Built alongside slices 4-6 and merged after them. The edit path is generic over 
 job-source, machine-source, usage-source, notifier) to its plugins.yaml key and cardinality, and
 the host's `instances()` lists what is configured. So a **lane** count (the machine instance's
 `lanes`) and a **connector** (a job source or notifier instance) are editable with the same
-per-instance form; restart roles show `changed — restart pending` after an edit.
+per-instance form; restart roles show `changed — restart pending` after an edit (the lane count
+applies live since issue #18, "Machines from the UI").
 
 - **`POST /ui/api/plugins`**, body by `action`:
   `{ action: 'options', role, name, options, version }` · `{ action: 'select', role: router |
@@ -2130,7 +2141,7 @@ It is a machine beside `local`: the decider sees it in `DecisionInputs.machines`
 to it by the unchanged rule (online, runs the executor, most remaining room). Nothing else in the
 decider changes.
 
-**Configuration** — plugins.yaml, read at start (a restart role, like `executors:`):
+**Configuration** — plugins.yaml, followed without a restart since issue #18 ("Machines from the UI"):
 
 ```yaml
 attachedMachines:
@@ -2181,8 +2192,8 @@ linger, confirms the session runs, and prints the plugins.yaml lines with the re
 runs a real Claude job there (throwaway session) through the composition root. Passed against
 `laptop` 2026-10-04.
 
-**Not built:** `/api/plugins` shows no pending change for `attachedMachines:` (restart to apply);
-the UI shows attached machines only through `/api/machines`. **Beside the machine-source role, not
+**Live since issue #18:** `attachedMachines:` is followed like a live role, so `/api/plugins` never
+shows it pending; the Machines view adds, edits and removes machines ("Machines from the UI"). **Beside the machine-source role, not
 in it** (merged after slice 4, 2026-10-03): the `machines:` instance supplies this machine and
 `attachedMachines:` adds the others, combined in `main.ts` (`combineMachineSources`). An attached
 machine may not take the machine instance's name. Folding attached machines into the
@@ -2221,6 +2232,10 @@ Plugin tie: the repair is a role candidate (a `repairer` slot with detection and
 has one caller today; build it plain first, extract on a second real caller.
 
 ### 6b. Webhook subscription in the UI
+
+**Settled and built in issue #18** — "Webhook subscriptions in the UI" at the end of this file.
+The open questions below are answered there; the plugin tie is not taken (a subscription is not a
+notifier instance: glossary *Notifier*).
 
 Owner request: subscriptions are visible and configurable in the UI.
 
@@ -2378,8 +2393,92 @@ session still expires after `JOB_HOPPER_UI_SESSION_HOURS` (12).
 token or a device link in flight. Accepted for a home LAN; the peer list keeps the VPN and container
 networks out. A device link is as strong as the login code file and works once.
 
-
 ## UI manages everything (issue #18, 2026-10-03)
+
+the owner (2026-10-03), after the reworked UI went live: "Looks way better. Cant add machines, cant
+modify wh subscriptions, doesnt show the accounts used and usage. Cant specify router, queue sorter,
+question gates, routing rules, nor lane specific instructions. But i like the layout so far." On
+scoping: "Forget lane rules. Usage throttles lanes for sure. Rest are fine." So no lane-specific
+instructions and no rule that targets a lane. Every control below works at phone width (390 px):
+he uses the UI from his phone across the LAN.
+
+### Question gates (issue #18)
+
+Owner request: set question gates from the UI.
+
+The **question gates** are the chain an open question goes through: answerer (drafts) →
+assessor (escalates or not) → risk rules → the owner. One panel in the Questions view, below the
+open questions (collapsed by default under 640 px), shows the chain with each live stage's
+instance and state, and edits what is configuration:
+
+- **Answerer and assessor** — the plugin filling each (the answerer may be none) and each
+  instance's non-command options (model, timeoutMs, effort, …), through the existing
+  `POST /ui/api/plugins` `select` / `options`. Gate state comes from `GET /api/plugins`
+  (`answerer`, `assessor`): active plugin, detection, fallback (`always-escalate` standing in for an
+  assessor that cannot run; no answerer for one that cannot) and the reason. Nothing new on the
+  plugins side. The form is shared with the Plugins and Routing views: `ui/src/components/plugin-form.tsx`
+  (`InstanceForm { role, inst }`, `PluginSelector { role }`, `sendPluginsEdit`,
+  `pluginEditsUnsaved`), extracted from `views/plugins.tsx`; each form holds its own unsaved edits.
+- **Rules file** — `GET /api/question-gates` → `{ rulesFile: { path, text, version, missing },
+  riskRules }`; `POST /ui/api/rules-file { text, version }` (UI-session guarded) replaces it whole:
+  `version` is the sha-256 of the file's bytes (or `missing`), stale → 409; more than 64 KiB
+  (`RULES_FILE_MAX_BYTES`, UTF-8 bytes) → 400; written atomically (temp file beside it, rename),
+  keeping the file's mode, 600 for a new one. Answers the new `rulesFile`. The question service
+  reads the file on every ask (`requestFor`, `src/questions/service.ts`), so the next question's
+  answerer and assessor get the edit without a restart. The UI keeps an unsaved edit in
+  `localStorage` (`jh_rules_draft`: path, text, the version it began from), so it survives a reload;
+  a draft over an older version is shown stale and Save is refused until Discard.
+- **Risk rules** — code (`src/questions/risk.ts`), listed read-only with one line each
+  (`RISK_RULES`); no setting weakens them.
+
+`GET /api/question-gates` is a read: open on loopback, session-only across the LAN. Residual risk:
+every local user can read the rules text (as every GET), and a session holder can rewrite the rules,
+which steer the answerer and assessor; the assessor's fail-closed contract and the risk rules stand.
+
+### Webhook subscriptions in the UI (issue #18)
+
+Owner request: edit webhook subscriptions from the UI. Settles 6b.
+
+- **Source of truth.** `webhooks.yaml` stays the only source of subscriptions; the UI session
+  edits it. Not the store (the file would become a seed nobody trusts), not the notifier editor of
+  slice 7 (a subscription has a store row and deliveries; a notifier has neither).
+- **`POST /ui/api/webhooks`** (session-guarded, "UI session and mutations"), body by `action`,
+  each with the file's `version`:
+  `{ action: 'add', name, url, events, active?, version }` ·
+  `{ action: 'edit', name, url?, events?, active?, version }` ·
+  `{ action: 'rotate-secret', name, version }` · `{ action: 'remove', name, version }`.
+  Answers the new `GET /api/webhooks` view; after `add` and `rotate-secret` it adds `secret`.
+  400: body shape (a `secret`, `secretFile` or new name in the body included) or content invalid —
+  the content is checked with webhooks.yaml's own schema, so the messages are the file's
+  (`webhooks.N.url: …`, `must be an event type or "*"`); 404: no such name; 409: stale `version`,
+  `add` of a name already there, `rotate-secret` of a `secretFile` entry, an unparseable or invalid
+  webhooks.yaml (never edited from the UI — fix it by hand).
+- **`name`** is the reconcile key and never changes from the UI; renaming is remove + add.
+- **Secrets.** The daemon makes every secret (32 random bytes, hex) and writes it inline as
+  `secret`. It leaves the daemon once: in the answer to the add or rotate-secret that made it. No
+  GET carries a secret or a `secretFile` path. An entry with `secretFile` keeps that path as written;
+  its other fields are editable, its secret is rotated in that file only (409 says so).
+  `GET /api/webhooks` carries each subscription's `secretSource` (`inline` | `file`, never the
+  path), so the UI offers Rotate secret only for an inline one.
+- **The write.** Version = sha-256 of the file's bytes, or `missing` (then an add writes
+  `version: 1` and the one entry). The change is spliced into the text at the entry's source
+  ranges (`yaml` Document API), so comments, spacing and every other entry stay byte for byte; the
+  result is re-parsed and must mean exactly what the Document edit means, else the Document is
+  written instead (comments kept, spacing normalised) — the case for a flow-style or empty
+  `webhooks` list. Validated against the file schema, written atomically (temp, rename, mode 600),
+  then the watcher's `reload()` runs before the answer, so the store and the dispatcher already
+  use the new entry (the 5 s mtime check is not waited for).
+- **Residual risk.** A UI session holder can point a subscription at any http(s) URL and receive
+  events (prompts, issue context) there. Same holder as "UI session and mutations"; no command can
+  be run through a subscription.
+- **UI.** The Webhooks view (`ui/src/views/webhooks.tsx`; model `ui/src/model/webhooks.ts`, tested
+  from `test/ui/webhooks.test.ts`): a card per subscription — name, active switch, url, events,
+  last delivery — with Edit (url, events picker over every event type and `*`, which stands alone,
+  active), Rotate secret and Remove, each destructive one behind a confirm; an Add subscription
+  form. A new secret is shown once in a dialog with a copy button; where the clipboard API is
+  missing (plain HTTP on a LAN name) the readonly field is selected for the device's own copy. The
+  dialog states the check a subscriber makes (`x-jobhopper-signature`, "Webhooks"). A refused edit
+  re-reads `GET /api/webhooks`, so a stale version is one retry. Vendored `ui/src/components/ui/switch.tsx`.
 
 ### Usage and accounts (issue #18)
 
@@ -2443,3 +2542,143 @@ source reads without emitting events).
 **Tests never run the real claude.** `test/support/isolate.ts` puts a guard `claude` first on PATH
 (answers `--version`, refuses the rest); `TEST_PLUGINS` has `usageSources: []`; claude-plan tests
 name `test/plugins/fake-claude-plan.mjs` as `bin`.
+
+### Machines from the UI (issue #18)
+
+Owner request: add machines from the UI. The Machines view adds, edits and removes attached machines, and
+edits this machine's lane count. Every change is written to plugins.yaml and applies without a
+restart.
+
+**Read** — `GET /api/machines/config` → `MachinesConfig` (`src/domain/machines.ts`): `path`,
+`version` (sha-256 of plugins.yaml, as `/api/plugins` `config.version`), `error?`, `machine` (the
+machine source's instance; its `lanes` option is the lane count), `attached` (`attachedMachines:` as
+it applies now, defaults filled in), `executors` (the configured executor instance names) and `ssh:
+{ targets, notes }` — the **detected ssh targets**.
+
+**Detected ssh targets** (`src/machines/ssh-config.ts`): the `Host` aliases of `~/.ssh/config`, in
+file order. A pattern with `*`, `?` or `!` is not a target. `Include` is followed as ssh does
+(relative to `~/.ssh`, `~` expanded, globs through `fs.globSync`, 16 levels); what cannot be read is a
+note, never an error. Hand-written: the `ssh-config` package does not follow `Include`, the part that
+needs care.
+
+**Write** — `POST /ui/api/machines` (UI session, as every mutation), body by `action`:
+
+| body | effect |
+|---|---|
+| `{ action: 'add', name, ssh, lanes, executors?, label?, version }` | one new entry |
+| `{ action: 'edit', name, lanes?, executors?, label? (null: drop), version }` | that entry's lanes, executors, label |
+| `{ action: 'remove', name, version }` | that entry gone |
+
+Answers the new `MachinesConfig`. 400: body invalid (strict: `herdrBin`, `session` and, on edit,
+`ssh` are refused), an ssh target not detected, `local` or the machine source's name, lanes < 1, an
+executor that is not a configured instance. 404: no such attached machine. 409: stale `version`; an
+invalid plugins.yaml (fix it by hand); a name already attached; herdr not resolvable there (the
+reason; machine not added); a removal while a lane there is busy or draining, or a job waits for an
+answer in a pane there (`resumeOn`) — the error names the jobs.
+
+- **The ssh target is never typed.** The add form offers only detected ssh targets, and the route
+  refuses any other value: an ssh destination is command-bearing-adjacent (`-oProxyCommand=…`, a
+  host that runs whatever it likes). Adding a Host alias stays a `~/.ssh/config` edit.
+- **`herdrBin` is never taken from the UI.** On add the daemon resolves it over ssh, with the same
+  `BatchMode`/`ControlPath` argv as every herdr call (`resolveHerdrBinOverSsh`): `command -v herdr`
+  in a login shell there (`"$SHELL" -lc`, the last line, must be absolute), else `~/.local/bin/herdr`
+  if executable. Failure → 409 with the reason. `session` is left out (the default `job-hopper`). The
+  probe takes seconds, so the file's version is checked again before the write.
+- **One entry only.** The edit splices that entry's text into the file at its source range (`yaml`
+  node ranges), so every other byte stays: other sections, other entries, comments. An added entry
+  takes the style of the entries before it (flow `{ … }` or block); an empty `[]` or a flow list
+  becomes a block list; removing the last entry leaves `attachedMachines: []`. The result is checked
+  against the plugins.yaml schema, written atomically, mode 600, then reloaded before the answer.
+- **Live apply.** The host re-reads `attachedMachines:` on every good reload (`attachedMachines()`;
+  an invalid file keeps the last good list). `createAttachedMachines` reads that list on every
+  `list()`: a new machine appears (offline until its first probe), a removed one disappears (logged),
+  and lanes, executors and label apply at once without losing what the probe knows. Another ssh
+  target, herdr binary or session is another machine, probed afresh.
+- **Lanes of a machine that is gone.** The decider closes the idle lanes of a machine no source
+  lists and drains its busy ones (`planGoneLanes`); nothing starts there. Removal is refused while a
+  job needs the machine, so this cleans up idle lanes.
+- **This machine's lane count** is the machine source's `lanes` option, edited through
+  `POST /ui/api/plugins` `options` (no new route). The machine source now applies an options change
+  live; another instance name or plugin still shows `changed — restart pending`, since lanes are
+  stored under the machine id.
+- **UI**: `ui/src/views/machines.tsx` (cards: online/offline, lanes, executors, ssh target, herdr
+  path and session read-only; Edit, Remove behind a confirm dialog; Add machine) and
+  `machine-forms.tsx`; model `ui/src/model/machines.ts`, tested from `test/ui/machines.test.ts`. Phone
+  width first: fields stack, controls are at least 36 px tall.
+
+Residual risk: a session holder can attach any machine already in `~/.ssh/config` and point jobs
+at it; that needs the owner's ssh config to name it and the machine to run herdr. Every local user can
+read the detected ssh targets (`GET /api/machines/config`, like every loopback read).
+
+### Router, queue sorter and routing rules (issue #18)
+
+Owner request: set the router, queue sorter and routing rules from the UI. Lane rules are out of scope.
+So no rule targets a lane.
+
+**Router.** The Routing view lists every router plugin with its detection. One that cannot run is
+shown with its reason or its setup command and is never offered (on server `jev-router` is
+unavailable while the Jev checkout is missing, so the reason is on screen). Selecting a router uses
+`POST /ui/api/plugins` `select`; shadow/active uses `POST /ui/api/router-mode`; the configured
+instance's options use the shared options form (`ui/src/components/plugin-form.tsx`, also used
+by the Plugins view and the question gates).
+
+**Queue sorter.** A new live role, `queue-sorter`, with exactly one instance, like the router.
+Port: `QueueSorter { name; sort(entries: { job, effectivePriority }[]) → JobId[] }`. It is
+synchronous and called once per Decision. Configured in plugins.yaml `queueSorter:`, selectable in
+the UI. Built-in plugins: `priority` (the default, and the built-in instance when the section is
+absent: effective priority desc, then `createdAt` asc, then id, which is the decider's own rule, so
+nothing changes without the section), `oldest-first`, and `newest-first`.
+- **The decider stays pure.** The engine calls the sorter while it gathers inputs
+  (`src/engine/queue-order.ts`) and passes `DecisionInputs.queueOrder { sorter, jobIds }`. Step 6
+  orders admissible jobs by that order. Jobs it leaves out come after it, by the old rule. With no
+  order (Decisions stored before this), the old rule applies. The order never admits or holds a
+  job. A reason line says `queue order by <instance>`.
+- **Effective priority stays the decider's notion.** `effectivePriority(job, mode, policy)` is
+  exported from `src/decider/assign.ts`. The engine computes it for the sorter's input, and
+  `/api/queue` `waiting` uses the same order.
+- **Fallback.** These cases fall back to `priority` for that call: a sorter that cannot run
+  (unknown plugin, invalid options, not available, create threw), a sort that throws, or a result
+  that is not distinct ids of the given jobs. The fallback is logged once per reason. `/api/plugins`
+  `queueSorter` gives `{ instance, detection, active, fallback, reason? }`. A sort fallback clears
+  on the next good sort.
+- Authors: `examples/plugins/queue-sorter/word-first/`, `docs/plugins.md`.
+
+**Routing rules.** plugins.yaml `routing:` holds an ordered list. When the section is absent there
+are no rules.
+
+```yaml
+routing:
+  - name: urgent sandbox
+    match: { repo: "owner/*", label: urgent }   # any of: source, repo, label, author, title
+    set: { priority: 90, machine: laptop }               # any of: machine, executor, priority
+```
+
+- `match` fields are case-insensitive, and every field given must match. `source` is the
+  job-source instance name. In `repo`, `*` matches any run of characters, the slash included.
+  `label` means the item has that label. `title` is a substring match. An empty `match` matches
+  every item. `set` needs at least one field: `machine` (a configured machine id, which becomes the
+  `spec.machineId` pin), `executor` (a configured executor instance), or `priority` (0..100). The
+  schema is strict, so a `lane` anywhere is refused.
+- **The first matching rule wins.** Rules are applied at intake (`SourceHost.ingest`,
+  `src/engine/source-host.ts`), when a source item becomes a job. The item's source, repo, labels,
+  author and title come from `SourceItem`. The job records `spec.routedBy { rule, set }` (additive
+  in `job.queued`, still v1), and the UI shows it on the job. A source re-sort does not change a
+  priority that a rule set.
+- **New jobs only.** A rule change does not touch jobs already created. The UI copy says so.
+- **Targets.** If a rule names a machine or executor that is not configured, a save returns 400.
+  If the target disappears later, intake skips the rule with a warning and tries the next one.
+  Intake never fails on a rule. `GET /api/routing` lists those rules under `skipped`.
+- **API.** `GET /api/routing` returns `{ path, version, rules, error?, targets: { machines,
+  executors }, skipped }`. `version` is plugins.yaml's sha-256, the same as `/api/plugins`.
+  `POST /ui/api/routing { rules, version }` takes the whole list and is session-guarded. It is
+  validated by the plugins.yaml schema and the target check. It writes only the `routing` node
+  (yaml Document API; comments and other sections stay byte for byte), atomically, with mode 600,
+  then reloads before it answers. 400: invalid rule or unknown target. 409: stale version, or
+  plugins.yaml invalid. Pure matching: `src/routing/`.
+
+**UI.** A "Routing" nav item with three panels: Router (current advice and fallback reason, mode
+buttons, picker, options form), Queue sorter (picker with each plugin's description, options form),
+and Routing rules (ordered list; each rule is a stacked form with match and set fields; add, move
+up/down, delete; one Save for the whole list). The machine select uses `/api/machines` plus the
+routing targets; the executor select uses the configured executors. Forms stack at 390 px width;
+there is no horizontal page scroll.

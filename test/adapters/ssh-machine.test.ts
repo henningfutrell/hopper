@@ -2,11 +2,11 @@
 // ssh. The probe runs in the background on its own cadence; list() never waits for it, so a
 // machine that is off or asleep never stalls a Decision.
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { chmodSync, mkdtempSync, rmSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createAttachedMachineSource, probeHerdrOverSsh } from '../../src/machines/index.ts';
+import { createAttachedMachineSource, probeHerdrOverSsh, resolveHerdrBinOverSsh } from '../../src/machines/index.ts';
 
 const HERDR = fileURLToPath(new URL('../herdr/fake-herdr-bin.mjs', import.meta.url));
 const SSH = fileURLToPath(new URL('../herdr/fake-ssh-bin.mjs', import.meta.url));
@@ -20,7 +20,7 @@ function harness(results: (boolean | Error)[]) {
   const lines: string[] = [];
   let calls = 0;
   const src = createAttachedMachineSource({
-    machine: { name: 'laptop', ssh: 'laptop', lanes: 2, executors: ['herdr-claude'], session: 'job-hopper', herdrBin: '/home/h/.local/bin/herdr' },
+    machine: () => ({ name: 'laptop', ssh: 'laptop', lanes: 2, executors: ['herdr-claude'], session: 'job-hopper', herdrBin: '/home/h/.local/bin/herdr' }),
     clock: { now: () => new Date(t) },
     probeEveryMs: 30000,
     probe: async () => {
@@ -72,7 +72,7 @@ describe('attached machine source', () => {
 
   it('honours a label', async () => {
     const h = createAttachedMachineSource({
-      machine: { name: 'laptop', label: 'arch-laptop', ssh: 'laptop', lanes: 1, executors: [], session: 'job-hopper', herdrBin: 'herdr' }, probe: async () => true,
+      machine: () => ({ name: 'laptop', label: 'arch-laptop', ssh: 'laptop', lanes: 1, executors: [], session: 'job-hopper', herdrBin: 'herdr' }), probe: async () => true,
     });
     expect((await h.list())[0]!.label).toBe('arch-laptop');
   });
@@ -102,5 +102,42 @@ describe('probeHerdrOverSsh', () => {
 
   it('rejects with the ssh failure when the machine cannot be reached', async () => {
     await expect(probe('unreachable')).rejects.toThrow(/ssh unreachable/);
+  });
+});
+
+// Adding a machine from the UI (issue #18): herdrBin is never typed; the daemon asks the machine.
+describe('resolveHerdrBinOverSsh', () => {
+  let home: string;
+  const saved = { ...process.env };
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), 'jh-ssh-home-'));
+    process.env.FAKE_HERDR_DIR = home;
+    process.env.HOME = home;
+    process.env.SHELL = '/bin/sh';
+  });
+  afterEach(() => {
+    process.env = { ...saved };
+    rmSync(home, { recursive: true, force: true });
+  });
+  const executable = (path: string) => {
+    mkdirSync(join(path, '..'), { recursive: true });
+    writeFileSync(path, '#!/bin/sh\necho herdr\n', { mode: 0o755 });
+  };
+  const resolve = (target: string) => resolveHerdrBinOverSsh({ target, sshBin: SSH, controlDir: join(home, 's') });
+
+  it('the absolute path a login shell there finds', async () => {
+    executable(join(home, 'tools', 'herdr'));
+    writeFileSync(join(home, '.profile'), `PATH="${join(home, 'tools')}:$PATH"; export PATH\necho motd line\n`);
+    expect(await resolve('laptop')).toBe(join(home, 'tools', 'herdr'));
+  });
+
+  it('else ~/.local/bin/herdr when it is executable', async () => {
+    executable(join(home, '.local', 'bin', 'herdr'));
+    expect(await resolve('laptop')).toBe(join(home, '.local', 'bin', 'herdr'));
+  });
+
+  it('rejects with the reason when herdr is nowhere, or the machine cannot be reached', async () => {
+    await expect(resolve('laptop')).rejects.toThrow(/herdr not found/);
+    await expect(resolve('unreachable')).rejects.toThrow(/ssh unreachable/);
   });
 });

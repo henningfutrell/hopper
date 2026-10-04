@@ -1,5 +1,5 @@
 import type {
-  Clock, ExecutorRegistry, IdGen, MachineSource, QuestionService, Router, SettableUsageSource, Store, UsageSource,
+  Clock, ExecutorRegistry, IdGen, MachineSource, QuestionService, QueueSorter, Router, RoutingView, SettableUsageSource, Store, UsageSource,
 } from '../domain/ports.ts';
 import type { DeciderPolicy, RouterMode } from '../domain/types.ts';
 
@@ -16,6 +16,10 @@ export interface EngineOptions {
   fakeUsage?: SettableUsageSource;
   /** The router role (live: the plugin host may swap its instance between calls). */
   router: Router;
+  /** The queue-sorter role (live, like the router): the order of the waiting jobs, asked each Decision. */
+  queueSorter: QueueSorter;
+  /** The routing rules applied at intake, and the machine ids they may pin to. */
+  routing: RoutingView;
   policy: DeciderPolicy;
   tickMs: number;
   /** Router mode used only when the store has none yet. */

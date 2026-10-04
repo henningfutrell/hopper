@@ -2,6 +2,7 @@
 import { decide } from '../decider/index.ts';
 import type { Decision, DecisionInputs, Job, LaneId } from '../domain/types.ts';
 import { nowIso, type EngineContext } from './context.ts';
+import { queueOrder } from './queue-order.ts';
 
 export interface Claim { jobId: string; laneId: LaneId }
 
@@ -11,18 +12,23 @@ const RUNNING = ['claimed', 'running'] as const;
 async function gather(c: EngineContext, trigger: string): Promise<() => DecisionInputs> {
   const [machines, ...readings] = await Promise.all([c.machines.list(), ...c.usage.map((u) => u.poll())]);
   // Store reads happen after the awaits, synchronously with decide and apply: no interleaving.
-  return () => ({
-    at: nowIso(c),
-    trigger,
-    routerMode: c.routerMode(),
-    machines,
-    lanes: c.store.lanes.list(),
-    usage: readings.flat(),
-    waiting: oldestFirst(c.store.jobs.list({ status: [...WAITING] })),
-    running: oldestFirst(c.store.jobs.list({ status: [...RUNNING] })),
-    unavailableExecutors: c.executors.unavailable(),
-    policy: c.policy,
-  });
+  return () => {
+    const routerMode = c.routerMode();
+    const waiting = oldestFirst(c.store.jobs.list({ status: [...WAITING] }));
+    return {
+      at: nowIso(c),
+      trigger,
+      routerMode,
+      machines,
+      lanes: c.store.lanes.list(),
+      usage: readings.flat(),
+      waiting,
+      running: oldestFirst(c.store.jobs.list({ status: [...RUNNING] })),
+      unavailableExecutors: c.executors.unavailable(),
+      queueOrder: queueOrder(c, waiting, routerMode),
+      policy: c.policy,
+    };
+  };
 }
 
 const oldestFirst = (jobs: Job[]): Job[] => [...jobs].reverse();

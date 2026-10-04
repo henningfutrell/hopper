@@ -4,12 +4,14 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import type { Clock, PluginsView, QuestionService, SourceRegistry, Store, WebhookDispatcher } from '../domain/ports.ts';
 import type { Engine } from '../engine/index.ts';
-import type { WebhookConfigStatus } from '../webhooks/config.ts';
+import type { WebhookConfigView } from './webhooks.ts';
+import type { WebhooksEditor } from '../webhooks/edit.ts';
 import { accountRoutes } from './accounts.ts';
 import { installErrorHandling } from './errors.ts';
 import { installHostGuard } from './host-guard.ts';
 import type { Lan } from './reach.ts';
 import { jobRoutes } from './jobs.ts';
+import { questionGatesRoutes } from './question-gates.ts';
 import { questionRoutes } from './questions.ts';
 import { sourceRoutes } from './sources.ts';
 import { sseRoutes } from './sse.ts';
@@ -27,11 +29,15 @@ export interface ServerOptions {
   sources: SourceRegistry;
   /** The router's status and GET /api/plugins. */
   plugins: PluginsView;
-  webhookConfig: { status(): WebhookConfigStatus };
+  webhookConfig: WebhookConfigView;
+  /** UI edits of webhooks.yaml (POST /ui/api/webhooks). */
+  webhooksEditor: WebhooksEditor;
   clock: Clock;
   version: string;
   /** The bound port, for the Host guard and the UI Origin check (known only after listen). */
   port: () => number;
+  /** The rules file (JOB_HOPPER_RULES_FILE): read by GET /api/question-gates, written by POST /ui/api/rules-file. */
+  rulesFile: string;
   /** Where the UI login code file lives. */
   dataDir: string;
   sessionHours: number;
@@ -51,11 +57,15 @@ export function createServer(o: ServerOptions): FastifyInstance {
   jobRoutes(app, o);
   stateRoutes(app, o);
   questionRoutes(app, o);
+  questionGatesRoutes(app, o);
   webhookRoutes(app, o);
   sourceRoutes(app, o);
   accountRoutes(app, o);
   sseRoutes(app, o);
   staticRoutes(app, o.uiDir);
-  registerUiRoutes(app, { engine: o.engine, questions: o.questions, sessions, plugins: o.plugins, port: o.port, lan: o.lan, dataDir: o.dataDir });
+  registerUiRoutes(app, {
+    engine: o.engine, questions: o.questions, sessions, plugins: o.plugins, rulesFile: o.rulesFile, port: o.port, lan: o.lan, dataDir: o.dataDir,
+    store: o.store, webhookConfig: o.webhookConfig, webhooksEditor: o.webhooksEditor,
+  });
   return app;
 }

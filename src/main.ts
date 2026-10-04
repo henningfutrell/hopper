@@ -12,7 +12,7 @@ import { createEngine, type Engine } from './engine/index.ts';
 import { createExecutorRegistry } from './executors/index.ts';
 import type { HerdrClient } from './executors/herdr/index.ts';
 import { createServer } from './http/index.ts';
-import { combineMachineSources, createAttachedMachineSource, probeHerdrOverSsh } from './machines/index.ts';
+import { combineMachineSources, createAttachedMachines, probeHerdrOverSsh } from './machines/index.ts';
 import { BUILTIN_PLUGINS } from './plugins/builtin.ts';
 import { herdrClaudePlugin } from './plugins/executor/herdr-claude/index.ts';
 import { createPluginHost, type BuiltJobSource } from './plugins/index.ts';
@@ -27,6 +27,7 @@ import { logFailures } from './engine/failure-log.ts';
 import { createSourceSync, idleStatus, withFixedStatuses, type GitHubApi, type SourceSync } from './sources/index.ts';
 import { openStore } from './store/index.ts';
 import { createWebhookConfigWatcher, type WebhookConfigWatcher } from './webhooks/config.ts';
+import { createWebhooksEditor } from './webhooks/edit.ts';
 import { createWebhookDispatcher } from './webhooks/index.ts';
 
 export interface App {
@@ -74,6 +75,8 @@ export interface AppSeams {
   pluginsFileIntervalMs?: number;
   /** Replaces the ssh probe of every attached machine: true = its herdr session is running. */
   machineProbe?: (machine: AttachedMachine) => Promise<boolean>;
+  /** Replaces resolving herdr's path over ssh when the UI adds a machine (issue #18): the path, or a rejection with the reason. */
+  resolveHerdrBin?: (ssh: string) => Promise<string>;
   /** The built UI bundle; default UI_DIR. */
   uiDir?: string;
 }
@@ -119,7 +122,11 @@ function splitSources(built: BuiltJobSource[]): { running: RunningSource[]; fixe
 
 /** A seam router (tests) answers as itself; the report stays the host's. */
 function seamPlugins(router: Router, host: PluginsView): PluginsView {
-  return { routerStatus: () => ({ name: router.name, plugin: router.name, fallback: false }), report: host.report, edit: host.edit };
+  return {
+    routerStatus: () => ({ name: router.name, plugin: router.name, fallback: false }), report: host.report, edit: host.edit,
+    machinesConfig: host.machinesConfig, editMachines: host.editMachines,
+    routing: host.routing, editRouting: host.editRouting,
+  };
 }
 
 export async function startApp(config: Config, seams: AppSeams = {}): Promise<App> {
@@ -134,6 +141,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   const dataDir = dirname(config.dbPath);
   const routerMode = () => store.settings.getRouterMode() ?? config.routerMode;
   let executorNames = (): string[] => [];
+  let jobsOnMachine = (_name: string): string[] => [];
   const host = createPluginHost({
     pluginDir: config.pluginDir, pluginsFile: config.pluginsFile, dataDir, clock, routerMode, logger,
     builtins: withSeams(seams),
@@ -143,6 +151,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     },
     machineContext: { executors: () => executorNames() },
     intervalMs: seams.pluginsFileIntervalMs ?? PLUGINS_FILE_CHECK_MS,
+    attached: { inUse: (name) => jobsOnMachine(name), ...(seams.resolveHerdrBin ? { resolveHerdrBin: seams.resolveHerdrBin } : {}) },
   });
   await host.start();
   const built = host.executors();
@@ -170,16 +179,17 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     onExpired: (q: Question) => engine.onExpired(q),
   });
   const engine: Engine = createEngine({
-    store, clock, executors, router, questions,
+    store, clock, executors, router, questions, queueSorter: host.queueSorter,
+    routing: { rules: () => host.routingRules(), machines: () => host.machineIds() },
     ...(seams.fakeUsage ? { fakeUsage: seams.fakeUsage } : {}),
+    // Both follow plugins.yaml without a restart (issue #18).
     machines: combineMachineSources([
       host.machines(),
-      ...host.attachedMachines().map((m) => createAttachedMachineSource({
-        machine: m, clock, logger: { info: (l) => console.log(l), warn: (l) => console.warn(l) },
+      createAttachedMachines({
+        machines: () => host.attachedMachines(), clock, logger,
         probe: seams.machineProbe
-          ? () => seams.machineProbe!(m)
-          : () => probeHerdrOverSsh({ target: m.ssh, herdrBin: m.herdrBin, session: m.session, controlDir: join(dataDir, 'ssh') }),
-      })),
+          ?? ((m) => probeHerdrOverSsh({ target: m.ssh, herdrBin: m.herdrBin, session: m.session, controlDir: join(dataDir, 'ssh') })),
+      }),
     ]),
     usage: [...host.usageSources(), ...(seams.fakeUsage ? [seams.fakeUsage] : [])],
     policy: {
@@ -191,6 +201,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     maxQuestions: config.maxQuestions,
     keepPanes: config.keepPanes,
   });
+  jobsOnMachine = (name) => engine.jobsOnMachine(name);
   const { running, fixed } = splitSources(host.jobSources());
   const stopFailureLog = logFailures(store);
   const sync = createSourceSync({
@@ -203,7 +214,8 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   });
   const server = createServer({
     engine, store, dispatcher, questions, clock, version: VERSION, sources: registry, webhookConfig, plugins,
-    port: () => port, dataDir, sessionHours: config.uiSessionHours, lan: { names: config.lanNames, peers: config.lanPeers }, uiDir: seams.uiDir ?? UI_DIR,
+    webhooksEditor: createWebhooksEditor({ path: config.webhooksFile, reload: webhookConfig.reload }),
+    port: () => port, rulesFile: config.rulesFile, dataDir, sessionHours: config.uiSessionHours, lan: { names: config.lanNames, peers: config.lanPeers }, uiDir: seams.uiDir ?? UI_DIR,
   });
 
   webhookConfig.start();

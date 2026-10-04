@@ -1,5 +1,6 @@
 // webhooks.yaml: the source of truth for webhook subscriptions. Loaded at startup and
 // re-read when its mtime changes; reconciled by `name` into the store.
+import { createHash } from 'node:crypto';
 import { readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { parse } from 'yaml';
@@ -8,7 +9,9 @@ import type { Clock, Store } from '../domain/ports.ts';
 import { EVENT_TYPES } from '../domain/types.ts';
 
 export interface WebhookConfig { name: string; url: string; events: string[]; secret: string; active: boolean }
-export type LoadResult = { webhooks: WebhookConfig[]; warnings: string[] } | { error: string };
+/** Where a subscription's secret lives: inline in webhooks.yaml, or in its `secretFile`. Never the path. */
+export type SecretSource = 'inline' | 'file';
+export type LoadResult = { webhooks: WebhookConfig[]; warnings: string[]; secretSources: Record<string, SecretSource> } | { error: string };
 
 const eventName = z.string().refine((e) => e === '*' || (EVENT_TYPES as readonly string[]).includes(e), {
   message: 'must be an event type or "*"',
@@ -31,6 +34,21 @@ const FILE = z.strictObject({ version: z.literal(1), webhooks: z.array(entry) })
   }
 });
 
+/** Why a parsed webhooks.yaml is refused, or undefined when it is valid. */
+export function webhooksFileProblem(raw: unknown): string | undefined {
+  const parsed = FILE.safeParse(raw);
+  return parsed.success ? undefined : parsed.error.issues.map((i) => `${i.path.join('.') || 'file'}: ${i.message}`).join('; ');
+}
+
+/** sha-256 of the file's bytes, or `missing`: a UI edit read against one version is refused against another. */
+export function webhooksFileVersion(path: string): string {
+  try {
+    return createHash('sha256').update(readFileSync(path)).digest('hex');
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code === 'ENOENT' ? 'missing' : 'unreadable';
+  }
+}
+
 const expandHome = (p: string): string => (p === '~' || p.startsWith('~/') ? homedir() + p.slice(1) : p);
 
 export function loadWebhooksFile(path: string): LoadResult {
@@ -40,18 +58,18 @@ export function loadWebhooksFile(path: string): LoadResult {
     text = readFileSync(path, 'utf8');
     mode = statSync(path).mode;
   } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return { webhooks: [], warnings: ['no webhooks file'] };
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return { webhooks: [], warnings: ['no webhooks file'], secretSources: {} };
     return { error: `cannot read ${path}: ${(e as Error).message}` };
   }
   let raw: unknown;
   try { raw = parse(text); } catch (e) { return { error: `${path}: ${(e as Error).message}` }; }
   const parsed = FILE.safeParse(raw);
-  if (!parsed.success) {
-    return { error: `${path}: ${parsed.error.issues.map((i) => `${i.path.join('.') || 'file'}: ${i.message}`).join('; ')}` };
-  }
+  if (!parsed.success) return { error: `${path}: ${webhooksFileProblem(raw)}` };
   const warnings: string[] = [];
   const webhooks: WebhookConfig[] = [];
+  const secretSources: Record<string, SecretSource> = {};
   for (const w of parsed.data.webhooks) {
+    secretSources[w.name] = w.secretFile === undefined ? 'inline' : 'file';
     let secret = w.secret;
     if (w.secretFile !== undefined) {
       const sf = expandHome(w.secretFile);
@@ -64,15 +82,21 @@ export function loadWebhooksFile(path: string): LoadResult {
     }
     webhooks.push({ name: w.name, url: w.url, events: w.events, secret: secret as string, active: w.active });
   }
-  return { webhooks, warnings };
+  return { webhooks, warnings, secretSources };
 }
 
-export interface WebhookConfigStatus { path: string; loadedAt?: string; error?: string; warnings: string[] }
+export interface WebhookConfigStatus {
+  path: string; loadedAt?: string; error?: string; warnings: string[];
+  /** The file's version now (webhooksFileVersion), for a UI edit. */
+  version: string;
+}
 
 export interface WebhookConfigWatcher {
   start(): void;
   stop(): void;
   status(): WebhookConfigStatus;
+  /** Each subscription's secret source, as last loaded. */
+  secretSources(): Record<string, SecretSource>;
   /** Re-read now, whatever the mtime. */
   reload(): void;
 }
@@ -83,7 +107,8 @@ export function createWebhookConfigWatcher(o: {
   const { path, store, clock } = o;
   let timer: NodeJS.Timeout | undefined;
   let signature: string | undefined;
-  const state: WebhookConfigStatus = { path, warnings: [] };
+  const state: Omit<WebhookConfigStatus, 'version'> = { path, warnings: [] };
+  let sources: Record<string, SecretSource> = {};
 
   const sign = (): string => {
     try { const s = statSync(path); return `${s.mtimeMs}:${s.size}`; } catch { return 'missing'; }
@@ -98,6 +123,7 @@ export function createWebhookConfigWatcher(o: {
     for (const s of store.webhooks.list()) if (!names.has(s.name)) store.webhooks.delete(s.id);
     delete state.error;
     state.warnings = r.warnings;
+    sources = r.secretSources;
     state.loadedAt = clock.now().toISOString();
   }
 
@@ -109,7 +135,8 @@ export function createWebhookConfigWatcher(o: {
       timer.unref();
     },
     stop() { if (timer) clearInterval(timer); timer = undefined; },
-    status: () => ({ ...state, warnings: [...state.warnings] }),
+    secretSources: () => ({ ...sources }),
+    status: () => ({ ...state, warnings: [...state.warnings], version: webhooksFileVersion(path) }),
     reload,
   };
 }

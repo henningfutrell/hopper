@@ -56,6 +56,8 @@ export function stateRoutes(app: FastifyInstance, o: { engine: Engine; store: St
   });
   app.get('/api/queue', async () => engine.getQueue());
   app.get('/api/machines', async () => ({ machines: await engine.getMachines() }));
+  // What the Machines view edits (issue #18): the machine source, the attached machines, the detected ssh targets, the file version.
+  app.get('/api/machines/config', async () => plugins.machinesConfig());
 
   app.get('/api/decisions', async (req) => {
     const { limit } = parseWith(z.object({ limit: z.coerce.number().int().min(1).max(1000).default(50) }), req.query);
@@ -77,6 +79,7 @@ export function stateRoutes(app: FastifyInstance, o: { engine: Engine; store: St
 
   app.get('/api/router', async () => routerView(engine, plugins));
   app.get('/api/plugins', async () => plugins.report());
+  app.get('/api/routing', async () => plugins.routing());
 
   app.get('/api/usage', async () => engine.getUsageReport());
 }

@@ -5,12 +5,16 @@
 // (design.md "Reaching the UI across the LAN").
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import type { PluginsView, QuestionService } from '../../domain/ports.ts';
+import type { PluginsView, QuestionService, Store } from '../../domain/ports.ts';
 import { ROLES, SELECTABLE_ROLES } from '../../domain/types.ts';
 import type { Engine } from '../../engine/index.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { lanHosts, type Lan } from '../reach.ts';
+import { writeRulesFile } from '../../questions/index.ts';
 import { routerView } from '../state.ts';
+import { webhooksView } from '../webhooks.ts';
+import type { WebhookConfigView } from '../webhooks.ts';
+import type { WebhooksEditor } from '../../webhooks/edit.ts';
 import { SESSION_HEADER, mutationRefusal } from './guard.ts';
 import { createLoginCode } from './login-code.ts';
 import type { UiSessions } from './sessions.ts';
@@ -22,10 +26,15 @@ export interface UiRouteOptions {
   questions: QuestionService;
   sessions: UiSessions;
   plugins: PluginsView;
+  /** The rules file (JOB_HOPPER_RULES_FILE). */
+  rulesFile: string;
   /** The bound port (known only after listen). */
   port: () => number;
   lan: Lan;
   dataDir: string;
+  store: Pick<Store, 'webhooks'>;
+  webhookConfig: WebhookConfigView;
+  webhooksEditor: WebhooksEditor;
 }
 
 const idParams = z.object({ id: z.string() });
@@ -37,7 +46,28 @@ const pluginsEditBody = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('select'), role: z.enum(SELECTABLE_ROLES), plugin: z.string().min(1).nullable(), version: z.string().min(1) }),
   z.strictObject({ action: z.literal('rescan') }),
 ]);
+const rulesFileBody = z.strictObject({ text: z.string(), version: z.string().min(1) });
+// The content (url, events) is checked against webhooks.yaml's own schema in the editor, so the UI
+// shows the file's messages; here only the shape. No secret, no secretFile, no new name.
+const webhookFields = { name: z.string().min(1), version: z.string().min(1) };
+const webhooksEditBody = z.discriminatedUnion('action', [
+  z.strictObject({ action: z.literal('add'), ...webhookFields, url: z.string(), events: z.array(z.string()), active: z.boolean().optional() }),
+  z.strictObject({ action: z.literal('edit'), ...webhookFields, url: z.string().optional(), events: z.array(z.string()).optional(), active: z.boolean().optional() }),
+  z.strictObject({ action: z.literal('rotate-secret'), ...webhookFields }),
+  z.strictObject({ action: z.literal('remove'), ...webhookFields }),
+]);
+const machineName = z.string().trim().min(1).max(64);
+const machineLanes = z.number().int().min(1, 'lanes must be at least 1');
+const machineExecutors = z.array(z.string().min(1));
+// ssh is checked against the detected ssh targets, herdrBin and session are never accepted (strict).
+const machinesEditBody = z.discriminatedUnion('action', [
+  z.strictObject({ action: z.literal('add'), name: machineName, ssh: z.string().min(1), lanes: machineLanes, executors: machineExecutors.optional(), label: z.string().trim().min(1).optional(), version: z.string().min(1) }),
+  z.strictObject({ action: z.literal('edit'), name: machineName, lanes: machineLanes.optional(), executors: machineExecutors.optional(), label: z.string().trim().min(1).nullable().optional(), version: z.string().min(1) }),
+  z.strictObject({ action: z.literal('remove'), name: machineName, version: z.string().min(1) }),
+]);
 const EDIT_STATUS = { invalid: 400, not_found: 404, conflict: 409 } as const;
+/** The rules themselves are validated by the plugin host (the plugins.yaml schema), so a refusal names the field. */
+const routingEditBody = z.strictObject({ rules: z.array(z.any()), version: z.string().min(1) });
 
 const refuse = (req: FastifyRequest, reply: FastifyReply, why: string) => {
   console.warn(`job-hopper: UI ${req.method} ${req.url} refused: ${why}`);
@@ -108,6 +138,40 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   // filling a one-instance role, or a rescan. Answers the new GET /api/plugins report.
   app.post('/ui/api/plugins', guarded, async (req) => {
     const r = await o.plugins.edit(parseWith(pluginsEditBody, req.body));
+    if (!r.ok) throw new HttpError(EDIT_STATUS[r.code], r.error);
+    return r.report;
+  });
+
+  // Question gates (issue #18): the rules file, whole, against the version read (sha-256 of its
+  // bytes); the next question reads it. Answers the new GET /api/question-gates rulesFile.
+  app.post('/ui/api/rules-file', guarded, async (req) => {
+    const { text, version } = parseWith(rulesFileBody, req.body);
+    const r = writeRulesFile(o.rulesFile, text, version);
+    if (!r.ok) throw new HttpError(EDIT_STATUS[r.code], r.error);
+    return r.view;
+  });
+
+  // Issue #18: one webhooks.yaml entry added, edited, its secret rotated, or removed. Answers the
+  // new GET /api/webhooks view, plus the new secret after add or rotate-secret — the only time a
+  // secret leaves the daemon.
+  app.post('/ui/api/webhooks', guarded, async (req) => {
+    const r = o.webhooksEditor.edit(parseWith(webhooksEditBody, req.body));
+    if (!r.ok) throw new HttpError(EDIT_STATUS[r.code], r.error);
+    return { ...webhooksView(o.store, o.webhookConfig), ...(r.secret === undefined ? {} : { secret: r.secret }) };
+  });
+
+  // design.md "Machines from the UI" (issue #18): add, edit or remove one attached machine in
+  // plugins.yaml; applies without a restart. Answers the new GET /api/machines/config.
+  app.post('/ui/api/machines', guarded, async (req) => {
+    const r = await o.plugins.editMachines(parseWith(machinesEditBody, req.body));
+    if (!r.ok) throw new HttpError(EDIT_STATUS[r.code], r.error);
+    return r.config;
+  });
+
+  // design.md "Routing rules (issue #18)": the whole ordered list into plugins.yaml `routing:`.
+  // Answers the new GET /api/routing report. A rule change applies to new jobs only.
+  app.post('/ui/api/routing', guarded, async (req) => {
+    const r = await o.plugins.editRouting(parseWith(routingEditBody, req.body));
     if (!r.ok) throw new HttpError(EDIT_STATUS[r.code], r.error);
     return r.report;
   });

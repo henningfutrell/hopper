@@ -2,7 +2,8 @@
 // these. Adapters live in src/{executors,machines,usage,plugins,store,webhooks}.
 
 import type {
-  Advice, DomainEvent, Decision, EventType, ExecutorUnavailable, Job, JobId, JobSpec, JobStatus, Lane, PluginsEdit, PluginsEditOutcome, PluginsReport, RouterMode, RouterStatus,
+  Advice, DomainEvent, Decision, EventType, ExecutorUnavailable, Job, JobId, JobSpec, JobStatus, Lane, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit, PluginsEditOutcome, PluginsReport, RouterMode, RouterStatus,
+  RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule,
   JobSourceRef, LaneId, MachineId, MachineSnapshot, NewEvent, Question, QuestionAttempt, QuestionStatus,
   SourceStatus, UsageReading, UsageSourceState, WebhookDelivery, WebhookSubscription,
 } from './types.ts';
@@ -137,12 +138,43 @@ export interface Router {
   advise(job: Job): Promise<Advice>;
 }
 
+/** One waiting job as the queue sorter sees it: the job and its effective priority (the decider's notion). */
+export interface QueueEntry {
+  job: Job;
+  effectivePriority: number;
+}
+
+/**
+ * The queue-sorter role: orders the waiting jobs. Synchronous and pure in spirit: called once per
+ * Decision while the engine gathers inputs. Returns job ids; ids it leaves out follow, by the
+ * decider's own rule. Throwing or returning anything but distinct ids of the given jobs is a
+ * fallback to `priority` for that call.
+ */
+export interface QueueSorter {
+  readonly name: string;
+  sort(entries: readonly QueueEntry[]): JobId[];
+}
+
 /** What the HTTP edge reads about plugins: the router's status and GET /api/plugins. */
 export interface PluginsView {
   routerStatus(): RouterStatus;
   report(): PluginsReport;
   /** A UI edit of plugins.yaml (or a rescan); applied like a file edit before it resolves. */
   edit(e: PluginsEdit): Promise<PluginsEditOutcome>;
+  /** GET /api/machines/config: the machine source, the attached machines, the detected ssh targets. */
+  machinesConfig(): MachinesConfig;
+  /** A UI edit of plugins.yaml `attachedMachines:`; applied (live) before it resolves. */
+  editMachines(e: MachineEdit): Promise<MachineEditOutcome>;
+  /** GET /api/routing: plugins.yaml `routing:` and what a rule may name. */
+  routing(): RoutingReport;
+  /** POST /ui/api/routing: the whole ordered list; applied before it resolves. */
+  editRouting(e: RoutingEdit): Promise<RoutingEditOutcome>;
+}
+
+/** What intake reads to route a source item (design.md "Routing rules (issue #18)"): the rules now, and the machine ids running. */
+export interface RoutingView {
+  rules(): readonly RoutingRule[];
+  machines(): readonly string[];
 }
 
 export interface Clock {

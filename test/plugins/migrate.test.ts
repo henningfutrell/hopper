@@ -64,6 +64,7 @@ describe('ensurePluginsFile', () => {
     expect(readFileSync(`${sourcesFile}.migrated`, 'utf8')).toBe(SOURCES);
     expect(read(pluginsFile)).toEqual({
       version: 1,
+      queueSorter: { name: 'priority', plugin: 'priority' },
       answerer: { name: 'opus', plugin: 'claude-cli', options: { bin: '/opt/claude', model: 'sonnet', timeoutMs: 1234 } },
       assessor: { name: 'fable', plugin: 'claude-cli-assessor', options: { bin: '/opt/claude', model: 'haiku', timeoutMs: 1234 } },
       executors: [
@@ -119,6 +120,7 @@ describe('ensurePluginsFile', () => {
     expect(statSync(pluginsFile).mode & 0o777).toBe(0o600);
     expect(read(pluginsFile)).toEqual({
       version: 1,
+      queueSorter: { name: 'priority', plugin: 'priority' },
       answerer: { name: 'opus', plugin: 'claude-cli', options: { bin: 'claude', model: 'opus', timeoutMs: 180000 } },
       assessor: { name: 'fable', plugin: 'claude-cli-assessor', options: { bin: 'claude', model: 'fable', timeoutMs: 180000 } },
       executors: [{ name: 'test', plugin: 'test' }, DEFAULT_HERDR],

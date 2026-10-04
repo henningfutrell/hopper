@@ -1,8 +1,8 @@
 // Plugin vocabulary (design.md "Phase 5 — every part is a plugin"; docs/glossary.md).
 
 /** A slot the engine calls through one port. Each slice adds the roles it builds. */
-export type Role = 'router' | 'answerer' | 'assessor' | 'executor' | 'job-source' | 'machine-source' | 'usage-source' | 'notifier';
-export const ROLES: readonly Role[] = ['router', 'answerer', 'assessor', 'executor', 'job-source', 'machine-source', 'usage-source', 'notifier'];
+export type Role = 'router' | 'queue-sorter' | 'answerer' | 'assessor' | 'executor' | 'job-source' | 'machine-source' | 'usage-source' | 'notifier';
+export const ROLES: readonly Role[] = ['router', 'queue-sorter', 'answerer', 'assessor', 'executor', 'job-source', 'machine-source', 'usage-source', 'notifier'];
 
 /** The roles built once at start; a later plugins.yaml change applies at the next restart. */
 export type RestartRole = 'executor' | 'job-source' | 'machine-source' | 'usage-source' | 'notifier';
@@ -82,8 +82,29 @@ export interface ConfiguredInstance {
 }
 
 /** The roles with exactly one instance (the answerer: 0..1), whose plugin the UI may select. */
-export type SelectableRole = 'router' | 'answerer' | 'assessor';
-export const SELECTABLE_ROLES: readonly SelectableRole[] = ['router', 'answerer', 'assessor'];
+export type SelectableRole = 'router' | 'queue-sorter' | 'answerer' | 'assessor';
+export const SELECTABLE_ROLES: readonly SelectableRole[] = ['router', 'queue-sorter', 'answerer', 'assessor'];
+
+/** The queue order (DecisionInputs.queueOrder): the waiting jobs as the queue sorter ordered them, and which instance did. */
+export interface QueueOrder {
+  /** The queue-sorter instance name. */
+  sorter: string;
+  /** Job ids. */
+  jobIds: string[];
+}
+
+/**
+ * The queue sorter in GET /api/plugins. `active`: the plugin answering — `priority` when the
+ * configured one cannot run. `fallback`: it cannot run, or its last sort threw or returned garbage
+ * (that call answered with priority's order); `reason` says which.
+ */
+export interface QueueSorterStatus {
+  instance: InstanceSpec;
+  detection: Detection;
+  active: string;
+  fallback: boolean;
+  reason?: string;
+}
 
 /**
  * POST /ui/api/plugins (design.md "UI and mutation"). `version` is GET /api/plugins
@@ -112,6 +133,7 @@ export interface PluginsReport {
   /** Every configured instance, by role — each one's options are its own. */
   instances: ConfiguredInstance[];
   router: { instance: InstanceSpec; selection: RouterSelection; detection: Detection; active: string; fallback: boolean; reason?: string };
+  queueSorter: QueueSorterStatus;
   answerer: QuestionRoleStatus;
   assessor: QuestionRoleStatus;
   /** The restart roles, as built at start. */

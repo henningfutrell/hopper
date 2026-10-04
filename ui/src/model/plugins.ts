@@ -1,6 +1,6 @@
 // The Plugins view's model (design.md "Settled in slice 7"): an instance's state as GET /api/plugins
 // reports it, the input each option gets, and the whole options object one Save sends.
-import type { PluginsReport, Role } from '../../../src/domain/types.ts';
+import type { PluginsReport, Role, SelectableRole } from '../../../src/domain/types.ts';
 
 export interface OptionSchema {
   type?: string;
@@ -64,7 +64,8 @@ const RESTART = {
   executor: 'executors', 'job-source': 'jobSources', 'machine-source': 'machines', 'usage-source': 'usageSources', notifier: 'notifiers',
 } as const satisfies Partial<Record<Role, keyof PluginsReport>>;
 
-export const SELECTABLE: readonly Role[] = ['router', 'answerer', 'assessor'];
+export const SELECTABLE: readonly SelectableRole[] = ['router', 'queue-sorter', 'answerer', 'assessor'];
+export const isSelectable = (role: Role): role is SelectableRole => (SELECTABLE as readonly Role[]).includes(role);
 
 export interface InstanceState {
   tone: 'ok' | 'warn' | 'bad';
@@ -86,7 +87,7 @@ export function instanceState(report: PluginsReport, role: Role, name: string): 
     const base = { ...(s.reason ? { reason: s.reason } : {}), detection: s.detection, rolePending };
     return s.active === null ? { tone: 'bad', label: 'cannot run', ...base } : { tone: 'ok', label: 'active', ...base };
   }
-  const s = role === 'router' ? report.router : role === 'answerer' ? report.answerer : report.assessor;
+  const s = role === 'router' ? report.router : role === 'queue-sorter' ? report.queueSorter : role === 'answerer' ? report.answerer : report.assessor;
   if (!s.instance || s.instance.name !== name) return { ...pending, rolePending: false };
   const base = { ...(s.reason ? { reason: s.reason } : {}), ...(s.detection ? { detection: s.detection } : {}), rolePending: false };
   if (s.active === null) return { tone: 'bad', label: 'cannot run', ...base };
@@ -94,6 +95,6 @@ export function instanceState(report: PluginsReport, role: Role, name: string): 
 }
 
 export const ROLE_TITLES: Record<Role, string> = {
-  router: 'Router', answerer: 'Answerer', assessor: 'Assessor', executor: 'Executors',
+  router: 'Router', 'queue-sorter': 'Queue sorter', answerer: 'Answerer', assessor: 'Assessor', executor: 'Executors',
   'job-source': 'Job sources', 'machine-source': 'Machine source', 'usage-source': 'Usage sources', notifier: 'Notifiers',
 };
