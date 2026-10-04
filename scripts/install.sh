@@ -5,7 +5,7 @@
 # it on the first boot without one, from sources.yaml and the unit's environment of that boot (so
 # an upgrade restarts once on the new code under the OLD unit before installing the new one).
 #
-# Stage mode (JOB_HOPPER_INSTALL_STAGE=<dir>, used by the daemon's self-update, design.md
+# Build-only mode (JOB_HOPPER_INSTALL_INTO=<dir>, used by the daemon's self-update, design.md
 # "Self-update"): build the install into <dir> and stop there — no service, unit or config is
 # touched. JOB_HOPPER_INSTALL_REPO / _BRANCH / _COMMIT then say what it was built from, since the
 # source is an unpacked tree with no .git.
@@ -23,12 +23,12 @@ PLUGIN_DIR="${JOB_HOPPER_PLUGIN_DIR:-$CONFIG_DIR/plugins}"
 
 step() { printf '==> %s\n' "$*"; }
 
-STAGE="${JOB_HOPPER_INSTALL_STAGE:-}"
+INTO="${JOB_HOPPER_INSTALL_INTO:-}"
 # install.json: what this install is built from, so the daemon can tell when a newer one exists.
-if [ -n "$STAGE" ]; then
-  REPO="${JOB_HOPPER_INSTALL_REPO:?stage mode needs JOB_HOPPER_INSTALL_REPO}"
-  BRANCH="${JOB_HOPPER_INSTALL_BRANCH:?stage mode needs JOB_HOPPER_INSTALL_BRANCH}"
-  COMMIT="${JOB_HOPPER_INSTALL_COMMIT:?stage mode needs JOB_HOPPER_INSTALL_COMMIT}"
+if [ -n "$INTO" ]; then
+  REPO="${JOB_HOPPER_INSTALL_REPO:?build-only mode needs JOB_HOPPER_INSTALL_REPO}"
+  BRANCH="${JOB_HOPPER_INSTALL_BRANCH:?build-only mode needs JOB_HOPPER_INSTALL_BRANCH}"
+  COMMIT="${JOB_HOPPER_INSTALL_COMMIT:?build-only mode needs JOB_HOPPER_INSTALL_COMMIT}"
 else
   REPO="$(git -C "$APP_DIR" remote get-url origin 2>/dev/null || true)"
   BRANCH="${JOB_HOPPER_UPDATE_BRANCH:-main}"
@@ -77,9 +77,9 @@ process.getBuiltinModule("node:fs").writeFileSync(file, JSON.stringify({ repo, b
   fi
 }
 
-if [ -n "$STAGE" ]; then
-  assemble "$STAGE"
-  step "staged in $STAGE (stage mode: no service, unit or config touched)"
+if [ -n "$INTO" ]; then
+  assemble "$INTO"
+  step "built into $INTO (build-only mode: no service, unit or config touched)"
   exit 0
 fi
 assemble "$DEST"

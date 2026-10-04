@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
-import type { Clock, Restarter, Store, UpdateStager, Updater } from '../domain/ports.ts';
+import type { Clock, Restarter, Store, UpdateBuilder, Updater } from '../domain/ports.ts';
 import type { InstallInfo, UpdateApply, UpdateChange, UpdateRelease, UpdateSettings, UpdateStatus } from '../domain/types.ts';
 import { UPDATE_CHANGES_CAP } from '../domain/types.ts';
 import { createGitMirror, type GitMirror } from './git.ts';
@@ -27,7 +27,7 @@ export interface UpdaterOptions {
   store: Pick<Store, 'settings' | 'events'>;
   clock: Clock;
   logger: { info(line: string): void; warn(line: string): void };
-  stager: UpdateStager;
+  builder: UpdateBuilder;
   restart: Restarter;
   /** Running jobs a restart would lose (their executor can neither reattach nor re-run them); empty: safe. */
   restartBlockers: () => string[];
@@ -164,7 +164,7 @@ export function createUpdater(o: UpdaterOptions): RunningUpdater {
     try {
       await mirror.extract(info.commit, source);
       rmSync(next, { recursive: true, force: true });
-      await o.stager.stage(source, next, info);
+      await o.builder.build(source, next, info);
       await proveLoads(next);
     } catch (e) {
       rmSync(next, { recursive: true, force: true });

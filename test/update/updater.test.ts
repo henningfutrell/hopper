@@ -1,6 +1,6 @@
 // Self-update (issue #44) against real git repositories: detecting newer commits and releases,
 // applying one beside the running install, waiting for jobs a restart would lose, and reporting
-// the result on the next boot. The build (scripts/install.sh stage mode) and the restart are seams.
+// the result on the next boot. The build (scripts/install.sh build-only mode) and the restart are seams.
 import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -9,7 +9,7 @@ import type { UpdateStatus } from '../../src/domain/types.ts';
 import { openStore } from '../../src/store/index.ts';
 import { createUpdater, type UpdaterOptions } from '../../src/update/index.ts';
 import { waitFor } from '../support/wait.ts';
-import { copyStager, createInstall, createUpstream, git, readInstall, tempDir, type Upstream } from './support.ts';
+import { copyBuilder, createInstall, createUpstream, git, readInstall, tempDir, type Upstream } from './support.ts';
 
 const dirs: string[] = [];
 const stores: Store[] = [];
@@ -36,7 +36,7 @@ function updater(w: World, appDir: string, o: Partial<UpdaterOptions> = {}) {
   const restarts: number[] = [];
   const u = createUpdater({
     appDir, dataDir: w.dataDir, store: w.store, clock: { now: () => new Date() }, logger: { info: () => {}, warn: () => {} },
-    stager: copyStager(), restart: async () => { restarts.push(Date.now()); }, restartBlockers: () => [], checkMs: 0, waitMs: 20,
+    builder: copyBuilder(), restart: async () => { restarts.push(Date.now()); }, restartBlockers: () => [], checkMs: 0, waitMs: 20,
     ...o,
   });
   updaters.push(u);
@@ -162,7 +162,7 @@ describe('applying an update', () => {
     const c1 = w.up.commit('first', 'v1');
     w.up.commit('second', 'v2');
     const appDir = createInstall(w.root, w.up.dir, c1);
-    const { u, restarts } = updater(w, appDir, { stager: copyStager({ main: 'export const = ;\n' }) });
+    const { u, restarts } = updater(w, appDir, { builder: copyBuilder({ main: 'export const = ;\n' }) });
     await u.check();
     u.apply();
     const s = await waitFor(async () => (u.status().state === 'error' ? u.status() : undefined));

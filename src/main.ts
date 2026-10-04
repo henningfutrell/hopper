@@ -4,7 +4,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Answerer, Assessor, Clock, Executor, JobSource, PluginsView, Restarter, Router, SettableUsageSource, SourceRegistry, Store, UpdateStager, Updater } from './domain/ports.ts';
+import type { Answerer, Assessor, Clock, Executor, JobSource, PluginsView, Restarter, Router, SettableUsageSource, SourceRegistry, Store, UpdateBuilder, Updater } from './domain/ports.ts';
 import type { AttachedMachine, Question, SourceStatus } from './domain/types.ts';
 import { isRerunnable } from './domain/types.ts';
 import { loadConfig, type Config } from './config.ts';
@@ -26,7 +26,7 @@ import { createQuestionService } from './questions/index.ts';
 import { logFailures } from './engine/failure-log.ts';
 import { createSourceSync, idleStatus, withFixedStatuses, type GitHubApi, type SourceSync } from './sources/index.ts';
 import { openStore } from './store/index.ts';
-import { createInstallScriptStager, createRestarter, createUpdater, restartBlockers } from './update/index.ts';
+import { createInstallScriptBuilder, createRestarter, createUpdater, restartBlockers } from './update/index.ts';
 import { createWebhookConfigWatcher, type WebhookConfigWatcher } from './webhooks/config.ts';
 import { createWebhooksEditor } from './webhooks/edit.ts';
 import { createWebhookDispatcher } from './webhooks/index.ts';
@@ -81,8 +81,8 @@ export interface AppSeams {
   resolveHerdrBin?: (ssh: string) => Promise<string>;
   /** The built UI bundle; default UI_DIR. */
   uiDir?: string;
-  /** Self-update: the install dir (default APP_DIR), the build (default install.sh stage mode), the restart (default exit or respawn). */
-  update?: { appDir?: string; stager?: UpdateStager; restart?: Restarter };
+  /** Self-update: the install dir (default APP_DIR), the build (default install.sh build-only mode), the restart (default exit or respawn). */
+  update?: { appDir?: string; builder?: UpdateBuilder; restart?: Restarter };
 }
 
 const WEBHOOKS_FILE_CHECK_MS = 5000;
@@ -224,7 +224,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   const appDir = seams.update?.appDir ?? APP_DIR;
   const updater = createUpdater({
     appDir, dataDir, store, clock, logger,
-    stager: seams.update?.stager ?? createInstallScriptStager({ logFile: join(dataDir, 'update', 'stage.log') }),
+    builder: seams.update?.builder ?? createInstallScriptBuilder({ logFile: join(dataDir, 'update', 'build.log') }),
     restart: seams.update?.restart ?? (() => restartApp()),
     restartBlockers: () => restartBlockers(store.jobs.list({ status: ['running'] }), (name) => executors.get(name)),
     checkMs: config.updateCheckMs,

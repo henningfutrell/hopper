@@ -492,9 +492,9 @@ export interface SettingsRepository {
 
 // ---- Self-update (issue #44) ------------------------------------------------------------
 
-/** Builds an install of the source tree `sourceDir` into `targetDir` (scripts/install.sh stage mode in production). */
-export interface UpdateStager {
-  stage(sourceDir: string, targetDir: string, info: InstallInfo): Promise<void>;
+/** Builds an install of the source tree `sourceDir` into `targetDir` (scripts/install.sh build-only mode in production). */
+export interface UpdateBuilder {
+  build(sourceDir: string, targetDir: string, info: InstallInfo): Promise<void>;
 }
 
 /** Ends this process so it starts again on the install now in place (exit for the supervisor, or respawn). Never returns in production. */

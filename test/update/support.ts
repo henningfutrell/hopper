@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { UpdateStager } from '../../src/domain/ports.ts';
+import type { UpdateBuilder } from '../../src/domain/ports.ts';
 import type { InstallInfo } from '../../src/domain/types.ts';
 
 const ID = { GIT_AUTHOR_NAME: 'test', GIT_AUTHOR_EMAIL: 'test@example.invalid', GIT_COMMITTER_NAME: 'test', GIT_COMMITTER_EMAIL: 'test@example.invalid' };
@@ -53,10 +53,10 @@ export function createInstall(root: string, repo: string, commit: string, branch
 
 export const readInstall = (appDir: string): InstallInfo => JSON.parse(readFileSync(join(appDir, 'install.json'), 'utf8')) as InstallInfo;
 
-/** A stager that copies the source tree and adds src/main.ts (`main` overrides its text) and install.json. */
-export function copyStager(o: { main?: string; calls?: string[] } = {}): UpdateStager {
+/** A builder that copies the source tree and adds src/main.ts (`main` overrides its text) and install.json. */
+export function copyBuilder(o: { main?: string; calls?: string[] } = {}): UpdateBuilder {
   return {
-    async stage(sourceDir, targetDir, info) {
+    async build(sourceDir, targetDir, info) {
       o.calls?.push(info.commit);
       rmSync(targetDir, { recursive: true, force: true });
       cpSync(sourceDir, targetDir, { recursive: true });

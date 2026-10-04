@@ -1,4 +1,4 @@
-// The install directory: install.json (what it was built from), and the swap of a staged install
+// The install directory: install.json (what it was built from), and the swap of a next install (built beside it)
 // into its place. The old install stays beside it as `<appDir>.prev` until the next swap.
 import { existsSync, readFileSync, renameSync, rmSync } from 'node:fs';
 import { join } from 'node:path';

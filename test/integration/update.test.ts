@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { UpdateStatus } from '../../src/domain/types.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { waitFor } from '../support/wait.ts';
-import { copyStager, createInstall, createUpstream, readInstall, tempDir } from '../update/support.ts';
+import { copyBuilder, createInstall, createUpstream, readInstall, tempDir } from '../update/support.ts';
 
 const apps: TestApp[] = [];
 const cleanups: (() => void)[] = [];
@@ -40,7 +40,7 @@ describe('self-update over HTTP', () => {
   it('checks, sets auto-update and the channel, and applies only with a UI session', async () => {
     const w = world();
     const restarts: number[] = [];
-    const app = await startTestApp({ dbPath: w.dbPath, seams: { update: { appDir: w.appDir, stager: copyStager(), restart: async () => { restarts.push(1); } } } });
+    const app = await startTestApp({ dbPath: w.dbPath, seams: { update: { appDir: w.appDir, builder: copyBuilder(), restart: async () => { restarts.push(1); } } } });
     apps.push(app);
     expect((await app.ui('/ui/api/update', { action: 'check' })).status).toBe(403);
     const token = await app.login();
@@ -68,7 +68,7 @@ describe('self-update over HTTP', () => {
   it('reports update.applied on the boot after, and keeps the settings and the queue', async () => {
     const w = world();
     const restarts: number[] = [];
-    const seams = { update: { appDir: w.appDir, stager: copyStager(), restart: async () => { restarts.push(1); } } };
+    const seams = { update: { appDir: w.appDir, builder: copyBuilder(), restart: async () => { restarts.push(1); } } };
     const first = await startTestApp({ dbPath: w.dbPath, seams });
     apps.push(first);
     const token = await first.login();
