@@ -1,5 +1,5 @@
 // REST endpoints of the fake GitHub: app installations, token minting, installation repos,
-// issues, comments, labels. Response shapes follow the GitHub REST API (the fields the adapter
+// issues (read and close), comments, labels. Response shapes follow the GitHub REST API (the fields the adapter
 // reads). Authentication is checked by fake-server.ts before a route runs.
 
 import { randomBytes } from 'node:crypto';
@@ -101,6 +101,15 @@ function issueRoutes(ctx: FakeCtx, req: FakeReq, repo: FakeRepo, rest: string): 
   if (!m || !issue) return notFound;
   const sub = m[2] ?? '';
   if (req.method === 'GET' && sub === '') return { status: 200, body: restIssue(repo, issue) };
+  if (req.method === 'PATCH' && sub === '') {
+    if (body.state === 'closed' && issue.state === 'open') {
+      issue.state = 'closed';
+      issue.closedBy = ctx.bot;
+      delete issue.closedByPullRequest;
+    }
+    if (typeof body.state_reason === 'string') issue.stateReason = body.state_reason;
+    return { status: 200, body: restIssue(repo, issue) };
+  }
   if (req.method === 'GET' && sub === '/comments') {
     const p = paginate(ctx, req, issue.comments.map((c) => restComment(repo, issue.number, c)));
     return { status: 200, body: p.items, headers: p.headers };

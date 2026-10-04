@@ -1,6 +1,7 @@
 // report(): what happened to a job, written to its issue. The hopper's only issue writes are
-// labels (state); it posts no comment at all (owner decision, 2026-10-04: a finished issue needs
-// no comment): claimed → `hopper:claimed`; finished → `hopper:done`; failed → `hopper:failed`;
+// labels and closing a finished job's issue; it posts no comment at all (owner decision,
+// 2026-10-04: a finished issue needs no comment): claimed → `hopper:claimed`; finished →
+// `hopper:done` and the issue closed as completed (issue #38); failed → `hopper:failed`;
 // cancelled → the claim label goes. Returns the source state unchanged. Rows written under
 // earlier rules may still carry finalCommentId, claimCommentId, progressCommentId,
 // questionComments and answeredComments; they are kept as stored and never read.
@@ -51,6 +52,7 @@ async function apply(ctx: ReportContext, r: SourceReport, state: State): Promise
       return state;
     case 'finished':
       await settle(ctx, repo, number, [LABEL_DONE]);
+      await ctx.api.closeAsCompleted(repo, number);
       return state;
     case 'failed':
       await settle(ctx, repo, number, [LABEL_FAILED]);
