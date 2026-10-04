@@ -1,10 +1,14 @@
-// Open questions: what the job asked, its recent output, the escalation trail, and the answer box.
-import { ChevronRight, MessageCircleQuestion, Send } from 'lucide-react';
+// Open questions: what the job asked, its recent output, the escalation trail, and the answer box
+// with Send answer and Close. Logged out, the box is a notice naming the login command; a 403 on
+// either mutation drops the UI to logged out, so the notice replaces the box.
+import { ChevronRight, LogIn, MessageCircleQuestion, Send, X } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Textarea } from '@/components/ui/textarea';
+import { Confirm } from '@/components/confirm';
 import { Countdown, JobTitle } from '@/components/job';
+import { LOGIN_CMD } from '@/lib/api';
 import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
 import { between, clock } from '@/model/format';
@@ -48,6 +52,13 @@ function QuestionCard({ q }: { q: Question }) {
     setSending(false);
     refreshQuestions().catch(() => {});
   };
+  const close = async () => {
+    if (sending) return;
+    setSending(true);
+    if (await act(`/ui/api/questions/${encodeURIComponent(q.id)}/close`, {}, 'Question closed')) setDraft('');
+    setSending(false);
+    refreshQuestions().catch(() => {});
+  };
   return (
     <Panel title={q.tier === 'human' ? 'For you' : `With ${q.tier}`} icon={MessageCircleQuestion} className={q.tier === 'human' ? 'border-question/40' : ''}
       action={<span className="num text-xs text-muted-foreground">asked {clock(q.createdAt)}{q.tier === 'human' && <> · notified {q.notifyCount}×</>}
@@ -66,7 +77,18 @@ function QuestionCard({ q }: { q: Question }) {
         <div className="space-y-2">
           <Textarea rows={3} value={draft} disabled={sending} placeholder="Answer to type into the job (Ctrl/Cmd+Enter sends)"
             onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); void send(); } }} />
-          <Button onClick={() => void send()} disabled={sending || !draft.trim()}><Send />{sending ? 'Sending…' : 'Send answer'}</Button>
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={() => void send()} disabled={sending || !draft.trim()}><Send />{sending ? 'Sending…' : 'Send answer'}</Button>
+            <Confirm title="Close this question without answering?" description="The job continues on its own judgement, or fails."
+              action="Close question" onConfirm={() => void close()}>
+              <Button variant="outline" disabled={sending} title="End the question without answering"><X />Close</Button>
+            </Confirm>
+          </div>
+        </div>
+      )}
+      {!authed && (
+        <div data-slot="login-notice" className="flex flex-wrap items-center gap-2 rounded-md border border-warn/40 bg-warn/5 p-3 text-sm text-warn">
+          <LogIn className="size-4" />Log in to answer or close: <code className="font-mono text-xs break-all text-foreground">{LOGIN_CMD}</code>
         </div>
       )}
     </Panel>

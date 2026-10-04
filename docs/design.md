@@ -620,7 +620,10 @@ can still be answered or closed in the UI.
 
 **Logged out** the card shows, where the answer box would be, "Log in to answer or close:
 `bash ~/.local/lib/job-hopper/scripts/open-ui.sh`". A 403 on any mutation drops the stored
-token and every card shows the same notice.
+token and every card shows the same notice. In the UI rework this is `ui/src/views/questions.tsx`
+(the notice is `data-slot="login-notice"`; Close sits next to Send answer and asks first in a
+dialog, `components/confirm.tsx`, never `window.confirm`); `test/ui/questions.test.ts` renders
+the whole app in happy-dom against a fake daemon.
 
 ## Decider changes
 
@@ -2295,5 +2298,5 @@ realtime, responsive, fast. Builds on the at-a-glance board (issue #5).
   Events, Sources, Machines, Plugins (#13's panel, ported: "Settled in slice 7"), Webhooks. Charts read `/api/events?types=…&limit=5000`
   (`HISTORY_TYPES`): lane spans and ended-per-hour are derived client-side, no new API.
 - **Mutations unchanged**: cancel (now behind a confirm dialog), approve, answer, router mode,
-  plugins (options, select, rescan), logout — same `/ui/api/*` routes and session header.
+  question close, plugins (options, select, rescan), logout — same `/ui/api/*` routes and session header.
 - **Theme.** Dark by default, light by toggle, remembered in `localStorage` (`jh_theme`).

@@ -220,6 +220,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       try {
         const s = paneStateOf(job);
         if (!s?.turn) return null;
+        const herdr = herdrOn(s);
         const agent = await herdr.getAgent(s.agentName);
         if (!agent || agent.paneId !== s.paneId) return null;
         // Parked before parkedSeq was saved: the send's seq (the turn had already ended past it).

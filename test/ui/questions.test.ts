@@ -1,15 +1,14 @@
 // @vitest-environment happy-dom
-// The UI's question card (src/ui/app.js), run in happy-dom against a fake of the daemon's HTTP
-// surface: the browser's only seam. Logged out, the card says how to log in where the answer box
-// would be; logged in, it offers Send answer and Close; a 403 on a mutation logs the UI out and
-// shows the same notice.
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+// The UI's question card (ui/src/views/questions.tsx), rendered in happy-dom inside the whole app
+// against a fake of the daemon's HTTP surface: the browser's only seam. Logged out, the card says
+// how to log in where the answer box would be; logged in, it offers Send answer and Close (Close
+// asks first, in a dialog); a 403 on a mutation logs the UI out and shows the same notice.
+import { createElement } from 'react';
+import { act } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const LOGIN_CMD = 'bash ~/.local/lib/job-hopper/scripts/open-ui.sh';
-const html = readFileSync(join(process.cwd(), 'src/ui/index.html'), 'utf8');
-const body = /<body>([\s\S]*)<\/body>/.exec(html)![1]!.replace(/<script[\s\S]*?<\/script>/g, '');
 
 const question = {
   id: 'bf094266', jobId: '89849c4f', text: 'Which branch?', recentOutput: 'line', detectedBy: 'marker', status: 'open',
@@ -22,8 +21,8 @@ function fakeDaemon(o: { authed: boolean; mutationStatus?: number }) {
   const calls: Call[] = [];
   const json = (status: number, b: unknown) => new Response(JSON.stringify(b), { status, headers: { 'content-type': 'application/json' } });
   const routes: Record<string, unknown> = {
-    '/api/health': { routerMode: 'shadow', router: 'pass-through', uptimeS: 1 },
-    '/api/queue': { waiting: [], running: [], waitingAnswer: [], counts: {} },
+    '/api/health': { ok: true, version: '0', routerMode: 'shadow', router: 'pass-through', fallback: false, executors: [], uptimeS: 1 },
+    '/api/queue': { waiting: [], running: [], waitingAnswer: [], ended: [], counts: {} },
     '/api/machines': { machines: [] },
     '/api/decisions': { decisions: [] },
     '/api/events': { events: [] },
@@ -54,50 +53,62 @@ class FakeEventSource {
   close(): void {}
 }
 
+let root: Root | undefined;
+
 async function boot(o: { authed: boolean; mutationStatus?: number }) {
-  document.body.innerHTML = body;
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  document.body.innerHTML = '<div id="root"></div>';
+  window.location.hash = '#questions';
   localStorage.clear();
   if (o.authed) localStorage.setItem('jh_session', 'a'.repeat(64));
   const daemon = fakeDaemon(o);
   vi.stubGlobal('fetch', daemon.fetch);
   vi.stubGlobal('EventSource', FakeEventSource);
-  vi.stubGlobal('confirm', () => true);
-  vi.stubGlobal('alert', () => {});
   vi.resetModules();
-  const app = '../../src/ui/app.js'; // browser code, no types: imported by path
-  await import(app);
-  await vi.waitFor(() => expect(document.querySelector('#questions .question')).not.toBeNull());
+  const app = '../../ui/src/app/app.tsx'; // browser code, type-checked by ui/tsconfig.json: imported by path
+  const { App } = (await import(app)) as { App: () => ReturnType<typeof createElement> };
+  await act(async () => { root = createRoot(document.getElementById('root')!); root.render(createElement(App)); });
+  await vi.waitFor(() => expect(card()).not.toBeNull());
   return daemon;
 }
 
-const card = () => document.querySelector('#questions .question')!;
-const button = (label: string) => [...card().querySelectorAll('button')].find((b) => b.textContent === label);
+const card = () => [...document.querySelectorAll('[data-slot="card"]')].find((c) => c.textContent?.includes(question.text)) ?? null;
+const button = (label: string, within: ParentNode = card()!) => [...within.querySelectorAll('button')].find((b) => b.textContent?.trim() === label);
+const notice = () => card()!.querySelector('[data-slot="login-notice"]');
+const click = (b: HTMLElement | undefined) => act(async () => { b!.click(); });
 
-beforeEach(() => { vi.useRealTimers(); });
-afterEach(() => { vi.unstubAllGlobals(); });
+afterEach(async () => {
+  await act(async () => root?.unmount());
+  root = undefined;
+  vi.unstubAllGlobals();
+});
 
 describe('question card', () => {
   it('logged out: where the answer box would be, a notice says how to log in, with the exact command', async () => {
     await boot({ authed: false });
-    expect(card().querySelector('textarea')).toBeNull();
-    const notice = card().querySelector('.login-notice');
-    expect(notice?.textContent).toContain('Log in to answer or close');
-    expect(notice?.textContent).toContain(LOGIN_CMD);
+    expect(card()!.querySelector('textarea')).toBeNull();
+    expect(notice()?.textContent).toContain('Log in to answer or close');
+    expect(notice()?.textContent).toContain(LOGIN_CMD);
   });
 
   it('logged in: the answer box offers Send answer and Close', async () => {
     await boot({ authed: true });
-    expect(card().querySelector('textarea')).not.toBeNull();
+    await vi.waitFor(() => expect(card()!.querySelector('textarea')).not.toBeNull());
     expect(button('Send answer')).toBeDefined();
     expect(button('Close')).toBeDefined();
-    expect(card().querySelector('.login-notice')).toBeNull();
+    expect(notice()).toBeNull();
   });
 
-  it('Close posts /ui/api/questions/:id/close with the session header and a JSON body', async () => {
+  it('Close asks first, then posts /ui/api/questions/:id/close with the session header and a JSON body', async () => {
     const daemon = await boot({ authed: true });
-    button('Close')!.click();
-    await vi.waitFor(() => expect(daemon.calls.some((c) => c.path === `/ui/api/questions/${question.id}/close`)).toBe(true));
-    const call = daemon.calls.find((c) => c.path === `/ui/api/questions/${question.id}/close`)!;
+    await vi.waitFor(() => expect(button('Close')).toBeDefined());
+    await click(button('Close'));
+    const path = `/ui/api/questions/${question.id}/close`;
+    expect(daemon.calls.some((c) => c.path === path)).toBe(false);
+    const dialog = await vi.waitFor(() => { const d = document.querySelector('[role="alertdialog"]'); expect(d).not.toBeNull(); return d!; });
+    await click(button('Close question', dialog));
+    await vi.waitFor(() => expect(daemon.calls.some((c) => c.path === path)).toBe(true));
+    const call = daemon.calls.find((c) => c.path === path)!;
     expect(call.method).toBe('POST');
     expect(call.headers['x-jobhopper-session']).toBe('a'.repeat(64));
     expect(call.headers['content-type']).toBe('application/json');
@@ -106,11 +117,14 @@ describe('question card', () => {
 
   it('a 403 on a mutation logs the UI out and shows the login notice in the card', async () => {
     await boot({ authed: true, mutationStatus: 403 });
-    const box = card().querySelector('textarea')!;
-    box.value = 'main';
-    box.dispatchEvent(new Event('input'));
-    button('Send answer')!.click();
-    await vi.waitFor(() => expect(card().querySelector('.login-notice')?.textContent).toContain(LOGIN_CMD));
-    expect(card().querySelector('textarea')).toBeNull();
+    const box = await vi.waitFor(() => { const t = card()!.querySelector('textarea'); expect(t).not.toBeNull(); return t!; });
+    await act(async () => {
+      const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!;
+      set.call(box, 'main');
+      box.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await click(button('Send answer'));
+    await vi.waitFor(() => expect(notice()?.textContent).toContain(LOGIN_CMD));
+    expect(card()!.querySelector('textarea')).toBeNull();
   });
 });
