@@ -1,6 +1,7 @@
 // The operator CLI (src/cli.ts, design.md "Operator CLI"): config documents read and replaced in the
 // daemon's own database, against their version — where command-bearing options are set.
 import { createHash } from 'node:crypto';
+import argon2 from 'argon2';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -116,5 +117,25 @@ describe('job-hopper login-code', () => {
     expect(s.loginCodes.take(hash(a.out.trim()), new Date().toISOString())).toBe(true);
     expect(s.loginCodes.take(hash(a.out.trim()), new Date().toISOString())).toBe(false);
     s.close();
+  });
+});
+
+describe('job-hopper password-hash', () => {
+  it('prints an argon2id hash of the password on stdin that verifies; needs no database', async () => {
+    const out: string[] = [];
+    const err: string[] = [];
+    const code = await runCli(['password-hash'], { env: {}, stdin: () => 'correct horse\n', out: (t) => out.push(t), err: (t) => err.push(t) });
+    expect(code).toBe(0);
+    const hash = out.join('').trim();
+    expect(hash).toMatch(/^\$argon2id\$/);
+    expect(await argon2.verify(hash, 'correct horse')).toBe(true);
+    expect(await argon2.verify(hash, 'correct horse\n')).toBe(false);
+  });
+
+  it('refuses an empty password', async () => {
+    const err: string[] = [];
+    const code = await runCli(['password-hash'], { env: {}, stdin: () => '\n', out: () => {}, err: (t) => err.push(t) });
+    expect(code).toBe(2);
+    expect(err.join('')).toMatch(/empty/);
   });
 });
