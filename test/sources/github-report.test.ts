@@ -29,7 +29,7 @@ describe('GitHub source report', () => {
     expect(gh.calls.filter((c) => c.method === 'ensureLabel')).toHaveLength(3);
   });
 
-  it('finished: claimed → done, no comment, no write but labels; state unchanged', async () => {
+  it('finished: claimed → done, the issue closed as completed, no comment; state unchanged', async () => {
     const { gh, source } = withIssue();
     const job = jobForIssue(1, {
       id: 'abcdef12-3456-7890-abcd-ef1234567890', status: 'finished', result: { summary: 'README added, mindless prose' },
@@ -40,8 +40,16 @@ describe('GitHub source report', () => {
     const state = await source.report({ kind: 'finished', job });
     expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:done']);
     expect(gh.commentsOn(REPO, 1)).toEqual([]);
-    expect(gh.calls.map((c) => c.method)).toEqual(['removeLabels', 'addLabels']);
+    expect(gh.calls.map((c) => c.method)).toEqual(['removeLabels', 'addLabels', 'closeAsCompleted']);
+    expect(gh.issue(REPO, 1).state).toBe('closed');
     expect(state).toEqual(claimed);
+  });
+
+  it('finished on an issue already closed (by the job's own pull request): labels settle, the close is harmless', async () => {
+    const { gh, source } = withIssue();
+    gh.closeByPullRequest(REPO, 1, { createdAt: '2026-10-02T10:30:00.000Z', mergedAt: '2026-10-02T11:00:00.000Z' });
+    await source.report({ kind: 'finished', job: jobForIssue(1, { status: 'finished', result: 'ok' }) });
+    expect(gh.issue(REPO, 1)).toMatchObject({ state: 'closed', labels: ['hopper', 'hopper:done'] });
   });
 
   it('failed: label only, claimed → failed, no comment', async () => {
@@ -50,6 +58,7 @@ describe('GitHub source report', () => {
     const claimed = await source.report({ kind: 'claimed', job });
     const state = await source.report({ kind: 'failed', job: { ...job, sourceState: { source: claimed } } });
     expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:failed']);
+    expect(gh.issue(REPO, 1).state).toBe('open');
     expect(gh.commentsOn(REPO, 1)).toEqual([]);
     expect(state).toEqual(claimed);
   });
@@ -60,6 +69,7 @@ describe('GitHub source report', () => {
     await source.report({ kind: 'claimed', job });
     await source.report({ kind: 'cancelled', job });
     expect(gh.issue(REPO, 1).labels).toEqual(['hopper']);
+    expect(gh.issue(REPO, 1).state).toBe('open');
     expect(gh.commentsOn(REPO, 1)).toEqual([]);
   });
 

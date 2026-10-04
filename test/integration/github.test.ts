@@ -78,6 +78,35 @@ describe('GitHub issue → job → issue', () => {
     expect(bodies(gh, unlabelled.number)).toEqual([]);
   });
 
+  it('a job whose own merged pull request closes its issue runs on and is recorded finished', async () => {
+    const gh = createFakeGitHub();
+    const a = await boot(gh);
+    const issue = gh.createIssue({ repo: REPO, body: body({ op: 'sleep', ms: 1500 }), labels: ['hopper'] });
+    await a.sync();
+    const job = (await jobFor(a, issue.url))!;
+    await a.waitForStatus(job.id, 'running');
+    const now = new Date().toISOString();
+    gh.closeByPullRequest(REPO, issue.number, { createdAt: now, mergedAt: now });
+    await a.sync();
+    await a.waitForStatus(job.id, 'finished');
+    expect(await a.events('types=job.cancelled')).toEqual([]);
+    await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:done'), { what: 'hopper:done' });
+    expect(gh.issue(REPO, issue.number).state).toBe('closed');
+    expect(bodies(gh, issue.number)).toEqual([]);
+  });
+
+  it('a finished job closes its open issue as completed, without a comment', async () => {
+    const gh = createFakeGitHub();
+    const a = await boot(gh);
+    const issue = gh.createIssue({ repo: REPO, body: body({ op: 'echo' }), labels: ['hopper'] });
+    await a.sync();
+    const job = (await jobFor(a, issue.url))!;
+    await a.waitForStatus(job.id, 'finished');
+    await waitFor(() => gh.issue(REPO, issue.number).state === 'closed', { what: 'issue closed' });
+    expect(gh.issue(REPO, issue.number).labels).toEqual(['hopper', 'hopper:done']);
+    expect(bodies(gh, issue.number)).toEqual([]);
+  });
+
   it('a failed job labels the issue hopper:failed, leaves no comment, and logs one line', async () => {
     const logged: string[] = [];
     const spy = vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => { logged.push(args.join(' ')); });
