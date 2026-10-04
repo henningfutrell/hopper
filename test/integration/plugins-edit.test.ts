@@ -327,7 +327,8 @@ attachedMachines:
     const one = 'version: 1\nexecutors:\n  - { name: test, plugin: test }\n';
     writeFileSync(file, one, { mode: 0o600 });
     const v = (await report(a)).config.version;
-    expect((await a.ui('/ui/api/plugins', { action: 'remove', role: 'executor', name: 'test', version: v }, { token })).status).toBe(400);
+    const last = await a.ui<Reply>('/ui/api/plugins', { action: 'remove', role: 'executor', name: 'test', version: v }, { token });
+    expect(last.status).toBe(400);
     expect(read(file)).toBe(one);
   });
 });

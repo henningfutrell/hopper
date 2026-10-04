@@ -1,8 +1,8 @@
-// A UI edit of plugins.yaml (design.md "UI and mutation"): one instance's options, or the plugin
-// filling a one-instance role. Each edit rewrites only that instance's part of the file; comments
+// A UI edit of plugins.yaml (design.md "UI and mutation"): one instance's options, the plugin
+// filling a one-instance role, or an instance of a list role added or removed. Each edit rewrites only that instance's part of the file; comments
 // and every other section stay as written. Command-bearing options are never changed from here.
 import { isMap, isSeq, parseDocument, type Document } from 'yaml';
-import type { ConfiguredInstance, Detection, InstanceSpec, PluginsEdit, Role, RoutingEdit, RoutingRule } from '../domain/types.ts';
+import type { ConfiguredInstance, Detection, InstanceSpec, ListRole, PluginsEdit, Role, RoutingEdit, RoutingRule } from '../domain/types.ts';
 import { parseRoutingRules } from '../routing/index.ts';
 import { optionsJsonSchema, parseOptions } from './options.ts';
 import { pluginsFileProblem, pluginsFileVersion, readPluginsText, writePluginsFile } from './plugins-file.ts';
@@ -100,13 +100,54 @@ function place(doc: Document, role: Role, name: string, next: InstanceSpec | nul
   doc.set(key, doc.createNode(all.map(specNode)));
 }
 
-function write(path: string, text: string | undefined, version: string, change: (doc: Document) => void): EditResult {
+/** Append `next` to a list role, or remove instance `name` from it (`next` null); nothing else changes. */
+function list(doc: Document, role: ListRole, name: string, next: InstanceSpec | null, configured: readonly ConfiguredInstance[]): void {
+  const { key } = SECTIONS[role];
+  const section = doc.get(key, true);
+  if (isSeq(section)) {
+    if (next) {
+      const node = doc.createNode(specNode(next));
+      // Written like the entry before it: one flow line when that one is.
+      const last = section.items.at(-1);
+      if (isMap(node) && isMap(last)) node.flow = last.flow ?? false;
+      section.add(node);
+    } else {
+      section.items.splice(section.items.findIndex((item) => isMap(item) && item.get('name') === name), 1);
+    }
+    return;
+  }
+  // No section yet: the built-in instances fill this role; write them, with this change.
+  const now = configured.filter((c) => c.role === role).map((c) => c.instance).filter((i) => next || i.name !== name);
+  doc.set(key, doc.createNode([...now, ...(next ? [next] : [])].map(specNode)));
+}
+
+/**
+ * What still names executor `name` in the file as it is now: job sources (their `executor`, the
+ * plugin's default when unset; no section: the built-in ones), routing rules, attached machines.
+ */
+function executorUsers(name: string, doc: Document, ctx: EditContext): string[] {
+  const file = (doc.toJS() ?? {}) as { jobSources?: InstanceSpec[]; routing?: RoutingRule[]; attachedMachines?: { name: string; executors?: string[] }[] };
+  const sources = file.jobSources ?? ctx.configured.filter((c) => c.role === 'job-source').map((c) => c.instance);
+  const named = sources.filter((i) => {
+    const def = ctx.find(i.plugin)?.definition;
+    const parsed = def ? parseOptions(def, i.options ?? {}) : undefined;
+    return (parsed?.ok ? parsed.options : (i.options ?? {})).executor === name;
+  });
+  return [
+    ...named.map((i) => `job source ${i.name}`),
+    ...(file.routing ?? []).filter((r) => r.set?.executor === name).map((r) => `routing rule ${r.name}`),
+    ...(file.attachedMachines ?? []).filter((m) => (m.executors ?? ['herdr-claude']).includes(name)).map((m) => `attached machine ${m.name}`),
+  ];
+}
+
+function write(path: string, text: string | undefined, version: string, change: (doc: Document) => EditRefusal | void): EditResult {
   if (pluginsFileVersion(text) !== version) return refuse('conflict', `${path} changed since it was read; reload and edit again`);
   const doc = text === undefined ? parseDocument('version: 1\n') : parseDocument(text);
   if (doc.errors.length) return refuse('conflict', `${path} is not valid YAML; fix it by hand: ${doc.errors[0]!.message}`);
   const before = pluginsFileProblem(doc.toJS());
   if (before) return refuse('conflict', `${path} is invalid; fix it by hand: ${before}`);
-  change(doc);
+  const refused = change(doc);
+  if (refused) return refused;
   const problem = pluginsFileProblem(doc.toJS());
   if (problem) return refuse('invalid', problem);
   // lineWidth 0: never refold lines the owner wrote long.
@@ -129,6 +170,7 @@ export function applyRoutingEdit(e: RoutingEdit, path: string, targetProblem: (r
 
 export function applyEdit(e: Exclude<PluginsEdit, { action: 'rescan' }>, ctx: EditContext): EditResult {
   const text = readPluginsText(ctx.path);
+  if (e.action === 'add' || e.action === 'remove') return applyListEdit(e, text, ctx);
   if (e.action === 'options') {
     const current = ctx.configured.find((c) => c.role === e.role && c.instance.name === e.name);
     if (!current) return refuse('not_found', `no ${e.role} instance named ${e.name}`);
@@ -158,4 +200,25 @@ export function applyEdit(e: Exclude<PluginsEdit, { action: 'rescan' }>, ctx: Ed
   }
   if (current?.instance.plugin === e.plugin) return { ok: true, changed: false };
   return write(ctx.path, text, e.version, (doc) => place(doc, e.role, current?.instance.name ?? e.plugin!, { name: e.plugin!, plugin: e.plugin! }, ctx.configured));
+}
+
+function applyListEdit(e: Extract<PluginsEdit, { action: 'add' | 'remove' }>, text: string | undefined, ctx: EditContext): EditResult {
+  const current = ctx.configured.find((c) => c.role === e.role && c.instance.name === e.name);
+  if (e.action === 'remove') {
+    if (!current) return refuse('not_found', `no ${e.role} instance named ${e.name}`);
+    return write(ctx.path, text, e.version, (doc) => {
+      const users = e.role === 'executor' ? executorUsers(e.name, doc, ctx) : [];
+      if (users.length) return refuse('conflict', `executor ${e.name} is named by ${users.join(', ')}; change ${users.length === 1 ? 'it' : 'them'} first`);
+      list(doc, e.role, e.name, null, ctx.configured);
+      return undefined;
+    });
+  }
+  if (current) return refuse('conflict', `a ${e.role} instance is already named ${e.name}`);
+  const found = ctx.find(e.plugin);
+  if (!found) return refuse('not_found', `no plugin ${e.plugin}`);
+  if (found.definition.role !== e.role) return refuse('conflict', `${e.plugin} is a ${found.definition.role} plugin, not a ${e.role} plugin`);
+  if (found.detection.status !== 'available') {
+    return refuse('conflict', `${e.plugin} is ${found.detection.status} here: ${found.detection.reason}`);
+  }
+  return write(ctx.path, text, e.version, (doc) => list(doc, e.role, e.name, { name: e.name, plugin: e.plugin }, ctx.configured));
 }

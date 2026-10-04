@@ -1,5 +1,5 @@
-// One plugin instance's options form and a one-instance role's plugin selector (design.md "UI and
-// mutation"), shared by the Plugins view, the Routing view and the Question gates panel. Each form keeps its own
+// One plugin instance's options form (Remove for a list role's instance), a one-instance role's plugin
+// selector and a list role's Add form (design.md "UI and mutation"), shared by the Plugins view, the Routing view and the Question gates panel. Each form keeps its own
 // unsaved edits; command-bearing options are shown, never edited (plugins.yaml only). One Save sends
 // one instance's whole options object through POST /ui/api/plugins against GET /api/plugins'
 // version. Reads the report and the session from the store.
@@ -8,10 +8,11 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { Confirm } from '@/components/confirm';
 import { StatusBadge } from '@/components/status';
 import { post, SessionRejected } from '@/lib/api';
-import { collectOptions, fieldKind, instanceState, ROLE_TITLES, shown, type Draft, type OptionSchema, type OptionsSchema } from '@/model/plugins';
-import type { InstanceSpec, PluginsEdit, PluginsReport, Role, SelectableRole } from '@/model/wire';
+import { collectOptions, fieldKind, instanceState, isListRole, newInstance, ROLE_TITLES, shown, type Draft, type OptionSchema, type OptionsSchema } from '@/model/plugins';
+import type { InstanceSpec, ListRole, PluginsEdit, PluginsReport, Role, SelectableRole } from '@/model/wire';
 import { refreshHealth, refreshPlugins, setPlugins, useHopper } from '@/store';
 
 export const FIELD = 'h-8 w-full rounded-lg border border-input bg-transparent px-2.5 font-mono text-xs disabled:opacity-50 dark:bg-input/30';
@@ -97,6 +98,11 @@ export function InstanceForm({ role, inst }: { role: Role; inst: InstanceSpec })
     if (await sendPluginsEdit({ action: 'options', role, name: inst.name, options, version: report.config.version }, `Saved ${inst.name}`)) setDraft({});
     setBusy(false);
   };
+  const remove = async (list: ListRole) => {
+    setBusy(true);
+    await sendPluginsEdit({ action: 'remove', role: list, name: inst.name, version: report.config.version }, `Removed ${inst.name}`);
+    setBusy(false);
+  };
   return (
     <div className="space-y-2 rounded-md border p-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -112,10 +118,17 @@ export function InstanceForm({ role, inst }: { role: Role; inst: InstanceSpec })
             set={(v) => setDraft((d) => ({ ...d, [name]: v }))} />)}
         </div>
         : <div className="text-xs text-muted-foreground">no options</div>}
-      {authed && props.length > 0 && (
-        <div className="flex gap-2">
-          <Button size="sm" disabled={busy || !dirty} onClick={() => void save()}>Save {inst.name}</Button>
+      {authed && (props.length > 0 || isListRole(role)) && (
+        <div className="flex flex-wrap gap-2">
+          {props.length > 0 && <Button size="sm" disabled={busy || !dirty} onClick={() => void save()}>Save {inst.name}</Button>}
           {dirty && <Button size="sm" variant="ghost" disabled={busy} onClick={() => setDraft({})}>Discard</Button>}
+          {isListRole(role) && (
+            <Confirm title={`Remove ${inst.name}?`} action="Remove"
+              description={`${inst.name} leaves plugins.yaml; ${ROLE_TITLES[role].toLowerCase()} change at the next restart.`}
+              onConfirm={() => void remove(role)}>
+              <Button size="sm" variant="ghost" className="ml-auto text-bad" disabled={busy}>Remove</Button>
+            </Confirm>
+          )}
         </div>
       )}
     </div>
@@ -150,4 +163,34 @@ export function PluginSelector({ role }: { role: SelectableRole }) {
   if (!report || !authed) return null;
   const current = report.instances.find((i) => i.role === role)?.instance.plugin ?? '';
   return <Picker key={current} role={role} current={current} report={report} />;
+}
+
+/** A new instance of a list role: an available plugin, under the name typed (else the plugin id), with its defaults. */
+export function AddInstance({ role }: { role: ListRole }) {
+  const report = useHopper((s) => s.plugins);
+  const authed = useHopper((s) => s.authed);
+  const [plugin, setPlugin] = useState('');
+  const [typed, setTyped] = useState('');
+  const [busy, setBusy] = useState(false);
+  if (!report || !authed) return null;
+  const choices = report.plugins.filter((p) => p.role === role);
+  const pick = plugin || choices.find((p) => p.detection.status === 'available')?.id || '';
+  const next = pick ? newInstance(report, role, pick, typed) : undefined;
+  const add = async () => {
+    if (!next || next.problem) return;
+    setBusy(true);
+    if (await sendPluginsEdit({ action: 'add', role, plugin: pick, name: next.name, version: report.config.version }, `Added ${next.name}`)) setTyped('');
+    setBusy(false);
+  };
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-xs">
+      <span className="text-muted-foreground">add</span>
+      <select name={`add-plugin-${role}`} className={`${FIELD} w-auto max-w-full`} value={pick} disabled={busy} onChange={(e) => setPlugin(e.target.value)}>
+        {choices.map((p) => <option key={p.id} value={p.id} disabled={p.detection.status !== 'available'}>{p.id}{p.builtin ? '' : ' (custom)'} — {p.detection.status}</option>)}
+      </select>
+      <Input name={`add-name-${role}`} className="h-8 w-40 font-mono text-xs" placeholder={pick || 'name'} value={typed} disabled={busy} onChange={(e) => setTyped(e.target.value)} />
+      <Button size="sm" variant="outline" disabled={busy || !next || next.problem !== undefined} onClick={() => void add()}>Add</Button>
+      {next?.problem && <span className="text-bad">{next.problem}</span>}
+    </div>
+  );
 }

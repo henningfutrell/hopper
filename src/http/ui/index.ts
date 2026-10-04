@@ -6,7 +6,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { PluginsView, QuestionService, Store } from '../../domain/ports.ts';
-import { ROLES, SELECTABLE_ROLES } from '../../domain/types.ts';
+import { LIST_ROLES, ROLES, SELECTABLE_ROLES } from '../../domain/types.ts';
 import type { Engine } from '../../engine/index.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { lanHosts, type Lan } from '../reach.ts';
@@ -44,6 +44,8 @@ const loginBody = z.object({ code: z.string() });
 const pluginsEditBody = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('options'), role: z.enum(ROLES), name: z.string().min(1), options: z.record(z.string(), z.unknown()), version: z.string().min(1) }),
   z.strictObject({ action: z.literal('select'), role: z.enum(SELECTABLE_ROLES), plugin: z.string().min(1).nullable(), version: z.string().min(1) }),
+  z.strictObject({ action: z.literal('add'), role: z.enum(LIST_ROLES), plugin: z.string().min(1), name: z.string().min(1), version: z.string().min(1) }),
+  z.strictObject({ action: z.literal('remove'), role: z.enum(LIST_ROLES), name: z.string().min(1), version: z.string().min(1) }),
   z.strictObject({ action: z.literal('rescan') }),
 ]);
 const rulesFileBody = z.strictObject({ text: z.string(), version: z.string().min(1) });
