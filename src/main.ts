@@ -238,11 +238,12 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   webhookConfig.start();
   dispatcher.start();
   host.startNotifiers({ subscribe: (l) => store.events.subscribe(l), job: (id) => store.jobs.get(id) });
+  // Before listening: the boot after an update records update.applied before anything is answered.
+  updater.start();
   await server.listen({ host: config.host, port: config.port });
   port = (server.server.address() as { port: number }).port;
   await engine.start();
   sync.start();
-  updater.start();
 
   let stopped: Promise<void> | undefined;
   const app: App = {
