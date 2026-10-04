@@ -52,8 +52,8 @@ export type ExecutionOutcome =
 export interface Executor {
   readonly name: string;
   /**
-   * Safe to run again from scratch after a daemon restart? Default true. A non-idempotent
-   * job interrupted by a restart is cleaned up and failed, never re-run.
+   * Safe to run again from scratch after a daemon restart? Default true. A non-idempotent job
+   * running at a restart is never re-run: it is reattached (below) or cleaned up and failed.
    */
   readonly idempotent?: boolean;
   /** Validate a payload at push time; return an error string or null. */
@@ -65,9 +65,21 @@ export interface Executor {
    */
   resume?(ctx: ExecutionContext, answer: string): Promise<ExecutionOutcome>;
   /**
+   * Restart recovery, before anything is written: is the work of this `running` job still alive
+   * outside the process (its pane and agent), so `reattach` can watch it? Absent → never. Must
+   * not throw (an error is `false`).
+   */
+  canReattach?(job: Job): Promise<boolean>;
+  /**
+   * Continue a job that was running when the daemon stopped, from the present state of its
+   * external work (`ctx.job.executorState`), until the next outcome. Called only after
+   * `canReattach` said true; present exactly when `canReattach` is.
+   */
+  reattach?(ctx: ExecutionContext): Promise<ExecutionOutcome>;
+  /**
    * Release whatever a job holds outside the process (close its pane). Called when a
-   * waiting_answer job is cancelled or expires, and by restart recovery for jobs that were
-   * running. Must not throw; idempotent.
+   * waiting_answer job is cancelled or expires, and by restart recovery for running jobs it
+   * fails. Must not throw; idempotent.
    */
   cleanup?(job: Job): Promise<void>;
 }

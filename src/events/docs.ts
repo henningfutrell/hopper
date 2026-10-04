@@ -16,6 +16,7 @@ const WHEN: Record<EventType, string> = {
   'job.failed': 'A job ended with an error.',
   'job.cancelled': 'A job was cancelled.',
   'job.requeued': 'A job went back to the queue (restart recovery, or a question answered). `reason` is a free string.',
+  'job.reattached': 'Restart recovery kept a running job running on its lane: its external work (the herdr pane and Claude) outlived the daemon, and the executor watches it again. `reason` is `daemon restart`.',
   'job.reprioritized': 'A source re-sorted a waiting job.',
   'lane.opened': 'A Decision opened a lane.',
   'lane.closed': 'A lane closed (decision reason, `drained`, or `daemon restart`).',

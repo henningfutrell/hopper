@@ -434,7 +434,7 @@ function connect(afterSeq) {
   es.onerror = () => { state.conn = 'reconnecting'; renderHeader(); };
   es.addEventListener('delivery.updated', (m) => upsertDelivery(JSON.parse(m.data)));
   es.addEventListener('source.updated', (m) => upsertSource(JSON.parse(m.data)));
-  const types = ['job.queued', 'job.prioritized', 'job.reprioritized', 'job.held', 'job.approved', 'job.claimed', 'job.started', 'job.progressed', 'job.finished', 'job.failed', 'job.cancelled', 'job.requeued', 'lane.opened', 'lane.closed', 'decision.made', 'router.mode_changed', 'question.asked', 'question.escalated', 'question.answered', 'question.expired'];
+  const types = ['job.queued', 'job.prioritized', 'job.reprioritized', 'job.held', 'job.approved', 'job.claimed', 'job.started', 'job.progressed', 'job.finished', 'job.failed', 'job.cancelled', 'job.requeued', 'job.reattached', 'lane.opened', 'lane.closed', 'decision.made', 'router.mode_changed', 'question.asked', 'question.escalated', 'question.answered', 'question.expired'];
   for (const t of types) es.addEventListener(t, onDomainEvent);
   setInterval(() => refreshHealth().catch(() => {}), 10000);
   setInterval(renderSources, 15000);

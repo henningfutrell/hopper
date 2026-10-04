@@ -32,6 +32,7 @@ export const EVENT_SCHEMAS = {
   'job.failed': strict({ error: z.string() }),
   'job.cancelled': strict({ reason: z.string() }),
   'job.requeued': strict({ from: z.string(), reason: z.string() }),
+  'job.reattached': strict({ reason: z.string() }),
   'job.reprioritized': strict({ from: z.number(), to: z.number(), reason: z.string() }),
   'lane.opened': strict({}),
   'lane.closed': strict({ reason: z.string() }),

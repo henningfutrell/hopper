@@ -20,6 +20,18 @@ export interface PaneState {
   agentName: string;
   cwd: string;
   laneId: string;
+  /** The turn in flight, recorded at every send, so a restarted daemon can watch it again. */
+  turn?: TurnAnchor;
+}
+
+/** What the monitor needs to find one turn's outcome: design.md "Turn anchor (B1)". */
+export interface TurnAnchor {
+  /** state_change_seq read just before the send. */
+  seq: number;
+  /** Last line of what was sent, as Claude echoes it. */
+  anchor: string;
+  /** Claude was at a dialog when we sent. */
+  blockedAtSend: boolean;
 }
 
 export interface StartDeps {

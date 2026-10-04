@@ -10,7 +10,7 @@ import { resolvePayload, validatePayload } from './payload.ts';
 import type { ClaudeJobPayload } from './payload.ts';
 import { FOOTER_ANCHOR, PROTOCOL_FOOTER } from './screen.ts';
 import { openPane, startClaude } from './start.ts';
-import type { PaneState, StartDeps } from './start.ts';
+import type { PaneState, StartDeps, TurnAnchor } from './start.ts';
 
 const UNBLOCK_POLLS = 10;
 
@@ -75,12 +75,28 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       agent = await herdr.getAgent(s.agentName);
     }
     if (!agent) return { kind: 'failed', error: 'pane lost' };
+    const turn: TurnAnchor = { seq: agent.stateChangeSeq, anchor, blockedAtSend: agent.status === 'blocked' };
+    // Saved before the prompt: a restart in between watches a turn never sent, which ends as an
+    // idle question, never as a lost job.
+    ctx.saveState({ ...s, turn });
     await herdr.prompt(s.agentName, text);
+    return watch(ctx, s, p, turn);
+  }
+
+  function watch(ctx: ExecutionContext, s: PaneState, p: ClaudeJobPayload, turn: TurnAnchor): Promise<ExecutionOutcome | Interrupt> {
     return watchTurn({
       herdr, clock, sleep, pollMs: o.pollMs, idleQuestionMs: o.idleQuestionMs, ctx, agentName: s.agentName,
-      paneId: s.paneId, anchor, seqAtSend: agent.stateChangeSeq, blockedAtSend: agent.status === 'blocked',
+      paneId: s.paneId, anchor: turn.anchor, seqAtSend: turn.seq, blockedAtSend: turn.blockedAtSend,
       timeoutMs: p.timeoutMs, expectedMs: p.expectedMs,
     });
+  }
+
+  /** The saved pane, with its turn, when Claude still runs in that pane. */
+  async function liveTurn(job: Job): Promise<(PaneState & { turn: TurnAnchor }) | undefined> {
+    const state = paneStateOf(job);
+    if (!state?.turn) return undefined;
+    const agent = await herdr.getAgent(state.agentName);
+    return agent?.paneId === state.paneId ? { ...state, turn: state.turn } : undefined;
   }
 
   /** Runs `body` with the lane mapped to the pane; never rejects; on error the pane is released. */
@@ -128,8 +144,22 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       return onLane(ctx, () => state.paneId, async () => {
         if (!(await herdr.getAgent(state.agentName))) return { kind: 'failed', error: 'pane lost' };
         lanes.set(ctx.laneId, state.paneId);
-        ctx.saveState({ ...state, laneId: ctx.laneId });
-        return send(ctx, state, p, answer, lastLineOf(answer));
+        return send(ctx, { ...state, laneId: ctx.laneId }, p, answer, lastLineOf(answer));
+      });
+    },
+
+    async canReattach(job) {
+      return (await liveTurn(job).catch(() => undefined)) !== undefined;
+    },
+
+    reattach(ctx) {
+      const saved = paneStateOf(ctx.job);
+      const p = resolvePayload(ctx.job.spec.payload, o.defaultCwd);
+      return onLane(ctx, () => saved?.paneId, async () => {
+        const state = await liveTurn(ctx.job);
+        if (!state) return { kind: 'failed', error: 'interrupted by daemon restart' };
+        lanes.set(ctx.laneId, state.paneId);
+        return watch(ctx, state, p, state.turn);
       });
     },
 

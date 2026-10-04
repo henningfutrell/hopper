@@ -18,6 +18,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'job.failed': { error: 'boom' },
   'job.cancelled': { reason: 'cancelled while queued' },
   'job.requeued': { from: 'waiting_answer', reason: 'answered' },
+  'job.reattached': { reason: 'daemon restart' },
   'job.reprioritized': { from: 50, to: 80, reason: 'project:Priority=P1' },
   'lane.opened': {},
   'lane.closed': { reason: 'drained' },

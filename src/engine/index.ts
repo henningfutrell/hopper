@@ -33,8 +33,8 @@ export interface Engine extends Commands, Queries, AnswerHandlers {
   /** What the sync loop may do to the hopper (ingest, cancel, answer, reprioritize, setSourceState). */
   readonly sourceHost: SourceHost;
   routerMode(): RouterMode;
-  /** Recover from a previous run (jobs, then questions), ask the router, take the first Decision, start the tick. */
-  start(): void;
+  /** Recover from a previous run (jobs — reattaching live ones —, then questions), ask the router, take the first Decision, start the tick. */
+  start(): Promise<void>;
   /** Abort running executors (≤ 5 s) and stop deciding. The caller closes the store. */
   stop(): Promise<void>;
 }
@@ -72,8 +72,10 @@ export function createEngine(o: EngineOptions): Engine {
     ...commands,
     ...createQueries(c),
     ...createAnswerHandlers(c, cleanup),
-    start() {
-      for (const jobId of recover(c)) void cleanup(jobId);
+    async start() {
+      const recovered = await recover(c);
+      for (const jobId of recovered.toClean) void cleanup(jobId);
+      for (const claim of recovered.reattach) runner.reattach(claim);
       unsubscribe = store.events.subscribe((event) => {
         // Never decide inside append: schedule.
         if (event.type === 'job.queued' && event.jobId) {
