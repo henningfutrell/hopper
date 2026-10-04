@@ -106,6 +106,7 @@ export interface Rig {
   svc: QuestionService;
   answered: Array<{ q: Question; depth: number }>;
   expired: Array<{ q: Question; depth: number }>;
+  dismissed: Array<{ q: Question; depth: number }>;
   /** Calls the assessor received, in order. */
   assessed: Array<{ req: AnswerRequest; draft: AnswerDraft }>;
   /** Create a question the way the engine does: at the service's first stage. */
@@ -136,6 +137,7 @@ export function rig(o: RigOptions = {}): Rig {
   }
   const answered: Rig['answered'] = [];
   const expired: Rig['expired'] = [];
+  const dismissed: Rig['dismissed'] = [];
   const assessed: Rig['assessed'] = [];
   let answerer: Answerer | undefined = o.answer === null ? undefined : scriptedAnswerer('opus', o.answer ?? (() => SAFE));
   const script = o.assess ?? (() => PROCEED);
@@ -155,10 +157,11 @@ export function rig(o: RigOptions = {}): Rig {
     answerUrl: (id) => `http://localhost/q/${id}`,
     onAnswered: (q) => answered.push({ q, depth: mem.depth() }),
     onExpired: (q) => expired.push({ q, depth: mem.depth() }),
+    onDismissed: (q) => dismissed.push({ q, depth: mem.depth() }),
   });
   const job = mem.addJob('build the thing', 'ship it');
   return {
-    mem, svc, answered, expired, assessed,
+    mem, svc, answered, expired, dismissed, assessed,
     question: (text = 'Which database?') =>
       mem.store.questions.create({ jobId: job.id, text, recentOutput: 'line1\nline2', detectedBy: 'marker', tier: svc.firstStage() }),
     eventsOf: (type) => mem.events.filter((e) => e.type === type),

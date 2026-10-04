@@ -421,6 +421,20 @@ Version 1 (`docs/schemas/question.closed.v1.json`). The owner closed an open que
 }
 ```
 
+## `question.dismissed`
+
+Version 1 (`docs/schemas/question.dismissed.v1.json`). The owner dismissed an open question (UI Dismiss): it needs no action any more. Nothing is typed into the job; a job still waiting on it is cancelled (`job.cancelled`, reason `question dismissed`); any answerer or assessor call in flight is aborted.
+
+| field | type | required |
+|---|---|---|
+| `questionId` | string | yes |
+
+```json
+{
+  "questionId": "q1"
+}
+```
+
 ## `question.expired`
 
 Version 1 (`docs/schemas/question.expired.v1.json`). The human stage timed out and the job fails.

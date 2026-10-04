@@ -26,7 +26,8 @@ const read = (): View => { const h = window.location.hash.slice(1); return (VIEW
 export const useView = (): View => useSyncExternalStore(subscribe, read);
 
 function Links({ view, onPick }: { view: View; onPick?: () => void }) {
-  const questions = useHopper((s) => s.questions.length);
+  // The owner's questions not yet seen: at the human stage, without seenAt. Seen or no longer open → off the badge.
+  const questions = useHopper((s) => s.questions.filter((q) => q.tier === 'human' && !q.seenAt).length);
   const failedSources = useHopper((s) => s.sources.filter((x) => x.state === 'error').length);
   const badge: Partial<Record<View, { n: number; cls: string }>> = {
     questions: { n: questions, cls: 'bg-question text-background' }, sources: { n: failedSources, cls: 'bg-bad text-background' },
@@ -41,7 +42,7 @@ function Links({ view, onPick }: { view: View; onPick?: () => void }) {
             className={cn('flex h-9 items-center gap-2.5 rounded-md px-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground',
               view === v && 'bg-muted text-foreground')}>
             <Icon className="size-4" />{label}
-            {b && b.n > 0 && <span className={cn('num ml-auto grid h-5 min-w-5 place-items-center rounded-full px-1.5 text-[11px] font-semibold', b.cls)}>{b.n}</span>}
+            {b && b.n > 0 && <span data-slot="nav-badge" className={cn('num ml-auto grid h-5 min-w-5 place-items-center rounded-full px-1.5 text-[11px] font-semibold', b.cls)}>{b.n}</span>}
           </a>
         );
       })}
