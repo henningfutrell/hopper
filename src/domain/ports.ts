@@ -539,6 +539,14 @@ export type ConfigDocumentName = (typeof CONFIG_DOCUMENTS)[number];
  * Config documents: named texts, each edited whole against its `version` — the sha-256 of its
  * text, or `missing` while there is none.
  */
+/** Seals a secret the hopper keeps (design.md "Secrets at rest"): `src/secrets/box.ts`. */
+export interface SecretBox {
+  seal(secret: string): string;
+  /** Throws when `value` is not sealed, altered, or sealed under another key. */
+  unseal(value: string): string;
+  isSealed(value: string): boolean;
+}
+
 export interface ConfigDocuments {
   read(name: ConfigDocumentName): string | undefined;
   version(name: ConfigDocumentName): string;

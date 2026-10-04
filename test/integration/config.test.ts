@@ -65,7 +65,7 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
       JOB_HOPPER_UPDATE_CHECK_MS: '0', JOB_HOPPER_RESTART: 'respawn',
     });
     expect(c).toEqual({
-      host: '::', port: 0, databaseUrl: 'postgres://jh:pw@db:5432/jh', workDir: '/var/tmp/jh', tickMs: 50, routerMode: 'active',
+      host: '::', port: 0, databaseUrl: 'postgres://jh:pw@db:5432/jh', secretKey: KEY, workDir: '/var/tmp/jh', tickMs: 50, routerMode: 'active',
       softLimit: 0.5, hardLimit: 0.9, routerCheapBoost: 5, webhookBaseMs: 20, laneIdleGraceMs: 100, answerTimeoutMs: 1000,
       humanRenotifyMs: 10, humanTimeoutMs: 20, resumeBoost: 7, maxQuestions: 1, keepPanes: true,
       uiSessionHours: 1.5, pluginDir: '/srv/p', publicUrl: 'https://hopper.example.com',

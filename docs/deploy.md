@@ -11,6 +11,7 @@ platform that runs a container and hands it a managed Postgres.
 | | where |
 |---|---|
 | `JOB_HOPPER_DATABASE_URL` | `postgres://user:password@host:port/database[?schema=<name>][&sslmode=require]`. Required. Put Postgres near the hopper: every store call waits one round trip. |
+| `JOB_HOPPER_SECRET_KEY` | 32 bytes, base64 (`openssl rand -base64 32`): the key the secrets the hopper keeps in the database are sealed under (docs/design.md "Secrets at rest"). Required. Back it up apart from the database; never change it (a new key cannot unseal the old secrets: rotate each one in the UI). `install.sh` writes one. |
 | Secrets | environment variables (docs/design.md "Secrets"): `GITHUB_APP_PRIVATE_KEY`, `GROKBOT_WEBHOOK_URL`, `GROKBOT_WEBHOOK_KEY`, `TYPESAFE_API_KEY`, a webhook's `secretEnv`, an identity provider's `clientSecretEnv`; `GH_TOKEN` for the gh CLI, `CLAUDE_CODE_OAUTH_TOKEN` for the claude CLI where their own login is not on the machine. |
 | Process settings | `JOB_HOPPER_*` variables: port, LAN names and peers, public URL, tick, limits (`src/config.ts`). |
 | Config | the documents `plugins.yaml`, `webhooks.yaml`, `rules.md`, `auth.yaml`: from the UI, or `job-hopper config edit <document>`. The first boot writes the built-in plugins.yaml. |

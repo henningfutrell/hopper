@@ -102,6 +102,13 @@ if [ -z "$(env_line JOB_HOPPER_DATABASE_URL)" ]; then
 fi
 chmod 600 "$ENV_FILE"
 
+# The key stored secrets are sealed under (docs/design.md "Secrets at rest"): made once, never replaced —
+# a new key could not unseal what the old one sealed.
+if [ -z "$(env_line JOB_HOPPER_SECRET_KEY)" ]; then
+  step "write a new JOB_HOPPER_SECRET_KEY to $ENV_FILE"
+  (umask 077; printf 'JOB_HOPPER_SECRET_KEY=%s\n' "$(node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('base64'))")" >> "$ENV_FILE")
+fi
+
 step "link the CLI: $BIN_DIR/job-hopper -> $DEST/src/cli.ts"
 mkdir -p "$BIN_DIR"
 chmod 755 "$DEST/src/cli.ts"

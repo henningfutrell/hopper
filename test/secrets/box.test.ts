@@ -33,8 +33,9 @@ describe('the secret box', () => {
 
   it('refuses a tampered value, a plain one and one sealed under another key, naming the key', () => {
     const sealed = box.seal('s-grok');
-    const last = sealed.at(-1) === 'A' ? 'B' : 'A';
-    expect(() => box.unseal(sealed.slice(0, -1) + last)).toThrow(/cannot unseal/);
+    const i = 'sealed:v1:'.length + 20; // inside the tag: every bit counts
+    const tampered = sealed.slice(0, i) + (sealed[i] === 'A' ? 'B' : 'A') + sealed.slice(i + 1);
+    expect(() => box.unseal(tampered)).toThrow(/cannot unseal/);
     expect(() => box.unseal('s-grok')).toThrow(/not a sealed secret/);
     const other = createSecretBox(randomBytes(32).toString('base64'));
     expect(() => other.unseal(sealed)).toThrow(/JOB_HOPPER_SECRET_KEY/);

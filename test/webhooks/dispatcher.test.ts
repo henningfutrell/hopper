@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createWebhookDispatcher, verify } from '../../src/webhooks/index.ts';
 import type { WebhookDelivery } from '../../src/domain/types.ts';
+import { testBox } from '../support/secret-key.ts';
 import { createFakeStore, type FakeStore } from './fakeStore.ts';
 import { startReceiver, type Receiver, type Responder } from './receiver.ts';
 
@@ -28,7 +29,7 @@ afterEach(async () => {
 
 function setup(responder: Responder, o: { timeoutMs?: number; maxAttempts?: number } = {}) {
   fake = createFakeStore();
-  const dispatcher = createWebhookDispatcher({ store: fake.store, clock, baseMs: 20, sweepMs: 10, ...o });
+  const dispatcher = createWebhookDispatcher({ store: fake.store, clock, box: testBox(), baseMs: 20, sweepMs: 10, ...o });
   const updates: WebhookDelivery[] = [];
   dispatcher.onDeliveryUpdated((d) => updates.push(d));
   stopFn = () => dispatcher.stop();
@@ -39,7 +40,7 @@ describe('webhook dispatcher', () => {
   it('POSTs a signed event with the contract headers', async () => {
     const s = setup(ok);
     receiver = await s.receiverP;
-    const sub = fake.subscribe({ url: receiver.url, events: ['*'], secret: 'topsecret' });
+    fake.subscribe({ url: receiver.url, events: ['*'], secret: testBox().seal('topsecret') });
     s.dispatcher.start();
     const ev = fake.append('job.queued', { x: 1 });
     await until(() => fake.deliveries()[0]?.status === 'delivered');
@@ -51,7 +52,7 @@ describe('webhook dispatcher', () => {
     expect(r.headers['x-jobhopper-delivery']).toBe(fake.deliveries()[0]!.id);
     const ts = r.headers['x-jobhopper-timestamp'] as string;
     expect(ts).toMatch(/^\d+$/);
-    expect(verify(sub.secret, ts, r.body, r.headers['x-jobhopper-signature'] as string)).toBe(true);
+    expect(verify('topsecret', ts, r.body, r.headers['x-jobhopper-signature'] as string)).toBe(true);
     expect(fake.deliveries()[0]!.attempts).toBe(1);
     expect(s.updates.at(-1)!.status).toBe('delivered');
   });

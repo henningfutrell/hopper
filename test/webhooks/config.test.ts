@@ -3,6 +3,9 @@ import type { Store } from '../../src/domain/ports.ts';
 import type { WebhookSubscription } from '../../src/domain/types.ts';
 import { createWebhookConfigWatcher, loadWebhooksFile } from '../../src/webhooks/config.ts';
 import { useTempDocuments } from '../support/documents.ts';
+import { testBox } from '../support/secret-key.ts';
+
+const box = testBox();
 
 const docs = useTempDocuments();
 afterEach(() => { vi.useRealTimers(); });
@@ -11,11 +14,11 @@ const hook = (name: string, extra = '') =>
   `  - name: ${name}\n    url: http://127.0.0.1:4795/${name}\n    events: ["job.finished"]\n    secret: s-${name}\n${extra}`;
 const doc = (...hooks: string[]) => `version: 1\nwebhooks:\n${hooks.join('')}`;
 const noEnv = () => undefined;
-const load = (text: string) => loadWebhooksFile(text, noEnv);
+const load = (text: string) => loadWebhooksFile(text, noEnv, box);
 
 describe('loadWebhooksFile', () => {
   it('missing document → no webhooks and a warning', () => {
-    expect(loadWebhooksFile(undefined, noEnv)).toEqual({ webhooks: [], warnings: ['no webhooks.yaml yet'], secretSources: {} });
+    expect(loadWebhooksFile(undefined, noEnv, box)).toEqual({ webhooks: [], warnings: ['no webhooks.yaml yet'], secretSources: {} });
   });
 
   it('parses a valid document; active defaults to true', () => {
@@ -37,10 +40,10 @@ describe('loadWebhooksFile', () => {
 
   it('reads secretEnv from the environment and trims it; an unset variable is an error naming it', () => {
     const text = doc(hook('a').replace('    secret: s-a\n', '    secretEnv: A_HOOK_SECRET\n'));
-    const r = loadWebhooksFile(text, (n) => (n === 'A_HOOK_SECRET' ? 'topsecret\n' : undefined));
+    const r = loadWebhooksFile(text, (n) => (n === 'A_HOOK_SECRET' ? 'topsecret\n' : undefined), box);
     expect('webhooks' in r && r.webhooks[0]?.secret).toBe('topsecret');
     expect(r).toMatchObject({ secretSources: { a: 'env' } });
-    const bad = loadWebhooksFile(text, noEnv);
+    const bad = loadWebhooksFile(text, noEnv, box);
     expect('error' in bad && bad.error).toContain('A_HOOK_SECRET');
   });
 
@@ -85,7 +88,7 @@ describe('createWebhookConfigWatcher', () => {
   const make = (intervalMs = 5000) => {
     const d = docs();
     const f = fakeStore();
-    const w = createWebhookConfigWatcher({ documents: d, store: f.store, clock, intervalMs });
+    const w = createWebhookConfigWatcher({ documents: d, store: f.store, clock, box, intervalMs });
     return { d, f, w, write: (text: string) => d.set('webhooks.yaml', text) };
   };
 
@@ -129,10 +132,10 @@ describe('createWebhookConfigWatcher', () => {
   it('a secretEnv secret is read from the watcher\'s environment', () => {
     const d = docs();
     const f = fakeStore();
-    const w = createWebhookConfigWatcher({ documents: d, store: f.store, clock, intervalMs: 5000, env: (n) => (n === 'A_HOOK' ? 'topsecret' : undefined) });
+    const w = createWebhookConfigWatcher({ documents: d, store: f.store, clock, box, intervalMs: 5000, env: (n) => (n === 'A_HOOK' ? 'topsecret' : undefined) });
     d.set('webhooks.yaml', doc(hook('a').replace('    secret: s-a\n', '    secretEnv: A_HOOK\n')));
     w.reload();
-    expect([...f.subs.values()][0]?.secret).toBe('topsecret');
+    expect(box.unseal([...f.subs.values()][0]!.secret)).toBe('topsecret');
     expect(w.secretSources()).toEqual({ a: 'env' });
   });
 

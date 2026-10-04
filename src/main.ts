@@ -27,6 +27,7 @@ import { createDetectionKit } from './plugins/detect.ts';
 import { createQuestionService } from './questions/index.ts';
 import { logFailures } from './engine/failure-log.ts';
 import { createSourceSync, idleStatus, withFixedStatuses, type GitHubApi, type SourceSync } from './sources/index.ts';
+import { createSecretBox } from './secrets/box.ts';
 import { openStore } from './store/index.ts';
 import { createInstallScriptBuilder, createRestarter, createUpdater, restartBlockers } from './update/index.ts';
 import { createWebhookConfigWatcher, type WebhookConfigWatcher } from './webhooks/config.ts';
@@ -145,6 +146,8 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   const clock: Clock = { now: () => new Date() };
   const logger = { info: (l: string) => console.log(l), warn: (l: string) => console.warn(l) };
   warnLeftoverEnv(config);
+  // Before the store: a key that cannot seal stops the daemon before it touches anything.
+  const box = createSecretBox(config.secretKey);
   const store = openStore({ url: config.databaseUrl, clock });
   // plugins.yaml is the one truth: the built-in instances are written on the boot that finds none.
   ensurePluginsDocument({ documents: store.documents, answerTimeoutMs: config.answerTimeoutMs, logger });
@@ -186,7 +189,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   // Seam doubles win over the host's live instances (looked up per question).
   const answerer = (): Answerer | undefined => (seams.answerer !== undefined ? (seams.answerer ?? undefined) : host.answerer());
   const assessor = (): Assessor => seams.assessor ?? host.assessor();
-  const dispatcher = createWebhookDispatcher({ store, clock, baseMs: config.webhookBaseMs });
+  const dispatcher = createWebhookDispatcher({ store, clock, box, baseMs: config.webhookBaseMs });
   // The service calls the engine and the engine calls the service: the engine's handlers are
   // reached through closures that run only after `engine` exists (design.md "Construction
   // contract added").
@@ -232,7 +235,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   });
   const registry: SourceRegistry = withFixedStatuses(sync, fixed);
   const webhookConfig = createWebhookConfigWatcher({
-    documents: store.documents, store, clock, intervalMs: seams.webhookConfigIntervalMs ?? WEBHOOKS_FILE_CHECK_MS, env: (name) => env[name],
+    documents: store.documents, store, clock, box, intervalMs: seams.webhookConfigIntervalMs ?? WEBHOOKS_FILE_CHECK_MS, env: (name) => env[name],
   });
   const signIn = createSignIn({ config: auth, clock, origin: () => config.publicUrl ?? `http://localhost:${port}` });
   // Self-update (issue #44): the restart reaches app.stop() through `restartApp`, set below.
@@ -247,7 +250,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   });
   const server = createServer({
     engine, store, dispatcher, questions, clock, version: VERSION, sources: registry, webhookConfig, plugins, updater,
-    webhooksEditor: createWebhooksEditor({ documents: store.documents, reload: webhookConfig.reload }),
+    webhooksEditor: createWebhooksEditor({ documents: store.documents, box, reload: webhookConfig.reload }),
     port: () => port, sessionHours: config.uiSessionHours, signIn,
     lan: { names: config.lanNames, peers: config.lanPeers, publicUrl: config.publicUrl }, uiDir: seams.uiDir ?? UI_DIR,
   });

@@ -45,7 +45,9 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
 - **Nothing leans on the machine** (issue #40, `docs/design.md` "Deployable"). Everything the daemon
   keeps is in the database `JOB_HOPPER_DATABASE_URL` names; config is config documents in it
   (`plugins.yaml`, `webhooks.yaml`, `rules.md`, `auth.yaml`); a secret is an environment variable,
-  named by a command-bearing option — never a file the daemon reads. No default names a path on one
+  named by a command-bearing option — never a file the daemon reads. A secret the hopper keeps itself
+  is stored sealed under `JOB_HOPPER_SECRET_KEY` (`src/secrets/box.ts`), a token or code only hashed
+  (`docs/design.md` "Secrets at rest"). No default names a path on one
   machine; the work dir (`JOB_HOPPER_WORK_DIR`) is scratch only. The operator CLI (`src/cli.ts`,
   `job-hopper`) writes the database directly: whoever runs it holds its credentials.
 - **Never write into the Jev repo.** The shim reads it; logs go to job-hopper's work dir.

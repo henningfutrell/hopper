@@ -216,7 +216,7 @@ describe('POST /ui/api/webhooks — edit', () => {
   it('a stale version: 409, nothing written', async () => {
     const { a, token } = await start(COMMENTED);
     const v = await version(a);
-    const changed = COMMENTED.replace('s-other', 's-other-2');
+    const changed = COMMENTED.replace('4796/other', '4796/other-2');
     writeDocument(a.dbPath, 'webhooks.yaml', changed);
     const r = await edit(a, token, { action: 'edit', name: 'other', active: false, version: v });
     expect(r.status).toBe(409);

@@ -46,7 +46,7 @@ describe('systemd/job-hopper.service', () => {
     const text = readFileSync(INSTALL, 'utf8');
     expect(text).toMatch(/env_line JOB_HOPPER_SECRET_KEY/);
     expect(text).toMatch(/JOB_HOPPER_SECRET_KEY=%s/);
-    expect(readFileSync(join(import.meta.dirname, '..', '..', 'deploy', 'hopper.env.example'), 'utf8')).toMatch(/^JOB_HOPPER_SECRET_KEY=/m);
+    expect(readFileSync(fileURLToPath(new URL('../../deploy/hopper.env.example', import.meta.url)), 'utf8')).toMatch(/^JOB_HOPPER_SECRET_KEY=/m);
   });
 
   it('install.sh offers Postgres only: no SQLite file, no migrate-local (issue #53)', () => {

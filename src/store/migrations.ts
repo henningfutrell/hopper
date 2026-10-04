@@ -94,6 +94,11 @@ const MIGRATIONS: readonly Migration[] = [
   `
   CREATE TABLE IF NOT EXISTS login_codes (code_hash TEXT PRIMARY KEY, expires_at TEXT NOT NULL);
   `,
+  // 10: no secret in clear (issue #53): a subscription's secret is stored sealed. The table is a
+  // projection of webhooks.yaml, written sealed at every load, so a clear one left from before goes.
+  `
+  UPDATE webhooks SET secret = '' WHERE secret NOT LIKE 'sealed:%';
+  `,
 ];
 
 /** The schema version a store is at once migrated. */
