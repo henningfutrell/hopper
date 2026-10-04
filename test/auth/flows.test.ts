@@ -15,7 +15,7 @@ describe('pending sign-in flows', () => {
     idp = await startOidcIdp();
     const signIn = createSignIn({
       clock: { now: () => new Date() }, origin: () => 'http://localhost:1', maxFlows: 3,
-      config: { local: { enabled: true }, providers: [{
+      config: { local: { enabled: true }, none: null, password: null, providers: [{
         name: 'corp', label: 'corp', type: 'oidc', issuer: idp.issuer, clientId: 'c', scopes: ['openid'],
         claims: { email: 'email', username: 'preferred_username', name: 'name', groups: 'groups' }, trustUnverifiedEmail: false, roles: { defaultRole: 'viewer' },
       }] },

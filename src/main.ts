@@ -317,6 +317,8 @@ async function main(): Promise<void> {
   if (auth.providers.length) console.log(`job-hopper: sign-in with ${auth.providers.map((p) => `${p.name} (${p.type})`).join(', ')}`);
   if (auth.local.enabled) console.log('job-hopper: local sign-in on; a login code: job-hopper login-code');
   else console.log('job-hopper: local sign-in is off (auth.yaml)');
+  if (auth.password) console.log(`job-hopper: password sign-in on (${auth.password.users.length} account(s))`);
+  if (auth.none) console.warn(`job-hopper: NO SIGN-IN is on (auth.yaml none): anyone who reaches the UI acts as ${auth.none.role}`);
   const shutdown = (signal: string): void => {
     console.log(`job-hopper: ${signal}, shutting down`);
     app.stop().then(() => process.exit(0), (e) => {

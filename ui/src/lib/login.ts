@@ -1,6 +1,8 @@
 // Logging a browser in (design.md "UI session and mutations", "Reaching the UI across the LAN"):
 // the one-time login code goes to POST /ui/login as a plain form, whose answer stores the session
-// token and reloads. A device link carries the code in the URL fragment, never sent to a server.
+// token and reloads. A device link carries the code in the URL fragment, never sent to a server. No
+// sign-in and password sign-in answer JSON with the token (design.md "Sign-in", issue #53).
+import type { SessionView } from '../model/wire.ts';
 
 const CODE = /^[0-9a-f]{64}$/;
 
@@ -44,6 +46,21 @@ export function beginSignIn(provider: string, origin: string): void {
   try { localStorage.setItem(BINDING_KEY, binding); } catch { /* storage blocked: the sign-in will be refused at the end */ }
   location.assign(signInPath(provider, binding));
 }
+
+/** True when the UI should take a no-sign-in session by itself: logged out, and auth.yaml `none` is on. */
+export const wantsNoSignIn = (authed: boolean, offer: Pick<SessionView['signIn'], 'none'> | null): boolean => !authed && (offer?.none ?? null) !== null;
+
+/** POST a sign-in that answers `{ token }` as JSON (no sign-in, password); keeps the token. Resolves the error, or null. */
+async function jsonSignIn(path: string, body: unknown): Promise<string | null> {
+  const res = await fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  const out = await res.json().catch(() => ({})) as { token?: string; error?: string };
+  if (!res.ok || !out.token) return res.status === 429 ? 'too many sign-in attempts; wait a minute' : (out.error ?? `${res.status}`);
+  try { localStorage.setItem('jh_session', out.token); } catch { return 'browser storage is blocked: the session cannot be kept'; }
+  return null;
+}
+
+export const signInWithoutCredential = (): Promise<string | null> => jsonSignIn('/ui/auth/none', {});
+export const signInWithPassword = (username: string, password: string): Promise<string | null> => jsonSignIn('/ui/auth/password', { username, password });
 
 /** True when this page was reached on a LAN name, not on loopback. */
 export const onLan = (): boolean => !['127.0.0.1', 'localhost', '[::1]'].includes(location.hostname);

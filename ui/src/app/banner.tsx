@@ -1,14 +1,34 @@
-// Logged out: the ways to sign in — a button per identity provider (auth.yaml), and, while local
-// sign-in is on, the login code (the command on this machine, a device link or a pasted code across
-// the LAN). Design: design.md "Sign-in: local, OIDC and SAML", "Reaching the UI across the LAN".
+// Logged out: the ways to sign in — a button per identity provider (auth.yaml), a username and
+// password form while password sign-in is on, continuing without sign-in while `none` is on, and,
+// while local sign-in is on, the login code (the command on this machine, a device link or a pasted
+// code across the LAN). Design: design.md "Sign-in: none, password, local, OIDC and SAML", "Reaching
+// the UI across the LAN".
 import { Copy, Lock, LogIn } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { LOGIN_CMD } from '@/lib/api';
-import { beginSignIn, onLan, submitLogin } from '@/lib/login';
-import { useHopper } from '@/store';
+import { beginSignIn, onLan, signInWithPassword, signInWithoutCredential, submitLogin } from '@/lib/login';
+import { checkSession, useHopper } from '@/store';
+
+/** Ends a JSON sign-in: toast its error, or read the new session. */
+const finish = async (error: string | null) => { if (error) toast.error(error); else await checkSession(); };
+
+function PasswordSignIn() {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const submit = async () => { await finish(await signInWithPassword(username.trim(), password)); setPassword(''); };
+  return (
+    <form className="flex items-center gap-1.5" onSubmit={(e) => { e.preventDefault(); if (username.trim() && password) void submit(); }}>
+      <Input aria-label="Username" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="username"
+        autoComplete="username" className="h-7 w-32 text-xs" />
+      <Input aria-label="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="password"
+        autoComplete="current-password" className="h-7 w-32 text-xs" />
+      <Button type="submit" size="xs" variant="outline" disabled={!username.trim() || !password}><LogIn />Sign in</Button>
+    </form>
+  );
+}
 
 function LoginCode() {
   const [code, setCode] = useState('');
@@ -42,8 +62,10 @@ export function ReadOnlyBanner() {
       {signIn.providers.map((p) => (
         <Button key={p.name} size="xs" variant="outline" onClick={() => beginSignIn(p.name, signIn.origin)}><LogIn />Sign in with {p.label}</Button>
       ))}
+      {signIn.password && <PasswordSignIn />}
+      {signIn.none && <Button size="xs" variant="outline" onClick={() => void signInWithoutCredential().then(finish)}><LogIn />Continue as {signIn.none}</Button>}
       {signIn.local && <LoginCode />}
-      {!signIn.local && signIn.providers.length === 0 && <>no way to sign in is configured (auth.yaml).</>}
+      {!signIn.local && !signIn.password && !signIn.none && signIn.providers.length === 0 && <>no way to sign in is configured (auth.yaml).</>}
     </div>
   );
 }

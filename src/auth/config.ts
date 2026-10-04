@@ -1,11 +1,12 @@
 // auth.yaml (design.md "Sign-in: local, OIDC and SAML" — Configuration): how people sign in, a config
 // document in the store (design.md "Config documents"). Read once at start; an invalid document stops
-// the daemon, naming the field (sign-in fails closed). None → the one-time login code only. A client
-// secret comes from the environment only (`clientSecretEnv`, design.md "Secrets"); a SAML IdP
+// the daemon, naming the field (sign-in fails closed). None → the one-time login code only. `none`
+// (no sign-in) and `password` (argon2id hashes, never a password) are built in beside the providers.
+// A client secret comes from the environment only (`clientSecretEnv`, design.md "Secrets"); a SAML IdP
 // certificate is public and sits inline.
 import { parse } from 'yaml';
 import { z } from 'zod';
-import { UI_ROLES } from '../domain/types.ts';
+import { UI_ROLES, type UiRole } from '../domain/types.ts';
 import type { RoleRules } from './roles.ts';
 
 interface ProviderBase { name: string; label: string; roles: RoleRules }
@@ -40,11 +41,22 @@ export interface SamlProviderConfig extends ProviderBase {
   requireSignedResponse: boolean;
 }
 export type ProviderConfig = OidcProviderConfig | GithubProviderConfig | SamlProviderConfig;
-export interface AuthConfig { local: { enabled: boolean }; providers: ProviderConfig[] }
+/** No sign-in: everyone who reaches the UI gets a session with this role. */
+export interface NoSignInConfig { role: UiRole }
+/** One password sign-in account: an argon2id hash (`job-hopper password-hash`), never the password. */
+export interface PasswordUser { username: string; passwordHash: string; role: UiRole }
+export interface AuthConfig {
+  local: { enabled: boolean };
+  /** null: off. */
+  none: NoSignInConfig | null;
+  /** null: off. */
+  password: { users: PasswordUser[] } | null;
+  providers: ProviderConfig[];
+}
 
 export const AUTH = 'auth.yaml';
-/** Provider names are URL path segments; these two are taken by the routes. */
-const RESERVED = ['local', 'complete'];
+/** Provider names are URL path segments; these are taken by the routes and the built-in sign-in kinds. */
+const RESERVED = ['local', 'complete', 'none', 'password'];
 
 const LOOPBACK = ['127.0.0.1', 'localhost', '[::1]'];
 /** https, or http to loopback (a local test IdP). */
@@ -87,11 +99,24 @@ const saml = z.strictObject({
   requireSignedResponse: z.boolean().default(false),
 });
 const provider = z.discriminatedUnion('type', [oidc, github, saml]);
+const passwordUser = z.strictObject({
+  username: z.string().min(1).max(128),
+  passwordHash: z.string().startsWith('$argon2id$', 'must be an argon2id hash: job-hopper password-hash'),
+  role: z.enum(UI_ROLES),
+});
 const schema = z.strictObject({
   version: z.literal(1),
   local: z.strictObject({ enabled: z.boolean().default(true) }).default({ enabled: true }),
+  none: z.strictObject({ role: z.enum(UI_ROLES) }).optional(),
+  password: z.strictObject({ users: z.array(passwordUser) }).optional(),
   providers: z.array(provider).default([]),
 }).superRefine((doc, ctx) => {
+  const users = doc.password?.users ?? [];
+  users.forEach((u, i) => {
+    if (users.findIndex((v) => v.username.toLowerCase() === u.username.toLowerCase()) !== i) {
+      ctx.addIssue({ code: 'custom', path: ['password', 'users', i, 'username'], message: `${u.username} is named twice; usernames must be unique (case does not count)` });
+    }
+  });
   doc.providers.forEach((p, i) => {
     if (doc.providers.findIndex((q) => q.name === p.name) !== i) ctx.addIssue({ code: 'custom', path: ['providers', i, 'name'], message: `${p.name} is named twice; names must be unique` });
     if (p.type === 'github' && p.clientSecretEnv === undefined) ctx.addIssue({ code: 'custom', path: ['providers', i, 'clientSecretEnv'], message: 'GitHub needs clientSecretEnv: the variable holding its client secret' });
@@ -123,11 +148,11 @@ export function authDocumentProblem(raw: unknown): string | undefined {
 
 /** auth.yaml's text (undefined: none yet → local sign-in only), its secrets from `env`. Throws on anything invalid. */
 export function loadAuthDocument(text: string | undefined, env: Env): AuthConfig {
-  if (text === undefined) return { local: { enabled: true }, providers: [] };
+  if (text === undefined) return { local: { enabled: true }, none: null, password: null, providers: [] };
   let doc: unknown;
   try { doc = parse(text); } catch (e) { throw new Error(`invalid auth.yaml: ${(e as Error).message}`, { cause: e }); }
   const problem = authDocumentProblem(doc);
   if (problem) throw new Error(`invalid auth.yaml: ${problem}`);
   const r = schema.parse(doc ?? {});
-  return { local: r.local, providers: r.providers.map((p, i) => resolve(p, i, env)) };
+  return { local: r.local, none: r.none ?? null, password: r.password ?? null, providers: r.providers.map((p, i) => resolve(p, i, env)) };
 }

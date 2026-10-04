@@ -1,4 +1,4 @@
-// Signing in (design.md "Sign-in: local, OIDC and SAML", issue #39): who a UI session belongs to,
+// Signing in (design.md "Sign-in: none, password, local, OIDC and SAML", issues #39, #53): who a UI session belongs to,
 // and what its role lets it do. The same for every identity provider.
 
 /** What a UI session may do. Each role includes the ones before it. */
@@ -8,12 +8,12 @@ export const UI_ROLES: readonly UiRole[] = ['viewer', 'operator', 'admin'];
 /** True when `role` includes `needs`. */
 export const roleAllows = (role: UiRole, needs: UiRole): boolean => UI_ROLES.indexOf(role) >= UI_ROLES.indexOf(needs);
 
-/** The identity provider types auth.yaml offers. `local` is the one-time login code. */
+/** The identity provider types auth.yaml offers. `local` (the login code), `none` and `password` are built in, not providers. */
 export type IdentityProviderType = 'oidc' | 'github' | 'saml';
 
 /** Who signed in, as every identity provider reports it. */
 export interface Identity {
-  /** The provider instance name in auth.yaml (`local` for the login code). */
+  /** The provider instance name in auth.yaml (`local` the login code, `none` no sign-in, `password` password sign-in). */
   provider: string;
   /** The provider's stable id for the user (OIDC `sub`, GitHub user id, SAML NameID). */
   subject: string;
@@ -48,6 +48,10 @@ export interface SessionView {
   signIn: {
     /** The one-time login code works. */
     local: boolean;
+    /** No sign-in: the role anyone gets from POST /ui/auth/none; null when off. */
+    none: UiRole | null;
+    /** Password sign-in (POST /ui/auth/password) is on. */
+    password: boolean;
     /** The origin a provider sign-in starts and ends on (JOB_HOPPER_PUBLIC_URL, else http://localhost:<port>). */
     origin: string;
     providers: SignInProviderView[];
