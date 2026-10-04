@@ -91,6 +91,27 @@ describe('ensurePluginsFile', () => {
     expect(readFileSync(pluginsFile, 'utf8')).toContain('# auto: on only while no GitHub App is configured');
   });
 
+  it('drops progressCommentSeconds from both blocks (the hopper posts no progress comments since 2026-10-03), comments and other keys kept', () => {
+    const { pluginsFile } = setup({ sources: [
+      'version: 1',
+      'github:',
+      '  enabled: true',
+      '  progressCommentSeconds: 300  # at most one progress-comment edit',
+      '  recentComments: 10  # mine',
+      'githubApp:',
+      '  progressCommentSeconds: 300',
+      '  label: hopper',
+      '',
+    ].join('\n') });
+    ensurePluginsFile({ pluginsFile, answerTimeoutMs: 180000, env: {}, logger: quiet });
+    const text = readFileSync(pluginsFile, 'utf8');
+    expect(text).not.toContain('progressCommentSeconds');
+    expect(text).toContain('# mine');
+    const [gh, app] = read(pluginsFile).jobSources;
+    expect(gh.options).toMatchObject({ enabled: true, recentComments: 10 });
+    expect(app.options).toMatchObject({ label: 'hopper' });
+  });
+
   it('nothing to migrate: the built-in defaults (github disabled, github-app waiting for the app file beside plugins.yaml)', () => {
     const { dir, pluginsFile } = setup();
     expect(ensurePluginsFile({ pluginsFile, answerTimeoutMs: 180000, env: {}, logger: quiet })).toEqual({ action: 'default', renamed: [] });

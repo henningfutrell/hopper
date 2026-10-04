@@ -120,13 +120,6 @@ describe('gh CLI GitHubApi', () => {
     expect(r).toEqual({ id: 901, url: 'https://github.com/o/r/issues/5#issuecomment-901', createdAt: '2026-10-02T09:00:01Z' });
   });
 
-  it('editComment PATCHes the comment with the body on stdin', async () => {
-    await gh().editComment('o/r', 77, 'new text');
-    const [c] = calls();
-    expect(c!.argv).toEqual(['api', 'repos/o/r/issues/comments/77', '-X', 'PATCH', '--input', '-']);
-    expect(JSON.parse(c!.stdin!)).toEqual({ body: 'new text' });
-  });
-
   it('ensureLabel creates or updates the label idempotently (--force)', async () => {
     await gh().ensureLabel('o/r', 'hopper:done', '0e8a16', 'job-hopper finished this');
     expect(calls()[0]!.argv).toEqual(['label', 'create', 'hopper:done', '-R', 'o/r', '--color', '0e8a16', '--description', 'job-hopper finished this', '--force']);

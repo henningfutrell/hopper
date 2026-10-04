@@ -63,6 +63,7 @@ describe('the first boot without plugins.yaml migrates', () => {
     const doc = parse(readFileSync(pluginsFile, 'utf8'));
     expect(doc.jobSources.map((s: { name: string; plugin: string }) => [s.name, s.plugin])).toEqual([['github', 'github-gh'], ['github-app', 'github-app']]);
     expect(doc.machines).toEqual({ name: 'local', plugin: 'local', options: { lanes: 0 } });
+    expect(doc.jobSources[0].options).not.toHaveProperty('progressCommentSeconds');
     expect(doc.executors).toEqual([{ name: 'test', plugin: 'test' }]);
     const warned = warn.mock.calls.map((c) => String(c[0])).join('\n');
     expect(warned).toMatch(/JOB_HOPPER_EXECUTORS/);

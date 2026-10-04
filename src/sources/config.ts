@@ -30,7 +30,6 @@ const sharedKeys = {
     .meta({ commandBearing: true, description: 'working directory of jobs from repos not in repoPaths' }),
   executor: z.string().min(1).default('herdr-claude'),
   model: z.string().min(1).nullable().default(null),
-  progressCommentSeconds: z.number().int().positive().default(300),
   recentComments: z.number().int().min(0).default(10),
   projects: z.record(z.string(), projectSchema).default({}),
 };
@@ -42,14 +41,16 @@ export const githubGhOptions = z.object({
   owners: z.array(z.string().min(1)).default([]),
   bin: z.string().min(1).default('gh').meta({ commandBearing: true, description: 'the gh CLI' }),
   appFile: z.string().min(1).nullable().default(DEFAULT_APP_FILE)
-    .meta({ description: 'with enabled: auto, this source pauses while this GitHub App file is readable; null: never' }),
+    .meta({ commandBearing: true, description: 'with enabled: auto, this source pauses while this GitHub App file is readable; null: never' }),
   ...sharedKeys,
 }).strict();
 
 /** github-app: the App source, posting as the app's bot. */
 export const githubAppOptions = z.object({
   enabled: z.boolean().default(true),
-  appFile: z.string().min(1).default(DEFAULT_APP_FILE).meta({ description: 'github-app.json, written by create-github-app.sh' }),
+  // Selects the private key and so the identity the source acts as: command-bearing.
+  appFile: z.string().min(1).default(DEFAULT_APP_FILE)
+    .meta({ commandBearing: true, description: 'github-app.json, written by create-github-app.sh' }),
   // Where the app's tokens are sent: command-bearing, so a UI session can never redirect them.
   apiUrl: z.url({ protocol: /^https?$/ }).transform((u) => u.replace(/\/+$/, '')).optional()
     .meta({ commandBearing: true, description: 'GitHub API base; unset: https://api.github.com' }),

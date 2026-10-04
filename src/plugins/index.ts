@@ -34,7 +34,7 @@ export interface PluginHostOptions {
   defaultAssessor?: InstanceSpec;
   /** The executor instances when plugins.yaml has no `executors` section. Default: the built-in ones. */
   defaultExecutors?: InstanceSpec[];
-  /** What job sources are told. Default (tests): no key known, nothing re-runnable, no comment helper. */
+  /** What job sources are told. Default (tests): no key known, nothing re-runnable. */
   jobSourceContext?: JobSourceContext;
   /** What the machine source is told. Default: the runnable executors this host built. */
   machineContext?: { executors(): string[] };
@@ -88,7 +88,7 @@ function restartStatus<B extends { spec: InstanceSpec }>(slot: RestartSlot<B>, s
   };
 }
 
-const NO_SOURCE_CONTEXT: JobSourceContext = { knownKeys: () => new Set(), rerunnable: () => new Set(), commentCmd: '' };
+const NO_SOURCE_CONTEXT: JobSourceContext = { knownKeys: () => new Set(), rerunnable: () => new Set() };
 
 export function createPluginHost(o: PluginHostOptions): PluginHost {
   const kit = o.kit ?? createDetectionKit();

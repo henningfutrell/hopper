@@ -13,8 +13,7 @@ Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin
 # %h/.config/job-hopper/github-app.json, or the gh CLI), executors, router, answerer, assessor, the
 # machine and its lanes — is configured in plugins.yaml, which the daemon writes (mode 600) on the
 # first boot without one. It sends webhooks (webhooks.yaml). The UI login code is written to
-# %h/.local/share/job-hopper/ui-login-code; job token files to %h/.local/share/job-hopper/job-tokens
-# (outside PrivateTmp, so herdr panes can read them).
+# %h/.local/share/job-hopper/ui-login-code.
 Environment=JOB_HOPPER_PLUGINS_FILE=%h/.config/job-hopper/plugins.yaml
 Environment=JOB_HOPPER_WEBHOOKS_FILE=%h/.config/job-hopper/webhooks.yaml
 Restart=on-failure

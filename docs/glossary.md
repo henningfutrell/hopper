@@ -26,7 +26,7 @@ synonyms. Rename here first, in the same commit as everything else.
 | **Plugin** | One module implementing one role: built in (`src/plugins/<role>/<id>/`) or custom (one directory under the plugin dir). Default export a `PluginDefinition`. | extension, addon, adapter (an adapter is the code behind a port; a plugin is the swappable unit) |
 | **Role** | A slot the engine calls through one port. Today: `router`, `answerer`, `assessor`, `executor`, `job-source`, `machine-source`, `usage-source`. A **live** role swaps its instance between calls when plugins.yaml changes; a **restart** role (`executor`, `job-source`, `machine-source`, `usage-source`) is built at start, and a change shows `changed — restart pending` in `/api/plugins`. | slot type, kind |
 | **Plugin instance** | A plugin plus validated options, under a name (`jev`), chosen in `plugins.yaml`. | config, profile |
-| **Command-bearing option** | A plugin option naming a program, its arguments, a working directory, an interpreter or a sourced file (`bin`, `args`, `cwd`, `defaultCwd`, `repoPaths`, `python`, `jevSrc`, …), or the endpoint a credential is sent to (`apiUrl`). Marked `.meta({ commandBearing: true })`, carried into its JSON Schema; the UI never edits it (design.md "UI and mutation"). | |
+| **Command-bearing option** | A plugin option naming a program, its arguments, a working directory, an interpreter or a sourced file (`bin`, `args`, `cwd`, `defaultCwd`, `repoPaths`, `python`, `jevSrc`, …), or the endpoint a credential is sent to (`apiUrl`), or the file that selects an identity's key (`appFile`). Marked `.meta({ commandBearing: true })`, carried into its JSON Schema; the UI never edits it (design.md "UI and mutation"). | |
 | **Detection** | A plugin's cheap check that it can run here: `available`, `unavailable` + reason, or `needs-setup` + the command to run. A job source that needs setup still runs (it waits, then works without a restart); any other role's does not. | health check |
 | **Plugin dir** | `~/.config/job-hopper/plugins` (`JOB_HOPPER_PLUGIN_DIR`): custom plugins, one directory each. | |
 | **Plugins file** | `~/.config/job-hopper/plugins.yaml` (`JOB_HOPPER_PLUGINS_FILE`): which instance fills which role, and every part's options — the only configuration of a part (env holds process settings only). Re-read on change. Always present: the boot that finds none writes it (mode 600) — the **plugins-file migration**, from sources.yaml and the removed env vars, or the built-in instances; it never replaces one. A section left out means the built-in instances. | |
@@ -56,11 +56,12 @@ synonyms. Rename here first, in the same commit as everything else.
 | **Source item** | One eligible thing a source offers — for GitHub, an open issue labelled `hopper` by an allowlisted author. | |
 | **Source key** | The id of a source item (the issue URL). Many jobs may share one (see re-run); the newest is the key's job. | |
 | **Re-run** | A new job for a source key whose newest job failed or was cancelled and whose end the source already reported — offered again because a human cleared the marker (`hopper:failed`). Never from `finished`. | retry, resubmit |
-| **Claim** (of an issue) | Labelling it `hopper:claimed` and commenting, when the hopper takes it. Distinct from a lane claim. | |
+| **Claim** (of an issue) | Labelling it `hopper:claimed` when the hopper takes it (no comment). Distinct from a lane claim. | |
 | **Sync** | One pass of a source: discover, check active jobs, retry reports. | poll |
-| **Report** | Telling the source what happened to its job (comments, labels). | |
-| **Signal** | What a source tells the hopper: cancel, or a human answer. | |
-| **Hopper marker** | The hidden first line of every hopper comment; tells its comments from the owner's replies. | |
+| **Completion comment** | The one comment the hopper posts on an issue: when its job finishes: one fixed line of hopper facts (job id prefix, duration), never model-written text. The hopper's only other issue writes are labels. | status comment, result comment |
+| **Report** | Telling the source what happened to its job: the claim and the end. On GitHub: labels, plus one completion comment on `finished`. | |
+| **Signal** | What a source tells the hopper: cancel. Questions are answered in the UI, never through a source. | |
+| **Hopper marker** | The hidden first line of a hopper comment (today only the completion comment); tells it from the owner's text. | |
 | **Leftover variable** | A `JOB_HOPPER_*` variable that is set but read by nothing (a removed part-choosing one, or a typo). One loud warning at boot names them all. | |
 | **UI session** | A browser session created from the one-time login code; the only way to mutate. | |
 | **Payload version** | `schemaVersion` on every event: the version of that event type's payload schema. | |
@@ -68,9 +69,6 @@ synonyms. Rename here first, in the same commit as everything else.
 | **Installation** | Where the owner installed the app; its repos are the only ones the `github-app` source scans. | |
 | **Bot login** | The app's author name on GitHub; how hopper comments are identified (the marker is secondary). | |
 | **Paused** (source) | A job source that must not discover new items right now — the gh source while a GitHub App is configured, the app source while none is. It still checks and reports its own active jobs. Only for sources; a job waiting on a question is *waiting answer*, never "paused". | |
-| **Token keeper** | The part of the app source that mints, refreshes and deletes job token files. | |
-| **Job token file** | A per-job file holding a short-lived installation token scoped to one repo, `issues: write`. | |
-| **hopper-comment** | The helper a job runs to comment on its own issue as the app. | |
 | **Manifest flow** | GitHub's create-app-from-a-manifest flow, driven by `create-github-app.sh`. | |
 | **Event** | One recorded state change, `seq`-ordered, in the event log. Wire type dotted (`job.queued`). | message |
 | **Webhook subscription** | A URL + event filter + HMAC secret that receives events. | hook |

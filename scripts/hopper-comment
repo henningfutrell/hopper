@@ -1,4 +1,0 @@
-#!/usr/bin/env bash
-# Post a comment on the job's issue as the job-hopper app. See docs/design.md "Phase 4".
-dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-exec node "$dir/hopper-comment.ts" "$@"

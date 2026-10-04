@@ -1,7 +1,7 @@
 // In-memory GitHub implementing GitHubApi, plus helpers for tests to play the owner (or a
 // stranger) on the other side: create issues, reply, close, unlabel, delete, set project items.
 // Default identity: gh (writes appear as `login`). With `app`, writes appear as the bot and the
-// app-only methods exist: the installed repos and repo-scoped token minting.
+// app-only methods exist: the bot login and the installed repos.
 
 import { GitHubApiError } from './api.ts';
 import type { GitHubApi, GitHubComment, GitHubIssue, GitHubProjectItem } from './api.ts';
@@ -29,10 +29,6 @@ export interface FakeGitHub extends GitHubApi {
 export interface FakeAppIdentity {
   botLogin: string;
   installedRepos?: string[];
-  /** Clock for minted tokens' expiresAt (default: the real clock). */
-  now?: () => Date;
-  /** Lifetime of a minted token (default 1 h, like GitHub). */
-  tokenTtlMs?: number;
 }
 
 const notFound = (what: string) => new GitHubApiError(`gh: Not Found (HTTP 404): ${what}`, true, 404);
@@ -41,7 +37,6 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
   const human = o.login ?? 'owner';
   const login = o.app?.botLogin ?? human;
   let installed = [...(o.app?.installedRepos ?? [])];
-  let minted = 0;
   const issues = new Map<string, GitHubIssue>();
   const comments = new Map<string, GitHubComment[]>();
   const labels = new Map<string, Set<string>>();
@@ -108,23 +103,12 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
       const c = fake.addComment(repo, n, login, body);
       return { id: c.id, url: c.url, createdAt: c.createdAt };
     },
-    async editComment(repo, id, body) {
-      enter('editComment', [repo, id, body]);
-      const c = [...comments.values()].flat().find((x) => x.id === id);
-      if (!c) throw notFound(`comment ${id}`);
-      c.body = body;
-    },
   };
 
   if (o.app) {
     const app = o.app;
     api.botLogin = async () => { enter('botLogin', []); return app.botLogin; };
     api.listInstalledRepos = async () => { enter('listInstalledRepos', []); return installed.map((repo, i) => ({ repo, installationId: 100 + i })); };
-    api.mintRepoToken = async (repo) => {
-      enter('mintRepoToken', [repo]);
-      const now = app.now?.() ?? new Date();
-      return { token: `ghs_fake_${++minted}`, expiresAt: new Date(now.getTime() + (app.tokenTtlMs ?? 3_600_000)).toISOString() };
-    };
   }
 
   const fake: FakeGitHub = {

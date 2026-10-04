@@ -20,7 +20,6 @@ const SHARED_DEFAULTS = {
   defaultCwd: '~/workbench/app-workflows',
   executor: 'herdr-claude',
   model: null,
-  progressCommentSeconds: 300,
   recentComments: 10,
   projects: {},
 };

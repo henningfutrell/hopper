@@ -30,7 +30,7 @@ export function writeAppFile(dir: string): string {
   return appFile;
 }
 
-const JOB_KEYS = { authors: ['owner'], executor: 'scripted', defaultCwd: '/tmp', progressCommentSeconds: 1, pollSeconds: 3600 };
+const JOB_KEYS = { authors: ['owner'], executor: 'scripted', defaultCwd: '/tmp', pollSeconds: 3600 };
 
 /**
  * plugins.yaml `jobSources:` for both GitHub sources: `github` (github-gh, pausing while the app

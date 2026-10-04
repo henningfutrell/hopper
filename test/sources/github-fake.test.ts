@@ -20,8 +20,6 @@ describe('in-memory fake GitHub', () => {
     const c2 = gh.addComment('h/a', 1, 'stranger', 'theirs');
     expect(c2.id).toBeGreaterThan(c1.id);
     expect((await gh.listComments('h/a', 1)).map((c) => [c.author, c.body])).toEqual([['me', 'mine'], ['stranger', 'theirs']]);
-    await gh.editComment('h/a', c1.id, 'edited');
-    expect(gh.commentsOn('h/a', 1)[0]!.body).toBe('edited');
   });
 
   it('adding a label the repo does not have fails like GitHub (422, permanent)', async () => {

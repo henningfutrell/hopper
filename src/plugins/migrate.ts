@@ -102,11 +102,18 @@ function readSources(path: string): Document | undefined {
   return doc;
 }
 
-/** A block of sources.yaml: its plain value, and its node (to keep its comments). Throws when it is not a mapping. */
+/** sources.yaml keys no option carries any more: `progressCommentSeconds` (no progress comment since 2026-10-03). */
+const DROPPED_KEYS = ['progressCommentSeconds'];
+
+/**
+ * A block of sources.yaml: its plain value, and its node (to keep its comments), without the
+ * dropped keys. Throws when it is not a mapping.
+ */
 function blockOf(doc: Document | undefined, key: string, path: string): { value?: Block; node?: Node } {
   const node = doc?.get(key, true) as Node | undefined;
   if (node === undefined || node === null) return {};
   if (!isMap(node)) throw new Error(`cannot fold ${path} into plugins.yaml: ${key} is not a mapping; fix or remove it`);
+  for (const k of DROPPED_KEYS) node.delete(k);
   return { value: node.toJSON() as Block, node };
 }
 

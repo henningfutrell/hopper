@@ -3,7 +3,6 @@
 // host (integration tests call startApp, with doubles at the seams).
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import type { Answerer, Assessor, Clock, Executor, JobSource, PluginsView, Router, SettableUsageSource, SourceRegistry, Store } from './domain/ports.ts';
 import type { Question, SourceStatus } from './domain/types.ts';
 import { isRerunnable } from './domain/types.ts';
@@ -74,9 +73,6 @@ const WEBHOOKS_FILE_CHECK_MS = 5000;
 const PLUGINS_FILE_CHECK_MS = 5000;
 const SEAM_SOURCE_POLL_MS = 1000;
 
-/** The jobs' comment helper, next to this file's install: <install dir>/scripts/hopper-comment. */
-const HOPPER_COMMENT_CMD = fileURLToPath(new URL('../scripts/hopper-comment', import.meta.url));
-
 const VERSION = (JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }).version;
 
 /** The built-in plugins with the seams (tests) in place of the herdr CLI and the GitHub adapters. */
@@ -131,7 +127,6 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     pluginDir: config.pluginDir, pluginsFile: config.pluginsFile, dataDir, clock, routerMode, logger,
     builtins: withSeams(seams),
     jobSourceContext: {
-      commentCmd: HOPPER_COMMENT_CMD,
       knownKeys: (keys) => new Set(keys.filter((k) => store.jobs.getBySourceKey(k))),
       rerunnable: (keys) => new Set(keys.filter((k) => { const j = store.jobs.getBySourceKey(k); return j !== undefined && isRerunnable(j); })),
     },
@@ -182,7 +177,6 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   const sync = createSourceSync({
     sources: [...running.map((r) => r.source), ...(seams.sources ?? [])], host: engine.sourceHost, clock,
     pollMs: (name) => running.find((r) => r.source.name === name)?.pollMs ?? SEAM_SOURCE_POLL_MS,
-    progressThrottleMs: (name) => running.find((r) => r.source.name === name)?.progressThrottleMs ?? 0,
   });
   const registry: SourceRegistry = withFixedStatuses(sync, fixed);
   const webhookConfig = createWebhookConfigWatcher({

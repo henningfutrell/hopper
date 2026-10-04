@@ -26,9 +26,9 @@ export function githubAppPlugin(seam?: GitHubApi): PluginDefinition<'job-source'
       if (!o.enabled) return { disabled: { kind: 'github-app', detail: { mode: 'app' } } };
       const source = createAppSource({
         name: ctx.instanceName, clock: ctx.clock, knownKeys: ctx.knownKeys, rerunnable: ctx.rerunnable,
-        dataDir: ctx.dataDir, commentCmd: ctx.commentCmd, ...(seam ? { api: seam } : {}),
+        ...(seam ? { api: seam } : {}),
       }, o);
-      return { source, pollMs: o.pollSeconds * 1000, progressThrottleMs: o.progressCommentSeconds * 1000 };
+      return { source, pollMs: o.pollSeconds * 1000 };
     },
   };
 }

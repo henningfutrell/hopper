@@ -50,7 +50,7 @@ export interface PluginContext {
  * switch it off, only a `disabled` entry in /api/sources. `source.name` must be the instance name.
  */
 export type JobSourceInstance =
-  | { source: JobSource; pollMs: number; progressThrottleMs: number }
+  | { source: JobSource; pollMs: number }
   | { disabled: { kind: string; detail: Record<string, unknown> } };
 
 /**
@@ -70,7 +70,7 @@ export interface RoleInstance {
 
 /**
  * What each role adds to the context. The router passes job-hopper's router mode on (Jev reads it);
- * a job source learns which source keys already have jobs and the jobs' comment helper; a machine
+ * a job source learns which source keys already have jobs; a machine
  * source learns the executors registered when it is asked.
  */
 export interface RoleContext {
@@ -88,8 +88,6 @@ export interface JobSourceContext {
   knownKeys(keys: string[]): Set<string>;
   /** Of these source keys, those whose newest job may be re-run. */
   rerunnable(keys: string[]): Set<string>;
-  /** Absolute path of the jobs' comment helper (scripts/hopper-comment). */
-  commentCmd: string;
 }
 
 /** The zod the core passes to `options` — authors need not import zod. */

@@ -1,18 +1,17 @@
-// The sync loop: per source, pull (discover → ingest/re-sort), check (signals), and push
-// (event-driven reports with a retry scan). One writer of `sourceState.sync`; the adapter owns
+// The sync loop: per source, pull (discover → ingest/re-sort), check (cancel signals), and push
+// (the claim and the end of each job, event-driven with a retry scan). One writer of `sourceState.sync`; the adapter owns
 // `sourceState.source`. Knows only the narrow SourceHost, never engine internals.
 
 import { SourceError } from '../domain/ports.ts';
 import type { Clock, JobSource, SourceHost, SourceRegistry, SourceReport } from '../domain/ports.ts';
 import { TERMINAL_STATUSES, isRerunnable } from '../domain/types.ts';
-import type { DomainEvent, Job, Question, SourceStatus } from '../domain/types.ts';
+import type { DomainEvent, Job, SourceStatus } from '../domain/types.ts';
 
 export interface SourceSyncOptions {
   sources: JobSource[];
   host: SourceHost;
   clock: Clock;
   pollMs: (sourceName: string) => number;
-  progressThrottleMs: (sourceName: string) => number;
 }
 
 export type SourceSync = SourceRegistry & {
@@ -21,17 +20,16 @@ export type SourceSync = SourceRegistry & {
   syncNow(name?: string): Promise<void>;
 };
 
+// Stored rows written before 2026-10-03 may also carry reportedQuestions, answeredQuestions and
+// lastProgressAt; nothing reads them.
 interface SyncFlags {
   claimReported?: boolean;
-  reportedQuestions?: string[];
-  answeredQuestions?: string[];
   finalReported?: boolean;
-  lastProgressAt?: string;
   cancelReason?: string;
   permanentErrors?: Array<{ kind: string; message: string }>;
 }
 
-interface Hint { progress?: boolean; cancelReason?: string }
+interface Hint { cancelReason?: string }
 
 interface Slot {
   source: JobSource;
@@ -42,7 +40,7 @@ interface Slot {
   retrying: Map<string, string>;
 }
 
-const TRIGGERS = new Set(['job.progressed', 'question.escalated', 'question.answered', 'job.finished', 'job.failed', 'job.cancelled']);
+const TRIGGERS = new Set(['job.finished', 'job.failed', 'job.cancelled']);
 const isTerminal = (j: Job) => TERMINAL_STATUSES.includes(j.status);
 const flagsOf = (j: Job): SyncFlags => (j.sourceState?.sync ?? {}) as SyncFlags;
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -112,46 +110,18 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     }
   }
 
-  async function reportQuestions(slot: Slot, jobId: string): Promise<boolean> {
-    const qs = store.questions.list({ jobId }).slice().sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-    for (const q of qs) {
-      const flags = flagsOf(store.jobs.get(jobId)!);
-      if (q.status === 'open' && q.tier === 'human' && !flags.reportedQuestions?.includes(q.id)) {
-        const ok = await send(slot, jobId, 'question', (job) => ({ kind: 'question', job, question: q }),
-          (f) => ({ ...f, reportedQuestions: [...(f.reportedQuestions ?? []), q.id] }));
-        if (!ok) return false;
-      } else if (q.status === 'answered' && !flags.answeredQuestions?.includes(q.id)) {
-        const ok = await send(slot, jobId, 'answered', (job) => ({ kind: 'answered', job, question: fresh(q) }),
-          (f) => ({ ...f, answeredQuestions: [...(f.answeredQuestions ?? []), q.id] }));
-        if (!ok) return false;
-      }
-    }
-    return true;
-  }
-
-  const fresh = (q: Question) => store.questions.get(q.id) ?? q;
-
   async function reportJob(slot: Slot, jobId: string, hint: Hint): Promise<void> {
     let job = store.jobs.get(jobId);
     if (!job || job.source?.source !== slot.source.name) return;
     if (!flagsOf(job).claimReported) {
       if (!await send(slot, jobId, 'claimed', (j) => ({ kind: 'claimed', job: j }), (f) => ({ ...f, claimReported: true }))) return;
     }
-    if (!await reportQuestions(slot, jobId)) return;
     job = store.jobs.get(jobId)!;
     const flags = flagsOf(job);
-    if (isTerminal(job)) {
-      if (flags.finalReported) return;
-      if (job.status === 'cancelled' && !flags.cancelReason && hint.cancelReason) write(jobId, { ...flags, cancelReason: hint.cancelReason });
-      const kind = job.status === 'finished' ? 'finished' : job.status === 'failed' ? 'failed' : 'cancelled';
-      await send(slot, jobId, kind, (j) => ({ kind, job: j }), (f) => ({ ...f, finalReported: true }));
-      return;
-    }
-    if (!hint.progress) return;
-    const nowMs = clock.now().getTime();
-    if (flags.lastProgressAt && nowMs - Date.parse(flags.lastProgressAt) < o.progressThrottleMs(slot.source.name)) return;
-    await send(slot, jobId, 'progress', (j) => ({ kind: 'progress', job: j, message: j.progressMessage ?? '' }),
-      (f) => ({ ...f, lastProgressAt: clock.now().toISOString() }));
+    if (!isTerminal(job) || flags.finalReported) return;
+    if (job.status === 'cancelled' && !flags.cancelReason && hint.cancelReason) write(jobId, { ...flags, cancelReason: hint.cancelReason });
+    const kind = job.status === 'finished' ? 'finished' : job.status === 'failed' ? 'failed' : 'cancelled';
+    await send(slot, jobId, kind, (j) => ({ kind, job: j }), (f) => ({ ...f, finalReported: true }));
   }
 
   function queueReport(slot: Slot, jobId: string, hint: Hint = {}): Promise<void> {
@@ -161,10 +131,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
   function onEvent(e: DomainEvent) {
     if (!running || !e.jobId || !TRIGGERS.has(e.type)) return;
     const jobId = e.jobId;
-    const hint: Hint = {
-      ...(e.type === 'job.progressed' ? { progress: true } : {}),
-      ...(e.type === 'job.cancelled' && typeof e.data.reason === 'string' ? { cancelReason: e.data.reason } : {}),
-    };
+    const hint: Hint = e.type === 'job.cancelled' && typeof e.data.reason === 'string' ? { cancelReason: e.data.reason } : {};
     // Listeners fire inside append; never call a source from there.
     track(new Promise<void>((resolve) => setImmediate(() => {
       const slot = slots.get(store.jobs.get(jobId)?.source?.source ?? '');
@@ -180,7 +147,6 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     const ids = new Set(active.map((j) => j.id));
     for (const s of await slot.source.check(active)) {
       if (!ids.has(s.jobId)) continue;
-      if (s.kind === 'answer') { host.answer(s.questionId, s.answer); continue; }
       await enqueue(s.jobId, async () => {
         const job = store.jobs.get(s.jobId);
         if (!job || isTerminal(job)) return;
