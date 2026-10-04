@@ -11,6 +11,7 @@ import { loadConfig, type Config } from './config.ts';
 import { createEngine, type Engine } from './engine/index.ts';
 import { createExecutorRegistry } from './executors/index.ts';
 import type { HerdrClient } from './executors/herdr/index.ts';
+import { dockerHost } from './executors/docker.ts';
 import { hopperSshAuth, pinHostKeys } from './executors/ssh.ts';
 import { createServer } from './http/index.ts';
 import { AUTH, createSignIn, loadAuthDocument, type AuthConfig } from './auth/index.ts';
@@ -224,7 +225,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
         machines: () => pinned(host.attachedMachines()), clock, logger,
         probe: seams.machineProbe
           ?? ((m) => ('docker' in m
-            ? probeContainer({ container: m.docker })
+            ? probeContainer({ container: m.docker, dockerHost: () => dockerHost(secret) })
             : probeHerdrOverSsh({ target: m.ssh, herdrBin: m.herdrBin, session: m.session, controlDir: join(dataDir, 'ssh'), auth: sshAuth }))),
       }),
     ]),

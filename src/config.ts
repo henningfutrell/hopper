@@ -108,7 +108,9 @@ const schema = z.object({
 
 /** A secret among the settings: also read from a mounted file, `<name>_FILE`. */
 const SECRET_SETTINGS = ['JOB_HOPPER_DATABASE_URL'];
-const READ = new Set([...Object.keys(schema.shape), ...SECRET_SETTINGS.map((n) => `${n}_FILE`)]);
+/** Read by the parts, not here (design.md "Target authentication"): the hopper's ssh key and its docker socket. */
+const PART_SETTINGS = ['JOB_HOPPER_SSH_KEY', 'JOB_HOPPER_SSH_KEY_FILE', 'JOB_HOPPER_DOCKER_HOST'];
+const READ = new Set([...Object.keys(schema.shape), ...SECRET_SETTINGS.map((n) => `${n}_FILE`), ...PART_SETTINGS]);
 
 /**
  * Reads only JOB_HOPPER_* keys; empty strings count as unset. Throws on any invalid value of a key

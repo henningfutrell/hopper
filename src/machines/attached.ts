@@ -11,6 +11,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { Clock, MachineSource } from '../domain/ports.ts';
 import type { AttachedMachine, MachineSnapshot } from '../domain/types.ts';
+import { dockerArgv, dockerEnv } from '../executors/docker.ts';
 import { scrubbedEnv } from '../executors/env.ts';
 import { createHerdrCliClient } from '../executors/herdr/index.ts';
 import { SSH_FAILED, resolveDestination, sshArgv, type SshAuth, HOST_KEY } from '../executors/ssh.ts';
@@ -76,11 +77,20 @@ export async function probeHerdrOverSsh(o: { target: string; herdrBin: string; s
   return /^status: running$/m.test(await herdr.exec(['status', 'server']));
 }
 
-/** Whether a container target runs: `docker container inspect` says it is running. A missing container is not. */
-export function probeContainer(o: { container: string; dockerBin?: string; timeoutMs?: number }): Promise<boolean> {
+/**
+ * Whether a container target runs: `docker container inspect` says it is running. A missing container
+ * is not. Only through the docker socket the hopper may open (design.md "Target authentication").
+ */
+export function probeContainer(o: { container: string; dockerHost: () => string; dockerBin?: string; timeoutMs?: number }): Promise<boolean> {
   return new Promise((resolve, reject) => {
-    execFile(o.dockerBin ?? 'docker', ['container', 'inspect', '--format', '{{.State.Running}}', '--', o.container], {
-      env: scrubbedEnv(), timeout: o.timeoutMs ?? 15000, killSignal: 'SIGKILL', encoding: 'utf8',
+    let args: string[];
+    try {
+      args = dockerArgv(o.dockerHost(), ['container', 'inspect', '--format', '{{.State.Running}}', '--', o.container]);
+    } catch (e) {
+      return reject(e instanceof Error ? e : new Error(String(e)));
+    }
+    execFile(o.dockerBin ?? 'docker', args, {
+      env: dockerEnv(), timeout: o.timeoutMs ?? 15000, killSignal: 'SIGKILL', encoding: 'utf8',
     }, (err, stdout, stderr) => {
       const e = err as (Error & { killed?: boolean; code?: number | string }) | null;
       if (e?.killed) return reject(new Error(`docker: no answer within ${o.timeoutMs ?? 15000} ms`));

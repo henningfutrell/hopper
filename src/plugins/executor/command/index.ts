@@ -3,6 +3,7 @@
 // machine that runs no agent. Not in the built-in instances: plugins.yaml names it to use it.
 import { join } from 'node:path';
 import { createCommandExecutor } from '../../../executors/index.ts';
+import { dockerHost } from '../../../executors/docker.ts';
 import { hopperSshAuth } from '../../../executors/ssh.ts';
 import type { PluginDefinition } from '../../sdk.ts';
 
@@ -21,6 +22,7 @@ const command: PluginDefinition<'executor', CommandOptions> = {
   create: (ctx, o) => createCommandExecutor({
     name: ctx.instanceName, timeoutMs: o.timeoutMs, dockerBin: o.dockerBin, sshBin: o.sshBin, sshControlDir: join(ctx.dataDir, 'ssh'),
     sshAuth: () => hopperSshAuth({ env: ctx.env, dataDir: ctx.dataDir }),
+    dockerHost: () => dockerHost(ctx.env),
   }),
 };
 

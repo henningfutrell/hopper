@@ -6,7 +6,7 @@ import { execFile } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import type { ExecutionContext, ExecutionOutcome, Executor } from '../domain/ports.ts';
 import type { MachineSnapshot } from '../domain/types.ts';
-import { scrubbedEnv } from './env.ts';
+import { dockerArgv, dockerEnv } from './docker.ts';
 import { shellQuote, sshArgv, type SshAuth } from './ssh.ts';
 
 /** Per stream, the tail kept in the job's result. */
@@ -23,6 +23,8 @@ export interface CommandExecutorOptions {
   sshControlDir?: string;
   /** How the hopper proves itself to an ssh target (design.md "Target authentication"); throws when it cannot. */
   sshAuth: () => SshAuth;
+  /** The docker socket only the hopper may open (design.md "Target authentication"); throws when there is none. */
+  dockerHost: () => string;
 }
 
 /** The script a body carries: its first fenced code block when it has one, else the whole body. */
@@ -34,8 +36,8 @@ export function scriptOf(body: string): string {
 const tail = (s: string): string => (s.length > OUTPUT_CAP ? s.slice(-OUTPUT_CAP) : s);
 
 /** The program and argv that run `argv` on the machine, by its connection. */
-export function commandOn(machine: MachineSnapshot, argv: string[], o: Pick<CommandExecutorOptions, 'dockerBin' | 'sshBin' | 'sshControlDir' | 'sshAuth'>): [string, string[]] {
-  if (machine.docker) return [o.dockerBin ?? 'docker', ['exec', '--', machine.docker, ...argv]];
+export function commandOn(machine: MachineSnapshot, argv: string[], o: Pick<CommandExecutorOptions, 'dockerBin' | 'sshBin' | 'sshControlDir' | 'sshAuth' | 'dockerHost'>): [string, string[]] {
+  if (machine.docker) return [o.dockerBin ?? 'docker', dockerArgv(o.dockerHost(), ['exec', '--', machine.docker, ...argv])];
   if (machine.ssh) {
     const t = { target: machine.ssh, auth: o.sshAuth, ...(o.sshBin ? { bin: o.sshBin } : {}), ...(o.sshControlDir ? { controlDir: o.sshControlDir } : {}) };
     return [o.sshBin ?? 'ssh', sshArgv(t, argv.map(shellQuote).join(' '))];
@@ -48,7 +50,7 @@ interface Ran { exitCode: number; stdout: string; stderr: string }
 function run(file: string, args: string[], timeoutMs: number, signal: AbortSignal): Promise<Ran | 'aborted' | 'timeout'> {
   return new Promise((resolve, reject) => {
     execFile(file, args, {
-      env: scrubbedEnv(), timeout: timeoutMs, killSignal: 'SIGKILL', signal, maxBuffer: 64 * 1024 * 1024, encoding: 'utf8',
+      env: dockerEnv(), timeout: timeoutMs, killSignal: 'SIGKILL', signal, maxBuffer: 64 * 1024 * 1024, encoding: 'utf8',
     }, (err, stdout, stderr) => {
       if (!err) return resolve({ exitCode: 0, stdout, stderr });
       const e = err as NodeJS.ErrnoException & { killed?: boolean; code?: number | string };

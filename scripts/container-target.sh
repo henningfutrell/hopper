@@ -40,3 +40,4 @@ executors:
 attachedMachines:
   - { name: $NAME, docker: $NAME, lanes: $LANES, executors: [command] }
 YAML
+step "the hopper reaches it only through its socket proxy (issue #59): bash scripts/docker-proxy.sh <every container target, $NAME among them>"
