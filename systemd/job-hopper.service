@@ -26,6 +26,9 @@ KillSignal=SIGTERM
 TimeoutStopSec=10
 NoNewPrivileges=true
 PrivateTmp=true
+# Docker only through a socket the daemon alone may open (JOB_HOPPER_DOCKER_HOST, a socket proxy:
+# scripts/docker-proxy.sh), never the root daemon's: whoever opens that one is root here (issue #59).
+InaccessiblePaths=-/run/docker.sock -/var/run/docker.sock
 
 [Install]
 WantedBy=default.target

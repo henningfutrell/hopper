@@ -156,6 +156,8 @@ export interface MachineSnapshot {
   herdr?: { bin: string; session: string };
   /** A container target: the container its executors reach it in, through `docker exec`. */
   docker?: string;
+  /** A client target: the variable its token is in; its tunnel's socket is named after the machine id. */
+  client?: { tokenEnv: string };
 }
 
 /** Everything one Decision is made over. Recorded verbatim on the Decision. */
@@ -432,7 +434,7 @@ export interface SourceStatus {
 
 // ---- Attached machines: src/domain/machines.ts (re-exported here) ------------------------
 
-export type { AttachedMachine, ContainerMachine, MachineEdit, SshMachine, MachineEditOutcome, MachinesConfig } from './machines.ts';
+export type { AttachedMachine, ClientMachine, ContainerMachine, MachineEdit, SshMachine, MachineEditOutcome, MachinesConfig } from './machines.ts';
 
 // ---- Routing rules: src/domain/routing.ts; plugins: src/domain/plugins.ts (re-exported here, one vocabulary) ----
 

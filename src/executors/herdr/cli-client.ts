@@ -1,21 +1,18 @@
 // HerdrClient over the herdr CLI. Every call is `<bin> --session <session> …` with no shell,
 // JSON on stdout, server errors as JSON on stderr with exit 1, usage errors with exit 2.
 // Never the default session: the session is required. On an attached machine (`ssh`) the same
-// argv runs there through `ssh`, quoted for the remote login shell (design.md "Attached machines").
+// argv runs there through `ssh`, quoted for the remote login shell (design.md "Attached machines"),
+// authenticated as `../ssh.ts` says (design.md "Target authentication").
 
 import { execFile } from 'node:child_process';
-import { existsSync, mkdirSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { mkdirSync } from 'node:fs';
+import { scrubbedEnv } from '../env.ts';
+import { clientHerdr, type ClientTransport } from '../client.ts';
+import { SSH_FAILED, shellQuote, sshArgv, type SshTransport } from '../ssh.ts';
 import { HerdrError } from './client.ts';
 import type { AgentInfo, AgentStatus, HerdrClient } from './client.ts';
 
 const DEFAULT_TIMEOUT_MS = 15000;
-
-/** process.env without CLAUDECODE and CLAUDE_CODE_*: a child-session marker must not leak into panes. */
-export function scrubbedEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
-  return Object.fromEntries(Object.entries(env).filter(([k]) => k !== 'CLAUDECODE' && !k.startsWith('CLAUDE_CODE_')));
-}
 
 function errorFrom(stderr: string, fallback: string): HerdrError {
   try {
@@ -33,49 +30,50 @@ export interface HerdrCliClient extends HerdrClient {
   run(args: string[], timeoutMs?: number): Promise<Record<string, unknown>>;
 }
 
-/** Reaching herdr on an attached machine. */
-export interface SshTransport {
-  /** The ssh destination: a `~/.ssh/config` alias or `user@host`. */
-  target: string;
-  /** The ssh binary. Default `ssh`. */
-  bin?: string;
-  /** Where the shared connection's control socket lives. Absent → no connection sharing. */
-  controlDir?: string;
+/** This machine's herdr or an ssh target's: the binary and session are the hopper's to name. */
+interface CliOptions { bin: string; session: string; timeoutMs?: number; ssh?: SshTransport }
+/** A client target's herdr: its binary and session are the client's own (design.md "Client targets"). */
+interface ClientOptions { client: ClientTransport; timeoutMs?: number }
+
+/** herdr's exit status as the CLI gives it: usage errors exit 2, server errors carry JSON on stderr. */
+function failure(code: number, stderr: string, fallback: string): HerdrError {
+  return code === 2 ? new HerdrError('usage', stderr.trim() || fallback) : errorFrom(stderr, fallback);
 }
 
-/** POSIX single quoting: the remote login shell (sh, bash, zsh) reads it back as one word. */
-export const shellQuote = (arg: string): string => `'${arg.replaceAll("'", "'\\''")}'`;
-
-/** ssh's exit status for its own failures (connection, authentication). */
-export const SSH_FAILED = 255;
-
-/**
- * The user's ssh config, or none: never /etc/ssh. Under the job-hopper unit (PrivateTmp, a user
- * namespace) root-owned files look foreign-owned and ssh refuses them ("Bad owner or permissions").
- */
-export function userSshConfig(home = homedir()): string {
-  const config = join(home, '.ssh', 'config');
-  return existsSync(config) ? config : '/dev/null';
-}
-
-/** ssh's argv running one remote shell command: batch mode, the user's config only, a 10 s connect timeout, the shared connection. */
-export function sshArgv(t: SshTransport, command: string): string[] {
-  const shared = t.controlDir
-    ? ['-o', 'ControlMaster=auto', '-o', `ControlPath=${t.controlDir}/%C`, '-o', 'ControlPersist=60']
-    : [];
-  return ['-F', userSshConfig(), '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', ...shared, '--', t.target, command];
-}
-
-export function createHerdrCliClient(o: { bin: string; session: string; timeoutMs?: number; ssh?: SshTransport }): HerdrCliClient {
+export function createHerdrCliClient(o: CliOptions | ClientOptions): HerdrCliClient {
+  if ('client' in o) return withCalls('', viaClient(o.client), o.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   if (!o.session) throw new Error('herdr session is required (never the default session)');
-  if (o.ssh && (!o.ssh.target || o.ssh.target.startsWith('-'))) throw new Error(`bad ssh target: ${o.ssh.target}`);
-  const callTimeout = o.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  return withCalls(o.session, viaCli(o), o.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+}
+
+type Exec = (args: string[], timeoutMs: number) => Promise<string>;
+
+function viaClient(t: ClientTransport): Exec {
+  return async (args, timeoutMs) => {
+    let r;
+    try {
+      r = await clientHerdr(t, args, timeoutMs);
+    } catch (e) {
+      throw new HerdrError('client', (e as Error).message);
+    }
+    if (r.code === 0) return r.stdout;
+    if (r.code === 124) throw new HerdrError('timeout', `herdr ${args.slice(0, 2).join(' ')} timed out after ${timeoutMs} ms`);
+    throw failure(r.code, r.stderr, `herdr exited ${r.code}`);
+  };
+}
+
+function viaCli(o: CliOptions): Exec {
   const ssh = o.ssh;
   if (ssh?.controlDir) mkdirSync(ssh.controlDir, { recursive: true, mode: 0o700 });
-
-  const exec = (args: string[], timeoutMs = callTimeout): Promise<string> => new Promise((resolve, reject) => {
+  return (args, timeoutMs) => new Promise((resolve, reject) => {
     const argv = [o.bin, '--session', o.session, ...args];
-    const [file, fileArgs] = ssh ? [ssh.bin ?? 'ssh', sshArgv(ssh, argv.map(shellQuote).join(' '))] : [o.bin, argv.slice(1)];
+    let file: string, fileArgs: string[];
+    try {
+      [file, fileArgs] = ssh ? [ssh.bin ?? 'ssh', sshArgv(ssh, argv.map(shellQuote).join(' '))] : [o.bin, argv.slice(1)];
+    } catch (e) {
+      // Not authenticated as the hopper must be (no key, unpinned, a jump host): never connected.
+      return reject(new HerdrError('ssh', `ssh ${ssh!.target}: ${(e as Error).message}`));
+    }
     execFile(file, fileArgs, {
       env: scrubbedEnv(), timeout: timeoutMs, killSignal: 'SIGKILL', maxBuffer: 16 * 1024 * 1024, encoding: 'utf8',
     }, (err, stdout, stderr) => {
@@ -84,10 +82,13 @@ export function createHerdrCliClient(o: { bin: string; session: string; timeoutM
       if (e.killed) return reject(new HerdrError('timeout', `herdr ${args.slice(0, 2).join(' ')} timed out after ${timeoutMs} ms`));
       if (typeof e.code === 'string') return reject(new HerdrError('spawn', `${file}: ${e.message}`));
       if (ssh && e.code === SSH_FAILED) return reject(new HerdrError('ssh', `ssh ${ssh.target}: ${stderr.trim() || e.message}`));
-      if (e.code === 2) return reject(new HerdrError('usage', stderr.trim() || e.message));
-      reject(errorFrom(stderr, e.message));
+      reject(failure(e.code ?? 1, stderr, e.message));
     });
   });
+}
+
+function withCalls(session: string, call: Exec, callTimeout: number): HerdrCliClient {
+  const exec = (args: string[], timeoutMs = callTimeout): Promise<string> => call(args, timeoutMs);
 
   const run = async (args: string[], timeoutMs?: number): Promise<Record<string, unknown>> => {
     const out = await exec(args, timeoutMs);
@@ -99,7 +100,7 @@ export function createHerdrCliClient(o: { bin: string; session: string; timeoutM
   };
 
   return {
-    session: o.session,
+    session,
     exec,
     run,
     async ensureWorkspace(label, cwd) {

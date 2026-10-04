@@ -1,16 +1,22 @@
-// Opt-in: JOB_HOPPER_REAL_SSH=<ssh-target> (e.g. laptop). Issue #10 for real: a herdr-claude job
-// pulled by the daemon runs on the attached machine, in a throwaway herdr session started there
-// (jh-test-<random>), and reports that machine's hostname. Costs one small Claude turn there.
-// Needs herdr and claude on the target, and ssh in batch mode.
+// Opt-in: JOB_HOPPER_REAL_SSH=<ssh-target> (e.g. laptop) with JOB_HOPPER_SSH_KEY_FILE=<the hopper's
+// key, installed there by attach-machine.sh>. Issue #10 for real: a herdr-claude job pulled by the
+// daemon runs on the attached machine, in a throwaway herdr session started there (jh-test-<random>),
+// and reports that machine's hostname — reached as issue #59 requires: the hopper's key only, to the
+// host key the user's known_hosts pins. Costs one small Claude turn there. Needs herdr and claude on
+// the target, and ssh in batch mode.
 import { execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { homedir } from 'node:os';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { knownHostKey } from '../../src/machines/index.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { waitFor } from '../support/wait.ts';
 
 const TARGET = process.env.JOB_HOPPER_REAL_SSH;
+// The real home: the test isolation moves HOME, and the target's pinned key is in the user's known_hosts.
+const REAL_HOME = process.env.JOB_HOPPER_REAL_HOME ?? homedir();
 const SESSION = `jh-test-${randomBytes(4).toString('hex')}`;
 const ssh = (command: string): string =>
   execFileSync('ssh', ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', '--', TARGET!, command], { encoding: 'utf8', timeout: 30000 });
@@ -21,6 +27,7 @@ describe.skipIf(!TARGET)('a real job on an attached machine (opt-in)', () => {
 
   beforeAll(async () => {
     const herdrBin = ssh('command -v herdr').trim().replaceAll('//', '/');
+    const hostKey = await knownHostKey({ target: TARGET!, knownHosts: join(REAL_HOME, '.ssh', 'known_hosts') });
     ssh(`nohup ${herdrBin} --session ${SESSION} server >/dev/null 2>&1 </dev/null &`);
     const db = tempDbPath();
     cleanup = db.cleanup;
@@ -28,9 +35,9 @@ describe.skipIf(!TARGET)('a real job on an attached machine (opt-in)', () => {
       'version: 1',
       `executors: [ { name: herdr-claude, plugin: herdr-claude, options: { cwd: /tmp } } ]`,
       'attachedMachines:',
-      `  - { name: remote, ssh: ${TARGET}, lanes: 8, session: ${SESSION}, herdrBin: ${herdrBin} }`,
+      `  - { name: remote, ssh: ${TARGET}, lanes: 8, session: ${SESSION}, herdrBin: ${herdrBin}, hostKey: ${hostKey} }`,
     ].join('\n'), { mode: 0o600 });
-    a = await startTestApp({ dbPath: db.dbPath });
+    a = await startTestApp({ dbPath: db.dbPath, secrets: { JOB_HOPPER_SSH_KEY_FILE: process.env.JOB_HOPPER_SSH_KEY_FILE } });
     await waitFor(async () => (await a.api('GET', '/api/machines')).body.machines.some((m: { id: string; online: boolean }) => m.id === 'remote' && m.online), { timeoutMs: 60000 });
   }, 90000);
 

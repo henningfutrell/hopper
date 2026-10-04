@@ -4,6 +4,8 @@ import { describe, expect, it } from 'vitest';
 import type { FakeTurn } from '../../src/executors/herdr/index.ts';
 import { LAPTOP, contextFor, jobWith, setup } from './support.ts';
 
+const STUDIO = { id: 'studio', label: 'studio', maxLanes: 1, online: true, executors: ['herdr-claude'], client: { tokenEnv: 'STUDIO_CLIENT_TOKEN' } };
+
 const DONE: FakeTurn = { output: ['● Done on the laptop.', '  JOB_HOPPER_DONE'] };
 const ASK: FakeTurn = { output: ['● Which branch?', '  JOB_HOPPER_QUESTION'] };
 
@@ -26,6 +28,20 @@ describe('herdr-claude executor on an attached machine', () => {
     const { ctx } = contextFor(jobWith({ prompt: 'go' }), 'box/lane-1', box);
     expect(await executor.run(ctx)).toEqual({ kind: 'failed', error: 'herdr-claude does not run on container target box: it has no herdr; give it the command executor' });
     expect(herdr.calls).toEqual([]);
+  });
+
+  it('on a client target: that client\'s herdr, reached through its tunnel with its token; the pane state says so (issue #59)', async () => {
+    const { herdr, remotes, reached, executor } = setup({}, { remote: { studio: { turns: [ASK, DONE] } } });
+    const first = contextFor(jobWith({ prompt: 'go' }), 'studio/lane-1', STUDIO);
+    expect((await executor.run(first.ctx)).kind).toBe('question');
+    expect(first.saved[0]).toMatchObject({ client: { machine: 'studio', tokenEnv: 'STUDIO_CLIENT_TOKEN' }, paneId: 'w1:p1' });
+    expect(first.saved[0]).not.toHaveProperty('ssh');
+    const job = jobWith({ prompt: 'go' }, { executorState: first.saved.at(-1) });
+    expect((await executor.resume!(contextFor(job, 'studio/lane-1', STUDIO).ctx, 'main')).kind).toBe('finished');
+    await executor.cleanup!(job);
+    expect(remotes.get('studio')!.calls.some((c) => c.method === 'closePane')).toBe(true);
+    expect(herdr.calls).toEqual([]);
+    expect(new Set(reached.map((r) => JSON.stringify(r)))).toEqual(new Set([JSON.stringify({ client: { machine: 'studio', tokenEnv: 'STUDIO_CLIENT_TOKEN' } })]));
   });
 
   it('a job on this machine records no ssh target', async () => {

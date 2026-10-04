@@ -11,9 +11,12 @@ import { loadConfig, type Config } from './config.ts';
 import { createEngine, type Engine } from './engine/index.ts';
 import { createExecutorRegistry } from './executors/index.ts';
 import type { HerdrClient } from './executors/herdr/index.ts';
+import { clientSocket, type ClientTransport } from './executors/client.ts';
+import { dockerHost } from './executors/docker.ts';
+import { hopperSshAuth, pinHostKeys } from './executors/ssh.ts';
 import { createServer } from './http/index.ts';
 import { AUTH, createSignIn, loadAuthDocument, type AuthConfig } from './auth/index.ts';
-import { combineMachineSources, createAttachedMachines, probeContainer, probeHerdrOverSsh } from './machines/index.ts';
+import { combineMachineSources, createAttachedMachines, probeClient, probeContainer, probeHerdrOverSsh } from './machines/index.ts';
 import { BUILTIN_PLUGINS } from './plugins/builtin.ts';
 import { herdrClaudePlugin } from './plugins/executor/herdr-claude/index.ts';
 import { createPluginHost, type BuiltJobSource } from './plugins/index.ts';
@@ -84,8 +87,8 @@ export interface AppSeams {
   pluginsFileIntervalMs?: number;
   /** Replaces the probe of every attached machine: true = its herdr session (ssh) or its container (docker) is running. */
   machineProbe?: (machine: AttachedMachine) => Promise<boolean>;
-  /** Replaces resolving herdr's path over ssh when the UI adds a machine (issue #18): the path, or a rejection with the reason. */
-  resolveHerdrBin?: (ssh: string) => Promise<string>;
+  /** Replaces resolving a new ssh target when the UI adds a machine (issues #18, #59): its herdr path and pinned host key, or a rejection with the reason. */
+  resolveTarget?: (ssh: string) => Promise<{ herdrBin: string; hostKey: string }>;
   /** The built UI bundle; default UI_DIR. */
   uiDir?: string;
   /** Self-update: the install dir (default APP_DIR), the build (default install.sh build-only mode), the restart (default exit or respawn). */
@@ -162,6 +165,13 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   }
   const dataDir = config.workDir;
   mkdirSync(dataDir, { recursive: true, mode: 0o700 });
+  // How the hopper proves itself to an ssh target, asked at every connection (design.md "Target authentication").
+  const sshAuth = () => hopperSshAuth({ env: secret, dataDir });
+  // Where client targets' reverse tunnels open their sockets: this user's alone (design.md "Client targets").
+  mkdirSync(join(dataDir, 'clients'), { recursive: true, mode: 0o700 });
+  const clientTransport = (machine: string, tokenEnv: string): ClientTransport => ({
+    machine, socket: clientSocket(dataDir, machine), token: () => secret(tokenEnv) ?? '',
+  });
   const routerMode = () => store.settings.getRouterMode() ?? config.routerMode;
   let executorNames = (): string[] => [];
   let jobsOnMachine = (_name: string): string[] => [];
@@ -175,9 +185,16 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     },
     machineContext: { executors: () => executorNames() },
     intervalMs: seams.pluginsFileIntervalMs ?? PLUGINS_FILE_CHECK_MS,
-    attached: { inUse: (name) => jobsOnMachine(name), ...(seams.resolveHerdrBin ? { resolveHerdrBin: seams.resolveHerdrBin } : {}) },
+    attached: { inUse: (name) => jobsOnMachine(name), sshAuth, ...(seams.resolveTarget ? { resolveTarget: seams.resolveTarget } : {}) },
   });
   await host.start();
+  // The pinned host keys follow plugins.yaml: rewritten when it changes, each problem logged once.
+  const pinProblems = new Set<string>();
+  const pinned = (machines: AttachedMachine[]): AttachedMachine[] => {
+    for (const p of pinHostKeys(dataDir, machines)) if (!pinProblems.has(p)) { pinProblems.add(p); logger.warn(`job-hopper: ${p}`); }
+    return machines;
+  };
+  pinned(host.attachedMachines());
   const built = host.executors();
   const executors = createExecutorRegistry(
     [...built.flatMap((b): Executor[] => (b.executor ? [b.executor] : [])), ...(seams.executors ?? [])],
@@ -211,11 +228,13 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     machines: combineMachineSources([
       host.machines(),
       createAttachedMachines({
-        machines: () => host.attachedMachines(), clock, logger,
+        machines: () => pinned(host.attachedMachines()), clock, logger,
         probe: seams.machineProbe
           ?? ((m) => ('docker' in m
-            ? probeContainer({ container: m.docker })
-            : probeHerdrOverSsh({ target: m.ssh, herdrBin: m.herdrBin, session: m.session, controlDir: join(dataDir, 'ssh') }))),
+            ? probeContainer({ container: m.docker, dockerHost: () => dockerHost(secret) })
+            : 'client' in m
+              ? probeClient(clientTransport(m.name, m.client.tokenEnv))
+              : probeHerdrOverSsh({ target: m.ssh, herdrBin: m.herdrBin, session: m.session, controlDir: join(dataDir, 'ssh'), auth: sshAuth }))),
       }),
     ]),
     usage: [...host.usageSources(), ...(seams.fakeUsage ? [seams.fakeUsage] : [])],

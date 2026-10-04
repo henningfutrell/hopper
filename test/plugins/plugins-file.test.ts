@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { loadPluginsFile } from '../../src/plugins/plugins-file.ts';
+import { TEST_HOST_KEY } from '../support/ssh.ts';
 
 /** The document text as the store holds it. */
 const file = (text: string): string => text;
@@ -143,15 +144,34 @@ describe('plugins.yaml attachedMachines (design.md "Attached machines")', () => 
     ['  - { name: a, ssh: -oProxyCommand=x, lanes: 1 }', /ssh/],
     ['  - { name: a, ssh: laptop, lanes: 0 }', /lanes/],
     ['  - { name: a, ssh: laptop, lanes: 1, session: default }', /default herdr session/],
-    ['  - { name: a, lanes: 1 }', /ssh or docker/],
-    ['  - { name: a, ssh: laptop, docker: box, lanes: 1 }', /ssh or docker, not both/],
+    ['  - { name: a, lanes: 1 }', /ssh, docker or client/],
+    ['  - { name: a, ssh: laptop, docker: box, lanes: 1 }', /one of ssh, docker or client/],
     ['  - { name: a, docker: -H=tcp://x, lanes: 1 }', /docker must be a container/],
-    ['  - { name: a, docker: box, lanes: 1, session: jh }', /session and herdrBin are for ssh/],
-    ['  - { name: a, docker: box, lanes: 1, herdrBin: /opt/herdr }', /session and herdrBin are for ssh/],
+    ['  - { name: a, docker: box, lanes: 1, session: jh }', /session, herdrBin and hostKey are for ssh/],
+    ['  - { name: a, docker: box, lanes: 1, herdrBin: /opt/herdr }', /session, herdrBin and hostKey are for ssh/],
+    [`  - { name: a, docker: box, lanes: 1, hostKey: ${TEST_HOST_KEY} }`, /session, herdrBin and hostKey are for ssh/],
+    ['  - { name: a, ssh: laptop, lanes: 1, hostKey: ssh-ed25519 }', /hostKey must be a public host key/],
+    ['  - { name: a, ssh: laptop, client: { tokenEnv: T }, lanes: 1 }', /one of ssh, docker or client/],
+    ['  - { name: a, client: { tokenEnv: T }, lanes: 1, herdrBin: /opt/herdr }', /a client target names its herdr itself/],
+    ['  - { name: a, client: {}, lanes: 1 }', /tokenEnv/],
+    ['  - { name: ../x, client: { tokenEnv: T }, lanes: 1 }', /client target name/],
+    ['  - { name: a, ssh: laptop, lanes: 1, hostKey: "ssh-dss AAAAB3Nz" }', /hostKey must be a public host key/],
   ])('refuses %s', (entry, why) => {
     const r = loadPluginsFile(file(`version: 1\nattachedMachines:\n${entry}\n`));
     expect(r).toHaveProperty('error');
     expect((r as { error: string }).error).toMatch(why);
+  });
+
+  it('a client target names the variable its token is in; herdr-claude runs there by default (issue #59)', () => {
+    const r = loadPluginsFile(file('version: 1\nattachedMachines:\n  - { name: studio, client: { tokenEnv: STUDIO_CLIENT_TOKEN }, lanes: 2 }\n'));
+    expect(r).not.toHaveProperty('error');
+    expect((r as { attachedMachines: unknown[] }).attachedMachines[0]).toEqual({ name: 'studio', client: { tokenEnv: 'STUDIO_CLIENT_TOKEN' }, lanes: 2, executors: ['herdr-claude'] });
+  });
+
+  it('an ssh target pins its host key (issue #59)', () => {
+    const r = loadPluginsFile(file(`version: 1\nattachedMachines:\n  - { name: laptop, ssh: laptop, lanes: 1, hostKey: ${TEST_HOST_KEY} }\n`));
+    expect(r).not.toHaveProperty('error');
+    expect((r as { attachedMachines: unknown[] }).attachedMachines[0]).toMatchObject({ ssh: 'laptop', hostKey: TEST_HOST_KEY });
   });
 
   it('reads a container target reached over docker: no herdr, the command executor by default', () => {

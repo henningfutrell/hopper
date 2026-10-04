@@ -17,6 +17,7 @@ describe('container-target.sh', () => {
     expect(r.status, r.stderr).toBe(0);
     expect(inspect('{{.State.Running}} {{.HostConfig.NetworkMode}} {{.HostConfig.RestartPolicy.Name}} {{.HostConfig.ReadonlyRootfs}}')).toBe('true none unless-stopped true');
     expect(r.stdout).toContain(`  - { name: ${NAME}, docker: ${NAME}, lanes: 2, executors: [command] }`);
+    expect(r.stderr).toContain('bash scripts/docker-proxy.sh');
     expect(execFileSync('docker', ['exec', NAME, 'sh', '-c', 'echo ok'], { encoding: 'utf8' })).toBe('ok\n');
   });
 

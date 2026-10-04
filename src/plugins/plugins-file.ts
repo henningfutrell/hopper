@@ -6,6 +6,9 @@ import { parse } from 'yaml';
 import { z } from 'zod';
 import type { AttachedMachine, InstanceSpec, RoutingRule } from '../domain/types.ts';
 import { ROUTING_RULES } from '../routing/index.ts';
+import { HOST_KEY } from '../executors/ssh.ts';
+
+const CLIENT_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 
 export type PluginsFileResult =
   | { missing: true }
@@ -50,16 +53,27 @@ const attachedMachine = z.strictObject({
   executors: z.array(z.string().min(1)).optional(),
   session: z.string().min(1).refine((s) => s !== 'default', 'must not be the default herdr session').optional(),
   herdrBin: z.string().min(1).optional(),
+  client: z.strictObject({ tokenEnv: z.string().regex(/^[A-Z_][A-Z0-9_]*$/, 'tokenEnv must name an environment variable (A-Z, 0-9, _)') }).optional(),
+  hostKey: z.string().regex(HOST_KEY, 'hostKey must be a public host key, `<type> <base64>`, as ssh_host_*_key.pub holds it (comment dropped)').optional(),
 }).superRefine((m, ctx) => {
-  if (m.ssh === undefined && m.docker === undefined) ctx.addIssue({ code: 'custom', message: 'name how it is reached: ssh or docker' });
-  if (m.ssh !== undefined && m.docker !== undefined) ctx.addIssue({ code: 'custom', message: 'ssh or docker, not both' });
-  if (m.docker !== undefined && (m.session !== undefined || m.herdrBin !== undefined)) {
-    ctx.addIssue({ code: 'custom', message: 'session and herdrBin are for ssh targets; a container target has no herdr' });
+  const reached = [m.ssh, m.docker, m.client].filter((x) => x !== undefined).length;
+  if (reached === 0) ctx.addIssue({ code: 'custom', message: 'name how it is reached: ssh, docker or client' });
+  if (reached > 1) ctx.addIssue({ code: 'custom', message: 'name exactly one of ssh, docker or client' });
+  if (m.client !== undefined && (m.session !== undefined || m.herdrBin !== undefined || m.hostKey !== undefined)) {
+    ctx.addIssue({ code: 'custom', message: 'session, herdrBin and hostKey are not for a client target: a client target names its herdr itself, and its tunnel pins the keys' });
+  }
+  if (m.client !== undefined && !CLIENT_NAME.test(m.name)) ctx.addIssue({ code: 'custom', message: 'a client target name is letters, digits, _, . and - (it names its tunnel\'s socket)' });
+  if (m.docker !== undefined && (m.session !== undefined || m.herdrBin !== undefined || m.hostKey !== undefined)) {
+    ctx.addIssue({ code: 'custom', message: 'session, herdrBin and hostKey are for ssh targets; a container target has no herdr and no sshd' });
   }
 }).transform((m): AttachedMachine => {
   const base = { name: m.name, ...(m.label !== undefined ? { label: m.label } : {}), lanes: m.lanes };
   if (m.docker !== undefined) return { ...base, docker: m.docker, executors: m.executors ?? ['command'] };
-  return { ...base, ssh: m.ssh!, executors: m.executors ?? ['herdr-claude'], session: m.session ?? 'job-hopper', herdrBin: m.herdrBin ?? 'herdr' };
+  if (m.client !== undefined) return { ...base, client: { tokenEnv: m.client.tokenEnv }, executors: m.executors ?? ['herdr-claude'] };
+  return {
+    ...base, ssh: m.ssh!, executors: m.executors ?? ['herdr-claude'], session: m.session ?? 'job-hopper', herdrBin: m.herdrBin ?? 'herdr',
+    ...(m.hostKey !== undefined ? { hostKey: m.hostKey } : {}),
+  };
 });
 
 const FILE = z.strictObject({

@@ -51,8 +51,9 @@ export function setup(
     herdr, clock, sleep,
     remote: (there) => {
       reached.push(there);
-      const r = remotes.get(there.ssh);
-      if (!r) throw new Error(`no fake herdr for ${there.ssh}`);
+      const key = 'client' in there ? there.client.machine : there.ssh;
+      const r = remotes.get(key);
+      if (!r) throw new Error(`no fake herdr for ${key}`);
       return r;
     },
     defaultCwd: CWD, claudeArgs: overrides.claudeArgs ?? ['--dangerously-skip-permissions'],

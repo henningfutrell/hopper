@@ -227,7 +227,7 @@ describe('attached machines in the host (issue #18)', () => {
     await host.start();
     documents.set(PLUGINS, 'version: 1\nattachedMachines:\n  - { name: laptop, ssh: -oProxy, lanes: 2 }\n');
     await host.reload();
-    expect(host.attachedMachines().map((m) => ('ssh' in m ? m.ssh : m.docker))).toEqual(['laptop']);
+    expect(host.attachedMachines().map((m) => ('ssh' in m ? m.ssh : 'docker' in m ? m.docker : m.name))).toEqual(['laptop']);
   });
 });
 

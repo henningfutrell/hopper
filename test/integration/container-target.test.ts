@@ -1,23 +1,30 @@
 // Issue #58 through the real composition root: a container target reached over docker exec, not
 // ssh, with no agent in it. An issue a routing rule sends there runs its body as a command in the
 // container; the job finishes with what it printed. The container is real (alpine, no network);
-// its probe is the real one (`docker container inspect`).
+// its probe is the real one (`docker container inspect`). Docker is reached the way the daemon must
+// reach it (issue #59): through an allowlisting socket proxy only this user can open.
 import { execFileSync } from 'node:child_process';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { Job } from '../../src/domain/types.ts';
 import { createFakeGitHub } from '../../src/sources/index.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
+import { startDockerProxy, type DockerProxy } from '../support/docker-proxy.ts';
 import { waitFor } from '../support/wait.ts';
 
 const CONTAINER = `jh-it-target-${process.pid}`;
 const REPO = 'owner/job-hopper-sandbox';
 let t: TestApp | undefined;
 let cleanup: (() => void) | undefined;
+let proxy: DockerProxy;
 
-beforeAll(() => {
+beforeAll(async () => {
   execFileSync('docker', ['run', '-d', '--rm', '--name', CONTAINER, '--network', 'none', '--hostname', 'target-box', 'alpine:latest', 'sleep', '600']);
+  proxy = await startDockerProxy([CONTAINER, 'jh-no-such-container']);
 }, 60000);
-afterAll(() => { execFileSync('docker', ['rm', '-f', CONTAINER]); });
+afterAll(() => {
+  proxy.stop();
+  execFileSync('docker', ['rm', '-f', CONTAINER]);
+});
 afterEach(async () => {
   await t?.stop();
   t = undefined;
@@ -39,6 +46,7 @@ async function boot(container: string): Promise<{ a: TestApp; gh: ReturnType<typ
       routing: [{ name: 'commands to the box', match: { label: 'on-box' }, set: { machine: 'box', executor: 'command' } }],
     },
     seams: { github: gh },
+    secrets: { JOB_HOPPER_DOCKER_HOST: proxy.host },
   });
   return { a: t, gh };
 }
@@ -47,6 +55,22 @@ const jobFor = async (a: TestApp, key: string): Promise<Job> =>
   waitFor(async () => (await a.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=1000')).body.jobs.find((j) => j.source?.key === key), { what: `a job for ${key}` });
 
 describe('a container target reached over docker exec', () => {
+  it('without JOB_HOPPER_DOCKER_HOST the box stays offline: the daemon never falls back to the root docker socket', async () => {
+    const db = tempDbPath();
+    cleanup = db.cleanup;
+    t = await startTestApp({
+      dbPath: db.dbPath,
+      plugins: {
+        executors: [{ name: 'test', plugin: 'test' }, { name: 'command', plugin: 'command' }],
+        machines: { name: 'local', plugin: 'local', options: { lanes: 1, executors: ['test'] } },
+        attachedMachines: [{ name: 'box', docker: CONTAINER, lanes: 1 }],
+      },
+    });
+    await new Promise((r) => setTimeout(r, 1500));
+    const box = (await t.api('GET', '/api/machines')).body.machines.find((m: { id: string }) => m.id === 'box');
+    expect(box.online).toBe(false);
+  });
+
   it('/api/machines lists it online, with its container and the command executor', async () => {
     const { a } = await boot(CONTAINER);
     const box = await waitFor(async () => (await a.api('GET', '/api/machines')).body.machines.find((m: { id: string; online: boolean }) => m.id === 'box' && m.online));

@@ -7,7 +7,8 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createHerdrClaudeExecutor, createHerdrCliClient, scrubbedEnv } from '../../src/executors/herdr/index.ts';
+import { scrubbedEnv } from '../../src/executors/env.ts';
+import { createHerdrClaudeExecutor, createHerdrCliClient } from '../../src/executors/herdr/index.ts';
 import { openPane, startClaude } from '../../src/executors/herdr/start.ts';
 import { contextFor, jobWith } from './support.ts';
 
