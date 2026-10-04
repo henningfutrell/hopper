@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
-# Install or upgrade job-hopper as systemd --user services: the daemon (job-hopper) and its
-# own headless herdr session (job-hopper-herdr). Re-running upgrades in place. Config starters
-# (rules.md, webhooks.yaml) are written only when absent. plugins.yaml is the daemon's: it writes
-# it on the first boot without one, from sources.yaml and the unit's environment of that boot (so
-# an upgrade restarts once on the new code under the OLD unit before installing the new one).
+# Install or upgrade job-hopper as systemd --user services on this host: the daemon (job-hopper)
+# and its own headless herdr session (job-hopper-herdr). Re-running upgrades in place. This is one
+# deploy recipe; the container image is another (docs/deploy.md).
+#
+# Everything the daemon keeps is in its database: JOB_HOPPER_DATABASE_URL in
+# ~/.config/job-hopper/daemon.env (the unit's EnvironmentFile, mode 600) says which. The first
+# install needs it: set it there, or run with JOB_HOPPER_DATABASE_URL set and it is written there.
+# Config is config documents in that database (plugins.yaml, webhooks.yaml, rules.md, auth.yaml),
+# edited from the UI or with `job-hopper config edit <document>`; secrets are daemon.env lines.
 #
 # Build-only mode (JOB_HOPPER_INSTALL_INTO=<dir>, used by the daemon's self-update, design.md
 # "Self-update"): build the install into <dir> and stop there — no service, unit or config is
@@ -16,10 +20,8 @@ DEST="$HOME/.local/lib/job-hopper"
 UNIT_DIR="$HOME/.config/systemd/user"
 URL="http://127.0.0.1:4790"
 CONFIG_DIR="$HOME/.config/job-hopper"
-RULES="$CONFIG_DIR/rules.md"
-PLUGINS="$CONFIG_DIR/plugins.yaml"
-WEBHOOKS="$CONFIG_DIR/webhooks.yaml"
-PLUGIN_DIR="${JOB_HOPPER_PLUGIN_DIR:-$CONFIG_DIR/plugins}"
+ENV_FILE="$CONFIG_DIR/daemon.env"
+BIN_DIR="$HOME/.local/bin"
 
 step() { printf '==> %s\n' "$*"; }
 
@@ -84,69 +86,38 @@ if [ -n "$INTO" ]; then
 fi
 assemble "$DEST"
 
-if [ ! -e "$PLUGINS" ] && [ -e "$UNIT_DIR/job-hopper.service" ]; then
-  step "no $PLUGINS yet: restart job-hopper once on the new code under the OLD unit, so the daemon folds sources.yaml and that unit's environment into it"
-  systemctl --user restart job-hopper
-  for i in $(seq 1 20); do
-    [ -e "$PLUGINS" ] && break
-    printf '  try %s/20: %s not written yet\n' "$i" "$PLUGINS"
-    sleep 0.5
-  done
-  if [ -e "$PLUGINS" ]; then
-    step "wrote $PLUGINS (sources.yaml, if any, is now sources.yaml.migrated)"
+# The database comes first: the daemon does not start without one, and none is assumed.
+env_line() { [ -r "$ENV_FILE" ] && grep -m1 "^$1=" "$ENV_FILE" | cut -d= -f2- || true; }
+if [ -z "$(env_line JOB_HOPPER_DATABASE_URL)" ]; then
+  if [ -n "${JOB_HOPPER_DATABASE_URL:-}" ]; then
+    step "write JOB_HOPPER_DATABASE_URL to $ENV_FILE (mode 600)"
+    mkdir -p "$CONFIG_DIR"
+    (umask 077; printf 'JOB_HOPPER_DATABASE_URL=%s\n' "$JOB_HOPPER_DATABASE_URL" >> "$ENV_FILE")
   else
-    echo "job-hopper did not write $PLUGINS in 10 s. Inspect: journalctl --user -u job-hopper -n 50" >&2
+    echo "no JOB_HOPPER_DATABASE_URL in $ENV_FILE: which database does the daemon keep everything in?" >&2
+    echo "  Postgres: docker compose -f $APP_DIR/deploy/compose.yaml up -d postgres (docs/deploy.md), then" >&2
+    echo "  JOB_HOPPER_DATABASE_URL=postgres://hopper:<password>@127.0.0.1:<port>/hopper bash $0" >&2
+    echo "  SQLite (local use): JOB_HOPPER_DATABASE_URL=sqlite:$HOME/.local/share/job-hopper/job-hopper.db bash $0" >&2
     exit 1
   fi
 fi
+chmod 600 "$ENV_FILE"
+
+step "link the CLI: $BIN_DIR/job-hopper -> $DEST/src/cli.ts"
+mkdir -p "$BIN_DIR"
+chmod 755 "$DEST/src/cli.ts"
+ln -sfn "$DEST/src/cli.ts" "$BIN_DIR/job-hopper"
 
 step "install units to $UNIT_DIR: job-hopper.service, job-hopper-herdr.service"
 mkdir -p "$UNIT_DIR"
 install -m 0644 "$APP_DIR/systemd/job-hopper.service" "$UNIT_DIR/job-hopper.service"
 install -m 0644 "$APP_DIR/systemd/job-hopper-herdr.service" "$UNIT_DIR/job-hopper-herdr.service"
 
-if [ -e "$RULES" ]; then
-  step "keep existing rules file $RULES"
-else
-  step "write starter rules file $RULES (edit it: every answer tier reads it on each question)"
-  mkdir -p "$(dirname "$RULES")"
-  cat > "$RULES" <<'RULES_EOF'
-# Standing rules for job-hopper's answer tiers (starter — edit me)
-
-Every model tier answering a question from an unattended job reads this file.
-
-- Never push or force-push.
-- Never delete files outside the job's working directory.
-- Never deploy or publish anything.
-- Never spend money or buy anything.
-- Never send messages, emails or posts to anyone.
-- Prefer the smallest change that does the job.
-- When unsure, say you are not confident, so a human is asked.
-RULES_EOF
+PLUGIN_DIR="$(env_line JOB_HOPPER_PLUGIN_DIR)"
+if [ -n "$PLUGIN_DIR" ]; then
+  step "plugin types: $PLUGIN_DIR/tsconfig.json maps job-hopper/plugin to $DEST/src/plugins/sdk.ts (an owner-edited one is kept)"
+  node "$DEST/scripts/write-plugin-tsconfig.ts" "$PLUGIN_DIR" "$DEST/src/plugins/sdk.ts"
 fi
-
-if [ -e "$WEBHOOKS" ]; then
-  step "keep existing webhooks file $WEBHOOKS"
-else
-  step "write starter webhooks file $WEBHOOKS (mode 600; re-read within 5 s of every change)"
-  mkdir -p "$CONFIG_DIR"
-  (umask 077; cat > "$WEBHOOKS" <<'WEBHOOKS_EOF'
-# job-hopper outbound webhooks: every event, signed with HMAC-SHA256 (docs/events.md).
-version: 1
-webhooks: []
-# webhooks:
-#   - name: grok-bot                     # unique; the reconcile key
-#     url: http://127.0.0.1:4795/hook
-#     events: ["question.escalated", "job.finished", "job.failed"]   # or ["*"]
-#     secret: "<hex>"                    # or secretFile: ~/.config/job-hopper/grok-bot.secret
-#     active: true
-WEBHOOKS_EOF
-  )
-fi
-chmod 600 "$WEBHOOKS"
-
-step "plugin types: $PLUGIN_DIR/tsconfig.json maps job-hopper/plugin to $DEST/src/plugins/sdk.ts (an owner-edited one is kept)"
-node "$DEST/scripts/write-plugin-tsconfig.ts" "$PLUGIN_DIR" "$DEST/src/plugins/sdk.ts"
 
 step "systemctl --user daemon-reload"
 systemctl --user daemon-reload
@@ -170,14 +141,18 @@ for i in $(seq 1 20); do
     printf 'health (try %s): %s\n' "$i" "$health"
     printf 'executors: %s\n' "$(printf '%s' "$health" | node -e 'let s="";process.stdin.on("data",(c)=>s+=c).on("end",()=>console.log((JSON.parse(s).executors??[]).join(", ")))')"
     printf 'UI: %s/ (read-only until you log in)\n' "$URL"
-    echo 'open the UI: bash ~/.local/lib/job-hopper/scripts/open-ui.sh'
-    if [ -r "$CONFIG_DIR/daemon.env" ] && grep -q '^JOB_HOPPER_LAN_NAMES=' "$CONFIG_DIR/daemon.env"; then
-      printf 'LAN: %s (another device: log in with the device-link button in a logged-in UI)\n' "$(grep '^JOB_HOPPER_LAN_NAMES=' "$CONFIG_DIR/daemon.env" | cut -d= -f2-)"
-    else
-      echo "LAN: off. To reach the UI from other machines, set JOB_HOPPER_LAN_NAMES and JOB_HOPPER_LAN_PEERS in $CONFIG_DIR/daemon.env (docs/design.md \"Reaching the UI across the LAN\")"
+    if JOB_HOPPER_DATABASE_URL="$(env_line JOB_HOPPER_DATABASE_URL)" node "$DEST/src/cli.ts" config version rules.md 2>/dev/null | grep -qx missing; then
+      step "no rules.md in the database yet: write the starter (edit it in the UI, Questions → Question gates)"
+      JOB_HOPPER_DATABASE_URL="$(env_line JOB_HOPPER_DATABASE_URL)" node "$DEST/src/cli.ts" config set rules.md --if-version missing < "$APP_DIR/scripts/starter-rules.md"
     fi
-    if [ ! -e "$CONFIG_DIR/github-app.json" ]; then
-      echo 'next: create the GitHub App (one click in the browser): bash ~/.local/lib/job-hopper/scripts/create-github-app.sh'
+    echo "open the UI: bash $DEST/scripts/open-ui.sh (or mint a code: job-hopper login-code)"
+    if [ -n "$(env_line JOB_HOPPER_LAN_NAMES)" ]; then
+      printf 'LAN: %s (another device: log in with the device-link button in a logged-in UI)\n' "$(env_line JOB_HOPPER_LAN_NAMES)"
+    else
+      echo "LAN: off. To reach the UI from other machines, set JOB_HOPPER_LAN_NAMES and JOB_HOPPER_LAN_PEERS in $ENV_FILE (docs/design.md \"Reaching the UI across the LAN\")"
+    fi
+    if [ -z "$(env_line GITHUB_APP_PRIVATE_KEY)" ]; then
+      echo "next: create the GitHub App (bash $DEST/scripts/create-github-app.sh), then its key goes in $ENV_FILE as GITHUB_APP_PRIVATE_KEY"
     fi
     exit 0
   fi

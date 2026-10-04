@@ -30,7 +30,7 @@ plugin" is its current enactment; Phase 6 items are judged against it.
 One process. Node ≥ 24 runs the TypeScript directly (type stripping) — the daemon has no build
 step. The UI is the one built part: `ui/` (React, shadcn/ui, Tailwind, d3) → `npm run build:ui`
 → `ui/dist`, which the daemon serves (issue #14, "UI rework" below).
-Fastify for HTTP, `node:sqlite` for storage, zod for request validation.
+Fastify for HTTP, SQLite (`node:sqlite`) or Postgres (`pg`) for storage ("Deployable" below), zod for request validation.
 
 ## Directories and what each must not know
 
@@ -38,7 +38,7 @@ Fastify for HTTP, `node:sqlite` for storage, zod for request validation.
 |-----|------|-----------------|
 | `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts; `machines.ts` attached machines and their edit; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`), ports | anything else in `src/` |
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock | everything but `domain/` |
-| `src/store/` | SQLite schema, migrations, repositories, event log | engine, http, decider |
+| `src/store/` | the database seam (`db.ts`: SQLite or Postgres through `postgres-worker.ts`), schema, migrations, repositories, event log, config documents, login codes | engine, http, decider |
 | `src/webhooks/` | signing, dispatcher, retry/backoff, `webhooks.yaml` load + watch (`config.ts`), the UI edit of it (`edit.ts`) | engine, http, decider |
 | `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `job-hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, `plugins.yaml` + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `question-slots.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), a machine edit of `attachedMachines:` (`attached-edit.ts`, spliced into the file; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `answerer/claude-cli/`, `assessor/claude-cli-assessor/`, `assessor/always-escalate/` hold their prompts; `executor/herdr-claude/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-gh/` and `job-source/github-app/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser, runner, background refresh); `notifier/grokbot-routine/` is the Grok Bot routine webhook — env-file reader and notifier; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`) | engine, http, store, decider, questions |
 | `src/executors/` | `Executor` adapters (`test`, `herdr/`) and the registry; reached through the executor plugins | engine, http, store, plugins |
@@ -51,7 +51,9 @@ Fastify for HTTP, `node:sqlite` for storage, zod for request validation.
 | `src/http/` | Fastify routes, SSE, static UI; the UI session, its role check and the sign-in routes (`ui/`) | executors, plugins (reads them through the `PluginsView` port) |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
 | `examples/plugins/` | one minimal runnable custom plugin per role, for authors (`docs/plugins.md`); imports only `job-hopper/plugin` types and `node:` builtins | everything in `src/` at runtime |
-| `src/main.ts` | composition root: config → plugins.yaml (migrated or written when absent) → plugin host (every part) → store → engine → server | — |
+| `src/main.ts` | composition root: config → store → plugins.yaml (written when absent) → plugin host (every part) → engine → server | — |
+| `src/cli.ts` | the operator CLI `job-hopper`: config documents, login codes, migrate-local — against the daemon's database | engine, executors |
+| `src/migrate/` | `migrate-local`: a SQLite install and its config dir into an empty database ("Migrating a local install") | http, engine |
 
 ## The decider
 
@@ -2980,3 +2982,148 @@ working — #40 depends on this section, not the other way round.
 supervisor restarting it; recovery by hand is swapping `<install>.prev` back and restarting (the boot
 records `update.failed`). Signature checks on the fetched code: the repository the owner installed
 from is trusted as the install itself was.
+
+## Deployable: a database, config documents, secrets from the environment (issue #40, 2026-10-04)
+
+Owner direction: the hopper must not lean on the computer it runs on — config in local files, state
+in a local SQLite file, login codes and secrets on disk, paths in a home directory. Everything the
+daemon keeps is now in one database; its secrets come from its environment; nothing in the code
+names a path on one machine. Operator path: `docs/deploy.md`.
+
+### Database
+
+`JOB_HOPPER_DATABASE_URL`, required (no default: a database is never assumed): `postgres://…` for
+a deploy, `sqlite:<path>` for local use. `JOB_HOPPER_DB` is gone. The URL may name a schema with
+job-hopper's own `?schema=<name>` (created when absent; stripped before the driver sees the URL).
+
+**The Store port stays synchronous.** The engine relies on it: store reads happen after the awaits,
+synchronously with decide and apply (`src/engine/decision-step.ts`), so no read-modify-write is ever
+interleaved. Postgres is reached through one worker thread (`synckit`, `src/store/postgres-worker.ts`)
+the calling thread blocks on; the worker holds one `pg` client per open store, so a transaction's
+statements share a connection exactly as they share the one SQLite connection. A call fails after
+30 s rather than hanging the daemon; a dropped connection fails the call it broke and the next call
+outside a transaction connects again. Cost: every query blocks the event loop for one round trip —
+sub-millisecond to a database on the same host or LAN, but put Postgres near the hopper (a 20 ms
+link × ~50 queries a tick is a second of stall). An async Store was rejected: ~230 call sites, and a
+new class of interleaving bug between the tick and the UI's mutations.
+
+One SQL text for both (`src/store/db.ts`): `?` placeholders (numbered `$n` for Postgres), `RETURNING`
+for generated keys, `ON CONFLICT … DO UPDATE` for upserts — never `INSERT OR REPLACE`. Postgres
+returns a BIGINT seq as a number. One schema version for both: SQLite's `PRAGMA user_version`,
+Postgres's `schema_version` table. SQLite keeps its six-migration history (`SQLITE_HISTORY`); a
+Postgres store starts at the shape that history ends at (`POSTGRES_BASE`, version 6); every
+migration after it is in `SHARED`, in SQL both databases mean the same way (7 session role and
+identity, 8 config documents, 9 login codes). A Postgres sequence is not transactional, so a
+rolled-back append can leave a gap in `seq`: seq only rises.
+
+### Config documents
+
+`plugins.yaml`, `webhooks.yaml`, `rules.md` and `auth.yaml` are **config documents**: named texts in
+the store (`config_documents`, port `ConfigDocuments`), each replaced whole against its `version` —
+the sha-256 of its text, or `missing`. The YAML stays the format, comments and all; every UI edit
+already splices into the text against the version it read, and now writes it back the same way
+(`documents.write(name, text, version)` refuses a moved document). Watchers poll the version every
+5 s instead of an mtime. `JOB_HOPPER_PLUGINS_FILE`, `_WEBHOOKS_FILE`, `_RULES_FILE`, `_AUTH_FILE` are
+gone (leftover variables). The first boot against an empty store writes plugins.yaml from the
+built-in instances (`ensurePluginsDocument`); the sources.yaml and env → plugins.yaml migrations are
+removed. `install.sh` writes the starter rules.md through the CLI when there is none. The rules wire
+names follow: `GET /api/question-gates` `rules` (`RulesView`, `document: "rules.md"`),
+`POST /ui/api/rules`; reports name their document (`config.document`, `source: "document"`) instead
+of a path. **What the UI deliberately never edits** — command-bearing options — the operator sets
+with the CLI (below). Custom plugins are code, not config: `JOB_HOPPER_PLUGIN_DIR`, now with no
+default (unset: none).
+
+### Secrets
+
+Every secret comes from the daemon's environment — systemd's `EnvironmentFile`, a container's
+`env_file`, or whatever secrets manager fills them — and no secret file is read. Plugins ask through
+`PluginContext.env(name)` / `DetectionKit.env(name)` (`AppSeams.env` in tests). The variable is named
+by a command-bearing option, so a UI session cannot redirect a credential:
+
+| part | option (default) | was |
+|------|------------------|-----|
+| github-app source | `privateKeyEnv` (`GITHUB_APP_PRIVATE_KEY`; a PEM, real newlines or `\n` escapes) + `appId`, `slug` options | `appFile` → github-app.json + .pem |
+| github-gh source | `appKeyEnv` (`GITHUB_APP_PRIVATE_KEY`; null: never pause): `enabled: auto` pauses while it is set | `appFile` readable |
+| grokbot-routine notifier | `urlEnv`, `keyEnv` (`GROKBOT_WEBHOOK_URL`, `GROKBOT_WEBHOOK_KEY`) | `envFile` |
+| jev-router | `TYPESAFE_API_KEY` | `typesafeKeyFile` |
+| webhook subscription | `secretEnv` (rotate-secret refused for it) | `secretFile` |
+| identity provider (auth.yaml) | `clientSecretEnv` only; a SAML `idpCert` is public and inline | `clientSecret`, `clientSecretFile`, `idpCertFile` |
+
+The App's bot is `<slug>[bot]`, its page `https://github.com/apps/<slug>`. `create-github-app.sh`
+writes the key (and webhook secret) as lines of an env file (`--secrets-file`, default the host
+unit's `daemon.env`) and prints the `appId` and `slug` to set. Exceptions, both the hopper's own
+data rather than a credential it is given: a webhook subscription's generated inline `secret`, and
+UI session token hashes. The gh and claude CLIs sign in from their own variables (`GH_TOKEN`,
+`CLAUDE_CODE_OAUTH_TOKEN`) where their login state is not on the machine.
+
+### Login codes
+
+The daemon writes no login code file. `job-hopper login-code` mints a one-time code into the
+database (`login_codes`: its SHA-256 and an expiry, 10 minutes); `POST /ui/login` takes it once. A
+device link mints its own (one code for all its links). `scripts/open-ui.sh` runs the CLI — the
+database from `JOB_HOPPER_DATABASE_URL`, else that line of `JOB_HOPPER_ENV_FILE` (default the unit's
+`daemon.env`) — and writes its auto-posting page under `$XDG_RUNTIME_DIR/job-hopper/` (0700/0600).
+
+### Work dir
+
+`JOB_HOPPER_WORK_DIR` (default `<system temp dir>/job-hopper`) holds scratch only: claude's working
+directory for answerer and assessor calls, each plugin's scratch dir, ssh control sockets, Jev's own
+`jev-runs.jsonl` debug log (Jev's file, not the hopper's state), self-update's mirror and next
+install. Losing it loses nothing the hopper needs; the host unit points it at the user's cache dir
+(`%C/job-hopper`) so the update mirror survives restarts. Defaults that named one machine's layout are
+gone: `jevSrc` has no default, and a job's working directory defaults to `~` (herdr-claude `cwd`,
+the GitHub sources' `defaultCwd`).
+
+### Operator CLI
+
+`src/cli.ts`, installed as `job-hopper` (`~/.local/bin/job-hopper` by install.sh,
+`/usr/local/bin/job-hopper` in the image). It opens the daemon's database (`JOB_HOPPER_DATABASE_URL`),
+so whoever runs it holds the database's credentials — the daemon's own trust, more than any UI
+session's. Not an HTTP route, so the rule that every mutation goes through `POST /ui/api/*` is
+about the daemon's surface; the CLI is beside it, like editing a file was.
+
+- `config get|version <document>`; `config set <document> --if-version <version>` (stdin);
+  `config edit <document>` ($EDITOR, written back against the version read). A document that would
+  not load (plugins/webhooks/auth schema, rules size) is refused; a moved one is refused.
+- `login-code [--link <base url>]`.
+- `migrate-local` (below).
+
+Residual risk, unchanged in kind: a job on the hopper host runs as the daemon's user and can read
+the env file and so the database URL, as it could read the 0600 yaml files before.
+
+### Migrating a local install
+
+`job-hopper migrate-local --from-sqlite <file> [--config-dir <dir>] --secrets-out <file>`, into the
+database `JOB_HOPPER_DATABASE_URL` names, which must be empty (run it before the daemon first starts
+there). `src/migrate/local.ts`:
+
+- The SQLite file is read through a `VACUUM INTO` snapshot, migrated to the current schema, and
+  copied table by table in one transaction, every row with its seq; Postgres's sequences are then
+  moved past the copied rows. The source is never written.
+- From the config dir: plugins.yaml, webhooks.yaml, rules.md, auth.yaml become documents, every
+  file-path option rewritten as the table above says (github-app.json's id and slug become options),
+  comments kept; each must load after the rewrite or nothing is copied.
+- The secrets those files pointed at are written as `NAME=value` lines (one line each, a PEM's
+  newlines as `\n`) to `--secrets-out`, mode 600, never over an existing file: the deploy's
+  environment takes them from there.
+
+### Deploy recipes
+
+- **This host** (`scripts/install.sh`, systemd `--user`): `daemon.env` (the unit's EnvironmentFile,
+  now required) holds `JOB_HOPPER_DATABASE_URL` and the secrets; install.sh refuses to finish without
+  the database and says how to set it. Postgres from `deploy/compose.yaml` (`up -d postgres`,
+  published on loopback), or SQLite for local use.
+- **A container** (`Dockerfile`, `deploy/compose.yaml` profile `container`): node 26, git, ssh,
+  python3 + PyYAML, gh, the claude CLI; the UI built in a first stage. No herdr in the image: jobs run
+  on attached machines over ssh (their keys and `~/.ssh/config` mounted, or the machine source
+  configured for none). Self-update does not apply (no install.json; an image is updated by
+  rebuilding it).
+
+### Settled (issue #40)
+
+- **No object store.** Once config, login codes and secrets left the disk, nothing file-like
+  remained that is the hopper's: every document is small text in the database. Jev's debug log and
+  self-update's mirror are scratch in the work dir. A blob store would be a service to run for no
+  data.
+- **Process settings stay environment variables** (`JOB_HOPPER_*`: port, LAN, tick, limits, the
+  database itself). They configure the process, not a part; a deploy sets them where it sets secrets.

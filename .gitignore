@@ -5,3 +5,4 @@ data/
 *.db-shm
 coverage/
 ui/dist/
+deploy/hopper.env
