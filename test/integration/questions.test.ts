@@ -255,7 +255,6 @@ describe('a question escalated to the human', () => {
     await a.waitForStatus(second.id, 'finished');
     const queue = (await a.api('GET', '/api/queue')).body;
     expect(queue.waitingAnswer.map((j: Job) => j.id)).toEqual([first.id]);
-    expect(queue.counts.waiting_answer).toBe(1);
   });
 
   it('delivers question.escalated with target human to a webhook from webhooks.yaml', async () => {

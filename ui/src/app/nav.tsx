@@ -4,6 +4,7 @@ import { useState, useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { useHopper } from '@/store';
+import { useUnseenForOwner } from '@/store/selectors';
 import { cn } from '@/lib/utils';
 
 export const VIEWS = ['overview', 'questions', 'decisions', 'events', 'sources', 'machines', 'usage', 'routing', 'plugins', 'webhooks'] as const;
@@ -26,8 +27,7 @@ const read = (): View => { const h = window.location.hash.slice(1); return (VIEW
 export const useView = (): View => useSyncExternalStore(subscribe, read);
 
 function Links({ view, onPick }: { view: View; onPick?: () => void }) {
-  // The owner's questions not yet seen: at the human stage, without seenAt. Seen or no longer open → off the badge.
-  const questions = useHopper((s) => s.questions.filter((q) => q.tier === 'human' && !q.seenAt).length);
+  const questions = useUnseenForOwner();
   const failedSources = useHopper((s) => s.sources.filter((x) => x.state === 'error').length);
   const badge: Partial<Record<View, { n: number; cls: string }>> = {
     questions: { n: questions, cls: 'bg-question text-background' }, sources: { n: failedSources, cls: 'bg-bad text-background' },

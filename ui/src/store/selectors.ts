@@ -1,14 +1,34 @@
-// Derived reads over the store, memoised by zustand's shallow equality where they allocate.
+// Derived reads over the store, memoised so a view re-renders only when what it derives from changes.
 import { useMemo } from 'react';
+import { jobBoard, type JobBoard } from '@/model/board';
+import { laneSpans, type LaneSpan } from '@/model/history';
 import { goalOf, issueRef } from '@/model/job';
+import { awaitsOwner } from '@/model/questions';
 import type { Job } from '@/model/wire';
 import { useHopper } from './index';
 
 /** Every job the UI currently knows, by id. */
-export function useJobIndex(): Map<string, Job> {
-  const queue = useHopper((s) => s.queue);
-  return useMemo(() => new Map([...queue.ended, ...queue.waiting, ...queue.waitingAnswer, ...queue.running].map((j) => [j.id, j])), [queue]);
+export function useJobIndex(): ReadonlyMap<string, Job> {
+  const jobs = useHopper((s) => s.jobs);
+  return useMemo(() => new Map(Object.entries(jobs)), [jobs]);
 }
+
+/** The jobs by group: what every job list and every job count on every view reads. */
+export function useJobBoard(): JobBoard {
+  const jobs = useHopper((s) => s.jobs);
+  const order = useHopper((s) => s.waitingOrder);
+  return useMemo(() => jobBoard(Object.values(jobs), order), [jobs, order]);
+}
+
+/** The lane spans since `since`, from the event log and the job store together. */
+export function useLaneSpans(since: number): LaneSpan[] {
+  const history = useHopper((s) => s.history);
+  const jobs = useJobIndex();
+  return useMemo(() => laneSpans(history, since, jobs), [history, since, jobs]);
+}
+
+/** How many open questions wait on the owner and are not yet seen: the nav badge. */
+export const useUnseenForOwner = (): number => useHopper((s) => s.questions.filter(awaitsOwner).length);
 
 /** A job's short name: `ref goal`, or its id prefix when the UI no longer holds the job. */
 export function useJobName(): (jobId: string) => string {
