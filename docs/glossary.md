@@ -51,7 +51,8 @@ synonyms. Rename here first, in the same commit as everything else.
 | **Parked pane** | The pane of a job waiting on an answer. | |
 | **Job source** | Where the hopper pulls jobs from (`github` today). Nothing pushes jobs. | inbox, feed |
 | **Source item** | One eligible thing a source offers — for GitHub, an open issue labelled `hopper` by an allowlisted author. | |
-| **Source key** | The unique id of a source item (the issue URL); dedupes jobs. | |
+| **Source key** | The id of a source item (the issue URL). Many jobs may share one (see re-run); the newest is the key's job. | |
+| **Re-run** | A new job for a source key whose newest job failed or was cancelled and whose end the source already reported — offered again because a human cleared the marker (`hopper:failed`). Never from `finished`. | retry, resubmit |
 | **Claim** (of an issue) | Labelling it `hopper:claimed` and commenting, when the hopper takes it. Distinct from a lane claim. | |
 | **Sync** | One pass of a source: discover, check active jobs, retry reports. | poll |
 | **Report** | Telling the source what happened to its job (comments, labels). | |

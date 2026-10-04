@@ -35,6 +35,7 @@ describe('discover and ingest', () => {
     const { source, sync } = await setup();
     source.items = [item('bad', { invalid: 'empty issue body' })];
     await sync.syncNow();
+    source.items = []; // the issue now carries hopper:failed, so the real source stops offering it
     await sync.syncNow();
     expect(kinds(source)).toEqual(['claimed', 'failed']);
   });
@@ -63,7 +64,6 @@ describe('re-run', () => {
   it.each(['failed', 'cancelled'] as const)('a %s job whose end was reported gives a rediscovered item a new job', async (status) => {
     const { world, source, sync } = await ended(status);
     expect(world.jobs.get('job-1')!.sourceState!.sync).toMatchObject({ finalReported: true });
-    await sync.syncNow();
     await sync.syncNow();
     expect(world.jobs.size).toBe(2);
     expect(world.jobs.get('job-2')).toMatchObject({ status: 'queued', source: { key: 'k1' } });

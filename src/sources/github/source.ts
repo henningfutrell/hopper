@@ -45,6 +45,8 @@ export interface GitHubSourceOptions {
   whoami?: string;
   /** Which of these source keys already have a local job. */
   knownKeys?: (keys: string[]) => Set<string>;
+  /** Of the keys, those whose newest job may be re-run (`isRerunnable`); they are offered with comments for the new job. */
+  rerunnable?: (keys: string[]) => Set<string>;
   /** A reason not to discover right now (see JobSource.paused). */
   paused?: () => string | undefined;
   /** App mode: the per-job token keeper. */
@@ -107,8 +109,8 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     HOPPER_GITHUB_API: o.apiBase ?? DEFAULT_API_BASE,
   });
 
-  const toItem = async (issue: GitHubIssue, known: Set<string>, p: ReturnType<typeof priorityOf>, bot: BotLogin): Promise<SourceItem> => {
-    const comments = known.has(issue.url) || config.recentComments === 0 ? [] : await api.listComments(issue.repo, issue.number);
+  const toItem = async (issue: GitHubIssue, known: Set<string>, rerun: Set<string>, p: ReturnType<typeof priorityOf>, bot: BotLogin): Promise<SourceItem> => {
+    const comments = (known.has(issue.url) && !rerun.has(issue.url)) || config.recentComments === 0 ? [] : await api.listComments(issue.repo, issue.number);
     const context = contextBlock(issue, p, contextComments(comments, config.authors, config.recentComments, bot), config.recentComments, mode);
     return {
       key: issue.url, url: issue.url, title: issue.title, body: issue.body,
@@ -172,9 +174,11 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       skippedClaimedWithoutJob = found.skippedClaimedWithoutJob;
       const projects = await readProjects(api, config, found.issues);
       projectErrors = projects.errors;
-      const known = o.knownKeys && found.issues.length > 0 ? o.knownKeys(found.issues.map((i) => i.url)) : new Set<string>();
+      const urls = found.issues.map((i) => i.url);
+      const known = o.knownKeys && urls.length > 0 ? o.knownKeys(urls) : new Set<string>();
+      const rerun = o.rerunnable && urls.length > 0 ? o.rerunnable(urls) : new Set<string>();
       const items: SourceItem[] = [];
-      for (const issue of found.issues) items.push(await toItem(issue, known, priorityOf(issue, config, projects.views.get(issue.repo)), bot));
+      for (const issue of found.issues) items.push(await toItem(issue, known, rerun, priorityOf(issue, config, projects.views.get(issue.repo)), bot));
       lastDiscoverAt = o.clock.now().toISOString();
       return items;
     },

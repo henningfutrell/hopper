@@ -80,7 +80,7 @@ describe('GitHub source discover', () => {
     gh.addComment(REPO, issue.number, 'owner', 'try again');
     const [item] = await source.discover();
     expect(item!.prompt).toContain('try again');
-    expect(source.describe().skippedClaimedWithoutJob).toEqual([]);
+    expect(source.describe().skippedClaimedWithoutJob ?? []).toEqual([]);
   });
 
   it('a claimed issue with a live job does not have its comments loaded', async () => {

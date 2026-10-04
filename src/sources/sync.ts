@@ -4,7 +4,7 @@
 
 import { SourceError } from '../domain/ports.ts';
 import type { Clock, JobSource, SourceHost, SourceRegistry, SourceReport } from '../domain/ports.ts';
-import { TERMINAL_STATUSES } from '../domain/types.ts';
+import { TERMINAL_STATUSES, isRerunnable } from '../domain/types.ts';
 import type { DomainEvent, Job, Question, SourceStatus } from '../domain/types.ts';
 
 export interface SourceSyncOptions {
@@ -195,7 +195,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     let created = 0;
     for (const item of items) {
       const existing = store.jobs.getBySourceKey(item.key);
-      if (existing) host.reprioritize(existing.id, item.priority, item.priorityReason);
+      if (existing && !isRerunnable(existing)) host.reprioritize(existing.id, item.priority, item.priorityReason);
       else if (host.ingest(item, { name: slot.source.name, kind: slot.source.kind })) created++;
     }
     return { seen: items.length, created };

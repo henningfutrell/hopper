@@ -5,6 +5,7 @@ import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Answerer, Assessor, Clock, Executor, JobSource, PluginsView, Router, SourceRegistry, Store } from './domain/ports.ts';
 import type { InstanceSpec, Question } from './domain/types.ts';
+import { isRerunnable } from './domain/types.ts';
 import { loadConfig, type Config } from './config.ts';
 import { createEngine, type Engine } from './engine/index.ts';
 import { createExecutorRegistry, createTestExecutor } from './executors/index.ts';
@@ -173,6 +174,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     sourcesFile: config.sourcesFile, ghBin: config.ghBin, dataDir, commentCmd: HOPPER_COMMENT_CMD, clock,
     ...(config.githubApiUrl ? { githubApiUrl: config.githubApiUrl } : {}),
     knownKeys: (keys) => new Set(keys.filter((k) => store.jobs.getBySourceKey(k))),
+    rerunnable: (keys) => new Set(keys.filter((k) => { const j = store.jobs.getBySourceKey(k); return j !== undefined && isRerunnable(j); })),
     ...(seams.github ? { github: seams.github } : {}),
     ...(seams.githubApp ? { githubApp: seams.githubApp } : {}),
   });

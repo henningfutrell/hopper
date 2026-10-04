@@ -2,8 +2,8 @@
 // write is one store.tx that re-reads the job (compare-and-set), so a re-sort can never land on a
 // job a Decision has just claimed. design.md "Job sources".
 import type { SourceHost, SourceItem } from '../domain/ports.ts';
+import { isRerunnable } from '../domain/types.ts';
 import type { Job, JobSourceRef, JobSpec } from '../domain/types.ts';
-import { DuplicateSourceKeyError } from '../store/index.ts';
 import type { Commands } from './commands.ts';
 import { nowIso, type EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
@@ -38,24 +38,20 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
     store,
 
     ingest(item, source) {
-      if (store.jobs.getBySourceKey(item.key)) return null;
+      const known = store.jobs.getBySourceKey(item.key);
+      if (known && !isRerunnable(known)) return null;
       const priority = clamp(item.priority);
       const ref = refFor(item, source);
       const spec = specFor(item, source, priority);
       const invalid = problemWith(c, item, spec);
-      try {
-        return store.tx((): Job => {
-          const job = store.jobs.create(spec, priority, ref);
-          store.events.append({ type: 'job.queued', jobId: job.id, data: { spec, priority, source: ref } });
-          if (invalid === undefined) return job;
-          // Created and failed together: the source reports claimed, then failed — once.
-          store.events.append({ type: 'job.failed', jobId: job.id, data: { error: invalid } });
-          return store.jobs.update(job.id, { status: 'failed', error: invalid, finishedAt: nowIso(c) });
-        });
-      } catch (e) {
-        if (e instanceof DuplicateSourceKeyError) return null;
-        throw e;
-      }
+      return store.tx((): Job => {
+        const job = store.jobs.create(spec, priority, ref);
+        store.events.append({ type: 'job.queued', jobId: job.id, data: { spec, priority, source: ref } });
+        if (invalid === undefined) return job;
+        // Created and failed together: the source reports claimed, then failed — once.
+        store.events.append({ type: 'job.failed', jobId: job.id, data: { error: invalid } });
+        return store.jobs.update(job.id, { status: 'failed', error: invalid, finishedAt: nowIso(c) });
+      });
     },
 
     cancel(jobId, reason) {

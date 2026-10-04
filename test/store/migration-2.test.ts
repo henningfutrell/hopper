@@ -40,7 +40,7 @@ describe('migration 2 (questions)', () => {
     s.close();
 
     const after = new DatabaseSync(path);
-    expect(after.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 4 });
+    expect(after.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 5 });
     after.close();
   });
 });

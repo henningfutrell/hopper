@@ -106,7 +106,7 @@ describe('migration 4 (router renames) on a pre-plugin store', () => {
     expect(s.jobs.get(id(1))!.advice!.details).toEqual({ intent: 'build', jevUsed: false });
     s.close();
     const db = new DatabaseSync(path);
-    expect(db.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 4 });
+    expect(db.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 5 });
     db.close();
   });
 });

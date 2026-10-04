@@ -78,6 +78,11 @@ const MIGRATIONS: readonly (string | ((db: DatabaseSync) => void))[] = [
   `,
   // 4: Jev → router names in jobs, decisions and settings (phase 5).
   migrateRouterNames,
+  // 5: a source key may have many jobs (a re-run); the newest one is the key's job.
+  `
+  DROP INDEX jobs_source_key;
+  CREATE INDEX jobs_source_key ON jobs (source_key);
+  `,
 ];
 
 export function migrate(db: DatabaseSync): void {
