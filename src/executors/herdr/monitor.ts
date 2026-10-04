@@ -32,6 +32,8 @@ export interface TurnWatch {
   blockedAtSend: boolean;
   timeoutMs: number;
   expectedMs: number;
+  /** Called with state_change_seq when the turn parks on a question, before the outcome returns. */
+  parked?: (seq: number) => void;
 }
 
 export function abortReason(signal: AbortSignal): 'cancel' | 'shutdown' {
@@ -80,7 +82,8 @@ export async function watchTurn(w: TurnWatch): Promise<ExecutionOutcome | Interr
         ctx.progress(Math.min(0.9, (now - started) / w.expectedMs), lastLine);
       }
       const moved = agent.stateChangeSeq > w.seqAtSend;
-      if (agent.status === 'blocked' && (moved || !w.blockedAtSend)) return await blockedQuestion(w, recent);
+      const park = (o: ExecutionOutcome): ExecutionOutcome => { w.parked?.(agent.stateChangeSeq); return o; };
+      if (agent.status === 'blocked' && (moved || !w.blockedAtSend)) return park(await blockedQuestion(w, recent));
       const ended = (agent.status === 'idle' || agent.status === 'done') && moved;
       if (!ended) idleSince = null;
       else if (turn.lastMarker === 'done') {
@@ -88,12 +91,12 @@ export async function watchTurn(w: TurnWatch): Promise<ExecutionOutcome | Interr
       } else if (turn.lastMarker === 'failed') {
         return { kind: 'failed', error: turn.failedReason || 'JOB_HOPPER_FAILED without a reason' };
       } else if (turn.lastMarker === 'question') {
-        return { kind: 'question', question: { text: turn.assistantText, recentOutput: tail(recent, OUTPUT_LINES), detectedBy: 'marker' } };
+        return park({ kind: 'question', question: { text: turn.assistantText, recentOutput: tail(recent, OUTPUT_LINES), detectedBy: 'marker' } });
       } else {
         idleSince ??= now;
         if (now - idleSince >= w.idleQuestionMs) {
           const text = turn.assistantText || 'stopped waiting for input';
-          return { kind: 'question', question: { text, recentOutput: tail(recent, OUTPUT_LINES), detectedBy: 'idle' } };
+          return park({ kind: 'question', question: { text, recentOutput: tail(recent, OUTPUT_LINES), detectedBy: 'idle' } });
         }
       }
       errors = 0;

@@ -446,6 +446,10 @@ gutter. The prompt echo contains the markers mid-line only, never as a whole lin
 Progress: on change of the last non-empty assistant line, `ctx.progress(min(0.9,
 elapsed / expectedMs), line)` (`expectedMs` default 600000).
 
+**Parked.** When a turn parks on a question (any `question` outcome) the monitor saves
+`parkedSeq` = the `state_change_seq` it saw, for `answeredInPane` ("Questions" → "Answered in
+the pane"). The next send drops it.
+
 **Resume** (`resume(ctx, answer)`): `agent get` the saved agent; gone → `failed` `pane lost`.
 If `blocked` → `send-keys esc` first. `agent prompt <agent> <answer>`; then the same monitor.
 
@@ -588,6 +592,29 @@ same `onAnswered` as an answer: job → `queued` with `pendingAnswer` = the clos
 (`CLOSED_ANSWER`, `src/questions/service.ts`): "The owner closed this question without answering.
 Continue on your own judgement; if you cannot, end with JOB_HOPPER_FAILED and say why."
 Recovery treats a `closed` question like an `answered` one (requeue with its answer).
+
+**Answered in the pane.** the owner may type the answer straight into a parked pane instead of
+the UI. On every engine tick, `src/engine/pane-answers.ts` asks the executor of each
+`waiting_answer` job `answeredInPane(job)` (port method; herdr-claude implements it; the decider
+is untouched). herdr-claude: the monitor saves `parkedSeq` (the `state_change_seq` at which the
+turn parked) in `executorState`; a job parked before that field existed uses its turn's send
+`seq`. Answered when `agent get` shows the same pane with `state_change_seq > parkedSeq` **and**
+either status `working` or a typed echo below the question (`typedAfterQuestion` in
+`screen.ts`: the first `❯` block after Claude's reply to the turn anchor, above the input box).
+A seq move alone is not enough (herdr's own idle/done flip moves it). The answer is the typed
+text, or `(answered in the pane)` when no echo can be read (a dialog answered with keys). The
+new turn is `{ seq: parkedSeq, anchor: last typed line (else the old anchor), blockedAtSend:
+false }`. Then one tx: `QuestionService.answeredInPane` (stage aborted `superseded`, timers
+cleared, attempt `reason: "answered in the pane"`, question `answered` by `human`,
+`question.answered { by: human, answer, via: "pane" }`, no `onAnswered`, nothing typed), job
+`running` on an idle lane of its `resumeOn` machine with the new `executorState`,
+`job.reattached { reason: "answered in the pane" }`; after the commit `runner.reattach` watches
+the turn to its outcome, exactly as after a restart. **Lanes:** the job already runs
+physically, so it never waits: with no idle lane it opens one more (`lane.opened`) and runs
+**over the lane cap** until it ends; the decider counts that busy lane like any other and drains
+or closes the extra lane after. **Missed:** a reply turn that starts and ends between two ticks
+with no readable echo (e.g. a dialog answered by keys) is not seen; the question stays open and
+can still be answered or closed in the UI.
 
 **Logged out** the card shows, where the answer box would be, "Log in to answer or close:
 `bash ~/.local/lib/job-hopper/scripts/open-ui.sh`". A 403 on any mutation drops the stored

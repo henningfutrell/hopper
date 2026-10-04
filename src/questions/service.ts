@@ -280,21 +280,27 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
   }
 
   /** the owner settles an open question: his answer, or the close text. Wins over any stage in flight. */
+  /** Inside a tx. Ends an open question as the owner's; the caller decides what the job does. */
+  function settle(q: Question, answer: string, status: 'answered' | 'closed', via?: 'pane'): Question {
+    abortStage(q.id, 'superseded');
+    clearTimers(q.id);
+    const at = iso();
+    store.questions.addAttempt(q.id, {
+      tier: HUMAN, role: 'human', startedAt: at, finishedAt: at, answer, outcome: 'accepted',
+      ...(status === 'closed' ? { reason: 'closed without answering' } : via ? { reason: 'answered in the pane' } : {}),
+    });
+    const updated = store.questions.update(q.id, { status, answer, answeredBy: HUMAN });
+    if (status === 'closed') emit(updated, 'question.closed', { answer });
+    else emit(updated, 'question.answered', { by: HUMAN, answer, ...(via ? { via } : {}) });
+    return updated;
+  }
+
   function byHuman(id: string, answer: string, status: 'answered' | 'closed'): AnswerByHumanResult {
     return store.tx(() => {
       const q = store.questions.get(id);
       if (!q) return { ok: false as const, reason: 'not_found' as const };
       if (q.status !== 'open') return { ok: false as const, reason: 'not_open' as const };
-      abortStage(id, 'superseded');
-      clearTimers(id);
-      const at = iso();
-      store.questions.addAttempt(id, {
-        tier: HUMAN, role: 'human', startedAt: at, finishedAt: at, answer, outcome: 'accepted',
-        ...(status === 'closed' ? { reason: 'closed without answering' } : {}),
-      });
-      const updated = store.questions.update(id, { status, answer, answeredBy: HUMAN });
-      if (status === 'closed') emit(updated, 'question.closed', { answer });
-      else emit(updated, 'question.answered', { by: HUMAN, answer });
+      const updated = settle(q, answer, status);
       o.onAnswered(updated);
       return { ok: true as const, question: updated };
     });
@@ -309,6 +315,13 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
 
     answerByHuman: (id, answer) => byHuman(id, answer, 'answered'),
     closeByHuman: (id) => byHuman(id, CLOSED_ANSWER, 'closed'),
+
+    answeredInPane(id, answer) {
+      return store.tx(() => {
+        const q = store.questions.get(id);
+        return q?.status === 'open' ? settle(q, answer, 'answered', 'pane') : undefined;
+      });
+    },
 
     cancel(id) {
       store.tx(() => {

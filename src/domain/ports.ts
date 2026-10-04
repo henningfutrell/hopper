@@ -43,6 +43,9 @@ export type ExecutionOutcome =
   /** The job is paused on a question. Its executor state (saveState) must allow resume. */
   | { kind: 'question'; question: ExecutionQuestion };
 
+/** What `Executor.answeredInPane` saw: the typed answer (if readable) and the state to reattach with. */
+export interface PaneAnswer { answer?: string; executorState: Record<string, unknown> }
+
 /**
  * Runs one job on one lane. `name` matches JobSpec.executor: "test" (built in) and
  * "herdr-claude" (Claude Code in a herdr pane).
@@ -76,6 +79,13 @@ export interface Executor {
    * `canReattach` said true; present exactly when `canReattach` is.
    */
   reattach?(ctx: ExecutionContext): Promise<ExecutionOutcome>;
+  /**
+   * A `waiting_answer` job whose question the owner answered outside the hopper (typed into its
+   * pane): its work runs again. Returns the typed text when it can be read reliably, and the
+   * executor state that lets `reattach` watch the new turn; null while still parked. Absent →
+   * never. Must not throw (an error is null). The engine polls it on every tick.
+   */
+  answeredInPane?(job: Job): Promise<PaneAnswer | null>;
   /**
    * Release whatever a job holds outside the process (close its pane). Called when a
    * waiting_answer job is cancelled or expires, and by restart recovery for running jobs it
@@ -224,6 +234,13 @@ export interface QuestionService {
   answerByHuman(questionId: string, answer: string): AnswerByHumanResult;
   /** the owner ends an open question without answering: status `closed`, the close text becomes its answer, `question.closed`, then onAnswered resumes the job. */
   closeByHuman(questionId: string): AnswerByHumanResult;
+  /**
+   * The owner answered in the job's pane, not the UI. Synchronous; call inside the caller's tx.
+   * Aborts an in-flight stage, clears timers, marks it answered by `human`, `question.answered
+   * { via: "pane" }`. Does NOT call onAnswered: the job already runs again, nothing is typed.
+   * Undefined when the question is not open.
+   */
+  answeredInPane(questionId: string, answer: string): Question | undefined;
   /** Synchronous; call inside the caller's tx. Aborts an in-flight stage, clears timers. */
   cancel(questionId: string): void;
   /** Startup: every open non-human question restarts at the answer stage; re-arm human timers, expire overdue ones. */

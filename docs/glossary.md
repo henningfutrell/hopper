@@ -48,7 +48,8 @@ synonyms. Rename here first, in the same commit as everything else.
 | **Attempt** | One entry in a question's trail: an answerer's draft, an assessor's assessment, or the human's answer. `tier` = who, `role`, `outcome` `drafted` / `accepted` / `escalated`. Rows before slice 2 have no `role` and may carry `risky`. | try |
 | **Risk rule** | A named pattern (delete, deploy, force-push, spend, credentials, send-message) over question and draft; a hit after the assessor escalates to the human whatever it said. Code, not configuration. | |
 | **Rules file** | the owner's standing rules, given to the answerer and the assessor. | policy |
-| **Reattach** | Restart recovery keeping a running job running: its pane and Claude outlived the daemon, so the executor watches the same turn again. Never a re-run. | resume (that delivers an answer), restart |
+| **Reattach** | The executor watching a job's live pane again without sending anything: restart recovery keeping a running job running (its pane and Claude outlived the daemon), or a parked job *answered in the pane*. Never a re-run. | resume (that delivers an answer), restart |
+| **Answered in the pane** | the owner typed the answer straight into a parked pane. The hopper sees Claude working again, marks the question answered by `human` (`question.answered { via: "pane" }`) with the typed text, or `(answered in the pane)` when it cannot be read, and reattaches the job on a lane. | |
 | **Resume** | Delivering an accepted answer to a job's parked pane and continuing it. | restart |
 | **herdr session** | The named herdr server (`job-hopper`) that hosts job panes. Never the user's default session. | |
 | **Pane** | The herdr terminal a herdr-claude job runs in; one tab per job run. | window |

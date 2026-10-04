@@ -8,6 +8,7 @@ import { createCleanup } from './cleanup.ts';
 import { createCommands, type Commands } from './commands.ts';
 import type { EngineContext, EngineOptions } from './context.ts';
 import { decisionStep } from './decision-step.ts';
+import { createPaneAnswers } from './pane-answers.ts';
 import { createQueries, type Queries } from './queries.ts';
 import { recover } from './recovery.ts';
 import { createRunner } from './runner.ts';
@@ -64,6 +65,7 @@ export function createEngine(o: EngineOptions): Engine {
   const runner = createRunner(c, cleanup);
   const classifier = createClassifier(c);
   const commands = createCommands(c, runner, cleanup);
+  const paneAnswers = createPaneAnswers(c, (claim) => runner.reattach(claim));
 
   return {
     executorNames: o.executors.names(),
@@ -88,6 +90,7 @@ export function createEngine(o: EngineOptions): Engine {
       o.questions.recover();
       timer = setInterval(() => {
         classifier.sweep();
+        void paneAnswers.sweep();
         c.trigger('tick');
       }, o.tickMs);
       classifier.sweep();

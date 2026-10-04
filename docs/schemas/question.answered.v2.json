@@ -11,6 +11,10 @@
     },
     "answer": {
       "type": "string"
+    },
+    "via": {
+      "type": "string",
+      "const": "pane"
     }
   },
   "required": [

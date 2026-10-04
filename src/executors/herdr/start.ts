@@ -23,6 +23,8 @@ export interface PaneState {
   laneId: string;
   /** The turn in flight, recorded at every send, so a restarted daemon can watch it again. */
   turn?: TurnAnchor;
+  /** state_change_seq when the turn parked on a question: Claude moving past it means the owner answered in the pane. */
+  parkedSeq?: number;
 }
 
 /** What the monitor needs to find one turn's outcome: design.md "Turn anchor (B1)". */

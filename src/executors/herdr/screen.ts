@@ -162,3 +162,27 @@ export function isTrustDialog(text: string, cwd: string): boolean {
   const shown = compact(text.slice(head + 'Accessing workspace:'.length, tail)).replace(/\/+$/, '');
   return shown !== '' && shown === compact(cwd).replace(/\/+$/, '');
 }
+
+/**
+ * What was typed into the pane after the turn that parked the job: the first user echo (❯ and
+ * its continuation lines) after Claude's reply to `anchor`, above the input box. Undefined when
+ * nothing was typed (text still in the input box does not count). Lines are trimmed, ❯ removed.
+ */
+export function typedAfterQuestion(text: string, anchor: string): string | undefined {
+  const lines = text.split('\n');
+  const at = anchorLine(lines, anchor);
+  if (at < 0) return undefined;
+  let i = at + 1;
+  // Skip the rest of the echo holding the anchor, then Claude's reply, up to the next echo.
+  while (i < lines.length && !ASSISTANT_START.test(lines[i]!) && !SEPARATOR.test(lines[i]!)) i++;
+  while (i < lines.length && !USER_ECHO.test(lines[i]!) && !SEPARATOR.test(lines[i]!)) i++;
+  if (i >= lines.length || SEPARATOR.test(lines[i]!)) return undefined;
+  const typed = [lines[i]!.replace(USER_ECHO, '').trim()];
+  for (let k = i + 1; k < lines.length; k++) {
+    const l = lines[k]!;
+    if (l.trim() === '' || ASSISTANT_START.test(l) || STATUS_LINE.test(l) || SEPARATOR.test(l) || USER_ECHO.test(l)) break;
+    typed.push(l.trim());
+  }
+  const out = typed.filter(Boolean).join('\n');
+  return out === '' ? undefined : out;
+}

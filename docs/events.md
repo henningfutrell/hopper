@@ -211,7 +211,7 @@ Version 1 (`docs/schemas/job.requeued.v1.json`). A job went back to the queue (r
 
 ## `job.reattached`
 
-Version 1 (`docs/schemas/job.reattached.v1.json`). Restart recovery kept a running job running on its lane: its external work (the herdr pane and Claude) outlived the daemon, and the executor watches it again. `reason` is `daemon restart`.
+Version 1 (`docs/schemas/job.reattached.v1.json`). The executor watches a job's live external work again (the herdr pane and Claude) without sending anything. `reason` `daemon restart`: restart recovery kept a running job running on its lane. `reason` `answered in the pane`: The owner typed the answer into a parked job's pane; the job runs again on a lane.
 
 | field | type | required |
 |---|---|---|
@@ -388,13 +388,14 @@ Version 2 (`docs/schemas/question.escalated.v2.json`). A question entered a stag
 
 ## `question.answered`
 
-Version 2 (`docs/schemas/question.answered.v2.json`). An answer was accepted: an answerer's draft the assessor let through (`by` = the answerer instance), or the human's.
+Version 2 (`docs/schemas/question.answered.v2.json`). An answer was accepted: an answerer's draft the assessor let through (`by` = the answerer instance), or the human's (`via: "pane"` when he typed it into the job's pane: the job already runs again, nothing is typed for him).
 
 | field | type | required |
 |---|---|---|
 | `questionId` | string | yes |
 | `by` | string | yes |
 | `answer` | string | yes |
+| `via` | string | no |
 
 ```json
 {
