@@ -2,7 +2,7 @@ import type { Decision, DecisionInputs, Divergence, Lane } from '../domain/types
 import { assign, nativeHold, order } from './assign.ts';
 import type { Candidate, MachineState } from './assign.ts';
 import { divergence, routerVerdict } from './router-verdict.ts';
-import { planLanes } from './lanes.ts';
+import { planGoneLanes, planLanes } from './lanes.ts';
 import { laneCap, machineUsage } from './usage.ts';
 
 /** Pure: same inputs, same Decision. `inputs.at` is the clock; `decisionId` is supplied. */
@@ -63,6 +63,9 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
     const unassigned = (idleByMachine.get(s.machine.id) ?? []).filter((l) => !taken.has(l.id));
     return planLanes(s, unassigned, lanes, placed.start, inputs.at, policy.laneIdleGraceMs);
   });
+  const listed = new Set(machines.map((m) => m.id));
+  const gone = [...new Set(lanes.map((l) => l.machineId).filter((id) => !listed.has(id)))].sort();
+  plans.push(...gone.map((id) => planGoneLanes(id, lanes)));
 
   reasons.push(
     `${inputs.routerMode} mode: ${waiting.length} waiting, ${placed.start.length} start, ${hold.length} held`,

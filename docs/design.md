@@ -46,6 +46,11 @@ Fastify for HTTP, `node:sqlite` for storage, zod for request validation.
 | `src/executors/` | `Executor` adapters (`test`, `herdr/`) and the registry; reached through the executor plugins | engine, http, store, plugins |
 | `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (ssh probe through the herdr CLI client), `combineMachineSources` | engine, http, store, plugins |
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin) | engine, http, store, plugins |
+| `src/webhooks/` | signing, dispatcher, retry/backoff | engine, http, decider |
+| `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `job-hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, `plugins.yaml` + watch, the role slots (`router-slot.ts` with the shared `instantiate`, `question-slots.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), a machine edit of `attachedMachines:` (`attached-edit.ts`, spliced into the file; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `answerer/claude-cli/`, `assessor/claude-cli-assessor/`, `assessor/always-escalate/` hold their prompts; `executor/herdr-claude/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-gh/` and `job-source/github-app/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `notifier/grokbot-routine/` is the Grok Bot routine webhook — env-file reader and notifier) | engine, http, store, decider, questions |
+| `src/executors/` | `Executor` adapters (`test`, `herdr/`) and the registry; reached through the executor plugins | engine, http, store, plugins |
+| `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following plugins.yaml; ssh probe and herdr path resolution through the herdr CLI client's ssh argv), the detected ssh targets (`ssh-config.ts`), `combineMachineSources` | engine, http, store, plugins |
+| `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production | engine, http, store, plugins |
 | `src/engine/` | the loop: gather → decide → apply; job lifecycle; restart recovery | http |
 | `src/http/` | Fastify routes, SSE, static UI | executors, plugins (reads them through the `PluginsView` port) |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
@@ -786,6 +791,9 @@ the engine.
 `/api/usage` · `/api/questions[/:id]` · `/api/webhooks` (from `webhooks.yaml`, secrets
 omitted, plus `config: { path, loadedAt, error?, warnings, version }`; `version` since issue #18) · `/api/webhooks/deliveries` ·
 **new** `GET /api/sources` → `{ sources: SourceStatus[] }`.
+omitted, plus `config: { path, loadedAt, error? }`) · `/api/webhooks/deliveries` ·
+**new** `GET /api/sources` → `{ sources: SourceStatus[] }` · `GET /api/machines/config` (issue #18,
+"Machines from the UI").
 
 Every request (GET included) must carry `Host: 127.0.0.1:<port>` or `localhost:<port>`, or a
 LAN name with the port; anything else is 421 — DNS-rebinding guard. A LAN request reads `/api/`
@@ -833,6 +841,7 @@ token and send any `Origin`. Cookies are no better here: they ignore ports, so a
 | POST | `/ui/api/plugins` | `{ action, … }` | edit plugins.yaml: one instance's options, select a plugin, rescan (phase 5 slice 7; "Settled in slice 7") |
 | POST | `/ui/api/rules-file` | `{ text, version }` | replace the rules file whole (issue #18, "Question gates"): 400 over 64 KiB, 409 stale `version` |
 | POST | `/ui/api/webhooks` | `{ action, name, … }` | edit webhooks.yaml: add, edit (url, events, active), rotate-secret, remove one entry; answers `GET /api/webhooks` plus a new `secret` once (issue #18, "Webhook subscriptions in the UI") |
+| POST | `/ui/api/machines` | `{ action, … }` | add, edit or remove one attached machine in plugins.yaml, applied without a restart (issue #18; "Machines from the UI") |
 | POST | `/ui/api/device-link` | `{}` | `{ links }`: the current login code as `http://<LAN name>:<port>/#login=<code>`, one per LAN name; 409 without LAN names ("Reaching the UI across the LAN") |
 | POST | `/ui/api/logout` | `{}` | drop the session |
 
@@ -1508,7 +1517,7 @@ A **role** is a slot the engine calls through one port. A **plugin** implements 
 | `assessor` | `Assessor { name; assess(req, draft, signal) → { escalate, reason } }` | 1 | `claude-cli-assessor`, `always-escalate` | live |
 | `executor` | `Executor` (unchanged) | 1..n | `herdr-claude`, `test` | restart |
 | `job-source` | `JobSource` (unchanged) | 0..n | `github-gh`, `github-app` | restart |
-| `machine-source` | `MachineSource` (unchanged) | 1 | `local` | restart |
+| `machine-source` | `MachineSource` (unchanged) | 1 | `local` | restart (an options change is live since issue #18) |
 | `usage-source` | `UsageSource` (unchanged) | 0..n | none in production; `fake` stays a test fake at the `ports.ts` seam | restart |
 | `notifier` | `Notifier { name; start(events); stop() }` (new) | 0..n | `grokbot-routine` | restart |
 
@@ -2065,7 +2074,8 @@ Built alongside slices 4-6 and merged after them. The edit path is generic over 
 job-source, machine-source, usage-source, notifier) to its plugins.yaml key and cardinality, and
 the host's `instances()` lists what is configured. So a **lane** count (the machine instance's
 `lanes`) and a **connector** (a job source or notifier instance) are editable with the same
-per-instance form; restart roles show `changed — restart pending` after an edit.
+per-instance form; restart roles show `changed — restart pending` after an edit (the lane count
+applies live since issue #18, "Machines from the UI").
 
 - **`POST /ui/api/plugins`**, body by `action`:
   `{ action: 'options', role, name, options, version }` · `{ action: 'select', role: router |
@@ -2120,7 +2130,7 @@ It is a machine beside `local`: the decider sees it in `DecisionInputs.machines`
 to it by the unchanged rule (online, runs the executor, most remaining room). Nothing else in the
 decider changes.
 
-**Configuration** — plugins.yaml, read at start (a restart role, like `executors:`):
+**Configuration** — plugins.yaml, followed without a restart since issue #18 ("Machines from the UI"):
 
 ```yaml
 attachedMachines:
@@ -2171,8 +2181,8 @@ linger, confirms the session runs, and prints the plugins.yaml lines with the re
 runs a real Claude job there (throwaway session) through the composition root. Passed against
 `laptop` 2026-10-04.
 
-**Not built:** `/api/plugins` shows no pending change for `attachedMachines:` (restart to apply);
-the UI shows attached machines only through `/api/machines`. **Beside the machine-source role, not
+**Live since issue #18:** `attachedMachines:` is followed like a live role, so `/api/plugins` never
+shows it pending; the Machines view adds, edits and removes machines ("Machines from the UI"). **Beside the machine-source role, not
 in it** (merged after slice 4, 2026-10-03): the `machines:` instance supplies this machine and
 `attachedMachines:` adds the others, combined in `main.ts` (`combineMachineSources`). An attached
 machine may not take the machine instance's name. Folding attached machines into the
@@ -2374,9 +2384,16 @@ networks out. A device link is as strong as the login code file and works once.
 
 ## UI manages everything (issue #18, 2026-10-03)
 
-Owner request: set question gates from the UI.
+the owner (2026-10-03), after the reworked UI went live: "Looks way better. Cant add machines, cant
+modify wh subscriptions, doesnt show the accounts used and usage. Cant specify router, queue sorter,
+question gates, routing rules, nor lane specific instructions. But i like the layout so far." On
+scoping: "Forget lane rules. Usage throttles lanes for sure. Rest are fine." So no lane-specific
+instructions and no rule that targets a lane. Every control below works at phone width (390 px):
+he uses the UI from his phone across the LAN.
 
 ### Question gates (issue #18)
+
+Owner request: set question gates from the UI.
 
 The **question gates** are the chain an open question goes through: answerer (drafts) →
 assessor (escalates or not) → risk rules → the owner. One panel in the Questions view, below the
@@ -2450,8 +2467,6 @@ Owner request: edit webhook subscriptions from the UI. Settles 6b.
   dialog states the check a subscriber makes (`x-jobhopper-signature`, "Webhooks"). A refused edit
   re-reads `GET /api/webhooks`, so a stale version is one retry. Vendored `ui/src/components/ui/switch.tsx`.
 
-## UI manages everything (issue #18, 2026-10-03)
-
 ### Usage and accounts (issue #18)
 
 Owner request: show the accounts used and their usage; usage throttles lanes.
@@ -2514,3 +2529,70 @@ source reads without emitting events).
 **Tests never run the real claude.** `test/support/isolate.ts` puts a guard `claude` first on PATH
 (answers `--version`, refuses the rest); `TEST_PLUGINS` has `usageSources: []`; claude-plan tests
 name `test/plugins/fake-claude-plan.mjs` as `bin`.
+
+### Machines from the UI (issue #18)
+
+Owner request: add machines from the UI. The Machines view adds, edits and removes attached machines, and
+edits this machine's lane count. Every change is written to plugins.yaml and applies without a
+restart.
+
+**Read** — `GET /api/machines/config` → `MachinesConfig` (`src/domain/machines.ts`): `path`,
+`version` (sha-256 of plugins.yaml, as `/api/plugins` `config.version`), `error?`, `machine` (the
+machine source's instance; its `lanes` option is the lane count), `attached` (`attachedMachines:` as
+it applies now, defaults filled in), `executors` (the configured executor instance names) and `ssh:
+{ targets, notes }` — the **detected ssh targets**.
+
+**Detected ssh targets** (`src/machines/ssh-config.ts`): the `Host` aliases of `~/.ssh/config`, in
+file order. A pattern with `*`, `?` or `!` is not a target. `Include` is followed as ssh does
+(relative to `~/.ssh`, `~` expanded, globs through `fs.globSync`, 16 levels); what cannot be read is a
+note, never an error. Hand-written: the `ssh-config` package does not follow `Include`, the part that
+needs care.
+
+**Write** — `POST /ui/api/machines` (UI session, as every mutation), body by `action`:
+
+| body | effect |
+|---|---|
+| `{ action: 'add', name, ssh, lanes, executors?, label?, version }` | one new entry |
+| `{ action: 'edit', name, lanes?, executors?, label? (null: drop), version }` | that entry's lanes, executors, label |
+| `{ action: 'remove', name, version }` | that entry gone |
+
+Answers the new `MachinesConfig`. 400: body invalid (strict: `herdrBin`, `session` and, on edit,
+`ssh` are refused), an ssh target not detected, `local` or the machine source's name, lanes < 1, an
+executor that is not a configured instance. 404: no such attached machine. 409: stale `version`; an
+invalid plugins.yaml (fix it by hand); a name already attached; herdr not resolvable there (the
+reason; machine not added); a removal while a lane there is busy or draining, or a job waits for an
+answer in a pane there (`resumeOn`) — the error names the jobs.
+
+- **The ssh target is never typed.** The add form offers only detected ssh targets, and the route
+  refuses any other value: an ssh destination is command-bearing-adjacent (`-oProxyCommand=…`, a
+  host that runs whatever it likes). Adding a Host alias stays a `~/.ssh/config` edit.
+- **`herdrBin` is never taken from the UI.** On add the daemon resolves it over ssh, with the same
+  `BatchMode`/`ControlPath` argv as every herdr call (`resolveHerdrBinOverSsh`): `command -v herdr`
+  in a login shell there (`"$SHELL" -lc`, the last line, must be absolute), else `~/.local/bin/herdr`
+  if executable. Failure → 409 with the reason. `session` is left out (the default `job-hopper`). The
+  probe takes seconds, so the file's version is checked again before the write.
+- **One entry only.** The edit splices that entry's text into the file at its source range (`yaml`
+  node ranges), so every other byte stays: other sections, other entries, comments. An added entry
+  takes the style of the entries before it (flow `{ … }` or block); an empty `[]` or a flow list
+  becomes a block list; removing the last entry leaves `attachedMachines: []`. The result is checked
+  against the plugins.yaml schema, written atomically, mode 600, then reloaded before the answer.
+- **Live apply.** The host re-reads `attachedMachines:` on every good reload (`attachedMachines()`;
+  an invalid file keeps the last good list). `createAttachedMachines` reads that list on every
+  `list()`: a new machine appears (offline until its first probe), a removed one disappears (logged),
+  and lanes, executors and label apply at once without losing what the probe knows. Another ssh
+  target, herdr binary or session is another machine, probed afresh.
+- **Lanes of a machine that is gone.** The decider closes the idle lanes of a machine no source
+  lists and drains its busy ones (`planGoneLanes`); nothing starts there. Removal is refused while a
+  job needs the machine, so this cleans up idle lanes.
+- **This machine's lane count** is the machine source's `lanes` option, edited through
+  `POST /ui/api/plugins` `options` (no new route). The machine source now applies an options change
+  live; another instance name or plugin still shows `changed — restart pending`, since lanes are
+  stored under the machine id.
+- **UI**: `ui/src/views/machines.tsx` (cards: online/offline, lanes, executors, ssh target, herdr
+  path and session read-only; Edit, Remove behind a confirm dialog; Add machine) and
+  `machine-forms.tsx`; model `ui/src/model/machines.ts`, tested from `test/ui/machines.test.ts`. Phone
+  width first: fields stack, controls are at least 36 px tall.
+
+Residual risk: a session holder can attach any machine already in `~/.ssh/config` and point jobs
+at it; that needs the owner's ssh config to name it and the machine to run herdr. Every local user can
+read the detected ssh targets (`GET /api/machines/config`, like every loopback read).

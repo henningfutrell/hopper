@@ -153,21 +153,6 @@ export interface MachineSnapshot {
   herdr?: { bin: string; session: string };
 }
 
-/** An attached machine as plugins.yaml `attachedMachines:` names it (design.md "Attached machines"). */
-export interface AttachedMachine {
-  /** The machine id; never `local`. */
-  name: string;
-  label?: string;
-  /** The ssh destination: a `~/.ssh/config` alias or `user@host`. */
-  ssh: string;
-  lanes: number;
-  /** Executor instances that can run there. */
-  executors: string[];
-  /** Its herdr session (never `default`) and herdr binary, as the remote login shell finds it. */
-  session: string;
-  herdrBin: string;
-}
-
 /** Everything one Decision is made over. Recorded verbatim on the Decision. */
 export interface DecisionInputs {
   at: string;
@@ -427,6 +412,10 @@ export interface SourceStatus {
   /** Source-specific facts for the UI, e.g. { owners, repos, authors, label }. */
   detail: Record<string, unknown>;
 }
+
+// ---- Attached machines: src/domain/machines.ts (re-exported here) ------------------------
+
+export type { AttachedMachine, MachineEdit, MachineEditOutcome, MachinesConfig } from './machines.ts';
 
 // ---- Plugins: src/domain/plugins.ts (re-exported here, one vocabulary) ------------------
 

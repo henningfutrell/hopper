@@ -1,15 +1,17 @@
 // The plugin host (design.md "Phase 5"): built-in + custom plugins, plugins.yaml watched by mtime,
 // detection of every plugin, the live roles (the router — from plugins.yaml, else chosen from what
 // is detected — the answerer and the assessor, each swapped between calls) and the restart roles
-// (executors, job sources, the machine source, usage sources, notifiers): built once at start; a
-// later change is reported as pending. Notifiers are started with the event feed by the caller. A section plugins.yaml leaves out means the built-in instances.
-// UI edits (edit.ts) write plugins.yaml and apply like a file edit.
+// (executors, job sources, usage sources, notifiers): built once at start; a later change is
+// reported as pending. The machine source applies an options change (its lane count) live; another
+// instance waits for a restart. Attached machines follow plugins.yaml live (issue #18). Notifiers are started with the event feed by the caller. A section plugins.yaml leaves out means the built-in instances.
+// UI edits (edit.ts, attached-edit.ts) write plugins.yaml and apply like a file edit.
 import { statSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { Answerer, Assessor, Clock, MachineSource, Notifier, NotifierEvents, UsageSource } from '../domain/ports.ts';
 import {
-  ROLES, type AttachedMachine, type ConfiguredInstance, type Detection, type InstanceSpec, type PluginsEdit, type PluginsEditOutcome, type PluginsReport, type RestartRoleStatus, type RouterMode, type RouterSelection, type RouterStatus,
+  ROLES, type AttachedMachine, type ConfiguredInstance, type MachineEdit, type MachineEditOutcome, type MachinesConfig, type Detection, type InstanceSpec, type PluginsEdit, type PluginsEditOutcome, type PluginsReport, type RestartRoleStatus, type RouterMode, type RouterSelection, type RouterStatus,
 } from '../domain/types.ts';
+import { createMachinesEditor, type AttachedEditOptions } from './attached-slot.ts';
 import { BUILTIN_PLUGINS } from './builtin.ts';
 import { createDetectionKit } from './detect.ts';
 import { loadCustomPlugins, type LoadedPlugin, type LoadResult } from './loader.ts';
@@ -19,7 +21,7 @@ import { loadPluginsFile, pluginsFileVersion, readPluginsText } from './plugins-
 import { buildExecutors, executorStatus, type BuiltExecutor } from './executor-slot.ts';
 import { builtinInstances } from './migrate.ts';
 import { buildNotifiers, startNotifiers, stopNotifiers } from './notifier-slot.ts';
-import { NO_MACHINE, buildJobSources, buildMachine, buildUsageSources, instanceStatus, type Built, type BuiltJobSource } from './source-slots.ts';
+import { NO_MACHINE, applyMachineSpec, buildJobSources, buildUsageSources, instanceStatus, type Built, type BuiltJobSource } from './source-slots.ts';
 import { answererStatus, assessorStatus, buildAnswerer, buildAssessor, type BuiltAnswerer, type BuiltAssessor } from './question-slots.ts';
 import { buildRouter, createLiveRouter, detectRouter, safeDetect, type BuiltRouter, type LiveRouter, type SlotDeps } from './router-slot.ts';
 import type { DetectionKit, JobSourceContext, PluginDefinition, PluginLogger, Router } from './sdk.ts';
@@ -51,6 +53,8 @@ export interface PluginHostOptions {
   builtins?: readonly PluginDefinition[];
   /** How often plugins.yaml's mtime is checked; default 5000. */
   intervalMs?: number;
+  /** What a machine edit needs (issue #18). */
+  attached?: AttachedEditOptions;
 }
 
 export interface PluginHost {
@@ -69,7 +73,7 @@ export interface PluginHost {
   executors(): BuiltExecutor[];
   /** The job source instances built at start, running, disabled or not. Fixed until restart. Valid after start(). */
   jobSources(): BuiltJobSource[];
-  /** The machine source built at start (no machine at all when it cannot run). Valid after start(). */
+  /** The machine source (no machine at all when it cannot run); follows an options change. Valid after start(). */
   machines(): MachineSource;
   /** The usage sources built at start that run. Valid after start(). */
   usageSources(): UsageSource[];
@@ -79,8 +83,12 @@ export interface PluginHost {
   startNotifiers(events: NotifierEvents): void;
   /** Stop every started notifier, awaiting in-flight work. Once; never throws. */
   stopNotifiers(): Promise<void>;
-  /** plugins.yaml `attachedMachines:` as read at start (design.md "Attached machines"). */
+  /** plugins.yaml `attachedMachines:` now: the last good configuration (design.md "Attached machines", issue #18). */
   attachedMachines(): AttachedMachine[];
+  /** GET /api/machines/config. Valid after start(). */
+  machinesConfig(): MachinesConfig;
+  /** A UI edit of `attachedMachines:`; resolves once plugins.yaml is reloaded. */
+  editMachines(e: MachineEdit): Promise<MachineEditOutcome>;
   report(): PluginsReport;
   /** Re-read plugins.yaml now, whatever the mtime; resolves when the router is in place. */
   reload(): Promise<void>;
@@ -131,7 +139,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
   const notifiers: RestartSlot<Built<Notifier>> = {};
   let notifiersStarted = false;
   let notifiersStopped: Promise<void> | undefined;
-  /** Read once at start, like the restart roles: a change takes a restart. */
+  /** plugins.yaml `attachedMachines:`, re-read with every good reload. */
   let attached: AttachedMachine[] | undefined;
   let timer: NodeJS.Timeout | undefined;
   let signature: string | undefined;
@@ -217,13 +225,16 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
       assessor = await buildAssessor(spec.assessor, deps);
       o.logger.info(`job-hopper: assessor ${spec.assessor.name} (${assessor.plugin}${assessor.fallback ? ', fallback' : ''})`);
     }
-    attached ??= (!error && file?.attachedMachines) || [];
+    attached = error ? (attached ?? []) : (file?.attachedMachines ?? []);
     await restart(executors, 'executors', spec.executors, () => buildExecutors(spec.executors, deps));
     await restart(jobSources, 'job sources', spec.jobSources, () => buildJobSources(spec.jobSources, deps));
-    await restart(machines, 'machine source', [spec.machines], async () => [await buildMachine(spec.machines, deps)]);
+    await applyMachineSpec(machines, spec.machines, deps);
     await restart(usageSources, 'usage sources', spec.usageSources, () => buildUsageSources(spec.usageSources, deps));
     await restart(notifiers, 'notifiers', spec.notifiers, () => buildNotifiers(spec.notifiers, deps));
   }
+
+  const liveMachine: MachineSource = { list: () => (machines.built?.[0]?.instance ?? NO_MACHINE).list() };
+  const copyAttached = (): AttachedMachine[] => started(attached).map((m) => ({ ...m, executors: [...m.executors] }));
 
   function started<T>(value: T | undefined): T {
     if (value === undefined) throw new Error('plugin host not started');
@@ -257,6 +268,11 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
     return live;
   };
 
+  const machinesEditor = createMachinesEditor({
+    ...o.attached, pluginsFile: o.pluginsFile, dataDir: o.dataDir, logger: o.logger,
+    configured: () => started(configured), attached: copyAttached, version: fileVersion, error: () => config.error, reload: enqueue,
+  });
+
   const host: PluginHost = {
     async start() {
       await scan();
@@ -278,7 +294,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
     },
     executors: () => [...started(executors.built)],
     jobSources: () => [...started(jobSources.built)],
-    machines: () => started(machines.built)[0]?.instance ?? NO_MACHINE,
+    machines: () => { started(machines.built); return liveMachine; },
     usageSources: () => started(usageSources.built).flatMap((b) => (b.instance ? [b.instance] : [])),
     notifiers: () => started(notifiers.built).flatMap((b) => (b.instance ? [b.instance] : [])),
     startNotifiers(events) {
@@ -291,10 +307,9 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
       notifiersStopped ??= stopNotifiers(started(notifiers.built), o.logger);
       return notifiersStopped;
     },
-    attachedMachines() {
-      if (!attached) throw new Error('plugin host not started');
-      return attached.map((m) => ({ ...m, executors: [...m.executors] }));
-    },
+    attachedMachines: copyAttached,
+    machinesConfig: () => machinesEditor.config(),
+    editMachines: (e) => machinesEditor.edit(e),
     reload: enqueue,
     async edit(e) {
       if (e.action === 'rescan') {

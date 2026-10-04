@@ -27,6 +27,8 @@ export interface Queries {
   getUsageReport(): Promise<UsageReport>;
   /** Each usage source's name and state (when it last read, why it has no readings, its account). */
   getUsageSources(): UsageSourceReport[];
+  /** Jobs that need a machine: on a busy or draining lane there, or waiting for an answer in a pane there (`resumeOn`). */
+  jobsOnMachine(machineId: string): string[];
 }
 
 export function createQueries(c: EngineContext): Queries {
@@ -75,6 +77,11 @@ export function createQueries(c: EngineContext): Queries {
           return { machineId: m.id, label: m.label, online: m.online, maxLanes: m.maxLanes, usedFrac, cap, band };
         }),
       };
+    },
+    jobsOnMachine(machineId) {
+      const onLanes = c.store.lanes.list(machineId).flatMap((l) => (l.state !== 'idle' && l.jobId ? [l.jobId] : []));
+      const parked = c.store.jobs.list({ status: ['waiting_answer'] }).filter((j) => j.resumeOn === machineId).map((j) => j.id);
+      return [...new Set([...onLanes, ...parked])];
     },
   };
 }

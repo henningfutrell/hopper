@@ -56,6 +56,15 @@ const webhooksEditBody = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('rotate-secret'), ...webhookFields }),
   z.strictObject({ action: z.literal('remove'), ...webhookFields }),
 ]);
+const machineName = z.string().trim().min(1).max(64);
+const machineLanes = z.number().int().min(1, 'lanes must be at least 1');
+const machineExecutors = z.array(z.string().min(1));
+// ssh is checked against the detected ssh targets, herdrBin and session are never accepted (strict).
+const machinesEditBody = z.discriminatedUnion('action', [
+  z.strictObject({ action: z.literal('add'), name: machineName, ssh: z.string().min(1), lanes: machineLanes, executors: machineExecutors.optional(), label: z.string().trim().min(1).optional(), version: z.string().min(1) }),
+  z.strictObject({ action: z.literal('edit'), name: machineName, lanes: machineLanes.optional(), executors: machineExecutors.optional(), label: z.string().trim().min(1).nullable().optional(), version: z.string().min(1) }),
+  z.strictObject({ action: z.literal('remove'), name: machineName, version: z.string().min(1) }),
+]);
 const EDIT_STATUS = { invalid: 400, not_found: 404, conflict: 409 } as const;
 
 const refuse = (req: FastifyRequest, reply: FastifyReply, why: string) => {
@@ -147,6 +156,14 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     const r = o.webhooksEditor.edit(parseWith(webhooksEditBody, req.body));
     if (!r.ok) throw new HttpError(EDIT_STATUS[r.code], r.error);
     return { ...webhooksView(o.store, o.webhookConfig), ...(r.secret === undefined ? {} : { secret: r.secret }) };
+  });
+
+  // design.md "Machines from the UI" (issue #18): add, edit or remove one attached machine in
+  // plugins.yaml; applies without a restart. Answers the new GET /api/machines/config.
+  app.post('/ui/api/machines', guarded, async (req) => {
+    const r = await o.plugins.editMachines(parseWith(machinesEditBody, req.body));
+    if (!r.ok) throw new HttpError(EDIT_STATUS[r.code], r.error);
+    return r.config;
   });
 
   // The current login code as a link per LAN name, in the fragment (never sent to a server). It

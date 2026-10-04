@@ -2,7 +2,7 @@
 // these. Adapters live in src/{executors,machines,usage,plugins,store,webhooks}.
 
 import type {
-  Advice, DomainEvent, Decision, EventType, ExecutorUnavailable, Job, JobId, JobSpec, JobStatus, Lane, PluginsEdit, PluginsEditOutcome, PluginsReport, RouterMode, RouterStatus,
+  Advice, DomainEvent, Decision, EventType, ExecutorUnavailable, Job, JobId, JobSpec, JobStatus, Lane, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit, PluginsEditOutcome, PluginsReport, RouterMode, RouterStatus,
   JobSourceRef, LaneId, MachineId, MachineSnapshot, NewEvent, Question, QuestionAttempt, QuestionStatus,
   SourceStatus, UsageReading, UsageSourceState, WebhookDelivery, WebhookSubscription,
 } from './types.ts';
@@ -143,6 +143,10 @@ export interface PluginsView {
   report(): PluginsReport;
   /** A UI edit of plugins.yaml (or a rescan); applied like a file edit before it resolves. */
   edit(e: PluginsEdit): Promise<PluginsEditOutcome>;
+  /** GET /api/machines/config: the machine source, the attached machines, the detected ssh targets. */
+  machinesConfig(): MachinesConfig;
+  /** A UI edit of plugins.yaml `attachedMachines:`; applied (live) before it resolves. */
+  editMachines(e: MachineEdit): Promise<MachineEditOutcome>;
 }
 
 export interface Clock {

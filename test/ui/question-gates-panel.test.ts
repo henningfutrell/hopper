@@ -59,6 +59,8 @@ function fakeDaemon() {
     '/api/webhooks/deliveries': { deliveries: [] },
     '/api/questions': { questions: [] },
     '/api/sources': { sources: [] },
+    '/api/usage': { readings: [], sources: [], limits: { soft: 0.7, hard: 0.95 }, machines: [] },
+    '/api/accounts': { accounts: [] },
     '/api/plugins': PLUGINS,
     '/api/question-gates': GATES,
   };
