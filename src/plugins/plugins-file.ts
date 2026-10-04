@@ -71,6 +71,9 @@ const FILE = z.strictObject({
 }).refine((f) => !f.answerer || !f.assessor || f.answerer.name !== f.assessor.name, {
   message: 'answerer and assessor have the same name; a question stage must say which one holds it',
   path: ['assessor', 'name'],
+}).refine((f) => !f.machines || !f.attachedMachines?.some((m) => m.name === f.machines!.name), {
+  message: 'an attached machine has the machine source\'s name; machine ids are unique',
+  path: ['attachedMachines'],
 });
 
 /** Why a parsed plugins.yaml is refused, or undefined when it is valid. */

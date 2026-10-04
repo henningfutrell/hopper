@@ -163,4 +163,14 @@ describe('plugins.yaml attachedMachines (design.md "Attached machines")', () => 
     expect(r).toHaveProperty('error');
     expect((r as { error: string }).error).toMatch(why);
   });
+
+  it('refuses an attached machine named like the machine source\'s machine (machine ids are unique)', () => {
+    const r = loadPluginsFile(file([
+      'version: 1',
+      'machines: { name: server, plugin: local, options: { lanes: 2 } }',
+      'attachedMachines:',
+      '  - { name: server, ssh: laptop, lanes: 1 }',
+    ].join('\n')));
+    expect((r as { error: string }).error).toMatch(/attached machine has the machine source's name/);
+  });
 });
