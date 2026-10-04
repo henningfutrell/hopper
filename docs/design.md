@@ -47,7 +47,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/routing/` | routing rules: the plugins.yaml `routing:` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
 | `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`); job lifecycle; routing at intake (`source-host.ts`); restart recovery | http |
 | `src/auth/` | sign-in through identity providers (issue #39): `auth.yaml` load (`config.ts`), the role rules (`roles.ts`, pure), the identity provider port (`provider.ts`) and its adapters `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), password sign-in (`password.ts`, argon2), the sign-in flow — flows, tickets, bindings, no sign-in (`index.ts`) | engine, http, store, plugins, decider, questions |
-| `src/secrets/` | the secret box (`box.ts`): seal and unseal under `JOB_HOPPER_SECRET_KEY`, AES-256-GCM through `node:crypto` ("Secrets at rest") | everything but `domain/` |
+| `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets") | everything |
 | `src/update/` | self-update ("Self-update"): install.json, the git mirror of the update repository, the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers | engine, http, plugins, decider |
 | `src/http/` | Fastify routes, SSE, static UI; the UI session, its role check and the sign-in routes (`ui/`) | executors, plugins (reads them through the `PluginsView` port) |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
@@ -290,7 +290,9 @@ subscription marks its pending/retrying deliveries `failed`.
 2xx within 5 s = delivered. Otherwise attempt `n` schedules the next at
 `now + min(base * 2^(n-1), 300 s)`, `base` = 1 s (configurable for tests); after 6 attempts
 the delivery is `failed`. Due deliveries are swept every 500 ms and on enqueue; pending
-deliveries survive a restart. Secrets: generated (32 random bytes hex) if not supplied.
+deliveries survive a restart. The secret comes from the runtime: the variable the subscription's
+`secretEnv` names (or the mounted file `<secretEnv>_FILE` names), read at each delivery ("Secrets").
+None given: nothing is sent, and the delivery retries naming the variable.
 
 ## Construction contract
 
@@ -897,7 +899,7 @@ token and send any `Origin`. Cookies are no better here: they ignore ports, so a
 | POST | `/ui/api/router-mode` | `{ mode }` | set router mode (phase 5; was `/ui/api/jev`) |
 | POST | `/ui/api/plugins` | `{ action, … }` | edit plugins.yaml: one instance's options, select a plugin, add or remove a list role's instance, rescan (phase 5 slice 7, issue #4; "Settled in slice 7") |
 | POST | `/ui/api/rules-file` | `{ text, version }` | replace the rules file whole (issue #18, "Question gates"): 400 over 64 KiB, 409 stale `version` |
-| POST | `/ui/api/webhooks` | `{ action, name, … }` | edit webhooks.yaml: add, edit (url, events, active), rotate-secret, remove one entry; answers `GET /api/webhooks` plus a new `secret` once (issue #18, "Webhook subscriptions in the UI") |
+| POST | `/ui/api/webhooks` | `{ action, name, … }` | edit webhooks.yaml: add (naming a `WEBHOOK_SECRET_*` variable), edit (url, events, active), remove one entry; answers `GET /api/webhooks`, never a secret (issues #18, #56) (issue #18, "Webhook subscriptions in the UI") |
 | POST | `/ui/api/machines` | `{ action, … }` | add, edit or remove one attached machine in plugins.yaml, applied without a restart (issue #18; "Machines from the UI") |
 | POST | `/ui/api/device-link` | `{}` | `{ links }`: the current login code as `http://<LAN name>:<port>/#login=<code>`, one per LAN name; 409 without LAN names ("Reaching the UI across the LAN") |
 | POST | `/ui/api/logout` | `{}` | drop the session |
@@ -2546,22 +2548,24 @@ Owner request: webhook subscriptions can be changed in the UI. Settles 6b.
   slice 7 (a subscription has a store row and deliveries; a notifier has neither).
 - **`POST /ui/api/webhooks`** (session-guarded, "UI session and mutations"), body by `action`,
   each with the file's `version`:
-  `{ action: 'add', name, url, events, active?, version }` ·
-  `{ action: 'edit', name, url?, events?, active?, version }` ·
-  `{ action: 'rotate-secret', name, version }` · `{ action: 'remove', name, version }`.
-  Answers the new `GET /api/webhooks` view; after `add` and `rotate-secret` it adds `secret`.
-  400: body shape (a `secret`, `secretFile` or new name in the body included) or content invalid —
-  the content is checked with webhooks.yaml's own schema, so the messages are the file's
-  (`webhooks.N.url: …`, `must be an event type or "*"`); 404: no such name; 409: stale `version`,
-  `add` of a name already there, `rotate-secret` of a `secretFile` entry, an unparseable or invalid
-  webhooks.yaml (never edited from the UI — fix it by hand).
+  `{ action: 'add', name, url, events, secretEnv, active?, version }` ·
+  `{ action: 'edit', name, url?, events?, active?, version }` · `{ action: 'remove', name, version }`.
+  Answers the new `GET /api/webhooks` view.
+  400: body shape (a `secret`, `secretFile`, an edit's `secretEnv` or a new name in the body
+  included), an add's `secretEnv` outside `WEBHOOK_SECRET_*`, or content invalid — the content is
+  checked with webhooks.yaml's own schema, so the messages are the file's (`webhooks.N.url: …`,
+  `must be an event type or "*"`); 404: no such name; 409: stale `version`, `add` of a name already
+  there, an unparseable or invalid webhooks.yaml (never edited from the UI — fix it by hand).
 - **`name`** is the reconcile key and never changes from the UI; renaming is remove + add.
-- **Secrets.** The daemon makes every secret (32 random bytes, hex) and writes it inline as
-  `secret`. It leaves the daemon once: in the answer to the add or rotate-secret that made it. No
-  GET carries a secret or a `secretFile` path. An entry with `secretFile` keeps that path as written;
-  its other fields are editable, its secret is rotated in that file only (409 says so).
-  `GET /api/webhooks` carries each subscription's `secretSource` (`inline` | `file`, never the
-  path), so the UI offers Rotate secret only for an inline one.
+- **Secrets (issue #56, "Secrets").** The hopper makes, keeps and hands out no secret. An entry names
+  the variable the runtime gives its secret in (`secretEnv`); the operator sets the secret there (a
+  variable, or a mounted file `<secretEnv>_FILE`) and gives it to the subscriber, and rotates it
+  there — read at each delivery, so a rotated file applies at once; a changed variable at the next
+  start. A UI session may name only a `WEBHOOK_SECRET_*` variable, so it cannot point a subscription
+  at another credential the runtime holds (a delivery's HMAC under it); the CLI names any. An
+  entry's `secretEnv` is not edited from the UI (remove + add, or the CLI). `GET /api/webhooks`
+  carries each subscription's `secretEnv` and, when the runtime gives none, `secretProblem`
+  (`WEBHOOK_SECRET_X is not set`) — never a secret.
 - **The write.** Version = sha-256 of the file's bytes, or `missing` (then an add writes
   `version: 1` and the one entry). The change is spliced into the text at the entry's source
   ranges (`yaml` Document API), so comments, spacing and every other entry stay byte for byte; the
@@ -2576,10 +2580,9 @@ Owner request: webhook subscriptions can be changed in the UI. Settles 6b.
 - **UI.** The Webhooks view (`ui/src/views/webhooks.tsx`; model `ui/src/model/webhooks.ts`, tested
   from `test/ui/webhooks.test.ts`): a card per subscription — name, active switch, url, events,
   last delivery — with Edit (url, events picker over every event type and `*`, which stands alone,
-  active), Rotate secret and Remove, each destructive one behind a confirm; an Add subscription
-  form. A new secret is shown once in a dialog with a copy button; where the clipboard API is
-  missing (plain HTTP on a LAN name) the readonly field is selected for the device's own copy. The
-  dialog states the check a subscriber makes (`x-jobhopper-signature`, "Webhooks"). A refused edit
+  active) and Remove, behind a confirm; each card names its secret's variable and says when the
+  runtime does not give it. An Add subscription form, whose secret variable follows the name
+  (`WEBHOOK_SECRET_<NAME>`, `secretEnvFor`) until edited. A refused edit
   re-reads `GET /api/webhooks`, so a stale version is one retry. Vendored `ui/src/components/ui/switch.tsx`.
 
 ### Usage and accounts (issue #18)
@@ -3025,12 +3028,13 @@ from is trusted as the install itself was.
 
 Owner direction: the hopper must not lean on the computer it runs on — config in local files, state
 in a local SQLite file, login codes and secrets on disk, paths in a home directory. Everything the
-daemon keeps is now in one database; its secrets come from its environment; nothing in the code
-names a path on one machine. Operator path: `docs/deploy.md`.
+daemon keeps is now in one database; its secrets come from its runtime ("Secrets", issue #56);
+nothing in the code names a path on one machine. Operator path: `docs/deploy.md`.
 
 ### Database
 
-`JOB_HOPPER_DATABASE_URL`, required (no default: a database is never assumed): `postgres://…`, the
+`JOB_HOPPER_DATABASE_URL` (or the mounted file `JOB_HOPPER_DATABASE_URL_FILE` names: it carries a
+password, "Secrets"), required (no default: a database is never assumed): `postgres://…`, the
 only store (issue #53 — a local SQLite file is no different from a local JSON file; it keeps the
 hopper on one machine). The hopper is given a database; it never creates its own file. TLS to a
 managed Postgres: the driver's `sslmode` in the URL. `JOB_HOPPER_DB` is gone. The URL may name a schema with
@@ -3078,53 +3082,58 @@ default (unset: none).
 
 ### Secrets
 
-Every secret comes from the daemon's environment — systemd's `EnvironmentFile`, a container's
-`env_file`, or whatever secrets manager fills them — and no secret file is read. Plugins ask through
-`PluginContext.env(name)` / `DetectionKit.env(name)` (`AppSeams.env` in tests). The variable is named
-by a command-bearing option, so a UI session cannot redirect a credential:
+**Every secret comes from the runtime (owner direction, issue #56).** The hopper's runtime can never
+be guaranteed, so it is given every secret as an environment variable or a mounted secret file, and
+any secret source can feed it: a container's or orchestrator's secrets, a secrets manager, a service
+manager's credentials. A secret named `NAME` is the variable `NAME`, or the file the variable
+`NAME_FILE` names (`src/secrets/runtime.ts`, `runtimeSecrets`) — the `_FILE` convention container
+images use. Both set: refused, naming both (never a silent choice). The file is read at each use, its
+one trailing newline dropped, so a mounted secret the runtime rotates applies at once; an unreadable
+one is refused, naming the variable. The hopper does not store a secret itself — not in the database,
+not in its own files.
+
+Parts ask through `PluginContext.env(name)` / `DetectionKit.env(name)` (both `runtimeSecrets`;
+`AppSeams.env` in tests). The variable is named by a command-bearing option, so a UI session cannot
+redirect a credential:
 
 | part | option (default) | was |
 |------|------------------|-----|
+| database | `JOB_HOPPER_DATABASE_URL` (it carries the password; also `_FILE`) | — |
 | github-app source | `privateKeyEnv` (`GITHUB_APP_PRIVATE_KEY`; a PEM, real newlines or `\n` escapes) + `appId`, `slug` options | `appFile` → github-app.json + .pem |
 | github-gh source | `appKeyEnv` (`GITHUB_APP_PRIVATE_KEY`; null: never pause): `enabled: auto` pauses while it is set | `appFile` readable |
 | grokbot-routine notifier | `urlEnv`, `keyEnv` (`GROKBOT_WEBHOOK_URL`, `GROKBOT_WEBHOOK_KEY`) | `envFile` |
 | jev-router | `TYPESAFE_API_KEY` | `typesafeKeyFile` |
-| webhook subscription | `secretEnv` (rotate-secret refused for it) | `secretFile` |
+| webhook subscription | `secretEnv`, always (from the UI: `WEBHOOK_SECRET_*` only) | inline `secret` (sealed), `secretFile` |
 | identity provider (auth.yaml) | `clientSecretEnv` only; a SAML `idpCert` is public and inline | `clientSecret`, `clientSecretFile`, `idpCertFile` |
 
 The App's bot is `<slug>[bot]`, its page `https://github.com/apps/<slug>`. `create-github-app.sh`
 writes the key (and webhook secret) as lines of an env file (`--secrets-file`, default the host
-unit's `daemon.env`) and prints the `appId` and `slug` to set. What the hopper keeps itself rather
-than is given is stored sealed or hashed ("Secrets at rest"). The gh and claude CLIs sign in from their own variables (`GH_TOKEN`,
-`CLAUDE_CODE_OAUTH_TOKEN`) where their login state is not on the machine.
+unit's `daemon.env`) and prints the `appId` and `slug` to set. The gh and claude CLIs sign in from their own variables (`GH_TOKEN`,
+`CLAUDE_CODE_OAUTH_TOKEN`) where their login state is not on the machine; they read those
+themselves, so no `_FILE` form for them.
 
-### Secrets at rest (issue #53)
-
-Owner requirement: secrets and all other sensitive data are stored securely. The database is a
-service of its own (backups, dumps, an operator with `psql`), so nothing in it is a usable
-credential in clear:
+**What the hopper keeps is no secret** (issue #56 replaces issue #53's sealing):
 
 | kept | how |
 |------|-----|
-| a webhook subscription's secret (generated by the UI, or written inline by hand) | **sealed**: AES-256-GCM under `JOB_HOPPER_SECRET_KEY` (`src/secrets/box.ts`, `node:crypto`), `sealed:v1:<base64url nonce‖tag‖ciphertext>`, a fresh nonce each time — in the `webhooks.yaml` document and in the `webhooks` table alike; a `secretEnv` secret is sealed in the table too |
-| UI session tokens, login codes | SHA-256 only (32 random bytes: no dictionary to try) |
-| password sign-in passwords | argon2id hashes in `auth.yaml` ("Sign-in") |
-| credentials the hopper is given (GitHub App key, Grok Bot, TypeSafe, client secrets, the database URL) | the environment only ("Secrets" above), never the database |
+| a webhook subscription | its `secretEnv`, a variable's name — in the `webhooks.yaml` document and the `webhooks` table (`secret_env`, migration 11, which dropped the sealed `secret` column) |
+| UI session tokens, login codes | SHA-256 only (32 random bytes: no dictionary to try) — the hopper's own short-lived state; a hash is not a usable credential |
+| password sign-in passwords | argon2id hashes in `auth.yaml` ("Sign-in") — a verifier the operator writes, not a credential |
 
-`JOB_HOPPER_SECRET_KEY` (32 bytes, base64) is required: a missing or malformed key stops the daemon
-before the store opens. `install.sh` writes one into `daemon.env` when there is none and never
-replaces it. A secret written in clear (`job-hopper config set webhooks.yaml`, an old document) is
-sealed in place by the next load, byte for byte otherwise; the clear value is used meanwhile.
-Migration 10 blanks a clear secret left in the `webhooks` table (a projection of the document, which
-re-seals it at load). The UI hands a new secret out once, in clear, as before. A delivery signs with
-the unsealed secret; one that will not unseal (a changed key, a blanked row) fails that delivery and
-retries, naming the key. No key rotation: a new key means rotating each inline secret in the UI.
-Deliberately not encrypted: job bodies, events, questions (prompts and answers, the hopper's working
-data, read by every UI view) and identities in sessions (needed to reconcile roles).
+`JOB_HOPPER_SECRET_KEY`, the secret box (`src/secrets/box.ts`) and the UI's rotate-secret are gone:
+with no secret to keep there is nothing to seal. A leftover `JOB_HOPPER_SECRET_KEY` is a leftover
+variable (boot warning; delete the line). A `webhooks.yaml` entry with an inline `secret` — sealed or
+clear, from before — is refused at load with what to do (put the secret in the runtime, name it with
+`secretEnv`); the document is left as it is, never rewritten, so nothing is lost silently. The one
+install there was had no subscription when this landed.
 
-**Residual risk, stated.** The key sits beside the database URL in the same environment, so whoever
-holds the hopper's environment holds both; sealing protects the database's own copies (backups,
-dumps, a read-only role), not the running process. Keep the key out of the backups it protects.
+**systemd credentials.** `LoadCredential=<name>:<path>` (or `LoadCredentialEncrypted=`) in a drop-in
+for `job-hopper.service`, with `Environment=<NAME>_FILE=%d/<name>`: the secret never sits in
+`daemon.env`.
+
+**Residual risk, stated.** Whoever holds the hopper's runtime holds its secrets, and a job on the
+hopper host runs as the daemon's user (it can read `daemon.env` or a readable mounted file). The
+database and its backups hold no secret; the database URL is the one credential that opens it.
 
 ### Login codes
 
@@ -3171,7 +3180,8 @@ has it (`git log -- src/migrate/local.ts`).
 ### Deploy recipes
 
 - **This host** (`scripts/install.sh`, systemd `--user`): `daemon.env` (the unit's EnvironmentFile,
-  now required) holds `JOB_HOPPER_DATABASE_URL` and the secrets; install.sh refuses to finish without
+  now required) holds `JOB_HOPPER_DATABASE_URL` (or `JOB_HOPPER_DATABASE_URL_FILE`) and the secrets,
+  or names their mounted files; install.sh refuses to finish without
   the database and says how to set it. Postgres from `deploy/compose.yaml` (`up -d postgres`,
   published on loopback), or any Postgres the host can reach.
 - **A container** (`Dockerfile`, `deploy/compose.yaml` profile `container`): node 26, git, ssh,
