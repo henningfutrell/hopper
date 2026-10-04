@@ -23,6 +23,7 @@ if (cmd === 'workspace list') out({ result: { type: 'workspace_list', workspaces
 else if (cmd.startsWith('workspace create')) out({ result: { type: 'workspace_created', workspace: { workspace_id: 'w9', label: 'job-hopper' }, tab: { tab_id: 'w9:t1' }, root_pane: { pane_id: 'w9:p1' } } });
 else if (cmd.startsWith('tab create')) out({ result: { type: 'tab_created', tab: { tab_id: 'w7:t3' }, root_pane: { pane_id: 'w7:p5' } } });
 else if (cmd.startsWith('agent start jh-blocked')) fail('agent_not_ready', 'agent jh-blocked is blocked during startup and is not ready for prompts');
+else if (cmd.startsWith('agent start jh-busy')) fail('agent_pane_busy', 'agent target pane w7:p5 is not an available shell');
 else if (cmd.startsWith('agent start jh-boom')) fail('pane_not_found', 'pane w7:p404 not found');
 else if (cmd.startsWith('agent start')) out({ result: { type: 'agent_started' } });
 else if (cmd === 'agent get jh-gone') fail('agent_not_found', 'agent target jh-gone not found');
