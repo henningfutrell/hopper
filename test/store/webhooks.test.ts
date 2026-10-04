@@ -3,7 +3,7 @@ import type { DomainEvent } from '../../src/domain/types.ts';
 import { fixedClock, useTempStore } from './helpers.ts';
 
 const t = useTempStore();
-const input = { name: 'hook', url: 'http://127.0.0.1:9/h', events: ['*'], secret: 's3', active: true };
+const input = { name: 'hook', url: 'http://127.0.0.1:9/h', events: ['*'], secretEnv: 'S3', active: true };
 
 describe('webhook subscriptions', () => {
   it('creates active, gets, lists, deletes', () => {
@@ -25,8 +25,8 @@ describe('webhook upsertByName', () => {
     const s = t.open(t.url());
     const a = s.webhooks.upsertByName(input);
     expect(a).toMatchObject({ ...input, createdAt: '2026-10-02T10:00:00.000Z' });
-    const b = s.webhooks.upsertByName({ ...input, url: 'http://127.0.0.1:9/new', secret: 'z', active: false });
-    expect(b).toMatchObject({ id: a.id, name: 'hook', url: 'http://127.0.0.1:9/new', secret: 'z', active: false });
+    const b = s.webhooks.upsertByName({ ...input, url: 'http://127.0.0.1:9/new', secretEnv: 'Z', active: false });
+    expect(b).toMatchObject({ id: a.id, name: 'hook', url: 'http://127.0.0.1:9/new', secretEnv: 'Z', active: false });
     const c = s.webhooks.upsertByName({ ...input, name: 'second' });
     expect(c.id).not.toBe(a.id);
     expect(s.webhooks.list()).toEqual([b, c]);

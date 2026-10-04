@@ -29,7 +29,7 @@ describe('openStore', () => {
     let n = 0;
     const s = openStore({ url: t.url(), clock: fixedClock(), idGen: () => `id-${++n}` });
     expect(s.jobs.create({ executor: 'x', payload: {} }, 5).id).toBe('id-1');
-    expect(s.webhooks.upsertByName({ name: 'n', url: 'u', events: [], secret: 's', active: true }).id).toBe('id-2');
+    expect(s.webhooks.upsertByName({ name: 'n', url: 'u', events: [], secretEnv: 'S', active: true }).id).toBe('id-2');
     expect(s.events.append({ type: 'job.queued', data: {} }).id).toBe('id-3');
     s.close();
   });

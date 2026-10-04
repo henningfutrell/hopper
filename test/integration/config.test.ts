@@ -1,10 +1,10 @@
+import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { loadConfig } from '../../src/config.ts';
 
-const KEY = Buffer.alloc(32, 1).toString('base64');
-const DB = { JOB_HOPPER_DATABASE_URL: 'postgres://u:p@db:5432/jh', JOB_HOPPER_SECRET_KEY: KEY };
+const DB = { JOB_HOPPER_DATABASE_URL: 'postgres://u:p@db:5432/jh' };
 
 describe('configuration from env: process settings only (phase 5 slice 4)', () => {
   it('JOB_HOPPER_DATABASE_URL is required: no database is assumed on this machine', () => {
@@ -14,9 +14,17 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
     expect(() => loadConfig({ JOB_HOPPER_DATABASE_URL: 'sqlite:/var/lib/db.sqlite' })).toThrow(/JOB_HOPPER_DATABASE_URL: must be postgres:/);
   });
 
-  it('JOB_HOPPER_SECRET_KEY is required: 32 bytes, base64 — the key stored secrets are sealed under (issue #53)', () => {
-    expect(() => loadConfig({ JOB_HOPPER_DATABASE_URL: DB.JOB_HOPPER_DATABASE_URL })).toThrow(/JOB_HOPPER_SECRET_KEY: required/);
-    expect(() => loadConfig({ ...DB, JOB_HOPPER_SECRET_KEY: 'short' })).toThrow(/JOB_HOPPER_SECRET_KEY: .*32 bytes/);
+  it('the database URL (it carries the password) may come from a mounted secret file: JOB_HOPPER_DATABASE_URL_FILE (issue #56)', () => {
+    const file = join(mkdtempSync(join(tmpdir(), 'jh-db-url-')), 'url');
+    writeFileSync(file, 'postgres://u:from-file@db:5432/jh\n', { mode: 0o600 });
+    const c = loadConfig({ JOB_HOPPER_DATABASE_URL_FILE: file });
+    expect(c.databaseUrl).toBe('postgres://u:from-file@db:5432/jh');
+    expect(c.leftoverEnv).toEqual({});
+    expect(() => loadConfig({ ...DB, JOB_HOPPER_DATABASE_URL_FILE: file })).toThrow(/JOB_HOPPER_DATABASE_URL and JOB_HOPPER_DATABASE_URL_FILE are both set/);
+  });
+
+  it('JOB_HOPPER_SECRET_KEY is no longer read: the hopper seals nothing, it keeps no secret (issue #56)', () => {
+    expect(loadConfig({ ...DB, JOB_HOPPER_SECRET_KEY: 'k' }).leftoverEnv).toEqual({ JOB_HOPPER_SECRET_KEY: 'k' });
   });
 
   it('JOB_HOPPER_DB is no longer read: it is a leftover variable', () => {
@@ -29,7 +37,6 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
       host: '127.0.0.1',
       port: 4790,
       databaseUrl: 'postgres://u:p@db:5432/jh',
-      secretKey: KEY,
       workDir: join(tmpdir(), 'job-hopper'),
       tickMs: 2000,
       routerMode: 'shadow',
@@ -55,7 +62,7 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
 
   it('reads every process setting; paths are taken as given', () => {
     const c = loadConfig({
-      JOB_HOPPER_PORT: '0', JOB_HOPPER_DATABASE_URL: 'postgres://jh:pw@db:5432/jh', JOB_HOPPER_SECRET_KEY: KEY, JOB_HOPPER_WORK_DIR: '/var/tmp/jh', JOB_HOPPER_TICK_MS: '50',
+      JOB_HOPPER_PORT: '0', JOB_HOPPER_DATABASE_URL: 'postgres://jh:pw@db:5432/jh', JOB_HOPPER_WORK_DIR: '/var/tmp/jh', JOB_HOPPER_TICK_MS: '50',
       JOB_HOPPER_ROUTER_MODE: 'active', JOB_HOPPER_SOFT_LIMIT: '0.5', JOB_HOPPER_HARD_LIMIT: '0.9', JOB_HOPPER_ROUTER_CHEAP_BOOST: '5',
       JOB_HOPPER_WEBHOOK_BASE_MS: '20', JOB_HOPPER_LANE_IDLE_GRACE_MS: '100', JOB_HOPPER_ANSWER_TIMEOUT_MS: '1000',
       JOB_HOPPER_HUMAN_RENOTIFY_MS: '10', JOB_HOPPER_HUMAN_TIMEOUT_MS: '20',
@@ -65,7 +72,7 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
       JOB_HOPPER_UPDATE_CHECK_MS: '0', JOB_HOPPER_RESTART: 'respawn',
     });
     expect(c).toEqual({
-      host: '::', port: 0, databaseUrl: 'postgres://jh:pw@db:5432/jh', secretKey: KEY, workDir: '/var/tmp/jh', tickMs: 50, routerMode: 'active',
+      host: '::', port: 0, databaseUrl: 'postgres://jh:pw@db:5432/jh', workDir: '/var/tmp/jh', tickMs: 50, routerMode: 'active',
       softLimit: 0.5, hardLimit: 0.9, routerCheapBoost: 5, webhookBaseMs: 20, laneIdleGraceMs: 100, answerTimeoutMs: 1000,
       humanRenotifyMs: 10, humanTimeoutMs: 20, resumeBoost: 7, maxQuestions: 1, keepPanes: true,
       uiSessionHours: 1.5, pluginDir: '/srv/p', publicUrl: 'https://hopper.example.com',

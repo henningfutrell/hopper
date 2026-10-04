@@ -4,7 +4,6 @@
 import { execFileSync } from 'node:child_process';
 import { userInfo, homedir } from 'node:os';
 import { describe, expect, it } from 'vitest';
-import { TEST_SECRET_KEY } from './support/secret-key.ts';
 import { loadConfig } from '../src/config.ts';
 import { expandHome } from '../src/plugins/expand-home.ts';
 import { builtinInstances } from '../src/plugins/builtin-instances.ts';
@@ -17,7 +16,7 @@ describe('test isolation', () => {
   it('HOME is not the real home, so every ~/ default resolves to a throwaway dir', () => {
     if (process.env.JOB_HOPPER_REAL_HERDR === '1') return; // opt-in real test: Claude needs the real login
     expect(homedir()).not.toBe(REAL_HOME);
-    const c = loadConfig({ JOB_HOPPER_DATABASE_URL: 'postgres://u:p@db:5432/jh', JOB_HOPPER_SECRET_KEY: TEST_SECRET_KEY });
+    const c = loadConfig({ JOB_HOPPER_DATABASE_URL: 'postgres://u:p@db:5432/jh'});
     // Every path default: herdr-claude's cwd and the config's own paths.
     const parsed = parseOptions(herdrClaude, {});
     const cwd = expandHome(String(parsed.ok ? parsed.options.cwd : ''));

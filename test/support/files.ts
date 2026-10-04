@@ -5,7 +5,7 @@ import type { ConfigDocumentName } from '../../src/domain/ports.ts';
 import { openStore } from '../../src/store/index.ts';
 import { databaseUrlFor } from './database.ts';
 
-export interface WebhookEntry { name: string; url: string; events: string[]; secret?: string; secretEnv?: string; active?: boolean }
+export interface WebhookEntry { name: string; url: string; events: string[]; secretEnv: string; active?: boolean }
 
 /** Replace a document in the database of `dbPath` (whatever version it is at). `doc`: text, or a value written as YAML. */
 export function writeDocument(dbPath: string, name: ConfigDocumentName, doc: unknown): void {

@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createWebhookDispatcher, verify } from '../../src/webhooks/index.ts';
 import type { WebhookDelivery } from '../../src/domain/types.ts';
-import { testBox } from '../support/secret-key.ts';
 import { createFakeStore, type FakeStore } from './fakeStore.ts';
 import { startReceiver, type Receiver, type Responder } from './receiver.ts';
 
@@ -27,9 +26,13 @@ afterEach(async () => {
   receiver = undefined;
 });
 
+/** The runtime's secrets (issue #56): what the dispatcher reads a subscription's secret from, at each delivery. */
+let secrets: Record<string, string>;
+
 function setup(responder: Responder, o: { timeoutMs?: number; maxAttempts?: number } = {}) {
   fake = createFakeStore();
-  const dispatcher = createWebhookDispatcher({ store: fake.store, clock, box: testBox(), baseMs: 20, sweepMs: 10, ...o });
+  secrets = { HOOK_SECRET: 'shh' };
+  const dispatcher = createWebhookDispatcher({ store: fake.store, clock, secret: (name) => secrets[name], baseMs: 20, sweepMs: 10, ...o });
   const updates: WebhookDelivery[] = [];
   dispatcher.onDeliveryUpdated((d) => updates.push(d));
   stopFn = () => dispatcher.stop();
@@ -40,7 +43,8 @@ describe('webhook dispatcher', () => {
   it('POSTs a signed event with the contract headers', async () => {
     const s = setup(ok);
     receiver = await s.receiverP;
-    fake.subscribe({ url: receiver.url, events: ['*'], secret: testBox().seal('topsecret') });
+    secrets.TOP = 'topsecret';
+    fake.subscribe({ url: receiver.url, events: ['*'], secretEnv: 'TOP' });
     s.dispatcher.start();
     const ev = fake.append('job.queued', { x: 1 });
     await until(() => fake.deliveries()[0]?.status === 'delivered');
@@ -122,6 +126,32 @@ describe('webhook dispatcher', () => {
     expect(fake.deliveries()[0]!.attempts).toBe(2);
     expect(receiver.maxActive()).toBe(1);
     expect(s.updates.find((u) => u.status === 'retrying')!.lastError).toBeTruthy();
+  });
+
+  it('reads the secret at each delivery: a secret the runtime rotates signs the next delivery', async () => {
+    const s = setup(ok);
+    receiver = await s.receiverP;
+    fake.subscribe({ url: receiver.url, events: ['*'] });
+    s.dispatcher.start();
+    fake.append('job.queued');
+    await until(() => fake.deliveries()[0]?.status === 'delivered');
+    secrets.HOOK_SECRET = 'rotated';
+    fake.append('job.finished');
+    await until(() => fake.deliveries()[1]?.status === 'delivered');
+    const [a, b] = receiver.received;
+    expect(verify('shh', a!.headers['x-jobhopper-timestamp'] as string, a!.body, a!.headers['x-jobhopper-signature'] as string)).toBe(true);
+    expect(verify('rotated', b!.headers['x-jobhopper-timestamp'] as string, b!.body, b!.headers['x-jobhopper-signature'] as string)).toBe(true);
+  });
+
+  it('a secret the runtime does not provide: nothing is sent; the delivery retries, naming the variable', async () => {
+    const s = setup(ok);
+    receiver = await s.receiverP;
+    fake.subscribe({ url: receiver.url, events: ['*'], secretEnv: 'UNSET_SECRET' });
+    s.dispatcher.start();
+    fake.append('job.queued');
+    await until(() => fake.deliveries()[0]?.status === 'retrying');
+    expect(fake.deliveries()[0]!.lastError).toContain('UNSET_SECRET is not set');
+    expect(receiver.received).toHaveLength(0);
   });
 
   it('stop() unsubscribes and halts sending', async () => {

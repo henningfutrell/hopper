@@ -43,6 +43,17 @@ describe('job-hopper config', () => {
     expect(r.err).toMatch(/JOB_HOPPER_DATABASE_URL is not set/);
   });
 
+  it('reads the database URL from a mounted secret file, JOB_HOPPER_DATABASE_URL_FILE (issue #56)', () => {
+    const url = db();
+    const d = mkdtempSync(`${tmpdir()}/jh-cli-url-`);
+    dirs.push(d);
+    writeFileSync(`${d}/url`, `${url}\n`, { mode: 0o600 });
+    const out: string[] = [];
+    const code = runCli(['config', 'version', 'rules.md'], { env: { JOB_HOPPER_DATABASE_URL_FILE: `${d}/url` }, stdin: () => '', out: (t) => out.push(t), err: () => {} });
+    expect(code).toBe(0);
+    expect(out.join('')).toBe('missing\n');
+  });
+
   it('refuses an unknown document or command', () => {
     expect(cli(db(), ['config', 'get', 'sources.yaml']).err).toMatch(/unknown document sources.yaml; one of plugins.yaml, webhooks.yaml, rules.md/);
     expect(cli(db(), ['deploy']).code).toBe(2);
