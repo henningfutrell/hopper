@@ -8,7 +8,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Empty, Panel } from '@/components/panel';
-import { FIELD, InstanceForm, sendPluginsEdit } from '@/components/plugin-form';
+import { FIELD, InstanceForm, pluginEditsUnsaved, sendPluginsEdit } from '@/components/plugin-form';
 import { StatusBadge } from '@/components/status';
 import { post, SessionRejected } from '@/lib/api';
 import {
@@ -236,6 +236,12 @@ export function Routing() {
   const report = useHopper((s) => s.plugins);
   const error = useHopper((s) => s.pluginsError);
   const [busy, setBusy] = useState(false);
+  // This view may be the first one opened: it loads the plugins report, and refreshes it while no form holds unsaved edits.
+  useEffect(() => {
+    void refreshPlugins();
+    const t = setInterval(() => { if (!pluginEditsUnsaved()) void refreshPlugins(); }, REFRESH_MS);
+    return () => clearInterval(t);
+  }, []);
   if (!report) return <Panel title="Routing" icon={Route}><Empty>{error ?? 'loading…'}</Empty></Panel>;
   const send = async (edit: PluginsEdit, done: string) => { setBusy(true); try { return await sendPluginsEdit(edit, done); } finally { setBusy(false); } };
   const ctx: PluginCtx = { report, authed, busy, send };
