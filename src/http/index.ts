@@ -2,6 +2,7 @@
 // mutate (design.md "Phase 3"). Loopback, plus the LAN names when set; every request passes the
 // Host guard (AGENTS.md).
 import Fastify, { type FastifyInstance } from 'fastify';
+import type { SignIn } from '../auth/index.ts';
 import type { Clock, PluginsView, QuestionService, SourceRegistry, Store, WebhookDispatcher } from '../domain/ports.ts';
 import type { Engine } from '../engine/index.ts';
 import type { WebhookConfigView } from './webhooks.ts';
@@ -41,6 +42,8 @@ export interface ServerOptions {
   /** Where the UI login code file lives. */
   dataDir: string;
   sessionHours: number;
+  /** auth.yaml as loaded: local sign-in and the identity providers. */
+  signIn: SignIn;
   /** The LAN names and peers (design.md "Reaching the UI across the LAN"); empty: loopback only. */
   lan: Lan;
   /** The built UI bundle (ui/dist). */
@@ -53,6 +56,9 @@ export function createServer(o: ServerOptions): FastifyInstance {
   const app = Fastify({ logger: o.logger ?? false, forceCloseConnections: true });
   installErrorHandling(app);
   const sessions = createUiSessions({ repo: o.store.uiSessions, clock: o.clock, hours: o.sessionHours });
+  // auth.yaml may have changed since the sessions were made: a removed provider or rule ends them.
+  const r = sessions.reconcile(o.signIn.roleOf);
+  if (r.dropped + r.changed > 0) console.warn(`job-hopper: auth.yaml applied to stored UI sessions: ${r.dropped} ended, ${r.changed} changed role`);
   installHostGuard(app, { port: o.port, lan: o.lan, sessions });
   jobRoutes(app, o);
   stateRoutes(app, o);
@@ -64,7 +70,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   sseRoutes(app, o);
   staticRoutes(app, o.uiDir);
   registerUiRoutes(app, {
-    engine: o.engine, questions: o.questions, sessions, plugins: o.plugins, rulesFile: o.rulesFile, port: o.port, lan: o.lan, dataDir: o.dataDir,
+    engine: o.engine, questions: o.questions, sessions, signIn: o.signIn, plugins: o.plugins, rulesFile: o.rulesFile, port: o.port, lan: o.lan, dataDir: o.dataDir,
     store: o.store, webhookConfig: o.webhookConfig, webhooksEditor: o.webhooksEditor,
   });
   return app;

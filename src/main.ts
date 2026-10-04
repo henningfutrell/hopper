@@ -12,6 +12,7 @@ import { createEngine, type Engine } from './engine/index.ts';
 import { createExecutorRegistry } from './executors/index.ts';
 import type { HerdrClient } from './executors/herdr/index.ts';
 import { createServer } from './http/index.ts';
+import { createSignIn, loadAuthFile } from './auth/index.ts';
 import { combineMachineSources, createAttachedMachines, probeHerdrOverSsh } from './machines/index.ts';
 import { BUILTIN_PLUGINS } from './plugins/builtin.ts';
 import { herdrClaudePlugin } from './plugins/executor/herdr-claude/index.ts';
@@ -137,6 +138,8 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   const ensured = ensurePluginsFile({ pluginsFile: config.pluginsFile, env: config.leftoverEnv, answerTimeoutMs: config.answerTimeoutMs, logger });
   const staleSources = join(dirname(config.pluginsFile), 'sources.yaml');
   if (ensured.action === 'kept' && existsSync(staleSources)) console.warn(`job-hopper: WARNING: ${staleSources} is no longer read; plugins.yaml jobSources configures the job sources`);
+  // Before anything starts: an invalid auth.yaml stops the daemon (sign-in fails closed).
+  const auth = loadAuthFile(config.authFile);
   const store = openStore({ path: config.dbPath, clock });
   const dataDir = dirname(config.dbPath);
   const routerMode = () => store.settings.getRouterMode() ?? config.routerMode;
@@ -212,10 +215,12 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   const webhookConfig = createWebhookConfigWatcher({
     path: config.webhooksFile, store, clock, intervalMs: seams.webhookConfigIntervalMs ?? WEBHOOKS_FILE_CHECK_MS,
   });
+  const signIn = createSignIn({ config: auth, clock, origin: () => config.publicUrl ?? `http://localhost:${port}` });
   const server = createServer({
     engine, store, dispatcher, questions, clock, version: VERSION, sources: registry, webhookConfig, plugins,
     webhooksEditor: createWebhooksEditor({ path: config.webhooksFile, reload: webhookConfig.reload }),
-    port: () => port, rulesFile: config.rulesFile, dataDir, sessionHours: config.uiSessionHours, lan: { names: config.lanNames, peers: config.lanPeers }, uiDir: seams.uiDir ?? UI_DIR,
+    port: () => port, rulesFile: config.rulesFile, dataDir, sessionHours: config.uiSessionHours, signIn,
+    lan: { names: config.lanNames, peers: config.lanPeers, publicUrl: config.publicUrl }, uiDir: seams.uiDir ?? UI_DIR,
   });
 
   webhookConfig.start();
@@ -268,7 +273,11 @@ async function main(): Promise<void> {
   const lan = app.config.lanNames.length ? ` and ${app.config.lanNames.map((n) => `http://${n}:${new URL(app.url).port}`).join(', ')} (LAN peers ${app.config.lanPeers.join(', ')})` : '';
   console.log(`job-hopper listening on ${app.url}${lan} (router ${r.name} [${r.plugin}${r.fallback ? ', fallback' : ''}] ${app.routerMode()}, executors ${app.engine.executorNames.join(',') || 'none'}${unavailableNote(app.plugins)}, ${q})`);
   for (const s of app.sources.statuses()) console.log(`job-hopper: source ${s.name} (${s.kind}) ${s.state}`);
-  console.log('job-hopper: UI login code written; open the UI with: bash ~/.local/lib/job-hopper/scripts/open-ui.sh');
+  const auth = loadAuthFile(app.config.authFile);
+  if (app.config.publicUrl) console.log(`job-hopper: public URL ${app.config.publicUrl} (sign-in origin)`);
+  if (auth.providers.length) console.log(`job-hopper: sign-in with ${auth.providers.map((p) => `${p.name} (${p.type})`).join(', ')}`);
+  if (auth.local.enabled) console.log('job-hopper: UI login code written; open the UI with: bash ~/.local/lib/job-hopper/scripts/open-ui.sh');
+  else console.log('job-hopper: local sign-in is off (auth.yaml)');
   const shutdown = (signal: string): void => {
     console.log(`job-hopper: ${signal}, shutting down`);
     app.stop().then(() => process.exit(0), (e) => {

@@ -432,3 +432,8 @@ export type * from './plugins.ts';
 // ---- Question gates: src/domain/question-gates.ts (re-exported here) -------------------
 
 export type { QuestionGatesView, RiskRuleView, RulesFileView } from './question-gates.ts';
+
+// ---- Sign-in: src/domain/sign-in.ts (re-exported here) ------------------------------------
+
+export type { Identity, IdentityProviderType, SessionUser, SessionView, SignInProviderView, UiRole } from './sign-in.ts';
+export { UI_ROLES, roleAllows } from './sign-in.ts';

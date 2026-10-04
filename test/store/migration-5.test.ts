@@ -25,7 +25,7 @@ describe('migration 5 (a source key may have many jobs)', () => {
     s.close();
 
     const after = new DatabaseSync(path);
-    expect(after.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 6 });
+    expect(after.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 7 });
     after.close();
   });
 });
