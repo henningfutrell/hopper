@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Decision, Job, Lane } from '../../src/domain/types.ts';
-import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
+import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { waitFor } from '../support/wait.ts';
 
 let t: TestApp;
@@ -9,7 +9,7 @@ let cleanup: () => void;
 beforeEach(async () => {
   const db = tempDbPath();
   cleanup = db.cleanup;
-  t = await startTestApp({ dbPath: db.dbPath, env: { JOB_HOPPER_LOCAL_LANES: '2' } });
+  t = await startTestApp({ dbPath: db.dbPath, plugins: { machines: lanes(2) } });
 });
 afterEach(async () => {
   await t.stop();

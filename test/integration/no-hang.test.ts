@@ -7,7 +7,7 @@ import type { AnswerDraft, SourceItem } from '../../src/domain/ports.ts';
 import type { Decision, DomainEvent, Job, Question } from '../../src/domain/types.ts';
 import { createFakeHerdrClient } from '../../src/executors/herdr/index.ts';
 import { createFakeAnswerer, createFakeAssessor } from '../../src/questions/index.ts';
-import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
+import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { manualItem } from '../support/manual-source.ts';
 import { waitFor } from '../support/wait.ts';
 
@@ -16,10 +16,10 @@ let cleanup: (() => void) | undefined;
 
 const NO_TICK = { JOB_HOPPER_TICK_MS: '600000' };
 
-async function start(env: Record<string, string>, o: Omit<Parameters<typeof startTestApp>[0], 'dbPath' | 'env'> = {}): Promise<TestApp> {
+async function start(laneCount: number, o: Omit<Parameters<typeof startTestApp>[0], 'dbPath' | 'env'> = {}): Promise<TestApp> {
   const db = tempDbPath();
   cleanup = db.cleanup;
-  t = await startTestApp({ dbPath: db.dbPath, env: { ...NO_TICK, ...env }, ...o });
+  t = await startTestApp({ dbPath: db.dbPath, env: NO_TICK, ...o, plugins: { machines: lanes(laneCount), ...(o.plugins || {}) } });
   return t;
 }
 
@@ -58,7 +58,7 @@ function heldAnswerer() {
 
 describe('everything runs in parallel', () => {
   it('N free lanes and N queued jobs: one Decision claims all N, and all N run at once', async () => {
-    const a = await start({ JOB_HOPPER_LOCAL_LANES: '4' });
+    const a = await start(4);
     const jobs = await pullAll(a, [1, 2, 3, 4].map(() => ({ op: 'sleep', ms: 3000 })));
     await waitFor(() => a.scripted.payloads.length === 4, { what: '4 executors started' });
     expect((await ofType(a, 'job.started')).map((e) => e.jobId).sort()).toEqual(jobs.map((j) => j.id).sort());
@@ -70,7 +70,7 @@ describe('everything runs in parallel', () => {
   });
 
   it('more queued than lanes: every lane fills; the rest are held for lanes alone', async () => {
-    const a = await start({ JOB_HOPPER_LOCAL_LANES: '2' });
+    const a = await start(2);
     const jobs = await pullAll(a, [1, 2, 3].map(() => ({ op: 'sleep', ms: 3000 })));
     await waitFor(async () => (await a.api<{ running: Job[] }>('GET', '/api/queue')).body.running.length === 2, { what: '2 running' });
     const third = await waitFor(async () => { const j = await a.job(jobs[2]!.id); return j.status === 'held' ? j : undefined; });
@@ -81,7 +81,7 @@ describe('everything runs in parallel', () => {
 describe('a question frees its lane at once', () => {
   it('the parked job\'s lane goes to the next queued job in the Decision the question woke', async () => {
     const held = heldAnswerer();
-    const a = await start({ JOB_HOPPER_LOCAL_LANES: '1' }, { seams: { answerer: held.answerer } });
+    const a = await start(1, { seams: { answerer: held.answerer } });
     const [asker, next] = await pullAll(a, [{ op: 'ask', message: 'Which colour?', ms: 100 }, { op: 'sleep', ms: 3000 }]);
     await waitFor(async () => (await a.job(next!.id)).status === 'running', { what: 'next job running', timeoutMs: 3000 });
     expect((await a.job(asker!.id)).status).toBe('waiting_answer');
@@ -101,8 +101,8 @@ describe('a herdr-claude question frees its lane at once', () => {
     });
     const held = heldAnswerer();
     const a = await start(
-      { JOB_HOPPER_LOCAL_LANES: '1', JOB_HOPPER_EXECUTORS: 'test,herdr-claude', JOB_HOPPER_HERDR_POLL_MS: '10', JOB_HOPPER_IDLE_QUESTION_MS: '5000' },
-      { seams: { herdr, answerer: held.answerer } },
+      1,
+      { seams: { herdr, answerer: held.answerer }, plugins: { executors: [{ name: 'test', plugin: 'test' }, { name: 'herdr-claude', plugin: 'herdr-claude', options: { pollMs: 10, idleQuestionMs: 5000 } }] } },
     );
     const herdrItem = (prompt: string) => ({ executor: 'herdr-claude', prompt, cwd: '/tmp', env: {} });
     const [asker, next] = await pullAll(a, [herdrItem('Paint the shed'), herdrItem('Mow the lawn')], true);
@@ -124,7 +124,7 @@ describe('a question is the owner\'s the moment it is asked', () => {
     const held = heldAnswerer();
     const judged: string[] = [];
     const judge = createFakeAssessor({ name: 'judge', script: (_r, d) => { judged.push(d.answer); return { escalate: false, reason: 'fine' }; } });
-    const a = await start({ JOB_HOPPER_LOCAL_LANES: '1' }, { seams: { answerer: held.answerer, assessor: judge } });
+    const a = await start(1, { seams: { answerer: held.answerer, assessor: judge } });
     const token = await a.login();
     const [job] = await pullAll(a, [{ op: 'ask', message: 'Tabs or spaces?' }]);
     const q = await waitFor(async () => (await a.api<{ questions: Question[] }>('GET', '/api/questions')).body.questions.find((x) => x.jobId === job!.id));

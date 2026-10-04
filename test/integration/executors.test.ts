@@ -1,5 +1,5 @@
 // Phase 5 slice 3 through the real composition root: executors are plugin instances from
-// plugins.yaml `executors:` (or the env); one that cannot run holds the jobs naming it — never
+// plugins.yaml `executors:`; one that cannot run holds the jobs naming it — never
 // fails or re-routes them — and they run once a restart brings it up. /api/plugins shows the
 // executor role, detection per plugin and per instance, a pending change, and the
 // command-bearing marks.
@@ -105,12 +105,12 @@ describe('an executor that cannot run holds its jobs', () => {
 });
 
 describe('GET /api/plugins: the executor role', () => {
-  it('env-derived instances (no executors section), detection per plugin and per instance', async () => {
+  it('the instances plugins.yaml names, detection per plugin and per instance', async () => {
     const a = await boot(newDb());
     const body = (await a.api('GET', '/api/plugins')).body;
-    expect(body.roles).toEqual(['router', 'answerer', 'assessor', 'executor']);
+    expect(body.roles).toEqual(['router', 'answerer', 'assessor', 'executor', 'job-source', 'machine-source', 'usage-source']);
     expect(body.executors).toEqual({
-      instances: [{ instance: { name: 'test', plugin: 'test' }, detection: { status: 'available' }, active: 'test' }],
+      instances: [{ instance: { name: 'test', plugin: 'test', options: {} }, detection: { status: 'available' }, active: 'test' }],
     });
     const byId = new Map(body.plugins.map((p: { id: string }) => [p.id, p]));
     expect(byId.get('herdr-claude')).toMatchObject({ role: 'executor', builtin: true, detection: { status: expect.any(String) } });
@@ -128,6 +128,9 @@ describe('GET /api/plugins: the executor role', () => {
     expect(marked('claude-cli')).toEqual(['bin']);
     expect(marked('claude-cli-assessor')).toEqual(['bin']);
     expect(marked('jev-router')).toEqual(['jevSrc', 'python']);
+    expect(marked('github-gh')).toEqual(['bin', 'defaultCwd', 'repoPaths']);
+    expect(marked('github-app')).toEqual(['apiUrl', 'defaultCwd', 'repoPaths']);
+    expect(marked('local')).toEqual([]);
   });
 
   it('editing executors in plugins.yaml shows changed — restart pending; the running set is unchanged', async () => {

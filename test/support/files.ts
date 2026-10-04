@@ -1,5 +1,6 @@
-// Config files a test app reads: <dataDir>/webhooks.yaml and <dataDir>/sources.yaml (the paths
-// startTestApp points JOB_HOPPER_WEBHOOKS_FILE / JOB_HOPPER_SOURCES_FILE at).
+// Config files a test app reads: <dataDir>/webhooks.yaml (startTestApp points
+// JOB_HOPPER_WEBHOOKS_FILE at it), and <dataDir>/sources.yaml — the phase-3/4 file the daemon folds
+// into plugins.yaml on a boot without one (migration tests).
 import { writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { stringify } from 'yaml';

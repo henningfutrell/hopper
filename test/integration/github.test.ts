@@ -5,7 +5,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Job } from '../../src/domain/types.ts';
 import { createFakeGitHub, type FakeGitHub } from '../../src/sources/index.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
-import { writeSourcesFile } from '../support/files.ts';
 import { waitFor } from '../support/wait.ts';
 
 const REPO = 'owner/job-hopper-sandbox';
@@ -18,24 +17,24 @@ afterEach(async () => {
 });
 
 function github(extra: Record<string, unknown> = {}) {
-  return {
-    version: 1,
-    github: {
+  return [{
+    name: 'github', plugin: 'github-gh', options: {
       enabled: true, pollSeconds: 3600, repos: [REPO], authors: ['owner'], executor: 'scripted',
       defaultCwd: '/tmp', progressCommentSeconds: 1, ...extra,
     },
-  };
+  }];
 }
 
 async function boot(gh: FakeGitHub, o: { dbPath?: string; config?: Record<string, unknown>; env?: Record<string, string> } = {}) {
   let dbPath = o.dbPath;
+  let plugins: Record<string, unknown> | undefined;
   if (!dbPath) {
     const db = tempDbPath();
     cleanup = db.cleanup;
     dbPath = db.dbPath;
-    writeSourcesFile(dbPath, github(o.config));
+    plugins = { jobSources: github(o.config) };
   }
-  const a = await startTestApp({ dbPath, env: o.env ?? {}, seams: { github: gh } });
+  const a = await startTestApp({ dbPath, env: o.env ?? {}, seams: { github: gh }, ...(plugins ? { plugins } : {}) });
   apps.push(a);
   return a;
 }

@@ -17,10 +17,10 @@ const routerJs = (id: string) => `export default {
 `;
 
 describe('built-in plugins', () => {
-  it('are the routers jev-router and pass-through, the answerer claude-cli, the assessors claude-cli-assessor and always-escalate, the executors herdr-claude and test', () => {
+  it('are the routers jev-router and pass-through, the answerer claude-cli, the assessors claude-cli-assessor and always-escalate, the executors herdr-claude and test, the job sources github-gh and github-app, the machine source local', () => {
     expect(BUILTIN_PLUGINS.map((p) => [p.id, p.role]).sort()).toEqual([
-      ['always-escalate', 'assessor'], ['claude-cli', 'answerer'], ['claude-cli-assessor', 'assessor'], ['herdr-claude', 'executor'], ['jev-router', 'router'],
-      ['pass-through', 'router'], ['test', 'executor'],
+      ['always-escalate', 'assessor'], ['claude-cli', 'answerer'], ['claude-cli-assessor', 'assessor'], ['github-app', 'job-source'], ['github-gh', 'job-source'],
+      ['herdr-claude', 'executor'], ['jev-router', 'router'], ['local', 'machine-source'], ['pass-through', 'router'], ['test', 'executor'],
     ]);
   });
 });

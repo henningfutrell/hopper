@@ -3,17 +3,18 @@
 
 import type { Job, JobStatus, Question } from '../../../src/domain/types.ts';
 import type { JobSource, SourceItem } from '../../../src/domain/ports.ts';
-import { parseSourcesConfig } from '../../../src/sources/config.ts';
-import type { GitHubSourceConfig } from '../../../src/sources/config.ts';
+import githubGh from '../../../src/plugins/job-source/github-gh/index.ts';
+import { parseOptions } from '../../../src/plugins/options.ts';
+import { sourceConfig, type GitHubGhOptions, type GitHubSourceConfig } from '../../../src/sources/config.ts';
 import { createFakeGitHub, createGitHubSource } from '../../../src/sources/github/index.ts';
 import type { FakeGitHub, GitHubSourceOptions, JobTokenKeeper } from '../../../src/sources/github/index.ts';
 
 export const REPO = 'owner/sandbox';
 
 export function githubConfig(over: Record<string, unknown> = {}): GitHubSourceConfig {
-  const r = parseSourcesConfig({ version: 1, github: { repos: [REPO], defaultCwd: '/work/default', ...over } });
-  if ('error' in r || !r.github) throw new Error('error' in r ? r.error : 'no github');
-  return r.github;
+  const r = parseOptions(githubGh, { repos: [REPO], defaultCwd: '/work/default', ...over });
+  if (!r.ok) throw new Error(r.error);
+  return sourceConfig(r.options as GitHubGhOptions);
 }
 
 export function setup(over: Record<string, unknown> = {}, o: { knownKeys?: (keys: string[]) => Set<string>; rerunnable?: (keys: string[]) => Set<string>; whoami?: string } = {}) {

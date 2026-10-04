@@ -19,11 +19,11 @@ afterEach(async () => {
   cleanup?.();
 });
 
-async function start(o: { before?: (dataDir: string) => void; env?: Record<string, string>; realRouter?: boolean } = {}): Promise<TestApp> {
+async function start(o: { before?: (dataDir: string) => void; plugins?: Record<string, unknown>; realRouter?: boolean } = {}): Promise<TestApp> {
   const db = tempDbPath();
   cleanup = db.cleanup;
   o.before?.(dirname(db.dbPath));
-  t = await startTestApp({ dbPath: db.dbPath, realRouter: o.realRouter ?? true, ...(o.env ? { env: o.env } : {}) });
+  t = await startTestApp({ dbPath: db.dbPath, realRouter: o.realRouter ?? true, ...(o.plugins ? { plugins: o.plugins } : {}) });
   return t;
 }
 
@@ -35,7 +35,7 @@ const writePluginsYaml = (dataDir: string, text: string) => writeFileSync(join(d
 const JEV_PRESENT = existsSync(join(homedir(), 'workbench/jev-src/grok-bot-jev/src/router.py'));
 
 describe.skipIf(JEV_PRESENT)('router chosen from what is detected, no Jev checkout', () => {
-  it('no plugins.yaml → pass-through, chosen, not a fallback; /api/health and /api/router say so', async () => {
+  it('no router in plugins.yaml → pass-through, chosen, not a fallback; /api/health and /api/router say so', async () => {
     const a = await start();
     const health = (await a.api('GET', '/api/health')).body;
     expect(health).toMatchObject({ ok: true, routerMode: 'shadow', router: 'pass-through', fallback: false });
@@ -52,16 +52,16 @@ describe.skipIf(JEV_PRESENT)('router chosen from what is detected, no Jev checko
   it('GET /api/plugins: roles, the detected instance, and every plugin; a custom router that can run is chosen', async () => {
     const a = await start({ before: installAlwaysProceed });
     const body = (await a.api('GET', '/api/plugins')).body;
-    expect(body.roles).toEqual(['router', 'answerer', 'assessor', 'executor']);
-    expect(body.config).toMatchObject({ source: 'env', path: join(a.dataDir, 'plugins.yaml') });
+    expect(body.roles).toEqual(['router', 'answerer', 'assessor', 'executor', 'job-source', 'machine-source', 'usage-source']);
+    expect(body.config).toMatchObject({ source: 'file', path: join(a.dataDir, 'plugins.yaml') });
     expect(body.router).toMatchObject({
       instance: { name: 'always-proceed', plugin: 'always-proceed' }, selection: 'detected',
       detection: { status: 'available' }, active: 'always-proceed', fallback: false,
     });
     const ids = body.plugins.map((p: { id: string; builtin: boolean }) => [p.id, p.builtin]).sort();
     expect(ids).toEqual([
-      ['always-escalate', true], ['always-proceed', false], ['claude-cli', true], ['claude-cli-assessor', true], ['herdr-claude', true], ['jev-router', true],
-      ['pass-through', true], ['test', true],
+      ['always-escalate', true], ['always-proceed', false], ['claude-cli', true], ['claude-cli-assessor', true], ['github-app', true], ['github-gh', true],
+      ['herdr-claude', true], ['jev-router', true], ['local', true], ['pass-through', true], ['test', true],
     ]);
     const jev = body.plugins.find((p: { id: string }) => p.id === 'jev-router');
     expect(jev).toMatchObject({ role: 'router', describe: expect.any(String), detection: { status: 'unavailable' }, options: { type: 'object', properties: { jevSrc: {}, python: {} } } });
@@ -132,9 +132,17 @@ describe('a store written before plugins', () => {
 });
 
 describe('question roles in /api/plugins (slice 2)', () => {
-  it('derived from the env: answerer opus (claude-cli), assessor fable (claude-cli-assessor), models and timeout from the env', async () => {
-    const a = await start({ env: {
-      JOB_HOPPER_CLAUDE_BIN: process.execPath, JOB_HOPPER_ANSWER_MODEL_A: 'sonnet', JOB_HOPPER_ANSWER_MODEL_B: 'haiku', JOB_HOPPER_ANSWER_TIMEOUT_MS: '1234',
+  it('no section: the built-in instances, answerer opus (claude-cli), assessor fable (claude-cli-assessor)', async () => {
+    const a = await start();
+    const body = (await a.api('GET', '/api/plugins')).body;
+    expect(body.answerer.instance).toEqual({ name: 'opus', plugin: 'claude-cli', options: { bin: 'claude', model: 'opus', timeoutMs: 180000 } });
+    expect(body.assessor.instance).toEqual({ name: 'fable', plugin: 'claude-cli-assessor', options: { bin: 'claude', model: 'fable', timeoutMs: 180000 } });
+  });
+
+  it('sections with a bin and models: those instances, detected', async () => {
+    const a = await start({ plugins: {
+      answerer: { name: 'opus', plugin: 'claude-cli', options: { bin: process.execPath, model: 'sonnet', timeoutMs: 1234 } },
+      assessor: { name: 'fable', plugin: 'claude-cli-assessor', options: { bin: process.execPath, model: 'haiku', timeoutMs: 1234 } },
     } });
     const body = (await a.api('GET', '/api/plugins')).body;
     expect(body.answerer).toEqual({
@@ -148,13 +156,16 @@ describe('question roles in /api/plugins (slice 2)', () => {
   });
 
   it('claude not installed: no answerer, and the assessor falls back to always-escalate — shown', async () => {
-    const a = await start({ env: { JOB_HOPPER_CLAUDE_BIN: '/nonexistent/claude' } });
+    const a = await start({ plugins: {
+      answerer: { name: 'opus', plugin: 'claude-cli', options: { bin: '/nonexistent/claude' } },
+      assessor: { name: 'fable', plugin: 'claude-cli-assessor', options: { bin: '/nonexistent/claude' } },
+    } });
     const body = (await a.api('GET', '/api/plugins')).body;
     expect(body.answerer).toMatchObject({ instance: { name: 'opus' }, detection: { status: 'unavailable' }, active: null, fallback: true, reason: expect.stringContaining('/nonexistent/claude') });
     expect(body.assessor).toMatchObject({ instance: { name: 'fable' }, detection: { status: 'unavailable' }, active: 'always-escalate', fallback: true });
   });
 
-  it('plugins.yaml sections win over the env', async () => {
+  it('answerer: null and another assessor', async () => {
     const a = await start({ before: (d) => writePluginsYaml(d, 'version: 1\nanswerer: null\nassessor: { name: wall, plugin: always-escalate }\n') });
     const body = (await a.api('GET', '/api/plugins')).body;
     expect(body.answerer).toEqual({ instance: null, active: null, fallback: false });

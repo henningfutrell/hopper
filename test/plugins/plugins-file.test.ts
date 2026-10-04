@@ -13,7 +13,7 @@ function file(text: string, mode = 0o600): string {
   return path;
 }
 
-describe('plugins.yaml (router, answerer, assessor and executors sections)', () => {
+describe('plugins.yaml (router, answerer, assessor, executors, jobSources, machines, usageSources)', () => {
   it('absent file → missing, so the caller derives the router', () => {
     expect(loadPluginsFile(join(temp(), 'none.yaml'))).toEqual({ missing: true });
   });
@@ -33,7 +33,7 @@ describe('plugins.yaml (router, answerer, assessor and executors sections)', () 
     expect(loadPluginsFile(file('version: 1\n'))).toEqual({ warnings: [] });
   });
 
-  it('reads the answerer, assessor and executor instances; the later sections are allowed, unread', () => {
+  it('reads every role section; notifiers is allowed, unread (slice 5)', () => {
     const r = loadPluginsFile(file([
       'version: 1',
       'router: { name: jev, plugin: jev-router }',
@@ -50,6 +50,27 @@ describe('plugins.yaml (router, answerer, assessor and executors sections)', () 
       answerer: { name: 'opus', plugin: 'claude-cli', options: { model: 'opus' } },
       assessor: { name: 'fable', plugin: 'claude-cli-assessor', options: {} },
       executors: [{ name: 'test', plugin: 'test', options: {} }],
+      jobSources: [],
+      machines: { name: 'local', plugin: 'local', options: {} },
+      usageSources: [],
+      warnings: [],
+    });
+  });
+
+  it('jobSources and usageSources: 0..n instances in order, each with its options', () => {
+    const r = loadPluginsFile(file([
+      'version: 1',
+      'jobSources:',
+      '  - { name: github, plugin: github-gh, options: { enabled: auto } }',
+      '  - { name: github-app, plugin: github-app }',
+      'usageSources: [ { name: budget, plugin: my-usage } ]',
+    ].join('\n')));
+    expect(r).toEqual({
+      jobSources: [
+        { name: 'github', plugin: 'github-gh', options: { enabled: 'auto' } },
+        { name: 'github-app', plugin: 'github-app', options: {} },
+      ],
+      usageSources: [{ name: 'budget', plugin: 'my-usage', options: {} }],
       warnings: [],
     });
   });
@@ -91,6 +112,10 @@ describe('plugins.yaml (router, answerer, assessor and executors sections)', () 
     ['executors: null', 'version: 1\nexecutors: null\n', /executors/],
     ['two executors with one name (jobs name their executor)', 'version: 1\nexecutors: [ { name: t, plugin: test }, { name: t, plugin: herdr-claude } ]\n', /executors.*t.*twice|twice/],
     ['executor without a plugin', 'version: 1\nexecutors: [ { name: t } ]\n', /executors\.0\.plugin/],
+    ['two job sources with one name (sync state is keyed by it)', 'version: 1\njobSources: [ { name: g, plugin: github-gh }, { name: g, plugin: github-app } ]\n', /jobSources.*g.*twice/],
+    ['two usage sources with one name', 'version: 1\nusageSources: [ { name: u, plugin: a }, { name: u, plugin: b } ]\n', /usageSources.*u.*twice/],
+    ['machines: null (the machine slot is never empty)', 'version: 1\nmachines: null\n', /machines/],
+    ['machines as a list (one machine source)', 'version: 1\nmachines: [ { name: local, plugin: local } ]\n', /machines/],
     ['answerer and assessor with one name', 'version: 1\nanswerer: { name: x, plugin: claude-cli }\nassessor: { name: x, plugin: always-escalate }\n', /same name/],
   ])('%s is an error naming the problem', (_name, text, why) => {
     const r = loadPluginsFile(file(text));

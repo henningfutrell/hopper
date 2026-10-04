@@ -11,8 +11,7 @@ import type { Job, SourceStatus } from '../../src/domain/types.ts';
 import { createFakeGitHubServer, type FakeGitHubServer } from '../../src/sources/github/app/index.ts';
 import { createFakeGitHub, type FakeGitHub } from '../../src/sources/index.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
-import { writeSourcesFile } from '../support/files.ts';
-import { APP_ID, BOT, KEYS, SLUG, appFilePath, sourcesDoc, writeAppFile } from '../support/github-app.ts';
+import { APP_ID, BOT, KEYS, SLUG, appFilePath, jobSourcesDoc, writeAppFile } from '../support/github-app.ts';
 import { waitFor } from '../support/wait.ts';
 import { dirname } from 'node:path';
 
@@ -32,13 +31,12 @@ afterEach(async () => {
   for (const c of cleanups.splice(0)) c();
 });
 
-async function boot(o: { doc?: (dir: string) => unknown; seams?: { github?: FakeGitHub; githubApp?: FakeGitHub }; appFile?: boolean; env?: Record<string, string> }) {
+async function boot(o: { doc?: (dir: string) => unknown; seams?: { github?: FakeGitHub; githubApp?: FakeGitHub }; appFile?: boolean }) {
   const db = tempDbPath();
   cleanups.push(db.cleanup);
   const dir = dirname(db.dbPath);
   if (o.appFile) writeAppFile(dir);
-  writeSourcesFile(db.dbPath, o.doc ? o.doc(dir) : sourcesDoc(dir));
-  const a = await startTestApp({ dbPath: db.dbPath, env: o.env ?? {}, seams: o.seams ?? {} });
+  const a = await startTestApp({ dbPath: db.dbPath, plugins: { jobSources: o.doc ? o.doc(dir) : jobSourcesDoc(dir) }, seams: o.seams ?? {} });
   apps.push(a);
   return { a, dir };
 }
@@ -53,7 +51,7 @@ const envOf = (a: TestApp, url: string) => a.scripted.payloads.map((p) => p.env 
 describe('GitHub App source (in-memory fake at the seam)', () => {
   it('claims as the bot, asks the human as the bot, takes the owner\'s marker-less reply, finishes, labels hopper:done', async () => {
     const app = createFakeGitHub({ app: { botLogin: BOT, installedRepos: [REPO] } });
-    const { a } = await boot({ seams: { githubApp: app }, appFile: true, doc: (dir) => sourcesDoc(dir, { github: false }) });
+    const { a } = await boot({ seams: { githubApp: app }, appFile: true, doc: (dir) => jobSourcesDoc(dir, { github: false }) });
     const issue = app.createIssue({ repo: REPO, title: 'Risky thing', body: body({ op: 'ask', message: 'Is this risky?' }), labels: ['hopper'] });
     const elsewhere = app.createIssue({ repo: OTHER, body: body({ op: 'echo' }), labels: ['hopper'] });
     await a.sync();
@@ -96,7 +94,7 @@ describe('GitHub App source (in-memory fake at the seam)', () => {
   it('gh with enabled auto pauses once the app file appears mid-run, yet finishes its own active job', async () => {
     const gh = createFakeGitHub();
     const app = createFakeGitHub({ app: { botLogin: BOT, installedRepos: [] } });
-    const { a, dir } = await boot({ seams: { github: gh, githubApp: app }, doc: (d) => sourcesDoc(d, { github: { repos: [REPO] } }) });
+    const { a, dir } = await boot({ seams: { github: gh, githubApp: app }, doc: (d) => jobSourcesDoc(d, { github: { repos: [REPO] } }) });
     const first = gh.createIssue({ repo: REPO, body: body({ op: 'sleep', ms: 800 }), labels: ['hopper'] });
     await a.sync();
     const j1 = (await jobFor(a, first.url))!;
@@ -119,7 +117,7 @@ describe('GitHub App source (in-memory fake at the seam)', () => {
 
   it('gh runs while no app file exists; github-app is disabled and says how to create the app', async () => {
     const gh = createFakeGitHub();
-    const { a } = await boot({ seams: { github: gh }, doc: (d) => sourcesDoc(d, { github: { repos: [REPO] } }) });
+    const { a } = await boot({ seams: { github: gh }, doc: (d) => jobSourcesDoc(d, { github: { repos: [REPO] } }) });
     const issue = gh.createIssue({ repo: REPO, body: body({ op: 'echo' }), labels: ['hopper'] });
     await a.sync();
     expect(await jobFor(a, issue.url)).toBeDefined();
@@ -132,14 +130,14 @@ describe('GitHub App source (in-memory fake at the seam)', () => {
   });
 
   it('githubApp.authors containing the bot login is refused when the app file is readable', async () => {
-    const { a } = await boot({ appFile: true, doc: (d) => sourcesDoc(d, { github: false, githubApp: { authors: ['owner', BOT] } }) });
+    const { a } = await boot({ appFile: true, doc: (d) => jobSourcesDoc(d, { github: false, githubApp: { authors: ['owner', BOT] } }) });
     const st = await status(a, 'github-app');
     expect(st).toMatchObject({ state: 'error' });
     expect(st.lastError).toMatch(/authors must not contain the app bot/);
   });
 
   it('enabled: false on both lists both disabled', async () => {
-    const { a } = await boot({ doc: (d) => sourcesDoc(d, { github: { enabled: false }, githubApp: { enabled: false } }) });
+    const { a } = await boot({ doc: (d) => jobSourcesDoc(d, { github: { enabled: false }, githubApp: { enabled: false } }) });
     expect(await status(a, 'github')).toMatchObject({ kind: 'github', state: 'disabled' });
     expect(await status(a, 'github-app')).toMatchObject({ kind: 'github-app', state: 'disabled' });
   });
@@ -154,7 +152,7 @@ describe('GitHub App source through HTTP (node:http fake GitHub, real App adapte
       ] }] }],
     });
     servers.push(fake);
-    const { a } = await boot({ appFile: true, env: { JOB_HOPPER_GITHUB_API: fake.url }, doc: (d) => sourcesDoc(d, { github: false }) });
+    const { a } = await boot({ appFile: true, doc: (d) => jobSourcesDoc(d, { github: false, githubApp: { apiUrl: fake.url } }) });
     const issue = fake.state.repos.get(REPO)!.issues.get(1)!;
     const url = `https://github.com/${REPO}/issues/1`;
     await a.sync();
