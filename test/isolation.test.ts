@@ -1,6 +1,7 @@
 // Tests never touch the owner's real config or send real webhooks: every worker gets its own HOME,
 // and any request to a non-loopback host is refused. 2026-10-04: test daemons sent three
 // question.escalated webhooks to the real Grok Bot routine from ~/.config/job-hopper.
+import { execFileSync } from 'node:child_process';
 import { userInfo, homedir } from 'node:os';
 import { describe, expect, it } from 'vitest';
 import { dirname } from 'node:path';
@@ -24,6 +25,12 @@ describe('test isolation', () => {
     for (const p of [builtinEnvFile, defaultEnvFile, c.webhooksFile, c.pluginsFile, c.dbPath]) {
       expect(p.startsWith(`${REAL_HOME}/`)).toBe(false);
     }
+  });
+
+  it('the real claude never runs: `claude` on PATH is the isolation guard, which answers --version and refuses the rest', () => {
+    if (process.env.JOB_HOPPER_REAL_HERDR === '1') return;
+    expect(execFileSync('claude', ['--version'], { encoding: 'utf8' })).toMatch(/test isolation/);
+    expect(() => execFileSync('claude', ['-p', '/usage', '--output-format', 'json'], { stdio: 'pipe' })).toThrow(/test isolation/);
   });
 
   it('a request to a non-loopback host is refused before it leaves the process', async () => {
