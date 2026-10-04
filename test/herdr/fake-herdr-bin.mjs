@@ -31,6 +31,7 @@ else if (cmd.startsWith('agent get')) out({ result: { type: 'agent_info', agent:
 else if (cmd.startsWith('pane read')) process.stdout.write('line one\n● JOB_HOPPER_DONE\n');
 else if (cmd.startsWith('agent prompt') || cmd.startsWith('pane send-keys') || cmd.startsWith('pane close w7:p5')) out({ result: { type: 'ok' } });
 else if (cmd.startsWith('pane close')) fail('pane_not_found', `pane ${argv[4]} not found`);
+else if (cmd === 'status server') process.stdout.write(process.env.FAKE_HERDR_RUNNING ? 'status: running\nsocket: /x/herdr.sock\n' : 'status: not running\nsocket: /x/herdr.sock\n');
 else if (cmd.startsWith('slow')) setTimeout(() => out({ result: {} }), 5000);
 else if (cmd.startsWith('usage')) { process.stderr.write('error: bad usage'); process.exit(2); }
 else fail('unknown', `unhandled: ${cmd}`);

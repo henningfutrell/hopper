@@ -102,3 +102,34 @@ describe('plugins.yaml (router, answerer, assessor and executors sections)', () 
     expect(r).toEqual({ warnings: [expect.stringMatching(/chmod 600/)] });
   });
 });
+
+describe('plugins.yaml attachedMachines (design.md "Attached machines")', () => {
+  it('reads each attached machine with its defaults', () => {
+    const r = loadPluginsFile(file([
+      'version: 1',
+      'attachedMachines:',
+      '  - { name: laptop, ssh: laptop, lanes: 2 }',
+      '  - { name: pi, ssh: user@host.example.net, label: Pi, lanes: 1, executors: [herdr-claude, other], session: jh, herdrBin: /opt/herdr }',
+    ].join('\n')));
+    expect(r).toEqual({
+      attachedMachines: [
+        { name: 'laptop', ssh: 'laptop', lanes: 2, executors: ['herdr-claude'], session: 'job-hopper', herdrBin: 'herdr' },
+        { name: 'pi', ssh: 'user@host.example.net', label: 'Pi', lanes: 1, executors: ['herdr-claude', 'other'], session: 'jh', herdrBin: '/opt/herdr' },
+      ],
+      warnings: [],
+    });
+  });
+
+  it.each([
+    ['  - { name: local, ssh: laptop, lanes: 1 }', /local is this machine/],
+    ['  - { name: a, ssh: laptop, lanes: 1 }\n  - { name: a, ssh: other, lanes: 1 }', /machine a named twice/],
+    ['  - { name: a, ssh: -oProxyCommand=x, lanes: 1 }', /ssh/],
+    ['  - { name: a, ssh: laptop, lanes: 0 }', /lanes/],
+    ['  - { name: a, ssh: laptop, lanes: 1, session: default }', /default herdr session/],
+    ['  - { name: a, lanes: 1 }', /ssh/],
+  ])('refuses %s', (entry, why) => {
+    const r = loadPluginsFile(file(`version: 1\nattachedMachines:\n${entry}\n`));
+    expect(r).toHaveProperty('error');
+    expect((r as { error: string }).error).toMatch(why);
+  });
+});
