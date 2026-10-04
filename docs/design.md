@@ -190,7 +190,7 @@ budgets**, so it cannot be the usage source. job-hopper uses it for what it is: 
   (gate → `typesafe` | `haiku`) and, when TypeSafe was wanted but could not answer,
   `typesafeError` (no key is not an error: TypeSafe is simply off).
 - Options: `jevSrc`, `python`, `claudeBin` (`claude`), `model` (`haiku`), `typesafeGates`,
-  `timeoutMs` (60000: a Haiku run takes about 4 s, the CLI start included). `detect` needs
+  `timeoutMs` (60000: one Haiku run over all five gates took about 20 s on server, the CLI start included). `detect` needs
   `python`, `<jevSrc>/src/router.py` and `claudeBin`; its detail says whether TypeSafe is on.
 - Advice from a real router run has `source: "jev-router"`; `details.jevUsed` mirrors the
   router's own `jev_used`. Any failure (Haiku failing or leaving a gate unanswered, timeout, bad
