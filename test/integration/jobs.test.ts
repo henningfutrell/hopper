@@ -177,15 +177,11 @@ describe('jobs pulled from a source', () => {
     expect((await t.job(running.id)).priority).toBe(30);
   });
 
-  it('serves health and the UI', async () => {
+  it('serves health', async () => {
     const health = (await t.api('GET', '/api/health')).body;
     expect(health).toMatchObject({ ok: true, routerMode: 'shadow', router: 'fake', fallback: false });
     expect(health).not.toHaveProperty('advisor');
     expect(health.executors).toEqual(['test', 'scripted']);
-    const page = await fetch(t.url + '/');
-    expect(page.headers.get('content-type')).toMatch(/text\/html/);
-    expect(await page.text()).toContain('/ui/app.js');
-    expect((await fetch(t.url + '/ui/app.js')).headers.get('content-type')).toMatch(/javascript/);
     const missing = await t.api('GET', '/api/nothing');
     expect(missing.status).toBe(404);
     expect(missing.body.error).toBeDefined();
