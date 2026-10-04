@@ -85,8 +85,9 @@ synonyms. Rename here first, in the same commit as everything else.
 | **Re-run** | A new job for a source key whose newest job failed or was cancelled and whose end the source already reported — offered again because a human cleared the marker (`hopper:failed`). Never from `finished`. | retry, resubmit |
 | **Claim** (of an issue) | Labelling it `hopper:claimed` when the hopper takes it (no comment). Distinct from a lane claim. | |
 | **Sync** | One pass of a source: discover, check active jobs, retry reports. | poll |
-| **Report** | Telling the source what happened to its job: the claim and the end. On GitHub: labels only; the hopper posts no comment. | |
+| **Report** | Telling the source what happened to its job: the claim and the end. On GitHub: labels, and a finished job closes its issue; the hopper posts no comment. | |
 | **Signal** | What a source tells the hopper: cancel. Questions are answered in the UI, never through a source. | |
+| **Closing pull request** | The merged pull request whose merge closed an issue (the closer of the issue's last close event, `closingPullRequest`). Opened at or after the job's creation, it is the job's own: its close is no cancel signal, and the job runs on to its own end. | closer PR, linked PR |
 | **Hopper marker** | The hidden first line of a comment the hopper once posted (it posts none now); lets the context filter tell old ones from the owner's text. | |
 | **Leftover variable** | A `JOB_HOPPER_*` variable that is set but read by nothing (a removed part-choosing one, or a typo). One loud warning at boot names them all. | |
 | **UI session** | A browser session created from the one-time login code; the only way to mutate. | |

@@ -1072,9 +1072,11 @@ labelled `hopper:claimed` with no local job is skipped and shown in status detai
 above; empty body → claimed, then failed with error "empty issue body"; priority per
 "Priority"; cwd = `repoPaths[repo]` (expanded) else `defaultCwd`.
 
-**Write criteria.** The hopper's only issue writes are labels (state); it posts no comments at
-all (owner decision, 2026-10-04: a finished issue needs no comment). No claim, progress, question,
-answered, failure, cancel or completion comment; no reactions, issue edits, closes, or PR
+**Write criteria.** The hopper's only issue writes are labels (state) and closing the issue of a
+finished job; it posts no comments at all (owner decision, 2026-10-04: a finished issue needs no
+comment). A finished job's issue is closed with `state_reason: completed` (issue #38: finished work
+leaves no open issue behind); a failed or cancelled job's issue stays open. No claim, progress,
+question, answered, failure, cancel or completion comment; no reactions, other issue edits, or PR
 comments. Jobs get no way to write to their issue (no token, no helper), and their prompt says
 nothing about commenting (owner decision, 2026-10-04: a job has no reason to talk on its issue): the
 issue context block ends at the comments list, with no footer. A question goes to the owner through
@@ -1106,7 +1108,13 @@ A failure never goes to the issue as text. It is one stderr line in the daemon l
 
 **Signals (check):** per active job, `getIssue`:
 - issue `closed`, or `label` removed → `cancel` (reason `issue closed` / `label removed`);
-  issue 404/410 → `cancel` (`issue gone`). Jobs are told not to close their own issue.
+  issue 404/410 → `cancel` (`issue gone`).
+- **Except the job's own pull request** (issue #38): a closed issue whose last close event's closer
+  is a merged pull request opened at or after the job's `createdAt` gives no signal — that is the
+  job's work landing, and the job still has to install and verify. It runs on and ends as it
+  reports (`finished` on `JOB_HOPPER_DONE`). `closingPullRequest` asks GraphQL
+  (`src/sources/github/closer.ts`); a pull request opened before the job, a person, or a commit
+  closing the issue cancels as above; a permanent error asking counts as "not its own".
 - `hopper:backburner` on the issue of a waiting (`queued`/`held`) job → `cancel` (`backburner`);
   a running job is not touched.
 - **Error classes:** `GitHubApi` errors carry `permanent` (404/410/403/422) vs transient
@@ -1436,7 +1444,9 @@ Manifest:
   "default_events": [] }
 ```
 
-- `issues: write` now covers only labels (write criteria). The
+- `issues: write` now covers only labels and closing a finished job's issue (write criteria).
+  Reading which pull request closed an issue needs nothing more (verified against the live app,
+  2026-10-04). The
   app could later drop to fewer permissions; not changed here.
 
 - `hook_attributes` exists only to make GitHub issue a webhook secret for later. The URL uses

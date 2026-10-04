@@ -1,10 +1,13 @@
 // Projects (v2) items over GraphQL with an installation token. Tried as an organization project,
 // then as a user project. Installation tokens can read organization projects
 // (`organization_projects: read`); user-owned projects need a personal token, so for those this
-// ends in a permanent error and the source falls back to labels (projectErrors).
+// ends in a permanent error and the source falls back to labels (projectErrors). Also: the pull
+// request that closed an issue (closer.ts).
 
-import type { GitHubProjectItem } from '../api.ts';
+import type { ClosingPullRequest, GitHubProjectItem } from '../api.ts';
 import { GitHubApiError } from '../api.ts';
+import { CLOSING_PULL_REQUEST_QUERY, closingPullRequestFrom } from '../closer.ts';
+import { splitRepo } from './http.ts';
 import type { Request } from './http.ts';
 
 const MAX_PAGES = 50;
@@ -80,4 +83,12 @@ export async function projectItems(req: Request, token: string, owner: string, n
   if ('items' in user) return user.items;
   const hint = user.forbidden ? ' (a GitHub App installation token cannot read user-owned Projects; priority comes from labels)' : '';
   throw new GitHubApiError(`project ${owner}/projects/${number}: organization: ${org.error}; user: ${user.error}${hint}`, true);
+}
+
+export async function closingPullRequest(req: Request, token: string, repo: string, number: number): Promise<ClosingPullRequest | undefined> {
+  const { owner, repo: name } = splitRepo(repo);
+  const r = await req('POST /graphql', {
+    query: CLOSING_PULL_REQUEST_QUERY, variables: { owner, name, number }, headers: { authorization: `token ${token}` },
+  });
+  return closingPullRequestFrom(r.data, `closer of ${repo}#${number}`);
 }

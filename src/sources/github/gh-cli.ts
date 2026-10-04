@@ -5,6 +5,7 @@
 import { execFile } from 'node:child_process';
 import { GitHubApiError, isPermanent } from './api.ts';
 import type { GitHubApi, GitHubComment, GitHubIssue, GitHubProjectItem } from './api.ts';
+import { CLOSING_PULL_REQUEST_QUERY, closingPullRequestFrom } from './closer.ts';
 
 const DEFAULT_TIMEOUT_MS = 30000;
 const SEARCH_FIELDS = 'url,number,title,body,author,labels,repository,updatedAt,state';
@@ -123,6 +124,15 @@ export function createGhCliApi(o: { bin: string; timeoutMs?: number }): GitHubAp
     },
     async removeLabels(repo, number, labels) {
       await exec(['issue', 'edit', String(number), '-R', repo, '--remove-label', labels.join(',')]);
+    },
+    async closingPullRequest(repo, number) {
+      const [owner, name] = repo.split('/');
+      const body = await json<unknown>(['api', 'graphql', '-f', `query=${CLOSING_PULL_REQUEST_QUERY}`,
+        '-F', `owner=${owner}`, '-F', `name=${name}`, '-F', `number=${number}`]);
+      return closingPullRequestFrom(body, `closer of ${repo}#${number}`);
+    },
+    async closeAsCompleted(repo, number) {
+      await exec(['api', '-X', 'PATCH', `repos/${repo}/issues/${number}`, '-f', 'state=closed', '-f', 'state_reason=completed']);
     },
   };
 }

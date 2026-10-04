@@ -35,8 +35,8 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   exact Origin, same-origin, JSON — else 403); a new mutation goes there and nowhere else.
   `docs/design.md` "UI session and mutations" states the residual risk.
 - **GitHub text is neutral.** Text the hopper or a job writes to GitHub names no person and
-  carries no personal or machine details. The hopper writes only labels to issues and posts no
-  comments. The job prompt carries the rule (`src/executors/herdr/screen.ts` `PUBLISHING_RULE`).
+  carries no personal or machine details. The hopper writes only labels to issues, closes the
+  issue of a finished job, and posts no comments. The job prompt carries the rule (`src/executors/herdr/screen.ts` `PUBLISHING_RULE`).
 - **Never write into the Jev repo.** The shim reads it; logs go to job-hopper's data dir.
 - **Persisted state is the user's.** A schema change ships a migration in
   `src/store/migrations.ts`; it never drops a queue.
