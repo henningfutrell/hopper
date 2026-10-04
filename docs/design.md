@@ -256,7 +256,7 @@ Loopback (`127.0.0.1`), plus the LAN names when set — "Reaching the UI across 
 
 ## SSE
 
-`GET /api/events/stream`. Replays events after `?after=` / `Last-Event-ID`, then live.
+`GET /api/events/stream`. Replays events after `Last-Event-ID`, else `?after=`, then live (a reconnecting EventSource reuses its first URL, so the header wins).
 Domain events: `id: <seq>`, `event: <type>`, `data: <DomainEvent JSON>`. Delivery updates
 (not domain events, never persisted or webhooked, so a delivery cannot trigger a delivery):
 `event: delivery.updated`, `data: <WebhookDelivery JSON>`, no `id`. Comment heartbeat

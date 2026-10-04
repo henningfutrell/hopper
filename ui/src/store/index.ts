@@ -110,10 +110,11 @@ export async function logout() {
 
 export function onDomainEvent(e: DomainEvent) {
   const s = state();
-  if (s.events.some((x) => x.seq === e.seq)) return;
+  // The stream sends in seq order, so anything at or below the newest held is a replay.
+  if (e.seq <= (s.events[0]?.seq ?? 0)) return;
   set({
     events: capped([e, ...s.events], CAP.events),
-    ...(HISTORY_TYPES.includes(e.type) ? { history: [...s.history, e].slice(-CAP.history) } : {}),
+    ...(HISTORY_TYPES.includes(e.type) && e.seq > (s.history.at(-1)?.seq ?? 0) ? { history: [...s.history, e].slice(-CAP.history) } : {}),
   });
   refreshLiveSoon();
   if (e.type.startsWith('question.')) refreshQuestionsSoon();
