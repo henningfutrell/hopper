@@ -1,6 +1,6 @@
 // The GitHub source in app mode: the installation is the allowlist, and hopper comments are
-// told apart by the bot author (the marker is only a secondary check). It writes labels and one
-// completion comment, as the bot.
+// told apart by the bot author (the marker is only a secondary check). It writes labels
+// and nothing else.
 
 import { describe, expect, it } from 'vitest';
 import { APP_INFO, BOT, REPO, discoverOne, jobForIssue, setup, setupApp } from './fixtures/github-support.ts';
@@ -46,24 +46,12 @@ describe('app mode discovery', () => {
 });
 
 describe('app mode identity', () => {
-  it('posts the completion comment as the bot', async () => {
+  it('finishing posts no comment, as the bot or anyone', async () => {
     const { gh, source } = setupApp();
     gh.createIssue({ repo: REPO, labels: ['hopper'] });
     await source.report({ kind: 'finished', job: jobForIssue(1, { status: 'finished', result: 'done' }, REPO, 'github-app') });
-    expect(gh.commentsOn(REPO, 1).map((c) => c.author)).toEqual([BOT]);
-  });
-
-  it("reuse on retry finds the bot's comment and ignores a stranger's planted marker", async () => {
-    const { gh, source } = setupApp();
-    gh.createIssue({ repo: REPO, labels: ['hopper'] });
-    const job = jobForIssue(1, { status: 'finished', result: 'done' }, REPO, 'github-app');
-    const marker = `<!-- job-hopper v1 kind=finished job=${job.id} -->`;
-    gh.addComment(REPO, 1, 'mallory', `${marker}\nplanted`);
-    const first = await source.report({ kind: 'finished', job });
-    expect(gh.commentsOn(REPO, 1).find((c) => c.id === first.finalCommentId)?.author).toBe(BOT);
-    const again = await source.report({ kind: 'finished', job }); // a retry without the state
-    expect(again.finalCommentId).toBe(first.finalCommentId);
-    expect(gh.commentsOn(REPO, 1).filter((c) => c.author === BOT)).toHaveLength(1);
+    expect(gh.commentsOn(REPO, 1)).toEqual([]);
+    expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:done']);
   });
 
   it('the job context excludes bot comments, marker or not', async () => {

@@ -1,7 +1,6 @@
-// What the hopper may write to an issue (owner decision, 2026-10-03: the bot does not post to
-// the issues." … "it has to be a status update based on job completion"). Through the real
-// daemon, against the fake GitHub: the only writes are labels (state) and ONE completion comment
-// when a job finishes. No claim, progress, question, answered, failure or cancel comment; a
+// What the hopper may write to an issue (owner decision, 2026-10-04: a finished issue needs labels only).
+// Through the real daemon, against the fake GitHub: the only writes are labels (state). No
+// comment at all: not claim, progress, question, answered, failure, cancel or completion; a
 // question goes to the owner through the UI, never onto the issue, and a reply on the issue is not
 // an answer. Jobs get no way to write to their issue (no token file, no comment helper).
 import { existsSync } from 'node:fs';
@@ -16,6 +15,8 @@ import { waitFor } from '../support/wait.ts';
 
 const REPO = 'owner/job-hopper-sandbox';
 const WRITES = new Set(['comment', 'editComment', 'mintRepoToken']);
+const LABEL_WRITES = ['ensureLabel', 'addLabels', 'removeLabels'];
+const labelCalls = (gh: FakeGitHub) => gh.calls.filter((c) => LABEL_WRITES.includes(c.method));
 
 const apps: TestApp[] = [];
 const servers: FakeGitHubServer[] = [];
@@ -50,7 +51,7 @@ const jobFor = async (a: TestApp, url: string): Promise<Job | undefined> =>
 const writesTo = (gh: FakeGitHub) => gh.calls.filter((c) => WRITES.has(c.method));
 
 describe.each<Mode>(['gh', 'app'])('issue writes (%s source)', (mode) => {
-  it('claim → progress → question → answer in the UI → finished: labels, and exactly one comment — the completion status', async () => {
+  it('claim → progress → question → answer in the UI → finished: labels only, zero comments', async () => {
     const gh = fakeFor(mode);
     const a = await boot(mode, gh);
     const issue = gh.createIssue({ repo: REPO, title: 'Risky thing', body: body({ op: 'ask', message: 'Is this risky?', progress: [0.25, 0.5] }), labels: ['hopper'] });
@@ -76,10 +77,11 @@ describe.each<Mode>(['gh', 'app'])('issue writes (%s source)', (mode) => {
     expect(gh.issue(REPO, issue.number).labels).not.toContain('hopper:claimed');
     await a.sync();
 
-    const mine = gh.commentsOn(REPO, issue.number).filter((c) => c.author === (mode === 'gh' ? 'owner' : BOT) && c.body !== 'go ahead from the issue');
-    expect(mine).toHaveLength(1);
-    expect(mine[0]!.body).toMatch(new RegExp(`^<!-- job-hopper v1 kind=finished job=${job.id} -->\njob-hopper: finished \\(job ${job.id.slice(0, 8)}, \\d+s\\)$`));
-    expect(writesTo(gh).map((c) => c.method)).toEqual(['comment']);
+    expect(gh.commentsOn(REPO, issue.number).filter((c) => c.body !== 'go ahead from the issue')).toEqual([]);
+    expect(writesTo(gh)).toEqual([]);
+    const added = labelCalls(gh).filter((c) => c.method === 'addLabels').map((c) => (c.args[2] as string[]).join(','));
+    expect(added).toEqual(['hopper:claimed', 'hopper:done']);
+    expect(labelCalls(gh).filter((c) => c.method === 'removeLabels').map((c) => (c.args[2] as string[]).join(','))).toEqual(['hopper:claimed']);
   });
 
   it('a failed job: labels hopper:failed, zero comments', async () => {
@@ -135,7 +137,7 @@ describe.each<Mode>(['gh', 'app'])('issue writes (%s source)', (mode) => {
 });
 
 describe('issue writes through HTTP (node:http fake GitHub, real App adapter)', () => {
-  it('only label writes and one completion comment reach GitHub; no repo-scoped token is minted', async () => {
+  it('only label writes reach GitHub, no comment POST; no repo-scoped token is minted', async () => {
     const fake = await createFakeGitHubServer({
       appId: APP_ID, publicKeyPem: KEYS.publicKey, slug: SLUG,
       installations: [{ id: 7, account: 'owner', repos: [{ owner: 'owner', name: 'job-hopper-sandbox', labels: ['hopper'], issues: [
@@ -157,12 +159,14 @@ describe('issue writes through HTTP (node:http fake GitHub, real App adapter)', 
     await waitFor(() => issue.labels.includes('hopper:done'), { what: 'hopper:done' });
     await a.sync();
 
-    expect(issue.comments).toHaveLength(1);
-    expect(issue.comments[0]).toMatchObject({ author: BOT, body: expect.stringMatching(new RegExp(`^<!-- job-hopper v1 kind=finished job=${job.id} -->\njob-hopper: finished \\(job ${job.id.slice(0, 8)}, \\d+s\\)$`)) });
+    expect(issue.comments).toEqual([]);
     const writes = fake.state.requests
       .filter((r) => r.method !== 'GET' && !r.path.startsWith('/app/') && !r.path.startsWith('/graphql'))
       .map((r) => `${r.method} ${r.path.replace(/\/labels\/.+$/, '/labels/:name')}`);
-    expect(writes.filter((w) => !/\/labels(\/:name)?$/.test(w))).toEqual([`POST /repos/${REPO}/issues/1/comments`]);
+    expect(writes.filter((w) => !/\/labels(\/:name)?$/.test(w))).toEqual([]);
+    expect(writes.some((w) => /comments/.test(w))).toBe(false);
+    expect(writes.filter((w) => w.endsWith('/issues/1/labels'))).toEqual([`POST /repos/${REPO}/issues/1/labels`, `POST /repos/${REPO}/issues/1/labels`]);
+    expect(writes.filter((w) => w.endsWith('/labels/:name'))).toEqual([`DELETE /repos/${REPO}/issues/1/labels/:name`]);
     expect(fake.state.tokens.some((t) => t.body.permissions !== undefined || t.body.repositories !== undefined)).toBe(false);
   });
 });

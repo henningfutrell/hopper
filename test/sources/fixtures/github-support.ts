@@ -35,7 +35,7 @@ export interface AppSetupOptions {
   appInfo?: GitHubSourceOptions['appInfo'];
 }
 
-/** A source in app mode over the fake GitHub with the app identity (comments post as BOT). */
+/** A source in app mode over the fake GitHub with the app identity (BOT is the app's login). */
 export function setupApp(over: Record<string, unknown> = {}, o: AppSetupOptions = {}) {
   const gh = createFakeGitHub({ app: { botLogin: BOT, installedRepos: o.installed ?? [REPO] } });
   const config = githubConfig({ repos: [], ...over });
@@ -86,6 +86,5 @@ export function jobForIssue(n: number, over: Partial<Job> = {}, repo = REPO, sou
   return jobFor({ key: url, url, repo, number: n, author: 'owner', title: `Issue ${n}` }, over, source);
 }
 
-export const MARKER_RE = /^<!-- job-hopper v1 /;
 
 export type { FakeGitHub };

@@ -13,10 +13,10 @@ describe('in-memory fake GitHub', () => {
     expect(await gh.whoami()).toBe('owner');
   });
 
-  it('comment ids are numeric and increasing; posts are by the gh user, addComment by anyone', async () => {
-    const gh = createFakeGitHub({ login: 'me' });
+  it('comment ids are numeric and increasing; addComment is by anyone', async () => {
+    const gh = createFakeGitHub();
     gh.createIssue({ repo: 'h/a', labels: ['hopper'] });
-    const c1 = await gh.comment('h/a', 1, 'mine');
+    const c1 = gh.addComment('h/a', 1, 'me', 'mine');
     const c2 = gh.addComment('h/a', 1, 'stranger', 'theirs');
     expect(c2.id).toBeGreaterThan(c1.id);
     expect((await gh.listComments('h/a', 1)).map((c) => [c.author, c.body])).toEqual([['me', 'mine'], ['stranger', 'theirs']]);
@@ -40,7 +40,7 @@ describe('in-memory fake GitHub', () => {
     gh.deleteIssue('h/a', 2);
     expect((await gh.getIssue('h/a', 1)).state).toBe('closed');
     await expect(gh.getIssue('h/a', 2)).rejects.toMatchObject({ permanent: true, status: 404 });
-    await expect(gh.comment('h/a', 2, 'x')).rejects.toMatchObject({ status: 404 });
+    await expect(gh.listComments('h/a', 2)).rejects.toMatchObject({ status: 404 });
   });
 
   it('failNext fails exactly the next call of that method', async () => {

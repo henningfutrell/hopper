@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { BOT, seen, startApp } from './fixtures/app/setup.ts';
+import { seen, startApp } from './fixtures/app/setup.ts';
 import type { AppHarness } from './fixtures/app/setup.ts';
 
 let h: AppHarness | undefined;
@@ -51,17 +51,13 @@ describe('App adapter: issues and comments', () => {
     await expect(h.api.getIssue('owner/a', 99)).rejects.toMatchObject({ permanent: true, status: 404 });
   });
 
-  it('lists every comment oldest first across pages; posts as the bot', async () => {
+  it('lists every comment oldest first across pages', async () => {
     const comments = [1, 2, 3, 4, 5].map((n) => ({ author: 'owner', body: `c${n}` }));
     h = await startApp({ pageSize: 2, installations: [{ id: 11, account: 'owner', repos: [{ owner: 'owner', name: 'a', issues: [issue(1, { comments })] }] }] });
     const listed = await h.api.listComments('owner/a', 1);
     expect(listed.map((c) => c.body)).toEqual(['c1', 'c2', 'c3', 'c4', 'c5']);
     expect(listed.map((c) => c.id)).toEqual([...listed.map((c) => c.id)].sort((a, b) => a - b));
 
-    const posted = await h.api.comment('owner/a', 1, 'from the hopper');
-    expect(posted.url).toContain('/owner/a/issues/1#issuecomment-');
-    const last = (await h.api.listComments('owner/a', 1)).at(-1)!;
-    expect(last).toMatchObject({ id: posted.id, author: BOT, body: 'from the hopper' });
   });
 
   it('labels: create (422 already_exists is fine), add, remove (absent label is fine)', async () => {
@@ -79,7 +75,7 @@ describe('App adapter: issues and comments', () => {
 describe('App adapter: cold installation lookup', () => {
   it('a report before any listInstalledRepos looks the installation up per repo (JWT), once', async () => {
     h = await startApp({ installations: [{ id: 33, account: 'owner', repos: [{ owner: 'owner', name: 'a', issues: [issue(1)] }] }] });
-    await h.api.comment('owner/a', 1, 'cold');
+    await h.api.addLabels('owner/a', 1, ['cold']);
     await h.api.getIssue('owner/a', 1);
     const lookups = h.fake.state.requests.filter((r) => r.path === '/repos/owner/a/installation');
     expect(lookups).toHaveLength(1);

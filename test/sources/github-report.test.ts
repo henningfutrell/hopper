@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { SourceError } from '../../src/domain/ports.ts';
 import { GitHubApiError } from '../../src/sources/github/index.ts';
-import { MARKER_RE, REPO, jobForIssue, setup } from './fixtures/github-support.ts';
+import { REPO, jobForIssue, setup } from './fixtures/github-support.ts';
 
 function withIssue(over: Record<string, unknown> = {}) {
   const s = setup(over);
@@ -29,32 +29,19 @@ describe('GitHub source report', () => {
     expect(gh.calls.filter((c) => c.method === 'ensureLabel')).toHaveLength(3);
   });
 
-  it('finished: the one comment — one fixed line of hopper facts, no result text; claimed → done', async () => {
+  it('finished: claimed → done, no comment, no write but labels; state unchanged', async () => {
     const { gh, source } = withIssue();
     const job = jobForIssue(1, {
       id: 'abcdef12-3456-7890-abcd-ef1234567890', status: 'finished', result: { summary: 'README added, mindless prose' },
       startedAt: '2026-10-02T10:00:00.000Z', finishedAt: '2026-10-02T10:04:12.000Z',
     });
-    await source.report({ kind: 'claimed', job });
+    const claimed = await source.report({ kind: 'claimed', job });
+    gh.calls.length = 0;
     const state = await source.report({ kind: 'finished', job });
     expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:done']);
-    const comments = gh.commentsOn(REPO, 1);
-    expect(comments).toHaveLength(1);
-    expect(comments[0]!.body).toBe(
-      '<!-- job-hopper v1 kind=finished job=abcdef12-3456-7890-abcd-ef1234567890 -->\njob-hopper: finished (job abcdef12, 4m12s)',
-    );
-    expect(state).toEqual({ finalCommentId: comments[0]!.id });
-  });
-
-  it.each([
-    ['2026-10-02T10:00:00.000Z', '2026-10-02T10:00:42.400Z', '42s'],
-    ['2026-10-02T10:00:00.000Z', '2026-10-02T11:03:05.000Z', '1h3m5s'],
-    [undefined, '2026-10-02T10:00:42.000Z', 'duration unknown'],
-  ])('the duration runs from startedAt %s to finishedAt %s: %s', async (startedAt, finishedAt, text) => {
-    const { gh, source } = withIssue();
-    const job = jobForIssue(1, { id: '12345678-aaaa', status: 'finished', result: 'x', ...(startedAt ? { startedAt } : {}), finishedAt });
-    await source.report({ kind: 'finished', job });
-    expect(gh.commentsOn(REPO, 1)[0]!.body.split('\n')[1]).toBe(`job-hopper: finished (job 12345678, ${text})`);
+    expect(gh.commentsOn(REPO, 1)).toEqual([]);
+    expect(gh.calls.map((c) => c.method)).toEqual(['removeLabels', 'addLabels']);
+    expect(state).toEqual(claimed);
   });
 
   it('failed: label only, claimed → failed, no comment', async () => {
@@ -76,31 +63,19 @@ describe('GitHub source report', () => {
     expect(gh.commentsOn(REPO, 1)).toEqual([]);
   });
 
-  it('finished twice with the returned state posts once', async () => {
+  it('finished twice: labels settle once, still no comment', async () => {
     const { gh, source } = withIssue();
     const job = jobForIssue(1, { status: 'finished', result: 'ok' });
     const state = await source.report({ kind: 'finished', job });
     await source.report({ kind: 'finished', job: { ...job, sourceState: { source: state } } });
-    expect(gh.commentsOn(REPO, 1)).toHaveLength(1);
-  });
-
-  it('a final report retried after a crash (state lost) reuses the comment carrying the marker', async () => {
-    const { gh, source } = withIssue();
-    const job = jobForIssue(1, { status: 'finished', result: 'ok' });
-    const first = await source.report({ kind: 'finished', job });
-    const again = await source.report({ kind: 'finished', job });
-    expect(gh.commentsOn(REPO, 1)).toHaveLength(1);
-    expect(again).toEqual(first);
+    expect(gh.commentsOn(REPO, 1)).toEqual([]);
+    expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:done']);
   });
 
   it('a huge result never reaches the issue', async () => {
     const { gh, source } = withIssue();
-    const job = jobForIssue(1, { status: 'finished', result: 'r'.repeat(100000) });
-    await source.report({ kind: 'finished', job });
-    const [c] = gh.commentsOn(REPO, 1);
-    expect(c!.body).not.toContain('rrr');
-    expect(c!.body.split('\n')).toHaveLength(2);
-    expect(c!.body).toMatch(MARKER_RE);
+    await source.report({ kind: 'finished', job: jobForIssue(1, { status: 'finished', result: 'r'.repeat(100000) }) });
+    expect(gh.commentsOn(REPO, 1)).toEqual([]);
   });
 
   it('an issue that is gone is a permanent SourceError with its status', async () => {
@@ -113,7 +88,7 @@ describe('GitHub source report', () => {
 
   it('a transient GitHub failure is a SourceError to retry', async () => {
     const { gh, source } = withIssue();
-    gh.failNext('comment', new GitHubApiError('gh: Bad Gateway (HTTP 502)', false, 502));
+    gh.failNext('addLabels', new GitHubApiError('gh: Bad Gateway (HTTP 502)', false, 502));
     const err = await source.report({ kind: 'finished', job: jobForIssue(1, { status: 'finished', result: 'x' }) }).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(SourceError);
     expect(err).toMatchObject({ permanent: false, status: 502 });

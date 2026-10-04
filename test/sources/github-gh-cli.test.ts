@@ -110,16 +110,6 @@ describe('gh CLI GitHubApi', () => {
     expect(comments[0]).toMatchObject({ createdAt: '2026-10-02T09:00:01Z', url: 'https://github.com/o/r/issues/5#issuecomment-11' });
   });
 
-  it('comment sends the body as JSON on stdin, never on argv', async () => {
-    const body = '<!-- job-hopper v1 kind=claimed job=j1 -->\nsecret issue text';
-    const r = await gh().comment('o/r', 5, body);
-    const [c] = calls();
-    expect(c!.argv).toEqual(['api', 'repos/o/r/issues/5/comments', '-X', 'POST', '--input', '-']);
-    expect(c!.argv.join(' ')).not.toContain('secret');
-    expect(JSON.parse(c!.stdin!)).toEqual({ body });
-    expect(r).toEqual({ id: 901, url: 'https://github.com/o/r/issues/5#issuecomment-901', createdAt: '2026-10-02T09:00:01Z' });
-  });
-
   it('ensureLabel creates or updates the label idempotently (--force)', async () => {
     await gh().ensureLabel('o/r', 'hopper:done', '0e8a16', 'job-hopper finished this');
     expect(calls()[0]!.argv).toEqual(['label', 'create', 'hopper:done', '-R', 'o/r', '--color', '0e8a16', '--description', 'job-hopper finished this', '--force']);

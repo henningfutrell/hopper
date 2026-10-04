@@ -42,6 +42,7 @@ async function boot(gh: FakeGitHub, o: { dbPath?: string; config?: Record<string
 const body = (op: Record<string, unknown>, text = 'Please do the thing.') => `${JSON.stringify(op)}\n\n${text}`;
 const jobFor = async (a: TestApp, url: string): Promise<Job | undefined> =>
   (await a.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=1000')).body.jobs.find((j) => j.source?.key === url);
+
 const bodies = (gh: FakeGitHub, n: number) => gh.commentsOn(REPO, n).map((c) => c.body);
 
 describe('GitHub issue → job → issue', () => {
@@ -159,8 +160,8 @@ describe('GitHub issue → job → issue', () => {
     const jobs = (await second.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=100')).body.jobs;
     expect(jobs.map((j) => j.id)).toEqual([job.id]);
     await second.waitForStatus(job.id, 'finished');
-    await waitFor(() => bodies(gh, issue.number).length === 1, { what: 'the completion comment' });
-    expect(bodies(gh, issue.number)[0]).toContain('kind=finished');
+    await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:done'), { what: 'hopper:done' });
+    expect(gh.commentsOn(REPO, issue.number)).toEqual([]);
     const gh2 = (await second.api('GET', '/api/sources')).body.sources.find((s: { name: string }) => s.name === 'github');
     expect(gh2).toMatchObject({ state: 'ok', kind: 'github' });
     expect(gh2.detail.skippedClaimedWithoutJob).toBeUndefined();
