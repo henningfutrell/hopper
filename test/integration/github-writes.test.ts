@@ -79,8 +79,7 @@ describe.each<Mode>(['gh', 'app'])('issue writes (%s source)', (mode) => {
 
     const mine = gh.commentsOn(REPO, issue.number).filter((c) => c.author === (mode === 'gh' ? 'owner' : BOT) && c.body !== 'go ahead from the issue');
     expect(mine).toHaveLength(1);
-    expect(mine[0]!.body).toMatch(new RegExp(`^<!-- job-hopper v1 kind=finished job=${job.id} -->\n`));
-    expect(mine[0]!.body).toContain('go ahead');
+    expect(mine[0]!.body).toMatch(new RegExp(`^<!-- job-hopper v1 kind=finished job=${job.id} -->\njob-hopper: finished \\(job ${job.id.slice(0, 8)}, \\d+s\\)$`));
     expect(writesTo(gh).map((c) => c.method)).toEqual(['comment']);
   });
 
@@ -160,7 +159,7 @@ describe('issue writes through HTTP (node:http fake GitHub, real App adapter)', 
     await a.sync();
 
     expect(issue.comments).toHaveLength(1);
-    expect(issue.comments[0]).toMatchObject({ author: BOT, body: expect.stringMatching(/^<!-- job-hopper v1 kind=finished /) });
+    expect(issue.comments[0]).toMatchObject({ author: BOT, body: expect.stringMatching(new RegExp(`^<!-- job-hopper v1 kind=finished job=${job.id} -->\njob-hopper: finished \\(job ${job.id.slice(0, 8)}, \\d+s\\)$`)) });
     const writes = fake.state.requests
       .filter((r) => r.method !== 'GET' && !r.path.startsWith('/app/') && !r.path.startsWith('/graphql'))
       .map((r) => `${r.method} ${r.path.replace(/\/labels\/.+$/, '/labels/:name')}`);

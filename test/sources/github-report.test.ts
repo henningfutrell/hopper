@@ -29,17 +29,32 @@ describe('GitHub source report', () => {
     expect(gh.calls.filter((c) => c.method === 'ensureLabel')).toHaveLength(3);
   });
 
-  it('finished: the one comment — a completion status with the result, marked; claimed → done', async () => {
+  it('finished: the one comment — one fixed line of hopper facts, no result text; claimed → done', async () => {
     const { gh, source } = withIssue();
-    const job = jobForIssue(1, { status: 'finished', result: { summary: 'README added' } });
+    const job = jobForIssue(1, {
+      id: 'abcdef12-3456-7890-abcd-ef1234567890', status: 'finished', result: { summary: 'README added, mindless prose' },
+      startedAt: '2026-10-02T10:00:00.000Z', finishedAt: '2026-10-02T10:04:12.000Z',
+    });
     await source.report({ kind: 'claimed', job });
     const state = await source.report({ kind: 'finished', job });
     expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:done']);
     const comments = gh.commentsOn(REPO, 1);
     expect(comments).toHaveLength(1);
-    expect(comments[0]!.body.split('\n')[0]).toBe(`<!-- job-hopper v1 kind=finished job=${job.id} -->`);
-    expect(comments[0]!.body).toContain('README added');
+    expect(comments[0]!.body).toBe(
+      '<!-- job-hopper v1 kind=finished job=abcdef12-3456-7890-abcd-ef1234567890 -->\njob-hopper: finished (job abcdef12, 4m12s)',
+    );
     expect(state).toEqual({ finalCommentId: comments[0]!.id });
+  });
+
+  it.each([
+    ['2026-10-02T10:00:00.000Z', '2026-10-02T10:00:42.400Z', '42s'],
+    ['2026-10-02T10:00:00.000Z', '2026-10-02T11:03:05.000Z', '1h3m5s'],
+    [undefined, '2026-10-02T10:00:42.000Z', 'duration unknown'],
+  ])('the duration runs from startedAt %s to finishedAt %s: %s', async (startedAt, finishedAt, text) => {
+    const { gh, source } = withIssue();
+    const job = jobForIssue(1, { id: '12345678-aaaa', status: 'finished', result: 'x', ...(startedAt ? { startedAt } : {}), finishedAt });
+    await source.report({ kind: 'finished', job });
+    expect(gh.commentsOn(REPO, 1)[0]!.body.split('\n')[1]).toBe(`job-hopper: finished (job 12345678, ${text})`);
   });
 
   it('failed: label only, claimed → failed, no comment', async () => {
@@ -78,13 +93,13 @@ describe('GitHub source report', () => {
     expect(again).toEqual(first);
   });
 
-  it('truncates a comment to 60 000 chars with a note', async () => {
+  it('a huge result never reaches the issue', async () => {
     const { gh, source } = withIssue();
     const job = jobForIssue(1, { status: 'finished', result: 'r'.repeat(100000) });
     await source.report({ kind: 'finished', job });
     const [c] = gh.commentsOn(REPO, 1);
-    expect(c!.body.length).toBeLessThanOrEqual(60000);
-    expect(c!.body).toContain(`(truncated, see job ${job.id})`);
+    expect(c!.body).not.toContain('rrr');
+    expect(c!.body.split('\n')).toHaveLength(2);
     expect(c!.body).toMatch(MARKER_RE);
   });
 
