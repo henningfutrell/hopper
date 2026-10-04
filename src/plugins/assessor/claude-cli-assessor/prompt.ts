@@ -56,6 +56,7 @@ export function buildAssessPrompt(req: AnswerRequest, draft: AnswerDraft): strin
     part('Question', q.text) +
     part('Draft answer (what would be typed into the agent)', draft.answer) +
     part("Answerer's reason", draft.reason) +
+    `Answerer confident: ${draft.confident ? 'yes' : 'no'}\n\n` +
     (req.previous.length > 0 ? part('Earlier attempts', req.previous.map(attemptLine).join('\n')) : '') +
     `${VERDICT}\n`
   );
