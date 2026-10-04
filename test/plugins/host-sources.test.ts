@@ -1,6 +1,7 @@
-// Phase 5 slice 4: the job-source, machine-source and usage-source roles in the plugin host. All
-// three are restart roles: built once at start from plugins.yaml (or the built-in instances when a
-// section is absent); a later edit shows `changed — restart pending`. Detection never makes a paid
+// Phase 5 slice 4: the job-source, machine-source and usage-source roles in the plugin host, built
+// at start from plugins.yaml (or the built-in instances when a section is absent). Job and usage
+// sources are restart roles: a later edit shows `changed — restart pending`. The machine source
+// applies an options edit live (issue #18); another instance still waits for a restart. Detection never makes a paid
 // call: github-gh asks `gh auth status`, github-app looks for its app file.
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -172,13 +173,46 @@ describe('the machine-source role', () => {
     expect(host.report().machines.instances[0]).toMatchObject({ active: null, reason: expect.stringMatching(/lanes/) });
   });
 
-  it('a restart role: a lanes edit shows changed — restart pending', async () => {
+  it('a lanes edit applies live (issue #18): same instance, new options, no restart pending', async () => {
     const { host, pluginsFile } = start({ file: 'version: 1\nmachines: { name: local, plugin: local, options: { lanes: 2 } }\n' });
     await host.start();
+    const machines = host.machines();
     writeFileSync(pluginsFile, 'version: 1\nmachines: { name: local, plugin: local, options: { lanes: 3 } }\n', { mode: 0o600 });
     await host.reload();
-    expect(host.report().machines.pending).toEqual({ status: 'changed — restart pending', instances: [{ name: 'local', plugin: 'local', options: { lanes: 3 } }] });
-    expect((await host.machines().list())[0]!.maxLanes).toBe(2);
+    expect(host.report().machines.pending).toBeUndefined();
+    expect(host.report().machines.instances[0]!.instance.options).toEqual({ lanes: 3 });
+    expect((await machines.list())[0]!.maxLanes).toBe(3);
+  });
+
+  it('another instance name or plugin still waits for a restart: lanes are stored under the machine id', async () => {
+    const { host, pluginsFile } = start({ file: 'version: 1\nmachines: { name: local, plugin: local, options: { lanes: 2 } }\n' });
+    await host.start();
+    writeFileSync(pluginsFile, 'version: 1\nmachines: { name: server, plugin: local, options: { lanes: 3 } }\n', { mode: 0o600 });
+    await host.reload();
+    expect(host.report().machines.pending).toEqual({ status: 'changed — restart pending', instances: [{ name: 'server', plugin: 'local', options: { lanes: 3 } }] });
+    expect((await host.machines().list())[0]).toMatchObject({ id: 'local', maxLanes: 2 });
+  });
+});
+
+describe('attached machines in the host (issue #18)', () => {
+  it('attachedMachines() follows plugins.yaml: added, changed and removed without a restart', async () => {
+    const { host, pluginsFile } = start({ file: 'version: 1\n' });
+    await host.start();
+    expect(host.attachedMachines()).toEqual([]);
+    writeFileSync(pluginsFile, 'version: 1\nattachedMachines:\n  - { name: laptop, ssh: laptop, lanes: 2, herdrBin: /h/herdr }\n', { mode: 0o600 });
+    await host.reload();
+    expect(host.attachedMachines()).toEqual([{ name: 'laptop', ssh: 'laptop', lanes: 2, herdrBin: '/h/herdr', session: 'job-hopper', executors: ['herdr-claude'] }]);
+    writeFileSync(pluginsFile, 'version: 1\nattachedMachines: []\n', { mode: 0o600 });
+    await host.reload();
+    expect(host.attachedMachines()).toEqual([]);
+  });
+
+  it('an invalid plugins.yaml keeps the last good attached machines', async () => {
+    const { host, pluginsFile } = start({ file: 'version: 1\nattachedMachines:\n  - { name: laptop, ssh: laptop, lanes: 2 }\n' });
+    await host.start();
+    writeFileSync(pluginsFile, 'version: 1\nattachedMachines:\n  - { name: laptop, ssh: -oProxy, lanes: 2 }\n', { mode: 0o600 });
+    await host.reload();
+    expect(host.attachedMachines().map((m) => m.ssh)).toEqual(['laptop']);
   });
 });
 

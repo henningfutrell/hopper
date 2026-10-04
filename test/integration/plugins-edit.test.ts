@@ -118,7 +118,7 @@ describe('POST /ui/api/plugins — one instance\'s options', () => {
     expect(r.body.executors.pending?.status).toBe('changed — restart pending');
   });
 
-  it('the machine instance: its lane count is edited in place (one map, not a list); restart pending', async () => {
+  it('the machine instance: its lane count is edited in place (one map, not a list) and applies live (issue #18)', async () => {
     const { a, token, file } = await start(`${TWO_EXECUTORS}machines: { name: local, plugin: local, options: { lanes: 4 } }\n`);
     const body = await report(a);
     expect(body.instances).toEqual(expect.arrayContaining([{ role: 'machine-source', instance: { name: 'local', plugin: 'local', options: { lanes: 4 } } }]));
@@ -127,7 +127,9 @@ describe('POST /ui/api/plugins — one instance\'s options', () => {
     const doc = parse(read(file));
     expect(doc.machines).toEqual({ name: 'local', plugin: 'local', options: { lanes: 2 } });
     expect(doc.executors).toHaveLength(3);
-    expect(r.body.machines.pending?.status).toBe('changed — restart pending');
+    expect(r.body.machines.pending).toBeUndefined();
+    const local = (await a.api('GET', '/api/machines')).body.machines.find((m: { id: string }) => m.id === 'local');
+    expect(local.maxLanes).toBe(2);
   });
 
   it('a command-bearing option that differs: 409 naming it, nothing written', async () => {
