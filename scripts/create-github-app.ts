@@ -1,25 +1,30 @@
 // Manifest-flow helper: docs/design.md "The manifest-flow helper". Node built-ins only.
-// Exit codes: 0 created, 1 failure/timeout, 2 refused (config exists, no --force).
+// The app's private key (and webhook secret, if GitHub made one) are secrets: they go to the env
+// file as GITHUB_APP_PRIVATE_KEY= (newlines as \n) and GITHUB_APP_WEBHOOK_SECRET= lines — by default
+// ~/.config/job-hopper/daemon.env, the host unit's EnvironmentFile; --secrets-file for any other deploy,
+// whose secret store takes them from there. The app's id and slug are config: set them as the
+// github-app instance's appId and slug (`job-hopper config edit plugins.yaml`); the helper prints both.
+// Exit codes: 0 created, 1 failure/timeout, 2 refused (the env file already holds a key, no --force).
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { chmodSync, closeSync, lstatSync, mkdirSync, openSync, renameSync, unlinkSync, writeSync } from 'node:fs';
+import { chmodSync, closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeSync } from 'node:fs';
 import http from 'node:http';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { parseArgs } from 'node:util';
 
 const { values: opt } = parseArgs({
   options: {
     name: { type: 'string' }, owner: { type: 'string' }, org: { type: 'string' },
-    'no-webhook': { type: 'boolean' }, force: { type: 'boolean' }, 'no-open': { type: 'boolean' },
+    'no-webhook': { type: 'boolean' }, force: { type: 'boolean' }, 'no-open': { type: 'boolean' }, 'secrets-file': { type: 'string' },
   },
 });
 
 const web = (process.env.JOB_HOPPER_GITHUB_WEB ?? 'https://github.com').replace(/\/$/, '');
 const api = (process.env.JOB_HOPPER_GITHUB_API ?? 'https://api.github.com').replace(/\/$/, '');
-const dir = process.env.JOB_HOPPER_CONFIG_DIR ?? join(homedir(), '.config', 'job-hopper');
+const envFile = opt['secrets-file'] ?? join(homedir(), '.config', 'job-hopper', 'daemon.env');
 const timeoutMs = Number(process.env.JOB_HOPPER_APP_FLOW_TIMEOUT_MS ?? 15 * 60 * 1000);
-const target = (f: string) => join(dir, f);
+const SECRET_KEYS = ['GITHUB_APP_PRIVATE_KEY', 'GITHUB_APP_WEBHOOK_SECRET'];
 
 const fail = (msg: string, code = 1): never => {
   process.stderr.write(`create-github-app: ${msg}\n`);
@@ -68,42 +73,31 @@ async function convert(code: string): Promise<Conversion> {
   return c;
 }
 
-// Writes the config files. All targets are checked for symlinks first; each file is
+const envText = (): string => (existsSync(envFile) ? readFileSync(envFile, 'utf8') : '');
+const holdsKey = (text: string): boolean => text.split('\n').some((l) => l.startsWith('GITHUB_APP_PRIVATE_KEY='));
+
+// Replaces the env file with its other lines plus the app's secrets: checked for a symlink first,
 // created 600 under a temp name and renamed into place.
-function writeConfig(c: Conversion): string {
-  const names = ['github-app.pem', 'github-app-webhook.secret', 'github-app.json'];
-  for (const n of names) {
-    if (exists(target(n)) && lstatSync(target(n)).isSymbolicLink()) throw new Error(`refusing symlink at ${target(n)}`);
-  }
-  mkdirSync(dir, { recursive: true, mode: 0o700 });
-  const tmps: string[] = [];
-  const put = (name: string, data: string) => {
-    const tmp = `${target(name)}.tmp-${process.pid}`;
-    tmps.push(tmp);
-    const fd = openSync(tmp, 'wx', 0o600);
-    try { writeSync(fd, data); } finally { closeSync(fd); }
-    chmodSync(tmp, 0o600);
-    renameSync(tmp, target(name));
-  };
+function writeSecrets(c: Conversion): string {
+  if (exists(envFile) && lstatSync(envFile).isSymbolicLink()) throw new Error(`refusing symlink at ${envFile}`);
+  mkdirSync(dirname(envFile), { recursive: true, mode: 0o700 });
+  const kept = envText().split('\n').filter((l) => l !== '' && !SECRET_KEYS.some((k) => l.startsWith(`${k}=`)));
+  const lines = [...kept, `GITHUB_APP_PRIVATE_KEY=${c.pem.trim().replaceAll('\n', '\\n')}`, ...(c.webhook_secret ? [`GITHUB_APP_WEBHOOK_SECRET=${c.webhook_secret}`] : [])];
+  const tmp = `${envFile}.tmp-${process.pid}`;
+  const fd = openSync(tmp, 'wx', 0o600);
+  try { writeSync(fd, `${lines.join('\n')}\n`); } finally { closeSync(fd); }
   try {
-    put('github-app.pem', c.pem);
-    if (c.webhook_secret) put('github-app-webhook.secret', `${c.webhook_secret}\n`);
-    else if (exists(target('github-app-webhook.secret'))) unlinkSync(target('github-app-webhook.secret'));
-    put('github-app.json', `${JSON.stringify({
-      version: 1, appId: c.id, slug: c.slug, botLogin: `${c.slug}[bot]`, clientId: c.client_id,
-      htmlUrl: c.html_url, owner: c.owner.login, privateKeyFile: target('github-app.pem'),
-      webhookSecretFile: c.webhook_secret ? target('github-app-webhook.secret') : null,
-      createdAt: new Date().toISOString(),
-    }, null, 2)}\n`);
+    chmodSync(tmp, 0o600);
+    renameSync(tmp, envFile);
   } catch (e) {
-    for (const t of tmps) { try { unlinkSync(t); } catch { /* already renamed */ } }
+    try { unlinkSync(tmp); } catch { /* already renamed */ }
     throw e;
   }
-  return target('github-app.json');
+  return envFile;
 }
 
-if (exists(target('github-app.json')) && !opt.force) {
-  fail(`${target('github-app.json')} exists; pass --force to replace it`, 2);
+if (holdsKey(envText()) && !opt.force) {
+  fail(`${envFile} already holds GITHUB_APP_PRIVATE_KEY; pass --force to replace it`, 2);
 }
 
 const owner = resolveOwner();
@@ -137,10 +131,12 @@ const server = http.createServer((req, res) => {
 async function finish(code: string, res: http.ServerResponse): Promise<void> {
   try {
     const c = await convert(code);
-    const path = writeConfig(c);
+    const path = writeSecrets(c);
     const install = `${web}/apps/${c.slug}/installations/new`;
     page(200, `<h1>App created</h1><p><a href="${escapeHtml(install)}">Install it on your repositories</a></p>`, res);
-    process.stdout.write(`\nApp created: ${c.slug}\nInstall it: ${install}\nConfig: ${path}\nJOB_HOPPER_APP_CREATED ${path}\n`);
+    process.stdout.write(`\nApp created: ${c.slug}\nInstall it: ${install}\nKey: GITHUB_APP_PRIVATE_KEY in ${path}\n` +
+      `Set the github-app instance's options (job-hopper config edit plugins.yaml): appId: ${c.id}, slug: ${c.slug}\n` +
+      `JOB_HOPPER_APP_CREATED ${c.id} ${c.slug}\n`);
     res.on('close', () => process.exit(0));
     setTimeout(() => process.exit(0), 1000).unref();
   } catch (e) {

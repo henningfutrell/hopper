@@ -15,7 +15,7 @@ describe('GitHub', () => {
     h.stops.push(() => gh.stop());
     return gh;
   }
-  const ghProvider = (gh: GithubFake, roles: unknown) => ({ name: 'github', label: 'GitHub', type: 'github', clientId: 'gh-id', clientSecret: 'gh-secret', webUrl: gh.url, apiUrl: gh.url, roles });
+  const ghProvider = (gh: GithubFake, roles: unknown) => ({ name: 'github', label: 'GitHub', type: 'github', clientId: 'gh-id', clientSecretEnv: 'GITHUB_CLIENT_SECRET', webUrl: gh.url, apiUrl: gh.url, roles });
 
   it('signs in by username; asks for no org scope when no rule names groups', async () => {
     const gh = await github();

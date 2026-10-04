@@ -27,7 +27,7 @@ function world(): World {
   const root = tempDir('jh-update-');
   dirs.push(root);
   const dataDir = join(root, 'data');
-  const store = openStore({ path: join(dataDir, 'db.sqlite'), clock: { now: () => new Date() } });
+  const store = openStore({ url: `sqlite:${join(dataDir, 'db.sqlite')}`, clock: { now: () => new Date() } });
   stores.push(store);
   return { root, up: createUpstream(root), store, dataDir };
 }

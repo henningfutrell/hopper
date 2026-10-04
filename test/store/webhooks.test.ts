@@ -7,7 +7,7 @@ const input = { name: 'hook', url: 'http://127.0.0.1:9/h', events: ['*'], secret
 
 describe('webhook subscriptions', () => {
   it('creates active, gets, lists, deletes', () => {
-    const s = t.open(t.path());
+    const s = t.open(t.url());
     const w = s.webhooks.upsertByName(input);
     expect(w).toMatchObject({ ...input, active: true, createdAt: '2026-10-02T10:00:00.000Z' });
     expect(s.webhooks.get(w.id)).toEqual(w);
@@ -22,7 +22,7 @@ describe('webhook subscriptions', () => {
 
 describe('webhook upsertByName', () => {
   it('inserts, then replaces by name keeping the id stable', () => {
-    const s = t.open(t.path());
+    const s = t.open(t.url());
     const a = s.webhooks.upsertByName(input);
     expect(a).toMatchObject({ ...input, createdAt: '2026-10-02T10:00:00.000Z' });
     const b = s.webhooks.upsertByName({ ...input, url: 'http://127.0.0.1:9/new', secret: 'z', active: false });
@@ -36,7 +36,7 @@ describe('webhook upsertByName', () => {
 });
 
 describe('webhook deliveries', () => {
-  function setup(path = t.path(), clock = fixedClock()) {
+  function setup(path = t.url(), clock = fixedClock()) {
     const s = t.open(path, clock);
     const w = s.webhooks.upsertByName(input);
     const e: DomainEvent = s.events.append({ type: 'job.queued', jobId: 'j', data: {} });

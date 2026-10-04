@@ -1,15 +1,16 @@
 // Issue #18, "Cant add machines": the Machines view adds, edits and removes attached machines
 // through POST /ui/api/machines, which writes plugins.yaml `attachedMachines:` and applies without
 // a restart. The ssh target is chosen from ~/.ssh/config's Host aliases, never typed; herdrBin is
-// resolved over ssh by the daemon (the seam here), never sent by the UI. Real HTTP server, real
-// plugins.yaml in the sealed HOME.
-import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+// resolved over ssh by the daemon (the seam here), never sent by the UI. Real HTTP server, the
+// plugins.yaml document in the database, the sealed HOME.
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { parse } from 'yaml';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { MachinesConfig } from '../../src/domain/types.ts';
-import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
+import { startTestApp, tempDbPath, writePluginsYaml, type TestApp } from '../support/app.ts';
+import { readDocument } from '../support/files.ts';
 import { waitFor } from '../support/wait.ts';
 
 type Reply = MachinesConfig & { error: string };
@@ -40,11 +41,10 @@ attachedMachines:
   - { name: desk, ssh: desk, lanes: 1, executors: [test], herdrBin: /usr/bin/herdr }   # the desk
 `;
 
-async function start(file = FILE): Promise<{ a: TestApp; token: string; path: string }> {
+async function start(file = FILE): Promise<{ a: TestApp; token: string }> {
   const db = tempDbPath();
   cleanup = db.cleanup;
-  const path = join(dirname(db.dbPath), 'plugins.yaml');
-  writeFileSync(path, file, { mode: 0o600 });
+  writePluginsYaml(db.dbPath, file);
   t = await startTestApp({
     dbPath: db.dbPath,
     seams: {
@@ -56,15 +56,15 @@ async function start(file = FILE): Promise<{ a: TestApp; token: string; path: st
       },
     },
   });
-  return { a: t, token: await t.login(), path };
+  return { a: t, token: await t.login() };
 }
 
 const config = async (a: TestApp): Promise<MachinesConfig> => (await a.api('GET', '/api/machines/config')).body;
 const machineIds = async (a: TestApp): Promise<string[]> => (await a.api('GET', '/api/machines')).body.machines.map((m: { id: string }) => m.id);
-const read = (path: string) => readFileSync(path, 'utf8');
+const read = (a: TestApp) => readDocument(a.dbPath, 'plugins.yaml')!;
 
 describe('GET /api/machines/config', () => {
-  it('the attached machines as configured, the executors they may run, the detected ssh targets and the file version', async () => {
+  it('the attached machines as configured, the executors they may run, the detected ssh targets and the document version', async () => {
     const { a } = await start();
     const c = await config(a);
     expect(c.version).toMatch(/^[0-9a-f]{64}$/);
@@ -77,46 +77,45 @@ describe('GET /api/machines/config', () => {
 
 describe('POST /ui/api/machines — add', () => {
   it('without a UI session: 403, nothing written', async () => {
-    const { a, path } = await start();
-    const before = read(path);
+    const { a } = await start();
+    const before = read(a);
     const r = await a.ui('/ui/api/machines', { action: 'add', name: 'laptop', ssh: 'laptop', lanes: 2, version: (await config(a)).version });
     expect(r.status).toBe(403);
-    expect(read(path)).toBe(before);
+    expect(read(a)).toBe(before);
   });
 
-  it('writes one entry with the resolved herdrBin, keeps every other byte, mode 600; /api/machines lists it without a restart', async () => {
-    const { a, token, path } = await start();
+  it('writes one entry with the resolved herdrBin, keeps every other byte; /api/machines lists it without a restart', async () => {
+    const { a, token } = await start();
     const r = await a.ui<Reply>('/ui/api/machines', {
       action: 'add', name: 'laptop', ssh: 'laptop', lanes: 2, executors: ['herdr-claude', 'test'], label: 'spare laptop', version: (await config(a)).version,
     }, { token });
     expect(r.status).toBe(200);
     expect(resolved).toEqual(['laptop']);
-    const text = read(path);
+    const text = read(a);
     expect(text.startsWith(FILE)).toBe(true);
     expect(parse(text).attachedMachines[1]).toEqual({ name: 'laptop', ssh: 'laptop', lanes: 2, executors: ['herdr-claude', 'test'], label: 'spare laptop', herdrBin: '/home/user/.local/bin/herdr' });
-    expect(statSync(path).mode & 0o777).toBe(0o600);
     expect(r.body.attached.map((m) => m.name)).toEqual(['desk', 'laptop']);
     expect(await machineIds(a)).toEqual(['local', 'desk', 'laptop']);
     await waitFor(async () => (await a.api('GET', '/api/machines')).body.machines.find((m: { id: string; online: boolean }) => m.id === 'laptop' && m.online));
   });
 
-  it('into a file with no attachedMachines section: the section is added', async () => {
-    const { a, token, path } = await start('version: 1\nexecutors: [ { name: test, plugin: test } ]\n');
+  it('into a document with no attachedMachines section: the section is added', async () => {
+    const { a, token } = await start('version: 1\nexecutors: [ { name: test, plugin: test } ]\n');
     const r = await a.ui<Reply>('/ui/api/machines', { action: 'add', name: 'laptop', ssh: 'laptop', lanes: 1, executors: ['test'], version: (await config(a)).version }, { token });
     expect(r.status).toBe(200);
-    expect(parse(read(path)).attachedMachines).toEqual([{ name: 'laptop', ssh: 'laptop', lanes: 1, executors: ['test'], herdrBin: '/home/user/.local/bin/herdr' }]);
+    expect(parse(read(a)).attachedMachines).toEqual([{ name: 'laptop', ssh: 'laptop', lanes: 1, executors: ['test'], herdrBin: '/home/user/.local/bin/herdr' }]);
   });
 
   it('an ssh target not among the detected Host aliases: 400, never probed, nothing written', async () => {
-    const { a, token, path } = await start();
-    const before = read(path);
+    const { a, token } = await start();
+    const before = read(a);
     for (const ssh of ['user@10.0.0.9', 'x.lan', '-oProxyCommand=sh']) {
       const r = await a.ui<Reply>('/ui/api/machines', { action: 'add', name: 'x', ssh, lanes: 1, version: (await config(a)).version }, { token });
       expect(r.status).toBe(400);
       expect(r.body.error).toMatch(/ssh/);
     }
     expect(resolved).toEqual([]);
-    expect(read(path)).toBe(before);
+    expect(read(a)).toBe(before);
   });
 
   it('herdrBin and session are never taken from the UI: 400', async () => {
@@ -127,18 +126,18 @@ describe('POST /ui/api/machines — add', () => {
   });
 
   it('herdr cannot be resolved there: 409 with the reason, nothing written', async () => {
-    const { a, token, path } = await start();
-    const before = read(path);
+    const { a, token } = await start();
+    const before = read(a);
     const r = await a.ui<Reply>('/ui/api/machines', { action: 'add', name: 'gone', ssh: 'unreachable', lanes: 1, executors: ['test'], version: (await config(a)).version }, { token });
     expect(r.status).toBe(409);
     expect(r.body.error).toMatch(/No route to host/);
-    expect(read(path)).toBe(before);
+    expect(read(a)).toBe(before);
     expect(await machineIds(a)).toEqual(['local', 'desk']);
   });
 
   it('refused by the attachedMachines rules: local, the machine source\'s name, a name taken, lanes < 1, an unknown executor', async () => {
-    const { a, token, path } = await start();
-    const before = read(path);
+    const { a, token } = await start();
+    const before = read(a);
     const version = (await config(a)).version;
     const add = (over: Record<string, unknown>) => a.ui<Reply>('/ui/api/machines', { action: 'add', name: 'laptop', ssh: 'laptop', lanes: 1, executors: ['test'], version, ...over }, { token });
     expect((await add({ name: 'local' })).status).toBe(400);
@@ -147,26 +146,26 @@ describe('POST /ui/api/machines — add', () => {
     const unknown = await add({ executors: ['nope'] });
     expect(unknown.status).toBe(400);
     expect(unknown.body.error).toMatch(/nope/);
-    expect(read(path)).toBe(before);
+    expect(read(a)).toBe(before);
   });
 
   it('a stale version: 409, nothing written', async () => {
-    const { a, token, path } = await start();
+    const { a, token } = await start();
     const version = (await config(a)).version;
-    writeFileSync(path, `${FILE}# edited by hand\n`, { mode: 0o600 });
+    writePluginsYaml(a.dbPath, `${FILE}# edited by hand\n`);
     const r = await a.ui<Reply>('/ui/api/machines', { action: 'add', name: 'laptop', ssh: 'laptop', lanes: 1, executors: ['test'], version }, { token });
     expect(r.status).toBe(409);
     expect(r.body.error).toMatch(/changed since it was read/);
-    expect(read(path)).toBe(`${FILE}# edited by hand\n`);
+    expect(read(a)).toBe(`${FILE}# edited by hand\n`);
   });
 });
 
 describe('POST /ui/api/machines — edit', () => {
   it('lanes, executors and label change in place; ssh, herdrBin and session stay; applies without a restart', async () => {
-    const { a, token, path } = await start();
+    const { a, token } = await start();
     const r = await a.ui<Reply>('/ui/api/machines', { action: 'edit', name: 'desk', lanes: 3, executors: ['test', 'herdr-claude'], label: 'the desk', version: (await config(a)).version }, { token });
     expect(r.status).toBe(200);
-    const text = read(path);
+    const text = read(a);
     const desk = /^ {2}- \{ name: desk.*$/m;
     expect(text.replace(desk, '')).toBe(FILE.replace(desk, ''));
     expect(parse(text).attachedMachines).toEqual([{ name: 'desk', ssh: 'desk', lanes: 3, executors: ['test', 'herdr-claude'], label: 'the desk', herdrBin: '/usr/bin/herdr' }]);
@@ -175,10 +174,10 @@ describe('POST /ui/api/machines — edit', () => {
   });
 
   it('a null label goes back to the name', async () => {
-    const { a, token, path } = await start(FILE.replace('lanes: 1,', 'lanes: 1, label: old,'));
+    const { a, token } = await start(FILE.replace('lanes: 1,', 'lanes: 1, label: old,'));
     const r = await a.ui<Reply>('/ui/api/machines', { action: 'edit', name: 'desk', label: null, version: (await config(a)).version }, { token });
     expect(r.status).toBe(200);
-    expect(parse(read(path)).attachedMachines[0].label).toBeUndefined();
+    expect(parse(read(a)).attachedMachines[0].label).toBeUndefined();
   });
 
   it('cannot change ssh, herdrBin or session (400); an unknown machine is 404', async () => {
@@ -193,24 +192,24 @@ describe('POST /ui/api/machines — edit', () => {
 
 describe('POST /ui/api/machines — remove', () => {
   it('removes the entry; /api/machines no longer lists it, without a restart', async () => {
-    const { a, token, path } = await start();
+    const { a, token } = await start();
     const r = await a.ui<Reply>('/ui/api/machines', { action: 'remove', name: 'desk', version: (await config(a)).version }, { token });
     expect(r.status).toBe(200);
-    expect(parse(read(path)).attachedMachines).toEqual([]);
-    expect(read(path)).toContain("# The owner's note: kept across UI edits");
+    expect(parse(read(a)).attachedMachines).toEqual([]);
+    expect(read(a)).toContain("# The owner's note: kept across UI edits");
     expect(await machineIds(a)).toEqual(['local']);
   });
 
   it('refused (409, naming the jobs) while a lane there is busy or a job waits for an answer in a pane there', async () => {
-    const { a, token, path } = await start();
-    const before = read(path);
+    const { a, token } = await start();
+    const before = read(a);
     const store = a.app.store;
     const parked = store.jobs.create({ executor: 'test', payload: {} }, 50);
     store.jobs.update(parked.id, { status: 'waiting_answer', resumeOn: 'desk' });
     const r = await a.ui<Reply>('/ui/api/machines', { action: 'remove', name: 'desk', version: (await config(a)).version }, { token });
     expect(r.status).toBe(409);
     expect(r.body.error).toContain(parked.id);
-    expect(read(path)).toBe(before);
+    expect(read(a)).toBe(before);
 
     store.jobs.update(parked.id, { status: 'cancelled', resumeOn: undefined });
     const running = store.jobs.create({ executor: 'test', payload: {} }, 50);

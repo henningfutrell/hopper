@@ -50,8 +50,8 @@ export function Plugins() {
       <Panel title="plugins.yaml" icon={Puzzle} bodyClassName="space-y-1.5 text-xs"
         action={authed && <Button size="sm" variant="outline" disabled={busy} onClick={() => void rescan()}><RefreshCw />Rescan</Button>}>
         <div className="flex flex-wrap items-center gap-2">
-          <code className="font-mono break-all">{c.path}</code>
-          <StatusBadge status={c.source === 'file' ? 'from file' : 'built-in defaults'} tone={c.source === 'file' ? 'ok' : 'muted'} />
+          <code className="font-mono break-all">{c.document}</code>
+          <StatusBadge status={c.source === 'document' ? 'in the database' : 'built-in defaults'} tone={c.source === 'document' ? 'ok' : 'muted'} />
           {c.loadedAt && <span className="text-muted-foreground">loaded {new Date(c.loadedAt).toLocaleTimeString()}</span>}
         </div>
         {c.error && <div className="text-bad">{c.error}</div>}

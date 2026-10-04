@@ -1,6 +1,8 @@
 // The attached machines in the plugin host (design.md "Machines from the UI", issue #18): what GET
 // /api/machines/config reports, and a machine edit — written by attached-edit.ts, then plugins.yaml
 // reloaded, so the machines follow it without a restart.
+import type { ConfigDocuments } from '../domain/ports.ts';
+import { PLUGINS } from './plugins-file.ts';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { AttachedMachine, InstanceSpec, MachineEdit, MachineEditOutcome, MachinesConfig } from '../domain/types.ts';
@@ -17,7 +19,7 @@ export interface AttachedEditOptions {
 }
 
 export function createMachinesEditor(o: AttachedEditOptions & {
-  pluginsFile: string;
+  documents: ConfigDocuments;
   dataDir: string;
   logger: PluginLogger;
   /** What plugins.yaml names now: the machine source and the executor instances. */
@@ -35,7 +37,7 @@ export function createMachinesEditor(o: AttachedEditOptions & {
     const c = o.configured();
     const error = o.error();
     return {
-      path: o.pluginsFile, version: o.version(), ...(error ? { error } : {}),
+      document: PLUGINS, version: o.version(), ...(error ? { error } : {}),
       machine: c.machines, attached: o.attached(), executors: c.executors.map((x) => x.name), ssh: readSshTargets(sshConfig),
     };
   }
@@ -43,7 +45,7 @@ export function createMachinesEditor(o: AttachedEditOptions & {
   async function edit(e: MachineEdit): Promise<MachineEditOutcome> {
     const c = o.configured();
     const r = await applyMachineEdit(e, {
-      path: o.pluginsFile, machineName: c.machines.name, executors: c.executors.map((x) => x.name),
+      documents: o.documents, machineName: c.machines.name, executors: c.executors.map((x) => x.name),
       sshTargets: () => readSshTargets(sshConfig), resolveHerdrBin, inUse,
     });
     if (!r.ok) return r;

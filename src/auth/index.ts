@@ -17,7 +17,7 @@ import type { FlowSecrets, IdentityProvider, ProviderCallback } from './provider
 import { roleFor } from './roles.ts';
 import { createSamlProvider } from './saml.ts';
 
-export { DEFAULT_AUTH_FILE, loadAuthFile, type AuthConfig } from './config.ts';
+export { AUTH, authDocumentProblem, loadAuthDocument, type AuthConfig } from './config.ts';
 
 const FLOW_MS = 10 * 60_000;
 const TICKET_MS = 2 * 60_000;

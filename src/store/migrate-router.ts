@@ -1,7 +1,7 @@
 // Migration 4: Jev → router names in stored rows (design.md "Persisted-state migrations").
 // Rows are rewritten field by field; nothing is dropped — `jevUsed` moves into `details`.
 // Stored events are not rewritten: they keep their v1 payloads and are read by version.
-import type { DatabaseSync } from 'node:sqlite';
+import type { Db } from './db.ts';
 
 type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -50,16 +50,15 @@ export function renameDecision(d: Obj): Obj {
   return renamed;
 }
 
-function rewrite(db: DatabaseSync, table: 'jobs' | 'decisions', fn: (o: Obj) => Obj): void {
-  const update = db.prepare(`UPDATE ${table} SET body = ? WHERE seq = ?`);
-  for (const row of db.prepare(`SELECT seq, body FROM ${table}`).all()) {
+function rewrite(db: Db, table: 'jobs' | 'decisions', fn: (o: Obj) => Obj): void {
+  for (const row of db.all(`SELECT seq, body FROM ${table}`)) {
     const before = row.body as string;
     const after = JSON.stringify(fn(JSON.parse(before) as Obj));
-    if (after !== before) update.run(after, row.seq as number);
+    if (after !== before) db.run(`UPDATE ${table} SET body = ? WHERE seq = ?`, after, row.seq as number);
   }
 }
 
-export function migrateRouterNames(db: DatabaseSync): void {
+export function migrateRouterNames(db: Db): void {
   rewrite(db, 'jobs', renameJob);
   rewrite(db, 'decisions', renameDecision);
   db.exec("UPDATE settings SET key = 'routerMode' WHERE key = 'jevMode'");

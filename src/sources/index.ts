@@ -8,7 +8,8 @@ export { createGitHubSource, createGhCliApi, createFakeGitHub } from './github/i
 export type { FakeGitHub, GitHubApi, GitHubSourceOptions } from './github/index.ts';
 export { githubAppOptions, githubGhOptions, sourceConfig } from './config.ts';
 export type { GitHubAppOptions, GitHubGhOptions, GitHubSourceConfig } from './config.ts';
-export { APP_MISSING, GH_PAUSED, appFileProblem, createAppSource, createGhSource } from './compose.ts';
+export { APP_MISSING, GH_PAUSED, appProblem, createAppSource, createGhSource } from './compose.ts';
+export { loadGitHubApp } from './github/app/index.ts';
 export { createSourceSync } from './sync.ts';
 export type { SourceSync, SourceSyncOptions } from './sync.ts';
 

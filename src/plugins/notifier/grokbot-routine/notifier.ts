@@ -1,11 +1,12 @@
 // The Grok Bot routine webhook (design.md "Grok Bot routine webhook"): one POST per question that
-// reaches the human, read from the env file at each event. In memory only: no store row, no event.
+// reaches the human, the URL and key read from the environment at each event. In memory only: no
+// store row, no event.
 import type { DomainEvent, Notifier, NotifierEvents, PluginLogger } from '../../sdk.ts';
-import { readGrokBotEnv } from './env-file.ts';
 
 export interface GrokBotNotifierOptions {
   name: string;
-  path: string;
+  /** The routine's URL and bearer key now; either unset: nothing is sent. */
+  routine(): { url?: string; key?: string };
   logger: PluginLogger;
   /** First retry delay; doubles per attempt. Default 1000. */
   baseMs?: number;
@@ -21,13 +22,12 @@ function wanted(e: DomainEvent): boolean {
 }
 
 export function createGrokBotNotifier(o: GrokBotNotifierOptions): Notifier {
-  const { path, logger } = o;
+  const { logger } = o;
   const baseMs = o.baseMs ?? 1000;
   const timeoutMs = o.timeoutMs ?? 10_000;
   let feed: NotifierEvents | undefined;
   const inFlight = new Set<Promise<void>>();
   let unsubscribe: (() => void) | undefined;
-  let warnedMode = false;
 
   function payload(e: DomainEvent): Record<string, unknown> {
     const source = e.jobId ? feed?.job(e.jobId)?.source : undefined;
@@ -39,17 +39,9 @@ export function createGrokBotNotifier(o: GrokBotNotifierOptions): Notifier {
   }
 
   async function deliver(e: DomainEvent): Promise<void> {
-    const cfg = readGrokBotEnv(path);
-    if (cfg.kind === 'absent') return;
+    const cfg = o.routine();
+    if (!cfg.url || !cfg.key) return;
     const tag = `grokbot: ${e.type} ${e.jobId ?? ''}`.trim();
-    if (cfg.kind === 'invalid') {
-      logger.warn(`${tag}: ${path} ${cfg.reason}; skipped`);
-      return;
-    }
-    if (cfg.looseMode && !warnedMode) {
-      warnedMode = true;
-      logger.warn(`grokbot: ${path} is readable by group or other; chmod 600 it`);
-    }
     const body = JSON.stringify(payload(e));
     let last = 'no attempt';
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {

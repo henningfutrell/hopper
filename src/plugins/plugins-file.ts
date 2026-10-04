@@ -1,9 +1,7 @@
-// plugins.yaml: which instance fills which role (design.md "Configuration — plugins.yaml"). Read:
-// router, queueSorter, answerer, assessor, executors, jobSources, machines, usageSources, notifiers, attachedMachines, routing. A UI edit
-// (edit.ts) writes it through writePluginsFile.
-import { createHash } from 'node:crypto';
-import { chmodSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
-import { basename, dirname, join } from 'node:path';
+// plugins.yaml: which instance fills which role (design.md "Configuration — plugins.yaml"), a config
+// document in the store (design.md "Config documents"). Read: router, queueSorter, answerer,
+// assessor, executors, jobSources, machines, usageSources, notifiers, attachedMachines, routing. A UI
+// edit (edit.ts, attached-edit.ts) replaces it against its version.
 import { parse } from 'yaml';
 import { z } from 'zod';
 import type { AttachedMachine, InstanceSpec, RoutingRule } from '../domain/types.ts';
@@ -86,44 +84,19 @@ export function pluginsFileProblem(raw: unknown): string | undefined {
   return parsed.success ? undefined : parsed.error.issues.map((i) => `${i.path.join('.') || 'file'}: ${i.message}`).join('; ');
 }
 
-/** sha-256 of the file's bytes, or `missing`: an edit read against one version is refused against another. */
-export function pluginsFileVersion(text: string | undefined): string {
-  return text === undefined ? 'missing' : createHash('sha256').update(text).digest('hex');
-}
+export const PLUGINS = 'plugins.yaml';
 
-/** The file's text, or undefined when there is none. */
-export function readPluginsText(path: string): string | undefined {
-  try {
-    return readFileSync(path, 'utf8');
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
-    throw e;
-  }
-}
+/** How the operator edits a config document by hand: the CLI against the same database (design.md "Config documents"). */
+export const BY_HAND = 'job-hopper config edit plugins.yaml';
 
-/** Replace the file atomically (a temp file beside it, renamed over it), mode 600. */
-export function writePluginsFile(path: string, text: string): void {
-  const tmp = join(dirname(path), `.${basename(path)}.${process.pid}.tmp`);
-  writeFileSync(tmp, text, { mode: 0o600 });
-  chmodSync(tmp, 0o600);
-  renameSync(tmp, path);
-}
-
-export function loadPluginsFile(path: string): PluginsFileResult {
-  let text: string;
-  let mode: number;
-  try {
-    text = readFileSync(path, 'utf8');
-    mode = statSync(path).mode;
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return { missing: true };
-    return { error: `cannot read ${path}: ${(e as Error).message}` };
-  }
+/** The plugins document's text parsed and checked; `undefined` text: there is none yet. */
+export function loadPluginsFile(text: string | undefined): PluginsFileResult {
+  if (text === undefined) return { missing: true };
   let raw: unknown;
-  try { raw = parse(text); } catch (e) { return { error: `${path}: ${(e as Error).message}` }; }
+  try { raw = parse(text); } catch (e) { return { error: `${PLUGINS}: ${(e as Error).message}` }; }
   const parsed = FILE.safeParse(raw);
-  if (!parsed.success) return { error: `${path}: ${pluginsFileProblem(raw)}` };
-  const warnings = mode & 0o077 ? [`${path} is readable by group/other; options may hold secrets (chmod 600 ${path})`] : [];
+  if (!parsed.success) return { error: `${PLUGINS}: ${pluginsFileProblem(raw)}` };
+  const warnings: string[] = [];
   const { router, queueSorter, answerer, assessor, executors, jobSources, machines, usageSources, notifiers, attachedMachines, routing } = parsed.data;
   return {
     ...(router ? { router } : {}),

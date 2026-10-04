@@ -9,42 +9,40 @@ const toSub = (r: Record<string, unknown>): WebhookSubscription => ({
 
 export function createWebhookRepository(c: StoreContext): WebhookRepository {
   const getDelivery = (id: string): WebhookDelivery | undefined => {
-    const r = c.db.prepare('SELECT body FROM deliveries WHERE id = ?').get(id);
+    const r = c.db.get('SELECT body FROM deliveries WHERE id = ?', id);
     return r ? parse<WebhookDelivery>(r.body) : undefined;
   };
   const saveDelivery = (d: WebhookDelivery, insert: boolean): void => {
     const body = JSON.stringify(d);
     if (insert) {
-      c.db.prepare('INSERT INTO deliveries (id, subscription_id, status, next_attempt_at, body) VALUES (?, ?, ?, ?, ?)')
-        .run(d.id, d.subscriptionId, d.status, d.nextAttemptAt ?? null, body);
+      c.db.run('INSERT INTO deliveries (id, subscription_id, status, next_attempt_at, body) VALUES (?, ?, ?, ?, ?)', d.id, d.subscriptionId, d.status, d.nextAttemptAt ?? null, body);
     } else {
-      c.db.prepare('UPDATE deliveries SET status = ?, next_attempt_at = ?, body = ? WHERE id = ?')
-        .run(d.status, d.nextAttemptAt ?? null, body, d.id);
+      c.db.run('UPDATE deliveries SET status = ?, next_attempt_at = ?, body = ? WHERE id = ?', d.status, d.nextAttemptAt ?? null, body, d.id);
     }
   };
 
   return {
     upsertByName(input) {
-      c.db.prepare(
+      c.db.run(
         `INSERT INTO webhooks (id, name, url, events, secret, active, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (name) DO UPDATE SET url = excluded.url, events = excluded.events,
            secret = excluded.secret, active = excluded.active`,
-      ).run(c.idGen(), input.name, input.url, JSON.stringify(input.events), input.secret, input.active ? 1 : 0, c.clock.now().toISOString());
-      return toSub(c.db.prepare('SELECT * FROM webhooks WHERE name = ?').get(input.name)!);
+      c.idGen(), input.name, input.url, JSON.stringify(input.events), input.secret, input.active ? 1 : 0, c.clock.now().toISOString());
+      return toSub(c.db.get('SELECT * FROM webhooks WHERE name = ?', input.name)!);
     },
     get(id) {
-      const r = c.db.prepare('SELECT * FROM webhooks WHERE id = ?').get(id);
+      const r = c.db.get('SELECT * FROM webhooks WHERE id = ?', id);
       return r ? toSub(r) : undefined;
     },
     list() {
-      return c.db.prepare('SELECT * FROM webhooks ORDER BY seq').all().map(toSub);
+      return c.db.all('SELECT * FROM webhooks ORDER BY seq').map(toSub);
     },
     delete(id) {
       return c.tx(() => {
-        const gone = c.db.prepare('DELETE FROM webhooks WHERE id = ?').run(id).changes > 0;
+        const gone = c.db.run('DELETE FROM webhooks WHERE id = ?', id).changes > 0;
         if (!gone) return false;
         const at = c.clock.now().toISOString();
-        const open = c.db.prepare("SELECT body FROM deliveries WHERE subscription_id = ? AND status IN ('pending', 'retrying')").all(id);
+        const open = c.db.all("SELECT body FROM deliveries WHERE subscription_id = ? AND status IN ('pending', 'retrying')", id);
         for (const r of open) {
           saveDelivery({ ...parse<WebhookDelivery>(r.body), status: 'failed', nextAttemptAt: undefined, updatedAt: at }, false);
         }
@@ -68,15 +66,15 @@ export function createWebhookRepository(c: StoreContext): WebhookRepository {
       return next;
     },
     dueDeliveries(now) {
-      return c.db.prepare(
+      return c.db.all(
         "SELECT body FROM deliveries WHERE status IN ('pending', 'retrying') AND next_attempt_at <= ? ORDER BY next_attempt_at, seq",
-      ).all(now.toISOString()).map((r) => parse<WebhookDelivery>(r.body));
+        now.toISOString()).map((r) => parse<WebhookDelivery>(r.body));
     },
     listDeliveries(filter) {
       const where = filter?.subscriptionId !== undefined ? 'WHERE subscription_id = ?' : '';
       const limit = filter?.limit !== undefined ? 'LIMIT ?' : '';
       const args = [...(filter?.subscriptionId !== undefined ? [filter.subscriptionId] : []), ...(filter?.limit !== undefined ? [filter.limit] : [])];
-      return c.db.prepare(`SELECT body FROM deliveries ${where} ORDER BY seq DESC ${limit}`).all(...args)
+      return c.db.all(`SELECT body FROM deliveries ${where} ORDER BY seq DESC ${limit}`, ...args)
         .map((r) => parse<WebhookDelivery>(r.body));
     },
   };

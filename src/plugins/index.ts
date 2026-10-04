@@ -1,12 +1,10 @@
-// The plugin host (design.md "Phase 5"): built-in + custom plugins, plugins.yaml watched by mtime,
+// The plugin host (design.md "Phase 5"): built-in + custom plugins, plugins.yaml watched by version,
 // detection of every plugin, the live roles (the router — from plugins.yaml, else chosen from what
 // is detected — the answerer and the assessor, each swapped between calls) and the restart roles
 // (executors, job sources, usage sources, notifiers): built once at start; a later change is
 // reported as pending. The machine source applies an options change (its lane count) live; another
 // instance waits for a restart. Attached machines follow plugins.yaml live (issue #18). Notifiers are started with the event feed by the caller. A section plugins.yaml leaves out means the built-in instances.
-// UI edits (edit.ts, attached-edit.ts) write plugins.yaml and apply like a file edit.
-import { statSync } from 'node:fs';
-import { dirname } from 'node:path';
+// UI edits (edit.ts, attached-edit.ts) replace plugins.yaml in the store and apply like any other change.
 import type { MachineSource, Notifier, UsageSource } from '../domain/ports.ts';
 import {
   ROLES, type AttachedMachine, type ConfiguredInstance, type Detection, type InstanceSpec, type PluginsReport, type RestartRoleStatus, type RouterSelection, type RoutingRule,
@@ -18,9 +16,9 @@ import { createDetectionKit } from './detect.ts';
 import { loadCustomPlugins, type LoadedPlugin, type LoadResult } from './loader.ts';
 import { optionsJsonSchema, parseOptions } from './options.ts';
 import { applyEdit, configuredInstances, type Configured } from './edit.ts';
-import { loadPluginsFile, pluginsFileVersion, readPluginsText } from './plugins-file.ts';
+import { BY_HAND, PLUGINS, loadPluginsFile } from './plugins-file.ts';
 import { buildExecutors, executorStatus, type BuiltExecutor } from './executor-slot.ts';
-import { builtinInstances } from './migrate.ts';
+import { builtinInstances } from './builtin-instances.ts';
 import { buildNotifiers, startNotifiers, stopNotifiers } from './notifier-slot.ts';
 import { NO_MACHINE, applyMachineSpec, buildJobSources, buildUsageSources, instanceStatus, type Built, type BuiltJobSource } from './source-slots.ts';
 import { buildQueueSorter, createLiveQueueSorter, type LiveQueueSorter } from './queue-sorter-slot.ts';
@@ -63,7 +61,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
   let sorter: LiveQueueSorter | undefined;
   let answerer: BuiltAnswerer | undefined;
   let assessor: BuiltAssessor | undefined;
-  const builtin = builtinInstances(dirname(o.pluginsFile));
+  const builtin = builtinInstances();
   const defaults = {
     routing: [] as RoutingRule[],
     queueSorter: builtin.queueSorter,
@@ -90,7 +88,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
   let chain: Promise<void> = Promise.resolve();
   /** What plugins.yaml (or the built-in instances) names now: the last good configuration. */
   let configured: Configured | undefined;
-  const config: Omit<PluginsReport['config'], 'version'> = { path: o.pluginsFile, source: 'defaults', warnings: [] };
+  const config: Omit<PluginsReport['config'], 'version'> = { document: PLUGINS, source: 'defaults', warnings: [] };
 
   const find = (id: string): PluginDefinition | undefined => entries.find((e) => e.definition.id === id)?.definition;
   const runnableExecutors = () => (executors.built ?? []).flatMap((b) => (b.executor ? [b.executor.name] : []));
@@ -109,19 +107,17 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
     if (changed && !same(slot.pending, specs)) o.logger.info(`job-hopper: ${label} changed — restart pending`);
     slot.pending = changed ? specs : undefined;
   }
-  const sign = (): string => {
-    try { const s = statSync(o.pluginsFile); return `${s.mtimeMs}:${s.size}`; } catch { return 'missing'; }
-  };
+  const sign = (): string => o.documents.version(PLUGINS);
 
   async function catalogueDetection(def: PluginDefinition): Promise<Detection> {
     const parsed = parseOptions(def, {});
-    if (!parsed.ok) return { status: 'needs-setup', reason: parsed.error, command: `set ${def.role} options for ${def.id} in ${o.pluginsFile}` };
+    if (!parsed.ok) return { status: 'needs-setup', reason: parsed.error, command: `set ${def.role} options for ${def.id}: ${BY_HAND}` };
     return safeDetect(def, kit, parsed.options);
   }
 
   async function configure(): Promise<void> {
     signature = sign();
-    const r = loadPluginsFile(o.pluginsFile);
+    const r = loadPluginsFile(o.documents.read(PLUGINS));
     const file = 'error' in r || 'missing' in r ? undefined : r;
     let spec = {
       router: file?.router,
@@ -137,7 +133,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
     };
     let error = 'error' in r ? r.error : undefined;
     if (!error && spec.answerer && spec.answerer.name === spec.assessor.name) {
-      error = `${o.pluginsFile}: answerer and assessor have the same name (${spec.answerer.name}); a question stage must say which one holds it`;
+      error = `${PLUGINS}: answerer and assessor have the same name (${spec.answerer.name}); a question stage must say which one holds it`;
     }
     if (error) {
       config.error = error;
@@ -149,7 +145,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
       config.loadedAt = o.clock.now().toISOString();
     }
     configured = spec;
-    config.source = file && !error ? 'file' : 'defaults';
+    config.source = file && !error ? 'document' : 'defaults';
     config.warnings = 'warnings' in r ? r.warnings : [];
     const next: RouterSelection = spec.router ? 'file' : 'detected';
     const unchanged = (s: InstanceSpec) => live !== undefined && selection === next && same(live.current().spec, s);
@@ -199,7 +195,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
   };
 
   async function scan(): Promise<void> {
-    loaded = await loadCustomPlugins(o.pluginDir, new Set(builtins.map((b) => b.id)));
+    loaded = o.pluginDir === undefined ? { plugins: [], errors: [], warnings: [] } : await loadCustomPlugins(o.pluginDir, new Set(builtins.map((b) => b.id)));
     for (const e of loaded.errors) o.logger.warn(`job-hopper: plugin ${e.path} refused: ${e.error}`);
     for (const w of loaded.warnings) o.logger.warn(`job-hopper: ${w}`);
     const all: { definition: PluginDefinition; builtin: boolean; path?: string }[] = [
@@ -209,9 +205,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
     entries = await Promise.all(all.map(async (e) => ({ ...e, detection: await catalogueDetection(e.definition) })));
   }
 
-  const fileVersion = (): string => {
-    try { return pluginsFileVersion(readPluginsText(o.pluginsFile)); } catch { return 'unreadable'; }
-  };
+  const fileVersion = (): string => o.documents.version(PLUGINS);
 
   const instances = (): ConfiguredInstance[] => (configured ? configuredInstances(configured, need().current().spec) : []);
 
@@ -221,14 +215,14 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
   };
 
   const machinesEditor = createMachinesEditor({
-    ...o.attached, pluginsFile: o.pluginsFile, dataDir: o.dataDir, logger: o.logger,
+    ...o.attached, documents: o.documents, dataDir: o.dataDir, logger: o.logger,
     configured: () => started(configured), attached: copyAttached, version: fileVersion, error: () => config.error, reload: enqueue,
   });
   const machineIds = (): string[] => [
     ...(machines.built ?? []).flatMap((b) => (b.instance ? [b.spec.name] : [])), ...(attached ?? []).map((m) => m.name),
   ];
   const routingConfig = createRoutingConfig({
-    path: o.pluginsFile,
+    documents: o.documents,
     rules: () => configured?.routing ?? [],
     running: () => ({ machines: machineIds(), executors: (executors.built ?? []).map((b) => b.spec.name) }),
     configured: () => ({
@@ -289,9 +283,9 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
         await enqueue();
         o.logger.info('job-hopper: plugins rescanned');
       } else {
-        // Act on what the file says now, not on a reload the watch timer has not run yet.
+        // Act on what the document says now, not on a reload the watch timer has not run yet.
         if (sign() !== signature) await enqueue();
-        const r = applyEdit(e, { path: o.pluginsFile, configured: instances(), find: (id) => entries.find((x) => x.definition.id === id) });
+        const r = applyEdit(e, { documents: o.documents, configured: instances(), find: (id) => entries.find((x) => x.definition.id === id) });
         if (!r.ok) return r;
         if (r.changed) {
           o.logger.info(`job-hopper: plugins.yaml edited in the UI: ${e.action} ${e.role} ${e.action === 'select' ? String(e.plugin) : e.name}`);

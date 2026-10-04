@@ -1,14 +1,13 @@
 // A UI edit of webhooks.yaml (design.md "Webhook subscriptions in the UI", issue #18): add, edit,
-// rotate-secret or remove one entry. The file stays the source of truth: each edit rewrites only
-// that entry's part of it (comments and every other entry as written), atomically, mode 600,
-// against the file's version, then reloads it into the store before answering.
-import { createHash, randomBytes } from 'node:crypto';
-import { chmodSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
-import { basename, dirname, join } from 'node:path';
+// rotate-secret or remove one entry. The document stays the source of truth: each edit rewrites only
+// that entry's part of it (comments and every other entry as written), against the document's
+// version, then reloads it into the store before answering.
+import { randomBytes } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { isMap, isScalar, isSeq, parse, parseDocument, stringify, type Document, type Scalar, type YAMLMap } from 'yaml';
+import type { ConfigDocuments } from '../domain/ports.ts';
 import type { WebhooksEdit } from '../domain/types.ts';
-import { webhooksFileProblem } from './config.ts';
+import { WEBHOOKS, webhooksFileProblem } from './config.ts';
 
 export type WebhooksEditRefusal = { ok: false; code: 'invalid' | 'not_found' | 'conflict'; error: string };
 /** `secret`: the new secret of an add or rotate-secret, given out this once. */
@@ -22,23 +21,6 @@ const refuse = (code: WebhooksEditRefusal['code'], error: string): WebhooksEditR
 
 /** A subscription secret: 32 random bytes, hex (design.md "Webhooks"). */
 const newSecret = (): string => randomBytes(32).toString('hex');
-
-function readBytes(path: string): Buffer | undefined {
-  try {
-    return readFileSync(path);
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
-    throw e;
-  }
-}
-
-/** Replace the file atomically (a temp file beside it, renamed over it), mode 600. */
-function writeAtomic(path: string, text: string): void {
-  const tmp = join(dirname(path), `.${basename(path)}.${process.pid}.tmp`);
-  writeFileSync(tmp, text, { mode: 0o600 });
-  chmodSync(tmp, 0o600);
-  renameSync(tmp, path);
-}
 
 /** One change to webhooks.yaml, applied to the parsed Document (the meaning) and spliced into the text (the bytes). */
 type Change =
@@ -113,21 +95,23 @@ function indexOf(doc: Document, name: string): number {
   return isSeq(seq) ? seq.items.findIndex((item) => isMap(item) && item.get('name') === name) : -1;
 }
 
+const CHANGED = `${WEBHOOKS} changed since it was read; reload and edit again`;
+const BY_HAND = 'job-hopper config edit webhooks.yaml';
+
 export function createWebhooksEditor(o: {
-  path: string;
-  /** Re-read the file into the store; runs after every write, before the answer. */
+  documents: ConfigDocuments;
+  /** Re-read the document into the store; runs after every write, before the answer. */
   reload(): void;
 }): WebhooksEditor {
-  const { path } = o;
+  const path = WEBHOOKS;
 
   function edit(e: WebhooksEdit): WebhooksEditResult {
-    const bytes = readBytes(path);
-    const version = bytes === undefined ? 'missing' : createHash('sha256').update(bytes).digest('hex');
-    if (version !== e.version) return refuse('conflict', `${path} changed since it was read; reload and edit again`);
-    let doc = parseDocument(bytes === undefined ? 'version: 1\nwebhooks: []\n' : bytes.toString('utf8'));
-    if (doc.errors.length) return refuse('conflict', `${path} is not valid YAML; fix it by hand: ${doc.errors[0]!.message}`);
+    const original = o.documents.read(WEBHOOKS);
+    if (o.documents.version(WEBHOOKS) !== e.version) return refuse('conflict', CHANGED);
+    let doc = parseDocument(original ?? 'version: 1\nwebhooks: []\n');
+    if (doc.errors.length) return refuse('conflict', `${path} is not valid YAML; fix it by hand (${BY_HAND}): ${doc.errors[0]!.message}`);
     const before = webhooksFileProblem(doc.toJS());
-    if (before) return refuse('conflict', `${path} is invalid; fix it by hand: ${before}`);
+    if (before) return refuse('conflict', `${path} is invalid; fix it by hand (${BY_HAND}): ${before}`);
 
     const at = indexOf(doc, e.name);
     let secret: string | undefined;
@@ -143,9 +127,9 @@ export function createWebhooksEditor(o: {
           if (e[key] !== undefined) changes.push({ kind: 'set', at, key, value: e[key] });
         }
       } else if (e.action === 'rotate-secret') {
-        const secretFile = entryMap(doc, at).get('secretFile');
-        if (secretFile !== undefined) {
-          return refuse('conflict', `webhook "${e.name}" reads its secret from secretFile ${String(secretFile)}; rotate it in that file, not from the UI`);
+        const secretEnv = entryMap(doc, at).get('secretEnv');
+        if (secretEnv !== undefined) {
+          return refuse('conflict', `webhook "${e.name}" reads its secret from ${String(secretEnv)}; rotate it in the environment, not from the UI`);
         }
         secret = newSecret();
         changes.push({ kind: 'set', at, key: 'secret', value: secret });
@@ -157,7 +141,7 @@ export function createWebhooksEditor(o: {
     // Splice each change into the text; the Document says what the result must mean. A layout the
     // splice does not handle, or a splice that means anything else, is written from the Document
     // instead: comments kept, spacing normalised.
-    let text: string | undefined = bytes?.toString('utf8');
+    let text: string | undefined = original;
     for (const c of changes) {
       text = text === undefined ? undefined : splice(text, doc, c);
       applyToDocument(doc, c);
@@ -167,7 +151,7 @@ export function createWebhooksEditor(o: {
     const problem = webhooksFileProblem(doc.toJS());
     if (problem) return refuse('invalid', problem);
     // lineWidth 0: never refold lines the owner wrote long.
-    writeAtomic(path, text ?? doc.toString({ lineWidth: 0 }));
+    if (!o.documents.write(WEBHOOKS, text ?? doc.toString({ lineWidth: 0 }), e.version)) return refuse('conflict', CHANGED);
     o.reload();
     return secret === undefined ? { ok: true } : { ok: true, secret };
   }

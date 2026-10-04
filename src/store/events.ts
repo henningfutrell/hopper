@@ -37,21 +37,21 @@ export function createEventLog(c: StoreContext, inTx: () => boolean): EventLogIn
       const id = c.idGen();
       const at = n.at ?? c.clock.now().toISOString();
       const schemaVersion = EVENT_SCHEMA_VERSIONS[n.type];
-      const r = c.db.prepare(
-        'INSERT INTO events (id, type, at, job_id, lane_id, machine_id, decision_id, question_id, data, schema_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      ).run(id, n.type, at, n.jobId ?? null, n.laneId ?? null, n.machineId ?? null, n.decisionId ?? null, n.questionId ?? null, JSON.stringify(n.data), schemaVersion);
-      const event: DomainEvent = { ...n, schemaVersion, seq: Number(r.lastInsertRowid), id, at };
+      const r = c.db.get(
+        'INSERT INTO events (id, type, at, job_id, lane_id, machine_id, decision_id, question_id, data, schema_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING seq',
+      id, n.type, at, n.jobId ?? null, n.laneId ?? null, n.machineId ?? null, n.decisionId ?? null, n.questionId ?? null, JSON.stringify(n.data), schemaVersion);
+      const event: DomainEvent = { ...n, schemaVersion, seq: Number(r!.seq), id, at };
       if (inTx()) pending.push(event);
       else notify([event]);
       return event;
     },
     since(afterSeq, limit) {
       const sql = `SELECT * FROM events WHERE seq > ? ORDER BY seq ${limit !== undefined ? 'LIMIT ?' : ''}`;
-      return (limit !== undefined ? c.db.prepare(sql).all(afterSeq, limit) : c.db.prepare(sql).all(afterSeq)).map(toEvent);
+      return (limit !== undefined ? c.db.all(sql, afterSeq, limit) : c.db.all(sql, afterSeq)).map(toEvent);
     },
     recent(limit = 100, types) {
       const where = types?.length ? `WHERE type IN (${types.map(() => '?').join(',')})` : '';
-      return c.db.prepare(`SELECT * FROM events ${where} ORDER BY seq DESC LIMIT ?`).all(...(types ?? []), limit).map(toEvent);
+      return c.db.all(`SELECT * FROM events ${where} ORDER BY seq DESC LIMIT ?`, ...(types ?? []), limit).map(toEvent);
     },
     subscribe(l) {
       listeners.add(l);

@@ -55,7 +55,8 @@ export interface SkippedRule {
 
 /** GET /api/routing. `version` is plugins.yaml's (as in /api/plugins); an edit carries it back. */
 export interface RoutingReport {
-  path: string;
+  /** The config document: `plugins.yaml`. */
+  document: string;
   version: string;
   rules: RoutingRule[];
   /** plugins.yaml could not be read: the last good rules apply. */

@@ -1,9 +1,9 @@
-// The UI session (design.md "UI session and mutations"): a one-time login code in a 0600 file,
-// POST /ui/login → a page that stores the token in localStorage, and mutations only with that
+// The UI session (design.md "UI session and mutations"): a one-time login code minted in the
+// database (`job-hopper login-code`), POST /ui/login → a page that stores the token in localStorage, and mutations only with that
 // token in x-jobhopper-session plus exact Origin, same-origin Sec-Fetch-Site and a JSON body.
-import { readFileSync, statSync } from 'node:fs';
-import { join } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
+import { runCli } from '../../src/cli.ts';
+import { openDb, parseDatabaseUrl } from '../../src/store/db.ts';
+import { databaseUrlFor } from '../support/database.ts';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { TOKEN_RE, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { rawRequest } from '../support/http.ts';
@@ -21,8 +21,13 @@ afterEach(async () => {
   cleanup();
 });
 
-const codeFile = () => join(t.dataDir, 'ui-login-code');
-const readCode = () => readFileSync(codeFile(), 'utf8').trim();
+/** A fresh code, as `job-hopper login-code` mints it: into the daemon's database. */
+const readCode = (): string => {
+  let out = '';
+  const code = runCli(['login-code'], { env: { JOB_HOPPER_DATABASE_URL: databaseUrlFor(t.dbPath) }, stdin: () => '', out: (x) => { out += x; }, err: () => {} });
+  if (code !== 0) throw new Error(`login-code exited ${code}`);
+  return out.trim();
+};
 const login = (code: string, headers: Record<string, string> = {}) => rawRequest(t.url, {
   method: 'POST', path: '/ui/login', body: `code=${encodeURIComponent(code)}`,
   headers: { 'content-type': 'application/x-www-form-urlencoded', origin: 'null', ...headers },
@@ -30,9 +35,10 @@ const login = (code: string, headers: Record<string, string> = {}) => rawRequest
 const session = (token?: string) => rawRequest(t.url, { path: '/ui/api/session', headers: token ? { 'x-jobhopper-session': token } : {} });
 
 describe('login', () => {
-  it('writes a 64-hex login code at startup, mode 0600, in the data dir', () => {
+  it('job-hopper login-code mints a 64-hex code; the daemon writes no code anywhere', async () => {
     expect(readCode()).toMatch(/^[0-9a-f]{64}$/);
-    expect(statSync(codeFile()).mode & 0o777).toBe(0o600);
+    const { readdirSync } = await import('node:fs');
+    expect(readdirSync(t.dataDir).filter((f) => f.includes('login'))).toEqual([]);
   });
 
   it('the right code answers a page that stores the session token in localStorage jh_session and goes to /', async () => {
@@ -48,14 +54,24 @@ describe('login', () => {
     expect(JSON.parse(s.text)).toMatchObject({ authenticated: true, expiresAt: expect.any(String), user: { role: 'admin', provider: 'local' } });
   });
 
-  it('the code rotates on every use: the old code is refused, the new one works; the file stays 0600', async () => {
+  it('a code works once; each minted code is its own', async () => {
     const first = readCode();
-    expect((await login(first)).status).toBe(200);
     const second = readCode();
     expect(second).not.toBe(first);
-    expect(statSync(codeFile()).mode & 0o777).toBe(0o600);
+    expect((await login(first)).status).toBe(200);
     expect((await login(first)).status).toBe(403);
     expect((await login(second)).status).toBe(200);
+  });
+
+  it('a code expires ten minutes after it is minted', async () => {
+    const { vi } = await import('vitest');
+    const code = readCode();
+    vi.useFakeTimers({ now: Date.now() + 10 * 60_000 + 1000, toFake: ['Date'] });
+    try {
+      expect((await login(code)).status).toBe(403);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('a wrong, empty or missing code is 403 and creates no session', async () => {
@@ -119,9 +135,9 @@ describe('UI mutations', () => {
 
   it('the store keeps only a hash of the session token, never the token', async () => {
     const token = await t.login();
-    const raw = new DatabaseSync(t.dbPath, { readOnly: true });
+    const raw = openDb(parseDatabaseUrl(databaseUrlFor(t.dbPath)));
     try {
-      const rows = raw.prepare('SELECT * FROM ui_sessions').all();
+      const rows = raw.all('SELECT * FROM ui_sessions');
       expect(rows).toHaveLength(1);
       expect(JSON.stringify(rows)).not.toContain(token);
     } finally {

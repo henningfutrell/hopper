@@ -1,11 +1,12 @@
 // The daemon side of sign-in tests: start the real app with an auth.yaml, read GET /ui/api/session,
 // start loopback OIDC issuers. Everything started is stopped by `stopAll` (call it in afterEach).
-import { writeFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { stringify } from 'yaml';
 import { startTestApp, tempDbPath, type TestApp } from './app.ts';
+import { writeDocument } from './files.ts';
 import { rawRequest } from './http.ts';
 import { startOidcIdp, type OidcIdp } from './idp.ts';
+
+/** The environment the daemon reads provider client secrets from (`clientSecretEnv`). */
+export const SECRETS = { CORP_CLIENT_SECRET: 'shh', GITHUB_CLIENT_SECRET: 'gh-secret' };
 
 export interface Harness { t: TestApp | undefined; cleanup: (() => void) | undefined; stops: (() => unknown)[] }
 export const harness = (): Harness => ({ t: undefined, cleanup: undefined, stops: [] });
@@ -21,19 +22,17 @@ export async function stopAll(h: Harness): Promise<void> {
 export async function startWithAuth(h: Harness, auth: unknown, env: Record<string, string> = {}): Promise<{ app: TestApp; origin: string; host: string }> {
   const db = tempDbPath();
   h.cleanup = db.cleanup;
-  const file = join(db.dbPath, '..', 'auth.yaml');
-  if (auth !== undefined) writeFileSync(file, stringify(auth), { mode: 0o600 });
-  h.t = await startTestApp({ dbPath: db.dbPath, env: { JOB_HOPPER_AUTH_FILE: file, ...env } });
+  if (auth !== undefined) writeDocument(db.dbPath, 'auth.yaml', auth);
+  h.t = await startTestApp({ dbPath: db.dbPath, env, secrets: { ...SECRETS } });
   const port = new URL(h.t.url).port;
   return { app: h.t, origin: `http://localhost:${port}`, host: `localhost:${port}` };
 }
 
 /** Restart on the same store with this auth.yaml. */
 export async function restartWithAuth(h: Harness, app: TestApp, auth: unknown): Promise<TestApp> {
-  const file = app.app.config.authFile;
   await app.stop();
-  writeFileSync(file, stringify(auth), { mode: 0o600 });
-  h.t = await startTestApp({ dbPath: app.dbPath, env: { JOB_HOPPER_AUTH_FILE: file } });
+  writeDocument(app.dbPath, 'auth.yaml', auth);
+  h.t = await startTestApp({ dbPath: app.dbPath, secrets: { ...SECRETS } });
   return h.t;
 }
 
@@ -51,4 +50,4 @@ export async function oidcIdp(h: Harness, o: { claims?: Record<string, unknown>;
 }
 
 export const oidcProvider = (idp: Pick<OidcIdp, 'issuer'>, roles: unknown, extra: Record<string, unknown> = {}) =>
-  ({ name: 'corp', label: 'Corp SSO', type: 'oidc', issuer: idp.issuer, clientId: 'hopper', clientSecret: 'shh', roles, ...extra });
+  ({ name: 'corp', label: 'Corp SSO', type: 'oidc', issuer: idp.issuer, clientId: 'hopper', clientSecretEnv: 'CORP_CLIENT_SECRET', roles, ...extra });

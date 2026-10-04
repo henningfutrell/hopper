@@ -1,21 +1,12 @@
-import { chmodSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { loadPluginsFile } from '../../src/plugins/plugins-file.ts';
-import { useTempDirs } from './support.ts';
 
-const temp = useTempDirs();
-
-function file(text: string, mode = 0o600): string {
-  const path = join(temp(), 'plugins.yaml');
-  writeFileSync(path, text);
-  chmodSync(path, mode);
-  return path;
-}
+/** The document text as the store holds it. */
+const file = (text: string): string => text;
 
 describe('plugins.yaml (router, answerer, assessor, executors, jobSources, machines, usageSources)', () => {
-  it('absent file → missing, so the caller derives the router', () => {
-    expect(loadPluginsFile(join(temp(), 'none.yaml'))).toEqual({ missing: true });
+  it('absent document → missing, so the caller derives the router', () => {
+    expect(loadPluginsFile(undefined)).toEqual({ missing: true });
   });
 
   it('reads the router instance', () => {
@@ -126,11 +117,6 @@ describe('plugins.yaml (router, answerer, assessor, executors, jobSources, machi
   ])('%s is an error naming the problem', (_name, text, why) => {
     const r = loadPluginsFile(file(text));
     expect(r).toEqual({ error: expect.stringMatching(why) });
-  });
-
-  it('warns when the file is readable by group or other (options may hold secrets)', () => {
-    const r = loadPluginsFile(file('version: 1\n', 0o644));
-    expect(r).toEqual({ warnings: [expect.stringMatching(/chmod 600/)] });
   });
 });
 

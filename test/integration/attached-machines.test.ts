@@ -5,7 +5,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { AttachedMachine } from '../../src/domain/types.ts';
-import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
+import { startTestApp, tempDbPath, writePluginsYaml, type TestApp } from '../support/app.ts';
 import { waitFor } from '../support/wait.ts';
 
 const apps: TestApp[] = [];
@@ -30,12 +30,12 @@ function configure(laptopLanes: number): string {
     "  create() { return { name: 'where', idempotent: true, validate() { return null; },",
     "    async run(ctx) { return { kind: 'finished', result: { machine: ctx.machine.id, ssh: ctx.machine.ssh ?? null } }; } }; } };",
   ].join('\n'), { mode: 0o600 });
-  writeFileSync(join(dir, 'plugins.yaml'), [
+  writePluginsYaml(db.dbPath, [
     'version: 1',
     'executors: [ { name: test, plugin: test }, { name: where, plugin: where } ]',
     'attachedMachines:',
     `  - { name: laptop, label: arch-laptop, ssh: laptop, lanes: ${laptopLanes}, executors: [where] }`,
-  ].join('\n'), { mode: 0o600 });
+  ].join('\n'));
   return db.dbPath;
 }
 

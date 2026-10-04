@@ -1,7 +1,7 @@
-// Composition root: config → plugins.yaml (written on the first boot without one) → plugin host
-// (every part) → store → engine → server. Adapters are built by their plugins, here through the
+// Composition root: config → store → plugins.yaml (written on the first boot without one) → plugin
+// host (every part) → engine → server. Adapters are built by their plugins, here through the
 // host (integration tests call startApp, with doubles at the seams).
-import { existsSync, readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Answerer, Assessor, Clock, Executor, JobSource, PluginsView, Restarter, Router, SettableUsageSource, SourceRegistry, Store, UpdateBuilder, Updater } from './domain/ports.ts';
@@ -12,7 +12,7 @@ import { createEngine, type Engine } from './engine/index.ts';
 import { createExecutorRegistry } from './executors/index.ts';
 import type { HerdrClient } from './executors/herdr/index.ts';
 import { createServer } from './http/index.ts';
-import { createSignIn, loadAuthFile } from './auth/index.ts';
+import { AUTH, createSignIn, loadAuthDocument, type AuthConfig } from './auth/index.ts';
 import { combineMachineSources, createAttachedMachines, probeHerdrOverSsh } from './machines/index.ts';
 import { BUILTIN_PLUGINS } from './plugins/builtin.ts';
 import { herdrClaudePlugin } from './plugins/executor/herdr-claude/index.ts';
@@ -22,7 +22,8 @@ import { unavailableExecutors } from './plugins/executor-slot.ts';
 import { githubAppPlugin } from './plugins/job-source/github-app/index.ts';
 import { githubGhPlugin } from './plugins/job-source/github-gh/index.ts';
 import { grokbotRoutinePlugin } from './plugins/notifier/grokbot-routine/index.ts';
-import { ensurePluginsFile } from './plugins/migrate.ts';
+import { ensurePluginsDocument } from './plugins/builtin-instances.ts';
+import { createDetectionKit } from './plugins/detect.ts';
 import { createQuestionService } from './questions/index.ts';
 import { logFailures } from './engine/failure-log.ts';
 import { createSourceSync, idleStatus, withFixedStatuses, type GitHubApi, type SourceSync } from './sources/index.ts';
@@ -36,6 +37,8 @@ export interface App {
   /** Always the loopback URL, whatever the bind address. */
   url: string;
   config: Config;
+  /** auth.yaml as loaded at start. */
+  auth: AuthConfig;
   /** The UI link to one question, as notifications carry it: the first LAN name, else loopback. */
   answerUrl(questionId: string): string;
   routerMode(): string;
@@ -64,7 +67,7 @@ export interface AppSeams {
   fakeUsage?: SettableUsageSource;
   /** Run after the configured sources, polled every SEAM_SOURCE_POLL_MS. */
   sources?: JobSource[];
-  /** How often webhooks.yaml's mtime is checked; default WEBHOOKS_FILE_CHECK_MS. */
+  /** How often webhooks.yaml's version is checked; default WEBHOOKS_FILE_CHECK_MS. */
   webhookConfigIntervalMs?: number;
   /** First retry delay of every grokbot-routine notifier instance; default 1000. */
   grokbotBaseMs?: number;
@@ -74,7 +77,9 @@ export interface AppSeams {
   answerer?: Answerer | null;
   /** Replaces the configured assessor. The report stays the host's. */
   assessor?: Assessor;
-  /** How often plugins.yaml's mtime is checked; default PLUGINS_FILE_CHECK_MS. */
+  /** How often plugins.yaml's version is checked; default PLUGINS_FILE_CHECK_MS. */
+  /** The environment the parts read their secrets from (design.md "Secrets"); default process.env. */
+  env?: Record<string, string | undefined>;
   pluginsFileIntervalMs?: number;
   /** Replaces the ssh probe of every attached machine: true = its herdr session is running. */
   machineProbe?: (machine: AttachedMachine) => Promise<boolean>;
@@ -140,19 +145,26 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   const clock: Clock = { now: () => new Date() };
   const logger = { info: (l: string) => console.log(l), warn: (l: string) => console.warn(l) };
   warnLeftoverEnv(config);
-  // plugins.yaml is the one truth: written from sources.yaml and the removed env vars on the boot that finds none.
-  const ensured = ensurePluginsFile({ pluginsFile: config.pluginsFile, env: config.leftoverEnv, answerTimeoutMs: config.answerTimeoutMs, logger });
-  const staleSources = join(dirname(config.pluginsFile), 'sources.yaml');
-  if (ensured.action === 'kept' && existsSync(staleSources)) console.warn(`job-hopper: WARNING: ${staleSources} is no longer read; plugins.yaml jobSources configures the job sources`);
+  const store = openStore({ url: config.databaseUrl, clock });
+  // plugins.yaml is the one truth: the built-in instances are written on the boot that finds none.
+  ensurePluginsDocument({ documents: store.documents, answerTimeoutMs: config.answerTimeoutMs, logger });
+  const env = seams.env ?? process.env;
   // Before anything starts: an invalid auth.yaml stops the daemon (sign-in fails closed).
-  const auth = loadAuthFile(config.authFile);
-  const store = openStore({ path: config.dbPath, clock });
-  const dataDir = dirname(config.dbPath);
+  let auth: AuthConfig;
+  try {
+    auth = loadAuthDocument(store.documents.read(AUTH), (name) => env[name]);
+  } catch (e) {
+    store.close();
+    throw e;
+  }
+  const dataDir = config.workDir;
+  mkdirSync(dataDir, { recursive: true, mode: 0o700 });
   const routerMode = () => store.settings.getRouterMode() ?? config.routerMode;
   let executorNames = (): string[] => [];
   let jobsOnMachine = (_name: string): string[] => [];
   const host = createPluginHost({
-    pluginDir: config.pluginDir, pluginsFile: config.pluginsFile, dataDir, clock, routerMode, logger,
+    ...(config.pluginDir ? { pluginDir: config.pluginDir } : {}), documents: store.documents, dataDir, clock, routerMode, logger,
+    kit: createDetectionKit({ env }),
     builtins: withSeams(seams),
     jobSourceContext: {
       knownKeys: (keys) => new Set(keys.filter((k) => store.jobs.getBySourceKey(k))),
@@ -181,7 +193,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   let port = config.port;
   const answerUrl = (id: string): string => `http://${config.lanNames[0] ?? '127.0.0.1'}:${port}/#question-${id}`;
   const questions = createQuestionService({
-    store, clock, answerer, assessor, stageTimeoutMs: config.answerTimeoutMs, rulesFile: config.rulesFile,
+    store, clock, answerer, assessor, stageTimeoutMs: config.answerTimeoutMs, documents: store.documents,
     renotifyMs: config.humanRenotifyMs, humanTimeoutMs: config.humanTimeoutMs,
     answerUrl,
     onAnswered: (q: Question) => engine.onAnswered(q),
@@ -220,7 +232,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   });
   const registry: SourceRegistry = withFixedStatuses(sync, fixed);
   const webhookConfig = createWebhookConfigWatcher({
-    path: config.webhooksFile, store, clock, intervalMs: seams.webhookConfigIntervalMs ?? WEBHOOKS_FILE_CHECK_MS,
+    documents: store.documents, store, clock, intervalMs: seams.webhookConfigIntervalMs ?? WEBHOOKS_FILE_CHECK_MS, env: (name) => env[name],
   });
   const signIn = createSignIn({ config: auth, clock, origin: () => config.publicUrl ?? `http://localhost:${port}` });
   // Self-update (issue #44): the restart reaches app.stop() through `restartApp`, set below.
@@ -235,8 +247,8 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   });
   const server = createServer({
     engine, store, dispatcher, questions, clock, version: VERSION, sources: registry, webhookConfig, plugins, updater,
-    webhooksEditor: createWebhooksEditor({ path: config.webhooksFile, reload: webhookConfig.reload }),
-    port: () => port, rulesFile: config.rulesFile, dataDir, sessionHours: config.uiSessionHours, signIn,
+    webhooksEditor: createWebhooksEditor({ documents: store.documents, reload: webhookConfig.reload }),
+    port: () => port, sessionHours: config.uiSessionHours, signIn,
     lan: { names: config.lanNames, peers: config.lanPeers, publicUrl: config.publicUrl }, uiDir: seams.uiDir ?? UI_DIR,
   });
 
@@ -254,6 +266,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   const app: App = {
     url: `http://127.0.0.1:${port}`,
     config,
+    auth,
     answerUrl,
     routerMode,
     plugins,
@@ -296,10 +309,10 @@ async function main(): Promise<void> {
   const lan = app.config.lanNames.length ? ` and ${app.config.lanNames.map((n) => `http://${n}:${new URL(app.url).port}`).join(', ')} (LAN peers ${app.config.lanPeers.join(', ')})` : '';
   console.log(`job-hopper listening on ${app.url}${lan} (router ${r.name} [${r.plugin}${r.fallback ? ', fallback' : ''}] ${app.routerMode()}, executors ${app.engine.executorNames.join(',') || 'none'}${unavailableNote(app.plugins)}, ${q})`);
   for (const s of app.sources.statuses()) console.log(`job-hopper: source ${s.name} (${s.kind}) ${s.state}`);
-  const auth = loadAuthFile(app.config.authFile);
+  const { auth } = app;
   if (app.config.publicUrl) console.log(`job-hopper: public URL ${app.config.publicUrl} (sign-in origin)`);
   if (auth.providers.length) console.log(`job-hopper: sign-in with ${auth.providers.map((p) => `${p.name} (${p.type})`).join(', ')}`);
-  if (auth.local.enabled) console.log('job-hopper: UI login code written; open the UI with: bash ~/.local/lib/job-hopper/scripts/open-ui.sh');
+  if (auth.local.enabled) console.log('job-hopper: local sign-in on; a login code: job-hopper login-code');
   else console.log('job-hopper: local sign-in is off (auth.yaml)');
   const shutdown = (signal: string): void => {
     console.log(`job-hopper: ${signal}, shutting down`);

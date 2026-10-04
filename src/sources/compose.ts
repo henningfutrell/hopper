@@ -1,25 +1,20 @@
 // The two GitHub sources over one source logic, as the job-source plugins build them: `github-gh`
 // (gh CLI, as the owner) and `github-app` (the App adapter, as the bot). Each pauses itself
-// (JobSource.paused): gh while `enabled: auto` and its `appFile` is readable, the app while its app
-// file is not.
-import { accessSync, constants } from 'node:fs';
+// (JobSource.paused): gh while `enabled: auto` and the App's key variable is set, the app while its
+// identity (appId, slug, key) is incomplete.
 import type { Clock, JobSource } from '../domain/ports.ts';
-import { createGitHubAppApi, loadGitHubAppFile } from './github/app/index.ts';
+import { createGitHubAppApi, loadGitHubApp, type GitHubAppLoad } from './github/app/index.ts';
 import type { GitHubApi } from './github/index.ts';
 import { createGhCliApi, createGitHubSource } from './github/index.ts';
-import { expandHome, sourceConfig, type GitHubAppOptions, type GitHubGhOptions } from './config.ts';
+import { sourceConfig, type GitHubAppOptions, type GitHubGhOptions } from './config.ts';
 
 export const GH_PAUSED = 'GitHub App configured';
 export const APP_MISSING = 'no GitHub App configured';
 
-/** Why the app file cannot be used right now, or undefined when it is readable. */
-export function appFileProblem(file: string): string | undefined {
-  try {
-    accessSync(file, constants.R_OK);
-    return undefined;
-  } catch (err) {
-    return (err as NodeJS.ErrnoException).code === 'ENOENT' ? APP_MISSING : `cannot read ${file}: ${(err as Error).message}`;
-  }
+/** Why the app cannot be used right now, or undefined when its identity is complete. */
+export function appProblem(load: GitHubAppLoad): string | undefined {
+  if (load.ok) return undefined;
+  return load.reason === 'missing' ? APP_MISSING : load.reason;
 }
 
 export interface GitHubSourceDeps {
@@ -28,31 +23,36 @@ export interface GitHubSourceDeps {
   clock: Clock;
   knownKeys: (keys: string[]) => Set<string>;
   rerunnable: (keys: string[]) => Set<string>;
+  /** An environment variable of the daemon (the App key). */
+  env(name: string): string | undefined;
   /** A double at the GitHubApi seam (tests). */
   api?: GitHubApi;
 }
 
 export function createGhSource(o: GitHubSourceDeps, options: GitHubGhOptions): JobSource {
-  const appFile = options.appFile === null ? undefined : expandHome(options.appFile);
+  const keyEnv = options.appKeyEnv;
   return createGitHubSource({
     name: o.name, kind: 'github', mode: 'gh', config: sourceConfig(options), clock: o.clock, knownKeys: o.knownKeys, rerunnable: o.rerunnable,
     api: o.api ?? createGhCliApi({ bin: options.bin }),
-    paused: () => (options.enabled === 'auto' && appFile !== undefined && appFileProblem(appFile) === undefined ? GH_PAUSED : undefined),
+    paused: () => (options.enabled === 'auto' && keyEnv !== null && o.env(keyEnv)?.trim() ? GH_PAUSED : undefined),
   });
 }
 
 /** Throws when `authors` holds the app's bot: its comments would be read as answers. */
 export function createAppSource(o: GitHubSourceDeps, options: GitHubAppOptions): JobSource {
-  const appFile = expandHome(options.appFile);
-  const loaded = loadGitHubAppFile(appFile);
-  if (loaded.ok && options.authors.includes(loaded.app.botLogin)) {
-    throw new Error(`authors must not contain the app bot ${loaded.app.botLogin}: the app's own writes must never count as the owner's`);
+  const app = (): GitHubAppLoad => loadGitHubApp({
+    ...(options.appId === undefined ? {} : { appId: options.appId }), ...(options.slug === undefined ? {} : { slug: options.slug }),
+    privateKeyEnv: options.privateKeyEnv, privateKey: o.env(options.privateKeyEnv),
+  });
+  const bot = options.slug === undefined ? undefined : `${options.slug}[bot]`;
+  if (bot !== undefined && options.authors.includes(bot)) {
+    throw new Error(`authors must not contain the app bot ${bot}: the app's own writes must never count as the owner's`);
   }
-  const real = o.api ? undefined : createGitHubAppApi({ appFile, clock: o.clock, ...(options.apiUrl ? { baseUrl: options.apiUrl } : {}) });
+  const real = o.api ? undefined : createGitHubAppApi({ app, keyEnv: options.privateKeyEnv, clock: o.clock, ...(options.apiUrl ? { baseUrl: options.apiUrl } : {}) });
   const api: GitHubApi = o.api ?? real!;
   return createGitHubSource({
     name: o.name, kind: 'github-app', mode: 'app', config: sourceConfig(options), clock: o.clock, knownKeys: o.knownKeys, rerunnable: o.rerunnable, api,
-    paused: () => appFileProblem(appFile),
+    paused: () => appProblem(app()),
     ...(real ? { appInfo: () => real.appStatus() } : {}),
   });
 }

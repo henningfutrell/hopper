@@ -5,11 +5,11 @@ import type { StoreContext } from './context.ts';
 
 export function createSettingsRepository(c: StoreContext): SettingsRepository {
   const read = (key: string): string | undefined => {
-    const r = c.db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
+    const r = c.db.get('SELECT value FROM settings WHERE key = ?', key);
     return r ? (r.value as string) : undefined;
   };
   const write = (key: string, value: string): void => {
-    c.db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, value);
+    c.db.run('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value', key, value);
   };
   return {
     getRouterMode() {

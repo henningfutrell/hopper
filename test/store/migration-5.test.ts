@@ -1,3 +1,4 @@
+import { SCHEMA_VERSION } from '../../src/store/migrations.ts';
 import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
 import { spec, useTempStore } from './helpers.ts';
@@ -25,7 +26,7 @@ describe('migration 5 (a source key may have many jobs)', () => {
     s.close();
 
     const after = new DatabaseSync(path);
-    expect(after.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 7 });
+    expect(after.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: SCHEMA_VERSION });
     after.close();
   });
 });

@@ -20,7 +20,7 @@ const SHARED_DEFAULTS = {
   priorityLabels: { 'hopper:high': 75, 'hopper:low': 25 },
   defaultPriority: 50,
   repoPaths: {},
-  defaultCwd: '~/workbench/app-workflows',
+  defaultCwd: '~',
   executor: 'herdr-claude',
   model: null,
   recentComments: 10,
@@ -33,9 +33,9 @@ const ok = (r: ReturnType<typeof parseOptions>) => {
 };
 
 describe('github-gh options', () => {
-  it('authors alone gets every other default from the design, plus the gh bin and the app file it pauses for', () => {
+  it('authors alone gets every other default from the design, plus the gh bin and the key variable it pauses for', () => {
     expect(ok(parseOptions(githubGh, AUTHORS))).toEqual({
-      enabled: 'auto', owners: [], bin: 'gh', appFile: '~/.config/job-hopper/github-app.json', ...SHARED_DEFAULTS,
+      enabled: 'auto', owners: [], bin: 'gh', appKeyEnv: 'GITHUB_APP_PRIVATE_KEY', ...SHARED_DEFAULTS,
     });
   });
 
@@ -66,8 +66,8 @@ describe('github-gh options', () => {
     expect(ok(parseOptions(githubGh, { ...AUTHORS, enabled: v })).enabled).toBe(want);
   });
 
-  it('appFile: null — never pauses for an app', () => {
-    expect(ok(parseOptions(githubGh, { ...AUTHORS, appFile: null })).appFile).toBeNull();
+  it('appKeyEnv: null — never pauses for an app', () => {
+    expect(ok(parseOptions(githubGh, { ...AUTHORS, appKeyEnv: null })).appKeyEnv).toBeNull();
   });
 
   it.each([
@@ -83,8 +83,8 @@ describe('github-gh options', () => {
 });
 
 describe('github-app options', () => {
-  it('authors alone gets the defaults: enabled, the installed app file, no API override', () => {
-    expect(ok(parseOptions(githubApp, AUTHORS))).toEqual({ enabled: true, appFile: '~/.config/job-hopper/github-app.json', ...SHARED_DEFAULTS });
+  it('authors alone gets the defaults: enabled, the default key variable, no identity yet, no API override', () => {
+    expect(ok(parseOptions(githubApp, AUTHORS))).toEqual({ enabled: true, privateKeyEnv: 'GITHUB_APP_PRIVATE_KEY', ...SHARED_DEFAULTS });
   });
 
   it('apiUrl: an http(s) URL without its trailing slash (tests point it at a fake GitHub)', () => {

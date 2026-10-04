@@ -9,21 +9,21 @@ const rowOf = (r: Record<string, unknown>): UiSessionRow => ({
 export function createUiSessionRepository(c: StoreContext): UiSessionRepository {
   return {
     create(s) {
-      c.db.prepare('INSERT INTO ui_sessions (token_hash, expires_at, role, identity) VALUES (?, ?, ?, ?)').run(s.tokenHash, s.expiresAt, s.role, JSON.stringify(s.identity));
+      c.db.run('INSERT INTO ui_sessions (token_hash, expires_at, role, identity) VALUES (?, ?, ?, ?)', s.tokenHash, s.expiresAt, s.role, JSON.stringify(s.identity));
     },
     find(tokenHash, now) {
-      c.db.prepare('DELETE FROM ui_sessions WHERE expires_at <= ?').run(now);
-      const r = c.db.prepare('SELECT * FROM ui_sessions WHERE token_hash = ?').get(tokenHash);
+      c.db.run('DELETE FROM ui_sessions WHERE expires_at <= ?', now);
+      const r = c.db.get('SELECT * FROM ui_sessions WHERE token_hash = ?', tokenHash);
       return r ? rowOf(r) : undefined;
     },
     all() {
-      return c.db.prepare('SELECT * FROM ui_sessions').all().map(rowOf);
+      return c.db.all('SELECT * FROM ui_sessions').map(rowOf);
     },
     setRole(tokenHash, role) {
-      c.db.prepare('UPDATE ui_sessions SET role = ? WHERE token_hash = ?').run(role, tokenHash);
+      c.db.run('UPDATE ui_sessions SET role = ? WHERE token_hash = ?', role, tokenHash);
     },
     drop(tokenHash) {
-      c.db.prepare('DELETE FROM ui_sessions WHERE token_hash = ?').run(tokenHash);
+      c.db.run('DELETE FROM ui_sessions WHERE token_hash = ?', tokenHash);
     },
   };
 }

@@ -17,7 +17,7 @@ function decision(id: string, at: string): Decision {
 
 describe('decisions', () => {
   it('saves, gets, lists newest first with limit, survives reopen', () => {
-    const path = t.path();
+    const path = t.url();
     const s = t.open(path);
     const [d1, d2, d3] = [decision('d1', '2026-10-02T10:00:00Z'), decision('d2', '2026-10-02T10:01:00Z'), decision('d3', '2026-10-02T10:02:00Z')];
     for (const d of [d1, d2, d3]) s.decisions.save(d);
@@ -34,7 +34,7 @@ describe('decisions', () => {
 
 describe('settings', () => {
   it('router mode is undefined until set, then survives reopen', () => {
-    const path = t.path();
+    const path = t.url();
     const s = t.open(path);
     expect(s.settings.getRouterMode()).toBeUndefined();
     s.settings.setRouterMode('active');

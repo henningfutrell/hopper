@@ -1,6 +1,8 @@
 // The routing rules as the plugin host holds them (design.md "Routing rules (issue #18)"): plugins.yaml
 // `routing:` (re-read with the file, the last good list kept on an invalid file), what a rule may
 // name, the report for GET /api/routing, and the UI's edit.
+import type { ConfigDocuments } from '../domain/ports.ts';
+import { PLUGINS } from './plugins-file.ts';
 import type { RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule } from '../domain/types.ts';
 import { ruleProblem, skippedRules, type RoutingTargets } from '../routing/index.ts';
 import { applyRoutingEdit } from './edit.ts';
@@ -8,7 +10,7 @@ import { applyRoutingEdit } from './edit.ts';
 const unique = (xs: string[]): string[] => [...new Set(xs)];
 
 export interface RoutingConfigDeps {
-  path: string;
+  documents: ConfigDocuments;
   /** The rules plugins.yaml names now (none when absent). */
   rules(): RoutingRule[];
   /** What runs now: the machine ids and executor instances intake checks a rule against. */
@@ -32,7 +34,7 @@ export function createRoutingConfig(d: RoutingConfigDeps) {
     const t = targets();
     const error = d.error();
     return {
-      path: d.path, version: d.version(), rules: d.rules(), ...(error ? { error } : {}),
+      document: PLUGINS, version: d.version(), rules: d.rules(), ...(error ? { error } : {}),
       targets: { machines: [...t.machines], executors: [...t.executors] },
       skipped: skippedRules(d.rules(), d.running()),
     };
@@ -41,7 +43,7 @@ export function createRoutingConfig(d: RoutingConfigDeps) {
     report,
     async edit(e: RoutingEdit): Promise<RoutingEditOutcome> {
       const known = targets();
-      const r = applyRoutingEdit(e, d.path, (rules) => {
+      const r = applyRoutingEdit(e, d.documents, (rules) => {
         for (const rule of rules) {
           const why = ruleProblem(rule, known);
           if (why) return `rule ${rule.name}: ${why}`;

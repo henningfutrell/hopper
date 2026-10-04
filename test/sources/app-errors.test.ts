@@ -9,12 +9,12 @@ afterEach(async () => { await h?.close(); h = undefined; });
 const oneRepo = [{ id: 11, account: 'owner', repos: [{ owner: 'owner', name: 'a', issues: [{ number: 1, labels: ['hopper'] }] }, { owner: 'owner', name: 'b' }] }];
 
 describe('App adapter: error classification', () => {
-  it('a JWT signed with the wrong key is rejected: permanent, naming the app config file', async () => {
+  it('a JWT signed with the wrong key is rejected: permanent, naming the key variable', async () => {
     h = await startApp({ installations: oneRepo, privateKey: generateKeys().privateKey });
     const err = await h.api.listInstalledRepos!().catch((e: unknown) => e);
     expect(err).toBeInstanceOf(GitHubApiError);
     expect(err).toMatchObject({ permanent: true, status: 401 });
-    expect((err as Error).message).toContain(h.appFile);
+    expect((err as Error).message).toContain('GITHUB_APP_PRIVATE_KEY');
     const status = h.api.appStatus();
     expect(status.ok).toBe(false);
     if (!status.ok) expect(status.reason).toMatch(/401|rejected/);

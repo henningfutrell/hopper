@@ -1,10 +1,8 @@
-// auth.yaml (design.md "Sign-in: local, OIDC and SAML" — Configuration): how people sign in. Read once
-// at start; an invalid file stops the daemon, naming the field (sign-in fails closed). No file →
-// the one-time login code only. Secrets may sit inline (the file is 0600), in their own files, or in
-// environment variables.
-import { existsSync, readFileSync, statSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { join } from 'node:path';
+// auth.yaml (design.md "Sign-in: local, OIDC and SAML" — Configuration): how people sign in, a config
+// document in the store (design.md "Config documents"). Read once at start; an invalid document stops
+// the daemon, naming the field (sign-in fails closed). None → the one-time login code only. A client
+// secret comes from the environment only (`clientSecretEnv`, design.md "Secrets"); a SAML IdP
+// certificate is public and sits inline.
 import { parse } from 'yaml';
 import { z } from 'zod';
 import { UI_ROLES } from '../domain/types.ts';
@@ -44,11 +42,10 @@ export interface SamlProviderConfig extends ProviderBase {
 export type ProviderConfig = OidcProviderConfig | GithubProviderConfig | SamlProviderConfig;
 export interface AuthConfig { local: { enabled: boolean }; providers: ProviderConfig[] }
 
-export const DEFAULT_AUTH_FILE = '~/.config/job-hopper/auth.yaml';
+export const AUTH = 'auth.yaml';
 /** Provider names are URL path segments; these two are taken by the routes. */
 const RESERVED = ['local', 'complete'];
 
-const expandHome = (p: string): string => (p === '~' ? homedir() : p.startsWith('~/') ? join(homedir(), p.slice(2)) : p);
 const LOOPBACK = ['127.0.0.1', 'localhost', '[::1]'];
 /** https, or http to loopback (a local test IdP). */
 const endpoint = z.url().refine((u) => { const x = new URL(u); return x.protocol === 'https:' || (x.protocol === 'http:' && LOOPBACK.includes(x.hostname)); },
@@ -65,7 +62,7 @@ const base = {
   label: z.string().min(1).optional(),
   roles,
 };
-const secret = { clientSecret: z.string().min(1).optional(), clientSecretFile: z.string().min(1).optional(), clientSecretEnv: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/, 'must be an environment variable name').optional() };
+const secret = { clientSecretEnv: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/, 'must be an environment variable name').optional() };
 const oidc = z.strictObject({
   ...base, ...secret, type: z.literal('oidc'), issuer: endpoint, clientId: z.string().min(1),
   scopes: z.array(z.string().min(1)).default(['openid', 'email', 'profile']),
@@ -81,7 +78,7 @@ const github = z.strictObject({
 });
 const saml = z.strictObject({
   ...base, type: z.literal('saml'), entryPoint: endpoint,
-  idpCert: z.string().min(1).optional(), idpCertFile: z.string().min(1).optional(),
+  idpCert: z.string().min(1),
   entityId: z.string().min(1).optional(),
   idpIssuer: z.string().min(1).optional(),
   attributes: z.strictObject({
@@ -97,52 +94,40 @@ const schema = z.strictObject({
 }).superRefine((doc, ctx) => {
   doc.providers.forEach((p, i) => {
     if (doc.providers.findIndex((q) => q.name === p.name) !== i) ctx.addIssue({ code: 'custom', path: ['providers', i, 'name'], message: `${p.name} is named twice; names must be unique` });
-    const secrets = p.type === 'saml' ? 0 : [p.clientSecret, p.clientSecretFile, p.clientSecretEnv].filter((x) => x !== undefined).length;
-    if (secrets > 1) ctx.addIssue({ code: 'custom', path: ['providers', i, 'clientSecret'], message: 'set one of clientSecret, clientSecretFile and clientSecretEnv' });
-    if (p.type === 'github' && secrets === 0) ctx.addIssue({ code: 'custom', path: ['providers', i, 'clientSecret'], message: 'GitHub needs clientSecret, clientSecretFile or clientSecretEnv' });
-    if (p.type === 'saml' && (p.idpCert === undefined) === (p.idpCertFile === undefined)) ctx.addIssue({ code: 'custom', path: ['providers', i, 'idpCert'], message: 'set exactly one of idpCert and idpCertFile' });
+    if (p.type === 'github' && p.clientSecretEnv === undefined) ctx.addIssue({ code: 'custom', path: ['providers', i, 'clientSecretEnv'], message: 'GitHub needs clientSecretEnv: the variable holding its client secret' });
   });
 });
 
-function readSecretFile(path: string, field: string): string {
-  const p = expandHome(path);
-  try {
-    if (statSync(p).mode & 0o077) console.warn(`job-hopper: WARNING: ${p} (${field}) is readable by others; chmod 600 it`);
-    return readFileSync(p, 'utf8').trim();
-  } catch (e) {
-    throw new Error(`invalid auth.yaml: ${field}: cannot read ${p}: ${(e as Error).message}`, { cause: e });
-  }
-}
+type Env = (name: string) => string | undefined;
 
-function readSecretEnv(name: string, field: string): string {
-  const v = process.env[name];
+function readSecretEnv(env: Env, name: string, field: string): string {
+  const v = env(name);
   if (v === undefined || v === '') throw new Error(`invalid auth.yaml: ${field}: environment variable ${name} is not set`);
   return v;
 }
 
-function resolve(p: z.output<typeof provider>, i: number): ProviderConfig {
-  const at = `providers.${i}`;
+function resolve(p: z.output<typeof provider>, i: number, env: Env): ProviderConfig {
   const label = p.label ?? p.name;
-  if (p.type === 'saml') {
-    const { idpCertFile, idpCert, ...rest } = p;
-    return { ...rest, label, idpCert: idpCert ?? readSecretFile(idpCertFile!, `${at}.idpCertFile`) };
-  }
-  const { clientSecretFile, clientSecretEnv, clientSecret, ...rest } = p;
-  const s = clientSecret
-    ?? (clientSecretFile === undefined ? undefined : readSecretFile(clientSecretFile, `${at}.clientSecretFile`))
-    ?? (clientSecretEnv === undefined ? undefined : readSecretEnv(clientSecretEnv, `${at}.clientSecretEnv`));
+  if (p.type === 'saml') return { ...p, label };
+  const { clientSecretEnv, ...rest } = p;
+  const s = clientSecretEnv === undefined ? undefined : readSecretEnv(env, clientSecretEnv, `providers.${i}.clientSecretEnv`);
   return p.type === 'github' ? { ...rest, type: 'github', label, clientSecret: s! } as GithubProviderConfig
     : { ...rest, type: 'oidc', label, ...(s === undefined ? {} : { clientSecret: s }) } as OidcProviderConfig;
 }
 
-/** auth.yaml at `path`, or local sign-in only when there is none. Throws on anything invalid. */
-export function loadAuthFile(path: string): AuthConfig {
-  const p = expandHome(path);
-  if (!existsSync(p)) return { local: { enabled: true }, providers: [] };
-  if (statSync(p).mode & 0o077) console.warn(`job-hopper: WARNING: ${p} is readable by others; chmod 600 it`);
+/** Why `raw` (parsed YAML) is not a valid auth.yaml, or undefined; the variables it names are not checked. */
+export function authDocumentProblem(raw: unknown): string | undefined {
+  const r = schema.safeParse(raw ?? {});
+  return r.success ? undefined : r.error.issues.map((x) => `${x.path.join('.') || '(document)'}: ${x.message}`).join('; ');
+}
+
+/** auth.yaml's text (undefined: none yet → local sign-in only), its secrets from `env`. Throws on anything invalid. */
+export function loadAuthDocument(text: string | undefined, env: Env): AuthConfig {
+  if (text === undefined) return { local: { enabled: true }, providers: [] };
   let doc: unknown;
-  try { doc = parse(readFileSync(p, 'utf8')); } catch (e) { throw new Error(`invalid auth.yaml: ${(e as Error).message}`, { cause: e }); }
-  const r = schema.safeParse(doc ?? {});
-  if (!r.success) throw new Error(`invalid auth.yaml: ${r.error.issues.map((x) => `${x.path.join('.') || '(file)'}: ${x.message}`).join('; ')}`);
-  return { local: r.data.local, providers: r.data.providers.map(resolve) };
+  try { doc = parse(text); } catch (e) { throw new Error(`invalid auth.yaml: ${(e as Error).message}`, { cause: e }); }
+  const problem = authDocumentProblem(doc);
+  if (problem) throw new Error(`invalid auth.yaml: ${problem}`);
+  const r = schema.parse(doc ?? {});
+  return { local: r.local, providers: r.providers.map((p, i) => resolve(p, i, env)) };
 }

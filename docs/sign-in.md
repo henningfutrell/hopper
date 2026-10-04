@@ -21,16 +21,20 @@ logout behave the same whichever provider signed the user in.
 
 | setup | what to do |
 |---|---|
-| One person, one machine | Nothing. With no `auth.yaml`, the one-time login code is the only way in: `bash ~/.local/lib/job-hopper/scripts/open-ui.sh`. It signs in as `admin`. |
+| One person, one machine | Nothing. With no `auth.yaml`, the one-time login code is the only way in: `job-hopper login-code` mints one (good once, 10 minutes); on the host install `bash ~/.local/lib/job-hopper/scripts/open-ui.sh` opens the UI already logged in. It signs in as `admin`. |
 | One person, a few devices on a home LAN | `JOB_HOPPER_LAN_NAMES` / `JOB_HOPPER_LAN_PEERS` (`docs/design.md` "Reaching the UI across the LAN") and device links. Add a provider if you prefer signing in with an account. |
 | A team, or anyone reaching it over the internet | A reverse proxy with TLS, `JOB_HOPPER_PUBLIC_URL`, one or more providers in `auth.yaml`, role rules, and usually `local: { enabled: false }`. |
 
 ## auth.yaml
 
-`~/.config/job-hopper/auth.yaml` (another path: `JOB_HOPPER_AUTH_FILE`). Mode `600` — it may hold
-client secrets; the daemon warns when it is readable by others. **Read at start**: after editing it,
-`systemctl --user restart job-hopper`. An invalid file stops the daemon with a message naming the
-field (`journalctl --user -u job-hopper`): sign-in fails closed, never open.
+`auth.yaml` is a **config document** in the daemon's database, not a file. Write or change it with
+`job-hopper config edit auth.yaml` (opens `$EDITOR`, writes back against the version it read), or
+`job-hopper config set auth.yaml --if-version <version>` with the text on stdin;
+`job-hopper config version auth.yaml` prints the version. A document that does not load, or that
+moved since you read it, is refused. **Read at start**: after changing it, restart the daemon
+(`systemctl --user restart job-hopper` on the host install). An invalid document stops the daemon
+with a message naming the field (`journalctl --user -u job-hopper`): sign-in fails closed, never
+open.
 
 ```yaml
 version: 1
@@ -47,9 +51,11 @@ providers:
       defaultRole: null  # the role of a signed-in account no rule matches; null: no session
 ```
 
-A client secret inline (`clientSecret`), in a file of its own (`clientSecretFile`; `~/` works) or
-in an environment variable (`clientSecretEnv`: its name; set it in `daemon.env` or the container's
-environment) — exactly one. The SAML certificate is not a secret: `idpCert` or `idpCertFile`.
+A client secret comes **only** from an environment variable: `clientSecretEnv` names it. Put the
+variable in the daemon's environment: `daemon.env` on the host install, the container's env file
+otherwise. Inline `clientSecret` and `clientSecretFile` are refused. The SAML certificate is not a
+secret: `idpCert`, inline only (PEM or bare base64; a YAML block scalar `|` holds a PEM).
+`idpCertFile` is refused.
 
 **Per type:**
 
@@ -57,14 +63,14 @@ environment) — exactly one. The SAML certificate is not a secret: `idpCert` or
 |---|---|---|---|
 | `oidc` | `issuer` | — | The issuer URL; discovery reads `<issuer>/.well-known/openid-configuration`. https (http only to `127.0.0.1`/`localhost`). |
 | | `clientId` | — | |
-| | `clientSecret` / `clientSecretFile` / `clientSecretEnv` | none | Omit all three for a public client (PKCE only). |
+| | `clientSecretEnv` | none | Name of the environment variable holding the secret. Omit for a public client (PKCE only). |
 | | `scopes` | `[openid, email, profile]` | Add what your groups claim needs (`groups` at Okta). |
 | | `claims.email` / `.username` / `.name` / `.groups` | `email` / `preferred_username` / `name` / `groups` | Claim names, read from the ID token, then userinfo. `groups` may be a list or one string. |
 | | `trustUnverifiedEmail` | `false` | Count `email` even without `email_verified: true`. Only for an issuer whose emails you control. |
-| `github` | `clientId`, `clientSecret` / `clientSecretFile` / `clientSecretEnv` | — | An OAuth app (not a GitHub App). |
+| `github` | `clientId`, `clientSecretEnv` | — | An OAuth app (not a GitHub App). `clientSecretEnv` is required. |
 | | `webUrl` / `apiUrl` | `https://github.com` / `https://api.github.com` | GitHub Enterprise Server: `https://ghe.example.com` and `https://ghe.example.com/api/v3`. |
 | `saml` | `entryPoint` | — | The IdP's single sign-on URL (HTTP-Redirect binding). |
-| | `idpCert` / `idpCertFile` | — | The IdP's signing certificate, PEM or bare base64. |
+| | `idpCert` | — | The IdP's signing certificate, inline: PEM or bare base64. |
 | | `idpIssuer` | none | The IdP's entity id. Set it: a response from another issuer is then refused. |
 | | `entityId` | `<sign-in origin>/ui/auth/<name>/metadata` | This service's entity id (the IdP calls it Identifier or Audience). |
 | | `attributes.email` / `.name` / `.groups` / `.username` | `email` / `displayName` / `groups` / NameID | Attribute names in the assertion. |
@@ -191,7 +197,8 @@ without a session by any process on the host — keep the daemon on a machine on
 ## Providers
 
 Each section: what to create at the provider, then the `auth.yaml` entry. Replace `<origin>` with
-the sign-in origin.
+the sign-in origin. Put each `clientSecretEnv` variable, as `NAME=<secret>`, in the daemon's
+environment (`daemon.env` on the host install), then restart.
 
 ### Google
 
@@ -206,10 +213,12 @@ the sign-in origin.
     type: oidc
     issuer: https://accounts.google.com
     clientId: 1234-abc.apps.googleusercontent.com
-    clientSecretFile: ~/.config/job-hopper/google-client-secret
+    clientSecretEnv: GOOGLE_CLIENT_SECRET
     roles:
       admin: { emails: [ada@example.com] }
 ```
+
+In the daemon's environment: `GOOGLE_CLIENT_SECRET=<secret>`.
 
 Google sends no groups. For "everyone in our Google Workspace", match the hosted-domain claim
 rather than the email domain (a personal Google account can carry a verified address at any domain):
@@ -229,7 +238,7 @@ set `claims: { groups: hd }` and grant `groups: [example.com]`.
     type: oidc
     issuer: https://login.microsoftonline.com/<tenant-id>/v2.0
     clientId: <application (client) id>
-    clientSecretFile: ~/.config/job-hopper/entra-client-secret
+    clientSecretEnv: ENTRA_CLIENT_SECRET
     claims: { groups: roles }        # app roles; leave out to use the groups claim (object ids)
     roles:
       admin:    { groups: [Hopper.Admin] }
@@ -252,7 +261,7 @@ match on groups, app roles or `usernames` (the UPN in `preferred_username`), not
     type: oidc
     issuer: https://<your-org>.okta.com
     clientId: <client id>
-    clientSecretFile: ~/.config/job-hopper/okta-client-secret
+    clientSecretEnv: OKTA_CLIENT_SECRET
     scopes: [openid, email, profile, groups]
     roles:
       admin:    { groups: [hopper-admins] }
@@ -274,7 +283,7 @@ With a custom authorization server the issuer is `https://<your-org>.okta.com/oa
     type: oidc
     issuer: https://<tenant>.auth0.com/     # the trailing slash is part of Auth0's issuer
     clientId: <client id>
-    clientSecretFile: ~/.config/job-hopper/auth0-client-secret
+    clientSecretEnv: AUTH0_CLIENT_SECRET
     claims: { groups: https://hopper.example.com/roles }
     roles:
       admin: { groups: [hopper-admin] }
@@ -294,7 +303,7 @@ With a custom authorization server the issuer is `https://<your-org>.okta.com/oa
     type: oidc
     issuer: https://keycloak.example.com/realms/<realm>
     clientId: job-hopper
-    clientSecretFile: ~/.config/job-hopper/keycloak-client-secret
+    clientSecretEnv: KEYCLOAK_CLIENT_SECRET
     roles:
       admin:    { groups: [hopper-admins] }
       operator: { groups: [hopper-operators] }
@@ -316,7 +325,7 @@ verified email and (when a rule names groups) their teams from the API.
     label: GitHub
     type: github
     clientId: <client id>
-    clientSecretFile: ~/.config/job-hopper/github-oauth-secret
+    clientSecretEnv: GITHUB_OAUTH_CLIENT_SECRET
     roles:
       admin:    { subjects: ["583231"] }        # the numeric user id: https://api.github.com/users/<login> → id
       operator: { groups: [acme/platform] }     # org/team-slug
@@ -339,7 +348,7 @@ HTTP-POST for the response. Unsolicited (IdP-initiated) responses are refused.
    - assertion consumer service (HTTP-POST): `<origin>/ui/auth/<name>/callback`
 2. Have it sign assertions (SHA-256), with a persistent NameID, and send email, display name and
    groups attributes.
-3. From the IdP take: its SSO URL (`entryPoint`), signing certificate (`idpCertFile`) and entity id
+3. From the IdP take: its SSO URL (`entryPoint`), signing certificate (`idpCert`) and entity id
    (`idpIssuer`).
 
 ```yaml
@@ -347,7 +356,10 @@ HTTP-POST for the response. Unsolicited (IdP-initiated) responses are refused.
     label: Corp SSO
     type: saml
     entryPoint: https://idp.example.com/sso/saml
-    idpCertFile: ~/.config/job-hopper/corp-idp.pem
+    idpCert: |
+      -----BEGIN CERTIFICATE-----
+      <base64 certificate>
+      -----END CERTIFICATE-----
     idpIssuer: https://idp.example.com/metadata
     attributes: { email: email, name: displayName, groups: groups }
     roles:
@@ -367,7 +379,10 @@ sign-on → SAML**. Identifier: `<origin>/ui/auth/entra-saml/metadata`; Reply UR
     label: Microsoft
     type: saml
     entryPoint: https://login.microsoftonline.com/<tenant-id>/saml2
-    idpCertFile: ~/.config/job-hopper/entra-saml.cer
+    idpCert: |
+      -----BEGIN CERTIFICATE-----
+      <base64 certificate>
+      -----END CERTIFICATE-----
     idpIssuer: https://sts.windows.net/<tenant-id>/
     attributes:
       email: http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress
@@ -390,7 +405,10 @@ the SSO URL, issuer and certificate.
     label: Okta
     type: saml
     entryPoint: https://<your-org>.okta.com/app/<app>/<id>/sso/saml
-    idpCertFile: ~/.config/job-hopper/okta.cert
+    idpCert: |
+      -----BEGIN CERTIFICATE-----
+      <base64 certificate>
+      -----END CERTIFICATE-----
     idpIssuer: http://www.okta.com/<id>
     roles:
       operator: { groups: [hopper-operators] }
@@ -409,7 +427,10 @@ in `https://keycloak.example.com/realms/<realm>/protocol/saml/descriptor`.
     label: Keycloak
     type: saml
     entryPoint: https://keycloak.example.com/realms/<realm>/protocol/saml
-    idpCertFile: ~/.config/job-hopper/keycloak-realm.pem
+    idpCert: |
+      -----BEGIN CERTIFICATE-----
+      <base64 certificate>
+      -----END CERTIFICATE-----
     idpIssuer: https://keycloak.example.com/realms/<realm>
     roles:
       admin: { groups: [hopper-admins] }

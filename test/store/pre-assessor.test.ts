@@ -3,6 +3,7 @@
 // attempts. A store written by job-hopper 7d9d4e0 — the last release before the assessor —
 // through its own repositories (test/store/fixtures/pre-assessor.sqlite: open questions at opus,
 // fable and human, one answered by fable, and v1 question events) must read and validate as is.
+import { SCHEMA_VERSION } from '../../src/store/migrations.ts';
 import { copyFileSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -53,7 +54,7 @@ describe('a store written before the assessor', () => {
     const path = copyFixture();
     t.open(path).close();
     const db = new DatabaseSync(path);
-    expect(db.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 7 });
+    expect(db.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: SCHEMA_VERSION });
     db.close();
   });
 });

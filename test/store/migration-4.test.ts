@@ -2,6 +2,7 @@
 // pre-plugin release — through its own repositories: test/store/fixtures/pre-plugins.sqlite
 // (schema v3; jobs with jevAdvice from jev-router, fake and fallback, a held job, an
 // unclassified one, settings.jevMode = active, a decision with Jev divergences, and v1 events).
+import { SCHEMA_VERSION } from '../../src/store/migrations.ts';
 import { copyFileSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -106,7 +107,7 @@ describe('migration 4 (router renames) on a pre-plugin store', () => {
     expect(s.jobs.get(id(1))!.advice!.details).toEqual({ intent: 'build', jevUsed: false });
     s.close();
     const db = new DatabaseSync(path);
-    expect(db.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 7 });
+    expect(db.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: SCHEMA_VERSION });
     db.close();
   });
 });

@@ -1,5 +1,6 @@
 // The plugin host's contract (index.ts builds it): what it is given, and what it offers the
 // composition root and the HTTP edge.
+import type { ConfigDocuments } from '../domain/ports.ts';
 import type { Answerer, Assessor, Clock, MachineSource, Notifier, NotifierEvents, UsageSource } from '../domain/ports.ts';
 import type {
   AttachedMachine, InstanceSpec, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit, PluginsEditOutcome, PluginsReport, RouterMode, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule,
@@ -10,8 +11,10 @@ import type { BuiltJobSource } from './source-slots.ts';
 import type { DetectionKit, JobSourceContext, PluginDefinition, PluginLogger, QueueSorter, Router } from './sdk.ts';
 
 export interface PluginHostOptions {
-  pluginDir: string;
-  pluginsFile: string;
+  /** Custom plugins, one directory each; undefined: none (design.md "Where plugins live"). */
+  pluginDir?: string;
+  /** Where plugins.yaml is kept: the store's config documents. */
+  documents: ConfigDocuments;
   /** The answerer instance when plugins.yaml has no `answerer` section; null = none. Default: the built-in one. */
   defaultAnswerer?: InstanceSpec | null;
   /** The assessor instance when plugins.yaml has no `assessor` section. Default: the built-in one. */
@@ -30,7 +33,7 @@ export interface PluginHostOptions {
   kit?: DetectionKit;
   /** Default: BUILTIN_PLUGINS. */
   builtins?: readonly PluginDefinition[];
-  /** How often plugins.yaml's mtime is checked; default 5000. */
+  /** How often plugins.yaml's version is checked; default 5000. */
   intervalMs?: number;
   /** What a machine edit needs (issue #18). */
   attached?: AttachedEditOptions;

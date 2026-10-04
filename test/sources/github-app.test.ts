@@ -4,6 +4,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { APP_INFO, BOT, REPO, discoverOne, jobForIssue, setup, setupApp } from './fixtures/github-support.ts';
+import { CREATE_APP_HINT } from '../../src/sources/github/source.ts';
 
 const OTHER = 'owner/other';
 const methods = (calls: { method: string }[]) => calls.map((c) => c.method);
@@ -89,9 +90,9 @@ describe('describe (B4 fields)', () => {
     expect(source.describe().setup).toBeUndefined();
   });
 
-  it('app source without an app file: setup says to run the helper; a broken file is appError', () => {
+  it('app source without an app: setup says how to create it; a broken key is appError', () => {
     const missing = setupApp({}, { appInfo: () => ({ ok: false, reason: 'missing' }) }).source.describe();
-    expect(missing.setup).toBe('run bash ~/.local/lib/job-hopper/scripts/create-github-app.sh');
+    expect(missing.setup).toBe(CREATE_APP_HINT);
     const broken = setupApp({}, { appInfo: () => ({ ok: false, reason: 'bad key' }) }).source.describe();
     expect(broken.appError).toBe('bad key');
   });

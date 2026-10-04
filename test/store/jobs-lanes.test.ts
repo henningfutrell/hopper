@@ -5,7 +5,7 @@ const t = useTempStore();
 
 describe('jobs', () => {
   it('creates queued, unapproved, attempts 0, and gets it back', () => {
-    const s = t.open(t.path());
+    const s = t.open(t.url());
     const j = s.jobs.create(spec, 50);
     expect(j).toMatchObject({ spec, priority: 50, status: 'queued', approved: false, attempts: 0 });
     expect(j.createdAt).toBe('2026-10-02T10:00:00.000Z');
@@ -16,7 +16,7 @@ describe('jobs', () => {
 
   it('update merges, bumps updatedAt, and clears on explicit undefined', () => {
     const clock = fixedClock();
-    const s = t.open(t.path(), clock);
+    const s = t.open(t.url(), clock);
     const j = s.jobs.create(spec, 50);
     clock.set('2026-10-02T11:00:00.000Z');
     const u = s.jobs.update(j.id, { status: 'held', holdReason: 'budget', result: { a: 1 }, progress: 0.5 });
@@ -30,14 +30,14 @@ describe('jobs', () => {
   });
 
   it('update of a missing job throws', () => {
-    const s = t.open(t.path());
+    const s = t.open(t.url());
     expect(() => s.jobs.update('nope', { status: 'failed' })).toThrow();
     s.close();
   });
 
   it('lists newest first with status filter and limit', () => {
     const clock = fixedClock();
-    const s = t.open(t.path(), clock);
+    const s = t.open(t.url(), clock);
     const ids: string[] = [];
     for (let i = 0; i < 4; i++) {
       clock.set(`2026-10-02T10:0${i}:00.000Z`);
@@ -51,7 +51,7 @@ describe('jobs', () => {
   });
 
   it('stores advice, and everything survives reopen', () => {
-    const path = t.path();
+    const path = t.url();
     const s = t.open(path);
     const j = s.jobs.create(spec, 70);
     const advice = { action: 'chat_only' as const, reason: 'r', details: { x: 1, jevUsed: true }, source: 'fake', at: 'a' };
@@ -65,7 +65,7 @@ describe('jobs', () => {
 
 describe('lanes', () => {
   it('opens the lowest free number per machine, idle, idleSince = openedAt', () => {
-    const s = t.open(t.path());
+    const s = t.open(t.url());
     const a = s.lanes.open('m1');
     const b = s.lanes.open('m1');
     expect(a).toMatchObject({ id: 'm1/lane-1', machineId: 'm1', state: 'idle', openedAt: '2026-10-02T10:00:00.000Z', idleSince: '2026-10-02T10:00:00.000Z' });
@@ -77,7 +77,7 @@ describe('lanes', () => {
   });
 
   it('lists by machine, updates with clear, closes', () => {
-    const s = t.open(t.path());
+    const s = t.open(t.url());
     const a = s.lanes.open('m1');
     s.lanes.open('m2');
     expect(s.lanes.list()).toHaveLength(2);
@@ -91,7 +91,7 @@ describe('lanes', () => {
   });
 
   it('survives reopen', () => {
-    const path = t.path();
+    const path = t.url();
     const s = t.open(path);
     s.lanes.open('m1');
     const l = s.lanes.update(s.lanes.open('m1').id, { state: 'busy', jobId: 'j' });
@@ -107,7 +107,7 @@ describe('jobs pulled from a source', () => {
   const ref = (key: string) => ({ source: 'github', kind: 'github', key, url: key, repo: 'o/r', number: 1 });
 
   it('stores the source and finds the job by key, across reopen', () => {
-    const path = t.path();
+    const path = t.url();
     const s = t.open(path);
     const j = s.jobs.create(spec, 5, ref('https://x/1'));
     expect(j.source).toEqual(ref('https://x/1'));
@@ -120,7 +120,7 @@ describe('jobs pulled from a source', () => {
   });
 
   it('keeps every job for a key; getBySourceKey returns the newest', () => {
-    const s = t.open(t.path());
+    const s = t.open(t.url());
     s.jobs.create(spec, 5, ref('k'));
     const second = s.jobs.create(spec, 5, ref('k'));
     expect(s.jobs.list()).toHaveLength(2);
@@ -129,7 +129,7 @@ describe('jobs pulled from a source', () => {
   });
 
   it('allows many jobs without a source', () => {
-    const s = t.open(t.path());
+    const s = t.open(t.url());
     s.jobs.create(spec, 5);
     s.jobs.create(spec, 5);
     expect(s.jobs.list()).toHaveLength(2);

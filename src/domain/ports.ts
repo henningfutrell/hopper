@@ -510,7 +510,6 @@ export interface Updater {
   settings(patch: Partial<UpdateSettings>): UpdateStatus;
 }
 
-/** The whole store. One SQLite file; repositories share one connection. */
 /** UI sessions, keyed by the SHA-256 of the token; the token itself is never stored. */
 /** A stored UI session: never the token, only its SHA-256. */
 export interface UiSessionRow { tokenHash: string; expiresAt: string; role: UiRole; identity: Identity }
@@ -525,6 +524,29 @@ export interface UiSessionRepository {
   drop(tokenHash: string): void;
 }
 
+/** One-time UI login codes, keyed by the SHA-256 of the code; the code itself is never stored. */
+export interface LoginCodeRepository {
+  create(codeHash: string, expiresAt: string): void;
+  /** True, and the code is gone, when it exists and `expiresAt > now`. Expired codes are deleted first. */
+  take(codeHash: string, now: string): boolean;
+}
+
+/** The config documents the store holds (design.md "Config documents"). */
+export const CONFIG_DOCUMENTS = ['plugins.yaml', 'webhooks.yaml', 'rules.md', 'auth.yaml'] as const;
+export type ConfigDocumentName = (typeof CONFIG_DOCUMENTS)[number];
+
+/**
+ * Config documents: named texts, each edited whole against its `version` — the sha-256 of its
+ * text, or `missing` while there is none.
+ */
+export interface ConfigDocuments {
+  read(name: ConfigDocumentName): string | undefined;
+  version(name: ConfigDocumentName): string;
+  /** Replace the text if the document is still at `version`; false (nothing written) when it moved. */
+  write(name: ConfigDocumentName, text: string, version: string): boolean;
+}
+
+/** The whole store: one database (SQLite or Postgres); repositories share one connection. */
 export interface Store {
   jobs: JobRepository;
   lanes: LaneRepository;
@@ -534,6 +556,8 @@ export interface Store {
   questions: QuestionRepository;
   settings: SettingsRepository;
   uiSessions: UiSessionRepository;
+  documents: ConfigDocuments;
+  loginCodes: LoginCodeRepository;
   /** Run fn in one transaction. Re-entrant: a nested tx joins the outer one. Throw = rollback. */
   tx<T>(fn: () => T): T;
   close(): void;

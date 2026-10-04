@@ -1,15 +1,17 @@
 // A machine edit (design.md "Machines from the UI", issue #18): add, edit or remove one entry of
-// plugins.yaml `attachedMachines:`. The new text is spliced into the file at that entry's source
+// plugins.yaml `attachedMachines:`. The new text is spliced into the document at that entry's source
 // range, so every other byte — other sections, other entries, comments — stays as written. The
-// result is parsed and checked against the plugins.yaml schema before it is written (atomic, 600).
+// result is parsed and checked against the plugins.yaml schema before it replaces the document,
+// against the version the edit was read at.
 // The ssh target must be a detected one; herdrBin is resolved over ssh here, never sent.
 import { isMap, isScalar, isSeq, parseDocument, stringify, type Document, type Node, type YAMLMap, type YAMLSeq } from 'yaml';
+import type { ConfigDocuments } from '../domain/ports.ts';
 import type { AttachedMachine, MachineEdit } from '../domain/types.ts';
-import { pluginsFileProblem, pluginsFileVersion, readPluginsText, writePluginsFile } from './plugins-file.ts';
+import { BY_HAND, PLUGINS, pluginsFileProblem } from './plugins-file.ts';
 import type { EditRefusal, EditResult } from './edit.ts';
 
 export interface MachineEditContext {
-  path: string;
+  documents: ConfigDocuments;
   /** The machine source's instance name: an attached machine may not take it. */
   machineName: string;
   /** The configured executor instance names. */
@@ -110,22 +112,24 @@ function unknownExecutors(list: readonly string[] | undefined, ctx: MachineEditC
 
 interface Read { text: string; doc: Document; seq: YAMLSeq | undefined; entries: Record<string, unknown>[] }
 
+const CHANGED = `${PLUGINS} changed since it was read; reload and edit again`;
+
 function readFile(ctx: MachineEditContext, version: string): Read | EditRefusal {
-  const text = readPluginsText(ctx.path);
-  if (pluginsFileVersion(text) !== version) return refuse('conflict', `${ctx.path} changed since it was read; reload and edit again`);
-  if (text === undefined) return refuse('conflict', `${ctx.path} is missing; restart the daemon to write it`);
+  const text = ctx.documents.read(PLUGINS);
+  if (ctx.documents.version(PLUGINS) !== version) return refuse('conflict', CHANGED);
+  if (text === undefined) return refuse('conflict', `${PLUGINS} is missing; restart the daemon to write it`);
   const doc = parseDocument(text);
-  if (doc.errors.length) return refuse('conflict', `${ctx.path} is not valid YAML; fix it by hand: ${doc.errors[0]!.message}`);
+  if (doc.errors.length) return refuse('conflict', `${PLUGINS} is not valid YAML; fix it by hand (${BY_HAND}): ${doc.errors[0]!.message}`);
   const problem = pluginsFileProblem(doc.toJS());
-  if (problem) return refuse('conflict', `${ctx.path} is invalid; fix it by hand: ${problem}`);
+  if (problem) return refuse('conflict', `${PLUGINS} is invalid; fix it by hand (${BY_HAND}): ${problem}`);
   const seq = doc.get(KEY, true);
   return { text, doc, seq: isSeq(seq) ? seq : undefined, entries: isSeq(seq) ? (seq.toJSON() as Record<string, unknown>[]) : [] };
 }
 
-function writeChecked(ctx: MachineEditContext, text: string): EditResult {
+function writeChecked(ctx: MachineEditContext, text: string, version: string): EditResult {
   const problem = pluginsFileProblem(parseDocument(text).toJS());
   if (problem) return refuse('invalid', problem);
-  writePluginsFile(ctx.path, text);
+  if (!ctx.documents.write(PLUGINS, text, version)) return refuse('conflict', CHANGED);
   return { ok: true, changed: true };
 }
 
@@ -149,17 +153,17 @@ export async function applyMachineEdit(e: MachineEdit, ctx: MachineEditContext):
     } catch (err) {
       return refuse('conflict', `cannot resolve herdr on ${e.ssh}, machine not added: ${err instanceof Error ? err.message : String(err)}`);
     }
-    // The probe takes seconds: the file may have changed meanwhile.
+    // The probe takes seconds: the document may have changed meanwhile.
     const again = readFile(ctx, e.version);
     if ('ok' in again) return again;
-    return writeChecked(ctx, spliceAdd(again.text, again.doc, { ...draft, herdrBin }));
+    return writeChecked(ctx, spliceAdd(again.text, again.doc, { ...draft, herdrBin }), e.version);
   }
 
   if (at < 0 || !r.seq) return refuse('not_found', `no attached machine named ${e.name}`);
   if (e.action === 'remove') {
     const jobs = ctx.inUse(e.name);
     if (jobs.length) return refuse('conflict', `${e.name} still has jobs (${jobs.join(', ')}): wait for them to end, or cancel them, then remove it`);
-    return writeChecked(ctx, spliceEntry(r.text, r.doc, r.seq, at, null));
+    return writeChecked(ctx, spliceEntry(r.text, r.doc, r.seq, at, null), e.version);
   }
 
   const bad = e.executors ? unknownExecutors(e.executors, ctx) : undefined;
@@ -171,5 +175,5 @@ export async function applyMachineEdit(e: MachineEdit, ctx: MachineEditContext):
   if (e.label === null) delete next.label;
   else if (e.label !== undefined) next.label = e.label;
   if (JSON.stringify(next) === JSON.stringify(current)) return { ok: true, changed: false };
-  return writeChecked(ctx, spliceEntry(r.text, r.doc, r.seq, at, entryOf(next)));
+  return writeChecked(ctx, spliceEntry(r.text, r.doc, r.seq, at, entryOf(next)), e.version);
 }

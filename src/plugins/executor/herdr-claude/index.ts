@@ -37,7 +37,7 @@ export function herdrClaudePlugin(seam?: HerdrClient): PluginDefinition<'executo
       session: z.string().min(1).refine((s) => s !== 'default', 'must not be the default herdr session').default('job-hopper'),
       args: z.array(z.string()).default(['--dangerously-skip-permissions'])
         .meta({ commandBearing: true, description: "Claude Code's arguments: permissions, allowed tools, MCP config" }),
-      cwd: z.string().min(1).default('~/workbench/app-workflows').transform(expandHome)
+      cwd: z.string().min(1).default('~').transform(expandHome)
         .meta({ commandBearing: true, description: 'working directory of a job whose payload names none' }),
       trustWorkdir: z.boolean().default(true),
       pollMs: z.number().int().positive().default(1000),

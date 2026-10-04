@@ -5,7 +5,7 @@ import type { MachinesConfig } from '../../src/domain/types.ts';
 import { addBody, addProblem, editBody, kindOf, type MachineDraft } from '../../ui/src/model/machines.ts';
 
 const CONFIG: MachinesConfig = {
-  path: '/h/.config/job-hopper/plugins.yaml',
+  document: 'plugins.yaml',
   version: 'v1',
   machine: { name: 'local', plugin: 'local', options: { lanes: 4 } },
   attached: [{ name: 'desk', ssh: 'desk', lanes: 1, executors: ['test'], session: 'job-hopper', herdrBin: '/usr/bin/herdr' }],

@@ -1,3 +1,4 @@
+import { SCHEMA_VERSION } from '../../src/store/migrations.ts';
 import { existsSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { DatabaseSync } from 'node:sqlite';
@@ -14,12 +15,12 @@ describe('openStore', () => {
     s.close();
     const raw = new DatabaseSync(path);
     expect(raw.prepare('PRAGMA journal_mode').get()).toMatchObject({ journal_mode: 'wal' });
-    expect(raw.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 7 });
+    expect(raw.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: SCHEMA_VERSION });
     raw.close();
   });
 
-  it('reopening an existing file does not re-run or lose migrations', () => {
-    const path = t.path();
+  it('reopening an existing database does not re-run or lose migrations', () => {
+    const path = t.url();
     const s = t.open(path);
     const j = s.jobs.create({ executor: 'x', payload: {} }, 5);
     s.close();
@@ -30,7 +31,7 @@ describe('openStore', () => {
 
   it('uses the injected idGen', () => {
     let n = 0;
-    const s = openStore({ path: t.path(), clock: fixedClock(), idGen: () => `id-${++n}` });
+    const s = openStore({ url: t.url(), clock: fixedClock(), idGen: () => `id-${++n}` });
     expect(s.jobs.create({ executor: 'x', payload: {} }, 5).id).toBe('id-1');
     expect(s.webhooks.upsertByName({ name: 'n', url: 'u', events: [], secret: 's', active: true }).id).toBe('id-2');
     expect(s.events.append({ type: 'job.queued', data: {} }).id).toBe('id-3');
@@ -38,7 +39,7 @@ describe('openStore', () => {
   });
 
   it('defaults ids to uuids', () => {
-    const s = t.open(t.path());
+    const s = t.open(t.url());
     expect(s.jobs.create({ executor: 'x', payload: {} }, 5).id).toMatch(/^[0-9a-f-]{36}$/);
     s.close();
   });

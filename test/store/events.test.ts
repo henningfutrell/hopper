@@ -8,7 +8,7 @@ const ev = (type: 'job.queued' | 'lane.opened' = 'job.queued', n = 0) => ({ type
 
 describe('event log', () => {
   it('assigns seq, id, at; since and recent behave', () => {
-    const s = t.open(t.path());
+    const s = t.open(t.url());
     const a = s.events.append(ev());
     const b = s.events.append(ev('lane.opened', 1));
     const c = s.events.append({ ...ev(), at: '2020-01-01T00:00:00.000Z' });
@@ -25,7 +25,7 @@ describe('event log', () => {
   });
 
   it('keeps optional ids and data; seq is monotonic across reopen', () => {
-    const path = t.path();
+    const path = t.url();
     const s = t.open(path);
     const a = s.events.append({ type: 'decision.made', decisionId: 'd', laneId: 'l', machineId: 'm', data: { k: [1] } });
     s.close();
@@ -36,7 +36,7 @@ describe('event log', () => {
   });
 
   it('notifies immediately outside a tx, and unsubscribe stops it', () => {
-    const s = t.open(t.path());
+    const s = t.open(t.url());
     const got: DomainEvent[] = [];
     const off = s.events.subscribe((e) => got.push(e));
     s.events.append(ev());
@@ -47,7 +47,7 @@ describe('event log', () => {
   });
 
   it('notifies only after the outermost commit, in seq order', () => {
-    const s = t.open(t.path());
+    const s = t.open(t.url());
     const got: number[] = [];
     s.events.subscribe((e) => got.push(e.seq));
     s.tx(() => {
@@ -61,26 +61,28 @@ describe('event log', () => {
   });
 
   it('notifies nothing on rollback and reuses no state', () => {
-    const s = t.open(t.path());
+    const s = t.open(t.url());
     const got: number[] = [];
     s.events.subscribe((e) => got.push(e.seq));
     expect(() => s.tx(() => { s.events.append(ev()); throw new Error('boom'); })).toThrow('boom');
     expect(got).toEqual([]);
     expect(s.events.since(0)).toEqual([]);
-    s.events.append(ev());
-    expect(got).toEqual([1]);
+    const e = s.events.append(ev());
+    // A rolled-back append may leave a gap (a Postgres sequence is not transactional): seq only rises.
+    expect(got).toEqual([e.seq]);
+    expect(s.events.since(0).map((x) => x.seq)).toEqual([e.seq]);
     s.close();
   });
 
   it('an inner throw caught by the outer still commits the outer', () => {
-    const s = t.open(t.path());
+    const s = t.open(t.url());
     expect(() => s.tx(() => { s.tx(() => { throw new Error('inner'); }); })).toThrow('inner');
     expect(s.tx(() => 7)).toBe(7);
     s.close();
   });
 
   it('a throwing listener is reported and never breaks append or other listeners', () => {
-    const s = t.open(t.path());
+    const s = t.open(t.url());
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});
     const got: number[] = [];
     s.events.subscribe(() => { throw new Error('bad listener'); });
@@ -95,7 +97,7 @@ describe('event log', () => {
 
 describe('tx', () => {
   it('commits writes of every repository together and rolls them back together', () => {
-    const s = t.open(t.path());
+    const s = t.open(t.url());
     expect(() => s.tx(() => { s.jobs.create({ executor: 'x', payload: {} }, 1); s.lanes.open('m'); throw new Error('x'); })).toThrow();
     expect(s.jobs.list()).toEqual([]);
     expect(s.lanes.list()).toEqual([]);
@@ -107,7 +109,7 @@ describe('tx', () => {
 
 describe('event schema version', () => {
   it('is stamped from EVENT_SCHEMA_VERSIONS, round-trips, survives reopen', () => {
-    const path = t.path();
+    const path = t.url();
     const s = t.open(path);
     const a = s.events.append(ev());
     expect(a.schemaVersion).toBe(EVENT_SCHEMA_VERSIONS['job.queued']);
@@ -119,7 +121,7 @@ describe('event schema version', () => {
   });
 
   it('notifies listeners with the stamped version', () => {
-    const s = t.open(t.path());
+    const s = t.open(t.url());
     const seen: number[] = [];
     s.events.subscribe((e) => seen.push(e.schemaVersion));
     s.events.append(ev());

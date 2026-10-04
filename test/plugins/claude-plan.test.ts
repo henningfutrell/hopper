@@ -97,7 +97,7 @@ describe('claude-plan plugin', () => {
     if (saved === undefined) delete process.env.FAKE_PLAN_DIR; else process.env.FAKE_PLAN_DIR = saved;
   });
 
-  const ctx = () => ({ clock: { now: () => now }, logger: { info() {}, warn() {} }, dataDir: scratch, scratchDir: scratch, instanceName: 'claude' });
+  const ctx = () => ({ clock: { now: () => now }, logger: { info() {}, warn() {} }, dataDir: scratch, scratchDir: scratch, instanceName: 'claude', env: () => undefined });
   async function create(raw: Record<string, unknown> = {}): Promise<UsageSource> {
     const p = parseOptions(claudePlan, { bin: BIN, ...raw });
     if (!p.ok) throw new Error(p.error);

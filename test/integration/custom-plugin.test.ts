@@ -22,7 +22,7 @@ describe('a custom plugin copied from examples/plugins', () => {
     cleanup = db.cleanup;
     const dataDir = join(db.dbPath, '..');
     cpSync(join(EXAMPLES, 'executor', 'echo-executor'), join(dataDir, 'plugins', 'echo-executor'), { recursive: true });
-    writePluginsYaml(dataDir, { version: 1, executors: [{ name: 'test', plugin: 'test' }, { name: 'echo', plugin: 'echo-executor', options: { prefix: 'heard: ' } }], jobSources: [] });
+    writePluginsYaml(db.dbPath, { version: 1, executors: [{ name: 'test', plugin: 'test' }, { name: 'echo', plugin: 'echo-executor', options: { prefix: 'heard: ' } }], jobSources: [] });
     t = await startTestApp({ dbPath: db.dbPath });
 
     const report = (await t.api('GET', '/api/plugins')).body;

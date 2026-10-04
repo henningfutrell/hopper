@@ -1,18 +1,20 @@
 // A UI edit of plugins.yaml (design.md "UI and mutation"): one instance's options, the plugin
-// filling a one-instance role, or an instance of a list role added or removed. Each edit rewrites only that instance's part of the file; comments
-// and every other section stay as written. Command-bearing options are never changed from here.
+// filling a one-instance role, or an instance of a list role added or removed. Each edit rewrites only that instance's part of the document; comments
+// and every other section stay as written. Command-bearing options are never changed from here:
+// they are the operator's, set with `job-hopper config edit plugins.yaml` (design.md "Config documents").
 import { isMap, isSeq, parseDocument, type Document } from 'yaml';
+import type { ConfigDocuments } from '../domain/ports.ts';
 import type { ConfiguredInstance, Detection, InstanceSpec, ListRole, PluginsEdit, Role, RoutingEdit, RoutingRule } from '../domain/types.ts';
 import { parseRoutingRules } from '../routing/index.ts';
 import { optionsJsonSchema, parseOptions } from './options.ts';
-import { pluginsFileProblem, pluginsFileVersion, readPluginsText, writePluginsFile } from './plugins-file.ts';
+import { BY_HAND, PLUGINS, pluginsFileProblem } from './plugins-file.ts';
 import type { PluginDefinition } from './sdk.ts';
 
 export type EditRefusal = { ok: false; code: 'invalid' | 'not_found' | 'conflict'; error: string };
 export type EditResult = { ok: true; changed: boolean } | EditRefusal;
 
 export interface EditContext {
-  path: string;
+  documents: ConfigDocuments;
   /** What plugins.yaml (or the built-in instances, for a role with no section) names now. */
   configured: readonly ConfiguredInstance[];
   find(id: string): { definition: PluginDefinition; detection: Detection } | undefined;
@@ -140,18 +142,22 @@ function executorUsers(name: string, doc: Document, ctx: EditContext): string[] 
   ];
 }
 
-function write(path: string, text: string | undefined, version: string, change: (doc: Document) => EditRefusal | void): EditResult {
-  if (pluginsFileVersion(text) !== version) return refuse('conflict', `${path} changed since it was read; reload and edit again`);
+const CHANGED = `${PLUGINS} changed since it was read; reload and edit again`;
+
+/** Apply `change` to the plugins document read now, and replace it if it is still at `version`. */
+export function writePlugins(documents: ConfigDocuments, version: string, change: (doc: Document) => EditRefusal | void): EditResult {
+  const text = documents.read(PLUGINS);
+  if (documents.version(PLUGINS) !== version) return refuse('conflict', CHANGED);
   const doc = text === undefined ? parseDocument('version: 1\n') : parseDocument(text);
-  if (doc.errors.length) return refuse('conflict', `${path} is not valid YAML; fix it by hand: ${doc.errors[0]!.message}`);
+  if (doc.errors.length) return refuse('conflict', `${PLUGINS} is not valid YAML; fix it by hand (${BY_HAND}): ${doc.errors[0]!.message}`);
   const before = pluginsFileProblem(doc.toJS());
-  if (before) return refuse('conflict', `${path} is invalid; fix it by hand: ${before}`);
+  if (before) return refuse('conflict', `${PLUGINS} is invalid; fix it by hand (${BY_HAND}): ${before}`);
   const refused = change(doc);
   if (refused) return refused;
   const problem = pluginsFileProblem(doc.toJS());
   if (problem) return refuse('invalid', problem);
   // lineWidth 0: never refold lines the owner wrote long.
-  writePluginsFile(path, doc.toString({ lineWidth: 0 }));
+  if (!documents.write(PLUGINS, doc.toString({ lineWidth: 0 }), version)) return refuse('conflict', CHANGED);
   return { ok: true, changed: true };
 }
 
@@ -160,37 +166,36 @@ function write(path: string, text: string | undefined, version: string, change: 
  * `routing` node; nothing else in the file changes. `targetProblem`: why a rule names a machine or
  * executor that is not configured, refused like an invalid rule.
  */
-export function applyRoutingEdit(e: RoutingEdit, path: string, targetProblem: (rules: RoutingRule[]) => string | undefined): EditResult {
+export function applyRoutingEdit(e: RoutingEdit, documents: ConfigDocuments, targetProblem: (rules: RoutingRule[]) => string | undefined): EditResult {
   const parsed = parseRoutingRules(e.rules);
   if (!parsed.ok) return refuse('invalid', parsed.error);
   const problem = targetProblem(parsed.rules);
   if (problem) return refuse('invalid', problem);
-  return write(path, readPluginsText(path), e.version, (doc) => { doc.set('routing', doc.createNode(parsed.rules)); });
+  return writePlugins(documents, e.version, (doc) => { doc.set('routing', doc.createNode(parsed.rules)); });
 }
 
 export function applyEdit(e: Exclude<PluginsEdit, { action: 'rescan' }>, ctx: EditContext): EditResult {
-  const text = readPluginsText(ctx.path);
-  if (e.action === 'add' || e.action === 'remove') return applyListEdit(e, text, ctx);
+  if (e.action === 'add' || e.action === 'remove') return applyListEdit(e, ctx);
   if (e.action === 'options') {
     const current = ctx.configured.find((c) => c.role === e.role && c.instance.name === e.name);
     if (!current) return refuse('not_found', `no ${e.role} instance named ${e.name}`);
     const def = ctx.find(current.instance.plugin)?.definition;
-    if (!def) return refuse('conflict', `plugin ${current.instance.plugin} is not loaded; edit ${e.name} in ${ctx.path}`);
+    if (!def) return refuse('conflict', `plugin ${current.instance.plugin} is not loaded; edit ${e.name} by hand (${BY_HAND})`);
     const parsed = parseOptions(def, e.options);
     if (!parsed.ok) return refuse('invalid', parsed.error);
     const changed = changedCommandBearing(def, current.instance.options ?? {}, e.options);
     if (changed.length) {
-      return refuse('conflict', `${changed.join(', ')} ${changed.length === 1 ? 'is' : 'are'} command-bearing: edit ${changed.length === 1 ? 'it' : 'them'} in ${ctx.path}, not from the UI`);
+      return refuse('conflict', `${changed.join(', ')} ${changed.length === 1 ? 'is' : 'are'} command-bearing: edit ${changed.length === 1 ? 'it' : 'them'} by hand (${BY_HAND}), not from the UI`);
     }
     const next = { ...current.instance, options: e.options };
-    return write(ctx.path, text, e.version, (doc) => place(doc, e.role, e.name, next, ctx.configured));
+    return writePlugins(ctx.documents, e.version, (doc) => place(doc, e.role, e.name, next, ctx.configured));
   }
 
   const current = ctx.configured.find((c) => c.role === e.role);
   if (e.plugin === null) {
     if (e.role !== 'answerer') return refuse('invalid', `the ${e.role} is never empty; select a plugin`);
     if (!current) return { ok: true, changed: false };
-    return write(ctx.path, text, e.version, (doc) => place(doc, 'answerer', current.instance.name, null, ctx.configured));
+    return writePlugins(ctx.documents, e.version, (doc) => place(doc, 'answerer', current.instance.name, null, ctx.configured));
   }
   const found = ctx.find(e.plugin);
   if (!found) return refuse('not_found', `no plugin ${e.plugin}`);
@@ -199,14 +204,14 @@ export function applyEdit(e: Exclude<PluginsEdit, { action: 'rescan' }>, ctx: Ed
     return refuse('conflict', `${e.plugin} is ${found.detection.status} here: ${found.detection.reason}`);
   }
   if (current?.instance.plugin === e.plugin) return { ok: true, changed: false };
-  return write(ctx.path, text, e.version, (doc) => place(doc, e.role, current?.instance.name ?? e.plugin!, { name: e.plugin!, plugin: e.plugin! }, ctx.configured));
+  return writePlugins(ctx.documents, e.version, (doc) => place(doc, e.role, current?.instance.name ?? e.plugin!, { name: e.plugin!, plugin: e.plugin! }, ctx.configured));
 }
 
-function applyListEdit(e: Extract<PluginsEdit, { action: 'add' | 'remove' }>, text: string | undefined, ctx: EditContext): EditResult {
+function applyListEdit(e: Extract<PluginsEdit, { action: 'add' | 'remove' }>, ctx: EditContext): EditResult {
   const current = ctx.configured.find((c) => c.role === e.role && c.instance.name === e.name);
   if (e.action === 'remove') {
     if (!current) return refuse('not_found', `no ${e.role} instance named ${e.name}`);
-    return write(ctx.path, text, e.version, (doc) => {
+    return writePlugins(ctx.documents, e.version, (doc) => {
       const users = e.role === 'executor' ? executorUsers(e.name, doc, ctx) : [];
       if (users.length) return refuse('conflict', `executor ${e.name} is named by ${users.join(', ')}; change ${users.length === 1 ? 'it' : 'them'} first`);
       list(doc, e.role, e.name, null, ctx.configured);
@@ -220,5 +225,5 @@ function applyListEdit(e: Extract<PluginsEdit, { action: 'add' | 'remove' }>, te
   if (found.detection.status !== 'available') {
     return refuse('conflict', `${e.plugin} is ${found.detection.status} here: ${found.detection.reason}`);
   }
-  return write(ctx.path, text, e.version, (doc) => list(doc, e.role, e.name, { name: e.name, plugin: e.plugin }, ctx.configured));
+  return writePlugins(ctx.documents, e.version, (doc) => list(doc, e.role, e.name, { name: e.name, plugin: e.plugin }, ctx.configured));
 }

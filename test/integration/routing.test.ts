@@ -1,14 +1,13 @@
 // Issue #18: routing rules through the real daemon. Applied at intake, when a source item becomes
 // a job: the first matching rule sets the job's machine pin, executor and/or priority, and the job
 // records it (`spec.routedBy`). A rule change applies to new jobs only. Edited from the UI with
-// POST /ui/api/routing (whole list, validated, the `routing` node only, 600, atomic, 409 stale).
-import { readFileSync, statSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { parse, stringify } from 'yaml';
+// POST /ui/api/routing (whole list, validated, the `routing` node only, 409 stale).
+import { parse } from 'yaml';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Job, RoutingReport } from '../../src/domain/types.ts';
 import { createFakeGitHub, type FakeGitHub } from '../../src/sources/index.ts';
-import { lanes, startTestApp, tempDbPath, TEST_PLUGINS, type TestApp } from '../support/app.ts';
+import { lanes, startTestApp, tempDbPath, TEST_PLUGINS, writePluginsYaml, type TestApp } from '../support/app.ts';
+import { readDocument } from '../support/files.ts';
 import { waitFor } from '../support/wait.ts';
 
 const REPO = 'owner/job-hopper-sandbox';
@@ -23,7 +22,7 @@ afterEach(async () => {
 async function boot(plugins: Record<string, unknown>, gh?: FakeGitHub, file?: string): Promise<TestApp> {
   const db = tempDbPath();
   cleanup = db.cleanup;
-  if (file !== undefined) writeFileSync(join(db.dbPath, '..', 'plugins.yaml'), file, { mode: 0o600 });
+  if (file !== undefined) writePluginsYaml(db.dbPath, file);
   t = await startTestApp({ dbPath: db.dbPath, ...(file === undefined ? { plugins } : {}), ...(gh ? { seams: { github: gh } } : {}) });
   return t;
 }
@@ -88,14 +87,14 @@ machines: { name: local, plugin: local, options: { lanes: 2 } }
 `;
 
 describe('GET /api/routing and POST /ui/api/routing', () => {
-  it('reads the rules (none when the section is absent), the file version and the targets a rule may name', async () => {
+  it('reads the rules (none when the section is absent), the document version and the targets a rule may name', async () => {
     const a = await boot({}, undefined, FILE);
     const r = (await a.api<RoutingReport>('GET', '/api/routing')).body;
     expect(r).toMatchObject({ rules: [], skipped: [], targets: { machines: ['local'], executors: ['test'] } });
     expect(r.version).toBe((await a.api('GET', '/api/plugins')).body.config.version);
   });
 
-  it('writes the whole list into the routing node only; comments and other sections stay; mode 600; new jobs only', async () => {
+  it('writes the whole list into the routing node only; comments and other sections stay; new jobs only', async () => {
     const a = await boot({}, undefined, FILE);
     const token = await a.login();
     a.setUsage(100);
@@ -106,11 +105,9 @@ describe('GET /api/routing and POST /ui/api/routing', () => {
     expect(r.status).toBe(200);
     expect(r.body.rules).toEqual(rules);
     expect(r.body.version).not.toBe(version);
-    const file = join(a.dataDir, 'plugins.yaml');
-    const text = readFileSync(file, 'utf8');
+    const text = readDocument(a.dbPath, 'plugins.yaml')!;
     expect(text.startsWith(FILE)).toBe(true);
     expect(parse(text).routing).toEqual(rules);
-    expect(statSync(file).mode & 0o777).toBe(0o600);
     const after = await a.pull({ op: 'echo' }, { title: 'new job' });
     expect(after.priority).toBe(80);
     expect((await a.job(before.id)).priority).toBe(50);
@@ -118,12 +115,12 @@ describe('GET /api/routing and POST /ui/api/routing', () => {
     a.setUsage(0);
   });
 
-  it('without a UI session: 403, file unchanged', async () => {
+  it('without a UI session: 403, document unchanged', async () => {
     const a = await boot({}, undefined, FILE);
     const version = (await a.api<RoutingReport>('GET', '/api/routing')).body.version;
     const r = await a.ui('/ui/api/routing', { rules: [], version });
     expect(r.status).toBe(403);
-    expect(readFileSync(join(a.dataDir, 'plugins.yaml'), 'utf8')).toBe(FILE);
+    expect(readDocument(a.dbPath, 'plugins.yaml')).toBe(FILE);
   });
 
   it.each([
@@ -131,30 +128,30 @@ describe('GET /api/routing and POST /ui/api/routing', () => {
     ['an unknown machine', [{ name: 'x', match: {}, set: { machine: 'ghost' } }], /machine ghost is not configured/],
     ['an unknown executor', [{ name: 'x', match: {}, set: { executor: 'codex' } }], /executor codex is not configured/],
     ['nothing to set', [{ name: 'x', match: {}, set: {} }], /set at least one/],
-  ])('refuses %s: 400, file unchanged', async (_n, rules, why) => {
+  ])('refuses %s: 400, document unchanged', async (_n, rules, why) => {
     const a = await boot({}, undefined, FILE);
     const token = await a.login();
     const version = (await a.api<RoutingReport>('GET', '/api/routing')).body.version;
     const r = await a.ui<{ error: string }>('/ui/api/routing', { rules, version }, { token });
     expect(r.status).toBe(400);
     expect(r.body.error).toMatch(why);
-    expect(readFileSync(join(a.dataDir, 'plugins.yaml'), 'utf8')).toBe(FILE);
+    expect(readDocument(a.dbPath, 'plugins.yaml')).toBe(FILE);
   });
 
-  it('a stale version: 409, file unchanged', async () => {
+  it('a stale version: 409, document unchanged', async () => {
     const a = await boot({}, undefined, FILE);
     const token = await a.login();
     const version = (await a.api<RoutingReport>('GET', '/api/routing')).body.version;
     const changed = `${FILE}# edited by hand\n`;
-    writeFileSync(join(a.dataDir, 'plugins.yaml'), changed, { mode: 0o600 });
+    writePluginsYaml(a.dbPath, changed);
     const r = await a.ui('/ui/api/routing', { rules: [], version }, { token });
     expect(r.status).toBe(409);
-    expect(readFileSync(join(a.dataDir, 'plugins.yaml'), 'utf8')).toBe(changed);
+    expect(readDocument(a.dbPath, 'plugins.yaml')).toBe(changed);
   });
 
   it('a hand edit of the routing section applies to the next intake', async () => {
     const a = await boot({}, undefined, FILE);
-    writeFileSync(join(a.dataDir, 'plugins.yaml'), stringify({ ...TEST_PLUGINS, machines: lanes(2), routing: [{ name: 'low', match: {}, set: { priority: 3 } }] }), { mode: 0o600 });
+    writePluginsYaml(a.dbPath, { ...TEST_PLUGINS, machines: lanes(2), routing: [{ name: 'low', match: {}, set: { priority: 3 } }] });
     await waitFor(async () => (await a.api<RoutingReport>('GET', '/api/routing')).body.rules.length === 1, { what: 'the rules to reload' });
     expect((await a.pull({ op: 'echo' })).priority).toBe(3);
   });

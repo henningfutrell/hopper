@@ -1,11 +1,10 @@
 // The event log over HTTP and SSE, and webhooks configured by webhooks.yaml (not by the API):
 // signed deliveries carrying schemaVersion, reload when the file changes.
 import { createHmac } from 'node:crypto';
-import { writeFileSync } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
 import { EVENT_SCHEMA_VERSIONS, type DomainEvent, type WebhookDelivery } from '../../src/domain/types.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
-import { writeWebhooksFile } from '../support/files.ts';
+import { writeDocument, writeWebhooksFile } from '../support/files.ts';
 import { startReceiver, type Receiver } from '../support/receiver.ts';
 import { openSse, type SseClient } from '../support/sse.ts';
 import { waitFor } from '../support/wait.ts';
@@ -108,7 +107,7 @@ describe('webhooks from webhooks.yaml', () => {
     const body = (await a.api('GET', '/api/webhooks')).body;
     expect(body.subscriptions).toEqual([expect.objectContaining({ name: 'one', url: 'http://127.0.0.1:9/x', events: ['job.finished'], active: true })]);
     for (const s of body.subscriptions) expect(s).not.toHaveProperty('secret');
-    expect(body.config).toMatchObject({ path: expect.stringMatching(/webhooks\.yaml$/), loadedAt: expect.any(String), warnings: [] });
+    expect(body.config).toMatchObject({ document: 'webhooks.yaml', loadedAt: expect.any(String), warnings: [] });
     expect(body.config.error).toBeUndefined();
   });
 
@@ -150,7 +149,7 @@ describe('webhooks from webhooks.yaml', () => {
     await new Promise((res) => setTimeout(res, 150));
     expect(r1.received).toEqual([]);
 
-    writeFileSync(path.replace(/db\.sqlite$/, 'webhooks.yaml'), 'version: 2\nwebhooks: nope\n');
+    writeDocument(path, 'webhooks.yaml', 'version: 2\nwebhooks: nope\n');
     const cfg = await waitFor(async () => {
       const b = (await a.api('GET', '/api/webhooks')).body;
       return b.config.error ? b : undefined;

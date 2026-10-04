@@ -1,5 +1,4 @@
 // Jobs pulled from a source, run, and read back over the read-only API.
-import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { DomainEvent, Job } from '../../src/domain/types.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
@@ -155,10 +154,7 @@ describe('jobs pulled from a source', () => {
       ids.push(j.id);
     }
     // Age the first one past the window, as the store would hold it a day later.
-    const db = new DatabaseSync(t.dbPath);
-    const old = { ...(await t.job(ids[0]!)), finishedAt: new Date(Date.now() - 25 * 3_600_000).toISOString() };
-    db.prepare('UPDATE jobs SET body = ? WHERE id = ?').run(JSON.stringify(old), old.id);
-    db.close();
+    t.app.store.jobs.update(ids[0]!, { finishedAt: new Date(Date.now() - 25 * 3_600_000).toISOString() });
     const ended = (await t.api('GET', '/api/queue')).body.ended.map((j: Job) => j.id);
     expect(ended).toEqual(ids.slice(1).reverse());
   });

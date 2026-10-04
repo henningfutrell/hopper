@@ -1,118 +1,92 @@
-import { chmodSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
-import { createGitHubAppApi, loadGitHubAppFile } from '../../src/sources/github/app/index.ts';
+import { describe, expect, it } from 'vitest';
 import { GitHubApiError } from '../../src/sources/github/api.ts';
-import { BOT, KEYS, SLUG, clock, tempDir, writeAppFiles } from './fixtures/app/setup.ts';
+import { createGitHubAppApi, loadGitHubApp, pemFromEnv } from '../../src/sources/github/app/index.ts';
+import type { GitHubAppLoad } from '../../src/sources/github/app/index.ts';
+import { APP_ID, BOT, KEYS, KEY_ENV, SLUG, clock } from './fixtures/app/setup.ts';
 
-const dirs: string[] = [];
-const dir = () => { const d = tempDir(); dirs.push(d); return d; };
-afterEach(() => { for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true }); });
+const complete = { appId: APP_ID, slug: SLUG, privateKeyEnv: KEY_ENV, privateKey: KEYS.privateKey };
 
-describe('loadGitHubAppFile', () => {
-  it('reads the app file and its private key; no warnings at mode 600', () => {
-    const appFile = writeAppFiles(dir(), KEYS.privateKey);
-    const r = loadGitHubAppFile(appFile);
+describe('loadGitHubApp', () => {
+  it('a complete identity is ok: botLogin <slug>[bot], htmlUrl, the key', () => {
+    const r = loadGitHubApp(complete);
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(r.app).toMatchObject({ appId: 4242, slug: SLUG, botLogin: BOT, owner: 'owner', webhookSecretFile: null });
-    expect(r.app.privateKey).toBe(KEYS.privateKey);
-    expect(r.warnings).toEqual([]);
+    expect(r.app).toMatchObject({ appId: APP_ID, slug: SLUG, botLogin: BOT, htmlUrl: `https://github.com/apps/${SLUG}` });
+    expect(r.app.privateKey.trim()).toBe(KEYS.privateKey.trim());
   });
 
-  it('a missing file is reason "missing"', () => {
-    expect(loadGitHubAppFile(join(dir(), 'nope.json'))).toEqual({ ok: false, reason: 'missing' });
+  it('nothing set is reason "missing"', () => {
+    expect(loadGitHubApp({ privateKeyEnv: KEY_ENV, privateKey: undefined })).toEqual({ ok: false, reason: 'missing' });
   });
 
-  it('invalid JSON, a wrong version, or a missing field is a reason naming the file', () => {
-    const d = dir();
-    const f = join(d, 'github-app.json');
-    writeFileSync(f, '{ not json');
-    const bad = loadGitHubAppFile(f);
-    expect(bad.ok).toBe(false);
-    if (!bad.ok) expect(bad.reason).toContain(f);
+  it.each([
+    ['appId', { appId: undefined }],
+    ['slug', { slug: undefined }],
+    [KEY_ENV, { privateKey: undefined }],
+    [KEY_ENV, { privateKey: '  ' }],
+  ])('a missing %s is named in the reason', (name, change) => {
+    const r = loadGitHubApp({ ...complete, ...change });
+    expect(r).toEqual({ ok: false, reason: `incomplete GitHub App: ${name} not set` });
+  });
 
-    writeAppFiles(d, KEYS.privateKey, { version: 2 });
-    expect(loadGitHubAppFile(f).ok).toBe(false);
-    writeAppFiles(d, KEYS.privateKey, { botLogin: undefined });
-    const r = loadGitHubAppFile(f);
+  it('several missing pieces are all named', () => {
+    const r = loadGitHubApp({ ...complete, appId: undefined, privateKey: undefined });
+    expect(r).toEqual({ ok: false, reason: `incomplete GitHub App: appId, ${KEY_ENV} not set` });
+  });
+
+  it('a key with literal \\n escapes reads as a PEM', () => {
+    const oneLine = KEYS.privateKey.trim().replaceAll('\n', '\\n');
+    expect(oneLine).not.toContain('\n');
+    const r = loadGitHubApp({ ...complete, privateKey: oneLine });
+    expect(r.ok && r.app.privateKey).toBe(KEYS.privateKey.trim() + '\n');
+  });
+
+  it('a value that is not a key is refused, naming the variable', () => {
+    const r = loadGitHubApp({ ...complete, privateKey: 'not a key' });
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.reason).toMatch(/botLogin/);
-  });
-
-  it('an unreadable or invalid private key is a reason naming the key file', () => {
-    const d = dir();
-    const f = writeAppFiles(d, KEYS.privateKey, { privateKeyFile: join(d, 'missing.pem') });
-    const r = loadGitHubAppFile(f);
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.reason).toContain('missing.pem');
-
-    const g = writeAppFiles(d, 'not a key');
-    const r2 = loadGitHubAppFile(g);
-    expect(r2.ok).toBe(false);
-    if (!r2.ok) expect(r2.reason).toContain('github-app.pem');
-  });
-
-  it('expands ~ in privateKeyFile against the home directory', () => {
-    const home = dir();
-    const prev = process.env.HOME;
-    process.env.HOME = home;
-    try {
-      writeAppFiles(home, KEYS.privateKey);
-      const f = writeAppFiles(home, KEYS.privateKey, { privateKeyFile: '~/github-app.pem' });
-      const r = loadGitHubAppFile(f);
-      expect(r.ok && r.app.privateKey).toBe(KEYS.privateKey);
-      expect(loadGitHubAppFile('~/github-app.json').ok).toBe(true);
-    } finally {
-      process.env.HOME = prev;
-    }
-  });
-
-  it('warns when the app file or the key is readable by group or others', () => {
-    const d = dir();
-    const f = writeAppFiles(d, KEYS.privateKey);
-    chmodSync(join(d, 'github-app.pem'), 0o644);
-    const r = loadGitHubAppFile(f);
-    expect(r.ok).toBe(true);
-    if (r.ok) expect(r.warnings.join('\n')).toMatch(/github-app\.pem.*644/);
+    if (!r.ok) expect(r.reason).toContain(`${KEY_ENV} is not a private key`);
   });
 });
 
-describe('createGitHubAppApi: lazy, identity from the app file', () => {
-  it('constructing with no app file does not throw; first use is a permanent "no app configured"', async () => {
-    const api = createGitHubAppApi({ appFile: join(dir(), 'github-app.json'), baseUrl: 'http://127.0.0.1:9', clock });
-    expect(api.appStatus()).toEqual({ ok: false, reason: 'missing' });
-    const err = await api.getIssue('h/a', 1).catch((e: unknown) => e);
+describe('pemFromEnv', () => {
+  it('keeps real newlines, expands \\n escapes, ends with one newline', () => {
+    expect(pemFromEnv('a\nb\n')).toBe('a\nb\n');
+    expect(pemFromEnv('a\\nb')).toBe('a\nb\n');
+  });
+});
+
+describe('createGitHubAppApi: lazy, identity from the app getter', () => {
+  const api = (app: () => GitHubAppLoad) => createGitHubAppApi({ app, keyEnv: KEY_ENV, baseUrl: 'http://127.0.0.1:9', clock });
+
+  it('constructing with no app does not throw; first use is a permanent "no app configured"', async () => {
+    const a = api(() => ({ ok: false, reason: 'missing' }));
+    expect(a.appStatus()).toEqual({ ok: false, reason: 'missing' });
+    const err = await a.getIssue('h/a', 1).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(GitHubApiError);
     expect((err as GitHubApiError).permanent).toBe(true);
     expect((err as GitHubApiError).message).toMatch(/no app configured/);
   });
 
   it('botLogin and whoami are the configured bot; appStatus reports slug and htmlUrl', async () => {
-    const appFile = writeAppFiles(dir(), KEYS.privateKey);
-    const api = createGitHubAppApi({ appFile, baseUrl: 'http://127.0.0.1:9', clock });
-    expect(await api.botLogin!()).toBe(BOT);
-    expect(await api.whoami()).toBe(BOT);
-    expect(api.appStatus()).toEqual({ ok: true, slug: SLUG, botLogin: BOT, htmlUrl: `https://github.com/apps/${SLUG}` });
+    const a = api(() => loadGitHubApp(complete));
+    expect(await a.botLogin!()).toBe(BOT);
+    expect(await a.whoami()).toBe(BOT);
+    expect(a.appStatus()).toEqual({ ok: true, slug: SLUG, botLogin: BOT, htmlUrl: `https://github.com/apps/${SLUG}` });
   });
 
-  it('re-reads the app file when its mtime changes; a file appearing later is picked up', async () => {
-    const d = dir();
-    const appFile = join(d, 'github-app.json');
-    const api = createGitHubAppApi({ appFile, baseUrl: 'http://127.0.0.1:9', clock });
-    expect(api.appStatus().ok).toBe(false);
-    writeAppFiles(d, KEYS.privateKey);
-    expect(await api.botLogin!()).toBe(BOT);
-    writeAppFiles(d, KEYS.privateKey, { slug: 'renamed', botLogin: 'renamed[bot]' });
-    const later = new Date(Date.now() + 5000);
-    utimesSync(appFile, later, later);
-    expect(await api.botLogin!()).toBe('renamed[bot]');
+  it('asks the getter every time: an identity appearing or changing later is picked up', async () => {
+    let now: GitHubAppLoad = { ok: false, reason: 'missing' };
+    const a = api(() => now);
+    expect(a.appStatus().ok).toBe(false);
+    now = loadGitHubApp(complete);
+    expect(await a.botLogin!()).toBe(BOT);
+    now = loadGitHubApp({ ...complete, slug: 'renamed' });
+    expect(await a.botLogin!()).toBe('renamed[bot]');
   });
 
   it('searchOpenIssues is never used in app mode: permanent error', async () => {
-    const appFile = writeAppFiles(dir(), KEYS.privateKey);
-    const api = createGitHubAppApi({ appFile, baseUrl: 'http://127.0.0.1:9', clock });
-    await expect(api.searchOpenIssues({ owners: ['h'], label: 'hopper' }))
+    const a = api(() => loadGitHubApp(complete));
+    await expect(a.searchOpenIssues({ owners: ['h'], label: 'hopper' }))
       .rejects.toMatchObject({ permanent: true, message: expect.stringMatching(/not used in app mode/) });
   });
 });

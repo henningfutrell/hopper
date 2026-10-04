@@ -1,11 +1,8 @@
 // In-memory Store stand-in: only what the question service touches (questions, jobs.get,
 // events.append, tx). Records the tx depth at every event so tests can assert that
 // onAnswered/onExpired run inside the transaction. tx rolls back on throw.
-import { mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { vi } from 'vitest';
-import type { AnswerDraft, AnswerRequest, Answerer, Assessment, Assessor, QuestionService, Store } from '../../src/domain/ports.ts';
+import type { AnswerDraft, ConfigDocuments, AnswerRequest, Answerer, Assessment, Assessor, QuestionService, Store } from '../../src/domain/ports.ts';
 import { EVENT_SCHEMA_VERSIONS, type DomainEvent, type Job, type NewEvent, type Question, type QuestionAttempt } from '../../src/domain/types.ts';
 import { createQuestionService } from '../../src/questions/index.ts';
 
@@ -117,6 +114,17 @@ export interface Rig {
   setAssessor(a: Assessor): void;
 }
 
+/** The config documents at the ports seam: a map; `rules.md` holds `rules` when given. */
+function rulesDocuments(rules: string | undefined): ConfigDocuments {
+  const texts = new Map<string, string>(rules === undefined ? [] : [['rules.md', rules]]);
+  const version = (n: string) => (texts.has(n) ? `v:${texts.get(n)}` : 'missing');
+  return {
+    read: (n) => texts.get(n),
+    version,
+    write(n, text, v) { if (v !== version(n)) return false; texts.set(n, text); return true; },
+  };
+}
+
 export interface RigOptions {
   /** Script of the answerer instance `opus`; `null` → no answerer configured. */
   answer?: AnswerScript | null;
@@ -130,11 +138,7 @@ export interface RigOptions {
 
 export function rig(o: RigOptions = {}): Rig {
   const mem = createMemoryStore();
-  let rulesFile = join(tmpdir(), 'jh-no-such-rules-file.md');
-  if (o.rules !== null && o.rules !== undefined) {
-    rulesFile = join(mkdtempSync(join(tmpdir(), 'jh-rules-')), 'rules.md');
-    writeFileSync(rulesFile, o.rules);
-  }
+  const documents = rulesDocuments(o.rules ?? undefined);
   const answered: Rig['answered'] = [];
   const expired: Rig['expired'] = [];
   const dismissed: Rig['dismissed'] = [];
@@ -151,7 +155,7 @@ export function rig(o: RigOptions = {}): Rig {
     answerer: () => answerer,
     assessor: () => assessor,
     stageTimeoutMs: o.stageTimeoutMs ?? 60_000,
-    rulesFile,
+    documents,
     renotifyMs: o.renotifyMs ?? 1000,
     humanTimeoutMs: o.humanTimeoutMs ?? 10_000,
     answerUrl: (id) => `http://localhost/q/${id}`,

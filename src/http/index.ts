@@ -40,10 +40,6 @@ export interface ServerOptions {
   version: string;
   /** The bound port, for the Host guard and the UI Origin check (known only after listen). */
   port: () => number;
-  /** The rules file (JOB_HOPPER_RULES_FILE): read by GET /api/question-gates, written by POST /ui/api/rules-file. */
-  rulesFile: string;
-  /** Where the UI login code file lives. */
-  dataDir: string;
   sessionHours: number;
   /** auth.yaml as loaded: local sign-in and the identity providers. */
   signIn: SignIn;
@@ -66,7 +62,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   jobRoutes(app, o);
   stateRoutes(app, o);
   questionRoutes(app, o);
-  questionGatesRoutes(app, o);
+  questionGatesRoutes(app, { documents: o.store.documents });
   webhookRoutes(app, o);
   sourceRoutes(app, o);
   accountRoutes(app, o);
@@ -74,7 +70,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   sseRoutes(app, o);
   staticRoutes(app, o.uiDir);
   registerUiRoutes(app, {
-    engine: o.engine, questions: o.questions, sessions, signIn: o.signIn, plugins: o.plugins, rulesFile: o.rulesFile, port: o.port, lan: o.lan, dataDir: o.dataDir,
+    engine: o.engine, questions: o.questions, sessions, signIn: o.signIn, plugins: o.plugins, port: o.port, lan: o.lan, clock: o.clock,
     store: o.store, webhookConfig: o.webhookConfig, webhooksEditor: o.webhooksEditor, updater: o.updater,
   });
   return app;

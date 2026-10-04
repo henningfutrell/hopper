@@ -1,17 +1,17 @@
-// Starts the real composition root (src/main.ts) on port 0 against a temp SQLite file, with the
-// fake router at the Router seam (unless `realRouter`: then the plugin host's router runs), the
-// fake usage source and the fake question doubles (fake-questions.ts) at their seams, a fast tick,
-// and a temp plugins.yaml (executor `test`, no job or usage sources) and webhooks file (never the user's
-// ~/.config). `plugins` sections are written over TEST_PLUGINS on every start; without them a
-// plugins.yaml already in the data dir is kept; `plugins: false` writes none, so the daemon
-// migrates or writes its defaults. Jobs are PULLED: a
+// Starts the real composition root (src/main.ts) on port 0 against a temp database (support/database.ts:
+// SQLite, or Postgres under scripts/test-postgres.sh), with the fake router at the Router seam (unless
+// `realRouter`: then the plugin host's router runs), the fake usage source and the fake question
+// doubles (fake-questions.ts) at their seams, a fast tick, and plugins.yaml (executor `test`, no job
+// or usage sources) in the database. `plugins` sections are written over TEST_PLUGINS on every start;
+// without them a plugins.yaml already in the database is kept; `plugins: false` writes none, so the
+// daemon writes its built-in instances. `secrets` is the environment the parts read secrets from
+// (seams.env): the same object, so a test may set or unset a variable while the app runs. Jobs are PULLED: a
 // manual JobSource (manual-source.ts) offers items, run by the "scripted" executor
 // (scripted-executor.ts). Every event the app emits is validated against its schema; stop()
 // fails the test on any nonconforming event (tracker + a scan of the whole event log).
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { stringify } from 'yaml';
 import { loadConfig } from '../../src/config.ts';
 import { startApp, type App, type AppSeams } from '../../src/main.ts';
 import type { SourceItem } from '../../src/domain/ports.ts';
@@ -20,6 +20,9 @@ import { validateEvent } from '../../src/events/index.ts';
 import { assertAllConform, trackConformance } from './conformance.ts';
 import { rawRequest } from './http.ts';
 import { createFakeUsageSource } from '../../src/usage/index.ts';
+import { databaseUrlFor } from './database.ts';
+import { mintLoginCode } from '../../src/http/ui/login-code.ts';
+import { readDocument, writeDocument } from './files.ts';
 import { fakeQuestionRoles } from './fake-questions.ts';
 import { createFakeRouter } from './fake-router.ts';
 import { createManualSource, manualItem, type ManualSource } from './manual-source.ts';
@@ -56,7 +59,7 @@ export interface TestApp {
   waitForQuestion(jobId: string, ok: (q: Question) => boolean, timeoutMs?: number): Promise<Question>;
   /** Set the fake usage reading (through the engine; there is no HTTP route). */
   setUsage(used: number, limit?: number): void;
-  /** Log in like open-ui.sh does: read the code file, POST /ui/login. Returns the session token. */
+  /** Log in like open-ui.sh does: mint a code (`job-hopper login-code`), POST /ui/login. Returns the session token. */
   login(): Promise<string>;
   /** POST a UI mutation with a valid Origin, JSON content type and (if given) the session header. */
   ui<T = unknown>(path: string, body?: unknown, o?: UiOptions): Promise<ApiResponse<T>>;
@@ -74,11 +77,9 @@ export const lanes = (n: number) => ({ name: 'local', plugin: 'local', options: 
 /** The plugins.yaml a test app gets unless it brings its own: executor `test`, no job or usage sources. */
 export const TEST_PLUGINS = { version: 1, executors: [{ name: 'test', plugin: 'test' }], jobSources: [], usageSources: [] };
 
-export function writePluginsYaml(dataDir: string, doc: unknown): string {
-  const path = join(dataDir, 'plugins.yaml');
-  mkdirSync(dataDir, { recursive: true });
-  writeFileSync(path, typeof doc === 'string' ? doc : stringify(doc), { mode: 0o600 });
-  return path;
+/** Replace plugins.yaml in the database of `dbPath`. */
+export function writePluginsYaml(dbPath: string, doc: unknown): void {
+  writeDocument(dbPath, 'plugins.yaml', doc);
 }
 
 export const TOKEN_RE = /localStorage\.setItem\(\s*['"]jh_session['"]\s*,\s*['"]([0-9a-f]{64})['"]\s*\)/;
@@ -91,20 +92,22 @@ export async function startTestApp(o: {
   plugins?: Record<string, unknown> | false;
   /** Run the plugin host's answerer and assessor instead of the fake doubles. */
   realQuestionRoles?: boolean;
+  /** Secrets the parts read (GITHUB_APP_PRIVATE_KEY, GROKBOT_WEBHOOK_URL, …), over PATH; mutable while the app runs. */
+  secrets?: Record<string, string | undefined>;
 }): Promise<TestApp> {
   const dataDir = dirname(o.dbPath);
-  if (o.plugins) writePluginsYaml(dataDir, { ...TEST_PLUGINS, ...o.plugins });
-  else if (o.plugins === undefined && !existsSync(join(dataDir, 'plugins.yaml'))) writePluginsYaml(dataDir, TEST_PLUGINS);
+  if (o.plugins) writePluginsYaml(o.dbPath, { ...TEST_PLUGINS, ...o.plugins });
+  else if (o.plugins === undefined && readDocument(o.dbPath, 'plugins.yaml') === undefined) writePluginsYaml(o.dbPath, TEST_PLUGINS);
+  const secrets = o.secrets ?? {};
+  if (secrets.PATH === undefined) secrets.PATH = process.env.PATH;
   const config = loadConfig({
     JOB_HOPPER_PORT: '0',
-    JOB_HOPPER_DB: o.dbPath,
+    JOB_HOPPER_DATABASE_URL: databaseUrlFor(o.dbPath),
+    JOB_HOPPER_WORK_DIR: dataDir,
     JOB_HOPPER_TICK_MS: '50',
     JOB_HOPPER_WEBHOOK_BASE_MS: '20',
     JOB_HOPPER_LANE_IDLE_GRACE_MS: '200',
-    JOB_HOPPER_RULES_FILE: '/nonexistent/job-hopper-rules.md',
-    JOB_HOPPER_WEBHOOKS_FILE: join(dataDir, 'webhooks.yaml'),
     JOB_HOPPER_PLUGIN_DIR: join(dataDir, 'plugins'),
-    JOB_HOPPER_PLUGINS_FILE: join(dataDir, 'plugins.yaml'),
     JOB_HOPPER_UPDATE_CHECK_MS: '0',
     ...o.env,
   });
@@ -112,6 +115,7 @@ export async function startTestApp(o: {
   const scripted = createScriptedExecutor();
   const app = await startApp(config, {
     pluginsFileIntervalMs: 50,
+    env: secrets,
     ...(o.realRouter ? {} : { router: createFakeRouter({ clock: { now: () => new Date() } }) }),
     ...(o.realQuestionRoles ? {} : fakeQuestionRoles()),
     fakeUsage: createFakeUsageSource({ now: () => new Date() }),
@@ -156,7 +160,7 @@ export async function startTestApp(o: {
     }, { timeoutMs, what: `a matching question on job ${jobId}` }),
     setUsage(used, limit = 100) { app.engine.setFakeUsage({ used, limit, unit: '%' }); },
     async login() {
-      const code = readFileSync(join(dataDir, 'ui-login-code'), 'utf8').trim();
+      const code = mintLoginCode(app.store, { now: () => new Date() });
       const res = await rawRequest(app.url, {
         method: 'POST', path: '/ui/login', body: `code=${code}`,
         headers: { 'content-type': 'application/x-www-form-urlencoded', origin: 'null' },
