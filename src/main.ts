@@ -200,7 +200,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   grokbot.start();
   await server.listen({ host: config.host, port: config.port });
   port = (server.server.address() as { port: number }).port;
-  engine.start();
+  await engine.start();
   sync.start();
 
   let stopped: Promise<void> | undefined;

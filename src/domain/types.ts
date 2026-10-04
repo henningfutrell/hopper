@@ -251,6 +251,7 @@ export type EventType =
   | 'job.failed'
   | 'job.cancelled'
   | 'job.requeued'
+  | 'job.reattached'
   | 'job.reprioritized'
   | 'lane.opened'
   | 'lane.closed'
@@ -268,14 +269,14 @@ export type EventType =
 export const EVENT_SCHEMA_VERSIONS: Readonly<Record<EventType, number>> = {
   'job.queued': 1, 'job.prioritized': 2, 'job.held': 1, 'job.approved': 1, 'job.claimed': 1,
   'job.started': 1, 'job.progressed': 1, 'job.finished': 1, 'job.failed': 1, 'job.cancelled': 1,
-  'job.requeued': 1, 'job.reprioritized': 1, 'lane.opened': 1, 'lane.closed': 1,
+  'job.requeued': 1, 'job.reattached': 1, 'job.reprioritized': 1, 'lane.opened': 1, 'lane.closed': 1,
   'decision.made': 2, 'router.mode_changed': 1, 'question.asked': 1, 'question.escalated': 2,
   'question.answered': 2, 'question.expired': 1,
 };
 
 export const EVENT_TYPES: readonly EventType[] = [
   'job.queued', 'job.prioritized', 'job.held', 'job.approved', 'job.claimed', 'job.started',
-  'job.progressed', 'job.finished', 'job.failed', 'job.cancelled', 'job.requeued', 'job.reprioritized',
+  'job.progressed', 'job.finished', 'job.failed', 'job.cancelled', 'job.requeued', 'job.reattached', 'job.reprioritized',
   'lane.opened', 'lane.closed', 'decision.made', 'router.mode_changed',
   'question.asked', 'question.escalated', 'question.answered', 'question.expired',
 ];

@@ -114,12 +114,13 @@ an idle tick every 2 s would bury the decision log. Every recorded Decision emit
   every router hold (not only `ask_human`).
 - **Cancel:** waiting → `cancelled` at once. Claimed/running → abort the executor's signal;
   the job ends `cancelled`. Terminal → HTTP 409.
-- **Restart recovery:** at startup, every `claimed`/`running` job returns to `queued`
-  (`job.requeued`, `attempts` kept) and every stored lane is closed (`lane.closed`,
-  `reason: daemon restart`). Test jobs are idempotent; a future executor that is not must
-  declare it, and this rule is revisited then.
-- **Shutdown:** SIGTERM aborts running executors, waits up to 5 s, closes the store.
-  Interrupted jobs are requeued on the next start, by the rule above.
+- **Restart recovery:** at startup, `claimed` jobs and `running` jobs of idempotent executors
+  return to `queued` (`job.requeued`, `attempts` kept); every stored lane not held by a
+  reattached job is closed (`lane.closed`, `reason: daemon restart`). Non-idempotent
+  executors (herdr-claude): Phase 2 "Recovery at startup".
+- **Shutdown:** SIGTERM aborts running executors (reason `shutdown`: external work such as a
+  herdr pane is left as it is), waits up to 5 s, closes the store. Nothing is written or
+  cleaned up after that; the next start recovers by the rule above.
 
 ## Jev
 
@@ -281,6 +282,7 @@ Every event: `{ seq, id, type, at, jobId?, laneId?, machineId?, decisionId?, dat
 | `job.failed` | `{ error }` |
 | `job.cancelled` | `{ reason }` |
 | `job.requeued` | `{ from, reason: "daemon restart" }` |
+| `job.reattached` | `{ reason: "daemon restart" }` — restart recovery kept a running job running on its lane (Phase 2 "Recovery at startup") |
 | `job.reprioritized` | `{ from, to, reason }` — phase 3, source re-sort |
 | `lane.opened` | `{}` |
 | `lane.closed` | `{ reason }` — the lane plan's reason, `drained`, or `daemon restart` |
@@ -383,7 +385,9 @@ If the job cannot be done, end with a line containing only: JOB_HOPPER_FAILED fo
 **Monitor** every `JOB_HOPPER_HERDR_POLL_MS` (1000): `agent get` (status, `state_change_seq`)
 and `agent read --source recent-unwrapped --lines 200`.
 
-**Turn anchor (B1).** At every send record `{ seq: state_change_seq, anchor }` where
+**Turn anchor (B1).** At every send record `{ seq: state_change_seq, anchor }` (saved in
+`job.executorState.turn` with `blockedAtSend`, before the prompt, so a restarted daemon can
+watch the same turn) where
 `anchor` is the last line of what was sent as Claude echoes it — the footer's last line
 (`If the job cannot be done, …`) on the first turn, the answer's last line on a resume.
 Only output lines **after the last occurrence of the anchor** count. **Every** outcome
@@ -497,19 +501,35 @@ next question fails the job `too many questions` (and cleans up). When `detected
 `idle`, the answerer prompt says the agent may simply have finished and that a valid answer
 is "If the job is complete, end your message with JOB_HOPPER_DONE".
 
-**Recovery at startup (B2, B3).**
-- `claimed`/`running` jobs: idempotent executor → requeued (`job.requeued`) as before;
-  non-idempotent (herdr-claude) → `executor.cleanup(job)`, job `failed` `interrupted by
-  daemon restart`, `job.failed`. Never re-run: a second run repeats real side effects.
-  Reattaching to the live pane is carried work.
+**Recovery at startup (B2, B3).** `install.sh` restarts the daemon, not `job-hopper-herdr`,
+so a running job's pane and Claude outlive a restart.
+- `running` job of a non-idempotent executor (herdr-claude) **reattached** when its lane row
+  still holds it and `executor.canReattach(job)` says its work is alive — for herdr-claude:
+  `executorState` has a `turn` and `agent get <agentName>` answers for the saved `paneId`.
+  Probed before the recovery tx (herdr calls). In the tx: the job stays `running` with its
+  `laneId`, its lane is kept (not closed), `job.reattached { reason: "daemon restart" }`.
+  After it: `executor.reattach(ctx)` runs the monitor from the saved turn anchor (`seq`,
+  `anchor`, `blockedAtSend`) — a turn that ended while the daemon was down is detected on the
+  first poll (status idle/done, seq past the send), one in progress is watched; `timeoutMs` and
+  the progress clock restart at reattach. No `job.started`; the outcome is recorded as any
+  other run's. The decider is unchanged: the kept lane is an ordinary busy lane.
+- Same job, work gone (no `turn`, agent gone, pane differs, or the lane row lost) →
+  `executor.cleanup(job)`, job `failed` `interrupted by daemon restart`, `job.failed`. Not
+  re-run: a second run repeats real side effects. A non-idempotent executor without
+  `reattach` always takes this path.
+- `claimed` jobs, any executor → requeued (`job.requeued { from: claimed }`), `executorState`
+  and `pendingAnswer` kept, nothing closed. The claim → `running` write happens before the
+  executor is called, so a claimed job never ran: a fresh claim has no pane; a resume claim's
+  pane is its parked pane, which the next resume uses.
+- `running` job of an idempotent executor → requeued as before.
 - `waiting_answer` jobs, by their question: `open` → leave it (QuestionService.recover
   restarts every open non-human question at the answer stage, whatever its `tier`, and re-arms
   human timers; a human question past `expiresAt` expires now; one created at `human` but never
   announced goes to the human now); `answered` → requeue with that answer; `expired`/`cancelled`/missing → job `failed`,
   `cleanup`.
 - `pendingAnswer` is cleared in the same tx that records the resume's outcome (not at claim),
-  so a restart mid-resume does not lose the answer — but a restart mid-resume of a
-  herdr-claude job fails it per the first rule.
+  so a restart mid-resume does not lose the answer; a herdr-claude job mid-resume is
+  `running` and follows the first two rules (its resume turn is the saved `turn`).
 
 **Cancel** of a `waiting_answer` job: question `cancelled`, `executor.cleanup`, job
 `cancelled`.

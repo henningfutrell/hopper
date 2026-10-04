@@ -1,5 +1,6 @@
 // Job lifecycle after a claim: started → progressed (throttled) → finished | failed |
-// cancelled | waiting_answer. A claim of a job with a pending answer resumes it.
+// cancelled | waiting_answer. A claim of a job with a pending answer resumes it. A job
+// reattached by restart recovery skips `started` and goes on from its executor's present state.
 import type { ExecutionContext, ExecutionOutcome, Executor } from '../domain/ports.ts';
 import type { Job, LaneId } from '../domain/types.ts';
 import type { Cleanup } from './cleanup.ts';
@@ -18,6 +19,8 @@ interface Running {
 
 export interface Runner {
   start(claim: Claim): void;
+  /** Watch a job restart recovery kept `running` on its lane (Executor.reattach). */
+  reattach(claim: Claim): void;
   /** Abort a claimed/running job as a cancel, recorded with `reason`. False when it is not running here. */
   cancel(jobId: string, reason: string): boolean;
   /** Abort everything for shutdown and wait up to `ms`. Nothing is written afterwards. */
@@ -28,8 +31,9 @@ export interface Runner {
 const CANCEL = 'cancel';
 const SHUTDOWN = 'shutdown';
 
-async function execute(executor: Executor | undefined, job: Job, ctx: ExecutionContext): Promise<ExecutionOutcome> {
+async function execute(executor: Executor | undefined, job: Job, ctx: ExecutionContext, reattach: boolean): Promise<ExecutionOutcome> {
   if (!executor) return { kind: 'failed', error: `executor ${job.spec.executor} is not registered` };
+  if (reattach) return executor.reattach ? executor.reattach(ctx) : { kind: 'failed', error: `executor ${executor.name} cannot reattach` };
   if (job.pendingAnswer === undefined) return executor.run(ctx);
   if (!executor.resume) return { kind: 'failed', error: `executor ${executor.name} cannot resume` };
   return executor.resume(ctx, job.pendingAnswer);
@@ -62,12 +66,12 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
     };
   }
 
-  async function run(claim: Claim, entry: Running): Promise<void> {
+  async function run(claim: Claim, entry: Running, reattach: boolean): Promise<void> {
     const { store } = c;
     const job = store.jobs.get(claim.jobId);
     if (!job) return;
     const executor = c.executors.get(job.spec.executor);
-    const started = store.tx(() => {
+    const started = reattach ? job : store.tx(() => {
       const j = store.jobs.update(job.id, { status: 'running', startedAt: nowIso(c) });
       store.events.append({ type: 'job.started', jobId: job.id, laneId: claim.laneId, data: { attempts: j.attempts } });
       return j;
@@ -79,7 +83,7 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
         job: started, laneId: claim.laneId, signal: entry.controller.signal,
         progress: (f, m) => progress.report(f, m),
         saveState: (state) => { if (!c.stopping()) store.jobs.update(job.id, { executorState: state }); },
-      });
+      }, reattach);
     } catch (e) {
       outcome = { kind: 'failed', error: e instanceof Error ? e.message : String(e) };
     }
@@ -91,14 +95,17 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
     else await cleanup(job.id);
   }
 
+  function launch(claim: Claim, reattach: boolean): void {
+    const entry: Running = { controller: new AbortController(), done: Promise.resolve() };
+    running.set(claim.jobId, entry);
+    entry.done = run(claim, entry, reattach)
+      .catch((e) => console.error('job runner failed', claim.jobId, e))
+      .finally(() => { if (running.get(claim.jobId) === entry) running.delete(claim.jobId); });
+  }
+
   return {
-    start(claim) {
-      const entry: Running = { controller: new AbortController(), done: Promise.resolve() };
-      running.set(claim.jobId, entry);
-      entry.done = run(claim, entry)
-        .catch((e) => console.error('job runner failed', claim.jobId, e))
-        .finally(() => { if (running.get(claim.jobId) === entry) running.delete(claim.jobId); });
-    },
+    start: (claim) => launch(claim, false),
+    reattach: (claim) => launch(claim, true),
     cancel(jobId, reason) {
       const entry = running.get(jobId);
       if (!entry) return false;

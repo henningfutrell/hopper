@@ -209,6 +209,20 @@ Version 1 (`docs/schemas/job.requeued.v1.json`). A job went back to the queue (r
 }
 ```
 
+## `job.reattached`
+
+Version 1 (`docs/schemas/job.reattached.v1.json`). Restart recovery kept a running job running on its lane: its external work (the herdr pane and Claude) outlived the daemon, and the executor watches it again. `reason` is `daemon restart`.
+
+| field | type | required |
+|---|---|---|
+| `reason` | string | yes |
+
+```json
+{
+  "reason": "daemon restart"
+}
+```
+
 ## `job.reprioritized`
 
 Version 1 (`docs/schemas/job.reprioritized.v1.json`). A source re-sorted a waiting job.
