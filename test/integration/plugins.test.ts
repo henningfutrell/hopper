@@ -49,7 +49,7 @@ describe('router from the environment, Jev checkout absent', () => {
   it('GET /api/plugins: roles, the configured instance with detection and fallback, and every router plugin', async () => {
     const a = await start({ env: { JOB_HOPPER_JEV_SRC: '/nonexistent/grok-bot-jev', JOB_HOPPER_PYTHON: 'python3' }, before: installAlwaysProceed });
     const body = (await a.api('GET', '/api/plugins')).body;
-    expect(body.roles).toEqual(['router', 'answerer', 'assessor']);
+    expect(body.roles).toEqual(['router', 'answerer', 'assessor', 'executor']);
     expect(body.config).toMatchObject({ source: 'env', path: join(a.dataDir, 'plugins.yaml') });
     expect(body.router).toMatchObject({
       instance: { name: 'jev', plugin: 'jev-router', options: { jevSrc: '/nonexistent/grok-bot-jev', python: 'python3' } },
@@ -57,7 +57,8 @@ describe('router from the environment, Jev checkout absent', () => {
     });
     const ids = body.plugins.map((p: { id: string; builtin: boolean }) => [p.id, p.builtin]).sort();
     expect(ids).toEqual([
-      ['always-escalate', true], ['always-proceed', false], ['claude-cli', true], ['claude-cli-assessor', true], ['jev-router', true], ['pass-through', true],
+      ['always-escalate', true], ['always-proceed', false], ['claude-cli', true], ['claude-cli-assessor', true], ['herdr-claude', true], ['jev-router', true],
+      ['pass-through', true], ['test', true],
     ]);
     const jev = body.plugins.find((p: { id: string }) => p.id === 'jev-router');
     expect(jev).toMatchObject({ role: 'router', describe: expect.any(String), options: { type: 'object', properties: { jevSrc: {}, python: {} } } });

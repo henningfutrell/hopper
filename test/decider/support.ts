@@ -46,6 +46,6 @@ export function reading(used: number, limit = 100, over: Partial<UsageReading> =
 export function inputs(over: Partial<DecisionInputs> = {}): DecisionInputs {
   return {
     at: NOW, trigger: 'tick', routerMode: 'shadow', machines: [machine()], lanes: [], usage: [],
-    waiting: [], running: [], policy, ...over,
+    waiting: [], running: [], unavailableExecutors: [], policy, ...over,
   };
 }

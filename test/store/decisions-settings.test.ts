@@ -9,7 +9,7 @@ function decision(id: string, at: string): Decision {
     id, at, trigger: 'tick', routerMode: 'shadow', lanes: [], start: [], hold: [], advice: [],
     reasons: ['r'],
     inputs: {
-      at, trigger: 'tick', routerMode: 'shadow', machines: [], lanes: [], usage: [], waiting: [], running: [],
+      at, trigger: 'tick', routerMode: 'shadow', machines: [], lanes: [], usage: [], waiting: [], running: [], unavailableExecutors: [],
       policy: { softLimit: 0.7, hardLimit: 0.95, routerCheapBoost: 10, laneIdleGraceMs: 1000, resumeBoost: 20 },
     },
   };
