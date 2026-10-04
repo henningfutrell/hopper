@@ -5,7 +5,7 @@ The contract every module is built against. Types: `src/domain/types.ts`; seams:
 
 ## North star
 
-Owner direction (2026-10-03): an extendable plugin architecture.
+Owner decision (2026-10-03): job-hopper is an extendable plugin architecture.
 
 This is the top-level principle. Every part must serve it: a new capability arrives as a
 plugin or as configuration of one, not as a hardcoded branch. "Phase 5 — every part is a
@@ -201,7 +201,7 @@ budgets**, so it cannot be the usage source. job-hopper uses it for what it is: 
   `typesafeError` (no key is not an error: TypeSafe is simply off).
 - Options: `jevSrc`, `python`, `claudeBin` (`claude`), `model` (`haiku`), `typesafeGates`,
   `typesafeKeyFile` (command-bearing: its contents go to TypeSafe),
-  `timeoutMs` (60000: one Haiku run over all five gates took about 20 s on server, the CLI start included). `detect` needs
+  `timeoutMs` (60000: one Haiku run over all five gates took about 20 s on the hopper host, the CLI start included). `detect` needs
   `python`, `<jevSrc>/src/router.py` and `claudeBin`; its detail says whether TypeSafe is on.
 - Advice from a real router run has `source: "jev-router"`; `details.jevUsed` mirrors the
   router's own `jev_used`. Any failure (Haiku failing or leaving a gate unanswered, timeout, bad
@@ -507,7 +507,7 @@ draining), events `question.asked`.
 **Visible and answerable at once.** From that commit on, the question is in `GET /api/questions`
 (every open question, whatever its stage) and the job in `/api/queue` `waitingAnswer`; the UI
 refreshes both on `question.asked` and shows the answer box at every stage, not only `human`.
-The owner may answer while the answerer drafts or the assessor assesses: his answer wins, the
+The owner may answer while the answerer drafts or the assessor assesses: their answer wins, the
 in-flight stage call is aborted (`superseded`), the assessor is never called, and nothing is
 pushed. **Push is gated:** the Grok Bot routine
 webhook fire only on `question.escalated {target: "human"}` — after the assessor escalates, a
@@ -621,7 +621,7 @@ so a running job's pane and Claude outlive a restart.
 **Cancel** of a `waiting_answer` job: question `cancelled`, `executor.cleanup`, job
 `cancelled`.
 
-**Close** (`POST /ui/api/questions/:id/close`, the card's Close button): The owner ends an open
+**Close** (`POST /ui/api/questions/:id/close`, the card's Close button): the owner ends an open
 question, at any stage, without answering. `QuestionService.closeByHuman`, one tx as for a human
 answer: an in-flight stage call aborted (`superseded`), timers cleared, attempt `{ tier: human,
 role: human, outcome: accepted, reason: "closed without answering" }`, question `closed` with
@@ -633,7 +633,7 @@ same `onAnswered` as an answer: job → `queued` with `pendingAnswer` = the clos
 Continue on your own judgement; if you cannot, end with JOB_HOPPER_FAILED and say why."
 Recovery treats a `closed` question like an `answered` one (requeue with its answer).
 
-**Answered in the pane.** the owner may type the answer straight into a parked pane instead of
+**Answered in the pane.** The owner may type the answer straight into a parked pane instead of
 the UI. On every engine tick, `src/engine/pane-answers.ts` asks the executor of each
 `waiting_answer` job `answeredInPane(job)` (port method; herdr-claude implements it; the decider
 is untouched). herdr-claude: the monitor saves `parkedSeq` (the `state_change_seq` at which the
@@ -959,7 +959,7 @@ github:
   #     map: { P0: 100, P1: 75, P2: 50, P3: 25 }   # single-select option → priority
 ```
 
-**Priority** (the owner, phase 3 addition). Both sources are supported, configurable per repo;
+**Priority** (owner request, phase 3 addition). Both sources are supported, configurable per repo;
 **when both are present, the project wins**:
 
 1. Project (repos listed under `projects`): the issue's item in that Projects (v2) board.
@@ -992,7 +992,7 @@ priority of every eligible item. When a waiting (`queued`/`held`) job's priority
 the sync loop updates it and emits `job.reprioritized { from, to, reason }`, then
 triggers a decision. Running jobs keep their priority.
 
-**Full issue context into the job** (the owner, phase 3 addition). The prompt is the issue
+**Full issue context into the job** (owner request, phase 3 addition). The prompt is the issue
 body, then a block:
 
 ```
@@ -1047,10 +1047,10 @@ above; empty body → claimed, then failed with error "empty issue body"; priori
 "Priority"; cwd = `repoPaths[repo]` (expanded) else `defaultCwd`.
 
 **Write criteria.** The hopper's only issue writes are labels (state); it posts no comments at
-all (owner decision, 2026-10-04: a finished issue needs labels only). No claim, progress, question,
+all (owner decision, 2026-10-04: a finished issue needs no comment). No claim, progress, question,
 answered, failure, cancel or completion comment; no reactions, issue edits, closes, or PR
 comments. Jobs get no way to write to their issue (no token, no helper), and their prompt says
-nothing about commenting (Owner direction: the job does not talk on the issue.): the
+nothing about commenting (owner decision, 2026-10-04: a job has no reason to talk on its issue): the
 issue context block ends at the comments list, with no footer. A question goes to the owner through
 the UI and the Grok Bot routine webhook, never onto the issue; a reply on the issue is not an
 answer.
@@ -1097,7 +1097,7 @@ A failure never goes to the issue as text. It is one stderr line in the daemon l
 version: 1
 webhooks:
   - name: grok-bot
-    url: http://127.0.0.1:4795/hook
+    url: http://127.0.0.1:<port>/hook
     events: ["question.escalated", "job.finished", "job.failed"]   # or ["*"]
     secret: "<hex>"              # or secretFile: ~/.config/job-hopper/grok-bot.secret
     active: true
@@ -1204,10 +1204,10 @@ decision TRIGGERS; `src/ui/app.js` learns `job.reprioritized`.
 
 ---
 
-# Phase 4 — a GitHub App instead of gh-as-the owner (2026-10-03)
+# Phase 4 — a GitHub App instead of gh-as-owner (2026-10-03)
 
-The `gh` source acts as the owner: its comments are his, so a hidden marker was the only way to
-tell them from his replies, and it sees every repo he can see. A GitHub App fixes both: it
+The `gh` source acts as the owner: its comments are theirs, so a hidden marker was the only way to
+tell them from their replies, and it sees every repo they can see. A GitHub App fixes both: it
 posts as its own bot, and **its installations are the repo allowlist**. Polling stays — no
 inbound webhook to the laptop.
 
@@ -1223,10 +1223,10 @@ inbound webhook to the laptop.
 `~/.config/job-hopper/github-app.json` (mode 600):
 
 ```json
-{ "version": 1, "appId": 123456, "slug": "job-hopper-owner",
-  "botLogin": "job-hopper-owner[bot]", "clientId": "Iv23…",
-  "htmlUrl": "https://github.com/apps/job-hopper-owner",
-  "owner": "owner", "privateKeyFile": "~/.config/job-hopper/github-app.pem",
+{ "version": 1, "appId": 123456, "slug": "job-hopper-<owner>",
+  "botLogin": "job-hopper-<owner>[bot]", "clientId": "Iv23…",
+  "htmlUrl": "https://github.com/apps/job-hopper-<owner>",
+  "owner": "<owner>", "privateKeyFile": "~/.config/job-hopper/github-app.pem",
   "webhookSecretFile": "~/.config/job-hopper/github-app-webhook.secret",
   "createdAt": "ISO" }
 ```
@@ -1251,7 +1251,7 @@ later optional webhook; the app's webhook is created **inactive** and nothing li
   - Tried as `organization(login)`, then `user(login)`.
   - GitHub Apps can read **organization** Projects (v2) with `organization_projects: read`.
     **Projects (v2) owned by a personal account cannot be read with an installation token**
-    (GitHub's docs: user-owned projects need a personal token). the owner's repos are
+    (GitHub's docs: user-owned projects need a personal token). The owner's repos are
     user-owned, so in app mode priority comes from labels. A project lookup failure still
     falls back to labels with `projectErrors`. `organization_projects: read` stays in the
     manifest because the directive asks for project read, and it is what enables project
@@ -1310,7 +1310,7 @@ exists. The app source pauses while the file is missing or unreadable, with
 on its own once the file appears, and re-reads it when its mtime changes (so a `--force`
 recreate needs no restart).
 
-**the owner's live file (B1).** The installed `~/.config/job-hopper/sources.yaml` says
+**The owner's live file (B1).** The installed `~/.config/job-hopper/sources.yaml` says
 `enabled: true` (phase-3 starter). `install.sh` rewrites that exact starter line
 (`  enabled: true              # false: pull nothing from GitHub`) to `enabled: auto` once
 and says so. Any other value is left alone with a printed warning. The phase-4 starter
@@ -1362,8 +1362,8 @@ The path is deterministic from the issue URL, so it is in the job's env at inges
 
 The App source's context block replaces the `gh issue comment` instruction with: "To comment
 on your issue: `"$HOPPER_COMMENT_CMD" "<your text>"` (posts as the job-hopper app). **Never
-comment with `gh`**: it posts as the owner, and a comment from him after a question reads as
-his answer." (N5: panes are still logged in to `gh` as the owner.)
+comment with `gh`**: it posts as the owner, and a comment from them after a question reads as
+their answer." (N5: panes are still logged in to `gh` as the owner.)
 
 **Residual, stated:** the token file is readable by any process running as the owner, for at
 most about an hour, and covers only that repo's issues. That is far narrower than the gh
@@ -1381,7 +1381,7 @@ source, whose job comments ran on the owner's full `gh` login.
    is shown below.
 4. Opens `http://127.0.0.1:<port>/` with `xdg-open`, and prints it too (with a `qrencode`
    QR if available — this is a desktop page, the QR is a convenience).
-5. GitHub shows the owner the prefilled "Create GitHub App" page. He clicks the create
+5. GitHub shows the owner the prefilled "Create GitHub App" page. They click the create
    button; GitHub redirects to `http://127.0.0.1:<port>/callback?code=…&state=…`.
 6. The callback checks `state` (mismatch → 400, nothing stored) and runs
    `POST https://api.github.com/app-manifests/{code}/conversions` (unauthenticated, code
@@ -1402,7 +1402,7 @@ Manifest:
 ```json
 { "name": "job-hopper-<owner>",
   "url": "https://github.com/<owner>",
-  "description": "Pulls jobs for job-hopper on the owner's laptop from issues labelled hopper.",
+  "description": "Pulls jobs for job-hopper from issues labelled hopper.",
   "hook_attributes": { "url": "https://example.invalid/job-hopper-webhook", "active": false },
   "redirect_url": "http://127.0.0.1:<port>/callback",
   "public": false,
@@ -1425,14 +1425,14 @@ Manifest:
 Base URLs are overridable (`JOB_HOPPER_GITHUB_WEB`, `JOB_HOPPER_GITHUB_API`) so tests run the
 whole flow against a fake GitHub. `--no-open` skips `xdg-open`.
 
-## the owner's clicks (also in the summary)
+## The owner's clicks (also in the summary)
 
 1. Run `bash ~/.local/lib/job-hopper/scripts/create-github-app.sh`. The browser opens on
-   GitHub's "Create GitHub App for owner" page, prefilled.
-2. Click **Create GitHub App for owner**. The browser returns to `127.0.0.1` with
+   GitHub's "Create GitHub App for <owner>" page, prefilled.
+2. Click **Create GitHub App for <owner>**. The browser returns to `127.0.0.1` with
    "App created" and an **Install** link; the terminal prints the same link.
 3. Click the link → **Install** → **Only select repositories** → pick the repos → **Install**.
-   (A private app owned by owner installs only on owner's own account.)
+   (A private app owned by a user installs only on that user's own account.)
 4. Nothing else: within one sync (60 s) the `github-app` source shows `ok` with the
    installed repos, and the `gh` source stops discovering (auto). Restarting is not needed.
 
@@ -1537,7 +1537,7 @@ schema change, no domain event; in-memory only.
 
 ## Phase 5 — every part is a plugin (2026-10-03, in progress)
 
-Owner direction (owner decision, 2026-10-03): the **router** (Jev) decides admission; **Fable
+Owner direction (2026-10-03): the **router** (Jev) decides admission; **Fable
 assesses questions** — it decides whether a question escalates to the owner, nothing else.
 Every part is broken out as a **plugin**: any piece can be swapped, writing a custom plugin is
 easy, and the choices offered come from what is detected on the machine. Consultant-reviewed
@@ -1560,7 +1560,7 @@ A **role** is a slot the engine calls through one port. A **plugin** implements 
 | `usage-source` | `UsageSource` (unchanged) | 0..n | none in production; `fake` stays a test fake at the `ports.ts` seam | restart |
 | `notifier` | `Notifier { name; start(events); stop() }` (new) | 0..n | `grokbot-routine` | restart |
 
-A new agent CLI (codex, cursor-agent, opencode, hermes — all present on server) is a new
+A new agent CLI (codex, cursor-agent, opencode, hermes — all present on the hopper host) is a new
 `executor` plugin; nothing is generic over CLIs.
 
 **Not plugins — invariants:** the decider, store, engine loop, HTTP guard and UI session, the
@@ -1688,7 +1688,7 @@ role, enable/disable an instance, or **edit one instance's options** — except 
 route creates or changes a … setting": plugin selection and option editing join router mode
 as UI-session mutations.
 
-**Command-bearing options** (owner decision, owner decision, 2026-10-03, issue #6 option (a)): an
+**Command-bearing options** (owner decision, 2026-10-03, issue #6 option (a)): an
 option that names a program, its arguments, a working directory, an interpreter, or a file
 that is sourced or executed — `bin`, `args`, `cwd`, `python`, `jevSrc`, `claudeBin`, `envFile` and their
 kind. A plugin marks each in its schema with `.meta({ commandBearing: true })`; zod 4 carries
@@ -1755,7 +1755,7 @@ stored old events are not rewritten (read raw by version; v1 schemas stay in doc
 6. **Examples + `plugin:check`** + plugin tsconfig from `install.sh` (landed; "Settled in slice 6" below).
 7. **UI Plugins panel** + `POST /ui/api/plugins` (select, per-instance option editing except
    command-bearing options) + rescan (landed; "Settled in slice 7" below). Issue #6.
-8. **Install on server** (when no herdr-claude job runs) and live verification.
+8. **Install on the hopper host** (when no herdr-claude job runs) and live verification.
 
 ### Settled in slice 1 (2026-10-03)
 
@@ -1801,9 +1801,8 @@ stored old events are not rewritten (read raw by version; v1 schemas stay in doc
 
 ### Router selection (issue #7, 2026-10-03)
 
-Owner direction: a router is wanted, configurable from what is on the system and swappable.
-The Fable advisor only assesses whether a question escalates.
-Fable is the **assessor** (`claude-cli-assessor`, model `fable`);
+Owner decision: use a router, configurable from what is on the system and swappable; the Fable
+advisor only assesses questions, to decide whether they escalate to the owner. Fable is the **assessor** (`claude-cli-assessor`, model `fable`);
 it never routes. The router was `jev-router` only because the env named it.
 
 Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) and
@@ -2017,7 +2016,7 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
   passes the fake question doubles and the fake usage source as seams; `AppSeams.github` /
   `.githubApp` swap the GitHub plugins' adapters (detection then `available`), like `.herdr`.
 - **No store migration.** Instance names equal the old source and executor names; jobs, sync state
-  and lanes are keyed as before. the owner's sources.yaml survives as `sources.yaml.migrated`.
+  and lanes are keyed as before. The owner's sources.yaml survives as `sources.yaml.migrated`.
 
 #### Configuration (env), as of slice 5
 
@@ -2173,9 +2172,8 @@ applies live since issue #18, "Machines from the UI").
 
 ## Attached machines (issue #10, 2026-10-04)
 
-Owner request: attach other machines and execute jobs on them over SSH with their own herdr.
-
-
+Owner request: attach other machines to the hopper and run jobs on them, for example a laptop
+reached over ssh that has herdr, as a consumer.
 
 An **attached machine** is another host that runs jobs in its own herdr session, reached over ssh.
 It is a machine beside `local`: the decider sees it in `DecisionInputs.machines` and assigns jobs
@@ -2243,7 +2241,7 @@ command-bearing) is open.
 
 ## Phase 6 — owner direction, not yet built (2026-10-03)
 
-Four items from the owner. None is designed to completion; each records his words, the code it
+Four items from the owner. None is designed to completion; each records the request, the code it
 touches, the open questions, and its tie to the plugin architecture (North star). Nothing here
 is a commitment to a shape.
 
@@ -2278,7 +2276,7 @@ has one caller today; build it plain first, extract on a second real caller.
 The open questions below are answered there; the plugin tie is not taken (a subscription is not a
 notifier instance: glossary *Notifier*).
 
-Owner request: subscriptions are visible and configurable in the UI.
+Owner request: webhook subscriptions are visible in the UI and can be configured there.
 
 Meaning: the UI shows each subscription (name, url, events, active, last delivery state) and
 lets the owner edit it. Today `webhooks.yaml` is the only source (`src/webhooks/config.ts`,
@@ -2304,7 +2302,7 @@ webhook-only screen.
 
 ### 6c. Own herdr session visible and attachable
 
-The owner: the hopper's own herdr session should be visible in the UI and attachable in a single click.
+Owner request: the hopper's own herdr session should be visible in the UI and attachable in a single click.
 
 Meaning: the UI shows the herdr session (herdr-claude option `session`, default `job-hopper`; unit
 `job-hopper-herdr`) with its state, and offers attach. Attach is `herdr session attach job-hopper`,
@@ -2328,7 +2326,7 @@ needs no UI change.
 
 ### 6d. Backends are configuration
 
-Owner direction: herdr can drive any agent; the tools used are defined in the configuration.
+Owner request: herdr may drive OMP, Claude, or any other agent; which tools a job uses is configuration.
 
 Meaning: which agent runs a job is configuration, not code. `herdr agent start --kind` accepts
 pi, claude, codex, gemini, cursor, devin, agy, cline, omp, mastracode, opencode, copilot, kimi,
@@ -2355,8 +2353,8 @@ parser exists); `kind` arrives with a second parser.
 
 ## UI rework — shadcn/ui + d3 (issue #14, 2026-10-03)
 
-Owner direction (2026-10-03): rebuild the UI with shadcn/ui and d3: elegant, mature,
-realtime, responsive, fast. Builds on the at-a-glance board (issue #5).
+Owner direction (2026-10-03): rebuild the UI with shadcn/ui and d3: elegant, mature, realtime,
+responsive and fast. Builds on the at-a-glance board (issue #5).
 
 - **Build.** `ui/` is a Vite project (root `package.json`, `npm run build:ui`, base `/ui/`). The
   daemon reads `ui/dist` once at startup (`src/http/static.ts`): `/` → `index.html` (`no-cache`),
@@ -2381,8 +2379,8 @@ realtime, responsive, fast. Builds on the at-a-glance board (issue #5).
 
 ## Reaching the UI across the LAN (issue #16, 2026-10-03)
 
-Owner request: reach the UI across the LAN. He opens the UI, answers and closes questions from
-other machines on his LAN. This ends the loopback-only rule; the Host guard, the UI session and
+Owner request: reach the UI across the LAN. The owner opens the UI, answers and closes questions from
+other machines on the LAN. This ends the loopback-only rule; the Host guard, the UI session and
 "the hopper pulls" stand.
 
 **Configuration** — this machine's, in `~/.config/job-hopper/daemon.env` (the unit's optional
@@ -2436,19 +2434,19 @@ networks out. A device link is as strong as the login code file and works once.
 
 ## UI manages everything (issue #18, 2026-10-03)
 
-the owner (2026-10-03), after the reworked UI went live: "Looks way better. Cant add machines, cant
-modify wh subscriptions, doesnt show the accounts used and usage. Cant specify router, queue sorter,
-question gates, routing rules, nor lane specific instructions. But i like the layout so far." On
-scoping: "Forget lane rules. Usage throttles lanes for sure. Rest are fine." So no lane-specific
-instructions and no rule that targets a lane. Every control below works at phone width (390 px):
-he uses the UI from his phone across the LAN.
+Owner review (2026-10-03), after the reworked UI went live: the layout is kept; the UI cannot yet add
+machines, change webhook subscriptions, show the accounts in use and their usage, or set the router,
+queue sorter, question gates, routing rules or lane-specific instructions. Scope decision: lane rules
+are out; usage throttles lanes; the rest is in. So no lane-specific instructions and no rule that
+targets a lane. Every control below works at phone width (390 px): the owner uses the UI from a
+phone across the LAN.
 
 ### Question gates (issue #18)
 
-Owner request: set question gates from the UI.
+Owner request: the question gates can be set in the UI.
 
 The **question gates** are the chain an open question goes through: answerer (drafts) →
-assessor (escalates or not) → risk rules → the owner. One panel in the Questions view, below the
+assessor (escalates or not) → risk rules → owner. One panel in the Questions view, below the
 open questions (collapsed by default under 640 px), shows the chain with each live stage's
 instance and state, and edits what is configuration:
 
@@ -2478,7 +2476,7 @@ which steer the answerer and assessor; the assessor's fail-closed contract and t
 
 ### Webhook subscriptions in the UI (issue #18)
 
-Owner request: edit webhook subscriptions from the UI. Settles 6b.
+Owner request: webhook subscriptions can be changed in the UI. Settles 6b.
 
 - **Source of truth.** `webhooks.yaml` stays the only source of subscriptions; the UI session
   edits it. Not the store (the file would become a seed nobody trusts), not the notifier editor of
@@ -2523,7 +2521,7 @@ Owner request: edit webhook subscriptions from the UI. Settles 6b.
 
 ### Usage and accounts (issue #18)
 
-Owner request: show the accounts used and their usage; usage throttles lanes.
+Owner request: the UI shows the accounts in use and their usage, and usage throttles lanes.
 
 **Built-in usage source `claude-plan`** (`src/plugins/usage-source/claude-plan/`). Claude
 subscription usage comes from `claude -p /usage --output-format json --no-session-persistence`: a
@@ -2586,7 +2584,7 @@ name `test/plugins/fake-claude-plan.mjs` as `bin`.
 
 ### Machines from the UI (issue #18)
 
-Owner request: add machines from the UI. The Machines view adds, edits and removes attached machines, and
+Owner request: machines can be added in the UI. The Machines view adds, edits and removes attached machines, and
 edits this machine's lane count. Every change is written to plugins.yaml and applies without a
 restart.
 
@@ -2653,11 +2651,11 @@ read the detected ssh targets (`GET /api/machines/config`, like every loopback r
 
 ### Router, queue sorter and routing rules (issue #18)
 
-Owner request: set the router, queue sorter and routing rules from the UI. Lane rules are out of scope.
-So no rule targets a lane.
+Owner request: the router, queue sorter and routing rules can be set in the UI; lane rules are out of
+scope. So no rule targets a lane.
 
 **Router.** The Routing view lists every router plugin with its detection. One that cannot run is
-shown with its reason or its setup command and is never offered (on server `jev-router` is
+shown with its reason or its setup command and is never offered (on the hopper host `jev-router` is
 unavailable while the Jev checkout is missing, so the reason is on screen). Selecting a router uses
 `POST /ui/api/plugins` `select`; shadow/active uses `POST /ui/api/router-mode`; the configured
 instance's options use the shared options form (`ui/src/components/plugin-form.tsx`, also used

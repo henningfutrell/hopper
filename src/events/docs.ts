@@ -16,7 +16,7 @@ const WHEN: Record<EventType, string> = {
   'job.failed': 'A job ended with an error.',
   'job.cancelled': 'A job was cancelled.',
   'job.requeued': 'A job went back to the queue (restart recovery, or a question answered or closed). `reason` is a free string.',
-  'job.reattached': 'The executor watches a job\'s live external work again (the herdr pane and Claude) without sending anything. `reason` `daemon restart`: restart recovery kept a running job running on its lane. `reason` `answered in the pane`: The owner typed the answer into a parked job\'s pane; the job runs again on a lane.',
+  'job.reattached': 'The executor watches a job\'s live external work again (the herdr pane and Claude) without sending anything. `reason` `daemon restart`: restart recovery kept a running job running on its lane. `reason` `answered in the pane`: the owner typed the answer into a parked job\'s pane; the job runs again on a lane.',
   'job.reprioritized': 'A source re-sorted a waiting job.',
   'lane.opened': 'A Decision opened a lane.',
   'lane.closed': 'A lane closed (decision reason, `drained`, or `daemon restart`).',
@@ -24,8 +24,8 @@ const WHEN: Record<EventType, string> = {
   'router.mode_changed': 'The router mode was switched.',
   'question.asked': 'A running job paused on a question.',
   'question.escalated': 'A question entered a stage — `target` is the answerer\'s instance name, the assessor\'s, or `human` — or the human was re-notified.',
-  'question.answered': 'An answer was accepted: an answerer\'s draft the assessor let through (`by` = the answerer instance), or the human\'s (`via: "pane"` when he typed it into the job\'s pane: the job already runs again, nothing is typed for him).',
-  'question.closed': 'the owner closed an open question without answering (UI Close). The job resumes with `answer`, the fixed close text, typed in; any answerer or assessor call in flight is aborted.',
+  'question.answered': 'An answer was accepted: an answerer\'s draft the assessor let through (`by` = the answerer instance), or the human\'s (`via: "pane"` when they typed it into the job\'s pane: the job already runs again, nothing is typed for them).',
+  'question.closed': 'The owner closed an open question without answering (UI Close). The job resumes with `answer`, the fixed close text, typed in; any answerer or assessor call in flight is aborted.',
   'question.expired': 'The human stage timed out and the job fails.',
 };
 

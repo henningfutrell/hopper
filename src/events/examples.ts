@@ -27,6 +27,6 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'question.asked': { questionId: 'q1', text: 'which?', detectedBy: 'marker' },
   'question.escalated': { questionId: 'q1', target: 'human', reason: 'asked', text: 'which?', jobId: 'j1', goal: 'g', answerUrl: 'http://127.0.0.1/q', notifyCount: 0, renotify: true },
   'question.answered': { questionId: 'q1', by: 'human', answer: 'yes' },
-  'question.closed': { questionId: 'q1', answer: 'the owner closed this question without answering. Continue on your own judgement; if you cannot, end with JOB_HOPPER_FAILED and say why.' },
+  'question.closed': { questionId: 'q1', answer: 'The owner closed this question without answering. Continue on your own judgement; if you cannot, end with JOB_HOPPER_FAILED and say why.' },
   'question.expired': { questionId: 'q1', after_ms: 1000 },
 };

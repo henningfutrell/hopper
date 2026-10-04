@@ -120,7 +120,7 @@ describe('a herdr-claude question frees its lane at once', () => {
 });
 
 describe('a question is the owner\'s the moment it is asked', () => {
-  it('visible and answerable in the UI while the answerer drafts; his answer wins and aborts the chain', async () => {
+  it('visible and answerable in the UI while the answerer drafts; their answer wins and aborts the chain', async () => {
     const held = heldAnswerer();
     const judged: string[] = [];
     const judge = createFakeAssessor({ name: 'judge', script: (_r, d) => { judged.push(d.answer); return { escalate: false, reason: 'fine' }; } });
@@ -141,7 +141,7 @@ describe('a question is the owner\'s the moment it is asked', () => {
     expect(after).toMatchObject({ status: 'answered', answeredBy: 'human', answer: 'tabs' });
     expect(after.attempts.map((t) => [t.tier, t.outcome, t.reason])).toEqual([['human', 'accepted', undefined], ['drafter', 'escalated', 'superseded']]);
     expect(judged).toEqual([]);
-    // The escalation gate is untouched: The owner answered first, so nothing was pushed.
+    // The escalation gate is untouched: the owner answered first, so nothing was pushed.
     expect((await ofType(a, 'question.escalated')).map((e) => e.data.target)).toEqual(['drafter']);
   });
 });

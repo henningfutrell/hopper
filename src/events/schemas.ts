@@ -50,7 +50,7 @@ export const EVENT_SCHEMAS = {
     notifyCount: z.number().int().optional(), renotify: z.boolean().optional(),
   }),
   // v2: `by` is the answerer instance whose draft was accepted, or `human`.
-  // `via: "pane"`: The owner typed it into the job's pane, not the UI (additive, still v2).
+  // `via: "pane"`: the owner typed it into the job's pane, not the UI (additive, still v2).
   'question.answered': strict({ questionId: z.string(), by: stage, answer: z.string(), via: z.literal('pane').optional() }),
   // `answer` is the close text typed into the job in place of an answer.
   'question.closed': strict({ questionId: z.string(), answer: z.string() }),

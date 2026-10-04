@@ -1,5 +1,5 @@
 // An answerer: drafts an answer to a question a job asked. The assessor then decides whether
-// The owner must see it, and the risk rules still apply. This one always drafts the same text.
+// the owner must see it, and the risk rules still apply. This one always drafts the same text.
 //   answerer: { name: canned, plugin: canned-answer, options: { answer: "Yes, go ahead." } }
 import type { PluginDefinition } from 'job-hopper/plugin';
 

@@ -1,4 +1,4 @@
-// What the hopper may write to an issue (owner decision, 2026-10-04: a finished issue needs labels only).
+// What the hopper may write to an issue (owner decision, 2026-10-04: labels only, no comment).
 // Through the real daemon, against the fake GitHub: the only writes are labels (state). No
 // comment at all: not claim, progress, question, answered, failure, cancel or completion; a
 // question goes to the owner through the UI, never onto the issue, and a reply on the issue is not
@@ -64,7 +64,7 @@ describe.each<Mode>(['gh', 'app'])('issue writes (%s source)', (mode) => {
     const escalated = (await a.events('types=question.escalated')).find((e: DomainEvent) => e.questionId === q.id && e.data.target === 'human')!;
     expect(escalated.data.answerUrl).toBe(`${a.url}/#question-${q.id}`);
 
-    // the owner's reply on the issue is not an answer: there is no question comment to reply to.
+    // The owner's reply on the issue is not an answer: there is no question comment to reply to.
     gh.addComment(REPO, issue.number, 'owner', 'go ahead from the issue');
     await a.sync();
     expect((await a.job(job.id)).status).toBe('waiting_answer');
@@ -117,7 +117,7 @@ describe.each<Mode>(['gh', 'app'])('issue writes (%s source)', (mode) => {
     const gh = fakeFor(mode);
     const a = await boot(mode, gh);
     const issue = gh.createIssue({ repo: REPO, title: 'Echo it', body: body({ op: 'echo', message: 'hi' }), labels: ['hopper'] });
-    gh.addComment(REPO, issue.number, 'owner', 'context from owner');
+    gh.addComment(REPO, issue.number, 'owner', 'context from the owner');
     await a.sync();
     const job = (await jobFor(a, issue.url))!;
     await a.waitForStatus(job.id, 'finished');
@@ -128,7 +128,7 @@ describe.each<Mode>(['gh', 'app'])('issue writes (%s source)', (mode) => {
     const prompt = String(payload.prompt);
     expect(prompt).toContain('[job-hopper issue context]');
     expect(prompt).toContain(`url: ${issue.url}`);
-    expect(prompt).toContain('context from owner');
+    expect(prompt).toContain('context from the owner');
     expect(prompt).not.toContain('[how to report on your issue]');
     expect(prompt).not.toMatch(/HOPPER_COMMENT|hopper-comment|gh issue comment/);
     expect(prompt).not.toMatch(/read-only\]|comment on|status comment/);

@@ -10,7 +10,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 const empty = { type: 'object', properties: {} };
 const PLUGINS = {
   roles: ['router', 'queue-sorter'],
-  config: { path: '/home/h/.config/job-hopper/plugins.yaml', source: 'file', version: 'p1', warnings: [] },
+  config: { path: '/home/user/.config/job-hopper/plugins.yaml', source: 'file', version: 'p1', warnings: [] },
   instances: [
     { role: 'router', instance: { name: 'pass-through', plugin: 'pass-through' } },
     { role: 'queue-sorter', instance: { name: 'priority', plugin: 'priority' } },

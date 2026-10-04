@@ -22,7 +22,7 @@ afterEach(async () => {
 });
 
 const COMMENTED = `version: 1
-# the owner's note: kept across UI edits
+# The owner's note: kept across UI edits
 webhooks:
   # the bot, first
   - name: grok-bot
@@ -151,7 +151,7 @@ describe('POST /ui/api/webhooks — edit', () => {
     expect(r.body).not.toHaveProperty('secret');
     expect(r.body.subscriptions.find((s: { name: string }) => s.name === 'other')).toMatchObject({ url: 'http://127.0.0.1:4799/new', events: ['job.failed', 'job.finished'], active: false });
     const text = read(file);
-    expect(text).toContain("# the owner's note: kept across UI edits");
+    expect(text).toContain("# The owner's note: kept across UI edits");
     expect(text).toContain(GROK_BLOCK);
     expect(text).toContain('secret: s-other');
     expect(statSync(file).mode & 0o777).toBe(0o600);

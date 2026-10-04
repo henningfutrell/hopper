@@ -20,7 +20,7 @@ function harness(results: (boolean | Error)[]) {
   const lines: string[] = [];
   let calls = 0;
   const src = createAttachedMachineSource({
-    machine: () => ({ name: 'laptop', ssh: 'laptop', lanes: 2, executors: ['herdr-claude'], session: 'job-hopper', herdrBin: '/home/h/.local/bin/herdr' }),
+    machine: () => ({ name: 'laptop', ssh: 'laptop', lanes: 2, executors: ['herdr-claude'], session: 'job-hopper', herdrBin: '/home/user/.local/bin/herdr' }),
     clock: { now: () => new Date(t) },
     probeEveryMs: 30000,
     probe: async () => {
@@ -38,7 +38,7 @@ describe('attached machine source', () => {
     const h = harness([true]);
     expect(await h.src.list()).toEqual([{
       id: 'laptop', label: 'laptop', maxLanes: 2, online: false, executors: ['herdr-claude'], ssh: 'laptop',
-      herdr: { bin: '/home/h/.local/bin/herdr', session: 'job-hopper' },
+      herdr: { bin: '/home/user/.local/bin/herdr', session: 'job-hopper' },
     }]);
     await flush();
     expect((await h.src.list())[0]).toMatchObject({ online: true });

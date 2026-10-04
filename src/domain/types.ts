@@ -337,7 +337,7 @@ export interface WebhookDelivery {
 // ---- Questions ---------------------------------------------------------------------
 
 /** open: being worked on (tier = the stage holding it). answered/expired/cancelled are terminal. */
-/** `closed`: The owner ended it without answering; the job resumes with the close text (questions/service.ts CLOSED_ANSWER). */
+/** `closed`: the owner ended it without answering; the job resumes with the close text (questions/service.ts CLOSED_ANSWER). */
 export type QuestionStatus = 'open' | 'answered' | 'closed' | 'expired' | 'cancelled';
 
 /** Who made an attempt. Absent on attempts stored before slice 2, when every model attempt was an answer. */

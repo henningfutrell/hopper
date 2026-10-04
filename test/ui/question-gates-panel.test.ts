@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // The Question gates panel in the Questions view (issue #18), rendered in happy-dom inside the whole
 // app against a fake of the daemon's HTTP surface. It shows the chain a question goes through, lets
-// The owner pick the answerer (or none) and the assessor through POST /ui/api/plugins, and edits the
+// the owner pick the answerer (or none) and the assessor through POST /ui/api/plugins, and edits the
 // rules file through POST /ui/api/rules-file with the version the draft was based on. An unsaved
 // draft survives a reload.
 import { createElement } from 'react';
@@ -9,7 +9,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const RULES = { path: '/home/h/.config/job-hopper/rules.md', text: '- prefer small PRs\n', version: 'v1', missing: false };
+const RULES = { path: '/home/user/.config/job-hopper/rules.md', text: '- prefer small PRs\n', version: 'v1', missing: false };
 const GATES = {
   rulesFile: RULES,
   riskRules: [
@@ -27,7 +27,7 @@ const claudeSchema = {
 };
 const PLUGINS = {
   roles: ['router', 'answerer', 'assessor'],
-  config: { path: '/home/h/.config/job-hopper/plugins.yaml', source: 'file', version: 'p1', warnings: [] },
+  config: { path: '/home/user/.config/job-hopper/plugins.yaml', source: 'file', version: 'p1', warnings: [] },
   instances: [
     { role: 'answerer', instance: { name: 'opus', plugin: 'claude-cli', options: { model: 'opus' } } },
     { role: 'assessor', instance: { name: 'fable', plugin: 'claude-cli-assessor', options: { model: 'fable' } } },
@@ -123,7 +123,7 @@ describe('question gates panel', () => {
   it('shows the chain, the risk rules read-only, and the rules file', async () => {
     await boot();
     const text = panel()!.textContent!;
-    for (const s of ['Answerer', 'Assessor', 'Risk rules', 'the owner', 'opus', 'fable', 'delete', 'deploying or publishing', RULES.path]) expect(text).toContain(s);
+    for (const s of ['Answerer', 'Assessor', 'Risk rules', 'Owner', 'opus', 'fable', 'delete', 'deploying or publishing', RULES.path]) expect(text).toContain(s);
     expect(rulesBox()!.value).toBe(RULES.text);
   });
 

@@ -2,7 +2,7 @@
 // Only comments by allowlisted authors that are not hopper comments reach the job: anyone else's
 // text would be a prompt-injection path into a skip-permissions agent. The job never writes to
 // its issue, and its prompt says nothing about commenting (its pane is still logged in to gh as
-// The owner: the prompt is the only lever, and silence about issues is the instruction).
+// the owner: the prompt is the only lever, and silence about issues is the instruction).
 
 import type { GitHubComment, GitHubIssue } from './api.ts';
 import { isHopperComment } from './identity.ts';

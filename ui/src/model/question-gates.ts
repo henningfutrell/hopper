@@ -1,5 +1,5 @@
 // The question gates' model (issue #18): the chain a question goes through — answerer, assessor,
-// risk rules, the owner — as GET /api/plugins reports it, and the rules-file editor's draft, kept in
+// risk rules, owner — as GET /api/plugins reports it, and the rules-file editor's draft, kept in
 // the browser so unsaved edits survive a reload, sent back with the version it was based on.
 import type { PluginsReport, RulesFileView } from '../../../src/domain/types.ts';
 import { instanceState } from './plugins.ts';
@@ -31,7 +31,7 @@ export function gateChain(report: PluginsReport, riskRuleCount: number): Gate[] 
     liveGate(report, 'answerer'),
     liveGate(report, 'assessor'),
     { stage: 'risk-rules', name: `${riskRuleCount} rules`, label: 'code, cannot be weakened', tone: 'muted' },
-    { stage: 'human', name: 'the owner', label: 'last stop', tone: 'muted' },
+    { stage: 'human', name: 'Owner', label: 'last stop', tone: 'muted' },
   ];
 }
 

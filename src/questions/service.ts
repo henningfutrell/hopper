@@ -31,7 +31,7 @@ export interface QuestionServiceOptions {
 export const HUMAN = 'human';
 
 /** Typed into the job in place of an answer when the owner closes its question. */
-export const CLOSED_ANSWER = 'the owner closed this question without answering. Continue on your own judgement; if you cannot, end with JOB_HOPPER_FAILED and say why.';
+export const CLOSED_ANSWER = 'The owner closed this question without answering. Continue on your own judgement; if you cannot, end with JOB_HOPPER_FAILED and say why.';
 
 const DRAFT = z.object({ answer: z.string(), confident: z.boolean(), reason: z.string() });
 // Only this accepts: a boolean `escalate` and a string `reason`. `"false"`, a missing field or
@@ -277,7 +277,7 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
     running.add(p);
   }
 
-  /** the owner settles an open question: his answer, or the close text. Wins over any stage in flight. */
+  /** The owner settles an open question: their answer, or the close text. Wins over any stage in flight. */
   /** Inside a tx. Ends an open question as the owner's; the caller decides what the job does. */
   function settle(q: Question, answer: string, status: 'answered' | 'closed', via?: 'pane'): Question {
     abortStage(q.id, 'superseded');

@@ -31,7 +31,7 @@ afterEach(async () => {
 });
 
 const FILE = `version: 1
-# the owner's note: kept across UI edits
+# The owner's note: kept across UI edits
 executors:
   - { name: test, plugin: test }
   - { name: herdr-claude, plugin: herdr-claude }
@@ -52,7 +52,7 @@ async function start(file = FILE): Promise<{ a: TestApp; token: string; path: st
       resolveHerdrBin: async (ssh) => {
         resolved.push(ssh);
         if (ssh === 'unreachable') throw new Error('ssh unreachable: No route to host');
-        return `/home/h/.local/bin/herdr`;
+        return `/home/user/.local/bin/herdr`;
       },
     },
   });
@@ -87,13 +87,13 @@ describe('POST /ui/api/machines — add', () => {
   it('writes one entry with the resolved herdrBin, keeps every other byte, mode 600; /api/machines lists it without a restart', async () => {
     const { a, token, path } = await start();
     const r = await a.ui<Reply>('/ui/api/machines', {
-      action: 'add', name: 'laptop', ssh: 'laptop', lanes: 2, executors: ['herdr-claude', 'test'], label: 'arch laptop', version: (await config(a)).version,
+      action: 'add', name: 'laptop', ssh: 'laptop', lanes: 2, executors: ['herdr-claude', 'test'], label: 'spare laptop', version: (await config(a)).version,
     }, { token });
     expect(r.status).toBe(200);
     expect(resolved).toEqual(['laptop']);
     const text = read(path);
     expect(text.startsWith(FILE)).toBe(true);
-    expect(parse(text).attachedMachines[1]).toEqual({ name: 'laptop', ssh: 'laptop', lanes: 2, executors: ['herdr-claude', 'test'], label: 'arch laptop', herdrBin: '/home/h/.local/bin/herdr' });
+    expect(parse(text).attachedMachines[1]).toEqual({ name: 'laptop', ssh: 'laptop', lanes: 2, executors: ['herdr-claude', 'test'], label: 'spare laptop', herdrBin: '/home/user/.local/bin/herdr' });
     expect(statSync(path).mode & 0o777).toBe(0o600);
     expect(r.body.attached.map((m) => m.name)).toEqual(['desk', 'laptop']);
     expect(await machineIds(a)).toEqual(['local', 'desk', 'laptop']);
@@ -104,13 +104,13 @@ describe('POST /ui/api/machines — add', () => {
     const { a, token, path } = await start('version: 1\nexecutors: [ { name: test, plugin: test } ]\n');
     const r = await a.ui<Reply>('/ui/api/machines', { action: 'add', name: 'laptop', ssh: 'laptop', lanes: 1, executors: ['test'], version: (await config(a)).version }, { token });
     expect(r.status).toBe(200);
-    expect(parse(read(path)).attachedMachines).toEqual([{ name: 'laptop', ssh: 'laptop', lanes: 1, executors: ['test'], herdrBin: '/home/h/.local/bin/herdr' }]);
+    expect(parse(read(path)).attachedMachines).toEqual([{ name: 'laptop', ssh: 'laptop', lanes: 1, executors: ['test'], herdrBin: '/home/user/.local/bin/herdr' }]);
   });
 
   it('an ssh target not among the detected Host aliases: 400, never probed, nothing written', async () => {
     const { a, token, path } = await start();
     const before = read(path);
-    for (const ssh of ['owner@10.0.0.9', 'x.lan', '-oProxyCommand=sh']) {
+    for (const ssh of ['user@10.0.0.9', 'x.lan', '-oProxyCommand=sh']) {
       const r = await a.ui<Reply>('/ui/api/machines', { action: 'add', name: 'x', ssh, lanes: 1, version: (await config(a)).version }, { token });
       expect(r.status).toBe(400);
       expect(r.body.error).toMatch(/ssh/);
@@ -197,7 +197,7 @@ describe('POST /ui/api/machines — remove', () => {
     const r = await a.ui<Reply>('/ui/api/machines', { action: 'remove', name: 'desk', version: (await config(a)).version }, { token });
     expect(r.status).toBe(200);
     expect(parse(read(path)).attachedMachines).toEqual([]);
-    expect(read(path)).toContain("# the owner's note: kept across UI edits");
+    expect(read(path)).toContain("# The owner's note: kept across UI edits");
     expect(await machineIds(a)).toEqual(['local']);
   });
 

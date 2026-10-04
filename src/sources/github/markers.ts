@@ -2,7 +2,7 @@
 // now, but old ones (claimed, progress, question, answered, finished, and jobs' own
 // `kind=job-comment`) remain on issues, so the context filter still tells them from the owner's
 // text. The gh source posted as the owner, so the marker is the only way to tell its comments
-// from his.
+// from theirs.
 
 const MARKER_LINE_RE = /^<!-- job-hopper v1 /;
 

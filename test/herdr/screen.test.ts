@@ -165,7 +165,7 @@ describe('readTurn', () => {
 
 const DIALOG = (path: string[]): string => [
   'claude --dangerously-skip-permissions',
-  '╭─user@server-laptop /tmp/claude-1000/jhprobe',
+  '╭─user@laptop /tmp/claude-1000/jhprobe',
   '╰─ claude --dangerously-skip-permissions',
   '────────────────────────────────────────',
   ' Accessing workspace:',

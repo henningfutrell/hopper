@@ -189,7 +189,7 @@ export interface AnswerRequest {
   /** The job's full prompt. */
   jobPrompt: string;
   jobGoal?: string;
-  /** the owner's standing rules, read from the rules file at ask time. */
+  /** The owner's standing rules, read from the rules file at ask time. */
   rules: string;
   /** The question's trail so far (attempts of earlier runs), so a stage sees what was tried. */
   previous: QuestionAttempt[];
@@ -275,7 +275,7 @@ export interface QuestionService {
   /** Start the pipeline for a newly asked question (created at `firstStage()`). */
   handle(questionId: string): void;
   answerByHuman(questionId: string, answer: string): AnswerByHumanResult;
-  /** the owner ends an open question without answering: status `closed`, the close text becomes its answer, `question.closed`, then onAnswered resumes the job. */
+  /** The owner ends an open question without answering: status `closed`, the close text becomes its answer, `question.closed`, then onAnswered resumes the job. */
   closeByHuman(questionId: string): AnswerByHumanResult;
   /**
    * The owner answered in the job's pane, not the UI. Synchronous; call inside the caller's tx.

@@ -81,7 +81,7 @@ describe('routing rules at intake', () => {
 });
 
 const FILE = `version: 1
-# the owner's note: kept across UI edits
+# The owner's note: kept across UI edits
 executors: [ { name: test, plugin: test } ]
 jobSources: []
 machines: { name: local, plugin: local, options: { lanes: 2 } }

@@ -65,7 +65,7 @@ export function AddMachineForm({ config, busy, send, onDone }: {
           <Input className="h-9" type="number" inputMode="numeric" min={1} step={1} value={d.lanes} disabled={busy} onChange={(e) => set({ lanes: e.target.value })} />
         </Field>
         <Field label="label" hint="optional; shown instead of the name">
-          <Input className="h-9" value={d.label} disabled={busy} placeholder={d.name.trim() || 'arch laptop'} onChange={(e) => set({ label: e.target.value })} />
+          <Input className="h-9" value={d.label} disabled={busy} placeholder={d.name.trim() || 'spare laptop'} onChange={(e) => set({ label: e.target.value })} />
         </Field>
       </div>
       <ExecutorChecks all={config.executors} picked={d.executors} disabled={busy} onChange={(executors) => set({ executors })} />

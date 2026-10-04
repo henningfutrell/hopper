@@ -1,6 +1,6 @@
 // report(): what happened to a job, written to its issue. The hopper's only issue writes are
 // labels (state); it posts no comment at all (owner decision, 2026-10-04: a finished issue needs
-// labels only): claimed → `hopper:claimed`; finished → `hopper:done`; failed → `hopper:failed`;
+// no comment): claimed → `hopper:claimed`; finished → `hopper:done`; failed → `hopper:failed`;
 // cancelled → the claim label goes. Returns the source state unchanged. Rows written under
 // earlier rules may still carry finalCommentId, claimCommentId, progressCommentId,
 // questionComments and answeredComments; they are kept as stored and never read.

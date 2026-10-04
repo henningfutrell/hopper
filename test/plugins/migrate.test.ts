@@ -52,7 +52,7 @@ describe('ensurePluginsFile', () => {
     const r = ensurePluginsFile({
       pluginsFile, answerTimeoutMs: 1234, logger: quiet,
       env: {
-        JOB_HOPPER_EXECUTORS: 'test,herdr-claude', JOB_HOPPER_LOCAL_LANES: '2', JOB_HOPPER_CLAUDE_CWD: '/home/h/w',
+        JOB_HOPPER_EXECUTORS: 'test,herdr-claude', JOB_HOPPER_LOCAL_LANES: '2', JOB_HOPPER_CLAUDE_CWD: '/home/user/w',
         JOB_HOPPER_HERDR_SESSION: 'jh', JOB_HOPPER_CLAUDE_ARGS: '--a  --b', JOB_HOPPER_TRUST_WORKDIR: 'false',
         JOB_HOPPER_CLAUDE_BIN: '/opt/claude', JOB_HOPPER_ANSWER_MODEL_A: 'sonnet', JOB_HOPPER_ANSWER_MODEL_B: 'haiku',
         JOB_HOPPER_GH_BIN: '/opt/gh', JOB_HOPPER_GITHUB_API: 'http://127.0.0.1:9/',
@@ -69,7 +69,7 @@ describe('ensurePluginsFile', () => {
       assessor: { name: 'fable', plugin: 'claude-cli-assessor', options: { bin: '/opt/claude', model: 'haiku', timeoutMs: 1234 } },
       executors: [
         { name: 'test', plugin: 'test' },
-        { ...DEFAULT_HERDR, options: { ...DEFAULT_HERDR.options, claudeBin: '/opt/claude', session: 'jh', args: ['--a', '--b'], cwd: '/home/h/w', trustWorkdir: false } },
+        { ...DEFAULT_HERDR, options: { ...DEFAULT_HERDR.options, claudeBin: '/opt/claude', session: 'jh', args: ['--a', '--b'], cwd: '/home/user/w', trustWorkdir: false } },
       ],
       jobSources: [
         { name: 'github', plugin: 'github-gh', options: {

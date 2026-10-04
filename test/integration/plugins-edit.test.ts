@@ -55,7 +55,7 @@ const writePlugin = (dataDir: string, id: string, text: string) => {
 };
 
 const TWO_EXECUTORS = `version: 1
-# the owner's note: kept across UI edits
+# The owner's note: kept across UI edits
 assessor: { name: fable, plugin: claude-cli-assessor, options: { model: fable } }
 executors:
   - { name: herdr-a, plugin: herdr-claude, options: { session: hopper-a, pollMs: 1000 } }
@@ -101,7 +101,7 @@ describe('POST /ui/api/plugins — one instance\'s options', () => {
     expect(r.body.assessor.instance).toEqual({ name: 'fable', plugin: 'claude-cli-assessor', options: { model: 'sonnet' } });
     expect(r.body.config.version).not.toBe(version);
     const text = read(file);
-    expect(text).toContain("# the owner's note: kept across UI edits");
+    expect(text).toContain("# The owner's note: kept across UI edits");
     const doc = parse(text);
     expect(doc.assessor.options).toEqual({ model: 'sonnet' });
     expect(doc.executors).toEqual(parse(TWO_EXECUTORS).executors);

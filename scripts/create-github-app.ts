@@ -47,7 +47,7 @@ function buildManifest(owner: string, port: number): Record<string, unknown> {
   return {
     name: (opt.name ?? `job-hopper-${owner}`).slice(0, 34),
     url: `https://github.com/${owner}`,
-    description: "Pulls jobs for job-hopper on the owner's laptop from issues labelled hopper.",
+    description: "Pulls jobs for job-hopper from issues labelled hopper.",
     ...(opt['no-webhook'] ? {} : { hook_attributes: { url: 'https://example.invalid/job-hopper-webhook', active: false } }),
     redirect_url: `http://127.0.0.1:${port}/callback`,
     public: false,

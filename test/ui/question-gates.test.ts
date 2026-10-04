@@ -11,13 +11,13 @@ const base = {
 } as unknown as PluginsReport;
 
 describe('gateChain', () => {
-  it('answerer, assessor, risk rules, the owner — each live stage with its instance and state', () => {
+  it('answerer, assessor, risk rules, owner — each live stage with its instance and state', () => {
     const chain = gateChain(base, 6);
     expect(chain.map((s) => s.stage)).toEqual(['answerer', 'assessor', 'risk-rules', 'human']);
     expect(chain[0]).toMatchObject({ name: 'opus', plugin: 'claude-cli', label: 'active', tone: 'ok' });
     expect(chain[1]).toMatchObject({ name: 'fable', label: 'fallback: always-escalate', tone: 'warn', reason: 'assessor fable unavailable: no claude' });
     expect(chain[2]).toMatchObject({ name: '6 rules', label: 'code, cannot be weakened', tone: 'muted' });
-    expect(chain[3]).toMatchObject({ name: 'the owner', label: 'last stop' });
+    expect(chain[3]).toMatchObject({ name: 'Owner', label: 'last stop' });
   });
 
   it('no answerer: questions skip to the owner', () => {

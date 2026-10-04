@@ -1,5 +1,5 @@
 // Question gates (issue #18): the chain a question goes through — answerer (drafts), assessor
-// (escalates or not), risk rules (code), the owner — with each live stage's instance and state from
+// (escalates or not), risk rules (code), owner — with each live stage's instance and state from
 // GET /api/plugins, the answerer and assessor chosen and tuned through the shared plugin form, and
 // the rules file edited whole (POST /ui/api/rules-file). An unsaved rules edit is kept in this
 // browser, so it survives a reload. Collapsed by default at phone width.
@@ -18,7 +18,7 @@ import type { QuestionGatesView, RulesFileView } from '@/model/wire';
 import { refreshPlugins, useHopper } from '@/store';
 
 const REFRESH_MS = 15000;
-const STAGE_TITLE: Record<Gate['stage'], string> = { answerer: 'Answerer', assessor: 'Assessor', 'risk-rules': 'Risk rules', human: 'the owner' };
+const STAGE_TITLE: Record<Gate['stage'], string> = { answerer: 'Answerer', assessor: 'Assessor', 'risk-rules': 'Risk rules', human: 'Owner' };
 
 const loadStored = (): StoredDraft | undefined => { try { return readDraft(localStorage.getItem(DRAFT_KEY)); } catch { return undefined; } };
 const keepStored = (d: StoredDraft | undefined) => {
@@ -144,7 +144,7 @@ export function QuestionGates() {
                 </ul>
               </Stage>
             )}
-            <Stage n={4} title="The owner" what="the last stop">
+            <Stage n={4} title="Owner" what="the last stop">
               <div className="text-xs text-muted-foreground">An escalated question waits above until you answer or close it.</div>
             </Stage>
           </CollapsibleContent>

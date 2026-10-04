@@ -26,7 +26,7 @@ describe('classifyRequest', () => {
   });
 
   it('a peer outside loopback and the LAN peers is refused 403, whatever Host it names', () => {
-    for (const peer of ['198.51.100.9', '10.0.0.1', '::ffff:172.17.0.2', 'fd7a:115c:a1e0::1', undefined]) {
+    for (const peer of ['198.51.100.5', '10.0.0.1', '::ffff:198.51.100.2', '2001:db8::1', undefined]) {
       const r = classifyRequest({ host: `server:${PORT}`, peer }, PORT, lan);
       expect(r, String(peer)).toMatchObject({ refuse: 403 });
     }
@@ -39,7 +39,7 @@ describe('classifyRequest', () => {
   });
 
   it('any other Host is 421 (DNS rebinding), as before', () => {
-    for (const host of ['evil.example', `evil.example:${PORT}`, 'server', `server:${PORT + 1}`, `server.evil:${PORT}`, '127.0.0.1', '']) {
+    for (const host of ['evil.example', `evil.example:${PORT}`, 'server', `server:${PORT + 1}`, `server.evil.example:${PORT}`, '127.0.0.1', '']) {
       expect(classifyRequest({ host, peer: '127.0.0.1' }, PORT, lan), host).toMatchObject({ refuse: 421 });
     }
     expect(classifyRequest({ host: `server:${PORT}`, peer: '127.0.0.1' }, PORT, off)).toMatchObject({ refuse: 421 });

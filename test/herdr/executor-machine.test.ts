@@ -16,8 +16,8 @@ describe('herdr-claude executor on an attached machine', () => {
     expect(herdr.calls).toEqual([]);
     expect(remotes.get('laptop')!.agentStarts).toHaveLength(1);
     // The machine's own herdr binary and session, by absolute path: never its PATH.
-    expect(reached[0]).toEqual({ ssh: 'laptop', bin: '/home/h/.local/bin/herdr', session: 'jh-there' });
-    expect(saved[0]).toMatchObject({ ssh: 'laptop', herdrBin: '/home/h/.local/bin/herdr', session: 'jh-there', paneId: 'w1:p1', laneId: 'laptop/lane-1' });
+    expect(reached[0]).toEqual({ ssh: 'laptop', bin: '/home/user/.local/bin/herdr', session: 'jh-there' });
+    expect(saved[0]).toMatchObject({ ssh: 'laptop', herdrBin: '/home/user/.local/bin/herdr', session: 'jh-there', paneId: 'w1:p1', laneId: 'laptop/lane-1' });
   });
 
   it('a job on this machine records no ssh target', async () => {
@@ -41,7 +41,7 @@ describe('herdr-claude executor on an attached machine', () => {
     expect(laptop.calls.some((c) => c.method === 'closePane')).toBe(true);
     expect(herdr.calls).toEqual([]);
     // cleanup has only the job: its saved state names the same machine, binary and session.
-    expect(new Set(reached.map((r) => JSON.stringify(r)))).toEqual(new Set([JSON.stringify({ ssh: 'laptop', bin: '/home/h/.local/bin/herdr', session: 'jh-there' })]));
+    expect(new Set(reached.map((r) => JSON.stringify(r)))).toEqual(new Set([JSON.stringify({ ssh: 'laptop', bin: '/home/user/.local/bin/herdr', session: 'jh-there' })]));
   });
 
   it('the same pane id on two machines is two panes: neither lane is refused', async () => {

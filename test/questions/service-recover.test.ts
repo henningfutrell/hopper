@@ -11,7 +11,7 @@ const unsure: AnswerDraft = { ...SAFE, confident: false, reason: 'the rules do n
 
 describe('human timers', () => {
   it('renotifies every interval, then expires and calls onExpired in the tx', async () => {
-    const r = rig({ answer: () => unsure, assess: () => ({ escalate: true, reason: 'the owner decides' }), renotifyMs: 1000, humanTimeoutMs: 3500 });
+    const r = rig({ answer: () => unsure, assess: () => ({ escalate: true, reason: 'The owner decides' }), renotifyMs: 1000, humanTimeoutMs: 3500 });
     const q = r.question();
     r.svc.handle(q.id);
     await settle();
@@ -24,7 +24,7 @@ describe('human timers', () => {
   });
 
   it('a human answer stops the timers', async () => {
-    const r = rig({ answer: () => unsure, assess: () => ({ escalate: true, reason: 'the owner decides' }) });
+    const r = rig({ answer: () => unsure, assess: () => ({ escalate: true, reason: 'The owner decides' }) });
     const q = r.question();
     r.svc.handle(q.id);
     await settle();

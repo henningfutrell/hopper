@@ -32,7 +32,7 @@ function newDb(): { dbPath: string; dataDir: string } {
 
 const SOURCES = `version: 1
 github:
-  enabled: true              # the owner's own comment
+  enabled: true              # The owner's own comment
   pollSeconds: 3600
   repos: [${REPO}]
   authors: [owner]
@@ -106,7 +106,7 @@ describe('the first boot without plugins.yaml migrates', () => {
 
   it('a plugins.yaml that exists is never overwritten; a sources.yaml beside it stays and is reported as no longer read', async () => {
     const { dbPath, dataDir } = newDb();
-    const text = 'version: 1\n# the owner\'s\nexecutors: [ { name: test, plugin: test } ]\njobSources: []\n';
+    const text = 'version: 1\n# The owner\'s\nexecutors: [ { name: test, plugin: test } ]\njobSources: []\n';
     writePluginsYaml(dataDir, text);
     writeSourcesFile(dbPath, SOURCES);
     const warn = vi.spyOn(console, 'warn');

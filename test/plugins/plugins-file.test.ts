@@ -140,12 +140,12 @@ describe('plugins.yaml attachedMachines (design.md "Attached machines")', () => 
       'version: 1',
       'attachedMachines:',
       '  - { name: laptop, ssh: laptop, lanes: 2 }',
-      '  - { name: pi, ssh: user@host.example.net, label: Pi, lanes: 1, executors: [herdr-claude, other], session: jh, herdrBin: /opt/herdr }',
+      '  - { name: pi, ssh: user@laptop.example, label: Pi, lanes: 1, executors: [herdr-claude, other], session: jh, herdrBin: /opt/herdr }',
     ].join('\n')));
     expect(r).toEqual({
       attachedMachines: [
         { name: 'laptop', ssh: 'laptop', lanes: 2, executors: ['herdr-claude'], session: 'job-hopper', herdrBin: 'herdr' },
-        { name: 'pi', ssh: 'user@host.example.net', label: 'Pi', lanes: 1, executors: ['herdr-claude', 'other'], session: 'jh', herdrBin: '/opt/herdr' },
+        { name: 'pi', ssh: 'user@laptop.example', label: 'Pi', lanes: 1, executors: ['herdr-claude', 'other'], session: 'jh', herdrBin: '/opt/herdr' },
       ],
       warnings: [],
     });
