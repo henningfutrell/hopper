@@ -43,12 +43,13 @@ describe('usage model', () => {
     expect(laneEffectText(m({ online: false, cap: 0, band: 'offline' }))).toBe('offline: no lanes');
   });
 
-  it('an account: the service by name, its facts as label/value pairs (lists joined)', () => {
+  it('an account: the service by name, its facts as label/value pairs (lists joined, empty ones left out)', () => {
     const app: PartAccount = { role: 'job-source', instance: 'github-app', service: 'github', identity: 'jh[bot]', detail: { via: 'GitHub App', installedRepos: ['o/a', 'o/b'] } };
     expect(serviceLabel('claude')).toBe('Claude');
     expect(serviceLabel('github')).toBe('GitHub');
     expect(serviceLabel('other')).toBe('other');
     expect(accountFacts(app)).toEqual([['via', 'GitHub App'], ['installed repos', 'o/a, o/b']]);
+    expect(accountFacts({ ...app, detail: { via: 'GitHub App', installedRepos: [] } })).toEqual([['via', 'GitHub App']]);
     expect(accountFacts({ ...app, detail: { plan: 'max', organization: 'Org', authMethod: 'claude.ai' } })).toEqual([['plan', 'max'], ['organization', 'Org'], ['sign-in', 'claude.ai']]);
   });
 });
