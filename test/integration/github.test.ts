@@ -1,7 +1,7 @@
 // The GitHub source end to end through the real daemon, against the in-memory fake GitHub at
 // the GitHubApi seam (never the real one). Issues carry a scripted-executor op as their first
 // body line (test/support/scripted-executor.ts). Syncs are driven with syncNow (pollSeconds is long).
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Job } from '../../src/domain/types.ts';
 import { createFakeGitHub, type FakeGitHub } from '../../src/sources/index.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
@@ -106,7 +106,7 @@ describe('GitHub issue → job → issue', () => {
     expect(gh.issue(REPO, issue.number).labels).toEqual(['hopper']);
   });
 
-  it('closing the issue cancels the running job and comments; removing the label does too', async () => {
+  it('closing the issue cancels the running job without a comment; removing the label does too', async () => {
     const gh = createFakeGitHub();
     const a = await boot(gh);
     const closed = gh.createIssue({ repo: REPO, body: body({ op: 'sleep', ms: 10000 }), labels: ['hopper'] });
@@ -122,9 +122,30 @@ describe('GitHub issue → job → issue', () => {
     await a.waitForStatus(j2.id, 'cancelled');
     const reasons = (await a.events('types=job.cancelled')).map((e) => [e.jobId, e.data.reason]);
     expect(reasons).toEqual(expect.arrayContaining([[j1.id, 'issue closed'], [j2.id, 'label removed']]));
-    await waitFor(() => bodies(gh, closed.number).some((b) => b.includes('kind=cancelled') && b.includes('issue closed')), { what: 'cancel comment' });
-    await waitFor(() => bodies(gh, unlabelled.number).some((b) => b.includes('label removed')), { what: 'cancel comment 2' });
-    expect(gh.issue(REPO, closed.number).labels).not.toContain('hopper:claimed');
+    await waitFor(() => !gh.issue(REPO, closed.number).labels.includes('hopper:claimed'), { what: 'claimed label removed' });
+    await waitFor(() => !gh.issue(REPO, unlabelled.number).labels.includes('hopper:claimed'), { what: 'claimed label removed 2' });
+    expect(bodies(gh, closed.number).filter((b) => !b.includes('kind=claimed'))).toEqual([]);
+    expect(bodies(gh, unlabelled.number).filter((b) => !b.includes('kind=claimed'))).toEqual([]);
+  });
+
+  it('a failed job labels the issue hopper:failed, leaves no comment, and logs one line', async () => {
+    const logged: string[] = [];
+    const spy = vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => { logged.push(args.join(' ')); });
+    try {
+      const gh = createFakeGitHub();
+      const a = await boot(gh);
+      const issue = gh.createIssue({ repo: REPO, body: body({ op: 'fail', message: 'boom' }), labels: ['hopper'] });
+      await a.sync();
+      const job = (await jobFor(a, issue.url))!;
+      await a.waitForStatus(job.id, 'failed');
+      await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:failed'), { what: 'failed label' });
+      expect(gh.issue(REPO, issue.number).labels).not.toContain('hopper:claimed');
+      expect(bodies(gh, issue.number).filter((b) => !b.includes('kind=claimed'))).toEqual([]);
+      expect((await jobFor(a, issue.url))!.error).toBe('boom');
+      expect(logged).toContain(`job-hopper: job ${job.id} failed (${issue.url}): boom`);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('priority: label, project wins over label, and a re-sort on the next poll emits job.reprioritized', async () => {
