@@ -64,7 +64,7 @@ describe('ssh to a target: key-based authentication only', () => {
   });
 
   it('forwards nothing to the target', () => {
-    expect(opts(argv())).toEqual(expect.arrayContaining(['ForwardAgent=no', 'ForwardX11=no', 'ClearAllForwardings=yes', 'PermitLocalCommand=no']));
+    expect(opts(argv())).toEqual(expect.arrayContaining(['ForwardAgent=no', 'ForwardX11=no', 'ClearAllForwardings=yes', 'PermitLocalCommand=no', 'RequestTTY=no']));
   });
 
   it('refuses a target that goes through a jump host or a proxy command: their ssh would not be this one', () => {
