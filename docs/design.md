@@ -219,6 +219,7 @@ Loopback (`127.0.0.1`), plus the LAN names when set — "Reaching the UI across 
 | GET | `/api/events/stream` | `?after=<seq>` or `Last-Event-ID` | SSE (below) |
 | GET | `/api/router` | | `{ mode, router, plugin, fallback, reason? }` (phase 5; was `GET /api/jev`) |
 | GET | `/api/plugins` | | `PluginsReport` (phase 5): roles, config, router instance + selection + detection + fallback, every plugin |
+| GET | `/api/question-gates` | | `QuestionGatesView` (issue #18): `{ rulesFile: { path, text, version, missing }, riskRules: { name, describe }[] }` |
 | GET | `/api/usage` | | `{ readings: UsageReading[] }` |
 | PUT | `/api/usage/fake` | `{ used, limit, unit?, machineId? }` | `{ readings }` · 404 if no fake source |
 | POST | `/api/webhooks` | `{ url, events?: string[], secret?: string }` | 201 `WebhookSubscription` (secret shown once) |
@@ -539,7 +540,8 @@ Each rule has a name (`delete`, `deploy`, `force-push`, `spend`, `credentials`,
 `send-message`); matches are recorded in `riskRules`.
 
 **Rules file** `JOB_HOPPER_RULES_FILE` (default `~/.config/job-hopper/rules.md`), read on
-every ask; missing → empty rules, noted in the prompt and the attempt reason.
+every ask; missing → empty rules, noted in the prompt and the attempt reason. Editable from the
+UI since issue #18 ("Question gates" at the end); an edit applies to the next question.
 `scripts/install.sh` writes a starter file only if none exists.
 
 **Atomicity (B3).** Every QuestionService write is one `store.tx`, compare-and-set on
@@ -826,6 +828,7 @@ token and send any `Origin`. Cookies are no better here: they ignore ports, so a
 | POST | `/ui/api/questions/:id/close` | `{}` | `QuestionService.closeByHuman` (404/409): close without answering ("Questions" → Close) |
 | POST | `/ui/api/router-mode` | `{ mode }` | set router mode (phase 5; was `/ui/api/jev`) |
 | POST | `/ui/api/plugins` | `{ action, … }` | edit plugins.yaml: one instance's options, select a plugin, rescan (phase 5 slice 7; "Settled in slice 7") |
+| POST | `/ui/api/rules-file` | `{ text, version }` | replace the rules file whole (issue #18, "Question gates"): 400 over 64 KiB, 409 stale `version` |
 | POST | `/ui/api/device-link` | `{}` | `{ links }`: the current login code as `http://<LAN name>:<port>/#login=<code>`, one per LAN name; 409 without LAN names ("Reaching the UI across the LAN") |
 | POST | `/ui/api/logout` | `{}` | drop the session |
 
@@ -2360,3 +2363,37 @@ session still expires after `JOB_HOPPER_UI_SESSION_HOURS` (12).
 token or a device link in flight. Accepted for a home LAN; the peer list keeps the VPN and container
 networks out. A device link is as strong as the login code file and works once.
 
+## UI manages everything (issue #18, 2026-10-03)
+
+Owner request: set question gates from the UI.
+
+### Question gates (issue #18)
+
+The **question gates** are the chain an open question goes through: answerer (drafts) →
+assessor (escalates or not) → risk rules → the owner. One panel in the Questions view, below the
+open questions (collapsed by default under 640 px), shows the chain with each live stage's
+instance and state, and edits what is configuration:
+
+- **Answerer and assessor** — the plugin filling each (the answerer may be none) and each
+  instance's non-command options (model, timeoutMs, effort, …), through the existing
+  `POST /ui/api/plugins` `select` / `options`. Gate state comes from `GET /api/plugins`
+  (`answerer`, `assessor`): active plugin, detection, fallback (`always-escalate` standing in for an
+  assessor that cannot run; no answerer for one that cannot) and the reason. Nothing new on the
+  plugins side. The form is shared with the Plugins view: `ui/src/components/plugin-form.tsx`
+  (`InstanceForm { role, inst }`, `PluginSelector { role }`, `sendPluginsEdit`,
+  `pluginEditsUnsaved`), extracted from `views/plugins.tsx`; each form holds its own unsaved edits.
+- **Rules file** — `GET /api/question-gates` → `{ rulesFile: { path, text, version, missing },
+  riskRules }`; `POST /ui/api/rules-file { text, version }` (UI-session guarded) replaces it whole:
+  `version` is the sha-256 of the file's bytes (or `missing`), stale → 409; more than 64 KiB
+  (`RULES_FILE_MAX_BYTES`, UTF-8 bytes) → 400; written atomically (temp file beside it, rename),
+  keeping the file's mode, 600 for a new one. Answers the new `rulesFile`. The question service
+  reads the file on every ask (`requestFor`, `src/questions/service.ts`), so the next question's
+  answerer and assessor get the edit without a restart. The UI keeps an unsaved edit in
+  `localStorage` (`jh_rules_draft`: path, text, the version it began from), so it survives a reload;
+  a draft over an older version is shown stale and Save is refused until Discard.
+- **Risk rules** — code (`src/questions/risk.ts`), listed read-only with one line each
+  (`RISK_RULES`); no setting weakens them.
+
+`GET /api/question-gates` is a read: open on loopback, session-only across the LAN. Residual risk:
+every local user can read the rules text (as every GET), and a session holder can rewrite the rules,
+which steer the answerer and assessor; the assessor's fail-closed contract and the risk rules stand.
