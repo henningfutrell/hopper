@@ -31,6 +31,8 @@ export interface ServerOptions {
   /** Where the UI login code file lives. */
   dataDir: string;
   sessionHours: number;
+  /** The built UI bundle (ui/dist). */
+  uiDir: string;
   /** Fastify logger; off by default. */
   logger?: boolean;
 }
@@ -45,7 +47,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   webhookRoutes(app, o);
   sourceRoutes(app, o);
   sseRoutes(app, o);
-  staticRoutes(app);
+  staticRoutes(app, o.uiDir);
   registerUiRoutes(app, { engine: o.engine, questions: o.questions, plugins: o.plugins, port: o.port, dataDir: o.dataDir, clock: o.clock, sessionHours: o.sessionHours });
   return app;
 }
