@@ -182,6 +182,56 @@ describe('a question escalated to the human', () => {
     expect((await a.api('GET', `/api/questions/${q.id}`)).body.status).toBe('open');
   });
 
+  it('Dismiss in the UI drops a question: question.dismissed, nothing typed in, and the job still waiting on it is cancelled', async () => {
+    const a = await start();
+    const token = await a.login();
+    const job = await a.pull(ask('Is this risky?'));
+    const q = await a.waitForQuestion(job.id, (x) => x.tier === 'human');
+    const res = await a.ui<Question>(`/ui/api/questions/${q.id}/dismiss`, {}, { token });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ status: 'dismissed' });
+    expect(res.body.answer).toBeUndefined();
+    const done = await a.waitForStatus(job.id, 'cancelled');
+    expect(done.pendingAnswer).toBeUndefined();
+    const events = ofJob(await a.events(), job.id);
+    expect(events.find((e) => e.type === 'question.dismissed')).toMatchObject({ questionId: q.id, data: { questionId: q.id } });
+    expect(events.find((e) => e.type === 'job.cancelled')!.data).toEqual({ reason: 'question dismissed' });
+    expect(events.find((e) => e.type === 'job.requeued')).toBeUndefined();
+    expect((await a.api<{ questions: Question[] }>('GET', '/api/questions')).body.questions).toEqual([]);
+    expect((await a.api<{ questions: Question[] }>('GET', '/api/questions?status=dismissed')).body.questions.map((x) => x.id)).toEqual([q.id]);
+    expect((await a.ui(`/ui/api/questions/${q.id}/dismiss`, {}, { token })).status).toBe(409);
+    expect((await a.ui('/ui/api/questions/nope/dismiss', {}, { token })).status).toBe(404);
+  });
+
+  it('Dismiss and Seen are guarded like answer: no session, no change', async () => {
+    const a = await start();
+    const job = await a.pull(ask('Is this risky?'));
+    const q = await a.waitForQuestion(job.id, (x) => x.tier === 'human');
+    expect((await a.ui(`/ui/api/questions/${q.id}/dismiss`, {})).status).toBe(403);
+    expect((await a.ui(`/ui/api/questions/${q.id}/seen`, {})).status).toBe(403);
+    const now = (await a.api<Question>('GET', `/api/questions/${q.id}`)).body;
+    expect(now.status).toBe('open');
+    expect(now.seenAt).toBeUndefined();
+  });
+
+  it('Seen marks a question seen once: seenAt is set, kept on a second call, and survives in the history', async () => {
+    const a = await start();
+    const token = await a.login();
+    const job = await a.pull(ask('Is this risky?'));
+    const q = await a.waitForQuestion(job.id, (x) => x.tier === 'human');
+    expect(q.seenAt).toBeUndefined();
+    const first = await a.ui<Question>(`/ui/api/questions/${q.id}/seen`, {}, { token });
+    expect(first.status).toBe(200);
+    expect(first.body.seenAt).toEqual(expect.any(String));
+    const again = await a.ui<Question>(`/ui/api/questions/${q.id}/seen`, {}, { token });
+    expect(again.body.seenAt).toBe(first.body.seenAt);
+    expect((await a.api<Question>('GET', `/api/questions/${q.id}`)).body).toMatchObject({ status: 'open', seenAt: first.body.seenAt });
+    expect((await a.ui('/ui/api/questions/nope/seen', {}, { token })).status).toBe(404);
+    await a.ui(`/ui/api/questions/${q.id}/answer`, { answer: 'go ahead' }, { token });
+    const all = (await a.api<{ questions: Question[] }>('GET', '/api/questions?status=all')).body.questions;
+    expect(all.find((x) => x.id === q.id)).toMatchObject({ status: 'answered', answer: 'go ahead', seenAt: first.body.seenAt });
+  });
+
   it('cancelling a waiting job in the UI cancels its question', async () => {
     const a = await start();
     const token = await a.login();
