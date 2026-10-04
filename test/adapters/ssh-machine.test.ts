@@ -20,7 +20,7 @@ function harness(results: (boolean | Error)[]) {
   const lines: string[] = [];
   let calls = 0;
   const src = createAttachedMachineSource({
-    machine: { name: 'laptop', ssh: 'laptop', lanes: 2, executors: ['herdr-claude'] },
+    machine: { name: 'laptop', ssh: 'laptop', lanes: 2, executors: ['herdr-claude'], session: 'job-hopper', herdrBin: '/home/h/.local/bin/herdr' },
     clock: { now: () => new Date(t) },
     probeEveryMs: 30000,
     probe: async () => {
@@ -36,7 +36,10 @@ function harness(results: (boolean | Error)[]) {
 describe('attached machine source', () => {
   it('is offline until the first probe answers, then online with its lanes, executors and ssh target', async () => {
     const h = harness([true]);
-    expect(await h.src.list()).toEqual([{ id: 'laptop', label: 'laptop', maxLanes: 2, online: false, executors: ['herdr-claude'], ssh: 'laptop' }]);
+    expect(await h.src.list()).toEqual([{
+      id: 'laptop', label: 'laptop', maxLanes: 2, online: false, executors: ['herdr-claude'], ssh: 'laptop',
+      herdr: { bin: '/home/h/.local/bin/herdr', session: 'job-hopper' },
+    }]);
     await flush();
     expect((await h.src.list())[0]).toMatchObject({ online: true });
     expect(h.lines).toEqual(['job-hopper: attached machine laptop online (ssh laptop)']);
@@ -69,7 +72,7 @@ describe('attached machine source', () => {
 
   it('honours a label', async () => {
     const h = createAttachedMachineSource({
-      machine: { name: 'laptop', label: 'arch-laptop', ssh: 'laptop', lanes: 1, executors: [] }, probe: async () => true,
+      machine: { name: 'laptop', label: 'arch-laptop', ssh: 'laptop', lanes: 1, executors: [], session: 'job-hopper', herdrBin: 'herdr' }, probe: async () => true,
     });
     expect((await h.list())[0]!.label).toBe('arch-laptop');
   });

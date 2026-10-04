@@ -59,7 +59,7 @@ describe('attach-machine.sh', () => {
     expect(r.stdout).toContain('herdr session job-hopper is running on laptop');
     // The plugins.yaml lines to add, ready to paste.
     expect(r.stdout).toContain('attachedMachines:');
-    expect(r.stdout).toContain('- { name: laptop, ssh: laptop, lanes: 2 }');
+    expect(r.stdout).toContain(`- { name: laptop, ssh: laptop, lanes: 2, herdrBin: ${bin}/herdr }`);
   });
 
   it('refuses without a target, and a target ssh would read as an option', () => {

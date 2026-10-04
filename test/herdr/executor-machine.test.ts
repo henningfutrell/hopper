@@ -9,13 +9,15 @@ const ASK: FakeTurn = { output: ['● Which branch?', '  JOB_HOPPER_QUESTION'] }
 
 describe('herdr-claude executor on an attached machine', () => {
   it('runs the job through that machine\'s herdr; this machine\'s herdr sees nothing', async () => {
-    const { herdr, remotes, executor } = setup({}, { remote: { laptop: { turns: [DONE] } } });
+    const { herdr, remotes, reached, executor } = setup({}, { remote: { laptop: { turns: [DONE] } } });
     const { ctx, saved } = contextFor(jobWith({ prompt: 'go' }), 'laptop/lane-1', LAPTOP);
     const out = await executor.run(ctx);
     expect(out).toMatchObject({ kind: 'finished', result: { summary: 'Done on the laptop.' } });
     expect(herdr.calls).toEqual([]);
     expect(remotes.get('laptop')!.agentStarts).toHaveLength(1);
-    expect(saved[0]).toMatchObject({ ssh: 'laptop', paneId: 'w1:p1', laneId: 'laptop/lane-1' });
+    // The machine's own herdr binary and session, by absolute path: never its PATH.
+    expect(reached[0]).toEqual({ ssh: 'laptop', bin: '/home/h/.local/bin/herdr', session: 'jh-there' });
+    expect(saved[0]).toMatchObject({ ssh: 'laptop', herdrBin: '/home/h/.local/bin/herdr', session: 'jh-there', paneId: 'w1:p1', laneId: 'laptop/lane-1' });
   });
 
   it('a job on this machine records no ssh target', async () => {
@@ -26,7 +28,7 @@ describe('herdr-claude executor on an attached machine', () => {
   });
 
   it('resume, cleanup and reattach of an attached-machine job go to that machine', async () => {
-    const { herdr, remotes, executor } = setup({}, { remote: { laptop: { turns: [ASK, DONE] } } });
+    const { herdr, remotes, reached, executor } = setup({}, { remote: { laptop: { turns: [ASK, DONE] } } });
     const first = contextFor(jobWith({ prompt: 'go' }), 'laptop/lane-1', LAPTOP);
     expect((await executor.run(first.ctx)).kind).toBe('question');
     const job = jobWith({ prompt: 'go' }, { executorState: first.saved.at(-1) });
@@ -38,6 +40,8 @@ describe('herdr-claude executor on an attached machine', () => {
     expect(laptop.prompts.map((p) => p.text).at(-1)).toBe('main');
     expect(laptop.calls.some((c) => c.method === 'closePane')).toBe(true);
     expect(herdr.calls).toEqual([]);
+    // cleanup has only the job: its saved state names the same machine, binary and session.
+    expect(new Set(reached.map((r) => JSON.stringify(r)))).toEqual(new Set([JSON.stringify({ ssh: 'laptop', bin: '/home/h/.local/bin/herdr', session: 'jh-there' })]));
   });
 
   it('the same pane id on two machines is two panes: neither lane is refused', async () => {

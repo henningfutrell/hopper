@@ -7,7 +7,7 @@ export const JOB_ID = 'abcdef12-3456-7890-abcd-ef1234567890';
 export const CWD = '/tmp/jh-work';
 export const LANE = 'local/lane-1';
 export const LOCAL: MachineSnapshot = { id: 'local', label: 'server', maxLanes: 4, online: true, executors: ['herdr-claude'] };
-export const LAPTOP: MachineSnapshot = { id: 'laptop', label: 'laptop', maxLanes: 2, online: true, executors: ['herdr-claude'], ssh: 'laptop' };
+export const LAPTOP: MachineSnapshot = { id: 'laptop', label: 'laptop', maxLanes: 2, online: true, executors: ['herdr-claude'], ssh: 'laptop', herdr: { bin: '/home/h/.local/bin/herdr', session: 'jh-there' } };
 
 /** A clock that only moves when the executor sleeps; each sleep yields one macrotask. */
 export function fakeClock(start = Date.parse('2026-10-02T12:00:00Z')) {
@@ -44,19 +44,21 @@ export function setup(
   overrides: { trustWorkdir?: boolean; idleQuestionMs?: number; claudeArgs?: string[]; remote?: Record<string, FakeHerdrOptions> } = {},
 ) {
   const herdr = createFakeHerdrClient({ session: 'jh-test', ...fakeOptions });
-  const remotes = new Map(Object.entries(overrides.remote ?? {}).map(([target, fo]) => [target, createFakeHerdrClient({ session: 'jh-test', ...fo })]));
+  const remotes = new Map(Object.entries(overrides.remote ?? {}).map(([target, fo]) => [target, createFakeHerdrClient({ session: 'jh-there', ...fo })]));
+  const reached: unknown[] = [];
   const { clock, sleep } = fakeClock();
   const executor = createHerdrClaudeExecutor({
     herdr, clock, sleep,
-    remote: (target) => {
-      const r = remotes.get(target);
-      if (!r) throw new Error(`no fake herdr for ${target}`);
+    remote: (there) => {
+      reached.push(there);
+      const r = remotes.get(there.ssh);
+      if (!r) throw new Error(`no fake herdr for ${there.ssh}`);
       return r;
     },
     defaultCwd: CWD, claudeArgs: overrides.claudeArgs ?? ['--dangerously-skip-permissions'],
     trustWorkdir: overrides.trustWorkdir ?? true, pollMs: 1000, idleQuestionMs: overrides.idleQuestionMs ?? 20000,
   });
-  return { herdr, remotes, clock, executor };
+  return { herdr, remotes, reached, clock, executor };
 }
 
 /** Yield macrotasks until cond holds (the executor loop advances one poll per yield). */
