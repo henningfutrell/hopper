@@ -17,6 +17,7 @@ export const INVALID_DATA: Partial<Record<EventType, Record<string, unknown>>> =
   'job.failed': { error: 7 },
   'job.cancelled': {},
   'job.requeued': { from: 'x' },
+  'job.reattached': {},
   'job.reprioritized': { from: 50, to: 'high', reason: 'r' },
   'lane.closed': {},
   'decision.made': { decisionId: 'd1' },
