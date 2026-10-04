@@ -42,6 +42,10 @@ export interface Config {
   lanNames: string[];
   /** CIDR ranges a LAN request may come from. */
   lanPeers: string[];
+  /** How often the self-update checks the update repository; 0: only when asked (design.md "Self-update"). */
+  updateCheckMs: number;
+  /** Forces how the daemon starts again after an update: `exit` (a supervisor restarts it) or `respawn`; absent: detected. */
+  restart?: 'exit' | 'respawn';
   /**
    * Every set JOB_HOPPER_* variable this config does not read, raw: the part-choosing ones removed
    * in phase 5 slices 4 and 5 (read once more by the plugins.yaml migration) and any unknown one. The
@@ -94,6 +98,8 @@ const schema = z.object({
   JOB_HOPPER_UI_SESSION_HOURS: z.coerce.number().finite().positive().default(12),
   JOB_HOPPER_PLUGIN_DIR: path('~/.config/job-hopper/plugins'),
   JOB_HOPPER_PLUGINS_FILE: path('~/.config/job-hopper/plugins.yaml'),
+  JOB_HOPPER_UPDATE_CHECK_MS: int(0).default(900000),
+  JOB_HOPPER_RESTART: z.enum(['exit', 'respawn']).optional(),
 }).refine((e) => e.JOB_HOPPER_SOFT_LIMIT < e.JOB_HOPPER_HARD_LIMIT, {
   message: 'must be below JOB_HOPPER_HARD_LIMIT',
   path: ['JOB_HOPPER_SOFT_LIMIT'],
@@ -148,6 +154,8 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     publicUrl: e.JOB_HOPPER_PUBLIC_URL,
     lanNames: e.JOB_HOPPER_LAN_NAMES,
     lanPeers: e.JOB_HOPPER_LAN_PEERS,
+    updateCheckMs: e.JOB_HOPPER_UPDATE_CHECK_MS,
+    ...(e.JOB_HOPPER_RESTART ? { restart: e.JOB_HOPPER_RESTART } : {}),
     leftoverEnv,
   };
 }

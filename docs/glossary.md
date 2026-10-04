@@ -114,6 +114,12 @@ synonyms. Rename here first, in the same commit as everything else.
 | **Rotate secret** | Replace a subscription's HMAC secret with a new one the daemon makes (32 random bytes, hex). The new secret is shown once, in the answer; a `secretFile` secret is rotated in that file only. | regenerate, reset |
 | **Notifier** | The role that tells something outside about events (`Notifier` port: `start(events)`, `stop()`). 0..n instances (plugins.yaml `notifiers:`; absent → the built-in `grok-bot` instance). Built-in plugin `grokbot-routine`. One that cannot run is dropped, its reason in `/api/plugins`. Not a *Webhook subscription*: no store row, no delivery. | connector (issue #6's word for a source or notifier instance) |
 | **Grok Bot routine webhook** | The one POST (bearer key, from the `grokbot-routine` notifier's `envFile`, default `grokbot-webhook.env` beside plugins.yaml) to a Grok Bot routine when a question reaches the human. Questions only. Not a *Webhook subscription*; nothing stored. | |
+| **Install** | The directory the daemon runs from (`~/.local/lib/job-hopper` from `scripts/install.sh`), with `install.json`: the repository, tracked branch and commit it was built from. Without install.json, self-update is unavailable. | deployment, copy |
+| **Update** | A newer commit than the installed one on the update channel (the **update target**: `ref` + commit), with the commits it adds. *Available* while the installed commit does not contain the target. **Applied** in flight: built beside the install, swapped in, then a restart. | upgrade, release (a release is one kind of target) |
+| **Update channel** | What counts as newer: `main` (every commit on the tracked branch) or `release` (the newest `v<major>.<minor>.<patch>` tag). A setting in the store. UI: `commits` / `releases`. | track, stream |
+| **Auto-update** | The setting that applies an available update as soon as a check finds it. | |
+| **Next install** | `<install>.next`: the update target built by `scripts/install.sh` in **build-only mode** (`JOB_HOPPER_INSTALL_INTO`), beside the running install, then swapped in; the replaced install stays as `<install>.prev`. | staged install (*stage* is a question's) |
+| **Restart blocker** | A running job a restart would lose — its executor is non-idempotent and cannot reattach. Applying an update waits until there is none. | |
 | **Delivery** | One attempt series sending one event to one subscription. `pending`, `retrying`, `delivered`, `failed`. | |
 
 ## Events
@@ -142,3 +148,7 @@ synonyms. Rename here first, in the same commit as everything else.
 | QuestionClosed (by the human, without an answer) | `question.closed` |
 | QuestionDismissed (by the human; needs no action) | `question.dismissed` |
 | QuestionExpired | `question.expired` |
+| UpdateAvailable | `update.available` |
+| UpdateStarted | `update.started` |
+| UpdateApplied | `update.applied` |
+| UpdateFailed | `update.failed` |

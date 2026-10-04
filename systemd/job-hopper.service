@@ -22,6 +22,9 @@ Environment=JOB_HOPPER_WEBHOOKS_FILE=%h/.config/job-hopper/webhooks.yaml
 EnvironmentFile=-%h/.config/job-hopper/daemon.env
 Restart=on-failure
 RestartSec=2
+# Self-update (design.md "Self-update"): exit 75 means "start me again on the new install".
+SuccessExitStatus=75
+RestartForceExitStatus=75
 KillSignal=SIGTERM
 TimeoutStopSec=10
 NoNewPrivileges=true

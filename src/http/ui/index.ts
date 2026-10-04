@@ -8,8 +8,8 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { existsSync, unlinkSync } from 'node:fs';
 import { LOCAL_IDENTITY, type SignIn } from '../../auth/index.ts';
-import type { PluginsView, QuestionService, Store } from '../../domain/ports.ts';
-import { LIST_ROLES, ROLES, SELECTABLE_ROLES, type SessionView, type UiRole } from '../../domain/types.ts';
+import type { PluginsView, QuestionService, Store, Updater } from '../../domain/ports.ts';
+import { LIST_ROLES, ROLES, SELECTABLE_ROLES, UPDATE_CHANNELS, type SessionView, type UiRole } from '../../domain/types.ts';
 import type { Engine } from '../../engine/index.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { lanHosts, type Lan } from '../reach.ts';
@@ -40,6 +40,7 @@ export interface UiRouteOptions {
   store: Pick<Store, 'webhooks'>;
   webhookConfig: WebhookConfigView;
   webhooksEditor: WebhooksEditor;
+  updater: Updater;
 }
 
 const idParams = z.object({ id: z.string() });
@@ -71,6 +72,12 @@ const machinesEditBody = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('add'), name: machineName, ssh: z.string().min(1), lanes: machineLanes, executors: machineExecutors.optional(), label: z.string().trim().min(1).optional(), version: z.string().min(1) }),
   z.strictObject({ action: z.literal('edit'), name: machineName, lanes: machineLanes.optional(), executors: machineExecutors.optional(), label: z.string().trim().min(1).nullable().optional(), version: z.string().min(1) }),
   z.strictObject({ action: z.literal('remove'), name: machineName, version: z.string().min(1) }),
+]);
+// Self-update (issue #44): check now, apply the available update, or set the channel / auto-update.
+const updateBody = z.discriminatedUnion('action', [
+  z.strictObject({ action: z.literal('check') }),
+  z.strictObject({ action: z.literal('apply') }),
+  z.strictObject({ action: z.literal('settings'), channel: z.enum(UPDATE_CHANNELS).optional(), autoUpdate: z.boolean().optional() }),
 ]);
 const EDIT_STATUS = { invalid: 400, not_found: 404, conflict: 409 } as const;
 /** The rules themselves are validated by the plugin host (the plugins.yaml schema), so a refusal names the field. */
@@ -206,6 +213,20 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     const r = await o.plugins.editRouting(parseWith(routingEditBody, req.body));
     if (!r.ok) throw new HttpError(EDIT_STATUS[r.code], r.error);
     return r.report;
+  });
+
+  // design.md "Self-update": answers the new GET /api/update status. `apply` answers at once (the
+  // build runs in the background; the daemon then restarts), or 409 when nothing can be applied.
+  app.post('/ui/api/update', admin, async (req) => {
+    const body = parseWith(updateBody, req.body);
+    if (body.action === 'check') return o.updater.check();
+    if (body.action === 'settings') {
+      const { action: _, ...patch } = body;
+      return o.updater.settings(patch);
+    }
+    const r = o.updater.apply();
+    if (!r.ok) throw new HttpError(409, r.error);
+    return r.status;
   });
 
   // The current login code as a link per LAN name, in the fragment (never sent to a server). It

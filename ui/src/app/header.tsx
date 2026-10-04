@@ -1,5 +1,6 @@
-// The top bar: connection, router mode (switchable by an admin), router health, uptime, who is
-// signed in and with which role, logout, and a device link for another browser.
+// The top bar: version (opens the update panel), connection, router mode (switchable by an admin),
+// router health, uptime, who is signed in and with which role, logout, and a device link for another
+// browser.
 import { LogOut, Moon, Rabbit, Sun } from 'lucide-react';
 import { setTheme, useTheme } from '@/hooks/use-theme';
 import { Button } from '@/components/ui/button';
@@ -9,6 +10,7 @@ import { duration } from '@/model/format';
 import { act, logout, refreshHealth, useHopper } from '@/store';
 import { useCanAdmin } from '@/store/selectors';
 import { DeviceLink } from './device-link';
+import { UpdateButton } from './update';
 
 export function Header({ nav }: { nav?: React.ReactNode }) {
   const health = useHopper((s) => s.health);
@@ -28,7 +30,7 @@ export function Header({ nav }: { nav?: React.ReactNode }) {
           <span className="grid size-7 place-items-center rounded-md bg-busy/15 text-busy"><Rabbit className="size-4" /></span>
           job-hopper
         </div>
-        <span className="hidden font-mono text-[11px] text-muted-foreground sm:inline">{health?.version}</span>
+        <UpdateButton version={health?.version} />
         <div className="ml-auto flex items-center gap-2 text-xs sm:gap-3">
           <div className="hidden items-center gap-1.5 md:flex">
             <span className="text-muted-foreground">router</span>

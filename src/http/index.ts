@@ -3,7 +3,7 @@
 // Host guard (AGENTS.md).
 import Fastify, { type FastifyInstance } from 'fastify';
 import type { SignIn } from '../auth/index.ts';
-import type { Clock, PluginsView, QuestionService, SourceRegistry, Store, WebhookDispatcher } from '../domain/ports.ts';
+import type { Clock, PluginsView, QuestionService, SourceRegistry, Store, Updater, WebhookDispatcher } from '../domain/ports.ts';
 import type { Engine } from '../engine/index.ts';
 import type { WebhookConfigView } from './webhooks.ts';
 import type { WebhooksEditor } from '../webhooks/edit.ts';
@@ -20,6 +20,7 @@ import { stateRoutes } from './state.ts';
 import { staticRoutes } from './static.ts';
 import { registerUiRoutes } from './ui/index.ts';
 import { createUiSessions } from './ui/sessions.ts';
+import { updateRoutes } from './update.ts';
 import { webhookRoutes } from './webhooks.ts';
 
 export interface ServerOptions {
@@ -33,6 +34,8 @@ export interface ServerOptions {
   webhookConfig: WebhookConfigView;
   /** UI edits of webhooks.yaml (POST /ui/api/webhooks). */
   webhooksEditor: WebhooksEditor;
+  /** Self-update: GET /api/update, POST /ui/api/update. */
+  updater: Updater;
   clock: Clock;
   version: string;
   /** The bound port, for the Host guard and the UI Origin check (known only after listen). */
@@ -67,11 +70,12 @@ export function createServer(o: ServerOptions): FastifyInstance {
   webhookRoutes(app, o);
   sourceRoutes(app, o);
   accountRoutes(app, o);
+  updateRoutes(app, o);
   sseRoutes(app, o);
   staticRoutes(app, o.uiDir);
   registerUiRoutes(app, {
     engine: o.engine, questions: o.questions, sessions, signIn: o.signIn, plugins: o.plugins, rulesFile: o.rulesFile, port: o.port, lan: o.lan, dataDir: o.dataDir,
-    store: o.store, webhookConfig: o.webhookConfig, webhooksEditor: o.webhooksEditor,
+    store: o.store, webhookConfig: o.webhookConfig, webhooksEditor: o.webhooksEditor, updater: o.updater,
   });
   return app;
 }

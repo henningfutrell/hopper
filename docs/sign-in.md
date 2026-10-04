@@ -76,7 +76,7 @@ environment) — exactly one. The SAML certificate is not a secret: `idpCert` or
 |---|---|
 | `viewer` | read everything the UI shows |
 | `operator` | + cancel and approve jobs; answer, close, dismiss questions and mark them seen |
-| `admin` | + change configuration: plugins, machines, routing rules, webhooks, the rules file, router mode; hand out device links |
+| `admin` | + change configuration: plugins, machines, routing rules, webhooks, the rules file, router mode; apply updates; hand out device links |
 
 The login code always signs in as `admin`. For a provider, `roles` decides, the same way for every
 type:
