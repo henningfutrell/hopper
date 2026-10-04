@@ -35,6 +35,16 @@ describe('systemd/job-hopper.service', () => {
     expect(text).toMatch(/^RestartForceExitStatus=75$/m);
   });
 
+  it('hides the root docker socket from the daemon: docker only through a socket only it may open (issue #59)', () => {
+    const text = readFileSync(UNIT, 'utf8');
+    expect(text).toMatch(/^InaccessiblePaths=-\/run\/docker\.sock -\/var\/run\/docker\.sock$/m);
+  });
+
+  it('the daemon reads the hopper\'s ssh key and its docker socket without warning about them (issue #59)', () => {
+    const c = loadConfig({ JOB_HOPPER_DATABASE_URL: 'postgres://u:p@db:5432/jh', JOB_HOPPER_SSH_KEY_FILE: '/run/creds/key', JOB_HOPPER_DOCKER_HOST: 'unix:///run/x.sock' });
+    expect(c.leftoverEnv).toEqual({});
+  });
+
   it('install.sh writes no part-choosing variable and no sources.yaml', () => {
     const text = readFileSync(INSTALL, 'utf8');
     expect(text).not.toMatch(/JOB_HOPPER_(EXECUTORS|HERDR_|CLAUDE_|SOURCES_FILE|GH_BIN|LOCAL_LANES|ANSWER_MODEL|JEV_)/);
