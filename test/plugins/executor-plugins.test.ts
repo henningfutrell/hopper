@@ -11,7 +11,7 @@ import herdrClaude, { herdrClaudePlugin } from '../../src/plugins/executor/herdr
 import testExecutor from '../../src/plugins/executor/test/index.ts';
 import { optionsJsonSchema, parseOptions } from '../../src/plugins/options.ts';
 import jevRouter from '../../src/plugins/router/jev-router/index.ts';
-import type { PluginDefinition } from '../../src/plugins/sdk.ts';
+import type { PluginDefinition, Role } from '../../src/plugins/sdk.ts';
 import { createFakeHerdrClient } from '../../src/executors/herdr/index.ts';
 import { fakeKit, fixedClock, useTempDirs } from './support.ts';
 
@@ -19,10 +19,11 @@ const temp = useTempDirs();
 const logger = { info() {}, warn() {} };
 const ctx = (dir: string) => ({ clock: fixedClock, logger, dataDir: dir, scratchDir: join(dir, 'scratch') });
 
-function options(def: PluginDefinition, raw: unknown = {}): Record<string, unknown> {
+/** The options `def` would get from `raw`, as its own options type. */
+function options<O>(def: PluginDefinition<Role, O>, raw: unknown = {}): O {
   const r = parseOptions(def, raw);
   if (!r.ok) throw new Error(r.error);
-  return r.options;
+  return r.options as O;
 }
 
 /** The options' JSON Schema properties, as /api/plugins shows them. */

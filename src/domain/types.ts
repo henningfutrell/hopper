@@ -1,5 +1,6 @@
 // The job-hopper domain vocabulary. Every name here is defined in docs/glossary.md;
 // change the glossary in the same commit as any rename.
+import type { ExecutorUnavailable } from './plugins.ts';
 
 export type JobId = string;
 export type MachineId = string;
@@ -172,6 +173,8 @@ export interface DecisionInputs {
   waiting: Job[];
   /** Jobs claimed or running. */
   running: Job[];
+  /** Configured executors that cannot run; jobs naming one are held. Absent on Decisions stored before phase 5 slice 3. */
+  unavailableExecutors: ExecutorUnavailable[];
   policy: DeciderPolicy;
 }
 
@@ -417,4 +420,6 @@ export interface SourceStatus {
 // ---- Plugins: src/domain/plugins.ts (re-exported here, one vocabulary) ------------------
 
 export { ROLES } from './plugins.ts';
-export type { Detection, InstanceSpec, PluginsReport, QuestionRoleStatus, Role, RouterStatus } from './plugins.ts';
+export type {
+  Detection, ExecutorInstanceStatus, ExecutorUnavailable, InstanceSpec, PluginsReport, QuestionRoleStatus, Role, RouterStatus,
+} from './plugins.ts';

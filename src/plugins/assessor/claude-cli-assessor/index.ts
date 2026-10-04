@@ -27,7 +27,7 @@ const claudeCliAssessor: PluginDefinition<'assessor', ClaudeCliAssessorOptions> 
   role: 'assessor',
   describe: 'Decides with the claude CLI (print mode, no tools) whether the owner must see a question; never answers',
   options: (zod) => zod.object({
-    bin: zod.string().min(1).default('claude'),
+    bin: zod.string().min(1).default('claude').meta({ commandBearing: true }),
     model: zod.string().min(1).default('fable'),
     timeoutMs: zod.number().int().positive().default(CLAUDE_TIMEOUT_MS),
   }),

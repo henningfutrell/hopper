@@ -24,7 +24,7 @@ plugin" is its current enactment; Phase 6 items are judged against it.
                       │   machines · lanes · usage · waiting · running · router mode
                       └── apply: lanes open/close/drain, claim+start jobs, holds
                                  │
-                              executors (test; herdr-claude later)
+                              executors (plugin instances: herdr-claude, test)
 ```
 
 One process. Node ≥ 24 runs the TypeScript directly (type stripping) — no build step.
@@ -39,8 +39,8 @@ Fastify for HTTP, `node:sqlite` for storage, zod for request validation.
 | `src/store/` | SQLite schema, migrations, repositories, event log | engine, http, decider |
 | `src/webhooks/` | signing, dispatcher, retry/backoff | engine, http, decider |
 | `src/grokbot/` | the Grok Bot routine webhook: env-file reader, notifier (event log → POST) | engine, http, decider |
-| `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `job-hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, `plugins.yaml` + watch, the role slots (`router-slot.ts` with the shared `instantiate`, `question-slots.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`); built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `answerer/claude-cli/`, `assessor/claude-cli-assessor/`, `assessor/always-escalate/` hold their prompts) | engine, http, store, decider, questions |
-| `src/executors/` | `Executor` adapters: `test` | engine, http, store |
+| `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `job-hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, `plugins.yaml` + watch, the role slots (`router-slot.ts` with the shared `instantiate`, `question-slots.ts`, `executor-slot.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `answerer/claude-cli/`, `assessor/claude-cli-assessor/`, `assessor/always-escalate/` hold their prompts; `executor/herdr-claude/` and `executor/test/` wrap the adapters in `src/executors/`) | engine, http, store, decider, questions |
+| `src/executors/` | `Executor` adapters (`test`, `herdr/`) and the registry; reached through the executor plugins | engine, http, store, plugins |
 | `src/machines/` | `MachineSource` adapters: `local` | engine, http, store |
 | `src/usage/` | `UsageSource` adapters: `fake` | engine, http, store |
 | `src/engine/` | the loop: gather → decide → apply; job lifecycle; restart recovery | http |
@@ -1616,7 +1616,7 @@ stored old events are not rewritten (read raw by version; v1 schemas stay in doc
    fallback. Glossary first.
 2. **Questions** (landed; "Settled in slice 2" below): answerer + assessor roles, pipeline,
    fail-closed assessor, recovery.
-3. **Executors** as plugins; `EXECUTOR_NAMES` removed; held-when-unavailable.
+3. **Executors** as plugins (landed; "Settled in slice 3" below); `EXECUTOR_NAMES` removed; held-when-unavailable.
 4. **Job, machine, usage sources** as plugins; `sources.yaml` + env migration in the daemon;
    unit file updated.
 5. **Notifier** port + `grokbot-routine`.
@@ -1722,6 +1722,60 @@ stored old events are not rewritten (read raw by version; v1 schemas stay in doc
   announcement a restart cut off.
 - **Human expiry past the timer limit** (found by that fixture): `setTimeout` fires a delay over
   2^31−1 ms (~24.8 days) after 1 ms, so such an expiry now re-arms instead of expiring at once.
+
+### Settled in slice 3 (2026-10-03)
+
+- **Roles:** `ROLES` adds `executor` (port `Executor`, unchanged). Built-ins
+  `src/plugins/executor/herdr-claude/` and `src/plugins/executor/test/`; the adapters stay in
+  `src/executors/`. `EXECUTOR_NAMES` is gone: an executor is a plugin instance and jobs name the
+  instance (`spec.executor`). Custom executor plugins load like any other (tested end to end).
+- **herdr-claude options:** `bin` (`herdr`), `claudeBin` (`claude`), `session` (`job-hopper`;
+  `default` refused), `args` (`[--dangerously-skip-permissions]`), `cwd`
+  (`~/workbench/app-workflows`, `~` expanded), `trustWorkdir` (true), `pollMs` (1000),
+  `idleQuestionMs` (20000). Detection: `which bin`, then `which claudeBin` — never `--version`,
+  never a model call, nothing launched. `claudeBin` exists for detection only: herdr starts
+  `claude` itself (`--kind claude`, resolved on herdr's PATH). `test`: no options, always available.
+- **6d, as built:** no `kind` option. `screen.ts` parses only Claude Code's TUI, so a `kind`
+  other than `claude` could not work; another agent CLI is another executor plugin (Phase 5
+  "Roles, plugins, instances"). The tools are configuration already: `args` are the agent's own
+  arguments (`--allowedTools`, `--permission-mode`, `--mcp-config`, …), per instance. Revisit
+  `kind` when a second parser exists.
+- **Herdr session is an instance option**, not process env: two herdr-claude instances may use two
+  sessions. The env-derived instance takes `JOB_HOPPER_HERDR_SESSION`. This amends "env keeps …
+  herdr session" in "Configuration — plugins.yaml"; slice 4 drops the var with the rest.
+- **plugins.yaml `executors:`** — 1..n instances, names unique (refused otherwise: a job names
+  one). No section → env-derived instances, one per `JOB_HOPPER_EXECUTORS` name, each an
+  instance of the plugin with that id; `herdr-claude` takes `JOB_HOPPER_HERDR_BIN`,
+  `JOB_HOPPER_CLAUDE_BIN`, `JOB_HOPPER_HERDR_SESSION`, `JOB_HOPPER_CLAUDE_ARGS`,
+  `JOB_HOPPER_CLAUDE_CWD`, `JOB_HOPPER_TRUST_WORKDIR`, `JOB_HOPPER_HERDR_POLL_MS`,
+  `JOB_HOPPER_IDLE_QUESTION_MS`. `JOB_HOPPER_EXECUTORS` accepts any instance-shaped name; an
+  unknown one is an unavailable executor, not a boot failure. Slice 4 removes these vars.
+- **Restart role:** executors are built once in `host.start()`. A later change of the section
+  (or its removal, when the env-derived set differs) → `/api/plugins` `executors.pending =
+  { status: 'changed — restart pending', instances }`; nothing changes until restart. Reverting
+  clears it. An invalid file keeps the running set and leaves `pending` as it was.
+- **Held when unavailable, through the pure decider.** `ExecutorRegistry.unavailable()` lists
+  configured instances that cannot run (unknown plugin, invalid options, detection not
+  `available`, `create` throwing) with the reason; the engine passes it in as
+  `DecisionInputs.unavailableExecutors`; `nativeHold` checks it first, reason `executor <name>
+  unavailable: <reason>`. A resuming job and an active-mode admit are held too. Intake accepts an
+  item naming an unavailable executor **without payload validation** (no executor to ask); a name
+  configured nowhere still fails at intake (`unknown executor …`). A job running at a restart
+  whose executor is then unavailable is requeued (as before for an unregistered one) and held.
+- **The instance name wins** over the plugin's own `name` (`Object.create` over the plugin's
+  executor, so its other members and closures are untouched). `/api/health` `executors` lists the
+  runnable names only; `/api/plugins` `executors.instances[]` = `{ instance, detection, active,
+  reason? }`, `active: null` for one that cannot run.
+- **Command-bearing marks** (`.meta({ commandBearing: true })`): herdr-claude `bin`, `claudeBin`,
+  `args`, `cwd`; claude-cli and claude-cli-assessor `bin`; jev-router `jevSrc`, `python`. zod
+  carries the mark into `z.toJSONSchema()`; `/api/plugins` shows it. `session` is not marked (it
+  names a herdr session, not a program).
+- **Tests:** `AppSeams.herdr` swaps the herdr-claude built-in for `herdrClaudePlugin(seam)`
+  (detection `available`, the seam client driven); `AppSeams.executors` still register after the
+  plugin-built ones.
+- **No store migration.** Instance names default to the old executor names (`herdr-claude`,
+  `test`), so stored `spec.executor` values keep working. `DecisionInputs.unavailableExecutors` is
+  new: Decisions stored before this slice lack it (read-only history; nothing replays them).
 
 ### Configuration added (env)
 
@@ -1835,4 +1889,5 @@ Open questions:
 - Idempotence flag per backend (recovery treats non-idempotent as fail-on-restart).
 
 Plugin tie: this is Phase 5 slice 3 ("Executors as plugins; `EXECUTOR_NAMES` removed"). Slice 3
-should land with `kind` and tools as plugin-instance options so 6d needs no second pass.
+landed with the tools as the `args` option and without `kind` (see "Settled in slice 3": one
+parser exists); `kind` arrives with a second parser.

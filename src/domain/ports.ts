@@ -2,7 +2,7 @@
 // these. Adapters live in src/{executors,machines,usage,plugins,store,webhooks}.
 
 import type {
-  Advice, DomainEvent, Decision, EventType, Job, JobId, JobSpec, JobStatus, Lane, PluginsReport, RouterMode, RouterStatus,
+  Advice, DomainEvent, Decision, EventType, ExecutorUnavailable, Job, JobId, JobSpec, JobStatus, Lane, PluginsReport, RouterMode, RouterStatus,
   JobSourceRef, LaneId, MachineId, MachineSnapshot, NewEvent, Question, QuestionAttempt, QuestionStatus,
   SourceStatus, UsageReading, WebhookDelivery, WebhookSubscription,
 } from './types.ts';
@@ -167,8 +167,12 @@ export interface Assessor {
 export type IdGen = () => string;
 
 export interface ExecutorRegistry {
+  /** A runnable executor by instance name; undefined for an unknown or unavailable one. */
   get(name: string): Executor | undefined;
+  /** The runnable executors' names. */
   names(): string[];
+  /** Configured executors that cannot run, and why: their jobs are accepted and held, never failed. */
+  unavailable(): ExecutorUnavailable[];
 }
 
 /** A usage source whose readings can be set by hand — the fake; set through the engine (tests). */

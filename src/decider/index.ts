@@ -32,7 +32,7 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
   const advice: Divergence[] = [];
   const candidates: Candidate[] = [];
   for (const job of waiting) {
-    const native = nativeHold(job, machines);
+    const native = nativeHold(job, machines, inputs.unavailableExecutors);
     if (!native && job.pendingAnswer !== undefined) {
       // Admitted once already: the router neither holds nor reorders it.
       candidates.push({

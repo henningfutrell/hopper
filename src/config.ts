@@ -20,8 +20,12 @@ export interface Config {
   routerCheapBoost: number;
   webhookBaseMs: number;
   laneIdleGraceMs: number;
-  /** Executors to register, by name. */
-  executors: ExecutorName[];
+  /**
+   * Executor instances derived from the env when plugins.yaml has no `executors` section: each
+   * name is an instance of the plugin with that id (herdr-claude takes its options from the
+   * herdr/claude settings below). Phase 5 slice 4 removes this with the other part-choosing env.
+   */
+  executors: string[];
   herdrBin: string;
   herdrSession: string;
   herdrPollMs: number;
@@ -61,22 +65,20 @@ export interface Config {
   githubApiUrl?: string;
 }
 
-export const EXECUTOR_NAMES = ['test', 'herdr-claude'] as const;
-export type ExecutorName = (typeof EXECUTOR_NAMES)[number];
-
 const expandHome = (p: string): string => (p === '~' ? homedir() : p.startsWith('~/') ? join(homedir(), p.slice(2)) : p);
 
 const int = (min: number, max = Number.MAX_SAFE_INTEGER) => z.coerce.number().int().min(min).max(max);
 const fraction = () => z.coerce.number().min(0).max(1);
 const path = (fallback: string) => z.string().min(1).default(fallback).transform(expandHome);
 const flag = (fallback: boolean) => z.enum(['true', 'false']).default(fallback ? 'true' : 'false').transform((v) => v === 'true');
+const INSTANCE_NAME = /^[a-z0-9][a-z0-9-]*$/;
 const executorList = z.string().default('test,herdr-claude').transform((s, ctx) => {
   const names = [...new Set(s.split(',').map((x) => x.trim()).filter(Boolean))];
   if (names.length === 0) ctx.addIssue({ code: 'custom', message: 'name at least one executor' });
   for (const n of names) {
-    if (!(EXECUTOR_NAMES as readonly string[]).includes(n)) ctx.addIssue({ code: 'custom', message: `unknown executor ${n} (known: ${EXECUTOR_NAMES.join(', ')})` });
+    if (!INSTANCE_NAME.test(n)) ctx.addIssue({ code: 'custom', message: `executor ${JSON.stringify(n)}: lowercase letters, digits and dashes` });
   }
-  return names as ExecutorName[];
+  return names;
 });
 
 const schema = z.object({

@@ -22,10 +22,11 @@ synonyms. Rename here first, in the same commit as everything else.
 | **Hold** | A Decision keeping a waiting job out, with a reason. Status `held`. | block, defer |
 | **Waiting** | Status `queued` or `held`. | pending |
 | **Claim** | A Decision assigning a job to a lane, before the executor runs. | |
-| **Executor** | Runs one job on one lane: `test` (built in) or `herdr-claude` (Claude Code in a herdr pane). | runner |
+| **Executor** | Runs one job on one lane. The role whose 1..n instances are named in plugins.yaml `executors:`; a job names an executor instance (`spec.executor`). Built-in plugins `herdr-claude` (Claude Code in a herdr pane) and `test`. One that cannot run holds the jobs naming it (`executor <name> unavailable: …`); never fails or re-routes them. | runner, task (issue #6's "task" is an executor instance) |
 | **Plugin** | One module implementing one role: built in (`src/plugins/<role>/<id>/`) or custom (one directory under the plugin dir). Default export a `PluginDefinition`. | extension, addon, adapter (an adapter is the code behind a port; a plugin is the swappable unit) |
-| **Role** | A slot the engine calls through one port. Today: `router`, `answerer`, `assessor`. | slot type, kind |
+| **Role** | A slot the engine calls through one port. Today: `router`, `answerer`, `assessor`, `executor`. A **live** role swaps its instance between calls when plugins.yaml changes; a **restart** role (`executor`) is built at start, and a change shows `changed — restart pending` in `/api/plugins`. | slot type, kind |
 | **Plugin instance** | A plugin plus validated options, under a name (`jev`), chosen in `plugins.yaml`. | config, profile |
+| **Command-bearing option** | A plugin option naming a program, its arguments, a working directory, an interpreter or a sourced file (`bin`, `args`, `cwd`, `python`, `jevSrc`, …). Marked `.meta({ commandBearing: true })`, carried into its JSON Schema; the UI never edits it (design.md "UI and mutation"). | |
 | **Detection** | A plugin's cheap check that it can run here: `available`, `unavailable` + reason, or `needs-setup` + the command to run. | health check |
 | **Plugin dir** | `~/.config/job-hopper/plugins` (`JOB_HOPPER_PLUGIN_DIR`): custom plugins, one directory each. | |
 | **Plugins file** | `~/.config/job-hopper/plugins.yaml` (`JOB_HOPPER_PLUGINS_FILE`): which instance fills which role. Re-read on change. | |
