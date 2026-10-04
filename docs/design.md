@@ -2829,8 +2829,7 @@ Cookies ignore ports ("UI session and mutations"), and a SAML response is a cros
 1. The UI keeps a fresh **binding** (32 random bytes, base64url) in `localStorage` `jh_sign_in` and
    opens `GET /ui/auth/<name>/start?binding=…` **on the sign-in origin** (else 409: the binding would
    not come back). The daemon keeps a flow — provider, SHA-256 of the binding, the provider's secrets
-   (PKCE verifier, nonce, state) — under a random flow id for 10 minutes (at most 1000 pending: the
-   route needs no session), and redirects to the provider with the flow id as `state` / `RelayState`.
+   (PKCE verifier, nonce, state) — under a random flow id for 10 minutes, and redirects to the provider with the flow id as `state` / `RelayState`.
 2. The provider returns to `/ui/auth/<name>/callback` (GET for OIDC and GitHub, POST for SAML). The
    flow is taken (once), the response validated by the library, the Identity built and its role
    decided. No role → 403 page. Else a one-time **ticket** (2 minutes) and a page whose script posts
@@ -2839,7 +2838,10 @@ Cookies ignore ports ("UI session and mutations"), and a SAML response is a cros
 3. The ticket gives a session only with the binding that began the flow: a callback link handed to
    another browser — login CSRF — signs nobody in.
 
-Flows and tickets are in memory: a restart mid-sign-in means signing in again. SAML is SP-initiated
+Flows and tickets are in memory: a restart mid-sign-in means signing in again. Starting needs no
+session, so at most 10 000 flows are pending; past that the oldest is evicted (never a refusal: a
+flood of starts must not lock real users out, it can only make one start again). Rate limiting
+`/ui/auth/` is the reverse proxy's job (`docs/sign-in.md`). SAML is SP-initiated
 only (`validateInResponseTo: always`); assertions must be signed (`requireSignedResponse` adds the
 whole response); `disableRequestedAuthnContext` and no NameID format, so the IdP's MFA and NameID
 choices pass. `GET /ui/auth/<name>/metadata` serves the SP metadata.
@@ -2874,5 +2876,8 @@ machine needs none. Without it the sign-in origin is `http://localhost:<port>`.
 `127.0.0.1:<port>` without a session; deploy on a host only the operator and the proxy use. TLS is
 the proxy's job; without it a session token crosses the network in clear. A session outlives a
 change at the provider (user disabled, group removed) until it expires or the daemon restarts with
-`auth.yaml` changed. GitHub teams are read from the first page (100).
+`auth.yaml` changed. GitHub teams are read from the first page (100). The event stream carries the
+session token in its query (`EventSource` sends no headers), so a proxy's access log holds tokens
+unless it skips that path (`docs/sign-in.md`). A `usernames` rule is only as stable as the provider's
+usernames: GitHub logins can be renamed and re-registered, so the guide grants by `subjects`.
 

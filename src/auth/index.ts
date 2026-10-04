@@ -21,8 +21,12 @@ export { DEFAULT_AUTH_FILE, loadAuthFile, type AuthConfig } from './config.ts';
 
 const FLOW_MS = 10 * 60_000;
 const TICKET_MS = 2 * 60_000;
-/** Starting a flow needs no session, so the pending ones are capped. */
-const MAX_FLOWS = 1000;
+/**
+ * Starting a flow needs no session, so the pending ones are capped. Past the cap the oldest is
+ * evicted: a flood of starts costs a real user at most a retry, never a lockout (rate-limit
+ * /ui/auth/ at the reverse proxy: docs/sign-in.md).
+ */
+const MAX_FLOWS = 10_000;
 const BINDING = /^[A-Za-z0-9_-]{32,128}$/;
 
 export const LOCAL_IDENTITY: Identity = { provider: 'local', subject: 'local', name: 'login code', groups: [] };
@@ -48,8 +52,8 @@ export interface SignIn {
 }
 
 export class SignInRefused extends Error {
-  readonly status: 400 | 404 | 429;
-  constructor(status: 400 | 404 | 429, message: string) { super(message); this.status = status; }
+  readonly status: 400 | 404;
+  constructor(status: 400 | 404, message: string) { super(message); this.status = status; }
 }
 
 interface Flow { provider: string; binding: string; secrets: FlowSecrets; expires: number }
@@ -65,7 +69,8 @@ function build(p: ProviderConfig, origin: string): IdentityProvider {
   return createSamlProvider(p, callback, p.entityId ?? `${origin}/ui/auth/${p.name}/metadata`);
 }
 
-export function createSignIn(o: { config: AuthConfig; origin: () => string; clock: Clock }): SignIn {
+export function createSignIn(o: { config: AuthConfig; origin: () => string; clock: Clock; maxFlows?: number }): SignIn {
+  const maxFlows = o.maxFlows ?? MAX_FLOWS;
   const configs = new Map(o.config.providers.map((p) => [p.name, p]));
   // Built on first use: the redirect URIs need the bound port.
   let providers: Map<string, IdentityProvider> | undefined;
@@ -94,7 +99,8 @@ export function createSignIn(o: { config: AuthConfig; origin: () => string; cloc
       if (!p) throw new SignInRefused(404, `no identity provider ${name}`);
       if (!BINDING.test(binding)) throw new SignInRefused(400, 'missing or malformed binding');
       prune();
-      if (flows.size >= MAX_FLOWS) throw new SignInRefused(429, 'too many sign-ins in progress; try again in a few minutes');
+      // A Map iterates in insertion order: the first key is the oldest flow.
+      while (flows.size >= maxFlows) flows.delete(flows.keys().next().value!);
       const id = random();
       const { url, secrets } = await p.start(id);
       flows.set(id, { provider: name, binding: hash(binding).toString('hex'), secrets, expires: now() + FLOW_MS });

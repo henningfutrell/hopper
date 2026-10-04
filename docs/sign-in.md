@@ -84,6 +84,9 @@ type:
 - `admin`, `operator`, `viewer` each take any of `subjects`, `usernames`, `emails`, `emailDomains`,
   `groups`. Any one match grants the role; **the highest matching role wins**.
 - `emails`, `emailDomains`, `usernames` ignore case; `subjects` and `groups` compare exactly.
+- Prefer identifiers the user cannot change: `subjects`, groups, verified emails. `usernames` is only
+  as stable as the provider makes it — a GitHub login can be renamed and taken by someone else; an
+  OIDC `preferred_username` is user-editable at some issuers.
   `emailDomains: [example.com]` matches `a@example.com`, not `a@sub.example.com`.
 - Nothing matches → `defaultRole`; absent or `null` → **no session** ("signed in, but auth.yaml
   grants this account no role"). Leaving `roles` out lets nobody in — on purpose.
@@ -132,7 +135,19 @@ UI mutations. With the proxy on the same machine the daemon keeps listening on `
 proxy on another machine: add its address to `JOB_HOPPER_LAN_PEERS` (the daemon then listens on
 every interface and refuses any other peer).
 
-Caddy (TLS included):
+The proxy must route only requests for the public host to the daemon, with that host as `Host`. A
+proxy that forwards any client-chosen `Host` unchanged would let a request claiming
+`Host: localhost:4790` read as a local one.
+
+Two more things belong at the proxy:
+
+- **Rate-limit `/ui/auth/`.** Starting a sign-in needs no session; the daemon keeps at most 10 000
+  pending sign-ins and drops the oldest past that, so a flood can make a real user start again.
+- **Keep the event stream's query out of access logs.** The browser's `EventSource` cannot send
+  headers, so `/api/events/stream` carries the session token as `?session=`.
+
+Caddy (TLS included; Caddy logs no access lines unless `log` is set; `rate_limit` needs the
+caddy-ratelimit plugin):
 
 ```
 hopper.example.com {
@@ -140,14 +155,33 @@ hopper.example.com {
 }
 ```
 
-nginx (the event stream must not be buffered):
+nginx:
 
 ```nginx
-location / {
-    proxy_pass http://127.0.0.1:4790;
-    proxy_set_header Host $host;
-    proxy_buffering off;
-    proxy_read_timeout 1h;
+limit_req_zone $binary_remote_addr zone=hopper_signin:10m rate=10r/m;
+
+server {
+    server_name hopper.example.com;
+    # listen 443 ssl; ssl_certificate …; ssl_certificate_key …;
+
+    location / {
+        proxy_pass http://127.0.0.1:4790;
+        proxy_set_header Host $host;
+        proxy_buffering off;              # the event stream must not be buffered
+        proxy_read_timeout 1h;
+    }
+    location /ui/auth/ {
+        limit_req zone=hopper_signin burst=20;
+        proxy_pass http://127.0.0.1:4790;
+        proxy_set_header Host $host;
+    }
+    location /api/events/stream {
+        access_log off;                   # the session token is in the query
+        proxy_pass http://127.0.0.1:4790;
+        proxy_set_header Host $host;
+        proxy_buffering off;
+        proxy_read_timeout 1h;
+    }
 }
 ```
 
@@ -284,9 +318,12 @@ verified email and (when a rule names groups) their teams from the API.
     clientId: <client id>
     clientSecretFile: ~/.config/job-hopper/github-oauth-secret
     roles:
-      admin:    { usernames: [octocat] }
+      admin:    { subjects: ["583231"] }        # the numeric user id: https://api.github.com/users/<login> → id
       operator: { groups: [acme/platform] }     # org/team-slug
 ```
+
+Grant by `subjects` (the numeric id) or teams, not `usernames`: a GitHub login can be renamed, and
+the old name registered by someone else.
 
 GitHub Enterprise Server: add `webUrl: https://ghe.example.com` and
 `apiUrl: https://ghe.example.com/api/v3`. Teams are read from the first page (100).
