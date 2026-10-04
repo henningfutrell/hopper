@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { applyMachineEdit, type MachineEditContext } from '../../src/plugins/attached-edit.ts';
 import { PLUGINS } from '../../src/plugins/plugins-file.ts';
 import { useTempDocuments } from '../support/documents.ts';
+import { TEST_HOST_KEY } from '../support/ssh.ts';
 
 const docs = useTempDocuments();
 
@@ -18,7 +19,7 @@ function setup(text: string): { ctx: MachineEditContext; read: () => string | un
     ctx: {
       documents, machineName: 'local', executors: ['herdr-claude', 'test'],
       sshTargets: () => ({ targets: ['laptop', 'desk'], notes: [] }),
-      resolveHerdrBin: async () => '/h/bin/herdr',
+      resolveTarget: async () => ({ herdrBin: '/h/bin/herdr', hostKey: TEST_HOST_KEY }),
       inUse: () => [],
     },
   };
@@ -43,7 +44,7 @@ describe('applyMachineEdit on block-style entries', () => {
     const { ctx, read, version } = setup(BLOCK);
     expect(await applyMachineEdit({ action: 'add', name: 'laptop', ssh: 'laptop', lanes: 2, version }, ctx)).toEqual({ ok: true, changed: true });
     const text = read()!;
-    expect(text).toBe(BLOCK.replace('# tail comment', '  - name: laptop\n    ssh: laptop\n    lanes: 2\n    herdrBin: /h/bin/herdr\n# tail comment'));
+    expect(text).toBe(BLOCK.replace('# tail comment', `  - name: laptop\n    ssh: laptop\n    lanes: 2\n    herdrBin: /h/bin/herdr\n    hostKey: ${TEST_HOST_KEY}\n# tail comment`));
   });
 
   it('edit rewrites only that entry', async () => {
@@ -75,7 +76,7 @@ describe('applyMachineEdit on an empty or last list', () => {
     expect((await applyMachineEdit({ action: 'add', name: 'laptop', ssh: 'laptop', lanes: 1, version }, ctx)).ok).toBe(true);
     const text = read()!;
     expect(text.endsWith('notifiers: []\n')).toBe(true);
-    expect(parse(text).attachedMachines).toEqual([{ name: 'laptop', ssh: 'laptop', lanes: 1, herdrBin: '/h/bin/herdr' }]);
+    expect(parse(text).attachedMachines).toEqual([{ name: 'laptop', ssh: 'laptop', lanes: 1, herdrBin: '/h/bin/herdr', hostKey: TEST_HOST_KEY }]);
   });
 
   it('removing the last entry leaves `attachedMachines: []`', async () => {
@@ -87,7 +88,7 @@ describe('applyMachineEdit on an empty or last list', () => {
 
   it('the document changing while herdr is resolved: 409, nothing written over it', async () => {
     const { ctx, read, version } = setup('version: 1\n');
-    ctx.resolveHerdrBin = async () => { ctx.documents.write(PLUGINS, 'version: 1\n# meanwhile\n', version); return '/h/bin/herdr'; };
+    ctx.resolveTarget = async () => { ctx.documents.write(PLUGINS, 'version: 1\n# meanwhile\n', version); return { herdrBin: '/h/bin/herdr', hostKey: TEST_HOST_KEY }; };
     expect(await applyMachineEdit({ action: 'add', name: 'laptop', ssh: 'laptop', lanes: 1, version }, ctx)).toMatchObject({ ok: false, code: 'conflict' });
     expect(read()!).toBe('version: 1\n# meanwhile\n');
   });

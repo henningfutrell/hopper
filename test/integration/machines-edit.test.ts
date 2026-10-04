@@ -12,6 +12,7 @@ import type { MachinesConfig } from '../../src/domain/types.ts';
 import { startTestApp, tempDbPath, writePluginsYaml, type TestApp } from '../support/app.ts';
 import { readDocument } from '../support/files.ts';
 import { waitFor } from '../support/wait.ts';
+import { TEST_HOST_KEY } from '../support/ssh.ts';
 
 type Reply = MachinesConfig & { error: string };
 
@@ -49,10 +50,10 @@ async function start(file = FILE): Promise<{ a: TestApp; token: string }> {
     dbPath: db.dbPath,
     seams: {
       machineProbe: async () => true,
-      resolveHerdrBin: async (ssh) => {
+      resolveTarget: async (ssh) => {
         resolved.push(ssh);
         if (ssh === 'unreachable') throw new Error('ssh unreachable: No route to host');
-        return `/home/user/.local/bin/herdr`;
+        return { herdrBin: `/home/user/.local/bin/herdr`, hostKey: TEST_HOST_KEY };
       },
     },
   });
@@ -84,7 +85,7 @@ describe('POST /ui/api/machines — add', () => {
     expect(read(a)).toBe(before);
   });
 
-  it('writes one entry with the resolved herdrBin, keeps every other byte; /api/machines lists it without a restart', async () => {
+  it('writes one entry with the resolved herdrBin and the pinned host key, keeps every other byte; /api/machines lists it without a restart', async () => {
     const { a, token } = await start();
     const r = await a.ui<Reply>('/ui/api/machines', {
       action: 'add', name: 'laptop', ssh: 'laptop', lanes: 2, executors: ['herdr-claude', 'test'], label: 'spare laptop', version: (await config(a)).version,
@@ -93,7 +94,7 @@ describe('POST /ui/api/machines — add', () => {
     expect(resolved).toEqual(['laptop']);
     const text = read(a);
     expect(text.startsWith(FILE)).toBe(true);
-    expect(parse(text).attachedMachines[1]).toEqual({ name: 'laptop', ssh: 'laptop', lanes: 2, executors: ['herdr-claude', 'test'], label: 'spare laptop', herdrBin: '/home/user/.local/bin/herdr' });
+    expect(parse(text).attachedMachines[1]).toEqual({ name: 'laptop', ssh: 'laptop', lanes: 2, executors: ['herdr-claude', 'test'], label: 'spare laptop', herdrBin: '/home/user/.local/bin/herdr', hostKey: TEST_HOST_KEY });
     expect(r.body.attached.map((m) => m.name)).toEqual(['desk', 'laptop']);
     expect(await machineIds(a)).toEqual(['local', 'desk', 'laptop']);
     await waitFor(async () => (await a.api('GET', '/api/machines')).body.machines.find((m: { id: string; online: boolean }) => m.id === 'laptop' && m.online));
@@ -103,7 +104,7 @@ describe('POST /ui/api/machines — add', () => {
     const { a, token } = await start('version: 1\nexecutors: [ { name: test, plugin: test } ]\n');
     const r = await a.ui<Reply>('/ui/api/machines', { action: 'add', name: 'laptop', ssh: 'laptop', lanes: 1, executors: ['test'], version: (await config(a)).version }, { token });
     expect(r.status).toBe(200);
-    expect(parse(read(a)).attachedMachines).toEqual([{ name: 'laptop', ssh: 'laptop', lanes: 1, executors: ['test'], herdrBin: '/home/user/.local/bin/herdr' }]);
+    expect(parse(read(a)).attachedMachines).toEqual([{ name: 'laptop', ssh: 'laptop', lanes: 1, executors: ['test'], herdrBin: '/home/user/.local/bin/herdr', hostKey: TEST_HOST_KEY }]);
   });
 
   it('an ssh target not among the detected Host aliases: 400, never probed, nothing written', async () => {
@@ -118,11 +119,12 @@ describe('POST /ui/api/machines — add', () => {
     expect(read(a)).toBe(before);
   });
 
-  it('herdrBin and session are never taken from the UI: 400', async () => {
+  it('herdrBin, session and the host key are never taken from the UI: 400', async () => {
     const { a, token } = await start();
     const version = (await config(a)).version;
     expect((await a.ui('/ui/api/machines', { action: 'add', name: 'laptop', ssh: 'laptop', lanes: 1, herdrBin: '/tmp/evil', version }, { token })).status).toBe(400);
     expect((await a.ui('/ui/api/machines', { action: 'add', name: 'laptop', ssh: 'laptop', lanes: 1, session: 'default', version }, { token })).status).toBe(400);
+    expect((await a.ui('/ui/api/machines', { action: 'add', name: 'laptop', ssh: 'laptop', lanes: 1, hostKey: TEST_HOST_KEY, version }, { token })).status).toBe(400);
   });
 
   it('herdr cannot be resolved there: 409 with the reason, nothing written', async () => {

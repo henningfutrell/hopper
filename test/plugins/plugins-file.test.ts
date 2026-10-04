@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { loadPluginsFile } from '../../src/plugins/plugins-file.ts';
+import { TEST_HOST_KEY } from '../support/ssh.ts';
 
 /** The document text as the store holds it. */
 const file = (text: string): string => text;
@@ -146,12 +147,21 @@ describe('plugins.yaml attachedMachines (design.md "Attached machines")', () => 
     ['  - { name: a, lanes: 1 }', /ssh or docker/],
     ['  - { name: a, ssh: laptop, docker: box, lanes: 1 }', /ssh or docker, not both/],
     ['  - { name: a, docker: -H=tcp://x, lanes: 1 }', /docker must be a container/],
-    ['  - { name: a, docker: box, lanes: 1, session: jh }', /session and herdrBin are for ssh/],
-    ['  - { name: a, docker: box, lanes: 1, herdrBin: /opt/herdr }', /session and herdrBin are for ssh/],
+    ['  - { name: a, docker: box, lanes: 1, session: jh }', /session, herdrBin and hostKey are for ssh/],
+    ['  - { name: a, docker: box, lanes: 1, herdrBin: /opt/herdr }', /session, herdrBin and hostKey are for ssh/],
+    [`  - { name: a, docker: box, lanes: 1, hostKey: ${TEST_HOST_KEY} }`, /session, herdrBin and hostKey are for ssh/],
+    ['  - { name: a, ssh: laptop, lanes: 1, hostKey: ssh-ed25519 }', /hostKey must be a public host key/],
+    ['  - { name: a, ssh: laptop, lanes: 1, hostKey: "ssh-dss AAAAB3Nz" }', /hostKey must be a public host key/],
   ])('refuses %s', (entry, why) => {
     const r = loadPluginsFile(file(`version: 1\nattachedMachines:\n${entry}\n`));
     expect(r).toHaveProperty('error');
     expect((r as { error: string }).error).toMatch(why);
+  });
+
+  it('an ssh target pins its host key (issue #59)', () => {
+    const r = loadPluginsFile(file(`version: 1\nattachedMachines:\n  - { name: laptop, ssh: laptop, lanes: 1, hostKey: ${TEST_HOST_KEY} }\n`));
+    expect(r).not.toHaveProperty('error');
+    expect((r as { attachedMachines: unknown[] }).attachedMachines[0]).toMatchObject({ ssh: 'laptop', hostKey: TEST_HOST_KEY });
   });
 
   it('reads a container target reached over docker: no herdr, the command executor by default', () => {

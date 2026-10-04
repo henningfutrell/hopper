@@ -11,6 +11,7 @@ import type { ExecutionContext } from '../../src/domain/ports.ts';
 import type { Job, MachineSnapshot } from '../../src/domain/types.ts';
 import { createCommandExecutor, scriptOf } from '../../src/executors/index.ts';
 import { probeContainer } from '../../src/machines/index.ts';
+import { testSshAuth } from '../support/ssh.ts';
 
 const CONTAINER = `jh-test-target-${process.pid}`;
 const HERE: MachineSnapshot = { id: 'local', label: 'here', maxLanes: 1, online: true, executors: ['command'] };
@@ -37,7 +38,7 @@ function ctxFor(payload: Record<string, unknown>, machine: MachineSnapshot, sign
 }
 
 describe('command executor', () => {
-  const ex = createCommandExecutor({ name: 'command', timeoutMs: 20000 });
+  const ex = createCommandExecutor({ name: 'command', timeoutMs: 20000, sshAuth: () => { throw new Error('no ssh in this test'); } });
 
   it('runs the issue body in the container over docker exec and returns what it printed', async () => {
     const out = await ex.run(ctxFor({ body: 'hostname; echo "job $HOPPER_JOB_ID on $HOPPER_REPO"', env: { HOPPER_REPO: 'o/r' } }, BOX));
@@ -60,12 +61,12 @@ describe('command executor', () => {
   });
 
   it('runs over ssh on an ssh target: one remote command, POSIX-quoted', async () => {
-    const overSsh = createCommandExecutor({ name: 'command', timeoutMs: 20000, sshBin: FAKE_SSH });
+    const overSsh = createCommandExecutor({ name: 'command', timeoutMs: 20000, sshBin: FAKE_SSH, sshAuth: testSshAuth(join(sshDir, 'auth')) });
     process.env.FAKE_HERDR_DIR = sshDir;
     const out = await overSsh.run(ctxFor({ body: "echo 'it''s' there" }, { ...HERE, id: 'laptop', ssh: 'laptop' }));
     expect(out).toEqual({ kind: 'finished', result: { machine: 'laptop', exitCode: 0, stdout: 'its there\n', stderr: '' } });
     const call = JSON.parse(readFileSync(join(sshDir, 'ssh-calls.jsonl'), 'utf8').trim().split('\n').at(-1)!) as { argv: string[] };
-    expect(call.argv.slice(call.argv.indexOf('--') + 1, -1)).toEqual(['laptop']);
+    expect(call.argv.slice(call.argv.indexOf('--') + 1, -1)).toEqual(['laptop.example']);
   });
 
   it('cancel stops the command', async () => {

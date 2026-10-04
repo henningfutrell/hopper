@@ -2,11 +2,12 @@
 // ssh. The probe runs in the background on its own cadence; list() never waits for it, so a
 // machine that is off or asleep never stalls a Decision.
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createAttachedMachineSource, probeHerdrOverSsh, resolveHerdrBinOverSsh } from '../../src/machines/index.ts';
+import { createAttachedMachineSource, probeHerdrOverSsh, resolveSshTarget } from '../../src/machines/index.ts';
+import { TEST_HOST_KEY, testSshAuth } from '../support/ssh.ts';
 
 const HERDR = fileURLToPath(new URL('../herdr/fake-herdr-bin.mjs', import.meta.url));
 const SSH = fileURLToPath(new URL('../herdr/fake-ssh-bin.mjs', import.meta.url));
@@ -89,7 +90,7 @@ describe('probeHerdrOverSsh', () => {
     process.env = { ...saved };
     rmSync(dir, { recursive: true, force: true });
   });
-  const probe = (target: string) => probeHerdrOverSsh({ target, sshBin: SSH, herdrBin: HERDR, session: 'job-hopper', controlDir: join(dir, 's') });
+  const probe = (target: string) => probeHerdrOverSsh({ target, sshBin: SSH, herdrBin: HERDR, session: 'job-hopper', controlDir: join(dir, 's'), auth: testSshAuth(join(dir, 'auth')) });
 
   it('true when the remote herdr session reports running', async () => {
     process.env.FAKE_HERDR_RUNNING = '1';
@@ -105,8 +106,9 @@ describe('probeHerdrOverSsh', () => {
   });
 });
 
-// Adding a machine from the UI (issue #18): herdrBin is never typed; the daemon asks the machine.
-describe('resolveHerdrBinOverSsh', () => {
+// Adding a machine from the UI (issues #18, #59): herdrBin is never typed, the daemon asks the
+// machine; its host key is pinned from the user's own known_hosts, never learned from the connection.
+describe('resolveSshTarget', () => {
   let home: string;
   const saved = { ...process.env };
   beforeEach(() => {
@@ -114,6 +116,14 @@ describe('resolveHerdrBinOverSsh', () => {
     process.env.FAKE_HERDR_DIR = home;
     process.env.HOME = home;
     process.env.SHELL = '/bin/sh';
+    mkdirSync(join(home, '.ssh'), { mode: 0o700 });
+    // The stand-in resolves <target> to <target>.example port 2222.
+    writeFileSync(join(home, '.ssh', 'known_hosts'), [
+      `[laptop.example]:2222 ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAAAgQDRh9ldXnc48FmFomQaAcoOZMhpBgnn1srZqnHSTXTkeTu6VJN0OpBHrdOPHOuhIXh9A6hF00dvjqeqjz0otBUh/GRe7jR/811y/10PATyEbCMgoVjxgENlwwGH0Oz/fxq4xMkmJCJnChh/tuf8J8cPapcfKF5NZw7Y4bcgJ8CWJw==`,
+      `[laptop.example]:2222 ${TEST_HOST_KEY}`,
+      `[unreachable.example]:2222 ${TEST_HOST_KEY}`,
+      '',
+    ].join('\n'));
   });
   afterEach(() => {
     process.env = { ...saved };
@@ -123,17 +133,35 @@ describe('resolveHerdrBinOverSsh', () => {
     mkdirSync(join(path, '..'), { recursive: true });
     writeFileSync(path, '#!/bin/sh\necho herdr\n', { mode: 0o755 });
   };
-  const resolve = (target: string) => resolveHerdrBinOverSsh({ target, sshBin: SSH, controlDir: join(home, 's') });
+  const resolve = (target: string) => resolveSshTarget({
+    target, sshBin: SSH, controlDir: join(home, 's'), auth: testSshAuth(join(home, 'auth')), knownHosts: join(home, '.ssh', 'known_hosts'),
+  });
+  const sshCalls = (): string[][] => readFileSync(join(home, 'ssh-calls.jsonl'), 'utf8').trim().split('\n').map((l) => (JSON.parse(l) as { argv: string[] }).argv);
 
-  it('the absolute path a login shell there finds', async () => {
+  it('the absolute path a login shell there finds, and the ed25519 key the user\'s known_hosts holds for it', async () => {
     executable(join(home, 'tools', 'herdr'));
     writeFileSync(join(home, '.profile'), `PATH="${join(home, 'tools')}:$PATH"; export PATH\necho motd line\n`);
-    expect(await resolve('laptop')).toBe(join(home, 'tools', 'herdr'));
+    expect(await resolve('laptop')).toEqual({ herdrBin: join(home, 'tools', 'herdr'), hostKey: TEST_HOST_KEY });
+  });
+
+  it('asks over a connection that trusts only that key, and leaves no trust behind', async () => {
+    executable(join(home, '.local', 'bin', 'herdr'));
+    await resolve('laptop');
+    const argv = sshCalls()[0]!;
+    const known = argv.find((a) => a.startsWith('UserKnownHostsFile='))!.slice('UserKnownHostsFile='.length);
+    expect(known).toMatch(/known_hosts\.add-[0-9a-f]{12}$/);
+    expect(argv).toContain('StrictHostKeyChecking=yes');
+    expect(existsSync(known)).toBe(false);
   });
 
   it('else ~/.local/bin/herdr when it is executable', async () => {
     executable(join(home, '.local', 'bin', 'herdr'));
-    expect(await resolve('laptop')).toBe(join(home, '.local', 'bin', 'herdr'));
+    expect((await resolve('laptop')).herdrBin).toBe(join(home, '.local', 'bin', 'herdr'));
+  });
+
+  it('a target the user has never connected to: rejected before any connection', async () => {
+    await expect(resolve('desk')).rejects.toThrow(/no host key for desk \(\[desk\.example\]:2222\) in ~\/\.ssh\/known_hosts/);
+    expect(existsSync(join(home, 'ssh-calls.jsonl'))).toBe(false);
   });
 
   it('rejects with the reason when herdr is nowhere, or the machine cannot be reached', async () => {
