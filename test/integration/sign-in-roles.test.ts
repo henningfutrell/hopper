@@ -27,6 +27,9 @@ describe('roles, sessions and logout: the same for every provider', () => {
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ needs: 'operator' });
     expect((await session(app, token)).authenticated).toBe(true);
+    for (const path of ['/ui/api/questions/q/answer', '/ui/api/questions/q/close', '/ui/api/questions/q/dismiss', '/ui/api/questions/q/seen', '/ui/api/jobs/j/approve']) {
+      expect((await app.ui(path, { answer: 'x' }, { token })).body, path).toMatchObject({ needs: 'operator' });
+    }
   });
 
   it('an operator cancels jobs but may not change configuration', async () => {

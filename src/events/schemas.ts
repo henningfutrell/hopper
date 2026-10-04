@@ -54,6 +54,8 @@ export const EVENT_SCHEMAS = {
   'question.answered': strict({ questionId: z.string(), by: stage, answer: z.string(), via: z.literal('pane').optional() }),
   // `answer` is the close text typed into the job in place of an answer.
   'question.closed': strict({ questionId: z.string(), answer: z.string() }),
+  // Nothing is typed into the job; a job still waiting on it is cancelled (job.cancelled, reason `question dismissed`).
+  'question.dismissed': strict({ questionId: z.string() }),
   'question.expired': strict({ questionId: z.string(), after_ms: z.number() }),
 } satisfies Record<EventType, z.ZodType>;
 

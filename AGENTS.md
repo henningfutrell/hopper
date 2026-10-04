@@ -38,8 +38,8 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
 - **Sign-in fails closed.** An invalid `auth.yaml` stops the daemon; an identity no role rule
   matches gets no session; sign-in is never a plugin (`docs/design.md` "Sign-in").
 - **GitHub text is neutral.** Text the hopper or a job writes to GitHub names no person and
-  carries no personal or machine details. The hopper writes only labels to issues and posts no
-  comments. The job prompt carries the rule (`src/executors/herdr/screen.ts` `PUBLISHING_RULE`).
+  carries no personal or machine details. The hopper writes only labels to issues, closes the
+  issue of a finished job, and posts no comments. The job prompt carries the rule (`src/executors/herdr/screen.ts` `PUBLISHING_RULE`).
 - **Never write into the Jev repo.** The shim reads it; logs go to job-hopper's data dir.
 - **Persisted state is the user's.** A schema change ships a migration in
   `src/store/migrations.ts`; it never drops a queue.

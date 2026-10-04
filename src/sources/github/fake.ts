@@ -1,10 +1,11 @@
 // In-memory GitHub implementing GitHubApi, plus helpers for tests to play the owner (or a
-// stranger) on the other side: create issues, reply, close, unlabel, delete, set project items.
+// stranger) on the other side: create issues, reply, close (by hand or by merging a pull request),
+// unlabel, delete, set project items.
 // Default identity: gh (writes appear as `login`). With `app`, writes appear as the bot and the
 // app-only methods exist: the bot login and the installed repos.
 
 import { GitHubApiError } from './api.ts';
-import type { GitHubApi, GitHubComment, GitHubIssue, GitHubProjectItem } from './api.ts';
+import type { ClosingPullRequest, GitHubApi, GitHubComment, GitHubIssue, GitHubProjectItem } from './api.ts';
 
 type Method = keyof GitHubApi;
 
@@ -12,6 +13,8 @@ export interface FakeGitHub extends GitHubApi {
   createIssue(o: { repo: string; title?: string; body?: string; author?: string; labels?: string[] }): GitHubIssue;
   addComment(repo: string, number: number, author: string, body: string): GitHubComment;
   closeIssue(repo: string, number: number, closedBy?: string): void;
+  /** The merge of a pull request (opened at createdAt) closes the issue. */
+  closeByPullRequest(repo: string, number: number, pr: { createdAt: string; mergedAt: string }): ClosingPullRequest;
   deleteIssue(repo: string, number: number): void;
   addLabel(repo: string, number: number, label: string): void;
   removeLabel(repo: string, number: number, label: string): void;
@@ -40,6 +43,8 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
   const issues = new Map<string, GitHubIssue>();
   const comments = new Map<string, GitHubComment[]>();
   const labels = new Map<string, Set<string>>();
+  const closers = new Map<string, ClosingPullRequest>();
+  let pullNumber = 1000;
   const projects = new Map<string, GitHubProjectItem[] | Error>();
   const failures = new Map<Method, Error[]>();
   const calls: { method: Method; args: unknown[] }[] = [];
@@ -98,6 +103,17 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
       const i = find(repo, n);
       i.labels = i.labels.filter((l) => !names.includes(l));
     },
+    async closingPullRequest(repo, n) {
+      enter('closingPullRequest', [repo, n]);
+      find(repo, n);
+      const pr = closers.get(key(repo, n));
+      return pr ? { ...pr } : undefined;
+    },
+    async closeAsCompleted(repo, n) {
+      enter('closeAsCompleted', [repo, n]);
+      const i = find(repo, n);
+      if (i.state === 'open') { i.state = 'closed'; i.closedBy = login; closers.delete(key(repo, n)); }
+    },
   };
 
   if (o.app) {
@@ -126,7 +142,15 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
       comments.set(key(repo, n), [...(comments.get(key(repo, n)) ?? []), c]);
       return { ...c };
     },
-    closeIssue(repo, n, closedBy) { const i = find(repo, n); i.state = 'closed'; i.closedBy = closedBy ?? human; },
+    closeIssue(repo, n, closedBy) { const i = find(repo, n); i.state = 'closed'; i.closedBy = closedBy ?? human; closers.delete(key(repo, n)); },
+    closeByPullRequest(repo, n, { createdAt, mergedAt }) {
+      const i = find(repo, n);
+      i.state = 'closed';
+      i.closedBy = human;
+      const pr = { url: `https://github.com/${repo}/pull/${++pullNumber}`, createdAt, mergedAt };
+      closers.set(key(repo, n), pr);
+      return { ...pr };
+    },
     deleteIssue(repo, n) { find(repo, n); issues.delete(key(repo, n)); },
     addLabel(repo, n, label) { repoLabels(repo).add(label); const i = find(repo, n); if (!i.labels.includes(label)) i.labels.push(label); },
     removeLabel(repo, n, label) { const i = find(repo, n); i.labels = i.labels.filter((l) => l !== label); },

@@ -11,6 +11,8 @@ export interface AnswerHandlers {
   onAnswered(q: Question): void;
   /** Fail the job; its pane is cleaned up after the commit. */
   onExpired(q: Question): void;
+  /** Cancel the job if it still waits on the question (a job that moved on is left alone); its pane is cleaned up after the commit. */
+  onDismissed(q: Question): void;
 }
 
 export function createAnswerHandlers(c: EngineContext, cleanup: Cleanup): AnswerHandlers {
@@ -33,6 +35,13 @@ export function createAnswerHandlers(c: EngineContext, cleanup: Cleanup): Answer
       store.jobs.update(q.jobId, { status: 'failed', error, finishedAt: nowIso(c) });
       store.events.append({ type: 'job.failed', jobId: q.jobId, questionId: q.id, data: { error } });
       // After the surrounding tx commits.
+      setImmediate(() => void cleanup(q.jobId));
+    },
+    onDismissed(q) {
+      const job = store.jobs.get(q.jobId);
+      if (job?.status !== 'waiting_answer' || job.questionId !== q.id) return;
+      store.jobs.update(q.jobId, { status: 'cancelled', finishedAt: nowIso(c), pendingAnswer: undefined });
+      store.events.append({ type: 'job.cancelled', jobId: q.jobId, questionId: q.id, data: { reason: 'question dismissed' } });
       setImmediate(() => void cleanup(q.jobId));
     },
   };

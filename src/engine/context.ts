@@ -24,7 +24,7 @@ export interface EngineOptions {
   tickMs: number;
   /** Router mode used only when the store has none yet. */
   initialRouterMode: RouterMode;
-  /** The answer chain. Its onAnswered/onExpired must call the engine's (see main.ts). */
+  /** The answer chain. Its onAnswered/onExpired/onDismissed must call the engine's (see main.ts). */
   questions: QuestionService;
   /** At most this many questions per job; the next one fails it (design.md B6). */
   maxQuestions: number;

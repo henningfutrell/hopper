@@ -63,7 +63,10 @@ synonyms. Rename here first, in the same commit as everything else.
 | **Stage** | Where an open question is: the answerer's instance name (drafting), the assessor's (assessing), or `human`. Stored as the question's `tier`; `question.escalated.target` names the stage entered. | tier, level |
 | **Owner** | The one person the hopper works for: answers the questions the gates escalate, in the UI or in the pane, and closes them. The last stage of the question gates; code and stored rows call that stage `human` (`tier`, `answerByHuman`). The `gh` source acts as the owner; the App acts as its bot. | user, operator |
 | **Escalation** | Sending a question to the human: no answerer, answerer not confident or failing, assessor escalating or failing, or a risk rule hit. (`question.escalated` also announces the answer and assess stages.) | |
-| **Closed** (question) | Status `closed`: the owner ended an open question without answering (UI Close). The **close text** ("The owner closed this question without answering. Continue on your own judgement; if you cannot, end with JOB_HOPPER_FAILED and say why.") is typed into the job in place of an answer; any stage in flight is aborted. `question.closed`. | dismissed, skipped |
+| **Closed** (question) | Status `closed`: the owner ended an open question without answering (UI Close). The **close text** ("The owner closed this question without answering. Continue on your own judgement; if you cannot, end with JOB_HOPPER_FAILED and say why.") is typed into the job in place of an answer; any stage in flight is aborted. `question.closed`. | skipped (*dismissed* is something else) |
+| **Dismissed** (question) | Status `dismissed`: the owner dropped an open question that needs no action any more (UI Dismiss). Nothing is typed into the job; a job still waiting on it is cancelled (`question dismissed`), a job that moved on is left alone. `question.dismissed`. | closed (Close lets the job go on), archived, hidden |
+| **Seen** (question) | The owner had the question in front of them in the Questions view: `seenAt`, set once. The nav badge counts open questions at the human stage not yet seen. | read, acknowledged |
+| **Handled** (question) | Any question no longer open: answered, closed, dismissed, expired or cancelled. The Questions view lists them as the question history, kept in the hopper's SQLite file and never sent to GitHub. | archived, done, resolved |
 | **Attempt** | One entry in a question's trail: an answerer's draft, an assessor's assessment, or the human's answer. `tier` = who, `role`, `outcome` `drafted` / `accepted` / `escalated`. Rows before slice 2 have no `role` and may carry `risky`. | try |
 | **Risk rule** | A named pattern (delete, deploy, force-push, spend, credentials, send-message) over question and draft; a hit after the assessor escalates to the human whatever it said. Code, not configuration. | |
 | **Rules file** | The owner's standing rules, given to the answerer and the assessor: `JOB_HOPPER_RULES_FILE` (default `~/.config/job-hopper/rules.md`), read on every ask. Edited by hand or whole from the UI (`POST /ui/api/rules-file`, against its `version`, the sha-256 of its bytes). | policy |
@@ -82,8 +85,9 @@ synonyms. Rename here first, in the same commit as everything else.
 | **Re-run** | A new job for a source key whose newest job failed or was cancelled and whose end the source already reported — offered again because a human cleared the marker (`hopper:failed`). Never from `finished`. | retry, resubmit |
 | **Claim** (of an issue) | Labelling it `hopper:claimed` when the hopper takes it (no comment). Distinct from a lane claim. | |
 | **Sync** | One pass of a source: discover, check active jobs, retry reports. | poll |
-| **Report** | Telling the source what happened to its job: the claim and the end. On GitHub: labels only; the hopper posts no comment. | |
+| **Report** | Telling the source what happened to its job: the claim and the end. On GitHub: labels, and a finished job closes its issue; the hopper posts no comment. | |
 | **Signal** | What a source tells the hopper: cancel. Questions are answered in the UI, never through a source. | |
+| **Closing pull request** | The merged pull request whose merge closed an issue (the closer of the issue's last close event, `closingPullRequest`). Opened at or after the job's creation, it is the job's own: its close is no cancel signal, and the job runs on to its own end. | closer PR, linked PR |
 | **Hopper marker** | The hidden first line of a comment the hopper once posted (it posts none now); lets the context filter tell old ones from the owner's text. | |
 | **Leftover variable** | A `JOB_HOPPER_*` variable that is set but read by nothing (a removed part-choosing one, or a typo). One loud warning at boot names them all. | |
 | **UI session** | A browser session created by a sign-in; the only way to mutate. Carries a UI role and the identity it was made for. | |
@@ -135,4 +139,5 @@ synonyms. Rename here first, in the same commit as everything else.
 | QuestionEscalated (to a stage) | `question.escalated` |
 | QuestionAnswered (by an answerer instance, or the human) | `question.answered` |
 | QuestionClosed (by the human, without an answer) | `question.closed` |
+| QuestionDismissed (by the human; needs no action) | `question.dismissed` |
 | QuestionExpired | `question.expired` |

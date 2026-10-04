@@ -41,6 +41,7 @@
         "question.escalated",
         "question.answered",
         "question.closed",
+        "question.dismissed",
         "question.expired",
         "jev.mode_changed"
       ]

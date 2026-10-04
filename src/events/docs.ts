@@ -26,6 +26,7 @@ const WHEN: Record<EventType, string> = {
   'question.escalated': 'A question entered a stage — `target` is the answerer\'s instance name, the assessor\'s, or `human` — or the human was re-notified.',
   'question.answered': 'An answer was accepted: an answerer\'s draft the assessor let through (`by` = the answerer instance), or the human\'s (`via: "pane"` when they typed it into the job\'s pane: the job already runs again, nothing is typed for them).',
   'question.closed': 'The owner closed an open question without answering (UI Close). The job resumes with `answer`, the fixed close text, typed in; any answerer or assessor call in flight is aborted.',
+  'question.dismissed': 'The owner dismissed an open question (UI Dismiss): it needs no action any more. Nothing is typed into the job; a job still waiting on it is cancelled (`job.cancelled`, reason `question dismissed`); any answerer or assessor call in flight is aborted.',
   'question.expired': 'The human stage timed out and the job fails.',
 };
 

@@ -261,6 +261,7 @@ export type EventType =
   | 'question.escalated'
   | 'question.answered'
   | 'question.closed'
+  | 'question.dismissed'
   | 'question.expired';
 
 /**
@@ -272,14 +273,14 @@ export const EVENT_SCHEMA_VERSIONS: Readonly<Record<EventType, number>> = {
   'job.started': 1, 'job.progressed': 1, 'job.finished': 1, 'job.failed': 1, 'job.cancelled': 1,
   'job.requeued': 1, 'job.reattached': 1, 'job.reprioritized': 1, 'lane.opened': 1, 'lane.closed': 1,
   'decision.made': 2, 'router.mode_changed': 1, 'question.asked': 1, 'question.escalated': 2,
-  'question.answered': 2, 'question.closed': 1, 'question.expired': 1,
+  'question.answered': 2, 'question.closed': 1, 'question.dismissed': 1, 'question.expired': 1,
 };
 
 export const EVENT_TYPES: readonly EventType[] = [
   'job.queued', 'job.prioritized', 'job.held', 'job.approved', 'job.claimed', 'job.started',
   'job.progressed', 'job.finished', 'job.failed', 'job.cancelled', 'job.requeued', 'job.reattached', 'job.reprioritized',
   'lane.opened', 'lane.closed', 'decision.made', 'router.mode_changed',
-  'question.asked', 'question.escalated', 'question.answered', 'question.closed', 'question.expired',
+  'question.asked', 'question.escalated', 'question.answered', 'question.closed', 'question.dismissed', 'question.expired',
 ];
 
 export interface DomainEvent<T = Record<string, unknown>> {
@@ -338,7 +339,8 @@ export interface WebhookDelivery {
 
 /** open: being worked on (tier = the stage holding it). answered/expired/cancelled are terminal. */
 /** `closed`: the owner ended it without answering; the job resumes with the close text (questions/service.ts CLOSED_ANSWER). */
-export type QuestionStatus = 'open' | 'answered' | 'closed' | 'expired' | 'cancelled';
+/** `dismissed`: the owner dropped it; nothing is typed into the job, and a job still waiting on it is cancelled. */
+export type QuestionStatus = 'open' | 'answered' | 'closed' | 'dismissed' | 'expired' | 'cancelled';
 
 /** Who made an attempt. Absent on attempts stored before slice 2, when every model attempt was an answer. */
 export type AttemptRole = 'answerer' | 'assessor' | 'human';
@@ -393,6 +395,8 @@ export interface Question {
   notifyCount: number;
   /** Human tier: when the question expires and the job fails. */
   expiresAt?: string;
+  /** When the owner first saw it in the UI (POST /ui/api/questions/:id/seen). Unseen open questions at the human stage are the nav badge. */
+  seenAt?: string;
   createdAt: string;
   updatedAt: string;
 }

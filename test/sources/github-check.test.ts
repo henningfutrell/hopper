@@ -11,6 +11,32 @@ describe('GitHub source check', () => {
     expect(await source.check([job])).toEqual([{ kind: 'cancel', jobId: job.id, reason: 'issue closed' }]);
   });
 
+  it('an issue closed by the merge of a pull request opened after the job was created gives no signal: the job ends on its own', async () => {
+    const { gh, source } = setup();
+    gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:claimed'] });
+    gh.closeByPullRequest(REPO, 1, { createdAt: '2026-10-02T10:30:00.000Z', mergedAt: '2026-10-02T11:00:00.000Z' });
+    const [running, waiting] = [jobForIssue(1), jobForIssue(1, { status: 'waiting_answer', questionId: 'q-1' })];
+    expect(await source.check([running, waiting])).toEqual([]);
+  });
+
+  it('an issue closed by the merge of a pull request opened before the job was created cancels the job', async () => {
+    const { gh, source } = setup();
+    gh.createIssue({ repo: REPO, labels: ['hopper'] });
+    gh.closeByPullRequest(REPO, 1, { createdAt: '2026-10-02T09:00:00.000Z', mergedAt: '2026-10-02T11:00:00.000Z' });
+    const job = jobForIssue(1);
+    expect(await source.check([job])).toEqual([{ kind: 'cancel', jobId: job.id, reason: 'issue closed' }]);
+  });
+
+  it('a transient error asking what closed the issue skips the job: no cancel this sync', async () => {
+    const { gh, source } = setup();
+    gh.createIssue({ repo: REPO, labels: ['hopper'] });
+    gh.closeByPullRequest(REPO, 1, { createdAt: '2026-10-02T10:30:00.000Z', mergedAt: '2026-10-02T11:00:00.000Z' });
+    gh.failNext('closingPullRequest', new GitHubApiError('gh: Bad Gateway (HTTP 502)', false, 502));
+    const job = jobForIssue(1);
+    expect(await source.check([job])).toEqual([]);
+    expect(source.describe().checkErrors).toEqual({ [job.id]: 'gh: Bad Gateway (HTTP 502)' });
+  });
+
   it('removing the label cancels its job', async () => {
     const { gh, source } = setup();
     gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:claimed'] });

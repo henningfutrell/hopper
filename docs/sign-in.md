@@ -74,7 +74,7 @@ Secrets either inline (`clientSecret`, `idpCert`) or in a file of their own (`cl
 | UI role | may |
 |---|---|
 | `viewer` | read everything the UI shows |
-| `operator` | + cancel and approve jobs, answer and close questions |
+| `operator` | + cancel and approve jobs; answer, close, dismiss questions and mark them seen |
 | `admin` | + change configuration: plugins, machines, routing rules, webhooks, the rules file, router mode; hand out device links |
 
 The login code always signs in as `admin`. For a provider, `roles` decides, the same way for every

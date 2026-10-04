@@ -50,6 +50,13 @@ else if (cmd === 'api repos/o/r/issues/comments/77 -X PATCH --input -') {
   const { body } = JSON.parse(stdin);
   out({ ...restComment(77, 'owner', body) });
 }
+else if (argv[0] === 'api' && argv[1] === 'graphql') {
+  const number = argv.find((a) => a.startsWith('number='))?.slice('number='.length);
+  const closer = number === '5' ? { __typename: 'PullRequest', url: 'https://github.com/o/r/pull/9', createdAt: '2026-10-02T09:10:00Z', mergedAt: '2026-10-02T09:20:00Z' }
+    : number === '8' ? { __typename: 'Commit' } : null;
+  out({ data: { repository: { issue: { timelineItems: { nodes: [{ closer }] } } } } });
+}
+else if (cmd === 'api -X PATCH repos/o/r/issues/5 -f state=closed -f state_reason=completed') out({ number: 5, state: 'closed' });
 else if (cmd.startsWith('label create') || cmd.startsWith('issue edit')) out('');
 else if (cmd.startsWith('project item-list 3 ')) out({
   items: [

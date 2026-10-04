@@ -634,6 +634,30 @@ same `onAnswered` as an answer: job → `queued` with `pendingAnswer` = the clos
 Continue on your own judgement; if you cannot, end with JOB_HOPPER_FAILED and say why."
 Recovery treats a `closed` question like an `answered` one (requeue with its answer).
 
+**Dismiss** (`POST /ui/api/questions/:id/dismiss`, the card's Dismiss button; issue #37): the owner
+drops an open question that needs no action any more — typically one whose job has moved on, or
+whose work was done elsewhere. `QuestionService.dismissByHuman`, one tx: an in-flight stage call
+aborted (`superseded`), timers cleared (no re-notify, no expiry), question `dismissed` with no
+answer and no attempt, `question.dismissed { questionId }`, then `onDismissed`: a job still
+`waiting_answer` on that question is `cancelled` (`job.cancelled { reason: "question dismissed" }`,
+its source told as for any cancel) and its pane cleaned up after the commit; a job that has moved
+on is left alone (compare-and-set, no log line). Nothing is typed into any pane. Close lets the job
+go on; Dismiss ends it. The card marks a job that has moved on (`job moved on: <status>`).
+
+**Seen** (`POST /ui/api/questions/:id/seen`; issue #37): `seenAt` set once on the question, kept
+after; any status. The Questions view posts it for every open question at the human stage without
+`seenAt` while it is shown with a UI session. The nav badge counts open questions at the human stage
+without `seenAt`, so it clears once they are seen, answered, closed or dismissed. No event: seen
+changes no job and nothing outside the UI reads it. Only human-stage questions are marked, so a
+question seen while still with the answerer or the assessor badges when it reaches the owner.
+
+**Question history** (issue #37): every question stays in the `questions` table with its text,
+trail, answer and status; nothing prunes it. The Questions view lists handled ones (status not
+`open`, newest first, the last 200 from `GET /api/questions?status=all&limit=200`) as one compact
+line each — time, outcome, first line of the question — that opens to the question, the answer
+and who gave it, and the job. The history is local to the hopper's SQLite file: no route sends it
+anywhere, and the hopper writes nothing of a question to GitHub (it writes only labels).
+
 **Answered in the pane.** The owner may type the answer straight into a parked pane instead of
 the UI. On every engine tick, `src/engine/pane-answers.ts` asks the executor of each
 `waiting_answer` job `answeredInPane(job)` (port method; herdr-claude implements it; the decider
@@ -864,6 +888,8 @@ token and send any `Origin`. Cookies are no better here: they ignore ports, so a
 | POST | `/ui/api/jobs/:id/approve` | `{}` | engine approve |
 | POST | `/ui/api/questions/:id/answer` | `{ answer }` | `QuestionService.answerByHuman` (404/409) |
 | POST | `/ui/api/questions/:id/close` | `{}` | `QuestionService.closeByHuman` (404/409): close without answering ("Questions" → Close) |
+| POST | `/ui/api/questions/:id/dismiss` | `{}` | `QuestionService.dismissByHuman` (404/409): drop the question; a job still waiting on it is cancelled ("Questions" → Dismiss) |
+| POST | `/ui/api/questions/:id/seen` | `{}` | `QuestionService.markSeen` (404): `seenAt` once; clears the nav badge |
 | POST | `/ui/api/router-mode` | `{ mode }` | set router mode (phase 5; was `/ui/api/jev`) |
 | POST | `/ui/api/plugins` | `{ action, … }` | edit plugins.yaml: one instance's options, select a plugin, add or remove a list role's instance, rescan (phase 5 slice 7, issue #4; "Settled in slice 7") |
 | POST | `/ui/api/rules-file` | `{ text, version }` | replace the rules file whole (issue #18, "Question gates"): 400 over 64 KiB, 409 stale `version` |
@@ -1050,9 +1076,11 @@ labelled `hopper:claimed` with no local job is skipped and shown in status detai
 above; empty body → claimed, then failed with error "empty issue body"; priority per
 "Priority"; cwd = `repoPaths[repo]` (expanded) else `defaultCwd`.
 
-**Write criteria.** The hopper's only issue writes are labels (state); it posts no comments at
-all (owner decision, 2026-10-04: a finished issue needs no comment). No claim, progress, question,
-answered, failure, cancel or completion comment; no reactions, issue edits, closes, or PR
+**Write criteria.** The hopper's only issue writes are labels (state) and closing the issue of a
+finished job; it posts no comments at all (owner decision, 2026-10-04: a finished issue needs no
+comment). A finished job's issue is closed with `state_reason: completed` (issue #38: finished work
+leaves no open issue behind); a failed or cancelled job's issue stays open. No claim, progress,
+question, answered, failure, cancel or completion comment; no reactions, other issue edits, or PR
 comments. Jobs get no way to write to their issue (no token, no helper), and their prompt says
 nothing about commenting (owner decision, 2026-10-04: a job has no reason to talk on its issue): the
 issue context block ends at the comments list, with no footer. A question goes to the owner through
@@ -1084,7 +1112,13 @@ A failure never goes to the issue as text. It is one stderr line in the daemon l
 
 **Signals (check):** per active job, `getIssue`:
 - issue `closed`, or `label` removed → `cancel` (reason `issue closed` / `label removed`);
-  issue 404/410 → `cancel` (`issue gone`). Jobs are told not to close their own issue.
+  issue 404/410 → `cancel` (`issue gone`).
+- **Except the job's own pull request** (issue #38): a closed issue whose last close event's closer
+  is a merged pull request opened at or after the job's `createdAt` gives no signal — that is the
+  job's work landing, and the job still has to install and verify. It runs on and ends as it
+  reports (`finished` on `JOB_HOPPER_DONE`). `closingPullRequest` asks GraphQL
+  (`src/sources/github/closer.ts`); a pull request opened before the job, a person, or a commit
+  closing the issue cancels as above; a permanent error asking counts as "not its own".
 - `hopper:backburner` on the issue of a waiting (`queued`/`held`) job → `cancel` (`backburner`);
   a running job is not touched.
 - **Error classes:** `GitHubApi` errors carry `permanent` (404/410/403/422) vs transient
@@ -1414,7 +1448,9 @@ Manifest:
   "default_events": [] }
 ```
 
-- `issues: write` now covers only labels (write criteria). The
+- `issues: write` now covers only labels and closing a finished job's issue (write criteria).
+  Reading which pull request closed an issue needs nothing more (verified against the live app,
+  2026-10-04). The
   app could later drop to fewer permissions; not changed here.
 
 - `hook_attributes` exists only to make GitHub issue a webhook secret for later. The URL uses
@@ -2763,7 +2799,7 @@ first sign-in, not at boot: an unreachable issuer must not stop the daemon.
 | UI role | mutations |
 |---|---|
 | `viewer` | `POST /ui/api/logout` |
-| `operator` | + jobs `cancel`, `approve`; questions `answer`, `close` |
+| `operator` | + jobs `cancel`, `approve`; questions `answer`, `close`, `dismiss`, `seen` |
 | `admin` | + `router-mode`, `plugins`, `rules-file`, `webhooks`, `machines`, `routing`, `device-link` |
 
 A live session whose role is short gets 403 `{ error, needs }` — the UI keeps the session and
