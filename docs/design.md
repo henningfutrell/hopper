@@ -41,7 +41,8 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations, repositories, event log, config documents, login codes | engine, http, decider |
 | `src/webhooks/` | signing, dispatcher, retry/backoff, `webhooks.yaml` load + watch (`config.ts`), the UI edit of it (`edit.ts`) | engine, http, decider |
 | `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `job-hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, `plugins.yaml` + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `question-slots.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), a machine edit of `attachedMachines:` (`attached-edit.ts`, spliced into the file; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `answerer/claude-cli/`, `assessor/claude-cli-assessor/`, `assessor/always-escalate/` hold their prompts; `executor/herdr-claude/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-gh/` and `job-source/github-app/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser, runner, background refresh); `notifier/grokbot-routine/` is the Grok Bot routine webhook — env-file reader and notifier; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`) | engine, http, store, decider, questions |
-| `src/executors/` | `Executor` adapters (`test`, `herdr/`, `command.ts` — a job's body run on its machine through its connection) and the registry; reached through the executor plugins | engine, http, store, plugins |
+| `src/executors/` | `Executor` adapters (`test`, `herdr/`, `command.ts` — a job's body run on its machine through its connection) and the registry; reached through the executor plugins. The connections and their target authentication ("Target authentication"): `ssh.ts` (key-only ssh to pinned host keys), `docker.ts` (the docker socket check, the proxy's allowlist), `client.ts` (a client target's tunnel, signed calls); `env.ts` the scrubbed child environment | engine, http, store, plugins |
+| `src/client/` | the hopper client ("Client targets"), installed on a client target as plain files: `server.ts` (signed `POST /herdr` over HTTP/2 on the tunnel), `tunnel.ts` (its ssh to the hopper), `main.ts`; `relay.ts`, the forced command of its key on the hopper's machine; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`); `ssh-options.ts` (the hardened ssh options, shared with `src/executors/ssh.ts`) | everything in `src/` outside `src/client/` |
 | `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following plugins.yaml; ssh probe and herdr path resolution through the herdr CLI client's ssh argv; the container probe, `docker container inspect`), the detected ssh targets (`ssh-config.ts`), `combineMachineSources` | engine, http, store, plugins |
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin) | engine, http, store, plugins |
 | `src/routing/` | routing rules: the plugins.yaml `routing:` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
@@ -2250,9 +2251,10 @@ attachedMachines:
 | `executors` | `[herdr-claude]` | executor instances that run there |
 | `label` | `name` | |
 | `session` | `job-hopper` | job-hopper's herdr session there; never `default` |
+| `hostKey` | — | the **pinned host key**, `<type> <base64>`; absent → the hopper does not connect ("Target authentication") |
 | `herdrBin` | `herdr` | **give the absolute path.** Each call is a fresh login shell there; on the laptop the shell env file is a symlink that every new pane's shell updates, and a call racing that update lost its PATH (`zsh:1: command not found: herdr`, exit 127, seen live) |
 
-**Reaching it.** `createHerdrCliClient({ ssh: { target, controlDir } })` runs the same herdr argv as
+**Reaching it** (authentication: "Target authentication" below; the argv here predates it). `createHerdrCliClient({ ssh: { target, controlDir } })` runs the same herdr argv as
 `ssh -F ~/.ssh/config -o BatchMode=yes -o ConnectTimeout=10 -o ControlMaster=auto -o ControlPath=<dataDir>/ssh/%C
 -o ControlPersist=60 -- <target> '<argv, POSIX single-quoted>'`. `-F` names the user's config only
 (`/dev/null` when there is none): under the job-hopper unit (PrivateTmp, so a user namespace) the
@@ -2327,6 +2329,9 @@ routing:
 | `executors` | `[command]` | `[herdr-claude]` for an ssh target |
 | `session`, `herdrBin` | — | refused on a container target: it has no herdr |
 
+**Reached** only through the hopper's **docker socket** (`JOB_HOPPER_DOCKER_HOST`, "Target authentication"):
+`docker --host <it> exec …`; without it a container target stays offline.
+
 **Online** while `docker container inspect` says the container runs; a missing container is
 offline, not an error. Same background probe as an ssh target (at most every 30 s, `list()` never
 waits). A pinned job waits while its target is offline (`pinned machine box offline`).
@@ -2360,6 +2365,116 @@ adding one from the UI is not built (the add form attaches ssh targets).
 **Verification:** `test/integration/container-target.test.ts` — a real container, the real probe, a
 GitHub issue routed there runs and finishes with the container's output; `test/adapters/command-executor.test.ts`
 — the executor over docker, ssh and here.
+
+## Target authentication (issue #59, 2026-10-04)
+
+Owner request: the hopper proves itself securely to every target it connects to; security first, no
+shortcuts. SSH: key-based authentication only, no passwords. Docker: access control on the socket.
+HTTP: tokens. Owner answer on HTTP: machines run an installed hopper client, are registered with the
+hopper, and connect back to it over a reverse tunnel ("Client targets" below).
+
+| target | the hopper proves itself by | the target proves itself by | refused |
+|---|---|---|---|
+| ssh target | the **hopper's ssh key**, alone | its **pinned host key** | passwords, keyboard-interactive, GSSAPI, host-based, the user's agent and other keys, an unpinned or changed host key, jump hosts, forwarding |
+| container target | holding a **docker socket** only its user may open, which lets through only its targets | — (this machine's docker) | the root daemon's socket, a group- or world-openable socket, a TCP daemon, any `DOCKER_*` variable |
+| client target | an HMAC of the **client token** on every request | an HMAC of the token on every answer; its tunnel key | an unsigned, stale (30 s), replayed or altered request; an answer it did not sign |
+
+**ssh** (`src/executors/ssh.ts`; every ssh call: herdr over ssh, the probe, the command executor, adding
+a machine). The destination is resolved once with `ssh -G -F <the user's config>` (host, user, port;
+a `ProxyJump` or `ProxyCommand` there is refused); the connection reads no config (`-F /dev/null`) and
+carries on its command line `src/client/ssh-options.ts`: `PreferredAuthentications=publickey`,
+`PasswordAuthentication=no`, `KbdInteractiveAuthentication=no`, `GSSAPIAuthentication=no`,
+`HostbasedAuthentication=no`, `IdentitiesOnly=yes`, `IdentityAgent=none`, `StrictHostKeyChecking=yes`,
+`GlobalKnownHostsFile=/dev/null`, `UpdateHostKeys=no`, `CheckHostIP=no`, `VerifyHostKeyDNS=no`, no
+agent, X11 or port forwarding, `BatchMode=yes`; then `-i <the hopper's key>`,
+`UserKnownHostsFile=<workdir>/ssh/known_hosts`, `HostKeyAlias=<target>`. The key is the mounted secret
+file `JOB_HOPPER_SSH_KEY_FILE` names (a variable is refused: ssh reads keys from files only; others
+must not be able to read it). The known_hosts file holds one line per ssh target, written from each
+machine's `hostKey` whenever plugins.yaml changes; a machine without one, or two machines pinning
+different keys for one target, is never connected to (logged once). A target name is a plain name
+(`[A-Za-z0-9_.-]`, optionally `user@`). On the target the key is installed with `restrict` (no pty, no
+forwarding): `JOB_HOPPER_SSH_KEY_FILE=<key> bash scripts/attach-machine.sh <target>` adds it once and
+prints the entry with its `hostKey` — the key the user's own `~/.ssh/known_hosts` holds for the
+target, never one learned from a connection. Adding a machine from the UI pins the same way
+(`resolveSshTarget`): a target the user has never connected to by hand is refused. The target's own
+sshd may still accept passwords from others; the hopper never offers one (proven against a real sshd
+that does: `test/integration/ssh-auth-real.test.ts`).
+
+**docker** (`src/executors/docker.ts`). Docker's socket has no authentication: whoever opens it is root
+on this machine, and the root daemon's socket opens to the whole docker group. So the hopper uses only
+`JOB_HOPPER_DOCKER_HOST=unix://<path>`, checked before every call: a socket owned by its user, mode
+without group or other bits, in a directory owned by its user that others may not write. There is no
+default. Every call is `docker --host <it> …` with no `DOCKER_*` variable in its environment. The
+daemon's unit makes the root socket inaccessible (`InaccessiblePaths=-/run/docker.sock
+-/var/run/docker.sock`). In practice the socket is the **docker socket proxy**: `bash
+scripts/docker-proxy.sh <container>...` runs `wollomatic/socket-proxy` (pinned by digest; no network,
+read-only, no capabilities, restarted with docker) on `~/.local/state/job-hopper/docker/docker.sock`
+(mode 600), allowing `HEAD /_ping`, `GET /_ping`, `GET /v1.N/containers/<target>/json`,
+`POST /v1.N/containers/<target>/exec`, `POST /v1.N/exec/<id>/start`, `GET /v1.N/exec/<id>/json` —
+everything else is 403. Re-run it with every container target when one is added. **Residual risk:**
+the proxy checks paths, not bodies, so an exec it lets through could ask for `Privileged` or another
+user in that container; only the hopper's own code writes those requests.
+
+**client** ("Client targets"): HMAC-SHA256 over method, path, timestamp, nonce and the body's hash,
+keyed with the client token; the client accepts it within 30 s and once, and signs its answer over the
+request's nonce, status and body. The token itself never crosses the wire. node:crypto (HMAC,
+`timingSafeEqual`), not a library: the client installs as plain files with no `node_modules`, and the
+construction is a few lines over node's own primitives.
+
+**Configuration** (daemon.env, beside the other secrets): `JOB_HOPPER_SSH_KEY_FILE`,
+`JOB_HOPPER_DOCKER_HOST`, and each client target's token (`<tokenEnv>` or `<tokenEnv>_FILE`).
+
+## Client targets (issue #59, 2026-10-04)
+
+A **client target** is an attached machine that runs the **hopper client** and dials this machine;
+the hopper never connects to it directly.
+
+```yaml
+attachedMachines:
+  - { name: studio, client: { tokenEnv: CLIENT_TOKEN_STUDIO }, lanes: 1 }   # executors default: [herdr-claude]
+```
+
+| field | | |
+|---|---|---|
+| `client.tokenEnv` | — | the variable holding the client token in the daemon's runtime (or `<it>_FILE`); `[A-Z_][A-Z0-9_]*` |
+| `name` | — | letters, digits, `_`, `-`: it names the tunnel's socket |
+| `session`, `herdrBin`, `hostKey` | — | refused: the client names its herdr itself, and its tunnel pins the keys |
+
+**The tunnel.** The client (`src/client/tunnel.ts`) runs `ssh -T` to this machine with the hardened
+options, its own key (made on the client; the private half never leaves it) and this machine's pinned
+host key (read from `/etc/ssh/ssh_host_ed25519_key.pub` here by the installer). The key's line in this
+user's authorized_keys is `restrict,command="<node> <app>/src/client/relay.ts
+<workdir>/clients/<name>.sock" <key> job-hopper-client:<name>`: no shell, no forwarding of any kind —
+the key can do nothing but open its own socket. The **relay** writes a marker line (the client skips
+whatever the login shell printed before it), listens on that socket (mode 600, a stale socket
+replaced), takes the daemon's one connection and pipes it to the session. The client serves HTTP/2 on
+the session's stdin and stdout. When either end goes, the relay exits and the client dials again
+(1 s, 2 s, 5 s, 10 s, then every 30 s; back to 1 s after a minute up).
+
+**The calls.** `POST /herdr {args, timeoutMs}` → `{code, stdout, stderr}`: the client runs `<its
+herdr> --session <its session> <args>` with no shell; `--session` in the args is refused, so is
+anything but a signed `POST /herdr` (401, 404, 400, 413 over 1 MB). The daemon keeps one HTTP/2
+session per socket (`src/executors/client.ts`); `createHerdrCliClient({ client })` maps the answer as
+the CLI's exit codes map (2 → usage, JSON on stderr → herdr's error). herdr-claude runs there like on an
+ssh target and records `client: { machine, tokenEnv }` in its pane state, so resume, reattach and
+cleanup reach the same client. The command executor refuses a client target (it serves herdr only).
+
+**Online** while `status server` through the tunnel says `status: running`, answered and signed by
+the client; offline when there is no tunnel, the token is missing, or the answer does not prove
+itself.
+
+**Installing one** (on this machine, as the daemon's user): `bash scripts/attach-client.sh <name>
+<ssh-target> <user@this-host> [lanes]` — over the user's ssh: checks node ≥ 24 and herdr there,
+installs `src/client/{main,server,signature,tunnel,ssh-options}.ts` to `~/.local/lib/job-hopper-client/`,
+the token, the pinned host key and `client.env` to `~/.config/job-hopper-client/` (mode 700; files
+600), the units `job-hopper-client` and `job-hopper-client-herdr` (its own herdr session,
+`job-hopper-client` unless `JOB_HOPPER_CLIENT_SESSION`), and starts them; here: mints the token to
+`~/.config/job-hopper/clients/<name>.token` (600) and adds the key's line. Prints the daemon.env line
+(`<tokenEnv>_FILE=…`, then restart the daemon) and the plugins.yaml entry. Re-running keeps the token
+and the key.
+
+**Residual risk.** The client's key logs in as the daemon's user, restricted to the relay; the relay is
+the only thing it can run. The daemon trusts nothing from a client but the herdr answers it signed.
 
 ## Phase 6 — owner direction, not yet built (2026-10-03)
 
