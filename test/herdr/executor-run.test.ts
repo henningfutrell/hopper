@@ -188,4 +188,31 @@ describe('herdr-claude executor: run', () => {
     const out = await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx);
     expect(out.kind === 'failed' && out.error).toMatch(/workspace_not_found/);
   });
+
+  it('waits for the pane shell: retries agent start while herdr says not an available shell', async () => {
+    const { herdr, executor } = setup({ turns: [DONE], shellNotReadyStarts: 3 });
+    const out = await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx);
+    expect(out.kind, JSON.stringify(out)).toBe('finished');
+    expect(herdr.calls.filter((c) => c.method === 'startAgent')).toHaveLength(4);
+    expect(herdr.agentStarts).toHaveLength(1);
+  });
+
+  it('gives up at the start deadline when the shell never comes: failed, pane closed', async () => {
+    const { herdr, clock, executor } = setup({ turns: [DONE], shellNotReadyStarts: Infinity });
+    const t0 = clock.now().getTime();
+    const out = await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx);
+    expect(out.kind === 'failed' && out.error).toMatch(/shell/);
+    expect(clock.now().getTime() - t0).toBeGreaterThanOrEqual(60000);
+    expect(clock.now().getTime() - t0).toBeLessThan(62000);
+    expect(herdr.closed).toEqual(['w1:p1']);
+    expect(herdr.prompts).toEqual([]);
+  });
+
+  it('does not retry any other agent start error', async () => {
+    const { herdr, executor } = setup({ turns: [DONE] });
+    herdr.failNext('startAgent', 'pane_not_found');
+    const out = await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx);
+    expect(out.kind === 'failed' && out.error).toMatch(/pane_not_found/);
+    expect(herdr.calls.filter((c) => c.method === 'startAgent')).toHaveLength(1);
+  });
 });

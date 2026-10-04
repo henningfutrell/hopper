@@ -73,6 +73,10 @@ describe('herdr CLI client', () => {
     expect(await herdr().startAgent({ name: 'jh-blocked', paneId: 'w7:p5', args: [], timeoutMs: 1000 })).toEqual({ ok: false, notReady: true });
   });
 
+  it('startAgent maps agent_pane_busy (pane not at a shell yet) to paneBusy', async () => {
+    expect(await herdr().startAgent({ name: 'jh-busy', paneId: 'w7:p5', args: [], timeoutMs: 1000 })).toEqual({ ok: false, paneBusy: true });
+  });
+
   it('other errors become a typed HerdrError with code and message', async () => {
     const err = await herdr().startAgent({ name: 'jh-boom', paneId: 'w7:p404', args: [], timeoutMs: 1000 }).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(HerdrError);

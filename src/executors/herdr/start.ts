@@ -10,6 +10,7 @@ import { isTrustDialog } from './screen.ts';
 
 export const WORKSPACE_LABEL = 'job-hopper';
 const START_TIMEOUT_MS = 60000;
+const SHELL_RETRY_MS = 100;
 
 /** What a job keeps in `job.executorState`. */
 export interface PaneState {
@@ -68,7 +69,15 @@ async function waitReady(d: StartDeps, ctx: ExecutionContext, s: PaneState): Pro
  */
 export async function startClaude(d: StartDeps, ctx: ExecutionContext, s: PaneState, p: ClaudeJobPayload): Promise<ExecutionOutcome | null> {
   const args = [...d.claudeArgs, ...(p.model ? ['--model', p.model] : [])];
-  const started = await d.herdr.startAgent({ name: s.agentName, paneId: s.paneId, args, timeoutMs: START_TIMEOUT_MS });
+  const until = d.clock.now().getTime() + START_TIMEOUT_MS;
+  let started = await d.herdr.startAgent({ name: s.agentName, paneId: s.paneId, args, timeoutMs: START_TIMEOUT_MS });
+  // A pane spawned a moment ago is not at its shell prompt yet; herdr refuses `agent start` until it is.
+  while (!started.ok && 'paneBusy' in started) {
+    if (ctx.signal.aborted) return null;
+    if (d.clock.now().getTime() >= until) return { kind: 'failed', error: `pane ${s.paneId} never reached its shell prompt within ${START_TIMEOUT_MS} ms` };
+    await d.sleep(SHELL_RETRY_MS, ctx.signal);
+    started = await d.herdr.startAgent({ name: s.agentName, paneId: s.paneId, args, timeoutMs: START_TIMEOUT_MS });
+  }
   if (started.ok) return null;
   const screen = await d.herdr.read(s.paneId, { source: 'visible', lines: 60 });
   if (!(d.trustWorkdir && isTrustDialog(screen, s.cwd))) {

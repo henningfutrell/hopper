@@ -118,4 +118,23 @@ describe('herdr-claude executor: cancel, shutdown, cleanup', () => {
     await executor.cleanup!(jobWith({ prompt: 'go' }));
     expect(herdr.calls).toEqual([]);
   });
+
+  it('refuses to map a pane another lane holds: failed, pane untouched', async () => {
+    const s = setup({ turns: [{ output: [], end: 'working' }] });
+    const first = contextFor(jobWith({ prompt: 'Write a greeting' }), 'local/lane-1');
+    const running = s.executor.run(first.ctx);
+    await until(() => s.herdr.prompts.length === 1);
+    expect(s.executor.lanePanes().get('local/lane-1')).toBe('w1:p1');
+
+    const intruder = jobWith({ prompt: 'x' }, { id: 'ffffffff-0000-0000-0000-000000000000', executorState: first.saved.at(-1) });
+    const out = await s.executor.resume!(contextFor(intruder, 'local/lane-2').ctx, 'answer');
+    expect(out.kind === 'failed' && out.error).toMatch(/w1:p1.*local\/lane-1/);
+    expect(s.herdr.closed).toEqual([]);
+    expect(s.herdr.keys).toEqual([]);
+    expect(s.herdr.prompts).toHaveLength(1);
+    expect([...s.executor.lanePanes()]).toEqual([['local/lane-1', 'w1:p1']]);
+
+    first.ac.abort();
+    await running;
+  });
 });

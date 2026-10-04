@@ -28,6 +28,8 @@ export interface FakeHerdrOptions {
   trustDialogFor?: string;
   /** Startup blocks on some other screen. */
   startupBlockedBy?: string[];
+  /** The first N `startAgent` calls answer `paneBusy`, as herdr does for a pane spawned a moment ago. */
+  shellNotReadyStarts?: number;
   session?: string;
   /** Column width the prompt echo is wrapped at. Default 100. */
   width?: number;
@@ -96,6 +98,7 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
   const panes = new Map<string, Pane>();
   const failures = new Map<string, string>();
   let n = 0;
+  let busyStarts = o.shellNotReadyStarts ?? 0;
   let workspaceId: string | undefined;
 
   const record = (method: keyof HerdrClient, ...args: unknown[]): void => {
@@ -156,6 +159,7 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
     },
     async startAgent(args) {
       record('startAgent', args);
+      if (busyStarts-- > 0) return { ok: false, paneBusy: true };
       fake.agentStarts.push(args);
       const p = livePane(args.paneId);
       p.agent = args.name;

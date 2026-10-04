@@ -14,7 +14,8 @@ export interface AgentInfo {
 
 export type ReadSource = 'visible' | 'recent' | 'recent-unwrapped';
 
-export type StartAgentResult = { ok: true } | { ok: false; notReady: true };
+/** `notReady`: Claude blocked at startup. `paneBusy`: the pane is not at its shell prompt yet (just spawned); retry. */
+export type StartAgentResult = { ok: true } | { ok: false; notReady: true } | { ok: false; paneBusy: true };
 
 /** A herdr server error (JSON on stderr, exit 1), a usage error, a timeout, or a failed spawn. */
 export class HerdrError extends Error {
@@ -33,7 +34,7 @@ export interface HerdrClient {
   ensureWorkspace(label: string, cwd: string): Promise<string>;
   /** `env`: variables for the process launched in the tab (`herdr tab create --env K=V`). */
   createTab(o: { workspaceId: string; cwd: string; label: string; env: Record<string, string> }): Promise<{ tabId: string; paneId: string }>;
-  /** Start Claude in the pane. `notReady`: blocked at startup (e.g. the folder-trust dialog). */
+  /** Start Claude in the pane. `notReady`: blocked at startup (e.g. the folder-trust dialog). `paneBusy`: shell not up yet. */
   startAgent(o: { name: string; paneId: string; args: string[]; timeoutMs: number }): Promise<StartAgentResult>;
   /** null when no live agent has that name. */
   getAgent(name: string): Promise<AgentInfo | null>;
