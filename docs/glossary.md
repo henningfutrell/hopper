@@ -13,7 +13,11 @@ synonyms. Rename here first, in the same commit as everything else.
 | **ssh target** | The ssh destination of an attached machine: a `~/.ssh/config` alias or `user@host`. | host |
 | **Lane** | One concurrent job slot on a machine. Opened and closed by Decisions. `idle`, `busy`, `draining`. | slot, worker, thread |
 | **Draining** | A busy lane the Decision wants gone; it closes when its job ends. | |
-| **Usage reading** | One budget measurement: `used` of `limit` in a `unit`, optionally for one machine. Supplied by usage sources: the `usage-source` role's 0..n instances (plugins.yaml `usageSources:`; no built-in plugin — the fake is a test double). | quota |
+| **Usage reading** | One budget measurement: `used` of `limit` in a `unit`, optionally for one machine, optionally of one usage window, optionally informational. Supplied by usage sources: the `usage-source` role's 0..n instances (plugins.yaml `usageSources:`; an absent section → the built-in `claude` instance of `claude-plan`; the fake is a test double). | quota |
+| **Usage window** | The period a usage reading measures, as its source names it (`window`): claude-plan's `session` (5 h), `week` (all models), `week (Fable)`. | period, bucket |
+| **Informational reading** | A usage reading that is shown but never throttles lanes (`informational: true`): its budget limits one model, not every job — claude-plan's `week (Fable)`, or a window it does not know. The decider's step 1 skips it. | advisory |
+| **Account** | Who a part acts as on an outside service: the Claude account a usage source reads usage for (email, plan), the GitHub user the `github-gh` source acts as, the GitHub App bot the `github-app` source acts as and its installation repos. `GET /api/accounts`. Facts only, never a token. | identity (in UI copy), credentials |
+| **Lane effect** | What usage does to one machine's lanes now: its used fraction, lane cap and band (`free`, `soft`, `hard`, `offline`) — the decider's steps 1-2 over the current readings. `GET /api/usage` `machines`. | |
 | **Soft limit / hard limit** | Usage fractions. Past soft, the lane cap scales down; at hard, lanes stop. | |
 | **Lane cap** | The most lanes a machine may run given its usage. | |
 | **Decider** | The pure function `decide()`: inputs in, one Decision out. | scheduler |

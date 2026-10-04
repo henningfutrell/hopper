@@ -88,6 +88,26 @@ describe('usage limits', () => {
     expect(plan(d)).toMatchObject({ target: 0, open: 0, close: ['local/lane-1'], drain: ['local/lane-3', 'local/lane-2'] });
   });
 
+  it('an informational reading (a window of one model) never throttles lanes', () => {
+    const fable = reading(99, 100, { window: 'week (Fable)', informational: true, unit: '%' });
+    const d = decide(inputs({ usage: [fable], waiting: ['a', 'b', 'c'].map((i) => job(i)) }), 'd1');
+    expect(d.start).toHaveLength(3);
+    expect(plan(d).target).toBe(3);
+  });
+
+  it('a session reading at 80% scales lanes down while an informational one at 99% is ignored', () => {
+    // used 0.8: floor(4 * (0.95-0.8)/(0.95-0.7)) = floor(2.4) = 2
+    const usage = [
+      reading(80, 100, { window: 'session', unit: '%' }),
+      reading(30, 100, { window: 'week', unit: '%' }),
+      reading(99, 100, { window: 'week (Fable)', informational: true, unit: '%' }),
+    ];
+    const d = decide(inputs({ usage, waiting: ['a', 'b', 'c', 'd'].map((i) => job(i)) }), 'd1');
+    expect(d.start).toHaveLength(2);
+    expect(plan(d).target).toBe(2);
+    expect(d.hold[0]!.reason).toContain('usage soft limit caps lanes at 2');
+  });
+
   it('ignores readings with limit <= 0 and says so', () => {
     const d = decide(inputs({ usage: [reading(5, 0, { source: 'broken' })], waiting: [job('a')] }), 'd1');
     expect(d.start).toHaveLength(1);

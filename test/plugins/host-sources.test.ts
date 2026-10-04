@@ -1,7 +1,7 @@
 // Phase 5 slice 4: the job-source, machine-source and usage-source roles in the plugin host. All
 // three are restart roles: built once at start from plugins.yaml (or the built-in instances when a
 // section is absent); a later edit shows `changed — restart pending`. Detection never makes a paid
-// call: github-gh asks `gh auth status`, github-app looks for its app file.
+// call: github-gh asks `gh auth status`, github-app looks for its app file, claude-plan `which`es claude.
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -183,11 +183,16 @@ describe('the machine-source role', () => {
 });
 
 describe('the usage-source role', () => {
-  it('none built in: no usage sources unless plugins.yaml names one', async () => {
-    const { host } = start({ file: 'version: 1\n' });
-    await host.start();
-    expect(host.usageSources()).toEqual([]);
-    expect(BUILTIN_PLUGINS.filter((p) => p.role === 'usage-source')).toEqual([]);
+  it('built in: claude-plan; no section means the built-in claude instance, `usageSources: []` means none', async () => {
+    expect(BUILTIN_PLUGINS.filter((p) => p.role === 'usage-source').map((p) => p.id)).toEqual(['claude-plan']);
+    const absent = start({ file: 'version: 1\n' }).host;
+    await absent.start();
+    expect(absent.report().usageSources.instances.map((i) => [i.instance.name, i.instance.plugin, i.active]))
+      .toEqual([['claude', 'claude-plan', 'claude-plan']]);
+    absent.stop();
+    const none = start({ file: 'version: 1\nusageSources: []\n' }).host;
+    await none.start();
+    expect(none.usageSources()).toEqual([]);
   });
 
   it('a usage plugin named in plugins.yaml is polled under its instance name; an unknown one is dropped with the reason', async () => {

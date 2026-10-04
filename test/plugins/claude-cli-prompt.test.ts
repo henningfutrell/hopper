@@ -58,6 +58,11 @@ describe('buildAssessPrompt (claude-cli-assessor)', () => {
     for (const s of ['RULE-ONE', 'JOBPROMPT', 'QUESTIONTEXT', 'DRAFTANSWER', 'DRAFTREASON']) expect(p).toContain(s);
   });
 
+  it("says whether the answerer was confident (Fable assesses unconfident drafts too)", () => {
+    expect(buildAssessPrompt(req(), draft)).toContain('Answerer confident: yes');
+    expect(buildAssessPrompt(req(), { ...draft, confident: false })).toContain('Answerer confident: no');
+  });
+
   it('includes previous attempts', () => {
     const previous = [{ tier: 'opus', role: 'answerer' as const, startedAt: 'a', outcome: 'escalated' as const, reason: 'EARLIER' }];
     expect(buildAssessPrompt(req({ previous }), draft)).toContain('EARLIER');

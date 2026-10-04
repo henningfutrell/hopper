@@ -1,7 +1,7 @@
 // Starts the real composition root (src/main.ts) on port 0 against a temp SQLite file, with the
 // fake router at the Router seam (unless `realRouter`: then the plugin host's router runs), the
 // fake usage source and the fake question doubles (fake-questions.ts) at their seams, a fast tick,
-// and a temp plugins.yaml (executor `test`, no job sources) and webhooks file (never the user's
+// and a temp plugins.yaml (executor `test`, no job or usage sources) and webhooks file (never the user's
 // ~/.config). `plugins` sections are written over TEST_PLUGINS on every start; without them a
 // plugins.yaml already in the data dir is kept; `plugins: false` writes none, so the daemon
 // migrates or writes its defaults. Jobs are PULLED: a
@@ -71,8 +71,8 @@ export function tempDbPath(): { dbPath: string; cleanup(): void } {
 /** plugins.yaml `machines:` with this many lanes on the local machine. */
 export const lanes = (n: number) => ({ name: 'local', plugin: 'local', options: { lanes: n } });
 
-/** The plugins.yaml a test app gets unless it brings its own: executor `test`, no job sources. */
-export const TEST_PLUGINS = { version: 1, executors: [{ name: 'test', plugin: 'test' }], jobSources: [] };
+/** The plugins.yaml a test app gets unless it brings its own: executor `test`, no job or usage sources. */
+export const TEST_PLUGINS = { version: 1, executors: [{ name: 'test', plugin: 'test' }], jobSources: [], usageSources: [] };
 
 export function writePluginsYaml(dataDir: string, doc: unknown): string {
   const path = join(dataDir, 'plugins.yaml');

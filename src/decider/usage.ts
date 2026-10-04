@@ -6,9 +6,9 @@ export interface MachineUsage {
   ignored: UsageReading[];
 }
 
-/** Step 1: max of used/limit over the readings that apply to the machine. */
+/** Step 1: max of used/limit over the readings that apply to the machine; informational readings never do. */
 export function machineUsage(machineId: string, readings: UsageReading[]): MachineUsage {
-  const applicable = readings.filter((r) => r.machineId === undefined || r.machineId === machineId);
+  const applicable = readings.filter((r) => !r.informational && (r.machineId === undefined || r.machineId === machineId));
   const ignored = applicable.filter((r) => r.limit <= 0);
   const fracs = applicable.filter((r) => r.limit > 0).map((r) => r.used / r.limit);
   return { usedFrac: fracs.length === 0 ? 0 : Math.max(...fracs), ignored };

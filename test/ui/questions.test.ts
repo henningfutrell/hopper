@@ -30,6 +30,8 @@ function fakeDaemon(o: { authed: boolean; mutationStatus?: number }) {
     '/api/webhooks/deliveries': { deliveries: [] },
     '/api/questions': { questions: [question] },
     '/api/sources': { sources: [] },
+    '/api/usage': { readings: [], sources: [], limits: { soft: 0.7, hard: 0.95 }, machines: [] },
+    '/api/accounts': { accounts: [] },
   };
   const fetch = vi.fn(async (input: string, init: RequestInit = {}) => {
     const path = String(input).split('?')[0]!;
