@@ -33,7 +33,7 @@ describe('GitHub source: full issue context and job environment', () => {
   it('says "none" when there are no qualifying comments', async () => {
     const { gh, source } = setup();
     gh.createIssue({ repo: REPO, labels: ['hopper'] });
-    expect((await discoverOne(source)).prompt).toContain('\nrecent comments: none\n');
+    expect((await discoverOne(source)).prompt).toMatch(/\nrecent comments: none$/);
   });
 
   it('comments by non-allowlisted authors and hopper-marked comments never reach the job', async () => {

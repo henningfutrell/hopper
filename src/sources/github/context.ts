@@ -1,7 +1,8 @@
 // The job's prompt (issue body + issue context block) and environment: the issue, read-only.
 // Only comments by allowlisted authors that are not hopper comments reach the job: anyone else's
 // text would be a prompt-injection path into a skip-permissions agent. The job never writes to
-// its issue; the footer says so (its pane is still logged in to gh as the owner).
+// its issue, and its prompt says nothing about commenting (its pane is still logged in to gh as
+// The owner: the prompt is the only lever, and silence about issues is the instruction).
 
 import type { GitHubComment, GitHubIssue } from './api.ts';
 import { isHopperComment } from './identity.ts';
@@ -17,11 +18,6 @@ const oneLine = (s: string) => s.replace(/\s*[\r\n]+\s*/g, ' ').trim();
 
 export type SourceMode = 'gh' | 'app';
 
-const FOOTER = [
-  '[your issue is read-only]',
-  'Do not comment on, edit, label or close this issue, and do not use "Closes #N": job-hopper posts one status comment when you finish, and closing the issue cancels you.',
-  'If you need an answer, ask in this session: The owner answers here, never on the issue.',
-].join('\n');
 
 const COMMENTS_HEADER: Record<SourceMode, string> = {
   gh: 'only allowlisted authors, no hopper-marked comments',
@@ -51,15 +47,15 @@ export function contextBlock(issue: GitHubIssue, p: Priority, comments: GitHubCo
   ].join('\n');
   const lines = comments.map(commentLine);
   const build = (kept: string[]) => kept.length === 0
-    ? `${head}\nrecent comments: none\n${FOOTER}`
-    : `${head}\nrecent comments (oldest first, up to ${limit}; ${COMMENTS_HEADER[mode]}):\n${kept.join('\n')}\n${FOOTER}`;
+    ? `${head}\nrecent comments: none`
+    : `${head}\nrecent comments (oldest first, up to ${limit}; ${COMMENTS_HEADER[mode]}):\n${kept.join('\n')}`;
   let kept = lines;
   let block = build(kept);
   while (block.length > CONTEXT_CAP && kept.length > 0) {
     kept = kept.slice(1); // drop the oldest first
     block = build(kept);
   }
-  return block.length > CONTEXT_CAP ? `${block.slice(0, CONTEXT_CAP - FOOTER.length - 1)}\n${FOOTER}` : block;
+  return block.length > CONTEXT_CAP ? block.slice(0, CONTEXT_CAP) : block;
 }
 
 export function issuePrompt(issue: GitHubIssue, context: string): string {

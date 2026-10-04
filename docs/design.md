@@ -929,8 +929,9 @@ above; empty body → claimed, then failed with error "empty issue body"; priori
 **Write criteria (owner decision, 2026-10-03: the bot does not post to issues)** The
 hopper's only issue writes are labels (state) and one completion comment. Nothing else: no
 claim, progress, question, answered, failure or cancel comment; no reactions, issue edits,
-closes, or PR comments. Jobs get no way to write to their issue (no token, no helper; their
-prompt tells them not to). A question goes to the owner through the UI and the Grok Bot routine
+closes, or PR comments. Jobs get no way to write to their issue (no token, no helper), and their
+prompt says nothing about commenting (owner direction: the job does not talk on the
+issue): the issue context block ends at the comments list, with no footer. A question goes to the owner through the UI and the Grok Bot routine
 webhook, never onto the issue; a reply on the issue is not an answer.
 
 The completion comment starts with a hidden marker line
