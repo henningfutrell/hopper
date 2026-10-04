@@ -2,9 +2,9 @@
 // "herdr-claude executor"). The screen protocol parses Claude Code's TUI, so the agent kind is
 // fixed: another agent CLI is another executor plugin. `args` are the agent's own arguments —
 // where its tools are chosen (design.md "6d"). A job on an attached machine runs in that machine's
-// herdr session of the same name, reached over ssh (design.md "Attached machines").
+// own herdr (binary and session from its attachedMachines entry), reached over ssh (design.md "Attached machines").
 import { join } from 'node:path';
-import type { HerdrClient } from '../../../executors/herdr/index.ts';
+import type { HerdrClient, RemoteHerdr } from '../../../executors/herdr/index.ts';
 import { createHerdrClaudeExecutor, createHerdrCliClient } from '../../../executors/herdr/index.ts';
 import { expandHome } from '../../expand-home.ts';
 import type { PluginDefinition } from '../../sdk.ts';
@@ -52,14 +52,15 @@ export function herdrClaudePlugin(seam?: HerdrClient): PluginDefinition<'executo
       return { status: 'available', detail: `${herdr}, ${claude}` };
     },
     create(ctx, o) {
-      // One client per attached machine; their ssh connections share sockets under the data dir
-      // (a unix socket path is capped at 108 bytes: keep the data dir short).
+      // One client per attached machine's herdr; their ssh connections share sockets under the data
+      // dir (a unix socket path is capped at 108 bytes: keep the data dir short).
       const remotes = new Map<string, HerdrClient>();
-      const remote = (target: string): HerdrClient => {
-        let client = remotes.get(target);
+      const remote = (there: RemoteHerdr): HerdrClient => {
+        const key = JSON.stringify(there);
+        let client = remotes.get(key);
         if (!client) {
-          client = seam ?? createHerdrCliClient({ bin: o.bin, session: o.session, ssh: { target, controlDir: join(ctx.dataDir, 'ssh') } });
-          remotes.set(target, client);
+          client = seam ?? createHerdrCliClient({ bin: there.bin, session: there.session, ssh: { target: there.ssh, controlDir: join(ctx.dataDir, 'ssh') } });
+          remotes.set(key, client);
         }
         return client;
       };

@@ -17,8 +17,8 @@ const UNBLOCK_POLLS = 10;
 export interface HerdrClaudeExecutorOptions {
   /** This machine's herdr. */
   herdr: HerdrClient;
-  /** The herdr of an attached machine, by its ssh destination. Absent → jobs on one fail. */
-  remote?: (sshTarget: string) => HerdrClient;
+  /** The herdr of an attached machine. Absent → jobs on one fail. */
+  remote?: (there: RemoteHerdr) => HerdrClient;
   clock: Clock;
   defaultCwd: string;
   claudeArgs: string[];
@@ -43,15 +43,23 @@ const realSleep: Sleep = (ms, signal) => new Promise((resolve) => {
 
 const lastLineOf = (text: string): string => text.split('\n').map((l) => l.trim()).filter(Boolean).at(-1) ?? text.trim();
 
-const heldOf = (s: PaneState): HeldPane => ({ paneId: s.paneId, ...(s.ssh ? { ssh: s.ssh } : {}) });
+const heldOf = (s: PaneState): HeldPane => ({
+  paneId: s.paneId, ...(s.ssh ? { ssh: s.ssh, ...(s.herdrBin ? { herdrBin: s.herdrBin } : {}), ...(s.session ? { session: s.session } : {}) } : {}),
+});
 
 function paneStateOf(job: Job): PaneState | undefined {
   const s = job.executorState as Partial<PaneState> | undefined;
   return s?.paneId && s.agentName ? (s as PaneState) : undefined;
 }
 
+/** An attached machine's herdr: where (ssh), which binary, which session. */
+export interface RemoteHerdr { ssh: string; bin: string; session: string }
+
+/** Which herdr: absent `ssh` → this machine's; else that attached machine's binary and session. */
+interface Where { ssh?: string; herdrBin?: string; session?: string }
+
 /** A pane on one machine: pane ids are per herdr server, so two machines can share one. */
-interface HeldPane { paneId: string; ssh?: string }
+interface HeldPane extends Where { paneId: string }
 
 const samePane = (a: HeldPane, b: HeldPane): boolean => a.paneId === b.paneId && a.ssh === b.ssh;
 
@@ -61,14 +69,18 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
   const lanes = new Map<LaneId, HeldPane>();
 
   /** The herdr a pane lives on: this machine's, or the attached machine's over ssh. */
-  function herdrOn(ssh: string | undefined): HerdrClient {
-    if (!ssh) return o.herdr;
-    if (!o.remote) throw new Error(`cannot reach attached machine ${ssh}: no remote herdr`);
-    return o.remote(ssh);
+  function herdrOn(p: Where): HerdrClient {
+    if (!p.ssh) return o.herdr;
+    if (!o.remote || !p.herdrBin || !p.session) throw new Error(`cannot reach attached machine ${p.ssh}: no herdr there`);
+    return o.remote({ ssh: p.ssh, bin: p.herdrBin, session: p.session });
   }
 
-  const depsOn = (ssh: string | undefined): StartDeps => ({
-    herdr: herdrOn(ssh), clock, sleep, pollMs: o.pollMs, claudeArgs: o.claudeArgs, trustWorkdir: o.trustWorkdir,
+  /** Where a job on the lane's machine runs. */
+  const whereOn = (m: ExecutionContext['machine']): Where =>
+    (m.ssh ? { ssh: m.ssh, ...(m.herdr ? { herdrBin: m.herdr.bin, session: m.herdr.session } : {}) } : {});
+
+  const depsOn = (where: Where): StartDeps => ({
+    herdr: herdrOn(where), clock, sleep, pollMs: o.pollMs, claudeArgs: o.claudeArgs, trustWorkdir: o.trustWorkdir,
   });
 
   /** The refusal when the pane is already mapped to another lane; a lane never shares a pane. */
@@ -86,7 +98,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       await herdr.sendKeys(pane.paneId, ['ctrl+c', 'ctrl+c']).catch(() => {});
       await herdr.closePane(pane.paneId).catch(() => {});
     };
-    await Promise.resolve().then(() => close(herdrOn(pane.ssh))).catch(() => {});
+    await Promise.resolve().then(() => close(herdrOn(pane))).catch(() => {});
     for (const [lane, held] of lanes) if (samePane(held, pane)) lanes.delete(lane);
   }
 
@@ -98,7 +110,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
   }
 
   async function send(ctx: ExecutionContext, s: PaneState, p: ClaudeJobPayload, text: string, anchor: string): Promise<ExecutionOutcome | Interrupt> {
-    const herdr = herdrOn(s.ssh);
+    const herdr = herdrOn(s);
     let agent = await herdr.getAgent(s.agentName);
     for (let i = 0; agent?.status === 'blocked' && i < UNBLOCK_POLLS; i++) {
       if (i === 0) await herdr.sendKeys(s.paneId, ['esc']);
@@ -117,7 +129,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
 
   function watch(ctx: ExecutionContext, s: PaneState, p: ClaudeJobPayload, turn: TurnAnchor): Promise<ExecutionOutcome | Interrupt> {
     return watchTurn({
-      herdr: herdrOn(s.ssh), clock, sleep, pollMs: o.pollMs, idleQuestionMs: o.idleQuestionMs, ctx, agentName: s.agentName,
+      herdr: herdrOn(s), clock, sleep, pollMs: o.pollMs, idleQuestionMs: o.idleQuestionMs, ctx, agentName: s.agentName,
       paneId: s.paneId, anchor: turn.anchor, seqAtSend: turn.seq, blockedAtSend: turn.blockedAtSend,
       timeoutMs: p.timeoutMs, expectedMs: p.expectedMs,
     });
@@ -127,7 +139,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
   async function liveTurn(job: Job): Promise<(PaneState & { turn: TurnAnchor }) | undefined> {
     const state = paneStateOf(job);
     if (!state?.turn) return undefined;
-    const agent = await herdrOn(state.ssh).getAgent(state.agentName);
+    const agent = await herdrOn(state).getAgent(state.agentName);
     return agent?.paneId === state.paneId ? { ...state, turn: state.turn } : undefined;
   }
 
@@ -158,7 +170,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       const p = resolvePayload(ctx.job.spec.payload, o.defaultCwd);
       let state: PaneState | undefined;
       return onLane(ctx, () => state, async () => {
-        const deps = depsOn(ctx.machine.ssh);
+        const deps = depsOn(whereOn(ctx.machine));
         const opened = await openPane(deps, ctx, p.cwd, p.env);
         const refused = heldElsewhere(ctx.laneId, opened);
         if (refused) return refused;
@@ -182,7 +194,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       const refused = heldElsewhere(ctx.laneId, state);
       if (refused) return Promise.resolve(refused);
       return onLane(ctx, () => state, async () => {
-        if (!(await herdrOn(state.ssh).getAgent(state.agentName))) return { kind: 'failed', error: 'pane lost' };
+        if (!(await herdrOn(state).getAgent(state.agentName))) return { kind: 'failed', error: 'pane lost' };
         lanes.set(ctx.laneId, heldOf(state));
         return send(ctx, { ...state, laneId: ctx.laneId }, p, answer, lastLineOf(answer));
       });

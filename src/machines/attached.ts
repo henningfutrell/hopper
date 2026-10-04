@@ -11,7 +11,7 @@ const PROBE_EVERY_MS = 30000;
 interface Logger { info(line: string): void; warn(line: string): void }
 
 export function createAttachedMachineSource(o: {
-  machine: Pick<AttachedMachine, 'name' | 'label' | 'ssh' | 'lanes' | 'executors'>;
+  machine: AttachedMachine;
   probe: () => Promise<boolean>;
   clock?: Clock;
   probeEveryMs?: number;
@@ -45,7 +45,10 @@ export function createAttachedMachineSource(o: {
   return {
     async list() {
       probe();
-      return [{ id: m.name, label: m.label ?? m.name, maxLanes: m.lanes, online, executors: [...m.executors], ssh: m.ssh }];
+      return [{
+        id: m.name, label: m.label ?? m.name, maxLanes: m.lanes, online, executors: [...m.executors], ssh: m.ssh,
+        herdr: { bin: m.herdrBin, session: m.session },
+      }];
     },
   };
 }

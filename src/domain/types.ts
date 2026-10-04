@@ -148,6 +148,8 @@ export interface MachineSnapshot {
   executors: string[];
   /** An attached machine: the ssh destination its executors reach it by. Absent → this machine. */
   ssh?: string;
+  /** An attached machine's herdr: its binary (absolute, so never its PATH) and job-hopper's session there. */
+  herdr?: { bin: string; session: string };
 }
 
 /** An attached machine as plugins.yaml `attachedMachines:` names it (design.md "Attached machines"). */

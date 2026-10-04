@@ -29,6 +29,10 @@ step "check herdr and claude on $TARGET"
 for bin in herdr claude; do
   remote "command -v $bin >/dev/null" || die "$bin not found on $TARGET (on the PATH of its non-interactive login shell)"
 done
+# Jobs call herdr there by this absolute path: a login shell's PATH can be briefly incomplete there
+# (shell startup files that update themselves), and a missed lookup fails the job.
+HERDR_BIN="$(remote 'command -v herdr' | tr -d '\r')"
+HERDR_BIN="${HERDR_BIN//\/\//\/}"
 
 step "install ~/.config/systemd/user/job-hopper-herdr.service on $TARGET"
 remote 'mkdir -p ~/.config/systemd/user && cat > ~/.config/systemd/user/job-hopper-herdr.service' < "$UNIT"
@@ -42,14 +46,14 @@ fi
 
 step "verify the herdr session on $TARGET"
 for _ in 1 2 3 4 5 6 7 8 9 10; do
-  if remote "herdr --session $SESSION status server" | grep -q '^status: running$'; then
+  if remote "$HERDR_BIN --session $SESSION status server" | grep -q '^status: running$'; then
     echo "herdr session $SESSION is running on $TARGET"
     cat <<EOF
 
 Add to ~/.config/job-hopper/plugins.yaml on this machine, then: systemctl --user restart job-hopper
 
 attachedMachines:
-  - { name: $TARGET, ssh: $TARGET, lanes: $LANES }
+  - { name: $TARGET, ssh: $TARGET, lanes: $LANES, herdrBin: $HERDR_BIN }
 
 Jobs there run in the same working directories as here: each job's cwd must exist on $TARGET.
 EOF
