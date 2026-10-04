@@ -10,13 +10,13 @@ const ev = (type: EventType, min: number, o: Partial<DomainEvent> = {}): DomainE
   ({ seq: ++seq, schemaVersion: 1, id: String(seq), type, at: at(min), data: {}, ...o });
 
 describe('throughput', () => {
-  it('buckets ended jobs by outcome, oldest first, the last bucket holding now', () => {
+  it('buckets ended jobs by outcome, oldest first, the last bucket holding now; older ones fall outside', () => {
     const events = [
       ev('job.finished', -125), ev('job.finished', -61), ev('job.failed', -59), ev('job.cancelled', -1), ev('job.started', -1),
     ];
     const b = throughput(events, T0 + 30_000, 60 * 60_000, 3);
     expect(b.map((x) => [x.start, x.finished, x.failed, x.cancelled])).toEqual([
-      [T0 - 120 * 60_000, 1, 0, 0], [T0 - 60 * 60_000, 1, 1, 1], [T0, 0, 0, 0],
+      [T0 - 120 * 60_000, 1, 0, 0], [T0 - 60 * 60_000, 0, 1, 1], [T0, 0, 0, 0],
     ]);
   });
 });
