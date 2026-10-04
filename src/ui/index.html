@@ -9,12 +9,18 @@
 <body>
 <header id="header"></header>
 <div id="banner" class="banner" hidden></div>
+<section class="panel" id="board">
+  <h2>At a glance <span class="summary"></span></h2>
+  <div class="cols">
+    <div class="col" id="col-lanes"><h3>Lanes <span class="count"></span></h3><div class="body"></div></div>
+    <div class="col" id="col-waiting"><h3>Waiting <span class="count"></span></h3><div class="body"></div></div>
+    <div class="col" id="col-ended"><h3>Ended <span class="count"></span></h3><div class="body"></div></div>
+  </div>
+</section>
 <section class="panel" id="questions"><h2>Questions <span class="count"></span></h2><div class="body"></div></section>
 <section class="panel" id="sources"><h2>Sources <span class="count"></span></h2><div class="body"></div></section>
 <main>
-  <section class="panel" id="machines"><h2>Machines &amp; lanes</h2><div class="body"></div></section>
-  <section class="panel" id="queue"><h2>Queue <span class="count"></span></h2><div class="body"></div></section>
-  <section class="panel" id="running"><h2>Running <span class="count"></span></h2><div class="body"></div></section>
+  <section class="panel wide" id="machines"><h2>Machines &amp; usage</h2><div class="body"></div></section>
   <section class="panel wide" id="decisions"><h2>Decisions <span class="count"></span></h2><div class="body"></div></section>
   <section class="panel wide" id="events">
     <h2>Event stream <span class="count"></span>

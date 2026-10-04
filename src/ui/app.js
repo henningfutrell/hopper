@@ -3,7 +3,7 @@
 
 const CAP = { events: 500, decisions: 100, deliveries: 100 };
 const state = {
-  health: null, queue: { waiting: [], running: [], waitingAnswer: [], counts: {} }, machines: [],
+  health: null, queue: { waiting: [], running: [], waitingAnswer: [], ended: [], counts: {} }, machines: [],
   decisions: [], questions: [], drafts: {}, sending: {}, qerrors: {}, events: [], deliveries: [], subscriptions: [], webhookConfig: null, sources: [], authed: false, conn: 'reconnecting', filter: '',
 };
 const $ = (id) => document.getElementById(id);
@@ -120,9 +120,7 @@ function renderMachines() {
     el('div', { class: 'row' }, el('b', null, m.label || m.id), mono(m.id),
       pill(m.online ? 'online' : 'offline', m.online ? 'ok' : 'bad'),
       el('span', { class: 'muted' }, `max ${m.maxLanes} lanes · ${m.lanes.length} open · runs ${m.executors.join(', ')}`)),
-    m.usage.map(usageBar),
-    el('div', { class: 'lanes' }, m.lanes.length ? m.lanes.map((l) => el('span', { class: 'lane ' + l.state, title: l.id },
-      l.id.split('/').pop() + ' ' + l.state + (l.jobId ? ' ' + l.jobId : ''))) : el('span', { class: 'muted' }, 'no lanes open')))),
+    m.usage.map(usageBar))),
   'no machines');
 }
 
@@ -133,41 +131,124 @@ function issueLink(job) {
   const link = el('a', { class: 'issue', href: s.url, target: '_blank', rel: 'noopener noreferrer', title: s.title }, text);
   return s.source === 'github-app' ? el('span', { class: 'issue-wrap' }, link, el('span', { class: 'tag', title: 'from the GitHub App source' }, 'app')) : link;
 }
-function jobLabel(j) {
-  return [mono(j.id), issueLink(j), j.spec.goal && el('span', null, j.spec.goal), el('span', { class: 'muted' }, j.spec.executor + (j.spec.submittedBy ? ' · ' + j.spec.submittedBy : ''))];
+// ---- board: lanes, waiting, ended at a glance ---------------------------------------
+
+function elapsed(iso) {
+  const s = Math.max(0, Math.floor((Date.now() - new Date(iso)) / 1000));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+  return h ? `${h}h ${m}m` : m ? `${m}m ${s % 60}s` : `${s}s`;
 }
-function renderQueue() {
+function span(a, b) {
+  if (!a || !b) return '';
+  const s = Math.max(0, Math.floor((new Date(b) - new Date(a)) / 1000));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+  return h ? `${h}h ${m}m` : m ? `${m}m ${s % 60}s` : `${s}s`;
+}
+const since = (iso) => el('span', { class: 'el', 'data-since': iso, title: iso }, elapsed(iso));
+// One line that says what the job is: the issue (repo#n) and its goal; the id only on hover.
+function shortRef(j) {
+  const s = j.source;
+  if (!s?.url || !s.repo || s.number == null) return issueLink(j);
+  return ghLink(s.url, `${s.repo.split('/').pop()}#${s.number}`, 'issue') ?? issueLink(j);
+}
+function jobHead(j) {
+  const goal = j.spec.goal || j.source?.title || j.spec.executor;
+  return el('div', { class: 'jhead', title: `${goal}\n${j.source?.repo ? j.source.repo + '#' + j.source.number + '\n' : ''}job ${j.id}` },
+    el('span', { class: 'goal' }, goal),
+    shortRef(j) ?? mono(j.id.slice(0, 8)));
+}
+const cancelBtn = (j) => state.authed && el('button', { class: 'danger', onclick: () => act(`/ui/api/jobs/${j.id}/cancel`).then(refreshLive) }, 'Cancel');
+const laneName = (id) => id.split('/').pop();
+
+function laneCard(m, lane, job) {
+  const cls = 'card lane-card ' + (lane ? lane.state : 'free');
+  const head = el('div', { class: 'lhead' },
+    el('b', null, lane ? laneName(lane.id) : 'free'),
+    el('span', { class: 'muted' }, m.label || m.id),
+    lane ? pill(lane.state, lane.state === 'busy' ? 'busy' : lane.state === 'draining' ? 'warn' : 'neutral') : pill('not open', 'neutral'));
+  if (!job) return el('div', { class: cls, title: lane?.id }, head, el('div', { class: 'muted' }, lane ? 'idle' : 'capacity, no lane open'));
+  const p = pct(job.progress ?? 0);
+  return el('div', { class: cls, title: lane?.id },
+    head, jobHead(job),
+    el('div', { class: 'row tight' },
+      pill(job.status, job.status === 'running' ? 'busy' : ''),
+      job.startedAt && el('span', { class: 'muted' }, 'for ', since(job.startedAt)),
+      el('div', { class: 'bar prog' }, el('i', { style: `width:${p}%` })),
+      el('span', { class: 'muted' }, Math.round(p) + '%'),
+      cancelBtn(job)),
+    job.progressMessage && el('div', { class: 'muted clip', title: job.progressMessage }, job.progressMessage));
+}
+function renderLanes() {
+  const running = new Map(state.queue.running.map((j) => [j.id, j]));
+  const byLane = new Map(state.queue.running.filter((j) => j.laneId).map((j) => [j.laneId, j]));
+  const cards = [];
+  const placed = new Set();
+  for (const m of state.machines) {
+    for (const l of m.lanes) {
+      const job = (l.jobId && running.get(l.jobId)) || byLane.get(l.id);
+      if (job) placed.add(job.id);
+      cards.push(laneCard(m, l, job));
+    }
+    for (let i = m.lanes.length; i < m.maxLanes; i += 1) cards.push(laneCard(m, null, null));
+  }
+  // A running job whose lane is not (yet) in /api/machines still shows, never vanishes.
+  for (const j of state.queue.running) if (!placed.has(j.id)) cards.push(laneCard({ id: j.laneId ?? '?' }, { id: j.laneId ?? 'unassigned', state: 'busy' }, j));
+  fill('col-lanes', cards, 'no machines');
+  const open = state.machines.reduce((n, m) => n + m.lanes.length, 0);
+  const max = state.machines.reduce((n, m) => n + m.maxLanes, 0);
+  $('col-lanes').querySelector('.count').textContent = `${state.queue.running.length} running · ${open}/${max} open`;
+}
+function renderWaiting() {
   const effective = new Map();
   for (const s of state.decisions[0]?.start ?? []) effective.set(s.jobId, s.effectivePriority);
-  fill('queue', state.queue.waiting.map((j) => el('div', { class: 'row' },
-    jobLabel(j), pill(j.status, j.status === 'held' ? 'warn' : ''),
-    el('span', null, 'prio ' + j.priority + (effective.has(j.id) ? ' (eff ' + effective.get(j.id) + ')' : '')),
-    j.approved && pill('approved', 'ok'),
-    j.holdReason && el('span', { class: 'muted' }, j.holdReason),
-    j.advice && el('span', { title: j.advice.reason }, 'advice: ', el('b', null, j.advice.action), el('span', { class: 'muted' }, ' ' + j.advice.source)),
-    el('span', { style: 'margin-left:auto' },
-      state.authed && !j.approved && el('button', { onclick: () => act(`/ui/api/jobs/${j.id}/approve`).then(refreshLive) }, 'Approve'), ' ',
-      state.authed && el('button', { class: 'danger', onclick: () => act(`/ui/api/jobs/${j.id}/cancel`).then(refreshLive) }, 'Cancel')))),
-  'nothing waiting');
   const wa = state.queue.waitingAnswer ?? [];
-  if (wa.length) {
-    const body = $('queue').querySelector('.body');
-    if (body.querySelector('.empty')) body.replaceChildren();
-    body.append(el('div', { class: 'sec' }, el('h3', null, 'waiting for answer'),
-      wa.map((j) => el('div', { class: 'row' }, jobLabel(j), pill('waiting_answer', 'warn'), j.questionId && mono(j.questionId),
-        state.authed && el('button', { class: 'danger', onclick: () => act(`/ui/api/jobs/${j.id}/cancel`).then(refreshLive) }, 'Cancel')))));
-  }
-  count('queue', state.queue.waiting.length + wa.length);
+  const cards = [
+    ...wa.map((j) => el('div', { class: 'card answer' }, jobHead(j),
+      el('div', { class: 'row tight' }, pill('waiting answer', 'q'), el('span', { class: 'muted' }, 'pane parked'),
+        el('a', { href: '#questions', class: 'ext' }, 'question ↓'), cancelBtn(j)))),
+    ...state.queue.waiting.map((j, i) => el('div', { class: 'card ' + j.status }, jobHead(j),
+      el('div', { class: 'row tight' },
+        el('span', { class: 'muted' }, '#' + (i + 1)),
+        pill(j.status, j.status === 'held' ? 'warn' : ''),
+        el('span', null, 'prio ' + j.priority + (effective.has(j.id) ? ' (eff ' + effective.get(j.id) + ')' : '')),
+        el('span', { class: 'muted' }, 'for ', since(j.createdAt)),
+        j.approved && pill('approved', 'ok'),
+        j.advice && el('span', { title: j.advice.reason }, 'advice: ', el('b', null, j.advice.action)),
+        state.authed && !j.approved && j.status === 'held' && el('button', { onclick: () => act(`/ui/api/jobs/${j.id}/approve`).then(refreshLive) }, 'Approve'),
+        cancelBtn(j)),
+      j.holdReason && el('div', { class: 'muted clip', title: j.holdReason }, j.holdReason))),
+  ];
+  fill('col-waiting', cards, 'nothing waiting');
+  const n = state.queue.waiting.length;
+  $('col-waiting').querySelector('.count').textContent = [n && `${n} queued/held`, wa.length && `${wa.length} on a question`].filter(Boolean).join(' · ');
 }
-function renderRunning() {
-  fill('running', state.queue.running.map((j) => el('div', { class: 'row' },
-    jobLabel(j), pill(j.status), j.laneId && mono(j.laneId),
-    el('div', { class: 'bar prog' }, el('i', { style: `width:${pct(j.progress ?? 0)}%` })),
-    el('span', { class: 'muted' }, Math.round(pct(j.progress ?? 0)) + '%' + (j.progressMessage ? ' ' + j.progressMessage : '')),
-    state.authed && el('button', { class: 'danger', onclick: () => act(`/ui/api/jobs/${j.id}/cancel`).then(refreshLive) }, 'Cancel'))),
-  'nothing running');
-  count('running', state.queue.running.length);
+const ENDED_PILL = { finished: 'ok', failed: 'bad', cancelled: 'neutral' };
+function renderEnded() {
+  const ended = state.queue.ended ?? [];
+  fill('col-ended', ended.map((j) => el('div', { class: 'card ended ' + j.status }, jobHead(j),
+    el('div', { class: 'row tight' }, pill(j.status, ENDED_PILL[j.status]),
+      el('span', { class: 'muted', title: j.finishedAt }, ago(j.finishedAt ?? j.updatedAt)),
+      j.startedAt && el('span', { class: 'muted' }, 'took ' + span(j.startedAt, j.finishedAt))),
+    j.error && el('div', { class: 'err clip', title: j.error }, j.error))),
+  'nothing ended yet');
+  const c = state.queue.counts || {};
+  $('col-ended').querySelector('.count').textContent = ['finished', 'failed', 'cancelled'].filter((s) => c[s]).map((s) => `${c[s]} ${s}`).join(' · ');
 }
+function renderSummary() {
+  const c = state.queue.counts || {};
+  const busy = state.machines.reduce((n, m) => n + m.lanes.filter((l) => l.state !== 'idle').length, 0);
+  const max = state.machines.reduce((n, m) => n + m.maxLanes, 0);
+  const parts = [
+    [`${(c.running ?? 0) + (c.claimed ?? 0)} running`, (c.running ?? 0) + (c.claimed ?? 0) ? 'busy' : 'neutral'],
+    [`${busy}/${max} lanes busy`, ''],
+    [`${(c.queued ?? 0) + (c.held ?? 0)} waiting`, c.held ? 'warn' : 'neutral'],
+    [`${c.waiting_answer ?? 0} on a question`, c.waiting_answer ? 'q' : 'neutral'],
+    [`${c.failed ?? 0} failed`, c.failed ? 'bad' : 'neutral'],
+    [`${c.finished ?? 0} finished`, c.finished ? 'ok' : 'neutral'],
+  ];
+  $('board').querySelector('.summary').replaceChildren(...parts.map(([t, cls]) => pill(t, cls)));
+}
+function renderBoard() { renderSummary(); renderLanes(); renderWaiting(); renderEnded(); }
 
 // ---- questions ---------------------------------------------------------------------
 
@@ -253,6 +334,7 @@ function renderQuestions() {
 }
 setInterval(() => {
   for (const n of document.querySelectorAll('#questions .cd, #sources .cd')) n.textContent = countdown(n.dataset.exp);
+  for (const n of document.querySelectorAll('#board .el')) n.textContent = elapsed(n.dataset.since);
 }, 1000);
 
 function section(title, nodes) {
@@ -383,7 +465,7 @@ function renderDeliveries() {
   count('deliveries', state.deliveries.length);
 }
 
-const renderAll = () => { renderBanner(); renderHeader(); renderMachines(); renderQueue(); renderRunning(); renderQuestions(); renderSources(); renderDecisions(); renderEvents(); renderDeliveries(); };
+const renderAll = () => { renderBanner(); renderHeader(); renderMachines(); renderBoard(); renderQuestions(); renderSources(); renderDecisions(); renderEvents(); renderDeliveries(); };
 
 // ---- data --------------------------------------------------------------------------
 
@@ -395,7 +477,7 @@ async function refreshQuestions() {
 async function refreshLive() {
   const [queue, machines] = await Promise.all([api('/api/queue'), api('/api/machines')]);
   state.queue = queue; state.machines = machines.machines;
-  renderHeader(); renderMachines(); renderQueue(); renderRunning(); renderQuestions();
+  renderHeader(); renderMachines(); renderBoard(); renderQuestions();
 }
 let timer = null;
 let qtimer = null;
@@ -422,7 +504,7 @@ function onDomainEvent(msg) {
     api('/api/decisions/' + encodeURIComponent(id)).then((d) => {
       if (state.decisions.some((x) => x.id === d.id)) return;
       prepend(state.decisions, d, CAP.decisions);
-      renderDecisions(); renderQueue();
+      renderDecisions(); renderWaiting();
     }).catch(() => {});
   }
 }
@@ -437,7 +519,7 @@ function connect(afterSeq) {
   const types = ['job.queued', 'job.prioritized', 'job.reprioritized', 'job.held', 'job.approved', 'job.claimed', 'job.started', 'job.progressed', 'job.finished', 'job.failed', 'job.cancelled', 'job.requeued', 'job.reattached', 'lane.opened', 'lane.closed', 'decision.made', 'router.mode_changed', 'question.asked', 'question.escalated', 'question.answered', 'question.expired'];
   for (const t of types) es.addEventListener(t, onDomainEvent);
   setInterval(() => refreshHealth().catch(() => {}), 10000);
-  setInterval(renderSources, 15000);
+  setInterval(() => { renderSources(); renderEnded(); }, 15000);
 }
 
 async function init() {
