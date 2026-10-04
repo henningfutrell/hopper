@@ -2361,3 +2361,78 @@ session still expires after `JOB_HOPPER_UI_SESSION_HOURS` (12).
 token or a device link in flight. Accepted for a home LAN; the peer list keeps the VPN and container
 networks out. A device link is as strong as the login code file and works once.
 
+
+## UI manages everything (issue #18, 2026-10-03)
+
+### Router, queue sorter and routing rules (issue #18)
+
+Owner request: set the router, queue sorter and routing rules from the UI. Lane rules are out of scope.
+So no rule targets a lane.
+
+**Router.** The Routing view lists every router plugin with its detection. One that cannot run is
+shown with its reason or its setup command and is never offered (on server `jev-router` is
+unavailable while the Jev checkout is missing, so the reason is on screen). Selecting a router uses
+`POST /ui/api/plugins` `select`; shadow/active uses `POST /ui/api/router-mode`; the configured
+instance's options use the shared options form (`ui/src/components/plugin-instance.tsx`, also used
+by the Plugins view).
+
+**Queue sorter.** A new live role, `queue-sorter`, with exactly one instance, like the router.
+Port: `QueueSorter { name; sort(entries: { job, effectivePriority }[]) → JobId[] }`. It is
+synchronous and called once per Decision. Configured in plugins.yaml `queueSorter:`, selectable in
+the UI. Built-in plugins: `priority` (the default, and the built-in instance when the section is
+absent: effective priority desc, then `createdAt` asc, then id, which is the decider's own rule, so
+nothing changes without the section), `oldest-first`, and `newest-first`.
+- **The decider stays pure.** The engine calls the sorter while it gathers inputs
+  (`src/engine/queue-order.ts`) and passes `DecisionInputs.queueOrder { sorter, jobIds }`. Step 6
+  orders admissible jobs by that order. Jobs it leaves out come after it, by the old rule. With no
+  order (Decisions stored before this), the old rule applies. The order never admits or holds a
+  job. A reason line says `queue order by <instance>`.
+- **Effective priority stays the decider's notion.** `effectivePriority(job, mode, policy)` is
+  exported from `src/decider/assign.ts`. The engine computes it for the sorter's input, and
+  `/api/queue` `waiting` uses the same order.
+- **Fallback.** These cases fall back to `priority` for that call: a sorter that cannot run
+  (unknown plugin, invalid options, not available, create threw), a sort that throws, or a result
+  that is not distinct ids of the given jobs. The fallback is logged once per reason. `/api/plugins`
+  `queueSorter` gives `{ instance, detection, active, fallback, reason? }`. A sort fallback clears
+  on the next good sort.
+- Authors: `examples/plugins/queue-sorter/word-first/`, `docs/plugins.md`.
+
+**Routing rules.** plugins.yaml `routing:` holds an ordered list. When the section is absent there
+are no rules.
+
+```yaml
+routing:
+  - name: urgent sandbox
+    match: { repo: "owner/*", label: urgent }   # any of: source, repo, label, author, title
+    set: { priority: 90, machine: laptop }               # any of: machine, executor, priority
+```
+
+- `match` fields are case-insensitive, and every field given must match. `source` is the
+  job-source instance name. In `repo`, `*` matches any run of characters, the slash included.
+  `label` means the item has that label. `title` is a substring match. An empty `match` matches
+  every item. `set` needs at least one field: `machine` (a configured machine id, which becomes the
+  `spec.machineId` pin), `executor` (a configured executor instance), or `priority` (0..100). The
+  schema is strict, so a `lane` anywhere is refused.
+- **The first matching rule wins.** Rules are applied at intake (`SourceHost.ingest`,
+  `src/engine/source-host.ts`), when a source item becomes a job. The item's source, repo, labels,
+  author and title come from `SourceItem`. The job records `spec.routedBy { rule, set }` (additive
+  in `job.queued`, still v1), and the UI shows it on the job. A source re-sort does not change a
+  priority that a rule set.
+- **New jobs only.** A rule change does not touch jobs already created. The UI copy says so.
+- **Targets.** If a rule names a machine or executor that is not configured, a save returns 400.
+  If the target disappears later, intake skips the rule with a warning and tries the next one.
+  Intake never fails on a rule. `GET /api/routing` lists those rules under `skipped`.
+- **API.** `GET /api/routing` returns `{ path, version, rules, error?, targets: { machines,
+  executors }, skipped }`. `version` is plugins.yaml's sha-256, the same as `/api/plugins`.
+  `POST /ui/api/routing { rules, version }` takes the whole list and is session-guarded. It is
+  validated by the plugins.yaml schema and the target check. It writes only the `routing` node
+  (yaml Document API; comments and other sections stay byte for byte), atomically, with mode 600,
+  then reloads before it answers. 400: invalid rule or unknown target. 409: stale version, or
+  plugins.yaml invalid. Pure matching: `src/routing/`.
+
+**UI.** A "Routing" nav item with three panels: Router (current advice and fallback reason, mode
+buttons, picker, options form), Queue sorter (picker with each plugin's description, options form),
+and Routing rules (ordered list; each rule is a stacked form with match and set fields; add, move
+up/down, delete; one Save for the whole list). The machine select uses `/api/machines` plus the
+routing targets; the executor select uses the configured executors. Forms stack at 390 px width;
+there is no horizontal page scroll.

@@ -31,7 +31,7 @@ function Picker({ role, ctx }: { role: 'router' | 'queue-sorter'; ctx: PluginCtx
               <span className="font-mono text-sm font-medium">{c.id}</span>
               {!c.builtin && <span className="rounded border px-1 text-[10px] text-muted-foreground">custom</span>}
               <StatusBadge status={c.status} tone={c.status === 'available' ? 'ok' : c.status === 'needs-setup' ? 'warn' : 'bad'} />
-              {c.current && <StatusBadge status="in use" tone="busy" />}
+              {c.current && <StatusBadge status="configured" tone="busy" />}
             </div>
             <div className="text-xs text-muted-foreground">{c.describe}</div>
             {c.why && <div className="text-xs break-words text-muted-foreground">{c.why}</div>}
