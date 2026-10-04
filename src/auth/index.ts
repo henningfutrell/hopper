@@ -1,4 +1,4 @@
-// Signing in through an identity provider (design.md "Sign-in: local, OIDC and SAML"). Three steps,
+// Signing in through an identity provider (design.md "Sign-in: none, password, local, OIDC and SAML"). Three steps,
 // no cookies (they ignore ports; see "UI session and mutations"):
 //   1. begin: the browser keeps a random binding in localStorage and asks for /ui/auth/<name>/start;
 //      a flow (provider secrets, the binding's hash) is kept here and the browser goes to the provider.

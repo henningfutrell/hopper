@@ -1,4 +1,4 @@
-// Sign-in (issue #39, design.md "Sign-in: local, OIDC and SAML"): local sign-in, and OIDC end to end
+// Sign-in (issue #39, design.md "Sign-in: none, password, local, OIDC and SAML"): local sign-in, and OIDC end to end
 // through the daemon's HTTP routes against a loopback issuer.
 import { afterEach, describe, expect, it } from 'vitest';
 import { rawRequest } from '../support/http.ts';

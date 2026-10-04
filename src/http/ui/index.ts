@@ -2,7 +2,7 @@
 // login code (when auth.yaml leaves local sign-in on) or an identity provider (sign-in.ts) → a page
 // that keeps the session token in localStorage → POST /ui/api/* with that token in
 // x-jobhopper-session, exact Origin, same-origin, JSON, and a role that allows it (design.md
-// "Sign-in: local, OIDC and SAML"). Every refusal is a logged 403. A logged-in admin hands another
+// "Sign-in: none, password, local, OIDC and SAML"). Every refusal is a logged 403. A logged-in admin hands another
 // device a login link per LAN name (design.md "Reaching the UI across the LAN").
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';

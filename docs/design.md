@@ -46,7 +46,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin) | engine, http, store, plugins |
 | `src/routing/` | routing rules: the plugins.yaml `routing:` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
 | `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`); job lifecycle; routing at intake (`source-host.ts`); restart recovery | http |
-| `src/auth/` | sign-in through identity providers (issue #39): `auth.yaml` load (`config.ts`), the role rules (`roles.ts`, pure), the identity provider port (`provider.ts`) and its adapters `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), the sign-in flow — flows, tickets, bindings (`index.ts`) | engine, http, store, plugins, decider, questions |
+| `src/auth/` | sign-in through identity providers (issue #39): `auth.yaml` load (`config.ts`), the role rules (`roles.ts`, pure), the identity provider port (`provider.ts`) and its adapters `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), password sign-in (`password.ts`, argon2), the sign-in flow — flows, tickets, bindings, no sign-in (`index.ts`) | engine, http, store, plugins, decider, questions |
 | `src/secrets/` | the secret box (`box.ts`): seal and unseal under `JOB_HOPPER_SECRET_KEY`, AES-256-GCM through `node:crypto` ("Secrets at rest") | everything but `domain/` |
 | `src/update/` | self-update ("Self-update"): install.json, the git mirror of the update repository, the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers | engine, http, plugins, decider |
 | `src/http/` | Fastify routes, SSE, static UI; the UI session, its role check and the sign-in routes (`ui/`) | executors, plugins (reads them through the `PluginsView` port) |
@@ -903,7 +903,7 @@ token and send any `Origin`. Cookies are no better here: they ignore ports, so a
 | POST | `/ui/api/logout` | `{}` | drop the session |
 
 Since issue #39 a session may also come from an identity provider, and each mutation needs a UI
-role: "Sign-in: local, OIDC and SAML" (Roles).
+role: "Sign-in: none, password, local, OIDC and SAML" (Roles).
 
 **Residual risk, stated.** Still able to act or read:
 - A process running **as the owner** that reads `ui-login-code`/`ui-login.html` or the
@@ -2090,7 +2090,7 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
 | `JOB_HOPPER_UI_SESSION_HOURS` | `12` |
 | `JOB_HOPPER_PLUGIN_DIR` | `~/.config/job-hopper/plugins` |
 | `JOB_HOPPER_PLUGINS_FILE` | `~/.config/job-hopper/plugins.yaml` |
-| `JOB_HOPPER_AUTH_FILE` | `~/.config/job-hopper/auth.yaml` (issue #39, "Sign-in: local, OIDC and SAML") |
+| `JOB_HOPPER_AUTH_FILE` | `~/.config/job-hopper/auth.yaml` (issue #39, "Sign-in: none, password, local, OIDC and SAML") |
 | `JOB_HOPPER_PUBLIC_URL` | unset (issue #39) |
 | `JOB_HOPPER_UPDATE_CHECK_MS` | `900000` — self-update check interval; `0` only when asked ("Self-update") |
 | `JOB_HOPPER_RESTART` | unset (detected) — `exit` or `respawn` after an update ("Self-update") |
@@ -2785,7 +2785,7 @@ up/down, delete; one Save for the whole list). The machine select uses `/api/mac
 routing targets; the executor select uses the configured executors. Forms stack at 390 px width;
 there is no horizontal page scroll.
 
-## Sign-in: local, OIDC and SAML (issue #39, 2026-10-04)
+## Sign-in: none, password, local, OIDC and SAML (issues #39, #53, 2026-10-04)
 
 Owner request: the hopper deployable by anyone, plugged into a personal or enterprise identity
 setup — any OIDC provider (Google, Microsoft Entra ID, Okta, Auth0, Keycloak, …), GitHub, and SAML
@@ -2878,6 +2878,39 @@ thing being ended, and the same on every provider). At every start the stored se
 reconciled with `auth.yaml`: a removed provider (or local sign-in turned off) or an account no rule
 grants a role any more loses its session; a changed rule changes the stored role. Audit: one journal
 line per sign-in, refusal and logout (no domain event: webhook subscribers would receive identities).
+
+### No sign-in and password sign-in (issue #53)
+
+Owner requirement: as a self-hosted service the hopper supports no auth, simple auth, OIDC and SAML,
+each through an established library. Both new kinds are built in beside `local`, not identity
+providers (no redirect, no flow, no ticket); `none` and `password` are reserved provider names.
+
+- **No sign-in** — `auth.yaml` `none: { role }`, absent: off. `POST /ui/auth/none` → `{ token,
+  expiresAt, user }`, identity `{ provider: none, subject: anonymous, name: "no sign-in" }`. The
+  session still exists because the mutation guard needs it: the session header is the CSRF defence
+  and the role check. The UI takes the session by itself when logged out (`wantsNoSignIn`). A
+  startup warning names the role. Composes with everything else (anonymous `viewer`, sign in to act).
+- **Password sign-in** — `auth.yaml` `password.users: [{ username, passwordHash, role }]`. The hash
+  is argon2id through the `argon2` package (`src/auth/password.ts`), made by `job-hopper
+  password-hash` (stdin, or a no-echo prompt asked twice, through `read`); anything not starting
+  `$argon2id$` is refused at load. `POST /ui/auth/password { username, password }` → the same
+  answer as above; identity `{ provider: password, subject: username, username }`. Usernames compare
+  case-insensitively and are unique. An unknown username is verified against a fixed hash of a
+  random password, so it costs a wrong password's time; every failure is one 403, logged.
+- **Origin.** Both need the exact Origin of a UI page — `uiOrigins` (loopback, LAN names, public
+  URL), the set mutations accept — not only the sign-in origin: nothing comes back from a provider,
+  so a LAN page can sign in where it stands.
+- **Stored sessions** follow `auth.yaml` at start like provider sessions: `roleOf` gives `none`'s
+  role (null when off) and the account's current role (null when removed).
+- **Rate limit.** Every route that needs no session to start one — `POST /ui/login`, `/ui/auth/*`
+  — is registered in one Fastify child context behind `@fastify/rate-limit`: 20 requests a minute
+  per client address (`SIGN_IN_RATE`, in memory), then 429. Behind a reverse proxy every client is
+  the proxy's address, so the limit is shared there (`trustProxy` stays off: a forwarded header
+  would let a client pick its own key); a public deploy limits per client at the proxy.
+
+**Residual risk, stated.** `none` with `operator` or `admin` hands those powers to whoever reaches
+the port or the proxy; it is only as safe as what stands in front. Password sign-in has no lockout
+beyond the rate limit and no password policy: the operator chooses the password and hashes it.
 
 ### Local sign-in off
 

@@ -1,6 +1,6 @@
 # job-hopper — repo law
 
-Local job-queue daemon that pulls its jobs. Loopback plus an opt-in LAN or public URL behind a reverse proxy, sign-in through the login code or identity providers (OIDC, GitHub, SAML). TypeScript run directly by Node ≥ 24.
+Local job-queue daemon that pulls its jobs. Loopback plus an opt-in LAN or public URL behind a reverse proxy, sign-in through the login code, password sign-in, no sign-in, or identity providers (OIDC, GitHub, SAML). TypeScript run directly by Node ≥ 24.
 
 North star (owner decision): an extendable and plugin architecture; every part must serve it. `docs/design.md` "North star".
 
@@ -36,9 +36,11 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   `POST /ui/api/*`, behind a UI session (`x-jobhopper-session`,
   exact Origin, same-origin, JSON — else 403) whose UI role allows it; a new mutation goes there and
   nowhere else, and names its least UI role. `docs/design.md` "UI session and mutations" and
-  "Sign-in: local, OIDC and SAML" state the residual risk.
+  "Sign-in: none, password, local, OIDC and SAML" state the residual risk.
 - **Sign-in fails closed.** An invalid `auth.yaml` stops the daemon; an identity no role rule
-  matches gets no session; sign-in is never a plugin (`docs/design.md` "Sign-in").
+  matches gets no session; sign-in is never a plugin (`docs/design.md` "Sign-in"). Every sign-in
+  kind uses an established library for its protocol or hash (openid-client, @node-saml/node-saml,
+  argon2); no hand-rolled protocol or password code. No sign-in (`none`) is only ever explicit.
 - **GitHub text is neutral.** Text the hopper or a job writes to GitHub names no person and
   carries no personal or machine details. The hopper writes only labels to issues, closes the
   issue of a finished job, and posts no comments. The job prompt carries the rule (`src/executors/herdr/screen.ts` `PUBLISHING_RULE`).

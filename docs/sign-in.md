@@ -1,13 +1,14 @@
-# Signing in — local, OIDC and SAML
+# Signing in — none, password, local, OIDC and SAML
 
 How people sign in to the job-hopper UI, and how to plug it into an identity provider. The
-design and its reasons: `docs/design.md` "Sign-in: local, OIDC and SAML".
+design and its reasons: `docs/design.md` "Sign-in: none, password, local, OIDC and SAML".
 
 Every way of signing in ends the same: a **UI session** with a **UI role**. Sessions, roles and
 logout behave the same whichever provider signed the user in.
 
 - [Pick a setup](#pick-a-setup)
 - [auth.yaml](#authyaml)
+- [No sign-in](#no-sign-in) · [Password sign-in](#password-sign-in)
 - [UI roles and role rules](#ui-roles-and-role-rules)
 - [The sign-in origin and a public URL](#the-sign-in-origin-and-a-public-url)
 - [Providers](#providers): [Google](#google) · [Microsoft Entra ID](#microsoft-entra-id-oidc) ·
@@ -23,7 +24,9 @@ logout behave the same whichever provider signed the user in.
 |---|---|
 | One person, one machine | Nothing. With no `auth.yaml`, the one-time login code is the only way in: `job-hopper login-code` mints one (good once, 10 minutes); on the host install `bash ~/.local/lib/job-hopper/scripts/open-ui.sh` opens the UI already logged in. It signs in as `admin`. |
 | One person, a few devices on a home LAN | `JOB_HOPPER_LAN_NAMES` / `JOB_HOPPER_LAN_PEERS` (`docs/design.md` "Reaching the UI across the LAN") and device links. Add a provider if you prefer signing in with an account. |
-| A team, or anyone reaching it over the internet | A reverse proxy with TLS, `JOB_HOPPER_PUBLIC_URL`, one or more providers in `auth.yaml`, role rules, and usually `local: { enabled: false }`. |
+| Behind a proxy or network that already decides who gets in | [No sign-in](#no-sign-in): `none: { role: … }`. Everyone who reaches the UI acts with that role. |
+| A few people, no identity provider | [Password sign-in](#password-sign-in): accounts with argon2id hashes in `auth.yaml`. |
+| A team, or anyone reaching it over the internet | A reverse proxy with TLS, `JOB_HOPPER_PUBLIC_URL`, one or more providers in `auth.yaml` (or password sign-in), role rules, and usually `local: { enabled: false }`. |
 
 ## auth.yaml
 
@@ -40,6 +43,11 @@ open.
 version: 1
 local:
   enabled: true          # the one-time login code (signs in as admin). Default true.
+none:                    # no sign-in: everyone gets this role. Absent: off.
+  role: viewer
+password:                # password sign-in. Absent: off.
+  users:
+    - { username: ada, passwordHash: "$argon2id$v=19$…", role: operator }
 providers:
   - name: google         # lowercase letters, digits, dashes: it is part of the callback URL
     label: Google        # the button says "Sign in with Google"; default: the name
@@ -75,6 +83,51 @@ secret: `idpCert`, inline only (PEM or bare base64; a YAML block scalar `|` hold
 | | `entityId` | `<sign-in origin>/ui/auth/<name>/metadata` | This service's entity id (the IdP calls it Identifier or Audience). |
 | | `attributes.email` / `.name` / `.groups` / `.username` | `email` / `displayName` / `groups` / NameID | Attribute names in the assertion. |
 | | `requireSignedResponse` | `false` | Also require the whole response signed. The assertion must be signed either way. |
+
+## No sign-in
+
+```yaml
+version: 1
+none: { role: viewer }   # viewer | operator | admin
+```
+
+Anyone who reaches the UI gets a session with that role, without a credential: the UI takes it by
+itself (`POST /ui/auth/none`; the exact UI origin is required, so another site cannot mint one in a
+visitor's browser). The daemon logs `NO SIGN-IN is on` at every start. It combines with the rest:
+`none: { role: viewer }` plus password sign-in, a provider or the login code means everyone may
+look and those who sign in may act. Use it only where something in front — a VPN, a proxy with
+its own login, a network only you reach — already decides who gets in. With `role: admin`, anyone
+who reaches the UI can change every setting.
+
+## Password sign-in
+
+```yaml
+version: 1
+password:
+  users:
+    - username: ada
+      passwordHash: "$argon2id$v=19$m=65536,p=4,t=3$…"
+      role: operator     # viewer | operator | admin
+```
+
+`auth.yaml` holds an **argon2id hash**, never a password. Make one with the operator CLI (it asks
+twice without echo on a terminal; from a pipe it reads the first line):
+
+```sh
+job-hopper password-hash
+```
+
+then paste it with `job-hopper config edit auth.yaml` and restart. Usernames are unique, case
+ignored. A wrong password, an unknown username and an empty password get the same 403, and an
+unknown username costs the same time as a wrong password. To change a password, replace the hash;
+to remove an account, delete its entry — either way restart, and its sessions end at that start.
+The UI shows a username and password form; the form works on every UI origin (loopback, a LAN
+name, the public URL).
+
+**Rate limit.** Every sign-in route (`/ui/login`, `/ui/auth/…`) together accepts 20 attempts a
+minute per client address; past that, 429 until the minute is over. Behind a reverse proxy every
+client has the proxy's address, so the limit is shared: add a per-client limit at the proxy for a
+public deploy.
 
 ## UI roles and role rules
 
@@ -438,15 +491,16 @@ in `https://keycloak.example.com/realms/<realm>/protocol/saml/descriptor`.
 
 ## Sessions and logout
 
-The same for every provider and the login code:
+The same for every provider, password sign-in, no sign-in and the login code:
 
 - A session is a random token in the browser's `localStorage` for the exact origin, sent as the
   `x-jobhopper-session` header. The daemon stores only its SHA-256, with the role and identity.
 - It lasts `JOB_HOPPER_UI_SESSION_HOURS` (default 12) and survives daemon restarts.
 - **Log out** (the header's button) ends the job-hopper session. It does not sign you out of the
   provider: signing in again may need no password.
-- At every start the daemon applies `auth.yaml` to the stored sessions: a removed provider, or an
-  account no rule grants a role any more, loses its session; a changed rule changes its role. To
+- At every start the daemon applies `auth.yaml` to the stored sessions: a removed provider, a
+  removed password account, no sign-in turned off, or an account no rule grants a role any more,
+  loses its session; a changed rule (or account or `none` role) changes its role. To
   cut someone off at once: change `auth.yaml` and restart.
 - Sign-ins, refusals and logouts are logged to the journal
   (`journalctl --user -u job-hopper | grep 'UI session\|sign-in'`).
@@ -456,6 +510,8 @@ The same for every provider and the login code:
 | symptom | cause |
 |---|---|
 | Daemon will not start, `invalid auth.yaml: providers.0.…` | The named field is wrong; the message says how. |
+| `invalid auth.yaml: password.users.0.passwordHash: must be an argon2id hash` | The entry holds a password or another hash kind. Run `job-hopper password-hash`. |
+| 429 "too many sign-in attempts" | Over 20 sign-in attempts a minute from one address. Wait a minute. |
 | "Sign in on the sign-in address" | The page is open on another address than the sign-in origin. Open the origin shown. |
 | Provider says the redirect URI does not match | Register exactly `<origin>/ui/auth/<name>/callback`; check `JOB_HOPPER_PUBLIC_URL`. |
 | "signed in, but auth.yaml grants this account no role" | No rule matched. The journal line names the account; for OIDC check that the email is verified or match on groups. |

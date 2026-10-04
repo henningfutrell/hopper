@@ -1,4 +1,4 @@
-// auth.yaml (design.md "Sign-in: local, OIDC and SAML" — Configuration): how people sign in, a config
+// auth.yaml (design.md "Sign-in: none, password, local, OIDC and SAML" — Configuration): how people sign in, a config
 // document in the store (design.md "Config documents"). Read once at start; an invalid document stops
 // the daemon, naming the field (sign-in fails closed). None → the one-time login code only. `none`
 // (no sign-in) and `password` (argon2id hashes, never a password) are built in beside the providers.

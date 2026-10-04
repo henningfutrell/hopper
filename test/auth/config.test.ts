@@ -1,4 +1,4 @@
-// auth.yaml (design.md "Sign-in: local, OIDC and SAML" — Configuration): absent → local sign-in
+// auth.yaml (design.md "Sign-in: none, password, local, OIDC and SAML" — Configuration): absent → local sign-in
 // only; every mistake is refused at load, naming the field; secrets may live in their own files.
 import { describe, expect, it } from 'vitest';
 import { loadAuthDocument } from '../../src/auth/config.ts';
