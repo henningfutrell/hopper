@@ -135,8 +135,15 @@ describe('jobs pulled from a source', () => {
     const long = await t.pull({ op: 'sleep', ms: 10000 }, { key: 'ended-3' });
     await t.waitForStatus(long.id, 'running');
     const queue = (await t.api('GET', '/api/queue')).body;
-    expect(queue.ended.map((j: Job) => j.id)).toEqual([bad.id, done.id]);
-    expect(queue.ended.map((j: Job) => j.status)).toEqual(['failed', 'finished']);
+    // The manual source offers a failed item again (re-run), so more than one job may end on ended-2.
+    const ended: Job[] = queue.ended;
+    const ids = ended.map((j) => j.id);
+    expect(ids).toEqual(expect.arrayContaining([done.id, bad.id]));
+    expect(ids).not.toContain(long.id);
+    expect(ended.every((j) => ['finished', 'failed', 'cancelled'].includes(j.status))).toBe(true);
+    const ends = ended.map((j) => j.finishedAt!);
+    expect(ends).toEqual([...ends].sort().reverse());
+    expect(ids.indexOf(bad.id)).toBeLessThan(ids.indexOf(done.id));
     expect(queue.running.map((j: Job) => j.id)).toEqual([long.id]);
   });
 

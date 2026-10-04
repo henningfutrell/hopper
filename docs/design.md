@@ -596,6 +596,7 @@ appends `question.expired` **and** `job.failed`. `question.asked`, `question.ans
 `question.expired` are engine triggers (a lane freed or a job requeued is decided at once).
 The events table gains a `question_id` column (migration 2).
 `GET /api/queue` `counts` gains `waiting_answer`; `/api/queue` gains `waitingAnswer: Job[]`.
+`/api/queue` gains `ended: Job[]` (issue #5): ended jobs, newest `finishedAt` first, at most 20 — the UI board's Ended column.
 
 ## Events added
 
