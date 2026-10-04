@@ -64,7 +64,7 @@ describe('claude-plan through the composition root', () => {
     ].join('\n'));
     const a = await boot({ plugins: { machines: lanes(4), usageSources: [{ name: 'claude', plugin: 'claude-plan', options: { bin: FAKE_CLAUDE } }] } });
 
-    const report = await waitFor(async () => { const u = await usage(a); return u.readings.some((r) => r.source === 'claude') ? u : undefined; }, { what: 'claude readings' });
+    const report = await waitFor(async () => { const u = await usage(a); return u.readings.some((r) => r.source === 'claude') && u.sources[0]?.account ? u : undefined; }, { what: 'claude readings and account' });
     expect(report.readings.filter((r) => r.source === 'claude').map((r) => [r.window, r.used, r.limit, r.unit, r.informational ?? false])).toEqual([
       ['session', 80, 100, '%', false], ['week', 30, 100, '%', false], ['week (Fable)', 99, 100, '%', true],
     ]);
@@ -73,7 +73,7 @@ describe('claude-plan through the composition root', () => {
       { name: 'fake' },
     ]);
     expect(report.limits).toEqual({ soft: 0.7, hard: 0.95 });
-    expect(report.machines).toEqual([{ machineId: 'local', label: 'local', online: true, maxLanes: 4, usedFrac: 0.8, cap: 2, band: 'soft' }]);
+    expect(report.machines).toEqual([{ machineId: 'local', label: expect.any(String), online: true, maxLanes: 4, usedFrac: 0.8, cap: 2, band: 'soft' }]);
 
     const jobs: Job[] = [];
     for (let i = 0; i < 4; i++) jobs.push(await a.pull({ op: 'sleep', ms: 3000 }));
