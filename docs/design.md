@@ -2253,8 +2253,11 @@ attachedMachines:
 | `herdrBin` | `herdr` | **give the absolute path.** Each call is a fresh login shell there; on the laptop the shell env file is a symlink that every new pane's shell updates, and a call racing that update lost its PATH (`zsh:1: command not found: herdr`, exit 127, seen live) |
 
 **Reaching it.** `createHerdrCliClient({ ssh: { target, controlDir } })` runs the same herdr argv as
-`ssh -o BatchMode=yes -o ConnectTimeout=10 -o ControlMaster=auto -o ControlPath=<dataDir>/ssh/%C
--o ControlPersist=60 -- <target> '<argv, POSIX single-quoted>'`. The remote login shell must read
+`ssh -F ~/.ssh/config -o BatchMode=yes -o ConnectTimeout=10 -o ControlMaster=auto -o ControlPath=<dataDir>/ssh/%C
+-o ControlPersist=60 -- <target> '<argv, POSIX single-quoted>'`. `-F` names the user's config only
+(`/dev/null` when there is none): under the job-hopper unit (PrivateTmp, so a user namespace) the
+root-owned files in `/etc/ssh` look foreign-owned and ssh refuses them ("Bad owner or permissions",
+seen live 2026-10-04, issue #58), as the self-update mirror found before. The remote login shell must read
 POSIX single quotes (sh, bash, zsh; not fish). One shared connection per target (the probe and every
 job share it). ssh's own failure (exit 255) is `HerdrError` code `ssh`; herdr's JSON errors come back
 as they do locally. A unix socket path is capped at 108 bytes: `<dataDir>/ssh/` plus 40 hex chars

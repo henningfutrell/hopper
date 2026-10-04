@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { HerdrError, createHerdrCliClient } from '../../src/executors/herdr/index.ts';
+import { userSshConfig } from '../../src/executors/herdr/cli-client.ts';
 
 const HERDR = fileURLToPath(new URL('./fake-herdr-bin.mjs', import.meta.url));
 const SSH = fileURLToPath(new URL('./fake-ssh-bin.mjs', import.meta.url));
@@ -52,14 +53,14 @@ describe('herdr CLI client over ssh', () => {
   });
 
   it('reads only the user\'s ssh config, never /etc/ssh: under the unit those files look foreign-owned and ssh refuses them', async () => {
-    process.env.HOME = join(dir, 'home');
     await remote().getAgent('jh-a');
-    mkdirSync(join(dir, 'home', '.ssh'), { recursive: true });
-    writeFileSync(join(dir, 'home', '.ssh', 'config'), 'Host laptop\n');
-    await remote().getAgent('jh-a');
-    const [none, own] = lines('ssh-calls.jsonl').map((l) => l.argv.slice(0, l.argv.indexOf('--')));
-    expect(none).toEqual(expect.arrayContaining(['-F', '/dev/null']));
-    expect(own).toEqual(expect.arrayContaining(['-F', join(dir, 'home', '.ssh', 'config')]));
+    const argv = lines('ssh-calls.jsonl')[0]!.argv;
+    expect(argv.slice(0, 2)).toEqual(['-F', userSshConfig()]);
+    const home = join(dir, 'home');
+    expect(userSshConfig(home)).toBe('/dev/null');
+    mkdirSync(join(home, '.ssh'), { recursive: true });
+    writeFileSync(join(home, '.ssh', 'config'), 'Host laptop\n');
+    expect(userSshConfig(home)).toBe(join(home, '.ssh', 'config'));
   });
 
   it('remote herdr results and errors come back as they do locally', async () => {
