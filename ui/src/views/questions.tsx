@@ -1,6 +1,7 @@
 // Open questions: what the job asked, its recent output, the escalation trail, and the answer box
 // with Send answer and Close. Logged out, the box is a notice naming the login command; a 403 on
-// either mutation drops the UI to logged out, so the notice replaces the box.
+// either mutation drops the UI to logged out, so the notice replaces the box. Below them, the
+// question gates (views/question-gates.tsx).
 import { ChevronRight, LogIn, MessageCircleQuestion, Send, X } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -11,6 +12,7 @@ import { Countdown, JobTitle } from '@/components/job';
 import { loginHint } from '@/lib/api';
 import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
+import { QuestionGates } from '@/views/question-gates';
 import { between, clock } from '@/model/format';
 import type { Question, QuestionAttempt } from '@/model/wire';
 import { act, refreshQuestions, useHopper } from '@/store';
@@ -97,7 +99,12 @@ function QuestionCard({ q }: { q: Question }) {
 
 export function Questions() {
   const questions = useHopper((s) => s.questions);
-  return questions.length
-    ? <div className="space-y-3">{questions.map((q) => <QuestionCard key={q.id} q={q} />)}</div>
-    : <Panel title="Questions" icon={MessageCircleQuestion}><Empty>no open questions</Empty></Panel>;
+  return (
+    <div className="space-y-3">
+      {questions.length
+        ? questions.map((q) => <QuestionCard key={q.id} q={q} />)
+        : <Panel title="Questions" icon={MessageCircleQuestion}><Empty>no open questions</Empty></Panel>}
+      <QuestionGates />
+    </div>
+  );
 }

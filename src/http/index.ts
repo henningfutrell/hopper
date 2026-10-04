@@ -9,6 +9,7 @@ import { installErrorHandling } from './errors.ts';
 import { installHostGuard } from './host-guard.ts';
 import type { Lan } from './reach.ts';
 import { jobRoutes } from './jobs.ts';
+import { questionGatesRoutes } from './question-gates.ts';
 import { questionRoutes } from './questions.ts';
 import { sourceRoutes } from './sources.ts';
 import { sseRoutes } from './sse.ts';
@@ -31,6 +32,8 @@ export interface ServerOptions {
   version: string;
   /** The bound port, for the Host guard and the UI Origin check (known only after listen). */
   port: () => number;
+  /** The rules file (JOB_HOPPER_RULES_FILE): read by GET /api/question-gates, written by POST /ui/api/rules-file. */
+  rulesFile: string;
   /** Where the UI login code file lives. */
   dataDir: string;
   sessionHours: number;
@@ -50,10 +53,11 @@ export function createServer(o: ServerOptions): FastifyInstance {
   jobRoutes(app, o);
   stateRoutes(app, o);
   questionRoutes(app, o);
+  questionGatesRoutes(app, o);
   webhookRoutes(app, o);
   sourceRoutes(app, o);
   sseRoutes(app, o);
   staticRoutes(app, o.uiDir);
-  registerUiRoutes(app, { engine: o.engine, questions: o.questions, sessions, plugins: o.plugins, port: o.port, lan: o.lan, dataDir: o.dataDir });
+  registerUiRoutes(app, { engine: o.engine, questions: o.questions, sessions, plugins: o.plugins, rulesFile: o.rulesFile, port: o.port, lan: o.lan, dataDir: o.dataDir });
   return app;
 }

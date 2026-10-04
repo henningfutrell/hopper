@@ -10,6 +10,7 @@ import { ROLES, SELECTABLE_ROLES } from '../../domain/types.ts';
 import type { Engine } from '../../engine/index.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { lanHosts, type Lan } from '../reach.ts';
+import { writeRulesFile } from '../../questions/index.ts';
 import { routerView } from '../state.ts';
 import { SESSION_HEADER, mutationRefusal } from './guard.ts';
 import { createLoginCode } from './login-code.ts';
@@ -22,6 +23,8 @@ export interface UiRouteOptions {
   questions: QuestionService;
   sessions: UiSessions;
   plugins: PluginsView;
+  /** The rules file (JOB_HOPPER_RULES_FILE). */
+  rulesFile: string;
   /** The bound port (known only after listen). */
   port: () => number;
   lan: Lan;
@@ -37,6 +40,7 @@ const pluginsEditBody = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('select'), role: z.enum(SELECTABLE_ROLES), plugin: z.string().min(1).nullable(), version: z.string().min(1) }),
   z.strictObject({ action: z.literal('rescan') }),
 ]);
+const rulesFileBody = z.strictObject({ text: z.string(), version: z.string().min(1) });
 const EDIT_STATUS = { invalid: 400, not_found: 404, conflict: 409 } as const;
 
 const refuse = (req: FastifyRequest, reply: FastifyReply, why: string) => {
@@ -110,6 +114,15 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     const r = await o.plugins.edit(parseWith(pluginsEditBody, req.body));
     if (!r.ok) throw new HttpError(EDIT_STATUS[r.code], r.error);
     return r.report;
+  });
+
+  // Question gates (issue #18): the rules file, whole, against the version read (sha-256 of its
+  // bytes); the next question reads it. Answers the new GET /api/question-gates rulesFile.
+  app.post('/ui/api/rules-file', guarded, async (req) => {
+    const { text, version } = parseWith(rulesFileBody, req.body);
+    const r = writeRulesFile(o.rulesFile, text, version);
+    if (!r.ok) throw new HttpError(EDIT_STATUS[r.code], r.error);
+    return r.view;
   });
 
   // The current login code as a link per LAN name, in the fragment (never sent to a server). It
