@@ -2,6 +2,8 @@
 
 Local job-queue daemon that pulls its jobs. One maintainer, loopback only, TypeScript run directly by Node ≥ 24.
 
+North star (the owner): an extendable and plugin architecture; every part must serve it. `docs/design.md` "North star".
+
 Acknowledge before working here: you have read this file, `docs/design.md`, and
 `docs/glossary.md`.
 
