@@ -1,7 +1,7 @@
 // Read models for the HTTP edge.
 import { effectivePriority, order } from '../decider/assign.ts';
 import { laneCap, machineUsage } from '../decider/usage.ts';
-import { TERMINAL_STATUSES, type Job, type JobStatus, type Lane, type MachineSnapshot, type UsageReading, type UsageReport, type UsageSourceReport } from '../domain/types.ts';
+import { TERMINAL_STATUSES, type Job, type Lane, type MachineSnapshot, type UsageReading, type UsageReport, type UsageSourceReport } from '../domain/types.ts';
 import type { EngineContext } from './context.ts';
 import { queueOrder } from './queue-order.ts';
 
@@ -10,12 +10,12 @@ export interface QueueView {
   running: Job[];
   /** Jobs paused on a question, oldest first. They hold no lane. */
   waitingAnswer: Job[];
-  /** Ended jobs (finished, failed, cancelled), newest end first, at most `ENDED_CAP`. */
+  /** Jobs that ended (finished, failed, cancelled) in the last `ENDED_WINDOW_MS`, newest end first. */
   ended: Job[];
-  counts: Record<JobStatus, number>;
 }
 
-export const ENDED_CAP = 20;
+/** How far back `ended` reaches: the UI's cards count ended jobs over this window, and list the same jobs. */
+export const ENDED_WINDOW_MS = 24 * 3_600_000;
 
 export type MachineView = MachineSnapshot & { lanes: Lane[]; usage: UsageReading[] };
 
@@ -37,10 +37,6 @@ export function createQueries(c: EngineContext): Queries {
   return {
     getQueue() {
       const all = c.store.jobs.list();
-      const counts: Record<JobStatus, number> = {
-        queued: 0, held: 0, claimed: 0, running: 0, waiting_answer: 0, finished: 0, failed: 0, cancelled: 0,
-      };
-      for (const j of all) counts[j.status] += 1;
       // The decider's own order: the queue sorter's, then effective priority, then age.
       const mode = c.routerMode();
       const queued = all.filter((j) => j.status === 'queued' || j.status === 'held');
@@ -49,9 +45,10 @@ export function createQueries(c: EngineContext): Queries {
       const running = all.filter((j) => j.status === 'claimed' || j.status === 'running').reverse();
       const waitingAnswer = all.filter((j) => j.status === 'waiting_answer').reverse();
       const end = (j: Job) => j.finishedAt ?? j.updatedAt;
-      const ended = all.filter((j) => TERMINAL_STATUSES.includes(j.status))
-        .sort((a, b) => end(b).localeCompare(end(a))).slice(0, ENDED_CAP);
-      return { waiting, running, waitingAnswer, ended, counts };
+      const since = new Date(c.clock.now().getTime() - ENDED_WINDOW_MS).toISOString();
+      const ended = all.filter((j) => TERMINAL_STATUSES.includes(j.status) && end(j) >= since)
+        .sort((a, b) => end(b).localeCompare(end(a)));
+      return { waiting, running, waitingAnswer, ended };
     },
     async getMachines() {
       const [machines, usage] = await Promise.all([c.machines.list(), getUsage()]);

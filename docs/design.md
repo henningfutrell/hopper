@@ -238,7 +238,7 @@ Loopback (`127.0.0.1`), plus the LAN names when set — "Reaching the UI across 
 | GET | `/api/jobs/:id` | | `Job` · 404 |
 | POST | `/api/jobs/:id/cancel` | | `Job` · 404 · 409 terminal |
 | POST | `/api/jobs/:id/approve` | | `Job` (emits `job.approved`) · 404 · 409 terminal |
-| GET | `/api/queue` | | `{ waiting: Job[], running: Job[], counts: Record<JobStatus, number> }` |
+| GET | `/api/queue` | | `{ waiting: Job[], running: Job[], waitingAnswer: Job[], ended: Job[] }` — `waiting` in queue order; `ended` = jobs ended in the last 24 h, newest end first (issue #45). No counts: the UI counts the lists |
 | GET | `/api/machines` | | `{ machines: (MachineSnapshot & { lanes: Lane[], usage: UsageReading[] })[] }` |
 | GET | `/api/decisions` | `?limit=50` | `{ decisions: Decision[] }` newest first |
 | GET | `/api/decisions/:id` | | `Decision` · 404 |
@@ -712,6 +712,7 @@ appends `question.expired` **and** `job.failed`. `question.asked`, `question.ans
 The events table gains a `question_id` column (migration 2).
 `GET /api/queue` `counts` gains `waiting_answer`; `/api/queue` gains `waitingAnswer: Job[]`.
 `/api/queue` gains `ended: Job[]` (issue #5): ended jobs, newest `finishedAt` first, at most 20 — the UI board's Ended column.
+(Issue #45: `ended` is now every job ended in the last 24 h, and `counts` is gone; see "One job store".)
 
 ## Events added
 
@@ -2404,6 +2405,16 @@ responsive and fast. Builds on the at-a-glance board (issue #5).
   d3 for scales/shapes/arcs only — React renders every SVG node, axes included, so d3 never owns
   DOM. zustand holds the one store. sonner for toasts. Hand-rolled only the static file map
   (shorter than `@fastify/static`'s config).
+- **One job store** (issue #45). The store holds each job once, by id (`jobs`), filled only from
+  `/api/queue` answers (on load, and on the refresh every stream event triggers). Every job view
+  — the KPI cards, the lanes, waiting, on-a-question and ended lists, the attention panel, the
+  ended-per-hour chart, the lane timeline — derives from it through `jobBoard`
+  (`ui/src/model/board.ts`), whose `GROUP` is the one map from status to *job group*. A card is
+  the length of the list it names; `test/ui/overview-counts.test.ts` renders the overview and
+  checks each card against its list, before and after a stream event. Lane spans come from the
+  event log, but the job store wins: a span of a job no longer running ends with the job, and a
+  running job with no start in the log gets its span from `startedAt`. The nav's questions badge
+  counts `awaitsOwner` (`ui/src/model/questions.ts`), the same test the Questions view marks seen by.
 - **Realtime.** One SSE connection; each domain event updates the log and chart history at once
   and debounces a `/api/queue` + `/api/machines` refresh (150 ms). One shared 1 s clock drives
   every ticking label. `ui/src/model/event-types.ts` is a `Record<EventType, true>`: a new event
@@ -2411,7 +2422,7 @@ responsive and fast. Builds on the at-a-glance board (issue #5).
 - **Views** (hash-routed): Overview (KPIs with sparklines, lane timeline, attention, lanes /
   waiting / ended, ended-per-hour chart, usage gauges, live activity), Questions, Decisions,
   Events, Sources, Machines, Plugins (#13's panel, ported: "Settled in slice 7"), Webhooks. Charts read `/api/events?types=…&limit=5000`
-  (`HISTORY_TYPES`): lane spans and ended-per-hour are derived client-side, no new API.
+  (`HISTORY_TYPES`): lane spans are derived client-side, no new API; ended-per-hour counts the job store's ended jobs.
 - **Mutations unchanged**: cancel (now behind a confirm dialog), approve, answer, router mode,
   question close, plugins (options, select, rescan), logout — same `/ui/api/*` routes and session header.
 - **Theme.** Dark by default, light by toggle, remembered in `localStorage` (`jh_theme`).

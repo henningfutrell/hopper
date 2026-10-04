@@ -12,5 +12,5 @@ const ALL: Record<EventType, true> = {
 };
 export const EVENT_TYPES = Object.keys(ALL) as EventType[];
 
-/** The types the charts read: lane spans and ended jobs. */
+/** The types the lane spans read (the lane timeline, the Running card). */
 export const HISTORY_TYPES: EventType[] = ['job.started', 'job.reattached', 'job.finished', 'job.failed', 'job.cancelled', 'job.requeued', 'question.asked'];
