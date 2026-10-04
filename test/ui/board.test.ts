@@ -1,8 +1,8 @@
-// The overview's numbers and the lane board, derived from /api/queue and /api/machines.
+// The overview's numbers, lists and lane board, all derived from the one job store (issue #45).
 import { describe, expect, it } from 'vitest';
-import type { Job, Lane } from '../../src/domain/types.ts';
-import { kpis, laneRows, waitingRows } from '../../ui/src/model/board.ts';
-import type { MachineView, Queue } from '../../ui/src/model/wire.ts';
+import type { Job, JobStatus, Lane } from '../../src/domain/types.ts';
+import { GROUP, jobBoard, kpis, laneRows, waitingRows } from '../../ui/src/model/board.ts';
+import type { MachineView } from '../../ui/src/model/wire.ts';
 
 const job = (id: string, o: Partial<Job> = {}): Job => ({
   id, spec: { executor: 'test', payload: {} }, priority: 50, status: 'running', approved: false,
@@ -10,7 +10,50 @@ const job = (id: string, o: Partial<Job> = {}): Job => ({
 } as Job);
 const lane = (id: string, state: Lane['state'], jobId?: string): Lane => ({ id: `m1/${id}`, machineId: 'm1', state, jobId, openedAt: '2026-10-03T10:00:00Z' });
 const machine = (lanes: Lane[], maxLanes = 3): MachineView => ({ id: 'm1', label: 'laptop', maxLanes, online: true, executors: ['test'], lanes, usage: [] });
-const queue = (o: Partial<Queue> = {}): Queue => ({ waiting: [], running: [], waitingAnswer: [], ended: [], counts: {}, ...o });
+const STATUSES = Object.keys(GROUP) as JobStatus[];
+
+describe('jobBoard', () => {
+  it('puts every job in exactly the group its status names: waiting is queued or held, never waiting_answer', () => {
+    const jobs = STATUSES.map((status) => job(status, { status }));
+    const b = jobBoard(jobs, []);
+    expect(b.waiting.map((j) => j.status).sort()).toEqual(['held', 'queued']);
+    expect(b.waitingAnswer.map((j) => j.status)).toEqual(['waiting_answer']);
+    expect(b.running.map((j) => j.status).sort()).toEqual(['claimed', 'running']);
+    expect(b.ended.map((j) => j.status).sort()).toEqual(['cancelled', 'failed', 'finished']);
+    expect(Object.values(b).flat()).toHaveLength(STATUSES.length);
+  });
+  it('waiting in the queue order, ended newest end first, running oldest first', () => {
+    const b = jobBoard([
+      job('w1', { status: 'queued' }), job('w2', { status: 'held' }), job('w3', { status: 'queued' }),
+      job('e1', { status: 'finished', finishedAt: '2026-10-03T11:00:00Z' }), job('e2', { status: 'failed', finishedAt: '2026-10-03T12:00:00Z' }),
+      job('r1', { createdAt: '2026-10-03T09:00:00Z' }), job('r2', { status: 'claimed', createdAt: '2026-10-03T10:30:00Z' }),
+    ], ['w2', 'w1']);
+    expect(b.waiting.map((j) => j.id)).toEqual(['w2', 'w1', 'w3']);
+    expect(b.ended.map((j) => j.id)).toEqual(['e2', 'e1']);
+    expect(b.running.map((j) => j.id)).toEqual(['r1', 'r2']);
+  });
+});
+
+describe('kpis', () => {
+  it('every count is the length of the list it names, for any mix of statuses', () => {
+    const jobs = STATUSES.flatMap((status, i) => Array.from({ length: i + 1 }, (_, n) => job(`${status}-${n}`, { status })));
+    const b = jobBoard(jobs, []);
+    const k = kpis(b, [machine([lane('lane-1', 'busy'), lane('lane-2', 'draining'), lane('lane-3', 'idle')], 4)]);
+    expect(k).toEqual({
+      running: b.running.length, waiting: b.waiting.length, held: b.waiting.filter((j) => j.status === 'held').length,
+      waitingAnswer: b.waitingAnswer.length,
+      finished: b.ended.filter((j) => j.status === 'finished').length, failed: b.ended.filter((j) => j.status === 'failed').length,
+      cancelled: b.ended.filter((j) => j.status === 'cancelled').length,
+      lanesBusy: 2, lanesOpen: 3, lanesMax: 4,
+    });
+  });
+  it('one job on a question and nothing queued: waiting 0, waiting answer 1 (issue #45)', () => {
+    const b = jobBoard([job('q', { status: 'waiting_answer' })], []);
+    const k = kpis(b, []);
+    expect([k.waiting, k.waitingAnswer]).toEqual([0, 1]);
+    expect(waitingRows(b, undefined)).toEqual([]);
+  });
+});
 
 describe('laneRows', () => {
   it('one row per open lane with its job, then unopened capacity up to maxLanes', () => {
@@ -27,22 +70,10 @@ describe('laneRows', () => {
   });
 });
 
-describe('kpis', () => {
-  it('counts running with claimed, busy lanes, waiting with held, and the ended statuses', () => {
-    const k = kpis(queue({ counts: { running: 2, claimed: 1, queued: 3, held: 2, waiting_answer: 1, finished: 7, failed: 2, cancelled: 1 } }),
-      [machine([lane('lane-1', 'busy'), lane('lane-2', 'draining'), lane('lane-3', 'idle')], 4)]);
-    expect(k).toEqual({ running: 3, lanesBusy: 2, lanesOpen: 3, lanesMax: 4, waiting: 5, held: 2, onQuestion: 1, finished: 7, failed: 2, cancelled: 1 });
-  });
-});
-
 describe('waitingRows', () => {
-  it('jobs on a question first, then waiting in decider order with the latest Decision effective priority', () => {
-    const rows = waitingRows(
-      queue({ waitingAnswer: [job('q', { status: 'waiting_answer' })], waiting: [job('w1', { status: 'queued' }), job('w2', { status: 'held' })] }),
-      { start: [{ jobId: 'w2', effectivePriority: 70, laneId: null, machineId: 'm1', reason: 'r' }] },
-    );
-    expect(rows.map((r) => [r.job.id, r.kind, r.position, r.effectivePriority])).toEqual([
-      ['q', 'question', null, null], ['w1', 'waiting', 1, null], ['w2', 'waiting', 2, 70],
-    ]);
+  it('waiting jobs in queue order with the latest Decision effective priority', () => {
+    const b = jobBoard([job('w1', { status: 'queued' }), job('w2', { status: 'held' })], ['w1', 'w2']);
+    const rows = waitingRows(b, { start: [{ jobId: 'w2', effectivePriority: 70, laneId: null, machineId: 'm1', reason: 'r' }] });
+    expect(rows.map((r) => [r.job.id, r.position, r.effectivePriority])).toEqual([['w1', 1, null], ['w2', 2, 70]]);
   });
 });

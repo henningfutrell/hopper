@@ -30,7 +30,7 @@ function fakeDaemon(o: { authed: boolean; mutationStatus?: number }) {
   const json = (status: number, b: unknown) => new Response(JSON.stringify(b), { status, headers: { 'content-type': 'application/json' } });
   const routes: Record<string, unknown> = {
     '/api/health': { ok: true, version: '0', routerMode: 'shadow', router: 'pass-through', fallback: false, executors: [], uptimeS: 1 },
-    '/api/queue': { waiting: [], running: [], waitingAnswer: [], ended: [], counts: {} },
+    '/api/queue': { waiting: [], running: [], waitingAnswer: [], ended: [] },
     '/api/machines': { machines: [] },
     '/api/decisions': { decisions: [] },
     '/api/events': { events: [] },
