@@ -53,15 +53,17 @@ describe('attached machine source', () => {
     expect(h.probes()).toBe(2);
   });
 
-  it('goes offline when a probe says no or fails, with the reason logged once', async () => {
-    const h = harness([true, new Error('ssh laptop: No route to host'), false]);
+  it('goes offline when a probe says no or fails, with each new reason logged once', async () => {
+    const h = harness([true, new Error('ssh laptop: No route to host'), false, false]);
     await h.src.list(); await flush();
     h.advance(30000); await h.src.list(); await flush();
     expect((await h.src.list())[0]!.online).toBe(false);
     h.advance(30000); await h.src.list(); await flush();
+    h.advance(30000); await h.src.list(); await flush(); // same reason again: not logged again
     expect(h.lines).toEqual([
       'job-hopper: attached machine laptop online (ssh laptop)',
       'job-hopper: attached machine laptop offline: ssh laptop: No route to host',
+      'job-hopper: attached machine laptop offline: its herdr session is not running',
     ]);
   });
 
