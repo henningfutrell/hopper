@@ -19,7 +19,7 @@ describe('systemd/job-hopper.service', () => {
     // Config documents live in the database: the unit names neither file.
     expect(env).not.toHaveProperty('JOB_HOPPER_PLUGINS_FILE');
     expect(env).not.toHaveProperty('JOB_HOPPER_WEBHOOKS_FILE');
-    expect(loadConfig({ ...env, JOB_HOPPER_DATABASE_URL: 'sqlite:/d/db.sqlite' }).leftoverEnv).toEqual({});
+    expect(loadConfig({ ...env, JOB_HOPPER_DATABASE_URL: 'postgres://u:p@db:5432/jh' }).leftoverEnv).toEqual({});
   });
 
   it('binds loopback by default; the database, secrets and LAN settings come from daemon.env (design.md "Reaching the UI across the LAN")', () => {
@@ -41,10 +41,9 @@ describe('systemd/job-hopper.service', () => {
     expect(text).not.toMatch(/migrate-sources-yaml/);
   });
 
-  it('install.sh refuses a database without plugins.yaml while the old config files are there: they are migrated, never ignored', () => {
+  it('install.sh offers Postgres only: no SQLite file, no migrate-local (issue #53)', () => {
     const text = readFileSync(INSTALL, 'utf8');
-    expect(text).toMatch(/\$CONFIG_DIR\/plugins\.yaml/);
-    expect(text).toMatch(/migrate-local/);
-    expect(text).not.toMatch(/sqlite:\$HOME\/\.local\/share\/job-hopper\/job-hopper\.db/);
+    expect(text).not.toMatch(/sqlite/i);
+    expect(text).not.toMatch(/migrate-local/);
   });
 });

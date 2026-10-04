@@ -16,7 +16,7 @@ describe('test isolation', () => {
   it('HOME is not the real home, so every ~/ default resolves to a throwaway dir', () => {
     if (process.env.JOB_HOPPER_REAL_HERDR === '1') return; // opt-in real test: Claude needs the real login
     expect(homedir()).not.toBe(REAL_HOME);
-    const c = loadConfig({ JOB_HOPPER_DATABASE_URL: 'sqlite:/d/db.sqlite' });
+    const c = loadConfig({ JOB_HOPPER_DATABASE_URL: 'postgres://u:p@db:5432/jh' });
     // Every path default: herdr-claude's cwd and the config's own paths.
     const parsed = parseOptions(herdrClaude, {});
     const cwd = expandHome(String(parsed.ok ? parsed.options.cwd : ''));

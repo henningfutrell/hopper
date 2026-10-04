@@ -14,7 +14,7 @@ afterEach(() => { for (const d of dirs.splice(0)) rmSync(d, { recursive: true, f
 function db(): string {
   const d = mkdtempSync(`${tmpdir()}/jh-cli-`);
   dirs.push(d);
-  return testDatabaseUrl(d);
+  return testDatabaseUrl();
 }
 
 function cli(url: string | undefined, argv: string[], o: { stdin?: string; edit?: (file: string) => number } = {}) {

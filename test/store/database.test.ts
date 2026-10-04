@@ -1,6 +1,7 @@
-// JOB_HOPPER_DATABASE_URL: which database the store opens (design.md "Database"). The Postgres
-// cases run when JOB_HOPPER_TEST_POSTGRES_URL is set (scripts/test-postgres.sh), and are skipped
-// otherwise; every other store test runs against whichever backend is under test.
+// JOB_HOPPER_DATABASE_URL: the Postgres the store opens (design.md "Database"). Postgres is the only
+// store (issue #53): there is one implementation, and anything that is not a Postgres URL is refused.
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { numberPlaceholders, openDb, parseDatabaseUrl } from '../../src/store/db.ts';
 import { testPostgres } from '../support/database.ts';
@@ -9,16 +10,24 @@ import { spec, useTempStore } from './helpers.ts';
 const t = useTempStore();
 
 describe('parseDatabaseUrl', () => {
-  it('reads sqlite:<path> and postgres URLs', () => {
-    expect(parseDatabaseUrl('sqlite:/var/lib/jh/db.sqlite')).toEqual({ kind: 'sqlite', path: '/var/lib/jh/db.sqlite' });
-    expect(parseDatabaseUrl('sqlite://data/db.sqlite')).toEqual({ kind: 'sqlite', path: 'data/db.sqlite' });
-    expect(parseDatabaseUrl('postgres://u:p@db:5432/jh')).toEqual({ kind: 'postgres', url: 'postgres://u:p@db:5432/jh' });
-    expect(parseDatabaseUrl('postgresql://u@db/jh')).toEqual({ kind: 'postgres', url: 'postgresql://u@db/jh' });
+  it('reads postgres URLs', () => {
+    expect(parseDatabaseUrl('postgres://u:p@db:5432/jh')).toBe('postgres://u:p@db:5432/jh');
+    expect(parseDatabaseUrl('postgresql://u@db/jh?sslmode=require')).toBe('postgresql://u@db/jh?sslmode=require');
   });
 
-  it('refuses anything else', () => {
-    expect(() => parseDatabaseUrl('/home/x/db.sqlite')).toThrow(/sqlite:<path> or postgres:/);
-    expect(() => parseDatabaseUrl('mysql://db/jh')).toThrow(/sqlite:<path> or postgres:/);
+  it('refuses anything else, a SQLite file included', () => {
+    for (const url of ['sqlite:/var/lib/jh/db.sqlite', 'sqlite://data/db.sqlite', '/home/x/db.sqlite', 'mysql://db/jh']) {
+      expect(() => parseDatabaseUrl(url)).toThrow(/must be postgres:\/\//);
+    }
+  });
+});
+
+describe('one store implementation', () => {
+  it('no source file opens SQLite', () => {
+    const root = join(import.meta.dirname, '..', '..', 'src');
+    const files = readdirSync(root, { recursive: true, encoding: 'utf8' }).filter((f) => f.endsWith('.ts'));
+    expect(files.length).toBeGreaterThan(50);
+    expect(files.filter((f) => /node:sqlite|DatabaseSync/.test(readFileSync(join(root, f), 'utf8')))).toEqual([]);
   });
 });
 
@@ -28,14 +37,14 @@ describe('numberPlaceholders', () => {
   });
 });
 
-describe.runIf(testPostgres())('postgres', () => {
+describe('postgres', () => {
   it('keeps the store in the schema the URL names, created when absent', () => {
     const url = t.url();
     const s = t.open(url);
     const j = s.jobs.create(spec, 50);
     s.close();
     const schema = new URL(url).searchParams.get('schema')!;
-    const db = openDb({ kind: 'postgres', url: testPostgres()! });
+    const db = openDb(testPostgres());
     expect(db.get('SELECT count(*) AS n FROM information_schema.tables WHERE table_schema = ? AND table_name = ?', schema, 'jobs')).toEqual({ n: 1 });
     db.close();
     const again = t.open(url);
@@ -63,7 +72,7 @@ describe.runIf(testPostgres())('postgres', () => {
   });
 
   it('a failing statement names postgres and its code, and the connection stays usable', () => {
-    const db = openDb({ kind: 'postgres', url: t.url() });
+    const db = openDb(t.url());
     db.exec('CREATE TABLE x (id TEXT PRIMARY KEY)');
     db.run('INSERT INTO x (id) VALUES (?)', 'a');
     expect(() => db.run('INSERT INTO x (id) VALUES (?)', 'a')).toThrow(/postgres: .*\(23505\)/);
@@ -73,9 +82,9 @@ describe.runIf(testPostgres())('postgres', () => {
 
   it('connects again after the server drops the connection', () => {
     const url = t.url();
-    const db = openDb({ kind: 'postgres', url });
+    const db = openDb(url);
     const pid = db.get('SELECT pg_backend_pid() AS pid')!.pid as number;
-    const admin = openDb({ kind: 'postgres', url: testPostgres()! });
+    const admin = openDb(testPostgres());
     admin.get('SELECT pg_terminate_backend(?)', pid);
     admin.close();
     // The call the drop broke may fail; the one after it connects again.

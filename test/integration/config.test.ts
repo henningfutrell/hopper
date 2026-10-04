@@ -3,24 +3,26 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { loadConfig } from '../../src/config.ts';
 
-const DB = { JOB_HOPPER_DATABASE_URL: 'sqlite:/d/db.sqlite' };
+const DB = { JOB_HOPPER_DATABASE_URL: 'postgres://u:p@db:5432/jh' };
 
 describe('configuration from env: process settings only (phase 5 slice 4)', () => {
   it('JOB_HOPPER_DATABASE_URL is required: no database is assumed on this machine', () => {
-    expect(() => loadConfig({})).toThrow(/JOB_HOPPER_DATABASE_URL: required: sqlite:<path> or postgres:/);
-    expect(() => loadConfig({ JOB_HOPPER_DATABASE_URL: '/var/lib/db.sqlite' })).toThrow(/JOB_HOPPER_DATABASE_URL: must be sqlite:<path> or postgres:/);
+    expect(() => loadConfig({})).toThrow(/JOB_HOPPER_DATABASE_URL: required: postgres:/);
+    expect(() => loadConfig({ JOB_HOPPER_DATABASE_URL: '/var/lib/db.sqlite' })).toThrow(/JOB_HOPPER_DATABASE_URL: must be postgres:/);
+    // Postgres is the only store: a SQLite file is refused like any other non-Postgres URL.
+    expect(() => loadConfig({ JOB_HOPPER_DATABASE_URL: 'sqlite:/var/lib/db.sqlite' })).toThrow(/JOB_HOPPER_DATABASE_URL: must be postgres:/);
   });
 
   it('JOB_HOPPER_DB is no longer read: it is a leftover variable', () => {
-    expect(loadConfig({ JOB_HOPPER_DATABASE_URL: 'sqlite:/d/db.sqlite', JOB_HOPPER_DB: '/x.db' }).leftoverEnv).toEqual({ JOB_HOPPER_DB: '/x.db' });
+    expect(loadConfig({ JOB_HOPPER_DATABASE_URL: 'postgres://u:p@db:5432/jh', JOB_HOPPER_DB: '/x.db' }).leftoverEnv).toEqual({ JOB_HOPPER_DB: '/x.db' });
   });
 
   it('uses the documented defaults when only the database is given', () => {
-    const c = loadConfig({ JOB_HOPPER_DATABASE_URL: 'sqlite:/d/db.sqlite' });
+    const c = loadConfig({ JOB_HOPPER_DATABASE_URL: 'postgres://u:p@db:5432/jh' });
     expect(c).toEqual({
       host: '127.0.0.1',
       port: 4790,
-      databaseUrl: 'sqlite:/d/db.sqlite',
+      databaseUrl: 'postgres://u:p@db:5432/jh',
       workDir: join(tmpdir(), 'job-hopper'),
       tickMs: 2000,
       routerMode: 'shadow',
@@ -90,7 +92,7 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
       JOB_HOPPER_EXECUTORS: 'Not A Name', JOB_HOPPER_LOCAL_LANES: '-1', JOB_HOPPER_CLAUDE_CWD: '~/w', JOB_HOPPER_SOURCES_FILE: '~/s.yaml',
       JOB_HOPPER_JEV_MODE: 'active', JOB_HOPPER_JEV_ADVISOR: 'router', JOB_HOPPER_GITHUB_API: 'not a url', JOB_HOPPER_ANSWERER: 'fake',
       JOB_HOPPER_GROKBOT_WEBHOOK_FILE: '~/g.env', JOB_HOPPER_HOST: '0.0.0.0', JOB_HOPPER_PORT: '0', OTHER: 'x', JOB_HOPPER_EMPTY: '',
-      JOB_HOPPER_DATABASE_URL: 'sqlite:/d/db.sqlite',
+      JOB_HOPPER_DATABASE_URL: 'postgres://u:p@db:5432/jh',
     });
     expect(c.leftoverEnv).toEqual({
       JOB_HOPPER_EXECUTORS: 'Not A Name', JOB_HOPPER_LOCAL_LANES: '-1', JOB_HOPPER_CLAUDE_CWD: '~/w', JOB_HOPPER_SOURCES_FILE: '~/s.yaml',

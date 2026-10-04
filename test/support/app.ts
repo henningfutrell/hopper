@@ -1,5 +1,5 @@
 // Starts the real composition root (src/main.ts) on port 0 against a temp database (support/database.ts:
-// SQLite, or Postgres under scripts/test-postgres.sh), with the fake router at the Router seam (unless
+// a Postgres schema named after `dbPath`), with the fake router at the Router seam (unless
 // `realRouter`: then the plugin host's router runs), the fake usage source and the fake question
 // doubles (fake-questions.ts) at their seams, a fast tick, and plugins.yaml (executor `test`, no job
 // or usage sources) in the database. `plugins` sections are written over TEST_PLUGINS on every start;
@@ -66,6 +66,7 @@ export interface TestApp {
   stop(): Promise<void>;
 }
 
+/** A temp dir (the app's work dir) and `dbPath` in it: the key of the app's database (support/database.ts databaseUrlFor). */
 export function tempDbPath(): { dbPath: string; cleanup(): void } {
   const dir = mkdtempSync(join(tmpdir(), 'job-hopper-it-'));
   return { dbPath: join(dir, 'db.sqlite'), cleanup: () => rmSync(dir, { recursive: true, force: true }) };

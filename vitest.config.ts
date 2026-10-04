@@ -8,7 +8,9 @@ export default defineConfig({
     include: ['test/**/*.test.ts'],
     testTimeout: 15000,
     pool: 'forks',
-    // Isolated HOME and loopback-only fetch in every worker: test/support/isolate.ts.
+    // One Postgres for the run (test/support/postgres.ts); isolated HOME and loopback-only fetch in
+    // every worker (test/support/isolate.ts).
+    globalSetup: ['test/support/postgres.ts'],
     setupFiles: ['test/support/isolate.ts'],
   },
 });
