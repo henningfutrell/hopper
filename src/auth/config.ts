@@ -1,6 +1,7 @@
 // auth.yaml (design.md "Sign-in: local, OIDC and SAML" — Configuration): how people sign in. Read once
 // at start; an invalid file stops the daemon, naming the field (sign-in fails closed). No file →
-// the one-time login code only. Secrets may sit inline (the file is 0600) or in their own files.
+// the one-time login code only. Secrets may sit inline (the file is 0600), in their own files, or in
+// environment variables.
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -64,7 +65,7 @@ const base = {
   label: z.string().min(1).optional(),
   roles,
 };
-const secret = { clientSecret: z.string().min(1).optional(), clientSecretFile: z.string().min(1).optional() };
+const secret = { clientSecret: z.string().min(1).optional(), clientSecretFile: z.string().min(1).optional(), clientSecretEnv: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/, 'must be an environment variable name').optional() };
 const oidc = z.strictObject({
   ...base, ...secret, type: z.literal('oidc'), issuer: endpoint, clientId: z.string().min(1),
   scopes: z.array(z.string().min(1)).default(['openid', 'email', 'profile']),
@@ -96,8 +97,9 @@ const schema = z.strictObject({
 }).superRefine((doc, ctx) => {
   doc.providers.forEach((p, i) => {
     if (doc.providers.findIndex((q) => q.name === p.name) !== i) ctx.addIssue({ code: 'custom', path: ['providers', i, 'name'], message: `${p.name} is named twice; names must be unique` });
-    if (p.type !== 'saml' && p.clientSecret !== undefined && p.clientSecretFile !== undefined) ctx.addIssue({ code: 'custom', path: ['providers', i, 'clientSecret'], message: 'set clientSecret or clientSecretFile, not both' });
-    if (p.type === 'github' && p.clientSecret === undefined && p.clientSecretFile === undefined) ctx.addIssue({ code: 'custom', path: ['providers', i, 'clientSecret'], message: 'GitHub needs clientSecret or clientSecretFile' });
+    const secrets = p.type === 'saml' ? 0 : [p.clientSecret, p.clientSecretFile, p.clientSecretEnv].filter((x) => x !== undefined).length;
+    if (secrets > 1) ctx.addIssue({ code: 'custom', path: ['providers', i, 'clientSecret'], message: 'set one of clientSecret, clientSecretFile and clientSecretEnv' });
+    if (p.type === 'github' && secrets === 0) ctx.addIssue({ code: 'custom', path: ['providers', i, 'clientSecret'], message: 'GitHub needs clientSecret, clientSecretFile or clientSecretEnv' });
     if (p.type === 'saml' && (p.idpCert === undefined) === (p.idpCertFile === undefined)) ctx.addIssue({ code: 'custom', path: ['providers', i, 'idpCert'], message: 'set exactly one of idpCert and idpCertFile' });
   });
 });
@@ -112,6 +114,12 @@ function readSecretFile(path: string, field: string): string {
   }
 }
 
+function readSecretEnv(name: string, field: string): string {
+  const v = process.env[name];
+  if (v === undefined || v === '') throw new Error(`invalid auth.yaml: ${field}: environment variable ${name} is not set`);
+  return v;
+}
+
 function resolve(p: z.output<typeof provider>, i: number): ProviderConfig {
   const at = `providers.${i}`;
   const label = p.label ?? p.name;
@@ -119,8 +127,10 @@ function resolve(p: z.output<typeof provider>, i: number): ProviderConfig {
     const { idpCertFile, idpCert, ...rest } = p;
     return { ...rest, label, idpCert: idpCert ?? readSecretFile(idpCertFile!, `${at}.idpCertFile`) };
   }
-  const { clientSecretFile, clientSecret, ...rest } = p;
-  const s = clientSecret ?? (clientSecretFile === undefined ? undefined : readSecretFile(clientSecretFile, `${at}.clientSecretFile`));
+  const { clientSecretFile, clientSecretEnv, clientSecret, ...rest } = p;
+  const s = clientSecret
+    ?? (clientSecretFile === undefined ? undefined : readSecretFile(clientSecretFile, `${at}.clientSecretFile`))
+    ?? (clientSecretEnv === undefined ? undefined : readSecretEnv(clientSecretEnv, `${at}.clientSecretEnv`));
   return p.type === 'github' ? { ...rest, type: 'github', label, clientSecret: s! } as GithubProviderConfig
     : { ...rest, type: 'oidc', label, ...(s === undefined ? {} : { clientSecret: s }) } as OidcProviderConfig;
 }

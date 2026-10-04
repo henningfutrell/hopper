@@ -2788,7 +2788,17 @@ openssl throwaway key through `xml-crypto` (`test/support/idp.ts`).
 `JOB_HOPPER_AUTH_FILE` (default `~/.config/job-hopper/auth.yaml`), mode 600. Absent → local sign-in
 only (unchanged behaviour). Read **at start only**: an invalid file throws before the store opens,
 naming the field — sign-in fails closed. Schema in `src/auth/config.ts`; reference in
-`docs/sign-in.md`. Secrets inline or in files (`clientSecretFile`, `idpCertFile`). Issuer and
+`docs/sign-in.md`. Client secrets inline, in a file (`clientSecretFile`) or in an environment
+variable (`clientSecretEnv`).
+
+**Dependency on issue #40 (config in the store, secrets from env), stated.** #40 runs in parallel and
+moves the config documents (plugins, webhooks, rules) into the store and every secret into env. This
+work lands first and assumes: `auth.yaml` stays a start-time file until #40 folds it into the stored
+config documents the same way (an admin-only document; a change still applies at the next start, or
+#40 makes the sign-in service follow the stored version); `clientSecretEnv` is already the env path
+#40 asks for; migration 7 (`ALTER TABLE ui_sessions ADD COLUMN … NOT NULL DEFAULT …`) is plain SQL
+both SQLite and Postgres run; #40's store port keeps `UiSessionRepository.all` and `setRole`. The
+dependency runs one way: #40 builds on this, not the reverse. Issuer and
 endpoint URLs must be https, except to loopback (a local test or dev IdP). OIDC discovery runs on the
 first sign-in, not at boot: an unreachable issuer must not stop the daemon.
 

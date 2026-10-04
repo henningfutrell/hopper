@@ -47,8 +47,9 @@ providers:
       defaultRole: null  # the role of a signed-in account no rule matches; null: no session
 ```
 
-Secrets either inline (`clientSecret`, `idpCert`) or in a file of their own (`clientSecretFile`,
-`idpCertFile`; `~/` works) — exactly one of the two.
+A client secret inline (`clientSecret`), in a file of its own (`clientSecretFile`; `~/` works) or
+in an environment variable (`clientSecretEnv`: its name; set it in `daemon.env` or the container's
+environment) — exactly one. The SAML certificate is not a secret: `idpCert` or `idpCertFile`.
 
 **Per type:**
 
@@ -56,11 +57,11 @@ Secrets either inline (`clientSecret`, `idpCert`) or in a file of their own (`cl
 |---|---|---|---|
 | `oidc` | `issuer` | — | The issuer URL; discovery reads `<issuer>/.well-known/openid-configuration`. https (http only to `127.0.0.1`/`localhost`). |
 | | `clientId` | — | |
-| | `clientSecret` / `clientSecretFile` | none | Omit both for a public client (PKCE only). |
+| | `clientSecret` / `clientSecretFile` / `clientSecretEnv` | none | Omit all three for a public client (PKCE only). |
 | | `scopes` | `[openid, email, profile]` | Add what your groups claim needs (`groups` at Okta). |
 | | `claims.email` / `.username` / `.name` / `.groups` | `email` / `preferred_username` / `name` / `groups` | Claim names, read from the ID token, then userinfo. `groups` may be a list or one string. |
 | | `trustUnverifiedEmail` | `false` | Count `email` even without `email_verified: true`. Only for an issuer whose emails you control. |
-| `github` | `clientId`, `clientSecret` / `clientSecretFile` | — | An OAuth app (not a GitHub App). |
+| `github` | `clientId`, `clientSecret` / `clientSecretFile` / `clientSecretEnv` | — | An OAuth app (not a GitHub App). |
 | | `webUrl` / `apiUrl` | `https://github.com` / `https://api.github.com` | GitHub Enterprise Server: `https://ghe.example.com` and `https://ghe.example.com/api/v3`. |
 | `saml` | `entryPoint` | — | The IdP's single sign-on URL (HTTP-Redirect binding). |
 | | `idpCert` / `idpCertFile` | — | The IdP's signing certificate, PEM or bare base64. |
