@@ -338,6 +338,8 @@ export interface WebhookSubscription {
   createdAt: string;
 }
 
+export type { WebhooksEdit } from './webhooks.ts';
+
 export type DeliveryStatus = 'pending' | 'retrying' | 'delivered' | 'failed';
 
 export interface WebhookDelivery {

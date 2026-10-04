@@ -1,5 +1,6 @@
-// Webhook subscriptions come from webhooks.yaml (src/webhooks/config.ts), never from the API:
-// these routes only read — the subscriptions (secrets omitted), the file's status, the deliveries.
+// Webhook subscriptions come from webhooks.yaml (src/webhooks/config.ts), which the UI session may
+// edit (POST /ui/api/webhooks, src/http/ui/): these routes only read — the subscriptions (secrets
+// omitted), the file's status and version, the deliveries.
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { Store } from '../domain/ports.ts';
@@ -11,13 +12,15 @@ const deliveriesQuery = z.object({
   limit: z.coerce.number().int().min(1).max(1000).default(100),
 });
 
+/** GET /api/webhooks: every subscription without its secret, and the file's status. */
+export function webhooksView(store: Pick<Store, 'webhooks'>, config: { status(): WebhookConfigStatus }) {
+  return { subscriptions: store.webhooks.list().map(({ secret: _secret, ...rest }) => rest), config: config.status() };
+}
+
 export function webhookRoutes(app: FastifyInstance, o: { store: Store; webhookConfig: { status(): WebhookConfigStatus } }): void {
   const { webhooks } = o.store;
 
-  app.get('/api/webhooks', async () => ({
-    subscriptions: webhooks.list().map(({ secret: _secret, ...rest }) => rest),
-    config: o.webhookConfig.status(),
-  }));
+  app.get('/api/webhooks', async () => webhooksView(o.store, o.webhookConfig));
 
   app.get('/api/webhooks/deliveries', async (req) => {
     const q = parseWith(deliveriesQuery, req.query);

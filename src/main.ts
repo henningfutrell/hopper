@@ -27,6 +27,7 @@ import { logFailures } from './engine/failure-log.ts';
 import { createSourceSync, idleStatus, withFixedStatuses, type GitHubApi, type SourceSync } from './sources/index.ts';
 import { openStore } from './store/index.ts';
 import { createWebhookConfigWatcher, type WebhookConfigWatcher } from './webhooks/config.ts';
+import { createWebhooksEditor } from './webhooks/edit.ts';
 import { createWebhookDispatcher } from './webhooks/index.ts';
 
 export interface App {
@@ -203,6 +204,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   });
   const server = createServer({
     engine, store, dispatcher, questions, clock, version: VERSION, sources: registry, webhookConfig, plugins,
+    webhooksEditor: createWebhooksEditor({ path: config.webhooksFile, reload: webhookConfig.reload }),
     port: () => port, rulesFile: config.rulesFile, dataDir, sessionHours: config.uiSessionHours, lan: { names: config.lanNames, peers: config.lanPeers }, uiDir: seams.uiDir ?? UI_DIR,
   });
 

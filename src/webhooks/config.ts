@@ -1,5 +1,6 @@
 // webhooks.yaml: the source of truth for webhook subscriptions. Loaded at startup and
 // re-read when its mtime changes; reconciled by `name` into the store.
+import { createHash } from 'node:crypto';
 import { readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { parse } from 'yaml';
@@ -31,6 +32,21 @@ const FILE = z.strictObject({ version: z.literal(1), webhooks: z.array(entry) })
   }
 });
 
+/** Why a parsed webhooks.yaml is refused, or undefined when it is valid. */
+export function webhooksFileProblem(raw: unknown): string | undefined {
+  const parsed = FILE.safeParse(raw);
+  return parsed.success ? undefined : parsed.error.issues.map((i) => `${i.path.join('.') || 'file'}: ${i.message}`).join('; ');
+}
+
+/** sha-256 of the file's bytes, or `missing`: a UI edit read against one version is refused against another. */
+export function webhooksFileVersion(path: string): string {
+  try {
+    return createHash('sha256').update(readFileSync(path)).digest('hex');
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code === 'ENOENT' ? 'missing' : 'unreadable';
+  }
+}
+
 const expandHome = (p: string): string => (p === '~' || p.startsWith('~/') ? homedir() + p.slice(1) : p);
 
 export function loadWebhooksFile(path: string): LoadResult {
@@ -46,9 +62,7 @@ export function loadWebhooksFile(path: string): LoadResult {
   let raw: unknown;
   try { raw = parse(text); } catch (e) { return { error: `${path}: ${(e as Error).message}` }; }
   const parsed = FILE.safeParse(raw);
-  if (!parsed.success) {
-    return { error: `${path}: ${parsed.error.issues.map((i) => `${i.path.join('.') || 'file'}: ${i.message}`).join('; ')}` };
-  }
+  if (!parsed.success) return { error: `${path}: ${webhooksFileProblem(raw)}` };
   const warnings: string[] = [];
   const webhooks: WebhookConfig[] = [];
   for (const w of parsed.data.webhooks) {
@@ -67,7 +81,11 @@ export function loadWebhooksFile(path: string): LoadResult {
   return { webhooks, warnings };
 }
 
-export interface WebhookConfigStatus { path: string; loadedAt?: string; error?: string; warnings: string[] }
+export interface WebhookConfigStatus {
+  path: string; loadedAt?: string; error?: string; warnings: string[];
+  /** The file's version now (webhooksFileVersion), for a UI edit. */
+  version: string;
+}
 
 export interface WebhookConfigWatcher {
   start(): void;
@@ -83,7 +101,7 @@ export function createWebhookConfigWatcher(o: {
   const { path, store, clock } = o;
   let timer: NodeJS.Timeout | undefined;
   let signature: string | undefined;
-  const state: WebhookConfigStatus = { path, warnings: [] };
+  const state: Omit<WebhookConfigStatus, 'version'> = { path, warnings: [] };
 
   const sign = (): string => {
     try { const s = statSync(path); return `${s.mtimeMs}:${s.size}`; } catch { return 'missing'; }
@@ -109,7 +127,7 @@ export function createWebhookConfigWatcher(o: {
       timer.unref();
     },
     stop() { if (timer) clearInterval(timer); timer = undefined; },
-    status: () => ({ ...state, warnings: [...state.warnings] }),
+    status: () => ({ ...state, warnings: [...state.warnings], version: webhooksFileVersion(path) }),
     reload,
   };
 }

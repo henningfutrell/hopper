@@ -2,12 +2,12 @@
 // type-only imports: the wire contract has one definition, and nothing of src/ is bundled.
 import type {
   Decision, DomainEvent, InstanceSpec, Job, JobStatus, Lane, MachineSnapshot, PluginsEdit, PluginsReport, Question, QuestionAttempt, QuestionGatesView, RiskRuleView, Role, RulesFileView, SelectableRole, SourceStatus,
-  UsageReading, WebhookDelivery, WebhookSubscription,
+  UsageReading, WebhookDelivery, WebhookSubscription, WebhooksEdit,
 } from '../../../src/domain/types.ts';
 
 export type {
   Decision, DomainEvent, InstanceSpec, Job, JobStatus, Lane, PluginsEdit, PluginsReport, Question, QuestionAttempt, QuestionGatesView, RiskRuleView, Role, RulesFileView, SelectableRole, SourceStatus,
-  UsageReading, WebhookDelivery, WebhookSubscription,
+  UsageReading, WebhookDelivery, WebhookSubscription, WebhooksEdit,
 };
 
 export interface Queue {
@@ -36,4 +36,13 @@ export interface WebhookConfig {
   loadedAt?: string;
   error?: string;
   warnings?: string[];
+  /** webhooks.yaml's sha-256, or `missing`: what a POST /ui/api/webhooks edit is made against. */
+  version?: string;
+}
+
+/** GET /api/webhooks (secrets omitted); the answer to POST /ui/api/webhooks adds `secret` after add or rotate-secret. */
+export interface WebhooksView {
+  subscriptions: WebhookSubscription[];
+  config?: WebhookConfig;
+  secret?: string;
 }
