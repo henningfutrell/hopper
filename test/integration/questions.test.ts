@@ -128,11 +128,11 @@ describe('a question escalated to the human', () => {
     expect((await a.api('GET', '/api/questions?status=bogus')).status).toBe(400);
   });
 
-  it('an answerer that is not confident: human, the assessor never runs', async () => {
+  it('an answerer that is not confident: the assessor still runs (Opus, then Fable, then the owner)', async () => {
     const a = await start();
-    const job = await a.pull(ask('I am unsure, which one?'));
+    const job = await a.pull(ask('I am unsure, is this risky?'));
     const q = await a.waitForQuestion(job.id, (x) => x.tier === 'human');
-    expect(q.attempts.map((x) => [x.tier, x.outcome])).toEqual([['opus', 'escalated']]);
+    expect(q.attempts.map((x) => [x.tier, x.outcome])).toEqual([['opus', 'drafted'], ['fable', 'escalated']]);
   });
 
   it('a risk rule escalates a question the assessor let through', async () => {

@@ -80,15 +80,28 @@ describe('escalated to the human', () => {
     });
   });
 
-  it('answerer not confident: human, the assessor is not called', async () => {
-    const r = rig({ answer: () => unsure });
+  // owner decision, 2026-10-04: the chain is Opus, then Fable, then the owner on every question.
+  it('answerer not confident: the assessor still runs and decides (escalates here)', async () => {
+    const r = rig({ answer: () => unsure, assess: () => ESCALATE });
     const q = r.question();
     r.svc.handle(q.id);
     await settle();
     const got = human(r, q.id);
-    expect(r.assessed).toHaveLength(0);
-    expect(got.attempts).toEqual([expect.objectContaining({ tier: 'opus', role: 'answerer', confident: false, outcome: 'escalated' })]);
-    expect(r.eventsOf('question.escalated').map((e) => e.data.target)).toEqual(['opus', 'human']);
+    expect(r.assessed).toHaveLength(1);
+    expect(got.attempts).toEqual([
+      expect.objectContaining({ tier: 'opus', role: 'answerer', confident: false, outcome: 'drafted' }),
+      expect.objectContaining({ tier: 'fable', role: 'assessor', escalate: true, outcome: 'escalated' }),
+    ]);
+    expect(r.eventsOf('question.escalated').map((e) => e.data.target)).toEqual(['opus', 'fable', 'human']);
+  });
+
+  it('answerer not confident, assessor lets it through: the draft is the answer', async () => {
+    const r = rig({ answer: () => unsure });
+    const q = r.question();
+    r.svc.handle(q.id);
+    await settle();
+    expect(r.assessed).toHaveLength(1);
+    expect(r.mem.store.questions.get(q.id)).toMatchObject({ status: 'answered', answeredBy: 'opus' });
   });
 
   it.each([
