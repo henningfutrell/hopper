@@ -16,6 +16,7 @@ import {
 } from '@/model/routing';
 import type { PluginsEdit, PluginsReport, RoutingReport } from '@/model/wire';
 import { act, refreshHealth, refreshPlugins, refreshRouting, setRouting, useHopper } from '@/store';
+import { useCanAdmin } from '@/store/selectors';
 
 const REFRESH_MS = 15000;
 
@@ -232,7 +233,7 @@ function RulesPanel({ ctx }: { ctx: PluginCtx }) {
 }
 
 export function Routing() {
-  const authed = useHopper((s) => s.authed);
+  const authed = useCanAdmin();
   const report = useHopper((s) => s.plugins);
   const error = useHopper((s) => s.pluginsError);
   const [busy, setBusy] = useState(false);

@@ -1,6 +1,7 @@
 // Derived reads over the store, memoised by zustand's shallow equality where they allocate.
 import { useMemo } from 'react';
 import { goalOf, issueRef } from '@/model/job';
+import { allows } from '@/model/roles';
 import type { Job } from '@/model/wire';
 import { useHopper } from './index';
 
@@ -20,3 +21,8 @@ export function useJobName(): (jobId: string) => string {
     return ref ? `${ref} · ${goalOf(j)}` : goalOf(j);
   }, [jobs]);
 }
+
+/** The session may cancel and approve jobs, and answer and close questions. */
+export const useCanOperate = (): boolean => useHopper((s) => s.authed && allows(s.user, 'operator'));
+/** The session may change configuration (plugins, machines, routing, webhooks, rules, router mode). */
+export const useCanAdmin = (): boolean => useHopper((s) => s.authed && allows(s.user, 'admin'));

@@ -16,6 +16,7 @@ import { orderReadings, readingKey } from '@/model/usage';
 import type { MachineEdit, MachinesConfig, MachineView } from '@/model/wire';
 import { refreshLive, useHopper } from '@/store';
 import { AddMachineForm, EditMachineForm, LocalLanesForm } from './machine-forms';
+import { useCanAdmin } from '@/store/selectors';
 
 const REFRESH_MS = 15000;
 const fetchConfig = () => get<MachinesConfig>('/api/machines/config');
@@ -88,7 +89,7 @@ function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
 
 export function Machines() {
   const machines = useHopper((s) => s.machines);
-  const authed = useHopper((s) => s.authed);
+  const authed = useCanAdmin();
   const [config, setConfig] = useState<MachinesConfig | null>(null);
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);

@@ -3,8 +3,9 @@
 // events costs one round of requests.
 import { toast } from 'sonner';
 import { create } from 'zustand';
-import { get, post, SessionRejected, clearToken, sessionIsLive } from '@/lib/api';
+import { get, post, SessionRejected, clearToken, readSession } from '@/lib/api';
 import { HISTORY_TYPES } from '@/model/event-types';
+import type { SessionUser, SessionView } from '@/model/wire';
 import type { Decision, DomainEvent, Health, MachineView, PartAccount, PluginsReport, Question, Queue, RoutingReport, SourceStatus, UsageReport, WebhookConfig, WebhookDelivery, WebhookView, WebhooksView } from '@/model/wire';
 
 export const CAP = { events: 500, history: 5000, decisions: 100, deliveries: 100 };
@@ -15,6 +16,10 @@ export interface HopperState {
   loadError: string | null;
   conn: Conn;
   authed: boolean;
+  /** Who the session belongs to; null logged out. */
+  user: SessionUser | null;
+  /** The ways to sign in (GET /ui/api/session); null until read. */
+  signIn: SessionView['signIn'] | null;
   health: Health | null;
   queue: Queue;
   machines: MachineView[];
@@ -43,7 +48,7 @@ export interface HopperState {
 const EMPTY_QUEUE: Queue = { waiting: [], running: [], waitingAnswer: [], ended: [], counts: {} };
 
 export const useHopper = create<HopperState>(() => ({
-  loaded: false, loadError: null, conn: 'connecting', authed: false, health: null, queue: EMPTY_QUEUE, machines: [],
+  loaded: false, loadError: null, conn: 'connecting', authed: false, user: null, signIn: null, health: null, queue: EMPTY_QUEUE, machines: [],
   decisions: [], questions: [], events: [], history: [], sources: [], deliveries: [], subscriptions: [], webhookConfig: null,
   plugins: null, pluginsError: null, usage: null, accounts: [], routing: null, routingError: null,
 }));
@@ -85,7 +90,10 @@ export const refreshLiveSoon = debounced(refreshLive);
 const refreshQuestionsSoon = debounced(refreshQuestions);
 
 export async function checkSession() {
-  try { set({ authed: await sessionIsLive() }); } catch { /* daemon unreachable: keep the current mode */ }
+  try {
+    const s = await readSession();
+    set({ authed: s.authenticated, user: s.user ?? null, signIn: s.signIn });
+  } catch { /* daemon unreachable: keep the current mode */ }
 }
 
 /** A UI mutation. Failures toast; a rejected session drops to read-only. Resolves true on success. */
@@ -96,7 +104,7 @@ export async function act(path: string, body: unknown = {}, done?: string): Prom
     refreshLiveSoon();
     return true;
   } catch (e) {
-    if (e instanceof SessionRejected) set({ authed: false });
+    if (e instanceof SessionRejected) set({ authed: false, user: null });
     toast.error((e as Error).message);
     return false;
   }
@@ -105,7 +113,7 @@ export async function act(path: string, body: unknown = {}, done?: string): Prom
 export async function logout() {
   try { await post('/ui/api/logout'); } catch { /* already gone */ }
   clearToken();
-  set({ authed: false });
+  set({ authed: false, user: null });
 }
 
 export function onDomainEvent(e: DomainEvent) {

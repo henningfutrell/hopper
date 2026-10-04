@@ -9,11 +9,12 @@ import { waitingRows } from '@/model/board';
 import { ago, between } from '@/model/format';
 import { act, useHopper } from '@/store';
 import { CancelButton } from './lanes';
+import { useCanOperate } from '@/store/selectors';
 
 export function WaitingPanel() {
   const queue = useHopper((s) => s.queue);
   const latest = useHopper((s) => s.decisions[0]);
-  const authed = useHopper((s) => s.authed);
+  const authed = useCanOperate();
   const rows = waitingRows(queue, latest);
   return (
     <Panel title="Waiting" icon={Hourglass} count={rows.length || ''} bodyClassName="divide-y p-0">
