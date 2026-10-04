@@ -1,7 +1,8 @@
 // Phase 5 slice 7 (issue #6): every plugin instance has its own options, editable from the UI
 // through POST /ui/api/plugins — except its command-bearing options, which stay file-only. One
 // edit touches one instance's section of plugins.yaml and nothing else (design.md "UI and mutation").
-import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { parse } from 'yaml';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -68,8 +69,10 @@ describe('GET /api/plugins: what the UI edits', () => {
     expect(herdr.options.properties.pollMs.commandBearing).toBeUndefined();
   });
 
-  it('with no plugins.yaml the version says so', async () => {
-    const { a } = await start();
+  it('the version is the sha-256 of the file the boot keeps or writes; missing once it is gone', async () => {
+    const { a, file } = await start();
+    expect((await report(a)).config.version).toBe(createHash('sha256').update(read(file)).digest('hex'));
+    rmSync(file);
     expect((await report(a)).config.version).toBe('missing');
   });
 });
@@ -113,6 +116,18 @@ describe('POST /ui/api/plugins — one instance\'s options', () => {
     expect(doc.executors[1]).toEqual({ name: 'herdr-b', plugin: 'herdr-claude', options: { session: 'hopper-b', pollMs: 250 } });
     expect(doc.executors[2]).toEqual({ name: 'test', plugin: 'test' });
     expect(r.body.executors.pending?.status).toBe('changed — restart pending');
+  });
+
+  it('the machine instance: its lane count is edited in place (one map, not a list); restart pending', async () => {
+    const { a, token, file } = await start(`${TWO_EXECUTORS}machines: { name: local, plugin: local, options: { lanes: 4 } }\n`);
+    const body = await report(a);
+    expect(body.instances).toEqual(expect.arrayContaining([{ role: 'machine-source', instance: { name: 'local', plugin: 'local', options: { lanes: 4 } } }]));
+    const r = await a.ui<Reply>('/ui/api/plugins', { action: 'options', role: 'machine-source', name: 'local', options: { lanes: 2 }, version: body.config.version }, { token });
+    expect(r.status).toBe(200);
+    const doc = parse(read(file));
+    expect(doc.machines).toEqual({ name: 'local', plugin: 'local', options: { lanes: 2 } });
+    expect(doc.executors).toHaveLength(3);
+    expect(r.body.machines.pending?.status).toBe('changed — restart pending');
   });
 
   it('a command-bearing option that differs: 409 naming it, nothing written', async () => {
@@ -163,8 +178,9 @@ describe('POST /ui/api/plugins — one instance\'s options', () => {
     expect(r.status).toBe(404);
   });
 
-  it('no plugins.yaml: the edit writes one with version 1 and that section only, mode 600', async () => {
+  it('plugins.yaml removed while running: the edit writes one with version 1 and that section only, mode 600', async () => {
     const { a, token, file } = await start();
+    rmSync(file);
     const r = await a.ui<Reply>('/ui/api/plugins', { action: 'options', role: 'assessor', name: 'fable', options: { model: 'haiku' }, version: 'missing' }, { token });
     expect(r.status).toBe(200);
     const doc = parse(read(file));

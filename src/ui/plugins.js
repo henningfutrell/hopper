@@ -2,7 +2,12 @@
 // own options form; command-bearing options are shown, never edited (plugins.yaml only). One Save
 // sends one instance's options. Unsaved edits survive re-renders, keyed by role and instance name.
 
-const ROLE_TITLES = { router: 'Router', answerer: 'Answerer', assessor: 'Assessor', executor: 'Executors' };
+const ROLE_TITLES = {
+  router: 'Router', answerer: 'Answerer', assessor: 'Assessor', executor: 'Executors',
+  'job-source': 'Job sources', 'machine-source': 'Machine source', 'usage-source': 'Usage sources', notifier: 'Notifiers',
+};
+/** The restart roles, by their key in GET /api/plugins. */
+const RESTART = { executor: 'executors', 'job-source': 'jobSources', 'machine-source': 'machines', 'usage-source': 'usageSources', notifier: 'notifiers' };
 const SELECTABLE = ['router', 'answerer', 'assessor'];
 const drafts = {}; // `${role}:${name}` → { key: raw input value }
 const errors = {}; // `${role}:${name}` or `select:${role}` → message
@@ -37,8 +42,8 @@ const pluginsOf = (report, role) => report.plugins.filter((p) => p.role === role
 const schemaOf = (report, id) => report.plugins.find((p) => p.id === id)?.options;
 
 function status(report, role, name) {
-  if (role === 'executor') {
-    const s = report.executors.instances.find((i) => i.instance.name === name);
+  if (RESTART[role]) {
+    const s = report[RESTART[role]].instances.find((i) => i.instance.name === name);
     return s ? { active: s.active, fallback: false, reason: s.reason, detection: s.detection } : { pending: true };
   }
   const s = report[role];
@@ -48,12 +53,12 @@ function status(report, role, name) {
 function roleBlock(role, report, ui) {
   const { el, pill } = ui;
   const instances = report.instances.filter((i) => i.role === role);
-  const pending = role === 'executor' && report.executors.pending;
+  const pending = RESTART[role] && report[RESTART[role]].pending;
   return el('div', { class: 'role' },
     el('h3', null, ROLE_TITLES[role] ?? role, ' ', pending && pill('changed — restart pending', 'warn'),
       SELECTABLE.includes(role) && el('span', { class: 'muted' }, role === 'router' ? `(${report.router.selection})` : '')),
     SELECTABLE.includes(role) && ui.authed && selector(role, instances[0], report, ui),
-    ...(instances.length ? instances.map((i) => instanceCard(role, i.instance, report, ui)) : [el('div', { class: 'empty' }, 'none — questions go straight to the owner')]),
+    ...(instances.length ? instances.map((i) => instanceCard(role, i.instance, report, ui)) : [el('div', { class: 'empty' }, role === 'answerer' ? 'none — questions go straight to the owner' : 'none')]),
   );
 }
 

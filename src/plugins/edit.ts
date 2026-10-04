@@ -12,17 +12,21 @@ export type EditResult = { ok: true; changed: boolean } | EditRefusal;
 
 export interface EditContext {
   path: string;
-  /** What plugins.yaml (or the env, for a role with no section) names now. */
+  /** What plugins.yaml (or the built-in instances, for a role with no section) names now. */
   configured: readonly ConfiguredInstance[];
   find(id: string): { definition: PluginDefinition; detection: Detection } | undefined;
 }
 
-/** Where each role's instances live in plugins.yaml. Later slices add their roles here. */
+/** Where each role's instances live in plugins.yaml. */
 const SECTIONS: Record<Role, { key: string; many: boolean }> = {
   router: { key: 'router', many: false },
   answerer: { key: 'answerer', many: false },
   assessor: { key: 'assessor', many: false },
   executor: { key: 'executors', many: true },
+  'job-source': { key: 'jobSources', many: true },
+  'machine-source': { key: 'machines', many: false },
+  'usage-source': { key: 'usageSources', many: true },
+  notifier: { key: 'notifiers', many: true },
 };
 
 const refuse = (code: EditRefusal['code'], error: string): EditRefusal => ({ ok: false, code, error });
@@ -66,7 +70,7 @@ function place(doc: Document, role: Role, name: string, next: InstanceSpec | nul
       return;
     }
   }
-  // No section yet: the env names this role's instances; write them all, this one changed.
+  // No section yet: the built-in instances fill this role; write them all, this one changed.
   const all = configured.filter((c) => c.role === role).map((c) => (c.instance.name === name && next ? next : c.instance));
   doc.set(key, doc.createNode(all.map(specNode)));
 }
