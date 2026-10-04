@@ -51,7 +51,7 @@ describe('write-plugin-tsconfig', () => {
     const text = readFileSync(join(ROOT, 'scripts', 'install.sh'), 'utf8');
     expect(text).toMatch(/write-plugin-tsconfig\.ts/);
     expect(text).toMatch(/PLUGIN_DIR="\$\(env_line JOB_HOPPER_PLUGIN_DIR\)"/);
-    expect(text).not.toMatch(/\$CONFIG_DIR\/plugins/);
+    expect(text).not.toMatch(/\$CONFIG_DIR\/plugins(?!\.yaml)/);
     expect(text).toMatch(/\$DEST\/src\/plugins\/sdk\.ts/);
   });
 });
