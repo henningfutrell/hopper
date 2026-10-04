@@ -1,3 +1,4 @@
+import { SCHEMA_VERSION } from '../../src/store/migrations.ts';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -40,7 +41,7 @@ describe('migration 2 (questions)', () => {
     s.close();
 
     const after = new DatabaseSync(path);
-    expect(after.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 6 });
+    expect(after.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: SCHEMA_VERSION });
     after.close();
   });
 });

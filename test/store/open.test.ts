@@ -1,3 +1,4 @@
+import { SCHEMA_VERSION } from '../../src/store/migrations.ts';
 import { existsSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { DatabaseSync } from 'node:sqlite';
@@ -14,7 +15,7 @@ describe('openStore', () => {
     s.close();
     const raw = new DatabaseSync(path);
     expect(raw.prepare('PRAGMA journal_mode').get()).toMatchObject({ journal_mode: 'wal' });
-    expect(raw.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 6 });
+    expect(raw.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: SCHEMA_VERSION });
     raw.close();
   });
 
