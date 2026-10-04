@@ -41,6 +41,20 @@ describe('config documents', () => {
     again.close();
   });
 
+  it('a write is refused when another store replaced the document after it was read', () => {
+    const url = t.url();
+    const a = t.open(url);
+    const b = t.open(url);
+    a.documents.write('rules.md', 'one', 'missing');
+    const seen = a.documents.version('rules.md');
+    expect(b.documents.write('rules.md', 'two', seen)).toBe(true);
+    expect(a.documents.write('rules.md', 'three', seen)).toBe(false);
+    expect(b.documents.write('rules.md', 'four', 'missing')).toBe(false);
+    expect(a.documents.read('rules.md')).toBe('two');
+    a.close();
+    b.close();
+  });
+
   it('a write inside a transaction that rolls back leaves the document as it was', () => {
     const s = t.open(t.url());
     s.documents.write('rules.md', 'a', 'missing');

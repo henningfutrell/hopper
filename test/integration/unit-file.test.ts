@@ -40,4 +40,11 @@ describe('systemd/job-hopper.service', () => {
     expect(text).not.toMatch(/JOB_HOPPER_(EXECUTORS|HERDR_|CLAUDE_|SOURCES_FILE|GH_BIN|LOCAL_LANES|ANSWER_MODEL|JEV_)/);
     expect(text).not.toMatch(/migrate-sources-yaml/);
   });
+
+  it('install.sh refuses a database without plugins.yaml while the old config files are there: they are migrated, never ignored', () => {
+    const text = readFileSync(INSTALL, 'utf8');
+    expect(text).toMatch(/\$CONFIG_DIR\/plugins\.yaml/);
+    expect(text).toMatch(/migrate-local/);
+    expect(text).not.toMatch(/sqlite:\$HOME\/\.local\/share\/job-hopper\/job-hopper\.db/);
+  });
 });
