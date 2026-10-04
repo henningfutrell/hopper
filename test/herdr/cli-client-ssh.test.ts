@@ -1,7 +1,7 @@
 // The herdr CLI client on an attached machine: every call goes through `ssh`, and the remote
 // shell must hand herdr exactly the argv the local client would (design.md "Attached machines").
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { chmodSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -49,6 +49,17 @@ describe('herdr CLI client over ssh', () => {
     ]));
     expect(opts.some((o) => o.startsWith('ControlPersist='))).toBe(true);
     expect(opts.some((o) => o.startsWith('ConnectTimeout='))).toBe(true);
+  });
+
+  it('reads only the user\'s ssh config, never /etc/ssh: under the unit those files look foreign-owned and ssh refuses them', async () => {
+    process.env.HOME = join(dir, 'home');
+    await remote().getAgent('jh-a');
+    mkdirSync(join(dir, 'home', '.ssh'), { recursive: true });
+    writeFileSync(join(dir, 'home', '.ssh', 'config'), 'Host laptop\n');
+    await remote().getAgent('jh-a');
+    const [none, own] = lines('ssh-calls.jsonl').map((l) => l.argv.slice(0, l.argv.indexOf('--')));
+    expect(none).toEqual(expect.arrayContaining(['-F', '/dev/null']));
+    expect(own).toEqual(expect.arrayContaining(['-F', join(dir, 'home', '.ssh', 'config')]));
   });
 
   it('remote herdr results and errors come back as they do locally', async () => {
