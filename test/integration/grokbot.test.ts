@@ -1,8 +1,13 @@
 // The Grok Bot routine webhook: a real loopback receiver, a real env file, the real composition root.
+// Since phase 5 slice 5 it is the built-in notifier plugin grokbot-routine; the behaviour is unchanged.
+// Both upgrade orders end with Grok Bot configured: a plugins.yaml written before slice 5 (no
+// `notifiers` section) means the built-in grok-bot instance; a boot with no plugins.yaml writes
+// `notifiers` from the removed JOB_HOPPER_GROKBOT_WEBHOOK_FILE (or the default file).
 import { createServer, type IncomingHttpHeaders, type Server } from 'node:http';
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { parse } from 'yaml';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { waitFor } from '../support/wait.ts';
 
@@ -30,11 +35,11 @@ async function receiver(statuses: number[] = []): Promise<{ url: string; hits: H
   return { url: `http://127.0.0.1:${(server.address() as { port: number }).port}/routine`, hits };
 }
 
-async function start(env: Record<string, string> = {}): Promise<{ a: TestApp; file: string }> {
+async function start(env: Record<string, string> = {}, plugins?: Record<string, unknown> | false): Promise<{ a: TestApp; file: string }> {
   const db = tempDbPath();
   cleanup = db.cleanup;
   const file = join(db.dbPath, '..', 'grokbot-webhook.env');
-  t = await startTestApp({ dbPath: db.dbPath, env, seams: { grokbotBaseMs: 20 } });
+  t = await startTestApp({ dbPath: db.dbPath, env, seams: { grokbotBaseMs: 20 }, ...(plugins === undefined ? {} : { plugins }) });
   return { a: t, file };
 }
 const writeEnv = (file: string, url: string, key = 'sekrit') => writeFileSync(file, `GROKBOT_WEBHOOK_URL=${url}\nGROKBOT_WEBHOOK_KEY=${key}\n`, { mode: 0o600 });
@@ -146,5 +151,84 @@ describe('Grok Bot routine webhook', () => {
     await waitFor(() => r.hits.length >= 1, { what: 'first post' });
     await new Promise((x) => setTimeout(x, 300));
     expect(r.hits).toHaveLength(1);
+  });
+});
+
+describe('Grok Bot as the grokbot-routine notifier plugin (phase 5, slice 5)', () => {
+  it('a plugins.yaml without a notifiers section (slice 4 installed first): the built-in grok-bot instance posts; /api/plugins lists it', async () => {
+    const r = await receiver();
+    const { a, file } = await start();
+    expect(parse(readFileSync(join(a.dataDir, 'plugins.yaml'), 'utf8'))).not.toHaveProperty('notifiers');
+    expect((await a.api('GET', '/api/plugins')).body.notifiers.instances).toEqual([{
+      instance: { name: 'grok-bot', plugin: 'grokbot-routine', options: { envFile: file } },
+      detection: expect.objectContaining({ status: 'needs-setup' }), active: 'grokbot-routine',
+    }]);
+    writeEnv(file, r.url);
+    await humanQuestion(a);
+    await waitFor(() => r.hits.length === 1, { what: 'escalation post' });
+  });
+
+  it('no plugins.yaml (slice 5 installed straight over the old unit): the migration writes notifiers from JOB_HOPPER_GROKBOT_WEBHOOK_FILE, and it posts', async () => {
+    const r = await receiver();
+    const db = tempDbPath();
+    cleanup = db.cleanup;
+    const elsewhere = join(db.dbPath, '..', 'secrets', 'grok.env');
+    mkdirSync(join(elsewhere, '..'), { recursive: true });
+    writeEnv(elsewhere, r.url);
+    t = await startTestApp({ dbPath: db.dbPath, plugins: false, env: { JOB_HOPPER_GROKBOT_WEBHOOK_FILE: elsewhere }, seams: { grokbotBaseMs: 20 } });
+    expect(parse(readFileSync(join(t.dataDir, 'plugins.yaml'), 'utf8')).notifiers).toEqual([
+      { name: 'grok-bot', plugin: 'grokbot-routine', options: { envFile: elsewhere } },
+    ]);
+    await humanQuestion(t);
+    await waitFor(() => r.hits.length === 1, { what: 'escalation post' });
+  });
+
+  it('no plugins.yaml and no variable: the migration writes the default env file beside plugins.yaml', async () => {
+    const { a, file } = await start({}, false);
+    expect(parse(readFileSync(join(a.dataDir, 'plugins.yaml'), 'utf8')).notifiers).toEqual([
+      { name: 'grok-bot', plugin: 'grokbot-routine', options: { envFile: file } },
+    ]);
+  });
+
+  it('a notifiers section naming another env file: that file is read', async () => {
+    const r = await receiver();
+    const db = tempDbPath();
+    cleanup = db.cleanup;
+    const other = join(db.dbPath, '..', 'other.env');
+    writeEnv(other, r.url, 'other-key');
+    writeEnv(join(db.dbPath, '..', 'grokbot-webhook.env'), r.url, 'wrong-key');
+    t = await startTestApp({ dbPath: db.dbPath, plugins: { notifiers: [{ name: 'grok-bot', plugin: 'grokbot-routine', options: { envFile: other } }] }, seams: { grokbotBaseMs: 20 } });
+    await humanQuestion(t);
+    const hit = await waitFor(() => r.hits[0], { what: 'escalation post' });
+    expect(hit.headers.authorization).toBe('Bearer other-key');
+  });
+
+  it('notifiers: [] → nothing posted, even with the env file in place', async () => {
+    const r = await receiver();
+    const { a, file } = await start({}, { notifiers: [] });
+    writeEnv(file, r.url);
+    await humanQuestion(a);
+    await settle();
+    expect(r.hits).toHaveLength(0);
+    expect((await a.api('GET', '/api/plugins')).body.notifiers.instances).toEqual([]);
+  });
+
+  it('a notifier that cannot run is dropped with its reason in /api/plugins; the daemon boots and the others run', async () => {
+    const r = await receiver();
+    const db = tempDbPath();
+    cleanup = db.cleanup;
+    const file = join(db.dbPath, '..', 'grokbot-webhook.env');
+    writeEnv(file, r.url);
+    t = await startTestApp({ dbPath: db.dbPath, seams: { grokbotBaseMs: 20 }, plugins: { notifiers: [
+      { name: 'nope', plugin: 'no-such-notifier' },
+      { name: 'bad', plugin: 'grokbot-routine', options: { envFile: 42 } },
+      { name: 'grok-bot', plugin: 'grokbot-routine', options: { envFile: file } },
+    ] } });
+    const instances = (await t.api('GET', '/api/plugins')).body.notifiers.instances;
+    expect(instances.map((i: { instance: { name: string }; active: string | null }) => [i.instance.name, i.active])).toEqual([['nope', null], ['bad', null], ['grok-bot', 'grokbot-routine']]);
+    expect(instances[0].reason).toMatch(/unknown notifier plugin no-such-notifier/);
+    expect(instances[1].reason).toMatch(/envFile/);
+    await humanQuestion(t);
+    await waitFor(() => r.hits.length === 1, { what: 'escalation post' });
   });
 });

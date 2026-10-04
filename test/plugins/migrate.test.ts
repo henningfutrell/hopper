@@ -81,6 +81,7 @@ describe('ensurePluginsFile', () => {
       ],
       machines: { name: 'local', plugin: 'local', options: { lanes: 2 } },
       usageSources: [],
+      notifiers: [{ name: 'grok-bot', plugin: 'grokbot-routine', options: { envFile: join(dir, 'grokbot-webhook.env') } }],
     });
     expect(readdirSync(dir).sort()).toEqual(['plugins.yaml', 'sources.yaml.migrated']);
   });
@@ -127,7 +128,22 @@ describe('ensurePluginsFile', () => {
       ],
       machines: { name: 'local', plugin: 'local', options: { lanes: 4 } },
       usageSources: [],
+      notifiers: [{ name: 'grok-bot', plugin: 'grokbot-routine', options: { envFile: join(dir, 'grokbot-webhook.env') } }],
     });
+  });
+
+  it('JOB_HOPPER_GROKBOT_WEBHOOK_FILE (removed in slice 5) becomes the grok-bot notifier\'s envFile; it alone counts as a migration', () => {
+    const { pluginsFile } = setup();
+    const r = ensurePluginsFile({ pluginsFile, answerTimeoutMs: 180000, env: { JOB_HOPPER_GROKBOT_WEBHOOK_FILE: '~/secrets/grok.env' }, logger: quiet });
+    expect(r).toEqual({ action: 'migrated', renamed: [] });
+    expect(read(pluginsFile).notifiers).toEqual([{ name: 'grok-bot', plugin: 'grokbot-routine', options: { envFile: '~/secrets/grok.env' } }]);
+  });
+
+  it('JOB_HOPPER_SOURCES_FILE elsewhere: the grok-bot env file is still beside plugins.yaml', () => {
+    const { dir, pluginsFile } = setup();
+    const other = setup({ sources: 'version: 1\n' });
+    ensurePluginsFile({ pluginsFile, answerTimeoutMs: 180000, env: { JOB_HOPPER_SOURCES_FILE: other.sourcesFile }, logger: quiet });
+    expect(read(pluginsFile).notifiers[0].options.envFile).toBe(join(dir, 'grokbot-webhook.env'));
   });
 
   it('the app source switched off: the gh source never pauses for an app file (as with githubApp.enabled: false)', () => {

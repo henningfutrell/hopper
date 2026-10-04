@@ -25,7 +25,6 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
       maxQuestions: 5,
       keepPanes: false,
       webhooksFile: join(homedir(), '.config/job-hopper/webhooks.yaml'),
-      grokbotWebhookFile: join(homedir(), '.config/job-hopper/grokbot-webhook.env'),
       uiSessionHours: 12,
       pluginDir: join(homedir(), '.config/job-hopper/plugins'),
       pluginsFile: join(homedir(), '.config/job-hopper/plugins.yaml'),
@@ -40,14 +39,14 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
       JOB_HOPPER_WEBHOOK_BASE_MS: '20', JOB_HOPPER_LANE_IDLE_GRACE_MS: '100', JOB_HOPPER_ANSWER_TIMEOUT_MS: '1000',
       JOB_HOPPER_RULES_FILE: '~/r.md', JOB_HOPPER_HUMAN_RENOTIFY_MS: '10', JOB_HOPPER_HUMAN_TIMEOUT_MS: '20',
       JOB_HOPPER_RESUME_BOOST: '7', JOB_HOPPER_MAX_QUESTIONS: '1', JOB_HOPPER_KEEP_PANES: 'true',
-      JOB_HOPPER_WEBHOOKS_FILE: '/etc/w.yaml', JOB_HOPPER_GROKBOT_WEBHOOK_FILE: '~/g.env', JOB_HOPPER_UI_SESSION_HOURS: '1.5',
+      JOB_HOPPER_WEBHOOKS_FILE: '/etc/w.yaml', JOB_HOPPER_UI_SESSION_HOURS: '1.5',
       JOB_HOPPER_PLUGIN_DIR: '~/p', JOB_HOPPER_PLUGINS_FILE: '/etc/p.yaml',
     });
     expect(c).toEqual({
       host: '127.0.0.1', port: 0, dbPath: join(homedir(), 'x/db.sqlite'), tickMs: 50, routerMode: 'active',
       softLimit: 0.5, hardLimit: 0.9, routerCheapBoost: 5, webhookBaseMs: 20, laneIdleGraceMs: 100, answerTimeoutMs: 1000,
       rulesFile: join(homedir(), 'r.md'), humanRenotifyMs: 10, humanTimeoutMs: 20, resumeBoost: 7, maxQuestions: 1, keepPanes: true,
-      webhooksFile: '/etc/w.yaml', grokbotWebhookFile: join(homedir(), 'g.env'), uiSessionHours: 1.5,
+      webhooksFile: '/etc/w.yaml', uiSessionHours: 1.5,
       pluginDir: join(homedir(), 'p'), pluginsFile: '/etc/p.yaml', leftoverEnv: {},
     });
   });
@@ -56,16 +55,18 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
     const c = loadConfig({
       JOB_HOPPER_EXECUTORS: 'Not A Name', JOB_HOPPER_LOCAL_LANES: '-1', JOB_HOPPER_CLAUDE_CWD: '~/w', JOB_HOPPER_SOURCES_FILE: '~/s.yaml',
       JOB_HOPPER_JEV_MODE: 'active', JOB_HOPPER_JEV_ADVISOR: 'router', JOB_HOPPER_GITHUB_API: 'not a url', JOB_HOPPER_ANSWERER: 'fake',
-      JOB_HOPPER_PORT: '0', OTHER: 'x', JOB_HOPPER_EMPTY: '',
+      JOB_HOPPER_GROKBOT_WEBHOOK_FILE: '~/g.env', JOB_HOPPER_PORT: '0', OTHER: 'x', JOB_HOPPER_EMPTY: '',
     });
     expect(c.leftoverEnv).toEqual({
       JOB_HOPPER_EXECUTORS: 'Not A Name', JOB_HOPPER_LOCAL_LANES: '-1', JOB_HOPPER_CLAUDE_CWD: '~/w', JOB_HOPPER_SOURCES_FILE: '~/s.yaml',
       JOB_HOPPER_JEV_MODE: 'active', JOB_HOPPER_JEV_ADVISOR: 'router', JOB_HOPPER_GITHUB_API: 'not a url', JOB_HOPPER_ANSWERER: 'fake',
+      JOB_HOPPER_GROKBOT_WEBHOOK_FILE: '~/g.env',
     });
     expect(c.routerMode).toBe('shadow');
     expect(c).not.toHaveProperty('executors');
     expect(c).not.toHaveProperty('localLanes');
     expect(c).not.toHaveProperty('sourcesFile');
+    expect(c).not.toHaveProperty('grokbotWebhookFile');
   });
 
   it.each([
