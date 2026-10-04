@@ -31,8 +31,8 @@ export type MachineEdit =
 
 /** GET /api/machines/config: what the Machines view edits. */
 export interface MachinesConfig {
-  /** plugins.yaml. */
-  path: string;
+  /** The config document it is written to: `plugins.yaml`. */
+  document: string;
   /** sha-256 of plugins.yaml, or `missing`: a machine edit or a lanes edit carries it back. */
   version: string;
   /** plugins.yaml could not be used; the last good configuration runs. */

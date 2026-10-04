@@ -4,10 +4,10 @@
 // question (live roles), and every result is validated here: a plugin that breaks its contract
 // escalates, it never answers.
 import { z } from 'zod';
-import type { AnswerByHumanResult, AnswerDraft, AnswerRequest, Answerer, Assessor, Clock, QuestionService, Store } from '../domain/ports.ts';
+import type { AnswerByHumanResult, AnswerDraft, AnswerRequest, Answerer, Assessor, Clock, ConfigDocuments, QuestionService, Store } from '../domain/ports.ts';
 import type { AttemptRole, Question, QuestionAttempt } from '../domain/types.ts';
 import { riskRules } from './risk.ts';
-import { readRulesFile } from './rules-file.ts';
+import { readRules } from './rules.ts';
 
 export interface QuestionServiceOptions {
   store: Store;
@@ -18,7 +18,8 @@ export interface QuestionServiceOptions {
   assessor(): Assessor;
   /** Ceiling on one answerer or assessor call. Past it the call is aborted and counts as an error. */
   stageTimeoutMs: number;
-  rulesFile: string;
+  /** Where rules.md is read, on every ask. */
+  documents: ConfigDocuments;
   renotifyMs: number;
   humanTimeoutMs: number;
   answerUrl: (questionId: string) => string;
@@ -183,7 +184,7 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
   }
 
   function requestFor(q: Question): { req: AnswerRequest; rulesNote: string } {
-    const rules = readRulesFile(o.rulesFile);
+    const rules = readRules(o.documents);
     const job = store.jobs.get(q.jobId);
     return {
       req: {
@@ -193,7 +194,7 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
         rules: rules.text,
         previous: q.attempts,
       },
-      rulesNote: rules.missing ? ' (rules file missing)' : '',
+      rulesNote: rules.missing ? ' (no rules.md yet)' : '',
     };
   }
 

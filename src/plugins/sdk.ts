@@ -45,6 +45,8 @@ export interface PluginContext {
   scratchDir: string;
   /** The instance's name in plugins.yaml. A job source and a machine source are known by it. */
   instanceName: string;
+  /** An environment variable of the daemon: where every secret comes from (design.md "Secrets"). */
+  env(name: string): string | undefined;
 }
 
 /**

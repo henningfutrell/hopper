@@ -137,7 +137,7 @@ export interface PluginsReport {
    * `source: defaults`: plugins.yaml could not be read at start, so the built-in instances run.
    * `version`: sha-256 of plugins.yaml, or `missing`; an edit carries it back.
    */
-  config: { path: string; source: 'file' | 'defaults'; version: string; loadedAt?: string; error?: string; warnings: string[] };
+  config: { document: string; source: 'document' | 'defaults'; version: string; loadedAt?: string; error?: string; warnings: string[] };
   /** Every configured instance, by role — each one's options are its own. */
   instances: ConfiguredInstance[];
   router: { instance: InstanceSpec; selection: RouterSelection; detection: Detection; active: string; fallback: boolean; reason?: string };

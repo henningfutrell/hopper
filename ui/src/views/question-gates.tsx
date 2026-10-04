@@ -1,7 +1,7 @@
 // Question gates (issue #18): the chain a question goes through — answerer (drafts), assessor
 // (escalates or not), risk rules (code), owner — with each live stage's instance and state from
 // GET /api/plugins, the answerer and assessor chosen and tuned through the shared plugin form, and
-// the rules file edited whole (POST /ui/api/rules-file). An unsaved rules edit is kept in this
+// the rules edited whole (POST /ui/api/rules). An unsaved rules edit is kept in this
 // browser, so it survives a reload. Collapsed by default at phone width.
 import { ArrowRight, ChevronRight, ShieldCheck } from 'lucide-react';
 import { Fragment, useEffect, useState } from 'react';
@@ -13,8 +13,8 @@ import { Empty, Panel } from '@/components/panel';
 import { InstanceForm, PluginSelector, pluginEditsUnsaved } from '@/components/plugin-form';
 import { StatusBadge } from '@/components/status';
 import { get, post, SessionRejected } from '@/lib/api';
-import { DRAFT_KEY, gateChain, readDraft, rulesEditor, RULES_FILE_MAX_BYTES, type Gate, type StoredDraft } from '@/model/question-gates';
-import type { QuestionGatesView, RulesFileView } from '@/model/wire';
+import { DRAFT_KEY, gateChain, readDraft, rulesEditor, RULES_MAX_BYTES, type Gate, type StoredDraft } from '@/model/question-gates';
+import type { QuestionGatesView, RulesView } from '@/model/wire';
 import { refreshPlugins, useHopper } from '@/store';
 
 const REFRESH_MS = 15000;
@@ -52,13 +52,13 @@ function Stage({ n, title, what, children }: { n?: number; title: string; what: 
   );
 }
 
-function RulesFileEditor({ server, onSaved }: { server: RulesFileView; onSaved: (v: RulesFileView) => void }) {
+function RulesEditorPanel({ server, onSaved }: { server: RulesView; onSaved: (v: RulesView) => void }) {
   const authed = useHopper((s) => s.authed);
   const [stored, setStored] = useState<StoredDraft | undefined>(loadStored);
   const [busy, setBusy] = useState(false);
   const ed = rulesEditor(server, stored);
   const change = (text: string) => {
-    const d = { path: server.path, text, base: ed.base };
+    const d = { document: server.document, text, base: ed.base };
     setStored(d);
     keepStored(d);
   };
@@ -66,7 +66,7 @@ function RulesFileEditor({ server, onSaved }: { server: RulesFileView; onSaved: 
   const save = async () => {
     setBusy(true);
     try {
-      const view = await post<RulesFileView>('/ui/api/rules-file', { text: ed.text, version: ed.base });
+      const view = await post<RulesView>('/ui/api/rules', { text: ed.text, version: ed.base });
       discard();
       onSaved(view);
       toast.success('Rules saved; the next question reads them');
@@ -80,17 +80,17 @@ function RulesFileEditor({ server, onSaved }: { server: RulesFileView; onSaved: 
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2 text-xs">
-        <code className="font-mono break-all">{server.path}</code>
+        <code className="font-mono break-all">{server.document}</code>
         {server.missing && <StatusBadge status="missing — no standing rules" tone="warn" />}
         {ed.dirty && <StatusBadge status="unsaved" tone="warn" />}
       </div>
-      <Textarea name="rules-file" rows={8} className="font-mono text-xs" value={ed.text} readOnly={!authed} disabled={busy}
+      <Textarea name="rules" rows={8} className="font-mono text-xs" value={ed.text} readOnly={!authed} disabled={busy}
         placeholder="One rule per line. Given to the answerer and the assessor with every question." onChange={(e) => change(e.target.value)} />
-      {ed.stale && <div className="text-xs text-warn">The file changed since this draft began; Save will be refused. Copy what you need, then Discard to load it.</div>}
+      {ed.stale && <div className="text-xs text-warn">The rules changed since this draft began; Save will be refused. Copy what you need, then Discard to load it.</div>}
       <div className="flex flex-wrap items-center gap-2">
         {authed && <Button size="sm" disabled={busy || !ed.dirty || ed.tooLarge} onClick={() => void save()}>Save rules</Button>}
         {authed && ed.dirty && <Button size="sm" variant="ghost" disabled={busy} onClick={discard}>Discard</Button>}
-        <span className={`num ml-auto text-xs ${ed.tooLarge ? 'text-bad' : 'text-muted-foreground'}`}>{(ed.bytes / 1024).toFixed(1)} of {RULES_FILE_MAX_BYTES / 1024} KiB</span>
+        <span className={`num ml-auto text-xs ${ed.tooLarge ? 'text-bad' : 'text-muted-foreground'}`}>{(ed.bytes / 1024).toFixed(1)} of {RULES_MAX_BYTES / 1024} KiB</span>
       </div>
     </div>
   );
@@ -117,12 +117,12 @@ export function QuestionGates() {
         {report && gates ? <Chain gates={gateChain(report, gates.riskRules.length)} /> : <Empty>{error ?? pluginsError ?? 'loading…'}</Empty>}
         <Collapsible open={open} onOpenChange={setOpen}>
           <CollapsibleTrigger className="group flex min-h-9 items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
-            <ChevronRight className="size-3.5 transition-transform group-data-[state=open]:rotate-90" />{open ? 'Hide' : 'Show'} the gates and the rules file
+            <ChevronRight className="size-3.5 transition-transform group-data-[state=open]:rotate-90" />{open ? 'Hide' : 'Show'} the gates and the rules
           </CollapsibleTrigger>
           <CollapsibleContent className="space-y-5 pt-3">
             {gates && (
-              <Stage title="Standing rules" what="the rules file, given to the answerer and the assessor; read with every question">
-                <RulesFileEditor server={gates.rulesFile} onSaved={(rulesFile) => setGates({ ...gates, rulesFile })} />
+              <Stage title="Standing rules" what="rules.md, given to the answerer and the assessor; read with every question">
+                <RulesEditorPanel server={gates.rules} onSaved={(rules) => setGates({ ...gates, rules })} />
               </Stage>
             )}
             {report && (

@@ -10,7 +10,7 @@ import { LIST_ROLES, ROLES, SELECTABLE_ROLES } from '../../domain/types.ts';
 import type { Engine } from '../../engine/index.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { lanHosts, type Lan } from '../reach.ts';
-import { writeRulesFile } from '../../questions/index.ts';
+import { writeRules } from '../../questions/index.ts';
 import { routerView } from '../state.ts';
 import { webhooksView } from '../webhooks.ts';
 import type { WebhookConfigView } from '../webhooks.ts';
@@ -26,13 +26,11 @@ export interface UiRouteOptions {
   questions: QuestionService;
   sessions: UiSessions;
   plugins: PluginsView;
-  /** The rules file (JOB_HOPPER_RULES_FILE). */
-  rulesFile: string;
   /** The bound port (known only after listen). */
   port: () => number;
   lan: Lan;
   dataDir: string;
-  store: Pick<Store, 'webhooks'>;
+  store: Pick<Store, 'webhooks' | 'documents'>;
   webhookConfig: WebhookConfigView;
   webhooksEditor: WebhooksEditor;
 }
@@ -48,7 +46,7 @@ const pluginsEditBody = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('remove'), role: z.enum(LIST_ROLES), name: z.string().min(1), version: z.string().min(1) }),
   z.strictObject({ action: z.literal('rescan') }),
 ]);
-const rulesFileBody = z.strictObject({ text: z.string(), version: z.string().min(1) });
+const rulesBody = z.strictObject({ text: z.string(), version: z.string().min(1) });
 // The content (url, events) is checked against webhooks.yaml's own schema in the editor, so the UI
 // shows the file's messages; here only the shape. No secret, no secretFile, no new name.
 const webhookFields = { name: z.string().min(1), version: z.string().min(1) };
@@ -159,11 +157,11 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     return r.report;
   });
 
-  // Question gates (issue #18): the rules file, whole, against the version read (sha-256 of its
-  // bytes); the next question reads it. Answers the new GET /api/question-gates rulesFile.
-  app.post('/ui/api/rules-file', guarded, async (req) => {
-    const { text, version } = parseWith(rulesFileBody, req.body);
-    const r = writeRulesFile(o.rulesFile, text, version);
+  // Question gates (issue #18): the rules, whole, against the version read (sha-256 of the text);
+  // the next question reads them. Answers the new GET /api/question-gates rules.
+  app.post('/ui/api/rules', guarded, async (req) => {
+    const { text, version } = parseWith(rulesBody, req.body);
+    const r = writeRules(o.store.documents, text, version);
     if (!r.ok) throw new HttpError(EDIT_STATUS[r.code], r.error);
     return r.view;
   });

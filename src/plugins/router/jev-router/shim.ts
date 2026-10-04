@@ -1,7 +1,6 @@
 // Running grok-bot-jev's router once per job through jev_shim.py (design.md "Jev"). Any failure is
 // advice with `source: fallback` — the router's own documented safe fallback — never a throw.
 import { spawn } from 'node:child_process';
-import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { claudeArgv, scrubbedEnv } from '../../claude-print.ts';
@@ -43,8 +42,8 @@ export interface JevShimOptions {
   model: string;
   /** The Jev gates TypeSafe answers once its key is set; Haiku answers the rest. */
   typesafeGates: string[];
-  /** Holds the TypeSafe key when TYPESAFE_API_KEY is unset (absolute); read on every call. */
-  typesafeKeyFile: string;
+  /** The TypeSafe key (TYPESAFE_API_KEY), asked on every call; undefined: TypeSafe off. */
+  typesafeKey(): string | undefined;
   dataDir: string;
   mode: () => RouterMode;
   clock: Clock;
@@ -63,18 +62,6 @@ function jevState(job: Job): Record<string, unknown> {
   const state: Record<string, unknown> = { goal, kind };
   for (const key of META_KEYS) if (key in meta) state[key] = meta[key];
   return state;
-}
-
-/** TYPESAFE_API_KEY, else the key file's trimmed contents; undefined when neither holds one. */
-async function typesafeKey(file: string): Promise<string | undefined> {
-  const fromEnv = process.env.TYPESAFE_API_KEY;
-  if (fromEnv) return fromEnv;
-  try {
-    return (await readFile(file, 'utf8')).trim() || undefined;
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
-    throw e;
-  }
 }
 
 /**
@@ -132,7 +119,7 @@ export function createJevShimRouter(o: JevShimOptions): Router {
     name: 'jev-router',
     async advise(job: Job): Promise<Advice> {
       try {
-        const stdout = await runShim(o, await typesafeKey(o.typesafeKeyFile), {
+        const stdout = await runShim(o, o.typesafeKey() || undefined, {
           jevSrc: o.jevSrc,
           mode: o.mode(),
           logPath: join(o.dataDir, 'jev-runs.jsonl'),

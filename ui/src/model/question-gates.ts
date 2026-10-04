@@ -1,7 +1,7 @@
 // The question gates' model (issue #18): the chain a question goes through — answerer, assessor,
-// risk rules, owner — as GET /api/plugins reports it, and the rules-file editor's draft, kept in
+// risk rules, owner — as GET /api/plugins reports it, and the rules editor's draft, kept in
 // the browser so unsaved edits survive a reload, sent back with the version it was based on.
-import type { PluginsReport, RulesFileView } from '../../../src/domain/types.ts';
+import type { PluginsReport, RulesView } from '../../../src/domain/types.ts';
 import { instanceState } from './plugins.ts';
 
 export type GateStage = 'answerer' | 'assessor' | 'risk-rules' | 'human';
@@ -35,11 +35,11 @@ export function gateChain(report: PluginsReport, riskRuleCount: number): Gate[] 
   ];
 }
 
-/** Matches RULES_FILE_MAX_BYTES in src/questions/rules-file.ts; the daemon refuses more (400). */
-export const RULES_FILE_MAX_BYTES = 64 * 1024;
+/** Matches RULES_MAX_BYTES in src/questions/rules.ts; the daemon refuses more (400). */
+export const RULES_MAX_BYTES = 64 * 1024;
 
-/** An unsaved rules-file edit as the browser keeps it: for which file, over which version. */
-export interface StoredDraft { path: string; text: string; base: string }
+/** An unsaved rules edit as the browser keeps it: for which document, over which version. */
+export interface StoredDraft { document: string; text: string; base: string }
 
 export const DRAFT_KEY = 'jh_rules_draft';
 
@@ -47,7 +47,7 @@ export function readDraft(raw: string | null): StoredDraft | undefined {
   if (!raw) return undefined;
   try {
     const d = JSON.parse(raw) as Partial<StoredDraft>;
-    return typeof d.path === 'string' && typeof d.text === 'string' && typeof d.base === 'string' ? { path: d.path, text: d.text, base: d.base } : undefined;
+    return typeof d.document === 'string' && typeof d.text === 'string' && typeof d.base === 'string' ? { document: d.document, text: d.text, base: d.base } : undefined;
   } catch {
     return undefined;
   }
@@ -58,16 +58,16 @@ export interface RulesEditor {
   /** The version Save sends: the one the draft was based on. */
   base: string;
   dirty: boolean;
-  /** The file changed since the draft began: Save will be refused (409) until Discard. */
+  /** The rules changed since the draft began: Save will be refused (409) until Discard. */
   stale: boolean;
   bytes: number;
   tooLarge: boolean;
 }
 
-export function rulesEditor(server: RulesFileView, stored: StoredDraft | undefined): RulesEditor {
-  const d = stored && stored.path === server.path ? stored : undefined;
+export function rulesEditor(server: RulesView, stored: StoredDraft | undefined): RulesEditor {
+  const d = stored && stored.document === server.document ? stored : undefined;
   const text = d ? d.text : server.text;
   const base = d ? d.base : server.version;
   const bytes = new TextEncoder().encode(text).length;
-  return { text, base, dirty: d !== undefined && (d.text !== server.text || d.base !== server.version), stale: base !== server.version, bytes, tooLarge: bytes > RULES_FILE_MAX_BYTES };
+  return { text, base, dirty: d !== undefined && (d.text !== server.text || d.base !== server.version), stale: base !== server.version, bytes, tooLarge: bytes > RULES_MAX_BYTES };
 }

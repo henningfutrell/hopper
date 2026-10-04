@@ -435,4 +435,4 @@ export type * from './plugins.ts';
 
 // ---- Question gates: src/domain/question-gates.ts (re-exported here) -------------------
 
-export type { QuestionGatesView, RiskRuleView, RulesFileView } from './question-gates.ts';
+export type { QuestionGatesView, RiskRuleView, RulesView } from './question-gates.ts';

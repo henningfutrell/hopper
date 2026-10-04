@@ -2,13 +2,13 @@
 // type-only imports: the wire contract has one definition, and nothing of src/ is bundled.
 import type {
   AttachedMachine, Decision, DomainEvent, InstanceSpec, Job, JobStatus, Lane, MachineEdit, MachineLaneEffect, MachineSnapshot, MachinesConfig, PartAccount, PluginsEdit, PluginsReport,
-  Question, QuestionAttempt, QuestionGatesView, QuestionStatus, RiskRuleView, Role, RoutingReport, RulesFileView, SelectableRole, ListRole, SourceStatus, UsageReading, UsageReport, UsageSourceReport, WebhookDelivery,
+  Question, QuestionAttempt, QuestionGatesView, QuestionStatus, RiskRuleView, Role, RoutingReport, RulesView, SelectableRole, ListRole, SourceStatus, UsageReading, UsageReport, UsageSourceReport, WebhookDelivery,
   WebhookSubscription, WebhooksEdit,
 } from '../../../src/domain/types.ts';
 
 export type {
   AttachedMachine, Decision, DomainEvent, InstanceSpec, Job, JobStatus, Lane, MachineEdit, MachineLaneEffect, MachinesConfig, PartAccount, PluginsEdit, PluginsReport,
-  Question, QuestionAttempt, QuestionGatesView, QuestionStatus, RiskRuleView, Role, RoutingReport, RulesFileView, SelectableRole, ListRole, SourceStatus, UsageReading, UsageReport, UsageSourceReport, WebhookDelivery,
+  Question, QuestionAttempt, QuestionGatesView, QuestionStatus, RiskRuleView, Role, RoutingReport, RulesView, SelectableRole, ListRole, SourceStatus, UsageReading, UsageReport, UsageSourceReport, WebhookDelivery,
   WebhookSubscription, WebhooksEdit,
 };
 
@@ -34,7 +34,8 @@ export interface Health {
 }
 
 export interface WebhookConfig {
-  path?: string;
+  /** The config document: `webhooks.yaml`. */
+  document?: string;
   loadedAt?: string;
   error?: string;
   warnings?: string[];
@@ -44,7 +45,7 @@ export interface WebhookConfig {
 
 /** GET /api/webhooks (secrets omitted); the answer to POST /ui/api/webhooks adds `secret` after add or rotate-secret. */
 /** A subscription as GET /api/webhooks shows it: no secret, only where it lives. */
-export type WebhookView = Omit<WebhookSubscription, 'secret'> & { secretSource: 'inline' | 'file' };
+export type WebhookView = Omit<WebhookSubscription, 'secret'> & { secretSource: 'inline' | 'env' };
 
 export interface WebhooksView {
   subscriptions: WebhookView[];

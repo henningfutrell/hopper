@@ -14,7 +14,8 @@ const projectSchema = z.object({
   map: z.record(z.string(), z.number()).optional(),
 }).strict().refine((p) => p.mode !== 'field' || p.field !== undefined, { message: 'mode field needs a field name', path: ['field'] });
 
-const DEFAULT_APP_FILE = '~/.config/job-hopper/github-app.json';
+/** Where the App's private key is, by default (design.md "Secrets"). */
+export const DEFAULT_APP_KEY_ENV = 'GITHUB_APP_PRIVATE_KEY';
 
 /** Keys both GitHub sources share. A working directory is command-bearing: the UI never edits it. */
 const sharedKeys = {
@@ -26,7 +27,7 @@ const sharedKeys = {
   defaultPriority: z.number().min(0).max(100).default(50),
   repoPaths: z.record(z.string(), z.string()).default({})
     .meta({ commandBearing: true, description: 'owner/repo → the working directory of its jobs' }),
-  defaultCwd: z.string().min(1).default('~/workbench/app-workflows')
+  defaultCwd: z.string().min(1).default('~')
     .meta({ commandBearing: true, description: 'working directory of jobs from repos not in repoPaths' }),
   executor: z.string().min(1).default('herdr-claude'),
   model: z.string().min(1).nullable().default(null),
@@ -36,21 +37,23 @@ const sharedKeys = {
 
 /** github-gh: the gh source, acting as the owner through the gh CLI. */
 export const githubGhOptions = z.object({
-  // auto: on exactly while `appFile` is not readable (checked every sync).
+  // auto: on exactly while `appKeyEnv` is unset (checked every sync).
   enabled: z.union([z.literal('auto'), z.boolean()]).default('auto'),
   owners: z.array(z.string().min(1)).default([]),
   bin: z.string().min(1).default('gh').meta({ commandBearing: true, description: 'the gh CLI' }),
-  appFile: z.string().min(1).nullable().default(DEFAULT_APP_FILE)
-    .meta({ commandBearing: true, description: 'with enabled: auto, this source pauses while this GitHub App file is readable; null: never' }),
+  appKeyEnv: z.string().min(1).nullable().default(DEFAULT_APP_KEY_ENV)
+    .meta({ commandBearing: true, description: 'with enabled: auto, this source pauses while this variable (the GitHub App key) is set; null: never' }),
   ...sharedKeys,
 }).strict();
 
 /** github-app: the App source, posting as the app's bot. */
 export const githubAppOptions = z.object({
   enabled: z.boolean().default(true),
-  // Selects the private key and so the identity the source acts as: command-bearing.
-  appFile: z.string().min(1).default(DEFAULT_APP_FILE)
-    .meta({ commandBearing: true, description: 'github-app.json, written by create-github-app.sh' }),
+  // The identity the source acts as, and where its key comes from: command-bearing.
+  appId: z.number().int().positive().optional().meta({ commandBearing: true, description: "the GitHub App's id" }),
+  slug: z.string().min(1).optional().meta({ commandBearing: true, description: "the GitHub App's slug; its bot is <slug>[bot]" }),
+  privateKeyEnv: z.string().min(1).default(DEFAULT_APP_KEY_ENV)
+    .meta({ commandBearing: true, description: "environment variable holding the app's private key (PEM; \\n escapes allowed)" }),
   // Where the app's tokens are sent: command-bearing, so a UI session can never redirect them.
   apiUrl: z.url({ protocol: /^https?$/ }).transform((u) => u.replace(/\/+$/, '')).optional()
     .meta({ commandBearing: true, description: 'GitHub API base; unset: https://api.github.com' }),
@@ -62,7 +65,7 @@ export type GitHubGhOptions = z.output<typeof githubGhOptions>;
 export type GitHubAppOptions = z.output<typeof githubAppOptions>;
 
 /** What the source logic reads: either plugin's options, `~` expanded, no `model: null`. */
-export type GitHubSourceConfig = Omit<GitHubGhOptions, 'model' | 'bin' | 'appFile'> & { model?: string };
+export type GitHubSourceConfig = Omit<GitHubGhOptions, 'model' | 'bin' | 'appKeyEnv'> & { model?: string };
 
 export const expandHome = (p: string): string => (p === '~' ? homedir() : p.startsWith('~/') ? join(homedir(), p.slice(2)) : p);
 

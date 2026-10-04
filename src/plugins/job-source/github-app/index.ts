@@ -1,13 +1,13 @@
 // github-app: the same GitHub source posting as job-hopper's GitHub App; the repos the app is
 // installed on are the allowlist (design.md "Phase 4"). Its instance is named `github-app`: jobs and
-// sync state are keyed by it. Detection looks for the app file only. Without it the source still
-// runs, paused, and starts on its own once create-github-app.sh writes the file.
-import { expandHome } from '../../expand-home.ts';
+// sync state are keyed by it. Detection checks the app's identity only: `appId` and `slug` in the
+// options, its private key in the environment (design.md "Secrets"). Without them the source still
+// runs, paused, and starts on its own once they are set.
 import type { GitHubApi } from '../../../sources/index.ts';
-import { createAppSource, githubAppOptions, type GitHubAppOptions } from '../../../sources/index.ts';
+import { appProblem, createAppSource, githubAppOptions, loadGitHubApp, type GitHubAppOptions } from '../../../sources/index.ts';
 import type { PluginDefinition } from '../../sdk.ts';
 
-const CREATE_APP = 'bash ~/.local/lib/job-hopper/scripts/create-github-app.sh';
+const CREATE_APP = 'scripts/create-github-app.sh (from the job-hopper checkout), then set appId and slug with job-hopper config edit plugins.yaml and the key in the environment';
 
 /** The plugin. `seam` (tests, `AppSeams.githubApp`) replaces the App adapter; detection then says available. */
 export function githubAppPlugin(seam?: GitHubApi): PluginDefinition<'job-source', GitHubAppOptions> {
@@ -18,14 +18,18 @@ export function githubAppPlugin(seam?: GitHubApi): PluginDefinition<'job-source'
     options: () => githubAppOptions,
     async detect(sys, o) {
       if (seam) return { status: 'available', detail: 'GitHub seam (tests)' };
-      const file = expandHome(o.appFile);
-      if (!(await sys.exists(file))) return { status: 'needs-setup', reason: `no GitHub App configured: ${file} not found`, command: CREATE_APP };
-      return { status: 'available', detail: file };
+      const load = loadGitHubApp({
+        ...(o.appId === undefined ? {} : { appId: o.appId }), ...(o.slug === undefined ? {} : { slug: o.slug }),
+        privateKeyEnv: o.privateKeyEnv, privateKey: sys.env(o.privateKeyEnv),
+      });
+      const problem = appProblem(load);
+      if (problem) return { status: 'needs-setup', reason: problem, command: CREATE_APP };
+      return { status: 'available', detail: `${o.slug} (app ${o.appId}), key from ${o.privateKeyEnv}` };
     },
     create(ctx, o) {
       if (!o.enabled) return { disabled: { kind: 'github-app', detail: { mode: 'app' } } };
       const source = createAppSource({
-        name: ctx.instanceName, clock: ctx.clock, knownKeys: ctx.knownKeys, rerunnable: ctx.rerunnable,
+        name: ctx.instanceName, clock: ctx.clock, knownKeys: ctx.knownKeys, rerunnable: ctx.rerunnable, env: ctx.env,
         ...(seam ? { api: seam } : {}),
       }, o);
       return { source, pollMs: o.pollSeconds * 1000 };

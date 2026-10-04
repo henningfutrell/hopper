@@ -8,16 +8,13 @@ Type=simple
 ExecStart=/usr/bin/node %h/.local/lib/job-hopper/src/main.ts
 Environment=JOB_HOPPER_PORT=4790
 Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin
-# Process settings only. Every part — job sources (the GitHub App via
-# %h/.config/job-hopper/github-app.json, or the gh CLI), executors, router, answerer, assessor, the
-# machine and its lanes — is configured in plugins.yaml, which the daemon writes (mode 600) on the
-# first boot without one. It sends webhooks (webhooks.yaml). The UI login code is written to
-# %h/.local/share/job-hopper/ui-login-code.
-Environment=JOB_HOPPER_PLUGINS_FILE=%h/.config/job-hopper/plugins.yaml
-Environment=JOB_HOPPER_WEBHOOKS_FILE=%h/.config/job-hopper/webhooks.yaml
-# Optional, this machine's: JOB_HOPPER_LAN_NAMES and JOB_HOPPER_LAN_PEERS to reach the UI across the
-# LAN (docs/design.md "Reaching the UI across the LAN"). Absent: loopback only.
-EnvironmentFile=-%h/.config/job-hopper/daemon.env
+# Process settings only. Every part — job sources, executors, router, answerer, assessor, the machine
+# and its lanes — is configured in plugins.yaml, a config document in the database, which the daemon
+# writes on the first boot without one (docs/design.md "Config documents").
+# daemon.env, this machine's (written by install.sh, mode 600): JOB_HOPPER_DATABASE_URL (required),
+# the secrets (docs/design.md "Secrets"), and optionally JOB_HOPPER_LAN_NAMES and JOB_HOPPER_LAN_PEERS
+# to reach the UI across the LAN (docs/design.md "Reaching the UI across the LAN").
+EnvironmentFile=%h/.config/job-hopper/daemon.env
 Restart=on-failure
 RestartSec=2
 KillSignal=SIGTERM

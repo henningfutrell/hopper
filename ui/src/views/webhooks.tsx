@@ -196,13 +196,13 @@ export function Webhooks() {
   const [shown, setShown] = useState<Shown | null>(null);
   const version = cfg?.version ?? 'missing';
   const byId = new Map(subs.map((s) => [s.id, s]));
-  // The file may have been edited by hand since load: read its version and entries afresh.
+  // The document may have been edited by hand since load: read its version and entries afresh.
   useEffect(() => { refreshWebhooks().catch(() => {}); }, []);
   return (
     <div className="space-y-3">
       <Panel title="Subscriptions" icon={Webhook} count={subs.length || ''} bodyClassName="space-y-3"
         action={authed && !adding && <Button size="sm" variant="outline" onClick={() => setAdding(true)}><Plus />Add subscription</Button>}>
-        {cfg && <div className="text-xs break-all text-muted-foreground">config <code className="font-mono text-foreground/80">{cfg.path ?? '?'}</code>{cfg.loadedAt && <> · loaded {clock(cfg.loadedAt)}</>}</div>}
+        {cfg && <div className="text-xs break-all text-muted-foreground">config <code className="font-mono text-foreground/80">{cfg.document ?? '?'}</code>{cfg.loadedAt && <> · loaded {clock(cfg.loadedAt)}</>}</div>}
         {cfg?.error && <div className="text-xs break-words text-bad">error: {cfg.error}</div>}
         {(cfg?.warnings ?? []).map((w) => <div key={w} className="text-xs break-words text-warn">warning: {w}</div>)}
         {adding && (

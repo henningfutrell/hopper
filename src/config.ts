@@ -1,6 +1,8 @@
 // Configuration from env: process settings only (docs/design.md "Settled in slice 4"); every part is
-// configured in plugins.yaml. Invalid values fail loudly.
-import { homedir, tmpdir } from 'node:os';
+// configured in plugins.yaml, a config document in the store; secrets are env too (design.md
+// "Secrets"), read by the parts that use them. No default names a path on this machine. Invalid
+// values fail loudly.
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { parseDatabaseUrl } from './store/db.ts';
@@ -23,21 +25,16 @@ export interface Config {
   laneIdleGraceMs: number;
   /** The question service's ceiling per stage (answer, assess), whatever a plugin's own timeout says. */
   answerTimeoutMs: number;
-  rulesFile: string;
   humanRenotifyMs: number;
   humanTimeoutMs: number;
   resumeBoost: number;
   maxQuestions: number;
   /** Keep panes open after a job ends (for inspection); default false: every terminal outcome cleans up. */
   keepPanes: boolean;
-  /** webhooks.yaml: the webhook subscriptions. */
-  webhooksFile: string;
   /** Lifetime of a UI session, in hours. */
   uiSessionHours: number;
-  /** Custom plugins, one directory each. */
-  pluginDir: string;
-  /** plugins.yaml: which plugin instance fills which role — every part's configuration. */
-  pluginsFile: string;
+  /** Custom plugins, one directory each; unset: none. */
+  pluginDir?: string;
   /** Host names the UI answers to on the LAN (lowercase, no port); empty: loopback only. */
   lanNames: string[];
   /** CIDR ranges a LAN request may come from. */
@@ -50,11 +47,8 @@ export interface Config {
   leftoverEnv: Record<string, string>;
 }
 
-const expandHome = (p: string): string => (p === '~' ? homedir() : p.startsWith('~/') ? join(homedir(), p.slice(2)) : p);
-
 const int = (min: number, max = Number.MAX_SAFE_INTEGER) => z.coerce.number().int().min(min).max(max);
 const fraction = () => z.coerce.number().min(0).max(1);
-const path = (fallback: string) => z.string().min(1).default(fallback).transform(expandHome);
 const flag = (fallback: boolean) => z.enum(['true', 'false']).default(fallback ? 'true' : 'false').transform((v) => v === 'true');
 const list = (item: z.ZodType<string, string>) => z.string().default('')
   .transform((v) => v.split(',').map((x) => x.trim().toLowerCase()).filter((x) => x !== ''))
@@ -79,16 +73,13 @@ const schema = z.object({
   JOB_HOPPER_WEBHOOK_BASE_MS: int(1).default(1000),
   JOB_HOPPER_LANE_IDLE_GRACE_MS: int(0).default(5000),
   JOB_HOPPER_ANSWER_TIMEOUT_MS: int(1).default(180000),
-  JOB_HOPPER_RULES_FILE: path('~/.config/job-hopper/rules.md'),
   JOB_HOPPER_HUMAN_RENOTIFY_MS: int(1).default(900000),
   JOB_HOPPER_HUMAN_TIMEOUT_MS: int(1).default(86400000),
   JOB_HOPPER_RESUME_BOOST: z.coerce.number().finite().default(20),
   JOB_HOPPER_MAX_QUESTIONS: int(0).default(5),
   JOB_HOPPER_KEEP_PANES: flag(false),
-  JOB_HOPPER_WEBHOOKS_FILE: path('~/.config/job-hopper/webhooks.yaml'),
   JOB_HOPPER_UI_SESSION_HOURS: z.coerce.number().finite().positive().default(12),
-  JOB_HOPPER_PLUGIN_DIR: path('~/.config/job-hopper/plugins'),
-  JOB_HOPPER_PLUGINS_FILE: path('~/.config/job-hopper/plugins.yaml'),
+  JOB_HOPPER_PLUGIN_DIR: z.string().min(1).optional(),
 }).refine((e) => e.JOB_HOPPER_SOFT_LIMIT < e.JOB_HOPPER_HARD_LIMIT, {
   message: 'must be below JOB_HOPPER_HARD_LIMIT',
   path: ['JOB_HOPPER_SOFT_LIMIT'],
@@ -129,16 +120,13 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     webhookBaseMs: e.JOB_HOPPER_WEBHOOK_BASE_MS,
     laneIdleGraceMs: e.JOB_HOPPER_LANE_IDLE_GRACE_MS,
     answerTimeoutMs: e.JOB_HOPPER_ANSWER_TIMEOUT_MS,
-    rulesFile: e.JOB_HOPPER_RULES_FILE,
     humanRenotifyMs: e.JOB_HOPPER_HUMAN_RENOTIFY_MS,
     humanTimeoutMs: e.JOB_HOPPER_HUMAN_TIMEOUT_MS,
     resumeBoost: e.JOB_HOPPER_RESUME_BOOST,
     maxQuestions: e.JOB_HOPPER_MAX_QUESTIONS,
     keepPanes: e.JOB_HOPPER_KEEP_PANES,
-    webhooksFile: e.JOB_HOPPER_WEBHOOKS_FILE,
     uiSessionHours: e.JOB_HOPPER_UI_SESSION_HOURS,
-    pluginDir: e.JOB_HOPPER_PLUGIN_DIR,
-    pluginsFile: e.JOB_HOPPER_PLUGINS_FILE,
+    ...(e.JOB_HOPPER_PLUGIN_DIR ? { pluginDir: e.JOB_HOPPER_PLUGIN_DIR } : {}),
     lanNames: e.JOB_HOPPER_LAN_NAMES,
     lanPeers: e.JOB_HOPPER_LAN_PEERS,
     leftoverEnv,

@@ -1,15 +1,13 @@
 // The GitHub App adapter of the GitHubApi port: writes appear as the app bot, and the app's
-// installations are the repo allowlist. Lazy: the app file is read on first use and re-read when
-// its mtime changes, so creating (or --force recreating) the app needs no daemon restart.
+// installations are the repo allowlist. Lazy: the app's identity is asked for on first use and
+// again whenever it changes (a new key), so the credentials are never read twice for nothing.
 
-import { statSync } from 'node:fs';
 import type { Clock } from '../../../domain/ports.ts';
 import { GitHubApiError } from '../api.ts';
 import type { GitHubApi } from '../api.ts';
 import { createAuth } from './auth.ts';
 import type { AppAuth } from './auth.ts';
-import { expandHome, loadGitHubAppFile } from './config.ts';
-import type { GitHubApp } from './config.ts';
+import type { GitHubApp, GitHubAppLoad } from './config.ts';
 import { projectItems } from './graphql.ts';
 import { makeRequest, paginate, splitRepo, statusOf, toApiError } from './http.ts';
 import * as rest from './rest.ts';
@@ -18,7 +16,8 @@ export type AppStatus = { ok: true; slug: string; botLogin: string; htmlUrl: str
 export type GitHubAppApi = GitHubApi & { appStatus(): AppStatus };
 
 interface Loaded {
-  mtimeMs: number;
+  /** What it was built from: the same identity means the same credentials. */
+  key: string;
   app: GitHubApp;
   auth: AppAuth;
   /** owner/repo → installation id, from listInstalledRepos or a cold lookup. */
@@ -30,40 +29,29 @@ interface Loaded {
 interface Installation { id: number; account?: { login?: string } | null }
 interface InstalledRepo { full_name: string }
 
-export function createGitHubAppApi(o: { appFile: string; baseUrl?: string; clock: Clock }): GitHubAppApi {
-  const file = expandHome(o.appFile);
+/** `app`: the identity now (github-app options + the key's variable); `keyEnv` names that variable in messages. */
+export function createGitHubAppApi(o: { app(): GitHubAppLoad; keyEnv: string; baseUrl?: string; clock: Clock }): GitHubAppApi {
   const req = makeRequest(o.baseUrl ?? 'https://api.github.com');
   let loaded: Loaded | undefined;
-  let failed: { mtimeMs: number; reason: string } | undefined;
   let authError: string | undefined;
 
   const current = (): Loaded | { reason: string } => {
-    let mtimeMs: number;
-    try {
-      mtimeMs = statSync(file).mtimeMs;
-    } catch {
-      loaded = undefined;
-      return { reason: 'missing' };
-    }
-    if (loaded?.mtimeMs === mtimeMs) return loaded;
-    if (!loaded && failed?.mtimeMs === mtimeMs) return { reason: failed.reason };
-    const r = loadGitHubAppFile(file);
-    authError = undefined;
+    const r = o.app();
     if (!r.ok) {
       loaded = undefined;
-      failed = { mtimeMs, reason: r.reason };
       return { reason: r.reason };
     }
-    for (const w of r.warnings) console.warn(`job-hopper: github app: ${w}`);
-    failed = undefined;
-    loaded = { mtimeMs, app: r.app, auth: createAuth(r.app, req), installs: new Map() };
+    const key = `${r.app.appId}:${r.app.slug}:${r.app.privateKey}`;
+    if (loaded?.key === key) return loaded;
+    authError = undefined;
+    loaded = { key, app: r.app, auth: createAuth(r.app, req), installs: new Map() };
     return loaded;
   };
 
   const need = (): Loaded => {
     const c = current();
     if ('reason' in c) {
-      const why = c.reason === 'missing' ? `${file} is missing (run create-github-app.sh)` : c.reason;
+      const why = c.reason === 'missing' ? `set appId and slug in plugins.yaml and ${o.keyEnv} in the environment (create-github-app.sh)` : c.reason;
       throw new GitHubApiError(`no app configured: ${why}`, true);
     }
     return c;
@@ -76,7 +64,7 @@ export function createGitHubAppApi(o: { appFile: string; baseUrl?: string; clock
       authError = undefined;
       return v;
     } catch (err) {
-      const e = toApiError(err, what, file);
+      const e = toApiError(err, what, o.keyEnv);
       if (e.status === 401) authError = e.message;
       throw e;
     }

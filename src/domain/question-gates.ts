@@ -1,9 +1,10 @@
-// Question gates (issue #18): the gates a question passes that are not plugins — the rules file
+// Question gates (issue #18): the gates a question passes that are not plugins — the rules
 // and the risk rules — as GET /api/question-gates reports them. docs/glossary.md "Question gates".
 
-/** The rules file as read now. `version`: sha-256 of its bytes, or `missing`; an edit carries it back. */
-export interface RulesFileView {
-  path: string;
+/** The rules as read now. `version`: sha-256 of the text, or `missing`; an edit carries it back. */
+export interface RulesView {
+  /** The config document: `rules.md`. */
+  document: string;
   text: string;
   version: string;
   missing: boolean;
@@ -18,6 +19,6 @@ export interface RiskRuleView {
 
 /** GET /api/question-gates: what the gates that are not plugins hold. The answerer and assessor are in GET /api/plugins. */
 export interface QuestionGatesView {
-  rulesFile: RulesFileView;
+  rules: RulesView;
   riskRules: RiskRuleView[];
 }

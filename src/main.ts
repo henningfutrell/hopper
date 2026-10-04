@@ -1,8 +1,8 @@
-// Composition root: config → plugins.yaml (written on the first boot without one) → plugin host
-// (every part) → store → engine → server. Adapters are built by their plugins, here through the
+// Composition root: config → store → plugins.yaml (written on the first boot without one) → plugin
+// host (every part) → engine → server. Adapters are built by their plugins, here through the
 // host (integration tests call startApp, with doubles at the seams).
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { mkdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Answerer, Assessor, Clock, Executor, JobSource, PluginsView, Router, SettableUsageSource, SourceRegistry, Store } from './domain/ports.ts';
 import type { AttachedMachine, Question, SourceStatus } from './domain/types.ts';
@@ -21,7 +21,8 @@ import { unavailableExecutors } from './plugins/executor-slot.ts';
 import { githubAppPlugin } from './plugins/job-source/github-app/index.ts';
 import { githubGhPlugin } from './plugins/job-source/github-gh/index.ts';
 import { grokbotRoutinePlugin } from './plugins/notifier/grokbot-routine/index.ts';
-import { ensurePluginsFile } from './plugins/migrate.ts';
+import { ensurePluginsDocument } from './plugins/builtin-instances.ts';
+import { createDetectionKit } from './plugins/detect.ts';
 import { createQuestionService } from './questions/index.ts';
 import { logFailures } from './engine/failure-log.ts';
 import { createSourceSync, idleStatus, withFixedStatuses, type GitHubApi, type SourceSync } from './sources/index.ts';
@@ -61,7 +62,7 @@ export interface AppSeams {
   fakeUsage?: SettableUsageSource;
   /** Run after the configured sources, polled every SEAM_SOURCE_POLL_MS. */
   sources?: JobSource[];
-  /** How often webhooks.yaml's mtime is checked; default WEBHOOKS_FILE_CHECK_MS. */
+  /** How often webhooks.yaml's version is checked; default WEBHOOKS_FILE_CHECK_MS. */
   webhookConfigIntervalMs?: number;
   /** First retry delay of every grokbot-routine notifier instance; default 1000. */
   grokbotBaseMs?: number;
@@ -71,7 +72,9 @@ export interface AppSeams {
   answerer?: Answerer | null;
   /** Replaces the configured assessor. The report stays the host's. */
   assessor?: Assessor;
-  /** How often plugins.yaml's mtime is checked; default PLUGINS_FILE_CHECK_MS. */
+  /** How often plugins.yaml's version is checked; default PLUGINS_FILE_CHECK_MS. */
+  /** The environment the parts read their secrets from (design.md "Secrets"); default process.env. */
+  env?: Record<string, string | undefined>;
   pluginsFileIntervalMs?: number;
   /** Replaces the ssh probe of every attached machine: true = its herdr session is running. */
   machineProbe?: (machine: AttachedMachine) => Promise<boolean>;
@@ -133,18 +136,18 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   const clock: Clock = { now: () => new Date() };
   const logger = { info: (l: string) => console.log(l), warn: (l: string) => console.warn(l) };
   warnLeftoverEnv(config);
-  // plugins.yaml is the one truth: written from sources.yaml and the removed env vars on the boot that finds none.
-  const ensured = ensurePluginsFile({ pluginsFile: config.pluginsFile, env: config.leftoverEnv, answerTimeoutMs: config.answerTimeoutMs, logger });
-  const staleSources = join(dirname(config.pluginsFile), 'sources.yaml');
-  if (ensured.action === 'kept' && existsSync(staleSources)) console.warn(`job-hopper: WARNING: ${staleSources} is no longer read; plugins.yaml jobSources configures the job sources`);
   const store = openStore({ url: config.databaseUrl, clock });
+  // plugins.yaml is the one truth: the built-in instances are written on the boot that finds none.
+  ensurePluginsDocument({ documents: store.documents, answerTimeoutMs: config.answerTimeoutMs, logger });
+  const env = seams.env ?? process.env;
   const dataDir = config.workDir;
   mkdirSync(dataDir, { recursive: true, mode: 0o700 });
   const routerMode = () => store.settings.getRouterMode() ?? config.routerMode;
   let executorNames = (): string[] => [];
   let jobsOnMachine = (_name: string): string[] => [];
   const host = createPluginHost({
-    pluginDir: config.pluginDir, pluginsFile: config.pluginsFile, dataDir, clock, routerMode, logger,
+    ...(config.pluginDir ? { pluginDir: config.pluginDir } : {}), documents: store.documents, dataDir, clock, routerMode, logger,
+    kit: createDetectionKit({ env }),
     builtins: withSeams(seams),
     jobSourceContext: {
       knownKeys: (keys) => new Set(keys.filter((k) => store.jobs.getBySourceKey(k))),
@@ -173,7 +176,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   let port = config.port;
   const answerUrl = (id: string): string => `http://${config.lanNames[0] ?? '127.0.0.1'}:${port}/#question-${id}`;
   const questions = createQuestionService({
-    store, clock, answerer, assessor, stageTimeoutMs: config.answerTimeoutMs, rulesFile: config.rulesFile,
+    store, clock, answerer, assessor, stageTimeoutMs: config.answerTimeoutMs, documents: store.documents,
     renotifyMs: config.humanRenotifyMs, humanTimeoutMs: config.humanTimeoutMs,
     answerUrl,
     onAnswered: (q: Question) => engine.onAnswered(q),
@@ -212,12 +215,12 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   });
   const registry: SourceRegistry = withFixedStatuses(sync, fixed);
   const webhookConfig = createWebhookConfigWatcher({
-    path: config.webhooksFile, store, clock, intervalMs: seams.webhookConfigIntervalMs ?? WEBHOOKS_FILE_CHECK_MS,
+    documents: store.documents, store, clock, intervalMs: seams.webhookConfigIntervalMs ?? WEBHOOKS_FILE_CHECK_MS, env: (name) => env[name],
   });
   const server = createServer({
     engine, store, dispatcher, questions, clock, version: VERSION, sources: registry, webhookConfig, plugins,
-    webhooksEditor: createWebhooksEditor({ path: config.webhooksFile, reload: webhookConfig.reload }),
-    port: () => port, rulesFile: config.rulesFile, dataDir, sessionHours: config.uiSessionHours, lan: { names: config.lanNames, peers: config.lanPeers }, uiDir: seams.uiDir ?? UI_DIR,
+    webhooksEditor: createWebhooksEditor({ documents: store.documents, reload: webhookConfig.reload }),
+    port: () => port, dataDir, sessionHours: config.uiSessionHours, lan: { names: config.lanNames, peers: config.lanPeers }, uiDir: seams.uiDir ?? UI_DIR,
   });
 
   webhookConfig.start();
