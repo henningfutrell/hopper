@@ -1,8 +1,11 @@
 // A bare mirror of the update repository in the data dir, driven by the git CLI. Fetching names
 // the repository each time, so a changed install.json `repo` needs nothing else. Never prompts:
 // no terminal prompt, ssh in batch mode (an unreachable or unauthorised repo is an error, not a hang).
+// ssh reads only the user's own config: the unit's PrivateTmp puts the daemon in a user namespace
+// where root-owned files under /etc/ssh show as owned by nobody, and ssh refuses them.
 import { execFile } from 'node:child_process';
 import { existsSync, mkdirSync, rmSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import type { UpdateChange } from '../domain/types.ts';
@@ -26,11 +29,17 @@ export interface GitMirror {
   extract(commit: string, dir: string): Promise<void>;
 }
 
+const shellQuote = (s: string): string => `'${s.replaceAll("'", "'\\''")}'`;
+
+/** GIT_SSH_COMMAND for the mirror: the caller's own if set, else batch mode with only the user's ssh config (or none). */
+export function sshCommand(env: Record<string, string | undefined>, home: string, exists: (path: string) => boolean): string {
+  if (env.GIT_SSH_COMMAND) return env.GIT_SSH_COMMAND;
+  const config = join(home, '.ssh', 'config');
+  return `ssh -o BatchMode=yes -F ${exists(config) ? shellQuote(config) : '/dev/null'}`;
+}
+
 export function createGitMirror(dir: string): GitMirror {
-  const env = {
-    ...process.env, GIT_TERMINAL_PROMPT: '0',
-    GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND ?? 'ssh -o BatchMode=yes',
-  };
+  const env = { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_SSH_COMMAND: sshCommand(process.env, homedir(), existsSync) };
   const git = async (...args: string[]): Promise<string> =>
     (await exec('git', ['--git-dir', dir, ...args], { env, timeout: TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024 })).stdout.trim();
   const ok = (p: Promise<unknown>): Promise<boolean> => p.then(() => true, () => false);
