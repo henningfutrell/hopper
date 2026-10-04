@@ -81,6 +81,17 @@ describe('events', () => {
     expect(Number(m.id)).toBe(lastSeq);
   });
 
+  it('a reconnect resumes at Last-Event-ID, not at the stale after= of the URL it reuses', async () => {
+    const a = await start();
+    const job = await a.pull({ op: 'echo' });
+    await a.waitForStatus(job.id, 'finished');
+    const past = await a.events();
+    const lastSeq = past[past.length - 1]!.seq;
+    sse = await openSse(`${a.url}/api/events/stream?after=0`, { 'last-event-id': String(lastSeq - 1) });
+    const m = await waitFor(() => sse!.messages.find((x) => x.id !== undefined));
+    expect(Number(m.id)).toBe(lastSeq);
+  });
+
   it('the SSE stream emits source.updated (no id) after a sync', async () => {
     const a = await start();
     sse = await openSse(`${a.url}/api/events/stream`);
