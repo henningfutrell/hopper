@@ -11,11 +11,12 @@ import { loadConfig, type Config } from './config.ts';
 import { createEngine, type Engine } from './engine/index.ts';
 import { createExecutorRegistry } from './executors/index.ts';
 import type { HerdrClient } from './executors/herdr/index.ts';
+import { clientSocket, type ClientTransport } from './executors/client.ts';
 import { dockerHost } from './executors/docker.ts';
 import { hopperSshAuth, pinHostKeys } from './executors/ssh.ts';
 import { createServer } from './http/index.ts';
 import { AUTH, createSignIn, loadAuthDocument, type AuthConfig } from './auth/index.ts';
-import { combineMachineSources, createAttachedMachines, probeContainer, probeHerdrOverSsh } from './machines/index.ts';
+import { combineMachineSources, createAttachedMachines, probeClient, probeContainer, probeHerdrOverSsh } from './machines/index.ts';
 import { BUILTIN_PLUGINS } from './plugins/builtin.ts';
 import { herdrClaudePlugin } from './plugins/executor/herdr-claude/index.ts';
 import { createPluginHost, type BuiltJobSource } from './plugins/index.ts';
@@ -166,6 +167,11 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   mkdirSync(dataDir, { recursive: true, mode: 0o700 });
   // How the hopper proves itself to an ssh target, asked at every connection (design.md "Target authentication").
   const sshAuth = () => hopperSshAuth({ env: secret, dataDir });
+  // Where client targets' reverse tunnels open their sockets: this user's alone (design.md "Client targets").
+  mkdirSync(join(dataDir, 'clients'), { recursive: true, mode: 0o700 });
+  const clientTransport = (machine: string, tokenEnv: string): ClientTransport => ({
+    machine, socket: clientSocket(dataDir, machine), token: () => secret(tokenEnv) ?? '',
+  });
   const routerMode = () => store.settings.getRouterMode() ?? config.routerMode;
   let executorNames = (): string[] => [];
   let jobsOnMachine = (_name: string): string[] => [];
@@ -226,7 +232,9 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
         probe: seams.machineProbe
           ?? ((m) => ('docker' in m
             ? probeContainer({ container: m.docker, dockerHost: () => dockerHost(secret) })
-            : probeHerdrOverSsh({ target: m.ssh, herdrBin: m.herdrBin, session: m.session, controlDir: join(dataDir, 'ssh'), auth: sshAuth }))),
+            : 'client' in m
+              ? probeClient(clientTransport(m.name, m.client.tokenEnv))
+              : probeHerdrOverSsh({ target: m.ssh, herdrBin: m.herdrBin, session: m.session, controlDir: join(dataDir, 'ssh'), auth: sshAuth }))),
       }),
     ]),
     usage: [...host.usageSources(), ...(seams.fakeUsage ? [seams.fakeUsage] : [])],

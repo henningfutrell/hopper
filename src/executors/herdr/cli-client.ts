@@ -7,6 +7,7 @@
 import { execFile } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { scrubbedEnv } from '../env.ts';
+import { clientHerdr, type ClientTransport } from '../client.ts';
 import { SSH_FAILED, shellQuote, sshArgv, type SshTransport } from '../ssh.ts';
 import { HerdrError } from './client.ts';
 import type { AgentInfo, AgentStatus, HerdrClient } from './client.ts';
@@ -29,13 +30,42 @@ export interface HerdrCliClient extends HerdrClient {
   run(args: string[], timeoutMs?: number): Promise<Record<string, unknown>>;
 }
 
-export function createHerdrCliClient(o: { bin: string; session: string; timeoutMs?: number; ssh?: SshTransport }): HerdrCliClient {
+/** This machine's herdr or an ssh target's: the binary and session are the hopper's to name. */
+interface CliOptions { bin: string; session: string; timeoutMs?: number; ssh?: SshTransport }
+/** A client target's herdr: its binary and session are the client's own (design.md "Client targets"). */
+interface ClientOptions { client: ClientTransport; timeoutMs?: number }
+
+/** herdr's exit status as the CLI gives it: usage errors exit 2, server errors carry JSON on stderr. */
+function failure(code: number, stderr: string, fallback: string): HerdrError {
+  return code === 2 ? new HerdrError('usage', stderr.trim() || fallback) : errorFrom(stderr, fallback);
+}
+
+export function createHerdrCliClient(o: CliOptions | ClientOptions): HerdrCliClient {
+  if ('client' in o) return withCalls('', viaClient(o.client), o.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   if (!o.session) throw new Error('herdr session is required (never the default session)');
-  const callTimeout = o.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  return withCalls(o.session, viaCli(o), o.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+}
+
+type Exec = (args: string[], timeoutMs: number) => Promise<string>;
+
+function viaClient(t: ClientTransport): Exec {
+  return async (args, timeoutMs) => {
+    let r;
+    try {
+      r = await clientHerdr(t, args, timeoutMs);
+    } catch (e) {
+      throw new HerdrError('client', (e as Error).message);
+    }
+    if (r.code === 0) return r.stdout;
+    if (r.code === 124) throw new HerdrError('timeout', `herdr ${args.slice(0, 2).join(' ')} timed out after ${timeoutMs} ms`);
+    throw failure(r.code, r.stderr, `herdr exited ${r.code}`);
+  };
+}
+
+function viaCli(o: CliOptions): Exec {
   const ssh = o.ssh;
   if (ssh?.controlDir) mkdirSync(ssh.controlDir, { recursive: true, mode: 0o700 });
-
-  const exec = (args: string[], timeoutMs = callTimeout): Promise<string> => new Promise((resolve, reject) => {
+  return (args, timeoutMs) => new Promise((resolve, reject) => {
     const argv = [o.bin, '--session', o.session, ...args];
     let file: string, fileArgs: string[];
     try {
@@ -52,10 +82,13 @@ export function createHerdrCliClient(o: { bin: string; session: string; timeoutM
       if (e.killed) return reject(new HerdrError('timeout', `herdr ${args.slice(0, 2).join(' ')} timed out after ${timeoutMs} ms`));
       if (typeof e.code === 'string') return reject(new HerdrError('spawn', `${file}: ${e.message}`));
       if (ssh && e.code === SSH_FAILED) return reject(new HerdrError('ssh', `ssh ${ssh.target}: ${stderr.trim() || e.message}`));
-      if (e.code === 2) return reject(new HerdrError('usage', stderr.trim() || e.message));
-      reject(errorFrom(stderr, e.message));
+      reject(failure(e.code ?? 1, stderr, e.message));
     });
   });
+}
+
+function withCalls(session: string, call: Exec, callTimeout: number): HerdrCliClient {
+  const exec = (args: string[], timeoutMs = callTimeout): Promise<string> => call(args, timeoutMs);
 
   const run = async (args: string[], timeoutMs?: number): Promise<Record<string, unknown>> => {
     const out = await exec(args, timeoutMs);
@@ -67,7 +100,7 @@ export function createHerdrCliClient(o: { bin: string; session: string; timeoutM
   };
 
   return {
-    session: o.session,
+    session,
     exec,
     run,
     async ensureWorkspace(label, cwd) {

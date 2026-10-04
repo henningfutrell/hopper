@@ -2,10 +2,12 @@
 // "herdr-claude executor"). The screen protocol parses Claude Code's TUI, so the agent kind is
 // fixed: another agent CLI is another executor plugin. `args` are the agent's own arguments —
 // where its tools are chosen (design.md "6d"). A job on an attached machine runs in that machine's
-// own herdr (binary and session from its attachedMachines entry), reached over ssh (design.md "Attached machines").
+// own herdr (binary and session from its attachedMachines entry), reached over ssh (design.md "Attached machines"),
+// or a client target's herdr, through its reverse tunnel (design.md "Client targets").
 import { join } from 'node:path';
 import type { HerdrClient, RemoteHerdr } from '../../../executors/herdr/index.ts';
 import { createHerdrClaudeExecutor, createHerdrCliClient } from '../../../executors/herdr/index.ts';
+import { clientSocket } from '../../../executors/client.ts';
 import { hopperSshAuth } from '../../../executors/ssh.ts';
 import { expandHome } from '../../expand-home.ts';
 import type { PluginDefinition } from '../../sdk.ts';
@@ -60,10 +62,14 @@ export function herdrClaudePlugin(seam?: HerdrClient): PluginDefinition<'executo
         const key = JSON.stringify(there);
         let client = remotes.get(key);
         if (!client) {
-          client = seam ?? createHerdrCliClient({
-            bin: there.bin, session: there.session,
-            ssh: { target: there.ssh, controlDir: join(ctx.dataDir, 'ssh'), auth: () => hopperSshAuth({ env: ctx.env, dataDir: ctx.dataDir }) },
-          });
+          client = seam ?? ('client' in there
+            ? createHerdrCliClient({
+              client: { machine: there.client.machine, socket: clientSocket(ctx.dataDir, there.client.machine), token: () => ctx.env(there.client.tokenEnv) ?? '' },
+            })
+            : createHerdrCliClient({
+              bin: there.bin, session: there.session,
+              ssh: { target: there.ssh, controlDir: join(ctx.dataDir, 'ssh'), auth: () => hopperSshAuth({ env: ctx.env, dataDir: ctx.dataDir }) },
+            }));
           remotes.set(key, client);
         }
         return client;

@@ -23,7 +23,7 @@ export function createLocalMachineSource(o: {
   };
 }
 
-export { createAttachedMachineSource, createAttachedMachines, probeContainer, knownHostKey, probeHerdrOverSsh, resolveSshTarget } from './attached.ts';
+export { createAttachedMachineSource, createAttachedMachines, probeClient, probeContainer, knownHostKey, probeHerdrOverSsh, resolveSshTarget } from './attached.ts';
 export { readSshTargets, type SshTargets } from './ssh-config.ts';
 
 /** Every machine of every source, in source order: this machine first, then the attached ones. */

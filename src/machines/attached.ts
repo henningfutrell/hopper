@@ -13,6 +13,7 @@ import type { Clock, MachineSource } from '../domain/ports.ts';
 import type { AttachedMachine, MachineSnapshot } from '../domain/types.ts';
 import { dockerArgv, dockerEnv } from '../executors/docker.ts';
 import { scrubbedEnv } from '../executors/env.ts';
+import type { ClientTransport } from '../executors/client.ts';
 import { createHerdrCliClient } from '../executors/herdr/index.ts';
 import { SSH_FAILED, resolveDestination, sshArgv, type SshAuth, HOST_KEY } from '../executors/ssh.ts';
 
@@ -32,7 +33,10 @@ export function createAttachedMachineSource(o: AttachedOptions & {
   probe: () => Promise<boolean>;
 }): MachineSource {
   const name = o.machine().name;
-  const reached = (): string => { const m = o.machine(); return 'docker' in m ? `docker ${m.docker}` : `ssh ${m.ssh}`; };
+  const reached = (): string => {
+    const m = o.machine();
+    return 'docker' in m ? `docker ${m.docker}` : 'client' in m ? 'client, over its reverse tunnel' : `ssh ${m.ssh}`;
+  };
   const down = (): string => ('docker' in o.machine() ? 'its container is not running' : 'its herdr session is not running');
   const now = (): number => (o.clock ? o.clock.now().getTime() : Date.now());
   const every = o.probeEveryMs ?? PROBE_EVERY_MS;
@@ -63,7 +67,9 @@ export function createAttachedMachineSource(o: AttachedOptions & {
       probe();
       const m = o.machine();
       const base: MachineSnapshot = { id: m.name, label: m.label ?? m.name, maxLanes: m.lanes, online, executors: [...m.executors] };
-      return [('docker' in m ? { ...base, docker: m.docker } : { ...base, ssh: m.ssh, herdr: { bin: m.herdrBin, session: m.session } })];
+      if ('docker' in m) return [{ ...base, docker: m.docker }];
+      if ('client' in m) return [{ ...base, client: { tokenEnv: m.client.tokenEnv } }];
+      return [{ ...base, ssh: m.ssh, herdr: { bin: m.herdrBin, session: m.session } }];
     },
   };
 }
@@ -75,6 +81,11 @@ export async function probeHerdrOverSsh(o: { target: string; herdrBin: string; s
     ssh: { target: o.target, controlDir: o.controlDir, auth: o.auth, ...(o.sshBin ? { bin: o.sshBin } : {}) },
   });
   return /^status: running$/m.test(await herdr.exec(['status', 'server']));
+}
+
+/** Whether a client target's herdr session runs: `status server` through its tunnel, signed. Rejects when the client cannot be reached or does not prove itself. */
+export async function probeClient(t: ClientTransport): Promise<boolean> {
+  return /^status: running$/m.test(await createHerdrCliClient({ client: t, timeoutMs: 15000 }).exec(['status', 'server']));
 }
 
 /**
@@ -111,7 +122,8 @@ export function createAttachedMachines(o: AttachedOptions & {
   probe: (machine: AttachedMachine) => Promise<boolean>;
 }): MachineSource {
   const known = new Map<string, { source: MachineSource; current: AttachedMachine }>();
-  const identity = (m: AttachedMachine): string => JSON.stringify('docker' in m ? [m.name, 'docker', m.docker] : [m.name, m.ssh, m.herdrBin, m.session]);
+  const identity = (m: AttachedMachine): string => JSON.stringify('docker' in m ? [m.name, 'docker', m.docker]
+    : 'client' in m ? [m.name, 'client', m.client.tokenEnv] : [m.name, m.ssh, m.herdrBin, m.session]);
   return {
     async list() {
       const now = o.machines();

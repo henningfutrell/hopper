@@ -11,6 +11,7 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, renameSync, writeFileSy
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { AttachedMachine } from '../domain/types.ts';
+import { HARDENED_SSH_OPTIONS } from '../client/ssh-options.ts';
 import { scrubbedEnv } from './env.ts';
 
 /** ssh's exit status for its own failures (connection, authentication). */
@@ -54,19 +55,6 @@ const TARGET = /^[A-Za-z0-9_][A-Za-z0-9._-]*(@[A-Za-z0-9_][A-Za-z0-9._-]*)?$/;
 /** A pinned host key: `<type> <base64>`, as a host's `ssh_host_*_key.pub` holds it (comment dropped). */
 export const HOST_KEY = /^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(256|384|521)|sk-ssh-ed25519@openssh\.com|sk-ecdsa-sha2-nistp256@openssh\.com) [A-Za-z0-9+/]+={0,2}$/;
 
-/** The options every connection to a target carries; on the command line, so they beat any config. */
-const HARDENED = [
-  'BatchMode=yes', 'ConnectTimeout=10',
-  // Public-key authentication only.
-  'PreferredAuthentications=publickey', 'PubkeyAuthentication=yes', 'PasswordAuthentication=no',
-  'KbdInteractiveAuthentication=no', 'GSSAPIAuthentication=no', 'HostbasedAuthentication=no',
-  // The hopper's own key only.
-  'IdentitiesOnly=yes', 'IdentityAgent=none',
-  // Pinned host keys only.
-  'StrictHostKeyChecking=yes', 'GlobalKnownHostsFile=/dev/null', 'UpdateHostKeys=no', 'CheckHostIP=no', 'VerifyHostKeyDNS=no',
-  // Nothing forwarded, nothing run here.
-  'ForwardAgent=no', 'ForwardX11=no', 'ClearAllForwardings=yes', 'PermitLocalCommand=no',
-];
 
 /** Paths ssh reads from `-o` split at whitespace: refuse them rather than quote them. */
 function plainPath(what: string, path: string): string {
@@ -105,7 +93,7 @@ export function sshArgv(t: SshTransport, command: string): string[] {
     ? ['-o', 'ControlMaster=auto', '-o', `ControlPath=${plainPath('ssh control', t.controlDir)}/%C`, '-o', 'ControlPersist=60']
     : [];
   return [
-    '-F', '/dev/null', ...HARDENED.flatMap((o) => ['-o', o]),
+    '-F', '/dev/null', ...HARDENED_SSH_OPTIONS.flatMap((o) => ['-o', o]),
     '-i', auth.identityFile,
     '-o', `UserKnownHostsFile=${plainPath('known_hosts', auth.knownHostsFile)}`, '-o', `HostKeyAlias=${t.target}`,
     ...shared, '-p', d.port, '-l', d.user, '--', d.hostname, command,

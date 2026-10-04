@@ -38,6 +38,8 @@ const tail = (s: string): string => (s.length > OUTPUT_CAP ? s.slice(-OUTPUT_CAP
 /** The program and argv that run `argv` on the machine, by its connection. */
 export function commandOn(machine: MachineSnapshot, argv: string[], o: Pick<CommandExecutorOptions, 'dockerBin' | 'sshBin' | 'sshControlDir' | 'sshAuth' | 'dockerHost'>): [string, string[]] {
   if (machine.docker) return [o.dockerBin ?? 'docker', dockerArgv(o.dockerHost(), ['exec', '--', machine.docker, ...argv])];
+  // A client target serves herdr calls only (design.md "Client targets"); without this the command would run here.
+  if (machine.client) throw new Error('the command executor does not run on a client target: it serves herdr only');
   if (machine.ssh) {
     const t = { target: machine.ssh, auth: o.sshAuth, ...(o.sshBin ? { bin: o.sshBin } : {}), ...(o.sshControlDir ? { controlDir: o.sshControlDir } : {}) };
     return [o.sshBin ?? 'ssh', sshArgv(t, argv.map(shellQuote).join(' '))];

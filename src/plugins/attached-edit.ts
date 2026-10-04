@@ -100,7 +100,7 @@ function spliceEntry(text: string, doc: Document, seq: YAMLSeq, at: number, next
 }
 
 /** Plain fields, in the order the owner writes them; absent ones left out. */
-const FIELDS = ['name', 'label', 'ssh', 'docker', 'lanes', 'executors', 'session', 'herdrBin', 'hostKey'] as const;
+const FIELDS = ['name', 'label', 'ssh', 'docker', 'client', 'lanes', 'executors', 'session', 'herdrBin', 'hostKey'] as const;
 
 function entryOf(m: Partial<Record<(typeof FIELDS)[number], unknown>>): Record<string, unknown> {
   const order = FIELDS;

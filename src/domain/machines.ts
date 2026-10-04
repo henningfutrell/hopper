@@ -4,10 +4,11 @@ import type { InstanceSpec } from './plugins.ts';
 
 /**
  * An attached machine as plugins.yaml `attachedMachines:` names it (design.md "Attached machines",
- * "Container targets"): a target reached over ssh, with its own herdr, or a container reached over
- * docker exec, which runs commands only.
+ * "Container targets", "Client targets"): a target reached over ssh, with its own herdr; a container
+ * reached over docker exec, which runs commands only; or a client target, a machine running the
+ * hopper client that connects back over a reverse tunnel.
  */
-export type AttachedMachine = SshMachine | ContainerMachine;
+export type AttachedMachine = SshMachine | ContainerMachine | ClientMachine;
 
 interface AttachedBase {
   /** The machine id; never `local`. */
@@ -35,6 +36,16 @@ export interface SshMachine extends AttachedBase {
 export interface ContainerMachine extends AttachedBase {
   /** The container's name or id: commands run in it through `docker exec`. */
   docker: string;
+}
+
+/**
+ * A client target (issue #59): a machine running the hopper client, connected back to this one over
+ * a reverse tunnel; herdr calls go to it over HTTP, signed with its token. Its herdr binary and
+ * session are the client's own.
+ */
+export interface ClientMachine extends AttachedBase {
+  /** `tokenEnv`: the variable (or `<name>_FILE`) the client's token is in, in the hopper's runtime. */
+  client: { tokenEnv: string };
 }
 
 /**
