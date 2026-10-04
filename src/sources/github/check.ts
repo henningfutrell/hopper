@@ -1,5 +1,9 @@
 // check(): cancel signals for a source's active jobs. Closed/unlabelled/gone issue → cancel; a
 // waiting job whose issue went on the backburner → cancel (a running job is left to finish).
+// Only GitHub saying so about the issue itself (404, 410) is "gone": an error about the source —
+// no app configured, refused credentials, app not installed, 403, a missing scope — cancels
+// nothing, however permanent; the job is skipped and the error shown (issue #52: the boot after an
+// install could not read its app key, and every active job was cancelled).
 // An issue closed by the merge of a pull request opened after the job was created is the job's own
 // work landing, not a cancel: the job runs on to its own end (a job merges before it installs and
 // verifies). A pull request opened earlier is somebody else's, and cancels as any close does.
@@ -33,7 +37,7 @@ async function checkJob(api: GitHubApi, config: CheckConfig, job: Job): Promise<
   try {
     issue = await api.getIssue(repo, number);
   } catch (err) {
-    if (err instanceof GitHubApiError && err.permanent) return { kind: 'cancel', jobId: job.id, reason: 'issue gone' };
+    if (err instanceof GitHubApiError && (err.status === 404 || err.status === 410)) return { kind: 'cancel', jobId: job.id, reason: 'issue gone' };
     throw err;
   }
   if (issue.state === 'closed') return await closedByOwnPullRequest(api, job, repo, number) ? undefined : { kind: 'cancel', jobId: job.id, reason: 'issue closed' };

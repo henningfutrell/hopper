@@ -82,7 +82,8 @@ export function createGitHubAppApi(o: { app(): GitHubAppLoad; keyEnv: string; ba
       l.installs.set(repo, id);
       return id;
     } catch (err) {
-      if (statusOf(err) === 404) throw new GitHubApiError(`app not installed on ${repo}`, true, 404);
+      // No status: the 404 is about the installation, not the item asked for (an issue is not gone).
+      if (statusOf(err) === 404) throw new GitHubApiError(`app not installed on ${repo}`, true);
       throw err;
     }
   };
