@@ -43,7 +43,7 @@ export function AddMachineForm({ config, busy, send, onDone }: {
   config: MachinesConfig; busy: boolean; send: (e: MachineEdit, done: string) => Promise<boolean>; onDone: () => void;
 }) {
   const [d, setD] = useState<MachineDraft>({
-    name: '', ssh: config.ssh.targets.find((t) => !config.attached.some((m) => m.ssh === t)) ?? '', lanes: '2',
+    name: '', ssh: '', lanes: '2',
     executors: config.executors.includes('herdr-claude') ? ['herdr-claude'] : config.executors.slice(0, 1), label: '',
   });
   const set = (over: Partial<MachineDraft>) => setD((x) => ({ ...x, ...over }));
