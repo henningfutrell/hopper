@@ -1,6 +1,6 @@
 # job-hopper — repo law
 
-Local job-queue daemon that pulls its jobs. One maintainer, loopback plus an opt-in LAN, TypeScript run directly by Node ≥ 24.
+Local job-queue daemon that pulls its jobs. Loopback plus an opt-in LAN or public URL behind a reverse proxy, sign-in through the login code or identity providers (OIDC, GitHub, SAML). TypeScript run directly by Node ≥ 24.
 
 North star (owner decision): an extendable and plugin architecture; every part must serve it. `docs/design.md` "North star".
 
@@ -24,16 +24,19 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   subscribers removed, and runs network-isolated (`unshare -rn`).
 - **Erasable TypeScript only** (`erasableSyntaxOnly`): no enums, no namespaces, no
   parameter properties. Relative imports carry `.ts`.
-- **Loopback plus the LAN names, and the hopper pulls.** The daemon binds `127.0.0.1`, or every
-  interface only when `JOB_HOPPER_LAN_NAMES` and `JOB_HOPPER_LAN_PEERS` are set; a peer outside
-  loopback and the LAN peers is refused, and a LAN request reads `/api/` only with a UI session
+- **Loopback plus the LAN names and the public URL, and the hopper pulls.** The daemon binds `127.0.0.1`, or every
+  interface only when `JOB_HOPPER_LAN_PEERS` is set; a peer outside
+  loopback and the LAN peers is refused, and a LAN or public request reads `/api/` only with a UI session
   (`docs/design.md` "Reaching the UI across the LAN", issue #16). No route creates or changes a job, question, webhook or setting except
   through the UI session below: jobs come only from job sources; webhooks come only from
   `webhooks.yaml`, which the UI session may edit (`POST /ui/api/webhooks`, issue #18). Every request passes the Host guard
-  (`127.0.0.1:<port>` / `localhost:<port>` / a LAN name with the port, else 421). The only mutations are the UI's
-  `POST /ui/api/*`, behind a UI session from the one-time login code (`x-jobhopper-session`,
-  exact Origin, same-origin, JSON — else 403); a new mutation goes there and nowhere else.
-  `docs/design.md` "UI session and mutations" states the residual risk.
+  (`127.0.0.1:<port>` / `localhost:<port>` / a LAN name with the port / the public URL's host, else 421). The only mutations are the UI's
+  `POST /ui/api/*`, behind a UI session (`x-jobhopper-session`,
+  exact Origin, same-origin, JSON — else 403) whose UI role allows it; a new mutation goes there and
+  nowhere else, and names its least UI role. `docs/design.md` "UI session and mutations" and
+  "Sign-in: local, OIDC and SAML" state the residual risk.
+- **Sign-in fails closed.** An invalid `auth.yaml` stops the daemon; an identity no role rule
+  matches gets no session; sign-in is never a plugin (`docs/design.md` "Sign-in").
 - **GitHub text is neutral.** Text the hopper or a job writes to GitHub names no person and
   carries no personal or machine details. The hopper writes only labels to issues and posts no
   comments. The job prompt carries the rule (`src/executors/herdr/screen.ts` `PUBLISHING_RULE`).

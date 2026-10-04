@@ -46,7 +46,8 @@ Fastify for HTTP, `node:sqlite` for storage, zod for request validation.
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin) | engine, http, store, plugins |
 | `src/routing/` | routing rules: the plugins.yaml `routing:` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
 | `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`); job lifecycle; routing at intake (`source-host.ts`); restart recovery | http |
-| `src/http/` | Fastify routes, SSE, static UI | executors, plugins (reads them through the `PluginsView` port) |
+| `src/auth/` | sign-in through identity providers (issue #39): `auth.yaml` load (`config.ts`), the role rules (`roles.ts`, pure), the identity provider port (`provider.ts`) and its adapters `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), the sign-in flow — flows, tickets, bindings (`index.ts`) | engine, http, store, plugins, decider, questions |
+| `src/http/` | Fastify routes, SSE, static UI; the UI session, its role check and the sign-in routes (`ui/`) | executors, plugins (reads them through the `PluginsView` port) |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
 | `examples/plugins/` | one minimal runnable custom plugin per role, for authors (`docs/plugins.md`); imports only `job-hopper/plugin` types and `node:` builtins | everything in `src/` at runtime |
 | `src/main.ts` | composition root: config → plugins.yaml (migrated or written when absent) → plugin host (every part) → store → engine → server | — |
@@ -870,6 +871,9 @@ token and send any `Origin`. Cookies are no better here: they ignore ports, so a
 | POST | `/ui/api/machines` | `{ action, … }` | add, edit or remove one attached machine in plugins.yaml, applied without a restart (issue #18; "Machines from the UI") |
 | POST | `/ui/api/device-link` | `{}` | `{ links }`: the current login code as `http://<LAN name>:<port>/#login=<code>`, one per LAN name; 409 without LAN names ("Reaching the UI across the LAN") |
 | POST | `/ui/api/logout` | `{}` | drop the session |
+
+Since issue #39 a session may also come from an identity provider, and each mutation needs a UI
+role: "Sign-in: local, OIDC and SAML" (Roles).
 
 **Residual risk, stated.** Still able to act or read:
 - A process running **as the owner** that reads `ui-login-code`/`ui-login.html` or the
@@ -2041,6 +2045,8 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
 | `JOB_HOPPER_UI_SESSION_HOURS` | `12` |
 | `JOB_HOPPER_PLUGIN_DIR` | `~/.config/job-hopper/plugins` |
 | `JOB_HOPPER_PLUGINS_FILE` | `~/.config/job-hopper/plugins.yaml` |
+| `JOB_HOPPER_AUTH_FILE` | `~/.config/job-hopper/auth.yaml` (issue #39, "Sign-in: local, OIDC and SAML") |
+| `JOB_HOPPER_PUBLIC_URL` | unset (issue #39) |
 
 ### Settled in slice 5 (2026-10-03)
 
@@ -2721,3 +2727,106 @@ and Routing rules (ordered list; each rule is a stacked form with match and set 
 up/down, delete; one Save for the whole list). The machine select uses `/api/machines` plus the
 routing targets; the executor select uses the configured executors. Forms stack at 390 px width;
 there is no horizontal page scroll.
+
+## Sign-in: local, OIDC and SAML (issue #39, 2026-10-04)
+
+Owner request: the hopper deployable by anyone, plugged into a personal or enterprise identity
+setup — any OIDC provider (Google, Microsoft Entra ID, Okta, Auth0, Keycloak, …), GitHub, and SAML
+SSO — configured by settings, not code; the simple local sign-in kept; roles, sessions and logout the
+same across providers. Operator guide, per provider: `docs/sign-in.md`.
+
+**Not a plugin.** "UI session" is an invariant of the HTTP edge ("Phase 5", *Not plugins*), and
+sign-in is part of it: a swappable part here would be a swappable lock. The capability still arrives
+as configuration of built-in parts — the north star's "or as configuration of one". The three
+provider types are adapters behind one port (`src/auth/provider.ts`), so a fourth is a file and a
+schema branch.
+
+**Libraries, not hand-rolled protocol code.** OIDC and GitHub's OAuth 2.0: `openid-client` (v6;
+discovery, PKCE, state, nonce, ID token validation, userinfo). SAML: `@node-saml/node-saml` (v5;
+signature, audience, InResponseTo, clock-skew validation, SP metadata). Tests drive real protocol
+exchanges against loopback IdPs: `oauth2-mock-server`, a GitHub fake, a SAML IdP signing with an
+openssl throwaway key through `xml-crypto` (`test/support/idp.ts`).
+
+### Configuration — `auth.yaml`
+
+`JOB_HOPPER_AUTH_FILE` (default `~/.config/job-hopper/auth.yaml`), mode 600. Absent → local sign-in
+only (unchanged behaviour). Read **at start only**: an invalid file throws before the store opens,
+naming the field — sign-in fails closed. Schema in `src/auth/config.ts`; reference in
+`docs/sign-in.md`. Secrets inline or in files (`clientSecretFile`, `idpCertFile`). Issuer and
+endpoint URLs must be https, except to loopback (a local test or dev IdP). OIDC discovery runs on the
+first sign-in, not at boot: an unreachable issuer must not stop the daemon.
+
+### Roles
+
+`viewer` < `operator` < `admin` (`src/domain/sign-in.ts`). Every mutation names its least role:
+
+| UI role | mutations |
+|---|---|
+| `viewer` | `POST /ui/api/logout` |
+| `operator` | + jobs `cancel`, `approve`; questions `answer`, `close` |
+| `admin` | + `router-mode`, `plugins`, `rules-file`, `webhooks`, `machines`, `routing`, `device-link` |
+
+A live session whose role is short gets 403 `{ error, needs }` — the UI keeps the session and
+toasts; any other 403 still means "log in again". The login code always gives `admin`. A provider's
+`roles` (`src/auth/roles.ts`, pure): `admin` / `operator` / `viewer` each match on subjects,
+usernames, emails, email domains or groups; the highest match wins; else `defaultRole`; else **no
+session**. Only an email the provider vouches for is an Identity's `email`: OIDC needs
+`email_verified: true` unless `trustUnverifiedEmail`; GitHub's primary verified email; SAML's
+asserted one.
+
+### The flow (no cookies)
+
+Cookies ignore ports ("UI session and mutations"), and a SAML response is a cross-site POST that a
+`SameSite=Lax` cookie would not survive anyway. So the browser proves it began the sign-in with
+`localStorage`, as the session token already does:
+
+1. The UI keeps a fresh **binding** (32 random bytes, base64url) in `localStorage` `jh_sign_in` and
+   opens `GET /ui/auth/<name>/start?binding=…` **on the sign-in origin** (else 409: the binding would
+   not come back). The daemon keeps a flow — provider, SHA-256 of the binding, the provider's secrets
+   (PKCE verifier, nonce, state) — under a random flow id for 10 minutes (at most 1000 pending: the
+   route needs no session), and redirects to the provider with the flow id as `state` / `RelayState`.
+2. The provider returns to `/ui/auth/<name>/callback` (GET for OIDC and GitHub, POST for SAML). The
+   flow is taken (once), the response validated by the library, the Identity built and its role
+   decided. No role → 403 page. Else a one-time **ticket** (2 minutes) and a page whose script posts
+   `{ ticket, binding }` to `POST /ui/auth/complete` (exact sign-in Origin), stores the returned
+   token as `jh_session`, and goes to `/`.
+3. The ticket gives a session only with the binding that began the flow: a callback link handed to
+   another browser — login CSRF — signs nobody in.
+
+Flows and tickets are in memory: a restart mid-sign-in means signing in again. SAML is SP-initiated
+only (`validateInResponseTo: always`); assertions must be signed (`requireSignedResponse` adds the
+whole response); `disableRequestedAuthnContext` and no NameID format, so the IdP's MFA and NameID
+choices pass. `GET /ui/auth/<name>/metadata` serves the SP metadata.
+
+### Sessions and logout
+
+One session kind for every provider: migration 7 adds `role` and `identity` (JSON) to
+`ui_sessions`; older rows become `admin` / provider `local` (they were all made from the login code).
+`GET /ui/api/session` → `{ authenticated, expiresAt?, user?: { role, provider, name }, signIn: {
+local, origin, providers: [{ name, label, type }] } }`. Logout drops the row, for every provider; it
+does not end the provider's own session (no RP-initiated logout or SAML SLO: a hopper session is the
+thing being ended, and the same on every provider). At every start the stored sessions are
+reconciled with `auth.yaml`: a removed provider (or local sign-in turned off) or an account no rule
+grants a role any more loses its session; a changed rule changes the stored role. Audit: one journal
+line per sign-in, refusal and logout (no domain event: webhook subscribers would receive identities).
+
+### Local sign-in off
+
+`local: { enabled: false }`: no `ui-login-code` is written (a stale one is deleted), `POST /ui/login`
+is 403, `POST /ui/api/device-link` is 409, login-code sessions end at the next start.
+
+### A public URL
+
+`JOB_HOPPER_PUBLIC_URL` (origin only, never loopback): the UI behind a reverse proxy. Its host (with
+the port only when it is not the scheme's default) passes the Host guard as a **public request** —
+like a LAN request, `/api/` only with a UI session — from loopback or a LAN peer; its origin may post
+UI mutations; it is the sign-in origin. The daemon binds every interface only when
+`JOB_HOPPER_LAN_PEERS` is set (now allowed with a public URL and no LAN names); a proxy on the same
+machine needs none. Without it the sign-in origin is `http://localhost:<port>`.
+
+**Residual risk, stated.** As before, every local user of the host can read the GET API straight on
+`127.0.0.1:<port>` without a session; deploy on a host only the operator and the proxy use. TLS is
+the proxy's job; without it a session token crosses the network in clear. A session outlives a
+change at the provider (user disabled, group removed) until it expires or the daemon restarts with
+`auth.yaml` changed. GitHub teams are read from the first page (100).
+
