@@ -97,3 +97,15 @@ describe('github-app options', () => {
     expect(parseOptions(githubApp, raw).ok).toBe(false);
   });
 });
+
+describe('authors: the allowlist is always explicit', () => {
+  it.each([['github-gh', githubGh], ['github-app', githubApp]] as const)('%s without authors is an error naming authors', (_n, plugin) => {
+    const r = parseOptions(plugin, {});
+    expect(r.ok).toBe(false);
+    expect(!r.ok && r.error).toMatch(/authors/);
+  });
+
+  it.each([['github-gh', githubGh], ['github-app', githubApp]] as const)('%s with authors: [] is an error', (_n, plugin) => {
+    expect(parseOptions(plugin, { authors: [] }).ok).toBe(false);
+  });
+});
