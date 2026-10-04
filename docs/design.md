@@ -3,6 +3,14 @@
 The contract every module is built against. Types: `src/domain/types.ts`; seams:
 `src/domain/ports.ts`; words: `docs/glossary.md`.
 
+## North star
+
+Owner direction (2026-10-03): an extendable plugin architecture.
+
+This is the top-level principle. Every part must serve it: a new capability arrives as a
+plugin or as configuration of one, not as a hardcoded branch. "Phase 5 — every part is a
+plugin" is its current enactment; Phase 6 items are judged against it.
+
 ## Shape
 
 ```
@@ -1721,3 +1729,110 @@ stored old events are not rewritten (read raw by version; v1 schemas stay in doc
 |-----|---------|
 | `JOB_HOPPER_PLUGIN_DIR` | `~/.config/job-hopper/plugins` |
 | `JOB_HOPPER_PLUGINS_FILE` | `~/.config/job-hopper/plugins.yaml` |
+
+## Phase 6 — owner direction, not yet built (2026-10-03)
+
+Four items from the owner. None is designed to completion; each records his words, the code it
+touches, the open questions, and its tie to the plugin architecture (North star). Nothing here
+is a commitment to a shape.
+
+### 6a. Self-repair
+
+Owner request: the app repairs and reinstalls itself in place.
+
+Meaning: if an install breaks, or a restart kills work, the app detects it and repairs itself.
+Today `scripts/install.sh` copies the tree to `~/.local/lib/job-hopper` (`DEST`) and runs
+`systemctl --user restart job-hopper`. A restart fails running non-idempotent jobs
+(`recover()` in `src/engine/recovery.ts`: `interrupted by daemon restart`) and a broken copy
+leaves the unit crash-looping with nobody to notice. Another worker is making running jobs
+survive restart; self-repair covers what that does not.
+
+Touches: `scripts/install.sh`, `src/main.ts` (startup), `src/engine/recovery.ts`,
+`GET /api/health`, the systemd unit files, `src/events/` (a repair event).
+
+Open questions:
+- What counts as "broken": unit failed or flapping, health check red, dist/source mismatch, missing dependency, schema ahead of code?
+- Who repairs: a second watchdog unit (the daemon cannot repair itself while down), or `ExecStartPre`, or `OnFailure=`?
+- Reinstall from where: the clone, a pinned git ref, a retained last-good copy in `~/.local/lib/job-hopper.prev`?
+- Roll back to last-good, or roll forward? What stops a repair loop?
+- How is a repair surfaced: event, UI banner, GitHub comment (never on a job issue; see no-comment rule)?
+- A repair must never touch `~/.local/share/job-hopper` (persisted state).
+
+Plugin tie: the repair is a role candidate (a `repairer` slot with detection and action), but
+has one caller today; build it plain first, extract on a second real caller.
+
+### 6b. Webhook subscription in the UI
+
+Owner request: subscriptions are visible and configurable in the UI.
+
+Meaning: the UI shows each subscription (name, url, events, active, last delivery state) and
+lets the owner edit it. Today `webhooks.yaml` is the only source (`src/webhooks/config.ts`,
+reconciled by `name` into the store; dispatch in `src/webhooks/dispatcher.ts`; read-only
+`src/http/webhooks.ts`). Repo law: no route creates or changes a webhook; the only mutations are
+`POST /ui/api/*` behind a UI session. The edit therefore goes through a new `POST /ui/api/webhooks`
+(session, exact Origin, same-origin, JSON), and the law line "webhooks only from `webhooks.yaml`"
+changes in the same commit.
+
+Touches: `src/webhooks/config.ts`, `src/http/ui/` (mutation route), `src/ui/app.js` + `index.html`,
+`AGENTS.md` loopback rule, design "UI session and mutations".
+
+Open questions:
+- Source of truth after an edit: the UI writes `webhooks.yaml` (file stays truth, comments lost) or the store owns it (file becomes seed)?
+- Secrets: show, mask, never display? `secretFile` handling in a form.
+- Which fields are editable; may the UI create and delete, or edit only?
+- Validation: reuse the zod `entry` schema; same error text in the UI.
+- Same machinery as issue #6 (per-piece configuration in the UI)? Probably one editor, two data sets.
+
+Plugin tie: a subscriber is a notifier instance (Phase 5 slice 5, `Notifier` port). Subscription
+editing is the generic per-instance option editor of slice 7 applied to the notifier role, not a
+webhook-only screen.
+
+### 6c. Own herdr session visible and attachable
+
+The owner: the hopper's own herdr session should be visible in the UI and attachable in a single click.
+
+Meaning: the UI shows the herdr session (`JOB_HOPPER_HERDR_SESSION`, default `job-hopper`; unit
+`job-hopper-herdr`) with its state, and offers attach. Attach is `herdr session attach job-hopper`,
+a terminal action; the page is a browser on a loopback-only app.
+
+Touches: `src/executors/herdr/` (session name, status via `client.ts`), `src/http/state.ts`
+(expose session name and liveness), `src/ui/app.js`, `src/http/host-guard.ts` (no change expected).
+
+Options (not decided):
+1. Copyable command: show `herdr session attach job-hopper` with a copy button. Zero new surface; two clicks including paste.
+2. Terminal URL handler: a `terminal:`/custom-scheme link registered by the OS to open a terminal running the command. One click; per-machine setup, and a link that runs a command is an execution surface.
+3. Loopback-only helper: `POST /ui/api/herdr/attach` spawns a terminal emulator on the host. One click; the daemon launches a GUI process, which breaks "the hopper pulls".
+4. Embedded terminal in the page (web terminal over the herdr socket). One click, no host terminal; largest surface and a new dependency.
+
+Open questions: which terminal does the owner use; is a host-side spawn acceptable under the
+loopback law; read-only view (screen mirror) as a first step?
+
+Plugin tie: the executor plugin (slice 3) reports its own session and attach command; the UI
+renders whatever the active executors declare, so another backend with another multiplexer
+needs no UI change.
+
+### 6d. Backends are configuration
+
+Owner direction: herdr can drive any agent; the tools used are defined in the configuration.
+
+Meaning: which agent runs a job is configuration, not code. `herdr agent start --kind` accepts
+pi, claude, codex, gemini, cursor, devin, agy, cline, omp, mastracode, opencode, copilot, kimi,
+kiro, droid, amp, grok, hermes, kilo, qodercli, qwen, maki (`herdr agent start --help`).
+Today `src/executors/herdr/cli-client.ts` hardcodes `--kind claude`; `screen.ts` parses the
+Claude Code TUI (turn anchor, gutter, `JOB_HOPPER_*` markers) and `PROTOCOL_FOOTER` assumes
+Claude echoes it; `src/config.ts` has `EXECUTOR_NAMES = ['test', 'herdr-claude']`; the executor
+is named `herdr-claude`.
+
+Touches: `src/executors/herdr/cli-client.ts` (kind parameter), `screen.ts` (per-kind parsing),
+`executor.ts`, `src/config.ts` (`EXECUTOR_NAMES`), `plugins.yaml` options, `docs/glossary.md`
+(rename `herdr-claude` if the executor stops being Claude-specific).
+
+Open questions:
+- One `herdr` executor with `kind` as an option, or one plugin per backend? Config-only if parsing is uniform.
+- Screen parsing per kind: does each TUI echo the footer and keep the anchor? Without that, how is turn end detected: herdr's own agent status, or a per-kind parser plugin?
+- "Define the tools to be used": does that mean the tool allow-list passed as agent args (`-- ...args`) per instance?
+- Existing jobs persist `spec.executor = 'herdr-claude'`: a rename needs a migration in `src/store/migrations.ts`.
+- Idempotence flag per backend (recovery treats non-idempotent as fail-on-restart).
+
+Plugin tie: this is Phase 5 slice 3 ("Executors as plugins; `EXECUTOR_NAMES` removed"). Slice 3
+should land with `kind` and tools as plugin-instance options so 6d needs no second pass.
