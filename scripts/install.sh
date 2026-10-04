@@ -87,14 +87,16 @@ fi
 assemble "$DEST"
 
 # The database comes first: the daemon does not start without one, and none is assumed.
+# It is a secret (it carries the password): the line itself, or a mounted file the
+# JOB_HOPPER_DATABASE_URL_FILE line names (docs/design.md "Secrets").
 env_line() { [ -r "$ENV_FILE" ] && grep -m1 "^$1=" "$ENV_FILE" | cut -d= -f2- || true; }
-if [ -z "$(env_line JOB_HOPPER_DATABASE_URL)" ]; then
+if [ -z "$(env_line JOB_HOPPER_DATABASE_URL)" ] && [ -z "$(env_line JOB_HOPPER_DATABASE_URL_FILE)" ]; then
   if [ -n "${JOB_HOPPER_DATABASE_URL:-}" ]; then
     step "write JOB_HOPPER_DATABASE_URL to $ENV_FILE (mode 600)"
     mkdir -p "$CONFIG_DIR"
     (umask 077; printf 'JOB_HOPPER_DATABASE_URL=%s\n' "$JOB_HOPPER_DATABASE_URL" >> "$ENV_FILE")
   else
-    echo "no JOB_HOPPER_DATABASE_URL in $ENV_FILE: which database does the daemon keep everything in?" >&2
+    echo "no JOB_HOPPER_DATABASE_URL (or JOB_HOPPER_DATABASE_URL_FILE) in $ENV_FILE: which database does the daemon keep everything in?" >&2
     echo "  Postgres: docker compose -f $APP_DIR/deploy/compose.yaml up -d postgres (docs/deploy.md), then" >&2
     echo "  JOB_HOPPER_DATABASE_URL=postgres://hopper:<password>@127.0.0.1:<port>/hopper bash $0" >&2
     exit 1
@@ -102,12 +104,12 @@ if [ -z "$(env_line JOB_HOPPER_DATABASE_URL)" ]; then
 fi
 chmod 600 "$ENV_FILE"
 
-# The key stored secrets are sealed under (docs/design.md "Secrets at rest"): made once, never replaced —
-# a new key could not unseal what the old one sealed.
-if [ -z "$(env_line JOB_HOPPER_SECRET_KEY)" ]; then
-  step "write a new JOB_HOPPER_SECRET_KEY to $ENV_FILE"
-  (umask 077; printf 'JOB_HOPPER_SECRET_KEY=%s\n' "$(node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('base64'))")" >> "$ENV_FILE")
-fi
+# The operator CLI against the daemon's database, given the way daemon.env gives it.
+cli() {
+  local file; file="$(env_line JOB_HOPPER_DATABASE_URL_FILE)"
+  if [ -n "$file" ]; then JOB_HOPPER_DATABASE_URL_FILE="$file" node "$DEST/src/cli.ts" "$@"
+  else JOB_HOPPER_DATABASE_URL="$(env_line JOB_HOPPER_DATABASE_URL)" node "$DEST/src/cli.ts" "$@"; fi
+}
 
 step "link the CLI: $BIN_DIR/job-hopper -> $DEST/src/cli.ts"
 mkdir -p "$BIN_DIR"
@@ -147,9 +149,9 @@ for i in $(seq 1 20); do
     printf 'health (try %s): %s\n' "$i" "$health"
     printf 'executors: %s\n' "$(printf '%s' "$health" | node -e 'let s="";process.stdin.on("data",(c)=>s+=c).on("end",()=>console.log((JSON.parse(s).executors??[]).join(", ")))')"
     printf 'UI: %s/ (read-only until you log in)\n' "$URL"
-    if JOB_HOPPER_DATABASE_URL="$(env_line JOB_HOPPER_DATABASE_URL)" node "$DEST/src/cli.ts" config version rules.md 2>/dev/null | grep -qx missing; then
+    if cli config version rules.md 2>/dev/null | grep -qx missing; then
       step "no rules.md in the database yet: write the starter (edit it in the UI, Questions → Question gates)"
-      JOB_HOPPER_DATABASE_URL="$(env_line JOB_HOPPER_DATABASE_URL)" node "$DEST/src/cli.ts" config set rules.md --if-version missing < "$APP_DIR/scripts/starter-rules.md"
+      cli config set rules.md --if-version missing < "$APP_DIR/scripts/starter-rules.md"
     fi
     echo "open the UI: bash $DEST/scripts/open-ui.sh (or mint a code: job-hopper login-code)"
     if [ -n "$(env_line JOB_HOPPER_LAN_NAMES)" ]; then

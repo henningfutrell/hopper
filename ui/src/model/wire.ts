@@ -42,12 +42,11 @@ export interface WebhookConfig {
   version?: string;
 }
 
-/** GET /api/webhooks (secrets omitted); the answer to POST /ui/api/webhooks adds `secret` after add or rotate-secret. */
-/** A subscription as GET /api/webhooks shows it: no secret, only where it lives. */
-export type WebhookView = Omit<WebhookSubscription, 'secret'> & { secretSource: 'inline' | 'env' };
+/** A subscription as GET /api/webhooks shows it: the variable its secret is in, and why the runtime gives none (if so). Never a secret. */
+export type WebhookView = WebhookSubscription & { secretProblem?: string };
 
+/** GET /api/webhooks, and the answer to POST /ui/api/webhooks. */
 export interface WebhooksView {
   subscriptions: WebhookView[];
   config?: WebhookConfig;
-  secret?: string;
 }

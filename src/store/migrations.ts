@@ -99,6 +99,12 @@ const MIGRATIONS: readonly Migration[] = [
   `
   UPDATE webhooks SET secret = '' WHERE secret NOT LIKE 'sealed:%';
   `,
+  // 11: the hopper keeps no secret (issue #56): a subscription names the variable the runtime gives its
+  // secret in. The sealed secrets go with their column; the next load of webhooks.yaml fills secret_env.
+  `
+  ALTER TABLE webhooks ADD COLUMN secret_env TEXT NOT NULL DEFAULT '';
+  ALTER TABLE webhooks DROP COLUMN secret;
+  `,
 ];
 
 /** The schema version a store is at once migrated. */

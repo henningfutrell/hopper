@@ -40,9 +40,11 @@ the directory into the plugin dir and change it.
 
 ## Secrets
 
-A plugin reads a secret from the daemon's environment: `ctx.env(name)` in `create`, `sys.env(name)`
-in `detect`. Name the variable with a command-bearing option (a UI session then cannot redirect a
-credential). Never read a secret file.
+A plugin reads a secret from the runtime: `ctx.env(name)` in `create` (call it at each use, not once,
+so a rotated secret applies), `sys.env(name)` in `detect`. It answers the variable `name`, or the
+mounted file the variable `<name>_FILE` names (design.md "Secrets"); it throws when both are set or
+the file cannot be read. Name the variable with a command-bearing option (a UI session then cannot
+redirect a credential). Never read a secret file of your own, and never store a secret.
 
 ## Command-bearing options
 

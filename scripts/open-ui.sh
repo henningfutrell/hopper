@@ -8,8 +8,9 @@
 #
 #   bash ~/.local/lib/job-hopper/scripts/open-ui.sh
 #
-# database: $JOB_HOPPER_DATABASE_URL, else its line in $JOB_HOPPER_ENV_FILE
-#           (default ~/.config/job-hopper/daemon.env, the unit's EnvironmentFile).
+# database: $JOB_HOPPER_DATABASE_URL or $JOB_HOPPER_DATABASE_URL_FILE (a mounted secret file), else
+#           the line of either in $JOB_HOPPER_ENV_FILE (default ~/.config/job-hopper/daemon.env, the
+#           unit's EnvironmentFile).
 # port:     $JOB_HOPPER_PORT, else 4790.
 set -euo pipefail
 
@@ -17,17 +18,19 @@ here="${BASH_SOURCE[0]%/*}"
 cli="$here/../src/cli.ts"
 port="${JOB_HOPPER_PORT:-4790}"
 
-if [[ -z "${JOB_HOPPER_DATABASE_URL:-}" ]]; then
+if [[ -z "${JOB_HOPPER_DATABASE_URL:-}" && -z "${JOB_HOPPER_DATABASE_URL_FILE:-}" ]]; then
   env_file="${JOB_HOPPER_ENV_FILE:-$HOME/.config/job-hopper/daemon.env}"
   if [[ -r "$env_file" ]]; then
     JOB_HOPPER_DATABASE_URL="$(grep -m1 '^JOB_HOPPER_DATABASE_URL=' "$env_file" | cut -d= -f2- || true)"
+    JOB_HOPPER_DATABASE_URL_FILE="$(grep -m1 '^JOB_HOPPER_DATABASE_URL_FILE=' "$env_file" | cut -d= -f2- || true)"
   fi
 fi
-if [[ -z "${JOB_HOPPER_DATABASE_URL:-}" ]]; then
-  echo "open-ui: JOB_HOPPER_DATABASE_URL is not set and not in ${env_file:-the env file}: which database does the daemon use?" >&2
+if [[ -z "${JOB_HOPPER_DATABASE_URL:-}" && -z "${JOB_HOPPER_DATABASE_URL_FILE:-}" ]]; then
+  echo "open-ui: JOB_HOPPER_DATABASE_URL (or _FILE) is not set and not in ${env_file:-the env file}: which database does the daemon use?" >&2
   exit 1
 fi
-export JOB_HOPPER_DATABASE_URL
+[[ -n "${JOB_HOPPER_DATABASE_URL:-}" ]] && export JOB_HOPPER_DATABASE_URL || unset JOB_HOPPER_DATABASE_URL
+[[ -n "${JOB_HOPPER_DATABASE_URL_FILE:-}" ]] && export JOB_HOPPER_DATABASE_URL_FILE || unset JOB_HOPPER_DATABASE_URL_FILE
 
 code="$(node "$cli" login-code)"
 if [[ ! "$code" =~ ^[0-9a-f]{64}$ ]]; then

@@ -3,7 +3,7 @@ import type { WebhookDelivery, WebhookSubscription } from '../domain/types.ts';
 import { applyPatch, parse, type StoreContext } from './context.ts';
 
 const toSub = (r: Record<string, unknown>): WebhookSubscription => ({
-  id: r.id as string, name: r.name as string, url: r.url as string, events: parse(r.events), secret: r.secret as string,
+  id: r.id as string, name: r.name as string, url: r.url as string, events: parse(r.events), secretEnv: r.secret_env as string,
   active: r.active === 1, createdAt: r.created_at as string,
 });
 
@@ -24,10 +24,10 @@ export function createWebhookRepository(c: StoreContext): WebhookRepository {
   return {
     upsertByName(input) {
       c.db.run(
-        `INSERT INTO webhooks (id, name, url, events, secret, active, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO webhooks (id, name, url, events, secret_env, active, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (name) DO UPDATE SET url = excluded.url, events = excluded.events,
-           secret = excluded.secret, active = excluded.active`,
-      c.idGen(), input.name, input.url, JSON.stringify(input.events), input.secret, input.active ? 1 : 0, c.clock.now().toISOString());
+           secret_env = excluded.secret_env, active = excluded.active`,
+      c.idGen(), input.name, input.url, JSON.stringify(input.events), input.secretEnv, input.active ? 1 : 0, c.clock.now().toISOString());
       return toSub(c.db.get('SELECT * FROM webhooks WHERE name = ?', input.name)!);
     },
     get(id) {

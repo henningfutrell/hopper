@@ -1,27 +1,23 @@
-// A UI edit of webhooks.yaml (design.md "Webhook subscriptions in the UI", issue #18): add, edit,
-// rotate-secret or remove one entry. The document stays the source of truth: each edit rewrites only
-// that entry's part of it (comments and every other entry as written), against the document's
-// version, then reloads it into the store before answering. A new secret is written sealed (design.md
-// "Secrets at rest") and given out in clear this once.
-import { randomBytes } from 'node:crypto';
+// A UI edit of webhooks.yaml (design.md "Webhook subscriptions in the UI", issue #18): add, edit or
+// remove one entry. The document stays the source of truth: each edit rewrites only that entry's part
+// of it (comments and every other entry as written), against the document's version, then reloads it
+// into the store before answering. No secret passes through here (issue #56): an added entry names
+// the `WEBHOOK_SECRET_*` variable the runtime gives its secret in.
 import { isDeepStrictEqual } from 'node:util';
 import { isMap, isScalar, isSeq, parse, parseDocument, stringify, type Document, type Scalar, type YAMLMap } from 'yaml';
-import type { ConfigDocuments, SecretBox } from '../domain/ports.ts';
+import type { ConfigDocuments } from '../domain/ports.ts';
 import type { WebhooksEdit } from '../domain/types.ts';
+import { UI_SECRET_ENV } from '../domain/webhooks.ts';
 import { WEBHOOKS, webhooksFileProblem } from './config.ts';
 
 export type WebhooksEditRefusal = { ok: false; code: 'invalid' | 'not_found' | 'conflict'; error: string };
-/** `secret`: the new secret of an add or rotate-secret, given out this once. */
-export type WebhooksEditResult = { ok: true; secret?: string } | WebhooksEditRefusal;
+export type WebhooksEditResult = { ok: true } | WebhooksEditRefusal;
 
 export interface WebhooksEditor {
   edit(e: WebhooksEdit): WebhooksEditResult;
 }
 
 const refuse = (code: WebhooksEditRefusal['code'], error: string): WebhooksEditRefusal => ({ ok: false, code, error });
-
-/** A subscription secret: 32 random bytes, hex (design.md "Webhooks"). */
-const newSecret = (): string => randomBytes(32).toString('hex');
 
 /** One change to webhooks.yaml, applied to the parsed Document (the meaning) and spliced into the text (the bytes). */
 type Change =
@@ -101,7 +97,6 @@ const BY_HAND = 'job-hopper config edit webhooks.yaml';
 
 export function createWebhooksEditor(o: {
   documents: ConfigDocuments;
-  box: SecretBox;
   /** Re-read the document into the store; runs after every write, before the answer. */
   reload(): void;
 }): WebhooksEditor {
@@ -116,25 +111,17 @@ export function createWebhooksEditor(o: {
     if (before) return refuse('conflict', `${path} is invalid; fix it by hand (${BY_HAND}): ${before}`);
 
     const at = indexOf(doc, e.name);
-    let secret: string | undefined;
     const changes: Change[] = [];
     if (e.action === 'add') {
+      if (!UI_SECRET_ENV.test(e.secretEnv)) return refuse('invalid', `secretEnv: from the UI, a WEBHOOK_SECRET_* variable (A-Z, 0-9, _); ${BY_HAND} names any other`);
       if (at >= 0) return refuse('conflict', `webhook "${e.name}" is already in ${path}`);
-      secret = newSecret();
-      changes.push({ kind: 'append', entry: { name: e.name, url: e.url, events: e.events, secret: o.box.seal(secret), active: e.active ?? true } });
+      changes.push({ kind: 'append', entry: { name: e.name, url: e.url, events: e.events, secretEnv: e.secretEnv, active: e.active ?? true } });
     } else {
       if (at < 0) return refuse('not_found', `no webhook "${e.name}" in ${path}`);
       if (e.action === 'edit') {
         for (const key of ['url', 'events', 'active'] as const) {
           if (e[key] !== undefined) changes.push({ kind: 'set', at, key, value: e[key] });
         }
-      } else if (e.action === 'rotate-secret') {
-        const secretEnv = entryMap(doc, at).get('secretEnv');
-        if (secretEnv !== undefined) {
-          return refuse('conflict', `webhook "${e.name}" reads its secret from ${String(secretEnv)}; rotate it in the environment, not from the UI`);
-        }
-        secret = newSecret();
-        changes.push({ kind: 'set', at, key: 'secret', value: o.box.seal(secret) });
       } else {
         changes.push({ kind: 'delete', at });
       }
@@ -155,7 +142,7 @@ export function createWebhooksEditor(o: {
     // lineWidth 0: never refold lines the owner wrote long.
     if (!o.documents.write(WEBHOOKS, text ?? doc.toString({ lineWidth: 0 }), e.version)) return refuse('conflict', CHANGED);
     o.reload();
-    return secret === undefined ? { ok: true } : { ok: true, secret };
+    return { ok: true };
   }
 
   return { edit };

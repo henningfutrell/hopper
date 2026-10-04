@@ -14,11 +14,14 @@ let cleanup: (() => void) | undefined;
 let sse: SseClient | undefined;
 const receivers: Receiver[] = [];
 
+/** The runtime's secrets every subscription here names (issue #56). */
+const SECRETS = { WH_ONE: 'abc', WH_R: 'k3y', WH_R1: 's1', WH_R2: 's2' };
+
 async function start(before?: (dbPath: string) => void): Promise<TestApp> {
   const db = tempDbPath();
   cleanup = db.cleanup;
   before?.(db.dbPath);
-  t = await startTestApp({ dbPath: db.dbPath, seams: { webhookConfigIntervalMs: 50 } });
+  t = await startTestApp({ dbPath: db.dbPath, seams: { webhookConfigIntervalMs: 50 }, secrets: { ...SECRETS } });
   return t;
 }
 async function receiver(): Promise<Receiver> {
@@ -103,17 +106,18 @@ describe('events', () => {
 
 describe('webhooks from webhooks.yaml', () => {
   it('lists file subscriptions by name without secrets, with the config status', async () => {
-    const a = await start((db) => writeWebhooksFile(db, [{ name: 'one', url: 'http://127.0.0.1:9/x', events: ['job.finished'], secret: 'abc' }]));
+    const a = await start((db) => writeWebhooksFile(db, [{ name: 'one', url: 'http://127.0.0.1:9/x', events: ['job.finished'], secretEnv: 'WH_ONE' }]));
     const body = (await a.api('GET', '/api/webhooks')).body;
     expect(body.subscriptions).toEqual([expect.objectContaining({ name: 'one', url: 'http://127.0.0.1:9/x', events: ['job.finished'], active: true })]);
     for (const s of body.subscriptions) expect(s).not.toHaveProperty('secret');
+    expect(JSON.stringify(body)).not.toContain('abc');
     expect(body.config).toMatchObject({ document: 'webhooks.yaml', loadedAt: expect.any(String), warnings: [] });
     expect(body.config.error).toBeUndefined();
   });
 
   it('a real receiver gets signed deliveries with schemaVersion; deliveries are listed and streamed', async () => {
     const r = await receiver();
-    const a = await start((db) => writeWebhooksFile(db, [{ name: 'r', url: r.url, events: ['job.finished'], secret: 'k3y' }]));
+    const a = await start((db) => writeWebhooksFile(db, [{ name: 'r', url: r.url, events: ['job.finished'], secretEnv: 'WH_R' }]));
     const sub = (await a.api('GET', '/api/webhooks')).body.subscriptions[0];
     sse = await openSse(`${a.url}/api/events/stream`);
     const job = await a.pull({ op: 'echo', message: 'ping' });
@@ -136,8 +140,8 @@ describe('webhooks from webhooks.yaml', () => {
     const r1 = await receiver();
     const r2 = await receiver();
     let path = '';
-    const a = await start((db) => { path = db; writeWebhooksFile(db, [{ name: 'r1', url: r1.url, events: ['job.finished'], secret: 's1' }]); });
-    writeWebhooksFile(path, [{ name: 'r2', url: r2.url, events: ['job.queued'], secret: 's2' }]);
+    const a = await start((db) => { path = db; writeWebhooksFile(db, [{ name: 'r1', url: r1.url, events: ['job.finished'], secretEnv: 'WH_R1' }]); });
+    writeWebhooksFile(path, [{ name: 'r2', url: r2.url, events: ['job.queued'], secretEnv: 'WH_R2' }]);
     await waitFor(async () => {
       const subs = (await a.api('GET', '/api/webhooks')).body.subscriptions as { name: string }[];
       return subs.length === 1 && subs[0]!.name === 'r2';

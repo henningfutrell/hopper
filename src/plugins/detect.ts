@@ -5,6 +5,7 @@ import { constants } from 'node:fs';
 import { access, stat } from 'node:fs/promises';
 import { delimiter, isAbsolute, join } from 'node:path';
 import type { DetectionKit } from './sdk.ts';
+import { runtimeSecrets, type RuntimeSecrets } from '../secrets/runtime.ts';
 
 const VERSION_TIMEOUT_MS = 5000;
 
@@ -26,8 +27,14 @@ function run(bin: string, args: string[], timeoutMs: number, env: NodeJS.Process
   });
 }
 
-export function createDetectionKit(o: { env?: NodeJS.ProcessEnv; timeoutMs?: number } = {}): DetectionKit & { timeoutMs: number } {
+export function createDetectionKit(o: {
+  env?: NodeJS.ProcessEnv;
+  /** The runtime's secrets (src/secrets/runtime.ts); default from `env`. */
+  secret?: RuntimeSecrets;
+  timeoutMs?: number;
+} = {}): DetectionKit & { timeoutMs: number } {
   const env = o.env ?? process.env;
+  const secret = o.secret ?? runtimeSecrets(env);
   const timeoutMs = o.timeoutMs ?? VERSION_TIMEOUT_MS;
   const which = async (bin: string): Promise<string | undefined> => {
     if (bin.includes('/')) return isAbsolute(bin) && (await executable(bin)) ? bin : undefined;
@@ -71,6 +78,6 @@ export function createDetectionKit(o: { env?: NodeJS.ProcessEnv; timeoutMs?: num
       if (!path) return false;
       return (await run(path, ['-c', `import ${module}`], timeoutMs, { ...env, PYTHONDONTWRITEBYTECODE: '1' })) !== undefined;
     },
-    env: (name) => env[name],
+    env: secret,
   };
 }

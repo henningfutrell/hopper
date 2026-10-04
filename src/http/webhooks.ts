@@ -1,13 +1,14 @@
 // Webhook subscriptions come from webhooks.yaml (src/webhooks/config.ts), which the UI session may
-// edit (POST /ui/api/webhooks, src/http/ui/): these routes only read — the subscriptions (secrets
-// omitted), the file's status and version, the deliveries.
+// edit (POST /ui/api/webhooks, src/http/ui/): these routes only read — the subscriptions (each with
+// the variable its secret is in and whether the runtime gives it; never a secret), the file's status
+// and version, the deliveries.
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { Store } from '../domain/ports.ts';
-import type { SecretSource, WebhookConfigStatus } from '../webhooks/config.ts';
+import type { WebhookConfigStatus } from '../webhooks/config.ts';
 
 /** What the webhooks routes read of the webhooks.yaml watcher. */
-export interface WebhookConfigView { status(): WebhookConfigStatus; secretSources(): Record<string, SecretSource> }
+export interface WebhookConfigView { status(): WebhookConfigStatus; secretProblem(secretEnv: string): string | undefined }
 import { parseWith } from './errors.ts';
 
 const deliveriesQuery = z.object({
@@ -15,11 +16,13 @@ const deliveriesQuery = z.object({
   limit: z.coerce.number().int().min(1).max(1000).default(100),
 });
 
-/** GET /api/webhooks: every subscription without its secret (but where it lives), and the file's status. */
+/** GET /api/webhooks: every subscription, with why the runtime gives no secret for it (if so), and the file's status. */
 export function webhooksView(store: Pick<Store, 'webhooks'>, config: WebhookConfigView) {
-  const sources = config.secretSources();
   return {
-    subscriptions: store.webhooks.list().map(({ secret: _secret, ...rest }) => ({ ...rest, secretSource: sources[rest.name] ?? 'inline' })),
+    subscriptions: store.webhooks.list().map((sub) => {
+      const secretProblem = config.secretProblem(sub.secretEnv);
+      return secretProblem === undefined ? sub : { ...sub, secretProblem };
+    }),
     config: config.status(),
   };
 }

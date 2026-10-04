@@ -1,11 +1,11 @@
 // In-memory stand-in for the parts of Store the webhook dispatcher uses.
-import { testBox } from '../support/secret-key.ts';
 import type { Store } from '../../src/domain/ports.ts';
 import { EVENT_SCHEMA_VERSIONS, type DomainEvent, type NewEvent, type WebhookDelivery, type WebhookSubscription } from '../../src/domain/types.ts';
 
 export interface FakeStore {
   store: Store;
-  subscribe(input: { name?: string; url: string; events: string[]; secret?: string; active?: boolean }): WebhookSubscription;
+  /** `secretEnv` defaults to HOOK_SECRET. */
+  subscribe(input: { name?: string; url: string; events: string[]; secretEnv?: string; active?: boolean }): WebhookSubscription;
   deliveries(): WebhookDelivery[];
   append(type: DomainEvent['type'], data?: Record<string, unknown>): DomainEvent;
   listenerCount(): number;
@@ -35,7 +35,7 @@ export function createFakeStore(): FakeStore {
       },
     },
     webhooks: {
-      upsertByName: (i: { name: string; url: string; events: string[]; secret: string; active: boolean }) => fakeStore.subscribe(i),
+      upsertByName: (i: { name: string; url: string; events: string[]; secretEnv: string; active: boolean }) => fakeStore.subscribe(i),
       get: (id: string) => subs.get(id),
       list: () => [...subs.values()],
       delete: (id: string) => subs.delete(id),
@@ -64,7 +64,7 @@ export function createFakeStore(): FakeStore {
     store,
     subscribe(i) {
       const s: WebhookSubscription = {
-        id: `s-${subs.size + 1}`, name: i.name ?? `hook-${subs.size + 1}`, url: i.url, events: i.events, secret: i.secret ?? testBox().seal('shh'),
+        id: `s-${subs.size + 1}`, name: i.name ?? `hook-${subs.size + 1}`, url: i.url, events: i.events, secretEnv: i.secretEnv ?? 'HOOK_SECRET',
         active: i.active ?? true, createdAt: iso(),
       };
       subs.set(s.id, s);

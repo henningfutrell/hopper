@@ -2,7 +2,10 @@
 // environment (seams.env: the test's `secrets`, mutable while the app runs), the real composition root.
 // It is the built-in notifier plugin grokbot-routine; a plugins.yaml without a `notifiers` section
 // means the built-in grok-bot instance, and a database with no plugins.yaml gets the built-in instances.
+import { mkdtempSync, writeFileSync } from 'node:fs';
 import { createServer, type IncomingHttpHeaders, type Server } from 'node:http';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
@@ -66,6 +69,18 @@ const humanQuestion = async (a: TestApp, text = 'Is this risky?') => {
 const settle = () => new Promise((x) => setTimeout(x, 200));
 
 describe('Grok Bot routine webhook', () => {
+  it('its key may come from a mounted secret file (GROKBOT_WEBHOOK_KEY_FILE): a plugin reads secrets from the runtime (issue #56)', async () => {
+    const r = await receiver();
+    const { a, secrets } = await start();
+    const file = join(mkdtempSync(join(tmpdir(), 'jh-mounted-')), 'key');
+    writeFileSync(file, 'from-file\n', { mode: 0o600 });
+    secrets.GROKBOT_WEBHOOK_URL = r.url;
+    secrets.GROKBOT_WEBHOOK_KEY_FILE = file;
+    await humanQuestion(a);
+    const hit = await waitFor(() => r.hits.find((h) => h.body.kind === 'question.escalated'), { what: 'escalation post' });
+    expect(hit.headers.authorization).toBe('Bearer from-file');
+  });
+
   it('variables unset: a human question sends nothing', async () => {
     const r = await receiver();
     const { a } = await start();

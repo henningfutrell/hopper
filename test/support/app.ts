@@ -12,7 +12,6 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { TEST_SECRET_KEY } from './secret-key.ts';
 import { loadConfig } from '../../src/config.ts';
 import { startApp, type App, type AppSeams } from '../../src/main.ts';
 import type { SourceItem } from '../../src/domain/ports.ts';
@@ -105,7 +104,6 @@ export async function startTestApp(o: {
   const config = loadConfig({
     JOB_HOPPER_PORT: '0',
     JOB_HOPPER_DATABASE_URL: databaseUrlFor(o.dbPath),
-    JOB_HOPPER_SECRET_KEY: TEST_SECRET_KEY,
     JOB_HOPPER_WORK_DIR: dataDir,
     JOB_HOPPER_TICK_MS: '50',
     JOB_HOPPER_WEBHOOK_BASE_MS: '20',

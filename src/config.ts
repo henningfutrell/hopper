@@ -1,21 +1,19 @@
 // Configuration from env: process settings only (docs/design.md "Settled in slice 4"); every part is
-// configured in plugins.yaml, a config document in the store; secrets are env too (design.md
-// "Secrets"), read by the parts that use them. No default names a path on this machine. Invalid
-// values fail loudly.
+// configured in plugins.yaml, a config document in the store; secrets come from the runtime (design.md
+// "Secrets", src/secrets/runtime.ts), read by the parts that use them — the database URL, which
+// carries a password, among them. No default names a path on this machine. Invalid values fail loudly.
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { secretKeyProblem } from './secrets/box.ts';
+import { runtimeSecrets } from './secrets/runtime.ts';
 import { parseDatabaseUrl } from './store/db.ts';
 
 export interface Config {
   /** The bind address: `127.0.0.1`, or `::` (every interface) when LAN names are set. */
   host: string;
   port: number;
-  /** JOB_HOPPER_DATABASE_URL: `postgres://…` (design.md "Database"). Required. */
+  /** JOB_HOPPER_DATABASE_URL (or the file JOB_HOPPER_DATABASE_URL_FILE names): `postgres://…` (design.md "Database"). Required. */
   databaseUrl: string;
-  /** JOB_HOPPER_SECRET_KEY: the key secrets the hopper keeps are sealed under (design.md "Secrets at rest"). Required. */
-  secretKey: string;
   /** Scratch only — claude's working directory, ssh control sockets, probes; nothing kept. */
   workDir: string;
   tickMs: number;
@@ -79,8 +77,6 @@ const schema = z.object({
   JOB_HOPPER_PORT: int(0, 65535).default(4790),
   JOB_HOPPER_DATABASE_URL: z.string({ error: 'required: postgres://user:password@host:port/database' })
     .superRefine((v, ctx) => { try { parseDatabaseUrl(v); } catch (e) { ctx.addIssue({ code: 'custom', message: (e as Error).message }); } }),
-  JOB_HOPPER_SECRET_KEY: z.string({ error: 'required: 32 bytes, base64 (openssl rand -base64 32)' })
-    .superRefine((v, ctx) => { const p = secretKeyProblem(v); if (p) ctx.addIssue({ code: 'custom', message: p }); }),
   JOB_HOPPER_WORK_DIR: z.string().min(1).default(join(tmpdir(), 'job-hopper')),
   JOB_HOPPER_TICK_MS: int(1).default(2000),
   JOB_HOPPER_ROUTER_MODE: z.enum(['shadow', 'active']).default('shadow'),
@@ -110,7 +106,9 @@ const schema = z.object({
   path: ['JOB_HOPPER_LAN_NAMES'],
 });
 
-const READ = new Set(Object.keys(schema.shape));
+/** A secret among the settings: also read from a mounted file, `<name>_FILE`. */
+const SECRET_SETTINGS = ['JOB_HOPPER_DATABASE_URL'];
+const READ = new Set([...Object.keys(schema.shape), ...SECRET_SETTINGS.map((n) => `${n}_FILE`)]);
 
 /**
  * Reads only JOB_HOPPER_* keys; empty strings count as unset. Throws on any invalid value of a key
@@ -118,7 +116,13 @@ const READ = new Set(Object.keys(schema.shape));
  */
 export function loadConfig(env: Record<string, string | undefined>): Config {
   const set = Object.entries(env).filter((e): e is [string, string] => e[0].startsWith('JOB_HOPPER_') && e[1] !== undefined && e[1] !== '');
-  const relevant = Object.fromEntries(set.filter(([k]) => READ.has(k)));
+  const relevant: Record<string, string | undefined> = Object.fromEntries(set.filter(([k]) => READ.has(k)));
+  const secret = runtimeSecrets(relevant);
+  try {
+    for (const name of SECRET_SETTINGS) { relevant[name] = secret(name); delete relevant[`${name}_FILE`]; }
+  } catch (e) {
+    throw new Error(`invalid configuration: ${(e as Error).message}`, { cause: e });
+  }
   const leftoverEnv = Object.fromEntries(set.filter(([k]) => !READ.has(k)));
   const parsed = schema.safeParse(relevant);
   if (!parsed.success) {
@@ -131,7 +135,6 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     host: e.JOB_HOPPER_LAN_PEERS.length > 0 ? '::' : '127.0.0.1',
     port: e.JOB_HOPPER_PORT,
     databaseUrl: e.JOB_HOPPER_DATABASE_URL,
-    secretKey: e.JOB_HOPPER_SECRET_KEY,
     workDir: e.JOB_HOPPER_WORK_DIR,
     tickMs: e.JOB_HOPPER_TICK_MS,
     routerMode: e.JOB_HOPPER_ROUTER_MODE,

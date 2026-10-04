@@ -18,7 +18,7 @@ describe('persistence across restart', () => {
   it('requeues the interrupted job, keeps queued jobs, file webhooks and the router mode, and never re-ingests an item', async () => {
     const db = tempDbPath();
     cleanup = db.cleanup;
-    writeWebhooksFile(db.dbPath, [{ name: 'h', url: 'http://127.0.0.1:9/h', events: ['lane.opened'], secret: 's' }]);
+    writeWebhooksFile(db.dbPath, [{ name: 'h', url: 'http://127.0.0.1:9/h', events: ['lane.opened'], secretEnv: 'WEBHOOK_SECRET_H' }]);
     const source = createManualSource();
     const first = await startTestApp({ dbPath: db.dbPath, plugins: { machines: lanes(1) }, source });
     apps.push(first);

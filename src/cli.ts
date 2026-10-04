@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // The operator's command line (design.md "Config documents", "Operator CLI"): it opens the same
-// database as the daemon (JOB_HOPPER_DATABASE_URL), so whoever runs it holds the database's
+// database as the daemon (JOB_HOPPER_DATABASE_URL, or the file JOB_HOPPER_DATABASE_URL_FILE names), so whoever runs it holds the database's
 // credentials — the same trust as the daemon's own environment, more than a UI session's. This is
 // where command-bearing options are set: the UI never edits them.
 //
@@ -25,6 +25,7 @@ import { LOGIN_CODE_MINUTES, mintLoginCode } from './http/ui/login-code.ts';
 import { pluginsFileProblem } from './plugins/plugins-file.ts';
 import { RULES_MAX_BYTES } from './questions/index.ts';
 import { openStore } from './store/index.ts';
+import { runtimeSecrets } from './secrets/runtime.ts';
 import { webhooksFileProblem } from './webhooks/config.ts';
 
 export interface CliIo {
@@ -150,9 +151,15 @@ export function runCli(argv: string[], io: CliIo): number | Promise<number> {
     io.err(`${USAGE}\n`);
     return 2;
   }
-  const url = io.env.JOB_HOPPER_DATABASE_URL;
+  let url: string | undefined;
+  try {
+    url = runtimeSecrets(io.env)('JOB_HOPPER_DATABASE_URL');
+  } catch (e) {
+    io.err(`job-hopper: ${(e as Error).message}\n`);
+    return 2;
+  }
   if (!url) {
-    io.err('JOB_HOPPER_DATABASE_URL is not set: the database the daemon uses (postgres://…)\n');
+    io.err('JOB_HOPPER_DATABASE_URL is not set (nor JOB_HOPPER_DATABASE_URL_FILE): the database the daemon uses (postgres://…)\n');
     return 2;
   }
   let store: Store | undefined;

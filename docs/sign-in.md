@@ -59,9 +59,9 @@ providers:
       defaultRole: null  # the role of a signed-in account no rule matches; null: no session
 ```
 
-A client secret comes **only** from an environment variable: `clientSecretEnv` names it. Put the
-variable in the daemon's environment: `daemon.env` on the host install, the container's env file
-otherwise. Inline `clientSecret` and `clientSecretFile` are refused. The SAML certificate is not a
+A client secret comes **only** from the runtime: `clientSecretEnv` names the variable. Put the
+variable in the daemon's environment — `daemon.env` on the host install, the container's env file
+otherwise — or mount the secret as a file and set `<variable>_FILE` to its path (design.md "Secrets"). Inline `clientSecret` and `clientSecretFile` are refused. The SAML certificate is not a
 secret: `idpCert`, inline only (PEM or bare base64; a YAML block scalar `|` holds a PEM).
 `idpCertFile` is refused.
 
