@@ -127,8 +127,8 @@ describe('GitHub issue → job → issue', () => {
     const projects = { [REPO]: { owner: 'owner', number: 1, mode: 'field', field: 'Priority', map: { P0: 100, P1: 60 } } };
     const a = await boot(gh, { config: { projects } });
     a.setUsage(100);
-    const labelled = gh.createIssue({ repo: REPO, body: body({ op: 'echo' }), labels: ['hopper', 'hopper:p3'] });
-    const both = gh.createIssue({ repo: REPO, body: body({ op: 'echo' }), labels: ['hopper', 'hopper:p0'] });
+    const labelled = gh.createIssue({ repo: REPO, body: body({ op: 'echo' }), labels: ['hopper', 'hopper:low'] });
+    const both = gh.createIssue({ repo: REPO, body: body({ op: 'echo' }), labels: ['hopper', 'hopper:high'] });
     gh.setProjectItems('owner', 1, [{ url: both.url, fields: { priority: 'P1' } }]);
     await a.sync();
     const jl = (await jobFor(a, labelled.url))!;
@@ -142,6 +142,33 @@ describe('GitHub issue → job → issue', () => {
     const ev = (await a.events('types=job.reprioritized')).filter((e) => e.jobId === jb.id);
     expect(ev.map((e) => e.data)).toEqual([{ from: 60, to: 100, reason: 'project:Priority=P0' }]);
     expect((await a.api('GET', '/api/queue')).body.waiting.map((j: Job) => j.id)).toEqual([jb.id, jl.id]);
+  });
+
+  it('hopper:backburner: never picked up while set; a waiting job is cancelled; removing it takes the issue in again', async () => {
+    const gh = createFakeGitHub();
+    const a = await boot(gh);
+    a.setUsage(100);
+    const parked = gh.createIssue({ repo: REPO, body: body({ op: 'echo' }), labels: ['hopper', 'hopper:backburner'] });
+    const waiting = gh.createIssue({ repo: REPO, body: body({ op: 'echo' }), labels: ['hopper'] });
+    await a.sync();
+    expect(await jobFor(a, parked.url)).toBeUndefined();
+    const job = (await jobFor(a, waiting.url))!;
+    expect(['queued', 'held']).toContain(job.status);
+
+    gh.addLabel(REPO, waiting.number, 'hopper:backburner');
+    await a.sync();
+    await waitFor(async () => (await a.job(job.id)).sourceState?.sync?.finalReported === true, { what: 'cancel reported' });
+    expect(await a.job(job.id)).toMatchObject({ status: 'cancelled' });
+    await a.sync();
+    expect((await a.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=1000')).body.jobs).toHaveLength(1);
+
+    gh.removeLabel(REPO, parked.number, 'hopper:backburner');
+    gh.removeLabel(REPO, waiting.number, 'hopper:backburner');
+    await a.sync();
+    expect(['queued', 'held']).toContain((await jobFor(a, parked.url))?.status);
+    const jobs = (await a.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=1000')).body.jobs.filter((j) => j.source?.key === waiting.url);
+    expect(jobs.map((j) => j.status === 'cancelled' ? 'cancelled' : 'waiting').sort()).toEqual(['cancelled', 'waiting']);
+    expect(gh.commentsOn(REPO, waiting.number)).toEqual([]);
   });
 
   it('a restart keeps sourced jobs deduped: the claimed issue is not ingested again', async () => {

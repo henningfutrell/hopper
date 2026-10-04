@@ -161,11 +161,11 @@ describe('jobs pulled from a source', () => {
   it('re-sorting: a changed item priority reprioritizes a waiting job (job.reprioritized), never a running one', async () => {
     t.setUsage(100);
     const waiting = await t.pull({ op: 'echo' }, { key: 'resort-1', priority: 40 });
-    t.source.add(manualItem({ key: 'resort-1', prompt: '{"op":"echo"}', priority: 80, priorityReason: 'label:hopper:p1' }));
+    t.source.add(manualItem({ key: 'resort-1', prompt: '{"op":"echo"}', priority: 80, priorityReason: 'label:hopper:high' }));
     await t.sync();
     expect((await t.job(waiting.id)).priority).toBe(80);
     const ev = (await t.events('types=job.reprioritized')).filter((e) => e.jobId === waiting.id);
-    expect(ev.map((e) => e.data)).toEqual([{ from: 40, to: 80, reason: 'label:hopper:p1' }]);
+    expect(ev.map((e) => e.data)).toEqual([{ from: 40, to: 80, reason: 'label:hopper:high' }]);
     await t.sync();
     expect((await t.events('types=job.reprioritized')).filter((e) => e.jobId === waiting.id)).toHaveLength(1);
 

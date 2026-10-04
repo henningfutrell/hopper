@@ -19,6 +19,17 @@ describe('GitHub source check', () => {
     expect(await source.check([job])).toEqual([{ kind: 'cancel', jobId: job.id, reason: 'label removed' }]);
   });
 
+  it('the backburner label cancels a waiting job, never a running one', async () => {
+    const { gh, source } = setup();
+    gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:backburner'] });
+    gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:claimed', 'hopper:backburner'] });
+    const [queued, held, running] = [jobForIssue(1, { status: 'queued' }), jobForIssue(1, { status: 'held' }), jobForIssue(2, { status: 'running' })];
+    expect(await source.check([queued, held, running])).toEqual([
+      { kind: 'cancel', jobId: queued.id, reason: 'backburner' },
+      { kind: 'cancel', jobId: held.id, reason: 'backburner' },
+    ]);
+  });
+
   it('a deleted issue (404) cancels with "issue gone" and does not fail the sync', async () => {
     const { gh, source } = setup();
     gh.createIssue({ repo: REPO, labels: ['hopper'] });

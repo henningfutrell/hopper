@@ -7,10 +7,19 @@ const fieldProject = { [REPO]: { owner: 'owner', number: 3, mode: 'field', field
 const rankProject = { [REPO]: { owner: 'owner', number: 4, mode: 'rank' } };
 
 describe('GitHub source priority', () => {
+  it('labels: hopper:high runs before the default, hopper:low after it', async () => {
+    const { gh, source } = setup({ repos: [REPO] });
+    gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:high'] });
+    gh.createIssue({ repo: REPO, labels: ['hopper'] });
+    gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:low'] });
+    const items = await source.discover();
+    expect(items.map((i) => [i.priority, i.priorityReason])).toEqual([[75, 'label:hopper:high'], [50, 'default'], [25, 'label:hopper:low']]);
+  });
+
   it('labels: the highest matching priority label wins', async () => {
     const { gh, source } = setup();
-    gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:p2', 'hopper:p0'] });
-    expect(await discoverOne(source)).toMatchObject({ priority: 100, priorityReason: 'label:hopper:p0' });
+    gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:low', 'hopper:high'] });
+    expect(await discoverOne(source)).toMatchObject({ priority: 75, priorityReason: 'label:hopper:high' });
   });
 
   it('no label and no project → defaultPriority', async () => {
@@ -21,9 +30,9 @@ describe('GitHub source priority', () => {
 
   it('project field (single-select, mapped) wins over a label; the field name matches case-insensitively', async () => {
     const { gh, source } = setup({ projects: fieldProject });
-    gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:p0'] });
-    gh.setProjectItems('owner', 3, [{ url: url(1), fields: { priority: 'P1' } }]);
-    expect(await discoverOne(source)).toMatchObject({ priority: 75, priorityReason: 'project:Priority=P1' });
+    gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:high'] });
+    gh.setProjectItems('owner', 3, [{ url: url(1), fields: { priority: 'P2' } }]);
+    expect(await discoverOne(source)).toMatchObject({ priority: 50, priorityReason: 'project:Priority=P2' });
     expect(gh.calls.find((c) => c.method === 'projectItems')?.args).toEqual(['owner', 3]);
   });
 
@@ -38,19 +47,19 @@ describe('GitHub source priority', () => {
 
   it('an unmapped option, a missing field or no project item falls back to labels', async () => {
     const { gh, source } = setup({ projects: fieldProject });
-    gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:p3'] });
-    gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:p1'] });
+    gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:low'] });
+    gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:high'] });
     gh.createIssue({ repo: REPO, labels: ['hopper'] });
     gh.setProjectItems('owner', 3, [{ url: url(1), fields: { priority: 'Someday' } }, { url: url(2), fields: { status: 'Todo' } }]);
     const items = await source.discover();
-    expect(items.map((i) => i.priorityReason)).toEqual(['label:hopper:p3', 'label:hopper:p1', 'default']);
+    expect(items.map((i) => i.priorityReason)).toEqual(['label:hopper:low', 'label:hopper:high', 'default']);
   });
 
   it('rank: the top eligible item is 100, then 99…; ineligible items in the project do not count', async () => {
     const { gh, source } = setup({ projects: rankProject });
     gh.createIssue({ repo: REPO, labels: ['hopper'] }); // #1
     gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:done'] }); // #2 not eligible
-    gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:p0'] }); // #3
+    gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:high'] }); // #3
     gh.setProjectItems('owner', 4, [
       { url: 'https://github.com/owner/elsewhere/issues/9' },
       { url: url(2) },
@@ -64,9 +73,9 @@ describe('GitHub source priority', () => {
 
   it('a project error falls back to labels and shows in status projectErrors; it clears once the project reads again', async () => {
     const { gh, source } = setup({ projects: fieldProject });
-    gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:p1'] });
+    gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:high'] });
     gh.setProjectItems('owner', 3, new GitHubApiError('missing required scopes [read:project]', true));
-    expect(await discoverOne(source)).toMatchObject({ priority: 75, priorityReason: 'label:hopper:p1' });
+    expect(await discoverOne(source)).toMatchObject({ priority: 75, priorityReason: 'label:hopper:high' });
     expect(source.describe().projectErrors).toEqual({ [REPO]: 'missing required scopes [read:project]' });
 
     gh.setProjectItems('owner', 3, [{ url: url(1), fields: { priority: 'P0' } }]);
@@ -76,11 +85,12 @@ describe('GitHub source priority', () => {
 
   it('re-sort: every discover recomputes priority from the current labels and project', async () => {
     const { gh, source } = setup({ projects: fieldProject });
-    gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:p3'] });
+    gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:low'] });
     gh.setProjectItems('owner', 3, []);
     expect((await discoverOne(source)).priority).toBe(25);
-    gh.addLabel(REPO, 1, 'hopper:p0');
-    expect((await discoverOne(source)).priority).toBe(100);
+    gh.removeLabel(REPO, 1, 'hopper:low');
+    gh.addLabel(REPO, 1, 'hopper:high');
+    expect((await discoverOne(source)).priority).toBe(75);
     gh.setProjectItems('owner', 3, [{ url: url(1), fields: { priority: 'P2' } }]);
     expect((await discoverOne(source)).priority).toBe(50);
   });

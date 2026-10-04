@@ -6,7 +6,7 @@ const URL1 = `https://github.com/${REPO}/issues/1`;
 describe('GitHub source: full issue context and job environment', () => {
   it('the prompt is the body, then the context block in the documented shape', async () => {
     const { gh, source } = setup();
-    gh.createIssue({ repo: REPO, title: 'Add a README', body: 'Write a README.', labels: ['hopper', 'hopper:p1'] });
+    gh.createIssue({ repo: REPO, title: 'Add a README', body: 'Write a README.', labels: ['hopper', 'hopper:high'] });
     const c = gh.addComment(REPO, 1, 'owner', 'Keep it short.');
     const item = await discoverOne(source);
     expect(item.prompt).toBe([
@@ -15,8 +15,8 @@ describe('GitHub source: full issue context and job environment', () => {
       '[job-hopper issue context]',
       `repo: ${REPO} · issue: #1 · url: ${URL1}`,
       'title: Add a README',
-      'labels: hopper, hopper:p1 · author: owner',
-      'priority: 75 (label:hopper:p1) · project item: none',
+      'labels: hopper, hopper:high · author: owner',
+      'priority: 75 (label:hopper:high) · project item: none',
       'recent comments (oldest first, up to 10; only allowlisted authors, no hopper-marked comments):',
       `- owner at ${c.createdAt}: Keep it short.`,
     ].join('\n'));

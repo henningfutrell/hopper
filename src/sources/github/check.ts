@@ -1,4 +1,5 @@
-// check(): cancel signals for a source's active jobs. Closed/unlabelled/gone issue → cancel.
+// check(): cancel signals for a source's active jobs. Closed/unlabelled/gone issue → cancel; a
+// waiting job whose issue went on the backburner → cancel (a running job is left to finish).
 // Nothing on the issue answers a question: questions are answered in the UI.
 
 import type { SourceSignal } from '../../domain/ports.ts';
@@ -6,6 +7,7 @@ import type { Job } from '../../domain/types.ts';
 import { GitHubApiError } from './api.ts';
 import type { GitHubApi } from './api.ts';
 import type { GitHubSourceConfig } from '../config.ts';
+import { LABEL_BACKBURNER } from './labels.ts';
 
 type CheckConfig = Pick<GitHubSourceConfig, 'label'>;
 
@@ -21,6 +23,8 @@ async function checkJob(api: GitHubApi, config: CheckConfig, job: Job): Promise<
   }
   if (issue.state === 'closed') return { kind: 'cancel', jobId: job.id, reason: 'issue closed' };
   if (!issue.labels.includes(config.label)) return { kind: 'cancel', jobId: job.id, reason: 'label removed' };
+  const waiting = job.status === 'queued' || job.status === 'held';
+  if (waiting && issue.labels.includes(LABEL_BACKBURNER)) return { kind: 'cancel', jobId: job.id, reason: 'backburner' };
   return undefined;
 }
 

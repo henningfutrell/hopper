@@ -1,11 +1,11 @@
-// Which issues are eligible: open, labelled, by an allowlisted author, not done/failed, in an
-// allowed repo. Claimed issues without a local job are skipped (never re-run blind). The scope
+// Which issues are eligible: open, labelled, by an allowlisted author, not done/failed/on the
+// backburner, in an allowed repo. Claimed issues without a local job are skipped (never re-run blind). The scope
 // is given: a repo list (gh `repos`, or the app's installed repos) is listed repo by repo; an
 // empty one searches over `owners` — gh mode only, the app source never passes an empty list.
 
 import type { GitHubApi, GitHubIssue } from './api.ts';
 import type { GitHubSourceConfig } from '../config.ts';
-import { LABEL_CLAIMED, LABEL_DONE, LABEL_FAILED } from './labels.ts';
+import { LABEL_BACKBURNER, LABEL_CLAIMED, LABEL_DONE, LABEL_FAILED } from './labels.ts';
 
 export interface DiscoverResult {
   issues: GitHubIssue[];
@@ -47,7 +47,8 @@ function eligible(i: GitHubIssue, config: DiscoverConfig): boolean {
     && i.labels.includes(config.label)
     && config.authors.includes(i.author)
     && !i.labels.includes(LABEL_DONE)
-    && !i.labels.includes(LABEL_FAILED);
+    && !i.labels.includes(LABEL_FAILED)
+    && !i.labels.includes(LABEL_BACKBURNER);
 }
 
 export async function discoverIssues(

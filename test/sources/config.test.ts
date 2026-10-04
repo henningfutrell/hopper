@@ -14,7 +14,7 @@ const SHARED_DEFAULTS = {
   repos: [],
   authors: ['owner'],
   label: 'hopper',
-  priorityLabels: { 'hopper:p0': 100, 'hopper:p1': 75, 'hopper:p2': 50, 'hopper:p3': 25 },
+  priorityLabels: { 'hopper:high': 75, 'hopper:low': 25 },
   defaultPriority: 50,
   repoPaths: {},
   defaultCwd: '~/workbench/app-workflows',

@@ -47,6 +47,14 @@ describe('GitHub source discover', () => {
     expect(await source.discover()).toEqual([]);
   });
 
+  it('skips issues on the backburner until the label is removed', async () => {
+    const { gh, source } = setup();
+    gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:backburner'] });
+    expect(await source.discover()).toEqual([]);
+    gh.removeLabel(REPO, 1, 'hopper:backburner');
+    expect((await source.discover()).map((i) => i.number)).toEqual([1]);
+  });
+
   it('without explicit repos searches over the gh user and keeps only repos they own', async () => {
     const { gh, source } = setup({ repos: [] });
     gh.createIssue({ repo: 'owner/a', labels: ['hopper'] });
