@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import { create } from 'zustand';
 import { get, post, SessionRejected, clearToken, sessionIsLive } from '@/lib/api';
 import { HISTORY_TYPES } from '@/model/event-types';
-import type { Decision, DomainEvent, Health, MachineView, PluginsReport, Question, Queue, SourceStatus, WebhookConfig, WebhookDelivery, WebhookSubscription } from '@/model/wire';
+import type { Decision, DomainEvent, Health, MachineView, PluginsReport, Question, Queue, RoutingReport, SourceStatus, WebhookConfig, WebhookDelivery, WebhookSubscription } from '@/model/wire';
 
 export const CAP = { events: 500, history: 5000, decisions: 100, deliveries: 100 };
 export type Conn = 'connecting' | 'live' | 'reconnecting';
@@ -31,6 +31,9 @@ export interface HopperState {
   /** GET /api/plugins, fetched by the Plugins view; `pluginsError` when that failed. */
   plugins: PluginsReport | null;
   pluginsError: string | null;
+  /** GET /api/routing, fetched by the Routing view; `routingError` when that failed. */
+  routing: RoutingReport | null;
+  routingError: string | null;
 }
 
 const EMPTY_QUEUE: Queue = { waiting: [], running: [], waitingAnswer: [], ended: [], counts: {} };
@@ -38,7 +41,7 @@ const EMPTY_QUEUE: Queue = { waiting: [], running: [], waitingAnswer: [], ended:
 export const useHopper = create<HopperState>(() => ({
   loaded: false, loadError: null, conn: 'connecting', authed: false, health: null, queue: EMPTY_QUEUE, machines: [],
   decisions: [], questions: [], events: [], history: [], sources: [], deliveries: [], subscriptions: [], webhookConfig: null,
-  plugins: null, pluginsError: null,
+  plugins: null, pluginsError: null, routing: null, routingError: null,
 }));
 const set = useHopper.setState;
 const state = useHopper.getState;
@@ -52,6 +55,10 @@ export async function refreshPlugins() {
   try { set({ plugins: await get<PluginsReport>('/api/plugins'), pluginsError: null }); } catch (e) { set({ pluginsError: (e as Error).message }); }
 }
 export const setPlugins = (plugins: PluginsReport) => set({ plugins, pluginsError: null });
+export async function refreshRouting() {
+  try { set({ routing: await get<RoutingReport>('/api/routing'), routingError: null }); } catch (e) { set({ routingError: (e as Error).message }); }
+}
+export const setRouting = (routing: RoutingReport) => set({ routing, routingError: null });
 export async function refreshQuestions() { set({ questions: (await get<{ questions: Question[] }>('/api/questions?status=open')).questions }); }
 export async function refreshLive() {
   const [queue, machines] = await Promise.all([get<Queue>('/api/queue'), get<{ machines: MachineView[] }>('/api/machines')]);
