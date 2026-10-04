@@ -448,6 +448,10 @@ gutter. The prompt echo contains the markers mid-line only, never as a whole lin
 Progress: on change of the last non-empty assistant line, `ctx.progress(min(0.9,
 elapsed / expectedMs), line)` (`expectedMs` default 600000).
 
+**Parked.** When a turn parks on a question (any `question` outcome) the monitor saves
+`parkedSeq` = the `state_change_seq` it saw, for `answeredInPane` ("Questions" → "Answered in
+the pane"). The next send drops it.
+
 **Resume** (`resume(ctx, answer)`): `agent get` the saved agent; gone → `failed` `pane lost`.
 If `blocked` → `send-keys esc` first. `agent prompt <agent> <answer>`; then the same monitor.
 
@@ -570,7 +574,7 @@ so a running job's pane and Claude outlive a restart.
 - `waiting_answer` jobs, by their question: `open` → leave it (QuestionService.recover
   restarts every open non-human question at the answer stage, whatever its `tier`, and re-arms
   human timers; a human question past `expiresAt` expires now; one created at `human` but never
-  announced goes to the human now); `answered` → requeue with that answer; `expired`/`cancelled`/missing → job `failed`,
+  announced goes to the human now); `answered` or `closed` → requeue with that answer (the close text for `closed`); `expired`/`cancelled`/missing → job `failed`,
   `cleanup`.
 - `pendingAnswer` is cleared in the same tx that records the resume's outcome (not at claim),
   so a restart mid-resume does not lose the answer; a herdr-claude job mid-resume is
@@ -578,6 +582,45 @@ so a running job's pane and Claude outlive a restart.
 
 **Cancel** of a `waiting_answer` job: question `cancelled`, `executor.cleanup`, job
 `cancelled`.
+
+**Close** (`POST /ui/api/questions/:id/close`, the card's Close button): The owner ends an open
+question, at any stage, without answering. `QuestionService.closeByHuman`, one tx as for a human
+answer: an in-flight stage call aborted (`superseded`), timers cleared, attempt `{ tier: human,
+role: human, outcome: accepted, reason: "closed without answering" }`, question `closed` with
+`answer` = the close text and `answeredBy: human`, `question.closed { questionId, answer }`
+(not `question.answered`: no answer was given, and a consumer must be able to tell). Then the
+same `onAnswered` as an answer: job → `queued` with `pendingAnswer` = the close text,
+`job.requeued { reason: "closed" }`; the resume types it into the pane. Close text
+(`CLOSED_ANSWER`, `src/questions/service.ts`): "The owner closed this question without answering.
+Continue on your own judgement; if you cannot, end with JOB_HOPPER_FAILED and say why."
+Recovery treats a `closed` question like an `answered` one (requeue with its answer).
+
+**Answered in the pane.** the owner may type the answer straight into a parked pane instead of
+the UI. On every engine tick, `src/engine/pane-answers.ts` asks the executor of each
+`waiting_answer` job `answeredInPane(job)` (port method; herdr-claude implements it; the decider
+is untouched). herdr-claude: the monitor saves `parkedSeq` (the `state_change_seq` at which the
+turn parked) in `executorState`; a job parked before that field existed uses its turn's send
+`seq`. Answered when `agent get` shows the same pane with `state_change_seq > parkedSeq` **and**
+either status `working` or a typed echo below the question (`typedAfterQuestion` in
+`screen.ts`: the first `❯` block after Claude's reply to the turn anchor, above the input box).
+A seq move alone is not enough (herdr's own idle/done flip moves it). The answer is the typed
+text, or `(answered in the pane)` when no echo can be read (a dialog answered with keys). The
+new turn is `{ seq: parkedSeq, anchor: last typed line (else the old anchor), blockedAtSend:
+false }`. Then one tx: `QuestionService.answeredInPane` (stage aborted `superseded`, timers
+cleared, attempt `reason: "answered in the pane"`, question `answered` by `human`,
+`question.answered { by: human, answer, via: "pane" }`, no `onAnswered`, nothing typed), job
+`running` on an idle lane of its `resumeOn` machine with the new `executorState`,
+`job.reattached { reason: "answered in the pane" }`; after the commit `runner.reattach` watches
+the turn to its outcome, exactly as after a restart. **Lanes:** the job already runs
+physically, so it never waits: with no idle lane it opens one more (`lane.opened`) and runs
+**over the lane cap** until it ends; the decider counts that busy lane like any other and drains
+or closes the extra lane after. **Missed:** a reply turn that starts and ends between two ticks
+with no readable echo (e.g. a dialog answered by keys) is not seen; the question stays open and
+can still be answered or closed in the UI.
+
+**Logged out** the card shows, where the answer box would be, "Log in to answer or close:
+`bash ~/.local/lib/job-hopper/scripts/open-ui.sh`". A 403 on any mutation drops the stored
+token and every card shows the same notice.
 
 ## Decider changes
 
@@ -756,8 +799,10 @@ token and send any `Origin`. Cookies are no better here: they ignore ports, so a
    expiry `JOB_HOPPER_UI_SESSION_HOURS`, default 12), rotate the code, and answer with a
    same-origin HTML page whose inline script stores the token in `localStorage`
    (`jh_session`) and goes to `/`. Mismatch → 403. `localStorage` is scoped to the exact
-   origin incl. port, so no other server on `127.0.0.1` can read it. Sessions live in memory
-   (a restart logs the UI out).
+   origin incl. port, so no other server on `127.0.0.1` can read it. Sessions live in SQLite
+   (`ui_sessions`, migration 6), so a daemon restart does not log the UI out; the row holds
+   only the token's SHA-256 and the expiry, never the token. Expired rows are deleted on
+   lookup. Logout deletes the row.
 4. **`GET /ui/api/session`** with header `x-jobhopper-session` → `{ authenticated,
    expiresAt? }`. Without a valid session the page is read-only and says how to log in:
    `bash ~/.local/lib/job-hopper/scripts/open-ui.sh`.
@@ -772,6 +817,7 @@ token and send any `Origin`. Cookies are no better here: they ignore ports, so a
 | POST | `/ui/api/jobs/:id/cancel` | `{}` | engine `cancel(id, "cancelled in UI")` (the source is told) |
 | POST | `/ui/api/jobs/:id/approve` | `{}` | engine approve |
 | POST | `/ui/api/questions/:id/answer` | `{ answer }` | `QuestionService.answerByHuman` (404/409) |
+| POST | `/ui/api/questions/:id/close` | `{}` | `QuestionService.closeByHuman` (404/409): close without answering ("Questions" → Close) |
 | POST | `/ui/api/router-mode` | `{ mode }` | set router mode (phase 5; was `/ui/api/jev`) |
 | POST | `/ui/api/plugins` | `{ action, … }` | edit plugins.yaml: one instance's options, select a plugin, rescan (phase 5 slice 7; "Settled in slice 7") |
 | POST | `/ui/api/logout` | `{}` | drop the session |

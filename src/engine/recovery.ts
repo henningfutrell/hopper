@@ -44,7 +44,7 @@ export async function recover(c: EngineContext): Promise<Recovered> {
   };
   const byQuestion = (job: Job, q: Question | undefined): void => {
     if (q?.status === 'open') return; // QuestionService.recover re-drives it
-    if (q?.status === 'answered') return requeue(job, 'waiting_answer', 'answered', { pendingAnswer: q.answer ?? '' });
+    if (q?.status === 'answered' || q?.status === 'closed') return requeue(job, 'waiting_answer', q.status, { pendingAnswer: q.answer ?? '' });
     fail(job, q?.status === 'expired' ? 'question unanswered' : `question ${q?.status ?? 'missing'}`);
   };
   store.tx(() => {

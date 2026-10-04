@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FOOTER_ANCHOR, PROTOCOL_FOOTER, isTrustDialog, readTurn } from '../../src/executors/herdr/screen.ts';
+import { FOOTER_ANCHOR, PROTOCOL_FOOTER, isTrustDialog, readTurn, typedAfterQuestion } from '../../src/executors/herdr/screen.ts';
 
 const CHROME = [
   '──────────────────────────────',
@@ -197,5 +197,27 @@ describe('isTrustDialog', () => {
   it('rejects a screen that is not the trust dialog', () => {
     expect(isTrustDialog('Accessing workspace:\n/tmp/x\nsomething else', '/tmp/x')).toBe(false);
     expect(isTrustDialog('', '/tmp/x')).toBe(false);
+  });
+});
+
+describe('typedAfterQuestion', () => {
+  it('reads what the owner typed into the pane after the question', () => {
+    expect(typedAfterQuestion(screen(TURN_1, ['❯ French.', '● Working on it'], CHROME), FOOTER_ANCHOR)).toBe('French.');
+  });
+
+  it('reads a wrapped, multi-line answer up to the reply', () => {
+    expect(typedAfterQuestion(screen(TURN_1, ['❯ Use French,', '  and be polite.', '', '● ok'], CHROME), FOOTER_ANCHOR)).toBe('Use French,\nand be polite.');
+  });
+
+  it('nothing typed yet: undefined', () => {
+    expect(typedAfterQuestion(screen(TURN_1, CHROME), FOOTER_ANCHOR)).toBeUndefined();
+  });
+
+  it('text still in the input box is not an answer', () => {
+    expect(typedAfterQuestion(screen(TURN_1, ['──────────────────────────────', '❯ half typed', '──────────────────────────────']), FOOTER_ANCHOR)).toBeUndefined();
+  });
+
+  it('anchored on an earlier answer: reads the next typed line, not the anchor echo', () => {
+    expect(typedAfterQuestion(screen(TURN_1, TURN_2, ['● Anything else?', '  JOB_HOPPER_QUESTION', '❯ No, stop.'], CHROME), 'French.')).toBe('No, stop.');
   });
 });

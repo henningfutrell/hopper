@@ -5,21 +5,12 @@
     "questionId": {
       "type": "string"
     },
-    "by": {
-      "type": "string",
-      "minLength": 1
-    },
     "answer": {
       "type": "string"
-    },
-    "via": {
-      "type": "string",
-      "const": "pane"
     }
   },
   "required": [
     "questionId",
-    "by",
     "answer"
   ],
   "additionalProperties": false

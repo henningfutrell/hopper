@@ -3,6 +3,7 @@
 // Answerer / Assessor seams; the store is the in-memory stand-in at the Store seam.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AnswerDraft, Assessment } from '../../src/domain/ports.ts';
+import { CLOSED_ANSWER } from '../../src/questions/index.ts';
 import { PROCEED, SAFE, deferred, rig, scriptedAnswerer, scriptedAssessor, settle } from './support.ts';
 
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date('2026-10-02T10:00:00Z')); });
@@ -237,6 +238,30 @@ describe('atomicity', () => {
       ['fable', 'assessor', 'escalated', 'superseded'],
     ]);
     expect(r.answered).toHaveLength(1);
+  });
+
+  it('closeByHuman while the assessor is in flight wins: question closed with the close text, the stage aborted, question.closed', async () => {
+    const gate = deferred<Assessment>();
+    let sig: AbortSignal | undefined;
+    const r = rig({ assess: (_req, _d, signal) => { sig = signal; return gate.promise; } });
+    const q = r.question();
+    r.svc.handle(q.id);
+    await settle();
+    const res = r.svc.closeByHuman(q.id);
+    expect(res).toMatchObject({ ok: true, question: { status: 'closed', answeredBy: 'human', answer: CLOSED_ANSWER } });
+    expect(sig?.aborted).toBe(true);
+    gate.resolve(PROCEED);
+    await settle();
+    expect(r.mem.store.questions.get(q.id)).toMatchObject({ status: 'closed' });
+    expect(r.eventsOf('question.closed').map((e) => e.data)).toEqual([{ questionId: q.id, answer: CLOSED_ANSWER }]);
+    expect(r.eventsOf('question.answered')).toHaveLength(0);
+    expect(r.answered.map((x) => x.q.status)).toEqual(['closed']);
+    expect(r.svc.closeByHuman(q.id)).toEqual({ ok: false, reason: 'not_open' });
+    expect(r.svc.closeByHuman('nope')).toEqual({ ok: false, reason: 'not_found' });
+  });
+
+  it('the close text tells the job to go on alone or fail with JOB_HOPPER_FAILED', () => {
+    expect(CLOSED_ANSWER).toBe('the owner closed this question without answering. Continue on your own judgement; if you cannot, end with JOB_HOPPER_FAILED and say why.');
   });
 
   it('answerByHuman reports not_found and not_open', async () => {

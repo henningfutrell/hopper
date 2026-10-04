@@ -6,7 +6,7 @@ import type { Store } from '../domain/ports.ts';
 import type { QuestionStatus } from '../domain/types.ts';
 import { HttpError, parseWith } from './errors.ts';
 
-const STATUSES = ['open', 'answered', 'expired', 'cancelled'] as const satisfies QuestionStatus[];
+const STATUSES = ['open', 'answered', 'closed', 'expired', 'cancelled'] as const satisfies QuestionStatus[];
 
 const listQuery = z.object({
   status: z.enum([...STATUSES, 'all']).default('open'),

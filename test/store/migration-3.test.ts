@@ -47,7 +47,7 @@ describe('migration 3 (sources, schema versions, webhook names)', () => {
     s.close();
 
     const after = new DatabaseSync(path);
-    expect(after.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 5 });
+    expect(after.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 6 });
     after.close();
   });
 });

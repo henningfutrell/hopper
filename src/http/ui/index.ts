@@ -4,7 +4,7 @@
 // refusal is a logged 403.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import type { Clock, PluginsView, QuestionService } from '../../domain/ports.ts';
+import type { Clock, PluginsView, QuestionService, UiSessionRepository } from '../../domain/ports.ts';
 import { ROLES, SELECTABLE_ROLES } from '../../domain/types.ts';
 import type { Engine } from '../../engine/index.ts';
 import { HttpError, parseWith } from '../errors.ts';
@@ -18,6 +18,7 @@ export { LOGIN_CODE_FILE } from './login-code.ts';
 export interface UiRouteOptions {
   engine: Engine;
   questions: QuestionService;
+  uiSessions: UiSessionRepository;
   plugins: PluginsView;
   /** The bound port (known only after listen). */
   port: () => number;
@@ -51,7 +52,7 @@ const loginPage = (token: string): string => `<!doctype html><meta charset="utf-
 export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void {
   const code = createLoginCode(o.dataDir);
   code.rotate();
-  const sessions = createUiSessions({ clock: o.clock, hours: o.sessionHours });
+  const sessions = createUiSessions({ repo: o.uiSessions, clock: o.clock, hours: o.sessionHours });
 
   app.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string' }, (_req, body, done) => {
     done(null, Object.fromEntries(new URLSearchParams(body as string)));
@@ -84,6 +85,14 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     const { id } = parseWith(idParams, req.params);
     const { answer } = parseWith(answerBody, req.body);
     const r = o.questions.answerByHuman(id, answer);
+    if (r.ok) return r.question;
+    if (r.reason === 'not_found') throw new HttpError(404, `question ${id} not found`);
+    throw new HttpError(409, `question ${id} is not open`);
+  });
+
+  app.post('/ui/api/questions/:id/close', guarded, async (req) => {
+    const { id } = parseWith(idParams, req.params);
+    const r = o.questions.closeByHuman(id);
     if (r.ok) return r.question;
     if (r.reason === 'not_found') throw new HttpError(404, `question ${id} not found`);
     throw new HttpError(409, `question ${id} is not open`);

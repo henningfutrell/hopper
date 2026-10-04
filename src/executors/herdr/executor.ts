@@ -4,11 +4,11 @@
 import type { Clock, ExecutionContext, ExecutionOutcome, Executor } from '../../domain/ports.ts';
 import type { Job, LaneId } from '../../domain/types.ts';
 import type { HerdrClient } from './client.ts';
-import { abortReason, watchTurn } from './monitor.ts';
+import { RECENT_LINES, abortReason, watchTurn } from './monitor.ts';
 import type { Interrupt, Sleep } from './monitor.ts';
 import { resolvePayload, validatePayload } from './payload.ts';
 import type { ClaudeJobPayload } from './payload.ts';
-import { FOOTER_ANCHOR, PROTOCOL_FOOTER } from './screen.ts';
+import { FOOTER_ANCHOR, PROTOCOL_FOOTER, typedAfterQuestion } from './screen.ts';
 import { openPane, startClaude } from './start.ts';
 import type { PaneState, StartDeps, TurnAnchor } from './start.ts';
 
@@ -122,7 +122,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
     const turn: TurnAnchor = { seq: agent.stateChangeSeq, anchor, blockedAtSend: agent.status === 'blocked' };
     // Saved before the prompt: a restart in between watches a turn never sent, which ends as an
     // idle question, never as a lost job.
-    ctx.saveState({ ...s, turn });
+    ctx.saveState({ ...s, turn, parkedSeq: undefined });
     await herdr.prompt(s.agentName, text);
     return watch(ctx, s, p, turn);
   }
@@ -132,6 +132,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       herdr: herdrOn(s), clock, sleep, pollMs: o.pollMs, idleQuestionMs: o.idleQuestionMs, ctx, agentName: s.agentName,
       paneId: s.paneId, anchor: turn.anchor, seqAtSend: turn.seq, blockedAtSend: turn.blockedAtSend,
       timeoutMs: p.timeoutMs, expectedMs: p.expectedMs,
+      parked: (seq) => ctx.saveState({ ...s, turn, parkedSeq: seq }),
     });
   }
 
@@ -213,6 +214,27 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
         lanes.set(ctx.laneId, heldOf(state));
         return watch(ctx, state, p, state.turn);
       });
+    },
+
+    async answeredInPane(job) {
+      try {
+        const s = paneStateOf(job);
+        if (!s?.turn) return null;
+        const agent = await herdr.getAgent(s.agentName);
+        if (!agent || agent.paneId !== s.paneId) return null;
+        // Parked before parkedSeq was saved: the send's seq (the turn had already ended past it).
+        const parked = s.parkedSeq ?? s.turn.seq;
+        if (agent.stateChangeSeq <= parked) return null;
+        const recent = await herdr.read(s.paneId, { source: 'recent-unwrapped', lines: RECENT_LINES });
+        const typed = typedAfterQuestion(recent, s.turn.anchor);
+        // A seq move alone may be herdr's own idle/done flip; working, or a typed echo, is the owner.
+        if (agent.status !== 'working' && typed === undefined) return null;
+        const turn: TurnAnchor = { seq: parked, anchor: typed ? lastLineOf(typed) : s.turn.anchor, blockedAtSend: false };
+        const { parkedSeq: _drop, ...rest } = s;
+        return { ...(typed ? { answer: typed } : {}), executorState: { ...rest, turn } };
+      } catch {
+        return null;
+      }
     },
 
     async cleanup(job) {
