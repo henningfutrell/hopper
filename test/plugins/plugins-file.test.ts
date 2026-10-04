@@ -143,11 +143,31 @@ describe('plugins.yaml attachedMachines (design.md "Attached machines")', () => 
     ['  - { name: a, ssh: -oProxyCommand=x, lanes: 1 }', /ssh/],
     ['  - { name: a, ssh: laptop, lanes: 0 }', /lanes/],
     ['  - { name: a, ssh: laptop, lanes: 1, session: default }', /default herdr session/],
-    ['  - { name: a, lanes: 1 }', /ssh/],
+    ['  - { name: a, lanes: 1 }', /ssh or docker/],
+    ['  - { name: a, ssh: laptop, docker: box, lanes: 1 }', /ssh or docker, not both/],
+    ['  - { name: a, docker: -H=tcp://x, lanes: 1 }', /docker must be a container/],
+    ['  - { name: a, docker: box, lanes: 1, session: jh }', /session and herdrBin are for ssh/],
+    ['  - { name: a, docker: box, lanes: 1, herdrBin: /opt/herdr }', /session and herdrBin are for ssh/],
   ])('refuses %s', (entry, why) => {
     const r = loadPluginsFile(file(`version: 1\nattachedMachines:\n${entry}\n`));
     expect(r).toHaveProperty('error');
     expect((r as { error: string }).error).toMatch(why);
+  });
+
+  it('reads a container target reached over docker: no herdr, the command executor by default', () => {
+    const r = loadPluginsFile(file([
+      'version: 1',
+      'attachedMachines:',
+      '  - { name: box, docker: job-hopper-target, lanes: 1 }',
+      '  - { name: box2, docker: other, label: Box, lanes: 2, executors: [command, test] }',
+    ].join('\n')));
+    expect(r).toEqual({
+      attachedMachines: [
+        { name: 'box', docker: 'job-hopper-target', lanes: 1, executors: ['command'] },
+        { name: 'box2', docker: 'other', label: 'Box', lanes: 2, executors: ['command', 'test'] },
+      ],
+      warnings: [],
+    });
   });
 
   it('refuses an attached machine named like the machine source\'s machine (machine ids are unique)', () => {
