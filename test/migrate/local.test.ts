@@ -36,7 +36,7 @@ function localInstall() {
   s.webhooks.createDelivery(sub.id, s.events.since(0, 1)[0]!);
   s.settings.setRouterMode('active');
   s.questions.create({ jobId: job.id, text: 'q?', recentOutput: '', detectedBy: 'marker', tier: 'human' });
-  s.uiSessions.create('a'.repeat(64), '2099-01-01T00:00:00.000Z');
+  s.uiSessions.create({ tokenHash: 'a'.repeat(64), expiresAt: '2099-01-01T00:00:00.000Z', role: 'admin', identity: { provider: 'local', subject: 'local', name: 'login code', groups: [] } });
   s.close();
   const config = join(dir, 'config');
   mkdirSync(config);

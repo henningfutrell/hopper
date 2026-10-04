@@ -17,6 +17,13 @@ export interface GitHubIssue {
   closedBy?: string;
 }
 
+/** The pull request whose merge closed an issue (GitHub's ClosedEvent closer). */
+export interface ClosingPullRequest {
+  url: string;
+  createdAt: string;
+  mergedAt: string;
+}
+
 export interface GitHubComment {
   /** Numeric and increasing: the order of comments on an issue. */
   id: number;
@@ -47,6 +54,10 @@ export interface GitHubApi {
   ensureLabel(repo: string, name: string, color: string, description: string): Promise<void>;
   addLabels(repo: string, number: number, labels: string[]): Promise<void>;
   removeLabels(repo: string, number: number, labels: string[]): Promise<void>;
+  /** The merged pull request that closed the issue last; undefined when a person or a commit closed it. */
+  closingPullRequest(repo: string, number: number): Promise<ClosingPullRequest | undefined>;
+  /** Close the issue with state_reason `completed`. Closing a closed issue is harmless. */
+  closeAsCompleted(repo: string, number: number): Promise<void>;
 
   // ---- GitHub App mode only (absent on the gh-CLI adapter) ----------------------------
 

@@ -165,7 +165,13 @@ const POSTGRES_BASE = `
 
 /** Migrations 7 on, for both databases. */
 const SHARED: readonly Migration[] = [
-  // 7: config documents (plugins.yaml, webhooks.yaml, rules.md) live in the store, not in files.
+  // 7: a session belongs to someone (issue #39): the role it acts with and the identity behind it.
+  // Sessions from before were all made from the login code: admin, provider local.
+  `
+  ALTER TABLE ui_sessions ADD COLUMN role TEXT NOT NULL DEFAULT 'admin';
+  ALTER TABLE ui_sessions ADD COLUMN identity TEXT NOT NULL DEFAULT '{"provider":"local","subject":"local","name":"login code","groups":[]}';
+  `,
+  // 8: config documents (plugins.yaml, webhooks.yaml, rules.md, auth.yaml) live in the store, not in files.
   `
   CREATE TABLE IF NOT EXISTS config_documents (name TEXT PRIMARY KEY, text TEXT NOT NULL, updated_at TEXT NOT NULL);
   `,

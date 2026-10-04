@@ -5,7 +5,8 @@ import type {
   Advice, DomainEvent, Decision, EventType, ExecutorUnavailable, Job, JobId, JobSpec, JobStatus, Lane, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit, PluginsEditOutcome, PluginsReport, RouterMode, RouterStatus,
   RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule,
   JobSourceRef, LaneId, MachineId, MachineSnapshot, NewEvent, Question, QuestionAttempt, QuestionStatus,
-  SourceStatus, UsageReading, UsageSourceState, WebhookDelivery, WebhookSubscription,
+  Identity, SourceStatus, UiRole, UsageReading, UsageSourceState, WebhookDelivery, WebhookSubscription,
+  InstallInfo, UpdateSettings, UpdateStatus,
 } from './types.ts';
 
 // ---- Execution -----------------------------------------------------------------------
@@ -484,18 +485,47 @@ export interface QuestionRepository {
 export interface SettingsRepository {
   getRouterMode(): RouterMode | undefined;
   setRouterMode(mode: RouterMode): void;
+  /** Self-update settings the owner chose; absent fields were never set. */
+  getUpdateSettings(): Partial<UpdateSettings>;
+  setUpdateSettings(patch: Partial<UpdateSettings>): void;
+}
+
+// ---- Self-update (issue #44) ------------------------------------------------------------
+
+/** Builds an install of the source tree `sourceDir` into `targetDir` (scripts/install.sh build-only mode in production). */
+export interface UpdateBuilder {
+  build(sourceDir: string, targetDir: string, info: InstallInfo): Promise<void>;
+}
+
+/** Ends this process so it starts again on the install now in place (exit for the supervisor, or respawn). Never returns in production. */
+export type Restarter = () => Promise<void>;
+
+/** The daemon's self-update: GET /api/update, POST /ui/api/update. */
+export interface Updater {
+  status(): UpdateStatus;
+  /** Fetch the repository and compare; answers the new status. */
+  check(): Promise<UpdateStatus>;
+  /** Start applying the target; answers at once with `apply` set. Refuses (`error`) when nothing is available or an apply runs. */
+  apply(): { ok: true; status: UpdateStatus } | { ok: false; error: string };
+  settings(patch: Partial<UpdateSettings>): UpdateStatus;
 }
 
 /** UI sessions, keyed by the SHA-256 of the token; the token itself is never stored. */
+/** A stored UI session: never the token, only its SHA-256. */
+export interface UiSessionRow { tokenHash: string; expiresAt: string; role: UiRole; identity: Identity }
+
 export interface UiSessionRepository {
-  create(tokenHash: string, expiresAt: string): void;
-  /** The expiry of the live session with this hash, or undefined. Expired rows (`expires_at <= now`) are deleted first. */
-  find(tokenHash: string, now: string): string | undefined;
+  create(row: UiSessionRow): void;
+  /** The live session with this hash, or undefined. Expired rows (`expires_at <= now`) are deleted first. */
+  find(tokenHash: string, now: string): UiSessionRow | undefined;
+  /** Every stored session, expired or not. */
+  all(): UiSessionRow[];
+  setRole(tokenHash: string, role: UiRole): void;
   drop(tokenHash: string): void;
 }
 
 /** The config documents the store holds (design.md "Config documents"). */
-export const CONFIG_DOCUMENTS = ['plugins.yaml', 'webhooks.yaml', 'rules.md'] as const;
+export const CONFIG_DOCUMENTS = ['plugins.yaml', 'webhooks.yaml', 'rules.md', 'auth.yaml'] as const;
 export type ConfigDocumentName = (typeof CONFIG_DOCUMENTS)[number];
 
 /**

@@ -1,11 +1,29 @@
 // POST /graphql of the fake GitHub: `organization(login).projectV2(number)` and
 // `user(login).projectV2(number)` items, behaving as GitHub does for an installation token:
 // organization projects are readable; a user-owned project is FORBIDDEN ("Resource not
-// accessible by integration"); a login of the other kind is NOT_FOUND.
+// accessible by integration"); a login of the other kind is NOT_FOUND. Also
+// `repository(owner, name).issue(number)`: the pull request whose merge closed the issue.
 
+import { tokenReaches } from './fake-routes.ts';
 import type { FakeCtx, FakeReply, FakeReq } from './fake-routes.ts';
 
-interface GqlBody { query?: string; variables?: { login?: string; number?: number; first?: number; after?: string | null } }
+interface GqlBody {
+  query?: string;
+  variables?: { login?: string; owner?: string; name?: string; number?: number; first?: number; after?: string | null };
+}
+
+/** `repository(owner, name).issue(number)` last ClosedEvent: its closer, a pull request or none. */
+function closer(ctx: FakeCtx, req: FakeReq, b: GqlBody): FakeReply {
+  const repo = ctx.state.repos.get(`${b.variables?.owner}/${b.variables?.name}`);
+  if (!repo || !tokenReaches(req.token!, repo)) {
+    return { status: 200, body: { data: { repository: null }, errors: [{ type: 'NOT_FOUND', path: ['repository'], message: 'Could not resolve to a Repository.' }] } };
+  }
+  const issue = repo.issues.get(Number(b.variables?.number));
+  if (!issue) return { status: 200, body: { data: { repository: { issue: null } }, errors: [{ type: 'NOT_FOUND', path: ['repository', 'issue'], message: 'Could not resolve to an Issue.' }] } };
+  const pr = issue.closedByPullRequest;
+  const nodes = issue.state !== 'closed' ? [] : [{ closer: pr ? { __typename: 'PullRequest', ...pr } : null }];
+  return { status: 200, body: { data: { repository: { issue: { timelineItems: { nodes } } } } } };
+}
 
 function fieldNode(name: string, value: string | number) {
   return typeof value === 'number' ? { number: value, field: { name } } : { name: value, field: { name } };
@@ -14,6 +32,7 @@ function fieldNode(name: string, value: string | number) {
 export function graphql(ctx: FakeCtx, req: FakeReq): FakeReply {
   const b = (req.body ?? {}) as GqlBody;
   const query = b.query ?? '';
+  if (/repository\(owner/.test(query)) return closer(ctx, req, b);
   const login = b.variables?.login ?? '';
   const number = Number(b.variables?.number);
   const kind = /organization\(login/.test(query) ? 'organization' : /user\(login/.test(query) ? 'user' : undefined;

@@ -14,6 +14,7 @@ import { post, SessionRejected } from '@/lib/api';
 import { collectOptions, fieldKind, instanceState, isListRole, newInstance, ROLE_TITLES, shown, type Draft, type OptionSchema, type OptionsSchema } from '@/model/plugins';
 import type { InstanceSpec, ListRole, PluginsEdit, PluginsReport, Role, SelectableRole } from '@/model/wire';
 import { refreshHealth, refreshPlugins, setPlugins, useHopper } from '@/store';
+import { useCanAdmin } from '@/store/selectors';
 
 export const FIELD = 'h-8 w-full rounded-lg border border-input bg-transparent px-2.5 font-mono text-xs disabled:opacity-50 dark:bg-input/30';
 
@@ -77,7 +78,7 @@ function Field({ name, p, current, draft, disabled, set }: {
 /** One instance: its plugin, state, and options form with Save and Discard. */
 export function InstanceForm({ role, inst }: { role: Role; inst: InstanceSpec }) {
   const report = useHopper((s) => s.plugins);
-  const authed = useHopper((s) => s.authed);
+  const authed = useCanAdmin();
   const [draft, setDraft] = useState<Draft>({});
   const [busy, setBusy] = useState(false);
   const k = `${role}:${inst.name}`;
@@ -159,7 +160,7 @@ function Picker({ role, current, report }: { role: SelectableRole; current: stri
 /** The plugin filling a one-instance role (the answerer: or none). Shown only with a UI session. */
 export function PluginSelector({ role }: { role: SelectableRole }) {
   const report = useHopper((s) => s.plugins);
-  const authed = useHopper((s) => s.authed);
+  const authed = useCanAdmin();
   if (!report || !authed) return null;
   const current = report.instances.find((i) => i.role === role)?.instance.plugin ?? '';
   return <Picker key={current} role={role} current={current} report={report} />;
@@ -168,7 +169,7 @@ export function PluginSelector({ role }: { role: SelectableRole }) {
 /** A new instance of a list role: an available plugin, under the name typed (else the plugin id), with its defaults. */
 export function AddInstance({ role }: { role: ListRole }) {
   const report = useHopper((s) => s.plugins);
-  const authed = useHopper((s) => s.authed);
+  const authed = useCanAdmin();
   const [plugin, setPlugin] = useState('');
   const [typed, setTyped] = useState('');
   const [busy, setBusy] = useState(false);

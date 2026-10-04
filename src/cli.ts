@@ -11,7 +11,7 @@
 //   job-hopper migrate-local --from-sqlite <file> [--config-dir <dir>] --secrets-out <file>
 //                                                         a local install into this (empty) database
 //
-// <document>: plugins.yaml, webhooks.yaml or rules.md. A document that would not load is refused.
+// <document>: plugins.yaml, webhooks.yaml, rules.md or auth.yaml. A document that would not load is refused.
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -19,6 +19,7 @@ import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { parse } from 'yaml';
 import { CONFIG_DOCUMENTS, type ConfigDocumentName, type Store } from './domain/ports.ts';
+import { authDocumentProblem } from './auth/index.ts';
 import { MigrateRefusal, migrateLocal, secretsEnvFile } from './migrate/local.ts';
 import { pluginsFileProblem } from './plugins/plugins-file.ts';
 import { RULES_MAX_BYTES } from './questions/index.ts';
@@ -57,6 +58,7 @@ export function documentProblem(name: ConfigDocumentName, text: string): string 
   }
   let raw: unknown;
   try { raw = parse(text); } catch (e) { return `not valid YAML: ${(e as Error).message}`; }
+  if (name === 'auth.yaml') return authDocumentProblem(raw);
   return name === 'plugins.yaml' ? pluginsFileProblem(raw) : webhooksFileProblem(raw);
 }
 

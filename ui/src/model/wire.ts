@@ -3,22 +3,21 @@
 import type {
   AttachedMachine, Decision, DomainEvent, InstanceSpec, Job, JobStatus, Lane, MachineEdit, MachineLaneEffect, MachineSnapshot, MachinesConfig, PartAccount, PluginsEdit, PluginsReport,
   Question, QuestionAttempt, QuestionGatesView, QuestionStatus, RiskRuleView, Role, RoutingReport, RulesView, SelectableRole, ListRole, SourceStatus, UsageReading, UsageReport, UsageSourceReport, WebhookDelivery,
-  WebhookSubscription, WebhooksEdit,
+  WebhookSubscription, WebhooksEdit, SessionUser, SessionView, SignInProviderView, UiRole, UpdateStatus, UpdateChannel,
 } from '../../../src/domain/types.ts';
 
 export type {
   AttachedMachine, Decision, DomainEvent, InstanceSpec, Job, JobStatus, Lane, MachineEdit, MachineLaneEffect, MachinesConfig, PartAccount, PluginsEdit, PluginsReport,
   Question, QuestionAttempt, QuestionGatesView, QuestionStatus, RiskRuleView, Role, RoutingReport, RulesView, SelectableRole, ListRole, SourceStatus, UsageReading, UsageReport, UsageSourceReport, WebhookDelivery,
-  WebhookSubscription, WebhooksEdit,
+  WebhookSubscription, WebhooksEdit, SessionUser, SessionView, SignInProviderView, UiRole, UpdateStatus, UpdateChannel,
 };
 
 export interface Queue {
   waiting: Job[];
   running: Job[];
   waitingAnswer: Job[];
-  /** Ended jobs, newest end first, at most 20. */
+  /** Jobs ended in the last 24 hours, newest end first. */
   ended: Job[];
-  counts: Partial<Record<JobStatus, number>>;
 }
 
 export type MachineView = MachineSnapshot & { lanes: Lane[]; usage: UsageReading[] };

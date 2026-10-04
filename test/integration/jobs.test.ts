@@ -114,7 +114,7 @@ describe('jobs pulled from a source', () => {
     await waitFor(() => t.source.reports.some((r) => r.kind === 'cancelled' && r.job.id === long.id));
   });
 
-  it('the queue orders waiting jobs by priority, then age, and counts every status', async () => {
+  it('the queue orders waiting jobs by priority, then age; it carries the jobs, not counts of them', async () => {
     t.setUsage(99);
     const low = await t.pull({ op: 'echo' }, { priority: 10 });
     const high = await t.pull({ op: 'echo' }, { priority: 90 });
@@ -122,8 +122,7 @@ describe('jobs pulled from a source', () => {
     const queue = (await t.api('GET', '/api/queue')).body;
     expect(queue.waiting.map((j: Job) => j.id)).toEqual([high.id, mid.id, low.id]);
     expect(queue.running).toEqual([]);
-    expect(Object.keys(queue.counts).sort()).toEqual(
-      ['cancelled', 'claimed', 'failed', 'finished', 'held', 'queued', 'running', 'waiting_answer']);
+    expect(queue.counts).toBeUndefined();
     expect(queue.waitingAnswer).toEqual([]);
   });
 
@@ -147,15 +146,17 @@ describe('jobs pulled from a source', () => {
     expect(queue.running.map((j: Job) => j.id)).toEqual([long.id]);
   });
 
-  it('the ended list is capped at the 20 most recent', async () => {
+  it('the ended list holds every job that ended in the last 24 hours, and none older (issue #45)', async () => {
     const ids: string[] = [];
     for (let i = 0; i < 22; i += 1) {
-      const j = await t.pull({ op: 'echo' }, { key: `cap-${i}` });
+      const j = await t.pull({ op: 'echo' }, { key: `window-${i}` });
       await t.waitForStatus(j.id, 'finished');
       ids.push(j.id);
     }
+    // Age the first one past the window, as the store would hold it a day later.
+    t.app.store.jobs.update(ids[0]!, { finishedAt: new Date(Date.now() - 25 * 3_600_000).toISOString() });
     const ended = (await t.api('GET', '/api/queue')).body.ended.map((j: Job) => j.id);
-    expect(ended).toEqual(ids.reverse().slice(0, 20));
+    expect(ended).toEqual(ids.slice(1).reverse());
   });
 
   it('re-sorting: a changed item priority reprioritizes a waiting job (job.reprioritized), never a running one', async () => {

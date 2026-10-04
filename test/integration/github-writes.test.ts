@@ -1,5 +1,6 @@
-// What the hopper may write to an issue (owner decision, 2026-10-04: labels only, no comment).
-// Through the real daemon, against the fake GitHub: the only writes are labels (state). No
+// What the hopper may write to an issue (owner decision, 2026-10-04: labels only, no comment;
+// issue #38: a finished job also closes its issue). Through the real daemon, against the fake
+// GitHub: the only writes are labels (state) and that close, which changes the state alone. No
 // comment at all: not claim, progress, question, answered, failure, cancel or completion; a
 // question goes to the owner through the UI, never onto the issue, and a reply on the issue is not
 // an answer. Jobs get no way to write to their issue (no token file, no comment helper).
@@ -135,7 +136,7 @@ describe.each<Mode>(['gh', 'app'])('issue writes (%s source)', (mode) => {
 });
 
 describe('issue writes through HTTP (node:http fake GitHub, real App adapter)', () => {
-  it('only label writes reach GitHub, no comment POST; no repo-scoped token is minted', async () => {
+  it('only label writes and the close of a finished job reach GitHub, no comment POST; no repo-scoped token is minted', async () => {
     const fake = await createFakeGitHubServer({
       appId: APP_ID, publicKeyPem: KEYS.publicKey, slug: SLUG,
       installations: [{ id: 7, account: 'owner', repos: [{ owner: 'owner', name: 'job-hopper-sandbox', labels: ['hopper'], issues: [
@@ -161,7 +162,10 @@ describe('issue writes through HTTP (node:http fake GitHub, real App adapter)', 
     const writes = fake.state.requests
       .filter((r) => r.method !== 'GET' && !r.path.startsWith('/app/') && !r.path.startsWith('/graphql'))
       .map((r) => `${r.method} ${r.path.replace(/\/labels\/.+$/, '/labels/:name')}`);
-    expect(writes.filter((w) => !/\/labels(\/:name)?$/.test(w))).toEqual([]);
+    expect(writes.filter((w) => !/\/labels(\/:name)?$/.test(w))).toEqual([`PATCH /repos/${REPO}/issues/1`]);
+    const close = fake.state.requests.find((r) => r.method === 'PATCH')!;
+    expect(close.body).toEqual({ state: 'closed', state_reason: 'completed' });
+    expect(issue.state).toBe('closed');
     expect(writes.some((w) => /comments/.test(w))).toBe(false);
     expect(writes.filter((w) => w.endsWith('/issues/1/labels'))).toEqual([`POST /repos/${REPO}/issues/1/labels`, `POST /repos/${REPO}/issues/1/labels`]);
     expect(writes.filter((w) => w.endsWith('/labels/:name'))).toEqual([`DELETE /repos/${REPO}/issues/1/labels/:name`]);

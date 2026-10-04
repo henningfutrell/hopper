@@ -5,6 +5,8 @@
 // asks first, in a dialog); a 403 on a mutation logs the UI out and shows the same notice. Dismiss
 // drops a question (asks first); opening the view marks the owner's questions seen, which clears
 // the nav badge; handled questions are a compact list below, each opening to its question and answer.
+// A session whose role cannot answer (viewer, issue #39) says so; a 403 naming the role needed keeps
+// the session.
 import { createElement } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -24,13 +26,16 @@ const handled = {
 
 interface Call { path: string; method: string; headers: Record<string, string>; body?: unknown }
 
-function fakeDaemon(o: { authed: boolean; mutationStatus?: number }) {
+type Role = 'viewer' | 'operator' | 'admin';
+interface Boot { authed: boolean; hash?: string; role?: Role; mutationStatus?: number; needs?: Role; providers?: { name: string; label: string; type: string }[] }
+
+function fakeDaemon(o: Boot) {
   const calls: Call[] = [];
   const open = { ...question } as Record<string, unknown>;
   const json = (status: number, b: unknown) => new Response(JSON.stringify(b), { status, headers: { 'content-type': 'application/json' } });
   const routes: Record<string, unknown> = {
     '/api/health': { ok: true, version: '0', routerMode: 'shadow', router: 'pass-through', fallback: false, executors: [], uptimeS: 1 },
-    '/api/queue': { waiting: [], running: [], waitingAnswer: [], ended: [], counts: {} },
+    '/api/queue': { waiting: [], running: [], waitingAnswer: [], ended: [] },
     '/api/machines': { machines: [] },
     '/api/decisions': { decisions: [] },
     '/api/events': { events: [] },
@@ -44,12 +49,18 @@ function fakeDaemon(o: { authed: boolean; mutationStatus?: number }) {
     const [path, query = ''] = String(input).split('?') as [string, string?];
     const headers = Object.fromEntries(Object.entries((init.headers ?? {}) as Record<string, string>));
     calls.push({ path, method: init.method ?? 'GET', headers, ...(init.body ? { body: JSON.parse(String(init.body)) } : {}) });
-    if (path === '/ui/api/session') return json(200, o.authed ? { authenticated: true, expiresAt: '2099-01-01T00:00:00.000Z' } : { authenticated: false });
+    const signIn = { local: true, origin: location.origin, providers: o.providers ?? [] };
+    if (path === '/ui/api/session') {
+      return json(200, o.authed
+        ? { authenticated: true, expiresAt: '2099-01-01T00:00:00.000Z', user: { role: o.role ?? 'admin', provider: 'local', name: 'login code' }, signIn }
+        : { authenticated: false, signIn });
+    }
     if (path === '/api/questions') return json(200, { questions: new URLSearchParams(query).get('status') === 'all' ? [open, handled] : [open] });
     if (path === `/ui/api/questions/${question.id}/seen`) { open.seenAt ??= '2026-10-03T20:01:00.000Z'; return json(200, open); }
     if (path.startsWith('/ui/api/')) {
       const status = o.mutationStatus ?? 200;
-      return json(status, status === 200 ? { ...question, status: 'closed' } : { error: 'missing or invalid x-jobhopper-session' });
+      if (status === 200) return json(200, { ...question, status: 'closed' });
+      return json(status, o.needs ? { error: `role ${o.role} may not do this; it needs ${o.needs}`, needs: o.needs } : { error: 'missing or invalid x-jobhopper-session' });
     }
     if (path in routes) return json(200, routes[path]);
     return json(404, { error: 'not found' });
@@ -66,7 +77,7 @@ class FakeEventSource {
 
 let root: Root | undefined;
 
-async function boot(o: { authed: boolean; mutationStatus?: number; hash?: string }) {
+async function boot(o: Boot) {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
   window.location.hash = o.hash ?? '#questions';
@@ -137,6 +148,29 @@ describe('question card', () => {
     await click(button('Send answer'));
     await vi.waitFor(() => expect(notice()?.textContent).toContain(LOGIN_CMD));
     expect(card()!.querySelector('textarea')).toBeNull();
+  });
+
+  it('a viewer: no answer box; the card says the role cannot answer', async () => {
+    await boot({ authed: true, role: 'viewer' });
+    await vi.waitFor(() => expect(notice()?.textContent).toContain('viewer'));
+    expect(card()!.querySelector('textarea')).toBeNull();
+    expect(notice()?.textContent).toMatch(/cannot answer/);
+  });
+
+  it('a 403 naming the role needed keeps the session: the answer box stays', async () => {
+    await boot({ authed: true, role: 'operator', mutationStatus: 403, needs: 'admin' });
+    await vi.waitFor(() => expect(button('Close')).toBeDefined());
+    await click(button('Close'));
+    const dialog = await vi.waitFor(() => { const d = document.querySelector('[role="alertdialog"]'); expect(d).not.toBeNull(); return d!; });
+    await click(button('Close question', dialog));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(card()!.querySelector('textarea')).not.toBeNull();
+    expect(localStorage.getItem('jh_session')).toBe('a'.repeat(64));
+  });
+
+  it('logged out with identity providers: the banner offers a sign-in button per provider', async () => {
+    await boot({ authed: false, providers: [{ name: 'corp', label: 'Corp SSO', type: 'oidc' }] });
+    await vi.waitFor(() => expect(button('Sign in with Corp SSO', document.body)).toBeDefined());
   });
 
   it('logged in: Dismiss sits beside Close, asks first, then posts /ui/api/questions/:id/dismiss', async () => {

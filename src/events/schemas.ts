@@ -57,6 +57,11 @@ export const EVENT_SCHEMAS = {
   // Nothing is typed into the job; a job still waiting on it is cancelled (job.cancelled, reason `question dismissed`).
   'question.dismissed': strict({ questionId: z.string() }),
   'question.expired': strict({ questionId: z.string(), after_ms: z.number() }),
+  // Self-update (issue #44): commits are full shas; `ref` is the branch or the release tag.
+  'update.available': strict({ from: z.string(), to: z.string(), ref: z.string(), changes: z.number().int() }),
+  'update.started': strict({ from: z.string(), to: z.string(), ref: z.string() }),
+  'update.applied': strict({ from: z.string(), to: z.string(), ref: z.string() }),
+  'update.failed': strict({ to: z.string(), error: z.string() }),
 } satisfies Record<EventType, z.ZodType>;
 
 export const ENVELOPE_SCHEMA = strict({

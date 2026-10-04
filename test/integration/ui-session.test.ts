@@ -46,7 +46,7 @@ describe('login', () => {
     expect(res.text).toMatch(/location\.replace\(\s*['"]\/['"]\s*\)/);
     const s = await session(token);
     expect(s.status).toBe(200);
-    expect(JSON.parse(s.text)).toEqual({ authenticated: true, expiresAt: expect.any(String) });
+    expect(JSON.parse(s.text)).toMatchObject({ authenticated: true, expiresAt: expect.any(String), user: { role: 'admin', provider: 'local' } });
   });
 
   it('the code rotates on every use: the old code is refused, the new one works; the file stays 0600', async () => {
@@ -63,14 +63,14 @@ describe('login', () => {
     expect((await login('0'.repeat(64))).status).toBe(403);
     expect((await login('')).status).toBe(403);
     expect((await rawRequest(t.url, { method: 'POST', path: '/ui/login', body: 'nothing=1', headers: { 'content-type': 'application/x-www-form-urlencoded' } })).status).toBe(403);
-    expect(JSON.parse((await session('f'.repeat(64))).text)).toEqual({ authenticated: false });
-    expect(JSON.parse((await session()).text)).toEqual({ authenticated: false });
+    expect(JSON.parse((await session('f'.repeat(64))).text)).toMatchObject({ authenticated: false });
+    expect(JSON.parse((await session()).text)).toMatchObject({ authenticated: false });
   });
 
   it('logout drops the session', async () => {
     const token = await t.login();
     expect((await t.ui('/ui/api/logout', {}, { token })).status).toBe(200);
-    expect(JSON.parse((await session(token)).text)).toEqual({ authenticated: false });
+    expect(JSON.parse((await session(token)).text)).toMatchObject({ authenticated: false });
     expect((await t.ui('/ui/api/router-mode', { mode: 'active' }, { token })).status).toBe(403);
   });
 });
@@ -113,7 +113,8 @@ describe('UI mutations', () => {
     const before = JSON.parse((await session(token)).text);
     await t.stop();
     t = await startTestApp({ dbPath: t.dbPath });
-    expect(JSON.parse((await session(token)).text)).toEqual(before);
+    const after = JSON.parse((await session(token)).text);
+    expect({ ...after, signIn: undefined }).toEqual({ ...before, signIn: undefined });
     expect((await t.ui('/ui/api/router-mode', { mode: 'active' }, { token })).status).toBe(200);
   });
 
@@ -134,7 +135,7 @@ describe('UI mutations', () => {
     expect((await t.ui('/ui/api/logout', {}, { token })).status).toBe(200);
     await t.stop();
     t = await startTestApp({ dbPath: t.dbPath });
-    expect(JSON.parse((await session(token)).text)).toEqual({ authenticated: false });
+    expect(JSON.parse((await session(token)).text)).toMatchObject({ authenticated: false });
   });
 
   it('a session expires after JOB_HOPPER_UI_SESSION_HOURS', async () => {
@@ -146,7 +147,7 @@ describe('UI mutations', () => {
     const token = await t.login();
     expect(JSON.parse((await session(token)).text).authenticated).toBe(true);
     await new Promise((r) => setTimeout(r, 300));
-    expect(JSON.parse((await session(token)).text)).toEqual({ authenticated: false });
+    expect(JSON.parse((await session(token)).text)).toMatchObject({ authenticated: false });
     expect((await t.ui('/ui/api/router-mode', { mode: 'active' }, { token })).status).toBe(403);
   });
 });

@@ -450,3 +450,75 @@ Version 1 (`docs/schemas/question.expired.v1.json`). The human stage timed out a
   "after_ms": 1000
 }
 ```
+
+## `update.available`
+
+Version 1 (`docs/schemas/update.available.v1.json`). A check found a newer target on the update channel than the installed commit (once per target). `ref` is the branch or the release tag; `changes` counts its commits not installed (capped at 100).
+
+| field | type | required |
+|---|---|---|
+| `from` | string | yes |
+| `to` | string | yes |
+| `ref` | string | yes |
+| `changes` | integer | yes |
+
+```json
+{
+  "from": "a1b2c3d",
+  "to": "e4f5a6b",
+  "ref": "main",
+  "changes": 3
+}
+```
+
+## `update.started`
+
+Version 1 (`docs/schemas/update.started.v1.json`). Applying an update began (UI, or auto-update): the target is built beside the running install. Running jobs keep running.
+
+| field | type | required |
+|---|---|---|
+| `from` | string | yes |
+| `to` | string | yes |
+| `ref` | string | yes |
+
+```json
+{
+  "from": "a1b2c3d",
+  "to": "e4f5a6b",
+  "ref": "main"
+}
+```
+
+## `update.applied`
+
+Version 1 (`docs/schemas/update.applied.v1.json`). The first boot on an applied update: the install now runs `to`. Recovery reattached what was running.
+
+| field | type | required |
+|---|---|---|
+| `from` | string | yes |
+| `to` | string | yes |
+| `ref` | string | yes |
+
+```json
+{
+  "from": "a1b2c3d",
+  "to": "e4f5a6b",
+  "ref": "main"
+}
+```
+
+## `update.failed`
+
+Version 1 (`docs/schemas/update.failed.v1.json`). Applying an update failed (fetch, build, the new build not loading, or the swap) and the install is unchanged — or a boot after an update is not on the applied commit.
+
+| field | type | required |
+|---|---|---|
+| `to` | string | yes |
+| `error` | string | yes |
+
+```json
+{
+  "to": "e4f5a6b",
+  "error": "the new build does not load: SyntaxError"
+}
+```

@@ -9,10 +9,12 @@ import { laneRows, type LaneRow } from '@/model/board';
 import { goalOf } from '@/model/job';
 import type { Job } from '@/model/wire';
 import { act, useHopper } from '@/store';
+import { useJobBoard } from '@/store/selectors';
 import { cn } from '@/lib/utils';
+import { useCanOperate } from '@/store/selectors';
 
 export function CancelButton({ job }: { job: Job }) {
-  const authed = useHopper((s) => s.authed);
+  const authed = useCanOperate();
   if (!authed) return null;
   return (
     <Confirm title="Cancel this job?" action="Cancel job" onConfirm={() => act(`/ui/api/jobs/${job.id}/cancel`, {}, 'Job cancelled')}
@@ -34,7 +36,7 @@ function LaneCard({ row }: { row: LaneRow }) {
         <StatusBadge className="ml-auto" status={row.state === 'unopened' ? 'not open' : row.state} tone={row.state === 'unopened' ? 'muted' : undefined} />
       </div>
       {job ? (
-        <div className="space-y-2">
+        <div data-job-group="running" data-job-id={job.id} data-status={job.status} className="space-y-2">
           <div className="flex items-start gap-2"><JobTitle job={job} className="flex-1" /><CancelButton job={job} /></div>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             {job.startedAt && <Since iso={job.startedAt} className="w-14 shrink-0" />}
@@ -52,7 +54,7 @@ function LaneCard({ row }: { row: LaneRow }) {
 
 export function LanesPanel() {
   const machines = useHopper((s) => s.machines);
-  const running = useHopper((s) => s.queue.running);
+  const { running } = useJobBoard();
   const rows = laneRows(machines, running);
   return (
     <Panel title="Lanes" icon={Layers} count={`${running.length} running`} bodyClassName="grid grid-cols-1 gap-2">

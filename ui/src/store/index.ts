@@ -1,11 +1,14 @@
-// The UI's one store: what the daemon last said, kept current by SSE. Reads go through `get`,
+// The UI's one store: what the daemon last said, kept current by SSE. Jobs are held once, by id
+// (`jobs`); every job view derives from them through `jobBoard` (store/selectors.ts). Reads go through `get`,
 // writes through `act` (POST /ui/api/*). Refreshes after events are debounced, so a burst of
 // events costs one round of requests.
 import { toast } from 'sonner';
 import { create } from 'zustand';
-import { get, post, SessionRejected, clearToken, sessionIsLive } from '@/lib/api';
+import { get, post, SessionRejected, clearToken, readSession } from '@/lib/api';
 import { HISTORY_TYPES } from '@/model/event-types';
-import type { Decision, DomainEvent, Health, MachineView, PartAccount, PluginsReport, Question, Queue, RoutingReport, SourceStatus, UsageReport, WebhookConfig, WebhookDelivery, WebhookView, WebhooksView } from '@/model/wire';
+import { reloadNeeded } from '@/model/update';
+import type { SessionUser, SessionView } from '@/model/wire';
+import type { Decision, DomainEvent, Health, Job, MachineView, PartAccount, PluginsReport, Question, Queue, RoutingReport, SourceStatus, UpdateStatus, UsageReport, WebhookConfig, WebhookDelivery, WebhookView, WebhooksView } from '@/model/wire';
 
 export const CAP = { events: 500, history: 5000, decisions: 100, deliveries: 100 };
 export type Conn = 'connecting' | 'live' | 'reconnecting';
@@ -15,8 +18,15 @@ export interface HopperState {
   loadError: string | null;
   conn: Conn;
   authed: boolean;
+  /** Who the session belongs to; null logged out. */
+  user: SessionUser | null;
+  /** The ways to sign in (GET /ui/api/session); null until read. */
+  signIn: SessionView['signIn'] | null;
   health: Health | null;
-  queue: Queue;
+  /** Every job the daemon's /api/queue holds — not ended, or ended in the last 24 hours — by id. */
+  jobs: Record<string, Job>;
+  /** The queue order of the waiting jobs, as /api/queue gave it. */
+  waitingOrder: string[];
   machines: MachineView[];
   decisions: Decision[];
   /** Open questions, every stage. */
@@ -41,14 +51,16 @@ export interface HopperState {
   /** GET /api/routing, fetched by the Routing view; `routingError` when that failed. */
   routing: RoutingReport | null;
   routingError: string | null;
+  /** GET /api/update: self-update (issue #44). */
+  update: UpdateStatus | null;
+  /** The installed commit when this page loaded: another one later means the daemon restarted on an update. */
+  loadedCommit: string | undefined;
 }
 
-const EMPTY_QUEUE: Queue = { waiting: [], running: [], waitingAnswer: [], ended: [], counts: {} };
-
 export const useHopper = create<HopperState>(() => ({
-  loaded: false, loadError: null, conn: 'connecting', authed: false, health: null, queue: EMPTY_QUEUE, machines: [],
+  loaded: false, loadError: null, conn: 'connecting', authed: false, user: null, signIn: null, health: null, jobs: {}, waitingOrder: [], machines: [],
   decisions: [], questions: [], handled: [], events: [], history: [], sources: [], deliveries: [], subscriptions: [], webhookConfig: null,
-  plugins: null, pluginsError: null, usage: null, accounts: [], routing: null, routingError: null,
+  plugins: null, pluginsError: null, usage: null, accounts: [], routing: null, routingError: null, update: null, loadedCommit: undefined,
 }));
 const set = useHopper.setState;
 const state = useHopper.getState;
@@ -56,6 +68,12 @@ const state = useHopper.getState;
 const capped = <T,>(list: T[], cap: number) => (list.length > cap ? list.slice(0, cap) : list);
 const upsert = <T,>(list: T[], item: T, same: (x: T) => boolean, cap: number) =>
   list.some(same) ? list.map((x) => (same(x) ? item : x)) : capped([item, ...list], cap);
+
+/** The one way jobs enter the store: an /api/queue answer replaces them all. */
+const jobsOf = (q: Queue): Pick<HopperState, 'jobs' | 'waitingOrder'> => ({
+  jobs: Object.fromEntries([...q.waiting, ...q.waitingAnswer, ...q.running, ...q.ended].map((j) => [j.id, j])),
+  waitingOrder: q.waiting.map((j) => j.id),
+});
 
 export async function refreshHealth() { set({ health: await get<Health>('/api/health') }); }
 export async function refreshPlugins() {
@@ -88,9 +106,26 @@ export async function markSeen(ids: string[]) {
     }
   }
 }
+/** GET /api/update. The daemon running another commit than this page was loaded from → reload (new UI bundle). */
+export async function refreshUpdate() {
+  const update = await get<UpdateStatus>('/api/update');
+  const { loadedCommit } = state();
+  if (reloadNeeded(loadedCommit, update)) { location.reload(); return; }
+  set({ update, loadedCommit: loadedCommit ?? update.installed?.commit });
+}
+/** POST /ui/api/update: check, apply, or settings. Answers the new status; failures toast. */
+export async function updateAct(body: { action: 'check' | 'apply' } | { action: 'settings'; channel?: UpdateStatus['channel']; autoUpdate?: boolean }, done?: string) {
+  try {
+    set({ update: await post<UpdateStatus>('/ui/api/update', body) });
+    if (done) toast.success(done);
+  } catch (e) {
+    if (e instanceof SessionRejected) set({ authed: false });
+    toast.error((e as Error).message);
+  }
+}
 export async function refreshLive() {
   const [queue, machines, usage] = await Promise.all([get<Queue>('/api/queue'), get<{ machines: MachineView[] }>('/api/machines'), get<UsageReport>('/api/usage')]);
-  set({ queue, machines: machines.machines, usage });
+  set({ ...jobsOf(queue), machines: machines.machines, usage });
 }
 /** Usage and accounts change without an event (a usage source reads in the background): views poll this. */
 export async function refreshUsage() {
@@ -106,7 +141,10 @@ export const refreshLiveSoon = debounced(refreshLive);
 const refreshQuestionsSoon = debounced(refreshQuestions);
 
 export async function checkSession() {
-  try { set({ authed: await sessionIsLive() }); } catch { /* daemon unreachable: keep the current mode */ }
+  try {
+    const s = await readSession();
+    set({ authed: s.authenticated, user: s.user ?? null, signIn: s.signIn });
+  } catch { /* daemon unreachable: keep the current mode */ }
 }
 
 /** A UI mutation. Failures toast; a rejected session drops to read-only. Resolves true on success. */
@@ -117,7 +155,7 @@ export async function act(path: string, body: unknown = {}, done?: string): Prom
     refreshLiveSoon();
     return true;
   } catch (e) {
-    if (e instanceof SessionRejected) set({ authed: false });
+    if (e instanceof SessionRejected) set({ authed: false, user: null });
     toast.error((e as Error).message);
     return false;
   }
@@ -126,7 +164,7 @@ export async function act(path: string, body: unknown = {}, done?: string): Prom
 export async function logout() {
   try { await post('/ui/api/logout'); } catch { /* already gone */ }
   clearToken();
-  set({ authed: false });
+  set({ authed: false, user: null });
 }
 
 export function onDomainEvent(e: DomainEvent) {
@@ -140,6 +178,7 @@ export function onDomainEvent(e: DomainEvent) {
   refreshLiveSoon();
   if (e.type.startsWith('question.')) refreshQuestionsSoon();
   if (e.type === 'router.mode_changed') refreshHealth().catch(() => {});
+  if (e.type.startsWith('update.')) refreshUpdate().catch(() => {});
   if (e.type === 'decision.made') {
     const id = e.decisionId ?? String(e.data.decisionId);
     get<Decision>(`/api/decisions/${encodeURIComponent(id)}`).then((d) => {
@@ -166,10 +205,11 @@ export async function load() {
     get<UsageReport>('/api/usage'), get<{ accounts: PartAccount[] }>('/api/accounts'),
   ]);
   set({
-    loaded: true, loadError: null, health, queue, machines: machines.machines, decisions: decisions.decisions,
+    loaded: true, loadError: null, health, ...jobsOf(queue), machines: machines.machines, decisions: decisions.decisions,
     events: events.events.slice().sort((a, b) => b.seq - a.seq), history: history.events.slice().sort((a, b) => a.seq - b.seq),
     subscriptions: subs.subscriptions, webhookConfig: subs.config ?? null, deliveries: deliveries.deliveries,
     questions: questions.questions, handled: handledOf(allQuestions.questions), sources: sources.sources, usage, accounts: accounts.accounts,
   });
+  refreshUpdate().catch(() => {});
 }
 export const setLoadError = (loadError: string) => set({ loadError });

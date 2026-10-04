@@ -262,7 +262,11 @@ export type EventType =
   | 'question.answered'
   | 'question.closed'
   | 'question.dismissed'
-  | 'question.expired';
+  | 'question.expired'
+  | 'update.available'
+  | 'update.started'
+  | 'update.applied'
+  | 'update.failed';
 
 /**
  * Payload schema version per event type (docs/schemas/<type>.v<N>.json). Additive field →
@@ -274,6 +278,7 @@ export const EVENT_SCHEMA_VERSIONS: Readonly<Record<EventType, number>> = {
   'job.requeued': 1, 'job.reattached': 1, 'job.reprioritized': 1, 'lane.opened': 1, 'lane.closed': 1,
   'decision.made': 2, 'router.mode_changed': 1, 'question.asked': 1, 'question.escalated': 2,
   'question.answered': 2, 'question.closed': 1, 'question.dismissed': 1, 'question.expired': 1,
+  'update.available': 1, 'update.started': 1, 'update.applied': 1, 'update.failed': 1,
 };
 
 export const EVENT_TYPES: readonly EventType[] = [
@@ -281,6 +286,7 @@ export const EVENT_TYPES: readonly EventType[] = [
   'job.progressed', 'job.finished', 'job.failed', 'job.cancelled', 'job.requeued', 'job.reattached', 'job.reprioritized',
   'lane.opened', 'lane.closed', 'decision.made', 'router.mode_changed',
   'question.asked', 'question.escalated', 'question.answered', 'question.closed', 'question.dismissed', 'question.expired',
+  'update.available', 'update.started', 'update.applied', 'update.failed',
 ];
 
 export interface DomainEvent<T = Record<string, unknown>> {
@@ -436,3 +442,13 @@ export type * from './plugins.ts';
 // ---- Question gates: src/domain/question-gates.ts (re-exported here) -------------------
 
 export type { QuestionGatesView, RiskRuleView, RulesView } from './question-gates.ts';
+
+// ---- Sign-in: src/domain/sign-in.ts (re-exported here) ------------------------------------
+
+export type { Identity, IdentityProviderType, SessionUser, SessionView, SignInProviderView, UiRole } from './sign-in.ts';
+export { UI_ROLES, roleAllows } from './sign-in.ts';
+
+// ---- Self-update (issue #44) ------------------------------------------------------------
+
+export type { InstallInfo, UpdateApply, UpdateChange, UpdateChannel, UpdateRelease, UpdateSettings, UpdateState, UpdateStatus } from './update.ts';
+export { UPDATE_CHANGES_CAP, UPDATE_CHANNELS } from './update.ts';

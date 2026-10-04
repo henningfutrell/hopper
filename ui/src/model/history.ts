@@ -1,5 +1,7 @@
-// The charts' data, from the event log: ended jobs per time bucket, and what each lane ran when.
-import type { DomainEvent } from './wire.ts';
+// The charts' data: ended jobs per time bucket, from the job store; what each lane ran when, from
+// the event log with the job store's word on which jobs run now.
+import { GROUP } from './board.ts';
+import type { DomainEvent, Job, JobStatus } from './wire.ts';
 
 export interface Bucket { start: number; finished: number; failed: number; cancelled: number }
 
@@ -9,15 +11,14 @@ function starts(now: number, bucketMs: number, buckets: number): number[] {
   return Array.from({ length: buckets }, (_, i) => last - (buckets - 1 - i) * bucketMs);
 }
 
-export function throughput(events: DomainEvent[], now: number, bucketMs: number, buckets: number): Bucket[] {
+/** `ended`: the job board's ended jobs, bucketed by status at their end. */
+export function throughput(ended: Job[], now: number, bucketMs: number, buckets: number): Bucket[] {
   const out = starts(now, bucketMs, buckets).map((start): Bucket => ({ start, finished: 0, failed: 0, cancelled: 0 }));
   const first = out[0]?.start ?? 0;
-  for (const e of events) {
-    const kind = e.type === 'job.finished' ? 'finished' : e.type === 'job.failed' ? 'failed' : e.type === 'job.cancelled' ? 'cancelled' : null;
-    if (!kind) continue;
-    const i = Math.floor((Date.parse(e.at) - first) / bucketMs);
-    const b = out[i];
-    if (b) b[kind] += 1;
+  for (const j of ended) {
+    if (j.status !== 'finished' && j.status !== 'failed' && j.status !== 'cancelled') continue;
+    const b = out[Math.floor((Date.parse(j.finishedAt ?? j.updatedAt) - first) / bucketMs)];
+    if (b) b[j.status] += 1;
   }
   return out;
 }
@@ -29,8 +30,19 @@ const ENDS: Partial<Record<DomainEvent['type'], SpanOutcome>> = {
   'job.finished': 'finished', 'job.failed': 'failed', 'job.cancelled': 'cancelled', 'job.requeued': 'requeued', 'question.asked': 'question',
 };
 
-/** One span per job run on a lane, in start order; spans that ended before `since` are dropped. */
-export function laneSpans(events: DomainEvent[], since: number): LaneSpan[] {
+/** How a span ends when the job store says its job no longer runs. */
+const LEFT: Record<JobStatus, SpanOutcome> = {
+  finished: 'finished', failed: 'failed', cancelled: 'cancelled', waiting_answer: 'question', queued: 'requeued', held: 'requeued',
+  claimed: 'running', running: 'running',
+};
+
+/**
+ * One span per job run on a lane, in start order; spans that ended before `since` are dropped.
+ * `jobs` (the job store) wins over the log: an open span of a job not running there ends with the
+ * job (or goes, when the store no longer holds it), and a running job the log has no start for
+ * gets its span from `startedAt`.
+ */
+export function laneSpans(events: DomainEvent[], since: number, jobs: ReadonlyMap<string, Job>): LaneSpan[] {
   const spans: LaneSpan[] = [];
   const open = new Map<string, LaneSpan>();
   for (const e of [...events].sort((a, b) => a.seq - b.seq)) {
@@ -49,7 +61,18 @@ export function laneSpans(events: DomainEvent[], since: number): LaneSpan[] {
     span.outcome = outcome;
     open.delete(e.jobId);
   }
-  return spans.filter((s) => s.end === null || s.end >= since);
+  for (const [jobId, span] of open) {
+    const job = jobs.get(jobId);
+    if (job && GROUP[job.status] === 'running') continue;
+    if (!job) { spans.splice(spans.indexOf(span), 1); continue; }
+    span.end = Date.parse(job.finishedAt ?? job.updatedAt);
+    span.outcome = LEFT[job.status];
+  }
+  for (const job of jobs.values()) {
+    if (GROUP[job.status] !== 'running' || open.has(job.id) || !job.laneId || !job.startedAt) continue;
+    spans.push({ laneId: job.laneId, jobId: job.id, start: Date.parse(job.startedAt), end: null, outcome: 'running' });
+  }
+  return spans.filter((s) => s.end === null || s.end >= since).sort((a, b) => a.start - b.start);
 }
 
 /** How many spans overlap each bucket; buckets aligned as in `throughput`. */

@@ -11,7 +11,7 @@ import { usePoll } from '@/hooks/use-poll';
 import { ReadingGauge } from '@/components/reading';
 import { orderReadings, readingKey } from '@/model/usage';
 import { refreshUsage, useHopper } from '@/store';
-import { useJobName } from '@/store/selectors';
+import { useJobBoard, useJobName, useLaneSpans } from '@/store/selectors';
 import { cn } from '@/lib/utils';
 
 // `show` is the breakpoint from which the legend fits beside the panel's other actions.
@@ -24,11 +24,11 @@ const Legend = ({ items, show = 'sm:flex' }: { items: readonly { key: string; co
 );
 
 export function ThroughputPanel() {
-  const history = useHopper((s) => s.history);
+  const { ended } = useJobBoard();
   const now = useNow();
   return (
     <Panel title="Ended per hour" icon={BarChart3} count="24 h" action={<Legend items={THROUGHPUT_LEGEND} />}>
-      <ThroughputChart history={history} now={now} />
+      <ThroughputChart ended={ended} now={now} />
     </Panel>
   );
 }
@@ -38,11 +38,11 @@ type Win = keyof typeof WINDOWS;
 const OUTCOMES = Object.entries(OUTCOME_TONE).map(([key, tone]) => ({ key, color: COLOR[tone] }));
 
 export function TimelinePanel() {
-  const history = useHopper((s) => s.history);
   const machines = useHopper((s) => s.machines);
   const nameOf = useJobName();
   const now = useNow();
   const [win, setWin] = useState<Win>('1h');
+  const spans = useLaneSpans(now - WINDOWS[win]);
   const lanes = machines.flatMap((m) => m.lanes.map((l) => l.id));
   return (
     <Panel title="Lane timeline" icon={GanttChart} action={<>
@@ -51,7 +51,7 @@ export function TimelinePanel() {
         <TabsList className="h-7">{Object.keys(WINDOWS).map((w) => <TabsTrigger key={w} value={w} className="px-2 text-xs">{w}</TabsTrigger>)}</TabsList>
       </Tabs>
     </>}>
-      <LaneTimeline history={history} now={now} windowMs={WINDOWS[win]} lanes={lanes} nameOf={nameOf} />
+      <LaneTimeline spans={spans} now={now} windowMs={WINDOWS[win]} lanes={lanes} nameOf={nameOf} />
     </Panel>
   );
 }

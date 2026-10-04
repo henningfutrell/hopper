@@ -1,12 +1,15 @@
 // The UI session and the only mutations left (design.md "UI session and mutations"): a one-time
-// login code → POST /ui/login → a page that keeps the session token in localStorage → POST
-// /ui/api/* with that token in x-jobhopper-session, exact Origin, same-origin, JSON. Every
-// refusal is a logged 403. A logged-in browser hands another device a login link per LAN name
-// (design.md "Reaching the UI across the LAN").
+// login code (when auth.yaml leaves local sign-in on) or an identity provider (sign-in.ts) → a page
+// that keeps the session token in localStorage → POST /ui/api/* with that token in
+// x-jobhopper-session, exact Origin, same-origin, JSON, and a role that allows it (design.md
+// "Sign-in: local, OIDC and SAML"). Every refusal is a logged 403. A logged-in admin hands another
+// device a login link per LAN name (design.md "Reaching the UI across the LAN").
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import type { PluginsView, QuestionService, Store } from '../../domain/ports.ts';
-import { LIST_ROLES, ROLES, SELECTABLE_ROLES } from '../../domain/types.ts';
+import { existsSync, unlinkSync } from 'node:fs';
+import { LOCAL_IDENTITY, type SignIn } from '../../auth/index.ts';
+import type { PluginsView, QuestionService, Store, Updater } from '../../domain/ports.ts';
+import { LIST_ROLES, ROLES, SELECTABLE_ROLES, UPDATE_CHANNELS, type SessionView, type UiRole } from '../../domain/types.ts';
 import type { Engine } from '../../engine/index.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { lanHosts, type Lan } from '../reach.ts';
@@ -17,7 +20,8 @@ import type { WebhookConfigView } from '../webhooks.ts';
 import type { WebhooksEditor } from '../../webhooks/edit.ts';
 import { SESSION_HEADER, mutationRefusal } from './guard.ts';
 import { createLoginCode } from './login-code.ts';
-import type { UiSessions } from './sessions.ts';
+import { sessionUser, type UiSessions } from './sessions.ts';
+import { registerSignInRoutes } from './sign-in.ts';
 
 export { LOGIN_CODE_FILE } from './login-code.ts';
 
@@ -25,6 +29,7 @@ export interface UiRouteOptions {
   engine: Engine;
   questions: QuestionService;
   sessions: UiSessions;
+  signIn: SignIn;
   plugins: PluginsView;
   /** The bound port (known only after listen). */
   port: () => number;
@@ -33,6 +38,7 @@ export interface UiRouteOptions {
   store: Pick<Store, 'webhooks' | 'documents'>;
   webhookConfig: WebhookConfigView;
   webhooksEditor: WebhooksEditor;
+  updater: Updater;
 }
 
 const idParams = z.object({ id: z.string() });
@@ -65,13 +71,19 @@ const machinesEditBody = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('edit'), name: machineName, lanes: machineLanes.optional(), executors: machineExecutors.optional(), label: z.string().trim().min(1).nullable().optional(), version: z.string().min(1) }),
   z.strictObject({ action: z.literal('remove'), name: machineName, version: z.string().min(1) }),
 ]);
+// Self-update (issue #44): check now, apply the available update, or set the channel / auto-update.
+const updateBody = z.discriminatedUnion('action', [
+  z.strictObject({ action: z.literal('check') }),
+  z.strictObject({ action: z.literal('apply') }),
+  z.strictObject({ action: z.literal('settings'), channel: z.enum(UPDATE_CHANNELS).optional(), autoUpdate: z.boolean().optional() }),
+]);
 const EDIT_STATUS = { invalid: 400, not_found: 404, conflict: 409 } as const;
 /** The rules themselves are validated by the plugin host (the plugins.yaml schema), so a refusal names the field. */
 const routingEditBody = z.strictObject({ rules: z.array(z.any()), version: z.string().min(1) });
 
-const refuse = (req: FastifyRequest, reply: FastifyReply, why: string) => {
+const refuse = (req: FastifyRequest, reply: FastifyReply, why: string, needs?: UiRole) => {
   console.warn(`job-hopper: UI ${req.method} ${req.url} refused: ${why}`);
-  return reply.code(403).send({ error: why });
+  return reply.code(403).send(needs ? { error: why, needs } : { error: why });
 };
 
 /** The login answer: store the token (hex, safe inline) for this exact origin, then go to the UI. */
@@ -82,8 +94,10 @@ const loginPage = (token: string): string => `<!doctype html><meta charset="utf-
 
 export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void {
   const code = createLoginCode(o.dataDir);
-  code.rotate();
-  const { sessions } = o;
+  const { sessions, signIn } = o;
+  // Local sign-in off: no code file, not even a stale one from before.
+  if (signIn.local) code.rotate();
+  else if (existsSync(code.path)) unlinkSync(code.path);
 
   app.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string' }, (_req, body, done) => {
     done(null, Object.fromEntries(new URLSearchParams(body as string)));
@@ -92,27 +106,35 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   // Origin may be null (a local file posts it); the code is the credential.
   app.post('/ui/login', async (req, reply) => {
     const parsed = loginBody.safeParse(req.body);
+    if (!signIn.local) return refuse(req, reply, 'local sign-in is off in auth.yaml');
     if (!parsed.success || !code.use(parsed.data.code)) return refuse(req, reply, 'wrong or missing login code');
-    const s = sessions.create();
+    const s = sessions.create({ role: 'admin', identity: LOCAL_IDENTITY });
+    console.warn('job-hopper: UI session started: local login code, role admin');
     return reply.type('text/html; charset=utf-8').header('cache-control', 'no-store').header('referrer-policy', 'no-referrer')
       .send(loginPage(s.token));
   });
 
-  app.get('/ui/api/session', async (req) => {
+  app.get('/ui/api/session', async (req): Promise<SessionView> => {
     const header = req.headers[SESSION_HEADER];
     const s = sessions.find(typeof header === 'string' ? header : undefined);
-    return s ? { authenticated: true, expiresAt: s.expiresAt } : { authenticated: false };
+    const offer = { local: signIn.local, origin: signIn.origin(), providers: signIn.providers() };
+    return s ? { authenticated: true, expiresAt: s.expiresAt, user: sessionUser(s), signIn: offer } : { authenticated: false, signIn: offer };
   });
 
-  const guarded = { onRequest: async (req: FastifyRequest, reply: FastifyReply) => {
-    const why = mutationRefusal(req.headers, o.port(), o.lan, sessions);
-    if (why) return refuse(req, reply, why);
-  } };
+  registerSignInRoutes(app, { sessions, signIn, refuse });
 
-  app.post('/ui/api/jobs/:id/cancel', guarded, async (req) => o.engine.cancel(parseWith(idParams, req.params).id, 'cancelled in UI'));
-  app.post('/ui/api/jobs/:id/approve', guarded, async (req) => o.engine.approve(parseWith(idParams, req.params).id));
+  // Each mutation names the least role that may make it (design.md "Sign-in" Roles).
+  const allow = (needs: UiRole) => ({ onRequest: async (req: FastifyRequest, reply: FastifyReply) => {
+    const r = mutationRefusal(req.headers, o.port(), o.lan, sessions, needs);
+    if (r) return refuse(req, reply, r.why, r.needs);
+  } });
+  const operator = allow('operator');
+  const admin = allow('admin');
 
-  app.post('/ui/api/questions/:id/answer', guarded, async (req) => {
+  app.post('/ui/api/jobs/:id/cancel', operator, async (req) => o.engine.cancel(parseWith(idParams, req.params).id, 'cancelled in UI'));
+  app.post('/ui/api/jobs/:id/approve', operator, async (req) => o.engine.approve(parseWith(idParams, req.params).id));
+
+  app.post('/ui/api/questions/:id/answer', operator, async (req) => {
     const { id } = parseWith(idParams, req.params);
     const { answer } = parseWith(answerBody, req.body);
     const r = o.questions.answerByHuman(id, answer);
@@ -121,7 +143,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     throw new HttpError(409, `question ${id} is not open`);
   });
 
-  app.post('/ui/api/questions/:id/close', guarded, async (req) => {
+  app.post('/ui/api/questions/:id/close', operator, async (req) => {
     const { id } = parseWith(idParams, req.params);
     const r = o.questions.closeByHuman(id);
     if (r.ok) return r.question;
@@ -129,7 +151,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     throw new HttpError(409, `question ${id} is not open`);
   });
 
-  app.post('/ui/api/questions/:id/dismiss', guarded, async (req) => {
+  app.post('/ui/api/questions/:id/dismiss', operator, async (req) => {
     const { id } = parseWith(idParams, req.params);
     const r = o.questions.dismissByHuman(id);
     if (r.ok) return r.question;
@@ -137,21 +159,21 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     throw new HttpError(409, `question ${id} is not open`);
   });
 
-  app.post('/ui/api/questions/:id/seen', guarded, async (req) => {
+  app.post('/ui/api/questions/:id/seen', operator, async (req) => {
     const { id } = parseWith(idParams, req.params);
     const r = o.questions.markSeen(id);
     if (r.ok) return r.question;
     throw new HttpError(404, `question ${id} not found`);
   });
 
-  app.post('/ui/api/router-mode', guarded, async (req) => {
+  app.post('/ui/api/router-mode', admin, async (req) => {
     o.engine.setRouterMode(parseWith(routerModeBody, req.body).mode);
     return routerView(o.engine, o.plugins);
   });
 
   // design.md "UI and mutation": one instance's options (never a command-bearing one), the plugin
   // filling a one-instance role, or a rescan. Answers the new GET /api/plugins report.
-  app.post('/ui/api/plugins', guarded, async (req) => {
+  app.post('/ui/api/plugins', admin, async (req) => {
     const r = await o.plugins.edit(parseWith(pluginsEditBody, req.body));
     if (!r.ok) throw new HttpError(EDIT_STATUS[r.code], r.error);
     return r.report;
@@ -159,7 +181,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
 
   // Question gates (issue #18): the rules, whole, against the version read (sha-256 of the text);
   // the next question reads them. Answers the new GET /api/question-gates rules.
-  app.post('/ui/api/rules', guarded, async (req) => {
+  app.post('/ui/api/rules', admin, async (req) => {
     const { text, version } = parseWith(rulesBody, req.body);
     const r = writeRules(o.store.documents, text, version);
     if (!r.ok) throw new HttpError(EDIT_STATUS[r.code], r.error);
@@ -169,7 +191,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   // Issue #18: one webhooks.yaml entry added, edited, its secret rotated, or removed. Answers the
   // new GET /api/webhooks view, plus the new secret after add or rotate-secret — the only time a
   // secret leaves the daemon.
-  app.post('/ui/api/webhooks', guarded, async (req) => {
+  app.post('/ui/api/webhooks', admin, async (req) => {
     const r = o.webhooksEditor.edit(parseWith(webhooksEditBody, req.body));
     if (!r.ok) throw new HttpError(EDIT_STATUS[r.code], r.error);
     return { ...webhooksView(o.store, o.webhookConfig), ...(r.secret === undefined ? {} : { secret: r.secret }) };
@@ -177,7 +199,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
 
   // design.md "Machines from the UI" (issue #18): add, edit or remove one attached machine in
   // plugins.yaml; applies without a restart. Answers the new GET /api/machines/config.
-  app.post('/ui/api/machines', guarded, async (req) => {
+  app.post('/ui/api/machines', admin, async (req) => {
     const r = await o.plugins.editMachines(parseWith(machinesEditBody, req.body));
     if (!r.ok) throw new HttpError(EDIT_STATUS[r.code], r.error);
     return r.config;
@@ -185,20 +207,37 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
 
   // design.md "Routing rules (issue #18)": the whole ordered list into plugins.yaml `routing:`.
   // Answers the new GET /api/routing report. A rule change applies to new jobs only.
-  app.post('/ui/api/routing', guarded, async (req) => {
+  app.post('/ui/api/routing', admin, async (req) => {
     const r = await o.plugins.editRouting(parseWith(routingEditBody, req.body));
     if (!r.ok) throw new HttpError(EDIT_STATUS[r.code], r.error);
     return r.report;
   });
 
+  // design.md "Self-update": answers the new GET /api/update status. `apply` answers at once (the
+  // build runs in the background; the daemon then restarts), or 409 when nothing can be applied.
+  app.post('/ui/api/update', admin, async (req) => {
+    const body = parseWith(updateBody, req.body);
+    if (body.action === 'check') return o.updater.check();
+    if (body.action === 'settings') {
+      const { action: _, ...patch } = body;
+      return o.updater.settings(patch);
+    }
+    const r = o.updater.apply();
+    if (!r.ok) throw new HttpError(409, r.error);
+    return r.status;
+  });
+
   // The current login code as a link per LAN name, in the fragment (never sent to a server). It
   // works once, like the code file; using either rotates both.
-  app.post('/ui/api/device-link', guarded, async () => {
+  app.post('/ui/api/device-link', admin, async () => {
+    if (!signIn.local) throw new HttpError(409, 'local sign-in is off in auth.yaml: no login code to hand on');
     if (o.lan.names.length === 0) throw new HttpError(409, 'no LAN names: set JOB_HOPPER_LAN_NAMES and JOB_HOPPER_LAN_PEERS to reach the UI from another device');
     return { links: lanHosts(o.port(), o.lan).map((h) => `http://${h}/#login=${code.current()}`) };
   });
 
-  app.post('/ui/api/logout', guarded, async (req) => {
+  app.post('/ui/api/logout', allow('viewer'), async (req) => {
+    const s = sessions.find(String(req.headers[SESSION_HEADER]));
+    if (s) console.warn(`job-hopper: UI session ended: ${s.identity.provider} ${sessionUser(s).name}`);
     sessions.drop(String(req.headers[SESSION_HEADER]));
     return { ok: true };
   });

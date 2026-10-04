@@ -46,7 +46,9 @@ Fastify for HTTP, `node:sqlite` for storage, zod for request validation.
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin) | engine, http, store, plugins |
 | `src/routing/` | routing rules: the plugins.yaml `routing:` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
 | `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`); job lifecycle; routing at intake (`source-host.ts`); restart recovery | http |
-| `src/http/` | Fastify routes, SSE, static UI | executors, plugins (reads them through the `PluginsView` port) |
+| `src/auth/` | sign-in through identity providers (issue #39): `auth.yaml` load (`config.ts`), the role rules (`roles.ts`, pure), the identity provider port (`provider.ts`) and its adapters `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), the sign-in flow — flows, tickets, bindings (`index.ts`) | engine, http, store, plugins, decider, questions |
+| `src/update/` | self-update ("Self-update"): install.json, the git mirror of the update repository, the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers | engine, http, plugins, decider |
+| `src/http/` | Fastify routes, SSE, static UI; the UI session, its role check and the sign-in routes (`ui/`) | executors, plugins (reads them through the `PluginsView` port) |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
 | `examples/plugins/` | one minimal runnable custom plugin per role, for authors (`docs/plugins.md`); imports only `job-hopper/plugin` types and `node:` builtins | everything in `src/` at runtime |
 | `src/main.ts` | composition root: config → plugins.yaml (migrated or written when absent) → plugin host (every part) → store → engine → server | — |
@@ -237,7 +239,7 @@ Loopback (`127.0.0.1`), plus the LAN names when set — "Reaching the UI across 
 | GET | `/api/jobs/:id` | | `Job` · 404 |
 | POST | `/api/jobs/:id/cancel` | | `Job` · 404 · 409 terminal |
 | POST | `/api/jobs/:id/approve` | | `Job` (emits `job.approved`) · 404 · 409 terminal |
-| GET | `/api/queue` | | `{ waiting: Job[], running: Job[], counts: Record<JobStatus, number> }` |
+| GET | `/api/queue` | | `{ waiting: Job[], running: Job[], waitingAnswer: Job[], ended: Job[] }` — `waiting` in queue order; `ended` = jobs ended in the last 24 h, newest end first (issue #45). No counts: the UI counts the lists |
 | GET | `/api/machines` | | `{ machines: (MachineSnapshot & { lanes: Lane[], usage: UsageReading[] })[] }` |
 | GET | `/api/decisions` | `?limit=50` | `{ decisions: Decision[] }` newest first |
 | GET | `/api/decisions/:id` | | `Decision` · 404 |
@@ -711,6 +713,7 @@ appends `question.expired` **and** `job.failed`. `question.asked`, `question.ans
 The events table gains a `question_id` column (migration 2).
 `GET /api/queue` `counts` gains `waiting_answer`; `/api/queue` gains `waitingAnswer: Job[]`.
 `/api/queue` gains `ended: Job[]` (issue #5): ended jobs, newest `finishedAt` first, at most 20 — the UI board's Ended column.
+(Issue #45: `ended` is now every job ended in the last 24 h, and `counts` is gone; see "One job store".)
 
 ## Events added
 
@@ -897,6 +900,9 @@ token and send any `Origin`. Cookies are no better here: they ignore ports, so a
 | POST | `/ui/api/device-link` | `{}` | `{ links }`: the current login code as `http://<LAN name>:<port>/#login=<code>`, one per LAN name; 409 without LAN names ("Reaching the UI across the LAN") |
 | POST | `/ui/api/logout` | `{}` | drop the session |
 
+Since issue #39 a session may also come from an identity provider, and each mutation needs a UI
+role: "Sign-in: local, OIDC and SAML" (Roles).
+
 **Residual risk, stated.** Still able to act or read:
 - A process running **as the owner** that reads `ui-login-code`/`ui-login.html` or the
   browser profile's `localStorage`. That includes Claude jobs running with
@@ -1072,9 +1078,11 @@ labelled `hopper:claimed` with no local job is skipped and shown in status detai
 above; empty body → claimed, then failed with error "empty issue body"; priority per
 "Priority"; cwd = `repoPaths[repo]` (expanded) else `defaultCwd`.
 
-**Write criteria.** The hopper's only issue writes are labels (state); it posts no comments at
-all (owner decision, 2026-10-04: a finished issue needs no comment). No claim, progress, question,
-answered, failure, cancel or completion comment; no reactions, issue edits, closes, or PR
+**Write criteria.** The hopper's only issue writes are labels (state) and closing the issue of a
+finished job; it posts no comments at all (owner decision, 2026-10-04: a finished issue needs no
+comment). A finished job's issue is closed with `state_reason: completed` (issue #38: finished work
+leaves no open issue behind); a failed or cancelled job's issue stays open. No claim, progress,
+question, answered, failure, cancel or completion comment; no reactions, other issue edits, or PR
 comments. Jobs get no way to write to their issue (no token, no helper), and their prompt says
 nothing about commenting (owner decision, 2026-10-04: a job has no reason to talk on its issue): the
 issue context block ends at the comments list, with no footer. A question goes to the owner through
@@ -1106,7 +1114,13 @@ A failure never goes to the issue as text. It is one stderr line in the daemon l
 
 **Signals (check):** per active job, `getIssue`:
 - issue `closed`, or `label` removed → `cancel` (reason `issue closed` / `label removed`);
-  issue 404/410 → `cancel` (`issue gone`). Jobs are told not to close their own issue.
+  issue 404/410 → `cancel` (`issue gone`).
+- **Except the job's own pull request** (issue #38): a closed issue whose last close event's closer
+  is a merged pull request opened at or after the job's `createdAt` gives no signal — that is the
+  job's work landing, and the job still has to install and verify. It runs on and ends as it
+  reports (`finished` on `JOB_HOPPER_DONE`). `closingPullRequest` asks GraphQL
+  (`src/sources/github/closer.ts`); a pull request opened before the job, a person, or a commit
+  closing the issue cancels as above; a permanent error asking counts as "not its own".
 - `hopper:backburner` on the issue of a waiting (`queued`/`held`) job → `cancel` (`backburner`);
   a running job is not touched.
 - **Error classes:** `GitHubApi` errors carry `permanent` (404/410/403/422) vs transient
@@ -1436,7 +1450,9 @@ Manifest:
   "default_events": [] }
 ```
 
-- `issues: write` now covers only labels (write criteria). The
+- `issues: write` now covers only labels and closing a finished job's issue (write criteria).
+  Reading which pull request closed an issue needs nothing more (verified against the live app,
+  2026-10-04). The
   app could later drop to fewer permissions; not changed here.
 
 - `hook_attributes` exists only to make GitHub issue a webhook secret for later. The URL uses
@@ -2067,6 +2083,10 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
 | `JOB_HOPPER_UI_SESSION_HOURS` | `12` |
 | `JOB_HOPPER_PLUGIN_DIR` | `~/.config/job-hopper/plugins` |
 | `JOB_HOPPER_PLUGINS_FILE` | `~/.config/job-hopper/plugins.yaml` |
+| `JOB_HOPPER_AUTH_FILE` | `~/.config/job-hopper/auth.yaml` (issue #39, "Sign-in: local, OIDC and SAML") |
+| `JOB_HOPPER_PUBLIC_URL` | unset (issue #39) |
+| `JOB_HOPPER_UPDATE_CHECK_MS` | `900000` — self-update check interval; `0` only when asked ("Self-update") |
+| `JOB_HOPPER_RESTART` | unset (detected) — `exit` or `respawn` after an update ("Self-update") |
 
 ### Settled in slice 5 (2026-10-03)
 
@@ -2391,6 +2411,16 @@ responsive and fast. Builds on the at-a-glance board (issue #5).
   d3 for scales/shapes/arcs only — React renders every SVG node, axes included, so d3 never owns
   DOM. zustand holds the one store. sonner for toasts. Hand-rolled only the static file map
   (shorter than `@fastify/static`'s config).
+- **One job store** (issue #45). The store holds each job once, by id (`jobs`), filled only from
+  `/api/queue` answers (on load, and on the refresh every stream event triggers). Every job view
+  — the KPI cards, the lanes, waiting, on-a-question and ended lists, the attention panel, the
+  ended-per-hour chart, the lane timeline — derives from it through `jobBoard`
+  (`ui/src/model/board.ts`), whose `GROUP` is the one map from status to *job group*. A card is
+  the length of the list it names; `test/ui/overview-counts.test.ts` renders the overview and
+  checks each card against its list, before and after a stream event. Lane spans come from the
+  event log, but the job store wins: a span of a job no longer running ends with the job, and a
+  running job with no start in the log gets its span from `startedAt`. The nav's questions badge
+  counts `awaitsOwner` (`ui/src/model/questions.ts`), the same test the Questions view marks seen by.
 - **Realtime.** One SSE connection; each domain event updates the log and chart history at once
   and debounces a `/api/queue` + `/api/machines` refresh (150 ms). One shared 1 s clock drives
   every ticking label. `ui/src/model/event-types.ts` is a `Record<EventType, true>`: a new event
@@ -2398,7 +2428,7 @@ responsive and fast. Builds on the at-a-glance board (issue #5).
 - **Views** (hash-routed): Overview (KPIs with sparklines, lane timeline, attention, lanes /
   waiting / ended, ended-per-hour chart, usage gauges, live activity), Questions, Decisions,
   Events, Sources, Machines, Plugins (#13's panel, ported: "Settled in slice 7"), Webhooks. Charts read `/api/events?types=…&limit=5000`
-  (`HISTORY_TYPES`): lane spans and ended-per-hour are derived client-side, no new API.
+  (`HISTORY_TYPES`): lane spans are derived client-side, no new API; ended-per-hour counts the job store's ended jobs.
 - **Mutations unchanged**: cancel (now behind a confirm dialog), approve, answer, router mode,
   question close, plugins (options, select, rescan), logout — same `/ui/api/*` routes and session header.
 - **Theme.** Dark by default, light by toggle, remembered in `localStorage` (`jh_theme`).
@@ -2747,3 +2777,206 @@ and Routing rules (ordered list; each rule is a stacked form with match and set 
 up/down, delete; one Save for the whole list). The machine select uses `/api/machines` plus the
 routing targets; the executor select uses the configured executors. Forms stack at 390 px width;
 there is no horizontal page scroll.
+
+## Sign-in: local, OIDC and SAML (issue #39, 2026-10-04)
+
+Owner request: the hopper deployable by anyone, plugged into a personal or enterprise identity
+setup — any OIDC provider (Google, Microsoft Entra ID, Okta, Auth0, Keycloak, …), GitHub, and SAML
+SSO — configured by settings, not code; the simple local sign-in kept; roles, sessions and logout the
+same across providers. Operator guide, per provider: `docs/sign-in.md`.
+
+**Not a plugin.** "UI session" is an invariant of the HTTP edge ("Phase 5", *Not plugins*), and
+sign-in is part of it: a swappable part here would be a swappable lock. The capability still arrives
+as configuration of built-in parts — the north star's "or as configuration of one". The three
+provider types are adapters behind one port (`src/auth/provider.ts`), so a fourth is a file and a
+schema branch.
+
+**Libraries, not hand-rolled protocol code.** OIDC and GitHub's OAuth 2.0: `openid-client` (v6;
+discovery, PKCE, state, nonce, ID token validation, userinfo). SAML: `@node-saml/node-saml` (v5;
+signature, audience, InResponseTo, clock-skew validation, SP metadata). Tests drive real protocol
+exchanges against loopback IdPs: `oauth2-mock-server`, a GitHub fake, a SAML IdP signing with an
+openssl throwaway key through `xml-crypto` (`test/support/idp.ts`).
+
+### Configuration — `auth.yaml`
+
+`JOB_HOPPER_AUTH_FILE` (default `~/.config/job-hopper/auth.yaml`), mode 600. Absent → local sign-in
+only (unchanged behaviour). Read **at start only**: an invalid file throws before the store opens,
+naming the field — sign-in fails closed. Schema in `src/auth/config.ts`; reference in
+`docs/sign-in.md`. Client secrets inline, in a file (`clientSecretFile`) or in an environment
+variable (`clientSecretEnv`).
+
+**Dependency on issue #40 (config in the store, secrets from env), stated.** #40 runs in parallel and
+moves the config documents (plugins, webhooks, rules) into the store and every secret into env. This
+work lands first and assumes: `auth.yaml` stays a start-time file until #40 folds it into the stored
+config documents the same way (an admin-only document; a change still applies at the next start, or
+#40 makes the sign-in service follow the stored version); `clientSecretEnv` is already the env path
+#40 asks for; migration 7 (`ALTER TABLE ui_sessions ADD COLUMN … NOT NULL DEFAULT …`) is plain SQL
+both SQLite and Postgres run; #40's store port keeps `UiSessionRepository.all` and `setRole`. The
+dependency runs one way: #40 builds on this, not the reverse. Issuer and
+endpoint URLs must be https, except to loopback (a local test or dev IdP). OIDC discovery runs on the
+first sign-in, not at boot: an unreachable issuer must not stop the daemon.
+
+### Roles
+
+`viewer` < `operator` < `admin` (`src/domain/sign-in.ts`). Every mutation names its least role:
+
+| UI role | mutations |
+|---|---|
+| `viewer` | `POST /ui/api/logout` |
+| `operator` | + jobs `cancel`, `approve`; questions `answer`, `close`, `dismiss`, `seen` |
+| `admin` | + `router-mode`, `plugins`, `rules-file`, `webhooks`, `machines`, `routing`, `device-link`, `update` |
+
+A live session whose role is short gets 403 `{ error, needs }` — the UI keeps the session and
+toasts; any other 403 still means "log in again". The login code always gives `admin`. A provider's
+`roles` (`src/auth/roles.ts`, pure): `admin` / `operator` / `viewer` each match on subjects,
+usernames, emails, email domains or groups; the highest match wins; else `defaultRole`; else **no
+session**. Only an email the provider vouches for is an Identity's `email`: OIDC needs
+`email_verified: true` unless `trustUnverifiedEmail`; GitHub's primary verified email; SAML's
+asserted one.
+
+### The flow (no cookies)
+
+Cookies ignore ports ("UI session and mutations"), and a SAML response is a cross-site POST that a
+`SameSite=Lax` cookie would not survive anyway. So the browser proves it began the sign-in with
+`localStorage`, as the session token already does:
+
+1. The UI keeps a fresh **binding** (32 random bytes, base64url) in `localStorage` `jh_sign_in` and
+   opens `GET /ui/auth/<name>/start?binding=…` **on the sign-in origin** (else 409: the binding would
+   not come back). The daemon keeps a flow — provider, SHA-256 of the binding, the provider's secrets
+   (PKCE verifier, nonce, state) — under a random flow id for 10 minutes, and redirects to the provider with the flow id as `state` / `RelayState`.
+2. The provider returns to `/ui/auth/<name>/callback` (GET for OIDC and GitHub, POST for SAML). The
+   flow is taken (once), the response validated by the library, the Identity built and its role
+   decided. No role → 403 page. Else a one-time **ticket** (2 minutes) and a page whose script posts
+   `{ ticket, binding }` to `POST /ui/auth/complete` (exact sign-in Origin), stores the returned
+   token as `jh_session`, and goes to `/`.
+3. The ticket gives a session only with the binding that began the flow: a callback link handed to
+   another browser — login CSRF — signs nobody in.
+
+Flows and tickets are in memory: a restart mid-sign-in means signing in again. Starting needs no
+session, so at most 10 000 flows are pending; past that the oldest is evicted (never a refusal: a
+flood of starts must not lock real users out, it can only make one start again). Rate limiting
+`/ui/auth/` is the reverse proxy's job (`docs/sign-in.md`). SAML is SP-initiated
+only (`validateInResponseTo: always`); assertions must be signed (`requireSignedResponse` adds the
+whole response); `disableRequestedAuthnContext` and no NameID format, so the IdP's MFA and NameID
+choices pass. `GET /ui/auth/<name>/metadata` serves the SP metadata.
+
+### Sessions and logout
+
+One session kind for every provider: migration 7 adds `role` and `identity` (JSON) to
+`ui_sessions`; older rows become `admin` / provider `local` (they were all made from the login code).
+`GET /ui/api/session` → `{ authenticated, expiresAt?, user?: { role, provider, name }, signIn: {
+local, origin, providers: [{ name, label, type }] } }`. Logout drops the row, for every provider; it
+does not end the provider's own session (no RP-initiated logout or SAML SLO: a hopper session is the
+thing being ended, and the same on every provider). At every start the stored sessions are
+reconciled with `auth.yaml`: a removed provider (or local sign-in turned off) or an account no rule
+grants a role any more loses its session; a changed rule changes the stored role. Audit: one journal
+line per sign-in, refusal and logout (no domain event: webhook subscribers would receive identities).
+
+### Local sign-in off
+
+`local: { enabled: false }`: no `ui-login-code` is written (a stale one is deleted), `POST /ui/login`
+is 403, `POST /ui/api/device-link` is 409, login-code sessions end at the next start.
+
+### A public URL
+
+`JOB_HOPPER_PUBLIC_URL` (origin only, never loopback): the UI behind a reverse proxy. Its host (with
+the port only when it is not the scheme's default) passes the Host guard as a **public request** —
+like a LAN request, `/api/` only with a UI session — from loopback or a LAN peer; its origin may post
+UI mutations; it is the sign-in origin. The daemon binds every interface only when
+`JOB_HOPPER_LAN_PEERS` is set (now allowed with a public URL and no LAN names); a proxy on the same
+machine needs none. Without it the sign-in origin is `http://localhost:<port>`.
+
+**Residual risk, stated.** As before, every local user of the host can read the GET API straight on
+`127.0.0.1:<port>` without a session; deploy on a host only the operator and the proxy use. TLS is
+the proxy's job; without it a session token crosses the network in clear. A session outlives a
+change at the provider (user disabled, group removed) until it expires or the daemon restarts with
+`auth.yaml` changed. GitHub teams are read from the first page (100). The event stream carries the
+session token in its query (`EventSource` sends no headers), so a proxy's access log holds tokens
+unless it skips that path (`docs/sign-in.md`). A `usernames` rule is only as stable as the provider's
+usernames: GitHub logins can be renamed and re-registered, so the guide grants by `subjects`.
+
+## Self-update (issue #44, 2026-10-04)
+
+The hopper knows when a newer version exists, says what changed, and applies it without losing a
+job, a lane or a question: from the UI, or on its own with auto-update. Code: `src/update/`
+(`updater.ts` the loop, `git.ts` the mirror, `install.ts` install.json and the swap, `build.ts` the
+build, `restart.ts` the restart, `blockers.ts`); routes `GET /api/update`, `POST /ui/api/update`.
+
+**The install knows where it came from.** `install.json` in the install (beside `src/`):
+`{ repo, branch, commit, installedAt }`. `scripts/install.sh` writes it from the clone's `origin`
+and `HEAD`; the branch is `main` unless `JOB_HOPPER_UPDATE_BRANCH` names another. An update writes
+the new one. No install.json (a checkout run with `npm start`, a clone without `origin`) → state
+`unavailable` with the reason; nothing else changes.
+
+**Detecting.** A bare mirror at `<data dir>/update/repo.git`, fetched from install.json's `repo` on
+every check — the git CLI, never prompting (`GIT_TERMINAL_PROMPT=0`, ssh `BatchMode=yes`, and
+only the user's ssh config: `-F ~/.ssh/config`, since the unit's `PrivateTmp` puts the daemon in a
+user namespace where root-owned `/etc/ssh` files show as owned by nobody and ssh refuses them), so any
+git URL the daemon's user can fetch works: GitHub by ssh or https, another host, a local path. A
+check runs 10 s after start, then every `JOB_HOPPER_UPDATE_CHECK_MS` (default 900000; 0: only when
+asked), and from the UI's Check now. The **update channel** decides the target: `main` → the head
+of the tracked branch; `release` → the newest `v<major>.<minor>.<patch>` tag. An update is
+**available** when the installed commit does not contain the target (an install ahead of it, e.g.
+from a feature branch, is `current`). What changed: `git log installed..target`, newest first,
+capped at 100 (`truncated`). The newest release is reported on either channel (`release.newer`).
+`update.available` is appended once per target.
+
+**Applying, in flight.** `POST /ui/api/update { action: "apply" }` answers at once; then:
+
+1. The target's tree (`git archive`) is unpacked to `<data dir>/update/source`.
+2. The **next install** `<install>.next` is built by the target's own `scripts/install.sh` in
+   **build-only mode** (`JOB_HOPPER_INSTALL_INTO=<dir>` + `_REPO`, `_BRANCH`, `_COMMIT`): UI bundle,
+   production dependencies, install.json — no service, unit or config touched. Log:
+   `<data dir>/update/build.log`. The running daemon is not touched: jobs keep running.
+3. Proof it loads: a child `node` imports the next install's `src/main.ts`. A module that fails to
+   load fails here.
+4. Wait while there is a **restart blocker**: a running job whose executor is non-idempotent and
+   cannot reattach, which restart recovery would fail. herdr-claude jobs reattach and idempotent
+   jobs re-run, so neither blocks. The status says which jobs it waits for.
+5. Swap: `<install>` → `<install>.prev` (the previous `.prev` removed), `<install>.next` →
+   `<install>`; `<data dir>/update/pending.json` names from, to and ref.
+6. Restart (below).
+
+A failure in steps 1-3 or the swap → `update.failed`, the install unchanged, state `error` with the
+reason until the next check.
+
+**Restarting.** Under a supervisor — systemd (`INVOCATION_ID` set) or a container's PID 1 — the
+daemon stops cleanly (the same `app.stop()` as SIGTERM) and exits 75. The unit has
+`SuccessExitStatus=75` and `RestartForceExitStatus=75`; an older unit's `Restart=on-failure`
+restarts a 75 too, so the first update needs no unit change. A container restarts it by its restart
+policy. Unsupervised, it stops, starts its successor detached, and exits. `JOB_HOPPER_RESTART=exit|
+respawn` forces either. Under systemd the units the new install ships (`systemd/`, now copied into
+the install) are written over installed ones that differ, then `systemctl --user daemon-reload`;
+`job-hopper-herdr` is never restarted (that would kill every pane).
+
+**What survives the restart** — restart recovery, unchanged ("Recovery at startup"): herdr panes
+live in `job-hopper-herdr`, not the daemon, so running herdr-claude jobs are reattached on their
+lanes (`job.reattached`); idempotent jobs are requeued; `waiting_answer` jobs keep their question;
+an open question in the answer or assess stage restarts there, one at the human stage keeps its
+timers; UI sessions are in SQLite; schema migrations run at boot as on any start.
+
+**The boot after** reads pending.json: install.json on `to` → `update.applied`; otherwise (rolled back
+by hand) → `update.failed`. The UI reloads itself when `GET /api/update` names another installed
+commit than the page was loaded with — the new UI bundle.
+
+**Settings** in the store's `settings` table (`updateChannel`, `autoUpdate`; key/value, no
+migration): `POST /ui/api/update { action: "settings", channel?, autoUpdate? }`. Auto-update applies
+an available update as soon as a check finds it, and at once when switched on with one available.
+
+**UI.** A notice above the views while an update is available, applying or failed — headline,
+"What changed" (the commits, and the GitHub compare link for a GitHub repo), Update now. The header's
+version (with the installed commit) opens the Updates panel: installed, newest, release, last check,
+Check now, Update now, auto-update, channel (`commits` / `releases`).
+
+**Any deployment.** The updater needs: install.json, git and network access to the repository,
+npm (the build), write access to the install's parent directory (the swap), and a supervisor or the
+respawn. A container must keep its install on a volume, or the update lasts only until the
+container is recreated from its image; its recipe writes install.json (build args for repo, branch,
+commit). Assumption about issue #40 (a deploy recipe and a database, in parallel): it keeps an
+install directory with `src/` and install.json, and keeps `scripts/install.sh` build-only mode
+working — #40 depends on this section, not the other way round.
+
+**Not built.** Automatic rollback: a next install that loads but crashes after start leaves the
+supervisor restarting it; recovery by hand is swapping `<install>.prev` back and restarting (the boot
+records `update.failed`). Signature checks on the fetched code: the repository the owner installed
+from is trusted as the install itself was.

@@ -35,10 +35,16 @@ export interface Config {
   uiSessionHours: number;
   /** Custom plugins, one directory each; unset: none. */
   pluginDir?: string;
+  /** The URL people reach the UI at through a reverse proxy (origin only), or undefined. The sign-in origin when set. */
+  publicUrl: string | undefined;
   /** Host names the UI answers to on the LAN (lowercase, no port); empty: loopback only. */
   lanNames: string[];
   /** CIDR ranges a LAN request may come from. */
   lanPeers: string[];
+  /** How often the self-update checks the update repository; 0: only when asked (design.md "Self-update"). */
+  updateCheckMs: number;
+  /** Forces how the daemon starts again after an update: `exit` (a supervisor restarts it) or `respawn`; absent: detected. */
+  restart?: 'exit' | 'respawn';
   /**
    * Every set JOB_HOPPER_* variable this config does not read, raw: the part-choosing ones removed
    * in phase 5 slices 4 and 5 (read once more by the plugins.yaml migration) and any unknown one. The
@@ -57,7 +63,13 @@ const list = (item: z.ZodType<string, string>) => z.string().default('')
 const lanName = z.string().regex(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/, 'must be host names or IPv4 addresses, comma-separated, no port')
   .refine((n) => n !== 'localhost' && !n.startsWith('127.'), 'loopback is always served; list LAN names only');
 const lanPeer = z.union([z.cidrv4(), z.cidrv6()], { error: 'must be CIDR ranges, comma-separated (192.0.2.0/24)' });
+// An origin only: http(s), no path, no query; never loopback (those are always served).
+const publicUrl = z.url({ protocol: /^https?$/, error: 'must be an http(s) URL' })
+  .refine((u) => { const x = new URL(u); return (x.pathname === '/' || x.pathname === '') && x.search === '' && x.hash === ''; }, 'must be an origin only: scheme, host and port, no path')
+  .refine((u) => !['localhost', '127.0.0.1', '[::1]'].includes(new URL(u).hostname), 'loopback is always served; name the public host')
+  .transform((u) => new URL(u).origin);
 const schema = z.object({
+  JOB_HOPPER_PUBLIC_URL: publicUrl.optional(),
   // Loopback, plus the LAN names when set (AGENTS.md, design.md "Reaching the UI across the LAN").
   JOB_HOPPER_LAN_NAMES: list(lanName),
   JOB_HOPPER_LAN_PEERS: list(lanPeer),
@@ -80,14 +92,16 @@ const schema = z.object({
   JOB_HOPPER_KEEP_PANES: flag(false),
   JOB_HOPPER_UI_SESSION_HOURS: z.coerce.number().finite().positive().default(12),
   JOB_HOPPER_PLUGIN_DIR: z.string().min(1).optional(),
+  JOB_HOPPER_UPDATE_CHECK_MS: int(0).default(900000),
+  JOB_HOPPER_RESTART: z.enum(['exit', 'respawn']).optional(),
 }).refine((e) => e.JOB_HOPPER_SOFT_LIMIT < e.JOB_HOPPER_HARD_LIMIT, {
   message: 'must be below JOB_HOPPER_HARD_LIMIT',
   path: ['JOB_HOPPER_SOFT_LIMIT'],
 }).refine((e) => e.JOB_HOPPER_LAN_NAMES.length === 0 || e.JOB_HOPPER_LAN_PEERS.length > 0, {
   message: 'must be set with JOB_HOPPER_LAN_NAMES: the ranges LAN requests may come from',
   path: ['JOB_HOPPER_LAN_PEERS'],
-}).refine((e) => e.JOB_HOPPER_LAN_PEERS.length === 0 || e.JOB_HOPPER_LAN_NAMES.length > 0, {
-  message: 'must be set with JOB_HOPPER_LAN_PEERS: the names the UI answers to on the LAN',
+}).refine((e) => e.JOB_HOPPER_LAN_PEERS.length === 0 || e.JOB_HOPPER_LAN_NAMES.length > 0 || e.JOB_HOPPER_PUBLIC_URL !== undefined, {
+  message: 'must be set with JOB_HOPPER_LAN_PEERS (or set JOB_HOPPER_PUBLIC_URL): the names the UI answers to beyond loopback',
   path: ['JOB_HOPPER_LAN_NAMES'],
 });
 
@@ -108,7 +122,8 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
   }
   const e = parsed.data;
   return {
-    host: e.JOB_HOPPER_LAN_NAMES.length > 0 ? '::' : '127.0.0.1',
+    // Every interface only when requests may come from beyond loopback (LAN peers); a reverse proxy on this host needs none.
+    host: e.JOB_HOPPER_LAN_PEERS.length > 0 ? '::' : '127.0.0.1',
     port: e.JOB_HOPPER_PORT,
     databaseUrl: e.JOB_HOPPER_DATABASE_URL,
     workDir: e.JOB_HOPPER_WORK_DIR,
@@ -127,8 +142,11 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     keepPanes: e.JOB_HOPPER_KEEP_PANES,
     uiSessionHours: e.JOB_HOPPER_UI_SESSION_HOURS,
     ...(e.JOB_HOPPER_PLUGIN_DIR ? { pluginDir: e.JOB_HOPPER_PLUGIN_DIR } : {}),
+    publicUrl: e.JOB_HOPPER_PUBLIC_URL,
     lanNames: e.JOB_HOPPER_LAN_NAMES,
     lanPeers: e.JOB_HOPPER_LAN_PEERS,
+    updateCheckMs: e.JOB_HOPPER_UPDATE_CHECK_MS,
+    ...(e.JOB_HOPPER_RESTART ? { restart: e.JOB_HOPPER_RESTART } : {}),
     leftoverEnv,
   };
 }

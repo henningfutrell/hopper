@@ -2,9 +2,9 @@
 // host (every part) → engine → server. Adapters are built by their plugins, here through the
 // host (integration tests call startApp, with doubles at the seams).
 import { mkdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Answerer, Assessor, Clock, Executor, JobSource, PluginsView, Router, SettableUsageSource, SourceRegistry, Store } from './domain/ports.ts';
+import type { Answerer, Assessor, Clock, Executor, JobSource, PluginsView, Restarter, Router, SettableUsageSource, SourceRegistry, Store, UpdateBuilder, Updater } from './domain/ports.ts';
 import type { AttachedMachine, Question, SourceStatus } from './domain/types.ts';
 import { isRerunnable } from './domain/types.ts';
 import { loadConfig, type Config } from './config.ts';
@@ -12,6 +12,7 @@ import { createEngine, type Engine } from './engine/index.ts';
 import { createExecutorRegistry } from './executors/index.ts';
 import type { HerdrClient } from './executors/herdr/index.ts';
 import { createServer } from './http/index.ts';
+import { AUTH, createSignIn, loadAuthDocument, type AuthConfig } from './auth/index.ts';
 import { combineMachineSources, createAttachedMachines, probeHerdrOverSsh } from './machines/index.ts';
 import { BUILTIN_PLUGINS } from './plugins/builtin.ts';
 import { herdrClaudePlugin } from './plugins/executor/herdr-claude/index.ts';
@@ -27,6 +28,7 @@ import { createQuestionService } from './questions/index.ts';
 import { logFailures } from './engine/failure-log.ts';
 import { createSourceSync, idleStatus, withFixedStatuses, type GitHubApi, type SourceSync } from './sources/index.ts';
 import { openStore } from './store/index.ts';
+import { createInstallScriptBuilder, createRestarter, createUpdater, restartBlockers } from './update/index.ts';
 import { createWebhookConfigWatcher, type WebhookConfigWatcher } from './webhooks/config.ts';
 import { createWebhooksEditor } from './webhooks/edit.ts';
 import { createWebhookDispatcher } from './webhooks/index.ts';
@@ -35,6 +37,8 @@ export interface App {
   /** Always the loopback URL, whatever the bind address. */
   url: string;
   config: Config;
+  /** auth.yaml as loaded at start. */
+  auth: AuthConfig;
   /** The UI link to one question, as notifications carry it: the first LAN name, else loopback. */
   answerUrl(questionId: string): string;
   routerMode(): string;
@@ -44,6 +48,7 @@ export interface App {
   engine: Engine;
   sources: SourceSync;
   webhookConfig: WebhookConfigWatcher;
+  updater: Updater;
   /** Close the server; stop the sync loop, question service, engine (≤ 5 s), dispatcher, watcher; close the store. */
   stop(): Promise<void>;
 }
@@ -82,12 +87,16 @@ export interface AppSeams {
   resolveHerdrBin?: (ssh: string) => Promise<string>;
   /** The built UI bundle; default UI_DIR. */
   uiDir?: string;
+  /** Self-update: the install dir (default APP_DIR), the build (default install.sh build-only mode), the restart (default exit or respawn). */
+  update?: { appDir?: string; builder?: UpdateBuilder; restart?: Restarter };
 }
 
 const WEBHOOKS_FILE_CHECK_MS = 5000;
 const PLUGINS_FILE_CHECK_MS = 5000;
 const SEAM_SOURCE_POLL_MS = 1000;
 const UI_DIR = fileURLToPath(new URL('../ui/dist', import.meta.url));
+/** The install (or checkout) this process runs from: install.json and src/ live here. */
+const APP_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
 
 const VERSION = (JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }).version;
 
@@ -140,6 +149,14 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   // plugins.yaml is the one truth: the built-in instances are written on the boot that finds none.
   ensurePluginsDocument({ documents: store.documents, answerTimeoutMs: config.answerTimeoutMs, logger });
   const env = seams.env ?? process.env;
+  // Before anything starts: an invalid auth.yaml stops the daemon (sign-in fails closed).
+  let auth: AuthConfig;
+  try {
+    auth = loadAuthDocument(store.documents.read(AUTH), (name) => env[name]);
+  } catch (e) {
+    store.close();
+    throw e;
+  }
   const dataDir = config.workDir;
   mkdirSync(dataDir, { recursive: true, mode: 0o700 });
   const routerMode = () => store.settings.getRouterMode() ?? config.routerMode;
@@ -217,24 +234,39 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   const webhookConfig = createWebhookConfigWatcher({
     documents: store.documents, store, clock, intervalMs: seams.webhookConfigIntervalMs ?? WEBHOOKS_FILE_CHECK_MS, env: (name) => env[name],
   });
+  const signIn = createSignIn({ config: auth, clock, origin: () => config.publicUrl ?? `http://localhost:${port}` });
+  // Self-update (issue #44): the restart reaches app.stop() through `restartApp`, set below.
+  let restartApp: Restarter = async () => {};
+  const appDir = seams.update?.appDir ?? APP_DIR;
+  const updater = createUpdater({
+    appDir, dataDir, store, clock, logger,
+    builder: seams.update?.builder ?? createInstallScriptBuilder({ logFile: join(dataDir, 'update', 'build.log') }),
+    restart: seams.update?.restart ?? (() => restartApp()),
+    restartBlockers: () => restartBlockers(store.jobs.list({ status: ['running'] }), (name) => executors.get(name)),
+    checkMs: config.updateCheckMs,
+  });
   const server = createServer({
-    engine, store, dispatcher, questions, clock, version: VERSION, sources: registry, webhookConfig, plugins,
+    engine, store, dispatcher, questions, clock, version: VERSION, sources: registry, webhookConfig, plugins, updater,
     webhooksEditor: createWebhooksEditor({ documents: store.documents, reload: webhookConfig.reload }),
-    port: () => port, dataDir, sessionHours: config.uiSessionHours, lan: { names: config.lanNames, peers: config.lanPeers }, uiDir: seams.uiDir ?? UI_DIR,
+    port: () => port, dataDir, sessionHours: config.uiSessionHours, signIn,
+    lan: { names: config.lanNames, peers: config.lanPeers, publicUrl: config.publicUrl }, uiDir: seams.uiDir ?? UI_DIR,
   });
 
   webhookConfig.start();
   dispatcher.start();
   host.startNotifiers({ subscribe: (l) => store.events.subscribe(l), job: (id) => store.jobs.get(id) });
+  // Before listening: the boot after an update records update.applied before anything is answered.
+  updater.start();
   await server.listen({ host: config.host, port: config.port });
   port = (server.server.address() as { port: number }).port;
   await engine.start();
   sync.start();
 
   let stopped: Promise<void> | undefined;
-  return {
+  const app: App = {
     url: `http://127.0.0.1:${port}`,
     config,
+    auth,
     answerUrl,
     routerMode,
     plugins,
@@ -242,8 +274,10 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     engine,
     sources: sync,
     webhookConfig,
+    updater,
     stop() {
       stopped ??= (async () => {
+        updater.stop();
         await server.close();
         await sync.stop();
         await questions.stop();
@@ -258,6 +292,8 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
       return stopped;
     },
   };
+  restartApp = createRestarter({ appDir, ...(config.restart ? { forced: config.restart } : {}), stop: () => app.stop(), logger });
+  return app;
 }
 
 function unavailableNote(plugins: PluginsView): string {
@@ -273,7 +309,11 @@ async function main(): Promise<void> {
   const lan = app.config.lanNames.length ? ` and ${app.config.lanNames.map((n) => `http://${n}:${new URL(app.url).port}`).join(', ')} (LAN peers ${app.config.lanPeers.join(', ')})` : '';
   console.log(`job-hopper listening on ${app.url}${lan} (router ${r.name} [${r.plugin}${r.fallback ? ', fallback' : ''}] ${app.routerMode()}, executors ${app.engine.executorNames.join(',') || 'none'}${unavailableNote(app.plugins)}, ${q})`);
   for (const s of app.sources.statuses()) console.log(`job-hopper: source ${s.name} (${s.kind}) ${s.state}`);
-  console.log('job-hopper: UI login code written; open the UI with: bash ~/.local/lib/job-hopper/scripts/open-ui.sh');
+  const { auth } = app;
+  if (app.config.publicUrl) console.log(`job-hopper: public URL ${app.config.publicUrl} (sign-in origin)`);
+  if (auth.providers.length) console.log(`job-hopper: sign-in with ${auth.providers.map((p) => `${p.name} (${p.type})`).join(', ')}`);
+  if (auth.local.enabled) console.log('job-hopper: local sign-in on; a login code: job-hopper login-code');
+  else console.log('job-hopper: local sign-in is off (auth.yaml)');
   const shutdown = (signal: string): void => {
     console.log(`job-hopper: ${signal}, shutting down`);
     app.stop().then(() => process.exit(0), (e) => {

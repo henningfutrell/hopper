@@ -33,8 +33,9 @@ synonyms. Rename here first, in the same commit as everything else.
 | **Overlap** | Two jobs whose work touches the same thing. The jobs settle it, never the hopper: a job states the assumptions it made about the other work, or makes the needed fix in the other project, annotated with which way the dependency runs. Nothing holds a job for an overlap. | dependency hold, blocked-by |
 | **Hold** | A Decision keeping a waiting job out, with a reason. Status `held`. | block, defer |
 | **Waiting** | Status `queued` or `held`. | pending |
-| **Ended** | Status `finished`, `failed` or `cancelled` (`TERMINAL_STATUSES`). `/api/queue` `ended` lists the 20 most recent, newest end first. *Finished* is only the success status. | done, completed, terminal (in UI copy) |
-| **Lane span** | One run of one job on one lane: from `job.started` (or `job.reattached`) to the event that ended it — `finished`, `failed`, `cancelled`, `requeued`, `question` — or still `running`. Derived in the UI from the event log; drawn as a bar on the lane timeline. | slot, run |
+| **Ended** | Status `finished`, `failed` or `cancelled` (`TERMINAL_STATUSES`). `/api/queue` `ended` lists those that ended in the last 24 hours, newest end first; the UI's Finished and Failed cards count the same jobs. *Finished* is only the success status. | done, completed, terminal (in UI copy) |
+| **Job group** | Which of *waiting*, *waiting answer*, *running* (`claimed` or `running`) and *ended* a job's status puts it in. One map in the UI (`ui/src/model/board.ts` `GROUP`); every job list and job count reads it. | phase, bucket, category |
+| **Lane span** | One run of one job on one lane: from `job.started` (or `job.reattached`) to the event that ended it — `finished`, `failed`, `cancelled`, `requeued`, `question` — or still `running`. Derived in the UI from the event log, with the job store's word on which jobs run now; drawn as a bar on the lane timeline. | slot, run |
 | **Attention** | The UI list of what wants a human now: open questions, a router in fallback, sources in error, recent failures. Derived; nothing stored. | alerts, notifications |
 | **Claim** | A Decision assigning a job to a lane, before the executor runs. | |
 | **Executor** | Runs one job on one lane. The role whose 1..n instances are named in plugins.yaml `executors:`; a job names an executor instance (`spec.executor`). Built-in plugins `herdr-claude` (Claude Code in a herdr pane) and `test`. One that cannot run holds the jobs naming it (`executor <name> unavailable: …`); never fails or re-routes them. | runner, task (issue #6's "task" is an executor instance) |
@@ -85,11 +86,19 @@ synonyms. Rename here first, in the same commit as everything else.
 | **Re-run** | A new job for a source key whose newest job failed or was cancelled and whose end the source already reported — offered again because a human cleared the marker (`hopper:failed`). Never from `finished`. | retry, resubmit |
 | **Claim** (of an issue) | Labelling it `hopper:claimed` when the hopper takes it (no comment). Distinct from a lane claim. | |
 | **Sync** | One pass of a source: discover, check active jobs, retry reports. | poll |
-| **Report** | Telling the source what happened to its job: the claim and the end. On GitHub: labels only; the hopper posts no comment. | |
+| **Report** | Telling the source what happened to its job: the claim and the end. On GitHub: labels, and a finished job closes its issue; the hopper posts no comment. | |
 | **Signal** | What a source tells the hopper: cancel. Questions are answered in the UI, never through a source. | |
+| **Closing pull request** | The merged pull request whose merge closed an issue (the closer of the issue's last close event, `closingPullRequest`). Opened at or after the job's creation, it is the job's own: its close is no cancel signal, and the job runs on to its own end. | closer PR, linked PR |
 | **Hopper marker** | The hidden first line of a comment the hopper once posted (it posts none now); lets the context filter tell old ones from the owner's text. | |
 | **Leftover variable** | A `JOB_HOPPER_*` variable that is set but read by nothing (a removed part-choosing one, or a typo). One loud warning at boot names them all. | |
-| **UI session** | A browser session created from the one-time login code; the only way to mutate. | |
+| **UI session** | A browser session created by a sign-in; the only way to mutate. Carries a UI role and the identity it was made for. | |
+| **Sign-in** | Starting a UI session: with the one-time login code (**local sign-in**, always `admin`; `auth.yaml` `local.enabled`) or through an identity provider. The login code's own path keeps its words (login code, `POST /ui/login`, "Log in"). | authentication |
+| **Identity provider** | One `auth.yaml` `providers:` entry: a named `oidc`, `github` or `saml` service that vouches for who signs in. Not a plugin. | IdP (in prose only), SSO provider |
+| **Identity** | Who signed in, as every identity provider reports it: provider, subject, verified email, username, name, groups. | user, principal |
+| **UI role** | What a UI session may do: `viewer` (read), `operator` (+ jobs and questions), `admin` (+ configuration, device links). Granted by an identity provider's **role rules** (subjects, usernames, emails, email domains, groups; the highest match wins, else `defaultRole`, else no session). Not a plugin role. | permission, role (alone: that is a plugin role) |
+| **Sign-in origin** | Where provider sign-in starts and ends: `JOB_HOPPER_PUBLIC_URL`, else `http://localhost:<port>`. Callback: `<origin>/ui/auth/<name>/callback`. | redirect host |
+| **Binding** | A random value the browser keeps in `localStorage` when a provider sign-in begins and posts at the end with the ticket; a sign-in completes only in the browser that began it. | nonce (that is OIDC's) |
+| **Public URL** | `JOB_HOPPER_PUBLIC_URL`: the origin people reach the UI at through a reverse proxy. Its host passes the Host guard (a **public request**: `/api/` only with a UI session), its origin may mutate, and it is the sign-in origin. | external URL |
 | **LAN name** | A host name or address the UI answers to from other machines (`JOB_HOPPER_LAN_NAMES`), with the port. A request naming one is a **LAN request**: it reads `/api/` only with a UI session. | remote host |
 | **LAN peer** | A CIDR range a LAN request may come from (`JOB_HOPPER_LAN_PEERS`). Any other non-loopback peer is refused. | allowlist |
 | **Device link** | `http://<LAN name>:<port>/#login=<code>`: the current login code as a link a logged-in browser hands another device. Works once. | pairing link, invite |
@@ -105,6 +114,12 @@ synonyms. Rename here first, in the same commit as everything else.
 | **Rotate secret** | Replace a subscription's HMAC secret with a new one the daemon makes (32 random bytes, hex). The new secret is shown once, in the answer; a `secretFile` secret is rotated in that file only. | regenerate, reset |
 | **Notifier** | The role that tells something outside about events (`Notifier` port: `start(events)`, `stop()`). 0..n instances (plugins.yaml `notifiers:`; absent → the built-in `grok-bot` instance). Built-in plugin `grokbot-routine`. One that cannot run is dropped, its reason in `/api/plugins`. Not a *Webhook subscription*: no store row, no delivery. | connector (issue #6's word for a source or notifier instance) |
 | **Grok Bot routine webhook** | The one POST (bearer key, from the `grokbot-routine` notifier's `envFile`, default `grokbot-webhook.env` beside plugins.yaml) to a Grok Bot routine when a question reaches the human. Questions only. Not a *Webhook subscription*; nothing stored. | |
+| **Install** | The directory the daemon runs from (`~/.local/lib/job-hopper` from `scripts/install.sh`), with `install.json`: the repository, tracked branch and commit it was built from. Without install.json, self-update is unavailable. | deployment, copy |
+| **Update** | A newer commit than the installed one on the update channel (the **update target**: `ref` + commit), with the commits it adds. *Available* while the installed commit does not contain the target. **Applied** in flight: built beside the install, swapped in, then a restart. | upgrade, release (a release is one kind of target) |
+| **Update channel** | What counts as newer: `main` (every commit on the tracked branch) or `release` (the newest `v<major>.<minor>.<patch>` tag). A setting in the store. UI: `commits` / `releases`. | track, stream |
+| **Auto-update** | The setting that applies an available update as soon as a check finds it. | |
+| **Next install** | `<install>.next`: the update target built by `scripts/install.sh` in **build-only mode** (`JOB_HOPPER_INSTALL_INTO`), beside the running install, then swapped in; the replaced install stays as `<install>.prev`. | staged install (*stage* is a question's) |
+| **Restart blocker** | A running job a restart would lose — its executor is non-idempotent and cannot reattach. Applying an update waits until there is none. | |
 | **Delivery** | One attempt series sending one event to one subscription. `pending`, `retrying`, `delivered`, `failed`. | |
 
 ## Events
@@ -133,3 +148,7 @@ synonyms. Rename here first, in the same commit as everything else.
 | QuestionClosed (by the human, without an answer) | `question.closed` |
 | QuestionDismissed (by the human; needs no action) | `question.dismissed` |
 | QuestionExpired | `question.expired` |
+| UpdateAvailable | `update.available` |
+| UpdateStarted | `update.started` |
+| UpdateApplied | `update.applied` |
+| UpdateFailed | `update.failed` |

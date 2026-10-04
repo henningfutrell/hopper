@@ -107,6 +107,7 @@ export async function startTestApp(o: {
     JOB_HOPPER_WEBHOOK_BASE_MS: '20',
     JOB_HOPPER_LANE_IDLE_GRACE_MS: '200',
     JOB_HOPPER_PLUGIN_DIR: join(dataDir, 'plugins'),
+    JOB_HOPPER_UPDATE_CHECK_MS: '0',
     ...o.env,
   });
   const source = o.source ?? createManualSource();

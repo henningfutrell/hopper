@@ -36,7 +36,7 @@ function fakeDaemon() {
   const calls: Call[] = [];
   const routes: Record<string, unknown> = {
     '/api/health': { ok: true, version: '0', routerMode: 'shadow', router: 'pass-through', fallback: false, executors: [], uptimeS: 1 },
-    '/api/queue': { waiting: [], running: [], waitingAnswer: [], ended: [], counts: {} },
+    '/api/queue': { waiting: [], running: [], waitingAnswer: [], ended: [] },
     '/api/machines': { machines: [] }, '/api/decisions': { decisions: [] }, '/api/events': { events: [] },
     '/api/webhooks': { subscriptions: [] }, '/api/webhooks/deliveries': { deliveries: [] },
     '/api/questions': { questions: [] }, '/api/sources': { sources: [] },
@@ -48,7 +48,7 @@ function fakeDaemon() {
     const path = String(input).split('?')[0]!;
     const body = init.body ? JSON.parse(String(init.body)) as Record<string, unknown> : undefined;
     calls.push({ path, method: init.method ?? 'GET', ...(body ? { body } : {}) });
-    if (path === '/ui/api/session') return json(200, { authenticated: true, expiresAt: '2099-01-01T00:00:00.000Z' });
+    if (path === '/ui/api/session') return json(200, { authenticated: true, expiresAt: '2099-01-01T00:00:00.000Z', user: { role: 'admin', provider: 'local', name: 'login code' }, signIn: { local: true, origin: location.origin, providers: [] } });
     if (path === '/ui/api/plugins') return json(200, PLUGINS);
     if (path in routes) return json(200, routes[path]);
     return json(404, { error: 'not found' });
