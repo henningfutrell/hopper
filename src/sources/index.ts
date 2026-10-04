@@ -1,13 +1,14 @@
-// Job sources: the GitHub adapter, sources.yaml, the sync loop — and the registry main serves on
-// /api/sources, which also lists a configured source that does not run (disabled, or an invalid
-// sources.yaml) as a fixed status.
+// Job sources: the GitHub adapter and its options, the sync loop — and the registry main serves on
+// /api/sources, which also lists a configured source that does not run (disabled, or an instance
+// that cannot run) as a fixed status.
 import type { SourceRegistry } from '../domain/ports.ts';
 import type { SourceStatus } from '../domain/types.ts';
 
 export { createGitHubSource, createGhCliApi, createFakeGitHub } from './github/index.ts';
 export type { FakeGitHub, GitHubApi, GitHubSourceOptions } from './github/index.ts';
-export { loadSourcesFile, parseSourcesConfig } from './config.ts';
-export type { GitHubSourceConfig, SourcesFile } from './config.ts';
+export { githubAppOptions, githubGhOptions, sourceConfig } from './config.ts';
+export type { GitHubAppOptions, GitHubGhOptions, GitHubSourceConfig } from './config.ts';
+export { APP_MISSING, GH_PAUSED, appFileProblem, createAppSource, createGhSource } from './compose.ts';
 export { createSourceSync } from './sync.ts';
 export type { SourceSync, SourceSyncOptions } from './sync.ts';
 

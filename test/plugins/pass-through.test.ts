@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import passThrough from '../../src/plugins/router/pass-through/index.ts';
 import { fakeKit, fixedClock } from './support.ts';
 
-const ctx = { clock: fixedClock, logger: { info() {}, warn() {} }, dataDir: '/x', scratchDir: '/x', routerMode: () => 'shadow' as const };
+const ctx = { clock: fixedClock, logger: { info() {}, warn() {} }, dataDir: '/x', scratchDir: '/x', instanceName: 'p', routerMode: () => 'shadow' as const };
 
 describe('pass-through router', () => {
   it('is always available', async () => {

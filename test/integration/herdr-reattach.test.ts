@@ -5,11 +5,11 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { Job } from '../../src/domain/types.ts';
 import { createFakeHerdrClient, type FakeHerdrClient, type FakeTurn } from '../../src/executors/herdr/index.ts';
 import { openStore } from '../../src/store/index.ts';
-import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
+import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { createManualSource } from '../support/manual-source.ts';
 import { waitFor } from '../support/wait.ts';
 
-const ENV = { JOB_HOPPER_EXECUTORS: 'test,herdr-claude', JOB_HOPPER_HERDR_POLL_MS: '10', JOB_HOPPER_IDLE_QUESTION_MS: '5000' };
+const EXECUTORS = [{ name: 'test', plugin: 'test' }, { name: 'herdr-claude', plugin: 'herdr-claude', options: { pollMs: 10, idleQuestionMs: 5000 } }];
 /** A turn long enough (one step per poll) to still be working when the daemon restarts. */
 const LONG: FakeTurn = {
   steps: Array.from({ length: 40 }, (_, i) => `● Painting plank ${i + 1}`),
@@ -34,8 +34,8 @@ function freshDb(): void {
   dbPath = db.dbPath;
 }
 
-async function boot(herdr: FakeHerdrClient, env: Record<string, string> = {}): Promise<TestApp> {
-  const a = await startTestApp({ dbPath, source, env: { ...ENV, ...env }, seams: { herdr } });
+async function boot(herdr: FakeHerdrClient, laneCount = 4): Promise<TestApp> {
+  const a = await startTestApp({ dbPath, source, plugins: { executors: EXECUTORS, machines: lanes(laneCount) }, seams: { herdr } });
   apps.push(a);
   return a;
 }
@@ -108,7 +108,7 @@ describe('herdr-claude job across a daemon restart', () => {
   it('a claimed herdr-claude job (nothing ran yet) is requeued and runs', async () => {
     freshDb();
     const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [{ output: ['● Done.', '  JOB_HOPPER_DONE'] }] });
-    const first = await boot(herdr, { JOB_HOPPER_LOCAL_LANES: '0' });
+    const first = await boot(herdr, 0);
     const pulled = await first.pull({}, item);
     await first.waitForStatus(pulled.id, 'held');
     await first.stop();

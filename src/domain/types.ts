@@ -421,5 +421,6 @@ export interface SourceStatus {
 
 export { ROLES } from './plugins.ts';
 export type {
-  Detection, ExecutorInstanceStatus, ExecutorUnavailable, InstanceSpec, PluginsReport, QuestionRoleStatus, Role, RouterSelection, RouterStatus,
+  Detection, ExecutorUnavailable, InstanceSpec, InstanceStatus, PluginsReport, QuestionRoleStatus, RestartRole, RestartRoleStatus, Role, RouterSelection,
+  RouterStatus,
 } from './plugins.ts';

@@ -11,8 +11,7 @@ import type { DomainEvent, Job } from '../../src/domain/types.ts';
 import { createFakeGitHubServer, type FakeGitHubServer } from '../../src/sources/github/app/index.ts';
 import { createFakeGitHub, type FakeGitHub } from '../../src/sources/index.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
-import { writeSourcesFile } from '../support/files.ts';
-import { APP_ID, BOT, KEYS, SLUG, sourcesDoc, writeAppFile } from '../support/github-app.ts';
+import { APP_ID, BOT, KEYS, SLUG, jobSourcesDoc, writeAppFile } from '../support/github-app.ts';
 import { waitFor } from '../support/wait.ts';
 
 const REPO = 'owner/job-hopper-sandbox';
@@ -30,16 +29,16 @@ afterEach(async () => {
 
 type Mode = 'gh' | 'app';
 
-async function boot(mode: Mode, gh: FakeGitHub | undefined, env: Record<string, string> = {}) {
+async function boot(mode: Mode, gh: FakeGitHub | undefined, app: Record<string, unknown> = {}) {
   const db = tempDbPath();
   cleanups.push(db.cleanup);
   const dir = dirname(db.dbPath);
   if (mode === 'app') writeAppFile(dir);
-  writeSourcesFile(db.dbPath, mode === 'gh'
-    ? sourcesDoc(dir, { github: { enabled: true, repos: [REPO] }, githubApp: { enabled: false } })
-    : sourcesDoc(dir, { github: false }));
+  const jobSources = mode === 'gh'
+    ? jobSourcesDoc(dir, { github: { enabled: true, repos: [REPO], appFile: null }, githubApp: { enabled: false } })
+    : jobSourcesDoc(dir, { github: false, githubApp: app });
   const seams = gh === undefined ? {} : mode === 'gh' ? { github: gh } : { githubApp: gh };
-  const a = await startTestApp({ dbPath: db.dbPath, env, seams });
+  const a = await startTestApp({ dbPath: db.dbPath, plugins: { jobSources }, seams });
   apps.push(a);
   return a;
 }
@@ -144,7 +143,7 @@ describe('issue writes through HTTP (node:http fake GitHub, real App adapter)', 
       ] }] }],
     });
     servers.push(fake);
-    const a = await boot('app', undefined, { JOB_HOPPER_GITHUB_API: fake.url });
+    const a = await boot('app', undefined, { apiUrl: fake.url });
     const issue = fake.state.repos.get(REPO)!.issues.get(1)!;
     await a.sync();
     const job = (await jobFor(a, `https://github.com/${REPO}/issues/1`))!;

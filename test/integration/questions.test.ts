@@ -1,12 +1,12 @@
 // Questions over the real HTTP server and SQLite file: the scripted executor's `ask` op and the
-// fake question doubles of JOB_HOPPER_ANSWERER=fake (policy in src/main.ts: the answerer `opus`
+// fake question doubles (policy in test/support/fake-questions.ts: the answerer `opus`
 // is confident unless the question says "unsure"; the assessor `fable` escalates when it says
 // "risky" or "hard"; the risk rules apply on top), or scripted doubles at the Answerer / Assessor
 // seams. Human answers and cancels go through the UI session routes.
 import { afterEach, describe, expect, it } from 'vitest';
 import type { DomainEvent, Job, Question } from '../../src/domain/types.ts';
 import { createFakeAnswerer, createFakeAssessor } from '../../src/questions/index.ts';
-import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
+import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { createAskerExecutor } from '../support/doubles.ts';
 import { writeWebhooksFile } from '../support/files.ts';
 import { startReceiver, type Receiver } from '../support/receiver.ts';
@@ -171,7 +171,7 @@ describe('a question escalated to the human', () => {
   });
 
   it('a waiting job frees its lane: another job runs on the only lane meanwhile', async () => {
-    const a = await start({ JOB_HOPPER_LOCAL_LANES: '1' });
+    const a = await start({}, { plugins: { machines: lanes(1) } });
     const first = await a.pull(ask('Is this risky?'));
     await a.waitForQuestion(first.id, (x) => x.tier === 'human');
     const second = await a.pull({ op: 'echo', message: 'meanwhile' });

@@ -1,6 +1,6 @@
 // GitHub App test support for integration tests: an in-process RSA key pair, an app file
-// (github-app.json + PEM, mode 600) in a temp dir, and sources.yaml documents for both GitHub
-// sources. Nothing here talks to github.com.
+// (github-app.json + PEM, mode 600) in a temp dir, plugins.yaml `jobSources` for both GitHub
+// sources, and the phase-4 sources.yaml document (migration tests). Nothing here talks to github.com.
 import { generateKeyPairSync } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -32,7 +32,18 @@ export function writeAppFile(dir: string): string {
 
 const JOB_KEYS = { authors: ['owner'], executor: 'scripted', defaultCwd: '/tmp', pollSeconds: 3600 };
 
-/** A sources.yaml document: `github` omitted when false; both blocks sync only on syncNow. */
+/**
+ * plugins.yaml `jobSources:` for both GitHub sources: `github` (github-gh, pausing while the app
+ * file in `dir` is readable) omitted when false; both sync only on syncNow.
+ */
+export function jobSourcesDoc(dir: string, o: { github?: Record<string, unknown> | false; githubApp?: Record<string, unknown> } = {}) {
+  return [
+    ...(o.github === false ? [] : [{ name: 'github', plugin: 'github-gh', options: { enabled: 'auto', appFile: appFilePath(dir), ...JOB_KEYS, ...o.github } }]),
+    { name: 'github-app', plugin: 'github-app', options: { appFile: appFilePath(dir), ...JOB_KEYS, ...o.githubApp } },
+  ];
+}
+
+/** A phase-4 sources.yaml document: `github` omitted when false. */
 export function sourcesDoc(dir: string, o: { github?: Record<string, unknown> | false; githubApp?: Record<string, unknown> } = {}) {
   return {
     version: 1,

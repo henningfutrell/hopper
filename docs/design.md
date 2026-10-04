@@ -39,14 +39,14 @@ Fastify for HTTP, `node:sqlite` for storage, zod for request validation.
 | `src/store/` | SQLite schema, migrations, repositories, event log | engine, http, decider |
 | `src/webhooks/` | signing, dispatcher, retry/backoff | engine, http, decider |
 | `src/grokbot/` | the Grok Bot routine webhook: env-file reader, notifier (event log → POST) | engine, http, decider |
-| `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `job-hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, `plugins.yaml` + watch, the role slots (`router-slot.ts` with the shared `instantiate`, `question-slots.ts`, `executor-slot.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `answerer/claude-cli/`, `assessor/claude-cli-assessor/`, `assessor/always-escalate/` hold their prompts; `executor/herdr-claude/` and `executor/test/` wrap the adapters in `src/executors/`) | engine, http, store, decider, questions |
+| `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `job-hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, `plugins.yaml` + watch, the role slots (`router-slot.ts` with the shared `instantiate`, `question-slots.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `answerer/claude-cli/`, `assessor/claude-cli-assessor/`, `assessor/always-escalate/` hold their prompts; `executor/herdr-claude/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-gh/` and `job-source/github-app/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`) | engine, http, store, decider, questions |
 | `src/executors/` | `Executor` adapters (`test`, `herdr/`) and the registry; reached through the executor plugins | engine, http, store, plugins |
-| `src/machines/` | `MachineSource` adapters: `local` | engine, http, store |
-| `src/usage/` | `UsageSource` adapters: `fake` | engine, http, store |
+| `src/machines/` | `MachineSource` adapters: `local`; reached through the `local` machine-source plugin | engine, http, store, plugins |
+| `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production | engine, http, store, plugins |
 | `src/engine/` | the loop: gather → decide → apply; job lifecycle; restart recovery | http |
 | `src/http/` | Fastify routes, SSE, static UI | executors, plugins (reads them through the `PluginsView` port) |
 | `src/ui/` | static `index.html`, `app.js`, `style.css` — browser only | all of `src/` (talks HTTP/SSE only) |
-| `src/main.ts` | composition root: config → plugin host → adapters → store → engine → server | — |
+| `src/main.ts` | composition root: config → plugins.yaml (migrated or written when absent) → plugin host (every part) → store → engine → server | — |
 
 ## The decider
 
@@ -116,7 +116,7 @@ an idle tick every 2 s would bury the decision log. Every recorded Decision emit
   the decision path and never gates a start. A question frees its lane in the transaction that
   parks the job; `question.asked` wakes the Decision that hands the lane to the next waiting job,
   while the answer pipeline runs. The only things that keep an admissible job waiting:
-  - the **lane cap** — `maxLanes` per machine (`JOB_HOPPER_LOCAL_LANES`, default 4), scaled down
+  - the **lane cap** — `maxLanes` per machine (the machine instance's `lanes` option, default 4), scaled down
     past the usage soft limit, 0 at the hard limit (hold `all lanes busy (cap N)` / `usage …`);
   - **router mode `active`**: no advice yet, or advice that holds (`ask_human`, `stop_retry`,
     `reuse_cache`) — the router speaking first is the point of active mode; shadow (the
@@ -189,7 +189,7 @@ budgets**, so it cannot be the usage source. job-hopper uses it for what it is: 
   `meta.needs_subagent` → `allow_subagent`; `research`/`browser` → `research_capped`; else
   `proceed_full`.
 - **Mode** (router mode) is job-hopper's, persisted in the store (`settings.routerMode`),
-  initialised from `JOB_HOPPER_JEV_MODE` (default `shadow`), switched at runtime in the UI
+  initialised from `JOB_HOPPER_ROUTER_MODE` (default `shadow`), switched at runtime in the UI
   (`POST /ui/api/router-mode`).
 
 ## HTTP API
@@ -268,14 +268,18 @@ constructs adapters.
 src/store/index.ts      openStore(o: { path: string; clock: Clock; idGen?: IdGen }): Store
 src/webhooks/index.ts   createWebhookDispatcher(o: { store: Store; clock: Clock; baseMs: number;
                           timeoutMs?: number; maxAttempts?: number; sweepMs?: number }): WebhookDispatcher
-src/plugins/index.ts    createPluginHost(o: { pluginDir; pluginsFile; defaultRouter: InstanceSpec; dataDir;
-                          clock; logger; routerMode(); kit?; builtins?; intervalMs? }): PluginHost
-                          — start(), stop(), router (live), routerStatus(), report(), reload()
+src/plugins/index.ts    createPluginHost(o: { pluginDir; pluginsFile; dataDir; clock; logger; routerMode();
+                          jobSourceContext?; machineContext?; defaultAnswerer?; defaultAssessor?; defaultExecutors?;
+                          kit?; builtins?; intervalMs? }): PluginHost
+                          — start(), stop(), router (live), routerStatus(), answerer(), assessor(), executors(),
+                            jobSources(), machines(), usageSources(), report(), reload()
+src/plugins/migrate.ts  ensurePluginsFile(o: { pluginsFile; env; answerTimeoutMs; logger }) → kept | migrated | default
+                        builtinInstances(configDir) — the sections an absent section means
 src/executors/index.ts  createTestExecutor(): Executor
                         createExecutorRegistry(executors: Executor[]): ExecutorRegistry
-src/machines/index.ts   createLocalMachineSource(o: { maxLanes: number; executors: string[];
+src/machines/index.ts   createLocalMachineSource(o: { maxLanes: number; executors: () => string[];
                           id?: string; label?: string }): MachineSource
-src/usage/index.ts      createFakeUsageSource(clock: Clock): SettableUsageSource
+src/usage/index.ts      createFakeUsageSource(clock: Clock): SettableUsageSource  (test double)
 src/decider/index.ts    decide(inputs: DecisionInputs, decisionId: string): Decision
 src/engine/index.ts     createEngine(...)  — T009 defines
 src/http/index.ts       createServer(...)  — T009 defines
@@ -340,6 +344,9 @@ The usage-change trigger is named `usage.changed`; it is a trigger, not an event
 
 ## Configuration (env)
 
+Slice 4 of phase 5 removed every part-choosing variable and renamed `JEV_MODE` / `JEV_CHEAP_BOOST`;
+the current list is "Settled in slice 4" → "Configuration (env), as of slice 4".
+
 | var | default |
 |-----|---------|
 | `JOB_HOPPER_HOST` | `127.0.0.1` |
@@ -370,7 +377,7 @@ Job: `executor: "herdr-claude"`, payload
 `{ prompt: string (required, non-empty), cwd?: string (absolute or ~; default config
 JOB_HOPPER_CLAUDE_CWD), model?: string, expectedMs?: number, timeoutMs?: number }`.
 
-**herdr session.** job-hopper owns the named session `JOB_HOPPER_HERDR_SESSION`
+**herdr session.** job-hopper owns the named session of the herdr-claude instance's `session` option
 (default `job-hopper`), run headless by its own unit `job-hopper-herdr.service`
 (`herdr --session job-hopper server`). Every herdr call is `herdr --session <s> …`, JSON on
 stdout, errors JSON on stderr with exit 1. Never the default session — herdr's own doctrine
@@ -605,6 +612,9 @@ The events table gains a `question_id` column (migration 2).
 
 ## Configuration added (env)
 
+Removed in phase 5 slice 4 except the answer timeout, rules file, human timers, resume boost and max
+questions; each part's setting is now a plugin option ("Settled in slice 4").
+
 | var | default |
 |-----|---------|
 | `JOB_HOPPER_EXECUTORS` | `test,herdr-claude` |
@@ -699,7 +709,7 @@ remains. The only mutations are the owner's actions in the local UI, behind a UI
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/sources/` | `JobSource` adapters (`github`), the GitHub API port + `gh` CLI adapter + in-memory fake, `sources.yaml` loader, the sync loop | engine internals (uses the narrow `SourceHost` it is given), http |
+| `src/sources/` | `JobSource` adapters (`github`), the GitHub API port + `gh` CLI adapter + in-memory fake, the sync loop; since slice 4 the GitHub sources' option schemas (`config.ts`, was the `sources.yaml` loader) and their factories (`compose.ts`), reached through the job-source plugins | engine internals (uses the narrow `SourceHost` it is given), http, plugins |
 | `src/events/` | versioned payload schemas (zod) per event type, the envelope, JSON Schema export | everything but `domain/` and `zod` |
 | `src/http/ui/` | UI session: login codes, session cookie, CSRF, origin/host guard, the UI-only mutation routes | engine internals beyond the engine's public commands |
 
@@ -952,8 +962,9 @@ Progress and questions are not reported to the source at all (`SourceReport` has
 Stored `sourceState.source` keys from before this rule (`claimCommentId`, `progressCommentId`,
 `questionComments`, `answeredComments`) and `sourceState.sync` keys (`reportedQuestions`,
 `answeredQuestions`, `lastProgressAt`) stay in the JSON and are never read; no column changed, no
-migration. `progressCommentSeconds` left `sources.yaml`: `migrate-sources-yaml.ts` (install) drops
-its lines.
+migration. `progressCommentSeconds` left `sources.yaml`: `migrate-sources-yaml.ts` (install) dropped
+its lines; since phase 5 slice 4 the daemon's plugins-file migration drops the key instead (that
+script is gone).
 
 A failure never goes to the issue as text. It is one stderr line in the daemon log
 (`job-hopper: job <id> failed (<issue url>): <error>`, `src/engine/failure-log.ts`), the job's
@@ -1021,6 +1032,9 @@ A shared test helper (`test/support/conformance.ts`) subscribes to the event log
 validates every event a test emits.
 
 ## Configuration added (env)
+
+`JOB_HOPPER_SOURCES_FILE` and `JOB_HOPPER_GH_BIN` were removed in phase 5 slice 4 (sources.yaml
+folded into plugins.yaml `jobSources`; the gh bin is github-gh's `bin` option).
 
 | var | default |
 |-----|---------|
@@ -1531,17 +1545,24 @@ router:    { name: jev, plugin: jev-router, options: { jevSrc: ~/workbench/jev-s
 answerer:  { name: opus, plugin: claude-cli, options: { model: opus } }
 assessor:  { name: fable, plugin: claude-cli-assessor, options: { model: fable } }
 executors: [ { name: herdr-claude, plugin: herdr-claude, options: { cwd: ~/workbench/app-workflows } }, { name: test, plugin: test } ]
-jobSources: [ { name: github, plugin: github-gh, options: { } }, { name: github-app, plugin: github-app, options: { } } ]
+jobSources:
+  - { name: github, plugin: github-gh, options: { enabled: auto, bin: gh, appFile: ~/.config/job-hopper/github-app.json, authors: [owner], label: hopper } }
+  - { name: github-app, plugin: github-app, options: { appFile: ~/.config/job-hopper/github-app.json, authors: [owner], label: hopper } }
 machines:  { name: local, plugin: local, options: { lanes: 4 } }
 usageSources: []
-notifiers: [ { name: grok-bot, plugin: grokbot-routine, options: { envFile: ~/.config/job-hopper/grokbot-webhook.env } } ]
+# notifiers: slice 5 — accepted, not read yet
+# notifiers: [ { name: grok-bot, plugin: grokbot-routine, options: { envFile: ~/.config/job-hopper/grokbot-webhook.env } } ]
 ```
+
+The `jobSources` options are the old sources.yaml blocks' keys (design "GitHub source", "Phase 4
+Configuration added") plus github-gh `bin` and `appFile` (with `enabled: auto` it pauses while that
+file is readable; `null`: never) and github-app `apiUrl`. The written file holds every option
+explicitly; the example shows a few.
 
 - **Job-source instance names stay exactly `github` and `github-app`**: sync state and
   `jobs.source_key` dedup are keyed by them; a rename would re-pull or drop items.
 - `sources.yaml` folds into `jobSources[].options`. Part-choosing env vars are removed (no
-  compatibility path); env keeps process settings only (host, port, db, tick, plugin dir,
-  plugins file, herdr session, UI session hours).
+  compatibility path); env keeps process settings only — as built, "Settled in slice 4".
 - **Migration runs in the daemon, in the slice that removes each input:** on boot with no
   `plugins.yaml`, build it from `sources.yaml` and the current env, write it 600, rename the
   inputs `*.migrated`. Any leftover `JOB_HOPPER_*` var no longer read → a loud boot warning.
@@ -1623,8 +1644,8 @@ stored old events are not rewritten (read raw by version; v1 schemas stay in doc
 2. **Questions** (landed; "Settled in slice 2" below): answerer + assessor roles, pipeline,
    fail-closed assessor, recovery.
 3. **Executors** as plugins (landed; "Settled in slice 3" below); `EXECUTOR_NAMES` removed; held-when-unavailable.
-4. **Job, machine, usage sources** as plugins; `sources.yaml` + env migration in the daemon;
-   unit file updated.
+4. **Job, machine, usage sources** as plugins (landed; "Settled in slice 4" below); `sources.yaml` + env
+   migration in the daemon; unit file updated.
 5. **Notifier** port + `grokbot-routine`.
 6. **Examples + `plugin:check`** + plugin tsconfig from `install.sh`.
 7. **UI Plugins panel** + `POST /ui/api/plugins` (select, enable/disable, per-instance option
@@ -1808,10 +1829,112 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
   `test`), so stored `spec.executor` values keep working. `DecisionInputs.unavailableExecutors` is
   new: Decisions stored before this slice lack it (read-only history; nothing replays them).
 
-### Configuration added (env)
+### Settled in slice 4 (2026-10-03)
+
+- **Roles:** `ROLES` adds `job-source` (0..n; built-ins `github-gh`, `github-app`), `machine-source` (1;
+  built-in `local`, option `lanes`, default 4) and `usage-source` (0..n; none built in — the fake usage
+  source is a test double, `AppSeams.fakeUsage`; production has no usage reading, the decider's
+  `usedFrac` is 0 as before). All three are restart roles: `/api/plugins` `jobSources`, `machines`,
+  `usageSources` = `{ instances: InstanceStatus[], pending? }`, the same shape as `executors`
+  (`ExecutorInstanceStatus` renamed `InstanceStatus`). plugins.yaml `machines:` is one instance (a
+  map, never a list); `jobSources` and `usageSources` names are unique (refused otherwise).
+- **Instance names stay `github` and `github-app`.** The migration writes exactly those; `ctx.instanceName`
+  (new in `PluginContext`) is what a source calls itself, and the host refuses a job source whose
+  `source.name` differs (its jobs would be keyed under a name no sync slot has). The machine id is
+  the machine instance's name (`local`: lanes are stored under it).
+- **Detection.** github-gh: `which bin`, then `gh auth status` through the new kit method
+  `succeeds(bin, args)` (exit 0 within 5 s, output discarded) — `needs-setup`, command `gh auth login`,
+  when it fails. github-app: the app file exists → `available`, else `needs-setup`, command
+  `bash ~/.local/lib/job-hopper/scripts/create-github-app.sh`. Never a paid call. **A job source whose
+  detection says needs-setup is still built** (`instantiate(…, needsSetupRuns)`): a restart role
+  cannot re-detect, and both GitHub sources heal on their own (gh after `gh auth login`, the app
+  source when its file appears — phase 4's no-restart switch). `unavailable` (gh not installed)
+  drops it. Every other role still needs `available`.
+- **Job source instance.** `create` returns `{ source, pollMs }` (the source's own cadence, from
+  `pollSeconds`) or `{ disabled: { kind, detail } }` (options
+  `enabled: false`) — listed `disabled` in `/api/sources`, never run. A source that cannot run is a
+  fixed `error` status with the reason (kind = plugin id). `RoleContext['job-source']` = `knownKeys`,
+  `rerunnable`; `RoleContext['machine-source']` = `executors()` (asked on every list, so
+  seam executors registered after the host count).
+- **The gh source's pause** no longer reads the app source's config: github-gh has its own `appFile`
+  (default `~/.config/job-hopper/github-app.json`; `null` never pauses). The migration writes the app
+  source's app file there, or `null` when `githubApp.enabled` was false — the phase-4 rule as before.
+- **Plugins-file migration** (`src/plugins/migrate.ts`, `ensurePluginsFile`), first thing in `startApp`:
+  - plugins.yaml exists → nothing (never overwritten; a `sources.yaml` beside it → boot warning
+    "no longer read").
+  - else build every section: `answerer`/`assessor` (claude-cli `opus` / claude-cli-assessor `fable`,
+    `bin` = `CLAUDE_BIN`, models `ANSWER_MODEL_A/B`, `timeoutMs` = `JOB_HOPPER_ANSWER_TIMEOUT_MS`),
+    `executors` (one per `EXECUTORS` name; herdr-claude with `HERDR_BIN`, `CLAUDE_BIN`, `HERDR_SESSION`,
+    `CLAUDE_ARGS`, `CLAUDE_CWD`, `TRUST_WORKDIR`, `HERDR_POLL_MS`, `IDLE_QUESTION_MS`), `jobSources`
+    (sources.yaml's `github:` and `githubApp:` blocks as options — their YAML nodes, so comments
+    survive — plus `bin` = `GH_BIN`, the gh `appFile`, `apiUrl` = `GITHUB_API`; no `github:` block →
+    `{ enabled: false }`, as before; the app's `appFile` beside sources.yaml when unset), `machines`
+    (`LOCAL_LANES`), `usageSources: []`. No `router` section: the router stays detected, as before.
+    The removed vars keep their old validation and defaults; an invalid one, an unparseable
+    sources.yaml or a block that is not a mapping → the boot fails loudly, nothing written or renamed.
+  - sources.yaml is `JOB_HOPPER_SOURCES_FILE` (read this once more) or `sources.yaml` beside plugins.yaml.
+  - written mode 600 to a temp file, then `link`ed into place (fails rather than replace a file that
+    appeared meanwhile), then sources.yaml → `sources.yaml.migrated` (`.migrated-<ms>` if taken).
+  - nothing to migrate → the same builder with no inputs: the built-in instances (github-gh
+    `enabled: false`, github-app waiting for `github-app.json` beside plugins.yaml — what a missing
+    sources.yaml meant). So there is always one file. An absent section later means those same
+    built-in instances (`builtinInstances`), not the env.
+- **Env keeps process settings only:** host, port, db, tick, router mode (seed) and cheap boost, the
+  decider's limits and lane idle grace, webhook base, `JOB_HOPPER_ANSWER_TIMEOUT_MS` (kept: it is the
+  question service's per-stage ceiling, a bound on every plugin whatever its own `timeoutMs` — the
+  fail-closed containment, not a part's option), rules file, human renotify/timeout, resume boost,
+  max questions, keep panes, webhooks file, Grok Bot env file (slice 5), UI session hours, plugin dir,
+  plugins file. Removed, no compatibility path: `EXECUTORS`, `HERDR_BIN`, `HERDR_SESSION`,
+  `HERDR_POLL_MS`, `CLAUDE_BIN`, `CLAUDE_ARGS`, `CLAUDE_CWD`, `TRUST_WORKDIR`, `IDLE_QUESTION_MS`,
+  `ANSWERER` (`fake`: the doubles are test seams now, `test/support/fake-questions.ts`),
+  `ANSWER_MODEL_A`/`_B`, `LOCAL_LANES`, `SOURCES_FILE`, `GH_BIN`, `GITHUB_API` (the daemon's: now
+  github-app `apiUrl`; `scripts/create-github-app.ts` still reads it). Renamed: `JEV_MODE` →
+  `ROUTER_MODE`, `JEV_CHEAP_BOOST` → `ROUTER_CHEAP_BOOST` (glossary: "Jev mode" is not a word).
+- **Leftover variables:** `loadConfig` puts every set `JOB_HOPPER_*` key it does not read into
+  `config.leftoverEnv` unvalidated; `startApp` prints one `WARNING: set but no longer read …` line
+  naming them all, on every boot, migration boot included.
+- **Command-bearing marks added:** github-gh `bin`, `appFile`, `defaultCwd`, `repoPaths`; github-app
+  `appFile`, `defaultCwd`, `repoPaths`, `apiUrl`. `apiUrl` is where the app's JWT and installation
+  tokens are sent; `appFile` selects the private key and so the identity the source acts as — a UI
+  session must change neither. `local` has none.
+- **Dropped keys:** the migration deletes `progressCommentSeconds` from both blocks (no progress
+  comment exists since the T009 rule, 2026-10-03; the options schemas are strict), covering what
+  `migrate-sources-yaml.ts` did for it at install.
+- **Unit file and install:** `systemd/job-hopper.service` sets only `JOB_HOPPER_HOST`, `_PORT`,
+  `_PLUGINS_FILE`, `_WEBHOOKS_FILE` (a test checks none is a leftover). `install.sh` no longer writes
+  or edits sources.yaml (`scripts/migrate-sources-yaml.ts` is gone); when plugins.yaml is absent and
+  an old unit is installed, it restarts the daemon once on the new code **under the old unit** and
+  waits for plugins.yaml, so the migration reads that unit's environment — then installs the new
+  unit. A fresh install gets the built-in instances (gh off, app source waiting for
+  create-github-app.sh), no longer a gh-auto starter.
+- **Tests:** `startTestApp` writes plugins.yaml (`TEST_PLUGINS`: executor `test`, no job sources) and
+  passes the fake question doubles and the fake usage source as seams; `AppSeams.github` /
+  `.githubApp` swap the GitHub plugins' adapters (detection then `available`), like `.herdr`.
+- **No store migration.** Instance names equal the old source and executor names; jobs, sync state
+  and lanes are keyed as before. the owner's sources.yaml survives as `sources.yaml.migrated`.
+
+#### Configuration (env), as of slice 4
 
 | var | default |
 |-----|---------|
+| `JOB_HOPPER_HOST` | `127.0.0.1` |
+| `JOB_HOPPER_PORT` | `4790` |
+| `JOB_HOPPER_DB` | `~/.local/share/job-hopper/job-hopper.db` |
+| `JOB_HOPPER_TICK_MS` | `2000` |
+| `JOB_HOPPER_ROUTER_MODE` | `shadow` (initial router mode only; the stored setting wins once set) |
+| `JOB_HOPPER_SOFT_LIMIT` / `HARD_LIMIT` | `0.7` / `0.95` |
+| `JOB_HOPPER_ROUTER_CHEAP_BOOST` | `10` |
+| `JOB_HOPPER_WEBHOOK_BASE_MS` | `1000` |
+| `JOB_HOPPER_LANE_IDLE_GRACE_MS` | `5000` |
+| `JOB_HOPPER_ANSWER_TIMEOUT_MS` | `180000` — the question service's per-stage ceiling |
+| `JOB_HOPPER_RULES_FILE` | `~/.config/job-hopper/rules.md` |
+| `JOB_HOPPER_HUMAN_RENOTIFY_MS` / `HUMAN_TIMEOUT_MS` | `900000` / `86400000` |
+| `JOB_HOPPER_RESUME_BOOST` | `20` |
+| `JOB_HOPPER_MAX_QUESTIONS` | `5` |
+| `JOB_HOPPER_KEEP_PANES` | `false` |
+| `JOB_HOPPER_WEBHOOKS_FILE` | `~/.config/job-hopper/webhooks.yaml` |
+| `JOB_HOPPER_GROKBOT_WEBHOOK_FILE` | `~/.config/job-hopper/grokbot-webhook.env` (slice 5 moves it) |
+| `JOB_HOPPER_UI_SESSION_HOURS` | `12` |
 | `JOB_HOPPER_PLUGIN_DIR` | `~/.config/job-hopper/plugins` |
 | `JOB_HOPPER_PLUGINS_FILE` | `~/.config/job-hopper/plugins.yaml` |
 
@@ -1876,7 +1999,7 @@ webhook-only screen.
 
 The owner: the hopper's own herdr session should be visible in the UI and attachable in a single click.
 
-Meaning: the UI shows the herdr session (`JOB_HOPPER_HERDR_SESSION`, default `job-hopper`; unit
+Meaning: the UI shows the herdr session (herdr-claude option `session`, default `job-hopper`; unit
 `job-hopper-herdr`) with its state, and offers attach. Attach is `herdr session attach job-hopper`,
 a terminal action; the page is a browser on a loopback-only app.
 

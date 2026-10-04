@@ -46,6 +46,10 @@ export function createDetectionKit(o: { env?: NodeJS.ProcessEnv; timeoutMs?: num
       const out = await run(path, args, timeoutMs, env);
       return out?.trim().split('\n')[0]?.trim() || undefined;
     },
+    async succeeds(bin, args) {
+      const path = await which(bin);
+      return path !== undefined && (await run(path, args, timeoutMs, env)) !== undefined;
+    },
     async exists(path) {
       try {
         await access(path);
