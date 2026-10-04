@@ -1,0 +1,65 @@
+// The shell: header, navigation, the current view. Loads once, then lives on SSE.
+import { AlertTriangle } from 'lucide-react';
+import { useEffect } from 'react';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Toaster } from '@/components/ui/sonner';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import { load, setLoadError, useHopper } from '@/store';
+import { connect } from '@/store/stream';
+import { Decisions } from '@/views/decisions';
+import { Events } from '@/views/events';
+import { Machines } from '@/views/machines';
+import { Overview } from '@/views/overview';
+import { Questions } from '@/views/questions';
+import { Sources } from '@/views/sources';
+import { Webhooks } from '@/views/webhooks';
+import { ReadOnlyBanner } from './banner';
+import { Header } from './header';
+import { MobileNav, Sidebar, useView, viewLabel, type View } from './nav';
+
+const VIEW: Record<View, () => React.ReactNode> = {
+  overview: Overview, questions: Questions, decisions: Decisions, events: Events, sources: Sources, machines: Machines, webhooks: Webhooks,
+};
+
+function Loading() {
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">{Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="h-28" />)}</div>
+      <Skeleton className="h-64" />
+    </div>
+  );
+}
+
+export function App() {
+  const view = useView();
+  const loaded = useHopper((s) => s.loaded);
+  const loadError = useHopper((s) => s.loadError);
+  useEffect(() => {
+    let close: (() => void) | undefined;
+    let cancelled = false;
+    load().then(() => { if (!cancelled) close = connect(); }, (e: Error) => setLoadError(e.message));
+    return () => { cancelled = true; close?.(); };
+  }, []);
+  useEffect(() => { document.title = view === 'overview' ? 'job-hopper' : `${viewLabel(view)} · job-hopper`; }, [view]);
+  const Current = VIEW[view];
+  return (
+    <TooltipProvider delayDuration={300}>
+      <div className="min-h-dvh">
+        <Header nav={<MobileNav view={view} />} />
+        <div className="flex">
+          <Sidebar view={view} />
+          <main className="min-w-0 flex-1 space-y-3 p-3 sm:p-4 lg:p-6">
+            <ReadOnlyBanner />
+            {loadError && (
+              <div className="flex items-center gap-2 rounded-lg border border-bad/40 bg-bad/5 p-3 text-sm text-bad">
+                <AlertTriangle className="size-4" />Could not load from the daemon: {loadError}
+              </div>
+            )}
+            {loaded ? <Current /> : !loadError && <Loading />}
+          </main>
+        </div>
+      </div>
+      <Toaster position="bottom-right" />
+    </TooltipProvider>
+  );
+}

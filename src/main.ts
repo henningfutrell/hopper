@@ -3,6 +3,7 @@
 // host (integration tests call startApp, with doubles at the seams).
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { Answerer, Assessor, Clock, Executor, JobSource, PluginsView, Router, SettableUsageSource, SourceRegistry, Store } from './domain/ports.ts';
 import type { AttachedMachine, Question, SourceStatus } from './domain/types.ts';
 import { isRerunnable } from './domain/types.ts';
@@ -70,11 +71,14 @@ export interface AppSeams {
   pluginsFileIntervalMs?: number;
   /** Replaces the ssh probe of every attached machine: true = its herdr session is running. */
   machineProbe?: (machine: AttachedMachine) => Promise<boolean>;
+  /** The built UI bundle; default UI_DIR. */
+  uiDir?: string;
 }
 
 const WEBHOOKS_FILE_CHECK_MS = 5000;
 const PLUGINS_FILE_CHECK_MS = 5000;
 const SEAM_SOURCE_POLL_MS = 1000;
+const UI_DIR = fileURLToPath(new URL('../ui/dist', import.meta.url));
 
 const VERSION = (JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }).version;
 
@@ -195,7 +199,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   });
   const server = createServer({
     engine, store, dispatcher, questions, clock, version: VERSION, sources: registry, webhookConfig, plugins,
-    port: () => port, dataDir, sessionHours: config.uiSessionHours,
+    port: () => port, dataDir, sessionHours: config.uiSessionHours, uiDir: seams.uiDir ?? UI_DIR,
   });
 
   webhookConfig.start();

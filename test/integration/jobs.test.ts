@@ -127,6 +127,37 @@ describe('jobs pulled from a source', () => {
     expect(queue.waitingAnswer).toEqual([]);
   });
 
+  it('the queue lists ended jobs (finished, failed, cancelled), newest end first, never a live one', async () => {
+    const done = await t.pull({ op: 'echo' }, { key: 'ended-1' });
+    await t.waitForStatus(done.id, 'finished');
+    const bad = await t.pull({ op: 'fail', message: 'boom' }, { key: 'ended-2' });
+    await t.waitForStatus(bad.id, 'failed');
+    const long = await t.pull({ op: 'sleep', ms: 10000 }, { key: 'ended-3' });
+    await t.waitForStatus(long.id, 'running');
+    const queue = (await t.api('GET', '/api/queue')).body;
+    // The manual source offers a failed item again (re-run), so more than one job may end on ended-2.
+    const ended: Job[] = queue.ended;
+    const ids = ended.map((j) => j.id);
+    expect(ids).toEqual(expect.arrayContaining([done.id, bad.id]));
+    expect(ids).not.toContain(long.id);
+    expect(ended.every((j) => ['finished', 'failed', 'cancelled'].includes(j.status))).toBe(true);
+    const ends = ended.map((j) => j.finishedAt!);
+    expect(ends).toEqual([...ends].sort().reverse());
+    expect(ids.indexOf(bad.id)).toBeLessThan(ids.indexOf(done.id));
+    expect(queue.running.map((j: Job) => j.id)).toEqual([long.id]);
+  });
+
+  it('the ended list is capped at the 20 most recent', async () => {
+    const ids: string[] = [];
+    for (let i = 0; i < 22; i += 1) {
+      const j = await t.pull({ op: 'echo' }, { key: `cap-${i}` });
+      await t.waitForStatus(j.id, 'finished');
+      ids.push(j.id);
+    }
+    const ended = (await t.api('GET', '/api/queue')).body.ended.map((j: Job) => j.id);
+    expect(ended).toEqual(ids.reverse().slice(0, 20));
+  });
+
   it('re-sorting: a changed item priority reprioritizes a waiting job (job.reprioritized), never a running one', async () => {
     t.setUsage(100);
     const waiting = await t.pull({ op: 'echo' }, { key: 'resort-1', priority: 40 });
@@ -146,15 +177,11 @@ describe('jobs pulled from a source', () => {
     expect((await t.job(running.id)).priority).toBe(30);
   });
 
-  it('serves health and the UI', async () => {
+  it('serves health', async () => {
     const health = (await t.api('GET', '/api/health')).body;
     expect(health).toMatchObject({ ok: true, routerMode: 'shadow', router: 'fake', fallback: false });
     expect(health).not.toHaveProperty('advisor');
     expect(health.executors).toEqual(['test', 'scripted']);
-    const page = await fetch(t.url + '/');
-    expect(page.headers.get('content-type')).toMatch(/text\/html/);
-    expect(await page.text()).toContain('/ui/app.js');
-    expect((await fetch(t.url + '/ui/app.js')).headers.get('content-type')).toMatch(/javascript/);
     const missing = await t.api('GET', '/api/nothing');
     expect(missing.status).toBe(404);
     expect(missing.body.error).toBeDefined();

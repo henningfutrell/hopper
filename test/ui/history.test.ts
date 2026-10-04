@@ -1,0 +1,59 @@
+// The charts' data: ended jobs per time bucket, and what each lane ran when.
+import { describe, expect, it } from 'vitest';
+import type { DomainEvent, EventType } from '../../src/domain/types.ts';
+import { concurrency, laneSpans, throughput } from '../../ui/src/model/history.ts';
+
+const T0 = Date.parse('2026-10-03T12:00:00Z');
+const at = (min: number) => new Date(T0 + min * 60_000).toISOString();
+let seq = 0;
+const ev = (type: EventType, min: number, o: Partial<DomainEvent> = {}): DomainEvent =>
+  ({ seq: ++seq, schemaVersion: 1, id: String(seq), type, at: at(min), data: {}, ...o });
+
+describe('throughput', () => {
+  it('buckets ended jobs by outcome, oldest first, the last bucket holding now; older ones fall outside', () => {
+    const events = [
+      ev('job.finished', -125), ev('job.finished', -61), ev('job.failed', -59), ev('job.cancelled', -1), ev('job.started', -1),
+    ];
+    const b = throughput(events, T0 + 30_000, 60 * 60_000, 3);
+    expect(b.map((x) => [x.start, x.finished, x.failed, x.cancelled])).toEqual([
+      [T0 - 120 * 60_000, 1, 0, 0], [T0 - 60 * 60_000, 0, 1, 1], [T0, 0, 0, 0],
+    ]);
+  });
+});
+
+describe('laneSpans', () => {
+  it('a span per job run on a lane: started → its end, outcome named; unended spans are running', () => {
+    const events = [
+      ev('job.started', -50, { jobId: 'a', laneId: 'm/lane-1' }),
+      ev('job.started', -40, { jobId: 'b', laneId: 'm/lane-2' }),
+      ev('job.finished', -30, { jobId: 'a' }),
+      ev('question.asked', -20, { jobId: 'b' }),
+      ev('job.started', -10, { jobId: 'b', laneId: 'm/lane-1' }),
+      ev('job.reattached', -5, { jobId: 'c', laneId: 'm/lane-2' }),
+    ];
+    expect(laneSpans(events, T0 - 60 * 60_000)).toEqual([
+      { laneId: 'm/lane-1', jobId: 'a', start: T0 - 50 * 60_000, end: T0 - 30 * 60_000, outcome: 'finished' },
+      { laneId: 'm/lane-2', jobId: 'b', start: T0 - 40 * 60_000, end: T0 - 20 * 60_000, outcome: 'question' },
+      { laneId: 'm/lane-1', jobId: 'b', start: T0 - 10 * 60_000, end: null, outcome: 'running' },
+      { laneId: 'm/lane-2', jobId: 'c', start: T0 - 5 * 60_000, end: null, outcome: 'running' },
+    ]);
+  });
+  it('drops spans that ended before the window; failed, cancelled and requeued end a span', () => {
+    const events = [
+      ev('job.started', -90, { jobId: 'old', laneId: 'm/lane-1' }), ev('job.failed', -80, { jobId: 'old' }),
+      ev('job.started', -50, { jobId: 'x', laneId: 'm/lane-1' }), ev('job.cancelled', -45, { jobId: 'x' }),
+      ev('job.started', -40, { jobId: 'y', laneId: 'm/lane-1' }), ev('job.requeued', -35, { jobId: 'y' }),
+    ];
+    expect(laneSpans(events, T0 - 60 * 60_000).map((s) => [s.jobId, s.outcome])).toEqual([['x', 'cancelled'], ['y', 'requeued']]);
+  });
+});
+
+describe('concurrency', () => {
+  it('how many spans overlap each bucket, buckets aligned as throughput', () => {
+    const spans = [
+      { laneId: 'l1', jobId: 'a', start: T0 - 50 * 60_000, end: T0 - 25 * 60_000, outcome: 'finished' as const },
+      { laneId: 'l2', jobId: 'b', start: T0 - 40 * 60_000, end: null, outcome: 'running' as const },
+    ];
+    expect(concurrency(spans, T0, 20 * 60_000, 3)).toEqual([2, 1, 1]);
+  });
+});

@@ -27,7 +27,9 @@ plugin" is its current enactment; Phase 6 items are judged against it.
                               executors (plugin instances: herdr-claude, test)
 ```
 
-One process. Node ≥ 24 runs the TypeScript directly (type stripping) — no build step.
+One process. Node ≥ 24 runs the TypeScript directly (type stripping) — the daemon has no build
+step. The UI is the one built part: `ui/` (React, shadcn/ui, Tailwind, d3) → `npm run build:ui`
+→ `ui/dist`, which the daemon serves (issue #14, "UI rework" below).
 Fastify for HTTP, `node:sqlite` for storage, zod for request validation.
 
 ## Directories and what each must not know
@@ -44,7 +46,7 @@ Fastify for HTTP, `node:sqlite` for storage, zod for request validation.
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production | engine, http, store, plugins |
 | `src/engine/` | the loop: gather → decide → apply; job lifecycle; restart recovery | http |
 | `src/http/` | Fastify routes, SSE, static UI | executors, plugins (reads them through the `PluginsView` port) |
-| `src/ui/` | static `index.html`, `app.js`, `plugins.js`, `style.css` — browser only | all of `src/` (talks HTTP/SSE only) |
+| `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
 | `examples/plugins/` | one minimal runnable custom plugin per role, for authors (`docs/plugins.md`); imports only `job-hopper/plugin` types and `node:` builtins | everything in `src/` at runtime |
 | `src/main.ts` | composition root: config → plugins.yaml (migrated or written when absent) → plugin host (every part) → store → engine → server | — |
 
@@ -600,6 +602,7 @@ appends `question.expired` **and** `job.failed`. `question.asked`, `question.ans
 `question.expired` are engine triggers (a lane freed or a job requeued is decided at once).
 The events table gains a `question_id` column (migration 2).
 `GET /api/queue` `counts` gains `waiting_answer`; `/api/queue` gains `waitingAnswer: Job[]`.
+`/api/queue` gains `ended: Job[]` (issue #5): ended jobs, newest `finishedAt` first, at most 20 — the UI board's Ended column.
 
 ## Events added
 
@@ -2220,3 +2223,29 @@ Open questions:
 Plugin tie: this is Phase 5 slice 3 ("Executors as plugins; `EXECUTOR_NAMES` removed"). Slice 3
 landed with the tools as the `args` option and without `kind` (see "Settled in slice 3": one
 parser exists); `kind` arrives with a second parser.
+
+## UI rework — shadcn/ui + d3 (issue #14, 2026-10-03)
+
+Owner direction (2026-10-03): rebuild the UI with shadcn/ui and d3: elegant, mature,
+realtime, responsive, fast. Builds on the at-a-glance board (issue #5).
+
+- **Build.** `ui/` is a Vite project (root `package.json`, `npm run build:ui`, base `/ui/`). The
+  daemon reads `ui/dist` once at startup (`src/http/static.ts`): `/` → `index.html` (`no-cache`),
+  `/ui/assets/<hashed file>` → `public, max-age=31536000, immutable`. Only files listed at startup
+  are served, so no request path reaches the filesystem. No bundle → `/` is 503 naming
+  `npm run build:ui`; the API is unaffected. `scripts/install.sh` builds before it copies.
+- **Libraries, and why each.** React + shadcn/ui (Radix) for components, Tailwind v4 for styling,
+  d3 for scales/shapes/arcs only — React renders every SVG node, axes included, so d3 never owns
+  DOM. zustand holds the one store. sonner for toasts. Hand-rolled only the static file map
+  (shorter than `@fastify/static`'s config).
+- **Realtime.** One SSE connection; each domain event updates the log and chart history at once
+  and debounces a `/api/queue` + `/api/machines` refresh (150 ms). One shared 1 s clock drives
+  every ticking label. `ui/src/model/event-types.ts` is a `Record<EventType, true>`: a new event
+  type that the UI does not subscribe to fails the UI typecheck.
+- **Views** (hash-routed): Overview (KPIs with sparklines, lane timeline, attention, lanes /
+  waiting / ended, ended-per-hour chart, usage gauges, live activity), Questions, Decisions,
+  Events, Sources, Machines, Webhooks. Charts read `/api/events?types=…&limit=5000`
+  (`HISTORY_TYPES`): lane spans and ended-per-hour are derived client-side, no new API.
+- **Mutations unchanged**: cancel (now behind a confirm dialog), approve, answer, router mode,
+  logout — same `/ui/api/*` routes and session header.
+- **Theme.** Dark by default, light by toggle, remembered in `localStorage` (`jh_theme`).
