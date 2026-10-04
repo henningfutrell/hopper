@@ -1,5 +1,5 @@
 // Restart recovery for phase 2 (design.md "Recovery at startup"): two app instances over one
-// SQLite file, sharing one manual source. The store is opened directly only to stage a crash
+// database, sharing one manual source. The store is opened directly only to stage a crash
 // window no API can produce.
 import { afterEach, describe, expect, it } from 'vitest';
 import type { AppSeams } from '../../src/main.ts';

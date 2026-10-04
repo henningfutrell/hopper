@@ -4,7 +4,6 @@
 import { cpSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { Job } from '../../src/domain/types.ts';
 import { startTestApp, tempDbPath, writePluginsYaml, type TestApp } from '../support/app.ts';
 import { waitFor } from '../support/wait.ts';
 import { ALWAYS_PROCEED_DIR } from '../plugins/support.ts';

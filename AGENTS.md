@@ -16,13 +16,14 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
 - **The decider stays pure.** No I/O, no clock, no randomness in `src/decider/`. The
   Decision id is passed in.
 - **Test first.** Failing test committed before the code that passes it. Integration tests
-  use the real database and the real HTTP server; fakes only at `ports.ts` seams. The suite runs on
-  SQLite (`npm test`) and on Postgres (`bash scripts/test-postgres.sh`); a store change passes both.
+  use the real database and the real HTTP server; fakes only at `ports.ts` seams. Postgres is the only
+  store (issue #53): `npm test` starts a throwaway Postgres container (testcontainers; needs docker),
+  each test in its own schema, unless `JOB_HOPPER_TEST_POSTGRES_URL` names one.
 - **Tests are sealed off from the real machine.** `test/support/isolate.ts` (vitest setup) gives
   every worker a throwaway HOME and refuses any non-loopback `fetch`. Never point a test at
   the owner's database, env file or a real URL; a test daemon once sent real Grok Bot webhooks.
-  An ad-hoc daemon (own port) gets its own database (a copy, by `migrate-local`, with the Grok Bot
-  variables and webhook subscribers removed), and runs network-isolated (`unshare -rn`).
+  An ad-hoc daemon (own port) gets its own database (a copy, by `pg_dump` into a fresh
+  database, with the Grok Bot variables and webhook subscribers removed), and runs network-isolated (`unshare -rn`).
 - **Erasable TypeScript only** (`erasableSyntaxOnly`): no enums, no namespaces, no
   parameter properties. Relative imports carry `.ts`.
 - **Loopback plus the LAN names and the public URL, and the hopper pulls.** The daemon binds `127.0.0.1`, or every
@@ -55,4 +56,4 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
 - **The UI is the one built part.** `ui/` → `npm run build:ui` → `ui/dist` (gitignored), served
   by the daemon. It imports nothing of `src/` at runtime; types only, from `src/domain/types.ts`.
 - Gates: `npm run typecheck`, `npm run lint`, `npm test`, `npm run build:ui` — all exit 0
-  (`npm run check` runs all four); `bash scripts/test-postgres.sh` exits 0 for any store change.
+  (`npm run check` runs all four).

@@ -546,7 +546,7 @@ export interface ConfigDocuments {
   write(name: ConfigDocumentName, text: string, version: string): boolean;
 }
 
-/** The whole store: one database (SQLite or Postgres); repositories share one connection. */
+/** The whole store: one Postgres database; repositories share one connection. */
 export interface Store {
   jobs: JobRepository;
   lanes: LaneRepository;

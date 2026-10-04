@@ -1,4 +1,4 @@
-// Persistence across a restart: two app instances over one SQLite file and one manual source.
+// Persistence across a restart: two app instances over one database and one manual source.
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Job } from '../../src/domain/types.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';

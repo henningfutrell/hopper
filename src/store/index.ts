@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Clock, IdGen, Store } from '../domain/ports.ts';
 import type { StoreContext } from './context.ts';
-import { openDb, parseDatabaseUrl } from './db.ts';
+import { openDb } from './db.ts';
 import { createDecisionRepository } from './decisions.ts';
 import { createConfigDocuments } from './documents.ts';
 import { createLoginCodeRepository } from './login-codes.ts';
@@ -15,16 +15,15 @@ import { createUiSessionRepository } from './ui-sessions.ts';
 import { createWebhookRepository } from './webhooks.ts';
 
 
-/** `url`: JOB_HOPPER_DATABASE_URL — `sqlite:<path>` or `postgres://…` (design.md "Database"). */
+/** `url`: JOB_HOPPER_DATABASE_URL, `postgres://…` (design.md "Database"). */
 export function openStore(o: { url: string; clock: Clock; idGen?: IdGen }): Store {
-  const db = openDb(parseDatabaseUrl(o.url));
+  const db = openDb(o.url);
   try {
     migrate(db);
   } catch (e) {
     db.close();
     throw e;
   }
-  const begin = db.dialect === 'sqlite' ? 'BEGIN IMMEDIATE' : 'BEGIN';
 
   let depth = 0;
   // eslint-disable-next-line prefer-const -- events needs ctx, ctx.tx needs events
@@ -38,7 +37,7 @@ export function openStore(o: { url: string; clock: Clock; idGen?: IdGen }): Stor
         depth++;
         try { return fn(); } finally { depth--; }
       }
-      db.exec(begin);
+      db.exec('BEGIN');
       depth = 1;
       let result: T;
       try {
