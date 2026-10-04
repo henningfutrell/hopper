@@ -1,12 +1,15 @@
 // The SSE connection: replays after the newest event already loaded, then live. EventSource
 // reconnects by itself (with Last-Event-ID); every (re)open refreshes what may have changed.
+import { readToken } from '@/lib/api';
 import { EVENT_TYPES } from '@/model/event-types';
 import type { DomainEvent } from '@/model/wire';
 import { onDelivery, onDomainEvent, onSource, refreshHealth, refreshLive, refreshQuestions, setConn, useHopper } from './index';
 
 export function connect(): () => void {
   const after = useHopper.getState().events[0]?.seq ?? 0;
-  const es = new EventSource(`/api/events/stream?after=${after}`);
+  // EventSource sends no headers: across the LAN the session rides in the query.
+  const token = readToken();
+  const es = new EventSource(`/api/events/stream?after=${after}${token ? `&session=${token}` : ''}`);
   es.onopen = () => {
     setConn('live');
     refreshLive().catch(() => {});

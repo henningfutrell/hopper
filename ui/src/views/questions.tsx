@@ -8,7 +8,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { Textarea } from '@/components/ui/textarea';
 import { Confirm } from '@/components/confirm';
 import { Countdown, JobTitle } from '@/components/job';
-import { LOGIN_CMD } from '@/lib/api';
+import { loginHint } from '@/lib/api';
 import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
 import { between, clock } from '@/model/format';
@@ -88,7 +88,7 @@ function QuestionCard({ q }: { q: Question }) {
       )}
       {!authed && (
         <div data-slot="login-notice" className="flex flex-wrap items-center gap-2 rounded-md border border-warn/40 bg-warn/5 p-3 text-sm text-warn">
-          <LogIn className="size-4" />Log in to answer or close: <code className="font-mono text-xs break-all text-foreground">{LOGIN_CMD}</code>
+          <LogIn className="size-4" />Log in to answer or close: <span className="break-all text-foreground">{loginHint()}</span>
         </div>
       )}
     </Panel>

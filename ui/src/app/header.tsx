@@ -1,4 +1,5 @@
-// The top bar: connection, router mode (switchable with a session), router health, uptime, login.
+// The top bar: connection, router mode (switchable with a session), router health, uptime, login,
+// and a device link for another browser.
 import { LogOut, Moon, Rabbit, Sun } from 'lucide-react';
 import { setTheme, useTheme } from '@/hooks/use-theme';
 import { Button } from '@/components/ui/button';
@@ -6,6 +7,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { Dot, StatusBadge } from '@/components/status';
 import { duration } from '@/model/format';
 import { act, logout, refreshHealth, useHopper } from '@/store';
+import { DeviceLink } from './device-link';
 
 export function Header({ nav }: { nav?: React.ReactNode }) {
   const health = useHopper((s) => s.health);
@@ -46,6 +48,7 @@ export function Header({ nav }: { nav?: React.ReactNode }) {
           </span>
           <Button variant="ghost" size="icon-sm" aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
             onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <Sun /> : <Moon />}</Button>
+          {authed && <DeviceLink />}
           {authed && <Button variant="ghost" size="icon-sm" aria-label="Log out" onClick={() => void logout()}><LogOut /></Button>}
         </div>
       </div>

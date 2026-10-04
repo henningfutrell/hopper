@@ -71,6 +71,9 @@ synonyms. Rename here first, in the same commit as everything else.
 | **Hopper marker** | The hidden first line of a comment the hopper once posted (it posts none now); lets the context filter tell old ones from the owner's text. | |
 | **Leftover variable** | A `JOB_HOPPER_*` variable that is set but read by nothing (a removed part-choosing one, or a typo). One loud warning at boot names them all. | |
 | **UI session** | A browser session created from the one-time login code; the only way to mutate. | |
+| **LAN name** | A host name or address the UI answers to from other machines (`JOB_HOPPER_LAN_NAMES`), with the port. A request naming one is a **LAN request**: it reads `/api/` only with a UI session. | remote host |
+| **LAN peer** | A CIDR range a LAN request may come from (`JOB_HOPPER_LAN_PEERS`). Any other non-loopback peer is refused. | allowlist |
+| **Device link** | `http://<LAN name>:<port>/#login=<code>`: the current login code as a link a logged-in browser hands another device. Works once. | pairing link, invite |
 | **Payload version** | `schemaVersion` on every event: the version of that event type's payload schema. | |
 | **GitHub App** | job-hopper's own GitHub identity (`job-hopper-<owner>[bot]`), created by the owner via the manifest flow. | bot account |
 | **Installation** | Where the owner installed the app; its repos are the only ones the `github-app` source scans. | |

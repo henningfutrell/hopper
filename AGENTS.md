@@ -1,6 +1,6 @@
 # job-hopper — repo law
 
-Local job-queue daemon that pulls its jobs. One maintainer, loopback only, TypeScript run directly by Node ≥ 24.
+Local job-queue daemon that pulls its jobs. One maintainer, loopback plus an opt-in LAN, TypeScript run directly by Node ≥ 24.
 
 North star (the owner): an extendable and plugin architecture; every part must serve it. `docs/design.md` "North star".
 
@@ -24,10 +24,12 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   subscribers removed, and runs network-isolated (`unshare -rn`).
 - **Erasable TypeScript only** (`erasableSyntaxOnly`): no enums, no namespaces, no
   parameter properties. Relative imports carry `.ts`.
-- **Loopback only, and the hopper pulls.** Binding anything but `127.0.0.1` is a different
-  application. No route creates or changes a job, question, webhook or setting: jobs come only
+- **Loopback plus the LAN names, and the hopper pulls.** The daemon binds `127.0.0.1`, or every
+  interface only when `JOB_HOPPER_LAN_NAMES` and `JOB_HOPPER_LAN_PEERS` are set; a peer outside
+  loopback and the LAN peers is refused, and a LAN request reads `/api/` only with a UI session
+  (`docs/design.md` "Reaching the UI across the LAN", issue #16). No route creates or changes a job, question, webhook or setting: jobs come only
   from job sources, webhooks only from `webhooks.yaml`. Every request passes the Host guard
-  (`127.0.0.1:<port>` / `localhost:<port>`, else 421). The only mutations are the UI's
+  (`127.0.0.1:<port>` / `localhost:<port>` / a LAN name with the port, else 421). The only mutations are the UI's
   `POST /ui/api/*`, behind a UI session from the one-time login code (`x-jobhopper-session`,
   exact Origin, same-origin, JSON — else 403); a new mutation goes there and nowhere else.
   `docs/design.md` "UI session and mutations" states the residual risk.

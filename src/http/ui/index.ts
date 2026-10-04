@@ -1,30 +1,31 @@
 // The UI session and the only mutations left (design.md "UI session and mutations"): a one-time
 // login code → POST /ui/login → a page that keeps the session token in localStorage → POST
 // /ui/api/* with that token in x-jobhopper-session, exact Origin, same-origin, JSON. Every
-// refusal is a logged 403.
+// refusal is a logged 403. A logged-in browser hands another device a login link per LAN name
+// (design.md "Reaching the UI across the LAN").
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import type { Clock, PluginsView, QuestionService, UiSessionRepository } from '../../domain/ports.ts';
+import type { PluginsView, QuestionService } from '../../domain/ports.ts';
 import { ROLES, SELECTABLE_ROLES } from '../../domain/types.ts';
 import type { Engine } from '../../engine/index.ts';
 import { HttpError, parseWith } from '../errors.ts';
+import { lanHosts, type Lan } from '../reach.ts';
 import { routerView } from '../state.ts';
 import { SESSION_HEADER, mutationRefusal } from './guard.ts';
 import { createLoginCode } from './login-code.ts';
-import { createUiSessions } from './sessions.ts';
+import type { UiSessions } from './sessions.ts';
 
 export { LOGIN_CODE_FILE } from './login-code.ts';
 
 export interface UiRouteOptions {
   engine: Engine;
   questions: QuestionService;
-  uiSessions: UiSessionRepository;
+  sessions: UiSessions;
   plugins: PluginsView;
   /** The bound port (known only after listen). */
   port: () => number;
+  lan: Lan;
   dataDir: string;
-  clock: Clock;
-  sessionHours: number;
 }
 
 const idParams = z.object({ id: z.string() });
@@ -52,7 +53,7 @@ const loginPage = (token: string): string => `<!doctype html><meta charset="utf-
 export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void {
   const code = createLoginCode(o.dataDir);
   code.rotate();
-  const sessions = createUiSessions({ repo: o.uiSessions, clock: o.clock, hours: o.sessionHours });
+  const { sessions } = o;
 
   app.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string' }, (_req, body, done) => {
     done(null, Object.fromEntries(new URLSearchParams(body as string)));
@@ -74,7 +75,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   });
 
   const guarded = { onRequest: async (req: FastifyRequest, reply: FastifyReply) => {
-    const why = mutationRefusal(req.headers, o.port(), sessions);
+    const why = mutationRefusal(req.headers, o.port(), o.lan, sessions);
     if (why) return refuse(req, reply, why);
   } };
 
@@ -109,6 +110,13 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     const r = await o.plugins.edit(parseWith(pluginsEditBody, req.body));
     if (!r.ok) throw new HttpError(EDIT_STATUS[r.code], r.error);
     return r.report;
+  });
+
+  // The current login code as a link per LAN name, in the fragment (never sent to a server). It
+  // works once, like the code file; using either rotates both.
+  app.post('/ui/api/device-link', guarded, async () => {
+    if (o.lan.names.length === 0) throw new HttpError(409, 'no LAN names: set JOB_HOPPER_LAN_NAMES and JOB_HOPPER_LAN_PEERS to reach the UI from another device');
+    return { links: lanHosts(o.port(), o.lan).map((h) => `http://${h}/#login=${code.current()}`) };
   });
 
   app.post('/ui/api/logout', guarded, async (req) => {

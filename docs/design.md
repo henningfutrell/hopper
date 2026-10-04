@@ -200,7 +200,7 @@ budgets**, so it cannot be the usage source. job-hopper uses it for what it is: 
 > removed (404); jobs come from job sources, mutations go through `/ui/api/*` behind a UI
 > session. The `GET` routes stand. See "Phase 3 — the hopper pulls".
 
-Loopback only (`127.0.0.1`), no auth — see profile. JSON everywhere; errors are
+Loopback (`127.0.0.1`), plus the LAN names when set — "Reaching the UI across the LAN". JSON everywhere; errors are
 `{ error: string }` with 400/404/409.
 
 | method | path | body / query | returns |
@@ -340,6 +340,7 @@ The usage-change trigger is named `usage.changed`; it is a trigger, not an event
 - **Soft-limit scaling floors.** `floor(maxLanes × (hard − used)/(hard − soft))`: with 2
   lanes, 85 % usage gives 0 lanes, not 1. Conservative by choice.
 - **Only `127.0.0.1` is accepted** for `JOB_HOPPER_HOST`; config refuses anything else.
+  *Superseded by "Reaching the UI across the LAN" (issue #16): `JOB_HOPPER_HOST` is gone.*
 - **Static UI files are read once at startup**; a UI change needs a daemon restart.
 - **The installed daemon runs from a copy** (`~/.local/lib/job-hopper`, made by
   `scripts/install.sh`), so switching branches in the source checkout never breaks it.
@@ -351,7 +352,8 @@ the current list is "Settled in slice 4" → "Configuration (env), as of slice 5
 
 | var | default |
 |-----|---------|
-| `JOB_HOPPER_HOST` | `127.0.0.1` |
+| `JOB_HOPPER_LAN_NAMES` | empty (loopback only) — "Reaching the UI across the LAN" |
+| `JOB_HOPPER_LAN_PEERS` | empty — set with `LAN_NAMES` |
 | `JOB_HOPPER_PORT` | `4790` |
 | `JOB_HOPPER_DB` | `~/.local/share/job-hopper/job-hopper.db` |
 | `JOB_HOPPER_TICK_MS` | `2000` |
@@ -780,8 +782,9 @@ the engine.
 omitted, plus `config: { path, loadedAt, error? }`) · `/api/webhooks/deliveries` ·
 **new** `GET /api/sources` → `{ sources: SourceStatus[] }`.
 
-Every request (GET included) must carry `Host: 127.0.0.1:<port>` or `localhost:<port>`;
-anything else is 421 — DNS-rebinding guard.
+Every request (GET included) must carry `Host: 127.0.0.1:<port>` or `localhost:<port>`, or a
+LAN name with the port; anything else is 421 — DNS-rebinding guard. A LAN request reads `/api/`
+only with a UI session ("Reaching the UI across the LAN").
 
 SSE adds non-domain `event: source.updated` (`data: SourceStatus`), like `delivery.updated`.
 
@@ -823,6 +826,7 @@ token and send any `Origin`. Cookies are no better here: they ignore ports, so a
 | POST | `/ui/api/questions/:id/close` | `{}` | `QuestionService.closeByHuman` (404/409): close without answering ("Questions" → Close) |
 | POST | `/ui/api/router-mode` | `{ mode }` | set router mode (phase 5; was `/ui/api/jev`) |
 | POST | `/ui/api/plugins` | `{ action, … }` | edit plugins.yaml: one instance's options, select a plugin, rescan (phase 5 slice 7; "Settled in slice 7") |
+| POST | `/ui/api/device-link` | `{}` | `{ links }`: the current login code as `http://<LAN name>:<port>/#login=<code>`, one per LAN name; 409 without LAN names ("Reaching the UI across the LAN") |
 | POST | `/ui/api/logout` | `{}` | drop the session |
 
 **Residual risk, stated.** Still able to act or read:
@@ -2300,3 +2304,59 @@ realtime, responsive, fast. Builds on the at-a-glance board (issue #5).
 - **Mutations unchanged**: cancel (now behind a confirm dialog), approve, answer, router mode,
   question close, plugins (options, select, rescan), logout — same `/ui/api/*` routes and session header.
 - **Theme.** Dark by default, light by toggle, remembered in `localStorage` (`jh_theme`).
+
+## Reaching the UI across the LAN (issue #16, 2026-10-03)
+
+Owner request: reach the UI across the LAN. He opens the UI, answers and closes questions from
+other machines on his LAN. This ends the loopback-only rule; the Host guard, the UI session and
+"the hopper pulls" stand.
+
+**Configuration** — this machine's, in `~/.config/job-hopper/daemon.env` (the unit's optional
+`EnvironmentFile`), never in the unit:
+
+```sh
+JOB_HOPPER_LAN_NAMES=server,192.0.2.29
+JOB_HOPPER_LAN_PEERS=192.0.2.0/24,100.64.0.0/10
+```
+
+| var | |
+|---|---|
+| `JOB_HOPPER_LAN_NAMES` | Host names or IPv4 addresses this daemon answers to, comma-separated, no port, never loopback. The first is the one in question links (`answerUrl`). |
+| `JOB_HOPPER_LAN_PEERS` | CIDR ranges a LAN request may come from. Set both or neither. |
+
+With LAN names set the daemon binds `::` (every interface); without, `127.0.0.1` as before.
+`App.url` stays `http://127.0.0.1:<port>`.
+
+**Who is asking** (`src/http/reach.ts`, `classifyRequest`, pure):
+
+| peer | Host | result |
+|---|---|---|
+| loopback | `127.0.0.1:<port>` / `localhost:<port>` | local — as before: reads open |
+| loopback or in `LAN_PEERS` | `<LAN name>:<port>` | LAN |
+| in `LAN_PEERS` | loopback name | 421 |
+| anything else | any | 403 — a peer on another interface (VPN `tun0`, docker bridges) is refused before routing |
+| any | any other Host | 421 — DNS rebinding, as before |
+
+**A LAN request reads `/api/` only with a UI session** (401 `{ error }` otherwise): the
+`x-jobhopper-session` header, or — for `GET /api/events/stream` only, since `EventSource` sends no
+headers — the `session` query parameter. `/`, `/ui/assets/*`, `POST /ui/login` and
+`GET /ui/api/session` stay open, so a logged-out device can load the page and log in. Loopback reads
+stay open: a local process can read the store file anyway.
+
+**Mutations** accept `Origin: http://<LAN name>:<port>` beside the loopback origins; every other
+check in "UI session and mutations" 5 stands.
+
+**Logging a device in.** `open-ui.sh` works only on this machine. Two other ways, both through
+the same one-time login code (`POST /ui/login`; using it rotates it):
+1. **Device link** — a logged-in browser's header button calls `POST /ui/api/device-link` and shows
+   `http://<LAN name>:<port>/#login=<code>` per LAN name. The code rides in the fragment, which the
+   browser never sends; the page strips it from the address bar and history, then posts it.
+2. **Paste a login code** into the logged-out banner (from `ui-login-code` on this machine).
+
+Sessions are already in SQLite (migration 6), so a daemon restart does not log a device out; a
+session still expires after `JOB_HOPPER_UI_SESSION_HOURS` (12).
+
+**Residual risk, stated.** Plain HTTP: a host on the LAN that can sniff traffic can take a session
+token or a device link in flight. Accepted for a home LAN; the peer list keeps the VPN and container
+networks out. A device link is as strong as the login code file and works once.
+

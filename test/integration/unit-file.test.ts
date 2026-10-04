@@ -17,6 +17,12 @@ describe('systemd/job-hopper.service', () => {
     expect(loadConfig(env).leftoverEnv).toEqual({});
   });
 
+  it('binds loopback by default; LAN settings come from the optional daemon.env (design.md "Reaching the UI across the LAN")', () => {
+    const text = readFileSync(UNIT, 'utf8');
+    expect(text).not.toMatch(/JOB_HOPPER_HOST/);
+    expect(text).toMatch(/^EnvironmentFile=-%h\/\.config\/job-hopper\/daemon\.env$/m);
+  });
+
   it('install.sh writes no part-choosing variable and no sources.yaml', () => {
     const text = readFileSync(INSTALL, 'utf8');
     expect(text).not.toMatch(/JOB_HOPPER_(EXECUTORS|HERDR_|CLAUDE_|SOURCES_FILE|GH_BIN|LOCAL_LANES|ANSWER_MODEL|JEV_)/);
