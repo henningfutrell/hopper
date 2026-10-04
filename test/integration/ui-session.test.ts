@@ -102,7 +102,7 @@ describe('UI mutations', () => {
   });
 
   it('every mutation route refuses a request without a session', async () => {
-    for (const path of ['/ui/api/jobs/x/cancel', '/ui/api/jobs/x/approve', '/ui/api/questions/x/answer', '/ui/api/router-mode', '/ui/api/logout']) {
+    for (const path of ['/ui/api/jobs/x/cancel', '/ui/api/jobs/x/approve', '/ui/api/questions/x/answer', '/ui/api/questions/x/close', '/ui/api/router-mode', '/ui/api/logout']) {
       expect((await t.ui(path, {})).status, path).toBe(403);
     }
   });

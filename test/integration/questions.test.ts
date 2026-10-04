@@ -5,7 +5,7 @@
 // seams. Human answers and cancels go through the UI session routes.
 import { afterEach, describe, expect, it } from 'vitest';
 import type { DomainEvent, Job, Question } from '../../src/domain/types.ts';
-import { createFakeAnswerer, createFakeAssessor } from '../../src/questions/index.ts';
+import { CLOSED_ANSWER, createFakeAnswerer, createFakeAssessor } from '../../src/questions/index.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { createAskerExecutor } from '../support/doubles.ts';
 import { writeWebhooksFile } from '../support/files.ts';
@@ -153,6 +153,33 @@ describe('a question escalated to the human', () => {
     expect(events.find((e) => e.type === 'question.expired')).toBeDefined();
     await waitFor(() => a.source.reports.some((r) => r.kind === 'failed' && r.job.id === job.id));
     expect(a.source.reports.filter((r) => r.job.id === job.id).map((r) => r.kind)).toEqual(['claimed', 'failed']);
+  });
+
+  it('Close in the UI ends the question: question.closed, and the job resumes with the fixed close text and finishes', async () => {
+    const a = await start();
+    const token = await a.login();
+    const job = await a.pull(ask('Is this risky?'));
+    const q = await a.waitForQuestion(job.id, (x) => x.tier === 'human');
+    const res = await a.ui<Question>(`/ui/api/questions/${q.id}/close`, {}, { token });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ status: 'closed', answeredBy: 'human', answer: CLOSED_ANSWER });
+    expect((await a.waitForStatus(job.id, 'finished')).result).toEqual({ answer: CLOSED_ANSWER });
+    const events = ofJob(await a.events(), job.id);
+    expect(events.find((e) => e.type === 'question.closed')).toMatchObject({ questionId: q.id, data: { questionId: q.id, answer: CLOSED_ANSWER } });
+    expect(events.find((e) => e.type === 'question.answered')).toBeUndefined();
+    expect(events.find((e) => e.type === 'job.requeued')!.data).toEqual({ from: 'waiting_answer', reason: 'closed' });
+    expect((await a.api<{ questions: Question[] }>('GET', '/api/questions')).body.questions).toEqual([]);
+    expect((await a.api<{ questions: Question[] }>('GET', '/api/questions?status=closed')).body.questions.map((x) => x.id)).toEqual([q.id]);
+    expect((await a.ui(`/ui/api/questions/${q.id}/close`, {}, { token })).status).toBe(409);
+    expect((await a.ui('/ui/api/questions/nope/close', {}, { token })).status).toBe(404);
+  });
+
+  it('Close is guarded like answer: no session, no close', async () => {
+    const a = await start();
+    const job = await a.pull(ask('Is this risky?'));
+    const q = await a.waitForQuestion(job.id, (x) => x.tier === 'human');
+    expect((await a.ui(`/ui/api/questions/${q.id}/close`, {})).status).toBe(403);
+    expect((await a.api('GET', `/api/questions/${q.id}`)).body.status).toBe('open');
   });
 
   it('cancelling a waiting job in the UI cancels its question', async () => {
