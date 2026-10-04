@@ -946,7 +946,7 @@ retries). Bodies are sent on stdin (`gh api … -X POST --input -`), never argv,
 | report | on GitHub |
 |--------|-----------|
 | claimed | ensure labels `hopper:claimed`, `hopper:done`, `hopper:failed` exist (`gh label create --force`, once per repo per process); add `hopper:claimed`. **No comment** |
-| finished | **the one comment**: "✅ job `<id>` finished." + the job's result; remove `hopper:claimed`, add `hopper:done` |
+| finished | **the one comment**, one fixed line of hopper facts: `job-hopper: finished (job <first 8 of id>, <startedAt→finishedAt, e.g. 4m12s>)`. No result, no summary, no model-written text; remove `hopper:claimed`, add `hopper:done` |
 | failed | **no comment**; remove `hopper:claimed`, add `hopper:failed` (removing it is the re-run gesture) |
 | cancelled | **no comment**; remove `hopper:claimed` |
 

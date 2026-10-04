@@ -56,7 +56,7 @@ synonyms. Rename here first, in the same commit as everything else.
 | **Re-run** | A new job for a source key whose newest job failed or was cancelled and whose end the source already reported — offered again because a human cleared the marker (`hopper:failed`). Never from `finished`. | retry, resubmit |
 | **Claim** (of an issue) | Labelling it `hopper:claimed` when the hopper takes it (no comment). Distinct from a lane claim. | |
 | **Sync** | One pass of a source: discover, check active jobs, retry reports. | poll |
-| **Completion comment** | The one comment the hopper posts on an issue: when its job finishes, with the job's result. The hopper's only other issue writes are labels. | status comment, result comment |
+| **Completion comment** | The one comment the hopper posts on an issue: when its job finishes: one fixed line of hopper facts (job id prefix, duration), never model-written text. The hopper's only other issue writes are labels. | status comment, result comment |
 | **Report** | Telling the source what happened to its job: the claim and the end. On GitHub: labels, plus one completion comment on `finished`. | |
 | **Signal** | What a source tells the hopper: cancel. Questions are answered in the UI, never through a source. | |
 | **Hopper marker** | The hidden first line of a hopper comment (today only the completion comment); tells it from the owner's text. | |

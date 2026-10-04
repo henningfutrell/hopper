@@ -1,6 +1,6 @@
 // report(): what happened to a job, written to its issue. The hopper's only issue writes are
 // labels (state) and one completion comment: claimed → `hopper:claimed`; finished → one status
-// comment (the job's result) + `hopper:done`; failed → `hopper:failed`; cancelled → the claim
+// comment (one fixed line of hopper facts, never the job's result) + `hopper:done`; failed → `hopper:failed`; cancelled → the claim
 // label goes. Nothing else is posted: no claim, progress, question, answer, failure or cancel
 // comment (owner decision, 2026-10-03). Returns the WHOLE new source state: { finalCommentId }. Rows
 // written before that rule may still carry claimCommentId, progressCommentId,
@@ -33,10 +33,14 @@ function issueOf(job: Job): { repo: string; number: number } {
   return { repo, number };
 }
 
-function resultText(result: unknown): string {
-  if (result === undefined || result === null) return '(no result)';
-  if (typeof result === 'string') return result;
-  return '```json\n' + JSON.stringify(result, null, 2) + '\n```';
+/** `4m12s`, `42s`, `1h3m5s` from startedAt to finishedAt (whole seconds); `duration unknown` without both. */
+function duration(job: Job): string {
+  if (!job.startedAt || !job.finishedAt) return 'duration unknown';
+  const total = Math.max(0, Math.floor((Date.parse(job.finishedAt) - Date.parse(job.startedAt)) / 1000));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const sec = total % 60;
+  return `${h ? `${h}h` : ''}${h || m ? `${m}m` : ''}${sec}s`;
 }
 
 async function ensureLabels(ctx: ReportContext, repo: string): Promise<void> {
@@ -58,7 +62,8 @@ async function settle(ctx: ReportContext, repo: string, number: number, add: str
 async function finished(ctx: ReportContext, job: Job, repo: string, number: number, state: State): Promise<State> {
   const t: CommentTarget = { api: ctx.api, repo, number, botLogin: await ctx.botLogin() };
   const marker = finishedMarker(job.id);
-  const text = `✅ job \`${job.id}\` finished.\n\n${resultText(job.result)}`;
+  // Hopper facts only: no model-written text ever reaches the issue (owner decision, 2026-10-03).
+  const text = `job-hopper: finished (job ${job.id.slice(0, 8)}, ${duration(job)})`;
   const id = await postOnce(t, marker, commentBody(marker, text, job.id), state.finalCommentId as number | undefined);
   await settle(ctx, repo, number, [LABEL_DONE]);
   return { ...state, finalCommentId: id };
