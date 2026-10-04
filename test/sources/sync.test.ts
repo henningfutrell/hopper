@@ -49,6 +49,57 @@ describe('discover and ingest', () => {
   });
 });
 
+describe('re-run', () => {
+  async function ended(status: 'failed' | 'cancelled' | 'finished') {
+    const ctx = await setup();
+    ctx.source.items = [item('k1')];
+    await ctx.sync.syncNow();
+    ctx.world.patchJob('job-1', { status });
+    ctx.world.emit(`job.${status}`, 'job-1', {});
+    await settle();
+    return ctx;
+  }
+
+  it.each(['failed', 'cancelled'] as const)('a %s job whose end was reported gives a rediscovered item a new job', async (status) => {
+    const { world, source, sync } = await ended(status);
+    expect(world.jobs.get('job-1')!.sourceState!.sync).toMatchObject({ finalReported: true });
+    await sync.syncNow();
+    await sync.syncNow();
+    expect(world.jobs.size).toBe(2);
+    expect(world.jobs.get('job-2')).toMatchObject({ status: 'queued', source: { key: 'k1' } });
+    expect(world.calls.reprioritize).toEqual([]);
+    expect(sync.statuses()[0]!.jobsCreated).toBe(2);
+    expect(kinds(source)).toEqual(['claimed', status, 'claimed']);
+  });
+
+  it('does not re-run while the end was not yet reported (the label write may be failing)', async () => {
+    const { world, source, sync } = await setup();
+    source.items = [item('k1')];
+    await sync.syncNow();
+    source.reportErrors = [new SourceError('boom', false, 502), new SourceError('boom', false, 502)];
+    world.patchJob('job-1', { status: 'failed' });
+    world.emit('job.failed', 'job-1', {});
+    await settle();
+    await sync.syncNow();
+    expect(world.jobs.size).toBe(1);
+    expect(world.calls.reprioritize).toHaveLength(1);
+  });
+
+  it('does not re-run a finished job', async () => {
+    const { world, sync } = await ended('finished');
+    await sync.syncNow();
+    expect(world.jobs.size).toBe(1);
+  });
+
+  it('re-runs once: the new job is the newest, so a live one is only re-sorted', async () => {
+    const { world, sync } = await ended('failed');
+    await sync.syncNow();
+    await sync.syncNow();
+    expect(world.jobs.size).toBe(2);
+    expect(world.calls.reprioritize.map((c) => c[0])).toEqual(['job-2']);
+  });
+});
+
 describe('reports', () => {
   it('reports the claim once and replaces the source state rather than merging', async () => {
     const { world, source, sync } = await setup();

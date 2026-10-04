@@ -16,7 +16,7 @@ export function githubConfig(over: Record<string, unknown> = {}): GitHubSourceCo
   return r.github;
 }
 
-export function setup(over: Record<string, unknown> = {}, o: { knownKeys?: (keys: string[]) => Set<string>; whoami?: string } = {}) {
+export function setup(over: Record<string, unknown> = {}, o: { knownKeys?: (keys: string[]) => Set<string>; rerunnable?: (keys: string[]) => Set<string>; whoami?: string } = {}) {
   const gh = createFakeGitHub();
   const config = githubConfig(over);
   const clock = { now: () => new Date('2026-10-02T10:00:00.000Z') };

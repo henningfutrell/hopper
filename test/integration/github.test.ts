@@ -127,6 +127,30 @@ describe('GitHub issue → job → issue', () => {
     expect(gh.issue(REPO, closed.number).labels).not.toContain('hopper:claimed');
   });
 
+  it('removing hopper:failed re-runs a failed issue once its failure was reported; the label is the only gate', async () => {
+    const gh = createFakeGitHub();
+    const a = await boot(gh);
+    // An empty body is an invalid item: the job is created and failed at once.
+    const issue = gh.createIssue({ repo: REPO, body: '', labels: ['hopper'] });
+    const jobsFor = async () => (await a.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=1000')).body.jobs.filter((j) => j.source?.key === issue.url);
+    await a.sync();
+    await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:failed'), { what: 'hopper:failed' });
+    const [first] = await jobsFor();
+    expect(first).toMatchObject({ status: 'failed', sourceState: { sync: { finalReported: true } } });
+
+    await a.sync();
+    expect(await jobsFor()).toHaveLength(1); // hopper:failed still there: no new job
+
+    gh.removeLabel(REPO, issue.number, 'hopper:failed'); // hopper:claimed stays on the issue
+    await a.sync();
+    await waitFor(async () => (await jobsFor()).length === 2, { what: 'second job' });
+    const jobs = await jobsFor();
+    expect(jobs.find((j) => j.id !== first!.id)).toMatchObject({ status: 'failed' });
+    await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:failed'), { what: 'hopper:failed again' });
+    await a.sync();
+    expect(await jobsFor()).toHaveLength(2); // failed again, reported again: waits for the human
+  });
+
   it('priority: label, project wins over label, and a re-sort on the next poll emits job.reprioritized', async () => {
     const gh = createFakeGitHub();
     const projects = { [REPO]: { owner: 'owner', number: 1, mode: 'field', field: 'Priority', map: { P0: 100, P1: 60 } } };

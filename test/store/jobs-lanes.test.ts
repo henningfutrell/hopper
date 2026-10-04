@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { DuplicateSourceKeyError } from '../../src/store/index.ts';
 import { fixedClock, spec, useTempStore } from './helpers.ts';
 
 const t = useTempStore();
@@ -120,11 +119,12 @@ describe('jobs pulled from a source', () => {
     s2.close();
   });
 
-  it('refuses a duplicate key with DuplicateSourceKeyError and creates nothing', () => {
+  it('keeps every job for a key; getBySourceKey returns the newest', () => {
     const s = t.open(t.path());
     s.jobs.create(spec, 5, ref('k'));
-    expect(() => s.jobs.create(spec, 5, ref('k'))).toThrow(DuplicateSourceKeyError);
-    expect(s.jobs.list()).toHaveLength(1);
+    const second = s.jobs.create(spec, 5, ref('k'));
+    expect(s.jobs.list()).toHaveLength(2);
+    expect(s.jobs.getBySourceKey('k')).toEqual(second);
     s.close();
   });
 
