@@ -3,12 +3,14 @@ import { BarChart3, Gauge as GaugeIcon, GanttChart } from 'lucide-react';
 import { useState } from 'react';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Empty, Panel } from '@/components/panel';
-import { Gauge } from '@/charts/gauge';
 import { LaneTimeline, OUTCOME_TONE } from '@/charts/lane-timeline';
 import { THROUGHPUT_LEGEND, ThroughputChart } from '@/charts/throughput';
 import { COLOR } from '@/components/status';
 import { useNow } from '@/hooks/use-now';
-import { useHopper } from '@/store';
+import { usePoll } from '@/hooks/use-poll';
+import { ReadingGauge } from '@/components/reading';
+import { orderReadings, readingKey } from '@/model/usage';
+import { refreshUsage, useHopper } from '@/store';
 import { useJobName } from '@/store/selectors';
 
 const Legend = ({ items }: { items: readonly { key: string; color: string }[] }) => (
@@ -53,16 +55,15 @@ export function TimelinePanel() {
 }
 
 export function UsagePanel() {
-  const machines = useHopper((s) => s.machines);
-  const readings = machines.flatMap((m) => m.usage);
+  const usage = useHopper((s) => s.usage);
+  const now = useNow();
+  usePoll(refreshUsage, 60_000);
+  const readings = orderReadings(usage?.readings ?? []);
   return (
-    <Panel title="Usage" icon={GaugeIcon} count={readings.length || ''} bodyClassName="flex flex-wrap justify-around gap-4">
-      {readings.length ? readings.map((r) => (
-        <div key={`${r.source}-${r.machineId ?? ''}`} className="flex flex-col items-center">
-          <Gauge fraction={r.limit > 0 ? r.used / r.limit : 0} label={r.source} sub={`${r.used}/${r.limit} ${r.unit}`} />
-          <div className="font-mono text-xs text-muted-foreground">{r.source}{r.machineId && ` @${r.machineId}`}</div>
-        </div>
-      )) : <Empty>no usage sources: lanes are capped by machines only</Empty>}
+    <Panel title="Usage" icon={GaugeIcon} count={readings.length || ''} action={<a href="#usage" className="text-xs text-muted-foreground hover:text-foreground">details</a>}
+      bodyClassName="flex flex-wrap justify-around gap-x-2 gap-y-4">
+      {readings.length ? readings.map((r) => <ReadingGauge key={readingKey(r)} r={r} now={now} showSource />)
+        : <Empty>{usage?.sources.some((s) => s.problem) ? `no readings: ${usage.sources.find((s) => s.problem)!.problem}` : 'no usage sources: lanes are capped by machines only'}</Empty>}
     </Panel>
   );
 }

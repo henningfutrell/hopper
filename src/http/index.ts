@@ -5,6 +5,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import type { Clock, PluginsView, QuestionService, SourceRegistry, Store, WebhookDispatcher } from '../domain/ports.ts';
 import type { Engine } from '../engine/index.ts';
 import type { WebhookConfigStatus } from '../webhooks/config.ts';
+import { accountRoutes } from './accounts.ts';
 import { installErrorHandling } from './errors.ts';
 import { installHostGuard } from './host-guard.ts';
 import type { Lan } from './reach.ts';
@@ -52,6 +53,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   questionRoutes(app, o);
   webhookRoutes(app, o);
   sourceRoutes(app, o);
+  accountRoutes(app, o);
   sseRoutes(app, o);
   staticRoutes(app, o.uiDir);
   registerUiRoutes(app, { engine: o.engine, questions: o.questions, sessions, plugins: o.plugins, port: o.port, lan: o.lan, dataDir: o.dataDir });

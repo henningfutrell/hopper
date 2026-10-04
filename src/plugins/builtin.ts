@@ -10,8 +10,9 @@ import local from './machine-source/local/index.ts';
 import grokbotRoutine from './notifier/grokbot-routine/index.ts';
 import jevRouter from './router/jev-router/index.ts';
 import passThrough from './router/pass-through/index.ts';
+import claudePlan from './usage-source/claude-plan/index.ts';
 import type { PluginDefinition } from './sdk.ts';
 
 export const BUILTIN_PLUGINS: readonly PluginDefinition[] = [
-  jevRouter, passThrough, claudeCli, claudeCliAssessor, alwaysEscalate, herdrClaude, testExecutor, githubGh, githubApp, local, grokbotRoutine,
+  jevRouter, passThrough, claudeCli, claudeCliAssessor, alwaysEscalate, herdrClaude, testExecutor, githubGh, githubApp, local, claudePlan, grokbotRoutine,
 ];

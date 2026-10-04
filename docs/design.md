@@ -36,14 +36,14 @@ Fastify for HTTP, `node:sqlite` for storage, zod for request validation.
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/domain/` | types, ports | anything else in `src/` |
+| `src/domain/` | types (`usage.ts`: usage readings, usage report, accounts), ports | anything else in `src/` |
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock | everything but `domain/` |
 | `src/store/` | SQLite schema, migrations, repositories, event log | engine, http, decider |
 | `src/webhooks/` | signing, dispatcher, retry/backoff | engine, http, decider |
-| `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `job-hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, `plugins.yaml` + watch, the role slots (`router-slot.ts` with the shared `instantiate`, `question-slots.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `answerer/claude-cli/`, `assessor/claude-cli-assessor/`, `assessor/always-escalate/` hold their prompts; `executor/herdr-claude/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-gh/` and `job-source/github-app/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `notifier/grokbot-routine/` is the Grok Bot routine webhook — env-file reader and notifier) | engine, http, store, decider, questions |
+| `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `job-hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, `plugins.yaml` + watch, the role slots (`router-slot.ts` with the shared `instantiate`, `question-slots.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `answerer/claude-cli/`, `assessor/claude-cli-assessor/`, `assessor/always-escalate/` hold their prompts; `executor/herdr-claude/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-gh/` and `job-source/github-app/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser, runner, background refresh); `notifier/grokbot-routine/` is the Grok Bot routine webhook — env-file reader and notifier) | engine, http, store, decider, questions |
 | `src/executors/` | `Executor` adapters (`test`, `herdr/`) and the registry; reached through the executor plugins | engine, http, store, plugins |
 | `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (ssh probe through the herdr CLI client), `combineMachineSources` | engine, http, store, plugins |
-| `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production | engine, http, store, plugins |
+| `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin) | engine, http, store, plugins |
 | `src/engine/` | the loop: gather → decide → apply; job lifecycle; restart recovery | http |
 | `src/http/` | Fastify routes, SSE, static UI | executors, plugins (reads them through the `PluginsView` port) |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
@@ -57,7 +57,8 @@ same Decision. Algorithm, in order:
 
 1. **Usage fraction per machine.** `usedFrac(m)` = max of `used/limit` over readings whose
    `machineId` is `m` or absent. Readings with `limit <= 0` are ignored and noted in
-   `reasons`. No readings → `0`.
+   `reasons`. **Informational readings** (`informational: true` — a window that limits one
+   model only, issue #18) are skipped. No readings → `0`.
 2. **Lane cap per machine** (`policy.softLimit`, `policy.hardLimit`):
    - offline → `0`
    - `usedFrac < soft` → `maxLanes`
@@ -2360,3 +2361,68 @@ session still expires after `JOB_HOPPER_UI_SESSION_HOURS` (12).
 token or a device link in flight. Accepted for a home LAN; the peer list keeps the VPN and container
 networks out. A device link is as strong as the login code file and works once.
 
+
+## UI manages everything (issue #18, 2026-10-03)
+
+### Usage and accounts (issue #18)
+
+Owner request: show the accounts used and their usage; usage throttles lanes.
+
+**Built-in usage source `claude-plan`** (`src/plugins/usage-source/claude-plan/`). Claude
+subscription usage comes from `claude -p /usage --output-format json --no-session-persistence`: a
+local slash command, zero turns, zero tokens; Claude Code refreshes its own OAuth, so job-hopper
+holds no credential. Prior art: `a status-bar script`.
+- Options: `bin` (command-bearing, default `claude`), `intervalSeconds` (default 600, min 120).
+  Detection: `which bin` only — never a call to claude.
+- Runs in the background: once at create, then every `intervalSeconds`, each call killed after 45 s,
+  in `<scratchDir>/probe` (mode 0700, ours alone); the project dir claude keeps for that cwd under
+  `$CLAUDE_CONFIG_DIR` or `~/.claude/projects/` is removed after every run. `poll` answers from the
+  last good read and never waits: every Decision polls every usage source.
+- Readings: one per **usage window**, `used` = percent, `limit` 100, unit `%`, `resetsAt` (ISO; the
+  panel prints no year: the one nearest now), `at` = when read. `session` and `week` (all models)
+  throttle through decider steps 1-2 (soft 0.7 scales down, hard 0.95 stops). A window of one model
+  (`week (Fable)`) or a shape not known is an **informational reading** (`informational: true`):
+  shown, never throttling — decider step 1 skips it (it limits one model, not every job).
+- A window past its `resetsAt` is left out until the next read. No read yet, a failed read
+  (`usage unavailable: …`, `claude -p /usage failed: …`) or readings older than 3 intervals
+  (`stale: last read …`) → no readings and the reason in `state().problem`. **Fails open**: with no
+  readings, lanes are capped by machines only — the same as no usage source. Accepted: claude down
+  must not stop the hopper, and the reason is on the Usage view.
+- `claude auth status --json` (same run, same probe dir) gives the **account**: email, plan
+  (`subscriptionType`), organization (`orgName`), sign-in method. Ids and anything else are dropped.
+
+**Port.** `UsageSource` gains optional `state(): UsageSourceState` (`refreshedAt`, `problem`,
+`account`) and `stop()` (the host calls it at shutdown). `UsageReading` gains optional `window` and
+`informational`. Types: `src/domain/usage.ts`, re-exported by `types.ts`.
+
+**Built-in instances (decided).** An absent `usageSources` section means
+`[{ name: claude, plugin: claude-plan }]`, and the plugins-file migration writes it (`bin` =
+the old `JOB_HOPPER_CLAUDE_BIN`). Why: the hopper runs Claude jobs, so Claude usage is the budget
+that matters on a fresh install; where claude is not installed the instance is unavailable and
+dropped with its reason. `usageSources: []` (the owner's file today) still means none: the
+installer adds `- { name: claude, plugin: claude-plan }`. A restart role, as before.
+
+**Read API** (read-only, Host guard and LAN session rule as every `/api/` read):
+- `GET /api/usage` → `UsageReport`: `{ readings, sources: [{ name, refreshedAt?, problem?, account? }],
+  limits: { soft, hard }, machines: [{ machineId, label, online, maxLanes, usedFrac, cap, band }] }`.
+  `machines` is the **lane effect**: the decider's own `machineUsage` and `laneCap` over the current
+  readings (one definition; the UI computes nothing).
+- `GET /api/accounts` → `{ accounts: PartAccount[] }`, `PartAccount` = `{ role: usage-source |
+  job-source, instance, service, identity?, detail, problem? }`. Each part describes its own
+  account: a usage source through `state().account`, a job source as `detail.account` in its
+  status — so a custom plugin's appears the same way. GitHub: the gh source names the gh user once
+  it has asked (`whoami`; not asked while owners or repos are configured), and its pause reason; the
+  app source names its bot (app file or first sync), the app slug and its installation repos.
+  Never a token: accounts carry facts only, and nothing else is read.
+  A separate route, not part of `/api/usage`: an account is not a budget (GitHub's have no usage).
+
+**UI.** A **Usage** view (`ui/src/views/usage.tsx`, model `ui/src/model/usage.ts`, tested from
+`test/ui/usage.test.ts`): Accounts, Lane effect (limits, per machine used %, cap of max lanes,
+band), and per usage source its state line and one gauge per window with "resets in" and a "does
+not throttle" tag on informational ones. The Overview's usage gauges and the Machines view read
+the same readings (`/api/usage`, polled every 30-60 s and refreshed with every event: a usage
+source reads without emitting events).
+
+**Tests never run the real claude.** `test/support/isolate.ts` puts a guard `claude` first on PATH
+(answers `--version`, refuses the rest); `TEST_PLUGINS` has `usageSources: []`; claude-plan tests
+name `test/plugins/fake-claude-plan.mjs` as `bin`.

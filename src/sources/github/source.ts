@@ -8,7 +8,7 @@
 // search), and tells hopper comments by the bot author (marker secondary).
 
 import type { Clock, JobSource, SourceItem } from '../../domain/ports.ts';
-import { TERMINAL_STATUSES } from '../../domain/types.ts';
+import { TERMINAL_STATUSES, type Account } from '../../domain/types.ts';
 import type { GitHubApi, GitHubIssue } from './api.ts';
 import type { GitHubSourceConfig } from '../config.ts';
 import { checkJobs } from './check.ts';
@@ -26,7 +26,7 @@ export type GitHubSourceSettings = Pick<GitHubSourceConfig,
 > & { owners?: string[]; enabled?: boolean | 'auto' };
 
 /** The app's identity as the adapter knows it (its `appStatus()` fits), or undefined. */
-export type GitHubAppInfo = { ok?: true; slug: string; htmlUrl: string } | { ok: false; reason: string };
+export type GitHubAppInfo = { ok?: true; slug: string; htmlUrl: string; botLogin?: string } | { ok: false; reason: string };
 
 export interface GitHubSourceOptions {
   name: string;
@@ -67,10 +67,13 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   let nothingToScan = false;
   const labelledRepos = new Set<string>();
 
+  /** App mode: the bot, once known (the app file, or the first sync). */
+  let knownBot: string | undefined;
   const botLogin = async (): Promise<BotLogin> => {
     if (!app) return undefined;
     if (!api.botLogin) throw new Error('app mode needs the GitHub App adapter (no botLogin)');
-    return api.botLogin();
+    knownBot = await api.botLogin();
+    return knownBot;
   };
 
   const ghScope = async (): Promise<DiscoverScope> => {
@@ -122,14 +125,32 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     };
   };
 
+  /**
+   * Who this source acts as on GitHub (glossary "Account"): the gh user — known once gh was asked,
+   * which it is not while owners or repos are configured — or the app's bot and its installation repos.
+   */
+  const account = (paused: string | undefined, detail: Record<string, unknown>): Account => {
+    const info = o.appInfo?.();
+    const bot = knownBot ?? (info && info.ok !== false ? info.botLogin : undefined);
+    const identity = app ? bot : login;
+    const problem = paused ?? (typeof detail.appError === 'string' ? detail.appError : undefined);
+    return {
+      service: 'github', ...(identity ? { identity } : {}),
+      detail: app ? { via: 'GitHub App', ...(typeof detail.slug === 'string' ? { app: detail.slug } : {}), installedRepos } : { via: 'gh CLI' },
+      ...(problem ? { problem } : {}),
+    };
+  };
+
   return {
     name: o.name,
     kind: o.kind ?? o.name,
     ...(o.paused ? { paused: o.paused } : {}),
     describe() {
       const paused = o.paused?.();
+      const detail = app ? appDetail() : { mode: 'gh', enabledSetting: String(config.enabled ?? true), owners, ...(login ? { login } : {}) };
       return {
-        ...(app ? appDetail() : { mode: 'gh', enabledSetting: String(config.enabled ?? true), owners }),
+        ...detail,
+        account: account(paused, detail),
         ...(paused ? { paused } : {}),
         repos: config.repos, authors: config.authors, label: config.label, projectErrors,
         ...(skippedClaimedWithoutJob.length ? { skippedClaimedWithoutJob } : {}),
