@@ -1,5 +1,5 @@
 // Moving a hopper off the machine it ran on (design.md "Migrating a local install"): the SQLite
-// file, the config directory's plugins.yaml, webhooks.yaml and rules.md, and the secret files they
+// file, the config directory's plugins.yaml, webhooks.yaml, rules.md and auth.yaml, and the secret files they
 // pointed at, into the database JOB_HOPPER_DATABASE_URL names — the documents rewritten for the
 // options that replaced file paths, the secrets written out as environment lines for the deploy to
 // supply. Nothing is changed where it came from: the SQLite file is read through a snapshot.
@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { parseEnv } from 'node:util';
 import { isMap, isSeq, parseDocument, type Document, type YAMLMap } from 'yaml';
+import { authDocumentProblem } from '../auth/index.ts';
 import type { ConfigDocumentName } from '../domain/ports.ts';
 import { pluginsFileProblem } from '../plugins/plugins-file.ts';
 import { openDb, parseDatabaseUrl, type Db, type Row } from '../store/db.ts';
@@ -152,6 +153,28 @@ function rewriteWebhooks(doc: Document, secrets: Record<string, string>, notes: 
   }
 }
 
+/** auth.yaml with every client secret (inline or a file) moved to a `clientSecretEnv`, every IdP certificate file inlined. */
+function rewriteAuth(doc: Document, secrets: Record<string, string>, notes: string[]): void {
+  const list = doc.get('providers', true);
+  for (const p of isSeq(list) ? list.items : []) {
+    if (!isMap(p)) continue;
+    const name = String(p.get('name'));
+    if (p.has('clientSecret') || p.has('clientSecretFile')) {
+      const variable = `AUTH_CLIENT_SECRET_${name.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}`;
+      secrets[variable] = p.has('clientSecret') ? String(p.get('clientSecret')) : read(String(p.get('clientSecretFile'))).trim();
+      p.delete('clientSecret');
+      p.delete('clientSecretFile');
+      p.set('clientSecretEnv', variable);
+      notes.push(`auth provider ${name}: client secret moved to ${variable}`);
+    }
+    if (p.has('idpCertFile')) {
+      p.set('idpCert', read(String(p.get('idpCertFile'))));
+      p.delete('idpCertFile');
+      notes.push(`auth provider ${name}: idpCertFile inlined as idpCert`);
+    }
+  }
+}
+
 function documentsFrom(dir: string, secrets: Record<string, string>, notes: string[]): Partial<Record<ConfigDocumentName, string>> {
   const out: Partial<Record<ConfigDocumentName, string>> = {};
   const at = (name: string) => join(expand(dir), name);
@@ -172,6 +195,14 @@ function documentsFrom(dir: string, secrets: Record<string, string>, notes: stri
     out['webhooks.yaml'] = doc.toString({ lineWidth: 0 });
   }
   if (existsSync(at('rules.md'))) out['rules.md'] = readFileSync(at('rules.md'), 'utf8');
+  if (existsSync(at('auth.yaml'))) {
+    const doc = parseDocument(readFileSync(at('auth.yaml'), 'utf8'));
+    if (doc.errors.length) throw new MigrateRefusal(`auth.yaml does not parse: ${doc.errors[0]!.message}`);
+    rewriteAuth(doc, secrets, notes);
+    const problem = authDocumentProblem(doc.toJS());
+    if (problem) throw new MigrateRefusal(`auth.yaml would not load after the rewrite: ${problem}`);
+    out['auth.yaml'] = doc.toString({ lineWidth: 0 });
+  }
   return out;
 }
 
