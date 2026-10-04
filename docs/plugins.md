@@ -27,7 +27,7 @@ the directory into the plugin dir and change it.
   the catalogue and `plugin:check` parse `{}`.
 - `create(ctx, options)`: `ctx` has `clock`, `logger`, `dataDir`, `scratchDir`, `instanceName`, plus
   the role's own fields (a job source's `knownKeys`/`rerunnable`, a machine source's `executors()`,
-  the router's `routerMode()`). A job source and a machine source must call themselves
+  the router's `routerMode()`). A usage source's `poll` must answer at once from what it already has (every Decision polls it); it may add `state()` (when it last read, why it has no readings, its account) and `stop()`. A job source and a machine source must call themselves
   `ctx.instanceName`.
 
 ## Command-bearing options
