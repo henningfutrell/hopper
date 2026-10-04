@@ -7,6 +7,7 @@ synonyms. Rename here first, in the same commit as everything else.
 |------|---------|-----|
 | **Job** | One unit of work pushed through the API: an executor name, a payload, a priority. | task, run |
 | **Priority** | `0..100` on the job, higher first. Default 50. | rank |
+| **Backburner** | The `hopper:backburner` label on an issue: the GitHub sources never pick it up while it is set, and cancel a waiting job whose issue gets it. Not a priority. | parked, paused |
 | **Effective priority** | Priority after the router's boost (cheap advice), which applies only in active mode, or the resume boost of a job resuming with an answer. The decider's notion (`effectivePriority`, `src/decider/assign.ts`); the queue sorter is given it. | score |
 | **Queue sorter** | The role that orders the waiting jobs (`QueueSorter` port: `sort(entries) → job ids`). Live, exactly one instance (plugins.yaml `queueSorter:`; absent → the built-in `priority`). Built-in plugins `priority` (effective priority, then oldest, then id — the decider's own rule), `oldest-first`, `newest-first`. It orders; it never admits or holds. One that cannot run, throws, or returns anything but distinct waiting job ids → `priority` answers, `fallback` in `/api/plugins`. | scheduler, ranker |
 | **Queue order** | The queue sorter's order of the waiting jobs for one Decision (`DecisionInputs.queueOrder`: sorter instance + job ids). Step 6 orders admissible jobs by it; jobs it leaves out follow by the decider's own rule. `/api/queue` `waiting` is in the same order. | ranking |

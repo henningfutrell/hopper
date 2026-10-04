@@ -310,7 +310,7 @@ export interface SourceItem {
   env: Record<string, string>;
   author: string;
   priority: number;
-  /** Where `priority` came from, e.g. "project:Priority=P1", "label:hopper:p0", "default". */
+  /** Where `priority` came from, e.g. "project:Priority=P1", "label:hopper:high", "default". */
   priorityReason: string;
   /** Working directory for the job (absolute). */
   cwd: string;

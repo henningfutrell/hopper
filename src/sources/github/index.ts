@@ -6,4 +6,4 @@ export type { FakeAppIdentity, FakeGitHub } from './fake.ts';
 export { CONFIG_URL, CREATE_APP_HINT, createGitHubSource } from './source.ts';
 export type { GitHubAppInfo, GitHubSourceOptions, GitHubSourceSettings } from './source.ts';
 export { isHopperComment } from './identity.ts';
-export { HOPPER_LABELS, LABEL_CLAIMED, LABEL_DONE, LABEL_FAILED } from './labels.ts';
+export { HOPPER_LABELS, LABEL_BACKBURNER, LABEL_CLAIMED, LABEL_DONE, LABEL_FAILED } from './labels.ts';

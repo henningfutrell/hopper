@@ -941,7 +941,7 @@ github:
   repos: []             # allowlist: when non-empty, ONLY these owner/repo are acted on
   authors: [owner]
   label: hopper
-  priorityLabels: { "hopper:p0": 100, "hopper:p1": 75, "hopper:p2": 50, "hopper:p3": 25 }
+  priorityLabels: { "hopper:high": 75, "hopper:low": 25 }
   defaultPriority: 50
   repoPaths: {}         # owner/repo → local path (cwd); default defaultCwd
   defaultCwd: ~/workbench/app-workflows
@@ -975,8 +975,19 @@ github:
 2. Labels: the highest matching `priorityLabels` value.
 3. `defaultPriority`.
 
+**Filing labels** (issue #31). Filing a job needs only `label` (`hopper`); every job then runs
+at `defaultPriority` (50). Optional, set by a person on the issue:
+
+| label | effect |
+|-------|--------|
+| `hopper:high` | priority 75: runs before default jobs |
+| `hopper:low` | priority 25: runs after default jobs |
+| `hopper:backburner` | never picked up while set (not a priority: discovery skips the issue); a waiting job whose issue gets it is cancelled, a running job finishes. Removing the label takes the issue in again on the next poll |
+
+The `hopper:p0`..`hopper:p3` labels are gone: removed from the issues and the watched repos.
+
 `priorityReason` records which one applied, e.g. `project:Priority=P1`, `project:rank=2`,
-`label:hopper:p0` or `default`. **Re-sorted on every poll:** discovery recomputes the
+`label:hopper:high` or `default`. **Re-sorted on every poll:** discovery recomputes the
 priority of every eligible item. When a waiting (`queued`/`held`) job's priority changed,
 the sync loop updates it and emits `job.reprioritized { from, to, reason }`, then
 triggers a decision. Running jobs keep their priority.
@@ -989,7 +1000,7 @@ body, then a block:
 repo: owner/repo · issue: #N · url: …
 title: …
 labels: a, b · author: owner
-priority: 75 (label:hopper:p1) · project item: <project title> · Priority=P1 (or "none")
+priority: 75 (label:hopper:high) · project item: <project title> · Priority=P1 (or "none")
 recent comments (oldest first, up to recentComments; only allowlisted authors, no hopper-marked comments — anyone else's text never reaches the job):
 - <author> at <ISO>: <body, ≤ 1000 chars>
 ...
@@ -1027,7 +1038,7 @@ timeouts, typed errors; env passes through (gh's keyring auth). Fake: an in-memo
 **Discovery:** `repos` non-empty → `listOpenIssues` per repo (no search lag). Else
 `searchOpenIssues` over `owners` (or `whoami()`), restricted to repos owned by them —
 GitHub search can lag new issues by up to about a minute. Eligible: open, has `label`,
-author in `authors`, no `hopper:done` / `hopper:failed`, repo allowed. Already-claimed
+author in `authors`, no `hopper:done` / `hopper:failed` / `hopper:backburner`, repo allowed. Already-claimed
 issues with no job here (another machine, a wiped database) are **not** re-run: an issue
 labelled `hopper:claimed` with no local job is skipped and shown in status detail.
 
@@ -1070,6 +1081,8 @@ A failure never goes to the issue as text. It is one stderr line in the daemon l
 **Signals (check):** per active job, `getIssue`:
 - issue `closed`, or `label` removed → `cancel` (reason `issue closed` / `label removed`);
   issue 404/410 → `cancel` (`issue gone`). Jobs are told not to close their own issue.
+- `hopper:backburner` on the issue of a waiting (`queued`/`held`) job → `cancel` (`backburner`);
+  a running job is not touched.
 - **Error classes:** `GitHubApi` errors carry `permanent` (404/410/403/422) vs transient
   (network, 5xx, rate limit, timeout); `check` turns a permanent error on one job into the
   `issue gone` cancel and never fails the whole sync for it.
@@ -1439,7 +1452,7 @@ githubApp:
   repos: []                # optional extra restriction inside the installations
   authors: [owner]
   label: hopper
-  priorityLabels: { "hopper:p0": 100, "hopper:p1": 75, "hopper:p2": 50, "hopper:p3": 25 }
+  priorityLabels: { "hopper:high": 75, "hopper:low": 25 }
   defaultPriority: 50
   repoPaths: {}
   defaultCwd: ~/workbench/app-workflows

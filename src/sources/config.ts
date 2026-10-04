@@ -22,7 +22,7 @@ const sharedKeys = {
   repos: z.array(z.string().regex(/^[^/\s]+\/[^/\s]+$/, 'owner/repo')).default([]),
   authors: z.array(z.string().min(1)).default(['owner']),
   label: z.string().min(1).default('hopper'),
-  priorityLabels: z.record(z.string(), z.number()).default({ 'hopper:p0': 100, 'hopper:p1': 75, 'hopper:p2': 50, 'hopper:p3': 25 }),
+  priorityLabels: z.record(z.string(), z.number()).default({ 'hopper:high': 75, 'hopper:low': 25 }),
   defaultPriority: z.number().min(0).max(100).default(50),
   repoPaths: z.record(z.string(), z.string()).default({})
     .meta({ commandBearing: true, description: 'owner/repo → the working directory of its jobs' }),
