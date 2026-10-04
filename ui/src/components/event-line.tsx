@@ -25,7 +25,7 @@ export function detailOf(e: DomainEvent): string {
 export function EventLine({ e, nameOf, className }: { e: DomainEvent; nameOf: (jobId: string) => string; className?: string }) {
   const detail = detailOf(e);
   return (
-    <div className={cn('grid grid-cols-[4.5rem_8.5rem_1fr] items-baseline gap-2 text-xs', className)}>
+    <div className={cn('grid grid-cols-[4.5rem_8.5rem_minmax(0,1fr)] items-baseline gap-2 text-xs', className)}>
       <span className="num font-mono text-muted-foreground/80" title={e.at}>{clock(e.at)}</span>
       <span className={cn('truncate font-mono font-medium', TEXT[eventTone(e.type)])}>{e.type}</span>
       <span className="min-w-0 truncate" title={detail ? `${subjectOf(e, nameOf)} — ${detail}` : subjectOf(e, nameOf)}>

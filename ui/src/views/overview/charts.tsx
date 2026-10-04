@@ -12,9 +12,11 @@ import { ReadingGauge } from '@/components/reading';
 import { orderReadings, readingKey } from '@/model/usage';
 import { refreshUsage, useHopper } from '@/store';
 import { useJobName } from '@/store/selectors';
+import { cn } from '@/lib/utils';
 
-const Legend = ({ items }: { items: readonly { key: string; color: string }[] }) => (
-  <div className="hidden items-center gap-3 sm:flex">
+// `show` is the breakpoint from which the legend fits beside the panel's other actions.
+const Legend = ({ items, show = 'sm:flex' }: { items: readonly { key: string; color: string }[]; show?: string }) => (
+  <div className={cn('hidden items-center gap-3', show)}>
     {items.map(({ key, color }) => (
       <span key={key} className="flex items-center gap-1.5 text-[11px] text-muted-foreground"><span className="size-2 rounded-sm" style={{ background: color }} />{key}</span>
     ))}
@@ -44,7 +46,7 @@ export function TimelinePanel() {
   const lanes = machines.flatMap((m) => m.lanes.map((l) => l.id));
   return (
     <Panel title="Lane timeline" icon={GanttChart} action={<>
-      <Legend items={OUTCOMES} />
+      <Legend items={OUTCOMES} show="xl:flex" />
       <Tabs value={win} onValueChange={(v) => setWin(v as Win)}>
         <TabsList className="h-7">{Object.keys(WINDOWS).map((w) => <TabsTrigger key={w} value={w} className="px-2 text-xs">{w}</TabsTrigger>)}</TabsList>
       </Tabs>

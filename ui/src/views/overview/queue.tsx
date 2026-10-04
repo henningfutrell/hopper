@@ -45,7 +45,7 @@ export function EndedPanel() {
   const ended = useHopper((s) => s.queue.ended);
   const now = useNow();
   return (
-    <Panel title="Ended" icon={Archive} count={ended.length ? `last ${ended.length}` : ''} bodyClassName="divide-y p-0">
+    <Panel title="Ended" icon={Archive} count={ended.length ? `last ${ended.length}` : ''} bodyClassName="divide-y p-0 xl:max-h-[36rem] xl:overflow-y-auto">
       {ended.length ? ended.map((job) => (
         <div key={job.id} className="space-y-1.5 px-4 py-3">
           <div className="flex items-start gap-2">
