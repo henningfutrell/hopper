@@ -30,10 +30,13 @@ const TURN_2 = [
 
 const screen = (...parts: string[][]): string => parts.flat().join('\n');
 
+const PUBLISHING_RULE = "[job-hopper publishing rule] Any text you send to GitHub (commit messages, branch names, pull request titles and bodies, issue text) describes the change and how it was verified, in neutral terms. Never quote or name the repository owner or any other person. Never include personal or machine details: email addresses, people's names, IP addresses, hostnames, tailnet names, home directory paths, usernames, machine or pane ids, port numbers of local machines, codes, tokens or secrets.";
+
 describe('protocol footer', () => {
-  it('is the design text verbatim, three lines', () => {
+  it('is the design text verbatim: the publishing rule, then the three protocol lines', () => {
     expect(PROTOCOL_FOOTER).toBe(
-      '[job-hopper protocol] When you need an answer from the user, ask exactly one question and end your message with a line containing only: JOB_HOPPER_QUESTION\n'
+      PUBLISHING_RULE + '\n'
+      + '[job-hopper protocol] When you need an answer from the user, ask exactly one question and end your message with a line containing only: JOB_HOPPER_QUESTION\n'
       + 'When the job is completely finished, end your final message with a line containing only: JOB_HOPPER_DONE\n'
       + 'If the job cannot be done, end with a line containing only: JOB_HOPPER_FAILED followed by the reason.',
     );

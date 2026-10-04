@@ -68,6 +68,17 @@ describe('herdr-claude executor: run', () => {
     expect(herdr.calls.find((c) => c.method === 'createTab')!.args[0]).toMatchObject({ cwd: `${homedir()}/proj` });
   });
 
+  it('every job prompt carries the publishing rule: neutral GitHub text, no person, PII or machine details', async () => {
+    const { herdr, executor } = setup({ turns: [DONE] });
+    await executor.run(contextFor(jobWith({ prompt: 'Write hello.txt' })).ctx);
+    const sent = herdr.prompts[0]!.text;
+    expect(sent).toContain('[job-hopper publishing rule]');
+    for (const term of ['Never quote or name the repository owner', 'email addresses', 'IP addresses', 'hostnames', 'tailnet names', 'home directory paths', 'usernames', 'machine or pane ids', 'port numbers of local machines', 'tokens or secrets', 'in neutral terms']) {
+      expect(sent).toContain(term);
+    }
+    expect(sent).not.toMatch(/comment/i);
+  });
+
   it('sends the prompt exactly once, with the protocol footer', async () => {
     const { herdr, executor } = setup({ turns: [{ steps: ['● a', '● b', '● c'], ...DONE }] });
     await executor.run(contextFor(jobWith({ prompt: 'Write hello.txt' })).ctx);
