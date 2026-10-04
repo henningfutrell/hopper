@@ -99,3 +99,16 @@ a.ext { color: var(--accent); }
 .setup { width: 100%; margin: 4px 0; padding: 6px 10px; color: var(--warn); background: var(--hl); border: 1px solid var(--warn); border-radius: 6px; overflow-wrap: anywhere; }
 .setup code { font-weight: 600; }
 .repos { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: center; padding: 2px 0 4px; }
+#plugins .body { max-height: none; }
+.role { padding: 4px 0 8px; border-bottom: 1px solid var(--line); }
+.role:last-child { border-bottom: 0; }
+.role h3 { margin: 6px 0 2px; font-size: 12px; display: flex; gap: 8px; align-items: center; }
+.inst { margin: 4px 0 6px 10px; padding-left: 8px; border-left: 2px solid var(--line); }
+.inst .row { border-bottom: 0; }
+.opts { display: grid; grid-template-columns: minmax(10em, 22em) minmax(0, 1fr); gap: 4px 12px; align-items: center; padding: 2px 0 4px; }
+.opt { display: contents; }
+.opt label { overflow-wrap: anywhere; }
+.opts input[type=text], .opts input[type=number], .opts select, .opts textarea, .role select { font: inherit; font-family: var(--mono); font-size: 12px; padding: 2px 6px; background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; max-width: 32em; width: 100%; }
+.opts input[type=checkbox] { justify-self: start; }
+.role select { width: auto; }
+@media (max-width: 700px) { .opts { grid-template-columns: 1fr; } }

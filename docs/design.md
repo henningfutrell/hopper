@@ -45,7 +45,7 @@ Fastify for HTTP, `node:sqlite` for storage, zod for request validation.
 | `src/usage/` | `UsageSource` adapters: `fake` | engine, http, store |
 | `src/engine/` | the loop: gather → decide → apply; job lifecycle; restart recovery | http |
 | `src/http/` | Fastify routes, SSE, static UI | executors, plugins (reads them through the `PluginsView` port) |
-| `src/ui/` | static `index.html`, `app.js`, `style.css` — browser only | all of `src/` (talks HTTP/SSE only) |
+| `src/ui/` | static `index.html`, `app.js`, `plugins.js`, `style.css` — browser only | all of `src/` (talks HTTP/SSE only) |
 | `src/main.ts` | composition root: config → plugin host → adapters → store → engine → server | — |
 
 ## The decider
@@ -760,6 +760,7 @@ token and send any `Origin`. Cookies are no better here: they ignore ports, so a
 | POST | `/ui/api/jobs/:id/approve` | `{}` | engine approve |
 | POST | `/ui/api/questions/:id/answer` | `{ answer }` | `QuestionService.answerByHuman` (404/409) |
 | POST | `/ui/api/router-mode` | `{ mode }` | set router mode (phase 5; was `/ui/api/jev`) |
+| POST | `/ui/api/plugins` | `{ action, … }` | edit plugins.yaml: one instance's options, select a plugin, rescan (phase 5 slice 7; "Settled in slice 7") |
 | POST | `/ui/api/logout` | `{}` | drop the session |
 
 **Residual risk, stated.** Still able to act or read:
@@ -1627,8 +1628,8 @@ stored old events are not rewritten (read raw by version; v1 schemas stay in doc
    unit file updated.
 5. **Notifier** port + `grokbot-routine`.
 6. **Examples + `plugin:check`** + plugin tsconfig from `install.sh`.
-7. **UI Plugins panel** + `POST /ui/api/plugins` (select, enable/disable, per-instance option
-   editing except command-bearing options) + rescan. Issue #6.
+7. **UI Plugins panel** + `POST /ui/api/plugins` (select, per-instance option editing except
+   command-bearing options) + rescan (landed ahead of 4-6; "Settled in slice 7" below). Issue #6.
 8. **Install on server** (when no herdr-claude job runs) and live verification.
 
 ### Settled in slice 1 (2026-10-03)
@@ -1807,6 +1808,55 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
 - **No store migration.** Instance names default to the old executor names (`herdr-claude`,
   `test`), so stored `spec.executor` values keep working. `DecisionInputs.unavailableExecutors` is
   new: Decisions stored before this slice lack it (read-only history; nothing replays them).
+
+### Settled in slice 7 (2026-10-03, issue #6)
+
+Landed before slices 4-6, over the roles that exist (router, answerer, assessor, executor). The
+edit path is generic over roles: `SECTIONS` in `src/plugins/edit.ts` maps a role to its
+plugins.yaml key and cardinality, and the host's `instances()` lists what is configured. A later
+slice adding a role (job sources, machines, notifiers) adds one row to each and its instances get
+the same per-instance form: that is how a **lane** count (the machine instance's `lanes`) and a
+**connector** (a job source or notifier instance) become editable.
+
+- **`POST /ui/api/plugins`**, body by `action`:
+  `{ action: 'options', role, name, options, version }` · `{ action: 'select', role: router |
+  answerer | assessor, plugin | null, version }` · `{ action: 'rescan' }`. Answers the new
+  `GET /api/plugins` report. 400: body or options invalid (zod's issues); 404: no such instance or
+  plugin; 409: stale `version`, an invalid or unparseable plugins.yaml (never edited from the UI —
+  fix it by hand), a command-bearing value that differs, a plugin of another role or not
+  `available` here.
+- **`version`** is the sha-256 of plugins.yaml's bytes, or `missing` — not the mtime the design
+  first named: two writes inside one mtime tick with equal size would compare equal.
+  `GET /api/plugins` carries it as `config.version`, and `instances[]` (`{ role, instance }`):
+  what plugins.yaml names now, or the env-derived instance for a role with no section — the thing
+  an edit acts on. For a detected router (no `router` section) it is the detected instance;
+  editing or selecting it writes a `router` section, so selection becomes `file`.
+- **One instance's part only.** An options edit replaces that instance's `options` node in place
+  (`yaml` Document API); comments, other sections, and other entries' text stay byte for byte;
+  long lines are never refolded (`lineWidth: 0`). A role with no section is written whole from
+  what is configured, that one instance changed. With no file, the edit writes
+  `version: 1` plus that section; the other roles stay env-derived. Every write is validated
+  against the plugins.yaml schema first, then written atomically (temp file, rename, mode 600),
+  then reloaded before the answer: live roles answer with the new instance, executors show
+  `changed — restart pending`.
+- **Command-bearing:** keys with `commandBearing: true` in the plugin's JSON Schema. Both sides are
+  parsed with the plugin's schema before comparing, so sending the current value or omitting a
+  key that is at its default is accepted. The UI shows these values with a "plugins.yaml only"
+  tag and always sends them back unchanged.
+- **Select** fills the role with `{ name: <plugin id>, plugin }` and the plugin's defaults (only a
+  plugin `available` with its defaults is offered, so the defaults parse). Selecting the
+  configured plugin is a no-op (options are kept). `plugin: null` is the answerer only
+  (`answerer: null`); the assessor is never empty (400).
+- **Rescan** re-reads the plugin dir and re-runs every detection. A new custom plugin appears; a
+  changed module of one already loaded keeps its first code until restart (Node caches imports).
+- **Not built:** enabling/disabling an executor instance, and adding or removing one. A job names
+  its executor and an absent name fails at intake, so "disable" needs its own decision (hold, or a
+  new `enabled` field); executors are a restart role either way. Edit the `executors` list in
+  plugins.yaml meanwhile.
+- **UI:** `src/ui/plugins.js` (a module `app.js` imports), the Plugins panel: per role a plugin
+  selector (one-instance roles) and one form per instance, generated from the options' JSON
+  Schema (string, number, boolean, enum, string list, else JSON). Unsaved edits survive redraws;
+  the panel refreshes every 15 s unless a form holds unsaved edits.
 
 ### Configuration added (env)
 
