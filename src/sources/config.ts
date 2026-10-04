@@ -20,7 +20,7 @@ const DEFAULT_APP_FILE = '~/.config/job-hopper/github-app.json';
 const sharedKeys = {
   pollSeconds: z.number().int().positive().default(60),
   repos: z.array(z.string().regex(/^[^/\s]+\/[^/\s]+$/, 'owner/repo')).default([]),
-  authors: z.array(z.string().min(1)).default(['owner']),
+  authors: z.array(z.string().min(1)).min(1).meta({ description: 'GitHub logins whose issues and comments the source accepts; no default' }),
   label: z.string().min(1).default('hopper'),
   priorityLabels: z.record(z.string(), z.number()).default({ 'hopper:high': 75, 'hopper:low': 25 }),
   defaultPriority: z.number().min(0).max(100).default(50),

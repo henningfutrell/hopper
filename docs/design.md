@@ -939,7 +939,7 @@ github:
   pollSeconds: 60
   owners: []            # discover across repos owned by these; empty → the `gh` user
   repos: []             # allowlist: when non-empty, ONLY these owner/repo are acted on
-  authors: [owner]
+  authors: [owner]      # required, at least one login: no default allowlist
   label: hopper
   priorityLabels: { "hopper:high": 75, "hopper:low": 25 }
   defaultPriority: 50
@@ -1450,7 +1450,7 @@ githubApp:
   enabled: true            # still needs ~/.config/job-hopper/github-app.json (create-github-app.sh)
   appFile: ~/.config/job-hopper/github-app.json
   repos: []                # optional extra restriction inside the installations
-  authors: [owner]
+  authors: [owner]        # required, at least one login; never the app's bot
   label: hopper
   priorityLabels: { "hopper:high": 75, "hopper:low": 25 }
   defaultPriority: 50
@@ -1981,8 +1981,9 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
   - written mode 600 to a temp file, then `link`ed into place (fails rather than replace a file that
     appeared meanwhile), then sources.yaml → `sources.yaml.migrated` (`.migrated-<ms>` if taken).
   - nothing to migrate → the same builder with no inputs: the built-in instances (github-gh
-    `enabled: false`, github-app waiting for `github-app.json` beside plugins.yaml — what a missing
-    sources.yaml meant). So there is always one file. An absent section later means those same
+    `enabled: false`, github-app on `github-app.json` beside plugins.yaml — what a missing
+    sources.yaml meant). Neither names `authors`, which has no default (no implicit
+    allowlist), so both stay in `error` until plugins.yaml sets it. So there is always one file. An absent section later means those same
     built-in instances (`builtinInstances`), not the env.
 - **Env keeps process settings only:** host, port, db, tick, router mode (seed) and cheap boost, the
   decider's limits and lane idle grace, webhook base, `JOB_HOPPER_ANSWER_TIMEOUT_MS` (kept: it is the
@@ -2011,7 +2012,7 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
   an old unit is installed, it restarts the daemon once on the new code **under the old unit** and
   waits for plugins.yaml, so the migration reads that unit's environment — then installs the new
   unit. A fresh install gets the built-in instances (gh off, app source waiting for
-  create-github-app.sh), no longer a gh-auto starter.
+  create-github-app.sh, both needing `authors`), no longer a gh-auto starter.
 - **Tests:** `startTestApp` writes plugins.yaml (`TEST_PLUGINS`: executor `test`, no job sources) and
   passes the fake question doubles and the fake usage source as seams; `AppSeams.github` /
   `.githubApp` swap the GitHub plugins' adapters (detection then `available`), like `.herdr`.

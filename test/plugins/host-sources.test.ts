@@ -47,35 +47,45 @@ function start(o: { file?: string; kit?: DetectionKit; executors?: () => string[
 const catalogue = (h: PluginHost, id: string) => h.report().plugins.find((p) => p.id === id);
 
 describe('detection of the job-source plugins', () => {
+  const ghFile = 'version: 1\njobSources: [ { name: github, plugin: github-gh, options: { authors: [owner] } } ]\n';
+  const appFile = 'version: 1\njobSources: [ { name: github-app, plugin: github-app, options: { authors: [owner] } } ]\n';
+  const detection = (h: PluginHost) => h.report().jobSources.instances[0]!.detection;
+
   it('github-gh: needs-setup with the command when `gh auth status` fails; unavailable without gh; available when logged in', async () => {
     const calls: string[][] = [];
-    const { host: a } = start({ kit: fakeKit({ succeeds: async (bin, args) => { calls.push([bin, ...args]); return false; } }) });
+    const { host: a } = start({ file: ghFile, kit: fakeKit({ succeeds: async (bin, args) => { calls.push([bin, ...args]); return false; } }) });
     await a.start();
-    expect(catalogue(a, 'github-gh')).toMatchObject({ role: 'job-source', builtin: true, detection: { status: 'needs-setup', command: 'gh auth login' } });
+    expect(detection(a)).toMatchObject({ status: 'needs-setup', command: 'gh auth login' });
     expect(calls).toContainEqual(['gh', 'auth', 'status']);
     a.stop();
 
-    const { host: b } = start({ kit: fakeKit({ which: async (bin) => (bin === 'gh' ? undefined : `/usr/bin/${bin}`) }) });
+    const { host: b } = start({ file: ghFile, kit: fakeKit({ which: async (bin) => (bin === 'gh' ? undefined : `/usr/bin/${bin}`) }) });
     await b.start();
-    expect(catalogue(b, 'github-gh')!.detection).toEqual({ status: 'unavailable', reason: 'gh not found: gh' });
+    expect(detection(b)).toEqual({ status: 'unavailable', reason: 'gh not found: gh' });
     b.stop();
 
-    const { host: c } = start({ kit: fakeKit() });
+    const { host: c } = start({ file: ghFile, kit: fakeKit() });
     await c.start();
-    expect(catalogue(c, 'github-gh')!.detection).toMatchObject({ status: 'available' });
+    expect(detection(c)).toMatchObject({ status: 'available' });
   });
 
   it('github-app: needs-setup with the create-github-app command while the app file is missing; available once it exists', async () => {
-    const { host: a } = start({ kit: fakeKit({ exists: async () => false }) });
+    const { host: a } = start({ file: appFile, kit: fakeKit({ exists: async () => false }) });
     await a.start();
-    expect(catalogue(a, 'github-app')!.detection).toEqual({
+    expect(detection(a)).toEqual({
       status: 'needs-setup', reason: expect.stringMatching(/no GitHub App configured/),
       command: 'bash ~/.local/lib/job-hopper/scripts/create-github-app.sh',
     });
     a.stop();
-    const { host: b } = start({ kit: fakeKit({ exists: async () => true }) });
+    const { host: b } = start({ file: appFile, kit: fakeKit({ exists: async () => true }) });
     await b.start();
-    expect(catalogue(b, 'github-app')!.detection).toMatchObject({ status: 'available' });
+    expect(detection(b)).toMatchObject({ status: 'available' });
+  });
+
+  it.each(['github-gh', 'github-app'])('%s in the catalogue: needs-setup until plugins.yaml names its authors (no default allowlist)', async (id) => {
+    const { host } = start({ kit: fakeKit() });
+    await host.start();
+    expect(catalogue(host, id)!.detection).toMatchObject({ status: 'needs-setup', reason: expect.stringMatching(/authors/) });
   });
 });
 
@@ -84,8 +94,8 @@ describe('job-source instances', () => {
     const { host } = start({ file: [
       'version: 1',
       'jobSources:',
-      '  - { name: github, plugin: github-gh, options: { enabled: true, repos: [o/r] } }',
-      '  - { name: github-app, plugin: github-app, options: { appFile: /nonexistent/jh/github-app.json } }',
+      '  - { name: github, plugin: github-gh, options: { enabled: true, repos: [o/r], authors: [owner] } }',
+      '  - { name: github-app, plugin: github-app, options: { appFile: /nonexistent/jh/github-app.json, authors: [owner] } }',
     ].join('\n') });
     await host.start();
     const built = host.jobSources();
@@ -96,13 +106,13 @@ describe('job-source instances', () => {
     const gh = built[0]!.instance!;
     expect('source' in gh && gh.pollMs).toBe(60_000);
     expect(host.report().jobSources.instances).toEqual([
-      { instance: { name: 'github', plugin: 'github-gh', options: { enabled: true, repos: ['o/r'] } }, detection: { status: 'available', detail: expect.any(String) }, active: 'github-gh' },
+      { instance: { name: 'github', plugin: 'github-gh', options: { enabled: true, repos: ['o/r'], authors: ['owner'] } }, detection: { status: 'available', detail: expect.any(String) }, active: 'github-gh' },
       { instance: expect.objectContaining({ name: 'github-app' }), detection: expect.objectContaining({ status: 'needs-setup' }), active: 'github-app' },
     ]);
   });
 
   it('enabled: false is a disabled instance (listed, never run)', async () => {
-    const { host } = start({ file: 'version: 1\njobSources: [ { name: github, plugin: github-gh, options: { enabled: false } } ]\n' });
+    const { host } = start({ file: 'version: 1\njobSources: [ { name: github, plugin: github-gh, options: { enabled: false, authors: [owner] } } ]\n' });
     await host.start();
     expect(host.jobSources()[0]!.instance).toMatchObject({ disabled: { kind: 'github' } });
   });
@@ -121,7 +131,7 @@ describe('job-source instances', () => {
   });
 
   it('gh not installed: dropped (unavailable is not needs-setup)', async () => {
-    const { host } = start({ file: 'version: 1\njobSources: [ { name: github, plugin: github-gh, options: { bin: /nonexistent/gh } } ]\n', kit: fakeKit({ which: async () => undefined }) });
+    const { host } = start({ file: 'version: 1\njobSources: [ { name: github, plugin: github-gh, options: { bin: /nonexistent/gh, authors: [owner] } } ]\n', kit: fakeKit({ which: async () => undefined }) });
     await host.start();
     expect(host.jobSources()[0]).toMatchObject({ plugin: null, reason: 'gh not found: /nonexistent/gh' });
   });
@@ -132,13 +142,14 @@ describe('job-source instances', () => {
     expect(host.report().config.error).toMatch(/jobSources.*twice|twice/);
   });
 
-  it('no jobSources section: the built-in instances — github disabled, github-app waiting for the app file beside plugins.yaml', async () => {
+  it('no jobSources section: the built-in instances — github disabled, github-app on the app file beside plugins.yaml; neither runs until authors are set', async () => {
     const { host, dir } = start({ file: 'version: 1\n' });
     await host.start();
     expect(host.report().jobSources.instances.map((i) => i.instance)).toEqual([
       { name: 'github', plugin: 'github-gh', options: { enabled: false, bin: 'gh', appFile: join(dir, 'github-app.json') } },
       { name: 'github-app', plugin: 'github-app', options: { appFile: join(dir, 'github-app.json') } },
     ]);
+    for (const i of host.report().jobSources.instances) expect(i).toMatchObject({ active: null, reason: expect.stringMatching(/authors/) });
   });
 
   it('a restart role: an edit shows changed — restart pending; the built sources stay', async () => {

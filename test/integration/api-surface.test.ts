@@ -64,12 +64,12 @@ describe('Host guard (DNS rebinding)', () => {
 });
 
 describe('GET /api/sources', () => {
-  it('lists the running sources with their sync status; plugins.yaml without jobSources → github disabled, github-app waiting', async () => {
+  it('lists the running sources with their sync status; plugins.yaml without jobSources → github and github-app in error until authors are set', async () => {
     const a = await start((db) => writePluginsYaml(dirname(db), { version: 1, executors: TEST_PLUGINS.executors }));
     await a.sync();
     const { sources } = (await a.api<{ sources: SourceStatus[] }>('GET', '/api/sources')).body;
-    expect(sources.find((s) => s.name === 'github')).toMatchObject({ kind: 'github', state: 'disabled' });
-    expect(sources.find((s) => s.name === 'github-app')).toMatchObject({ kind: 'github-app', state: 'disabled', detail: expect.objectContaining({ paused: 'no GitHub App configured' }) });
+    expect(sources.find((s) => s.name === 'github')).toMatchObject({ state: 'error', lastError: expect.stringMatching(/authors/) });
+    expect(sources.find((s) => s.name === 'github-app')).toMatchObject({ state: 'error', lastError: expect.stringMatching(/authors/) });
     expect(sources.find((s) => s.name === 'manual')).toMatchObject({ kind: 'manual', state: 'ok', lastSyncAt: expect.any(String) });
   });
 
@@ -83,7 +83,7 @@ describe('GET /api/sources', () => {
   });
 
   it('github enabled: false is listed disabled', async () => {
-    const a = await start((db) => writePluginsYaml(dirname(db), { ...TEST_PLUGINS, jobSources: [{ name: 'github', plugin: 'github-gh', options: { enabled: false } }] }));
+    const a = await start((db) => writePluginsYaml(dirname(db), { ...TEST_PLUGINS, jobSources: [{ name: 'github', plugin: 'github-gh', options: { enabled: false, authors: ['owner'] } }] }));
     const { sources } = (await a.api<{ sources: SourceStatus[] }>('GET', '/api/sources')).body;
     expect(sources.find((s) => s.name === 'github')).toMatchObject({ kind: 'github', state: 'disabled' });
   });

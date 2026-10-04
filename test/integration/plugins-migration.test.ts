@@ -94,13 +94,13 @@ describe('the first boot without plugins.yaml migrates', () => {
     expect((await second.events('types=job.cancelled')).find((e) => e.jobId === job!.id)?.data).toEqual({ reason: 'issue closed' });
   });
 
-  it('nothing to migrate: writes the default plugins.yaml (600) — github disabled, github-app waiting for its app file', async () => {
+  it('nothing to migrate: writes the default plugins.yaml (600) — github and github-app in error until authors are set', async () => {
     const { dbPath, dataDir } = newDb();
     const a = await startTestApp({ dbPath, plugins: false });
     apps.push(a);
     expect(statSync(join(dataDir, 'plugins.yaml')).mode & 0o777).toBe(0o600);
-    expect(await status(a, 'github')).toMatchObject({ state: 'disabled' });
-    expect(await status(a, 'github-app')).toMatchObject({ state: 'disabled', detail: expect.objectContaining({ paused: 'no GitHub App configured' }) });
+    expect(await status(a, 'github')).toMatchObject({ state: 'error', lastError: expect.stringMatching(/authors/) });
+    expect(await status(a, 'github-app')).toMatchObject({ state: 'error', lastError: expect.stringMatching(/authors/) });
     expect((await a.api('GET', '/api/machines')).body.machines[0]).toMatchObject({ maxLanes: 4 });
   });
 

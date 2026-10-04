@@ -12,7 +12,7 @@ import type { FakeGitHub, GitHubSourceOptions } from '../../../src/sources/githu
 export const REPO = 'owner/sandbox';
 
 export function githubConfig(over: Record<string, unknown> = {}): GitHubSourceConfig {
-  const r = parseOptions(githubGh, { repos: [REPO], defaultCwd: '/work/default', ...over });
+  const r = parseOptions(githubGh, { repos: [REPO], authors: ['owner'], defaultCwd: '/work/default', ...over });
   if (!r.ok) throw new Error(r.error);
   return sourceConfig(r.options as GitHubGhOptions);
 }

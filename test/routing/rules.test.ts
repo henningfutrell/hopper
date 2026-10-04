@@ -6,7 +6,7 @@ import type { RoutingItem, RoutingRule } from '../../src/domain/types.ts';
 import { routeItem, routingRulesProblem, ruleMatches } from '../../src/routing/index.ts';
 
 const item = (over: Partial<RoutingItem> = {}): RoutingItem => ({
-  source: 'github-app', repo: 'henningfutrell/job-hopper', labels: ['hopper', 'Urgent'], author: 'owner', title: 'Fix the Login page', ...over,
+  source: 'github-app', repo: 'owner/job-hopper', labels: ['hopper', 'Urgent'], author: 'owner', title: 'Fix the Login page', ...over,
 });
 const rule = (name: string, match: RoutingRule['match'], set: RoutingRule['set']): RoutingRule => ({ name, match, set });
 const known = { machines: ['local', 'laptop'], executors: ['herdr-claude', 'test'] };

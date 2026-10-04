@@ -9,10 +9,13 @@ import githubGh from '../../src/plugins/job-source/github-gh/index.ts';
 import { parseOptions } from '../../src/plugins/options.ts';
 import { sourceConfig } from '../../src/sources/config.ts';
 
+/** authors has no default: every valid instance names one. */
+const AUTHORS = { authors: ['owner'] };
+
 const SHARED_DEFAULTS = {
   pollSeconds: 60,
   repos: [],
-  authors: ['owner'],
+  ...AUTHORS,
   label: 'hopper',
   priorityLabels: { 'hopper:high': 75, 'hopper:low': 25 },
   defaultPriority: 50,
@@ -30,26 +33,26 @@ const ok = (r: ReturnType<typeof parseOptions>) => {
 };
 
 describe('github-gh options', () => {
-  it('{} gets every default from the design, plus the gh bin and the app file it pauses for', () => {
-    expect(ok(parseOptions(githubGh, {}))).toEqual({
+  it('authors alone gets every other default from the design, plus the gh bin and the app file it pauses for', () => {
+    expect(ok(parseOptions(githubGh, AUTHORS))).toEqual({
       enabled: 'auto', owners: [], bin: 'gh', appFile: '~/.config/job-hopper/github-app.json', ...SHARED_DEFAULTS,
     });
   });
 
   it('the source config expands ~ in defaultCwd and repoPaths and keeps a configured model', () => {
     const o = ok(parseOptions(githubGh, {
-      defaultCwd: '~/work', repoPaths: { 'owner/sandbox': '~/code/sandbox', 'o/abs': '/srv/abs' }, model: 'claude-sonnet-5', enabled: false,
+      ...AUTHORS, defaultCwd: '~/work', repoPaths: { 'owner/sandbox': '~/code/sandbox', 'o/abs': '/srv/abs' }, model: 'claude-sonnet-5', enabled: false,
     }));
     const c = sourceConfig(o as never);
     expect(c).toMatchObject({
       defaultCwd: join(homedir(), 'work'), repoPaths: { 'owner/sandbox': join(homedir(), 'code/sandbox'), 'o/abs': '/srv/abs' },
       model: 'claude-sonnet-5', enabled: false,
     });
-    expect(sourceConfig(ok(parseOptions(githubGh, {})) as never)).not.toHaveProperty('model');
+    expect(sourceConfig(ok(parseOptions(githubGh, AUTHORS)) as never)).not.toHaveProperty('model');
   });
 
   it('parses project priority config in both modes', () => {
-    const o = ok(parseOptions(githubGh, { projects: {
+    const o = ok(parseOptions(githubGh, { ...AUTHORS, projects: {
       'owner/a': { owner: 'owner', number: 3, mode: 'field', field: 'Priority', map: { P0: 100, P1: 75 } },
       'owner/b': { owner: 'owner', number: 4, mode: 'rank' },
     } }));
@@ -60,11 +63,11 @@ describe('github-gh options', () => {
   });
 
   it.each([['auto', 'auto'], [true, true], [false, false]] as const)('enabled: %s is accepted', (v, want) => {
-    expect(ok(parseOptions(githubGh, { enabled: v })).enabled).toBe(want);
+    expect(ok(parseOptions(githubGh, { ...AUTHORS, enabled: v })).enabled).toBe(want);
   });
 
   it('appFile: null — never pauses for an app', () => {
-    expect(ok(parseOptions(githubGh, { appFile: null })).appFile).toBeNull();
+    expect(ok(parseOptions(githubGh, { ...AUTHORS, appFile: null })).appFile).toBeNull();
   });
 
   it.each([
@@ -73,20 +76,20 @@ describe('github-gh options', () => {
     ['a wrong type', { pollSeconds: 'soon' }, /pollSeconds/],
     ['enabled: maybe', { enabled: 'maybe' }, /enabled/],
   ])('%s is an error naming the path', (_n, raw, why) => {
-    const r = parseOptions(githubGh, raw);
+    const r = parseOptions(githubGh, { ...AUTHORS, ...raw });
     expect(r.ok).toBe(false);
     expect(!r.ok && r.error).toMatch(why);
   });
 });
 
 describe('github-app options', () => {
-  it('{} gets the defaults: enabled, the installed app file, no API override', () => {
-    expect(ok(parseOptions(githubApp, {}))).toEqual({ enabled: true, appFile: '~/.config/job-hopper/github-app.json', ...SHARED_DEFAULTS });
+  it('authors alone gets the defaults: enabled, the installed app file, no API override', () => {
+    expect(ok(parseOptions(githubApp, AUTHORS))).toEqual({ enabled: true, appFile: '~/.config/job-hopper/github-app.json', ...SHARED_DEFAULTS });
   });
 
   it('apiUrl: an http(s) URL without its trailing slash (tests point it at a fake GitHub)', () => {
-    expect(ok(parseOptions(githubApp, { apiUrl: 'http://127.0.0.1:9999/' })).apiUrl).toBe('http://127.0.0.1:9999');
-    expect(parseOptions(githubApp, { apiUrl: 'not a url' }).ok).toBe(false);
+    expect(ok(parseOptions(githubApp, { ...AUTHORS, apiUrl: 'http://127.0.0.1:9999/' })).apiUrl).toBe('http://127.0.0.1:9999');
+    expect(parseOptions(githubApp, { ...AUTHORS, apiUrl: 'not a url' }).ok).toBe(false);
   });
 
   it.each([
@@ -94,7 +97,7 @@ describe('github-app options', () => {
     ['an unknown key', { lable: 'hopper' }],
     ['enabled: auto (only github-gh has auto)', { enabled: 'auto' }],
   ])('%s is an error', (_n, raw) => {
-    expect(parseOptions(githubApp, raw).ok).toBe(false);
+    expect(parseOptions(githubApp, { ...AUTHORS, ...raw }).ok).toBe(false);
   });
 });
 
