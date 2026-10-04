@@ -5,8 +5,7 @@ import { useMemo, useState } from 'react';
 import { COLOR, type Tone } from '@/components/status';
 import { useSize } from '@/hooks/use-size';
 import { duration } from '@/model/format';
-import { laneSpans, type LaneSpan, type SpanOutcome } from '@/model/history';
-import type { DomainEvent } from '@/model/wire';
+import type { LaneSpan, SpanOutcome } from '@/model/history';
 import { TimeAxis } from './axis';
 
 export const OUTCOME_TONE: Record<SpanOutcome, Tone> = {
@@ -16,13 +15,13 @@ const ROW = 26;
 const M = { top: 4, right: 16, bottom: 22, left: 64 };
 const hm = timeFormat('%H:%M');
 
-export function LaneTimeline({ history, now, windowMs, lanes, nameOf }: {
-  history: DomainEvent[]; now: number; windowMs: number; lanes: string[]; nameOf: (jobId: string) => string;
+export function LaneTimeline({ spans, now, windowMs, lanes, nameOf }: {
+  /** From `useLaneSpans`: the event log reconciled with the job store. */
+  spans: LaneSpan[]; now: number; windowMs: number; lanes: string[]; nameOf: (jobId: string) => string;
 }) {
   const [ref, { width }] = useSize<HTMLDivElement>();
   const [hover, setHover] = useState<LaneSpan | null>(null);
   const since = now - windowMs;
-  const spans = useMemo(() => laneSpans(history, since), [history, since]);
   const rows = useMemo(() => [...new Set([...lanes, ...spans.map((s) => s.laneId)])].sort(), [lanes, spans]);
   const height = M.top + M.bottom + Math.max(1, rows.length) * ROW;
   const iw = Math.max(0, width - M.left - M.right);

@@ -1,6 +1,34 @@
-// The overview's numbers, the lane board and the waiting order, from /api/queue,
-// /api/machines and the latest Decision.
-import type { Decision, Job, Lane, MachineView, Queue } from './wire.ts';
+// Every job view's data, from the one job store: which group each status is in, the groups as
+// lists, the overview's numbers counted off those lists, the lane board and the waiting order.
+import type { Decision, Job, JobStatus, Lane, MachineView } from './wire.ts';
+
+/** The one definition of each status's group (docs/glossary.md: Waiting, Waiting answer, Running, Ended). */
+export const GROUP = {
+  queued: 'waiting', held: 'waiting',
+  waiting_answer: 'waitingAnswer',
+  claimed: 'running', running: 'running',
+  finished: 'ended', failed: 'ended', cancelled: 'ended',
+} as const satisfies Record<JobStatus, string>;
+export type JobGroup = (typeof GROUP)[JobStatus];
+
+/** The jobs the store holds, by group. Every view lists these and every count is a length of one. */
+export type JobBoard = Record<JobGroup, Job[]>;
+
+const endOf = (j: Job) => j.finishedAt ?? j.updatedAt;
+
+/** `waitingOrder`: the queue order of the waiting jobs as /api/queue gave it; a job it lacks follows, oldest first. */
+export function jobBoard(jobs: Iterable<Job>, waitingOrder: readonly string[]): JobBoard {
+  const board: JobBoard = { waiting: [], waitingAnswer: [], running: [], ended: [] };
+  for (const j of jobs) board[GROUP[j.status]].push(j);
+  const place = new Map(waitingOrder.map((id, i) => [id, i]));
+  const at = (j: Job) => place.get(j.id) ?? Infinity;
+  const oldest = (a: Job, b: Job) => a.createdAt.localeCompare(b.createdAt);
+  board.waiting.sort((a, b) => at(a) - at(b) || oldest(a, b));
+  board.waitingAnswer.sort(oldest);
+  board.running.sort(oldest);
+  board.ended.sort((a, b) => endOf(b).localeCompare(endOf(a)));
+  return board;
+}
 
 export interface LaneRow {
   key: string;
@@ -41,42 +69,37 @@ export interface Kpis {
   lanesMax: number;
   waiting: number;
   held: number;
-  onQuestion: number;
+  waitingAnswer: number;
   finished: number;
   failed: number;
   cancelled: number;
 }
 
-export function kpis(queue: Queue, machines: MachineView[]): Kpis {
-  const c = queue.counts;
-  const n = (k: keyof Queue['counts']) => c[k] ?? 0;
+export function kpis(board: JobBoard, machines: MachineView[]): Kpis {
   const lanes = machines.flatMap((m) => m.lanes);
+  const ended = (status: JobStatus) => board.ended.filter((j) => j.status === status).length;
   return {
-    running: n('running') + n('claimed'),
+    running: board.running.length,
     lanesBusy: lanes.filter((l) => l.state !== 'idle').length,
     lanesOpen: lanes.length,
     lanesMax: machines.reduce((s, m) => s + m.maxLanes, 0),
-    waiting: n('queued') + n('held'),
-    held: n('held'),
-    onQuestion: n('waiting_answer'),
-    finished: n('finished'),
-    failed: n('failed'),
-    cancelled: n('cancelled'),
+    waiting: board.waiting.length,
+    held: board.waiting.filter((j) => j.status === 'held').length,
+    waitingAnswer: board.waitingAnswer.length,
+    finished: ended('finished'),
+    failed: ended('failed'),
+    cancelled: ended('cancelled'),
   };
 }
 
 export interface WaitingRow {
   job: Job;
-  kind: 'question' | 'waiting';
-  /** 1-based place in decider order; null for jobs on a question. */
-  position: number | null;
+  /** 1-based place in queue order. */
+  position: number;
   effectivePriority: number | null;
 }
 
-export function waitingRows(queue: Queue, latest: Pick<Decision, 'start'> | undefined): WaitingRow[] {
+export function waitingRows(board: JobBoard, latest: Pick<Decision, 'start'> | undefined): WaitingRow[] {
   const effective = new Map((latest?.start ?? []).map((s) => [s.jobId, s.effectivePriority]));
-  return [
-    ...queue.waitingAnswer.map((job): WaitingRow => ({ job, kind: 'question', position: null, effectivePriority: null })),
-    ...queue.waiting.map((job, i): WaitingRow => ({ job, kind: 'waiting', position: i + 1, effectivePriority: effective.get(job.id) ?? null })),
-  ];
+  return board.waiting.map((job, i) => ({ job, position: i + 1, effectivePriority: effective.get(job.id) ?? null }));
 }

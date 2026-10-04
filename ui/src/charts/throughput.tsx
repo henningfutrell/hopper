@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { COLOR } from '@/components/status';
 import { useSize } from '@/hooks/use-size';
 import { throughput, type Bucket } from '@/model/history';
-import type { DomainEvent } from '@/model/wire';
+import type { Job } from '@/model/wire';
 import { GridY, TimeAxis } from './axis';
 
 const HOUR = 3_600_000;
@@ -14,12 +14,12 @@ const KEYS = [
 const M = { top: 8, right: 16, bottom: 22, left: 26 };
 const hour = timeFormat('%H:%M');
 
-export function ThroughputChart({ history, now, height = 200 }: { history: DomainEvent[]; now: number; height?: number }) {
+export function ThroughputChart({ ended, now, height = 200 }: { ended: Job[]; now: number; height?: number }) {
   const [ref, { width }] = useSize<HTMLDivElement>();
   const [hover, setHover] = useState<Bucket | null>(null);
   const hourNow = Math.floor(now / HOUR);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- recompute per hour, not per tick
-  const buckets = useMemo(() => throughput(history, now, HOUR, 24), [history, hourNow]);
+  const buckets = useMemo(() => throughput(ended, now, HOUR, 24), [ended, hourNow]);
   const iw = Math.max(0, width - M.left - M.right);
   const ih = height - M.top - M.bottom;
   const x = scaleBand<number>().domain(buckets.map((b) => b.start)).range([0, iw]).paddingInner(0.28);

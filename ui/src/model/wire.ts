@@ -16,9 +16,8 @@ export interface Queue {
   waiting: Job[];
   running: Job[];
   waitingAnswer: Job[];
-  /** Ended jobs, newest end first, at most 20. */
+  /** Jobs ended in the last 24 hours, newest end first. */
   ended: Job[];
-  counts: Partial<Record<JobStatus, number>>;
 }
 
 export type MachineView = MachineSnapshot & { lanes: Lane[]; usage: UsageReading[] };

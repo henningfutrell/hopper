@@ -7,7 +7,7 @@ import { Dot, StatusBadge } from '@/components/status';
 import { useNow } from '@/hooks/use-now';
 import { ago } from '@/model/format';
 import { useHopper } from '@/store';
-import { useJobName } from '@/store/selectors';
+import { useJobBoard, useJobName } from '@/store/selectors';
 
 export function LivePanel() {
   const events = useHopper((s) => s.events);
@@ -25,7 +25,7 @@ interface Alert { key: string; tone: 'question' | 'bad' | 'warn'; label: string;
 
 export function AttentionPanel() {
   const questions = useHopper((s) => s.questions);
-  const ended = useHopper((s) => s.queue.ended);
+  const { ended } = useJobBoard();
   const sources = useHopper((s) => s.sources);
   const health = useHopper((s) => s.health);
   const nameOf = useJobName();

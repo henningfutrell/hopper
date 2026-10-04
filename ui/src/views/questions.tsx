@@ -18,6 +18,7 @@ import { QuestionGates } from '@/views/question-gates';
 import { between, clock } from '@/model/format';
 import type { Question, QuestionAttempt, QuestionStatus } from '@/model/wire';
 import type { Tone } from '@/components/status';
+import { awaitsOwner } from '@/model/questions';
 import { act, markSeen, refreshQuestions, useHopper } from '@/store';
 import { useCanOperate, useJobIndex } from '@/store/selectors';
 
@@ -159,7 +160,7 @@ export function Questions() {
   const questions = useHopper((s) => s.questions);
   // Seen is shared state: only a session that can act on the questions marks them.
   const canAnswer = useCanOperate();
-  const unseen = questions.filter((q) => q.tier === 'human' && !q.seenAt).map((q) => q.id).join(',');
+  const unseen = questions.filter(awaitsOwner).map((q) => q.id).join(',');
   useEffect(() => { if (canAnswer && unseen) void markSeen(unseen.split(',')); }, [canAnswer, unseen]);
   return (
     <div className="space-y-3">

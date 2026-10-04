@@ -1,6 +1,6 @@
 // The charts' data: ended jobs per time bucket, and what each lane ran when.
 import { describe, expect, it } from 'vitest';
-import type { DomainEvent, EventType } from '../../src/domain/types.ts';
+import type { DomainEvent, EventType, Job } from '../../src/domain/types.ts';
 import { concurrency, laneSpans, throughput } from '../../ui/src/model/history.ts';
 
 const T0 = Date.parse('2026-10-03T12:00:00Z');
@@ -8,13 +8,19 @@ const at = (min: number) => new Date(T0 + min * 60_000).toISOString();
 let seq = 0;
 const ev = (type: EventType, min: number, o: Partial<DomainEvent> = {}): DomainEvent =>
   ({ seq: ++seq, schemaVersion: 1, id: String(seq), type, at: at(min), data: {}, ...o });
+const job = (id: string, o: Partial<Job> = {}): Job => ({
+  id, spec: { executor: 'test', payload: {} }, priority: 50, status: 'running', approved: false,
+  createdAt: at(-120), updatedAt: at(-120), attempts: 1, ...o,
+} as Job);
+const store = (...jobs: Job[]) => new Map(jobs.map((j) => [j.id, j]));
 
 describe('throughput', () => {
-  it('buckets ended jobs by outcome, oldest first, the last bucket holding now; older ones fall outside', () => {
-    const events = [
-      ev('job.finished', -125), ev('job.finished', -61), ev('job.failed', -59), ev('job.cancelled', -1), ev('job.started', -1),
+  it('buckets ended jobs by status at their end, oldest first, the last bucket holding now; older ones fall outside', () => {
+    const ended = [
+      job('a', { status: 'finished', finishedAt: at(-125) }), job('b', { status: 'finished', finishedAt: at(-61) }),
+      job('c', { status: 'failed', finishedAt: at(-59) }), job('d', { status: 'cancelled', finishedAt: at(-1) }),
     ];
-    const b = throughput(events, T0 + 30_000, 60 * 60_000, 3);
+    const b = throughput(ended, T0 + 30_000, 60 * 60_000, 3);
     expect(b.map((x) => [x.start, x.finished, x.failed, x.cancelled])).toEqual([
       [T0 - 120 * 60_000, 1, 0, 0], [T0 - 60 * 60_000, 0, 1, 1], [T0, 0, 0, 0],
     ]);
@@ -22,7 +28,7 @@ describe('throughput', () => {
 });
 
 describe('laneSpans', () => {
-  it('a span per job run on a lane: started → its end, outcome named; unended spans are running', () => {
+  it('a span per job run on a lane: started → its end, outcome named; unended spans of running jobs are running', () => {
     const events = [
       ev('job.started', -50, { jobId: 'a', laneId: 'm/lane-1' }),
       ev('job.started', -40, { jobId: 'b', laneId: 'm/lane-2' }),
@@ -31,7 +37,7 @@ describe('laneSpans', () => {
       ev('job.started', -10, { jobId: 'b', laneId: 'm/lane-1' }),
       ev('job.reattached', -5, { jobId: 'c', laneId: 'm/lane-2' }),
     ];
-    expect(laneSpans(events, T0 - 60 * 60_000)).toEqual([
+    expect(laneSpans(events, T0 - 60 * 60_000, store(job('a', { status: 'finished' }), job('b'), job('c')))).toEqual([
       { laneId: 'm/lane-1', jobId: 'a', start: T0 - 50 * 60_000, end: T0 - 30 * 60_000, outcome: 'finished' },
       { laneId: 'm/lane-2', jobId: 'b', start: T0 - 40 * 60_000, end: T0 - 20 * 60_000, outcome: 'question' },
       { laneId: 'm/lane-1', jobId: 'b', start: T0 - 10 * 60_000, end: null, outcome: 'running' },
@@ -44,7 +50,18 @@ describe('laneSpans', () => {
       ev('job.started', -50, { jobId: 'x', laneId: 'm/lane-1' }), ev('job.cancelled', -45, { jobId: 'x' }),
       ev('job.started', -40, { jobId: 'y', laneId: 'm/lane-1' }), ev('job.requeued', -35, { jobId: 'y' }),
     ];
-    expect(laneSpans(events, T0 - 60 * 60_000).map((s) => [s.jobId, s.outcome])).toEqual([['x', 'cancelled'], ['y', 'requeued']]);
+    expect(laneSpans(events, T0 - 60 * 60_000, store()).map((s) => [s.jobId, s.outcome])).toEqual([['x', 'cancelled'], ['y', 'requeued']]);
+  });
+  it('the job store wins over the event log: an open span of a job no longer running ends with it (issue #45)', () => {
+    const events = [ev('job.started', -50, { jobId: 'a', laneId: 'm/lane-1' }), ev('job.started', -40, { jobId: 'q', laneId: 'm/lane-2' }), ev('job.started', -30, { jobId: 'gone', laneId: 'm/lane-2' })];
+    const spans = laneSpans(events, T0 - 60 * 60_000, store(
+      job('a', { status: 'failed', finishedAt: at(-20) }), job('q', { status: 'waiting_answer', updatedAt: at(-35) }),
+    ));
+    expect(spans.map((s) => [s.jobId, s.end, s.outcome])).toEqual([['a', T0 - 20 * 60_000, 'failed'], ['q', T0 - 35 * 60_000, 'question']]);
+  });
+  it('a running job the event log holds no start for still gets its running span', () => {
+    const spans = laneSpans([], T0 - 60 * 60_000, store(job('r', { laneId: 'm/lane-3', startedAt: at(-15) }), job('w', { status: 'queued' })));
+    expect(spans).toEqual([{ laneId: 'm/lane-3', jobId: 'r', start: T0 - 15 * 60_000, end: null, outcome: 'running' }]);
   });
 });
 
