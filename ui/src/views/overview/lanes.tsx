@@ -55,7 +55,7 @@ export function LanesPanel() {
   const running = useHopper((s) => s.queue.running);
   const rows = laneRows(machines, running);
   return (
-    <Panel title="Lanes" icon={Layers} count={`${running.length} running`} bodyClassName="grid gap-2">
+    <Panel title="Lanes" icon={Layers} count={`${running.length} running`} bodyClassName="grid grid-cols-1 gap-2">
       {rows.length ? rows.map((r) => <LaneCard key={r.key} row={r} />) : <Empty>no machines</Empty>}
     </Panel>
   );
