@@ -1,12 +1,17 @@
 // Starts the real composition root (src/main.ts) on port 0 against a temp SQLite file, with the
-// fake router at the Router seam (unless `realRouter`: then the plugin host's router runs), fake usage source, fake answerers (src/main.ts documents their policy), a fast
-// tick, and temp sources/webhooks files (never the user's ~/.config). Jobs are PULLED: a
+// fake router at the Router seam (unless `realRouter`: then the plugin host's router runs), the
+// fake usage source and the fake question doubles (fake-questions.ts) at their seams, a fast tick,
+// and a temp plugins.yaml (executor `test`, no job sources) and webhooks file (never the user's
+// ~/.config). `plugins` sections are written over TEST_PLUGINS on every start; without them a
+// plugins.yaml already in the data dir is kept; `plugins: false` writes none, so the daemon
+// migrates or writes its defaults. Jobs are PULLED: a
 // manual JobSource (manual-source.ts) offers items, run by the "scripted" executor
 // (scripted-executor.ts). Every event the app emits is validated against its schema; stop()
 // fails the test on any nonconforming event (tracker + a scan of the whole event log).
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { stringify } from 'yaml';
 import { loadConfig } from '../../src/config.ts';
 import { startApp, type App, type AppSeams } from '../../src/main.ts';
 import type { SourceItem } from '../../src/domain/ports.ts';
@@ -14,6 +19,8 @@ import type { DomainEvent, Job, Question } from '../../src/domain/types.ts';
 import { validateEvent } from '../../src/events/index.ts';
 import { assertAllConform, trackConformance } from './conformance.ts';
 import { rawRequest } from './http.ts';
+import { createFakeUsageSource } from '../../src/usage/index.ts';
+import { fakeQuestionRoles } from './fake-questions.ts';
 import { createFakeRouter } from './fake-router.ts';
 import { createManualSource, manualItem, type ManualSource } from './manual-source.ts';
 import { createScriptedExecutor, type ScriptedExecutor } from './scripted-executor.ts';
@@ -61,27 +68,42 @@ export function tempDbPath(): { dbPath: string; cleanup(): void } {
   return { dbPath: join(dir, 'db.sqlite'), cleanup: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
+/** plugins.yaml `machines:` with this many lanes on the local machine. */
+export const lanes = (n: number) => ({ name: 'local', plugin: 'local', options: { lanes: n } });
+
+/** The plugins.yaml a test app gets unless it brings its own: executor `test`, no job sources. */
+export const TEST_PLUGINS = { version: 1, executors: [{ name: 'test', plugin: 'test' }], jobSources: [] };
+
+export function writePluginsYaml(dataDir: string, doc: unknown): string {
+  const path = join(dataDir, 'plugins.yaml');
+  mkdirSync(dataDir, { recursive: true });
+  writeFileSync(path, typeof doc === 'string' ? doc : stringify(doc), { mode: 0o600 });
+  return path;
+}
+
 export const TOKEN_RE = /localStorage\.setItem\(\s*['"]jh_session['"]\s*,\s*['"]([0-9a-f]{64})['"]\s*\)/;
 
 export async function startTestApp(o: {
   dbPath: string; env?: Record<string, string>; seams?: AppSeams; source?: ManualSource;
-  /** Run the configured router (plugins.yaml / env through the plugin host) instead of the fake. */
+  /** Run the configured router (plugins.yaml through the plugin host) instead of the fake. */
   realRouter?: boolean;
+  /** Sections over TEST_PLUGINS, written on this start; absent: TEST_PLUGINS unless the data dir has a plugins.yaml; false: none. */
+  plugins?: Record<string, unknown> | false;
+  /** Run the plugin host's answerer and assessor instead of the fake doubles. */
+  realQuestionRoles?: boolean;
 }): Promise<TestApp> {
   const dataDir = dirname(o.dbPath);
+  if (o.plugins) writePluginsYaml(dataDir, { ...TEST_PLUGINS, ...o.plugins });
+  else if (o.plugins === undefined && !existsSync(join(dataDir, 'plugins.yaml'))) writePluginsYaml(dataDir, TEST_PLUGINS);
   const config = loadConfig({
     JOB_HOPPER_PORT: '0',
     JOB_HOPPER_DB: o.dbPath,
     JOB_HOPPER_TICK_MS: '50',
     JOB_HOPPER_WEBHOOK_BASE_MS: '20',
     JOB_HOPPER_LANE_IDLE_GRACE_MS: '200',
-    JOB_HOPPER_EXECUTORS: 'test',
-    JOB_HOPPER_ANSWERER: 'fake',
     JOB_HOPPER_RULES_FILE: '/nonexistent/job-hopper-rules.md',
-    JOB_HOPPER_SOURCES_FILE: join(dataDir, 'sources.yaml'),
     JOB_HOPPER_WEBHOOKS_FILE: join(dataDir, 'webhooks.yaml'),
     JOB_HOPPER_GROKBOT_WEBHOOK_FILE: join(dataDir, 'grokbot-webhook.env'),
-    JOB_HOPPER_GH_BIN: '/nonexistent/gh',
     JOB_HOPPER_PLUGIN_DIR: join(dataDir, 'plugins'),
     JOB_HOPPER_PLUGINS_FILE: join(dataDir, 'plugins.yaml'),
     ...o.env,
@@ -91,6 +113,8 @@ export async function startTestApp(o: {
   const app = await startApp(config, {
     pluginsFileIntervalMs: 50,
     ...(o.realRouter ? {} : { router: createFakeRouter({ clock: { now: () => new Date() } }) }),
+    ...(o.realQuestionRoles ? {} : fakeQuestionRoles()),
+    fakeUsage: createFakeUsageSource({ now: () => new Date() }),
     ...o.seams,
     executors: [scripted, ...(o.seams?.executors ?? [])],
     sources: [source, ...(o.seams?.sources ?? [])],

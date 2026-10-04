@@ -1,19 +1,20 @@
 // Shared helpers for the GitHub source tests: a configured source over the in-memory fake,
-// and Job / Question literals shaped like the ones the engine hands a source.
+// and Job literals shaped like the ones the engine hands a source.
 
-import type { Job, JobStatus, Question } from '../../../src/domain/types.ts';
+import type { Job, JobStatus } from '../../../src/domain/types.ts';
 import type { JobSource, SourceItem } from '../../../src/domain/ports.ts';
-import { parseSourcesConfig } from '../../../src/sources/config.ts';
-import type { GitHubSourceConfig } from '../../../src/sources/config.ts';
+import githubGh from '../../../src/plugins/job-source/github-gh/index.ts';
+import { parseOptions } from '../../../src/plugins/options.ts';
+import { sourceConfig, type GitHubGhOptions, type GitHubSourceConfig } from '../../../src/sources/config.ts';
 import { createFakeGitHub, createGitHubSource } from '../../../src/sources/github/index.ts';
-import type { FakeGitHub, GitHubSourceOptions, JobTokenKeeper } from '../../../src/sources/github/index.ts';
+import type { FakeGitHub, GitHubSourceOptions } from '../../../src/sources/github/index.ts';
 
 export const REPO = 'owner/sandbox';
 
 export function githubConfig(over: Record<string, unknown> = {}): GitHubSourceConfig {
-  const r = parseSourcesConfig({ version: 1, github: { repos: [REPO], defaultCwd: '/work/default', ...over } });
-  if ('error' in r || !r.github) throw new Error('error' in r ? r.error : 'no github');
-  return r.github;
+  const r = parseOptions(githubGh, { repos: [REPO], defaultCwd: '/work/default', ...over });
+  if (!r.ok) throw new Error(r.error);
+  return sourceConfig(r.options as GitHubGhOptions);
 }
 
 export function setup(over: Record<string, unknown> = {}, o: { knownKeys?: (keys: string[]) => Set<string>; rerunnable?: (keys: string[]) => Set<string>; whoami?: string } = {}) {
@@ -31,7 +32,6 @@ export interface AppSetupOptions {
   installed?: string[];
   knownKeys?: (keys: string[]) => Set<string>;
   paused?: () => string | undefined;
-  tokens?: JobTokenKeeper;
   appInfo?: GitHubSourceOptions['appInfo'];
 }
 
@@ -42,11 +42,9 @@ export function setupApp(over: Record<string, unknown> = {}, o: AppSetupOptions 
   const clock = { now: () => new Date('2026-10-02T10:00:00.000Z') };
   const source = createGitHubSource({
     name: 'github-app', kind: 'github-app', mode: 'app', config, api: gh, clock,
-    commentCmd: '/opt/hopper/hopper-comment', apiBase: 'http://127.0.0.1:9/api',
     appInfo: o.appInfo ?? (() => APP_INFO),
     ...(o.knownKeys ? { knownKeys: o.knownKeys } : {}),
     ...(o.paused ? { paused: o.paused } : {}),
-    ...(o.tokens ? { tokens: o.tokens } : {}),
   });
   return { gh, config, source };
 }
@@ -86,18 +84,6 @@ export function jobFor(item: Pick<SourceItem, 'key' | 'url' | 'repo' | 'number' 
 export function jobForIssue(n: number, over: Partial<Job> = {}, repo = REPO, source = 'github'): Job {
   const url = `https://github.com/${repo}/issues/${n}`;
   return jobFor({ key: url, url, repo, number: n, author: 'owner', title: `Issue ${n}` }, over, source);
-}
-
-export function question(jobId: string, over: Partial<Question> = {}): Question {
-  return {
-    id: 'q-1', jobId, text: 'Which database should I use?', recentOutput: '…', detectedBy: 'marker', status: 'open', tier: 'human',
-    attempts: [
-      { tier: 'opus', model: 'opus', startedAt: '2026-10-02T10:00:00Z', answer: 'sqlite', confident: false, risky: false, reason: 'unsure', outcome: 'escalated' },
-      { tier: 'fable', model: 'fable', startedAt: '2026-10-02T10:01:00Z', answer: 'drop it', confident: true, risky: true, riskRules: ['destructive'], reason: 'r', outcome: 'escalated' },
-    ],
-    notifyCount: 1, createdAt: '2026-10-02T10:00:00Z', updatedAt: '2026-10-02T10:02:00Z',
-    ...over,
-  };
 }
 
 export const MARKER_RE = /^<!-- job-hopper v1 /;

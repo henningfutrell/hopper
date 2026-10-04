@@ -1,15 +1,12 @@
 // The GitHub JobSource: open issues labelled `hopper` by allowlisted authors become jobs;
-// what happens to them goes back as comments and labels; replies and closes come back as
-// signals. `knownKeys` (wired by the sync loop) tells discover which claimed issues already have
+// what happens to them goes back as labels and one completion comment; closes and unlabels come
+// back as cancel signals. `knownKeys` (wired by the sync loop) tells discover which claimed issues already have
 // a local job; without it every claimed issue is skipped, so nothing is ever re-run blind.
 //
-// One source, two identities (`mode`): `gh` posts as the owner and tells hopper comments by their
-// marker; `app` posts as the app bot, scans only the repos the app is installed on (never a
-// search), tells hopper comments by the bot author (marker secondary), and gives each job a
-// token file to comment as the app.
+// One source, two identities (`mode`): `gh` writes as the owner and tells hopper comments by their
+// marker; `app` writes as the app bot, scans only the repos the app is installed on (never a
+// search), and tells hopper comments by the bot author (marker secondary).
 
-import { homedir } from 'node:os';
-import { join } from 'node:path';
 import type { Clock, JobSource, SourceItem } from '../../domain/ports.ts';
 import { TERMINAL_STATUSES } from '../../domain/types.ts';
 import type { GitHubApi, GitHubIssue } from './api.ts';
@@ -22,7 +19,6 @@ import type { DiscoverScope } from './discover.ts';
 import type { BotLogin } from './identity.ts';
 import { priorityOf, readProjects } from './priority.ts';
 import { reportToGitHub } from './report.ts';
-import type { JobTokenKeeper } from './tokens.ts';
 
 /** What the source reads of its config: the `github:` keys, or `githubApp:` (no owners). */
 export type GitHubSourceSettings = Pick<GitHubSourceConfig,
@@ -49,20 +45,12 @@ export interface GitHubSourceOptions {
   rerunnable?: (keys: string[]) => Set<string>;
   /** A reason not to discover right now (see JobSource.paused). */
   paused?: () => string | undefined;
-  /** App mode: the per-job token keeper. */
-  tokens?: JobTokenKeeper;
-  /** App mode: the job's comment helper (HOPPER_COMMENT_CMD). */
-  commentCmd?: string;
-  /** App mode: the API base the comment helper talks to (HOPPER_GITHUB_API). */
-  apiBase?: string;
   /** App mode: slug/htmlUrl for the install link, or why the app is not usable. */
   appInfo?: () => GitHubAppInfo | undefined;
 }
 
 export const CONFIG_URL = 'https://github.com/settings/installations';
 export const CREATE_APP_HINT = 'run bash ~/.local/lib/job-hopper/scripts/create-github-app.sh';
-const DEFAULT_COMMENT_CMD = join(homedir(), '.local/lib/job-hopper/scripts/hopper-comment');
-const DEFAULT_API_BASE = 'https://api.github.com';
 
 export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   const { config, api } = o;
@@ -95,7 +83,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
 
   /** The installation is the allowlist; config `repos`, when set, narrows it further. */
   const appScope = async (bot: string): Promise<DiscoverScope> => {
-    if (config.authors.includes(bot)) throw new Error(`authors must not contain the app bot ${bot}: its comments would be read as answers`);
+    if (config.authors.includes(bot)) throw new Error(`authors must not contain the app bot ${bot}: the app's own writes must never count as the owner's`);
     if (!api.listInstalledRepos) throw new Error('app mode needs the GitHub App adapter (no listInstalledRepos)');
     installedRepos = (await api.listInstalledRepos()).map((r) => r.repo);
     const wanted = new Set(config.repos.map((r) => r.toLowerCase()));
@@ -103,18 +91,12 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     return { repos, owners: [] };
   };
 
-  const appEnv = (issueUrl: string): Record<string, string> => ({
-    ...(o.tokens ? { HOPPER_TOKEN_FILE: o.tokens.pathFor(issueUrl) } : {}),
-    HOPPER_COMMENT_CMD: o.commentCmd ?? DEFAULT_COMMENT_CMD,
-    HOPPER_GITHUB_API: o.apiBase ?? DEFAULT_API_BASE,
-  });
-
   const toItem = async (issue: GitHubIssue, known: Set<string>, rerun: Set<string>, p: ReturnType<typeof priorityOf>, bot: BotLogin): Promise<SourceItem> => {
     const comments = (known.has(issue.url) && !rerun.has(issue.url)) || config.recentComments === 0 ? [] : await api.listComments(issue.repo, issue.number);
     const context = contextBlock(issue, p, contextComments(comments, config.authors, config.recentComments, bot), config.recentComments, mode);
     return {
       key: issue.url, url: issue.url, title: issue.title, body: issue.body,
-      prompt: issuePrompt(issue, context), env: issueEnv(issue, app ? appEnv(issue.url) : {}),
+      prompt: issuePrompt(issue, context), env: issueEnv(issue),
       author: issue.author, priority: p.priority, priorityReason: p.reason,
       cwd: config.repoPaths[issue.repo] ?? config.defaultCwd,
       labels: issue.labels, repo: issue.repo, number: issue.number,
@@ -131,14 +113,12 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     const installUrl = ok ? `${ok.htmlUrl}/installations/new` : undefined;
     const setup = reason === 'missing' ? CREATE_APP_HINT
       : nothingToScan ? `install the app: ${installUrl ?? CONFIG_URL}` : undefined;
-    const tokenErrors = o.tokens?.errors() ?? {};
     return {
       mode: 'app',
       ...(ok ? { slug: ok.slug, htmlUrl: ok.htmlUrl, installUrl } : {}),
       configUrl: CONFIG_URL, installedRepos,
       ...(setup ? { setup } : {}),
       ...(reason !== undefined && reason !== 'missing' ? { appError: reason } : {}),
-      ...(Object.keys(tokenErrors).length ? { tokenErrors } : {}),
     };
   };
 
@@ -184,14 +164,13 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     },
     async check(active) {
       const mine = active.filter((j) => j.source?.source === o.name && !TERMINAL_STATUSES.includes(j.status));
-      await o.tokens?.refresh(mine); // never throws; also sweeps files of jobs no longer active
       if (mine.length === 0) return [];
-      const r = await checkJobs(api, config, mine, await botLogin());
+      const r = await checkJobs(api, config, mine);
       checkErrors = r.errors;
       return r.signals;
     },
     report(r) {
-      return reportToGitHub({ api, labelledRepos, botLogin, ...(o.tokens ? { tokens: o.tokens } : {}) }, r);
+      return reportToGitHub({ api, labelledRepos, botLogin }, r);
     },
   };
 }

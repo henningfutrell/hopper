@@ -17,9 +17,10 @@ const routerJs = (id: string) => `export default {
 `;
 
 describe('built-in plugins', () => {
-  it('are the routers jev-router and pass-through, the answerer claude-cli, the assessors claude-cli-assessor and always-escalate', () => {
+  it('are the routers jev-router and pass-through, the answerer claude-cli, the assessors claude-cli-assessor and always-escalate, the executors herdr-claude and test, the job sources github-gh and github-app, the machine source local', () => {
     expect(BUILTIN_PLUGINS.map((p) => [p.id, p.role]).sort()).toEqual([
-      ['always-escalate', 'assessor'], ['claude-cli', 'answerer'], ['claude-cli-assessor', 'assessor'], ['jev-router', 'router'], ['pass-through', 'router'],
+      ['always-escalate', 'assessor'], ['claude-cli', 'answerer'], ['claude-cli-assessor', 'assessor'], ['github-app', 'job-source'], ['github-gh', 'job-source'],
+      ['herdr-claude', 'executor'], ['jev-router', 'router'], ['local', 'machine-source'], ['pass-through', 'router'], ['test', 'executor'],
     ]);
   });
 });
@@ -36,7 +37,7 @@ describe('custom plugin loader', () => {
       ['js-router', join(dir, 'js-router', 'index.js')],
     ]);
     const def = r.plugins.find((p) => p.definition.id === 'always-proceed')!.definition as PluginDefinition<'router'>;
-    const router = await def.create({ clock: fixedClock, logger: { info() {}, warn() {} }, dataDir: dir, scratchDir: dir, routerMode: () => 'shadow' }, { note: 'hi' });
+    const router = await def.create({ clock: fixedClock, logger: { info() {}, warn() {} }, dataDir: dir, scratchDir: dir, instanceName: 'r', routerMode: () => 'shadow' }, { note: 'hi' });
     expect(await router.advise({} as never)).toMatchObject({ action: 'proceed_full', reason: 'hi', source: 'always-proceed' });
   });
 

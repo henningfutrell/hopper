@@ -35,7 +35,7 @@ function options(raw: Record<string, unknown> = {}) {
 }
 
 function router(o: { jevSrc?: string; python?: string; timeoutMs?: number } = {}) {
-  const ctx = { clock: fixedClock, logger: { info() {}, warn() {} }, dataDir, scratchDir: dataDir, routerMode: () => 'shadow' as const };
+  const ctx = { clock: fixedClock, logger: { info() {}, warn() {} }, dataDir, scratchDir: dataDir, instanceName: 'jev', routerMode: () => 'shadow' as const };
   return jevRouter.create(ctx, options({ jevSrc: o.jevSrc ?? JEV_SRC, ...o }));
 }
 

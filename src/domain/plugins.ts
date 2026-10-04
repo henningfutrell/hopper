@@ -1,8 +1,11 @@
 // Plugin vocabulary (design.md "Phase 5 — every part is a plugin"; docs/glossary.md).
 
 /** A slot the engine calls through one port. Each slice adds the roles it builds. */
-export type Role = 'router' | 'answerer' | 'assessor';
-export const ROLES: readonly Role[] = ['router', 'answerer', 'assessor'];
+export type Role = 'router' | 'answerer' | 'assessor' | 'executor' | 'job-source' | 'machine-source' | 'usage-source';
+export const ROLES: readonly Role[] = ['router', 'answerer', 'assessor', 'executor', 'job-source', 'machine-source', 'usage-source'];
+
+/** The roles built once at start; a later plugins.yaml change applies at the next restart. */
+export type RestartRole = 'executor' | 'job-source' | 'machine-source' | 'usage-source';
 
 /** A plugin's cheap check of whether it can run on this machine. */
 export type Detection =
@@ -16,6 +19,9 @@ export interface InstanceSpec {
   plugin: string;
   options?: Record<string, unknown>;
 }
+
+/** How the router instance was chosen: named in plugins.yaml, or the first router that can run here. */
+export type RouterSelection = 'file' | 'detected';
 
 /** The router as /api/health and /api/router report it. */
 export interface RouterStatus {
@@ -41,13 +47,48 @@ export interface QuestionRoleStatus {
   reason?: string;
 }
 
+/** A configured executor that cannot run: the jobs naming it are held with this reason. */
+export interface ExecutorUnavailable {
+  /** The instance name (what `spec.executor` names). */
+  name: string;
+  reason: string;
+}
+
+/**
+ * One instance of a restart role in GET /api/plugins. `active` null: it cannot run (`reason`) — an
+ * executor's jobs are held, a job or usage source is dropped, a machine source leaves no machine.
+ */
+export interface InstanceStatus {
+  instance: InstanceSpec;
+  detection: Detection;
+  active: string | null;
+  reason?: string;
+}
+
+/**
+ * A restart role in GET /api/plugins: the instances running since start. `pending`: plugins.yaml
+ * now names other instances (or, with the section removed, the built-in ones differ); they apply
+ * at the next restart.
+ */
+export interface RestartRoleStatus {
+  instances: InstanceStatus[];
+  pending?: { status: 'changed — restart pending'; instances: InstanceSpec[] };
+}
+
 /** GET /api/plugins. */
 export interface PluginsReport {
   roles: Role[];
-  config: { path: string; source: 'file' | 'env'; loadedAt?: string; error?: string; warnings: string[] };
-  router: { instance: InstanceSpec; detection: Detection; active: string; fallback: boolean; reason?: string };
+  /** `source: defaults`: plugins.yaml could not be read at start, so the built-in instances run. */
+  config: { path: string; source: 'file' | 'defaults'; loadedAt?: string; error?: string; warnings: string[] };
+  router: { instance: InstanceSpec; selection: RouterSelection; detection: Detection; active: string; fallback: boolean; reason?: string };
   answerer: QuestionRoleStatus;
   assessor: QuestionRoleStatus;
+  /** The restart roles, as built at start. */
+  executors: RestartRoleStatus;
+  jobSources: RestartRoleStatus;
+  /** One instance (the machine source); a list like the others. */
+  machines: RestartRoleStatus;
+  usageSources: RestartRoleStatus;
   plugins: {
     id: string; role: Role; describe: string; builtin: boolean; path?: string;
     detection: Detection;

@@ -128,8 +128,5 @@ export function createGhCliApi(o: { bin: string; timeoutMs?: number }): GitHubAp
       const c = await json<RestComment>(['api', `repos/${repo}/issues/${number}/comments`, '-X', 'POST', '--input', '-'], JSON.stringify({ body }));
       return { id: c.id, url: c.html_url, createdAt: c.created_at };
     },
-    async editComment(repo, id, body) {
-      await json<RestComment>(['api', `repos/${repo}/issues/comments/${id}`, '-X', 'PATCH', '--input', '-'], JSON.stringify({ body }));
-    },
   };
 }

@@ -2,12 +2,16 @@
 // Out-of-tree plugins import it type-only as `job-hopper/plugin` (package.json `exports`), which
 // type stripping erases, so a plugin needs nothing of job-hopper at runtime. Types only here.
 import type { z } from 'zod';
-import type { AnswerDraft, AnswerRequest, Answerer, Assessment, Assessor, Clock, Router } from '../domain/ports.ts';
-import type { Advice, AdviceAction, Detection, Job, Question, QuestionAttempt, Role, RouterMode } from '../domain/types.ts';
+import type {
+  AnswerDraft, AnswerRequest, Answerer, Assessment, Assessor, Clock, ExecutionContext, ExecutionOutcome, Executor, JobSource,
+  MachineSource, Router, UsageSource,
+} from '../domain/ports.ts';
+import type { Advice, AdviceAction, Detection, Job, MachineSnapshot, Question, QuestionAttempt, Role, RouterMode, UsageReading } from '../domain/types.ts';
 
 export type {
-  Advice, AdviceAction, AnswerDraft, AnswerRequest, Answerer, Assessment, Assessor, Clock, Detection, Job, Question,
-  QuestionAttempt, Role, Router, RouterMode,
+  Advice, AdviceAction, AnswerDraft, AnswerRequest, Answerer, Assessment, Assessor, Clock, Detection, ExecutionContext,
+  ExecutionOutcome, Executor, Job, JobSource, MachineSnapshot, MachineSource, Question, QuestionAttempt, Role, Router, RouterMode,
+  UsageReading, UsageSource,
 };
 
 /** What `detect` may use. Cheap; never a paid model call; never runs a GUI binary. */
@@ -16,6 +20,8 @@ export interface DetectionKit {
   which(bin: string): Promise<string | undefined>;
   /** First line of `bin args` stdout (default `--version`), or undefined on failure or after 5 s. CLIs only. */
   version(bin: string, args?: string[]): Promise<string | undefined>;
+  /** Whether `bin args` exits 0 within 5 s (output discarded). CLIs only. */
+  succeeds(bin: string, args: string[]): Promise<boolean>;
   exists(path: string): Promise<boolean>;
   /** Whether `python -c "import <module>"` succeeds. */
   pythonImports(python: string, module: string): Promise<boolean>;
@@ -35,23 +41,53 @@ export interface PluginContext {
   dataDir: string;
   /** This plugin's own scratch dir (`<dataDir>/plugin-data/<id>`), created before `create`. */
   scratchDir: string;
+  /** The instance's name in plugins.yaml. A job source and a machine source are known by it. */
+  instanceName: string;
 }
 
 /**
+ * A job source instance: the source the sync loop runs, with its own cadence — or, when its options
+ * switch it off, only a `disabled` entry in /api/sources. `source.name` must be the instance name.
+ */
+export type JobSourceInstance =
+  | { source: JobSource; pollMs: number }
+  | { disabled: { kind: string; detail: Record<string, unknown> } };
+
+/**
  * What each role's `create` returns. The core names the instance after plugins.yaml (`name` is
- * overridden), validates every answerer draft and assessor result, and fails closed on them.
+ * overridden: jobs name an executor instance, a question's stage names an answerer or assessor
+ * instance), validates every answerer draft and assessor result, and fails closed on them.
  */
 export interface RoleInstance {
   router: Router;
   answerer: Answerer;
   assessor: Assessor;
+  executor: Executor;
+  'job-source': JobSourceInstance;
+  'machine-source': MachineSource;
+  'usage-source': UsageSource;
 }
 
-/** What each role adds to the context. The router passes job-hopper's router mode on (Jev reads it). */
+/**
+ * What each role adds to the context. The router passes job-hopper's router mode on (Jev reads it);
+ * a job source learns which source keys already have jobs; a machine
+ * source learns the executors registered when it is asked.
+ */
 export interface RoleContext {
   router: { routerMode(): RouterMode };
   answerer: object;
   assessor: object;
+  executor: object;
+  'job-source': JobSourceContext;
+  'machine-source': { executors(): string[] };
+  'usage-source': object;
+}
+
+export interface JobSourceContext {
+  /** Of these source keys, those that already have a local job. */
+  knownKeys(keys: string[]): Set<string>;
+  /** Of these source keys, those whose newest job may be re-run. */
+  rerunnable(keys: string[]): Set<string>;
 }
 
 /** The zod the core passes to `options` — authors need not import zod. */
@@ -68,7 +104,12 @@ export interface PluginDefinition<R extends Role = Role, O = any> {
   role: R;
   /** One line for /api/plugins and the UI. */
   describe: string;
-  /** Options schema built from the core's zod. Absent → no options. Validated before detect and create. */
+  /**
+   * Options schema built from the core's zod. Absent → no options. Validated before detect and
+   * create. Mark every option naming a program, its arguments, a working directory, an
+   * interpreter or a sourced file with `.meta({ commandBearing: true })`: the UI shows it
+   * read-only (design.md "UI and mutation").
+   */
   options?: (z: Zod) => z.ZodType<O>;
   /** Can it run here, with these options? */
   detect(sys: DetectionKit, options: O): Promise<Detection>;

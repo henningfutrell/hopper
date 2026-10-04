@@ -2,7 +2,7 @@
 // these. Adapters live in src/{executors,machines,usage,plugins,store,webhooks}.
 
 import type {
-  Advice, DomainEvent, Decision, EventType, Job, JobId, JobSpec, JobStatus, Lane, PluginsReport, RouterMode, RouterStatus,
+  Advice, DomainEvent, Decision, EventType, ExecutorUnavailable, Job, JobId, JobSpec, JobStatus, Lane, PluginsReport, RouterMode, RouterStatus,
   JobSourceRef, LaneId, MachineId, MachineSnapshot, NewEvent, Question, QuestionAttempt, QuestionStatus,
   SourceStatus, UsageReading, WebhookDelivery, WebhookSubscription,
 } from './types.ts';
@@ -167,8 +167,12 @@ export interface Assessor {
 export type IdGen = () => string;
 
 export interface ExecutorRegistry {
+  /** A runnable executor by instance name; undefined for an unknown or unavailable one. */
   get(name: string): Executor | undefined;
+  /** The runnable executors' names. */
   names(): string[];
+  /** Configured executors that cannot run, and why: their jobs are accepted and held, never failed. */
+  unavailable(): ExecutorUnavailable[];
 }
 
 /** A usage source whose readings can be set by hand — the fake; set through the engine (tests). */
@@ -248,17 +252,15 @@ export interface SourceItem {
   invalid?: string;
 }
 
-/** What a source observed about a job it owns. */
-export type SourceSignal =
-  | { kind: 'cancel'; jobId: JobId; reason: string }
-  | { kind: 'answer'; jobId: JobId; questionId: string; answer: string; author: string; url?: string };
+/** What a source observed about a job it owns. Questions are answered in the UI, never through a source. */
+export type SourceSignal = { kind: 'cancel'; jobId: JobId; reason: string };
 
-/** What happened to a job, reported back to its source. */
+/**
+ * What happened to a job, reported back to its source: the claim and the end. Progress and
+ * questions are not reported (a source is not where the owner is asked).
+ */
 export type SourceReport =
   | { kind: 'claimed'; job: Job }
-  | { kind: 'progress'; job: Job; message: string }
-  | { kind: 'question'; job: Job; question: Question }
-  | { kind: 'answered'; job: Job; question: Question }
   | { kind: 'finished'; job: Job }
   | { kind: 'failed'; job: Job }
   | { kind: 'cancelled'; job: Job };
@@ -277,14 +279,14 @@ export interface JobSource {
   paused?(): string | undefined;
   /** Eligible open items (allowlisted author, labelled, not already done/failed). */
   discover(): Promise<SourceItem[]>;
-  /** Signals for this source's non-terminal jobs: cancellations and human answers. */
+  /** Signals for this source's non-terminal jobs: cancellations. */
   check(active: Job[]): Promise<SourceSignal[]>;
   /**
    * Tell the source what happened. Returns the WHOLE new `job.sourceState.source` object
-   * (it replaces the old one). Idempotent: before posting, the adapter looks for its own
-   * earlier comment with the same hidden marker and reuses it, so a retry after a crash never
-   * duplicates. Throws SourceError; `permanent: true` means never retry (404/410/403 on the
-   * item, oversized body), `false` means retry on a later sync.
+   * (it replaces the old one). Idempotent: a retry after a crash never writes twice (the
+   * GitHub source looks for its own completion comment by its hidden marker). Throws
+   * SourceError; `permanent: true` means never retry (404/410/403 on the item, oversized
+   * body), `false` means retry on a later sync.
    */
   report(report: SourceReport): Promise<Record<string, unknown>>;
 }
@@ -309,7 +311,6 @@ export interface SourceHost {
   /** Create the job for an item (dedupe by key). null when the key already has a job. */
   ingest(item: SourceItem, source: { name: string; kind: string }): Job | null;
   cancel(jobId: JobId, reason: string): void;
-  answer(questionId: string, answer: string): AnswerByHumanResult;
   /** Apply only if the job is queued/held and the priority differs; emits job.reprioritized. */
   reprioritize(jobId: JobId, to: number, reason: string): boolean;
   /** Replace sourceState in one tx that re-reads the job. */

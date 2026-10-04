@@ -5,13 +5,19 @@ import { createFakeUsageSource } from '../../src/usage/index.ts';
 
 describe('local machine source', () => {
   it('lists one online machine with defaults', async () => {
-    const src = createLocalMachineSource({ maxLanes: 4, executors: ['test'] });
+    const src = createLocalMachineSource({ maxLanes: 4, executors: () => ['test'] });
     expect(await src.list()).toEqual([
       { id: 'local', label: hostname(), maxLanes: 4, online: true, executors: ['test'] },
     ]);
   });
+  it('names the executors registered when it is asked, not when it was made', async () => {
+    const names = ['test'];
+    const src = createLocalMachineSource({ maxLanes: 1, executors: () => names });
+    names.push('scripted');
+    expect((await src.list())[0]!.executors).toEqual(['test', 'scripted']);
+  });
   it('honours id and label', async () => {
-    const src = createLocalMachineSource({ maxLanes: 2, executors: [], id: 'm1', label: 'M one' });
+    const src = createLocalMachineSource({ maxLanes: 2, executors: () => [], id: 'm1', label: 'M one' });
     expect(await src.list()).toEqual([{ id: 'm1', label: 'M one', maxLanes: 2, online: true, executors: [] }]);
   });
 });

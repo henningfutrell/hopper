@@ -2,8 +2,8 @@
 // and nothing that pushes or mutates (those routes are gone, 404).
 import { afterEach, describe, expect, it } from 'vitest';
 import type { SourceStatus } from '../../src/domain/types.ts';
-import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
-import { writeSourcesFile } from '../support/files.ts';
+import { dirname } from 'node:path';
+import { TEST_PLUGINS, startTestApp, tempDbPath, writePluginsYaml, type TestApp } from '../support/app.ts';
 import { rawRequest } from '../support/http.ts';
 
 let t: TestApp | undefined;
@@ -64,25 +64,27 @@ describe('Host guard (DNS rebinding)', () => {
 });
 
 describe('GET /api/sources', () => {
-  it('lists the running sources with their sync status; no sources file → github disabled', async () => {
-    const a = await start();
+  it('lists the running sources with their sync status; plugins.yaml without jobSources → github disabled, github-app waiting', async () => {
+    const a = await start((db) => writePluginsYaml(dirname(db), { version: 1, executors: TEST_PLUGINS.executors }));
     await a.sync();
     const { sources } = (await a.api<{ sources: SourceStatus[] }>('GET', '/api/sources')).body;
     expect(sources.find((s) => s.name === 'github')).toMatchObject({ kind: 'github', state: 'disabled' });
+    expect(sources.find((s) => s.name === 'github-app')).toMatchObject({ kind: 'github-app', state: 'disabled', detail: expect.objectContaining({ paused: 'no GitHub App configured' }) });
     expect(sources.find((s) => s.name === 'manual')).toMatchObject({ kind: 'manual', state: 'ok', lastSyncAt: expect.any(String) });
   });
 
-  it('an invalid sources.yaml shows github in state error with the message, and nothing is pulled from it', async () => {
-    const a = await start((db) => writeSourcesFile(db, 'version: 1\ngithub:\n  pollSeconds: -5\n'));
+  it('a job source with invalid options shows in state error with the message, and nothing is pulled from it', async () => {
+    const a = await start((db) => writePluginsYaml(dirname(db), { ...TEST_PLUGINS, jobSources: [{ name: 'github', plugin: 'github-gh', options: { pollSeconds: -5 } }] }));
     const { sources } = (await a.api<{ sources: SourceStatus[] }>('GET', '/api/sources')).body;
     const gh = sources.find((s) => s.name === 'github')!;
     expect(gh.state).toBe('error');
     expect(gh.lastError).toMatch(/pollSeconds/);
+    expect((await a.api('GET', '/api/plugins')).body.jobSources.instances[0]).toMatchObject({ instance: { name: 'github' }, active: null, reason: expect.stringMatching(/pollSeconds/) });
   });
 
   it('github enabled: false is listed disabled', async () => {
-    const a = await start((db) => writeSourcesFile(db, { version: 1, github: { enabled: false } }));
+    const a = await start((db) => writePluginsYaml(dirname(db), { ...TEST_PLUGINS, jobSources: [{ name: 'github', plugin: 'github-gh', options: { enabled: false } }] }));
     const { sources } = (await a.api<{ sources: SourceStatus[] }>('GET', '/api/sources')).body;
-    expect(sources.find((s) => s.name === 'github')).toMatchObject({ state: 'disabled' });
+    expect(sources.find((s) => s.name === 'github')).toMatchObject({ kind: 'github', state: 'disabled' });
   });
 });

@@ -1,7 +1,8 @@
 // Phase 5 slice 1 through the real composition root: the plugin host, plugins.yaml, custom
 // plugins from the plugin dir, GET /api/plugins, the router fallback in /api/health, and a store
 // written before plugins existed.
-import { copyFileSync, cpSync, mkdirSync, writeFileSync } from 'node:fs';
+import { copyFileSync, cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Job } from '../../src/domain/types.ts';
@@ -18,50 +19,62 @@ afterEach(async () => {
   cleanup?.();
 });
 
-async function start(o: { before?: (dataDir: string) => void; env?: Record<string, string>; realRouter?: boolean } = {}): Promise<TestApp> {
+async function start(o: { before?: (dataDir: string) => void; plugins?: Record<string, unknown>; realRouter?: boolean } = {}): Promise<TestApp> {
   const db = tempDbPath();
   cleanup = db.cleanup;
   o.before?.(dirname(db.dbPath));
-  t = await startTestApp({ dbPath: db.dbPath, realRouter: o.realRouter ?? true, ...(o.env ? { env: o.env } : {}) });
+  t = await startTestApp({ dbPath: db.dbPath, realRouter: o.realRouter ?? true, ...(o.plugins ? { plugins: o.plugins } : {}) });
   return t;
 }
 
 const installAlwaysProceed = (dataDir: string) => cpSync(ALWAYS_PROCEED_DIR, join(dataDir, 'plugins', 'always-proceed'), { recursive: true });
 const writePluginsYaml = (dataDir: string, text: string) => writeFileSync(join(dataDir, 'plugins.yaml'), text, { mode: 0o600 });
 
-describe('router from the environment, Jev checkout absent', () => {
-  it('falls back to pass-through; /api/health and /api/router say so; advice is source fallback', async () => {
-    const a = await start({ env: { JOB_HOPPER_JEV_SRC: '/nonexistent/grok-bot-jev' } });
+// The real detection kit runs here: these tests assume no Jev checkout at
+// ~/workbench/jev-src/grok-bot-jev (jev-router's default jevSrc); with one, jev-router is chosen.
+const JEV_PRESENT = existsSync(join(homedir(), 'workbench/jev-src/grok-bot-jev/src/router.py'));
+
+describe.skipIf(JEV_PRESENT)('router chosen from what is detected, no Jev checkout', () => {
+  it('no router in plugins.yaml → pass-through, chosen, not a fallback; /api/health and /api/router say so', async () => {
+    const a = await start();
     const health = (await a.api('GET', '/api/health')).body;
-    expect(health).toMatchObject({ ok: true, routerMode: 'shadow', router: 'jev', fallback: true });
-    expect((await a.api('GET', '/api/router')).body).toEqual({
-      mode: 'shadow', router: 'jev', plugin: 'pass-through', fallback: true, reason: expect.stringContaining('/nonexistent/grok-bot-jev/src/router.py'),
-    });
+    expect(health).toMatchObject({ ok: true, routerMode: 'shadow', router: 'pass-through', fallback: false });
+    expect((await a.api('GET', '/api/router')).body).toEqual({ mode: 'shadow', router: 'pass-through', plugin: 'pass-through', fallback: false });
 
     const job = await a.pull({ op: 'echo' });
     const advised = await waitFor(async () => (await a.job(job.id)).advice, { what: 'advice' });
-    expect(advised).toMatchObject({ action: 'proceed_full', source: 'fallback', reason: expect.stringMatching(/^router jev unavailable: /) });
+    expect(advised).toMatchObject({ action: 'proceed_full', source: 'pass-through' });
     const prioritized = (await a.events('types=job.prioritized')).find((e) => e.jobId === job.id)!;
     expect(prioritized.schemaVersion).toBe(2);
-    expect(prioritized.data).toMatchObject({ advice: { source: 'fallback' }, mode: 'shadow' });
+    expect(prioritized.data).toMatchObject({ advice: { source: 'pass-through' }, mode: 'shadow' });
   });
 
-  it('GET /api/plugins: roles, the configured instance with detection and fallback, and every router plugin', async () => {
-    const a = await start({ env: { JOB_HOPPER_JEV_SRC: '/nonexistent/grok-bot-jev', JOB_HOPPER_PYTHON: 'python3' }, before: installAlwaysProceed });
+  it('GET /api/plugins: roles, the detected instance, and every plugin; a custom router that can run is chosen', async () => {
+    const a = await start({ before: installAlwaysProceed });
     const body = (await a.api('GET', '/api/plugins')).body;
-    expect(body.roles).toEqual(['router', 'answerer', 'assessor']);
-    expect(body.config).toMatchObject({ source: 'env', path: join(a.dataDir, 'plugins.yaml') });
+    expect(body.roles).toEqual(['router', 'answerer', 'assessor', 'executor', 'job-source', 'machine-source', 'usage-source']);
+    expect(body.config).toMatchObject({ source: 'file', path: join(a.dataDir, 'plugins.yaml') });
     expect(body.router).toMatchObject({
-      instance: { name: 'jev', plugin: 'jev-router', options: { jevSrc: '/nonexistent/grok-bot-jev', python: 'python3' } },
-      detection: { status: 'unavailable' }, active: 'pass-through', fallback: true,
+      instance: { name: 'always-proceed', plugin: 'always-proceed' }, selection: 'detected',
+      detection: { status: 'available' }, active: 'always-proceed', fallback: false,
     });
     const ids = body.plugins.map((p: { id: string; builtin: boolean }) => [p.id, p.builtin]).sort();
     expect(ids).toEqual([
-      ['always-escalate', true], ['always-proceed', false], ['claude-cli', true], ['claude-cli-assessor', true], ['jev-router', true], ['pass-through', true],
+      ['always-escalate', true], ['always-proceed', false], ['claude-cli', true], ['claude-cli-assessor', true], ['github-app', true], ['github-gh', true],
+      ['herdr-claude', true], ['jev-router', true], ['local', true], ['pass-through', true], ['test', true],
     ]);
     const jev = body.plugins.find((p: { id: string }) => p.id === 'jev-router');
-    expect(jev).toMatchObject({ role: 'router', describe: expect.any(String), options: { type: 'object', properties: { jevSrc: {}, python: {} } } });
+    expect(jev).toMatchObject({ role: 'router', describe: expect.any(String), detection: { status: 'unavailable' }, options: { type: 'object', properties: { jevSrc: {}, python: {} } } });
     expect(body.errors).toEqual([]);
+  });
+
+  it('a router named in plugins.yaml that cannot run → pass-through as fallback', async () => {
+    const a = await start({ before: (d) => writePluginsYaml(d, 'version: 1\nrouter: { name: jev, plugin: jev-router, options: { jevSrc: /nonexistent/grok-bot-jev } }\n') });
+    expect((await a.api('GET', '/api/router')).body).toEqual({
+      mode: 'shadow', router: 'jev', plugin: 'pass-through', fallback: true, reason: expect.stringContaining('/nonexistent/grok-bot-jev/src/router.py'),
+    });
+    const job = await a.pull({ op: 'echo' });
+    expect(await waitFor(async () => (await a.job(job.id)).advice, { what: 'advice' })).toMatchObject({ source: 'fallback', reason: expect.stringMatching(/^router jev unavailable: /) });
   });
 });
 
@@ -90,14 +103,11 @@ describe('plugins.yaml and a custom plugin', () => {
     expect(await waitFor(async () => (await a.job(second.id)).advice, { what: 'advice' })).toMatchObject({ source: 'always-proceed', reason: 'swapped' });
   });
 
-  it('an invalid plugins.yaml at start: env router, error shown', async () => {
-    const a = await start({
-      env: { JOB_HOPPER_JEV_SRC: '/nonexistent/grok-bot-jev' },
-      before: (d) => writePluginsYaml(d, 'version: 1\nrouter: { plugin: x }\n'),
-    });
+  it('an invalid plugins.yaml at start: the detected router, error shown', async () => {
+    const a = await start({ before: (d) => writePluginsYaml(d, 'version: 1\nrouter: { plugin: x }\n') });
     const body = (await a.api('GET', '/api/plugins')).body;
     expect(body.config.error).toMatch(/router\.name/);
-    expect(body.router.instance).toMatchObject({ name: 'jev', plugin: 'jev-router' });
+    expect(body.router).toMatchObject({ selection: 'detected', fallback: false });
   });
 });
 
@@ -122,9 +132,17 @@ describe('a store written before plugins', () => {
 });
 
 describe('question roles in /api/plugins (slice 2)', () => {
-  it('derived from the env: answerer opus (claude-cli), assessor fable (claude-cli-assessor), models and timeout from the env', async () => {
-    const a = await start({ env: {
-      JOB_HOPPER_CLAUDE_BIN: process.execPath, JOB_HOPPER_ANSWER_MODEL_A: 'sonnet', JOB_HOPPER_ANSWER_MODEL_B: 'haiku', JOB_HOPPER_ANSWER_TIMEOUT_MS: '1234',
+  it('no section: the built-in instances, answerer opus (claude-cli), assessor fable (claude-cli-assessor)', async () => {
+    const a = await start();
+    const body = (await a.api('GET', '/api/plugins')).body;
+    expect(body.answerer.instance).toEqual({ name: 'opus', plugin: 'claude-cli', options: { bin: 'claude', model: 'opus', timeoutMs: 180000 } });
+    expect(body.assessor.instance).toEqual({ name: 'fable', plugin: 'claude-cli-assessor', options: { bin: 'claude', model: 'fable', timeoutMs: 180000 } });
+  });
+
+  it('sections with a bin and models: those instances, detected', async () => {
+    const a = await start({ plugins: {
+      answerer: { name: 'opus', plugin: 'claude-cli', options: { bin: process.execPath, model: 'sonnet', timeoutMs: 1234 } },
+      assessor: { name: 'fable', plugin: 'claude-cli-assessor', options: { bin: process.execPath, model: 'haiku', timeoutMs: 1234 } },
     } });
     const body = (await a.api('GET', '/api/plugins')).body;
     expect(body.answerer).toEqual({
@@ -138,13 +156,16 @@ describe('question roles in /api/plugins (slice 2)', () => {
   });
 
   it('claude not installed: no answerer, and the assessor falls back to always-escalate — shown', async () => {
-    const a = await start({ env: { JOB_HOPPER_CLAUDE_BIN: '/nonexistent/claude' } });
+    const a = await start({ plugins: {
+      answerer: { name: 'opus', plugin: 'claude-cli', options: { bin: '/nonexistent/claude' } },
+      assessor: { name: 'fable', plugin: 'claude-cli-assessor', options: { bin: '/nonexistent/claude' } },
+    } });
     const body = (await a.api('GET', '/api/plugins')).body;
     expect(body.answerer).toMatchObject({ instance: { name: 'opus' }, detection: { status: 'unavailable' }, active: null, fallback: true, reason: expect.stringContaining('/nonexistent/claude') });
     expect(body.assessor).toMatchObject({ instance: { name: 'fable' }, detection: { status: 'unavailable' }, active: 'always-escalate', fallback: true });
   });
 
-  it('plugins.yaml sections win over the env', async () => {
+  it('answerer: null and another assessor', async () => {
     const a = await start({ before: (d) => writePluginsYaml(d, 'version: 1\nanswerer: null\nassessor: { name: wall, plugin: always-escalate }\n') });
     const body = (await a.api('GET', '/api/plugins')).body;
     expect(body.answerer).toEqual({ instance: null, active: null, fallback: false });

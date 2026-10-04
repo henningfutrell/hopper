@@ -1,6 +1,6 @@
 // plugins.yaml: which instance fills which role (design.md "Configuration — plugins.yaml"). Read:
-// router, answerer, assessor. The other sections are allowed so the file can be written whole, but
-// nothing reads them yet.
+// router, answerer, assessor, executors, jobSources, machines, usageSources. `notifiers` is allowed
+// so the file can be written whole; slice 5 reads it.
 import { readFileSync, statSync } from 'node:fs';
 import { parse } from 'yaml';
 import { z } from 'zod';
@@ -9,7 +9,10 @@ import type { InstanceSpec } from '../domain/types.ts';
 export type PluginsFileResult =
   | { missing: true }
   /** `answerer: null` = no answerer configured; absent = derive it. */
-  | { router?: InstanceSpec; answerer?: InstanceSpec | null; assessor?: InstanceSpec; warnings: string[] }
+  | {
+    router?: InstanceSpec; answerer?: InstanceSpec | null; assessor?: InstanceSpec; executors?: InstanceSpec[];
+    jobSources?: InstanceSpec[]; machines?: InstanceSpec; usageSources?: InstanceSpec[]; warnings: string[];
+  }
   | { error: string };
 
 const instance = z.strictObject({
@@ -23,16 +26,27 @@ const stageInstance = instance.extend({
   name: z.string().min(1).refine((n) => n !== 'human', 'human is the human stage; name the instance something else'),
 });
 
+/** Instances under unique names: `what` names the thing that is keyed by the name. */
+const uniqueList = (section: string, keyedBy: string) => z.array(instance).superRefine((list, ctx) => {
+  const seen = new Set<string>();
+  for (const e of list) {
+    if (seen.has(e.name)) ctx.addIssue({ code: 'custom', message: `${section}: ${e.name} named twice; ${keyedBy}` });
+    seen.add(e.name);
+  }
+});
+
 const FILE = z.strictObject({
   version: z.literal(1),
   router: instance.optional(),
   answerer: stageInstance.nullable().optional(),
   assessor: stageInstance.optional(),
-  // Read by later slices (executors, sources, notifiers).
-  executors: z.unknown().optional(),
-  jobSources: z.unknown().optional(),
-  machines: z.unknown().optional(),
-  usageSources: z.unknown().optional(),
+  // 1..n; jobs name an executor instance, so a name is one instance.
+  executors: uniqueList('executors', 'jobs name their executor').min(1, 'name at least one executor').optional(),
+  // 0..n each; a job source's name keys its jobs and sync state.
+  jobSources: uniqueList('jobSources', 'jobs and sync state are keyed by it').optional(),
+  machines: instance.optional(),
+  usageSources: uniqueList('usageSources', 'readings name their source').optional(),
+  // Read by slice 5 (notifiers).
   notifiers: z.unknown().optional(),
 }).refine((f) => !f.answerer || !f.assessor || f.answerer.name !== f.assessor.name, {
   message: 'answerer and assessor have the same name; a question stage must say which one holds it',
@@ -56,11 +70,15 @@ export function loadPluginsFile(path: string): PluginsFileResult {
     return { error: `${path}: ${parsed.error.issues.map((i) => `${i.path.join('.') || 'file'}: ${i.message}`).join('; ')}` };
   }
   const warnings = mode & 0o077 ? [`${path} is readable by group/other; options may hold secrets (chmod 600 ${path})`] : [];
-  const { router, answerer, assessor } = parsed.data;
+  const { router, answerer, assessor, executors, jobSources, machines, usageSources } = parsed.data;
   return {
     ...(router ? { router } : {}),
     ...(answerer !== undefined ? { answerer } : {}),
     ...(assessor ? { assessor } : {}),
+    ...(executors ? { executors } : {}),
+    ...(jobSources ? { jobSources } : {}),
+    ...(machines ? { machines } : {}),
+    ...(usageSources ? { usageSources } : {}),
     warnings,
   };
 }

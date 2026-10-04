@@ -1,12 +1,9 @@
-// sources.yaml: which sources the hopper pulls from, validated with zod. An invalid file
-// yields { error } (the source shows it; the daemon keeps running). `github:` is the gh source
-// (enabled auto | true | false); `githubApp:` is the App source, present with defaults even when
-// the file omits it (it waits for the app file).
-
-import { readFileSync } from 'node:fs';
+// The GitHub job sources' options (plugins.yaml `jobSources[].options` of `github-gh` and
+// `github-app`; until phase 5 slice 4 the `github:` / `githubApp:` blocks of sources.yaml), and the
+// source config they turn into: `~` expanded, `model: null` dropped. The plugin host validates
+// them with these schemas; an invalid instance is dropped with the error shown.
 import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
-import { parse } from 'yaml';
+import { join } from 'node:path';
 import { z } from 'zod';
 
 const projectSchema = z.object({
@@ -17,7 +14,9 @@ const projectSchema = z.object({
   map: z.record(z.string(), z.number()).optional(),
 }).strict().refine((p) => p.mode !== 'field' || p.field !== undefined, { message: 'mode field needs a field name', path: ['field'] });
 
-/** Keys both GitHub sources share (`github:` and `githubApp:`). */
+const DEFAULT_APP_FILE = '~/.config/job-hopper/github-app.json';
+
+/** Keys both GitHub sources share. A working directory is command-bearing: the UI never edits it. */
 const sharedKeys = {
   pollSeconds: z.number().int().positive().default(60),
   repos: z.array(z.string().regex(/^[^/\s]+\/[^/\s]+$/, 'owner/repo')).default([]),
@@ -25,53 +24,49 @@ const sharedKeys = {
   label: z.string().min(1).default('hopper'),
   priorityLabels: z.record(z.string(), z.number()).default({ 'hopper:p0': 100, 'hopper:p1': 75, 'hopper:p2': 50, 'hopper:p3': 25 }),
   defaultPriority: z.number().min(0).max(100).default(50),
-  repoPaths: z.record(z.string(), z.string()).default({}),
-  defaultCwd: z.string().min(1).default('~/workbench/app-workflows'),
+  repoPaths: z.record(z.string(), z.string()).default({})
+    .meta({ commandBearing: true, description: 'owner/repo → the working directory of its jobs' }),
+  defaultCwd: z.string().min(1).default('~/workbench/app-workflows')
+    .meta({ commandBearing: true, description: 'working directory of jobs from repos not in repoPaths' }),
   executor: z.string().min(1).default('herdr-claude'),
   model: z.string().min(1).nullable().default(null),
-  progressCommentSeconds: z.number().int().positive().default(300),
   recentComments: z.number().int().min(0).default(10),
   projects: z.record(z.string(), projectSchema).default({}),
 };
 
-const githubSchema = z.object({
-  // auto: on exactly while no GitHub App is configured (checked every sync).
+/** github-gh: the gh source, acting as the owner through the gh CLI. */
+export const githubGhOptions = z.object({
+  // auto: on exactly while `appFile` is not readable (checked every sync).
   enabled: z.union([z.literal('auto'), z.boolean()]).default('auto'),
   owners: z.array(z.string().min(1)).default([]),
+  bin: z.string().min(1).default('gh').meta({ commandBearing: true, description: 'the gh CLI' }),
+  appFile: z.string().min(1).nullable().default(DEFAULT_APP_FILE)
+    .meta({ commandBearing: true, description: 'with enabled: auto, this source pauses while this GitHub App file is readable; null: never' }),
   ...sharedKeys,
 }).strict();
 
-const githubAppSchema = z.object({
+/** github-app: the App source, posting as the app's bot. */
+export const githubAppOptions = z.object({
   enabled: z.boolean().default(true),
-  /** Default: github-app.json beside sources.yaml. */
-  appFile: z.string().min(1).optional(),
+  // Selects the private key and so the identity the source acts as: command-bearing.
+  appFile: z.string().min(1).default(DEFAULT_APP_FILE)
+    .meta({ commandBearing: true, description: 'github-app.json, written by create-github-app.sh' }),
+  // Where the app's tokens are sent: command-bearing, so a UI session can never redirect them.
+  apiUrl: z.url({ protocol: /^https?$/ }).transform((u) => u.replace(/\/+$/, '')).optional()
+    .meta({ commandBearing: true, description: 'GitHub API base; unset: https://api.github.com' }),
   ...sharedKeys,
-}).strict();
-
-const fileSchema = z.object({
-  version: z.literal(1),
-  github: githubSchema.optional(),
-  githubApp: githubAppSchema.optional(),
 }).strict();
 
 export type GitHubProjectConfig = z.infer<typeof projectSchema>;
+export type GitHubGhOptions = z.output<typeof githubGhOptions>;
+export type GitHubAppOptions = z.output<typeof githubAppOptions>;
 
-export type GitHubSourceConfig = Omit<z.infer<typeof githubSchema>, 'model'> & { model?: string };
+/** What the source logic reads: either plugin's options, `~` expanded, no `model: null`. */
+export type GitHubSourceConfig = Omit<GitHubGhOptions, 'model' | 'bin' | 'appFile'> & { model?: string };
 
-export type GitHubAppSourceConfig = Omit<z.infer<typeof githubAppSchema>, 'model' | 'appFile'> & { model?: string; appFile: string };
+export const expandHome = (p: string): string => (p === '~' ? homedir() : p.startsWith('~/') ? join(homedir(), p.slice(2)) : p);
 
-export type SourcesConfig = { github?: GitHubSourceConfig; githubApp: GitHubAppSourceConfig };
-
-export type SourcesFile = (SourcesConfig & { note?: string }) | { error: string };
-
-const DEFAULT_CONFIG_DIR = '~/.config/job-hopper';
-
-function expandHome(p: string): string {
-  if (p === '~') return homedir();
-  return p.startsWith('~/') ? join(homedir(), p.slice(2)) : p;
-}
-
-function finish<T extends { model: string | null; defaultCwd: string; repoPaths: Record<string, string> }>(raw: T): Omit<T, 'model'> & { model?: string } {
+export function sourceConfig<T extends { model: string | null; defaultCwd: string; repoPaths: Record<string, string> }>(raw: T): Omit<T, 'model'> & { model?: string } {
   const { model, ...rest } = raw;
   return {
     ...rest,
@@ -79,39 +74,4 @@ function finish<T extends { model: string | null; defaultCwd: string; repoPaths:
     repoPaths: Object.fromEntries(Object.entries(rest.repoPaths).map(([k, v]) => [k, expandHome(v)])),
     ...(model ? { model } : {}),
   };
-}
-
-function finishApp(raw: z.infer<typeof githubAppSchema>, configDir: string): GitHubAppSourceConfig {
-  const { appFile, ...rest } = finish(raw);
-  return { ...rest, appFile: expandHome(appFile ?? join(configDir, 'github-app.json')) };
-}
-
-/** Validate an already-parsed sources document. */
-export function parseSourcesConfig(doc: unknown, configDir = DEFAULT_CONFIG_DIR): SourcesConfig | { error: string } {
-  const r = fileSchema.safeParse(doc);
-  if (!r.success) return { error: r.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`).join('; ') };
-  return {
-    github: r.data.github ? finish(r.data.github) : undefined,
-    githubApp: finishApp(r.data.githubApp ?? githubAppSchema.parse({}), configDir),
-  };
-}
-
-export function loadSourcesFile(path: string): SourcesFile {
-  let text: string;
-  try {
-    text = readFileSync(path, 'utf8');
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-      return { github: undefined, githubApp: finishApp(githubAppSchema.parse({}), dirname(path)), note: `no sources file at ${path}` };
-    }
-    return { error: `${path}: ${(err as Error).message}` };
-  }
-  let doc: unknown;
-  try {
-    doc = parse(text);
-  } catch (err) {
-    return { error: `${path}: ${(err as Error).message}` };
-  }
-  const r = parseSourcesConfig(doc, dirname(path));
-  return 'error' in r ? { error: `${path}: ${r.error}` } : r;
 }

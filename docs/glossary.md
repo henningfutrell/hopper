@@ -8,10 +8,10 @@ synonyms. Rename here first, in the same commit as everything else.
 | **Job** | One unit of work pushed through the API: an executor name, a payload, a priority. | task, run |
 | **Priority** | `0..100` on the job, higher first. Default 50. | rank |
 | **Effective priority** | Priority after the router's boost (cheap advice), which applies only in active mode. | score |
-| **Machine** | A host that can run jobs. Today: this laptop (`local`). Supplied by a `MachineSource`. | node, worker |
+| **Machine** | A host that can run jobs. Today: this laptop (`local`). Supplied by the machine source: the `machine-source` role's one instance (plugins.yaml `machines:`, built-in plugin `local`, named after the instance; its `lanes` option is the lane count). None that can run → no machine, every job held. | node, worker |
 | **Lane** | One concurrent job slot on a machine. Opened and closed by Decisions. `idle`, `busy`, `draining`. | slot, worker, thread |
 | **Draining** | A busy lane the Decision wants gone; it closes when its job ends. | |
-| **Usage reading** | One budget measurement: `used` of `limit` in a `unit`, optionally for one machine. Supplied by a `UsageSource`. | quota |
+| **Usage reading** | One budget measurement: `used` of `limit` in a `unit`, optionally for one machine. Supplied by usage sources: the `usage-source` role's 0..n instances (plugins.yaml `usageSources:`; no built-in plugin — the fake is a test double). | quota |
 | **Soft limit / hard limit** | Usage fractions. Past soft, the lane cap scales down; at hard, lanes stop. | |
 | **Lane cap** | The most lanes a machine may run given its usage. | |
 | **Decider** | The pure function `decide()`: inputs in, one Decision out. | scheduler |
@@ -23,16 +23,18 @@ synonyms. Rename here first, in the same commit as everything else.
 | **Waiting** | Status `queued` or `held`. | pending |
 | **Ended** | Status `finished`, `failed` or `cancelled` (`TERMINAL_STATUSES`). `/api/queue` `ended` lists the 20 most recent, newest end first. *Finished* is only the success status. | done, completed, terminal (in UI copy) |
 | **Claim** | A Decision assigning a job to a lane, before the executor runs. | |
-| **Executor** | Runs one job on one lane: `test` (built in) or `herdr-claude` (Claude Code in a herdr pane). | runner |
+| **Executor** | Runs one job on one lane. The role whose 1..n instances are named in plugins.yaml `executors:`; a job names an executor instance (`spec.executor`). Built-in plugins `herdr-claude` (Claude Code in a herdr pane) and `test`. One that cannot run holds the jobs naming it (`executor <name> unavailable: …`); never fails or re-routes them. | runner, task (issue #6's "task" is an executor instance) |
 | **Plugin** | One module implementing one role: built in (`src/plugins/<role>/<id>/`) or custom (one directory under the plugin dir). Default export a `PluginDefinition`. | extension, addon, adapter (an adapter is the code behind a port; a plugin is the swappable unit) |
-| **Role** | A slot the engine calls through one port. Today: `router`, `answerer`, `assessor`. | slot type, kind |
+| **Role** | A slot the engine calls through one port. Today: `router`, `answerer`, `assessor`, `executor`, `job-source`, `machine-source`, `usage-source`. A **live** role swaps its instance between calls when plugins.yaml changes; a **restart** role (`executor`, `job-source`, `machine-source`, `usage-source`) is built at start, and a change shows `changed — restart pending` in `/api/plugins`. | slot type, kind |
 | **Plugin instance** | A plugin plus validated options, under a name (`jev`), chosen in `plugins.yaml`. | config, profile |
-| **Detection** | A plugin's cheap check that it can run here: `available`, `unavailable` + reason, or `needs-setup` + the command to run. | health check |
+| **Command-bearing option** | A plugin option naming a program, its arguments, a working directory, an interpreter or a sourced file (`bin`, `args`, `cwd`, `defaultCwd`, `repoPaths`, `python`, `jevSrc`, …), or the endpoint a credential is sent to (`apiUrl`), or the file that selects an identity's key (`appFile`). Marked `.meta({ commandBearing: true })`, carried into its JSON Schema; the UI never edits it (design.md "UI and mutation"). | |
+| **Detection** | A plugin's cheap check that it can run here: `available`, `unavailable` + reason, or `needs-setup` + the command to run. A job source that needs setup still runs (it waits, then works without a restart); any other role's does not. | health check |
 | **Plugin dir** | `~/.config/job-hopper/plugins` (`JOB_HOPPER_PLUGIN_DIR`): custom plugins, one directory each. | |
-| **Plugins file** | `~/.config/job-hopper/plugins.yaml` (`JOB_HOPPER_PLUGINS_FILE`): which instance fills which role. Re-read on change. | |
-| **Router** | The role that advises admission and order per job (`Router` port). Built-in plugins `jev-router` and `pass-through`. When the configured one cannot run, `pass-through` answers and its advice is `source: fallback`. | advisor, classifier |
+| **Plugins file** | `~/.config/job-hopper/plugins.yaml` (`JOB_HOPPER_PLUGINS_FILE`): which instance fills which role, and every part's options — the only configuration of a part (env holds process settings only). Re-read on change. Always present: the boot that finds none writes it (mode 600) — the **plugins-file migration**, from sources.yaml and the removed env vars, or the built-in instances; it never replaces one. A section left out means the built-in instances. | |
+| **Router** | The role that advises admission and order per job (`Router` port). Built-in plugins `jev-router` and `pass-through`. When the one named in `plugins.yaml` cannot run, `pass-through` answers and its advice is `source: fallback`. Not the assessor: the router never sees a question. | advisor, classifier |
+| **Router selection** | How the router instance was chosen: `file` (named in `plugins.yaml`) or `detected` (none named: the first router plugin that can run here, built-ins first, then custom; `pass-through` when none can — chosen, not a fallback). | auto, default router |
 | **Advice** | A router's action + reason + details for one job; `source` names the plugin, or `fallback`. | classification, verdict |
-| **Router mode** | `shadow`: advice recorded, never applied. `active`: advice shapes admission and order. Decider state, in the store. | Jev mode |
+| **Router mode** | `shadow`: advice recorded, never applied. `active`: advice shapes admission and order. Decider state, in the store (`JOB_HOPPER_ROUTER_MODE` only seeds it). | Jev mode |
 | **Jev** | grok-bot-jev's usage router; one router plugin (`jev-router`). | |
 | **Divergence** | A job where the advice's verdict differs from the native one. Recorded in both modes. | |
 | **Waiting answer** | Status `waiting_answer`: a job stopped on a question. Holds no lane; its pane stays open. | blocked, paused (a *paused* source is something else) |
@@ -51,24 +53,23 @@ synonyms. Rename here first, in the same commit as everything else.
 | **herdr session** | The named herdr server (`job-hopper`) that hosts job panes. Never the user's default session. | |
 | **Pane** | The herdr terminal a herdr-claude job runs in; one tab per job run. | window |
 | **Parked pane** | The pane of a job waiting on an answer. | |
-| **Job source** | Where the hopper pulls jobs from (`github` today). Nothing pushes jobs. | inbox, feed |
+| **Job source** | Where the hopper pulls jobs from: the `job-source` role's 0..n instances (plugins.yaml `jobSources:`). Built-in plugins `github-gh` (instance `github`) and `github-app` (instance `github-app`); the instance name keys its jobs and sync state. Nothing pushes jobs. | inbox, feed |
 | **Source item** | One eligible thing a source offers — for GitHub, an open issue labelled `hopper` by an allowlisted author. | |
 | **Source key** | The id of a source item (the issue URL). Many jobs may share one (see re-run); the newest is the key's job. | |
 | **Re-run** | A new job for a source key whose newest job failed or was cancelled and whose end the source already reported — offered again because a human cleared the marker (`hopper:failed`). Never from `finished`. | retry, resubmit |
-| **Claim** (of an issue) | Labelling it `hopper:claimed` and commenting, when the hopper takes it. Distinct from a lane claim. | |
+| **Claim** (of an issue) | Labelling it `hopper:claimed` when the hopper takes it (no comment). Distinct from a lane claim. | |
 | **Sync** | One pass of a source: discover, check active jobs, retry reports. | poll |
-| **Report** | Telling the source what happened to its job (comments, labels). | |
-| **Signal** | What a source tells the hopper: cancel, or a human answer. | |
-| **Hopper marker** | The hidden first line of every hopper comment; tells its comments from the owner's replies. | |
+| **Completion comment** | The one comment the hopper posts on an issue: when its job finishes: one fixed line of hopper facts (job id prefix, duration), never model-written text. The hopper's only other issue writes are labels. | status comment, result comment |
+| **Report** | Telling the source what happened to its job: the claim and the end. On GitHub: labels, plus one completion comment on `finished`. | |
+| **Signal** | What a source tells the hopper: cancel. Questions are answered in the UI, never through a source. | |
+| **Hopper marker** | The hidden first line of a hopper comment (today only the completion comment); tells it from the owner's text. | |
+| **Leftover variable** | A `JOB_HOPPER_*` variable that is set but read by nothing (a removed part-choosing one, or a typo). One loud warning at boot names them all. | |
 | **UI session** | A browser session created from the one-time login code; the only way to mutate. | |
 | **Payload version** | `schemaVersion` on every event: the version of that event type's payload schema. | |
 | **GitHub App** | job-hopper's own GitHub identity (`job-hopper-<owner>[bot]`), created by the owner via the manifest flow. | bot account |
 | **Installation** | Where the owner installed the app; its repos are the only ones the `github-app` source scans. | |
 | **Bot login** | The app's author name on GitHub; how hopper comments are identified (the marker is secondary). | |
 | **Paused** (source) | A job source that must not discover new items right now — the gh source while a GitHub App is configured, the app source while none is. It still checks and reports its own active jobs. Only for sources; a job waiting on a question is *waiting answer*, never "paused". | |
-| **Token keeper** | The part of the app source that mints, refreshes and deletes job token files. | |
-| **Job token file** | A per-job file holding a short-lived installation token scoped to one repo, `issues: write`. | |
-| **hopper-comment** | The helper a job runs to comment on its own issue as the app. | |
 | **Manifest flow** | GitHub's create-app-from-a-manifest flow, driven by `create-github-app.sh`. | |
 | **Event** | One recorded state change, `seq`-ordered, in the event log. Wire type dotted (`job.queued`). | message |
 | **Webhook subscription** | A URL + event filter + HMAC secret that receives events. | hook |

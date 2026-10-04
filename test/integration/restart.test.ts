@@ -1,7 +1,7 @@
 // Persistence across a restart: two app instances over one SQLite file and one manual source.
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Job } from '../../src/domain/types.ts';
-import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
+import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { writeWebhooksFile } from '../support/files.ts';
 import { createManualSource } from '../support/manual-source.ts';
 import { waitFor } from '../support/wait.ts';
@@ -20,8 +20,7 @@ describe('persistence across restart', () => {
     cleanup = db.cleanup;
     writeWebhooksFile(db.dbPath, [{ name: 'h', url: 'http://127.0.0.1:9/h', events: ['lane.opened'], secret: 's' }]);
     const source = createManualSource();
-    const env = { JOB_HOPPER_LOCAL_LANES: '1' };
-    const first = await startTestApp({ dbPath: db.dbPath, env, source });
+    const first = await startTestApp({ dbPath: db.dbPath, plugins: { machines: lanes(1) }, source });
     apps.push(first);
     expect((await first.ui('/ui/api/router-mode', { mode: 'active' }, { token: await first.login() })).status).toBe(200);
     const hook = (await first.api('GET', '/api/webhooks')).body.subscriptions[0];
@@ -31,7 +30,7 @@ describe('persistence across restart', () => {
     await first.waitForStatus(queued.id, 'held');
     await first.stop();
 
-    const second = await startTestApp({ dbPath: db.dbPath, env: { ...env, JOB_HOPPER_JEV_MODE: 'shadow' }, source });
+    const second = await startTestApp({ dbPath: db.dbPath, env: { JOB_HOPPER_ROUTER_MODE: 'shadow' }, source });
     apps.push(second);
     expect((await second.api('GET', '/api/router')).body.mode).toBe('active');
     expect((await second.api('GET', '/api/webhooks')).body.subscriptions.map((s: { id: string; name: string }) => [s.id, s.name])).toEqual([[hook.id, 'h']]);

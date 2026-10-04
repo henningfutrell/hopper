@@ -23,10 +23,15 @@ function specFor(item: SourceItem, source: { name: string }, priority: number): 
   return { executor: item.executor, payload, priority, goal: item.title, submittedBy: `${source.name}:${item.author}`, kind: 'coding' };
 }
 
-/** Why the item cannot run, or undefined: the source's own verdict first, then the executor's. */
+/**
+ * Why the item cannot run, or undefined: the source's own verdict first, then the executor's. A
+ * configured executor that cannot run accepts the item unvalidated: its job is held until a
+ * restart brings the executor up (design.md "Failure").
+ */
 function problemWith(c: EngineContext, item: SourceItem, spec: JobSpec): string | undefined {
   if (item.invalid) return item.invalid;
   const executor = c.executors.get(spec.executor);
+  if (!executor && c.executors.unavailable().some((u) => u.name === spec.executor)) return undefined;
   if (!executor) return `unknown executor ${spec.executor} (known: ${c.executors.names().join(', ')})`;
   const problem = executor.validate(spec.payload);
   return problem ? `invalid payload for executor ${spec.executor}: ${problem}` : undefined;
@@ -62,8 +67,6 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
         if (!(e instanceof EngineError)) throw e;
       }
     },
-
-    answer: (questionId, answer) => c.questions.answerByHuman(questionId, answer),
 
     reprioritize(jobId, to, reason) {
       return store.tx(() => {

@@ -1,5 +1,5 @@
-// Configuration from env, per docs/design.md "Configuration (env)" and both "Configuration added".
-// Invalid values fail loudly.
+// Configuration from env: process settings only (docs/design.md "Settled in slice 4"); every part is
+// configured in plugins.yaml. Invalid values fail loudly.
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';
@@ -11,30 +11,12 @@ export interface Config {
   tickMs: number;
   /** Router mode used only until the store has one. */
   routerMode: 'shadow' | 'active';
-  /** With `python`: the jev-router instance used when plugins.yaml names no router. */
-  jevSrc: string;
-  python: string;
-  localLanes: number;
   softLimit: number;
   hardLimit: number;
   routerCheapBoost: number;
   webhookBaseMs: number;
   laneIdleGraceMs: number;
-  /** Executors to register, by name. */
-  executors: ExecutorName[];
-  herdrBin: string;
-  herdrSession: string;
-  herdrPollMs: number;
-  /** The `claude` CLI the env-derived answerer and assessor run (plugin option `bin`). */
-  claudeBin: string;
-  /** Extra args for Claude in a pane, split on whitespace. */
-  claudeArgs: string[];
-  claudeCwd: string;
-  trustWorkdir: boolean;
-  idleQuestionMs: number;
-  answerer: 'claude' | 'fake';
-  answerModelA: string;
-  answerModelB: string;
+  /** The question service's ceiling per stage (answer, assess), whatever a plugin's own timeout says. */
   answerTimeoutMs: number;
   rulesFile: string;
   humanRenotifyMs: number;
@@ -43,26 +25,23 @@ export interface Config {
   maxQuestions: number;
   /** Keep panes open after a job ends (for inspection); default false: every terminal outcome cleans up. */
   keepPanes: boolean;
-  /** sources.yaml: which job sources the hopper pulls from. */
-  sourcesFile: string;
   /** webhooks.yaml: the webhook subscriptions. */
   webhooksFile: string;
   /** Env file with GROKBOT_WEBHOOK_URL / GROKBOT_WEBHOOK_KEY (the Grok Bot routine webhook). */
   grokbotWebhookFile: string;
-  /** The `gh` CLI the GitHub source runs. */
-  ghBin: string;
   /** Lifetime of a UI session, in hours. */
   uiSessionHours: number;
   /** Custom plugins, one directory each. */
   pluginDir: string;
-  /** plugins.yaml: which plugin instance fills which role. */
+  /** plugins.yaml: which plugin instance fills which role — every part's configuration. */
   pluginsFile: string;
-  /** GitHub API base for the App adapter and the jobs' hopper-comment; unset → https://api.github.com. Tests point it at a fake. */
-  githubApiUrl?: string;
+  /**
+   * Every set JOB_HOPPER_* variable this config does not read, raw: the part-choosing ones removed
+   * in phase 5 slice 4 (read once more by the plugins.yaml migration) and any unknown one. The
+   * daemon warns about them at boot.
+   */
+  leftoverEnv: Record<string, string>;
 }
-
-export const EXECUTOR_NAMES = ['test', 'herdr-claude'] as const;
-export type ExecutorName = (typeof EXECUTOR_NAMES)[number];
 
 const expandHome = (p: string): string => (p === '~' ? homedir() : p.startsWith('~/') ? join(homedir(), p.slice(2)) : p);
 
@@ -70,46 +49,18 @@ const int = (min: number, max = Number.MAX_SAFE_INTEGER) => z.coerce.number().in
 const fraction = () => z.coerce.number().min(0).max(1);
 const path = (fallback: string) => z.string().min(1).default(fallback).transform(expandHome);
 const flag = (fallback: boolean) => z.enum(['true', 'false']).default(fallback ? 'true' : 'false').transform((v) => v === 'true');
-const executorList = z.string().default('test,herdr-claude').transform((s, ctx) => {
-  const names = [...new Set(s.split(',').map((x) => x.trim()).filter(Boolean))];
-  if (names.length === 0) ctx.addIssue({ code: 'custom', message: 'name at least one executor' });
-  for (const n of names) {
-    if (!(EXECUTOR_NAMES as readonly string[]).includes(n)) ctx.addIssue({ code: 'custom', message: `unknown executor ${n} (known: ${EXECUTOR_NAMES.join(', ')})` });
-  }
-  return names as ExecutorName[];
-});
-
 const schema = z.object({
   // Loopback only (AGENTS.md): any other bind address needs authentication — a different application.
   JOB_HOPPER_HOST: z.literal('127.0.0.1', { error: 'must be 127.0.0.1 (loopback only)' }).default('127.0.0.1'),
   JOB_HOPPER_PORT: int(0, 65535).default(4790),
   JOB_HOPPER_DB: path('~/.local/share/job-hopper/job-hopper.db'),
   JOB_HOPPER_TICK_MS: int(1).default(2000),
-  JOB_HOPPER_JEV_MODE: z.enum(['shadow', 'active']).default('shadow'),
-  // Slice 1 of phase 5: the router is chosen in plugins.yaml; without one, `router` (jev-router
-  // from JEV_SRC / PYTHON) is the only value. The fake router is a test double, never configured.
-  JOB_HOPPER_JEV_ADVISOR: z.literal('router', { error: 'must be router (choose another router in plugins.yaml)' }).default('router'),
-  JOB_HOPPER_JEV_SRC: path('~/workbench/jev-src/grok-bot-jev'),
-  JOB_HOPPER_PYTHON: z.string().min(1).default('python3'),
-  JOB_HOPPER_LOCAL_LANES: int(0).default(4),
+  JOB_HOPPER_ROUTER_MODE: z.enum(['shadow', 'active']).default('shadow'),
   JOB_HOPPER_SOFT_LIMIT: fraction().default(0.7),
   JOB_HOPPER_HARD_LIMIT: fraction().default(0.95),
-  JOB_HOPPER_JEV_CHEAP_BOOST: z.coerce.number().default(10),
+  JOB_HOPPER_ROUTER_CHEAP_BOOST: z.coerce.number().default(10),
   JOB_HOPPER_WEBHOOK_BASE_MS: int(1).default(1000),
   JOB_HOPPER_LANE_IDLE_GRACE_MS: int(0).default(5000),
-  JOB_HOPPER_EXECUTORS: executorList,
-  JOB_HOPPER_HERDR_BIN: z.string().min(1).default('herdr'),
-  // Never the user's default herdr session (herdr's own doctrine; design.md "herdr session").
-  JOB_HOPPER_HERDR_SESSION: z.string().min(1).refine((s) => s !== 'default', 'must not be the default herdr session').default('job-hopper'),
-  JOB_HOPPER_HERDR_POLL_MS: int(1).default(1000),
-  JOB_HOPPER_CLAUDE_BIN: z.string().min(1).default('claude'),
-  JOB_HOPPER_CLAUDE_ARGS: z.string().default('--dangerously-skip-permissions').transform((s) => s.split(/\s+/).filter(Boolean)),
-  JOB_HOPPER_CLAUDE_CWD: path('~/workbench/app-workflows'),
-  JOB_HOPPER_TRUST_WORKDIR: flag(true),
-  JOB_HOPPER_IDLE_QUESTION_MS: int(1).default(20000),
-  JOB_HOPPER_ANSWERER: z.enum(['claude', 'fake']).default('claude'),
-  JOB_HOPPER_ANSWER_MODEL_A: z.string().min(1).default('opus'),
-  JOB_HOPPER_ANSWER_MODEL_B: z.string().min(1).default('fable'),
   JOB_HOPPER_ANSWER_TIMEOUT_MS: int(1).default(180000),
   JOB_HOPPER_RULES_FILE: path('~/.config/job-hopper/rules.md'),
   JOB_HOPPER_HUMAN_RENOTIFY_MS: int(1).default(900000),
@@ -117,24 +68,26 @@ const schema = z.object({
   JOB_HOPPER_RESUME_BOOST: z.coerce.number().finite().default(20),
   JOB_HOPPER_MAX_QUESTIONS: int(0).default(5),
   JOB_HOPPER_KEEP_PANES: flag(false),
-  JOB_HOPPER_SOURCES_FILE: path('~/.config/job-hopper/sources.yaml'),
   JOB_HOPPER_WEBHOOKS_FILE: path('~/.config/job-hopper/webhooks.yaml'),
   JOB_HOPPER_GROKBOT_WEBHOOK_FILE: path('~/.config/job-hopper/grokbot-webhook.env'),
-  JOB_HOPPER_GH_BIN: z.string().min(1).default('gh'),
   JOB_HOPPER_UI_SESSION_HOURS: z.coerce.number().finite().positive().default(12),
   JOB_HOPPER_PLUGIN_DIR: path('~/.config/job-hopper/plugins'),
   JOB_HOPPER_PLUGINS_FILE: path('~/.config/job-hopper/plugins.yaml'),
-  JOB_HOPPER_GITHUB_API: z.url({ protocol: /^https?$/ }).transform((u) => u.replace(/\/+$/, '')).optional(),
 }).refine((e) => e.JOB_HOPPER_SOFT_LIMIT < e.JOB_HOPPER_HARD_LIMIT, {
   message: 'must be below JOB_HOPPER_HARD_LIMIT',
   path: ['JOB_HOPPER_SOFT_LIMIT'],
 });
 
-/** Reads only JOB_HOPPER_* keys; empty strings count as unset. Throws on any invalid value. */
+const READ = new Set(Object.keys(schema.shape));
+
+/**
+ * Reads only JOB_HOPPER_* keys; empty strings count as unset. Throws on any invalid value of a key
+ * it reads; the rest go to `leftoverEnv` unvalidated.
+ */
 export function loadConfig(env: Record<string, string | undefined>): Config {
-  const relevant = Object.fromEntries(
-    Object.entries(env).filter(([k, v]) => k.startsWith('JOB_HOPPER_') && v !== undefined && v !== ''),
-  );
+  const set = Object.entries(env).filter((e): e is [string, string] => e[0].startsWith('JOB_HOPPER_') && e[1] !== undefined && e[1] !== '');
+  const relevant = Object.fromEntries(set.filter(([k]) => READ.has(k)));
+  const leftoverEnv = Object.fromEntries(set.filter(([k]) => !READ.has(k)));
   const parsed = schema.safeParse(relevant);
   if (!parsed.success) {
     const problems = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
@@ -146,27 +99,12 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     port: e.JOB_HOPPER_PORT,
     dbPath: e.JOB_HOPPER_DB,
     tickMs: e.JOB_HOPPER_TICK_MS,
-    routerMode: e.JOB_HOPPER_JEV_MODE,
-    jevSrc: e.JOB_HOPPER_JEV_SRC,
-    python: e.JOB_HOPPER_PYTHON,
-    localLanes: e.JOB_HOPPER_LOCAL_LANES,
+    routerMode: e.JOB_HOPPER_ROUTER_MODE,
     softLimit: e.JOB_HOPPER_SOFT_LIMIT,
     hardLimit: e.JOB_HOPPER_HARD_LIMIT,
-    routerCheapBoost: e.JOB_HOPPER_JEV_CHEAP_BOOST,
+    routerCheapBoost: e.JOB_HOPPER_ROUTER_CHEAP_BOOST,
     webhookBaseMs: e.JOB_HOPPER_WEBHOOK_BASE_MS,
     laneIdleGraceMs: e.JOB_HOPPER_LANE_IDLE_GRACE_MS,
-    executors: e.JOB_HOPPER_EXECUTORS,
-    herdrBin: e.JOB_HOPPER_HERDR_BIN,
-    herdrSession: e.JOB_HOPPER_HERDR_SESSION,
-    herdrPollMs: e.JOB_HOPPER_HERDR_POLL_MS,
-    claudeBin: e.JOB_HOPPER_CLAUDE_BIN,
-    claudeArgs: e.JOB_HOPPER_CLAUDE_ARGS,
-    claudeCwd: e.JOB_HOPPER_CLAUDE_CWD,
-    trustWorkdir: e.JOB_HOPPER_TRUST_WORKDIR,
-    idleQuestionMs: e.JOB_HOPPER_IDLE_QUESTION_MS,
-    answerer: e.JOB_HOPPER_ANSWERER,
-    answerModelA: e.JOB_HOPPER_ANSWER_MODEL_A,
-    answerModelB: e.JOB_HOPPER_ANSWER_MODEL_B,
     answerTimeoutMs: e.JOB_HOPPER_ANSWER_TIMEOUT_MS,
     rulesFile: e.JOB_HOPPER_RULES_FILE,
     humanRenotifyMs: e.JOB_HOPPER_HUMAN_RENOTIFY_MS,
@@ -174,13 +112,11 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     resumeBoost: e.JOB_HOPPER_RESUME_BOOST,
     maxQuestions: e.JOB_HOPPER_MAX_QUESTIONS,
     keepPanes: e.JOB_HOPPER_KEEP_PANES,
-    sourcesFile: e.JOB_HOPPER_SOURCES_FILE,
     webhooksFile: e.JOB_HOPPER_WEBHOOKS_FILE,
     grokbotWebhookFile: e.JOB_HOPPER_GROKBOT_WEBHOOK_FILE,
-    ghBin: e.JOB_HOPPER_GH_BIN,
     uiSessionHours: e.JOB_HOPPER_UI_SESSION_HOURS,
     pluginDir: e.JOB_HOPPER_PLUGIN_DIR,
     pluginsFile: e.JOB_HOPPER_PLUGINS_FILE,
-    ...(e.JOB_HOPPER_GITHUB_API ? { githubApiUrl: e.JOB_HOPPER_GITHUB_API } : {}),
+    leftoverEnv,
   };
 }

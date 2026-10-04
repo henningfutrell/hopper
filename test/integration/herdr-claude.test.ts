@@ -11,12 +11,12 @@ let cleanup: (() => void) | undefined;
 
 const ASK = { output: ['● Which colour should the shed be?', '  JOB_HOPPER_QUESTION'] };
 const DONE = { steps: ['● Painting'], output: ['● Painted the shed.', '  JOB_HOPPER_DONE'] };
-const ENV = { JOB_HOPPER_EXECUTORS: 'test,herdr-claude', JOB_HOPPER_HERDR_POLL_MS: '10', JOB_HOPPER_IDLE_QUESTION_MS: '5000' };
+const EXECUTORS = [{ name: 'test', plugin: 'test' }, { name: 'herdr-claude', plugin: 'herdr-claude', options: { pollMs: 10, idleQuestionMs: 5000 } }];
 
 async function start(herdr: FakeHerdrClient, env: Record<string, string> = {}): Promise<TestApp> {
   const db = tempDbPath();
   cleanup = db.cleanup;
-  t = await startTestApp({ dbPath: db.dbPath, env: { ...ENV, ...env }, seams: { herdr } });
+  t = await startTestApp({ dbPath: db.dbPath, env, plugins: { executors: EXECUTORS }, seams: { herdr } });
   return t;
 }
 

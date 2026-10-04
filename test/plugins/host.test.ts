@@ -7,6 +7,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { AnswerRequest } from '../../src/domain/ports.ts';
 import type { Job, Question } from '../../src/domain/types.ts';
 import { BUILTIN_PLUGINS } from '../../src/plugins/builtin.ts';
+import jevRouter from '../../src/plugins/router/jev-router/index.ts';
+import passThrough from '../../src/plugins/router/pass-through/index.ts';
 import { createPluginHost, type PluginHost, type PluginHostOptions } from '../../src/plugins/index.ts';
 import type { DetectionKit, PluginDefinition } from '../../src/plugins/sdk.ts';
 import { waitFor } from '../support/wait.ts';
@@ -63,7 +65,7 @@ const selfFallingBack: PluginDefinition<'router'> = {
 };
 
 function start(o: {
-  file?: string; kit?: DetectionKit; defaultRouter?: PluginHostOptions['defaultRouter']; pluginDir?: string;
+  file?: string; kit?: DetectionKit; pluginDir?: string; builtins?: readonly PluginDefinition[];
   defaultAnswerer?: PluginHostOptions['defaultAnswerer']; defaultAssessor?: PluginHostOptions['defaultAssessor'];
 } = {}) {
   const dir = temp();
@@ -72,36 +74,49 @@ function start(o: {
   host = createPluginHost({
     pluginDir: o.pluginDir ?? join(dir, 'plugins'), pluginsFile, dataDir: dir, clock: fixedClock,
     logger: { info() {}, warn() {} }, routerMode: () => 'shadow', kit: o.kit ?? fakeKit(),
-    builtins: [...BUILTIN_PLUGINS, tagging, brokenCreate, throwingAdvise, selfFallingBack, cannedAnswerer, cannedAssessor],
-    defaultRouter: o.defaultRouter ?? { name: 'jev', plugin: 'jev-router', options: { jevSrc: '/jev', python: 'python3' } },
+    builtins: o.builtins ?? [...BUILTIN_PLUGINS, tagging, brokenCreate, throwingAdvise, selfFallingBack, cannedAnswerer, cannedAssessor],
     defaultAnswerer: o.defaultAnswerer === undefined ? { name: 'opus', plugin: 'claude-cli', options: { model: 'opus' } } : o.defaultAnswerer,
     defaultAssessor: o.defaultAssessor ?? { name: 'fable', plugin: 'claude-cli-assessor', options: { model: 'fable' } },
+    defaultExecutors: [{ name: 'test', plugin: 'test' }],
     intervalMs: 30,
   });
   return { host, pluginsFile };
 }
 
-describe('router instance from the environment (no plugins.yaml)', () => {
-  it('uses the default instance when its plugin is available', async () => {
-    const { host } = start({ defaultRouter: { name: 'tg', plugin: 'tagging', options: { tag: 'env' } } });
+describe('router chosen from what is detected (no router in plugins.yaml)', () => {
+  it('jev-router detected → the router is jev-router, not a fallback', async () => {
+    const { host } = start({ builtins: [...BUILTIN_PLUGINS] });
     await host.start();
-    expect(host.routerStatus()).toEqual({ name: 'tg', plugin: 'tagging', fallback: false });
-    expect(await host.router.advise(job)).toMatchObject({ reason: 'env', source: 'tagging' });
-    expect(host.router.name).toBe('tg');
-    expect(host.report().config).toMatchObject({ source: 'env' });
+    expect(host.routerStatus()).toEqual({ name: 'jev-router', plugin: 'jev-router', fallback: false });
+    expect(host.report().router).toMatchObject({ instance: { name: 'jev-router', plugin: 'jev-router' }, selection: 'detected', fallback: false });
   });
 
-  it('jev-router unavailable (no Jev checkout) → pass-through, advice source fallback', async () => {
-    const { host } = start({ kit: fakeKit({ exists: async () => false }) });
+  it('no router but pass-through can run → pass-through, chosen, not a fallback', async () => {
+    const { host } = start({ builtins: [...BUILTIN_PLUGINS], kit: fakeKit({ exists: async () => false }) });
     await host.start();
-    expect(host.routerStatus()).toEqual({ name: 'jev', plugin: 'pass-through', fallback: true, reason: expect.stringContaining('/jev/src/router.py') });
-    const advice = await host.router.advise(job);
-    expect(advice).toMatchObject({ action: 'proceed_full', source: 'fallback', at: '2026-10-03T12:00:00.000Z' });
-    expect(advice.reason).toMatch(/^router jev unavailable: /);
-    expect(host.report().router).toMatchObject({
-      instance: { name: 'jev', plugin: 'jev-router' }, active: 'pass-through', fallback: true,
-      detection: { status: 'unavailable' },
-    });
+    expect(host.routerStatus()).toEqual({ name: 'pass-through', plugin: 'pass-through', fallback: false });
+    expect(await host.router.advise(job)).toMatchObject({ action: 'proceed_full', source: 'pass-through' });
+    expect(host.report().router).toMatchObject({ instance: { name: 'pass-through', plugin: 'pass-through' }, selection: 'detected', detection: { status: 'available' } });
+  });
+
+  it('a custom router that can run is chosen when jev-router cannot', async () => {
+    const pluginDir = temp();
+    cpSync(ALWAYS_PROCEED_DIR, join(pluginDir, 'always-proceed'), { recursive: true });
+    const { host } = start({ pluginDir, builtins: [...BUILTIN_PLUGINS], kit: fakeKit({ exists: async () => false }) });
+    await host.start();
+    expect(host.routerStatus()).toEqual({ name: 'always-proceed', plugin: 'always-proceed', fallback: false });
+  });
+
+  it('built-ins come first, in their order; a router that detects but cannot start is skipped', async () => {
+    const { host } = start({ builtins: [passThrough, brokenCreate, jevRouter, tagging] });
+    await host.start();
+    expect(host.routerStatus()).toEqual({ name: 'jev-router', plugin: 'jev-router', fallback: false });
+  });
+
+  it('a router named in plugins.yaml wins over detection; selection says file', async () => {
+    const { host } = start({ file: 'version: 1\nrouter: { name: one, plugin: tagging, options: { tag: t } }\n' });
+    await host.start();
+    expect(host.report().router).toMatchObject({ instance: { name: 'one' }, selection: 'file' });
   });
 });
 
@@ -139,10 +154,10 @@ describe('fallback to pass-through', () => {
 });
 
 describe('plugins.yaml live reload (router swaps between calls)', () => {
-  it('a changed router section swaps the router; a broken edit keeps the last good one; removal returns to env', async () => {
+  it('a changed router section swaps the router; a broken edit keeps the last good one; removal returns to the detected one', async () => {
     const { host, pluginsFile } = start({
       file: 'version: 1\nrouter: { name: one, plugin: tagging, options: { tag: first } }\n',
-      defaultRouter: { name: 'env', plugin: 'pass-through' },
+      builtins: [passThrough, tagging],
     });
     await host.start();
     expect(host.report().config).toMatchObject({ source: 'file', path: pluginsFile });
@@ -157,8 +172,8 @@ describe('plugins.yaml live reload (router swaps between calls)', () => {
     expect((await host.router.advise(job)).reason).toBe('second-one');
 
     rmSync(pluginsFile);
-    await waitFor(() => host.routerStatus().name === 'env', { what: 'the env router' });
-    expect(host.report().config).toMatchObject({ source: 'env' });
+    await waitFor(() => host.routerStatus().name === 'pass-through', { what: 'the detected router' });
+    expect(host.report().router).toMatchObject({ selection: 'detected' });
     expect(host.report().config.error).toBeUndefined();
     expect(await host.router.advise(job)).toMatchObject({ source: 'pass-through' });
   });
@@ -190,7 +205,7 @@ describe('custom plugins through the host', () => {
     const { host } = start({ pluginDir, kit: fakeKit({ exists: async () => false }) });
     await host.start();
     const r = host.report();
-    expect(r.roles).toEqual(['router', 'answerer', 'assessor']);
+    expect(r.roles).toEqual(['router', 'answerer', 'assessor', 'executor', 'job-source', 'machine-source', 'usage-source']);
     const byId = new Map(r.plugins.map((p) => [p.id, p]));
     expect(byId.get('jev-router')).toMatchObject({
       role: 'router', builtin: true, detection: { status: 'unavailable' },

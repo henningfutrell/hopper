@@ -1,6 +1,6 @@
 // The app's credentials, via `@octokit/auth-app`: a JWT signed with the private key (for the
-// `/app/*` endpoints and the per-repo installation lookup), installation tokens (cached by the
-// library), and fresh repo-scoped tokens for jobs.
+// `/app/*` endpoints and the per-repo installation lookup) and installation tokens (cached by
+// the library).
 
 import { createAppAuth } from '@octokit/auth-app';
 import type { GitHubApp } from './config.ts';
@@ -11,8 +11,6 @@ export interface AppAuth {
   jwt(): Promise<string>;
   /** An installation token covering every repo of the installation (library-cached). */
   installationToken(installationId: number): Promise<string>;
-  /** A new token for one repo with `issues: write` only. Never cached: each call mints. */
-  mint(installationId: number, repoName: string): Promise<{ token: string; expiresAt: string }>;
 }
 
 export function createAuth(app: GitHubApp, request: Request): AppAuth {
@@ -23,14 +21,6 @@ export function createAuth(app: GitHubApp, request: Request): AppAuth {
     },
     async installationToken(installationId) {
       return (await auth({ type: 'installation', installationId })).token;
-    },
-    async mint(installationId, repoName) {
-      // refresh: the library caches tokens for 59 min per options; without it a "refresh" would
-      // hand back the same token, close to expiry (design B2).
-      const a = await auth({
-        type: 'installation', installationId, repositoryNames: [repoName], permissions: { issues: 'write' }, refresh: true,
-      });
-      return { token: a.token, expiresAt: a.expiresAt };
     },
   };
 }

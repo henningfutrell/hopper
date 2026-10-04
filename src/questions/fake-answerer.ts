@@ -1,4 +1,4 @@
-// Doubles at the Answerer and Assessor seams, for tests and `JOB_HOPPER_ANSWERER=fake`. Not
+// Doubles at the Answerer and Assessor seams, for tests (AppSeams.answerer, .assessor). Not
 // plugins: nothing in plugins.yaml can select them. Scripts may be async; a throw comes back as
 // `{ error }`. The assessor double returns whatever its script returns, so a test can hand the
 // question service a malformed assessment.

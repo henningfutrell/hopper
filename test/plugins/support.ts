@@ -13,6 +13,7 @@ export function fakeKit(over: Partial<DetectionKit> = {}): DetectionKit {
   return {
     which: async (bin) => (bin.startsWith('/') ? bin : `/usr/bin/${bin}`),
     version: async () => '1.0.0',
+    succeeds: async () => true,
     exists: async () => true,
     pythonImports: async () => true,
     env: () => undefined,

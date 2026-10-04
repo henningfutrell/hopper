@@ -8,18 +8,14 @@ Type=simple
 ExecStart=/usr/bin/node %h/.local/lib/job-hopper/src/main.ts
 Environment=JOB_HOPPER_HOST=127.0.0.1
 Environment=JOB_HOPPER_PORT=4790
-Environment=JOB_HOPPER_JEV_ADVISOR=router
-Environment=JOB_HOPPER_JEV_MODE=shadow
 Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin
-Environment=JOB_HOPPER_CLAUDE_CWD=%h/workbench/app-workflows
-Environment=JOB_HOPPER_HERDR_SESSION=job-hopper
-# The hopper pulls jobs (sources.yaml: the GitHub App via %h/.config/job-hopper/github-app.json, or
-# the gh CLI and its keyring login while no app exists) and sends webhooks (webhooks.yaml). The UI
-# login code is written to %h/.local/share/job-hopper/ui-login-code; job token files to
-# %h/.local/share/job-hopper/job-tokens (outside PrivateTmp, so herdr panes can read them).
-Environment=JOB_HOPPER_SOURCES_FILE=%h/.config/job-hopper/sources.yaml
+# Process settings only. Every part — job sources (the GitHub App via
+# %h/.config/job-hopper/github-app.json, or the gh CLI), executors, router, answerer, assessor, the
+# machine and its lanes — is configured in plugins.yaml, which the daemon writes (mode 600) on the
+# first boot without one. It sends webhooks (webhooks.yaml). The UI login code is written to
+# %h/.local/share/job-hopper/ui-login-code.
+Environment=JOB_HOPPER_PLUGINS_FILE=%h/.config/job-hopper/plugins.yaml
 Environment=JOB_HOPPER_WEBHOOKS_FILE=%h/.config/job-hopper/webhooks.yaml
-Environment=JOB_HOPPER_GH_BIN=gh
 Restart=on-failure
 RestartSec=2
 KillSignal=SIGTERM
