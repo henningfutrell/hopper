@@ -127,7 +127,7 @@ describe('GET /api/plugins: the executor role', () => {
     expect(marked('test')).toEqual([]);
     expect(marked('claude-cli')).toEqual(['bin']);
     expect(marked('claude-cli-assessor')).toEqual(['bin']);
-    expect(marked('jev-router')).toEqual(['jevSrc', 'python']);
+    expect(marked('jev-router')).toEqual(['claudeBin', 'jevSrc', 'python']);
     expect(marked('github-gh')).toEqual(['appFile', 'bin', 'defaultCwd', 'repoPaths']);
     expect(marked('github-app')).toEqual(['apiUrl', 'appFile', 'defaultCwd', 'repoPaths']);
     expect(marked('local')).toEqual([]);

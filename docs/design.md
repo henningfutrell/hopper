@@ -169,20 +169,35 @@ budgets**, so it cannot be the usage source. job-hopper uses it for what it is: 
 > level: jev-router puts it in `details.jevUsed`. Mode is the **router mode**
 > (`settings.routerMode`, `POST /ui/api/router-mode`). The text below describes the shim.
 
-- `jev-router`: spawns `<python> src/plugins/router/jev-router/jev_shim.py` with JSON on stdin. The shim puts
-  the Jev repo on `sys.path`, loads Jev's **own** `config.yaml` (its kill switch is
-  honoured), overrides only `mode` (job-hopper's) and `logging.path` (job-hopper's data
-  dir), sets `PYTHONDONTWRITEBYTECODE=1`, calls `route_task(state)`, prints the result.
-  Nothing is written under the Jev repo. `router.py` imports `typesafe_sdk` at module
-  load (via `src.jev_client`); when that package is absent the shim installs a stub module
-  in `sys.modules` so the kill-switch path still runs — with Jev enabled the stub raises
-  and the call falls back. The shim patches `src.router.load_config` and
-  `src.router.resolve_log_path` (the names the router imported) and catches
-  `BaseException` (`secrets.py` raises `SystemExit`). Advice from a real router run has
-  `source: "jev-router"`; `details.jevUsed` mirrors the router's own `jev_used`. Any failure (missing `typesafe_sdk`, missing
-  `TYPESAFE_API_KEY`, timeout 10 s, bad JSON) → advice `{ action: proceed_full, source:
-  fallback, details: { jevUsed: false }, reason: "jev unavailable: …" }` — the router's own documented
-  safe fallback.
+- `jev-router`: spawns `<python> src/plugins/router/jev-router/jev_shim.py` with JSON on stdin, in its
+  own process group (a timeout kills the group, so no `claude` outlives it) and with the Claude Code
+  markers scrubbed from the environment. The shim puts the Jev repo on `sys.path`, loads Jev's
+  **own** `config.yaml` (its kill switch is honoured), overrides only `mode` (job-hopper's) and
+  `logging.path` (job-hopper's data dir), sets `PYTHONDONTWRITEBYTECODE=1`, calls
+  `route_task(state)`, prints the result. Nothing is written under the Jev repo. `router.py`
+  imports `typesafe_sdk` at module load (via `src.jev_client`); when that package is absent the
+  shim installs a stub whose `Choice`/`Noul`/`Score` only record their instructions and criteria.
+- **Jev gates: TypeSafe where it is set up, Haiku for the rest** (owner decision, 2026-10-03, issue #19:
+  keep Jev and TypeSafe; TypeSafe is better at some things; Haiku through the existing Claude
+  login, no new paid key). Jev's router runs unchanged; the shim replaces only the
+  `system_one` it imported. Each gate in `typesafeGates` (default `intent`, `reuse_cache`,
+  `stop_retry`: crisp classifications of the job state, where TypeSafe's calibrated probabilities
+  feed Jev's thresholds) goes to TypeSafe through Jev's own `jev_client.system_one` — when
+  `TYPESAFE_API_KEY` is set in the daemon's environment (`~/.config/job-hopper/daemon.env`) and
+  `python` imports `typesafe_sdk`. Every other gate (`needs_subagent`, `complexity`: judgement
+  of how much work a goal implies), and every gate TypeSafe fails on, goes to Haiku: one
+  locked-down `claude -p --model <model>` run (`claudeArgv`, `claude-print.ts`), prompt on stdin,
+  output bound to a schema of TypeSafe's answer shapes, cwd = the data dir. The shim checks every
+  gate is answered and every choice is a label Jev offered. Advice details gain `gatesBy`
+  (gate → `typesafe` | `haiku`) and, when TypeSafe was wanted but could not answer,
+  `typesafeError` (no key is not an error: TypeSafe is simply off).
+- Options: `jevSrc`, `python`, `claudeBin` (`claude`), `model` (`haiku`), `typesafeGates`,
+  `timeoutMs` (60000: one Haiku run over all five gates took about 20 s on server, the CLI start included). `detect` needs
+  `python`, `<jevSrc>/src/router.py` and `claudeBin`; its detail says whether TypeSafe is on.
+- Advice from a real router run has `source: "jev-router"`; `details.jevUsed` mirrors the
+  router's own `jev_used`. Any failure (Haiku failing or leaving a gate unanswered, timeout, bad
+  JSON) → advice `{ action: proceed_full, source: fallback, details: { jevUsed: false }, reason:
+  "jev unavailable: …" }` — the router's own documented safe fallback.
 - Job → Jev state: `goal` ← `spec.goal`, `kind` ← `spec.kind`, plus `spec.meta` keys
   `cached_artifact`, `cached_note`, `prior_error`, `same_error_count`, `sources_found`,
   `constraints`.
@@ -1604,7 +1619,7 @@ Live roles (router, answerer, assessor) swap between calls; restart roles show
 
 ```yaml
 version: 1
-router:    { name: jev, plugin: jev-router, options: { jevSrc: ~/workbench/jev-src/grok-bot-jev, python: python3 } }
+router:    { name: jev, plugin: jev-router, options: { jevSrc: ~/workbench/jev-src/grok-bot-jev, python: python3, claudeBin: claude, model: haiku } }
 answerer:  { name: opus, plugin: claude-cli, options: { model: opus } }
 assessor:  { name: fable, plugin: claude-cli-assessor, options: { model: fable } }
 executors: [ { name: herdr-claude, plugin: herdr-claude, options: { cwd: ~/workbench/app-workflows } }, { name: test, plugin: test } ]
@@ -1647,7 +1662,7 @@ as UI-session mutations.
 
 **Command-bearing options** (owner decision, owner decision, 2026-10-03, issue #6 option (a)): an
 option that names a program, its arguments, a working directory, an interpreter, or a file
-that is sourced or executed — `bin`, `args`, `cwd`, `python`, `jevSrc`, `envFile` and their
+that is sourced or executed — `bin`, `args`, `cwd`, `python`, `jevSrc`, `claudeBin`, `envFile` and their
 kind. A plugin marks each in its schema with `.meta({ commandBearing: true })`; zod 4 carries
 the mark into `z.toJSONSchema()`, so `/api/plugins` and the UI see it. The UI shows these
 read-only; they are edited only in `plugins.yaml`. Why: a UI session is readable by jobs
@@ -1881,7 +1896,7 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
   runnable names only; `/api/plugins` `executors.instances[]` = `{ instance, detection, active,
   reason? }`, `active: null` for one that cannot run.
 - **Command-bearing marks** (`.meta({ commandBearing: true })`): herdr-claude `bin`, `claudeBin`,
-  `args`, `cwd`; claude-cli and claude-cli-assessor `bin`; jev-router `jevSrc`, `python`. zod
+  `args`, `cwd`; claude-cli and claude-cli-assessor `bin`; jev-router `jevSrc`, `python`, `claudeBin`. zod
   carries the mark into `z.toJSONSchema()`; `/api/plugins` shows it. `session` is not marked (it
   names a herdr session, not a program).
 - **Tests:** `AppSeams.herdr` swaps the herdr-claude built-in for `herdrClaudePlugin(seam)`
