@@ -425,7 +425,7 @@ export type { AttachedMachine, MachineEdit, MachineEditOutcome, MachinesConfig }
 // ---- Routing rules: src/domain/routing.ts; plugins: src/domain/plugins.ts (re-exported here, one vocabulary) ----
 
 export type * from './routing.ts';
-export { ROLES, SELECTABLE_ROLES } from './plugins.ts';
+export { LIST_ROLES, ROLES, SELECTABLE_ROLES } from './plugins.ts';
 export type { Account, MachineLaneEffect, PartAccount, UsageReading, UsageReport, UsageSourceReport, UsageSourceState } from './usage.ts';
 export type * from './plugins.ts';
 

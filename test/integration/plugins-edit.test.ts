@@ -42,6 +42,13 @@ const UNAVAILABLE_ROUTER = `export default {
   create() { throw new Error('unreachable'); },
 };
 `;
+/** An unavailable executor plugin, so adding one can be refused whatever this machine has. */
+const UNAVAILABLE_EXECUTOR = `export default {
+  id: 'never-here-exec', role: 'executor', describe: 'never available',
+  async detect() { return { status: 'unavailable', reason: 'not on this machine' }; },
+  create() { throw new Error('unreachable'); },
+};
+`;
 const writePlugin = (dataDir: string, id: string, text: string) => {
   mkdirSync(join(dataDir, 'plugins', id), { recursive: true, mode: 0o700 });
   writeFileSync(join(dataDir, 'plugins', id, 'index.js'), text);
@@ -237,5 +244,91 @@ describe('POST /ui/api/plugins — rescan', () => {
     const r = await a.ui<Reply>('/ui/api/plugins', { action: 'rescan' }, { token });
     expect(r.status).toBe(200);
     expect(r.body.plugins.find((p: { id: string }) => p.id === 'never-here')).toMatchObject({ role: 'router', detection: { status: 'unavailable' } });
+  });
+});
+
+// Issue #4: an instance of a many-instance role (executor, job source, usage source, notifier) is
+// added or removed from the UI. Executors are a restart role: the change waits for a restart.
+describe('POST /ui/api/plugins — add an instance', () => {
+  it('an executor: appended under its name with the plugin\'s defaults; other entries and comments stay; restart pending', async () => {
+    const { a, token, file } = await start(TWO_EXECUTORS);
+    const version = (await report(a)).config.version;
+    const r = await a.ui<Reply>('/ui/api/plugins', { action: 'add', role: 'executor', plugin: 'test', name: 'test-2', version }, { token });
+    expect(r.status).toBe(200);
+    const text = read(file);
+    expect(text.startsWith(TWO_EXECUTORS)).toBe(true);
+    expect(parse(text).executors).toEqual([...parse(TWO_EXECUTORS).executors, { name: 'test-2', plugin: 'test' }]);
+    expect(r.body.instances).toEqual(expect.arrayContaining([{ role: 'executor', instance: { name: 'test-2', plugin: 'test', options: {} } }]));
+    expect(r.body.executors.pending?.status).toBe('changed — restart pending');
+  });
+
+  it('a role with no section: the instances that fill it now are written, then the new one', async () => {
+    const { a, token, file } = await start('version: 1\n');
+    const body = await report(a);
+    const before = body.instances.filter((i: { role: string }) => i.role === 'executor').map((i: { instance: { name: string } }) => i.instance.name);
+    const r = await a.ui<Reply>('/ui/api/plugins', { action: 'add', role: 'executor', plugin: 'test', name: 'test-2', version: body.config.version }, { token });
+    expect(r.status).toBe(200);
+    expect(parse(read(file)).executors.map((e: { name: string }) => e.name)).toEqual([...before, 'test-2']);
+  });
+
+  it('refused, nothing written: a name taken (409), a plugin of another role (409), unknown (404), not available here (409), a one-instance role (400)', async () => {
+    const { a, token, file } = await start(TWO_EXECUTORS, (d) => writePlugin(d, 'never-here', UNAVAILABLE_EXECUTOR));
+    const version = (await report(a)).config.version;
+    const add = (role: string, plugin: string, name: string) => a.ui<Reply>('/ui/api/plugins', { action: 'add', role, plugin, name, version }, { token });
+    const taken = await add('executor', 'test', 'herdr-a');
+    expect(taken.status).toBe(409);
+    expect(taken.body.error).toMatch(/herdr-a/);
+    expect((await add('executor', 'always-escalate', 'x')).status).toBe(409);
+    expect((await add('executor', 'no-such-plugin', 'x')).status).toBe(404);
+    expect((await add('executor', 'never-here-exec', 'x')).status).toBe(409);
+    expect((await add('assessor', 'always-escalate', 'x')).status).toBe(400);
+    expect(read(file)).toBe(TWO_EXECUTORS);
+  });
+});
+
+describe('POST /ui/api/plugins — remove an instance', () => {
+  it('an executor: its entry goes, every other line stays; restart pending', async () => {
+    const { a, token, file } = await start(TWO_EXECUTORS);
+    const version = (await report(a)).config.version;
+    const r = await a.ui<Reply>('/ui/api/plugins', { action: 'remove', role: 'executor', name: 'herdr-b', version }, { token });
+    expect(r.status).toBe(200);
+    expect(read(file)).toBe(TWO_EXECUTORS.replace('  - { name: herdr-b, plugin: herdr-claude, options: { session: hopper-b, pollMs: 1000 } }\n', ''));
+    expect(r.body.instances.some((i: { instance: { name: string } }) => i.instance.name === 'herdr-b')).toBe(false);
+    expect(r.body.executors.pending?.status).toBe('changed — restart pending');
+  });
+
+  it('the last job source: the section stays, empty (no jobs come in), never the built-in ones', async () => {
+    const { a, token, file } = await start(`${TWO_EXECUTORS}jobSources:\n  - { name: gh, plugin: github-gh, options: { enabled: false, executor: test } }\n`);
+    const version = (await report(a)).config.version;
+    const r = await a.ui<Reply>('/ui/api/plugins', { action: 'remove', role: 'job-source', name: 'gh', version }, { token });
+    expect(r.status).toBe(200);
+    expect(parse(read(file)).jobSources).toEqual([]);
+  });
+
+  it('refused, nothing written: an executor a job source, routing rule or attached machine names (409), the last executor (400), not configured (404)', async () => {
+    const yaml = `${TWO_EXECUTORS}jobSources:
+  - { name: gh, plugin: github-gh, options: { enabled: false, executor: test } }
+routing:
+  - { name: to-a, match: { label: a }, set: { executor: herdr-a } }
+attachedMachines:
+  - { name: laptop, ssh: laptop, lanes: 1, executors: [herdr-b] }
+`;
+    const { a, token, file } = await start(yaml);
+    const version = (await report(a)).config.version;
+    const remove = (role: string, name: string) => a.ui<Reply>('/ui/api/plugins', { action: 'remove', role, name, version }, { token });
+    for (const [name, by] of [['test', /gh/], ['herdr-a', /to-a/], ['herdr-b', /laptop/]] as const) {
+      const r = await remove('executor', name);
+      expect(r.status).toBe(409);
+      expect(r.body.error).toMatch(by);
+    }
+    expect((await remove('executor', 'nope')).status).toBe(404);
+    expect(read(file)).toBe(yaml);
+
+    const one = 'version: 1\nexecutors:\n  - { name: test, plugin: test }\n';
+    writeFileSync(file, one, { mode: 0o600 });
+    const v = (await report(a)).config.version;
+    const last = await a.ui<Reply>('/ui/api/plugins', { action: 'remove', role: 'executor', name: 'test', version: v }, { token });
+    expect(last.status).toBe(400);
+    expect(read(file)).toBe(one);
   });
 });

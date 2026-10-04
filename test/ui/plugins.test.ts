@@ -2,8 +2,8 @@
 // the whole options object one Save sends — drafts over what is configured, command-bearing as
 // configured, so the daemon's command-bearing check never trips on a form round trip.
 import { describe, expect, it } from 'vitest';
-import { collectOptions, fieldKind, instanceState, type OptionsSchema } from '../../ui/src/model/plugins.ts';
-import type { PluginsReport } from '../../src/domain/types.ts';
+import { collectOptions, fieldKind, instanceState, isListRole, newInstance, type OptionsSchema } from '../../ui/src/model/plugins.ts';
+import type { PluginsReport, Role } from '../../src/domain/types.ts';
 
 const SCHEMA: OptionsSchema = {
   type: 'object',
@@ -71,5 +71,27 @@ describe('instanceState', () => {
   it('a restart role whose section changed says so', () => {
     expect(instanceState(report, 'machine-source', 'local').rolePending).toBe(true);
     expect(instanceState(report, 'executor', 'test').rolePending).toBe(false);
+  });
+});
+
+describe('adding an instance (issue #4)', () => {
+  const report = {
+    instances: [{ role: 'executor', instance: { name: 'test', plugin: 'test' } }, { role: 'job-source', instance: { name: 'github', plugin: 'github-gh' } }],
+  } as unknown as PluginsReport;
+
+  it('only the list roles take added and removed instances', () => {
+    expect(['executor', 'job-source', 'usage-source', 'notifier', 'router', 'assessor', 'machine-source'].map((r) => isListRole(r as Role))).toEqual(
+      [true, true, true, true, false, false, false],
+    );
+  });
+
+  it('the name typed, trimmed; empty: the plugin id', () => {
+    expect(newInstance(report, 'executor', 'herdr-claude', '  laptop ')).toEqual({ name: 'laptop' });
+    expect(newInstance(report, 'executor', 'herdr-claude', '')).toEqual({ name: 'herdr-claude' });
+  });
+
+  it('a name the role already has is refused, naming it; the same name in another role is not', () => {
+    expect(newInstance(report, 'executor', 'test', '')).toEqual({ name: 'test', problem: 'an executor is already named test' });
+    expect(newInstance(report, 'executor', 'github-gh', 'github')).toEqual({ name: 'github' });
   });
 });

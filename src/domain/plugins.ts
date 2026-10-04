@@ -85,6 +85,10 @@ export interface ConfiguredInstance {
 export type SelectableRole = 'router' | 'queue-sorter' | 'answerer' | 'assessor';
 export const SELECTABLE_ROLES: readonly SelectableRole[] = ['router', 'queue-sorter', 'answerer', 'assessor'];
 
+/** The roles with 0..n instances (executors: 1..n), each added or removed from the UI under its own name. */
+export type ListRole = 'executor' | 'job-source' | 'usage-source' | 'notifier';
+export const LIST_ROLES: readonly ListRole[] = ['executor', 'job-source', 'usage-source', 'notifier'];
+
 /** The queue order (DecisionInputs.queueOrder): the waiting jobs as the queue sorter ordered them, and which instance did. */
 export interface QueueOrder {
   /** The queue-sorter instance name. */
@@ -115,6 +119,10 @@ export type PluginsEdit =
   | { action: 'options'; role: Role; name: string; options: Record<string, unknown>; version: string }
   /** A plugin, detected available, fills the role under its own id; `null`: no answerer. */
   | { action: 'select'; role: SelectableRole; plugin: string | null; version: string }
+  /** A plugin, detected available, as a new instance `name` of a list role, with the plugin's defaults. */
+  | { action: 'add'; role: ListRole; plugin: string; name: string; version: string }
+  /** Instance `name` of a list role leaves plugins.yaml; an executor still named elsewhere is refused. */
+  | { action: 'remove'; role: ListRole; name: string; version: string }
   /** Load custom plugins added since start and re-run every detection. */
   | { action: 'rescan' };
 

@@ -1,13 +1,13 @@
 // Plugins (design.md "UI and mutation"): per role, the configured instances, each with its own
-// options form (components/plugin-form.tsx); command-bearing options are shown, never edited
+// options form (components/plugin-form.tsx), and for a list role Add and Remove; command-bearing options are shown, never edited
 // (plugins.yaml only). Refreshes every 15 s unless a form holds unsaved edits.
 import { Puzzle, RefreshCw } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Empty, Panel } from '@/components/panel';
-import { InstanceForm, PluginSelector, pluginEditsUnsaved, sendPluginsEdit } from '@/components/plugin-form';
+import { AddInstance, InstanceForm, PluginSelector, pluginEditsUnsaved, sendPluginsEdit } from '@/components/plugin-form';
 import { StatusBadge } from '@/components/status';
-import { instanceState, isSelectable, ROLE_TITLES } from '@/model/plugins';
+import { instanceState, isListRole, isSelectable, ROLE_TITLES } from '@/model/plugins';
 import type { PluginsReport, Role } from '@/model/wire';
 import { refreshPlugins, useHopper } from '@/store';
 
@@ -22,6 +22,7 @@ function RoleBlock({ role, report }: { role: Role; report: PluginsReport }) {
       action={<>{role === 'router' && <span className="text-xs text-muted-foreground">{report.router.selection}</span>}
         {rolePending && <StatusBadge status="changed — restart pending" tone="warn" />}</>}>
       {isSelectable(role) && <PluginSelector role={role} />}
+      {isListRole(role) && <AddInstance role={role} />}
       {instances.length
         ? instances.map((i) => <InstanceForm key={i.instance.name} role={role} inst={i.instance} />)
         : <Empty>{role === 'answerer' ? 'none — questions go straight to the owner' : 'none'}</Empty>}

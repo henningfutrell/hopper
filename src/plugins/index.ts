@@ -289,10 +289,12 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
         await enqueue();
         o.logger.info('job-hopper: plugins rescanned');
       } else {
+        // Act on what the file says now, not on a reload the watch timer has not run yet.
+        if (sign() !== signature) await enqueue();
         const r = applyEdit(e, { path: o.pluginsFile, configured: instances(), find: (id) => entries.find((x) => x.definition.id === id) });
         if (!r.ok) return r;
         if (r.changed) {
-          o.logger.info(`job-hopper: plugins.yaml edited in the UI: ${e.action} ${e.role} ${e.action === 'options' ? e.name : String(e.plugin)}`);
+          o.logger.info(`job-hopper: plugins.yaml edited in the UI: ${e.action} ${e.role} ${e.action === 'select' ? String(e.plugin) : e.name}`);
           await enqueue();
         }
       }

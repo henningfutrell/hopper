@@ -1,6 +1,7 @@
 // The Plugins view's model (design.md "Settled in slice 7"): an instance's state as GET /api/plugins
-// reports it, the input each option gets, and the whole options object one Save sends.
-import type { PluginsReport, Role, SelectableRole } from '../../../src/domain/types.ts';
+// reports it, the input each option gets, the whole options object one Save sends, and the name an
+// added instance gets.
+import type { ListRole, PluginsReport, Role, SelectableRole } from '../../../src/domain/types.ts';
 
 export interface OptionSchema {
   type?: string;
@@ -66,6 +67,18 @@ const RESTART = {
 
 export const SELECTABLE: readonly SelectableRole[] = ['router', 'queue-sorter', 'answerer', 'assessor'];
 export const isSelectable = (role: Role): role is SelectableRole => (SELECTABLE as readonly Role[]).includes(role);
+
+export const LIST: readonly ListRole[] = ['executor', 'job-source', 'usage-source', 'notifier'];
+export const isListRole = (role: Role): role is ListRole => (LIST as readonly Role[]).includes(role);
+
+const ONE: Record<ListRole, string> = { executor: 'an executor', 'job-source': 'a job source', 'usage-source': 'a usage source', notifier: 'a notifier' };
+
+/** The name an added instance gets — what was typed, else the plugin id — and why it cannot have it. */
+export function newInstance(report: PluginsReport, role: ListRole, plugin: string, typed: string): { name: string; problem?: string } {
+  const name = typed.trim() || plugin;
+  const taken = report.instances.some((i) => i.role === role && i.instance.name === name);
+  return taken ? { name, problem: `${ONE[role]} is already named ${name}` } : { name };
+}
 
 export interface InstanceState {
   tone: 'ok' | 'warn' | 'bad';

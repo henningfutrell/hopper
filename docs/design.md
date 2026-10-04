@@ -864,7 +864,7 @@ token and send any `Origin`. Cookies are no better here: they ignore ports, so a
 | POST | `/ui/api/questions/:id/answer` | `{ answer }` | `QuestionService.answerByHuman` (404/409) |
 | POST | `/ui/api/questions/:id/close` | `{}` | `QuestionService.closeByHuman` (404/409): close without answering ("Questions" → Close) |
 | POST | `/ui/api/router-mode` | `{ mode }` | set router mode (phase 5; was `/ui/api/jev`) |
-| POST | `/ui/api/plugins` | `{ action, … }` | edit plugins.yaml: one instance's options, select a plugin, rescan (phase 5 slice 7; "Settled in slice 7") |
+| POST | `/ui/api/plugins` | `{ action, … }` | edit plugins.yaml: one instance's options, select a plugin, add or remove a list role's instance, rescan (phase 5 slice 7, issue #4; "Settled in slice 7") |
 | POST | `/ui/api/rules-file` | `{ text, version }` | replace the rules file whole (issue #18, "Question gates"): 400 over 64 KiB, 409 stale `version` |
 | POST | `/ui/api/webhooks` | `{ action, name, … }` | edit webhooks.yaml: add, edit (url, events, active), rotate-secret, remove one entry; answers `GET /api/webhooks` plus a new `secret` once (issue #18, "Webhook subscriptions in the UI") |
 | POST | `/ui/api/machines` | `{ action, … }` | add, edit or remove one attached machine in plugins.yaml, applied without a restart (issue #18; "Machines from the UI") |
@@ -2134,13 +2134,25 @@ applies live since issue #18, "Machines from the UI").
   (`answerer: null`); the assessor is never empty (400).
 - **Rescan** re-reads the plugin dir and re-runs every detection. A new custom plugin appears; a
   changed module of one already loaded keeps its first code until restart (Node caches imports).
-- **Not built:** enabling/disabling an executor instance, and adding or removing one. A job names
-  its executor and an absent name fails at intake, so "disable" needs its own decision (hold, or a
-  new `enabled` field); executors are a restart role either way. Edit the `executors` list in
-  plugins.yaml meanwhile.
+- **Add and remove** (issue #4): `{ action: 'add', role, plugin, name, version }` and
+  `{ action: 'remove', role, name, version }`, for the **list roles** only (`executor`,
+  `job-source`, `usage-source`, `notifier`; 400 for any other). Add appends `{ name, plugin }` (the
+  plugin's defaults; written in the style of the entry before it) and is refused like select: 409
+  for a name the role already has, a plugin of another role or not `available` here; 404 for an
+  unknown plugin. Remove deletes that one entry, every other line byte for byte; 404 when not
+  configured. A role with no section is written whole from the built-in instances, with the change.
+  The last job source, usage source or notifier may go (`[]`: none — never the built-in ones);
+  the last executor may not (400, the file schema's 1..n). An executor still named by a job source's
+  `executor` (its default included), a routing rule or an attached machine's `executors` is refused
+  (409, naming each) — change those first; a job that names a removed executor is held, as with any
+  unregistered one ("Settled in slice 3"). All four are restart roles: the change shows `changed —
+  restart pending`. **Disable is remove**: no `enabled` field; plugins.yaml is the record, and git
+  or a backup keeps the old entry. An edit first reloads plugins.yaml when the watch has not yet,
+  so it acts on the file the `version` names.
 - **UI:** the Plugins view (`ui/src/views/plugins.tsx`; model `ui/src/model/plugins.ts`, tested
   from `test/ui/plugins.test.ts`): plugins.yaml path, source, errors and Rescan; per role a plugin
-  selector (one-instance roles) and one form per instance, generated from the options' JSON
+  selector (one-instance roles) or an Add form (list roles: plugin, name — empty: the plugin id),
+  and one form per instance (a list role's with Remove, confirmed), generated from the options' JSON
   Schema (string, number, boolean, enum, string list, else JSON); restart roles show `changed —
   restart pending`. Unsaved edits survive redraws; the view refreshes every 15 s unless a form
   holds unsaved edits. (Built first as `src/ui/plugins.js`; ported when the UI rework landed.)
