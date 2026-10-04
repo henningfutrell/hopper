@@ -1,5 +1,6 @@
 // The operator CLI (src/cli.ts, design.md "Operator CLI"): config documents read and replaced in the
 // daemon's own database, against their version — where command-bearing options are set.
+import { createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -100,5 +101,20 @@ describe('job-hopper config', () => {
     });
     expect(raced).toMatchObject({ code: 2, err: expect.stringMatching(/rules.md changed since version/) });
     expect(documentIn(url, 'rules.md')).toBe('from the UI');
+  });
+});
+
+describe('job-hopper login-code', () => {
+  it('mints a one-time code into the database and prints it; --link prints the device link', () => {
+    const url = db();
+    const a = cli(url, ['login-code']);
+    expect(a).toMatchObject({ code: 0, out: expect.stringMatching(/^[0-9a-f]{64}\n$/) });
+    const b = cli(url, ['login-code', '--link', 'https://hopper.example.com/']);
+    expect(b.out).toMatch(/^https:\/\/hopper\.example\.com\/#login=[0-9a-f]{64}\n$/);
+    const s = openStore({ url, clock: { now: () => new Date() } });
+    const hash = (c: string) => createHash('sha256').update(c).digest('hex');
+    expect(s.loginCodes.take(hash(a.out.trim()), new Date().toISOString())).toBe(true);
+    expect(s.loginCodes.take(hash(a.out.trim()), new Date().toISOString())).toBe(false);
+    s.close();
   });
 });

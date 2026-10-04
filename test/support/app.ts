@@ -21,6 +21,7 @@ import { assertAllConform, trackConformance } from './conformance.ts';
 import { rawRequest } from './http.ts';
 import { createFakeUsageSource } from '../../src/usage/index.ts';
 import { databaseUrlFor } from './database.ts';
+import { mintLoginCode } from '../../src/http/ui/login-code.ts';
 import { readDocument, writeDocument } from './files.ts';
 import { fakeQuestionRoles } from './fake-questions.ts';
 import { createFakeRouter } from './fake-router.ts';
@@ -58,7 +59,7 @@ export interface TestApp {
   waitForQuestion(jobId: string, ok: (q: Question) => boolean, timeoutMs?: number): Promise<Question>;
   /** Set the fake usage reading (through the engine; there is no HTTP route). */
   setUsage(used: number, limit?: number): void;
-  /** Log in like open-ui.sh does: read the code file, POST /ui/login. Returns the session token. */
+  /** Log in like open-ui.sh does: mint a code (`job-hopper login-code`), POST /ui/login. Returns the session token. */
   login(): Promise<string>;
   /** POST a UI mutation with a valid Origin, JSON content type and (if given) the session header. */
   ui<T = unknown>(path: string, body?: unknown, o?: UiOptions): Promise<ApiResponse<T>>;
@@ -159,7 +160,7 @@ export async function startTestApp(o: {
     }, { timeoutMs, what: `a matching question on job ${jobId}` }),
     setUsage(used, limit = 100) { app.engine.setFakeUsage({ used, limit, unit: '%' }); },
     async login() {
-      const code = readFileSync(join(dataDir, 'ui-login-code'), 'utf8').trim();
+      const code = mintLoginCode(app.store, { now: () => new Date() });
       const res = await rawRequest(app.url, {
         method: 'POST', path: '/ui/login', body: `code=${code}`,
         headers: { 'content-type': 'application/x-www-form-urlencoded', origin: 'null' },
