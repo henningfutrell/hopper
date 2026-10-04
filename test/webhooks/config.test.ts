@@ -18,7 +18,7 @@ const doc = (...hooks: string[]) => `version: 1\nwebhooks:\n${hooks.join('')}`;
 
 describe('loadWebhooksFile', () => {
   it('missing file → no webhooks and a warning', () => {
-    expect(loadWebhooksFile(join(dir, 'nope.yaml'))).toEqual({ webhooks: [], warnings: ['no webhooks file'] });
+    expect(loadWebhooksFile(join(dir, 'nope.yaml'))).toEqual({ webhooks: [], warnings: ['no webhooks file'], secretSources: {} });
   });
 
   it('parses a valid file; active defaults to true', () => {
@@ -30,6 +30,7 @@ describe('loadWebhooksFile', () => {
         { name: 'b', url: 'http://127.0.0.1:4795/b', events: ['job.finished'], secret: 's-b', active: false },
       ],
       warnings: [],
+      secretSources: { a: 'inline', b: 'inline' },
     });
   });
 

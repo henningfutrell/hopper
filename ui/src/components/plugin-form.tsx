@@ -1,5 +1,5 @@
 // One plugin instance's options form and a one-instance role's plugin selector (design.md "UI and
-// mutation"), shared by the Plugins view and the Question gates panel. Each form keeps its own
+// mutation"), shared by the Plugins view, the Routing view and the Question gates panel. Each form keeps its own
 // unsaved edits; command-bearing options are shown, never edited (plugins.yaml only). One Save sends
 // one instance's whole options object through POST /ui/api/plugins against GET /api/plugins'
 // version. Reads the report and the session from the store.
@@ -14,7 +14,7 @@ import { collectOptions, fieldKind, instanceState, ROLE_TITLES, shown, type Draf
 import type { InstanceSpec, PluginsEdit, PluginsReport, Role, SelectableRole } from '@/model/wire';
 import { refreshHealth, refreshPlugins, setPlugins, useHopper } from '@/store';
 
-const FIELD = 'h-8 w-full rounded-lg border border-input bg-transparent px-2.5 font-mono text-xs disabled:opacity-50 dark:bg-input/30';
+export const FIELD = 'h-8 w-full rounded-lg border border-input bg-transparent px-2.5 font-mono text-xs disabled:opacity-50 dark:bg-input/30';
 
 /** Instances whose forms hold unsaved edits: a view does not refresh the report under them. */
 const unsaved = new Set<string>();

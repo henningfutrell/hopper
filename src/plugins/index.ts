@@ -7,11 +7,12 @@
 // UI edits (edit.ts, attached-edit.ts) write plugins.yaml and apply like a file edit.
 import { statSync } from 'node:fs';
 import { dirname } from 'node:path';
-import type { Answerer, Assessor, Clock, MachineSource, Notifier, NotifierEvents, UsageSource } from '../domain/ports.ts';
+import type { MachineSource, Notifier, UsageSource } from '../domain/ports.ts';
 import {
-  ROLES, type AttachedMachine, type ConfiguredInstance, type MachineEdit, type MachineEditOutcome, type MachinesConfig, type Detection, type InstanceSpec, type PluginsEdit, type PluginsEditOutcome, type PluginsReport, type RestartRoleStatus, type RouterMode, type RouterSelection, type RouterStatus,
+  ROLES, type AttachedMachine, type ConfiguredInstance, type Detection, type InstanceSpec, type PluginsReport, type RestartRoleStatus, type RouterSelection, type RoutingRule,
 } from '../domain/types.ts';
-import { createMachinesEditor, type AttachedEditOptions } from './attached-slot.ts';
+import { createMachinesEditor } from './attached-slot.ts';
+import { createRoutingConfig } from './routing-config.ts';
 import { BUILTIN_PLUGINS } from './builtin.ts';
 import { createDetectionKit } from './detect.ts';
 import { loadCustomPlugins, type LoadedPlugin, type LoadResult } from './loader.ts';
@@ -22,79 +23,18 @@ import { buildExecutors, executorStatus, type BuiltExecutor } from './executor-s
 import { builtinInstances } from './migrate.ts';
 import { buildNotifiers, startNotifiers, stopNotifiers } from './notifier-slot.ts';
 import { NO_MACHINE, applyMachineSpec, buildJobSources, buildUsageSources, instanceStatus, type Built, type BuiltJobSource } from './source-slots.ts';
+import { buildQueueSorter, createLiveQueueSorter, type LiveQueueSorter } from './queue-sorter-slot.ts';
 import { answererStatus, assessorStatus, buildAnswerer, buildAssessor, type BuiltAnswerer, type BuiltAssessor } from './question-slots.ts';
 import { buildRouter, createLiveRouter, detectRouter, safeDetect, type BuiltRouter, type LiveRouter, type SlotDeps } from './router-slot.ts';
-import type { DetectionKit, JobSourceContext, PluginDefinition, PluginLogger, Router } from './sdk.ts';
+import type { JobSourceContext, PluginDefinition } from './sdk.ts';
+import type { PluginHost, PluginHostOptions } from './host-types.ts';
+
+export type { PluginHost, PluginHostOptions } from './host-types.ts';
 
 export type { BuiltExecutor } from './executor-slot.ts';
 export type { Built, BuiltJobSource } from './source-slots.ts';
 export type { PluginDefinition } from './sdk.ts';
 
-export interface PluginHostOptions {
-  pluginDir: string;
-  pluginsFile: string;
-  /** The answerer instance when plugins.yaml has no `answerer` section; null = none. Default: the built-in one. */
-  defaultAnswerer?: InstanceSpec | null;
-  /** The assessor instance when plugins.yaml has no `assessor` section. Default: the built-in one. */
-  defaultAssessor?: InstanceSpec;
-  /** The executor instances when plugins.yaml has no `executors` section. Default: the built-in ones. */
-  defaultExecutors?: InstanceSpec[];
-  /** What job sources are told. Default (tests): no key known, nothing re-runnable. */
-  jobSourceContext?: JobSourceContext;
-  /** What the machine source is told. Default: the runnable executors this host built. */
-  machineContext?: { executors(): string[] };
-  dataDir: string;
-  clock: Clock;
-  logger: PluginLogger;
-  routerMode(): RouterMode;
-  /** Default: the real kit. */
-  kit?: DetectionKit;
-  /** Default: BUILTIN_PLUGINS. */
-  builtins?: readonly PluginDefinition[];
-  /** How often plugins.yaml's mtime is checked; default 5000. */
-  intervalMs?: number;
-  /** What a machine edit needs (issue #18). */
-  attached?: AttachedEditOptions;
-}
-
-export interface PluginHost {
-  /** Load plugins, read plugins.yaml, build the router, detect every plugin, start the watch. */
-  start(): Promise<void>;
-  /** Stop the plugins.yaml watch and every usage source's background work. */
-  stop(): void;
-  /** Live: swaps between calls when plugins.yaml changes. Valid after start(). With no router in plugins.yaml, the first router that can run here. */
-  readonly router: Router;
-  routerStatus(): RouterStatus;
-  /** The answerer now, or undefined (none configured, or it cannot run). Valid after start(). */
-  answerer(): Answerer | undefined;
-  /** The assessor now (always-escalate standing in when the configured one cannot run). Valid after start(). */
-  assessor(): Assessor;
-  /** The executor instances built at start, runnable or not. Fixed until restart. Valid after start(). */
-  executors(): BuiltExecutor[];
-  /** The job source instances built at start, running, disabled or not. Fixed until restart. Valid after start(). */
-  jobSources(): BuiltJobSource[];
-  /** The machine source (no machine at all when it cannot run); follows an options change. Valid after start(). */
-  machines(): MachineSource;
-  /** The usage sources built at start that run. Valid after start(). */
-  usageSources(): UsageSource[];
-  /** The notifiers built at start that run (and, once started, did not throw). Valid after start(). */
-  notifiers(): Notifier[];
-  /** Start every notifier with the event feed; one whose start throws is dropped with its reason. Once. */
-  startNotifiers(events: NotifierEvents): void;
-  /** Stop every started notifier, awaiting in-flight work. Once; never throws. */
-  stopNotifiers(): Promise<void>;
-  /** plugins.yaml `attachedMachines:` now: the last good configuration (design.md "Attached machines", issue #18). */
-  attachedMachines(): AttachedMachine[];
-  /** GET /api/machines/config. Valid after start(). */
-  machinesConfig(): MachinesConfig;
-  /** A UI edit of `attachedMachines:`; resolves once plugins.yaml is reloaded. */
-  editMachines(e: MachineEdit): Promise<MachineEditOutcome>;
-  report(): PluginsReport;
-  /** Re-read plugins.yaml now, whatever the mtime; resolves when the router is in place. */
-  reload(): Promise<void>;
-  /** A UI edit of plugins.yaml, or a rescan; resolves once the change is in place. */
-  edit(e: PluginsEdit): Promise<PluginsEditOutcome>;
-}
 
 
 interface Entry { definition: PluginDefinition; builtin: boolean; path?: string; detection: Detection }
@@ -120,10 +60,13 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
   let entries: Entry[] = [];
   let live: LiveRouter | undefined;
   let selection: RouterSelection = 'detected';
+  let sorter: LiveQueueSorter | undefined;
   let answerer: BuiltAnswerer | undefined;
   let assessor: BuiltAssessor | undefined;
   const builtin = builtinInstances(dirname(o.pluginsFile));
   const defaults = {
+    routing: [] as RoutingRule[],
+    queueSorter: builtin.queueSorter,
     answerer: o.defaultAnswerer === undefined ? builtin.answerer : o.defaultAnswerer,
     assessor: o.defaultAssessor ?? builtin.assessor,
     executors: o.defaultExecutors ?? builtin.executors,
@@ -141,6 +84,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
   let notifiersStopped: Promise<void> | undefined;
   /** plugins.yaml `attachedMachines:`, re-read with every good reload. */
   let attached: AttachedMachine[] | undefined;
+  /** plugins.yaml `attachedMachines:` now (what a routing rule may name before the restart). */
   let timer: NodeJS.Timeout | undefined;
   let signature: string | undefined;
   let chain: Promise<void> = Promise.resolve();
@@ -181,6 +125,8 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
     const file = 'error' in r || 'missing' in r ? undefined : r;
     let spec = {
       router: file?.router,
+      routing: file?.routing ?? defaults.routing,
+      queueSorter: file?.queueSorter ?? defaults.queueSorter,
       answerer: file?.answerer !== undefined ? file.answerer : defaults.answerer,
       assessor: file?.assessor ?? defaults.assessor,
       executors: file?.executors ?? defaults.executors,
@@ -216,6 +162,12 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
         selection = next;
         o.logger.info(`job-hopper: router ${built.spec.name} (${built.plugin}${built.fallback ? ', fallback' : ''}; ${next})`);
       }
+    }
+    if (!sorter || !same(sorter.current().spec, spec.queueSorter)) {
+      const built = await buildQueueSorter(spec.queueSorter, deps);
+      if (sorter) sorter.swap(built);
+      else sorter = createLiveQueueSorter(built, o.logger);
+      o.logger.info(`job-hopper: queue sorter ${spec.queueSorter.name} (${built.plugin}${built.fallback ? ', fallback' : ''})`);
     }
     if (!answerer || !same(answerer.spec, spec.answerer)) {
       answerer = await buildAnswerer(spec.answerer, deps);
@@ -272,6 +224,21 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
     ...o.attached, pluginsFile: o.pluginsFile, dataDir: o.dataDir, logger: o.logger,
     configured: () => started(configured), attached: copyAttached, version: fileVersion, error: () => config.error, reload: enqueue,
   });
+  const machineIds = (): string[] => [
+    ...(machines.built ?? []).flatMap((b) => (b.instance ? [b.spec.name] : [])), ...(attached ?? []).map((m) => m.name),
+  ];
+  const routingConfig = createRoutingConfig({
+    path: o.pluginsFile,
+    rules: () => configured?.routing ?? [],
+    running: () => ({ machines: machineIds(), executors: (executors.built ?? []).map((b) => b.spec.name) }),
+    configured: () => ({
+      machines: configured ? [configured.machines.name, ...(attached ?? []).map((m) => m.name)] : [],
+      executors: (configured?.executors ?? []).map((e) => e.name),
+    }),
+    version: fileVersion,
+    error: () => config.error,
+    reload: enqueue,
+  });
 
   const host: PluginHost = {
     async start() {
@@ -287,6 +254,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
     },
     get router() { return need().router; },
     routerStatus: () => need().status(),
+    get queueSorter() { return started(sorter).sorter; },
     answerer: () => answerer?.answerer,
     assessor() {
       if (!assessor) throw new Error('plugin host not started');
@@ -311,6 +279,10 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
     machinesConfig: () => machinesEditor.config(),
     editMachines: (e) => machinesEditor.edit(e),
     reload: enqueue,
+    routingRules: () => [...(configured?.routing ?? [])],
+    machineIds,
+    routing: routingConfig.report,
+    editRouting: routingConfig.edit,
     async edit(e) {
       if (e.action === 'rescan') {
         await scan();
@@ -337,6 +309,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
           instance: current.spec, selection, detection: current.detection, active: current.plugin, fallback: status.fallback,
           ...(status.reason === undefined ? {} : { reason: status.reason }),
         },
+        queueSorter: started(sorter).status(),
         answerer: answerer ? answererStatus(answerer) : { instance: null, active: null, fallback: false },
         assessor: assessor ? assessorStatus(assessor) : { instance: defaults.assessor, active: null, fallback: false },
         executors: restartStatus(executors, executorStatus),

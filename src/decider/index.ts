@@ -1,5 +1,5 @@
 import type { Decision, DecisionInputs, Divergence, Lane } from '../domain/types.ts';
-import { assign, nativeHold, order } from './assign.ts';
+import { assign, effectivePriority, nativeHold, order } from './assign.ts';
 import type { Candidate, MachineState } from './assign.ts';
 import { divergence, routerVerdict } from './router-verdict.ts';
 import { planGoneLanes, planLanes } from './lanes.ts';
@@ -36,7 +36,7 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
     if (!native && job.pendingAnswer !== undefined) {
       // Admitted once already: the router neither holds nor reorders it.
       candidates.push({
-        job, effectivePriority: job.priority + policy.resumeBoost, note: `resume boost +${policy.resumeBoost}`,
+        job, effectivePriority: effectivePriority(job, inputs.routerMode, policy), note: `resume boost +${policy.resumeBoost}`,
       });
       continue;
     }
@@ -47,15 +47,12 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
     }
     const d = divergence(job, verdict);
     if (d) advice.push(d);
-    if (inputs.routerMode === 'active') {
-      if (verdict.admit) candidates.push({ job, effectivePriority: job.priority + verdict.boost });
-      else hold.push({ jobId: job.id, reason: verdict.reason });
-    } else {
-      candidates.push({ job, effectivePriority: job.priority });
-    }
+    if (inputs.routerMode === 'active' && !verdict.admit) hold.push({ jobId: job.id, reason: verdict.reason });
+    else candidates.push({ job, effectivePriority: effectivePriority(job, inputs.routerMode, policy) });
   }
 
-  const placed = assign(order(candidates), states);
+  if (inputs.queueOrder) reasons.push(`queue order by ${inputs.queueOrder.sorter}`);
+  const placed = assign(order(candidates, inputs.queueOrder?.jobIds), states);
   hold.push(...placed.hold);
 
   const taken = new Set(placed.start.map((s) => s.laneId));

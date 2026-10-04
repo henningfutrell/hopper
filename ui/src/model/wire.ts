@@ -2,13 +2,13 @@
 // type-only imports: the wire contract has one definition, and nothing of src/ is bundled.
 import type {
   AttachedMachine, Decision, DomainEvent, InstanceSpec, Job, JobStatus, Lane, MachineEdit, MachineLaneEffect, MachineSnapshot, MachinesConfig, PartAccount, PluginsEdit, PluginsReport,
-  Question, QuestionAttempt, QuestionGatesView, RiskRuleView, Role, RulesFileView, SelectableRole, SourceStatus, UsageReading, UsageReport, UsageSourceReport, WebhookDelivery,
+  Question, QuestionAttempt, QuestionGatesView, RiskRuleView, Role, RoutingReport, RulesFileView, SelectableRole, SourceStatus, UsageReading, UsageReport, UsageSourceReport, WebhookDelivery,
   WebhookSubscription, WebhooksEdit,
 } from '../../../src/domain/types.ts';
 
 export type {
   AttachedMachine, Decision, DomainEvent, InstanceSpec, Job, JobStatus, Lane, MachineEdit, MachineLaneEffect, MachinesConfig, PartAccount, PluginsEdit, PluginsReport,
-  Question, QuestionAttempt, QuestionGatesView, RiskRuleView, Role, RulesFileView, SelectableRole, SourceStatus, UsageReading, UsageReport, UsageSourceReport, WebhookDelivery,
+  Question, QuestionAttempt, QuestionGatesView, RiskRuleView, Role, RoutingReport, RulesFileView, SelectableRole, SourceStatus, UsageReading, UsageReport, UsageSourceReport, WebhookDelivery,
   WebhookSubscription, WebhooksEdit,
 };
 

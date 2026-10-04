@@ -125,6 +125,7 @@ function seamPlugins(router: Router, host: PluginsView): PluginsView {
   return {
     routerStatus: () => ({ name: router.name, plugin: router.name, fallback: false }), report: host.report, edit: host.edit,
     machinesConfig: host.machinesConfig, editMachines: host.editMachines,
+    routing: host.routing, editRouting: host.editRouting,
   };
 }
 
@@ -178,7 +179,8 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     onExpired: (q: Question) => engine.onExpired(q),
   });
   const engine: Engine = createEngine({
-    store, clock, executors, router, questions,
+    store, clock, executors, router, questions, queueSorter: host.queueSorter,
+    routing: { rules: () => host.routingRules(), machines: () => host.machineIds() },
     ...(seams.fakeUsage ? { fakeUsage: seams.fakeUsage } : {}),
     // Both follow plugins.yaml without a restart (issue #18).
     machines: combineMachineSources([

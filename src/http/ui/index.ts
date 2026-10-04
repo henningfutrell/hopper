@@ -66,6 +66,8 @@ const machinesEditBody = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('remove'), name: machineName, version: z.string().min(1) }),
 ]);
 const EDIT_STATUS = { invalid: 400, not_found: 404, conflict: 409 } as const;
+/** The rules themselves are validated by the plugin host (the plugins.yaml schema), so a refusal names the field. */
+const routingEditBody = z.strictObject({ rules: z.array(z.any()), version: z.string().min(1) });
 
 const refuse = (req: FastifyRequest, reply: FastifyReply, why: string) => {
   console.warn(`job-hopper: UI ${req.method} ${req.url} refused: ${why}`);
@@ -164,6 +166,14 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     const r = await o.plugins.editMachines(parseWith(machinesEditBody, req.body));
     if (!r.ok) throw new HttpError(EDIT_STATUS[r.code], r.error);
     return r.config;
+  });
+
+  // design.md "Routing rules (issue #18)": the whole ordered list into plugins.yaml `routing:`.
+  // Answers the new GET /api/routing report. A rule change applies to new jobs only.
+  app.post('/ui/api/routing', guarded, async (req) => {
+    const r = await o.plugins.editRouting(parseWith(routingEditBody, req.body));
+    if (!r.ok) throw new HttpError(EDIT_STATUS[r.code], r.error);
+    return r.report;
   });
 
   // The current login code as a link per LAN name, in the fragment (never sent to a server). It

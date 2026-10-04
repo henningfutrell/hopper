@@ -1,6 +1,7 @@
 // The job-hopper domain vocabulary. Every name here is defined in docs/glossary.md;
 // change the glossary in the same commit as any rename.
-import type { ExecutorUnavailable } from './plugins.ts';
+import type { ExecutorUnavailable, QueueOrder } from './plugins.ts';
+import type { RoutedBy } from './routing.ts';
 import type { UsageReading } from './usage.ts';
 
 export type JobId = string;
@@ -45,6 +46,8 @@ export interface JobSpec {
   machineId?: MachineId;
   /** Free metadata for the router (Jev state: cached_artifact, prior_error, same_error_count, ...). */
   meta?: Record<string, unknown>;
+  /** The routing rule that set this job's machine, executor or priority at intake (issue #18). */
+  routedBy?: RoutedBy;
 }
 
 export interface Job {
@@ -167,6 +170,8 @@ export interface DecisionInputs {
   running: Job[];
   /** Configured executors that cannot run; jobs naming one are held. Absent on Decisions stored before phase 5 slice 3. */
   unavailableExecutors: ExecutorUnavailable[];
+  /** The queue sorter's order of the waiting jobs (step 6). Absent on Decisions stored before issue #18: today's rule. */
+  queueOrder?: QueueOrder;
   policy: DeciderPolicy;
 }
 
@@ -417,14 +422,12 @@ export interface SourceStatus {
 
 export type { AttachedMachine, MachineEdit, MachineEditOutcome, MachinesConfig } from './machines.ts';
 
-// ---- Plugins: src/domain/plugins.ts (re-exported here, one vocabulary) ------------------
+// ---- Routing rules: src/domain/routing.ts; plugins: src/domain/plugins.ts (re-exported here, one vocabulary) ----
 
+export type * from './routing.ts';
 export { ROLES, SELECTABLE_ROLES } from './plugins.ts';
 export type { Account, MachineLaneEffect, PartAccount, UsageReading, UsageReport, UsageSourceReport, UsageSourceState } from './usage.ts';
-export type {
-  ConfiguredInstance, Detection, ExecutorUnavailable, InstanceSpec, InstanceStatus, PluginsEdit, PluginsEditOutcome, PluginsReport, QuestionRoleStatus, RestartRole,
-  RestartRoleStatus, Role, RouterSelection, RouterStatus, SelectableRole,
-} from './plugins.ts';
+export type * from './plugins.ts';
 
 // ---- Question gates: src/domain/question-gates.ts (re-exported here) -------------------
 

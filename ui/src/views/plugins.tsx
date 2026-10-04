@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Empty, Panel } from '@/components/panel';
 import { InstanceForm, PluginSelector, pluginEditsUnsaved, sendPluginsEdit } from '@/components/plugin-form';
 import { StatusBadge } from '@/components/status';
-import { instanceState, ROLE_TITLES } from '@/model/plugins';
+import { instanceState, isSelectable, ROLE_TITLES } from '@/model/plugins';
 import type { PluginsReport, Role } from '@/model/wire';
 import { refreshPlugins, useHopper } from '@/store';
 
@@ -21,7 +21,7 @@ function RoleBlock({ role, report }: { role: Role; report: PluginsReport }) {
     <Panel title={ROLE_TITLES[role]} icon={Puzzle} count={instances.length || ''} bodyClassName="space-y-3"
       action={<>{role === 'router' && <span className="text-xs text-muted-foreground">{report.router.selection}</span>}
         {rolePending && <StatusBadge status="changed — restart pending" tone="warn" />}</>}>
-      {(role === 'router' || role === 'answerer' || role === 'assessor') && <PluginSelector role={role} />}
+      {isSelectable(role) && <PluginSelector role={role} />}
       {instances.length
         ? instances.map((i) => <InstanceForm key={i.instance.name} role={role} inst={i.instance} />)
         : <Empty>{role === 'answerer' ? 'none — questions go straight to the owner' : 'none'}</Empty>}

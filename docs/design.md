@@ -36,22 +36,16 @@ Fastify for HTTP, `node:sqlite` for storage, zod for request validation.
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/domain/` | types (`usage.ts`: usage readings, usage report, accounts), ports | anything else in `src/` |
+| `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts; `machines.ts` attached machines and their edit; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`), ports | anything else in `src/` |
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock | everything but `domain/` |
 | `src/store/` | SQLite schema, migrations, repositories, event log | engine, http, decider |
 | `src/webhooks/` | signing, dispatcher, retry/backoff, `webhooks.yaml` load + watch (`config.ts`), the UI edit of it (`edit.ts`) | engine, http, decider |
-| `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `job-hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, `plugins.yaml` + watch, the role slots (`router-slot.ts` with the shared `instantiate`, `question-slots.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `answerer/claude-cli/`, `assessor/claude-cli-assessor/`, `assessor/always-escalate/` hold their prompts; `executor/herdr-claude/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-gh/` and `job-source/github-app/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `notifier/grokbot-routine/` is the Grok Bot routine webhook — env-file reader and notifier) | engine, http, store, decider, questions |
-| `src/webhooks/` | signing, dispatcher, retry/backoff | engine, http, decider |
-| `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `job-hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, `plugins.yaml` + watch, the role slots (`router-slot.ts` with the shared `instantiate`, `question-slots.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `answerer/claude-cli/`, `assessor/claude-cli-assessor/`, `assessor/always-escalate/` hold their prompts; `executor/herdr-claude/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-gh/` and `job-source/github-app/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser, runner, background refresh); `notifier/grokbot-routine/` is the Grok Bot routine webhook — env-file reader and notifier) | engine, http, store, decider, questions |
-| `src/executors/` | `Executor` adapters (`test`, `herdr/`) and the registry; reached through the executor plugins | engine, http, store, plugins |
-| `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (ssh probe through the herdr CLI client), `combineMachineSources` | engine, http, store, plugins |
-| `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin) | engine, http, store, plugins |
-| `src/webhooks/` | signing, dispatcher, retry/backoff | engine, http, decider |
-| `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `job-hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, `plugins.yaml` + watch, the role slots (`router-slot.ts` with the shared `instantiate`, `question-slots.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), a machine edit of `attachedMachines:` (`attached-edit.ts`, spliced into the file; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `answerer/claude-cli/`, `assessor/claude-cli-assessor/`, `assessor/always-escalate/` hold their prompts; `executor/herdr-claude/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-gh/` and `job-source/github-app/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `notifier/grokbot-routine/` is the Grok Bot routine webhook — env-file reader and notifier) | engine, http, store, decider, questions |
+| `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `job-hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, `plugins.yaml` + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `question-slots.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), a machine edit of `attachedMachines:` (`attached-edit.ts`, spliced into the file; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `answerer/claude-cli/`, `assessor/claude-cli-assessor/`, `assessor/always-escalate/` hold their prompts; `executor/herdr-claude/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-gh/` and `job-source/github-app/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser, runner, background refresh); `notifier/grokbot-routine/` is the Grok Bot routine webhook — env-file reader and notifier; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`) | engine, http, store, decider, questions |
 | `src/executors/` | `Executor` adapters (`test`, `herdr/`) and the registry; reached through the executor plugins | engine, http, store, plugins |
 | `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following plugins.yaml; ssh probe and herdr path resolution through the herdr CLI client's ssh argv), the detected ssh targets (`ssh-config.ts`), `combineMachineSources` | engine, http, store, plugins |
-| `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production | engine, http, store, plugins |
-| `src/engine/` | the loop: gather → decide → apply; job lifecycle; restart recovery | http |
+| `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin) | engine, http, store, plugins |
+| `src/routing/` | routing rules: the plugins.yaml `routing:` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
+| `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`); job lifecycle; routing at intake (`source-host.ts`); restart recovery | http |
 | `src/http/` | Fastify routes, SSE, static UI | executors, plugins (reads them through the `PluginsView` port) |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
 | `examples/plugins/` | one minimal runnable custom plugin per role, for authors (`docs/plugins.md`); imports only `job-hopper/plugin` types and `node:` builtins | everything in `src/` at runtime |
@@ -2405,7 +2399,7 @@ instance and state, and edits what is configuration:
   `POST /ui/api/plugins` `select` / `options`. Gate state comes from `GET /api/plugins`
   (`answerer`, `assessor`): active plugin, detection, fallback (`always-escalate` standing in for an
   assessor that cannot run; no answerer for one that cannot) and the reason. Nothing new on the
-  plugins side. The form is shared with the Plugins view: `ui/src/components/plugin-form.tsx`
+  plugins side. The form is shared with the Plugins and Routing views: `ui/src/components/plugin-form.tsx`
   (`InstanceForm { role, inst }`, `PluginSelector { role }`, `sendPluginsEdit`,
   `pluginEditsUnsaved`), extracted from `views/plugins.tsx`; each form holds its own unsaved edits.
 - **Rules file** — `GET /api/question-gates` → `{ rulesFile: { path, text, version, missing },
@@ -2598,3 +2592,76 @@ answer in a pane there (`resumeOn`) — the error names the jobs.
 Residual risk: a session holder can attach any machine already in `~/.ssh/config` and point jobs
 at it; that needs the owner's ssh config to name it and the machine to run herdr. Every local user can
 read the detected ssh targets (`GET /api/machines/config`, like every loopback read).
+
+### Router, queue sorter and routing rules (issue #18)
+
+Owner request: set the router, queue sorter and routing rules from the UI. Lane rules are out of scope.
+So no rule targets a lane.
+
+**Router.** The Routing view lists every router plugin with its detection. One that cannot run is
+shown with its reason or its setup command and is never offered (on server `jev-router` is
+unavailable while the Jev checkout is missing, so the reason is on screen). Selecting a router uses
+`POST /ui/api/plugins` `select`; shadow/active uses `POST /ui/api/router-mode`; the configured
+instance's options use the shared options form (`ui/src/components/plugin-form.tsx`, also used
+by the Plugins view and the question gates).
+
+**Queue sorter.** A new live role, `queue-sorter`, with exactly one instance, like the router.
+Port: `QueueSorter { name; sort(entries: { job, effectivePriority }[]) → JobId[] }`. It is
+synchronous and called once per Decision. Configured in plugins.yaml `queueSorter:`, selectable in
+the UI. Built-in plugins: `priority` (the default, and the built-in instance when the section is
+absent: effective priority desc, then `createdAt` asc, then id, which is the decider's own rule, so
+nothing changes without the section), `oldest-first`, and `newest-first`.
+- **The decider stays pure.** The engine calls the sorter while it gathers inputs
+  (`src/engine/queue-order.ts`) and passes `DecisionInputs.queueOrder { sorter, jobIds }`. Step 6
+  orders admissible jobs by that order. Jobs it leaves out come after it, by the old rule. With no
+  order (Decisions stored before this), the old rule applies. The order never admits or holds a
+  job. A reason line says `queue order by <instance>`.
+- **Effective priority stays the decider's notion.** `effectivePriority(job, mode, policy)` is
+  exported from `src/decider/assign.ts`. The engine computes it for the sorter's input, and
+  `/api/queue` `waiting` uses the same order.
+- **Fallback.** These cases fall back to `priority` for that call: a sorter that cannot run
+  (unknown plugin, invalid options, not available, create threw), a sort that throws, or a result
+  that is not distinct ids of the given jobs. The fallback is logged once per reason. `/api/plugins`
+  `queueSorter` gives `{ instance, detection, active, fallback, reason? }`. A sort fallback clears
+  on the next good sort.
+- Authors: `examples/plugins/queue-sorter/word-first/`, `docs/plugins.md`.
+
+**Routing rules.** plugins.yaml `routing:` holds an ordered list. When the section is absent there
+are no rules.
+
+```yaml
+routing:
+  - name: urgent sandbox
+    match: { repo: "owner/*", label: urgent }   # any of: source, repo, label, author, title
+    set: { priority: 90, machine: laptop }               # any of: machine, executor, priority
+```
+
+- `match` fields are case-insensitive, and every field given must match. `source` is the
+  job-source instance name. In `repo`, `*` matches any run of characters, the slash included.
+  `label` means the item has that label. `title` is a substring match. An empty `match` matches
+  every item. `set` needs at least one field: `machine` (a configured machine id, which becomes the
+  `spec.machineId` pin), `executor` (a configured executor instance), or `priority` (0..100). The
+  schema is strict, so a `lane` anywhere is refused.
+- **The first matching rule wins.** Rules are applied at intake (`SourceHost.ingest`,
+  `src/engine/source-host.ts`), when a source item becomes a job. The item's source, repo, labels,
+  author and title come from `SourceItem`. The job records `spec.routedBy { rule, set }` (additive
+  in `job.queued`, still v1), and the UI shows it on the job. A source re-sort does not change a
+  priority that a rule set.
+- **New jobs only.** A rule change does not touch jobs already created. The UI copy says so.
+- **Targets.** If a rule names a machine or executor that is not configured, a save returns 400.
+  If the target disappears later, intake skips the rule with a warning and tries the next one.
+  Intake never fails on a rule. `GET /api/routing` lists those rules under `skipped`.
+- **API.** `GET /api/routing` returns `{ path, version, rules, error?, targets: { machines,
+  executors }, skipped }`. `version` is plugins.yaml's sha-256, the same as `/api/plugins`.
+  `POST /ui/api/routing { rules, version }` takes the whole list and is session-guarded. It is
+  validated by the plugins.yaml schema and the target check. It writes only the `routing` node
+  (yaml Document API; comments and other sections stay byte for byte), atomically, with mode 600,
+  then reloads before it answers. 400: invalid rule or unknown target. 409: stale version, or
+  plugins.yaml invalid. Pure matching: `src/routing/`.
+
+**UI.** A "Routing" nav item with three panels: Router (current advice and fallback reason, mode
+buttons, picker, options form), Queue sorter (picker with each plugin's description, options form),
+and Routing rules (ordered list; each rule is a stacked form with match and set fields; add, move
+up/down, delete; one Save for the whole list). The machine select uses `/api/machines` plus the
+routing targets; the executor select uses the configured executors. Forms stack at 390 px width;
+there is no horizontal page scroll.

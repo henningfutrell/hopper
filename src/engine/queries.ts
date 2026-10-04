@@ -1,9 +1,9 @@
 // Read models for the HTTP edge.
-import { order } from '../decider/assign.ts';
-import { routerVerdict } from '../decider/router-verdict.ts';
+import { effectivePriority, order } from '../decider/assign.ts';
 import { laneCap, machineUsage } from '../decider/usage.ts';
 import { TERMINAL_STATUSES, type Job, type JobStatus, type Lane, type MachineSnapshot, type UsageReading, type UsageReport, type UsageSourceReport } from '../domain/types.ts';
 import type { EngineContext } from './context.ts';
+import { queueOrder } from './queue-order.ts';
 
 export interface QueueView {
   waiting: Job[];
@@ -41,12 +41,11 @@ export function createQueries(c: EngineContext): Queries {
         queued: 0, held: 0, claimed: 0, running: 0, waiting_answer: 0, finished: 0, failed: 0, cancelled: 0,
       };
       for (const j of all) counts[j.status] += 1;
-      const active = c.routerMode() === 'active';
-      // The decider's own order: effective priority (router boost only in active mode), then age.
-      const waiting = order(all.filter((j) => j.status === 'queued' || j.status === 'held').map((job) => {
-        const v = routerVerdict(job, c.policy.routerCheapBoost);
-        return { job, effectivePriority: job.priority + (active && v.admit ? v.boost : 0) };
-      })).map((x) => x.job);
+      // The decider's own order: the queue sorter's, then effective priority, then age.
+      const mode = c.routerMode();
+      const queued = all.filter((j) => j.status === 'queued' || j.status === 'held');
+      const ids = queueOrder(c, queued, mode).jobIds;
+      const waiting = order(queued.map((job) => ({ job, effectivePriority: effectivePriority(job, mode, c.policy) })), ids).map((x) => x.job);
       const running = all.filter((j) => j.status === 'claimed' || j.status === 'running').reverse();
       const waitingAnswer = all.filter((j) => j.status === 'waiting_answer').reverse();
       const end = (j: Job) => j.finishedAt ?? j.updatedAt;

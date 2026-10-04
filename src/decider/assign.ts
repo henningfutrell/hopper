@@ -1,4 +1,5 @@
-import type { ExecutorUnavailable, Job, Lane, MachineSnapshot, StartPlan, HoldPlan } from '../domain/types.ts';
+import type { DeciderPolicy, ExecutorUnavailable, Job, JobId, Lane, MachineSnapshot, RouterMode, StartPlan, HoldPlan } from '../domain/types.ts';
+import { routerVerdict } from './router-verdict.ts';
 import type { CapBand } from './usage.ts';
 
 export interface MachineState {
@@ -45,10 +46,34 @@ export function nativeHold(job: Job, machines: MachineSnapshot[], unavailable: E
   return undefined;
 }
 
-/** Step 6: priority desc, createdAt asc, id. */
-export function order(candidates: Candidate[]): Candidate[] {
+/**
+ * A waiting job's effective priority: a resuming job's priority plus the resume boost (either
+ * mode); in active mode, plus the router's boost; in shadow mode, its priority. The engine reads it
+ * for the queue sorter's input, so the sorter and the decider agree on one notion.
+ */
+export function effectivePriority(job: Job, mode: RouterMode, policy: DeciderPolicy): number {
+  if (job.pendingAnswer !== undefined) return job.priority + policy.resumeBoost;
+  return mode === 'active' ? job.priority + routerVerdict(job, policy.routerCheapBoost).boost : job.priority;
+}
+
+/**
+ * Step 6: by the queue order when there is one — the jobs it names first, in its order; the rest
+ * after them — and otherwise (and among the rest) priority desc, createdAt asc, id.
+ */
+export function order(candidates: Candidate[], queueOrder?: readonly JobId[]): Candidate[] {
+  const rank = new Map<JobId, number>();
+  queueOrder?.forEach((id, i) => { if (!rank.has(id)) rank.set(id, i); });
+  const byRank = (a: Candidate, b: Candidate): number => {
+    const ra = rank.get(a.job.id);
+    const rb = rank.get(b.job.id);
+    if (ra === undefined && rb === undefined) return 0;
+    if (ra === undefined) return 1;
+    if (rb === undefined) return -1;
+    return ra - rb;
+  };
   return [...candidates].sort((a, b) =>
-    b.effectivePriority - a.effectivePriority
+    byRank(a, b)
+    || b.effectivePriority - a.effectivePriority
     || a.job.createdAt.localeCompare(b.job.createdAt)
     || a.job.id.localeCompare(b.job.id));
 }
