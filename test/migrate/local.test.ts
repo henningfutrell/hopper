@@ -72,6 +72,24 @@ notifiers:
 `);
   writeFileSync(join(config, 'webhooks.yaml'), `version: 1\nwebhooks:\n  - name: hook\n    url: http://127.0.0.1:9/h\n    events: ["*"]\n    secretFile: ${join(config, 'hook.secret')}\n`);
   writeFileSync(join(config, 'rules.md'), '- be brief\n');
+  writeFileSync(join(config, 'oidc.secret'), 'from-file\n');
+  writeFileSync(join(config, 'idp.pem'), '-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n');
+  writeFileSync(join(config, 'auth.yaml'), `version: 1
+providers:
+  - name: corp-sso
+    type: oidc
+    issuer: https://idp.example.com
+    clientId: hopper
+    clientSecretFile: ${join(config, 'oidc.secret')}
+  - name: gh
+    type: github
+    clientId: gh-id
+    clientSecret: inline-secret
+  - name: saml
+    type: saml
+    entryPoint: https://idp.example.com/sso
+    idpCertFile: ${join(config, 'idp.pem')}
+`);
   return { sqlite, config, job };
 }
 
@@ -105,12 +123,17 @@ describe('migrate-local', () => {
     const local = localInstall();
     const target = testDatabaseUrl(temp());
     const r = migrateLocal({ sqlite: local.sqlite, configDir: local.config, target, log: quiet });
-    expect(r.documents.sort()).toEqual(['plugins.yaml', 'rules.md', 'webhooks.yaml']);
+    expect(r.documents.sort()).toEqual(['auth.yaml', 'plugins.yaml', 'rules.md', 'webhooks.yaml']);
     const s = openStore({ url: target, clock });
     const plugins = s.documents.read('plugins.yaml')!;
     const webhooks = s.documents.read('webhooks.yaml')!;
     expect(s.documents.read('rules.md')).toBe('- be brief\n');
+    const auth = parse(s.documents.read('auth.yaml')!);
     s.close();
+    expect(auth.providers[0]).toEqual({ name: 'corp-sso', type: 'oidc', issuer: 'https://idp.example.com', clientId: 'hopper', clientSecretEnv: 'AUTH_CLIENT_SECRET_CORP_SSO' });
+    expect(auth.providers[1].clientSecretEnv).toBe('AUTH_CLIENT_SECRET_GH');
+    expect(auth.providers[2].idpCert).toContain('BEGIN CERTIFICATE');
+    expect(r.secrets).toMatchObject({ AUTH_CLIENT_SECRET_CORP_SSO: 'from-file', AUTH_CLIENT_SECRET_GH: 'inline-secret' });
     expect(plugins).not.toMatch(/appFile|envFile|typesafeKeyFile/);
     expect(plugins).toContain('# the Jev checkout');
     const p = parse(plugins);
