@@ -5,7 +5,7 @@ import type {
   Clock, JobSource, SourceHost, SourceItem, SourceReport, SourceSignal, Store,
 } from '../../src/domain/ports.ts';
 import type { DomainEvent, EventType, Job, Question } from '../../src/domain/types.ts';
-import { TERMINAL_STATUSES } from '../../src/domain/types.ts';
+import { TERMINAL_STATUSES, isRerunnable } from '../../src/domain/types.ts';
 
 export function item(key: string, over: Partial<SourceItem> = {}): SourceItem {
   return {
@@ -52,7 +52,7 @@ export function createWorld(): World {
     jobs: {
       get: (id: string) => jobs.get(id),
       list: () => [...jobs.values()],
-      getBySourceKey: (key: string) => [...jobs.values()].find((j) => j.source?.key === key),
+      getBySourceKey: (key: string) => [...jobs.values()].filter((j) => j.source?.key === key).at(-1),
     },
     questions: {
       get: (id: string) => questions.get(id),
@@ -72,7 +72,8 @@ export function createWorld(): World {
     store,
     ingest(it, source) {
       calls.ingest.push(it);
-      if (store.jobs.getBySourceKey(it.key)) return null;
+      const known = store.jobs.getBySourceKey(it.key);
+      if (known && !isRerunnable(known)) return null;
       const id = `job-${jobs.size + 1}`;
       const job = {
         id, spec: { executor: it.executor, payload: {} }, priority: it.priority, approved: false, attempts: 0,

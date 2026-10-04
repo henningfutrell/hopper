@@ -73,6 +73,23 @@ describe('GitHub source discover', () => {
     expect(source.describe().skippedClaimedWithoutJob).toEqual([`https://github.com/${REPO}/issues/2`]);
   });
 
+  it('a claimed issue whose job may be re-run is returned, with its comments loaded for the new job', async () => {
+    const all = (keys: string[]) => new Set(keys);
+    const { gh, source } = setup({}, { knownKeys: all, rerunnable: all });
+    const issue = gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:claimed'] });
+    gh.addComment(REPO, issue.number, 'owner', 'try again');
+    const [item] = await source.discover();
+    expect(item!.prompt).toContain('try again');
+    expect(source.describe().skippedClaimedWithoutJob ?? []).toEqual([]);
+  });
+
+  it('a claimed issue with a live job does not have its comments loaded', async () => {
+    const { gh, source } = setup({}, { knownKeys: (keys) => new Set(keys) });
+    gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:claimed'] });
+    await source.discover();
+    expect(gh.calls.some((c) => c.method === 'listComments')).toBe(false);
+  });
+
   it('without knownKeys every claimed issue is skipped (never re-run blind)', async () => {
     const { gh, source } = setup();
     gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:claimed'] });

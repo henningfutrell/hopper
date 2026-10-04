@@ -1,7 +1,6 @@
 import type { JobFilter, JobRepository } from '../domain/ports.ts';
 import type { Job } from '../domain/types.ts';
 import { applyPatch, parse, type StoreContext } from './context.ts';
-import { DuplicateSourceKeyError } from './errors.ts';
 
 export function createJobRepository(c: StoreContext): JobRepository {
   const get = (id: string): Job | undefined => {
@@ -13,18 +12,13 @@ export function createJobRepository(c: StoreContext): JobRepository {
       const at = c.clock.now().toISOString();
       const job: Job = { id: c.idGen(), spec, priority, status: 'queued', approved: false, createdAt: at, updatedAt: at, attempts: 0 };
       if (source) job.source = source;
-      try {
-        c.db.prepare('INSERT INTO jobs (id, status, created_at, source_key, body) VALUES (?, ?, ?, ?, ?)')
-          .run(job.id, job.status, at, source?.key ?? null, JSON.stringify(job));
-      } catch (e) {
-        if (source && String((e as Error).message).includes('jobs.source_key')) throw new DuplicateSourceKeyError(source.key);
-        throw e;
-      }
+      c.db.prepare('INSERT INTO jobs (id, status, created_at, source_key, body) VALUES (?, ?, ?, ?, ?)')
+        .run(job.id, job.status, at, source?.key ?? null, JSON.stringify(job));
       return job;
     },
     get,
     getBySourceKey(key) {
-      const r = c.db.prepare('SELECT body FROM jobs WHERE source_key = ?').get(key);
+      const r = c.db.prepare('SELECT body FROM jobs WHERE source_key = ? ORDER BY created_at DESC, seq DESC LIMIT 1').get(key);
       return r ? parse<Job>(r.body) : undefined;
     },
     list(filter?: JobFilter) {

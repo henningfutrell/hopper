@@ -24,6 +24,7 @@ export interface ComposeSourcesOptions {
   commentCmd: string;
   clock: Clock;
   knownKeys: (keys: string[]) => Set<string>;
+  rerunnable: (keys: string[]) => Set<string>;
   /** Doubles at the GitHubApi seam (tests). */
   github?: GitHubApi;
   githubApp?: GitHubApi;
@@ -87,7 +88,7 @@ export function composeSources(o: ComposeSourcesOptions): ComposedSources {
 
 function ghSource(o: ComposeSourcesOptions, gh: GitHubSourceConfig, appLive: () => boolean): JobSource {
   return createGitHubSource({
-    name: 'github', kind: 'github', mode: 'gh', config: gh, clock: o.clock, knownKeys: o.knownKeys,
+    name: 'github', kind: 'github', mode: 'gh', config: gh, clock: o.clock, knownKeys: o.knownKeys, rerunnable: o.rerunnable,
     api: o.github ?? createGhCliApi({ bin: o.ghBin }),
     paused: () => (gh.enabled === 'auto' && appLive() ? GH_PAUSED : undefined),
   });
@@ -97,7 +98,7 @@ function appSource(o: ComposeSourcesOptions, app: GitHubAppSourceConfig): JobSou
   const real = o.githubApp ? undefined : createGitHubAppApi({ appFile: app.appFile, clock: o.clock, ...(o.githubApiUrl ? { baseUrl: o.githubApiUrl } : {}) });
   const api: GitHubApi = o.githubApp ?? real!;
   return createGitHubSource({
-    name: 'github-app', kind: 'github-app', mode: 'app', config: app, clock: o.clock, knownKeys: o.knownKeys, api,
+    name: 'github-app', kind: 'github-app', mode: 'app', config: app, clock: o.clock, knownKeys: o.knownKeys, rerunnable: o.rerunnable, api,
     paused: () => appFileProblem(app.appFile),
     tokens: createJobTokenKeeper({ dir: join(o.dataDir, 'job-tokens'), api, clock: o.clock }),
     commentCmd: o.commentCmd,

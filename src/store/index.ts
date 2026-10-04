@@ -13,7 +13,6 @@ import { migrate } from './migrations.ts';
 import { createSettingsRepository } from './settings.ts';
 import { createWebhookRepository } from './webhooks.ts';
 
-export { DuplicateSourceKeyError } from './errors.ts';
 
 export function openStore(o: { path: string; clock: Clock; idGen?: IdGen }): Store {
   mkdirSync(dirname(o.path), { recursive: true });

@@ -322,7 +322,6 @@ export interface JobFilter {
 }
 
 export interface JobRepository {
-  /** With `source`, its key must be unique: a duplicate key throws DuplicateSourceKeyError. */
   create(spec: JobSpec, priority: number, source?: JobSourceRef): Job;
   get(id: JobId): Job | undefined;
   getBySourceKey(key: string): Job | undefined;

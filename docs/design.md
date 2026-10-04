@@ -725,7 +725,8 @@ files.
 `JobSource` port (`src/domain/ports.ts`). The **sync loop** (`createSourceSync`) runs per
 source every `pollSeconds`:
 
-1. `discover()` → for each item whose `key` has no job: create one via the host's
+1. `discover()` → for each item whose `key` has no job, or whose newest job is re-runnable
+   (see **Re-run** below): create one via the host's
    `ingest(item)` — spec `{ executor: item.executor, payload: { prompt, cwd, model?, env },
    priority, goal: title, submittedBy: "<source>:<author>", kind: "coding" }`; `item.invalid`
    or a payload the executor rejects → job created and failed in one tx (`job.queued` +
@@ -733,7 +734,7 @@ source every `pollSeconds`:
    item.priority, item.priorityReason)` (re-sort; applies only to queued/held),
    `source: JobSourceRef`, with `payload.prompt = item.prompt`, `payload.env = item.env` —
    then `report({kind:'claimed'})`, merge the returned patch into
-   `sourceState`. Duplicate key → skip (dedupe by store unique index).
+   `sourceState`. A key whose newest job is not re-runnable → skip (the host's `ingest` guard).
 2. `check(active)` for this source's non-terminal jobs → `cancel` signal → engine cancel
    (reason recorded); `answer` signal → `QuestionService.answerByHuman(questionId, answer)`
    (ignored if not open).
@@ -751,6 +752,16 @@ source every `pollSeconds`:
    report done-with-error (status `detail.permanentErrors`) and is never retried.
 4. Status → `SourceStatus` (state, last sync, last error, counts, detail) → `/api/sources`,
    SSE `source.updated`.
+
+**Re-run.** A source key may have many jobs; `jobs.source_key` is an index, not unique, and
+`getBySourceKey` returns the **newest** (`created_at`, then `seq`, descending). An item whose
+newest job is `failed` or `cancelled` **and** whose end was reported (`sourceState.sync.finalReported`,
+so the source's marker — `hopper:failed` on GitHub — was written at least once) gets a new job
+when the source offers it again. The GitHub source stops offering an issue while `hopper:failed`
+is present, so removing that label is the re-run gesture, and a leftover `hopper:claimed` does not
+block it (the old job makes the key known). Unreported, the item stays one attempt, so a failing
+label write cannot loop. `finished` is never re-run. Predicate: `isRerunnable` in
+`src/domain/types.ts`. The key spans sources: an old `github` job and a `github-app` re-run share it.
 
 A source error never stops the daemon or other sources; it is shown in status and retried.
 
@@ -946,6 +957,7 @@ reconcile since no file names them). `EVENT_SCHEMA_VERSIONS` lives in `src/domai
 keys rejected) so an undeclared field fails the conformance test; additive changes keep the
 version, removals/renames/retypes bump it. `job.requeued.reason` is a free string. Events
 stored before phase 3 read as v1 and are not re-validated (stated in `docs/events.md`).
+Migration 5 drops that unique index and recreates `jobs.source_key` as a plain index (re-run); jobs are untouched.
 A shared test helper (`test/support/conformance.ts`) subscribes to the event log and
 validates every event a test emits.
 
