@@ -317,8 +317,8 @@ export interface WebhookSubscription {
   url: string;
   /** Event types to deliver; ['*'] = all. */
   events: string[];
-  /** HMAC-SHA256 key. Returned once on create, never listed. */
-  secret: string;
+  /** The variable the runtime gives the HMAC-SHA256 key in (design.md "Secrets"): a name, never the secret. */
+  secretEnv: string;
   active: boolean;
   createdAt: string;
 }

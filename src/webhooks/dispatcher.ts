@@ -1,12 +1,13 @@
-import type { Clock, SecretBox, Store, WebhookDispatcher } from '../domain/ports.ts';
+import type { Clock, Store, WebhookDispatcher } from '../domain/ports.ts';
 import type { DomainEvent, WebhookDelivery, WebhookSubscription } from '../domain/types.ts';
+import { subscriptionSecret } from './config.ts';
 import { sign } from './signer.ts';
 
 export interface WebhookDispatcherOptions {
   store: Store;
   clock: Clock;
-  /** Unseals a subscription's stored secret to sign with (design.md "Secrets at rest"). */
-  box: SecretBox;
+  /** The runtime's secrets (src/secrets/runtime.ts): a subscription's secret, by the variable it names, read at each delivery. */
+  secret: (name: string) => string | undefined;
   baseMs: number;
   timeoutMs?: number;
   maxAttempts?: number;
@@ -55,7 +56,7 @@ export function createWebhookDispatcher(o: WebhookDispatcherOptions): WebhookDis
     let statusCode: number | undefined;
     let error: string | undefined;
     try {
-      const signature = sign(o.box.unseal(sub.secret), timestamp, body);
+      const signature = sign(subscriptionSecret(o.secret, sub.secretEnv), timestamp, body);
       const res = await fetch(sub.url, {
         method: 'POST',
         headers: {

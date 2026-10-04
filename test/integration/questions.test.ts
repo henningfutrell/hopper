@@ -260,7 +260,7 @@ describe('a question escalated to the human', () => {
   it('delivers question.escalated with target human to a webhook from webhooks.yaml', async () => {
     receiver = await startReceiver();
     const url = receiver.url;
-    const a = await start({}, { before: (db) => writeWebhooksFile(db, [{ name: 'r', url, events: ['question.escalated'], secret: 's' }]) });
+    const a = await start({}, { secrets: { WEBHOOK_SECRET_R: 's' }, before: (db) => writeWebhooksFile(db, [{ name: 'r', url, events: ['question.escalated'], secretEnv: 'WEBHOOK_SECRET_R' }]) });
     const job = await a.pull(ask('Is this risky?'), { title: 'tidy up' });
     const q = await a.waitForQuestion(job.id, (x) => x.tier === 'human');
     const body = await waitFor(() => receiver!.received.map((r) => JSON.parse(r.body) as DomainEvent).find((e) => e.data.target === 'human'));

@@ -1,5 +1,6 @@
-// The Webhooks view's model (issue #18): the events picker and the last delivery a subscription
-// card shows. Pure; tested from test/ui/webhooks.test.ts.
+// The Webhooks view's model (issue #18): the events picker, the variable a new subscription's secret
+// is in (issue #56), and the last delivery a subscription card shows. Pure; tested from
+// test/ui/webhooks.test.ts.
 import { EVENT_TYPES } from './event-types.ts';
 import type { WebhookDelivery } from './wire.ts';
 
@@ -19,4 +20,9 @@ export function lastDelivery(deliveries: readonly WebhookDelivery[], subscriptio
   let last: WebhookDelivery | undefined;
   for (const d of deliveries) if (d.subscriptionId === subscriptionId && (!last || d.updatedAt > last.updatedAt)) last = d;
   return last;
+}
+
+/** The WEBHOOK_SECRET_* variable suggested for a new subscription named `name`: the only kind a UI session may name. */
+export function secretEnvFor(name: string): string {
+  return `WEBHOOK_SECRET_${name.trim().toUpperCase().replace(/[^A-Z0-9]+/g, '_')}`;
 }

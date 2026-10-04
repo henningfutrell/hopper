@@ -84,7 +84,7 @@ describe('createWebhookConfigWatcher', () => {
   const make = (intervalMs = 5000) => {
     const d = docs();
     const f = fakeStore();
-    const w = createWebhookConfigWatcher({ documents: d, store: f.store, clock, intervalMs });
+    const w = createWebhookConfigWatcher({ documents: d, store: f.store, clock, intervalMs, secret: () => undefined });
     return { d, f, w, write: (text: string) => d.set('webhooks.yaml', text) };
   };
 

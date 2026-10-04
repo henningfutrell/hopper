@@ -51,12 +51,12 @@ const pluginsEditBody = z.discriminatedUnion('action', [
 ]);
 const rulesBody = z.strictObject({ text: z.string(), version: z.string().min(1) });
 // The content (url, events) is checked against webhooks.yaml's own schema in the editor, so the UI
-// shows the file's messages; here only the shape. No secret, no secretFile, no new name.
+// shows the file's messages; here only the shape. No secret (issue #56), no secretFile, no new name;
+// secretEnv only on add, and only a WEBHOOK_SECRET_* variable (checked in the editor).
 const webhookFields = { name: z.string().min(1), version: z.string().min(1) };
 const webhooksEditBody = z.discriminatedUnion('action', [
-  z.strictObject({ action: z.literal('add'), ...webhookFields, url: z.string(), events: z.array(z.string()), active: z.boolean().optional() }),
+  z.strictObject({ action: z.literal('add'), ...webhookFields, url: z.string(), events: z.array(z.string()), secretEnv: z.string(), active: z.boolean().optional() }),
   z.strictObject({ action: z.literal('edit'), ...webhookFields, url: z.string().optional(), events: z.array(z.string()).optional(), active: z.boolean().optional() }),
-  z.strictObject({ action: z.literal('rotate-secret'), ...webhookFields }),
   z.strictObject({ action: z.literal('remove'), ...webhookFields }),
 ]);
 const machineName = z.string().trim().min(1).max(64);
@@ -162,13 +162,12 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     return r.view;
   });
 
-  // Issue #18: one webhooks.yaml entry added, edited, its secret rotated, or removed. Answers the
-  // new GET /api/webhooks view, plus the new secret after add or rotate-secret — the only time a
-  // secret leaves the daemon.
+  // Issue #18: one webhooks.yaml entry added, edited or removed. Answers the new GET /api/webhooks
+  // view. No secret passes either way (issue #56): the runtime holds them.
   app.post('/ui/api/webhooks', admin, async (req) => {
     const r = o.webhooksEditor.edit(parseWith(webhooksEditBody, req.body));
     if (!r.ok) throw new HttpError(EDIT_STATUS[r.code], r.error);
-    return { ...webhooksView(o.store, o.webhookConfig), ...(r.secret === undefined ? {} : { secret: r.secret }) };
+    return webhooksView(o.store, o.webhookConfig);
   });
 
   // design.md "Machines from the UI" (issue #18): add, edit or remove one attached machine in

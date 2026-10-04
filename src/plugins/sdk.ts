@@ -27,6 +27,7 @@ export interface DetectionKit {
   readable(path: string): Promise<boolean>;
   /** Whether `python -c "import <module>"` succeeds. */
   pythonImports(python: string, module: string): Promise<boolean>;
+  /** A value the runtime gives, as PluginContext.env. */
   env(name: string): string | undefined;
 }
 
@@ -45,7 +46,11 @@ export interface PluginContext {
   scratchDir: string;
   /** The instance's name in plugins.yaml. A job source and a machine source are known by it. */
   instanceName: string;
-  /** An environment variable of the daemon: where every secret comes from (design.md "Secrets"). */
+  /**
+   * A value the runtime gives: the variable `name`, or the mounted file the variable `<name>_FILE`
+   * names, read at each call. Where every secret comes from (design.md "Secrets"); throws when both are
+   * set or the file cannot be read.
+   */
   env(name: string): string | undefined;
 }
 
