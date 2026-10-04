@@ -17,6 +17,9 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   Decision id is passed in.
 - **Test first.** Failing test committed before the code that passes it. Integration tests
   use the real SQLite file and the real HTTP server; fakes only at `ports.ts` seams.
+- **Tests are sealed off from the real machine.** `test/support/isolate.ts` (vitest setup) gives
+  every worker a throwaway HOME and refuses any non-loopback `fetch`. Never point a test at
+  `~/.config/job-hopper` or a real URL; a test daemon once sent real Grok Bot webhooks.
 - **Erasable TypeScript only** (`erasableSyntaxOnly`): no enums, no namespaces, no
   parameter properties. Relative imports carry `.ts`.
 - **Loopback only, and the hopper pulls.** Binding anything but `127.0.0.1` is a different
