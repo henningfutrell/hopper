@@ -5,7 +5,7 @@
 // change is reported as pending.
 import { statSync } from 'node:fs';
 import type { Answerer, Assessor, Clock } from '../domain/ports.ts';
-import { ROLES, type Detection, type InstanceSpec, type PluginsReport, type RouterMode, type RouterSelection, type RouterStatus } from '../domain/types.ts';
+import { ROLES, type AttachedMachine, type Detection, type InstanceSpec, type PluginsReport, type RouterMode, type RouterSelection, type RouterStatus } from '../domain/types.ts';
 import { BUILTIN_PLUGINS } from './builtin.ts';
 import { createDetectionKit } from './detect.ts';
 import { loadCustomPlugins, type LoadedPlugin, type LoadResult } from './loader.ts';
@@ -53,6 +53,8 @@ export interface PluginHost {
   assessor(): Assessor;
   /** The executor instances built at start, runnable or not. Fixed until restart. Valid after start(). */
   executors(): BuiltExecutor[];
+  /** plugins.yaml `attachedMachines:` as read at start (design.md "Attached machines"). */
+  attachedMachines(): AttachedMachine[];
   report(): PluginsReport;
   /** Re-read plugins.yaml now, whatever the mtime; resolves when the router is in place. */
   reload(): Promise<void>;
@@ -70,6 +72,8 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
   let answerer: BuiltAnswerer | undefined;
   let assessor: BuiltAssessor | undefined;
   let executors: BuiltExecutor[] | undefined;
+  /** Read once at start, like the executors: a change takes a restart. */
+  let attached: AttachedMachine[] | undefined;
   /** What plugins.yaml (or the env) names now, when it differs from the executors running. */
   let pendingExecutors: InstanceSpec[] | undefined;
   let timer: NodeJS.Timeout | undefined;
@@ -135,6 +139,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
       assessor = await buildAssessor(spec.assessor, deps);
       o.logger.info(`job-hopper: assessor ${spec.assessor.name} (${assessor.plugin}${assessor.fallback ? ', fallback' : ''})`);
     }
+    attached ??= (!error && file?.attachedMachines) || [];
     if (!executors) {
       executors = await buildExecutors(spec.executors, deps);
     } else {
@@ -183,6 +188,10 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
     executors() {
       if (!executors) throw new Error('plugin host not started');
       return [...executors];
+    },
+    attachedMachines() {
+      if (!attached) throw new Error('plugin host not started');
+      return attached.map((m) => ({ ...m, executors: [...m.executors] }));
     },
     reload: enqueue,
     report() {

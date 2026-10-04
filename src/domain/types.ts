@@ -150,6 +150,21 @@ export interface MachineSnapshot {
   ssh?: string;
 }
 
+/** An attached machine as plugins.yaml `attachedMachines:` names it (design.md "Attached machines"). */
+export interface AttachedMachine {
+  /** The machine id; never `local`. */
+  name: string;
+  label?: string;
+  /** The ssh destination: a `~/.ssh/config` alias or `user@host`. */
+  ssh: string;
+  lanes: number;
+  /** Executor instances that can run there. */
+  executors: string[];
+  /** Its herdr session (never `default`) and herdr binary, as the remote login shell finds it. */
+  session: string;
+  herdrBin: string;
+}
+
 /** One usage budget reading. `used`/`limit` share a unit; `unit` names it. */
 export interface UsageReading {
   source: string;
