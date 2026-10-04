@@ -44,7 +44,7 @@ const req = (over: Partial<AnswerRequest> = {}): AnswerRequest => ({
   question, jobPrompt: 'Build the invoicing service', jobGoal: 'invoicing', rules: 'RULE: prefer sqlite', previous: [], ...over,
 });
 const draft: AnswerDraft = { answer: 'use sqlite', confident: true, reason: 'the rules prefer it' };
-const ctx = () => ({ clock: fixedClock, logger: { info() {}, warn() {} }, dataDir: dir, scratchDir: join(dir, 'scratch') });
+const ctx = () => ({ clock: fixedClock, logger: { info() {}, warn() {} }, dataDir: dir, scratchDir: join(dir, 'scratch'), instanceName: 'opus' });
 const signal = () => new AbortController().signal;
 const rec = () => JSON.parse(readFileSync(out, 'utf8')) as { argv: string[]; stdin: string; env: Record<string, string>; cwd: string };
 

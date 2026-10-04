@@ -119,7 +119,7 @@ describe('ensurePluginsFile', () => {
 
   it('JOB_HOPPER_SOURCES_FILE names where sources.yaml was', () => {
     const { pluginsFile } = setup();
-    const other = setup({ sources: 'version: 1\ngithub: { enabled: true, label: elsewhere }\n');
+    const other = setup({ sources: 'version: 1\ngithub: { enabled: true, label: elsewhere }\n' });
     const r = ensurePluginsFile({ pluginsFile, answerTimeoutMs: 180000, env: { JOB_HOPPER_SOURCES_FILE: other.sourcesFile }, logger: quiet });
     expect(r).toEqual({ action: 'migrated', renamed: [`${other.sourcesFile}.migrated`] });
     expect(read(pluginsFile).jobSources[0].options).toMatchObject({ label: 'elsewhere' });
