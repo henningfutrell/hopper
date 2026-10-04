@@ -30,7 +30,7 @@ describe('onDomainEvent', () => {
     const { history, events } = useHopper.getState();
     expect(history.map((e) => e.seq)).toEqual([started.seq, finished.seq]);
     expect(events[0]!.seq).toBe(finished.seq);
-    expect(laneSpans(history, 0).map((s) => s.outcome)).toEqual(['finished']);
+    expect(laneSpans(history, 0, new Map()).map((s) => s.outcome)).toEqual(['finished']);
   });
 });
 

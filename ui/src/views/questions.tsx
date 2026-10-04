@@ -17,6 +17,7 @@ import { QuestionGates } from '@/views/question-gates';
 import { between, clock } from '@/model/format';
 import type { Question, QuestionAttempt, QuestionStatus } from '@/model/wire';
 import type { Tone } from '@/components/status';
+import { awaitsOwner } from '@/model/questions';
 import { act, markSeen, refreshQuestions, useHopper } from '@/store';
 import { useJobIndex } from '@/store/selectors';
 
@@ -150,7 +151,7 @@ function Handled() {
 export function Questions() {
   const questions = useHopper((s) => s.questions);
   const authed = useHopper((s) => s.authed);
-  const unseen = questions.filter((q) => q.tier === 'human' && !q.seenAt).map((q) => q.id).join(',');
+  const unseen = questions.filter(awaitsOwner).map((q) => q.id).join(',');
   useEffect(() => { if (authed && unseen) void markSeen(unseen.split(',')); }, [authed, unseen]);
   return (
     <div className="space-y-3">
