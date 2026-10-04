@@ -4,6 +4,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Job } from '../../src/domain/types.ts';
 import { createFakeGitHub, type FakeGitHub } from '../../src/sources/index.ts';
+import { GitHubApiError } from '../../src/sources/github/index.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { waitFor } from '../support/wait.ts';
 
@@ -221,5 +222,37 @@ describe('GitHub issue → job → issue', () => {
     const gh2 = (await second.api('GET', '/api/sources')).body.sources.find((s: { name: string }) => s.name === 'github');
     expect(gh2).toMatchObject({ state: 'ok', kind: 'github' });
     expect(gh2.detail.skippedClaimedWithoutJob).toBeUndefined();
+  });
+
+  // Issue #52: the boot after an install could not authenticate to GitHub, and its first check
+  // cancelled every active job as "issue gone".
+  it('a restart whose first check cannot authenticate cancels nothing: running and waiting jobs carry on', async () => {
+    const gh = createFakeGitHub();
+    const first = await boot(gh, { env: {} });
+    const running = gh.createIssue({ repo: REPO, body: body({ op: 'sleep', ms: 300 }), labels: ['hopper'] });
+    const asking = gh.createIssue({ repo: REPO, body: body({ op: 'ask', message: 'Is this risky?' }), labels: ['hopper'] });
+    await first.sync();
+    const [r, w] = [(await jobFor(first, running.url))!, (await jobFor(first, asking.url))!];
+    await first.waitForStatus(r.id, 'running');
+    const q = await first.waitForQuestion(w.id, (x) => x.tier === 'human');
+    const dbPath = first.dbPath;
+    await first.stop();
+
+    const before = gh.calls.filter((c) => c.method === 'getIssue').length;
+    const refused = new GitHubApiError("get issue: GitHub rejected the app's credentials (401: Bad credentials)", true, 401);
+    gh.failNext('getIssue', refused);
+    gh.failNext('getIssue', refused);
+    const second = await boot(gh, { dbPath });
+    await second.sync();
+    expect(gh.calls.filter((c) => c.method === 'getIssue').length - before).toBeGreaterThanOrEqual(2);
+    expect((await second.job(r.id)).status).not.toBe('cancelled');
+    expect((await second.job(w.id)).status).toBe('waiting_answer');
+
+    await second.sync();
+    expect((await second.job(w.id)).status).toBe('waiting_answer');
+    const token = await second.login();
+    expect((await second.ui(`/ui/api/questions/${q.id}/answer`, { answer: 'yes' }, { token })).status).toBe(200);
+    await second.waitForStatus(r.id, 'finished');
+    await second.waitForStatus(w.id, 'finished');
   });
 });

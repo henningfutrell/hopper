@@ -1126,8 +1126,13 @@ A failure never goes to the issue as text. It is one stderr line in the daemon l
 - `hopper:backburner` on the issue of a waiting (`queued`/`held`) job → `cancel` (`backburner`);
   a running job is not touched.
 - **Error classes:** `GitHubApi` errors carry `permanent` (404/410/403/422) vs transient
-  (network, 5xx, rate limit, timeout); `check` turns a permanent error on one job into the
-  `issue gone` cancel and never fails the whole sync for it.
+  (network, 5xx, rate limit, timeout). `check` cancels only on a 404 or 410 about the issue
+  itself (`issue gone`). Any other error — permanent or not, such as no app configured, refused
+  credentials (401), the app not installed on the repo, 403, a missing scope — is about the
+  source, not the issue: the job is skipped, the error shown in `checkErrors`, and the next sync
+  asks again. Never fails the whole sync for one job. Issue #52: the boot after an install could
+  not read the app key, and every active job — running, and waiting on a question — was cancelled
+  as `issue gone`. A restart or an update cancels no job.
 
 **Authors outside the allowlist are never acted on** — not as issues, not as answers.
 
