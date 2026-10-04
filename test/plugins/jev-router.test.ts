@@ -1,7 +1,8 @@
 // jev-router: Jev's own router, run through jev_shim.py against a stand-in Jev checkout
 // (fixtures/jev), a fake `claude` (Haiku) and a fake typesafe_sdk (TypeSafe). TypeSafe answers the
-// Jev gates named in `typesafeGates` once TYPESAFE_API_KEY is set; Haiku answers the rest, and every
-// gate while TypeSafe is off or failing.
+// Jev gates named in `typesafeGates` once its key is set; Haiku answers the rest, and every
+// gate while TypeSafe is off or failing. The key comes from the environment or from `typesafeKeyFile`,
+// read on every call, so writing the file switches TypeSafe on without a restart.
 import { chmodSync, cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -54,7 +55,7 @@ function makeJob(spec: Partial<JobSpec> = {}): Job {
   };
 }
 
-type Opts = { jevSrc: string; python: string; claudeBin: string; model: string; typesafeGates: string[]; timeoutMs: number };
+type Opts = { jevSrc: string; python: string; claudeBin: string; model: string; typesafeGates: string[]; typesafeKeyFile: string; timeoutMs: number };
 
 function options(raw: Record<string, unknown> = {}): Opts {
   const r = parseOptions(jevRouter, raw);
@@ -64,11 +65,11 @@ function options(raw: Record<string, unknown> = {}): Opts {
 
 function router(o: Partial<Opts> = {}) {
   const ctx = { clock: fixedClock, logger: { info() {}, warn() {} }, dataDir, scratchDir: dataDir, instanceName: 'jev', routerMode: () => 'shadow' as const };
-  return jevRouter.create(ctx, options({ jevSrc: JEV, claudeBin: CLAUDE, ...o }));
+  return jevRouter.create(ctx, options({ jevSrc: JEV, claudeBin: CLAUDE, typesafeKeyFile: join(dataDir, 'typesafe-api-key'), ...o }));
 }
 
 const claudeCall = () => JSON.parse(readFileSync(process.env.FAKE_CLAUDE_OUT!, 'utf8')) as { argv: string[]; stdin: string; env: Record<string, string>; cwd: string };
-const typesafeCall = () => JSON.parse(readFileSync(process.env.FAKE_TYPESAFE_OUT!, 'utf8')) as { questions: string[]; model: string };
+const typesafeCall = () => JSON.parse(readFileSync(process.env.FAKE_TYPESAFE_OUT!, 'utf8')) as { questions: string[]; model: string; key: string | null };
 
 function snapshot(root: string): string[] {
   const out: string[] = [];
@@ -85,19 +86,31 @@ function snapshot(root: string): string[] {
 }
 
 describe('jev-router options and detection', () => {
-  it('defaults: the Jev checkout under ~/workbench, python3, Haiku through claude, TypeSafe for the crisp gates, 60 s', () => {
+  it('defaults: the Jev checkout under ~/workbench, python3, Haiku through claude, TypeSafe for the crisp gates, its key file, 60 s', () => {
     expect(options()).toEqual({
       jevSrc: '~/workbench/jev-src/grok-bot-jev', python: 'python3', claudeBin: 'claude', model: 'haiku',
-      typesafeGates: ['intent', 'reuse_cache', 'stop_retry'], timeoutMs: 60000,
+      typesafeGates: ['intent', 'reuse_cache', 'stop_retry'], typesafeKeyFile: '~/.config/job-hopper/typesafe-api-key', timeoutMs: 60000,
     });
+  });
+
+  it('the key file is command-bearing: its contents go to TypeSafe', async () => {
+    const { commandBearingKeys } = await import('../../src/plugins/edit.ts');
+    expect(commandBearingKeys(jevRouter)).toContain('typesafeKeyFile');
   });
 
   it('available when python, the Jev router and claude are present; says TypeSafe is off without a key', async () => {
     const seen: string[] = [];
-    const kit = fakeKit({ exists: async (p) => { seen.push(p); return true; } });
-    const d = await jevRouter.detect(kit, options({ jevSrc: '/jev' }));
-    expect(d).toMatchObject({ status: 'available', detail: expect.stringContaining('TypeSafe off: TYPESAFE_API_KEY unset') });
+    const kit = fakeKit({ exists: async (p) => { seen.push(p); return true; }, readable: async () => false });
+    const d = await jevRouter.detect(kit, options({ jevSrc: '/jev', typesafeKeyFile: '/keys/ts' }));
+    expect(d).toMatchObject({ status: 'available', detail: expect.stringContaining('TypeSafe off until a key is set: TYPESAFE_API_KEY or /keys/ts') });
     expect(seen).toContain('/jev/src/router.py');
+  });
+
+  it('says TypeSafe is on with a key file and typesafe_sdk', async () => {
+    const read: string[] = [];
+    const kit = fakeKit({ readable: async (p) => { read.push(p); return true; }, pythonImports: async () => true });
+    expect(await jevRouter.detect(kit, options({ jevSrc: '/jev', typesafeKeyFile: '/keys/ts' }))).toMatchObject({ detail: expect.stringContaining('TypeSafe on (intent, reuse_cache, stop_retry)') });
+    expect(read).toContain('/keys/ts');
   });
 
   it('says TypeSafe is on with a key and typesafe_sdk', async () => {
@@ -164,7 +177,7 @@ describe('jev-router classifies through Jev', () => {
     typesafeOn();
     process.env.FAKE_CLAUDE_STRUCTURED = JSON.stringify({ choices: {}, nouls: { needs_subagent: 0.2 }, scores: { complexity: 2 } });
     const advice = await (await router()).advise(makeJob({ goal: 'fix the login form' }));
-    expect(typesafeCall()).toEqual({ questions: ['intent', 'reuse_cache', 'stop_retry'], model: 'jev-latest', state: { goal: 'fix the login form' } });
+    expect(typesafeCall()).toEqual({ questions: ['intent', 'reuse_cache', 'stop_retry'], model: 'jev-latest', state: { goal: 'fix the login form' }, key: 'ts-test' });
     expect(claudeCall().stdin).not.toContain('reuse_cache');
     expect(claudeCall().stdin).toContain('needs_subagent');
     expect(advice).toMatchObject({
@@ -174,6 +187,28 @@ describe('jev-router classifies through Jev', () => {
         gatesBy: { intent: 'typesafe', reuse_cache: 'typesafe', stop_retry: 'typesafe', needs_subagent: 'haiku', complexity: 'haiku' },
       },
     });
+  });
+
+  it('writing the key file switches TypeSafe on for the next call, no restart', async () => {
+    process.env.PYTHONPATH = FAKE_TYPESAFE;
+    const jev = await router();
+    const before = await jev.advise(makeJob({ goal: 'g' }));
+    expect(before.details).toMatchObject({ gatesBy: { intent: 'haiku', reuse_cache: 'haiku', stop_retry: 'haiku' } });
+    expect(before.details).not.toHaveProperty('typesafeError');
+    expect(existsSync(process.env.FAKE_TYPESAFE_OUT!)).toBe(false);
+
+    writeFileSync(join(dataDir, 'typesafe-api-key'), 'ts-from-file\n', { mode: 0o600 });
+    const after = await jev.advise(makeJob({ goal: 'g' }));
+    expect(after.details).toMatchObject({ gatesBy: { intent: 'typesafe', reuse_cache: 'typesafe', stop_retry: 'typesafe', needs_subagent: 'haiku' } });
+    expect(typesafeCall().key).toBe('ts-from-file');
+  });
+
+  it('an empty key file leaves TypeSafe off', async () => {
+    process.env.PYTHONPATH = FAKE_TYPESAFE;
+    writeFileSync(join(dataDir, 'typesafe-api-key'), ' \n');
+    const advice = await (await router()).advise(makeJob({ goal: 'g' }));
+    expect(advice.details).toMatchObject({ gatesBy: { intent: 'haiku' } });
+    expect(advice.details).not.toHaveProperty('typesafeError');
   });
 
   it('TypeSafe on for every gate: Haiku is not asked', async () => {
