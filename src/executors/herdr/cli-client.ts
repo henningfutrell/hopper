@@ -45,13 +45,14 @@ export interface SshTransport {
 const shellQuote = (arg: string): string => `'${arg.replaceAll("'", "'\\''")}'`;
 
 /** ssh's exit status for its own failures (connection, authentication). */
-const SSH_FAILED = 255;
+export const SSH_FAILED = 255;
 
-function sshArgv(t: SshTransport, argv: string[]): string[] {
+/** ssh's argv running one remote shell command: batch mode, a 10 s connect timeout, the shared connection. */
+export function sshArgv(t: SshTransport, command: string): string[] {
   const shared = t.controlDir
     ? ['-o', 'ControlMaster=auto', '-o', `ControlPath=${t.controlDir}/%C`, '-o', 'ControlPersist=60']
     : [];
-  return ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', ...shared, '--', t.target, argv.map(shellQuote).join(' ')];
+  return ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', ...shared, '--', t.target, command];
 }
 
 export function createHerdrCliClient(o: { bin: string; session: string; timeoutMs?: number; ssh?: SshTransport }): HerdrCliClient {
@@ -63,7 +64,7 @@ export function createHerdrCliClient(o: { bin: string; session: string; timeoutM
 
   const exec = (args: string[], timeoutMs = callTimeout): Promise<string> => new Promise((resolve, reject) => {
     const argv = [o.bin, '--session', o.session, ...args];
-    const [file, fileArgs] = ssh ? [ssh.bin ?? 'ssh', sshArgv(ssh, argv)] : [o.bin, argv.slice(1)];
+    const [file, fileArgs] = ssh ? [ssh.bin ?? 'ssh', sshArgv(ssh, argv.map(shellQuote).join(' '))] : [o.bin, argv.slice(1)];
     execFile(file, fileArgs, {
       env: scrubbedEnv(), timeout: timeoutMs, killSignal: 'SIGKILL', maxBuffer: 16 * 1024 * 1024, encoding: 'utf8',
     }, (err, stdout, stderr) => {

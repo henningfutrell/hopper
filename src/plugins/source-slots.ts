@@ -36,6 +36,24 @@ export function buildMachine(spec: InstanceSpec, deps: SlotDeps): Promise<Built<
   return buildOne('machine-source', spec, deps);
 }
 
+/**
+ * The machine source as plugins.yaml names it now (issue #18): the same instance with other options
+ * (its lane count) is rebuilt at once; another name or plugin waits for a restart (`pending`), since
+ * lanes are stored under the machine id.
+ */
+export async function applyMachineSpec(slot: { built?: Built<MachineSource>[]; pending?: InstanceSpec[] }, spec: InstanceSpec, deps: SlotDeps): Promise<void> {
+  const now = slot.built?.[0];
+  if (now && (now.spec.name !== spec.name || now.spec.plugin !== spec.plugin)) {
+    if (!slot.pending) deps.logger.info('job-hopper: machine source changed — restart pending');
+    slot.pending = [spec];
+    return;
+  }
+  slot.pending = undefined;
+  if (now && JSON.stringify(now.spec) === JSON.stringify(spec)) return;
+  slot.built = [await buildMachine(spec, deps)];
+  if (now) deps.logger.info(`job-hopper: machine source ${spec.name} options applied`);
+}
+
 /** No machine: every job is held (`no online machine runs executor …`). */
 export const NO_MACHINE: MachineSource = { list: async () => [] };
 
