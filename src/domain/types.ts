@@ -419,8 +419,8 @@ export interface SourceStatus {
 
 // ---- Plugins: src/domain/plugins.ts (re-exported here, one vocabulary) ------------------
 
-export { ROLES } from './plugins.ts';
+export { ROLES, SELECTABLE_ROLES } from './plugins.ts';
 export type {
-  Detection, ExecutorUnavailable, InstanceSpec, InstanceStatus, PluginsReport, QuestionRoleStatus, RestartRole, RestartRoleStatus, Role, RouterSelection,
-  RouterStatus,
+  ConfiguredInstance, Detection, ExecutorUnavailable, InstanceSpec, InstanceStatus, PluginsEdit, PluginsEditOutcome, PluginsReport, QuestionRoleStatus, RestartRole,
+  RestartRoleStatus, Role, RouterSelection, RouterStatus, SelectableRole,
 } from './plugins.ts';

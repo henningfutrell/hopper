@@ -1,10 +1,11 @@
 // job-hopper UI: watches the daemon over HTTP + SSE. No framework, no build.
 // All data reaches the DOM through el()/textContent, never innerHTML.
+import { hasDrafts, renderPlugins } from './plugins.js';
 
 const CAP = { events: 500, decisions: 100, deliveries: 100 };
 const state = {
   health: null, queue: { waiting: [], running: [], waitingAnswer: [], counts: {} }, machines: [],
-  decisions: [], questions: [], drafts: {}, sending: {}, qerrors: {}, events: [], deliveries: [], subscriptions: [], webhookConfig: null, sources: [], authed: false, conn: 'reconnecting', filter: '',
+  decisions: [], questions: [], drafts: {}, sending: {}, qerrors: {}, events: [], deliveries: [], subscriptions: [], webhookConfig: null, sources: [], plugins: null, authed: false, conn: 'reconnecting', filter: '',
 };
 const $ = (id) => document.getElementById(id);
 
@@ -383,7 +384,17 @@ function renderDeliveries() {
   count('deliveries', state.deliveries.length);
 }
 
-const renderAll = () => { renderBanner(); renderHeader(); renderMachines(); renderQueue(); renderRunning(); renderQuestions(); renderSources(); renderDecisions(); renderEvents(); renderDeliveries(); };
+function renderPluginsPanel() {
+  count('plugins', state.plugins?.instances.length ?? 0);
+  renderPlugins($('plugins').querySelector('.body'), {
+    report: state.plugins, authed: state.authed, el, mono, pill,
+    send: (body) => mutate('/ui/api/plugins', body),
+    onReport: (r) => { state.plugins = r; renderPluginsPanel(); refreshHealth().catch(() => {}); },
+    reload: refreshPlugins,
+  });
+}
+async function refreshPlugins() { state.plugins = await api('/api/plugins'); renderPluginsPanel(); }
+const renderAll = () => { renderBanner(); renderHeader(); renderMachines(); renderQueue(); renderRunning(); renderQuestions(); renderSources(); renderDecisions(); renderEvents(); renderDeliveries(); renderPluginsPanel(); };
 
 // ---- data --------------------------------------------------------------------------
 
@@ -453,6 +464,9 @@ async function init() {
   state.events = events.events.slice().sort((a, b) => b.seq - a.seq);
   state.subscriptions = subs.subscriptions; state.webhookConfig = subs.config ?? null; state.sources = sources.sources; state.deliveries = deliveries.deliveries;
   renderAll();
+  refreshPlugins().catch(() => {});
+  // A hand edit of plugins.yaml shows within 15 s, unless a form holds unsaved edits.
+  setInterval(() => { if (!hasDrafts()) refreshPlugins().catch(() => {}); }, 15000);
   connect(state.events[0]?.seq ?? 0);
 }
 init().catch((e) => { state.conn = 'reconnecting'; renderHeader(); $('machines').querySelector('.body').replaceChildren(el('div', { class: 'empty' }, 'load failed: ' + e.message)); });

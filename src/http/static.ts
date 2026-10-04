@@ -1,10 +1,11 @@
-// The UI: three static files, read once at startup.
+// The UI: four static files, read once at startup.
 import { readFileSync } from 'node:fs';
 import type { FastifyInstance } from 'fastify';
 
 const FILES = [
   { route: '/', file: 'index.html', type: 'text/html; charset=utf-8' },
   { route: '/ui/app.js', file: 'app.js', type: 'text/javascript; charset=utf-8' },
+  { route: '/ui/plugins.js', file: 'plugins.js', type: 'text/javascript; charset=utf-8' },
   { route: '/ui/style.css', file: 'style.css', type: 'text/css; charset=utf-8' },
 ];
 

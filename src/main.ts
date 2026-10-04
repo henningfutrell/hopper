@@ -108,8 +108,8 @@ function splitSources(built: BuiltJobSource[]): { running: RunningSource[]; fixe
 }
 
 /** A seam router (tests) answers as itself; the report stays the host's. */
-function seamPlugins(router: Router, report: PluginsView['report']): PluginsView {
-  return { routerStatus: () => ({ name: router.name, plugin: router.name, fallback: false }), report };
+function seamPlugins(router: Router, host: PluginsView): PluginsView {
+  return { routerStatus: () => ({ name: router.name, plugin: router.name, fallback: false }), report: host.report, edit: host.edit };
 }
 
 export async function startApp(config: Config, seams: AppSeams = {}): Promise<App> {
@@ -141,7 +141,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     unavailableExecutors(built),
   );
   executorNames = () => executors.names();
-  const plugins: PluginsView = seams.router ? seamPlugins(seams.router, host.report) : host;
+  const plugins: PluginsView = seams.router ? seamPlugins(seams.router, host) : host;
   const router = seams.router ?? host.router;
   // Seam doubles win over the host's live instances (looked up per question).
   const answerer = (): Answerer | undefined => (seams.answerer !== undefined ? (seams.answerer ?? undefined) : host.answerer());

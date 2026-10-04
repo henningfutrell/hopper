@@ -75,11 +75,42 @@ export interface RestartRoleStatus {
   pending?: { status: 'changed — restart pending'; instances: InstanceSpec[] };
 }
 
+/** One instance as plugins.yaml (or, with no section, the built-in instances) names it now: what an options edit acts on. */
+export interface ConfiguredInstance {
+  role: Role;
+  instance: InstanceSpec;
+}
+
+/** The roles with exactly one instance (the answerer: 0..1), whose plugin the UI may select. */
+export type SelectableRole = 'router' | 'answerer' | 'assessor';
+export const SELECTABLE_ROLES: readonly SelectableRole[] = ['router', 'answerer', 'assessor'];
+
+/**
+ * POST /ui/api/plugins (design.md "UI and mutation"). `version` is GET /api/plugins
+ * `config.version`, read with the form: a file changed since is refused.
+ */
+export type PluginsEdit =
+  /** One instance's whole options object; command-bearing values must equal the file's. */
+  | { action: 'options'; role: Role; name: string; options: Record<string, unknown>; version: string }
+  /** A plugin, detected available, fills the role under its own id; `null`: no answerer. */
+  | { action: 'select'; role: SelectableRole; plugin: string | null; version: string }
+  /** Load custom plugins added since start and re-run every detection. */
+  | { action: 'rescan' };
+
+export type PluginsEditOutcome =
+  | { ok: true; report: PluginsReport }
+  | { ok: false; code: 'invalid' | 'not_found' | 'conflict'; error: string };
+
 /** GET /api/plugins. */
 export interface PluginsReport {
   roles: Role[];
-  /** `source: defaults`: plugins.yaml could not be read at start, so the built-in instances run. */
-  config: { path: string; source: 'file' | 'defaults'; loadedAt?: string; error?: string; warnings: string[] };
+  /**
+   * `source: defaults`: plugins.yaml could not be read at start, so the built-in instances run.
+   * `version`: sha-256 of plugins.yaml, or `missing`; an edit carries it back.
+   */
+  config: { path: string; source: 'file' | 'defaults'; version: string; loadedAt?: string; error?: string; warnings: string[] };
+  /** Every configured instance, by role — each one's options are its own. */
+  instances: ConfiguredInstance[];
   router: { instance: InstanceSpec; selection: RouterSelection; detection: Detection; active: string; fallback: boolean; reason?: string };
   answerer: QuestionRoleStatus;
   assessor: QuestionRoleStatus;
