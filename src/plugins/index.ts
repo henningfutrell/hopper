@@ -8,13 +8,13 @@ import { statSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { Answerer, Assessor, Clock, MachineSource, Notifier, NotifierEvents, UsageSource } from '../domain/ports.ts';
 import {
-  ROLES, type ConfiguredInstance, type Detection, type InstanceSpec, type PluginsEdit, type PluginsEditOutcome, type PluginsReport, type RestartRoleStatus, type RouterMode, type RouterSelection, type RouterStatus,
+  ROLES, type AttachedMachine, type ConfiguredInstance, type Detection, type InstanceSpec, type PluginsEdit, type PluginsEditOutcome, type PluginsReport, type RestartRoleStatus, type RouterMode, type RouterSelection, type RouterStatus,
 } from '../domain/types.ts';
 import { BUILTIN_PLUGINS } from './builtin.ts';
 import { createDetectionKit } from './detect.ts';
 import { loadCustomPlugins, type LoadedPlugin, type LoadResult } from './loader.ts';
 import { optionsJsonSchema, parseOptions } from './options.ts';
-import { applyEdit } from './edit.ts';
+import { applyEdit, configuredInstances, type Configured } from './edit.ts';
 import { loadPluginsFile, pluginsFileVersion, readPluginsText } from './plugins-file.ts';
 import { buildExecutors, executorStatus, type BuiltExecutor } from './executor-slot.ts';
 import { builtinInstances } from './migrate.ts';
@@ -78,6 +78,8 @@ export interface PluginHost {
   startNotifiers(events: NotifierEvents): void;
   /** Stop every started notifier, awaiting in-flight work. Once; never throws. */
   stopNotifiers(): Promise<void>;
+  /** plugins.yaml `attachedMachines:` as read at start (design.md "Attached machines"). */
+  attachedMachines(): AttachedMachine[];
   report(): PluginsReport;
   /** Re-read plugins.yaml now, whatever the mtime; resolves when the router is in place. */
   reload(): Promise<void>;
@@ -85,10 +87,6 @@ export interface PluginHost {
   edit(e: PluginsEdit): Promise<PluginsEditOutcome>;
 }
 
-interface Configured {
-  router?: InstanceSpec; answerer: InstanceSpec | null; assessor: InstanceSpec; executors: InstanceSpec[];
-  jobSources: InstanceSpec[]; machines: InstanceSpec; usageSources: InstanceSpec[]; notifiers: InstanceSpec[];
-}
 
 interface Entry { definition: PluginDefinition; builtin: boolean; path?: string; detection: Detection }
 
@@ -132,6 +130,8 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
   const notifiers: RestartSlot<Built<Notifier>> = {};
   let notifiersStarted = false;
   let notifiersStopped: Promise<void> | undefined;
+  /** Read once at start, like the restart roles: a change takes a restart. */
+  let attached: AttachedMachine[] | undefined;
   let timer: NodeJS.Timeout | undefined;
   let signature: string | undefined;
   let chain: Promise<void> = Promise.resolve();
@@ -216,6 +216,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
       assessor = await buildAssessor(spec.assessor, deps);
       o.logger.info(`job-hopper: assessor ${spec.assessor.name} (${assessor.plugin}${assessor.fallback ? ', fallback' : ''})`);
     }
+    attached ??= (!error && file?.attachedMachines) || [];
     await restart(executors, 'executors', spec.executors, () => buildExecutors(spec.executors, deps));
     await restart(jobSources, 'job sources', spec.jobSources, () => buildJobSources(spec.jobSources, deps));
     await restart(machines, 'machine source', [spec.machines], async () => [await buildMachine(spec.machines, deps)]);
@@ -248,20 +249,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
     try { return pluginsFileVersion(readPluginsText(o.pluginsFile)); } catch { return 'unreadable'; }
   };
 
-  function instances(): ConfiguredInstance[] {
-    if (!configured) return [];
-    const c = configured;
-    return [
-      { role: 'router', instance: c.router ?? need().current().spec },
-      ...(c.answerer ? [{ role: 'answerer' as const, instance: c.answerer }] : []),
-      { role: 'assessor', instance: c.assessor },
-      ...c.executors.map((instance) => ({ role: 'executor' as const, instance })),
-      ...c.jobSources.map((instance) => ({ role: 'job-source' as const, instance })),
-      { role: 'machine-source', instance: c.machines },
-      ...c.usageSources.map((instance) => ({ role: 'usage-source' as const, instance })),
-      ...c.notifiers.map((instance) => ({ role: 'notifier' as const, instance })),
-    ];
-  }
+  const instances = (): ConfiguredInstance[] => (configured ? configuredInstances(configured, need().current().spec) : []);
 
   const need = (): LiveRouter => {
     if (!live) throw new Error('plugin host not started');
@@ -300,6 +288,10 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
       if (!notifiersStarted) return Promise.resolve();
       notifiersStopped ??= stopNotifiers(started(notifiers.built), o.logger);
       return notifiersStopped;
+    },
+    attachedMachines() {
+      if (!attached) throw new Error('plugin host not started');
+      return attached.map((m) => ({ ...m, executors: [...m.executors] }));
     },
     reload: enqueue,
     async edit(e) {

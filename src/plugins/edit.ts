@@ -29,6 +29,26 @@ const SECTIONS: Record<Role, { key: string; many: boolean }> = {
   notifier: { key: 'notifiers', many: true },
 };
 
+/** What plugins.yaml (or the built-in instances) names now, section by section. */
+export interface Configured {
+  router?: InstanceSpec; answerer: InstanceSpec | null; assessor: InstanceSpec; executors: InstanceSpec[];
+  jobSources: InstanceSpec[]; machines: InstanceSpec; usageSources: InstanceSpec[]; notifiers: InstanceSpec[];
+}
+
+/** Every configured instance by role; with no `router` section, the router chosen by detection. */
+export function configuredInstances(c: Configured, detectedRouter: InstanceSpec): ConfiguredInstance[] {
+  return [
+    { role: 'router', instance: c.router ?? detectedRouter },
+    ...(c.answerer ? [{ role: 'answerer' as const, instance: c.answerer }] : []),
+    { role: 'assessor', instance: c.assessor },
+    ...c.executors.map((instance) => ({ role: 'executor' as const, instance })),
+    ...c.jobSources.map((instance) => ({ role: 'job-source' as const, instance })),
+    { role: 'machine-source', instance: c.machines },
+    ...c.usageSources.map((instance) => ({ role: 'usage-source' as const, instance })),
+    ...c.notifiers.map((instance) => ({ role: 'notifier' as const, instance })),
+  ];
+}
+
 const refuse = (code: EditRefusal['code'], error: string): EditRefusal => ({ ok: false, code, error });
 
 /** The options marked `.meta({ commandBearing: true })` in the plugin's schema. */

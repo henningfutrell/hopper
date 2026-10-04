@@ -146,6 +146,25 @@ export interface MachineSnapshot {
   online: boolean;
   /** Executors this machine can run. */
   executors: string[];
+  /** An attached machine: the ssh destination its executors reach it by. Absent → this machine. */
+  ssh?: string;
+  /** An attached machine's herdr: its binary (absolute, so never its PATH) and job-hopper's session there. */
+  herdr?: { bin: string; session: string };
+}
+
+/** An attached machine as plugins.yaml `attachedMachines:` names it (design.md "Attached machines"). */
+export interface AttachedMachine {
+  /** The machine id; never `local`. */
+  name: string;
+  label?: string;
+  /** The ssh destination: a `~/.ssh/config` alias or `user@host`. */
+  ssh: string;
+  lanes: number;
+  /** Executor instances that can run there. */
+  executors: string[];
+  /** Its herdr session (never `default`) and herdr binary, as the remote login shell finds it. */
+  session: string;
+  herdrBin: string;
 }
 
 /** One usage budget reading. `used`/`limit` share a unit; `unit` names it. */

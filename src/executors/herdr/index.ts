@@ -1,11 +1,11 @@
 export { HerdrError } from './client.ts';
 export type { AgentInfo, AgentStatus, HerdrClient, ReadSource, StartAgentResult } from './client.ts';
 export { createHerdrCliClient, scrubbedEnv } from './cli-client.ts';
-export type { HerdrCliClient } from './cli-client.ts';
+export type { HerdrCliClient, SshTransport } from './cli-client.ts';
 export { FOOTER_ANCHOR, PROTOCOL_FOOTER, isTrustDialog, readTurn } from './screen.ts';
 export type { Marker, TurnView } from './screen.ts';
 export { createHerdrClaudeExecutor } from './executor.ts';
-export type { HerdrClaudeExecutor, HerdrClaudeExecutorOptions } from './executor.ts';
+export type { HerdrClaudeExecutor, HerdrClaudeExecutorOptions, RemoteHerdr } from './executor.ts';
 export type { Sleep } from './monitor.ts';
 export type { PaneState } from './start.ts';
 export { validatePayload } from './payload.ts';

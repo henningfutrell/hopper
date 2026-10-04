@@ -15,6 +15,10 @@ const SHELL_RETRY_MS = 100;
 /** What a job keeps in `job.executorState`. */
 export interface PaneState {
   session?: string;
+  /** The attached machine's ssh destination; absent → this machine's herdr. */
+  ssh?: string;
+  /** The attached machine's herdr binary (with `ssh`), so cleanup reaches the same herdr. */
+  herdrBin?: string;
   workspaceId: string;
   tabId: string;
   paneId: string;
@@ -56,6 +60,7 @@ export async function openPane(d: StartDeps, ctx: ExecutionContext, cwd: string,
   });
   const state: PaneState = {
     ...(d.herdr.session ? { session: d.herdr.session } : {}),
+    ...(ctx.machine.ssh && ctx.machine.herdr ? { ssh: ctx.machine.ssh, herdrBin: ctx.machine.herdr.bin } : {}),
     workspaceId, tabId, paneId, agentName: agentNameFor(ctx.job.id), cwd, laneId: ctx.laneId,
   };
   ctx.saveState({ ...state });

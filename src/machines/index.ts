@@ -21,3 +21,10 @@ export function createLocalMachineSource(o: {
     ],
   };
 }
+
+export { createAttachedMachineSource, probeHerdrOverSsh } from './attached.ts';
+
+/** Every machine of every source, in source order: this machine first, then the attached ones. */
+export function combineMachineSources(sources: MachineSource[]): MachineSource {
+  return { list: async () => (await Promise.all(sources.map((s) => s.list()))).flat() };
+}

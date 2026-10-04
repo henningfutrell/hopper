@@ -4,13 +4,14 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { Answerer, Assessor, Clock, Executor, JobSource, PluginsView, Router, SettableUsageSource, SourceRegistry, Store } from './domain/ports.ts';
-import type { Question, SourceStatus } from './domain/types.ts';
+import type { AttachedMachine, Question, SourceStatus } from './domain/types.ts';
 import { isRerunnable } from './domain/types.ts';
 import { loadConfig, type Config } from './config.ts';
 import { createEngine, type Engine } from './engine/index.ts';
 import { createExecutorRegistry } from './executors/index.ts';
 import type { HerdrClient } from './executors/herdr/index.ts';
 import { createServer } from './http/index.ts';
+import { combineMachineSources, createAttachedMachineSource, probeHerdrOverSsh } from './machines/index.ts';
 import { BUILTIN_PLUGINS } from './plugins/builtin.ts';
 import { herdrClaudePlugin } from './plugins/executor/herdr-claude/index.ts';
 import { createPluginHost, type BuiltJobSource } from './plugins/index.ts';
@@ -67,6 +68,8 @@ export interface AppSeams {
   assessor?: Assessor;
   /** How often plugins.yaml's mtime is checked; default PLUGINS_FILE_CHECK_MS. */
   pluginsFileIntervalMs?: number;
+  /** Replaces the ssh probe of every attached machine: true = its herdr session is running. */
+  machineProbe?: (machine: AttachedMachine) => Promise<boolean>;
 }
 
 const WEBHOOKS_FILE_CHECK_MS = 5000;
@@ -161,7 +164,15 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   const engine: Engine = createEngine({
     store, clock, executors, router, questions,
     ...(seams.fakeUsage ? { fakeUsage: seams.fakeUsage } : {}),
-    machines: host.machines(),
+    machines: combineMachineSources([
+      host.machines(),
+      ...host.attachedMachines().map((m) => createAttachedMachineSource({
+        machine: m, clock, logger: { info: (l) => console.log(l), warn: (l) => console.warn(l) },
+        probe: seams.machineProbe
+          ? () => seams.machineProbe!(m)
+          : () => probeHerdrOverSsh({ target: m.ssh, herdrBin: m.herdrBin, session: m.session, controlDir: join(dataDir, 'ssh') }),
+      })),
+    ]),
     usage: [...host.usageSources(), ...(seams.fakeUsage ? [seams.fakeUsage] : [])],
     policy: {
       softLimit: config.softLimit, hardLimit: config.hardLimit, routerCheapBoost: config.routerCheapBoost,

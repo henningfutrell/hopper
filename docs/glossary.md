@@ -8,7 +8,9 @@ synonyms. Rename here first, in the same commit as everything else.
 | **Job** | One unit of work pushed through the API: an executor name, a payload, a priority. | task, run |
 | **Priority** | `0..100` on the job, higher first. Default 50. | rank |
 | **Effective priority** | Priority after the router's boost (cheap advice), which applies only in active mode. | score |
-| **Machine** | A host that can run jobs. Today: this laptop (`local`). Supplied by the machine source: the `machine-source` role's one instance (plugins.yaml `machines:`, built-in plugin `local`, named after the instance; its `lanes` option is the lane count). None that can run → no machine, every job held. | node, worker |
+| **Machine** | A host that can run jobs: this laptop (`local`) and every attached machine. This one is supplied by the machine source: the `machine-source` role's one instance (plugins.yaml `machines:`, built-in plugin `local`, named after the instance; its `lanes` option is the lane count). None that can run → no machine here; attached machines still run what they list. | node, worker |
+| **Attached machine** | Another host that runs jobs in its own herdr session, reached over ssh; plugins.yaml `attachedMachines:` (beside the machine source's machine, read at start). Online while that session answers. | remote, worker, consumer (issue #10's word) |
+| **ssh target** | The ssh destination of an attached machine: a `~/.ssh/config` alias or `user@host`. | host |
 | **Lane** | One concurrent job slot on a machine. Opened and closed by Decisions. `idle`, `busy`, `draining`. | slot, worker, thread |
 | **Draining** | A busy lane the Decision wants gone; it closes when its job ends. | |
 | **Usage reading** | One budget measurement: `used` of `limit` in a `unit`, optionally for one machine. Supplied by usage sources: the `usage-source` role's 0..n instances (plugins.yaml `usageSources:`; no built-in plugin — the fake is a test double). | quota |

@@ -1,8 +1,10 @@
 // HerdrClient over the herdr CLI. Every call is `<bin> --session <session> …` with no shell,
 // JSON on stdout, server errors as JSON on stderr with exit 1, usage errors with exit 2.
-// Never the default session: the session is required.
+// Never the default session: the session is required. On an attached machine (`ssh`) the same
+// argv runs there through `ssh`, quoted for the remote login shell (design.md "Attached machines").
 
 import { execFile } from 'node:child_process';
+import { mkdirSync } from 'node:fs';
 import { HerdrError } from './client.ts';
 import type { AgentInfo, AgentStatus, HerdrClient } from './client.ts';
 
@@ -29,18 +31,47 @@ export interface HerdrCliClient extends HerdrClient {
   run(args: string[], timeoutMs?: number): Promise<Record<string, unknown>>;
 }
 
-export function createHerdrCliClient(o: { bin: string; session: string; timeoutMs?: number }): HerdrCliClient {
+/** Reaching herdr on an attached machine. */
+export interface SshTransport {
+  /** The ssh destination: a `~/.ssh/config` alias or `user@host`. */
+  target: string;
+  /** The ssh binary. Default `ssh`. */
+  bin?: string;
+  /** Where the shared connection's control socket lives. Absent → no connection sharing. */
+  controlDir?: string;
+}
+
+/** POSIX single quoting: the remote login shell (sh, bash, zsh) reads it back as one word. */
+const shellQuote = (arg: string): string => `'${arg.replaceAll("'", "'\\''")}'`;
+
+/** ssh's exit status for its own failures (connection, authentication). */
+const SSH_FAILED = 255;
+
+function sshArgv(t: SshTransport, argv: string[]): string[] {
+  const shared = t.controlDir
+    ? ['-o', 'ControlMaster=auto', '-o', `ControlPath=${t.controlDir}/%C`, '-o', 'ControlPersist=60']
+    : [];
+  return ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', ...shared, '--', t.target, argv.map(shellQuote).join(' ')];
+}
+
+export function createHerdrCliClient(o: { bin: string; session: string; timeoutMs?: number; ssh?: SshTransport }): HerdrCliClient {
   if (!o.session) throw new Error('herdr session is required (never the default session)');
+  if (o.ssh && (!o.ssh.target || o.ssh.target.startsWith('-'))) throw new Error(`bad ssh target: ${o.ssh.target}`);
   const callTimeout = o.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const ssh = o.ssh;
+  if (ssh?.controlDir) mkdirSync(ssh.controlDir, { recursive: true, mode: 0o700 });
 
   const exec = (args: string[], timeoutMs = callTimeout): Promise<string> => new Promise((resolve, reject) => {
-    execFile(o.bin, ['--session', o.session, ...args], {
+    const argv = [o.bin, '--session', o.session, ...args];
+    const [file, fileArgs] = ssh ? [ssh.bin ?? 'ssh', sshArgv(ssh, argv)] : [o.bin, argv.slice(1)];
+    execFile(file, fileArgs, {
       env: scrubbedEnv(), timeout: timeoutMs, killSignal: 'SIGKILL', maxBuffer: 16 * 1024 * 1024, encoding: 'utf8',
     }, (err, stdout, stderr) => {
       if (!err) return resolve(stdout);
       const e = err as NodeJS.ErrnoException & { killed?: boolean; code?: number | string };
       if (e.killed) return reject(new HerdrError('timeout', `herdr ${args.slice(0, 2).join(' ')} timed out after ${timeoutMs} ms`));
-      if (typeof e.code === 'string') return reject(new HerdrError('spawn', `${o.bin}: ${e.message}`));
+      if (typeof e.code === 'string') return reject(new HerdrError('spawn', `${file}: ${e.message}`));
+      if (ssh && e.code === SSH_FAILED) return reject(new HerdrError('ssh', `ssh ${ssh.target}: ${stderr.trim() || e.message}`));
       if (e.code === 2) return reject(new HerdrError('usage', stderr.trim() || e.message));
       reject(errorFrom(stderr, e.message));
     });
