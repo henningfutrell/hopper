@@ -1,41 +1,22 @@
-// The one-time UI login code (design.md "UI session and mutations" 1): a fresh random code in
-// <dataDir>/ui-login-code, mode 0600, written at startup and after every successful use.
-// Written to a temp file and renamed, so a reader never sees a half-written code.
-import { chmodSync, renameSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { randomSecret, sameSecret } from './secret.ts';
+// One-time UI login codes (design.md "UI session and mutations" 1): minted into the store — by the
+// operator's `job-hopper login-code`, or for a device link — and taken once by POST /ui/login. Only
+// the code's SHA-256 is stored; a code expires LOGIN_CODE_MINUTES after it is minted.
+import { createHash } from 'node:crypto';
+import type { Clock, Store } from '../../domain/ports.ts';
+import { randomSecret } from './secret.ts';
 
-export const LOGIN_CODE_FILE = 'ui-login-code';
+export const LOGIN_CODE_MINUTES = 10;
 
-export interface LoginCode {
-  readonly path: string;
-  /** The code that works now (for a device link). */
-  current(): string;
-  /** Write a fresh code; the old one stops working. */
-  rotate(): void;
-  /** True (and the code rotates) when `code` is the current one. */
-  use(code: string): boolean;
+const hash = (code: string): string => createHash('sha256').update(code).digest('hex');
+
+/** A fresh code, stored (hashed) until it is used or expires. */
+export function mintLoginCode(store: Pick<Store, 'loginCodes'>, clock: Clock): string {
+  const code = randomSecret();
+  store.loginCodes.create(hash(code), new Date(clock.now().getTime() + LOGIN_CODE_MINUTES * 60_000).toISOString());
+  return code;
 }
 
-export function createLoginCode(dataDir: string): LoginCode {
-  const path = join(dataDir, LOGIN_CODE_FILE);
-  let current = '';
-  const rotate = (): void => {
-    const next = randomSecret();
-    const tmp = `${path}.${process.pid}.tmp`;
-    writeFileSync(tmp, `${next}\n`, { mode: 0o600 });
-    chmodSync(tmp, 0o600);
-    renameSync(tmp, path);
-    current = next;
-  };
-  return {
-    path,
-    rotate,
-    current: () => current,
-    use(code) {
-      if (!sameSecret(code, current)) return false;
-      rotate();
-      return true;
-    },
-  };
+/** True, and the code is spent, when `code` was minted and has not expired. */
+export function useLoginCode(store: Pick<Store, 'loginCodes'>, clock: Clock, code: string): boolean {
+  return /^[0-9a-f]{64}$/.test(code) && store.loginCodes.take(hash(code), clock.now().toISOString());
 }

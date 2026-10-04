@@ -4,6 +4,7 @@ import type { StoreContext } from './context.ts';
 import { openDb, parseDatabaseUrl } from './db.ts';
 import { createDecisionRepository } from './decisions.ts';
 import { createConfigDocuments } from './documents.ts';
+import { createLoginCodeRepository } from './login-codes.ts';
 import { createEventLog } from './events.ts';
 import { createJobRepository } from './jobs.ts';
 import { createLaneRepository } from './lanes.ts';
@@ -66,6 +67,7 @@ export function openStore(o: { url: string; clock: Clock; idGen?: IdGen }): Stor
     settings: createSettingsRepository(ctx),
     uiSessions: createUiSessionRepository(ctx),
     documents: createConfigDocuments(ctx),
+    loginCodes: createLoginCodeRepository(ctx),
     tx: ctx.tx,
     close: () => db.close(),
   };

@@ -6,9 +6,8 @@
 // device a login link per LAN name (design.md "Reaching the UI across the LAN").
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { existsSync, unlinkSync } from 'node:fs';
 import { LOCAL_IDENTITY, type SignIn } from '../../auth/index.ts';
-import type { PluginsView, QuestionService, Store, Updater } from '../../domain/ports.ts';
+import type { Clock, PluginsView, QuestionService, Store, Updater } from '../../domain/ports.ts';
 import { LIST_ROLES, ROLES, SELECTABLE_ROLES, UPDATE_CHANNELS, type SessionView, type UiRole } from '../../domain/types.ts';
 import type { Engine } from '../../engine/index.ts';
 import { HttpError, parseWith } from '../errors.ts';
@@ -19,11 +18,10 @@ import { webhooksView } from '../webhooks.ts';
 import type { WebhookConfigView } from '../webhooks.ts';
 import type { WebhooksEditor } from '../../webhooks/edit.ts';
 import { SESSION_HEADER, mutationRefusal } from './guard.ts';
-import { createLoginCode } from './login-code.ts';
+import { mintLoginCode, useLoginCode } from './login-code.ts';
 import { sessionUser, type UiSessions } from './sessions.ts';
 import { registerSignInRoutes } from './sign-in.ts';
 
-export { LOGIN_CODE_FILE } from './login-code.ts';
 
 export interface UiRouteOptions {
   engine: Engine;
@@ -34,8 +32,8 @@ export interface UiRouteOptions {
   /** The bound port (known only after listen). */
   port: () => number;
   lan: Lan;
-  dataDir: string;
-  store: Pick<Store, 'webhooks' | 'documents'>;
+  clock: Clock;
+  store: Pick<Store, 'webhooks' | 'documents' | 'loginCodes'>;
   webhookConfig: WebhookConfigView;
   webhooksEditor: WebhooksEditor;
   updater: Updater;
@@ -93,11 +91,7 @@ const loginPage = (token: string): string => `<!doctype html><meta charset="utf-
 `;
 
 export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void {
-  const code = createLoginCode(o.dataDir);
   const { sessions, signIn } = o;
-  // Local sign-in off: no code file, not even a stale one from before.
-  if (signIn.local) code.rotate();
-  else if (existsSync(code.path)) unlinkSync(code.path);
 
   app.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string' }, (_req, body, done) => {
     done(null, Object.fromEntries(new URLSearchParams(body as string)));
@@ -107,7 +101,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   app.post('/ui/login', async (req, reply) => {
     const parsed = loginBody.safeParse(req.body);
     if (!signIn.local) return refuse(req, reply, 'local sign-in is off in auth.yaml');
-    if (!parsed.success || !code.use(parsed.data.code)) return refuse(req, reply, 'wrong or missing login code');
+    if (!parsed.success || !useLoginCode(o.store, o.clock, parsed.data.code)) return refuse(req, reply, 'wrong, used, expired or missing login code');
     const s = sessions.create({ role: 'admin', identity: LOCAL_IDENTITY });
     console.warn('job-hopper: UI session started: local login code, role admin');
     return reply.type('text/html; charset=utf-8').header('cache-control', 'no-store').header('referrer-policy', 'no-referrer')
@@ -227,12 +221,13 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     return r.status;
   });
 
-  // The current login code as a link per LAN name, in the fragment (never sent to a server). It
-  // works once, like the code file; using either rotates both.
+  // A fresh login code as a link per LAN name, in the fragment (never sent to a server). The links
+  // share one code: it works once, and expires like any other.
   app.post('/ui/api/device-link', admin, async () => {
     if (!signIn.local) throw new HttpError(409, 'local sign-in is off in auth.yaml: no login code to hand on');
     if (o.lan.names.length === 0) throw new HttpError(409, 'no LAN names: set JOB_HOPPER_LAN_NAMES and JOB_HOPPER_LAN_PEERS to reach the UI from another device');
-    return { links: lanHosts(o.port(), o.lan).map((h) => `http://${h}/#login=${code.current()}`) };
+    const code = mintLoginCode(o.store, o.clock);
+    return { links: lanHosts(o.port(), o.lan).map((h) => `http://${h}/#login=${code}`) };
   });
 
   app.post('/ui/api/logout', allow('viewer'), async (req) => {

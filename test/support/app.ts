@@ -9,7 +9,7 @@
 // manual JobSource (manual-source.ts) offers items, run by the "scripted" executor
 // (scripted-executor.ts). Every event the app emits is validated against its schema; stop()
 // fails the test on any nonconforming event (tracker + a scan of the whole event log).
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { loadConfig } from '../../src/config.ts';

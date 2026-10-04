@@ -8,6 +8,7 @@
 //   job-hopper config version <document>                  print its version
 //   job-hopper config set <document> --if-version <v>     replace it from stdin, if still at <v>
 //   job-hopper config edit <document>                     $EDITOR on it, written back against the version read
+//   job-hopper login-code [--link <base url>]             mint a one-time UI login code (stdout)
 //   job-hopper migrate-local --from-sqlite <file> [--config-dir <dir>] --secrets-out <file>
 //                                                         a local install into this (empty) database
 //
@@ -20,6 +21,7 @@ import { parseArgs } from 'node:util';
 import { parse } from 'yaml';
 import { CONFIG_DOCUMENTS, type ConfigDocumentName, type Store } from './domain/ports.ts';
 import { authDocumentProblem } from './auth/index.ts';
+import { LOGIN_CODE_MINUTES, mintLoginCode } from './http/ui/login-code.ts';
 import { MigrateRefusal, migrateLocal, secretsEnvFile } from './migrate/local.ts';
 import { pluginsFileProblem } from './plugins/plugins-file.ts';
 import { RULES_MAX_BYTES } from './questions/index.ts';
@@ -40,6 +42,7 @@ const USAGE = `usage:
   job-hopper config version <document>
   job-hopper config set <document> --if-version <version>   (text on stdin; version "missing" for a new one)
   job-hopper config edit <document>
+  job-hopper login-code [--link <base url>]
   job-hopper migrate-local --from-sqlite <file> [--config-dir <dir>] --secrets-out <file>
 documents: ${CONFIG_DOCUMENTS.join(', ')}`;
 
@@ -113,6 +116,14 @@ function config(store: Store, args: string[], io: CliIo): void {
   }
 }
 
+/** One fresh login code on stdout (or the device link with it); its expiry on stderr. */
+function loginCode(store: Store, args: string[], io: CliIo): void {
+  const { values } = parseArgs({ args, options: { link: { type: 'string' } } });
+  const code = mintLoginCode(store, { now: () => new Date() });
+  io.out(values.link ? `${values.link.replace(/\/+$/, '')}/#login=${code}\n` : `${code}\n`);
+  io.err(`login code minted: works once, for ${LOGIN_CODE_MINUTES} minutes\n`);
+}
+
 function migrateCommand(url: string, args: string[], io: CliIo): void {
   const { values } = parseArgs({ args, options: { 'from-sqlite': { type: 'string' }, 'config-dir': { type: 'string' }, 'secrets-out': { type: 'string' } } });
   const sqlite = values['from-sqlite'];
@@ -133,7 +144,7 @@ function migrateCommand(url: string, args: string[], io: CliIo): void {
 /** Run one command; the exit code. */
 export function runCli(argv: string[], io: CliIo): number {
   const [command, ...rest] = argv;
-  if (command !== 'config' && command !== 'migrate-local') {
+  if (command !== 'config' && command !== 'migrate-local' && command !== 'login-code') {
     io.err(`${USAGE}\n`);
     return 2;
   }
@@ -149,7 +160,8 @@ export function runCli(argv: string[], io: CliIo): number {
       return 0;
     }
     store = openStore({ url, clock: { now: () => new Date() } });
-    config(store, rest, io);
+    if (command === 'login-code') loginCode(store, rest, io);
+    else config(store, rest, io);
     return 0;
   } catch (e) {
     io.err(`job-hopper: ${e instanceof Error ? e.message : String(e)}\n`);

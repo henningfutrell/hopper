@@ -524,6 +524,13 @@ export interface UiSessionRepository {
   drop(tokenHash: string): void;
 }
 
+/** One-time UI login codes, keyed by the SHA-256 of the code; the code itself is never stored. */
+export interface LoginCodeRepository {
+  create(codeHash: string, expiresAt: string): void;
+  /** True, and the code is gone, when it exists and `expiresAt > now`. Expired codes are deleted first. */
+  take(codeHash: string, now: string): boolean;
+}
+
 /** The config documents the store holds (design.md "Config documents"). */
 export const CONFIG_DOCUMENTS = ['plugins.yaml', 'webhooks.yaml', 'rules.md', 'auth.yaml'] as const;
 export type ConfigDocumentName = (typeof CONFIG_DOCUMENTS)[number];
@@ -550,6 +557,7 @@ export interface Store {
   settings: SettingsRepository;
   uiSessions: UiSessionRepository;
   documents: ConfigDocuments;
+  loginCodes: LoginCodeRepository;
   /** Run fn in one transaction. Re-entrant: a nested tx joins the outer one. Throw = rollback. */
   tx<T>(fn: () => T): T;
   close(): void;

@@ -30,6 +30,7 @@ const TABLES: readonly { name: string; key: string; seq: boolean }[] = [
   { name: 'questions', key: 'seq', seq: true },
   { name: 'ui_sessions', key: 'token_hash', seq: false },
   { name: 'config_documents', key: 'name', seq: false },
+  { name: 'login_codes', key: 'code_hash', seq: false },
 ];
 
 const BATCH = 200;

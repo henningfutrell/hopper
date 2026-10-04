@@ -248,7 +248,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   const server = createServer({
     engine, store, dispatcher, questions, clock, version: VERSION, sources: registry, webhookConfig, plugins, updater,
     webhooksEditor: createWebhooksEditor({ documents: store.documents, reload: webhookConfig.reload }),
-    port: () => port, dataDir, sessionHours: config.uiSessionHours, signIn,
+    port: () => port, sessionHours: config.uiSessionHours, signIn,
     lan: { names: config.lanNames, peers: config.lanPeers, publicUrl: config.publicUrl }, uiDir: seams.uiDir ?? UI_DIR,
   });
 

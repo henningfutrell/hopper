@@ -175,6 +175,11 @@ const SHARED: readonly Migration[] = [
   `
   CREATE TABLE IF NOT EXISTS config_documents (name TEXT PRIMARY KEY, text TEXT NOT NULL, updated_at TEXT NOT NULL);
   `,
+  // 9: one-time UI login codes live in the store (minted by `job-hopper login-code`), not in a file.
+  // Only the code's SHA-256 is kept.
+  `
+  CREATE TABLE IF NOT EXISTS login_codes (code_hash TEXT PRIMARY KEY, expires_at TEXT NOT NULL);
+  `,
 ];
 
 /** The schema version a store is at once migrated. */
