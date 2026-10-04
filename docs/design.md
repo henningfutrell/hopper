@@ -753,8 +753,10 @@ token and send any `Origin`. Cookies are no better here: they ignore ports, so a
    expiry `JOB_HOPPER_UI_SESSION_HOURS`, default 12), rotate the code, and answer with a
    same-origin HTML page whose inline script stores the token in `localStorage`
    (`jh_session`) and goes to `/`. Mismatch → 403. `localStorage` is scoped to the exact
-   origin incl. port, so no other server on `127.0.0.1` can read it. Sessions live in memory
-   (a restart logs the UI out).
+   origin incl. port, so no other server on `127.0.0.1` can read it. Sessions live in SQLite
+   (`ui_sessions`, migration 6), so a daemon restart does not log the UI out; the row holds
+   only the token's SHA-256 and the expiry, never the token. Expired rows are deleted on
+   lookup. Logout deletes the row.
 4. **`GET /ui/api/session`** with header `x-jobhopper-session` → `{ authenticated,
    expiresAt? }`. Without a valid session the page is read-only and says how to log in:
    `bash ~/.local/lib/job-hopper/scripts/open-ui.sh`.

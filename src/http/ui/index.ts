@@ -4,7 +4,7 @@
 // refusal is a logged 403.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import type { Clock, PluginsView, QuestionService } from '../../domain/ports.ts';
+import type { Clock, PluginsView, QuestionService, UiSessionRepository } from '../../domain/ports.ts';
 import type { Engine } from '../../engine/index.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { routerView } from '../state.ts';
@@ -17,6 +17,7 @@ export { LOGIN_CODE_FILE } from './login-code.ts';
 export interface UiRouteOptions {
   engine: Engine;
   questions: QuestionService;
+  uiSessions: UiSessionRepository;
   plugins: PluginsView;
   /** The bound port (known only after listen). */
   port: () => number;
@@ -44,7 +45,7 @@ const loginPage = (token: string): string => `<!doctype html><meta charset="utf-
 export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void {
   const code = createLoginCode(o.dataDir);
   code.rotate();
-  const sessions = createUiSessions({ clock: o.clock, hours: o.sessionHours });
+  const sessions = createUiSessions({ repo: o.uiSessions, clock: o.clock, hours: o.sessionHours });
 
   app.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string' }, (_req, body, done) => {
     done(null, Object.fromEntries(new URLSearchParams(body as string)));

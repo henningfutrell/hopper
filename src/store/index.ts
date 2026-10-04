@@ -11,6 +11,7 @@ import { createLaneRepository } from './lanes.ts';
 import { createQuestionRepository } from './questions.ts';
 import { migrate } from './migrations.ts';
 import { createSettingsRepository } from './settings.ts';
+import { createUiSessionRepository } from './ui-sessions.ts';
 import { createWebhookRepository } from './webhooks.ts';
 
 
@@ -60,6 +61,7 @@ export function openStore(o: { path: string; clock: Clock; idGen?: IdGen }): Sto
     webhooks: createWebhookRepository(ctx),
     questions: createQuestionRepository(ctx),
     settings: createSettingsRepository(ctx),
+    uiSessions: createUiSessionRepository(ctx),
     tx: ctx.tx,
     close: () => db.close(),
   };

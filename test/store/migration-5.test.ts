@@ -14,7 +14,7 @@ describe('migration 5 (a source key may have many jobs)', () => {
 
     // Put the file back as v4 shipped it: unique index, user_version 4.
     const raw = new DatabaseSync(path);
-    raw.exec('DROP INDEX jobs_source_key; CREATE UNIQUE INDEX jobs_source_key ON jobs (source_key); PRAGMA user_version = 4');
+    raw.exec('DROP INDEX jobs_source_key; CREATE UNIQUE INDEX jobs_source_key ON jobs (source_key); DROP TABLE ui_sessions; PRAGMA user_version = 4');
     raw.close();
 
     const s = t.open(path);

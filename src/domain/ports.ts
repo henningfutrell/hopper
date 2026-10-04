@@ -421,6 +421,14 @@ export interface SettingsRepository {
 }
 
 /** The whole store. One SQLite file; repositories share one connection. */
+/** UI sessions, keyed by the SHA-256 of the token; the token itself is never stored. */
+export interface UiSessionRepository {
+  create(tokenHash: string, expiresAt: string): void;
+  /** The expiry of the live session with this hash, or undefined. Expired rows (`expires_at <= now`) are deleted first. */
+  find(tokenHash: string, now: string): string | undefined;
+  drop(tokenHash: string): void;
+}
+
 export interface Store {
   jobs: JobRepository;
   lanes: LaneRepository;
@@ -429,6 +437,7 @@ export interface Store {
   webhooks: WebhookRepository;
   questions: QuestionRepository;
   settings: SettingsRepository;
+  uiSessions: UiSessionRepository;
   /** Run fn in one transaction. Re-entrant: a nested tx joins the outer one. Throw = rollback. */
   tx<T>(fn: () => T): T;
   close(): void;

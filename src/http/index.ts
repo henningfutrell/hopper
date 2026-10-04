@@ -46,6 +46,6 @@ export function createServer(o: ServerOptions): FastifyInstance {
   sourceRoutes(app, o);
   sseRoutes(app, o);
   staticRoutes(app);
-  registerUiRoutes(app, { engine: o.engine, questions: o.questions, plugins: o.plugins, port: o.port, dataDir: o.dataDir, clock: o.clock, sessionHours: o.sessionHours });
+  registerUiRoutes(app, { engine: o.engine, questions: o.questions, uiSessions: o.store.uiSessions, plugins: o.plugins, port: o.port, dataDir: o.dataDir, clock: o.clock, sessionHours: o.sessionHours });
   return app;
 }

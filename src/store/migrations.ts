@@ -83,6 +83,10 @@ const MIGRATIONS: readonly (string | ((db: DatabaseSync) => void))[] = [
   DROP INDEX jobs_source_key;
   CREATE INDEX jobs_source_key ON jobs (source_key);
   `,
+  // 6: UI sessions outlive a daemon restart. Only the token's SHA-256 is kept (the token is a secret).
+  `
+  CREATE TABLE ui_sessions (token_hash TEXT PRIMARY KEY, expires_at TEXT NOT NULL);
+  `,
 ];
 
 export function migrate(db: DatabaseSync): void {
