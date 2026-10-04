@@ -10,8 +10,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
 import { post, SessionRejected } from '@/lib/api';
-import { collectOptions, fieldKind, instanceState, ROLE_TITLES, SELECTABLE, shown, type Draft, type OptionSchema, type OptionsSchema } from '@/model/plugins';
-import type { InstanceSpec, PluginsEdit, PluginsReport, Role } from '@/model/wire';
+import { collectOptions, fieldKind, instanceState, isSelectable, ROLE_TITLES, shown, type Draft, type OptionSchema, type OptionsSchema } from '@/model/plugins';
+import type { InstanceSpec, PluginsEdit, PluginsReport, Role, SelectableRole } from '@/model/wire';
 import { refreshHealth, refreshPlugins, setPlugins, useHopper } from '@/store';
 
 const REFRESH_MS = 15000;
@@ -102,10 +102,9 @@ function InstanceCard({ role, inst, ctx }: { role: Role; inst: InstanceSpec; ctx
   );
 }
 
-function Selector({ role, current, ctx }: { role: Role; current?: InstanceSpec; ctx: Ctx }) {
+function Selector({ role, current, ctx }: { role: SelectableRole; current?: InstanceSpec; ctx: Ctx }) {
   const choices = ctx.report.plugins.filter((p) => p.role === role);
   const [pick, setPick] = useState(current?.plugin ?? '');
-  if (role !== 'router' && role !== 'answerer' && role !== 'assessor') return null;
   return (
     <div className="flex flex-wrap items-center gap-2 text-xs">
       <span className="text-muted-foreground">plugin</span>
@@ -127,7 +126,7 @@ function RoleBlock({ role, ctx }: { role: Role; ctx: Ctx }) {
     <Panel title={ROLE_TITLES[role]} icon={Puzzle} count={instances.length || ''} bodyClassName="space-y-3"
       action={<>{role === 'router' && <span className="text-xs text-muted-foreground">{ctx.report.router.selection}</span>}
         {rolePending && <StatusBadge status="changed — restart pending" tone="warn" />}</>}>
-      {SELECTABLE.includes(role) && ctx.authed && <Selector key={first?.instance.plugin ?? ''} role={role} current={first?.instance} ctx={ctx} />}
+      {isSelectable(role) && ctx.authed && <Selector key={first?.instance.plugin ?? ''} role={role} current={first?.instance} ctx={ctx} />}
       {instances.length
         ? instances.map((i) => <InstanceCard key={i.instance.name} role={role} inst={i.instance} ctx={ctx} />)
         : <Empty>{role === 'answerer' ? 'none — questions go straight to the owner' : 'none'}</Empty>}

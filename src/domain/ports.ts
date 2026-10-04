@@ -130,6 +130,23 @@ export interface Router {
   advise(job: Job): Promise<Advice>;
 }
 
+/** One waiting job as the queue sorter sees it: the job and its effective priority (the decider's notion). */
+export interface QueueEntry {
+  job: Job;
+  effectivePriority: number;
+}
+
+/**
+ * The queue-sorter role: orders the waiting jobs. Synchronous and pure in spirit: called once per
+ * Decision while the engine gathers inputs. Returns job ids; ids it leaves out follow, by the
+ * decider's own rule. Throwing or returning anything but distinct ids of the given jobs is a
+ * fallback to `priority` for that call.
+ */
+export interface QueueSorter {
+  readonly name: string;
+  sort(entries: readonly QueueEntry[]): JobId[];
+}
+
 /** What the HTTP edge reads about plugins: the router's status and GET /api/plugins. */
 export interface PluginsView {
   routerStatus(): RouterStatus;

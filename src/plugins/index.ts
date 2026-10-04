@@ -20,9 +20,10 @@ import { buildExecutors, executorStatus, type BuiltExecutor } from './executor-s
 import { builtinInstances } from './migrate.ts';
 import { buildNotifiers, startNotifiers, stopNotifiers } from './notifier-slot.ts';
 import { NO_MACHINE, buildJobSources, buildMachine, buildUsageSources, instanceStatus, type Built, type BuiltJobSource } from './source-slots.ts';
+import { buildQueueSorter, createLiveQueueSorter, type LiveQueueSorter } from './queue-sorter-slot.ts';
 import { answererStatus, assessorStatus, buildAnswerer, buildAssessor, type BuiltAnswerer, type BuiltAssessor } from './question-slots.ts';
 import { buildRouter, createLiveRouter, detectRouter, safeDetect, type BuiltRouter, type LiveRouter, type SlotDeps } from './router-slot.ts';
-import type { DetectionKit, JobSourceContext, PluginDefinition, PluginLogger, Router } from './sdk.ts';
+import type { DetectionKit, JobSourceContext, PluginDefinition, PluginLogger, QueueSorter, Router } from './sdk.ts';
 
 export type { BuiltExecutor } from './executor-slot.ts';
 export type { Built, BuiltJobSource } from './source-slots.ts';
@@ -60,6 +61,8 @@ export interface PluginHost {
   /** Live: swaps between calls when plugins.yaml changes. Valid after start(). With no router in plugins.yaml, the first router that can run here. */
   readonly router: Router;
   routerStatus(): RouterStatus;
+  /** Live: the queue-sorter instance now (priority answering for one that cannot run or misbehaves). Valid after start(). */
+  readonly queueSorter: QueueSorter;
   /** The answerer now, or undefined (none configured, or it cannot run). Valid after start(). */
   answerer(): Answerer | undefined;
   /** The assessor now (always-escalate standing in when the configured one cannot run). Valid after start(). */
@@ -111,10 +114,12 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
   let entries: Entry[] = [];
   let live: LiveRouter | undefined;
   let selection: RouterSelection = 'detected';
+  let sorter: LiveQueueSorter | undefined;
   let answerer: BuiltAnswerer | undefined;
   let assessor: BuiltAssessor | undefined;
   const builtin = builtinInstances(dirname(o.pluginsFile));
   const defaults = {
+    queueSorter: builtin.queueSorter,
     answerer: o.defaultAnswerer === undefined ? builtin.answerer : o.defaultAnswerer,
     assessor: o.defaultAssessor ?? builtin.assessor,
     executors: o.defaultExecutors ?? builtin.executors,
@@ -172,6 +177,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
     const file = 'error' in r || 'missing' in r ? undefined : r;
     let spec = {
       router: file?.router,
+      queueSorter: file?.queueSorter ?? defaults.queueSorter,
       answerer: file?.answerer !== undefined ? file.answerer : defaults.answerer,
       assessor: file?.assessor ?? defaults.assessor,
       executors: file?.executors ?? defaults.executors,
@@ -207,6 +213,12 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
         selection = next;
         o.logger.info(`job-hopper: router ${built.spec.name} (${built.plugin}${built.fallback ? ', fallback' : ''}; ${next})`);
       }
+    }
+    if (!sorter || !same(sorter.current().spec, spec.queueSorter)) {
+      const built = await buildQueueSorter(spec.queueSorter, deps);
+      if (sorter) sorter.swap(built);
+      else sorter = createLiveQueueSorter(built, o.logger);
+      o.logger.info(`job-hopper: queue sorter ${spec.queueSorter.name} (${built.plugin}${built.fallback ? ', fallback' : ''})`);
     }
     if (!answerer || !same(answerer.spec, spec.answerer)) {
       answerer = await buildAnswerer(spec.answerer, deps);
@@ -269,6 +281,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
     },
     get router() { return need().router; },
     routerStatus: () => need().status(),
+    get queueSorter() { return started(sorter).sorter; },
     answerer: () => answerer?.answerer,
     assessor() {
       if (!assessor) throw new Error('plugin host not started');
@@ -320,6 +333,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
           instance: current.spec, selection, detection: current.detection, active: current.plugin, fallback: status.fallback,
           ...(status.reason === undefined ? {} : { reason: status.reason }),
         },
+        queueSorter: started(sorter).status(),
         answerer: answerer ? answererStatus(answerer) : { instance: null, active: null, fallback: false },
         assessor: assessor ? assessorStatus(assessor) : { instance: defaults.assessor, active: null, fallback: false },
         executors: restartStatus(executors, executorStatus),

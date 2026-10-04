@@ -1,5 +1,5 @@
 // plugins.yaml: which instance fills which role (design.md "Configuration — plugins.yaml"). Read:
-// router, answerer, assessor, executors, jobSources, machines, usageSources, notifiers, attachedMachines. A UI edit
+// router, queueSorter, answerer, assessor, executors, jobSources, machines, usageSources, notifiers, attachedMachines. A UI edit
 // (edit.ts) writes it through writePluginsFile.
 import { createHash } from 'node:crypto';
 import { chmodSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
@@ -12,7 +12,7 @@ export type PluginsFileResult =
   | { missing: true }
   /** `answerer: null` = no answerer configured; absent = derive it. */
   | {
-    router?: InstanceSpec; answerer?: InstanceSpec | null; assessor?: InstanceSpec; executors?: InstanceSpec[];
+    router?: InstanceSpec; queueSorter?: InstanceSpec; answerer?: InstanceSpec | null; assessor?: InstanceSpec; executors?: InstanceSpec[];
     jobSources?: InstanceSpec[]; machines?: InstanceSpec; usageSources?: InstanceSpec[]; notifiers?: InstanceSpec[];
     attachedMachines?: AttachedMachine[]; warnings: string[];
   }
@@ -51,6 +51,7 @@ const attachedMachine = z.strictObject({
 const FILE = z.strictObject({
   version: z.literal(1),
   router: instance.optional(),
+  queueSorter: instance.optional(),
   answerer: stageInstance.nullable().optional(),
   assessor: stageInstance.optional(),
   // 1..n; jobs name an executor instance, so a name is one instance.
@@ -120,9 +121,10 @@ export function loadPluginsFile(path: string): PluginsFileResult {
   const parsed = FILE.safeParse(raw);
   if (!parsed.success) return { error: `${path}: ${pluginsFileProblem(raw)}` };
   const warnings = mode & 0o077 ? [`${path} is readable by group/other; options may hold secrets (chmod 600 ${path})`] : [];
-  const { router, answerer, assessor, executors, jobSources, machines, usageSources, notifiers, attachedMachines } = parsed.data;
+  const { router, queueSorter, answerer, assessor, executors, jobSources, machines, usageSources, notifiers, attachedMachines } = parsed.data;
   return {
     ...(router ? { router } : {}),
+    ...(queueSorter ? { queueSorter } : {}),
     ...(answerer !== undefined ? { answerer } : {}),
     ...(assessor ? { assessor } : {}),
     ...(executors ? { executors } : {}),

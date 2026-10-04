@@ -20,6 +20,7 @@ export interface EditContext {
 /** Where each role's instances live in plugins.yaml. */
 const SECTIONS: Record<Role, { key: string; many: boolean }> = {
   router: { key: 'router', many: false },
+  'queue-sorter': { key: 'queueSorter', many: false },
   answerer: { key: 'answerer', many: false },
   assessor: { key: 'assessor', many: false },
   executor: { key: 'executors', many: true },
@@ -31,7 +32,7 @@ const SECTIONS: Record<Role, { key: string; many: boolean }> = {
 
 /** What plugins.yaml (or the built-in instances) names now, section by section. */
 export interface Configured {
-  router?: InstanceSpec; answerer: InstanceSpec | null; assessor: InstanceSpec; executors: InstanceSpec[];
+  router?: InstanceSpec; queueSorter: InstanceSpec; answerer: InstanceSpec | null; assessor: InstanceSpec; executors: InstanceSpec[];
   jobSources: InstanceSpec[]; machines: InstanceSpec; usageSources: InstanceSpec[]; notifiers: InstanceSpec[];
 }
 
@@ -39,6 +40,7 @@ export interface Configured {
 export function configuredInstances(c: Configured, detectedRouter: InstanceSpec): ConfiguredInstance[] {
   return [
     { role: 'router', instance: c.router ?? detectedRouter },
+    { role: 'queue-sorter', instance: c.queueSorter },
     ...(c.answerer ? [{ role: 'answerer' as const, instance: c.answerer }] : []),
     { role: 'assessor', instance: c.assessor },
     ...c.executors.map((instance) => ({ role: 'executor' as const, instance })),

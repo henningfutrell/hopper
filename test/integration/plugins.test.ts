@@ -61,7 +61,7 @@ describe.skipIf(JEV_PRESENT)('router chosen from what is detected, no Jev checko
     const ids = body.plugins.map((p: { id: string; builtin: boolean }) => [p.id, p.builtin]).sort();
     expect(ids).toEqual([
       ['always-escalate', true], ['always-proceed', false], ['claude-cli', true], ['claude-cli-assessor', true], ['github-app', true], ['github-gh', true], ['grokbot-routine', true],
-      ['herdr-claude', true], ['jev-router', true], ['local', true], ['pass-through', true], ['test', true],
+      ['herdr-claude', true], ['jev-router', true], ['local', true], ['newest-first', true], ['oldest-first', true], ['pass-through', true], ['priority', true], ['test', true],
     ]);
     const jev = body.plugins.find((p: { id: string }) => p.id === 'jev-router');
     expect(jev).toMatchObject({ role: 'router', describe: expect.any(String), detection: { status: 'unavailable' }, options: { type: 'object', properties: { jevSrc: {}, python: {} } } });

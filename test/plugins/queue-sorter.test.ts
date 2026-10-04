@@ -123,7 +123,7 @@ describe('the plugin host\'s queue sorter', () => {
     const { host, pluginsFile } = await start('version: 1\n');
     const r = await host.edit({ action: 'select', role: 'queue-sorter', plugin: 'oldest-first', version: host.report().config.version });
     expect(r.ok).toBe(true);
-    expect(host.report().queueSorter.instance).toEqual({ name: 'oldest-first', plugin: 'oldest-first' });
+    expect(host.report().queueSorter.instance).toMatchObject({ name: 'oldest-first', plugin: 'oldest-first' });
     expect((await import('node:fs')).readFileSync(pluginsFile, 'utf8')).toContain('queueSorter:');
   });
 });

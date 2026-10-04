@@ -10,7 +10,7 @@ Short guide for authors. The contract is `docs/design.md` "Plugin contract"; the
 - Loaded at daemon start. A broken plugin is refused with its error in `/api/plugins`; the daemon
   still starts. A custom id equal to a built-in id is refused.
 - It runs only once `plugins.yaml` names it: `{ name: <instance>, plugin: <id>, options: { … } }`
-  in the role's section (`router`, `answerer`, `assessor`, `executors`, `jobSources`, `machines`,
+  in the role's section (`router`, `queueSorter`, `answerer`, `assessor`, `executors`, `jobSources`, `machines`,
   `usageSources`, `notifiers`). Executors, sources and notifiers apply at the next restart.
 
 ## How to write one
@@ -29,6 +29,11 @@ the directory into the plugin dir and change it.
   the role's own fields (a job source's `knownKeys`/`rerunnable`, a machine source's `executors()`,
   the router's `routerMode()`). A job source and a machine source must call themselves
   `ctx.instanceName`.
+- A **queue sorter** (`examples/plugins/queue-sorter/word-first/`) gets every waiting job with its
+  effective priority and returns job ids, synchronously, once per Decision. Ids it leaves out run
+  after the ones it names, in the decider's own order. It orders; it never admits or holds a job.
+  A throw, or anything but distinct ids of the jobs it was given, falls back to the built-in
+  `priority` for that call (shown in `/api/plugins` `queueSorter.fallback`).
 
 ## Command-bearing options
 

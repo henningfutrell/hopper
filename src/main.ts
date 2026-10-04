@@ -170,7 +170,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     onExpired: (q: Question) => engine.onExpired(q),
   });
   const engine: Engine = createEngine({
-    store, clock, executors, router, questions,
+    store, clock, executors, router, questions, queueSorter: host.queueSorter,
     ...(seams.fakeUsage ? { fakeUsage: seams.fakeUsage } : {}),
     machines: combineMachineSources([
       host.machines(),
