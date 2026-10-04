@@ -1,11 +1,11 @@
 // The plugin host (design.md "Phase 5"): built-in + custom plugins, plugins.yaml watched by mtime,
 // detection of every plugin, the live roles (the router — from plugins.yaml, else chosen from what
 // is detected — the answerer and the assessor, each swapped between calls) and the restart roles
-// (executors, job sources, the machine source, usage sources): built once at start; a later change
-// is reported as pending. A section plugins.yaml leaves out means the built-in instances.
+// (executors, job sources, the machine source, usage sources, notifiers): built once at start; a
+// later change is reported as pending. Notifiers are started with the event feed by the caller. A section plugins.yaml leaves out means the built-in instances.
 import { statSync } from 'node:fs';
 import { dirname } from 'node:path';
-import type { Answerer, Assessor, Clock, MachineSource, UsageSource } from '../domain/ports.ts';
+import type { Answerer, Assessor, Clock, MachineSource, Notifier, NotifierEvents, UsageSource } from '../domain/ports.ts';
 import {
   ROLES, type Detection, type InstanceSpec, type PluginsReport, type RestartRoleStatus, type RouterMode, type RouterSelection, type RouterStatus,
 } from '../domain/types.ts';
@@ -16,6 +16,7 @@ import { optionsJsonSchema, parseOptions } from './options.ts';
 import { loadPluginsFile } from './plugins-file.ts';
 import { buildExecutors, executorStatus, type BuiltExecutor } from './executor-slot.ts';
 import { builtinInstances } from './migrate.ts';
+import { buildNotifiers, startNotifiers, stopNotifiers } from './notifier-slot.ts';
 import { NO_MACHINE, buildJobSources, buildMachine, buildUsageSources, instanceStatus, type Built, type BuiltJobSource } from './source-slots.ts';
 import { answererStatus, assessorStatus, buildAnswerer, buildAssessor, type BuiltAnswerer, type BuiltAssessor } from './question-slots.ts';
 import { buildRouter, createLiveRouter, detectRouter, safeDetect, type BuiltRouter, type LiveRouter, type SlotDeps } from './router-slot.ts';
@@ -69,6 +70,12 @@ export interface PluginHost {
   machines(): MachineSource;
   /** The usage sources built at start that run. Valid after start(). */
   usageSources(): UsageSource[];
+  /** The notifiers built at start that run (and, once started, did not throw). Valid after start(). */
+  notifiers(): Notifier[];
+  /** Start every notifier with the event feed; one whose start throws is dropped with its reason. Once. */
+  startNotifiers(events: NotifierEvents): void;
+  /** Stop every started notifier, awaiting in-flight work. Once; never throws. */
+  stopNotifiers(): Promise<void>;
   report(): PluginsReport;
   /** Re-read plugins.yaml now, whatever the mtime; resolves when the router is in place. */
   reload(): Promise<void>;
@@ -107,11 +114,15 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
     jobSources: builtin.jobSources,
     machines: builtin.machines,
     usageSources: builtin.usageSources,
+    notifiers: builtin.notifiers,
   };
   const executors: RestartSlot<BuiltExecutor> = {};
   const jobSources: RestartSlot<BuiltJobSource> = {};
   const machines: RestartSlot<Built<MachineSource>> = {};
   const usageSources: RestartSlot<Built<UsageSource>> = {};
+  const notifiers: RestartSlot<Built<Notifier>> = {};
+  let notifiersStarted = false;
+  let notifiersStopped: Promise<void> | undefined;
   let timer: NodeJS.Timeout | undefined;
   let signature: string | undefined;
   let chain: Promise<void> = Promise.resolve();
@@ -156,6 +167,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
       jobSources: file?.jobSources ?? defaults.jobSources,
       machines: file?.machines ?? defaults.machines,
       usageSources: file?.usageSources ?? defaults.usageSources,
+      notifiers: file?.notifiers ?? defaults.notifiers,
     };
     let error = 'error' in r ? r.error : undefined;
     if (!error && spec.answerer && spec.answerer.name === spec.assessor.name) {
@@ -196,6 +208,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
     await restart(jobSources, 'job sources', spec.jobSources, () => buildJobSources(spec.jobSources, deps));
     await restart(machines, 'machine source', [spec.machines], async () => [await buildMachine(spec.machines, deps)]);
     await restart(usageSources, 'usage sources', spec.usageSources, () => buildUsageSources(spec.usageSources, deps));
+    await restart(notifiers, 'notifiers', spec.notifiers, () => buildNotifiers(spec.notifiers, deps));
   }
 
   function started<T>(value: T | undefined): T {
@@ -242,6 +255,17 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
     jobSources: () => [...started(jobSources.built)],
     machines: () => started(machines.built)[0]?.instance ?? NO_MACHINE,
     usageSources: () => started(usageSources.built).flatMap((b) => (b.instance ? [b.instance] : [])),
+    notifiers: () => started(notifiers.built).flatMap((b) => (b.instance ? [b.instance] : [])),
+    startNotifiers(events) {
+      if (notifiersStarted) return;
+      notifiersStarted = true;
+      startNotifiers(started(notifiers.built), events, o.logger);
+    },
+    stopNotifiers() {
+      if (!notifiersStarted) return Promise.resolve();
+      notifiersStopped ??= stopNotifiers(started(notifiers.built), o.logger);
+      return notifiersStopped;
+    },
     reload: enqueue,
     report() {
       const current = need().current();
@@ -259,6 +283,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
         jobSources: restartStatus(jobSources, instanceStatus),
         machines: restartStatus(machines, instanceStatus),
         usageSources: restartStatus(usageSources, instanceStatus),
+        notifiers: restartStatus(notifiers, instanceStatus),
         plugins: entries.map((e) => ({
           id: e.definition.id, role: e.definition.role, describe: e.definition.describe, builtin: e.builtin,
           ...(e.path ? { path: e.path } : {}), detection: e.detection, options: optionsJsonSchema(e.definition),

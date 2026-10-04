@@ -1,6 +1,5 @@
 // plugins.yaml: which instance fills which role (design.md "Configuration — plugins.yaml"). Read:
-// router, answerer, assessor, executors, jobSources, machines, usageSources. `notifiers` is allowed
-// so the file can be written whole; slice 5 reads it.
+// router, answerer, assessor, executors, jobSources, machines, usageSources, notifiers.
 import { readFileSync, statSync } from 'node:fs';
 import { parse } from 'yaml';
 import { z } from 'zod';
@@ -11,7 +10,8 @@ export type PluginsFileResult =
   /** `answerer: null` = no answerer configured; absent = derive it. */
   | {
     router?: InstanceSpec; answerer?: InstanceSpec | null; assessor?: InstanceSpec; executors?: InstanceSpec[];
-    jobSources?: InstanceSpec[]; machines?: InstanceSpec; usageSources?: InstanceSpec[]; warnings: string[];
+    jobSources?: InstanceSpec[]; machines?: InstanceSpec; usageSources?: InstanceSpec[]; notifiers?: InstanceSpec[];
+    warnings: string[];
   }
   | { error: string };
 
@@ -46,8 +46,7 @@ const FILE = z.strictObject({
   jobSources: uniqueList('jobSources', 'jobs and sync state are keyed by it').optional(),
   machines: instance.optional(),
   usageSources: uniqueList('usageSources', 'readings name their source').optional(),
-  // Read by slice 5 (notifiers).
-  notifiers: z.unknown().optional(),
+  notifiers: uniqueList('notifiers', 'logs and /api/plugins name a notifier by it').optional(),
 }).refine((f) => !f.answerer || !f.assessor || f.answerer.name !== f.assessor.name, {
   message: 'answerer and assessor have the same name; a question stage must say which one holds it',
   path: ['assessor', 'name'],
@@ -70,7 +69,7 @@ export function loadPluginsFile(path: string): PluginsFileResult {
     return { error: `${path}: ${parsed.error.issues.map((i) => `${i.path.join('.') || 'file'}: ${i.message}`).join('; ')}` };
   }
   const warnings = mode & 0o077 ? [`${path} is readable by group/other; options may hold secrets (chmod 600 ${path})`] : [];
-  const { router, answerer, assessor, executors, jobSources, machines, usageSources } = parsed.data;
+  const { router, answerer, assessor, executors, jobSources, machines, usageSources, notifiers } = parsed.data;
   return {
     ...(router ? { router } : {}),
     ...(answerer !== undefined ? { answerer } : {}),
@@ -79,6 +78,7 @@ export function loadPluginsFile(path: string): PluginsFileResult {
     ...(jobSources ? { jobSources } : {}),
     ...(machines ? { machines } : {}),
     ...(usageSources ? { usageSources } : {}),
+    ...(notifiers ? { notifiers } : {}),
     warnings,
   };
 }

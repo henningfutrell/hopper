@@ -27,8 +27,6 @@ export interface Config {
   keepPanes: boolean;
   /** webhooks.yaml: the webhook subscriptions. */
   webhooksFile: string;
-  /** Env file with GROKBOT_WEBHOOK_URL / GROKBOT_WEBHOOK_KEY (the Grok Bot routine webhook). */
-  grokbotWebhookFile: string;
   /** Lifetime of a UI session, in hours. */
   uiSessionHours: number;
   /** Custom plugins, one directory each. */
@@ -37,7 +35,7 @@ export interface Config {
   pluginsFile: string;
   /**
    * Every set JOB_HOPPER_* variable this config does not read, raw: the part-choosing ones removed
-   * in phase 5 slice 4 (read once more by the plugins.yaml migration) and any unknown one. The
+   * in phase 5 slices 4 and 5 (read once more by the plugins.yaml migration) and any unknown one. The
    * daemon warns about them at boot.
    */
   leftoverEnv: Record<string, string>;
@@ -69,7 +67,6 @@ const schema = z.object({
   JOB_HOPPER_MAX_QUESTIONS: int(0).default(5),
   JOB_HOPPER_KEEP_PANES: flag(false),
   JOB_HOPPER_WEBHOOKS_FILE: path('~/.config/job-hopper/webhooks.yaml'),
-  JOB_HOPPER_GROKBOT_WEBHOOK_FILE: path('~/.config/job-hopper/grokbot-webhook.env'),
   JOB_HOPPER_UI_SESSION_HOURS: z.coerce.number().finite().positive().default(12),
   JOB_HOPPER_PLUGIN_DIR: path('~/.config/job-hopper/plugins'),
   JOB_HOPPER_PLUGINS_FILE: path('~/.config/job-hopper/plugins.yaml'),
@@ -113,7 +110,6 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     maxQuestions: e.JOB_HOPPER_MAX_QUESTIONS,
     keepPanes: e.JOB_HOPPER_KEEP_PANES,
     webhooksFile: e.JOB_HOPPER_WEBHOOKS_FILE,
-    grokbotWebhookFile: e.JOB_HOPPER_GROKBOT_WEBHOOK_FILE,
     uiSessionHours: e.JOB_HOPPER_UI_SESSION_HOURS,
     pluginDir: e.JOB_HOPPER_PLUGIN_DIR,
     pluginsFile: e.JOB_HOPPER_PLUGINS_FILE,

@@ -16,6 +16,7 @@
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.json",
     "schemas": "node scripts/export-schemas.ts",
+    "plugin:check": "node scripts/plugin-check.ts",
     "check": "npm run typecheck && npm run lint && npm test"
   },
   "dependencies": {

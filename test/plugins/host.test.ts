@@ -205,7 +205,7 @@ describe('custom plugins through the host', () => {
     const { host } = start({ pluginDir, kit: fakeKit({ exists: async () => false }) });
     await host.start();
     const r = host.report();
-    expect(r.roles).toEqual(['router', 'answerer', 'assessor', 'executor', 'job-source', 'machine-source', 'usage-source']);
+    expect(r.roles).toEqual(['router', 'answerer', 'assessor', 'executor', 'job-source', 'machine-source', 'usage-source', 'notifier']);
     const byId = new Map(r.plugins.map((p) => [p.id, p]));
     expect(byId.get('jev-router')).toMatchObject({
       role: 'router', builtin: true, detection: { status: 'unavailable' },

@@ -58,6 +58,14 @@ export function createDetectionKit(o: { env?: NodeJS.ProcessEnv; timeoutMs?: num
         return false;
       }
     },
+    async readable(path) {
+      try {
+        await access(path, constants.R_OK);
+        return true;
+      } catch {
+        return false;
+      }
+    },
     async pythonImports(python, module) {
       const path = await which(python);
       if (!path) return false;

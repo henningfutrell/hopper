@@ -3,7 +3,9 @@
 // `jobSources[].options`, comments kept) and the part-choosing env vars removed in slice 4, read
 // here one last time. With neither, the same builder gives the built-in instances. The file is
 // written mode 600 without ever replacing one (link, not rename), then sources.yaml becomes
-// sources.yaml.migrated. The host's built-in instances for an absent section come from here too.
+// sources.yaml.migrated. The host's built-in instances for an absent section come from here too —
+// so a plugins.yaml written before a section existed (slice 5's `notifiers`) gets that section's
+// built-in instances, never nothing.
 import { existsSync, linkSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { Document, isMap, parseDocument, type Node } from 'yaml';
@@ -19,7 +21,7 @@ const executorList = z.string().transform((s, ctx) => {
   return names;
 });
 
-/** The removed variables, with the rules and defaults they had in src/config.ts before slice 4. */
+/** The removed variables, with the rules and defaults they had in src/config.ts before slice 4 (GROKBOT: slice 5). */
 const LEGACY = z.object({
   JOB_HOPPER_EXECUTORS: executorList.default(['test', 'herdr-claude']),
   JOB_HOPPER_HERDR_BIN: z.string().min(1).default('herdr'),
@@ -36,6 +38,7 @@ const LEGACY = z.object({
   JOB_HOPPER_GH_BIN: z.string().min(1).default('gh'),
   JOB_HOPPER_GITHUB_API: z.url({ protocol: /^https?$/ }).transform((u) => u.replace(/\/+$/, '')).optional(),
   JOB_HOPPER_SOURCES_FILE: z.string().min(1).transform(expandHome).optional(),
+  JOB_HOPPER_GROKBOT_WEBHOOK_FILE: z.string().min(1).optional(),
 });
 type Legacy = z.output<typeof LEGACY>;
 
@@ -47,12 +50,16 @@ export interface PluginsDoc {
   jobSources: InstanceSpec[];
   machines: InstanceSpec;
   usageSources: InstanceSpec[];
+  notifiers: InstanceSpec[];
 }
 
 type Block = Record<string, unknown>;
 
-/** The sections from the legacy settings and sources.yaml's two blocks (undefined: no block). */
-function buildDoc(e: Legacy, answerTimeoutMs: number, sourcesDir: string, blocks: { github?: Block; githubApp?: Block }): PluginsDoc {
+/**
+ * The sections from the legacy settings and sources.yaml's two blocks (undefined: no block).
+ * `configDir`: plugins.yaml's dir (the Grok Bot env file's default home); `sourcesDir`: sources.yaml's.
+ */
+function buildDoc(e: Legacy, answerTimeoutMs: number, configDir: string, sourcesDir: string, blocks: { github?: Block; githubApp?: Block }): PluginsDoc {
   const question = { bin: e.JOB_HOPPER_CLAUDE_BIN, timeoutMs: answerTimeoutMs };
   const app = blocks.githubApp;
   const appFile = typeof app?.appFile === 'string' ? app.appFile : join(sourcesDir, 'github-app.json');
@@ -78,12 +85,13 @@ function buildDoc(e: Legacy, answerTimeoutMs: number, sourcesDir: string, blocks
     ],
     machines: { name: 'local', plugin: 'local', options: { lanes: e.JOB_HOPPER_LOCAL_LANES } },
     usageSources: [],
+    notifiers: [{ name: 'grok-bot', plugin: 'grokbot-routine', options: { envFile: e.JOB_HOPPER_GROKBOT_WEBHOOK_FILE ?? join(configDir, 'grokbot-webhook.env') } }],
   };
 }
 
 /** The built-in instances: what a boot with nothing to migrate writes, and what an absent section means. */
 export function builtinInstances(configDir: string, answerTimeoutMs = 180_000): PluginsDoc {
-  return buildDoc(LEGACY.parse({}), answerTimeoutMs, configDir, {});
+  return buildDoc(LEGACY.parse({}), answerTimeoutMs, configDir, configDir, {});
 }
 
 function legacyOf(env: Record<string, string>): Legacy {
@@ -152,7 +160,7 @@ export function ensurePluginsFile(o: { pluginsFile: string; env: Record<string, 
   const sources = readSources(sourcesFile);
   const github = blockOf(sources, 'github', sourcesFile);
   const githubApp = blockOf(sources, 'githubApp', sourcesFile);
-  const doc = buildDoc(legacy, o.answerTimeoutMs, dirname(sourcesFile), { ...(github.value ? { github: github.value } : {}), ...(githubApp.value ? { githubApp: githubApp.value } : {}) });
+  const doc = buildDoc(legacy, o.answerTimeoutMs, dirname(o.pluginsFile), dirname(sourcesFile), { ...(github.value ? { github: github.value } : {}), ...(githubApp.value ? { githubApp: githubApp.value } : {}) });
   const fromEnv = Object.keys(o.env).filter((k) => k in LEGACY.shape);
   const migrated = sources !== undefined || fromEnv.length > 0;
   const origin = migrated ? [sources ? sourcesFile : '', fromEnv.length ? `the env (${fromEnv.sort().join(', ')})` : ''].filter(Boolean).join(' and ') : 'the built-in defaults';

@@ -44,6 +44,18 @@ describe('detection kit (real)', () => {
     expect(createDetectionKit().timeoutMs).toBe(5000);
   });
 
+  it('readable: true for a file this process can read; false when missing or mode 000', async () => {
+    const dir = temp();
+    const file = join(dir, 'f');
+    writeFileSync(file, 'x', { mode: 0o600 });
+    const locked = join(dir, 'locked');
+    writeFileSync(locked, 'x', { mode: 0o000 });
+    const kit = createDetectionKit();
+    expect(await kit.readable(file)).toBe(true);
+    expect(await kit.readable(join(dir, 'missing'))).toBe(false);
+    if (process.getuid?.() !== 0) expect(await kit.readable(locked)).toBe(false);
+  });
+
   it('exists, env', async () => {
     const dir = temp();
     const kit = createDetectionKit({ env: { JH_X: 'y' } });

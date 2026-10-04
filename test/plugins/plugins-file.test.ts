@@ -33,7 +33,7 @@ describe('plugins.yaml (router, answerer, assessor, executors, jobSources, machi
     expect(loadPluginsFile(file('version: 1\n'))).toEqual({ warnings: [] });
   });
 
-  it('reads every role section; notifiers is allowed, unread (slice 5)', () => {
+  it('reads every role section', () => {
     const r = loadPluginsFile(file([
       'version: 1',
       'router: { name: jev, plugin: jev-router }',
@@ -43,7 +43,7 @@ describe('plugins.yaml (router, answerer, assessor, executors, jobSources, machi
       'jobSources: []',
       'machines: { name: local, plugin: local }',
       'usageSources: []',
-      'notifiers: []',
+      'notifiers: [ { name: grok-bot, plugin: grokbot-routine, options: { envFile: /x/g.env } } ]',
     ].join('\n')));
     expect(r).toEqual({
       router: { name: 'jev', plugin: 'jev-router', options: {} },
@@ -53,8 +53,14 @@ describe('plugins.yaml (router, answerer, assessor, executors, jobSources, machi
       jobSources: [],
       machines: { name: 'local', plugin: 'local', options: {} },
       usageSources: [],
+      notifiers: [{ name: 'grok-bot', plugin: 'grokbot-routine', options: { envFile: '/x/g.env' } }],
       warnings: [],
     });
+  });
+
+  it('notifiers: 0..n under unique names; `notifiers: []` reads as none, not as absent', () => {
+    expect(loadPluginsFile(file('version: 1\nnotifiers: []\n'))).toEqual({ notifiers: [], warnings: [] });
+    expect(loadPluginsFile(file('version: 1\nnotifiers: [ { name: n, plugin: a }, { name: n, plugin: b } ]\n'))).toEqual({ error: expect.stringMatching(/notifiers: n named twice/) });
   });
 
   it('jobSources and usageSources: 0..n instances in order, each with its options', () => {

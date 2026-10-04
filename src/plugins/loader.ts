@@ -26,7 +26,8 @@ export function definitionProblem(x: unknown): string | undefined {
   return undefined;
 }
 
-async function importPlugin(path: string): Promise<{ definition: PluginDefinition } | { error: string }> {
+/** Import one plugin module and check its default export. Never throws. */
+export async function importPlugin(path: string): Promise<{ definition: PluginDefinition } | { error: string }> {
   let mod: { default?: unknown };
   try {
     mod = await import(pathToFileURL(path).href) as { default?: unknown };

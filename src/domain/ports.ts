@@ -97,6 +97,21 @@ export interface UsageSource {
   poll(): Promise<UsageReading[]>;
 }
 
+/** What a notifier is given at start: the event log's live feed, and the job an event names. */
+export interface NotifierEvents {
+  /** Called after each append (listeners must not re-enter synchronously: defer the work). Returns the unsubscribe. */
+  subscribe(listener: (event: DomainEvent) => void): () => void;
+  job(id: JobId): Job | undefined;
+}
+
+/** The notifier role: tells something outside about events. Started once, stopped at shutdown. */
+export interface Notifier {
+  readonly name: string;
+  start(events: NotifierEvents): void;
+  /** Unsubscribes and settles in-flight work. */
+  stop(): Promise<void>;
+}
+
 /** The router role: advise on one job. Never throws (a failure is advice with `source: fallback`). */
 export interface Router {
   readonly name: string;

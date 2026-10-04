@@ -1,20 +1,15 @@
-import type { Store } from '../domain/ports.ts';
-import type { DomainEvent } from '../domain/types.ts';
+// The Grok Bot routine webhook (design.md "Grok Bot routine webhook"): one POST per question that
+// reaches the human, read from the env file at each event. In memory only: no store row, no event.
+import type { DomainEvent, Notifier, NotifierEvents, PluginLogger } from '../../sdk.ts';
 import { readGrokBotEnv } from './env-file.ts';
 
 export interface GrokBotNotifierOptions {
-  store: Store;
+  name: string;
   path: string;
+  logger: PluginLogger;
   /** First retry delay; doubles per attempt. Default 1000. */
   baseMs?: number;
   timeoutMs?: number;
-  /** Success line sink (lint allows console.log only in main.ts). Default: silent. */
-  info?: (line: string) => void;
-}
-
-export interface GrokBotNotifier {
-  start(): void;
-  stop(): Promise<void>;
 }
 
 const MAX_ATTEMPTS = 3;
@@ -25,17 +20,17 @@ function wanted(e: DomainEvent): boolean {
   return e.type === 'question.escalated' && e.data.target === 'human' && !e.data.renotify;
 }
 
-export function createGrokBotNotifier(o: GrokBotNotifierOptions): GrokBotNotifier {
-  const { store, path } = o;
+export function createGrokBotNotifier(o: GrokBotNotifierOptions): Notifier {
+  const { path, logger } = o;
   const baseMs = o.baseMs ?? 1000;
   const timeoutMs = o.timeoutMs ?? 10_000;
-  const info = o.info ?? (() => {});
+  let feed: NotifierEvents | undefined;
   const inFlight = new Set<Promise<void>>();
   let unsubscribe: (() => void) | undefined;
   let warnedMode = false;
 
   function payload(e: DomainEvent): Record<string, unknown> {
-    const source = e.jobId ? store.jobs.get(e.jobId)?.source : undefined;
+    const source = e.jobId ? feed?.job(e.jobId)?.source : undefined;
     const base = { source: 'job-hopper', kind: e.type, at: e.at, jobId: e.jobId ?? null, issueTitle: source?.title ?? null, issueUrl: source?.url ?? null };
     if (e.type === 'question.escalated') {
       return { ...base, question: e.data.text, questionId: e.data.questionId, ...(e.data.answerUrl ? { answerUrl: e.data.answerUrl } : {}) };
@@ -48,12 +43,12 @@ export function createGrokBotNotifier(o: GrokBotNotifierOptions): GrokBotNotifie
     if (cfg.kind === 'absent') return;
     const tag = `grokbot: ${e.type} ${e.jobId ?? ''}`.trim();
     if (cfg.kind === 'invalid') {
-      console.error(`${tag}: ${path} ${cfg.reason}; skipped`);
+      logger.warn(`${tag}: ${path} ${cfg.reason}; skipped`);
       return;
     }
     if (cfg.looseMode && !warnedMode) {
       warnedMode = true;
-      console.warn(`grokbot: ${path} is readable by group or other; chmod 600 it`);
+      logger.warn(`grokbot: ${path} is readable by group or other; chmod 600 it`);
     }
     const body = JSON.stringify(payload(e));
     let last = 'no attempt';
@@ -69,7 +64,7 @@ export function createGrokBotNotifier(o: GrokBotNotifierOptions): GrokBotNotifie
         status = res.status;
         await res.body?.cancel();
         if (res.ok) {
-          info(`${tag}: delivered (HTTP ${status})`);
+          logger.info(`${tag}: delivered (HTTP ${status})`);
           return;
         }
         last = `HTTP ${status}`;
@@ -79,7 +74,7 @@ export function createGrokBotNotifier(o: GrokBotNotifierOptions): GrokBotNotifie
       if (status !== undefined && !retriable(status)) break;
       if (attempt < MAX_ATTEMPTS) await sleep(baseMs * 2 ** (attempt - 1));
     }
-    console.error(`${tag}: delivery failed (${last})`);
+    logger.warn(`${tag}: delivery failed (${last})`);
   }
 
   function onEvent(e: DomainEvent): void {
@@ -87,14 +82,16 @@ export function createGrokBotNotifier(o: GrokBotNotifierOptions): GrokBotNotifie
     // Listeners must not re-enter synchronously (ports.ts): defer the work.
     const p = new Promise<void>((r) => setImmediate(r))
       .then(() => deliver(e))
-      .catch((err) => console.error(`grokbot: ${e.type} ${e.jobId ?? ''}: ${err instanceof Error ? err.message : String(err)}`))
+      .catch((err) => logger.warn(`grokbot: ${e.type} ${e.jobId ?? ''}: ${err instanceof Error ? err.message : String(err)}`))
       .finally(() => inFlight.delete(p));
     inFlight.add(p);
   }
 
   return {
-    start() {
-      unsubscribe ??= store.events.subscribe(onEvent);
+    name: o.name,
+    start(events) {
+      feed = events;
+      unsubscribe ??= events.subscribe(onEvent);
     },
     async stop() {
       unsubscribe?.();
