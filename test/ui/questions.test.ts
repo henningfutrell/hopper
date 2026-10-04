@@ -2,7 +2,9 @@
 // The UI's question card (ui/src/views/questions.tsx), rendered in happy-dom inside the whole app
 // against a fake of the daemon's HTTP surface: the browser's only seam. Logged out, the card says
 // how to log in where the answer box would be; logged in, it offers Send answer and Close (Close
-// asks first, in a dialog); a 403 on a mutation logs the UI out and shows the same notice.
+// asks first, in a dialog); a 403 on a mutation logs the UI out and shows the same notice. A
+// session whose role cannot answer (viewer, issue #39) says so; a 403 naming the role needed keeps
+// the session.
 import { createElement } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -17,7 +19,10 @@ const question = {
 
 interface Call { path: string; method: string; headers: Record<string, string>; body?: unknown }
 
-function fakeDaemon(o: { authed: boolean; mutationStatus?: number }) {
+type Role = 'viewer' | 'operator' | 'admin';
+interface Boot { authed: boolean; role?: Role; mutationStatus?: number; needs?: Role; providers?: { name: string; label: string; type: string }[] }
+
+function fakeDaemon(o: Boot) {
   const calls: Call[] = [];
   const json = (status: number, b: unknown) => new Response(JSON.stringify(b), { status, headers: { 'content-type': 'application/json' } });
   const routes: Record<string, unknown> = {
@@ -37,10 +42,16 @@ function fakeDaemon(o: { authed: boolean; mutationStatus?: number }) {
     const path = String(input).split('?')[0]!;
     const headers = Object.fromEntries(Object.entries((init.headers ?? {}) as Record<string, string>));
     calls.push({ path, method: init.method ?? 'GET', headers, ...(init.body ? { body: JSON.parse(String(init.body)) } : {}) });
-    if (path === '/ui/api/session') return json(200, o.authed ? { authenticated: true, expiresAt: '2099-01-01T00:00:00.000Z' } : { authenticated: false });
+    const signIn = { local: true, origin: location.origin, providers: o.providers ?? [] };
+    if (path === '/ui/api/session') {
+      return json(200, o.authed
+        ? { authenticated: true, expiresAt: '2099-01-01T00:00:00.000Z', user: { role: o.role ?? 'admin', provider: 'local', name: 'login code' }, signIn }
+        : { authenticated: false, signIn });
+    }
     if (path.startsWith('/ui/api/')) {
       const status = o.mutationStatus ?? 200;
-      return json(status, status === 200 ? { ...question, status: 'closed' } : { error: 'missing or invalid x-jobhopper-session' });
+      if (status === 200) return json(200, { ...question, status: 'closed' });
+      return json(status, o.needs ? { error: `role ${o.role} may not do this; it needs ${o.needs}`, needs: o.needs } : { error: 'missing or invalid x-jobhopper-session' });
     }
     if (path in routes) return json(200, routes[path]);
     return json(404, { error: 'not found' });
@@ -57,7 +68,7 @@ class FakeEventSource {
 
 let root: Root | undefined;
 
-async function boot(o: { authed: boolean; mutationStatus?: number }) {
+async function boot(o: Boot) {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
   window.location.hash = '#questions';
@@ -128,5 +139,28 @@ describe('question card', () => {
     await click(button('Send answer'));
     await vi.waitFor(() => expect(notice()?.textContent).toContain(LOGIN_CMD));
     expect(card()!.querySelector('textarea')).toBeNull();
+  });
+
+  it('a viewer: no answer box; the card says the role cannot answer', async () => {
+    await boot({ authed: true, role: 'viewer' });
+    await vi.waitFor(() => expect(notice()?.textContent).toContain('viewer'));
+    expect(card()!.querySelector('textarea')).toBeNull();
+    expect(notice()?.textContent).toMatch(/cannot answer/);
+  });
+
+  it('a 403 naming the role needed keeps the session: the answer box stays', async () => {
+    await boot({ authed: true, role: 'operator', mutationStatus: 403, needs: 'admin' });
+    await vi.waitFor(() => expect(button('Close')).toBeDefined());
+    await click(button('Close'));
+    const dialog = await vi.waitFor(() => { const d = document.querySelector('[role="alertdialog"]'); expect(d).not.toBeNull(); return d!; });
+    await click(button('Close question', dialog));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(card()!.querySelector('textarea')).not.toBeNull();
+    expect(localStorage.getItem('jh_session')).toBe('a'.repeat(64));
+  });
+
+  it('logged out with identity providers: the banner offers a sign-in button per provider', async () => {
+    await boot({ authed: false, providers: [{ name: 'corp', label: 'Corp SSO', type: 'oidc' }] });
+    await vi.waitFor(() => expect(button('Sign in with Corp SSO', document.body)).toBeDefined());
   });
 });
