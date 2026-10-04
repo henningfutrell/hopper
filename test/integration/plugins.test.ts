@@ -52,7 +52,7 @@ describe.skipIf(JEV_PRESENT)('router chosen from what is detected, no Jev checko
   it('GET /api/plugins: roles, the detected instance, and every plugin; a custom router that can run is chosen', async () => {
     const a = await start({ before: installAlwaysProceed });
     const body = (await a.api('GET', '/api/plugins')).body;
-    expect(body.roles).toEqual(['router', 'answerer', 'assessor', 'executor', 'job-source', 'machine-source', 'usage-source', 'notifier']);
+    expect(body.roles).toEqual(['router', 'queue-sorter', 'answerer', 'assessor', 'executor', 'job-source', 'machine-source', 'usage-source', 'notifier']);
     expect(body.config).toMatchObject({ source: 'file', path: join(a.dataDir, 'plugins.yaml') });
     expect(body.router).toMatchObject({
       instance: { name: 'always-proceed', plugin: 'always-proceed' }, selection: 'detected',
