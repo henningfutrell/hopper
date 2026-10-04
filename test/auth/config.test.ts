@@ -71,6 +71,18 @@ providers:
     expect(() => loadAuthFile(write(`version: 1\n${yaml}`.replace('version: 1\nversion: 2', 'version: 2')))).toThrow(msg);
   });
 
+  it('reads a client secret from an environment variable', () => {
+    process.env.JH_TEST_SECRET = 'from-env';
+    try {
+      const auth = loadAuthFile(write('version: 1\nproviders: [{ name: x, type: github, clientId: a, clientSecretEnv: JH_TEST_SECRET }]'));
+      expect(auth.providers[0]).toMatchObject({ clientSecret: 'from-env' });
+    } finally {
+      delete process.env.JH_TEST_SECRET;
+    }
+    expect(() => loadAuthFile(write('version: 1\nproviders: [{ name: x, type: github, clientId: a, clientSecretEnv: JH_TEST_UNSET }]'))).toThrow(/JH_TEST_UNSET/);
+    expect(() => loadAuthFile(write('version: 1\nproviders: [{ name: x, type: github, clientId: a, clientSecret: b, clientSecretEnv: X }]'))).toThrow(/clientSecret/);
+  });
+
   it('refuses a missing secret file', () => {
     expect(() => loadAuthFile(write('version: 1\nproviders: [{ name: x, type: github, clientId: a, clientSecretFile: /nonexistent/secret }]')))
       .toThrow(/\/nonexistent\/secret/);
