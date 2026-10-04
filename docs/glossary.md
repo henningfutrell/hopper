@@ -8,7 +8,9 @@ synonyms. Rename here first, in the same commit as everything else.
 | **Job** | One unit of work pushed through the API: an executor name, a payload, a priority. | task, run |
 | **Priority** | `0..100` on the job, higher first. Default 50. | rank |
 | **Effective priority** | Priority after the router's boost (cheap advice), which applies only in active mode. | score |
-| **Machine** | A host that can run jobs. Today: this laptop (`local`). Supplied by a `MachineSource`. | node, worker |
+| **Machine** | A host that can run jobs: this one (`local`) and every attached machine. Supplied by a `MachineSource`. | node, worker |
+| **Attached machine** | Another host that runs jobs in its own herdr session, reached over ssh; plugins.yaml `attachedMachines:`. Online while that session answers. | remote, worker, consumer (issue #10's word) |
+| **ssh target** | The ssh destination of an attached machine: a `~/.ssh/config` alias or `user@host`. | host |
 | **Lane** | One concurrent job slot on a machine. Opened and closed by Decisions. `idle`, `busy`, `draining`. | slot, worker, thread |
 | **Draining** | A busy lane the Decision wants gone; it closes when its job ends. | |
 | **Usage reading** | One budget measurement: `used` of `limit` in a `unit`, optionally for one machine. Supplied by a `UsageSource`. | quota |

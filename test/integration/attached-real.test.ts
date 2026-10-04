@@ -20,14 +20,15 @@ describe.skipIf(!TARGET)('a real job on an attached machine (opt-in)', () => {
   let cleanup: () => void;
 
   beforeAll(async () => {
-    ssh(`nohup herdr --session ${SESSION} server >/dev/null 2>&1 </dev/null &`);
+    const herdrBin = ssh('command -v herdr').trim().replaceAll('//', '/');
+    ssh(`nohup ${herdrBin} --session ${SESSION} server >/dev/null 2>&1 </dev/null &`);
     const db = tempDbPath();
     cleanup = db.cleanup;
     writeFileSync(join(dirname(db.dbPath), 'plugins.yaml'), [
       'version: 1',
-      `executors: [ { name: herdr-claude, plugin: herdr-claude, options: { session: ${SESSION}, cwd: /tmp } } ]`,
+      `executors: [ { name: herdr-claude, plugin: herdr-claude, options: { cwd: /tmp } } ]`,
       'attachedMachines:',
-      `  - { name: remote, ssh: ${TARGET}, lanes: 8, session: ${SESSION} }`,
+      `  - { name: remote, ssh: ${TARGET}, lanes: 8, session: ${SESSION}, herdrBin: ${herdrBin} }`,
     ].join('\n'), { mode: 0o600 });
     a = await startTestApp({ dbPath: db.dbPath });
     await waitFor(async () => (await a.api('GET', '/api/machines')).body.machines.some((m: { id: string; online: boolean }) => m.id === 'remote' && m.online), { timeoutMs: 60000 });
@@ -54,7 +55,7 @@ describe.skipIf(!TARGET)('a real job on an attached machine (opt-in)', () => {
     expect(done, JSON.stringify(done)).toMatchObject({ status: 'finished' });
     const claimed = (await a.events('types=job.claimed&limit=100')).find((e) => e.jobId === job.id)!;
     expect(claimed.machineId).toBe('remote');
-    expect(done.executorState).toMatchObject({ ssh: TARGET, session: SESSION });
+    expect(done.executorState).toMatchObject({ ssh: TARGET, session: SESSION, herdrBin: expect.stringMatching(/^\/.*herdr$/) });
     expect(JSON.stringify(done.result)).toContain(hostname);
   }, 300000);
 });

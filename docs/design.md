@@ -41,7 +41,7 @@ Fastify for HTTP, `node:sqlite` for storage, zod for request validation.
 | `src/grokbot/` | the Grok Bot routine webhook: env-file reader, notifier (event log → POST) | engine, http, decider |
 | `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `job-hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, `plugins.yaml` + watch, the role slots (`router-slot.ts` with the shared `instantiate`, `question-slots.ts`, `executor-slot.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `answerer/claude-cli/`, `assessor/claude-cli-assessor/`, `assessor/always-escalate/` hold their prompts; `executor/herdr-claude/` and `executor/test/` wrap the adapters in `src/executors/`) | engine, http, store, decider, questions |
 | `src/executors/` | `Executor` adapters (`test`, `herdr/`) and the registry; reached through the executor plugins | engine, http, store, plugins |
-| `src/machines/` | `MachineSource` adapters: `local` | engine, http, store |
+| `src/machines/` | `MachineSource` adapters: `local`, attached machines (ssh probe through the herdr CLI client), `combineMachineSources` | engine, http, store |
 | `src/usage/` | `UsageSource` adapters: `fake` | engine, http, store |
 | `src/engine/` | the loop: gather → decide → apply; job lifecycle; restart recovery | http |
 | `src/http/` | Fastify routes, SSE, static UI | executors, plugins (reads them through the `PluginsView` port) |
@@ -1814,6 +1814,73 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
 |-----|---------|
 | `JOB_HOPPER_PLUGIN_DIR` | `~/.config/job-hopper/plugins` |
 | `JOB_HOPPER_PLUGINS_FILE` | `~/.config/job-hopper/plugins.yaml` |
+
+## Attached machines (issue #10, 2026-10-04)
+
+Owner request: attach other machines and execute jobs on them over SSH with their own herdr.
+
+
+
+An **attached machine** is another host that runs jobs in its own herdr session, reached over ssh.
+It is a machine beside `local`: the decider sees it in `DecisionInputs.machines` and assigns jobs
+to it by the unchanged rule (online, runs the executor, most remaining room). Nothing else in the
+decider changes.
+
+**Configuration** — plugins.yaml, read at start (a restart role, like `executors:`):
+
+```yaml
+attachedMachines:
+  - { name: laptop, ssh: laptop, lanes: 2, herdrBin: /home/user/.local/bin/herdr }
+```
+
+| field | default | |
+|---|---|---|
+| `name` | — | the machine id; never `local`; unique |
+| `ssh` | — | ssh destination (`~/.ssh/config` alias or `user@host`); must not start with `-` |
+| `lanes` | — | its `maxLanes`, ≥ 1 |
+| `executors` | `[herdr-claude]` | executor instances that run there |
+| `label` | `name` | |
+| `session` | `job-hopper` | job-hopper's herdr session there; never `default` |
+| `herdrBin` | `herdr` | **give the absolute path.** Each call is a fresh login shell there; on the laptop the shell env file is a symlink that every new pane's shell updates, and a call racing that update lost its PATH (`zsh:1: command not found: herdr`, exit 127, seen live) |
+
+**Reaching it.** `createHerdrCliClient({ ssh: { target, controlDir } })` runs the same herdr argv as
+`ssh -o BatchMode=yes -o ConnectTimeout=10 -o ControlMaster=auto -o ControlPath=<dataDir>/ssh/%C
+-o ControlPersist=60 -- <target> '<argv, POSIX single-quoted>'`. The remote login shell must read
+POSIX single quotes (sh, bash, zsh; not fish). One shared connection per target (the probe and every
+job share it). ssh's own failure (exit 255) is `HerdrError` code `ssh`; herdr's JSON errors come back
+as they do locally. A unix socket path is capped at 108 bytes: `<dataDir>/ssh/` plus 40 hex chars
+must fit (`~/.local/share/job-hopper/ssh/…` does).
+
+**Online.** `herdr --session <session> status server` over ssh says `status: running`. Probed in the
+background at most every 30 s; `list()` never waits, so a machine that is off or asleep never stalls
+a Decision (see "Scheduler loose ends": every Decision awaits every machine source). Offline until
+the first probe answers. Transitions are logged once per reason (`job-hopper: attached machine
+laptop online (ssh laptop)` / `… offline: <reason>`). Offline → the decider gives it nothing; a
+waiting-answer job whose pane is there stays pinned (`resumeOn`) and waits.
+
+**Executors are told the machine.** `ExecutionContext.machine` is the lane's `MachineSnapshot`
+(`ssh` and `herdr { bin, session }` on an attached one); the runner looks it up per run. herdr-claude
+drives that machine's herdr and records `ssh`, `herdrBin`, `session` in its pane state, so resume,
+reattach and cleanup (which have only the job) reach the same herdr. Pane ids are per herdr server:
+held panes are keyed by machine and pane. An executor that cannot run elsewhere is simply not listed
+in the machine's `executors`.
+
+**Working directories are the same paths there.** A job's `cwd` (payload, or the instance's `cwd`) is
+resolved on this machine (`~` expanded here) and must exist on the attached one; the laptop has
+`~/workbench/app-workflows` with its own checkouts. A missing cwd fails the job at `tab create`.
+
+**Preparing a machine:** `bash scripts/attach-machine.sh <ssh-target> [lanes]` — checks herdr and
+claude there, installs `systemd/job-hopper-herdr.service` there, `enable --now`s it, warns without
+linger, confirms the session runs, and prints the plugins.yaml lines with the resolved `herdrBin`.
+
+**Verification:** `JOB_HOPPER_REAL_SSH=<target> npm test -- test/integration/attached-real.test.ts`
+runs a real Claude job there (throwaway session) through the composition root. Passed against
+`laptop` 2026-10-04.
+
+**Not built:** `/api/plugins` shows no pending change for `attachedMachines:` (restart to apply);
+the UI shows attached machines only through `/api/machines`; slice 4 ("Job, machine, usage sources
+as plugins") may fold this section into the machine-source role — the adapter
+(`src/machines/attached.ts`) is the piece it would wrap; the `ssh` option is command-bearing there.
 
 ## Phase 6 — owner direction, not yet built (2026-10-03)
 
