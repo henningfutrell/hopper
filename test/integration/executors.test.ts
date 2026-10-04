@@ -33,7 +33,7 @@ async function boot(dbPath: string): Promise<TestApp> {
 
 const writePluginsYaml = (dbPath: string, text: string) => writeFileSync(join(dirname(dbPath), 'plugins.yaml'), text, { mode: 0o600 });
 
-/** A custom executor plugin that finishes every job at once, echoing its prompt. */
+/** A custom executor plugin that finishes every job at once, echoing its prompt and the machine it ran on. */
 function installEchoExecutor(dbPath: string): void {
   const dir = join(dirname(dbPath), 'plugins', 'echo-executor');
   mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -41,7 +41,7 @@ function installEchoExecutor(dbPath: string): void {
     "export default { id: 'echo-executor', role: 'executor', describe: 'finishes at once',",
     "  async detect() { return { status: 'available' }; },",
     "  create() { return { name: 'echo-executor', idempotent: true, validate() { return null; },",
-    "    async run(ctx) { return { kind: 'finished', result: { echoed: ctx.job.spec.payload.prompt } }; } }; } };",
+    "    async run(ctx) { return { kind: 'finished', result: { echoed: ctx.job.spec.payload.prompt, machine: ctx.machine?.id } }; } }; } };",
   ].join('\n'), { mode: 0o600 });
 }
 
@@ -100,7 +100,7 @@ describe('an executor that cannot run holds its jobs', () => {
     const second = await boot(dbPath);
     const done = await second.waitForStatus(job.id, 'finished');
     expect(done.spec.executor).toBe('later');
-    expect(done.result).toEqual({ echoed: 'ping' });
+    expect(done.result).toEqual({ echoed: 'ping', machine: 'local' }); // the executor is told its lane's machine
   });
 });
 
