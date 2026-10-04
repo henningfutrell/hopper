@@ -1,6 +1,6 @@
 // jev-router: Jev's own router, run through jev_shim.py against a stand-in Jev checkout
 // (fixtures/jev), a fake `claude` (Haiku) and a fake typesafe_sdk (TypeSafe). TypeSafe answers the
-// Jev gates named in `typesafeGates` once TYPESAFE_API_KEY is set; Haiku answers the rest, and every
+// Jev gates named in `typesafeGates` once its key is set; Haiku answers the rest, and every
 // gate while TypeSafe is off or failing. The key comes from the environment or from `typesafeKeyFile`,
 // read on every call, so writing the file switches TypeSafe on without a restart.
 import { chmodSync, cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';

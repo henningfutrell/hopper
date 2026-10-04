@@ -1,6 +1,7 @@
 // Running grok-bot-jev's router once per job through jev_shim.py (design.md "Jev"). Any failure is
 // advice with `source: fallback` — the router's own documented safe fallback — never a throw.
 import { spawn } from 'node:child_process';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { claudeArgv, scrubbedEnv } from '../../claude-print.ts';
@@ -40,8 +41,10 @@ export interface JevShimOptions {
   claudeBin: string;
   /** Haiku's model id for the claude CLI. */
   model: string;
-  /** The Jev gates TypeSafe answers when TYPESAFE_API_KEY is set; Haiku answers the rest. */
+  /** The Jev gates TypeSafe answers once its key is set; Haiku answers the rest. */
   typesafeGates: string[];
+  /** Holds the TypeSafe key when TYPESAFE_API_KEY is unset (absolute); read on every call. */
+  typesafeKeyFile: string;
   dataDir: string;
   mode: () => RouterMode;
   clock: Clock;
@@ -62,14 +65,28 @@ function jevState(job: Job): Record<string, unknown> {
   return state;
 }
 
+/** TYPESAFE_API_KEY, else the key file's trimmed contents; undefined when neither holds one. */
+async function typesafeKey(file: string): Promise<string | undefined> {
+  const fromEnv = process.env.TYPESAFE_API_KEY;
+  if (fromEnv) return fromEnv;
+  try {
+    return (await readFile(file, 'utf8')).trim() || undefined;
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+    throw e;
+  }
+}
+
 /**
  * Spawn the shim, feed it the request, resolve with its stdout. Rejects on any failure. The shim
  * runs in its own process group, so a timeout also kills the claude it started.
  */
-function runShim(o: JevShimOptions, request: unknown): Promise<string> {
+function runShim(o: JevShimOptions, key: string | undefined, request: unknown): Promise<string> {
   return new Promise((resolve, reject) => {
+    const env: NodeJS.ProcessEnv = { ...scrubbedEnv(), PYTHONDONTWRITEBYTECODE: '1' };
+    if (key) env.TYPESAFE_API_KEY = key;
     const child = spawn(o.python, [SHIM], {
-      env: { ...scrubbedEnv(), PYTHONDONTWRITEBYTECODE: '1' },
+      env,
       stdio: ['pipe', 'pipe', 'pipe'],
       detached: true,
     });
@@ -115,7 +132,7 @@ export function createJevShimRouter(o: JevShimOptions): Router {
     name: 'jev-router',
     async advise(job: Job): Promise<Advice> {
       try {
-        const stdout = await runShim(o, {
+        const stdout = await runShim(o, await typesafeKey(o.typesafeKeyFile), {
           jevSrc: o.jevSrc,
           mode: o.mode(),
           logPath: join(o.dataDir, 'jev-runs.jsonl'),

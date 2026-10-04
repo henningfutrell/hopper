@@ -188,8 +188,11 @@ budgets**, so it cannot be the usage source. job-hopper uses it for what it is: 
   `system_one` it imported. Each gate in `typesafeGates` (default `intent`, `reuse_cache`,
   `stop_retry`: crisp classifications of the job state, where TypeSafe's calibrated probabilities
   feed Jev's thresholds) goes to TypeSafe through Jev's own `jev_client.system_one` — when
-  `TYPESAFE_API_KEY` is set in the daemon's environment (`~/.config/job-hopper/daemon.env`) and
-  `python` imports `typesafe_sdk`. Every other gate (`needs_subagent`, `complexity`: judgement
+  a key is set and `python` imports `typesafe_sdk`. The key is `TYPESAFE_API_KEY` from the daemon's
+  environment, else the trimmed contents of `typesafeKeyFile` (`~/.config/job-hopper/typesafe-api-key`,
+  mode 600), read on **every** call: writing the file switches TypeSafe on for the next job with
+  no restart (issue #28); an absent or empty file leaves it off. The key reaches only the shim's
+  environment, where Jev's own `secrets.py` reads it. Every other gate (`needs_subagent`, `complexity`: judgement
   of how much work a goal implies), and every gate TypeSafe fails on, goes to Haiku: one
   locked-down `claude -p --model <model>` run (`claudeArgv`, `claude-print.ts`), prompt on stdin,
   output bound to a schema of TypeSafe's answer shapes, cwd = the data dir. The shim checks every
@@ -197,6 +200,7 @@ budgets**, so it cannot be the usage source. job-hopper uses it for what it is: 
   (gate → `typesafe` | `haiku`) and, when TypeSafe was wanted but could not answer,
   `typesafeError` (no key is not an error: TypeSafe is simply off).
 - Options: `jevSrc`, `python`, `claudeBin` (`claude`), `model` (`haiku`), `typesafeGates`,
+  `typesafeKeyFile` (command-bearing: its contents go to TypeSafe),
   `timeoutMs` (60000: one Haiku run over all five gates took about 20 s on server, the CLI start included). `detect` needs
   `python`, `<jevSrc>/src/router.py` and `claudeBin`; its detail says whether TypeSafe is on.
 - Advice from a real router run has `source: "jev-router"`; `details.jevUsed` mirrors the

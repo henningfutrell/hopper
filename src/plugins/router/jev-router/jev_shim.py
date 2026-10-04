@@ -6,7 +6,7 @@ stdin and prints one JSON line: {"ok": true, "route": ...} or {"ok": false, "err
 
 Jev's router runs unchanged; only its `system_one` call is replaced. Each Jev gate (a named
 question Jev asks about the job) goes to TypeSafe through Jev's own client when TYPESAFE_API_KEY
-is set, typesafe_sdk imports, and the gate is in typesafeGates; every other gate, and every gate
+is set (shim.ts sets it from the environment or the key file), typesafe_sdk imports, and the gate is in typesafeGates; every other gate, and every gate
 TypeSafe fails on, goes to Haiku through `haiku.argv` (the locked-down claude CLI, prompt on
 stdin, structured output). The route's details gain `gatesBy` (gate -> "typesafe" | "haiku") and,
 when TypeSafe was wanted but could not answer, `typesafeError`.
