@@ -5,6 +5,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { Clock, PluginsView, QuestionService } from '../../domain/ports.ts';
+import { ROLES, SELECTABLE_ROLES } from '../../domain/types.ts';
 import type { Engine } from '../../engine/index.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { routerView } from '../state.ts';
@@ -29,6 +30,12 @@ const idParams = z.object({ id: z.string() });
 const answerBody = z.object({ answer: z.string().trim().min(1, 'answer must not be empty') });
 const routerModeBody = z.object({ mode: z.enum(['shadow', 'active']) });
 const loginBody = z.object({ code: z.string() });
+const pluginsEditBody = z.discriminatedUnion('action', [
+  z.strictObject({ action: z.literal('options'), role: z.enum(ROLES), name: z.string().min(1), options: z.record(z.string(), z.unknown()), version: z.string().min(1) }),
+  z.strictObject({ action: z.literal('select'), role: z.enum(SELECTABLE_ROLES), plugin: z.string().min(1).nullable(), version: z.string().min(1) }),
+  z.strictObject({ action: z.literal('rescan') }),
+]);
+const EDIT_STATUS = { invalid: 400, not_found: 404, conflict: 409 } as const;
 
 const refuse = (req: FastifyRequest, reply: FastifyReply, why: string) => {
   console.warn(`job-hopper: UI ${req.method} ${req.url} refused: ${why}`);
@@ -85,6 +92,14 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   app.post('/ui/api/router-mode', guarded, async (req) => {
     o.engine.setRouterMode(parseWith(routerModeBody, req.body).mode);
     return routerView(o.engine, o.plugins);
+  });
+
+  // design.md "UI and mutation": one instance's options (never a command-bearing one), the plugin
+  // filling a one-instance role, or a rescan. Answers the new GET /api/plugins report.
+  app.post('/ui/api/plugins', guarded, async (req) => {
+    const r = await o.plugins.edit(parseWith(pluginsEditBody, req.body));
+    if (!r.ok) throw new HttpError(EDIT_STATUS[r.code], r.error);
+    return r.report;
   });
 
   app.post('/ui/api/logout', guarded, async (req) => {

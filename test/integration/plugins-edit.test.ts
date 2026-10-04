@@ -5,7 +5,11 @@ import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { parse } from 'yaml';
 import { afterEach, describe, expect, it } from 'vitest';
+import type { PluginsReport } from '../../src/domain/types.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
+
+/** A POST /ui/api/plugins answer: the new report, or `{ error }`. */
+type Reply = PluginsReport & { error: string };
 
 let t: TestApp | undefined;
 let cleanup: (() => void) | undefined;
@@ -82,7 +86,7 @@ describe('POST /ui/api/plugins — one instance\'s options', () => {
   it('a live role: the assessor swaps to the new options; other sections and comments stay; mode 600', async () => {
     const { a, token, file } = await start(TWO_EXECUTORS);
     const version = (await report(a)).config.version;
-    const r = await a.ui<any>('/ui/api/plugins', { action: 'options', role: 'assessor', name: 'fable', options: { model: 'sonnet' }, version }, { token });
+    const r = await a.ui<Reply>('/ui/api/plugins', { action: 'options', role: 'assessor', name: 'fable', options: { model: 'sonnet' }, version }, { token });
     expect(r.status).toBe(200);
     expect(r.body.assessor.instance).toEqual({ name: 'fable', plugin: 'claude-cli-assessor', options: { model: 'sonnet' } });
     expect(r.body.config.version).not.toBe(version);
@@ -97,21 +101,24 @@ describe('POST /ui/api/plugins — one instance\'s options', () => {
   it('one executor instance: only its own entry changes; restart pending', async () => {
     const { a, token, file } = await start(TWO_EXECUTORS);
     const version = (await report(a)).config.version;
-    const r = await a.ui<any>('/ui/api/plugins', {
+    const r = await a.ui<Reply>('/ui/api/plugins', {
       action: 'options', role: 'executor', name: 'herdr-b', options: { session: 'hopper-b', pollMs: 250 }, version,
     }, { token });
     expect(r.status).toBe(200);
-    const doc = parse(read(file));
+    const text = read(file);
+    expect(text).toContain('  - { name: herdr-a, plugin: herdr-claude, options: { session: hopper-a, pollMs: 1000 } }\n');
+    expect(text).toContain('  - { name: test, plugin: test }\n');
+    const doc = parse(text);
     expect(doc.executors[0]).toEqual({ name: 'herdr-a', plugin: 'herdr-claude', options: { session: 'hopper-a', pollMs: 1000 } });
     expect(doc.executors[1]).toEqual({ name: 'herdr-b', plugin: 'herdr-claude', options: { session: 'hopper-b', pollMs: 250 } });
     expect(doc.executors[2]).toEqual({ name: 'test', plugin: 'test' });
-    expect(r.body.executors.pending.status).toBe('changed — restart pending');
+    expect(r.body.executors.pending?.status).toBe('changed — restart pending');
   });
 
   it('a command-bearing option that differs: 409 naming it, nothing written', async () => {
     const { a, token, file } = await start(TWO_EXECUTORS);
     const version = (await report(a)).config.version;
-    const r = await a.ui<any>('/ui/api/plugins', {
+    const r = await a.ui<Reply>('/ui/api/plugins', {
       action: 'options', role: 'executor', name: 'herdr-a', options: { session: 'hopper-a', pollMs: 1000, cwd: '/tmp/elsewhere' }, version,
     }, { token });
     expect(r.status).toBe(409);
@@ -132,7 +139,7 @@ describe('POST /ui/api/plugins — one instance\'s options', () => {
   it('options the plugin\'s schema refuses: 400 with the issues, nothing written', async () => {
     const { a, token, file } = await start(TWO_EXECUTORS);
     const version = (await report(a)).config.version;
-    const r = await a.ui<any>('/ui/api/plugins', { action: 'options', role: 'executor', name: 'herdr-a', options: { session: 'default' }, version }, { token });
+    const r = await a.ui<Reply>('/ui/api/plugins', { action: 'options', role: 'executor', name: 'herdr-a', options: { session: 'default' }, version }, { token });
     expect(r.status).toBe(400);
     expect(r.body.error).toMatch(/session/);
     expect(read(file)).toBe(TWO_EXECUTORS);
@@ -143,7 +150,7 @@ describe('POST /ui/api/plugins — one instance\'s options', () => {
     const version = (await report(a)).config.version;
     const edited = TWO_EXECUTORS.replace('model: fable', 'model: opus');
     writeFileSync(file, edited, { mode: 0o600 });
-    const r = await a.ui<any>('/ui/api/plugins', { action: 'options', role: 'assessor', name: 'fable', options: { model: 'sonnet' }, version }, { token });
+    const r = await a.ui<Reply>('/ui/api/plugins', { action: 'options', role: 'assessor', name: 'fable', options: { model: 'sonnet' }, version }, { token });
     expect(r.status).toBe(409);
     expect(r.body.error).toMatch(/changed/);
     expect(read(file)).toBe(edited);
@@ -158,7 +165,7 @@ describe('POST /ui/api/plugins — one instance\'s options', () => {
 
   it('no plugins.yaml: the edit writes one with version 1 and that section only, mode 600', async () => {
     const { a, token, file } = await start();
-    const r = await a.ui<any>('/ui/api/plugins', { action: 'options', role: 'assessor', name: 'fable', options: { model: 'haiku' }, version: 'missing' }, { token });
+    const r = await a.ui<Reply>('/ui/api/plugins', { action: 'options', role: 'assessor', name: 'fable', options: { model: 'haiku' }, version: 'missing' }, { token });
     expect(r.status).toBe(200);
     const doc = parse(read(file));
     expect(Object.keys(doc).sort()).toEqual(['assessor', 'version']);
@@ -170,7 +177,7 @@ describe('POST /ui/api/plugins — one instance\'s options', () => {
   it('an invalid plugins.yaml is not edited from the UI: 409', async () => {
     const { a, token, file } = await start('version: 1\nrouter: [nonsense\n');
     const version = (await report(a)).config.version;
-    const r = await a.ui<any>('/ui/api/plugins', { action: 'options', role: 'assessor', name: 'fable', options: { model: 'sonnet' }, version }, { token });
+    const r = await a.ui<Reply>('/ui/api/plugins', { action: 'options', role: 'assessor', name: 'fable', options: { model: 'sonnet' }, version }, { token });
     expect(r.status).toBe(409);
     expect(read(file)).toBe('version: 1\nrouter: [nonsense\n');
   });
@@ -180,13 +187,13 @@ describe('POST /ui/api/plugins — select a plugin for a one-instance role', () 
   it('the assessor: an available plugin takes the slot under its own name; the answerer: none', async () => {
     const { a, token, file } = await start(TWO_EXECUTORS);
     let version = (await report(a)).config.version;
-    let r = await a.ui<any>('/ui/api/plugins', { action: 'select', role: 'assessor', plugin: 'always-escalate', version }, { token });
+    let r = await a.ui<Reply>('/ui/api/plugins', { action: 'select', role: 'assessor', plugin: 'always-escalate', version }, { token });
     expect(r.status).toBe(200);
     expect(r.body.assessor).toMatchObject({ instance: { name: 'always-escalate', plugin: 'always-escalate' }, active: 'always-escalate', fallback: false });
     expect(parse(read(file)).executors).toEqual(parse(TWO_EXECUTORS).executors);
 
     version = r.body.config.version;
-    r = await a.ui<any>('/ui/api/plugins', { action: 'select', role: 'answerer', plugin: null, version }, { token });
+    r = await a.ui<Reply>('/ui/api/plugins', { action: 'select', role: 'answerer', plugin: null, version }, { token });
     expect(r.status).toBe(200);
     expect(r.body.answerer).toMatchObject({ instance: null, active: null });
     expect(parse(read(file)).answerer).toBeNull();
@@ -195,7 +202,7 @@ describe('POST /ui/api/plugins — select a plugin for a one-instance role', () 
   it('refused: a plugin that is not available here (409), of another role (409), unknown (404); none for the assessor (400)', async () => {
     const { a, token, file } = await start(TWO_EXECUTORS, (d) => writePlugin(d, 'never-here', UNAVAILABLE_ROUTER));
     const version = (await report(a)).config.version;
-    const sel = (role: string, plugin: string | null) => a.ui<any>('/ui/api/plugins', { action: 'select', role, plugin, version }, { token });
+    const sel = (role: string, plugin: string | null) => a.ui<Reply>('/ui/api/plugins', { action: 'select', role, plugin, version }, { token });
     expect((await sel('router', 'never-here')).status).toBe(409);
     expect((await sel('router', 'always-escalate')).status).toBe(409);
     expect((await sel('router', 'no-such-plugin')).status).toBe(404);
@@ -209,7 +216,7 @@ describe('POST /ui/api/plugins — rescan', () => {
     const { a, token } = await start(TWO_EXECUTORS);
     expect((await report(a)).plugins.some((p: { id: string }) => p.id === 'never-here')).toBe(false);
     writePlugin(a.dataDir, 'never-here', UNAVAILABLE_ROUTER);
-    const r = await a.ui<any>('/ui/api/plugins', { action: 'rescan' }, { token });
+    const r = await a.ui<Reply>('/ui/api/plugins', { action: 'rescan' }, { token });
     expect(r.status).toBe(200);
     expect(r.body.plugins.find((p: { id: string }) => p.id === 'never-here')).toMatchObject({ role: 'router', detection: { status: 'unavailable' } });
   });

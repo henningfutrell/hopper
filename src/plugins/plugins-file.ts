@@ -1,7 +1,9 @@
 // plugins.yaml: which instance fills which role (design.md "Configuration — plugins.yaml"). Read:
 // router, answerer, assessor, executors. The other sections are allowed so the file can be written
-// whole, but nothing reads them yet.
-import { readFileSync, statSync } from 'node:fs';
+// whole, but nothing reads them yet. A UI edit (edit.ts) writes it through writePluginsFile.
+import { createHash } from 'node:crypto';
+import { chmodSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
+import { basename, dirname, join } from 'node:path';
 import { parse } from 'yaml';
 import { z } from 'zod';
 import type { InstanceSpec } from '../domain/types.ts';
@@ -46,6 +48,35 @@ const FILE = z.strictObject({
   path: ['assessor', 'name'],
 });
 
+/** Why a parsed plugins.yaml is refused, or undefined when it is valid. */
+export function pluginsFileProblem(raw: unknown): string | undefined {
+  const parsed = FILE.safeParse(raw);
+  return parsed.success ? undefined : parsed.error.issues.map((i) => `${i.path.join('.') || 'file'}: ${i.message}`).join('; ');
+}
+
+/** sha-256 of the file's bytes, or `missing`: an edit read against one version is refused against another. */
+export function pluginsFileVersion(text: string | undefined): string {
+  return text === undefined ? 'missing' : createHash('sha256').update(text).digest('hex');
+}
+
+/** The file's text, or undefined when there is none. */
+export function readPluginsText(path: string): string | undefined {
+  try {
+    return readFileSync(path, 'utf8');
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+    throw e;
+  }
+}
+
+/** Replace the file atomically (a temp file beside it, renamed over it), mode 600. */
+export function writePluginsFile(path: string, text: string): void {
+  const tmp = join(dirname(path), `.${basename(path)}.${process.pid}.tmp`);
+  writeFileSync(tmp, text, { mode: 0o600 });
+  chmodSync(tmp, 0o600);
+  renameSync(tmp, path);
+}
+
 export function loadPluginsFile(path: string): PluginsFileResult {
   let text: string;
   let mode: number;
@@ -59,9 +90,7 @@ export function loadPluginsFile(path: string): PluginsFileResult {
   let raw: unknown;
   try { raw = parse(text); } catch (e) { return { error: `${path}: ${(e as Error).message}` }; }
   const parsed = FILE.safeParse(raw);
-  if (!parsed.success) {
-    return { error: `${path}: ${parsed.error.issues.map((i) => `${i.path.join('.') || 'file'}: ${i.message}`).join('; ')}` };
-  }
+  if (!parsed.success) return { error: `${path}: ${pluginsFileProblem(raw)}` };
   const warnings = mode & 0o077 ? [`${path} is readable by group/other; options may hold secrets (chmod 600 ${path})`] : [];
   const { router, answerer, assessor, executors } = parsed.data;
   return {

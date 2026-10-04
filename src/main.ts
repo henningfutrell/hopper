@@ -125,8 +125,8 @@ function withHerdrSeam(herdr: HerdrClient) {
 }
 
 /** A seam router (tests) answers as itself; the report stays the host's. */
-function seamPlugins(router: Router, report: PluginsView['report']): PluginsView {
-  return { routerStatus: () => ({ name: router.name, plugin: router.name, fallback: false }), report };
+function seamPlugins(router: Router, host: PluginsView): PluginsView {
+  return { routerStatus: () => ({ name: router.name, plugin: router.name, fallback: false }), report: host.report, edit: host.edit };
 }
 
 export async function startApp(config: Config, seams: AppSeams = {}): Promise<App> {
@@ -150,7 +150,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     [...built.flatMap((b): Executor[] => (b.executor ? [b.executor] : [])), ...(seams.executors ?? [])],
     unavailableExecutors(built),
   );
-  const plugins: PluginsView = seams.router ? seamPlugins(seams.router, host.report) : host;
+  const plugins: PluginsView = seams.router ? seamPlugins(seams.router, host) : host;
   const router = seams.router ?? host.router;
   // Seam doubles win, then the env's fake doubles, then the host's live instances (looked up per question).
   const fake = config.answerer === 'fake' ? fakeQuestionRoles() : undefined;
