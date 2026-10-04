@@ -51,10 +51,6 @@ Promise<{ id: number; url: string; createdAt: string }> {
   return { id: c.id, url: c.html_url, createdAt: c.created_at };
 }
 
-export async function editComment(req: Request, token: string, repo: string, id: number, body: string): Promise<void> {
-  await req('PATCH /repos/{owner}/{repo}/issues/comments/{comment_id}', { ...splitRepo(repo), comment_id: id, body, headers: auth(token) });
-}
-
 /** Creates the label; one that already exists (422 already_exists) is fine. */
 export async function ensureLabel(req: Request, token: string, repo: string, name: string, color: string, description: string): Promise<void> {
   try {

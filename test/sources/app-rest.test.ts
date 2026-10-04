@@ -51,7 +51,7 @@ describe('App adapter: issues and comments', () => {
     await expect(h.api.getIssue('owner/a', 99)).rejects.toMatchObject({ permanent: true, status: 404 });
   });
 
-  it('lists every comment oldest first across pages; posts and edits as the bot', async () => {
+  it('lists every comment oldest first across pages; posts as the bot', async () => {
     const comments = [1, 2, 3, 4, 5].map((n) => ({ author: 'owner', body: `c${n}` }));
     h = await startApp({ pageSize: 2, installations: [{ id: 11, account: 'owner', repos: [{ owner: 'owner', name: 'a', issues: [issue(1, { comments })] }] }] });
     const listed = await h.api.listComments('owner/a', 1);
@@ -60,9 +60,8 @@ describe('App adapter: issues and comments', () => {
 
     const posted = await h.api.comment('owner/a', 1, 'from the hopper');
     expect(posted.url).toContain('/owner/a/issues/1#issuecomment-');
-    await h.api.editComment('owner/a', posted.id, 'edited');
     const last = (await h.api.listComments('owner/a', 1)).at(-1)!;
-    expect(last).toMatchObject({ id: posted.id, author: BOT, body: 'edited' });
+    expect(last).toMatchObject({ id: posted.id, author: BOT, body: 'from the hopper' });
   });
 
   it('labels: create (422 already_exists is fine), add, remove (absent label is fine)', async () => {

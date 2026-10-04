@@ -136,13 +136,10 @@ export function createGitHubAppApi(o: { appFile: string; baseUrl?: string; clock
       }
       return out;
     }),
-    mintRepoToken: (repo) => call(`mint token for ${repo}`, async (l) =>
-      l.auth.mint(await installationFor(l, repo), splitRepo(repo).repo)),
     listOpenIssues: (repo, label) => call(`list issues ${repo}`, async (l) => rest.listOpenIssues(req, await tokenFor(l, repo), repo, label)),
     getIssue: (repo, number) => call(`get ${repo}#${number}`, async (l) => rest.getIssue(req, await tokenFor(l, repo), repo, number)),
     listComments: (repo, number) => call(`comments ${repo}#${number}`, async (l) => rest.listComments(req, await tokenFor(l, repo), repo, number)),
     comment: (repo, number, body) => call(`comment ${repo}#${number}`, async (l) => rest.comment(req, await tokenFor(l, repo), repo, number, body)),
-    editComment: (repo, id, body) => call(`edit comment ${repo} ${id}`, async (l) => rest.editComment(req, await tokenFor(l, repo), repo, id, body)),
     ensureLabel: (repo, name, color, description) => call(`label ${repo} ${name}`, async (l) =>
       rest.ensureLabel(req, await tokenFor(l, repo), repo, name, color, description)),
     addLabels: (repo, number, labels) => call(`add labels ${repo}#${number}`, async (l) => rest.addLabels(req, await tokenFor(l, repo), repo, number, labels)),

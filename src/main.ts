@@ -2,7 +2,6 @@
 // are constructed (besides integration tests, which call startApp).
 import { readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import type { Answerer, Assessor, Clock, Executor, JobSource, PluginsView, Router, SourceRegistry, Store } from './domain/ports.ts';
 import type { InstanceSpec, Question } from './domain/types.ts';
 import { isRerunnable } from './domain/types.ts';
@@ -69,9 +68,6 @@ export interface AppSeams {
 const WEBHOOKS_FILE_CHECK_MS = 5000;
 const PLUGINS_FILE_CHECK_MS = 5000;
 const SEAM_SOURCE_POLL_MS = 1000;
-
-/** The jobs' comment helper, next to this file's install: <install dir>/scripts/hopper-comment. */
-const HOPPER_COMMENT_CMD = fileURLToPath(new URL('../scripts/hopper-comment', import.meta.url));
 
 const VERSION = (JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }).version;
 
@@ -188,7 +184,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     keepPanes: config.keepPanes,
   });
   const composed = composeSources({
-    sourcesFile: config.sourcesFile, ghBin: config.ghBin, dataDir, commentCmd: HOPPER_COMMENT_CMD, clock,
+    sourcesFile: config.sourcesFile, ghBin: config.ghBin, clock,
     ...(config.githubApiUrl ? { githubApiUrl: config.githubApiUrl } : {}),
     knownKeys: (keys) => new Set(keys.filter((k) => store.jobs.getBySourceKey(k))),
     rerunnable: (keys) => new Set(keys.filter((k) => { const j = store.jobs.getBySourceKey(k); return j !== undefined && isRerunnable(j); })),
@@ -200,7 +196,6 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   const sync = createSourceSync({
     sources: composed.sources, host: engine.sourceHost, clock,
     pollMs: (name) => composed.pollMs.get(name) ?? SEAM_SOURCE_POLL_MS,
-    progressThrottleMs: (name) => composed.throttleMs.get(name) ?? 0,
   });
   const registry: SourceRegistry = withFixedStatuses(sync, composed.fixed);
   const webhookConfig = createWebhookConfigWatcher({

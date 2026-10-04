@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { SourceError } from '../../src/domain/ports.ts';
 import { GitHubApiError } from '../../src/sources/github/index.ts';
-import { MARKER_RE, REPO, jobForIssue, question, setup } from './fixtures/github-support.ts';
+import { MARKER_RE, REPO, jobForIssue, setup } from './fixtures/github-support.ts';
 
 function withIssue(over: Record<string, unknown> = {}) {
   const s = setup(over);
@@ -10,33 +10,14 @@ function withIssue(over: Record<string, unknown> = {}) {
 }
 
 describe('GitHub source report', () => {
-  it('claimed: ensures the hopper labels, labels the issue claimed, comments with a marker', async () => {
+  it('claimed: ensures the hopper labels, labels the issue claimed, posts nothing; state unchanged', async () => {
     const { gh, source } = withIssue();
-    const job = jobForIssue(1, { priority: 75, spec: { executor: 'herdr-claude', payload: { prompt: 'p', cwd: '/code/x' } } });
+    const job = jobForIssue(1, { priority: 75, sourceState: { source: { claimCommentId: 5 } } });
     const state = await source.report({ kind: 'claimed', job });
     expect(gh.labelsIn(REPO)).toEqual(expect.arrayContaining(['hopper:claimed', 'hopper:done', 'hopper:failed']));
     expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:claimed']);
-    const [c] = gh.commentsOn(REPO, 1);
-    expect(c!.body.split('\n')[0]).toBe(`<!-- job-hopper v1 kind=claimed job=${job.id} -->`);
-    expect(c!.body).toContain(`claimed this as job \`${job.id}\` (priority 75, executor herdr-claude, cwd /code/x)`);
-    expect(state).toEqual({ claimCommentId: c!.id });
-  });
-
-  it('claimed twice with the returned state posts once', async () => {
-    const { gh, source } = withIssue();
-    const job = jobForIssue(1);
-    const state = await source.report({ kind: 'claimed', job });
-    await source.report({ kind: 'claimed', job: { ...job, sourceState: { source: state } } });
-    expect(gh.commentsOn(REPO, 1)).toHaveLength(1);
-  });
-
-  it('a retry after a crash (state lost) reuses the comment already carrying the marker', async () => {
-    const { gh, source } = withIssue();
-    const job = jobForIssue(1);
-    const first = await source.report({ kind: 'claimed', job });
-    const again = await source.report({ kind: 'claimed', job });
-    expect(gh.commentsOn(REPO, 1)).toHaveLength(1);
-    expect(again).toEqual(first);
+    expect(gh.commentsOn(REPO, 1)).toEqual([]);
+    expect(state).toEqual({ claimCommentId: 5 });
   });
 
   it('ensures labels once per repo per process', async () => {
@@ -48,78 +29,32 @@ describe('GitHub source report', () => {
     expect(gh.calls.filter((c) => c.method === 'ensureLabel')).toHaveLength(3);
   });
 
-  it('progress: one comment, edited in place; other state keys are kept', async () => {
+  it('finished: the one comment — one fixed line of hopper facts, no result text; claimed → done', async () => {
     const { gh, source } = withIssue();
-    const job = jobForIssue(1, { progress: 0.25, sourceState: { source: { claimCommentId: 5 } } });
-    const s1 = await source.report({ kind: 'progress', job, message: 'reading code' });
-    const s2 = await source.report({ kind: 'progress', job: { ...job, progress: 0.5, sourceState: { source: s1 } }, message: 'writing tests' });
-    const comments = gh.commentsOn(REPO, 1);
-    expect(comments).toHaveLength(1);
-    expect(comments[0]!.body).toMatch(MARKER_RE);
-    expect(comments[0]!.body).toContain('50%');
-    expect(comments[0]!.body).toContain('writing tests');
-    expect(s2).toEqual({ claimCommentId: 5, progressCommentId: comments[0]!.id });
-    expect(gh.calls.filter((c) => c.method === 'editComment')).toHaveLength(1);
-  });
-
-  it('question (human tier): comment with the question, the escalation trail and how to answer', async () => {
-    const { gh, source } = withIssue();
-    const job = jobForIssue(1, { status: 'waiting_answer', questionId: 'q-1' });
-    const state = await source.report({ kind: 'question', job, question: question(job.id) });
-    const [c] = gh.commentsOn(REPO, 1);
-    expect(c!.body.split('\n')[0]).toBe(`<!-- job-hopper v1 kind=question job=${job.id} question=q-1 -->`);
-    expect(c!.body).toContain('Which database should I use?');
-    expect(c!.body).toContain('opus · confident=no · risky=no');
-    expect(c!.body).toContain('fable · confident=yes · risky=yes · rules: destructive');
-    expect(c!.body).toContain('Reply to this issue to answer.');
-    expect(state).toEqual({ questionComments: { 'q-1': c!.id } });
-  });
-
-  it('question: the trail shows the answerer draft and the assessment (role, escalate, reason)', async () => {
-    const { gh, source } = withIssue();
-    const job = jobForIssue(1, { status: 'waiting_answer', questionId: 'q-1' });
-    await source.report({ kind: 'question', job, question: question(job.id, { attempts: [
-      { tier: 'opus', role: 'answerer', model: 'opus', startedAt: 'a', answer: 'sqlite', confident: true, reason: 'rules', outcome: 'drafted' },
-      { tier: 'fable', role: 'assessor', model: 'fable', startedAt: 'b', escalate: true, reason: 'drops a table', riskRules: [], outcome: 'escalated' },
-    ] }) });
-    const [c] = gh.commentsOn(REPO, 1);
-    expect(c!.body).toContain('- opus (answerer) · confident=yes · drafted');
-    expect(c!.body).toContain('- fable (assessor) · escalate=yes · drops a table');
-  });
-
-  it('a second question keeps the first question comment id (whole state returned)', async () => {
-    const { source } = withIssue();
-    const job = jobForIssue(1);
-    const s1 = await source.report({ kind: 'question', job, question: question(job.id) });
-    const s2 = await source.report({ kind: 'question', job: { ...job, sourceState: { source: s1 } }, question: question(job.id, { id: 'q-2' }) });
-    expect(Object.keys(s2.questionComments as object)).toEqual(['q-1', 'q-2']);
-  });
-
-  it('a question not at the human tier posts nothing', async () => {
-    const { gh, source } = withIssue();
-    const job = jobForIssue(1);
-    expect(await source.report({ kind: 'question', job, question: question(job.id, { tier: 'opus' }) })).toEqual({});
-    expect(gh.commentsOn(REPO, 1)).toHaveLength(0);
-  });
-
-  it('answered: says which tier answered and what', async () => {
-    const { gh, source } = withIssue();
-    const job = jobForIssue(1);
-    await source.report({ kind: 'answered', job, question: question(job.id, { status: 'answered', answer: 'use sqlite', answeredBy: 'fable' }) });
-    const [c] = gh.commentsOn(REPO, 1);
-    expect(c!.body.split('\n')[0]).toBe(`<!-- job-hopper v1 kind=answered job=${job.id} question=q-1 -->`);
-    expect(c!.body).toContain('Answered by fable: use sqlite');
-  });
-
-  it('finished: result comment, claimed → done', async () => {
-    const { gh, source } = withIssue();
-    const job = jobForIssue(1, { status: 'finished', result: { summary: 'README added' } });
+    const job = jobForIssue(1, {
+      id: 'abcdef12-3456-7890-abcd-ef1234567890', status: 'finished', result: { summary: 'README added, mindless prose' },
+      startedAt: '2026-10-02T10:00:00.000Z', finishedAt: '2026-10-02T10:04:12.000Z',
+    });
     await source.report({ kind: 'claimed', job });
     const state = await source.report({ kind: 'finished', job });
     expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:done']);
-    const last = gh.commentsOn(REPO, 1).at(-1)!;
-    expect(last.body).toContain('README added');
-    expect(state).toMatchObject({ finalCommentId: last.id });
+    const comments = gh.commentsOn(REPO, 1);
+    expect(comments).toHaveLength(1);
+    expect(comments[0]!.body).toBe(
+      '<!-- job-hopper v1 kind=finished job=abcdef12-3456-7890-abcd-ef1234567890 -->\njob-hopper: finished (job abcdef12, 4m12s)',
+    );
+    expect(state).toEqual({ finalCommentId: comments[0]!.id });
+  });
+
+  it.each([
+    ['2026-10-02T10:00:00.000Z', '2026-10-02T10:00:42.400Z', '42s'],
+    ['2026-10-02T10:00:00.000Z', '2026-10-02T11:03:05.000Z', '1h3m5s'],
+    [undefined, '2026-10-02T10:00:42.000Z', 'duration unknown'],
+  ])('the duration runs from startedAt %s to finishedAt %s: %s', async (startedAt, finishedAt, text) => {
+    const { gh, source } = withIssue();
+    const job = jobForIssue(1, { id: '12345678-aaaa', status: 'finished', result: 'x', ...(startedAt ? { startedAt } : {}), finishedAt });
+    await source.report({ kind: 'finished', job });
+    expect(gh.commentsOn(REPO, 1)[0]!.body.split('\n')[1]).toBe(`job-hopper: finished (job 12345678, ${text})`);
   });
 
   it('failed: label only, claimed → failed, no comment', async () => {
@@ -128,7 +63,7 @@ describe('GitHub source report', () => {
     const claimed = await source.report({ kind: 'claimed', job });
     const state = await source.report({ kind: 'failed', job: { ...job, sourceState: { source: claimed } } });
     expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:failed']);
-    expect(gh.commentsOn(REPO, 1).map((c) => c.body)).toEqual([expect.stringContaining('kind=claimed')]);
+    expect(gh.commentsOn(REPO, 1)).toEqual([]);
     expect(state).toEqual(claimed);
   });
 
@@ -138,24 +73,33 @@ describe('GitHub source report', () => {
     await source.report({ kind: 'claimed', job });
     await source.report({ kind: 'cancelled', job });
     expect(gh.issue(REPO, 1).labels).toEqual(['hopper']);
-    expect(gh.commentsOn(REPO, 1)).toHaveLength(1);
+    expect(gh.commentsOn(REPO, 1)).toEqual([]);
   });
 
-  it('a final report retried after a crash does not comment twice', async () => {
+  it('finished twice with the returned state posts once', async () => {
     const { gh, source } = withIssue();
     const job = jobForIssue(1, { status: 'finished', result: 'ok' });
-    await source.report({ kind: 'finished', job });
-    await source.report({ kind: 'finished', job });
+    const state = await source.report({ kind: 'finished', job });
+    await source.report({ kind: 'finished', job: { ...job, sourceState: { source: state } } });
     expect(gh.commentsOn(REPO, 1)).toHaveLength(1);
   });
 
-  it('truncates a comment to 60 000 chars with a note', async () => {
+  it('a final report retried after a crash (state lost) reuses the comment carrying the marker', async () => {
+    const { gh, source } = withIssue();
+    const job = jobForIssue(1, { status: 'finished', result: 'ok' });
+    const first = await source.report({ kind: 'finished', job });
+    const again = await source.report({ kind: 'finished', job });
+    expect(gh.commentsOn(REPO, 1)).toHaveLength(1);
+    expect(again).toEqual(first);
+  });
+
+  it('a huge result never reaches the issue', async () => {
     const { gh, source } = withIssue();
     const job = jobForIssue(1, { status: 'finished', result: 'r'.repeat(100000) });
     await source.report({ kind: 'finished', job });
     const [c] = gh.commentsOn(REPO, 1);
-    expect(c!.body.length).toBeLessThanOrEqual(60000);
-    expect(c!.body).toContain(`(truncated, see job ${job.id})`);
+    expect(c!.body).not.toContain('rrr');
+    expect(c!.body.split('\n')).toHaveLength(2);
     expect(c!.body).toMatch(MARKER_RE);
   });
 
@@ -170,7 +114,7 @@ describe('GitHub source report', () => {
   it('a transient GitHub failure is a SourceError to retry', async () => {
     const { gh, source } = withIssue();
     gh.failNext('comment', new GitHubApiError('gh: Bad Gateway (HTTP 502)', false, 502));
-    const err = await source.report({ kind: 'claimed', job: jobForIssue(1) }).catch((e: unknown) => e);
+    const err = await source.report({ kind: 'finished', job: jobForIssue(1, { status: 'finished', result: 'x' }) }).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(SourceError);
     expect(err).toMatchObject({ permanent: false, status: 502 });
   });

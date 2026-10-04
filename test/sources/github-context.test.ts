@@ -19,11 +19,9 @@ describe('GitHub source: full issue context and job environment', () => {
       'priority: 75 (label:hopper:p1) · project item: none',
       'recent comments (oldest first, up to 10; only allowlisted authors, no hopper-marked comments):',
       `- owner at ${c.createdAt}: Keep it short.`,
-      '[how to report on your issue]',
-      'Your issue is $HOPPER_ISSUE_URL (repo $HOPPER_REPO, number $HOPPER_ISSUE_NUMBER).',
-      'To comment on it: gh issue comment "$HOPPER_ISSUE_NUMBER" -R "$HOPPER_REPO" --body "$(printf \'%s\\n%s\' "$HOPPER_COMMENT_MARKER" "<your text>")"',
-      'Always start your comments with $HOPPER_COMMENT_MARKER. job-hopper posts your status, questions and result for you.',
-      'Do not close this issue and do not use "Closes #N" — closing the issue cancels you.',
+      '[your issue is read-only]',
+      'Do not comment on, edit, label or close this issue, and do not use "Closes #N": job-hopper posts one status comment when you finish, and closing the issue cancels you.',
+      'If you need an answer, ask in this session: The owner answers here, never on the issue.',
     ].join('\n'));
   });
 
@@ -77,7 +75,7 @@ describe('GitHub source: full issue context and job environment', () => {
     expect(body!.length).toBeLessThanOrEqual(64000);
     const context = `[job-hopper issue context]${rest.join('')}`;
     expect(context.length).toBeLessThanOrEqual(16000);
-    expect(context).toContain('[how to report on your issue]');
+    expect(context).toContain('[your issue is read-only]');
     expect(context).toContain('c39 '); // the newest comments survive
     expect(context).not.toContain('c0 ');
   });
@@ -90,7 +88,6 @@ describe('GitHub source: full issue context and job environment', () => {
       HOPPER_REPO: REPO,
       HOPPER_ISSUE_NUMBER: '1',
       HOPPER_ISSUE_TITLE: 'Two lines',
-      HOPPER_COMMENT_MARKER: '<!-- job-hopper v1 kind=job-comment -->',
     });
   });
 

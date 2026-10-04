@@ -100,4 +100,25 @@ describe('migrate-sources-yaml', () => {
     expect(loaded.github).toMatchObject({ enabled: 'auto', authors: ['owner'] });
     expect(loaded.githubApp).toMatchObject({ enabled: true, appFile: expect.stringMatching(/\.config\/job-hopper\/github-app\.json$/) });
   });
+
+  it('drops every progressCommentSeconds line (no progress comment exists any more), says so; the result loads; idempotent', async () => {
+    const p = temp(`${phase3(AUTO_LINE)}  progressCommentSeconds: 300  # at most one progress-comment edit\ngithubApp:\n  enabled: true\n  progressCommentSeconds: 300\n  recentComments: 10\n`);
+    const r = await migrate(p);
+    const text = readFileSync(p, 'utf8');
+    expect(text).not.toContain('progressCommentSeconds');
+    expect(text).toContain('  recentComments: 10');
+    expect(r.stdout).toMatch(/progressCommentSeconds/);
+    const loaded = loadSourcesFile(p);
+    if ('error' in loaded) throw new Error(loaded.error);
+    expect(loaded.githubApp).toMatchObject({ enabled: true, recentComments: 10 });
+    const again = await migrate(p);
+    expect(readFileSync(p, 'utf8')).toBe(text);
+    expect(again.stdout).not.toMatch(/progressCommentSeconds/);
+  });
+
+  it('a starter written today has no progressCommentSeconds', async () => {
+    const p = temp();
+    await migrate(p);
+    expect(readFileSync(p, 'utf8')).not.toContain('progressCommentSeconds');
+  });
 });

@@ -6,12 +6,12 @@ import { createFakeSource, createWorld, item, settle, type FakeSource, type Worl
 let sync: ReturnType<typeof createSourceSync> | undefined;
 afterEach(async () => { await sync?.stop(); sync = undefined; });
 
-async function setup(over: { throttleMs?: number; sources?: FakeSource[]; start?: boolean } = {}) {
+async function setup(over: { sources?: FakeSource[]; start?: boolean } = {}) {
   const world: World = createWorld();
   const source = createFakeSource();
   sync = createSourceSync({
     sources: over.sources ?? [source], host: world.host, clock: world.clock,
-    pollMs: () => 60_000, progressThrottleMs: () => over.throttleMs ?? 0,
+    pollMs: () => 60_000,
   });
   if (over.start !== false) { sync.start(); await sync.syncNow(); } // initial sync (no items) done
   return { world, source, sync };
@@ -146,50 +146,26 @@ describe('reports', () => {
     expect(kinds(source)).toEqual(['claimed', 'finished']);
   });
 
-  it('throttles progress reports per job', async () => {
-    const { world, source, sync } = await setup({ throttleMs: 1000 });
+  it('reports neither progress nor questions nor answers: only the claim and the end', async () => {
+    const { world, source, sync } = await setup();
     source.items = [item('k1')];
     await sync.syncNow();
     world.patchJob('job-1', { status: 'running', progressMessage: 'a' });
     world.emit('job.progressed', 'job-1', { progress: 0.1 });
-    world.emit('job.progressed', 'job-1', { progress: 0.2 });
-    await settle();
-    expect(kinds(source)).toEqual(['claimed', 'progress']);
-    world.clock.advance(1000);
-    world.emit('job.progressed', 'job-1', { progress: 0.3 });
-    await settle();
-    expect(kinds(source)).toEqual(['claimed', 'progress', 'progress']);
-  });
-
-  it('sends one question report however often the human tier renotifies', async () => {
-    const { world, source, sync } = await setup();
-    source.items = [item('k1')];
-    await sync.syncNow();
     world.patchJob('job-1', { status: 'waiting_answer' });
     const q = world.addQuestion('job-1');
     world.emit('question.escalated', 'job-1', { target: 'human' }, q.id);
-    world.emit('question.escalated', 'job-1', { target: 'human', renotify: true }, q.id);
+    world.questions.set(q.id, { ...q, status: 'answered', answer: 'yes', answeredBy: 'human' });
+    world.emit('question.answered', 'job-1', {}, q.id);
     await settle();
     await sync.syncNow();
-    expect(kinds(source)).toEqual(['claimed', 'question']);
-  });
-
-  it('does not report a question escalated to a model tier', async () => {
-    const { world, source, sync } = await setup();
-    source.items = [item('k1')];
-    await sync.syncNow();
-    const q = world.addQuestion('job-1', { tier: 'opus' });
-    world.emit('question.escalated', 'job-1', { target: 'opus' }, q.id);
-    await settle();
     expect(kinds(source)).toEqual(['claimed']);
   });
 
-  it('reports answered, finished, failed and cancelled', async () => {
+  it('reports finished, failed and cancelled', async () => {
     const { world, source, sync } = await setup();
     source.items = [item('a'), item('b'), item('c')];
     await sync.syncNow();
-    const q = world.addQuestion('job-1', { status: 'answered', answer: 'yes', answeredBy: 'human' });
-    world.emit('question.answered', 'job-1', {}, q.id);
     world.patchJob('job-1', { status: 'finished' });
     world.emit('job.finished', 'job-1', {});
     world.patchJob('job-2', { status: 'failed', error: 'x' });
@@ -198,7 +174,7 @@ describe('reports', () => {
     world.emit('job.cancelled', 'job-3', { reason: 'cancelled in UI' });
     await settle();
     const by = (id: string) => source.reports.filter((r) => 'job' in r && r.job.id === id).map((r) => r.kind);
-    expect(by('job-1')).toEqual(['claimed', 'answered', 'finished']);
+    expect(by('job-1')).toEqual(['claimed', 'finished']);
     expect(by('job-2')).toEqual(['claimed', 'failed']);
     expect(by('job-3')).toEqual(['claimed', 'cancelled']);
     expect(world.jobs.get('job-3')!.sourceState!.sync!.cancelReason).toBe('cancelled in UI');
@@ -216,21 +192,20 @@ describe('reports', () => {
 
   it('serializes reports for one job', async () => {
     const { world, source, sync } = await setup();
-    source.items = [item('k1')];
-    await sync.syncNow();
     let release!: () => void;
     source.gate = new Promise<void>((r) => { release = r; });
-    world.patchJob('job-1', { status: 'waiting_answer' });
-    const q = world.addQuestion('job-1');
-    world.emit('question.escalated', 'job-1', { target: 'human' }, q.id);
+    source.items = [item('k1')];
+    const first = sync.syncNow(); // the claim report waits at the gate
+    await settle();
     world.patchJob('job-1', { status: 'finished' });
     world.emit('job.finished', 'job-1');
     await settle();
     expect(source.inFlight).toBe(1);
     release();
+    await first;
     await settle();
     expect(source.maxInFlight).toBe(1);
-    expect(kinds(source)).toEqual(['claimed', 'question', 'finished']);
+    expect(kinds(source)).toEqual(['claimed', 'finished']);
   });
 });
 
@@ -244,16 +219,6 @@ describe('signals', () => {
     expect(world.calls.cancel).toEqual([['job-1', 'issue closed']]);
     const cancelled = source.reports.find((r) => r.kind === 'cancelled')!;
     expect('job' in cancelled && cancelled.job.sourceState!.sync!.cancelReason).toBe('issue closed');
-  });
-
-  it('calls host.answer for an answer signal', async () => {
-    const { world, source, sync } = await setup();
-    source.items = [item('k1')];
-    await sync.syncNow();
-    world.patchJob('job-1', { status: 'waiting_answer' });
-    source.signals = [{ kind: 'answer', jobId: 'job-1', questionId: 'q1', answer: 'go', author: 'me' }];
-    await sync.syncNow();
-    expect(world.calls.answer).toEqual([['q1', 'go']]);
   });
 });
 
@@ -295,7 +260,7 @@ describe('status and lifecycle', () => {
   it('polls on its timer and stop() halts it and awaits in-flight work', async () => {
     const world = createWorld();
     const source = createFakeSource();
-    sync = createSourceSync({ sources: [source], host: world.host, clock: world.clock, pollMs: () => 10, progressThrottleMs: () => 0 });
+    sync = createSourceSync({ sources: [source], host: world.host, clock: world.clock, pollMs: () => 10 });
     sync.start();
     await new Promise((r) => setTimeout(r, 60));
     expect(source.discovers).toBeGreaterThan(1);

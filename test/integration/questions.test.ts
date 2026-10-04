@@ -59,8 +59,8 @@ describe('a question the assessor lets through', () => {
     expect(events.find((e) => e.type === 'question.answered')).toMatchObject({ schemaVersion: 2, data: { by: 'opus', answer: 'fake opus answer' } });
     expect(events.find((e) => e.type === 'job.requeued')!.data).toEqual({ from: 'waiting_answer', reason: 'answered' });
     expect(events.filter((e) => e.type === 'question.escalated').map((e) => e.data.target)).toEqual(['opus', 'fable']);
-    await waitFor(() => a.source.reports.some((r) => r.kind === 'answered' && r.job.id === job.id), { what: 'answered report' });
-    expect(a.source.reports.some((r) => r.kind === 'question')).toBe(false);
+    await waitFor(() => a.source.reports.some((r) => r.kind === 'finished' && r.job.id === job.id), { what: 'finished report' });
+    expect(a.source.reports.filter((r) => r.job.id === job.id).map((r) => r.kind)).toEqual(['claimed', 'finished']);
   });
 
   it('fail-after-answer fails the job on resume and clears the pending answer', async () => {
@@ -105,7 +105,7 @@ describe('the pipeline end to end through the seams', () => {
 });
 
 describe('a question escalated to the human', () => {
-  it('the assessor escalates; reported once to the source, and a UI answer resumes the job', async () => {
+  it('the assessor escalates; nothing goes to the source, and a UI answer resumes the job', async () => {
     const a = await start();
     const token = await a.login();
     const job = await a.pull(ask('Is this risky?'));
@@ -114,7 +114,8 @@ describe('a question escalated to the human', () => {
     expect((await a.api<{ questions: Question[] }>('GET', '/api/questions')).body.questions.map((x) => x.id)).toEqual([q.id]);
     const waiting = await a.job(job.id);
     expect(waiting).toMatchObject({ status: 'waiting_answer', questionId: q.id, resumeOn: 'local' });
-    await waitFor(() => a.source.reports.some((r) => r.kind === 'question'), { what: 'question report' });
+    await a.sync();
+    expect(a.source.reports.filter((r) => r.job.id === job.id).map((r) => r.kind)).toEqual(['claimed']);
 
     expect((await a.ui(`/ui/api/questions/${q.id}/answer`, { answer: '' }, { token })).status).toBe(400);
     const res = await a.ui<Question>(`/ui/api/questions/${q.id}/answer`, { answer: 'go ahead' }, { token });
@@ -125,16 +126,6 @@ describe('a question escalated to the human', () => {
     expect((await a.ui('/ui/api/questions/nope/answer', { answer: 'x' }, { token })).status).toBe(404);
     expect((await a.api('GET', '/api/questions/nope')).status).toBe(404);
     expect((await a.api('GET', '/api/questions?status=bogus')).status).toBe(400);
-    expect(a.source.reports.filter((r) => r.kind === 'question')).toHaveLength(1);
-  });
-
-  it('an answer signal from the source answers the human question', async () => {
-    const a = await start();
-    const job = await a.pull(ask('Is this risky?'));
-    const q = await a.waitForQuestion(job.id, (x) => x.tier === 'human');
-    a.source.signal({ kind: 'answer', jobId: job.id, questionId: q.id, answer: 'from the issue', author: 'owner' });
-    await a.sync();
-    expect((await a.waitForStatus(job.id, 'finished')).result).toEqual({ answer: 'from the issue' });
   });
 
   it('an answerer that is not confident: human, the assessor never runs', async () => {
@@ -161,7 +152,7 @@ describe('a question escalated to the human', () => {
     expect(human.slice(1).every((e) => e.data.renotify === true)).toBe(true);
     expect(events.find((e) => e.type === 'question.expired')).toBeDefined();
     await waitFor(() => a.source.reports.some((r) => r.kind === 'failed' && r.job.id === job.id));
-    expect(a.source.reports.filter((r) => r.kind === 'question')).toHaveLength(1);
+    expect(a.source.reports.filter((r) => r.job.id === job.id).map((r) => r.kind)).toEqual(['claimed', 'failed']);
   });
 
   it('cancelling a waiting job in the UI cancels its question', async () => {

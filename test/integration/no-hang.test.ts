@@ -142,7 +142,6 @@ describe('a question is the owner\'s the moment it is asked', () => {
     expect(after.attempts.map((t) => [t.tier, t.outcome, t.reason])).toEqual([['human', 'accepted', undefined], ['drafter', 'escalated', 'superseded']]);
     expect(judged).toEqual([]);
     // The escalation gate is untouched: The owner answered first, so nothing was pushed.
-    expect(a.source.reports.some((r) => r.kind === 'question')).toBe(false);
     expect((await ofType(a, 'question.escalated')).map((e) => e.data.target)).toEqual(['drafter']);
   });
 });

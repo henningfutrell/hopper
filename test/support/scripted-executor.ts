@@ -1,7 +1,8 @@
 // The built-in test executor driven by a sourced job's prompt. A source builds payload
 // { prompt, cwd, env, model? }, so the test-executor op travels as JSON on the prompt's FIRST line
 // (an issue body like `{"op":"ask","message":"Is this risky?"}`; the issue context follows).
-// Registered through AppSeams.executors as "scripted"; it records every payload it ran.
+// Registered through AppSeams.executors as "scripted"; it records every payload it ran. An op may
+// carry `progress: number[]`: each fraction is reported (job.progressed) before the op runs.
 import type { ExecutionContext, Executor } from '../../src/domain/ports.ts';
 import { createTestExecutor } from '../../src/executors/index.ts';
 
@@ -38,7 +39,12 @@ export function createScriptedExecutor(): ScriptedExecutor {
       const s = script(payload);
       return typeof s === 'string' ? s : inner.validate(s);
     },
-    run: (ctx) => inner.run(scripted(ctx)),
+    run: (ctx) => {
+      const op = scripted(ctx);
+      const steps = op.job.spec.payload.progress;
+      if (Array.isArray(steps)) for (const f of steps) ctx.progress(Number(f), `step ${String(f)}`);
+      return inner.run(op);
+    },
     resume: (ctx, answer) => inner.resume!(scripted(ctx), answer),
   };
 }

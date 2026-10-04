@@ -13,7 +13,7 @@ function setup(initial?: string) {
   const source = createFakeSource('gh');
   let reason = initial;
   source.paused = () => reason;
-  sync = createSourceSync({ sources: [source], host: world.host, clock: world.clock, pollMs: () => 60_000, progressThrottleMs: () => 0 });
+  sync = createSourceSync({ sources: [source], host: world.host, clock: world.clock, pollMs: () => 60_000 });
   sync.start();
   return { world, source, sync, pause: (r: string | undefined) => { reason = r; } };
 }

@@ -1,8 +1,9 @@
 // The GitHub source in app mode: the installation is the allowlist, and hopper comments are
-// told apart by the bot author (the marker is only a secondary check).
+// told apart by the bot author (the marker is only a secondary check). It writes labels and one
+// completion comment, as the bot.
 
 import { describe, expect, it } from 'vitest';
-import { APP_INFO, BOT, REPO, discoverOne, jobForIssue, question, setup, setupApp } from './fixtures/github-support.ts';
+import { APP_INFO, BOT, REPO, discoverOne, jobForIssue, setup, setupApp } from './fixtures/github-support.ts';
 
 const OTHER = 'owner/other';
 const methods = (calls: { method: string }[]) => calls.map((c) => c.method);
@@ -37,7 +38,7 @@ describe('app mode discovery', () => {
     });
   });
 
-  it('refuses an authors list containing the bot (its comments would read as answers)', async () => {
+  it('refuses an authors list containing the bot (its writes must never count as the owner\'s)', async () => {
     const { gh, source } = setupApp({ authors: ['owner', BOT] });
     gh.createIssue({ repo: REPO, labels: ['hopper'] });
     await expect(source.discover()).rejects.toThrow(/authors.*bot/);
@@ -45,50 +46,23 @@ describe('app mode discovery', () => {
 });
 
 describe('app mode identity', () => {
-  async function asked() {
-    const s = setupApp();
-    s.gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:claimed'] });
-    const base = jobForIssue(1, { status: 'waiting_answer', questionId: 'q-1' }, REPO, 'github-app');
-    const state = await s.source.report({ kind: 'question', job: base, question: question(base.id) });
-    return { ...s, job: { ...base, sourceState: { source: state } } };
-  }
-
-  it('posts hopper comments as the bot', async () => {
-    const { gh } = await asked();
+  it('posts the completion comment as the bot', async () => {
+    const { gh, source } = setupApp();
+    gh.createIssue({ repo: REPO, labels: ['hopper'] });
+    await source.report({ kind: 'finished', job: jobForIssue(1, { status: 'finished', result: 'done' }, REPO, 'github-app') });
     expect(gh.commentsOn(REPO, 1).map((c) => c.author)).toEqual([BOT]);
-  });
-
-  it('a bot comment is never an answer, even without a marker', async () => {
-    const { gh, source, job } = await asked();
-    gh.addComment(REPO, 1, BOT, 'plain text from the app');
-    expect(await source.check([job])).toEqual([]);
-  });
-
-  it("the owner's reply without a marker is the answer", async () => {
-    const { gh, source, job } = await asked();
-    gh.addComment(REPO, 1, BOT, 'a job comment');
-    const reply = gh.addComment(REPO, 1, 'owner', '  use postgres  ');
-    expect(await source.check([job])).toEqual([
-      { kind: 'answer', jobId: job.id, questionId: 'q-1', answer: 'use postgres', author: 'owner', url: reply.url },
-    ]);
-  });
-
-  it("a marker-carrying comment by the owner is still excluded (secondary check)", async () => {
-    const { gh, source, job } = await asked();
-    gh.addComment(REPO, 1, 'owner', '<!-- job-hopper v1 kind=job-comment -->\nfrom a gh job');
-    expect(await source.check([job])).toEqual([]);
   });
 
   it("reuse on retry finds the bot's comment and ignores a stranger's planted marker", async () => {
     const { gh, source } = setupApp();
     gh.createIssue({ repo: REPO, labels: ['hopper'] });
-    const job = jobForIssue(1, {}, REPO, 'github-app');
-    const marker = `<!-- job-hopper v1 kind=claimed job=${job.id} -->`;
+    const job = jobForIssue(1, { status: 'finished', result: 'done' }, REPO, 'github-app');
+    const marker = `<!-- job-hopper v1 kind=finished job=${job.id} -->`;
     gh.addComment(REPO, 1, 'mallory', `${marker}\nplanted`);
-    const first = await source.report({ kind: 'claimed', job });
-    expect(gh.commentsOn(REPO, 1).find((c) => c.id === first.claimCommentId)?.author).toBe(BOT);
-    const again = await source.report({ kind: 'claimed', job }); // a retry without the state
-    expect(again.claimCommentId).toBe(first.claimCommentId);
+    const first = await source.report({ kind: 'finished', job });
+    expect(gh.commentsOn(REPO, 1).find((c) => c.id === first.finalCommentId)?.author).toBe(BOT);
+    const again = await source.report({ kind: 'finished', job }); // a retry without the state
+    expect(again.finalCommentId).toBe(first.finalCommentId);
     expect(gh.commentsOn(REPO, 1).filter((c) => c.author === BOT)).toHaveLength(1);
   });
 
@@ -103,36 +77,14 @@ describe('app mode identity', () => {
   });
 });
 
-describe('app mode job context and env', () => {
-  it('tells the job to comment with HOPPER_COMMENT_CMD and never with gh', async () => {
-    const { gh, source } = setupApp();
-    gh.createIssue({ repo: REPO, labels: ['hopper'] });
-    const { prompt } = await discoverOne(source);
-    expect(prompt).toContain('"$HOPPER_COMMENT_CMD" "<your text>"');
-    expect(prompt).toContain('Never comment with gh');
-    expect(prompt).not.toContain('gh issue comment');
-  });
-
-  it('carries the token file, the comment command and the API base in the env', async () => {
-    const { gh, source } = setupApp({}, {
-      tokens: { pathFor: (url) => `/tokens/${url.length}.json`, ensure: async () => undefined, refresh: async () => undefined, drop: () => undefined, errors: () => ({}) },
-    });
+describe('job context and env: the issue, read-only', () => {
+  it.each([['app', setupApp], ['gh', setup]] as const)('%s mode: no write path in the prompt or the env', async (_mode, make) => {
+    const { gh, source } = make();
     const issue = gh.createIssue({ repo: REPO, labels: ['hopper'] });
-    expect((await discoverOne(source)).env).toMatchObject({
-      HOPPER_ISSUE_URL: issue.url, HOPPER_REPO: REPO, HOPPER_ISSUE_NUMBER: '1',
-      HOPPER_COMMENT_MARKER: '<!-- job-hopper v1 kind=job-comment -->',
-      HOPPER_TOKEN_FILE: `/tokens/${issue.url.length}.json`,
-      HOPPER_COMMENT_CMD: '/opt/hopper/hopper-comment',
-      HOPPER_GITHUB_API: 'http://127.0.0.1:9/api',
-    });
-  });
-
-  it('gh mode keeps the phase-3 block and env', async () => {
-    const { gh, source } = setup();
-    gh.createIssue({ repo: REPO, labels: ['hopper'] });
     const item = await discoverOne(source);
-    expect(item.prompt).toContain('gh issue comment "$HOPPER_ISSUE_NUMBER"');
-    expect(Object.keys(item.env).sort()).toEqual(['HOPPER_COMMENT_MARKER', 'HOPPER_ISSUE_NUMBER', 'HOPPER_ISSUE_TITLE', 'HOPPER_ISSUE_URL', 'HOPPER_REPO']);
+    expect(item.prompt).not.toMatch(/HOPPER_COMMENT|gh issue comment|how to report/);
+    expect(item.prompt).toContain('Do not comment on, edit, label or close this issue');
+    expect(item.env).toEqual({ HOPPER_ISSUE_URL: issue.url, HOPPER_REPO: REPO, HOPPER_ISSUE_NUMBER: '1', HOPPER_ISSUE_TITLE: 'Issue 1' });
   });
 });
 

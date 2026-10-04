@@ -8,30 +8,6 @@ afterEach(async () => { await h?.close(); h = undefined; });
 
 const oneRepo = [{ id: 11, account: 'owner', repos: [{ owner: 'owner', name: 'a', issues: [{ number: 1, labels: ['hopper'] }] }, { owner: 'owner', name: 'b' }] }];
 
-describe('App adapter: per-repo scoped tokens', () => {
-  it('mints a token scoped to exactly one repo with issues: write; two mints are two tokens', async () => {
-    h = await startApp({ installations: oneRepo });
-    const t1 = await h.api.mintRepoToken!('owner/a');
-    const t2 = await h.api.mintRepoToken!('owner/a');
-    expect(t1.token).not.toBe(t2.token);
-    expect(Date.parse(t1.expiresAt)).toBeGreaterThan(Date.now() + 50 * 60_000);
-    const mints = h.fake.state.tokens.filter((t) => t.body.repositories !== undefined);
-    expect(mints).toHaveLength(2);
-    for (const m of mints) {
-      expect(m.installationId).toBe(11);
-      expect(m.body).toEqual({ repositories: ['a'], permissions: { issues: 'write' } });
-    }
-  });
-
-  it('the scoped token reaches its repo and nothing else', async () => {
-    h = await startApp({ installations: oneRepo });
-    const { token } = await h.api.mintRepoToken!('owner/a');
-    const get = (repo: string) => fetch(`${h!.fake.url}/repos/${repo}/issues/1`, { headers: { authorization: `token ${token}` } });
-    expect((await get('owner/a')).status).toBe(200);
-    expect((await get('owner/b')).status).toBe(404);
-  });
-});
-
 describe('App adapter: error classification', () => {
   it('a JWT signed with the wrong key is rejected: permanent, naming the app config file', async () => {
     h = await startApp({ installations: oneRepo, privateKey: generateKeys().privateKey });

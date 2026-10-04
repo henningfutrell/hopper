@@ -29,7 +29,6 @@ const sharedKeys = {
   defaultCwd: z.string().min(1).default('~/workbench/app-workflows'),
   executor: z.string().min(1).default('herdr-claude'),
   model: z.string().min(1).nullable().default(null),
-  progressCommentSeconds: z.number().int().positive().default(300),
   recentComments: z.number().int().min(0).default(10),
   projects: z.record(z.string(), projectSchema).default({}),
 };

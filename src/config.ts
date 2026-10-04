@@ -58,7 +58,7 @@ export interface Config {
   pluginDir: string;
   /** plugins.yaml: which plugin instance fills which role. */
   pluginsFile: string;
-  /** GitHub API base for the App adapter and the jobs' hopper-comment; unset → https://api.github.com. Tests point it at a fake. */
+  /** GitHub API base for the App adapter; unset → https://api.github.com. Tests point it at a fake. */
   githubApiUrl?: string;
 }
 

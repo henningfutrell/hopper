@@ -90,17 +90,6 @@ function issueRoutes(ctx: FakeCtx, req: FakeReq, repo: FakeRepo, rest: string): 
     const p = paginate(ctx, req, list.map((i) => restIssue(repo, i)));
     return { status: 200, body: p.items, headers: p.headers };
   }
-  const editComment = /^\/issues\/comments\/(\d+)$/.exec(rest);
-  if (req.method === 'PATCH' && editComment) {
-    for (const i of repo.issues.values()) {
-      const c = i.comments.find((x) => x.id === Number(editComment[1]));
-      if (!c) continue;
-      if (c.author !== ctx.bot) return { status: 403, body: { message: 'Resource not accessible by integration' } };
-      c.body = String(body.body ?? '');
-      return { status: 200, body: restComment(repo, i.number, c) };
-    }
-    return notFound;
-  }
   if (req.method === 'POST' && rest === '/labels') {
     const name = String(body.name ?? '');
     if (repo.labels.has(name)) return { status: 422, body: { message: 'Validation Failed', errors: [{ resource: 'Label', code: 'already_exists', field: 'name' }] } };
