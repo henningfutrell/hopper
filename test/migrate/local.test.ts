@@ -170,7 +170,7 @@ describe('migrate-local', () => {
     const local = localInstall();
     writeFileSync(join(local.config, 'webhooks.yaml'), `version: 1\nwebhooks:\n  - { name: a-b, url: "http://127.0.0.1:9/1", events: ["*"], secretFile: ${join(local.config, 'hook.secret')} }\n  - { name: a_b, url: "http://127.0.0.1:9/2", events: ["*"], secretFile: ${join(local.config, 'hook.secret')} }\n`);
     const target = testDatabaseUrl(temp());
-    expect(() => migrateLocal({ sqlite: local.sqlite, configDir: local.config, target, log: quiet })).toThrow(/WEBHOOK_SECRET_A_B.*twice/);
+    expect(() => migrateLocal({ sqlite: local.sqlite, configDir: local.config, target, log: quiet })).toThrow(/two secrets would both be WEBHOOK_SECRET_A_B/);
     expect(rowsOf(target).jobs).toEqual([]);
   });
 

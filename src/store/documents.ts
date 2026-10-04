@@ -14,15 +14,16 @@ export function createConfigDocuments(c: StoreContext): ConfigDocuments {
   return {
     read,
     version: (name) => documentVersion(read(name)),
+    // Compare-and-swap, so it holds across processes on Postgres too (READ COMMITTED takes no lock
+    // on the read): a new document is inserted only if none is there, an existing one replaced only
+    // while it still holds the text read.
     write(name, text, version) {
-      return c.tx(() => {
-        if (documentVersion(read(name)) !== version) return false;
-        c.db.run(
-          'INSERT INTO config_documents (name, text, updated_at) VALUES (?, ?, ?) ON CONFLICT (name) DO UPDATE SET text = excluded.text, updated_at = excluded.updated_at',
-          name, text, c.clock.now().toISOString(),
-        );
-        return true;
-      });
+      const current = read(name);
+      if (documentVersion(current) !== version) return false;
+      const at = c.clock.now().toISOString();
+      return current === undefined
+        ? c.db.run('INSERT INTO config_documents (name, text, updated_at) VALUES (?, ?, ?) ON CONFLICT (name) DO NOTHING', name, text, at).changes > 0
+        : c.db.run('UPDATE config_documents SET text = ?, updated_at = ? WHERE name = ? AND text = ?', text, at, name, current).changes > 0;
     },
   };
 }

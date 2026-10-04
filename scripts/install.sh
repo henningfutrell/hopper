@@ -97,11 +97,20 @@ if [ -z "$(env_line JOB_HOPPER_DATABASE_URL)" ]; then
     echo "no JOB_HOPPER_DATABASE_URL in $ENV_FILE: which database does the daemon keep everything in?" >&2
     echo "  Postgres: docker compose -f $APP_DIR/deploy/compose.yaml up -d postgres (docs/deploy.md), then" >&2
     echo "  JOB_HOPPER_DATABASE_URL=postgres://hopper:<password>@127.0.0.1:<port>/hopper bash $0" >&2
-    echo "  SQLite (local use): JOB_HOPPER_DATABASE_URL=sqlite:$HOME/.local/share/job-hopper/job-hopper.db bash $0" >&2
+    echo "  SQLite (local use): JOB_HOPPER_DATABASE_URL=sqlite:$HOME/.local/share/job-hopper/store.sqlite bash $0" >&2
     exit 1
   fi
 fi
 chmod 600 "$ENV_FILE"
+
+# Config files from before the database are migrated, never silently replaced by the built-ins.
+if [ -e "$CONFIG_DIR/plugins.yaml" ] && JOB_HOPPER_DATABASE_URL="$(env_line JOB_HOPPER_DATABASE_URL)" node "$DEST/src/cli.ts" config version plugins.yaml 2>/dev/null | grep -qx missing; then
+  echo "$CONFIG_DIR/plugins.yaml exists but the database has no plugins.yaml: move the old install first (docs/deploy.md \"Moving an existing install\"):" >&2
+  echo "  systemctl --user stop job-hopper" >&2
+  echo "  JOB_HOPPER_DATABASE_URL=… $DEST/src/cli.ts migrate-local --from-sqlite <old db> --config-dir $CONFIG_DIR --secrets-out <file>" >&2
+  echo "then add the secrets to $ENV_FILE and run install.sh again; or move $CONFIG_DIR/plugins.yaml aside to start empty" >&2
+  exit 1
+fi
 
 step "link the CLI: $BIN_DIR/job-hopper -> $DEST/src/cli.ts"
 mkdir -p "$BIN_DIR"

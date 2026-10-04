@@ -62,6 +62,12 @@ export class MigrateRefusal extends Error {}
 const expand = (p: string): string => (p === '~' ? homedir() : p.startsWith('~/') ? join(homedir(), p.slice(2)) : p);
 const read = (p: string): string => readFileSync(expand(p), 'utf8');
 
+/** Record a secret under `name`; two secrets may never share one variable. */
+function putSecret(secrets: Record<string, string>, name: string, value: string): void {
+  if (name in secrets) throw new MigrateRefusal(`two secrets would both be ${name}: rename one of them, then migrate again`);
+  secrets[name] = value;
+}
+
 /** A PEM as one environment line: newlines as `\n` escapes (pemFromEnv reads them back). */
 const oneLine = (pem: string): string => pem.trim().replaceAll('\n', '\\n');
 
@@ -146,7 +152,7 @@ function rewriteWebhooks(doc: Document, secrets: Record<string, string>, notes: 
     if (!isMap(w) || !w.has('secretFile')) continue;
     const name = String(w.get('name'));
     const variable = `WEBHOOK_SECRET_${name.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}`;
-    secrets[variable] = read(String(w.get('secretFile'))).trim();
+    putSecret(secrets, variable, read(String(w.get('secretFile'))).trim());
     w.delete('secretFile');
     w.set('secretEnv', variable);
     notes.push(`webhook ${name}: secretFile replaced by secretEnv ${variable}`);
@@ -161,7 +167,7 @@ function rewriteAuth(doc: Document, secrets: Record<string, string>, notes: stri
     const name = String(p.get('name'));
     if (p.has('clientSecret') || p.has('clientSecretFile')) {
       const variable = `AUTH_CLIENT_SECRET_${name.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}`;
-      secrets[variable] = p.has('clientSecret') ? String(p.get('clientSecret')) : read(String(p.get('clientSecretFile'))).trim();
+      putSecret(secrets, variable, p.has('clientSecret') ? String(p.get('clientSecret')) : read(String(p.get('clientSecretFile'))).trim());
       p.delete('clientSecret');
       p.delete('clientSecretFile');
       p.set('clientSecretEnv', variable);
