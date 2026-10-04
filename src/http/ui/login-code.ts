@@ -9,6 +9,8 @@ export const LOGIN_CODE_FILE = 'ui-login-code';
 
 export interface LoginCode {
   readonly path: string;
+  /** The code that works now (for a device link). */
+  current(): string;
   /** Write a fresh code; the old one stops working. */
   rotate(): void;
   /** True (and the code rotates) when `code` is the current one. */
@@ -29,6 +31,7 @@ export function createLoginCode(dataDir: string): LoginCode {
   return {
     path,
     rotate,
+    current: () => current,
     use(code) {
       if (!sameSecret(code, current)) return false;
       rotate();

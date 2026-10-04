@@ -1,11 +1,13 @@
 // The HTTP edge: read-only routes, SSE, the static UI, and the UI session — the only way to
-// mutate (design.md "Phase 3"). Loopback only; every request passes the Host guard (AGENTS.md).
+// mutate (design.md "Phase 3"). Loopback, plus the LAN names when set; every request passes the
+// Host guard (AGENTS.md).
 import Fastify, { type FastifyInstance } from 'fastify';
 import type { Clock, PluginsView, QuestionService, SourceRegistry, Store, WebhookDispatcher } from '../domain/ports.ts';
 import type { Engine } from '../engine/index.ts';
 import type { WebhookConfigStatus } from '../webhooks/config.ts';
 import { installErrorHandling } from './errors.ts';
 import { installHostGuard } from './host-guard.ts';
+import type { Lan } from './reach.ts';
 import { jobRoutes } from './jobs.ts';
 import { questionRoutes } from './questions.ts';
 import { sourceRoutes } from './sources.ts';
@@ -13,6 +15,7 @@ import { sseRoutes } from './sse.ts';
 import { stateRoutes } from './state.ts';
 import { staticRoutes } from './static.ts';
 import { registerUiRoutes } from './ui/index.ts';
+import { createUiSessions } from './ui/sessions.ts';
 import { webhookRoutes } from './webhooks.ts';
 
 export interface ServerOptions {
@@ -31,6 +34,8 @@ export interface ServerOptions {
   /** Where the UI login code file lives. */
   dataDir: string;
   sessionHours: number;
+  /** The LAN names and peers (design.md "Reaching the UI across the LAN"); empty: loopback only. */
+  lan: Lan;
   /** The built UI bundle (ui/dist). */
   uiDir: string;
   /** Fastify logger; off by default. */
@@ -40,7 +45,8 @@ export interface ServerOptions {
 export function createServer(o: ServerOptions): FastifyInstance {
   const app = Fastify({ logger: o.logger ?? false, forceCloseConnections: true });
   installErrorHandling(app);
-  installHostGuard(app, o.port);
+  const sessions = createUiSessions({ repo: o.store.uiSessions, clock: o.clock, hours: o.sessionHours });
+  installHostGuard(app, { port: o.port, lan: o.lan, sessions });
   jobRoutes(app, o);
   stateRoutes(app, o);
   questionRoutes(app, o);
@@ -48,6 +54,6 @@ export function createServer(o: ServerOptions): FastifyInstance {
   sourceRoutes(app, o);
   sseRoutes(app, o);
   staticRoutes(app, o.uiDir);
-  registerUiRoutes(app, { engine: o.engine, questions: o.questions, uiSessions: o.store.uiSessions, plugins: o.plugins, port: o.port, dataDir: o.dataDir, clock: o.clock, sessionHours: o.sessionHours });
+  registerUiRoutes(app, { engine: o.engine, questions: o.questions, sessions, plugins: o.plugins, port: o.port, lan: o.lan, dataDir: o.dataDir });
   return app;
 }

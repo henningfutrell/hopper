@@ -30,8 +30,11 @@ import { createWebhookConfigWatcher, type WebhookConfigWatcher } from './webhook
 import { createWebhookDispatcher } from './webhooks/index.ts';
 
 export interface App {
+  /** Always the loopback URL, whatever the bind address. */
   url: string;
   config: Config;
+  /** The UI link to one question, as notifications carry it: the first LAN name, else loopback. */
+  answerUrl(questionId: string): string;
   routerMode(): string;
   /** For tests: the store, the engine (setFakeUsage), the sync loop (syncNow), the webhooks.yaml watcher. */
   plugins: PluginsView;
@@ -158,10 +161,11 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   // reached through closures that run only after `engine` exists (design.md "Construction
   // contract added").
   let port = config.port;
+  const answerUrl = (id: string): string => `http://${config.lanNames[0] ?? '127.0.0.1'}:${port}/#question-${id}`;
   const questions = createQuestionService({
     store, clock, answerer, assessor, stageTimeoutMs: config.answerTimeoutMs, rulesFile: config.rulesFile,
     renotifyMs: config.humanRenotifyMs, humanTimeoutMs: config.humanTimeoutMs,
-    answerUrl: (id) => `http://${config.host}:${port}/#question-${id}`,
+    answerUrl,
     onAnswered: (q: Question) => engine.onAnswered(q),
     onExpired: (q: Question) => engine.onExpired(q),
   });
@@ -199,7 +203,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   });
   const server = createServer({
     engine, store, dispatcher, questions, clock, version: VERSION, sources: registry, webhookConfig, plugins,
-    port: () => port, dataDir, sessionHours: config.uiSessionHours, uiDir: seams.uiDir ?? UI_DIR,
+    port: () => port, dataDir, sessionHours: config.uiSessionHours, lan: { names: config.lanNames, peers: config.lanPeers }, uiDir: seams.uiDir ?? UI_DIR,
   });
 
   webhookConfig.start();
@@ -212,8 +216,9 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
 
   let stopped: Promise<void> | undefined;
   return {
-    url: `http://${config.host}:${port}`,
+    url: `http://127.0.0.1:${port}`,
     config,
+    answerUrl,
     routerMode,
     plugins,
     store,
@@ -248,7 +253,8 @@ async function main(): Promise<void> {
   const r = app.plugins.routerStatus();
   const { answerer, assessor } = app.plugins.report();
   const q = `answerer ${answerer.instance ? `${answerer.instance.name} [${answerer.active ?? 'unavailable'}]` : 'none'}, assessor ${assessor.instance?.name} [${assessor.active}${assessor.fallback ? ', fallback' : ''}]`;
-  console.log(`job-hopper listening on ${app.url} (router ${r.name} [${r.plugin}${r.fallback ? ', fallback' : ''}] ${app.routerMode()}, executors ${app.engine.executorNames.join(',') || 'none'}${unavailableNote(app.plugins)}, ${q})`);
+  const lan = app.config.lanNames.length ? ` and ${app.config.lanNames.map((n) => `http://${n}:${new URL(app.url).port}`).join(', ')} (LAN peers ${app.config.lanPeers.join(', ')})` : '';
+  console.log(`job-hopper listening on ${app.url}${lan} (router ${r.name} [${r.plugin}${r.fallback ? ', fallback' : ''}] ${app.routerMode()}, executors ${app.engine.executorNames.join(',') || 'none'}${unavailableNote(app.plugins)}, ${q})`);
   for (const s of app.sources.statuses()) console.log(`job-hopper: source ${s.name} (${s.kind}) ${s.state}`);
   console.log('job-hopper: UI login code written; open the UI with: bash ~/.local/lib/job-hopper/scripts/open-ui.sh');
   const shutdown = (signal: string): void => {

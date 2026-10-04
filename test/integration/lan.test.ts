@@ -45,7 +45,8 @@ const lanLogin = (code: string) => rawRequest(t.url, {
 
 describe('the UI across the LAN', () => {
   it('the app and the session check answer a LAN name without a session; /api/ does not (401)', async () => {
-    expect((await lanGet('/')).status).toBe(200);
+    // 200 with a built UI, 503 without (ui/dist is not built in a fresh checkout); never refused.
+    expect([200, 503]).toContain((await lanGet('/')).status);
     expect(JSON.parse((await lanGet('/ui/api/session')).text)).toEqual({ authenticated: false });
     for (const path of ['/api/health', '/api/queue', '/api/questions', '/api/jobs']) {
       const res = await lanGet(path);

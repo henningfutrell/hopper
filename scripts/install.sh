@@ -128,6 +128,11 @@ for i in $(seq 1 20); do
     printf 'executors: %s\n' "$(printf '%s' "$health" | node -e 'let s="";process.stdin.on("data",(c)=>s+=c).on("end",()=>console.log((JSON.parse(s).executors??[]).join(", ")))')"
     printf 'UI: %s/ (read-only until you log in)\n' "$URL"
     echo 'open the UI: bash ~/.local/lib/job-hopper/scripts/open-ui.sh'
+    if [ -r "$CONFIG_DIR/daemon.env" ] && grep -q '^JOB_HOPPER_LAN_NAMES=' "$CONFIG_DIR/daemon.env"; then
+      printf 'LAN: %s (another device: log in with the device-link button in a logged-in UI)\n' "$(grep '^JOB_HOPPER_LAN_NAMES=' "$CONFIG_DIR/daemon.env" | cut -d= -f2-)"
+    else
+      echo "LAN: off. To reach the UI from other machines, set JOB_HOPPER_LAN_NAMES and JOB_HOPPER_LAN_PEERS in $CONFIG_DIR/daemon.env (docs/design.md \"Reaching the UI across the LAN\")"
+    fi
     if [ ! -e "$CONFIG_DIR/github-app.json" ]; then
       echo 'next: create the GitHub App (one click in the browser): bash ~/.local/lib/job-hopper/scripts/create-github-app.sh'
     fi

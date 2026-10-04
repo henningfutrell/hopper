@@ -1,7 +1,7 @@
 // A device link (design.md "Reaching the UI across the LAN") carries the login code in the URL
 // fragment, which the browser never sends to the server; the page reads it once and posts it.
 import { describe, expect, it } from 'vitest';
-import { loginCodeFromHash } from '@/lib/login';
+import { loginCodeFromHash } from '../../ui/src/lib/login.ts';
 
 const CODE = 'a'.repeat(64);
 

@@ -1,12 +1,11 @@
 [Unit]
-Description=job-hopper local job-queue daemon (loopback-only, 127.0.0.1:4790)
+Description=job-hopper local job-queue daemon (127.0.0.1:4790; LAN names from daemon.env)
 Wants=job-hopper-herdr.service
 After=default.target job-hopper-herdr.service
 
 [Service]
 Type=simple
 ExecStart=/usr/bin/node %h/.local/lib/job-hopper/src/main.ts
-Environment=JOB_HOPPER_HOST=127.0.0.1
 Environment=JOB_HOPPER_PORT=4790
 Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin
 # Process settings only. Every part — job sources (the GitHub App via
@@ -16,6 +15,9 @@ Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin
 # %h/.local/share/job-hopper/ui-login-code.
 Environment=JOB_HOPPER_PLUGINS_FILE=%h/.config/job-hopper/plugins.yaml
 Environment=JOB_HOPPER_WEBHOOKS_FILE=%h/.config/job-hopper/webhooks.yaml
+# Optional, this machine's: JOB_HOPPER_LAN_NAMES and JOB_HOPPER_LAN_PEERS to reach the UI across the
+# LAN (docs/design.md "Reaching the UI across the LAN"). Absent: loopback only.
+EnvironmentFile=-%h/.config/job-hopper/daemon.env
 Restart=on-failure
 RestartSec=2
 KillSignal=SIGTERM

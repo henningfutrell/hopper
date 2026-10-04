@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { z } from 'zod';
 
 export interface Config {
+  /** The bind address: `127.0.0.1`, or `::` (every interface) when LAN names are set. */
   host: string;
   port: number;
   dbPath: string;
@@ -33,6 +34,10 @@ export interface Config {
   pluginDir: string;
   /** plugins.yaml: which plugin instance fills which role — every part's configuration. */
   pluginsFile: string;
+  /** Host names the UI answers to on the LAN (lowercase, no port); empty: loopback only. */
+  lanNames: string[];
+  /** CIDR ranges a LAN request may come from. */
+  lanPeers: string[];
   /**
    * Every set JOB_HOPPER_* variable this config does not read, raw: the part-choosing ones removed
    * in phase 5 slices 4 and 5 (read once more by the plugins.yaml migration) and any unknown one. The
@@ -47,9 +52,17 @@ const int = (min: number, max = Number.MAX_SAFE_INTEGER) => z.coerce.number().in
 const fraction = () => z.coerce.number().min(0).max(1);
 const path = (fallback: string) => z.string().min(1).default(fallback).transform(expandHome);
 const flag = (fallback: boolean) => z.enum(['true', 'false']).default(fallback ? 'true' : 'false').transform((v) => v === 'true');
+const list = (item: z.ZodType<string, string>) => z.string().default('')
+  .transform((v) => v.split(',').map((x) => x.trim().toLowerCase()).filter((x) => x !== ''))
+  .pipe(z.array(item));
+// A host name or IP literal, no port; never a loopback name (those are always served).
+const lanName = z.string().regex(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/, 'must be host names or IPv4 addresses, comma-separated, no port')
+  .refine((n) => n !== 'localhost' && !n.startsWith('127.'), 'loopback is always served; list LAN names only');
+const lanPeer = z.union([z.cidrv4(), z.cidrv6()], { error: 'must be CIDR ranges, comma-separated (192.0.2.0/24)' });
 const schema = z.object({
-  // Loopback only (AGENTS.md): any other bind address needs authentication — a different application.
-  JOB_HOPPER_HOST: z.literal('127.0.0.1', { error: 'must be 127.0.0.1 (loopback only)' }).default('127.0.0.1'),
+  // Loopback, plus the LAN names when set (AGENTS.md, design.md "Reaching the UI across the LAN").
+  JOB_HOPPER_LAN_NAMES: list(lanName),
+  JOB_HOPPER_LAN_PEERS: list(lanPeer),
   JOB_HOPPER_PORT: int(0, 65535).default(4790),
   JOB_HOPPER_DB: path('~/.local/share/job-hopper/job-hopper.db'),
   JOB_HOPPER_TICK_MS: int(1).default(2000),
@@ -73,6 +86,12 @@ const schema = z.object({
 }).refine((e) => e.JOB_HOPPER_SOFT_LIMIT < e.JOB_HOPPER_HARD_LIMIT, {
   message: 'must be below JOB_HOPPER_HARD_LIMIT',
   path: ['JOB_HOPPER_SOFT_LIMIT'],
+}).refine((e) => e.JOB_HOPPER_LAN_NAMES.length === 0 || e.JOB_HOPPER_LAN_PEERS.length > 0, {
+  message: 'must be set with JOB_HOPPER_LAN_NAMES: the ranges LAN requests may come from',
+  path: ['JOB_HOPPER_LAN_PEERS'],
+}).refine((e) => e.JOB_HOPPER_LAN_PEERS.length === 0 || e.JOB_HOPPER_LAN_NAMES.length > 0, {
+  message: 'must be set with JOB_HOPPER_LAN_PEERS: the names the UI answers to on the LAN',
+  path: ['JOB_HOPPER_LAN_NAMES'],
 });
 
 const READ = new Set(Object.keys(schema.shape));
@@ -92,7 +111,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
   }
   const e = parsed.data;
   return {
-    host: e.JOB_HOPPER_HOST,
+    host: e.JOB_HOPPER_LAN_NAMES.length > 0 ? '::' : '127.0.0.1',
     port: e.JOB_HOPPER_PORT,
     dbPath: e.JOB_HOPPER_DB,
     tickMs: e.JOB_HOPPER_TICK_MS,
@@ -113,6 +132,8 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     uiSessionHours: e.JOB_HOPPER_UI_SESSION_HOURS,
     pluginDir: e.JOB_HOPPER_PLUGIN_DIR,
     pluginsFile: e.JOB_HOPPER_PLUGINS_FILE,
+    lanNames: e.JOB_HOPPER_LAN_NAMES,
+    lanPeers: e.JOB_HOPPER_LAN_PEERS,
     leftoverEnv,
   };
 }
