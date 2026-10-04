@@ -4,7 +4,7 @@
 import type {
   Advice, DomainEvent, Decision, EventType, ExecutorUnavailable, Job, JobId, JobSpec, JobStatus, Lane, PluginsEdit, PluginsEditOutcome, PluginsReport, RouterMode, RouterStatus,
   JobSourceRef, LaneId, MachineId, MachineSnapshot, NewEvent, Question, QuestionAttempt, QuestionStatus,
-  SourceStatus, UsageReading, WebhookDelivery, WebhookSubscription,
+  SourceStatus, UsageReading, UsageSourceState, WebhookDelivery, WebhookSubscription,
 } from './types.ts';
 
 // ---- Execution -----------------------------------------------------------------------
@@ -103,10 +103,17 @@ export interface MachineSource {
   list(): Promise<MachineSnapshot[]>;
 }
 
-/** A pluggable usage-budget source. Returns zero or more readings per poll. */
+/**
+ * A pluggable usage-budget source. Returns zero or more readings per poll. Every Decision polls
+ * every usage source: `poll` must answer from what it already has, never wait on a slow read.
+ */
 export interface UsageSource {
   readonly name: string;
   poll(): Promise<UsageReading[]>;
+  /** When it last read, why it has no readings, and the account it reads them for. */
+  state?(): UsageSourceState;
+  /** Stop background work (timers, a child process). Called once, at shutdown. */
+  stop?(): void;
 }
 
 /** What a notifier is given at start: the event log's live feed, and the job an event names. */

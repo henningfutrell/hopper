@@ -84,7 +84,8 @@ function buildDoc(e: Legacy, answerTimeoutMs: number, configDir: string, sources
       } },
     ],
     machines: { name: 'local', plugin: 'local', options: { lanes: e.JOB_HOPPER_LOCAL_LANES } },
-    usageSources: [],
+    // Claude subscription usage throttles lanes (issue #18); unavailable where claude is not installed.
+    usageSources: [{ name: 'claude', plugin: 'claude-plan', options: { bin: e.JOB_HOPPER_CLAUDE_BIN, intervalSeconds: 600 } }],
     notifiers: [{ name: 'grok-bot', plugin: 'grokbot-routine', options: { envFile: e.JOB_HOPPER_GROKBOT_WEBHOOK_FILE ?? join(configDir, 'grokbot-webhook.env') } }],
   };
 }

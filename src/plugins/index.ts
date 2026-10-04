@@ -56,6 +56,7 @@ export interface PluginHostOptions {
 export interface PluginHost {
   /** Load plugins, read plugins.yaml, build the router, detect every plugin, start the watch. */
   start(): Promise<void>;
+  /** Stop the plugins.yaml watch and every usage source's background work. */
   stop(): void;
   /** Live: swaps between calls when plugins.yaml changes. Valid after start(). With no router in plugins.yaml, the first router that can run here. */
   readonly router: Router;
@@ -266,6 +267,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
     stop() {
       if (timer) clearInterval(timer);
       timer = undefined;
+      for (const b of usageSources.built ?? []) b.instance?.stop?.();
     },
     get router() { return need().router; },
     routerStatus: () => need().status(),

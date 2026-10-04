@@ -78,5 +78,5 @@ export function stateRoutes(app: FastifyInstance, o: { engine: Engine; store: St
   app.get('/api/router', async () => routerView(engine, plugins));
   app.get('/api/plugins', async () => plugins.report());
 
-  app.get('/api/usage', async () => ({ readings: await engine.getUsage() }));
+  app.get('/api/usage', async () => engine.getUsageReport());
 }

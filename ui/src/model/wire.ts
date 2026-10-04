@@ -1,13 +1,13 @@
 // The HTTP API's shapes as the UI reads them. Domain types come from src/domain/types.ts as
 // type-only imports: the wire contract has one definition, and nothing of src/ is bundled.
 import type {
-  Decision, DomainEvent, InstanceSpec, Job, JobStatus, Lane, MachineSnapshot, PluginsEdit, PluginsReport, Question, QuestionAttempt, QuestionGatesView, RiskRuleView, Role, RulesFileView, SelectableRole, SourceStatus,
-  UsageReading, WebhookDelivery, WebhookSubscription, WebhooksEdit,
+  Decision, DomainEvent, InstanceSpec, Job, JobStatus, Lane, MachineLaneEffect, MachineSnapshot, PartAccount, PluginsEdit, PluginsReport, Question, QuestionAttempt,
+  QuestionGatesView, RiskRuleView, Role, RulesFileView, SelectableRole, SourceStatus, UsageReading, UsageReport, UsageSourceReport, WebhookDelivery, WebhookSubscription, WebhooksEdit,
 } from '../../../src/domain/types.ts';
 
 export type {
-  Decision, DomainEvent, InstanceSpec, Job, JobStatus, Lane, PluginsEdit, PluginsReport, Question, QuestionAttempt, QuestionGatesView, RiskRuleView, Role, RulesFileView, SelectableRole, SourceStatus,
-  UsageReading, WebhookDelivery, WebhookSubscription, WebhooksEdit,
+  Decision, DomainEvent, InstanceSpec, Job, JobStatus, Lane, MachineLaneEffect, PartAccount, PluginsEdit, PluginsReport, Question, QuestionAttempt,
+  QuestionGatesView, RiskRuleView, Role, RulesFileView, SelectableRole, SourceStatus, UsageReading, UsageReport, UsageSourceReport, WebhookDelivery, WebhookSubscription, WebhooksEdit,
 };
 
 export interface Queue {

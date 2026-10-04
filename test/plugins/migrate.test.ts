@@ -80,7 +80,7 @@ describe('ensurePluginsFile', () => {
         } },
       ],
       machines: { name: 'local', plugin: 'local', options: { lanes: 2 } },
-      usageSources: [],
+      usageSources: [{ name: 'claude', plugin: 'claude-plan', options: { bin: '/opt/claude', intervalSeconds: 600 } }],
       notifiers: [{ name: 'grok-bot', plugin: 'grokbot-routine', options: { envFile: join(dir, 'grokbot-webhook.env') } }],
     });
     expect(readdirSync(dir).sort()).toEqual(['plugins.yaml', 'sources.yaml.migrated']);
@@ -127,7 +127,7 @@ describe('ensurePluginsFile', () => {
         { name: 'github-app', plugin: 'github-app', options: { appFile: join(dir, 'github-app.json') } },
       ],
       machines: { name: 'local', plugin: 'local', options: { lanes: 4 } },
-      usageSources: [],
+      usageSources: [{ name: 'claude', plugin: 'claude-plan', options: { bin: 'claude', intervalSeconds: 600 } }],
       notifiers: [{ name: 'grok-bot', plugin: 'grokbot-routine', options: { envFile: join(dir, 'grokbot-webhook.env') } }],
     });
   });

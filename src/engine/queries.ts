@@ -1,7 +1,8 @@
 // Read models for the HTTP edge.
 import { order } from '../decider/assign.ts';
 import { routerVerdict } from '../decider/router-verdict.ts';
-import { TERMINAL_STATUSES, type Job, type JobStatus, type Lane, type MachineSnapshot, type UsageReading } from '../domain/types.ts';
+import { laneCap, machineUsage } from '../decider/usage.ts';
+import { TERMINAL_STATUSES, type Job, type JobStatus, type Lane, type MachineSnapshot, type UsageReading, type UsageReport, type UsageSourceReport } from '../domain/types.ts';
 import type { EngineContext } from './context.ts';
 
 export interface QueueView {
@@ -22,10 +23,15 @@ export interface Queries {
   getQueue(): QueueView;
   getMachines(): Promise<MachineView[]>;
   getUsage(): Promise<UsageReading[]>;
+  /** Every reading, every usage source's state, the limits, and the lane effect per machine (the decider's steps 1-2). */
+  getUsageReport(): Promise<UsageReport>;
+  /** Each usage source's name and state (when it last read, why it has no readings, its account). */
+  getUsageSources(): UsageSourceReport[];
 }
 
 export function createQueries(c: EngineContext): Queries {
   const getUsage = async (): Promise<UsageReading[]> => (await Promise.all(c.usage.map((u) => u.poll()))).flat();
+  const getUsageSources = (): UsageSourceReport[] => c.usage.map((u) => ({ name: u.name, ...u.state?.() }));
   return {
     getQueue() {
       const all = c.store.jobs.list();
@@ -56,5 +62,19 @@ export function createQueries(c: EngineContext): Queries {
       }));
     },
     getUsage,
+    getUsageSources,
+    async getUsageReport() {
+      const [machines, readings] = await Promise.all([c.machines.list(), getUsage()]);
+      return {
+        readings,
+        sources: getUsageSources(),
+        limits: { soft: c.policy.softLimit, hard: c.policy.hardLimit },
+        machines: machines.map((m) => {
+          const { usedFrac } = machineUsage(m.id, readings);
+          const { cap, band } = laneCap(m, usedFrac, c.policy);
+          return { machineId: m.id, label: m.label, online: m.online, maxLanes: m.maxLanes, usedFrac, cap, band };
+        }),
+      };
+    },
   };
 }

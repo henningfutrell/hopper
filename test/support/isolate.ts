@@ -5,10 +5,19 @@
 //   resolves to an empty throwaway dir, and child processes inherit the same.
 //   Exception: JOB_HOPPER_REAL_HERDR=1 keeps HOME, because Claude in a real herdr pane needs
 //   the real login; the fetch guard below still applies.
+// - `claude` on PATH is a guard that answers `--version` (detection) and refuses everything else,
+//   so a built-in instance left at its default `bin` (claude-plan's background `/usage` read,
+//   issue #18) never runs the real CLI. A test that wants claude names a fake as `bin`.
 // - fetch() to anything but a loopback host rejects, so a webhook can never reach a real URL.
-import { mkdtempSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
+
+const CLAUDE_GUARD = `#!/bin/sh
+if [ "$1" = "--version" ]; then echo "0.0.0 (job-hopper test isolation)"; exit 0; fi
+echo "test isolation: the real claude is never run in tests" >&2
+exit 1
+`;
 
 if (process.env.JOB_HOPPER_REAL_HERDR !== '1') {
   const home = mkdtempSync(join(tmpdir(), 'jh-test-home-'));
@@ -16,6 +25,10 @@ if (process.env.JOB_HOPPER_REAL_HERDR !== '1') {
   process.env.XDG_CONFIG_HOME = join(home, '.config');
   process.env.XDG_DATA_HOME = join(home, '.local/share');
   process.env.XDG_STATE_HOME = join(home, '.local/state');
+  const guards = join(home, '.isolation-bin');
+  mkdirSync(guards, { mode: 0o700 });
+  writeFileSync(join(guards, 'claude'), CLAUDE_GUARD, { mode: 0o755 });
+  process.env.PATH = `${guards}${delimiter}${process.env.PATH ?? ''}`;
 }
 
 const LOOPBACK = new Set(['127.0.0.1', 'localhost', '[::1]', '::1']);

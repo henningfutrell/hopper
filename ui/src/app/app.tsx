@@ -13,13 +13,14 @@ import { Overview } from '@/views/overview';
 import { Plugins } from '@/views/plugins';
 import { Questions } from '@/views/questions';
 import { Sources } from '@/views/sources';
+import { Usage } from '@/views/usage';
 import { Webhooks } from '@/views/webhooks';
 import { ReadOnlyBanner } from './banner';
 import { Header } from './header';
 import { MobileNav, Sidebar, useView, viewLabel, type View } from './nav';
 
 const VIEW: Record<View, () => React.ReactNode> = {
-  overview: Overview, questions: Questions, decisions: Decisions, events: Events, sources: Sources, machines: Machines, plugins: Plugins, webhooks: Webhooks,
+  overview: Overview, questions: Questions, decisions: Decisions, events: Events, sources: Sources, machines: Machines, usage: Usage, plugins: Plugins, webhooks: Webhooks,
 };
 
 function Loading() {
