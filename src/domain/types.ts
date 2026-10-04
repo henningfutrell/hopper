@@ -146,6 +146,8 @@ export interface MachineSnapshot {
   online: boolean;
   /** Executors this machine can run. */
   executors: string[];
+  /** An attached machine: the ssh destination its executors reach it by. Absent → this machine. */
+  ssh?: string;
 }
 
 /** One usage budget reading. `used`/`limit` share a unit; `unit` names it. */

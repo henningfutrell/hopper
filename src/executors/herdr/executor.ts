@@ -15,7 +15,10 @@ import type { PaneState, StartDeps, TurnAnchor } from './start.ts';
 const UNBLOCK_POLLS = 10;
 
 export interface HerdrClaudeExecutorOptions {
+  /** This machine's herdr. */
   herdr: HerdrClient;
+  /** The herdr of an attached machine, by its ssh destination. Absent → jobs on one fail. */
+  remote?: (sshTarget: string) => HerdrClient;
   clock: Clock;
   defaultCwd: string;
   claudeArgs: string[];
@@ -40,41 +43,62 @@ const realSleep: Sleep = (ms, signal) => new Promise((resolve) => {
 
 const lastLineOf = (text: string): string => text.split('\n').map((l) => l.trim()).filter(Boolean).at(-1) ?? text.trim();
 
+const heldOf = (s: PaneState): HeldPane => ({ paneId: s.paneId, ...(s.ssh ? { ssh: s.ssh } : {}) });
+
 function paneStateOf(job: Job): PaneState | undefined {
   const s = job.executorState as Partial<PaneState> | undefined;
   return s?.paneId && s.agentName ? (s as PaneState) : undefined;
 }
 
-export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrClaudeExecutor {
-  const { herdr, clock } = o;
-  const sleep = o.sleep ?? realSleep;
-  const deps: StartDeps = { herdr, clock, sleep, pollMs: o.pollMs, claudeArgs: o.claudeArgs, trustWorkdir: o.trustWorkdir };
-  const lanes = new Map<LaneId, string>();
+/** A pane on one machine: pane ids are per herdr server, so two machines can share one. */
+interface HeldPane { paneId: string; ssh?: string }
 
-  /** The refusal when `paneId` is already mapped to another lane; a lane never shares a pane. */
-  function heldElsewhere(laneId: LaneId, paneId: string): ExecutionOutcome | null {
-    for (const [lane, pane] of lanes) {
-      if (pane === paneId && lane !== laneId) return { kind: 'failed', error: `herdr: pane ${paneId} is already held by lane ${lane}` };
+const samePane = (a: HeldPane, b: HeldPane): boolean => a.paneId === b.paneId && a.ssh === b.ssh;
+
+export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrClaudeExecutor {
+  const { clock } = o;
+  const sleep = o.sleep ?? realSleep;
+  const lanes = new Map<LaneId, HeldPane>();
+
+  /** The herdr a pane lives on: this machine's, or the attached machine's over ssh. */
+  function herdrOn(ssh: string | undefined): HerdrClient {
+    if (!ssh) return o.herdr;
+    if (!o.remote) throw new Error(`cannot reach attached machine ${ssh}: no remote herdr`);
+    return o.remote(ssh);
+  }
+
+  const depsOn = (ssh: string | undefined): StartDeps => ({
+    herdr: herdrOn(ssh), clock, sleep, pollMs: o.pollMs, claudeArgs: o.claudeArgs, trustWorkdir: o.trustWorkdir,
+  });
+
+  /** The refusal when the pane is already mapped to another lane; a lane never shares a pane. */
+  function heldElsewhere(laneId: LaneId, pane: HeldPane): ExecutionOutcome | null {
+    for (const [lane, held] of lanes) {
+      if (samePane(held, pane) && lane !== laneId) return { kind: 'failed', error: `herdr: pane ${pane.paneId} is already held by lane ${lane}` };
     }
     return null;
   }
 
   /** esc, ctrl+c twice, close. Swallows every error: the pane may already be gone. */
-  async function exitAndClose(paneId: string): Promise<void> {
-    await herdr.sendKeys(paneId, ['esc']).catch(() => {});
-    await herdr.sendKeys(paneId, ['ctrl+c', 'ctrl+c']).catch(() => {});
-    await herdr.closePane(paneId).catch(() => {});
-    for (const [lane, pane] of lanes) if (pane === paneId) lanes.delete(lane);
+  async function exitAndClose(pane: HeldPane): Promise<void> {
+    const close = async (herdr: HerdrClient): Promise<void> => {
+      await herdr.sendKeys(pane.paneId, ['esc']).catch(() => {});
+      await herdr.sendKeys(pane.paneId, ['ctrl+c', 'ctrl+c']).catch(() => {});
+      await herdr.closePane(pane.paneId).catch(() => {});
+    };
+    await Promise.resolve().then(() => close(herdrOn(pane.ssh))).catch(() => {});
+    for (const [lane, held] of lanes) if (samePane(held, pane)) lanes.delete(lane);
   }
 
-  async function settle(result: ExecutionOutcome | Interrupt, paneId: string): Promise<ExecutionOutcome> {
+  async function settle(result: ExecutionOutcome | Interrupt, pane: HeldPane): Promise<ExecutionOutcome> {
     if (!('interrupt' in result)) return result;
     if (result.interrupt === 'shutdown') return { kind: 'failed', error: 'shutdown' };
-    await exitAndClose(paneId);
+    await exitAndClose(pane);
     return { kind: 'failed', error: result.interrupt === 'timeout' ? 'timed out' : 'aborted' };
   }
 
   async function send(ctx: ExecutionContext, s: PaneState, p: ClaudeJobPayload, text: string, anchor: string): Promise<ExecutionOutcome | Interrupt> {
+    const herdr = herdrOn(s.ssh);
     let agent = await herdr.getAgent(s.agentName);
     for (let i = 0; agent?.status === 'blocked' && i < UNBLOCK_POLLS; i++) {
       if (i === 0) await herdr.sendKeys(s.paneId, ['esc']);
@@ -93,7 +117,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
 
   function watch(ctx: ExecutionContext, s: PaneState, p: ClaudeJobPayload, turn: TurnAnchor): Promise<ExecutionOutcome | Interrupt> {
     return watchTurn({
-      herdr, clock, sleep, pollMs: o.pollMs, idleQuestionMs: o.idleQuestionMs, ctx, agentName: s.agentName,
+      herdr: herdrOn(s.ssh), clock, sleep, pollMs: o.pollMs, idleQuestionMs: o.idleQuestionMs, ctx, agentName: s.agentName,
       paneId: s.paneId, anchor: turn.anchor, seqAtSend: turn.seq, blockedAtSend: turn.blockedAtSend,
       timeoutMs: p.timeoutMs, expectedMs: p.expectedMs,
     });
@@ -103,44 +127,47 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
   async function liveTurn(job: Job): Promise<(PaneState & { turn: TurnAnchor }) | undefined> {
     const state = paneStateOf(job);
     if (!state?.turn) return undefined;
-    const agent = await herdr.getAgent(state.agentName);
+    const agent = await herdrOn(state.ssh).getAgent(state.agentName);
     return agent?.paneId === state.paneId ? { ...state, turn: state.turn } : undefined;
   }
 
   /** Runs `body` with the lane mapped to the pane; never rejects; on error the pane is released. */
-  async function onLane(ctx: ExecutionContext, getPane: () => string | undefined, body: () => Promise<ExecutionOutcome | Interrupt>): Promise<ExecutionOutcome> {
+  async function onLane(ctx: ExecutionContext, getPane: () => HeldPane | undefined, body: () => Promise<ExecutionOutcome | Interrupt>): Promise<ExecutionOutcome> {
     try {
       const result = await body();
-      const paneId = getPane();
-      return paneId ? await settle(result, paneId) : ('interrupt' in result ? { kind: 'failed', error: 'aborted' } : result);
+      const pane = getPane();
+      return pane ? await settle(result, pane) : ('interrupt' in result ? { kind: 'failed', error: 'aborted' } : result);
     } catch (err) {
-      const paneId = getPane();
-      if (paneId && !(ctx.signal.aborted && abortReason(ctx.signal) === 'shutdown')) await exitAndClose(paneId);
+      const pane = getPane();
+      if (pane && !(ctx.signal.aborted && abortReason(ctx.signal) === 'shutdown')) await exitAndClose(pane);
       return { kind: 'failed', error: `herdr: ${(err as Error).message}` };
     } finally {
-      if (lanes.get(ctx.laneId) === getPane()) lanes.delete(ctx.laneId);
+      const held = lanes.get(ctx.laneId);
+      const pane = getPane();
+      if (held && pane && samePane(held, pane)) lanes.delete(ctx.laneId);
     }
   }
 
   return {
     name: 'herdr-claude',
     idempotent: false,
-    lanePanes: () => lanes,
+    lanePanes: () => new Map([...lanes].map(([lane, held]) => [lane, held.paneId])),
     validate: validatePayload,
 
     run(ctx) {
       const p = resolvePayload(ctx.job.spec.payload, o.defaultCwd);
       let state: PaneState | undefined;
-      return onLane(ctx, () => state?.paneId, async () => {
+      return onLane(ctx, () => state, async () => {
+        const deps = depsOn(ctx.machine.ssh);
         const opened = await openPane(deps, ctx, p.cwd, p.env);
-        const refused = heldElsewhere(ctx.laneId, opened.paneId);
+        const refused = heldElsewhere(ctx.laneId, opened);
         if (refused) return refused;
         state = opened;
-        lanes.set(ctx.laneId, state.paneId);
+        lanes.set(ctx.laneId, heldOf(state));
         if (ctx.signal.aborted) return { interrupt: abortReason(ctx.signal) };
         const failed = await startClaude(deps, ctx, state, p);
         if (failed) {
-          await exitAndClose(state.paneId);
+          await exitAndClose(state);
           return failed;
         }
         if (ctx.signal.aborted) return { interrupt: abortReason(ctx.signal) };
@@ -152,11 +179,11 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       const state = paneStateOf(ctx.job);
       if (!state) return Promise.resolve({ kind: 'failed', error: 'pane lost' });
       const p = resolvePayload(ctx.job.spec.payload, o.defaultCwd);
-      const refused = heldElsewhere(ctx.laneId, state.paneId);
+      const refused = heldElsewhere(ctx.laneId, state);
       if (refused) return Promise.resolve(refused);
-      return onLane(ctx, () => state.paneId, async () => {
-        if (!(await herdr.getAgent(state.agentName))) return { kind: 'failed', error: 'pane lost' };
-        lanes.set(ctx.laneId, state.paneId);
+      return onLane(ctx, () => state, async () => {
+        if (!(await herdrOn(state.ssh).getAgent(state.agentName))) return { kind: 'failed', error: 'pane lost' };
+        lanes.set(ctx.laneId, heldOf(state));
         return send(ctx, { ...state, laneId: ctx.laneId }, p, answer, lastLineOf(answer));
       });
     },
@@ -168,17 +195,17 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
     reattach(ctx) {
       const saved = paneStateOf(ctx.job);
       const p = resolvePayload(ctx.job.spec.payload, o.defaultCwd);
-      return onLane(ctx, () => saved?.paneId, async () => {
+      return onLane(ctx, () => saved, async () => {
         const state = await liveTurn(ctx.job);
         if (!state) return { kind: 'failed', error: 'interrupted by daemon restart' };
-        lanes.set(ctx.laneId, state.paneId);
+        lanes.set(ctx.laneId, heldOf(state));
         return watch(ctx, state, p, state.turn);
       });
     },
 
     async cleanup(job) {
       const state = paneStateOf(job);
-      if (state) await exitAndClose(state.paneId);
+      if (state) await exitAndClose(state);
     },
   };
 }

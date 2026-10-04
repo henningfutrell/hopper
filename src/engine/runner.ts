@@ -2,7 +2,7 @@
 // cancelled | waiting_answer. A claim of a job with a pending answer resumes it. A job
 // reattached by restart recovery skips `started` and goes on from its executor's present state.
 import type { ExecutionContext, ExecutionOutcome, Executor } from '../domain/ports.ts';
-import type { Job, LaneId } from '../domain/types.ts';
+import type { Job, LaneId, MachineSnapshot } from '../domain/types.ts';
 import type { Cleanup } from './cleanup.ts';
 import { nowIso, type EngineContext } from './context.ts';
 import type { Claim } from './decision-step.ts';
@@ -66,11 +66,18 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
     };
   }
 
+  /** The machine snapshot of the lane's machine; undefined once it is no longer attached. */
+  async function machineOf(laneId: LaneId): Promise<MachineSnapshot | undefined> {
+    const lane = c.store.lanes.list().find((l) => l.id === laneId);
+    return lane ? (await c.machines.list()).find((m) => m.id === lane.machineId) : undefined;
+  }
+
   async function run(claim: Claim, entry: Running, reattach: boolean): Promise<void> {
     const { store } = c;
     const job = store.jobs.get(claim.jobId);
     if (!job) return;
     const executor = c.executors.get(job.spec.executor);
+    const machine = await machineOf(claim.laneId);
     const started = reattach ? job : store.tx(() => {
       const j = store.jobs.update(job.id, { status: 'running', startedAt: nowIso(c) });
       store.events.append({ type: 'job.started', jobId: job.id, laneId: claim.laneId, data: { attempts: j.attempts } });
@@ -79,8 +86,8 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
     const progress = progressReporter(job.id, claim.laneId);
     let outcome: ExecutionOutcome;
     try {
-      outcome = await execute(executor, started, {
-        job: started, laneId: claim.laneId, signal: entry.controller.signal,
+      outcome = !machine ? { kind: 'failed', error: `machine of lane ${claim.laneId} is not attached` } : await execute(executor, started, {
+        job: started, laneId: claim.laneId, machine, signal: entry.controller.signal,
         progress: (f, m) => progress.report(f, m),
         saveState: (state) => { if (!c.stopping()) store.jobs.update(job.id, { executorState: state }); },
       }, reattach);

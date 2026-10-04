@@ -12,6 +12,8 @@ import type {
 export interface ExecutionContext {
   job: Job;
   laneId: LaneId;
+  /** The machine the lane is on: an executor that runs work outside the process runs it there. */
+  machine: MachineSnapshot;
   /**
    * Aborted on cancel or daemon shutdown; `signal.reason` is the string `'cancel'` or
    * `'shutdown'`. On cancel an executor stops the work and releases it; on shutdown it
