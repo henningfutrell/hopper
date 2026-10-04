@@ -859,7 +859,7 @@ issues with no job here (another machine, a wiped database) are **not** re-run: 
 labelled `hopper:claimed` with no local job is skipped and shown in status detail.
 
 **Item → job:** key = issue URL; title → goal; prompt = body + issue context (above); env as
-above; empty body → claimed, then failed with a comment "empty issue body"; priority per
+above; empty body → claimed, then failed with error "empty issue body"; priority per
 "Priority"; cwd = `repoPaths[repo]` (expanded) else `defaultCwd`.
 
 **Comments.** Every hopper comment starts with a hidden marker line
@@ -876,8 +876,12 @@ and truncated to 60 000 characters with a "(truncated)" note (GitHub's limit is 
 | question (human tier only) | comment with the question, the escalation trail summary (answerer: name · confident · outcome; assessor: name · escalate · reason · rules; rows from before slice 2: tier · confident · risky · rules), and "Reply to this issue to answer." |
 | answered | comment "Answered by <tier>: …" (`answeredBy`: the answerer instance or `human`; also for answers the assessor let through, so the issue tells the whole story) |
 | finished | comment with the result summary; remove `hopper:claimed`, add `hopper:done` |
-| failed | comment with the error; remove `hopper:claimed`, add `hopper:failed` |
-| cancelled | comment "cancelled (<reason>)"; remove `hopper:claimed` |
+| failed | **no comment**; remove `hopper:claimed`, add `hopper:failed` |
+| cancelled | **no comment**; remove `hopper:claimed` |
+
+A failure never goes to the issue as text. It is one stderr line in the daemon log
+(`job-hopper: job <id> failed (<issue url>): <error>`, `src/engine/failure-log.ts`), the job's
+`error` in `/api/jobs`, and the `job.failed` row (with its error) in the UI event feed.
 
 **Signals (check):** per active job, `getIssue` + `listComments` (all pages:
 `gh api --paginate --slurp "repos/O/R/issues/N/comments?per_page=100"`):

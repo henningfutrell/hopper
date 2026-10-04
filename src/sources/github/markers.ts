@@ -6,7 +6,7 @@ export const MARKER_LINE_RE = /^<!-- job-hopper v1 /;
 /** What a job prefixes its own comments with (env HOPPER_COMMENT_MARKER). */
 export const JOB_COMMENT_MARKER = '<!-- job-hopper v1 kind=job-comment -->';
 
-export type CommentKind = 'claimed' | 'progress' | 'question' | 'answered' | 'finished' | 'failed' | 'cancelled';
+export type CommentKind = 'claimed' | 'progress' | 'question' | 'answered' | 'finished';
 
 export function markerFor(kind: CommentKind, jobId: string, questionId?: string): string {
   return `<!-- job-hopper v1 kind=${kind} job=${jobId}${questionId ? ` question=${questionId}` : ''} -->`;

@@ -1,4 +1,5 @@
-// report(): what happened to a job, as comments and labels on its issue. Returns the WHOLE
+// report(): what happened to a job, as comments and labels on its issue (a failed or cancelled
+// job gets labels only). Returns the WHOLE
 // new source state: { claimCommentId, progressCommentId, questionComments, answeredComments,
 // finalCommentId }. With a token keeper (app mode) the claim also mints the job's token file —
 // a failed mint never fails the claim — and the final report deletes it.
@@ -64,17 +65,22 @@ async function ensureLabels(ctx: ReportContext, repo: string): Promise<void> {
   ctx.labelledRepos.add(repo);
 }
 
-async function final(ctx: ReportContext, t: CommentTarget, r: SourceReport, state: State, text: string, add: string[]): Promise<State> {
-  const { job } = r;
+/** End of a job on its issue: drop `hopper:claimed`, add the outcome label, drop the token. */
+async function settle(ctx: ReportContext, t: CommentTarget, job: Job, add: string[]): Promise<void> {
   const { repo, number } = t;
-  const marker = markerFor(r.kind as 'finished', job.id);
-  const id = await postOnce(t, marker, commentBody(marker, text, job.id), state.finalCommentId as number | undefined);
   await ctx.api.removeLabels(repo, number, [LABEL_CLAIMED]);
   if (add.length) {
     await ensureLabels(ctx, repo);
     await ctx.api.addLabels(repo, number, add);
   }
   ctx.tokens?.drop(job);
+}
+
+async function finished(ctx: ReportContext, t: CommentTarget, job: Job, state: State): Promise<State> {
+  const marker = markerFor('finished', job.id);
+  const text = `✅ job \`${job.id}\` finished.\n\n${resultText(job.result)}`;
+  const id = await postOnce(t, marker, commentBody(marker, text, job.id), state.finalCommentId as number | undefined);
+  await settle(ctx, t, job, [LABEL_DONE]);
   return { ...state, finalCommentId: id };
 }
 
@@ -115,13 +121,14 @@ async function apply(ctx: ReportContext, r: SourceReport, state: State): Promise
       return { ...state, answeredComments: map };
     }
     case 'finished':
-      return final(ctx, t, r, state, `✅ job \`${job.id}\` finished.\n\n${resultText(job.result)}`, [LABEL_DONE]);
+      return finished(ctx, t, job, state);
+    // A failure or a cancel is the job's own state (logs, UI, /api/jobs); the issue gets the label only.
     case 'failed':
-      return final(ctx, t, r, state, `❌ job \`${job.id}\` failed: ${job.error ?? '(no error recorded)'}`, [LABEL_FAILED]);
-    case 'cancelled': {
-      const reason = (job.sourceState?.sync?.cancelReason as string | undefined) ?? job.error ?? 'cancelled';
-      return final(ctx, t, r, state, `🛑 job \`${job.id}\` cancelled (${reason})`, []);
-    }
+      await settle(ctx, t, job, [LABEL_FAILED]);
+      return state;
+    case 'cancelled':
+      await settle(ctx, t, job, []);
+      return state;
   }
 }
 

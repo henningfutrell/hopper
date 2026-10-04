@@ -14,6 +14,7 @@ import { createServer } from './http/index.ts';
 import { createLocalMachineSource } from './machines/index.ts';
 import { createPluginHost } from './plugins/index.ts';
 import { createFakeAnswerer, createFakeAssessor, createQuestionService } from './questions/index.ts';
+import { logFailures } from './engine/failure-log.ts';
 import { createSourceSync, withFixedStatuses, type GitHubApi, type SourceSync } from './sources/index.ts';
 import { composeSources } from './sources/compose.ts';
 import { openStore } from './store/index.ts';
@@ -177,6 +178,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     ...(seams.githubApp ? { githubApp: seams.githubApp } : {}),
   });
   composed.sources.push(...(seams.sources ?? []));
+  const stopFailureLog = logFailures(store);
   const sync = createSourceSync({
     sources: composed.sources, host: engine.sourceHost, clock,
     pollMs: (name) => composed.pollMs.get(name) ?? SEAM_SOURCE_POLL_MS,
@@ -218,6 +220,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
         await dispatcher.stop();
         await grokbot.stop();
         webhookConfig.stop();
+        stopFailureLog();
         host.stop();
         store.close();
       })();

@@ -122,22 +122,23 @@ describe('GitHub source report', () => {
     expect(state).toMatchObject({ finalCommentId: last.id });
   });
 
-  it('failed: error comment, claimed → failed', async () => {
+  it('failed: label only, claimed → failed, no comment', async () => {
     const { gh, source } = withIssue();
     const job = jobForIssue(1, { status: 'failed', error: 'empty issue body' });
-    await source.report({ kind: 'claimed', job });
-    await source.report({ kind: 'failed', job });
+    const claimed = await source.report({ kind: 'claimed', job });
+    const state = await source.report({ kind: 'failed', job: { ...job, sourceState: { source: claimed } } });
     expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:failed']);
-    expect(gh.commentsOn(REPO, 1).at(-1)!.body).toContain('empty issue body');
+    expect(gh.commentsOn(REPO, 1).map((c) => c.body)).toEqual([expect.stringContaining('kind=claimed')]);
+    expect(state).toEqual(claimed);
   });
 
-  it('cancelled: comment with the recorded reason, claimed removed', async () => {
+  it('cancelled: claimed removed, no comment', async () => {
     const { gh, source } = withIssue();
     const job = jobForIssue(1, { status: 'cancelled', sourceState: { sync: { cancelReason: 'cancelled in UI' } } });
     await source.report({ kind: 'claimed', job });
     await source.report({ kind: 'cancelled', job });
     expect(gh.issue(REPO, 1).labels).toEqual(['hopper']);
-    expect(gh.commentsOn(REPO, 1).at(-1)!.body).toContain('cancelled (cancelled in UI)');
+    expect(gh.commentsOn(REPO, 1)).toHaveLength(1);
   });
 
   it('a final report retried after a crash does not comment twice', async () => {
