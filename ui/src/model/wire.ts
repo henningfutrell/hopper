@@ -43,8 +43,11 @@ export interface WebhookConfig {
 }
 
 /** GET /api/webhooks (secrets omitted); the answer to POST /ui/api/webhooks adds `secret` after add or rotate-secret. */
+/** A subscription as GET /api/webhooks shows it: no secret, only where it lives. */
+export type WebhookView = Omit<WebhookSubscription, 'secret'> & { secretSource: 'inline' | 'file' };
+
 export interface WebhooksView {
-  subscriptions: WebhookSubscription[];
+  subscriptions: WebhookView[];
   config?: WebhookConfig;
   secret?: string;
 }

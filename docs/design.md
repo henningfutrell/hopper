@@ -2447,6 +2447,8 @@ Owner request: edit webhook subscriptions from the UI. Settles 6b.
   `secret`. It leaves the daemon once: in the answer to the add or rotate-secret that made it. No
   GET carries a secret or a `secretFile` path. An entry with `secretFile` keeps that path as written;
   its other fields are editable, its secret is rotated in that file only (409 says so).
+  `GET /api/webhooks` carries each subscription's `secretSource` (`inline` | `file`, never the
+  path), so the UI offers Rotate secret only for an inline one.
 - **The write.** Version = sha-256 of the file's bytes, or `missing` (then an add writes
   `version: 1` and the one entry). The change is spliced into the text at the entry's source
   ranges (`yaml` Document API), so comments, spacing and every other entry stay byte for byte; the

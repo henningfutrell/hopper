@@ -4,7 +4,7 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import type { Clock, PluginsView, QuestionService, SourceRegistry, Store, WebhookDispatcher } from '../domain/ports.ts';
 import type { Engine } from '../engine/index.ts';
-import type { WebhookConfigStatus } from '../webhooks/config.ts';
+import type { WebhookConfigView } from './webhooks.ts';
 import type { WebhooksEditor } from '../webhooks/edit.ts';
 import { accountRoutes } from './accounts.ts';
 import { installErrorHandling } from './errors.ts';
@@ -29,7 +29,7 @@ export interface ServerOptions {
   sources: SourceRegistry;
   /** The router's status and GET /api/plugins. */
   plugins: PluginsView;
-  webhookConfig: { status(): WebhookConfigStatus };
+  webhookConfig: WebhookConfigView;
   /** UI edits of webhooks.yaml (POST /ui/api/webhooks). */
   webhooksEditor: WebhooksEditor;
   clock: Clock;

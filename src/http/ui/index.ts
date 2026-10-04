@@ -13,7 +13,7 @@ import { lanHosts, type Lan } from '../reach.ts';
 import { writeRulesFile } from '../../questions/index.ts';
 import { routerView } from '../state.ts';
 import { webhooksView } from '../webhooks.ts';
-import type { WebhookConfigStatus } from '../../webhooks/config.ts';
+import type { WebhookConfigView } from '../webhooks.ts';
 import type { WebhooksEditor } from '../../webhooks/edit.ts';
 import { SESSION_HEADER, mutationRefusal } from './guard.ts';
 import { createLoginCode } from './login-code.ts';
@@ -33,7 +33,7 @@ export interface UiRouteOptions {
   lan: Lan;
   dataDir: string;
   store: Pick<Store, 'webhooks'>;
-  webhookConfig: { status(): WebhookConfigStatus };
+  webhookConfig: WebhookConfigView;
   webhooksEditor: WebhooksEditor;
 }
 

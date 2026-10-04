@@ -15,7 +15,7 @@ import { StatusBadge } from '@/components/status';
 import { post, SessionRejected } from '@/lib/api';
 import { clock } from '@/model/format';
 import { EVENT_CHOICES, lastDelivery, toggleEvent } from '@/model/webhooks';
-import type { WebhookSubscription, WebhooksEdit, WebhooksView } from '@/model/wire';
+import type { WebhooksEdit, WebhookView, WebhooksView } from '@/model/wire';
 import { refreshWebhooks, setWebhooks, useHopper } from '@/store';
 
 /** A new secret to show once: whose, and why. */
@@ -95,7 +95,7 @@ function SubscriptionForm({ initial, adding, busy, onSubmit, onCancel }: {
 }
 
 function SubscriptionCard({ sub, authed, version, send, busy, onSecret }: {
-  sub: WebhookSubscription; authed: boolean; version: string; send: Send; busy: boolean; onSecret: (s: Shown) => void;
+  sub: WebhookView; authed: boolean; version: string; send: Send; busy: boolean; onSecret: (s: Shown) => void;
 }) {
   const deliveries = useHopper((s) => s.deliveries);
   const [editing, setEditing] = useState(false);
@@ -131,10 +131,12 @@ function SubscriptionCard({ sub, authed, version, send, busy, onSecret }: {
           {authed && (
             <div className="flex flex-wrap gap-2 pt-1">
               <Button size="sm" variant="outline" disabled={!can} onClick={() => setEditing(true)}><Pencil />Edit</Button>
-              <Confirm title={`Rotate the secret of ${sub.name}?`} action="Rotate secret" onConfirm={() => void rotate()}
-                description="A new secret replaces the current one in webhooks.yaml at once. Deliveries signed with the old one stop verifying until the subscriber has the new one.">
-                <Button size="sm" variant="outline" disabled={!can}><KeyRound />Rotate secret</Button>
-              </Confirm>
+              {sub.secretSource === 'inline' && (
+                <Confirm title={`Rotate the secret of ${sub.name}?`} action="Rotate secret" onConfirm={() => void rotate()}
+                  description="A new secret replaces the current one in webhooks.yaml at once. Deliveries signed with the old one stop verifying until the subscriber has the new one.">
+                  <Button size="sm" variant="outline" disabled={!can}><KeyRound />Rotate secret</Button>
+                </Confirm>
+              )}
               <Confirm title={`Remove ${sub.name}?`} action="Remove" onConfirm={() => void send({ action: 'remove', name: sub.name, version }, `${sub.name}: removed`)}
                 description="Its entry leaves webhooks.yaml and its pending deliveries fail.">
                 <Button size="sm" variant="destructive" disabled={!can}><Trash2 />Remove</Button>

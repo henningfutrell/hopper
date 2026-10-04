@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import { create } from 'zustand';
 import { get, post, SessionRejected, clearToken, sessionIsLive } from '@/lib/api';
 import { HISTORY_TYPES } from '@/model/event-types';
-import type { Decision, DomainEvent, Health, MachineView, PartAccount, PluginsReport, Question, Queue, SourceStatus, UsageReport, WebhookConfig, WebhookDelivery, WebhookSubscription, WebhooksView } from '@/model/wire';
+import type { Decision, DomainEvent, Health, MachineView, PartAccount, PluginsReport, Question, Queue, SourceStatus, UsageReport, WebhookConfig, WebhookDelivery, WebhookView, WebhooksView } from '@/model/wire';
 
 export const CAP = { events: 500, history: 5000, decisions: 100, deliveries: 100 };
 export type Conn = 'connecting' | 'live' | 'reconnecting';
@@ -26,7 +26,7 @@ export interface HopperState {
   history: DomainEvent[];
   sources: SourceStatus[];
   deliveries: WebhookDelivery[];
-  subscriptions: WebhookSubscription[];
+  subscriptions: WebhookView[];
   webhookConfig: WebhookConfig | null;
   /** GET /api/plugins, fetched by the Plugins view; `pluginsError` when that failed. */
   plugins: PluginsReport | null;

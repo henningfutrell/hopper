@@ -4,7 +4,10 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { Store } from '../domain/ports.ts';
-import type { WebhookConfigStatus } from '../webhooks/config.ts';
+import type { SecretSource, WebhookConfigStatus } from '../webhooks/config.ts';
+
+/** What the webhooks routes read of the webhooks.yaml watcher. */
+export interface WebhookConfigView { status(): WebhookConfigStatus; secretSources(): Record<string, SecretSource> }
 import { parseWith } from './errors.ts';
 
 const deliveriesQuery = z.object({
@@ -12,12 +15,16 @@ const deliveriesQuery = z.object({
   limit: z.coerce.number().int().min(1).max(1000).default(100),
 });
 
-/** GET /api/webhooks: every subscription without its secret, and the file's status. */
-export function webhooksView(store: Pick<Store, 'webhooks'>, config: { status(): WebhookConfigStatus }) {
-  return { subscriptions: store.webhooks.list().map(({ secret: _secret, ...rest }) => rest), config: config.status() };
+/** GET /api/webhooks: every subscription without its secret (but where it lives), and the file's status. */
+export function webhooksView(store: Pick<Store, 'webhooks'>, config: WebhookConfigView) {
+  const sources = config.secretSources();
+  return {
+    subscriptions: store.webhooks.list().map(({ secret: _secret, ...rest }) => ({ ...rest, secretSource: sources[rest.name] ?? 'inline' })),
+    config: config.status(),
+  };
 }
 
-export function webhookRoutes(app: FastifyInstance, o: { store: Store; webhookConfig: { status(): WebhookConfigStatus } }): void {
+export function webhookRoutes(app: FastifyInstance, o: { store: Store; webhookConfig: WebhookConfigView }): void {
   const { webhooks } = o.store;
 
   app.get('/api/webhooks', async () => webhooksView(o.store, o.webhookConfig));
