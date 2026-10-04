@@ -10,7 +10,6 @@ import { loadConfig, type Config } from './config.ts';
 import { createEngine, type Engine } from './engine/index.ts';
 import { createExecutorRegistry } from './executors/index.ts';
 import type { HerdrClient } from './executors/herdr/index.ts';
-import { createGrokBotNotifier } from './grokbot/index.ts';
 import { createServer } from './http/index.ts';
 import { BUILTIN_PLUGINS } from './plugins/builtin.ts';
 import { herdrClaudePlugin } from './plugins/executor/herdr-claude/index.ts';
@@ -19,6 +18,7 @@ import type { JobSourceInstance } from './plugins/sdk.ts';
 import { unavailableExecutors } from './plugins/executor-slot.ts';
 import { githubAppPlugin } from './plugins/job-source/github-app/index.ts';
 import { githubGhPlugin } from './plugins/job-source/github-gh/index.ts';
+import { grokbotRoutinePlugin } from './plugins/notifier/grokbot-routine/index.ts';
 import { ensurePluginsFile } from './plugins/migrate.ts';
 import { createQuestionService } from './questions/index.ts';
 import { logFailures } from './engine/failure-log.ts';
@@ -57,7 +57,7 @@ export interface AppSeams {
   sources?: JobSource[];
   /** How often webhooks.yaml's mtime is checked; default WEBHOOKS_FILE_CHECK_MS. */
   webhookConfigIntervalMs?: number;
-  /** First retry delay of the Grok Bot routine webhook; default 1000. */
+  /** First retry delay of every grokbot-routine notifier instance; default 1000. */
   grokbotBaseMs?: number;
   /** Replaces the configured router (the plugin host still loads, for /api/plugins). */
   router?: Router;
@@ -81,6 +81,7 @@ function withSeams(seams: AppSeams) {
     if (p.id === 'herdr-claude' && seams.herdr) return herdrClaudePlugin(seams.herdr);
     if (p.id === 'github-gh' && seams.github) return githubGhPlugin(seams.github);
     if (p.id === 'github-app' && seams.githubApp) return githubAppPlugin(seams.githubApp);
+    if (p.id === 'grokbot-routine' && seams.grokbotBaseMs) return grokbotRoutinePlugin({ baseMs: seams.grokbotBaseMs });
     return p;
   });
 }
@@ -146,7 +147,6 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   const answerer = (): Answerer | undefined => (seams.answerer !== undefined ? (seams.answerer ?? undefined) : host.answerer());
   const assessor = (): Assessor => seams.assessor ?? host.assessor();
   const dispatcher = createWebhookDispatcher({ store, clock, baseMs: config.webhookBaseMs });
-  const grokbot = createGrokBotNotifier({ store, path: config.grokbotWebhookFile, info: (l) => console.log(l), ...(seams.grokbotBaseMs ? { baseMs: seams.grokbotBaseMs } : {}) });
   // The service calls the engine and the engine calls the service: the engine's handlers are
   // reached through closures that run only after `engine` exists (design.md "Construction
   // contract added").
@@ -189,7 +189,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
 
   webhookConfig.start();
   dispatcher.start();
-  grokbot.start();
+  host.startNotifiers({ subscribe: (l) => store.events.subscribe(l), job: (id) => store.jobs.get(id) });
   await server.listen({ host: config.host, port: config.port });
   port = (server.server.address() as { port: number }).port;
   await engine.start();
@@ -212,7 +212,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
         await questions.stop();
         await engine.stop();
         await dispatcher.stop();
-        await grokbot.stop();
+        await host.stopNotifiers();
         webhookConfig.stop();
         stopFailureLog();
         host.stop();

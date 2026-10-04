@@ -1,11 +1,11 @@
 // Plugin vocabulary (design.md "Phase 5 — every part is a plugin"; docs/glossary.md).
 
 /** A slot the engine calls through one port. Each slice adds the roles it builds. */
-export type Role = 'router' | 'answerer' | 'assessor' | 'executor' | 'job-source' | 'machine-source' | 'usage-source';
-export const ROLES: readonly Role[] = ['router', 'answerer', 'assessor', 'executor', 'job-source', 'machine-source', 'usage-source'];
+export type Role = 'router' | 'answerer' | 'assessor' | 'executor' | 'job-source' | 'machine-source' | 'usage-source' | 'notifier';
+export const ROLES: readonly Role[] = ['router', 'answerer', 'assessor', 'executor', 'job-source', 'machine-source', 'usage-source', 'notifier'];
 
 /** The roles built once at start; a later plugins.yaml change applies at the next restart. */
-export type RestartRole = 'executor' | 'job-source' | 'machine-source' | 'usage-source';
+export type RestartRole = 'executor' | 'job-source' | 'machine-source' | 'usage-source' | 'notifier';
 
 /** A plugin's cheap check of whether it can run on this machine. */
 export type Detection =
@@ -56,7 +56,7 @@ export interface ExecutorUnavailable {
 
 /**
  * One instance of a restart role in GET /api/plugins. `active` null: it cannot run (`reason`) — an
- * executor's jobs are held, a job or usage source is dropped, a machine source leaves no machine.
+ * executor's jobs are held, a job or usage source or a notifier is dropped, a machine source leaves no machine.
  */
 export interface InstanceStatus {
   instance: InstanceSpec;
@@ -89,6 +89,7 @@ export interface PluginsReport {
   /** One instance (the machine source); a list like the others. */
   machines: RestartRoleStatus;
   usageSources: RestartRoleStatus;
+  notifiers: RestartRoleStatus;
   plugins: {
     id: string; role: Role; describe: string; builtin: boolean; path?: string;
     detection: Detection;

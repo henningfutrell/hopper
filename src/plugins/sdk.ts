@@ -4,14 +4,14 @@
 import type { z } from 'zod';
 import type {
   AnswerDraft, AnswerRequest, Answerer, Assessment, Assessor, Clock, ExecutionContext, ExecutionOutcome, Executor, JobSource,
-  MachineSource, Router, UsageSource,
+  MachineSource, Notifier, NotifierEvents, Router, UsageSource,
 } from '../domain/ports.ts';
-import type { Advice, AdviceAction, Detection, Job, MachineSnapshot, Question, QuestionAttempt, Role, RouterMode, UsageReading } from '../domain/types.ts';
+import type { Advice, AdviceAction, Detection, DomainEvent, Job, MachineSnapshot, Question, QuestionAttempt, Role, RouterMode, UsageReading } from '../domain/types.ts';
 
 export type {
-  Advice, AdviceAction, AnswerDraft, AnswerRequest, Answerer, Assessment, Assessor, Clock, Detection, ExecutionContext,
-  ExecutionOutcome, Executor, Job, JobSource, MachineSnapshot, MachineSource, Question, QuestionAttempt, Role, Router, RouterMode,
-  UsageReading, UsageSource,
+  Advice, AdviceAction, AnswerDraft, AnswerRequest, Answerer, Assessment, Assessor, Clock, Detection, DomainEvent, ExecutionContext,
+  ExecutionOutcome, Executor, Job, JobSource, MachineSnapshot, MachineSource, Notifier, NotifierEvents, Question, QuestionAttempt, Role,
+  Router, RouterMode, UsageReading, UsageSource,
 };
 
 /** What `detect` may use. Cheap; never a paid model call; never runs a GUI binary. */
@@ -23,6 +23,8 @@ export interface DetectionKit {
   /** Whether `bin args` exits 0 within 5 s (output discarded). CLIs only. */
   succeeds(bin: string, args: string[]): Promise<boolean>;
   exists(path: string): Promise<boolean>;
+  /** Whether this process can read `path`. */
+  readable(path: string): Promise<boolean>;
   /** Whether `python -c "import <module>"` succeeds. */
   pythonImports(python: string, module: string): Promise<boolean>;
   env(name: string): string | undefined;
@@ -66,6 +68,7 @@ export interface RoleInstance {
   'job-source': JobSourceInstance;
   'machine-source': MachineSource;
   'usage-source': UsageSource;
+  notifier: Notifier;
 }
 
 /**
@@ -81,6 +84,7 @@ export interface RoleContext {
   'job-source': JobSourceContext;
   'machine-source': { executors(): string[] };
   'usage-source': object;
+  notifier: object;
 }
 
 export interface JobSourceContext {
@@ -107,7 +111,7 @@ export interface PluginDefinition<R extends Role = Role, O = any> {
   /**
    * Options schema built from the core's zod. Absent → no options. Validated before detect and
    * create. Mark every option naming a program, its arguments, a working directory, an
-   * interpreter or a sourced file with `.meta({ commandBearing: true })`: the UI shows it
+   * interpreter, a sourced file, or where a credential is read or sent with `.meta({ commandBearing: true })`: the UI shows it
    * read-only (design.md "UI and mutation").
    */
   options?: (z: Zod) => z.ZodType<O>;

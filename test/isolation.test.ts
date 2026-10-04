@@ -3,7 +3,12 @@
 // question.escalated webhooks to the real Grok Bot routine from ~/.config/job-hopper.
 import { userInfo, homedir } from 'node:os';
 import { describe, expect, it } from 'vitest';
+import { dirname } from 'node:path';
 import { loadConfig } from '../src/config.ts';
+import { builtinInstances } from '../src/plugins/migrate.ts';
+import grokbotRoutine from '../src/plugins/notifier/grokbot-routine/index.ts';
+import { parseOptions } from '../src/plugins/options.ts';
+import { expandHome } from '../src/plugins/expand-home.ts';
 
 const REAL_HOME = userInfo().homedir; // from the passwd entry, not $HOME
 
@@ -12,7 +17,11 @@ describe('test isolation', () => {
     if (process.env.JOB_HOPPER_REAL_HERDR === '1') return; // opt-in real test: Claude needs the real login
     expect(homedir()).not.toBe(REAL_HOME);
     const c = loadConfig({});
-    for (const p of [c.grokbotWebhookFile, c.webhooksFile, c.pluginsFile, c.dbPath]) {
+    // The Grok Bot env file: the built-in grok-bot instance's (beside plugins.yaml) and the plugin's own default.
+    const builtinEnvFile = String(builtinInstances(dirname(c.pluginsFile)).notifiers[0]!.options!.envFile);
+    const parsed = parseOptions(grokbotRoutine, {});
+    const defaultEnvFile = expandHome(String(parsed.ok ? parsed.options.envFile : ''));
+    for (const p of [builtinEnvFile, defaultEnvFile, c.webhooksFile, c.pluginsFile, c.dbPath]) {
       expect(p.startsWith(`${REAL_HOME}/`)).toBe(false);
     }
   });

@@ -38,8 +38,7 @@ Fastify for HTTP, `node:sqlite` for storage, zod for request validation.
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock | everything but `domain/` |
 | `src/store/` | SQLite schema, migrations, repositories, event log | engine, http, decider |
 | `src/webhooks/` | signing, dispatcher, retry/backoff | engine, http, decider |
-| `src/grokbot/` | the Grok Bot routine webhook: env-file reader, notifier (event log → POST) | engine, http, decider |
-| `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `job-hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, `plugins.yaml` + watch, the role slots (`router-slot.ts` with the shared `instantiate`, `question-slots.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `answerer/claude-cli/`, `assessor/claude-cli-assessor/`, `assessor/always-escalate/` hold their prompts; `executor/herdr-claude/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-gh/` and `job-source/github-app/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`) | engine, http, store, decider, questions |
+| `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `job-hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, `plugins.yaml` + watch, the role slots (`router-slot.ts` with the shared `instantiate`, `question-slots.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `answerer/claude-cli/`, `assessor/claude-cli-assessor/`, `assessor/always-escalate/` hold their prompts; `executor/herdr-claude/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-gh/` and `job-source/github-app/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `notifier/grokbot-routine/` is the Grok Bot routine webhook — env-file reader and notifier) | engine, http, store, decider, questions |
 | `src/executors/` | `Executor` adapters (`test`, `herdr/`) and the registry; reached through the executor plugins | engine, http, store, plugins |
 | `src/machines/` | `MachineSource` adapters: `local`; reached through the `local` machine-source plugin | engine, http, store, plugins |
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production | engine, http, store, plugins |
@@ -345,7 +344,7 @@ The usage-change trigger is named `usage.changed`; it is a trigger, not an event
 ## Configuration (env)
 
 Slice 4 of phase 5 removed every part-choosing variable and renamed `JEV_MODE` / `JEV_CHEAP_BOOST`;
-the current list is "Settled in slice 4" → "Configuration (env), as of slice 4".
+the current list is "Settled in slice 4" → "Configuration (env), as of slice 5".
 
 | var | default |
 |-----|---------|
@@ -1402,17 +1401,18 @@ main.ts seams                    AppSeams.githubApp?: GitHubApi (tests) beside .
 
 ## Grok Bot routine webhook
 
-`src/grokbot/` POSTs to a Grok Bot routine (https://cursor.com/help/grok-bot/routines) when a
+The built-in notifier plugin `grokbot-routine` (`src/plugins/notifier/grokbot-routine/`, since
+phase 5 slice 5) POSTs to a Grok Bot routine (https://cursor.com/help/grok-bot/routines) when a
 question reaches the owner (questions never go onto the issue). Not a **Webhook subscription**: no store row, no
 schema change, no domain event; in-memory only.
 
 - Events: questions only — `question.escalated` with `data.target === 'human'` and not
   `data.renotify`. Never `job.finished` or `job.failed`.
-- Config: `~/.config/job-hopper/grokbot-webhook.env` (`JOB_HOPPER_GROKBOT_WEBHOOK_FILE`),
-  `GROKBOT_WEBHOOK_URL=` and `GROKBOT_WEBHOOK_KEY=`, parsed with `util.parseEnv`. Read at
+- Config: the instance's `envFile` option (plugins.yaml `notifiers:`; the built-in `grok-bot`
+  instance's is `grokbot-webhook.env` beside plugins.yaml), `GROKBOT_WEBHOOK_URL=` and `GROKBOT_WEBHOOK_KEY=`, parsed with `util.parseEnv`. Read at
   each matching event, so a file created later applies without a restart.
-  Absent: silent no-op. Present but missing a variable or unreadable: one `console.error`
-  per event, skipped. Mode readable by group/other: one `console.warn` per process.
+  Absent: silent no-op. Present but missing a variable or unreadable: one warning
+  per event, skipped. Mode readable by group/other: one warning per process.
 - Request: `Authorization: Bearer <key>`, JSON body `{ source: 'job-hopper', kind, at, jobId,
   issueTitle, issueUrl, question, questionId, answerUrl? }` (title/url from the job's source
   ref, else null).
@@ -1421,14 +1421,10 @@ schema change, no domain event; in-memory only.
   network error, 429, 5xx; other non-2xx is final. Success logs kind, jobId, status; final
   failure logs an error. The key is never logged. Work runs deferred, off the event listener;
   `stop()` unsubscribes and awaits in-flight posts.
-- `createGrokBotNotifier({ store, path, baseMs?, timeoutMs? })` → `{ start(); stop() }`;
-  `AppSeams.grokbotBaseMs` lets tests shorten the backoff.
+- `createGrokBotNotifier({ name, path, logger, baseMs?, timeoutMs? })` → `Notifier`; the job's
+  title and url come from `events.job(id)`. `AppSeams.grokbotBaseMs` lets tests shorten the backoff.
 
-### Configuration added (env)
-
-| var | default |
-|-----|---------|
-| `JOB_HOPPER_GROKBOT_WEBHOOK_FILE` | `~/.config/job-hopper/grokbot-webhook.env` |
+`JOB_HOPPER_GROKBOT_WEBHOOK_FILE` was this section's env var; removed in slice 5 ("Settled in slice 5").
 
 ## Phase 5 — every part is a plugin (2026-10-03, in progress)
 
@@ -1550,8 +1546,7 @@ jobSources:
   - { name: github-app, plugin: github-app, options: { appFile: ~/.config/job-hopper/github-app.json, authors: [owner], label: hopper } }
 machines:  { name: local, plugin: local, options: { lanes: 4 } }
 usageSources: []
-# notifiers: slice 5 — accepted, not read yet
-# notifiers: [ { name: grok-bot, plugin: grokbot-routine, options: { envFile: ~/.config/job-hopper/grokbot-webhook.env } } ]
+notifiers: [ { name: grok-bot, plugin: grokbot-routine, options: { envFile: ~/.config/job-hopper/grokbot-webhook.env } } ]
 ```
 
 The `jobSources` options are the old sources.yaml blocks' keys (design "GitHub source", "Phase 4
@@ -1646,7 +1641,7 @@ stored old events are not rewritten (read raw by version; v1 schemas stay in doc
 3. **Executors** as plugins (landed; "Settled in slice 3" below); `EXECUTOR_NAMES` removed; held-when-unavailable.
 4. **Job, machine, usage sources** as plugins (landed; "Settled in slice 4" below); `sources.yaml` + env
    migration in the daemon; unit file updated.
-5. **Notifier** port + `grokbot-routine`.
+5. **Notifier** port + `grokbot-routine` (landed; "Settled in slice 5" below).
 6. **Examples + `plugin:check`** + plugin tsconfig from `install.sh`.
 7. **UI Plugins panel** + `POST /ui/api/plugins` (select, enable/disable, per-instance option
    editing except command-bearing options) + rescan. Issue #6.
@@ -1883,7 +1878,7 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
   decider's limits and lane idle grace, webhook base, `JOB_HOPPER_ANSWER_TIMEOUT_MS` (kept: it is the
   question service's per-stage ceiling, a bound on every plugin whatever its own `timeoutMs` — the
   fail-closed containment, not a part's option), rules file, human renotify/timeout, resume boost,
-  max questions, keep panes, webhooks file, Grok Bot env file (slice 5), UI session hours, plugin dir,
+  max questions, keep panes, webhooks file, Grok Bot env file (removed in slice 5), UI session hours, plugin dir,
   plugins file. Removed, no compatibility path: `EXECUTORS`, `HERDR_BIN`, `HERDR_SESSION`,
   `HERDR_POLL_MS`, `CLAUDE_BIN`, `CLAUDE_ARGS`, `CLAUDE_CWD`, `TRUST_WORKDIR`, `IDLE_QUESTION_MS`,
   `ANSWERER` (`fake`: the doubles are test seams now, `test/support/fake-questions.ts`),
@@ -1913,7 +1908,7 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
 - **No store migration.** Instance names equal the old source and executor names; jobs, sync state
   and lanes are keyed as before. the owner's sources.yaml survives as `sources.yaml.migrated`.
 
-#### Configuration (env), as of slice 4
+#### Configuration (env), as of slice 5
 
 | var | default |
 |-----|---------|
@@ -1933,10 +1928,45 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
 | `JOB_HOPPER_MAX_QUESTIONS` | `5` |
 | `JOB_HOPPER_KEEP_PANES` | `false` |
 | `JOB_HOPPER_WEBHOOKS_FILE` | `~/.config/job-hopper/webhooks.yaml` |
-| `JOB_HOPPER_GROKBOT_WEBHOOK_FILE` | `~/.config/job-hopper/grokbot-webhook.env` (slice 5 moves it) |
 | `JOB_HOPPER_UI_SESSION_HOURS` | `12` |
 | `JOB_HOPPER_PLUGIN_DIR` | `~/.config/job-hopper/plugins` |
 | `JOB_HOPPER_PLUGINS_FILE` | `~/.config/job-hopper/plugins.yaml` |
+
+### Settled in slice 5 (2026-10-03)
+
+- **Role:** `ROLES` adds `notifier` (0..n, a restart role). Port `Notifier { name; start(events);
+  stop() }` (`src/domain/ports.ts`); `events` is `NotifierEvents { subscribe(listener) → unsubscribe;
+  job(id) }` — the event log's feed plus the job an event names (Grok Bot's payload carries the
+  issue title and url). `/api/plugins` `notifiers` has the restart-role shape (`instances`,
+  `pending`). `PluginHost.startNotifiers(events)` / `stopNotifiers()` are called by `main.ts`
+  where the Grok Bot notifier used to start and stop (stop awaits in-flight posts).
+- **Built-in `grokbot-routine`**, one option `envFile` (default `~/.config/job-hopper/grokbot-webhook.env`),
+  marked command-bearing: the file holds the bearer key and the URL it is sent to, so a UI session
+  must not point it elsewhere. Behaviour unchanged (questions only, read at each event, retries).
+  Logs go through `ctx.logger` (warn for what was `console.error`).
+- **Detection:** the env file only, through the new kit method `readable(path)`; never runs, nor
+  `which`es, the Grok Bot app. Missing → `needs-setup` with a `printf … > <file>` command;
+  unreadable → `needs-setup`, `chmod 600 <file>`. **A notifier that needs setup still runs**
+  (`needsSetupRuns`, as for job sources): the file is read at each event, so one written later
+  applies without a restart — the phase-4 behaviour.
+- **Failure:** unknown plugin, invalid options, `unavailable`, `create` or `start` throwing → dropped,
+  reason in `/api/plugins` (`active: null`); never a boot failure. A failing `stop` is logged.
+- **Migration, both upgrade orders end with Grok Bot configured:**
+  - no plugins.yaml (slice 5 installed over the pre-slice-4 unit): the plugins-file migration writes
+    `notifiers: [ { name: grok-bot, plugin: grokbot-routine, options: { envFile } } ]`, `envFile` =
+    `JOB_HOPPER_GROKBOT_WEBHOOK_FILE` if set (read this once more), else `grokbot-webhook.env`
+    beside plugins.yaml. The variable alone counts as a migration.
+  - plugins.yaml without `notifiers` (slice 4 installed first): **chosen: the built-in instance for
+    an absent section**, not a section-level rewrite. It is the rule every section already follows
+    since slice 4 ("an absent section means the built-in instances"), it writes nothing into
+    the owner's file, and it cannot race an edit. The built-in `grok-bot` instance's `envFile` is
+    `grokbot-webhook.env` beside plugins.yaml — never a hardcoded home path. Cost, accepted: a
+    non-default `JOB_HOPPER_GROKBOT_WEBHOOK_FILE` beside an existing plugins.yaml is not carried
+    over; the leftover-variable warning names it, and the fix is a `notifiers` section. The
+    installed unit never set it. `notifiers: []` = no notifiers.
+- **`JOB_HOPPER_GROKBOT_WEBHOOK_FILE` removed** (no compatibility path; leftover warning). `src/grokbot/`
+  moved to `src/plugins/notifier/grokbot-routine/`.
+- **No store migration.** Nothing was ever stored for Grok Bot.
 
 ## Phase 6 — owner direction, not yet built (2026-10-03)
 

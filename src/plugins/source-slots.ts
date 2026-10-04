@@ -16,7 +16,7 @@ export type Built<T> = { spec: InstanceSpec; detection: Detection } & (
 
 export type BuiltJobSource = Built<JobSourceInstance>;
 
-async function buildOne<R extends Role>(role: R, spec: InstanceSpec, deps: SlotDeps, o: { needsSetupRuns?: boolean; check?: (i: RoleInstance[R]) => string | undefined } = {}): Promise<Built<RoleInstance[R]>> {
+export async function buildOne<R extends Role>(role: R, spec: InstanceSpec, deps: SlotDeps, o: { needsSetupRuns?: boolean; check?: (i: RoleInstance[R]) => string | undefined } = {}): Promise<Built<RoleInstance[R]>> {
   const built = await instantiate(role, spec, deps, o.needsSetupRuns);
   const why = built.ok ? o.check?.(built.instance) : built.why;
   if (built.ok && why === undefined) return { spec, instance: built.instance, plugin: built.plugin, detection: built.detection };

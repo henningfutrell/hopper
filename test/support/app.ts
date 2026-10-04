@@ -103,7 +103,6 @@ export async function startTestApp(o: {
     JOB_HOPPER_LANE_IDLE_GRACE_MS: '200',
     JOB_HOPPER_RULES_FILE: '/nonexistent/job-hopper-rules.md',
     JOB_HOPPER_WEBHOOKS_FILE: join(dataDir, 'webhooks.yaml'),
-    JOB_HOPPER_GROKBOT_WEBHOOK_FILE: join(dataDir, 'grokbot-webhook.env'),
     JOB_HOPPER_PLUGIN_DIR: join(dataDir, 'plugins'),
     JOB_HOPPER_PLUGINS_FILE: join(dataDir, 'plugins.yaml'),
     ...o.env,
