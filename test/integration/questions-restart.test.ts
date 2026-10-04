@@ -4,6 +4,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { AppSeams } from '../../src/main.ts';
 import { openStore } from '../../src/store/index.ts';
+import { databaseUrlFor } from '../support/database.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { createStickyExecutor } from '../support/doubles.ts';
 import { createManualSource } from '../support/manual-source.ts';
@@ -55,7 +56,7 @@ describe('restart with questions', () => {
     const q = await first.waitForQuestion(job.id, (x) => x.tier === 'human');
     await first.stop();
     // The crash window B3 guards against: question answered, job still waiting_answer.
-    const store = openStore({ path: dbPath, clock: { now: () => new Date() } });
+    const store = openStore({ url: databaseUrlFor(dbPath), clock: { now: () => new Date() } });
     store.questions.update(q.id, { status: 'answered', answer: 'answered in the gap', answeredBy: 'human' });
     store.close();
 
@@ -71,7 +72,7 @@ describe('restart with questions', () => {
     const job = await first.pull({ op: 'ask', message: 'Is this risky?' });
     const q = await first.waitForQuestion(job.id, (x) => x.tier === 'human');
     await first.stop();
-    const store = openStore({ path: dbPath, clock: { now: () => new Date() } });
+    const store = openStore({ url: databaseUrlFor(dbPath), clock: { now: () => new Date() } });
     store.questions.update(q.id, { status: 'cancelled' });
     store.close();
 

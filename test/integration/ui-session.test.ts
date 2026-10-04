@@ -3,7 +3,8 @@
 // token in x-jobhopper-session plus exact Origin, same-origin Sec-Fetch-Site and a JSON body.
 import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
+import { openDb, parseDatabaseUrl } from '../../src/store/db.ts';
+import { databaseUrlFor } from '../support/database.ts';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { TOKEN_RE, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { rawRequest } from '../support/http.ts';
@@ -118,9 +119,9 @@ describe('UI mutations', () => {
 
   it('the store keeps only a hash of the session token, never the token', async () => {
     const token = await t.login();
-    const raw = new DatabaseSync(t.dbPath, { readOnly: true });
+    const raw = openDb(parseDatabaseUrl(databaseUrlFor(t.dbPath)));
     try {
-      const rows = raw.prepare('SELECT * FROM ui_sessions').all();
+      const rows = raw.all('SELECT * FROM ui_sessions');
       expect(rows).toHaveLength(1);
       expect(JSON.stringify(rows)).not.toContain(token);
     } finally {

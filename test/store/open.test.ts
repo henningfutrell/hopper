@@ -18,8 +18,8 @@ describe('openStore', () => {
     raw.close();
   });
 
-  it('reopening an existing file does not re-run or lose migrations', () => {
-    const path = t.path();
+  it('reopening an existing database does not re-run or lose migrations', () => {
+    const path = t.url();
     const s = t.open(path);
     const j = s.jobs.create({ executor: 'x', payload: {} }, 5);
     s.close();
@@ -30,7 +30,7 @@ describe('openStore', () => {
 
   it('uses the injected idGen', () => {
     let n = 0;
-    const s = openStore({ path: t.path(), clock: fixedClock(), idGen: () => `id-${++n}` });
+    const s = openStore({ url: t.url(), clock: fixedClock(), idGen: () => `id-${++n}` });
     expect(s.jobs.create({ executor: 'x', payload: {} }, 5).id).toBe('id-1');
     expect(s.webhooks.upsertByName({ name: 'n', url: 'u', events: [], secret: 's', active: true }).id).toBe('id-2');
     expect(s.events.append({ type: 'job.queued', data: {} }).id).toBe('id-3');
@@ -38,7 +38,7 @@ describe('openStore', () => {
   });
 
   it('defaults ids to uuids', () => {
-    const s = t.open(t.path());
+    const s = t.open(t.url());
     expect(s.jobs.create({ executor: 'x', payload: {} }, 5).id).toMatch(/^[0-9a-f-]{36}$/);
     s.close();
   });

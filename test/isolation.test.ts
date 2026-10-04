@@ -17,12 +17,12 @@ describe('test isolation', () => {
   it('HOME is not the real home, so every ~/ default resolves to a throwaway dir', () => {
     if (process.env.JOB_HOPPER_REAL_HERDR === '1') return; // opt-in real test: Claude needs the real login
     expect(homedir()).not.toBe(REAL_HOME);
-    const c = loadConfig({});
+    const c = loadConfig({ JOB_HOPPER_DATABASE_URL: 'sqlite:/d/db.sqlite' });
     // The Grok Bot env file: the built-in grok-bot instance's (beside plugins.yaml) and the plugin's own default.
     const builtinEnvFile = String(builtinInstances(dirname(c.pluginsFile)).notifiers[0]!.options!.envFile);
     const parsed = parseOptions(grokbotRoutine, {});
     const defaultEnvFile = expandHome(String(parsed.ok ? parsed.options.envFile : ''));
-    for (const p of [builtinEnvFile, defaultEnvFile, c.webhooksFile, c.pluginsFile, c.dbPath]) {
+    for (const p of [builtinEnvFile, defaultEnvFile, c.webhooksFile, c.pluginsFile]) {
       expect(p.startsWith(`${REAL_HOME}/`)).toBe(false);
     }
   });

@@ -6,7 +6,7 @@ const input = (jobId: string, text = 'proceed?', tier = 'opus') => ({ jobId, tex
 
 describe('questions repository', () => {
   it('creates an open question at the stage it is given (the answerer instance, or human), empty trail, from the store clock and idGen', () => {
-    const s = t.open(t.path());
+    const s = t.open(t.url());
     const j = s.jobs.create(spec, 5);
     const q = s.questions.create(input(j.id));
     expect(q).toMatchObject({
@@ -23,7 +23,7 @@ describe('questions repository', () => {
   });
 
   it('lists newest first and filters by status, jobId and limit', () => {
-    const s = t.open(t.path());
+    const s = t.open(t.url());
     const a = s.jobs.create(spec, 5);
     const b = s.jobs.create(spec, 5);
     const q1 = s.questions.create(input(a.id, 'one'));
@@ -41,7 +41,7 @@ describe('questions repository', () => {
 
   it('update merges, clears on undefined, bumps updatedAt, and keeps status filterable', () => {
     const clock = fixedClock();
-    const s = t.open(t.path(), clock);
+    const s = t.open(t.url(), clock);
     const q = s.questions.create(input(s.jobs.create(spec, 5).id));
     clock.set('2026-10-02T11:00:00.000Z');
     const u = s.questions.update(q.id, { tier: 'human', expiresAt: 'x', notifyCount: 2 });
@@ -56,7 +56,7 @@ describe('questions repository', () => {
 
   it('addAttempt appends in order and bumps updatedAt', () => {
     const clock = fixedClock();
-    const s = t.open(t.path(), clock);
+    const s = t.open(t.url(), clock);
     const q = s.questions.create(input(s.jobs.create(spec, 5).id));
     clock.set('2026-10-02T12:00:00.000Z');
     s.questions.addAttempt(q.id, { tier: 'opus', startedAt: 'a', outcome: 'escalated', reason: 'unsure' });
@@ -68,7 +68,7 @@ describe('questions repository', () => {
   });
 
   it('survives close and reopen, and rolls back with the transaction', () => {
-    const path = t.path();
+    const path = t.url();
     const s = t.open(path);
     const j = s.jobs.create(spec, 5);
     const q = s.questions.create(input(j.id));
@@ -84,7 +84,7 @@ describe('questions repository', () => {
   });
 
   it('event questionId round-trips through append, since, recent and reopen', () => {
-    const path = t.path();
+    const path = t.url();
     const s = t.open(path);
     const e = s.events.append({ type: 'job.queued', jobId: 'j', questionId: 'q1', data: {} });
     const plain = s.events.append({ type: 'job.queued', data: {} });

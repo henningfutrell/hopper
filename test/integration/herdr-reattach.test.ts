@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { Job } from '../../src/domain/types.ts';
 import { createFakeHerdrClient, type FakeHerdrClient, type FakeTurn } from '../../src/executors/herdr/index.ts';
 import { openStore } from '../../src/store/index.ts';
+import { databaseUrlFor } from '../support/database.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { createManualSource } from '../support/manual-source.ts';
 import { waitFor } from '../support/wait.ts';
@@ -113,7 +114,7 @@ describe('herdr-claude job across a daemon restart', () => {
     await first.waitForStatus(pulled.id, 'held');
     await first.stop();
     // The crash window between claim and start, which no API can produce.
-    const store = openStore({ path: dbPath, clock: { now: () => new Date() } });
+    const store = openStore({ url: databaseUrlFor(dbPath), clock: { now: () => new Date() } });
     const lane = store.lanes.open('local');
     store.lanes.update(lane.id, { state: 'busy', jobId: pulled.id });
     store.jobs.update(pulled.id, { status: 'claimed', laneId: lane.id, holdReason: undefined });

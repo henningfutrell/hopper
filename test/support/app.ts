@@ -20,6 +20,7 @@ import { validateEvent } from '../../src/events/index.ts';
 import { assertAllConform, trackConformance } from './conformance.ts';
 import { rawRequest } from './http.ts';
 import { createFakeUsageSource } from '../../src/usage/index.ts';
+import { databaseUrlFor } from './database.ts';
 import { fakeQuestionRoles } from './fake-questions.ts';
 import { createFakeRouter } from './fake-router.ts';
 import { createManualSource, manualItem, type ManualSource } from './manual-source.ts';
@@ -97,7 +98,7 @@ export async function startTestApp(o: {
   else if (o.plugins === undefined && !existsSync(join(dataDir, 'plugins.yaml'))) writePluginsYaml(dataDir, TEST_PLUGINS);
   const config = loadConfig({
     JOB_HOPPER_PORT: '0',
-    JOB_HOPPER_DB: o.dbPath,
+    JOB_HOPPER_DATABASE_URL: databaseUrlFor(o.dbPath),
     JOB_HOPPER_TICK_MS: '50',
     JOB_HOPPER_WEBHOOK_BASE_MS: '20',
     JOB_HOPPER_LANE_IDLE_GRACE_MS: '200',

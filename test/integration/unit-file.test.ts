@@ -14,7 +14,9 @@ describe('systemd/job-hopper.service', () => {
       .filter((l) => l.startsWith('Environment=JOB_HOPPER_'))
       .map((l) => { const kv = l.slice('Environment='.length); const i = kv.indexOf('='); return [kv.slice(0, i), kv.slice(i + 1).replaceAll('%h', '/home/x')]; }));
     expect(Object.keys(env).length).toBeGreaterThan(0);
-    expect(loadConfig(env).leftoverEnv).toEqual({});
+    // The database comes from the EnvironmentFile (install.sh writes it), never from the unit.
+    expect(env).not.toHaveProperty('JOB_HOPPER_DATABASE_URL');
+    expect(loadConfig({ ...env, JOB_HOPPER_DATABASE_URL: 'sqlite:/d/db.sqlite' }).leftoverEnv).toEqual({});
   });
 
   it('binds loopback by default; LAN settings come from the optional daemon.env (design.md "Reaching the UI across the LAN")', () => {
