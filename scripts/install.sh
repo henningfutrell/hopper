@@ -14,6 +14,7 @@ CONFIG_DIR="$HOME/.config/job-hopper"
 RULES="$CONFIG_DIR/rules.md"
 PLUGINS="$CONFIG_DIR/plugins.yaml"
 WEBHOOKS="$CONFIG_DIR/webhooks.yaml"
+PLUGIN_DIR="${JOB_HOPPER_PLUGIN_DIR:-$CONFIG_DIR/plugins}"
 
 step() { printf '==> %s\n' "$*"; }
 
@@ -87,6 +88,9 @@ WEBHOOKS_EOF
   )
 fi
 chmod 600 "$WEBHOOKS"
+
+step "plugin types: $PLUGIN_DIR/tsconfig.json maps job-hopper/plugin to $DEST/src/plugins/sdk.ts (an owner-edited one is kept)"
+node "$DEST/scripts/write-plugin-tsconfig.ts" "$PLUGIN_DIR" "$DEST/src/plugins/sdk.ts"
 
 step "systemctl --user daemon-reload"
 systemctl --user daemon-reload

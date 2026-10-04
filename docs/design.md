@@ -45,6 +45,7 @@ Fastify for HTTP, `node:sqlite` for storage, zod for request validation.
 | `src/engine/` | the loop: gather → decide → apply; job lifecycle; restart recovery | http |
 | `src/http/` | Fastify routes, SSE, static UI | executors, plugins (reads them through the `PluginsView` port) |
 | `src/ui/` | static `index.html`, `app.js`, `style.css` — browser only | all of `src/` (talks HTTP/SSE only) |
+| `examples/plugins/` | one minimal runnable custom plugin per role, for authors (`docs/plugins.md`); imports only `job-hopper/plugin` types and `node:` builtins | everything in `src/` at runtime |
 | `src/main.ts` | composition root: config → plugins.yaml (migrated or written when absent) → plugin host (every part) → store → engine → server | — |
 
 ## The decider
@@ -1527,7 +1528,8 @@ export default {
 - Types for out-of-tree authors: `install.sh` writes `~/.config/job-hopper/plugins/tsconfig.json`
   mapping `job-hopper/plugin` to `<install>/src/plugins/sdk.ts`. `npm run plugin:check <dir>`
   type-checks with that mapping, then runs the real loader and `detect`.
-  `examples/plugins/<role>/` holds one minimal runnable plugin per role.
+  `examples/plugins/<role>/` holds one minimal runnable plugin per role. Author guide:
+  `docs/plugins.md`.
 
 ### Configuration — `~/.config/job-hopper/plugins.yaml`
 
@@ -1642,7 +1644,7 @@ stored old events are not rewritten (read raw by version; v1 schemas stay in doc
 4. **Job, machine, usage sources** as plugins (landed; "Settled in slice 4" below); `sources.yaml` + env
    migration in the daemon; unit file updated.
 5. **Notifier** port + `grokbot-routine` (landed; "Settled in slice 5" below).
-6. **Examples + `plugin:check`** + plugin tsconfig from `install.sh`.
+6. **Examples + `plugin:check`** + plugin tsconfig from `install.sh` (landed; "Settled in slice 6" below).
 7. **UI Plugins panel** + `POST /ui/api/plugins` (select, enable/disable, per-instance option
    editing except command-bearing options) + rescan. Issue #6.
 8. **Install on server** (when no herdr-claude job runs) and live verification.
@@ -1967,6 +1969,34 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
 - **`JOB_HOPPER_GROKBOT_WEBHOOK_FILE` removed** (no compatibility path; leftover warning). `src/grokbot/`
   moved to `src/plugins/notifier/grokbot-routine/`.
 - **No store migration.** Nothing was ever stored for Grok Bot.
+
+### Settled in slice 6 (2026-10-03)
+
+- **Examples:** `examples/plugins/<role>/<id>/index.ts`, one per role — router `proceed-all`,
+  answerer `canned-answer`, assessor `keyword-assessor`, executor `echo-executor`, job source
+  `static-items`, machine source `fixed-machine`, usage source `fixed-usage`, notifier `log-events`.
+  Type-checked by `npm run typecheck` (tsconfig includes `examples/`) and by `plugin:check` (a test
+  runs it over `examples/plugins` and asserts one per role in `ROLES`, so a new role needs an
+  example). A test copies `echo-executor` into an ad-hoc daemon's plugin dir and runs a job on it.
+  The SDK now also exports `SourceItem`, `SourceSignal`, `SourceReport` (a job source needs them).
+- **`npm run plugin:check <dir>`** (`scripts/plugin-check.ts`): `<dir>` is one plugin or a tree of
+  them. Type-check through a throwaway tsconfig in the temp dir (never written into `<dir>`), with
+  `module: preserve` / `moduleResolution: bundler` — a plugin dir has no package.json, and under
+  `nodenext` its `.ts` files would be CommonJS to tsc while Node runs them as ES modules. Then per
+  plugin: `importPlugin` (the loader's), the built-in-id check, options parsed from `{}`, `detect`
+  with the real kit. **Failures:** type errors, a module that is not a plugin, a taken id, options
+  without defaults (the catalogue would show `needs-setup`), `detect` throwing. **Not failures:**
+  `unavailable` / `needs-setup` (the plugin may not run on this machine). `create` is not called (it
+  may start real work). Needs the dev dependencies: run it from a checkout, not the install (which
+  is `npm ci --omit=dev`) — it says so when typescript is missing.
+- **Plugin tsconfig:** `install.sh` runs `scripts/write-plugin-tsconfig.ts "$PLUGIN_DIR"
+  "$DEST/src/plugins/sdk.ts"` (`PLUGIN_DIR` = `JOB_HOPPER_PLUGIN_DIR`, default
+  `~/.config/job-hopper/plugins`), mode 600, the dir created 700. **No-clobber rule, chosen:** the
+  file starts with a job-hopper marker line and is rewritten on every install while that line is
+  there (an install can move the SDK); without it the file is the owner's and is kept byte for
+  byte, with a note. Deleting the line is how the owner takes it over. The install has no
+  `@types/node`, so `node:` imports are untyped in an editor unless the author adds it.
+- **Author guide:** `docs/plugins.md`.
 
 ## Phase 6 — owner direction, not yet built (2026-10-03)
 

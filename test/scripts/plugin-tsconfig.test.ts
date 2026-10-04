@@ -27,7 +27,7 @@ describe('write-plugin-tsconfig', () => {
     expect(statSync(path).mode & 0o777).toBe(0o600);
     expect(statSync(dir).mode & 0o777).toBe(0o700);
     expect(read(path).compilerOptions.paths).toEqual({ 'job-hopper/plugin': ['/opt/jh/src/plugins/sdk.ts'] });
-    expect(read(path).compilerOptions).toMatchObject({ module: 'nodenext', allowImportingTsExtensions: true, erasableSyntaxOnly: true, noEmit: true });
+    expect(read(path).compilerOptions).toMatchObject({ module: 'preserve', allowImportingTsExtensions: true, erasableSyntaxOnly: true, noEmit: true });
   });
 
   it("job-hopper's own, with another install path: rewritten", () => {

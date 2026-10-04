@@ -4,14 +4,14 @@
 import type { z } from 'zod';
 import type {
   AnswerDraft, AnswerRequest, Answerer, Assessment, Assessor, Clock, ExecutionContext, ExecutionOutcome, Executor, JobSource,
-  MachineSource, Notifier, NotifierEvents, Router, UsageSource,
+  MachineSource, Notifier, NotifierEvents, Router, SourceItem, SourceReport, SourceSignal, UsageSource,
 } from '../domain/ports.ts';
 import type { Advice, AdviceAction, Detection, DomainEvent, Job, MachineSnapshot, Question, QuestionAttempt, Role, RouterMode, UsageReading } from '../domain/types.ts';
 
 export type {
   Advice, AdviceAction, AnswerDraft, AnswerRequest, Answerer, Assessment, Assessor, Clock, Detection, DomainEvent, ExecutionContext,
   ExecutionOutcome, Executor, Job, JobSource, MachineSnapshot, MachineSource, Notifier, NotifierEvents, Question, QuestionAttempt, Role,
-  Router, RouterMode, UsageReading, UsageSource,
+  Router, RouterMode, SourceItem, SourceReport, SourceSignal, UsageReading, UsageSource,
 };
 
 /** What `detect` may use. Cheap; never a paid model call; never runs a GUI binary. */

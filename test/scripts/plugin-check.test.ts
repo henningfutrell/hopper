@@ -52,7 +52,7 @@ describe('plugin:check', () => {
   it('a type error fails the check, naming the file', () => {
     const dir = temp();
     write(dir, 'good', GOOD);
-    write(dir, 'typo', GOOD.replace("'good-usage'", "'typo-usage'").replace('used: o.used', 'used: o.usd'));
+    write(dir, 'typo', GOOD.replace("'good-usage'", "'typo-usage'").replace('limit: 10', "limit: 'ten'"));
     const r = check(dir);
     expect(r.out).toMatch(/type-check: FAIL/);
     expect(r.out).toMatch(/typo\/index\.ts/);
