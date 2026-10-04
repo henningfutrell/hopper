@@ -94,10 +94,31 @@ an idle tick every 2 s would bury the decision log. Every recorded Decision emit
 ## The engine
 
 - **Triggers:** interval tick (`JOB_HOPPER_TICK_MS`, default 2000) plus the events
-  `job.queued`, `job.prioritized`, `job.approved`, `job.finished`, `job.failed`,
-  `job.cancelled`, `router.mode_changed`, and a usage change. Decisions are serialized; triggers
-  arriving mid-decision coalesce into one follow-up. Event listeners schedule triggers with
-  `setImmediate`; they never run a decision synchronously inside `append`.
+  `job.queued`, `job.prioritized`, `job.reprioritized`, `job.approved`, `job.finished`,
+  `job.failed`, `job.cancelled`, `router.mode_changed`, `question.asked`, `question.answered`,
+  `question.expired` (`TRIGGERS`, `src/engine/index.ts`). Decisions are serialized; triggers
+  arriving mid-decision coalesce into one follow-up, which keeps the first waiting trigger's name
+  (so `decision.trigger` names *a* cause, not necessarily the last). Event listeners schedule
+  triggers with `setImmediate`; they never run a decision synchronously inside `append`. The tick
+  is a safety net: every state change that frees a lane or adds work wakes a Decision itself.
+- **Parallel by default.** One Decision claims every admissible waiting job that has room: N free
+  lanes and N admissible jobs → N claims in that Decision, N executors started at once (the
+  runner never awaits one job before starting the next). A source sync ingests every new item in
+  one pass, so they reach the same Decision; the source's claim report (label, comment) runs off
+  the decision path and never gates a start. A question frees its lane in the transaction that
+  parks the job; `question.asked` wakes the Decision that hands the lane to the next waiting job,
+  while the answer pipeline runs. The only things that keep an admissible job waiting:
+  - the **lane cap** — `maxLanes` per machine (`JOB_HOPPER_LOCAL_LANES`, default 4), scaled down
+    past the usage soft limit, 0 at the hard limit (hold `all lanes busy (cap N)` / `usage …`);
+  - **router mode `active`**: no advice yet, or advice that holds (`ask_human`, `stop_retry`,
+    `reuse_cache`) — the router speaking first is the point of active mode; shadow (the
+    default) never holds;
+  - a **native hold** (no online machine runs the executor; pinned machine unknown/offline);
+  - a resumed job **pinned** to the machine holding its pane (`resumeOn`).
+  Nothing else orders jobs against each other: no per-source, per-repo or per-author cap, no
+  one-claim-per-tick. GitHub calls inside one source sync stay serial (GitHub's REST guidance:
+  serial requests per client, to stay under secondary rate limits); that delays discovery, never
+  a start.
 - **Router advice:** on `job.queued`, on every tick, and at startup, the engine calls
   `router.advise(job)` for each waiting job with no `advice` that is not already in its
   in-memory in-flight set — off the decision path. It stores `advice` and emits
@@ -428,7 +449,17 @@ per `run`/`resume` call; time spent waiting for an answer does not count.
 Lifecycle: executor returns `question` → engine, in one tx: question created (`open`, `tier` =
 `QuestionService.firstStage()`: the configured answerer's instance name, or `human` with none),
 job `waiting_answer` + `questionId`, `resumeOn` = its machine, lane idle (or closed if
-draining), events `question.asked`. Then `QuestionService.handle(questionId)` runs the
+draining), events `question.asked`.
+
+**Visible and answerable at once.** From that commit on, the question is in `GET /api/questions`
+(every open question, whatever its stage) and the job in `/api/queue` `waitingAnswer`; the UI
+refreshes both on `question.asked` and shows the answer box at every stage, not only `human`.
+The owner may answer while the answerer drafts or the assessor assesses: his answer wins, the
+in-flight stage call is aborted (`superseded`), the assessor is never called, and nothing is
+pushed. **Push is gated:** the source's question report (issue comment) and the Grok Bot routine
+webhook fire only on `question.escalated {target: "human"}` — after the assessor escalates, a
+stage fails, or a risk rule hits. Worst case between ask and push: the answerer's and the
+assessor's stage timeouts back to back (`2 × JOB_HOPPER_ANSWER_TIMEOUT_MS`, 6 min by default). Then `QuestionService.handle(questionId)` runs the
 pipeline off the decision path (phase 5 slice 2 replaced the opus → fable → human chain; full
 contract in "Question pipeline" under Phase 5):
 
