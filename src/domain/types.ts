@@ -436,3 +436,8 @@ export type * from './plugins.ts';
 // ---- Question gates: src/domain/question-gates.ts (re-exported here) -------------------
 
 export type { QuestionGatesView, RiskRuleView, RulesFileView } from './question-gates.ts';
+
+// ---- Self-update (issue #44) ------------------------------------------------------------
+
+export type { InstallInfo, UpdateApply, UpdateChange, UpdateChannel, UpdateRelease, UpdateSettings, UpdateState, UpdateStatus } from './update.ts';
+export { UPDATE_CHANGES_CAP, UPDATE_CHANNELS } from './update.ts';
