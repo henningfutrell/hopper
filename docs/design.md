@@ -2041,10 +2041,12 @@ per-instance form; restart roles show `changed — restart pending` after an edi
   its executor and an absent name fails at intake, so "disable" needs its own decision (hold, or a
   new `enabled` field); executors are a restart role either way. Edit the `executors` list in
   plugins.yaml meanwhile.
-- **UI:** `src/ui/plugins.js` (a module `app.js` imports), the Plugins panel: per role a plugin
+- **UI:** the Plugins view (`ui/src/views/plugins.tsx`; model `ui/src/model/plugins.ts`, tested
+  from `test/ui/plugins.test.ts`): plugins.yaml path, source, errors and Rescan; per role a plugin
   selector (one-instance roles) and one form per instance, generated from the options' JSON
-  Schema (string, number, boolean, enum, string list, else JSON). Unsaved edits survive redraws;
-  the panel refreshes every 15 s unless a form holds unsaved edits.
+  Schema (string, number, boolean, enum, string list, else JSON); restart roles show `changed —
+  restart pending`. Unsaved edits survive redraws; the view refreshes every 15 s unless a form
+  holds unsaved edits. (Built first as `src/ui/plugins.js`; ported when the UI rework landed.)
 
 ## Attached machines (issue #10, 2026-10-04)
 
@@ -2159,7 +2161,7 @@ reconciled by `name` into the store; dispatch in `src/webhooks/dispatcher.ts`; r
 (session, exact Origin, same-origin, JSON), and the law line "webhooks only from `webhooks.yaml`"
 changes in the same commit.
 
-Touches: `src/webhooks/config.ts`, `src/http/ui/` (mutation route), `src/ui/app.js` + `index.html`,
+Touches: `src/webhooks/config.ts`, `src/http/ui/` (mutation route), `ui/src/views/webhooks.tsx`,
 `AGENTS.md` loopback rule, design "UI session and mutations".
 
 Open questions:
@@ -2182,7 +2184,7 @@ Meaning: the UI shows the herdr session (herdr-claude option `session`, default 
 a terminal action; the page is a browser on a loopback-only app.
 
 Touches: `src/executors/herdr/` (session name, status via `client.ts`), `src/http/state.ts`
-(expose session name and liveness), `src/ui/app.js`, `src/http/host-guard.ts` (no change expected).
+(expose session name and liveness), `ui/src/` (a view), `src/http/host-guard.ts` (no change expected).
 
 Options (not decided):
 1. Copyable command: show `herdr session attach job-hopper` with a copy button. Zero new surface; two clicks including paste.
@@ -2244,8 +2246,8 @@ realtime, responsive, fast. Builds on the at-a-glance board (issue #5).
   type that the UI does not subscribe to fails the UI typecheck.
 - **Views** (hash-routed): Overview (KPIs with sparklines, lane timeline, attention, lanes /
   waiting / ended, ended-per-hour chart, usage gauges, live activity), Questions, Decisions,
-  Events, Sources, Machines, Webhooks. Charts read `/api/events?types=…&limit=5000`
+  Events, Sources, Machines, Plugins (#13's panel, ported: "Settled in slice 7"), Webhooks. Charts read `/api/events?types=…&limit=5000`
   (`HISTORY_TYPES`): lane spans and ended-per-hour are derived client-side, no new API.
 - **Mutations unchanged**: cancel (now behind a confirm dialog), approve, answer, router mode,
-  logout — same `/ui/api/*` routes and session header.
+  plugins (options, select, rescan), logout — same `/ui/api/*` routes and session header.
 - **Theme.** Dark by default, light by toggle, remembered in `localStorage` (`jh_theme`).

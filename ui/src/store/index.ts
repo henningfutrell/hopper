@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import { create } from 'zustand';
 import { get, post, SessionRejected, clearToken, sessionIsLive } from '@/lib/api';
 import { HISTORY_TYPES } from '@/model/event-types';
-import type { Decision, DomainEvent, Health, MachineView, Question, Queue, SourceStatus, WebhookConfig, WebhookDelivery, WebhookSubscription } from '@/model/wire';
+import type { Decision, DomainEvent, Health, MachineView, PluginsReport, Question, Queue, SourceStatus, WebhookConfig, WebhookDelivery, WebhookSubscription } from '@/model/wire';
 
 export const CAP = { events: 500, history: 5000, decisions: 100, deliveries: 100 };
 export type Conn = 'connecting' | 'live' | 'reconnecting';
@@ -28,6 +28,9 @@ export interface HopperState {
   deliveries: WebhookDelivery[];
   subscriptions: WebhookSubscription[];
   webhookConfig: WebhookConfig | null;
+  /** GET /api/plugins, fetched by the Plugins view; `pluginsError` when that failed. */
+  plugins: PluginsReport | null;
+  pluginsError: string | null;
 }
 
 const EMPTY_QUEUE: Queue = { waiting: [], running: [], waitingAnswer: [], ended: [], counts: {} };
@@ -35,6 +38,7 @@ const EMPTY_QUEUE: Queue = { waiting: [], running: [], waitingAnswer: [], ended:
 export const useHopper = create<HopperState>(() => ({
   loaded: false, loadError: null, conn: 'connecting', authed: false, health: null, queue: EMPTY_QUEUE, machines: [],
   decisions: [], questions: [], events: [], history: [], sources: [], deliveries: [], subscriptions: [], webhookConfig: null,
+  plugins: null, pluginsError: null,
 }));
 const set = useHopper.setState;
 const state = useHopper.getState;
@@ -44,6 +48,10 @@ const upsert = <T,>(list: T[], item: T, same: (x: T) => boolean, cap: number) =>
   list.some(same) ? list.map((x) => (same(x) ? item : x)) : capped([item, ...list], cap);
 
 export async function refreshHealth() { set({ health: await get<Health>('/api/health') }); }
+export async function refreshPlugins() {
+  try { set({ plugins: await get<PluginsReport>('/api/plugins'), pluginsError: null }); } catch (e) { set({ pluginsError: (e as Error).message }); }
+}
+export const setPlugins = (plugins: PluginsReport) => set({ plugins, pluginsError: null });
 export async function refreshQuestions() { set({ questions: (await get<{ questions: Question[] }>('/api/questions?status=open')).questions }); }
 export async function refreshLive() {
   const [queue, machines] = await Promise.all([get<Queue>('/api/queue'), get<{ machines: MachineView[] }>('/api/machines')]);

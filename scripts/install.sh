@@ -18,15 +18,23 @@ PLUGIN_DIR="${JOB_HOPPER_PLUGIN_DIR:-$CONFIG_DIR/plugins}"
 
 step() { printf '==> %s\n' "$*"; }
 
-step "build the UI bundle in $APP_DIR (npm ci with dev dependencies, then npm run build:ui -> ui/dist)"
-npm ci --prefix "$APP_DIR"
-npm run build:ui --prefix "$APP_DIR"
+# The UI is the one built part (ui/ -> ui/dist). It is built in a throwaway copy so the checkout's
+# node_modules (possibly a symlink shared by worktrees) and ui/dist are never touched, and a clean
+# clone with no node_modules installs the same way.
+BUILD="$(mktemp -d "${TMPDIR:-/tmp}/job-hopper-ui.XXXXXX")"
+trap 'rm -rf "$BUILD"' EXIT
+step "build the UI bundle in $BUILD (copy ui/, src/, package*.json; npm ci with dev dependencies; npm run build:ui)"
+cp -r "$APP_DIR/ui" "$APP_DIR/src" "$APP_DIR/package.json" "$APP_DIR/package-lock.json" "$BUILD/"
+rm -rf "$BUILD/ui/dist" "$BUILD/ui/node_modules"
+npm ci --prefix "$BUILD" --no-audit --no-fund
+npm run build:ui --prefix "$BUILD"
+[ -s "$BUILD/ui/dist/index.html" ] || { echo "UI build wrote no $BUILD/ui/dist/index.html" >&2; exit 1; }
 
 step "copy src/, scripts/, ui/dist/, package.json, package-lock.json to $DEST (replacing old src/, scripts/ and ui/; node_modules kept for npm ci)"
 mkdir -p "$DEST/ui"
 rm -rf "$DEST/src" "$DEST/scripts" "$DEST/ui/dist"
 cp -r "$APP_DIR/src" "$DEST/src"
-cp -r "$APP_DIR/ui/dist" "$DEST/ui/dist"
+cp -r "$BUILD/ui/dist" "$DEST/ui/dist"
 cp -r --preserve=mode "$APP_DIR/scripts" "$DEST/scripts"
 cp "$APP_DIR/package.json" "$APP_DIR/package-lock.json" "$DEST/"
 

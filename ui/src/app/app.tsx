@@ -10,6 +10,7 @@ import { Decisions } from '@/views/decisions';
 import { Events } from '@/views/events';
 import { Machines } from '@/views/machines';
 import { Overview } from '@/views/overview';
+import { Plugins } from '@/views/plugins';
 import { Questions } from '@/views/questions';
 import { Sources } from '@/views/sources';
 import { Webhooks } from '@/views/webhooks';
@@ -18,7 +19,7 @@ import { Header } from './header';
 import { MobileNav, Sidebar, useView, viewLabel, type View } from './nav';
 
 const VIEW: Record<View, () => React.ReactNode> = {
-  overview: Overview, questions: Questions, decisions: Decisions, events: Events, sources: Sources, machines: Machines, webhooks: Webhooks,
+  overview: Overview, questions: Questions, decisions: Decisions, events: Events, sources: Sources, machines: Machines, plugins: Plugins, webhooks: Webhooks,
 };
 
 function Loading() {
