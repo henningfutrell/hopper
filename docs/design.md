@@ -40,9 +40,9 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock | everything but `domain/` |
 | `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations, repositories, event log, config documents, login codes | engine, http, decider |
 | `src/webhooks/` | signing, dispatcher, retry/backoff, `webhooks.yaml` load + watch (`config.ts`), the UI edit of it (`edit.ts`) | engine, http, decider |
-| `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `job-hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, `plugins.yaml` + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `question-slots.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), a machine edit of `attachedMachines:` (`attached-edit.ts`, spliced into the file; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `answerer/claude-cli/`, `assessor/claude-cli-assessor/`, `assessor/always-escalate/` hold their prompts; `executor/herdr-claude/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-gh/` and `job-source/github-app/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser, runner, background refresh); `notifier/grokbot-routine/` is the Grok Bot routine webhook — env-file reader and notifier; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`) | engine, http, store, decider, questions |
-| `src/executors/` | `Executor` adapters (`test`, `herdr/`) and the registry; reached through the executor plugins | engine, http, store, plugins |
-| `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following plugins.yaml; ssh probe and herdr path resolution through the herdr CLI client's ssh argv), the detected ssh targets (`ssh-config.ts`), `combineMachineSources` | engine, http, store, plugins |
+| `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `job-hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, `plugins.yaml` + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `question-slots.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), a machine edit of `attachedMachines:` (`attached-edit.ts`, spliced into the file; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `answerer/claude-cli/`, `assessor/claude-cli-assessor/`, `assessor/always-escalate/` hold their prompts; `executor/herdr-claude/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-gh/` and `job-source/github-app/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser, runner, background refresh); `notifier/grokbot-routine/` is the Grok Bot routine webhook — env-file reader and notifier; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`) | engine, http, store, decider, questions |
+| `src/executors/` | `Executor` adapters (`test`, `herdr/`, `command.ts` — a job's body run on its machine through its connection) and the registry; reached through the executor plugins | engine, http, store, plugins |
+| `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following plugins.yaml; ssh probe and herdr path resolution through the herdr CLI client's ssh argv; the container probe, `docker container inspect`), the detected ssh targets (`ssh-config.ts`), `combineMachineSources` | engine, http, store, plugins |
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin) | engine, http, store, plugins |
 | `src/routing/` | routing rules: the plugins.yaml `routing:` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
 | `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`); job lifecycle; routing at intake (`source-host.ts`); restart recovery | http |
@@ -2228,9 +2228,9 @@ applies live since issue #18, "Machines from the UI").
 ## Attached machines (issue #10, 2026-10-04)
 
 Owner request: attach other machines to the hopper and run jobs on them, for example a laptop
-reached over ssh that has herdr, as a consumer.
+reached over ssh that has herdr, as a target.
 
-An **attached machine** is another host that runs jobs in its own herdr session, reached over ssh.
+An **attached machine** is a target beside this machine. An ssh target runs jobs in its own herdr session, reached over ssh; a container target is reached over docker exec ("Container targets" below).
 It is a machine beside `local`: the decider sees it in `DecisionInputs.machines` and assigns jobs
 to it by the unchanged rule (online, runs the executor, most remaining room). Nothing else in the
 decider changes.
@@ -2293,6 +2293,70 @@ in it** (merged after slice 4, 2026-10-03): the `machines:` instance supplies th
 machine may not take the machine instance's name. Folding attached machines into the
 machine-source role (a plugin wrapping `src/machines/attached.ts`, `ssh` and `herdrBin`
 command-bearing) is open.
+
+## Container targets (issue #58, 2026-10-04)
+
+Owner request: the hopper connects to and runs jobs on more than one machine — a laptop over ssh
+(above), and a second machine run as a container **with no agent of any kind in it**, reached over a
+protocol other than ssh, to show the hopper supports more than one connection. Owner decision: no
+Claude and no other agentic AI in the container; it is a plain machine that only executes — the
+hopper runs plain commands in it and gets their results. Its role is a **target** (never
+"consumer").
+
+A **container target** is an attached machine whose entry names a `docker` container in place of an
+`ssh` destination. Its **connection** is `docker exec` through this machine's docker CLI, which speaks
+the Docker Engine API over the docker socket. Nothing of the hopper is installed in the container,
+and it runs no sshd and no herdr.
+
+```yaml
+executors:
+  - { name: command, plugin: command }
+machines: { name: local, plugin: local, options: { lanes: 4, executors: [test, herdr-claude] } }
+attachedMachines:
+  - { name: box, docker: job-hopper-target, lanes: 1 }        # executors default: [command]
+routing:
+  - { name: commands to the box, match: { label: on-box }, set: { machine: box, executor: command } }
+```
+
+| field | default | |
+|---|---|---|
+| `docker` | — | the container's name or id; must not start with `-`; exactly one of `ssh`, `docker` |
+| `executors` | `[command]` | `[herdr-claude]` for an ssh target |
+| `session`, `herdrBin` | — | refused on a container target: it has no herdr |
+
+**Online** while `docker container inspect` says the container runs; a missing container is
+offline, not an error. Same background probe as an ssh target (at most every 30 s, `list()` never
+waits). A pinned job waits while its target is offline (`pinned machine box offline`).
+
+**The command executor** (built-in plugin `command`, opt-in: not in the built-in instances) runs a
+job's `body` on the job's machine through that machine's connection: `docker exec -- <container>
+env K=V… sh -c <script>` on a container target, the same argv POSIX-quoted over ssh on an ssh
+target, directly on this machine. The script is the body's first fenced code block, else the whole
+body. The body is the issue's own text, without the issue context block: the job source puts it in
+the payload as `body` beside `prompt`. The job's issue variables (`HOPPER_ISSUE_URL`, …) and
+`HOPPER_JOB_ID` are set. The working directory is the connection's default (the container's
+workdir; the ssh login's home): a job's `cwd` names a path on this machine. Exit 0 → finished with
+`{ machine, exitCode, stdout, stderr }` (each stream's last 16000 characters); anything else → failed
+with the exit code and the output's tail. `timeoutMs` (default 600000) and a cancel kill the client
+process; a `docker exec` already started in the container may outlive it. Not idempotent, no
+questions, nothing to reattach: a restart fails a running command job, never re-runs it.
+
+**Where commands may run.** The command executor runs anything an allowlisted issue author writes,
+like herdr-claude with `--dangerously-skip-permissions`. To keep command jobs on the container,
+this machine's `local` instance takes an `executors` option that narrows what runs here (absent:
+every registered executor); with `command` left out, an unpinned command job can only go to a target
+that lists it. herdr-claude refuses a container target outright (`herdr-claude does not run on
+container target …`): with no `ssh` it would otherwise drive this machine's herdr.
+
+**Preparing it:** `bash scripts/container-target.sh <container> [lanes]` — alpine, `--network none`,
+read-only root, every capability dropped, `no-new-privileges`, `/tmp` a tmpfs, `--restart
+unless-stopped`; the main process is `sleep infinity`. Re-running keeps a running container. Prints
+the plugins.yaml lines. A machine edit can change a container target's lanes, executors and label;
+adding one from the UI is not built (the add form attaches ssh targets).
+
+**Verification:** `test/integration/container-target.test.ts` — a real container, the real probe, a
+GitHub issue routed there runs and finishes with the container's output; `test/adapters/command-executor.test.ts`
+— the executor over docker, ssh and here.
 
 ## Phase 6 — owner direction, not yet built (2026-10-03)
 
