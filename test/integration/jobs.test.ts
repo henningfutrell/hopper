@@ -127,6 +127,30 @@ describe('jobs pulled from a source', () => {
     expect(queue.waitingAnswer).toEqual([]);
   });
 
+  it('the queue lists ended jobs (finished, failed, cancelled), newest end first, never a live one', async () => {
+    const done = await t.pull({ op: 'echo' }, { key: 'ended-1' });
+    await t.waitForStatus(done.id, 'finished');
+    const bad = await t.pull({ op: 'fail', message: 'boom' }, { key: 'ended-2' });
+    await t.waitForStatus(bad.id, 'failed');
+    const long = await t.pull({ op: 'sleep', ms: 10000 }, { key: 'ended-3' });
+    await t.waitForStatus(long.id, 'running');
+    const queue = (await t.api('GET', '/api/queue')).body;
+    expect(queue.ended.map((j: Job) => j.id)).toEqual([bad.id, done.id]);
+    expect(queue.ended.map((j: Job) => j.status)).toEqual(['failed', 'finished']);
+    expect(queue.running.map((j: Job) => j.id)).toEqual([long.id]);
+  });
+
+  it('the ended list is capped at the 20 most recent', async () => {
+    const ids: string[] = [];
+    for (let i = 0; i < 22; i += 1) {
+      const j = await t.pull({ op: 'echo' }, { key: `cap-${i}` });
+      await t.waitForStatus(j.id, 'finished');
+      ids.push(j.id);
+    }
+    const ended = (await t.api('GET', '/api/queue')).body.ended.map((j: Job) => j.id);
+    expect(ended).toEqual(ids.reverse().slice(0, 20));
+  });
+
   it('re-sorting: a changed item priority reprioritizes a waiting job (job.reprioritized), never a running one', async () => {
     t.setUsage(100);
     const waiting = await t.pull({ op: 'echo' }, { key: 'resort-1', priority: 40 });
