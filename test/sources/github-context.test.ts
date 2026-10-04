@@ -19,9 +19,6 @@ describe('GitHub source: full issue context and job environment', () => {
       'priority: 75 (label:hopper:p1) · project item: none',
       'recent comments (oldest first, up to 10; only allowlisted authors, no hopper-marked comments):',
       `- owner at ${c.createdAt}: Keep it short.`,
-      '[your issue is read-only]',
-      'Do not comment on, edit, label or close this issue, and do not use "Closes #N": job-hopper posts one status comment when you finish, and closing the issue cancels you.',
-      'If you need an answer, ask in this session: The owner answers here, never on the issue.',
     ].join('\n'));
   });
 
@@ -75,7 +72,7 @@ describe('GitHub source: full issue context and job environment', () => {
     expect(body!.length).toBeLessThanOrEqual(64000);
     const context = `[job-hopper issue context]${rest.join('')}`;
     expect(context.length).toBeLessThanOrEqual(16000);
-    expect(context).toContain('[your issue is read-only]');
+    expect(context).not.toMatch(/read-only|comment on|status comment/);
     expect(context).toContain('c39 '); // the newest comments survive
     expect(context).not.toContain('c0 ');
   });

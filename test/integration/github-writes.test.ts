@@ -130,7 +130,7 @@ describe.each<Mode>(['gh', 'app'])('issue writes (%s source)', (mode) => {
     expect(prompt).toContain('context from owner');
     expect(prompt).not.toContain('[how to report on your issue]');
     expect(prompt).not.toMatch(/HOPPER_COMMENT|hopper-comment|gh issue comment/);
-    expect(prompt).toContain('Do not comment on, edit, label or close this issue');
+    expect(prompt).not.toMatch(/read-only\]|comment on|status comment/);
     expect(existsSync(join(dirname(a.dbPath), 'job-tokens'))).toBe(false);
   });
 });

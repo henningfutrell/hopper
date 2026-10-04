@@ -82,8 +82,7 @@ describe('job context and env: the issue, read-only', () => {
     const { gh, source } = make();
     const issue = gh.createIssue({ repo: REPO, labels: ['hopper'] });
     const item = await discoverOne(source);
-    expect(item.prompt).not.toMatch(/HOPPER_COMMENT|gh issue comment|how to report/);
-    expect(item.prompt).toContain('Do not comment on, edit, label or close this issue');
+    expect(item.prompt).not.toMatch(/HOPPER_COMMENT|gh issue comment|how to report|read-only\]|comment on|status comment/);
     expect(item.env).toEqual({ HOPPER_ISSUE_URL: issue.url, HOPPER_REPO: REPO, HOPPER_ISSUE_NUMBER: '1', HOPPER_ISSUE_TITLE: 'Issue 1' });
   });
 });
