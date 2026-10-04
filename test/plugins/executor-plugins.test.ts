@@ -17,7 +17,7 @@ import { fakeKit, fixedClock, useTempDirs } from './support.ts';
 
 const temp = useTempDirs();
 const logger = { info() {}, warn() {} };
-const ctx = (dir: string) => ({ clock: fixedClock, logger, dataDir: dir, scratchDir: join(dir, 'scratch'), instanceName: 'x' });
+const ctx = (dir: string) => ({ clock: fixedClock, logger, dataDir: dir, scratchDir: join(dir, 'scratch'), instanceName: 'x', env: () => undefined });
 
 /** The options `def` would get from `raw`, as its own options type. */
 function options<O>(def: PluginDefinition<Role, O>, raw: unknown = {}): O {
@@ -40,7 +40,7 @@ describe('herdr-claude', () => {
   it('options default to what the env defaulted to before plugins', () => {
     expect(options(herdrClaude)).toEqual({
       bin: 'herdr', claudeBin: 'claude', session: 'job-hopper', args: ['--dangerously-skip-permissions'],
-      cwd: join(homedir(), 'workbench/app-workflows'), trustWorkdir: true, pollMs: 1000, idleQuestionMs: 20000,
+      cwd: homedir(), trustWorkdir: true, pollMs: 1000, idleQuestionMs: 20000,
     });
   });
 
@@ -97,7 +97,7 @@ describe('command-bearing options carry the mark into JSON Schema (design.md "UI
     ['herdr-claude', herdrClaude, ['bin', 'claudeBin', 'args', 'cwd']],
     ['claude-cli', claudeCli, ['bin']],
     ['claude-cli-assessor', claudeCliAssessor, ['bin']],
-    ['jev-router', jevRouter, ['jevSrc', 'python', 'claudeBin', 'typesafeKeyFile']],
+    ['jev-router', jevRouter, ['jevSrc', 'python', 'claudeBin']],
   ] as [string, PluginDefinition, string[]][])('%s', (_id, def, marked) => {
     const p = props(def);
     const bearing = Object.keys(p).filter((k) => p[k]!.commandBearing === true).sort();

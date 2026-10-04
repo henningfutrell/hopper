@@ -46,12 +46,12 @@ describe('accepted: the assessor does not escalate and no risk rule matches', ()
     expect(draft).toEqual(SAFE);
   });
 
-  it('a missing rules file is noted on the attempts', async () => {
+  it('a missing rules document is noted on the attempts', async () => {
     const r = rig({ rules: null });
     const q = r.question();
     r.svc.handle(q.id);
     await settle();
-    expect(r.mem.store.questions.get(q.id)!.attempts[0]!.reason).toMatch(/rules file missing/);
+    expect(r.mem.store.questions.get(q.id)!.attempts[0]!.reason).toMatch(/no rules.md yet/);
   });
 });
 

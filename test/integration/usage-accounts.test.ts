@@ -5,12 +5,12 @@
 // the GitHub identities of the job sources — and never a token.
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Job, PartAccount, UsageReport } from '../../src/domain/types.ts';
 import { createFakeGitHub } from '../../src/sources/index.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
-import { BOT, jobSourcesDoc, writeAppFile } from '../support/github-app.ts';
+import { appSecrets, BOT, jobSourcesDoc } from '../support/github-app.ts';
 import { waitFor } from '../support/wait.ts';
 
 const FAKE_CLAUDE = join(import.meta.dirname, '..', 'plugins', 'fake-claude-plan.mjs');
@@ -39,13 +39,10 @@ function resetsIn2Days(): string {
 
 type Plugins = Record<string, unknown>;
 
-async function boot(o: { plugins: Plugins | ((dir: string) => Plugins); seams?: Parameters<typeof startTestApp>[0]['seams']; before?: (dir: string) => void }) {
+async function boot(o: { plugins: Plugins; secrets?: Record<string, string | undefined>; seams?: Parameters<typeof startTestApp>[0]['seams'] }) {
   const db = tempDbPath();
   cleanups.push(db.cleanup);
-  const dir = dirname(db.dbPath);
-  o.before?.(dir);
-  const plugins = typeof o.plugins === 'function' ? o.plugins(dir) : o.plugins;
-  const a = await startTestApp({ dbPath: db.dbPath, plugins, ...(o.seams ? { seams: o.seams } : {}) });
+  const a = await startTestApp({ dbPath: db.dbPath, plugins: o.plugins, ...(o.secrets ? { secrets: o.secrets } : {}), ...(o.seams ? { seams: o.seams } : {}) });
   apps.push(a);
   return a;
 }
@@ -109,7 +106,7 @@ describe('GitHub accounts of the job sources', () => {
   it('the app source acts as its bot on its installation repos; the gh source paused by the app says so', async () => {
     const gh = createFakeGitHub();
     const app = createFakeGitHub({ app: { botLogin: BOT, installedRepos: [REPO] } });
-    const a = await boot({ before: (dir) => { writeAppFile(dir); }, plugins: (dir) => ({ jobSources: jobSourcesDoc(dir) }), seams: { github: gh, githubApp: app } });
+    const a = await boot({ plugins: { jobSources: jobSourcesDoc() }, secrets: appSecrets(), seams: { github: gh, githubApp: app } });
     await a.sync();
     const list = await accounts(a);
     expect(list).toContainEqual({ role: 'job-source', instance: 'github-app', service: 'github', identity: BOT, detail: { via: 'GitHub App', installedRepos: [REPO] } });
@@ -118,7 +115,7 @@ describe('GitHub accounts of the job sources', () => {
 
   it('the gh source names the gh user once it has asked who that is', async () => {
     const gh = createFakeGitHub({ login: 'owner' });
-    const a = await boot({ plugins: { jobSources: jobSourcesDoc('/nonexistent', { github: { enabled: true } }) }, seams: { github: gh } });
+    const a = await boot({ plugins: { jobSources: jobSourcesDoc({ github: { enabled: true } }) }, seams: { github: gh } });
     await a.sync();
     expect(await accounts(a)).toContainEqual({ role: 'job-source', instance: 'github', service: 'github', identity: 'owner', detail: { via: 'gh CLI' } });
   });

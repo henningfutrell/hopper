@@ -16,13 +16,17 @@ describe('systemd/job-hopper.service', () => {
     expect(Object.keys(env).length).toBeGreaterThan(0);
     // The database comes from the EnvironmentFile (install.sh writes it), never from the unit.
     expect(env).not.toHaveProperty('JOB_HOPPER_DATABASE_URL');
+    // Config documents live in the database: the unit names neither file.
+    expect(env).not.toHaveProperty('JOB_HOPPER_PLUGINS_FILE');
+    expect(env).not.toHaveProperty('JOB_HOPPER_WEBHOOKS_FILE');
     expect(loadConfig({ ...env, JOB_HOPPER_DATABASE_URL: 'sqlite:/d/db.sqlite' }).leftoverEnv).toEqual({});
   });
 
-  it('binds loopback by default; LAN settings come from the optional daemon.env (design.md "Reaching the UI across the LAN")', () => {
+  it('binds loopback by default; the database, secrets and LAN settings come from daemon.env (design.md "Reaching the UI across the LAN")', () => {
     const text = readFileSync(UNIT, 'utf8');
     expect(text).not.toMatch(/JOB_HOPPER_HOST/);
-    expect(text).toMatch(/^EnvironmentFile=-%h\/\.config\/job-hopper\/daemon\.env$/m);
+    // Required, not optional (no '-'): it holds JOB_HOPPER_DATABASE_URL, without which the daemon does not start.
+    expect(text).toMatch(/^EnvironmentFile=%h\/\.config\/job-hopper\/daemon\.env$/m);
   });
 
   it('install.sh writes no part-choosing variable and no sources.yaml', () => {

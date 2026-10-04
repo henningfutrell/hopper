@@ -1,20 +1,32 @@
-// Config files a test app reads: <dataDir>/webhooks.yaml (startTestApp points
-// JOB_HOPPER_WEBHOOKS_FILE at it), and <dataDir>/sources.yaml — the phase-3/4 file the daemon folds
-// into plugins.yaml on a boot without one (migration tests).
-import { writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+// Config documents a test app reads (design.md "Config documents"): plugins.yaml, webhooks.yaml and
+// rules.md, written into the test app's database before it starts, or while it runs.
 import { stringify } from 'yaml';
+import type { ConfigDocumentName } from '../../src/domain/ports.ts';
+import { openStore } from '../../src/store/index.ts';
+import { databaseUrlFor } from './database.ts';
 
-export interface WebhookEntry { name: string; url: string; events: string[]; secret: string; active?: boolean }
+export interface WebhookEntry { name: string; url: string; events: string[]; secret?: string; secretEnv?: string; active?: boolean }
 
-export function writeWebhooksFile(dbPath: string, webhooks: WebhookEntry[]): string {
-  const path = join(dirname(dbPath), 'webhooks.yaml');
-  writeFileSync(path, stringify({ version: 1, webhooks }), { mode: 0o600 });
-  return path;
+/** Replace a document in the database of `dbPath` (whatever version it is at). `doc`: text, or a value written as YAML. */
+export function writeDocument(dbPath: string, name: ConfigDocumentName, doc: unknown): void {
+  const store = openStore({ url: databaseUrlFor(dbPath), clock: { now: () => new Date() } });
+  try {
+    store.documents.write(name, typeof doc === 'string' ? doc : stringify(doc), store.documents.version(name));
+  } finally {
+    store.close();
+  }
 }
 
-export function writeSourcesFile(dbPath: string, doc: unknown): string {
-  const path = join(dirname(dbPath), 'sources.yaml');
-  writeFileSync(path, typeof doc === 'string' ? doc : stringify(doc), { mode: 0o600 });
-  return path;
+/** A document in the database of `dbPath`, or undefined. */
+export function readDocument(dbPath: string, name: ConfigDocumentName): string | undefined {
+  const store = openStore({ url: databaseUrlFor(dbPath), clock: { now: () => new Date() } });
+  try {
+    return store.documents.read(name);
+  } finally {
+    store.close();
+  }
+}
+
+export function writeWebhooksFile(dbPath: string, webhooks: WebhookEntry[]): void {
+  writeDocument(dbPath, 'webhooks.yaml', { version: 1, webhooks });
 }

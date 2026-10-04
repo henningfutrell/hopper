@@ -1,11 +1,9 @@
 // Phase 5 slice 5: the notifier role in the plugin host. 0..n instances, a restart role: built once
-// at start from plugins.yaml (an absent section → the built-in grok-bot instance, its env file beside
-// plugins.yaml; `notifiers: []` → none), started with the event feed, stopped with the daemon. A
+// at start from plugins.yaml (an absent section → the built-in grok-bot instance; `notifiers: []` → none), started with the event feed, stopped with the daemon. A
 // notifier that cannot run — unknown plugin, invalid options, unavailable, create or start throwing —
 // is dropped with its reason in the report; never a boot failure. grokbot-routine's detection looks
-// at its env file only (never runs the Grok Bot GUI); needs-setup still runs, because the file is
-// read at each event and one created later applies without a restart.
-import { writeFileSync } from 'node:fs';
+// at its two environment variables only (never runs the Grok Bot GUI); needs-setup still runs,
+// because they are read at each event and one set later applies without a restart.
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Notifier, NotifierEvents } from '../../src/domain/ports.ts';
@@ -13,9 +11,12 @@ import type { DomainEvent } from '../../src/domain/types.ts';
 import { BUILTIN_PLUGINS } from '../../src/plugins/builtin.ts';
 import { createPluginHost, type PluginHost } from '../../src/plugins/index.ts';
 import type { DetectionKit, PluginDefinition } from '../../src/plugins/sdk.ts';
+import { PLUGINS } from '../../src/plugins/plugins-file.ts';
+import { useTempDocuments } from '../support/documents.ts';
 import { fakeKit, fixedClock, useTempDirs } from './support.ts';
 
 const temp = useTempDirs();
+const docs = useTempDocuments();
 let host: PluginHost | undefined;
 afterEach(async () => { await host?.stopNotifiers(); host?.stop(); host = undefined; });
 
@@ -58,10 +59,10 @@ const feed = (): NotifierEvents & { listeners: ((e: DomainEvent) => void)[] } =>
 
 function start(o: { file?: string; kit?: DetectionKit } = {}) {
   const dir = temp();
-  const pluginsFile = join(dir, 'plugins.yaml');
-  if (o.file !== undefined) writeFileSync(pluginsFile, o.file, { mode: 0o600 });
+  const documents = docs();
+  if (o.file !== undefined) documents.set(PLUGINS, o.file);
   host = createPluginHost({
-    pluginDir: join(dir, 'plugins'), pluginsFile, dataDir: dir, clock: fixedClock,
+    pluginDir: join(dir, 'plugins'), documents, dataDir: dir, clock: fixedClock,
     logger: { info() {}, warn() {} }, routerMode: () => 'shadow', kit: o.kit ?? fakeKit({ exists: async () => false, readable: async () => false }),
     builtins: [...BUILTIN_PLUGINS, recorder, unavailable],
     defaultAnswerer: null,
@@ -69,27 +70,29 @@ function start(o: { file?: string; kit?: DetectionKit } = {}) {
     defaultExecutors: [{ name: 'test', plugin: 'test' }],
     intervalMs: 30,
   });
-  return { host, pluginsFile, dir };
+  return { host, documents, dir };
 }
 
 const catalogue = (h: PluginHost, id: string) => h.report().plugins.find((p) => p.id === id);
 
 describe('the notifier role', () => {
-  it('is a role; grokbot-routine is its built-in plugin, envFile marked command-bearing', async () => {
+  it('is a role; grokbot-routine is its built-in plugin, urlEnv and keyEnv marked command-bearing', async () => {
     const { host } = start({ file: 'version: 1\n' });
     await host.start();
     expect(host.report().roles).toContain('notifier');
     const g = catalogue(host, 'grokbot-routine');
     expect(g).toMatchObject({ role: 'notifier', builtin: true });
-    expect((g!.options as { properties: Record<string, Record<string, unknown>> }).properties.envFile).toMatchObject({ commandBearing: true });
+    const props = (g!.options as { properties: Record<string, Record<string, unknown>> }).properties;
+    expect(props.urlEnv).toMatchObject({ commandBearing: true });
+    expect(props.keyEnv).toMatchObject({ commandBearing: true });
   });
 
-  it('no notifiers section: the built-in grok-bot instance, its env file beside plugins.yaml — the Grok Bot routine survives a plugins.yaml written before slice 5', async () => {
-    const { host, dir } = start({ file: 'version: 1\njobSources: []\n' });
+  it('no notifiers section: the built-in grok-bot instance — the Grok Bot routine survives a plugins.yaml written before slice 5', async () => {
+    const { host } = start({ file: 'version: 1\njobSources: []\n' });
     await host.start();
     expect(host.report().notifiers.instances).toEqual([{
-      instance: { name: 'grok-bot', plugin: 'grokbot-routine', options: { envFile: join(dir, 'grokbot-webhook.env') } },
-      detection: { status: 'needs-setup', reason: expect.stringContaining('grokbot-webhook.env'), command: expect.stringContaining('GROKBOT_WEBHOOK_URL') },
+      instance: { name: 'grok-bot', plugin: 'grokbot-routine' },
+      detection: { status: 'needs-setup', reason: expect.stringContaining('GROKBOT_WEBHOOK_URL'), command: expect.stringContaining('GROKBOT_WEBHOOK_KEY') },
       active: 'grokbot-routine',
     }]);
   });
@@ -139,45 +142,46 @@ describe('the notifier role', () => {
   });
 
   it('a restart role: an edit shows changed — restart pending; the running notifiers stay', async () => {
-    const { host, pluginsFile } = start({ file: 'version: 1\nnotifiers: []\n' });
+    const { host, documents } = start({ file: 'version: 1\nnotifiers: []\n' });
     await host.start();
-    writeFileSync(pluginsFile, 'version: 1\nnotifiers: [ { name: one, plugin: recorder } ]\n', { mode: 0o600 });
+    documents.set(PLUGINS, 'version: 1\nnotifiers: [ { name: one, plugin: recorder } ]\n');
     await host.reload();
     expect(host.report().notifiers.pending).toEqual({ status: 'changed — restart pending', instances: [{ name: 'one', plugin: 'recorder', options: {} }] });
     expect(host.notifiers()).toEqual([]);
   });
 });
 
-describe('grokbot-routine detection: its env file only, never the Grok Bot binary', () => {
-  const entry = (file: string) => `version: 1\nnotifiers: [ { name: grok-bot, plugin: grokbot-routine, options: { envFile: ${file} } } ]\n`;
+describe('grokbot-routine detection: its environment variables only, never the Grok Bot binary', () => {
+  const entry = (options = '') => `version: 1\nnotifiers: [ { name: grok-bot, plugin: grokbot-routine${options} } ]\n`;
+  const set = (vars: Record<string, string>) => (n: string) => vars[n];
 
-  it('the env file exists and is readable → available; nothing is run', async () => {
+  it('both variables set → available; nothing is run', async () => {
     const ran: string[] = [];
     const kit = fakeKit({
-      exists: async () => true, readable: async () => true,
+      env: set({ GROKBOT_WEBHOOK_URL: 'http://x/hook', GROKBOT_WEBHOOK_KEY: 'k' }),
       which: async (b) => { ran.push(`which ${b}`); return undefined; },
       version: async (b) => { ran.push(`version ${b}`); return undefined; },
       succeeds: async (b) => { ran.push(`succeeds ${b}`); return false; },
     });
-    const { host } = start({ file: entry('/x/grokbot-webhook.env'), kit });
+    const { host } = start({ file: entry(), kit });
     await host.start();
     expect(host.report().notifiers.instances[0]).toMatchObject({ detection: { status: 'available' }, active: 'grokbot-routine' });
     expect(ran.filter((r) => /grok/i.test(r))).toEqual([]);
   });
 
-  it('missing → needs-setup with the file to write; still runs (a file written later applies without a restart)', async () => {
-    const { host } = start({ file: entry('/x/g.env'), kit: fakeKit({ exists: async () => false, readable: async () => false }) });
+  it('a variable unset → needs-setup naming it; still runs (one set later applies without a restart)', async () => {
+    const { host } = start({ file: entry(), kit: fakeKit({ env: set({ GROKBOT_WEBHOOK_URL: 'http://x/hook' }) }) });
     await host.start();
     expect(host.report().notifiers.instances[0]).toEqual({
-      instance: { name: 'grok-bot', plugin: 'grokbot-routine', options: { envFile: '/x/g.env' } },
-      detection: { status: 'needs-setup', reason: 'no Grok Bot routine configured: /x/g.env not found', command: expect.stringMatching(/GROKBOT_WEBHOOK_URL=.*GROKBOT_WEBHOOK_KEY=.*\/x\/g\.env/s) },
+      instance: { name: 'grok-bot', plugin: 'grokbot-routine', options: {} },
+      detection: { status: 'needs-setup', reason: 'no Grok Bot routine configured: GROKBOT_WEBHOOK_KEY not set', command: expect.stringContaining('GROKBOT_WEBHOOK_KEY') },
       active: 'grokbot-routine',
     });
   });
 
-  it('present but unreadable → needs-setup: chmod it', async () => {
-    const { host } = start({ file: entry('/x/g.env'), kit: fakeKit({ exists: async () => true, readable: async () => false }) });
+  it('urlEnv and keyEnv rename the variables detection reads', async () => {
+    const { host } = start({ file: entry(', options: { urlEnv: MY_URL, keyEnv: MY_KEY }'), kit: fakeKit({ env: set({ MY_URL: 'http://x/hook', MY_KEY: 'k' }) }) });
     await host.start();
-    expect(host.report().notifiers.instances[0]!.detection).toEqual({ status: 'needs-setup', reason: '/x/g.env is not readable', command: 'chmod 600 /x/g.env' });
+    expect(host.report().notifiers.instances[0]).toMatchObject({ detection: { status: 'available' } });
   });
 });

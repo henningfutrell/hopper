@@ -1,20 +1,22 @@
 // The plugin host: built-in + custom plugins, plugins.yaml (router, answerer, assessor sections)
-// with an mtime watch, detection, the live router with its fallback to pass-through, and the live
+// with a version watch, detection, the live router with its fallback to pass-through, and the live
 // question roles: no answerer when it cannot run, always-escalate when the assessor cannot.
-import { cpSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { AnswerRequest } from '../../src/domain/ports.ts';
 import type { Job, Question } from '../../src/domain/types.ts';
 import { BUILTIN_PLUGINS } from '../../src/plugins/builtin.ts';
-import jevRouter from '../../src/plugins/router/jev-router/index.ts';
 import passThrough from '../../src/plugins/router/pass-through/index.ts';
 import { createPluginHost, type PluginHost, type PluginHostOptions } from '../../src/plugins/index.ts';
 import type { DetectionKit, PluginDefinition } from '../../src/plugins/sdk.ts';
 import { waitFor } from '../support/wait.ts';
+import { PLUGINS } from '../../src/plugins/plugins-file.ts';
+import { useTempDocuments } from '../support/documents.ts';
 import { ALWAYS_PROCEED_DIR, fakeKit, fixedClock, useTempDirs, writePlugin } from './support.ts';
 
 const temp = useTempDirs();
+const docs = useTempDocuments();
 const job = { id: 'j1', spec: { executor: 'test', payload: {} } } as Job;
 let host: PluginHost | undefined;
 afterEach(() => { host?.stop(); host = undefined; });
@@ -69,10 +71,10 @@ function start(o: {
   defaultAnswerer?: PluginHostOptions['defaultAnswerer']; defaultAssessor?: PluginHostOptions['defaultAssessor'];
 } = {}) {
   const dir = temp();
-  const pluginsFile = join(dir, 'plugins.yaml');
-  if (o.file !== undefined) writeFileSync(pluginsFile, o.file, { mode: 0o600 });
+  const documents = docs();
+  if (o.file !== undefined) documents.set(PLUGINS, o.file);
   host = createPluginHost({
-    pluginDir: o.pluginDir ?? join(dir, 'plugins'), pluginsFile, dataDir: dir, clock: fixedClock,
+    pluginDir: o.pluginDir ?? join(dir, 'plugins'), documents, dataDir: dir, clock: fixedClock,
     logger: { info() {}, warn() {} }, routerMode: () => 'shadow', kit: o.kit ?? fakeKit(),
     builtins: o.builtins ?? [...BUILTIN_PLUGINS, tagging, brokenCreate, throwingAdvise, selfFallingBack, cannedAnswerer, cannedAssessor],
     defaultAnswerer: o.defaultAnswerer === undefined ? { name: 'opus', plugin: 'claude-cli', options: { model: 'opus' } } : o.defaultAnswerer,
@@ -80,15 +82,22 @@ function start(o: {
     defaultExecutors: [{ name: 'test', plugin: 'test' }],
     intervalMs: 30,
   });
-  return { host, pluginsFile };
+  return { host, documents };
 }
 
 describe('router chosen from what is detected (no router in plugins.yaml)', () => {
-  it('jev-router detected → the router is jev-router, not a fallback', async () => {
+  it('jev-router has no default Jev checkout, so detection never picks it: pass-through, not a fallback', async () => {
     const { host } = start({ builtins: [...BUILTIN_PLUGINS] });
     await host.start();
+    expect(host.routerStatus()).toEqual({ name: 'pass-through', plugin: 'pass-through', fallback: false });
+    expect(host.report().router).toMatchObject({ instance: { name: 'pass-through' }, selection: 'detected', fallback: false });
+  });
+
+  it('jev-router named in plugins.yaml with its jevSrc is the router, not a fallback', async () => {
+    const { host } = start({ builtins: [...BUILTIN_PLUGINS], file: 'version: 1\nrouter: { name: jev-router, plugin: jev-router, options: { jevSrc: /j/grok-bot-jev } }\n' });
+    await host.start();
     expect(host.routerStatus()).toEqual({ name: 'jev-router', plugin: 'jev-router', fallback: false });
-    expect(host.report().router).toMatchObject({ instance: { name: 'jev-router', plugin: 'jev-router' }, selection: 'detected', fallback: false });
+    expect(host.report().router).toMatchObject({ instance: { name: 'jev-router', plugin: 'jev-router' }, selection: 'file', fallback: false });
   });
 
   it('no router but pass-through can run → pass-through, chosen, not a fallback', async () => {
@@ -108,9 +117,10 @@ describe('router chosen from what is detected (no router in plugins.yaml)', () =
   });
 
   it('built-ins come first, in their order; a router that detects but cannot start is skipped', async () => {
-    const { host } = start({ builtins: [passThrough, brokenCreate, jevRouter, tagging] });
+    const second: PluginDefinition<'router'> = { ...tagging, id: 'second', options: undefined };
+    const { host } = start({ builtins: [brokenCreate, second, passThrough, tagging] });
     await host.start();
-    expect(host.routerStatus()).toEqual({ name: 'jev-router', plugin: 'jev-router', fallback: false });
+    expect(host.routerStatus()).toEqual({ name: 'second', plugin: 'second', fallback: false });
   });
 
   it('a router named in plugins.yaml wins over detection; selection says file', async () => {
@@ -154,24 +164,24 @@ describe('fallback to pass-through', () => {
 });
 
 describe('plugins.yaml live reload (router swaps between calls)', () => {
-  it('a changed router section swaps the router; a broken edit keeps the last good one; removal returns to the detected one', async () => {
-    const { host, pluginsFile } = start({
+  it('a changed router section swaps the router; a broken edit keeps the last good one; emptying the document returns to the detected one', async () => {
+    const { host, documents } = start({
       file: 'version: 1\nrouter: { name: one, plugin: tagging, options: { tag: first } }\n',
       builtins: [passThrough, tagging],
     });
     await host.start();
-    expect(host.report().config).toMatchObject({ source: 'file', path: pluginsFile });
+    expect(host.report().config).toMatchObject({ document: 'plugins.yaml', source: 'document' });
     expect((await host.router.advise(job)).reason).toBe('first');
 
-    writeFileSync(pluginsFile, 'version: 1\nrouter: { name: two, plugin: tagging, options: { tag: second-one } }\n');
+    documents.set(PLUGINS, 'version: 1\nrouter: { name: two, plugin: tagging, options: { tag: second-one } }\n');
     await waitFor(async () => (await host.router.advise(job)).reason === 'second-one', { what: 'the swapped router' });
     expect(host.routerStatus()).toEqual({ name: 'two', plugin: 'tagging', fallback: false });
 
-    writeFileSync(pluginsFile, 'version: 1\nrouter: [broken\n');
+    documents.set(PLUGINS, 'version: 1\nrouter: [broken\n');
     await waitFor(() => host.report().config.error, { what: 'the config error' });
     expect((await host.router.advise(job)).reason).toBe('second-one');
 
-    rmSync(pluginsFile);
+    documents.set(PLUGINS, 'version: 1\n');
     await waitFor(() => host.routerStatus().name === 'pass-through', { what: 'the detected router' });
     expect(host.report().router).toMatchObject({ selection: 'detected' });
     expect(host.report().config.error).toBeUndefined();
@@ -179,10 +189,10 @@ describe('plugins.yaml live reload (router swaps between calls)', () => {
   });
 
   it('reload() re-reads now', async () => {
-    const { host, pluginsFile } = start({ file: 'version: 1\nrouter: { name: one, plugin: tagging, options: { tag: a } }\n' });
+    const { host, documents } = start({ file: 'version: 1\nrouter: { name: one, plugin: tagging, options: { tag: a } }\n' });
     await host.start();
     host.stop();
-    writeFileSync(pluginsFile, 'version: 1\nrouter: { name: one, plugin: tagging, options: { tag: bb } }\n');
+    documents.set(PLUGINS, 'version: 1\nrouter: { name: one, plugin: tagging, options: { tag: bb } }\n');
     await host.reload();
     expect((await host.router.advise(job)).reason).toBe('bb');
   });
@@ -208,7 +218,7 @@ describe('custom plugins through the host', () => {
     expect(r.roles).toEqual(['router', 'queue-sorter', 'answerer', 'assessor', 'executor', 'job-source', 'machine-source', 'usage-source', 'notifier']);
     const byId = new Map(r.plugins.map((p) => [p.id, p]));
     expect(byId.get('jev-router')).toMatchObject({
-      role: 'router', builtin: true, detection: { status: 'unavailable' },
+      role: 'router', builtin: true, detection: { status: 'needs-setup' },
       options: { type: 'object', properties: { jevSrc: { type: 'string' }, python: { type: 'string' } } },
     });
     expect(byId.get('pass-through')).toMatchObject({ builtin: true, detection: { status: 'available' } });
@@ -283,10 +293,10 @@ describe('question roles (answerer 0..1, assessor 1)', () => {
   });
 
   it('plugins.yaml swaps answerer and assessor between calls', async () => {
-    const { host, pluginsFile } = start();
+    const { host, documents } = start();
     await host.start();
     expect(host.answerer()!.name).toBe('opus');
-    writeFileSync(pluginsFile, 'version: 1\nanswerer: { name: quick, plugin: canned-answerer, options: { answer: yes } }\nassessor: { name: lenient, plugin: canned-assessor }\n');
+    documents.set(PLUGINS, 'version: 1\nanswerer: { name: quick, plugin: canned-answerer, options: { answer: yes } }\nassessor: { name: lenient, plugin: canned-assessor }\n');
     await waitFor(() => host.answerer()?.name === 'quick', { what: 'the swapped answerer' });
     expect(await host.answerer()!.answer(request, new AbortController().signal)).toEqual({ answer: 'yes', confident: true, reason: 'canned' });
     expect(host.assessor().name).toBe('lenient');

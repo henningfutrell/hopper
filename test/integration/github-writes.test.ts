@@ -10,7 +10,7 @@ import type { DomainEvent, Job } from '../../src/domain/types.ts';
 import { createFakeGitHubServer, type FakeGitHubServer } from '../../src/sources/github/app/index.ts';
 import { createFakeGitHub, type FakeGitHub } from '../../src/sources/index.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
-import { APP_ID, BOT, KEYS, SLUG, jobSourcesDoc, writeAppFile } from '../support/github-app.ts';
+import { APP_ID, BOT, KEYS, SLUG, appSecrets, jobSourcesDoc } from '../support/github-app.ts';
 import { waitFor } from '../support/wait.ts';
 
 const REPO = 'owner/job-hopper-sandbox';
@@ -33,13 +33,11 @@ type Mode = 'gh' | 'app';
 async function boot(mode: Mode, gh: FakeGitHub | undefined, app: Record<string, unknown> = {}) {
   const db = tempDbPath();
   cleanups.push(db.cleanup);
-  const dir = dirname(db.dbPath);
-  if (mode === 'app') writeAppFile(dir);
   const jobSources = mode === 'gh'
-    ? jobSourcesDoc(dir, { github: { enabled: true, repos: [REPO], appFile: null }, githubApp: { enabled: false } })
-    : jobSourcesDoc(dir, { github: false, githubApp: app });
+    ? jobSourcesDoc({ github: { enabled: true, repos: [REPO], appKeyEnv: null }, githubApp: { enabled: false } })
+    : jobSourcesDoc({ github: false, githubApp: app });
   const seams = gh === undefined ? {} : mode === 'gh' ? { github: gh } : { githubApp: gh };
-  const a = await startTestApp({ dbPath: db.dbPath, plugins: { jobSources }, seams });
+  const a = await startTestApp({ dbPath: db.dbPath, plugins: { jobSources }, seams, secrets: mode === 'app' ? appSecrets() : {} });
   apps.push(a);
   return a;
 }

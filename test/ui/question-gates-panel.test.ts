@@ -2,16 +2,16 @@
 // The Question gates panel in the Questions view (issue #18), rendered in happy-dom inside the whole
 // app against a fake of the daemon's HTTP surface. It shows the chain a question goes through, lets
 // the owner pick the answerer (or none) and the assessor through POST /ui/api/plugins, and edits the
-// rules file through POST /ui/api/rules-file with the version the draft was based on. An unsaved
+// rules through POST /ui/api/rules with the version the draft was based on. An unsaved
 // draft survives a reload.
 import { createElement } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const RULES = { path: '/home/user/.config/job-hopper/rules.md', text: '- prefer small PRs\n', version: 'v1', missing: false };
+const RULES = { document: 'rules.md', text: '- prefer small PRs\n', version: 'v1', missing: false };
 const GATES = {
-  rulesFile: RULES,
+  rules: RULES,
   riskRules: [
     { name: 'delete', describe: 'deleting or wiping things' },
     { name: 'deploy', describe: 'deploying or publishing' },
@@ -27,7 +27,7 @@ const claudeSchema = {
 };
 const PLUGINS = {
   roles: ['router', 'answerer', 'assessor'],
-  config: { path: '/home/user/.config/job-hopper/plugins.yaml', source: 'file', version: 'p1', warnings: [] },
+  config: { document: 'plugins.yaml', source: 'document', version: 'p1', warnings: [] },
   instances: [
     { role: 'answerer', instance: { name: 'opus', plugin: 'claude-cli', options: { model: 'opus' } } },
     { role: 'assessor', instance: { name: 'fable', plugin: 'claude-cli-assessor', options: { model: 'fable' } } },
@@ -70,7 +70,7 @@ function fakeDaemon() {
     const body = init.body ? JSON.parse(String(init.body)) as Record<string, unknown> : undefined;
     calls.push({ path, method: init.method ?? 'GET', headers, ...(body ? { body } : {}) });
     if (path === '/ui/api/session') return json(200, { authenticated: true, expiresAt: '2099-01-01T00:00:00.000Z' });
-    if (path === '/ui/api/rules-file') return json(200, { ...RULES, text: body!.text, version: 'v2' });
+    if (path === '/ui/api/rules') return json(200, { ...RULES, text: body!.text, version: 'v2' });
     if (path === '/ui/api/plugins') return json(200, PLUGINS);
     if (path in routes) return json(200, routes[path]);
     return json(404, { error: 'not found' });
@@ -105,7 +105,7 @@ async function boot(o: { keepStorage?: boolean } = {}) {
 }
 
 const panel = () => document.querySelector('[data-slot="question-gates"]');
-const rulesBox = () => panel()?.querySelector<HTMLTextAreaElement>('textarea[name="rules-file"]') ?? null;
+const rulesBox = () => panel()?.querySelector<HTMLTextAreaElement>('textarea[name="rules"]') ?? null;
 const button = (label: string) => [...panel()!.querySelectorAll('button')].find((b) => b.textContent?.trim() === label);
 const click = (b: HTMLElement | undefined) => act(async () => { b!.click(); });
 const type = (box: HTMLTextAreaElement, text: string) => act(async () => {
@@ -120,10 +120,10 @@ afterEach(async () => {
 });
 
 describe('question gates panel', () => {
-  it('shows the chain, the risk rules read-only, and the rules file', async () => {
+  it('shows the chain, the risk rules read-only, and the rules', async () => {
     await boot();
     const text = panel()!.textContent!;
-    for (const s of ['Answerer', 'Assessor', 'Risk rules', 'Owner', 'opus', 'fable', 'delete', 'deploying or publishing', RULES.path]) expect(text).toContain(s);
+    for (const s of ['Answerer', 'Assessor', 'Risk rules', 'Owner', 'opus', 'fable', 'delete', 'deploying or publishing', RULES.document]) expect(text).toContain(s);
     expect(rulesBox()!.value).toBe(RULES.text);
   });
 
@@ -131,8 +131,8 @@ describe('question gates panel', () => {
     const daemon = await boot();
     await type(rulesBox()!, '- never force-push\n');
     await click(button('Save rules'));
-    await vi.waitFor(() => expect(daemon.calls.some((c) => c.path === '/ui/api/rules-file')).toBe(true));
-    const call = daemon.calls.find((c) => c.path === '/ui/api/rules-file')!;
+    await vi.waitFor(() => expect(daemon.calls.some((c) => c.path === '/ui/api/rules')).toBe(true));
+    const call = daemon.calls.find((c) => c.path === '/ui/api/rules')!;
     expect(call.method).toBe('POST');
     expect(call.headers['x-jobhopper-session']).toBe('a'.repeat(64));
     expect(call.body).toEqual({ text: '- never force-push\n', version: 'v1' });

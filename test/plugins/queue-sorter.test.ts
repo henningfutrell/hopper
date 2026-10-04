@@ -1,7 +1,6 @@
 // Issue #18: the queue-sorter role — live, exactly one instance, like the router. Built-ins
 // `priority` (today's order, the default), `oldest-first`, `newest-first`. A sorter that cannot
 // run, throws or returns garbage → `priority` answers, the fallback visible in /api/plugins.
-import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { QueueEntry } from '../../src/domain/ports.ts';
@@ -13,9 +12,12 @@ import oldestFirst from '../../src/plugins/queue-sorter/oldest-first/index.ts';
 import priority from '../../src/plugins/queue-sorter/priority/index.ts';
 import type { PluginDefinition } from '../../src/plugins/sdk.ts';
 import { waitFor } from '../support/wait.ts';
+import { PLUGINS } from '../../src/plugins/plugins-file.ts';
+import { useTempDocuments } from '../support/documents.ts';
 import { fakeKit, fixedClock, useTempDirs } from './support.ts';
 
 const temp = useTempDirs();
+const docs = useTempDocuments();
 let host: PluginHost | undefined;
 afterEach(() => { host?.stop(); host = undefined; });
 
@@ -29,7 +31,7 @@ const ENTRIES = [
   entry('old', 10, '2026-10-03T10:00:00.000Z'),
   entry('new', 90, '2026-10-03T10:05:00.000Z'),
 ];
-const ctx = { clock: fixedClock, logger: { info() {}, warn() {} }, dataDir: '/tmp', scratchDir: '/tmp', instanceName: 'q' };
+const ctx = { clock: fixedClock, logger: { info() {}, warn() {} }, dataDir: '/tmp', scratchDir: '/tmp', instanceName: 'q', env: () => undefined };
 const sorter = async (def: PluginDefinition<'queue-sorter'>) => def.create(ctx, {});
 
 describe('the queue-sorter role', () => {
@@ -71,15 +73,15 @@ const unavailable: PluginDefinition<'queue-sorter'> = {
 
 async function start(file?: string) {
   const dir = temp();
-  const pluginsFile = join(dir, 'plugins.yaml');
-  if (file !== undefined) writeFileSync(pluginsFile, file, { mode: 0o600 });
+  const documents = docs();
+  if (file !== undefined) documents.set(PLUGINS, file);
   host = createPluginHost({
-    pluginDir: join(dir, 'plugins'), pluginsFile, dataDir: dir, clock: fixedClock, logger: { info() {}, warn() {} },
+    pluginDir: join(dir, 'plugins'), documents, dataDir: dir, clock: fixedClock, logger: { info() {}, warn() {} },
     routerMode: () => 'shadow', kit: fakeKit(), builtins: [...BUILTIN_PLUGINS, throwing, garbage, duplicating, unavailable],
     defaultExecutors: [{ name: 'test', plugin: 'test' }], intervalMs: 30,
   });
   await host.start();
-  return { host, pluginsFile };
+  return { host, documents };
 }
 
 describe('the plugin host\'s queue sorter', () => {
@@ -91,9 +93,9 @@ describe('the plugin host\'s queue sorter', () => {
   });
 
   it('named in plugins.yaml: that instance; a file change swaps it live', async () => {
-    const { host, pluginsFile } = await start('version: 1\nqueueSorter: { name: fifo, plugin: oldest-first }\n');
+    const { host, documents } = await start('version: 1\nqueueSorter: { name: fifo, plugin: oldest-first }\n');
     expect(host.queueSorter.sort(ENTRIES)).toEqual(['old', 'a', 'b', 'new']);
-    writeFileSync(pluginsFile, 'version: 1\nqueueSorter: { name: lifo, plugin: newest-first }\n# changed\n', { mode: 0o600 });
+    documents.set(PLUGINS, 'version: 1\nqueueSorter: { name: lifo, plugin: newest-first }\n# changed\n');
     await waitFor(() => host.report().queueSorter.active === 'newest-first', { what: 'the sorter to swap' });
     expect(host.queueSorter.name).toBe('lifo');
     expect(host.queueSorter.sort(ENTRIES)).toEqual(['new', 'a', 'b', 'old']);
@@ -120,10 +122,10 @@ describe('the plugin host\'s queue sorter', () => {
   });
 
   it('the UI selects a queue sorter like the router', async () => {
-    const { host, pluginsFile } = await start('version: 1\n');
+    const { host, documents } = await start('version: 1\n');
     const r = await host.edit({ action: 'select', role: 'queue-sorter', plugin: 'oldest-first', version: host.report().config.version });
     expect(r.ok).toBe(true);
     expect(host.report().queueSorter.instance).toMatchObject({ name: 'oldest-first', plugin: 'oldest-first' });
-    expect((await import('node:fs')).readFileSync(pluginsFile, 'utf8')).toContain('queueSorter:');
+    expect(documents.read(PLUGINS)).toContain('queueSorter:');
   });
 });

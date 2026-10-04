@@ -1,4 +1,4 @@
-import { homedir, tmpdir } from 'node:os';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { loadConfig } from '../../src/config.ts';
@@ -30,41 +30,42 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
       webhookBaseMs: 1000,
       laneIdleGraceMs: 5000,
       answerTimeoutMs: 180000,
-      rulesFile: join(homedir(), '.config/job-hopper/rules.md'),
       humanRenotifyMs: 900000,
       humanTimeoutMs: 86400000,
       resumeBoost: 20,
       maxQuestions: 5,
       keepPanes: false,
-      webhooksFile: join(homedir(), '.config/job-hopper/webhooks.yaml'),
       uiSessionHours: 12,
-      pluginDir: join(homedir(), '.config/job-hopper/plugins'),
-      pluginsFile: join(homedir(), '.config/job-hopper/plugins.yaml'),
       lanNames: [],
       lanPeers: [],
       leftoverEnv: {},
     });
   });
 
-  it('reads every process setting and expands ~', () => {
+  it('reads every process setting; paths are taken as given', () => {
     const c = loadConfig({
       JOB_HOPPER_PORT: '0', JOB_HOPPER_DATABASE_URL: 'postgres://jh:pw@db:5432/jh', JOB_HOPPER_WORK_DIR: '/var/tmp/jh', JOB_HOPPER_TICK_MS: '50',
       JOB_HOPPER_ROUTER_MODE: 'active', JOB_HOPPER_SOFT_LIMIT: '0.5', JOB_HOPPER_HARD_LIMIT: '0.9', JOB_HOPPER_ROUTER_CHEAP_BOOST: '5',
       JOB_HOPPER_WEBHOOK_BASE_MS: '20', JOB_HOPPER_LANE_IDLE_GRACE_MS: '100', JOB_HOPPER_ANSWER_TIMEOUT_MS: '1000',
-      JOB_HOPPER_RULES_FILE: '~/r.md', JOB_HOPPER_HUMAN_RENOTIFY_MS: '10', JOB_HOPPER_HUMAN_TIMEOUT_MS: '20',
+      JOB_HOPPER_HUMAN_RENOTIFY_MS: '10', JOB_HOPPER_HUMAN_TIMEOUT_MS: '20',
       JOB_HOPPER_RESUME_BOOST: '7', JOB_HOPPER_MAX_QUESTIONS: '1', JOB_HOPPER_KEEP_PANES: 'true',
-      JOB_HOPPER_WEBHOOKS_FILE: '/etc/w.yaml', JOB_HOPPER_UI_SESSION_HOURS: '1.5',
-      JOB_HOPPER_PLUGIN_DIR: '~/p', JOB_HOPPER_PLUGINS_FILE: '/etc/p.yaml',
+      JOB_HOPPER_UI_SESSION_HOURS: '1.5', JOB_HOPPER_PLUGIN_DIR: '~/p',
       JOB_HOPPER_LAN_NAMES: ' Server , 192.0.2.29', JOB_HOPPER_LAN_PEERS: '192.0.2.0/24, 100.64.0.0/10',
     });
     expect(c).toEqual({
       host: '::', port: 0, databaseUrl: 'postgres://jh:pw@db:5432/jh', workDir: '/var/tmp/jh', tickMs: 50, routerMode: 'active',
       softLimit: 0.5, hardLimit: 0.9, routerCheapBoost: 5, webhookBaseMs: 20, laneIdleGraceMs: 100, answerTimeoutMs: 1000,
-      rulesFile: join(homedir(), 'r.md'), humanRenotifyMs: 10, humanTimeoutMs: 20, resumeBoost: 7, maxQuestions: 1, keepPanes: true,
-      webhooksFile: '/etc/w.yaml', uiSessionHours: 1.5,
-      pluginDir: join(homedir(), 'p'), pluginsFile: '/etc/p.yaml',
+      humanRenotifyMs: 10, humanTimeoutMs: 20, resumeBoost: 7, maxQuestions: 1, keepPanes: true,
+      uiSessionHours: 1.5, pluginDir: '~/p',
       lanNames: ['server', '192.0.2.29'], lanPeers: ['192.0.2.0/24', '100.64.0.0/10'], leftoverEnv: {},
     });
+  });
+
+  it('the retired file settings are no longer read: they land in leftoverEnv', () => {
+    const left = { JOB_HOPPER_RULES_FILE: '~/r.md', JOB_HOPPER_WEBHOOKS_FILE: '/etc/w.yaml', JOB_HOPPER_PLUGINS_FILE: '/etc/p.yaml' };
+    const c = loadConfig({ ...DB, ...left });
+    expect(c.leftoverEnv).toEqual(left);
+    for (const k of ['rulesFile', 'webhooksFile', 'pluginsFile', 'pluginDir']) expect(c).not.toHaveProperty(k);
   });
 
   it('a part-choosing variable is no longer read: it lands in leftoverEnv with every other unread JOB_HOPPER_* variable, unvalidated', () => {

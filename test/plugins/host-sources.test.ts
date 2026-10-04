@@ -2,18 +2,21 @@
 // at start from plugins.yaml (or the built-in instances when a section is absent). Job and usage
 // sources are restart roles: a later edit shows `changed — restart pending`. The machine source
 // applies an options edit live (issue #18); another instance still waits for a restart. Detection
-// never makes a paid call: github-gh asks `gh auth status`, github-app looks for its app file,
+// never makes a paid call: github-gh asks `gh auth status`, github-app looks for the app's identity and key in the environment,
 // claude-plan `which`es claude.
-import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { UsageSource } from '../../src/domain/ports.ts';
 import { BUILTIN_PLUGINS } from '../../src/plugins/builtin.ts';
 import { createPluginHost, type PluginHost } from '../../src/plugins/index.ts';
 import type { DetectionKit, PluginDefinition } from '../../src/plugins/sdk.ts';
+import { PLUGINS } from '../../src/plugins/plugins-file.ts';
+import { useTempDocuments } from '../support/documents.ts';
+import { KEYS } from '../support/github-app.ts';
 import { fakeKit, fixedClock, useTempDirs } from './support.ts';
 
 const temp = useTempDirs();
+const docs = useTempDocuments();
 let host: PluginHost | undefined;
 afterEach(() => { host?.stop(); host = undefined; });
 
@@ -29,10 +32,10 @@ const fixedUsage: PluginDefinition<'usage-source'> = {
 
 function start(o: { file?: string; kit?: DetectionKit; executors?: () => string[] } = {}) {
   const dir = temp();
-  const pluginsFile = join(dir, 'plugins.yaml');
-  if (o.file !== undefined) writeFileSync(pluginsFile, o.file, { mode: 0o600 });
+  const documents = docs();
+  if (o.file !== undefined) documents.set(PLUGINS, o.file);
   host = createPluginHost({
-    pluginDir: join(dir, 'plugins'), pluginsFile, dataDir: dir, clock: fixedClock,
+    pluginDir: join(dir, 'plugins'), documents, dataDir: dir, clock: fixedClock,
     logger: { info() {}, warn() {} }, routerMode: () => 'shadow', kit: o.kit ?? fakeKit({ exists: async () => false }),
     builtins: [...BUILTIN_PLUGINS, fixedUsage],
     defaultAnswerer: null,
@@ -41,14 +44,14 @@ function start(o: { file?: string; kit?: DetectionKit; executors?: () => string[
     ...(o.executors ? { machineContext: { executors: o.executors } } : {}),
     intervalMs: 30,
   });
-  return { host, pluginsFile, dir };
+  return { host, documents, dir };
 }
 
 const catalogue = (h: PluginHost, id: string) => h.report().plugins.find((p) => p.id === id);
 
 describe('detection of the job-source plugins', () => {
   const ghFile = 'version: 1\njobSources: [ { name: github, plugin: github-gh, options: { authors: [owner] } } ]\n';
-  const appFile = 'version: 1\njobSources: [ { name: github-app, plugin: github-app, options: { authors: [owner] } } ]\n';
+  const appFile = 'version: 1\njobSources: [ { name: github-app, plugin: github-app, options: { appId: 4242, slug: hopper-test, authors: [owner] } } ]\n';
   const detection = (h: PluginHost) => h.report().jobSources.instances[0]!.detection;
 
   it('github-gh: needs-setup with the command when `gh auth status` fails; unavailable without gh; available when logged in', async () => {
@@ -69,15 +72,15 @@ describe('detection of the job-source plugins', () => {
     expect(detection(c)).toMatchObject({ status: 'available' });
   });
 
-  it('github-app: needs-setup with the create-github-app command while the app file is missing; available once it exists', async () => {
-    const { host: a } = start({ file: appFile, kit: fakeKit({ exists: async () => false }) });
+  it('github-app: needs-setup with the create-github-app command while the key variable is unset; available once it is set', async () => {
+    const { host: a } = start({ file: appFile, kit: fakeKit() });
     await a.start();
     expect(detection(a)).toEqual({
-      status: 'needs-setup', reason: expect.stringMatching(/no GitHub App configured/),
-      command: 'bash ~/.local/lib/job-hopper/scripts/create-github-app.sh',
+      status: 'needs-setup', reason: expect.stringMatching(/GITHUB_APP_PRIVATE_KEY not set/),
+      command: expect.stringContaining('scripts/create-github-app.sh'),
     });
     a.stop();
-    const { host: b } = start({ file: appFile, kit: fakeKit({ exists: async () => true }) });
+    const { host: b } = start({ file: appFile, kit: fakeKit({ env: (n) => (n === 'GITHUB_APP_PRIVATE_KEY' ? KEYS.privateKey : undefined) }) });
     await b.start();
     expect(detection(b)).toMatchObject({ status: 'available' });
   });
@@ -95,7 +98,7 @@ describe('job-source instances', () => {
       'version: 1',
       'jobSources:',
       '  - { name: github, plugin: github-gh, options: { enabled: true, repos: [o/r], authors: [owner] } }',
-      '  - { name: github-app, plugin: github-app, options: { appFile: /nonexistent/jh/github-app.json, authors: [owner] } }',
+      '  - { name: github-app, plugin: github-app, options: { authors: [owner] } }',
     ].join('\n') });
     await host.start();
     const built = host.jobSources();
@@ -142,20 +145,20 @@ describe('job-source instances', () => {
     expect(host.report().config.error).toMatch(/jobSources.*twice|twice/);
   });
 
-  it('no jobSources section: the built-in instances — github disabled, github-app on the app file beside plugins.yaml; neither runs until authors are set', async () => {
-    const { host, dir } = start({ file: 'version: 1\n' });
+  it('no jobSources section: the built-in instances — github disabled, github-app with no identity or key; neither runs until authors are set', async () => {
+    const { host } = start({ file: 'version: 1\n' });
     await host.start();
     expect(host.report().jobSources.instances.map((i) => i.instance)).toEqual([
-      { name: 'github', plugin: 'github-gh', options: { enabled: false, bin: 'gh', appFile: join(dir, 'github-app.json') } },
-      { name: 'github-app', plugin: 'github-app', options: { appFile: join(dir, 'github-app.json') } },
+      { name: 'github', plugin: 'github-gh', options: { enabled: false } },
+      { name: 'github-app', plugin: 'github-app' },
     ]);
     for (const i of host.report().jobSources.instances) expect(i).toMatchObject({ active: null, reason: expect.stringMatching(/authors/) });
   });
 
   it('a restart role: an edit shows changed — restart pending; the built sources stay', async () => {
-    const { host, pluginsFile } = start({ file: 'version: 1\njobSources: []\n' });
+    const { host, documents } = start({ file: 'version: 1\njobSources: []\n' });
     await host.start();
-    writeFileSync(pluginsFile, 'version: 1\njobSources: [ { name: github, plugin: github-gh } ]\n', { mode: 0o600 });
+    documents.set(PLUGINS, 'version: 1\njobSources: [ { name: github, plugin: github-gh } ]\n');
     await host.reload();
     expect(host.report().jobSources.pending).toEqual({ status: 'changed — restart pending', instances: [{ name: 'github', plugin: 'github-gh', options: {} }] });
     expect(host.jobSources()).toEqual([]);
@@ -186,10 +189,10 @@ describe('the machine-source role', () => {
   });
 
   it('a lanes edit applies live (issue #18): same instance, new options, no restart pending', async () => {
-    const { host, pluginsFile } = start({ file: 'version: 1\nmachines: { name: local, plugin: local, options: { lanes: 2 } }\n' });
+    const { host, documents } = start({ file: 'version: 1\nmachines: { name: local, plugin: local, options: { lanes: 2 } }\n' });
     await host.start();
     const machines = host.machines();
-    writeFileSync(pluginsFile, 'version: 1\nmachines: { name: local, plugin: local, options: { lanes: 3 } }\n', { mode: 0o600 });
+    documents.set(PLUGINS, 'version: 1\nmachines: { name: local, plugin: local, options: { lanes: 3 } }\n');
     await host.reload();
     expect(host.report().machines.pending).toBeUndefined();
     expect(host.report().machines.instances[0]!.instance.options).toEqual({ lanes: 3 });
@@ -197,9 +200,9 @@ describe('the machine-source role', () => {
   });
 
   it('another instance name or plugin still waits for a restart: lanes are stored under the machine id', async () => {
-    const { host, pluginsFile } = start({ file: 'version: 1\nmachines: { name: local, plugin: local, options: { lanes: 2 } }\n' });
+    const { host, documents } = start({ file: 'version: 1\nmachines: { name: local, plugin: local, options: { lanes: 2 } }\n' });
     await host.start();
-    writeFileSync(pluginsFile, 'version: 1\nmachines: { name: server, plugin: local, options: { lanes: 3 } }\n', { mode: 0o600 });
+    documents.set(PLUGINS, 'version: 1\nmachines: { name: server, plugin: local, options: { lanes: 3 } }\n');
     await host.reload();
     expect(host.report().machines.pending).toEqual({ status: 'changed — restart pending', instances: [{ name: 'server', plugin: 'local', options: { lanes: 3 } }] });
     expect((await host.machines().list())[0]).toMatchObject({ id: 'local', maxLanes: 2 });
@@ -208,21 +211,21 @@ describe('the machine-source role', () => {
 
 describe('attached machines in the host (issue #18)', () => {
   it('attachedMachines() follows plugins.yaml: added, changed and removed without a restart', async () => {
-    const { host, pluginsFile } = start({ file: 'version: 1\n' });
+    const { host, documents } = start({ file: 'version: 1\n' });
     await host.start();
     expect(host.attachedMachines()).toEqual([]);
-    writeFileSync(pluginsFile, 'version: 1\nattachedMachines:\n  - { name: laptop, ssh: laptop, lanes: 2, herdrBin: /h/herdr }\n', { mode: 0o600 });
+    documents.set(PLUGINS, 'version: 1\nattachedMachines:\n  - { name: laptop, ssh: laptop, lanes: 2, herdrBin: /h/herdr }\n');
     await host.reload();
     expect(host.attachedMachines()).toEqual([{ name: 'laptop', ssh: 'laptop', lanes: 2, herdrBin: '/h/herdr', session: 'job-hopper', executors: ['herdr-claude'] }]);
-    writeFileSync(pluginsFile, 'version: 1\nattachedMachines: []\n', { mode: 0o600 });
+    documents.set(PLUGINS, 'version: 1\nattachedMachines: []\n');
     await host.reload();
     expect(host.attachedMachines()).toEqual([]);
   });
 
   it('an invalid plugins.yaml keeps the last good attached machines', async () => {
-    const { host, pluginsFile } = start({ file: 'version: 1\nattachedMachines:\n  - { name: laptop, ssh: laptop, lanes: 2 }\n' });
+    const { host, documents } = start({ file: 'version: 1\nattachedMachines:\n  - { name: laptop, ssh: laptop, lanes: 2 }\n' });
     await host.start();
-    writeFileSync(pluginsFile, 'version: 1\nattachedMachines:\n  - { name: laptop, ssh: -oProxy, lanes: 2 }\n', { mode: 0o600 });
+    documents.set(PLUGINS, 'version: 1\nattachedMachines:\n  - { name: laptop, ssh: -oProxy, lanes: 2 }\n');
     await host.reload();
     expect(host.attachedMachines().map((m) => m.ssh)).toEqual(['laptop']);
   });

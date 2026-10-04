@@ -2,8 +2,8 @@
 // through as GET /api/plugins reports it, and the rules-file editor's draft — kept in the browser
 // so unsaved edits survive a refresh, sent back with the version it was based on.
 import { describe, expect, it } from 'vitest';
-import type { PluginsReport, RulesFileView } from '../../src/domain/types.ts';
-import { gateChain, readDraft, rulesEditor, RULES_FILE_MAX_BYTES } from '../../ui/src/model/question-gates.ts';
+import type { PluginsReport, RulesView } from '../../src/domain/types.ts';
+import { gateChain, readDraft, rulesEditor, RULES_MAX_BYTES } from '../../ui/src/model/question-gates.ts';
 
 const base = {
   answerer: { instance: { name: 'opus', plugin: 'claude-cli', options: { model: 'opus' } }, detection: { status: 'available' }, active: 'claude-cli', fallback: false },
@@ -32,34 +32,36 @@ describe('gateChain', () => {
 });
 
 describe('the rules-file draft', () => {
-  const server: RulesFileView = { path: '/h/.config/job-hopper/rules.md', text: 'one\n', version: 'v1', missing: false };
+  const server: RulesView = { document: 'rules.md', text: 'one\n', version: 'v1', missing: false };
 
   it('no draft: the file as read, nothing to save', () => {
     expect(rulesEditor(server, undefined)).toEqual({ text: 'one\n', base: 'v1', dirty: false, stale: false, bytes: 4, tooLarge: false });
   });
 
   it('a draft over the version read is dirty; sent with that version', () => {
-    expect(rulesEditor(server, { path: server.path, text: 'two\n', base: 'v1' })).toMatchObject({ text: 'two\n', base: 'v1', dirty: true, stale: false });
+    expect(rulesEditor(server, { document: server.document, text: 'two\n', base: 'v1' })).toMatchObject({ text: 'two\n', base: 'v1', dirty: true, stale: false });
   });
 
   it('a draft over an older version is stale: kept, and sent with its own version (the daemon answers 409)', () => {
-    expect(rulesEditor(server, { path: server.path, text: 'two\n', base: 'v0' })).toMatchObject({ text: 'two\n', base: 'v0', dirty: true, stale: true });
+    expect(rulesEditor(server, { document: server.document, text: 'two\n', base: 'v0' })).toMatchObject({ text: 'two\n', base: 'v0', dirty: true, stale: true });
   });
 
-  it('a draft for another path is ignored', () => {
-    expect(rulesEditor(server, { path: '/elsewhere.md', text: 'x', base: 'v1' })).toMatchObject({ text: 'one\n', dirty: false });
+  it('a draft for another document is ignored', () => {
+    expect(rulesEditor(server, { document: 'elsewhere.md', text: 'x', base: 'v1' })).toMatchObject({ text: 'one\n', dirty: false });
   });
 
   it('counts UTF-8 bytes against the 64 KiB cap', () => {
-    expect(RULES_FILE_MAX_BYTES).toBe(64 * 1024);
-    const big = rulesEditor(server, { path: server.path, text: 'é'.repeat(32 * 1024 + 1), base: 'v1' });
+    expect(RULES_MAX_BYTES).toBe(64 * 1024);
+    const big = rulesEditor(server, { document: server.document, text: 'é'.repeat(32 * 1024 + 1), base: 'v1' });
     expect(big).toMatchObject({ bytes: 64 * 1024 + 2, tooLarge: true });
   });
 
   it('reads a stored draft defensively', () => {
     expect(readDraft(null)).toBeUndefined();
     expect(readDraft('not json')).toBeUndefined();
-    expect(readDraft(JSON.stringify({ path: 'p', text: 1, base: 'v' }))).toBeUndefined();
-    expect(readDraft(JSON.stringify({ path: 'p', text: 't', base: 'v' }))).toEqual({ path: 'p', text: 't', base: 'v' });
+    expect(readDraft(JSON.stringify({ document: 'p', text: 1, base: 'v' }))).toBeUndefined();
+    expect(readDraft(JSON.stringify({ document: 'p', text: 't', base: 'v' }))).toEqual({ document: 'p', text: 't', base: 'v' });
+    // A draft kept before the rules moved into the database names a path: not a draft of rules.md.
+    expect(readDraft(JSON.stringify({ path: '/h/rules.md', text: 't', base: 'v' }))).toBeUndefined();
   });
 });

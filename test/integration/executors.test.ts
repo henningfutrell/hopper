@@ -7,7 +7,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Job } from '../../src/domain/types.ts';
-import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
+import { startTestApp, tempDbPath, writePluginsYaml, type TestApp } from '../support/app.ts';
 import { waitFor } from '../support/wait.ts';
 
 const apps: TestApp[] = [];
@@ -30,8 +30,6 @@ async function boot(dbPath: string): Promise<TestApp> {
   apps.push(a);
   return a;
 }
-
-const writePluginsYaml = (dbPath: string, text: string) => writeFileSync(join(dirname(dbPath), 'plugins.yaml'), text, { mode: 0o600 });
 
 /** A custom executor plugin that finishes every job at once, echoing its prompt and the machine it ran on. */
 function installEchoExecutor(dbPath: string): void {
@@ -127,9 +125,9 @@ describe('GET /api/plugins: the executor role', () => {
     expect(marked('test')).toEqual([]);
     expect(marked('claude-cli')).toEqual(['bin']);
     expect(marked('claude-cli-assessor')).toEqual(['bin']);
-    expect(marked('jev-router')).toEqual(['claudeBin', 'jevSrc', 'python', 'typesafeKeyFile']);
-    expect(marked('github-gh')).toEqual(['appFile', 'bin', 'defaultCwd', 'repoPaths']);
-    expect(marked('github-app')).toEqual(['apiUrl', 'appFile', 'defaultCwd', 'repoPaths']);
+    expect(marked('jev-router')).toEqual(['claudeBin', 'jevSrc', 'python']);
+    expect(marked('github-gh')).toEqual(['appKeyEnv', 'bin', 'defaultCwd', 'repoPaths']);
+    expect(marked('github-app')).toEqual(['apiUrl', 'appId', 'defaultCwd', 'privateKeyEnv', 'repoPaths', 'slug']);
     expect(marked('local')).toEqual([]);
   });
 

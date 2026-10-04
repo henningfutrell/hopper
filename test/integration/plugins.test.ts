@@ -1,12 +1,11 @@
 // Phase 5 slice 1 through the real composition root: the plugin host, plugins.yaml, custom
 // plugins from the plugin dir, GET /api/plugins, the router fallback in /api/health, and a store
 // written before plugins existed.
-import { copyFileSync, cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { copyFileSync, cpSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Job } from '../../src/domain/types.ts';
-import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
+import { startTestApp, tempDbPath, writePluginsYaml, type TestApp } from '../support/app.ts';
 import { testPostgres } from '../support/database.ts';
 import { waitFor } from '../support/wait.ts';
 import { ALWAYS_PROCEED_DIR } from '../plugins/support.ts';
@@ -20,22 +19,18 @@ afterEach(async () => {
   cleanup?.();
 });
 
-async function start(o: { before?: (dataDir: string) => void; plugins?: Record<string, unknown>; realRouter?: boolean } = {}): Promise<TestApp> {
+async function start(o: { before?: (dbPath: string) => void; plugins?: Record<string, unknown>; realRouter?: boolean } = {}): Promise<TestApp> {
   const db = tempDbPath();
   cleanup = db.cleanup;
-  o.before?.(dirname(db.dbPath));
+  o.before?.(db.dbPath);
   t = await startTestApp({ dbPath: db.dbPath, realRouter: o.realRouter ?? true, ...(o.plugins ? { plugins: o.plugins } : {}) });
   return t;
 }
 
-const installAlwaysProceed = (dataDir: string) => cpSync(ALWAYS_PROCEED_DIR, join(dataDir, 'plugins', 'always-proceed'), { recursive: true });
-const writePluginsYaml = (dataDir: string, text: string) => writeFileSync(join(dataDir, 'plugins.yaml'), text, { mode: 0o600 });
+const installAlwaysProceed = (dbPath: string) => cpSync(ALWAYS_PROCEED_DIR, join(dirname(dbPath), 'plugins', 'always-proceed'), { recursive: true });
 
-// The real detection kit runs here: these tests assume no Jev checkout at
-// ~/workbench/jev-src/grok-bot-jev (jev-router's default jevSrc); with one, jev-router is chosen.
-const JEV_PRESENT = existsSync(join(homedir(), 'workbench/jev-src/grok-bot-jev/src/router.py'));
-
-describe.skipIf(JEV_PRESENT)('router chosen from what is detected, no Jev checkout', () => {
+// jevSrc has no default: without it jev-router needs setup and is never chosen, whatever is on this machine.
+describe('router chosen from what is detected, no Jev checkout', () => {
   it('no router in plugins.yaml → pass-through, chosen, not a fallback; /api/health and /api/router say so', async () => {
     const a = await start();
     const health = (await a.api('GET', '/api/health')).body;
@@ -54,7 +49,7 @@ describe.skipIf(JEV_PRESENT)('router chosen from what is detected, no Jev checko
     const a = await start({ before: installAlwaysProceed });
     const body = (await a.api('GET', '/api/plugins')).body;
     expect(body.roles).toEqual(['router', 'queue-sorter', 'answerer', 'assessor', 'executor', 'job-source', 'machine-source', 'usage-source', 'notifier']);
-    expect(body.config).toMatchObject({ source: 'file', path: join(a.dataDir, 'plugins.yaml') });
+    expect(body.config).toMatchObject({ source: 'document', document: 'plugins.yaml' });
     expect(body.router).toMatchObject({
       instance: { name: 'always-proceed', plugin: 'always-proceed' }, selection: 'detected',
       detection: { status: 'available' }, active: 'always-proceed', fallback: false,
@@ -66,7 +61,7 @@ describe.skipIf(JEV_PRESENT)('router chosen from what is detected, no Jev checko
       ['test', true],
     ]);
     const jev = body.plugins.find((p: { id: string }) => p.id === 'jev-router');
-    expect(jev).toMatchObject({ role: 'router', describe: expect.any(String), detection: { status: 'unavailable' }, options: { type: 'object', properties: { jevSrc: {}, python: {} } } });
+    expect(jev).toMatchObject({ role: 'router', describe: expect.any(String), detection: { status: 'needs-setup' }, options: { type: 'object', properties: { jevSrc: {}, python: {} } } });
     expect(body.errors).toEqual([]);
   });
 
@@ -86,7 +81,7 @@ describe('plugins.yaml and a custom plugin', () => {
       before: (d) => { installAlwaysProceed(d); writePluginsYaml(d, 'version: 1\nrouter: { name: mine, plugin: always-proceed, options: { note: from-yaml } }\n'); },
     });
     expect((await a.api('GET', '/api/health')).body).toMatchObject({ router: 'mine', fallback: false });
-    expect((await a.api('GET', '/api/plugins')).body.config).toMatchObject({ source: 'file' });
+    expect((await a.api('GET', '/api/plugins')).body.config).toMatchObject({ source: 'document' });
     const job = await a.pull({ op: 'echo' });
     const advised = await waitFor(async () => (await a.job(job.id)).advice, { what: 'advice' });
     expect(advised).toMatchObject({ action: 'proceed_full', reason: 'from-yaml', source: 'always-proceed' });
@@ -99,7 +94,7 @@ describe('plugins.yaml and a custom plugin', () => {
     const first = await a.pull({ op: 'echo' });
     expect(await waitFor(async () => (await a.job(first.id)).advice, { what: 'advice' })).toMatchObject({ source: 'pass-through' });
 
-    writePluginsYaml(a.dataDir, 'version: 1\nrouter: { name: mine, plugin: always-proceed, options: { note: swapped } }\n');
+    writePluginsYaml(a.dbPath, 'version: 1\nrouter: { name: mine, plugin: always-proceed, options: { note: swapped } }\n');
     await waitFor(async () => (await a.api('GET', '/api/router')).body.router === 'mine', { what: 'the swapped router' });
     const second = await a.pull({ op: 'echo' });
     expect(await waitFor(async () => (await a.job(second.id)).advice, { what: 'advice' })).toMatchObject({ source: 'always-proceed', reason: 'swapped' });
