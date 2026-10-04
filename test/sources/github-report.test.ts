@@ -45,7 +45,7 @@ describe('GitHub source report', () => {
     expect(state).toEqual(claimed);
   });
 
-  it('finished on an issue already closed (by the job's own pull request): labels settle, the close is harmless', async () => {
+  it('finished on an issue already closed (by the job’s own pull request): labels settle, the close is harmless', async () => {
     const { gh, source } = withIssue();
     gh.closeByPullRequest(REPO, 1, { createdAt: '2026-10-02T10:30:00.000Z', mergedAt: '2026-10-02T11:00:00.000Z' });
     await source.report({ kind: 'finished', job: jobForIssue(1, { status: 'finished', result: 'ok' }) });
