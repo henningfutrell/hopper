@@ -485,8 +485,10 @@ pipeline off the decision path (phase 5 slice 2 replaced the opus → fable → 
 contract in "Question pipeline" under Phase 5):
 
 1. **answer** — `question.escalated {target: <answerer>}`; the answerer drafts
-   `{ answer, confident, reason }`. No answerer, an error, a timeout, a malformed draft or
-   `confident` not `true` → human; the assessor is not called.
+   `{ answer, confident, reason }`. No answerer, an error, a timeout or a malformed draft →
+   human (there is no draft to assess). Every draft, **confident or not**, goes to the
+   assessor (owner decision, 2026-10-04: Opus, then Fable, then the owner, on every question); the
+   assessor is told the answerer's confidence.
 2. **assess** — `question.escalated {target: <assessor>, reason: "drafted by <answerer>"}`; the
    assessor returns `{ escalate, reason }`. Fails closed: anything but a schema-valid
    `escalate: false` → human.
@@ -1516,10 +1518,10 @@ rules, given to answerer and assessor), and the human as the last question stop.
 
 ### Question pipeline
 
-1. The answerer (if configured) drafts: `{ answer, confident, reason }`. Not confident, error,
-   or no answerer → straight to the human.
+1. The answerer (if configured) drafts: `{ answer, confident, reason }`. Error or no
+   answerer → straight to the human. A draft, confident or not, goes to the assessor.
 2. The assessor gets the full request (question, job prompt, rules file, previous attempts)
-   plus the draft and the answerer's reason, and returns `{ escalate, reason }`.
+   plus the draft, the answerer's reason and its confidence, and returns `{ escalate, reason }`.
    **Fails closed:** timeout, error, parse failure or a missing field → escalate. Only an
    explicit, schema-valid `escalate: false` accepts. The question text comes from a job that
    reads issue bodies and runs with `--dangerously-skip-permissions`; it may try to talk the

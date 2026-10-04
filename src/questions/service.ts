@@ -226,11 +226,9 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
         store.questions.addAttempt(id, { ...base, error: draft.error, reason: `error${rulesNote}` });
         return void toHuman(q, `answerer ${answerer.name} failed: ${draft.error}`);
       }
+      // Every draft goes to the assessor, confident or not (owner decision, 2026-10-04: Opus, then
+      // Fable, then the owner on every question); the assessor sees the answerer's confidence.
       const { answer, confident, reason: why } = draft.value;
-      if (!confident) {
-        store.questions.addAttempt(id, { ...base, answer, confident, reason: `${why}${rulesNote}` });
-        return void toHuman(q, `answerer ${answerer.name} not confident: ${why}`);
-      }
       store.questions.addAttempt(id, { ...base, answer, confident, reason: `${why}${rulesNote}`, outcome: 'drafted' });
       const next = o.assessor();
       enter(q, next.name, `drafted by ${answerer.name}`);
