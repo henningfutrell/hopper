@@ -177,6 +177,13 @@ export interface UsageReading {
   unit: string;
   /** ISO time the window resets, if known. */
   resetsAt?: string;
+  /** The usage window it measures, as the source names it (`session`, `week`, `week (Fable)`); absent = the source's one budget. */
+  window?: string;
+  /**
+   * Shown, never throttling: the budget limits one model only, not every job (glossary
+   * "Informational reading"). The decider's step 1 skips it.
+   */
+  informational?: true;
   at: string;
 }
 

@@ -57,7 +57,8 @@ same Decision. Algorithm, in order:
 
 1. **Usage fraction per machine.** `usedFrac(m)` = max of `used/limit` over readings whose
    `machineId` is `m` or absent. Readings with `limit <= 0` are ignored and noted in
-   `reasons`. No readings → `0`.
+   `reasons`. **Informational readings** (`informational: true` — a window that limits one
+   model only, issue #18) are skipped. No readings → `0`.
 2. **Lane cap per machine** (`policy.softLimit`, `policy.hardLimit`):
    - offline → `0`
    - `usedFrac < soft` → `maxLanes`
