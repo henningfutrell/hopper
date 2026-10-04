@@ -1,16 +1,17 @@
 // The plugin host (design.md "Phase 5"): built-in + custom plugins, plugins.yaml (router, answerer,
-// assessor sections) watched by mtime, detection of every plugin, and the live roles: the router,
-// the answerer and the assessor, each swapped between calls.
+// assessor sections) watched by mtime, detection of every plugin, and the live roles: the router
+// (from plugins.yaml, else chosen from what is detected), the answerer and the assessor, each
+// swapped between calls.
 import { statSync } from 'node:fs';
 import type { Answerer, Assessor, Clock } from '../domain/ports.ts';
-import { ROLES, type Detection, type InstanceSpec, type PluginsReport, type RouterMode, type RouterStatus } from '../domain/types.ts';
+import { ROLES, type Detection, type InstanceSpec, type PluginsReport, type RouterMode, type RouterSelection, type RouterStatus } from '../domain/types.ts';
 import { BUILTIN_PLUGINS } from './builtin.ts';
 import { createDetectionKit } from './detect.ts';
 import { loadCustomPlugins, type LoadedPlugin, type LoadResult } from './loader.ts';
 import { optionsJsonSchema, parseOptions } from './options.ts';
 import { loadPluginsFile } from './plugins-file.ts';
 import { answererStatus, assessorStatus, buildAnswerer, buildAssessor, type BuiltAnswerer, type BuiltAssessor } from './question-slots.ts';
-import { buildRouter, createLiveRouter, safeDetect, type LiveRouter, type SlotDeps } from './router-slot.ts';
+import { buildRouter, createLiveRouter, detectRouter, safeDetect, type BuiltRouter, type LiveRouter, type SlotDeps } from './router-slot.ts';
 import type { DetectionKit, PluginDefinition, PluginLogger, Router } from './sdk.ts';
 
 export type { PluginDefinition } from './sdk.ts';
@@ -18,8 +19,6 @@ export type { PluginDefinition } from './sdk.ts';
 export interface PluginHostOptions {
   pluginDir: string;
   pluginsFile: string;
-  /** The router instance when plugins.yaml names none (derived from the env). */
-  defaultRouter: InstanceSpec;
   /** The answerer instance when plugins.yaml has no `answerer` section; null = none. */
   defaultAnswerer: InstanceSpec | null;
   /** The assessor instance when plugins.yaml has no `assessor` section. */
@@ -40,7 +39,7 @@ export interface PluginHost {
   /** Load plugins, read plugins.yaml, build the router, detect every plugin, start the watch. */
   start(): Promise<void>;
   stop(): void;
-  /** Live: swaps between calls when plugins.yaml changes. Valid after start(). */
+  /** Live: swaps between calls when plugins.yaml changes. Valid after start(). With no router in plugins.yaml, the first router that can run here. */
   readonly router: Router;
   routerStatus(): RouterStatus;
   /** The answerer now, or undefined (none configured, or it cannot run). Valid after start(). */
@@ -60,6 +59,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
   let loaded: LoadResult = { plugins: [], errors: [], warnings: [] };
   let entries: Entry[] = [];
   let live: LiveRouter | undefined;
+  let selection: RouterSelection = 'detected';
   let answerer: BuiltAnswerer | undefined;
   let assessor: BuiltAssessor | undefined;
   let timer: NodeJS.Timeout | undefined;
@@ -84,7 +84,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
     const r = loadPluginsFile(o.pluginsFile);
     const file = 'error' in r || 'missing' in r ? undefined : r;
     let spec = {
-      router: file?.router ?? o.defaultRouter,
+      router: file?.router,
       answerer: file?.answerer !== undefined ? file.answerer : o.defaultAnswerer,
       assessor: file?.assessor ?? o.defaultAssessor,
     };
@@ -96,7 +96,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
       config.error = error;
       o.logger.warn(`job-hopper: ${error}`);
       if (live) return; // keep the last good instances
-      spec = { router: o.defaultRouter, answerer: o.defaultAnswerer, assessor: o.defaultAssessor };
+      spec = { router: undefined, answerer: o.defaultAnswerer, assessor: o.defaultAssessor };
     } else {
       delete config.error;
       config.loadedAt = o.clock.now().toISOString();
@@ -104,11 +104,17 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
     config.source = file && !error ? 'file' : 'env';
     config.warnings = 'warnings' in r ? r.warnings : [];
     const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
-    if (!live || !same(live.current().spec, spec.router)) {
-      const built = await buildRouter(spec.router, deps);
-      if (live) live.swap(built);
-      else live = createLiveRouter(built, o.clock);
-      o.logger.info(`job-hopper: router ${spec.router.name} (${built.plugin}${built.fallback ? ', fallback' : ''})`);
+    const next: RouterSelection = spec.router ? 'file' : 'detected';
+    const unchanged = (s: InstanceSpec) => live !== undefined && selection === next && same(live.current().spec, s);
+    if (!spec.router || !unchanged(spec.router)) {
+      // Detection is re-run on every reload, so a router installed since the last one is picked up.
+      const built: BuiltRouter = spec.router ? await buildRouter(spec.router, deps) : await detectRouter(entries.map((e) => e.definition), deps);
+      if (!unchanged(built.spec)) {
+        if (live) live.swap(built);
+        else live = createLiveRouter(built, o.clock);
+        selection = next;
+        o.logger.info(`job-hopper: router ${built.spec.name} (${built.plugin}${built.fallback ? ', fallback' : ''}; ${next})`);
+      }
     }
     if (!answerer || !same(answerer.spec, spec.answerer)) {
       answerer = await buildAnswerer(spec.answerer, deps);
@@ -163,7 +169,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
         roles: [...ROLES],
         config: { ...config, warnings: [...config.warnings] },
         router: {
-          instance: current.spec, detection: current.detection, active: current.plugin, fallback: status.fallback,
+          instance: current.spec, selection, detection: current.detection, active: current.plugin, fallback: status.fallback,
           ...(status.reason === undefined ? {} : { reason: status.reason }),
         },
         answerer: answerer ? answererStatus(answerer) : { instance: null, active: null, fallback: false },

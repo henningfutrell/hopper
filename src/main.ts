@@ -131,8 +131,6 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   const host = createPluginHost({
     pluginDir: config.pluginDir, pluginsFile: config.pluginsFile, dataDir, clock, routerMode,
     logger: { info: (l) => console.log(l), warn: (l) => console.warn(l) },
-    // Without a router in plugins.yaml: the jev-router the env described before plugins existed.
-    defaultRouter: { name: 'jev', plugin: 'jev-router', options: { jevSrc: config.jevSrc, python: config.python } },
     defaultAnswerer: questionDefaults(config).answerer,
     defaultAssessor: questionDefaults(config).assessor,
     intervalMs: seams.pluginsFileIntervalMs ?? PLUGINS_FILE_CHECK_MS,

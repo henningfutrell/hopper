@@ -216,7 +216,7 @@ Loopback only (`127.0.0.1`), no auth — see profile. JSON everywhere; errors ar
 | GET | `/api/events` | `?after=0&limit=200&types=job.queued,…` | `{ events: DomainEvent[] }` |
 | GET | `/api/events/stream` | `?after=<seq>` or `Last-Event-ID` | SSE (below) |
 | GET | `/api/router` | | `{ mode, router, plugin, fallback, reason? }` (phase 5; was `GET /api/jev`) |
-| GET | `/api/plugins` | | `PluginsReport` (phase 5): roles, config, router instance + detection + fallback, every plugin |
+| GET | `/api/plugins` | | `PluginsReport` (phase 5): roles, config, router instance + selection + detection + fallback, every plugin |
 | GET | `/api/usage` | | `{ readings: UsageReading[] }` |
 | PUT | `/api/usage/fake` | `{ used, limit, unit?, machineId? }` | `{ readings }` · 404 if no fake source |
 | POST | `/api/webhooks` | `{ url, events?: string[], secret?: string }` | 201 `WebhookSubscription` (secret shown once) |
@@ -347,9 +347,6 @@ The usage-change trigger is named `usage.changed`; it is a trigger, not an event
 | `JOB_HOPPER_DB` | `~/.local/share/job-hopper/job-hopper.db` |
 | `JOB_HOPPER_TICK_MS` | `2000` |
 | `JOB_HOPPER_JEV_MODE` | `shadow` (initial router mode only; the stored setting wins once set) |
-| `JOB_HOPPER_JEV_ADVISOR` | `router`, the only value (phase 5: `fake` is a test double; other routers come from `plugins.yaml`) |
-| `JOB_HOPPER_JEV_SRC` | `~/workbench/jev-src/grok-bot-jev` |
-| `JOB_HOPPER_PYTHON` | `python3` |
 | `JOB_HOPPER_LOCAL_LANES` | `4` |
 | `JOB_HOPPER_SOFT_LIMIT` / `HARD_LIMIT` | `0.7` / `0.95` |
 | `JOB_HOPPER_JEV_CHEAP_BOOST` | `10` |
@@ -1642,14 +1639,14 @@ stored old events are not rewritten (read raw by version; v1 schemas stay in doc
   contract) → fallback advice for that call. `fallback: true` in `/api/health` and
   `/api/router` while either holds, or while the router's own last advice was `source:
   fallback` (jev-router's shim failing); it clears on the next real advice.
-- **plugins.yaml in slice 1:** no file, or a file without `router` → the env-derived instance
+- **plugins.yaml in slice 1** (router part superseded by "Router selection"): no file, or a file without `router` → the env-derived instance
   `{ name: jev, plugin: jev-router, options: { jevSrc: JOB_HOPPER_JEV_SRC, python:
   JOB_HOPPER_PYTHON } }`. An invalid file → the last good router is kept (at start: the
   env-derived one) and the error is in `/api/plugins` `config.error` — the `webhooks.yaml`
   rule. Nothing is written; the daemon-side migration is slice 4. File readable by
   group/other → warning. Unknown top-level keys are refused; the later sections are accepted
   unread.
-- **`JOB_HOPPER_JEV_ADVISOR`** accepts only `router` (the installed unit sets it). `fake` is a
+- **`JOB_HOPPER_JEV_ADVISOR`** (removed by "Router selection") accepted only `router` (the installed unit sets it). `fake` is a
   test double at the `Router` seam (`AppSeams.router`), not a plugin and not configurable.
   `JOB_HOPPER_JEV_MODE` and `JOB_HOPPER_JEV_CHEAP_BOOST` keep their names until slice 4 removes
   part-choosing env; they feed `routerMode` and `routerCheapBoost`.
@@ -1666,6 +1663,31 @@ stored old events are not rewritten (read raw by version; v1 schemas stay in doc
 - **Custom plugin ids** match `^[a-z0-9][a-z0-9-]*$`; a second custom plugin with a taken id
   is refused like a built-in collision. A plugin module that throws on import is an error in
   `/api/plugins`, never a boot failure.
+
+### Router selection (issue #7, 2026-10-03)
+
+Owner direction: a router is wanted, configurable from what is on the system and swappable.
+The Fable advisor only assesses whether a question escalates.
+Fable is the **assessor** (`claude-cli-assessor`, model `fable`);
+it never routes. The router was `jev-router` only because the env named it.
+
+Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) and
+"`JOB_HOPPER_JEV_ADVISOR`":
+
+- **No router named in plugins.yaml** (no file, no `router` section, or an invalid file at
+  start) → the host chooses one from what is detected: the first router plugin in catalogue
+  order (built-ins in `BUILTIN_PLUGINS` order, then custom) that detects `available` with its
+  default options and starts; the instance is named after the plugin (`jev-router`). None →
+  `pass-through`, **chosen, not a fallback** (`fallback: false`, advice `source: pass-through`).
+  Detection re-runs on every plugins.yaml reload.
+- **Named in plugins.yaml** → that instance, exactly; when it cannot run, pass-through stands in
+  as a fallback, as before. Swapping is editing the `router` section (live, between calls).
+- `/api/plugins` `router.selection` is `file` or `detected`.
+- `JOB_HOPPER_JEV_SRC`, `JOB_HOPPER_PYTHON`, `JOB_HOPPER_JEV_ADVISOR` are removed (no
+  compatibility path; a set one is ignored). Jev elsewhere than `~/workbench/jev-src/grok-bot-jev`
+  → name `jev-router` with `jevSrc` in plugins.yaml. The installed unit no longer sets
+  `JOB_HOPPER_JEV_ADVISOR`.
+- Picking the router from the UI is slice 7 (`POST /ui/api/plugins` select), unchanged.
 
 ### Settled in slice 2 (2026-10-03)
 

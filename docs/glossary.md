@@ -29,7 +29,8 @@ synonyms. Rename here first, in the same commit as everything else.
 | **Detection** | A plugin's cheap check that it can run here: `available`, `unavailable` + reason, or `needs-setup` + the command to run. | health check |
 | **Plugin dir** | `~/.config/job-hopper/plugins` (`JOB_HOPPER_PLUGIN_DIR`): custom plugins, one directory each. | |
 | **Plugins file** | `~/.config/job-hopper/plugins.yaml` (`JOB_HOPPER_PLUGINS_FILE`): which instance fills which role. Re-read on change. | |
-| **Router** | The role that advises admission and order per job (`Router` port). Built-in plugins `jev-router` and `pass-through`. When the configured one cannot run, `pass-through` answers and its advice is `source: fallback`. | advisor, classifier |
+| **Router** | The role that advises admission and order per job (`Router` port). Built-in plugins `jev-router` and `pass-through`. When the one named in `plugins.yaml` cannot run, `pass-through` answers and its advice is `source: fallback`. Not the assessor: the router never sees a question. | advisor, classifier |
+| **Router selection** | How the router instance was chosen: `file` (named in `plugins.yaml`) or `detected` (none named: the first router plugin that can run here, built-ins first, then custom; `pass-through` when none can — chosen, not a fallback). | auto, default router |
 | **Advice** | A router's action + reason + details for one job; `source` names the plugin, or `fallback`. | classification, verdict |
 | **Router mode** | `shadow`: advice recorded, never applied. `active`: advice shapes admission and order. Decider state, in the store. | Jev mode |
 | **Jev** | grok-bot-jev's usage router; one router plugin (`jev-router`). | |

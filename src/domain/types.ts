@@ -417,4 +417,4 @@ export interface SourceStatus {
 // ---- Plugins: src/domain/plugins.ts (re-exported here, one vocabulary) ------------------
 
 export { ROLES } from './plugins.ts';
-export type { Detection, InstanceSpec, PluginsReport, QuestionRoleStatus, Role, RouterStatus } from './plugins.ts';
+export type { Detection, InstanceSpec, PluginsReport, QuestionRoleStatus, Role, RouterSelection, RouterStatus } from './plugins.ts';

@@ -11,9 +11,6 @@ export interface Config {
   tickMs: number;
   /** Router mode used only until the store has one. */
   routerMode: 'shadow' | 'active';
-  /** With `python`: the jev-router instance used when plugins.yaml names no router. */
-  jevSrc: string;
-  python: string;
   localLanes: number;
   softLimit: number;
   hardLimit: number;
@@ -86,11 +83,6 @@ const schema = z.object({
   JOB_HOPPER_DB: path('~/.local/share/job-hopper/job-hopper.db'),
   JOB_HOPPER_TICK_MS: int(1).default(2000),
   JOB_HOPPER_JEV_MODE: z.enum(['shadow', 'active']).default('shadow'),
-  // Slice 1 of phase 5: the router is chosen in plugins.yaml; without one, `router` (jev-router
-  // from JEV_SRC / PYTHON) is the only value. The fake router is a test double, never configured.
-  JOB_HOPPER_JEV_ADVISOR: z.literal('router', { error: 'must be router (choose another router in plugins.yaml)' }).default('router'),
-  JOB_HOPPER_JEV_SRC: path('~/workbench/jev-src/grok-bot-jev'),
-  JOB_HOPPER_PYTHON: z.string().min(1).default('python3'),
   JOB_HOPPER_LOCAL_LANES: int(0).default(4),
   JOB_HOPPER_SOFT_LIMIT: fraction().default(0.7),
   JOB_HOPPER_HARD_LIMIT: fraction().default(0.95),
@@ -147,8 +139,6 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     dbPath: e.JOB_HOPPER_DB,
     tickMs: e.JOB_HOPPER_TICK_MS,
     routerMode: e.JOB_HOPPER_JEV_MODE,
-    jevSrc: e.JOB_HOPPER_JEV_SRC,
-    python: e.JOB_HOPPER_PYTHON,
     localLanes: e.JOB_HOPPER_LOCAL_LANES,
     softLimit: e.JOB_HOPPER_SOFT_LIMIT,
     hardLimit: e.JOB_HOPPER_HARD_LIMIT,

@@ -1,6 +1,7 @@
 // Building a role's instance (resolve → options → detect → create; `instantiate`, shared by every
-// role), and the router role's one slot: fall back to pass-through when it cannot run, and answer
-// through a live Router whose instance can be swapped between calls (design.md "Failure").
+// role), and the router role's one slot: the router named in plugins.yaml (pass-through standing in
+// when it cannot run), else the first router that can run here; answered through a live Router
+// whose instance can be swapped between calls (design.md "Failure", "Router selection").
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Advice, Detection, InstanceSpec, RouterStatus } from '../domain/types.ts';
@@ -84,6 +85,23 @@ export async function buildRouter(spec: InstanceSpec, deps: SlotDeps): Promise<B
     },
   };
   return { spec, router, plugin: passThrough.id, detection: built.detection, fallback: why };
+}
+
+/**
+ * No router named in plugins.yaml: the first router plugin, in catalogue order, that detects
+ * available and starts with its default options. pass-through when none does — chosen, not a
+ * fallback.
+ */
+export async function detectRouter(catalogue: readonly PluginDefinition[], deps: SlotDeps): Promise<BuiltRouter> {
+  for (const def of catalogue) {
+    if (def.role !== 'router' || def.id === passThrough.id) continue;
+    const spec = { name: def.id, plugin: def.id };
+    const built = await instantiate('router', spec, deps);
+    if (built.ok) return { spec, router: built.instance, plugin: built.plugin, detection: built.detection };
+  }
+  const spec = { name: passThrough.id, plugin: passThrough.id };
+  const router = await passThrough.create(contextFor(deps, passThrough.id), {});
+  return { spec, router, plugin: passThrough.id, detection: { status: 'available' } };
 }
 
 export interface LiveRouter {

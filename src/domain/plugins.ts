@@ -17,6 +17,9 @@ export interface InstanceSpec {
   options?: Record<string, unknown>;
 }
 
+/** How the router instance was chosen: named in plugins.yaml, or the first router that can run here. */
+export type RouterSelection = 'file' | 'detected';
+
 /** The router as /api/health and /api/router report it. */
 export interface RouterStatus {
   /** The configured instance name (e.g. "jev"). */
@@ -45,7 +48,7 @@ export interface QuestionRoleStatus {
 export interface PluginsReport {
   roles: Role[];
   config: { path: string; source: 'file' | 'env'; loadedAt?: string; error?: string; warnings: string[] };
-  router: { instance: InstanceSpec; detection: Detection; active: string; fallback: boolean; reason?: string };
+  router: { instance: InstanceSpec; selection: RouterSelection; detection: Detection; active: string; fallback: boolean; reason?: string };
   answerer: QuestionRoleStatus;
   assessor: QuestionRoleStatus;
   plugins: {
