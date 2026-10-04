@@ -81,7 +81,7 @@ describe('claude-plan plugin', () => {
   let control: string;
   let scratch: string;
   let now: Date;
-  let sources: UsageSource[] = [];
+  const sources: UsageSource[] = [];
   const saved = process.env.FAKE_PLAN_DIR;
 
   beforeEach(() => {

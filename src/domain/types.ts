@@ -1,6 +1,7 @@
 // The job-hopper domain vocabulary. Every name here is defined in docs/glossary.md;
 // change the glossary in the same commit as any rename.
 import type { ExecutorUnavailable } from './plugins.ts';
+import type { UsageReading } from './usage.ts';
 
 export type JobId = string;
 export type MachineId = string;
@@ -165,26 +166,6 @@ export interface AttachedMachine {
   /** Its herdr session (never `default`) and herdr binary, as the remote login shell finds it. */
   session: string;
   herdrBin: string;
-}
-
-/** One usage budget reading. `used`/`limit` share a unit; `unit` names it. */
-export interface UsageReading {
-  source: string;
-  /** Machine the budget constrains; absent = applies to every machine. */
-  machineId?: MachineId;
-  used: number;
-  limit: number;
-  unit: string;
-  /** ISO time the window resets, if known. */
-  resetsAt?: string;
-  /** The usage window it measures, as the source names it (`session`, `week`, `week (Fable)`); absent = the source's one budget. */
-  window?: string;
-  /**
-   * Shown, never throttling: the budget limits one model only, not every job (glossary
-   * "Informational reading"). The decider's step 1 skips it.
-   */
-  informational?: true;
-  at: string;
 }
 
 /** Everything one Decision is made over. Recorded verbatim on the Decision. */
@@ -448,6 +429,7 @@ export interface SourceStatus {
 // ---- Plugins: src/domain/plugins.ts (re-exported here, one vocabulary) ------------------
 
 export { ROLES, SELECTABLE_ROLES } from './plugins.ts';
+export type { Account, MachineLaneEffect, PartAccount, UsageReading, UsageReport, UsageSourceReport, UsageSourceState } from './usage.ts';
 export type {
   ConfiguredInstance, Detection, ExecutorUnavailable, InstanceSpec, InstanceStatus, PluginsEdit, PluginsEditOutcome, PluginsReport, QuestionRoleStatus, RestartRole,
   RestartRoleStatus, Role, RouterSelection, RouterStatus, SelectableRole,
