@@ -4,7 +4,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Answerer, Assessor, Clock, Executor, JobSource, PluginsView, Router, SettableUsageSource, SourceRegistry, Store } from './domain/ports.ts';
+import type { Answerer, Assessor, Clock, Executor, JobSource, PluginsView, Restarter, Router, SettableUsageSource, SourceRegistry, Store, UpdateStager, Updater } from './domain/ports.ts';
 import type { AttachedMachine, Question, SourceStatus } from './domain/types.ts';
 import { isRerunnable } from './domain/types.ts';
 import { loadConfig, type Config } from './config.ts';
@@ -26,6 +26,7 @@ import { createQuestionService } from './questions/index.ts';
 import { logFailures } from './engine/failure-log.ts';
 import { createSourceSync, idleStatus, withFixedStatuses, type GitHubApi, type SourceSync } from './sources/index.ts';
 import { openStore } from './store/index.ts';
+import { createInstallScriptStager, createRestarter, createUpdater, restartBlockers } from './update/index.ts';
 import { createWebhookConfigWatcher, type WebhookConfigWatcher } from './webhooks/config.ts';
 import { createWebhooksEditor } from './webhooks/edit.ts';
 import { createWebhookDispatcher } from './webhooks/index.ts';
@@ -43,6 +44,7 @@ export interface App {
   engine: Engine;
   sources: SourceSync;
   webhookConfig: WebhookConfigWatcher;
+  updater: Updater;
   /** Close the server; stop the sync loop, question service, engine (≤ 5 s), dispatcher, watcher; close the store. */
   stop(): Promise<void>;
 }
@@ -79,12 +81,16 @@ export interface AppSeams {
   resolveHerdrBin?: (ssh: string) => Promise<string>;
   /** The built UI bundle; default UI_DIR. */
   uiDir?: string;
+  /** Self-update: the install dir (default APP_DIR), the build (default install.sh stage mode), the restart (default exit or respawn). */
+  update?: { appDir?: string; stager?: UpdateStager; restart?: Restarter };
 }
 
 const WEBHOOKS_FILE_CHECK_MS = 5000;
 const PLUGINS_FILE_CHECK_MS = 5000;
 const SEAM_SOURCE_POLL_MS = 1000;
 const UI_DIR = fileURLToPath(new URL('../ui/dist', import.meta.url));
+/** The install (or checkout) this process runs from: install.json and src/ live here. */
+const APP_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
 
 const VERSION = (JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }).version;
 
@@ -213,8 +219,18 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   const webhookConfig = createWebhookConfigWatcher({
     path: config.webhooksFile, store, clock, intervalMs: seams.webhookConfigIntervalMs ?? WEBHOOKS_FILE_CHECK_MS,
   });
+  // Self-update (issue #44): the restart reaches app.stop() through `restartApp`, set below.
+  let restartApp: Restarter = async () => {};
+  const appDir = seams.update?.appDir ?? APP_DIR;
+  const updater = createUpdater({
+    appDir, dataDir, store, clock, logger,
+    stager: seams.update?.stager ?? createInstallScriptStager({ logFile: join(dataDir, 'update', 'stage.log') }),
+    restart: seams.update?.restart ?? (() => restartApp()),
+    restartBlockers: () => restartBlockers(store.jobs.list({ status: ['running'] }), (name) => executors.get(name)),
+    checkMs: config.updateCheckMs,
+  });
   const server = createServer({
-    engine, store, dispatcher, questions, clock, version: VERSION, sources: registry, webhookConfig, plugins,
+    engine, store, dispatcher, questions, clock, version: VERSION, sources: registry, webhookConfig, plugins, updater,
     webhooksEditor: createWebhooksEditor({ path: config.webhooksFile, reload: webhookConfig.reload }),
     port: () => port, rulesFile: config.rulesFile, dataDir, sessionHours: config.uiSessionHours, lan: { names: config.lanNames, peers: config.lanPeers }, uiDir: seams.uiDir ?? UI_DIR,
   });
@@ -226,9 +242,10 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   port = (server.server.address() as { port: number }).port;
   await engine.start();
   sync.start();
+  updater.start();
 
   let stopped: Promise<void> | undefined;
-  return {
+  const app: App = {
     url: `http://127.0.0.1:${port}`,
     config,
     answerUrl,
@@ -238,8 +255,10 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     engine,
     sources: sync,
     webhookConfig,
+    updater,
     stop() {
       stopped ??= (async () => {
+        updater.stop();
         await server.close();
         await sync.stop();
         await questions.stop();
@@ -254,6 +273,8 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
       return stopped;
     },
   };
+  restartApp = createRestarter({ appDir, ...(config.restart ? { forced: config.restart } : {}), stop: () => app.stop(), logger });
+  return app;
 }
 
 function unavailableNote(plugins: PluginsView): string {

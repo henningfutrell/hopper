@@ -4,7 +4,8 @@ import { execFileSync } from 'node:child_process';
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { InstallInfo, UpdateStager } from '../../src/domain/ports.ts';
+import type { UpdateStager } from '../../src/domain/ports.ts';
+import type { InstallInfo } from '../../src/domain/types.ts';
 
 const ID = { GIT_AUTHOR_NAME: 'test', GIT_AUTHOR_EMAIL: 'test@example.invalid', GIT_COMMITTER_NAME: 'test', GIT_COMMITTER_EMAIL: 'test@example.invalid' };
 

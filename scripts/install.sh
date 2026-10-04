@@ -4,6 +4,11 @@
 # (rules.md, webhooks.yaml) are written only when absent. plugins.yaml is the daemon's: it writes
 # it on the first boot without one, from sources.yaml and the unit's environment of that boot (so
 # an upgrade restarts once on the new code under the OLD unit before installing the new one).
+#
+# Stage mode (JOB_HOPPER_INSTALL_STAGE=<dir>, used by the daemon's self-update, design.md
+# "Self-update"): build the install into <dir> and stop there — no service, unit or config is
+# touched. JOB_HOPPER_INSTALL_REPO / _BRANCH / _COMMIT then say what it was built from, since the
+# source is an unpacked tree with no .git.
 set -euo pipefail
 
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -18,6 +23,21 @@ PLUGIN_DIR="${JOB_HOPPER_PLUGIN_DIR:-$CONFIG_DIR/plugins}"
 
 step() { printf '==> %s\n' "$*"; }
 
+STAGE="${JOB_HOPPER_INSTALL_STAGE:-}"
+# install.json: what this install is built from, so the daemon can tell when a newer one exists.
+if [ -n "$STAGE" ]; then
+  REPO="${JOB_HOPPER_INSTALL_REPO:?stage mode needs JOB_HOPPER_INSTALL_REPO}"
+  BRANCH="${JOB_HOPPER_INSTALL_BRANCH:?stage mode needs JOB_HOPPER_INSTALL_BRANCH}"
+  COMMIT="${JOB_HOPPER_INSTALL_COMMIT:?stage mode needs JOB_HOPPER_INSTALL_COMMIT}"
+else
+  REPO="$(git -C "$APP_DIR" remote get-url origin 2>/dev/null || true)"
+  BRANCH="${JOB_HOPPER_UPDATE_BRANCH:-main}"
+  COMMIT="$(git -C "$APP_DIR" rev-parse HEAD 2>/dev/null || true)"
+  if [ -n "$COMMIT" ] && [ -n "$(git -C "$APP_DIR" status --porcelain --untracked-files=no 2>/dev/null)" ]; then
+    echo "warning: $APP_DIR has uncommitted changes; install.json names $COMMIT, which they are not part of" >&2
+  fi
+fi
+
 # The UI is the one built part (ui/ -> ui/dist). It is built in a throwaway copy so the checkout's
 # node_modules (possibly a symlink shared by worktrees) and ui/dist are never touched, and a clean
 # clone with no node_modules installs the same way.
@@ -30,16 +50,39 @@ npm ci --prefix "$BUILD" --no-audit --no-fund
 npm run build:ui --prefix "$BUILD"
 [ -s "$BUILD/ui/dist/index.html" ] || { echo "UI build wrote no $BUILD/ui/dist/index.html" >&2; exit 1; }
 
-step "copy src/, scripts/, ui/dist/, package.json, package-lock.json to $DEST (replacing old src/, scripts/ and ui/; node_modules kept for npm ci)"
-mkdir -p "$DEST/ui"
-rm -rf "$DEST/src" "$DEST/scripts" "$DEST/ui/dist"
-cp -r "$APP_DIR/src" "$DEST/src"
-cp -r "$BUILD/ui/dist" "$DEST/ui/dist"
-cp -r --preserve=mode "$APP_DIR/scripts" "$DEST/scripts"
-cp "$APP_DIR/package.json" "$APP_DIR/package-lock.json" "$DEST/"
+# The install: src/, scripts/, systemd/ (self-update installs changed units from here), ui/dist/,
+# package*.json, production node_modules, install.json.
+assemble() {
+  local target="$1"
+  step "copy src/, scripts/, systemd/, ui/dist/, package.json, package-lock.json to $target (replacing old ones; node_modules kept for npm ci)"
+  mkdir -p "$target/ui"
+  rm -rf "$target/src" "$target/scripts" "$target/systemd" "$target/ui/dist"
+  cp -r "$APP_DIR/src" "$target/src"
+  cp -r "$BUILD/ui/dist" "$target/ui/dist"
+  cp -r --preserve=mode "$APP_DIR/scripts" "$target/scripts"
+  cp -r "$APP_DIR/systemd" "$target/systemd"
+  cp "$APP_DIR/package.json" "$APP_DIR/package-lock.json" "$target/"
 
-step "npm ci --omit=dev --prefix $DEST"
-npm ci --omit=dev --prefix "$DEST"
+  step "npm ci --omit=dev --prefix $target"
+  npm ci --omit=dev --prefix "$target"
+
+  if [ -n "$REPO" ] && [ -n "$COMMIT" ]; then
+    step "write $target/install.json: $BRANCH at $COMMIT (self-update compares against it)"
+    node -e 'const [file, repo, branch, commit] = process.argv.slice(1);
+process.getBuiltinModule("node:fs").writeFileSync(file, JSON.stringify({ repo, branch, commit, installedAt: new Date().toISOString() }, null, 2) + "\n");' \
+      "$target/install.json" "$REPO" "$BRANCH" "$COMMIT"
+  else
+    rm -f "$target/install.json"
+    echo "warning: $APP_DIR is not a git clone with an origin: no install.json, so self-update is off for this install" >&2
+  fi
+}
+
+if [ -n "$STAGE" ]; then
+  assemble "$STAGE"
+  step "staged in $STAGE (stage mode: no service, unit or config touched)"
+  exit 0
+fi
+assemble "$DEST"
 
 if [ ! -e "$PLUGINS" ] && [ -e "$UNIT_DIR/job-hopper.service" ]; then
   step "no $PLUGINS yet: restart job-hopper once on the new code under the OLD unit, so the daemon folds sources.yaml and that unit's environment into it"

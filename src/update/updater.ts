@@ -1,0 +1,254 @@
+// The self-update loop (design.md "Self-update", issue #44): check the update repository for a
+// newer target on the channel, and apply one without losing work — build it beside the running
+// install, prove it loads, wait while a restart would lose a running job, swap it in, restart.
+// Restart recovery (src/engine/recovery.ts) reattaches running jobs and re-drives open questions;
+// the boot after reports `update.applied` from the pending file this loop leaves behind.
+import { execFile } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { promisify } from 'node:util';
+import type { Clock, Restarter, Store, UpdateStager, Updater } from '../domain/ports.ts';
+import type { InstallInfo, UpdateApply, UpdateChange, UpdateRelease, UpdateSettings, UpdateStatus } from '../domain/types.ts';
+import { UPDATE_CHANGES_CAP } from '../domain/types.ts';
+import { createGitMirror, type GitMirror } from './git.ts';
+import { nextDirOf, readInstallInfo, swapInstall } from './install.ts';
+
+const exec = promisify(execFile);
+const DEFAULTS: UpdateSettings = { channel: 'main', autoUpdate: false };
+const FIRST_CHECK_MS = 10_000;
+const LOAD_TIMEOUT_MS = 60_000;
+
+export interface UpdaterOptions {
+  /** The install this process runs from (holds install.json and src/). */
+  appDir: string;
+  /** Holds update/: the repository mirror, the unpacked source, the pending file. */
+  dataDir: string;
+  store: Pick<Store, 'settings' | 'events'>;
+  clock: Clock;
+  logger: { info(line: string): void; warn(line: string): void };
+  stager: UpdateStager;
+  restart: Restarter;
+  /** Running jobs a restart would lose (their executor can neither reattach nor re-run them); empty: safe. */
+  restartBlockers: () => string[];
+  /** How often to check on its own; 0: only when asked. */
+  checkMs: number;
+  /** How often to look again while waiting on restart blockers. */
+  waitMs?: number;
+  /** Default: a bare mirror under `<dataDir>/update/repo.git`. */
+  mirror?: GitMirror;
+}
+
+interface Checked {
+  state: 'unavailable' | 'current' | 'available' | 'error';
+  reason?: string;
+  installed?: InstallInfo;
+  target?: { commit: string; ref: string };
+  release?: UpdateRelease;
+  changes: UpdateChange[];
+  truncated: boolean;
+  checkedAt?: string;
+}
+
+interface Pending { from: string; to: string; ref: string }
+
+const short = (sha: string): string => sha.slice(0, 7);
+const firstLine = (s: string | undefined): string => (s ?? '').trim().split('\n').find((l) => l.trim()) ?? '';
+const messageOf = (e: unknown): string => {
+  const err = e as { stderr?: string; message?: string };
+  return firstLine(err.stderr) || firstLine(err.message) || String(e);
+};
+
+/** Imports the new build's composition root in a child process: a module that fails to load fails here, not after the swap. */
+async function proveLoads(dir: string): Promise<void> {
+  const main = pathToFileURL(join(dir, 'src', 'main.ts')).href;
+  try {
+    await exec(process.execPath, ['--input-type=module', '-e', `await import(${JSON.stringify(main)}); process.exit(0);`], { cwd: dir, timeout: LOAD_TIMEOUT_MS });
+  } catch (e) {
+    throw new Error(`the new build does not load: ${messageOf(e)}`, { cause: e });
+  }
+}
+
+export interface RunningUpdater extends Updater {
+  /** Report the result of an update applied before this boot, then check every `checkMs`. */
+  start(): void;
+  stop(): void;
+}
+
+export function createUpdater(o: UpdaterOptions): RunningUpdater {
+  const updateDir = join(o.dataDir, 'update');
+  const pendingFile = join(updateDir, 'pending.json');
+  const mirror = o.mirror ?? createGitMirror(join(updateDir, 'repo.git'));
+  const now = () => o.clock.now().toISOString();
+  // Until the first check: what install.json says, or why there is none.
+  const read = readInstallInfo(o.appDir);
+  let checked: Checked = read.ok
+    ? { state: 'current', installed: read.info, changes: [], truncated: false }
+    : { state: 'unavailable', reason: read.reason, changes: [], truncated: false };
+  let applying: UpdateApply | undefined;
+  let applyError: string | undefined;
+  let checking: Promise<UpdateStatus> | undefined;
+  let stopped = false;
+  const timers: NodeJS.Timeout[] = [];
+
+  const settings = (): UpdateSettings => ({ ...DEFAULTS, ...o.store.settings.getUpdateSettings() });
+  const append = (type: 'update.available' | 'update.started' | 'update.applied' | 'update.failed', data: Record<string, unknown>): void => {
+    if (!stopped) o.store.events.append({ type, data });
+  };
+  const lastAnnounced = (): unknown => o.store.events.recent(1, ['update.available'])[0]?.data.to;
+
+  function status(): UpdateStatus {
+    const base = { ...settings(), ...checked };
+    if (applying) return { ...base, state: 'applying', apply: applying };
+    if (applyError) return { ...base, state: 'error', reason: applyError };
+    return base;
+  }
+
+  async function compare(info: InstallInfo): Promise<Checked> {
+    const at = now();
+    try {
+      await mirror.fetch(info.repo);
+    } catch (e) {
+      return { ...checked, state: 'error', reason: `fetch from ${info.repo} failed: ${messageOf(e)}`, installed: info, checkedAt: at };
+    }
+    const newest = await mirror.newestRelease();
+    const release = newest && { ...newest, newer: !(await mirror.contains(info.commit, newest.commit)) };
+    const base = { installed: info, release, changes: [], truncated: false, checkedAt: at };
+    let target: Checked['target'];
+    if (settings().channel === 'release') {
+      if (!newest) return { ...base, state: 'current', reason: 'no release yet (no v<major>.<minor>.<patch> tag)' };
+      target = { commit: newest.commit, ref: newest.tag };
+    } else {
+      const head = await mirror.branchHead(info.branch);
+      if (!head) return { ...base, state: 'error', reason: `branch ${info.branch} not found in ${info.repo}` };
+      target = { commit: head, ref: info.branch };
+    }
+    if (target.commit === info.commit || (await mirror.contains(info.commit, target.commit))) return { ...base, state: 'current', target };
+    const changes = await mirror.log(info.commit, target.commit, UPDATE_CHANGES_CAP + 1);
+    return { ...base, state: 'available', target, changes: changes.slice(0, UPDATE_CHANGES_CAP), truncated: changes.length > UPDATE_CHANGES_CAP };
+  }
+
+  async function runCheck(): Promise<UpdateStatus> {
+    const read = readInstallInfo(o.appDir);
+    if (!read.ok) {
+      checked = { state: 'unavailable', reason: read.reason, changes: [], truncated: false, checkedAt: now() };
+      return status();
+    }
+    try {
+      checked = await compare(read.info);
+    } catch (e) {
+      checked = { ...checked, state: 'error', reason: messageOf(e), installed: read.info, checkedAt: now() };
+    }
+    if (checked.state === 'error') o.logger.warn(`job-hopper: update check failed: ${checked.reason}`);
+    applyError = undefined;
+    const { target, installed } = checked;
+    if (checked.state === 'available' && target && installed) {
+      if (lastAnnounced() !== target.commit) {
+        append('update.available', { from: installed.commit, to: target.commit, ref: target.ref, changes: checked.changes.length });
+        o.logger.info(`job-hopper: update available: ${target.ref} ${short(target.commit)} (${checked.changes.length} commit(s) not installed)`);
+      }
+      if (settings().autoUpdate) apply();
+    }
+    return status();
+  }
+
+  function check(): Promise<UpdateStatus> {
+    if (applying || stopped) return Promise.resolve(status());
+    checking ??= runCheck().finally(() => { checking = undefined; });
+    return checking;
+  }
+
+  async function build(info: InstallInfo): Promise<void> {
+    const source = join(updateDir, 'source');
+    const next = nextDirOf(o.appDir);
+    try {
+      await mirror.extract(info.commit, source);
+      rmSync(next, { recursive: true, force: true });
+      await o.stager.stage(source, next, info);
+      await proveLoads(next);
+    } catch (e) {
+      rmSync(next, { recursive: true, force: true });
+      throw e;
+    } finally {
+      rmSync(source, { recursive: true, force: true });
+    }
+  }
+
+  async function run(installed: InstallInfo, target: { commit: string; ref: string }): Promise<void> {
+    await build({ repo: installed.repo, branch: installed.branch, commit: target.commit, installedAt: now() });
+    for (;;) {
+      const blockers = o.restartBlockers();
+      if (blockers.length === 0) break;
+      if (stopped) throw new Error('stopped while waiting to restart');
+      applying = { ...applying!, phase: 'waiting', detail: `waiting for ${blockers.join(', ')}: a restart would lose ${blockers.length === 1 ? 'it' : 'them'}` };
+      await new Promise((r) => setTimeout(r, o.waitMs ?? 5000));
+    }
+    applying = { ...applying!, phase: 'restarting', detail: `restarting on ${target.ref} ${short(target.commit)}` };
+    swapInstall(o.appDir);
+    mkdirSync(updateDir, { recursive: true });
+    writeFileSync(pendingFile, JSON.stringify({ from: installed.commit, to: target.commit, ref: target.ref } satisfies Pending));
+    o.logger.info(`job-hopper: update ${short(installed.commit)} → ${short(target.commit)} in place; restarting`);
+    await o.restart();
+  }
+
+  function apply(): ReturnType<Updater['apply']> {
+    if (applying) return { ok: false, error: 'an update is already being applied' };
+    const { installed, target } = checked;
+    if (checked.state !== 'available' || !installed || !target) return { ok: false, error: 'no update available' };
+    applying = { phase: 'building', detail: `building ${target.ref} ${short(target.commit)} beside the running install`, target: target.commit, startedAt: now() };
+    applyError = undefined;
+    append('update.started', { from: installed.commit, to: target.commit, ref: target.ref });
+    o.logger.info(`job-hopper: applying update ${short(installed.commit)} → ${target.ref} ${short(target.commit)}`);
+    run(installed, target).catch((e: unknown) => {
+      applying = undefined;
+      applyError = e instanceof Error ? e.message : String(e);
+      o.logger.warn(`job-hopper: update to ${short(target.commit)} failed, install unchanged: ${applyError}`);
+      append('update.failed', { to: target.commit, error: applyError });
+    });
+    return { ok: true, status: status() };
+  }
+
+  /** The boot after an apply: is this install the commit it swapped in? */
+  function settlePending(): void {
+    if (!existsSync(pendingFile)) return;
+    let pending: Pending;
+    try {
+      pending = JSON.parse(readFileSync(pendingFile, 'utf8')) as Pending;
+    } finally {
+      rmSync(pendingFile, { force: true });
+    }
+    const read = readInstallInfo(o.appDir);
+    if (read.ok && read.info.commit === pending.to) {
+      append('update.applied', { from: pending.from, to: pending.to, ref: pending.ref });
+      o.logger.info(`job-hopper: running the applied update ${pending.ref} ${short(pending.to)}`);
+      return;
+    }
+    const on = read.ok ? short(read.info.commit) : 'an install without install.json';
+    append('update.failed', { to: pending.to, error: `the boot after the update runs ${on}, not ${short(pending.to)}` });
+  }
+
+  return {
+    status,
+    check,
+    apply,
+    settings(patch) {
+      const before = settings();
+      o.store.settings.setUpdateSettings(patch);
+      const after = settings();
+      if (after.channel !== before.channel) void check().catch(() => {});
+      else if (after.autoUpdate && !before.autoUpdate && checked.state === 'available') apply();
+      return status();
+    },
+    start() {
+      settlePending();
+      if (o.checkMs <= 0) return;
+      const tick = () => { void check().catch(() => {}); };
+      timers.push(setTimeout(tick, Math.min(FIRST_CHECK_MS, o.checkMs)), setInterval(tick, o.checkMs));
+      for (const t of timers) t.unref();
+    },
+    stop() {
+      stopped = true;
+      for (const t of timers.splice(0)) clearTimeout(t);
+    },
+  };
+}

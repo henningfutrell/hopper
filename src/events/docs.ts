@@ -28,6 +28,10 @@ const WHEN: Record<EventType, string> = {
   'question.closed': 'The owner closed an open question without answering (UI Close). The job resumes with `answer`, the fixed close text, typed in; any answerer or assessor call in flight is aborted.',
   'question.dismissed': 'The owner dismissed an open question (UI Dismiss): it needs no action any more. Nothing is typed into the job; a job still waiting on it is cancelled (`job.cancelled`, reason `question dismissed`); any answerer or assessor call in flight is aborted.',
   'question.expired': 'The human stage timed out and the job fails.',
+  'update.available': 'A check found a newer target on the update channel than the installed commit (once per target). `ref` is the branch or the release tag; `changes` counts its commits not installed (capped at 100).',
+  'update.started': 'Applying an update began (UI, or auto-update): the target is built beside the running install. Running jobs keep running.',
+  'update.applied': 'The first boot on an applied update: the install now runs `to`. Recovery reattached what was running.',
+  'update.failed': 'Applying an update failed (fetch, build, the new build not loading, or the swap) and the install is unchanged — or a boot after an update is not on the applied commit.',
 };
 
 type Prop = Record<string, unknown>;

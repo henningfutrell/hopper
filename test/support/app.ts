@@ -105,6 +105,7 @@ export async function startTestApp(o: {
     JOB_HOPPER_WEBHOOKS_FILE: join(dataDir, 'webhooks.yaml'),
     JOB_HOPPER_PLUGIN_DIR: join(dataDir, 'plugins'),
     JOB_HOPPER_PLUGINS_FILE: join(dataDir, 'plugins.yaml'),
+    JOB_HOPPER_UPDATE_CHECK_MS: '0',
     ...o.env,
   });
   const source = o.source ?? createManualSource();

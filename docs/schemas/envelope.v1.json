@@ -43,6 +43,10 @@
         "question.closed",
         "question.dismissed",
         "question.expired",
+        "update.available",
+        "update.started",
+        "update.applied",
+        "update.failed",
         "jev.mode_changed"
       ]
     },

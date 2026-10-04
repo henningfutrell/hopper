@@ -1,7 +1,7 @@
 // Self-update (issue #44) against real git repositories: detecting newer commits and releases,
 // applying one beside the running install, waiting for jobs a restart would lose, and reporting
 // the result on the next boot. The build (scripts/install.sh stage mode) and the restart are seams.
-import { existsSync, readFileSync, renameSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Store } from '../../src/domain/ports.ts';
@@ -116,7 +116,8 @@ describe('detecting an update', () => {
   it('reports a failed fetch as an error with the reason', async () => {
     const w = world();
     const c1 = w.up.commit('first');
-    const appDir = createInstall(w.root, join(w.root, 'missing-repo'), c1);
+    const appDir = createInstall(w.root, w.up.dir, c1);
+    writeFileSync(join(appDir, 'install.json'), JSON.stringify({ ...readInstall(appDir), repo: join(w.root, 'missing-repo') }));
     const s = await updater(w, appDir).u.check();
     expect(s.state).toBe('error');
     expect(s.reason).toMatch(/fetch/);
