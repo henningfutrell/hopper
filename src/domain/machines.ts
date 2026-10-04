@@ -2,19 +2,34 @@
 // the UI"; docs/glossary.md "Attached machine", "Machine edit", "Detected ssh target").
 import type { InstanceSpec } from './plugins.ts';
 
-/** An attached machine as plugins.yaml `attachedMachines:` names it (design.md "Attached machines"). */
-export interface AttachedMachine {
+/**
+ * An attached machine as plugins.yaml `attachedMachines:` names it (design.md "Attached machines",
+ * "Container targets"): a target reached over ssh, with its own herdr, or a container reached over
+ * docker exec, which runs commands only.
+ */
+export type AttachedMachine = SshMachine | ContainerMachine;
+
+interface AttachedBase {
   /** The machine id; never `local`. */
   name: string;
   label?: string;
-  /** The ssh destination: a `~/.ssh/config` alias or `user@host`. */
-  ssh: string;
   lanes: number;
   /** Executor instances that can run there. */
   executors: string[];
+}
+
+export interface SshMachine extends AttachedBase {
+  /** The ssh destination: a `~/.ssh/config` alias or `user@host`. */
+  ssh: string;
   /** Its herdr session (never `default`) and herdr binary, as the remote login shell finds it. */
   session: string;
   herdrBin: string;
+}
+
+/** A container target (issue #58): a running container on this machine's docker, no agent in it. */
+export interface ContainerMachine extends AttachedBase {
+  /** The container's name or id: commands run in it through `docker exec`. */
+  docker: string;
 }
 
 /**

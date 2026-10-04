@@ -6,7 +6,7 @@
 // The ssh target must be a detected one; herdrBin is resolved over ssh here, never sent.
 import { isMap, isScalar, isSeq, parseDocument, stringify, type Document, type Node, type YAMLMap, type YAMLSeq } from 'yaml';
 import type { ConfigDocuments } from '../domain/ports.ts';
-import type { AttachedMachine, MachineEdit } from '../domain/types.ts';
+import type { MachineEdit } from '../domain/types.ts';
 import { BY_HAND, PLUGINS, pluginsFileProblem } from './plugins-file.ts';
 import type { EditRefusal, EditResult } from './edit.ts';
 
@@ -99,8 +99,10 @@ function spliceEntry(text: string, doc: Document, seq: YAMLSeq, at: number, next
 }
 
 /** Plain fields, in the order the owner writes them; absent ones left out. */
-function entryOf(m: Partial<Record<keyof AttachedMachine, unknown>>): Record<string, unknown> {
-  const order = ['name', 'label', 'ssh', 'lanes', 'executors', 'session', 'herdrBin'] as const;
+const FIELDS = ['name', 'label', 'ssh', 'docker', 'lanes', 'executors', 'session', 'herdrBin'] as const;
+
+function entryOf(m: Partial<Record<(typeof FIELDS)[number], unknown>>): Record<string, unknown> {
+  const order = FIELDS;
   return Object.fromEntries(order.filter((k) => m[k] !== undefined).map((k) => [k, m[k]]));
 }
 

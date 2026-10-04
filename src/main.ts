@@ -13,7 +13,7 @@ import { createExecutorRegistry } from './executors/index.ts';
 import type { HerdrClient } from './executors/herdr/index.ts';
 import { createServer } from './http/index.ts';
 import { AUTH, createSignIn, loadAuthDocument, type AuthConfig } from './auth/index.ts';
-import { combineMachineSources, createAttachedMachines, probeHerdrOverSsh } from './machines/index.ts';
+import { combineMachineSources, createAttachedMachines, probeContainer, probeHerdrOverSsh } from './machines/index.ts';
 import { BUILTIN_PLUGINS } from './plugins/builtin.ts';
 import { herdrClaudePlugin } from './plugins/executor/herdr-claude/index.ts';
 import { createPluginHost, type BuiltJobSource } from './plugins/index.ts';
@@ -82,7 +82,7 @@ export interface AppSeams {
   /** The environment the parts read their secrets from (design.md "Secrets"); default process.env. */
   env?: Record<string, string | undefined>;
   pluginsFileIntervalMs?: number;
-  /** Replaces the ssh probe of every attached machine: true = its herdr session is running. */
+  /** Replaces the probe of every attached machine: true = its herdr session (ssh) or its container (docker) is running. */
   machineProbe?: (machine: AttachedMachine) => Promise<boolean>;
   /** Replaces resolving herdr's path over ssh when the UI adds a machine (issue #18): the path, or a rejection with the reason. */
   resolveHerdrBin?: (ssh: string) => Promise<string>;
@@ -213,7 +213,9 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
       createAttachedMachines({
         machines: () => host.attachedMachines(), clock, logger,
         probe: seams.machineProbe
-          ?? ((m) => probeHerdrOverSsh({ target: m.ssh, herdrBin: m.herdrBin, session: m.session, controlDir: join(dataDir, 'ssh') })),
+          ?? ((m) => ('docker' in m
+            ? probeContainer({ container: m.docker })
+            : probeHerdrOverSsh({ target: m.ssh, herdrBin: m.herdrBin, session: m.session, controlDir: join(dataDir, 'ssh') }))),
       }),
     ]),
     usage: [...host.usageSources(), ...(seams.fakeUsage ? [seams.fakeUsage] : [])],

@@ -54,7 +54,7 @@ describe('router chosen from what is detected, no Jev checkout', () => {
     });
     const ids = body.plugins.map((p: { id: string; builtin: boolean }) => [p.id, p.builtin]).sort();
     expect(ids).toEqual([
-      ['always-escalate', true], ['always-proceed', false], ['claude-cli', true], ['claude-cli-assessor', true], ['claude-plan', true], ['github-app', true], ['github-gh', true],
+      ['always-escalate', true], ['always-proceed', false], ['claude-cli', true], ['claude-cli-assessor', true], ['claude-plan', true], ['command', true], ['github-app', true], ['github-gh', true],
       ['grokbot-routine', true], ['herdr-claude', true], ['jev-router', true], ['local', true], ['newest-first', true], ['oldest-first', true], ['pass-through', true], ['priority', true],
       ['test', true],
     ]);

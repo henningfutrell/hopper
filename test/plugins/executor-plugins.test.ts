@@ -30,9 +30,9 @@ function options<O>(def: PluginDefinition<Role, O>, raw: unknown = {}): O {
 const props = (def: PluginDefinition) => (optionsJsonSchema(def) as { properties: Record<string, Record<string, unknown>> }).properties;
 
 describe('built-in executor plugins are listed', () => {
-  it('herdr-claude and test, role executor', () => {
+  it('herdr-claude, command and test, role executor', () => {
     const executors = BUILTIN_PLUGINS.filter((p) => p.role === 'executor').map((p) => p.id).sort();
-    expect(executors).toEqual(['herdr-claude', 'test']);
+    expect(executors).toEqual(['command', 'herdr-claude', 'test']);
   });
 });
 

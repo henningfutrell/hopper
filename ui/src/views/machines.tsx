@@ -69,6 +69,7 @@ function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
         <Fact label="id">{m.id}{kind.kind === 'local' && <span className="ml-1.5 font-sans text-muted-foreground">this machine</span>}</Fact>
         <Fact label="runs">{m.executors.length ? m.executors.join(', ') : '—'}</Fact>
         {m.ssh && <Fact label="ssh target">{m.ssh}</Fact>}
+        {m.docker && <Fact label="container (docker exec)">{m.docker}</Fact>}
         {m.herdr && <Fact label="herdr">{m.herdr.bin}</Fact>}
         {m.herdr && <Fact label="herdr session">{m.herdr.session}</Fact>}
       </dl>

@@ -154,6 +154,8 @@ export interface MachineSnapshot {
   ssh?: string;
   /** An attached machine's herdr: its binary (absolute, so never its PATH) and job-hopper's session there. */
   herdr?: { bin: string; session: string };
+  /** A container target: the container its executors reach it in, through `docker exec`. */
+  docker?: string;
 }
 
 /** Everything one Decision is made over. Recorded verbatim on the Decision. */
@@ -430,7 +432,7 @@ export interface SourceStatus {
 
 // ---- Attached machines: src/domain/machines.ts (re-exported here) ------------------------
 
-export type { AttachedMachine, MachineEdit, MachineEditOutcome, MachinesConfig } from './machines.ts';
+export type { AttachedMachine, ContainerMachine, MachineEdit, SshMachine, MachineEditOutcome, MachinesConfig } from './machines.ts';
 
 // ---- Routing rules: src/domain/routing.ts; plugins: src/domain/plugins.ts (re-exported here, one vocabulary) ----
 

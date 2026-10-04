@@ -20,6 +20,14 @@ describe('herdr-claude executor on an attached machine', () => {
     expect(saved[0]).toMatchObject({ ssh: 'laptop', herdrBin: '/home/user/.local/bin/herdr', session: 'jh-there', paneId: 'w1:p1', laneId: 'laptop/lane-1' });
   });
 
+  it('a container target has no herdr: the job fails there and nothing runs on this machine (issue #58)', async () => {
+    const { herdr, executor } = setup({ turns: [DONE] });
+    const box = { id: 'box', label: 'box', maxLanes: 1, online: true, executors: ['herdr-claude'], docker: 'target' };
+    const { ctx } = contextFor(jobWith({ prompt: 'go' }), 'box/lane-1', box);
+    expect(await executor.run(ctx)).toEqual({ kind: 'failed', error: 'herdr-claude does not run on container target box: it has no herdr; give it the command executor' });
+    expect(herdr.calls).toEqual([]);
+  });
+
   it('a job on this machine records no ssh target', async () => {
     const { executor } = setup({ turns: [DONE] });
     const { ctx, saved } = contextFor(jobWith({ prompt: 'go' }));

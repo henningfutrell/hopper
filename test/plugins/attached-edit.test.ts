@@ -55,6 +55,13 @@ describe('applyMachineEdit on block-style entries', () => {
     expect(parse(text).attachedMachines[1]).toEqual({ name: 'spare', ssh: 'desk', lanes: 3 });
   });
 
+  it('edit of a container target keeps its container; it never gains herdr fields (issue #58)', async () => {
+    const { ctx, read, version } = setup('version: 1\nexecutors: [ { name: command, plugin: command } ]\nattachedMachines:\n  - { name: box, docker: target, lanes: 1 }\n');
+    ctx.executors = ['command', 'test'];
+    expect((await applyMachineEdit({ action: 'edit', name: 'box', lanes: 2, executors: ['command', 'test'], version }, ctx)).ok).toBe(true);
+    expect(parse(read()!).attachedMachines[0]).toEqual({ name: 'box', docker: 'target', lanes: 2, executors: ['command', 'test'] });
+  });
+
   it('remove deletes every line of that entry', async () => {
     const { ctx, read, version } = setup(BLOCK);
     expect((await applyMachineEdit({ action: 'remove', name: 'desk', version }, ctx)).ok).toBe(true);

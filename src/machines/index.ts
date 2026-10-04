@@ -1,5 +1,5 @@
 // MachineSource adapters: `local`, this machine (reached through the `local` machine-source plugin),
-// the attached machines, and the ssh targets ~/.ssh/config names.
+// the attached machines (ssh targets and container targets), and the ssh targets ~/.ssh/config names.
 import { hostname } from 'node:os';
 import type { MachineSource } from '../domain/ports.ts';
 
@@ -23,7 +23,7 @@ export function createLocalMachineSource(o: {
   };
 }
 
-export { createAttachedMachineSource, createAttachedMachines, probeHerdrOverSsh, resolveHerdrBinOverSsh } from './attached.ts';
+export { createAttachedMachineSource, createAttachedMachines, probeContainer, probeHerdrOverSsh, resolveHerdrBinOverSsh } from './attached.ts';
 export { readSshTargets, type SshTargets } from './ssh-config.ts';
 
 /** Every machine of every source, in source order: this machine first, then the attached ones. */
