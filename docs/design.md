@@ -432,10 +432,14 @@ startup → `failed` with the screen text.
 **Prompt, once.** `agent prompt <agent> <prompt + protocol footer>` (no `--wait`). Footer:
 
 ```
+[job-hopper publishing rule] Any text you send to GitHub (commit messages, branch names, pull request titles and bodies, issue text) describes the change and how it was verified, in neutral terms. Never quote or name the repository owner or any other person. Never include personal or machine details: email addresses, people's names, IP addresses, hostnames, tailnet names, home directory paths, usernames, machine or pane ids, port numbers of local machines, codes, tokens or secrets.
 [job-hopper protocol] When you need an answer from the user, ask exactly one question and end your message with a line containing only: JOB_HOPPER_QUESTION
 When the job is completely finished, end your final message with a line containing only: JOB_HOPPER_DONE
 If the job cannot be done, end with a line containing only: JOB_HOPPER_FAILED followed by the reason.
 ```
+
+The publishing rule leads the footer so every job gets it, whatever its source; the last
+line stays the turn anchor. It names no comment path: jobs never write to issues.
 
 **Monitor** every `JOB_HOPPER_HERDR_POLL_MS` (1000): `agent get` (status, `state_change_seq`)
 and `agent read --source recent-unwrapped --lines 200`.
