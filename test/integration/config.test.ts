@@ -63,7 +63,7 @@ describe('configuration from env', () => {
     expect(c).toMatchObject({ sourcesFile: join(homedir(), 's.yaml'), webhooksFile: '/etc/w.yaml', ghBin: '/opt/gh', uiSessionHours: 1.5 });
   });
 
-  it('reads the phase-4 variable: the GitHub API base for the App adapter and hopper-comment', () => {
+  it('reads the phase-4 variable: the GitHub API base for the App adapter', () => {
     expect(loadConfig({}).githubApiUrl).toBeUndefined();
     expect(loadConfig({ JOB_HOPPER_GITHUB_API: 'http://127.0.0.1:9999/' })).toMatchObject({ githubApiUrl: 'http://127.0.0.1:9999' });
     expect(() => loadConfig({ JOB_HOPPER_GITHUB_API: 'not a url' })).toThrow(/JOB_HOPPER_GITHUB_API/);

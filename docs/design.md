@@ -769,9 +769,6 @@ token and send any `Origin`. Cookies are no better here: they ignore ports, so a
 - A process running **as the owner** that reads `ui-login-code`/`ui-login.html` or the
   browser profile's `localStorage`. That includes Claude jobs running with
   `--dangerously-skip-permissions`.
-- A job (or any script using the owner's `gh` token) that posts an issue comment without the
-  hopper marker. That comment counts as the owner's answer, so a job can answer its own
-  question.
 - Every local user can **read** the GET API, which exposes prompts, issue context and job
   environment.
 
@@ -932,36 +929,41 @@ labelled `hopper:claimed` with no local job is skipped and shown in status detai
 above; empty body → claimed, then failed with error "empty issue body"; priority per
 "Priority"; cwd = `repoPaths[repo]` (expanded) else `defaultCwd`.
 
-**Comments.** Every hopper comment starts with a hidden marker line
-`<!-- job-hopper v1 kind=<kind> job=<jobId>[ question=<questionId>] -->` — the hopper posts
-as the owner, so the marker is how its own comments are told apart from his replies. Before
-posting, the adapter lists comments and reuses one already carrying the identical marker
-(idempotent retries). Bodies are sent on stdin (`gh api … -X POST --input -`), never argv,
-and truncated to 60 000 characters with a "(truncated)" note (GitHub's limit is 65 536).
+**Write criteria (owner decision, 2026-10-03: the bot does not post to issues)** The
+hopper's only issue writes are labels (state) and one completion comment. Nothing else: no
+claim, progress, question, answered, failure or cancel comment; no reactions, issue edits,
+closes, or PR comments. Jobs get no way to write to their issue (no token, no helper; their
+prompt tells them not to). A question goes to the owner through the UI and the Grok Bot routine
+webhook, never onto the issue; a reply on the issue is not an answer.
+
+The completion comment starts with a hidden marker line
+`<!-- job-hopper v1 kind=finished job=<jobId> -->` (older hopper comments carry the same
+`<!-- job-hopper v1 ` prefix, so the context filter still drops them). Before posting, the
+adapter lists comments and reuses one already carrying the identical marker (idempotent
+retries). Bodies are sent on stdin (`gh api … -X POST --input -`), never argv, and truncated to
+60 000 characters with a "(truncated)" note (GitHub's limit is 65 536).
 
 | report | on GitHub |
 |--------|-----------|
-| claimed | ensure labels `hopper:claimed`, `hopper:done`, `hopper:failed` exist (`gh label create --force`, once per repo per process); add `hopper:claimed`; comment "🦘 job-hopper claimed this as job `<id>` (priority N, executor X, cwd …)" |
-| progress | one progress comment per job, **edited in place** (`editComment`), throttled |
-| question (human tier only) | comment with the question, the escalation trail summary (answerer: name · confident · outcome; assessor: name · escalate · reason · rules; rows from before slice 2: tier · confident · risky · rules), and "Reply to this issue to answer." |
-| answered | comment "Answered by <tier>: …" (`answeredBy`: the answerer instance or `human`; also for answers the assessor let through, so the issue tells the whole story) |
-| finished | comment with the result summary; remove `hopper:claimed`, add `hopper:done` |
-| failed | **no comment**; remove `hopper:claimed`, add `hopper:failed` |
+| claimed | ensure labels `hopper:claimed`, `hopper:done`, `hopper:failed` exist (`gh label create --force`, once per repo per process); add `hopper:claimed`. **No comment** |
+| finished | **the one comment**: "✅ job `<id>` finished." + the job's result; remove `hopper:claimed`, add `hopper:done` |
+| failed | **no comment**; remove `hopper:claimed`, add `hopper:failed` (removing it is the re-run gesture) |
 | cancelled | **no comment**; remove `hopper:claimed` |
+
+Progress and questions are not reported to the source at all (`SourceReport` has no such kinds).
+Stored `sourceState.source` keys from before this rule (`claimCommentId`, `progressCommentId`,
+`questionComments`, `answeredComments`) and `sourceState.sync` keys (`reportedQuestions`,
+`answeredQuestions`, `lastProgressAt`) stay in the JSON and are never read; no column changed, no
+migration. `progressCommentSeconds` left `sources.yaml`: `migrate-sources-yaml.ts` (install) drops
+its lines.
 
 A failure never goes to the issue as text. It is one stderr line in the daemon log
 (`job-hopper: job <id> failed (<issue url>): <error>`, `src/engine/failure-log.ts`), the job's
 `error` in `/api/jobs`, and the `job.failed` row (with its error) in the UI event feed.
 
-**Signals (check):** per active job, `getIssue` + `listComments` (all pages:
-`gh api --paginate --slurp "repos/O/R/issues/N/comments?per_page=100"`):
+**Signals (check):** per active job, `getIssue`:
 - issue `closed`, or `label` removed → `cancel` (reason `issue closed` / `label removed`);
   issue 404/410 → `cancel` (`issue gone`). Jobs are told not to close their own issue.
-- job `waiting_answer` and its question comment id is in `sourceState.source`: the answer is
-  the first comment with a **numeric id greater than the question comment's id**, by an
-  author in `authors`, whose first line does not match `^<!-- job-hopper v1 ` (that also
-  covers the jobs' own `HOPPER_COMMENT_MARKER`), body trimmed and non-empty. Edits are
-  ignored. Comments by anyone else are ignored.
 - **Error classes:** `GitHubApi` errors carry `permanent` (404/410/403/422) vs transient
   (network, 5xx, rate limit, timeout); `check` turns a permanent error on one job into the
   `issue gone` cancel and never fails the whole sync for it.
@@ -1091,9 +1093,7 @@ inbound webhook to the laptop.
 | dir | owns | must not import |
 |-----|------|-----------------|
 | `src/sources/github/app/` | the App `GitHubApi` adapter: app config file loader, JWT + installation tokens (`@octokit/auth-app`), REST + GraphQL via `@octokit/request`, per-repo scoped token minting | engine, http, store |
-| `src/sources/github/tokens.ts` | the per-job token keeper (writes/refreshes/deletes job token files) | engine, http |
 | `scripts/create-github-app.*` | the manifest-flow helper the owner runs once | everything in `src/` except small pure helpers it imports explicitly |
-| `scripts/hopper-comment*` | the job's helper for commenting on its own issue as the app | `src/` (standalone; Node built-ins only) |
 
 ## App configuration (files the owner's one click produces)
 
@@ -1197,6 +1197,11 @@ writes `auto` and a `githubApp:` block.
 
 ## Jobs comment as the app — the per-job token file
 
+**Removed 2026-10-03** (write criteria, "GitHub source"): no token keeper, no job token files, no
+`hopper-comment`, no `HOPPER_COMMENT_*` / `HOPPER_TOKEN_*` / `HOPPER_GITHUB_API` env. Jobs get
+`HOPPER_ISSUE_URL`, `HOPPER_REPO`, `HOPPER_ISSUE_NUMBER`, `HOPPER_ISSUE_TITLE` as read-only
+context. The text below is the history of what was built.
+
 A job must comment on its issue as the app without holding the app's private key, because
 the key can mint tokens for every installed repo. The source's **token keeper** handles it:
 - On `claimed` it mints `mintRepoToken(repo)`: one repo, `issues: write` only. It writes
@@ -1283,6 +1288,9 @@ Manifest:
   "default_permissions": { "issues": "write", "metadata": "read", "organization_projects": "read" },
   "default_events": [] }
 ```
+
+- `issues: write` now covers only labels and the one completion comment (write criteria). The
+  app could later drop to fewer permissions; not changed here.
 
 - `hook_attributes` exists only to make GitHub issue a webhook secret for later. The URL uses
   the reserved `.invalid` TLD and the hook is inactive, so nothing is ever delivered.
@@ -1382,8 +1390,8 @@ main.ts seams                    AppSeams.githubApp?: GitHubApi (tests) beside .
 
 ## Grok Bot routine webhook
 
-`src/grokbot/` POSTs to a Grok Bot routine (https://cursor.com/help/grok-bot/routines) in
-addition to the GitHub issue comments. Not a **Webhook subscription**: no store row, no
+`src/grokbot/` POSTs to a Grok Bot routine (https://cursor.com/help/grok-bot/routines) when a
+question reaches the owner (questions never go onto the issue). Not a **Webhook subscription**: no store row, no
 schema change, no domain event; in-memory only.
 
 - Events: questions only — `question.escalated` with `data.target === 'human'` and not

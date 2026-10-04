@@ -20,7 +20,7 @@ export interface World {
   clock: Clock & { advance(ms: number): void };
   jobs: Map<string, Job>;
   questions: Map<string, Question>;
-  calls: { cancel: Array<[string, string]>; answer: Array<[string, string]>; reprioritize: Array<[string, number, string]>; ingest: SourceItem[] };
+  calls: { cancel: Array<[string, string]>; reprioritize: Array<[string, number, string]>; ingest: SourceItem[] };
   emit(type: EventType, jobId: string, data?: Record<string, unknown>, questionId?: string): void;
   patchJob(id: string, patch: Partial<Job>): Job;
   addQuestion(jobId: string, over?: Partial<Question>): Question;
@@ -32,7 +32,7 @@ export function createWorld(): World {
   const jobs = new Map<string, Job>();
   const questions = new Map<string, Question>();
   const listeners = new Set<(e: DomainEvent) => void>();
-  const calls: World['calls'] = { cancel: [], answer: [], reprioritize: [], ingest: [] };
+  const calls: World['calls'] = { cancel: [], reprioritize: [], ingest: [] };
   let seq = 0;
   const iso = () => clock.now().toISOString();
 
@@ -89,7 +89,6 @@ export function createWorld(): World {
       patchJob(id, { status: 'cancelled' });
       emit('job.cancelled', id, { reason });
     },
-    answer(qid, answer) { calls.answer.push([qid, answer]); return { ok: true, question: questions.get(qid)! }; },
     reprioritize(id, to, reason) { calls.reprioritize.push([id, to, reason]); return true; },
     setSourceState(id, state) {
       const cur = jobs.get(id)!.sourceState ?? {};

@@ -3,6 +3,7 @@
 // - the exact phase-3 starter line `enabled: true # false: pull nothing from GitHub` → auto, once
 // - any other github.enabled value: kept, with a warning naming the file and the line
 // - no top-level `githubApp:` key: append the commented block, once
+// - every `progressCommentSeconds:` line: dropped (no progress comment exists since 2026-10-03)
 // Text edits only, so the owner's comments and layout survive. Node built-ins only.
 import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 
@@ -25,7 +26,6 @@ ${AUTO_LINE}
   defaultCwd: ~/workbench/app-workflows   # cwd for repos not in repoPaths
   executor: herdr-claude     # executor for issue jobs
   model: null                # optional claude model for issue jobs
-  progressCommentSeconds: 300  # at most one progress-comment edit per job per this many seconds
   recentComments: 10         # allowlisted comments passed into the job's context
   projects: {}               # optional GitHub Projects (v2) priority per repo; the project wins over labels
   # projects:                # needs the read:project scope: gh auth refresh -s read:project
@@ -53,7 +53,6 @@ githubApp:
   defaultCwd: ~/workbench/app-workflows
   executor: herdr-claude
   model: null
-  progressCommentSeconds: 300
   recentComments: 10
   projects: {}               # organization-owned Projects (v2) only: an app cannot read user-owned projects
 `;
@@ -87,7 +86,12 @@ function migrate(path: string): void {
     console.error(`WARNING: ${path} line ${at + 1} kept as is: ${lines[at]!.trim()}`);
     console.error('  With enabled: auto the gh source stops pulling once the GitHub App is configured.');
   }
-  let text = lines.join('\n');
+  const kept = lines.filter((l) => !/^\s+progressCommentSeconds:/.test(l));
+  if (kept.length !== lines.length) {
+    console.log(`dropped ${lines.length - kept.length} progressCommentSeconds line(s) from ${path}: the hopper posts no progress comments`);
+    changed = true;
+  }
+  let text = kept.join('\n');
   if (!/^githubApp:/m.test(text)) {
     text = `${text.replace(/\n*$/, '\n')}${APP_BLOCK}`;
     changed = true;

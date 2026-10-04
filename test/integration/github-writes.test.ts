@@ -133,7 +133,6 @@ describe.each<Mode>(['gh', 'app'])('issue writes (%s source)', (mode) => {
     expect(prompt).not.toMatch(/HOPPER_COMMENT|hopper-comment|gh issue comment/);
     expect(prompt).toContain('Do not comment on, edit, label or close this issue');
     expect(existsSync(join(dirname(a.dbPath), 'job-tokens'))).toBe(false);
-    expect(gh.calls.some((c) => c.method === 'mintRepoToken')).toBe(false);
   });
 });
 

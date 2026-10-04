@@ -37,7 +37,6 @@ describe('loadSourcesFile', () => {
       repoPaths: {},
       defaultCwd: join(homedir(), 'workbench/app-workflows'),
       executor: 'herdr-claude',
-      progressCommentSeconds: 300,
       recentComments: 10,
       projects: {},
     });
@@ -119,7 +118,6 @@ const APP_DEFAULTS = (appFile: string) => ({
   repoPaths: {},
   defaultCwd: join(homedir(), 'workbench/app-workflows'),
   executor: 'herdr-claude',
-  progressCommentSeconds: 300,
   recentComments: 10,
   projects: {},
 });

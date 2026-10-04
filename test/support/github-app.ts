@@ -30,7 +30,7 @@ export function writeAppFile(dir: string): string {
   return appFile;
 }
 
-const JOB_KEYS = { authors: ['owner'], executor: 'scripted', defaultCwd: '/tmp', progressCommentSeconds: 1, pollSeconds: 3600 };
+const JOB_KEYS = { authors: ['owner'], executor: 'scripted', defaultCwd: '/tmp', pollSeconds: 3600 };
 
 /** A sources.yaml document: `github` omitted when false; both blocks sync only on syncNow. */
 export function sourcesDoc(dir: string, o: { github?: Record<string, unknown> | false; githubApp?: Record<string, unknown> } = {}) {

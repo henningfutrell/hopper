@@ -63,8 +63,6 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
       }
     },
 
-    answer: (questionId, answer) => c.questions.answerByHuman(questionId, answer),
-
     reprioritize(jobId, to, reason) {
       return store.tx(() => {
         const job = store.jobs.get(jobId);

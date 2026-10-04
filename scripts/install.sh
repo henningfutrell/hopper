@@ -21,7 +21,7 @@ step "copy src/, scripts/, package.json, package-lock.json to $DEST (replacing o
 mkdir -p "$DEST"
 rm -rf "$DEST/src" "$DEST/scripts"
 cp -r "$APP_DIR/src" "$DEST/src"
-cp -r --preserve=mode "$APP_DIR/scripts" "$DEST/scripts"   # keeps hopper-comment and create-github-app.sh executable
+cp -r --preserve=mode "$APP_DIR/scripts" "$DEST/scripts"   # keeps create-github-app.sh executable
 cp "$APP_DIR/package.json" "$APP_DIR/package-lock.json" "$DEST/"
 
 step "npm ci --omit=dev --prefix $DEST"

@@ -1,7 +1,7 @@
-// Posting hopper comments idempotently: every comment starts with its marker; before posting,
-// an existing comment carrying the identical marker is reused (a retry after a crash never
-// duplicates). In app mode it must also be the bot's: a stranger's planted marker comment is
-// never reused (editing it would 403). Bodies are capped below GitHub's 65 536-char limit.
+// Posting the hopper's one comment (the completion status) idempotently: it starts with its
+// marker; before posting, an existing comment carrying the identical marker is reused (a retry
+// after a crash never duplicates). In app mode it must also be the bot's: a stranger's planted
+// marker comment is never taken for it. Bodies are capped below GitHub's 65 536-char limit.
 
 import type { GitHubApi } from './api.ts';
 import type { BotLogin } from './identity.ts';
@@ -13,7 +13,7 @@ export function commentBody(marker: string, text: string, jobId: string): string
   return truncate(`${marker}\n${text}`, COMMENT_BODY_CAP, `\n\n(truncated, see job ${jobId})`);
 }
 
-/** Where a hopper comment goes, and who the hopper posts as (bot in app mode). */
+/** Where the hopper comment goes, and who the hopper posts as (bot in app mode). */
 export interface CommentTarget {
   api: GitHubApi;
   repo: string;
@@ -32,12 +32,4 @@ export async function postOnce(t: CommentTarget, marker: string, body: string, k
   const existing = await findByMarker(t, marker);
   if (existing !== undefined) return existing;
   return (await t.api.comment(t.repo, t.number, body)).id;
-}
-
-/** Create the comment once, then edit it in place on every later call. */
-export async function upsert(t: CommentTarget, marker: string, body: string, known: number | undefined): Promise<number> {
-  const id = known ?? await findByMarker(t, marker);
-  if (id === undefined) return (await t.api.comment(t.repo, t.number, body)).id;
-  await t.api.editComment(t.repo, id, body);
-  return id;
 }

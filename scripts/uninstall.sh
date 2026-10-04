@@ -27,9 +27,6 @@ systemctl --user daemon-reload
 step "remove $DEST"
 rm -rf "$DEST"
 
-step "remove job token files $DATA/job-tokens (short-lived installation tokens of running jobs)"
-rm -rf "$DATA/job-tokens"
-
 echo "Kept $DATA — the queue database is your data. Delete it by hand to discard the queue."
 echo "Kept $CONFIG_DIR — your rules.md, sources.yaml, webhooks.yaml and the GitHub App files (github-app.json, .pem, webhook secret)."
 echo "The GitHub App itself stays on GitHub; delete it at https://github.com/settings/apps if you no longer want it."
