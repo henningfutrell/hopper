@@ -5,7 +5,8 @@ import { toast } from 'sonner';
 import { create } from 'zustand';
 import { get, post, SessionRejected, clearToken, sessionIsLive } from '@/lib/api';
 import { HISTORY_TYPES } from '@/model/event-types';
-import type { Decision, DomainEvent, Health, MachineView, PartAccount, PluginsReport, Question, Queue, RoutingReport, SourceStatus, UsageReport, WebhookConfig, WebhookDelivery, WebhookView, WebhooksView } from '@/model/wire';
+import { reloadNeeded } from '@/model/update';
+import type { Decision, DomainEvent, Health, MachineView, PartAccount, PluginsReport, Question, Queue, RoutingReport, SourceStatus, UpdateStatus, UsageReport, WebhookConfig, WebhookDelivery, WebhookView, WebhooksView } from '@/model/wire';
 
 export const CAP = { events: 500, history: 5000, decisions: 100, deliveries: 100 };
 export type Conn = 'connecting' | 'live' | 'reconnecting';
@@ -41,6 +42,10 @@ export interface HopperState {
   /** GET /api/routing, fetched by the Routing view; `routingError` when that failed. */
   routing: RoutingReport | null;
   routingError: string | null;
+  /** GET /api/update: self-update (issue #44). */
+  update: UpdateStatus | null;
+  /** The installed commit when this page loaded: another one later means the daemon restarted on an update. */
+  loadedCommit: string | undefined;
 }
 
 const EMPTY_QUEUE: Queue = { waiting: [], running: [], waitingAnswer: [], ended: [], counts: {} };
@@ -48,7 +53,7 @@ const EMPTY_QUEUE: Queue = { waiting: [], running: [], waitingAnswer: [], ended:
 export const useHopper = create<HopperState>(() => ({
   loaded: false, loadError: null, conn: 'connecting', authed: false, health: null, queue: EMPTY_QUEUE, machines: [],
   decisions: [], questions: [], handled: [], events: [], history: [], sources: [], deliveries: [], subscriptions: [], webhookConfig: null,
-  plugins: null, pluginsError: null, usage: null, accounts: [], routing: null, routingError: null,
+  plugins: null, pluginsError: null, usage: null, accounts: [], routing: null, routingError: null, update: null, loadedCommit: undefined,
 }));
 const set = useHopper.setState;
 const state = useHopper.getState;
@@ -86,6 +91,23 @@ export async function markSeen(ids: string[]) {
     } catch (e) {
       if (e instanceof SessionRejected) { set({ authed: false }); return; }
     }
+  }
+}
+/** GET /api/update. The daemon running another commit than this page was loaded from → reload (new UI bundle). */
+export async function refreshUpdate() {
+  const update = await get<UpdateStatus>('/api/update');
+  const { loadedCommit } = state();
+  if (reloadNeeded(loadedCommit, update)) { location.reload(); return; }
+  set({ update, loadedCommit: loadedCommit ?? update.installed?.commit });
+}
+/** POST /ui/api/update: check, apply, or settings. Answers the new status; failures toast. */
+export async function updateAct(body: { action: 'check' | 'apply' } | { action: 'settings'; channel?: UpdateStatus['channel']; autoUpdate?: boolean }, done?: string) {
+  try {
+    set({ update: await post<UpdateStatus>('/ui/api/update', body) });
+    if (done) toast.success(done);
+  } catch (e) {
+    if (e instanceof SessionRejected) set({ authed: false });
+    toast.error((e as Error).message);
   }
 }
 export async function refreshLive() {
@@ -140,6 +162,7 @@ export function onDomainEvent(e: DomainEvent) {
   refreshLiveSoon();
   if (e.type.startsWith('question.')) refreshQuestionsSoon();
   if (e.type === 'router.mode_changed') refreshHealth().catch(() => {});
+  if (e.type.startsWith('update.')) refreshUpdate().catch(() => {});
   if (e.type === 'decision.made') {
     const id = e.decisionId ?? String(e.data.decisionId);
     get<Decision>(`/api/decisions/${encodeURIComponent(id)}`).then((d) => {
@@ -171,5 +194,6 @@ export async function load() {
     subscriptions: subs.subscriptions, webhookConfig: subs.config ?? null, deliveries: deliveries.deliveries,
     questions: questions.questions, handled: handledOf(allQuestions.questions), sources: sources.sources, usage, accounts: accounts.accounts,
   });
+  refreshUpdate().catch(() => {});
 }
 export const setLoadError = (loadError: string) => set({ loadError });

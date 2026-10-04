@@ -18,6 +18,7 @@ import { Usage } from '@/views/usage';
 import { Webhooks } from '@/views/webhooks';
 import { ReadOnlyBanner } from './banner';
 import { Header } from './header';
+import { UpdateNotice } from './update';
 import { MobileNav, Sidebar, useView, viewLabel, type View } from './nav';
 
 const VIEW: Record<View, () => React.ReactNode> = {
@@ -53,6 +54,7 @@ export function App() {
           <Sidebar view={view} />
           <main className="min-w-0 flex-1 space-y-3 p-3 sm:p-4 lg:p-6">
             <ReadOnlyBanner />
+            <UpdateNotice />
             {loadError && (
               <div className="flex items-center gap-2 rounded-lg border border-bad/40 bg-bad/5 p-3 text-sm text-bad">
                 <AlertTriangle className="size-4" />Could not load from the daemon: {loadError}
