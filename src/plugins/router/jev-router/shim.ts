@@ -3,6 +3,7 @@
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { claudeArgv, scrubbedEnv } from '../../claude-print.ts';
 import type { Advice, AdviceAction, Clock, Job, Router, RouterMode } from '../../sdk.ts';
 
 const SHIM = fileURLToPath(new URL('./jev_shim.py', import.meta.url));
@@ -11,11 +12,36 @@ const ACTIONS: readonly string[] = [
   'chat_only', 'ask_human', 'allow_subagent', 'research_capped',
 ] satisfies AdviceAction[];
 const META_KEYS = ['cached_artifact', 'cached_note', 'prior_error', 'same_error_count', 'sources_found', 'constraints'];
+/**
+ * Haiku's answers to Jev's gates, keyed by gate name and grouped by gate type (TypeSafe's own
+ * grouping). Draft-07 literal, as claude-print.ts requires; the shim checks names and labels.
+ */
+const GATE_ANSWERS_SCHEMA = {
+  type: 'object',
+  properties: {
+    choices: {
+      type: 'object',
+      additionalProperties: {
+        type: 'object',
+        properties: { choice: { type: 'string' }, probabilities: { type: 'object', additionalProperties: { type: 'number', minimum: 0, maximum: 1 } } },
+        required: ['choice', 'probabilities'],
+      },
+    },
+    nouls: { type: 'object', additionalProperties: { type: 'number', minimum: 0, maximum: 1 } },
+    scores: { type: 'object', additionalProperties: { type: 'number', minimum: 0 } },
+  },
+  required: ['choices', 'nouls', 'scores'],
+};
 
 export interface JevShimOptions {
   /** The Jev checkout (absolute). */
   jevSrc: string;
   python: string;
+  claudeBin: string;
+  /** Haiku's model id for the claude CLI. */
+  model: string;
+  /** The Jev gates TypeSafe answers when TYPESAFE_API_KEY is set; Haiku answers the rest. */
+  typesafeGates: string[];
   dataDir: string;
   mode: () => RouterMode;
   clock: Clock;
@@ -36,12 +62,16 @@ function jevState(job: Job): Record<string, unknown> {
   return state;
 }
 
-/** Spawn the shim, feed it the request, resolve with its stdout. Rejects on any failure. */
+/**
+ * Spawn the shim, feed it the request, resolve with its stdout. Rejects on any failure. The shim
+ * runs in its own process group, so a timeout also kills the claude it started.
+ */
 function runShim(o: JevShimOptions, request: unknown): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn(o.python, [SHIM], {
-      env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' },
+      env: { ...scrubbedEnv(), PYTHONDONTWRITEBYTECODE: '1' },
       stdio: ['pipe', 'pipe', 'pipe'],
+      detached: true,
     });
     let stdout = '';
     let settled = false;
@@ -52,7 +82,11 @@ function runShim(o: JevShimOptions, request: unknown): Promise<string> {
       fn();
     };
     const timer = setTimeout(() => {
-      child.kill('SIGKILL');
+      try {
+        process.kill(-child.pid!, 'SIGKILL');
+      } catch {
+        child.kill('SIGKILL');
+      }
       settle(() => reject(new Error(`timed out after ${o.timeoutMs} ms`)));
     }, o.timeoutMs);
     child.stdout.on('data', (d: Buffer) => (stdout += d.toString()));
@@ -86,6 +120,8 @@ export function createJevShimRouter(o: JevShimOptions): Router {
           mode: o.mode(),
           logPath: join(o.dataDir, 'jev-runs.jsonl'),
           state: jevState(job),
+          typesafeGates: o.typesafeGates,
+          haiku: { argv: [o.claudeBin, ...claudeArgv({ model: o.model, jsonSchema: GATE_ANSWERS_SCHEMA })], cwd: o.dataDir },
         });
         const route = parseRoute(stdout);
         return {
