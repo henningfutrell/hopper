@@ -1,13 +1,13 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { generateKeyPairSync } from 'node:crypto';
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { lstatSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-const SCRIPT = join(import.meta.dirname, '..', '..', 'scripts', 'create-github-app.sh');
+const SCRIPT = join(import.meta.dirname, '..', '..', 'scripts', 'create-github-app.ts');
 const PEM = generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs1', format: 'pem' }) as string;
 const CLIENT_SECRET = 'client-secret-must-not-be-stored';
 
@@ -46,7 +46,7 @@ async function startFake(o: { delayMs?: number; webhookSecret?: string | null; s
 type Run = { proc: ChildProcess; out: () => string; err: () => string; startUrl: string; port: number; exited: Promise<number | null> };
 
 async function run(args: string[], env: Record<string, string>): Promise<Run> {
-  const proc = spawn('bash', [SCRIPT, '--no-open', '--owner', 'tester', ...args], { env: { ...process.env, ...env }, stdio: 'pipe' });
+  const proc = spawn(process.execPath, [SCRIPT, '--no-open', '--owner', 'tester', ...args], { env: { ...process.env, ...env }, stdio: 'pipe' });
   let out = '';
   let err = '';
   proc.stdout!.on('data', (d: Buffer) => { out += d.toString(); });
@@ -81,21 +81,28 @@ function rawGet(port: number, path: string, host: string): Promise<number> {
   });
 }
 
-describe('create-github-app.sh', () => {
+describe('create-github-app.ts', () => {
   let fake: Fake;
   let dir: string;
   let runs: Run[];
   const env = (extra: Record<string, string> = {}) => ({
-    JOB_HOPPER_GITHUB_WEB: fake.url, JOB_HOPPER_GITHUB_API: fake.url, JOB_HOPPER_CONFIG_DIR: dir, ...extra,
+    JOB_HOPPER_GITHUB_WEB: fake.url, JOB_HOPPER_GITHUB_API: fake.url, ...extra,
   });
-  const go = async (args: string[], extra: Record<string, string> = {}) => { const r = await run(args, env(extra)); runs.push(r); return r; };
+  const envFile = () => join(dir, 'daemon.env');
+  const go = async (args: string[], extra: Record<string, string> = {}) => { const r = await run(['--secrets-file', envFile(), ...args], env(extra)); runs.push(r); return r; };
   const files = () => readdirSync(dir).sort();
-  const mode = (f: string) => (lstatSync(join(dir, f)).mode & 0o777).toString(8);
+  const mode = (f: string) => (lstatSync(f).mode & 0o777).toString(8);
+  const read = () => readFileSync(envFile(), 'utf8');
+  const lineOf = (key: string) => read().split('\n').find((l) => l.startsWith(`${key}=`));
+  const expectUntouched = () => { expect(files()).toEqual(['daemon.env']); expect(read()).toBe(''); };
+  const callback = async (r: Run) => { const { action } = await startPage(r); return fetch(`http://127.0.0.1:${r.port}/callback?code=abc&state=${stateOf(action)}`); };
 
   beforeEach(async () => {
     fake = await startFake();
     dir = mkdtempSync(join(tmpdir(), 'jh-app-'));
     runs = [];
+    // Node itself reads `--secrets-file` anywhere in argv and exits 9 when the file is missing, so every run starts with one.
+    writeFileSync(envFile(), '');
   });
   afterEach(async () => {
     for (const r of runs) r.proc.kill('SIGKILL');
@@ -133,7 +140,7 @@ describe('create-github-app.sh', () => {
     expect(action.startsWith(`${fake.url}/organizations/acme/settings/apps/new?state=`)).toBe(true);
   });
 
-  it('on a valid callback converts the code and writes 600 files from the response, never the client secret', async () => {
+  it('on a valid callback converts the code and writes one 600 env file from the response, never the client secret', async () => {
     const r = await go([]);
     const { action } = await startPage(r);
     const res = await fetch(`http://127.0.0.1:${r.port}/callback?code=abc&state=${stateOf(action)}`);
@@ -142,33 +149,53 @@ describe('create-github-app.sh', () => {
     expect(await r.exited).toBe(0);
 
     expect(fake.calls).toEqual([{ code: 'abc' }]);
-    expect(files()).toEqual(['github-app-webhook.secret', 'github-app.json', 'github-app.pem']);
-    for (const f of files()) expect(mode(f)).toBe('600');
-    expect(JSON.parse(readFileSync(join(dir, 'github-app.json'), 'utf8'))).toEqual({
-      version: 1, appId: 123456, slug: 'renamed-by-owner', botLogin: 'renamed-by-owner[bot]', clientId: 'Iv23abc',
-      htmlUrl: 'https://github.com/apps/renamed-by-owner', owner: 'tester',
-      privateKeyFile: join(dir, 'github-app.pem'), webhookSecretFile: join(dir, 'github-app-webhook.secret'),
-      createdAt: expect.stringMatching(/^\d{4}-\d\d-\d\dT/),
-    });
-    expect(readFileSync(join(dir, 'github-app.pem'), 'utf8')).toBe(PEM);
-    expect(readFileSync(join(dir, 'github-app-webhook.secret'), 'utf8').trim()).toBe('whsec-123');
-    for (const f of files()) expect(readFileSync(join(dir, f), 'utf8')).not.toContain(CLIENT_SECRET);
+    expect(files()).toEqual(['daemon.env']);
+    expect(mode(envFile())).toBe('600');
+    expect(lineOf('GITHUB_APP_WEBHOOK_SECRET')).toBe('GITHUB_APP_WEBHOOK_SECRET=whsec-123');
+    expect(read()).not.toContain(CLIENT_SECRET);
 
     const lines = r.out().trim().split('\n');
-    expect(lines.at(-1)).toBe(`JOB_HOPPER_APP_CREATED ${join(dir, 'github-app.json')}`);
+    expect(lines.at(-1)).toBe('JOB_HOPPER_APP_CREATED 123456 renamed-by-owner');
+    expect(r.out()).toContain('appId: 123456, slug: renamed-by-owner');
+    expect(r.out()).toContain('plugins.yaml');
     expect(r.out()).toContain(`${fake.url}/apps/renamed-by-owner/installations/new`);
     expect(r.out()).toContain(r.startUrl);
+    expect(r.out()).not.toContain('BEGIN RSA');
   });
 
-  it('a null webhook_secret writes no secret file and webhookSecretFile null', async () => {
+  it('writes the private key as one line whose \\n escapes round-trip to the PEM', async () => {
+    const r = await go([]);
+    expect(await (await callback(r)).text()).toContain('App created');
+    expect(await r.exited).toBe(0);
+    const key = lineOf('GITHUB_APP_PRIVATE_KEY')!;
+    expect(key.includes('\n')).toBe(false);
+    const value = key.slice('GITHUB_APP_PRIVATE_KEY='.length);
+    expect(value).not.toMatch(/\n$/);
+    expect(value.replaceAll('\\n', '\n') + '\n').toBe(PEM.trim() + '\n');
+  });
+
+  it('keeps the env file\'s other lines', async () => {
+    writeFileSync(envFile(), 'JOB_HOPPER_DATABASE_URL=sqlite:/x\nOTHER=1\n');
+    const r = await go([]);
+    await callback(r);
+    expect(await r.exited).toBe(0);
+    const lines = read().split('\n');
+    expect(lines).toContain('JOB_HOPPER_DATABASE_URL=sqlite:/x');
+    expect(lines).toContain('OTHER=1');
+    expect(lineOf('GITHUB_APP_PRIVATE_KEY')).toBeDefined();
+    expect(read().endsWith('\n')).toBe(true);
+    expect(mode(envFile())).toBe('600');
+  });
+
+  it('a null webhook_secret writes no webhook secret line', async () => {
     await fake.close();
     fake = await startFake({ webhookSecret: null });
+    writeFileSync(envFile(), 'GITHUB_APP_WEBHOOK_SECRET=stale\n');
     const r = await go(['--no-webhook']);
-    const { action } = await startPage(r);
-    await fetch(`http://127.0.0.1:${r.port}/callback?code=abc&state=${stateOf(action)}`);
+    await callback(r);
     expect(await r.exited).toBe(0);
-    expect(files()).toEqual(['github-app.json', 'github-app.pem']);
-    expect(JSON.parse(readFileSync(join(dir, 'github-app.json'), 'utf8')).webhookSecretFile).toBeNull();
+    expect(lineOf('GITHUB_APP_WEBHOOK_SECRET')).toBeUndefined();
+    expect(lineOf('GITHUB_APP_PRIVATE_KEY')).toBeDefined();
   });
 
   it('a wrong state answers 400, converts nothing, writes nothing, and the flow stays open', async () => {
@@ -177,7 +204,7 @@ describe('create-github-app.sh', () => {
     const bad = await fetch(`http://127.0.0.1:${r.port}/callback?code=abc&state=nope`);
     expect(bad.status).toBe(400);
     expect(fake.calls).toEqual([]);
-    expect(files()).toEqual([]);
+    expectUntouched();
     const good = await fetch(`http://127.0.0.1:${r.port}/callback?code=abc&state=${stateOf(action)}`);
     expect(good.status).toBe(200);
     expect(await r.exited).toBe(0);
@@ -204,7 +231,7 @@ describe('create-github-app.sh', () => {
     expect(await rawGet(r.port, '/', 'evil.example')).toBe(421);
     expect(await rawGet(r.port, `/callback?code=abc&state=${stateOf(action)}`, `evil.example:${r.port}`)).toBe(421);
     expect(fake.calls).toEqual([]);
-    expect(files()).toEqual([]);
+    expectUntouched();
   });
 
   it('a failed conversion exits 1 and writes nothing', async () => {
@@ -215,49 +242,48 @@ describe('create-github-app.sh', () => {
     const res = await fetch(`http://127.0.0.1:${r.port}/callback?code=abc&state=${stateOf(action)}`);
     expect(res.status).toBe(502);
     expect(await r.exited).toBe(1);
-    expect(files()).toEqual([]);
+    expectUntouched();
   });
 
-  it('refuses with exit 2 when github-app.json exists, leaving it alone', async () => {
-    writeFileSync(join(dir, 'github-app.json'), 'OLD');
+  it('refuses with exit 2 when the env file already holds a key, leaving it alone', async () => {
+    const old = 'KEEP=1\nGITHUB_APP_PRIVATE_KEY=OLD\n';
+    writeFileSync(envFile(), old);
     const r = await go([]);
     expect(await r.exited).toBe(2);
     expect(r.startUrl).toBe('');
-    expect(readFileSync(join(dir, 'github-app.json'), 'utf8')).toBe('OLD');
+    expect(read()).toBe(old);
     expect(r.err()).toContain('--force');
   });
 
-  it('--force replaces an existing config', async () => {
-    writeFileSync(join(dir, 'github-app.json'), 'OLD');
+  it('--force replaces an existing key', async () => {
+    writeFileSync(envFile(), 'KEEP=1\nGITHUB_APP_PRIVATE_KEY=OLD\n');
     const r = await go(['--force']);
-    const { action } = await startPage(r);
-    await fetch(`http://127.0.0.1:${r.port}/callback?code=abc&state=${stateOf(action)}`);
+    await callback(r);
     expect(await r.exited).toBe(0);
-    expect(JSON.parse(readFileSync(join(dir, 'github-app.json'), 'utf8')).slug).toBe('renamed-by-owner');
+    expect(read()).not.toContain('OLD');
+    expect(read().split('\n')).toContain('KEEP=1');
+    expect(read().match(/^GITHUB_APP_PRIVATE_KEY=/gm)).toHaveLength(1);
     expect(files().filter((f) => f.includes('tmp'))).toEqual([]);
   });
 
   it('times out after JOB_HOPPER_APP_FLOW_TIMEOUT_MS with exit 1 and nothing written', async () => {
     const r = await go([], { JOB_HOPPER_APP_FLOW_TIMEOUT_MS: '300' });
     expect(await r.exited).toBe(1);
-    expect(files()).toEqual([]);
+    expectUntouched();
     expect(r.err()).toMatch(/timed out/i);
   });
 
-  it('refuses a symlink at a target path and writes through nothing', async () => {
-    const elsewhere = join(dir, 'elsewhere');
-    mkdirSync(elsewhere);
-    const cfg = join(dir, 'cfg');
-    mkdirSync(cfg);
-    writeFileSync(join(elsewhere, 'victim'), 'KEEP');
-    symlinkSync(join(elsewhere, 'victim'), join(cfg, 'github-app.pem'));
-    const r = await run([], { ...env(), JOB_HOPPER_CONFIG_DIR: cfg });
-    runs.push(r);
-    const { action } = await startPage(r);
-    await fetch(`http://127.0.0.1:${r.port}/callback?code=abc&state=${stateOf(action)}`);
+  it('refuses a symlink as the env file and writes through nothing', async () => {
+    const victim = join(dir, 'victim');
+    writeFileSync(victim, 'KEEP');
+    rmSync(envFile());
+    symlinkSync(victim, envFile());
+    const r = await go([]);
+    await callback(r);
     expect(await r.exited).toBe(1);
-    expect(readFileSync(join(elsewhere, 'victim'), 'utf8')).toBe('KEEP');
-    expect(existsSync(join(cfg, 'github-app.json'))).toBe(false);
+    expect(readFileSync(victim, 'utf8')).toBe('KEEP');
+    expect(lstatSync(envFile()).isSymbolicLink()).toBe(true);
+    expect(files().filter((f) => f.includes('tmp'))).toEqual([]);
     expect(r.err()).toMatch(/symlink/i);
   });
 });

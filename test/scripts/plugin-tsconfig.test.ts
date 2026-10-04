@@ -47,10 +47,11 @@ describe('write-plugin-tsconfig', () => {
     expect(r.out).toMatch(/kept/);
   });
 
-  it('install.sh calls it with the plugin dir (JOB_HOPPER_PLUGIN_DIR default) and the installed sdk.ts', () => {
+  it('install.sh calls it with daemon.env\'s JOB_HOPPER_PLUGIN_DIR (no default) and the installed sdk.ts', () => {
     const text = readFileSync(join(ROOT, 'scripts', 'install.sh'), 'utf8');
     expect(text).toMatch(/write-plugin-tsconfig\.ts/);
-    expect(text).toMatch(/\$CONFIG_DIR\/plugins/);
+    expect(text).toMatch(/PLUGIN_DIR="\$\(env_line JOB_HOPPER_PLUGIN_DIR\)"/);
+    expect(text).not.toMatch(/\$CONFIG_DIR\/plugins/);
     expect(text).toMatch(/\$DEST\/src\/plugins\/sdk\.ts/);
   });
 });
