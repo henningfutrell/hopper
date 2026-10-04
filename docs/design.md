@@ -128,7 +128,12 @@ an idle tick every 2 s would bury the decision log. Every recorded Decision emit
   - a **native hold** (no online machine runs the executor; pinned machine unknown/offline);
   - a resumed job **pinned** to the machine holding its pane (`resumeOn`).
   Nothing else orders jobs against each other: no per-source, per-repo or per-author cap, no
-  one-claim-per-tick. GitHub calls inside one source sync stay serial (GitHub's REST guidance:
+  one-claim-per-tick, **no dependency between jobs**. Owner decision (issue #11), replacing a
+  proposed dependency detector: every job runs in parallel; jobs settle overlaps themselves,
+  either by stating the assumptions they made or by making the needed fix in the other project,
+  annotated with which way the dependency runs; nothing blocks or holds. So the hopper has no
+  dependency detector and no dependency hold; an **overlap** is settled inside the jobs, and the
+  protocol footer ("Phase 2") tells each job so. Adding one back needs the owner's say-so. GitHub calls inside one source sync stay serial (GitHub's REST guidance:
   serial requests per client, to stay under secondary rate limits); that delays discovery, never
   a start.
 - **Router advice:** on `job.queued`, on every tick, and at startup, the engine calls
@@ -433,6 +438,8 @@ startup → `failed` with the screen text.
 
 ```
 [job-hopper publishing rule] Any text you send to GitHub (commit messages, branch names, pull request titles and bodies, issue text) describes the change and how it was verified, in neutral terms. Never quote or name the repository owner or any other person. Never include personal or machine details: email addresses, people's names, IP addresses, hostnames, tailnet names, home directory paths, usernames, machine or pane ids, port numbers of local machines, codes, tokens or secrets.
+[job-hopper parallel work] Other jobs run at the same time as this one, possibly in the same repos. Nothing orders or holds jobs for each other: no job waits for another.
+If your work overlaps another job's, sort it out yourself. Either state the assumptions you made about the other work, or make the needed fix in the other project and annotate it with which way the dependency runs (which work depends on which).
 [job-hopper protocol] When you need an answer from the user, ask exactly one question and end your message with a line containing only: JOB_HOPPER_QUESTION
 When the job is completely finished, end your final message with a line containing only: JOB_HOPPER_DONE
 If the job cannot be done, end with a line containing only: JOB_HOPPER_FAILED followed by the reason.

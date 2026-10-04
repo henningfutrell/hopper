@@ -29,6 +29,7 @@ synonyms. Rename here first, in the same commit as everything else.
 | **Trigger** | What woke the engine: `tick` or an event type. | |
 | **Decision** | The decider's single answer over all inputs: lane plans, starts, holds, divergences (`advice`), reasons, and the inputs themselves. | plan |
 | **Admission** | Whether a waiting job may start now. | |
+| **Overlap** | Two jobs whose work touches the same thing. The jobs settle it, never the hopper: a job states the assumptions it made about the other work, or makes the needed fix in the other project, annotated with which way the dependency runs. Nothing holds a job for an overlap. | dependency hold, blocked-by |
 | **Hold** | A Decision keeping a waiting job out, with a reason. Status `held`. | block, defer |
 | **Waiting** | Status `queued` or `held`. | pending |
 | **Ended** | Status `finished`, `failed` or `cancelled` (`TERMINAL_STATUSES`). `/api/queue` `ended` lists the 20 most recent, newest end first. *Finished* is only the success status. | done, completed, terminal (in UI copy) |

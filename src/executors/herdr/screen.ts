@@ -6,6 +6,8 @@ const PUBLISHING_RULE = "[job-hopper publishing rule] Any text you send to GitHu
 
 export const PROTOCOL_FOOTER = [
   PUBLISHING_RULE,
+  '[job-hopper parallel work] Other jobs run at the same time as this one, possibly in the same repos. Nothing orders or holds jobs for each other: no job waits for another.',
+  'If your work overlaps another job\'s, sort it out yourself. Either state the assumptions you made about the other work, or make the needed fix in the other project and annotate it with which way the dependency runs (which work depends on which).',
   '[job-hopper protocol] When you need an answer from the user, ask exactly one question and end your message with a line containing only: JOB_HOPPER_QUESTION',
   'When the job is completely finished, end your final message with a line containing only: JOB_HOPPER_DONE',
   'If the job cannot be done, end with a line containing only: JOB_HOPPER_FAILED followed by the reason.',
