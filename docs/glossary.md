@@ -22,6 +22,8 @@ synonyms. Rename here first, in the same commit as everything else.
 | **Hold** | A Decision keeping a waiting job out, with a reason. Status `held`. | block, defer |
 | **Waiting** | Status `queued` or `held`. | pending |
 | **Ended** | Status `finished`, `failed` or `cancelled` (`TERMINAL_STATUSES`). `/api/queue` `ended` lists the 20 most recent, newest end first. *Finished* is only the success status. | done, completed, terminal (in UI copy) |
+| **Lane span** | One run of one job on one lane: from `job.started` (or `job.reattached`) to the event that ended it — `finished`, `failed`, `cancelled`, `requeued`, `question` — or still `running`. Derived in the UI from the event log; drawn as a bar on the lane timeline. | slot, run |
+| **Attention** | The UI list of what wants a human now: open questions, a router in fallback, sources in error, recent failures. Derived; nothing stored. | alerts, notifications |
 | **Claim** | A Decision assigning a job to a lane, before the executor runs. | |
 | **Executor** | Runs one job on one lane. The role whose 1..n instances are named in plugins.yaml `executors:`; a job names an executor instance (`spec.executor`). Built-in plugins `herdr-claude` (Claude Code in a herdr pane) and `test`. One that cannot run holds the jobs naming it (`executor <name> unavailable: …`); never fails or re-routes them. | runner, task (issue #6's "task" is an executor instance) |
 | **Plugin** | One module implementing one role: built in (`src/plugins/<role>/<id>/`) or custom (one directory under the plugin dir). Default export a `PluginDefinition`. | extension, addon, adapter (an adapter is the code behind a port; a plugin is the swappable unit) |

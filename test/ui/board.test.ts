@@ -39,7 +39,7 @@ describe('waitingRows', () => {
   it('jobs on a question first, then waiting in decider order with the latest Decision effective priority', () => {
     const rows = waitingRows(
       queue({ waitingAnswer: [job('q', { status: 'waiting_answer' })], waiting: [job('w1', { status: 'queued' }), job('w2', { status: 'held' })] }),
-      { start: [{ jobId: 'w2', effectivePriority: 70 }] },
+      { start: [{ jobId: 'w2', effectivePriority: 70, laneId: null, machineId: 'm1', reason: 'r' }] },
     );
     expect(rows.map((r) => [r.job.id, r.kind, r.position, r.effectivePriority])).toEqual([
       ['q', 'question', null, null], ['w1', 'waiting', 1, null], ['w2', 'waiting', 2, 70],

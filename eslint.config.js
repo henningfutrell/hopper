@@ -1,8 +1,9 @@
 import js from '@eslint/js';
+import reactHooks from 'eslint-plugin-react-hooks';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['node_modules/**', 'data/**', 'coverage/**', 'src/ui/**/*.js'] },
+  { ignores: ['node_modules/**', 'data/**', 'coverage/**', 'ui/dist/**'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
@@ -17,7 +18,13 @@ export default tseslint.config(
     rules: { 'no-console': 'off' },
   },
   {
-    files: ['src/ui/**/*.js'],
-    languageOptions: { globals: { document: 'readonly', window: 'readonly', EventSource: 'readonly', fetch: 'readonly' } },
+    files: ['ui/src/**/*.{ts,tsx}'],
+    plugins: { 'react-hooks': reactHooks },
+    rules: { ...reactHooks.configs.recommended.rules },
+  },
+  {
+    // Vendored shadcn/ui components: kept as the CLI writes them, so a re-add diffs cleanly.
+    files: ['ui/src/components/ui/**'],
+    rules: { 'react-hooks/purity': 'off', 'max-lines': 'off' },
   },
 );

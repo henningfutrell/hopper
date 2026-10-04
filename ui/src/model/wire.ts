@@ -1,8 +1,8 @@
 // The HTTP API's shapes as the UI reads them. Domain types come from src/domain/types.ts as
 // type-only imports: the wire contract has one definition, and nothing of src/ is bundled.
-import type { Decision, DomainEvent, Job, JobStatus, Lane, MachineSnapshot, Question, SourceStatus, UsageReading, WebhookDelivery, WebhookSubscription } from '../../../src/domain/types.ts';
+import type { Decision, DomainEvent, Job, JobStatus, Lane, MachineSnapshot, Question, QuestionAttempt, SourceStatus, UsageReading, WebhookDelivery, WebhookSubscription } from '../../../src/domain/types.ts';
 
-export type { Decision, DomainEvent, Job, JobStatus, Lane, Question, SourceStatus, UsageReading, WebhookDelivery, WebhookSubscription };
+export type { Decision, DomainEvent, Job, JobStatus, Lane, Question, QuestionAttempt, SourceStatus, UsageReading, WebhookDelivery, WebhookSubscription };
 
 export interface Queue {
   waiting: Job[];

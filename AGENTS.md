@@ -29,4 +29,7 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
 - **Never write into the Jev repo.** The shim reads it; logs go to job-hopper's data dir.
 - **Persisted state is the user's.** A schema change ships a migration in
   `src/store/migrations.ts`; it never drops a queue.
-- Gates: `npm run typecheck`, `npm run lint`, `npm test` — all exit 0.
+- **The UI is the one built part.** `ui/` → `npm run build:ui` → `ui/dist` (gitignored), served
+  by the daemon. It imports nothing of `src/` at runtime; types only, from `src/domain/types.ts`.
+- Gates: `npm run typecheck`, `npm run lint`, `npm test`, `npm run build:ui` — all exit 0
+  (`npm run check` runs all four).
