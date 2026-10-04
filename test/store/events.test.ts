@@ -67,8 +67,10 @@ describe('event log', () => {
     expect(() => s.tx(() => { s.events.append(ev()); throw new Error('boom'); })).toThrow('boom');
     expect(got).toEqual([]);
     expect(s.events.since(0)).toEqual([]);
-    s.events.append(ev());
-    expect(got).toEqual([1]);
+    const e = s.events.append(ev());
+    // A rolled-back append may leave a gap (a Postgres sequence is not transactional): seq only rises.
+    expect(got).toEqual([e.seq]);
+    expect(s.events.since(0).map((x) => x.seq)).toEqual([e.seq]);
     s.close();
   });
 

@@ -486,7 +486,6 @@ export interface SettingsRepository {
   setRouterMode(mode: RouterMode): void;
 }
 
-/** The whole store. One SQLite file; repositories share one connection. */
 /** UI sessions, keyed by the SHA-256 of the token; the token itself is never stored. */
 export interface UiSessionRepository {
   create(tokenHash: string, expiresAt: string): void;
@@ -495,6 +494,7 @@ export interface UiSessionRepository {
   drop(tokenHash: string): void;
 }
 
+/** The whole store: one database (SQLite or Postgres); repositories share one connection. */
 export interface Store {
   jobs: JobRepository;
   lanes: LaneRepository;

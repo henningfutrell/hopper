@@ -4,15 +4,15 @@ import type { StoreContext } from './context.ts';
 export function createUiSessionRepository(c: StoreContext): UiSessionRepository {
   return {
     create(tokenHash, expiresAt) {
-      c.db.prepare('INSERT INTO ui_sessions (token_hash, expires_at) VALUES (?, ?)').run(tokenHash, expiresAt);
+      c.db.run('INSERT INTO ui_sessions (token_hash, expires_at) VALUES (?, ?)', tokenHash, expiresAt);
     },
     find(tokenHash, now) {
-      c.db.prepare('DELETE FROM ui_sessions WHERE expires_at <= ?').run(now);
-      const r = c.db.prepare('SELECT expires_at FROM ui_sessions WHERE token_hash = ?').get(tokenHash);
+      c.db.run('DELETE FROM ui_sessions WHERE expires_at <= ?', now);
+      const r = c.db.get('SELECT expires_at FROM ui_sessions WHERE token_hash = ?', tokenHash);
       return r ? String(r.expires_at) : undefined;
     },
     drop(tokenHash) {
-      c.db.prepare('DELETE FROM ui_sessions WHERE token_hash = ?').run(tokenHash);
+      c.db.run('DELETE FROM ui_sessions WHERE token_hash = ?', tokenHash);
     },
   };
 }

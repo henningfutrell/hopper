@@ -99,6 +99,7 @@ export async function startTestApp(o: {
   const config = loadConfig({
     JOB_HOPPER_PORT: '0',
     JOB_HOPPER_DATABASE_URL: databaseUrlFor(o.dbPath),
+    JOB_HOPPER_WORK_DIR: dataDir,
     JOB_HOPPER_TICK_MS: '50',
     JOB_HOPPER_WEBHOOK_BASE_MS: '20',
     JOB_HOPPER_LANE_IDLE_GRACE_MS: '200',

@@ -1,9 +1,9 @@
-import type { DatabaseSync } from 'node:sqlite';
 import type { Clock, IdGen } from '../domain/ports.ts';
+import type { Db } from './db.ts';
 
 /** What every repository shares: one connection, the clock, the id source. */
 export interface StoreContext {
-  db: DatabaseSync;
+  db: Db;
   clock: Clock;
   idGen: IdGen;
   /** Run fn in one transaction; nested calls join the outer one. */

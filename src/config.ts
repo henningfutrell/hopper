@@ -1,14 +1,18 @@
 // Configuration from env: process settings only (docs/design.md "Settled in slice 4"); every part is
 // configured in plugins.yaml. Invalid values fail loudly.
-import { homedir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';
+import { parseDatabaseUrl } from './store/db.ts';
 
 export interface Config {
   /** The bind address: `127.0.0.1`, or `::` (every interface) when LAN names are set. */
   host: string;
   port: number;
-  dbPath: string;
+  /** JOB_HOPPER_DATABASE_URL: `sqlite:<path>` or `postgres://…` (design.md "Database"). Required. */
+  databaseUrl: string;
+  /** Scratch only — claude's working directory, ssh control sockets, probes; nothing kept. */
+  workDir: string;
   tickMs: number;
   /** Router mode used only until the store has one. */
   routerMode: 'shadow' | 'active';
@@ -64,7 +68,9 @@ const schema = z.object({
   JOB_HOPPER_LAN_NAMES: list(lanName),
   JOB_HOPPER_LAN_PEERS: list(lanPeer),
   JOB_HOPPER_PORT: int(0, 65535).default(4790),
-  JOB_HOPPER_DB: path('~/.local/share/job-hopper/job-hopper.db'),
+  JOB_HOPPER_DATABASE_URL: z.string({ error: 'required: sqlite:<path> or postgres://user:password@host:port/database' })
+    .superRefine((v, ctx) => { try { parseDatabaseUrl(v); } catch (e) { ctx.addIssue({ code: 'custom', message: (e as Error).message }); } }),
+  JOB_HOPPER_WORK_DIR: z.string().min(1).default(join(tmpdir(), 'job-hopper')),
   JOB_HOPPER_TICK_MS: int(1).default(2000),
   JOB_HOPPER_ROUTER_MODE: z.enum(['shadow', 'active']).default('shadow'),
   JOB_HOPPER_SOFT_LIMIT: fraction().default(0.7),
@@ -113,7 +119,8 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
   return {
     host: e.JOB_HOPPER_LAN_NAMES.length > 0 ? '::' : '127.0.0.1',
     port: e.JOB_HOPPER_PORT,
-    dbPath: e.JOB_HOPPER_DB,
+    databaseUrl: e.JOB_HOPPER_DATABASE_URL,
+    workDir: e.JOB_HOPPER_WORK_DIR,
     tickMs: e.JOB_HOPPER_TICK_MS,
     routerMode: e.JOB_HOPPER_ROUTER_MODE,
     softLimit: e.JOB_HOPPER_SOFT_LIMIT,

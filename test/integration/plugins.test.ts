@@ -7,6 +7,7 @@ import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Job } from '../../src/domain/types.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
+import { testPostgres } from '../support/database.ts';
 import { waitFor } from '../support/wait.ts';
 import { ALWAYS_PROCEED_DIR } from '../plugins/support.ts';
 
@@ -112,7 +113,8 @@ describe('plugins.yaml and a custom plugin', () => {
   });
 });
 
-describe('a store written before plugins', () => {
+// SQLite fixtures: the SQLite migration history (a Postgres store starts at its end).
+describe.skipIf(testPostgres())('a store written before plugins', () => {
   it('migrates and runs: router mode kept, advice renamed, old decisions readable, old events still conform', async () => {
     const db = tempDbPath();
     cleanup = db.cleanup;
@@ -174,7 +176,7 @@ describe('question roles in /api/plugins (slice 2)', () => {
   });
 });
 
-describe('a store written before the assessor', () => {
+describe.skipIf(testPostgres())('a store written before the assessor', () => {
   const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 
   it('open questions at opus and at fable both restart at the answer stage; the human one stays with the human', async () => {

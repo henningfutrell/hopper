@@ -4,7 +4,7 @@ import { applyPatch, parse, type StoreContext } from './context.ts';
 
 export function createQuestionRepository(c: StoreContext): QuestionRepository {
   const get = (id: string): Question | undefined => {
-    const r = c.db.prepare('SELECT body FROM questions WHERE id = ?').get(id);
+    const r = c.db.get('SELECT body FROM questions WHERE id = ?', id);
     return r ? parse<Question>(r.body) : undefined;
   };
   const need = (id: string): Question => {
@@ -14,15 +14,14 @@ export function createQuestionRepository(c: StoreContext): QuestionRepository {
   };
   const save = (q: Question): Question => {
     const next: Question = { ...q, updatedAt: c.clock.now().toISOString() };
-    c.db.prepare('UPDATE questions SET status = ?, body = ? WHERE id = ?').run(next.status, JSON.stringify(next), q.id);
+    c.db.run('UPDATE questions SET status = ?, body = ? WHERE id = ?', next.status, JSON.stringify(next), q.id);
     return next;
   };
   return {
     create(input) {
       const at = c.clock.now().toISOString();
       const q: Question = { id: c.idGen(), ...input, status: 'open', attempts: [], notifyCount: 0, createdAt: at, updatedAt: at };
-      c.db.prepare('INSERT INTO questions (id, job_id, status, created_at, body) VALUES (?, ?, ?, ?, ?)')
-        .run(q.id, q.jobId, q.status, at, JSON.stringify(q));
+      c.db.run('INSERT INTO questions (id, job_id, status, created_at, body) VALUES (?, ?, ?, ?, ?)', q.id, q.jobId, q.status, at, JSON.stringify(q));
       return q;
     },
     get,
@@ -37,8 +36,7 @@ export function createQuestionRepository(c: StoreContext): QuestionRepository {
       const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
       const limit = filter?.limit !== undefined ? 'LIMIT ?' : '';
       if (filter?.limit !== undefined) args.push(filter.limit);
-      return c.db.prepare(`SELECT body FROM questions ${where} ORDER BY created_at DESC, seq DESC ${limit}`)
-        .all(...args).map((r) => parse<Question>(r.body));
+      return c.db.all(`SELECT body FROM questions ${where} ORDER BY created_at DESC, seq DESC ${limit}`, ...args).map((r) => parse<Question>(r.body));
     },
     update: (id, patch) => save(applyPatch<Question>(need(id), patch)),
     addAttempt(id, attempt) {

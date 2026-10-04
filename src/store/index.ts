@@ -1,9 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
 import type { Clock, IdGen, Store } from '../domain/ports.ts';
 import type { StoreContext } from './context.ts';
+import { openDb, parseDatabaseUrl } from './db.ts';
 import { createDecisionRepository } from './decisions.ts';
 import { createEventLog } from './events.ts';
 import { createJobRepository } from './jobs.ts';
@@ -15,12 +13,16 @@ import { createUiSessionRepository } from './ui-sessions.ts';
 import { createWebhookRepository } from './webhooks.ts';
 
 
-export function openStore(o: { path: string; clock: Clock; idGen?: IdGen }): Store {
-  mkdirSync(dirname(o.path), { recursive: true });
-  const db = new DatabaseSync(o.path);
-  db.exec('PRAGMA journal_mode = WAL');
-  db.exec('PRAGMA busy_timeout = 5000');
-  migrate(db);
+/** `url`: JOB_HOPPER_DATABASE_URL — `sqlite:<path>` or `postgres://…` (design.md "Database"). */
+export function openStore(o: { url: string; clock: Clock; idGen?: IdGen }): Store {
+  const db = openDb(parseDatabaseUrl(o.url));
+  try {
+    migrate(db);
+  } catch (e) {
+    db.close();
+    throw e;
+  }
+  const begin = db.dialect === 'sqlite' ? 'BEGIN IMMEDIATE' : 'BEGIN';
 
   let depth = 0;
   // eslint-disable-next-line prefer-const -- events needs ctx, ctx.tx needs events
@@ -34,7 +36,7 @@ export function openStore(o: { path: string; clock: Clock; idGen?: IdGen }): Sto
         depth++;
         try { return fn(); } finally { depth--; }
       }
-      db.exec('BEGIN IMMEDIATE');
+      db.exec(begin);
       depth = 1;
       let result: T;
       try {

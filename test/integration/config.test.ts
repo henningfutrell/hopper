@@ -1,7 +1,9 @@
-import { homedir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { loadConfig } from '../../src/config.ts';
+
+const DB = { JOB_HOPPER_DATABASE_URL: 'sqlite:/d/db.sqlite' };
 
 describe('configuration from env: process settings only (phase 5 slice 4)', () => {
   it('JOB_HOPPER_DATABASE_URL is required: no database is assumed on this machine', () => {
@@ -18,7 +20,8 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
     expect(c).toEqual({
       host: '127.0.0.1',
       port: 4790,
-      database: { kind: 'sqlite', path: '/d/db.sqlite' },
+      databaseUrl: 'sqlite:/d/db.sqlite',
+      workDir: join(tmpdir(), 'job-hopper'),
       tickMs: 2000,
       routerMode: 'shadow',
       softLimit: 0.7,
@@ -45,7 +48,7 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
 
   it('reads every process setting and expands ~', () => {
     const c = loadConfig({
-      JOB_HOPPER_PORT: '0', JOB_HOPPER_DATABASE_URL: 'postgres://jh:pw@db:5432/jh', JOB_HOPPER_TICK_MS: '50',
+      JOB_HOPPER_PORT: '0', JOB_HOPPER_DATABASE_URL: 'postgres://jh:pw@db:5432/jh', JOB_HOPPER_WORK_DIR: '/var/tmp/jh', JOB_HOPPER_TICK_MS: '50',
       JOB_HOPPER_ROUTER_MODE: 'active', JOB_HOPPER_SOFT_LIMIT: '0.5', JOB_HOPPER_HARD_LIMIT: '0.9', JOB_HOPPER_ROUTER_CHEAP_BOOST: '5',
       JOB_HOPPER_WEBHOOK_BASE_MS: '20', JOB_HOPPER_LANE_IDLE_GRACE_MS: '100', JOB_HOPPER_ANSWER_TIMEOUT_MS: '1000',
       JOB_HOPPER_RULES_FILE: '~/r.md', JOB_HOPPER_HUMAN_RENOTIFY_MS: '10', JOB_HOPPER_HUMAN_TIMEOUT_MS: '20',
@@ -55,7 +58,7 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
       JOB_HOPPER_LAN_NAMES: ' Server , 192.0.2.29', JOB_HOPPER_LAN_PEERS: '192.0.2.0/24, 100.64.0.0/10',
     });
     expect(c).toEqual({
-      host: '::', port: 0, database: { kind: 'postgres', url: 'postgres://jh:pw@db:5432/jh' }, tickMs: 50, routerMode: 'active',
+      host: '::', port: 0, databaseUrl: 'postgres://jh:pw@db:5432/jh', workDir: '/var/tmp/jh', tickMs: 50, routerMode: 'active',
       softLimit: 0.5, hardLimit: 0.9, routerCheapBoost: 5, webhookBaseMs: 20, laneIdleGraceMs: 100, answerTimeoutMs: 1000,
       rulesFile: join(homedir(), 'r.md'), humanRenotifyMs: 10, humanTimeoutMs: 20, resumeBoost: 7, maxQuestions: 1, keepPanes: true,
       webhooksFile: '/etc/w.yaml', uiSessionHours: 1.5,
@@ -106,11 +109,11 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
   });
 
   it('LAN names and LAN peers come together: one without the other fails loudly', () => {
-    expect(() => loadConfig({ JOB_HOPPER_LAN_NAMES: 'server' })).toThrow('JOB_HOPPER_LAN_PEERS');
-    expect(() => loadConfig({ JOB_HOPPER_LAN_PEERS: '192.0.2.0/24' })).toThrow('JOB_HOPPER_LAN_NAMES');
+    expect(() => loadConfig({ ...DB, JOB_HOPPER_LAN_NAMES: 'server' })).toThrow('JOB_HOPPER_LAN_PEERS');
+    expect(() => loadConfig({ ...DB, JOB_HOPPER_LAN_PEERS: '192.0.2.0/24' })).toThrow('JOB_HOPPER_LAN_NAMES');
   });
 
   it('refuses a soft limit at or above the hard limit', () => {
-    expect(() => loadConfig({ JOB_HOPPER_SOFT_LIMIT: '0.9', JOB_HOPPER_HARD_LIMIT: '0.8' })).toThrow('SOFT_LIMIT');
+    expect(() => loadConfig({ ...DB, JOB_HOPPER_SOFT_LIMIT: '0.9', JOB_HOPPER_HARD_LIMIT: '0.8' })).toThrow('SOFT_LIMIT');
   });
 });

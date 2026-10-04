@@ -43,6 +43,17 @@ describe.runIf(testPostgres())('postgres', () => {
     again.close();
   });
 
+  it('two stores open at once keep their own databases and transactions', () => {
+    const a = t.open(t.url());
+    const b = t.open(t.url());
+    const ja = a.jobs.create(spec, 1);
+    expect(() => b.tx(() => { b.jobs.create(spec, 2); throw new Error('b rolls back'); })).toThrow('b rolls back');
+    a.close();
+    expect(b.jobs.list()).toEqual([]);
+    expect(() => a.jobs.get(ja.id)).toThrow(/closed/);
+    b.close();
+  });
+
   it('a seq comes back as a number', () => {
     const s = t.open(t.url());
     const e = s.events.append({ type: 'job.queued', data: {} });

@@ -1,7 +1,7 @@
 // Composition root: config → plugins.yaml (written on the first boot without one) → plugin host
 // (every part) → store → engine → server. Adapters are built by their plugins, here through the
 // host (integration tests call startApp, with doubles at the seams).
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Answerer, Assessor, Clock, Executor, JobSource, PluginsView, Router, SettableUsageSource, SourceRegistry, Store } from './domain/ports.ts';
@@ -137,8 +137,9 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   const ensured = ensurePluginsFile({ pluginsFile: config.pluginsFile, env: config.leftoverEnv, answerTimeoutMs: config.answerTimeoutMs, logger });
   const staleSources = join(dirname(config.pluginsFile), 'sources.yaml');
   if (ensured.action === 'kept' && existsSync(staleSources)) console.warn(`job-hopper: WARNING: ${staleSources} is no longer read; plugins.yaml jobSources configures the job sources`);
-  const store = openStore({ path: config.dbPath, clock });
-  const dataDir = dirname(config.dbPath);
+  const store = openStore({ url: config.databaseUrl, clock });
+  const dataDir = config.workDir;
+  mkdirSync(dataDir, { recursive: true, mode: 0o700 });
   const routerMode = () => store.settings.getRouterMode() ?? config.routerMode;
   let executorNames = (): string[] => [];
   let jobsOnMachine = (_name: string): string[] => [];
