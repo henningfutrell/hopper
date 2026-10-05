@@ -2,7 +2,7 @@
 // an account are written. Pure; the view renders what these return.
 import { describe, expect, it } from 'vitest';
 import type { MachineLaneEffect, PartAccount, UsageReading } from '../../src/domain/types.ts';
-import { accountFacts, laneEffectText, orderReadings, readingKey, readingLabel, resetsIn, serviceLabel, sourceLine } from '../../ui/src/model/usage.ts';
+import { accountFacts, laneEffectText, orderReadings, readingKey, readingLabel, resetsIn, serviceLabel, shownSource, sourceLine } from '../../ui/src/model/usage.ts';
 
 const NOW = Date.parse('2026-10-03T12:00:00Z');
 const r = (over: Partial<UsageReading>): UsageReading => ({ source: 'claude', used: 10, limit: 100, unit: '%', at: '2026-10-03T11:58:00Z', ...over });
@@ -51,5 +51,13 @@ describe('usage model', () => {
     expect(accountFacts(app)).toEqual([['via', 'GitHub App'], ['installed repos', 'o/a, o/b']]);
     expect(accountFacts({ ...app, detail: { via: 'GitHub App', installedRepos: [] } })).toEqual([['via', 'GitHub App']]);
     expect(accountFacts({ ...app, detail: { plan: 'max', organization: 'Org', authMethod: 'claude.ai' } })).toEqual([['plan', 'max'], ['organization', 'Org'], ['sign-in', 'claude.ai']]);
+  });
+
+  it('the overview shows one usage source of several (issue #85): the chosen one while it reports, else the first', () => {
+    const sources = [{ name: 'work' }, { name: 'personal' }];
+    expect(shownSource(sources, 'personal')).toBe('personal');
+    expect(shownSource(sources, undefined)).toBe('work');
+    expect(shownSource(sources, 'gone')).toBe('work');
+    expect(shownSource([], 'work')).toBeUndefined();
   });
 });

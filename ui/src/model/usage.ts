@@ -22,6 +22,10 @@ export function resetsIn(iso: string, now: number): string {
   return `resets in ${d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`}`;
 }
 
+/** The one usage source the overview shows of several (issue #85): the chosen one while it reports, else the first. */
+export const shownSource = (sources: Pick<UsageSourceReport, 'name'>[], chosen: string | undefined): string | undefined =>
+  sources.find((s) => s.name === chosen)?.name ?? sources[0]?.name;
+
 /** What a usage source says about itself: why it has no readings, else when it last read. */
 export function sourceLine(s: UsageSourceReport, now: number): { text: string; problem: boolean } {
   if (s.problem) return { text: s.problem, problem: true };
