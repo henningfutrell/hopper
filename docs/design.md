@@ -2779,6 +2779,10 @@ responsive and fast. Builds on the at-a-glance board (issue #5).
   `/ui/assets/<hashed file>` → `public, max-age=31536000, immutable`. Only files listed at startup
   are served, so no request path reaches the filesystem. No bundle → `/` is 503 naming
   `npm run build:ui`; the API is unaffected. `scripts/install.sh` builds before it copies.
+- **One icon (issue #183).** The asset `index.html` names as its icon (`site/hopper-logo.svg`, built)
+  is also served at `/favicon.svg` and `/favicon.ico`. Every other page the daemon serves — the API
+  reference (Scalar's `favicon`), the sign-in pages — links `/favicon.svg`; `/favicon.ico` covers a
+  page that names no icon.
 - **Libraries, and why each.** React + shadcn/ui (Radix) for components, Tailwind v4 for styling,
   d3 for scales/shapes/arcs only — React renders every SVG node, axes included, so d3 never owns
   DOM. zustand holds the one store. sonner for toasts. Hand-rolled only the static file map
