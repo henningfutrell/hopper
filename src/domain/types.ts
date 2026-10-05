@@ -72,6 +72,8 @@ export interface Job {
   finishedAt?: string;
   /** Incremented on every claim. */
   attempts: number;
+  /** The job's work tree on its machine, as its executor reported it (issue #166); absent for an executor with none. */
+  workTree?: string;
   /** Executor-owned state (e.g. herdr pane/agent ids), written via ExecutionContext.saveState. */
   executorState?: Record<string, unknown>;
   /** The open question this job waits on (status waiting_answer). */

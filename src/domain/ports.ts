@@ -29,6 +29,8 @@ export interface ExecutionContext {
    * the herdr pane a job runs in — so restart recovery and resume can find it.
    */
   saveState(state: Record<string, unknown>): void;
+  /** Report the job's work tree (its cwd on the lane's machine) once resolved: `job.workTree`, shown on its lane. */
+  workTree(path: string): void;
 }
 
 /** What the executor needs answered before the job can continue. */

@@ -98,6 +98,7 @@ export function createCursorExecutor(o: CursorExecutorOptions): Executor {
     validate: validatePayload,
     run(ctx) {
       const p = resolvePayload(ctx.job.spec.payload, o.defaultCwd);
+      ctx.workTree(p.cwd);
       return turn(ctx, p.cwd, `${p.prompt}\n\n${protocolFooter(p.cwd)}`);
     },
     resume(ctx, answer) {

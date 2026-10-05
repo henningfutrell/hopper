@@ -8,6 +8,7 @@ import { COLOR } from '@/components/status';
 import { useNow } from '@/hooks/use-now';
 import { usePoll } from '@/hooks/use-poll';
 import { ReadingGauge } from '@/components/reading';
+import { laneName } from '@/model/board';
 import { orderReadings, readingKey, shownSource } from '@/model/usage';
 import type { UsageSourceReport } from '@/model/wire';
 import { TIMELINE_WINDOWS, type TimelineWindow } from '@/model/overview-layout';
@@ -51,7 +52,7 @@ export function TimelinePanel({ window: win, onWindow }: { window: TimelineWindo
         <TabsList className="h-7">{TIMELINE_WINDOWS.map((w) => <TabsTrigger key={w} value={w} className="px-2 text-xs">{w}</TabsTrigger>)}</TabsList>
       </Tabs>
     </>}>
-      <LaneTimeline spans={spans} now={now} windowMs={WINDOWS[win]} lanes={lanes} nameOf={nameOf} />
+      <LaneTimeline spans={spans} now={now} windowMs={WINDOWS[win]} lanes={lanes} nameOf={nameOf} laneNameOf={(id) => laneName(id, machines)} />
     </Panel>
   );
 }
