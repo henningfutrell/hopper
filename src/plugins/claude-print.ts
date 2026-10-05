@@ -1,7 +1,8 @@
 // The `claude` CLI in print mode, locked down, for the built-in escalation level (claude-cli;
 // design.md "Question pipeline"): no tools, no MCP, no settings, no session,
 // output bound to a JSON Schema, prompt on stdin, cwd = hopper's data dir (so no project
-// CLAUDE.md loads), env scrubbed of the Claude Code markers. Never throws.
+// CLAUDE.md loads), env scrubbed of the Claude Code markers. Never throws. On a designated
+// machine (`wrap`), the same argv runs through that machine's connection in a fresh private dir.
 import { spawn } from 'node:child_process';
 import type { z } from 'zod';
 import type { DetectionKit, OptionChoice, QuestionAttempt } from './sdk.ts';
@@ -18,7 +19,16 @@ export interface ClaudePrintOptions {
    * `$schema` draft 2020-12, which the claude CLI's validator rejects ("no schema with key or ref").
    */
   jsonSchema: Record<string, unknown>;
+  /** Where claude runs: given `[bin, ...argv]`, the program and argv that run it there. Absent: here. */
+  wrap?: (argv: string[]) => [string, string[]];
 }
+
+/**
+ * On an attached machine: claude in a fresh private dir there, removed after with the project dir
+ * claude keeps for it. `"$@"` is claude and its arguments, passed as words, never parsed as script.
+ * Run as `sh -c ON_MACHINE sh <bin> <args…>`.
+ */
+export const ON_MACHINE = 'd=$(mktemp -d) && cd "$d" || exit 1; "$@"; s=$?; cd /; rm -rf "$d" "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/$(printf %s "$d" | tr -c A-Za-z0-9 -)"; exit $s';
 
 /** Default `timeoutMs` of the claude plugins. */
 export const CLAUDE_TIMEOUT_MS = 180_000;
@@ -74,7 +84,8 @@ export function claudePrint<T extends object>(o: ClaudePrintOptions, schema: z.Z
       stop.removeEventListener('abort', onAbort);
       resolve(r);
     };
-    const child = spawn(o.bin, claudeArgv(o), { cwd: o.cwd, env: scrubbedEnv(), stdio: ['pipe', 'pipe', 'pipe'] });
+    const [file, args] = o.wrap ? o.wrap([o.bin, ...claudeArgv(o)]) : [o.bin, claudeArgv(o)];
+    const child = spawn(file, args, { cwd: o.cwd, env: scrubbedEnv(), stdio: ['pipe', 'pipe', 'pipe'] });
     const onAbort = () => {
       child.kill('SIGKILL');
       finish({ error: reasonOf() });

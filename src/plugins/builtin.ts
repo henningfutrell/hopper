@@ -1,4 +1,5 @@
 // The built-in plugins. A new built-in lives at src/plugins/<role>/<id>/index.ts and is listed here.
+import anthropicApi from './escalation-level/anthropic-api/index.ts';
 import claudeCli from './escalation-level/claude-cli/index.ts';
 import command from './executor/command/index.ts';
 import cursorAgent from './executor/cursor-agent/index.ts';
@@ -20,5 +21,5 @@ import claudePlan from './usage-source/claude-plan/index.ts';
 import type { PluginDefinition } from './sdk.ts';
 
 export const BUILTIN_PLUGINS: readonly PluginDefinition[] = [
-  gateRouter, passThrough, priority, oldestFirst, newestFirst, claudeCli, herdrClaude, cursorAgent, testExecutor, command, githubGh, githubApp, local, ssh, docker, client, claudePlan, grokbotRoutine,
+  gateRouter, passThrough, priority, oldestFirst, newestFirst, claudeCli, anthropicApi, herdrClaude, cursorAgent, testExecutor, command, githubGh, githubApp, local, ssh, docker, client, claudePlan, grokbotRoutine,
 ];

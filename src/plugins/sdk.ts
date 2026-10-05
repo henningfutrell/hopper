@@ -83,12 +83,12 @@ export interface RoleInstance {
 /**
  * What each role adds to the context. The router passes hopper's router mode on (Jev reads it);
  * a job source learns which source keys already have jobs; a machine
- * source learns the executors registered when it is asked; a usage source finds a machine.
+ * source learns the executors registered when it is asked; a usage source and an escalation level find a machine.
  */
 export interface RoleContext {
   router: { routerMode(): RouterMode };
   'queue-sorter': object;
-  'escalation-level': object;
+  'escalation-level': MachineLookup;
   executor: object;
   'job-source': JobSourceContext;
   'machine-source': MachineSourceContext;
@@ -96,13 +96,16 @@ export interface RoleContext {
   notifier: object;
 }
 
-/**
- * What a usage source learns: a machine by its id, as the machine sources list it now (absent: not
- * configured, or its source cannot run) — so a source can read the account of that machine (issue #139).
- */
-export interface UsageSourceContext {
+/** A machine by its id, as the machine sources list it now (absent: not configured, or its source cannot run). */
+export interface MachineLookup {
   machine(id: string): Promise<MachineSnapshot | undefined>;
 }
+
+/**
+ * What a usage source learns: a machine, so a source can read the account of that machine (issue #139).
+ * An escalation level learns the same, so it can run on its designated machine (issue #150).
+ */
+export type UsageSourceContext = MachineLookup;
 
 /**
  * What a machine source learns: the executors registered when it is asked, and how the hopper reaches

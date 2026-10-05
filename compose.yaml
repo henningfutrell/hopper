@@ -7,7 +7,7 @@
 #   podman compose exec hopper hopper login-code --link http://127.0.0.1:4790
 #
 # `docker compose` works the same. Settings and secrets, all optional, go in a .env file beside this
-# one: HOPPER_* settings, CLAUDE_CODE_OAUTH_TOKEN, … (GitHub needs none: the UI's Sources view →
+# one: HOPPER_* settings, CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY (an anthropic-api escalation level), … (GitHub needs none: the UI's Sources view →
 # Log in to GitHub). HOPPER_PORT moves the UI port;
 # HOPPER_IMAGE runs another image (one built from a checkout: `podman build -t localhost/hopper .`,
 # HOPPER_IMAGE=localhost/hopper). Upgrade: `podman compose pull && podman compose up -d`.
