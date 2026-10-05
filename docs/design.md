@@ -3494,8 +3494,10 @@ every check — the git CLI, never prompting (`GIT_TERMINAL_PROMPT=0`, ssh `Batc
 only the user's ssh config: `-F ~/.ssh/config`, since the unit's `PrivateTmp` puts the daemon in a
 user namespace where root-owned `/etc/ssh` files show as owned by nobody and ssh refuses them), so any
 git URL the daemon's user can fetch works: GitHub by ssh or https, another host, a local path. A
-check runs 10 s after start, then every `HOPPER_UPDATE_CHECK_MS` (default 900000; 0: only when
-asked), and from the UI's Check now. The **update channel** decides the target: `main` → the head
+check runs 10 s after start, then every `HOPPER_UPDATE_CHECK_MS` (default 60000; 0: only when
+asked), and from the UI's Check now. One minute, not fifteen (issue #177): a change merged to the
+tracked branch is not shipped until the running hopper offers it, and a 15-minute check left merged work
+unoffered for up to that long; a fetch that brings nothing is one round trip. The **update channel** decides the target: `main` → the head
 of the tracked branch; `release` → the newest `v<major>.<minor>.<patch>` tag. An update is
 **available** when the installed commit does not contain the target (an install ahead of it, e.g.
 from a feature branch, is `current`). **What's new** (issue #104): the bullets of `WHATS-NEW.md`

@@ -56,7 +56,7 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
       publicUrl: undefined,
       lanNames: [],
       lanPeers: [],
-      updateCheckMs: 900000,
+      updateCheckMs: 60000,
       leftoverEnv: {},
     });
   });
