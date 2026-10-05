@@ -1,39 +1,53 @@
 // What a test app reads from its database, written before it starts or while it runs: config
-// documents (design.md "Config documents") — plugins.yaml, rules.md, auth.yaml — and webhook
-// subscriptions, which are rows (issue #78).
+// documents (design.md "Config documents") — owner's plugins.yaml and rules.md, the instance's
+// auth.yaml — and owner's webhook subscriptions, which are rows (issue #78).
 import { stringify } from 'yaml';
-import type { ConfigDocumentName } from '../../src/domain/ports.ts';
-import { openStore } from '../../src/store/index.ts';
+import type { ConfigDocumentName, InstanceStore, UserStore } from '../../src/domain/ports.ts';
+import { OWNER_ID } from '../../src/domain/types.ts';
+import { openInstanceStore } from '../../src/store/index.ts';
 import { databaseUrlFor } from './database.ts';
 
 export interface WebhookEntry { name: string; url: string; events: string[]; secretEnv: string; active?: boolean }
 
-/** Replace a document in the database of `dbPath` (whatever version it is at). `doc`: text, or a value written as YAML. */
-export function writeDocument(dbPath: string, name: ConfigDocumentName, doc: unknown): void {
-  const store = openStore({ url: databaseUrlFor(dbPath), clock: { now: () => new Date() } });
+/** Run `fn` with the instance store of `dbPath`'s database and a user's store (default owner), closing both after. */
+export function withStores<T>(dbPath: string, fn: (instance: InstanceStore, user: UserStore) => T, userId = OWNER_ID): T {
+  const instance = openInstanceStore({ url: databaseUrlFor(dbPath), clock: { now: () => new Date() } });
   try {
-    store.documents.write(name, typeof doc === 'string' ? doc : stringify(doc), store.documents.version(name));
+    const user = instance.userStore(instance.users.get(userId) ?? instance.users.owner());
+    try {
+      return fn(instance, user);
+    } finally {
+      user.close();
+    }
   } finally {
-    store.close();
+    instance.close();
   }
+}
+
+/** Replace a document in the database of `dbPath` (whatever version it is at): auth.yaml the instance's, the others owner's. `doc`: text, or a value written as YAML. */
+export function writeDocument(dbPath: string, name: ConfigDocumentName, doc: unknown): void {
+  const text = typeof doc === 'string' ? doc : stringify(doc);
+  withStores(dbPath, (instance, owner) => {
+    if (name === 'auth.yaml') instance.documents.write(name, text, instance.documents.version(name));
+    else owner.documents.write(name, text, owner.documents.version(name));
+  });
 }
 
 /** A document in the database of `dbPath`, or undefined. */
 export function readDocument(dbPath: string, name: ConfigDocumentName): string | undefined {
-  const store = openStore({ url: databaseUrlFor(dbPath), clock: { now: () => new Date() } });
-  try {
-    return store.documents.read(name);
-  } finally {
-    store.close();
-  }
+  return withStores(dbPath, (instance, owner) => (name === 'auth.yaml' ? instance.documents.read(name) : owner.documents.read(name)));
 }
 
-/** Add webhook subscriptions to the database of `dbPath`. */
+/** Add webhook subscriptions to owner's store in the database of `dbPath`. */
 export function writeWebhooks(dbPath: string, webhooks: WebhookEntry[]): void {
-  const store = openStore({ url: databaseUrlFor(dbPath), clock: { now: () => new Date() } });
-  try {
-    for (const w of webhooks) store.webhooks.add({ ...w, active: w.active ?? true });
-  } finally {
-    store.close();
-  }
+  withStores(dbPath, (_instance, owner) => {
+    for (const w of webhooks) owner.webhooks.add({ ...w, active: w.active ?? true });
+  });
+}
+
+/** Owner's store in the database `url` names (its instance store closed with it). */
+export function openOwnerStore(url: string): UserStore {
+  const instance = openInstanceStore({ url, clock: { now: () => new Date() } });
+  const owner = instance.userStore(instance.users.owner());
+  return { ...owner, close: () => { owner.close(); instance.close(); } };
 }

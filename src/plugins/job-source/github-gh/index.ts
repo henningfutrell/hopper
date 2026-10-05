@@ -25,7 +25,7 @@ export function githubGhPlugin(seam?: GitHubApi): PluginDefinition<'job-source',
     },
     create(ctx, o) {
       if (o.enabled === false) return { disabled: { kind: 'github', detail: { mode: 'gh', enabledSetting: 'false' } } };
-      const source = createGhSource({ name: ctx.instanceName, clock: ctx.clock, knownKeys: ctx.knownKeys, rerunnable: ctx.rerunnable, env: ctx.env, ...(seam ? { api: seam } : {}) }, o);
+      const source = createGhSource({ name: ctx.instanceName, clock: ctx.clock, knownKeys: ctx.knownKeys, rerunnable: ctx.rerunnable, env: ctx.env, userEnv: ctx.userEnv, ...(seam ? { api: seam } : {}) }, o);
       return { source, pollMs: o.pollSeconds * 1000 };
     },
   };

@@ -1,0 +1,179 @@
+// Several users of one hopper (issue #158, design.md "Users: one hopper, separate users"): the
+// instance schema holds the users, their identity links, UI sessions, login codes, auth.yaml and the
+// instance settings; each user's own tables live in a user schema of their own.
+import { describe, expect, it } from 'vitest';
+import { openDb } from '../../src/store/db.ts';
+import { openInstanceStore } from '../../src/store/index.ts';
+import { INSTANCE_SCHEMA_VERSION } from '../../src/store/migrations.ts';
+import { TENANT_SCHEMA_VERSION } from '../../src/store/tenant-migrations.ts';
+import { testPostgres } from '../support/database.ts';
+import { fixedClock, spec, useTempStore } from './helpers.ts';
+
+const t = useTempStore();
+
+const schemaOf = (url: string): string => new URL(url).searchParams.get('schema')!;
+
+/** Column name, type and default of every table of `schema`, by table, without the schema's own name. */
+function shape(schema: string): Record<string, string[]> {
+  const db = openDb(testPostgres());
+  try {
+    const out: Record<string, string[]> = {};
+    for (const r of db.all(`SELECT table_name, column_name, data_type, is_nullable, column_default FROM information_schema.columns
+      WHERE table_schema = ? ORDER BY table_name, ordinal_position`, schema)) {
+      const def = String(r.column_default ?? '').replaceAll(`${schema}.`, '').replaceAll(`"${schema}".`, '');
+      (out[String(r.table_name)] ??= []).push(`${String(r.column_name)} ${String(r.data_type)} ${String(r.is_nullable)} ${def}`);
+    }
+    for (const r of db.all('SELECT tablename, indexdef FROM pg_indexes WHERE schemaname = ? ORDER BY indexname', schema)) {
+      (out[`index:${String(r.tablename)}`] ??= []).push(String(r.indexdef).replaceAll(`${schema}.`, '').replaceAll(`"${schema}".`, ''));
+    }
+    return out;
+  } finally {
+    db.close();
+  }
+}
+
+describe('a fresh store', () => {
+  it('starts with the user owner, whose tables live in a user schema of their own', () => {
+    const url = t.url();
+    const instance = openInstanceStore({ url, clock: fixedClock() });
+    const users = instance.users.list();
+    expect(users).toEqual([{ id: 'owner', name: 'owner', createdAt: expect.any(String), workDir: '', secretPrefix: '' }]);
+    expect(instance.users.owner().id).toBe('owner');
+    const owner = instance.userStore(users[0]!);
+    const job = owner.jobs.create(spec, 50);
+    owner.close();
+    instance.close();
+    const raw = openDb(testPostgres());
+    const at = (schema: string, table: string) => Number(raw.get('SELECT count(*) AS n FROM information_schema.tables WHERE table_schema = ? AND table_name = ?', schema, table)!.n);
+    expect(at(schemaOf(url), 'jobs')).toBe(0);
+    expect(at(schemaOf(url), 'users')).toBe(1);
+    expect(at(`${schemaOf(url)}_u_owner`, 'jobs')).toBe(1);
+    expect(raw.get(`SELECT id FROM "${schemaOf(url)}_u_owner".jobs`)).toEqual({ id: job.id });
+    expect(raw.get(`SELECT version FROM "${schemaOf(url)}".schema_version`)).toEqual({ version: INSTANCE_SCHEMA_VERSION });
+    expect(raw.get(`SELECT version FROM "${schemaOf(url)}_u_owner".schema_version`)).toEqual({ version: TENANT_SCHEMA_VERSION });
+    raw.close();
+  });
+
+  it('a user added later gets a slug id, a work dir, a secret prefix and a schema of the same shape as owner\'s', () => {
+    const url = t.url();
+    const instance = openInstanceStore({ url, clock: fixedClock() });
+    const ada = instance.users.add('Ada Lovelace');
+    expect(ada).toEqual({ id: 'ada_lovelace', name: 'Ada Lovelace', createdAt: expect.any(String), workDir: 'users/ada_lovelace', secretPrefix: 'HOPPER_USER_ADA_LOVELACE_' });
+    expect(instance.users.add('ada lovelace!').id).toBe('ada_lovelace_2');
+    expect(() => instance.users.add('Ada Lovelace')).toThrow(/name Ada Lovelace is taken/);
+    expect(instance.users.add('42').id).toBe('u42');
+    expect(instance.users.list().map((u) => u.id)).toEqual(['owner', 'ada_lovelace', 'ada_lovelace_2', 'u42']);
+    expect(instance.users.get('ada_lovelace')?.name).toBe('Ada Lovelace');
+    expect(instance.users.get('nobody')).toBeUndefined();
+    instance.close();
+    expect(shape(`${schemaOf(url)}_u_ada_lovelace`)).toEqual(shape(`${schemaOf(url)}_u_owner`));
+  });
+
+  it('one user never sees another\'s jobs, questions, events, documents, settings or webhooks', () => {
+    const instance = openInstanceStore({ url: t.url(), clock: fixedClock() });
+    const a = instance.userStore(instance.users.owner());
+    const b = instance.userStore(instance.users.add('bea'));
+    const job = a.jobs.create(spec, 50);
+    a.questions.create({ jobId: job.id, text: 'q?', recentOutput: '', detectedBy: 'marker', tier: 'human' });
+    a.events.append({ type: 'job.queued', jobId: job.id, data: {} });
+    a.documents.write('rules.md', 'a rules', 'missing');
+    a.settings.setRouterMode('active');
+    a.webhooks.add({ name: 'w', url: 'http://127.0.0.1:1/', events: ['job.*'], secretEnv: 'S', active: true });
+    expect(b.jobs.list()).toEqual([]);
+    expect(b.jobs.get(job.id)).toBeUndefined();
+    expect(b.questions.list()).toEqual([]);
+    expect(b.events.since(0)).toEqual([]);
+    expect(b.documents.read('rules.md')).toBeUndefined();
+    expect(b.settings.getRouterMode()).toBeUndefined();
+    expect(b.webhooks.list()).toEqual([]);
+    a.close();
+    b.close();
+    instance.close();
+  });
+});
+
+describe('identity links, sessions and login codes belong to a user', () => {
+  it('an identity is linked to one user', () => {
+    const instance = openInstanceStore({ url: t.url(), clock: fixedClock() });
+    const bea = instance.users.add('bea');
+    expect(instance.identities.userOf('corp', 'sub-1')).toBeUndefined();
+    instance.identities.link('corp', 'sub-1', bea.id);
+    expect(instance.identities.userOf('corp', 'sub-1')).toBe(bea.id);
+    instance.close();
+  });
+
+  it('a UI session carries its user', () => {
+    const instance = openInstanceStore({ url: t.url(), clock: fixedClock() });
+    const bea = instance.users.add('bea');
+    const identity = { provider: 'local', subject: 'local', groups: [] };
+    instance.uiSessions.create({ tokenHash: 'h', expiresAt: '2099-01-01T00:00:00.000Z', role: 'admin', identity, userId: bea.id });
+    expect(instance.uiSessions.find('h', '2026-10-02T10:00:00.000Z')).toEqual({ tokenHash: 'h', expiresAt: '2099-01-01T00:00:00.000Z', role: 'admin', identity, userId: 'bea' });
+    instance.close();
+  });
+
+  it('a login code is for one user: taking it names that user', () => {
+    const instance = openInstanceStore({ url: t.url(), clock: fixedClock() });
+    const bea = instance.users.add('bea');
+    instance.loginCodes.create('c1', '2099-01-01T00:00:00.000Z', bea.id);
+    expect(instance.loginCodes.live('c1', '2026-10-02T10:00:00.000Z')).toBe('bea');
+    expect(instance.loginCodes.take('c1', '2026-10-02T10:00:00.000Z')).toBe('bea');
+    expect(instance.loginCodes.take('c1', '2026-10-02T10:00:00.000Z')).toBeUndefined();
+    instance.close();
+  });
+});
+
+describe('migration 17: an install from before becomes the user owner, nothing lost', () => {
+  it('moves every tenant table, document and setting to owner; seq continues; sessions and codes are owner\'s', () => {
+    const url = t.url();
+    const v16 = t.at(url, 16);
+    const at = '2026-10-01T00:00:00.000Z';
+    v16.run("INSERT INTO jobs (id, status, created_at, body, source_key) VALUES ('j1', 'queued', ?, ?, 'k1')", at,
+      JSON.stringify({ id: 'j1', spec, priority: 50, status: 'queued', approved: false, createdAt: at, updatedAt: at, attempts: 0 }));
+    v16.run("INSERT INTO questions (id, job_id, status, created_at, body) VALUES ('q1', 'j1', 'open', ?, ?)", at,
+      JSON.stringify({ id: 'q1', jobId: 'j1', text: 'q?', recentOutput: '', detectedBy: 'marker', status: 'open', tier: 'human', attempts: [], createdAt: at, updatedAt: at }));
+    v16.run("INSERT INTO events (id, type, at, job_id, data, schema_version) VALUES ('e1', 'job.queued', ?, 'j1', '{}', 1)", at);
+    v16.run("INSERT INTO events (id, type, at, job_id, data, schema_version) VALUES ('e2', 'job.claimed', ?, 'j1', '{}', 1)", at);
+    v16.run("INSERT INTO webhooks (id, url, events, active, created_at, name, secret_env) VALUES ('w1', 'http://127.0.0.1:1/', '[\"job.*\"]', 1, ?, 'hook', 'WEBHOOK_SECRET_A')", at);
+    v16.run("INSERT INTO deliveries (id, subscription_id, status, body) VALUES ('d1', 'w1', 'delivered', ?)", JSON.stringify({ id: 'd1', subscriptionId: 'w1', status: 'delivered' }));
+    v16.run("INSERT INTO lanes (id, machine_id, number, body) VALUES ('l1', 'local', 1, ?)", JSON.stringify({ id: 'l1', machineId: 'local', number: 1, state: 'idle' }));
+    v16.run("INSERT INTO decisions (id, body) VALUES ('dec1', ?)", JSON.stringify({ id: 'dec1' }));
+    v16.run("INSERT INTO config_documents (name, text, updated_at) VALUES ('plugins.yaml', 'version: 1\n', ?), ('rules.md', 'be kind', ?), ('auth.yaml', 'version: 1\n', ?)", at, at, at);
+    v16.run("INSERT INTO settings (key, value) VALUES ('routerMode', 'active'), ('updateChannel', 'main'), ('autoUpdate', 'true'), ('pluginInstalls', '[]')");
+    v16.run("INSERT INTO ui_sessions (token_hash, expires_at, role, identity) VALUES ('t1', '2099-01-01T00:00:00.000Z', 'operator', ?)",
+      JSON.stringify({ provider: 'corp', subject: 'sub-9', name: 'Ada', groups: [] }));
+    v16.run("INSERT INTO login_codes (code_hash, expires_at) VALUES ('c1', '2099-01-01T00:00:00.000Z')");
+    v16.close();
+
+    const instance = openInstanceStore({ url, clock: fixedClock() });
+    expect(instance.users.list().map((u) => u.id)).toEqual(['owner']);
+    const owner = instance.userStore(instance.users.owner());
+    expect(owner.jobs.get('j1')?.status).toBe('queued');
+    expect(owner.jobs.getBySourceKey('k1')?.id).toBe('j1');
+    expect(owner.questions.get('q1')?.text).toBe('q?');
+    expect(owner.events.since(0).map((e) => e.id)).toEqual(['e1', 'e2']);
+    expect(owner.webhooks.list().map((w) => w.name)).toEqual(['hook']);
+    expect(owner.webhooks.listDeliveries().map((d) => d.id)).toEqual(['d1']);
+    expect(owner.lanes.list().map((l) => l.id)).toEqual(['l1']);
+    expect(owner.decisions.list().length).toBe(1);
+    expect(owner.documents.read('plugins.yaml')).toBe('version: 1\n');
+    expect(owner.documents.read('rules.md')).toBe('be kind');
+    expect(owner.settings.getRouterMode()).toBe('active');
+    // The sequence moved with its table: the next event follows the last one.
+    const next = owner.events.append({ type: 'job.started', jobId: 'j1', data: {} });
+    expect(next.seq).toBeGreaterThan(owner.events.since(0)[1]!.seq);
+    expect(instance.documents.read('auth.yaml')).toBe('version: 1\n');
+    expect(instance.settings.getUpdateSettings()).toEqual({ channel: 'main', autoUpdate: true });
+    expect(instance.settings.getPluginInstalls()).toEqual([]);
+    expect(instance.uiSessions.find('t1', '2026-10-02T10:00:00.000Z')?.userId).toBe('owner');
+    expect(instance.loginCodes.take('c1', '2026-10-02T10:00:00.000Z')).toBe('owner');
+    expect(instance.identities.userOf('corp', 'sub-9')).toBe('owner');
+    owner.close();
+    instance.close();
+    const raw = openDb(testPostgres());
+    const left = raw.all("SELECT table_name FROM information_schema.tables WHERE table_schema = ? ORDER BY table_name", schemaOf(url)).map((r) => r.table_name);
+    expect(left).toEqual(['config_documents', 'login_codes', 'schema_version', 'settings', 'ui_sessions', 'user_identities', 'users']);
+    expect(raw.all(`SELECT name FROM "${schemaOf(url)}".config_documents`)).toEqual([{ name: 'auth.yaml' }]);
+    expect(raw.all(`SELECT key FROM "${schemaOf(url)}".settings ORDER BY key`).map((r) => r.key)).toEqual(['autoUpdate', 'pluginInstalls', 'updateChannel']);
+    raw.close();
+  });
+});

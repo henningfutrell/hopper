@@ -1,12 +1,15 @@
 import { randomUUID } from 'node:crypto';
 import { YAMLSeq, isMap, isScalar, isSeq, parse, parseDocument, type Document, type Node, type YAMLMap } from 'yaml';
 import type { Db } from './db.ts';
+import { usersAndOwner } from './migration-users.ts';
 
 // Schema changes never drop a queue (persisted state is the user's). A migration is SQL, or a
 // function for a rewrite SQL cannot say plainly (JSON bodies); each runs in one transaction.
 //
 // The schema version is the `schema_version` table (design.md "Database"). A new store is created at
-// BASE, version 6; every migration after it is appended to MIGRATIONS.
+// BASE, version 6; every migration after it is appended to MIGRATIONS. This is the instance track:
+// since migration 17 (issue #158) a user's tables live in a user schema with a track of its own
+// (tenant-migrations.ts); a change to them goes there.
 type Migration = string | ((db: Db) => void);
 
 const BASE_VERSION = 6;
@@ -120,6 +123,9 @@ const MIGRATIONS: readonly Migration[] = [
   attachedMachinesToInstances,
   // 16: the question path is escalation levels (issue #134), in plugins.yaml and in the stored trails.
   (db) => { escalationLevelsSection(db); levelAttempts(db); },
+  // 17: several users (issue #158). The instance keeps users, identity links, UI sessions, login codes,
+  // auth.yaml and its own settings; everything else becomes the first user's, `owner`.
+  usersAndOwner,
 ];
 
 /**
@@ -334,8 +340,8 @@ function attachedMachinesToInstances(db: Db): void {
   db.run("UPDATE config_documents SET text = ?, updated_at = ? WHERE name = 'plugins.yaml'", doc.toString({ lineWidth: 0 }), new Date().toISOString());
 }
 
-/** The schema version a store is at once migrated. */
-export const SCHEMA_VERSION = BASE_VERSION + MIGRATIONS.length;
+/** The instance schema's version once migrated. */
+export const INSTANCE_SCHEMA_VERSION = BASE_VERSION + MIGRATIONS.length;
 
 function step(db: Db, m: Migration, record: () => void): void {
   db.exec('BEGIN');
@@ -350,7 +356,8 @@ function step(db: Db, m: Migration, record: () => void): void {
   }
 }
 
-export function migrate(db: Db): void {
+/** Migrate the instance schema up to `to` (default: the latest; a lower one only for a migration's own test). */
+export function migrateInstance(db: Db, to = INSTANCE_SCHEMA_VERSION): void {
   db.exec('CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)');
   const version = (): number => Number(db.get('SELECT version FROM schema_version')?.version ?? 0);
   const record = (v: number) => () => {
@@ -358,5 +365,5 @@ export function migrate(db: Db): void {
     db.run('INSERT INTO schema_version (version) VALUES (?)', v);
   };
   if (version() === 0) step(db, BASE, record(BASE_VERSION));
-  for (let v = version(); v < SCHEMA_VERSION; v++) step(db, MIGRATIONS[v - BASE_VERSION]!, record(v + 1));
+  for (let v = version(); v < to; v++) step(db, MIGRATIONS[v - BASE_VERSION]!, record(v + 1));
 }

@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
-import type { Clock, Restarter, Store, UpdateBuilder, Updater } from '../domain/ports.ts';
+import type { Clock, EventLog, InstanceSettingsRepository, Restarter, UpdateBuilder, Updater } from '../domain/ports.ts';
 import type { InstallInfo, UpdateApply, UpdateRelease, UpdateSettings, UpdateStatus } from '../domain/types.ts';
 import { createGitMirror, type GitMirror } from './git.ts';
 import { bullets, newSince, WHATS_NEW_FILE } from './whats-new.ts';
@@ -24,7 +24,10 @@ export interface UpdaterOptions {
   appDir: string;
   /** Holds update/: the repository mirror, the unpacked source, the pending file. */
   dataDir: string;
-  store: Pick<Store, 'settings' | 'events'>;
+  /** The instance's update settings. */
+  settings: Pick<InstanceSettingsRepository, 'getUpdateSettings' | 'setUpdateSettings'>;
+  /** Where update.* events go (every user's event log, issue #158), and the last one announced is read. */
+  events: Pick<EventLog, 'append' | 'recent'>;
   clock: Clock;
   logger: { info(line: string): void; warn(line: string): void };
   builder: UpdateBuilder;
@@ -92,11 +95,11 @@ export function createUpdater(o: UpdaterOptions): RunningUpdater {
   let stopped = false;
   const timers: NodeJS.Timeout[] = [];
 
-  const settings = (): UpdateSettings => ({ ...DEFAULTS, ...o.store.settings.getUpdateSettings() });
+  const settings = (): UpdateSettings => ({ ...DEFAULTS, ...o.settings.getUpdateSettings() });
   const append = (type: 'update.available' | 'update.started' | 'update.applied' | 'update.failed', data: Record<string, unknown>): void => {
-    if (!stopped) o.store.events.append({ type, data });
+    if (!stopped) o.events.append({ type, data });
   };
-  const lastAnnounced = (): unknown => o.store.events.recent(1, ['update.available'])[0]?.data.to;
+  const lastAnnounced = (): unknown => o.events.recent(1, ['update.available'])[0]?.data.to;
 
   function status(): UpdateStatus {
     const { commits: _commits, ...rest } = checked;
@@ -236,7 +239,7 @@ export function createUpdater(o: UpdaterOptions): RunningUpdater {
     apply,
     settings(patch) {
       const before = settings();
-      o.store.settings.setUpdateSettings(patch);
+      o.settings.setUpdateSettings(patch);
       const after = settings();
       if (after.channel !== before.channel) void check().catch(() => {});
       else if (after.autoUpdate && !before.autoUpdate && checked.state === 'available') apply();

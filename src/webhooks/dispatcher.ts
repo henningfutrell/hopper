@@ -1,4 +1,4 @@
-import type { Clock, Store, WebhookDispatcher } from '../domain/ports.ts';
+import type { Clock, UserStore, WebhookDispatcher } from '../domain/ports.ts';
 import type { DomainEvent, WebhookDelivery, WebhookSubscription } from '../domain/types.ts';
 import { sign } from './signer.ts';
 
@@ -18,7 +18,7 @@ export function secretProblem(secret: (name: string) => string | undefined, secr
 }
 
 export interface WebhookDispatcherOptions {
-  store: Store;
+  store: UserStore;
   clock: Clock;
   /** The runtime's secrets (src/secrets/runtime.ts): a subscription's secret, by the variable it names, read at each delivery. */
   secret: (name: string) => string | undefined;

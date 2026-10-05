@@ -29,9 +29,9 @@ const AUTH_ARGS = ['auth', 'status', '--json'];
 
 const failed = (what: string, r: CliRun): string => `claude ${what} failed: ${'error' in r ? r.error : `exited ${r.code}: ${r.stderr.trim().slice(0, 300)}`}`;
 
-/** The project dir `claude` keeps for a working directory: every non-alphanumeric as `-`. */
-const projectDirOf = (cwd: string): string =>
-  join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'projects', cwd.replace(/[^A-Za-z0-9]/g, '-'));
+/** The project dir `claude` keeps for a working directory: every non-alphanumeric as `-`; in the user's claude config dir (issue #158). */
+const projectDirOf = (cwd: string, userEnv: Readonly<Record<string, string>>): string =>
+  join(userEnv.CLAUDE_CONFIG_DIR || process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'projects', cwd.replace(/[^A-Za-z0-9]/g, '-'));
 
 const claudePlan: PluginDefinition<'usage-source', ClaudePlanOptions> = {
   id: 'claude-plan',
@@ -61,9 +61,9 @@ const claudePlan: PluginDefinition<'usage-source', ClaudePlanOptions> = {
       mkdirSync(probe, { recursive: true, mode: 0o700 });
       chmodSync(probe, 0o700);
       try {
-        return await runCli(o.bin, args, { cwd: probe, timeoutMs: TIMEOUT_MS, signal });
+        return await runCli(o.bin, args, { cwd: probe, timeoutMs: TIMEOUT_MS, signal, userEnv: ctx.userEnv });
       } finally {
-        rmSync(projectDirOf(probe), { recursive: true, force: true });
+        rmSync(projectDirOf(probe, ctx.userEnv), { recursive: true, force: true });
       }
     };
     const runOn = async (id: string, args: string[], signal: AbortSignal): Promise<CliRun> => {

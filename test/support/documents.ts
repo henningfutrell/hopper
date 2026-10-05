@@ -4,25 +4,27 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { afterEach } from 'vitest';
 import { stringify } from 'yaml';
-import type { ConfigDocumentName, ConfigDocuments, Store } from '../../src/domain/ports.ts';
-import { openStore } from '../../src/store/index.ts';
+import type { ConfigDocuments, UserDocumentName, UserStore } from '../../src/domain/ports.ts';
+import { openInstanceStore } from '../../src/store/index.ts';
 import { testDatabaseUrl } from './database.ts';
 
 export interface TempDocuments extends ConfigDocuments {
   /** Replace a document whatever its version; `doc` text, or a value written as YAML. */
-  set(name: ConfigDocumentName, doc: unknown): void;
-  store: Store;
+  set(name: UserDocumentName, doc: unknown): void;
+  store: UserStore;
 }
 
 /** Call at module level: `const docs = useTempDocuments();` then `docs()` in a test for a fresh, empty set. */
 export function useTempDocuments(): () => TempDocuments {
-  const open: { store: Store; dir: string }[] = [];
+  const open: { store: UserStore; dir: string }[] = [];
   afterEach(() => {
     for (const o of open.splice(0)) { o.store.close(); rmSync(o.dir, { recursive: true, force: true }); }
   });
   return () => {
     const dir = mkdtempSync(`${tmpdir()}/jh-docs-`);
-    const store = openStore({ url: testDatabaseUrl(), clock: { now: () => new Date() } });
+    const instance = openInstanceStore({ url: testDatabaseUrl(), clock: { now: () => new Date() } });
+    const owner = instance.userStore(instance.users.owner());
+    const store: UserStore = { ...owner, close: () => { owner.close(); instance.close(); } };
     open.push({ store, dir });
     const d = store.documents;
     return {

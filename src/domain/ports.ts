@@ -2,12 +2,12 @@
 // these. Adapters live in src/{executors,machines,usage,plugins,store,webhooks}.
 
 import type {
-  Advice, DomainEvent, Decision, EventType, ExecutorUnavailable, Job, JobId, JobSpec, JobStatus, Lane, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit, PluginsEditOutcome, PluginsReport, RouterMode, RouterStatus,
-  RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule,
-  JobSourceRef, LaneId, MachineId, MachineSnapshot, NewEvent, Question, QuestionAttempt, QuestionStatus,
-  Identity, SourceStatus, UiRole, UsageReading, UsageSourceState, WebhookDelivery, WebhookSubscription,
-  InstallInfo, UpdateSettings, UpdateStatus, GhLoginStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, PluginInstall,
+  Advice, DomainEvent, ExecutorUnavailable, Job, JobId, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit,
+  PluginsEditOutcome, PluginsReport, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule, LaneId, MachineSnapshot,
+  Question, QuestionAttempt, SourceStatus, UsageReading, UsageSourceState, WebhookDelivery, InstallInfo, UpdateSettings, UpdateStatus,
+  GhLoginStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport,
 } from './types.ts';
+import type { UserStore } from './store.ts';
 
 // ---- Execution -----------------------------------------------------------------------
 
@@ -389,7 +389,7 @@ export class SourceError extends Error {
  * compare-and-set on the job's current status.
  */
 export interface SourceHost {
-  store: Store;
+  store: UserStore;
   /** Create the job for an item (dedupe by key). null when the key already has a job. */
   ingest(item: SourceItem, source: { name: string; kind: string }): Job | null;
   cancel(jobId: JobId, reason: string): void;
@@ -407,92 +407,6 @@ export interface SourceHost {
 export interface SourceRegistry {
   statuses(): SourceStatus[];
   onStatus(listener: (status: SourceStatus) => void): () => void;
-}
-
-// ---- Persistence -----------------------------------------------------------------------
-
-export interface JobFilter {
-  status?: JobStatus[];
-  limit?: number;
-}
-
-export interface JobRepository {
-  create(spec: JobSpec, priority: number, source?: JobSourceRef): Job;
-  get(id: JobId): Job | undefined;
-  getBySourceKey(key: string): Job | undefined;
-  list(filter?: JobFilter): Job[];
-  /** Shallow-merge patch; a key present with value `undefined` clears that field. Bumps updatedAt. */
-  update(id: JobId, patch: Partial<Omit<Job, 'id' | 'spec' | 'createdAt'>>): Job;
-}
-
-export interface LaneRepository {
-  list(machineId?: MachineId): Lane[];
-  /** Opens the lowest free lane number for the machine. */
-  open(machineId: MachineId): Lane;
-  update(id: LaneId, patch: Partial<Omit<Lane, 'id' | 'machineId' | 'openedAt'>>): Lane;
-  close(id: LaneId): void;
-}
-
-export interface DecisionRepository {
-  save(decision: Decision): void;
-  get(id: string): Decision | undefined;
-  /** Newest first. */
-  list(limit?: number): Decision[];
-}
-
-/**
- * Append-only event log. append assigns seq/id/at. Listeners are notified only after the
- * OUTERMOST transaction commits (immediately when no transaction is open), and never for a
- * rolled-back append. Listeners must not re-enter the engine synchronously — schedule work
- * with setImmediate/queueMicrotask.
- */
-export interface EventLog {
-  append(event: NewEvent): DomainEvent;
-  /** Events with seq > afterSeq, oldest first. */
-  since(afterSeq: number, limit?: number): DomainEvent[];
-  /** Newest first. */
-  recent(limit?: number, types?: EventType[]): DomainEvent[];
-  subscribe(listener: (event: DomainEvent) => void): () => void;
-}
-
-export interface WebhookRepository {
-  /** A new subscription; undefined (nothing written) when the name is taken. The table is the source of truth (issue #78). */
-  add(input: { name: string; url: string; events: string[]; secretEnv: string; active: boolean }): WebhookSubscription | undefined;
-  /** Changes only the fields given; undefined when there is no such subscription. */
-  update(id: string, patch: { url?: string; events?: string[]; active?: boolean }): WebhookSubscription | undefined;
-  get(id: string): WebhookSubscription | undefined;
-  list(): WebhookSubscription[];
-  /** Deletes the subscription and marks its pending/retrying deliveries `failed`. */
-  delete(id: string): boolean;
-  /** status `pending`, attempts 0, nextAttemptAt = now. */
-  createDelivery(subscriptionId: string, event: DomainEvent): WebhookDelivery;
-  updateDelivery(id: string, patch: Partial<Omit<WebhookDelivery, 'id' | 'subscriptionId' | 'eventSeq' | 'eventType' | 'createdAt'>>): WebhookDelivery;
-  /** Deliveries due at or before `now`: status pending|retrying and nextAttemptAt <= now. */
-  dueDeliveries(now: Date): WebhookDelivery[];
-  listDeliveries(filter?: { subscriptionId?: string; limit?: number }): WebhookDelivery[];
-}
-
-export interface QuestionRepository {
-  /** `tier`: the stage it starts at (the first escalation level's instance name, or `human`). */
-  create(input: { jobId: JobId; text: string; recentOutput: string; detectedBy: string; tier: string }): Question;
-  get(id: string): Question | undefined;
-  /** Newest first. */
-  list(filter?: { status?: QuestionStatus[]; jobId?: JobId; limit?: number }): Question[];
-  /** Shallow-merge; `undefined` clears. Bumps updatedAt. */
-  update(id: string, patch: Partial<Omit<Question, 'id' | 'jobId' | 'createdAt' | 'attempts'>>): Question;
-  /** Append one attempt to the question's trail. */
-  addAttempt(id: string, attempt: QuestionAttempt): Question;
-}
-
-export interface SettingsRepository {
-  getRouterMode(): RouterMode | undefined;
-  setRouterMode(mode: RouterMode): void;
-  /** Self-update settings the owner chose; absent fields were never set. */
-  getUpdateSettings(): Partial<UpdateSettings>;
-  setUpdateSettings(patch: Partial<UpdateSettings>): void;
-  /** The store installs, by id (issue #93). */
-  getPluginInstalls(): PluginInstall[];
-  setPluginInstalls(installs: readonly PluginInstall[]): void;
 }
 
 // ---- Self-update (issue #44) ------------------------------------------------------------
@@ -524,57 +438,7 @@ export interface GhLogin {
   cancel(): Promise<GhLoginStatus>;
 }
 
-/** UI sessions, keyed by the SHA-256 of the token; the token itself is never stored. */
-/** A stored UI session: never the token, only its SHA-256. */
-export interface UiSessionRow { tokenHash: string; expiresAt: string; role: UiRole; identity: Identity }
+// ---- Persistence: src/domain/store.ts (re-exported here, one vocabulary) ----------------
 
-export interface UiSessionRepository {
-  create(row: UiSessionRow): void;
-  /** The live session with this hash, or undefined. Expired rows (`expires_at <= now`) are deleted first. */
-  find(tokenHash: string, now: string): UiSessionRow | undefined;
-  /** Every stored session, expired or not. */
-  all(): UiSessionRow[];
-  setRole(tokenHash: string, role: UiRole): void;
-  drop(tokenHash: string): void;
-}
-
-/** One-time UI login codes, keyed by the SHA-256 of the code; the code itself is never stored. */
-export interface LoginCodeRepository {
-  create(codeHash: string, expiresAt: string): void;
-  /** True, and the code is gone, when it exists and `expiresAt > now`. Expired codes are deleted first. */
-  take(codeHash: string, now: string): boolean;
-  /** True when it exists and `expiresAt > now`; the code stays. */
-  live(codeHash: string, now: string): boolean;
-}
-
-/** The config documents the store holds (design.md "Config documents"). */
-export const CONFIG_DOCUMENTS = ['plugins.yaml', 'rules.md', 'auth.yaml'] as const;
-export type ConfigDocumentName = (typeof CONFIG_DOCUMENTS)[number];
-
-/**
- * Config documents: named texts, each edited whole against its `version` — the sha-256 of its
- * text, or `missing` while there is none.
- */
-export interface ConfigDocuments {
-  read(name: ConfigDocumentName): string | undefined;
-  version(name: ConfigDocumentName): string;
-  /** Replace the text if the document is still at `version`; false (nothing written) when it moved. */
-  write(name: ConfigDocumentName, text: string, version: string): boolean;
-}
-
-/** The whole store: one Postgres database; repositories share one connection. */
-export interface Store {
-  jobs: JobRepository;
-  lanes: LaneRepository;
-  decisions: DecisionRepository;
-  events: EventLog;
-  webhooks: WebhookRepository;
-  questions: QuestionRepository;
-  settings: SettingsRepository;
-  uiSessions: UiSessionRepository;
-  documents: ConfigDocuments;
-  loginCodes: LoginCodeRepository;
-  /** Run fn in one transaction. Re-entrant: a nested tx joins the outer one. Throw = rollback. */
-  tx<T>(fn: () => T): T;
-  close(): void;
-}
+export type * from './store.ts';
+export { CONFIG_DOCUMENTS, INSTANCE_DOCUMENTS, USER_DOCUMENTS } from './store.ts';

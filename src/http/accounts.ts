@@ -2,10 +2,9 @@
 // (issue #18)"). Read-only, and facts only: each usage source's account (its state) and each job
 // source's (`detail.account` in its status) — a part describes its own, so a custom plugin's appears
 // the same way. Never a token: no part puts one there, and nothing else is read.
-import type { FastifyInstance } from 'fastify';
-import type { SourceRegistry } from '../domain/ports.ts';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Account, PartAccount, SourceStatus, UsageSourceReport } from '../domain/types.ts';
-import type { Engine } from '../engine/index.ts';
+import type { TenantParts } from './tenants.ts';
 
 const isAccount = (v: unknown): v is Account =>
   typeof v === 'object' && v !== null && typeof (v as Account).service === 'string' && typeof (v as Account).detail === 'object';
@@ -17,6 +16,6 @@ export function accountsOf(usage: UsageSourceReport[], sources: SourceStatus[]):
   ];
 }
 
-export function accountRoutes(app: FastifyInstance, o: { engine: Engine; sources: SourceRegistry }): void {
-  app.get('/api/accounts', async () => ({ accounts: accountsOf(o.engine.getUsageSources(), o.sources.statuses()) }));
+export function accountRoutes(app: FastifyInstance, o: { tenant: (req: FastifyRequest) => TenantParts }): void {
+  app.get('/api/accounts', async (req) => { const t = o.tenant(req); return { accounts: accountsOf(t.engine.getUsageSources(), t.registry.statuses()) }; });
 }

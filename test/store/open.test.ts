@@ -1,7 +1,7 @@
-import { SCHEMA_VERSION } from '../../src/store/migrations.ts';
+import { INSTANCE_SCHEMA_VERSION } from '../../src/store/migrations.ts';
 import { describe, expect, it } from 'vitest';
 import { openDb } from '../../src/store/db.ts';
-import { openStore } from '../../src/store/index.ts';
+
 import { fixedClock, useTempStore } from './helpers.ts';
 
 const t = useTempStore();
@@ -11,7 +11,7 @@ describe('openStore', () => {
     const url = t.url();
     t.open(url).close();
     const raw = openDb(url);
-    expect(raw.get('SELECT version FROM schema_version')).toEqual({ version: SCHEMA_VERSION });
+    expect(raw.get('SELECT version FROM schema_version')).toEqual({ version: INSTANCE_SCHEMA_VERSION });
     raw.close();
   });
 
@@ -27,7 +27,7 @@ describe('openStore', () => {
 
   it('uses the injected idGen', () => {
     let n = 0;
-    const s = openStore({ url: t.url(), clock: fixedClock(), idGen: () => `id-${++n}` });
+    const s = t.open(t.url(), fixedClock(), () => `id-${++n}`);
     expect(s.jobs.create({ executor: 'x', payload: {} }, 5).id).toBe('id-1');
     expect(s.webhooks.add({ name: 'n', url: 'u', events: [], secretEnv: 'S', active: true })!.id).toBe('id-2');
     expect(s.events.append({ type: 'job.queued', data: {} }).id).toBe('id-3');

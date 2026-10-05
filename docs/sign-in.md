@@ -3,13 +3,14 @@
 How people sign in to the hopper UI, and how to plug it into an identity provider. The
 design and its reasons: `docs/design.md` "Sign-in: none, password, local, OIDC and SAML".
 
-Every way of signing in ends the same: a **UI session** with a **UI role**. Sessions, roles and
-logout behave the same whichever provider signed the user in.
+Every way of signing in ends the same: a **UI session** with a **UI role**, acting for one **user**
+(issue #158). Sessions, roles and logout behave the same whichever provider signed the user in.
 
 - [Pick a setup](#pick-a-setup)
 - [auth.yaml](#authyaml)
 - [No sign-in](#no-sign-in) · [Password sign-in](#password-sign-in)
 - [UI roles and role rules](#ui-roles-and-role-rules)
+- [Who signs in as which user](#who-signs-in-as-which-user)
 - [The sign-in origin and a public URL](#the-sign-in-origin-and-a-public-url)
 - [Providers](#providers): [Google](#google) · [Microsoft Entra ID](#microsoft-entra-id-oidc) ·
   [Okta](#okta-oidc) · [Auth0](#auth0) · [Keycloak](#keycloak-oidc) · [GitHub](#github) ·
@@ -25,7 +26,7 @@ logout behave the same whichever provider signed the user in.
 | One person, one machine | Nothing. With no `auth.yaml`, the one-time login code is the only way in: `hopper login-code` mints one (good once, 10 minutes); on the host install `bash ~/.local/lib/hopper/scripts/open-ui.sh` opens the UI already logged in. It signs in as `admin`. |
 | One person, a few devices on a home LAN | `HOPPER_LAN_NAMES` / `HOPPER_LAN_PEERS` (`docs/design.md` "Reaching the UI across the LAN") and device links. Add a provider if you prefer signing in with an account. |
 | Behind a proxy or network that already decides who gets in | [No sign-in](#no-sign-in): `none: { role: … }`. Everyone who reaches the UI acts with that role. |
-| A few people, no identity provider | [Password sign-in](#password-sign-in): accounts with argon2id hashes in `auth.yaml`. |
+| A few people, no identity provider | [Password sign-in](#password-sign-in): accounts with argon2id hashes in `auth.yaml`. Each account gets a [user of its own](#who-signs-in-as-which-user). |
 | A team, or anyone reaching it over the internet | A reverse proxy with TLS, `HOPPER_PUBLIC_URL`, one or more providers in `auth.yaml` (or password sign-in), role rules, and usually `local: { enabled: false }`. |
 
 ## auth.yaml
@@ -162,6 +163,34 @@ What fills each field:
 | groups | `claims.groups` | teams as `org/team-slug` (asks for `read:org` only when a rule names groups) | `attributes.groups` |
 
 A UI role is not a plugin role: see `docs/glossary.md`.
+
+A role acts only inside the session's own user: an admin changes their own plugins, machines,
+routing, webhooks, rules and router mode, never another user's. What all users share — adding users,
+the plugin store, updates — needs `admin`.
+
+## Who signs in as which user
+
+One hopper can work for several people (issue #158, `docs/design.md` "Users: one hopper, separate
+users"). Each **user** has their own jobs, questions, events, machines, plugins, routing, rules,
+webhooks and credentials; nobody sees or touches another user's. Every hopper starts with the user
+`owner`, which holds everything from before there were several.
+
+| sign-in | user |
+|---|---|
+| login code | the user it was minted for: `hopper login-code --user <id>` (default `owner`); a device link is for the session's own user; a new user's login link for that user |
+| no sign-in (`none`) | `owner` |
+| password, OIDC, GitHub, SAML | the user its identity (provider and subject) is linked to; the **first** sign-in of an identity a role rule lets in creates a new user for it, named after its username, else its name, else its email (made unique: `ada`, `ada 2`), and links it |
+
+- An admin adds a user from **Settings → Users** (or `hopper user add <name>`) and hands over the
+  one-time login link it shows.
+- A user added later reads its secrets under its own prefix: a plugin option naming `GITHUB_TOKEN`
+  reads `HOPPER_USER_<ID>_GITHUB_TOKEN` (or its `_FILE`), so set the variable for that user in the
+  daemon's environment. `owner` reads the names as they are.
+- Its `gh` and `claude` logins are its own: they live in `<work dir>/users/<id>/gh` and `…/claude`.
+  Log it in to GitHub from its own Sources view.
+- An identity that signed in before there were several users is linked to `owner` when its session
+  was still stored; one whose sessions had all expired gets a new user at its next sign-in.
+  `hopper login-code` always reaches `owner`.
 
 ## The sign-in origin and a public URL
 
@@ -494,7 +523,8 @@ in `https://keycloak.example.com/realms/<realm>/protocol/saml/descriptor`.
 The same for every provider, password sign-in, no sign-in and the login code:
 
 - A session is a random token in the browser's `localStorage` for the exact origin, sent as the
-  `x-hopper-session` header. The daemon stores only its SHA-256, with the role and identity.
+  `x-hopper-session` header. The daemon stores only its SHA-256, with the role, the identity and the
+  user it acts for.
 - It lasts `HOPPER_UI_SESSION_HOURS` (default 12) and survives daemon restarts.
 - **Log out** (the header's button) ends the hopper session. It does not sign you out of the
   provider: signing in again may need no password.

@@ -4,10 +4,7 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import { apiReferenceRoutes } from './api-reference.ts';
 import type { SignIn } from '../auth/index.ts';
-import type { Clock, GhLogin, PluginStoreView, PluginsView, QuestionService, SourceRegistry, Store, Updater, WebhookDispatcher } from '../domain/ports.ts';
-import type { Engine } from '../engine/index.ts';
-import type { SecretProblem } from './webhooks.ts';
-import type { WebhooksEditor } from '../webhooks/edit.ts';
+import type { Clock, InstanceStore, PluginStoreView, Updater } from '../domain/ports.ts';
 import { accountRoutes } from './accounts.ts';
 import { installErrorHandling } from './errors.ts';
 import { ghLoginRoutes } from './gh-login.ts';
@@ -21,29 +18,24 @@ import { sourceRoutes } from './sources.ts';
 import { sseRoutes } from './sse.ts';
 import { stateRoutes } from './state.ts';
 import { staticRoutes } from './static.ts';
+import { installTenancy, tenantOf, type Tenants } from './tenants.ts';
 import { registerUiRoutes } from './ui/index.ts';
 import { createUiSessions } from './ui/sessions.ts';
 import { updateRoutes } from './update.ts';
+import { userRoutes } from './users.ts';
 import { webhookRoutes } from './webhooks.ts';
 
+export type { TenantParts, Tenants } from './tenants.ts';
+
 export interface ServerOptions {
-  engine: Engine;
-  store: Store;
-  dispatcher: WebhookDispatcher;
-  questions: QuestionService;
-  sources: SourceRegistry;
-  /** The router's status and GET /api/plugins. */
-  plugins: PluginsView;
-  /** The plugin store: GET /api/plugin-store, POST /ui/api/plugin-store. */
+  /** The instance store: UI sessions, login codes, the users. */
+  instance: Pick<InstanceStore, 'uiSessions' | 'loginCodes' | 'users'>;
+  /** Every user's running parts (issue #158): a tenant route reads and changes the request's user's. */
+  tenants: Tenants;
+  /** The plugin store (the instance's): GET /api/plugin-store, POST /ui/api/plugin-store. */
   pluginStore: PluginStoreView;
-  /** Why the runtime gives no secret for a webhook subscription's variable (GET /api/webhooks). */
-  secretProblem: SecretProblem;
-  /** UI edits of the webhook subscriptions (POST /ui/api/webhooks). */
-  webhooksEditor: WebhooksEditor;
-  /** Self-update: GET /api/update, POST /ui/api/update. */
+  /** Self-update (the instance's): GET /api/update, POST /ui/api/update. */
   updater: Updater;
-  /** gh login (issue #138): GET /api/gh-login, POST /ui/api/gh-login. */
-  ghLogin: GhLogin;
   clock: Clock;
   version: string;
   /** The bound port, for the Host guard and the UI Origin check (known only after listen). */
@@ -62,27 +54,30 @@ export interface ServerOptions {
 export function createServer(o: ServerOptions): FastifyInstance {
   const app = Fastify({ logger: o.logger ?? false, forceCloseConnections: true });
   installErrorHandling(app);
-  const sessions = createUiSessions({ repo: o.store.uiSessions, clock: o.clock, hours: o.sessionHours });
+  const sessions = createUiSessions({ repo: o.instance.uiSessions, clock: o.clock, hours: o.sessionHours });
   // auth.yaml may have changed since the sessions were made: a removed provider or rule ends them.
   const r = sessions.reconcile(o.signIn.roleOf);
   if (r.dropped + r.changed > 0) console.warn(`hopper: auth.yaml applied to stored UI sessions: ${r.dropped} ended, ${r.changed} changed role`);
   installHostGuard(app, { port: o.port, lan: o.lan, sessions });
+  installTenancy(app, { tenants: o.tenants, sessions, port: o.port, lan: o.lan });
+  const tenant = { tenant: (req: Parameters<typeof tenantOf>[1]) => tenantOf(o.tenants, req) };
   apiReferenceRoutes(app, o.version);
-  jobRoutes(app, o);
-  stateRoutes(app, o);
-  questionRoutes(app, o);
-  questionGatesRoutes(app, { documents: o.store.documents });
-  webhookRoutes(app, o);
-  sourceRoutes(app, o);
-  accountRoutes(app, o);
+  jobRoutes(app, tenant);
+  stateRoutes(app, { ...tenant, clock: o.clock, version: o.version });
+  questionRoutes(app, tenant);
+  questionGatesRoutes(app, tenant);
+  webhookRoutes(app, tenant);
+  sourceRoutes(app, tenant);
+  accountRoutes(app, tenant);
+  ghLoginRoutes(app, tenant);
+  sseRoutes(app, tenant);
   updateRoutes(app, o);
-  ghLoginRoutes(app, o);
   pluginStoreRoutes(app, o);
-  sseRoutes(app, o);
+  userRoutes(app, { tenants: o.tenants, sessions });
   staticRoutes(app, o.uiDir);
   registerUiRoutes(app, {
-    engine: o.engine, questions: o.questions, sessions, signIn: o.signIn, plugins: o.plugins, pluginStore: o.pluginStore, port: o.port, lan: o.lan, clock: o.clock,
-    store: o.store, secretProblem: o.secretProblem, webhooksEditor: o.webhooksEditor, updater: o.updater, ghLogin: o.ghLogin,
+    ...tenant, tenants: o.tenants, instance: o.instance, sessions, signIn: o.signIn, pluginStore: o.pluginStore, port: o.port, lan: o.lan, clock: o.clock,
+    updater: o.updater,
   });
   return app;
 }

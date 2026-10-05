@@ -4,14 +4,14 @@
 // the owner whatever level answered. The levels are looked up per question (a live role), and every
 // reply is validated here: a level that breaks its contract, fails or times out escalates, it never
 // answers.
-import type { AnswerByHumanResult, AnswerRequest, Clock, ConfigDocuments, EscalationLevel, QuestionService, Store } from '../domain/ports.ts';
+import type { AnswerByHumanResult, AnswerRequest, Clock, ConfigDocuments, EscalationLevel, QuestionService, UserStore } from '../domain/ports.ts';
 import type { Question, QuestionAttempt } from '../domain/types.ts';
 import { REPLY, check } from './results.ts';
 import { riskRules } from './risk.ts';
 import { readRules } from './rules.ts';
 
 export interface QuestionServiceOptions {
-  store: Store;
+  store: UserStore;
   clock: Clock;
   /** The escalation levels now, lowest first; empty: questions go straight to the human. Called per question. */
   levels(): readonly EscalationLevel[];

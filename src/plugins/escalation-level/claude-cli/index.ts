@@ -55,7 +55,7 @@ const claudeCli: PluginDefinition<'escalation-level', ClaudeCliOptions> = {
   detect: async (sys, o) => (o.machine ? { status: 'available', detail: `claude on machine ${o.machine}` } : detectClaude(sys, o.bin)),
   choices: (sys) => claudeModelChoices(sys, 'model'),
   create(ctx, o) {
-    const run: ClaudePrintOptions = { bin: o.bin, model: o.model, ...(o.effort ? { effort: o.effort } : {}), cwd: ctx.dataDir, timeoutMs: o.timeoutMs, jsonSchema: JSON_SCHEMA };
+    const run: ClaudePrintOptions = { bin: o.bin, model: o.model, ...(o.effort ? { effort: o.effort } : {}), cwd: ctx.dataDir, timeoutMs: o.timeoutMs, jsonSchema: JSON_SCHEMA, userEnv: ctx.userEnv };
     const sshControlDir = join(ctx.dataDir, 'ssh');
     return {
       name: 'claude-cli',

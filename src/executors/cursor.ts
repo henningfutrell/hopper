@@ -27,6 +27,8 @@ export interface CursorExecutorOptions {
   sshBin?: string;
   sshControlDir?: string;
   sshAuth: () => SshAuth;
+  /** Over the daemon's environment for what runs on this machine: the user's CLI config dirs (issue #158). */
+  userEnv?: Readonly<Record<string, string>>;
 }
 
 /** What a parked job keeps: the chat to resume, in the work tree it ran in. */
@@ -73,7 +75,7 @@ export function createCursorExecutor(o: CursorExecutorOptions): Executor {
     try {
       const [file, args] = commandOn(ctx.machine, ['sh', '-c', script], { ...o, dockerHost: () => { throw new Error('no docker'); } });
       ctx.progress(0, `cursor-agent ${chatId ? 'resumed' : 'started'} on ${where}`);
-      const r = await run(file, args, p.timeoutMs, ctx.signal);
+      const r = await run(file, args, p.timeoutMs, ctx.signal, o.userEnv);
       if (r === 'aborted') return { kind: 'failed', error: 'aborted' };
       if (r === 'timeout') return { kind: 'failed', error: `cursor-agent on ${where} timed out after ${p.timeoutMs} ms` };
       if (r.exitCode !== 0) return { kind: 'failed', error: `cursor-agent exited ${r.exitCode} on ${where}: ${tail(r.stderr.trim() || r.stdout.trim())}` };

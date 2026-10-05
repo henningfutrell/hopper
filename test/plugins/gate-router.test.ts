@@ -64,7 +64,7 @@ function options(raw: Record<string, unknown> = {}): Opts {
 }
 
 function router(o: Partial<Opts> = {}) {
-  const ctx = { clock: fixedClock, logger: { info() {}, warn() {} }, dataDir, scratchDir: dataDir, instanceName: 'jev', env: (n: string) => process.env[n], routerMode: () => 'shadow' as const };
+  const ctx = { clock: fixedClock, logger: { info() {}, warn() {} }, dataDir, userEnv: {}, scratchDir: dataDir, instanceName: 'jev', env: (n: string) => process.env[n], routerMode: () => 'shadow' as const };
   return gateRouter.create(ctx, options({ grokBotJevSrc: CHECKOUT, claudeBin: CLAUDE, ...o }));
 }
 

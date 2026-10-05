@@ -25,12 +25,16 @@ export interface Identity {
   groups: string[];
 }
 
-/** The signed-in user of a UI session. */
+/** Who a UI session acts for (issue #158): the user, its role, and who signed in. */
 export interface SessionUser {
+  /** The user the session reads and changes. */
+  id: string;
+  /** The user's name. */
+  name: string;
   role: UiRole;
   provider: string;
-  /** Name, username, email or subject: the first the provider gave. */
-  name: string;
+  /** Who signed in: name, username, email or subject, the first the provider gave. */
+  identity: string;
 }
 
 /** One way to sign in, as the logged-out UI offers it. */

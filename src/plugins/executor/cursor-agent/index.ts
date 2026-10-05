@@ -29,7 +29,7 @@ const cursorAgent: PluginDefinition<'executor', CursorAgentOptions> = {
   },
   create: (ctx, o) => createCursorExecutor({
     name: ctx.instanceName, bin: o.bin, args: o.args, defaultCwd: o.cwd, sshBin: o.sshBin, sshControlDir: join(ctx.dataDir, 'ssh'),
-    sshAuth: () => hopperSshAuth({ env: ctx.env, dataDir: ctx.dataDir }),
+    sshAuth: () => hopperSshAuth({ env: ctx.env, dataDir: ctx.dataDir }), userEnv: ctx.userEnv,
   }),
 };
 

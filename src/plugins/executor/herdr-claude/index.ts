@@ -24,10 +24,11 @@ export interface HerdrClaudeOptions {
 }
 
 /**
- * The plugin. `seam` (tests, `AppSeams.herdr`) replaces the herdr CLI client; detection then
- * says available, since nothing is run.
+ * The plugin. `seam` (tests, `UserSeams.herdr`) replaces the herdr CLI client; detection then
+ * says available, since nothing is run. `defaultSession`: the user's herdr session (issue #158) —
+ * `hopper` for owner, `hopper-<id>` for a user added later.
  */
-export function herdrClaudePlugin(seam?: HerdrClient): PluginDefinition<'executor', HerdrClaudeOptions> {
+export function herdrClaudePlugin(seam?: HerdrClient, defaultSession = 'hopper'): PluginDefinition<'executor', HerdrClaudeOptions> {
   return {
     id: 'herdr-claude',
     role: 'executor',
@@ -37,7 +38,7 @@ export function herdrClaudePlugin(seam?: HerdrClient): PluginDefinition<'executo
       claudeBin: z.string().min(1).default('claude')
         .meta({ commandBearing: true, description: 'the claude CLI herdr starts (detection checks it is on PATH)' }),
       // Never the user's default herdr session (herdr's own doctrine; design.md "herdr session").
-      session: z.string().min(1).refine((s) => s !== 'default', 'must not be the default herdr session').default('hopper'),
+      session: z.string().min(1).refine((s) => s !== 'default', 'must not be the default herdr session').default(defaultSession),
       args: z.array(z.string()).default(['--dangerously-skip-permissions'])
         .meta({ commandBearing: true, description: "Claude Code's arguments: permissions, allowed tools, MCP config" }),
       cwd: z.string().min(1).default('~').transform(expandHome)
@@ -74,8 +75,10 @@ export function herdrClaudePlugin(seam?: HerdrClient): PluginDefinition<'executo
         }
         return client;
       };
+      // A user's processes on this machine start with their CLI config dirs (issue #158): the herdr CLI
+      // (which starts the session's server) and every pane, through its tab's environment.
       return createHerdrClaudeExecutor({
-        herdr: seam ?? createHerdrCliClient({ bin: o.bin, session: o.session }), remote,
+        herdr: seam ?? createHerdrCliClient({ bin: o.bin, session: o.session, userEnv: ctx.userEnv }), remote, paneEnv: ctx.userEnv,
         clock: ctx.clock, defaultCwd: o.cwd, claudeArgs: o.args, trustWorkdir: o.trustWorkdir,
         pollMs: o.pollMs, idleQuestionMs: o.idleQuestionMs,
       });

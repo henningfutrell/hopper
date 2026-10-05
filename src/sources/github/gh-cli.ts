@@ -6,6 +6,7 @@ import { execFile } from 'node:child_process';
 import { GitHubApiError, isPermanent } from './api.ts';
 import type { GitHubApi, GitHubComment, GitHubIssue, GitHubProjectItem } from './api.ts';
 import { CLOSING_PULL_REQUEST_QUERY, closingPullRequestFrom } from './closer.ts';
+import { userProcessEnv } from '../../executors/env.ts';
 
 const DEFAULT_TIMEOUT_MS = 30000;
 const SEARCH_FIELDS = 'url,number,title,body,author,labels,repository,updatedAt,state';
@@ -54,12 +55,13 @@ function commentFrom(c: RestComment): GitHubComment {
   return { id: c.id, author: c.user?.login ?? '', body: c.body ?? '', createdAt: c.created_at, url: c.html_url };
 }
 
-export function createGhCliApi(o: { bin: string; timeoutMs?: number }): GitHubApi {
+/** `userEnv`: over the daemon's environment, the user's gh config dir (issue #158). */
+export function createGhCliApi(o: { bin: string; timeoutMs?: number; userEnv?: Readonly<Record<string, string>> }): GitHubApi {
   const timeout = o.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
   const exec = (args: string[], stdin?: string): Promise<string> => new Promise((resolve, reject) => {
     const child = execFile(o.bin, args, {
-      timeout, killSignal: 'SIGKILL', maxBuffer: 64 * 1024 * 1024, encoding: 'utf8',
+      env: userProcessEnv(o.userEnv), timeout, killSignal: 'SIGKILL', maxBuffer: 64 * 1024 * 1024, encoding: 'utf8',
     }, (err, stdout, stderr) => {
       if (!err) return resolve(stdout);
       const e = err as NodeJS.ErrnoException & { killed?: boolean };

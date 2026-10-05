@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { claudeArgv, scrubbedEnv } from '../../claude-print.ts';
 import type { Advice, AdviceAction, Clock, Job, Router, RouterMode } from '../../sdk.ts';
+import { userProcessEnv } from '../../../executors/env.ts';
 
 const SHIM = fileURLToPath(new URL('./gate_shim.py', import.meta.url));
 const ACTIONS: readonly string[] = [
@@ -48,6 +49,8 @@ export interface GateRouterShimOptions {
   mode: () => RouterMode;
   clock: Clock;
   timeoutMs: number;
+  /** Over the daemon's environment: the user's CLI config dirs, for the claude the shim starts (issue #158). */
+  userEnv?: Readonly<Record<string, string>>;
 }
 
 interface Route {
@@ -70,7 +73,7 @@ function routerState(job: Job): Record<string, unknown> {
  */
 function runShim(o: GateRouterShimOptions, key: string | undefined, request: unknown): Promise<string> {
   return new Promise((resolve, reject) => {
-    const env: NodeJS.ProcessEnv = { ...scrubbedEnv(), PYTHONDONTWRITEBYTECODE: '1' };
+    const env: NodeJS.ProcessEnv = { ...scrubbedEnv(userProcessEnv(o.userEnv)), PYTHONDONTWRITEBYTECODE: '1' };
     if (key) env.TYPESAFE_API_KEY = key;
     const child = spawn(o.python, [SHIM], {
       env,

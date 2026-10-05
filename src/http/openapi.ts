@@ -11,12 +11,12 @@ import { streamQuery } from './sse.ts';
 import { decisionsQuery, eventsQuery } from './state.ts';
 import { SESSION_HEADER } from './ui/guard.ts';
 import {
-  answerBody, deviceLinkBody, ghLoginBody, machineDefaultsBody, machinesEditBody, pluginStoreBody, pluginsEditBody, routerModeBody, routingEditBody, rulesBody, updateBody, webhooksEditBody,
+  answerBody, deviceLinkBody, ghLoginBody, machineDefaultsBody, machinesEditBody, pluginStoreBody, pluginsEditBody, routerModeBody, routingEditBody, rulesBody, updateBody, usersEditBody, webhooksEditBody,
 } from './ui/index.ts';
 import { completeBody, loginBody, passwordBody, startQuery } from './ui/sign-in.ts';
 import { deliveriesQuery } from './webhooks.ts';
 
-type Tag = 'State' | 'Jobs' | 'Questions' | 'Machines and usage' | 'Plugins and routing' | 'Webhooks' | 'Events' | 'Self-update' | 'Sign-in';
+type Tag = 'State' | 'Jobs' | 'Questions' | 'Machines and usage' | 'Plugins and routing' | 'Webhooks' | 'Events' | 'Self-update' | 'Users' | 'Sign-in';
 
 interface Operation {
   method: 'get' | 'post';
@@ -83,6 +83,8 @@ const OPERATIONS: Operation[] = [
   { method: 'get', path: '/api/events/stream', tag: 'Events', summary: 'Live events (server-sent events)', description: 'Replays after `after` (or `Last-Event-ID`), then live. Also `delivery.updated` and `source.updated` without an id, and a ping comment every 15 s. Beyond loopback the session goes in the `session` query parameter: EventSource sends no headers.', query: streamQuery, answers: 'sse', returns: 'an event stream' },
   { method: 'get', path: '/api/update', tag: 'Self-update', summary: 'Installed version and available update', returns: '`UpdateStatus`' },
   { method: 'post', path: '/ui/api/update', tag: 'Self-update', summary: 'Check, apply, or change update settings', role: 'admin', body: updateBody, returns: '`UpdateStatus`', errors: [409] },
+  { method: 'get', path: '/api/users', tag: 'Users', summary: 'The users of this hopper', description: 'Id, name and when each was added: nothing of a user\'s own data. Loopback, or a UI session with role **admin**.', returns: '`{ users: UserView[] }`, oldest first', errors: [403] },
+  { method: 'post', path: '/ui/api/users', tag: 'Users', summary: 'Add a user', description: 'A user of its own: its jobs, questions, events, plugins, webhooks and credentials apart from every other user\'s. Answers a one-time login link for it per UI origin, to hand over (none when local sign-in is off).', role: 'admin', body: usersEditBody, returns: '`UserAdded`: `{ user, links }`', errors: [409] },
   { method: 'get', path: '/ui/api/session', tag: 'Sign-in', summary: 'This session, and the sign-in on offer', returns: '`SessionView`' },
   { method: 'post', path: '/ui/login', tag: 'Sign-in', summary: 'Sign in with a one-time login code', description: 'Mint a code with `hopper login-code`. Answers a page that stores the session token for the UI.', body: loginBody, form: true, answers: 'html', returns: 'a page holding the session token' },
   { method: 'post', path: '/ui/auth/none', tag: 'Sign-in', summary: 'Start a session with no sign-in (auth.yaml `none`)', returns: '`{ token, expiresAt, user }`' },
@@ -105,10 +107,13 @@ const TAGS: Record<Tag, string> = {
   Webhooks: 'Subscribers to the event log, kept in the database.',
   Events: 'The event log, read back or streamed.',
   'Self-update': 'The install and the update repository.',
+  Users: 'The people one hopper works for, each with their own work, kept apart.',
   'Sign-in': 'UI sessions: sign-in, the session, logout.',
 };
 
 const DESCRIPTION = `The hopper daemon's HTTP API.
+
+**Users.** Every user's work is their own. A read or a change acts for the session's user. A loopback read without a session reads the user the \`x-hopper-user\` header names (a user id), else the first user, \`owner\`. The users, the plugin store, self-update and sign-in are shared.
 
 **Reading.** Every \`GET /api/*\` route reads. From loopback (\`127.0.0.1\` or \`localhost\` with the port) it needs nothing. From a LAN name or the public URL it needs a UI session: the token in the \`${SESSION_HEADER}\` header.
 

@@ -18,11 +18,12 @@ describe('roles, sessions and logout: the same for every provider', () => {
     const token = (await signIn(s.app.url, s.origin, 'corp')).token!;
     return { ...s, token };
   }
-  const job = async (app: TestApp) => app.pull({ op: 'sleep', ms: 60_000 });
+  /** A running job of the session's own user (issue #158: a session acts for its user only). */
+  const job = async (app: TestApp, token: string) => app.pull({ op: 'sleep', ms: 60_000 }, {}, (await session(app, token)).user.id);
 
   it('a viewer reads but changes nothing (403 naming the role needed); the session stays', async () => {
     const { app, token } = await as('viewer');
-    const j = await job(app);
+    const j = await job(app, token);
     const res = await app.ui(`/ui/api/jobs/${j.id}/cancel`, {}, { token });
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ needs: 'operator' });
@@ -34,7 +35,7 @@ describe('roles, sessions and logout: the same for every provider', () => {
 
   it('an operator cancels jobs but may not change configuration', async () => {
     const { app, token } = await as('operator');
-    const j = await job(app);
+    const j = await job(app, token);
     expect((await app.ui(`/ui/api/jobs/${j.id}/cancel`, {}, { token })).status).toBe(200);
     const res = await app.ui('/ui/api/router-mode', { mode: 'active' }, { token });
     expect(res.status).toBe(403);

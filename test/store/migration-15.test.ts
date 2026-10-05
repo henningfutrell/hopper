@@ -13,12 +13,12 @@ const t = useTempStore();
 /** The store as migration 14 left it, holding `text` as plugins.yaml; then opened, so migration 15 runs. */
 function migrated(text: string): string | undefined {
   const url = t.url();
-  t.open(url).close();
+  t.at(url, 16).close();
   const raw = openDb(url);
   raw.run("INSERT INTO config_documents (name, text, updated_at) VALUES ('plugins.yaml', ?, 'x')", text);
   raw.run('UPDATE schema_version SET version = 14');
   raw.close();
-  t.open(url).close();
+  t.at(url, 16).close();
   const after = openDb(url);
   const row = after.get("SELECT text FROM config_documents WHERE name = 'plugins.yaml'");
   after.close();

@@ -36,9 +36,10 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts; `machines.ts` attached machines and their edit; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`), ports | anything else in `src/` |
+| `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts; `machines.ts` attached machines and their edit; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users), ports (`ports.ts`, re-exporting the store's from `store.ts`) | anything else in `src/` |
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock | everything but `domain/` |
-| `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations, repositories, event log, config documents, login codes | engine, http, decider |
+| `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations (the instance's `migrations.ts` with migration 17 in `migration-users.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, `auth.yaml`, instance settings) and each user store (`user-store.ts`: repositories, event log, config documents) | engine, http, decider |
+| `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), identity → user (`identities.ts`: link or provision) | http, decider |
 | `src/webhooks/` | signing, dispatcher, retry/backoff, the secret of a subscription from the runtime (`dispatcher.ts`), the UI edit of the subscriptions (`edit.ts`, rows in the store) | engine, http, decider |
 | `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, `plugins.yaml` + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt, `escalation-level/anthropic-api/` asks the Claude API with the same prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-gh/` and `job-source/github-app/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser); `usage-source/command-usage/` reads any agent framework's usage and account from a command that prints them as JSON; `usage-source/polled.ts` the background refresh both share, `usage-source/run.ts` their command runner; `notifier/grokbot-routine/` is the Grok Bot routine webhook — env-file reader and notifier; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
 | `src/executors/` | `Executor` adapters (`test`, `herdr/`, `command.ts` — a job's body run on its machine through its connection, `cursor.ts` — Cursor's CLI agent there, issue #142) and the registry; reached through the executor plugins. The connections and their target authentication ("Target authentication"): `ssh.ts` (key-only ssh to pinned host keys), `docker.ts` (the docker socket check, the proxy's allowlist), `client.ts` (a client target's tunnel, signed calls); `env.ts` the scrubbed child environment | engine, http, store, plugins |
@@ -50,13 +51,13 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/auth/` | sign-in through identity providers (issue #39): `auth.yaml` load (`config.ts`), the role rules (`roles.ts`, pure), the identity provider port (`provider.ts`) and its adapters `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), password sign-in (`password.ts`, argon2), the sign-in flow — flows, tickets, bindings, no sign-in (`index.ts`) | engine, http, store, plugins, decider, questions |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets") | everything |
 | `src/update/` | self-update ("Self-update"): install.json, the git mirror of the update repository, the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
-| `src/http/` | Fastify routes, SSE, static UI; the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `api-reference.ts` Scalar at `/docs/`); the plugin store's read side (`plugin-store.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
+| `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `api-reference.ts` Scalar at `/docs/`); the plugin store's read side (`plugin-store.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
 | `site/` | the install page, published to GitHub Pages by `.github/workflows/pages.yml` with `scripts/get.sh` beside it as `install.sh`: one static `index.html`, no build step, nothing loaded from another site | everything in the repo at runtime; it links to the docs on GitHub |
 | `examples/plugins/` | one minimal runnable custom plugin per role, for authors (`docs/plugins.md`); imports only `hopper/plugin` types and `node:` builtins | everything in `src/` at runtime |
-| `src/main.ts` | composition root: config → store → plugins.yaml (written when absent) → plugin host (every part) → plugin store → engine → server | — |
+| `src/main.ts` | composition root: config → instance store → auth.yaml → plugin store → updater → server → one user runtime per user (`src/users/`) | — |
 | `src/startup-log.ts` | the daemon's startup lines (listening, parts, sign-in) | — |
-| `src/cli.ts` | the operator CLI `hopper`: config documents, login codes, `help` — against the daemon's database | engine, executors |
+| `src/cli.ts` | the operator CLI `hopper`: config documents, login codes, users, `help` — against the daemon's database | engine, executors |
 
 ## The decider
 
@@ -3327,7 +3328,7 @@ first sign-in, not at boot: an unreachable issuer must not stop the daemon.
 |---|---|
 | `viewer` | `POST /ui/api/logout` |
 | `operator` | + jobs `cancel`, `approve`; questions `answer`, `close`, `dismiss`, `seen` |
-| `admin` | + `router-mode`, `plugins`, `rules-file`, `webhooks`, `machines`, `routing`, `device-link`, `update` |
+| `admin` | + `router-mode`, `plugins`, `rules-file`, `webhooks`, `machines`, `routing`, `device-link`, `update`, `plugin-store`, `users` (issue #158: every role acts inside the session's own user; `update`, `plugin-store` and `users` are the instance's) |
 
 A live session whose role is short gets 403 `{ error, needs }` — the UI keeps the session and
 toasts; any other 403 still means "log in again". The login code always gives `admin`. A provider's
@@ -3830,6 +3831,8 @@ about the daemon's surface; the CLI is beside it, like editing a file was.
   `config edit <document>` ($EDITOR, written back against the version read). A document that would
   not load (plugins/webhooks/auth schema, rules size) is refused; a moved one is refused.
 - `login-code [--link <base url>]`.
+- Since issue #158: `users`, `user add <name>`, and `--user <id>` on `config` and `login-code`
+  ("Users: one hopper, separate users").
 - `password-hash`; `help` (also `--help`, `-h`): every command, exit 0. No command or an unknown
   one prints the same text on stderr, exit 2.
 
@@ -4201,3 +4204,144 @@ plugins from a store URL is a separate issue.
   restart pending`, and the UI has no restart. Making them live too belongs with the store issue.
 - **Docs** give the UI path (README "Cursor's agent"); no user step says `hopper config edit`.
 
+
+## Users: one hopper, separate users (issue #158, 2026-10-05)
+
+Owner decision: several people use one hopper, and **each user is fundamentally separate**. A user's
+jobs, questions, events, decisions, lanes, job sources, machines, executors, escalation levels, rules
+document, routing, router mode, usage sources, webhook subscriptions and credentials are their own,
+never visible to or touchable by another user. The **instance** is what they share: the daemon
+process and its port, sign-in (`auth.yaml`), the plugin store and its installs, self-update. No API
+keeps its old shape (no shims, every caller changed); persisted state migrates without loss: an
+install from before holds one user's work, and it becomes the first user's, `owner`.
+
+### Store: an instance schema and one user schema per user
+
+- **Instance schema** — the schema `HOPPER_DATABASE_URL` names (`public`, or its `?schema=`):
+  `schema_version`, `users (id, name UNIQUE, created_at, work_dir, secret_prefix)`,
+  `user_identities (provider, subject, user_id)`, `ui_sessions` and `login_codes` (each with
+  `user_id`), `config_documents` (only `auth.yaml`), `settings` (only `updateChannel`, `autoUpdate`,
+  `pluginInstalls`).
+- **User schema** — `u_<id>` when the instance schema is `public`, else `<instance schema>_u_<id>`
+  (tests run each in a schema of their own; this keeps them apart). It holds the tenant tables as
+  they were at instance version 16: jobs, lanes, decisions, events, webhooks, deliveries, questions,
+  `settings` (`routerMode`), `config_documents` (`plugins.yaml`, `rules.md`) — and its own
+  `schema_version` on the **tenant track** (`src/store/tenant-migrations.ts`): version 1 is those
+  tables exactly; a later tenant migration appends there and runs as each user store opens.
+- **Instance migration 17** creates `users` and `user_identities`, the user `owner` (`work_dir` and
+  `secret_prefix` empty), its user schema, and **moves** every tenant table into it with
+  `ALTER TABLE … SET SCHEMA` — the owned sequences and indexes move with the table, so `seq`
+  continues where it was. The `plugins.yaml` and `rules.md` documents and the `routerMode` setting
+  move to the user schema's own tables; the tenant `schema_version` is recorded at 1. `ui_sessions`
+  and `login_codes` gain `user_id` (default `owner`); every identity seen in a stored UI session is
+  linked to `owner`. A fresh store runs BASE → … → 17 the same way, so it starts with the user
+  `owner`. One transaction: a failure leaves version 16 as it was.
+- **Ports** — `InstanceStore` (`users`, `identities`, `uiSessions`, `loginCodes`, `documents` —
+  `auth.yaml` —, `settings` — the instance's —, `userStore(user)`, `tx`, `close`) and `UserStore`
+  (the store shape from before, without UI sessions and login codes; its `documents` hold
+  `plugins.yaml` and `rules.md`, its `settings` the router mode). `userStore(user)` opens one more
+  connection whose `search_path` is the user schema (the `?schema=` mechanism), and runs the tenant
+  track. `openInstanceStore` replaces `openStore`.
+
+### User runtime
+
+`startApp` (`src/main.ts`) is the instance: it opens the instance store, loads `auth.yaml`, sign-in,
+the plugin store, the updater and the HTTP server, then starts one **user runtime** per user
+(`src/users/runtime.ts`, `startUserRuntime`): everything main built before — plugins.yaml ensured,
+plugin host, target pool, executors, question service, engine, job source sync, webhook dispatcher,
+notifiers, failure log — over that user's store. A user added while the daemon runs gets its runtime
+at once. `App.user(id)` returns a runtime's parts (store, engine, sources, plugins) for tests; `stop`
+stops every runtime, then the instance.
+
+- **User work dir** — `HOPPER_WORK_DIR` joined with the user's `work_dir`: `''` for `owner` (its ssh
+  control dir, client sockets, plugin scratch stay where they were), `users/<id>` for a user added
+  later. The store installs and the update mirror stay in the work dir itself: they are the instance's.
+- **Secrets** — a user's runtime reads secret `NAME` as `<secret_prefix>NAME` (and
+  `<secret_prefix>NAME_FILE`), through the same `runtimeSecrets`. `owner`'s prefix is empty (nothing
+  changes for an install from before); a user added later gets `HOPPER_USER_<ID>_` (id upper-cased),
+  so one user's plugins.yaml can never name another user's variable. The instance's own secrets
+  (`HOPPER_DATABASE_URL`, `auth.yaml`'s `clientSecretEnv`) keep their names.
+- **Credentials of the CLIs** — for a user with a work dir of their own, every process their parts
+  start on this machine (`gh` in the github-gh source and gh login, `claude` in herdr-claude panes,
+  in claude-cli escalation levels, in the usage sources, `cursor-agent`, a command job, the herdr CLI)
+  starts with `GH_CONFIG_DIR=<user work dir>/gh` and `CLAUDE_CONFIG_DIR=<user work dir>/claude`
+  added. The runtime builds that environment once (`userProcessEnv`) and hands it to the parts as
+  `PluginContext.processEnv` and the detection kit's environment, never `process.env` directly. A
+  herdr pane gets it through the tab's environment (`createTab` `env`). `owner`'s environment is the
+  daemon's, unchanged. On an attached machine the target's own login applies, as before.
+- **herdr session** — the herdr-claude plugin's default `session` is the user's: `hopper` for
+  `owner`, `hopper-<id>` for a user added later; `ensurePluginsDocument` also writes it into a new
+  user's plugins.yaml on every herdr-claude instance. Panes and restart recovery of one user never
+  touch another user's session.
+- **Instance parts** — store installs are the instance's: after an install or removal every user's
+  plugin host rescans. The update's restart blockers are the running jobs of every user. The
+  instance's events (`update.*`, `plugin.installed`, `plugin.removed`) are appended to every user's
+  event log, so each user's UI and webhook subscriptions see them.
+
+### HTTP
+
+- A UI session belongs to a user (`ui_sessions.user_id`). Every tenant route — `/api/*` except the
+  instance routes below, `/api/events/stream`, and the tenant `POST /ui/api/*` mutations — reads and
+  changes the user runtime of the request's user: the session's user; else, for a **loopback request
+  without a session** (allowed for reads, as before), the user named by the header
+  `x-hopper-user: <id>`, else `owner` (the oldest user). An unknown user is 404. A LAN or public
+  request without a session stays refused (401). A question, job or webhook id of another user is
+  simply not there: 404.
+- Instance routes: sign-in, `GET /api/update` + `POST /ui/api/update`, `GET /api/plugin-store` +
+  `POST /ui/api/plugin-store`, `GET /api/users` + `POST /ui/api/users`, the docs. UI roles keep their
+  meaning (viewer < operator < admin) but act only inside the session's own user; the instance
+  mutations need `admin`.
+- `GET /api/users` (an admin session, or loopback): `{ users: [{ id, name, createdAt }] }` — nothing
+  of a user's own data. `POST /ui/api/users` (admin) `{ action: 'add', name }` creates a user (its
+  schema, its plugins.yaml, its runtime) and answers `{ user, links }`: a one-time login link per UI
+  origin (`http://<host>/#login=<code>`, the public URL too), minted for the new user, to hand over;
+  no links when local sign-in is off.
+- `GET /ui/api/session` `user` is `{ id, name, role, provider, identity }`: the user the session acts
+  for, its role, and who signed in (`identity`: the name the provider gave). The SSE stream carries the
+  session user's events, deliveries and source statuses only.
+
+### Sign-in maps an identity to a user
+
+`user_identities` links (provider, subject) to a user. A password, OIDC, GitHub or SAML sign-in
+whose identity is linked signs in as that user; an unlinked identity that a role rule grants a role
+gets a **new user** — named from the identity's username, else name, else email, else subject, made
+unique — and the link (`provisionUser`). A login code carries its user (`login_codes.user_id`):
+`hopper login-code [--user <id>]` (default `owner`), a device link mints one for the session's own
+user, a new user's login link for that user. No sign-in (`none`) is `owner`. Stored sessions are
+reconciled with `auth.yaml` at start as before; their user stays.
+
+**Residual risk, stated.** An identity that signed in before the migration only through sessions
+that had expired is not linked; its next sign-in provisions a new, empty user. `hopper login-code`
+(default `owner`) always reaches `owner`. An admin of any user can add users and update the daemon:
+instance mutations are not owner-only. Two users' `local` machines run on the same host side by side,
+each with its own lanes. As before, every local account of the host reads the GET API on loopback
+without a session — now any user's, by `x-hopper-user`; deploy on a host only the operator uses. Jobs
+of every user run as the daemon's account: one user's job on the hopper host can read files another
+user's job wrote there; the separation is the hopper's, not the operating system's.
+A user added later starts every process of theirs (gh, claude, the herdr server and its panes, commands)
+from the machine's variables only (`PATH`, `HOME`, `USER`, `LOGNAME`, `SHELL`, `LANG`, `LANGUAGE`, `TERM`,
+`TZ`, `TMPDIR`, `XDG_RUNTIME_DIR`, `LC_*`) plus their CLI config dirs (`userProcessEnv`,
+`src/executors/env.ts`): never the daemon's environment, which holds owner's runtime secrets and the
+database URL. Owner's processes keep the daemon's environment. This closes the easy read, not the
+account: a later user's job can still read the daemon account's files. A user who needs a boundary
+the operating system enforces runs their jobs on a machine of their own (an ssh, client or container target).
+
+### UI
+
+The top bar shows the session's user (its name; the identity that signed in on hover) and role.
+Settings gains a **Users** section (admin only, as `GET /api/users`): the list, and **Add user**, which
+shows the one-time login link the daemon answers to copy and hand over.
+
+### Operator CLI
+
+`hopper users` lists the users (id, name, created); `hopper user add <name>` creates one (schema,
+plugins.yaml) — a running daemon starts its runtime when it next lists users, at once for one added
+from the UI; `--user <id>` on `login-code` and `config` (a user's `plugins.yaml` and `rules.md`;
+`auth.yaml` is the instance's, and refuses `--user`).
+
+### Not built
+
+Removing a user; moving an identity between users; per-user plugin installs (installs are the
+instance's by decision). A client target of a user added later is attached with
+`HOPPER_WORK_DIR=<work dir>/users/<id> scripts/attach-client.sh …` (its relay socket is in that
+user's work dir) and its token variable under the user's prefix; the script does not take a user.

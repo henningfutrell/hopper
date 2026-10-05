@@ -6,8 +6,10 @@ import type { StoreContext } from './context.ts';
 export const documentVersion = (text: string | undefined): string =>
   text === undefined ? 'missing' : createHash('sha256').update(text).digest('hex');
 
-export function createConfigDocuments(c: StoreContext): ConfigDocuments {
-  const read = (name: string): string | undefined => {
+/** The documents `names` in the context's schema: a user's (plugins.yaml, rules.md) or the instance's (auth.yaml); any other name throws. */
+export function createConfigDocuments<N extends string>(c: StoreContext, names: readonly N[]): ConfigDocuments<N> {
+  const read = (name: N): string | undefined => {
+    if (!names.includes(name)) throw new Error(`no config document ${name} here; one of ${names.join(', ')}`);
     const r = c.db.get('SELECT text FROM config_documents WHERE name = ?', name);
     return r ? String(r.text) : undefined;
   };

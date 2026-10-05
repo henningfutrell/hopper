@@ -5,15 +5,15 @@ import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'nod
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { testDatabaseUrl } from '../support/database.ts';
-import type { Store } from '../../src/domain/ports.ts';
+import type { InstanceStore, UserStore } from '../../src/domain/ports.ts';
 import type { UpdateStatus } from '../../src/domain/types.ts';
-import { openStore } from '../../src/store/index.ts';
+import { openInstanceStore } from '../../src/store/index.ts';
 import { createUpdater, type UpdaterOptions } from '../../src/update/index.ts';
 import { waitFor } from '../support/wait.ts';
 import { copyBuilder, createInstall, createUpstream, git, readInstall, tempDir, type Upstream } from './support.ts';
 
 const dirs: string[] = [];
-const stores: Store[] = [];
+const stores: { close(): void }[] = [];
 const updaters: { stop(): void }[] = [];
 
 afterEach(() => {
@@ -22,21 +22,22 @@ afterEach(() => {
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
 });
 
-interface World { root: string; up: Upstream; store: Store; dataDir: string }
+interface World { root: string; up: Upstream; instance: InstanceStore; store: UserStore; dataDir: string }
 
 function world(): World {
   const root = tempDir('jh-update-');
   dirs.push(root);
   const dataDir = join(root, 'data');
-  const store = openStore({ url: testDatabaseUrl(), clock: { now: () => new Date() } });
-  stores.push(store);
-  return { root, up: createUpstream(root), store, dataDir };
+  const instance = openInstanceStore({ url: testDatabaseUrl(), clock: { now: () => new Date() } });
+  const store = instance.userStore(instance.users.owner());
+  stores.push(store, instance);
+  return { root, up: createUpstream(root), instance, store, dataDir };
 }
 
 function updater(w: World, appDir: string, o: Partial<UpdaterOptions> = {}) {
   const restarts: number[] = [];
   const u = createUpdater({
-    appDir, dataDir: w.dataDir, store: w.store, clock: { now: () => new Date() }, logger: { info: () => {}, warn: () => {} },
+    appDir, dataDir: w.dataDir, settings: w.instance.settings, events: w.store.events, clock: { now: () => new Date() }, logger: { info: () => {}, warn: () => {} },
     builder: copyBuilder(), restart: async () => { restarts.push(Date.now()); }, restartBlockers: () => [], checkMs: 0, waitMs: 20,
     ...o,
   });

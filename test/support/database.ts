@@ -20,3 +20,7 @@ export const testDatabaseUrl = (): string => withSchema(`t_${randomBytes(6).toSt
 /** The database of a test app's `dbPath`: a schema named after the path, so a second start on the same `dbPath` reopens it. */
 export const databaseUrlFor = (dbPath: string): string =>
   withSchema(`a_${createHash('sha256').update(dbPath).digest('hex').slice(0, 16)}`);
+
+/** The schema of owner's tables in the database of `dbPath` (issue #158: `<instance schema>_u_owner`). */
+export const ownerSchemaUrlFor = (dbPath: string): string =>
+  withSchema(`${new URL(databaseUrlFor(dbPath)).searchParams.get('schema')!}_u_owner`);

@@ -18,7 +18,8 @@ import { basename, join } from 'node:path';
 import { promisify } from 'node:util';
 import type { Job } from '../domain/types.ts';
 import { runtimeSecrets } from '../secrets/runtime.ts';
-import { openStore } from '../store/index.ts';
+import type { UserStore } from '../domain/ports.ts';
+import { openInstanceStore } from '../store/index.ts';
 
 const exec = promisify(execFile);
 
@@ -253,15 +254,21 @@ export function startHandover(appDir: string): void {
 }
 
 /** The pane jobs in the database the env file names (under either prefix), read with the daemon stopped; none named: none. */
+/** Owner's store (a job-hopper install had one user: issue #158 made its work owner's), closed after `fn`. */
+function withOwnerStore<T>(url: string, fn: (store: UserStore) => T): T {
+  const instance = openInstanceStore({ url, clock: { now: () => new Date() } });
+  try {
+    const store = instance.userStore(instance.users.owner());
+    try { return fn(store); } finally { store.close(); }
+  } finally {
+    instance.close();
+  }
+}
+
 function paneJobsIn(env: Record<string, string | undefined>): string[] {
   const url = runtimeSecrets(renamedEnv(env))('HOPPER_DATABASE_URL');
   if (!url) return [];
-  const store = openStore({ url, clock: { now: () => new Date() } });
-  try {
-    return paneJobs(store.jobs.list({ status: [...PANE_JOB_STATUSES] }));
-  } finally {
-    store.close();
-  }
+  return withOwnerStore(url, (store) => paneJobs(store.jobs.list({ status: [...PANE_JOB_STATUSES] })));
 }
 
 const waitsFor = (jobs: string[]): string =>
@@ -287,20 +294,17 @@ export function renameBoot(o: {
   }
   const env = renamedEnv(o.env);
   const url = runtimeSecrets(env)('HOPPER_DATABASE_URL')!;
-  const store = openStore({ url, clock: { now: () => new Date() } });
-  let jobs: string[];
-  try {
-    jobs = paneJobs(store.jobs.list({ status: [...PANE_JOB_STATUSES] }));
-    if (jobs.length > 0) {
+  const jobs = withOwnerStore(url, (store) => {
+    const held = paneJobs(store.jobs.list({ status: [...PANE_JOB_STATUSES] }));
+    if (held.length > 0) {
       const pendingFile = join(env.HOPPER_WORK_DIR ?? '', 'update', 'pending.json');
       let to: unknown;
       try { to = (JSON.parse(readFileSync(pendingFile, 'utf8')) as { to?: unknown }).to; } catch { /* no pending update */ }
-      store.events.append({ type: 'update.failed', data: { ...(typeof to === 'string' ? { to } : {}), error: waitsFor(jobs) } });
+      store.events.append({ type: 'update.failed', data: { ...(typeof to === 'string' ? { to } : {}), error: waitsFor(held) } });
       rmSync(pendingFile, { force: true });
     }
-  } finally {
-    store.close();
-  }
+    return held;
+  });
   if (jobs.length === 0) {
     o.log(`hopper: rename: no job holds a pane in herdr session ${OLD_NAME}; handing over to ${NEW_NAME}.service`);
     (o.start ?? startHandover)(o.appDir);

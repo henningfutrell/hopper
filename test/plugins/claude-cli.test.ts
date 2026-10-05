@@ -41,7 +41,7 @@ const question = {
 const req = (over: Partial<AnswerRequest> = {}): AnswerRequest => ({
   question, jobPrompt: 'Build the invoicing service', jobGoal: 'invoicing', rules: 'RULE: prefer sqlite', previous: [], level: { number: 1, of: 2 }, ...over,
 });
-const ctx = () => ({ clock: fixedClock, logger: { info() {}, warn() {} }, dataDir: dir, scratchDir: join(dir, 'scratch'), instanceName: 'opus', env: (_n: string): string | undefined => undefined, machine: async (): Promise<MachineSnapshot | undefined> => undefined });
+const ctx = () => ({ clock: fixedClock, logger: { info() {}, warn() {} }, dataDir: dir, userEnv: {}, scratchDir: join(dir, 'scratch'), instanceName: 'opus', env: (_n: string): string | undefined => undefined, machine: async (): Promise<MachineSnapshot | undefined> => undefined });
 const signal = () => new AbortController().signal;
 const rec = () => JSON.parse(readFileSync(out, 'utf8')) as { argv: string[]; stdin: string; env: Record<string, string>; cwd: string };
 

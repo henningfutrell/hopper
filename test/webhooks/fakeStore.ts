@@ -1,9 +1,9 @@
-// In-memory stand-in for the parts of Store the webhook dispatcher uses.
-import type { Store } from '../../src/domain/ports.ts';
+// In-memory stand-in for the parts of UserStore the webhook dispatcher uses.
+import type { UserStore } from '../../src/domain/ports.ts';
 import { EVENT_SCHEMA_VERSIONS, type DomainEvent, type NewEvent, type WebhookDelivery, type WebhookSubscription } from '../../src/domain/types.ts';
 
 export interface FakeStore {
-  store: Store;
+  store: UserStore;
   /** `secretEnv` defaults to HOOK_SECRET. */
   subscribe(input: { name?: string; url: string; events: string[]; secretEnv?: string; active?: boolean }): WebhookSubscription;
   deliveries(): WebhookDelivery[];
@@ -59,7 +59,7 @@ export function createFakeStore(): FakeStore {
         ).map((d) => ({ ...d })),
       listDeliveries: () => [...deliveries.values()],
     },
-  } as unknown as Store;
+  } as unknown as UserStore;
 
   const fakeStore: FakeStore = {
     store,

@@ -21,7 +21,7 @@ describe('GitHub', () => {
     const gh = await github();
     const { app, origin } = await start({ version: 1, providers: [ghProvider(gh, { admin: { usernames: ['octo'] } })] });
     const run = await signIn(app.url, origin, 'github');
-    expect(await session(app, run.token)).toMatchObject({ user: { role: 'admin', provider: 'github', name: 'Octo Cat' } });
+    expect(await session(app, run.token)).toMatchObject({ user: { role: 'admin', provider: 'github', name: 'octo', identity: 'Octo Cat' } });
     expect(gh.lastScope).toBe('read:user user:email');
   });
 
@@ -57,7 +57,7 @@ describe('SAML', () => {
       saml: (url) => idp.respond(url, { nameID: 'ada@example.com', attributes: { email: 'ada@example.com', displayName: 'Ada', groups: ['ops', 'dev'] } }),
     });
     expect(run.callback?.status).toBe(200);
-    expect(await session(app, run.token)).toMatchObject({ user: { role: 'operator', provider: 'corp-saml', name: 'Ada' } });
+    expect(await session(app, run.token)).toMatchObject({ user: { role: 'operator', provider: 'corp-saml', name: 'ada@example.com', identity: 'Ada' } });
   });
 
   it('an assertion signed by another key is refused', async () => {

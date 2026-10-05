@@ -2,6 +2,7 @@
 // named texts in the store, each replaced whole against its version.
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
+import { openInstanceStore } from '../../src/store/index.ts';
 import { fixedClock, useTempStore } from './helpers.ts';
 
 const t = useTempStore();
@@ -28,17 +29,23 @@ describe('config documents', () => {
     s.close();
   });
 
-  it('documents are independent and survive a reopen', () => {
+  it('documents are independent and survive a reopen; auth.yaml is the instance\'s, the others a user\'s', () => {
     const url = t.url();
     const s = t.open(url, fixedClock());
     s.documents.write('plugins.yaml', 'version: 1\n', 'missing');
-    s.documents.write('auth.yaml', 'version: 1\n', 'missing');
     s.close();
+    const instance = openInstanceStore({ url, clock: fixedClock() });
+    instance.documents.write('auth.yaml', 'version: 1\n', 'missing');
+    instance.close();
     const again = t.open(url);
     expect(again.documents.read('plugins.yaml')).toBe('version: 1\n');
-    expect(again.documents.read('auth.yaml')).toBe('version: 1\n');
     expect(again.documents.read('rules.md')).toBeUndefined();
+    expect(() => again.documents.read('auth.yaml' as 'rules.md')).toThrow(/no config document auth.yaml here/);
     again.close();
+    const instanceAgain = openInstanceStore({ url, clock: fixedClock() });
+    expect(instanceAgain.documents.read('auth.yaml')).toBe('version: 1\n');
+    expect(() => instanceAgain.documents.read('plugins.yaml' as 'auth.yaml')).toThrow(/no config document plugins.yaml here/);
+    instanceAgain.close();
   });
 
   it('a write is refused when another store replaced the document after it was read', () => {

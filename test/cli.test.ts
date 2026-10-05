@@ -6,7 +6,8 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
 import { runCli, type CliIo } from '../src/cli.ts';
-import { openStore } from '../src/store/index.ts';
+import { openInstanceStore } from '../src/store/index.ts';
+import { openOwnerStore } from './support/files.ts';
 import { testDatabaseUrl } from './support/database.ts';
 
 const dirs: string[] = [];
@@ -30,7 +31,7 @@ function cli(url: string | undefined, argv: string[], o: { stdin?: string; edit?
 }
 
 function documentIn(url: string, name: 'plugins.yaml' | 'rules.md'): string | undefined {
-  const s = openStore({ url, clock: { now: () => new Date() } });
+  const s = openOwnerStore(url);
   try { return s.documents.read(name); } finally { s.close(); }
 }
 
@@ -104,7 +105,7 @@ describe('hopper config', () => {
     expect(cli(url, ['config', 'edit', 'rules.md'], { edit: () => 0 }).err).toMatch(/rules.md unchanged/);
     const raced = cli(url, ['config', 'edit', 'rules.md'], {
       edit: (f) => {
-        const other = openStore({ url, clock: { now: () => new Date() } });
+        const other = openOwnerStore(url);
         other.documents.write('rules.md', 'from the UI', other.documents.version('rules.md'));
         other.close();
         writeFileSync(f, 'from the editor');
@@ -123,10 +124,10 @@ describe('hopper login-code', () => {
     expect(a).toMatchObject({ code: 0, out: expect.stringMatching(/^[0-9a-f]{64}\n$/) });
     const b = cli(url, ['login-code', '--link', 'https://hopper.example.com/']);
     expect(b.out).toMatch(/^https:\/\/hopper\.example\.com\/#login=[0-9a-f]{64}\n$/);
-    const s = openStore({ url, clock: { now: () => new Date() } });
+    const s = openInstanceStore({ url, clock: { now: () => new Date() } });
     const hash = (c: string) => createHash('sha256').update(c).digest('hex');
-    expect(s.loginCodes.take(hash(a.out.trim()), new Date().toISOString())).toBe(true);
-    expect(s.loginCodes.take(hash(a.out.trim()), new Date().toISOString())).toBe(false);
+    expect(s.loginCodes.take(hash(a.out.trim()), new Date().toISOString())).toBe('owner');
+    expect(s.loginCodes.take(hash(a.out.trim()), new Date().toISOString())).toBeUndefined();
     s.close();
   });
 });
@@ -156,7 +157,7 @@ describe('hopper help (issue #68)', () => {
     const r = cli(undefined, [arg]);
     expect(r.code).toBe(0);
     expect(r.err).toBe('');
-    for (const command of ['config get', 'config version', 'config set', 'config edit', 'login-code', 'password-hash', 'help']) {
+    for (const command of ['config get', 'config version', 'config set', 'config edit', 'login-code', 'users', 'user add', 'password-hash', 'help']) {
       expect(r.out).toContain(`hopper ${command}`);
     }
     expect(r.out).toMatch(/HOPPER_DATABASE_URL/);
@@ -171,5 +172,38 @@ describe('hopper help (issue #68)', () => {
       expect(r.out).toBe('');
       expect(r.err).toContain('hopper config edit');
     }
+  });
+});
+
+describe('several users (issue #158)', () => {
+  const hash = (c: string) => createHash('sha256').update(c).digest('hex');
+
+  it('hopper users lists every user; hopper user add adds one under a free name', () => {
+    const url = db();
+    expect(cli(url, ['users'])).toMatchObject({ code: 0, out: expect.stringMatching(/^owner\towner\t\S+\n$/) });
+    expect(cli(url, ['user', 'add', 'Bea Smith'])).toMatchObject({ code: 0, out: 'bea_smith\n' });
+    expect(cli(url, ['user', 'add', 'bea smith'])).toMatchObject({ code: 2, err: expect.stringMatching(/name bea smith is taken/) });
+    expect(cli(url, ['user', 'add'])).toMatchObject({ code: 2, err: expect.stringMatching(/user add <name>/) });
+    expect(cli(url, ['users']).out.split('\n').filter(Boolean).map((l) => l.split('\t').slice(0, 2))).toEqual([['owner', 'owner'], ['bea_smith', 'Bea Smith']]);
+  });
+
+  it('login-code --user mints a code for that user; an unknown user is refused', () => {
+    const url = db();
+    cli(url, ['user', 'add', 'bea']);
+    const code = cli(url, ['login-code', '--user', 'bea']).out.trim();
+    const s = openInstanceStore({ url, clock: { now: () => new Date() } });
+    expect(s.loginCodes.take(hash(code), new Date().toISOString())).toBe('bea');
+    s.close();
+    expect(cli(url, ['login-code', '--user', 'nobody'])).toMatchObject({ code: 2, err: expect.stringMatching(/no user nobody/) });
+  });
+
+  it('config --user edits that user\'s documents; auth.yaml is the instance\'s and refuses --user', () => {
+    const url = db();
+    cli(url, ['user', 'add', 'bea']);
+    expect(cli(url, ['config', 'set', 'rules.md', '--user', 'bea', '--if-version', 'missing'], { stdin: 'bea rules' }).code).toBe(0);
+    expect(cli(url, ['config', 'get', 'rules.md', '--user', 'bea']).out).toBe('bea rules');
+    expect(documentIn(url, 'rules.md')).toBeUndefined();
+    expect(cli(url, ['config', 'get', 'auth.yaml', '--user', 'bea'])).toMatchObject({ code: 2, err: expect.stringMatching(/auth.yaml is the instance's/) });
+    expect(cli(url, ['config', 'get', 'rules.md', '--user', 'nobody'])).toMatchObject({ code: 2, err: expect.stringMatching(/no user nobody/) });
   });
 });

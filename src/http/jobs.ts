@@ -1,8 +1,9 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import type { Store } from '../domain/ports.ts';
+import type { FastifyRequest } from 'fastify';
 import type { JobStatus } from '../domain/types.ts';
 import { HttpError, parseWith } from './errors.ts';
+import type { TenantParts } from './tenants.ts';
 
 const STATUSES = [
   'queued', 'held', 'claimed', 'running', 'waiting_answer', 'finished', 'failed', 'cancelled',
@@ -22,18 +23,16 @@ export const jobsQuery = z.object({
 
 const idParams = z.object({ id: z.string() });
 
-// Read-only: jobs are pulled from sources, never posted (design.md "Phase 3").
-export function jobRoutes(app: FastifyInstance, o: { store: Store }): void {
-  const { store } = o;
-
+// Read-only: jobs are pulled from sources, never posted (design.md "Phase 3"). The request's user's jobs.
+export function jobRoutes(app: FastifyInstance, o: { tenant: (req: FastifyRequest) => TenantParts }): void {
   app.get('/api/jobs', async (req) => {
     const q = parseWith(jobsQuery, req.query);
-    return { jobs: store.jobs.list({ ...(q.status ? { status: q.status } : {}), limit: q.limit }) };
+    return { jobs: o.tenant(req).store.jobs.list({ ...(q.status ? { status: q.status } : {}), limit: q.limit }) };
   });
 
   app.get('/api/jobs/:id', async (req) => {
     const { id } = parseWith(idParams, req.params);
-    const job = store.jobs.get(id);
+    const job = o.tenant(req).store.jobs.get(id);
     if (!job) throw new HttpError(404, `job ${id} not found`);
     return job;
   });

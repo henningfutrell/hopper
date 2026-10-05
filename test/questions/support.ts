@@ -1,13 +1,13 @@
-// In-memory Store stand-in: only what the question service touches (questions, jobs.get,
+// In-memory UserStore stand-in: only what the question service touches (questions, jobs.get,
 // events.append, tx). Records the tx depth at every event so tests can assert that
 // onAnswered/onExpired run inside the transaction. tx rolls back on throw.
 import { vi } from 'vitest';
-import type { AnswerRequest, ConfigDocuments, EscalationLevel, LevelReply, QuestionService, Store } from '../../src/domain/ports.ts';
+import type { AnswerRequest, ConfigDocuments, EscalationLevel, LevelReply, QuestionService, UserStore } from '../../src/domain/ports.ts';
 import { EVENT_SCHEMA_VERSIONS, type DomainEvent, type Job, type NewEvent, type Question, type QuestionAttempt } from '../../src/domain/types.ts';
 import { createQuestionService } from '../../src/questions/index.ts';
 
 export interface MemoryStore {
-  store: Store;
+  store: UserStore;
   events: Array<DomainEvent & { txDepth: number }>;
   depth(): number;
   addJob(prompt: string, goal?: string): Job;
@@ -66,7 +66,7 @@ export function createMemoryStore(): MemoryStore {
         depth--;
       }
     },
-  } as unknown as Store;
+  } as unknown as UserStore;
   return {
     store,
     get events() { return events; },

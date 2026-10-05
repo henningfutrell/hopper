@@ -38,14 +38,15 @@ describe('numberPlaceholders', () => {
 });
 
 describe('postgres', () => {
-  it('keeps the store in the schema the URL names, created when absent', () => {
+  it('keeps the store in the schema the URL names, created when absent, and each user\'s tables in a schema beside it', () => {
     const url = t.url();
     const s = t.open(url);
     const j = s.jobs.create(spec, 50);
     s.close();
     const schema = new URL(url).searchParams.get('schema')!;
     const db = openDb(testPostgres());
-    expect(db.get('SELECT count(*) AS n FROM information_schema.tables WHERE table_schema = ? AND table_name = ?', schema, 'jobs')).toEqual({ n: 1 });
+    expect(db.get('SELECT count(*) AS n FROM information_schema.tables WHERE table_schema = ? AND table_name = ?', schema, 'users')).toEqual({ n: 1 });
+    expect(db.get('SELECT count(*) AS n FROM information_schema.tables WHERE table_schema = ? AND table_name = ?', `${schema}_u_owner`, 'jobs')).toEqual({ n: 1 });
     db.close();
     const again = t.open(url);
     expect(again.jobs.get(j.id)).toEqual(j);
