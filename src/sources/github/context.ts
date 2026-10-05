@@ -44,6 +44,8 @@ export function contextBlock(issue: GitHubIssue, p: Priority, comments: GitHubCo
     `title: ${oneLine(issue.title)}`,
     `labels: ${issue.labels.join(', ')} · author: ${issue.author}`,
     `priority: ${p.priority} (${p.reason}) · project item: ${p.projectItem}`,
+    // What finished means (issue #171): JobSource.notShipped holds the job to it (shipped.ts).
+    `done: only once the change ships — a pull request this job opens, with "Closes #${issue.number}" in its body, is merged; until then the job is not done, and a job that ends done without it ends failed`,
   ].join('\n');
   const lines = comments.map(commentLine);
   const build = (kept: string[]) => kept.length === 0

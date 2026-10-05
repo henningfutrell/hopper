@@ -1098,6 +1098,7 @@ repo: owner/repo · issue: #N · url: …
 title: …
 labels: a, b · author: owner
 priority: 75 (label:hopper:high) · project item: <project title> · Priority=P1 (or "none")
+done: only once the change ships — a pull request this job opens, with "Closes #N" in its body, is merged; until then the job is not done, and a job that ends done without it ends failed
 recent comments (oldest first, up to recentComments; only allowlisted authors, no hopper-marked comments — anyone else's text never reaches the job):
 - <author> at <ISO>: <body, ≤ 1000 chars>
 ...
@@ -1158,10 +1159,24 @@ Comments the hopper posted before this rule start with a hidden marker line (`<!
 kind=… -->`). They remain on issues, so the context filter still drops any comment carrying the
 `<!-- hopper v1 ` prefix (and, in app mode, any by the bot).
 
+**Done means shipped** (issue #171). A job that ends done (`HOPPER_DONE`, or any executor's
+`finished` outcome) is not recorded finished until its source has said its work shipped
+(`JobSource.notShipped(job)`, asked by the engine's runner before `recordOutcome`). The GitHub
+source (`src/sources/github/shipped.ts`) says it shipped only when the issue's last close event's
+closer is a merged pull request opened at or after the job's `createdAt` — the same "own pull
+request" rule as the signals below; a merge closes an issue only on the default branch, so this is
+the change on main. Anything else — the issue still open, closed by a person, a commit or an older
+pull request — fails the job with `nothing shipped: no merged pull request opened by this job closes
+<issue url>`; an error asking GitHub (transient or not) fails it with `could not confirm the work
+shipped: <error>`. Fail closed: a failed job's issue stays open with `hopper:failed`, never
+`hopper:done`, and removing that label re-runs it. The issue context block says so to the job
+(`done:` line). A source without `notShipped`, and a job of no source, take every done job as
+shipped. Before this, a job that said it was done was closed as completed with nothing on main.
+
 | report | on GitHub |
 |--------|-----------|
 | claimed | ensure labels `hopper:claimed`, `hopper:done`, `hopper:failed` exist (`gh label create --force`, once per repo per process); add `hopper:claimed`. **No comment** |
-| finished | **no comment**; remove `hopper:claimed`, add `hopper:done` |
+| finished | **no comment**; remove `hopper:claimed`, add `hopper:done` (only a job whose work shipped is finished, above) |
 | failed | **no comment**; remove `hopper:claimed`, add `hopper:failed` (removing it is the re-run gesture) |
 | cancelled | **no comment**; remove `hopper:claimed` |
 
