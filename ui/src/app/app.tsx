@@ -5,7 +5,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Toaster } from '@/components/ui/sonner';
 import { useForgetCleared } from '@/hooks/use-dismissed';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { load, setLoadError, useHopper } from '@/store';
+import { load, mustSignIn, setLoadError, useHopper } from '@/store';
 import { connect } from '@/store/stream';
 import { Decisions } from '@/views/decisions';
 import { Events } from '@/views/events';
@@ -15,7 +15,7 @@ import { Questions } from '@/views/questions';
 import { Settings } from '@/views/settings';
 import { Sources } from '@/views/sources';
 import { Usage } from '@/views/usage';
-import { ReadOnlyBanner } from './banner';
+import { ReadOnlyBanner, SignInRequired } from './banner';
 import { Header } from './header';
 import { UpdateNotice } from './update';
 import { MobileNav, Sidebar, useView, viewLabel, type View } from './nav';
@@ -37,11 +37,12 @@ export function App() {
   const view = useView();
   const loaded = useHopper((s) => s.loaded);
   const loadError = useHopper((s) => s.loadError);
+  const signInFirst = useHopper(mustSignIn);
   useForgetCleared();
   useEffect(() => {
     let close: (() => void) | undefined;
     let cancelled = false;
-    load().then(() => { if (!cancelled) close = connect(); }, (e: Error) => setLoadError(e.message));
+    load().then((ok) => { if (ok && !cancelled) close = connect(); }, (e: Error) => setLoadError(e.message));
     return () => { cancelled = true; close?.(); };
   }, []);
   useEffect(() => { document.title = view === 'overview' ? 'hopper' : `${viewLabel(view)} · hopper`; }, [view]);
@@ -53,14 +54,14 @@ export function App() {
         <div className="flex">
           <Sidebar view={view} />
           <main className="min-w-0 flex-1 space-y-3 p-3 sm:p-4 lg:p-6">
-            <ReadOnlyBanner />
+            {signInFirst ? <SignInRequired /> : <ReadOnlyBanner />}
             <UpdateNotice />
             {loadError && (
               <div className="flex items-center gap-2 rounded-lg border border-bad/40 bg-bad/5 p-3 text-sm text-bad">
                 <AlertTriangle className="size-4" />Could not load from the daemon: {loadError}
               </div>
             )}
-            {loaded ? <Current /> : !loadError && <Loading />}
+            {signInFirst ? null : loaded ? <Current /> : !loadError && <Loading />}
           </main>
         </div>
       </div>
