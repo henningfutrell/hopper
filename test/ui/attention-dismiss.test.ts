@@ -132,4 +132,13 @@ describe('Dismissing notices', () => {
     await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
     expect(notice()).toBeNull();
   });
+
+  it('a toast has a close button', async () => {
+    await boot();
+    const { toast } = await import('sonner');
+    await act(async () => { toast.error('Clipboard blocked'); });
+    await vi.waitFor(() => expect(document.querySelector('[data-sonner-toast]')).not.toBeNull());
+    const toastEl = document.querySelector('[data-sonner-toast]')!;
+    await click(button(toastEl, 'Close toast'));
+  });
 });
