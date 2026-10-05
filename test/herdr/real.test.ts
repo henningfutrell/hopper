@@ -43,7 +43,7 @@ describe.skipIf(!REAL)('herdr-claude against a real herdr and Claude (opt-in)', 
     const executor = createHerdrClaudeExecutor({
       herdr: createHerdrCliClient({ bin: BIN, session: SESSION }),
       clock: { now: () => new Date() }, defaultCwd: dir, claudeArgs: ['--dangerously-skip-permissions'],
-      trustWorkdir: true, pollMs: 1000, idleQuestionMs: 30000,
+      trustWorkdir: true, pollMs: 1000, idleNudgeMs: 30000,
     });
     const id = randomUUID();
     const payload = {
@@ -75,7 +75,7 @@ describe.skipIf(!REAL)('herdr-claude against a real herdr and Claude (opt-in)', 
     const executor = createHerdrClaudeExecutor({
       herdr: createHerdrCliClient({ bin: BIN, session: SESSION }),
       clock: { now: () => new Date() }, defaultCwd: tree, claudeArgs: ['--dangerously-skip-permissions'],
-      trustWorkdir: true, pollMs: 1000, idleQuestionMs: 30000,
+      trustWorkdir: true, pollMs: 1000, idleNudgeMs: 30000,
     });
     const payload = {
       prompt: 'Run `mktemp` once in the shell and write the path it prints into where.txt in the current directory. '

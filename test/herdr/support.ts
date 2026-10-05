@@ -41,7 +41,7 @@ export function contextFor(job: Job, laneId = LANE, machine: MachineSnapshot = L
 
 export function setup(
   fakeOptions: FakeHerdrOptions = {},
-  overrides: { trustWorkdir?: boolean; idleQuestionMs?: number; claudeArgs?: string[]; remote?: Record<string, FakeHerdrOptions> } = {},
+  overrides: { trustWorkdir?: boolean; idleNudgeMs?: number; claudeArgs?: string[]; remote?: Record<string, FakeHerdrOptions> } = {},
 ) {
   const herdr = createFakeHerdrClient({ session: 'jh-test', ...fakeOptions });
   const remotes = new Map(Object.entries(overrides.remote ?? {}).map(([target, fo]) => [target, createFakeHerdrClient({ session: 'jh-there', ...fo })]));
@@ -57,7 +57,7 @@ export function setup(
       return r;
     },
     defaultCwd: CWD, claudeArgs: overrides.claudeArgs ?? ['--dangerously-skip-permissions'],
-    trustWorkdir: overrides.trustWorkdir ?? true, pollMs: 1000, idleQuestionMs: overrides.idleQuestionMs ?? 20000,
+    trustWorkdir: overrides.trustWorkdir ?? true, pollMs: 1000, idleNudgeMs: overrides.idleNudgeMs ?? 20000,
   });
   return { herdr, remotes, reached, clock, executor };
 }

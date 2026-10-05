@@ -10,6 +10,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { ExecutionContext } from '../../src/domain/ports.ts';
 import type { Job, MachineSnapshot } from '../../src/domain/types.ts';
 import { createCursorExecutor } from '../../src/executors/index.ts';
+import { STATUS_NOTE_NUDGE } from '../../src/executors/herdr/index.ts';
 import { testSshAuth } from '../support/ssh.ts';
 
 const FAKE_CURSOR = join(import.meta.dirname, 'fake-cursor-agent.mjs');
@@ -28,6 +29,7 @@ beforeAll(() => {
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 beforeEach(() => {
   delete process.env.FAKE_CURSOR_MODE;
+  delete process.env.FAKE_CURSOR_REPLIES;
   rmSync(join(dir, 'cursor-calls.jsonl'), { force: true });
 });
 
@@ -77,11 +79,30 @@ describe('cursor-agent executor', () => {
     expect(resumed.argv.slice(-4)).toEqual(['--resume', 'chat-1', '--', 'French.']);
   });
 
-  it('HOPPER_FAILED fails the job with its reason; an answer without a marker is a question', async () => {
+  it('HOPPER_FAILED fails the job with its reason', async () => {
     reply('Tried.\nHOPPER_FAILED the repo is archived');
     expect(await ex.run(ctxFor({ prompt: 'p', cwd: work }, HERE).ctx)).toEqual({ kind: 'failed', error: 'the repo is archived' });
-    reply('I looked at it and stopped.');
-    expect(await ex.run(ctxFor({ prompt: 'p', cwd: work }, HERE).ctx)).toMatchObject({ kind: 'question', question: { text: 'I looked at it and stopped.', detectedBy: 'idle' } });
+  });
+
+  // Issue #163: an answer without a marker is a status note, never a question.
+  it('an answer without a marker opens no question: the hopper nudges in the same chat, and the job goes on', async () => {
+    process.env.FAKE_CURSOR_REPLIES = JSON.stringify(['I looked at it and will now write the file.', 'Wrote it.\nHOPPER_DONE']);
+    const progress: (string | undefined)[] = [];
+    const { ctx } = ctxFor({ prompt: 'p', cwd: work }, HERE);
+    expect(await ex.run({ ...ctx, progress: (_f, m) => { progress.push(m); } })).toEqual({ kind: 'finished', result: { machine: 'local', summary: 'Wrote it.', chatId: 'chat-1' } });
+    expect(calls().at(-1)!.argv.slice(-4)).toEqual(['--resume', 'chat-1', '--', STATUS_NOTE_NUDGE]);
+    expect(progress).toContain('I looked at it and will now write the file.');
+  });
+
+  it('a question asked without the marker is nudged, and asked again with it', async () => {
+    process.env.FAKE_CURSOR_REPLIES = JSON.stringify(['Anything else?', 'Should the README change too?\nHOPPER_QUESTION']);
+    expect(await ex.run(ctxFor({ prompt: 'p', cwd: work }, HERE).ctx)).toMatchObject({ kind: 'question', question: { text: 'Should the README change too?', detectedBy: 'marker' } });
+  });
+
+  it('fails the job when the agent keeps answering without a marker after three nudges', async () => {
+    reply('Still thinking.');
+    expect(await ex.run(ctxFor({ prompt: 'p', cwd: work }, HERE).ctx)).toEqual({ kind: 'failed', error: 'cursor-agent answered 4 times in a row without a marker: Still thinking.' });
+    expect(calls()).toHaveLength(4);
   });
 
   it('Cursor failing — not signed in, or an error result — fails the job with what it said', async () => {

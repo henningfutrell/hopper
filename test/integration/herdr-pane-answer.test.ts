@@ -17,7 +17,7 @@ let cleanup: (() => void) | undefined;
 
 const ASK = { output: ['● Which colour should the shed be?', '  HOPPER_QUESTION'] };
 const DONE = { steps: ['● Painting', '● Still painting', '● Almost'], output: ['● Painted the shed blue.', '  HOPPER_DONE'] };
-const EXECUTORS = [{ name: 'test', plugin: 'test' }, { name: 'herdr-claude', plugin: 'herdr-claude', options: { pollMs: 10, idleQuestionMs: 5000 } }];
+const EXECUTORS = [{ name: 'test', plugin: 'test' }, { name: 'herdr-claude', plugin: 'herdr-claude', options: { pollMs: 10, idleNudgeMs: 5000 } }];
 const item = { executor: 'herdr-claude', prompt: 'Paint the shed', cwd: '/tmp', env: {} };
 
 async function start(herdr: FakeHerdrClient, seams: AppSeams = {}, laneCount = 4): Promise<TestApp> {

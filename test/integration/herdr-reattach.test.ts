@@ -10,7 +10,7 @@ import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts
 import { createManualSource } from '../support/manual-source.ts';
 import { waitFor } from '../support/wait.ts';
 
-const EXECUTORS = [{ name: 'test', plugin: 'test' }, { name: 'herdr-claude', plugin: 'herdr-claude', options: { pollMs: 10, idleQuestionMs: 5000 } }];
+const EXECUTORS = [{ name: 'test', plugin: 'test' }, { name: 'herdr-claude', plugin: 'herdr-claude', options: { pollMs: 10, idleNudgeMs: 5000 } }];
 /** A turn long enough (one step per poll) to still be working when the daemon restarts. */
 const LONG: FakeTurn = {
   steps: Array.from({ length: 40 }, (_, i) => `● Painting plank ${i + 1}`),

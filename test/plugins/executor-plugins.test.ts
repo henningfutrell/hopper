@@ -67,7 +67,7 @@ describe('herdr-claude', () => {
   it('options default to what the env defaulted to before plugins', () => {
     expect(options(herdrClaude)).toEqual({
       bin: 'herdr', claudeBin: 'claude', session: 'hopper', args: ['--dangerously-skip-permissions'],
-      cwd: homedir(), trustWorkdir: true, pollMs: 1000, idleQuestionMs: 20000,
+      cwd: homedir(), trustWorkdir: true, pollMs: 1000, idleNudgeMs: 20000,
     });
   });
 
