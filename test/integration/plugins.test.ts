@@ -46,7 +46,7 @@ describe('router chosen from what is detected, no grok-bot-jev checkout', () => 
   it('GET /api/plugins: roles, the detected instance, and every plugin; a custom router that can run is chosen', async () => {
     const a = await start({ before: installAlwaysProceed });
     const body = (await a.api('GET', '/api/plugins')).body;
-    expect(body.roles).toEqual(['router', 'queue-sorter', 'answerer', 'assessor', 'executor', 'job-source', 'machine-source', 'usage-source', 'notifier']);
+    expect(body.roles).toEqual(['router', 'queue-sorter', 'escalation-level', 'executor', 'job-source', 'machine-source', 'usage-source', 'notifier']);
     expect(body.config).toMatchObject({ source: 'document', document: 'plugins.yaml' });
     expect(body.router).toMatchObject({
       instance: { name: 'always-proceed', plugin: 'always-proceed' }, selection: 'detected',
@@ -54,7 +54,7 @@ describe('router chosen from what is detected, no grok-bot-jev checkout', () => 
     });
     const ids = body.plugins.map((p: { id: string; builtin: boolean }) => [p.id, p.builtin]).sort();
     expect(ids).toEqual([
-      ['always-escalate', true], ['always-proceed', false], ['claude-cli', true], ['claude-cli-assessor', true], ['claude-plan', true], ['client', true], ['command', true], ['docker', true], ['gate-router', true], ['github-app', true], ['github-gh', true],
+      ['always-proceed', false], ['claude-cli', true], ['claude-plan', true], ['client', true], ['command', true], ['docker', true], ['gate-router', true], ['github-app', true], ['github-gh', true],
       ['grokbot-routine', true], ['herdr-claude', true], ['local', true], ['newest-first', true], ['oldest-first', true], ['pass-through', true], ['priority', true], ['ssh', true],
       ['test', true],
     ]);
@@ -106,45 +106,37 @@ describe('plugins.yaml and a custom plugin', () => {
   });
 });
 
-describe('question roles in /api/plugins (slice 2)', () => {
-  it('no section: the built-in instances, answerer opus (claude-cli), assessor fable (claude-cli-assessor)', async () => {
+describe('escalation levels in /api/plugins', () => {
+  it('no section: the built-in levels, opus then fable, both claude-cli', async () => {
     const a = await start();
     const body = (await a.api('GET', '/api/plugins')).body;
-    expect(body.answerer.instance).toEqual({ name: 'opus', plugin: 'claude-cli', options: { bin: 'claude', model: 'opus', timeoutMs: 180000 } });
-    expect(body.assessor.instance).toEqual({ name: 'fable', plugin: 'claude-cli-assessor', options: { bin: 'claude', model: 'fable', timeoutMs: 180000 } });
+    expect(body.escalationLevels.map((l: { instance: unknown }) => l.instance)).toEqual([
+      { name: 'opus', plugin: 'claude-cli', options: { bin: 'claude', model: 'opus', timeoutMs: 180000 } },
+      { name: 'fable', plugin: 'claude-cli', options: { bin: 'claude', model: 'fable', timeoutMs: 180000 } },
+    ]);
   });
 
-  it('sections with a bin and models: those instances, detected', async () => {
-    const a = await start({ plugins: {
-      answerer: { name: 'opus', plugin: 'claude-cli', options: { bin: process.execPath, model: 'sonnet', timeoutMs: 1234 } },
-      assessor: { name: 'fable', plugin: 'claude-cli-assessor', options: { bin: process.execPath, model: 'haiku', timeoutMs: 1234 } },
-    } });
+  it('a section with a bin and models: those levels, in order, detected', async () => {
+    const a = await start({ plugins: { escalationLevels: [
+      { name: 'quick', plugin: 'claude-cli', options: { bin: process.execPath, model: 'haiku', timeoutMs: 1234 } },
+      { name: 'deep', plugin: 'claude-cli', options: { bin: process.execPath, model: 'fable', timeoutMs: 1234 } },
+    ] } });
     const body = (await a.api('GET', '/api/plugins')).body;
-    expect(body.answerer).toEqual({
-      instance: { name: 'opus', plugin: 'claude-cli', options: { bin: process.execPath, model: 'sonnet', timeoutMs: 1234 } },
-      detection: { status: 'available', detail: expect.any(String) }, active: 'claude-cli', fallback: false,
-    });
-    expect(body.assessor).toEqual({
-      instance: { name: 'fable', plugin: 'claude-cli-assessor', options: { bin: process.execPath, model: 'haiku', timeoutMs: 1234 } },
-      detection: { status: 'available', detail: expect.any(String) }, active: 'claude-cli-assessor', fallback: false,
-    });
+    expect(body.escalationLevels).toEqual([
+      { instance: { name: 'quick', plugin: 'claude-cli', options: { bin: process.execPath, model: 'haiku', timeoutMs: 1234 } }, detection: { status: 'available', detail: expect.any(String) }, active: 'claude-cli' },
+      { instance: { name: 'deep', plugin: 'claude-cli', options: { bin: process.execPath, model: 'fable', timeoutMs: 1234 } }, detection: { status: 'available', detail: expect.any(String) }, active: 'claude-cli' },
+    ]);
   });
 
-  it('claude not installed: no answerer, and the assessor falls back to always-escalate — shown', async () => {
-    const a = await start({ plugins: {
-      answerer: { name: 'opus', plugin: 'claude-cli', options: { bin: '/nonexistent/claude' } },
-      assessor: { name: 'fable', plugin: 'claude-cli-assessor', options: { bin: '/nonexistent/claude' } },
-    } });
+  it('claude not installed: each level is shown unable to run, with the reason', async () => {
+    const a = await start({ plugins: { escalationLevels: [{ name: 'opus', plugin: 'claude-cli', options: { bin: '/nonexistent/claude' } }] } });
     const body = (await a.api('GET', '/api/plugins')).body;
-    expect(body.answerer).toMatchObject({ instance: { name: 'opus' }, detection: { status: 'unavailable' }, active: null, fallback: true, reason: expect.stringContaining('/nonexistent/claude') });
-    expect(body.assessor).toMatchObject({ instance: { name: 'fable' }, detection: { status: 'unavailable' }, active: 'always-escalate', fallback: true });
+    expect(body.escalationLevels).toEqual([expect.objectContaining({ instance: expect.objectContaining({ name: 'opus' }), detection: expect.objectContaining({ status: 'unavailable' }), active: null, reason: expect.stringContaining('/nonexistent/claude') })]);
   });
 
-  it('answerer: null and another assessor', async () => {
-    const a = await start({ before: (d) => writePluginsYaml(d, 'version: 1\nanswerer: null\nassessor: { name: wall, plugin: always-escalate }\n') });
-    const body = (await a.api('GET', '/api/plugins')).body;
-    expect(body.answerer).toEqual({ instance: null, active: null, fallback: false });
-    expect(body.assessor).toMatchObject({ instance: { name: 'wall', plugin: 'always-escalate' }, active: 'always-escalate', fallback: false });
+  it('escalationLevels: [] — no levels', async () => {
+    const a = await start({ before: (d) => writePluginsYaml(d, 'version: 1\nescalationLevels: []\n') });
+    expect((await a.api('GET', '/api/plugins')).body.escalationLevels).toEqual([]);
   });
 });
 

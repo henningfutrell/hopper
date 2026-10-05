@@ -106,7 +106,7 @@ describe('GET /api/plugins: the executor role', () => {
   it('the instances plugins.yaml names, detection per plugin and per instance', async () => {
     const a = await boot(newDb());
     const body = (await a.api('GET', '/api/plugins')).body;
-    expect(body.roles).toEqual(['router', 'queue-sorter', 'answerer', 'assessor', 'executor', 'job-source', 'machine-source', 'usage-source', 'notifier']);
+    expect(body.roles).toEqual(['router', 'queue-sorter', 'escalation-level', 'executor', 'job-source', 'machine-source', 'usage-source', 'notifier']);
     expect(body.executors).toEqual({
       instances: [{ instance: { name: 'test', plugin: 'test', options: {} }, detection: { status: 'available' }, active: 'test' }],
     });
@@ -124,7 +124,6 @@ describe('GET /api/plugins: the executor role', () => {
     expect(marked('herdr-claude')).toEqual(['args', 'bin', 'claudeBin', 'cwd']);
     expect(marked('test')).toEqual([]);
     expect(marked('claude-cli')).toEqual(['bin']);
-    expect(marked('claude-cli-assessor')).toEqual(['bin']);
     expect(marked('gate-router')).toEqual(['claudeBin', 'grokBotJevSrc', 'python']);
     expect(marked('github-gh')).toEqual(['appKeyEnv', 'bin', 'defaultCwd', 'repoPaths']);
     expect(marked('github-app')).toEqual(['apiUrl', 'appId', 'defaultCwd', 'privateKeyEnv', 'repoPaths', 'slug']);

@@ -5,7 +5,7 @@ const t = useTempStore();
 const input = (jobId: string, text = 'proceed?', tier = 'opus') => ({ jobId, text, recentOutput: 'tail', detectedBy: 'marker', tier });
 
 describe('questions repository', () => {
-  it('creates an open question at the stage it is given (the answerer instance, or human), empty trail, from the store clock and idGen', () => {
+  it('creates an open question at the stage it is given (the first escalation level instance, or human), empty trail, from the store clock and idGen', () => {
     const s = t.open(t.url());
     const j = s.jobs.create(spec, 5);
     const q = s.questions.create(input(j.id));
@@ -17,7 +17,7 @@ describe('questions repository', () => {
     expect(q.id).toMatch(/^[0-9a-f-]{36}$/);
     expect(s.questions.get(q.id)).toEqual(q);
     expect(s.questions.get('nope')).toBeUndefined();
-    expect(s.questions.create(input(j.id, 'no answerer', 'human')).tier).toBe('human');
+    expect(s.questions.create(input(j.id, 'no levels', 'human')).tier).toBe('human');
     expect(s.questions.create(input(j.id, 'renamed', 'sonnet')).tier).toBe('sonnet');
     s.close();
   });
@@ -59,11 +59,11 @@ describe('questions repository', () => {
     const s = t.open(t.url(), clock);
     const q = s.questions.create(input(s.jobs.create(spec, 5).id));
     clock.set('2026-10-02T12:00:00.000Z');
-    s.questions.addAttempt(q.id, { tier: 'opus', startedAt: 'a', outcome: 'escalated', reason: 'unsure' });
-    const r = s.questions.addAttempt(q.id, { tier: 'fable', startedAt: 'b', outcome: 'accepted', answer: 'yes' });
+    s.questions.addAttempt(q.id, { tier: 'opus', role: 'level', startedAt: 'a', outcome: 'escalated', reason: 'unsure' });
+    const r = s.questions.addAttempt(q.id, { tier: 'fable', role: 'level', startedAt: 'b', outcome: 'accepted', answer: 'yes' });
     expect(r.attempts.map((a) => a.tier)).toEqual(['opus', 'fable']);
     expect(r.updatedAt).toBe('2026-10-02T12:00:00.000Z');
-    expect(() => s.questions.addAttempt('nope', { tier: 'opus', startedAt: 'a', outcome: 'accepted' })).toThrow(/question not found/);
+    expect(() => s.questions.addAttempt('nope', { tier: 'opus', role: 'level', startedAt: 'a', outcome: 'accepted' })).toThrow(/question not found/);
     s.close();
   });
 
@@ -72,7 +72,7 @@ describe('questions repository', () => {
     const s = t.open(path);
     const j = s.jobs.create(spec, 5);
     const q = s.questions.create(input(j.id));
-    s.questions.addAttempt(q.id, { tier: 'opus', startedAt: 'a', outcome: 'escalated' });
+    s.questions.addAttempt(q.id, { tier: 'opus', role: 'level', startedAt: 'a', outcome: 'escalated' });
     expect(() => s.tx(() => { s.questions.update(q.id, { status: 'answered' }); throw new Error('boom'); })).toThrow('boom');
     expect(s.questions.get(q.id)?.status).toBe('open');
     const before = s.questions.get(q.id);

@@ -23,7 +23,7 @@ import { createFakeUsageSource } from '../../src/usage/index.ts';
 import { databaseUrlFor } from './database.ts';
 import { mintLoginCode } from '../../src/http/ui/login-code.ts';
 import { readDocument, writeDocument } from './files.ts';
-import { fakeQuestionRoles } from './fake-questions.ts';
+import { fakeLevels } from './fake-questions.ts';
 import { createFakeRouter } from './fake-router.ts';
 import { createManualSource, manualItem, type ManualSource } from './manual-source.ts';
 import { createScriptedExecutor, type ScriptedExecutor } from './scripted-executor.ts';
@@ -91,8 +91,8 @@ export async function startTestApp(o: {
   realRouter?: boolean;
   /** Sections over TEST_PLUGINS, written on this start; absent: TEST_PLUGINS unless the data dir has a plugins.yaml; false: none. */
   plugins?: Record<string, unknown> | false;
-  /** Run the plugin host's answerer and assessor instead of the fake doubles. */
-  realQuestionRoles?: boolean;
+  /** Run the plugin host's escalation levels instead of the fake doubles. */
+  realLevels?: boolean;
   /** Secrets the parts read (GITHUB_APP_PRIVATE_KEY, GROKBOT_WEBHOOK_URL, …), over PATH; mutable while the app runs. */
   secrets?: Record<string, string | undefined>;
 }): Promise<TestApp> {
@@ -118,7 +118,7 @@ export async function startTestApp(o: {
     pluginsFileIntervalMs: 50,
     env: secrets,
     ...(o.realRouter ? {} : { router: createFakeRouter({ clock: { now: () => new Date() } }) }),
-    ...(o.realQuestionRoles ? {} : fakeQuestionRoles()),
+    ...(o.realLevels ? {} : fakeLevels()),
     fakeUsage: createFakeUsageSource({ now: () => new Date() }),
     ...o.seams,
     executors: [scripted, ...(o.seams?.executors ?? [])],

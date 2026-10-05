@@ -65,8 +65,7 @@ function start(o: { file?: string; kit?: DetectionKit } = {}) {
     pluginDir: join(dir, 'plugins'), documents, dataDir: dir, clock: fixedClock,
     logger: { info() {}, warn() {} }, routerMode: () => 'shadow', kit: o.kit ?? fakeKit({ exists: async () => false, readable: async () => false }),
     builtins: [...BUILTIN_PLUGINS, recorder, unavailable],
-    defaultAnswerer: null,
-    defaultAssessor: { name: 'a', plugin: 'always-escalate' },
+    defaultLevels: [],
     defaultExecutors: [{ name: 'test', plugin: 'test' }],
     intervalMs: 30,
   });

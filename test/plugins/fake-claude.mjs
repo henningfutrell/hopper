@@ -2,7 +2,7 @@
 /* global process, setInterval */
 // Fake `claude` executable. Records argv, stdin, env and cwd to $FAKE_CLAUDE_OUT (JSON), then
 // behaves per $FAKE_CLAUDE_MODE: ok (default) | malformed | invalid | exit1 | hang. In `ok` mode
-// the structured_output is $FAKE_CLAUDE_STRUCTURED (JSON) when set, else an answerer draft, and
+// the structured_output is $FAKE_CLAUDE_STRUCTURED (JSON) when set, else a level's answer, and
 // modelUsage names `claude-<--model>-resolved`, as the real CLI names the model an alias ran.
 import { writeFileSync } from 'node:fs';
 
@@ -18,7 +18,7 @@ process.stdin.on('end', () => {
   if (mode === 'exit1') { process.stderr.write('auth failed'); process.exit(1); }
   if (mode === 'malformed') { process.stdout.write('not json {'); return; }
   if (mode === 'invalid') {
-    process.stdout.write(JSON.stringify({ type: 'result', structured_output: { answer: 'x', confident: 'yes' } }));
+    process.stdout.write(JSON.stringify({ type: 'result', structured_output: { answer: 'x', escalate: 'no' } }));
     return;
   }
   process.stdout.write(JSON.stringify({
@@ -26,6 +26,6 @@ process.stdin.on('end', () => {
     modelUsage: { [`claude-${process.argv[process.argv.indexOf('--model') + 1]}-resolved`]: { outputTokens: 1 } },
     structured_output: process.env.FAKE_CLAUDE_STRUCTURED
       ? JSON.parse(process.env.FAKE_CLAUDE_STRUCTURED)
-      : { answer: 'use postgres', confident: true, reason: 'rules' },
+      : { answer: 'use postgres', escalate: false, reason: 'rules' },
   }));
 });
