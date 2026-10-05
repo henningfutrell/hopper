@@ -8,7 +8,6 @@ import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import type { UpdateChange } from '../domain/types.ts';
 
 const exec = promisify(execFile);
 const TIMEOUT_MS = 120_000;
@@ -23,8 +22,10 @@ export interface GitMirror {
   has(commit: string): Promise<boolean>;
   /** `ancestor` is reachable from `commit` (equal counts). */
   contains(commit: string, ancestor: string): Promise<boolean>;
-  /** Commits in `to` and not in `from`, newest first, at most `max`. */
-  log(from: string, to: string, max: number): Promise<UpdateChange[]>;
+  /** How many commits are in `to` and not in `from` (all of `to`'s when `from` is unknown). */
+  count(from: string, to: string): Promise<number>;
+  /** The text of `path` at `commit`, or undefined when it has no such file. */
+  read(commit: string, path: string): Promise<string | undefined>;
   /** The tree of `commit`, unpacked into `dir` (created). */
   extract(commit: string, dir: string): Promise<void>;
 }
@@ -65,10 +66,12 @@ export function createGitMirror(dir: string): GitMirror {
     contains(commit, ancestor) {
       return ok(git('merge-base', '--is-ancestor', ancestor, commit));
     },
-    async log(from, to, max) {
+    async count(from, to) {
       const range = (await this.has(from)) ? [`${from}..${to}`] : [to];
-      const out = await git('log', `--max-count=${max}`, '--format=%H%x1f%cI%x1f%s', ...range, '--');
-      return out ? out.split('\n').map((l) => { const [commit = '', at = '', subject = ''] = l.split('\x1f'); return { commit, at, subject }; }) : [];
+      return Number(await git('rev-list', '--count', ...range, '--'));
+    },
+    async read(commit, path) {
+      return (await this.has(commit)) ? git('show', `${commit}:${path}`).catch(() => undefined) : undefined;
     },
     async extract(commit, target) {
       rmSync(target, { recursive: true, force: true });

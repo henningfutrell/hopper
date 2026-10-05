@@ -16,8 +16,8 @@ const question = {
 };
 const failed = { id: 'j2', spec: { executor: 'test', payload: {}, goal: 'goal j2' }, priority: 50, status: 'failed', approved: false, createdAt: at, updatedAt: at, finishedAt: at, attempts: 1, error: 'exit 1' };
 const update = {
-  state: 'available', channel: 'main', autoUpdate: false, truncated: false, target: { commit: 'b'.repeat(40), ref: 'main' },
-  changes: [{ commit: 'b'.repeat(40), subject: 'x', at }], installed: { repo: 'r', branch: 'main', commit: 'a'.repeat(40), installedAt: at },
+  state: 'available', channel: 'main', autoUpdate: false, target: { commit: 'b'.repeat(40), ref: 'main' },
+  whatsNew: ['You can pause the queue.'], installed: { repo: 'r', branch: 'main', commit: 'a'.repeat(40), installedAt: at },
 };
 
 let calls: { path: string; method: string }[] = [];

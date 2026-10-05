@@ -1,7 +1,7 @@
-// Self-update (issue #44): the notice when an update is available, applying or failed — with what
-// changed — and the panel behind the header's version (installed commit, channel, auto-update,
+// Self-update (issue #44): the notice when an update is available, applying or failed — with
+// what's new in plain words (issue #104) — and the panel behind the header's version (installed commit, channel, auto-update,
 // check now). Applying keeps running jobs running; the page reloads once the daemon runs the new commit.
-import { ArrowUpCircle, ChevronDown, ExternalLink, RefreshCw, X } from 'lucide-react';
+import { ArrowUpCircle, ChevronDown, RefreshCw, X } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -12,7 +12,7 @@ import { dismissNotice, useDismissed } from '@/hooks/use-dismissed';
 import { useNow } from '@/hooks/use-now';
 import { noticeKey } from '@/model/dismissed';
 import { ago } from '@/model/format';
-import { compareUrl, headline, showNotice } from '@/model/update';
+import { headline, showNotice } from '@/model/update';
 import type { UpdateStatus } from '@/model/wire';
 import { cn } from '@/lib/utils';
 import { updateAct, useHopper } from '@/store';
@@ -21,22 +21,11 @@ import { useCanAdmin } from '@/store/selectors';
 const short = (sha: string | undefined) => sha?.slice(0, 7) ?? '…';
 const TONE: Record<UpdateStatus['state'], Tone> = { available: 'busy', applying: 'warn', error: 'bad', current: 'ok', unavailable: 'muted' };
 
-function Changes({ s }: { s: UpdateStatus }) {
-  const link = s.installed && s.target ? compareUrl(s.installed.repo, s.installed.commit, s.target.commit) : undefined;
-  if (s.changes.length === 0) return null;
+function WhatsNew({ s }: { s: UpdateStatus }) {
   return (
-    <div className="space-y-1">
-      <ul className="max-h-64 space-y-0.5 overflow-y-auto text-xs">
-        {s.changes.map((c) => (
-          <li key={c.commit} className="grid grid-cols-[4rem_minmax(0,1fr)] gap-2">
-            <span className="font-mono text-muted-foreground" title={c.at}>{short(c.commit)}</span>
-            <span className="truncate" title={c.subject}>{c.subject}</span>
-          </li>
-        ))}
-      </ul>
-      {s.truncated && <p className="text-xs text-muted-foreground">Only the newest {s.changes.length} are listed.</p>}
-      {link && <a className="inline-flex items-center gap-1 text-xs text-busy hover:underline" href={link} target="_blank" rel="noreferrer">Compare on GitHub<ExternalLink className="size-3" /></a>}
-    </div>
+    <ul className="max-h-64 list-disc space-y-1 overflow-y-auto pl-4 text-xs">
+      {s.whatsNew.map((b) => <li key={b}>{b}</li>)}
+    </ul>
   );
 }
 
@@ -63,16 +52,16 @@ export function UpdateNotice() {
       <div className="flex flex-wrap items-center gap-2">
         <Dot tone={tone} pulse={s.state === 'applying'} />
         <span className={cn('min-w-0 flex-1 truncate font-medium', TEXT[tone])} title={headline(s)}>{headline(s)}</span>
-        {s.changes.length > 0 && (
+        {s.whatsNew.length > 0 && (
           <CollapsibleTrigger asChild>
-            <Button variant="ghost" size="xs">What changed<ChevronDown className={cn('transition-transform', open && 'rotate-180')} /></Button>
+            <Button variant="ghost" size="xs">What's new<ChevronDown className={cn('transition-transform', open && 'rotate-180')} /></Button>
           </CollapsibleTrigger>
         )}
         <ApplyButton s={s} />
         <Button variant="ghost" size="icon-xs" aria-label="Dismiss" title="Dismiss: hide here, in this browser; the header version still shows the update"
           className="text-muted-foreground" onClick={() => dismissNotice(noticeKey.update(s))}><X /></Button>
       </div>
-      <CollapsibleContent className="pt-2"><Changes s={s} /></CollapsibleContent>
+      <CollapsibleContent className="pt-2"><WhatsNew s={s} /></CollapsibleContent>
     </Collapsible>
   );
 }
@@ -132,7 +121,7 @@ export function UpdateButton({ version }: { version: string | undefined }) {
                 </div>
               </div>
             </div>
-            {s.changes.length > 0 && <div className="space-y-1 border-t pt-3"><h3 className="text-xs font-medium">What changed</h3><Changes s={s} /></div>}
+            {s.whatsNew.length > 0 && <div className="space-y-1 border-t pt-3"><h3 className="text-xs font-medium">What's new</h3><WhatsNew s={s} /></div>}
             {!authed && <p className="text-xs text-muted-foreground">Read-only: an admin can update or change these settings.</p>}
           </div>
         )}

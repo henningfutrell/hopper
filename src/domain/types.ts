@@ -430,5 +430,5 @@ export { UI_ROLES, roleAllows } from './sign-in.ts';
 
 // ---- Self-update (issue #44) ------------------------------------------------------------
 
-export type { InstallInfo, UpdateApply, UpdateChange, UpdateChannel, UpdateRelease, UpdateSettings, UpdateState, UpdateStatus } from './update.ts';
-export { UPDATE_CHANGES_CAP, UPDATE_CHANNELS } from './update.ts';
+export type { InstallInfo, UpdateApply, UpdateChannel, UpdateRelease, UpdateSettings, UpdateState, UpdateStatus } from './update.ts';
+export { UPDATE_CHANNELS } from './update.ts';

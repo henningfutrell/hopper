@@ -3219,9 +3219,14 @@ check runs 10 s after start, then every `JOB_HOPPER_UPDATE_CHECK_MS` (default 90
 asked), and from the UI's Check now. The **update channel** decides the target: `main` → the head
 of the tracked branch; `release` → the newest `v<major>.<minor>.<patch>` tag. An update is
 **available** when the installed commit does not contain the target (an install ahead of it, e.g.
-from a feature branch, is `current`). What changed: `git log installed..target`, newest first,
-capped at 100 (`truncated`). The newest release is reported on either channel (`release.newer`).
-`update.available` is appended once per target.
+from a feature branch, is `current`). **What's new** (issue #104): the bullets of `WHATS-NEW.md`
+at the target that `WHATS-NEW.md` at the installed commit lacks, newest first (`whatsNew`; all of
+them when the installed commit has no such file) — plain words for people who use the hopper,
+written by hand in the change that makes them true (AGENTS.md "What's new"); `src/update/whats-new.ts`.
+Commit subjects, hashes and issue numbers are never shown: a merge list is the change's plumbing,
+not what changed for its users. The newest release is reported on either channel (`release.newer`).
+`update.available` is appended once per target, with `changes`: how many commits it adds (the log
+line too; never the UI).
 
 **Applying, in flight.** `POST /ui/api/update { action: "apply" }` answers at once; then:
 
@@ -3265,8 +3270,8 @@ commit than the page was loaded with — the new UI bundle.
 migration): `POST /ui/api/update { action: "settings", channel?, autoUpdate? }`. Auto-update applies
 an available update as soon as a check finds it, and at once when switched on with one available.
 
-**UI.** A notice above the views while an update is available, applying or failed — headline,
-"What changed" (the commits, and the GitHub compare link for a GitHub repo), Update now. The header's
+**UI.** A notice above the views while an update is available, applying or failed — headline
+("Update available", or the release), "What's new" (the bullets), Update now. The header's
 version (with the installed commit) opens the Updates panel: installed, newest, release, last check,
 Check now, Update now, auto-update, channel (`commits` / `releases`).
 
@@ -3278,7 +3283,10 @@ commit). Assumption about issue #40 (a deploy recipe and a database, in parallel
 install directory with `src/` and install.json, and keeps `scripts/install.sh` build-only mode
 working — #40 depends on this section, not the other way round.
 
-**Not built.** Automatic rollback: a next install that loads but crashes after start leaves the
+**Not built.** A CI step that writes What's new: the repository has no CI, and a model in one would
+be a credential to keep and rotate for text the change's author already knows; the line is written in
+the change itself, and `test/update/whats-new.test.ts` refuses a line carrying an issue number, a
+hash, a commit prefix or a file name. Automatic rollback: a next install that loads but crashes after start leaves the
 supervisor restarting it; recovery by hand is swapping `<install>.prev` back and restarting (the boot
 records `update.failed`). Signature checks on the fetched code: the repository the owner installed
 from is trusted as the install itself was.

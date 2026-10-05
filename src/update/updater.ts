@@ -9,9 +9,9 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import type { Clock, Restarter, Store, UpdateBuilder, Updater } from '../domain/ports.ts';
-import type { InstallInfo, UpdateApply, UpdateChange, UpdateRelease, UpdateSettings, UpdateStatus } from '../domain/types.ts';
-import { UPDATE_CHANGES_CAP } from '../domain/types.ts';
+import type { InstallInfo, UpdateApply, UpdateRelease, UpdateSettings, UpdateStatus } from '../domain/types.ts';
 import { createGitMirror, type GitMirror } from './git.ts';
+import { bullets, newSince, WHATS_NEW_FILE } from './whats-new.ts';
 import { nextDirOf, readInstallInfo, swapInstall } from './install.ts';
 
 const exec = promisify(execFile);
@@ -45,8 +45,9 @@ interface Checked {
   installed?: InstallInfo;
   target?: { commit: string; ref: string };
   release?: UpdateRelease;
-  changes: UpdateChange[];
-  truncated: boolean;
+  whatsNew: string[];
+  /** Commits in the target and not installed: the log line and `update.available`, never the UI. */
+  commits?: number;
   checkedAt?: string;
 }
 
@@ -83,8 +84,8 @@ export function createUpdater(o: UpdaterOptions): RunningUpdater {
   // Until the first check: what install.json says, or why there is none.
   const read = readInstallInfo(o.appDir);
   let checked: Checked = read.ok
-    ? { state: 'current', installed: read.info, changes: [], truncated: false }
-    : { state: 'unavailable', reason: read.reason, changes: [], truncated: false };
+    ? { state: 'current', installed: read.info, whatsNew: [] }
+    : { state: 'unavailable', reason: read.reason, whatsNew: [] };
   let applying: UpdateApply | undefined;
   let applyError: string | undefined;
   let checking: Promise<UpdateStatus> | undefined;
@@ -98,7 +99,8 @@ export function createUpdater(o: UpdaterOptions): RunningUpdater {
   const lastAnnounced = (): unknown => o.store.events.recent(1, ['update.available'])[0]?.data.to;
 
   function status(): UpdateStatus {
-    const base = { ...settings(), ...checked };
+    const { commits: _commits, ...rest } = checked;
+    const base = { ...settings(), ...rest };
     if (applying) return { ...base, state: 'applying', apply: applying };
     if (applyError) return { ...base, state: 'error', reason: applyError };
     return base;
@@ -113,7 +115,7 @@ export function createUpdater(o: UpdaterOptions): RunningUpdater {
     }
     const newest = await mirror.newestRelease();
     const release = newest && { ...newest, newer: !(await mirror.contains(info.commit, newest.commit)) };
-    const base = { installed: info, release, changes: [], truncated: false, checkedAt: at };
+    const base = { installed: info, release, whatsNew: [], checkedAt: at };
     let target: Checked['target'];
     if (settings().channel === 'release') {
       if (!newest) return { ...base, state: 'current', reason: 'no release yet (no v<major>.<minor>.<patch> tag)' };
@@ -124,14 +126,15 @@ export function createUpdater(o: UpdaterOptions): RunningUpdater {
       target = { commit: head, ref: info.branch };
     }
     if (target.commit === info.commit || (await mirror.contains(info.commit, target.commit))) return { ...base, state: 'current', target };
-    const changes = await mirror.log(info.commit, target.commit, UPDATE_CHANGES_CAP + 1);
-    return { ...base, state: 'available', target, changes: changes.slice(0, UPDATE_CHANGES_CAP), truncated: changes.length > UPDATE_CHANGES_CAP };
+    const notes = async (commit: string) => bullets((await mirror.read(commit, WHATS_NEW_FILE)) ?? '');
+    const whatsNew = newSince(await notes(info.commit), await notes(target.commit));
+    return { ...base, state: 'available', target, whatsNew, commits: await mirror.count(info.commit, target.commit) };
   }
 
   async function runCheck(): Promise<UpdateStatus> {
     const read = readInstallInfo(o.appDir);
     if (!read.ok) {
-      checked = { state: 'unavailable', reason: read.reason, changes: [], truncated: false, checkedAt: now() };
+      checked = { state: 'unavailable', reason: read.reason, whatsNew: [], checkedAt: now() };
       return status();
     }
     try {
@@ -144,8 +147,8 @@ export function createUpdater(o: UpdaterOptions): RunningUpdater {
     const { target, installed } = checked;
     if (checked.state === 'available' && target && installed) {
       if (lastAnnounced() !== target.commit) {
-        append('update.available', { from: installed.commit, to: target.commit, ref: target.ref, changes: checked.changes.length });
-        o.logger.info(`job-hopper: update available: ${target.ref} ${short(target.commit)} (${checked.changes.length} commit(s) not installed)`);
+        append('update.available', { from: installed.commit, to: target.commit, ref: target.ref, changes: checked.commits ?? 0 });
+        o.logger.info(`job-hopper: update available: ${target.ref} ${short(target.commit)} (${checked.commits ?? 0} commit(s) not installed)`);
       }
       if (settings().autoUpdate) apply();
     }

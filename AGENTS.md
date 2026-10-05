@@ -59,5 +59,10 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   documents too.
 - **The UI is the one built part.** `ui/` → `npm run build:ui` → `ui/dist` (gitignored), served
   by the daemon. It imports nothing of `src/` at runtime; types only, from `src/domain/types.ts`.
+- **What's new.** A change people who use the hopper would notice adds one line at the top of
+  `WHATS-NEW.md`, in the same change: plain words for a non-technical reader, what they can now do
+  or what now works. No issue or PR numbers, hashes, file names or code words; never edit a
+  released line (the update notice shows the lines the installed version lacks). Internal-only
+  changes add none. `docs/design.md` "Self-update".
 - Gates: `npm run typecheck`, `npm run lint`, `npm test`, `npm run build:ui` — all exit 0
   (`npm run check` runs all four).
