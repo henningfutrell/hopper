@@ -86,7 +86,7 @@ describe('create-github-app.ts', () => {
   let dir: string;
   let runs: Run[];
   const env = (extra: Record<string, string> = {}) => ({
-    JOB_HOPPER_GITHUB_WEB: fake.url, JOB_HOPPER_GITHUB_API: fake.url, ...extra,
+    HOPPER_GITHUB_WEB: fake.url, HOPPER_GITHUB_API: fake.url, ...extra,
   });
   const envFile = () => join(dir, 'daemon.env');
   const go = async (args: string[], extra: Record<string, string> = {}) => { const r = await run(['--secrets-file', envFile(), ...args], env(extra)); runs.push(r); return r; };
@@ -116,10 +116,10 @@ describe('create-github-app.ts', () => {
     expect(action).toBe(`${fake.url}/settings/apps/new?state=${stateOf(action)}`);
     expect(stateOf(action).length).toBeGreaterThanOrEqual(32);
     expect(manifest).toEqual({
-      name: 'job-hopper-tester',
+      name: 'hopper-tester',
       url: 'https://github.com/tester',
-      description: "Pulls jobs for job-hopper from issues labelled hopper.",
-      hook_attributes: { url: 'https://example.invalid/job-hopper-webhook', active: false },
+      description: "Pulls jobs for hopper from issues labelled hopper.",
+      hook_attributes: { url: 'https://example.invalid/hopper-webhook', active: false },
       redirect_url: `http://127.0.0.1:${r.port}/callback`,
       public: false,
       default_permissions: { issues: 'write', metadata: 'read', organization_projects: 'read' },
@@ -155,7 +155,7 @@ describe('create-github-app.ts', () => {
     expect(read()).not.toContain(CLIENT_SECRET);
 
     const lines = r.out().trim().split('\n');
-    expect(lines.at(-1)).toBe('JOB_HOPPER_APP_CREATED 123456 renamed-by-owner');
+    expect(lines.at(-1)).toBe('HOPPER_APP_CREATED 123456 renamed-by-owner');
     expect(r.out()).toContain('appId: 123456, slug: renamed-by-owner');
     expect(r.out()).toContain('plugins.yaml');
     expect(r.out()).toContain(`${fake.url}/apps/renamed-by-owner/installations/new`);
@@ -175,12 +175,12 @@ describe('create-github-app.ts', () => {
   });
 
   it('keeps the env file\'s other lines', async () => {
-    writeFileSync(envFile(), 'JOB_HOPPER_DATABASE_URL=postgres://u@db/x\nOTHER=1\n');
+    writeFileSync(envFile(), 'HOPPER_DATABASE_URL=postgres://u@db/x\nOTHER=1\n');
     const r = await go([]);
     await callback(r);
     expect(await r.exited).toBe(0);
     const lines = read().split('\n');
-    expect(lines).toContain('JOB_HOPPER_DATABASE_URL=postgres://u@db/x');
+    expect(lines).toContain('HOPPER_DATABASE_URL=postgres://u@db/x');
     expect(lines).toContain('OTHER=1');
     expect(lineOf('GITHUB_APP_PRIVATE_KEY')).toBeDefined();
     expect(read().endsWith('\n')).toBe(true);
@@ -266,8 +266,8 @@ describe('create-github-app.ts', () => {
     expect(files().filter((f) => f.includes('tmp'))).toEqual([]);
   });
 
-  it('times out after JOB_HOPPER_APP_FLOW_TIMEOUT_MS with exit 1 and nothing written', async () => {
-    const r = await go([], { JOB_HOPPER_APP_FLOW_TIMEOUT_MS: '300' });
+  it('times out after HOPPER_APP_FLOW_TIMEOUT_MS with exit 1 and nothing written', async () => {
+    const r = await go([], { HOPPER_APP_FLOW_TIMEOUT_MS: '300' });
     expect(await r.exited).toBe(1);
     expectUntouched();
     expect(r.err()).toMatch(/timed out/i);

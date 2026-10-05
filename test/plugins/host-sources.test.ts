@@ -216,7 +216,7 @@ describe('attached machines in the host (issue #18)', () => {
     expect(host.attachedMachines()).toEqual([]);
     documents.set(PLUGINS, 'version: 1\nattachedMachines:\n  - { name: laptop, ssh: laptop, lanes: 2, herdrBin: /h/herdr }\n');
     await host.reload();
-    expect(host.attachedMachines()).toEqual([{ name: 'laptop', ssh: 'laptop', lanes: 2, herdrBin: '/h/herdr', session: 'job-hopper', executors: ['herdr-claude'] }]);
+    expect(host.attachedMachines()).toEqual([{ name: 'laptop', ssh: 'laptop', lanes: 2, herdrBin: '/h/herdr', session: 'hopper', executors: ['herdr-claude'] }]);
     documents.set(PLUGINS, 'version: 1\nattachedMachines: []\n');
     await host.reload();
     expect(host.attachedMachines()).toEqual([]);

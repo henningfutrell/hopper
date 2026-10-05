@@ -1,5 +1,5 @@
 // The hopper client's tunnel (design.md "Client targets", issue #59): ssh from this machine to the
-// hopper's, authenticated as every ssh connection of job-hopper is (ssh-options.ts) — this client's
+// hopper's, authenticated as every ssh connection of hopper is (ssh-options.ts) — this client's
 // own key only, the hopper's pinned host key only, no password, nothing forwarded. No command is
 // asked for: the key's forced command there is relay.ts, so the session's stdin and stdout are the
 // tunnel. No pty (`-T`), so the stream is binary-clean.
@@ -12,7 +12,7 @@ export interface TunnelOptions {
   port: number;
   /** This client's private key (a file only this user may read). */
   keyFile: string;
-  /** known_hosts holding the hopper's pinned host key, under the name `job-hopper`. */
+  /** known_hosts holding the hopper's pinned host key, under the name `hopper`. */
   knownHostsFile: string;
   sshBin?: string;
 }
@@ -25,7 +25,7 @@ export function tunnelArgv(o: TunnelOptions): string[] {
   return [
     '-F', '/dev/null', '-T', ...HARDENED_SSH_OPTIONS.flatMap((x) => ['-o', x]),
     '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=3',
-    '-i', o.keyFile, '-o', `UserKnownHostsFile=${o.knownHostsFile}`, '-o', 'HostKeyAlias=job-hopper',
+    '-i', o.keyFile, '-o', `UserKnownHostsFile=${o.knownHostsFile}`, '-o', 'HostKeyAlias=hopper',
     '-p', String(o.port), '-l', user, '--', host,
   ];
 }

@@ -127,10 +127,10 @@ describe('restart with questions', () => {
     await waitFor(() => sticky.cleaned.includes(job.id));
   });
 
-  it('JOB_HOPPER_KEEP_PANES=true skips cleanup on terminal outcomes', async () => {
+  it('HOPPER_KEEP_PANES=true skips cleanup on terminal outcomes', async () => {
     const dbPath = freshDb();
     const sticky = createStickyExecutor();
-    const a = await boot(dbPath, { env: { JOB_HOPPER_KEEP_PANES: 'true' }, seams: { executors: [sticky] } });
+    const a = await boot(dbPath, { env: { HOPPER_KEEP_PANES: 'true' }, seams: { executors: [sticky] } });
     const job = await a.pull({}, { executor: 'sticky' });
     await a.waitForStatus(job.id, 'running');
     expect((await a.ui(`/ui/api/jobs/${job.id}/cancel`, {}, { token: await a.login() })).status).toBe(200);

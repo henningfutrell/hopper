@@ -15,7 +15,7 @@ interface Connection { url: string; client?: pg.Client; inTx: boolean }
 const connections = new Map<number, Connection>();
 let nextHandle = 1;
 
-/** `?schema=<name>` (job-hopper's own parameter, stripped before pg sees the URL): the schema the store lives in, created if absent. */
+/** `?schema=<name>` (hopper's own parameter, stripped before pg sees the URL): the schema the store lives in, created if absent. */
 function split(raw: string): { connectionString: string; schema?: string } {
   const u = new URL(raw);
   const schema = u.searchParams.get('schema') ?? undefined;
@@ -25,7 +25,7 @@ function split(raw: string): { connectionString: string; schema?: string } {
 
 async function connect(conn: Connection): Promise<pg.Client> {
   const { connectionString, schema } = split(conn.url);
-  const c = new pg.Client({ connectionString, application_name: 'job-hopper' });
+  const c = new pg.Client({ connectionString, application_name: 'hopper' });
   c.on('error', () => { if (conn.client === c) conn.client = undefined; });
   await c.connect();
   if (schema) {

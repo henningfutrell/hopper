@@ -1,5 +1,5 @@
 // Password sign-in (design.md "Sign-in" — Password sign-in): auth.yaml holds argon2id hashes, made
-// by `job-hopper password-hash`, checked here through the argon2 library. An unknown username is
+// by `hopper password-hash`, checked here through the argon2 library. An unknown username is
 // checked against a fixed hash of a random password, so it costs the same time as a wrong password.
 import argon2 from 'argon2';
 import type { Identity, UiRole } from '../domain/types.ts';

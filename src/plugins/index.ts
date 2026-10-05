@@ -104,7 +104,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
       return;
     }
     const changed = !same(slot.built.map((b) => b.spec), specs);
-    if (changed && !same(slot.pending, specs)) o.logger.info(`job-hopper: ${label} changed — restart pending`);
+    if (changed && !same(slot.pending, specs)) o.logger.info(`hopper: ${label} changed — restart pending`);
     slot.pending = changed ? specs : undefined;
   }
   const sign = (): string => o.documents.version(PLUGINS);
@@ -137,7 +137,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
     }
     if (error) {
       config.error = error;
-      o.logger.warn(`job-hopper: ${error}`);
+      o.logger.warn(`hopper: ${error}`);
       if (live) return; // keep the last good instances
       spec = { router: undefined, ...defaults };
     } else {
@@ -156,22 +156,22 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
         if (live) live.swap(built);
         else live = createLiveRouter(built, o.clock);
         selection = next;
-        o.logger.info(`job-hopper: router ${built.spec.name} (${built.plugin}${built.fallback ? ', fallback' : ''}; ${next})`);
+        o.logger.info(`hopper: router ${built.spec.name} (${built.plugin}${built.fallback ? ', fallback' : ''}; ${next})`);
       }
     }
     if (!sorter || !same(sorter.current().spec, spec.queueSorter)) {
       const built = await buildQueueSorter(spec.queueSorter, deps);
       if (sorter) sorter.swap(built);
       else sorter = createLiveQueueSorter(built, o.logger);
-      o.logger.info(`job-hopper: queue sorter ${spec.queueSorter.name} (${built.plugin}${built.fallback ? ', fallback' : ''})`);
+      o.logger.info(`hopper: queue sorter ${spec.queueSorter.name} (${built.plugin}${built.fallback ? ', fallback' : ''})`);
     }
     if (!answerer || !same(answerer.spec, spec.answerer)) {
       answerer = await buildAnswerer(spec.answerer, deps);
-      o.logger.info(`job-hopper: answerer ${spec.answerer ? `${spec.answerer.name} (${answerer.plugin ?? 'unavailable'})` : 'none'}`);
+      o.logger.info(`hopper: answerer ${spec.answerer ? `${spec.answerer.name} (${answerer.plugin ?? 'unavailable'})` : 'none'}`);
     }
     if (!assessor || !same(assessor.spec, spec.assessor)) {
       assessor = await buildAssessor(spec.assessor, deps);
-      o.logger.info(`job-hopper: assessor ${spec.assessor.name} (${assessor.plugin}${assessor.fallback ? ', fallback' : ''})`);
+      o.logger.info(`hopper: assessor ${spec.assessor.name} (${assessor.plugin}${assessor.fallback ? ', fallback' : ''})`);
     }
     attached = error ? (attached ?? []) : (file?.attachedMachines ?? []);
     await restart(executors, 'executors', spec.executors, () => buildExecutors(spec.executors, deps));
@@ -190,14 +190,14 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
   }
 
   const enqueue = (): Promise<void> => {
-    chain = chain.then(configure, configure).catch((e) => o.logger.warn(`job-hopper: plugins.yaml reload failed: ${String(e)}`));
+    chain = chain.then(configure, configure).catch((e) => o.logger.warn(`hopper: plugins.yaml reload failed: ${String(e)}`));
     return chain;
   };
 
   async function scan(): Promise<void> {
     loaded = await loadCustomPlugins([o.pluginDir, o.installedDir].filter((d) => d !== undefined), new Set(builtins.map((b) => b.id)));
-    for (const e of loaded.errors) o.logger.warn(`job-hopper: plugin ${e.path} refused: ${e.error}`);
-    for (const w of loaded.warnings) o.logger.warn(`job-hopper: ${w}`);
+    for (const e of loaded.errors) o.logger.warn(`hopper: plugin ${e.path} refused: ${e.error}`);
+    for (const w of loaded.warnings) o.logger.warn(`hopper: ${w}`);
     const all: { definition: PluginDefinition; builtin: boolean; path?: string }[] = [
       ...builtins.map((definition) => ({ definition, builtin: true })),
       ...loaded.plugins.map((p: LoadedPlugin) => ({ definition: p.definition, builtin: false, path: p.path })),
@@ -281,14 +281,14 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
       if (e.action === 'rescan') {
         await scan();
         await enqueue();
-        o.logger.info('job-hopper: plugins rescanned');
+        o.logger.info('hopper: plugins rescanned');
       } else {
         // Act on what the document says now, not on a reload the watch timer has not run yet.
         if (sign() !== signature) await enqueue();
         const r = applyEdit(e, { documents: o.documents, configured: instances(), find: (id) => entries.find((x) => x.definition.id === id) });
         if (!r.ok) return r;
         if (r.changed) {
-          o.logger.info(`job-hopper: plugins.yaml edited in the UI: ${e.action} ${e.role} ${e.action === 'select' ? String(e.plugin) : e.name}`);
+          o.logger.info(`hopper: plugins.yaml edited in the UI: ${e.action} ${e.role} ${e.action === 'select' ? String(e.plugin) : e.name}`);
           await enqueue();
         }
       }

@@ -10,7 +10,7 @@ import { BOT, appSecrets, jobSourcesDoc } from '../support/github-app.ts';
 import { CREATE_APP_HINT } from '../../src/sources/github/source.ts';
 import { waitFor } from '../support/wait.ts';
 
-const REPO = 'owner/job-hopper-sandbox';
+const REPO = 'owner/hopper-sandbox';
 
 const apps: TestApp[] = [];
 const cleanups: (() => void)[] = [];

@@ -1,4 +1,4 @@
-# job-hopper — repo law
+# hopper — repo law
 
 Local job-queue daemon that pulls its jobs. Loopback plus an opt-in LAN or public URL behind a reverse proxy, sign-in through the login code, password sign-in, no sign-in, or identity providers (OIDC, GitHub, SAML). TypeScript run directly by Node ≥ 24.
 
@@ -18,7 +18,7 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
 - **Test first.** Failing test committed before the code that passes it. Integration tests
   use the real database and the real HTTP server; fakes only at `ports.ts` seams. Postgres is the only
   store (issue #53): `npm test` starts a throwaway Postgres container (testcontainers; needs docker),
-  each test in its own schema, unless `JOB_HOPPER_TEST_POSTGRES_URL` names one.
+  each test in its own schema, unless `HOPPER_TEST_POSTGRES_URL` names one.
 - **Tests are sealed off from the real machine.** `test/support/isolate.ts` (vitest setup) gives
   every worker a throwaway HOME and refuses any non-loopback `fetch`. Never point a test at
   the owner's database, env file or a real URL; a test daemon once sent real Grok Bot webhooks.
@@ -27,13 +27,13 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
 - **Erasable TypeScript only** (`erasableSyntaxOnly`): no enums, no namespaces, no
   parameter properties. Relative imports carry `.ts`.
 - **Loopback plus the LAN names and the public URL, and the hopper pulls.** The daemon binds `127.0.0.1`, or every
-  interface only when `JOB_HOPPER_LAN_PEERS` is set; a peer outside
+  interface only when `HOPPER_LAN_PEERS` is set; a peer outside
   loopback and the LAN peers is refused, and a LAN or public request reads `/api/` only with a UI session
   (`docs/design.md` "Reaching the UI across the LAN", issue #16). No route creates or changes a job, question, webhook or setting except
   through the UI session below: jobs come only from job sources; webhooks come only from the
   `webhooks.yaml` config document, which the UI session may edit (`POST /ui/api/webhooks`, issue #18). Every request passes the Host guard
   (`127.0.0.1:<port>` / `localhost:<port>` / a LAN name with the port / the public URL's host, else 421). The only mutations are the UI's
-  `POST /ui/api/*`, behind a UI session (`x-jobhopper-session`,
+  `POST /ui/api/*`, behind a UI session (`x-hopper-session`,
   exact Origin, same-origin, JSON — else 403) whose UI role allows it; a new mutation goes there and
   nowhere else, and names its least UI role. `docs/design.md` "UI session and mutations" and
   "Sign-in: none, password, local, OIDC and SAML" state the residual risk.
@@ -45,14 +45,14 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   carries no personal or machine details. The hopper writes only labels to issues, closes the
   issue of a finished job, and posts no comments. The job prompt carries the rule (`src/executors/herdr/screen.ts` `PUBLISHING_RULE`).
 - **Nothing leans on the machine** (issue #40, `docs/design.md` "Deployable"). Everything the daemon
-  keeps is in the database `JOB_HOPPER_DATABASE_URL` names; config is config documents in it
+  keeps is in the database `HOPPER_DATABASE_URL` names; config is config documents in it
   (`plugins.yaml`, `webhooks.yaml`, `rules.md`, `auth.yaml`). **Every secret comes from the runtime**
   (issue #56): the variable `NAME` or the mounted file `NAME_FILE` names (`src/secrets/runtime.ts`),
   named by a command-bearing option. The hopper stores no secret — not in the database, not in a file
   of its own; a token or code it mints is only hashed (`docs/design.md` "Secrets"). No default names a path on one
-  machine; the work dir (`JOB_HOPPER_WORK_DIR`) is scratch only. The operator CLI (`src/cli.ts`,
-  `job-hopper`) writes the database directly: whoever runs it holds its credentials.
-- **Never write into the Jev repo.** The shim reads it; logs go to job-hopper's work dir.
+  machine; the work dir (`HOPPER_WORK_DIR`) is scratch only. The operator CLI (`src/cli.ts`,
+  `hopper`) writes the database directly: whoever runs it holds its credentials.
+- **Never write into the Jev repo.** The shim reads it; logs go to hopper's work dir.
 - **Persisted state is the user's.** A schema change ships a migration in
   `src/store/migrations.ts` (`SHARED`, in SQL both databases mean the same way); it never drops a
   queue. A change to persisted state outside the store's tables (a document's shape) migrates the

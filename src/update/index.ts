@@ -4,3 +4,4 @@ export { INSTALL_FILE, readInstallInfo, swapInstall } from './install.ts';
 export { restartBlockers } from './blockers.ts';
 export { createInstallScriptBuilder } from './build.ts';
 export { createRestarter, RESTART_EXIT_CODE, restartMode, type RestartMode } from './restart.ts';
+export { renameBoot } from './rename.ts';

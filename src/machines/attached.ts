@@ -65,8 +65,8 @@ export function createAttachedMachineSource(o: AttachedOptions & {
     inFlight = true;
     lastProbe = now();
     o.probe().then(
-      (p) => { online = p.online; clientRelease = p.online ? p.client : undefined; const up = p.online; say(up ? `job-hopper: attached machine ${name} online (${reached()})` : `job-hopper: attached machine ${name} offline: ${down()}`); },
-      (e: unknown) => { online = false; clientRelease = undefined; say(`job-hopper: attached machine ${name} offline: ${e instanceof Error ? e.message : String(e)}`); },
+      (p) => { online = p.online; clientRelease = p.online ? p.client : undefined; const up = p.online; say(up ? `hopper: attached machine ${name} online (${reached()})` : `hopper: attached machine ${name} offline: ${down()}`); },
+      (e: unknown) => { online = false; clientRelease = undefined; say(`hopper: attached machine ${name} offline: ${e instanceof Error ? e.message : String(e)}`); },
     ).finally(() => { inFlight = false; });
   }
 
@@ -139,7 +139,7 @@ export function createAttachedMachines(o: AttachedOptions & {
       for (const [key, e] of known) {
         if (keep.has(key)) continue;
         known.delete(key);
-        if (!now.some((m) => m.name === e.current.name)) o.logger?.info(`job-hopper: attached machine ${e.current.name} removed`);
+        if (!now.some((m) => m.name === e.current.name)) o.logger?.info(`hopper: attached machine ${e.current.name} removed`);
       }
       const sources = now.map((m) => {
         const key = identity(m);

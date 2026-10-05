@@ -17,7 +17,7 @@ export interface Db {
   close(): void;
 }
 
-/** JOB_HOPPER_DATABASE_URL checked: `postgres://…` or `postgresql://…`, else throws. */
+/** HOPPER_DATABASE_URL checked: `postgres://…` or `postgresql://…`, else throws. */
 export function parseDatabaseUrl(url: string): string {
   if (/^postgres(ql)?:\/\//.test(url)) return url;
   throw new Error('must be postgres://user:password@host:port/database');

@@ -14,7 +14,7 @@ import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { APP_ID, BOT, KEYS, SLUG, appSecrets, jobSourcesDoc } from '../support/github-app.ts';
 import { waitFor } from '../support/wait.ts';
 
-const REPO = 'owner/job-hopper-sandbox';
+const REPO = 'owner/hopper-sandbox';
 const WRITES = new Set(['comment', 'editComment', 'mintRepoToken']);
 const LABEL_WRITES = ['ensureLabel', 'addLabels', 'removeLabels'];
 const labelCalls = (gh: FakeGitHub) => gh.calls.filter((c) => LABEL_WRITES.includes(c.method));
@@ -125,7 +125,7 @@ describe.each<Mode>(['gh', 'app'])('issue writes (%s source)', (mode) => {
       HOPPER_ISSUE_URL: issue.url, HOPPER_REPO: REPO, HOPPER_ISSUE_NUMBER: String(issue.number), HOPPER_ISSUE_TITLE: 'Echo it',
     });
     const prompt = String(payload.prompt);
-    expect(prompt).toContain('[job-hopper issue context]');
+    expect(prompt).toContain('[hopper issue context]');
     expect(prompt).toContain(`url: ${issue.url}`);
     expect(prompt).toContain('context from the owner');
     expect(prompt).not.toContain('[how to report on your issue]');
@@ -139,7 +139,7 @@ describe('issue writes through HTTP (node:http fake GitHub, real App adapter)', 
   it('only label writes and the close of a finished job reach GitHub, no comment POST; no repo-scoped token is minted', async () => {
     const fake = await createFakeGitHubServer({
       appId: APP_ID, publicKeyPem: KEYS.publicKey, slug: SLUG,
-      installations: [{ id: 7, account: 'owner', repos: [{ owner: 'owner', name: 'job-hopper-sandbox', labels: ['hopper'], issues: [
+      installations: [{ id: 7, account: 'owner', repos: [{ owner: 'owner', name: 'hopper-sandbox', labels: ['hopper'], issues: [
         { number: 1, title: 'Risky thing', author: 'owner', labels: ['hopper'], body: body({ op: 'ask', message: 'Is this risky?', progress: [0.5] }) },
       ] }] }],
     });

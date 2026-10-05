@@ -28,7 +28,7 @@ export function Header({ nav }: { nav?: React.ReactNode }) {
         {nav}
         <div className="flex items-center gap-2 font-semibold tracking-tight">
           <span className="grid size-7 place-items-center rounded-md bg-busy/15 text-busy"><Rabbit className="size-4" /></span>
-          job-hopper
+          hopper
         </div>
         <UpdateButton version={health?.version} />
         <div className="ml-auto flex items-center gap-2 text-xs sm:gap-3">

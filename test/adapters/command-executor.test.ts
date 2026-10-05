@@ -70,7 +70,7 @@ describe('command executor', () => {
   it('without a socket only the hopper may open: fails the job, docker never run (issue #59)', async () => {
     const bad = createCommandExecutor({ name: 'command', timeoutMs: 20000, sshAuth: noSsh, dockerHost: () => dockerHost(() => 'unix:///var/run/docker.sock') });
     const out = await bad.run(ctxFor({ body: 'true' }, BOX));
-    expect(out).toMatchObject({ kind: 'failed', error: expect.stringMatching(/^command on box: JOB_HOPPER_DOCKER_HOST .* refused/) });
+    expect(out).toMatchObject({ kind: 'failed', error: expect.stringMatching(/^command on box: HOPPER_DOCKER_HOST .* refused/) });
   });
 
   it('runs on this machine when the lane is here', async () => {

@@ -62,7 +62,7 @@ export interface GitHubApi {
   // ---- GitHub App mode only (absent on the gh-CLI adapter) ----------------------------
 
   /**
-   * The login the adapter's writes appear under — the app bot, e.g. "job-hopper-owner[bot]".
+   * The login the adapter's writes appear under — the app bot, e.g. "hopper-owner[bot]".
    * Present ⇒ hopper comments are identified by this author (the marker is a secondary check).
    */
   botLogin?(): Promise<string>;

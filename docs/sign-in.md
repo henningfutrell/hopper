@@ -1,6 +1,6 @@
 # Signing in — none, password, local, OIDC and SAML
 
-How people sign in to the job-hopper UI, and how to plug it into an identity provider. The
+How people sign in to the hopper UI, and how to plug it into an identity provider. The
 design and its reasons: `docs/design.md` "Sign-in: none, password, local, OIDC and SAML".
 
 Every way of signing in ends the same: a **UI session** with a **UI role**. Sessions, roles and
@@ -22,21 +22,21 @@ logout behave the same whichever provider signed the user in.
 
 | setup | what to do |
 |---|---|
-| One person, one machine | Nothing. With no `auth.yaml`, the one-time login code is the only way in: `job-hopper login-code` mints one (good once, 10 minutes); on the host install `bash ~/.local/lib/job-hopper/scripts/open-ui.sh` opens the UI already logged in. It signs in as `admin`. |
-| One person, a few devices on a home LAN | `JOB_HOPPER_LAN_NAMES` / `JOB_HOPPER_LAN_PEERS` (`docs/design.md` "Reaching the UI across the LAN") and device links. Add a provider if you prefer signing in with an account. |
+| One person, one machine | Nothing. With no `auth.yaml`, the one-time login code is the only way in: `hopper login-code` mints one (good once, 10 minutes); on the host install `bash ~/.local/lib/hopper/scripts/open-ui.sh` opens the UI already logged in. It signs in as `admin`. |
+| One person, a few devices on a home LAN | `HOPPER_LAN_NAMES` / `HOPPER_LAN_PEERS` (`docs/design.md` "Reaching the UI across the LAN") and device links. Add a provider if you prefer signing in with an account. |
 | Behind a proxy or network that already decides who gets in | [No sign-in](#no-sign-in): `none: { role: … }`. Everyone who reaches the UI acts with that role. |
 | A few people, no identity provider | [Password sign-in](#password-sign-in): accounts with argon2id hashes in `auth.yaml`. |
-| A team, or anyone reaching it over the internet | A reverse proxy with TLS, `JOB_HOPPER_PUBLIC_URL`, one or more providers in `auth.yaml` (or password sign-in), role rules, and usually `local: { enabled: false }`. |
+| A team, or anyone reaching it over the internet | A reverse proxy with TLS, `HOPPER_PUBLIC_URL`, one or more providers in `auth.yaml` (or password sign-in), role rules, and usually `local: { enabled: false }`. |
 
 ## auth.yaml
 
 `auth.yaml` is a **config document** in the daemon's database, not a file. Write or change it with
-`job-hopper config edit auth.yaml` (opens `$EDITOR`, writes back against the version it read), or
-`job-hopper config set auth.yaml --if-version <version>` with the text on stdin;
-`job-hopper config version auth.yaml` prints the version. A document that does not load, or that
+`hopper config edit auth.yaml` (opens `$EDITOR`, writes back against the version it read), or
+`hopper config set auth.yaml --if-version <version>` with the text on stdin;
+`hopper config version auth.yaml` prints the version. A document that does not load, or that
 moved since you read it, is refused. **Read at start**: after changing it, restart the daemon
-(`systemctl --user restart job-hopper` on the host install). An invalid document stops the daemon
-with a message naming the field (`journalctl --user -u job-hopper`): sign-in fails closed, never
+(`systemctl --user restart hopper` on the host install). An invalid document stops the daemon
+with a message naming the field (`journalctl --user -u hopper`): sign-in fails closed, never
 open.
 
 ```yaml
@@ -114,10 +114,10 @@ password:
 twice without echo on a terminal; from a pipe it reads the first line):
 
 ```sh
-job-hopper password-hash
+hopper password-hash
 ```
 
-then paste it with `job-hopper config edit auth.yaml` and restart. Usernames are unique, case
+then paste it with `hopper config edit auth.yaml` and restart. Usernames are unique, case
 ignored. A wrong password, an unknown username and an empty password get the same 403, and an
 unknown username costs the same time as a wrong password. To change a password, replace the hash;
 to remove an account, delete its entry — either way restart, and its sessions end at that start.
@@ -167,7 +167,7 @@ A UI role is not a plugin role: see `docs/glossary.md`.
 
 A provider sends the browser back to one fixed address, the **sign-in origin**:
 
-- `JOB_HOPPER_PUBLIC_URL` when set (origin only: `https://hopper.example.com`), else
+- `HOPPER_PUBLIC_URL` when set (origin only: `https://hopper.example.com`), else
 - `http://localhost:<port>` — fine for one machine; most providers accept `localhost` redirects.
 
 Register these with the provider (`<origin>` = the sign-in origin, `<name>` = the provider's name):
@@ -181,17 +181,17 @@ Register these with the provider (`<origin>` = the sign-in origin, `<name>` = th
 Sign-in starts and ends on the sign-in origin. A browser on another address (a LAN name) is pointed
 there first.
 
-**Behind a reverse proxy.** Set the public URL in `~/.config/job-hopper/daemon.env` (the unit's
+**Behind a reverse proxy.** Set the public URL in `~/.config/hopper/daemon.env` (the unit's
 `EnvironmentFile`), then restart:
 
 ```sh
-JOB_HOPPER_PUBLIC_URL=https://hopper.example.com
+HOPPER_PUBLIC_URL=https://hopper.example.com
 ```
 
 The daemon then answers to that host as well: the proxy must pass the original `Host` header. A
 request on the public host reads `/api/` only with a UI session, and the public origin may post
 UI mutations. With the proxy on the same machine the daemon keeps listening on `127.0.0.1` only. A
-proxy on another machine: add its address to `JOB_HOPPER_LAN_PEERS` (the daemon then listens on
+proxy on another machine: add its address to `HOPPER_LAN_PEERS` (the daemon then listens on
 every interface and refuses any other peer).
 
 The proxy must route only requests for the public host to the daemon, with that host as `Host`. A
@@ -355,7 +355,7 @@ With a custom authorization server the issuer is `https://<your-org>.okta.com/oa
     label: Keycloak
     type: oidc
     issuer: https://keycloak.example.com/realms/<realm>
-    clientId: job-hopper
+    clientId: hopper
     clientSecretEnv: KEYCLOAK_CLIENT_SECRET
     roles:
       admin:    { groups: [hopper-admins] }
@@ -392,7 +392,7 @@ GitHub Enterprise Server: add `webUrl: https://ghe.example.com` and
 
 ### SAML (any identity provider)
 
-job-hopper is a SAML service provider: SP-initiated sign-in, HTTP-Redirect for the request,
+hopper is a SAML service provider: SP-initiated sign-in, HTTP-Redirect for the request,
 HTTP-POST for the response. Unsolicited (IdP-initiated) responses are refused.
 
 1. Give the IdP these (or the metadata at `<origin>/ui/auth/<name>/metadata`, served once the
@@ -494,26 +494,26 @@ in `https://keycloak.example.com/realms/<realm>/protocol/saml/descriptor`.
 The same for every provider, password sign-in, no sign-in and the login code:
 
 - A session is a random token in the browser's `localStorage` for the exact origin, sent as the
-  `x-jobhopper-session` header. The daemon stores only its SHA-256, with the role and identity.
-- It lasts `JOB_HOPPER_UI_SESSION_HOURS` (default 12) and survives daemon restarts.
-- **Log out** (the header's button) ends the job-hopper session. It does not sign you out of the
+  `x-hopper-session` header. The daemon stores only its SHA-256, with the role and identity.
+- It lasts `HOPPER_UI_SESSION_HOURS` (default 12) and survives daemon restarts.
+- **Log out** (the header's button) ends the hopper session. It does not sign you out of the
   provider: signing in again may need no password.
 - At every start the daemon applies `auth.yaml` to the stored sessions: a removed provider, a
   removed password account, no sign-in turned off, or an account no rule grants a role any more,
   loses its session; a changed rule (or account or `none` role) changes its role. To
   cut someone off at once: change `auth.yaml` and restart.
 - Sign-ins, refusals and logouts are logged to the journal
-  (`journalctl --user -u job-hopper | grep 'UI session\|sign-in'`).
+  (`journalctl --user -u hopper | grep 'UI session\|sign-in'`).
 
 ## Troubleshooting
 
 | symptom | cause |
 |---|---|
 | Daemon will not start, `invalid auth.yaml: providers.0.…` | The named field is wrong; the message says how. |
-| `invalid auth.yaml: password.users.0.passwordHash: must be an argon2id hash` | The entry holds a password or another hash kind. Run `job-hopper password-hash`. |
+| `invalid auth.yaml: password.users.0.passwordHash: must be an argon2id hash` | The entry holds a password or another hash kind. Run `hopper password-hash`. |
 | 429 "too many sign-in attempts" | Over 20 sign-in attempts a minute from one address. Wait a minute. |
 | "Sign in on the sign-in address" | The page is open on another address than the sign-in origin. Open the origin shown. |
-| Provider says the redirect URI does not match | Register exactly `<origin>/ui/auth/<name>/callback`; check `JOB_HOPPER_PUBLIC_URL`. |
+| Provider says the redirect URI does not match | Register exactly `<origin>/ui/auth/<name>/callback`; check `HOPPER_PUBLIC_URL`. |
 | "signed in, but auth.yaml grants this account no role" | No rule matched. The journal line names the account; for OIDC check that the email is verified or match on groups. |
 | "unknown or expired sign-in; start again" | The sign-in took over 10 minutes, the daemon restarted meanwhile, or the callback was opened twice. |
 | "another browser began it" | The callback page ran in a browser (or private window) other than the one that clicked *Sign in*. |

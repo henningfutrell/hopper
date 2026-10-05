@@ -68,7 +68,7 @@ describe('detection kit (real)', () => {
   it('pythonImports: true for a stdlib module, false for a missing one or a missing python', async () => {
     const kit = createDetectionKit();
     expect(await kit.pythonImports('python3', 'json')).toBe(true);
-    expect(await kit.pythonImports('python3', 'job_hopper_no_such_module')).toBe(false);
+    expect(await kit.pythonImports('python3', 'hopper_no_such_module')).toBe(false);
     expect(await kit.pythonImports('/nonexistent/python', 'json')).toBe(false);
   });
 });

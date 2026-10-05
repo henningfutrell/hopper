@@ -1,6 +1,6 @@
 // The `claude` CLI in print mode, locked down, for the built-in question plugins (claude-cli and
 // claude-cli-assessor; design.md "Question pipeline"): no tools, no MCP, no settings, no session,
-// output bound to a JSON Schema, prompt on stdin, cwd = job-hopper's data dir (so no project
+// output bound to a JSON Schema, prompt on stdin, cwd = hopper's data dir (so no project
 // CLAUDE.md loads), env scrubbed of the Claude Code markers. Never throws.
 import { spawn } from 'node:child_process';
 import type { z } from 'zod';

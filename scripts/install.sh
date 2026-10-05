@@ -1,39 +1,47 @@
 #!/usr/bin/env bash
-# Install or upgrade job-hopper as systemd --user services on this host: the daemon (job-hopper)
-# and its own headless herdr session (job-hopper-herdr). Re-running upgrades in place. This is one
+# Install or upgrade hopper as systemd --user services on this host: the daemon (hopper)
+# and its own headless herdr session (hopper-herdr). Re-running upgrades in place. This is one
 # deploy recipe; the container image is another (docs/deploy.md).
 #
-# Everything the daemon keeps is in its database: JOB_HOPPER_DATABASE_URL in
-# ~/.config/job-hopper/daemon.env (the unit's EnvironmentFile, mode 600) says which. The first
-# install needs it: set it there, or run with JOB_HOPPER_DATABASE_URL set and it is written there.
+# Everything the daemon keeps is in its database: HOPPER_DATABASE_URL in
+# ~/.config/hopper/daemon.env (the unit's EnvironmentFile, mode 600) says which. The first
+# install needs it: set it there, or run with HOPPER_DATABASE_URL set and it is written there.
 # Config is config documents in that database (plugins.yaml, webhooks.yaml, rules.md, auth.yaml),
-# edited from the UI or with `job-hopper config edit <document>`; secrets are daemon.env lines.
+# edited from the UI or with `hopper config edit <document>`; secrets are daemon.env lines.
 #
-# Build-only mode (JOB_HOPPER_INSTALL_INTO=<dir>, used by the daemon's self-update, design.md
+# Build-only mode (HOPPER_INSTALL_INTO=<dir>, used by the daemon's self-update, design.md
 # "Self-update"): build the install into <dir> and stop there — no service, unit or config is
-# touched. JOB_HOPPER_INSTALL_REPO / _BRANCH / _COMMIT then say what it was built from, since the
+# touched. HOPPER_INSTALL_REPO / _BRANCH / _COMMIT then say what it was built from, since the
 # source is an unpacked tree with no .git.
+#
+# The rename from job-hopper (issue #112): an install from before it is moved to the new names here
+# (src/update/rename.ts), its state kept. A job-hopper daemon's self-update runs this script in build-only
+# mode under the old variable names, which are read for that alone.
 set -euo pipefail
 
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DEST="$HOME/.local/lib/job-hopper"
+DEST="$HOME/.local/lib/hopper"
 UNIT_DIR="$HOME/.config/systemd/user"
 URL="http://127.0.0.1:4790"
-CONFIG_DIR="$HOME/.config/job-hopper"
+CONFIG_DIR="$HOME/.config/hopper"
 ENV_FILE="$CONFIG_DIR/daemon.env"
 BIN_DIR="$HOME/.local/bin"
 
 step() { printf '==> %s\n' "$*"; }
 
-INTO="${JOB_HOPPER_INSTALL_INTO:-}"
+if [ -z "${HOPPER_INSTALL_INTO:-}" ] && [ -n "${JOB_HOPPER_INSTALL_INTO:-}" ]; then
+  HOPPER_INSTALL_INTO="$JOB_HOPPER_INSTALL_INTO" HOPPER_INSTALL_REPO="${JOB_HOPPER_INSTALL_REPO:-}"
+  HOPPER_INSTALL_BRANCH="${JOB_HOPPER_INSTALL_BRANCH:-}" HOPPER_INSTALL_COMMIT="${JOB_HOPPER_INSTALL_COMMIT:-}"
+fi
+INTO="${HOPPER_INSTALL_INTO:-}"
 # install.json: what this install is built from, so the daemon can tell when a newer one exists.
 if [ -n "$INTO" ]; then
-  REPO="${JOB_HOPPER_INSTALL_REPO:?build-only mode needs JOB_HOPPER_INSTALL_REPO}"
-  BRANCH="${JOB_HOPPER_INSTALL_BRANCH:?build-only mode needs JOB_HOPPER_INSTALL_BRANCH}"
-  COMMIT="${JOB_HOPPER_INSTALL_COMMIT:?build-only mode needs JOB_HOPPER_INSTALL_COMMIT}"
+  REPO="${HOPPER_INSTALL_REPO:?build-only mode needs HOPPER_INSTALL_REPO}"
+  BRANCH="${HOPPER_INSTALL_BRANCH:?build-only mode needs HOPPER_INSTALL_BRANCH}"
+  COMMIT="${HOPPER_INSTALL_COMMIT:?build-only mode needs HOPPER_INSTALL_COMMIT}"
 else
   REPO="$(git -C "$APP_DIR" remote get-url origin 2>/dev/null || true)"
-  BRANCH="${JOB_HOPPER_UPDATE_BRANCH:-main}"
+  BRANCH="${HOPPER_UPDATE_BRANCH:-main}"
   COMMIT="$(git -C "$APP_DIR" rev-parse HEAD 2>/dev/null || true)"
   if [ -n "$COMMIT" ] && [ -n "$(git -C "$APP_DIR" status --porcelain --untracked-files=no 2>/dev/null)" ]; then
     echo "warning: $APP_DIR has uncommitted changes; install.json names $COMMIT, which they are not part of" >&2
@@ -43,7 +51,7 @@ fi
 # The UI is the one built part (ui/ -> ui/dist). It is built in a throwaway copy so the checkout's
 # node_modules (possibly a symlink shared by worktrees) and ui/dist are never touched, and a clean
 # clone with no node_modules installs the same way.
-BUILD="$(mktemp -d "${TMPDIR:-/tmp}/job-hopper-ui.XXXXXX")"
+BUILD="$(mktemp -d "${TMPDIR:-/tmp}/hopper-ui.XXXXXX")"
 trap 'rm -rf "$BUILD"' EXIT
 step "build the UI bundle in $BUILD (copy ui/, src/, package*.json; npm ci with dev dependencies; npm run build:ui)"
 cp -r "$APP_DIR/ui" "$APP_DIR/src" "$APP_DIR/package.json" "$APP_DIR/package-lock.json" "$BUILD/"
@@ -86,19 +94,24 @@ if [ -n "$INTO" ]; then
 fi
 assemble "$DEST"
 
+# A job-hopper install becomes this one: its config dir, daemon.env, work dir and client relay lines move
+# to the new names, and its units go. It waits (exit 1) while a job holds a pane in its herdr session.
+step "move a job-hopper install on this host to the new names, if there is one (node $DEST/src/update/rename.ts install)"
+node "$DEST/src/update/rename.ts" install
+
 # The database comes first: the daemon does not start without one, and none is assumed.
 # It is a secret (it carries the password): the line itself, or a mounted file the
-# JOB_HOPPER_DATABASE_URL_FILE line names (docs/design.md "Secrets").
+# HOPPER_DATABASE_URL_FILE line names (docs/design.md "Secrets").
 env_line() { [ -r "$ENV_FILE" ] && grep -m1 "^$1=" "$ENV_FILE" | cut -d= -f2- || true; }
-if [ -z "$(env_line JOB_HOPPER_DATABASE_URL)" ] && [ -z "$(env_line JOB_HOPPER_DATABASE_URL_FILE)" ]; then
-  if [ -n "${JOB_HOPPER_DATABASE_URL:-}" ]; then
-    step "write JOB_HOPPER_DATABASE_URL to $ENV_FILE (mode 600)"
+if [ -z "$(env_line HOPPER_DATABASE_URL)" ] && [ -z "$(env_line HOPPER_DATABASE_URL_FILE)" ]; then
+  if [ -n "${HOPPER_DATABASE_URL:-}" ]; then
+    step "write HOPPER_DATABASE_URL to $ENV_FILE (mode 600)"
     mkdir -p "$CONFIG_DIR"
-    (umask 077; printf 'JOB_HOPPER_DATABASE_URL=%s\n' "$JOB_HOPPER_DATABASE_URL" >> "$ENV_FILE")
+    (umask 077; printf 'HOPPER_DATABASE_URL=%s\n' "$HOPPER_DATABASE_URL" >> "$ENV_FILE")
   else
-    echo "no JOB_HOPPER_DATABASE_URL (or JOB_HOPPER_DATABASE_URL_FILE) in $ENV_FILE: which database does the daemon keep everything in?" >&2
+    echo "no HOPPER_DATABASE_URL (or HOPPER_DATABASE_URL_FILE) in $ENV_FILE: which database does the daemon keep everything in?" >&2
     echo "  Postgres: docker compose -f $APP_DIR/deploy/compose.yaml up -d postgres (docs/deploy.md), then" >&2
-    echo "  JOB_HOPPER_DATABASE_URL=postgres://hopper:<password>@127.0.0.1:<port>/hopper bash $0" >&2
+    echo "  HOPPER_DATABASE_URL=postgres://hopper:<password>@127.0.0.1:<port>/hopper bash $0" >&2
     exit 1
   fi
 fi
@@ -106,42 +119,42 @@ chmod 600 "$ENV_FILE"
 
 # The operator CLI against the daemon's database, given the way daemon.env gives it.
 cli() {
-  local file; file="$(env_line JOB_HOPPER_DATABASE_URL_FILE)"
-  if [ -n "$file" ]; then JOB_HOPPER_DATABASE_URL_FILE="$file" node "$DEST/src/cli.ts" "$@"
-  else JOB_HOPPER_DATABASE_URL="$(env_line JOB_HOPPER_DATABASE_URL)" node "$DEST/src/cli.ts" "$@"; fi
+  local file; file="$(env_line HOPPER_DATABASE_URL_FILE)"
+  if [ -n "$file" ]; then HOPPER_DATABASE_URL_FILE="$file" node "$DEST/src/cli.ts" "$@"
+  else HOPPER_DATABASE_URL="$(env_line HOPPER_DATABASE_URL)" node "$DEST/src/cli.ts" "$@"; fi
 }
 
-step "link the CLI: $BIN_DIR/job-hopper -> $DEST/src/cli.ts"
+step "link the CLI: $BIN_DIR/hopper -> $DEST/src/cli.ts"
 mkdir -p "$BIN_DIR"
 chmod 755 "$DEST/src/cli.ts"
-ln -sfn "$DEST/src/cli.ts" "$BIN_DIR/job-hopper"
+ln -sfn "$DEST/src/cli.ts" "$BIN_DIR/hopper"
 
-step "install units to $UNIT_DIR: job-hopper.service, job-hopper-herdr.service"
+step "install units to $UNIT_DIR: hopper.service, hopper-herdr.service"
 mkdir -p "$UNIT_DIR"
-install -m 0644 "$APP_DIR/systemd/job-hopper.service" "$UNIT_DIR/job-hopper.service"
-install -m 0644 "$APP_DIR/systemd/job-hopper-herdr.service" "$UNIT_DIR/job-hopper-herdr.service"
+install -m 0644 "$APP_DIR/systemd/hopper.service" "$UNIT_DIR/hopper.service"
+install -m 0644 "$APP_DIR/systemd/hopper-herdr.service" "$UNIT_DIR/hopper-herdr.service"
 
-PLUGIN_DIR="$(env_line JOB_HOPPER_PLUGIN_DIR)"
+PLUGIN_DIR="$(env_line HOPPER_PLUGIN_DIR)"
 if [ -n "$PLUGIN_DIR" ]; then
-  step "plugin types: $PLUGIN_DIR/tsconfig.json maps job-hopper/plugin to $DEST/src/plugins/sdk.ts (an owner-edited one is kept)"
+  step "plugin types: $PLUGIN_DIR/tsconfig.json maps hopper/plugin to $DEST/src/plugins/sdk.ts (an owner-edited one is kept)"
   node "$DEST/scripts/write-plugin-tsconfig.ts" "$PLUGIN_DIR" "$DEST/src/plugins/sdk.ts"
 fi
 
 step "systemctl --user daemon-reload"
 systemctl --user daemon-reload
 
-step "systemctl --user enable job-hopper-herdr job-hopper"
-systemctl --user enable job-hopper-herdr job-hopper
+step "systemctl --user enable hopper-herdr hopper"
+systemctl --user enable hopper-herdr hopper
 
-if systemctl --user is-active --quiet job-hopper-herdr; then
-  step "job-hopper-herdr is active: NOT restarted (restarting it would kill every parked pane and its Claude job)"
+if systemctl --user is-active --quiet hopper-herdr; then
+  step "hopper-herdr is active: NOT restarted (restarting it would kill every parked pane and its Claude job)"
 else
-  step "systemctl --user start job-hopper-herdr"
-  systemctl --user start job-hopper-herdr
+  step "systemctl --user start hopper-herdr"
+  systemctl --user start hopper-herdr
 fi
 
-step "systemctl --user restart job-hopper (starts it, or restarts onto the new code)"
-systemctl --user restart job-hopper
+step "systemctl --user restart hopper (starts it, or restarts onto the new code)"
+systemctl --user restart hopper
 
 step "wait for $URL/api/health (20 tries, 0.5 s apart)"
 for i in $(seq 1 20); do
@@ -153,11 +166,12 @@ for i in $(seq 1 20); do
       step "no rules.md in the database yet: write the starter (edit it in the UI, Questions → Question gates)"
       cli config set rules.md --if-version missing < "$APP_DIR/scripts/starter-rules.md"
     fi
-    echo "open the UI: bash $DEST/scripts/open-ui.sh (or mint a code: job-hopper login-code)"
-    if [ -n "$(env_line JOB_HOPPER_LAN_NAMES)" ]; then
-      printf 'LAN: %s (another device: log in with the device-link button in a logged-in UI)\n' "$(env_line JOB_HOPPER_LAN_NAMES)"
+    node "$DEST/src/update/rename.ts" cleanup
+    echo "open the UI: bash $DEST/scripts/open-ui.sh (or mint a code: hopper login-code)"
+    if [ -n "$(env_line HOPPER_LAN_NAMES)" ]; then
+      printf 'LAN: %s (another device: log in with the device-link button in a logged-in UI)\n' "$(env_line HOPPER_LAN_NAMES)"
     else
-      echo "LAN: off. To reach the UI from other machines, set JOB_HOPPER_LAN_NAMES and JOB_HOPPER_LAN_PEERS in $ENV_FILE (docs/design.md \"Reaching the UI across the LAN\")"
+      echo "LAN: off. To reach the UI from other machines, set HOPPER_LAN_NAMES and HOPPER_LAN_PEERS in $ENV_FILE (docs/design.md \"Reaching the UI across the LAN\")"
     fi
     # GitHub: the gh CLI by default; this hopper's own App when its key is set (README "Connect GitHub").
     if [ -n "$(env_line GITHUB_APP_PRIVATE_KEY)$(env_line GITHUB_APP_PRIVATE_KEY_FILE)" ]; then
@@ -173,5 +187,5 @@ for i in $(seq 1 20); do
   sleep 0.5
 done
 
-echo "job-hopper did not answer /api/health in 10 s. Inspect: journalctl --user -u job-hopper -n 50" >&2
+echo "hopper did not answer /api/health in 10 s. Inspect: journalctl --user -u hopper -n 50" >&2
 exit 1

@@ -15,7 +15,7 @@ const CLIENT_SRC = fileURLToPath(new URL('../../src/client', import.meta.url));
 
 /** A throwaway install dir holding this checkout's client release (never src/client itself: a load writes there). */
 export function testInstallDir(): string {
-  const install = join(mkdtempSync(join(tmpdir(), 'jh-client-install-')), 'job-hopper-client');
+  const install = join(mkdtempSync(join(tmpdir(), 'jh-client-install-')), 'hopper-client');
   cpSync(CLIENT_SRC, install, { recursive: true, filter: (p) => !p.endsWith('relay.ts') });
   return install;
 }

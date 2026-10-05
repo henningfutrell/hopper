@@ -1,16 +1,16 @@
 #!/usr/bin/env node
 // The operator's command line (design.md "Config documents", "Operator CLI"): it opens the same
-// database as the daemon (JOB_HOPPER_DATABASE_URL, or the file JOB_HOPPER_DATABASE_URL_FILE names), so whoever runs it holds the database's
+// database as the daemon (HOPPER_DATABASE_URL, or the file HOPPER_DATABASE_URL_FILE names), so whoever runs it holds the database's
 // credentials — the same trust as the daemon's own environment, more than a UI session's. This is
 // where command-bearing options are set: the UI never edits them.
 //
-//   job-hopper config get <document>                      print it (stdout)
-//   job-hopper config version <document>                  print its version
-//   job-hopper config set <document> --if-version <v>     replace it from stdin, if still at <v>
-//   job-hopper config edit <document>                     $EDITOR on it, written back against the version read
-//   job-hopper login-code [--link <base url>]             mint a one-time UI login code (stdout)
-//   job-hopper password-hash                              an argon2id hash of a password (stdin) for auth.yaml
-//   job-hopper help                                       what each command does
+//   hopper config get <document>                      print it (stdout)
+//   hopper config version <document>                  print its version
+//   hopper config set <document> --if-version <v>     replace it from stdin, if still at <v>
+//   hopper config edit <document>                     $EDITOR on it, written back against the version read
+//   hopper login-code [--link <base url>]             mint a one-time UI login code (stdout)
+//   hopper password-hash                              an argon2id hash of a password (stdin) for auth.yaml
+//   hopper help                                       what each command does
 //
 // <document>: plugins.yaml, webhooks.yaml, rules.md or auth.yaml. A document that would not load is refused.
 import { spawnSync } from 'node:child_process';
@@ -40,23 +40,23 @@ export interface CliIo {
   password?(): Promise<string>;
 }
 
-const USAGE = `job-hopper: the operator command line. It works on the daemon's database directly.
+const USAGE = `hopper: the operator command line. It works on the daemon's database directly.
 
 usage:
-  job-hopper config get <document>                       print a config document
-  job-hopper config version <document>                   print its version
-  job-hopper config set <document> --if-version <v>      replace it from stdin, if still at <v> ("missing" for a new one)
-  job-hopper config edit <document>                      edit it in $EDITOR, written back against the version read
-  job-hopper login-code [--link <base url>]              a one-time UI login code (${LOGIN_CODE_MINUTES} minutes), or a link with it
-  job-hopper password-hash                               an argon2id hash for auth.yaml password.users (password on stdin, or typed)
-  job-hopper help                                        this text
+  hopper config get <document>                       print a config document
+  hopper config version <document>                   print its version
+  hopper config set <document> --if-version <v>      replace it from stdin, if still at <v> ("missing" for a new one)
+  hopper config edit <document>                      edit it in $EDITOR, written back against the version read
+  hopper login-code [--link <base url>]              a one-time UI login code (${LOGIN_CODE_MINUTES} minutes), or a link with it
+  hopper password-hash                               an argon2id hash for auth.yaml password.users (password on stdin, or typed)
+  hopper help                                        this text
 
 documents: ${CONFIG_DOCUMENTS.join(', ')}
 
-Every command but password-hash and help needs JOB_HOPPER_DATABASE_URL (or JOB_HOPPER_DATABASE_URL_FILE):
+Every command but password-hash and help needs HOPPER_DATABASE_URL (or HOPPER_DATABASE_URL_FILE):
 the database the daemon uses, postgres://user:password@host:port/database.
 
-First sign-in:  job-hopper login-code --link http://127.0.0.1:4790   then open the link
+First sign-in:  hopper login-code --link http://127.0.0.1:4790   then open the link
 The daemon:     node src/main.ts --help   (its settings)
 API reference:  http://127.0.0.1:4790/docs/ on a running daemon
 Read on:        README.md, docs/deploy.md, docs/sign-in.md`;
@@ -107,12 +107,12 @@ function config(store: Store, args: string[], io: CliIo): void {
     io.out(`${store.documents.version(name)}\n`);
   } else if (verb === 'set') {
     const version = values['if-version'];
-    if (!version) throw new CliError('config set needs --if-version <version> (job-hopper config version <document>), so nobody else\'s edit is overwritten');
+    if (!version) throw new CliError('config set needs --if-version <version> (hopper config version <document>), so nobody else\'s edit is overwritten');
     put(store, name, io.stdin(), version);
     io.err(`${name} written (version ${store.documents.version(name)})\n`);
   } else if (verb === 'edit') {
     const version = store.documents.version(name);
-    const dir = mkdtempSync(join(tmpdir(), 'job-hopper-edit-'));
+    const dir = mkdtempSync(join(tmpdir(), 'hopper-edit-'));
     const file = join(dir, name);
     try {
       const before = store.documents.read(name) ?? '';
@@ -145,11 +145,11 @@ async function passwordHash(io: CliIo): Promise<number> {
   try {
     password = io.password ? await io.password() : (io.stdin().split(/\r?\n/)[0] ?? '');
   } catch (e) {
-    io.err(`job-hopper: ${(e as Error).message}\n`);
+    io.err(`hopper: ${(e as Error).message}\n`);
     return 2;
   }
   if (password === '') {
-    io.err('job-hopper: the password is empty; nothing hashed\n');
+    io.err('hopper: the password is empty; nothing hashed\n');
     return 2;
   }
   io.out(`${await hashPassword(password)}\n`);
@@ -170,13 +170,13 @@ export function runCli(argv: string[], io: CliIo): number | Promise<number> {
   }
   let url: string | undefined;
   try {
-    url = runtimeSecrets(io.env)('JOB_HOPPER_DATABASE_URL');
+    url = runtimeSecrets(io.env)('HOPPER_DATABASE_URL');
   } catch (e) {
-    io.err(`job-hopper: ${(e as Error).message}\n`);
+    io.err(`hopper: ${(e as Error).message}\n`);
     return 2;
   }
   if (!url) {
-    io.err('JOB_HOPPER_DATABASE_URL is not set (nor JOB_HOPPER_DATABASE_URL_FILE): the database the daemon uses (postgres://…)\n');
+    io.err('HOPPER_DATABASE_URL is not set (nor HOPPER_DATABASE_URL_FILE): the database the daemon uses (postgres://…)\n');
     return 2;
   }
   let store: Store | undefined;
@@ -186,7 +186,7 @@ export function runCli(argv: string[], io: CliIo): number | Promise<number> {
     else config(store, rest, io);
     return 0;
   } catch (e) {
-    io.err(`job-hopper: ${e instanceof Error ? e.message : String(e)}\n`);
+    io.err(`hopper: ${e instanceof Error ? e.message : String(e)}\n`);
     return e instanceof CliError ? 2 : 1;
   } finally {
     store?.close();

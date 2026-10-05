@@ -14,7 +14,7 @@ import { waitFor } from '../support/wait.ts';
 let t: TestApp | undefined;
 let cleanup: (() => void) | undefined;
 
-const NO_TICK = { JOB_HOPPER_TICK_MS: '600000' };
+const NO_TICK = { HOPPER_TICK_MS: '600000' };
 
 async function start(laneCount: number, o: Omit<Parameters<typeof startTestApp>[0], 'dbPath' | 'env'> = {}): Promise<TestApp> {
   const db = tempDbPath();
@@ -97,7 +97,7 @@ describe('a herdr-claude question frees its lane at once', () => {
   it('the parked pane stays open; the next herdr job runs on the same lane while the answerer drafts', async () => {
     const herdr = createFakeHerdrClient({
       session: 'jh-test',
-      turns: [{ output: ['● Which colour should the shed be?', '  JOB_HOPPER_QUESTION'] }, { steps: ['● Working'], output: [], end: 'working' }],
+      turns: [{ output: ['● Which colour should the shed be?', '  HOPPER_QUESTION'] }, { steps: ['● Working'], output: [], end: 'working' }],
     });
     const held = heldAnswerer();
     const a = await start(

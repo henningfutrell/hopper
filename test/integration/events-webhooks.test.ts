@@ -123,15 +123,15 @@ describe('webhooks from webhooks.yaml', () => {
     const job = await a.pull({ op: 'echo', message: 'ping' });
     await a.waitForStatus(job.id, 'finished');
     const got = await waitFor(() => r.received[0], { what: 'delivery' });
-    const ts = got.headers['x-jobhopper-timestamp'] as string;
-    expect(got.headers['x-jobhopper-signature']).toBe('sha256=' + createHmac('sha256', 'k3y').update(`${ts}.${got.body}`).digest('hex'));
-    expect(got.headers['x-jobhopper-event']).toBe('job.finished');
+    const ts = got.headers['x-hopper-timestamp'] as string;
+    expect(got.headers['x-hopper-signature']).toBe('sha256=' + createHmac('sha256', 'k3y').update(`${ts}.${got.body}`).digest('hex'));
+    expect(got.headers['x-hopper-event']).toBe('job.finished');
     expect(JSON.parse(got.body)).toMatchObject({ type: 'job.finished', jobId: job.id, schemaVersion: 1 });
     const deliveries = await waitFor(async () => {
       const ds = (await a.api<{ deliveries: WebhookDelivery[] }>('GET', `/api/webhooks/deliveries?subscriptionId=${sub.id}&limit=10`)).body.deliveries;
       return ds[0]?.status === 'delivered' ? ds : undefined;
     });
-    expect(got.headers['x-jobhopper-delivery']).toBe(deliveries[0]!.id);
+    expect(got.headers['x-hopper-delivery']).toBe(deliveries[0]!.id);
     const update = await waitFor(() => sse!.messages.find((m) => m.event === 'delivery.updated' && (JSON.parse(m.data) as WebhookDelivery).status === 'delivered'));
     expect(update.id).toBeUndefined();
   });

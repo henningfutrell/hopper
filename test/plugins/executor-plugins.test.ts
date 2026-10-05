@@ -39,7 +39,7 @@ describe('built-in executor plugins are listed', () => {
 describe('herdr-claude', () => {
   it('options default to what the env defaulted to before plugins', () => {
     expect(options(herdrClaude)).toEqual({
-      bin: 'herdr', claudeBin: 'claude', session: 'job-hopper', args: ['--dangerously-skip-permissions'],
+      bin: 'herdr', claudeBin: 'claude', session: 'hopper', args: ['--dangerously-skip-permissions'],
       cwd: homedir(), trustWorkdir: true, pollMs: 1000, idleQuestionMs: 20000,
     });
   });

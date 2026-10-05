@@ -24,7 +24,7 @@ export function startNotifiers(built: Built<Notifier>[], events: NotifierEvents,
       b.instance.start(events);
     } catch (e) {
       const reason = `cannot start: ${message(e)}`;
-      logger.warn(`job-hopper: notifier ${b.spec.name} (${b.spec.plugin}) unavailable: ${reason}`);
+      logger.warn(`hopper: notifier ${b.spec.name} (${b.spec.plugin}) unavailable: ${reason}`);
       built[i] = { spec: b.spec, detection: b.detection, plugin: null, reason };
     }
   });
@@ -36,7 +36,7 @@ export async function stopNotifiers(built: Built<Notifier>[], logger: SlotDeps['
     try {
       await b.instance?.stop();
     } catch (e) {
-      logger.warn(`job-hopper: notifier ${b.spec.name} failed to stop: ${message(e)}`);
+      logger.warn(`hopper: notifier ${b.spec.name} failed to stop: ${message(e)}`);
     }
   }));
 }

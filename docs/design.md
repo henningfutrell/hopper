@@ -1,11 +1,11 @@
-# job-hopper — design
+# hopper — design
 
 The contract every module is built against. Types: `src/domain/types.ts`; seams:
 `src/domain/ports.ts`; words: `docs/glossary.md`.
 
 ## North star
 
-Owner decision (2026-10-03): job-hopper is an extendable plugin architecture.
+Owner decision (2026-10-03): hopper is an extendable plugin architecture.
 
 This is the top-level principle. Every part must serve it: a new capability arrives as a
 plugin or as configuration of one, not as a hardcoded branch. "Phase 5 — every part is a
@@ -40,7 +40,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock | everything but `domain/` |
 | `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations, repositories, event log, config documents, login codes | engine, http, decider |
 | `src/webhooks/` | signing, dispatcher, retry/backoff, `webhooks.yaml` load + watch (`config.ts`), the UI edit of it (`edit.ts`) | engine, http, decider |
-| `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `job-hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, `plugins.yaml` + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `question-slots.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), a machine edit of `attachedMachines:` (`attached-edit.ts`, spliced into the file; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `answerer/claude-cli/`, `assessor/claude-cli-assessor/`, `assessor/always-escalate/` hold their prompts; `executor/herdr-claude/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-gh/` and `job-source/github-app/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser, runner, background refresh); `notifier/grokbot-routine/` is the Grok Bot routine webhook — env-file reader and notifier; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
+| `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, `plugins.yaml` + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `question-slots.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), a machine edit of `attachedMachines:` (`attached-edit.ts`, spliced into the file; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `answerer/claude-cli/`, `assessor/claude-cli-assessor/`, `assessor/always-escalate/` hold their prompts; `executor/herdr-claude/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-gh/` and `job-source/github-app/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser, runner, background refresh); `notifier/grokbot-routine/` is the Grok Bot routine webhook — env-file reader and notifier; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
 | `src/executors/` | `Executor` adapters (`test`, `herdr/`, `command.ts` — a job's body run on its machine through its connection) and the registry; reached through the executor plugins. The connections and their target authentication ("Target authentication"): `ssh.ts` (key-only ssh to pinned host keys), `docker.ts` (the docker socket check, the proxy's allowlist), `client.ts` (a client target's tunnel, signed calls); `env.ts` the scrubbed child environment | engine, http, store, plugins |
 | `src/client/` | the hopper client ("Client targets"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load` over HTTP/2 on the tunnel), `tunnel.ts` (its ssh to the hopper), `release.ts` (the client release: its files, its id, checking and installing one — "Client releases"), `main.ts`; `relay.ts`, the forced command of its key on the hopper's machine; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`); `ssh-options.ts` (the hardened ssh options, shared with `src/executors/ssh.ts`) | everything in `src/` outside `src/client/` |
 | `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following plugins.yaml; ssh probe and herdr path resolution through the herdr CLI client's ssh argv; the container probe, `docker container inspect`), the detected ssh targets (`ssh-config.ts`), keeping each client target on the hopper's client release (`client-release.ts`), `combineMachineSources` | engine, http, store, plugins |
@@ -49,14 +49,14 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`); job lifecycle; routing at intake (`source-host.ts`); restart recovery | http |
 | `src/auth/` | sign-in through identity providers (issue #39): `auth.yaml` load (`config.ts`), the role rules (`roles.ts`, pure), the identity provider port (`provider.ts`) and its adapters `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), password sign-in (`password.ts`, argon2), the sign-in flow — flows, tickets, bindings, no sign-in (`index.ts`) | engine, http, store, plugins, decider, questions |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets") | everything |
-| `src/update/` | self-update ("Self-update"): install.json, the git mirror of the update repository, the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers | engine, http, plugins, decider |
+| `src/update/` | self-update ("Self-update"): install.json, the git mirror of the update repository, the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
 | `src/http/` | Fastify routes, SSE, static UI; the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `api-reference.ts` Scalar at `/docs/`); the plugin store's read side (`plugin-store.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
 | `site/` | the install page, published to GitHub Pages by `.github/workflows/pages.yml` with `scripts/get.sh` beside it as `install.sh`: one static `index.html`, no build step, nothing loaded from another site | everything in the repo at runtime; it links to the docs on GitHub |
-| `examples/plugins/` | one minimal runnable custom plugin per role, for authors (`docs/plugins.md`); imports only `job-hopper/plugin` types and `node:` builtins | everything in `src/` at runtime |
+| `examples/plugins/` | one minimal runnable custom plugin per role, for authors (`docs/plugins.md`); imports only `hopper/plugin` types and `node:` builtins | everything in `src/` at runtime |
 | `src/main.ts` | composition root: config → store → plugins.yaml (written when absent) → plugin host (every part) → plugin store → engine → server | — |
 | `src/startup-log.ts` | the daemon's startup lines (listening, parts, sign-in) | — |
-| `src/cli.ts` | the operator CLI `job-hopper`: config documents, login codes, `help` — against the daemon's database | engine, executors |
+| `src/cli.ts` | the operator CLI `hopper`: config documents, login codes, `help` — against the daemon's database | engine, executors |
 
 ## The decider
 
@@ -112,7 +112,7 @@ an idle tick every 2 s would bury the decision log. Every recorded Decision emit
 
 ## The engine
 
-- **Triggers:** interval tick (`JOB_HOPPER_TICK_MS`, default 2000) plus the events
+- **Triggers:** interval tick (`HOPPER_TICK_MS`, default 2000) plus the events
   `job.queued`, `job.prioritized`, `job.reprioritized`, `job.approved`, `job.finished`,
   `job.failed`, `job.cancelled`, `router.mode_changed`, `question.asked`, `question.answered`,
   `question.expired` (`TRIGGERS`, `src/engine/index.ts`). Decisions are serialized; triggers
@@ -172,7 +172,7 @@ an idle tick every 2 s would bury the decision log. Every recorded Decision emit
 Jev (`~/workbench/jev-src/grok-bot-jev`, Python) is a per-request classifier: TypeSafe's
 `system_one` answers intent / reuse_cache / needs_subagent / stop_retry / complexity, and
 `route_task` maps that to one action. It has **no notion of machines, lanes, or usage
-budgets**, so it cannot be the usage source. job-hopper uses it for what it is: the
+budgets**, so it cannot be the usage source. hopper uses it for what it is: the
 **admission and prioritization layer** per job. Usage budgets come from `UsageSource`.
 
 > **Phase 5:** Jev is one **router plugin**, `jev-router` (`src/plugins/router/jev-router/`);
@@ -184,8 +184,8 @@ budgets**, so it cannot be the usage source. job-hopper uses it for what it is: 
 - `jev-router`: spawns `<python> src/plugins/router/jev-router/jev_shim.py` with JSON on stdin, in its
   own process group (a timeout kills the group, so no `claude` outlives it) and with the Claude Code
   markers scrubbed from the environment. The shim puts the Jev repo on `sys.path`, loads Jev's
-  **own** `config.yaml` (its kill switch is honoured), overrides only `mode` (job-hopper's) and
-  `logging.path` (job-hopper's data dir), sets `PYTHONDONTWRITEBYTECODE=1`, calls
+  **own** `config.yaml` (its kill switch is honoured), overrides only `mode` (hopper's) and
+  `logging.path` (hopper's data dir), sets `PYTHONDONTWRITEBYTECODE=1`, calls
   `route_task(state)`, prints the result. Nothing is written under the Jev repo. `router.py`
   imports `typesafe_sdk` at module load (via `src.jev_client`); when that package is absent the
   shim installs a stub whose `Choice`/`Noul`/`Score` only record their instructions and criteria.
@@ -196,7 +196,7 @@ budgets**, so it cannot be the usage source. job-hopper uses it for what it is: 
   `stop_retry`: crisp classifications of the job state, where TypeSafe's calibrated probabilities
   feed Jev's thresholds) goes to TypeSafe through Jev's own `jev_client.system_one` — when
   a key is set and `python` imports `typesafe_sdk`. The key is `TYPESAFE_API_KEY` from the daemon's
-  environment, else the trimmed contents of `typesafeKeyFile` (`~/.config/job-hopper/typesafe-api-key`,
+  environment, else the trimmed contents of `typesafeKeyFile` (`~/.config/hopper/typesafe-api-key`,
   mode 600), read on **every** call: writing the file switches TypeSafe on for the next job with
   no restart (issue #28); an absent or empty file leaves it off. The key reaches only the shim's
   environment, where Jev's own `secrets.py` reads it. Every other gate (`needs_subagent`, `complexity`: judgement
@@ -223,8 +223,8 @@ budgets**, so it cannot be the usage source. job-hopper uses it for what it is: 
   `lookup` → `run_deterministic`; `chat` → `chat_only`; `account` → `ask_human`;
   `meta.needs_subagent` → `allow_subagent`; `research`/`browser` → `research_capped`; else
   `proceed_full`.
-- **Mode** (router mode) is job-hopper's, persisted in the store (`settings.routerMode`),
-  initialised from `JOB_HOPPER_ROUTER_MODE` (default `shadow`), switched at runtime in the UI
+- **Mode** (router mode) is hopper's, persisted in the store (`settings.routerMode`),
+  initialised from `HOPPER_ROUTER_MODE` (default `shadow`), switched at runtime in the UI
   (`POST /ui/api/router-mode`).
 
 ## HTTP API
@@ -277,15 +277,15 @@ contains its type or `*`. Request:
 ```
 POST <url>
 content-type: application/json
-x-jobhopper-event: job.finished
-x-jobhopper-delivery: <delivery id>
-x-jobhopper-timestamp: <unix seconds>
-x-jobhopper-signature: sha256=<hex HMAC-SHA256(secret, "<timestamp>.<raw body>")>
+x-hopper-event: job.finished
+x-hopper-delivery: <delivery id>
+x-hopper-timestamp: <unix seconds>
+x-hopper-signature: sha256=<hex HMAC-SHA256(secret, "<timestamp>.<raw body>")>
 
 <DomainEvent JSON>
 ```
 
-Delivery is **at-least-once**; receivers dedupe on `x-jobhopper-delivery`. Before each POST
+Delivery is **at-least-once**; receivers dedupe on `x-hopper-delivery`. Before each POST
 the dispatcher moves `nextAttemptAt` past the timeout and keeps the id in an in-memory
 in-flight set, so the sweep never sends one delivery twice concurrently. Deleting a
 subscription marks its pending/retrying deliveries `failed`.
@@ -375,10 +375,10 @@ The usage-change trigger is named `usage.changed`; it is a trigger, not an event
   job that started before its advice arrived has advice but no divergence record.
 - **Soft-limit scaling floors.** `floor(maxLanes × (hard − used)/(hard − soft))`: with 2
   lanes, 85 % usage gives 0 lanes, not 1. Conservative by choice.
-- **Only `127.0.0.1` is accepted** for `JOB_HOPPER_HOST`; config refuses anything else.
-  *Superseded by "Reaching the UI across the LAN" (issue #16): `JOB_HOPPER_HOST` is gone.*
+- **Only `127.0.0.1` is accepted** for `HOPPER_HOST`; config refuses anything else.
+  *Superseded by "Reaching the UI across the LAN" (issue #16): `HOPPER_HOST` is gone.*
 - **Static UI files are read once at startup**; a UI change needs a daemon restart.
-- **The installed daemon runs from a copy** (`~/.local/lib/job-hopper`, made by
+- **The installed daemon runs from a copy** (`~/.local/lib/hopper`, made by
   `scripts/install.sh`), so switching branches in the source checkout never breaks it.
 
 ## Configuration (env)
@@ -388,17 +388,17 @@ the current list is "Settled in slice 4" → "Configuration (env), as of slice 5
 
 | var | default |
 |-----|---------|
-| `JOB_HOPPER_LAN_NAMES` | empty (loopback only) — "Reaching the UI across the LAN" |
-| `JOB_HOPPER_LAN_PEERS` | empty — set with `LAN_NAMES` |
-| `JOB_HOPPER_PORT` | `4790` |
-| `JOB_HOPPER_DB` | `~/.local/share/job-hopper/job-hopper.db` |
-| `JOB_HOPPER_TICK_MS` | `2000` |
-| `JOB_HOPPER_JEV_MODE` | `shadow` (initial router mode only; the stored setting wins once set) |
-| `JOB_HOPPER_LOCAL_LANES` | `4` |
-| `JOB_HOPPER_SOFT_LIMIT` / `HARD_LIMIT` | `0.7` / `0.95` |
-| `JOB_HOPPER_JEV_CHEAP_BOOST` | `10` |
-| `JOB_HOPPER_WEBHOOK_BASE_MS` | `1000` |
-| `JOB_HOPPER_LANE_IDLE_GRACE_MS` | `5000` |
+| `HOPPER_LAN_NAMES` | empty (loopback only) — "Reaching the UI across the LAN" |
+| `HOPPER_LAN_PEERS` | empty — set with `LAN_NAMES` |
+| `HOPPER_PORT` | `4790` |
+| `HOPPER_DB` | `~/.local/share/hopper/hopper.db` |
+| `HOPPER_TICK_MS` | `2000` |
+| `HOPPER_JEV_MODE` | `shadow` (initial router mode only; the stored setting wins once set) |
+| `HOPPER_LOCAL_LANES` | `4` |
+| `HOPPER_SOFT_LIMIT` / `HARD_LIMIT` | `0.7` / `0.95` |
+| `HOPPER_JEV_CHEAP_BOOST` | `10` |
+| `HOPPER_WEBHOOK_BASE_MS` | `1000` |
+| `HOPPER_LANE_IDLE_GRACE_MS` | `5000` |
 
 ---
 
@@ -415,16 +415,16 @@ the current list is "Settled in slice 4" → "Configuration (env), as of slice 5
 
 Job: `executor: "herdr-claude"`, payload
 `{ prompt: string (required, non-empty), cwd?: string (absolute or ~; default config
-JOB_HOPPER_CLAUDE_CWD), model?: string, expectedMs?: number, timeoutMs?: number }`.
+HOPPER_CLAUDE_CWD), model?: string, expectedMs?: number, timeoutMs?: number }`.
 
-**herdr session.** job-hopper owns the named session of the herdr-claude instance's `session` option
-(default `job-hopper`), run headless by its own unit `job-hopper-herdr.service`
-(`herdr --session job-hopper server`). Every herdr call is `herdr --session <s> …`, JSON on
+**herdr session.** hopper owns the named session of the herdr-claude instance's `session` option
+(default `hopper`), run headless by its own unit `hopper-herdr.service`
+(`herdr --session hopper server`). Every herdr call is `herdr --session <s> …`, JSON on
 stdout, errors JSON on stderr with exit 1. Never the default session — herdr's own doctrine
 forbids driving a user's session from outside it. Spawned processes get an environment with
 `CLAUDECODE` and every `CLAUDE_CODE_*` variable removed.
 
-**Lanes → panes.** One herdr workspace labelled `job-hopper` (found by label, else created
+**Lanes → panes.** One herdr workspace labelled `hopper` (found by label, else created
 `--no-focus`). One **tab per job run**, created with `--cwd <job cwd>` and labelled
 `<laneId> · <jobId first 8>`; its root pane hosts Claude. The executor keeps `laneId →
 paneId` for the job now on that lane and saves `{ session, workspaceId, tabId, paneId,
@@ -433,7 +433,7 @@ agentName, cwd }` with `ctx.saveState` the moment the pane exists. A job in
 is claimed onto maps to the parked pane.
 
 **Start.** `agent start jh-<jobId first 8> --kind claude --pane <pane> --timeout 60000 --
-<JOB_HOPPER_CLAUDE_ARGS> [--model <payload.model>]`, default args
+<HOPPER_CLAUDE_ARGS> [--model <payload.model>]`, default args
 `--dangerously-skip-permissions`. **Readiness wait:** herdr refuses `agent start` until the new pane is at its shell
 prompt, answering `agent_pane_busy` ("agent target pane … is not an available shell") when
 it is sent a few ms after `tab create` — seen live with 4 jobs claimed at once. The CLI
@@ -443,7 +443,7 @@ exactly that code until the 60000 ms start deadline, then fails the job
 lane:** the executor refuses to map a pane already held by another lane (job `failed`,
 pane left untouched). `agent_not_ready` (blocked at startup): read the visible
 screen; if it is Claude's folder-trust dialog (contains `trust this folder`) **and the
-dialog names the job's cwd** and `JOB_HOPPER_TRUST_WORKDIR` is true → send `down enter`,
+dialog names the job's cwd** and `HOPPER_TRUST_WORKDIR` is true → send `down enter`,
 log it via progress message `trusted workdir <cwd>`, wait for `idle`. Anything else blocking
 startup → `failed` with the screen text.
 
@@ -472,19 +472,19 @@ about where the work is done, not what is touched.
 **Prompt, once.** `agent prompt <agent> <prompt + protocol footer>` (no `--wait`). Footer:
 
 ```
-[job-hopper publishing rule] Any text you send to GitHub (commit messages, branch names, pull request titles and bodies, issue text) describes the change and how it was verified, in neutral terms. Never quote or name the repository owner or any other person. Never include personal or machine details: email addresses, people's names, IP addresses, hostnames, tailnet names, home directory paths, usernames, machine or pane ids, port numbers of local machines, codes, tokens or secrets.
-[job-hopper work tree] This job's work tree is <cwd>. Do all of the job's work inside it: clones, git worktrees, edits, builds, test runs, scratch and temporary files go under it. Never make or work in a copy of the code outside it, under /tmp or anywhere else. Temporary files go in <cwd>/.hopper-scratch: git ignores it, and TMPDIR and your scratchpad point there. Running or installing what you built, and reading files elsewhere, is fine. If the job seems to need a work tree outside this one, ask instead.
-[job-hopper parallel work] Other jobs run at the same time as this one, possibly in the same repos. Nothing orders or holds jobs for each other: no job waits for another.
+[hopper publishing rule] Any text you send to GitHub (commit messages, branch names, pull request titles and bodies, issue text) describes the change and how it was verified, in neutral terms. Never quote or name the repository owner or any other person. Never include personal or machine details: email addresses, people's names, IP addresses, hostnames, tailnet names, home directory paths, usernames, machine or pane ids, port numbers of local machines, codes, tokens or secrets.
+[hopper work tree] This job's work tree is <cwd>. Do all of the job's work inside it: clones, git worktrees, edits, builds, test runs, scratch and temporary files go under it. Never make or work in a copy of the code outside it, under /tmp or anywhere else. Temporary files go in <cwd>/.hopper-scratch: git ignores it, and TMPDIR and your scratchpad point there. Running or installing what you built, and reading files elsewhere, is fine. If the job seems to need a work tree outside this one, ask instead.
+[hopper parallel work] Other jobs run at the same time as this one, possibly in the same repos. Nothing orders or holds jobs for each other: no job waits for another.
 If your work overlaps another job's, sort it out yourself. Either state the assumptions you made about the other work, or make the needed fix in the other project and annotate it with which way the dependency runs (which work depends on which).
-[job-hopper protocol] When you need an answer from the user, ask exactly one question and end your message with a line containing only: JOB_HOPPER_QUESTION
-When the job is completely finished, end your final message with a line containing only: JOB_HOPPER_DONE
-If the job cannot be done, end with a line containing only: JOB_HOPPER_FAILED followed by the reason.
+[hopper protocol] When you need an answer from the user, ask exactly one question and end your message with a line containing only: HOPPER_QUESTION
+When the job is completely finished, end your final message with a line containing only: HOPPER_DONE
+If the job cannot be done, end with a line containing only: HOPPER_FAILED followed by the reason.
 ```
 
 The publishing rule leads the footer so every job gets it, whatever its source; the work-tree
 line follows with the job's own cwd (`protocolFooter(cwd)`); the last line stays the turn anchor. It names no comment path: jobs never write to issues.
 
-**Monitor** every `JOB_HOPPER_HERDR_POLL_MS` (1000): `agent get` (status, `state_change_seq`)
+**Monitor** every `HOPPER_HERDR_POLL_MS` (1000): `agent get` (status, `state_change_seq`)
 and `agent read --source recent-unwrapped --lines 200`.
 
 **Turn anchor (B1).** At every send record `{ seq: state_change_seq, anchor }` (saved in
@@ -495,18 +495,18 @@ watch the same turn) where
 Only output lines **after the last occurrence of the anchor** count. **Every** outcome
 below except `blocked`, agent gone and timeout requires status `idle`/`done` **and**
 `state_change_seq` greater than at send. Marker normalisation: strip the Claude Code gutter
-(`●`, `⎿`), whitespace, and surrounding `` ` `` / `*`; `JOB_HOPPER_DONE` and
-`JOB_HOPPER_QUESTION` must then equal the whole line; `JOB_HOPPER_FAILED` is a prefix match
+(`●`, `⎿`), whitespace, and surrounding `` ` `` / `*`; `HOPPER_DONE` and
+`HOPPER_QUESTION` must then equal the whole line; `HOPPER_FAILED` is a prefix match
 (after the anchor only). Parser tests cover: a wrapped echoed footer, the previous turn's
 marker still on screen, a marker in backticks or bold. Then:
 
 | observed | outcome |
 |----------|---------|
-| marker line `JOB_HOPPER_DONE` is the last marker (whole line, trimmed) and status idle/done | `finished`, result `{ summary: <assistant text of the final turn, ≤ 4000 chars>, paneId }` |
-| last marker `JOB_HOPPER_FAILED` | `failed`, error = text after the marker on that line or the next line |
-| last marker `JOB_HOPPER_QUESTION` | `question`, `detectedBy: marker`, text = the assistant message before the marker |
+| marker line `HOPPER_DONE` is the last marker (whole line, trimmed) and status idle/done | `finished`, result `{ summary: <assistant text of the final turn, ≤ 4000 chars>, paneId }` |
+| last marker `HOPPER_FAILED` | `failed`, error = text after the marker on that line or the next line |
+| last marker `HOPPER_QUESTION` | `question`, `detectedBy: marker`, text = the assistant message before the marker |
 | status `blocked` (question/approval UI) | `question`, `detectedBy: blocked`, text = the visible dialog |
-| idle/done with no marker after the anchor for `JOB_HOPPER_IDLE_QUESTION_MS` (20000) | `question`, `detectedBy: idle`, text = last assistant message ("stopped waiting for input") |
+| idle/done with no marker after the anchor for `HOPPER_IDLE_QUESTION_MS` (20000) | `question`, `detectedBy: idle`, text = last assistant message ("stopped waiting for input") |
 | agent gone (`agent get` error / pane closed) | `failed`, `claude exited` + last output |
 | `timeoutMs` (default 3600000) exceeded | interrupt, `failed` `timed out` |
 
@@ -544,7 +544,7 @@ in-flight stage call is aborted (`superseded`), the assessor is never called, an
 pushed. **Push is gated:** the Grok Bot routine
 webhook fire only on `question.escalated {target: "human"}` — after the assessor escalates, a
 stage fails, or a risk rule hits. Worst case between ask and push: the answerer's and the
-assessor's stage timeouts back to back (`2 × JOB_HOPPER_ANSWER_TIMEOUT_MS`, 6 min by default). Then `QuestionService.handle(questionId)` runs the
+assessor's stage timeouts back to back (`2 × HOPPER_ANSWER_TIMEOUT_MS`, 6 min by default). Then `QuestionService.handle(questionId)` runs the
 pipeline off the decision path (phase 5 slice 2 replaced the opus → fable → human chain; full
 contract in "Question pipeline" under Phase 5):
 
@@ -558,14 +558,14 @@ contract in "Question pipeline" under Phase 5):
    (issue #98). Fails closed: anything but a schema-valid `escalate: false` → human.
 3. **risk rules** over question + the answer to be typed; a hit → human, whatever the assessor said.
 4. **accepted** → the assessor's answer (or, with none, the draft it endorsed) is typed in. **human**: question `tier: human`,
-   `escalatedToHumanAt`, `expiresAt = now + JOB_HOPPER_HUMAN_TIMEOUT_MS`,
+   `escalatedToHumanAt`, `expiresAt = now + HOPPER_HUMAN_TIMEOUT_MS`,
    `question.escalated {target: "human", reason, text, jobId, goal, answerUrl, notifyCount: 1}`.
-   Every `JOB_HOPPER_HUMAN_RENOTIFY_MS` while open: same event, `renotify: true`,
+   Every `HOPPER_HUMAN_RENOTIFY_MS` while open: same event, `renotify: true`,
    `notifyCount` +1. At `expiresAt`: question `expired`, `question.expired`, job `failed`
    (`question unanswered`), executor `cleanup`. An expiry beyond the timer limit (~24.8 days)
    re-arms instead of firing early.
 
-Every answerer or assessor call is bounded by `JOB_HOPPER_ANSWER_TIMEOUT_MS` in the service
+Every answerer or assessor call is bounded by `HOPPER_ANSWER_TIMEOUT_MS` in the service
 (a custom plugin may hang), on top of the plugin's own `timeoutMs`; a throw counts as an error.
 **Accepted answer** (the draft, or the human's via API): question `answered`, `answer`,
 `answeredBy` (the answerer instance, or `human`); `question.answered {by, answer}`; job →
@@ -605,7 +605,7 @@ draft; run after the assessor): `\b(delete|deleting|remove (all|the)|rm -rf|drop
 Each rule has a name (`delete`, `deploy`, `force-push`, `spend`, `credentials`,
 `send-message`); matches are recorded in `riskRules`.
 
-**Rules file** `JOB_HOPPER_RULES_FILE` (default `~/.config/job-hopper/rules.md`), read on
+**Rules file** `HOPPER_RULES_FILE` (default `~/.config/hopper/rules.md`), read on
 every ask; missing → empty rules, noted in the prompt and the attempt reason. Editable from the
 UI since issue #18 ("Question gates" at the end); an edit applies to the next question.
 `scripts/install.sh` writes a starter file only if none exists.
@@ -615,12 +615,12 @@ UI since issue #18 ("Question gates" at the end); an edit applies to the next qu
 `onExpired` run synchronously inside it. The engine's side is compare-and-set too: it acts
 only if the job is `waiting_answer` with that `questionId`.
 
-**Question budget (B6).** At most `JOB_HOPPER_MAX_QUESTIONS` (5) questions per job; the
+**Question budget (B6).** At most `HOPPER_MAX_QUESTIONS` (5) questions per job; the
 next question fails the job `too many questions` (and cleans up). When `detectedBy` is
 `idle`, the answerer prompt says the agent may simply have finished and that a valid answer
-is "If the job is complete, end your message with JOB_HOPPER_DONE".
+is "If the job is complete, end your message with HOPPER_DONE".
 
-**Recovery at startup (B2, B3).** `install.sh` restarts the daemon, not `job-hopper-herdr`,
+**Recovery at startup (B2, B3).** `install.sh` restarts the daemon, not `hopper-herdr`,
 so a running job's pane and Claude outlive a restart.
 - `running` job of a non-idempotent executor (herdr-claude) **reattached** when its lane row
   still holds it and `executor.canReattach(job)` says its work is alive — for herdr-claude:
@@ -662,7 +662,7 @@ role: human, outcome: accepted, reason: "closed without answering" }`, question 
 same `onAnswered` as an answer: job → `queued` with `pendingAnswer` = the close text,
 `job.requeued { reason: "closed" }`; the resume types it into the pane. Close text
 (`CLOSED_ANSWER`, `src/questions/service.ts`): "The owner closed this question without answering.
-Continue on your own judgement; if you cannot, end with JOB_HOPPER_FAILED and say why."
+Continue on your own judgement; if you cannot, end with HOPPER_FAILED and say why."
 Recovery treats a `closed` question like an `answered` one (requeue with its answer).
 
 **Dismiss** (`POST /ui/api/questions/:id/dismiss`, the card's Dismiss button; issue #37): the owner
@@ -713,7 +713,7 @@ with no readable echo (e.g. a dialog answered by keys) is not seen; the question
 can still be answered or closed in the UI.
 
 **Logged out** the card shows, where the answer box would be, "Log in to answer or close:
-`bash ~/.local/lib/job-hopper/scripts/open-ui.sh`". A 403 on any mutation drops the stored
+`bash ~/.local/lib/hopper/scripts/open-ui.sh`". A 403 on any mutation drops the stored
 token and every card shows the same notice. In the UI rework this is `ui/src/views/questions.tsx`
 (the notice is `data-slot="login-notice"`; Close sits next to Send answer and asks first in a
 dialog, `components/confirm.tsx`, never `window.confirm`); `test/ui/questions.test.ts` renders
@@ -761,23 +761,23 @@ questions; each part's setting is now a plugin option ("Settled in slice 4").
 
 | var | default |
 |-----|---------|
-| `JOB_HOPPER_EXECUTORS` | `test,herdr-claude` |
-| `JOB_HOPPER_HERDR_BIN` | `herdr` |
-| `JOB_HOPPER_HERDR_SESSION` | `job-hopper` |
-| `JOB_HOPPER_HERDR_POLL_MS` | `1000` |
-| `JOB_HOPPER_CLAUDE_BIN` | `claude` |
-| `JOB_HOPPER_CLAUDE_ARGS` | `--dangerously-skip-permissions` |
-| `JOB_HOPPER_CLAUDE_CWD` | `~/workbench/app-workflows` |
-| `JOB_HOPPER_TRUST_WORKDIR` | `true` |
-| `JOB_HOPPER_IDLE_QUESTION_MS` | `20000` |
-| `JOB_HOPPER_ANSWERER` | `claude` (`fake` for tests: the fake doubles at the seams) |
-| `JOB_HOPPER_ANSWER_MODEL_A` / `_B` | `opus` / `fable` — the answerer's / assessor's model when plugins.yaml has no section |
-| `JOB_HOPPER_ANSWER_TIMEOUT_MS` | `180000` — plugin `timeoutMs` default from the env, and the service's per-stage ceiling |
-| `JOB_HOPPER_RULES_FILE` | `~/.config/job-hopper/rules.md` |
-| `JOB_HOPPER_HUMAN_RENOTIFY_MS` | `900000` (15 min) |
-| `JOB_HOPPER_HUMAN_TIMEOUT_MS` | `86400000` (24 h) |
-| `JOB_HOPPER_RESUME_BOOST` | `20` |
-| `JOB_HOPPER_MAX_QUESTIONS` | `5` |
+| `HOPPER_EXECUTORS` | `test,herdr-claude` |
+| `HOPPER_HERDR_BIN` | `herdr` |
+| `HOPPER_HERDR_SESSION` | `hopper` |
+| `HOPPER_HERDR_POLL_MS` | `1000` |
+| `HOPPER_CLAUDE_BIN` | `claude` |
+| `HOPPER_CLAUDE_ARGS` | `--dangerously-skip-permissions` |
+| `HOPPER_CLAUDE_CWD` | `~/workbench/app-workflows` |
+| `HOPPER_TRUST_WORKDIR` | `true` |
+| `HOPPER_IDLE_QUESTION_MS` | `20000` |
+| `HOPPER_ANSWERER` | `claude` (`fake` for tests: the fake doubles at the seams) |
+| `HOPPER_ANSWER_MODEL_A` / `_B` | `opus` / `fable` — the answerer's / assessor's model when plugins.yaml has no section |
+| `HOPPER_ANSWER_TIMEOUT_MS` | `180000` — plugin `timeoutMs` default from the env, and the service's per-stage ceiling |
+| `HOPPER_RULES_FILE` | `~/.config/hopper/rules.md` |
+| `HOPPER_HUMAN_RENOTIFY_MS` | `900000` (15 min) |
+| `HOPPER_HUMAN_TIMEOUT_MS` | `86400000` (24 h) |
+| `HOPPER_RESUME_BOOST` | `20` |
+| `HOPPER_MAX_QUESTIONS` | `5` |
 
 ## Construction contract added
 
@@ -821,10 +821,10 @@ Op `ask`: `{ op: "ask", message?: string }` → outcome `question` (text = `mess
   `server.listen` so `answerUrl` carries the real port. `/api/health` lists `executors`.
 - **`job.requeued`** `data.from`/`reason` also take `waiting_answer` / `answered`.
 - **Panes close on every terminal outcome** (finished, failed, cancelled, restart failure)
-  via `executor.cleanup`, unless `JOB_HOPPER_KEEP_PANES=true`. Timeouts and failed startups
+  via `executor.cleanup`, unless `HOPPER_KEEP_PANES=true`. Timeouts and failed startups
   close their pane too.
 - **herdr unit:** a second `herdr --session X server` exits 1, so
-  `job-hopper-herdr.service` has an `ExecCondition` that skips the start when that
+  `hopper-herdr.service` has an `ExecCondition` that skips the start when that
   session's server already runs; it unsets `CLAUDECODE` and the `CLAUDE_CODE_*` markers
   because panes inherit the server's environment. `install.sh` never restarts an active
   herdr unit — that would kill every parked pane.
@@ -834,7 +834,7 @@ Op `ask`: `{ op: "ask", message?: string }` → outcome `question` (text = `mess
   could not see it.
 - **Screen chrome** that is never progress: the status/spinner line, user echo, `⏵` mode
   line, the effort indicator (`… · /effort`), and spinner tips (`⎿  Tip: …`).
-- **The fake doubles** (`JOB_HOPPER_ANSWERER=fake`, tests only; slice 2 policy): answerer
+- **The fake doubles** (`HOPPER_ANSWERER=fake`, tests only; slice 2 policy): answerer
   `opus` drafts `fake opus answer`, confident unless the question says "unsure"; assessor
   `fable` escalates when it says "risky" or "hard"; real risk rules still apply.
 - **Models read the job's goal label.** In the demo both tiers cited a goal reading "chain
@@ -898,17 +898,17 @@ token and send any `Origin`. Cookies are no better here: they ignore ports, so a
    code, appears on any command line (`/proc` is readable by every user).
 3. **`POST /ui/login`** (form body `code`; Origin may be `null` — the code is the
    credential) — constant-time compare; on match: create a session (random 32-byte token,
-   expiry `JOB_HOPPER_UI_SESSION_HOURS`, default 12), rotate the code, and answer with a
+   expiry `HOPPER_UI_SESSION_HOURS`, default 12), rotate the code, and answer with a
    same-origin HTML page whose inline script stores the token in `localStorage`
    (`jh_session`) and goes to `/`. Mismatch → 403. `localStorage` is scoped to the exact
    origin incl. port, so no other server on `127.0.0.1` can read it. Sessions live in the store
    (`ui_sessions`, migration 6), so a daemon restart does not log the UI out; the row holds
    only the token's SHA-256 and the expiry, never the token. Expired rows are deleted on
    lookup. Logout deletes the row.
-4. **`GET /ui/api/session`** with header `x-jobhopper-session` → `{ authenticated,
+4. **`GET /ui/api/session`** with header `x-hopper-session` → `{ authenticated,
    expiresAt? }`. Without a valid session the page is read-only and says how to log in:
-   `bash ~/.local/lib/job-hopper/scripts/open-ui.sh`.
-5. **Mutations** — `POST` only, JSON body, all of: header `x-jobhopper-session` = a live
+   `bash ~/.local/lib/hopper/scripts/open-ui.sh`.
+5. **Mutations** — `POST` only, JSON body, all of: header `x-hopper-session` = a live
    session token (constant-time); `Origin` exactly `http://127.0.0.1:<port>` or
    `http://localhost:<port>`; `Sec-Fetch-Site`, when present, `same-origin`;
    `content-type: application/json`. The custom header is the CSRF defence (a cross-site
@@ -941,7 +941,7 @@ role: "Sign-in: none, password, local, OIDC and SAML" (Roles).
   environment.
 
 Blocked: other OS users acting, any web page (cross-site, DNS rebinding via the Host
-guard), and local processes that do not deliberately read job-hopper's or the browser's
+guard), and local processes that do not deliberately read hopper's or the browser's
 files.
 
 ## Job sources
@@ -991,7 +991,7 @@ A source error never stops the daemon or other sources; it is shown in status an
 
 ## GitHub source
 
-Config `~/.config/job-hopper/sources.yaml` (`JOB_HOPPER_SOURCES_FILE`), validated with zod;
+Config `~/.config/hopper/sources.yaml` (`HOPPER_SOURCES_FILE`), validated with zod;
 invalid → the source is `error` with the message, nothing is pulled.
 
 ```yaml
@@ -1013,7 +1013,7 @@ github:
   recentComments: 10    # comments passed into the job's context
   projects: {}          # per repo, optional — see "Priority"
   # projects:
-  #   owner/job-hopper-sandbox:
+  #   owner/hopper-sandbox:
   #     owner: owner
   #     number: 3
   #     mode: field         # field | rank
@@ -1058,7 +1058,7 @@ triggers a decision. Running jobs keep their priority.
 body, then a block:
 
 ```
-[job-hopper issue context]
+[hopper issue context]
 repo: owner/repo · issue: #N · url: …
 title: …
 labels: a, b · author: owner
@@ -1069,7 +1069,7 @@ recent comments (oldest first, up to recentComments; only allowlisted authors, n
 [how to report on your issue]
 Your issue is $HOPPER_ISSUE_URL (repo $HOPPER_REPO, number $HOPPER_ISSUE_NUMBER).
 To comment on it: gh issue comment "$HOPPER_ISSUE_NUMBER" -R "$HOPPER_REPO" --body "$(printf '%s\n%s' "$HOPPER_COMMENT_MARKER" "<your text>")"
-Always start your comments with $HOPPER_COMMENT_MARKER. job-hopper posts your status, questions and result for you.
+Always start your comments with $HOPPER_COMMENT_MARKER. hopper posts your status, questions and result for you.
 Do not close this issue and do not use "Closes #N" — closing the issue cancels you.
 ```
 
@@ -1077,7 +1077,7 @@ Size caps: body ≤ 64 000 chars, context block ≤ 16 000 chars (comments trunc
 
 Job environment, set on the job's herdr tab with `herdr tab create --env`:
 - `HOPPER_ISSUE_URL`, `HOPPER_REPO`, `HOPPER_ISSUE_NUMBER`, `HOPPER_ISSUE_TITLE`
-- `HOPPER_COMMENT_MARKER` = `<!-- job-hopper v1 kind=job-comment -->`
+- `HOPPER_COMMENT_MARKER` = `<!-- hopper v1 kind=job-comment -->`
 - `HOPPER_JOB_ID`, added by the herdr-claude executor from `ctx.job.id`
 
 The herdr-claude payload gains `env?: Record<string, string>`: keys must match
@@ -1119,9 +1119,9 @@ issue context block ends at the comments list, with no footer. A question goes t
 the UI and the Grok Bot routine webhook, never onto the issue; a reply on the issue is not an
 answer.
 
-Comments the hopper posted before this rule start with a hidden marker line (`<!-- job-hopper v1
+Comments the hopper posted before this rule start with a hidden marker line (`<!-- hopper v1
 kind=… -->`). They remain on issues, so the context filter still drops any comment carrying the
-`<!-- job-hopper v1 ` prefix (and, in app mode, any by the bot).
+`<!-- hopper v1 ` prefix (and, in app mode, any by the bot).
 
 | report | on GitHub |
 |--------|-----------|
@@ -1139,7 +1139,7 @@ its lines; since phase 5 slice 4 the daemon's plugins-file migration drops the k
 script is gone).
 
 A failure never goes to the issue as text. It is one stderr line in the daemon log
-(`job-hopper: job <id> failed (<issue url>): <error>`, `src/engine/failure-log.ts`), the job's
+(`hopper: job <id> failed (<issue url>): <error>`, `src/engine/failure-log.ts`), the job's
 `error` in `/api/jobs`, and the `job.failed` row (with its error) in the UI event feed.
 
 **Signals (check):** per active job, `getIssue`:
@@ -1148,7 +1148,7 @@ A failure never goes to the issue as text. It is one stderr line in the daemon l
 - **Except the job's own pull request** (issue #38): a closed issue whose last close event's closer
   is a merged pull request opened at or after the job's `createdAt` gives no signal — that is the
   job's work landing, and the job still has to install and verify. It runs on and ends as it
-  reports (`finished` on `JOB_HOPPER_DONE`). `closingPullRequest` asks GraphQL
+  reports (`finished` on `HOPPER_DONE`). `closingPullRequest` asks GraphQL
   (`src/sources/github/closer.ts`); a pull request opened before the job, a person, or a commit
   closing the issue cancels as above; a permanent error asking counts as "not its own".
 - `hopper:backburner` on the issue of a waiting (`queued`/`held`) job → `cancel` (`backburner`);
@@ -1166,7 +1166,7 @@ A failure never goes to the issue as text. It is one stderr line in the daemon l
 
 ## Webhooks from a file
 
-`~/.config/job-hopper/webhooks.yaml` (`JOB_HOPPER_WEBHOOKS_FILE`):
+`~/.config/hopper/webhooks.yaml` (`HOPPER_WEBHOOKS_FILE`):
 
 ```yaml
 version: 1
@@ -1174,7 +1174,7 @@ webhooks:
   - name: grok-bot
     url: http://127.0.0.1:<port>/hook
     events: ["question.escalated", "job.finished", "job.failed"]   # or ["*"]
-    secret: "<hex>"              # or secretFile: ~/.config/job-hopper/grok-bot.secret
+    secret: "<hex>"              # or secretFile: ~/.config/hopper/grok-bot.secret
     active: true
 ```
 
@@ -1219,15 +1219,15 @@ validates every event a test emits.
 
 ## Configuration added (env)
 
-`JOB_HOPPER_SOURCES_FILE` and `JOB_HOPPER_GH_BIN` were removed in phase 5 slice 4 (sources.yaml
+`HOPPER_SOURCES_FILE` and `HOPPER_GH_BIN` were removed in phase 5 slice 4 (sources.yaml
 folded into plugins.yaml `jobSources`; the gh bin is github-gh's `bin` option).
 
 | var | default |
 |-----|---------|
-| `JOB_HOPPER_SOURCES_FILE` | `~/.config/job-hopper/sources.yaml` |
-| `JOB_HOPPER_WEBHOOKS_FILE` | `~/.config/job-hopper/webhooks.yaml` |
-| `JOB_HOPPER_GH_BIN` | `gh` |
-| `JOB_HOPPER_UI_SESSION_HOURS` | `12` |
+| `HOPPER_SOURCES_FILE` | `~/.config/hopper/sources.yaml` |
+| `HOPPER_WEBHOOKS_FILE` | `~/.config/hopper/webhooks.yaml` |
+| `HOPPER_GH_BIN` | `gh` |
+| `HOPPER_UI_SESSION_HOURS` | `12` |
 
 ## Construction contract added
 
@@ -1295,14 +1295,14 @@ inbound webhook to the laptop.
 
 ## App configuration (files the owner's one click produces)
 
-`~/.config/job-hopper/github-app.json` (mode 600):
+`~/.config/hopper/github-app.json` (mode 600):
 
 ```json
-{ "version": 1, "appId": 123456, "slug": "job-hopper-<owner>",
-  "botLogin": "job-hopper-<owner>[bot]", "clientId": "Iv23…",
-  "htmlUrl": "https://github.com/apps/job-hopper-<owner>",
-  "owner": "<owner>", "privateKeyFile": "~/.config/job-hopper/github-app.pem",
-  "webhookSecretFile": "~/.config/job-hopper/github-app-webhook.secret",
+{ "version": 1, "appId": 123456, "slug": "hopper-<owner>",
+  "botLogin": "hopper-<owner>[bot]", "clientId": "Iv23…",
+  "htmlUrl": "https://github.com/apps/hopper-<owner>",
+  "owner": "<owner>", "privateKeyFile": "~/.config/hopper/github-app.pem",
+  "webhookSecretFile": "~/.config/hopper/github-app-webhook.secret",
   "createdAt": "ISO" }
 ```
 
@@ -1381,11 +1381,11 @@ the app switches new pulls from gh to the app with no restart. Mechanism (B3): b
 are always constructed unless set to `false`, and each has `paused()`. Paused, a source only
 checks and reports its own active jobs. The gh source pauses while `auto` and the app file
 exists. The app source pauses while the file is missing or unreadable, with
-`detail.setup: "run bash ~/.local/lib/job-hopper/scripts/create-github-app.sh"`. It starts
+`detail.setup: "run bash ~/.local/lib/hopper/scripts/create-github-app.sh"`. It starts
 on its own once the file appears, and re-reads it when its mtime changes (so a `--force`
 recreate needs no restart).
 
-**The owner's live file (B1).** The installed `~/.config/job-hopper/sources.yaml` says
+**The owner's live file (B1).** The installed `~/.config/hopper/sources.yaml` says
 `enabled: true` (phase-3 starter). `install.sh` rewrites that exact starter line
 (`  enabled: true              # false: pull nothing from GitHub`) to `enabled: auto` once
 and says so. Any other value is left alone with a printed warning. The phase-4 starter
@@ -1410,7 +1410,7 @@ the key can mint tokens for every installed repo. The source's **token keeper** 
   missing or has under 15 min left, and **deletes orphan files** (no active job of this
   source). This is how terminal jobs' files go away (B5).
 - It also deletes the file on the final report.
-- `<dataDir>` is `~/.local/share/job-hopper`, outside the daemon's `PrivateTmp` and readable
+- `<dataDir>` is `~/.local/share/hopper`, outside the daemon's `PrivateTmp` and readable
   by the herdr panes.
 
 The path is deterministic from the issue URL, so it is in the job's env at ingest:
@@ -1420,7 +1420,7 @@ The path is deterministic from the issue URL, so it is in the job's env at inges
 | `HOPPER_ISSUE_URL`, `HOPPER_REPO`, `HOPPER_ISSUE_NUMBER`, `HOPPER_ISSUE_TITLE` | as phase 3 |
 | `HOPPER_COMMENT_MARKER` | as phase 3 (secondary identification) |
 | `HOPPER_TOKEN_FILE` | the job's token file (App source only) |
-| `HOPPER_COMMENT_CMD` | `~/.local/lib/job-hopper/scripts/hopper-comment` (App source only, absolute path) |
+| `HOPPER_COMMENT_CMD` | `~/.local/lib/hopper/scripts/hopper-comment` (App source only, absolute path) |
 | `HOPPER_GITHUB_API` | API base URL (default `https://api.github.com`; tests point it at a fake) |
 | `HOPPER_TOKEN_WAIT_MS` | how long `hopper-comment` waits for the token file (default 30000; tests) |
 | `HOPPER_JOB_ID` | added by the herdr executor |
@@ -1436,7 +1436,7 @@ The path is deterministic from the issue URL, so it is in the job's env at inges
 - Node built-ins only.
 
 The App source's context block replaces the `gh issue comment` instruction with: "To comment
-on your issue: `"$HOPPER_COMMENT_CMD" "<your text>"` (posts as the job-hopper app). **Never
+on your issue: `"$HOPPER_COMMENT_CMD" "<your text>"` (posts as the hopper app). **Never
 comment with `gh`**: it posts as the owner, and a comment from them after a question reads as
 their answer." (N5: panes are still logged in to `gh` as the owner.)
 
@@ -1446,7 +1446,7 @@ source, whose job comments ran on the owner's full `gh` login.
 
 ## The manifest-flow helper (`scripts/create-github-app.sh`)
 
-`bash ~/.local/lib/job-hopper/scripts/create-github-app.sh [--name <app-name>] [--owner
+`bash ~/.local/lib/hopper/scripts/create-github-app.sh [--name <app-name>] [--owner
 <login>] [--no-webhook] [--force]` runs `scripts/create-github-app.ts`:
 
 1. Refuses if `github-app.json` exists (unless `--force`).
@@ -1475,10 +1475,10 @@ source, whose job comments ran on the owner's full `gh` login.
 Manifest:
 
 ```json
-{ "name": "job-hopper-<owner>",
+{ "name": "hopper-<owner>",
   "url": "https://github.com/<owner>",
-  "description": "Pulls jobs for job-hopper from issues labelled hopper.",
-  "hook_attributes": { "url": "https://example.invalid/job-hopper-webhook", "active": false },
+  "description": "Pulls jobs for hopper from issues labelled hopper.",
+  "hook_attributes": { "url": "https://example.invalid/hopper-webhook", "active": false },
   "redirect_url": "http://127.0.0.1:<port>/callback",
   "public": false,
   "default_permissions": { "issues": "write", "metadata": "read", "organization_projects": "read" },
@@ -1499,12 +1499,12 @@ Manifest:
   instead (as built; `--owner` only sets the owner login used in the name and homepage).
 - `privateKeyFile` / `webhookSecretFile` are written as absolute paths.
 
-Base URLs are overridable (`JOB_HOPPER_GITHUB_WEB`, `JOB_HOPPER_GITHUB_API`) so tests run the
+Base URLs are overridable (`HOPPER_GITHUB_WEB`, `HOPPER_GITHUB_API`) so tests run the
 whole flow against a fake GitHub. `--no-open` skips `xdg-open`.
 
 ## The owner's clicks (also in the summary)
 
-1. Run `bash ~/.local/lib/job-hopper/scripts/create-github-app.sh`. The browser opens on
+1. Run `bash ~/.local/lib/hopper/scripts/create-github-app.sh`. The browser opens on
    GitHub's "Create GitHub App for <owner>" page, prefilled.
 2. Click **Create GitHub App for <owner>**. The browser returns to `127.0.0.1` with
    "App created" and an **Install** link; the terminal prints the same link.
@@ -1513,7 +1513,7 @@ whole flow against a fake GitHub. `--no-open` skips `xdg-open`.
 4. Nothing else: within one sync (60 s) the `github-app` source shows `ok` with the
    installed repos, and the `gh` source stops discovering (auto). Restarting is not needed.
 
-To add or remove repos later: https://github.com/settings/installations → job-hopper →
+To add or remove repos later: https://github.com/settings/installations → hopper →
 Configure.
 
 ## Configuration added
@@ -1524,8 +1524,8 @@ github:
   enabled: auto            # auto | true | false — auto: on only while no GitHub App is configured
   # … phase-3 keys …
 githubApp:
-  enabled: true            # still needs ~/.config/job-hopper/github-app.json (create-github-app.sh)
-  appFile: ~/.config/job-hopper/github-app.json
+  enabled: true            # still needs ~/.config/hopper/github-app.json (create-github-app.sh)
+  appFile: ~/.config/hopper/github-app.json
   repos: []                # optional extra restriction inside the installations
   authors: [owner]        # required, at least one login; never the app's bot
   label: hopper
@@ -1565,8 +1565,8 @@ main.ts seams                    AppSeams.githubApp?: GitHubApi (tests) beside .
   from `sources.yaml`. `scripts/migrate-sources-yaml.ts` is install's sources step: it writes
   the starter when the file is absent, and migrates the phase-3 starter line to `auto`.
 - **`appFile` default:** `github-app.json` next to `sources.yaml` (the same
-  `~/.config/job-hopper/github-app.json` once installed; tests never see the real one).
-- **`JOB_HOPPER_GITHUB_API`** (env, optional) is the API base for the App adapter, the manifest
+  `~/.config/hopper/github-app.json` once installed; tests never see the real one).
+- **`HOPPER_GITHUB_API`** (env, optional) is the API base for the App adapter, the manifest
   helper and the jobs' `HOPPER_GITHUB_API`. One name for one concept. `createGitHubAppApi`
   takes `clock` as well.
 - **Pause rules, as built:**
@@ -1599,7 +1599,7 @@ schema change, no domain event; in-memory only.
   each matching event, so a file created later applies without a restart.
   Absent: silent no-op. Present but missing a variable or unreadable: one warning
   per event, skipped. Mode readable by group/other: one warning per process.
-- Request: `Authorization: Bearer <key>`, JSON body `{ source: 'job-hopper', kind, at, jobId,
+- Request: `Authorization: Bearer <key>`, JSON body `{ source: 'hopper', kind, at, jobId,
   issueTitle, issueUrl, question, questionId, answerUrl? }` (title/url from the job's source
   ref, else null).
   200 = a run started.
@@ -1610,7 +1610,7 @@ schema change, no domain event; in-memory only.
 - `createGrokBotNotifier({ name, path, logger, baseMs?, timeoutMs? })` → `Notifier`; the job's
   title and url come from `events.job(id)`. `AppSeams.grokbotBaseMs` lets tests shorten the backoff.
 
-`JOB_HOPPER_GROKBOT_WEBHOOK_FILE` was this section's env var; removed in slice 5 ("Settled in slice 5").
+`HOPPER_GROKBOT_WEBHOOK_FILE` was this section's env var; removed in slice 5 ("Settled in slice 5").
 
 ## Phase 5 — every part is a plugin (2026-10-03, in progress)
 
@@ -1690,7 +1690,7 @@ A plugin is one ES module — `.ts` run by Node's type stripping (erasable synta
 relative imports carry `.ts`) or `.js` — with a default export:
 
 ```ts
-import type { PluginDefinition } from 'job-hopper/plugin'; // type-only, erased at runtime
+import type { PluginDefinition } from 'hopper/plugin'; // type-only, erased at runtime
 export default {
   id: 'always-proceed',
   role: 'router',
@@ -1720,17 +1720,17 @@ export default {
 ### Where plugins live, and loading
 
 - Built-in: `src/plugins/<role>/<id>/index.ts`, listed in `src/plugins/builtin.ts`.
-- Custom: `<plugin dir>/<id>/index.ts` (`JOB_HOPPER_PLUGIN_DIR`, no default), then the store installs
+- Custom: `<plugin dir>/<id>/index.ts` (`HOPPER_PLUGIN_DIR`, no default), then the store installs
   (`<work dir>/plugin-store/installed/<id>/`, "Plugin store"), loaded by
   dynamic `import()` at start and on rescan. Same contract and validation. A custom id equal
   to a built-in id is refused. Plugin dir readable by group/other → warning.
 - Types for out-of-tree authors: `install.sh` writes `<plugin dir>/tsconfig.json`
-  mapping `job-hopper/plugin` to `<install>/src/plugins/sdk.ts`. `npm run plugin:check <dir>`
+  mapping `hopper/plugin` to `<install>/src/plugins/sdk.ts`. `npm run plugin:check <dir>`
   type-checks with that mapping, then runs the real loader and `detect`.
   `examples/plugins/<role>/` holds one minimal runnable plugin per role. Author guide:
   `docs/plugins.md`.
 
-### Configuration — `~/.config/job-hopper/plugins.yaml`
+### Configuration — `~/.config/hopper/plugins.yaml`
 
 The truth for which instance fills which role. Mode 600, owner-editable, mtime-watched (5 s).
 Live roles (router, answerer, assessor) swap between calls; restart roles show
@@ -1743,11 +1743,11 @@ answerer:  { name: opus, plugin: claude-cli, options: { model: opus } }
 assessor:  { name: fable, plugin: claude-cli-assessor, options: { model: fable } }
 executors: [ { name: herdr-claude, plugin: herdr-claude, options: { cwd: ~/workbench/app-workflows } }, { name: test, plugin: test } ]
 jobSources:
-  - { name: github, plugin: github-gh, options: { enabled: auto, bin: gh, appFile: ~/.config/job-hopper/github-app.json, authors: [owner], label: hopper } }
-  - { name: github-app, plugin: github-app, options: { appFile: ~/.config/job-hopper/github-app.json, authors: [owner], label: hopper } }
+  - { name: github, plugin: github-gh, options: { enabled: auto, bin: gh, appFile: ~/.config/hopper/github-app.json, authors: [owner], label: hopper } }
+  - { name: github-app, plugin: github-app, options: { appFile: ~/.config/hopper/github-app.json, authors: [owner], label: hopper } }
 machines:  { name: local, plugin: local, options: { lanes: 4 } }
 usageSources: []
-notifiers: [ { name: grok-bot, plugin: grokbot-routine, options: { envFile: ~/.config/job-hopper/grokbot-webhook.env } } ]
+notifiers: [ { name: grok-bot, plugin: grokbot-routine, options: { envFile: ~/.config/hopper/grokbot-webhook.env } } ]
 ```
 
 The `jobSources` options are the old sources.yaml blocks' keys (design "GitHub source", "Phase 4
@@ -1761,8 +1761,8 @@ explicitly; the example shows a few.
   compatibility path); env keeps process settings only — as built, "Settled in slice 4".
 - **Migration runs in the daemon, in the slice that removes each input:** on boot with no
   `plugins.yaml`, build it from `sources.yaml` and the current env, write it 600, rename the
-  inputs `*.migrated`. Any leftover `JOB_HOPPER_*` var no longer read → a loud boot warning.
-  `systemd/job-hopper.service` changes in the same slice.
+  inputs `*.migrated`. Any leftover `HOPPER_*` var no longer read → a loud boot warning.
+  `systemd/hopper.service` changes in the same slice.
 - **Router mode** (shadow/active) is decider state, not a plugin option: stays live in the
   store, `settings.jevMode` → `routerMode` by store migration; toggled in the UI as today.
 
@@ -1857,7 +1857,7 @@ stored old events are not rewritten (read raw by version; v1 schemas stay in doc
   with its default options (`{}` parsed); a plugin whose options have no defaults shows
   `needs-setup`. The configured instance is detected with its own options.
 - **Router context carries the router mode.** `create(ctx, options)` gets
-  `ctx.routerMode()` for the router role (`RoleContext` in `sdk.ts`): Jev is told job-hopper's
+  `ctx.routerMode()` for the router role (`RoleContext` in `sdk.ts`): Jev is told hopper's
   mode, as before. Other roles will add their own context fields.
 - **Fallback, all paths:** unknown plugin, invalid options, detection not `available`,
   `create` throwing → `pass-through` stands in (advice `source: fallback`, reason `router
@@ -1866,15 +1866,15 @@ stored old events are not rewritten (read raw by version; v1 schemas stay in doc
   `/api/router` while either holds, or while the router's own last advice was `source:
   fallback` (jev-router's shim failing); it clears on the next real advice.
 - **plugins.yaml in slice 1** (router part superseded by "Router selection"): no file, or a file without `router` → the env-derived instance
-  `{ name: jev, plugin: jev-router, options: { jevSrc: JOB_HOPPER_JEV_SRC, python:
-  JOB_HOPPER_PYTHON } }`. An invalid file → the last good router is kept (at start: the
+  `{ name: jev, plugin: jev-router, options: { jevSrc: HOPPER_JEV_SRC, python:
+  HOPPER_PYTHON } }`. An invalid file → the last good router is kept (at start: the
   env-derived one) and the error is in `/api/plugins` `config.error` — the `webhooks.yaml`
   rule. Nothing is written; the daemon-side migration is slice 4. File readable by
   group/other → warning. Unknown top-level keys are refused; the later sections are accepted
   unread.
-- **`JOB_HOPPER_JEV_ADVISOR`** (removed by "Router selection") accepted only `router` (the installed unit sets it). `fake` is a
+- **`HOPPER_JEV_ADVISOR`** (removed by "Router selection") accepted only `router` (the installed unit sets it). `fake` is a
   test double at the `Router` seam (`AppSeams.router`), not a plugin and not configurable.
-  `JOB_HOPPER_JEV_MODE` and `JOB_HOPPER_JEV_CHEAP_BOOST` keep their names until slice 4 removes
+  `HOPPER_JEV_MODE` and `HOPPER_JEV_CHEAP_BOOST` keep their names until slice 4 removes
   part-choosing env; they feed `routerMode` and `routerCheapBoost`.
 - **Scratch dir** is `<dataDir>/plugin-data/<id>` — not under the plugin dir, which holds only
   plugin code. jev-router keeps writing `jev-runs.jsonl` in the data dir.
@@ -1897,7 +1897,7 @@ advisor only assesses questions, to decide whether they escalate to the owner. F
 it never routes. The router was `jev-router` only because the env named it.
 
 Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) and
-"`JOB_HOPPER_JEV_ADVISOR`":
+"`HOPPER_JEV_ADVISOR`":
 
 - **No router named in plugins.yaml** (no file, no `router` section, or an invalid file at
   start) → the host chooses one from what is detected: the first router plugin in catalogue
@@ -1908,10 +1908,10 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
 - **Named in plugins.yaml** → that instance, exactly; when it cannot run, pass-through stands in
   as a fallback, as before. Swapping is editing the `router` section (live, between calls).
 - `/api/plugins` `router.selection` is `file` or `detected`.
-- `JOB_HOPPER_JEV_SRC`, `JOB_HOPPER_PYTHON`, `JOB_HOPPER_JEV_ADVISOR` are removed (no
+- `HOPPER_JEV_SRC`, `HOPPER_PYTHON`, `HOPPER_JEV_ADVISOR` are removed (no
   compatibility path; a set one is ignored). Jev elsewhere than `~/workbench/jev-src/grok-bot-jev`
   → name `jev-router` with `jevSrc` in plugins.yaml. The installed unit no longer sets
-  `JOB_HOPPER_JEV_ADVISOR`.
+  `HOPPER_JEV_ADVISOR`.
 - Picking the router from the UI is slice 7 (`POST /ui/api/plugins` select), unchanged.
 
 ### Settled in slice 2 (2026-10-03)
@@ -1925,7 +1925,7 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
   string, `confident` boolean, `reason` string) and every assessment (`escalate` boolean,
   `reason` string) with zod. A malformed draft is an answerer error; `{"escalate": "false"}`,
   a missing field, `null`, a string, `{ error }`, a throw or the stage timeout is an assessor
-  error — both go to the human. Each call is bounded by `JOB_HOPPER_ANSWER_TIMEOUT_MS` in the
+  error — both go to the human. Each call is bounded by `HOPPER_ANSWER_TIMEOUT_MS` in the
   service (and aborted), whatever the plugin's own timeout.
 - **Attempt shape.** One flat `QuestionAttempt`, so old rows type-check: `tier` = who (instance
   name or `human`), new optional `role` (`answerer` | `assessor` | `human`; absent before slice
@@ -1946,9 +1946,9 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
   straight to the human; `/api/plugins` shows `instance: null`); absent = the env-derived one;
   `assessor: null` is refused (the slot is never empty).
 - **Env-derived instances** (no section in plugins.yaml): answerer `{ name: opus, plugin:
-  claude-cli, options: { bin: JOB_HOPPER_CLAUDE_BIN, model: JOB_HOPPER_ANSWER_MODEL_A, timeoutMs:
-  JOB_HOPPER_ANSWER_TIMEOUT_MS } }`, assessor `{ name: fable, plugin: claude-cli-assessor,
-  options: { bin, model: JOB_HOPPER_ANSWER_MODEL_B, timeoutMs } }`. `JOB_HOPPER_ANSWERER=fake`
+  claude-cli, options: { bin: HOPPER_CLAUDE_BIN, model: HOPPER_ANSWER_MODEL_A, timeoutMs:
+  HOPPER_ANSWER_TIMEOUT_MS } }`, assessor `{ name: fable, plugin: claude-cli-assessor,
+  options: { bin, model: HOPPER_ANSWER_MODEL_B, timeoutMs } }`. `HOPPER_ANSWERER=fake`
   puts the fake doubles (`src/questions/fake-answerer.ts`) at the seams; `AppSeams.answerer` /
   `.assessor` (tests) win over both. Neither is a plugin; `/api/plugins` still reports the host.
 - **Failure, as built.** Answerer unknown, invalid options, not detected or failing `create` →
@@ -1976,7 +1976,7 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
   `src/plugins/executor/herdr-claude/` and `src/plugins/executor/test/`; the adapters stay in
   `src/executors/`. `EXECUTOR_NAMES` is gone: an executor is a plugin instance and jobs name the
   instance (`spec.executor`). Custom executor plugins load like any other (tested end to end).
-- **herdr-claude options:** `bin` (`herdr`), `claudeBin` (`claude`), `session` (`job-hopper`;
+- **herdr-claude options:** `bin` (`herdr`), `claudeBin` (`claude`), `session` (`hopper`;
   `default` refused), `args` (`[--dangerously-skip-permissions]`), `cwd`
   (`~/workbench/app-workflows`, `~` expanded), `trustWorkdir` (true), `pollMs` (1000),
   `idleQuestionMs` (20000). Detection: `which bin`, then `which claudeBin` — never `--version`,
@@ -1988,14 +1988,14 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
   arguments (`--allowedTools`, `--permission-mode`, `--mcp-config`, …), per instance. Revisit
   `kind` when a second parser exists.
 - **Herdr session is an instance option**, not process env: two herdr-claude instances may use two
-  sessions. The env-derived instance takes `JOB_HOPPER_HERDR_SESSION`. This amends "env keeps …
+  sessions. The env-derived instance takes `HOPPER_HERDR_SESSION`. This amends "env keeps …
   herdr session" in "Configuration — plugins.yaml"; slice 4 drops the var with the rest.
 - **plugins.yaml `executors:`** — 1..n instances, names unique (refused otherwise: a job names
-  one). No section → env-derived instances, one per `JOB_HOPPER_EXECUTORS` name, each an
-  instance of the plugin with that id; `herdr-claude` takes `JOB_HOPPER_HERDR_BIN`,
-  `JOB_HOPPER_CLAUDE_BIN`, `JOB_HOPPER_HERDR_SESSION`, `JOB_HOPPER_CLAUDE_ARGS`,
-  `JOB_HOPPER_CLAUDE_CWD`, `JOB_HOPPER_TRUST_WORKDIR`, `JOB_HOPPER_HERDR_POLL_MS`,
-  `JOB_HOPPER_IDLE_QUESTION_MS`. `JOB_HOPPER_EXECUTORS` accepts any instance-shaped name; an
+  one). No section → env-derived instances, one per `HOPPER_EXECUTORS` name, each an
+  instance of the plugin with that id; `herdr-claude` takes `HOPPER_HERDR_BIN`,
+  `HOPPER_CLAUDE_BIN`, `HOPPER_HERDR_SESSION`, `HOPPER_CLAUDE_ARGS`,
+  `HOPPER_CLAUDE_CWD`, `HOPPER_TRUST_WORKDIR`, `HOPPER_HERDR_POLL_MS`,
+  `HOPPER_IDLE_QUESTION_MS`. `HOPPER_EXECUTORS` accepts any instance-shaped name; an
   unknown one is an unavailable executor, not a boot failure. Slice 4 removes these vars.
 - **Restart role:** executors are built once in `host.start()`. A later change of the section
   (or its removal, when the env-derived set differs) → `/api/plugins` `executors.pending =
@@ -2040,7 +2040,7 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
 - **Detection.** github-gh: `which bin`, then `gh auth status` through the new kit method
   `succeeds(bin, args)` (exit 0 within 5 s, output discarded) — `needs-setup`, command `gh auth login`,
   when it fails. github-app: the app file exists → `available`, else `needs-setup`, command
-  `bash ~/.local/lib/job-hopper/scripts/create-github-app.sh`. Never a paid call. **A job source whose
+  `bash ~/.local/lib/hopper/scripts/create-github-app.sh`. Never a paid call. **A job source whose
   detection says needs-setup is still built** (`instantiate(…, needsSetupRuns)`): a restart role
   cannot re-detect, and both GitHub sources heal on their own (gh after `gh auth login`, the app
   source when its file appears — phase 4's no-restart switch). `unavailable` (gh not installed)
@@ -2052,13 +2052,13 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
   `rerunnable`; `RoleContext['machine-source']` = `executors()` (asked on every list, so
   seam executors registered after the host count).
 - **The gh source's pause** no longer reads the app source's config: github-gh has its own `appFile`
-  (default `~/.config/job-hopper/github-app.json`; `null` never pauses). The migration writes the app
+  (default `~/.config/hopper/github-app.json`; `null` never pauses). The migration writes the app
   source's app file there, or `null` when `githubApp.enabled` was false — the phase-4 rule as before.
 - **Plugins-file migration** (`src/plugins/migrate.ts`, `ensurePluginsFile`), first thing in `startApp`:
   - plugins.yaml exists → nothing (never overwritten; a `sources.yaml` beside it → boot warning
     "no longer read").
   - else build every section: `answerer`/`assessor` (claude-cli `opus` / claude-cli-assessor `fable`,
-    `bin` = `CLAUDE_BIN`, models `ANSWER_MODEL_A/B`, `timeoutMs` = `JOB_HOPPER_ANSWER_TIMEOUT_MS`),
+    `bin` = `CLAUDE_BIN`, models `ANSWER_MODEL_A/B`, `timeoutMs` = `HOPPER_ANSWER_TIMEOUT_MS`),
     `executors` (one per `EXECUTORS` name; herdr-claude with `HERDR_BIN`, `CLAUDE_BIN`, `HERDR_SESSION`,
     `CLAUDE_ARGS`, `CLAUDE_CWD`, `TRUST_WORKDIR`, `HERDR_POLL_MS`, `IDLE_QUESTION_MS`), `jobSources`
     (sources.yaml's `github:` and `githubApp:` blocks as options — their YAML nodes, so comments
@@ -2067,7 +2067,7 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
     (`LOCAL_LANES`), `usageSources: []`. No `router` section: the router stays detected, as before.
     The removed vars keep their old validation and defaults; an invalid one, an unparseable
     sources.yaml or a block that is not a mapping → the boot fails loudly, nothing written or renamed.
-  - sources.yaml is `JOB_HOPPER_SOURCES_FILE` (read this once more) or `sources.yaml` beside plugins.yaml.
+  - sources.yaml is `HOPPER_SOURCES_FILE` (read this once more) or `sources.yaml` beside plugins.yaml.
   - written mode 600 to a temp file, then `link`ed into place (fails rather than replace a file that
     appeared meanwhile), then sources.yaml → `sources.yaml.migrated` (`.migrated-<ms>` if taken).
   - nothing to migrate → the same builder with no inputs: the built-in instances (github-gh
@@ -2076,7 +2076,7 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
     allowlist), so both stay in `error` until plugins.yaml sets it. So there is always one file. An absent section later means those same
     built-in instances (`builtinInstances`), not the env.
 - **Env keeps process settings only:** host, port, db, tick, router mode (seed) and cheap boost, the
-  decider's limits and lane idle grace, webhook base, `JOB_HOPPER_ANSWER_TIMEOUT_MS` (kept: it is the
+  decider's limits and lane idle grace, webhook base, `HOPPER_ANSWER_TIMEOUT_MS` (kept: it is the
   question service's per-stage ceiling, a bound on every plugin whatever its own `timeoutMs` — the
   fail-closed containment, not a part's option), rules file, human renotify/timeout, resume boost,
   max questions, keep panes, webhooks file, Grok Bot env file (removed in slice 5), UI session hours, plugin dir,
@@ -2086,7 +2086,7 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
   `ANSWER_MODEL_A`/`_B`, `LOCAL_LANES`, `SOURCES_FILE`, `GH_BIN`, `GITHUB_API` (the daemon's: now
   github-app `apiUrl`; `scripts/create-github-app.ts` still reads it). Renamed: `JEV_MODE` →
   `ROUTER_MODE`, `JEV_CHEAP_BOOST` → `ROUTER_CHEAP_BOOST` (glossary: "Jev mode" is not a word).
-- **Leftover variables:** `loadConfig` puts every set `JOB_HOPPER_*` key it does not read into
+- **Leftover variables:** `loadConfig` puts every set `HOPPER_*` key it does not read into
   `config.leftoverEnv` unvalidated; `startApp` prints one `WARNING: set but no longer read …` line
   naming them all, on every boot, migration boot included.
 - **Command-bearing marks added:** github-gh `bin`, `appFile`, `defaultCwd`, `repoPaths`; github-app
@@ -2096,7 +2096,7 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
 - **Dropped keys:** the migration deletes `progressCommentSeconds` from both blocks (no progress
   comment exists since the T009 rule, 2026-10-03; the options schemas are strict), covering what
   `migrate-sources-yaml.ts` did for it at install.
-- **Unit file and install:** `systemd/job-hopper.service` sets only `JOB_HOPPER_HOST`, `_PORT`,
+- **Unit file and install:** `systemd/hopper.service` sets only `HOPPER_HOST`, `_PORT`,
   `_PLUGINS_FILE`, `_WEBHOOKS_FILE` (a test checks none is a leftover). `install.sh` no longer writes
   or edits sources.yaml (`scripts/migrate-sources-yaml.ts` is gone); when plugins.yaml is absent and
   an old unit is installed, it restarts the daemon once on the new code **under the old unit** and
@@ -2113,29 +2113,29 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
 
 | var | default |
 |-----|---------|
-| `JOB_HOPPER_HOST` | `127.0.0.1` |
-| `JOB_HOPPER_PORT` | `4790` |
-| `JOB_HOPPER_DB` | `~/.local/share/job-hopper/job-hopper.db` |
-| `JOB_HOPPER_TICK_MS` | `2000` |
-| `JOB_HOPPER_ROUTER_MODE` | `shadow` (initial router mode only; the stored setting wins once set) |
-| `JOB_HOPPER_SOFT_LIMIT` / `HARD_LIMIT` | `0.7` / `0.95` |
-| `JOB_HOPPER_ROUTER_CHEAP_BOOST` | `10` |
-| `JOB_HOPPER_WEBHOOK_BASE_MS` | `1000` |
-| `JOB_HOPPER_LANE_IDLE_GRACE_MS` | `5000` |
-| `JOB_HOPPER_ANSWER_TIMEOUT_MS` | `180000` — the question service's per-stage ceiling |
-| `JOB_HOPPER_RULES_FILE` | `~/.config/job-hopper/rules.md` |
-| `JOB_HOPPER_HUMAN_RENOTIFY_MS` / `HUMAN_TIMEOUT_MS` | `900000` / `86400000` |
-| `JOB_HOPPER_RESUME_BOOST` | `20` |
-| `JOB_HOPPER_MAX_QUESTIONS` | `5` |
-| `JOB_HOPPER_KEEP_PANES` | `false` |
-| `JOB_HOPPER_WEBHOOKS_FILE` | `~/.config/job-hopper/webhooks.yaml` |
-| `JOB_HOPPER_UI_SESSION_HOURS` | `12` |
-| `JOB_HOPPER_PLUGIN_DIR` | `~/.config/job-hopper/plugins` |
-| `JOB_HOPPER_PLUGINS_FILE` | `~/.config/job-hopper/plugins.yaml` |
-| `JOB_HOPPER_AUTH_FILE` | `~/.config/job-hopper/auth.yaml` (issue #39, "Sign-in: none, password, local, OIDC and SAML") |
-| `JOB_HOPPER_PUBLIC_URL` | unset (issue #39) |
-| `JOB_HOPPER_UPDATE_CHECK_MS` | `900000` — self-update check interval; `0` only when asked ("Self-update") |
-| `JOB_HOPPER_RESTART` | unset (detected) — `exit` or `respawn` after an update ("Self-update") |
+| `HOPPER_HOST` | `127.0.0.1` |
+| `HOPPER_PORT` | `4790` |
+| `HOPPER_DB` | `~/.local/share/hopper/hopper.db` |
+| `HOPPER_TICK_MS` | `2000` |
+| `HOPPER_ROUTER_MODE` | `shadow` (initial router mode only; the stored setting wins once set) |
+| `HOPPER_SOFT_LIMIT` / `HARD_LIMIT` | `0.7` / `0.95` |
+| `HOPPER_ROUTER_CHEAP_BOOST` | `10` |
+| `HOPPER_WEBHOOK_BASE_MS` | `1000` |
+| `HOPPER_LANE_IDLE_GRACE_MS` | `5000` |
+| `HOPPER_ANSWER_TIMEOUT_MS` | `180000` — the question service's per-stage ceiling |
+| `HOPPER_RULES_FILE` | `~/.config/hopper/rules.md` |
+| `HOPPER_HUMAN_RENOTIFY_MS` / `HUMAN_TIMEOUT_MS` | `900000` / `86400000` |
+| `HOPPER_RESUME_BOOST` | `20` |
+| `HOPPER_MAX_QUESTIONS` | `5` |
+| `HOPPER_KEEP_PANES` | `false` |
+| `HOPPER_WEBHOOKS_FILE` | `~/.config/hopper/webhooks.yaml` |
+| `HOPPER_UI_SESSION_HOURS` | `12` |
+| `HOPPER_PLUGIN_DIR` | `~/.config/hopper/plugins` |
+| `HOPPER_PLUGINS_FILE` | `~/.config/hopper/plugins.yaml` |
+| `HOPPER_AUTH_FILE` | `~/.config/hopper/auth.yaml` (issue #39, "Sign-in: none, password, local, OIDC and SAML") |
+| `HOPPER_PUBLIC_URL` | unset (issue #39) |
+| `HOPPER_UPDATE_CHECK_MS` | `900000` — self-update check interval; `0` only when asked ("Self-update") |
+| `HOPPER_RESTART` | unset (detected) — `exit` or `respawn` after an update ("Self-update") |
 
 ### Settled in slice 5 (2026-10-03)
 
@@ -2145,7 +2145,7 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
   issue title and url). `/api/plugins` `notifiers` has the restart-role shape (`instances`,
   `pending`). `PluginHost.startNotifiers(events)` / `stopNotifiers()` are called by `main.ts`
   where the Grok Bot notifier used to start and stop (stop awaits in-flight posts).
-- **Built-in `grokbot-routine`**, one option `envFile` (default `~/.config/job-hopper/grokbot-webhook.env`),
+- **Built-in `grokbot-routine`**, one option `envFile` (default `~/.config/hopper/grokbot-webhook.env`),
   marked command-bearing: the file holds the bearer key and the URL it is sent to, so a UI session
   must not point it elsewhere. Behaviour unchanged (questions only, read at each event, retries).
   Logs go through `ctx.logger` (warn for what was `console.error`).
@@ -2159,17 +2159,17 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
 - **Migration, both upgrade orders end with Grok Bot configured:**
   - no plugins.yaml (slice 5 installed over the pre-slice-4 unit): the plugins-file migration writes
     `notifiers: [ { name: grok-bot, plugin: grokbot-routine, options: { envFile } } ]`, `envFile` =
-    `JOB_HOPPER_GROKBOT_WEBHOOK_FILE` if set (read this once more), else `grokbot-webhook.env`
+    `HOPPER_GROKBOT_WEBHOOK_FILE` if set (read this once more), else `grokbot-webhook.env`
     beside plugins.yaml. The variable alone counts as a migration.
   - plugins.yaml without `notifiers` (slice 4 installed first): **chosen: the built-in instance for
     an absent section**, not a section-level rewrite. It is the rule every section already follows
     since slice 4 ("an absent section means the built-in instances"), it writes nothing into
     the owner's file, and it cannot race an edit. The built-in `grok-bot` instance's `envFile` is
     `grokbot-webhook.env` beside plugins.yaml — never a hardcoded home path. Cost, accepted: a
-    non-default `JOB_HOPPER_GROKBOT_WEBHOOK_FILE` beside an existing plugins.yaml is not carried
+    non-default `HOPPER_GROKBOT_WEBHOOK_FILE` beside an existing plugins.yaml is not carried
     over; the leftover-variable warning names it, and the fix is a `notifiers` section. The
     installed unit never set it. `notifiers: []` = no notifiers.
-- **`JOB_HOPPER_GROKBOT_WEBHOOK_FILE` removed** (no compatibility path; leftover warning). `src/grokbot/`
+- **`HOPPER_GROKBOT_WEBHOOK_FILE` removed** (no compatibility path; leftover warning). `src/grokbot/`
   moved to `src/plugins/notifier/grokbot-routine/`.
 - **No store migration.** Nothing was ever stored for Grok Bot.
 
@@ -2193,9 +2193,9 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
   may start real work). Needs the dev dependencies: run it from a checkout, not the install (which
   is `npm ci --omit=dev`) — it says so when typescript is missing.
 - **Plugin tsconfig:** `install.sh` runs `scripts/write-plugin-tsconfig.ts "$PLUGIN_DIR"
-  "$DEST/src/plugins/sdk.ts"` (`PLUGIN_DIR` = `JOB_HOPPER_PLUGIN_DIR`; skipped
+  "$DEST/src/plugins/sdk.ts"` (`PLUGIN_DIR` = `HOPPER_PLUGIN_DIR`; skipped
   when it is unset), mode 600, the dir created 700. **No-clobber rule, chosen:** the
-  file starts with a job-hopper marker line and is rewritten on every install while that line is
+  file starts with a hopper marker line and is rewritten on every install while that line is
   there (an install can move the SDK); without it the file is the owner's and is kept byte for
   byte, with a note. Deleting the line is how the owner takes it over. The install has no
   `@types/node`, so `node:` imports are untyped in an editor unless the author adds it.
@@ -2289,25 +2289,25 @@ attachedMachines:
 | `lanes` | — | its `maxLanes`, ≥ 1 |
 | `executors` | `[herdr-claude]` | executor instances that run there |
 | `label` | `name` | |
-| `session` | `job-hopper` | job-hopper's herdr session there; never `default` |
+| `session` | `hopper` | hopper's herdr session there; never `default` |
 | `hostKey` | — | the **pinned host key**, `<type> <base64>`; absent → the hopper does not connect ("Target authentication") |
 | `herdrBin` | `herdr` | **give the absolute path.** Each call is a fresh login shell there; on the laptop the shell env file is a symlink that every new pane's shell updates, and a call racing that update lost its PATH (`zsh:1: command not found: herdr`, exit 127, seen live) |
 
 **Reaching it** (authentication: "Target authentication" below; the argv here predates it). `createHerdrCliClient({ ssh: { target, controlDir } })` runs the same herdr argv as
 `ssh -F ~/.ssh/config -o BatchMode=yes -o ConnectTimeout=10 -o ControlMaster=auto -o ControlPath=<dataDir>/ssh/%C
 -o ControlPersist=60 -- <target> '<argv, POSIX single-quoted>'`. `-F` names the user's config only
-(`/dev/null` when there is none): under the job-hopper unit (PrivateTmp, so a user namespace) the
+(`/dev/null` when there is none): under the hopper unit (PrivateTmp, so a user namespace) the
 root-owned files in `/etc/ssh` look foreign-owned and ssh refuses them ("Bad owner or permissions",
 seen live 2026-10-04, issue #58), as the self-update mirror found before. The remote login shell must read
 POSIX single quotes (sh, bash, zsh; not fish). One shared connection per target (the probe and every
 job share it). ssh's own failure (exit 255) is `HerdrError` code `ssh`; herdr's JSON errors come back
 as they do locally. A unix socket path is capped at 108 bytes: `<dataDir>/ssh/` plus 40 hex chars
-must fit (`~/.local/share/job-hopper/ssh/…` does).
+must fit (`~/.local/share/hopper/ssh/…` does).
 
 **Online.** `herdr --session <session> status server` over ssh says `status: running`. Probed in the
 background at most every 30 s; `list()` never waits, so a machine that is off or asleep never stalls
 a Decision (every Decision awaits every machine source). Offline until
-the first probe answers. Transitions are logged once per reason (`job-hopper: attached machine
+the first probe answers. Transitions are logged once per reason (`hopper: attached machine
 laptop online (ssh laptop)` / `… offline: <reason>`). Offline → the decider gives it nothing; a
 waiting-answer job whose pane is there stays pinned (`resumeOn`) and waits.
 
@@ -2323,10 +2323,10 @@ resolved on this machine (`~` expanded here) and must exist on the attached one;
 `~/workbench/app-workflows` with its own checkouts. A missing cwd fails the job at `tab create`.
 
 **Preparing a machine:** `bash scripts/attach-machine.sh <ssh-target> [lanes]` — checks herdr and
-claude there, installs `systemd/job-hopper-herdr.service` there, `enable --now`s it, warns without
+claude there, installs `systemd/hopper-herdr.service` there, `enable --now`s it, warns without
 linger, confirms the session runs, and prints the plugins.yaml lines with the resolved `herdrBin`.
 
-**Verification:** `JOB_HOPPER_REAL_SSH=<target> npm test -- test/integration/attached-real.test.ts`
+**Verification:** `HOPPER_REAL_SSH=<target> npm test -- test/integration/attached-real.test.ts`
 runs a real Claude job there (throwaway session) through the composition root. Passed against
 `laptop` 2026-10-04.
 
@@ -2357,7 +2357,7 @@ executors:
   - { name: command, plugin: command }
 machines: { name: local, plugin: local, options: { lanes: 4, executors: [test, herdr-claude] } }
 attachedMachines:
-  - { name: box, docker: job-hopper-target, lanes: 1 }        # executors default: [command]
+  - { name: box, docker: hopper-target, lanes: 1 }        # executors default: [command]
 routing:
   - { name: commands to the box, match: { label: on-box }, set: { machine: box, executor: command } }
 ```
@@ -2368,7 +2368,7 @@ routing:
 | `executors` | `[command]` | `[herdr-claude]` for an ssh target |
 | `session`, `herdrBin` | — | refused on a container target: it has no herdr |
 
-**Reached** only through the hopper's **docker socket** (`JOB_HOPPER_DOCKER_HOST`, "Target authentication"):
+**Reached** only through the hopper's **docker socket** (`HOPPER_DOCKER_HOST`, "Target authentication"):
 `docker --host <it> exec …`; without it a container target stays offline.
 
 **Online** while `docker container inspect` says the container runs; a missing container is
@@ -2427,12 +2427,12 @@ carries on its command line `src/client/ssh-options.ts`: `PreferredAuthenticatio
 `GlobalKnownHostsFile=/dev/null`, `UpdateHostKeys=no`, `CheckHostIP=no`, `VerifyHostKeyDNS=no`, no
 agent, X11 or port forwarding, `BatchMode=yes`; then `-i <the hopper's key>`,
 `UserKnownHostsFile=<workdir>/ssh/known_hosts`, `HostKeyAlias=<target>`. The key is the mounted secret
-file `JOB_HOPPER_SSH_KEY_FILE` names (a variable is refused: ssh reads keys from files only; others
+file `HOPPER_SSH_KEY_FILE` names (a variable is refused: ssh reads keys from files only; others
 must not be able to read it). The known_hosts file holds one line per ssh target, written from each
 machine's `hostKey` whenever plugins.yaml changes; a machine without one, or two machines pinning
 different keys for one target, is never connected to (logged once). A target name is a plain name
 (`[A-Za-z0-9_.-]`, optionally `user@`). On the target the key is installed with `restrict` (no pty, no
-forwarding): `JOB_HOPPER_SSH_KEY_FILE=<key> bash scripts/attach-machine.sh <target>` adds it once and
+forwarding): `HOPPER_SSH_KEY_FILE=<key> bash scripts/attach-machine.sh <target>` adds it once and
 prints the entry with its `hostKey` — the key the user's own `~/.ssh/known_hosts` holds for the
 target, never one learned from a connection. Adding a machine from the UI pins the same way
 (`resolveSshTarget`): a target the user has never connected to by hand is refused. The target's own
@@ -2441,13 +2441,13 @@ that does: `test/integration/ssh-auth-real.test.ts`).
 
 **docker** (`src/executors/docker.ts`). Docker's socket has no authentication: whoever opens it is root
 on this machine, and the root daemon's socket opens to the whole docker group. So the hopper uses only
-`JOB_HOPPER_DOCKER_HOST=unix://<path>`, checked before every call: a socket owned by its user, mode
+`HOPPER_DOCKER_HOST=unix://<path>`, checked before every call: a socket owned by its user, mode
 without group or other bits, in a directory owned by its user that others may not write. There is no
 default. Every call is `docker --host <it> …` with no `DOCKER_*` variable in its environment. The
 daemon's unit makes the root socket inaccessible (`InaccessiblePaths=-/run/docker.sock
 -/var/run/docker.sock`). In practice the socket is the **docker socket proxy**: `bash
 scripts/docker-proxy.sh <container>...` runs `wollomatic/socket-proxy` (pinned by digest; no network,
-read-only, no capabilities, restarted with docker) on `~/.local/state/job-hopper/docker/docker.sock`
+read-only, no capabilities, restarted with docker) on `~/.local/state/hopper/docker/docker.sock`
 (mode 600), allowing `HEAD /_ping`, `GET /_ping`, `GET /v1.N/containers/<target>/json`,
 `POST /v1.N/containers/<target>/exec`, `POST /v1.N/exec/<id>/start`, `GET /v1.N/exec/<id>/json` —
 everything else is 403. Re-run it with every container target when one is added. **Residual risk:**
@@ -2460,8 +2460,8 @@ request's nonce, status and body. The token itself never crosses the wire. node:
 `timingSafeEqual`), not a library: the client installs as plain files with no `node_modules`, and the
 construction is a few lines over node's own primitives.
 
-**Configuration** (daemon.env, beside the other secrets): `JOB_HOPPER_SSH_KEY_FILE`,
-`JOB_HOPPER_DOCKER_HOST`, and each client target's token (`<tokenEnv>` or `<tokenEnv>_FILE`).
+**Configuration** (daemon.env, beside the other secrets): `HOPPER_SSH_KEY_FILE`,
+`HOPPER_DOCKER_HOST`, and each client target's token (`<tokenEnv>` or `<tokenEnv>_FILE`).
 
 ## Client targets (issue #59, 2026-10-04)
 
@@ -2483,7 +2483,7 @@ attachedMachines:
 options, its own key (made on the client; the private half never leaves it) and this machine's pinned
 host key (read from `/etc/ssh/ssh_host_ed25519_key.pub` here by the installer). The key's line in this
 user's authorized_keys is `restrict,command="<node> <app>/src/client/relay.ts
-<workdir>/clients/<name>.sock" <key> job-hopper-client:<name>`: no shell, no forwarding of any kind —
+<workdir>/clients/<name>.sock" <key> hopper-client:<name>`: no shell, no forwarding of any kind —
 the key can do nothing but open its own socket. The **relay** writes a marker line (the client skips
 whatever the login shell printed before it), listens on that socket (mode 600, a stale socket
 replaced), takes the daemon's one connection and pipes it to the session. The client serves HTTP/2 on
@@ -2504,12 +2504,12 @@ itself.
 
 **Installing one** (on this machine, as the daemon's user): `bash scripts/attach-client.sh <name>
 <ssh-target> <user@this-host> [lanes]` — over the user's ssh: checks node ≥ 24 and herdr there,
-installs the hopper's client release (the client files of `$JOB_HOPPER_APP_DIR/src/client`, "Client
-releases") to `~/.local/lib/job-hopper-client/`,
-the token, the pinned host key and `client.env` to `~/.config/job-hopper-client/` (mode 700; files
-600), the units `job-hopper-client` and `job-hopper-client-herdr` (its own herdr session,
-`job-hopper-client` unless `JOB_HOPPER_CLIENT_SESSION`), and starts them; here: mints the token to
-`~/.config/job-hopper/clients/<name>.token` (600) and adds the key's line. Prints the daemon.env line
+installs the hopper's client release (the client files of `$HOPPER_APP_DIR/src/client`, "Client
+releases") to `~/.local/lib/hopper-client/`,
+the token, the pinned host key and `client.env` to `~/.config/hopper-client/` (mode 700; files
+600), the units `hopper-client` and `hopper-client-herdr` (its own herdr session,
+`hopper-client` unless `HOPPER_CLIENT_SESSION`), and starts them; here: mints the token to
+`~/.config/hopper/clients/<name>.token` (600) and adds the key's line. Prints the daemon.env line
 (`<tokenEnv>_FILE=…`, then restart the daemon) and the plugins.yaml entry. Re-running keeps the token
 and the key.
 
@@ -2558,8 +2558,8 @@ is a commitment to a shape.
 Owner request: the app repairs and reinstalls itself in place.
 
 Meaning: if an install breaks, or a restart kills work, the app detects it and repairs itself.
-Today `scripts/install.sh` copies the tree to `~/.local/lib/job-hopper` (`DEST`) and runs
-`systemctl --user restart job-hopper`. A restart fails running non-idempotent jobs
+Today `scripts/install.sh` copies the tree to `~/.local/lib/hopper` (`DEST`) and runs
+`systemctl --user restart hopper`. A restart fails running non-idempotent jobs
 (`recover()` in `src/engine/recovery.ts`: `interrupted by daemon restart`) and a broken copy
 leaves the unit crash-looping with nobody to notice. Another worker is making running jobs
 survive restart; self-repair covers what that does not.
@@ -2570,10 +2570,10 @@ Touches: `scripts/install.sh`, `src/main.ts` (startup), `src/engine/recovery.ts`
 Open questions:
 - What counts as "broken": unit failed or flapping, health check red, dist/source mismatch, missing dependency, schema ahead of code?
 - Who repairs: a second watchdog unit (the daemon cannot repair itself while down), or `ExecStartPre`, or `OnFailure=`?
-- Reinstall from where: the clone, a pinned git ref, a retained last-good copy in `~/.local/lib/job-hopper.prev`?
+- Reinstall from where: the clone, a pinned git ref, a retained last-good copy in `~/.local/lib/hopper.prev`?
 - Roll back to last-good, or roll forward? What stops a repair loop?
 - How is a repair surfaced: event, UI banner, GitHub comment (never on a job issue; see no-comment rule)?
-- A repair must never touch `~/.local/share/job-hopper` (persisted state).
+- A repair must never touch `~/.local/share/hopper` (persisted state).
 
 Plugin tie: the repair is a role candidate (a `repairer` slot with detection and action), but
 has one caller today; build it plain first, extract on a second real caller.
@@ -2612,15 +2612,15 @@ webhook-only screen.
 
 Owner request: the hopper's own herdr session should be visible in the UI and attachable in a single click.
 
-Meaning: the UI shows the herdr session (herdr-claude option `session`, default `job-hopper`; unit
-`job-hopper-herdr`) with its state, and offers attach. Attach is `herdr session attach job-hopper`,
+Meaning: the UI shows the herdr session (herdr-claude option `session`, default `hopper`; unit
+`hopper-herdr`) with its state, and offers attach. Attach is `herdr session attach hopper`,
 a terminal action; the page is a browser on a loopback-only app.
 
 Touches: `src/executors/herdr/` (session name, status via `client.ts`), `src/http/state.ts`
 (expose session name and liveness), `ui/src/` (a view), `src/http/host-guard.ts` (no change expected).
 
 Options (not decided):
-1. Copyable command: show `herdr session attach job-hopper` with a copy button. Zero new surface; two clicks including paste.
+1. Copyable command: show `herdr session attach hopper` with a copy button. Zero new surface; two clicks including paste.
 2. Terminal URL handler: a `terminal:`/custom-scheme link registered by the OS to open a terminal running the command. One click; per-machine setup, and a link that runs a command is an execution surface.
 3. Loopback-only helper: `POST /ui/api/herdr/attach` spawns a terminal emulator on the host. One click; the daemon launches a GUI process, which breaks "the hopper pulls".
 4. Embedded terminal in the page (web terminal over the herdr socket). One click, no host terminal; largest surface and a new dependency.
@@ -2640,7 +2640,7 @@ Meaning: which agent runs a job is configuration, not code. `herdr agent start -
 pi, claude, codex, gemini, cursor, devin, agy, cline, omp, mastracode, opencode, copilot, kimi,
 kiro, droid, amp, grok, hermes, kilo, qodercli, qwen, maki (`herdr agent start --help`).
 Today `src/executors/herdr/cli-client.ts` hardcodes `--kind claude`; `screen.ts` parses the
-Claude Code TUI (turn anchor, gutter, `JOB_HOPPER_*` markers) and `protocolFooter` assumes
+Claude Code TUI (turn anchor, gutter, `HOPPER_*` markers) and `protocolFooter` assumes
 Claude echoes it; `src/config.ts` has `EXECUTOR_NAMES = ['test', 'herdr-claude']`; the executor
 is named `herdr-claude`.
 
@@ -2727,18 +2727,18 @@ Owner request: reach the UI across the LAN. The owner opens the UI, answers and 
 other machines on the LAN. This ends the loopback-only rule; the Host guard, the UI session and
 "the hopper pulls" stand.
 
-**Configuration** — this machine's, in `~/.config/job-hopper/daemon.env` (the unit's optional
+**Configuration** — this machine's, in `~/.config/hopper/daemon.env` (the unit's optional
 `EnvironmentFile`), never in the unit:
 
 ```sh
-JOB_HOPPER_LAN_NAMES=server,192.0.2.29
-JOB_HOPPER_LAN_PEERS=192.0.2.0/24,100.64.0.0/10
+HOPPER_LAN_NAMES=server,192.0.2.29
+HOPPER_LAN_PEERS=192.0.2.0/24,100.64.0.0/10
 ```
 
 | var | |
 |---|---|
-| `JOB_HOPPER_LAN_NAMES` | Host names or IPv4 addresses this daemon answers to, comma-separated, no port, never loopback. The first is the one in question links (`answerUrl`). |
-| `JOB_HOPPER_LAN_PEERS` | CIDR ranges a LAN request may come from. Set both or neither. |
+| `HOPPER_LAN_NAMES` | Host names or IPv4 addresses this daemon answers to, comma-separated, no port, never loopback. The first is the one in question links (`answerUrl`). |
+| `HOPPER_LAN_PEERS` | CIDR ranges a LAN request may come from. Set both or neither. |
 
 With LAN names set the daemon binds `::` (every interface); without, `127.0.0.1` as before.
 `App.url` stays `http://127.0.0.1:<port>`.
@@ -2754,7 +2754,7 @@ With LAN names set the daemon binds `::` (every interface); without, `127.0.0.1`
 | any | any other Host | 421 — DNS rebinding, as before |
 
 **A LAN request reads `/api/` only with a UI session** (401 `{ error }` otherwise): the
-`x-jobhopper-session` header, or — for `GET /api/events/stream` only, since `EventSource` sends no
+`x-hopper-session` header, or — for `GET /api/events/stream` only, since `EventSource` sends no
 headers — the `session` query parameter. `/`, `/ui/assets/*`, `POST /ui/login` and
 `GET /ui/api/session` stay open, so a logged-out device can load the page and log in. Loopback reads
 stay open: a local process can read the store file anyway.
@@ -2774,7 +2774,7 @@ the same one-time login code (`POST /ui/login`; using it rotates it):
 2. **Paste a login code** into the logged-out banner (from `ui-login-code` on this machine).
 
 Sessions are already in the store (migration 6), so a daemon restart does not log a device out; a
-session still expires after `JOB_HOPPER_UI_SESSION_HOURS` (12).
+session still expires after `HOPPER_UI_SESSION_HOURS` (12).
 
 **Residual risk, stated.** Plain HTTP: a host on the LAN that can sniff traffic can take a session
 token or a device link in flight. Accepted for a home LAN; the peer list keeps the VPN and container
@@ -2874,7 +2874,7 @@ Owner request: the UI shows the accounts in use and their usage, and usage throt
 
 **Built-in usage source `claude-plan`** (`src/plugins/usage-source/claude-plan/`). Claude
 subscription usage comes from `claude -p /usage --output-format json --no-session-persistence`: a
-local slash command, zero turns, zero tokens; Claude Code refreshes its own OAuth, so job-hopper
+local slash command, zero turns, zero tokens; Claude Code refreshes its own OAuth, so hopper
 holds no credential. Prior art: `a status-bar script`.
 - Options: `bin` (command-bearing, default `claude`), `intervalSeconds` (default 600, min 120).
   Detection: `which bin` only — never a call to claude.
@@ -2901,7 +2901,7 @@ holds no credential. Prior art: `a status-bar script`.
 
 **Built-in instances (decided).** An absent `usageSources` section means
 `[{ name: claude, plugin: claude-plan }]`, and the plugins-file migration writes it (`bin` =
-the old `JOB_HOPPER_CLAUDE_BIN`). Why: the hopper runs Claude jobs, so Claude usage is the budget
+the old `HOPPER_CLAUDE_BIN`). Why: the hopper runs Claude jobs, so Claude usage is the budget
 that matters on a fresh install; where claude is not installed the instance is unavailable and
 dropped with its reason. `usageSources: []` (the owner's file today) still means none: the
 installer adds `- { name: claude, plugin: claude-plan }`. A restart role, as before.
@@ -2972,7 +2972,7 @@ answer in a pane there (`resumeOn`) — the error names the jobs.
 - **`herdrBin` is never taken from the UI.** On add the daemon resolves it over ssh, with the same
   `BatchMode`/`ControlPath` argv as every herdr call (`resolveHerdrBinOverSsh`): `command -v herdr`
   in a login shell there (`"$SHELL" -lc`, the last line, must be absolute), else `~/.local/bin/herdr`
-  if executable. Failure → 409 with the reason. `session` is left out (the default `job-hopper`). The
+  if executable. Failure → 409 with the reason. `session` is left out (the default `hopper`). The
   probe takes seconds, so the file's version is checked again before the write.
 - **One entry only.** The edit splices that entry's text into the file at its source range (`yaml`
   node ranges), so every other byte stays: other sections, other entries, comments. An added entry
@@ -3094,7 +3094,7 @@ openssl throwaway key through `xml-crypto` (`test/support/idp.ts`).
 
 ### Configuration — `auth.yaml`
 
-`JOB_HOPPER_AUTH_FILE` (default `~/.config/job-hopper/auth.yaml`), mode 600. Absent → local sign-in
+`HOPPER_AUTH_FILE` (default `~/.config/hopper/auth.yaml`), mode 600. Absent → local sign-in
 only (unchanged behaviour). Read **at start only**: an invalid file throws before the store opens,
 naming the field — sign-in fails closed. Schema in `src/auth/config.ts`; reference in
 `docs/sign-in.md`. Client secrets inline, in a file (`clientSecretFile`) or in an environment
@@ -3179,7 +3179,7 @@ providers (no redirect, no flow, no ticket); `none` and `password` are reserved 
   and the role check. The UI takes the session by itself when logged out (`wantsNoSignIn`). A
   startup warning names the role. Composes with everything else (anonymous `viewer`, sign in to act).
 - **Password sign-in** — `auth.yaml` `password.users: [{ username, passwordHash, role }]`. The hash
-  is argon2id through the `argon2` package (`src/auth/password.ts`), made by `job-hopper
+  is argon2id through the `argon2` package (`src/auth/password.ts`), made by `hopper
   password-hash` (stdin, or a no-echo prompt asked twice, through `read`); anything not starting
   `$argon2id$` is refused at load. `POST /ui/auth/password { username, password }` → the same
   answer as above; identity `{ provider: password, subject: username, username }`. Usernames compare
@@ -3207,11 +3207,11 @@ is 403, `POST /ui/api/device-link` is 409, login-code sessions end at the next s
 
 ### A public URL
 
-`JOB_HOPPER_PUBLIC_URL` (origin only, never loopback): the UI behind a reverse proxy. Its host (with
+`HOPPER_PUBLIC_URL` (origin only, never loopback): the UI behind a reverse proxy. Its host (with
 the port only when it is not the scheme's default) passes the Host guard as a **public request** —
 like a LAN request, `/api/` only with a UI session — from loopback or a LAN peer; its origin may post
 UI mutations; it is the sign-in origin. The daemon binds every interface only when
-`JOB_HOPPER_LAN_PEERS` is set (now allowed with a public URL and no LAN names); a proxy on the same
+`HOPPER_LAN_PEERS` is set (now allowed with a public URL and no LAN names); a proxy on the same
 machine needs none. Without it the sign-in origin is `http://localhost:<port>`.
 
 **Residual risk, stated.** As before, every local user of the host can read the GET API straight on
@@ -3232,7 +3232,7 @@ build, `restart.ts` the restart, `blockers.ts`); routes `GET /api/update`, `POST
 
 **The install knows where it came from.** `install.json` in the install (beside `src/`):
 `{ repo, branch, commit, installedAt }`. `scripts/install.sh` writes it from the clone's `origin`
-and `HEAD`; the branch is `main` unless `JOB_HOPPER_UPDATE_BRANCH` names another. An update writes
+and `HEAD`; the branch is `main` unless `HOPPER_UPDATE_BRANCH` names another. An update writes
 the new one. No install.json (a checkout run with `npm start`, a clone without `origin`) → state
 `unavailable` with the reason; nothing else changes.
 
@@ -3241,7 +3241,7 @@ every check — the git CLI, never prompting (`GIT_TERMINAL_PROMPT=0`, ssh `Batc
 only the user's ssh config: `-F ~/.ssh/config`, since the unit's `PrivateTmp` puts the daemon in a
 user namespace where root-owned `/etc/ssh` files show as owned by nobody and ssh refuses them), so any
 git URL the daemon's user can fetch works: GitHub by ssh or https, another host, a local path. A
-check runs 10 s after start, then every `JOB_HOPPER_UPDATE_CHECK_MS` (default 900000; 0: only when
+check runs 10 s after start, then every `HOPPER_UPDATE_CHECK_MS` (default 900000; 0: only when
 asked), and from the UI's Check now. The **update channel** decides the target: `main` → the head
 of the tracked branch; `release` → the newest `v<major>.<minor>.<patch>` tag. An update is
 **available** when the installed commit does not contain the target (an install ahead of it, e.g.
@@ -3258,7 +3258,7 @@ line too; never the UI).
 
 1. The target's tree (`git archive`) is unpacked to `<data dir>/update/source`.
 2. The **next install** `<install>.next` is built by the target's own `scripts/install.sh` in
-   **build-only mode** (`JOB_HOPPER_INSTALL_INTO=<dir>` + `_REPO`, `_BRANCH`, `_COMMIT`): UI bundle,
+   **build-only mode** (`HOPPER_INSTALL_INTO=<dir>` + `_REPO`, `_BRANCH`, `_COMMIT`): UI bundle,
    production dependencies, install.json — no service, unit or config touched. Log:
    `<data dir>/update/build.log`. The running daemon is not touched: jobs keep running.
 3. Proof it loads: a child `node` imports the next install's `src/main.ts`. A module that fails to
@@ -3277,13 +3277,13 @@ reason until the next check.
 daemon stops cleanly (the same `app.stop()` as SIGTERM) and exits 75. The unit has
 `SuccessExitStatus=75` and `RestartForceExitStatus=75`; an older unit's `Restart=on-failure`
 restarts a 75 too, so the first update needs no unit change. A container restarts it by its restart
-policy. Unsupervised, it stops, starts its successor detached, and exits. `JOB_HOPPER_RESTART=exit|
+policy. Unsupervised, it stops, starts its successor detached, and exits. `HOPPER_RESTART=exit|
 respawn` forces either. Under systemd the units the new install ships (`systemd/`, now copied into
 the install) are written over installed ones that differ, then `systemctl --user daemon-reload`;
-`job-hopper-herdr` is never restarted (that would kill every pane).
+`hopper-herdr` is never restarted (that would kill every pane).
 
 **What survives the restart** — restart recovery, unchanged ("Recovery at startup"): herdr panes
-live in `job-hopper-herdr`, not the daemon, so running herdr-claude jobs are reattached on their
+live in `hopper-herdr`, not the daemon, so running herdr-claude jobs are reattached on their
 lanes (`job.reattached`); idempotent jobs are requeued; `waiting_answer` jobs keep their question;
 an open question in the answer or assess stage restarts there, one at the human stage keeps its
 timers; UI sessions are in the database; schema migrations run at boot as on any start.
@@ -3333,7 +3333,7 @@ the recommended runtime ("The published image, with Podman" below). Operating de
 **Jobs run in the hopper's container.** Until now the image had no herdr and ran jobs only on
 attached machines; a compose install with no other machine could run nothing. The image now carries
 herdr (herdr.dev's installer, which checks the release's SHA-256), and its entrypoint
-(`scripts/container-start.sh`) starts job-hopper's herdr session and starts it again when it stops,
+(`scripts/container-start.sh`) starts hopper's herdr session and starts it again when it stops,
 before it runs the daemon. The built-in `local` machine with `herdr-claude` then works unchanged. The
 image seeds Claude Code's first-run state (onboarding done; the `--dangerously-skip-permissions`
 prompt skipped) into `/home/node`, the `home` volume; the workspace trust dialog is answered by
@@ -3344,8 +3344,8 @@ loopback and forwards it from the compose network: the browser sends `Host: 127.
 daemon sees a peer in the network's range. It was refused 421 (the LAN table above); it is now a LAN
 request — a UI session for `/api/`, the exact Origin for mutations — never a local one. DNS
 rebinding is unaffected: another Host is 421 as before. The compose file publishes the daemon's own
-port (`JOB_HOPPER_PORT`, both sides) so the Host names it, sets `JOB_HOPPER_LAN_PEERS` to the private
-ranges and `JOB_HOPPER_LAN_NAMES` to `hopper`, the service name.
+port (`HOPPER_PORT`, both sides) so the Host names it, sets `HOPPER_LAN_PEERS` to the private
+ranges and `HOPPER_LAN_NAMES` to `hopper`, the service name.
 
 **The earlier container profile is gone** (`deploy/compose.yaml --profile container`, no
 compatibility): `deploy/compose.yaml` is the host install's Postgres alone, project `job-hopper`;
@@ -3400,6 +3400,75 @@ built with Podman; the stack under rootless Podman with podman-compose and again
 through the socket, on a spare port: Postgres healthy, the hopper up, a login code signed in through the
 published port, the `local` machine online with `herdr-claude`; down/up kept the data and password.
 
+## Rename from job-hopper (issue #112, 2026-10-05)
+
+The product was job-hopper; it is hopper everywhere: package and CLI `hopper`, install
+`~/.local/lib/hopper`, config `~/.config/hopper/`, work dir `%C/hopper`, units `hopper.service`,
+`hopper-herdr.service`, `hopper-client.service`, herdr sessions `hopper` and `hopper-client`, process
+variables `HOPPER_*`, the job protocol words `HOPPER_QUESTION` / `HOPPER_DONE` / `HOPPER_FAILED`, the
+headers `x-hopper-*`. No alias of an old name is kept. Persisted state is migrated, never abandoned; the
+code that reads the old names is `src/update/rename.ts` (the hopper's host), `renameClient` in
+`src/client/main.ts` (a client target), store migration 12 (plugins.yaml), and the lines marked so in
+`scripts/install.sh`, `scripts/get.sh`, `scripts/attach-client.sh` and `scripts/attach-machine.sh`.
+
+**What moves on the hopper's host.** The config dir; `daemon.env` (every `JOB_HOPPER_*` key renamed, every
+value naming the old config or work dir pointed at the new one: token files, key files); the work dir
+(pinned host keys, client sockets, the update mirror and its pending file); in `~/.ssh/authorized_keys`
+the client targets' lines (`job-hopper-client:<name>`), whose forced command runs the relay from the
+install dir and opens its socket in the work dir; the CLI link; the units (old ones disabled, stopped and
+removed); the install dir (removed once the new daemon answers `/api/health`). A dir whose new place
+already exists is left beside it and reported, never merged. The database is not touched: its URL is
+the user's, unchanged.
+
+**The herdr session moves only when no job holds a pane in it.** Stopping `job-hopper-herdr` closes every
+pane in session `job-hopper`, and a job started with the old protocol words would answer in words the new
+daemon does not parse. A pane job: `claimed`, `running` or `waiting_answer`, with its executor state in
+session `job-hopper` on this machine (not ssh, not a client target).
+
+- **install.sh** builds the new install, then `rename.ts install`: stops `job-hopper.service` (so no job
+  starts while it looks), reads the pane jobs from the database the old `daemon.env` names, and with
+  any, starts the old daemon again and exits 1 naming them; with none, moves the state. install.sh then
+  installs and starts the new units as on any upgrade, and `rename.ts cleanup` removes the old install
+  dir once the new daemon answers.
+- **Self-update** of a job-hopper install: its old updater runs the new `install.sh` in build-only mode
+  under `JOB_HOPPER_INSTALL_*` (read for that alone), swaps the new code into `~/.local/lib/job-hopper`,
+  and its unit starts it with the old variables. That boot (`renameBoot`, before anything starts)
+  opens the database: with no pane job, it starts `rename.ts handover` as a transient unit of its own
+  (`systemd-run --user`; the handover stops the unit the boot runs in) and waits to be stopped. The
+  handover copies the install to `~/.local/lib/hopper`, moves the state, installs and starts the new
+  units, and removes the old install dir once the new daemon answers. With a pane job, the boot puts
+  `<install>.prev` back, records `update.failed` with the jobs it waits for (the pending file removed,
+  so the old boot does not report it again), and exits 75: the old daemon runs on, and its updater
+  offers the update again at the next check — taken once the panes are gone (auto-update), or from
+  the UI.
+- **A deploy with neither** (a container, `npm start`): the daemon refuses to start while `JOB_HOPPER_*`
+  names its database and no `HOPPER_*` does, and names the variables to rename.
+
+**plugins.yaml** (store migration 12): an ssh-attached machine that named no `session` is given
+`session: job-hopper` — the session its own unit there still runs — until it is attached again
+(`attach-machine.sh` says how to drop the line and the old unit); a herdr-claude instance that named
+`session: job-hopper` named the local unit's session, now `hopper`, the default: the option goes.
+
+**Client targets.** A client attached before the rename runs as `job-hopper-client`. The hopper loads its
+client release there as on any release change — only when no job runs there — and that boot
+(`renameClient`) moves its config dir, `client.env` (keys, paths, and its session `job-hopper-client` →
+`hopper-client`), the pinned host key's name in its `known_hosts`, its install and its units, then swaps
+the units over in a transient unit of its own. The client release keeps its file list (a client checks a
+release has exactly its files), so the migration lives in `main.ts`, and the relay's first line stays
+`JOB-HOPPER-RELAY/1`: a client that has not loaded the new release must still reach the hopper to load it.
+
+**Kept on purpose.** The comment marker `<!-- job-hopper v1` (old comments on GitHub issues are not
+ours to rewrite); the bundled Postgres's volume `job-hopper_postgres` (`deploy/compose.yaml` names it:
+under the new project name compose would start an empty database beside the data); the relay marker
+above; the `jh_*` browser storage keys and the `jh-<job>` herdr agent names, which do not carry the
+product name and which a rename would cost the viewer's layout, notices and drafts.
+
+**Out of the migration.** Out-of-tree plugins import `hopper/plugin` now; their own sources that import
+`job-hopper/plugin` are the owner's to change (types only, so nothing fails at runtime). The tsconfig
+install.sh wrote for them is rewritten (`scripts/write-plugin-tsconfig.ts` knows its old first line).
+Webhook receivers read `x-hopper-*` headers now. The docker socket proxy keeps its container and socket
+path until `scripts/docker-proxy.sh` is run again: `daemon.env` keeps naming the running one.
+
 ## Deployable: a database, config documents, secrets from the environment (issue #40, 2026-10-04)
 
 Owner direction: the hopper must not lean on the computer it runs on — config in local files, state
@@ -3409,12 +3478,12 @@ nothing in the code names a path on one machine. Operator path: `docs/deploy.md`
 
 ### Database
 
-`JOB_HOPPER_DATABASE_URL` (or the mounted file `JOB_HOPPER_DATABASE_URL_FILE` names: it carries a
+`HOPPER_DATABASE_URL` (or the mounted file `HOPPER_DATABASE_URL_FILE` names: it carries a
 password, "Secrets"), required (no default: a database is never assumed): `postgres://…`, the
 only store (issue #53 — a local SQLite file is no different from a local JSON file; it keeps the
 hopper on one machine). The hopper is given a database; it never creates its own file. TLS to a
-managed Postgres: the driver's `sslmode` in the URL. `JOB_HOPPER_DB` is gone. The URL may name a schema with
-job-hopper's own `?schema=<name>` (created when absent; stripped before the driver sees the URL).
+managed Postgres: the driver's `sslmode` in the URL. `HOPPER_DB` is gone. The URL may name a schema with
+hopper's own `?schema=<name>` (created when absent; stripped before the driver sees the URL).
 
 **The Store port stays synchronous.** The engine relies on it: store reads happen after the awaits,
 synchronously with decide and apply (`src/engine/decision-step.ts`), so no read-modify-write is ever
@@ -3436,7 +3505,7 @@ rolled-back append can leave a gap in `seq`: seq only rises.
 
 **Tests and local development** run against Postgres too: `npm test` starts a throwaway container
 through `testcontainers` (vitest globalSetup, `test/support/postgres.ts`), each test in its own
-schema; `JOB_HOPPER_TEST_POSTGRES_URL` points the suite at an existing database instead. A local
+schema; `HOPPER_TEST_POSTGRES_URL` points the suite at an existing database instead. A local
 hopper uses `deploy/compose.yaml`'s Postgres (optional: any Postgres it is given will do).
 
 ### Config documents
@@ -3446,14 +3515,14 @@ the store (`config_documents`, port `ConfigDocuments`), each replaced whole agai
 the sha-256 of its text, or `missing`. The YAML stays the format, comments and all; every UI edit
 already splices into the text against the version it read, and now writes it back the same way
 (`documents.write(name, text, version)` refuses a moved document). Watchers poll the version every
-5 s instead of an mtime. `JOB_HOPPER_PLUGINS_FILE`, `_WEBHOOKS_FILE`, `_RULES_FILE`, `_AUTH_FILE` are
+5 s instead of an mtime. `HOPPER_PLUGINS_FILE`, `_WEBHOOKS_FILE`, `_RULES_FILE`, `_AUTH_FILE` are
 gone (leftover variables). The first boot against an empty store writes plugins.yaml from the
 built-in instances (`ensurePluginsDocument`); the sources.yaml and env → plugins.yaml migrations are
 removed. `install.sh` writes the starter rules.md through the CLI when there is none. The rules wire
 names follow: `GET /api/question-gates` `rules` (`RulesView`, `document: "rules.md"`),
 `POST /ui/api/rules`; reports name their document (`config.document`, `source: "document"`) instead
 of a path. **What the UI deliberately never edits** — command-bearing options — the operator sets
-with the CLI (below). Custom plugins are code, not config: `JOB_HOPPER_PLUGIN_DIR`, now with no
+with the CLI (below). Custom plugins are code, not config: `HOPPER_PLUGIN_DIR`, now with no
 default (unset: none).
 
 ### Secrets
@@ -3474,7 +3543,7 @@ redirect a credential:
 
 | part | option (default) | was |
 |------|------------------|-----|
-| database | `JOB_HOPPER_DATABASE_URL` (it carries the password; also `_FILE`) | — |
+| database | `HOPPER_DATABASE_URL` (it carries the password; also `_FILE`) | — |
 | github-app source | `privateKeyEnv` (`GITHUB_APP_PRIVATE_KEY`; a PEM, real newlines or `\n` escapes) + `appId`, `slug` options | `appFile` → github-app.json + .pem |
 | github-gh source | `appKeyEnv` (`GITHUB_APP_PRIVATE_KEY`; null: never pause): `enabled: auto` pauses while it is set | `appFile` readable |
 | grokbot-routine notifier | `urlEnv`, `keyEnv` (`GROKBOT_WEBHOOK_URL`, `GROKBOT_WEBHOOK_KEY`) | `envFile` |
@@ -3496,15 +3565,15 @@ themselves, so no `_FILE` form for them.
 | UI session tokens, login codes | SHA-256 only (32 random bytes: no dictionary to try) — the hopper's own short-lived state; a hash is not a usable credential |
 | password sign-in passwords | argon2id hashes in `auth.yaml` ("Sign-in") — a verifier the operator writes, not a credential |
 
-`JOB_HOPPER_SECRET_KEY`, the secret box (`src/secrets/box.ts`) and the UI's rotate-secret are gone:
-with no secret to keep there is nothing to seal. A leftover `JOB_HOPPER_SECRET_KEY` is a leftover
+`HOPPER_SECRET_KEY`, the secret box (`src/secrets/box.ts`) and the UI's rotate-secret are gone:
+with no secret to keep there is nothing to seal. A leftover `HOPPER_SECRET_KEY` is a leftover
 variable (boot warning; delete the line). A `webhooks.yaml` entry with an inline `secret` — sealed or
 clear, from before — is refused at load with what to do (put the secret in the runtime, name it with
 `secretEnv`); the document is left as it is, never rewritten, so nothing is lost silently. The one
 install there was had no subscription when this landed.
 
 **systemd credentials.** `LoadCredential=<name>:<path>` (or `LoadCredentialEncrypted=`) in a drop-in
-for `job-hopper.service`, with `Environment=<NAME>_FILE=%d/<name>`: the secret never sits in
+for `hopper.service`, with `Environment=<NAME>_FILE=%d/<name>`: the secret never sits in
 `daemon.env`.
 
 **Residual risk, stated.** Whoever holds the hopper's runtime holds its secrets, and a job on the
@@ -3513,26 +3582,26 @@ database and its backups hold no secret; the database URL is the one credential 
 
 ### Login codes
 
-The daemon writes no login code file. `job-hopper login-code` mints a one-time code into the
+The daemon writes no login code file. `hopper login-code` mints a one-time code into the
 database (`login_codes`: its SHA-256 and an expiry, 10 minutes); `POST /ui/login` takes it once. A
 device link mints its own (one code for all its links). `scripts/open-ui.sh` runs the CLI — the
-database from `JOB_HOPPER_DATABASE_URL`, else that line of `JOB_HOPPER_ENV_FILE` (default the unit's
-`daemon.env`) — and writes its auto-posting page under `$XDG_RUNTIME_DIR/job-hopper/` (0700/0600).
+database from `HOPPER_DATABASE_URL`, else that line of `HOPPER_ENV_FILE` (default the unit's
+`daemon.env`) — and writes its auto-posting page under `$XDG_RUNTIME_DIR/hopper/` (0700/0600).
 
 ### Work dir
 
-`JOB_HOPPER_WORK_DIR` (default `<system temp dir>/job-hopper`) holds scratch only: claude's working
+`HOPPER_WORK_DIR` (default `<system temp dir>/hopper`) holds scratch only: claude's working
 directory for answerer and assessor calls, each plugin's scratch dir, ssh control sockets, Jev's own
 `jev-runs.jsonl` debug log (Jev's file, not the hopper's state), self-update's mirror and next
 install. Losing it loses nothing the hopper needs; the host unit points it at the user's cache dir
-(`%C/job-hopper`) so the update mirror survives restarts. Defaults that named one machine's layout are
+(`%C/hopper`) so the update mirror survives restarts. Defaults that named one machine's layout are
 gone: `jevSrc` has no default, and a job's working directory defaults to `~` (herdr-claude `cwd`,
 the GitHub sources' `defaultCwd`).
 
 ### Operator CLI
 
-`src/cli.ts`, installed as `job-hopper` (`~/.local/bin/job-hopper` by install.sh,
-`/usr/local/bin/job-hopper` in the image). It opens the daemon's database (`JOB_HOPPER_DATABASE_URL`),
+`src/cli.ts`, installed as `hopper` (`~/.local/bin/hopper` by install.sh,
+`/usr/local/bin/hopper` in the image). It opens the daemon's database (`HOPPER_DATABASE_URL`),
 so whoever runs it holds the database's credentials — the daemon's own trust, more than any UI
 session's. Not an HTTP route, so the rule that every mutation goes through `POST /ui/api/*` is
 about the daemon's surface; the CLI is beside it, like editing a file was.
@@ -3558,7 +3627,7 @@ has it (`git log -- src/migrate/local.ts`).
 ### Deploy recipes
 
 - **This host** (`scripts/install.sh`, systemd `--user`): `daemon.env` (the unit's EnvironmentFile,
-  now required) holds `JOB_HOPPER_DATABASE_URL` (or `JOB_HOPPER_DATABASE_URL_FILE`) and the secrets,
+  now required) holds `HOPPER_DATABASE_URL` (or `HOPPER_DATABASE_URL_FILE`) and the secrets,
   or names their mounted files; install.sh refuses to finish without
   the database and says how to set it. Postgres from `deploy/compose.yaml` (`up -d postgres`,
   published on loopback), or any Postgres the host can reach.
@@ -3576,7 +3645,7 @@ has it (`git log -- src/migrate/local.ts`).
   remained that is the hopper's: every document is small text in the database. Jev's debug log and
   self-update's mirror are scratch in the work dir. A blob store would be a service to run for no
   data.
-- **Process settings stay environment variables** (`JOB_HOPPER_*`: port, LAN, tick, limits, the
+- **Process settings stay environment variables** (`HOPPER_*`: port, LAN, tick, limits, the
   database itself). They configure the process, not a part; a deploy sets them where it sets secrets.
 
 ## Deployable for others: help, instructions, the API reference (issue #68, 2026-10-05)
@@ -3585,8 +3654,8 @@ Owner direction: someone who is not the owner can run the hopper and use it from
 
 - **`README.md`**: what it is, what it needs, the three ways to run it (this host, a container, a
   checkout in the foreground), first sign-in, how to give it jobs, where everything else is.
-- **`job-hopper help`** (`--help`, `-h`): every operator command, what it needs, where to read on.
-- **`node src/main.ts --help`** (`-h`): every `JOB_HOPPER_*` setting with its default and what it
+- **`hopper help`** (`--help`, `-h`): every operator command, what it needs, where to read on.
+- **`node src/main.ts --help`** (`-h`): every `HOPPER_*` setting with its default and what it
   does, built from the config schema (`SETTINGS`, `daemonHelp` in `src/config.ts`; the help text is
   keyed by the schema, so a new setting does not typecheck without its line). Needs no database.
 - **The API reference**: `src/http/openapi.ts` builds an OpenAPI 3.1 document of every route under
@@ -3604,7 +3673,7 @@ Owner direction: someone who is not the owner can run the hopper and use it from
 - **Readable without a session.** `/docs/` is outside `/api/`, so a LAN or public request reads it
   as it reads the UI's page; the Host guard still applies. It holds the route list and request
   shapes, which the source already shows; no state, no secret. Trying a route from the page needs
-  what the route needs: nothing on loopback for a read, the `x-jobhopper-session` token beyond it and
+  what the route needs: nothing on loopback for a read, the `x-hopper-session` token beyond it and
   for every `POST /ui/api/*` (with the page's own Origin, which is a UI origin).
 - **Responses are described, not schematised**, except the error shape and the event envelope
   (`ENVELOPE_SCHEMA`): the wire types are TypeScript (`src/domain/types.ts`), and a second hand-kept
@@ -3623,7 +3692,7 @@ set it up, and is never steered toward a shared App private key.
   had no working path until the owner created an App. An existing plugins.yaml is never rewritten
   ("Settled in slice 4"); a hopper set up before keeps what it has.
 - **Each owner creates their own GitHub App** with `scripts/create-github-app.sh` (the manifest
-  flow): one App, one key, one hopper. job-hopper ships no App and no key. A shared key would let every
+  flow): one App, one key, one hopper. hopper ships no App and no key. A shared key would let every
   holder act on every repository the App is installed on, and nothing in the hopper could tell them
   apart.
 - **`install.sh` names the path** at the end of an install: the App when its key is in `daemon.env`,
@@ -3639,7 +3708,7 @@ Owner direction: there is a store to install plugins from. Code: `src/plugins/pl
 (the service), `src/plugins/plugin-store-catalogue.ts` (the catalogue, pure), `src/plugins/plugin-store-git.ts`
 (the git CLI); routes `GET /api/plugin-store`, `POST /ui/api/plugin-store`; the UI's Plugins view.
 
-**What a plugin store is.** A git repository, named by the process setting `JOB_HOPPER_PLUGIN_STORE`
+**What a plugin store is.** A git repository, named by the process setting `HOPPER_PLUGIN_STORE`
 (anything `git fetch` takes: ssh or https URL, a local path; no default — unset, there is no plugin
 store). Its default branch's root holds the **store catalogue** `plugin-store.yaml`:
 

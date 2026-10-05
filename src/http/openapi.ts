@@ -81,7 +81,7 @@ const OPERATIONS: Operation[] = [
   { method: 'get', path: '/api/update', tag: 'Self-update', summary: 'Installed version and available update', returns: '`UpdateStatus`' },
   { method: 'post', path: '/ui/api/update', tag: 'Self-update', summary: 'Check, apply, or change update settings', role: 'admin', body: updateBody, returns: '`UpdateStatus`', errors: [409] },
   { method: 'get', path: '/ui/api/session', tag: 'Sign-in', summary: 'This session, and the sign-in on offer', returns: '`SessionView`' },
-  { method: 'post', path: '/ui/login', tag: 'Sign-in', summary: 'Sign in with a one-time login code', description: 'Mint a code with `job-hopper login-code`. Answers a page that stores the session token for the UI.', body: loginBody, form: true, answers: 'html', returns: 'a page holding the session token' },
+  { method: 'post', path: '/ui/login', tag: 'Sign-in', summary: 'Sign in with a one-time login code', description: 'Mint a code with `hopper login-code`. Answers a page that stores the session token for the UI.', body: loginBody, form: true, answers: 'html', returns: 'a page holding the session token' },
   { method: 'post', path: '/ui/auth/none', tag: 'Sign-in', summary: 'Start a session with no sign-in (auth.yaml `none`)', returns: '`{ token, expiresAt, user }`' },
   { method: 'post', path: '/ui/auth/password', tag: 'Sign-in', summary: 'Sign in with a password (auth.yaml `password`)', body: passwordBody, returns: '`{ token, expiresAt, user }`' },
   { method: 'get', path: '/ui/auth/:name/start', tag: 'Sign-in', summary: 'Begin sign-in with an identity provider', query: startQuery, answers: 'redirect', returns: 'a redirect to the provider' },
@@ -105,7 +105,7 @@ const TAGS: Record<Tag, string> = {
   'Sign-in': 'UI sessions: sign-in, the session, logout.',
 };
 
-const DESCRIPTION = `The job-hopper daemon's HTTP API.
+const DESCRIPTION = `The hopper daemon's HTTP API.
 
 **Reading.** Every \`GET /api/*\` route reads. From loopback (\`127.0.0.1\` or \`localhost\` with the port) it needs nothing. From a LAN name or the public URL it needs a UI session: the token in the \`${SESSION_HEADER}\` header.
 
@@ -172,7 +172,7 @@ export function openApiDocument(version: string): Record<string, unknown> {
   for (const op of OPERATIONS) (paths[openApiPath(op.path)] ??= {})[op.method] = operation(op);
   return {
     openapi: '3.1.1',
-    info: { title: 'job-hopper', version, description: DESCRIPTION },
+    info: { title: 'hopper', version, description: DESCRIPTION },
     tags: Object.entries(TAGS).map(([n, d]) => ({ name: n, description: d })),
     paths,
     components: {

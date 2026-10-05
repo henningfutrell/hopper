@@ -1,4 +1,4 @@
-// The job-hopper domain vocabulary. Every name here is defined in docs/glossary.md;
+// The hopper domain vocabulary. Every name here is defined in docs/glossary.md;
 // change the glossary in the same commit as any rename.
 import type { ExecutorUnavailable, QueueOrder } from './plugins.ts';
 import type { RoutedBy } from './routing.ts';
@@ -152,7 +152,7 @@ export interface MachineSnapshot {
   executors: string[];
   /** An attached machine: the ssh destination its executors reach it by. Absent → this machine. */
   ssh?: string;
-  /** An attached machine's herdr: its binary (absolute, so never its PATH) and job-hopper's session there. */
+  /** An attached machine's herdr: its binary (absolute, so never its PATH) and hopper's session there. */
   herdr?: { bin: string; session: string };
   /** A container target: the container its executors reach it in, through `docker exec`. */
   docker?: string;

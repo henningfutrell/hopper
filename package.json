@@ -1,5 +1,5 @@
 {
-  "name": "job-hopper",
+  "name": "hopper",
   "version": "0.1.0",
   "private": true,
   "description": "Local job-queue daemon: one decider engine over machines, lanes, usage budgets and the queue, with Jev as admission layer.",

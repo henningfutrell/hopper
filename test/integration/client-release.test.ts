@@ -40,7 +40,7 @@ afterEach(async () => {
 function installDir(older: boolean): string {
   const dir = mkdtempSync(join(tmpdir(), 'jh-client-install-'));
   cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
-  const install = join(dir, 'job-hopper-client');
+  const install = join(dir, 'hopper-client');
   cpSync(SRC, install, { recursive: true, filter: (p) => !p.endsWith('relay.ts') });
   if (older) writeFileSync(join(install, 'main.ts'), `${HOPPERS.files['main.ts']}// an older client\n`);
   return install;
@@ -55,7 +55,7 @@ async function boot(install: string, clientToken = TOKEN): Promise<{ a: TestApp;
   mkdirSync(join(dataDir, 'clients'), { recursive: true, mode: 0o700 });
   const loaded: string[] = [];
   server = await startTestClient(clientSocket(dataDir, 'studio'), {
-    token: () => clientToken, herdrBin: HERDR, session: 'job-hopper', installDir: install, onLoaded: (id) => loaded.push(id),
+    token: () => clientToken, herdrBin: HERDR, session: 'hopper', installDir: install, onLoaded: (id) => loaded.push(id),
   });
   t = await startTestApp({
     dbPath: db.dbPath,

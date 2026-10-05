@@ -6,8 +6,8 @@ import { LAPTOP, contextFor, jobWith, setup } from './support.ts';
 
 const STUDIO = { id: 'studio', label: 'studio', maxLanes: 1, online: true, executors: ['herdr-claude'], client: { tokenEnv: 'STUDIO_CLIENT_TOKEN' } };
 
-const DONE: FakeTurn = { output: ['● Done on the laptop.', '  JOB_HOPPER_DONE'] };
-const ASK: FakeTurn = { output: ['● Which branch?', '  JOB_HOPPER_QUESTION'] };
+const DONE: FakeTurn = { output: ['● Done on the laptop.', '  HOPPER_DONE'] };
+const ASK: FakeTurn = { output: ['● Which branch?', '  HOPPER_QUESTION'] };
 
 describe('herdr-claude executor on an attached machine', () => {
   it('runs the job through that machine\'s herdr; this machine\'s herdr sees nothing', async () => {

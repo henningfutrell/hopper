@@ -16,7 +16,7 @@ const TYPES: Record<string, string> = {
   '.ico': 'image/x-icon',
   '.json': 'application/json',
 };
-const NOT_BUILT = 'UI not built: run npm run build:ui in the job-hopper checkout, then restart';
+const NOT_BUILT = 'UI not built: run npm run build:ui in the hopper checkout, then restart';
 
 export function staticRoutes(app: FastifyInstance, uiDir: string): void {
   const index = join(uiDir, 'index.html');

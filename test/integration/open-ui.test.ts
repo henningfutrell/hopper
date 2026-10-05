@@ -1,5 +1,5 @@
-// scripts/open-ui.sh: mints a login code with `job-hopper login-code` (the database from
-// JOB_HOPPER_DATABASE_URL, else the daemon's env file), writes a 0600 auto-posting page, and opens
+// scripts/open-ui.sh: mints a login code with `hopper login-code` (the database from
+// HOPPER_DATABASE_URL, else the daemon's env file), writes a 0600 auto-posting page, and opens
 // that FILE — the code never appears on a command line. Run against a live daemon.
 import { execFile } from 'node:child_process';
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
@@ -55,11 +55,11 @@ describe('scripts/open-ui.sh', () => {
     const { bin, argvFile } = fakeBin(true);
     const runtime = mkdtempSync(join(tmpdir(), 'jh-open-ui-run-'));
     dirs.push(runtime);
-    const r = await run({ PATH: bin, HOME: '/nonexistent', XDG_RUNTIME_DIR: runtime, JOB_HOPPER_DATABASE_URL: databaseUrlFor(db.dbPath), JOB_HOPPER_PORT: port });
+    const r = await run({ PATH: bin, HOME: '/nonexistent', XDG_RUNTIME_DIR: runtime, HOPPER_DATABASE_URL: databaseUrlFor(db.dbPath), HOPPER_PORT: port });
     expect(r.code, r.stderr).toBe(0);
-    const page = join(runtime, 'job-hopper', 'ui-login.html');
+    const page = join(runtime, 'hopper', 'ui-login.html');
     expect(statSync(page).mode & 0o777).toBe(0o600);
-    expect(statSync(join(runtime, 'job-hopper')).mode & 0o777).toBe(0o700);
+    expect(statSync(join(runtime, 'hopper')).mode & 0o777).toBe(0o700);
     const html = readFileSync(page, 'utf8');
     const code = /name="code" value="([0-9a-f]{64})"/.exec(html)![1]!;
     expect(html).toContain(`action="http://127.0.0.1:${port}/ui/login"`);
@@ -77,30 +77,30 @@ describe('scripts/open-ui.sh', () => {
     expect(TOKEN_RE.test(res.text)).toBe(true);
   });
 
-  it('reads JOB_HOPPER_DATABASE_URL from the env file when it is not set, and prints the page path without xdg-open', async () => {
+  it('reads HOPPER_DATABASE_URL from the env file when it is not set, and prints the page path without xdg-open', async () => {
     const db = tempDbPath();
     cleanup = db.cleanup;
     t = await startTestApp({ dbPath: db.dbPath });
     const envDir = mkdtempSync(join(tmpdir(), 'jh-open-ui-env-'));
     dirs.push(envDir);
     const envFile = join(envDir, 'daemon.env');
-    writeFileSync(envFile, `# comment\nGITHUB_APP_PRIVATE_KEY=-----BEGIN\\nx\nJOB_HOPPER_DATABASE_URL=${databaseUrlFor(db.dbPath)}\n`, { mode: 0o600 });
+    writeFileSync(envFile, `# comment\nGITHUB_APP_PRIVATE_KEY=-----BEGIN\\nx\nHOPPER_DATABASE_URL=${databaseUrlFor(db.dbPath)}\n`, { mode: 0o600 });
     const runtime = mkdtempSync(join(tmpdir(), 'jh-open-ui-run-'));
     dirs.push(runtime);
     const { bin } = fakeBin(false);
-    const r = await run({ PATH: bin, HOME: '/nonexistent', XDG_RUNTIME_DIR: runtime, JOB_HOPPER_ENV_FILE: envFile });
+    const r = await run({ PATH: bin, HOME: '/nonexistent', XDG_RUNTIME_DIR: runtime, HOPPER_ENV_FILE: envFile });
     expect(r.code, r.stderr).toBe(0);
-    expect(r.stdout).toContain(join(runtime, 'job-hopper', 'ui-login.html'));
-    expect(readFileSync(join(runtime, 'job-hopper', 'ui-login.html'), 'utf8')).toContain('action="http://127.0.0.1:4790/ui/login"');
+    expect(r.stdout).toContain(join(runtime, 'hopper', 'ui-login.html'));
+    expect(readFileSync(join(runtime, 'hopper', 'ui-login.html'), 'utf8')).toContain('action="http://127.0.0.1:4790/ui/login"');
   });
 
   it('fails clearly, before anything is written, when no database is known', async () => {
     const runtime = mkdtempSync(join(tmpdir(), 'jh-open-ui-run-'));
     dirs.push(runtime);
     const { bin } = fakeBin(false);
-    const r = await run({ PATH: bin, HOME: '/nonexistent', XDG_RUNTIME_DIR: runtime, JOB_HOPPER_ENV_FILE: join(runtime, 'missing.env') });
+    const r = await run({ PATH: bin, HOME: '/nonexistent', XDG_RUNTIME_DIR: runtime, HOPPER_ENV_FILE: join(runtime, 'missing.env') });
     expect(r.code).not.toBe(0);
-    expect(r.stderr).toMatch(/JOB_HOPPER_DATABASE_URL/);
-    expect(existsSync(join(runtime, 'job-hopper', 'ui-login.html'))).toBe(false);
+    expect(r.stderr).toMatch(/HOPPER_DATABASE_URL/);
+    expect(existsSync(join(runtime, 'hopper', 'ui-login.html'))).toBe(false);
   });
 });

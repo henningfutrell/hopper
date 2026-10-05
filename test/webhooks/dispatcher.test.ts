@@ -52,11 +52,11 @@ describe('webhook dispatcher', () => {
     const r = receiver.received[0]!;
     expect(r.body).toBe(JSON.stringify(ev));
     expect(r.headers['content-type']).toBe('application/json');
-    expect(r.headers['x-jobhopper-event']).toBe('job.queued');
-    expect(r.headers['x-jobhopper-delivery']).toBe(fake.deliveries()[0]!.id);
-    const ts = r.headers['x-jobhopper-timestamp'] as string;
+    expect(r.headers['x-hopper-event']).toBe('job.queued');
+    expect(r.headers['x-hopper-delivery']).toBe(fake.deliveries()[0]!.id);
+    const ts = r.headers['x-hopper-timestamp'] as string;
     expect(ts).toMatch(/^\d+$/);
-    expect(verify('topsecret', ts, r.body, r.headers['x-jobhopper-signature'] as string)).toBe(true);
+    expect(verify('topsecret', ts, r.body, r.headers['x-hopper-signature'] as string)).toBe(true);
     expect(fake.deliveries()[0]!.attempts).toBe(1);
     expect(s.updates.at(-1)!.status).toBe('delivered');
   });
@@ -139,8 +139,8 @@ describe('webhook dispatcher', () => {
     fake.append('job.finished');
     await until(() => fake.deliveries()[1]?.status === 'delivered');
     const [a, b] = receiver.received;
-    expect(verify('shh', a!.headers['x-jobhopper-timestamp'] as string, a!.body, a!.headers['x-jobhopper-signature'] as string)).toBe(true);
-    expect(verify('rotated', b!.headers['x-jobhopper-timestamp'] as string, b!.body, b!.headers['x-jobhopper-signature'] as string)).toBe(true);
+    expect(verify('shh', a!.headers['x-hopper-timestamp'] as string, a!.body, a!.headers['x-hopper-signature'] as string)).toBe(true);
+    expect(verify('rotated', b!.headers['x-hopper-timestamp'] as string, b!.body, b!.headers['x-hopper-signature'] as string)).toBe(true);
   });
 
   it('a secret the runtime does not provide: nothing is sent; the delivery retries, naming the variable', async () => {

@@ -69,7 +69,7 @@ describe('GET /api/machines/config', () => {
     const { a } = await start();
     const c = await config(a);
     expect(c.version).toMatch(/^[0-9a-f]{64}$/);
-    expect(c.attached).toEqual([{ name: 'desk', ssh: 'desk', lanes: 1, executors: ['test'], herdrBin: '/usr/bin/herdr', session: 'job-hopper' }]);
+    expect(c.attached).toEqual([{ name: 'desk', ssh: 'desk', lanes: 1, executors: ['test'], herdrBin: '/usr/bin/herdr', session: 'hopper' }]);
     expect(c.executors).toEqual(['test', 'herdr-claude']);
     expect(c.machine).toMatchObject({ name: 'local', plugin: 'local' });
     expect(c.ssh.targets).toEqual(['laptop', 'desk', 'unreachable']);

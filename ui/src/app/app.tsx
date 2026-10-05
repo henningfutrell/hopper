@@ -46,7 +46,7 @@ export function App() {
     load().then(() => { if (!cancelled) close = connect(); }, (e: Error) => setLoadError(e.message));
     return () => { cancelled = true; close?.(); };
   }, []);
-  useEffect(() => { document.title = view === 'overview' ? 'job-hopper' : `${viewLabel(view)} · job-hopper`; }, [view]);
+  useEffect(() => { document.title = view === 'overview' ? 'hopper' : `${viewLabel(view)} · hopper`; }, [view]);
   const Current = VIEW[view];
   return (
     <TooltipProvider delayDuration={300}>

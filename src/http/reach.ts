@@ -11,7 +11,7 @@ export interface Lan {
   names: readonly string[];
   /** CIDR ranges a LAN or public request may come from. */
   peers: readonly string[];
-  /** JOB_HOPPER_PUBLIC_URL's origin (`https://hopper.example.com`), or undefined. */
+  /** HOPPER_PUBLIC_URL's origin (`https://hopper.example.com`), or undefined. */
   publicUrl?: string | undefined;
 }
 
@@ -46,7 +46,7 @@ export function classifyRequest(req: { host: string | undefined; peer: string | 
   const known = [...loopbackHosts(port), ...lanHosts(port, lan), ...publicHosts(lan)];
   if (!local) {
     const listed = peer !== '' && lan.peers.length > 0 && peers.check(peer, isIPv6(peer) ? 'ipv6' : 'ipv4');
-    if (!listed) return { refuse: 403, why: `peer ${peer || '(unknown)'} is not on loopback or in JOB_HOPPER_LAN_PEERS` };
+    if (!listed) return { refuse: 403, why: `peer ${peer || '(unknown)'} is not on loopback or in HOPPER_LAN_PEERS` };
     if (lanHosts(port, lan).includes(host) || loopbackHosts(port).includes(host)) return { reach: 'lan' };
     if (publicHosts(lan).includes(host)) return { reach: 'public' };
     return { refuse: 421, why: `misdirected request: Host must be ${known.join(' or ')}` };

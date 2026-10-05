@@ -9,8 +9,8 @@ import { waitFor } from '../support/wait.ts';
 let t: TestApp | undefined;
 let cleanup: (() => void) | undefined;
 
-const ASK = { output: ['● Which colour should the shed be?', '  JOB_HOPPER_QUESTION'] };
-const DONE = { steps: ['● Painting'], output: ['● Painted the shed.', '  JOB_HOPPER_DONE'] };
+const ASK = { output: ['● Which colour should the shed be?', '  HOPPER_QUESTION'] };
+const DONE = { steps: ['● Painting'], output: ['● Painted the shed.', '  HOPPER_DONE'] };
 const EXECUTORS = [{ name: 'test', plugin: 'test' }, { name: 'herdr-claude', plugin: 'herdr-claude', options: { pollMs: 10, idleQuestionMs: 5000 } }];
 
 async function start(herdr: FakeHerdrClient, env: Record<string, string> = {}): Promise<TestApp> {
@@ -50,9 +50,9 @@ describe('herdr-claude job through the daemon', () => {
     expect(herdr.calls.find((c) => c.method === 'createTab')!.args[0]).toMatchObject({ env: { HOPPER_REPO: 'o/r', HOPPER_JOB_ID: job.id } });
   });
 
-  it('JOB_HOPPER_KEEP_PANES=true leaves the finished pane open', async () => {
+  it('HOPPER_KEEP_PANES=true leaves the finished pane open', async () => {
     const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [DONE] });
-    const a = await start(herdr, { JOB_HOPPER_KEEP_PANES: 'true' });
+    const a = await start(herdr, { HOPPER_KEEP_PANES: 'true' });
     const job = await a.pull({}, item());
     await a.waitForStatus(job.id, 'finished', 8000);
     await new Promise((r) => setTimeout(r, 100));

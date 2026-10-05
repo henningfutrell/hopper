@@ -41,5 +41,5 @@ export function writePlugin(dir: string, name: string, source: string, file = 'i
   return path;
 }
 
-/** The documented example plugin (design.md "Plugin contract"), type-checked through `job-hopper/plugin`. */
+/** The documented example plugin (design.md "Plugin contract"), type-checked through `hopper/plugin`. */
 export const ALWAYS_PROCEED_DIR = join(import.meta.dirname, 'fixtures', 'always-proceed');

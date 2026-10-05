@@ -40,7 +40,7 @@ let n = 0;
 const machine = () => `studio${n}`;
 const sock = () => clientSocket(dir, machine());
 const hopper = (token = TOKEN) => createHerdrCliClient({ client: { machine: machine(), socket: sock(), token: () => token } });
-const serve = async (token = TOKEN) => { n++; client = await startTestClient(sock(), { token: () => token, herdrBin: HERDR, session: 'job-hopper' }); };
+const serve = async (token = TOKEN) => { n++; client = await startTestClient(sock(), { token: () => token, herdrBin: HERDR, session: 'hopper' }); };
 const herdrCalls = (): string[][] => (existsSync(join(dir, 'calls.jsonl'))
   ? readFileSync(join(dir, 'calls.jsonl'), 'utf8').trim().split('\n').map((l) => (JSON.parse(l) as { argv: string[] }).argv) : []);
 
@@ -59,7 +59,7 @@ describe('herdr over a client target', () => {
     await expect(hopper().run(['usage'])).rejects.toMatchObject({ code: 'usage' });
     const text = `it's "quoted" $HOME \`date\` ; | &\nsecond line`;
     await hopper().prompt('jh-a', text);
-    expect(herdrCalls().at(-1)).toEqual(['--session', 'job-hopper', 'agent', 'prompt', 'jh-a', text]);
+    expect(herdrCalls().at(-1)).toEqual(['--session', 'hopper', 'agent', 'prompt', 'jh-a', text]);
   });
 
   it('the client refuses a hopper with the wrong token: code client, herdr never runs', async () => {
@@ -115,7 +115,7 @@ describe('herdr over a client target', () => {
     child.kill('SIGKILL');
     await new Promise((r) => child.once('exit', r));
     expect(existsSync(sock())).toBe(true);
-    client = await startTestClient(sock(), { token: () => TOKEN, herdrBin: HERDR, session: 'job-hopper' });
+    client = await startTestClient(sock(), { token: () => TOKEN, herdrBin: HERDR, session: 'hopper' });
     process.env.FAKE_HERDR_RUNNING = '1';
     const out = await waitFor(async () => hopper().exec(['status', 'server']).catch(() => undefined), { timeoutMs: 5000, what: 'the new relay' });
     expect(out).toMatch(/status: running/);

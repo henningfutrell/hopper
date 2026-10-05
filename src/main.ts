@@ -35,7 +35,7 @@ import { logFailures } from './engine/failure-log.ts';
 import { createSourceSync, idleStatus, withFixedStatuses, type GitHubApi, type SourceSync } from './sources/index.ts';
 import { runtimeSecrets } from './secrets/runtime.ts';
 import { openStore } from './store/index.ts';
-import { createInstallScriptBuilder, createRestarter, createUpdater, restartBlockers } from './update/index.ts';
+import { createInstallScriptBuilder, createRestarter, createUpdater, renameBoot, RESTART_EXIT_CODE, restartBlockers } from './update/index.ts';
 import { createWebhookConfigWatcher, type WebhookConfigWatcher } from './webhooks/config.ts';
 import { createWebhooksEditor } from './webhooks/edit.ts';
 import { createWebhookDispatcher } from './webhooks/index.ts';
@@ -118,11 +118,11 @@ function withSeams(seams: AppSeams) {
   });
 }
 
-/** JOB_HOPPER_* variables that are set but read by nothing: one loud line. */
+/** HOPPER_* variables that are set but read by nothing: one loud line. */
 function warnLeftoverEnv(config: Config): void {
   const names = Object.keys(config.leftoverEnv).sort();
   if (names.length === 0) return;
-  console.warn(`job-hopper: WARNING: set but no longer read (plugins.yaml configures every part; remove them from the unit): ${names.join(', ')}`);
+  console.warn(`hopper: WARNING: set but no longer read (plugins.yaml configures every part; remove them from the unit): ${names.join(', ')}`);
 }
 
 /** The job sources the sync loop runs, and fixed /api/sources entries for the ones that do not. */
@@ -204,7 +204,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   // The pinned host keys follow plugins.yaml: rewritten when it changes, each problem logged once.
   const pinProblems = new Set<string>();
   const pinned = (machines: AttachedMachine[]): AttachedMachine[] => {
-    for (const p of pinHostKeys(dataDir, machines)) if (!pinProblems.has(p)) { pinProblems.add(p); logger.warn(`job-hopper: ${p}`); }
+    for (const p of pinHostKeys(dataDir, machines)) if (!pinProblems.has(p)) { pinProblems.add(p); logger.warn(`hopper: ${p}`); }
     return machines;
   };
   pinned(host.attachedMachines());
@@ -336,10 +336,19 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
 }
 
 async function main(): Promise<void> {
+  // The first boot of a job-hopper install's self-update (issue #112): hand over to the hopper units, or
+  // run the previous install until no job holds a pane in the old herdr session.
+  const renamed = renameBoot({ env: process.env, appDir: APP_DIR, log: (l) => console.log(l) });
+  if (renamed === 'rollback') process.exit(RESTART_EXIT_CODE);
+  if (renamed === 'handover') {
+    process.once('SIGTERM', () => process.exit(0));
+    setInterval(() => {}, 60_000);
+    return;
+  }
   const app = await startApp(loadConfig(process.env));
   logStartup(app);
   const shutdown = (signal: string): void => {
-    console.log(`job-hopper: ${signal}, shutting down`);
+    console.log(`hopper: ${signal}, shutting down`);
     app.stop().then(() => process.exit(0), (e) => {
       console.error('shutdown failed', e);
       process.exit(1);

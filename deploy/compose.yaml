@@ -2,8 +2,8 @@
 # for local development. The hopper in containers is compose.yaml at the root.
 #
 #   POSTGRES_PASSWORD=<password> docker compose -f deploy/compose.yaml up -d postgres
-#   JOB_HOPPER_DATABASE_URL=postgres://hopper:<password>@127.0.0.1:${POSTGRES_PORT:-5433}/hopper
-name: job-hopper
+#   HOPPER_DATABASE_URL=postgres://hopper:<password>@127.0.0.1:${POSTGRES_PORT:-5433}/hopper
+name: hopper
 
 services:
   postgres:
@@ -26,3 +26,6 @@ services:
 
 volumes:
   postgres:
+    # The database's data, under the name compose gave it when the project was job-hopper (issue #112):
+    # under the project's own name it would be a new, empty volume beside the data.
+    name: job-hopper_postgres

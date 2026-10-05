@@ -43,7 +43,7 @@ export interface SamlProviderConfig extends ProviderBase {
 export type ProviderConfig = OidcProviderConfig | GithubProviderConfig | SamlProviderConfig;
 /** No sign-in: everyone who reaches the UI gets a session with this role. */
 export interface NoSignInConfig { role: UiRole }
-/** One password sign-in account: an argon2id hash (`job-hopper password-hash`), never the password. */
+/** One password sign-in account: an argon2id hash (`hopper password-hash`), never the password. */
 export interface PasswordUser { username: string; passwordHash: string; role: UiRole }
 export interface AuthConfig {
   local: { enabled: boolean };
@@ -101,7 +101,7 @@ const saml = z.strictObject({
 const provider = z.discriminatedUnion('type', [oidc, github, saml]);
 const passwordUser = z.strictObject({
   username: z.string().min(1).max(128),
-  passwordHash: z.string().startsWith('$argon2id$', 'must be an argon2id hash: job-hopper password-hash'),
+  passwordHash: z.string().startsWith('$argon2id$', 'must be an argon2id hash: hopper password-hash'),
   role: z.enum(UI_ROLES),
 });
 const schema = z.strictObject({

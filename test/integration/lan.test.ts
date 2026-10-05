@@ -15,7 +15,7 @@ let lanOrigin: string;
 beforeEach(async () => {
   const db = tempDbPath();
   cleanup = db.cleanup;
-  t = await startTestApp({ dbPath: db.dbPath, env: { JOB_HOPPER_LAN_NAMES: 'server,server.lan', JOB_HOPPER_LAN_PEERS: '192.0.2.0/24' } });
+  t = await startTestApp({ dbPath: db.dbPath, env: { HOPPER_LAN_NAMES: 'server,server.lan', HOPPER_LAN_PEERS: '192.0.2.0/24' } });
   port = new URL(t.url).port;
   lanHost = `server:${port}`;
   lanOrigin = `http://${lanHost}`;
@@ -58,12 +58,12 @@ describe('the UI across the LAN', () => {
 
   it('with a UI session a LAN request reads /api/ (header) and the event stream (session query)', async () => {
     const token = await t.login();
-    expect((await lanGet('/api/health', { 'x-jobhopper-session': token })).status).toBe(200);
-    expect((await lanGet('/api/questions', { 'x-jobhopper-session': token })).status).toBe(200);
+    expect((await lanGet('/api/health', { 'x-hopper-session': token })).status).toBe(200);
+    expect((await lanGet('/api/questions', { 'x-hopper-session': token })).status).toBe(200);
     const s = await streamStatus(`/api/events/stream?after=0&session=${token}`, { host: lanHost, accept: 'text/event-stream' });
     expect(s.status).toBe(200);
     expect(s.type).toMatch(/text\/event-stream/);
-    expect((await lanGet('/api/health', { 'x-jobhopper-session': 'f'.repeat(64) })).status).toBe(401);
+    expect((await lanGet('/api/health', { 'x-hopper-session': 'f'.repeat(64) })).status).toBe(401);
     expect((await lanGet(`/api/health?session=${token}`)).status).toBe(401);
   });
 
@@ -75,7 +75,7 @@ describe('the UI across the LAN', () => {
     const token = await t.login();
     const mutate = (origin: string) => rawRequest(t.url, {
       method: 'POST', path: '/ui/api/router-mode', body: JSON.stringify({ mode: 'active' }),
-      headers: { host: lanHost, origin, 'content-type': 'application/json', 'x-jobhopper-session': token, 'sec-fetch-site': 'same-origin' },
+      headers: { host: lanHost, origin, 'content-type': 'application/json', 'x-hopper-session': token, 'sec-fetch-site': 'same-origin' },
     });
     expect((await mutate(lanOrigin)).status).toBe(200);
     expect((await mutate(`http://server.lan:${port}`)).status).toBe(200);
@@ -96,7 +96,7 @@ describe('the UI across the LAN', () => {
     const login = await lanLogin(code);
     expect(login.status).toBe(200);
     const lanToken = TOKEN_RE.exec(login.text)?.[1];
-    expect((await lanGet('/api/health', { 'x-jobhopper-session': lanToken! })).status).toBe(200);
+    expect((await lanGet('/api/health', { 'x-hopper-session': lanToken! })).status).toBe(200);
     expect((await lanLogin(code)).status).toBe(403);
   });
 
@@ -141,7 +141,7 @@ describe('without LAN names', () => {
       const token = await local.login();
       const res = await local.ui<{ error: string }>('/ui/api/device-link', {}, { token });
       expect(res.status).toBe(409);
-      expect(res.body.error).toMatch(/JOB_HOPPER_LAN_NAMES/);
+      expect(res.body.error).toMatch(/HOPPER_LAN_NAMES/);
       expect(local.app.answerUrl('q1')).toBe(`${local.url}/#question-q1`);
     } finally {
       await local.stop();

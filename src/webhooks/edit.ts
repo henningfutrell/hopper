@@ -93,7 +93,7 @@ function indexOf(doc: Document, name: string): number {
 }
 
 const CHANGED = `${WEBHOOKS} changed since it was read; reload and edit again`;
-const BY_HAND = 'job-hopper config edit webhooks.yaml';
+const BY_HAND = 'hopper config edit webhooks.yaml';
 
 export function createWebhooksEditor(o: {
   documents: ConfigDocuments;

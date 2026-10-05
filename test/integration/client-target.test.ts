@@ -41,7 +41,7 @@ async function boot(daemonToken: string | undefined, clientToken?: string): Prom
   process.env.FAKE_HERDR_RUNNING = '1';
   if (clientToken) {
     mkdirSync(join(dataDir, 'clients'), { recursive: true, mode: 0o700 });
-    server = await startTestClient(clientSocket(dataDir, 'studio'), { token: () => clientToken, herdrBin: HERDR, session: 'job-hopper' });
+    server = await startTestClient(clientSocket(dataDir, 'studio'), { token: () => clientToken, herdrBin: HERDR, session: 'hopper' });
   }
   t = await startTestApp({
     dbPath: db.dbPath,

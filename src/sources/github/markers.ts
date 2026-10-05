@@ -2,7 +2,8 @@
 // now, but old ones (claimed, progress, question, answered, finished, and jobs' own
 // `kind=job-comment`) remain on issues, so the context filter still tells them from the owner's
 // text. The gh source posted as the owner, so the marker is the only way to tell its comments
-// from theirs.
+// from theirs. Those comments were posted before the rename to hopper (issue #112) and carry the
+// old product name; they are on GitHub, not ours to rewrite, so the marker keeps it.
 
 const MARKER_LINE_RE = /^<!-- job-hopper v1 /;
 

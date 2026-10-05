@@ -8,7 +8,7 @@ const CONFIG: MachinesConfig = {
   document: 'plugins.yaml',
   version: 'v1',
   machine: { name: 'local', plugin: 'local', options: { lanes: 4 } },
-  attached: [{ name: 'desk', ssh: 'desk', lanes: 1, executors: ['test'], session: 'job-hopper', herdrBin: '/usr/bin/herdr' }],
+  attached: [{ name: 'desk', ssh: 'desk', lanes: 1, executors: ['test'], session: 'hopper', herdrBin: '/usr/bin/herdr' }],
   executors: ['herdr-claude', 'test'],
   ssh: { targets: ['laptop', 'desk'], notes: [] },
 };

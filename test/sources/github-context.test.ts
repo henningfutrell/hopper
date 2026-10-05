@@ -12,7 +12,7 @@ describe('GitHub source: full issue context and job environment', () => {
     expect(item.prompt).toBe([
       'Write a README.',
       '',
-      '[job-hopper issue context]',
+      '[hopper issue context]',
       `repo: ${REPO} · issue: #1 · url: ${URL1}`,
       'title: Add a README',
       'labels: hopper, hopper:high · author: owner',
@@ -68,9 +68,9 @@ describe('GitHub source: full issue context and job environment', () => {
     gh.createIssue({ repo: REPO, body: 'b'.repeat(70000), labels: ['hopper'] });
     for (let i = 0; i < 40; i++) gh.addComment(REPO, 1, 'owner', `c${i} ${'y'.repeat(900)}`);
     const { prompt } = await discoverOne(source);
-    const [body, ...rest] = prompt.split('\n\n[job-hopper issue context]');
+    const [body, ...rest] = prompt.split('\n\n[hopper issue context]');
     expect(body!.length).toBeLessThanOrEqual(64000);
-    const context = `[job-hopper issue context]${rest.join('')}`;
+    const context = `[hopper issue context]${rest.join('')}`;
     expect(context.length).toBeLessThanOrEqual(16000);
     expect(context).not.toMatch(/read-only|comment on|status comment/);
     expect(context).toContain('c39 '); // the newest comments survive

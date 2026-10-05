@@ -21,7 +21,7 @@ function harness(results: (boolean | Error)[]) {
   const lines: string[] = [];
   let calls = 0;
   const src = createAttachedMachineSource({
-    machine: () => ({ name: 'laptop', ssh: 'laptop', lanes: 2, executors: ['herdr-claude'], session: 'job-hopper', herdrBin: '/home/user/.local/bin/herdr' }),
+    machine: () => ({ name: 'laptop', ssh: 'laptop', lanes: 2, executors: ['herdr-claude'], session: 'hopper', herdrBin: '/home/user/.local/bin/herdr' }),
     clock: { now: () => new Date(t) },
     probeEveryMs: 30000,
     probe: async () => {
@@ -39,11 +39,11 @@ describe('attached machine source', () => {
     const h = harness([true]);
     expect(await h.src.list()).toEqual([{
       id: 'laptop', label: 'laptop', maxLanes: 2, online: false, executors: ['herdr-claude'], ssh: 'laptop',
-      herdr: { bin: '/home/user/.local/bin/herdr', session: 'job-hopper' },
+      herdr: { bin: '/home/user/.local/bin/herdr', session: 'hopper' },
     }]);
     await flush();
     expect((await h.src.list())[0]).toMatchObject({ online: true });
-    expect(h.lines).toEqual(['job-hopper: attached machine laptop online (ssh laptop)']);
+    expect(h.lines).toEqual(['hopper: attached machine laptop online (ssh laptop)']);
   });
 
   it('probes at most once per interval, and again after it', async () => {
@@ -65,15 +65,15 @@ describe('attached machine source', () => {
     h.advance(30000); await h.src.list(); await flush();
     h.advance(30000); await h.src.list(); await flush(); // same reason again: not logged again
     expect(h.lines).toEqual([
-      'job-hopper: attached machine laptop online (ssh laptop)',
-      'job-hopper: attached machine laptop offline: ssh laptop: No route to host',
-      'job-hopper: attached machine laptop offline: its herdr session is not running',
+      'hopper: attached machine laptop online (ssh laptop)',
+      'hopper: attached machine laptop offline: ssh laptop: No route to host',
+      'hopper: attached machine laptop offline: its herdr session is not running',
     ]);
   });
 
   it('honours a label', async () => {
     const h = createAttachedMachineSource({
-      machine: () => ({ name: 'laptop', label: 'arch-laptop', ssh: 'laptop', lanes: 1, executors: [], session: 'job-hopper', herdrBin: 'herdr' }), probe: async () => ({ online: true }),
+      machine: () => ({ name: 'laptop', label: 'arch-laptop', ssh: 'laptop', lanes: 1, executors: [], session: 'hopper', herdrBin: 'herdr' }), probe: async () => ({ online: true }),
     });
     expect((await h.list())[0]!.label).toBe('arch-laptop');
   });
@@ -90,7 +90,7 @@ describe('probeHerdrOverSsh', () => {
     process.env = { ...saved };
     rmSync(dir, { recursive: true, force: true });
   });
-  const probe = (target: string) => probeHerdrOverSsh({ target, sshBin: SSH, herdrBin: HERDR, session: 'job-hopper', controlDir: join(dir, 's'), auth: testSshAuth(join(dir, 'auth')) });
+  const probe = (target: string) => probeHerdrOverSsh({ target, sshBin: SSH, herdrBin: HERDR, session: 'hopper', controlDir: join(dir, 's'), auth: testSshAuth(join(dir, 'auth')) });
 
   it('true when the remote herdr session reports running', async () => {
     process.env.FAKE_HERDR_RUNNING = '1';

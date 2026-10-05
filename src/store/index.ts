@@ -15,7 +15,7 @@ import { createUiSessionRepository } from './ui-sessions.ts';
 import { createWebhookRepository } from './webhooks.ts';
 
 
-/** `url`: JOB_HOPPER_DATABASE_URL, `postgres://…` (design.md "Database"). */
+/** `url`: HOPPER_DATABASE_URL, `postgres://…` (design.md "Database"). */
 export function openStore(o: { url: string; clock: Clock; idGen?: IdGen }): Store {
   const db = openDb(o.url);
   try {

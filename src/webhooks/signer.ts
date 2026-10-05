@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
-/** `sha256=<hex HMAC-SHA256(secret, "<timestamp>.<rawBody>")>` — the x-jobhopper-signature value. */
+/** `sha256=<hex HMAC-SHA256(secret, "<timestamp>.<rawBody>")>` — the x-hopper-signature value. */
 export function sign(secret: string, timestamp: string, rawBody: string): string {
   return 'sha256=' + createHmac('sha256', secret).update(`${timestamp}.${rawBody}`).digest('hex');
 }

@@ -16,7 +16,7 @@ afterEach(async () => {
 });
 
 function bundle(files: Record<string, string>): string {
-  const dir = mkdtempSync(join(tmpdir(), 'job-hopper-ui-'));
+  const dir = mkdtempSync(join(tmpdir(), 'hopper-ui-'));
   cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
   for (const [path, body] of Object.entries(files)) {
     mkdirSync(join(dir, path, '..'), { recursive: true });

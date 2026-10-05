@@ -1,4 +1,4 @@
-# Standing rules for job-hopper's answer tiers (starter — edit me)
+# Standing rules for hopper's answer tiers (starter — edit me)
 
 Every model tier answering a question from an unattended job reads these rules.
 

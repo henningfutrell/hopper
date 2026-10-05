@@ -68,7 +68,7 @@ describe('roles, sessions and logout: the same for every provider', () => {
 });
 
 describe('a public URL (behind a reverse proxy)', () => {
-  const env = { JOB_HOPPER_PUBLIC_URL: 'https://hopper.example.com' };
+  const env = { HOPPER_PUBLIC_URL: 'https://hopper.example.com' };
 
   it('the sign-in origin is the public URL; its Host is served; /api/ needs a session there', async () => {
     const idp = await oidc();
@@ -79,7 +79,7 @@ describe('a public URL (behind a reverse proxy)', () => {
     expect((await rawRequest(app.url, { path: '/api/health', headers: { host } })).status).toBe(401);
     const run = await signIn(app.url, 'https://hopper.example.com', 'corp');
     expect(String(run.start.headers.location)).toContain(encodeURIComponent('https://hopper.example.com/ui/auth/corp/callback'));
-    expect((await rawRequest(app.url, { path: '/api/health', headers: { host, 'x-jobhopper-session': run.token! } })).status).toBe(200);
+    expect((await rawRequest(app.url, { path: '/api/health', headers: { host, 'x-hopper-session': run.token! } })).status).toBe(200);
   });
 
   it('mutations accept the public origin', async () => {

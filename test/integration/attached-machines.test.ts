@@ -53,7 +53,7 @@ describe('attached machines', () => {
     const job = await a.pull({}, { executor: 'where' });
     const done = await a.waitForStatus(job.id, 'finished');
     expect(done.result).toEqual({ machine: 'laptop', ssh: 'laptop' });
-    expect(a.probed[0]).toMatchObject({ name: 'laptop', ssh: 'laptop', session: 'job-hopper', herdrBin: 'herdr' });
+    expect(a.probed[0]).toMatchObject({ name: 'laptop', ssh: 'laptop', session: 'hopper', herdrBin: 'herdr' });
     const claimed = (await a.events('types=job.claimed&limit=100')).find((e) => e.jobId === job.id)!;
     expect(claimed.machineId).toBe('laptop');
   });

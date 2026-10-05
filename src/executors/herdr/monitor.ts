@@ -89,7 +89,7 @@ export async function watchTurn(w: TurnWatch): Promise<ExecutionOutcome | Interr
       else if (turn.lastMarker === 'done') {
         return { kind: 'finished', result: { summary: turn.assistantText.slice(0, SUMMARY_CHARS), paneId: w.paneId } };
       } else if (turn.lastMarker === 'failed') {
-        return { kind: 'failed', error: turn.failedReason || 'JOB_HOPPER_FAILED without a reason' };
+        return { kind: 'failed', error: turn.failedReason || 'HOPPER_FAILED without a reason' };
       } else if (turn.lastMarker === 'question') {
         return park({ kind: 'question', question: { text: turn.assistantText, recentOutput: tail(recent, OUTPUT_LINES), detectedBy: 'marker' } });
       } else {

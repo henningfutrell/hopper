@@ -25,8 +25,8 @@ export function setup(over: Record<string, unknown> = {}, o: { knownKeys?: (keys
   return { gh, config, source };
 }
 
-export const BOT = 'job-hopper-owner[bot]';
-export const APP_INFO = { slug: 'job-hopper-owner', htmlUrl: 'https://github.com/apps/job-hopper-owner' };
+export const BOT = 'hopper-owner[bot]';
+export const APP_INFO = { slug: 'hopper-owner', htmlUrl: 'https://github.com/apps/hopper-owner' };
 
 export interface AppSetupOptions {
   installed?: string[];

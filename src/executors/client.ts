@@ -41,7 +41,7 @@ function sessionOn(t: ClientTransport): Promise<ClientHttp2Session> {
   const open = sessions.get(t.socket);
   if (open) return open;
   const opened = new Promise<ClientHttp2Session>((resolve, reject) => {
-    const s = connect('http://job-hopper-client', { createConnection: () => connectSocket(t.socket) });
+    const s = connect('http://hopper-client', { createConnection: () => connectSocket(t.socket) });
     const drop = (): void => { if (sessions.get(t.socket) === opened) sessions.delete(t.socket); };
     s.once('connect', () => resolve(s));
     s.once('error', (e: NodeJS.ErrnoException) => {

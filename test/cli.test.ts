@@ -22,7 +22,7 @@ function cli(url: string | undefined, argv: string[], o: { stdin?: string; edit?
   const out: string[] = [];
   const err: string[] = [];
   const io: CliIo = {
-    env: url ? { JOB_HOPPER_DATABASE_URL: url } : {}, stdin: () => o.stdin ?? '', out: (t) => out.push(t), err: (t) => err.push(t),
+    env: url ? { HOPPER_DATABASE_URL: url } : {}, stdin: () => o.stdin ?? '', out: (t) => out.push(t), err: (t) => err.push(t),
     ...(o.edit ? { edit: o.edit } : {}),
   };
   const code = runCli(argv, io);
@@ -36,20 +36,20 @@ function documentIn(url: string, name: 'plugins.yaml' | 'rules.md'): string | un
 
 const PLUGINS = 'version: 1\nexecutors:\n  - name: test\n    plugin: test\n';
 
-describe('job-hopper config', () => {
-  it('needs JOB_HOPPER_DATABASE_URL and says so', () => {
+describe('hopper config', () => {
+  it('needs HOPPER_DATABASE_URL and says so', () => {
     const r = cli(undefined, ['config', 'get', 'rules.md']);
     expect(r.code).toBe(2);
-    expect(r.err).toMatch(/JOB_HOPPER_DATABASE_URL is not set/);
+    expect(r.err).toMatch(/HOPPER_DATABASE_URL is not set/);
   });
 
-  it('reads the database URL from a mounted secret file, JOB_HOPPER_DATABASE_URL_FILE (issue #56)', () => {
+  it('reads the database URL from a mounted secret file, HOPPER_DATABASE_URL_FILE (issue #56)', () => {
     const url = db();
     const d = mkdtempSync(`${tmpdir()}/jh-cli-url-`);
     dirs.push(d);
     writeFileSync(`${d}/url`, `${url}\n`, { mode: 0o600 });
     const out: string[] = [];
-    const code = runCli(['config', 'version', 'rules.md'], { env: { JOB_HOPPER_DATABASE_URL_FILE: `${d}/url` }, stdin: () => '', out: (t) => out.push(t), err: () => {} });
+    const code = runCli(['config', 'version', 'rules.md'], { env: { HOPPER_DATABASE_URL_FILE: `${d}/url` }, stdin: () => '', out: (t) => out.push(t), err: () => {} });
     expect(code).toBe(0);
     expect(out.join('')).toBe('missing\n');
   });
@@ -116,7 +116,7 @@ describe('job-hopper config', () => {
   });
 });
 
-describe('job-hopper login-code', () => {
+describe('hopper login-code', () => {
   it('mints a one-time code into the database and prints it; --link prints the device link', () => {
     const url = db();
     const a = cli(url, ['login-code']);
@@ -131,7 +131,7 @@ describe('job-hopper login-code', () => {
   });
 });
 
-describe('job-hopper password-hash', () => {
+describe('hopper password-hash', () => {
   it('prints an argon2id hash of the password on stdin that verifies; needs no database', async () => {
     const out: string[] = [];
     const err: string[] = [];
@@ -151,15 +151,15 @@ describe('job-hopper password-hash', () => {
   });
 });
 
-describe('job-hopper help (issue #68)', () => {
+describe('hopper help (issue #68)', () => {
   it.each([['help'], ['--help'], ['-h']])('%s prints every command with what it does, and where to read on; needs no database', (arg) => {
     const r = cli(undefined, [arg]);
     expect(r.code).toBe(0);
     expect(r.err).toBe('');
     for (const command of ['config get', 'config version', 'config set', 'config edit', 'login-code', 'password-hash', 'help']) {
-      expect(r.out).toContain(`job-hopper ${command}`);
+      expect(r.out).toContain(`hopper ${command}`);
     }
-    expect(r.out).toMatch(/JOB_HOPPER_DATABASE_URL/);
+    expect(r.out).toMatch(/HOPPER_DATABASE_URL/);
     expect(r.out).toMatch(/node src\/main\.ts --help/);
     expect(r.out).toMatch(/\/docs\//);
   });
@@ -169,7 +169,7 @@ describe('job-hopper help (issue #68)', () => {
       const r = cli(undefined, argv);
       expect(r.code).toBe(2);
       expect(r.out).toBe('');
-      expect(r.err).toContain('job-hopper config edit');
+      expect(r.err).toContain('hopper config edit');
     }
   });
 });

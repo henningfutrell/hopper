@@ -1,5 +1,5 @@
 # The store catalogue of this repository as a plugin store (docs/design.md "Plugin store"):
-# set JOB_HOPPER_PLUGIN_STORE to this repository and the UI offers these example plugins.
+# set HOPPER_PLUGIN_STORE to this repository and the UI offers these example plugins.
 version: 1
 plugins:
   - id: canned-answer

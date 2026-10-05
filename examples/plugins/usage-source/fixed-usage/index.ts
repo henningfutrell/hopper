@@ -1,7 +1,7 @@
 // A usage source: budget readings the decider scales lanes by (past the soft limit fewer lanes,
 // at the hard limit none). This one reports one fixed reading.
 //   usageSources: [ { name: budget, plugin: fixed-usage, options: { used: 30, limit: 100 } } ]
-import type { PluginDefinition } from 'job-hopper/plugin';
+import type { PluginDefinition } from 'hopper/plugin';
 
 export default {
   id: 'fixed-usage',

@@ -27,21 +27,21 @@ export function createClientReleaseKeeper(o: { release: ClientRelease; logger: L
     try {
       running = await clientRunningRelease(t);
     } catch (e) {
-      say(t.machine, `job-hopper: client ${t.machine} runs no client release (${(e as Error).message}): install it again with scripts/attach-client.sh`, true);
+      say(t.machine, `hopper: client ${t.machine} runs no client release (${(e as Error).message}): install it again with scripts/attach-client.sh`, true);
       return { online: true, client: { current: false } };
     }
     if (running === ours) {
-      say(t.machine, `job-hopper: client ${t.machine}: runs the hopper's release ${ours}`);
+      say(t.machine, `hopper: client ${t.machine}: runs the hopper's release ${ours}`);
       return { online: true, client: { release: running, current: true } };
     }
     if (busy()) {
-      say(t.machine, `job-hopper: client ${t.machine}: runs release ${running}, the hopper's is ${ours}; loading it once no job runs there`);
+      say(t.machine, `hopper: client ${t.machine}: runs release ${running}, the hopper's is ${ours}; loading it once no job runs there`);
     } else {
       try {
         await loadClientRelease(t, o.release);
-        say(t.machine, `job-hopper: client ${t.machine}: loaded release ${ours} (was ${running}); it restarts to run it`);
+        say(t.machine, `hopper: client ${t.machine}: loaded release ${ours} (was ${running}); it restarts to run it`);
       } catch (e) {
-        say(t.machine, `job-hopper: client ${t.machine}: loading release ${ours} failed: ${(e as Error).message}`, true);
+        say(t.machine, `hopper: client ${t.machine}: loading release ${ours} failed: ${(e as Error).message}`, true);
       }
     }
     return { online: true, client: { release: running, current: false } };

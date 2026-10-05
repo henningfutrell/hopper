@@ -8,7 +8,7 @@
 #   usage: container-target.sh <container> [lanes]
 set -euo pipefail
 
-IMAGE="${JOB_HOPPER_TARGET_IMAGE:-alpine:latest}"
+IMAGE="${HOPPER_TARGET_IMAGE:-alpine:latest}"
 
 usage() { echo "usage: $0 <container> [lanes]" >&2; exit 2; }
 [ $# -ge 1 ] || usage
@@ -33,7 +33,7 @@ else
 fi
 
 docker exec -- "$NAME" true || { echo "container-target: docker exec into $NAME failed" >&2; exit 1; }
-step "container $NAME runs; attach it in plugins.yaml (job-hopper config edit plugins.yaml):"
+step "container $NAME runs; attach it in plugins.yaml (hopper config edit plugins.yaml):"
 cat <<YAML
 executors:
   - { name: command, plugin: command }

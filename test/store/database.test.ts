@@ -1,4 +1,4 @@
-// JOB_HOPPER_DATABASE_URL: the Postgres the store opens (design.md "Database"). Postgres is the only
+// HOPPER_DATABASE_URL: the Postgres the store opens (design.md "Database"). Postgres is the only
 // store (issue #53): there is one implementation, and anything that is not a Postgres URL is refused.
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';

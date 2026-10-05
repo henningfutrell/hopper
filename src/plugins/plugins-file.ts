@@ -71,7 +71,7 @@ const attachedMachine = z.strictObject({
   if (m.docker !== undefined) return { ...base, docker: m.docker, executors: m.executors ?? ['command'] };
   if (m.client !== undefined) return { ...base, client: { tokenEnv: m.client.tokenEnv }, executors: m.executors ?? ['herdr-claude'] };
   return {
-    ...base, ssh: m.ssh!, executors: m.executors ?? ['herdr-claude'], session: m.session ?? 'job-hopper', herdrBin: m.herdrBin ?? 'herdr',
+    ...base, ssh: m.ssh!, executors: m.executors ?? ['herdr-claude'], session: m.session ?? 'hopper', herdrBin: m.herdrBin ?? 'herdr',
     ...(m.hostKey !== undefined ? { hostKey: m.hostKey } : {}),
   };
 });
@@ -116,7 +116,7 @@ export function pluginsFileProblem(raw: unknown): string | undefined {
 export const PLUGINS = 'plugins.yaml';
 
 /** How the operator edits a config document by hand: the CLI against the same database (design.md "Config documents"). */
-export const BY_HAND = 'job-hopper config edit plugins.yaml';
+export const BY_HAND = 'hopper config edit plugins.yaml';
 
 /** The plugins document's text parsed and checked; `undefined` text: there is none yet. */
 export function loadPluginsFile(text: string | undefined): PluginsFileResult {

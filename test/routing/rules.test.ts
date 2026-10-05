@@ -6,7 +6,7 @@ import type { RoutingItem, RoutingRule } from '../../src/domain/types.ts';
 import { routeItem, routingRulesProblem, ruleMatches } from '../../src/routing/index.ts';
 
 const item = (over: Partial<RoutingItem> = {}): RoutingItem => ({
-  source: 'github-app', repo: 'owner/job-hopper', labels: ['hopper', 'Urgent'], author: 'owner', title: 'Fix the Login page', ...over,
+  source: 'github-app', repo: 'owner/hopper', labels: ['hopper', 'Urgent'], author: 'owner', title: 'Fix the Login page', ...over,
 });
 const rule = (name: string, match: RoutingRule['match'], set: RoutingRule['set']): RoutingRule => ({ name, match, set });
 const known = { machines: ['local', 'laptop'], executors: ['herdr-claude', 'test'] };
@@ -15,7 +15,7 @@ describe('ruleMatches', () => {
   it.each([
     ['source', { source: 'github-app' }, true],
     ['source (another instance)', { source: 'github' }, false],
-    ['repo exact, any case', { repo: 'Owner/Job-Hopper' }, true],
+    ['repo exact, any case', { repo: 'Owner/Hopper' }, true],
     ['repo glob', { repo: 'owner/*' }, true],
     ['repo glob across the slash', { repo: '*hopper' }, true],
     ['repo glob, no match', { repo: 'someone/*' }, false],

@@ -4,7 +4,7 @@
 // — so the key can do nothing else: no shell, no forwarding of any kind. It listens on that socket
 // (only this user may open it), takes the hopper daemon's one connection, and pipes it to the ssh
 // session's stdin and stdout, where the hopper client serves HTTP/2. When either side ends it exits,
-// and the client dials again. Imports nothing of job-hopper.
+// and the client dials again. Imports nothing of hopper.
 import { chmodSync, lstatSync, rmSync } from 'node:fs';
 import { createServer } from 'node:net';
 
@@ -17,7 +17,11 @@ if (!socket || !socket.startsWith('/') || !socket.endsWith('.sock')) {
 // A socket left by a tunnel that died blocks the listen: only ever a socket is removed.
 try { if (lstatSync(socket).isSocket()) rmSync(socket); } catch { /* none */ }
 
-/** Written first: the client skips whatever the login shell printed before it (relay.ts runs through the user's shell). */
+/**
+ * Written first: the client skips whatever the login shell printed before it (relay.ts runs through the user's shell).
+ * A wire constant every deployed client checks, so it keeps the name from before the rename (issue #112):
+ * a client that has not loaded this release yet must still reach the hopper to load it.
+ */
 const RELAY_MARKER = 'JOB-HOPPER-RELAY/1\n';
 
 const done = (): never => process.exit(0);

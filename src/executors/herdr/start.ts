@@ -9,7 +9,7 @@ import type { ClaudeJobPayload } from './payload.ts';
 import { SCRATCH_DIR, isTrustDialog } from './screen.ts';
 import { shellQuote } from '../ssh.ts';
 
-export const WORKSPACE_LABEL = 'job-hopper';
+export const WORKSPACE_LABEL = 'hopper';
 const START_TIMEOUT_MS = 60000;
 const SHELL_RETRY_MS = 100;
 /** What the scratch command prints last, so the hopper knows the shell ran it. */

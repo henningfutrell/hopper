@@ -273,8 +273,8 @@ describe('atomicity', () => {
     expect(r.svc.closeByHuman('nope')).toEqual({ ok: false, reason: 'not_found' });
   });
 
-  it('the close text tells the job to go on alone or fail with JOB_HOPPER_FAILED', () => {
-    expect(CLOSED_ANSWER).toBe('The owner closed this question without answering. Continue on your own judgement; if you cannot, end with JOB_HOPPER_FAILED and say why.');
+  it('the close text tells the job to go on alone or fail with HOPPER_FAILED', () => {
+    expect(CLOSED_ANSWER).toBe('The owner closed this question without answering. Continue on your own judgement; if you cannot, end with HOPPER_FAILED and say why.');
   });
 
   it('answerByHuman reports not_found and not_open', async () => {

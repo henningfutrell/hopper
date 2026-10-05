@@ -39,7 +39,7 @@ function commentLine(c: GitHubComment): string {
 
 export function contextBlock(issue: GitHubIssue, p: Priority, comments: GitHubComment[], limit: number, mode: SourceMode = 'gh'): string {
   const head = [
-    '[job-hopper issue context]',
+    '[hopper issue context]',
     `repo: ${issue.repo} · issue: #${issue.number} · url: ${issue.url}`,
     `title: ${oneLine(issue.title)}`,
     `labels: ${issue.labels.join(', ')} · author: ${issue.author}`,

@@ -1,6 +1,6 @@
 // The plugin SDK: every type a plugin is written against (design.md "Plugin contract").
-// Out-of-tree plugins import it type-only as `job-hopper/plugin` (package.json `exports`), which
-// type stripping erases, so a plugin needs nothing of job-hopper at runtime. Types only here.
+// Out-of-tree plugins import it type-only as `hopper/plugin` (package.json `exports`), which
+// type stripping erases, so a plugin needs nothing of hopper at runtime. Types only here.
 import type { z } from 'zod';
 import type {
   AnswerDraft, AnswerRequest, Answerer, Assessment, Assessor, Clock, ExecutionContext, ExecutionOutcome, Executor, JobSource,
@@ -40,7 +40,7 @@ export interface PluginLogger {
 export interface PluginContext {
   clock: Clock;
   logger: PluginLogger;
-  /** job-hopper's data dir (next to its database). */
+  /** hopper's data dir (next to its database). */
   dataDir: string;
   /** This plugin's own scratch dir (`<dataDir>/plugin-data/<id>`), created before `create`. */
   scratchDir: string;
@@ -80,7 +80,7 @@ export interface RoleInstance {
 }
 
 /**
- * What each role adds to the context. The router passes job-hopper's router mode on (Jev reads it);
+ * What each role adds to the context. The router passes hopper's router mode on (Jev reads it);
  * a job source learns which source keys already have jobs; a machine
  * source learns the executors registered when it is asked.
  */

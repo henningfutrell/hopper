@@ -55,8 +55,8 @@ function createClaudePlanSource(ctx: { clock: { now(): Date }; logger: { info(l:
 
   const note = (problem: string | undefined) => {
     if (problem === lastError) return;
-    if (problem) ctx.logger.warn(`job-hopper: usage source ${ctx.instanceName}: ${problem}`);
-    else ctx.logger.info(`job-hopper: usage source ${ctx.instanceName}: reading Claude usage`);
+    if (problem) ctx.logger.warn(`hopper: usage source ${ctx.instanceName}: ${problem}`);
+    else ctx.logger.info(`hopper: usage source ${ctx.instanceName}: reading Claude usage`);
     lastError = problem;
   };
 

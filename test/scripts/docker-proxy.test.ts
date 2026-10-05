@@ -13,7 +13,7 @@ const PROXY = `jh-script-proxy-${process.pid}`;
 const TARGET = `jh-script-dp-target-${process.pid}`;
 const OTHER = `jh-script-dp-other-${process.pid}`;
 let dir: string;
-const env = () => ({ ...process.env, JOB_HOPPER_DOCKER_DIR: dir, JOB_HOPPER_DOCKER_PROXY_NAME: PROXY });
+const env = () => ({ ...process.env, HOPPER_DOCKER_DIR: dir, HOPPER_DOCKER_PROXY_NAME: PROXY });
 const docker = (args: string[]) => spawnSync('docker', ['--host', `unix://${join(dir, 'docker.sock')}`, ...args], { encoding: 'utf8' });
 
 beforeAll(() => {
@@ -33,7 +33,7 @@ describe('docker-proxy.sh', () => {
       .toBe('true unless-stopped none true');
     const sock = join(dir, 'docker.sock');
     expect(statSync(sock).mode & 0o777).toBe(0o600);
-    expect(r.stdout).toContain(`JOB_HOPPER_DOCKER_HOST=unix://${sock}`);
+    expect(r.stdout).toContain(`HOPPER_DOCKER_HOST=unix://${sock}`);
     expect(dockerHost(() => `unix://${sock}`)).toBe(`unix://${sock}`);
   });
 

@@ -1,5 +1,5 @@
 // The plugin store (design.md "Plugin store", issue #75): the catalogue of the git repository the
-// operator names (JOB_HOPPER_PLUGIN_STORE), read in the background; installs, updates and removes
+// operator names (HOPPER_PLUGIN_STORE), read in the background; installs, updates and removes
 // store installs, one edit at a time. A store install is kept in the database (issue #93); its code
 // is unpacked into the work dir, proven to load as the catalogue says, renamed into place, and the
 // plugin host rescans. The work dir is scratch: `restore` unpacks every store install again at start.
@@ -20,9 +20,9 @@ const MARKER = '.plugin-store.json';
 export const installedDirOf = (workDir: string): string => join(workDir, 'plugin-store', 'installed');
 
 export interface PluginStoreOptions {
-  /** JOB_HOPPER_PLUGIN_STORE. */
+  /** HOPPER_PLUGIN_STORE. */
   repo?: string;
-  /** JOB_HOPPER_PLUGIN_DIR: the operator's plugins, never written but to move a store install left there into the database. */
+  /** HOPPER_PLUGIN_DIR: the operator's plugins, never written but to move a store install left there into the database. */
   pluginDir?: string;
   workDir: string;
   installs: Pick<SettingsRepository, 'getPluginInstalls' | 'setPluginInstalls'>;
@@ -59,7 +59,7 @@ function readMarker(id: string, dir: string): PluginInstall | undefined {
 }
 
 export function createPluginStore(o: PluginStoreOptions): PluginStore {
-  const unavailable = o.repo === undefined ? 'no plugin store: set JOB_HOPPER_PLUGIN_STORE to a git repository holding plugin-store.yaml' : undefined;
+  const unavailable = o.repo === undefined ? 'no plugin store: set HOPPER_PLUGIN_STORE to a git repository holding plugin-store.yaml' : undefined;
   const dir = installedDirOf(o.workDir);
   const mirror = o.mirror ?? createStoreMirror(join(o.workDir, 'plugin-store', 'repo.git'));
   let catalogue: (CatalogueEntry & { tree?: string })[] = [];
@@ -129,7 +129,7 @@ export function createPluginStore(o: PluginStoreOptions): PluginStore {
       error = undefined;
     } catch (e) {
       error = `plugin store ${o.repo}: ${message(e)}`;
-      o.logger.warn(`job-hopper: ${error}`);
+      o.logger.warn(`hopper: ${error}`);
     }
     checkedAt = o.clock.now().toISOString();
   }
@@ -147,7 +147,7 @@ export function createPluginStore(o: PluginStoreOptions): PluginStore {
       rmSync(join(dir, found.id, MARKER), { force: true });
       keep(found.id, found);
       rmSync(from, { recursive: true, force: true });
-      o.logger.info(`job-hopper: store install ${found.id} moved from the plugin dir into the database`);
+      o.logger.info(`hopper: store install ${found.id} moved from the plugin dir into the database`);
     }
   }
 
@@ -156,7 +156,7 @@ export function createPluginStore(o: PluginStoreOptions): PluginStore {
     const missing = [...installs().values()].filter((i) => !existsSync(join(dir, i.id)));
     if (missing.length === 0) return;
     if (o.repo === undefined) {
-      o.logger.warn(`job-hopper: store installs ${missing.map((i) => i.id).join(', ')} not restored: ${unavailable}`);
+      o.logger.warn(`hopper: store installs ${missing.map((i) => i.id).join(', ')} not restored: ${unavailable}`);
       return;
     }
     await refresh();
@@ -166,7 +166,7 @@ export function createPluginStore(o: PluginStoreOptions): PluginStore {
         await mirror.extract(i.tree, join(dir, i.id));
       } catch (e) {
         rmSync(join(dir, i.id), { recursive: true, force: true });
-        o.logger.warn(`job-hopper: store install ${i.id} not restored from ${o.repo} at ${i.commit}: ${message(e)}`);
+        o.logger.warn(`hopper: store install ${i.id} not restored from ${o.repo} at ${i.commit}: ${message(e)}`);
       }
     }
   }
@@ -212,7 +212,7 @@ export function createPluginStore(o: PluginStoreOptions): PluginStore {
     await o.plugins.edit({ action: 'rescan' });
     noteLoaded();
     o.events.append({ type: 'plugin.installed', data: { id, role: c.role, commit: at } });
-    o.logger.info(`job-hopper: plugin ${id} installed from the plugin store at ${at}${pending.has(id) ? ' — restart pending' : ''}`);
+    o.logger.info(`hopper: plugin ${id} installed from the plugin store at ${at}${pending.has(id) ? ' — restart pending' : ''}`);
     return { ok: true, report: report() };
   }
 
@@ -231,7 +231,7 @@ export function createPluginStore(o: PluginStoreOptions): PluginStore {
     pending.delete(id);
     await o.plugins.edit({ action: 'rescan' });
     o.events.append({ type: 'plugin.removed', data: { id } });
-    o.logger.info(`job-hopper: plugin ${id} removed (a store install)`);
+    o.logger.info(`hopper: plugin ${id} removed (a store install)`);
     return { ok: true, report: report() };
   }
 

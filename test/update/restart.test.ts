@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { RESTART_EXIT_CODE, restartMode } from '../../src/update/index.ts';
 
 describe('restartMode', () => {
-  it('exits under systemd or as a container PID 1, respawns otherwise, and follows JOB_HOPPER_RESTART', () => {
+  it('exits under systemd or as a container PID 1, respawns otherwise, and follows HOPPER_RESTART', () => {
     expect(restartMode({ INVOCATION_ID: 'x' }, 4242)).toBe('exit');
     expect(restartMode({}, 1)).toBe('exit');
     expect(restartMode({}, 4242)).toBe('respawn');

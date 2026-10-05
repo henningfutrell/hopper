@@ -131,7 +131,7 @@ describe('plugins.yaml attachedMachines (design.md "Attached machines")', () => 
     ].join('\n')));
     expect(r).toEqual({
       attachedMachines: [
-        { name: 'laptop', ssh: 'laptop', lanes: 2, executors: ['herdr-claude'], session: 'job-hopper', herdrBin: 'herdr' },
+        { name: 'laptop', ssh: 'laptop', lanes: 2, executors: ['herdr-claude'], session: 'hopper', herdrBin: 'herdr' },
         { name: 'pi', ssh: 'user@laptop.example', label: 'Pi', lanes: 1, executors: ['herdr-claude', 'other'], session: 'jh', herdrBin: '/opt/herdr' },
       ],
       warnings: [],
@@ -178,12 +178,12 @@ describe('plugins.yaml attachedMachines (design.md "Attached machines")', () => 
     const r = loadPluginsFile(file([
       'version: 1',
       'attachedMachines:',
-      '  - { name: box, docker: job-hopper-target, lanes: 1 }',
+      '  - { name: box, docker: hopper-target, lanes: 1 }',
       '  - { name: box2, docker: other, label: Box, lanes: 2, executors: [command, test] }',
     ].join('\n')));
     expect(r).toEqual({
       attachedMachines: [
-        { name: 'box', docker: 'job-hopper-target', lanes: 1, executors: ['command'] },
+        { name: 'box', docker: 'hopper-target', lanes: 1, executors: ['command'] },
         { name: 'box2', docker: 'other', label: 'Box', lanes: 2, executors: ['command', 'test'] },
       ],
       warnings: [],

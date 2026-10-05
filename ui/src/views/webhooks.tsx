@@ -85,7 +85,7 @@ function SubscriptionForm({ initial, adding, busy, onSubmit, onCancel }: {
             onChange={(e) => setV({ ...v, name: e.target.value })} /></label>
       )}
       {adding && (
-        <label className="block space-y-1"><Label>Secret variable — set it in the hopper's runtime (or a mounted file named by {secretEnv}_FILE); job-hopper keeps no secret</Label>
+        <label className="block space-y-1"><Label>Secret variable — set it in the hopper's runtime (or a mounted file named by {secretEnv}_FILE); hopper keeps no secret</Label>
           <Input className="h-9 font-mono text-sm" value={secretEnv} required pattern="WEBHOOK_SECRET_[A-Z0-9_]+" autoCapitalize="characters" autoCorrect="off" spellCheck={false}
             onChange={(e) => { setOwnEnv(true); setV({ ...v, secretEnv: e.target.value }); }} /></label>
       )}

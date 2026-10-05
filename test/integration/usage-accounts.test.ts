@@ -14,7 +14,7 @@ import { appSecrets, BOT, jobSourcesDoc } from '../support/github-app.ts';
 import { waitFor } from '../support/wait.ts';
 
 const FAKE_CLAUDE = join(import.meta.dirname, '..', 'plugins', 'fake-claude-plan.mjs');
-const REPO = 'owner/job-hopper-sandbox';
+const REPO = 'owner/hopper-sandbox';
 
 const apps: TestApp[] = [];
 const cleanups: (() => void)[] = [];

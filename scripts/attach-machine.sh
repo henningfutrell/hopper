@@ -1,27 +1,27 @@
 #!/usr/bin/env bash
-# Prepare another machine to run job-hopper jobs (design.md "Attached machines"): over ssh, check
-# herdr and claude are there, install job-hopper's own herdr session unit (job-hopper-herdr), enable
+# Prepare another machine to run hopper jobs (design.md "Attached machines"): over ssh, check
+# herdr and claude are there, install hopper's own herdr session unit (hopper-herdr), enable
 # and start it, and confirm the session runs. Let the hopper in with its own key only (issue #59,
-# design.md "Target authentication"): the public half of JOB_HOPPER_SSH_KEY_FILE goes into the
+# design.md "Target authentication"): the public half of HOPPER_SSH_KEY_FILE goes into the
 # machine's authorized_keys with `restrict` (no forwarding, no pty), and the machine's host key is
 # pinned as the one this user's ~/.ssh/known_hosts already trusts — never learned from a connection.
 # Then print the plugins.yaml lines that attach it. Re-running is safe: the unit is replaced and
 # restarted only if it is not running, and the key is added once.
-#   usage: JOB_HOPPER_SSH_KEY_FILE=<hopper key> attach-machine.sh <ssh-target> [lanes]
+#   usage: HOPPER_SSH_KEY_FILE=<hopper key> attach-machine.sh <ssh-target> [lanes]
 #   (<ssh-target>: a ~/.ssh/config alias or user@host; the key file is created when missing)
 set -euo pipefail
 
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-UNIT="$APP_DIR/systemd/job-hopper-herdr.service"
-SESSION=job-hopper
+UNIT="$APP_DIR/systemd/hopper-herdr.service"
+SESSION=hopper
 
-usage() { echo "usage: JOB_HOPPER_SSH_KEY_FILE=<the hopper's ssh key> $0 <ssh-target> [lanes]" >&2; exit 2; }
+usage() { echo "usage: HOPPER_SSH_KEY_FILE=<the hopper's ssh key> $0 <ssh-target> [lanes]" >&2; exit 2; }
 [ $# -ge 1 ] || usage
 TARGET="$1"
 LANES="${2:-2}"
 case "$TARGET" in -*|'') usage ;; esac
 case "$LANES" in ''|*[!0-9]*|0) usage ;; esac
-KEY="${JOB_HOPPER_SSH_KEY_FILE:-}"
+KEY="${HOPPER_SSH_KEY_FILE:-}"
 [ -n "$KEY" ] || usage
 
 step() { printf '==> %s\n' "$*"; }
@@ -54,16 +54,16 @@ HERDR_BIN="${HERDR_BIN//\/\//\/}"
 step "let the hopper in on $TARGET with its own key, restricted"
 if [ ! -e "$KEY" ]; then
   mkdir -p "$(dirname "$KEY")"
-  ssh-keygen -q -t ed25519 -N '' -C job-hopper -f "$KEY"
+  ssh-keygen -q -t ed25519 -N '' -C hopper -f "$KEY"
 fi
 PUB="$(ssh-keygen -y -f "$KEY" | awk '{ print $1, $2 }')"
-remote "mkdir -p ~/.ssh && chmod 700 ~/.ssh && touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && { grep -qF '$PUB' ~/.ssh/authorized_keys || printf '%s\n' 'restrict $PUB job-hopper' >> ~/.ssh/authorized_keys; }"
+remote "mkdir -p ~/.ssh && chmod 700 ~/.ssh && touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && { grep -qF '$PUB' ~/.ssh/authorized_keys || printf '%s\n' 'restrict $PUB hopper' >> ~/.ssh/authorized_keys; }"
 
-step "install ~/.config/systemd/user/job-hopper-herdr.service on $TARGET"
-remote 'mkdir -p ~/.config/systemd/user && cat > ~/.config/systemd/user/job-hopper-herdr.service' < "$UNIT"
+step "install ~/.config/systemd/user/hopper-herdr.service on $TARGET"
+remote 'mkdir -p ~/.config/systemd/user && cat > ~/.config/systemd/user/hopper-herdr.service' < "$UNIT"
 
-step "enable and start job-hopper-herdr on $TARGET"
-remote 'systemctl --user daemon-reload && systemctl --user enable --now job-hopper-herdr' || die "systemctl on $TARGET failed"
+step "enable and start hopper-herdr on $TARGET"
+remote 'systemctl --user daemon-reload && systemctl --user enable --now hopper-herdr' || die "systemctl on $TARGET failed"
 
 if ! remote 'loginctl show-user "$(id -un)" -p Linger' | grep -q '^Linger=yes'; then
   printf 'attach-machine: warning: no linger on %s: its herdr session stops when you log out. Run there: sudo loginctl enable-linger "$(id -un)"\n' "$TARGET" >&2
@@ -75,16 +75,25 @@ for _ in 1 2 3 4 5 6 7 8 9 10; do
     echo "herdr session $SESSION is running on $TARGET"
     cat <<EOF
 
-Add to plugins.yaml (job-hopper config edit plugins.yaml); the daemon follows it without a restart.
-The daemon needs JOB_HOPPER_SSH_KEY_FILE=$KEY in its environment (daemon.env).
+Add to plugins.yaml (hopper config edit plugins.yaml); the daemon follows it without a restart.
+The daemon needs HOPPER_SSH_KEY_FILE=$KEY in its environment (daemon.env).
 
 attachedMachines:
   - { name: $TARGET, ssh: $TARGET, lanes: $LANES, herdrBin: $HERDR_BIN, hostKey: $HOST_KEY }
 
 Jobs there run in the same working directories as here: each job's cwd must exist on $TARGET.
 EOF
+    # Attached before the rename (issue #112): its old unit still runs session job-hopper, which the
+    # stored plugins.yaml entry names (store migration 12) until it is attached again, as now.
+    if remote 'test -e ~/.config/systemd/user/job-hopper-herdr.service'; then
+      cat <<EOF
+$TARGET was attached as job-hopper: its entry in plugins.yaml names session: job-hopper. Once no job runs
+there, drop that line from the entry, then remove the old unit there:
+  ssh $TARGET 'systemctl --user disable --now job-hopper-herdr && rm ~/.config/systemd/user/job-hopper-herdr.service'
+EOF
+    fi
     exit 0
   fi
   sleep 1
 done
-die "herdr session $SESSION is not running on $TARGET (check there: journalctl --user -u job-hopper-herdr)"
+die "herdr session $SESSION is not running on $TARGET (check there: journalctl --user -u hopper-herdr)"
