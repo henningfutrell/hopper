@@ -12,7 +12,7 @@ import { mintToken } from '../../src/client/signature.ts';
 import { tunnelArgv } from '../../src/client/tunnel.ts';
 import { clientSocket } from '../../src/executors/client.ts';
 import { createHerdrCliClient } from '../../src/executors/herdr/index.ts';
-import { RELAY } from '../support/client.ts';
+import { RELAY, testInstallDir } from '../support/client.ts';
 import { waitFor } from '../support/wait.ts';
 
 const HERDR = fileURLToPath(new URL('../herdr/fake-herdr-bin.mjs', import.meta.url));
@@ -54,7 +54,7 @@ describe('the client over a tunnel whose login shell talks first', () => {
     const token = mintToken();
     const { mkdirSync } = await import('node:fs');
     mkdirSync(join(dir, 'clients'), { mode: 0o700 });
-    client = startClient({ token: () => token, herdrBin: HERDR, session: 'job-hopper', backoffMs: [50], tunnel: () => spawn(noisy, [], { stdio: ['pipe', 'pipe', 'pipe'] }) });
+    client = startClient({ token: () => token, herdrBin: HERDR, session: 'job-hopper', installDir: testInstallDir(), backoffMs: [50], tunnel: () => spawn(noisy, [], { stdio: ['pipe', 'pipe', 'pipe'] }) });
     const hopper = createHerdrCliClient({ client: { machine: 'studio', socket: sock, token: () => token } });
     const out = await waitFor(async () => hopper.exec(['status', 'server']).catch(() => undefined), { timeoutMs: 5000, what: 'the client' });
     expect(out).toMatch(/status: running/);
@@ -63,7 +63,7 @@ describe('the client over a tunnel whose login shell talks first', () => {
   it('a client whose herdr session is `default` or unnamed is refused at start', () => {
     dir = mkdtempSync('/tmp/jh-tn-');
     for (const session of ['default', '']) {
-      expect(() => startClient({ token: mintToken, herdrBin: HERDR, session, tunnel: () => spawn('true') })).toThrow(/never `default`/);
+      expect(() => startClient({ token: mintToken, herdrBin: HERDR, session, installDir: testInstallDir(), tunnel: () => spawn('true') })).toThrow(/never `default`/);
     }
   });
 });

@@ -156,8 +156,8 @@ export interface MachineSnapshot {
   herdr?: { bin: string; session: string };
   /** A container target: the container its executors reach it in, through `docker exec`. */
   docker?: string;
-  /** A client target: the variable its token is in; its tunnel's socket is named after the machine id. */
-  client?: { tokenEnv: string };
+  /** A client target: the variable its token is in (its tunnel's socket is named after the machine id); once probed online, the client release it runs (absent: it predates releases) and whether that is the hopper's (issue #70). */
+  client?: { tokenEnv: string; release?: string; current?: boolean };
 }
 
 /** Everything one Decision is made over. Recorded verbatim on the Decision. */

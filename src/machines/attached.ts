@@ -21,6 +21,13 @@ const PROBE_EVERY_MS = 30000;
 
 interface Logger { info(line: string): void; warn(line: string): void }
 
+/** What one probe of an attached machine found: online or not, and for a client target, its client release. */
+export interface MachineProbe {
+  online: boolean;
+  /** A client target: the release its client runs (absent when it predates releases), and whether it is the hopper's. */
+  client?: { release?: string; current: boolean };
+}
+
 interface AttachedOptions {
   clock?: Clock;
   probeEveryMs?: number;
@@ -30,7 +37,7 @@ interface AttachedOptions {
 /** One attached machine. `machine()` is read on every list(), so lanes, executors and label apply at once. */
 export function createAttachedMachineSource(o: AttachedOptions & {
   machine: () => AttachedMachine;
-  probe: () => Promise<boolean>;
+  probe: () => Promise<MachineProbe>;
 }): MachineSource {
   const name = o.machine().name;
   const reached = (): string => {
@@ -41,6 +48,7 @@ export function createAttachedMachineSource(o: AttachedOptions & {
   const now = (): number => (o.clock ? o.clock.now().getTime() : Date.now());
   const every = o.probeEveryMs ?? PROBE_EVERY_MS;
   let online = false;
+  let clientRelease: MachineProbe['client'];
   let lastProbe = -Infinity;
   let inFlight = false;
   let said: string | undefined;
@@ -57,8 +65,8 @@ export function createAttachedMachineSource(o: AttachedOptions & {
     inFlight = true;
     lastProbe = now();
     o.probe().then(
-      (up) => { online = up; say(up ? `job-hopper: attached machine ${name} online (${reached()})` : `job-hopper: attached machine ${name} offline: ${down()}`); },
-      (e: unknown) => { online = false; say(`job-hopper: attached machine ${name} offline: ${e instanceof Error ? e.message : String(e)}`); },
+      (p) => { online = p.online; clientRelease = p.online ? p.client : undefined; const up = p.online; say(up ? `job-hopper: attached machine ${name} online (${reached()})` : `job-hopper: attached machine ${name} offline: ${down()}`); },
+      (e: unknown) => { online = false; clientRelease = undefined; say(`job-hopper: attached machine ${name} offline: ${e instanceof Error ? e.message : String(e)}`); },
     ).finally(() => { inFlight = false; });
   }
 
@@ -68,7 +76,7 @@ export function createAttachedMachineSource(o: AttachedOptions & {
       const m = o.machine();
       const base: MachineSnapshot = { id: m.name, label: m.label ?? m.name, maxLanes: m.lanes, online, executors: [...m.executors] };
       if ('docker' in m) return [{ ...base, docker: m.docker }];
-      if ('client' in m) return [{ ...base, client: { tokenEnv: m.client.tokenEnv } }];
+      if ('client' in m) return [{ ...base, client: { tokenEnv: m.client.tokenEnv, ...clientRelease } }];
       return [{ ...base, ssh: m.ssh, herdr: { bin: m.herdrBin, session: m.session } }];
     },
   };
@@ -119,7 +127,7 @@ export function probeContainer(o: { container: string; dockerHost: () => string;
  */
 export function createAttachedMachines(o: AttachedOptions & {
   machines: () => AttachedMachine[];
-  probe: (machine: AttachedMachine) => Promise<boolean>;
+  probe: (machine: AttachedMachine) => Promise<MachineProbe>;
 }): MachineSource {
   const known = new Map<string, { source: MachineSource; current: AttachedMachine }>();
   const identity = (m: AttachedMachine): string => JSON.stringify('docker' in m ? [m.name, 'docker', m.docker]
