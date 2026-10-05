@@ -51,8 +51,8 @@ const request = {
   jobPrompt: '', rules: '', previous: [], level: { number: 1, of: 2 },
 } satisfies AnswerRequest;
 const DEFAULT_LEVELS = [
-  { name: 'opus', plugin: 'claude-cli', options: { model: 'opus' } },
-  { name: 'fable', plugin: 'claude-cli', options: { model: 'fable' } },
+  { name: 'opus', plugin: 'claude-cli', options: { model: 'opus', machine: 'local' } },
+  { name: 'fable', plugin: 'claude-cli', options: { model: 'fable', machine: 'local' } },
 ];
 let selfFallback = true;
 const selfFallingBack: PluginDefinition<'router'> = {
@@ -256,20 +256,20 @@ describe('escalation levels (0..n, lowest first, live)', () => {
     expect(host.levels().map((l) => l.name)).toEqual(['opus', 'fable']);
     const r = host.report();
     expect(r.escalationLevels).toEqual([
-      { instance: DEFAULT_LEVELS[0], detection: { status: 'available', detail: '1.0.0' }, active: 'claude-cli' },
-      { instance: DEFAULT_LEVELS[1], detection: { status: 'available', detail: '1.0.0' }, active: 'claude-cli' },
+      { instance: DEFAULT_LEVELS[0], detection: { status: 'available', detail: 'claude on machine local' }, active: 'claude-cli' },
+      { instance: DEFAULT_LEVELS[1], detection: { status: 'available', detail: 'claude on machine local' }, active: 'claude-cli' },
     ]);
     expect(r.instances.filter((i) => i.role === 'escalation-level').map((i) => i.instance.name)).toEqual(['opus', 'fable']);
     const byId = new Map(r.plugins.map((p) => [p.id, p]));
     expect(byId.get('claude-cli')).toMatchObject({ role: 'escalation-level', builtin: true, options: { properties: { bin: {}, model: {}, timeoutMs: {}, effort: {} } } });
   });
 
-  it('claude missing: each level stays in its place, cannot run, and escalates every question; shown in the report', async () => {
-    const { host } = start({ kit: fakeKit({ which: async () => undefined }) });
+  it('a level that names no machine stays in its place, cannot run, and escalates every question; shown in the report (#174)', async () => {
+    const { host } = start({ file: 'version: 1\nescalationLevels: [{ name: opus, plugin: claude-cli }, { name: fable, plugin: claude-cli, options: { machine: local } }]\n' });
     await host.start();
     expect(host.levels().map((l) => l.name)).toEqual(['opus', 'fable']);
     expect(host.report().escalationLevels[0]).toMatchObject({
-      instance: { name: 'opus', plugin: 'claude-cli' }, detection: { status: 'unavailable' }, active: null, reason: expect.stringContaining('claude'),
+      instance: { name: 'opus', plugin: 'claude-cli' }, detection: { status: 'unavailable' }, active: null, reason: expect.stringContaining('machine'),
     });
     expect(await host.levels()[0]!.answer(request, new AbortController().signal)).toEqual({
       escalate: true, reason: expect.stringMatching(/^unavailable: /),

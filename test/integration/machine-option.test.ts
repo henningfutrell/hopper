@@ -80,3 +80,13 @@ describe('a machine option is picked from the known machines (#174)', () => {
     expect(source.body.error).toMatch(/machine nowhere is not a configured machine/);
   });
 });
+
+describe('a machine a part runs on stays while it is named (#174)', () => {
+  it('removing a machine an escalation level names is refused until the level names another', async () => {
+    const { a, token } = await start(MACHINES.replace('machine: local', 'machine: box'));
+    const version = (await report(a)).config.version;
+    const r = await a.ui<Reply>('/ui/api/plugins', { action: 'remove', role: 'machine-source', name: 'box', version }, { token });
+    expect(r.status).toBe(409);
+    expect(r.body.error).toMatch(/machine box is named by escalation-level opus; change it first/);
+  });
+});

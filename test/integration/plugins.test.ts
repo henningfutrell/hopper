@@ -111,27 +111,27 @@ describe('escalation levels in /api/plugins', () => {
     const a = await start();
     const body = (await a.api('GET', '/api/plugins')).body;
     expect(body.escalationLevels.map((l: { instance: unknown }) => l.instance)).toEqual([
-      { name: 'opus', plugin: 'claude-cli', options: { bin: 'claude', model: 'opus', timeoutMs: 180000 } },
-      { name: 'fable', plugin: 'claude-cli', options: { bin: 'claude', model: 'fable', timeoutMs: 180000 } },
+      { name: 'opus', plugin: 'claude-cli', options: { machine: 'local', bin: 'claude', model: 'opus', timeoutMs: 180000 } },
+      { name: 'fable', plugin: 'claude-cli', options: { machine: 'local', bin: 'claude', model: 'fable', timeoutMs: 180000 } },
     ]);
   });
 
   it('a section with a bin and models: those levels, in order, detected', async () => {
     const a = await start({ plugins: { escalationLevels: [
-      { name: 'quick', plugin: 'claude-cli', options: { bin: process.execPath, model: 'haiku', timeoutMs: 1234 } },
-      { name: 'deep', plugin: 'claude-cli', options: { bin: process.execPath, model: 'fable', timeoutMs: 1234 } },
+      { name: 'quick', plugin: 'claude-cli', options: { machine: 'local', bin: process.execPath, model: 'haiku', timeoutMs: 1234 } },
+      { name: 'deep', plugin: 'claude-cli', options: { machine: 'local', bin: process.execPath, model: 'fable', timeoutMs: 1234 } },
     ] } });
     const body = (await a.api('GET', '/api/plugins')).body;
     expect(body.escalationLevels).toEqual([
-      { instance: { name: 'quick', plugin: 'claude-cli', options: { bin: process.execPath, model: 'haiku', timeoutMs: 1234 } }, detection: { status: 'available', detail: expect.any(String) }, active: 'claude-cli' },
-      { instance: { name: 'deep', plugin: 'claude-cli', options: { bin: process.execPath, model: 'fable', timeoutMs: 1234 } }, detection: { status: 'available', detail: expect.any(String) }, active: 'claude-cli' },
+      { instance: { name: 'quick', plugin: 'claude-cli', options: { machine: 'local', bin: process.execPath, model: 'haiku', timeoutMs: 1234 } }, detection: { status: 'available', detail: expect.any(String) }, active: 'claude-cli' },
+      { instance: { name: 'deep', plugin: 'claude-cli', options: { machine: 'local', bin: process.execPath, model: 'fable', timeoutMs: 1234 } }, detection: { status: 'available', detail: expect.any(String) }, active: 'claude-cli' },
     ]);
   });
 
-  it('claude not installed: each level is shown unable to run, with the reason', async () => {
-    const a = await start({ plugins: { escalationLevels: [{ name: 'opus', plugin: 'claude-cli', options: { bin: '/nonexistent/claude' } }] } });
+  it('a level that names no machine is shown unable to run, with the reason: this machine is no default (#174)', async () => {
+    const a = await start({ plugins: { escalationLevels: [{ name: 'opus', plugin: 'claude-cli', options: { bin: 'claude' } }] } });
     const body = (await a.api('GET', '/api/plugins')).body;
-    expect(body.escalationLevels).toEqual([expect.objectContaining({ instance: expect.objectContaining({ name: 'opus' }), detection: expect.objectContaining({ status: 'unavailable' }), active: null, reason: expect.stringContaining('/nonexistent/claude') })]);
+    expect(body.escalationLevels).toEqual([expect.objectContaining({ instance: expect.objectContaining({ name: 'opus' }), detection: expect.objectContaining({ status: 'unavailable' }), active: null, reason: expect.stringContaining('machine') })]);
   });
 
   it('escalationLevels: [] — no levels', async () => {
