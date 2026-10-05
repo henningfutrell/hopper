@@ -142,13 +142,13 @@ export function createUpdater(o: UpdaterOptions): RunningUpdater {
     } catch (e) {
       checked = { ...checked, state: 'error', reason: messageOf(e), installed: read.info, checkedAt: now() };
     }
-    if (checked.state === 'error') o.logger.warn(`job-hopper: update check failed: ${checked.reason}`);
+    if (checked.state === 'error') o.logger.warn(`hopper: update check failed: ${checked.reason}`);
     applyError = undefined;
     const { target, installed } = checked;
     if (checked.state === 'available' && target && installed) {
       if (lastAnnounced() !== target.commit) {
         append('update.available', { from: installed.commit, to: target.commit, ref: target.ref, changes: checked.commits ?? 0 });
-        o.logger.info(`job-hopper: update available: ${target.ref} ${short(target.commit)} (${checked.commits ?? 0} commit(s) not installed)`);
+        o.logger.info(`hopper: update available: ${target.ref} ${short(target.commit)} (${checked.commits ?? 0} commit(s) not installed)`);
       }
       if (settings().autoUpdate) apply();
     }
@@ -190,7 +190,7 @@ export function createUpdater(o: UpdaterOptions): RunningUpdater {
     swapInstall(o.appDir);
     mkdirSync(updateDir, { recursive: true });
     writeFileSync(pendingFile, JSON.stringify({ from: installed.commit, to: target.commit, ref: target.ref } satisfies Pending));
-    o.logger.info(`job-hopper: update ${short(installed.commit)} → ${short(target.commit)} in place; restarting`);
+    o.logger.info(`hopper: update ${short(installed.commit)} → ${short(target.commit)} in place; restarting`);
     await o.restart();
   }
 
@@ -201,11 +201,11 @@ export function createUpdater(o: UpdaterOptions): RunningUpdater {
     applying = { phase: 'building', detail: `building ${target.ref} ${short(target.commit)} beside the running install`, target: target.commit, startedAt: now() };
     applyError = undefined;
     append('update.started', { from: installed.commit, to: target.commit, ref: target.ref });
-    o.logger.info(`job-hopper: applying update ${short(installed.commit)} → ${target.ref} ${short(target.commit)}`);
+    o.logger.info(`hopper: applying update ${short(installed.commit)} → ${target.ref} ${short(target.commit)}`);
     run(installed, target).catch((e: unknown) => {
       applying = undefined;
       applyError = e instanceof Error ? e.message : String(e);
-      o.logger.warn(`job-hopper: update to ${short(target.commit)} failed, install unchanged: ${applyError}`);
+      o.logger.warn(`hopper: update to ${short(target.commit)} failed, install unchanged: ${applyError}`);
       append('update.failed', { to: target.commit, error: applyError });
     });
     return { ok: true, status: status() };
@@ -223,7 +223,7 @@ export function createUpdater(o: UpdaterOptions): RunningUpdater {
     const read = readInstallInfo(o.appDir);
     if (read.ok && read.info.commit === pending.to) {
       append('update.applied', { from: pending.from, to: pending.to, ref: pending.ref });
-      o.logger.info(`job-hopper: running the applied update ${pending.ref} ${short(pending.to)}`);
+      o.logger.info(`hopper: running the applied update ${pending.ref} ${short(pending.to)}`);
       return;
     }
     const on = read.ok ? short(read.info.commit) : 'an install without install.json';

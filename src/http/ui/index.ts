@@ -1,7 +1,7 @@
 // The UI session and the only mutations left (design.md "UI session and mutations"): a one-time
 // login code (when auth.yaml leaves local sign-in on) or an identity provider (sign-in.ts) → a page
 // that keeps the session token in localStorage → POST /ui/api/* with that token in
-// x-jobhopper-session, exact Origin, same-origin, JSON, and a role that allows it (design.md
+// x-hopper-session, exact Origin, same-origin, JSON, and a role that allows it (design.md
 // "Sign-in: none, password, local, OIDC and SAML"). Every refusal is a logged 403. A logged-in admin hands another
 // device a login link per LAN name (design.md "Reaching the UI across the LAN").
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
@@ -90,7 +90,7 @@ const EDIT_STATUS = { invalid: 400, not_found: 404, conflict: 409 } as const;
 export const routingEditBody = z.strictObject({ rules: z.array(z.any()), version: z.string().min(1) });
 
 const refuse = (req: FastifyRequest, reply: FastifyReply, why: string, needs?: UiRole) => {
-  console.warn(`job-hopper: UI ${req.method} ${req.url} refused: ${why}`);
+  console.warn(`hopper: UI ${req.method} ${req.url} refused: ${why}`);
   return reply.code(403).send(needs ? { error: why, needs } : { error: why });
 };
 
@@ -224,7 +224,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   // dialog shows comes back while it is live; once used or expired, a fresh one is minted.
   app.post('/ui/api/device-link', admin, async (req) => {
     if (!signIn.local) throw new HttpError(409, 'local sign-in is off in auth.yaml: no login code to hand on');
-    if (o.lan.names.length === 0) throw new HttpError(409, 'no LAN names: set JOB_HOPPER_LAN_NAMES and JOB_HOPPER_LAN_PEERS to reach the UI from another device');
+    if (o.lan.names.length === 0) throw new HttpError(409, 'no LAN names: set HOPPER_LAN_NAMES and HOPPER_LAN_PEERS to reach the UI from another device');
     const { keep } = parseWith(deviceLinkBody, req.body ?? {});
     const code = keep !== undefined && loginCodeLive(o.store, o.clock, keep) ? keep : mintLoginCode(o.store, o.clock);
     return { links: lanHosts(o.port(), o.lan).map((h) => `http://${h}/#login=${code}`) };
@@ -232,7 +232,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
 
   app.post('/ui/api/logout', allow('viewer'), async (req) => {
     const s = sessions.find(String(req.headers[SESSION_HEADER]));
-    if (s) console.warn(`job-hopper: UI session ended: ${s.identity.provider} ${sessionUser(s).name}`);
+    if (s) console.warn(`hopper: UI session ended: ${s.identity.provider} ${sessionUser(s).name}`);
     sessions.drop(String(req.headers[SESSION_HEADER]));
     return { ok: true };
   });

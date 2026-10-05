@@ -12,7 +12,7 @@ import { startDockerProxy, type DockerProxy } from '../support/docker-proxy.ts';
 import { waitFor } from '../support/wait.ts';
 
 const CONTAINER = `jh-it-target-${process.pid}`;
-const REPO = 'owner/job-hopper-sandbox';
+const REPO = 'owner/hopper-sandbox';
 let t: TestApp | undefined;
 let cleanup: (() => void) | undefined;
 let proxy: DockerProxy;
@@ -46,7 +46,7 @@ async function boot(container: string): Promise<{ a: TestApp; gh: ReturnType<typ
       routing: [{ name: 'commands to the box', match: { label: 'on-box' }, set: { machine: 'box', executor: 'command' } }],
     },
     seams: { github: gh },
-    secrets: { JOB_HOPPER_DOCKER_HOST: proxy.host },
+    secrets: { HOPPER_DOCKER_HOST: proxy.host },
   });
   return { a: t, gh };
 }
@@ -55,7 +55,7 @@ const jobFor = async (a: TestApp, key: string): Promise<Job> =>
   waitFor(async () => (await a.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=1000')).body.jobs.find((j) => j.source?.key === key), { what: `a job for ${key}` });
 
 describe('a container target reached over docker exec', () => {
-  it('without JOB_HOPPER_DOCKER_HOST the box stays offline: the daemon never falls back to the root docker socket', async () => {
+  it('without HOPPER_DOCKER_HOST the box stays offline: the daemon never falls back to the root docker socket', async () => {
     const db = tempDbPath();
     cleanup = db.cleanup;
     t = await startTestApp({

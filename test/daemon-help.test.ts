@@ -5,15 +5,15 @@ import { describe, expect, it } from 'vitest';
 import { SETTINGS, daemonHelp } from '../src/config.ts';
 
 describe('daemon help', () => {
-  it('lists every JOB_HOPPER_* setting the daemon reads, with its default and what it does', () => {
+  it('lists every HOPPER_* setting the daemon reads, with its default and what it does', () => {
     const text = daemonHelp();
     for (const s of SETTINGS) {
       expect(text, s.name).toContain(s.name);
       expect(s.help.length, s.name).toBeGreaterThan(10);
     }
-    expect(SETTINGS.find((s) => s.name === 'JOB_HOPPER_PORT')?.default).toBe('4790');
-    expect(SETTINGS.find((s) => s.name === 'JOB_HOPPER_DATABASE_URL')?.default).toBe('required');
-    expect(text).toMatch(/JOB_HOPPER_DATABASE_URL_FILE/);
+    expect(SETTINGS.find((s) => s.name === 'HOPPER_PORT')?.default).toBe('4790');
+    expect(SETTINGS.find((s) => s.name === 'HOPPER_DATABASE_URL')?.default).toBe('required');
+    expect(text).toMatch(/HOPPER_DATABASE_URL_FILE/);
     expect(text).toMatch(/\/docs\//);
     expect(text).toMatch(/README\.md/);
   });

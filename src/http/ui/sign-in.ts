@@ -29,7 +29,7 @@ export const loginBody = z.object({ code: z.string() });
 export const passwordBody = z.object({ username: z.string().max(128), password: z.string().max(1024) });
 
 /** The login answer: store the token (hex, safe inline) for this exact origin, then go to the UI. */
-const loginPage = (token: string): string => `<!doctype html><meta charset="utf-8"><title>job-hopper</title>
+const loginPage = (token: string): string => `<!doctype html><meta charset="utf-8"><title>hopper</title>
 <script>try { localStorage.setItem('jh_session', '${token}'); } catch (e) {} location.replace('/');</script>
 <noscript>JavaScript is needed to keep the UI session.</noscript>
 `;
@@ -38,14 +38,14 @@ const esc = (s: string): string => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeA
 
 /** A plain page saying what happened, with the way back. */
 const page = (title: string, text: string): string => `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width">
-<title>job-hopper — ${esc(title)}</title><body style="font-family:system-ui,sans-serif;max-width:40rem;margin:3rem auto;padding:0 1rem">
-<h1 style="font-size:1.2rem">${esc(title)}</h1><p>${esc(text)}</p><p><a href="/">Back to job-hopper</a></p>`;
+<title>hopper — ${esc(title)}</title><body style="font-family:system-ui,sans-serif;max-width:40rem;margin:3rem auto;padding:0 1rem">
+<h1 style="font-size:1.2rem">${esc(title)}</h1><p>${esc(text)}</p><p><a href="/">Back to hopper</a></p>`;
 
 /**
  * The callback's answer: post the ticket with this browser's binding (kept in localStorage when the
  * sign-in began), store the session token, go to the UI. Ticket is hex: safe inline.
  */
-const ticketPage = (ticket: string): string => `<!doctype html><meta charset="utf-8"><title>job-hopper — signing in</title>
+const ticketPage = (ticket: string): string => `<!doctype html><meta charset="utf-8"><title>hopper — signing in</title>
 <body style="font-family:system-ui,sans-serif"><p id="m">Signing in…</p><script>
 (async () => {
   let binding = null;
@@ -53,7 +53,7 @@ const ticketPage = (ticket: string): string => `<!doctype html><meta charset="ut
   const res = await fetch('/ui/auth/complete', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ticket: '${ticket}', binding: binding || '' }) });
   const out = await res.json().catch(() => ({}));
   if (res.ok) { try { localStorage.setItem('jh_session', out.token); } catch (e) {} location.replace('/'); return; }
-  document.getElementById('m').textContent = (out.error || 'Sign-in failed') + '. Start again from the job-hopper page in this browser.';
+  document.getElementById('m').textContent = (out.error || 'Sign-in failed') + '. Start again from the hopper page in this browser.';
 })();
 </script><noscript>JavaScript is needed to keep the UI session.</noscript>`;
 
@@ -81,7 +81,7 @@ function routes(app: FastifyInstance, o: Parameters<typeof registerSignInRoutes>
   /** A session for `who`, answered as JSON: the UI stores the token. */
   const started = (reply: FastifyReply, who: Identity, role: UiRole) => {
     const s = sessions.create({ role, identity: who });
-    console.warn(`job-hopper: UI session started: ${who.provider} ${sessionUser(s).name}, role ${role}`);
+    console.warn(`hopper: UI session started: ${who.provider} ${sessionUser(s).name}, role ${role}`);
     return reply.header('cache-control', 'no-store').send({ token: s.token, expiresAt: s.expiresAt, user: sessionUser(s) });
   };
   const fromSignInOrigin = (req: FastifyRequest): boolean => req.headers.origin?.toLowerCase() === signIn.origin();
@@ -94,7 +94,7 @@ function routes(app: FastifyInstance, o: Parameters<typeof registerSignInRoutes>
     if (!signIn.local) return o.refuse(req, reply, 'local sign-in is off in auth.yaml');
     if (!parsed.success || !useLoginCode(o.store, o.clock, parsed.data.code)) return o.refuse(req, reply, 'wrong, used, expired or missing login code');
     const s = sessions.create({ role: 'admin', identity: LOCAL_IDENTITY });
-    console.warn('job-hopper: UI session started: local login code, role admin');
+    console.warn('hopper: UI session started: local login code, role admin');
     return reply.type('text/html; charset=utf-8').header('cache-control', 'no-store').header('referrer-policy', 'no-referrer')
       .send(loginPage(s.token));
   });
@@ -125,7 +125,7 @@ function routes(app: FastifyInstance, o: Parameters<typeof registerSignInRoutes>
       return reply.header('cache-control', 'no-store').redirect(await signIn.begin(name, parseWith(startQuery, req.query).binding ?? ''), 302);
     } catch (e) {
       if (e instanceof SignInRefused) return html(reply, e.status, page('Cannot sign in', e.message));
-      console.warn(`job-hopper: sign-in with ${name} could not start: ${(e as Error).message}`);
+      console.warn(`hopper: sign-in with ${name} could not start: ${(e as Error).message}`);
       return html(reply, 502, page('Cannot sign in', (e as Error).message));
     }
   });
@@ -136,7 +136,7 @@ function routes(app: FastifyInstance, o: Parameters<typeof registerSignInRoutes>
     const r = await signIn.callback(name, { url: new URL(req.url, signIn.origin()), ...(body ? { body } : {}) });
     if (!r.ok) {
       const who = r.who ? ` (${r.who.provider} ${r.who.email ?? r.who.username ?? r.who.subject})` : '';
-      console.warn(`job-hopper: sign-in with ${name} refused${who}: ${r.error}`);
+      console.warn(`hopper: sign-in with ${name} refused${who}: ${r.error}`);
       return html(reply, r.status, page('Not signed in', r.error));
     }
     return html(reply, 200, ticketPage(r.ticket));

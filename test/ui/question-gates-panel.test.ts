@@ -134,7 +134,7 @@ describe('question gates panel', () => {
     await vi.waitFor(() => expect(daemon.calls.some((c) => c.path === '/ui/api/rules')).toBe(true));
     const call = daemon.calls.find((c) => c.path === '/ui/api/rules')!;
     expect(call.method).toBe('POST');
-    expect(call.headers['x-jobhopper-session']).toBe('a'.repeat(64));
+    expect(call.headers['x-hopper-session']).toBe('a'.repeat(64));
     expect(call.body).toEqual({ text: '- never force-push\n', version: 'v1' });
   });
 

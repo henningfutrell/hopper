@@ -1,4 +1,4 @@
-"""Run grok-bot-jev's router once, for job-hopper.
+"""Run grok-bot-jev's router once, for hopper.
 
 Reads {"jevSrc", "mode", "logPath", "state", "typesafeGates", "haiku": {"argv", "cwd"}} as JSON on
 stdin and prints one JSON line: {"ok": true, "route": ...} or {"ok": false, "error":

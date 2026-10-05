@@ -62,7 +62,7 @@ function send(res: ServerResponse, r: FakeReply): void {
 export async function createFakeGitHubServer(o: FakeGitHubOptions): Promise<FakeGitHubServer> {
   const state = buildState(o, new Date().toISOString());
   const failures = new Map<string, { status: number; message: string; times: number }>();
-  const ctx: FakeCtx = { state, opts: o, baseUrl: '', bot: `${o.slug ?? 'job-hopper'}[bot]`, now: () => new Date() };
+  const ctx: FakeCtx = { state, opts: o, baseUrl: '', bot: `${o.slug ?? 'hopper'}[bot]`, now: () => new Date() };
 
   const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const u = new URL(req.url ?? '/', ctx.baseUrl);

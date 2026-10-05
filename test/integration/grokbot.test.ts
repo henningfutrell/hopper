@@ -120,7 +120,7 @@ describe('Grok Bot routine webhook', () => {
     await settle();
     expect(hit.headers.authorization).toBe('Bearer sekrit');
     expect(hit.headers['content-type']).toMatch(/application\/json/);
-    expect(hit.body).toMatchObject({ source: 'job-hopper', jobId: human.id, question: 'Is this risky?', questionId: q.id, issueTitle: SRC.title, issueUrl: SRC.url });
+    expect(hit.body).toMatchObject({ source: 'hopper', jobId: human.id, question: 'Is this risky?', questionId: q.id, issueTitle: SRC.title, issueUrl: SRC.url });
     expect(typeof hit.body.at).toBe('string');
     expect(typeof hit.body.answerUrl).toBe('string');
     expect(r.hits).toHaveLength(1);
@@ -129,7 +129,7 @@ describe('Grok Bot routine webhook', () => {
 
   it('re-notifications do not post again, and the failure that ends the wait posts nothing', async () => {
     const r = await receiver();
-    const { a, secrets } = await start({ JOB_HOPPER_HUMAN_RENOTIFY_MS: '100', JOB_HOPPER_HUMAN_TIMEOUT_MS: '450' });
+    const { a, secrets } = await start({ HOPPER_HUMAN_RENOTIFY_MS: '100', HOPPER_HUMAN_TIMEOUT_MS: '450' });
     setHook(secrets, r.url);
     const job = await a.pull(ask('Is this risky?'));
     await a.waitForStatus(job.id, 'failed');

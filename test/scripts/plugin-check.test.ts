@@ -1,5 +1,5 @@
 // `npm run plugin:check <dir>` (design.md "Settled in slice 6"): type-checks a plugin directory with
-// `job-hopper/plugin` mapped to src/plugins/sdk.ts, then runs the real loader, parses the options
+// `hopper/plugin` mapped to src/plugins/sdk.ts, then runs the real loader, parses the options
 // with their defaults and runs detect, one line per plugin; non-zero on any failure. Every example
 // under examples/plugins passes, and there is one per role.
 import { spawnSync } from 'node:child_process';
@@ -23,7 +23,7 @@ const write = (dir: string, name: string, source: string) => {
   writeFileSync(join(dir, name, 'index.ts'), source);
 };
 
-const GOOD = `import type { PluginDefinition } from 'job-hopper/plugin';
+const GOOD = `import type { PluginDefinition } from 'hopper/plugin';
 export default {
   id: 'good-usage', role: 'usage-source', describe: 'fine',
   options: (z) => z.object({ used: z.number().default(1) }),
@@ -89,7 +89,7 @@ describe('plugin:check', () => {
     expect(r.code).not.toBe(0);
   });
 
-  it('an example copied out of the tree still checks (job-hopper/plugin resolves through the mapping)', () => {
+  it('an example copied out of the tree still checks (hopper/plugin resolves through the mapping)', () => {
     const dir = temp();
     cpSync(join(EXAMPLES, 'notifier'), join(dir), { recursive: true });
     const r = check(dir);

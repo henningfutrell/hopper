@@ -31,7 +31,7 @@ export function createGrokBotNotifier(o: GrokBotNotifierOptions): Notifier {
 
   function payload(e: DomainEvent): Record<string, unknown> {
     const source = e.jobId ? feed?.job(e.jobId)?.source : undefined;
-    const base = { source: 'job-hopper', kind: e.type, at: e.at, jobId: e.jobId ?? null, issueTitle: source?.title ?? null, issueUrl: source?.url ?? null };
+    const base = { source: 'hopper', kind: e.type, at: e.at, jobId: e.jobId ?? null, issueTitle: source?.title ?? null, issueUrl: source?.url ?? null };
     if (e.type === 'question.escalated') {
       return { ...base, question: e.data.text, questionId: e.data.questionId, ...(e.data.answerUrl ? { answerUrl: e.data.answerUrl } : {}) };
     }

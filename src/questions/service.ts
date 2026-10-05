@@ -34,7 +34,7 @@ export interface QuestionServiceOptions {
 export const HUMAN = 'human';
 
 /** Typed into the job in place of an answer when the owner closes its question. */
-export const CLOSED_ANSWER = 'The owner closed this question without answering. Continue on your own judgement; if you cannot, end with JOB_HOPPER_FAILED and say why.';
+export const CLOSED_ANSWER = 'The owner closed this question without answering. Continue on your own judgement; if you cannot, end with HOPPER_FAILED and say why.';
 
 interface Timers { renotify?: NodeJS.Timeout; expiry?: NodeJS.Timeout }
 

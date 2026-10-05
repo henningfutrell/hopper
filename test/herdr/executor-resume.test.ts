@@ -3,8 +3,8 @@ import type { ExecutionOutcome } from '../../src/domain/ports.ts';
 import type { FakeTurn } from '../../src/executors/herdr/index.ts';
 import { CWD, LANE, contextFor, jobWith, setup, until } from './support.ts';
 
-const ASK = { output: ['● Which language should the greeting be in?', '  JOB_HOPPER_QUESTION'] };
-const DONE_FR = { steps: ['● Writing greeting.txt'], output: ['● I wrote greeting.txt in French.', '  JOB_HOPPER_DONE'] };
+const ASK = { output: ['● Which language should the greeting be in?', '  HOPPER_QUESTION'] };
+const DONE_FR = { steps: ['● Writing greeting.txt'], output: ['● I wrote greeting.txt in French.', '  HOPPER_DONE'] };
 
 /** Run to the first question; returns the job as the engine would hand it to resume. */
 async function parked(turns: FakeTurn[]) {
@@ -27,7 +27,7 @@ describe('herdr-claude executor: resume', () => {
   });
 
   it('does not report the old question while the resumed turn is still working', async () => {
-    const { executor, job } = await parked([ASK, { steps: ['● a', '● b', '● c'], output: ['● Next: which file name?', '  JOB_HOPPER_QUESTION'] }]);
+    const { executor, job } = await parked([ASK, { steps: ['● a', '● b', '● c'], output: ['● Next: which file name?', '  HOPPER_QUESTION'] }]);
     const out = await executor.resume!(contextFor(job).ctx, 'French.');
     expect(out).toMatchObject({ kind: 'question', question: { text: 'Next: which file name?' } });
   });

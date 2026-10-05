@@ -1,7 +1,7 @@
 // npm run plugin:check <dir> — check custom plugins before the daemon loads them (design.md
 // "Settled in slice 6", docs/plugins.md). <dir> is one plugin (it holds index.ts or index.js) or a
 // directory of them, nested at any depth (the plugin dir, examples/plugins). Steps:
-//   1. type-check every index.ts with `job-hopper/plugin` mapped to this checkout's src/plugins/sdk.ts
+//   1. type-check every index.ts with `hopper/plugin` mapped to this checkout's src/plugins/sdk.ts
 //      (a throwaway tsconfig in the temp dir; nothing is written into <dir>);
 //   2. per plugin: the real loader's import and shape check, the built-in id check, the options
 //      parsed from `{}` (every option needs a default), and `detect` with the real detection kit.
@@ -46,7 +46,7 @@ function typeCheck(files: string[]): string | undefined {
         target: 'es2024', module: 'preserve', moduleResolution: 'bundler', strict: true, noEmit: true,
         allowImportingTsExtensions: true, erasableSyntaxOnly: true, verbatimModuleSyntax: true, skipLibCheck: true,
         types: ['node'], typeRoots: [join(ROOT, 'node_modules', '@types')],
-        paths: { 'job-hopper/plugin': [SDK] },
+        paths: { 'hopper/plugin': [SDK] },
       },
       files,
     }));
@@ -75,7 +75,7 @@ async function main(): Promise<number> {
   const ts = entries.filter((e) => e.endsWith('.ts'));
   const problem = ts.length ? typeCheck(ts) : undefined;
   if (problem) failed = true;
-  console.log(`type-check: ${problem ? 'FAIL' : 'ok'} (${ts.length} .ts entr${ts.length === 1 ? 'y' : 'ies'}, job-hopper/plugin → ${SDK})`);
+  console.log(`type-check: ${problem ? 'FAIL' : 'ok'} (${ts.length} .ts entr${ts.length === 1 ? 'y' : 'ies'}, hopper/plugin → ${SDK})`);
   if (problem) console.log(problem.split('\n').map((l) => `  ${l}`).join('\n'));
 
   const kit = createDetectionKit();

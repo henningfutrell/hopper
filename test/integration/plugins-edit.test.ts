@@ -1,6 +1,6 @@
 // Phase 5 slice 7 (issue #6): every plugin instance has its own options, editable from the UI
 // through POST /ui/api/plugins — except its command-bearing options, which stay in the document (edited by
-// hand: `job-hopper config edit plugins.yaml`). One
+// hand: `hopper config edit plugins.yaml`). One
 // edit touches one instance's section of plugins.yaml and nothing else (design.md "UI and mutation").
 import { createHash } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -145,7 +145,7 @@ describe('POST /ui/api/plugins — one instance\'s options', () => {
     expect(r.status).toBe(409);
     expect(r.body.error).toMatch(/cwd/);
     expect(r.body.error).toMatch(/plugins\.yaml/);
-    expect(r.body.error).toMatch(/job-hopper config edit plugins\.yaml/);
+    expect(r.body.error).toMatch(/hopper config edit plugins\.yaml/);
     expect(read(a)).toBe(TWO_EXECUTORS);
   });
 

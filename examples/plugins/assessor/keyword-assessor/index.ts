@@ -3,7 +3,7 @@
 // answers on its own. The core fails closed: anything but a valid `escalate: false` escalates.
 // This one escalates when the question names a listed word, or the draft is not confident.
 //   assessor: { name: words, plugin: keyword-assessor, options: { words: [delete, deploy, money] } }
-import type { PluginDefinition } from 'job-hopper/plugin';
+import type { PluginDefinition } from 'hopper/plugin';
 
 export default {
   id: 'keyword-assessor',

@@ -6,6 +6,6 @@ export function logFailures(store: Pick<Store, 'events' | 'jobs'>): () => void {
   return store.events.subscribe((e) => {
     if (e.type !== 'job.failed' || !e.jobId) return;
     const where = store.jobs.get(e.jobId)?.source?.url;
-    console.error(`job-hopper: job ${e.jobId} failed${where ? ` (${where})` : ''}: ${String(e.data.error)}`);
+    console.error(`hopper: job ${e.jobId} failed${where ? ` (${where})` : ''}: ${String(e.data.error)}`);
   });
 }

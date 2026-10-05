@@ -28,7 +28,7 @@ export interface EngineOptions {
   questions: QuestionService;
   /** At most this many questions per job; the next one fails it (design.md B6). */
   maxQuestions: number;
-  /** Skip executor cleanup on terminal outcomes (JOB_HOPPER_KEEP_PANES). */
+  /** Skip executor cleanup on terminal outcomes (HOPPER_KEEP_PANES). */
   keepPanes: boolean;
 }
 

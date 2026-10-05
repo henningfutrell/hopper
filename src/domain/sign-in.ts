@@ -52,7 +52,7 @@ export interface SessionView {
     none: UiRole | null;
     /** Password sign-in (POST /ui/auth/password) is on. */
     password: boolean;
-    /** The origin a provider sign-in starts and ends on (JOB_HOPPER_PUBLIC_URL, else http://localhost:<port>). */
+    /** The origin a provider sign-in starts and ends on (HOPPER_PUBLIC_URL, else http://localhost:<port>). */
     origin: string;
     providers: SignInProviderView[];
   };

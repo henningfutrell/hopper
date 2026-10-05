@@ -1,7 +1,7 @@
 // A UI edit of plugins.yaml (design.md "UI and mutation"): one instance's options, the plugin
 // filling a one-instance role, or an instance of a list role added or removed. Each edit rewrites only that instance's part of the document; comments
 // and every other section stay as written. Command-bearing options are never changed from here:
-// they are the operator's, set with `job-hopper config edit plugins.yaml` (design.md "Config documents").
+// they are the operator's, set with `hopper config edit plugins.yaml` (design.md "Config documents").
 import { isMap, isSeq, parseDocument, type Document } from 'yaml';
 import type { ConfigDocuments } from '../domain/ports.ts';
 import type { ConfiguredInstance, Detection, InstanceSpec, ListRole, PluginsEdit, Role, RoutingEdit, RoutingRule } from '../domain/types.ts';

@@ -19,7 +19,7 @@ export async function buildExecutors(specs: InstanceSpec[], deps: SlotDeps): Pro
   return Promise.all(specs.map(async (spec): Promise<BuiltExecutor> => {
     const built = await instantiate('executor', spec, deps);
     if (built.ok) return { spec, executor: named(built.instance, spec.name), detection: built.detection, plugin: built.plugin };
-    deps.logger.warn(`job-hopper: executor ${spec.name} (${spec.plugin}) unavailable, its jobs are held: ${built.why}`);
+    deps.logger.warn(`hopper: executor ${spec.name} (${spec.plugin}) unavailable, its jobs are held: ${built.why}`);
     return { spec, detection: built.detection, plugin: null, reason: built.why };
   }));
 }

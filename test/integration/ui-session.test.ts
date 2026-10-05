@@ -1,6 +1,6 @@
 // The UI session (design.md "UI session and mutations"): a one-time login code minted in the
-// database (`job-hopper login-code`), POST /ui/login → a page that stores the token in localStorage, and mutations only with that
-// token in x-jobhopper-session plus exact Origin, same-origin Sec-Fetch-Site and a JSON body.
+// database (`hopper login-code`), POST /ui/login → a page that stores the token in localStorage, and mutations only with that
+// token in x-hopper-session plus exact Origin, same-origin Sec-Fetch-Site and a JSON body.
 import { runCli } from '../../src/cli.ts';
 import { openDb, parseDatabaseUrl } from '../../src/store/db.ts';
 import { databaseUrlFor } from '../support/database.ts';
@@ -21,10 +21,10 @@ afterEach(async () => {
   cleanup();
 });
 
-/** A fresh code, as `job-hopper login-code` mints it: into the daemon's database. */
+/** A fresh code, as `hopper login-code` mints it: into the daemon's database. */
 const readCode = (): string => {
   let out = '';
-  const code = runCli(['login-code'], { env: { JOB_HOPPER_DATABASE_URL: databaseUrlFor(t.dbPath) }, stdin: () => '', out: (x) => { out += x; }, err: () => {} });
+  const code = runCli(['login-code'], { env: { HOPPER_DATABASE_URL: databaseUrlFor(t.dbPath) }, stdin: () => '', out: (x) => { out += x; }, err: () => {} });
   if (code !== 0) throw new Error(`login-code exited ${code}`);
   return out.trim();
 };
@@ -32,10 +32,10 @@ const login = (code: string, headers: Record<string, string> = {}) => rawRequest
   method: 'POST', path: '/ui/login', body: `code=${encodeURIComponent(code)}`,
   headers: { 'content-type': 'application/x-www-form-urlencoded', origin: 'null', ...headers },
 });
-const session = (token?: string) => rawRequest(t.url, { path: '/ui/api/session', headers: token ? { 'x-jobhopper-session': token } : {} });
+const session = (token?: string) => rawRequest(t.url, { path: '/ui/api/session', headers: token ? { 'x-hopper-session': token } : {} });
 
 describe('login', () => {
-  it('job-hopper login-code mints a 64-hex code; the daemon writes no code anywhere', async () => {
+  it('hopper login-code mints a 64-hex code; the daemon writes no code anywhere', async () => {
     expect(readCode()).toMatch(/^[0-9a-f]{64}$/);
     const { readdirSync } = await import('node:fs');
     expect(readdirSync(t.dataDir).filter((f) => f.includes('login'))).toEqual([]);
@@ -100,7 +100,7 @@ describe('UI mutations', () => {
 
   it.each([
     ['no session header', { headers: {} as Record<string, string | null> }, false],
-    ['an unknown session token', { headers: { 'x-jobhopper-session': 'a'.repeat(64) } }, false],
+    ['an unknown session token', { headers: { 'x-hopper-session': 'a'.repeat(64) } }, false],
     ['no Origin', { headers: { origin: null } }, true],
     ['a foreign Origin', { headers: { origin: 'http://evil.example' } }, true],
     ['an Origin on another port', { headers: { origin: 'http://127.0.0.1:1' } }, true],
@@ -153,12 +153,12 @@ describe('UI mutations', () => {
     expect(JSON.parse((await session(token)).text)).toMatchObject({ authenticated: false });
   });
 
-  it('a session expires after JOB_HOPPER_UI_SESSION_HOURS', async () => {
+  it('a session expires after HOPPER_UI_SESSION_HOURS', async () => {
     await t.stop();
     const db = tempDbPath();
     const prev = cleanup;
     cleanup = () => { prev(); db.cleanup(); };
-    t = await startTestApp({ dbPath: db.dbPath, env: { JOB_HOPPER_UI_SESSION_HOURS: '0.00005' } }); // 180 ms
+    t = await startTestApp({ dbPath: db.dbPath, env: { HOPPER_UI_SESSION_HOURS: '0.00005' } }); // 180 ms
     const token = await t.login();
     expect(JSON.parse((await session(token)).text).authenticated).toBe(true);
     await new Promise((r) => setTimeout(r, 300));

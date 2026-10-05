@@ -15,8 +15,8 @@ import { waitFor } from '../support/wait.ts';
 let t: TestApp | undefined;
 let cleanup: (() => void) | undefined;
 
-const ASK = { output: ['● Which colour should the shed be?', '  JOB_HOPPER_QUESTION'] };
-const DONE = { steps: ['● Painting', '● Still painting', '● Almost'], output: ['● Painted the shed blue.', '  JOB_HOPPER_DONE'] };
+const ASK = { output: ['● Which colour should the shed be?', '  HOPPER_QUESTION'] };
+const DONE = { steps: ['● Painting', '● Still painting', '● Almost'], output: ['● Painted the shed blue.', '  HOPPER_DONE'] };
 const EXECUTORS = [{ name: 'test', plugin: 'test' }, { name: 'herdr-claude', plugin: 'herdr-claude', options: { pollMs: 10, idleQuestionMs: 5000 } }];
 const item = { executor: 'herdr-claude', prompt: 'Paint the shed', cwd: '/tmp', env: {} };
 

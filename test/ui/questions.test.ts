@@ -12,7 +12,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const LOGIN_CMD = 'bash ~/.local/lib/job-hopper/scripts/open-ui.sh';
+const LOGIN_CMD = 'bash ~/.local/lib/hopper/scripts/open-ui.sh';
 
 const question = {
   id: 'bf094266', jobId: '89849c4f', text: 'Which branch?', recentOutput: 'line', detectedBy: 'marker', status: 'open',
@@ -60,7 +60,7 @@ function fakeDaemon(o: Boot) {
     if (path.startsWith('/ui/api/')) {
       const status = o.mutationStatus ?? 200;
       if (status === 200) return json(200, { ...question, status: 'closed' });
-      return json(status, o.needs ? { error: `role ${o.role} may not do this; it needs ${o.needs}`, needs: o.needs } : { error: 'missing or invalid x-jobhopper-session' });
+      return json(status, o.needs ? { error: `role ${o.role} may not do this; it needs ${o.needs}`, needs: o.needs } : { error: 'missing or invalid x-hopper-session' });
     }
     if (path in routes) return json(200, routes[path]);
     return json(404, { error: 'not found' });
@@ -132,7 +132,7 @@ describe('question card', () => {
     await vi.waitFor(() => expect(daemon.calls.some((c) => c.path === path)).toBe(true));
     const call = daemon.calls.find((c) => c.path === path)!;
     expect(call.method).toBe('POST');
-    expect(call.headers['x-jobhopper-session']).toBe('a'.repeat(64));
+    expect(call.headers['x-hopper-session']).toBe('a'.repeat(64));
     expect(call.headers['content-type']).toBe('application/json');
     expect(call.body).toEqual({});
   });

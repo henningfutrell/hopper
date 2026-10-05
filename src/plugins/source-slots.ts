@@ -20,7 +20,7 @@ export async function buildOne<R extends Role>(role: R, spec: InstanceSpec, deps
   const built = await instantiate(role, spec, deps, o.needsSetupRuns);
   const why = built.ok ? o.check?.(built.instance) : built.why;
   if (built.ok && why === undefined) return { spec, instance: built.instance, plugin: built.plugin, detection: built.detection };
-  deps.logger.warn(`job-hopper: ${role} ${spec.name} (${spec.plugin}) unavailable: ${why}`);
+  deps.logger.warn(`hopper: ${role} ${spec.name} (${spec.plugin}) unavailable: ${why}`);
   return { spec, detection: built.detection, plugin: null, reason: why! };
 }
 
@@ -44,14 +44,14 @@ export function buildMachine(spec: InstanceSpec, deps: SlotDeps): Promise<Built<
 export async function applyMachineSpec(slot: { built?: Built<MachineSource>[]; pending?: InstanceSpec[] }, spec: InstanceSpec, deps: SlotDeps): Promise<void> {
   const now = slot.built?.[0];
   if (now && (now.spec.name !== spec.name || now.spec.plugin !== spec.plugin)) {
-    if (!slot.pending) deps.logger.info('job-hopper: machine source changed — restart pending');
+    if (!slot.pending) deps.logger.info('hopper: machine source changed — restart pending');
     slot.pending = [spec];
     return;
   }
   slot.pending = undefined;
   if (now && JSON.stringify(now.spec) === JSON.stringify(spec)) return;
   slot.built = [await buildMachine(spec, deps)];
-  if (now) deps.logger.info(`job-hopper: machine source ${spec.name} options applied`);
+  if (now) deps.logger.info(`hopper: machine source ${spec.name} options applied`);
 }
 
 /** No machine: every job is held (`no online machine runs executor …`). */

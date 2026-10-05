@@ -1,7 +1,7 @@
 // A notifier: tells something outside about events. Started once with the event feed, stopped at
 // shutdown. This one logs the events of the listed types.
 //   notifiers: [ { name: log, plugin: log-events, options: { types: [question.escalated, job.failed] } } ]
-import type { PluginDefinition } from 'job-hopper/plugin';
+import type { PluginDefinition } from 'hopper/plugin';
 
 export default {
   id: 'log-events',

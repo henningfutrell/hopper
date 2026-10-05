@@ -189,7 +189,7 @@ export interface PluginStoreReport {
   state: 'unavailable' | 'ready' | 'error';
   reason?: string;
   error?: string;
-  /** JOB_HOPPER_PLUGIN_STORE. */
+  /** HOPPER_PLUGIN_STORE. */
   repo?: string;
   /** The store's head the catalogue was read at. */
   commit?: string;

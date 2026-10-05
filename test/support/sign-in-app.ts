@@ -38,7 +38,7 @@ export async function restartWithAuth(h: Harness, app: TestApp, auth: unknown): 
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- tests read loose JSON
 export const session = async (app: TestApp, token?: string): Promise<any> => JSON.parse((await rawRequest(app.url, {
-  path: '/ui/api/session', headers: token ? { 'x-jobhopper-session': token } : {},
+  path: '/ui/api/session', headers: token ? { 'x-hopper-session': token } : {},
 })).text);
 
 export async function oidcIdp(h: Harness, o: { claims?: Record<string, unknown>; userinfo?: Record<string, unknown> } = {}): Promise<OidcIdp> {

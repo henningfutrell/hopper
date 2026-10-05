@@ -44,7 +44,7 @@ describe('the client release', () => {
 
   it('installs whole: the new files in the install dir, the old ones kept beside it as .prev', () => {
     dir = mkdtempSync(join(tmpdir(), 'jh-rel-'));
-    const install = join(dir, 'job-hopper-client');
+    const install = join(dir, 'hopper-client');
     const release = readRelease(SRC);
     installRelease(install, { id: 'x', files: Object.fromEntries(CLIENT_FILES.map((f) => [f, `old ${f}`])) });
     writeFileSync(join(install, 'stray.txt'), 'left by hand');

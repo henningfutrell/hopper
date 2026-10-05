@@ -27,7 +27,7 @@ describe('built-in plugins', () => {
 });
 
 describe('custom plugin loader', () => {
-  it('loads a .ts plugin written against job-hopper/plugin, and a .js one', async () => {
+  it('loads a .ts plugin written against hopper/plugin, and a .js one', async () => {
     const dir = temp();
     cpSync(ALWAYS_PROCEED_DIR, join(dir, 'always-proceed'), { recursive: true });
     writePlugin(dir, 'js-router', routerJs('js-router'), 'index.js');

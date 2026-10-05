@@ -17,8 +17,8 @@ export function createInstallScriptBuilder(o: { logFile: string }): UpdateBuilde
         const child = spawn('bash', [join(sourceDir, 'scripts', 'install.sh')], {
           cwd: sourceDir, stdio: ['ignore', 'pipe', 'pipe'], timeout: STAGE_TIMEOUT_MS,
           env: {
-            ...process.env, JOB_HOPPER_INSTALL_INTO: targetDir,
-            JOB_HOPPER_INSTALL_REPO: info.repo, JOB_HOPPER_INSTALL_BRANCH: info.branch, JOB_HOPPER_INSTALL_COMMIT: info.commit,
+            ...process.env, HOPPER_INSTALL_INTO: targetDir,
+            HOPPER_INSTALL_REPO: info.repo, HOPPER_INSTALL_BRANCH: info.branch, HOPPER_INSTALL_COMMIT: info.commit,
           },
         });
         child.stdout.pipe(log, { end: false });

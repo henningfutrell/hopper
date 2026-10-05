@@ -44,16 +44,16 @@ describe('herdr CLI client', () => {
   });
 
   it('ensureWorkspace creates the labelled workspace without focus when none exists', async () => {
-    expect(await herdr().ensureWorkspace('job-hopper', '/tmp/a')).toBe('w9');
+    expect(await herdr().ensureWorkspace('hopper', '/tmp/a')).toBe('w9');
     expect(calls().map((c) => c.argv.slice(2))).toEqual([
       ['workspace', 'list'],
-      ['workspace', 'create', '--label', 'job-hopper', '--cwd', '/tmp/a', '--no-focus'],
+      ['workspace', 'create', '--label', 'hopper', '--cwd', '/tmp/a', '--no-focus'],
     ]);
   });
 
   it('ensureWorkspace finds an existing workspace by label', async () => {
     process.env.FAKE_HERDR_HAS_WS = '1';
-    expect(await herdr().ensureWorkspace('job-hopper', '/tmp/a')).toBe('w7');
+    expect(await herdr().ensureWorkspace('hopper', '/tmp/a')).toBe('w7');
     expect(calls()).toHaveLength(1);
   });
 
@@ -89,7 +89,7 @@ describe('herdr CLI client', () => {
   });
 
   it('read returns the raw pane text', async () => {
-    expect(await herdr().read('w7:p5', { source: 'recent-unwrapped', lines: 200 })).toBe('line one\n● JOB_HOPPER_DONE\n');
+    expect(await herdr().read('w7:p5', { source: 'recent-unwrapped', lines: 200 })).toBe('line one\n● HOPPER_DONE\n');
     expect(calls()[0]!.argv.slice(2)).toEqual(['pane', 'read', 'w7:p5', '--source', 'recent-unwrapped', '--lines', '200']);
   });
 

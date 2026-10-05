@@ -12,6 +12,7 @@ update notice would show it again as new.
 - Jobs keep all their work, temporary files included, inside the folder they start in, instead of wandering off to other places on the machine.
 - You can run the hopper with Docker alone: download one file, start it, and the hopper, its database and the place its jobs run all come up together, with nothing else to install.
 - You can install the hopper on Windows. It runs in WSL, from the same one-line install, and the install page shows each step.
+- The app is now called hopper. An existing install changes to the new name with its next update, and keeps its settings, secrets and data.
 - When an update is ready, "What's new" now lists the changes in plain words instead of a technical change log.
 - When a job needs a decision, the hopper first works out its own best answer and only asks you when the choice really is yours.
 - The first-time setup guide now walks you through adding the machines your jobs run on.

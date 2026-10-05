@@ -17,8 +17,8 @@ import { scrubbedEnv } from './env.ts';
 /** ssh's exit status for its own failures (connection, authentication). */
 export const SSH_FAILED = 255;
 
-/** The runtime secret holding the hopper's ssh private key: a mounted file, `JOB_HOPPER_SSH_KEY_FILE`. */
-export const SSH_KEY = 'JOB_HOPPER_SSH_KEY';
+/** The runtime secret holding the hopper's ssh private key: a mounted file, `HOPPER_SSH_KEY_FILE`. */
+export const SSH_KEY = 'HOPPER_SSH_KEY';
 
 /** How the hopper proves itself, and which host keys it trusts. */
 export interface SshAuth {

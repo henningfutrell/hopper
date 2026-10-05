@@ -25,7 +25,7 @@ const HOST_KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILxWxd8NGtwDjmH0KQxSwU0m++
 
 function run(args: string[], env: Record<string, string> = {}) {
   return spawnSync('bash', [SCRIPT, ...args], {
-    encoding: 'utf8', env: { PATH: `${bin}:/usr/bin:/bin`, HOME: home, JOB_HOPPER_SSH_KEY_FILE: join(dir, 'hopper_ed25519'), ...env },
+    encoding: 'utf8', env: { PATH: `${bin}:/usr/bin:/bin`, HOME: home, HOPPER_SSH_KEY_FILE: join(dir, 'hopper_ed25519'), ...env },
   });
 }
 
@@ -62,10 +62,10 @@ describe('attach-machine.sh', () => {
     const r = run(['laptop']);
     expect(r.stderr).toBe('');
     expect(r.status).toBe(0);
-    const unit = join(home, '.config/systemd/user/job-hopper-herdr.service');
-    expect(readFileSync(unit, 'utf8')).toBe(readFileSync(join(ROOT, 'systemd/job-hopper-herdr.service'), 'utf8'));
-    expect(log()).toMatch(/systemctl --user daemon-reload\nsystemctl --user enable --now job-hopper-herdr/);
-    expect(r.stdout).toContain('herdr session job-hopper is running on laptop');
+    const unit = join(home, '.config/systemd/user/hopper-herdr.service');
+    expect(readFileSync(unit, 'utf8')).toBe(readFileSync(join(ROOT, 'systemd/hopper-herdr.service'), 'utf8'));
+    expect(log()).toMatch(/systemctl --user daemon-reload\nsystemctl --user enable --now hopper-herdr/);
+    expect(r.stdout).toContain('herdr session hopper is running on laptop');
     // The plugins.yaml lines to add, ready to paste.
     expect(r.stdout).toContain('attachedMachines:');
     expect(r.stdout).toContain(`- { name: laptop, ssh: laptop, lanes: 2, herdrBin: ${bin}/herdr, hostKey: ${HOST_KEY} }`);
@@ -75,7 +75,7 @@ describe('attach-machine.sh', () => {
     expect(run(['laptop']).status).toBe(0);
     expect(run(['laptop']).status).toBe(0);
     const pub = readFileSync(join(dir, 'hopper_ed25519.pub'), 'utf8').trim().split(' ').slice(0, 2).join(' ');
-    expect(readFileSync(join(home, '.ssh', 'authorized_keys'), 'utf8')).toBe(`restrict ${pub} job-hopper\n`);
+    expect(readFileSync(join(home, '.ssh', 'authorized_keys'), 'utf8')).toBe(`restrict ${pub} hopper\n`);
   });
 
   it('pins only a host key the user already trusts: a machine never connected to by hand is refused (issue #59)', () => {
@@ -86,10 +86,10 @@ describe('attach-machine.sh', () => {
     expect(log()).not.toMatch(/systemctl/);
   });
 
-  it('needs the hopper\'s key: refused without JOB_HOPPER_SSH_KEY_FILE, before touching the machine', () => {
-    const r = run(['laptop'], { JOB_HOPPER_SSH_KEY_FILE: '' });
+  it('needs the hopper\'s key: refused without HOPPER_SSH_KEY_FILE, before touching the machine', () => {
+    const r = run(['laptop'], { HOPPER_SSH_KEY_FILE: '' });
     expect(r.status).toBe(2);
-    expect(r.stderr).toMatch(/JOB_HOPPER_SSH_KEY_FILE/);
+    expect(r.stderr).toMatch(/HOPPER_SSH_KEY_FILE/);
     expect(log()).not.toMatch(/^ssh /m);
   });
 

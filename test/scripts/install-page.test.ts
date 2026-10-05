@@ -28,7 +28,7 @@ describe('the install page', () => {
   });
 
   it('names only hopper scripts that exist', () => {
-    const named = [...page.matchAll(/job-hopper\/scripts\/([\w-]+\.sh)/g)].map((m) => m[1] ?? '');
+    const named = [...page.matchAll(/hopper\/scripts\/([\w-]+\.sh)/g)].map((m) => m[1] ?? '');
     expect(named.length).toBeGreaterThan(0);
     for (const script of new Set(named)) expect(existsSync(join(ROOT, 'scripts', script)), script).toBe(true);
   });

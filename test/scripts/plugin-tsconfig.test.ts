@@ -1,6 +1,6 @@
 // The plugin dir's tsconfig.json, written by install.sh through scripts/write-plugin-tsconfig.ts
-// (design.md "Settled in slice 6"): maps `job-hopper/plugin` to the installed sdk.ts, mode 600.
-// Rewritten while it is still job-hopper's own (its first line says so); an owner-edited one is kept.
+// (design.md "Settled in slice 6"): maps `hopper/plugin` to the installed sdk.ts, mode 600.
+// Rewritten while it is still hopper's own (its first line says so); an owner-edited one is kept.
 import { spawnSync } from 'node:child_process';
 import { readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -26,18 +26,27 @@ describe('write-plugin-tsconfig', () => {
     const path = join(dir, 'tsconfig.json');
     expect(statSync(path).mode & 0o777).toBe(0o600);
     expect(statSync(dir).mode & 0o777).toBe(0o700);
-    expect(read(path).compilerOptions.paths).toEqual({ 'job-hopper/plugin': ['/opt/jh/src/plugins/sdk.ts'] });
+    expect(read(path).compilerOptions.paths).toEqual({ 'hopper/plugin': ['/opt/jh/src/plugins/sdk.ts'] });
     expect(read(path).compilerOptions).toMatchObject({ module: 'preserve', allowImportingTsExtensions: true, erasableSyntaxOnly: true, noEmit: true });
   });
 
-  it("job-hopper's own, with another install path: rewritten", () => {
+  it("hopper's own, with another install path: rewritten", () => {
     const dir = temp();
     run(dir, '/old/src/plugins/sdk.ts');
     run(dir, '/new/src/plugins/sdk.ts');
-    expect(read(join(dir, 'tsconfig.json')).compilerOptions.paths['job-hopper/plugin']).toEqual(['/new/src/plugins/sdk.ts']);
+    expect(read(join(dir, 'tsconfig.json')).compilerOptions.paths['hopper/plugin']).toEqual(['/new/src/plugins/sdk.ts']);
   });
 
-  it('owner-edited (no job-hopper first line): kept byte for byte, with a note', () => {
+  it('written before the rename (job-hopper first line): ours, rewritten to the new mapping', () => {
+    const dir = temp();
+    const path = join(dir, 'tsconfig.json');
+    writeFileSync(path, "// Written by job-hopper's install.sh; rewritten on every install. Delete this line to keep your own edits.\n{}\n");
+    run(dir, '/new/src/plugins/sdk.ts');
+    expect(readFileSync(path, 'utf8').split('\n')[0]).toMatch(/^\/\/ Written by hopper's install\.sh/);
+    expect(read(path).compilerOptions.paths).toEqual({ 'hopper/plugin': ['/new/src/plugins/sdk.ts'] });
+  });
+
+  it('owner-edited (no hopper first line): kept byte for byte, with a note', () => {
     const dir = temp();
     const path = join(dir, 'tsconfig.json');
     writeFileSync(path, '{ "compilerOptions": { "strict": false } }\n');
@@ -47,10 +56,10 @@ describe('write-plugin-tsconfig', () => {
     expect(r.out).toMatch(/kept/);
   });
 
-  it('install.sh calls it with daemon.env\'s JOB_HOPPER_PLUGIN_DIR (no default) and the installed sdk.ts', () => {
+  it('install.sh calls it with daemon.env\'s HOPPER_PLUGIN_DIR (no default) and the installed sdk.ts', () => {
     const text = readFileSync(join(ROOT, 'scripts', 'install.sh'), 'utf8');
     expect(text).toMatch(/write-plugin-tsconfig\.ts/);
-    expect(text).toMatch(/PLUGIN_DIR="\$\(env_line JOB_HOPPER_PLUGIN_DIR\)"/);
+    expect(text).toMatch(/PLUGIN_DIR="\$\(env_line HOPPER_PLUGIN_DIR\)"/);
     expect(text).not.toMatch(/\$CONFIG_DIR\/plugins(?!\.yaml)/);
     expect(text).toMatch(/\$DEST\/src\/plugins\/sdk\.ts/);
   });

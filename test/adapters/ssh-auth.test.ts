@@ -81,16 +81,16 @@ describe('ssh to a target: key-based authentication only', () => {
 describe('the hopper\'s ssh key comes from the runtime, as a mounted file', () => {
   const env = (vars: Record<string, string>) => (name: string) => vars[name];
 
-  it('is the file JOB_HOPPER_SSH_KEY_FILE names, beside the pinned known_hosts in the data dir', () => {
+  it('is the file HOPPER_SSH_KEY_FILE names, beside the pinned known_hosts in the data dir', () => {
     expect(hopperSshAuth({ env: env({ [`${SSH_KEY}_FILE`]: key }), dataDir: dir })).toEqual({ identityFile: key, knownHostsFile: join(dir, 'ssh', 'known_hosts') });
   });
 
   it('none set: refused, with what to set', () => {
-    expect(() => hopperSshAuth({ env: env({}), dataDir: dir })).toThrow(/no ssh key for the hopper: set JOB_HOPPER_SSH_KEY_FILE/);
+    expect(() => hopperSshAuth({ env: env({}), dataDir: dir })).toThrow(/no ssh key for the hopper: set HOPPER_SSH_KEY_FILE/);
   });
 
   it('given as a variable: refused, ssh reads a key only from a file', () => {
-    expect(() => hopperSshAuth({ env: env({ [SSH_KEY]: 'key text' }), dataDir: dir })).toThrow(/JOB_HOPPER_SSH_KEY must be a mounted file/);
+    expect(() => hopperSshAuth({ env: env({ [SSH_KEY]: 'key text' }), dataDir: dir })).toThrow(/HOPPER_SSH_KEY must be a mounted file/);
   });
 
   it('a key file others can read, or that is missing: refused', () => {
@@ -102,7 +102,7 @@ describe('the hopper\'s ssh key comes from the runtime, as a mounted file', () =
 
 describe('pinned host keys', () => {
   const ssh = (name: string, target: string, hostKey?: string): AttachedMachine => ({
-    name, ssh: target, lanes: 1, executors: ['herdr-claude'], session: 'job-hopper', herdrBin: 'herdr', ...(hostKey ? { hostKey } : {}),
+    name, ssh: target, lanes: 1, executors: ['herdr-claude'], session: 'hopper', herdrBin: 'herdr', ...(hostKey ? { hostKey } : {}),
   });
 
   it('one known_hosts line per ssh target, under the target\'s name; container targets and unpinned ones have none', () => {

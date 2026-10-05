@@ -32,7 +32,7 @@ export async function buildAnswerer(spec: InstanceSpec | null, deps: SlotDeps): 
   if (!spec) return { spec: null, plugin: null };
   const built = await instantiate('answerer', spec, deps);
   if (!built.ok) {
-    deps.logger.warn(`job-hopper: answerer ${spec.name} (${spec.plugin}) unavailable, questions go to the human: ${built.why}`);
+    deps.logger.warn(`hopper: answerer ${spec.name} (${spec.plugin}) unavailable, questions go to the human: ${built.why}`);
     return { spec, detection: built.detection, fallback: built.why, plugin: null };
   }
   const inner = built.instance;
@@ -56,7 +56,7 @@ export async function buildAssessor(spec: InstanceSpec, deps: SlotDeps): Promise
     return { spec, assessor, detection: built.detection, plugin: built.plugin };
   }
   const why = built.why;
-  deps.logger.warn(`job-hopper: assessor ${spec.name} (${spec.plugin}) unavailable, every question escalates: ${why}`);
+  deps.logger.warn(`hopper: assessor ${spec.name} (${spec.plugin}) unavailable, every question escalates: ${why}`);
   const assessor: Assessor = {
     name: spec.name,
     async assess(): Promise<Assessment> {

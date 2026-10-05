@@ -1,3 +1,4 @@
+import { isMap, isSeq, parseDocument, type YAMLMap } from 'yaml';
 import type { Db } from './db.ts';
 
 // Schema changes never drop a queue (persisted state is the user's). A migration is SQL, or a
@@ -89,7 +90,7 @@ const MIGRATIONS: readonly Migration[] = [
   `
   CREATE TABLE IF NOT EXISTS config_documents (name TEXT PRIMARY KEY, text TEXT NOT NULL, updated_at TEXT NOT NULL);
   `,
-  // 9: one-time UI login codes live in the store (minted by `job-hopper login-code`), not in a file.
+  // 9: one-time UI login codes live in the store (minted by `hopper login-code`), not in a file.
   // Only the code's SHA-256 is kept.
   `
   CREATE TABLE IF NOT EXISTS login_codes (code_hash TEXT PRIMARY KEY, expires_at TEXT NOT NULL);
@@ -105,7 +106,38 @@ const MIGRATIONS: readonly Migration[] = [
   ALTER TABLE webhooks ADD COLUMN secret_env TEXT NOT NULL DEFAULT '';
   ALTER TABLE webhooks DROP COLUMN secret;
   `,
+  // 12: the rename to hopper (issue #112) renames the hopper's own herdr session, and the default
+  // `session` with it. plugins.yaml keeps its meaning: see renameHerdrSession.
+  renameHerdrSession,
 ];
+
+/**
+ * An ssh-attached machine that named no session ran its jobs in `job-hopper`, the session its own unit
+ * there still runs: it is named, until that machine is attached again under the new name. A herdr-claude
+ * instance that named `job-hopper` named the local unit's session, which is now `hopper`, the default:
+ * the option goes. Comments and everything else in the document are kept.
+ */
+function renameHerdrSession(db: Db): void {
+  const text = db.get("SELECT text FROM config_documents WHERE name = 'plugins.yaml'")?.text;
+  if (typeof text !== 'string') return;
+  const doc = parseDocument(text);
+  let changed = false;
+  const items = (key: string): YAMLMap[] => {
+    const list = doc.get(key);
+    return isSeq(list) ? list.items.filter(isMap) : [];
+  };
+  for (const m of items('attachedMachines')) {
+    if (m.has('ssh') && !m.has('session')) { m.set('session', 'job-hopper'); changed = true; }
+  }
+  for (const e of items('executors')) {
+    const options = e.get('options');
+    if (e.get('plugin') !== 'herdr-claude' || !isMap(options) || options.get('session') !== 'job-hopper') continue;
+    options.delete('session');
+    if (options.items.length === 0) e.delete('options');
+    changed = true;
+  }
+  if (changed) db.run("UPDATE config_documents SET text = ?, updated_at = ? WHERE name = 'plugins.yaml'", doc.toString({ lineWidth: 0 }), new Date().toISOString());
+}
 
 /** The schema version a store is at once migrated. */
 export const SCHEMA_VERSION = BASE_VERSION + MIGRATIONS.length;

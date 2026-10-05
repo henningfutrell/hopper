@@ -30,7 +30,7 @@ describe('persistence across restart', () => {
     await first.waitForStatus(queued.id, 'held');
     await first.stop();
 
-    const second = await startTestApp({ dbPath: db.dbPath, env: { JOB_HOPPER_ROUTER_MODE: 'shadow' }, source });
+    const second = await startTestApp({ dbPath: db.dbPath, env: { HOPPER_ROUTER_MODE: 'shadow' }, source });
     apps.push(second);
     expect((await second.api('GET', '/api/router')).body.mode).toBe('active');
     expect((await second.api('GET', '/api/webhooks')).body.subscriptions.map((s: { id: string; name: string }) => [s.id, s.name])).toEqual([[hook.id, 'h']]);

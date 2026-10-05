@@ -1,9 +1,9 @@
 // Manifest-flow helper: docs/design.md "The manifest-flow helper". Node built-ins only.
 // The app's private key (and webhook secret, if GitHub made one) are secrets: they go to the env
 // file as GITHUB_APP_PRIVATE_KEY= (newlines as \n) and GITHUB_APP_WEBHOOK_SECRET= lines — by default
-// ~/.config/job-hopper/daemon.env, the host unit's EnvironmentFile; --secrets-file for any other deploy,
+// ~/.config/hopper/daemon.env, the host unit's EnvironmentFile; --secrets-file for any other deploy,
 // whose secret store takes them from there. The app's id and slug are config: set them as the
-// github-app instance's appId and slug (`job-hopper config edit plugins.yaml`); the helper prints both.
+// github-app instance's appId and slug (`hopper config edit plugins.yaml`); the helper prints both.
 // Exit codes: 0 created, 1 failure/timeout, 2 refused (the env file already holds a key, no --force).
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
@@ -20,10 +20,10 @@ const { values: opt } = parseArgs({
   },
 });
 
-const web = (process.env.JOB_HOPPER_GITHUB_WEB ?? 'https://github.com').replace(/\/$/, '');
-const api = (process.env.JOB_HOPPER_GITHUB_API ?? 'https://api.github.com').replace(/\/$/, '');
-const envFile = opt['secrets-file'] ?? join(homedir(), '.config', 'job-hopper', 'daemon.env');
-const timeoutMs = Number(process.env.JOB_HOPPER_APP_FLOW_TIMEOUT_MS ?? 15 * 60 * 1000);
+const web = (process.env.HOPPER_GITHUB_WEB ?? 'https://github.com').replace(/\/$/, '');
+const api = (process.env.HOPPER_GITHUB_API ?? 'https://api.github.com').replace(/\/$/, '');
+const envFile = opt['secrets-file'] ?? join(homedir(), '.config', 'hopper', 'daemon.env');
+const timeoutMs = Number(process.env.HOPPER_APP_FLOW_TIMEOUT_MS ?? 15 * 60 * 1000);
 const SECRET_KEYS = ['GITHUB_APP_PRIVATE_KEY', 'GITHUB_APP_WEBHOOK_SECRET'];
 
 const fail = (msg: string, code = 1): never => {
@@ -36,13 +36,13 @@ function exists(path: string): boolean {
 }
 
 function resolveOwner(): string {
-  const given = opt.owner ?? process.env.JOB_HOPPER_OWNER;
+  const given = opt.owner ?? process.env.HOPPER_OWNER;
   if (given) return given;
   try {
     const login = execFileSync('gh', ['api', 'user', '--jq', '.login'], { encoding: 'utf8' }).trim();
     if (login) return login;
   } catch { /* fall through */ }
-  return fail('cannot tell the owner: pass --owner <login> (or set JOB_HOPPER_OWNER)');
+  return fail('cannot tell the owner: pass --owner <login> (or set HOPPER_OWNER)');
 }
 
 const escapeHtml = (s: string) =>
@@ -50,10 +50,10 @@ const escapeHtml = (s: string) =>
 
 function buildManifest(owner: string, port: number): Record<string, unknown> {
   return {
-    name: (opt.name ?? `job-hopper-${owner}`).slice(0, 34),
+    name: (opt.name ?? `hopper-${owner}`).slice(0, 34),
     url: `https://github.com/${owner}`,
-    description: "Pulls jobs for job-hopper from issues labelled hopper.",
-    ...(opt['no-webhook'] ? {} : { hook_attributes: { url: 'https://example.invalid/job-hopper-webhook', active: false } }),
+    description: "Pulls jobs for hopper from issues labelled hopper.",
+    ...(opt['no-webhook'] ? {} : { hook_attributes: { url: 'https://example.invalid/hopper-webhook', active: false } }),
     redirect_url: `http://127.0.0.1:${port}/callback`,
     public: false,
     default_permissions: { issues: 'write', metadata: 'read', organization_projects: 'read' },
@@ -65,7 +65,7 @@ type Conversion = { id: number; slug: string; client_id: string; webhook_secret:
 
 async function convert(code: string): Promise<Conversion> {
   const res = await fetch(`${api}/app-manifests/${encodeURIComponent(code)}/conversions`, {
-    method: 'POST', headers: { accept: 'application/vnd.github+json', 'user-agent': 'job-hopper-create-github-app' },
+    method: 'POST', headers: { accept: 'application/vnd.github+json', 'user-agent': 'hopper-create-github-app' },
   });
   if (!res.ok) throw new Error(`conversion failed: HTTP ${res.status}`);
   const c = (await res.json()) as Conversion;
@@ -105,7 +105,7 @@ const state = randomBytes(24).toString('hex');
 let port = 0;
 let used = false;
 const page = (status: number, body: string, res: http.ServerResponse) => {
-  res.writeHead(status, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }).end(`<!doctype html><meta charset="utf-8"><title>job-hopper</title>${body}`);
+  res.writeHead(status, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }).end(`<!doctype html><meta charset="utf-8"><title>hopper</title>${body}`);
 };
 
 const server = http.createServer((req, res) => {
@@ -135,8 +135,8 @@ async function finish(code: string, res: http.ServerResponse): Promise<void> {
     const install = `${web}/apps/${c.slug}/installations/new`;
     page(200, `<h1>App created</h1><p><a href="${escapeHtml(install)}">Install it on your repositories</a></p>`, res);
     process.stdout.write(`\nApp created: ${c.slug}\nInstall it: ${install}\nKey: GITHUB_APP_PRIVATE_KEY in ${path}\n` +
-      `Set the github-app instance's options (job-hopper config edit plugins.yaml): appId: ${c.id}, slug: ${c.slug}\n` +
-      `JOB_HOPPER_APP_CREATED ${c.id} ${c.slug}\n`);
+      `Set the github-app instance's options (hopper config edit plugins.yaml): appId: ${c.id}, slug: ${c.slug}\n` +
+      `HOPPER_APP_CREATED ${c.id} ${c.slug}\n`);
     res.on('close', () => process.exit(0));
     setTimeout(() => process.exit(0), 1000).unref();
   } catch (e) {

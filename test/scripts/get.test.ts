@@ -1,6 +1,6 @@
 // scripts/get.sh, the curl install (issue #87): `curl -fsSL <raw get.sh> | bash` checks what the
 // install needs, clones or updates the hopper's source, gives it a database — the one in daemon.env,
-// JOB_HOPPER_DATABASE_URL, or else the bundled Postgres (deploy/compose.yaml) with a fresh password —
+// HOPPER_DATABASE_URL, or else the bundled Postgres (deploy/compose.yaml) with a fresh password —
 // and runs that source's scripts/install.sh. The source is a local repository whose install.sh only
 // records what it was given; docker is a stand-in on PATH. Nothing leaves this process tree.
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -38,13 +38,13 @@ function run(env: Record<string, string> = {}) {
     encoding: 'utf8',
     env: {
       PATH: `${bin}:${dirname(process.execPath)}:/usr/bin:/bin`, HOME: home,
-      JOB_HOPPER_REPO: origin, ...env,
+      HOPPER_SOURCE_REPO: origin, ...env,
     },
   });
 }
 const log = (): string => (existsSync(join(dir, 'log')) ? readFileSync(join(dir, 'log'), 'utf8') : '');
 const installed = (): Record<string, string> => JSON.parse(readFileSync(join(dir, 'install-ran'), 'utf8'));
-const SRC = (): string => join(home, '.local/share/job-hopper/source');
+const SRC = (): string => join(home, '.local/share/hopper/source');
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'jh-get-'));
@@ -58,10 +58,10 @@ beforeEach(() => {
   git(work, 'remote', 'add', 'origin', origin);
   mkdirSync(join(work, 'scripts'));
   mkdirSync(join(work, 'deploy'));
-  writeFileSync(join(work, 'deploy/compose.yaml'), 'name: job-hopper\n');
+  writeFileSync(join(work, 'deploy/compose.yaml'), 'name: hopper\n');
   // The source's install.sh: records where it ran from and what it was given.
   writeFileSync(join(work, 'scripts/install.sh'), `node -e 'process.getBuiltinModule("node:fs").writeFileSync(process.argv[1], JSON.stringify({
-  dir: process.cwd(), commit: process.argv[2], db: process.env.JOB_HOPPER_DATABASE_URL ?? "", branch: process.env.JOB_HOPPER_UPDATE_BRANCH ?? "" }))' \\
+  dir: process.cwd(), commit: process.argv[2], db: process.env.HOPPER_DATABASE_URL ?? "", branch: process.env.HOPPER_UPDATE_BRANCH ?? "" }))' \\
   "${dir}/install-ran" "$(git -C "$(dirname "$0")/.." rev-parse HEAD)"\n`);
   stub('systemctl', 'true');
 });
@@ -70,7 +70,7 @@ afterEach(() => rmSync(dir, { recursive: true, force: true }));
 describe('get.sh', () => {
   it('clones the source and runs its install.sh with the database it is given', () => {
     const head = commit('a', '1');
-    const r = run({ JOB_HOPPER_DATABASE_URL: 'postgres://u:p@db:5432/hopper' });
+    const r = run({ HOPPER_DATABASE_URL: 'postgres://u:p@db:5432/hopper' });
     expect(r.status, r.stderr).toBe(0);
     expect(git(SRC(), 'rev-parse', 'HEAD')).toBe(head);
     expect(git(SRC(), 'remote', 'get-url', 'origin')).toBe(origin);
@@ -80,29 +80,49 @@ describe('get.sh', () => {
 
   it('run again, updates the source to the newest commit and installs that', () => {
     commit('a', '1');
-    expect(run({ JOB_HOPPER_DATABASE_URL: 'postgres://u:p@db/h' }).status).toBe(0);
+    expect(run({ HOPPER_DATABASE_URL: 'postgres://u:p@db/h' }).status).toBe(0);
     const head = commit('b', '2');
-    const r = run({ JOB_HOPPER_DATABASE_URL: 'postgres://u:p@db/h' });
+    const r = run({ HOPPER_DATABASE_URL: 'postgres://u:p@db/h' });
     expect(r.status, r.stderr).toBe(0);
     expect(installed().commit).toBe(head);
   });
 
-  it('installs the ref JOB_HOPPER_REF names, and self-update tracks it', () => {
+  it('installs the ref HOPPER_SOURCE_REF names, and self-update tracks it', () => {
     commit('a', '1');
     git(work, 'checkout', '-q', '-b', 'next');
     const head = commit('b', '2');
     git(work, 'push', '-q', 'origin', 'next');
-    const r = run({ JOB_HOPPER_DATABASE_URL: 'postgres://u:p@db/h', JOB_HOPPER_REF: 'next' });
+    const r = run({ HOPPER_DATABASE_URL: 'postgres://u:p@db/h', HOPPER_SOURCE_REF: 'next' });
     expect(r.status, r.stderr).toBe(0);
     expect(installed()).toMatchObject({ commit: head, branch: 'next' });
   });
 
+  it('over a job-hopper install: its source clone moves to the new default, its database is the one its daemon.env names', () => {
+    commit('a', '1');
+    const oldSrc = join(home, '.local/share/job-hopper/source');
+    mkdirSync(dirname(oldSrc), { recursive: true });
+    git(dirname(oldSrc), 'clone', '-q', origin, oldSrc);
+    writeFileSync(join(dirname(oldSrc), 'job-hopper.db'), 'kept');
+    mkdirSync(join(home, '.config/job-hopper'), { recursive: true });
+    writeFileSync(join(home, '.config/job-hopper/daemon.env'), 'JOB_HOPPER_DATABASE_URL=postgres://u:p@127.0.0.1:5433/hopper\n');
+    stub('docker', 'exit 0');
+    const head = commit('b', '2');
+    const r = run();
+    expect(r.status, r.stderr).toBe(0);
+    expect(r.stdout).toContain('database: the one the job-hopper install');
+    expect(existsSync(oldSrc)).toBe(false);
+    expect(readFileSync(join(dirname(oldSrc), 'job-hopper.db'), 'utf8')).toBe('kept');
+    expect(git(SRC(), 'rev-parse', 'HEAD')).toBe(head);
+    expect(installed()).toMatchObject({ commit: head, db: '' });
+    expect(log()).not.toContain('docker');
+  });
+
   it('refuses to update a source with local changes', () => {
     commit('a', '1');
-    expect(run({ JOB_HOPPER_DATABASE_URL: 'postgres://u:p@db/h' }).status).toBe(0);
+    expect(run({ HOPPER_DATABASE_URL: 'postgres://u:p@db/h' }).status).toBe(0);
     rmSync(join(dir, 'install-ran'));
     writeFileSync(join(SRC(), 'a'), 'edited');
-    const r = run({ JOB_HOPPER_DATABASE_URL: 'postgres://u:p@db/h' });
+    const r = run({ HOPPER_DATABASE_URL: 'postgres://u:p@db/h' });
     expect(r.status).toBe(1);
     expect(r.stderr).toContain('local changes');
     expect(existsSync(join(dir, 'install-ran'))).toBe(false);
@@ -110,8 +130,8 @@ describe('get.sh', () => {
 
   it('uses the database daemon.env already names, and starts no Postgres', () => {
     commit('a', '1');
-    mkdirSync(join(home, '.config/job-hopper'), { recursive: true });
-    writeFileSync(join(home, '.config/job-hopper/daemon.env'), 'JOB_HOPPER_DATABASE_URL=postgres://u:p@kept/h\n');
+    mkdirSync(join(home, '.config/hopper'), { recursive: true });
+    writeFileSync(join(home, '.config/hopper/daemon.env'), 'HOPPER_DATABASE_URL=postgres://u:p@kept/h\n');
     stub('docker', 'exit 0');
     const r = run();
     expect(r.status, r.stderr).toBe(0);
@@ -139,7 +159,7 @@ describe('get.sh', () => {
     stub('docker', 'exit 0');
     const r = run();
     expect(r.status).toBe(1);
-    expect(r.stderr).toContain('job-hopper_postgres');
+    expect(r.stderr).toContain('hopper_postgres');
     expect(log()).not.toContain('compose');
     expect(existsSync(join(dir, 'install-ran'))).toBe(false);
   });
@@ -155,13 +175,13 @@ describe('get.sh', () => {
     }
     const r = run({ PATH: `${bin}:${dirname(process.execPath)}:${tools}` });
     expect(r.status).toBe(1);
-    expect(r.stderr).toContain('JOB_HOPPER_DATABASE_URL');
+    expect(r.stderr).toContain('HOPPER_DATABASE_URL');
     expect(existsSync(join(dir, 'install-ran'))).toBe(false);
   });
 
   it('refuses a node older than 24 before touching anything', () => {
     stub('node', 'echo v22.1.0');
-    const r = run({ JOB_HOPPER_DATABASE_URL: 'postgres://u:p@db/h' });
+    const r = run({ HOPPER_DATABASE_URL: 'postgres://u:p@db/h' });
     expect(r.status).toBe(1);
     expect(r.stderr).toContain('Node.js >= 24');
     expect(existsSync(SRC())).toBe(false);

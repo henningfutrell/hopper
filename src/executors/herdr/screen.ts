@@ -1,21 +1,21 @@
-// The job-hopper screen protocol over a Claude Code pane: pure functions, no I/O.
+// The hopper screen protocol over a Claude Code pane: pure functions, no I/O.
 // docs/design.md "Phase 2" → "Turn anchor (B1)".
 
 // The publishing rule comes first, then the work tree; the protocol lines follow and the last one
 // stays the turn anchor.
-const PUBLISHING_RULE = "[job-hopper publishing rule] Any text you send to GitHub (commit messages, branch names, pull request titles and bodies, issue text) describes the change and how it was verified, in neutral terms. Never quote or name the repository owner or any other person. Never include personal or machine details: email addresses, people's names, IP addresses, hostnames, tailnet names, home directory paths, usernames, machine or pane ids, port numbers of local machines, codes, tokens or secrets.";
+const PUBLISHING_RULE = "[hopper publishing rule] Any text you send to GitHub (commit messages, branch names, pull request titles and bodies, issue text) describes the change and how it was verified, in neutral terms. Never quote or name the repository owner or any other person. Never include personal or machine details: email addresses, people's names, IP addresses, hostnames, tailnet names, home directory paths, usernames, machine or pane ids, port numbers of local machines, codes, tokens or secrets.";
 
 /** Where a job's temporary files go, inside its work tree (design.md "Work tree"). */
 export const SCRATCH_DIR = '.hopper-scratch';
 
-const workTreeRule = (cwd: string): string => `[job-hopper work tree] This job's work tree is ${cwd}. Do all of the job's work inside it: clones, git worktrees, edits, builds, test runs, scratch and temporary files go under it. Never make or work in a copy of the code outside it, under /tmp or anywhere else. Temporary files go in ${cwd}/${SCRATCH_DIR}: git ignores it, and TMPDIR and your scratchpad point there. Running or installing what you built, and reading files elsewhere, is fine. If the job seems to need a work tree outside this one, ask instead.`;
+const workTreeRule = (cwd: string): string => `[hopper work tree] This job's work tree is ${cwd}. Do all of the job's work inside it: clones, git worktrees, edits, builds, test runs, scratch and temporary files go under it. Never make or work in a copy of the code outside it, under /tmp or anywhere else. Temporary files go in ${cwd}/${SCRATCH_DIR}: git ignores it, and TMPDIR and your scratchpad point there. Running or installing what you built, and reading files elsewhere, is fine. If the job seems to need a work tree outside this one, ask instead.`;
 
 const PROTOCOL_LINES = [
-  '[job-hopper parallel work] Other jobs run at the same time as this one, possibly in the same repos. Nothing orders or holds jobs for each other: no job waits for another.',
+  '[hopper parallel work] Other jobs run at the same time as this one, possibly in the same repos. Nothing orders or holds jobs for each other: no job waits for another.',
   'If your work overlaps another job\'s, sort it out yourself. Either state the assumptions you made about the other work, or make the needed fix in the other project and annotate it with which way the dependency runs (which work depends on which).',
-  '[job-hopper protocol] When you need an answer from the user, ask exactly one question and end your message with a line containing only: JOB_HOPPER_QUESTION',
-  'When the job is completely finished, end your final message with a line containing only: JOB_HOPPER_DONE',
-  'If the job cannot be done, end with a line containing only: JOB_HOPPER_FAILED followed by the reason.',
+  '[hopper protocol] When you need an answer from the user, ask exactly one question and end your message with a line containing only: HOPPER_QUESTION',
+  'When the job is completely finished, end your final message with a line containing only: HOPPER_DONE',
+  'If the job cannot be done, end with a line containing only: HOPPER_FAILED followed by the reason.',
 ];
 
 /** What follows a job's prompt on its first send: the rules, its work tree, the protocol. */
@@ -63,9 +63,9 @@ export function normaliseMarkerLine(line: string): string {
 
 function markerOf(line: string): Marker | null {
   const s = normaliseMarkerLine(line);
-  if (s === 'JOB_HOPPER_DONE') return 'done';
-  if (s === 'JOB_HOPPER_QUESTION') return 'question';
-  if (s.startsWith('JOB_HOPPER_FAILED')) return 'failed';
+  if (s === 'HOPPER_DONE') return 'done';
+  if (s === 'HOPPER_QUESTION') return 'question';
+  if (s.startsWith('HOPPER_FAILED')) return 'failed';
   return null;
 }
 
@@ -141,7 +141,7 @@ function blockText(lines: string[], index: number): string {
 }
 
 function failedReason(lines: string[], index: number): string {
-  const rest = normaliseMarkerLine(lines[index]!).slice('JOB_HOPPER_FAILED'.length).replace(/^[\s:—–-]+/, '').trim();
+  const rest = normaliseMarkerLine(lines[index]!).slice('HOPPER_FAILED'.length).replace(/^[\s:—–-]+/, '').trim();
   if (rest) return rest;
   const next = lines.slice(index + 1).map(stripGutter).find((l) => l !== '');
   return next ?? '';

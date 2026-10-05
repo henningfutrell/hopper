@@ -39,7 +39,7 @@ function route(c: EngineContext, item: SourceItem, source: { name: string }): Ro
   const executors = [...c.executors.names(), ...c.executors.unavailable().map((u) => u.name)];
   const r = routeItem(rules, { source: source.name, ...(item.repo !== undefined ? { repo: item.repo } : {}), labels: item.labels, author: item.author, title: item.title },
     { machines: c.routing.machines(), executors });
-  for (const s of r.skipped) console.warn(`job-hopper: routing rule ${s.rule} skipped for ${item.key}: ${s.reason}`);
+  for (const s of r.skipped) console.warn(`hopper: routing rule ${s.rule} skipped for ${item.key}: ${s.reason}`);
   return r.routedBy;
 }
 

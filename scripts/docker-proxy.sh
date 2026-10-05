@@ -8,12 +8,12 @@
 # no network, a read-only root and no capabilities, restarted with docker. Re-running replaces it
 # with the new allowlist. Then print the daemon.env line.
 #   usage: docker-proxy.sh <container> [<container>...]
-#   JOB_HOPPER_DOCKER_DIR (default ~/.local/state/job-hopper/docker) holds the socket.
+#   HOPPER_DOCKER_DIR (default ~/.local/state/hopper/docker) holds the socket.
 set -euo pipefail
 
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DIR="${JOB_HOPPER_DOCKER_DIR:-$HOME/.local/state/job-hopper/docker}"
-NAME="${JOB_HOPPER_DOCKER_PROXY_NAME:-job-hopper-docker-proxy}"
+DIR="${HOPPER_DOCKER_DIR:-$HOME/.local/state/hopper/docker}"
+NAME="${HOPPER_DOCKER_PROXY_NAME:-hopper-docker-proxy}"
 ROOT_SOCKET=/var/run/docker.sock
 
 usage() { echo "usage: $0 <container> [<container>...]" >&2; exit 2; }
@@ -49,4 +49,4 @@ docker --host "unix://$DIR/docker.sock" version --format '{{.Server.Version}}' >
   && die "the proxy lets through more than it should (docker version answered)"
 
 step "the hopper reaches docker through unix://$DIR/docker.sock; add to daemon.env:"
-echo "JOB_HOPPER_DOCKER_HOST=unix://$DIR/docker.sock"
+echo "HOPPER_DOCKER_HOST=unix://$DIR/docker.sock"

@@ -1,7 +1,7 @@
 // A machine source: the hosts that can run jobs. The machine id is the instance name (lanes are
 // stored under it). This one is one machine with a fixed lane count.
 //   machines: { name: local, plugin: fixed-machine, options: { lanes: 2 } }
-import type { PluginDefinition } from 'job-hopper/plugin';
+import type { PluginDefinition } from 'hopper/plugin';
 
 export default {
   id: 'fixed-machine',

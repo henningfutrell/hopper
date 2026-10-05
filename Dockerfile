@@ -1,5 +1,5 @@
-# job-hopper as a container (docs/deploy.md, compose.yaml). Everything the daemon keeps is in its
-# database (JOB_HOPPER_DATABASE_URL); its secrets are environment variables; nothing in the image
+# hopper as a container (docs/deploy.md, compose.yaml). Everything the daemon keeps is in its
+# database (HOPPER_DATABASE_URL); its secrets are environment variables; nothing in the image
 # depends on the machine it runs on. Jobs run in herdr panes: in its own herdr session, here (the
 # `local` machine, started by scripts/container-start.sh), and on attached machines.
 
@@ -16,7 +16,7 @@ RUN npm run build:ui && test -s ui/dist/index.html
 FROM node:26-bookworm-slim
 # git: self-update's mirror and Jev; openssh-client: attached machines; python3 + PyYAML: the Jev
 # shim; gh: the github-gh job source, and git's GitHub sign-in for jobs; ca-certificates: TLS to GitHub
-# and the identity providers; curl: herdr's installer; nano: `job-hopper config edit` (EDITOR).
+# and the identity providers; curl: herdr's installer; nano: `hopper config edit` (EDITOR).
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates curl git nano openssh-client python3 python3-yaml gh \
  && rm -rf /var/lib/apt/lists/* \
@@ -40,16 +40,16 @@ RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
 COPY src ./src
 COPY scripts ./scripts
 COPY --from=ui /build/ui/dist ./ui/dist
-RUN chmod 755 src/cli.ts && ln -s /app/src/cli.ts /usr/local/bin/job-hopper
+RUN chmod 755 src/cli.ts && ln -s /app/src/cli.ts /usr/local/bin/hopper
 
 USER node
 ENV NODE_ENV=production \
     EDITOR=nano \
-    JOB_HOPPER_PORT=4790 \
-    JOB_HOPPER_WORK_DIR=/tmp/job-hopper
+    HOPPER_PORT=4790 \
+    HOPPER_WORK_DIR=/tmp/hopper
 EXPOSE 4790
 # Loopback inside the container, on the daemon's port: a local request, no session needed.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \
-  CMD node -e "fetch('http://127.0.0.1:' + (process.env.JOB_HOPPER_PORT || 4790) + '/api/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+  CMD node -e "fetch('http://127.0.0.1:' + (process.env.HOPPER_PORT || 4790) + '/api/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
 ENTRYPOINT ["/app/scripts/container-start.sh"]
 CMD ["node", "src/main.ts"]

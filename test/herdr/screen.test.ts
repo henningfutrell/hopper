@@ -11,12 +11,12 @@ const CHROME = [
 // Real capture of turn 1: Ink wraps the echoed prompt itself, so the footer arrives hard-wrapped.
 const TURN_1 = [
   '❯ Create a file ... wait for the answer.',
-  '  [job-hopper protocol] When you need an answer from the user, ask exactly one question and end your message with a',
-  '  line containing only: JOB_HOPPER_QUESTION',
-  '  When the job is completely finished, end your final message with a line containing only: JOB_HOPPER_DONE',
-  '  If the job cannot be done, end with a line containing only: JOB_HOPPER_FAILED followed by the reason.',
+  '  [hopper protocol] When you need an answer from the user, ask exactly one question and end your message with a',
+  '  line containing only: HOPPER_QUESTION',
+  '  When the job is completely finished, end your final message with a line containing only: HOPPER_DONE',
+  '  If the job cannot be done, end with a line containing only: HOPPER_FAILED followed by the reason.',
   '● Which language should the greeting be in?',
-  '  JOB_HOPPER_QUESTION',
+  '  HOPPER_QUESTION',
   '✻ Cooked for 5s · done 9:45 PM',
 ];
 
@@ -24,24 +24,24 @@ const TURN_2 = [
   '❯ French.',
   '● I created greeting.txt in the current directory with a French greeting:',
   "  ▎ Bonjour ! J'espère que vous passez une excellente journée.",
-  '  JOB_HOPPER_DONE',
+  '  HOPPER_DONE',
   '✻ Worked for 8s · done 9:45 PM',
 ];
 
 const screen = (...parts: string[][]): string => parts.flat().join('\n');
 
-const PUBLISHING_RULE = "[job-hopper publishing rule] Any text you send to GitHub (commit messages, branch names, pull request titles and bodies, issue text) describes the change and how it was verified, in neutral terms. Never quote or name the repository owner or any other person. Never include personal or machine details: email addresses, people's names, IP addresses, hostnames, tailnet names, home directory paths, usernames, machine or pane ids, port numbers of local machines, codes, tokens or secrets.";
+const PUBLISHING_RULE = "[hopper publishing rule] Any text you send to GitHub (commit messages, branch names, pull request titles and bodies, issue text) describes the change and how it was verified, in neutral terms. Never quote or name the repository owner or any other person. Never include personal or machine details: email addresses, people's names, IP addresses, hostnames, tailnet names, home directory paths, usernames, machine or pane ids, port numbers of local machines, codes, tokens or secrets.";
 
 describe('protocol footer', () => {
   it('is the design text verbatim: the publishing rule, the work tree, parallel work, then the three protocol lines', () => {
     expect(protocolFooter('/w/repo')).toBe(
       PUBLISHING_RULE + '\n'
-      + "[job-hopper work tree] This job's work tree is /w/repo. Do all of the job's work inside it: clones, git worktrees, edits, builds, test runs, scratch and temporary files go under it. Never make or work in a copy of the code outside it, under /tmp or anywhere else. Temporary files go in /w/repo/.hopper-scratch: git ignores it, and TMPDIR and your scratchpad point there. Running or installing what you built, and reading files elsewhere, is fine. If the job seems to need a work tree outside this one, ask instead.\n"
-      + '[job-hopper parallel work] Other jobs run at the same time as this one, possibly in the same repos. Nothing orders or holds jobs for each other: no job waits for another.\n'
+      + "[hopper work tree] This job's work tree is /w/repo. Do all of the job's work inside it: clones, git worktrees, edits, builds, test runs, scratch and temporary files go under it. Never make or work in a copy of the code outside it, under /tmp or anywhere else. Temporary files go in /w/repo/.hopper-scratch: git ignores it, and TMPDIR and your scratchpad point there. Running or installing what you built, and reading files elsewhere, is fine. If the job seems to need a work tree outside this one, ask instead.\n"
+      + '[hopper parallel work] Other jobs run at the same time as this one, possibly in the same repos. Nothing orders or holds jobs for each other: no job waits for another.\n'
       + 'If your work overlaps another job\'s, sort it out yourself. Either state the assumptions you made about the other work, or make the needed fix in the other project and annotate it with which way the dependency runs (which work depends on which).\n'
-      + '[job-hopper protocol] When you need an answer from the user, ask exactly one question and end your message with a line containing only: JOB_HOPPER_QUESTION\n'
-      + 'When the job is completely finished, end your final message with a line containing only: JOB_HOPPER_DONE\n'
-      + 'If the job cannot be done, end with a line containing only: JOB_HOPPER_FAILED followed by the reason.',
+      + '[hopper protocol] When you need an answer from the user, ask exactly one question and end your message with a line containing only: HOPPER_QUESTION\n'
+      + 'When the job is completely finished, end your final message with a line containing only: HOPPER_DONE\n'
+      + 'If the job cannot be done, end with a line containing only: HOPPER_FAILED followed by the reason.',
     );
   });
 
@@ -52,7 +52,7 @@ describe('protocol footer', () => {
 
   it('anchors turn 1 on its last line', () => {
     expect(protocolFooter('/w/repo').split('\n').at(-1)).toBe(FOOTER_ANCHOR);
-    expect(FOOTER_ANCHOR).toBe('If the job cannot be done, end with a line containing only: JOB_HOPPER_FAILED followed by the reason.');
+    expect(FOOTER_ANCHOR).toBe('If the job cannot be done, end with a line containing only: HOPPER_FAILED followed by the reason.');
   });
 });
 
@@ -67,12 +67,12 @@ describe('readTurn', () => {
   it('ignores markers inside an echoed footer that Ink wrapped onto their own line', () => {
     const wrapped = [
       '❯ Do the thing.',
-      '  [job-hopper protocol] When you need an answer from the user, ask exactly one question and end your message with a line containing only:',
-      '  JOB_HOPPER_QUESTION',
+      '  [hopper protocol] When you need an answer from the user, ask exactly one question and end your message with a line containing only:',
+      '  HOPPER_QUESTION',
       '  When the job is completely finished, end your final message with a line containing only:',
-      '  JOB_HOPPER_DONE',
+      '  HOPPER_DONE',
       '  If the job cannot be done, end with a line containing only:',
-      '  JOB_HOPPER_FAILED followed by the reason.',
+      '  HOPPER_FAILED followed by the reason.',
     ];
     const t = readTurn(screen(wrapped, CHROME), FOOTER_ANCHOR);
     expect(t.lastMarker).toBeNull();
@@ -94,38 +94,38 @@ describe('readTurn', () => {
   });
 
   it('anchors on the echoed answer, not a later repetition of the same words', () => {
-    const t = readTurn(screen(['❯ yes', '● You said yes', '  JOB_HOPPER_DONE'], CHROME), 'yes');
+    const t = readTurn(screen(['❯ yes', '● You said yes', '  HOPPER_DONE'], CHROME), 'yes');
     expect(t.lastMarker).toBe('done');
     expect(t.assistantText).toBe('You said yes');
   });
 
   it.each([
-    ['`JOB_HOPPER_DONE`', 'done'],
-    ['**JOB_HOPPER_DONE**', 'done'],
-    ['● JOB_HOPPER_DONE', 'done'],
-    ['  ⎿  JOB_HOPPER_QUESTION  ', 'question'],
-    ['*JOB_HOPPER_QUESTION*', 'question'],
-    ['JOB_HOPPER_DONE now', null],
-    ['say JOB_HOPPER_DONE', null],
+    ['`HOPPER_DONE`', 'done'],
+    ['**HOPPER_DONE**', 'done'],
+    ['● HOPPER_DONE', 'done'],
+    ['  ⎿  HOPPER_QUESTION  ', 'question'],
+    ['*HOPPER_QUESTION*', 'question'],
+    ['HOPPER_DONE now', null],
+    ['say HOPPER_DONE', null],
   ])('normalises marker line %j to %s', (line, marker) => {
     const t = readTurn(screen(['❯ go', '● ok', line], CHROME), 'go');
     expect(t.lastMarker).toBe(marker);
   });
 
   it('reads the FAILED reason from the same line', () => {
-    const t = readTurn(screen(['❯ go', '● Cannot proceed.', '  JOB_HOPPER_FAILED: no network access'], CHROME), 'go');
+    const t = readTurn(screen(['❯ go', '● Cannot proceed.', '  HOPPER_FAILED: no network access'], CHROME), 'go');
     expect(t.lastMarker).toBe('failed');
     expect(t.failedReason).toBe('no network access');
   });
 
   it('reads the FAILED reason from the next line when the marker line is bare', () => {
-    const t = readTurn(screen(['❯ go', '● Cannot proceed.', '  JOB_HOPPER_FAILED', '  the repo is missing'], CHROME), 'go');
+    const t = readTurn(screen(['❯ go', '● Cannot proceed.', '  HOPPER_FAILED', '  the repo is missing'], CHROME), 'go');
     expect(t.lastMarker).toBe('failed');
     expect(t.failedReason).toBe('the repo is missing');
   });
 
   it('takes the last marker when a turn has several', () => {
-    const t = readTurn(screen(['❯ go', '● First', '  JOB_HOPPER_QUESTION', '● Never mind, done.', '  JOB_HOPPER_DONE'], CHROME), 'go');
+    const t = readTurn(screen(['❯ go', '● First', '  HOPPER_QUESTION', '● Never mind, done.', '  HOPPER_DONE'], CHROME), 'go');
     expect(t.lastMarker).toBe('done');
     expect(t.assistantText).toBe('Never mind, done.');
   });
@@ -160,7 +160,7 @@ describe('readTurn', () => {
   });
 
   it('counts every line when the anchor scrolled out', () => {
-    const t = readTurn(screen(['● Done all.', '  JOB_HOPPER_DONE'], CHROME), 'gone anchor');
+    const t = readTurn(screen(['● Done all.', '  HOPPER_DONE'], CHROME), 'gone anchor');
     expect(t.anchorFound).toBe(false);
     expect(t.lastMarker).toBe('done');
   });
@@ -230,6 +230,6 @@ describe('typedAfterQuestion', () => {
   });
 
   it('anchored on an earlier answer: reads the next typed line, not the anchor echo', () => {
-    expect(typedAfterQuestion(screen(TURN_1, TURN_2, ['● Anything else?', '  JOB_HOPPER_QUESTION', '❯ No, stop.'], CHROME), 'French.')).toBe('No, stop.');
+    expect(typedAfterQuestion(screen(TURN_1, TURN_2, ['● Anything else?', '  HOPPER_QUESTION', '❯ No, stop.'], CHROME), 'French.')).toBe('No, stop.');
   });
 });

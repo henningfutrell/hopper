@@ -8,7 +8,7 @@ import { createGitHubAppApi, loadGitHubApp } from '../../../../src/sources/githu
 import type { GitHubAppApi } from '../../../../src/sources/github/app/index.ts';
 
 export const APP_ID = 4242;
-export const SLUG = 'job-hopper-test';
+export const SLUG = 'hopper-test';
 export const BOT = `${SLUG}[bot]`;
 export const KEY_ENV = 'GITHUB_APP_PRIVATE_KEY';
 export const clock = { now: () => new Date() };

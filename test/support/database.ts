@@ -1,10 +1,10 @@
-// The database a test runs against: a fresh schema in the Postgres JOB_HOPPER_TEST_POSTGRES_URL
+// The database a test runs against: a fresh schema in the Postgres HOPPER_TEST_POSTGRES_URL
 // names (support/postgres.ts starts one for the run), so tests never share tables.
 import { createHash, randomBytes } from 'node:crypto';
 
 export function testPostgres(): string {
-  const url = process.env.JOB_HOPPER_TEST_POSTGRES_URL;
-  if (!url) throw new Error('JOB_HOPPER_TEST_POSTGRES_URL is not set: run the suite through vitest (its globalSetup starts Postgres)');
+  const url = process.env.HOPPER_TEST_POSTGRES_URL;
+  if (!url) throw new Error('HOPPER_TEST_POSTGRES_URL is not set: run the suite through vitest (its globalSetup starts Postgres)');
   return url;
 }
 

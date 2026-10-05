@@ -5,7 +5,7 @@ import type { SessionView } from '@/model/wire';
 import { onLan } from './login';
 
 const TOKEN_KEY = 'jh_session';
-export const LOGIN_CMD = 'bash ~/.local/lib/job-hopper/scripts/open-ui.sh';
+export const LOGIN_CMD = 'bash ~/.local/lib/hopper/scripts/open-ui.sh';
 /** How to log in from here: the command on this machine, a device link across the LAN. */
 export const loginHint = (): string => (onLan() ? 'sign in, open a device link from a logged-in browser, or paste a login code' : `sign in, or run ${LOGIN_CMD}`);
 
@@ -18,7 +18,7 @@ export class RoleRefused extends Error {}
 
 export async function get<T>(path: string): Promise<T> {
   const token = readToken();
-  const res = await fetch(path, token ? { headers: { 'x-jobhopper-session': token } } : {});
+  const res = await fetch(path, token ? { headers: { 'x-hopper-session': token } } : {});
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.error || `${res.status} ${path}`);
   return body as T;
@@ -27,7 +27,7 @@ export async function get<T>(path: string): Promise<T> {
 export async function post<T = unknown>(path: string, body: unknown = {}): Promise<T> {
   const res = await fetch(path, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-jobhopper-session': readToken() ?? '' },
+    headers: { 'content-type': 'application/json', 'x-hopper-session': readToken() ?? '' },
     body: JSON.stringify(body),
   });
   const out = await res.json().catch(() => ({}));
@@ -43,7 +43,7 @@ export const deviceLinks = (keep?: string) => post<{ links: string[] }>('/ui/api
 /** The session the stored token names (or none), and the ways to sign in. Throws only when the daemon is unreachable. */
 export async function readSession(): Promise<SessionView> {
   const token = readToken();
-  const res = await fetch('/ui/api/session', token ? { headers: { 'x-jobhopper-session': token } } : {});
+  const res = await fetch('/ui/api/session', token ? { headers: { 'x-hopper-session': token } } : {});
   const out = await res.json().catch(() => ({})) as Partial<SessionView>;
   if (!res.ok || !out.signIn) throw new Error(`${res.status} /ui/api/session`);
   if (out.authenticated !== true && token) clearToken();

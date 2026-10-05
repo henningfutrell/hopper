@@ -25,7 +25,7 @@ export function apiReferenceRoutes(app: FastifyInstance, version: string): void 
     logLevel: 'silent',
     configuration: {
       content: document,
-      pageTitle: 'job-hopper API',
+      pageTitle: 'hopper API',
       telemetry: false,
       withDefaultFonts: false,
       agent: { disabled: true },

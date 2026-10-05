@@ -1,6 +1,6 @@
 // Issue #59: the hopper reaches docker only through a socket that its own user alone can open — never
 // the root daemon's socket, which anyone in the docker group can open and which is root on this
-// machine (design.md "Target authentication"). The socket is named by JOB_HOPPER_DOCKER_HOST; in
+// machine (design.md "Target authentication"). The socket is named by HOPPER_DOCKER_HOST; in
 // practice an allowlisting socket proxy (scripts/docker-proxy.sh).
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -37,7 +37,7 @@ describe('the docker socket the hopper uses', () => {
   });
 
   it('not set: refused, with what to set — never the default socket', () => {
-    expect(() => dockerHost(env({}))).toThrow(/no docker socket for the hopper: set JOB_HOPPER_DOCKER_HOST/);
+    expect(() => dockerHost(env({}))).toThrow(/no docker socket for the hopper: set HOPPER_DOCKER_HOST/);
   });
 
   it('anything but a unix socket path: refused (a TCP daemon has no access control of its own)', () => {

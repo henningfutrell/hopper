@@ -27,8 +27,8 @@ describe('the client\'s tunnel', () => {
     expect(argv.slice(-6)).toEqual(['-p', '2222', '-l', 'hop', '--', 'hopper.lan']);
   });
 
-  it('every hardened option of job-hopper\'s ssh: key only, pinned host key only, nothing forwarded', () => {
-    expect(opts).toEqual(expect.arrayContaining([...HARDENED_SSH_OPTIONS, 'UserKnownHostsFile=/k/known_hosts', 'HostKeyAlias=job-hopper']));
+  it('every hardened option of hopper\'s ssh: key only, pinned host key only, nothing forwarded', () => {
+    expect(opts).toEqual(expect.arrayContaining([...HARDENED_SSH_OPTIONS, 'UserKnownHostsFile=/k/known_hosts', 'HostKeyAlias=hopper']));
     expect(argv[argv.indexOf('-i') + 1]).toBe('/k/id');
   });
 
@@ -54,7 +54,7 @@ describe('the client over a tunnel whose login shell talks first', () => {
     const token = mintToken();
     const { mkdirSync } = await import('node:fs');
     mkdirSync(join(dir, 'clients'), { mode: 0o700 });
-    client = startClient({ token: () => token, herdrBin: HERDR, session: 'job-hopper', installDir: testInstallDir(), backoffMs: [50], tunnel: () => spawn(noisy, [], { stdio: ['pipe', 'pipe', 'pipe'] }) });
+    client = startClient({ token: () => token, herdrBin: HERDR, session: 'hopper', installDir: testInstallDir(), backoffMs: [50], tunnel: () => spawn(noisy, [], { stdio: ['pipe', 'pipe', 'pipe'] }) });
     const hopper = createHerdrCliClient({ client: { machine: 'studio', socket: sock, token: () => token } });
     const out = await waitFor(async () => hopper.exec(['status', 'server']).catch(() => undefined), { timeoutMs: 5000, what: 'the client' });
     expect(out).toMatch(/status: running/);

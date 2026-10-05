@@ -29,13 +29,13 @@ async function olderClient(restartOnLoad = false): Promise<{ install: string; lo
   dir = mkdtempSync(join(tmpdir(), 'jh-keeper-'));
   process.env.FAKE_HERDR_DIR = dir;
   process.env.FAKE_HERDR_RUNNING = '1';
-  const install = join(dir, 'job-hopper-client');
+  const install = join(dir, 'hopper-client');
   cpSync(SRC, install, { recursive: true, filter: (p) => !p.endsWith('relay.ts') });
   writeFileSync(join(install, 'main.ts'), `${HOPPERS.files['main.ts']}// an older client\n`);
   mkdirSync(join(dir, 'clients'), { mode: 0o700 });
   const socket = clientSocket(dir, 'studio');
   const loaded: string[] = [];
-  client = await startTestClient(socket, { token: () => TOKEN, herdrBin: HERDR, session: 'job-hopper', installDir: install, onLoaded: (id) => { loaded.push(id); if (restartOnLoad) void client?.stop(); } });
+  client = await startTestClient(socket, { token: () => TOKEN, herdrBin: HERDR, session: 'hopper', installDir: install, onLoaded: (id) => { loaded.push(id); if (restartOnLoad) void client?.stop(); } });
   return { install, loaded, transport: { machine: 'studio', socket, token: () => TOKEN } };
 }
 

@@ -111,8 +111,8 @@ describe('gh CLI GitHubApi', () => {
   });
 
   it('ensureLabel creates or updates the label idempotently (--force)', async () => {
-    await gh().ensureLabel('o/r', 'hopper:done', '0e8a16', 'job-hopper finished this');
-    expect(calls()[0]!.argv).toEqual(['label', 'create', 'hopper:done', '-R', 'o/r', '--color', '0e8a16', '--description', 'job-hopper finished this', '--force']);
+    await gh().ensureLabel('o/r', 'hopper:done', '0e8a16', 'hopper finished this');
+    expect(calls()[0]!.argv).toEqual(['label', 'create', 'hopper:done', '-R', 'o/r', '--color', '0e8a16', '--description', 'hopper finished this', '--force']);
   });
 
   it('addLabels / removeLabels edit the issue', async () => {

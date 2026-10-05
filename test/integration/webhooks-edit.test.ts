@@ -70,7 +70,7 @@ const list = async (a: TestApp) => (await a.api('GET', '/api/webhooks')).body;
 const version = async (a: TestApp) => (await list(a)).config.version as string;
 const edit = (a: TestApp, token: string, body: Record<string, unknown>) => a.ui<Record<string, any>>('/ui/api/webhooks', body, { token }); // eslint-disable-line @typescript-eslint/no-explicit-any
 const signatureOf = (secret: string, got: { headers: Record<string, unknown>; body: string }) =>
-  `sha256=${createHmac('sha256', secret).update(`${String(got.headers['x-jobhopper-timestamp'])}.${got.body}`).digest('hex')}`;
+  `sha256=${createHmac('sha256', secret).update(`${String(got.headers['x-hopper-timestamp'])}.${got.body}`).digest('hex')}`;
 
 describe('GET /api/webhooks: what the UI edits', () => {
   it('carries the document version, each subscription\'s variable and whether the runtime provides it; never a secret', async () => {
@@ -110,7 +110,7 @@ describe('secrets come from the runtime (issue #56)', () => {
     const job = await a.pull({ op: 'echo' });
     await a.waitForStatus(job.id, 'finished');
     const got = await waitFor(() => rx.received[0]);
-    expect(got.headers['x-jobhopper-signature']).toBe(signatureOf('from-mounted-file', got));
+    expect(got.headers['x-hopper-signature']).toBe(signatureOf('from-mounted-file', got));
   });
 
   it('an inline secret in the document is refused at load, never used or kept in the store', async () => {
@@ -145,7 +145,7 @@ describe('POST /ui/api/webhooks — add', () => {
     const job = await a.pull({ op: 'echo' });
     await a.waitForStatus(job.id, 'finished');
     const got = await waitFor(() => rx.received[0]);
-    expect(got.headers['x-jobhopper-signature']).toBe(signatureOf('given-by-runtime', got));
+    expect(got.headers['x-hopper-signature']).toBe(signatureOf('given-by-runtime', got));
   });
 
   it('with no document: writes version 1 and the one entry', async () => {
@@ -178,7 +178,7 @@ describe('POST /ui/api/webhooks — add', () => {
   it('a secret in the body, no secretEnv, or a variable outside WEBHOOK_SECRET_*: 400, nothing written', async () => {
     const { a, token } = await start(COMMENTED);
     const v = await version(a);
-    for (const extra of [{ secretEnv: 'WEBHOOK_SECRET_N', secret: 'mine' }, {}, { secretEnv: 'GITHUB_APP_PRIVATE_KEY' }, { secretEnv: 'JOB_HOPPER_DATABASE_URL' }]) {
+    for (const extra of [{ secretEnv: 'WEBHOOK_SECRET_N', secret: 'mine' }, {}, { secretEnv: 'GITHUB_APP_PRIVATE_KEY' }, { secretEnv: 'HOPPER_DATABASE_URL' }]) {
       const r = await edit(a, token, { action: 'add', name: 'n', url: 'http://127.0.0.1:1/x', events: ['*'], version: v, ...extra });
       expect(r.status).toBe(400);
     }

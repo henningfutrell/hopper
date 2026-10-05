@@ -4,7 +4,7 @@ import { protocolFooter } from '../../src/executors/herdr/index.ts';
 import { CWD, JOB_ID, LANE, contextFor, jobWith, setup, until } from './support.ts';
 
 const SCRATCH = `${CWD}/.hopper-scratch`;
-const DONE = { output: ['● Wrote hello.txt.', '  JOB_HOPPER_DONE'] };
+const DONE = { output: ['● Wrote hello.txt.', '  HOPPER_DONE'] };
 
 describe('herdr-claude executor: shape and validation', () => {
   const { executor } = setup();
@@ -45,11 +45,11 @@ describe('herdr-claude executor: shape and validation', () => {
 });
 
 describe('herdr-claude executor: run', () => {
-  it('opens one tab in the job-hopper workspace, starts Claude, saves state before prompting', async () => {
+  it('opens one tab in the hopper workspace, starts Claude, saves state before prompting', async () => {
     const { herdr, executor } = setup({ turns: [DONE] }, { claudeArgs: ['--dangerously-skip-permissions'] });
     const { ctx, saved } = contextFor(jobWith({ prompt: 'Write hello.txt', model: 'opus' }));
     await executor.run(ctx);
-    expect(herdr.calls.find((c) => c.method === 'ensureWorkspace')!.args).toEqual(['job-hopper', CWD]);
+    expect(herdr.calls.find((c) => c.method === 'ensureWorkspace')!.args).toEqual(['hopper', CWD]);
     expect(herdr.calls.find((c) => c.method === 'createTab')!.args).toEqual([{ workspaceId: 'w1', cwd: CWD, label: `${LANE} · abcdef12`, env: { CLAUDE_CODE_TMPDIR: SCRATCH, TMPDIR: SCRATCH, HOPPER_JOB_ID: JOB_ID } }]);
     expect(herdr.agentStarts).toEqual([{ name: 'jh-abcdef12', paneId: 'w1:p1', args: ['--dangerously-skip-permissions', '--model', 'opus'], timeoutMs: 60000 }]);
     expect(saved[0]).toEqual({ session: 'jh-test', workspaceId: 'w1', tabId: 'w1:t1', paneId: 'w1:p1', agentName: 'jh-abcdef12', cwd: CWD, laneId: LANE });
@@ -117,7 +117,7 @@ describe('herdr-claude executor: run', () => {
     const { herdr, executor } = setup({ turns: [DONE] });
     await executor.run(contextFor(jobWith({ prompt: 'Write hello.txt' })).ctx);
     const sent = herdr.prompts[0]!.text;
-    expect(sent).toContain('[job-hopper publishing rule]');
+    expect(sent).toContain('[hopper publishing rule]');
     for (const term of ['Never quote or name the repository owner', 'email addresses', 'IP addresses', 'hostnames', 'tailnet names', 'home directory paths', 'usernames', 'machine or pane ids', 'port numbers of local machines', 'tokens or secrets', 'in neutral terms']) {
       expect(sent).toContain(term);
     }
@@ -130,19 +130,19 @@ describe('herdr-claude executor: run', () => {
     expect(herdr.prompts).toEqual([{ name: 'jh-abcdef12', text: `Write hello.txt\n\n${protocolFooter(CWD)}` }]);
   });
 
-  it('finishes on JOB_HOPPER_DONE with the final assistant text and the pane id', async () => {
+  it('finishes on HOPPER_DONE with the final assistant text and the pane id', async () => {
     const { executor } = setup({ turns: [DONE] });
     expect(await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx))
       .toEqual({ kind: 'finished', result: { summary: 'Wrote hello.txt.', paneId: 'w1:p1' } });
   });
 
-  it('fails on JOB_HOPPER_FAILED with its reason', async () => {
-    const { executor } = setup({ turns: [{ output: ['● I cannot.', '  JOB_HOPPER_FAILED no network access'] }] });
+  it('fails on HOPPER_FAILED with its reason', async () => {
+    const { executor } = setup({ turns: [{ output: ['● I cannot.', '  HOPPER_FAILED no network access'] }] });
     expect(await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx)).toEqual({ kind: 'failed', error: 'no network access' });
   });
 
-  it('asks on JOB_HOPPER_QUESTION, keeps the pane, and frees the lane mapping', async () => {
-    const { herdr, executor } = setup({ turns: [{ output: ['● Which language?', '  JOB_HOPPER_QUESTION'] }] });
+  it('asks on HOPPER_QUESTION, keeps the pane, and frees the lane mapping', async () => {
+    const { herdr, executor } = setup({ turns: [{ output: ['● Which language?', '  HOPPER_QUESTION'] }] });
     const out = await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx);
     expect(out).toMatchObject({ kind: 'question', question: { text: 'Which language?', detectedBy: 'marker' } });
     expect(out.kind === 'question' && out.question.recentOutput).toContain('Which language?');
@@ -151,7 +151,7 @@ describe('herdr-claude executor: run', () => {
   });
 
   it('a marker printed while Claude is still working is not an outcome (turn must end)', async () => {
-    const { executor } = setup({ turns: [{ steps: ['● I will end with', '  JOB_HOPPER_DONE', '● Bash(make)'], output: ['● Which target?', '  JOB_HOPPER_QUESTION'] }] });
+    const { executor } = setup({ turns: [{ steps: ['● I will end with', '  HOPPER_DONE', '● Bash(make)'], output: ['● Which target?', '  HOPPER_QUESTION'] }] });
     expect(await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx)).toMatchObject({ kind: 'question', question: { text: 'Which target?' } });
   });
 

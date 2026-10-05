@@ -8,7 +8,7 @@ import { GitHubApiError } from '../../src/sources/github/index.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { waitFor } from '../support/wait.ts';
 
-const REPO = 'owner/job-hopper-sandbox';
+const REPO = 'owner/hopper-sandbox';
 const apps: TestApp[] = [];
 let cleanup: (() => void) | undefined;
 
@@ -122,7 +122,7 @@ describe('GitHub issue → job → issue', () => {
       expect(gh.issue(REPO, issue.number).labels).not.toContain('hopper:claimed');
       expect(bodies(gh, issue.number)).toEqual([]);
       expect((await jobFor(a, issue.url))!.error).toBe('boom');
-      expect(logged).toContain(`job-hopper: job ${job.id} failed (${issue.url}): boom`);
+      expect(logged).toContain(`hopper: job ${job.id} failed (${issue.url}): boom`);
     } finally {
       spy.mockRestore();
     }

@@ -89,7 +89,7 @@ export async function buildRouter(spec: InstanceSpec, deps: SlotDeps): Promise<B
   const built = await instantiate('router', spec, deps);
   if (built.ok) return { spec, router: built.instance, plugin: built.plugin, detection: built.detection };
   const why = built.why;
-  deps.logger.warn(`job-hopper: router ${spec.name} (${spec.plugin}) unavailable, using pass-through: ${why}`);
+  deps.logger.warn(`hopper: router ${spec.name} (${spec.plugin}) unavailable, using pass-through: ${why}`);
   const inner = await passThrough.create(contextFor(deps, passThrough.id, spec.name), {});
   const router: Router = {
     name: spec.name,

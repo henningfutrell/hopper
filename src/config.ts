@@ -12,7 +12,7 @@ export interface Config {
   /** The bind address: `127.0.0.1`, or `::` (every interface) when LAN names are set. */
   host: string;
   port: number;
-  /** JOB_HOPPER_DATABASE_URL (or the file JOB_HOPPER_DATABASE_URL_FILE names): `postgres://…` (design.md "Database"). Required. */
+  /** HOPPER_DATABASE_URL (or the file HOPPER_DATABASE_URL_FILE names): `postgres://…` (design.md "Database"). Required. */
   databaseUrl: string;
   /** Scratch only — claude's working directory, ssh control sockets, probes; nothing kept. */
   workDir: string;
@@ -49,7 +49,7 @@ export interface Config {
   /** Forces how the daemon starts again after an update: `exit` (a supervisor restarts it) or `respawn`; absent: detected. */
   restart?: 'exit' | 'respawn';
   /**
-   * Every set JOB_HOPPER_* variable this config does not read, raw: the part-choosing ones removed
+   * Every set HOPPER_* variable this config does not read, raw: the part-choosing ones removed
    * in phase 5 slices 4 and 5 (read once more by the plugins.yaml migration) and any unknown one. The
    * daemon warns about them at boot.
    */
@@ -72,69 +72,69 @@ const publicUrl = z.url({ protocol: /^https?$/, error: 'must be an http(s) URL' 
   .refine((u) => !['localhost', '127.0.0.1', '[::1]'].includes(new URL(u).hostname), 'loopback is always served; name the public host')
   .transform((u) => new URL(u).origin);
 const schema = z.object({
-  JOB_HOPPER_PUBLIC_URL: publicUrl.optional(),
+  HOPPER_PUBLIC_URL: publicUrl.optional(),
   // Loopback, plus the LAN names when set (AGENTS.md, design.md "Reaching the UI across the LAN").
-  JOB_HOPPER_LAN_NAMES: list(lanName),
-  JOB_HOPPER_LAN_PEERS: list(lanPeer),
-  JOB_HOPPER_PORT: int(0, 65535).default(4790),
-  JOB_HOPPER_DATABASE_URL: z.string({ error: 'required: postgres://user:password@host:port/database' })
+  HOPPER_LAN_NAMES: list(lanName),
+  HOPPER_LAN_PEERS: list(lanPeer),
+  HOPPER_PORT: int(0, 65535).default(4790),
+  HOPPER_DATABASE_URL: z.string({ error: 'required: postgres://user:password@host:port/database' })
     .superRefine((v, ctx) => { try { parseDatabaseUrl(v); } catch (e) { ctx.addIssue({ code: 'custom', message: (e as Error).message }); } }),
-  JOB_HOPPER_WORK_DIR: z.string().min(1).default(join(tmpdir(), 'job-hopper')),
-  JOB_HOPPER_TICK_MS: int(1).default(2000),
-  JOB_HOPPER_ROUTER_MODE: z.enum(['shadow', 'active']).default('shadow'),
-  JOB_HOPPER_SOFT_LIMIT: fraction().default(0.7),
-  JOB_HOPPER_HARD_LIMIT: fraction().default(0.95),
-  JOB_HOPPER_ROUTER_CHEAP_BOOST: z.coerce.number().default(10),
-  JOB_HOPPER_WEBHOOK_BASE_MS: int(1).default(1000),
-  JOB_HOPPER_LANE_IDLE_GRACE_MS: int(0).default(5000),
-  JOB_HOPPER_ANSWER_TIMEOUT_MS: int(1).default(180000),
-  JOB_HOPPER_HUMAN_RENOTIFY_MS: int(1).default(900000),
-  JOB_HOPPER_HUMAN_TIMEOUT_MS: int(1).default(86400000),
-  JOB_HOPPER_RESUME_BOOST: z.coerce.number().finite().default(20),
-  JOB_HOPPER_MAX_QUESTIONS: int(0).default(5),
-  JOB_HOPPER_KEEP_PANES: flag(false),
-  JOB_HOPPER_UI_SESSION_HOURS: z.coerce.number().finite().positive().default(12),
-  JOB_HOPPER_PLUGIN_DIR: z.string().min(1).optional(),
-  JOB_HOPPER_PLUGIN_STORE: z.string().min(1).optional(),
-  JOB_HOPPER_UPDATE_CHECK_MS: int(0).default(900000),
-  JOB_HOPPER_RESTART: z.enum(['exit', 'respawn']).optional(),
-}).refine((e) => e.JOB_HOPPER_SOFT_LIMIT < e.JOB_HOPPER_HARD_LIMIT, {
-  message: 'must be below JOB_HOPPER_HARD_LIMIT',
-  path: ['JOB_HOPPER_SOFT_LIMIT'],
-}).refine((e) => e.JOB_HOPPER_LAN_NAMES.length === 0 || e.JOB_HOPPER_LAN_PEERS.length > 0, {
-  message: 'must be set with JOB_HOPPER_LAN_NAMES: the ranges LAN requests may come from',
-  path: ['JOB_HOPPER_LAN_PEERS'],
-}).refine((e) => e.JOB_HOPPER_LAN_PEERS.length === 0 || e.JOB_HOPPER_LAN_NAMES.length > 0 || e.JOB_HOPPER_PUBLIC_URL !== undefined, {
-  message: 'must be set with JOB_HOPPER_LAN_PEERS (or set JOB_HOPPER_PUBLIC_URL): the names the UI answers to beyond loopback',
-  path: ['JOB_HOPPER_LAN_NAMES'],
+  HOPPER_WORK_DIR: z.string().min(1).default(join(tmpdir(), 'hopper')),
+  HOPPER_TICK_MS: int(1).default(2000),
+  HOPPER_ROUTER_MODE: z.enum(['shadow', 'active']).default('shadow'),
+  HOPPER_SOFT_LIMIT: fraction().default(0.7),
+  HOPPER_HARD_LIMIT: fraction().default(0.95),
+  HOPPER_ROUTER_CHEAP_BOOST: z.coerce.number().default(10),
+  HOPPER_WEBHOOK_BASE_MS: int(1).default(1000),
+  HOPPER_LANE_IDLE_GRACE_MS: int(0).default(5000),
+  HOPPER_ANSWER_TIMEOUT_MS: int(1).default(180000),
+  HOPPER_HUMAN_RENOTIFY_MS: int(1).default(900000),
+  HOPPER_HUMAN_TIMEOUT_MS: int(1).default(86400000),
+  HOPPER_RESUME_BOOST: z.coerce.number().finite().default(20),
+  HOPPER_MAX_QUESTIONS: int(0).default(5),
+  HOPPER_KEEP_PANES: flag(false),
+  HOPPER_UI_SESSION_HOURS: z.coerce.number().finite().positive().default(12),
+  HOPPER_PLUGIN_DIR: z.string().min(1).optional(),
+  HOPPER_PLUGIN_STORE: z.string().min(1).optional(),
+  HOPPER_UPDATE_CHECK_MS: int(0).default(900000),
+  HOPPER_RESTART: z.enum(['exit', 'respawn']).optional(),
+}).refine((e) => e.HOPPER_SOFT_LIMIT < e.HOPPER_HARD_LIMIT, {
+  message: 'must be below HOPPER_HARD_LIMIT',
+  path: ['HOPPER_SOFT_LIMIT'],
+}).refine((e) => e.HOPPER_LAN_NAMES.length === 0 || e.HOPPER_LAN_PEERS.length > 0, {
+  message: 'must be set with HOPPER_LAN_NAMES: the ranges LAN requests may come from',
+  path: ['HOPPER_LAN_PEERS'],
+}).refine((e) => e.HOPPER_LAN_PEERS.length === 0 || e.HOPPER_LAN_NAMES.length > 0 || e.HOPPER_PUBLIC_URL !== undefined, {
+  message: 'must be set with HOPPER_LAN_PEERS (or set HOPPER_PUBLIC_URL): the names the UI answers to beyond loopback',
+  path: ['HOPPER_LAN_NAMES'],
 });
 
 /** What each setting does, for `node src/main.ts --help`. Keyed by the schema: a new setting needs its line. */
 const SETTING_HELP: Record<keyof typeof schema.shape, string> = {
-  JOB_HOPPER_DATABASE_URL: 'the Postgres database that holds everything: postgres://user:password@host:port/database[?schema=<name>][&sslmode=require]. Or JOB_HOPPER_DATABASE_URL_FILE: a file holding it',
-  JOB_HOPPER_PORT: 'the HTTP port of the UI, the API and the API reference',
-  JOB_HOPPER_PUBLIC_URL: 'the origin people reach the UI at through a reverse proxy (https://hopper.example.com); a proxy on another host also needs JOB_HOPPER_LAN_PEERS',
-  JOB_HOPPER_LAN_NAMES: 'host names the UI answers to on the LAN, comma-separated; needs JOB_HOPPER_LAN_PEERS. Unset: loopback only',
-  JOB_HOPPER_LAN_PEERS: 'CIDR ranges LAN or proxy requests may come from, comma-separated (192.0.2.0/24); binds every interface',
-  JOB_HOPPER_WORK_DIR: 'scratch space: working files, ssh control sockets. Nothing kept',
-  JOB_HOPPER_PLUGIN_DIR: 'a directory of custom plugins, one directory each (docs/plugins.md). Unset: none',
-  JOB_HOPPER_PLUGIN_STORE: 'the plugin store the UI installs plugins from (kept in the database, restored at start): a git repository (URL or path) holding plugin-store.yaml. Unset: none',
-  JOB_HOPPER_TICK_MS: 'how often the engine decides',
-  JOB_HOPPER_ROUTER_MODE: 'router mode until one is stored: shadow (advice is logged) or active (advice is applied)',
-  JOB_HOPPER_SOFT_LIMIT: 'usage fraction where a machine starts to close lanes',
-  JOB_HOPPER_HARD_LIMIT: 'usage fraction where a machine starts nothing',
-  JOB_HOPPER_ROUTER_CHEAP_BOOST: 'priority boost for a job the router calls cheap',
-  JOB_HOPPER_WEBHOOK_BASE_MS: 'first webhook retry delay; doubles each retry',
-  JOB_HOPPER_LANE_IDLE_GRACE_MS: 'how long an idle lane stays open',
-  JOB_HOPPER_ANSWER_TIMEOUT_MS: 'ceiling per question stage (answerer, assessor)',
-  JOB_HOPPER_HUMAN_RENOTIFY_MS: 'how often an unanswered question is notified again',
-  JOB_HOPPER_HUMAN_TIMEOUT_MS: 'when an unanswered question expires',
-  JOB_HOPPER_RESUME_BOOST: 'priority boost for a job resumed after a question',
-  JOB_HOPPER_MAX_QUESTIONS: 'questions one job may ask; the next one fails it',
-  JOB_HOPPER_KEEP_PANES: 'true: keep a job\'s pane open after it ends, for inspection',
-  JOB_HOPPER_UI_SESSION_HOURS: 'lifetime of a UI session',
-  JOB_HOPPER_UPDATE_CHECK_MS: 'how often self-update checks for a newer version; 0: only when asked',
-  JOB_HOPPER_RESTART: 'how the daemon starts again after an update: exit (a supervisor restarts it) or respawn. Unset: detected',
+  HOPPER_DATABASE_URL: 'the Postgres database that holds everything: postgres://user:password@host:port/database[?schema=<name>][&sslmode=require]. Or HOPPER_DATABASE_URL_FILE: a file holding it',
+  HOPPER_PORT: 'the HTTP port of the UI, the API and the API reference',
+  HOPPER_PUBLIC_URL: 'the origin people reach the UI at through a reverse proxy (https://hopper.example.com); a proxy on another host also needs HOPPER_LAN_PEERS',
+  HOPPER_LAN_NAMES: 'host names the UI answers to on the LAN, comma-separated; needs HOPPER_LAN_PEERS. Unset: loopback only',
+  HOPPER_LAN_PEERS: 'CIDR ranges LAN or proxy requests may come from, comma-separated (192.0.2.0/24); binds every interface',
+  HOPPER_WORK_DIR: 'scratch space: working files, ssh control sockets. Nothing kept',
+  HOPPER_PLUGIN_DIR: 'a directory of custom plugins, one directory each (docs/plugins.md). Unset: none',
+  HOPPER_PLUGIN_STORE: 'the plugin store the UI installs plugins from (kept in the database, restored at start): a git repository (URL or path) holding plugin-store.yaml. Unset: none',
+  HOPPER_TICK_MS: 'how often the engine decides',
+  HOPPER_ROUTER_MODE: 'router mode until one is stored: shadow (advice is logged) or active (advice is applied)',
+  HOPPER_SOFT_LIMIT: 'usage fraction where a machine starts to close lanes',
+  HOPPER_HARD_LIMIT: 'usage fraction where a machine starts nothing',
+  HOPPER_ROUTER_CHEAP_BOOST: 'priority boost for a job the router calls cheap',
+  HOPPER_WEBHOOK_BASE_MS: 'first webhook retry delay; doubles each retry',
+  HOPPER_LANE_IDLE_GRACE_MS: 'how long an idle lane stays open',
+  HOPPER_ANSWER_TIMEOUT_MS: 'ceiling per question stage (answerer, assessor)',
+  HOPPER_HUMAN_RENOTIFY_MS: 'how often an unanswered question is notified again',
+  HOPPER_HUMAN_TIMEOUT_MS: 'when an unanswered question expires',
+  HOPPER_RESUME_BOOST: 'priority boost for a job resumed after a question',
+  HOPPER_MAX_QUESTIONS: 'questions one job may ask; the next one fails it',
+  HOPPER_KEEP_PANES: 'true: keep a job\'s pane open after it ends, for inspection',
+  HOPPER_UI_SESSION_HOURS: 'lifetime of a UI session',
+  HOPPER_UPDATE_CHECK_MS: 'how often self-update checks for a newer version; 0: only when asked',
+  HOPPER_RESTART: 'how the daemon starts again after an update: exit (a supervisor restarts it) or respawn. Unset: detected',
 };
 
 /** Every setting the daemon reads: name, default (`required`, `unset` or the value), what it does. */
@@ -149,39 +149,39 @@ export const SETTINGS: { name: string; default: string; help: string }[] = Objec
 export function daemonHelp(): string {
   const width = Math.max(...SETTINGS.map((s) => s.name.length));
   const lines = SETTINGS.map((s) => `  ${s.name.padEnd(width)}  ${s.help} [${s.default}]`);
-  return `job-hopper daemon: pulls jobs from its job sources, runs them on its machines, serves the UI.
+  return `hopper daemon: pulls jobs from its job sources, runs them on its machines, serves the UI.
 
-usage: node src/main.ts            (in the job-hopper directory; the container and the systemd unit run this)
+usage: node src/main.ts            (in the hopper directory; the container and the systemd unit run this)
        node src/main.ts --help
 
 It is configured by environment variables; everything else is config documents in its database
-(plugins.yaml, webhooks.yaml, rules.md, auth.yaml), edited in the UI or with job-hopper config edit.
+(plugins.yaml, webhooks.yaml, rules.md, auth.yaml), edited in the UI or with hopper config edit.
 Secrets come from the environment too: NAME, or NAME_FILE naming a file holding it (docs/deploy.md).
 
 settings [default]:
 ${lines.join('\n')}
 
 Once it runs (default port 4790):
-  UI              http://127.0.0.1:4790/        sign in: job-hopper login-code --link http://127.0.0.1:4790
+  UI              http://127.0.0.1:4790/        sign in: hopper login-code --link http://127.0.0.1:4790
   API reference   http://127.0.0.1:4790/docs/
-  operator CLI    job-hopper help
+  operator CLI    hopper help
 
 Read on: README.md, docs/deploy.md, docs/sign-in.md, docs/plugins.md.
 `;
 }
 
 /** A secret among the settings: also read from a mounted file, `<name>_FILE`. */
-const SECRET_SETTINGS = ['JOB_HOPPER_DATABASE_URL'];
+const SECRET_SETTINGS = ['HOPPER_DATABASE_URL'];
 /** Read by the parts, not here (design.md "Target authentication"): the hopper's ssh key and its docker socket. */
-const PART_SETTINGS = ['JOB_HOPPER_SSH_KEY', 'JOB_HOPPER_SSH_KEY_FILE', 'JOB_HOPPER_DOCKER_HOST'];
+const PART_SETTINGS = ['HOPPER_SSH_KEY', 'HOPPER_SSH_KEY_FILE', 'HOPPER_DOCKER_HOST'];
 const READ = new Set([...Object.keys(schema.shape), ...SECRET_SETTINGS.map((n) => `${n}_FILE`), ...PART_SETTINGS]);
 
 /**
- * Reads only JOB_HOPPER_* keys; empty strings count as unset. Throws on any invalid value of a key
+ * Reads only HOPPER_* keys; empty strings count as unset. Throws on any invalid value of a key
  * it reads; the rest go to `leftoverEnv` unvalidated.
  */
 export function loadConfig(env: Record<string, string | undefined>): Config {
-  const set = Object.entries(env).filter((e): e is [string, string] => e[0].startsWith('JOB_HOPPER_') && e[1] !== undefined && e[1] !== '');
+  const set = Object.entries(env).filter((e): e is [string, string] => e[0].startsWith('HOPPER_') && e[1] !== undefined && e[1] !== '');
   const relevant: Record<string, string | undefined> = Object.fromEntries(set.filter(([k]) => READ.has(k)));
   const secret = runtimeSecrets(relevant);
   try {
@@ -198,31 +198,31 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
   const e = parsed.data;
   return {
     // Every interface only when requests may come from beyond loopback (LAN peers); a reverse proxy on this host needs none.
-    host: e.JOB_HOPPER_LAN_PEERS.length > 0 ? '::' : '127.0.0.1',
-    port: e.JOB_HOPPER_PORT,
-    databaseUrl: e.JOB_HOPPER_DATABASE_URL,
-    workDir: e.JOB_HOPPER_WORK_DIR,
-    tickMs: e.JOB_HOPPER_TICK_MS,
-    routerMode: e.JOB_HOPPER_ROUTER_MODE,
-    softLimit: e.JOB_HOPPER_SOFT_LIMIT,
-    hardLimit: e.JOB_HOPPER_HARD_LIMIT,
-    routerCheapBoost: e.JOB_HOPPER_ROUTER_CHEAP_BOOST,
-    webhookBaseMs: e.JOB_HOPPER_WEBHOOK_BASE_MS,
-    laneIdleGraceMs: e.JOB_HOPPER_LANE_IDLE_GRACE_MS,
-    answerTimeoutMs: e.JOB_HOPPER_ANSWER_TIMEOUT_MS,
-    humanRenotifyMs: e.JOB_HOPPER_HUMAN_RENOTIFY_MS,
-    humanTimeoutMs: e.JOB_HOPPER_HUMAN_TIMEOUT_MS,
-    resumeBoost: e.JOB_HOPPER_RESUME_BOOST,
-    maxQuestions: e.JOB_HOPPER_MAX_QUESTIONS,
-    keepPanes: e.JOB_HOPPER_KEEP_PANES,
-    uiSessionHours: e.JOB_HOPPER_UI_SESSION_HOURS,
-    ...(e.JOB_HOPPER_PLUGIN_DIR ? { pluginDir: e.JOB_HOPPER_PLUGIN_DIR } : {}),
-    ...(e.JOB_HOPPER_PLUGIN_STORE ? { pluginStore: e.JOB_HOPPER_PLUGIN_STORE } : {}),
-    publicUrl: e.JOB_HOPPER_PUBLIC_URL,
-    lanNames: e.JOB_HOPPER_LAN_NAMES,
-    lanPeers: e.JOB_HOPPER_LAN_PEERS,
-    updateCheckMs: e.JOB_HOPPER_UPDATE_CHECK_MS,
-    ...(e.JOB_HOPPER_RESTART ? { restart: e.JOB_HOPPER_RESTART } : {}),
+    host: e.HOPPER_LAN_PEERS.length > 0 ? '::' : '127.0.0.1',
+    port: e.HOPPER_PORT,
+    databaseUrl: e.HOPPER_DATABASE_URL,
+    workDir: e.HOPPER_WORK_DIR,
+    tickMs: e.HOPPER_TICK_MS,
+    routerMode: e.HOPPER_ROUTER_MODE,
+    softLimit: e.HOPPER_SOFT_LIMIT,
+    hardLimit: e.HOPPER_HARD_LIMIT,
+    routerCheapBoost: e.HOPPER_ROUTER_CHEAP_BOOST,
+    webhookBaseMs: e.HOPPER_WEBHOOK_BASE_MS,
+    laneIdleGraceMs: e.HOPPER_LANE_IDLE_GRACE_MS,
+    answerTimeoutMs: e.HOPPER_ANSWER_TIMEOUT_MS,
+    humanRenotifyMs: e.HOPPER_HUMAN_RENOTIFY_MS,
+    humanTimeoutMs: e.HOPPER_HUMAN_TIMEOUT_MS,
+    resumeBoost: e.HOPPER_RESUME_BOOST,
+    maxQuestions: e.HOPPER_MAX_QUESTIONS,
+    keepPanes: e.HOPPER_KEEP_PANES,
+    uiSessionHours: e.HOPPER_UI_SESSION_HOURS,
+    ...(e.HOPPER_PLUGIN_DIR ? { pluginDir: e.HOPPER_PLUGIN_DIR } : {}),
+    ...(e.HOPPER_PLUGIN_STORE ? { pluginStore: e.HOPPER_PLUGIN_STORE } : {}),
+    publicUrl: e.HOPPER_PUBLIC_URL,
+    lanNames: e.HOPPER_LAN_NAMES,
+    lanPeers: e.HOPPER_LAN_PEERS,
+    updateCheckMs: e.HOPPER_UPDATE_CHECK_MS,
+    ...(e.HOPPER_RESTART ? { restart: e.HOPPER_RESTART } : {}),
     leftoverEnv,
   };
 }

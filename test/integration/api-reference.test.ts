@@ -63,10 +63,10 @@ describe('GET /docs/openapi.json', () => {
     const a = await start();
     const doc = await reference(a);
     expect(doc.openapi).toMatch(/^3\.1\./);
-    expect(doc.info.title).toBe('job-hopper');
+    expect(doc.info.title).toBe('hopper');
     expect(doc.info.version).toBe((await a.api<{ version: string }>('GET', '/api/health')).body.version);
-    expect(doc.info.description).toMatch(/x-jobhopper-session/);
-    expect(doc.components.securitySchemes.uiSession).toEqual(expect.objectContaining({ type: 'apiKey', in: 'header', name: 'x-jobhopper-session' }));
+    expect(doc.info.description).toMatch(/x-hopper-session/);
+    expect(doc.components.securitySchemes.uiSession).toEqual(expect.objectContaining({ type: 'apiKey', in: 'header', name: 'x-hopper-session' }));
     expect((await get(a, '/docs/openapi.yaml')).text).toMatch(/^openapi: 3\.1\./m);
   });
 
@@ -103,7 +103,7 @@ describe('GET /docs/openapi.json', () => {
 
 describe('across the LAN', () => {
   it('the reference is readable without a session, as the UI page is; the API it describes is not', async () => {
-    const a = await start({ JOB_HOPPER_LAN_NAMES: 'server', JOB_HOPPER_LAN_PEERS: '192.0.2.0/24' });
+    const a = await start({ HOPPER_LAN_NAMES: 'server', HOPPER_LAN_PEERS: '192.0.2.0/24' });
     const host = `server:${new URL(a.url).port}`;
     expect((await get(a, '/docs/', { host })).status).toBe(200);
     expect((await get(a, '/docs/openapi.json', { host })).status).toBe(200);

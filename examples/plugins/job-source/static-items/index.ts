@@ -1,7 +1,7 @@
 // A job source: where the hopper pulls jobs from. The instance name keys its jobs and sync state,
 // so the source must call itself `ctx.instanceName`. This one offers the items in its options.
 //   jobSources: [ { name: chores, plugin: static-items, options: { items: [ { key: chore-1, title: Tidy, prompt: Tidy the repo } ] } } ]
-import type { PluginDefinition, SourceItem } from 'job-hopper/plugin';
+import type { PluginDefinition, SourceItem } from 'hopper/plugin';
 
 /** The options type: with it, `options` is typed in `create` (without it, `any`). */
 interface StaticItemsOptions { items: { key: string; title: string; prompt: string }[]; executor: string; cwd: string; pollSeconds: number }

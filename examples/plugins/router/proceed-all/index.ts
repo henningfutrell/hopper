@@ -1,7 +1,7 @@
 // A router: advises admission and order for each job. This one admits every job, as is.
-// Copy the directory into ~/.config/job-hopper/plugins/, then name it in plugins.yaml:
+// Copy the directory into ~/.config/hopper/plugins/, then name it in plugins.yaml:
 //   router: { name: open, plugin: proceed-all, options: { note: open door } }
-import type { PluginDefinition } from 'job-hopper/plugin'; // type-only: erased when Node runs it
+import type { PluginDefinition } from 'hopper/plugin'; // type-only: erased when Node runs it
 
 export default {
   id: 'proceed-all',

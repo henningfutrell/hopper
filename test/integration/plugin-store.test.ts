@@ -34,7 +34,7 @@ function world() {
   return { store, first, db, pluginDir };
 }
 
-async function start(w: ReturnType<typeof world>, env: Record<string, string> = { JOB_HOPPER_PLUGIN_STORE: w.store.dir }): Promise<TestApp> {
+async function start(w: ReturnType<typeof world>, env: Record<string, string> = { HOPPER_PLUGIN_STORE: w.store.dir }): Promise<TestApp> {
   const app = await startTestApp({ dbPath: w.db.dbPath, env });
   apps.push(app);
   return app;
@@ -46,17 +46,17 @@ const ready = (app: TestApp) => waitFor(async () => { const r = await read(app);
 const plugin = (r: PluginStoreReport, id: string) => r.plugins.find((p) => p.id === id);
 
 describe('the plugin store over HTTP', () => {
-  it('is unavailable without JOB_HOPPER_PLUGIN_STORE', async () => {
+  it('is unavailable without HOPPER_PLUGIN_STORE', async () => {
     const w = world();
     const app = await start(w, {});
     const r = await read(app);
     expect(r).toMatchObject({ state: 'unavailable', plugins: [] });
-    expect(r.reason).toMatch(/JOB_HOPPER_PLUGIN_STORE/);
+    expect(r.reason).toMatch(/HOPPER_PLUGIN_STORE/);
   });
 
   it('needs no plugin dir: installs are kept in the database', async () => {
     const w = world();
-    const app = await start(w, { JOB_HOPPER_PLUGIN_STORE: w.store.dir, JOB_HOPPER_PLUGIN_DIR: undefined } as unknown as Record<string, string>);
+    const app = await start(w, { HOPPER_PLUGIN_STORE: w.store.dir, HOPPER_PLUGIN_DIR: undefined } as unknown as Record<string, string>);
     await ready(app);
     expect((await read(app)).state).toBe('ready');
     const token = await app.login();
@@ -75,7 +75,7 @@ describe('the plugin store over HTTP', () => {
 
     const fresh = tempDir('jh-plugin-store-work-');
     cleanups.push(() => rmSync(fresh, { recursive: true, force: true }));
-    const app = await start(w, { JOB_HOPPER_PLUGIN_STORE: w.store.dir, JOB_HOPPER_WORK_DIR: fresh });
+    const app = await start(w, { HOPPER_PLUGIN_STORE: w.store.dir, HOPPER_WORK_DIR: fresh });
     expect(plugin(await read(app), 'echo-executor')?.installed).toMatchObject({ commit: w.first });
     const plugins = (await app.api<PluginsReport>('GET', '/api/plugins')).body;
     expect(plugins.plugins.find((p) => p.id === 'echo-executor')).toMatchObject({ role: 'executor', builtin: false, detection: { status: 'available' } });

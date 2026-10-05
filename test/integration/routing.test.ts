@@ -10,7 +10,7 @@ import { lanes, startTestApp, tempDbPath, TEST_PLUGINS, writePluginsYaml, type T
 import { readDocument } from '../support/files.ts';
 import { waitFor } from '../support/wait.ts';
 
-const REPO = 'owner/job-hopper-sandbox';
+const REPO = 'owner/hopper-sandbox';
 let t: TestApp | undefined;
 let cleanup: (() => void) | undefined;
 afterEach(async () => {

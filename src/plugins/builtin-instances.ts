@@ -52,8 +52,8 @@ export type EnsureResult = { action: 'kept' | 'default' };
 export function ensurePluginsDocument(o: { documents: ConfigDocuments; answerTimeoutMs: number; logger: PluginLogger }): EnsureResult {
   if (o.documents.read(PLUGINS) !== undefined) return { action: 'kept' };
   const out = new Document({ version: 1, ...builtinInstances(o.answerTimeoutMs) });
-  out.commentBefore = ' job-hopper plugins.yaml: which plugin instance fills which role (docs/design.md "Phase 5").\n Written by the daemon from the built-in instances.';
+  out.commentBefore = ' hopper plugins.yaml: which plugin instance fills which role (docs/design.md "Phase 5").\n Written by the daemon from the built-in instances.';
   if (!o.documents.write(PLUGINS, out.toString({ lineWidth: 0 }), 'missing')) return { action: 'kept' };
-  o.logger.info(`job-hopper: wrote ${PLUGINS} from the built-in instances. It is the only configuration of every part.`);
+  o.logger.info(`hopper: wrote ${PLUGINS} from the built-in instances. It is the only configuration of every part.`);
   return { action: 'default' };
 }

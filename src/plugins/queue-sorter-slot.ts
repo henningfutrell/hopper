@@ -23,7 +23,7 @@ const byPriorityIds = (entries: readonly QueueEntry[]): JobId[] => [...entries].
 export async function buildQueueSorter(spec: InstanceSpec, deps: SlotDeps): Promise<BuiltQueueSorter> {
   const built = await instantiate('queue-sorter', spec, deps);
   if (built.ok) return { spec, sorter: built.instance, plugin: built.plugin, detection: built.detection };
-  deps.logger.warn(`job-hopper: queue sorter ${spec.name} (${spec.plugin}) unavailable, using priority: ${built.why}`);
+  deps.logger.warn(`hopper: queue sorter ${spec.name} (${spec.plugin}) unavailable, using priority: ${built.why}`);
   return { spec, plugin: PRIORITY, detection: built.detection, fallback: built.why };
 }
 
@@ -67,7 +67,7 @@ export function createLiveQueueSorter(first: BuiltQueueSorter, logger: SlotDeps[
       if (c !== current) return why ? byPriorityIds(entries) : (out as JobId[]);
       if (why) {
         const reason = `queue sorter ${c.spec.name} ${why}; priority's order used`;
-        if (reason !== sortFallback) logger.warn(`job-hopper: ${reason}`);
+        if (reason !== sortFallback) logger.warn(`hopper: ${reason}`);
         sortFallback = reason;
         return byPriorityIds(entries);
       }

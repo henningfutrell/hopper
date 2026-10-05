@@ -1,6 +1,6 @@
 // The design's example custom plugin, verbatim in shape. Type-checked by `npm run typecheck`
-// through the package self-reference `job-hopper/plugin`; loaded by the loader tests from a copy.
-import type { PluginDefinition } from 'job-hopper/plugin'; // type-only, erased at runtime
+// through the package self-reference `hopper/plugin`; loaded by the loader tests from a copy.
+import type { PluginDefinition } from 'hopper/plugin'; // type-only, erased at runtime
 
 export default {
   id: 'always-proceed',

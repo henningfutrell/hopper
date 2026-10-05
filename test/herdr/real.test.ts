@@ -1,4 +1,4 @@
-// Opt-in: JOB_HOPPER_REAL_HERDR=1. Runs a real Claude Code job in a throwaway herdr session
+// Opt-in: HOPPER_REAL_HERDR=1. Runs a real Claude Code job in a throwaway herdr session
 // (jh-test-<random>), asks one question, resumes with an answer, and checks the file it wrote.
 // Costs a small Claude turn. Never touches the default herdr session.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -12,8 +12,8 @@ import { createHerdrClaudeExecutor, createHerdrCliClient } from '../../src/execu
 import { openPane, startClaude } from '../../src/executors/herdr/start.ts';
 import { contextFor, jobWith } from './support.ts';
 
-const REAL = process.env.JOB_HOPPER_REAL_HERDR === '1';
-const BIN = process.env.JOB_HOPPER_HERDR_BIN ?? 'herdr';
+const REAL = process.env.HOPPER_REAL_HERDR === '1';
+const BIN = process.env.HOPPER_HERDR_BIN ?? 'herdr';
 const SESSION = `jh-test-${randomBytes(4).toString('hex')}`;
 
 function herdrSync(args: string[]): string {
@@ -49,7 +49,7 @@ describe.skipIf(!REAL)('herdr-claude against a real herdr and Claude (opt-in)', 
     const payload = {
       prompt: 'Ask me exactly one question: which single word should be written into answer.txt in the current directory. '
         + 'Do not create the file yet. After I answer, write exactly that word (no newline needed) into answer.txt and finish.',
-      model: process.env.JOB_HOPPER_REAL_MODEL ?? 'sonnet', timeoutMs: 240000,
+      model: process.env.HOPPER_REAL_MODEL ?? 'sonnet', timeoutMs: 240000,
     };
     const first = contextFor(jobWith(payload, { id }));
     const asked = await executor.run(first.ctx);

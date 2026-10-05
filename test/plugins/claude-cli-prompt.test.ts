@@ -38,8 +38,8 @@ describe('buildAnswerPrompt (claude-cli)', () => {
   });
 
   it('adds the idle hint only when detected by idle', () => {
-    expect(buildAnswerPrompt(req({ question: q({ detectedBy: 'idle' }) }))).toContain('If the job is complete, end your message with JOB_HOPPER_DONE');
-    expect(buildAnswerPrompt(req())).not.toContain('JOB_HOPPER_DONE');
+    expect(buildAnswerPrompt(req({ question: q({ detectedBy: 'idle' }) }))).toContain('If the job is complete, end your message with HOPPER_DONE');
+    expect(buildAnswerPrompt(req())).not.toContain('HOPPER_DONE');
   });
 });
 

@@ -2,7 +2,7 @@
 // GET, SSE and the UI included — must name this daemon in Host with the bound port: 127.0.0.1 or
 // localhost from loopback, a LAN name, or the public URL's host. Another Host is 421, so a page on
 // another name that resolves here reads nothing; a peer outside loopback and the LAN peers is 403.
-// A LAN or public request reads /api/ only with a live UI session: the x-jobhopper-session header,
+// A LAN or public request reads /api/ only with a live UI session: the x-hopper-session header,
 // or for the event stream (EventSource sends no headers) the `session` query parameter.
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { classifyRequest, peerList, type Lan } from './reach.ts';
@@ -24,7 +24,7 @@ export function installHostGuard(app: FastifyInstance, o: { port: () => number; 
   app.addHook('onRequest', async (req, reply) => {
     const r = classifyRequest({ host: req.headers.host, peer: req.socket.remoteAddress }, o.port(), o.lan, peers);
     if ('refuse' in r) {
-      console.warn(`job-hopper: refused ${req.method} ${req.url.split('?')[0]} from ${req.socket.remoteAddress} Host ${JSON.stringify(req.headers.host ?? '')} (${r.refuse}): ${r.why}`);
+      console.warn(`hopper: refused ${req.method} ${req.url.split('?')[0]} from ${req.socket.remoteAddress} Host ${JSON.stringify(req.headers.host ?? '')} (${r.refuse}): ${r.why}`);
       return reply.code(r.refuse).send({ error: r.why });
     }
     if (r.reach !== 'local' && req.url.startsWith('/api/') && !o.sessions.find(sessionToken(req))) {

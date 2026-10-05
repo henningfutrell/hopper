@@ -5,7 +5,7 @@
 // nothing but the files decides it. The hopper loads its release onto a client running another
 // (server.ts `POST /load`, signed like every call); the client checks it whole before writing a byte,
 // writes it beside its install dir and swaps it in, keeping the one before as `<dir>.prev`.
-// Imports nothing of job-hopper: it is installed on the target as plain files.
+// Imports nothing of hopper: it is installed on the target as plain files.
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';

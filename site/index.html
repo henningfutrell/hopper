@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Install job-hopper</title>
-<meta name="description" content="Run job-hopper with Podman from its published image, connect GitHub, and watch it finish its first job.">
+<title>Install hopper</title>
+<meta name="description" content="Install hopper with one command, then sign in, connect GitHub and give it its first job.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230c4a6e'/%3E%3Cpath d='M9 22V10l7 6 7-6v12' fill='none' stroke='%237dd3fc' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <style>
 :root {
@@ -72,15 +72,10 @@ footer { margin-top: 48px; color: var(--muted); font-size: 14px; }
 </head>
 <body>
 <main>
-<h1>Install job-hopper</h1>
-<p class="lead">job-hopper turns GitHub issues into finished work. You label an issue <code>hopper</code>;
-job-hopper starts a Claude Code session with the issue as its instructions, answers the questions it can,
-asks you the rest, and labels and closes the issue when the work is done.</p>
-<p>This page takes you from nothing to a first finished job. It takes about 10 minutes. You need a terminal
-on the machine that will run it and a GitHub account.</p>
-<p><strong>Recommended: run it with Podman</strong>, from the published container image. Nothing is installed on
-the machine but Podman. It works on any Linux, and on Windows inside WSL (<a href="#windows">On Windows</a>).
-The other way, <a href="#host">installing it on the machine itself</a>, is below.</p>
+<h1>Install hopper</h1>
+<p class="lead">hopper takes GitHub issues labelled <code>hopper</code> and runs each one as a Claude Code
+session on a machine you own. This page gets it running on one Linux host.
+Full documentation: <a href="https://github.com/henningfutrell/hopper#readme">the README</a>.</p>
 
 <ol class="toc">
 <li><a href="#podman">Run it with Podman</a></li>
@@ -246,56 +241,43 @@ the message under <a href="#trouble">When something goes wrong</a>.</p>
 <details>
 <summary>What the install does</summary>
 <ul>
-<li>checks for git, Node.js 24 or later, npm and systemctl, and stops with a reason if one is missing;</li>
-<li>downloads the source to <code>~/.local/share/job-hopper/source</code>;</li>
-<li>starts a Postgres database in docker on <code>127.0.0.1:5433</code>, with a new random password;</li>
-<li>installs job-hopper to <code>~/.local/lib/job-hopper</code> and the <code>job-hopper</code> command to <code>~/.local/bin</code>;</li>
-<li>writes the settings file <code>~/.config/job-hopper/daemon.env</code>, readable only by you (it holds the database password);</li>
-<li>starts two background services for your user: <code>job-hopper</code> and <code>job-hopper-herdr</code>.</li>
+<li>checks for git, Node.js ≥ 24, npm and systemctl, and stops with a reason if one is missing;</li>
+<li>clones the source into <code>~/.local/share/hopper/source</code>;</li>
+<li>starts a Postgres in docker on <code>127.0.0.1:5433</code> with a new password;</li>
+<li>installs the daemon to <code>~/.local/lib/hopper</code> and the <code>hopper</code> command to <code>~/.local/bin</code>;</li>
+<li>writes the settings file <code>~/.config/hopper/daemon.env</code> (mode 600);</li>
+<li>starts two user services: <code>hopper</code> and <code>hopper-herdr</code>.</li>
 </ul>
 <p>Nothing is installed system-wide and nothing runs as root. The web UI listens on this machine only
 (<code>127.0.0.1:4790</code>).</p>
 </details>
 
-<details id="own-postgres">
-<summary>Use your own Postgres instead of docker</summary>
-<p>Give its address in front of <code>bash</code>. The database must exist and be empty or job-hopper's own:</p>
-<div class="cmd"><pre>curl -fsSL https://henningfutrell.github.io/hopper/install.sh | JOB_HOPPER_DATABASE_URL=postgres://user:password@host:5432/hopper bash</pre><button type="button" data-copy="curl -fsSL https://henningfutrell.github.io/hopper/install.sh | JOB_HOPPER_DATABASE_URL=postgres://user:password@host:5432/hopper bash">Copy</button></div>
-</details>
+<h3>Your own Postgres instead of docker</h3>
+<div class="cmd"><pre>curl -fsSL https://henningfutrell.github.io/hopper/install.sh | HOPPER_DATABASE_URL=postgres://user:password@host:5432/hopper bash</pre><button type="button" data-copy="curl -fsSL https://henningfutrell.github.io/hopper/install.sh | HOPPER_DATABASE_URL=postgres://user:password@host:5432/hopper bash">Copy</button></div>
 
 <details>
 <summary>Other install settings</summary>
 <p>Set them in front of <code>bash</code>, the same way:</p>
 <div class="table-wrap"><table class="stack">
 <tr><th>Variable</th><th>Default</th><th>What it sets</th></tr>
-<tr><td><code>JOB_HOPPER_REF</code></td><td><code>main</code></td><td>the branch to install and to update from</td></tr>
-<tr><td><code>JOB_HOPPER_REPO</code></td><td>this repository</td><td>where to download the source from (your fork, for example)</td></tr>
-<tr><td><code>JOB_HOPPER_SRC</code></td><td><code>~/.local/share/job-hopper/source</code></td><td>where the source is kept</td></tr>
-<tr><td><code>POSTGRES_PORT</code></td><td><code>5433</code></td><td>the port of the docker Postgres, on this machine only</td></tr>
+<tr><td><code>HOPPER_SOURCE_REF</code></td><td><code>main</code></td><td>the branch to install and to update from</td></tr>
+<tr><td><code>HOPPER_SOURCE_REPO</code></td><td>this repository</td><td>where to clone from (your fork, for example)</td></tr>
+<tr><td><code>HOPPER_SRC</code></td><td><code>~/.local/share/hopper/source</code></td><td>where the source clone lives</td></tr>
+<tr><td><code>POSTGRES_PORT</code></td><td><code>5433</code></td><td>the loopback port of the docker Postgres</td></tr>
 </table></div>
 </details>
 
-<h3 id="running">3. Keep it running</h3>
-<p>Services for your user stop when you log out, unless you allow them to stay. Allow it once:</p>
-<div class="cmd"><pre>sudo loginctl enable-linger "$USER"</pre><button type="button" data-copy="sudo loginctl enable-linger &quot;$USER&quot;">Copy</button></div>
-<p>Then check both services:</p>
-<div class="cmd"><pre>systemctl --user status job-hopper job-hopper-herdr</pre><button type="button" data-copy="systemctl --user status job-hopper job-hopper-herdr">Copy</button></div>
-<p>Both must say <span class="ok">active (running)</span>. Press <code>q</code> to leave. If one does not,
-see <a href="#trouble">When something goes wrong</a>.</p>
+<h3>Check that it runs</h3>
+<div class="cmd"><pre>systemctl --user status hopper hopper-herdr</pre><button type="button" data-copy="systemctl --user status hopper hopper-herdr">Copy</button></div>
+<p>Both must say <code>active (running)</code>. If not, read the log:</p>
+<div class="cmd"><pre>journalctl --user -u hopper -n 50</pre><button type="button" data-copy="journalctl --user -u hopper -n 50">Copy</button></div>
+<p class="note">To keep the services running after you log out: <code>sudo loginctl enable-linger "$USER"</code>.</p>
 
-<h3 id="ui">4. Open the UI</h3>
-<p>On the machine itself, with a desktop and a browser:</p>
-<div class="cmd"><pre>bash ~/.local/lib/job-hopper/scripts/open-ui.sh</pre><button type="button" data-copy="bash ~/.local/lib/job-hopper/scripts/open-ui.sh">Copy</button></div>
-<p>Your browser opens <code>http://127.0.0.1:4790/</code>, signed in.</p>
-
-<p><strong>From another computer (a server with no browser).</strong></p>
-<p>The UI listens on the server only, so reach it through ssh. On your own computer, connect with a tunnel
-and leave this terminal open:</p>
-<div class="cmd"><pre>ssh -L 4790:127.0.0.1:4790 you@your-server</pre><button type="button" data-copy="ssh -L 4790:127.0.0.1:4790 you@your-server">Copy</button></div>
-<p>In that ssh session, make a sign-in link:</p>
-<div class="cmd"><pre>job-hopper login-code --link http://127.0.0.1:4790</pre><button type="button" data-copy="job-hopper login-code --link http://127.0.0.1:4790">Copy</button></div>
-<p>Open the link it prints in the browser on your own computer. It works once, for 10 minutes; make another
-the same way when you need one. Passwords, other people and other devices:
+<h2 id="sign-in">3. Open the UI</h2>
+<div class="cmd"><pre>bash ~/.local/lib/hopper/scripts/open-ui.sh</pre><button type="button" data-copy="bash ~/.local/lib/hopper/scripts/open-ui.sh">Copy</button></div>
+<p>This signs your browser in and opens <code>http://127.0.0.1:4790/</code>. No browser on this host?
+Run <code>hopper login-code --link http://127.0.0.1:4790</code> and open the link it prints
+(it works once, for 10 minutes). Other ways to sign in:
 <a href="https://github.com/henningfutrell/hopper/blob/main/docs/sign-in.md">docs/sign-in.md</a>.</p>
 
 <h3 id="github">5. Connect GitHub</h3>
@@ -309,68 +291,10 @@ enter the code. Then check:</p>
 <p>It must say <span class="ok">Logged in to github.com</span>. job-hopper notices on its own; there is
 nothing to restart.</p>
 
-<h2 id="windows">On Windows</h2>
-<p>job-hopper runs inside WSL (the Linux that comes with Windows 10 and 11).</p>
-<ol class="steps">
-<li><p>Open PowerShell as administrator and install Ubuntu in WSL:</p>
-<div class="cmd"><pre>wsl --install -d Ubuntu-24.04</pre><button type="button" data-copy="wsl --install -d Ubuntu-24.04">Copy</button></div>
-<p>Restart Windows if it asks. Then open <strong>Ubuntu</strong> from the Start menu and choose a user name
-and password. Every command below runs in that Ubuntu window, not in PowerShell, unless it says so.</p></li>
-<li><p>Install Podman in Ubuntu:</p>
-<div class="cmd"><pre>sudo apt-get update &amp;&amp; sudo apt-get install -y podman podman-compose</pre><button type="button" data-copy="sudo apt-get update &amp;&amp; sudo apt-get install -y podman podman-compose">Copy</button></div></li>
-<li><p>Continue with <a href="#podman">Run it with Podman</a> from step 2, in Ubuntu. The sign-in link opens in
-your Windows browser: WSL passes <code>127.0.0.1</code> through to Windows.</p></li>
-</ol>
-<p class="note">WSL stops Ubuntu, and job-hopper with it, soon after you close the last Ubuntu window.
-Keep one Ubuntu window open while jobs run, and run <code>podman compose up -d</code> in job-hopper's folder
-after you open it again.</p>
-
-<details>
-<summary>Install it on the machine itself in WSL instead</summary>
-<ol class="steps">
-<li><p>Check that systemd runs:</p>
-<div class="cmd"><pre>systemctl --user status</pre><button type="button" data-copy="systemctl --user status">Copy</button></div>
-<p>If it says <code>System has not been booted with systemd</code>, turn systemd on:</p>
-<div class="cmd"><pre>printf '[boot]\nsystemd=true\n' | sudo tee -a /etc/wsl.conf</pre><button type="button" data-copy="printf &#x27;[boot]\nsystemd=true\n&#x27; | sudo tee -a /etc/wsl.conf">Copy</button></div>
-<p>Then run <code>wsl --shutdown</code> in PowerShell, open Ubuntu again, and check again.</p></li>
-<li><p>Install git, Node.js 24, Docker and the GitHub CLI in Ubuntu. Node.js comes from NodeSource, so it
-is at <code>/usr/bin/node</code>:</p>
-<div class="cmd"><pre>curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
-sudo apt-get install -y git nodejs docker.io docker-compose-v2 gh
-sudo usermod -aG docker "$USER"</pre><button type="button" data-copy="curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash - &amp;&amp; sudo apt-get install -y git nodejs docker.io docker-compose-v2 gh &amp;&amp; sudo usermod -aG docker &quot;$USER&quot;">Copy</button></div>
-<p>Close Ubuntu and open it again, so that you can use docker. Then install herdr and Claude Code
-as <a href="#before">step 1</a> says, sign in to <code>claude</code>, and run the check from step 1.</p></li>
-<li><p>Install job-hopper with the same command as on Linux:</p>
-<div class="cmd"><pre>curl -fsSL https://henningfutrell.github.io/hopper/install.sh | bash</pre><button type="button" data-copy="curl -fsSL https://henningfutrell.github.io/hopper/install.sh | bash">Copy</button></div></li>
-<li><p>Open the UI in your Windows browser. In Ubuntu, make a sign-in link:</p>
-<div class="cmd"><pre>job-hopper login-code --link http://127.0.0.1:4790</pre><button type="button" data-copy="job-hopper login-code --link http://127.0.0.1:4790">Copy</button></div>
-<p>Open the link it prints in your Windows browser (it works once, for 10 minutes). WSL passes
-<code>127.0.0.1</code> through to Windows.</p></li>
-<li><p>Continue with <a href="#github">step 5, Connect GitHub</a>, in Ubuntu, and then step 6.</p></li>
-</ol>
-<p class="note">Keep the repositories jobs work in inside Ubuntu (for example <code>~/src</code>), not under
-<code>/mnt/c</code>: it is much faster.</p>
-</details>
-
-<h2 id="upgrade">Upgrade</h2>
-<p><strong>With Podman:</strong> in job-hopper's folder, download the newest image and restart on it. It keeps your
-settings, database and sign-ins. It ends the jobs running at the time, so upgrade when none runs.</p>
-<div class="cmd"><pre>podman compose pull &amp;&amp; podman compose up -d</pre><button type="button" data-copy="podman compose pull &amp;&amp; podman compose up -d">Copy</button></div>
-<p><strong>On the machine itself:</strong> run the install command again. It updates job-hopper and keeps your
-settings, database and running jobs. The UI also tells you when an update is out, says what is new, and can
-apply it for you.</p>
-
-<h2 id="remove">Uninstall</h2>
-<p><strong>With Podman:</strong> in job-hopper's folder, stop and remove the containers. Your database and
-sign-ins are kept:</p>
-<div class="cmd"><pre>podman compose down</pre><button type="button" data-copy="podman compose down">Copy</button></div>
-<p>To delete them too: <code>podman compose down -v</code>.</p>
-<p><strong>On the machine itself:</strong></p>
-<div class="cmd"><pre>bash ~/.local/share/job-hopper/source/scripts/uninstall.sh</pre><button type="button" data-copy="bash ~/.local/share/job-hopper/source/scripts/uninstall.sh">Copy</button></div>
-<p>This stops the services, closes running jobs, and removes the installed program. It keeps your data: the database,
-<code>~/.config/job-hopper</code> and the source in <code>~/.local/share/job-hopper</code>.
-Delete those yourself if you want them gone. The docker database also stays; to delete it and its data:
-<code>docker rm -f job-hopper-postgres-1 &amp;&amp; docker volume rm job-hopper_postgres</code>.</p>
+<div class="cmd"><pre>bash ~/.local/share/hopper/source/scripts/uninstall.sh</pre><button type="button" data-copy="bash ~/.local/share/hopper/source/scripts/uninstall.sh">Copy</button></div>
+<p>This removes the services and the installed code. It keeps the database,
+<code>~/.config/hopper</code> and the source clone in <code>~/.local/share/hopper</code>;
+delete those yourself if you want them gone.</p>
 
 <h2 id="trouble">When something goes wrong</h2>
 <h3>With Podman</h3>
@@ -388,14 +312,12 @@ Delete those yourself if you want them gone. The docker database also stays; to 
 <h3>The install on the machine itself stops</h3>
 <div class="table-wrap"><table class="stack">
 <tr><th>It says</th><th>Do this</th></tr>
-<tr><td><code>needs node on PATH</code> (or git, npm, systemctl)</td><td>Install it (<a href="#before">step 1</a>), open a new terminal, run the install again.</td></tr>
-<tr><td><code>needs Node.js &gt;= 24</code></td><td>Your Node.js is too old. Install a newer one from <a href="https://nodejs.org/en/download">nodejs.org</a>, open a new terminal, check <code>node --version</code>.</td></tr>
-<tr><td><code>needs systemd running for this user</code></td><td>On Windows, turn systemd on in WSL: <a href="#windows">On Windows</a>, step 2. On Linux, log in to a normal session (not <code>su</code> or a bare container shell).</td></tr>
-<tr><td><code>no database</code></td><td>Install docker, or give a Postgres address as in <a href="#own-postgres">Use your own Postgres</a>.</td></tr>
-<tr><td><code>permission denied</code> … <code>docker.sock</code></td><td>Your user may not use docker yet. Follow docker's <a href="https://docs.docker.com/engine/install/linux-postinstall/">post-install steps</a>, log out and back in, run the install again.</td></tr>
-<tr><td><code>the docker volume job-hopper_postgres exists</code></td><td>An earlier install left its database. Give its address with <code>JOB_HOPPER_DATABASE_URL</code>, or delete it with <code>docker volume rm job-hopper_postgres</code> (this deletes its data) and run the install again.</td></tr>
-<tr><td><code>… has local changes</code></td><td>Someone edited the downloaded source. Undo the changes there, or set <code>JOB_HOPPER_SRC</code> to another folder.</td></tr>
-<tr><td><code>did not answer /api/health</code></td><td>job-hopper did not start. Read why with <code>journalctl --user -u job-hopper -n 50</code>.</td></tr>
+<tr><td><code>needs node on PATH</code> (or git, npm, systemctl)</td><td>Install it, open a new shell, run the command again.</td></tr>
+<tr><td><code>needs Node.js &gt;= 24</code></td><td>Install Node.js 24 or later (for example with your package manager, or nvm).</td></tr>
+<tr><td><code>no database</code></td><td>Install docker, or give a Postgres URL as in <a href="#install">Your own Postgres</a>.</td></tr>
+<tr><td><code>the docker volume job-hopper_postgres exists</code></td><td>An earlier install left its database. Give its URL with <code>HOPPER_DATABASE_URL</code>, or remove the volume with <code>docker volume rm job-hopper_postgres</code> (this deletes its data).</td></tr>
+<tr><td><code>hopper: command not found</code> (after the install)</td><td>Add <code>~/.local/bin</code> to your <code>PATH</code>, or run <code>~/.local/bin/hopper</code>.</td></tr>
+<tr><td><code>… has local changes</code></td><td>Someone edited the source clone. Commit or discard the changes there, or set <code>HOPPER_SRC</code> to another directory.</td></tr>
 </table></div>
 
 <h3>After the install on the machine itself</h3>
@@ -419,7 +341,7 @@ Delete those yourself if you want them gone. The docker database also stays; to 
 <li><a href="https://github.com/henningfutrell/hopper#readme">The README</a>: everything else.</li>
 </ul>
 
-<footer>job-hopper · <a href="https://github.com/henningfutrell/hopper">source on GitHub</a></footer>
+<footer>hopper · <a href="https://github.com/henningfutrell/hopper">source on GitHub</a></footer>
 </main>
 <script>
 document.querySelectorAll('[data-copy]').forEach((button) => {

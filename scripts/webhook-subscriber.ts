@@ -29,10 +29,10 @@ const server = createServer((req, res) => {
   req.on('data', (c: Buffer) => chunks.push(c));
   req.on('end', () => {
     const raw = Buffer.concat(chunks).toString('utf8');
-    const timestamp = header(req.headers['x-jobhopper-timestamp']);
-    const delivery = header(req.headers['x-jobhopper-delivery']);
-    const event = header(req.headers['x-jobhopper-event']);
-    const signature = header(req.headers['x-jobhopper-signature']);
+    const timestamp = header(req.headers['x-hopper-timestamp']);
+    const delivery = header(req.headers['x-hopper-delivery']);
+    const event = header(req.headers['x-hopper-event']);
+    const signature = header(req.headers['x-hopper-signature']);
     const signatureValid = verify(secret, timestamp, raw, signature);
     if (!signatureValid) {
       console.log(`delivery ${delivery || '?'} ${event || '?'} REJECTED bad signature`);

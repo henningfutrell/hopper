@@ -7,14 +7,14 @@ import { contextFor, jobWith, setup } from './support.ts';
 
 describe('a transcript left scrolled up', () => {
   it('scrolls with Ctrl+End and reads the real question and its marker', async () => {
-    const { herdr, executor } = setup({ turns: [{ hiddenUntilScrolled: true, output: ['● What is your favourite word?', '  JOB_HOPPER_QUESTION'] }] });
+    const { herdr, executor } = setup({ turns: [{ hiddenUntilScrolled: true, output: ['● What is your favourite word?', '  HOPPER_QUESTION'] }] });
     const out = await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx);
     expect(out).toMatchObject({ kind: 'question', question: { text: 'What is your favourite word?', detectedBy: 'marker' } });
     expect(herdr.texts.map((t) => t.text)).toContain(CTRL_END);
   });
 
-  it('scrolls and sees JOB_HOPPER_DONE instead of asking a false idle question', async () => {
-    const { executor } = setup({ turns: [{ hiddenUntilScrolled: true, output: ['● Wrote the file.', '  JOB_HOPPER_DONE'] }] });
+  it('scrolls and sees HOPPER_DONE instead of asking a false idle question', async () => {
+    const { executor } = setup({ turns: [{ hiddenUntilScrolled: true, output: ['● Wrote the file.', '  HOPPER_DONE'] }] });
     const out = await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx);
     expect(out).toMatchObject({ kind: 'finished' });
   });

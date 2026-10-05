@@ -143,7 +143,7 @@ describe('a question escalated to the human', () => {
   });
 
   it('re-notifies, then expires: question.expired, the job fails', async () => {
-    const a = await start({ JOB_HOPPER_HUMAN_RENOTIFY_MS: '100', JOB_HOPPER_HUMAN_TIMEOUT_MS: '450' });
+    const a = await start({ HOPPER_HUMAN_RENOTIFY_MS: '100', HOPPER_HUMAN_TIMEOUT_MS: '450' });
     const job = await a.pull(ask('Is this risky?'));
     expect((await a.waitForStatus(job.id, 'failed')).error).toBe('question unanswered');
     const events = ofJob(await a.events(), job.id);
@@ -273,9 +273,9 @@ describe('a question escalated to the human', () => {
 });
 
 describe('question budget', () => {
-  it('fails a job that asks more than JOB_HOPPER_MAX_QUESTIONS, without a new question', async () => {
+  it('fails a job that asks more than HOPPER_MAX_QUESTIONS, without a new question', async () => {
     const asker = createAskerExecutor();
-    const a = await start({ JOB_HOPPER_MAX_QUESTIONS: '2' }, { seams: { executors: [asker] } });
+    const a = await start({ HOPPER_MAX_QUESTIONS: '2' }, { seams: { executors: [asker] } });
     const job = await a.pull({}, { executor: 'asker' });
     expect((await a.waitForStatus(job.id, 'failed')).error).toBe('too many questions');
     expect(await a.questionsOf(job.id)).toHaveLength(2);

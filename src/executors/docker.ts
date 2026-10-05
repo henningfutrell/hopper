@@ -1,7 +1,7 @@
 // The hopper's docker connection to a container target (design.md "Target authentication", issue #59).
 // Docker's socket has no authentication of its own: whoever can open it is root on this machine, and
 // the root daemon's socket opens to the whole docker group. So the hopper opens only a socket that its
-// own user alone can open, in a directory only it can change, named by JOB_HOPPER_DOCKER_HOST — in
+// own user alone can open, in a directory only it can change, named by HOPPER_DOCKER_HOST — in
 // practice an allowlisting socket proxy (scripts/docker-proxy.sh) that lets through inspect and exec
 // on the target containers and nothing else. There is no default: never the root daemon's socket.
 import { lstatSync } from 'node:fs';
@@ -9,7 +9,7 @@ import { dirname } from 'node:path';
 import { scrubbedEnv } from './env.ts';
 
 /** The process setting naming the docker socket the hopper uses: `unix://<absolute path>`. */
-export const DOCKER_HOST = 'JOB_HOPPER_DOCKER_HOST';
+export const DOCKER_HOST = 'HOPPER_DOCKER_HOST';
 
 /** The allowlisting socket proxy, pinned by digest (an established proxy, not one of ours). */
 export const SOCKET_PROXY_IMAGE = 'wollomatic/socket-proxy:1@sha256:3935b709275e4ec35d6ed5a5c4a1f0d01ed31eec5e7234efc3357ecd47689002';

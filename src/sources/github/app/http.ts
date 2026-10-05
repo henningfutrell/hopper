@@ -11,7 +11,7 @@ const MAX_PAGES = 100;
 export function makeRequest(baseUrl: string): Request {
   return octokitRequest.defaults({
     baseUrl,
-    headers: { 'user-agent': 'job-hopper', 'x-github-api-version': '2022-11-28' },
+    headers: { 'user-agent': 'hopper', 'x-github-api-version': '2022-11-28' },
   });
 }
 

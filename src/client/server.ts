@@ -8,7 +8,7 @@
 // and then asks to be restarted (`onLoaded`; main.ts exits and the unit starts the new files).
 // A request runs only when the hopper signed it with the client's token (signature.ts); every answer
 // is signed back. When the tunnel ends the client dials again, backing off to 30 s.
-// Imports nothing of job-hopper but its own directory: it is installed on the target as plain files.
+// Imports nothing of hopper but its own directory: it is installed on the target as plain files.
 import { execFile, type ChildProcess } from 'node:child_process';
 import { performServerHandshake, type IncomingHttpHeaders, type ServerHttp2Stream } from 'node:http2';
 import { Duplex, Transform, type Readable } from 'node:stream';
@@ -91,7 +91,7 @@ async function serve(o: ClientOptions, nonces: ReturnType<typeof createNonceCach
   const header = headers[REQUEST_HEADER];
   const v = verifyRequest(o.token(), typeof header === 'string' ? header : undefined, method, path, body, nonces);
   if (!v.ok) {
-    o.log?.(`job-hopper-client: refused a request: ${v.why}`);
+    o.log?.(`hopper-client: refused a request: ${v.why}`);
     return answer(401, { error: `refused: ${v.why}` });
   }
   nonce = v.nonce;
@@ -116,13 +116,16 @@ function load(o: ClientOptions, releases: Releases, stream: ServerHttp2Stream, b
   if (release.id !== releases.installed) {
     installRelease(o.installDir, release);
     releases.installed = release.id;
-    o.log?.(`job-hopper-client: loaded release ${release.id} into ${o.installDir} (running ${releases.running}); restarting`);
+    o.log?.(`hopper-client: loaded release ${release.id} into ${o.installDir} (running ${releases.running}); restarting`);
   }
   if (release.id !== releases.running) stream.once('close', () => setTimeout(() => o.onLoaded?.(release.id), RESTART_GRACE_MS));
   answer(200, { release: release.id });
 }
 
-/** What the relay sends first; anything before it is the hopper machine's login shell talking. */
+/**
+ * What the relay sends first; anything before it is the hopper machine's login shell talking. Unchanged by
+ * the rename (issue #112): a hopper's relay must still reach clients that run a release from before it.
+ */
 const MARKER = Buffer.from('JOB-HOPPER-RELAY/1\n');
 const MAX_NOISE = 64 * 1024;
 
@@ -167,12 +170,12 @@ export function startClient(o: ClientOptions): Client {
     const session = performServerHandshake(duplex);
     session.on('stream', (stream, headers) => {
       serve(o, nonces, releases, stream, headers).catch((e: unknown) => {
-        log(`job-hopper-client: ${(e as Error).message}`);
+        log(`hopper-client: ${(e as Error).message}`);
         if (!stream.destroyed) stream.close();
       });
     });
-    session.on('error', (e) => log(`job-hopper-client: tunnel session: ${e.message}`));
-    c.stderr?.on('data', (d: Buffer) => log(`job-hopper-client: tunnel: ${d.toString().trim()}`));
+    session.on('error', (e) => log(`hopper-client: tunnel session: ${e.message}`));
+    c.stderr?.on('data', (d: Buffer) => log(`hopper-client: tunnel: ${d.toString().trim()}`));
     c.on('exit', (code) => {
       // The pipe is gone: ending the stream ends the session (destroying the session would write to it).
       duplex.destroy();
@@ -180,13 +183,13 @@ export function startClient(o: ClientOptions): Client {
       if (stopped) return;
       if (Date.now() - started > STABLE_MS) attempt = 0;
       const wait = backoff[Math.min(attempt++, backoff.length - 1)]!;
-      log(`job-hopper-client: tunnel ended (exit ${code ?? 'signal'}); dialing again in ${wait} ms`);
+      log(`hopper-client: tunnel ended (exit ${code ?? 'signal'}); dialing again in ${wait} ms`);
       timer = setTimeout(dial, wait);
     });
   }
 
   dial();
-  log(`job-hopper-client: release ${running}, serving herdr session ${o.session} over the tunnel`);
+  log(`hopper-client: release ${running}, serving herdr session ${o.session} over the tunnel`);
   return {
     async stop() {
       stopped = true;

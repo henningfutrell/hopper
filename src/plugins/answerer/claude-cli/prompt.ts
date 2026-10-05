@@ -7,7 +7,7 @@ const OUTPUT_LINES = 120;
 
 export const IDLE_HINT =
   'The agent went idle without asking anything, so it may simply have finished. ' +
-  'If the job is complete, end your message with JOB_HOPPER_DONE';
+  'If the job is complete, end your message with HOPPER_DONE';
 
 const CONTRACT = `Reply with one JSON object only:
 {"answer": string, "confident": boolean, "reason": string}

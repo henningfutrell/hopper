@@ -4,7 +4,7 @@
 import { generateKeyPairSync } from 'node:crypto';
 
 export const APP_ID = 4242;
-export const SLUG = 'job-hopper-test';
+export const SLUG = 'hopper-test';
 export const BOT = `${SLUG}[bot]`;
 
 export const KEYS = generateKeyPairSync('rsa', {

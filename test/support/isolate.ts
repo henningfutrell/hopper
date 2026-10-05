@@ -3,7 +3,7 @@
 // - HOME, XDG_CONFIG_HOME, XDG_DATA_HOME, XDG_STATE_HOME point at a fresh temp dir, so every
 //   `~/` default (grokbot-webhook.env, webhooks.yaml, plugins.yaml, github-app.json, the db)
 //   resolves to an empty throwaway dir, and child processes inherit the same.
-//   Exception: JOB_HOPPER_REAL_HERDR=1 keeps HOME, because Claude in a real herdr pane needs
+//   Exception: HOPPER_REAL_HERDR=1 keeps HOME, because Claude in a real herdr pane needs
 //   the real login; the fetch guard below still applies.
 // - `claude` on PATH is a guard that answers `--version` (detection) and refuses everything else,
 //   so a built-in instance left at its default `bin` (claude-plan's background `/usage` read,
@@ -14,12 +14,12 @@ import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 
 const CLAUDE_GUARD = `#!/bin/sh
-if [ "$1" = "--version" ]; then echo "0.0.0 (job-hopper test isolation)"; exit 0; fi
+if [ "$1" = "--version" ]; then echo "0.0.0 (hopper test isolation)"; exit 0; fi
 echo "test isolation: the real claude is never run in tests" >&2
 exit 1
 `;
 
-if (process.env.JOB_HOPPER_REAL_HERDR !== '1') {
+if (process.env.HOPPER_REAL_HERDR !== '1') {
   const home = mkdtempSync(join(tmpdir(), 'jh-test-home-'));
   process.env.HOME = home;
   process.env.XDG_CONFIG_HOME = join(home, '.config');

@@ -61,7 +61,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   const sessions = createUiSessions({ repo: o.store.uiSessions, clock: o.clock, hours: o.sessionHours });
   // auth.yaml may have changed since the sessions were made: a removed provider or rule ends them.
   const r = sessions.reconcile(o.signIn.roleOf);
-  if (r.dropped + r.changed > 0) console.warn(`job-hopper: auth.yaml applied to stored UI sessions: ${r.dropped} ended, ${r.changed} changed role`);
+  if (r.dropped + r.changed > 0) console.warn(`hopper: auth.yaml applied to stored UI sessions: ${r.dropped} ended, ${r.changed} changed role`);
   installHostGuard(app, { port: o.port, lan: o.lan, sessions });
   apiReferenceRoutes(app, o.version);
   jobRoutes(app, o);

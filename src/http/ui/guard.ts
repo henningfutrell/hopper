@@ -6,7 +6,7 @@ import { roleAllows, type UiRole } from '../../domain/types.ts';
 import { uiOrigins, type Lan } from '../reach.ts';
 import type { UiSessions } from './sessions.ts';
 
-export const SESSION_HEADER = 'x-jobhopper-session';
+export const SESSION_HEADER = 'x-hopper-session';
 
 const one = (v: string | string[] | undefined): string | undefined => (Array.isArray(v) ? undefined : v);
 

@@ -6,8 +6,8 @@ import type { AttachedMachine } from '../../src/domain/types.ts';
 import { createAttachedMachines } from '../../src/machines/index.ts';
 
 const flush = () => new Promise((r) => setImmediate(r));
-const laptop: AttachedMachine = { name: 'laptop', ssh: 'laptop', lanes: 2, executors: ['herdr-claude'], session: 'job-hopper', herdrBin: '/h/herdr' };
-const desk: AttachedMachine = { name: 'desk', ssh: 'desk', lanes: 1, executors: ['herdr-claude'], session: 'job-hopper', herdrBin: '/h/herdr' };
+const laptop: AttachedMachine = { name: 'laptop', ssh: 'laptop', lanes: 2, executors: ['herdr-claude'], session: 'hopper', herdrBin: '/h/herdr' };
+const desk: AttachedMachine = { name: 'desk', ssh: 'desk', lanes: 1, executors: ['herdr-claude'], session: 'hopper', herdrBin: '/h/herdr' };
 
 function harness(initial: AttachedMachine[]) {
   let configured = initial;
@@ -37,7 +37,7 @@ describe('createAttachedMachines', () => {
     await h.src.list();
     h.set([desk]);
     expect((await h.src.list()).map((m) => m.id)).toEqual(['desk']);
-    expect(h.lines).toContain('job-hopper: attached machine laptop removed');
+    expect(h.lines).toContain('hopper: attached machine laptop removed');
   });
 
   it('lanes, executors and label apply at once; the machine stays online (no new probe)', async () => {

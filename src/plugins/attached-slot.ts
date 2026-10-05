@@ -55,7 +55,7 @@ export function createMachinesEditor(o: AttachedEditOptions & {
     });
     if (!r.ok) return r;
     if (r.changed) {
-      o.logger.info(`job-hopper: plugins.yaml edited in the UI: ${e.action} attached machine ${e.name}`);
+      o.logger.info(`hopper: plugins.yaml edited in the UI: ${e.action} attached machine ${e.name}`);
       await o.reload();
     }
     return { ok: true, config: config() };

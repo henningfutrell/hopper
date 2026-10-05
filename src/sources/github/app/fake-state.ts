@@ -37,7 +37,7 @@ export interface FakeProjectInput {
 export interface FakeGitHubOptions {
   appId: number;
   publicKeyPem: string;
-  /** The app slug; comments post as `<slug>[bot]`. Default "job-hopper". */
+  /** The app slug; comments post as `<slug>[bot]`. Default "hopper". */
   slug?: string;
   installations: FakeInstallationInput[];
   projects?: FakeProjectInput[];

@@ -59,7 +59,7 @@ export interface TestApp {
   waitForQuestion(jobId: string, ok: (q: Question) => boolean, timeoutMs?: number): Promise<Question>;
   /** Set the fake usage reading (through the engine; there is no HTTP route). */
   setUsage(used: number, limit?: number): void;
-  /** Log in like open-ui.sh does: mint a code (`job-hopper login-code`), POST /ui/login. Returns the session token. */
+  /** Log in like open-ui.sh does: mint a code (`hopper login-code`), POST /ui/login. Returns the session token. */
   login(): Promise<string>;
   /** POST a UI mutation with a valid Origin, JSON content type and (if given) the session header. */
   ui<T = unknown>(path: string, body?: unknown, o?: UiOptions): Promise<ApiResponse<T>>;
@@ -68,7 +68,7 @@ export interface TestApp {
 
 /** A temp dir (the app's work dir) and `dbPath` in it: the key of the app's database (support/database.ts databaseUrlFor). */
 export function tempDbPath(): { dbPath: string; cleanup(): void } {
-  const dir = mkdtempSync(join(tmpdir(), 'job-hopper-it-'));
+  const dir = mkdtempSync(join(tmpdir(), 'hopper-it-'));
   return { dbPath: join(dir, 'db.sqlite'), cleanup: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
@@ -102,14 +102,14 @@ export async function startTestApp(o: {
   const secrets = o.secrets ?? {};
   if (secrets.PATH === undefined) secrets.PATH = process.env.PATH;
   const config = loadConfig({
-    JOB_HOPPER_PORT: '0',
-    JOB_HOPPER_DATABASE_URL: databaseUrlFor(o.dbPath),
-    JOB_HOPPER_WORK_DIR: dataDir,
-    JOB_HOPPER_TICK_MS: '50',
-    JOB_HOPPER_WEBHOOK_BASE_MS: '20',
-    JOB_HOPPER_LANE_IDLE_GRACE_MS: '200',
-    JOB_HOPPER_PLUGIN_DIR: join(dataDir, 'plugins'),
-    JOB_HOPPER_UPDATE_CHECK_MS: '0',
+    HOPPER_PORT: '0',
+    HOPPER_DATABASE_URL: databaseUrlFor(o.dbPath),
+    HOPPER_WORK_DIR: dataDir,
+    HOPPER_TICK_MS: '50',
+    HOPPER_WEBHOOK_BASE_MS: '20',
+    HOPPER_LANE_IDLE_GRACE_MS: '200',
+    HOPPER_PLUGIN_DIR: join(dataDir, 'plugins'),
+    HOPPER_UPDATE_CHECK_MS: '0',
     ...o.env,
   });
   const source = o.source ?? createManualSource();
@@ -172,7 +172,7 @@ export async function startTestApp(o: {
     },
     async ui<T>(path: string, body: unknown = {}, u: UiOptions = {}) {
       const defaults: Record<string, string | null> = {
-        'content-type': 'application/json', origin: app.url, ...(u.token ? { 'x-jobhopper-session': u.token } : {}),
+        'content-type': 'application/json', origin: app.url, ...(u.token ? { 'x-hopper-session': u.token } : {}),
       };
       const merged = { ...defaults, ...u.headers };
       const headers = Object.fromEntries(Object.entries(merged).filter((e): e is [string, string] => e[1] !== null));

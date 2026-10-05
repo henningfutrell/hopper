@@ -14,7 +14,7 @@ const EXECUTORS = [{ name: 'test', plugin: 'test' }, { name: 'herdr-claude', plu
 /** A turn long enough (one step per poll) to still be working when the daemon restarts. */
 const LONG: FakeTurn = {
   steps: Array.from({ length: 40 }, (_, i) => `● Painting plank ${i + 1}`),
-  output: ['● Painted the shed.', '  JOB_HOPPER_DONE'],
+  output: ['● Painted the shed.', '  HOPPER_DONE'],
 };
 const item = { executor: 'herdr-claude', prompt: 'Paint the shed', cwd: '/tmp' };
 
@@ -108,7 +108,7 @@ describe('herdr-claude job across a daemon restart', () => {
 
   it('a claimed herdr-claude job (nothing ran yet) is requeued and runs', async () => {
     freshDb();
-    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [{ output: ['● Done.', '  JOB_HOPPER_DONE'] }] });
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [{ output: ['● Done.', '  HOPPER_DONE'] }] });
     const first = await boot(herdr, 0);
     const pulled = await first.pull({}, item);
     await first.waitForStatus(pulled.id, 'held');

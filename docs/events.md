@@ -417,7 +417,7 @@ Version 1 (`docs/schemas/question.closed.v1.json`). The owner closed an open que
 ```json
 {
   "questionId": "q1",
-  "answer": "The owner closed this question without answering. Continue on your own judgement; if you cannot, end with JOB_HOPPER_FAILED and say why."
+  "answer": "The owner closed this question without answering. Continue on your own judgement; if you cannot, end with HOPPER_FAILED and say why."
 }
 ```
 

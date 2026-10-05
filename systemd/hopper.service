@@ -1,22 +1,22 @@
 [Unit]
-Description=job-hopper local job-queue daemon (127.0.0.1:4790; LAN names from daemon.env)
-Wants=job-hopper-herdr.service
-After=default.target job-hopper-herdr.service
+Description=hopper local job-queue daemon (127.0.0.1:4790; LAN names from daemon.env)
+Wants=hopper-herdr.service
+After=default.target hopper-herdr.service
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/node %h/.local/lib/job-hopper/src/main.ts
-Environment=JOB_HOPPER_PORT=4790
+ExecStart=/usr/bin/node %h/.local/lib/hopper/src/main.ts
+Environment=HOPPER_PORT=4790
 Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin
 # Process settings only. Every part — job sources, executors, router, answerer, assessor, the machine
 # and its lanes — is configured in plugins.yaml, and sign-in in auth.yaml: config documents in the
-# database (docs/design.md "Config documents"; edit by hand with `job-hopper config edit <document>`).
-# daemon.env, this machine's (written by install.sh, mode 600): JOB_HOPPER_DATABASE_URL (required),
-# the secrets (docs/design.md "Secrets"), and optionally JOB_HOPPER_LAN_NAMES and JOB_HOPPER_LAN_PEERS
-# to reach the UI across the LAN, JOB_HOPPER_PUBLIC_URL behind a reverse proxy.
-EnvironmentFile=%h/.config/job-hopper/daemon.env
+# database (docs/design.md "Config documents"; edit by hand with `hopper config edit <document>`).
+# daemon.env, this machine's (written by install.sh, mode 600): HOPPER_DATABASE_URL (required),
+# the secrets (docs/design.md "Secrets"), and optionally HOPPER_LAN_NAMES and HOPPER_LAN_PEERS
+# to reach the UI across the LAN, HOPPER_PUBLIC_URL behind a reverse proxy.
+EnvironmentFile=%h/.config/hopper/daemon.env
 # Scratch only (claude's working directory, ssh sockets, the update mirror): this user's cache dir.
-Environment=JOB_HOPPER_WORK_DIR=%C/job-hopper
+Environment=HOPPER_WORK_DIR=%C/hopper
 Restart=on-failure
 RestartSec=2
 # Self-update (design.md "Self-update"): exit 75 means "start me again on the new install".
@@ -26,7 +26,7 @@ KillSignal=SIGTERM
 TimeoutStopSec=10
 NoNewPrivileges=true
 PrivateTmp=true
-# Docker only through a socket the daemon alone may open (JOB_HOPPER_DOCKER_HOST, a socket proxy:
+# Docker only through a socket the daemon alone may open (HOPPER_DOCKER_HOST, a socket proxy:
 # scripts/docker-proxy.sh), never the root daemon's: whoever opens that one is root here (issue #59).
 InaccessiblePaths=-/run/docker.sock -/var/run/docker.sock
 
