@@ -3328,7 +3328,7 @@ first sign-in, not at boot: an unreachable issuer must not stop the daemon.
 |---|---|
 | `viewer` | `POST /ui/api/logout` |
 | `operator` | + jobs `cancel`, `approve`; questions `answer`, `close`, `dismiss`, `seen` |
-| `admin` | + `router-mode`, `plugins`, `rules-file`, `webhooks`, `machines`, `routing`, `device-link`, `update` |
+| `admin` | + `router-mode`, `plugins`, `rules-file`, `webhooks`, `machines`, `routing`, `device-link`, `update`, `plugin-store`, `users` (issue #158: every role acts inside the session's own user; `update`, `plugin-store` and `users` are the instance's) |
 
 A live session whose role is short gets 403 `{ error, needs }` — the UI keeps the session and
 toasts; any other 403 still means "log in again". The login code always gives `admin`. A provider's
