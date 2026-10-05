@@ -26,6 +26,14 @@ describe('ensurePluginsDocument', () => {
     ]);
   });
 
+  it('the built-in levels and usage source run on this machine, named as the `local` machine; where this host is no machine they name none (#174)', () => {
+    const here = builtinInstances(1000);
+    expect(here.escalationLevels.map((l) => l.options?.machine)).toEqual(['local', 'local']);
+    expect(here.usageSources.map((u) => u.options?.machine)).toEqual(['local']);
+    const container = builtinInstances(1000, false);
+    expect([...container.escalationLevels, ...container.usageSources].map((i) => i.options?.machine)).toEqual([undefined, undefined, undefined]);
+  });
+
   it('keeps an existing document untouched', () => {
     const documents = docs();
     documents.set(PLUGINS, 'version: 1\nnotifiers: []\n');
