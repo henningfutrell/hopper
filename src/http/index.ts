@@ -4,12 +4,13 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import { apiReferenceRoutes } from './api-reference.ts';
 import type { SignIn } from '../auth/index.ts';
-import type { Clock, PluginStoreView, PluginsView, QuestionService, SourceRegistry, Store, Updater, WebhookDispatcher } from '../domain/ports.ts';
+import type { Clock, GhLogin, PluginStoreView, PluginsView, QuestionService, SourceRegistry, Store, Updater, WebhookDispatcher } from '../domain/ports.ts';
 import type { Engine } from '../engine/index.ts';
 import type { SecretProblem } from './webhooks.ts';
 import type { WebhooksEditor } from '../webhooks/edit.ts';
 import { accountRoutes } from './accounts.ts';
 import { installErrorHandling } from './errors.ts';
+import { ghLoginRoutes } from './gh-login.ts';
 import { installHostGuard } from './host-guard.ts';
 import type { Lan } from './reach.ts';
 import { jobRoutes } from './jobs.ts';
@@ -41,6 +42,8 @@ export interface ServerOptions {
   webhooksEditor: WebhooksEditor;
   /** Self-update: GET /api/update, POST /ui/api/update. */
   updater: Updater;
+  /** gh login (issue #138): GET /api/gh-login, POST /ui/api/gh-login. */
+  ghLogin: GhLogin;
   clock: Clock;
   version: string;
   /** The bound port, for the Host guard and the UI Origin check (known only after listen). */
@@ -73,12 +76,13 @@ export function createServer(o: ServerOptions): FastifyInstance {
   sourceRoutes(app, o);
   accountRoutes(app, o);
   updateRoutes(app, o);
+  ghLoginRoutes(app, o);
   pluginStoreRoutes(app, o);
   sseRoutes(app, o);
   staticRoutes(app, o.uiDir);
   registerUiRoutes(app, {
     engine: o.engine, questions: o.questions, sessions, signIn: o.signIn, plugins: o.plugins, pluginStore: o.pluginStore, port: o.port, lan: o.lan, clock: o.clock,
-    store: o.store, secretProblem: o.secretProblem, webhooksEditor: o.webhooksEditor, updater: o.updater,
+    store: o.store, secretProblem: o.secretProblem, webhooksEditor: o.webhooksEditor, updater: o.updater, ghLogin: o.ghLogin,
   });
   return app;
 }

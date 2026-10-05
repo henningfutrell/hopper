@@ -6,7 +6,7 @@ import type {
   RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule,
   JobSourceRef, LaneId, MachineId, MachineSnapshot, NewEvent, Question, QuestionAttempt, QuestionStatus,
   Identity, SourceStatus, UiRole, UsageReading, UsageSourceState, WebhookDelivery, WebhookSubscription,
-  InstallInfo, UpdateSettings, UpdateStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, PluginInstall,
+  InstallInfo, UpdateSettings, UpdateStatus, GhLoginStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, PluginInstall,
 } from './types.ts';
 
 // ---- Execution -----------------------------------------------------------------------
@@ -511,6 +511,15 @@ export interface Updater {
   /** Start applying the target; answers at once with `apply` set. Refuses (`error`) when nothing is available or an apply runs. */
   apply(): { ok: true; status: UpdateStatus } | { ok: false; error: string };
   settings(patch: Partial<UpdateSettings>): UpdateStatus;
+}
+
+/** gh login from the UI (issue #138): GET /api/gh-login, POST /ui/api/gh-login. */
+export interface GhLogin {
+  status(): Promise<GhLoginStatus>;
+  /** Start gh's device flow and answer once it shows its device code; a waiting login answers its own code. */
+  start(): Promise<GhLoginStatus>;
+  /** End a waiting login; answers the new status. */
+  cancel(): Promise<GhLoginStatus>;
 }
 
 /** UI sessions, keyed by the SHA-256 of the token; the token itself is never stored. */

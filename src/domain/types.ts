@@ -427,3 +427,17 @@ export { UI_ROLES, roleAllows } from './sign-in.ts';
 
 export type { InstallInfo, UpdateApply, UpdateChannel, UpdateRelease, UpdateSettings, UpdateState, UpdateStatus } from './update.ts';
 export { UPDATE_CHANNELS } from './update.ts';
+
+// ---- gh login (issue #138) -------------------------------------------------------------
+
+/**
+ * The gh CLI's login, as GET /api/gh-login reports it: gh's device flow run by the hopper, its
+ * device code shown in the UI until the GitHub user approves it at `verificationUri`. gh keeps the
+ * token in its own config; the hopper keeps none.
+ */
+export type GhLoginStatus =
+  | { state: 'logged-in'; account?: string }
+  | { state: 'logged-out' }
+  | { state: 'waiting'; userCode: string; verificationUri: string }
+  | { state: 'failed'; error: string }
+  | { state: 'unavailable'; reason: string };

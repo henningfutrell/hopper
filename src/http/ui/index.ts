@@ -7,7 +7,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { SignIn } from '../../auth/index.ts';
-import type { Clock, PluginStoreView, PluginsView, QuestionService, Store, Updater } from '../../domain/ports.ts';
+import type { Clock, GhLogin, PluginStoreView, PluginsView, QuestionService, Store, Updater } from '../../domain/ports.ts';
 import { LIST_ROLES, ROLES, SELECTABLE_ROLES, UPDATE_CHANNELS, type SessionView, type UiRole } from '../../domain/types.ts';
 import type { Engine } from '../../engine/index.ts';
 import { HttpError, parseWith } from '../errors.ts';
@@ -38,6 +38,7 @@ export interface UiRouteOptions {
   secretProblem: SecretProblem;
   webhooksEditor: WebhooksEditor;
   updater: Updater;
+  ghLogin: GhLogin;
 }
 
 const idParams = z.object({ id: z.string() });
@@ -85,6 +86,8 @@ export const updateBody = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('apply') }),
   z.strictObject({ action: z.literal('settings'), channel: z.enum(UPDATE_CHANNELS).optional(), autoUpdate: z.boolean().optional() }),
 ]);
+// gh login (issue #138): start gh's device flow, or end a waiting one.
+export const ghLoginBody = z.strictObject({ action: z.enum(['start', 'cancel']) });
 const EDIT_STATUS = { invalid: 400, not_found: 404, conflict: 409 } as const;
 /** The rules themselves are validated by the plugin host (the plugins.yaml schema), so a refusal names the field. */
 export const routingEditBody = z.strictObject({ rules: z.array(z.any()), version: z.string().min(1) });
@@ -217,6 +220,15 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     const r = o.updater.apply();
     if (!r.ok) throw new HttpError(409, r.error);
     return r.status;
+  });
+
+  // design.md "gh login": answers the new GET /api/gh-login status — the device code once gh shows it.
+  // 409 when there is no gh to log in, or it cannot log in here (a token variable set).
+  app.post('/ui/api/gh-login', admin, async (req) => {
+    const { action } = parseWith(ghLoginBody, req.body);
+    const s = action === 'start' ? await o.ghLogin.start() : await o.ghLogin.cancel();
+    if (s.state === 'unavailable') throw new HttpError(409, s.reason);
+    return s;
   });
 
   // A login code as a link per LAN name, in the fragment (never sent to a server). The links

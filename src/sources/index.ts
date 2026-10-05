@@ -4,7 +4,7 @@
 import type { SourceRegistry } from '../domain/ports.ts';
 import type { SourceStatus } from '../domain/types.ts';
 
-export { createGitHubSource, createGhCliApi, createFakeGitHub } from './github/index.ts';
+export { createGitHubSource, createGhCliApi, createGhLogin, createFakeGitHub } from './github/index.ts';
 export type { FakeGitHub, GitHubApi, GitHubSourceOptions } from './github/index.ts';
 export { githubAppOptions, githubGhOptions, sourceConfig } from './config.ts';
 export type { GitHubAppOptions, GitHubGhOptions, GitHubSourceConfig } from './config.ts';
