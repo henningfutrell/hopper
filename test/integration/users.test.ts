@@ -14,6 +14,7 @@ import { waitFor } from '../support/wait.ts';
 import { openDb } from '../../src/store/db.ts';
 import { migrateInstance } from '../../src/store/migrations.ts';
 import { databaseUrlFor } from '../support/database.ts';
+import { runCli } from '../../src/cli.ts';
 
 let t: TestApp | undefined;
 let cleanup: (() => void) | undefined;
@@ -201,6 +202,16 @@ describe('a user\'s runtime', () => {
     expect(tabs[0]).not.toHaveProperty('CLAUDE_CONFIG_DIR');
     expect(tabs[0]).not.toHaveProperty('GH_CONFIG_DIR');
     expect(tabs[1]).toMatchObject({ CLAUDE_CONFIG_DIR: `${a.dataDir}/users/bea/claude`, GH_CONFIG_DIR: `${a.dataDir}/users/bea/gh` });
+  });
+});
+
+describe('a user added with the operator CLI', () => {
+  it('a running daemon starts its runtime when it next reads the users', async () => {
+    const a = await start();
+    const r = runCli(['user', 'add', 'Cy'], { env: { HOPPER_DATABASE_URL: databaseUrlFor(a.dbPath) }, stdin: () => '', out: () => {}, err: () => {} });
+    expect(r).toBe(0);
+    await waitFor(() => a.app.users().some((u) => u.id === 'cy') && (() => { try { return a.user('cy'); } catch { return undefined; } })());
+    expect((await a.api('GET', '/api/jobs', undefined, { 'x-hopper-user': 'cy' })).status).toBe(200);
   });
 });
 
