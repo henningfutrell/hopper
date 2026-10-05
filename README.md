@@ -29,6 +29,9 @@ Five steps, in this order. Each links to its section below.
 
 ## What you need
 
+On Windows, all of this goes inside WSL (Ubuntu with systemd on); the install page has the steps:
+https://henningfutrell.github.io/hopper/#windows
+
 | | for |
 |---|---|
 | Node.js ≥ 24 | the daemon (TypeScript, run directly) |

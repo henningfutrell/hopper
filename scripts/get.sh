@@ -20,6 +20,8 @@
 #   JOB_HOPPER_SRC   where the source clone lives (default: ~/.local/share/job-hopper/source)
 #   POSTGRES_PORT    the bundled Postgres's loopback port (default: 5433)
 #
+# On Windows it runs inside WSL, with systemd on (site/index.html "On Windows", issue #116).
+#
 # Everything is in main(), called on the last line, so a download cut short runs nothing.
 set -euo pipefail
 
@@ -38,6 +40,9 @@ main() {
   done
   local major; major="$(node --version | sed -E 's/^v([0-9]+).*/\1/')"
   [ "$major" -ge 24 ] 2>/dev/null || fail "needs Node.js >= 24; this one is $(node --version)"
+  # The daemon runs as systemd --user services; WSL starts without systemd unless told to.
+  systemctl --user show-environment >/dev/null 2>&1 \
+    || fail "needs systemd running for this user (systemctl --user fails). In WSL: add the two lines [boot] and systemd=true to /etc/wsl.conf, run wsl --shutdown in PowerShell, open Ubuntu again and rerun. Elsewhere: log in to a session with a systemd user manager"
 
   if [ -d "$src/.git" ]; then
     [ -z "$(git -C "$src" status --porcelain --untracked-files=no)" ] \

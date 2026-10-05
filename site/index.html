@@ -56,6 +56,7 @@ footer { margin-top: 48px; color: var(--muted); font-size: 14px; }
 <h1>Install job-hopper</h1>
 <p class="lead">job-hopper takes GitHub issues labelled <code>hopper</code> and runs each one as a Claude Code
 session on a machine you own. This page gets it running on one Linux host.
+On Windows it runs inside WSL, with the same install: start at <a href="#windows">On Windows</a>.
 Full documentation: <a href="https://github.com/henningfutrell/hopper#readme">the README</a>.</p>
 
 <h2 id="before">1. Before you start</h2>
@@ -141,6 +142,38 @@ job's instructions.</p></li>
 <strong>Questions</strong> view.</p></li>
 </ol>
 
+<h2 id="windows">On Windows</h2>
+<p>The hopper runs inside WSL (the Linux that comes with Windows 10 and 11), from the same install
+command as on Linux. Do these steps first, then follow steps 1–5 above inside Ubuntu.</p>
+<ol class="steps">
+<li><p>Open PowerShell as administrator and install Ubuntu in WSL:</p>
+<div class="cmd"><pre>wsl --install -d Ubuntu-24.04</pre><button type="button" data-copy="wsl --install -d Ubuntu-24.04">Copy</button></div>
+<p>Restart Windows if it asks. Then open <strong>Ubuntu</strong> from the Start menu and choose a user name
+and password. Every command below runs in that Ubuntu window, not in PowerShell, unless it says so.</p></li>
+<li><p>Check that systemd runs:</p>
+<div class="cmd"><pre>systemctl --user status</pre><button type="button" data-copy="systemctl --user status">Copy</button></div>
+<p>If it says <code>System has not been booted with systemd</code>, turn systemd on:</p>
+<div class="cmd"><pre>printf '[boot]\nsystemd=true\n' | sudo tee -a /etc/wsl.conf</pre><button type="button" data-copy="printf '[boot]\nsystemd=true\n' | sudo tee -a /etc/wsl.conf">Copy</button></div>
+<p>Then run <code>wsl --shutdown</code> in PowerShell, open Ubuntu again, and check again.</p></li>
+<li><p>Install git, Node.js 24 and Docker in Ubuntu. The service runs <code>/usr/bin/node</code>, so take
+Node.js from NodeSource, not from nvm:</p>
+<div class="cmd"><pre>curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
+sudo apt-get install -y git nodejs docker.io docker-compose-v2 gh
+sudo usermod -aG docker "$USER"</pre><button type="button" data-copy="curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash - &amp;&amp; sudo apt-get install -y git nodejs docker.io docker-compose-v2 gh &amp;&amp; sudo usermod -aG docker &quot;$USER&quot;">Copy</button></div>
+<p>Close Ubuntu and open it again, so that you can use docker. Then install herdr and the
+<code>claude</code> CLI in Ubuntu as <a href="#before">step 1</a> says, and sign in to <code>claude</code>.</p></li>
+<li><p>Install the hopper with the same command as on Linux:</p>
+<div class="cmd"><pre>curl -fsSL https://henningfutrell.github.io/hopper/install.sh | bash</pre><button type="button" data-copy="curl -fsSL https://henningfutrell.github.io/hopper/install.sh | bash">Copy</button></div></li>
+<li><p>Open the UI in your Windows browser. In Ubuntu, make a sign-in link:</p>
+<div class="cmd"><pre>job-hopper login-code --link http://127.0.0.1:4790</pre><button type="button" data-copy="job-hopper login-code --link http://127.0.0.1:4790">Copy</button></div>
+<p>Open the link it prints in your Windows browser (it works once, for 10 minutes). WSL passes
+<code>127.0.0.1</code> through to Windows.</p></li>
+<li><p>Continue with <a href="#github">step 4, Connect GitHub</a>, in Ubuntu.</p></li>
+</ol>
+<p class="note">WSL stops Ubuntu, and the hopper with it, soon after you close the last Ubuntu window.
+Keep one Ubuntu window open while jobs run. Keep the repositories jobs work in inside Ubuntu
+(for example <code>~/src</code>), not under <code>/mnt/c</code>: it is much faster.</p>
+
 <h2 id="upgrade">Upgrade</h2>
 <p>Run the install command again. It updates the source and reinstalls; your settings and database stay.
 The UI also tells you when an update is available, and can apply it.</p>
@@ -156,6 +189,7 @@ delete those yourself if you want them gone.</p>
 <tr><th>It says</th><th>Do this</th></tr>
 <tr><td><code>needs node on PATH</code> (or git, npm, systemctl)</td><td>Install it, open a new shell, run the command again.</td></tr>
 <tr><td><code>needs Node.js &gt;= 24</code></td><td>Install Node.js 24 or later (for example with your package manager, or nvm).</td></tr>
+<tr><td><code>needs systemd running for this user</code></td><td>On Windows, turn systemd on in WSL: <a href="#windows">On Windows</a>, step 2. On Linux, log in to a normal session (not <code>su</code> or a bare container shell).</td></tr>
 <tr><td><code>no database</code></td><td>Install docker, or give a Postgres URL as in <a href="#install">Your own Postgres</a>.</td></tr>
 <tr><td><code>the docker volume job-hopper_postgres exists</code></td><td>An earlier install left its database. Give its URL with <code>JOB_HOPPER_DATABASE_URL</code>, or remove the volume with <code>docker volume rm job-hopper_postgres</code> (this deletes its data).</td></tr>
 <tr><td><code>job-hopper: command not found</code> (after the install)</td><td>Add <code>~/.local/bin</code> to your <code>PATH</code>, or run <code>~/.local/bin/job-hopper</code>.</td></tr>
