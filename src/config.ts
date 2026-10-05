@@ -99,7 +99,7 @@ const schema = z.object({
   HOPPER_UI_SESSION_HOURS: z.coerce.number().finite().positive().default(12),
   HOPPER_PLUGIN_DIR: z.string().min(1).optional(),
   HOPPER_PLUGIN_STORE: z.string().min(1).optional(),
-  HOPPER_UPDATE_CHECK_MS: int(0).default(900000),
+  HOPPER_UPDATE_CHECK_MS: int(0).default(60000),
   HOPPER_RESTART: z.enum(['exit', 'respawn']).optional(),
 }).refine((e) => e.HOPPER_SOFT_LIMIT < e.HOPPER_HARD_LIMIT, {
   message: 'must be below HOPPER_HARD_LIMIT',
