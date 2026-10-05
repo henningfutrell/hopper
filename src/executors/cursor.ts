@@ -8,13 +8,15 @@ import { mkdirSync } from 'node:fs';
 import type { ExecutionContext, ExecutionOutcome, Executor } from '../domain/ports.ts';
 import { commandOn, run } from './command.ts';
 import { resolvePayload, validatePayload } from './herdr/payload.ts';
-import { normaliseMarkerLine, protocolFooter } from './herdr/screen.ts';
+import { STATUS_NOTE_NUDGE, normaliseMarkerLine, protocolFooter } from './herdr/screen.ts';
 import { scratchDirOf } from './herdr/start.ts';
 import { shellQuote, type SshAuth } from './ssh.ts';
 
 /** The answer's tail kept for whoever answers a question. */
 const OUTPUT_CAP = 16000;
 const SUMMARY_CHARS = 2000;
+/** Nudges after status notes in a row before the job fails: a print-mode turn never waits on background work. */
+const NUDGES = 3;
 
 export interface CursorExecutorOptions {
   name: string;
@@ -38,16 +40,18 @@ interface CursorResult { is_error?: boolean; result?: unknown; session_id?: unkn
 
 const tail = (s: string): string => (s.length > OUTPUT_CAP ? s.slice(-OUTPUT_CAP) : s);
 
+/** An answer without a marker (issue #163): progress, never a question. */
+interface StatusNote { statusNote: string }
+
 /** The answer's outcome by the marker on its last line (design.md "Phase 2" markers). */
-export function outcomeOf(text: string, machine: string, chatId: string): ExecutionOutcome {
+export function outcomeOf(text: string, machine: string, chatId: string): ExecutionOutcome | StatusNote {
   const lines = text.trimEnd().split('\n');
   const last = normaliseMarkerLine(lines.at(-1) ?? '');
   const before = lines.slice(0, -1).join('\n').trim();
   if (last === 'HOPPER_DONE') return { kind: 'finished', result: { machine, summary: before.slice(0, SUMMARY_CHARS), chatId } };
   if (last.startsWith('HOPPER_FAILED')) return { kind: 'failed', error: last.slice('HOPPER_FAILED'.length).trim() || 'HOPPER_FAILED without a reason' };
   if (last === 'HOPPER_QUESTION') return { kind: 'question', question: { text: before, recentOutput: tail(text.trim()), detectedBy: 'marker' } };
-  // The turn ended without a marker: the agent stopped and waits, so its last words go to whoever answers.
-  return { kind: 'question', question: { text: text.trim(), recentOutput: tail(text.trim()), detectedBy: 'idle' } };
+  return { statusNote: text.trim() };
 }
 
 function refusal(ctx: ExecutionContext): string | undefined {
@@ -59,7 +63,8 @@ function refusal(ctx: ExecutionContext): string | undefined {
 
 export function createCursorExecutor(o: CursorExecutorOptions): Executor {
   if (o.sshControlDir) mkdirSync(o.sshControlDir, { recursive: true, mode: 0o700 });
-  async function turn(ctx: ExecutionContext, cwd: string, text: string, chatId?: string): Promise<ExecutionOutcome> {
+  /** One turn; `notes` is how many answers in a row before it carried no marker. */
+  async function turn(ctx: ExecutionContext, cwd: string, text: string, chatId?: string, notes = 0): Promise<ExecutionOutcome> {
     const refused = refusal(ctx);
     if (refused) return { kind: 'failed', error: refused };
     const p = resolvePayload(ctx.job.spec.payload, o.defaultCwd);
@@ -85,6 +90,12 @@ export function createCursorExecutor(o: CursorExecutorOptions): Executor {
       if (answer.is_error) return { kind: 'failed', error: `cursor-agent on ${where}: ${tail(said.trim()) || 'error without a message'}` };
       if (typeof answer.session_id !== 'string' || answer.session_id === '') return { kind: 'failed', error: `cursor-agent on ${where} answered without a chat id` };
       const out = outcomeOf(said, where, answer.session_id);
+      if ('statusNote' in out) {
+        // A status note opens no question (issue #163): the agent is nudged in the same chat.
+        ctx.progress(0, out.statusNote);
+        if (notes >= NUDGES) return { kind: 'failed', error: `cursor-agent answered ${notes + 1} times in a row without a marker: ${tail(out.statusNote)}` };
+        return await turn(ctx, cwd, STATUS_NOTE_NUDGE, answer.session_id, notes + 1);
+      }
       if (out.kind === 'question') ctx.saveState({ chatId: answer.session_id, cwd } satisfies CursorState);
       return out;
     } catch (e) {

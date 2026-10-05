@@ -8,7 +8,7 @@ import { RECENT_LINES, abortReason, watchTurn } from './monitor.ts';
 import type { Interrupt, Sleep } from './monitor.ts';
 import { resolvePayload, validatePayload } from './payload.ts';
 import type { ClaudeJobPayload } from './payload.ts';
-import { FOOTER_ANCHOR, protocolFooter, typedAfterQuestion } from './screen.ts';
+import { FOOTER_ANCHOR, STATUS_NOTE_NUDGE, protocolFooter, typedAfterQuestion } from './screen.ts';
 import { openPane, startClaude } from './start.ts';
 import type { PaneState, StartDeps, TurnAnchor } from './start.ts';
 
@@ -24,7 +24,8 @@ export interface HerdrClaudeExecutorOptions {
   claudeArgs: string[];
   trustWorkdir: boolean;
   pollMs: number;
-  idleQuestionMs: number;
+  /** Idle without a marker this long, a turn is a status note and the agent is nudged; each further one in a row waits twice as long. */
+  idleNudgeMs: number;
   /** Set on the tab of a job in this machine's herdr: the user's CLI config dirs (issue #158). Default none. */
   paneEnv?: Readonly<Record<string, string>>;
   /** Injectable for tests; default an abortable setTimeout. */
@@ -121,7 +122,10 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
     return { kind: 'failed', error: result.interrupt === 'timeout' ? 'timed out' : 'aborted' };
   }
 
-  async function send(ctx: ExecutionContext, s: PaneState, p: ClaudeJobPayload, text: string, anchor: string): Promise<ExecutionOutcome | Interrupt> {
+  /** Status notes so far in a row, and when the turn they belong to began. */
+  interface Notes { count: number; startedAt: number }
+
+  async function send(ctx: ExecutionContext, s: PaneState, p: ClaudeJobPayload, text: string, anchor: string, notes?: Notes): Promise<ExecutionOutcome | Interrupt> {
     const herdr = herdrOn(s);
     let agent = await herdr.getAgent(s.agentName);
     for (let i = 0; agent?.status === 'blocked' && i < UNBLOCK_POLLS; i++) {
@@ -132,20 +136,26 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
     }
     if (!agent) return { kind: 'failed', error: 'pane lost' };
     const turn: TurnAnchor = { seq: agent.stateChangeSeq, anchor, blockedAtSend: agent.status === 'blocked' };
-    // Saved before the prompt: a restart in between watches a turn never sent, which ends as an
-    // idle question, never as a lost job.
+    // Saved before the prompt: a restart in between watches a turn never sent, which ends as a
+    // status note and a nudge, never as a lost job.
     ctx.saveState({ ...s, turn, parkedSeq: undefined });
     await herdr.prompt(s.agentName, text);
-    return watch(ctx, s, p, turn);
+    return watch(ctx, s, p, turn, notes);
   }
 
-  function watch(ctx: ExecutionContext, s: PaneState, p: ClaudeJobPayload, turn: TurnAnchor): Promise<ExecutionOutcome | Interrupt> {
-    return watchTurn({
-      herdr: herdrOn(s), clock, sleep, pollMs: o.pollMs, idleQuestionMs: o.idleQuestionMs, ctx, agentName: s.agentName,
+  /**
+   * Watches the turn to its outcome. A status note (issue #163) opens no question: the agent is
+   * nudged and the same turn goes on, under the same timeout.
+   */
+  async function watch(ctx: ExecutionContext, s: PaneState, p: ClaudeJobPayload, turn: TurnAnchor, notes: Notes = { count: 0, startedAt: clock.now().getTime() }): Promise<ExecutionOutcome | Interrupt> {
+    const result = await watchTurn({
+      herdr: herdrOn(s), clock, sleep, pollMs: o.pollMs, idleNudgeMs: o.idleNudgeMs * 2 ** notes.count, ctx, agentName: s.agentName,
       paneId: s.paneId, anchor: turn.anchor, seqAtSend: turn.seq, blockedAtSend: turn.blockedAtSend,
-      timeoutMs: p.timeoutMs, expectedMs: p.expectedMs,
+      timeoutMs: p.timeoutMs, expectedMs: p.expectedMs, startedAt: notes.startedAt,
       parked: (seq) => ctx.saveState({ ...s, turn, parkedSeq: seq }),
     });
+    if (!('statusNote' in result)) return result;
+    return send(ctx, s, p, STATUS_NOTE_NUDGE, STATUS_NOTE_NUDGE, { ...notes, count: notes.count + 1 });
   }
 
   /** The saved pane, with its turn, when Claude still runs in that pane. */

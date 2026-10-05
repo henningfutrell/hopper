@@ -3,6 +3,7 @@
 // instance version 16 — where instance migration 17 moved owner's. A new user's schema is created at
 // TENANT_BASE; a later change to a user's tables is appended to TENANT_MIGRATIONS and runs on every
 // user schema as its store opens. Schema changes never drop a queue (persisted state is the user's).
+import { isMap, isScalar, isSeq, parseDocument } from 'yaml';
 import type { Db } from './db.ts';
 
 type Migration = string | ((db: Db) => void);
@@ -80,8 +81,34 @@ const TENANT_BASE = `
   CREATE TABLE config_documents (name TEXT PRIMARY KEY, text TEXT NOT NULL, updated_at TEXT NOT NULL);
 `;
 
+/**
+ * Tenant migration 2 (issue #163): a turn without a marker is a status note and the agent is nudged,
+ * never asked. Every herdr-claude executor's option `idleQuestionMs` is `idleNudgeMs`, value kept.
+ * Comments and everything else in the document stay; a document that does not parse is left for the
+ * owner (the daemon reports it as before).
+ */
+function renameIdleQuestionMs(db: Db): void {
+  const row = db.get("SELECT text FROM config_documents WHERE name = 'plugins.yaml'");
+  if (!row) return;
+  const doc = parseDocument(String(row.text));
+  const executors = doc.get('executors');
+  if (doc.errors.length > 0 || !isSeq(executors)) return;
+  let changed = false;
+  for (const e of executors.items) {
+    const options = isMap(e) && e.get('plugin') === 'herdr-claude' ? e.get('options') : undefined;
+    if (!isMap(options)) continue;
+    for (const pair of options.items) {
+      if (isScalar(pair.key) && pair.key.value === 'idleQuestionMs') { pair.key.value = 'idleNudgeMs'; changed = true; }
+    }
+  }
+  if (changed) db.run("UPDATE config_documents SET text = ?, updated_at = ? WHERE name = 'plugins.yaml'", doc.toString({ lineWidth: 0 }), new Date().toISOString());
+}
+
 /** Tenant migrations 2 on. */
-const TENANT_MIGRATIONS: readonly Migration[] = [];
+const TENANT_MIGRATIONS: readonly Migration[] = [
+  // 2: herdr-claude's idleQuestionMs is idleNudgeMs (issue #163).
+  renameIdleQuestionMs,
+];
 
 /** A user schema's version once migrated. */
 export const TENANT_SCHEMA_VERSION = TENANT_BASE_VERSION + TENANT_MIGRATIONS.length;

@@ -11,10 +11,6 @@ import type { AnswerRequest } from '../../sdk.ts';
 
 const OUTPUT_LINES = 120;
 
-export const IDLE_HINT =
-  'The agent went idle without asking anything, so it may simply have finished. ' +
-  'If the job is complete, end your message with HOPPER_DONE';
-
 function role(number: number, of: number): string {
   const top = number >= of;
   const above = top
@@ -69,7 +65,6 @@ export function buildLevelPrompt(req: AnswerRequest): string {
   return (
     `${role(req.level.number, req.level.of)}\n\n` +
     `## Standing rules (the owner's own; trusted)\n${rules}\n\n` +
-    (q.detectedBy === 'idle' ? `## Note\n${IDLE_HINT}\n\n` : '') +
     `${UNTRUSTED}\n\n` +
     part('Job prompt', req.jobPrompt) +
     (req.jobGoal ? part('Goal', req.jobGoal) : '') +
