@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Install hopper</title>
 <meta name="description" content="Run hopper with Podman from its published image, connect GitHub, and watch it finish its first job.">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230c4a6e'/%3E%3Cpath d='M9 22V10l7 6 7-6v12' fill='none' stroke='%237dd3fc' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="icon" type="image/svg+xml" href="hopper-logo.svg">
 <style>
 :root {
   --bg: #ffffff; --text: #1c1f23; --muted: #5b6370; --line: #d9dde3;
@@ -67,12 +67,13 @@ th { font-weight: 600; }
 details { margin: 8px 0; }
 summary { cursor: pointer; font-weight: 600; }
 details[open] summary { margin-bottom: 4px; }
+h1 .logo { height: 1.1em; width: auto; margin-right: 10px; vertical-align: -0.12em; }
 footer { margin-top: 48px; color: var(--muted); font-size: 14px; }
 </style>
 </head>
 <body>
 <main>
-<h1>Install hopper</h1>
+<h1><img class="logo" src="hopper-logo.svg" alt="" width="26" height="40">Install hopper</h1>
 <p class="lead">hopper turns GitHub issues into finished work. You label an issue <code>hopper</code>;
 hopper starts a Claude Code session with the issue as its instructions, answers the questions it can,
 asks you the rest, and labels and closes the issue when the work is done.</p>

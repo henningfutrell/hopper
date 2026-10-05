@@ -1,3 +1,5 @@
+<img src="site/hopper-logo.svg" alt="" width="64">
+
 # hopper
 
 A self-hosted job queue for coding agents. It pulls jobs from GitHub issues, runs each one as a

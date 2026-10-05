@@ -9,6 +9,7 @@ WORKDIR /build
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY ui ./ui
+COPY site/hopper-logo.svg ./site/hopper-logo.svg
 COPY src ./src
 RUN npm run build:ui && test -s ui/dist/index.html
 
