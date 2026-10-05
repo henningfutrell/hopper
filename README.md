@@ -12,6 +12,18 @@ web UI, and an HTTP API with its reference at `/docs/`.
 - **Every part is a plugin**: router, queue sorter, answerer, assessor, executors, job sources,
   machines, usage sources, notifiers (`docs/plugins.md`); the UI installs more from a plugin store.
 
+## Getting started
+
+Four steps, in this order. Each links to its section below.
+
+1. **[Run it](#run-it)** — one line installs the daemon, its database and its herdr session on this
+   host.
+2. **[Sign in](#sign-in)** — one command opens the UI, signed in.
+3. **[Give it jobs](#give-it-jobs)** — say whose GitHub issues it takes, then label an issue
+   `hopper`.
+4. **[Add machines](#add-machines)** — optional: jobs run on this host from step 1; add other
+   computers, or a sandbox container, when you want more room.
+
 ## What you need
 
 | | for |
@@ -19,8 +31,8 @@ web UI, and an HTTP API with its reference at `/docs/`.
 | Node.js ≥ 24 | the daemon (TypeScript, run directly) |
 | Postgres (any; `deploy/compose.yaml` has one) | everything the daemon keeps |
 | Docker | the container deploy, the bundled Postgres, `npm test` |
-| herdr, at `~/.local/bin/herdr` | the panes jobs run in (`herdr-claude` executor), on each machine that runs jobs |
-| the `claude` CLI, signed in | jobs, the answerer, the assessor, usage readings |
+| herdr, at `~/.local/bin/herdr` | the panes jobs run in (`herdr-claude` executor), on each machine that runs Claude jobs |
+| the `claude` CLI, signed in | jobs (on each machine that runs them), the answerer, the assessor, usage readings |
 | the `gh` CLI signed in, or a GitHub App | the GitHub job source |
 
 ## Run it
@@ -83,9 +95,16 @@ node src/cli.ts login-code --link http://127.0.0.1:4790       # in another termi
 
 ## Sign in
 
-The UI is at `http://127.0.0.1:4790/` on the daemon's host. From loopback, a one-time login code
-signs a browser in as admin: `job-hopper login-code --link http://127.0.0.1:4790`, then open the
-link (it works once, for 10 minutes). For other people and other devices: password sign-in, OIDC,
+The UI is at `http://127.0.0.1:4790/` on the daemon's host. On that host, after the systemd
+install, one command signs this browser in as admin and opens the UI:
+
+```sh
+bash ~/.local/lib/job-hopper/scripts/open-ui.sh
+```
+
+Elsewhere (a container, a checkout, a browser without the script), mint a one-time login code:
+`job-hopper login-code --link http://127.0.0.1:4790`, then open the link (it works once, for 10
+minutes). For other people and other devices: password sign-in, OIDC,
 GitHub or SAML in `auth.yaml`, and the LAN or a public URL — `docs/sign-in.md`.
 
 ## Give it jobs
@@ -104,7 +123,9 @@ GitHub or SAML in `auth.yaml`, and the LAN or a public URL — `docs/sign-in.md`
          repoPaths: { your-org/your-repo: /srv/checkouts/your-repo }   # where each repo's jobs run
    ```
 
-   Restart the daemon (`systemctl --user restart job-hopper`, or the container).
+   A job runs in `repoPaths[<repo>]` (a checkout of that repo), else in `defaultCwd` (default: the
+   home directory). That path must exist on whichever machine runs the job ([Add machines](#add-machines)). Restart the daemon
+   (`systemctl --user restart job-hopper`, or the container).
 2. Label an issue `hopper`. The issue body is the job's prompt.
 3. Watch it in the UI. The labels say where it is: `hopper:claimed` (running), `hopper:done` (and
    the issue closed), `hopper:failed`. Remove `hopper:failed` to run it again. `hopper:high` and
@@ -112,6 +133,148 @@ GitHub or SAML in `auth.yaml`, and the LAN or a public URL — `docs/sign-in.md`
 
 When a job asks a question, the answerer (Claude) answers it, the assessor decides whether a
 person must, and the UI's Questions view shows what waits for you.
+
+## Add machines
+
+A **machine** runs jobs. Each has **lanes**: how many jobs it runs at once. A job goes to a machine
+that is online, runs the job's executor, and has the most room left — unless a
+[routing rule](#send-jobs-to-one-machine) pins it to one. Pick the kind you need:
+
+| Kind | Use it for | The hopper reaches it by | It needs |
+|---|---|---|---|
+| [this host](#this-host) | the start: jobs on the hopper's own machine | nothing to reach | herdr and `claude`; set up by the install |
+| [ssh target](#an-ssh-target) | another computer the hopper can always ssh to (a desktop, a server) | ssh, with its own key | herdr, `claude`, sshd |
+| [client target](#a-client-target) | a computer the hopper cannot always reach (a laptop that moves networks): it dials in | the client's tunnel to the hopper | Node.js ≥ 24, herdr, `claude`; sshd on the hopper's host |
+| [container target](#a-container-target) | plain shell commands, sandboxed: no network, no agent | `docker exec`, through a socket proxy | docker on the hopper's host |
+
+Every command below runs on the hopper's host, as the user the daemon runs as, from the install
+(`~/.local/lib/job-hopper`). Each script prints what to add next. The UI's Machines view shows each
+machine online or offline; the daemon's log says why one is offline
+(`journalctl --user -u job-hopper`).
+
+### This host
+
+Set up by [Run it](#run-it): `install.sh` starts its herdr session (`job-hopper-herdr`). It runs 4
+lanes. To change that: the UI's Machines view, Edit on this machine. To keep some executors off this
+host, set its `executors` option (`job-hopper config edit plugins.yaml`):
+
+```yaml
+machines: { name: local, plugin: local, options: { lanes: 4, executors: [test, herdr-claude] } }
+```
+
+In the [container deploy](#in-a-container) this host has no herdr: jobs run only on the machines you
+add.
+
+### An ssh target
+
+1. **On the target**: install herdr at `~/.local/bin/herdr` and the `claude` CLI, and sign `claude`
+   in (run `claude` once). Keep its services running after you log out:
+   `sudo loginctl enable-linger "$USER"`.
+2. **On the hopper's host**: give the target a `Host` alias in `~/.ssh/config`, then connect once by
+   hand and check the host key it shows. The hopper trusts only the host key that
+   `~/.ssh/known_hosts` holds for it; it never learns one from a connection.
+
+   ```sh
+   ssh my-desktop true        # must work without a password prompt
+   ```
+
+3. Prepare the target. This makes the hopper's own ssh key when it is missing, lets that key in on
+   the target (restricted: no forwarding, no pty), installs and starts the target's herdr
+   session, and prints the `plugins.yaml` entry:
+
+   ```sh
+   export JOB_HOPPER_SSH_KEY_FILE="$HOME/.config/job-hopper/ssh_key"
+   bash ~/.local/lib/job-hopper/scripts/attach-machine.sh my-desktop 2     # 2 lanes
+   ```
+
+4. Give the daemon the key, once for every ssh target, and restart it:
+
+   ```sh
+   echo "JOB_HOPPER_SSH_KEY_FILE=$HOME/.config/job-hopper/ssh_key" >> ~/.config/job-hopper/daemon.env
+   systemctl --user restart job-hopper
+   ```
+
+5. Attach it: in the UI, Machines → Add machine, pick `my-desktop`. Or paste the printed entry under
+   `attachedMachines:` with `job-hopper config edit plugins.yaml`. No restart.
+6. Make the jobs' working directories exist there, at the same paths (`repoPaths`, `defaultCwd`):
+   a job whose directory is missing fails.
+
+Within 30 s the Machines view shows it online.
+
+### A client target
+
+The target runs the hopper client, which dials the hopper over ssh and keeps the tunnel up; the
+hopper never connects to it after setup. The hopper loads each new client release onto it by itself.
+
+1. **On the target**: Node.js ≥ 24, herdr, the `claude` CLI signed in, and
+   `sudo loginctl enable-linger "$USER"`.
+2. **On the hopper's host**: sshd runs, and the target can reach it (`<user>@<hopper-host>`, port 22,
+   or `JOB_HOPPER_CLIENT_HOPPER_PORT`). You can ssh to the target now, as in step 2 of the ssh target.
+3. Install the client there. `laptop` is the machine's name in the hopper, `my-laptop` how you reach
+   it now, `me@hopper-host` how it reaches the hopper:
+
+   ```sh
+   bash ~/.local/lib/job-hopper/scripts/attach-client.sh laptop my-laptop me@hopper-host 1
+   ```
+
+4. Add the line it prints to `~/.config/job-hopper/daemon.env` (`CLIENT_TOKEN_LAPTOP_FILE=…`), then
+   `systemctl --user restart job-hopper`.
+5. Paste the printed entry under `attachedMachines:` with `job-hopper config edit plugins.yaml` (the
+   UI's Add machine attaches ssh targets only).
+6. Make the jobs' working directories exist there, as for an ssh target.
+
+### A container target
+
+A container on the hopper's host with no network, a read-only root and no capabilities. No agent
+runs in it: the `command` executor runs an issue's first fenced code block (else its whole body) with
+`sh -c` and reports the exit code and output.
+
+1. Start the container (`alpine:latest`; another image: `JOB_HOPPER_TARGET_IMAGE`):
+
+   ```sh
+   bash ~/.local/lib/job-hopper/scripts/container-target.sh box 1      # 1 lane
+   ```
+
+2. Start the docker socket proxy, naming every container target (run it again when you add one):
+
+   ```sh
+   bash ~/.local/lib/job-hopper/scripts/docker-proxy.sh box
+   ```
+
+3. Add the line it prints (`JOB_HOPPER_DOCKER_HOST=unix://…`) to `~/.config/job-hopper/daemon.env`.
+4. `job-hopper config edit plugins.yaml`: add the `command` executor, the container, keep commands
+   off this host, and send labelled issues to the container:
+
+   ```yaml
+   executors:
+     - { name: test, plugin: test }
+     - { name: herdr-claude, plugin: herdr-claude }
+     - { name: command, plugin: command }
+   machines: { name: local, plugin: local, options: { lanes: 4, executors: [test, herdr-claude] } }
+   attachedMachines:
+     - { name: box, docker: box, lanes: 1, executors: [command] }
+   routing:
+     - { name: commands to the box, match: { label: on-box }, set: { machine: box, executor: command } }
+   ```
+
+5. `systemctl --user restart job-hopper` (a new executor needs a restart).
+
+An issue labelled `hopper` and `on-box` now runs its script in the container.
+
+### Send jobs to one machine
+
+A routing rule sets a job's machine, executor or priority when the job comes in; the first rule that
+matches wins. Edit them in the UI's Routing view, or under `routing:` in `plugins.yaml`:
+
+```yaml
+routing:
+  - { name: app work on the desktop, match: { repo: "your-org/app-*" }, set: { machine: my-desktop } }
+  - { name: by label, match: { label: on-laptop }, set: { machine: laptop } }
+```
+
+A job pinned to a machine that is offline waits for it. How each kind works and why:
+`docs/design.md` "Attached machines", "Container targets", "Client targets", "Target
+authentication".
 
 ## Use it
 
