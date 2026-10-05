@@ -405,7 +405,7 @@ export interface SourceStatus {
 
 // ---- Attached machines: src/domain/machines.ts (re-exported here) ------------------------
 
-export type { AttachedMachine, ClientMachine, ContainerMachine, MachineEdit, SshMachine, MachineEditOutcome, MachinesConfig } from './machines.ts';
+export type { AttachedMachine, ClientMachine, ContainerMachine, MachineDefaults, MachineDefaultsEdit, MachineEdit, SshMachine, MachineEditOutcome, MachinesConfig } from './machines.ts';
 
 // ---- Routing rules: src/domain/routing.ts; plugins: src/domain/plugins.ts (re-exported here, one vocabulary) ----
 

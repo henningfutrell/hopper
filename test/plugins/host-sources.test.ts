@@ -245,7 +245,7 @@ describe('attached machines in the host (issues #18, #74)', () => {
     expect(host.targets()).toEqual([]);
     documents.set(PLUGINS, 'version: 1\nmachines:\n  - { name: local, plugin: local }\n  - { name: laptop, plugin: ssh, options: { ssh: laptop, lanes: 2, herdrBin: /h/herdr } }\n');
     await host.reload();
-    const laptop = { name: 'laptop', ssh: 'laptop', lanes: 2, herdrBin: '/h/herdr', session: 'hopper', executors: ['herdr-claude'] };
+    const laptop = { name: 'laptop', ssh: 'laptop', lanes: 2, herdr: true, herdrBin: '/h/herdr', session: 'hopper', executors: ['herdr-claude'] };
     expect(host.targets()).toEqual([laptop]);
     expect(t.asked).toEqual([laptop]);
     expect((await host.machines().list()).map((m) => `${m.id}:${m.maxLanes}`)).toEqual(['local:4', 'laptop:2']);

@@ -1,8 +1,9 @@
 // Machines: what each can run, its lanes, and the usage budgets that cap them. Logged in, attach a
 // machine over ssh (POST /ui/api/machines), edit or remove any machine — each a machine-source
 // instance, edited like every plugin instance (POST /ui/api/plugins, issue #74) — each applied by the
-// daemon without a restart (design.md "Machines from the UI", issue #18).
-import { Pencil, Plus, Server, Trash2 } from 'lucide-react';
+// daemon without a restart (design.md "Machines from the UI", issue #18). The machine defaults — what a
+// new machine starts with — are edited here too (POST /ui/api/machines/defaults, issue #142).
+import { Pencil, Plus, Server, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Confirm } from '@/components/confirm';
@@ -14,9 +15,9 @@ import { useNow } from '@/hooks/use-now';
 import { get, post, SessionRejected } from '@/lib/api';
 import { clientReleaseText, kindOf, type MachineKind } from '@/model/machines';
 import { orderReadings, readingKey } from '@/model/usage';
-import type { MachineEdit, MachinesConfig, MachineView, PluginsEdit } from '@/model/wire';
+import type { MachineDefaultsEdit, MachineEdit, MachinesConfig, MachineView, PluginsEdit } from '@/model/wire';
 import { refreshLive, useHopper } from '@/store';
-import { AddMachineForm, EditMachineForm, LocalLanesForm } from './machine-forms';
+import { AddMachineForm, EditMachineForm, LocalLanesForm, MachineDefaultsForm } from './machine-forms';
 import { useCanAdmin } from '@/store/selectors';
 
 const REFRESH_MS = 15000;
@@ -100,8 +101,9 @@ export function Machines() {
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const [defaulting, setDefaulting] = useState(false);
   const open = useRef(false);
-  useEffect(() => { open.current = adding || editing !== null; }, [adding, editing]);
+  useEffect(() => { open.current = adding || defaulting || editing !== null; }, [adding, defaulting, editing]);
 
   const load = useCallback(() => fetchConfig().then(setConfig, (e: Error) => { toast.error(e.message); }), []);
   useEffect(() => {
@@ -131,12 +133,25 @@ export function Machines() {
     attach: (e, done) => run(async () => setConfig(await post<MachinesConfig>('/ui/api/machines', e)), done),
     edit: (e, done) => run(async () => { await post('/ui/api/plugins', e); await load(); }, done),
   };
+  const saveDefaults = (e: MachineDefaultsEdit, done: string) => run(async () => setConfig(await post<MachinesConfig>('/ui/api/machines/defaults', e)), done);
+  const d = config?.defaults;
 
   return (
     <div className="space-y-3">
-      {authed && config && (adding
-        ? <Panel title="Attach a machine" icon={Plus}><AddMachineForm config={config} busy={busy} send={ctx.attach} onDone={() => setAdding(false)} /></Panel>
-        : <div className="flex justify-end"><Button size="lg" onClick={() => setAdding(true)}><Plus />Add machine</Button></div>)}
+      {authed && config && d && (defaulting
+        ? <Panel title="Machine defaults" icon={SlidersHorizontal}><MachineDefaultsForm config={config} busy={busy} send={saveDefaults} onDone={() => setDefaulting(false)} /></Panel>
+        : !adding && (
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <span className="text-xs text-muted-foreground">
+              a new machine: {d.lanes} lane{d.lanes === 1 ? '' : 's'}, runs {d.executors.length ? d.executors.join(', ') : 'nothing'}
+            </span>
+            <Button size="lg" variant="outline" onClick={() => setDefaulting(true)}><SlidersHorizontal />Defaults</Button>
+            <Button size="lg" onClick={() => setAdding(true)}><Plus />Add machine</Button>
+          </div>
+        ))}
+      {authed && config && adding && !defaulting && (
+        <Panel title="Attach a machine" icon={Plus}><AddMachineForm config={config} busy={busy} send={ctx.attach} onDone={() => setAdding(false)} /></Panel>
+      )}
       {config?.error && <div className="rounded-md border border-bad/40 p-3 text-xs break-words text-bad">{config.error}</div>}
       {machines.length
         ? <div className="grid gap-3 lg:grid-cols-2">{machines.map((m) => <MachineCard key={m.id} m={m} ctx={ctx} />)}</div>

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* global process */
+/* global process, setInterval */
 // A stand-in `cursor-agent` (Cursor's CLI agent) in print mode. Appends its argv, cwd and the
 // environment the hopper sets to cursor-calls.jsonl in $FAKE_CURSOR_DIR, then answers as
 // `cursor-agent -p --output-format json` does: one JSON result object. The reply is

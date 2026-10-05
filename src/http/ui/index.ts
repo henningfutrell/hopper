@@ -78,8 +78,10 @@ const machineExecutors = z.array(z.string().min(1));
 // Attach an ssh target (issue #74: editing and removing a machine is a plugins edit). ssh is checked
 // against the detected ssh targets; herdrBin, session and hostKey are never accepted (strict).
 export const machinesEditBody = z.strictObject({
-  name: machineName, ssh: z.string().min(1), lanes: machineLanes, executors: machineExecutors.optional(), label: z.string().trim().min(1).optional(), version: z.string().min(1),
+  name: machineName, ssh: z.string().min(1), lanes: machineLanes.optional(), executors: machineExecutors.optional(), label: z.string().trim().min(1).optional(), version: z.string().min(1),
 });
+// The machine defaults (issue #142): what a machine attached from the UI starts with.
+export const machineDefaultsBody = z.strictObject({ lanes: machineLanes, executors: machineExecutors, version: z.string().min(1) });
 // Self-update (issue #44): check now, apply the available update, or set the channel / auto-update.
 export const updateBody = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('check') }),
@@ -196,6 +198,13 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   // in plugins.yaml `machines:`; applies without a restart. Answers the new GET /api/machines/config.
   app.post('/ui/api/machines', admin, async (req) => {
     const r = await o.plugins.editMachines(parseWith(machinesEditBody, req.body));
+    if (!r.ok) throw new HttpError(EDIT_STATUS[r.code], r.error);
+    return r.config;
+  });
+
+  // Issue #142: plugins.yaml `machineDefaults:`, what a machine attached here starts with. Answers the new GET /api/machines/config.
+  app.post('/ui/api/machines/defaults', admin, async (req) => {
+    const r = await o.plugins.editMachineDefaults(parseWith(machineDefaultsBody, req.body));
     if (!r.ok) throw new HttpError(EDIT_STATUS[r.code], r.error);
     return r.config;
   });

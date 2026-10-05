@@ -90,7 +90,7 @@ describe('GET /api/machines/config', () => {
     const report = (await a.api('GET', '/api/plugins')).body as PluginsReport;
     expect(report.instances.filter((i) => i.role === 'machine-source').map((i) => `${i.instance.name}:${i.instance.plugin}`)).toEqual(['local:local', 'desk:ssh']);
     const ssh = report.plugins.find((p) => p.id === 'ssh')!.options as { properties: Record<string, { commandBearing?: boolean }> };
-    expect(Object.entries(ssh.properties).filter(([, p]) => p.commandBearing).map(([k]) => k).sort()).toEqual(['herdrBin', 'hostKey', 'session', 'ssh']);
+    expect(Object.entries(ssh.properties).filter(([, p]) => p.commandBearing).map(([k]) => k).sort()).toEqual(['herdr', 'herdrBin', 'hostKey', 'session', 'ssh']);
   });
 });
 

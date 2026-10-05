@@ -230,7 +230,7 @@ that is online, runs the job's executor, and has the most room left — unless a
 | Kind | Use it for | The hopper reaches it by | It needs |
 |---|---|---|---|
 | [this host](#this-host) | the start: jobs on the hopper's own machine | nothing to reach | herdr and `claude`; set up by the install |
-| [ssh target](#an-ssh-target) | another computer the hopper can always ssh to (a desktop, a server) | ssh, with its own key | herdr, `claude`, sshd |
+| [ssh target](#an-ssh-target) | another computer the hopper can always ssh to (a desktop, a server, WSL) | ssh, with its own key | sshd, and herdr with `claude` or [Cursor's agent](#cursors-agent) |
 | [client target](#a-client-target) | a computer the hopper cannot always reach (a laptop that moves networks): it dials in | the client's tunnel to the hopper | Node.js ≥ 24, herdr, `claude`; sshd on the hopper's host |
 | [container target](#a-container-target) | plain shell commands, sandboxed: no network, no agent | `docker exec`, through a socket proxy | docker on the hopper's host |
 
@@ -238,6 +238,10 @@ Every command below runs on the hopper's host, as the user the daemon runs as, f
 (`~/.local/lib/hopper`). Each script prints what to add next. The UI's Machines view shows each
 machine online or offline; the daemon's log says why one is offline
 (`journalctl --user -u hopper`).
+
+**Machine defaults.** A machine added in the Machines view starts with the machine defaults: its
+lanes and the executors it runs (one lane and `herdr-claude` until you change them). Change them
+there with **Defaults**; they apply to machines added afterwards, never to ones already there.
 
 ### This host
 
@@ -347,6 +351,29 @@ runs in it: the `command` executor runs an issue's first fenced code block (else
 5. `systemctl --user restart hopper` (a new executor needs a restart).
 
 An issue labelled `hopper` and `on-box` now runs its script in the container.
+
+### Cursor's agent
+
+The `cursor-agent` executor runs a job in Cursor's agent (the Cursor CLI, `cursor-agent`) instead of
+Claude Code: one print-mode run per turn, in the job's working directory, on this host or an ssh
+target. A question it asks is answered in the same Cursor chat. It needs no herdr, and nothing
+of it shows in a herdr pane.
+
+1. **On each machine that runs it**: install the Cursor CLI
+   (https://cursor.com/docs/cli/installation) and sign it in once: `cursor-agent login`, or set
+   `CURSOR_API_KEY` in that machine's environment. The hopper holds no Cursor credential.
+2. `hopper config edit plugins.yaml`: add the executor, then `systemctl --user restart hopper`:
+
+   ```yaml
+   executors:
+     - { name: herdr-claude, plugin: herdr-claude }
+     - { name: cursor, plugin: cursor-agent }
+   ```
+
+3. Attach the machine in the Machines view with only `cursor` ticked: a machine whose executors
+   need no herdr is checked over ssh alone, so it needs no herdr. To make it the usual choice, tick
+   `cursor` under **Defaults**.
+4. Send jobs to it with a routing rule, e.g. `set: { machine: wsl, executor: cursor }`.
 
 ### Send jobs to one machine
 

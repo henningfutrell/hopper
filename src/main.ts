@@ -17,7 +17,7 @@ import { dockerHost } from './executors/docker.ts';
 import { hopperSshAuth, pinHostKeys } from './executors/ssh.ts';
 import { createServer } from './http/index.ts';
 import { AUTH, createSignIn, loadAuthDocument, type AuthConfig } from './auth/index.ts';
-import { createClientReleaseKeeper, createTargetPool, probeContainer, probeHerdrOverSsh, type MachineProbe } from './machines/index.ts';
+import { createClientReleaseKeeper, createTargetPool, probeContainer, probeHerdrOverSsh, probeSsh, type MachineProbe, type ResolvedTarget } from './machines/index.ts';
 import { readRelease } from './client/release.ts';
 import { BUILTIN_PLUGINS } from './plugins/builtin.ts';
 import { herdrClaudePlugin } from './plugins/executor/herdr-claude/index.ts';
@@ -85,7 +85,7 @@ export interface AppSeams {
   /** Replaces the probe of every attached machine: online = its herdr session (ssh) or its container (docker) is running. */
   machineProbe?: (machine: AttachedMachine) => Promise<MachineProbe>;
   /** Replaces resolving a new ssh target when the UI adds a machine (issues #18, #59): its herdr path and pinned host key, or a rejection with the reason. */
-  resolveTarget?: (ssh: string) => Promise<{ herdrBin: string; hostKey: string }>;
+  resolveTarget?: (ssh: string, o: { herdr: boolean }) => Promise<ResolvedTarget>;
   /** The built UI bundle; default UI_DIR. */
   uiDir?: string;
   /** Self-update: the install dir (default APP_DIR), the build (default install.sh build-only mode), the restart (default exit or respawn). */
@@ -136,7 +136,7 @@ function splitSources(built: BuiltJobSource[]): { running: RunningSource[]; fixe
 function seamPlugins(router: Router, host: PluginsView): PluginsView {
   return {
     routerStatus: () => ({ name: router.name, plugin: router.name, fallback: false }), report: host.report, edit: host.edit,
-    machinesConfig: host.machinesConfig, editMachines: host.editMachines,
+    machinesConfig: host.machinesConfig, editMachines: host.editMachines, editMachineDefaults: host.editMachineDefaults,
     routing: host.routing, editRouting: host.editRouting,
   };
 }
@@ -181,7 +181,9 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
         ? keepClient(clientTransport(m.name, m.client.tokenEnv), () => jobsOnMachine(m.name).length > 0)
         : ('docker' in m
           ? probeContainer({ container: m.docker, dockerHost: () => dockerHost(secret) })
-          : probeHerdrOverSsh({ target: m.ssh, herdrBin: m.herdrBin, session: m.session, controlDir: join(dataDir, 'ssh'), auth: sshAuth })
+          : m.herdr
+            ? probeHerdrOverSsh({ target: m.ssh, herdrBin: m.herdrBin, session: m.session, controlDir: join(dataDir, 'ssh'), auth: sshAuth })
+            : probeSsh({ target: m.ssh, controlDir: join(dataDir, 'ssh'), auth: sshAuth })
         ).then((online) => ({ online })))),
   });
   const host = createPluginHost({

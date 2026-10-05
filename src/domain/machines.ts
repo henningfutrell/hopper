@@ -23,7 +23,12 @@ interface AttachedBase {
 export interface SshMachine extends AttachedBase {
   /** The ssh destination: a `~/.ssh/config` alias or `user@host`. */
   ssh: string;
-  /** Its herdr session (never `default`) and herdr binary, as the remote login shell finds it. */
+  /**
+   * It runs herdr: online while its herdr session answers, and herdr-claude runs there. False (issue
+   * #142): online while it answers over ssh; only executors that need no herdr run there (cursor-agent, command).
+   */
+  herdr: boolean;
+  /** Its herdr session (never `default`) and herdr binary, as the remote login shell finds it. Unused without `herdr`. */
   session: string;
   herdrBin: string;
   /**
@@ -52,11 +57,21 @@ export interface ClientMachine extends AttachedBase {
 /**
  * POST /ui/api/machines (design.md "Machines from the UI", issues #18, #74): attach an ssh target as
  * a new `ssh` instance in plugins.yaml `machines:`. `ssh` must be a detected ssh target; `herdrBin`
- * and `hostKey` are resolved by the daemon and `session` stays the default — none is ever sent. A
- * machine is edited and removed like any plugin instance (POST /ui/api/plugins). `version` is
- * `MachinesConfig.version`.
+ * and `hostKey` are resolved by the daemon and `session` stays the default — none is ever sent; it
+ * runs herdr only when one of its executors needs it (issue #142). `lanes` and `executors` left out
+ * are the machine defaults. A machine is edited and removed like any plugin instance (POST
+ * /ui/api/plugins). `version` is `MachinesConfig.version`.
  */
-export interface MachineEdit { name: string; ssh: string; lanes: number; executors?: string[]; label?: string; version: string }
+export interface MachineEdit { name: string; ssh: string; lanes?: number; executors?: string[]; label?: string; version: string }
+
+/**
+ * The **machine defaults** (issue #142): what a machine attached from the UI starts with — plugins.yaml
+ * `machineDefaults:`; a field left out is the `ssh` plugin's own default (one lane, herdr-claude).
+ */
+export interface MachineDefaults { lanes: number; executors: string[] }
+
+/** POST /ui/api/machines/defaults: the whole `machineDefaults:` section, against `MachinesConfig.version`. */
+export interface MachineDefaultsEdit extends MachineDefaults { version: string }
 
 /** GET /api/machines/config: what the Machines view edits. */
 export interface MachinesConfig {
@@ -70,6 +85,8 @@ export interface MachinesConfig {
   machines: InstanceSpec[];
   /** The configured executor instances: what an attached machine may run. */
   executors: string[];
+  /** What a machine attached from the UI starts with. */
+  defaults: MachineDefaults;
   /** The detected ssh targets: the Host aliases of ~/.ssh/config; `notes` say what could not be read. */
   ssh: { targets: string[]; notes: string[] };
 }

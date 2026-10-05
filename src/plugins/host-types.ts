@@ -3,7 +3,7 @@
 import type { ConfigDocuments } from '../domain/ports.ts';
 import type { Clock, EscalationLevel, MachineSource, Notifier, NotifierEvents, UsageSource } from '../domain/ports.ts';
 import type {
-  AttachedMachine, InstanceSpec, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit, PluginsEditOutcome, PluginsReport, RouterMode, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule,
+  AttachedMachine, InstanceSpec, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit, PluginsEditOutcome, PluginsReport, RouterMode, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule,
 } from '../domain/types.ts';
 import type { AttachedEditOptions } from './attached-slot.ts';
 import type { BuiltExecutor } from './executor-slot.ts';
@@ -74,6 +74,8 @@ export interface PluginHost {
   machinesConfig(): MachinesConfig;
   /** POST /ui/api/machines: attach an ssh target; resolves once plugins.yaml is reloaded. */
   editMachines(e: MachineEdit): Promise<MachineEditOutcome>;
+  /** POST /ui/api/machines/defaults (issue #142): plugins.yaml `machineDefaults:`. */
+  editMachineDefaults(e: MachineDefaultsEdit): Promise<MachineEditOutcome>;
   report(): PluginsReport;
   /** plugins.yaml `routing:` now (none when absent; the last good list on an invalid file). */
   routingRules(): RoutingRule[];

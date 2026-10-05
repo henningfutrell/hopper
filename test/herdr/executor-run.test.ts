@@ -103,7 +103,7 @@ describe('herdr-claude executor: run', () => {
     const { herdr, executor } = setup({ turns: [DONE] });
     await executor.run(contextFor(jobWith({ prompt: 'go', cwd: '/w/repo' })).ctx);
     const sent = herdr.prompts[0]!.text;
-    expect(sent).toContain("[job-hopper work tree] This job's work tree is /w/repo.");
+    expect(sent).toContain("[hopper work tree] This job's work tree is /w/repo.");
     expect(sent).toContain('Never make or work in a copy of the code outside it, under /tmp or anywhere else.');
   });
 

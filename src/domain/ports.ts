@@ -2,7 +2,7 @@
 // these. Adapters live in src/{executors,machines,usage,plugins,store,webhooks}.
 
 import type {
-  Advice, DomainEvent, Decision, EventType, ExecutorUnavailable, Job, JobId, JobSpec, JobStatus, Lane, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit, PluginsEditOutcome, PluginsReport, RouterMode, RouterStatus,
+  Advice, DomainEvent, Decision, EventType, ExecutorUnavailable, Job, JobId, JobSpec, JobStatus, Lane, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit, PluginsEditOutcome, PluginsReport, RouterMode, RouterStatus,
   RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule,
   JobSourceRef, LaneId, MachineId, MachineSnapshot, NewEvent, Question, QuestionAttempt, QuestionStatus,
   Identity, SourceStatus, UiRole, UsageReading, UsageSourceState, WebhookDelivery, WebhookSubscription,
@@ -166,6 +166,8 @@ export interface PluginsView {
   machinesConfig(): MachinesConfig;
   /** Attach an ssh target as an `ssh` instance in plugins.yaml `machines:`; applied (live) before it resolves. */
   editMachines(e: MachineEdit): Promise<MachineEditOutcome>;
+  /** POST /ui/api/machines/defaults (issue #142): plugins.yaml `machineDefaults:`. */
+  editMachineDefaults(e: MachineDefaultsEdit): Promise<MachineEditOutcome>;
   /** GET /api/routing: plugins.yaml `routing:` and what a rule may name. */
   routing(): RoutingReport;
   /** POST /ui/api/routing: the whole ordered list; applied before it resolves. */
