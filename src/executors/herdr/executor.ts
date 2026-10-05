@@ -8,7 +8,7 @@ import { RECENT_LINES, abortReason, watchTurn } from './monitor.ts';
 import type { Interrupt, Sleep } from './monitor.ts';
 import { resolvePayload, validatePayload } from './payload.ts';
 import type { ClaudeJobPayload } from './payload.ts';
-import { FOOTER_ANCHOR, PROTOCOL_FOOTER, typedAfterQuestion } from './screen.ts';
+import { FOOTER_ANCHOR, protocolFooter, typedAfterQuestion } from './screen.ts';
 import { openPane, startClaude } from './start.ts';
 import type { PaneState, StartDeps, TurnAnchor } from './start.ts';
 
@@ -196,7 +196,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
           return failed;
         }
         if (ctx.signal.aborted) return { interrupt: abortReason(ctx.signal) };
-        return send(ctx, state, p, `${p.prompt}\n\n${PROTOCOL_FOOTER}`, FOOTER_ANCHOR);
+        return send(ctx, state, p, `${p.prompt}\n\n${protocolFooter(p.cwd)}`, FOOTER_ANCHOR);
       });
     },
 

@@ -447,10 +447,33 @@ dialog names the job's cwd** and `JOB_HOPPER_TRUST_WORKDIR` is true → send `do
 log it via progress message `trusted workdir <cwd>`, wait for `idle`. Anything else blocking
 startup → `failed` with the screen text.
 
+**Work tree** (issue #121). A job's **work tree** is its cwd: all of its coding work happens
+under it — clones, git worktrees, builds, scratch and temporary files — never in a copy
+outside it (`/tmp` or anywhere else). Opening the pane there is not enough on its own: Claude
+Code's scratchpad lives under `/tmp` by default and its system prompt sends temp files there,
+which is how a job drifted out of its tree. So the hopper directs it three ways:
+
+- **Environment.** The tab gets `CLAUDE_CODE_TMPDIR` and `TMPDIR` = `<cwd>/.hopper-scratch`,
+  the job's **scratch dir**: Claude's scratchpad and every tool's temp files land inside the
+  tree. The payload cannot move them.
+- **The scratch dir ignores itself.** Before `agent start`, the pane's own shell runs
+  `mkdir -p <scratch> && printf '*\n' > <scratch>/.gitignore && printf 'hopper-scratch-%s\n' ready`
+  (`pane run`) — in the pane, so on whichever machine the work tree is. A fresh shell drops what
+  is typed before its prompt (seen live), so the executor waits up to 1000 ms for
+  `hopper-scratch-ready` in the pane's output (`pane wait-output`) and runs the command again,
+  until the 60000 ms start deadline, then fails the job (`pane … never ran the scratch dir
+  command`). Nothing is written to a repository's own `.gitignore`.
+- **The prompt says so.** The footer's work-tree line names the cwd and the scratch dir, and
+  tells the job to ask rather than work in a tree outside it.
+
+Running or installing what a job built, and reading files elsewhere, stays allowed: the rule is
+about where the work is done, not what is touched.
+
 **Prompt, once.** `agent prompt <agent> <prompt + protocol footer>` (no `--wait`). Footer:
 
 ```
 [job-hopper publishing rule] Any text you send to GitHub (commit messages, branch names, pull request titles and bodies, issue text) describes the change and how it was verified, in neutral terms. Never quote or name the repository owner or any other person. Never include personal or machine details: email addresses, people's names, IP addresses, hostnames, tailnet names, home directory paths, usernames, machine or pane ids, port numbers of local machines, codes, tokens or secrets.
+[job-hopper work tree] This job's work tree is <cwd>. Do all of the job's work inside it: clones, git worktrees, edits, builds, test runs, scratch and temporary files go under it. Never make or work in a copy of the code outside it, under /tmp or anywhere else. Temporary files go in <cwd>/.hopper-scratch: git ignores it, and TMPDIR and your scratchpad point there. Running or installing what you built, and reading files elsewhere, is fine. If the job seems to need a work tree outside this one, ask instead.
 [job-hopper parallel work] Other jobs run at the same time as this one, possibly in the same repos. Nothing orders or holds jobs for each other: no job waits for another.
 If your work overlaps another job's, sort it out yourself. Either state the assumptions you made about the other work, or make the needed fix in the other project and annotate it with which way the dependency runs (which work depends on which).
 [job-hopper protocol] When you need an answer from the user, ask exactly one question and end your message with a line containing only: JOB_HOPPER_QUESTION
@@ -458,8 +481,8 @@ When the job is completely finished, end your final message with a line containi
 If the job cannot be done, end with a line containing only: JOB_HOPPER_FAILED followed by the reason.
 ```
 
-The publishing rule leads the footer so every job gets it, whatever its source; the last
-line stays the turn anchor. It names no comment path: jobs never write to issues.
+The publishing rule leads the footer so every job gets it, whatever its source; the work-tree
+line follows with the job's own cwd (`protocolFooter(cwd)`); the last line stays the turn anchor. It names no comment path: jobs never write to issues.
 
 **Monitor** every `JOB_HOPPER_HERDR_POLL_MS` (1000): `agent get` (status, `state_change_seq`)
 and `agent read --source recent-unwrapped --lines 200`.
@@ -2617,7 +2640,7 @@ Meaning: which agent runs a job is configuration, not code. `herdr agent start -
 pi, claude, codex, gemini, cursor, devin, agy, cline, omp, mastracode, opencode, copilot, kimi,
 kiro, droid, amp, grok, hermes, kilo, qodercli, qwen, maki (`herdr agent start --help`).
 Today `src/executors/herdr/cli-client.ts` hardcodes `--kind claude`; `screen.ts` parses the
-Claude Code TUI (turn anchor, gutter, `JOB_HOPPER_*` markers) and `PROTOCOL_FOOTER` assumes
+Claude Code TUI (turn anchor, gutter, `JOB_HOPPER_*` markers) and `protocolFooter` assumes
 Claude echoes it; `src/config.ts` has `EXECUTOR_NAMES = ['test', 'herdr-claude']`; the executor
 is named `herdr-claude`.
 
