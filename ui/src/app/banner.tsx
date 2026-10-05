@@ -2,18 +2,24 @@
 // password form while password sign-in is on, continuing without sign-in while `none` is on, and,
 // while local sign-in is on, the login code (the command on this machine, a device link or a pasted
 // code across the LAN). Design: design.md "Sign-in: none, password, local, OIDC and SAML", "Reaching
-// the UI across the LAN".
-import { Copy, Lock, LogIn } from 'lucide-react';
+// the UI across the LAN". With several users (issue #167) a logged-out page shows only these, as the
+// sign-in screen: no user's work until someone signs in.
+import { Copy, Lock, LogIn, Users } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { LOGIN_CMD } from '@/lib/api';
 import { beginSignIn, onLan, signInWithPassword, signInWithoutCredential, submitLogin } from '@/lib/login';
+import type { SessionView } from '@/model/wire';
 import { checkSession, useHopper } from '@/store';
 
-/** Ends a JSON sign-in: toast its error, or read the new session. */
-const finish = async (error: string | null) => { if (error) toast.error(error); else await checkSession(); };
+/** Ends a JSON sign-in: toast its error, or read the new session (the sign-in screen read nothing yet: load the page). */
+const finish = async (error: string | null) => {
+  if (error) toast.error(error);
+  else if (useHopper.getState().signIn?.required) location.reload();
+  else await checkSession();
+};
 
 function PasswordSignIn() {
   const [username, setUsername] = useState('');
@@ -50,15 +56,12 @@ function LoginCode() {
   );
 }
 
-export function ReadOnlyBanner() {
-  const authed = useHopper((s) => s.authed);
-  const signIn = useHopper((s) => s.signIn);
-  if (authed || !signIn) return null;
+/** Every way auth.yaml offers to sign in, as buttons and forms. */
+function SignInOptions({ signIn, lead }: { signIn: SessionView['signIn']; lead: string }) {
   const elsewhere = signIn.providers.length > 0 && location.origin !== signIn.origin;
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed px-3 py-2 text-xs text-muted-foreground">
-      <Lock className="size-3.5" />
-      Read-only. To act, sign in{elsewhere && <> at <a className="text-foreground underline" href={signIn.origin}>{signIn.origin}</a></>}:
+    <>
+      {lead}{elsewhere && <> at <a className="text-foreground underline" href={signIn.origin}>{signIn.origin}</a></>}:
       {signIn.providers.map((p) => (
         <Button key={p.name} size="xs" variant="outline" onClick={() => beginSignIn(p.name, signIn.origin)}><LogIn />Sign in with {p.label}</Button>
       ))}
@@ -66,6 +69,29 @@ export function ReadOnlyBanner() {
       {signIn.none && <Button size="xs" variant="outline" onClick={() => void signInWithoutCredential().then(finish)}><LogIn />Continue as {signIn.none}</Button>}
       {signIn.local && <LoginCode />}
       {!signIn.local && !signIn.password && !signIn.none && signIn.providers.length === 0 && <>no way to sign in is configured (auth.yaml).</>}
+    </>
+  );
+}
+
+export function ReadOnlyBanner() {
+  const authed = useHopper((s) => s.authed);
+  const signIn = useHopper((s) => s.signIn);
+  if (authed || !signIn) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed px-3 py-2 text-xs text-muted-foreground">
+      <Lock className="size-3.5" />Read-only. <SignInOptions signIn={signIn} lead="To act, sign in" />
+    </div>
+  );
+}
+
+/** Several users and nobody signed in: only the ways to sign in, no user's work. */
+export function SignInRequired() {
+  const signIn = useHopper((s) => s.signIn);
+  if (!signIn) return null;
+  return (
+    <div className="mx-auto mt-8 max-w-2xl space-y-3 rounded-lg border p-5">
+      <div className="flex items-center gap-2 font-medium"><Users className="size-4" />Several people use this hopper. Sign in to see your work.</div>
+      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"><SignInOptions signIn={signIn} lead="Sign in" /></div>
     </div>
   );
 }

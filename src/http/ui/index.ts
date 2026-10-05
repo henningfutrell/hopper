@@ -14,7 +14,7 @@ import { HttpError, parseWith } from '../errors.ts';
 import { lanHosts, uiOrigins, type Lan } from '../reach.ts';
 import { writeRules } from '../../questions/index.ts';
 import { routerView } from '../state.ts';
-import type { TenantParts, Tenants } from '../tenants.ts';
+import { userIdOf, type TenantParts, type Tenants } from '../tenants.ts';
 import { webhooksView } from '../webhooks.ts';
 import { SESSION_HEADER, mutationRefusal } from './guard.ts';
 import { loginCodeLive, mintLoginCode } from './login-code.ts';
@@ -110,8 +110,13 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
 
   app.get('/ui/api/session', async (req): Promise<SessionView> => {
     const s = sessionOf(req);
-    const offer = { local: signIn.local, none: signIn.none, password: signIn.password, origin: signIn.origin(), providers: signIn.providers() };
-    return s ? { authenticated: true, expiresAt: s.expiresAt, user: sessionUser(s, userName(s)), signIn: offer } : { authenticated: false, signIn: offer };
+    const offer = {
+      local: signIn.local, none: signIn.none, password: signIn.password, origin: signIn.origin(), providers: signIn.providers(), required: o.instance.users.list().length > 1,
+    };
+    if (s) return { authenticated: true, expiresAt: s.expiresAt, user: sessionUser(s, userName(s)), signIn: offer };
+    const id = userIdOf(req);
+    const viewing = id === undefined ? undefined : o.instance.users.get(id);
+    return viewing ? { authenticated: false, viewing: { id: viewing.id, name: viewing.name }, signIn: offer } : { authenticated: false, signIn: offer };
   });
 
   registerSignInRoutes(app, {

@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- The top bar always shows who you are: your name and what you may do, or "not signed in" and whose work you see. When several people use the hopper, you sign in first and see only your own work.
 - See which version you run, and what it brought, at any time and on a phone too: tap the version at the top. Before, it showed only when an update was waiting.
 - A job that only reports how it is getting on no longer asks you a question or sends a question alert: it is told to carry on, and only real questions reach you.
 - Several people can now use one hopper, each with their own jobs, questions and settings, kept apart from everyone else's.

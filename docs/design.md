@@ -4342,6 +4342,17 @@ the operating system enforces runs their jobs on a machine of their own (an ssh,
 ### UI
 
 The top bar shows the session's user (its name; the identity that signed in on hover) and role.
+
+**Who you are, and sign-in first (issue #167).** The top bar says who you are at every width: the
+session's user and role, or `not signed in` and the user whose work the page shows. `GET
+/ui/api/session` answers, logged out, `viewing: { id, name }` — the user a read without a session
+reads (loopback: `owner`, or the one `x-hopper-user` names; absent on a LAN or public request) — and
+`signIn.required`, true while the instance has more than one user. Then a logged-out page reads no
+user's work: `load` stops after the session read (no `/api/` read, no event stream) and the page shows
+only the ways to sign in. A JSON sign-in (password, no sign-in) or a logout on that page reloads it.
+The API is unchanged: a loopback read without a session still reads `owner` (the residual risk above
+stands); the sign-in screen stops a browser from showing one user's work to another, not a process
+on the host.
 Settings gains a **Users** section (admin only, as `GET /api/users`): the list, and **Add user**, which
 shows the one-time login link the daemon answers to copy and hand over.
 

@@ -49,6 +49,8 @@ export interface SessionView {
   authenticated: boolean;
   expiresAt?: string;
   user?: SessionUser;
+  /** Logged out: the user a read without a session shows (loopback only: owner, or the one `x-hopper-user` names). */
+  viewing?: { id: string; name: string };
   signIn: {
     /** The one-time login code works. */
     local: boolean;
@@ -59,5 +61,7 @@ export interface SessionView {
     /** The origin a provider sign-in starts and ends on (HOPPER_PUBLIC_URL, else http://localhost:<port>). */
     origin: string;
     providers: SignInProviderView[];
+    /** Several users: the UI shows no user's work until someone signs in (issue #167). */
+    required: boolean;
   };
 }
