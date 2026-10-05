@@ -154,8 +154,9 @@ export function daemonHelp(): string {
 usage: node src/main.ts            (in the hopper directory; the container and the systemd unit run this)
        node src/main.ts --help
 
-It is configured by environment variables; everything else is config documents in its database
-(plugins.yaml, webhooks.yaml, rules.md, auth.yaml), edited in the UI or with hopper config edit.
+It is configured by environment variables; everything else is in its database: config documents
+(plugins.yaml, rules.md, auth.yaml), edited in the UI or with hopper config edit, and webhook
+subscriptions, edited in the UI.
 Secrets come from the environment too: NAME, or NAME_FILE naming a file holding it (docs/deploy.md).
 
 settings [default]:

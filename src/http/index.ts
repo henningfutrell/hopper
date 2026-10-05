@@ -35,8 +35,9 @@ export interface ServerOptions {
   plugins: PluginsView;
   /** The plugin store: GET /api/plugin-store, POST /ui/api/plugin-store. */
   pluginStore: PluginStoreView;
-  webhookConfig: WebhookConfigView;
-  /** UI edits of webhooks.yaml (POST /ui/api/webhooks). */
+  /** Why the runtime gives no secret for a webhook subscription's variable (GET /api/webhooks). */
+  secretProblem: SecretProblem;
+  /** UI edits of the webhook subscriptions (POST /ui/api/webhooks). */
   webhooksEditor: WebhooksEditor;
   /** Self-update: GET /api/update, POST /ui/api/update. */
   updater: Updater;
@@ -77,7 +78,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   staticRoutes(app, o.uiDir);
   registerUiRoutes(app, {
     engine: o.engine, questions: o.questions, sessions, signIn: o.signIn, plugins: o.plugins, pluginStore: o.pluginStore, port: o.port, lan: o.lan, clock: o.clock,
-    store: o.store, webhookConfig: o.webhookConfig, webhooksEditor: o.webhooksEditor, updater: o.updater,
+    store: o.store, secretProblem: o.secretProblem, webhooksEditor: o.webhooksEditor, updater: o.updater,
   });
   return app;
 }
