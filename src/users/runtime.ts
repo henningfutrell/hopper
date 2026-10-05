@@ -19,7 +19,6 @@ import type { HerdrClient } from '../executors/herdr/index.ts';
 import { clientSocket, type ClientTransport } from '../executors/client.ts';
 import { dockerHost } from '../executors/docker.ts';
 import { hopperSshAuth, pinHostKeys } from '../executors/ssh.ts';
-import type { SecretProblem } from '../http/webhooks.ts';
 import { createClientReleaseKeeper, createTargetPool, probeContainer, probeHerdrOverSsh, probeSsh, type MachineProbe, type ResolvedTarget } from '../machines/index.ts';
 import type { ClientRelease } from '../client/release.ts';
 import { BUILTIN_PLUGINS } from '../plugins/builtin.ts';
@@ -102,7 +101,8 @@ export interface UserRuntime {
   executors: ExecutorRegistry;
   ghLogin: GhLogin;
   webhooksEditor: WebhooksEditor;
-  secretProblem: SecretProblem;
+  /** Why the user's runtime gives no secret for a webhook subscription's variable; undefined when it does. */
+  secretProblem: (secretEnv: string) => string | undefined;
   routerMode(): string;
   /** Start the loops: engine and source sync (the dispatcher and notifiers run from creation). Once. */
   start(): Promise<void>;
