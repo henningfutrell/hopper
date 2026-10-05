@@ -219,7 +219,8 @@ Named so you know they are not missing steps. None is the path for a self-hosted
 
 When a job asks a question, it climbs the escalation levels: Opus answers what it can settle,
 Fable takes what Opus escalates, and what neither should decide waits for you in the UI's
-Questions view. The levels and their order are yours to change there.
+Questions view. The levels, their order and each one's model (picked from the models your `claude`
+offers) are yours to change in Settings → Question gates.
 
 ## Add machines
 
@@ -378,7 +379,7 @@ of it shows in a herdr pane.
 ### Send jobs to one machine
 
 A routing rule sets a job's machine, executor or priority when the job comes in; the first rule that
-matches wins. Edit them in the UI's Routing view, or under `routing:` in `plugins.yaml`:
+matches wins. Edit them in the UI's Settings → Routing, or under `routing:` in `plugins.yaml`:
 
 ```yaml
 routing:

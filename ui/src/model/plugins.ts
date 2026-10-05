@@ -1,7 +1,7 @@
 // The Plugins view's model (design.md "Settled in slice 7"): an instance's state as GET /api/plugins
-// reports it, the input each option gets, the whole options object one Save sends, and the name an
+// reports it, the input each option gets (a choice where the plugin lists the values, issue #151), the whole options object one Save sends, and the name an
 // added instance gets.
-import type { ListRole, PluginsReport, Role, SelectableRole } from '../../../src/domain/types.ts';
+import type { ListRole, OptionChoice, PluginsReport, Role, SelectableRole } from '../../../src/domain/types.ts';
 
 export interface OptionSchema {
   type?: string;
@@ -17,12 +17,14 @@ export interface OptionsSchema { type?: string; properties?: Record<string, Opti
 /** What the form holds for one option, as typed: a string, or a boolean for a checkbox. */
 export type Draft = Record<string, string | boolean>;
 
-export type FieldKind = 'readonly' | 'boolean' | 'enum' | 'number' | 'string' | 'lines' | 'json';
+export type FieldKind = 'readonly' | 'boolean' | 'enum' | 'choice' | 'number' | 'string' | 'lines' | 'json';
 
 const isStringList = (p: OptionSchema) => p.type === 'array' && p.items?.type === 'string';
 
-export function fieldKind(p: OptionSchema): FieldKind {
+/** `choices`: the values the plugin listed for this option; any makes it a choice, never a typed value. */
+export function fieldKind(p: OptionSchema, choices?: OptionChoice[]): FieldKind {
   if (p.commandBearing) return 'readonly';
+  if (choices?.length) return 'choice';
   if (p.type === 'boolean') return 'boolean';
   if (Array.isArray(p.enum)) return 'enum';
   if (p.type === 'number' || p.type === 'integer') return 'number';
@@ -51,7 +53,7 @@ export function collectOptions(current: Record<string, unknown>, schema: Options
     const kind = fieldKind(p);
     if (kind === 'boolean') out[k] = raw === true;
     else if (kind === 'number') out[k] = Number(raw);
-    else if (kind === 'string' || kind === 'enum') out[k] = raw;
+    else if (kind === 'string' || kind === 'enum' || kind === 'choice') out[k] = raw;
     else if (kind === 'lines') out[k] = String(raw).split('\n').map((l) => l.trim()).filter(Boolean);
     else {
       try { out[k] = JSON.parse(String(raw)); } catch { throw new Error(`${k}: not valid JSON`); }

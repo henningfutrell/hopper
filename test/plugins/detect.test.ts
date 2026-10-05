@@ -43,7 +43,7 @@ describe('detection kit (real)', () => {
   it('output: all of stdout, with the input given on stdin; undefined on failure or timeout', async () => {
     const dir = temp();
     const echo = join(dir, 'echo-in');
-    writeFileSync(echo, '#!/bin/sh\necho "args $1"\ncat\n');
+    writeFileSync(echo, '#!/bin/sh\necho "args $1"\nwhile IFS= read -r l; do echo "$l"; done\n');
     const slow = join(dir, 'slow');
     writeFileSync(slow, '#!/bin/sh\nsleep 5\n');
     const failing = join(dir, 'failing');

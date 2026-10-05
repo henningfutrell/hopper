@@ -2,7 +2,7 @@
 // (design.md "Question pipeline"). Returns `{ answer, escalate, reason }` or `{ error }`; the core
 // escalates on anything but a valid `escalate: false` with an answer.
 import { z } from 'zod';
-import { CLAUDE_TIMEOUT_MS, claudePrint, detectClaude } from '../../claude-print.ts';
+import { CLAUDE_TIMEOUT_MS, claudeModelChoices, claudePrint, detectClaude } from '../../claude-print.ts';
 import type { LevelReply, PluginDefinition } from '../../sdk.ts';
 import { buildLevelPrompt } from './prompt.ts';
 
@@ -33,6 +33,7 @@ const claudeCli: PluginDefinition<'escalation-level', ClaudeCliOptions> = {
     effort: zod.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional(),
   }),
   detect: (sys, o) => detectClaude(sys, o.bin),
+  choices: (sys) => claudeModelChoices(sys, 'model'),
   create(ctx, o) {
     const run = { bin: o.bin, model: o.model, ...(o.effort ? { effort: o.effort } : {}), cwd: ctx.dataDir, timeoutMs: o.timeoutMs, jsonSchema: JSON_SCHEMA };
     return {

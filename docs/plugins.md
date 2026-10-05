@@ -44,7 +44,7 @@ ships its `node_modules`.
 Start from `examples/plugins/<role>/<id>/index.ts` — one minimal runnable plugin per role. Copy
 the directory into the plugin dir and change it.
 
-- Default export: `{ id, role, describe, options?, detect, create } satisfies PluginDefinition<'<role>', Options>`.
+- Default export: `{ id, role, describe, options?, detect, choices?, create } satisfies PluginDefinition<'<role>', Options>`.
   Give the options type (second parameter) so `options` is typed in `create`.
 - Import from hopper **type-only**: `import type { … } from 'hopper/plugin'` (erased at
   runtime). Otherwise only `node:` builtins, unless the directory ships its own `node_modules`.
@@ -79,9 +79,16 @@ The UI shows those read-only; they are edited only with `hopper config edit plug
 ## Detection
 
 `detect(sys, options)` → `available` | `unavailable` + reason | `needs-setup` + reason + the command
-to run. Use the kit (`which`, `version`, `succeeds`, `exists`, `readable`, `pythonImports`, `env`).
+to run. Use the kit (`which`, `version`, `succeeds`, `output`, `exists`, `readable`, `pythonImports`, `env`).
 Cheap: never a paid model call, never a GUI program (`which` only). Only a job source or a notifier
 that needs setup still runs; any other role's must be `available`.
+
+## Option choices
+
+`choices(sys)` → `{ [option]: { value, label?, description? }[] }`, optional: the values an option
+may take, read from the system with the same kit (the models a CLI offers). The UI then offers them
+as a select instead of a typed value. Run at start and on rescan; the same limits as `detect`.
+Leave it out, return `{}` or throw, and the option is typed.
 
 ## Check it
 

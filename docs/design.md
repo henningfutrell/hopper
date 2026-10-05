@@ -689,7 +689,7 @@ changes no job and nothing outside the UI reads it. Only human-stage questions a
 question seen while still with an escalation level badges when it reaches the owner.
 
 **Question history** (issue #37): every question stays in the `questions` table with its text,
-trail, answer and status; nothing prunes it. The Questions view lists handled ones (status not
+trail, answer and status; nothing prunes it. Settings' Question history (issue #151) lists handled ones (status not
 `open`, newest first, the last 200 from `GET /api/questions?status=all&limit=200`) as one compact
 line each — time, outcome, first line of the question — that opens to the question, the answer
 and who gave it, and the job. The history is local to the hopper's SQLite file: no route sends it
@@ -1719,9 +1719,18 @@ export default {
 - **Detection** `detect(sys)` → `available` | `unavailable` + reason | `needs-setup` + the
   command to run. Cheap; never a paid model call; **never executes a GUI binary** (`grokbot`
   is Electron: `which` only). Kit: `which(bin)`, `version(bin, args)` (5 s timeout, CLIs
-  only), `exists(path)`, `pythonImports(python, module)`, `env(name)`. Models cannot be listed
-  offline: `claude` model options are free strings, with `opus`, `sonnet`, `fable` as
-  suggestions. `github-gh` reports `needs-setup` when `gh auth status` fails.
+  only), `output(bin, args, input)` (all of stdout, `input` on stdin, same timeout), `exists(path)`,
+  `pythonImports(python, module)`, `env(name)`. `github-gh` reports `needs-setup` when `gh auth
+  status` fails.
+- **Option choices** (issue #151) `choices(sys)` → `{ [option]: { value, label?, description? }[] }`:
+  the values an option may take, read from the system with the same kit and limits as `detect`. Run
+  at start and on rescan; reported per plugin in `GET /api/plugins` `plugins[].choices`; the UI offers
+  them as a select instead of a typed value, and a configured value not listed stays shown as
+  "not listed here". Absent, empty or throwing → the option is typed. `claude-cli` (`model`) and
+  `gate-router` (`claudeModel`) list the models of the `claude` on PATH (`claudeModels`,
+  `src/plugins/claude-print.ts`): one stream-json `initialize` control request on stdin, answered
+  with the models the account can use (alias, name, description); no prompt, so no model call. Only
+  the default `claude` is asked, not an instance's own `bin`: the list is per plugin.
 - `create(ctx, options)`: `ctx` = clock, logger, dataDir, the plugin's own scratch dir.
 - A plugin can import only `node:` builtins unless it ships its own `node_modules` in its
   directory.
@@ -2287,7 +2296,8 @@ applies live since issue #18, "Machines from the UI").
   from `test/ui/plugins.test.ts`): plugins.yaml path, source, errors and Rescan; per role a plugin
   selector (one-instance roles) or an Add form (list roles: plugin, name — empty: the plugin id),
   and one form per instance (a list role's with Remove, confirmed), generated from the options' JSON
-  Schema (string, number, boolean, enum, string list, else JSON); restart roles show `changed —
+  Schema (string, number, boolean, enum, string list, else JSON; a select of the option choices
+  where the plugin lists them); restart roles show `changed —
   restart pending`. Unsaved edits survive redraws; the view refreshes every 15 s unless a form
   holds unsaved edits. (Built first as `src/ui/plugins.js`; ported when the UI rework landed.)
 
@@ -2830,8 +2840,8 @@ phone across the LAN.
 Owner request: the question gates can be set in the UI.
 
 The **question gates** are the chain an open question goes through: the escalation levels,
-lowest first → risk rules → owner (issue #134; before it, answerer → assessor). One panel in the
-Questions view, below the open questions (collapsed by default under 640 px), shows the chain with
+lowest first → risk rules → owner (issue #134; before it, answerer → assessor). One panel, the
+first section of Settings (issue #151; before it, below the open questions in the Questions view), shows the chain with
 each level's instance and state, and edits what is configuration:
 
 - **Escalation levels** — added (on top, under the name typed, else the plugin id), removed,
@@ -2858,6 +2868,23 @@ each level's instance and state, and edits what is configuration:
 `GET /api/question-gates` is a read: open on loopback, session-only across the LAN. Residual risk:
 every local user can read the rules text (as every GET), and a session holder can rewrite the rules,
 which steer every escalation level; the levels' fail-closed contract and the risk rules stand.
+
+### Settings (issue #151)
+
+Owner request: escalation levels, history and the related configuration do not belong on the
+question page; one configuration plane organizes them, and models are chosen from what is
+available, not typed.
+
+**Settings** (`ui/src/views/settings.tsx`) is one entry in the main navigation with a section per
+part, each routed by hash so a link and the back button work: `#settings/questions` the question
+gates (the default for `#settings`), `#settings/history` the question history,
+`#settings/routing`, `#settings/plugins`, `#settings/webhooks` — the views that were their own
+navigation entries before. The Questions view holds the open questions only. Machines, Sources and
+Usage stay their own views: each is mostly live state, with its configuration beside it. The view
+of a hash is the part before the slash (`useView`, `useSection` in `ui/src/app/nav.tsx`).
+
+Every option a plugin lists **option choices** for (design.md "Plugin contract") is a select in
+every options form — a level's `model` and the gate router's `claudeModel` among them.
 
 ### Webhook subscriptions in the UI (issue #18)
 

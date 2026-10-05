@@ -1,6 +1,7 @@
 // One plugin instance's options form (Remove for a list role's instance; an escalation level also
 // moves earlier or later), a one-instance role's plugin selector and a list role's Add form (design.md "UI and mutation"), shared by the Plugins view, the Routing view and the Question gates panel. Each form keeps its own
-// unsaved edits; command-bearing options are shown, never edited (plugins.yaml only). One Save sends
+// unsaved edits; command-bearing options are shown, never edited (plugins.yaml only); an option the plugin lists
+// choices for (a model) is picked from them, not typed (issue #151). One Save sends
 // one instance's whole options object through POST /ui/api/plugins against GET /api/plugins'
 // version. Reads the report and the session from the store.
 import { ArrowDown, ArrowUp } from 'lucide-react';
@@ -13,7 +14,7 @@ import { Confirm } from '@/components/confirm';
 import { StatusBadge } from '@/components/status';
 import { post, SessionRejected } from '@/lib/api';
 import { collectOptions, fieldKind, instanceState, isListRole, newInstance, ROLE_TITLES, shown, type Draft, type OptionSchema, type OptionsSchema } from '@/model/plugins';
-import type { InstanceSpec, ListRole, PluginsEdit, PluginsReport, Role, SelectableRole } from '@/model/wire';
+import type { InstanceSpec, ListRole, OptionChoice, PluginsEdit, PluginsReport, Role, SelectableRole } from '@/model/wire';
 import { refreshHealth, refreshPlugins, setPlugins, useHopper } from '@/store';
 import { useCanAdmin } from '@/store/selectors';
 
@@ -40,10 +41,10 @@ export async function sendPluginsEdit(edit: PluginsEdit, done: string): Promise<
 
 const schemaOf = (report: PluginsReport, id: string) => report.plugins.find((p) => p.id === id)?.options as OptionsSchema | undefined;
 
-function Field({ name, p, current, draft, disabled, set }: {
-  name: string; p: OptionSchema; current: Record<string, unknown>; draft: Draft; disabled: boolean; set: (v: string | boolean) => void;
+function Field({ name, p, choices, current, draft, disabled, set }: {
+  name: string; p: OptionSchema; choices?: OptionChoice[]; current: Record<string, unknown>; draft: Draft; disabled: boolean; set: (v: string | boolean) => void;
 }) {
-  const kind = fieldKind(p);
+  const kind = fieldKind(p, choices);
   const label = <div className="text-xs break-words"><span className="font-mono">{name}</span>{p.description && <span className="text-muted-foreground"> — {p.description}</span>}</div>;
   if (kind === 'readonly') {
     const v = name in current ? current[name] : p.default;
@@ -64,6 +65,16 @@ function Field({ name, p, current, draft, disabled, set }: {
       <select name={name} className={FIELD} value={typeof value === 'string' ? value : ''} disabled={disabled} onChange={(e) => set(e.target.value)}>
         <option value="">{p.default !== undefined ? `default (${String(p.default)})` : '—'}</option>
         {(p.enum ?? []).map((v) => <option key={String(v)} value={String(v)}>{String(v)}</option>)}
+      </select>
+    );
+  } else if (kind === 'choice') {
+    const picked = typeof value === 'string' ? value : '';
+    const listed = choices ?? [];
+    input = (
+      <select name={name} className={FIELD} value={picked} disabled={disabled} onChange={(e) => set(e.target.value)}>
+        <option value="">{p.default !== undefined ? `default (${String(p.default)})` : '—'}</option>
+        {listed.map((c) => <option key={c.value} value={c.value} title={c.description}>{c.label ? `${c.label} (${c.value})` : c.value}</option>)}
+        {picked && !listed.some((c) => c.value === picked) && <option value={picked}>{picked} (not listed here)</option>}
       </select>
     );
   } else if (kind === 'number' || kind === 'string') {
@@ -91,6 +102,7 @@ export function InstanceForm({ role, inst }: { role: Role; inst: InstanceSpec })
   if (!report) return null;
   const st = instanceState(report, role, inst.name);
   const schema = schemaOf(report, inst.plugin);
+  const choices = report.plugins.find((p) => p.id === inst.plugin)?.choices ?? {};
   const props = Object.entries(schema?.properties ?? {});
   const current = inst.options ?? {};
   const save = async () => {
@@ -119,7 +131,7 @@ export function InstanceForm({ role, inst }: { role: Role; inst: InstanceSpec })
       ? `${inst.name} leaves plugins.yaml and stops taking jobs at once. Refused while a job runs there or waits for an answer in a pane there.`
       : `${inst.name} leaves plugins.yaml; ${ROLE_TITLES[role].toLowerCase()} change at the next restart.`;
   return (
-    <div className="space-y-2 rounded-md border p-3">
+    <div data-slot="instance-form" data-instance={inst.name} className="space-y-2 rounded-md border p-3">
       <div className="flex flex-wrap items-center gap-2">
         {at >= 0 && <span className="num text-xs text-muted-foreground">level {at + 1}</span>}
         <span className="font-medium">{inst.name}</span>
@@ -130,7 +142,7 @@ export function InstanceForm({ role, inst }: { role: Role; inst: InstanceSpec })
       </div>
       {props.length
         ? <div className="grid items-center gap-x-4 gap-y-2 sm:grid-cols-[minmax(8rem,18rem)_minmax(0,1fr)]">
-          {props.map(([name, p]) => <Field key={name} name={name} p={p} current={current} draft={draft} disabled={!authed || busy}
+          {props.map(([name, p]) => <Field key={name} name={name} p={p} choices={choices[name]} current={current} draft={draft} disabled={!authed || busy}
             set={(v) => setDraft((d) => ({ ...d, [name]: v }))} />)}
         </div>
         : <div className="text-xs text-muted-foreground">no options</div>}
