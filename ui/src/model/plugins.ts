@@ -1,7 +1,7 @@
 // The Plugins view's model (design.md "Settled in slice 7"): an instance's state as GET /api/plugins
 // reports it, the input each option gets, the whole options object one Save sends, and the name an
 // added instance gets.
-import type { ListRole, PluginsReport, Role, SelectableRole } from '../../../src/domain/types.ts';
+import type { ListRole, PluginsEdit, PluginsReport, Role, SelectableRole } from '../../../src/domain/types.ts';
 
 export interface OptionSchema {
   type?: string;
@@ -125,3 +125,33 @@ export const ROLE_TITLES: Record<Role, string> = {
   router: 'Router', 'queue-sorter': 'Queue sorter', 'escalation-level': 'Escalation levels', executor: 'Executors',
   'job-source': 'Job sources', 'machine-source': 'Machine sources', 'usage-source': 'Usage sources', notifier: 'Notifiers',
 };
+
+/**
+ * A shipped plugin as the Plugins view's switch shows it (issue #142; owner decision: users never edit
+ * plugins.yaml). `blocked`: why a click cannot change it here.
+ */
+export interface ShippedPlugin { id: string; role: ListRole; describe: string; enabled: boolean; instances: string[]; blocked?: string }
+
+/** The built-in plugins of the list roles, machines left out (they are attached in the Machines view). */
+export function shippedPlugins(report: PluginsReport): ShippedPlugin[] {
+  return report.plugins.flatMap((p): ShippedPlugin[] => {
+    if (!p.builtin || !isListRole(p.role) || p.role === 'machine-source') return [];
+    const instances = report.instances.filter((i) => i.role === p.role && i.instance.plugin === p.id).map((i) => i.instance.name);
+    const enabled = instances.length > 0;
+    const blocked = enabled
+      ? (instances.length > 1 ? `${instances.length} instances: remove them below` : undefined)
+      : p.detection.status !== 'available'
+        ? (p.detection.reason ?? p.detection.status)
+        : newInstance(report, p.role, p.id, '').problem;
+    return [{ id: p.id, role: p.role, describe: p.describe, enabled, instances, ...(blocked ? { blocked } : {}) }];
+  });
+}
+
+/** What flipping the switch sends: add one instance under the plugin's id, or remove its one instance; null when blocked. */
+export function toggleEdit(report: PluginsReport, p: ShippedPlugin): Extract<PluginsEdit, { action: 'add' | 'remove' }> | null {
+  if (p.blocked) return null;
+  const version = report.config.version;
+  return p.enabled
+    ? { action: 'remove', role: p.role, name: p.instances[0]!, version }
+    : { action: 'add', role: p.role, plugin: p.id, name: p.id, version };
+}

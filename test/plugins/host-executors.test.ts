@@ -10,7 +10,6 @@ import type { InstanceSpec } from '../../src/domain/types.ts';
 import { BUILTIN_PLUGINS } from '../../src/plugins/builtin.ts';
 import { createPluginHost, type PluginHost } from '../../src/plugins/index.ts';
 import type { DetectionKit, PluginDefinition } from '../../src/plugins/sdk.ts';
-import { waitFor } from '../support/wait.ts';
 import { PLUGINS } from '../../src/plugins/plugins-file.ts';
 import { useTempDocuments } from '../support/documents.ts';
 import { fakeKit, fixedClock, useTempDirs } from './support.ts';

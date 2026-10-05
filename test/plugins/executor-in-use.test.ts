@@ -6,7 +6,6 @@ import type { ConfigDocuments } from '../../src/domain/ports.ts';
 import type { ConfiguredInstance } from '../../src/domain/types.ts';
 import { BUILTIN_PLUGINS } from '../../src/plugins/builtin.ts';
 import { applyEdit } from '../../src/plugins/edit.ts';
-import { PLUGINS } from '../../src/plugins/plugins-file.ts';
 
 const FILE = 'version: 1\nexecutors:\n  - { name: test, plugin: test }\n  - { name: cursor, plugin: cursor-agent }\n';
 
