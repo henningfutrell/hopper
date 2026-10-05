@@ -23,6 +23,7 @@ function world() {
   cleanups.push(db.cleanup);
   const up = createUpstream(root);
   const c1 = up.commit('first', 'v1');
+  up.whatsNew(['Updates arrive on their own.']);
   const c2 = up.commit('second', 'v2');
   return { root, up, c1, c2, dbPath: db.dbPath, appDir: createInstall(root, up.dir, c1) };
 }
@@ -47,7 +48,7 @@ describe('self-update over HTTP', () => {
     const checked = await app.ui<UpdateStatus>('/ui/api/update', { action: 'check' }, { token });
     expect(checked.status).toBe(200);
     expect(checked.body).toMatchObject({ state: 'available', target: { commit: w.c2, ref: 'main' }, installed: { commit: w.c1 } });
-    expect(checked.body.changes.map((c) => c.subject)).toEqual(['second']);
+    expect(checked.body.whatsNew).toEqual(['Updates arrive on their own.']);
     expect((await app.api<UpdateStatus>('GET', '/api/update')).body.state).toBe('available');
 
     const set = await app.ui<UpdateStatus>('/ui/api/update', { action: 'settings', channel: 'release' }, { token });
