@@ -1,11 +1,11 @@
 // The lane board: every lane on every machine, what it runs, for how long, how far along.
-import { Layers, X } from 'lucide-react';
+import { FolderOpen, Layers, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Confirm } from '@/components/confirm';
 import { JobTitle, Since } from '@/components/job';
 import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
-import { laneRows, type LaneRow } from '@/model/board';
+import { laneRows, machineName, type LaneRow } from '@/model/board';
 import { goalOf } from '@/model/job';
 import type { Job } from '@/model/wire';
 import { act, useHopper } from '@/store';
@@ -24,15 +24,15 @@ export function CancelButton({ job }: { job: Job }) {
   );
 }
 
-function LaneCard({ row }: { row: LaneRow }) {
+function LaneCard({ row, machine }: { row: LaneRow; machine: string }) {
   const { job, lane } = row;
-  const name = lane ? lane.id.split('/').pop() : 'unopened';
+  const name = lane ? lane.id.slice(lane.id.lastIndexOf('/') + 1) : 'unopened';
   return (
     <div className={cn('rounded-lg border bg-background/40 p-3 transition-colors',
       row.state === 'busy' && 'border-busy/30 bg-busy/[0.04]', row.state === 'draining' && 'border-warn/30', row.state === 'unopened' && 'border-dashed opacity-60')}>
       <div className="mb-2 flex items-center gap-2 text-xs">
-        <span className="font-mono font-medium">{name}</span>
-        <span className="truncate text-muted-foreground">{row.machine.label}</span>
+        <span className="min-w-0 truncate font-medium" title={`machine ${machine}`}>{machine}</span>
+        <span className="shrink-0 font-mono text-muted-foreground">{name}</span>
         <StatusBadge className="ml-auto" status={row.state === 'unopened' ? 'not open' : row.state} tone={row.state === 'unopened' ? 'muted' : undefined} />
       </div>
       {job ? (
@@ -45,6 +45,12 @@ function LaneCard({ row }: { row: LaneRow }) {
             </div>
             <span className="num w-8 text-right">{Math.round((job.progress ?? 0) * 100)}%</span>
           </div>
+          {row.workTree && (
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground" title={`work tree ${row.workTree}`}>
+              <FolderOpen className="size-3.5 shrink-0" />
+              <span dir="rtl" className="min-w-0 truncate text-left font-mono"><bdi dir="ltr">{row.workTree}</bdi></span>
+            </div>
+          )}
           {job.progressMessage && <div className="truncate text-xs text-muted-foreground" title={job.progressMessage}>{job.progressMessage}</div>}
         </div>
       ) : <div className="text-xs text-muted-foreground/70">{lane ? 'idle' : 'capacity, no lane open'}</div>}
@@ -58,7 +64,7 @@ export function LanesPanel() {
   const rows = laneRows(machines, running);
   return (
     <Panel title="Lanes" icon={Layers} count={`${running.length} running`} list bodyClassName="grid grid-cols-1 gap-2">
-      {rows.length ? rows.map((r) => <LaneCard key={r.key} row={r} />) : <Empty>no machines</Empty>}
+      {rows.length ? rows.map((r) => <LaneCard key={r.key} row={r} machine={machineName(r.machine.id, machines)} />) : <Empty>no machines</Empty>}
     </Panel>
   );
 }

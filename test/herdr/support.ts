@@ -31,12 +31,14 @@ export function contextFor(job: Job, laneId = LANE, machine: MachineSnapshot = L
   const ac = new AbortController();
   const progress: { fraction: number; message?: string }[] = [];
   const saved: Record<string, unknown>[] = [];
+  const workTrees: string[] = [];
   const ctx: ExecutionContext = {
     job, laneId, machine, signal: ac.signal,
     progress: (fraction, message) => progress.push({ fraction, message }),
     saveState: (s) => saved.push(s),
+    workTree: (path) => workTrees.push(path),
   };
-  return { ctx, ac, progress, saved };
+  return { ctx, ac, progress, saved, workTrees };
 }
 
 export function setup(

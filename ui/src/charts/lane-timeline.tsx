@@ -15,28 +15,35 @@ const ROW = 26;
 const M = { top: 4, right: 16, bottom: 22, left: 64 };
 const hm = timeFormat('%H:%M');
 
-export function LaneTimeline({ spans, now, windowMs, lanes, nameOf }: {
+/** Width of one character of a row label (10px monospace), to fit the label column to the longest name. */
+const CHAR_PX = 6.1;
+
+export function LaneTimeline({ spans, now, windowMs, lanes, nameOf, laneNameOf }: {
   /** From `useLaneSpans`: the event log reconciled with the job store. */
   spans: LaneSpan[]; now: number; windowMs: number; lanes: string[]; nameOf: (jobId: string) => string;
+  /** A lane's name with its machine (issue #166): `lane-1` alone is on every machine. */
+  laneNameOf: (laneId: string) => string;
 }) {
   const [ref, { width }] = useSize<HTMLDivElement>();
   const [hover, setHover] = useState<LaneSpan | null>(null);
   const since = now - windowMs;
   const rows = useMemo(() => [...new Set([...lanes, ...spans.map((s) => s.laneId)])].sort(), [lanes, spans]);
   const height = M.top + M.bottom + Math.max(1, rows.length) * ROW;
-  const iw = Math.max(0, width - M.left - M.right);
+  const longest = Math.max(0, ...rows.map((l) => laneNameOf(l).length));
+  const left = Math.min(Math.max(M.left, Math.ceil(longest * CHAR_PX) + 12), Math.round(width * 0.45));
+  const iw = Math.max(0, width - left - M.right);
   const x = scaleTime().domain([since, now]).range([0, iw]);
   const y = scaleBand<string>().domain(rows).range([0, rows.length * ROW]).paddingInner(0.3).paddingOuter(0.15);
   return (
     <div ref={ref} className="relative w-full" style={{ height }}>
       {width > 0 && (
         <svg width={width} height={height} role="img" aria-label="Lane activity timeline">
-          <g transform={`translate(${M.left},${M.top})`}>
+          <g transform={`translate(${left},${M.top})`}>
             {rows.map((laneId) => (
               <g key={laneId}>
                 <rect x={0} y={y(laneId)} width={iw} height={y.bandwidth()} rx={3} className="fill-muted/40" />
                 <text x={-8} y={(y(laneId) ?? 0) + y.bandwidth() / 2} dy="0.32em" textAnchor="end" className="fill-muted-foreground font-mono text-[10px]">
-                  {laneId.split('/').pop()}
+                  <title>{laneNameOf(laneId)}</title>{laneNameOf(laneId)}
                 </text>
               </g>
             ))}
@@ -60,7 +67,7 @@ export function LaneTimeline({ spans, now, windowMs, lanes, nameOf }: {
         <div className="pointer-events-none absolute top-0 right-0 max-w-72 rounded-md border bg-popover/95 px-2.5 py-1.5 text-xs shadow-md backdrop-blur">
           <div className="truncate font-medium">{nameOf(hover.jobId)}</div>
           <div className="num text-muted-foreground">
-            {hover.laneId} · {hm(new Date(hover.start))}–{hover.end ? hm(new Date(hover.end)) : 'now'} · {duration(((hover.end ?? now) - hover.start) / 1000)} · {hover.outcome}
+            {laneNameOf(hover.laneId)} · {hm(new Date(hover.start))}–{hover.end ? hm(new Date(hover.end)) : 'now'} · {duration(((hover.end ?? now) - hover.start) / 1000)} · {hover.outcome}
           </div>
         </div>
       )}

@@ -30,11 +30,25 @@ export function jobBoard(jobs: Iterable<Job>, waitingOrder: readonly string[]): 
   return board;
 }
 
+/** A machine as people read it: its label, and its id too where they differ, since two machines can share a label (issue #166). */
+export function machineName(id: string, machines: readonly Pick<MachineView, 'id' | 'label'>[]): string {
+  const label = machines.find((m) => m.id === id)?.label;
+  return label && label !== id ? `${label} (${id})` : id;
+}
+
+/** A lane as people read it: its machine, then its number — `lane-1` alone is on every machine (issue #166). */
+export function laneName(laneId: string, machines: readonly Pick<MachineView, 'id' | 'label'>[]): string {
+  const cut = laneId.lastIndexOf('/');
+  return `${machineName(laneId.slice(0, cut), machines)} · ${laneId.slice(cut + 1)}`;
+}
+
 export interface LaneRow {
   key: string;
   machine: { id: string; label: string };
   lane?: Lane;
   job?: Job;
+  /** The work tree of the job it runs (issue #166). */
+  workTree?: string;
   /** `unopened`: capacity under maxLanes with no lane open. */
   state: Lane['state'] | 'unopened';
 }
@@ -49,7 +63,7 @@ export function laneRows(machines: MachineView[], running: Job[]): LaneRow[] {
     for (const lane of m.lanes) {
       const job = (lane.jobId && byId.get(lane.jobId)) || byLane.get(lane.id);
       if (job) placed.add(job.id);
-      rows.push({ key: lane.id, machine, lane, job, state: lane.state });
+      rows.push({ key: lane.id, machine, lane, job, ...(job?.workTree ? { workTree: job.workTree } : {}), state: lane.state });
     }
     for (let i = m.lanes.length; i < m.maxLanes; i += 1) rows.push({ key: `${m.id}/unopened-${i}`, machine, state: 'unopened' });
   }
@@ -57,7 +71,7 @@ export function laneRows(machines: MachineView[], running: Job[]): LaneRow[] {
   for (const job of running) {
     if (placed.has(job.id)) continue;
     const machineId = job.laneId?.split('/')[0] ?? '?';
-    rows.push({ key: `orphan-${job.id}`, machine: { id: machineId, label: machineId }, job, state: 'busy' });
+    rows.push({ key: `orphan-${job.id}`, machine: { id: machineId, label: machineId }, job, ...(job.workTree ? { workTree: job.workTree } : {}), state: 'busy' });
   }
   return rows;
 }

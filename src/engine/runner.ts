@@ -104,6 +104,7 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
         job: started, laneId: claim.laneId, machine, signal: entry.controller.signal,
         progress: (f, m) => progress.report(f, m),
         saveState: (state) => { if (!c.stopping()) store.jobs.update(job.id, { executorState: state }); },
+        workTree: (path) => { if (!c.stopping()) store.jobs.update(job.id, { workTree: path }); },
       }, reattach);
     } catch (e) {
       outcome = { kind: 'failed', error: e instanceof Error ? e.message : String(e) };

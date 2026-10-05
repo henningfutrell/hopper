@@ -39,14 +39,16 @@ const reply = (text: string) => { process.env.FAKE_CURSOR_REPLY = text; };
 
 function ctxFor(payload: Record<string, unknown>, machine: MachineSnapshot, o: { state?: Record<string, unknown>; signal?: AbortSignal } = {}) {
   const saved: Record<string, unknown>[] = [];
+  const workTrees: string[] = [];
   const job: Job = {
     id: 'job-1234', spec: { executor: 'cursor', payload }, priority: 50, status: 'running', approved: false,
     createdAt: '', updatedAt: '', attempts: 1, ...(o.state ? { executorState: o.state } : {}),
   };
   const ctx: ExecutionContext = {
     job, laneId: `${machine.id}/lane-1`, machine, signal: o.signal ?? new AbortController().signal, progress() {}, saveState: (s) => { saved.push(s); },
+    workTree: (path) => { workTrees.push(path); },
   };
-  return { ctx, saved };
+  return { ctx, saved, workTrees };
 }
 
 describe('cursor-agent executor', () => {
@@ -63,6 +65,13 @@ describe('cursor-agent executor', () => {
     expect(call!.argv.slice(0, -1)).toEqual(['-p', '--output-format', 'json', '--workspace', work, '--force', '--trust', '--model', 'sonnet-4', '--']);
     expect(call!.argv.at(-1)).toMatch(/^Write a greeting\n\n\[hopper publishing rule\][\s\S]*HOPPER_FAILED followed by the reason\.$/);
     expect(readFileSync(join(work, '.hopper-scratch', '.gitignore'), 'utf8')).toBe('*\n');
+  });
+
+  it('reports the job\'s work tree, so the lane running it shows where it works (issue #166)', async () => {
+    reply('Done.\n\nHOPPER_DONE');
+    const { ctx, workTrees } = ctxFor({ prompt: 'go', cwd: work }, HERE);
+    await ex.run(ctx);
+    expect(workTrees).toEqual([work]);
   });
 
   it('a question parks the job with its chat; the answer resumes that chat', async () => {

@@ -1,7 +1,7 @@
 // The overview's numbers, lists and lane board, all derived from the one job store (issue #45).
 import { describe, expect, it } from 'vitest';
 import type { Job, JobStatus, Lane } from '../../src/domain/types.ts';
-import { GROUP, jobBoard, kpis, laneRows, waitingRows } from '../../ui/src/model/board.ts';
+import { GROUP, jobBoard, kpis, laneName, laneRows, waitingRows } from '../../ui/src/model/board.ts';
 import type { MachineView } from '../../ui/src/model/wire.ts';
 
 const job = (id: string, o: Partial<Job> = {}): Job => ({
@@ -67,6 +67,23 @@ describe('laneRows', () => {
     const rows = laneRows([machine([lane('lane-1', 'draining', 'a')], 1)], [job('a'), job('b', { laneId: 'm9/lane-4' })]);
     expect(rows.map((r) => [r.state, r.job?.id])).toEqual([['draining', 'a'], ['busy', 'b']]);
     expect(rows[1]?.machine.id).toBe('m9');
+  });
+});
+
+describe('laneName (issue #166)', () => {
+  const on = (id: string, label: string): MachineView => ({ ...machine([]), id, label });
+  it('names the machine with every lane: two machines with the same label never read the same lane-1', () => {
+    const ms = [on('m1', 'laptop'), on('m2', 'laptop')];
+    expect(laneName('m1/lane-1', ms)).toBe('laptop (m1) · lane-1');
+    expect(laneName('m2/lane-1', ms)).toBe('laptop (m2) · lane-1');
+  });
+  it('a machine labelled with its own id, or no longer listed, is named by its id once', () => {
+    expect(laneName('local/lane-2', [on('local', 'local')])).toBe('local · lane-2');
+    expect(laneName('m9/lane-4', [])).toBe('m9 · lane-4');
+  });
+  it('a lane row carries the work tree of the job it runs', () => {
+    const rows = laneRows([machine([lane('lane-1', 'busy', 'a'), lane('lane-2', 'idle')], 2)], [job('a', { workTree: '/w/repo' })]);
+    expect(rows.map((r) => r.workTree)).toEqual(['/w/repo', undefined]);
   });
 });
 

@@ -42,7 +42,7 @@ function ctxFor(payload: Record<string, unknown>, machine: MachineSnapshot, sign
     id: 'job-1234', spec: { executor: 'command', payload }, priority: 50, status: 'running', approved: false,
     createdAt: '', updatedAt: '', attempts: 1,
   };
-  return { job, laneId: `${machine.id}/lane-1`, machine, signal, progress() {}, saveState() {} };
+  return { job, laneId: `${machine.id}/lane-1`, machine, signal, progress() {}, saveState() {}, workTree() {} };
 }
 
 describe('command executor', () => {

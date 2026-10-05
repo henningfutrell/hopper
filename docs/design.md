@@ -2417,6 +2417,13 @@ reattach and cleanup (which have only the job) reach the same herdr. Pane ids ar
 held panes are keyed by machine and pane. An executor that cannot run elsewhere is simply not listed
 in the machine's `executors`.
 
+**A lane shows its machine and its work tree** (issue #166). `lane-1` is on every machine, so a
+lane is never named by its number alone: the UI names it `<machine label> (<machine id>) · lane-<n>`
+(the id once when it is the label; `ui/src/model/board.ts` `laneName`), since labels can repeat and ids
+cannot. An executor with a work tree reports it once resolved, `ExecutionContext.workTree(path)`, and
+the runner keeps it on the job (`job.workTree`); the lane running the job shows that path. The
+command executor has none and reports none.
+
 **Working directories are the same paths there.** A job's `cwd` (payload, or the instance's `cwd`) is
 resolved on this machine (`~` expanded here) and must exist on the attached one; the laptop has
 `~/workbench/app-workflows` with its own checkouts. A missing cwd fails the job at `tab create`.
