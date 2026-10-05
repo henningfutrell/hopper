@@ -3,12 +3,18 @@
 // (an issue body like `{"op":"ask","message":"Is this risky?"}`; the issue context follows).
 // Registered through AppSeams.executors as "scripted"; it records every payload it ran. An op may
 // carry `progress: number[]`: each fraction is reported (job.progressed) before the op runs.
-import type { ExecutionContext, Executor } from '../../src/domain/ports.ts';
+// `ships(fn)` plays a job that ships its work (issue #171): fn runs (a test merges the job's pull
+// request in the fake GitHub) before each finished outcome is returned.
+import type { ExecutionContext, ExecutionOutcome, Executor } from '../../src/domain/ports.ts';
+import type { Job } from '../../src/domain/types.ts';
 import { createTestExecutor } from '../../src/executors/index.ts';
+import type { FakeGitHub } from '../../src/sources/index.ts';
 
 export interface ScriptedExecutor extends Executor {
   /** The sourced payloads of every run and resume, in order. */
   readonly payloads: Record<string, unknown>[];
+  /** From now on, every job that finishes ships first: `fn(job)` runs before the outcome returns. */
+  ships(fn: (job: Job) => void): void;
 }
 
 function script(payload: Record<string, unknown>): Record<string, unknown> | string {
@@ -26,6 +32,12 @@ function script(payload: Record<string, unknown>): Record<string, unknown> | str
 export function createScriptedExecutor(): ScriptedExecutor {
   const inner = createTestExecutor();
   const payloads: Record<string, unknown>[] = [];
+  let ship: ((job: Job) => void) | undefined;
+  const shipped = async (ctx: ExecutionContext, outcome: Promise<ExecutionOutcome>): Promise<ExecutionOutcome> => {
+    const o = await outcome;
+    if (o.kind === 'finished') ship?.(ctx.job);
+    return o;
+  };
   const scripted = (ctx: ExecutionContext): ExecutionContext => {
     payloads.push(ctx.job.spec.payload);
     const op = script(ctx.job.spec.payload) as Record<string, unknown>;
@@ -35,6 +47,7 @@ export function createScriptedExecutor(): ScriptedExecutor {
     name: 'scripted',
     idempotent: true,
     payloads,
+    ships(fn) { ship = fn; },
     validate(payload) {
       const s = script(payload);
       return typeof s === 'string' ? s : inner.validate(s);
@@ -43,8 +56,14 @@ export function createScriptedExecutor(): ScriptedExecutor {
       const op = scripted(ctx);
       const steps = op.job.spec.payload.progress;
       if (Array.isArray(steps)) for (const f of steps) ctx.progress(Number(f), `step ${String(f)}`);
-      return inner.run(op);
+      return shipped(ctx, inner.run(op));
     },
-    resume: (ctx, answer) => inner.resume!(scripted(ctx), answer),
+    resume: (ctx, answer) => shipped(ctx, inner.resume!(scripted(ctx), answer)),
   };
 }
+
+/** For `ships`: the job's pull request, opened and merged now, closes its issue in the fake GitHub. */
+export const mergesPullRequest = (gh: FakeGitHub) => (job: Job): void => {
+  const now = new Date().toISOString();
+  gh.closeByPullRequest(job.source!.repo!, job.source!.number!, { createdAt: now, mergedAt: now });
+};

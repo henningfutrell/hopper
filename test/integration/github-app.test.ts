@@ -8,6 +8,7 @@ import { createFakeGitHub, type FakeGitHub } from '../../src/sources/index.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { BOT, appSecrets, jobSourcesDoc } from '../support/github-app.ts';
 import { CREATE_APP_HINT } from '../../src/sources/github/source.ts';
+import { mergesPullRequest } from '../support/scripted-executor.ts';
 import { waitFor } from '../support/wait.ts';
 
 const REPO = 'owner/hopper-sandbox';
@@ -41,6 +42,7 @@ describe('GitHub App source (in-memory fake at the seam)', () => {
     const gh = createFakeGitHub();
     const app = createFakeGitHub({ app: { botLogin: BOT, installedRepos: [] } });
     const { a, secrets } = await boot({ seams: { github: gh, githubApp: app }, doc: jobSourcesDoc({ github: { repos: [REPO] } }) });
+    a.scripted.ships(mergesPullRequest(gh));
     const first = gh.createIssue({ repo: REPO, body: body({ op: 'sleep', ms: 800 }), labels: ['hopper'] });
     await a.sync();
     const j1 = (await jobFor(a, first.url))!;

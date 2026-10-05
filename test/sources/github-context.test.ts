@@ -17,6 +17,7 @@ describe('GitHub source: full issue context and job environment', () => {
       'title: Add a README',
       'labels: hopper, hopper:high · author: owner',
       'priority: 75 (label:hopper:high) · project item: none',
+      'done: only once the change ships — a pull request this job opens, with "Closes #1" in its body, is merged; until then the job is not done, and a job that ends done without it ends failed',
       'recent comments (oldest first, up to 10; only allowlisted authors, no hopper-marked comments):',
       `- owner at ${c.createdAt}: Keep it short.`,
     ].join('\n'));

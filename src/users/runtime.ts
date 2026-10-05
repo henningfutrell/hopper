@@ -238,6 +238,8 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     onExpired: (q: Question) => engine.onExpired(q),
     onDismissed: (q: Question) => engine.onDismissed(q),
   });
+  const { running, fixed } = splitSources(host.jobSources());
+  const jobSources = [...running.map((r) => r.source), ...(seams.sources ?? [])];
   const engine: Engine = createEngine({
     store, clock, executors, router, questions, queueSorter: host.queueSorter,
     routing: { rules: () => host.routingRules(), machines: () => host.machineIds() },
@@ -253,11 +255,12 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     initialRouterMode: config.routerMode,
     maxQuestions: config.maxQuestions,
     keepPanes: config.keepPanes,
+    // Shipping is the job's source's to judge (issue #171); a job of no source, or of one that does not judge, is shipped.
+    notShipped: async (job) => jobSources.find((s) => s.name === job.source?.source)?.notShipped?.(job),
   });
   jobsOnMachine = (name) => engine.jobsOnMachine(name);
-  const { running, fixed } = splitSources(host.jobSources());
   const sync = createSourceSync({
-    sources: [...running.map((r) => r.source), ...(seams.sources ?? [])], host: engine.sourceHost, clock,
+    sources: jobSources, host: engine.sourceHost, clock,
     pollMs: (name) => running.find((r) => r.source.name === name)?.pollMs ?? SEAM_SOURCE_POLL_MS,
   });
   const raw = runtimeSecrets(o.env);

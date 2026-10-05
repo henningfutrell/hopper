@@ -6,6 +6,7 @@ import type { Job } from '../../src/domain/types.ts';
 import { createFakeGitHub, type FakeGitHub } from '../../src/sources/index.ts';
 import { GitHubApiError } from '../../src/sources/github/index.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
+import { mergesPullRequest } from '../support/scripted-executor.ts';
 import { waitFor } from '../support/wait.ts';
 
 const REPO = 'owner/hopper-sandbox';
@@ -96,16 +97,45 @@ describe('GitHub issue → job → issue', () => {
     expect(bodies(gh, issue.number)).toEqual([]);
   });
 
-  it('a finished job closes its open issue as completed, without a comment', async () => {
+  it('a job that ends done with nothing shipped ends failed: no hopper:done, the issue stays open (issue #171)', async () => {
     const gh = createFakeGitHub();
     const a = await boot(gh);
     const issue = gh.createIssue({ repo: REPO, body: body({ op: 'echo' }), labels: ['hopper'] });
     await a.sync();
     const job = (await jobFor(a, issue.url))!;
-    await a.waitForStatus(job.id, 'finished');
-    await waitFor(() => gh.issue(REPO, issue.number).state === 'closed', { what: 'issue closed' });
-    expect(gh.issue(REPO, issue.number).labels).toEqual(['hopper', 'hopper:done']);
-    expect(bodies(gh, issue.number)).toEqual([]);
+    const failed = await a.waitForStatus(job.id, 'failed');
+    expect(failed.error).toBe(`nothing shipped: no merged pull request opened by this job closes ${issue.url}`);
+    await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:failed'), { what: 'hopper:failed' });
+    expect(gh.issue(REPO, issue.number).labels).not.toContain('hopper:done');
+    expect(gh.issue(REPO, issue.number).state).toBe('open');
+    expect(gh.calls.map((c) => c.method)).not.toContain('closeAsCompleted');
+    expect(await a.events('types=job.finished')).toEqual([]);
+  });
+
+  it('a pull request merged before the job began is not the job shipping: it ends failed (issue #171)', async () => {
+    const gh = createFakeGitHub();
+    const a = await boot(gh);
+    const issue = gh.createIssue({ repo: REPO, body: body({ op: 'echo' }), labels: ['hopper'] });
+    a.scripted.ships((j) => gh.closeByPullRequest(REPO, j.source!.number!, { createdAt: '2020-01-01T00:00:00.000Z', mergedAt: '2020-01-02T00:00:00.000Z' }));
+    await a.sync();
+    const job = (await jobFor(a, issue.url))!;
+    await a.waitForStatus(job.id, 'failed');
+    await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:failed'), { what: 'hopper:failed' });
+    expect(gh.issue(REPO, issue.number).labels).not.toContain('hopper:done');
+  });
+
+  it('when GitHub cannot say whether the work shipped, the job is not recorded done (issue #171)', async () => {
+    const gh = createFakeGitHub();
+    const a = await boot(gh);
+    const issue = gh.createIssue({ repo: REPO, body: body({ op: 'sleep', ms: 300 }), labels: ['hopper'] });
+    await a.sync();
+    const job = (await jobFor(a, issue.url))!;
+    await a.waitForStatus(job.id, 'running');
+    gh.failNext('closingPullRequest', new GitHubApiError('gh: timeout', false));
+    const failed = await a.waitForStatus(job.id, 'failed');
+    expect(failed.error).toBe('could not confirm the work shipped: gh: timeout');
+    await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:failed'), { what: 'hopper:failed' });
+    expect(gh.issue(REPO, issue.number).state).toBe('open');
   });
 
   it('a failed job labels the issue hopper:failed, leaves no comment, and logs one line', async () => {
@@ -213,6 +243,7 @@ describe('GitHub issue → job → issue', () => {
     await first.stop();
 
     const second = await boot(gh, { dbPath });
+    second.scripted.ships(mergesPullRequest(gh));
     await second.sync();
     const jobs = (await second.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=100')).body.jobs;
     expect(jobs.map((j) => j.id)).toEqual([job.id]);
@@ -243,6 +274,7 @@ describe('GitHub issue → job → issue', () => {
     gh.failNext('getIssue', refused);
     gh.failNext('getIssue', refused);
     const second = await boot(gh, { dbPath });
+    second.scripted.ships(mergesPullRequest(gh));
     await second.sync();
     expect(gh.calls.filter((c) => c.method === 'getIssue').length - before).toBeGreaterThanOrEqual(2);
     expect((await second.job(r.id)).status).not.toBe('cancelled');

@@ -12,6 +12,7 @@ import { createFakeGitHubServer, type FakeGitHubServer } from '../../src/sources
 import { createFakeGitHub, type FakeGitHub } from '../../src/sources/index.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { APP_ID, BOT, KEYS, SLUG, appSecrets, jobSourcesDoc } from '../support/github-app.ts';
+import { mergesPullRequest } from '../support/scripted-executor.ts';
 import { waitFor } from '../support/wait.ts';
 
 const REPO = 'owner/hopper-sandbox';
@@ -39,6 +40,7 @@ async function boot(mode: Mode, gh: FakeGitHub | undefined, app: Record<string, 
     : jobSourcesDoc({ github: false, githubApp: app });
   const seams = gh === undefined ? {} : mode === 'gh' ? { github: gh } : { githubApp: gh };
   const a = await startTestApp({ dbPath: db.dbPath, plugins: { jobSources }, seams, secrets: mode === 'app' ? appSecrets() : {} });
+  if (gh !== undefined) a.scripted.ships(mergesPullRequest(gh));
   apps.push(a);
   return a;
 }
@@ -146,6 +148,11 @@ describe('issue writes through HTTP (node:http fake GitHub, real App adapter)', 
     servers.push(fake);
     const a = await boot('app', undefined, { apiUrl: fake.url });
     const issue = fake.state.repos.get(REPO)!.issues.get(1)!;
+    a.scripted.ships(() => {
+      const now = new Date().toISOString();
+      issue.state = 'closed';
+      issue.closedByPullRequest = { url: `https://github.com/${REPO}/pull/2`, createdAt: now, mergedAt: now };
+    });
     await a.sync();
     const job = (await jobFor(a, `https://github.com/${REPO}/issues/1`))!;
     const q = await a.waitForQuestion(job.id, (x) => x.tier === 'human');

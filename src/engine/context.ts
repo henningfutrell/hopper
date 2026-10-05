@@ -1,7 +1,7 @@
 import type {
   Clock, ExecutorRegistry, IdGen, MachineSource, QuestionService, QueueSorter, Router, RoutingView, SettableUsageSource, UserStore, UsageSource,
 } from '../domain/ports.ts';
-import type { DeciderPolicy, RouterMode } from '../domain/types.ts';
+import type { DeciderPolicy, Job, RouterMode } from '../domain/types.ts';
 
 export interface EngineOptions {
   store: UserStore;
@@ -30,6 +30,8 @@ export interface EngineOptions {
   maxQuestions: number;
   /** Skip executor cleanup on terminal outcomes (HOPPER_KEEP_PANES). */
   keepPanes: boolean;
+  /** Why a job that ended done has not shipped, asked of its source (JobSource.notShipped, issue #171). */
+  notShipped: (job: Job) => Promise<string | undefined>;
 }
 
 /** What the engine's modules share. */
