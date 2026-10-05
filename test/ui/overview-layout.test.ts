@@ -3,7 +3,7 @@
 // stored never throws and never loses a panel.
 import { describe, expect, it } from 'vitest';
 import {
-  DEFAULT_LAYOUT, PANEL_IDS, movePanel, parseLayout, setPanel, setSetting,
+  DEFAULT_LAYOUT, PANEL_IDS, movePanel, parseLayout, placePanel, setPanel, setSetting,
 } from '../../ui/src/model/overview-layout.ts';
 
 const ids = (l = DEFAULT_LAYOUT) => l.panels.map((p) => p.id);
@@ -61,5 +61,25 @@ describe('movePanel', () => {
     expect(ids(movePanel(DEFAULT_LAYOUT, second!, -1)).slice(0, 2)).toEqual([second, first]);
     expect(movePanel(DEFAULT_LAYOUT, first!, -1)).toEqual(DEFAULT_LAYOUT);
     expect(movePanel(DEFAULT_LAYOUT, ids().at(-1)!, 1)).toEqual(DEFAULT_LAYOUT);
+  });
+});
+
+// Issue #86: the overview can be rearranged as seen fit — a panel dropped on another takes its place.
+describe('placePanel', () => {
+  it('a panel dropped on one before it goes in front of it; on one after it, behind it', () => {
+    expect(ids(placePanel(DEFAULT_LAYOUT, 'live', 'kpis'))).toEqual(['live', ...ids().filter((id) => id !== 'live')]);
+    expect(ids(placePanel(DEFAULT_LAYOUT, 'kpis', 'lanes'))).toEqual(['timeline', 'attention', 'lanes', 'kpis', 'waiting', 'ended', 'throughput', 'usage', 'live']);
+  });
+
+  it('keeps every panel once, with its visibility and width', () => {
+    const hidden = setPanel(DEFAULT_LAYOUT, 'ended', { shown: false, width: 3 });
+    const l = placePanel(hidden, 'usage', 'attention');
+    expect([...ids(l)].sort()).toEqual([...PANEL_IDS].sort());
+    expect(l.panels.find((p) => p.id === 'ended')).toEqual({ id: 'ended', shown: false, width: 3 });
+  });
+
+  it('dropped on itself, or on a panel the layout lacks: unchanged', () => {
+    expect(placePanel(DEFAULT_LAYOUT, 'lanes', 'lanes')).toBe(DEFAULT_LAYOUT);
+    expect(placePanel(DEFAULT_LAYOUT, 'lanes', 'gone' as never)).toBe(DEFAULT_LAYOUT);
   });
 });
