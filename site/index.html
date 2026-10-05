@@ -111,12 +111,13 @@ Docker works the same: <code>docker compose</code> in place of <code>podman comp
 <p>It works once, for 10 minutes; make another the same way when you need one. The UI listens on this
 machine only (<code>127.0.0.1:4790</code>). From another computer, connect with
 <code>ssh -L 4790:127.0.0.1:4790 you@your-server</code> first, then open the link there.</p></li>
-<li><p><strong>Sign in to GitHub and to Claude Code</strong>, inside the hopper's container. Once is enough:
-both are kept when it restarts or upgrades.</p>
-<div class="cmd"><pre>podman compose exec -it hopper gh auth login</pre><button type="button" data-copy="podman compose exec -it hopper gh auth login">Copy</button></div>
-<p>Answer <strong>GitHub.com</strong>, <strong>HTTPS</strong>, and <strong>Login with a web browser</strong>: it
-prints a one-time code and a web address; open the address on any device and enter the code.</p>
-<div class="cmd"><pre>podman compose exec -it hopper claude</pre><button type="button" data-copy="podman compose exec -it hopper claude">Copy</button></div>
+<li><p><strong>Sign in to GitHub and to Claude Code.</strong> Once is enough: both are kept when the hopper
+restarts or upgrades.</p>
+<p>GitHub: in the UI, open <strong>Sources</strong> and press <strong>Log in to GitHub</strong>. It shows a
+code and a web address; open the address on any device, sign in to GitHub, and enter the code. The panel
+says <strong>logged-in</strong> when it is done.</p>
+<p>Claude Code, inside the hopper's container:</p>
+<div class="cmd"><pre>podman compose exec hopper claude</pre><button type="button" data-copy="podman compose exec hopper claude">Copy</button></div>
 <p>In Claude Code, type <code>/login</code>, follow it, then <code>/exit</code>. Then say who jobs commit as:</p>
 <div class="cmd"><pre>podman compose exec hopper git config --global user.name "Your Name"</pre><button type="button" data-copy="podman compose exec hopper git config --global user.name &quot;Your Name&quot;">Copy</button></div>
 <div class="cmd"><pre>podman compose exec hopper git config --global user.email you@example.com</pre><button type="button" data-copy="podman compose exec hopper git config --global user.email you@example.com">Copy</button></div></li>
@@ -139,7 +140,7 @@ write to. Its clone goes in the hopper's home, inside the container:</p>
 <div class="cmd"><pre>podman compose exec hopper git clone https://github.com/your-login/your-repo /home/node/your-repo</pre><button type="button" data-copy="podman compose exec hopper git clone https://github.com/your-login/your-repo /home/node/your-repo">Copy</button></div></li>
 <li><p><strong>Tell hopper whose issues to take, and from where.</strong> Open its settings in a terminal
 editor:</p>
-<div class="cmd"><pre>podman compose exec -it hopper hopper config edit plugins.yaml</pre><button type="button" data-copy="podman compose exec -it hopper hopper config edit plugins.yaml">Copy</button></div>
+<div class="cmd"><pre>podman compose exec hopper hopper config edit plugins.yaml</pre><button type="button" data-copy="podman compose exec hopper hopper config edit plugins.yaml">Copy</button></div>
 <p>Under <code>jobSources:</code>, find the entry with <code>name: github</code> and replace it with this,
 using your GitHub login and your repository:</p>
 <div class="cmd yaml"><pre>  - name: github

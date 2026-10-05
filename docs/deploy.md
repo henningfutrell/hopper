@@ -17,7 +17,7 @@ with Podman** ("In containers, with Podman"); the host install is the other way.
 | Process settings | `HOPPER_*` variables: port, LAN names and peers, public URL, tick, limits (`src/config.ts`). |
 | Plugins | Optional. `HOPPER_PLUGIN_DIR` (plugins put there by hand; a container mounts it read-only) and `HOPPER_PLUGIN_STORE` (a git repository the UI installs plugins from — this repository is one: docs/plugins.md). Store installs are kept in the database and restored into the work dir at start: they need no plugin dir and no volume. |
 | Config | the documents `plugins.yaml`, `rules.md`, `auth.yaml`: from the UI, or `hopper config edit <document>`; webhook subscriptions, rows in the database: from the UI (Webhooks). The first boot writes the built-in plugins.yaml. |
-| GitHub | the gh CLI signed in as the owner (default; `GH_TOKEN` in a container), or a GitHub App the owner creates for this hopper with `scripts/create-github-app.sh` (its key in `GITHUB_APP_PRIVATE_KEY`). Each hopper has its own App and key; there is no shared one. Setting up either: `README.md` "Connect GitHub". |
+| GitHub | the gh CLI logged in as the owner (default; from the UI, Sources → Log in to GitHub — design.md "gh login"), or a GitHub App the owner creates for this hopper with `scripts/create-github-app.sh` (its key in `GITHUB_APP_PRIVATE_KEY`). Each hopper has its own App and key; there is no shared one. Setting up either: `README.md` "Connect GitHub". |
 | Where jobs run | machines: this host's herdr session (`hopper-herdr`), and attached machines, instances in plugins.yaml `machines:` — `ssh` targets, `client` targets, `docker` container targets. Setting each one up, step by step: `README.md` "Add machines". |
 
 `hopper` is the operator CLI (`hopper config …`, `hopper login-code`); it needs `HOPPER_DATABASE_URL` (or `_FILE`) and nothing else. `hopper help` lists its commands; `node src/main.ts --help` lists every daemon setting with its default.
@@ -57,9 +57,10 @@ podman compose exec hopper hopper login-code --link http://127.0.0.1:4790
   (`scripts/container-start.sh`) starts hopper's herdr session and keeps it running, as
   `hopper-herdr.service` does on a host. That is the `local` machine. Attached machines work as
   anywhere else.
-- **Sign-ins.** `podman compose exec -it hopper gh auth login` and `podman compose exec -it hopper claude`
-  (`/login`), once: both are kept in the home volume. Or the tokens in `.env`: `GH_TOKEN`,
-  `CLAUDE_CODE_OAUTH_TOKEN`. Jobs reach GitHub over HTTPS through gh (git's credential helper is
+- **Sign-ins.** GitHub: the UI's Sources view → **Log in to GitHub**, once (gh's device flow, run by the
+  hopper; no terminal). Claude Code: `podman compose exec hopper claude` (`/login`), once. Both are kept
+  in the home volume. No `-it`: `podman compose exec` is interactive with a terminal by default, and
+  podman-compose refuses the flag. Or, for Claude Code, `CLAUDE_CODE_OAUTH_TOKEN` in `.env`. Jobs reach GitHub over HTTPS through gh (git's credential helper is
   `gh auth git-credential`). Who jobs commit as: `git config --global` in the container, or the
   `GIT_AUTHOR_*`/`GIT_COMMITTER_*` variables in `.env`.
 - **Settings and secrets: `.env` beside `compose.yaml`**, optional (`.env.example`, mode 600). Compose

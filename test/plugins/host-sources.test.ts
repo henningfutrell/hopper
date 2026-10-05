@@ -84,7 +84,7 @@ describe('detection of the job-source plugins', () => {
     const calls: string[][] = [];
     const { host: a } = start({ file: ghFile, kit: fakeKit({ succeeds: async (bin, args) => { calls.push([bin, ...args]); return false; } }) });
     await a.start();
-    expect(detection(a)).toMatchObject({ status: 'needs-setup', command: 'gh auth login' });
+    expect(detection(a)).toMatchObject({ status: 'needs-setup', command: 'Sources → Log in to GitHub, or gh auth login' });
     expect(calls).toContainEqual(['gh', 'auth', 'status']);
     a.stop();
 
