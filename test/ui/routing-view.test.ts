@@ -22,7 +22,7 @@ const PLUGINS = {
   executors: { instances: [] }, jobSources: { instances: [] }, machines: { instances: [] }, usageSources: { instances: [] }, notifiers: { instances: [] },
   plugins: [
     { id: 'pass-through', role: 'router', describe: 'admits every job', builtin: true, detection: { status: 'available' }, options: empty },
-    { id: 'jev-router', role: 'router', describe: 'Jev', builtin: true, detection: { status: 'unavailable', reason: 'no Jev checkout' }, options: empty },
+    { id: 'gate-router', role: 'router', describe: 'gate router', builtin: true, detection: { status: 'unavailable', reason: 'no grok-bot-jev checkout' }, options: empty },
     { id: 'priority', role: 'queue-sorter', describe: 'effective priority first', builtin: true, detection: { status: 'available' }, options: empty },
     { id: 'oldest-first', role: 'queue-sorter', describe: 'oldest first', builtin: true, detection: { status: 'available' }, options: empty },
   ],
@@ -94,7 +94,7 @@ describe('Routing view', () => {
     await boot();
     await vi.waitFor(() => expect(item('oldest-first')).toBeDefined());
     const text = document.body.textContent!;
-    for (const s of ['pass-through', 'jev-router', 'no Jev checkout', 'priority', 'oldest-first']) expect(text).toContain(s);
+    for (const s of ['pass-through', 'gate-router', 'no grok-bot-jev checkout', 'priority', 'oldest-first']) expect(text).toContain(s);
   });
 
   it('Use on a queue sorter posts a select against the report version', async () => {

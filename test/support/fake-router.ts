@@ -34,8 +34,8 @@ export function createFakeRouter(o: { clock: Clock }): Router {
     name: 'fake',
     async advise(job: Job): Promise<Advice> {
       const at = o.clock.now().toISOString();
-      if (bypassed(job)) return { action: 'proceed_full', reason: 'bypass marker', details: { jevUsed: false }, source: 'fake', at };
-      return { ...classify(job), details: { jevUsed: true }, source: 'fake', at };
+      if (bypassed(job)) return { action: 'proceed_full', reason: 'bypass marker', details: { gatesAsked: false }, source: 'fake', at };
+      return { ...classify(job), details: { gatesAsked: true }, source: 'fake', at };
     },
   };
 }

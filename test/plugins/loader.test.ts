@@ -17,10 +17,10 @@ const routerJs = (id: string) => `export default {
 `;
 
 describe('built-in plugins', () => {
-  it('are the routers jev-router and pass-through, the answerer claude-cli, the assessors claude-cli-assessor and always-escalate, the executors herdr-claude, command and test, the job sources github-gh and github-app, the machine source local, the usage source claude-plan, the notifier grokbot-routine', () => {
+  it('are the routers gate-router and pass-through, the answerer claude-cli, the assessors claude-cli-assessor and always-escalate, the executors herdr-claude, command and test, the job sources github-gh and github-app, the machine source local, the usage source claude-plan, the notifier grokbot-routine', () => {
     expect(BUILTIN_PLUGINS.map((p) => [p.id, p.role]).sort()).toEqual([
-      ['always-escalate', 'assessor'], ['claude-cli', 'answerer'], ['claude-cli-assessor', 'assessor'], ['claude-plan', 'usage-source'], ['command', 'executor'], ['github-app', 'job-source'], ['github-gh', 'job-source'],
-      ['grokbot-routine', 'notifier'], ['herdr-claude', 'executor'], ['jev-router', 'router'], ['local', 'machine-source'], ['newest-first', 'queue-sorter'], ['oldest-first', 'queue-sorter'],
+      ['always-escalate', 'assessor'], ['claude-cli', 'answerer'], ['claude-cli-assessor', 'assessor'], ['claude-plan', 'usage-source'], ['command', 'executor'], ['gate-router', 'router'], ['github-app', 'job-source'], ['github-gh', 'job-source'],
+      ['grokbot-routine', 'notifier'], ['herdr-claude', 'executor'], ['local', 'machine-source'], ['newest-first', 'queue-sorter'], ['oldest-first', 'queue-sorter'],
       ['pass-through', 'router'], ['priority', 'queue-sorter'], ['test', 'executor'],
     ]);
   });

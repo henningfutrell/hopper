@@ -11,8 +11,8 @@ describe('plugins.yaml (router, answerer, assessor, executors, jobSources, machi
   });
 
   it('reads the router instance', () => {
-    const r = loadPluginsFile(file('version: 1\nrouter: { name: jev, plugin: jev-router, options: { python: python3 } }\n'));
-    expect(r).toEqual({ router: { name: 'jev', plugin: 'jev-router', options: { python: 'python3' } }, warnings: [] });
+    const r = loadPluginsFile(file('version: 1\nrouter: { name: gate-router, plugin: gate-router, options: { python: python3 } }\n'));
+    expect(r).toEqual({ router: { name: 'gate-router', plugin: 'gate-router', options: { python: 'python3' } }, warnings: [] });
   });
 
   it('options default to {}', () => {
@@ -28,7 +28,7 @@ describe('plugins.yaml (router, answerer, assessor, executors, jobSources, machi
   it('reads every role section', () => {
     const r = loadPluginsFile(file([
       'version: 1',
-      'router: { name: jev, plugin: jev-router }',
+      'router: { name: gate-router, plugin: gate-router }',
       'answerer: { name: opus, plugin: claude-cli, options: { model: opus } }',
       'assessor: { name: fable, plugin: claude-cli-assessor }',
       'executors: [ { name: test, plugin: test } ]',
@@ -38,7 +38,7 @@ describe('plugins.yaml (router, answerer, assessor, executors, jobSources, machi
       'notifiers: [ { name: grok-bot, plugin: grokbot-routine, options: { envFile: /x/g.env } } ]',
     ].join('\n')));
     expect(r).toEqual({
-      router: { name: 'jev', plugin: 'jev-router', options: {} },
+      router: { name: 'gate-router', plugin: 'gate-router', options: {} },
       answerer: { name: 'opus', plugin: 'claude-cli', options: { model: 'opus' } },
       assessor: { name: 'fable', plugin: 'claude-cli-assessor', options: {} },
       executors: [{ name: 'test', plugin: 'test', options: {} }],
@@ -100,7 +100,7 @@ describe('plugins.yaml (router, answerer, assessor, executors, jobSources, machi
     ['bad yaml', 'version: 1\nrouter: [unclosed\n', /plugins\.yaml/],
     ['wrong version', 'version: 2\n', /version/],
     ['unknown top-level key', 'version: 1\nrouters: {}\n', /routers/],
-    ['router without a plugin', 'version: 1\nrouter: { name: jev }\n', /router\.plugin/],
+    ['router without a plugin', 'version: 1\nrouter: { name: gate-router }\n', /router\.plugin/],
     ['router with an empty name', 'version: 1\nrouter: { name: "", plugin: x }\n', /router\.name/],
     ['options not a map', 'version: 1\nrouter: { name: a, plugin: b, options: 3 }\n', /router\.options/],
     ['assessor: null (the assessor slot is never empty)', 'version: 1\nassessor: null\n', /assessor/],
