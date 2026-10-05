@@ -4,6 +4,7 @@
 // the same way, inside WSL (issue #116).
 // Issue #115: the page is the main install path for someone new, so it says where to get every
 // prerequisite, checks them in one command, and walks through to a first finished job (gh CLI only).
+// Issue #125: the recommended path is the published image with Podman; the host install is the other way.
 import { spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -50,7 +51,7 @@ describe('the install page', () => {
   });
 
   it('keeps the services running after logout as a step, not a footnote', () => {
-    expect(page).toMatch(/<h2[^>]*>[^<]*[Kk]eep it running/);
+    expect(page).toMatch(/<h[23][^>]*>[^<]*[Kk]eep it running/);
     expect(page).toContain('loginctl enable-linger');
   });
 
@@ -61,6 +62,12 @@ describe('the install page', () => {
 
   it('reaches the UI of a host without a browser through an ssh tunnel', () => {
     expect(page).toContain('ssh -L 4790:127.0.0.1:4790');
+  });
+
+  it('keeps the Podman containers running after a reboot: podman-restart and lingering', () => {
+    const podman = page.slice(page.indexOf('id="podman"'), page.indexOf('id="first-job"'));
+    expect(podman).toContain('systemctl --user enable podman-restart.service');
+    expect(podman).toContain('loginctl enable-linger');
   });
 
   it('covers the gh CLI path only, not a GitHub App (issue #113)', () => {
@@ -74,6 +81,11 @@ describe('the Windows install (WSL)', () => {
   it('has its own section, linked from the top of the page', () => {
     expect(page).toContain('href="#windows"');
     expect(windows.length).toBeLessThan(page.length);
+  });
+
+  it('runs the hopper with Podman inside WSL, the same steps as on Linux (issue #125)', () => {
+    expect(windows).toContain('sudo apt-get install -y podman podman-compose');
+    expect(windows).toContain('href="#podman"');
   });
 
   it('sets up WSL with systemd, then runs the same one-line install inside it', () => {
