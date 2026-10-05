@@ -28,6 +28,9 @@ else if (cmd.startsWith('agent start jh-boom')) fail('pane_not_found', 'pane w7:
 else if (cmd.startsWith('agent start')) out({ result: { type: 'agent_started' } });
 else if (cmd === 'agent get jh-gone') fail('agent_not_found', 'agent target jh-gone not found');
 else if (cmd.startsWith('agent get')) out({ result: { type: 'agent_info', agent: { name: argv[4], agent_status: 'idle', state_change_seq: 4, pane_id: 'w7:p5' } } });
+else if (cmd.startsWith('pane wait-output') && argv.includes('never-printed')) fail('timeout', 'timed out waiting for output match');
+else if (cmd.startsWith('pane wait-output')) out({ result: { matched_line: argv[6], pane_id: argv[4] } });
+else if (cmd.startsWith('pane run')) process.stdout.write(''); // herdr prints nothing
 else if (cmd.startsWith('pane read')) process.stdout.write('line one\n● JOB_HOPPER_DONE\n');
 else if (cmd.startsWith('agent prompt') || cmd.startsWith('pane send-keys') || cmd.startsWith('pane close w7:p5')) out({ result: { type: 'ok' } });
 else if (cmd.startsWith('pane close')) fail('pane_not_found', `pane ${argv[4]} not found`);

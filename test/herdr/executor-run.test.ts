@@ -72,16 +72,31 @@ describe('herdr-claude executor: run', () => {
   it('prepares the scratch dir in the pane before Claude starts, git-ignored by its own .gitignore', async () => {
     const { herdr, executor } = setup({ turns: [DONE] });
     await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx);
-    expect(herdr.calls.find((c) => c.method === 'runInPane')!.args).toEqual(['w1:p1', `mkdir -p '${SCRATCH}' && printf '*\\n' > '${SCRATCH}/.gitignore'`]);
+    expect(herdr.calls.find((c) => c.method === 'runInPane')!.args).toEqual(['w1:p1', `mkdir -p '${SCRATCH}' && printf '*\\n' > '${SCRATCH}/.gitignore' && printf 'hopper-scratch-%s\\n' ready`]);
     const order = herdr.calls.map((c) => c.method);
     expect(order.indexOf('runInPane')).toBeGreaterThan(order.indexOf('createTab'));
     expect(order.indexOf('runInPane')).toBeLessThan(order.indexOf('startAgent'));
   });
 
+  it('runs the scratch command again until the shell has run it: a fresh shell can drop what is typed before its prompt', async () => {
+    const { herdr, executor } = setup({ turns: [DONE], shellDropsRuns: 2 });
+    expect(await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx)).toMatchObject({ kind: 'finished' });
+    expect(herdr.calls.filter((c) => c.method === 'runInPane')).toHaveLength(3);
+    expect(herdr.calls.filter((c) => c.method === 'waitOutput').map((c) => c.args.slice(1))).toEqual(Array(3).fill(['hopper-scratch-ready', 1000]));
+  });
+
+  it('fails the job, pane closed, when the shell never runs the scratch command', async () => {
+    const { herdr, executor } = setup({ turns: [DONE], shellDropsRuns: 1000 });
+    expect(await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx))
+      .toEqual({ kind: 'failed', error: `pane w1:p1 never ran the scratch dir command within 60000 ms` });
+    expect(herdr.agentStarts).toEqual([]);
+    expect(herdr.closed).toEqual(['w1:p1']);
+  });
+
   it('quotes a work tree path for the shell', async () => {
     const { herdr, executor } = setup({ turns: [DONE] });
     await executor.run(contextFor(jobWith({ prompt: 'go', cwd: "/w/it's here" })).ctx);
-    expect(herdr.calls.find((c) => c.method === 'runInPane')!.args[1]).toBe(`mkdir -p '/w/it'\\''s here/.hopper-scratch' && printf '*\\n' > '/w/it'\\''s here/.hopper-scratch/.gitignore'`);
+    expect(herdr.calls.find((c) => c.method === 'runInPane')!.args[1]).toBe(`mkdir -p '/w/it'\\''s here/.hopper-scratch' && printf '*\\n' > '/w/it'\\''s here/.hopper-scratch/.gitignore' && printf 'hopper-scratch-%s\\n' ready`);
   });
 
   it('every job prompt names its work tree and keeps the work in it', async () => {

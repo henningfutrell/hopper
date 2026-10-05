@@ -98,6 +98,12 @@ describe('herdr CLI client', () => {
     expect(calls()[0]!.argv.slice(2)).toEqual(['pane', 'run', 'w7:p5', "mkdir -p '/w/x'"]);
   });
 
+  it('waitOutput waits for a literal match in recent output: true when seen, false on herdr\'s timeout', async () => {
+    expect(await herdr().waitOutput('w7:p5', 'hopper-scratch-ready', 1000)).toBe(true);
+    expect(await herdr().waitOutput('w7:p5', 'never-printed', 1000)).toBe(false);
+    expect(calls()[0]!.argv.slice(2)).toEqual(['pane', 'wait-output', 'w7:p5', '--match', 'hopper-scratch-ready', '--source', 'recent-unwrapped', '--timeout', '1000']);
+  });
+
   it('prompt, sendKeys and closePane issue the documented commands', async () => {
     const h = herdr();
     await h.prompt('jh-a', 'line 1\nline 2');
