@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- You can run the hopper from a ready-made image with Podman: nothing to build or install on the machine but Podman, and an upgrade is one download. This is now the recommended way, and the install page leads with it.
 - Jobs keep all their work, temporary files included, inside the folder they start in, instead of wandering off to other places on the machine.
 - You can run the hopper with Docker alone: download one file, start it, and the hopper, its database and the place its jobs run all come up together, with nothing else to install.
 - You can install the hopper on Windows. It runs in WSL, from the same one-line install, and the install page shows each step.

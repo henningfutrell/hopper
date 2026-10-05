@@ -1,47 +1,44 @@
-# job-hopper in Docker Compose (docs/deploy.md "Docker Compose", issue #119): its Postgres and the
-# hopper, which runs jobs in its own herdr session inside its container. No host install, nothing to
-# set before the first start:
+# job-hopper in containers (docs/deploy.md "In containers, with Podman", issues #119 and #125): its
+# Postgres and the hopper's public image, which runs jobs in its own herdr session inside its
+# container. No host install, nothing to build, nothing to set before the first start:
 #
 #   curl -fsSLO https://henningfutrell.github.io/hopper/compose.yaml
-#   docker compose up -d --build
-#   docker compose exec hopper job-hopper login-code --link http://127.0.0.1:4790
+#   podman compose up -d
+#   podman compose exec hopper job-hopper login-code --link http://127.0.0.1:4790
 #
-# Settings and secrets, all optional, go in a .env file beside this one: JOB_HOPPER_* settings,
-# GH_TOKEN, CLAUDE_CODE_OAUTH_TOKEN, … (deploy/hopper.env.example). JOB_HOPPER_PORT moves the UI
-# port; HOPPER_SOURCE builds another source (a checkout: HOPPER_SOURCE=.). Upgrade: `up -d --build`.
+# `docker compose` works the same. Settings and secrets, all optional, go in a .env file beside this
+# one: JOB_HOPPER_* settings, GH_TOKEN, CLAUDE_CODE_OAUTH_TOKEN, … JOB_HOPPER_PORT moves the UI port;
+# HOPPER_IMAGE runs another image (one built from a checkout: `podman build -t localhost/hopper .`,
+# HOPPER_IMAGE=localhost/hopper). Upgrade: `podman compose pull && podman compose up -d`.
 name: hopper
 
 services:
-  # First start only: a random database password, kept in the secrets volume. Each file is readable
-  # only by the one service that needs it (postgres: uid 70; the hopper: uid 1000).
-  secrets:
-    image: postgres:17-alpine
-    user: root
-    restart: "no"
-    entrypoint: [sh, -euc]
-    command:
-      - |
-        umask 077
-        [ -s /secrets/postgres_password ] || head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n' > /secrets/postgres_password
-        printf 'postgres://hopper:%s@postgres:5432/hopper' "$$(cat /secrets/postgres_password)" > /secrets/database_url
-        chown 70:70 /secrets/postgres_password
-        chown 1000:1000 /secrets/database_url
-    volumes:
-      - secrets:/secrets
-
+  # Postgres makes the database password on its first start, kept in the secrets volume, before the
+  # database starts. Each file is readable only by the one service that needs it (postgres: uid 70;
+  # the hopper: uid 1000). No one-shot service for it: podman-compose cannot start a container whose
+  # dependency has exited.
   postgres:
     image: postgres:17-alpine
     restart: unless-stopped
-    depends_on:
-      secrets:
-        condition: service_completed_successfully
+    entrypoint: [sh, -euc]
+    command:
+      - |
+        s=/run/hopper-secrets
+        (
+          umask 077
+          [ -s $$s/postgres_password ] || head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n' > $$s/postgres_password
+          printf 'postgres://hopper:%s@postgres:5432/hopper' "$$(cat $$s/postgres_password)" > $$s/database_url
+        )
+        chown 70:70 $$s/postgres_password
+        chown 1000:1000 $$s/database_url
+        exec docker-entrypoint.sh postgres
     environment:
       POSTGRES_USER: hopper
       POSTGRES_DB: hopper
       POSTGRES_PASSWORD_FILE: /run/hopper-secrets/postgres_password
     volumes:
       - postgres:/var/lib/postgresql/data
-      - secrets:/run/hopper-secrets:ro
+      - secrets:/run/hopper-secrets
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U hopper -d hopper"]
       interval: 5s
@@ -49,12 +46,9 @@ services:
       retries: 20
 
   hopper:
-    build:
-      context: ${HOPPER_SOURCE:-https://github.com/henningfutrell/hopper.git#main}
+    image: ${HOPPER_IMAGE:-ghcr.io/henningfutrell/hopper:latest}
     restart: unless-stopped
     depends_on:
-      secrets:
-        condition: service_completed_successfully
       postgres:
         condition: service_healthy
     env_file:

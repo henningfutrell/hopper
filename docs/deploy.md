@@ -5,7 +5,8 @@ local file. Its secrets come from its runtime — environment variables or mount
 stores none; its config is config documents in that database
 (docs/design.md "Deployable"). It runs as a self-hosted service anywhere it can reach its database:
 containers from one compose file, systemd `--user` units on a host that also runs the jobs, or any
-platform that runs a container and hands it a managed Postgres.
+platform that runs a container and hands it a managed Postgres. **Recommended: the published image,
+with Podman** ("In containers, with Podman"); the host install is the other way.
 
 ## What every deploy needs
 
@@ -27,28 +28,36 @@ Mounted secrets: in compose, a `secrets:` entry (added to `compose.yaml`) appear
 `<NAME>_FILE=/run/secrets/<name>`; in Kubernetes, a Secret volume; under systemd, `LoadCredential=` in
 a drop-in with `Environment=<NAME>_FILE=%d/<name>`.
 
-## Docker Compose
+## In containers, with Podman (recommended)
 
-`compose.yaml` (issue #119): the whole hopper in containers, from that one file — no clone, no host
-install, nothing to set before the first start. The install page serves it.
+`compose.yaml` (issues #119, #125): the whole hopper in containers, from that one file — no clone, no
+host install, no build, nothing to set before the first start. The hopper is the public image
+`ghcr.io/henningfutrell/hopper` (`latest` follows `main`; `sha-<commit>` pins one build; Intel/AMD and
+ARM), built and pushed by `.github/workflows/image.yml` on every change to `main`. The install page
+serves the compose file.
+
+Needs Podman 4.7 or later with a compose provider: `podman compose` runs `docker-compose` or
+`podman-compose`, whichever is installed (Debian/Ubuntu: `sudo apt install podman podman-compose`;
+Fedora: `sudo dnf install podman podman-compose`). Rootless: run it as your own user, no sudo. Docker
+works the same — `docker compose` in place of `podman compose` everywhere below.
 
 ```sh
 curl -fsSLO https://henningfutrell.github.io/hopper/compose.yaml
-docker compose up -d --build
-docker compose exec hopper job-hopper login-code --link http://127.0.0.1:4790
+podman compose up -d
+podman compose exec hopper job-hopper login-code --link http://127.0.0.1:4790
 ```
 
 | service | |
 |---|---|
 | `secrets` | runs once per start: makes a random database password on the first one, in the `secrets` volume, and writes the database URL from it. Each file is readable only by the one service that uses it. Nobody types or keeps the password. |
 | `postgres` | the database (`POSTGRES_PASSWORD_FILE`), on no host port; data in the `postgres` volume. |
-| `hopper` | the image built from `HOPPER_SOURCE` (default `https://github.com/henningfutrell/hopper.git#main`; a checkout: `HOPPER_SOURCE=.`). `JOB_HOPPER_DATABASE_URL_FILE` from `secrets`. Its home, `/home/node`, is the `home` volume: the herdr session, the gh and claude sign-ins, git's identity, and the repositories jobs work in. |
+| `hopper` | the image `HOPPER_IMAGE` names (default `ghcr.io/henningfutrell/hopper:latest`). `JOB_HOPPER_DATABASE_URL_FILE` from `secrets`. Its home, `/home/node`, is the `home` volume: the herdr session, the gh and claude sign-ins, git's identity, and the repositories jobs work in. |
 
 - **Jobs run in the hopper's container.** The image carries herdr; its entrypoint
   (`scripts/container-start.sh`) starts job-hopper's herdr session and keeps it running, as
   `job-hopper-herdr.service` does on a host. That is the `local` machine. Attached machines work as
   anywhere else.
-- **Sign-ins.** `docker compose exec -it hopper gh auth login` and `docker compose exec -it hopper claude`
+- **Sign-ins.** `podman compose exec -it hopper gh auth login` and `podman compose exec -it hopper claude`
   (`/login`), once: both are kept in the home volume. Or the tokens in `.env`: `GH_TOKEN`,
   `CLAUDE_CODE_OAUTH_TOKEN`. Jobs reach GitHub over HTTPS through gh (git's credential helper is
   `gh auth git-credential`). Who jobs commit as: `git config --global` in the container, or the
@@ -61,11 +70,22 @@ docker compose exec hopper job-hopper login-code --link http://127.0.0.1:4790
   defaults to the private ranges and `JOB_HOPPER_LAN_NAMES` to `hopper`, the name a reverse proxy on the
   compose network reaches it by; set `JOB_HOPPER_PUBLIC_URL` for one.
 - **Health:** the image's HEALTHCHECK reads `/api/health` on loopback inside the container.
-- **Upgrade:** `docker compose up -d --build` (self-update does not apply to a container). It restarts
-  the container, so it ends the running jobs' panes: upgrade when none runs.
-- **Remove:** `docker compose down` keeps the volumes; `down -v` deletes the database and the sign-ins.
-- The image without the claude CLI: `--build-arg INSTALL_CLAUDE=false` (then jobs and the answerer need
+- **Keep it running.** Every container restarts unless stopped. Rootless Podman has no daemon, so
+  nothing starts them after a reboot by itself: `systemctl --user enable podman-restart.service` (it
+  starts every container whose restart policy is `always` or `unless-stopped`) and
+  `sudo loginctl enable-linger "$USER"`, once.
+- **Upgrade:** `podman compose pull && podman compose up -d` (self-update does not apply to a
+  container). It recreates the hopper's container, so it ends the running jobs' panes: upgrade when none
+  runs. A pinned build: `HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:sha-<commit>` in `.env`.
+- **Remove:** `podman compose down` keeps the volumes; `down -v` deletes the database and the sign-ins.
+- **An image from a checkout:** `podman build -t localhost/hopper .`, then `HOPPER_IMAGE=localhost/hopper`
+  in `.env`. Without the claude CLI: `--build-arg INSTALL_CLAUDE=false` (then jobs and the answerer need
   attached machines).
+
+**From the build-from-source compose file** (before issue #125): the volumes are the same, so the new
+file, downloaded into the same folder, starts on the old data with `docker compose up -d`. Docker and
+Podman keep separate volumes: moving such a stack from Docker to Podman moves the database once, with
+`pg_dump` from one and `psql` into the other, before the hopper's first start under Podman.
 
 **From the earlier container deploy** (`deploy/compose.yaml --profile container`, removed): its database
 is the `job-hopper_postgres` volume, which `deploy/compose.yaml` still serves. Move it into the new stack
