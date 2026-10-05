@@ -55,6 +55,8 @@ describe('GET /docs/', () => {
     expect(script.status).toBe(200);
     expect(script.headers['content-type']).toMatch(/javascript/);
     expect((await get(a, '/docs')).status).toBe(301);
+    // Issue #183: the app's icon, not Scalar's.
+    expect(page.text).toMatch(/"favicon":\s*"\/favicon\.svg"/);
   });
 });
 

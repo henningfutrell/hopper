@@ -9,6 +9,8 @@ const h = harness();
 afterEach(() => stopAll(h));
 const start = (auth: unknown, env?: Record<string, string>) => startWithAuth(h, auth, env);
 const oidc = (o?: Parameters<typeof oidcIdp>[1]) => oidcIdp(h, o);
+// Issue #183: every page the daemon serves shows the app's icon.
+const ICON = '<link rel="icon" type="image/svg+xml" href="/favicon.svg">';
 
 describe('no auth.yaml: local sign-in only', () => {
   it('the session view offers the login code and no providers', async () => {
@@ -102,6 +104,7 @@ describe('OIDC', () => {
     const { app, host } = await start({ version: 1, providers: [oidcProvider(idp, { defaultRole: 'admin' })] });
     const res = await rawRequest(app.url, { path: '/ui/auth/corp/callback?code=x&state=nope', headers: { host } });
     expect(res.status).toBe(400);
+    expect(res.text).toContain(ICON);
   });
 
   it('a ticket works once', async () => {
@@ -110,6 +113,7 @@ describe('OIDC', () => {
     const binding = 'a'.repeat(40);
     const run = await signIn(app.url, origin, 'corp', { binding });
     expect(run.token).toBeDefined();
+    expect(run.callback!.text).toContain(ICON);
     const again = await rawRequest(app.url, { method: 'POST', path: '/ui/auth/complete', body: run.complete ? JSON.stringify({ ticket: /'([0-9a-f]{64})'/.exec(run.callback!.text)![1], binding }) : '{}',
       headers: { host, origin, 'content-type': 'application/json' } });
     expect(again.status).toBe(403);
