@@ -76,6 +76,14 @@ Mark every option that names a program, its arguments, a working directory, an i
 sourced file, or where a credential is read or sent, with `.meta({ commandBearing: true })`.
 The UI shows those read-only; they are edited only with `hopper config edit plugins.yaml` (design.md "UI and mutation").
 
+## Machine options
+
+An option that names the machine a part runs on is marked `.meta({ machine: true })` and has no
+default: it is required. The UI picks it from the configured machines (this one is the `local`
+machine in that list, never an implicit default), and an edit or an added instance naming no
+configured machine is refused. Find the machine with the context's `machine(id)`; one with no `ssh`,
+`docker` or `client` is this machine (issue #174).
+
 ## Detection
 
 `detect(sys, options)` → `available` | `unavailable` + reason | `needs-setup` + reason + the command

@@ -1,7 +1,8 @@
 // One plugin instance's options form (Remove for a list role's instance; an escalation level also
 // moves earlier or later), a one-instance role's plugin selector and a list role's Add form (design.md "UI and mutation"), shared by the Plugins view, the Routing view and the Question gates panel. Each form keeps its own
 // unsaved edits; command-bearing options are shown, never edited (plugins.yaml only); an option the plugin lists
-// choices for (a model) is picked from them, not typed (issue #151). One Save sends
+// choices for (a model) is picked from them, not typed (issue #151); a machine option from the configured
+// machines, and never left empty — Add asks for it too (issue #174). One Save sends
 // one instance's whole options object through POST /ui/api/plugins against GET /api/plugins'
 // version. Reads the report and the session from the store.
 import { ArrowDown, ArrowUp } from 'lucide-react';
@@ -13,7 +14,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Confirm } from '@/components/confirm';
 import { StatusBadge } from '@/components/status';
 import { post, SessionRejected } from '@/lib/api';
-import { collectOptions, fieldKind, instanceState, isListRole, newInstance, ROLE_TITLES, shown, type Draft, type OptionSchema, type OptionsSchema } from '@/model/plugins';
+import { collectOptions, fieldKind, instanceState, isListRole, machineOptions, newInstance, ROLE_TITLES, shown, type Draft, type OptionSchema, type OptionsSchema } from '@/model/plugins';
 import type { InstanceSpec, ListRole, OptionChoice, PluginsEdit, PluginsReport, Role, SelectableRole } from '@/model/wire';
 import { refreshHealth, refreshPlugins, setPlugins, useHopper } from '@/store';
 import { useCanAdmin } from '@/store/selectors';
@@ -72,7 +73,9 @@ function Field({ name, p, choices, current, draft, disabled, set }: {
     const listed = choices ?? [];
     input = (
       <select name={name} className={FIELD} value={picked} disabled={disabled} onChange={(e) => set(e.target.value)}>
-        <option value="">{p.default !== undefined ? `default (${String(p.default)})` : '—'}</option>
+        {p.machine
+          ? <option value="" disabled>pick a machine</option>
+          : <option value="">{p.default !== undefined ? `default (${String(p.default)})` : '—'}</option>}
         {listed.map((c) => <option key={c.value} value={c.value} title={c.description}>{c.label ? `${c.label} (${c.value})` : c.value}</option>)}
         {picked && !listed.some((c) => c.value === picked) && <option value={picked}>{picked} (not listed here)</option>}
       </select>
@@ -194,21 +197,27 @@ export function PluginSelector({ role }: { role: SelectableRole }) {
   return <Picker key={current} role={role} current={current} report={report} />;
 }
 
-/** A new instance of a list role: an available plugin, under the name typed (else the plugin id), with its defaults. */
+/** A new instance of a list role: an available plugin, under the name typed (else the plugin id), with its defaults and the machine picked. */
 export function AddInstance({ role }: { role: ListRole }) {
   const report = useHopper((s) => s.plugins);
   const authed = useCanAdmin();
   const [plugin, setPlugin] = useState('');
   const [typed, setTyped] = useState('');
+  const [machines, setMachines] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   if (!report || !authed) return null;
   const choices = report.plugins.filter((p) => p.role === role);
   const pick = plugin || choices.find((p) => p.detection.status === 'available')?.id || '';
   const next = pick ? newInstance(report, role, pick, typed) : undefined;
+  const picked = report.plugins.find((p) => p.id === pick);
+  const onMachine = machineOptions(picked?.options as OptionsSchema | undefined);
+  const options = Object.fromEntries(onMachine.map((k) => [k, machines[k] ?? '']));
+  const unpicked = onMachine.some((k) => !options[k]);
   const add = async () => {
-    if (!next || next.problem) return;
+    if (!next || next.problem || unpicked) return;
     setBusy(true);
-    if (await sendPluginsEdit({ action: 'add', role, plugin: pick, name: next.name, version: report.config.version }, `Added ${next.name}`)) setTyped('');
+    const edit = { action: 'add' as const, role, plugin: pick, name: next.name, ...(onMachine.length ? { options } : {}), version: report.config.version };
+    if (await sendPluginsEdit(edit, `Added ${next.name}`)) { setTyped(''); setMachines({}); }
     setBusy(false);
   };
   return (
@@ -218,7 +227,14 @@ export function AddInstance({ role }: { role: ListRole }) {
         {choices.map((p) => <option key={p.id} value={p.id} disabled={p.detection.status !== 'available'}>{p.id}{p.builtin ? '' : ' (custom)'} — {p.detection.status}</option>)}
       </select>
       <Input name={`add-name-${role}`} className="h-8 w-40 font-mono text-xs" placeholder={pick || 'name'} value={typed} disabled={busy} onChange={(e) => setTyped(e.target.value)} />
-      <Button size="sm" variant="outline" disabled={busy || !next || next.problem !== undefined} onClick={() => void add()}>Add</Button>
+      {onMachine.map((k) => (
+        <select key={k} name={`add-${k}-${role}`} aria-label={k} className={`${FIELD} w-auto max-w-full`} value={options[k]} disabled={busy}
+          onChange={(e) => setMachines((m) => ({ ...m, [k]: e.target.value }))}>
+          <option value="" disabled>pick a machine</option>
+          {(picked?.choices?.[k] ?? []).map((c) => <option key={c.value} value={c.value} title={c.description}>{c.label ? `${c.label} (${c.value})` : c.value}</option>)}
+        </select>
+      ))}
+      <Button size="sm" variant="outline" disabled={busy || !next || next.problem !== undefined || unpicked} onClick={() => void add()}>Add</Button>
       {next?.problem && <span className="text-bad">{next.problem}</span>}
     </div>
   );

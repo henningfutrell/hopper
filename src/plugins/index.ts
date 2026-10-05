@@ -15,7 +15,7 @@ import { createRoutingConfig } from './routing-config.ts';
 import { BUILTIN_PLUGINS } from './builtin.ts';
 import { createDetectionKit } from './detect.ts';
 import { loadCustomPlugins, type LoadedPlugin, type LoadResult } from './loader.ts';
-import { optionsJsonSchema, parseOptions } from './options.ts';
+import { machineOptions, optionsJsonSchema, parseOptions, withMachineChoices } from './options.ts';
 import { applyEdit, configuredInstances, type Configured } from './edit.ts';
 import { BY_HAND, PLUGINS, loadPluginsFile } from './plugins-file.ts';
 import { applyExecutorSpecs, executorStatus, type BuiltExecutor } from './executor-slot.ts';
@@ -111,8 +111,12 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
   const sign = (): string => o.documents.version(PLUGINS);
 
   async function catalogueDetection(def: PluginDefinition): Promise<Detection> {
-    const parsed = parseOptions(def, {});
+    // A machine option has no default (issue #174): each instance names its machine, so the plugin is
+    // detected by what it needs besides the machine.
+    const onMachine = machineOptions(def);
+    const parsed = parseOptions(def, Object.fromEntries(onMachine.map((k) => [k, '-'])));
     if (!parsed.ok) return { status: 'needs-setup', reason: parsed.error, command: `set ${def.role} options for ${def.id}: ${BY_HAND}` };
+    if (onMachine.length) return { status: 'available', detail: 'runs on the machine each instance names' };
     return safeDetect(def, kit, parsed.options);
   }
 
@@ -326,7 +330,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
         plugins: entries.map((e) => ({
           id: e.definition.id, role: e.definition.role, describe: e.definition.describe, builtin: e.builtin,
           ...(e.path ? { path: e.path } : {}), detection: e.detection, options: optionsJsonSchema(e.definition),
-          ...(e.choices ? { choices: e.choices } : {}),
+          ...withMachineChoices(e.definition, e.choices, configured?.machines ?? []),
         })),
         errors: [...loaded.errors],
         warnings: [...loaded.warnings],
