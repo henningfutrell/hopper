@@ -1,0 +1,709 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>job-hopper — a self-hosted job queue for coding agents</title>
+<meta name="description" content="Label a GitHub issue. job-hopper pulls it, runs it as a Claude Code session on a machine it manages, answers or escalates its questions, and keeps every machine inside its usage budget.">
+<meta property="og:title" content="job-hopper — a self-hosted job queue for coding agents">
+<meta property="og:description" content="Label a GitHub issue. An agent picks it up. One daemon, one Postgres database, one line to install.">
+<meta property="og:type" content="website">
+<meta name="theme-color" content="#07090d">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230c4a6e'/%3E%3Cpath d='M9 22V10l7 6 7-6v12' fill='none' stroke='%237dd3fc' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..800&family=Geist+Mono:wght@400..600&display=swap" rel="stylesheet">
+<style>
+:root {
+  color-scheme: dark;
+  --bg: #07090d;
+  --bg-2: #0b0f15;
+  --panel: rgba(255, 255, 255, 0.025);
+  --panel-solid: #0d121a;
+  --line: rgba(255, 255, 255, 0.08);
+  --line-strong: rgba(255, 255, 255, 0.14);
+  --text: #e8edf3;
+  --muted: #8b95a5;
+  --faint: #5b6575;
+  --accent: #7dd3fc;
+  --accent-2: #a78bfa;
+  --ok: #86efac;
+  --warn: #fcd34d;
+  --sans: 'Geist', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --mono: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --radius: 14px;
+  --wrap: 1120px;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+a { color: inherit; text-decoration: none; }
+code, pre, kbd { font-family: var(--mono); }
+::selection { background: rgba(125, 211, 252, 0.3); }
+
+.wrap { max-width: var(--wrap); margin: 0 auto; padding: 0 24px; }
+
+/* backdrop: a faint grid, faded out, and two soft glows */
+.backdrop {
+  position: absolute; inset: 0 0 auto 0; height: 1100px; pointer-events: none; z-index: 0;
+  background-image:
+    linear-gradient(to right, rgba(255,255,255,0.035) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255,255,255,0.035) 1px, transparent 1px);
+  background-size: 56px 56px;
+  -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 0%, #000 30%, transparent 75%);
+          mask-image: radial-gradient(ellipse 70% 60% at 50% 0%, #000 30%, transparent 75%);
+}
+.glow {
+  position: absolute; pointer-events: none; z-index: 0; border-radius: 50%; filter: blur(90px); opacity: 0.55;
+}
+.glow.a { width: 620px; height: 420px; left: 50%; top: -180px; transform: translateX(-60%); background: radial-gradient(circle, rgba(56,189,248,0.55), transparent 65%); }
+.glow.b { width: 520px; height: 380px; left: 50%; top: -80px; transform: translateX(10%); background: radial-gradient(circle, rgba(139,92,246,0.45), transparent 65%); }
+
+/* nav */
+nav.top {
+  position: sticky; top: 0; z-index: 20;
+  backdrop-filter: saturate(140%) blur(14px); -webkit-backdrop-filter: saturate(140%) blur(14px);
+  background: rgba(7, 9, 13, 0.6);
+  border-bottom: 1px solid transparent;
+  transition: border-color .2s;
+}
+nav.top.scrolled { border-bottom-color: var(--line); }
+nav.top .wrap { display: flex; align-items: center; gap: 28px; height: 64px; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 600; letter-spacing: -0.01em; }
+.brand svg { width: 26px; height: 26px; }
+.navlinks { display: flex; gap: 22px; margin-left: auto; align-items: center; font-size: 14px; color: var(--muted); }
+.navlinks a:hover { color: var(--text); }
+.navlinks .gh { display: inline-flex; align-items: center; gap: 8px; padding: 7px 14px; border: 1px solid var(--line-strong); border-radius: 999px; color: var(--text); }
+.navlinks .gh:hover { border-color: rgba(125,211,252,0.5); }
+.navlinks .gh svg { width: 16px; height: 16px; }
+@media (max-width: 720px) { .navlinks .hide-sm { display: none; } }
+
+/* hero */
+header.hero { position: relative; padding: 96px 0 40px; text-align: center; }
+header.hero > .wrap { position: relative; z-index: 1; }
+.eyebrow {
+  display: inline-flex; align-items: center; gap: 10px; padding: 6px 14px 6px 8px;
+  border: 1px solid var(--line-strong); border-radius: 999px; background: var(--panel);
+  font-size: 13px; color: var(--muted);
+}
+.eyebrow .pill { font-family: var(--mono); font-size: 11.5px; padding: 2px 8px; border-radius: 999px; background: rgba(125,211,252,0.12); color: var(--accent); }
+h1 {
+  font-size: clamp(42px, 7.4vw, 84px); line-height: 1.02; letter-spacing: -0.045em; font-weight: 650;
+  margin: 26px auto 22px; max-width: 14ch;
+}
+h1 .grad {
+  background: linear-gradient(100deg, #e0f2fe 0%, var(--accent) 35%, var(--accent-2) 80%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.lede { font-size: clamp(17px, 2vw, 20px); color: var(--muted); max-width: 640px; margin: 0 auto; line-height: 1.55; }
+.lede strong { color: var(--text); font-weight: 500; }
+
+/* install box */
+.install { max-width: 900px; margin: 40px auto 0; text-align: left; }
+.install-box {
+  position: relative; border-radius: var(--radius); padding: 1px;
+  background: linear-gradient(135deg, rgba(125,211,252,0.55), rgba(255,255,255,0.08) 40%, rgba(167,139,250,0.5));
+  box-shadow: 0 30px 80px -30px rgba(56,189,248,0.35), 0 0 0 1px rgba(0,0,0,0.4);
+}
+.install-inner { border-radius: calc(var(--radius) - 1px); background: var(--panel-solid); overflow: hidden; }
+.tabs { display: flex; gap: 2px; padding: 8px 8px 0; border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
+.tabs::-webkit-scrollbar { display: none; }
+.tab {
+  appearance: none; border: 0; background: none; color: var(--muted); font: 500 13px var(--sans);
+  padding: 9px 14px 11px; cursor: pointer; position: relative; white-space: nowrap; border-radius: 8px 8px 0 0;
+}
+.tab:hover { color: var(--text); }
+.tab[aria-selected="true"] { color: var(--text); }
+.tab[aria-selected="true"]::after { content: ""; position: absolute; left: 12px; right: 12px; bottom: -1px; height: 2px; border-radius: 2px; background: var(--accent); }
+.panel { display: none; }
+.panel.active { display: block; }
+.cmd { display: flex; align-items: flex-start; gap: 12px; padding: 18px 14px 18px 20px; }
+.cmd pre { margin: 0; flex: 1; min-width: 0; overflow-x: auto; font-size: 13.5px; line-height: 1.75; color: var(--text); scrollbar-width: thin; }
+.cmd pre .p { color: var(--accent); user-select: none; -webkit-user-select: none; }
+.cmd pre .c { color: var(--faint); }
+.cmd pre .s { color: var(--ok); }
+.copy {
+  flex: none; display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px;
+  border: 1px solid var(--line-strong); border-radius: 8px; background: rgba(255,255,255,0.03);
+  color: var(--muted); font: 500 12.5px var(--sans); cursor: pointer; transition: all .15s;
+}
+.copy:hover { color: var(--text); border-color: rgba(125,211,252,0.5); }
+.copy.done { color: var(--ok); border-color: rgba(134,239,172,0.45); }
+.copy svg { width: 14px; height: 14px; }
+.install-note { padding: 12px 20px 14px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+.install-note code { font-size: 12.5px; color: var(--text); background: rgba(255,255,255,0.05); padding: 1px 6px; border-radius: 5px; }
+.ctas { display: flex; gap: 12px; justify-content: center; margin-top: 28px; flex-wrap: wrap; }
+.btn {
+  display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 20px; border-radius: 10px;
+  font-weight: 500; font-size: 15px; transition: transform .15s, background .15s, border-color .15s;
+}
+.btn.primary { background: var(--text); color: #0a0d12; }
+.btn.primary:hover { background: #fff; transform: translateY(-1px); }
+.btn.ghost { border: 1px solid var(--line-strong); color: var(--text); background: var(--panel); }
+.btn.ghost:hover { border-color: rgba(255,255,255,0.3); transform: translateY(-1px); }
+.btn svg { width: 16px; height: 16px; }
+
+/* terminal */
+.term-wrap { position: relative; max-width: 900px; margin: 72px auto 0; }
+.term {
+  border: 1px solid var(--line-strong); border-radius: var(--radius); background: #080b10; overflow: hidden;
+  box-shadow: 0 50px 120px -40px rgba(0,0,0,0.9), 0 0 0 1px rgba(0,0,0,0.5);
+  text-align: left;
+}
+.term-bar { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 16px; border-bottom: 1px solid var(--line); background: rgba(255,255,255,0.02); }
+.term-bar i { width: 11px; height: 11px; border-radius: 50%; background: #2a313c; }
+.term-bar span { margin: 0 auto; font: 12px var(--mono); color: var(--faint); transform: translateX(-24px); }
+.term-body { padding: 18px 20px 22px; font: 13px/1.75 var(--mono); color: #c9d2de; min-height: 380px; white-space: pre-wrap; word-break: break-word; }
+.term-body .p { color: var(--accent); }
+.term-body .st { color: var(--accent-2); }
+.term-body .dim { color: var(--faint); }
+.term-body .ok { color: var(--ok); }
+.cursor { display: inline-block; width: 8px; height: 15px; background: var(--accent); vertical-align: -2px; animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+
+/* sections */
+section { position: relative; padding: 120px 0 0; }
+.kicker { font: 500 12.5px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+h2 { font-size: clamp(30px, 4.4vw, 48px); line-height: 1.08; letter-spacing: -0.035em; font-weight: 620; margin: 14px 0 16px; max-width: 20ch; }
+.sub { color: var(--muted); font-size: 18px; max-width: 620px; margin: 0; }
+.sec-head { margin-bottom: 52px; }
+
+/* flow */
+.flow { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.step { background: var(--bg); padding: 28px 26px 30px; position: relative; transition: background .2s; }
+.step:hover { background: var(--bg-2); }
+.step .n { font: 500 12px var(--mono); color: var(--faint); }
+.step h3 { font-size: 18px; font-weight: 600; letter-spacing: -0.015em; margin: 14px 0 8px; }
+.step p { margin: 0; color: var(--muted); font-size: 14.5px; line-height: 1.6; }
+.step code { font-size: 12.5px; color: var(--accent); background: rgba(125,211,252,0.08); padding: 1px 6px; border-radius: 5px; }
+.step .ico { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; border: 1px solid var(--line-strong); background: var(--panel); margin-top: 14px; }
+.step .ico svg { width: 18px; height: 18px; stroke: var(--accent); }
+@media (max-width: 860px) { .flow { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 560px) { .flow { grid-template-columns: 1fr; } }
+
+/* labels strip */
+.labels { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 28px; align-items: center; font-size: 13.5px; color: var(--muted); }
+.lbl { font: 500 12.5px var(--mono); padding: 4px 10px; border-radius: 999px; border: 1px solid; }
+.lbl.l1 { color: #7dd3fc; border-color: rgba(125,211,252,0.35); background: rgba(125,211,252,0.07); }
+.lbl.l2 { color: #fcd34d; border-color: rgba(252,211,77,0.35); background: rgba(252,211,77,0.07); }
+.lbl.l3 { color: #86efac; border-color: rgba(134,239,172,0.35); background: rgba(134,239,172,0.07); }
+.lbl.l4 { color: #fca5a5; border-color: rgba(252,165,165,0.35); background: rgba(252,165,165,0.07); }
+.labels .arrow { color: var(--faint); }
+
+/* bento */
+.bento { display: grid; grid-template-columns: repeat(6, 1fr); gap: 16px; }
+.card {
+  grid-column: span 2; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel);
+  padding: 26px; position: relative; overflow: hidden; transition: border-color .2s, transform .2s;
+}
+.card:hover { border-color: var(--line-strong); }
+.card.wide { grid-column: span 3; }
+.card.full { grid-column: span 6; }
+.card h3 { font-size: 17px; font-weight: 600; letter-spacing: -0.015em; margin: 0 0 8px; }
+.card p { margin: 0; color: var(--muted); font-size: 14.5px; }
+.card code { font-size: 12.5px; color: var(--text); background: rgba(255,255,255,0.05); padding: 1px 6px; border-radius: 5px; }
+.card .viz { margin-top: 22px; }
+@media (max-width: 900px) { .card, .card.wide { grid-column: span 3; } }
+@media (max-width: 620px) { .bento { grid-template-columns: 1fr; } .card, .card.wide, .card.full { grid-column: span 1; } }
+
+/* usage viz */
+.meter { display: grid; gap: 10px; }
+.meter .row { display: grid; grid-template-columns: 74px 1fr 52px; gap: 12px; align-items: center; font: 12px var(--mono); color: var(--muted); }
+.meter .bar { height: 8px; border-radius: 99px; background: rgba(255,255,255,0.06); position: relative; overflow: hidden; }
+.meter .bar b { position: absolute; inset: 0 auto 0 0; border-radius: 99px; background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
+.meter .bar b.hot { background: linear-gradient(90deg, #fcd34d, #fca5a5); }
+.meter .lanes { display: flex; gap: 3px; justify-content: flex-end; }
+.meter .lanes i { width: 6px; height: 12px; border-radius: 2px; background: rgba(255,255,255,0.08); }
+.meter .lanes i.on { background: var(--ok); }
+
+/* plugin chips */
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { font: 12.5px var(--mono); padding: 6px 11px; border-radius: 8px; border: 1px solid var(--line-strong); background: rgba(255,255,255,0.02); color: var(--text); }
+.chip em { font-style: normal; color: var(--faint); }
+
+/* machines */
+.machines { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.machine { border: 1px solid var(--line); border-radius: var(--radius); padding: 24px; background: linear-gradient(180deg, rgba(255,255,255,0.03), transparent); }
+.machine .tag { font: 500 11.5px var(--mono); color: var(--accent); letter-spacing: .04em; text-transform: uppercase; }
+.machine h3 { font-size: 17px; margin: 10px 0 8px; font-weight: 600; letter-spacing: -0.015em; }
+.machine p { margin: 0; color: var(--muted); font-size: 14px; }
+.machine .via { margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--line-strong); font: 12px var(--mono); color: var(--faint); }
+@media (max-width: 900px) { .machines { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 560px) { .machines { grid-template-columns: 1fr; } }
+
+/* requirements */
+.reqs { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.req { display: grid; grid-template-columns: minmax(0, 300px) 1fr; gap: 24px; padding: 16px 24px; border-top: 1px solid var(--line); font-size: 14.5px; align-items: baseline; }
+.req:first-child { border-top: 0; }
+.req .what { font-family: var(--mono); font-size: 13.5px; color: var(--text); }
+.req .why { color: var(--muted); }
+@media (max-width: 620px) { .req { grid-template-columns: 1fr; gap: 4px; } }
+
+/* final cta */
+.final { margin: 140px 0 0; position: relative; text-align: center; padding: 80px 24px; border: 1px solid var(--line); border-radius: 22px; overflow: hidden; background: radial-gradient(ellipse 60% 80% at 50% 0%, rgba(56,189,248,0.14), transparent 70%), var(--bg-2); }
+.final h2 { margin: 0 auto 14px; }
+.final .sub { margin: 0 auto; }
+.final .install { margin-top: 34px; }
+
+footer { margin-top: 100px; border-top: 1px solid var(--line); padding: 34px 0 48px; color: var(--faint); font-size: 13.5px; }
+footer .wrap { display: flex; flex-wrap: wrap; gap: 18px 28px; align-items: center; }
+footer .links { display: flex; flex-wrap: wrap; gap: 20px; margin-left: auto; }
+footer a:hover { color: var(--text); }
+
+/* reveal on scroll */
+.reveal { opacity: 0; transform: translateY(18px); transition: opacity .7s ease, transform .7s ease; }
+.reveal.in { opacity: 1; transform: none; }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .reveal { opacity: 1; transform: none; transition: none; }
+  .cursor { animation: none; }
+}
+@media (max-width: 560px) {
+  .wrap { padding: 0 16px; }
+  header.hero { padding-top: 64px; }
+  section { padding-top: 88px; }
+  .cmd { padding: 14px 12px 14px 14px; }
+  .cmd pre { font-size: 12.5px; }
+  .term-body { font-size: 11.5px; min-height: 340px; padding: 14px; }
+  .final { padding: 56px 16px; }
+}
+</style>
+</head>
+<body>
+
+<nav class="top" id="nav">
+  <div class="wrap">
+    <a class="brand" href="#top" aria-label="job-hopper home">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#0c4a6e"/><path d="M9 22V10l7 6 7-6v12" fill="none" stroke="#7dd3fc" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      job-hopper
+    </a>
+    <div class="navlinks">
+      <a class="hide-sm" href="#how">How it works</a>
+      <a class="hide-sm" href="#features">Features</a>
+      <a class="hide-sm" href="#install">Install</a>
+      <a href="https://github.com/henningfutrell/hopper#readme">Docs</a>
+      <a class="gh" href="https://github.com/henningfutrell/hopper">
+        <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        GitHub
+      </a>
+    </div>
+  </div>
+</nav>
+
+<div class="backdrop" aria-hidden="true"></div>
+<div class="glow a" aria-hidden="true"></div>
+<div class="glow b" aria-hidden="true"></div>
+
+<header class="hero" id="top">
+  <div class="wrap">
+    <span class="eyebrow"><span class="pill">self-hosted</span> A job queue for coding agents</span>
+    <h1>Label an issue. <span class="grad">An agent picks it up.</span></h1>
+    <p class="lede">
+      job-hopper pulls jobs from <strong>GitHub issues</strong>, runs each one as a <strong>Claude Code session</strong>
+      on a machine it manages, answers or escalates the questions a job asks, and keeps every machine
+      inside its <strong>usage budget</strong>. One daemon. One Postgres database. One line to install.
+    </p>
+
+    <div class="install" data-install>
+      <div class="install-box">
+        <div class="install-inner">
+          <div class="tabs" role="tablist" aria-label="Install method">
+            <button class="tab" role="tab" aria-selected="true" data-tab="curl">One line</button>
+            <button class="tab" role="tab" aria-selected="false" data-tab="container">Container</button>
+            <button class="tab" role="tab" aria-selected="false" data-tab="checkout">From a checkout</button>
+          </div>
+          <div class="panel active" data-panel="curl" role="tabpanel">
+            <div class="cmd">
+              <pre><span class="p">$ </span>curl -fsSL https://raw.githubusercontent.com/henningfutrell/hopper/main/scripts/get.sh | bash
+<span class="p">$ </span>bash ~/.local/lib/job-hopper/scripts/open-ui.sh  <span class="c"># signs you in, opens the UI</span></pre>
+              <button class="copy" type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/henningfutrell/hopper/main/scripts/get.sh | bash">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span>Copy</span>
+              </button>
+            </div>
+            <div class="install-note">
+              Linux, <code>systemd --user</code>, Node.js ≥ 24. Bundled Postgres in docker, or bring your own:
+              <code>curl … | JOB_HOPPER_DATABASE_URL=postgres://… bash</code>. Run it again to upgrade.
+            </div>
+          </div>
+          <div class="panel" data-panel="container" role="tabpanel">
+            <div class="cmd">
+              <pre><span class="p">$ </span>cp deploy/hopper.env.example deploy/hopper.env  <span class="c"># fill it in</span>
+<span class="p">$ </span>export POSTGRES_PASSWORD="$(openssl rand -hex 24)"
+<span class="p">$ </span>docker compose -f deploy/compose.yaml --profile container up -d --build
+<span class="p">$ </span>docker compose -f deploy/compose.yaml exec hopper \
+    job-hopper login-code --link http://127.0.0.1:4790</pre>
+              <button class="copy" type="button" data-copy-panel>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span>Copy</span>
+              </button>
+            </div>
+            <div class="install-note">
+              The daemon in a container beside its Postgres; jobs run on machines it reaches over ssh.
+              Behind a reverse proxy: <code>JOB_HOPPER_PUBLIC_URL</code>. Details in <a href="https://github.com/henningfutrell/hopper/blob/main/docs/deploy.md"><code>docs/deploy.md</code></a>.
+            </div>
+          </div>
+          <div class="panel" data-panel="checkout" role="tabpanel">
+            <div class="cmd">
+              <pre><span class="p">$ </span>npm ci &amp;&amp; npm run build:ui
+<span class="p">$ </span>docker compose -f deploy/compose.yaml up -d postgres
+<span class="p">$ </span>export JOB_HOPPER_DATABASE_URL="postgres://hopper:$POSTGRES_PASSWORD@127.0.0.1:5433/hopper"
+<span class="p">$ </span>node src/main.ts                                         <span class="c"># --help: every setting</span>
+<span class="p">$ </span>node src/cli.ts login-code --link http://127.0.0.1:4790  <span class="c"># open the link</span></pre>
+              <button class="copy" type="button" data-copy-panel>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span>Copy</span>
+              </button>
+            </div>
+            <div class="install-note">
+              In the foreground, for a try-out or development. TypeScript run directly by Node — no build step but the UI.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ctas">
+      <a class="btn primary" href="#how">See how it works
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+      </a>
+      <a class="btn ghost" href="https://github.com/henningfutrell/hopper#getting-started">Getting started guide</a>
+    </div>
+
+    <div class="term-wrap reveal">
+      <div class="term" aria-label="An example install, as the terminal shows it">
+        <div class="term-bar"><i></i><i></i><i></i><span>~ — bash</span></div>
+        <div class="term-body" id="term"></div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <section id="how">
+    <div class="wrap">
+      <div class="sec-head reveal">
+        <div class="kicker">How a job moves</div>
+        <h2>From a labelled issue to a closed one.</h2>
+        <p class="sub">The issue body is the prompt. Nothing pushes work in: the hopper pulls it, places it, runs it and reports back through the issue's labels.</p>
+      </div>
+      <div class="flow reveal">
+        <div class="step">
+          <div class="n">01</div>
+          <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><circle cx="7" cy="7" r="1.5"/></svg></div>
+          <h3>Label an issue</h3>
+          <p>Add <code>hopper</code> to an issue by an author you allow. <code>hopper:high</code> and <code>hopper:low</code> set its priority.</p>
+        </div>
+        <div class="step">
+          <div class="n">02</div>
+          <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5M12 15V3"/></svg></div>
+          <h3>It is pulled</h3>
+          <p>A job source — the <code>gh</code> CLI or a GitHub App — picks it up. No route creates a job.</p>
+        </div>
+        <div class="step">
+          <div class="n">03</div>
+          <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg></div>
+          <h3>Routed and placed</h3>
+          <p>Routing rules pin a machine, executor or priority. Otherwise it goes to the online machine with the most room left.</p>
+        </div>
+        <div class="step">
+          <div class="n">04</div>
+          <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 9l3 3-3 3M12 15h6"/></svg></div>
+          <h3>Runs as Claude Code</h3>
+          <p>Each job is a Claude Code session in its own herdr pane, in a checkout of its repo on that machine.</p>
+        </div>
+        <div class="step">
+          <div class="n">05</div>
+          <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M9.5 9a2.5 2.5 0 0 1 4.9.7c0 1.6-2.4 2.3-2.4 2.3M12 14.5h.01"/></svg></div>
+          <h3>Questions handled</h3>
+          <p>The answerer replies to what it can. The assessor decides what a person must answer; the UI shows what waits for you.</p>
+        </div>
+        <div class="step">
+          <div class="n">06</div>
+          <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg></div>
+          <h3>Done, and closed</h3>
+          <p>A finished job gets <code>hopper:done</code> and its issue is closed. A failed one gets <code>hopper:failed</code>; remove it to retry.</p>
+        </div>
+      </div>
+      <div class="labels reveal">
+        <span class="lbl l1">hopper</span><span class="arrow">→</span>
+        <span class="lbl l2">hopper:claimed</span><span class="arrow">→</span>
+        <span class="lbl l3">hopper:done</span>
+        <span class="arrow">or</span>
+        <span class="lbl l4">hopper:failed</span>
+        <span style="margin-left:6px">The labels say where every job is, right on the issue.</span>
+      </div>
+    </div>
+  </section>
+
+  <section id="features">
+    <div class="wrap">
+      <div class="sec-head reveal">
+        <div class="kicker">What you get</div>
+        <h2>A queue that knows what each machine can take.</h2>
+        <p class="sub">One decider engine over machines, lanes, usage budgets and the queue — deterministic, and every decision it makes is in the event log.</p>
+      </div>
+      <div class="bento">
+        <div class="card wide reveal">
+          <h3>Usage budgets, enforced</h3>
+          <p>Each machine reads its Claude plan usage. Under the soft limit it runs every lane; between soft and hard it scales lanes down; at the hard limit it starts nothing and drains.</p>
+          <div class="viz meter" aria-hidden="true">
+            <div class="row"><span>desktop</span><div class="bar"><b style="width:34%"></b></div><span class="lanes"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span></div>
+            <div class="row"><span>laptop</span><div class="bar"><b style="width:71%"></b></div><span class="lanes"><i class="on"></i><i></i><i></i><i></i></span></div>
+            <div class="row"><span>server</span><div class="bar"><b class="hot" style="width:93%"></b></div><span class="lanes"><i></i><i></i><i></i><i></i></span></div>
+          </div>
+        </div>
+        <div class="card wide reveal">
+          <h3>Every part is a plugin</h3>
+          <p>Swap any role, write your own against <code>job-hopper/plugin</code>, or install more from the plugin store in the UI.</p>
+          <div class="viz chips">
+            <span class="chip">router</span><span class="chip">queue sorter</span><span class="chip">answerer</span>
+            <span class="chip">assessor</span><span class="chip">executor</span><span class="chip">job source</span>
+            <span class="chip">machine source</span><span class="chip">usage source</span><span class="chip">notifier</span>
+          </div>
+        </div>
+        <div class="card reveal">
+          <h3>Pulled, never pushed</h3>
+          <p>Jobs come only from job sources, and only from authors you allow. There is no endpoint to submit one.</p>
+        </div>
+        <div class="card reveal">
+          <h3>All state in one database</h3>
+          <p>Jobs, events and config documents live in Postgres. Secrets come from the environment; the hopper stores none.</p>
+        </div>
+        <div class="card reveal">
+          <h3>Sign-in fails closed</h3>
+          <p>Login codes, passwords (argon2), OIDC, GitHub or SAML — each through an established library. No sign-in is only ever explicit.</p>
+        </div>
+        <div class="card reveal">
+          <h3>A UI for the whole fleet</h3>
+          <p>The board, questions, machines, usage, plugins, routing, webhooks, events and decisions — live.</p>
+        </div>
+        <div class="card reveal">
+          <h3>Events and webhooks</h3>
+          <p>Every change is a versioned event with a JSON schema. Subscribe with signed webhooks, retried with backoff.</p>
+        </div>
+        <div class="card reveal">
+          <h3>An API, documented</h3>
+          <p>An OpenAPI reference at <code>/docs/</code> — try every route from the page. An operator CLI for the rest.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="machines">
+    <div class="wrap">
+      <div class="sec-head reveal">
+        <div class="kicker">Where jobs run</div>
+        <h2>Start on one host. Add machines when you want more room.</h2>
+        <p class="sub">A machine has lanes: how many jobs it runs at once. Each kind is one script away, and the Machines view shows it online within seconds.</p>
+      </div>
+      <div class="machines">
+        <div class="machine reveal">
+          <div class="tag">This host</div>
+          <h3>The start</h3>
+          <p>Jobs on the hopper's own machine. The install sets up its herdr session.</p>
+          <div class="via">reached by: nothing to reach</div>
+        </div>
+        <div class="machine reveal">
+          <div class="tag">ssh target</div>
+          <h3>Always reachable</h3>
+          <p>A desktop or server. Its own restricted key, and only host keys you pinned.</p>
+          <div class="via">reached by: ssh</div>
+        </div>
+        <div class="machine reveal">
+          <div class="tag">client target</div>
+          <h3>It dials in</h3>
+          <p>A laptop that moves networks keeps a tunnel up to the hopper, and takes each client release by itself.</p>
+          <div class="via">reached by: the client's tunnel</div>
+        </div>
+        <div class="machine reveal">
+          <div class="tag">container target</div>
+          <h3>Sandboxed</h3>
+          <p>Plain shell commands with no network, a read-only root and no capabilities.</p>
+          <div class="via">reached by: docker exec, via a proxy</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="needs">
+    <div class="wrap">
+      <div class="sec-head reveal">
+        <div class="kicker">What you need</div>
+        <h2>A short list.</h2>
+      </div>
+      <div class="reqs reveal">
+        <div class="req"><span class="what">Node.js ≥ 24</span><span class="why">The daemon — TypeScript, run directly.</span></div>
+        <div class="req"><span class="what">Postgres</span><span class="why">Everything the daemon keeps. Any will do; the one-line install brings one up in docker.</span></div>
+        <div class="req"><span class="what">herdr</span><span class="why">The panes jobs run in, on each machine that runs Claude jobs.</span></div>
+        <div class="req"><span class="what">claude CLI, signed in</span><span class="why">Jobs, the answerer, the assessor and usage readings.</span></div>
+        <div class="req"><span class="what">gh CLI, or a GitHub App</span><span class="why">The GitHub job source.</span></div>
+        <div class="req"><span class="what">Docker <span style="color:var(--faint)">(optional)</span></span><span class="why">The container deploy, the bundled Postgres and the test suite.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="wrap">
+    <div class="final reveal" id="install">
+      <div class="kicker">Install</div>
+      <h2>Your first job is one label away.</h2>
+      <p class="sub">Install, sign in, say whose issues it takes, then label one <code style="font-family:var(--mono);font-size:.9em;color:var(--accent)">hopper</code>.</p>
+      <div class="install">
+        <div class="install-box">
+          <div class="install-inner">
+            <div class="cmd">
+              <pre><span class="p">$ </span>curl -fsSL https://raw.githubusercontent.com/henningfutrell/hopper/main/scripts/get.sh | bash</pre>
+              <button class="copy" type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/henningfutrell/hopper/main/scripts/get.sh | bash">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span>Copy</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ctas">
+        <a class="btn primary" href="https://github.com/henningfutrell/hopper#getting-started">Read the guide</a>
+        <a class="btn ghost" href="https://github.com/henningfutrell/hopper/blob/main/scripts/get.sh">Read the script first</a>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>job-hopper — a self-hosted job queue for coding agents</span>
+    <div class="links">
+      <a href="https://github.com/henningfutrell/hopper#readme">README</a>
+      <a href="https://github.com/henningfutrell/hopper/blob/main/docs/design.md">Design</a>
+      <a href="https://github.com/henningfutrell/hopper/blob/main/docs/plugins.md">Plugins</a>
+      <a href="https://github.com/henningfutrell/hopper/blob/main/docs/deploy.md">Deploy</a>
+      <a href="https://github.com/henningfutrell/hopper/blob/main/docs/sign-in.md">Sign-in</a>
+      <a href="https://github.com/henningfutrell/hopper">GitHub</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+(() => {
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // nav border once scrolled
+  const nav = document.getElementById('nav');
+  const onScroll = () => nav.classList.toggle('scrolled', window.scrollY > 8);
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+
+  // install tabs
+  document.querySelectorAll('[data-install]').forEach((box) => {
+    const tabs = box.querySelectorAll('.tab');
+    tabs.forEach((tab) => tab.addEventListener('click', () => {
+      tabs.forEach((t) => t.setAttribute('aria-selected', String(t === tab)));
+      box.querySelectorAll('.panel').forEach((p) => p.classList.toggle('active', p.dataset.panel === tab.dataset.tab));
+    }));
+  });
+
+  // copy: the explicit command, or every "$ " line of the panel's block
+  const commandsOf = (pre) => pre.innerText.split('\n')
+    .reduce((acc, line) => {
+      if (line.startsWith('$ ')) acc.push(line.slice(2));
+      else if (acc.length && line.trim()) acc[acc.length - 1] += '\n' + line;
+      return acc;
+    }, [])
+    .map((c) => c.replace(/\s+#.*$/, '').trimEnd())
+    .join('\n');
+  const writeClipboard = async (text) => {
+    try { await navigator.clipboard.writeText(text); return true; } catch {}
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch {}
+    ta.remove();
+    return ok;
+  };
+  document.querySelectorAll('.copy').forEach((btn) => btn.addEventListener('click', async () => {
+    const text = btn.dataset.copy ?? commandsOf(btn.parentElement.querySelector('pre'));
+    const ok = await writeClipboard(text);
+    const label = btn.querySelector('span');
+    btn.classList.toggle('done', ok);
+    label.textContent = ok ? 'Copied' : 'Select and copy';
+    setTimeout(() => { btn.classList.remove('done'); label.textContent = 'Copy'; }, 1800);
+  }));
+
+  // reveal on scroll
+  const io = 'IntersectionObserver' in window ? new IntersectionObserver((entries) => {
+    entries.forEach((e) => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } });
+  }, { rootMargin: '0px 0px -8% 0px' }) : null;
+  document.querySelectorAll('.reveal').forEach((el) => io ? io.observe(el) : el.classList.add('in'));
+
+  // terminal: an example install, the lines get.sh and install.sh print
+  const term = document.getElementById('term');
+  const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const script = [
+    { type: 'cmd', text: 'curl -fsSL https://raw.githubusercontent.com/henningfutrell/hopper/main/scripts/get.sh | bash' },
+    { type: 'step', text: 'clone main of https://github.com/henningfutrell/hopper.git into ~/.local/share/job-hopper/source' },
+    { type: 'step', text: 'database: the bundled Postgres on 127.0.0.1:5433 (docker compose up -d --wait postgres)' },
+    { type: 'step', text: 'build the UI bundle (npm ci; npm run build:ui)' },
+    { type: 'dim', text: '    ✓ built in 4.2s' },
+    { type: 'step', text: 'npm ci --omit=dev --prefix ~/.local/lib/job-hopper' },
+    { type: 'step', text: 'write JOB_HOPPER_DATABASE_URL to ~/.config/job-hopper/daemon.env (mode 600)' },
+    { type: 'step', text: 'link the CLI: ~/.local/bin/job-hopper' },
+    { type: 'step', text: 'install units: job-hopper.service, job-hopper-herdr.service' },
+    { type: 'step', text: 'systemctl --user enable job-hopper-herdr job-hopper' },
+    { type: 'step', text: 'wait for http://127.0.0.1:4790/api/health' },
+    { type: 'ok', text: '    ✓ job-hopper is running' },
+    { type: 'blank' },
+    { type: 'cmd', text: 'bash ~/.local/lib/job-hopper/scripts/open-ui.sh' },
+    { type: 'ok', text: '    ✓ signed in — the UI is open in your browser' },
+  ];
+  const render = (line, partial) => {
+    const t = esc(partial ?? line.text ?? '');
+    switch (line.type) {
+      case 'cmd': return '<span class="p">$</span> ' + t;
+      case 'step': return '<span class="st">==&gt;</span> ' + t;
+      case 'ok': return '<span class="ok">' + t + '</span>';
+      case 'dim': return '<span class="dim">' + t + '</span>';
+      default: return '';
+    }
+  };
+  if (reduced) {
+    term.innerHTML = script.map((l) => render(l)).join('\n') + '\n<span class="p">$</span> ';
+    return;
+  }
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  let started = false;
+  const run = async () => {
+    for (;;) {
+      let done = '';
+      for (const line of script) {
+        if (line.type === 'cmd') {
+          for (let i = 1; i <= line.text.length; i += 2) {
+            term.innerHTML = done + render(line, line.text.slice(0, i)) + '<span class="cursor"></span>';
+            await sleep(14);
+          }
+          done += render(line) + '\n';
+          term.innerHTML = done + '<span class="cursor"></span>';
+          await sleep(420);
+        } else {
+          done += render(line) + '\n';
+          term.innerHTML = done + '<span class="cursor"></span>';
+          await sleep(line.type === 'step' ? 240 : 160);
+        }
+      }
+      term.innerHTML = done + '<span class="p">$</span> <span class="cursor"></span>';
+      await sleep(6000);
+    }
+  };
+  const termIo = 'IntersectionObserver' in window ? new IntersectionObserver((entries) => {
+    if (!started && entries.some((e) => e.isIntersecting)) { started = true; run(); termIo.disconnect(); }
+  }) : null;
+  termIo ? termIo.observe(term) : run();
+})();
+</script>
+</body>
+</html>
