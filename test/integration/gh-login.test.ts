@@ -64,7 +64,8 @@ describe('gh login from the UI', () => {
     expect((await app.ui('/ui/api/gh-login', { action: 'start' })).status).toBe(403);
 
     const token = await app.login();
-    const [started, twice] = await Promise.all([1, 2].map(() => app.ui<GhLoginStatus>('/ui/api/gh-login', { action: 'start' }, { token })));
+    const startOnce = () => app.ui<GhLoginStatus>('/ui/api/gh-login', { action: 'start' }, { token });
+    const [started, twice] = await Promise.all([startOnce(), startOnce()]);
     expect(twice.body).toEqual(started.body);
     expect(started.status).toBe(200);
     expect(started.body).toEqual({ state: 'waiting', userCode: 'ABCD-1234', verificationUri: 'https://github.com/login/device' });
