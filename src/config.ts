@@ -32,6 +32,8 @@ export interface Config {
   maxQuestions: number;
   /** Keep panes open after a job ends (for inspection); default false: every terminal outcome cleans up. */
   keepPanes: boolean;
+  /** This host is a machine: the built-in `local` instance runs jobs here. False in the container (issue #141). */
+  localMachine: boolean;
   /** Lifetime of a UI session, in hours. */
   uiSessionHours: number;
   /** Custom plugins, one directory each; unset: none. */
@@ -93,6 +95,7 @@ const schema = z.object({
   HOPPER_RESUME_BOOST: z.coerce.number().finite().default(20),
   HOPPER_MAX_QUESTIONS: int(0).default(5),
   HOPPER_KEEP_PANES: flag(false),
+  HOPPER_LOCAL_MACHINE: flag(true),
   HOPPER_UI_SESSION_HOURS: z.coerce.number().finite().positive().default(12),
   HOPPER_PLUGIN_DIR: z.string().min(1).optional(),
   HOPPER_PLUGIN_STORE: z.string().min(1).optional(),
@@ -132,6 +135,7 @@ const SETTING_HELP: Record<keyof typeof schema.shape, string> = {
   HOPPER_RESUME_BOOST: 'priority boost for a job resumed after a question',
   HOPPER_MAX_QUESTIONS: 'questions one job may ask; the next one fails it',
   HOPPER_KEEP_PANES: 'true: keep a job\'s pane open after it ends, for inspection',
+  HOPPER_LOCAL_MACHINE: 'false: this host is not a machine (the container): no `local` machine, and the boot removes one from plugins.yaml',
   HOPPER_UI_SESSION_HOURS: 'lifetime of a UI session',
   HOPPER_UPDATE_CHECK_MS: 'how often self-update checks for a newer version; 0: only when asked',
   HOPPER_RESTART: 'how the daemon starts again after an update: exit (a supervisor restarts it) or respawn. Unset: detected',
@@ -216,6 +220,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     resumeBoost: e.HOPPER_RESUME_BOOST,
     maxQuestions: e.HOPPER_MAX_QUESTIONS,
     keepPanes: e.HOPPER_KEEP_PANES,
+    localMachine: e.HOPPER_LOCAL_MACHINE,
     uiSessionHours: e.HOPPER_UI_SESSION_HOURS,
     ...(e.HOPPER_PLUGIN_DIR ? { pluginDir: e.HOPPER_PLUGIN_DIR } : {}),
     ...(e.HOPPER_PLUGIN_STORE ? { pluginStore: e.HOPPER_PLUGIN_STORE } : {}),

@@ -32,4 +32,41 @@ describe('ensurePluginsDocument', () => {
     expect(ensurePluginsDocument({ documents, answerTimeoutMs: 1000, logger })).toEqual({ action: 'kept' });
     expect(documents.read(PLUGINS)).toBe('version: 1\nnotifiers: []\n');
   });
+
+  it('a host that is not a machine (the container) lists no machine: an empty store gets `machines: []` (#141)', () => {
+    expect(builtinInstances(1000, false).machines).toEqual([]);
+    const documents = docs();
+    expect(ensurePluginsDocument({ documents, answerTimeoutMs: 1000, localMachine: false, logger })).toEqual({ action: 'default' });
+    expect(parse(documents.read(PLUGINS)!).machines).toEqual([]);
+  });
+
+  it('a host that is not a machine removes the `local` instance an earlier boot wrote, and keeps every other machine (#141)', () => {
+    const documents = docs();
+    documents.set(PLUGINS, [
+      'version: 1',
+      '# the machines',
+      'machines:',
+      '  - { name: local, plugin: local, options: { lanes: 4 } }',
+      '  - { name: box, plugin: docker, options: { docker: box } }',
+      'notifiers: []',
+      '',
+    ].join('\n'));
+    const lines: string[] = [];
+    const r = ensurePluginsDocument({ documents, answerTimeoutMs: 1000, localMachine: false, logger: { info: (l) => lines.push(l), warn() {} } });
+    expect(r).toEqual({ action: 'removed-local' });
+    const doc = parse(documents.read(PLUGINS)!);
+    expect(doc.machines).toEqual([{ name: 'box', plugin: 'docker', options: { docker: 'box' } }]);
+    expect(doc.notifiers).toEqual([]);
+    expect(documents.read(PLUGINS)).toContain('# the machines');
+    expect(lines.join('\n')).toMatch(/removed the machine `local`/);
+    expect(ensurePluginsDocument({ documents, answerTimeoutMs: 1000, localMachine: false, logger })).toEqual({ action: 'kept' });
+  });
+
+  it('a machine keeps its `local` instance', () => {
+    const documents = docs();
+    const text = 'version: 1\nmachines:\n  - { name: local, plugin: local, options: { lanes: 2 } }\n';
+    documents.set(PLUGINS, text);
+    expect(ensurePluginsDocument({ documents, answerTimeoutMs: 1000, logger })).toEqual({ action: 'kept' });
+    expect(documents.read(PLUGINS)).toBe(text);
+  });
 });

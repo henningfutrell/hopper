@@ -21,6 +21,8 @@ export interface PluginHostOptions {
   defaultLevels?: InstanceSpec[];
   /** The executor instances when plugins.yaml has no `executors` section. Default: the built-in ones. */
   defaultExecutors?: InstanceSpec[];
+  /** The machine instances when plugins.yaml has no `machines` section. Default: the built-in ones. */
+  defaultMachines?: InstanceSpec[];
   /** What job sources are told. Default (tests): no key known, nothing re-runnable. */
   jobSourceContext?: JobSourceContext;
   /**

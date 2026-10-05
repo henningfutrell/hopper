@@ -52,7 +52,7 @@ Pick one. Recommended: the published image with Podman.
 
 ### With Podman (recommended)
 
-The daemon, its Postgres and the herdr session jobs run in, all in containers from the public image
+The daemon and its Postgres, in containers from the public image
 `ghcr.io/henningfutrell/hopper` (`latest` follows `main`; Intel/AMD and ARM): no host install, nothing to
 build, nothing to set first. Needs Podman ≥ 4.7 with `podman-compose` (or Docker's compose; `docker
 compose` works the same everywhere below).
@@ -67,7 +67,7 @@ podman compose exec hopper claude                                    # once: /lo
 systemctl --user enable podman-restart.service                        # once: start it again after a reboot
 ```
 
-Jobs run in the container (`/home/node`; clone their repositories there). Settings and secrets: a
+The container is not a machine: jobs run on attached machines ("Add machines"). Settings and secrets: a
 `.env` beside `compose.yaml` (`.env.example`). Upgrade: `podman compose pull && podman compose up -d`.
 Details: `docs/deploy.md` "In containers, with Podman".
 
@@ -254,8 +254,8 @@ host, set its `executors` option (`hopper config edit plugins.yaml`):
 machines: { name: local, plugin: local, options: { lanes: 4, executors: [test, herdr-claude] } }
 ```
 
-With [Podman](#with-podman-recommended) this machine is the hopper's container: it has its own
-herdr session, and jobs run there.
+With [Podman](#with-podman-recommended) the hopper's container is not a machine: it lists no `local`
+machine (`HOPPER_LOCAL_MACHINE=false`), and jobs run on the machines attached below.
 
 ### An ssh target
 

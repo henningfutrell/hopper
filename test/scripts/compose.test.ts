@@ -5,7 +5,7 @@
 // Asserted on the rendered form compose runs (`docker compose config`, the provider `podman compose`
 // uses too), from an empty directory: the file as downloaded.
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -107,15 +107,15 @@ describe('compose.yaml with a .env beside it', () => {
   });
 });
 
-describe('the image runs jobs itself', () => {
+describe('the image is not a machine (issue #141)', () => {
   const dockerfile = readFileSync(join(ROOT, 'Dockerfile'), 'utf8');
 
-  it('carries herdr, and starts the hopper\'s herdr session before the daemon', () => {
+  it('registers no `local` machine: it sets HOPPER_LOCAL_MACHINE=false and starts no herdr session of its own', () => {
+    expect(dockerfile).toMatch(/HOPPER_LOCAL_MACHINE=false/);
+    // herdr stays: the herdr-claude executor detects it before it runs jobs on attached machines.
     expect(dockerfile).toContain('https://herdr.dev/install.sh');
-    expect(dockerfile).toMatch(/ENTRYPOINT \["\/app\/scripts\/container-start\.sh"\]/);
-    const start = readFileSync(join(ROOT, 'scripts', 'container-start.sh'), 'utf8');
-    expect(start).toContain('herdr --session hopper server');
-    expect(start).toMatch(/exec "\$@"/);
+    expect(dockerfile).not.toMatch(/ENTRYPOINT/);
+    expect(existsSync(join(ROOT, 'scripts', 'container-start.sh'))).toBe(false);
   });
 });
 

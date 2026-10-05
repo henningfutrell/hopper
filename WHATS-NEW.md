@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- The hopper's container no longer shows itself as a machine jobs can run on. It never had what a job needs; jobs run on the machines you add.
 - Settings has its own page: the question gates, the question history, routing, plugins and webhooks, each a section of it. The Questions page shows only the questions waiting for an answer.
 - The model of an escalation level or of the gate router is now picked from the models your Claude offers, not typed.
 - Turn a plugin that ships with the hopper on or off with one switch on the Plugins page. A new way to run jobs, such as Cursor's agent, works the moment you switch it on, with no restart.

@@ -28,7 +28,7 @@ import { unavailableExecutors } from './plugins/executor-slot.ts';
 import { githubAppPlugin } from './plugins/job-source/github-app/index.ts';
 import { githubGhPlugin } from './plugins/job-source/github-gh/index.ts';
 import { grokbotRoutinePlugin } from './plugins/notifier/grokbot-routine/index.ts';
-import { ensurePluginsDocument } from './plugins/builtin-instances.ts';
+import { builtinInstances, ensurePluginsDocument } from './plugins/builtin-instances.ts';
 import { createDetectionKit } from './plugins/detect.ts';
 import { createQuestionService } from './questions/index.ts';
 import { logFailures } from './engine/failure-log.ts';
@@ -147,7 +147,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   warnLeftoverEnv(config);
   const store = openStore({ url: config.databaseUrl, clock });
   // plugins.yaml is the one truth: the built-in instances are written on the boot that finds none.
-  ensurePluginsDocument({ documents: store.documents, answerTimeoutMs: config.answerTimeoutMs, logger });
+  ensurePluginsDocument({ documents: store.documents, answerTimeoutMs: config.answerTimeoutMs, localMachine: config.localMachine, logger });
   const env = seams.env ?? process.env;
   // Every secret comes from the runtime: a variable, or the mounted file <name>_FILE names (issue #56).
   const secret = runtimeSecrets(env);
@@ -189,6 +189,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   const host = createPluginHost({
     ...(config.pluginDir ? { pluginDir: config.pluginDir } : {}), installedDir: installedDirOf(dataDir),
     documents: store.documents, dataDir, clock, routerMode, logger,
+    defaultMachines: builtinInstances(config.answerTimeoutMs, config.localMachine).machines,
     kit: createDetectionKit({ env, secret }),
     builtins: withSeams(seams),
     jobSourceContext: {

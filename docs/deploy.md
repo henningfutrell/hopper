@@ -18,7 +18,7 @@ with Podman** ("In containers, with Podman"); the host install is the other way.
 | Plugins | Optional. `HOPPER_PLUGIN_DIR` (plugins put there by hand; a container mounts it read-only) and `HOPPER_PLUGIN_STORE` (a git repository the UI installs plugins from — this repository is one: docs/plugins.md). Store installs are kept in the database and restored into the work dir at start: they need no plugin dir and no volume. |
 | Config | the documents `plugins.yaml`, `rules.md`, `auth.yaml`: from the UI, or `hopper config edit <document>`; webhook subscriptions, rows in the database: from the UI (Webhooks). The first boot writes the built-in plugins.yaml. |
 | GitHub | the gh CLI logged in as the owner (default; from the UI, Sources → Log in to GitHub — design.md "gh login"), or a GitHub App the owner creates for this hopper with `scripts/create-github-app.sh` (its key in `GITHUB_APP_PRIVATE_KEY`). Each hopper has its own App and key; there is no shared one. Setting up either: `README.md` "Connect GitHub". |
-| Where jobs run | machines: this host's herdr session (`hopper-herdr`), and attached machines, instances in plugins.yaml `machines:` — `ssh` targets, `client` targets, `docker` container targets. Setting each one up, step by step: `README.md` "Add machines". |
+| Where jobs run | machines: this host's herdr session (`hopper-herdr`; not in a container, issue #141), and attached machines, instances in plugins.yaml `machines:` — `ssh` targets, `client` targets, `docker` container targets. Setting each one up, step by step: `README.md` "Add machines". |
 
 `hopper` is the operator CLI (`hopper config …`, `hopper login-code`); it needs `HOPPER_DATABASE_URL` (or `_FILE`) and nothing else. `hopper help` lists its commands; `node src/main.ts --help` lists every daemon setting with its default.
 
@@ -51,12 +51,11 @@ podman compose exec hopper hopper login-code --link http://127.0.0.1:4790
 |---|---|
 | `secrets` | runs once per start: makes a random database password on the first one, in the `secrets` volume, and writes the database URL from it. Each file is readable only by the one service that uses it. Nobody types or keeps the password. |
 | `postgres` | the database (`POSTGRES_PASSWORD_FILE`), on no host port; data in the `postgres` volume. |
-| `hopper` | the image `HOPPER_IMAGE` names (default `ghcr.io/henningfutrell/hopper:latest`). `HOPPER_DATABASE_URL_FILE` from `secrets`. Its home, `/home/node`, is the `home` volume: the herdr session, the gh and claude sign-ins, git's identity, and the repositories jobs work in. |
+| `hopper` | the image `HOPPER_IMAGE` names (default `ghcr.io/henningfutrell/hopper:latest`). `HOPPER_DATABASE_URL_FILE` from `secrets`. Its home, `/home/node`, is the `home` volume: the gh and claude sign-ins and git's identity. |
 
-- **Jobs run in the hopper's container.** The image carries herdr; its entrypoint
-  (`scripts/container-start.sh`) starts hopper's herdr session and keeps it running, as
-  `hopper-herdr.service` does on a host. That is the `local` machine. Attached machines work as
-  anywhere else.
+- **The container is not a machine** (issue #141). The image sets `HOPPER_LOCAL_MACHINE=false`: no
+  `local` machine, and the boot removes one an earlier version wrote into plugins.yaml. Jobs run on
+  attached machines (`README.md` "Add machines"); the image carries herdr's CLI for them.
 - **Sign-ins.** GitHub: the UI's Sources view → **Log in to GitHub**, once (gh's device flow, run by the
   hopper; no terminal). Claude Code: `podman compose exec hopper claude` (`/login`), once. Both are kept
   in the home volume. No `-it`: `podman compose exec` is interactive with a terminal by default, and

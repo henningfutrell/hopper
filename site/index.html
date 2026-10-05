@@ -90,9 +90,9 @@ The other way, <a href="#host">installing it on the machine itself</a>, is below
 <p class="note">Then: <a href="#upgrade">upgrade</a> · <a href="#remove">uninstall</a> · <a href="#windows">on Windows</a> · <a href="#host">install on the machine itself</a> · <a href="#trouble">when something goes wrong</a> · <a href="#more">more</a></p>
 
 <h2 id="podman">Run it with Podman (recommended)</h2>
-<p>hopper, its database and the panes its jobs run in, all in containers from the published image
+<p>hopper and its database, in containers from the published image
 <code>ghcr.io/henningfutrell/hopper</code>. Nothing is installed on the machine but Podman, nothing is built,
-and the containers run as your user, not as root. Run every command as your own user, in one folder.</p>
+and the containers run as your user, not as root. Jobs run on the machines you add, not in the container. Run every command as your own user, in one folder.</p>
 <ol class="steps">
 <li><p><strong>Get Podman</strong>, version 4.7 or later, with <code>podman-compose</code>, from your package manager:</p>
 <div class="cmd"><pre>sudo apt-get install -y podman podman-compose</pre><button type="button" data-copy="sudo apt-get install -y podman podman-compose">Copy</button></div>
