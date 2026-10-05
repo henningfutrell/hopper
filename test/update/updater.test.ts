@@ -5,7 +5,7 @@ import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'nod
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { testDatabaseUrl } from '../support/database.ts';
-import type { Store } from '../../src/domain/ports.ts';
+import type { UserStore } from '../../src/domain/ports.ts';
 import type { UpdateStatus } from '../../src/domain/types.ts';
 import { openStore } from '../../src/store/index.ts';
 import { createUpdater, type UpdaterOptions } from '../../src/update/index.ts';
@@ -13,7 +13,7 @@ import { waitFor } from '../support/wait.ts';
 import { copyBuilder, createInstall, createUpstream, git, readInstall, tempDir, type Upstream } from './support.ts';
 
 const dirs: string[] = [];
-const stores: Store[] = [];
+const stores: UserStore[] = [];
 const updaters: { stop(): void }[] = [];
 
 afterEach(() => {
@@ -22,7 +22,7 @@ afterEach(() => {
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
 });
 
-interface World { root: string; up: Upstream; store: Store; dataDir: string }
+interface World { root: string; up: Upstream; store: UserStore; dataDir: string }
 
 function world(): World {
   const root = tempDir('jh-update-');

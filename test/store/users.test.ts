@@ -134,9 +134,9 @@ describe('migration 17: an install from before becomes the user owner, nothing l
     v16.run("INSERT INTO events (id, type, at, job_id, data, schema_version) VALUES ('e1', 'job.queued', ?, 'j1', '{}', 1)", at);
     v16.run("INSERT INTO events (id, type, at, job_id, data, schema_version) VALUES ('e2', 'job.claimed', ?, 'j1', '{}', 1)", at);
     v16.run("INSERT INTO webhooks (id, url, events, active, created_at, name, secret_env) VALUES ('w1', 'http://127.0.0.1:1/', '[\"job.*\"]', 1, ?, 'hook', 'WEBHOOK_SECRET_A')", at);
-    v16.run("INSERT INTO deliveries (id, subscription_id, status, body) VALUES ('d1', 'w1', 'delivered', '{}')");
-    v16.run("INSERT INTO lanes (id, machine_id, number, body) VALUES ('l1', 'local', 1, '{}')");
-    v16.run("INSERT INTO decisions (id, body) VALUES ('dec1', '{}')");
+    v16.run("INSERT INTO deliveries (id, subscription_id, status, body) VALUES ('d1', 'w1', 'delivered', ?)", JSON.stringify({ id: 'd1', subscriptionId: 'w1', status: 'delivered' }));
+    v16.run("INSERT INTO lanes (id, machine_id, number, body) VALUES ('l1', 'local', 1, ?)", JSON.stringify({ id: 'l1', machineId: 'local', number: 1, state: 'idle' }));
+    v16.run("INSERT INTO decisions (id, body) VALUES ('dec1', ?)", JSON.stringify({ id: 'dec1' }));
     v16.run("INSERT INTO config_documents (name, text, updated_at) VALUES ('plugins.yaml', 'version: 1\n', ?), ('rules.md', 'be kind', ?), ('auth.yaml', 'version: 1\n', ?)", at, at, at);
     v16.run("INSERT INTO settings (key, value) VALUES ('routerMode', 'active'), ('updateChannel', 'main'), ('autoUpdate', 'true'), ('pluginInstalls', '[]')");
     v16.run("INSERT INTO ui_sessions (token_hash, expires_at, role, identity) VALUES ('t1', '2099-01-01T00:00:00.000Z', 'operator', ?)",

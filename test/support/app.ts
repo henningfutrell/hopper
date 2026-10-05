@@ -7,15 +7,18 @@
 // daemon writes its built-in instances. `secrets` is the environment the parts read secrets from
 // (seams.env): the same object, so a test may set or unset a variable while the app runs. Jobs are PULLED: a
 // manual JobSource (manual-source.ts) offers items, run by the "scripted" executor
-// (scripted-executor.ts). Every event the app emits is validated against its schema; stop()
-// fails the test on any nonconforming event (tracker + a scan of the whole event log).
+// (scripted-executor.ts). Every user (issue #158) has a manual source of its own (`sourceOf(id)`;
+// `source` is owner's); `api` reads as owner unless a session or `x-hopper-user` header says otherwise.
+// Every event the app emits is validated against its schema; stop() fails the test on any
+// nonconforming event (tracker + a scan of every user's whole event log).
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { loadConfig } from '../../src/config.ts';
 import { startApp, type App, type AppSeams } from '../../src/main.ts';
 import type { SourceItem } from '../../src/domain/ports.ts';
-import type { DomainEvent, Job, Question } from '../../src/domain/types.ts';
+import type { DomainEvent, Job, Question, User } from '../../src/domain/types.ts';
+import { OWNER_ID } from '../../src/domain/types.ts';
 import { validateEvent } from '../../src/events/index.ts';
 import { assertAllConform, trackConformance } from './conformance.ts';
 import { rawRequest } from './http.ts';
@@ -44,23 +47,35 @@ export interface TestApp {
   url: string;
   dbPath: string;
   dataDir: string;
+  /** Owner's manual source. */
   source: ManualSource;
+  /** A user's manual source. */
+  sourceOf(userId: string): ManualSource;
   scripted: ScriptedExecutor;
+  /** A user's running parts (store, engine, sources, plugins); default owner. */
+  user(id?: string): ReturnType<App['user']>;
+  /** A new user, its runtime started (as POST /ui/api/users does). */
+  addUser(name: string): Promise<User>;
+  /** A request without a session (loopback: owner's), with `headers` (`x-hopper-user`, `x-hopper-session`). */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- tests read loose JSON
-  api<T = any>(method: string, path: string, body?: unknown): Promise<ApiResponse<T>>;
-  /** Offer one item through the manual source, sync, and return its job. `script` is the scripted executor's op. */
-  pull(script: Record<string, unknown>, item?: Partial<SourceItem>): Promise<Job>;
-  /** One sync of every source. */
+  api<T = any>(method: string, path: string, body?: unknown, headers?: Record<string, string>): Promise<ApiResponse<T>>;
+  /** Offer one item through the user's manual source (default owner), sync, and return its job. `script` is the scripted executor's op. */
+  pull(script: Record<string, unknown>, item?: Partial<SourceItem>, userId?: string): Promise<Job>;
+  /** One sync of every source of owner. */
   sync(): Promise<void>;
   job(id: string): Promise<Job>;
   waitForStatus(id: string, status: string, timeoutMs?: number): Promise<Job>;
+  /** A user's job reaching `status`. */
+  waitForStatusOf(id: string, status: string, userId: string, timeoutMs?: number): Promise<Job>;
   events(query?: string): Promise<DomainEvent[]>;
   questionsOf(jobId: string): Promise<Question[]>;
   waitForQuestion(jobId: string, ok: (q: Question) => boolean, timeoutMs?: number): Promise<Question>;
   /** Set the fake usage reading (through the engine; there is no HTTP route). */
   setUsage(used: number, limit?: number): void;
-  /** Log in like open-ui.sh does: mint a code (`hopper login-code`), POST /ui/login. Returns the session token. */
-  login(): Promise<string>;
+  /** Log in like open-ui.sh does: mint a code for the user (`hopper login-code --user`; default owner), POST /ui/login. Returns the session token. */
+  login(userId?: string): Promise<string>;
+  /** POST /ui/login with this code. Returns the session token. */
+  loginWith(code: string): Promise<string>;
   /** POST a UI mutation with a valid Origin, JSON content type and (if given) the session header. */
   ui<T = unknown>(path: string, body?: unknown, o?: UiOptions): Promise<ApiResponse<T>>;
   stop(): Promise<void>;
@@ -113,22 +128,32 @@ export async function startTestApp(o: {
     ...o.env,
   });
   const source = o.source ?? createManualSource();
+  const sources = new Map<string, ManualSource>([[OWNER_ID, source]]);
+  const sourceOf = (id: string): ManualSource => {
+    let s = sources.get(id);
+    if (!s) sources.set(id, (s = createManualSource()));
+    return s;
+  };
   const scripted = createScriptedExecutor();
   const app = await startApp(config, {
     pluginsFileIntervalMs: 50,
     env: secrets,
     ...(o.realRouter ? {} : { router: createFakeRouter({ clock: { now: () => new Date() } }) }),
     ...(o.realLevels ? {} : fakeLevels()),
-    fakeUsage: createFakeUsageSource({ now: () => new Date() }),
     ...o.seams,
     executors: [scripted, ...(o.seams?.executors ?? [])],
-    sources: [source, ...(o.seams?.sources ?? [])],
+    // Each user's own manual source and fake usage; the seams' sources run for owner only.
+    perUser: (id) => ({
+      fakeUsage: createFakeUsageSource({ now: () => new Date() }),
+      sources: [sourceOf(id), ...(id === OWNER_ID ? o.seams?.sources ?? [] : [])],
+      ...o.seams?.perUser?.(id),
+    }),
   });
-  const tracker = trackConformance(app.store);
-  const api = async <T>(method: string, path: string, body?: unknown): Promise<ApiResponse<T>> => {
+  const tracker = trackConformance(app.user(OWNER_ID).store);
+  const api = async <T>(method: string, path: string, body?: unknown, headers: Record<string, string> = {}): Promise<ApiResponse<T>> => {
     const res = await fetch(app.url + path, {
       method,
-      headers: body === undefined ? {} : { 'content-type': 'application/json' },
+      headers: { ...(body === undefined ? {} : { 'content-type': 'application/json' }), ...headers },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     const text = await res.text();
@@ -137,15 +162,27 @@ export async function startTestApp(o: {
   const job = async (id: string): Promise<Job> => (await api<Job>('GET', `/api/jobs/${id}`)).body;
   const questionsOf = async (jobId: string): Promise<Question[]> => (await api<{ questions: Question[] }>(
     'GET', '/api/questions?status=all&limit=1000')).body.questions.filter((q) => q.jobId === jobId);
-  const sync = () => app.sources.syncNow();
+  const sync = () => app.user(OWNER_ID).sources.syncNow();
+  const loginWith = async (code: string): Promise<string> => {
+    const res = await rawRequest(app.url, {
+      method: 'POST', path: '/ui/login', body: `code=${code}`,
+      headers: { 'content-type': 'application/x-www-form-urlencoded', origin: 'null' },
+    });
+    const m = TOKEN_RE.exec(res.text);
+    if (res.status !== 200 || !m) throw new Error(`login failed ${res.status}: ${res.text}`);
+    return m[1]!;
+  };
   let stopped = false;
   return {
-    app, url: app.url, dbPath: o.dbPath, dataDir, source, scripted, api, sync, job, questionsOf,
-    async pull(op, over = {}) {
+    app, url: app.url, dbPath: o.dbPath, dataDir, source, sourceOf, scripted, api, sync, job, questionsOf, loginWith,
+    user: (id = OWNER_ID) => app.user(id),
+    addUser: (name) => app.addUser(name),
+    async pull(op, over = {}, userId = OWNER_ID) {
       const item = manualItem({ prompt: JSON.stringify(op), ...over });
-      source.add(item);
-      await app.sources.syncNow(source.name);
-      const jobs = (await api<{ jobs: Job[] }>('GET', '/api/jobs?limit=1000')).body.jobs;
+      const s = sourceOf(userId);
+      s.add(item);
+      await app.user(userId).sources.syncNow(s.name);
+      const jobs = (await api<{ jobs: Job[] }>('GET', '/api/jobs?limit=1000', undefined, { 'x-hopper-user': userId })).body.jobs;
       const found = jobs.find((j) => j.source?.key === item.key);
       if (!found) throw new Error(`no job was pulled for ${item.key}`);
       return found;
@@ -154,22 +191,17 @@ export async function startTestApp(o: {
       const j = await job(id);
       return j.status === status ? j : undefined;
     }, { timeoutMs, what: `job ${id} to be ${status}` }),
+    waitForStatusOf: (id, status, userId, timeoutMs) => waitFor(async () => {
+      const j = (await api<Job>('GET', `/api/jobs/${id}`, undefined, { 'x-hopper-user': userId })).body;
+      return j.status === status ? j : undefined;
+    }, { timeoutMs, what: `job ${id} of ${userId} to be ${status}` }),
     events: async (query = 'limit=1000') => (await api<{ events: DomainEvent[] }>('GET', `/api/events?${query}`)).body.events,
     waitForQuestion: (jobId, ok, timeoutMs) => waitFor(async () => {
       const q = (await questionsOf(jobId))[0];
       return q && ok(q) ? q : undefined;
     }, { timeoutMs, what: `a matching question on job ${jobId}` }),
-    setUsage(used, limit = 100) { app.engine.setFakeUsage({ used, limit, unit: '%' }); },
-    async login() {
-      const code = mintLoginCode(app.store, { now: () => new Date() });
-      const res = await rawRequest(app.url, {
-        method: 'POST', path: '/ui/login', body: `code=${code}`,
-        headers: { 'content-type': 'application/x-www-form-urlencoded', origin: 'null' },
-      });
-      const m = TOKEN_RE.exec(res.text);
-      if (res.status !== 200 || !m) throw new Error(`login failed ${res.status}: ${res.text}`);
-      return m[1]!;
-    },
+    setUsage(used, limit = 100) { app.user(OWNER_ID).engine.setFakeUsage({ used, limit, unit: '%' }); },
+    login: (userId = OWNER_ID) => loginWith(mintLoginCode(app.instance, { now: () => new Date() }, userId)),
     async ui<T>(path: string, body: unknown = {}, u: UiOptions = {}) {
       const defaults: Record<string, string | null> = {
         'content-type': 'application/json', origin: app.url, ...(u.token ? { 'x-hopper-session': u.token } : {}),
@@ -183,9 +215,14 @@ export async function startTestApp(o: {
       if (stopped) return;
       stopped = true;
       const all: DomainEvent[] = [];
-      for (let page = app.store.events.since(0, 1000); page.length > 0; page = app.store.events.since(all.at(-1)!.seq, 1000)) {
-        all.push(...page);
-        if (page.length < 1000) break;
+      for (const u of app.users()) {
+        const events = app.user(u.id).store.events;
+        const mine: DomainEvent[] = [];
+        for (let page = events.since(0, 1000); page.length > 0; page = events.since(mine.at(-1)!.seq, 1000)) {
+          mine.push(...page);
+          if (page.length < 1000) break;
+        }
+        all.push(...mine);
       }
       await app.stop();
       tracker.stop();
