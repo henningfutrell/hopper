@@ -2,7 +2,7 @@
 // (with their configured entry), what an Add or Edit form may send, and why it may not yet.
 import { describe, expect, it } from 'vitest';
 import type { MachinesConfig } from '../../src/domain/types.ts';
-import { addBody, addProblem, editBody, kindOf, type MachineDraft } from '../../ui/src/model/machines.ts';
+import { addBody, addProblem, clientReleaseText, editBody, kindOf, type MachineDraft } from '../../ui/src/model/machines.ts';
 
 const CONFIG: MachinesConfig = {
   document: 'plugins.yaml',
@@ -59,5 +59,15 @@ describe('the bodies sent', () => {
       action: 'edit', name: 'desk', executors: ['herdr-claude', 'test'], label: null, version: 'v1',
     });
     expect(editBody(entry, { lanes: '1', executors: ['test'], label: 'old' }, 'v1')).toBeNull();
+  });
+});
+
+describe('clientReleaseText (issue #70)', () => {
+  it('a client target\'s release, and whether it is the hopper\'s; nothing for any other machine or before a probe', () => {
+    expect(clientReleaseText({ tokenEnv: 'T', release: '0123456789abcdef', current: true })).toBe('0123456789abcdef (the hopper\'s)');
+    expect(clientReleaseText({ tokenEnv: 'T', release: '0123456789abcdef', current: false })).toBe('0123456789abcdef (not the hopper\'s: loaded once no job runs there)');
+    expect(clientReleaseText({ tokenEnv: 'T', current: false })).toBe('none: older than releases, install it again (scripts/attach-client.sh)');
+    expect(clientReleaseText({ tokenEnv: 'T' })).toBeNull();
+    expect(clientReleaseText(undefined)).toBeNull();
   });
 });

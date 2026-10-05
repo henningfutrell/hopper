@@ -3,10 +3,12 @@
 // <dataDir>/clients/<machine>.sock and pipes the daemon's one connection to the client, which serves
 // HTTP/2 on it: the reverse tunnel. A herdr call is `POST /herdr` on that HTTP/2 session, signed with
 // the client's token (src/client/signature.ts); an answer the client did not sign is not believed.
+// `POST /release` and `POST /load` are the client release's calls (src/client/release.ts, issue #70).
 // One session per socket in this process: the relay takes one connection per tunnel.
 import { connect, type ClientHttp2Session } from 'node:http2';
 import { connect as connectSocket } from 'node:net';
 import { join } from 'node:path';
+import type { ClientRelease } from '../client/release.ts';
 import { REQUEST_HEADER, RESPONSE_HEADER, checkToken, nonceOf, signRequest, verifyResponse } from '../client/signature.ts';
 
 /** Reaching a client target. */
@@ -56,14 +58,31 @@ function sessionOn(t: ClientTransport): Promise<ClientHttp2Session> {
 }
 
 /** One herdr call on the client target; resolves the client's signed answer. */
-export async function clientHerdr(t: ClientTransport, args: string[], timeoutMs: number): Promise<ClientAnswer> {
+export function clientHerdr(t: ClientTransport, args: string[], timeoutMs: number): Promise<ClientAnswer> {
+  return clientCall<ClientAnswer>(t, '/herdr', { args, timeoutMs }, timeoutMs);
+}
+
+/** The id of the client release the client target runs. */
+export async function clientRunningRelease(t: ClientTransport): Promise<string> {
+  const { release } = await clientCall<{ release?: unknown }>(t, '/release', {}, 15000);
+  if (typeof release !== 'string') throw new ClientError(`client ${t.machine}: no release in its answer`);
+  return release;
+}
+
+/** Loads a client release onto the client target; it restarts to run it. */
+export async function loadClientRelease(t: ClientTransport, release: ClientRelease): Promise<void> {
+  await clientCall(t, '/load', { release }, 30000);
+}
+
+/** One signed call on the client target; resolves the client's signed answer, parsed. */
+async function clientCall<T>(t: ClientTransport, path: string, payload: unknown, timeoutMs: number): Promise<T> {
   let token: string;
   try { token = checkToken(t.token()); } catch (e) { throw new ClientError(`client ${t.machine}: ${(e as Error).message}`); }
   const session = await sessionOn(t);
-  const body = JSON.stringify({ args, timeoutMs });
-  const auth = signRequest(token, 'POST', '/herdr', body);
+  const body = JSON.stringify(payload);
+  const auth = signRequest(token, 'POST', path, body);
   return new Promise((resolve, reject) => {
-    const req = session.request({ ':method': 'POST', ':path': '/herdr', 'content-type': 'application/json', [REQUEST_HEADER]: auth });
+    const req = session.request({ ':method': 'POST', ':path': path, 'content-type': 'application/json', [REQUEST_HEADER]: auth });
     req.setTimeout(timeoutMs + 5000, () => req.close());
     let status = 0;
     let sig: string | undefined;
@@ -81,7 +100,7 @@ export async function clientHerdr(t: ClientTransport, args: string[], timeoutMs:
         return reject(new ClientError(`client ${t.machine}: the answer at its tunnel did not prove itself (no valid client signature)`));
       }
       if (status !== 200) return reject(new ClientError(`client ${t.machine}: ${status} ${text.slice(0, 200)}`));
-      try { resolve(JSON.parse(text) as ClientAnswer); } catch { reject(new ClientError(`client ${t.machine}: answer is not JSON`)); }
+      try { resolve(JSON.parse(text) as T); } catch { reject(new ClientError(`client ${t.machine}: answer is not JSON`)); }
     });
     req.on('close', () => { if (!status) reject(new ClientError(`client ${t.machine}: no answer within ${timeoutMs + 5000} ms, or the tunnel closed`)); });
     req.on('error', (e) => reject(new ClientError(`client ${t.machine}: ${e.message}`)));

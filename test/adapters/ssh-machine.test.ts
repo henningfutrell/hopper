@@ -27,7 +27,7 @@ function harness(results: (boolean | Error)[]) {
     probe: async () => {
       const r = results[Math.min(calls++, results.length - 1)]!;
       if (r instanceof Error) throw r;
-      return r;
+      return { online: r };
     },
     logger: { info: (l) => lines.push(l), warn: (l) => lines.push(l) },
   });
@@ -73,7 +73,7 @@ describe('attached machine source', () => {
 
   it('honours a label', async () => {
     const h = createAttachedMachineSource({
-      machine: () => ({ name: 'laptop', label: 'arch-laptop', ssh: 'laptop', lanes: 1, executors: [], session: 'job-hopper', herdrBin: 'herdr' }), probe: async () => true,
+      machine: () => ({ name: 'laptop', label: 'arch-laptop', ssh: 'laptop', lanes: 1, executors: [], session: 'job-hopper', herdrBin: 'herdr' }), probe: async () => ({ online: true }),
     });
     expect((await h.list())[0]!.label).toBe('arch-laptop');
   });

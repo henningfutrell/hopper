@@ -16,7 +16,8 @@ import { dockerHost } from './executors/docker.ts';
 import { hopperSshAuth, pinHostKeys } from './executors/ssh.ts';
 import { createServer } from './http/index.ts';
 import { AUTH, createSignIn, loadAuthDocument, type AuthConfig } from './auth/index.ts';
-import { combineMachineSources, createAttachedMachines, probeClient, probeContainer, probeHerdrOverSsh } from './machines/index.ts';
+import { combineMachineSources, createAttachedMachines, createClientReleaseKeeper, probeContainer, probeHerdrOverSsh, type MachineProbe } from './machines/index.ts';
+import { readRelease } from './client/release.ts';
 import { BUILTIN_PLUGINS } from './plugins/builtin.ts';
 import { herdrClaudePlugin } from './plugins/executor/herdr-claude/index.ts';
 import { createPluginHost, type BuiltJobSource } from './plugins/index.ts';
@@ -85,8 +86,8 @@ export interface AppSeams {
   /** The environment the parts read their secrets from (design.md "Secrets"); default process.env. */
   env?: Record<string, string | undefined>;
   pluginsFileIntervalMs?: number;
-  /** Replaces the probe of every attached machine: true = its herdr session (ssh) or its container (docker) is running. */
-  machineProbe?: (machine: AttachedMachine) => Promise<boolean>;
+  /** Replaces the probe of every attached machine: online = its herdr session (ssh) or its container (docker) is running. */
+  machineProbe?: (machine: AttachedMachine) => Promise<MachineProbe>;
   /** Replaces resolving a new ssh target when the UI adds a machine (issues #18, #59): its herdr path and pinned host key, or a rejection with the reason. */
   resolveTarget?: (ssh: string) => Promise<{ herdrBin: string; hostKey: string }>;
   /** The built UI bundle; default UI_DIR. */
@@ -172,6 +173,8 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   const clientTransport = (machine: string, tokenEnv: string): ClientTransport => ({
     machine, socket: clientSocket(dataDir, machine), token: () => secret(tokenEnv) ?? '',
   });
+  // The client release this hopper loads onto its client targets: the client files of the install it runs from (issue #70).
+  const keepClient = createClientReleaseKeeper({ release: readRelease(join(APP_DIR, 'src', 'client')), logger });
   const routerMode = () => store.settings.getRouterMode() ?? config.routerMode;
   let executorNames = (): string[] => [];
   let jobsOnMachine = (_name: string): string[] => [];
@@ -230,11 +233,12 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
       createAttachedMachines({
         machines: () => pinned(host.attachedMachines()), clock, logger,
         probe: seams.machineProbe
-          ?? ((m) => ('docker' in m
-            ? probeContainer({ container: m.docker, dockerHost: () => dockerHost(secret) })
-            : 'client' in m
-              ? probeClient(clientTransport(m.name, m.client.tokenEnv))
-              : probeHerdrOverSsh({ target: m.ssh, herdrBin: m.herdrBin, session: m.session, controlDir: join(dataDir, 'ssh'), auth: sshAuth }))),
+          ?? ((m) => ('client' in m
+            ? keepClient(clientTransport(m.name, m.client.tokenEnv), () => jobsOnMachine(m.name).length > 0)
+            : ('docker' in m
+              ? probeContainer({ container: m.docker, dockerHost: () => dockerHost(secret) })
+              : probeHerdrOverSsh({ target: m.ssh, herdrBin: m.herdrBin, session: m.session, controlDir: join(dataDir, 'ssh'), auth: sshAuth })
+            ).then((online) => ({ online })))),
       }),
     ]),
     usage: [...host.usageSources(), ...(seams.fakeUsage ? [seams.fakeUsage] : [])],

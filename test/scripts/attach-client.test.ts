@@ -1,12 +1,15 @@
 // scripts/attach-client.sh <name> <ssh-target> <user@hopper> (issue #59, design.md "Client targets"):
 // installs the hopper client on another machine and lets its own key open its one tunnel here and
 // nothing else. Stand-ins on PATH — ssh runs the command in a local shell with HOME pointing at the
-// "remote" home — so nothing leaves this process tree. node and ssh-keygen are the real ones.
+// "remote" home — so nothing leaves this process tree. node and ssh-keygen are the real ones. The
+// client installed is the hopper's client release (issue #70): the client files of the hopper's
+// install (JOB_HOPPER_APP_DIR), whatever checkout the script runs from.
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { CLIENT_FILES, readRelease } from '../../src/client/release.ts';
 
 const ROOT = join(import.meta.dirname, '..', '..');
 const SCRIPT = join(ROOT, 'scripts', 'attach-client.sh');
@@ -16,6 +19,7 @@ let dir: string;
 let bin: string;
 let home: string;
 let there: string;
+let app: string;
 
 function stub(name: string, body: string): void {
   writeFileSync(join(bin, name), `#!/bin/sh\necho "${name} $*" >> "${dir}/log"\n${body}\n`);
@@ -27,7 +31,7 @@ function run(args: string[]) {
     encoding: 'utf8',
     env: {
       PATH: `${bin}:${dirname(process.execPath)}:/usr/bin:/bin`, HOME: home, THERE: there,
-      JOB_HOPPER_HOST_KEY_FILE: join(dir, 'host_ed25519.pub'), JOB_HOPPER_APP_DIR: '/opt/jh', JOB_HOPPER_WORK_DIR: join(dir, 'work'),
+      JOB_HOPPER_HOST_KEY_FILE: join(dir, 'host_ed25519.pub'), JOB_HOPPER_APP_DIR: app, JOB_HOPPER_WORK_DIR: join(dir, 'work'),
     },
   });
 }
@@ -38,7 +42,11 @@ beforeEach(() => {
   bin = join(dir, 'bin');
   home = join(dir, 'home');
   there = join(dir, 'there');
+  app = join(dir, 'app');
   for (const d of [bin, home, there]) mkdirSync(d);
+  // The hopper's install: its client release one line apart from this checkout's.
+  cpSync(join(ROOT, 'src/client'), join(app, 'src/client'), { recursive: true });
+  writeFileSync(join(app, 'src/client/main.ts'), `${readFileSync(join(ROOT, 'src/client/main.ts'), 'utf8')}// the installed hopper's\n`);
   writeFileSync(join(dir, 'host_ed25519.pub'), `${HOST_KEY} root@hopper\n`);
   stub('ssh', [
     'while [ "$1" != "--" ]; do shift; done; shift',
@@ -55,9 +63,10 @@ describe('attach-client.sh', () => {
   it('installs the client and its units there, with the token, its own key and this machine\'s pinned host key', () => {
     const r = run(['studio', 'studio-ssh', 'hop@hopper.lan', '2']);
     expect(r.status, r.stderr).toBe(0);
-    for (const f of ['main', 'server', 'signature', 'tunnel', 'ssh-options']) {
-      expect(readFileSync(join(there, `.local/lib/job-hopper-client/${f}.ts`), 'utf8')).toBe(readFileSync(join(ROOT, `src/client/${f}.ts`), 'utf8'));
-    }
+    const release = readRelease(join(app, 'src/client'));
+    expect(readRelease(join(there, '.local/lib/job-hopper-client'))).toEqual(release);
+    for (const f of CLIENT_FILES) expect(existsSync(join(there, `.local/lib/job-hopper-client/${f}`))).toBe(true);
+    expect(r.stderr).toContain(`client release ${release.id}`);
     const token = readFileSync(join(home, '.config/job-hopper/clients/studio.token'), 'utf8').trim();
     expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(statSync(join(home, '.config/job-hopper/clients/studio.token')).mode & 0o777).toBe(0o600);
@@ -89,7 +98,7 @@ describe('attach-client.sh', () => {
     const lines = readFileSync(join(home, '.ssh/authorized_keys'), 'utf8').trim().split('\n');
     expect(lines).toEqual([
       'ssh-ed25519 AAAAother user@desk',
-      `restrict,command="${process.execPath} /opt/jh/src/client/relay.ts ${join(dir, 'work')}/clients/studio.sock" ${pub} job-hopper-client:studio`,
+      `restrict,command="${process.execPath} ${app}/src/client/relay.ts ${join(dir, 'work')}/clients/studio.sock" ${pub} job-hopper-client:studio`,
     ]);
     expect(statSync(join(home, '.ssh/authorized_keys')).mode & 0o777).toBe(0o600);
   });

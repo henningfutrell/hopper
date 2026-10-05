@@ -15,7 +15,7 @@ function harness(initial: AttachedMachine[]) {
   const lines: string[] = [];
   const src = createAttachedMachines({
     machines: () => configured,
-    probe: async (m) => { probed.push(m.name); return true; },
+    probe: async (m) => { probed.push(m.name); return { online: true }; },
     logger: { info: (l) => lines.push(l), warn: (l) => lines.push(l) },
   });
   return { src, probed, lines, set: (next: AttachedMachine[]) => { configured = next; } };

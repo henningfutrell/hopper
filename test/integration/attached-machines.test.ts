@@ -41,7 +41,7 @@ function configure(laptopLanes: number): string {
 
 async function boot(dbPath: string, online: boolean): Promise<TestApp & { probed: AttachedMachine[] }> {
   const probed: AttachedMachine[] = [];
-  const a = await startTestApp({ dbPath, seams: { machineProbe: (m) => { probed.push(m); return Promise.resolve(online); } } });
+  const a = await startTestApp({ dbPath, seams: { machineProbe: (m) => { probed.push(m); return Promise.resolve({ online }); } } });
   apps.push(a);
   return Object.assign(a, { probed });
 }

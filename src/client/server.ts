@@ -1,14 +1,18 @@
 // The hopper client (design.md "Client targets", issue #59): what a client target runs. It dials the
 // hopper over ssh (tunnel.ts) and serves HTTP/2 on that session's stdin and stdout: the reverse
-// tunnel. The hopper end is relay.ts, the forced command of the client's key there. One route —
-// `POST /herdr {args, timeoutMs?}` — runs `<herdrBin> --session <session> <args>` with no shell and
-// answers `{code, stdout, stderr}`. The binary and the session are the client's own, never the
-// request's. A request runs only when the hopper signed it with the client's token (signature.ts);
-// every answer is signed back. When the tunnel ends the client dials again, backing off to 30 s.
+// tunnel. The hopper end is relay.ts, the forced command of the client's key there. Three routes:
+// `POST /herdr {args, timeoutMs?}` runs `<herdrBin> --session <session> <args>` with no shell and
+// answers `{code, stdout, stderr}` — the binary and the session are the client's own, never the
+// request's; `POST /release` answers `{release}`, the id of the release this process runs
+// (release.ts, issue #70); `POST /load {release}` writes the hopper's release into the install dir
+// and then asks to be restarted (`onLoaded`; main.ts exits and the unit starts the new files).
+// A request runs only when the hopper signed it with the client's token (signature.ts); every answer
+// is signed back. When the tunnel ends the client dials again, backing off to 30 s.
 // Imports nothing of job-hopper but its own directory: it is installed on the target as plain files.
 import { execFile, type ChildProcess } from 'node:child_process';
 import { performServerHandshake, type IncomingHttpHeaders, type ServerHttp2Stream } from 'node:http2';
 import { Duplex, Transform, type Readable } from 'node:stream';
+import { checkRelease, installRelease, readRelease } from './release.ts';
 import { REQUEST_HEADER, RESPONSE_HEADER, checkToken, createNonceCache, signResponse, verifyRequest } from './signature.ts';
 
 const MAX_BODY = 1024 * 1024;
@@ -29,6 +33,10 @@ export interface ClientOptions {
   log?: (line: string) => void;
   /** Delays between dials; default 1 s, 2 s, 5 s, 10 s, then 30 s. */
   backoffMs?: readonly number[];
+  /** The directory this client's files are installed in: its release is read from it at start, and a load writes there. */
+  installDir: string;
+  /** A release was loaded into installDir: restart to run it. Called after the answer is sent. */
+  onLoaded?: (release: string) => void;
 }
 
 export interface Client { stop(): Promise<void> }
@@ -62,7 +70,12 @@ function readBody(stream: ServerHttp2Stream): Promise<string | 'too large'> {
 }
 
 /** One request on the tunnel: verified, then run; the answer signed. */
-async function serve(o: ClientOptions, nonces: ReturnType<typeof createNonceCache>, stream: ServerHttp2Stream, headers: IncomingHttpHeaders): Promise<void> {
+const ROUTES = new Set(['/herdr', '/release', '/load']);
+
+/** What a client knows of its releases: the one it runs, and the one a load put in its install dir. */
+interface Releases { running: string; installed: string }
+
+async function serve(o: ClientOptions, nonces: ReturnType<typeof createNonceCache>, releases: Releases, stream: ServerHttp2Stream, headers: IncomingHttpHeaders): Promise<void> {
   const body = await readBody(stream);
   let nonce = '';
   const answer = (status: number, payload: unknown): void => {
@@ -74,7 +87,7 @@ async function serve(o: ClientOptions, nonces: ReturnType<typeof createNonceCach
   const method = String(headers[':method']);
   const path = String(headers[':path']);
   if (body === 'too large') return answer(413, { error: 'body too large' });
-  if (method !== 'POST' || path !== '/herdr') return answer(404, { error: 'not found' });
+  if (method !== 'POST' || !ROUTES.has(path)) return answer(404, { error: 'not found' });
   const header = headers[REQUEST_HEADER];
   const v = verifyRequest(o.token(), typeof header === 'string' ? header : undefined, method, path, body, nonces);
   if (!v.ok) {
@@ -82,11 +95,28 @@ async function serve(o: ClientOptions, nonces: ReturnType<typeof createNonceCach
     return answer(401, { error: `refused: ${v.why}` });
   }
   nonce = v.nonce;
+  if (path === '/release') return answer(200, { release: releases.running });
+  if (path === '/load') return load(o, releases, body, answer);
   let parsed: { args?: unknown; timeoutMs?: unknown };
   try { parsed = JSON.parse(body) as typeof parsed; } catch { return answer(400, { error: 'body must be JSON' }); }
   if (!validArgs(parsed.args)) return answer(400, { error: 'args must be a non-empty list of strings, without --session' });
   const timeoutMs = typeof parsed.timeoutMs === 'number' && parsed.timeoutMs > 0 ? Math.min(parsed.timeoutMs, MAX_TIMEOUT_MS) : DEFAULT_TIMEOUT_MS;
   answer(200, await herdr(o, parsed.args, timeoutMs));
+}
+
+/** A signed load: the release checked whole, written into the install dir, then a restart asked for. */
+function load(o: ClientOptions, releases: Releases, body: string, answer: (status: number, payload: unknown) => void): void {
+  let parsed: { release?: unknown };
+  try { parsed = JSON.parse(body) as typeof parsed; } catch { return answer(400, { error: 'body must be JSON' }); }
+  const release = checkRelease(parsed.release);
+  if (typeof release === 'string') return answer(400, { error: release });
+  if (release.id !== releases.installed) {
+    installRelease(o.installDir, release);
+    releases.installed = release.id;
+    o.log?.(`job-hopper-client: loaded release ${release.id} into ${o.installDir} (running ${releases.running}); restarting`);
+  }
+  answer(200, { release: release.id });
+  if (release.id !== releases.running) setImmediate(() => o.onLoaded?.(release.id));
 }
 
 /** What the relay sends first; anything before it is the hopper machine's login shell talking. */
@@ -112,6 +142,8 @@ function afterMarker(input: Readable): Readable {
 export function startClient(o: ClientOptions): Client {
   if (o.session === 'default' || !o.session) throw new Error('the client\'s herdr session must be named and never `default`');
   checkToken(o.token());
+  const running = readRelease(o.installDir).id;
+  const releases: Releases = { running, installed: running };
   const nonces = createNonceCache();
   const log = o.log ?? (() => {});
   const backoff = o.backoffMs ?? BACKOFF_MS;
@@ -131,7 +163,7 @@ export function startClient(o: ClientOptions): Client {
     const duplex = Duplex.from({ readable: afterMarker(c.stdout!), writable: c.stdin! } as unknown as Parameters<typeof Duplex.from>[0]);
     const session = performServerHandshake(duplex);
     session.on('stream', (stream, headers) => {
-      serve(o, nonces, stream, headers).catch((e: unknown) => {
+      serve(o, nonces, releases, stream, headers).catch((e: unknown) => {
         log(`job-hopper-client: ${(e as Error).message}`);
         if (!stream.destroyed) stream.close();
       });
@@ -151,7 +183,7 @@ export function startClient(o: ClientOptions): Client {
   }
 
   dial();
-  log(`job-hopper-client: serving herdr session ${o.session} over the tunnel`);
+  log(`job-hopper-client: release ${running}, serving herdr session ${o.session} over the tunnel`);
   return {
     async stop() {
       stopped = true;

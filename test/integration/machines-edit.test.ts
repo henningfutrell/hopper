@@ -49,7 +49,7 @@ async function start(file = FILE): Promise<{ a: TestApp; token: string }> {
   t = await startTestApp({
     dbPath: db.dbPath,
     seams: {
-      machineProbe: async () => true,
+      machineProbe: async () => ({ online: true }),
       resolveTarget: async (ssh) => {
         resolved.push(ssh);
         if (ssh === 'unreachable') throw new Error('ssh unreachable: No route to host');

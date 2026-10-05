@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Make another machine a client target of this hopper (design.md "Client targets", issue #59), from
 # the hopper's machine. Over this user's ssh to that machine: check node and herdr there, install the
-# hopper client (src/client/*.ts as plain files) and its units — the client, and its own herdr session —
+# hopper's client release (design.md "Client releases", issue #70: the client files of the hopper's
+# install, $JOB_HOPPER_APP_DIR/src/client, as plain files; after this the hopper keeps it current) and its units — the client, and its own herdr session —
 # and give it what it proves itself with: a fresh token (256 bits) and its own ssh key, made there
 # (the private half never leaves it). Here: pin the client's key in ~/.ssh/authorized_keys as
 #   restrict,command="node <app>/src/client/relay.ts <workdir>/clients/<name>.sock" <key>
@@ -60,10 +61,13 @@ step "this machine's host key, for the client to pin"
 HOST_KEY="$(awk '{ print $1, $2 }' "$HOST_KEY_FILE")"
 [ -n "$HOST_KEY" ] || die "cannot read $HOST_KEY_FILE"
 
-step "install the hopper client on $TARGET"
+RELEASE="$(node --input-type=module -e 'const { readRelease } = await import(process.argv[1]); const r = readRelease(process.argv[2]); console.log(r.id, ...Object.keys(r.files));' "$APP/src/client/release.ts" "$APP/src/client")" \
+  || die "no client release in the hopper's install ($APP/src/client): install the hopper first (scripts/install.sh)"
+read -r RELEASE_ID CLIENT_FILES <<<"$RELEASE"
+step "install the hopper's client release $RELEASE_ID on $TARGET"
 remote 'mkdir -p ~/.local/lib/job-hopper-client ~/.config/systemd/user && install -d -m 700 ~/.config/job-hopper-client'
-for f in main server signature tunnel ssh-options; do
-  remote "cat > ~/.local/lib/job-hopper-client/$f.ts" < "$SRC/src/client/$f.ts"
+for f in $CLIENT_FILES; do
+  remote "cat > ~/.local/lib/job-hopper-client/$f" < "$APP/src/client/$f"
 done
 remote '(umask 077; cat > ~/.config/job-hopper-client/token)' < "$TOKENS/$NAME.token"
 printf 'job-hopper %s\n' "$HOST_KEY" | remote 'cat > ~/.config/job-hopper-client/known_hosts'
