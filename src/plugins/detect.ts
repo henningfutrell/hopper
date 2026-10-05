@@ -18,12 +18,14 @@ async function executable(path: string): Promise<boolean> {
   }
 }
 
-/** stdout of a finished run, or undefined on a non-zero exit, a spawn error, or the timeout. */
-function run(bin: string, args: string[], timeoutMs: number, env: NodeJS.ProcessEnv): Promise<string | undefined> {
+/** stdout of a finished run, or undefined on a non-zero exit, a spawn error, or the timeout. `input` goes to stdin, then closes it. */
+function run(bin: string, args: string[], timeoutMs: number, env: NodeJS.ProcessEnv, input = ''): Promise<string | undefined> {
   return new Promise((resolve) => {
-    execFile(bin, args, { timeout: timeoutMs, killSignal: 'SIGKILL', env, encoding: 'utf8' }, (err, stdout) => {
+    const child = execFile(bin, args, { timeout: timeoutMs, killSignal: 'SIGKILL', env, encoding: 'utf8' }, (err, stdout) => {
       resolve(err ? undefined : stdout);
     });
+    child.stdin?.on('error', () => {});
+    child.stdin?.end(input);
   });
 }
 
@@ -72,6 +74,10 @@ export function createDetectionKit(o: {
       } catch {
         return false;
       }
+    },
+    async output(bin, args, input) {
+      const path = await which(bin);
+      return path ? run(path, args, timeoutMs, env, input) : undefined;
     },
     async pythonImports(python, module) {
       const path = await which(python);

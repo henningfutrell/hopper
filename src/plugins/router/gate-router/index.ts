@@ -3,7 +3,7 @@
 // into it. Jev, through TypeSafe, answers the gates in `jevGates` once TYPESAFE_API_KEY is in the
 // daemon's environment; the Claude model (`claudeModel`, Haiku) answers the rest.
 import { join } from 'node:path';
-import { detectClaude } from '../../claude-print.ts';
+import { claudeModelChoices, detectClaude } from '../../claude-print.ts';
 import { expandHome } from '../../expand-home.ts';
 import type { PluginDefinition } from '../../sdk.ts';
 import { createGateRouter } from './shim.ts';
@@ -40,6 +40,7 @@ const gateRouter: PluginDefinition<'router', GateRouterOptions> = {
     else if (!(await sys.pythonImports(o.python, 'typesafe_sdk'))) jev = `Jev off: ${o.python} cannot import typesafe_sdk`;
     return { status: 'available', detail: `${jev}; Claude ${o.claudeModel} answers the other gates via ${claude.detail}` };
   },
+  choices: (sys) => claudeModelChoices(sys, 'claudeModel'),
   create(ctx, o) {
     return createGateRouter({
       grokBotJevSrc: expandHome(o.grokBotJevSrc), python: o.python, claudeBin: o.claudeBin, claudeModel: o.claudeModel,

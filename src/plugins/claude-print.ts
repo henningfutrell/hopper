@@ -4,7 +4,7 @@
 // CLAUDE.md loads), env scrubbed of the Claude Code markers. Never throws.
 import { spawn } from 'node:child_process';
 import type { z } from 'zod';
-import type { DetectionKit, QuestionAttempt } from './sdk.ts';
+import type { DetectionKit, OptionChoice, QuestionAttempt } from './sdk.ts';
 
 export interface ClaudePrintOptions {
   bin: string;
@@ -99,6 +99,38 @@ export async function detectClaude(sys: DetectionKit, bin: string) {
   const version = await sys.version(bin, ['--version']);
   if (!version) return { status: 'unavailable' as const, reason: `${bin} --version failed` };
   return { status: 'available' as const, detail: version };
+}
+
+const INITIALIZE = `${JSON.stringify({ type: 'control_request', request_id: 'models', request: { subtype: 'initialize' } })}\n`;
+
+interface ListedModel { value?: unknown; displayName?: unknown; description?: unknown }
+
+/**
+ * The models `bin` offers, as its stream-json initialize handshake lists them: the reply to one
+ * control request, no prompt, so no model call. Empty when it cannot run or lists none.
+ */
+export async function claudeModels(sys: DetectionKit, bin: string): Promise<OptionChoice[]> {
+  const out = await sys.output(bin, ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
+    '--no-session-persistence', '--setting-sources', '', '--strict-mcp-config', '--tools', ''], INITIALIZE);
+  for (const line of (out ?? '').split('\n')) {
+    let msg: { type?: unknown; response?: { response?: { models?: unknown } } };
+    try { msg = JSON.parse(line) as typeof msg; } catch { continue; }
+    if (msg.type !== 'control_response') continue;
+    const models = msg.response?.response?.models;
+    if (!Array.isArray(models)) return [];
+    return (models as ListedModel[]).flatMap((m) => (typeof m.value === 'string' && m.value ? [{
+      value: m.value,
+      ...(typeof m.displayName === 'string' ? { label: m.displayName } : {}),
+      ...(typeof m.description === 'string' ? { description: m.description } : {}),
+    }] : []));
+  }
+  return [];
+}
+
+/** `option`'s choices: the models of the `claude` on PATH; none when it lists none. */
+export async function claudeModelChoices(sys: DetectionKit, option: string): Promise<Record<string, OptionChoice[]>> {
+  const models = await claudeModels(sys, 'claude');
+  return models.length ? { [option]: models } : {};
 }
 
 /** One trail entry as a prompt line (the claude-cli prompt lists the trail so far). */

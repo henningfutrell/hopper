@@ -6,7 +6,7 @@ import type {
   AnswerRequest, Clock, EscalationLevel, ExecutionContext, ExecutionOutcome, Executor, JobSource, LevelReply,
   MachineSource, Notifier, NotifierEvents, QueueEntry, QueueSorter, Router, SourceItem, SourceReport, SourceSignal, UsageSource,
 } from '../domain/ports.ts';
-import type { Advice, AdviceAction, AttachedMachine, Detection, DomainEvent, Job, MachineSnapshot, Question, QuestionAttempt, Role, RouterMode, UsageReading } from '../domain/types.ts';
+import type { Advice, AdviceAction, AttachedMachine, Detection, OptionChoice, DomainEvent, Job, MachineSnapshot, Question, QuestionAttempt, Role, RouterMode, UsageReading } from '../domain/types.ts';
 
 export type {
   Advice, AdviceAction, AnswerRequest, AttachedMachine, Clock, Detection, DomainEvent, EscalationLevel, ExecutionContext, LevelReply,
@@ -25,6 +25,8 @@ export interface DetectionKit {
   exists(path: string): Promise<boolean>;
   /** Whether this process can read `path`. */
   readable(path: string): Promise<boolean>;
+  /** All of `bin args` stdout, with `input` on stdin, or undefined on failure or after 5 s. CLIs only. */
+  output(bin: string, args: string[], input: string): Promise<string | undefined>;
   /** Whether `python -c "import <module>"` succeeds. */
   pythonImports(python: string, module: string): Promise<boolean>;
   /** A value the runtime gives, as PluginContext.env. */
@@ -120,6 +122,8 @@ export interface JobSourceContext {
   rerunnable(keys: string[]): Set<string>;
 }
 
+export type { OptionChoice };
+
 /** The zod the core passes to `options` — authors need not import zod. */
 export type Zod = typeof z;
 
@@ -143,5 +147,11 @@ export interface PluginDefinition<R extends Role = Role, O = any> {
   options?: (z: Zod) => z.ZodType<O>;
   /** Can it run here, with these options? */
   detect(sys: DetectionKit, options: O): Promise<Detection>;
+  /**
+   * Option choices: the values an option may take, read from the system (the models a CLI offers),
+   * by option name. The UI offers them instead of a typed value. Run at start and on rescan; same
+   * limits as `detect`. Absent, empty or throwing → the options are typed.
+   */
+  choices?(sys: DetectionKit): Promise<Record<string, OptionChoice[]>>;
   create(ctx: PluginContext & RoleContext[R], options: O): RoleInstance[R] | Promise<RoleInstance[R]>;
 }

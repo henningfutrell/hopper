@@ -226,6 +226,20 @@ describe('custom plugins through the host', () => {
     expect(r.errors).toEqual([{ path: join(pluginDir, 'clash', 'index.js'), error: expect.stringMatching(/built-in/) }]);
   });
 
+  it('report: an option\'s choices, as the plugin lists them from the system; a plugin that lists none has none', async () => {
+    const listing: PluginDefinition<'router'> = {
+      ...tagging, id: 'listing',
+      async choices(sys) { return { tag: [{ value: (await sys.version('lister')) ?? '?', label: 'From the system' }] }; },
+    };
+    const throwing: PluginDefinition<'router'> = { ...tagging, id: 'throwing-choices', async choices() { throw new Error('cannot list'); } };
+    const { host } = start({ builtins: [passThrough, listing, throwing, tagging], kit: fakeKit({ version: async () => 'v9' }) });
+    await host.start();
+    const byId = new Map(host.report().plugins.map((p) => [p.id, p]));
+    expect(byId.get('listing')!.choices).toEqual({ tag: [{ value: 'v9', label: 'From the system' }] });
+    expect(byId.get('throwing-choices')!.choices).toBeUndefined();
+    expect(byId.get('tagging')!.choices).toBeUndefined();
+  });
+
   it('a plugin whose detect throws is reported unavailable', async () => {
     const pluginDir = temp();
     writePlugin(pluginDir, 'det', "export default { id: 'det', role: 'router', describe: 'x', async detect() { throw new Error('probe failed'); }, create() {} };\n", 'index.js');

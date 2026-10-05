@@ -13,6 +13,13 @@ export type Detection =
   | { status: 'unavailable'; reason: string }
   | { status: 'needs-setup'; reason: string; command: string };
 
+/** One value an option may take, as the plugin read it from the system (a model the `claude` CLI offers). */
+export interface OptionChoice {
+  value: string;
+  label?: string;
+  description?: string;
+}
+
 /** A plugin plus options, under a name (plugins.yaml). */
 export interface InstanceSpec {
   name: string;
@@ -146,6 +153,8 @@ export interface PluginsReport {
     detection: Detection;
     /** The options as JSON Schema. */
     options: Record<string, unknown>;
+    /** Option choices, by option name: the values the plugin read from the system at start or the last rescan. */
+    choices?: Record<string, OptionChoice[]>;
   }[];
   /** Custom plugins refused at load. */
   errors: { path: string; error: string }[];

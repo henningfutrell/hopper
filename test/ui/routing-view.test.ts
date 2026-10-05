@@ -67,7 +67,7 @@ let root: Root | undefined;
 async function boot() {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
-  window.location.hash = '#routing';
+  window.location.hash = '#settings/routing';
   localStorage.clear();
   localStorage.setItem('jh_session', 'a'.repeat(64));
   const daemon = fakeDaemon();
@@ -86,6 +86,20 @@ afterEach(async () => {
   await act(async () => root?.unmount());
   root = undefined;
   vi.unstubAllGlobals();
+});
+
+describe('Settings', () => {
+  it('one navigation entry holds the configuration: question gates, question history, routing, plugins, webhooks', async () => {
+    await boot();
+    const main = document.querySelector('aside nav')!;
+    const hrefs = [...main.querySelectorAll('a')].map((a) => a.getAttribute('href'));
+    expect(hrefs).toContain('#settings');
+    for (const gone of ['#routing', '#plugins', '#webhooks']) expect(hrefs).not.toContain(gone);
+    const sections = await vi.waitFor(() => { const n = document.querySelector('[data-slot="settings-nav"]'); expect(n).not.toBeNull(); return n!; });
+    expect([...sections.querySelectorAll('a')].map((a) => a.getAttribute('href')))
+      .toEqual(['#settings/questions', '#settings/history', '#settings/routing', '#settings/plugins', '#settings/webhooks']);
+    expect(sections.querySelector('a[aria-current="page"]')!.getAttribute('href')).toBe('#settings/routing');
+  });
 });
 
 describe('Routing view', () => {

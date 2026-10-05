@@ -1,10 +1,10 @@
 // Open questions: what the job asked, its recent output, the escalation trail, and the answer box
 // with Send answer, Close and Dismiss. Logged out, the box is a notice naming the login command; a
 // 403 on a mutation drops the UI to logged out, so the notice replaces the box. Shown, the owner's
-// questions are marked seen (the nav badge clears). Below them, the handled questions as a compact
-// history, then the question gates (views/question-gates.tsx). A session whose UI role cannot act
-// (viewer) sees a notice instead of the box.
-import { Archive, ChevronRight, History, Lock, LogIn, MessageCircleQuestion, Send, X } from 'lucide-react';
+// questions are marked seen (the nav badge clears). Only the open questions: the question history and
+// the question gates are in Settings (issue #151). A session whose UI role cannot act (viewer) sees a
+// notice instead of the box.
+import { Archive, ChevronRight, Lock, LogIn, MessageCircleQuestion, Send, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -14,10 +14,8 @@ import { Countdown, JobTitle } from '@/components/job';
 import { loginHint } from '@/lib/api';
 import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
-import { QuestionGates } from '@/views/question-gates';
 import { between, clock } from '@/model/format';
-import type { Question, QuestionAttempt, QuestionStatus } from '@/model/wire';
-import type { Tone } from '@/components/status';
+import type { Question, QuestionAttempt } from '@/model/wire';
 import { awaitsOwner } from '@/model/questions';
 import { act, markSeen, refreshQuestions, useHopper } from '@/store';
 import { useCanOperate, useJobIndex } from '@/store/selectors';
@@ -116,48 +114,6 @@ function QuestionCard({ q }: { q: Question }) {
   );
 }
 
-const OUTCOME: Record<Exclude<QuestionStatus, 'open'>, Tone> = { answered: 'ok', closed: 'warn', dismissed: 'muted', expired: 'bad', cancelled: 'muted' };
-const firstLine = (s: string) => s.split('\n').find((l) => l.trim())?.trim() ?? '';
-
-/** One handled question, one line: when, outcome, the question's first line. Opens to the question, the answer and the job. */
-function HandledRow({ q }: { q: Question }) {
-  const job = useJobIndex().get(q.jobId);
-  const status = q.status as Exclude<QuestionStatus, 'open'>;
-  return (
-    <Collapsible data-slot="handled-question" className="border-b last:border-b-0">
-      <CollapsibleTrigger className="group flex w-full min-w-0 items-center gap-2 px-4 py-2 text-left text-sm hover:bg-muted/40">
-        <ChevronRight className="size-3.5 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
-        <span className="num shrink-0 text-xs text-muted-foreground">{clock(q.updatedAt)}</span>
-        <StatusBadge status={status} tone={OUTCOME[status]} className="shrink-0" />
-        <span className="min-w-0 flex-1 truncate">{firstLine(q.text)}</span>
-      </CollapsibleTrigger>
-      <CollapsibleContent className="space-y-2 px-4 pb-3 pl-9">
-        {job && <JobTitle job={job} />}
-        <pre className="rounded-md border-l-2 border-question bg-question/5 p-2 font-mono text-xs whitespace-pre-wrap">{q.text}</pre>
-        {q.answer && <div className="space-y-1">
-          <div className="text-[11px] text-muted-foreground">{q.status === 'closed' ? 'closed without answering' : 'answer'} · by {q.answeredBy ?? 'unknown'}</div>
-          <pre className="rounded-md bg-muted/50 p-2 font-mono text-xs whitespace-pre-wrap">{q.answer}</pre>
-        </div>}
-        {q.status === 'dismissed' && <div className="text-xs text-muted-foreground">dismissed: nothing was typed into the job</div>}
-        {q.status === 'expired' && <div className="text-xs text-bad">expired unanswered: the job failed</div>}
-        {q.status === 'cancelled' && <div className="text-xs text-muted-foreground">cancelled with its job</div>}
-        <div className="num text-[11px] text-muted-foreground">asked {clock(q.createdAt)} · {q.attempts.length} attempt{q.attempts.length === 1 ? '' : 's'}</div>
-      </CollapsibleContent>
-    </Collapsible>
-  );
-}
-
-function Handled() {
-  const handled = useHopper((s) => s.handled);
-  return (
-    <Panel title="Handled" icon={History} count={handled.length} bodyClassName="p-0">
-      {handled.length
-        ? <div data-slot="handled-questions">{handled.map((q) => <HandledRow key={q.id} q={q} />)}</div>
-        : <Empty>no handled questions yet</Empty>}
-    </Panel>
-  );
-}
-
 export function Questions() {
   const questions = useHopper((s) => s.questions);
   // Seen is shared state: only a session that can act on the questions marks them.
@@ -169,8 +125,6 @@ export function Questions() {
       {questions.length
         ? questions.map((q) => <QuestionCard key={q.id} q={q} />)
         : <Panel title="Questions" icon={MessageCircleQuestion}><Empty>no open questions</Empty></Panel>}
-      <Handled />
-      <QuestionGates />
     </div>
   );
 }

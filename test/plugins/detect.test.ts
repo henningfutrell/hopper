@@ -40,6 +40,22 @@ describe('detection kit (real)', () => {
     expect(await kit.version('/nonexistent/x')).toBeUndefined();
   });
 
+  it('output: all of stdout, with the input given on stdin; undefined on failure or timeout', async () => {
+    const dir = temp();
+    const echo = join(dir, 'echo-in');
+    writeFileSync(echo, '#!/bin/sh\necho "args $1"\nwhile IFS= read -r l; do echo "$l"; done\n');
+    const slow = join(dir, 'slow');
+    writeFileSync(slow, '#!/bin/sh\nsleep 5\n');
+    const failing = join(dir, 'failing');
+    writeFileSync(failing, '#!/bin/sh\necho partial\nexit 3\n');
+    for (const f of [echo, slow, failing]) chmodSync(f, 0o755);
+    const kit = createDetectionKit({ env: { PATH: dir }, timeoutMs: 200 });
+    expect(await kit.output('echo-in', ['x'], 'line one\nline two\n')).toBe('args x\nline one\nline two\n');
+    expect(await kit.output('slow', [], '')).toBeUndefined();
+    expect(await kit.output('failing', [], '')).toBeUndefined();
+    expect(await kit.output('no-such-binary-anywhere', [], '')).toBeUndefined();
+  });
+
   it('the version timeout is 5 s by default', () => {
     expect(createDetectionKit().timeoutMs).toBe(5000);
   });

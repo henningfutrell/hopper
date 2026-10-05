@@ -1,5 +1,5 @@
 // The plugin host (design.md "Phase 5"): built-in + custom plugins, plugins.yaml watched by version,
-// detection of every plugin, the live roles (the router — from plugins.yaml, else chosen from what
+// detection of every plugin and the option choices it lists, the live roles (the router — from plugins.yaml, else chosen from what
 // is detected — the queue sorter and the escalation levels, each swapped between calls) and the restart roles
 // (job sources, usage sources, notifiers): built once at start; a later change is reported as pending.
 // The machine sources — this machine and the attached ones, each an instance (issue #74) — follow
@@ -8,7 +8,7 @@
 // UI edits (edit.ts, attached-edit.ts) replace plugins.yaml in the store and apply like any other change.
 import type { MachineSource, Notifier, UsageSource } from '../domain/ports.ts';
 import {
-  ROLES, type AttachedMachine, type ConfiguredInstance, type Detection, type InstanceSpec, type PluginsReport, type RestartRoleStatus, type RouterSelection, type RoutingRule,
+  ROLES, type AttachedMachine, type ConfiguredInstance, type Detection, type InstanceSpec, type OptionChoice, type PluginsReport, type RestartRoleStatus, type RouterSelection, type RoutingRule,
 } from '../domain/types.ts';
 import { createMachinesEditor } from './attached-slot.ts';
 import { createRoutingConfig } from './routing-config.ts';
@@ -38,7 +38,7 @@ export type { PluginDefinition } from './sdk.ts';
 
 
 
-interface Entry { definition: PluginDefinition; builtin: boolean; path?: string; detection: Detection }
+interface Entry { definition: PluginDefinition; builtin: boolean; path?: string; detection: Detection; choices?: Record<string, OptionChoice[]> }
 
 /** A restart role: what was built at start, and what plugins.yaml names now when that differs. */
 interface RestartSlot<B extends { spec: InstanceSpec }> { built?: B[]; pending?: InstanceSpec[] }
@@ -114,6 +114,18 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
     const parsed = parseOptions(def, {});
     if (!parsed.ok) return { status: 'needs-setup', reason: parsed.error, command: `set ${def.role} options for ${def.id}: ${BY_HAND}` };
     return safeDetect(def, kit, parsed.options);
+  }
+
+  /** A plugin's option choices; none when it lists none, or listing throws. */
+  async function choicesOf(def: PluginDefinition): Promise<Record<string, OptionChoice[]> | undefined> {
+    if (!def.choices) return undefined;
+    try {
+      const listed = Object.entries(await def.choices(kit)).filter(([, c]) => Array.isArray(c) && c.length > 0);
+      return listed.length ? Object.fromEntries(listed) : undefined;
+    } catch (e) {
+      o.logger.warn(`hopper: plugin ${def.id} could not list its option choices: ${e instanceof Error ? e.message : String(e)}`);
+      return undefined;
+    }
   }
 
   async function configure(): Promise<void> {
@@ -201,7 +213,10 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
       ...builtins.map((definition) => ({ definition, builtin: true })),
       ...loaded.plugins.map((p: LoadedPlugin) => ({ definition: p.definition, builtin: false, path: p.path })),
     ];
-    entries = await Promise.all(all.map(async (e) => ({ ...e, detection: await catalogueDetection(e.definition) })));
+    entries = await Promise.all(all.map(async (e) => {
+      const [detection, choices] = await Promise.all([catalogueDetection(e.definition), choicesOf(e.definition)]);
+      return { ...e, detection, ...(choices ? { choices } : {}) };
+    }));
   }
 
   const fileVersion = (): string => o.documents.version(PLUGINS);
@@ -311,6 +326,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
         plugins: entries.map((e) => ({
           id: e.definition.id, role: e.definition.role, describe: e.definition.describe, builtin: e.builtin,
           ...(e.path ? { path: e.path } : {}), detection: e.detection, options: optionsJsonSchema(e.definition),
+          ...(e.choices ? { choices: e.choices } : {}),
         })),
         errors: [...loaded.errors],
         warnings: [...loaded.warnings],

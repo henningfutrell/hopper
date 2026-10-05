@@ -1,5 +1,6 @@
-// The views, routed by URL hash so a link (#questions) and the back button work.
-import { Gauge, Inbox, LayoutDashboard, ListTree, Menu, MessageCircleQuestion, Puzzle, Route, Scale, Server, Webhook, type LucideIcon } from 'lucide-react';
+// The views, routed by URL hash so a link (#questions) and the back button work. A view may have
+// sections after a slash (#settings/routing): the view is the part before it.
+import { Gauge, Inbox, LayoutDashboard, ListTree, Menu, MessageCircleQuestion, Scale, Server, Settings, type LucideIcon } from 'lucide-react';
 import { useState, useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -7,7 +8,7 @@ import { useHopper } from '@/store';
 import { useUnseenForOwner } from '@/store/selectors';
 import { cn } from '@/lib/utils';
 
-export const VIEWS = ['overview', 'questions', 'decisions', 'events', 'sources', 'machines', 'usage', 'routing', 'plugins', 'webhooks'] as const;
+export const VIEWS = ['overview', 'questions', 'decisions', 'events', 'sources', 'machines', 'usage', 'settings'] as const;
 export type View = (typeof VIEWS)[number];
 const ITEMS: Record<View, { label: string; icon: LucideIcon }> = {
   overview: { label: 'Overview', icon: LayoutDashboard },
@@ -17,14 +18,15 @@ const ITEMS: Record<View, { label: string; icon: LucideIcon }> = {
   sources: { label: 'Sources', icon: Inbox },
   machines: { label: 'Machines', icon: Server },
   usage: { label: 'Usage', icon: Gauge },
-  routing: { label: 'Routing', icon: Route },
-  plugins: { label: 'Plugins', icon: Puzzle },
-  webhooks: { label: 'Webhooks', icon: Webhook },
+  settings: { label: 'Settings', icon: Settings },
 };
 
 const subscribe = (fn: () => void) => { window.addEventListener('hashchange', fn); return () => window.removeEventListener('hashchange', fn); };
-const read = (): View => { const h = window.location.hash.slice(1); return (VIEWS as readonly string[]).includes(h) ? (h as View) : 'overview'; };
+const read = (): View => { const h = window.location.hash.slice(1).split('/')[0]!; return (VIEWS as readonly string[]).includes(h) ? (h as View) : 'overview'; };
 export const useView = (): View => useSyncExternalStore(subscribe, read);
+/** The section after the view in the hash (#settings/routing → routing), or ''. */
+const readSection = (): string => window.location.hash.slice(1).split('/')[1] ?? '';
+export const useSection = (): string => useSyncExternalStore(subscribe, readSection);
 
 function Links({ view, onPick }: { view: View; onPick?: () => void }) {
   const questions = useUnseenForOwner();
