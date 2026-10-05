@@ -1,7 +1,7 @@
-# job-hopper as a container (docs/deploy.md). Everything the daemon keeps is in its database
-# (JOB_HOPPER_DATABASE_URL); its secrets are environment variables; nothing in the image depends on
-# the machine it runs on. Jobs run in herdr panes on attached machines, reached over ssh: the
-# container has no herdr of its own.
+# job-hopper as a container (docs/deploy.md, compose.yaml). Everything the daemon keeps is in its
+# database (JOB_HOPPER_DATABASE_URL); its secrets are environment variables; nothing in the image
+# depends on the machine it runs on. Jobs run in herdr panes: in its own herdr session, here (the
+# `local` machine, started by scripts/container-start.sh), and on attached machines.
 
 # ---- the UI bundle (the one built part) --------------------------------------------------------
 FROM node:26-bookworm-slim AS ui
@@ -15,14 +15,24 @@ RUN npm run build:ui && test -s ui/dist/index.html
 # ---- the daemon --------------------------------------------------------------------------------
 FROM node:26-bookworm-slim
 # git: self-update's mirror and Jev; openssh-client: attached machines; python3 + PyYAML: the Jev
-# shim; gh: the github-gh job source; ca-certificates: TLS to GitHub and the identity providers.
+# shim; gh: the github-gh job source, and git's GitHub sign-in for jobs; ca-certificates: TLS to GitHub
+# and the identity providers; curl: herdr's installer; nano: `job-hopper config edit` (EDITOR).
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates git openssh-client python3 python3-yaml gh \
- && rm -rf /var/lib/apt/lists/*
+ && apt-get install -y --no-install-recommends ca-certificates curl git nano openssh-client python3 python3-yaml gh \
+ && rm -rf /var/lib/apt/lists/* \
+ && git config --system credential.https://github.com.helper '!gh auth git-credential'
+# herdr, the panes jobs run in (herdr.dev; the installer checks the release's SHA-256).
+RUN curl -fsSL https://herdr.dev/install.sh | HERDR_INSTALL_DIR=/usr/local/bin sh && herdr --version
 # The claude CLI, for the answerer, the assessor, the usage reading and Jev's Haiku gates. It signs
 # in from the environment (CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY). INSTALL_CLAUDE=false skips it.
 ARG INSTALL_CLAUDE=true
 RUN if [ "$INSTALL_CLAUDE" = true ]; then npm install -g --no-audit --no-fund @anthropic-ai/claude-code && npm cache clean --force; fi
+# A job's Claude Code starts without its first-run screens: onboarding, and the prompt that confirms
+# --dangerously-skip-permissions (herdr-claude's default args). Seeds the home volume on first start.
+RUN install -d -o node -g node /home/node/.claude \
+ && printf '{"hasCompletedOnboarding":true}\n' > /home/node/.claude.json \
+ && printf '{"skipDangerousModePermissionPrompt":true}\n' > /home/node/.claude/settings.json \
+ && chown node:node /home/node/.claude.json /home/node/.claude/settings.json
 
 WORKDIR /app
 COPY package.json package-lock.json ./
@@ -34,10 +44,12 @@ RUN chmod 755 src/cli.ts && ln -s /app/src/cli.ts /usr/local/bin/job-hopper
 
 USER node
 ENV NODE_ENV=production \
+    EDITOR=nano \
     JOB_HOPPER_PORT=4790 \
     JOB_HOPPER_WORK_DIR=/tmp/job-hopper
 EXPOSE 4790
-# Loopback inside the container: a local request, no session needed.
+# Loopback inside the container, on the daemon's port: a local request, no session needed.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \
-  CMD node -e "fetch('http://127.0.0.1:4790/api/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+  CMD node -e "fetch('http://127.0.0.1:' + (process.env.JOB_HOPPER_PORT || 4790) + '/api/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+ENTRYPOINT ["/app/scripts/container-start.sh"]
 CMD ["node", "src/main.ts"]

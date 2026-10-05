@@ -33,9 +33,12 @@ describe('classifyRequest', () => {
     expect(classifyRequest({ host: `server:${PORT}`, peer: '192.0.2.7' }, PORT, off)).toMatchObject({ refuse: 403 });
   });
 
-  it('a LAN peer may not name a loopback Host: 421', () => {
-    expect(classifyRequest({ host: `127.0.0.1:${PORT}`, peer: '192.0.2.7' }, PORT, lan)).toMatchObject({ refuse: 421 });
-    expect(classifyRequest({ host: `localhost:${PORT}`, peer: '192.0.2.7' }, PORT, lan)).toMatchObject({ refuse: 421 });
+  // A port a container publishes on its host's loopback (compose.yaml, issue #119) arrives from the
+  // container network with the loopback Host the browser used: a LAN request, never a local one.
+  it('a LAN peer naming a loopback Host with the port is a LAN request, not a local one', () => {
+    expect(classifyRequest({ host: `127.0.0.1:${PORT}`, peer: '192.0.2.7' }, PORT, lan)).toEqual({ reach: 'lan' });
+    expect(classifyRequest({ host: `localhost:${PORT}`, peer: '192.0.2.7' }, PORT, lan)).toEqual({ reach: 'lan' });
+    expect(classifyRequest({ host: '127.0.0.1:4800', peer: '192.0.2.7' }, PORT, lan)).toMatchObject({ refuse: 421 });
   });
 
   it('any other Host is 421 (DNS rebinding), as before', () => {

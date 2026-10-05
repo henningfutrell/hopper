@@ -1,9 +1,6 @@
-# job-hopper with its Postgres (docs/deploy.md).
+# The bundled Postgres for a hopper installed on this host by scripts/install.sh (docs/deploy.md), and
+# for local development. The hopper in containers is compose.yaml at the root.
 #
-#   cp deploy/hopper.env.example deploy/hopper.env   # then fill it in (mode 600)
-#   POSTGRES_PASSWORD=<password> docker compose -f deploy/compose.yaml up -d --build
-#
-# Only Postgres, for a hopper installed on this host by scripts/install.sh:
 #   POSTGRES_PASSWORD=<password> docker compose -f deploy/compose.yaml up -d postgres
 #   JOB_HOPPER_DATABASE_URL=postgres://hopper:<password>@127.0.0.1:${POSTGRES_PORT:-5433}/hopper
 name: job-hopper
@@ -18,7 +15,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
     volumes:
       - postgres:/var/lib/postgresql/data
-    # Loopback only: for a host-installed hopper and for backups; the container hopper uses the network.
+    # Loopback only: for the host-installed hopper and for backups.
     ports:
       - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
     healthcheck:
@@ -26,22 +23,6 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
-
-  hopper:
-    profiles: [container]
-    build:
-      context: ..
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-    env_file:
-      - path: hopper.env
-        required: true
-    environment:
-      JOB_HOPPER_DATABASE_URL: postgres://hopper:${POSTGRES_PASSWORD}@postgres:5432/hopper
-    ports:
-      - "127.0.0.1:${JOB_HOPPER_PORT:-4790}:4790"
 
 volumes:
   postgres:

@@ -80,7 +80,7 @@ the questions it can, asks you the rest, and labels and closes the issue when th
 15 minutes, most of it the install building itself. You need a terminal on that machine and a GitHub account.</p>
 <p class="note">Systems: Linux with systemd (Ubuntu, Debian, Fedora, Arch and most others).
 On Windows it runs inside WSL, with the same install: start at <a href="#windows">On Windows</a>.
-Not yet macOS.</p>
+Not yet macOS. With Docker, on any system: <a href="#docker">With Docker Compose</a>.</p>
 
 <ol class="toc">
 <li><a href="#before">Get what it needs</a></li>
@@ -90,7 +90,7 @@ Not yet macOS.</p>
 <li><a href="#github">Connect GitHub</a></li>
 <li><a href="#first-job">Give it its first job</a></li>
 </ol>
-<p class="note">Then: <a href="#windows">on Windows</a> · <a href="#upgrade">upgrade</a> · <a href="#remove">uninstall</a> · <a href="#trouble">when something goes wrong</a> · <a href="#more">more</a></p>
+<p class="note">Then: <a href="#docker">with Docker Compose</a> · <a href="#windows">on Windows</a> · <a href="#upgrade">upgrade</a> · <a href="#remove">uninstall</a> · <a href="#trouble">when something goes wrong</a> · <a href="#more">more</a></p>
 
 <h2 id="before">1. Get what it needs</h2>
 <p>Do this on the machine that will run job-hopper, as the user it will run as (not root).
@@ -235,6 +235,36 @@ The issue's labels show where it is:</p>
 <p>That is the whole loop. From here, label any issue <code>hopper</code> to hand it over. <code>hopper:high</code>
 and <code>hopper:low</code> change its priority; <code>hopper:backburner</code> keeps it waiting.</p>
 
+<h2 id="docker">With Docker Compose</h2>
+<p>Instead of steps 1 to 5: job-hopper, its database and the panes its jobs run in, all in containers. Nothing
+is installed on the machine itself, and it works wherever Docker runs. You need only
+<a href="https://docs.docker.com/get-started/get-docker/">Docker, with compose</a>.</p>
+<ol class="steps">
+<li><p><strong>Get the compose file and start it</strong>, in a folder of its own. The first start builds
+job-hopper, which takes a few minutes:</p>
+<div class="cmd"><pre>mkdir job-hopper &amp;&amp; cd job-hopper</pre><button type="button" data-copy="mkdir job-hopper &amp;&amp; cd job-hopper">Copy</button></div>
+<div class="cmd"><pre>curl -fsSLO https://henningfutrell.github.io/hopper/compose.yaml</pre><button type="button" data-copy="curl -fsSLO https://henningfutrell.github.io/hopper/compose.yaml">Copy</button></div>
+<div class="cmd"><pre>docker compose up -d --build</pre><button type="button" data-copy="docker compose up -d --build">Copy</button></div>
+<p>Run the later commands in this folder too.</p></li>
+<li><p><strong>Open the UI.</strong> Make a sign-in link and open it in your browser:</p>
+<div class="cmd"><pre>docker compose exec hopper job-hopper login-code --link http://127.0.0.1:4790</pre><button type="button" data-copy="docker compose exec hopper job-hopper login-code --link http://127.0.0.1:4790">Copy</button></div></li>
+<li><p><strong>Sign in to GitHub and to Claude Code</strong>, inside job-hopper's container. Once is enough:
+both are kept when it restarts or upgrades.</p>
+<div class="cmd"><pre>docker compose exec -it hopper gh auth login</pre><button type="button" data-copy="docker compose exec -it hopper gh auth login">Copy</button></div>
+<div class="cmd"><pre>docker compose exec -it hopper claude</pre><button type="button" data-copy="docker compose exec -it hopper claude">Copy</button></div>
+<p>In Claude Code, type <code>/login</code>, follow it, then <code>/exit</code>. Then say who jobs commit as:</p>
+<div class="cmd"><pre>docker compose exec hopper git config --global user.name "Your Name"</pre><button type="button" data-copy="docker compose exec hopper git config --global user.name &quot;Your Name&quot;">Copy</button></div>
+<div class="cmd"><pre>docker compose exec hopper git config --global user.email you@example.com</pre><button type="button" data-copy="docker compose exec hopper git config --global user.email you@example.com">Copy</button></div></li>
+<li><p><strong>Give it its first job</strong> as in <a href="#first-job">step 6</a>, with these commands
+in place of its first three:</p>
+<div class="cmd"><pre>docker compose exec hopper git clone https://github.com/your-login/your-repo /home/node/your-repo</pre><button type="button" data-copy="docker compose exec hopper git clone https://github.com/your-login/your-repo /home/node/your-repo">Copy</button></div>
+<div class="cmd"><pre>docker compose exec -it hopper job-hopper config edit plugins.yaml</pre><button type="button" data-copy="docker compose exec -it hopper job-hopper config edit plugins.yaml">Copy</button></div>
+<div class="cmd"><pre>docker compose restart hopper</pre><button type="button" data-copy="docker compose restart hopper">Copy</button></div></li>
+</ol>
+<p>Upgrade: <code>docker compose up -d --build</code>. Stop: <code>docker compose down</code> (everything is
+kept); <code>docker compose down -v</code> also deletes its database and sign-ins. Settings, a reverse proxy
+and secrets: <a href="https://github.com/henningfutrell/hopper/blob/main/docs/deploy.md#docker-compose">docs/deploy.md</a>.</p>
+
 <h2 id="windows">On Windows</h2>
 <p>job-hopper runs inside WSL (the Linux that comes with Windows 10 and 11), with the same install
 command as on Linux. Do these steps first; then continue with <a href="#github">step 5, Connect GitHub</a>, in Ubuntu.</p>
@@ -309,7 +339,7 @@ Delete those yourself if you want them gone. The docker database also stays; to 
 <ul>
 <li><a href="https://github.com/henningfutrell/hopper#add-machines">Add machines</a>: run jobs on other computers too, or in a sandbox container.</li>
 <li><a href="https://github.com/henningfutrell/hopper#send-jobs-to-one-machine">Routing rules</a>: send some jobs to one machine.</li>
-<li><a href="https://github.com/henningfutrell/hopper#in-a-container">Run job-hopper in a container</a> instead of as services for your user.</li>
+<li><a href="#docker">Run job-hopper in containers</a> instead of as services for your user.</li>
 <li><a href="https://github.com/henningfutrell/hopper/blob/main/docs/deploy.md">docs/deploy.md</a>: every install path in detail.</li>
 <li><a href="https://github.com/henningfutrell/hopper#readme">The README</a>: everything else.</li>
 </ul>
