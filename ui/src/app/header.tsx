@@ -1,6 +1,6 @@
 // The top bar: version (opens the update panel), connection, router mode (switchable by an admin),
-// router health, uptime, the API reference, who is signed in and with which role, logout, and a
-// device link for another browser.
+// router health, uptime, the API reference, the user the session acts for (issue #158) with its role,
+// logout, and a device link for another browser.
 import { BookOpen, LogOut, Moon, Sun } from 'lucide-react';
 import logo from '../../../site/hopper-logo.svg';
 import { setTheme, useTheme } from '@/hooks/use-theme';
@@ -64,7 +64,7 @@ export function Header({ nav }: { nav?: React.ReactNode }) {
           <Button variant="ghost" size="icon-sm" aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
             onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <Sun /> : <Moon />}</Button>
           {user && (
-            <span className="hidden items-center gap-1.5 md:flex" title={`Signed in with ${user.provider}`}>
+            <span className="hidden items-center gap-1.5 md:flex" title={`${user.identity}, signed in with ${user.provider}`}>
               <span className="max-w-40 truncate">{user.name}</span><StatusBadge status={user.role} tone="muted" />
             </span>
           )}

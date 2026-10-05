@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // Settings → Users (issue #158): the users of this hopper, and for an admin "Add user", which shows the
-// one-time login link the daemon answers, to copy and hand over. A session that is not admin sees the
-// list only. Rendered against a fake of the daemon's HTTP.
+// one-time login link the daemon answers, to copy and hand over. A session that is not admin neither
+// lists nor adds users (GET /api/users answers an admin). Rendered against a fake of the daemon's HTTP.
 import { createElement } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -76,9 +76,10 @@ describe('Settings: Users', () => {
     await vi.waitFor(() => expect(rows()).toEqual(['owner', 'bea']));
   });
 
-  it('a session that is not admin sees the list, not Add user', async () => {
+  it('a session that is not admin neither lists nor adds users', async () => {
     await render('operator');
-    await vi.waitFor(() => expect(rows()).toEqual(['owner']));
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Only an admin sees and adds users.'));
+    expect(rows()).toEqual([]);
     expect(button('Add user')).toBeUndefined();
   });
 });

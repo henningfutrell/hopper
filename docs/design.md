@@ -4316,6 +4316,12 @@ that had expired is not linked; its next sign-in provisions a new, empty user. `
 instance mutations are not owner-only. Two users' `local` machines run on the same host side by side,
 each with its own lanes.
 
+### UI
+
+The top bar shows the session's user (its name; the identity that signed in on hover) and role.
+Settings gains a **Users** section (admin only, as `GET /api/users`): the list, and **Add user**, which
+shows the one-time login link the daemon answers to copy and hand over.
+
 ### Operator CLI
 
 `hopper users` lists the users (id, name, created); `hopper user add <name>` creates one (schema,
