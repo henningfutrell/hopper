@@ -3831,6 +3831,8 @@ about the daemon's surface; the CLI is beside it, like editing a file was.
   `config edit <document>` ($EDITOR, written back against the version read). A document that would
   not load (plugins/webhooks/auth schema, rules size) is refused; a moved one is refused.
 - `login-code [--link <base url>]`.
+- Since issue #158: `users`, `user add <name>`, and `--user <id>` on `config` and `login-code`
+  ("Users: one hopper, separate users").
 - `password-hash`; `help` (also `--help`, `-h`): every command, exit 0. No command or an unknown
   one prints the same text on stderr, exit 2.
 

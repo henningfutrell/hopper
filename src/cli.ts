@@ -4,15 +4,18 @@
 // credentials — the same trust as the daemon's own environment, more than a UI session's. This is
 // where command-bearing options are set: the UI never edits them.
 //
-//   hopper config get <document>                      print it (stdout)
-//   hopper config version <document>                  print its version
+//   hopper config get <document> [--user <id>]       print it (stdout)
+//   hopper config version <document> [--user <id>]   print its version
 //   hopper config set <document> --if-version <v>     replace it from stdin, if still at <v>
 //   hopper config edit <document>                     $EDITOR on it, written back against the version read
-//   hopper login-code [--link <base url>]             mint a one-time UI login code (stdout)
+//   hopper login-code [--user <id>] [--link <url>]    mint a one-time UI login code for a user (stdout)
+//   hopper users                                      list the users (issue #158)
+//   hopper user add <name>                            add a user
 //   hopper password-hash                              an argon2id hash of a password (stdin) for auth.yaml
 //   hopper help                                       what each command does
 //
-// <document>: plugins.yaml, rules.md or auth.yaml. A document that would not load is refused.
+// <document>: plugins.yaml or rules.md (a user's: --user, default owner), or auth.yaml (the
+// instance's). A document that would not load is refused.
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -21,6 +24,7 @@ import { parseArgs } from 'node:util';
 import { read } from 'read';
 import { parse } from 'yaml';
 import { CONFIG_DOCUMENTS, type ConfigDocumentName, type ConfigDocuments, type InstanceStore } from './domain/ports.ts';
+import type { User } from './domain/types.ts';
 import { authDocumentProblem, hashPassword } from './auth/index.ts';
 import { LOGIN_CODE_MINUTES, mintLoginCode } from './http/ui/login-code.ts';
 import { pluginsFileProblem } from './plugins/plugins-file.ts';
@@ -47,10 +51,13 @@ usage:
   hopper config set <document> --if-version <v>      replace it from stdin, if still at <v> ("missing" for a new one)
   hopper config edit <document>                      edit it in $EDITOR, written back against the version read
   hopper login-code [--link <base url>]              a one-time UI login code (${LOGIN_CODE_MINUTES} minutes), or a link with it
+  hopper users                                       the users of this hopper: id, name, when added
+  hopper user add <name>                             add a user: their own jobs, questions and settings, kept apart
   hopper password-hash                               an argon2id hash for auth.yaml password.users (password on stdin, or typed)
   hopper help                                        this text
 
-documents: ${CONFIG_DOCUMENTS.join(', ')}
+documents: ${CONFIG_DOCUMENTS.join(', ')}. plugins.yaml and rules.md are one user's; auth.yaml (sign-in) is shared.
+--user <id> on config and login-code names the user (default: owner, the first user).
 
 Every command but password-hash and help needs HOPPER_DATABASE_URL (or HOPPER_DATABASE_URL_FILE):
 the database the daemon uses, postgres://user:password@host:port/database.
@@ -89,10 +96,21 @@ function put(documents: Documents, name: ConfigDocumentName, text: string, versi
   }
 }
 
-/** Run `fn` with the documents `name` lives in: auth.yaml the instance's, the others owner's. */
-function withDocuments<T>(instance: InstanceStore, name: ConfigDocumentName, fn: (documents: Documents) => T): T {
-  if (name === 'auth.yaml') return fn(instance.documents as Documents);
-  const store = instance.userStore(instance.users.owner());
+/** The user `--user` names, or owner. */
+function userOf(instance: InstanceStore, id: string | undefined): User {
+  if (id === undefined) return instance.users.owner();
+  const user = instance.users.get(id);
+  if (!user) throw new CliError(`no user ${id}; hopper users lists them`);
+  return user;
+}
+
+/** Run `fn` with the documents `name` lives in: auth.yaml the instance's, the others the user's (default owner). */
+function withDocuments<T>(instance: InstanceStore, name: ConfigDocumentName, userId: string | undefined, fn: (documents: Documents) => T): T {
+  if (name === 'auth.yaml') {
+    if (userId !== undefined) throw new CliError('auth.yaml is the instance\'s (sign-in is shared): no --user');
+    return fn(instance.documents as Documents);
+  }
+  const store = instance.userStore(userOf(instance, userId));
   try {
     return fn(store.documents as Documents);
   } finally {
@@ -108,10 +126,10 @@ function defaultEditor(env: CliIo['env']) {
 }
 
 function config(instance: InstanceStore, args: string[], io: CliIo): void {
-  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { 'if-version': { type: 'string' } } });
+  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { 'if-version': { type: 'string' }, user: { type: 'string' } } });
   const [verb, rawName] = positionals;
   const name = documentName(rawName);
-  withDocuments(instance, name, (documents) => configVerb(documents, name, verb, values['if-version'], io));
+  withDocuments(instance, name, values.user, (documents) => configVerb(documents, name, verb, values['if-version'], io));
 }
 
 function configVerb(documents: Documents, name: ConfigDocumentName, verb: string | undefined, ifVersion: string | undefined, io: CliIo): void {
@@ -149,10 +167,25 @@ function configVerb(documents: Documents, name: ConfigDocumentName, verb: string
 
 /** One fresh login code on stdout (or the device link with it); its expiry on stderr. */
 function loginCode(instance: InstanceStore, args: string[], io: CliIo): void {
-  const { values } = parseArgs({ args, options: { link: { type: 'string' } } });
-  const code = mintLoginCode(instance, { now: () => new Date() }, instance.users.owner().id);
+  const { values } = parseArgs({ args, options: { link: { type: 'string' }, user: { type: 'string' } } });
+  const code = mintLoginCode(instance, { now: () => new Date() }, userOf(instance, values.user).id);
   io.out(values.link ? `${values.link.replace(/\/+$/, '')}/#login=${code}\n` : `${code}\n`);
   io.err(`login code minted: works once, for ${LOGIN_CODE_MINUTES} minutes\n`);
+}
+
+/** `hopper users`: one line per user, oldest first: id, name, when added (tab-separated). */
+function users(instance: InstanceStore, io: CliIo): void {
+  for (const u of instance.users.list()) io.out(`${u.id}\t${u.name}\t${u.createdAt}\n`);
+}
+
+/** `hopper user add <name>`: the new user's id on stdout. A running daemon starts its runtime when it next reads the users. */
+function userCommand(instance: InstanceStore, args: string[], io: CliIo): void {
+  const [verb, name, ...extra] = args;
+  if (verb !== 'add' || !name?.trim() || extra.length > 0) throw new CliError('usage: hopper user add <name>');
+  if (instance.users.list().some((u) => u.name.toLowerCase() === name.trim().toLowerCase())) throw new CliError(`the name ${name.trim()} is taken`);
+  const user = instance.users.add(name);
+  io.out(`${user.id}\n`);
+  io.err(`user ${user.id} added: hopper login-code --user ${user.id} gives a first sign-in\n`);
 }
 
 /** An argon2id hash of one password on stdout, for auth.yaml `password.users` (design.md "Sign-in"). Needs no database. */
@@ -180,7 +213,7 @@ export function runCli(argv: string[], io: CliIo): number | Promise<number> {
     return 0;
   }
   if (command === 'password-hash') return passwordHash(io);
-  if (command !== 'config' && command !== 'login-code') {
+  if (command !== 'config' && command !== 'login-code' && command !== 'users' && command !== 'user') {
     io.err(`${USAGE}\n`);
     return 2;
   }
@@ -199,6 +232,8 @@ export function runCli(argv: string[], io: CliIo): number | Promise<number> {
   try {
     store = openInstanceStore({ url, clock: { now: () => new Date() } });
     if (command === 'login-code') loginCode(store, rest, io);
+    else if (command === 'users') users(store, io);
+    else if (command === 'user') userCommand(store, rest, io);
     else config(store, rest, io);
     return 0;
   } catch (e) {
