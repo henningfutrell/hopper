@@ -6,7 +6,7 @@ import { headline, reloadNeeded, showNotice } from '../../ui/src/model/update.ts
 const A = 'a'.repeat(40);
 const B = 'b'.repeat(40);
 const installed = { repo: 'git@github.com:o/r.git', branch: 'main', commit: A, installedAt: '2026-10-04T00:00:00Z' };
-const status = (o: Partial<UpdateStatus>): UpdateStatus => ({ state: 'current', channel: 'main', autoUpdate: false, whatsNew: [], installed, ...o });
+const status = (o: Partial<UpdateStatus>): UpdateStatus => ({ state: 'current', channel: 'main', autoUpdate: false, whatsNew: [], installedWhatsNew: [], installed, ...o });
 
 describe('update model', () => {
   it('headline: what is newer, what is happening, or why not; never commits', () => {

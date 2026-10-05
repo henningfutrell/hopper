@@ -1,6 +1,6 @@
 // Self-update (issue #44): the notice when an update is available, applying or failed — with
-// what's new in plain words (issue #104) — and the panel behind the header's version (installed commit, channel, auto-update,
-// check now). Applying keeps running jobs running; the page reloads once the daemon runs the new commit.
+// what's new in plain words (issue #104) — and the panel behind the header's version (version, installed commit, what that
+// version brought, channel, auto-update, check now), open at any time and on any screen (issue #165). Applying keeps running jobs running; the page reloads once the daemon runs the new commit.
 import { ArrowUpCircle, ChevronDown, RefreshCw, X } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -21,10 +21,10 @@ import { useCanAdmin } from '@/store/selectors';
 const short = (sha: string | undefined) => sha?.slice(0, 7) ?? '…';
 const TONE: Record<UpdateStatus['state'], Tone> = { available: 'busy', applying: 'warn', error: 'bad', current: 'ok', unavailable: 'muted' };
 
-function WhatsNew({ s }: { s: UpdateStatus }) {
+function WhatsNew({ lines }: { lines: string[] }) {
   return (
     <ul className="max-h-64 list-disc space-y-1 overflow-y-auto pl-4 text-xs">
-      {s.whatsNew.map((b) => <li key={b}>{b}</li>)}
+      {lines.map((b) => <li key={b}>{b}</li>)}
     </ul>
   );
 }
@@ -61,12 +61,12 @@ export function UpdateNotice() {
         <Button variant="ghost" size="icon-xs" aria-label="Dismiss" title="Dismiss: hide here, in this browser; the header version still shows the update"
           className="text-muted-foreground" onClick={() => dismissNotice(noticeKey.update(s))}><X /></Button>
       </div>
-      <CollapsibleContent className="pt-2"><WhatsNew s={s} /></CollapsibleContent>
+      <CollapsibleContent className="pt-2"><WhatsNew lines={s.whatsNew} /></CollapsibleContent>
     </Collapsible>
   );
 }
 
-/** The header's version: opens the update panel; a dot when an update is available. */
+/** The header's version, on every screen: opens the version and update panel; a dot when an update is available. */
 export function UpdateButton({ version }: { version: string | undefined }) {
   const s = useHopper((st) => st.update);
   const authed = useCanAdmin();
@@ -76,19 +76,21 @@ export function UpdateButton({ version }: { version: string | undefined }) {
   return (
     <Sheet>
       <SheetTrigger asChild>
-        <button type="button" className="hidden items-center gap-1.5 rounded px-1 font-mono text-[11px] text-muted-foreground hover:text-foreground sm:inline-flex" aria-label="Updates">
-          {version}{s?.installed && <span>· {short(s.installed.commit)}</span>}
+        <button type="button" className="inline-flex items-center gap-1.5 rounded px-1 font-mono text-[11px] text-muted-foreground hover:text-foreground" aria-label="Version and updates" title="Version and updates">
+          {version}{s?.installed && <span className="hidden sm:inline">· {short(s.installed.commit)}</span>}
           {s && showNotice(s) && <Dot tone={TONE[s.state]} pulse={s.state === 'applying'} />}
         </button>
       </SheetTrigger>
       <SheetContent className="w-full gap-0 overflow-y-auto sm:max-w-md">
         <SheetHeader>
-          <SheetTitle>Updates</SheetTitle>
+          <SheetTitle>Version and updates</SheetTitle>
           <SheetDescription>{s ? headline(s) : 'Loading…'}</SheetDescription>
         </SheetHeader>
         {s && (
           <div className="space-y-4 px-4 pb-4 text-sm">
             <dl className="grid grid-cols-[7rem_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs">
+              <dt className="text-muted-foreground">Version</dt>
+              <dd className="font-mono">{version ?? '…'}</dd>
               <dt className="text-muted-foreground">Installed</dt>
               <dd className="font-mono">{s.installed ? `${s.installed.branch} ${short(s.installed.commit)}` : '—'}</dd>
               {s.target && <><dt className="text-muted-foreground">Newest</dt><dd className="font-mono">{s.target.ref} {short(s.target.commit)}</dd></>}
@@ -121,7 +123,8 @@ export function UpdateButton({ version }: { version: string | undefined }) {
                 </div>
               </div>
             </div>
-            {s.whatsNew.length > 0 && <div className="space-y-1 border-t pt-3"><h3 className="text-xs font-medium">What's new</h3><WhatsNew s={s} /></div>}
+            {s.whatsNew.length > 0 && <div className="space-y-1 border-t pt-3"><h3 className="text-xs font-medium">What's new in the update</h3><WhatsNew lines={s.whatsNew} /></div>}
+            {s.installedWhatsNew.length > 0 && <div className="space-y-1 border-t pt-3"><h3 className="text-xs font-medium">In this version</h3><WhatsNew lines={s.installedWhatsNew} /></div>}
             {!authed && <p className="text-xs text-muted-foreground">Read-only: an admin can update or change these settings.</p>}
           </div>
         )}

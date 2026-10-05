@@ -18,6 +18,8 @@ const exec = promisify(execFile);
 const DEFAULTS: UpdateSettings = { channel: 'main', autoUpdate: false };
 const FIRST_CHECK_MS = 10_000;
 const LOAD_TIMEOUT_MS = 60_000;
+/** How many of the installed version's What's new lines the Updates panel shows. */
+const INSTALLED_WHATS_NEW = 5;
 
 export interface UpdaterOptions {
   /** The install this process runs from (holds install.json and src/). */
@@ -63,6 +65,12 @@ const messageOf = (e: unknown): string => {
   return firstLine(err.stderr) || firstLine(err.message) || String(e);
 };
 
+/** The newest bullets of the install's own WHATS-NEW.md (install.sh and the image copy it); none without one. */
+function installedWhatsNew(appDir: string): string[] {
+  const file = join(appDir, WHATS_NEW_FILE);
+  return existsSync(file) ? bullets(readFileSync(file, 'utf8')).slice(0, INSTALLED_WHATS_NEW) : [];
+}
+
 /** Imports the new build's composition root in a child process: a module that fails to load fails here, not after the swap. */
 async function proveLoads(dir: string): Promise<void> {
   const main = pathToFileURL(join(dir, 'src', 'main.ts')).href;
@@ -101,9 +109,12 @@ export function createUpdater(o: UpdaterOptions): RunningUpdater {
   };
   const lastAnnounced = (): unknown => o.events.recent(1, ['update.available'])[0]?.data.to;
 
+  // The install does not change under a running process: read once.
+  const installedNews = installedWhatsNew(o.appDir);
+
   function status(): UpdateStatus {
     const { commits: _commits, ...rest } = checked;
-    const base = { ...settings(), ...rest };
+    const base = { ...settings(), ...rest, installedWhatsNew: installedNews };
     if (applying) return { ...base, state: 'applying', apply: applying };
     if (applyError) return { ...base, state: 'error', reason: applyError };
     return base;

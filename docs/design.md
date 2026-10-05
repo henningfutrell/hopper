@@ -3468,7 +3468,10 @@ at the target that `WHATS-NEW.md` at the installed commit lacks, newest first (`
 them when the installed commit has no such file) — plain words for people who use the hopper,
 written by hand in the change that makes them true (AGENTS.md "What's new"); `src/update/whats-new.ts`.
 Commit subjects, hashes and issue numbers are never shown: a merge list is the change's plumbing,
-not what changed for its users. The newest release is reported on either channel (`release.newer`).
+not what changed for its users. The newest release is reported on either channel (`release.newer`). **In this
+version** (issue #165): the newest 5 bullets of the install's own `WHATS-NEW.md` (`installedWhatsNew`;
+`install.sh` and the image copy the file), read once at start — shown whether or not an update
+exists, and when self-update is unavailable.
 `update.available` is appended once per target, with `changes`: how many commits it adds (the log
 line too; never the UI).
 
@@ -3516,8 +3519,9 @@ an available update as soon as a check finds it, and at once when switched on wi
 
 **UI.** A notice above the views while an update is available, applying or failed — headline
 ("Update available", or the release), "What's new" (the bullets), Update now. The header's
-version (with the installed commit) opens the Updates panel: installed, newest, release, last check,
-Check now, Update now, auto-update, channel (`commits` / `releases`).
+version (with the installed commit from `sm` up) shows on every screen and opens the Version and
+updates panel at any time (issue #165): version, installed, newest, release, last check, Check now,
+Update now, auto-update, channel (`commits` / `releases`), the update's What's new, In this version.
 
 **Any deployment.** The updater needs: install.json, git and network access to the repository,
 npm (the build), write access to the install's parent directory (the swap), and a supervisor or the

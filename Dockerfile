@@ -41,6 +41,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
 COPY src ./src
 COPY scripts ./scripts
+COPY WHATS-NEW.md ./
 COPY --from=ui /build/ui/dist ./ui/dist
 RUN chmod 755 src/cli.ts && ln -s /app/src/cli.ts /usr/local/bin/hopper
 
