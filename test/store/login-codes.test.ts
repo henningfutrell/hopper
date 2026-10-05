@@ -24,6 +24,18 @@ describe('login codes', () => {
     s.close();
   });
 
+  it('a code is live until it is taken or expires; asking does not spend it (issue #95)', () => {
+    const s = t.open(t.url());
+    s.loginCodes.create('h3', '2026-10-02T10:10:00.000Z');
+    expect(s.loginCodes.live('h3', '2026-10-02T10:05:00.000Z')).toBe(true);
+    expect(s.loginCodes.live('h3', '2026-10-02T10:05:00.000Z')).toBe(true);
+    expect(s.loginCodes.live('h3', '2026-10-02T10:10:00.000Z')).toBe(false);
+    expect(s.loginCodes.live('nope', '2026-10-02T10:05:00.000Z')).toBe(false);
+    expect(s.loginCodes.take('h3', '2026-10-02T10:05:00.000Z')).toBe(true);
+    expect(s.loginCodes.live('h3', '2026-10-02T10:05:00.000Z')).toBe(false);
+    s.close();
+  });
+
   it('a code minted by one store (the CLI) is taken by another (the daemon)', () => {
     const url = t.url();
     const cli = t.open(url);

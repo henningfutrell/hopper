@@ -100,6 +100,30 @@ describe('the UI across the LAN', () => {
     expect((await lanLogin(code)).status).toBe(403);
   });
 
+  it('asked to keep a live code, the device link answers the same links; once the code is used, fresh ones (issue #95)', async () => {
+    const token = await t.login();
+    const first = (await t.ui<{ links: string[] }>('/ui/api/device-link', {}, { token })).body.links;
+    const code = new URL(first[0]!).hash.slice('#login='.length);
+    const kept = await t.ui<{ links: string[] }>('/ui/api/device-link', { keep: code }, { token });
+    expect(kept.status).toBe(200);
+    expect(kept.body.links).toEqual(first);
+
+    expect((await lanLogin(code)).status).toBe(200);
+    const fresh = (await t.ui<{ links: string[] }>('/ui/api/device-link', { keep: code }, { token })).body.links;
+    expect(fresh).toHaveLength(2);
+    const next = new URL(fresh[0]!).hash.slice('#login='.length);
+    expect(next).toMatch(/^[0-9a-f]{64}$/);
+    expect(next).not.toBe(code);
+    expect((await lanLogin(next)).status).toBe(200);
+  });
+
+  it('keep that is no login code gets fresh links, never an echo of it', async () => {
+    const token = await t.login();
+    const res = await t.ui<{ links: string[] }>('/ui/api/device-link', { keep: 'f'.repeat(64) }, { token });
+    expect(res.status).toBe(200);
+    expect(res.body.links[0]).not.toContain('f'.repeat(64));
+  });
+
   it('a device link needs a session', async () => {
     expect((await t.ui('/ui/api/device-link', {})).status).toBe(403);
   });
