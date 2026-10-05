@@ -2706,6 +2706,7 @@ responsive and fast. Builds on the at-a-glance board (issue #5).
   per browser, not per user or per hopper. A stored layout is read leniently — a field it cannot use
   takes its default, an unknown panel goes, a panel added since comes back at the end, shown — so a new
   panel needs no migration of what browsers stored. Reset removes the key. Tested through the rendered
+<<<<<<< HEAD
   app: `test/ui/overview-customize.test.ts`.
 - **List boxes are bounded** (issue #84). An overview panel fills its grid cell, so the panels of one
   row line up. A list box (attention, lanes, waiting, ended, live activity) holds its list in a body of
@@ -2722,6 +2723,17 @@ responsive and fast. Builds on the at-a-glance board (issue #5).
   occurrence shows too. Question and failed-job keys keep the newest 200. Attention's header offers
   *N dismissed · show* to bring its items back; a dismissed update notice still leaves the dot on the
   header version. Tested through the rendered app: `test/ui/attention-dismiss.test.ts`.
+=======
+  app: `test/ui/overview-customize.test.ts`
+- **Rearranging the overview** (issue #86). Arrange on the Overview covers each shown panel; a panel
+  dragged onto another takes its place (`placePanel`: in front of it from after, behind it from
+  before), and Move earlier / Move later step it past its shown neighbours, skipping hidden ones —
+  the way without a pointer. Done ends it; outside Arrange no panel drags, so charts and text keep
+  their pointer. Customize rows drag the same way. Both use the browser's own drag and drop
+  (`ui/src/hooks/use-drag-to-place.ts`), no library: the platform does it, and a library's pointer
+  sensors need layout the rendered-app tests (happy-dom) do not have. Same layout, same key: no
+  migration. Tested in `test/ui/overview-customize.test.ts` and `test/ui/overview-layout.test.ts`.
+>>>>>>> 2c9ce36 (feat(ui): rearrange the overview by dragging panels, on the Overview and in Customize (#86))
 
 ## Reaching the UI across the LAN (issue #16, 2026-10-03)
 

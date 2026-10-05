@@ -1,14 +1,15 @@
 // Customize (issue #73): the viewer's overview layout — each overview panel shown or hidden, moved,
-// sized in thirds of the row — and each panel's settings. Every change applies at once and is kept
-// by this browser; Reset forgets it.
-import { ArrowDown, ArrowUp, RotateCcw } from 'lucide-react';
+// sized in thirds of the row — and each panel's settings. A row dragged onto another takes its place
+// (issue #86). Every change applies at once and is kept by this browser; Reset forgets it.
+import { ArrowDown, ArrowUp, GripVertical, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Switch } from '@/components/ui/switch';
+import { useDragToPlace } from '@/hooks/use-drag-to-place';
 import { resetOverviewLayout, setOverviewLayout } from '@/hooks/use-overview-layout';
 import {
   LIVE_EVENTS, PANEL_TITLES, PANEL_WIDTHS, THROUGHPUT_HOURS, TIMELINE_WINDOWS, WIDTH_NAMES,
-  movePanel, setPanel, setSetting, type OverviewLayout, type OverviewSettings, type PanelPlacement,
+  movePanel, placePanel, setPanel, setSetting, type OverviewLayout, type OverviewSettings, type PanelId, type PanelPlacement,
 } from '@/model/overview-layout';
 import { cn } from '@/lib/utils';
 
@@ -43,12 +44,14 @@ function PanelSettings({ p, layout }: { p: PanelPlacement; layout: OverviewLayou
   }
 }
 
-function PanelRow({ p, i, layout }: { p: PanelPlacement; i: number; layout: OverviewLayout }) {
+function PanelRow({ p, i, layout, drag }: { p: PanelPlacement; i: number; layout: OverviewLayout; drag: object }) {
   const title = PANEL_TITLES[p.id];
   const last = layout.panels.length - 1;
   return (
-    <li data-customize-panel={p.id} className={cn('space-y-2 px-4 py-3', !p.shown && 'opacity-60')}>
+    <li data-customize-panel={p.id} {...drag}
+      className={cn('space-y-2 px-4 py-3', !p.shown && 'opacity-60', 'data-[dragging]:opacity-40 data-[drop-target]:bg-muted')}>
       <div className="flex items-center gap-2">
+        <GripVertical aria-hidden className="-ml-2 size-4 shrink-0 cursor-grab text-muted-foreground" />
         <Switch checked={p.shown} aria-label={`Show ${title}`} onCheckedChange={(shown) => setOverviewLayout(setPanel(layout, p.id, { shown }))} />
         <span className="flex-1 text-sm font-medium">{title}</span>
         <Button size="icon-xs" variant="ghost" aria-label="Move up" disabled={i === 0} onClick={() => setOverviewLayout(movePanel(layout, p.id, -1))}><ArrowUp /></Button>
@@ -64,16 +67,17 @@ function PanelRow({ p, i, layout }: { p: PanelPlacement; i: number; layout: Over
 }
 
 export function Customize({ layout, children }: { layout: OverviewLayout; children: React.ReactNode }) {
+  const { props: drag } = useDragToPlace<PanelId>((id, at) => setOverviewLayout(placePanel(layout, id, at)));
   return (
     <Sheet>
       <SheetTrigger asChild>{children}</SheetTrigger>
       <SheetContent className="gap-0 sm:max-w-md">
         <SheetHeader className="border-b">
           <SheetTitle>Customize the overview</SheetTitle>
-          <SheetDescription>Which panels show, in what order and how wide. Kept by this browser only.</SheetDescription>
+          <SheetDescription>Which panels show, in what order and how wide. Drag a row to move it. Kept by this browser only.</SheetDescription>
         </SheetHeader>
         <ol className="min-w-0 flex-1 divide-y overflow-x-hidden overflow-y-auto">
-          {layout.panels.map((p, i) => <PanelRow key={p.id} p={p} i={i} layout={layout} />)}
+          {layout.panels.map((p, i) => <PanelRow key={p.id} p={p} i={i} layout={layout} drag={drag(p.id)} />)}
         </ol>
         <SheetFooter className="border-t">
           <Button variant="outline" size="sm" onClick={resetOverviewLayout}><RotateCcw />Reset</Button>

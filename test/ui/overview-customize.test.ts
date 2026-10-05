@@ -72,6 +72,16 @@ async function click(el: Element | null | undefined) {
 const button = (scope: ParentNode, name: string) =>
   [...scope.querySelectorAll<HTMLElement>('button')].find((b) => b.getAttribute('aria-label') === name || b.textContent?.trim() === name);
 
+/** Drags `from` onto `to` as a browser fires it: dragstart, dragenter and dragover on the target, drop, dragend. */
+async function drag(from: Element | null, to: Element | null) {
+  expect(from).toBeTruthy();
+  expect(to).toBeTruthy();
+  const fire = (el: Element, type: string) => el.dispatchEvent(new Event(type, { bubbles: true, cancelable: true }));
+  await act(async () => { fire(from!, 'dragstart'); });
+  await act(async () => { fire(to!, 'dragenter'); fire(to!, 'dragover'); });
+  await act(async () => { fire(to!, 'drop'); fire(from!, 'dragend'); });
+}
+
 async function openCustomize() {
   await click(button(document, 'Customize'));
   await vi.waitFor(() => expect(row('kpis')).toBeTruthy());
@@ -137,5 +147,50 @@ describe('Overview layout', () => {
     await click(button(document, 'Reset'));
     expect(shown()).toEqual(DEFAULT_ORDER);
     expect(localStorage.getItem(KEY)).toBeNull();
+  });
+});
+
+// Issue #86: the overview can be rearranged as seen fit — panels dragged on the Overview itself, or
+// rows dragged in Customize, go where they are dropped.
+describe('Rearranging the overview', () => {
+  it('Arrange: a panel dragged onto another takes its place; a reload keeps the order', async () => {
+    await boot();
+    expect(panel('live')!.getAttribute('draggable')).not.toBe('true');
+    await click(button(document, 'Arrange'));
+    expect(panel('live')!.getAttribute('draggable')).toBe('true');
+    await drag(panel('live'), panel('kpis'));
+    await drag(panel('kpis'), panel('lanes'));
+    const order = ['live', 'timeline', 'attention', 'lanes', 'kpis', 'waiting', 'ended', 'throughput', 'usage'];
+    expect(shown()).toEqual(order);
+
+    await click(button(document, 'Done'));
+    expect(panel('live')!.getAttribute('draggable')).not.toBe('true');
+    await reload();
+    expect(shown()).toEqual(order);
+  });
+
+  it('Arrange without dragging: Move earlier and Move later step past hidden panels', async () => {
+    await boot(JSON.stringify({ panels: DEFAULT_ORDER.map((id) => ({ id, shown: id !== 'ended', width: 1 })), settings: {} }));
+    await click(button(document, 'Arrange'));
+    await click(button(panel('throughput')!, 'Move earlier'));
+    expect(shown()).toEqual(['kpis', 'timeline', 'attention', 'lanes', 'throughput', 'waiting', 'usage', 'live']);
+    await click(button(panel('waiting')!, 'Move later'));
+    expect(shown()).toEqual(['kpis', 'timeline', 'attention', 'lanes', 'throughput', 'usage', 'waiting', 'live']);
+    expect(button(panel('kpis')!, 'Move earlier')!.hasAttribute('disabled')).toBe(true);
+    expect(button(panel('live')!, 'Move later')!.hasAttribute('disabled')).toBe(true);
+  });
+
+  it('a panel dropped while not arranging stays where it is', async () => {
+    await boot();
+    await drag(panel('live'), panel('kpis'));
+    expect(shown()).toEqual(DEFAULT_ORDER);
+  });
+
+  it('Customize: a row dragged onto another takes its place', async () => {
+    await boot();
+    await openCustomize();
+    await drag(row('usage'), row('attention'));
+    expect(shown()).toEqual(['kpis', 'timeline', 'usage', 'attention', 'lanes', 'waiting', 'ended', 'throughput', 'live']);
+    expect(stored()?.panels.map((p) => p.id)).toEqual(['kpis', 'timeline', 'usage', 'attention', 'lanes', 'waiting', 'ended', 'throughput', 'live']);
   });
 });
