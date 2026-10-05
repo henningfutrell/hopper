@@ -33,13 +33,23 @@ export function sourceLine(s: UsageSourceReport, now: number): { text: string; p
   return { text: 'no state reported', problem: false };
 }
 
-export function laneEffectText(m: MachineLaneEffect): string {
+export function laneEffectText(m: Pick<MachineLaneEffect, 'band' | 'cap' | 'maxLanes'>): string {
   switch (m.band) {
     case 'offline': return 'offline: no lanes';
     case 'free': return `all ${m.maxLanes} lanes`;
     case 'soft': return `capped at ${m.cap} of ${m.maxLanes} lanes (past the soft limit)`;
     case 'hard': return `stopped: 0 of ${m.maxLanes} lanes (hard limit)`;
   }
+}
+
+/**
+ * One line per executor whose budget limits it apart from its machine (issue #140): a machine runs
+ * several agent frameworks, and one framework's budget leaves the others' jobs alone.
+ */
+export function executorEffectLines(m: MachineLaneEffect): string[] {
+  return m.executors
+    .filter((e) => e.cap !== m.cap || e.band !== m.band)
+    .map((e) => `${e.executor}: ${Math.round(e.usedFrac * 100)}% used, ${laneEffectText({ band: e.band, cap: e.cap, maxLanes: m.maxLanes })}`);
 }
 
 const SERVICES: Record<string, string> = { claude: 'Claude', github: 'GitHub' };

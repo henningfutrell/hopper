@@ -110,9 +110,10 @@ describe('claude-plan plugin', () => {
   }
   const calls = () => (existsSync(join(control, 'calls.jsonl')) ? readFileSync(join(control, 'calls.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as { argv: string[]; cwd: string }) : []);
 
-  it('is a usage source; options bin (command-bearing, default claude) and intervalSeconds (default 600, at least 120)', () => {
+  it('is a usage source; options bin (command-bearing, default claude), intervalSeconds (default 600, at least 120) and executors (default the built-in herdr-claude)', () => {
     expect(claudePlan).toMatchObject({ id: 'claude-plan', role: 'usage-source' });
-    expect(parseOptions(claudePlan, {})).toEqual({ ok: true, options: { bin: 'claude', intervalSeconds: 600, sshBin: 'ssh', dockerBin: 'docker' } });
+    expect(parseOptions(claudePlan, {})).toEqual({ ok: true, options: { bin: 'claude', intervalSeconds: 600, sshBin: 'ssh', dockerBin: 'docker', executors: ['herdr-claude'] } });
+    expect(parseOptions(claudePlan, { executors: ['claude-big'] })).toMatchObject({ ok: true, options: { executors: ['claude-big'] } });
     expect(parseOptions(claudePlan, { intervalSeconds: 60 }).ok).toBe(false);
     const schema = optionsJsonSchema(claudePlan) as { properties: Record<string, { commandBearing?: boolean }> };
     expect(schema.properties.bin!.commandBearing).toBe(true);
@@ -125,15 +126,15 @@ describe('claude-plan plugin', () => {
   it('detection is `which bin` only: never a call to claude', async () => {
     let ran = false;
     const kit = fakeKit({ version: async () => { ran = true; return 'x'; }, succeeds: async () => { ran = true; return true; } });
-    expect(await claudePlan.detect(kit, { bin: 'claude', intervalSeconds: 600, sshBin: 'ssh', dockerBin: 'docker' })).toMatchObject({ status: 'available' });
-    expect(await claudePlan.detect(fakeKit({ which: async () => undefined }), { bin: 'claude', intervalSeconds: 600, sshBin: 'ssh', dockerBin: 'docker' }))
+    expect(await claudePlan.detect(kit, { bin: 'claude', intervalSeconds: 600, sshBin: 'ssh', dockerBin: 'docker', executors: ['herdr-claude'] })).toMatchObject({ status: 'available' });
+    expect(await claudePlan.detect(fakeKit({ which: async () => undefined }), { bin: 'claude', intervalSeconds: 600, sshBin: 'ssh', dockerBin: 'docker', executors: ['herdr-claude'] }))
       .toEqual({ status: 'unavailable', reason: 'claude not found: claude' });
     expect(ran).toBe(false);
   });
 
   it('with a machine, detection never looks for claude here: claude runs on that machine', async () => {
     const kit = fakeKit({ which: async () => undefined });
-    expect(await claudePlan.detect(kit, { bin: 'claude', intervalSeconds: 600, machine: 'laptop', sshBin: 'ssh', dockerBin: 'docker' }))
+    expect(await claudePlan.detect(kit, { bin: 'claude', intervalSeconds: 600, machine: 'laptop', sshBin: 'ssh', dockerBin: 'docker', executors: ['herdr-claude'] }))
       .toEqual({ status: 'available', detail: 'claude on machine laptop' });
   });
 
@@ -145,9 +146,9 @@ describe('claude-plan plugin', () => {
     const readings = await waitFor(async () => { const r = await s.poll(); return r.length ? r : undefined; }, { what: 'readings' });
     const at = now.toISOString();
     expect(readings).toEqual([
-      { source: 'claude', window: 'session', used: 80, limit: 100, unit: '%', resetsAt: '2026-10-03T17:15:00.000Z', at },
-      { source: 'claude', window: 'week', used: 30, limit: 100, unit: '%', resetsAt: '2026-10-06T17:00:00.000Z', at },
-      { source: 'claude', window: 'week (Fable)', used: 99, limit: 100, unit: '%', resetsAt: '2026-10-06T17:00:00.000Z', informational: true, at },
+      { source: 'claude', window: 'session', used: 80, limit: 100, unit: '%', resetsAt: '2026-10-03T17:15:00.000Z', executors: ['herdr-claude'], at },
+      { source: 'claude', window: 'week', used: 30, limit: 100, unit: '%', resetsAt: '2026-10-06T17:00:00.000Z', executors: ['herdr-claude'], at },
+      { source: 'claude', window: 'week (Fable)', used: 99, limit: 100, unit: '%', resetsAt: '2026-10-06T17:00:00.000Z', informational: true, executors: ['herdr-claude'], at },
     ]);
     await waitFor(() => s.state!().account, { what: 'account' });
     expect(s.state!()).toEqual({

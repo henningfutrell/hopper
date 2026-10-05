@@ -3,7 +3,7 @@ import { assign, effectivePriority, nativeHold, order } from './assign.ts';
 import type { Candidate, MachineState } from './assign.ts';
 import { divergence, routerVerdict } from './router-verdict.ts';
 import { planGoneLanes, planLanes } from './lanes.ts';
-import { laneCap, machineUsage } from './usage.ts';
+import { laneEffect } from './usage.ts';
 
 /** Pure: same inputs, same Decision. `inputs.at` is the clock; `decisionId` is supplied. */
 export function decide(inputs: DecisionInputs, decisionId: string): Decision {
@@ -14,16 +14,24 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
   for (const j of parked) reasons.push(`ignored ${j.id}: status waiting_answer is not an input`);
   const waiting = inputs.waiting.filter((j) => j.status !== 'waiting_answer');
 
+  const executorOf = new Map([...inputs.waiting, ...inputs.running].map((j) => [j.id, j.spec.executor]));
   const states: MachineState[] = machines.map((machine) => {
-    const { usedFrac, ignored } = machineUsage(machine.id, inputs.usage);
+    const { usedFrac, cap, band, ignored, executors } = laneEffect(machine, inputs.usage, policy);
     for (const r of ignored) reasons.push(`ignored usage reading ${r.source}: limit ${r.limit} is not positive`);
-    const { cap, band } = laneCap(machine, usedFrac, policy);
     const mine = lanes.filter((l) => l.machineId === machine.id);
+    const held = mine.filter((l) => l.state !== 'idle');
     reasons.push(`${machine.id}: ${Math.round(usedFrac * 100)}% used, lane cap ${cap} of ${machine.maxLanes} (${band})`);
+    for (const e of executors.filter((x) => x.cap !== cap || x.band !== band)) {
+      reasons.push(`${machine.id} ${e.executor}: ${Math.round(e.usedFrac * 100)}% used, lane cap ${e.cap} of ${machine.maxLanes} (${e.band})`);
+    }
     return {
       machine, cap, band, usedFrac, assigned: 0,
-      occupied: mine.filter((l) => l.state !== 'idle').length,
+      occupied: held.length,
       freeIdle: mine.filter((l) => l.state === 'idle').sort((a, b) => a.id.localeCompare(b.id)),
+      executors: new Map(executors.map((e) => [e.executor, {
+        cap: e.cap, band: e.band, usedFrac: e.usedFrac, assigned: 0,
+        occupied: held.filter((l) => l.jobId !== undefined && executorOf.get(l.jobId) === e.executor).map((l) => l.id),
+      }])),
     };
   });
   const idleByMachine = new Map<string, Lane[]>(states.map((s) => [s.machine.id, [...s.freeIdle]]));

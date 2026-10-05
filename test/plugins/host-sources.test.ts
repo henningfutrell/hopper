@@ -277,8 +277,8 @@ describe('attached machines in the host (issues #18, #74)', () => {
 });
 
 describe('the usage-source role', () => {
-  it('built in: claude-plan; no section means the built-in claude instance, `usageSources: []` means none', async () => {
-    expect(BUILTIN_PLUGINS.filter((p) => p.role === 'usage-source').map((p) => p.id)).toEqual(['claude-plan']);
+  it('built in: claude-plan and command-usage; no section means the built-in claude instance, `usageSources: []` means none', async () => {
+    expect(BUILTIN_PLUGINS.filter((p) => p.role === 'usage-source').map((p) => p.id)).toEqual(['claude-plan', 'command-usage']);
     const absent = start({ file: 'version: 1\n' }).host;
     await absent.start();
     expect(absent.report().usageSources.instances.map((i) => [i.instance.name, i.instance.plugin, i.active]))

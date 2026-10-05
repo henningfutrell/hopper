@@ -18,8 +18,9 @@ import grokbotRoutine from './notifier/grokbot-routine/index.ts';
 import gateRouter from './router/gate-router/index.ts';
 import passThrough from './router/pass-through/index.ts';
 import claudePlan from './usage-source/claude-plan/index.ts';
+import commandUsage from './usage-source/command-usage/index.ts';
 import type { PluginDefinition } from './sdk.ts';
 
 export const BUILTIN_PLUGINS: readonly PluginDefinition[] = [
-  gateRouter, passThrough, priority, oldestFirst, newestFirst, claudeCli, anthropicApi, herdrClaude, cursorAgent, testExecutor, command, githubGh, githubApp, local, ssh, docker, client, claudePlan, grokbotRoutine,
+  gateRouter, passThrough, priority, oldestFirst, newestFirst, claudeCli, anthropicApi, herdrClaude, cursorAgent, testExecutor, command, githubGh, githubApp, local, ssh, docker, client, claudePlan, commandUsage, grokbotRoutine,
 ];

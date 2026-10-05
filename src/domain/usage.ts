@@ -7,6 +7,8 @@ export interface UsageReading {
   source: string;
   /** Machine the budget constrains; absent = applies to every machine. */
   machineId?: MachineId;
+  /** Executor instances whose jobs the budget limits (one agent framework's, as a rule); absent = every job. */
+  executors?: string[];
   used: number;
   limit: number;
   unit: string;
@@ -53,7 +55,20 @@ export interface UsageSourceReport extends UsageSourceState {
   name: string;
 }
 
-/** What usage does to one machine's lanes now: the decider's steps 1 and 2 over the current readings. */
+/** What usage does to the jobs of one executor on a machine: the readings that limit that executor. */
+export interface ExecutorLaneEffect {
+  executor: string;
+  usedFrac: number;
+  /** The most lanes its jobs may hold there. */
+  cap: number;
+  band: 'offline' | 'free' | 'soft' | 'hard';
+}
+
+/**
+ * What usage does to one machine's lanes now: the decider's steps 1 and 2 over the current readings.
+ * The machine's own figures are its least limited executor's: lanes stay open while any of its
+ * executors may run.
+ */
 export interface MachineLaneEffect {
   machineId: string;
   label: string;
@@ -64,6 +79,8 @@ export interface MachineLaneEffect {
   /** The lane cap: maxLanes below the soft limit, scaled down past it, 0 at the hard limit or offline. */
   cap: number;
   band: 'offline' | 'free' | 'soft' | 'hard';
+  /** Per executor the machine runs, in its order. */
+  executors: ExecutorLaneEffect[];
 }
 
 /** `GET /api/usage`: every reading, every usage source's state, the limits, and the lane effect per machine. */

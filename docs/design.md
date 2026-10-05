@@ -40,7 +40,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock | everything but `domain/` |
 | `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations, repositories, event log, config documents, login codes | engine, http, decider |
 | `src/webhooks/` | signing, dispatcher, retry/backoff, the secret of a subscription from the runtime (`dispatcher.ts`), the UI edit of the subscriptions (`edit.ts`, rows in the store) | engine, http, decider |
-| `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, `plugins.yaml` + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt, `escalation-level/anthropic-api/` asks the Claude API with the same prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-gh/` and `job-source/github-app/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser, runner, background refresh); `notifier/grokbot-routine/` is the Grok Bot routine webhook — env-file reader and notifier; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
+| `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, `plugins.yaml` + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt, `escalation-level/anthropic-api/` asks the Claude API with the same prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-gh/` and `job-source/github-app/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser); `usage-source/command-usage/` reads any agent framework's usage and account from a command that prints them as JSON; `usage-source/polled.ts` the background refresh both share, `usage-source/run.ts` their command runner; `notifier/grokbot-routine/` is the Grok Bot routine webhook — env-file reader and notifier; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
 | `src/executors/` | `Executor` adapters (`test`, `herdr/`, `command.ts` — a job's body run on its machine through its connection, `cursor.ts` — Cursor's CLI agent there, issue #142) and the registry; reached through the executor plugins. The connections and their target authentication ("Target authentication"): `ssh.ts` (key-only ssh to pinned host keys), `docker.ts` (the docker socket check, the proxy's allowlist), `client.ts` (a client target's tunnel, signed calls); `env.ts` the scrubbed child environment | engine, http, store, plugins |
 | `src/client/` | the hopper client ("Client targets"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load` over HTTP/2 on the tunnel), `tunnel.ts` (its ssh to the hopper), `release.ts` (the client release: its files, its id, checking and installing one — "Client releases"), `main.ts`; `relay.ts`, the forced command of its key on the hopper's machine; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`); `ssh-options.ts` (the hardened ssh options, shared with `src/executors/ssh.ts`) | everything in `src/` outside `src/client/` |
 | `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following plugins.yaml; ssh probe and herdr path resolution through the herdr CLI client's ssh argv; the container probe, `docker container inspect`), the detected ssh targets (`ssh-config.ts`), keeping each client target on the hopper's client release (`client-release.ts`), `combineMachineSources` | engine, http, store, plugins |
@@ -67,7 +67,8 @@ same Decision. Algorithm, in order:
    `m` (`readingsOf`): those whose `machineId` is `m` when any of them throttles — that machine's
    own account (issue #139) — else those whose `machineId` is `m` or absent. Readings with `limit <= 0` are ignored and noted in
    `reasons`. **Informational readings** (`informational: true` — a window that limits one
-   model only, issue #18) are skipped. No readings → `0`.
+   model only, issue #18) are skipped. No readings → `0`. Since issue #140 steps 1-2 run per executor, over the
+   readings that limit its jobs ("Usage per executor").
 2. **Lane cap per machine** (`policy.softLimit`, `policy.hardLimit`):
    - offline → `0`
    - `usedFrac < soft` → `maxLanes`
@@ -2956,6 +2957,9 @@ Owner request: webhook subscriptions can be changed in the UI. Settles 6b.
 
 ### Usage and accounts (issue #18)
 
+**Amended by issue #140** ("Usage per executor" below): a reading limits the jobs of the executors it
+names, claude-plan's the Claude executors only, and `command-usage` reads any agent framework's.
+
 Owner request: the UI shows the accounts in use and their usage, and usage throttles lanes.
 
 **Built-in usage source `claude-plan`** (`src/plugins/usage-source/claude-plan/`). Claude
@@ -3029,6 +3033,52 @@ source reads without emitting events).
 **Tests never run the real claude.** `test/support/isolate.ts` puts a guard `claude` first on PATH
 (answers `--version`, refuses the rest); `TEST_PLUGINS` has `usageSources: []`; claude-plan tests
 name `test/plugins/fake-claude-plan.mjs` as `bin`.
+
+### Usage per executor (issue #140, 2026-10-05)
+
+Owner request: "Do not assume Claude. Assigned machines may run a myriad of frameworks. Account
+usage and related machine handling must not be Claude-only." Before, every claude-plan reading
+throttled every machine: a Claude budget at its hard limit stopped a machine's Codex or `command`
+jobs too, and Claude was the only framework whose usage the hopper could read.
+
+- **A usage reading names the executors whose jobs it limits** (`UsageReading.executors`, glossary
+  "Usage reading"): the executor instances of one **agent framework**, as a rule. Absent: every job,
+  as before — a custom usage source that sets none keeps its meaning.
+- **The decider caps per executor** (`src/decider/usage.ts` `laneEffect`). Steps 1-2 run once per
+  executor the machine runs, over the readings that limit it; a job starts only while its machine has
+  room *and* its executor's jobs there hold fewer lanes than the executor's cap. The machine's own cap
+  is its least limited executor's, so its lanes stay while any executor may use them; a machine that
+  runs no executor is capped by the readings that limit every job. Draining (step 8): an executor past
+  its cap drains its own busy lanes, newest first; then the machine drains what is still past its cap.
+  A Decision's reasons add a line per executor whose cap differs from its machine's.
+- **`GET /api/usage` `machines[].executors`**: `{ executor, usedFrac, cap, band }` per executor the
+  machine runs, in its order (`ExecutorLaneEffect`); the machine's `usedFrac`, `cap` and `band` are
+  its least limited executor's. The Usage view adds a line under a machine for each executor whose
+  cap differs from it (`executorEffectLines`).
+- **claude-plan** gains `executors` (plain option, default `[herdr-claude]`, the built-in Claude Code
+  executor instance): its readings limit Claude jobs only. A stored plugins.yaml needs no migration:
+  the default applies to an instance without the option; one whose Claude executor has another name
+  names it.
+- **Built-in usage source `command-usage`** (`src/plugins/usage-source/command-usage/`): any agent
+  framework's budget and account, from a command the operator supplies. Options: `command` (argv, no
+  shell, command-bearing, required), `intervalSeconds` (default 600, min 60), `executors` (optional;
+  absent = every job). It prints `{ readings: [{ used, limit, unit, window?, resetsAt?,
+  informational? }], account?: { service, identity?, detail?, problem? } }`; anything else, a non-zero
+  exit or a timeout (45 s) → no readings and the reason in `state().problem`. Detection is `which` of
+  `command[0]` only. Runs in `<scratchDir>/probe` (0700). Readings are named after the instance; the
+  account appears on `GET /api/accounts` as any usage source's.
+- **Shared**: `usage-source/polled.ts` is the background refresh both built-ins use (one read at
+  create, then every interval; `poll` never waits; a budget past its reset left out; stale after 3
+  intervals); `usage-source/run.ts` the argv-only runner.
+- **With a machine's own readings** (issue #139): step 1 filters to the readings that limit the
+  executor first, then `readingsOf` applies — a machine with throttling readings of its own *for that
+  executor* is capped by those alone, else by those of every machine. A machine's own Claude account
+  then caps its Claude jobs, and a budget of another framework read for every machine still caps that
+  framework's jobs there. claude-plan with `machine` runs through `polled.ts` like the rest; a
+  machine not yet listed or probed online is read again after 30 s, not a full interval.
+- **Not changed**: the herdr executor stays Claude Code's (its screen protocol parses Claude Code's
+  TUI): another agent CLI is another executor plugin (`cursor-agent` is Cursor's), and
+  `command-usage` gives it a budget.
 
 ### Machines from the UI (issue #18)
 

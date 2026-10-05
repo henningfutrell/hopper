@@ -20,13 +20,18 @@ export function planLanes(
     else close.push(l.id);
   }
 
-  const draining = mine.filter((l) => l.state === 'draining').length;
-  const toDrain = Math.max(0, s.occupied - target - draining);
-  const drain = mine
-    .filter((l) => l.state === 'busy')
-    .sort((a, b) => b.openedAt.localeCompare(a.openedAt) || b.id.localeCompare(a.id))
-    .slice(0, toDrain)
-    .map((l) => l.id);
+  // Newest busy lanes drain first. An executor past its own cap drains its own lanes (issue #140);
+  // then the machine drains what is still past its cap.
+  const draining = mine.filter((l) => l.state === 'draining');
+  const busy = mine.filter((l) => l.state === 'busy').sort((a, b) => b.openedAt.localeCompare(a.openedAt) || b.id.localeCompare(a.id));
+  const drained = new Set<string>();
+  for (const e of s.executors.values()) {
+    const excess = e.occupied.length - draining.filter((l) => e.occupied.includes(l.id)).length - e.cap;
+    for (const l of busy.filter((b) => e.occupied.includes(b.id)).slice(0, Math.max(0, excess))) drained.add(l.id);
+  }
+  const toDrain = Math.max(0, s.occupied - target - draining.length - drained.size);
+  for (const l of busy.filter((b) => !drained.has(b.id)).slice(0, toDrain)) drained.add(l.id);
+  const drain = busy.filter((l) => drained.has(l.id)).map((l) => l.id);
 
   const reason = `${s.machine.id}: cap ${s.cap} (${s.band}), occupied ${s.occupied}, starting ${s.assigned}`
     + `; open ${opening}, close ${close.length}, drain ${drain.length}, keep ${kept}`;

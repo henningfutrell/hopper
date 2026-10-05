@@ -411,7 +411,7 @@ export type { AttachedMachine, ClientMachine, ContainerMachine, MachineDefaults,
 
 export type * from './routing.ts';
 export { LIST_ROLES, ROLES, SELECTABLE_ROLES } from './plugins.ts';
-export type { Account, MachineLaneEffect, PartAccount, UsageReading, UsageReport, UsageSourceReport, UsageSourceState } from './usage.ts';
+export type { Account, ExecutorLaneEffect, MachineLaneEffect, PartAccount, UsageReading, UsageReport, UsageSourceReport, UsageSourceState } from './usage.ts';
 export type * from './plugins.ts';
 
 // ---- Question gates: src/domain/question-gates.ts (re-exported here) -------------------
