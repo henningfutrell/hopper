@@ -1,19 +1,19 @@
-// Running grok-bot-jev's router once per job through jev_shim.py (design.md "Jev"). Any failure is
-// advice with `source: fallback` — the router's own documented safe fallback — never a throw.
+// Running grok-bot-jev's router once per job through gate_shim.py (design.md "Gate router"). Any
+// failure is advice with `source: fallback` — the router's own documented safe fallback — never a throw.
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { claudeArgv, scrubbedEnv } from '../../claude-print.ts';
 import type { Advice, AdviceAction, Clock, Job, Router, RouterMode } from '../../sdk.ts';
 
-const SHIM = fileURLToPath(new URL('./jev_shim.py', import.meta.url));
+const SHIM = fileURLToPath(new URL('./gate_shim.py', import.meta.url));
 const ACTIONS: readonly string[] = [
   'proceed_full', 'reuse_cache', 'stop_retry', 'run_deterministic',
   'chat_only', 'ask_human', 'allow_subagent', 'research_capped',
 ] satisfies AdviceAction[];
 const META_KEYS = ['cached_artifact', 'cached_note', 'prior_error', 'same_error_count', 'sources_found', 'constraints'];
 /**
- * Haiku's answers to Jev's gates, keyed by gate name and grouped by gate type (TypeSafe's own
+ * The Claude model's answers to the gates, keyed by gate name and grouped by gate type (Jev's own
  * grouping). Draft-07 literal, as claude-print.ts requires; the shim checks names and labels.
  */
 const GATE_ANSWERS_SCHEMA = {
@@ -33,16 +33,16 @@ const GATE_ANSWERS_SCHEMA = {
   required: ['choices', 'nouls', 'scores'],
 };
 
-export interface JevShimOptions {
-  /** The Jev checkout (absolute). */
-  jevSrc: string;
+export interface GateRouterShimOptions {
+  /** The grok-bot-jev checkout (absolute). */
+  grokBotJevSrc: string;
   python: string;
   claudeBin: string;
-  /** Haiku's model id for the claude CLI. */
-  model: string;
-  /** The Jev gates TypeSafe answers once its key is set; Haiku answers the rest. */
-  typesafeGates: string[];
-  /** The TypeSafe key (TYPESAFE_API_KEY), asked on every call; undefined: TypeSafe off. */
+  /** The Claude model, for the claude CLI. */
+  claudeModel: string;
+  /** The gates Jev answers, through TypeSafe, once its key is set; the Claude model answers the rest. */
+  jevGates: string[];
+  /** The TypeSafe key (TYPESAFE_API_KEY), asked on every call; undefined: Jev off. */
   typesafeKey(): string | undefined;
   dataDir: string;
   mode: () => RouterMode;
@@ -57,7 +57,7 @@ interface Route {
   details?: Record<string, unknown>;
 }
 
-function jevState(job: Job): Record<string, unknown> {
+function routerState(job: Job): Record<string, unknown> {
   const { goal, kind, meta = {} } = job.spec;
   const state: Record<string, unknown> = { goal, kind };
   for (const key of META_KEYS) if (key in meta) state[key] = meta[key];
@@ -68,7 +68,7 @@ function jevState(job: Job): Record<string, unknown> {
  * Spawn the shim, feed it the request, resolve with its stdout. Rejects on any failure. The shim
  * runs in its own process group, so a timeout also kills the claude it started.
  */
-function runShim(o: JevShimOptions, key: string | undefined, request: unknown): Promise<string> {
+function runShim(o: GateRouterShimOptions, key: string | undefined, request: unknown): Promise<string> {
   return new Promise((resolve, reject) => {
     const env: NodeJS.ProcessEnv = { ...scrubbedEnv(), PYTHONDONTWRITEBYTECODE: '1' };
     if (key) env.TYPESAFE_API_KEY = key;
@@ -113,32 +113,33 @@ function parseRoute(stdout: string): Route {
 }
 
 /** `name` is the plugin id; the host reports the instance name. */
-export function createJevShimRouter(o: JevShimOptions): Router {
+export function createGateRouter(o: GateRouterShimOptions): Router {
   const at = () => o.clock.now().toISOString();
   return {
-    name: 'jev-router',
+    name: 'gate-router',
     async advise(job: Job): Promise<Advice> {
       try {
         const stdout = await runShim(o, o.typesafeKey() || undefined, {
-          jevSrc: o.jevSrc,
+          grokBotJevSrc: o.grokBotJevSrc,
           mode: o.mode(),
-          logPath: join(o.dataDir, 'jev-runs.jsonl'),
-          state: jevState(job),
-          typesafeGates: o.typesafeGates,
-          haiku: { argv: [o.claudeBin, ...claudeArgv({ model: o.model, jsonSchema: GATE_ANSWERS_SCHEMA })], cwd: o.dataDir },
+          logPath: join(o.dataDir, 'gate-router-runs.jsonl'),
+          state: routerState(job),
+          jevGates: o.jevGates,
+          claude: { argv: [o.claudeBin, ...claudeArgv({ model: o.claudeModel, jsonSchema: GATE_ANSWERS_SCHEMA })], cwd: o.dataDir },
         });
         const route = parseRoute(stdout);
         return {
           action: route.action as AdviceAction,
           reason: route.reason,
-          // `jevUsed` mirrors the router's own `jev_used` (false: kill switch / bypass).
-          details: { ...(route.details ?? {}), jevUsed: route.jev_used },
-          source: 'jev-router',
+          // `gatesAsked` mirrors grok-bot-jev's own `jev_used`: were the gates asked at all (false: kill
+          // switch / bypass). It says nothing of who answered them; `gatesBy` does.
+          details: { ...(route.details ?? {}), gatesAsked: route.jev_used },
+          source: 'gate-router',
           at: at(),
         };
       } catch (e) {
         const why = e instanceof Error ? e.message : String(e);
-        return { action: 'proceed_full', reason: `jev unavailable: ${why}`, details: { jevUsed: false }, source: 'fallback', at: at() };
+        return { action: 'proceed_full', reason: `gate router unavailable: ${why}`, details: { gatesAsked: false }, source: 'fallback', at: at() };
       }
     },
   };

@@ -12,11 +12,11 @@ import newestFirst from './queue-sorter/newest-first/index.ts';
 import oldestFirst from './queue-sorter/oldest-first/index.ts';
 import priority from './queue-sorter/priority/index.ts';
 import grokbotRoutine from './notifier/grokbot-routine/index.ts';
-import jevRouter from './router/jev-router/index.ts';
+import gateRouter from './router/gate-router/index.ts';
 import passThrough from './router/pass-through/index.ts';
 import claudePlan from './usage-source/claude-plan/index.ts';
 import type { PluginDefinition } from './sdk.ts';
 
 export const BUILTIN_PLUGINS: readonly PluginDefinition[] = [
-  jevRouter, passThrough, priority, oldestFirst, newestFirst, claudeCli, claudeCliAssessor, alwaysEscalate, herdrClaude, testExecutor, command, githubGh, githubApp, local, claudePlan, grokbotRoutine,
+  gateRouter, passThrough, priority, oldestFirst, newestFirst, claudeCli, claudeCliAssessor, alwaysEscalate, herdrClaude, testExecutor, command, githubGh, githubApp, local, claudePlan, grokbotRoutine,
 ];

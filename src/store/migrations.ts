@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 import { isMap, isSeq, parseDocument, type YAMLMap } from 'yaml';
+=======
+import { isMap, isScalar, parseDocument } from 'yaml';
+>>>>>>> d836e15 (feat: router is a role, Jev a model — router plugin gate-router (#76))
 import type { Db } from './db.ts';
 
 // Schema changes never drop a queue (persisted state is the user's). A migration is SQL, or a
@@ -109,6 +113,9 @@ const MIGRATIONS: readonly Migration[] = [
   // 12: the rename to hopper (issue #112) renames the hopper's own herdr session, and the default
   // `session` with it. plugins.yaml keeps its meaning: see renameHerdrSession.
   renameHerdrSession,
+  // 13: the router is a role, Jev is a model (issue #76). The router plugin `jev-router` is
+  // `gate-router`, and its options say which model answers a gate.
+  renameGateRouter,
 ];
 
 /**
@@ -137,6 +144,33 @@ function renameHerdrSession(db: Db): void {
     changed = true;
   }
   if (changed) db.run("UPDATE config_documents SET text = ?, updated_at = ? WHERE name = 'plugins.yaml'", doc.toString({ lineWidth: 0 }), new Date().toISOString());
+}
+
+/** Options of the router plugin `jev-router`, under their `gate-router` names. */
+const GATE_ROUTER_OPTIONS: Readonly<Record<string, string>> = { jevSrc: 'grokBotJevSrc', model: 'claudeModel', typesafeGates: 'jevGates' };
+
+/**
+ * plugins.yaml naming the router plugin `jev-router` names `gate-router`, with the options renamed; an
+ * instance named `jev` or `jev-router` takes the new plugin's name. Comments and other sections stay. A
+ * document that does not parse is left for the owner (the daemon reports it as before).
+ */
+function renameGateRouter(db: Db): void {
+  const row = db.get("SELECT text FROM config_documents WHERE name = 'plugins.yaml'");
+  if (!row) return;
+  const doc = parseDocument(String(row.text));
+  if (doc.errors.length > 0) return;
+  const router = doc.get('router');
+  if (!isMap(router) || router.get('plugin') !== 'jev-router') return;
+  router.set('plugin', 'gate-router');
+  if (router.get('name') === 'jev' || router.get('name') === 'jev-router') router.set('name', 'gate-router');
+  const options = router.get('options');
+  if (isMap(options)) {
+    for (const pair of options.items) {
+      const key = isScalar(pair.key) ? pair.key.value : pair.key;
+      if (typeof key === 'string' && key in GATE_ROUTER_OPTIONS) pair.key = GATE_ROUTER_OPTIONS[key];
+    }
+  }
+  db.run("UPDATE config_documents SET text = ? WHERE name = 'plugins.yaml'", doc.toString({ lineWidth: 0 }));
 }
 
 /** The schema version a store is at once migrated. */

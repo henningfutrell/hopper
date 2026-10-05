@@ -25,7 +25,7 @@ export type RouterSelection = 'file' | 'detected';
 
 /** The router as /api/health and /api/router report it. */
 export interface RouterStatus {
-  /** The configured instance name (e.g. "jev"). */
+  /** The configured instance name (e.g. "gate-router"). */
   name: string;
   /** The plugin answering now: the instance's, or "pass-through" when it fell back. */
   plugin: string;

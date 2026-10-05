@@ -1,5 +1,5 @@
 // The fake router: a test double at the ports.ts `Router` seam (never a plugin). Deterministic, no
-// network; mirrors grok-bot-jev's router precedence from job metadata (design.md "Jev").
+// network; mirrors grok-bot-jev's router precedence from job metadata (design.md "Gate router").
 import type { Clock, Router } from '../../src/domain/ports.ts';
 import type { Advice, AdviceAction, Job } from '../../src/domain/types.ts';
 

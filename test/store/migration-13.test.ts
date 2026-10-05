@@ -15,7 +15,7 @@ function migrateFrom12(text: string | undefined): string | undefined {
   t.open(url).close();
   const raw = openDb(url);
   if (text !== undefined) raw.run("INSERT INTO config_documents (name, text, updated_at) VALUES ('plugins.yaml', ?, 'x')", text);
-  raw.run('UPDATE schema_version SET version = 11');
+  raw.run('UPDATE schema_version SET version = 12');
   raw.close();
   t.open(url).close();
   const after = openDb(url);
