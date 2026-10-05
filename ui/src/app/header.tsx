@@ -1,7 +1,8 @@
 // The top bar: version (opens the update panel), connection, router mode (switchable by an admin),
 // router health, uptime, the API reference, who is signed in and with which role, logout, and a
 // device link for another browser.
-import { BookOpen, LogOut, Moon, Rabbit, Sun } from 'lucide-react';
+import { BookOpen, LogOut, Moon, Sun } from 'lucide-react';
+import logo from '../../../site/hopper-logo.svg';
 import { setTheme, useTheme } from '@/hooks/use-theme';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -27,7 +28,7 @@ export function Header({ nav }: { nav?: React.ReactNode }) {
       <div className="flex h-14 items-center gap-3 px-4 lg:px-6">
         {nav}
         <div className="flex items-center gap-2 font-semibold tracking-tight">
-          <span className="grid size-7 place-items-center rounded-md bg-busy/15 text-busy"><Rabbit className="size-4" /></span>
+          <img src={logo} alt="" className="h-7 w-auto" />
           hopper
         </div>
         <UpdateButton version={health?.version} />
