@@ -16,11 +16,13 @@ export const eventTypeList = z.string().optional().transform((s, ctx) => {
   return parts as EventType[];
 });
 
-const eventsQuery = z.object({
+export const eventsQuery = z.object({
   after: z.coerce.number().int().min(0).optional(),
   limit: z.coerce.number().int().min(1).max(5000).default(200),
   types: eventTypeList,
 });
+
+export const decisionsQuery = z.object({ limit: z.coerce.number().int().min(1).max(1000).default(50) });
 
 const PAGE = 1000;
 
@@ -60,7 +62,7 @@ export function stateRoutes(app: FastifyInstance, o: { engine: Engine; store: St
   app.get('/api/machines/config', async () => plugins.machinesConfig());
 
   app.get('/api/decisions', async (req) => {
-    const { limit } = parseWith(z.object({ limit: z.coerce.number().int().min(1).max(1000).default(50) }), req.query);
+    const { limit } = parseWith(decisionsQuery, req.query);
     return { decisions: store.decisions.list(limit) };
   });
   app.get('/api/decisions/:id', async (req) => {

@@ -40,21 +40,21 @@ export interface UiRouteOptions {
 }
 
 const idParams = z.object({ id: z.string() });
-const answerBody = z.object({ answer: z.string().trim().min(1, 'answer must not be empty') });
-const routerModeBody = z.object({ mode: z.enum(['shadow', 'active']) });
-const pluginsEditBody = z.discriminatedUnion('action', [
+export const answerBody = z.object({ answer: z.string().trim().min(1, 'answer must not be empty') });
+export const routerModeBody = z.object({ mode: z.enum(['shadow', 'active']) });
+export const pluginsEditBody = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('options'), role: z.enum(ROLES), name: z.string().min(1), options: z.record(z.string(), z.unknown()), version: z.string().min(1) }),
   z.strictObject({ action: z.literal('select'), role: z.enum(SELECTABLE_ROLES), plugin: z.string().min(1).nullable(), version: z.string().min(1) }),
   z.strictObject({ action: z.literal('add'), role: z.enum(LIST_ROLES), plugin: z.string().min(1), name: z.string().min(1), version: z.string().min(1) }),
   z.strictObject({ action: z.literal('remove'), role: z.enum(LIST_ROLES), name: z.string().min(1), version: z.string().min(1) }),
   z.strictObject({ action: z.literal('rescan') }),
 ]);
-const rulesBody = z.strictObject({ text: z.string(), version: z.string().min(1) });
+export const rulesBody = z.strictObject({ text: z.string(), version: z.string().min(1) });
 // The content (url, events) is checked against webhooks.yaml's own schema in the editor, so the UI
 // shows the file's messages; here only the shape. No secret (issue #56), no secretFile, no new name;
 // secretEnv only on add, and only a WEBHOOK_SECRET_* variable (checked in the editor).
 const webhookFields = { name: z.string().min(1), version: z.string().min(1) };
-const webhooksEditBody = z.discriminatedUnion('action', [
+export const webhooksEditBody = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('add'), ...webhookFields, url: z.string(), events: z.array(z.string()), secretEnv: z.string(), active: z.boolean().optional() }),
   z.strictObject({ action: z.literal('edit'), ...webhookFields, url: z.string().optional(), events: z.array(z.string()).optional(), active: z.boolean().optional() }),
   z.strictObject({ action: z.literal('remove'), ...webhookFields }),
@@ -63,20 +63,20 @@ const machineName = z.string().trim().min(1).max(64);
 const machineLanes = z.number().int().min(1, 'lanes must be at least 1');
 const machineExecutors = z.array(z.string().min(1));
 // ssh is checked against the detected ssh targets, herdrBin and session are never accepted (strict).
-const machinesEditBody = z.discriminatedUnion('action', [
+export const machinesEditBody = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('add'), name: machineName, ssh: z.string().min(1), lanes: machineLanes, executors: machineExecutors.optional(), label: z.string().trim().min(1).optional(), version: z.string().min(1) }),
   z.strictObject({ action: z.literal('edit'), name: machineName, lanes: machineLanes.optional(), executors: machineExecutors.optional(), label: z.string().trim().min(1).nullable().optional(), version: z.string().min(1) }),
   z.strictObject({ action: z.literal('remove'), name: machineName, version: z.string().min(1) }),
 ]);
 // Self-update (issue #44): check now, apply the available update, or set the channel / auto-update.
-const updateBody = z.discriminatedUnion('action', [
+export const updateBody = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('check') }),
   z.strictObject({ action: z.literal('apply') }),
   z.strictObject({ action: z.literal('settings'), channel: z.enum(UPDATE_CHANNELS).optional(), autoUpdate: z.boolean().optional() }),
 ]);
 const EDIT_STATUS = { invalid: 400, not_found: 404, conflict: 409 } as const;
 /** The rules themselves are validated by the plugin host (the plugins.yaml schema), so a refusal names the field. */
-const routingEditBody = z.strictObject({ rules: z.array(z.any()), version: z.string().min(1) });
+export const routingEditBody = z.strictObject({ rules: z.array(z.any()), version: z.string().min(1) });
 
 const refuse = (req: FastifyRequest, reply: FastifyReply, why: string, needs?: UiRole) => {
   console.warn(`job-hopper: UI ${req.method} ${req.url} refused: ${why}`);

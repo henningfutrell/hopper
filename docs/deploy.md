@@ -17,7 +17,9 @@ platform that runs a container and hands it a managed Postgres.
 | Config | the documents `plugins.yaml`, `webhooks.yaml`, `rules.md`, `auth.yaml`: from the UI, or `job-hopper config edit <document>`. The first boot writes the built-in plugins.yaml. |
 | Where jobs run | herdr sessions: this host's (`job-hopper-herdr`), or attached machines over ssh (plugins.yaml `attachedMachines:`). |
 
-`job-hopper` is the operator CLI (`job-hopper config …`, `job-hopper login-code`); it needs `JOB_HOPPER_DATABASE_URL` (or `_FILE`) and nothing else.
+`job-hopper` is the operator CLI (`job-hopper config …`, `job-hopper login-code`); it needs `JOB_HOPPER_DATABASE_URL` (or `_FILE`) and nothing else. `job-hopper help` lists its commands; `node src/main.ts --help` lists every daemon setting with its default.
+
+Once it runs, the API reference is at `/docs/` (Scalar; the OpenAPI document at `/docs/openapi.json`), on every address the UI answers on. A first-time walkthrough is `README.md`.
 
 Mounted secrets: in compose, a `secrets:` entry appears at `/run/secrets/<name>` — set
 `<NAME>_FILE=/run/secrets/<name>`; in Kubernetes, a Secret volume; under systemd, `LoadCredential=` in

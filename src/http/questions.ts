@@ -8,7 +8,7 @@ import { HttpError, parseWith } from './errors.ts';
 
 const STATUSES = ['open', 'answered', 'closed', 'dismissed', 'expired', 'cancelled'] as const satisfies QuestionStatus[];
 
-const listQuery = z.object({
+export const questionsQuery = z.object({
   status: z.enum([...STATUSES, 'all']).default('open'),
   limit: z.coerce.number().int().min(1).max(1000).default(100),
 });
@@ -18,7 +18,7 @@ export function questionRoutes(app: FastifyInstance, o: { store: Store }): void 
   const { store } = o;
 
   app.get('/api/questions', async (req) => {
-    const q = parseWith(listQuery, req.query);
+    const q = parseWith(questionsQuery, req.query);
     return { questions: store.questions.list({ ...(q.status === 'all' ? {} : { status: [q.status] }), limit: q.limit }) };
   });
 

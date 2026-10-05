@@ -23,10 +23,10 @@ import { sessionUser, type UiSessions } from './sessions.ts';
 export const SIGN_IN_RATE = 20;
 
 const nameParams = z.object({ name: z.string() });
-const startQuery = z.object({ binding: z.string().optional() });
-const completeBody = z.object({ ticket: z.string(), binding: z.string() });
-const loginBody = z.object({ code: z.string() });
-const passwordBody = z.object({ username: z.string().max(128), password: z.string().max(1024) });
+export const startQuery = z.object({ binding: z.string().optional() });
+export const completeBody = z.object({ ticket: z.string(), binding: z.string() });
+export const loginBody = z.object({ code: z.string() });
+export const passwordBody = z.object({ username: z.string().max(128), password: z.string().max(1024) });
 
 /** The login answer: store the token (hex, safe inline) for this exact origin, then go to the UI. */
 const loginPage = (token: string): string => `<!doctype html><meta charset="utf-8"><title>job-hopper</title>

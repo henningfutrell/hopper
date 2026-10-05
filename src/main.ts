@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import type { Answerer, Assessor, Clock, Executor, JobSource, PluginsView, Restarter, Router, SettableUsageSource, SourceRegistry, Store, UpdateBuilder, Updater } from './domain/ports.ts';
 import type { AttachedMachine, Question, SourceStatus } from './domain/types.ts';
 import { isRerunnable } from './domain/types.ts';
-import { loadConfig, type Config } from './config.ts';
+import { daemonHelp, loadConfig, type Config } from './config.ts';
 import { createEngine, type Engine } from './engine/index.ts';
 import { createExecutorRegistry } from './executors/index.ts';
 import type { HerdrClient } from './executors/herdr/index.ts';
@@ -351,9 +351,6 @@ async function main(): Promise<void> {
   process.once('SIGINT', () => shutdown('SIGINT'));
 }
 
-if (import.meta.main) {
-  main().catch((e) => {
-    console.error(e instanceof Error ? e.message : e);
-    process.exit(1);
-  });
-}
+const asksHelp = process.argv.includes('--help') || process.argv.includes('-h');
+if (import.meta.main && asksHelp) process.stdout.write(daemonHelp());
+else if (import.meta.main) main().catch((e) => { console.error(e instanceof Error ? e.message : e); process.exit(1); });

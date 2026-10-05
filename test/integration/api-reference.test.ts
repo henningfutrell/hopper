@@ -90,12 +90,12 @@ describe('GET /docs/openapi.json', () => {
     const doc = await reference(a);
     const ops = Object.entries(doc.paths).flatMap(([path, o]) => Object.keys(o).map((m) => ({ method: m.toUpperCase(), path })));
     expect(ops.length).toBeGreaterThan(40);
-    for (const { method, path } of ops) {
+    expect(ops).toContainEqual({ method: 'GET', path: '/api/events/stream' }); // a stream never ends: the drift check on start covers it
+    for (const { method, path } of ops.filter((o) => o.path !== '/api/events/stream')) {
       const res = await rawRequest(a.url, {
         method, path: path.replace(/\{[^}]+\}/g, 'x'), headers: { host: new URL(a.url).host, 'content-type': 'application/json' },
         ...(method === 'POST' ? { body: '{}' } : {}),
       });
-      if (res.headers['content-type']?.toString().startsWith('text/event-stream')) continue;
       expect(res.text, `${method} ${path}`).not.toMatch(/no route/);
     }
   });

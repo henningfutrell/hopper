@@ -106,6 +106,66 @@ const schema = z.object({
   path: ['JOB_HOPPER_LAN_NAMES'],
 });
 
+/** What each setting does, for `node src/main.ts --help`. Keyed by the schema: a new setting needs its line. */
+const SETTING_HELP: Record<keyof typeof schema.shape, string> = {
+  JOB_HOPPER_DATABASE_URL: 'the Postgres database that holds everything: postgres://user:password@host:port/database[?schema=<name>][&sslmode=require]. Or JOB_HOPPER_DATABASE_URL_FILE: a file holding it',
+  JOB_HOPPER_PORT: 'the HTTP port of the UI, the API and the API reference',
+  JOB_HOPPER_PUBLIC_URL: 'the origin people reach the UI at through a reverse proxy (https://hopper.example.com); a proxy on another host also needs JOB_HOPPER_LAN_PEERS',
+  JOB_HOPPER_LAN_NAMES: 'host names the UI answers to on the LAN, comma-separated; needs JOB_HOPPER_LAN_PEERS. Unset: loopback only',
+  JOB_HOPPER_LAN_PEERS: 'CIDR ranges LAN or proxy requests may come from, comma-separated (192.0.2.0/24); binds every interface',
+  JOB_HOPPER_WORK_DIR: 'scratch space: working files, ssh control sockets. Nothing kept',
+  JOB_HOPPER_PLUGIN_DIR: 'a directory of custom plugins, one directory each (docs/plugins.md). Unset: none',
+  JOB_HOPPER_TICK_MS: 'how often the engine decides',
+  JOB_HOPPER_ROUTER_MODE: 'router mode until one is stored: shadow (advice is logged) or active (advice is applied)',
+  JOB_HOPPER_SOFT_LIMIT: 'usage fraction where a machine starts to close lanes',
+  JOB_HOPPER_HARD_LIMIT: 'usage fraction where a machine starts nothing',
+  JOB_HOPPER_ROUTER_CHEAP_BOOST: 'priority boost for a job the router calls cheap',
+  JOB_HOPPER_WEBHOOK_BASE_MS: 'first webhook retry delay; doubles each retry',
+  JOB_HOPPER_LANE_IDLE_GRACE_MS: 'how long an idle lane stays open',
+  JOB_HOPPER_ANSWER_TIMEOUT_MS: 'ceiling per question stage (answerer, assessor)',
+  JOB_HOPPER_HUMAN_RENOTIFY_MS: 'how often an unanswered question is notified again',
+  JOB_HOPPER_HUMAN_TIMEOUT_MS: 'when an unanswered question expires',
+  JOB_HOPPER_RESUME_BOOST: 'priority boost for a job resumed after a question',
+  JOB_HOPPER_MAX_QUESTIONS: 'questions one job may ask; the next one fails it',
+  JOB_HOPPER_KEEP_PANES: 'true: keep a job\'s pane open after it ends, for inspection',
+  JOB_HOPPER_UI_SESSION_HOURS: 'lifetime of a UI session',
+  JOB_HOPPER_UPDATE_CHECK_MS: 'how often self-update checks for a newer version; 0: only when asked',
+  JOB_HOPPER_RESTART: 'how the daemon starts again after an update: exit (a supervisor restarts it) or respawn. Unset: detected',
+};
+
+/** Every setting the daemon reads: name, default (`required`, `unset` or the value), what it does. */
+export const SETTINGS: { name: string; default: string; help: string }[] = Object.entries(SETTING_HELP).map(([name, help]) => {
+  const field = schema.shape[name as keyof typeof schema.shape] as z.ZodType;
+  const json = z.toJSONSchema(field, { io: 'input', unrepresentable: 'any' }) as { default?: unknown };
+  const fallback = json.default !== undefined ? String(json.default) : field.safeParse(undefined).success ? 'unset' : 'required';
+  return { name, default: fallback === '' ? 'unset' : fallback, help };
+});
+
+/** `node src/main.ts --help`: how to run the daemon and every setting it reads. */
+export function daemonHelp(): string {
+  const width = Math.max(...SETTINGS.map((s) => s.name.length));
+  const lines = SETTINGS.map((s) => `  ${s.name.padEnd(width)}  ${s.help} [${s.default}]`);
+  return `job-hopper daemon: pulls jobs from its job sources, runs them on its machines, serves the UI.
+
+usage: node src/main.ts            (in the job-hopper directory; the container and the systemd unit run this)
+       node src/main.ts --help
+
+It is configured by environment variables; everything else is config documents in its database
+(plugins.yaml, webhooks.yaml, rules.md, auth.yaml), edited in the UI or with job-hopper config edit.
+Secrets come from the environment too: NAME, or NAME_FILE naming a file holding it (docs/deploy.md).
+
+settings [default]:
+${lines.join('\n')}
+
+Once it runs (default port 4790):
+  UI              http://127.0.0.1:4790/        sign in: job-hopper login-code --link http://127.0.0.1:4790
+  API reference   http://127.0.0.1:4790/docs/
+  operator CLI    job-hopper help
+
+Read on: README.md, docs/deploy.md, docs/sign-in.md, docs/plugins.md.
+`;
+}
+
 /** A secret among the settings: also read from a mounted file, `<name>_FILE`. */
 const SECRET_SETTINGS = ['JOB_HOPPER_DATABASE_URL'];
 /** Read by the parts, not here (design.md "Target authentication"): the hopper's ssh key and its docker socket. */

@@ -11,6 +11,7 @@ const PING_MS = 15_000;
 const REPLAY_PAGE = 1000;
 
 const seq = z.coerce.number().int().min(0);
+export const streamQuery = z.object({ after: seq.optional() });
 
 export function sseRoutes(app: FastifyInstance, o: { store: Store; dispatcher: WebhookDispatcher; sources: SourceRegistry }): void {
   const open = new Set<ServerResponse>();
@@ -19,7 +20,7 @@ export function sseRoutes(app: FastifyInstance, o: { store: Store; dispatcher: W
   });
 
   app.get('/api/events/stream', (req, reply) => {
-    const q = parseWith(z.object({ after: seq.optional() }), req.query);
+    const q = parseWith(streamQuery, req.query);
     // An EventSource reconnects to the URL it opened, stale `after` included; Last-Event-ID is
     // where it actually is, so the header wins.
     const header = req.headers['last-event-id'];

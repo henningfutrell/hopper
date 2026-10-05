@@ -1,7 +1,8 @@
-// The HTTP edge: read-only routes, SSE, the static UI, and the UI session — the only way to
-// mutate (design.md "Phase 3"). Loopback, plus the LAN names when set; every request passes the
-// Host guard (AGENTS.md).
+// The HTTP edge: read-only routes, SSE, the static UI, the API reference, and the UI session — the
+// only way to mutate (design.md "Phase 3"). Loopback, plus the LAN names when set; every request
+// passes the Host guard (AGENTS.md).
 import Fastify, { type FastifyInstance } from 'fastify';
+import { apiReferenceRoutes } from './api-reference.ts';
 import type { SignIn } from '../auth/index.ts';
 import type { Clock, PluginsView, QuestionService, SourceRegistry, Store, Updater, WebhookDispatcher } from '../domain/ports.ts';
 import type { Engine } from '../engine/index.ts';
@@ -59,6 +60,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   const r = sessions.reconcile(o.signIn.roleOf);
   if (r.dropped + r.changed > 0) console.warn(`job-hopper: auth.yaml applied to stored UI sessions: ${r.dropped} ended, ${r.changed} changed role`);
   installHostGuard(app, { port: o.port, lan: o.lan, sessions });
+  apiReferenceRoutes(app, o.version);
   jobRoutes(app, o);
   stateRoutes(app, o);
   questionRoutes(app, o);
