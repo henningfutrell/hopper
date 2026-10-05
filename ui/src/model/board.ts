@@ -1,6 +1,7 @@
 // Every job view's data, from the one job store: which group each status is in, the groups as
-// lists, the overview's numbers counted off those lists, the lane board and the waiting order.
-import type { Decision, Job, JobStatus, Lane, MachineView } from './wire.ts';
+// lists, the overview's numbers counted off those lists, the lane board, the waiting order, and how a lane,
+// a machine or an event's subject is named.
+import type { Decision, DomainEvent, Job, JobStatus, Lane, MachineView } from './wire.ts';
 
 /** The one definition of each status's group (docs/glossary.md: Waiting, Waiting answer, Running, Ended). */
 export const GROUP = {
@@ -40,6 +41,19 @@ export function machineName(id: string, machines: readonly Pick<MachineView, 'id
 export function laneName(laneId: string, machines: readonly Pick<MachineView, 'id' | 'label'>[]): string {
   const cut = laneId.lastIndexOf('/');
   return `${machineName(laneId.slice(0, cut), machines)} · ${laneId.slice(cut + 1)}`;
+}
+
+/** Where a Decision starts a job, as people read it: its lane by `laneName`, or its machine and a new lane (issue #166). */
+export function startTarget(s: { machineId: string; laneId?: string | null }, machines: readonly Pick<MachineView, 'id' | 'label'>[]): string {
+  return s.laneId ? laneName(s.laneId, machines) : `${machineName(s.machineId, machines)} · new lane`;
+}
+
+/** An event's subject as people read it: its job's name, else its lane or machine named by `laneName`/`machineName` (issue #166). */
+export function subjectOf(e: DomainEvent, nameOf: (jobId: string) => string, machines: readonly Pick<MachineView, 'id' | 'label'>[]): string {
+  if (e.jobId) return nameOf(e.jobId);
+  if (e.laneId) return laneName(e.laneId, machines);
+  if (e.machineId) return machineName(e.machineId, machines);
+  return e.decisionId?.slice(0, 8) ?? '';
 }
 
 export interface LaneRow {
