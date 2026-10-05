@@ -68,7 +68,7 @@ describe('executor instances', () => {
       { instance: { name: 'test', plugin: 'test' }, detection: { status: 'available' }, active: 'test' },
       { instance: ENV_EXECUTORS[1], detection: { status: 'available', detail: expect.any(String) }, active: 'herdr-claude' },
     ]);
-    expect(r.executors.pending).toBeUndefined();
+    expect(r.executors).not.toHaveProperty('pending');
   });
 
   it('plugins.yaml `executors:` wins over the env', async () => {
@@ -129,7 +129,7 @@ describe('executors follow plugins.yaml live (issue #142)', () => {
     await host.reload();
     expect(names(host)).toEqual(['test', 't2']);
     expect(host.executors()[0]!.executor).toBe(before);
-    expect(host.report().executors.pending).toBeUndefined();
+    expect(host.report().executors).not.toHaveProperty('pending');
     expect(host.report().executors.instances.map((i) => i.instance.name)).toEqual(['test', 't2']);
 
     documents.set(PLUGINS, 'version: 1\nexecutors: [ { name: t2, plugin: test } ]\n');

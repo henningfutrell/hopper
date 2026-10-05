@@ -62,7 +62,7 @@ export function collectOptions(current: Record<string, unknown>, schema: Options
 
 /** The restart roles, by their key in GET /api/plugins. */
 const RESTART = {
-  executor: 'executors', 'job-source': 'jobSources', 'usage-source': 'usageSources', notifier: 'notifiers',
+  'job-source': 'jobSources', 'usage-source': 'usageSources', notifier: 'notifiers',
 } as const satisfies Partial<Record<Role, keyof PluginsReport>>;
 
 export const SELECTABLE: readonly SelectableRole[] = ['router', 'queue-sorter'];
@@ -92,9 +92,9 @@ export interface InstanceState {
 export function instanceState(report: PluginsReport, role: Role, name: string): InstanceState {
   const key = (RESTART as Partial<Record<Role, (typeof RESTART)[keyof typeof RESTART]>>)[role];
   const pending = { tone: 'warn' as const, label: 'restart pending' };
-  if (role === 'machine-source') {
-    // Live (issue #74): what plugins.yaml names is what runs, once the reload after an edit is done.
-    const s = report.machines.instances.find((i) => i.instance.name === name);
+  if (role === 'machine-source' || role === 'executor') {
+    // Live (issues #74, #142): what plugins.yaml names is what runs, once the reload after an edit is done.
+    const s = (role === 'executor' ? report.executors : report.machines).instances.find((i) => i.instance.name === name);
     if (!s) return { tone: 'warn', label: 'applying', rolePending: false };
     const base = { ...(s.reason ? { reason: s.reason } : {}), detection: s.detection, rolePending: false };
     return s.active === null ? { tone: 'bad', label: 'cannot run', ...base } : { tone: 'ok', label: 'active', ...base };

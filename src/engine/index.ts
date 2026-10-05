@@ -30,6 +30,7 @@ const TRIGGERS: ReadonlySet<EventType> = new Set<EventType>([
 
 export interface Engine extends Commands, Queries, AnswerHandlers {
   /** Registered executor names. */
+  /** The runnable executors now: they follow plugins.yaml (issue #142). */
   readonly executorNames: string[];
   /** What the sync loop may do to the hopper (ingest, cancel, answer, reprioritize, setSourceState). */
   readonly sourceHost: SourceHost;
@@ -68,7 +69,7 @@ export function createEngine(o: EngineOptions): Engine {
   const paneAnswers = createPaneAnswers(c, (claim) => runner.reattach(claim));
 
   return {
-    executorNames: o.executors.names(),
+    get executorNames() { return o.executors.names(); },
     sourceHost: createSourceHost(c, commands),
     routerMode: c.routerMode,
     ...commands,

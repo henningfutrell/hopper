@@ -16,8 +16,11 @@ export type EditResult = { ok: true; changed: boolean } | EditRefusal;
 
 export interface EditContext {
   documents: ConfigDocuments;
-  /** Jobs that need machine `name` (busy lanes there, panes parked there): its removal is refused while any do. */
-  inUse(name: string): string[];
+  /**
+   * Jobs that need instance `name` of `role` — a machine (busy lanes there, panes parked there) or an
+   * executor (a job naming it that has not ended, issue #142): its removal is refused while any do.
+   */
+  inUse(role: Role, name: string): string[];
   /** What plugins.yaml (or the built-in instances, for a role with no section) names now. */
   configured: readonly ConfiguredInstance[];
   find(id: string): { definition: PluginDefinition; detection: Detection } | undefined;
@@ -232,7 +235,7 @@ function applyListEdit(e: Extract<PluginsEdit, { action: 'add' | 'remove' }>, ct
   const current = ctx.configured.find((c) => c.role === e.role && c.instance.name === e.name);
   if (e.action === 'remove') {
     if (!current) return refuse('not_found', `no ${e.role} instance named ${e.name}`);
-    const jobs = e.role === 'machine-source' ? ctx.inUse(e.name) : [];
+    const jobs = ctx.inUse(e.role, e.name);
     if (jobs.length) return refuse('conflict', `${e.name} still has jobs (${jobs.join(', ')}): wait for them to end, or cancel them, then remove it`);
     return writePlugins(ctx.documents, e.version, (doc) => {
       const users = e.role === 'executor' ? executorUsers(e.name, doc, ctx) : [];

@@ -120,7 +120,7 @@ describe('POST /ui/api/plugins — one instance\'s options', () => {
     expect(doc.executors[0]).toEqual({ name: 'herdr-a', plugin: 'herdr-claude', options: { session: 'hopper-a', pollMs: 1000 } });
     expect(doc.executors[1]).toEqual({ name: 'herdr-b', plugin: 'herdr-claude', options: { session: 'hopper-b', pollMs: 250 } });
     expect(doc.executors[2]).toEqual({ name: 'test', plugin: 'test' });
-    expect(r.body.executors.pending).toBeUndefined();
+    expect(r.body.executors).not.toHaveProperty('pending');
   });
 
   it('a machine instance: its lane count is edited in place and applies live (issue #18)', async () => {
@@ -240,7 +240,7 @@ describe('POST /ui/api/plugins — add an instance', () => {
     expect(text.startsWith(TWO_EXECUTORS)).toBe(true);
     expect(parse(text).executors).toEqual([...parse(TWO_EXECUTORS).executors, { name: 'test-2', plugin: 'test' }]);
     expect(r.body.instances).toEqual(expect.arrayContaining([{ role: 'executor', instance: { name: 'test-2', plugin: 'test', options: {} } }]));
-    expect(r.body.executors.pending).toBeUndefined();
+    expect(r.body.executors).not.toHaveProperty('pending');
     expect((await a.api('GET', '/api/health')).body.executors).toContain('test-2');
   });
 
@@ -276,7 +276,7 @@ describe('POST /ui/api/plugins — remove an instance', () => {
     expect(r.status).toBe(200);
     expect(read(a)).toBe(TWO_EXECUTORS.replace('  - { name: herdr-b, plugin: herdr-claude, options: { session: hopper-b, pollMs: 1000 } }\n', ''));
     expect(r.body.instances.some((i: { instance: { name: string } }) => i.instance.name === 'herdr-b')).toBe(false);
-    expect(r.body.executors.pending).toBeUndefined();
+    expect(r.body.executors).not.toHaveProperty('pending');
   });
 
   it('the last job source: the section stays, empty (no jobs come in), never the built-in ones', async () => {
