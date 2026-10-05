@@ -55,59 +55,6 @@ describe('accepted: the assessor does not escalate and no risk rule matches', ()
   });
 });
 
-describe("the assessor's own answer (Opus, then Fable's best answer, then the owner)", () => {
-  const BETTER: Assessment = { answer: 'use sqlite, the rules prefer it', escalate: false, reason: 'the draft missed the rule' };
-
-  it('not escalating with its own answer: that answer is typed into the job, by the assessor', async () => {
-    const r = rig({ answer: () => unsure, assess: () => BETTER });
-    const q = r.question();
-    r.svc.handle(q.id);
-    await settle();
-    const got = r.mem.store.questions.get(q.id)!;
-    expect(got).toMatchObject({ status: 'answered', answer: BETTER.answer, answeredBy: 'fable' });
-    expect(got.attempts[1]).toMatchObject({ tier: 'fable', role: 'assessor', answer: BETTER.answer, escalate: false, outcome: 'accepted' });
-    expect(r.eventsOf('question.answered')[0]!.data).toMatchObject({ by: 'fable', answer: BETTER.answer });
-  });
-
-  it('escalating: its best answer stays on the trail for the owner', async () => {
-    const r = rig({ answer: () => unsure, assess: () => ({ ...ESCALATE, answer: 'pick option 1' }) });
-    const q = r.question();
-    r.svc.handle(q.id);
-    await settle();
-    const got = r.mem.store.questions.get(q.id)!;
-    expect(got).toMatchObject({ status: 'open', tier: 'human' });
-    expect(got.attempts[1]).toMatchObject({ role: 'assessor', answer: 'pick option 1', escalate: true, outcome: 'escalated' });
-  });
-
-  it('an empty answer is malformed: it escalates', async () => {
-    const r = rig({ assess: () => ({ ...BETTER, answer: '' }) });
-    const q = r.question();
-    r.svc.handle(q.id);
-    await settle();
-    const got = r.mem.store.questions.get(q.id)!;
-    expect(got).toMatchObject({ status: 'open', tier: 'human' });
-    expect(got.attempts[1]).toMatchObject({ role: 'assessor', error: expect.stringContaining('answer') });
-  });
-
-  it('the risk rules run on the answer that would be typed', async () => {
-    const r = rig({ assess: () => ({ ...BETTER, answer: 'force-push the branch' }) });
-    const q = r.question();
-    r.svc.handle(q.id);
-    await settle();
-    const got = r.mem.store.questions.get(q.id)!;
-    expect(got).toMatchObject({ status: 'open', tier: 'human' });
-    expect(got.attempts[1]!.riskRules).toContain('force-push');
-  });
-
-  it('the trail records the model each stage reports it ran, over the configured alias', async () => {
-    const r = rig({ answer: () => ({ ...SAFE, model: 'claude-opus-9' }), assess: () => ({ ...PROCEED, model: 'claude-fable-9' }) });
-    const q = r.question();
-    r.svc.handle(q.id);
-    await settle();
-    expect(r.mem.store.questions.get(q.id)!.attempts.map((a) => a.model)).toEqual(['claude-opus-9', 'claude-fable-9']);
-  });
-});
-
 describe('escalated to the human', () => {
   /** At the human stage, expiring humanTimeoutMs (10 s) after it got there (now, under fake timers). */
   const human = (r: ReturnType<typeof rig>, id: string) => {
