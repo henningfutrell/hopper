@@ -2655,6 +2655,17 @@ responsive and fast. Builds on the at-a-glance board (issue #5).
 - **Mutations unchanged**: cancel (now behind a confirm dialog), approve, answer, router mode,
   question close, plugins (options, select, rescan), logout — same `/ui/api/*` routes and session header.
 - **Theme.** Dark by default, light by toggle, remembered in `localStorage` (`jh_theme`).
+- **Overview layout** (issue #73). The Overview's panels are laid out on one three-column grid by the
+  viewer's overview layout (`ui/src/model/overview-layout.ts`, pure): each overview panel shown or
+  hidden, its place in the order, its width in thirds of the row, and the settings a panel has (lane
+  timeline window, ended-per-hour hours 6/12/24 — the job store holds 24 h of ended jobs — and the
+  number of live activity events). Customize (a sheet on the Overview) changes it; every change applies
+  at once. Kept per browser in `localStorage` (`jh_overview`, `ui/src/hooks/use-overview-layout.ts`),
+  like the theme: a viewer preference, so no route, no role and nothing in the database. Owner decision:
+  per browser, not per user or per hopper. A stored layout is read leniently — a field it cannot use
+  takes its default, an unknown panel goes, a panel added since comes back at the end, shown — so a new
+  panel needs no migration of what browsers stored. Reset removes the key. Tested through the rendered
+  app: `test/ui/overview-customize.test.ts`.
 
 ## Reaching the UI across the LAN (issue #16, 2026-10-03)
 

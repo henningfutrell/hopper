@@ -1,4 +1,4 @@
-// Ended jobs per hour, stacked by outcome, for the last 24 h. Hover a bar for its counts.
+// Ended jobs per hour, stacked by outcome, for the last `hours`. Hover a bar for its counts.
 import { max, scaleBand, scaleLinear, scaleTime, timeFormat } from 'd3';
 import { useMemo, useState } from 'react';
 import { COLOR } from '@/components/status';
@@ -14,22 +14,22 @@ const KEYS = [
 const M = { top: 8, right: 16, bottom: 22, left: 26 };
 const hour = timeFormat('%H:%M');
 
-export function ThroughputChart({ ended, now, height = 200 }: { ended: Job[]; now: number; height?: number }) {
+export function ThroughputChart({ ended, now, hours, height = 200 }: { ended: Job[]; now: number; hours: number; height?: number }) {
   const [ref, { width }] = useSize<HTMLDivElement>();
   const [hover, setHover] = useState<Bucket | null>(null);
   const hourNow = Math.floor(now / HOUR);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- recompute per hour, not per tick
-  const buckets = useMemo(() => throughput(ended, now, HOUR, 24), [ended, hourNow]);
+  const buckets = useMemo(() => throughput(ended, now, HOUR, hours), [ended, hourNow, hours]);
   const iw = Math.max(0, width - M.left - M.right);
   const ih = height - M.top - M.bottom;
   const x = scaleBand<number>().domain(buckets.map((b) => b.start)).range([0, iw]).paddingInner(0.28);
   const y = scaleLinear().domain([0, Math.max(4, max(buckets, (b) => b.finished + b.failed + b.cancelled) ?? 0)]).nice().range([ih, 0]);
   const first = buckets[0]?.start ?? now;
-  const t = scaleTime().domain([first, first + 24 * HOUR]).range([0, iw]);
+  const t = scaleTime().domain([first, first + hours * HOUR]).range([0, iw]);
   return (
     <div ref={ref} className="relative w-full" style={{ height }}>
       {width > 0 && (
-        <svg width={width} height={height} role="img" aria-label="Ended jobs per hour, last 24 hours">
+        <svg width={width} height={height} role="img" aria-label={`Ended jobs per hour, last ${hours} hours`}>
           <g transform={`translate(${M.left},${M.top})`}>
             <GridY scale={y} x0={0} x1={iw} />
             {buckets.map((b) => {

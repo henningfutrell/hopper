@@ -9,14 +9,14 @@ import { ago } from '@/model/format';
 import { useHopper } from '@/store';
 import { useJobBoard, useJobName } from '@/store/selectors';
 
-export function LivePanel() {
+export function LivePanel({ count }: { count: number }) {
   const events = useHopper((s) => s.events);
   const conn = useHopper((s) => s.conn);
   const nameOf = useJobName();
   return (
     <Panel title="Live activity" icon={Radio} action={<a href="#events" className="text-xs text-muted-foreground hover:text-foreground">all events →</a>}
       count={<Dot tone={conn === 'live' ? 'ok' : 'warn'} pulse={conn === 'live'} />} bodyClassName="space-y-1.5">
-      {events.length ? events.slice(0, 14).map((e) => <EventLine key={e.seq} e={e} nameOf={nameOf} className="animate-in fade-in slide-in-from-top-1 duration-300" />) : <Empty>no events yet</Empty>}
+      {events.length ? events.slice(0, count).map((e) => <EventLine key={e.seq} e={e} nameOf={nameOf} className="animate-in fade-in slide-in-from-top-1 duration-300" />) : <Empty>no events yet</Empty>}
     </Panel>
   );
 }

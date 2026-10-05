@@ -1,6 +1,5 @@
-// The overview's charts: throughput, lane timeline, usage.
+// The overview's charts: throughput, lane timeline, usage. Their settings come from the overview layout.
 import { BarChart3, Gauge as GaugeIcon, GanttChart } from 'lucide-react';
-import { useState } from 'react';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Empty, Panel } from '@/components/panel';
 import { LaneTimeline, OUTCOME_TONE } from '@/charts/lane-timeline';
@@ -10,6 +9,7 @@ import { useNow } from '@/hooks/use-now';
 import { usePoll } from '@/hooks/use-poll';
 import { ReadingGauge } from '@/components/reading';
 import { orderReadings, readingKey } from '@/model/usage';
+import { TIMELINE_WINDOWS, type TimelineWindow } from '@/model/overview-layout';
 import { refreshUsage, useHopper } from '@/store';
 import { useJobBoard, useJobName, useLaneSpans } from '@/store/selectors';
 import { cn } from '@/lib/utils';
@@ -23,32 +23,31 @@ const Legend = ({ items, show = 'sm:flex' }: { items: readonly { key: string; co
   </div>
 );
 
-export function ThroughputPanel() {
+export function ThroughputPanel({ hours }: { hours: number }) {
   const { ended } = useJobBoard();
   const now = useNow();
   return (
-    <Panel title="Ended per hour" icon={BarChart3} count="24 h" action={<Legend items={THROUGHPUT_LEGEND} />}>
-      <ThroughputChart ended={ended} now={now} />
+    <Panel title="Ended per hour" icon={BarChart3} count={`${hours} h`} action={<Legend items={THROUGHPUT_LEGEND} />}>
+      <ThroughputChart ended={ended} now={now} hours={hours} />
     </Panel>
   );
 }
 
-const WINDOWS = { '1h': 3_600_000, '6h': 6 * 3_600_000, '24h': 24 * 3_600_000 } as const;
-type Win = keyof typeof WINDOWS;
+const WINDOWS: Record<TimelineWindow, number> = { '1h': 3_600_000, '6h': 6 * 3_600_000, '24h': 24 * 3_600_000 };
 const OUTCOMES = Object.entries(OUTCOME_TONE).map(([key, tone]) => ({ key, color: COLOR[tone] }));
 
-export function TimelinePanel() {
+/** `window` is the overview layout's; choosing another on the panel sets it there. */
+export function TimelinePanel({ window: win, onWindow }: { window: TimelineWindow; onWindow: (w: TimelineWindow) => void }) {
   const machines = useHopper((s) => s.machines);
   const nameOf = useJobName();
   const now = useNow();
-  const [win, setWin] = useState<Win>('1h');
   const spans = useLaneSpans(now - WINDOWS[win]);
   const lanes = machines.flatMap((m) => m.lanes.map((l) => l.id));
   return (
     <Panel title="Lane timeline" icon={GanttChart} action={<>
       <Legend items={OUTCOMES} show="xl:flex" />
-      <Tabs value={win} onValueChange={(v) => setWin(v as Win)}>
-        <TabsList className="h-7">{Object.keys(WINDOWS).map((w) => <TabsTrigger key={w} value={w} className="px-2 text-xs">{w}</TabsTrigger>)}</TabsList>
+      <Tabs value={win} onValueChange={(v) => onWindow(v as TimelineWindow)}>
+        <TabsList className="h-7">{TIMELINE_WINDOWS.map((w) => <TabsTrigger key={w} value={w} className="px-2 text-xs">{w}</TabsTrigger>)}</TabsList>
       </Tabs>
     </>}>
       <LaneTimeline spans={spans} now={now} windowMs={WINDOWS[win]} lanes={lanes} nameOf={nameOf} />
