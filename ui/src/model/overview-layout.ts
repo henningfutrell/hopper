@@ -1,5 +1,6 @@
 // The overview layout (issue #73): which overview panels show, in what order, how wide (thirds of
 // the row), and each panel's settings. The viewer's, kept per browser (hooks/use-overview-layout.ts).
+// The viewer rearranges it as they see fit (issue #86): movePanel steps, placePanel drops.
 // Pure: reading a stored layout never throws and never loses a panel — a field it cannot use takes
 // its default, a panel it does not know goes, a panel the stored layout lacks comes back at the end.
 
@@ -91,4 +92,15 @@ export function setPanel(l: OverviewLayout, id: PanelId, patch: Partial<Omit<Pan
 
 export function setSetting<K extends keyof OverviewSettings>(l: OverviewLayout, key: K, value: OverviewSettings[K]): OverviewLayout {
   return { ...l, settings: { ...l.settings, [key]: value } };
+}
+
+/** The panel dropped on another takes its place (issue #86): in front of it when it came from
+ *  after, behind it when it came from before. Dropped on itself or on an unknown panel, it stays. */
+export function placePanel(l: OverviewLayout, id: PanelId, at: PanelId): OverviewLayout {
+  const i = l.panels.findIndex((p) => p.id === id);
+  const j = l.panels.findIndex((p) => p.id === at);
+  if (i < 0 || j < 0 || i === j) return l;
+  const panels = l.panels.filter((p) => p.id !== id);
+  panels.splice(j, 0, l.panels[i]!);
+  return { ...l, panels };
 }
