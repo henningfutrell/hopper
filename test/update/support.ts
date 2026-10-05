@@ -17,6 +17,8 @@ export interface Upstream {
   dir: string;
   /** Commit `app.txt` = `content` with this subject on the current branch; returns the sha. */
   commit(subject: string, content?: string): string;
+  /** Write WHATS-NEW.md with these bullets, newest first, for the next commit. */
+  whatsNew(bullets: string[]): void;
   tag(name: string, commit: string): void;
 }
 
@@ -37,6 +39,7 @@ export function createUpstream(root: string): Upstream {
       return git(dir, 'rev-parse', 'HEAD');
     },
     tag(name, commit) { git(dir, 'tag', name, commit); },
+    whatsNew(bullets) { writeFileSync(join(dir, 'WHATS-NEW.md'), `# What's new\n\n${bullets.map((b) => `- ${b}\n`).join('')}`); },
   };
 }
 

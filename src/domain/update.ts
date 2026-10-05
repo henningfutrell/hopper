@@ -15,13 +15,6 @@ export interface InstallInfo {
   installedAt: string;
 }
 
-export interface UpdateChange {
-  commit: string;
-  subject: string;
-  /** Committer date, ISO. */
-  at: string;
-}
-
 export interface UpdateRelease {
   /** The newest `v<semver>` tag. */
   tag: string;
@@ -55,12 +48,8 @@ export interface UpdateStatus extends UpdateSettings {
   /** The newest commit of the channel: the branch head (`main`) or the newest release's commit (`release`). */
   target?: { commit: string; ref: string };
   release?: UpdateRelease;
-  /** Commits in the target and not installed, newest first. */
-  changes: UpdateChange[];
-  /** `changes` was cut at UPDATE_CHANGES_CAP. */
-  truncated: boolean;
+  /** What's new: the target's WHATS-NEW.md bullets the installed version lacks, newest first, in plain words. */
+  whatsNew: string[];
   checkedAt?: string;
   apply?: UpdateApply;
 }
-
-export const UPDATE_CHANGES_CAP = 100;

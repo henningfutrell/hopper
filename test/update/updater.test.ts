@@ -56,16 +56,21 @@ describe('detecting an update', () => {
     expect(s.reason).toMatch(/install\.json/);
   });
 
-  it('finds newer commits on the tracked branch, newest first, and announces each new target once', async () => {
+  it('finds a newer head of the tracked branch, says what is new in plain words, and announces each new target once', async () => {
     const w = world();
+    w.up.whatsNew(['Older news.']);
     const c1 = w.up.commit('first');
-    const c2 = w.up.commit('second');
-    const c3 = w.up.commit('third');
+    w.up.whatsNew(['Jobs show their machine.', 'Older news.']);
+    w.up.commit('feat: machine on the job (#12)');
+    w.up.whatsNew(['You can pause the queue.', 'Jobs show their machine.', 'Older news.']);
+    const c3 = w.up.commit('fix: pause (#13)');
     const { u } = updater(w, createInstall(w.root, w.up.dir, c1));
     const s = await u.check();
-    expect(s).toMatchObject({ state: 'available', channel: 'main', target: { commit: c3, ref: 'main' }, truncated: false });
+    expect(s).toMatchObject({ state: 'available', channel: 'main', target: { commit: c3, ref: 'main' } });
     expect(s.installed?.commit).toBe(c1);
-    expect(s.changes.map((c) => [c.commit, c.subject])).toEqual([[c3, 'third'], [c2, 'second']]);
+    expect(s.whatsNew).toEqual(['You can pause the queue.', 'Jobs show their machine.']);
+    expect(JSON.stringify(s)).not.toMatch(/#1[23]|feat:|fix:/);
+    expect(w.store.events.since(0).find((e) => e.type === 'update.available')?.data).toMatchObject({ changes: 2 });
     await u.check();
     expect(types(w)).toEqual(['update.available']);
     const c4 = w.up.commit('fourth');
@@ -85,17 +90,20 @@ describe('detecting an update', () => {
     const { u: u2 } = updater(w, createInstall(w.root, w.up.dir, ahead));
     const s = await u2.check();
     expect(s.state).toBe('current');
-    expect(s.changes).toEqual([]);
+    expect(s.whatsNew).toEqual([]);
   });
 
   it('on the release channel targets the newest v<semver> tag, and reports the newest release on either channel', async () => {
     const w = world();
     const c1 = w.up.commit('first');
+    w.up.whatsNew(['Second news.']);
     const c2 = w.up.commit('second');
     w.up.tag('v0.9.0', c2);
+    w.up.whatsNew(['Third news.', 'Second news.']);
     const c3 = w.up.commit('third');
     w.up.tag('v0.10.0', c3);
     w.up.tag('not-a-release', c3);
+    w.up.whatsNew(['Fourth news.', 'Third news.', 'Second news.']);
     w.up.commit('fourth');
     const { u } = updater(w, createInstall(w.root, w.up.dir, c1));
     expect((await u.check()).release).toEqual({ tag: 'v0.10.0', commit: c3, newer: true });
@@ -103,7 +111,7 @@ describe('detecting an update', () => {
     expect(s.channel).toBe('release');
     const r = await u.check();
     expect(r).toMatchObject({ state: 'available', target: { commit: c3, ref: 'v0.10.0' } });
-    expect(r.changes.map((c) => c.subject)).toEqual(['third', 'second']);
+    expect(r.whatsNew).toEqual(['Third news.', 'Second news.']);
   });
 
   it('keeps the settings in the store', async () => {
