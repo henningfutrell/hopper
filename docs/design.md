@@ -2922,7 +2922,8 @@ holds no credential. Prior art: `a status-bar script`.
   a client target serves herdr only, so it cannot — in a fresh `mktemp -d` dir there, removed after
   with the project dir claude keeps for it. Its `PATH` is the machine's own. The machine is found
   through the usage-source context's `machine(id)` (as the machine sources list it now); not
-  configured or offline → no readings and the reason. Every reading carries `machineId`, and the
+  configured or offline → no readings and the reason, and it is read again 30 s later (on a poll), not
+  an interval later: at start an attached machine is offline until its first probe. Every reading carries `machineId`, and the
   account's detail names the `machine`. A machine with throttling readings of its own is capped by
   those alone, not by the readings of every machine (decider step 1): one Claude account per machine.
 - Runs in the background: once at create, then every `intervalSeconds`, each call killed after 45 s,
