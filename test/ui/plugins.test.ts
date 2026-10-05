@@ -2,7 +2,7 @@
 // the whole options object one Save sends — drafts over what is configured, command-bearing as
 // configured, so the daemon's command-bearing check never trips on a form round trip.
 import { describe, expect, it } from 'vitest';
-import { collectOptions, fieldKind, instanceState, isListRole, newInstance, type OptionsSchema } from '../../ui/src/model/plugins.ts';
+import { collectOptions, fieldKind, instanceState, isListRole, newInstance, shippedPlugins, toggleEdit, type OptionsSchema } from '../../ui/src/model/plugins.ts';
 import type { PluginsReport, Role } from '../../src/domain/types.ts';
 
 const SCHEMA: OptionsSchema = {
@@ -70,17 +70,14 @@ describe('instanceState', () => {
   });
 
   it('a restart role: active, cannot run (with the reason), or not built yet (restart pending)', () => {
-    expect(instanceState(report, 'executor', 'test')).toMatchObject({ tone: 'ok', label: 'active' });
     expect(instanceState(report, 'job-source', 'github')).toMatchObject({ tone: 'bad', label: 'cannot run', reason: 'no gh' });
     expect(instanceState(report, 'notifier', 'new-one')).toMatchObject({ tone: 'warn', label: 'restart pending' });
   });
 
-  it('a restart role whose section changed says so', () => {
-    expect(instanceState(report, 'executor', 'test').rolePending).toBe(false);
-  });
-
-  it('the machine sources are live (issue #74): never restart pending', () => {
+  it('the machine sources (issue #74) and the executors (issue #142) are live: never restart pending', () => {
     expect(instanceState(report, 'machine-source', 'local')).toMatchObject({ tone: 'ok', label: 'active', rolePending: false });
+    expect(instanceState(report, 'executor', 'test')).toMatchObject({ tone: 'ok', label: 'active', rolePending: false });
+    expect(instanceState(report, 'executor', 'just-added')).toMatchObject({ tone: 'warn', label: 'applying', rolePending: false });
   });
 });
 
@@ -103,5 +100,45 @@ describe('adding an instance (issue #4)', () => {
   it('a name the role already has is refused, naming it; the same name in another role is not', () => {
     expect(newInstance(report, 'executor', 'test', '')).toEqual({ name: 'test', problem: 'an executor is already named test' });
     expect(newInstance(report, 'executor', 'github-gh', 'github')).toEqual({ name: 'github' });
+  });
+});
+
+// Issue #142 (owner decision: users never edit plugins.yaml): every shipped plugin of a list role is
+// enabled or disabled from the Plugins view. Enable adds one instance under the plugin's id with its
+// defaults; disable removes its one instance. Machines are attached in the Machines view.
+describe('shipped plugins', () => {
+  const plugin = (id: string, role: string, detection: Record<string, unknown> = { status: 'available' }, builtin = true) =>
+    ({ id, role, describe: `${id} does things`, builtin, detection, options: {} });
+  const report = {
+    config: { version: 'v1' },
+    instances: [
+      { role: 'executor', instance: { name: 'test', plugin: 'test' } },
+      { role: 'executor', instance: { name: 'claude-a', plugin: 'herdr-claude' } },
+      { role: 'executor', instance: { name: 'claude-b', plugin: 'herdr-claude' } },
+      { role: 'machine-source', instance: { name: 'local', plugin: 'local' } },
+    ],
+    plugins: [
+      plugin('test', 'executor'), plugin('herdr-claude', 'executor'), plugin('cursor-agent', 'executor'),
+      plugin('command', 'executor', { status: 'needs-setup', reason: 'set its options' }),
+      plugin('github-gh', 'job-source', { status: 'unavailable', reason: 'gh not found' }),
+      plugin('local', 'machine-source'), plugin('gate-router', 'router'), plugin('mine', 'executor', { status: 'available' }, false),
+    ],
+  } as unknown as PluginsReport;
+
+  it('the built-in plugins of the list roles but machines: enabled when an instance names them, and whether a click can change that', () => {
+    expect(shippedPlugins(report)).toEqual([
+      { id: 'test', role: 'executor', describe: 'test does things', enabled: true, instances: ['test'] },
+      { id: 'herdr-claude', role: 'executor', describe: 'herdr-claude does things', enabled: true, instances: ['claude-a', 'claude-b'], blocked: '2 instances: remove them below' },
+      { id: 'cursor-agent', role: 'executor', describe: 'cursor-agent does things', enabled: false, instances: [] },
+      { id: 'command', role: 'executor', describe: 'command does things', enabled: false, instances: [], blocked: 'set its options' },
+      { id: 'github-gh', role: 'job-source', describe: 'github-gh does things', enabled: false, instances: [], blocked: 'gh not found' },
+    ]);
+  });
+
+  it('the edit a switch sends: add under the plugin id, or remove its one instance; none when blocked', () => {
+    const [test, herdr, cursor] = shippedPlugins(report);
+    expect(toggleEdit(report, cursor!)).toEqual({ action: 'add', role: 'executor', plugin: 'cursor-agent', name: 'cursor-agent', version: 'v1' });
+    expect(toggleEdit(report, test!)).toEqual({ action: 'remove', role: 'executor', name: 'test', version: 'v1' });
+    expect(toggleEdit(report, herdr!)).toBeNull();
   });
 });
