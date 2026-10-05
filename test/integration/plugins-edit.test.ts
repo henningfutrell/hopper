@@ -106,7 +106,7 @@ describe('POST /ui/api/plugins — one instance\'s options', () => {
     expect(doc.executors).toEqual(parse(TWO_EXECUTORS).executors);
   });
 
-  it('one executor instance: only its own entry changes; restart pending', async () => {
+  it('one executor instance: only its own entry changes; applied without a restart (issue #142)', async () => {
     const { a, token } = await start(TWO_EXECUTORS);
     const version = (await report(a)).config.version;
     const r = await a.ui<Reply>('/ui/api/plugins', {
@@ -120,7 +120,7 @@ describe('POST /ui/api/plugins — one instance\'s options', () => {
     expect(doc.executors[0]).toEqual({ name: 'herdr-a', plugin: 'herdr-claude', options: { session: 'hopper-a', pollMs: 1000 } });
     expect(doc.executors[1]).toEqual({ name: 'herdr-b', plugin: 'herdr-claude', options: { session: 'hopper-b', pollMs: 250 } });
     expect(doc.executors[2]).toEqual({ name: 'test', plugin: 'test' });
-    expect(r.body.executors.pending?.status).toBe('changed — restart pending');
+    expect(r.body.executors.pending).toBeUndefined();
   });
 
   it('a machine instance: its lane count is edited in place and applies live (issue #18)', async () => {
@@ -231,7 +231,7 @@ describe('POST /ui/api/plugins — rescan', () => {
 // Issue #4: an instance of a many-instance role (executor, job source, usage source, notifier) is
 // added or removed from the UI. Executors are a restart role: the change waits for a restart.
 describe('POST /ui/api/plugins — add an instance', () => {
-  it('an executor: appended under its name with the plugin\'s defaults; other entries and comments stay; restart pending', async () => {
+  it('an executor: appended under its name with the plugin\'s defaults; other entries and comments stay; it runs at once (issue #142)', async () => {
     const { a, token } = await start(TWO_EXECUTORS);
     const version = (await report(a)).config.version;
     const r = await a.ui<Reply>('/ui/api/plugins', { action: 'add', role: 'executor', plugin: 'test', name: 'test-2', version }, { token });
@@ -240,7 +240,8 @@ describe('POST /ui/api/plugins — add an instance', () => {
     expect(text.startsWith(TWO_EXECUTORS)).toBe(true);
     expect(parse(text).executors).toEqual([...parse(TWO_EXECUTORS).executors, { name: 'test-2', plugin: 'test' }]);
     expect(r.body.instances).toEqual(expect.arrayContaining([{ role: 'executor', instance: { name: 'test-2', plugin: 'test', options: {} } }]));
-    expect(r.body.executors.pending?.status).toBe('changed — restart pending');
+    expect(r.body.executors.pending).toBeUndefined();
+    expect((await a.api('GET', '/api/health')).body.executors).toContain('test-2');
   });
 
   it('a role with no section: the instances that fill it now are written, then the new one', async () => {
@@ -268,14 +269,14 @@ describe('POST /ui/api/plugins — add an instance', () => {
 });
 
 describe('POST /ui/api/plugins — remove an instance', () => {
-  it('an executor: its entry goes, every other line stays; restart pending', async () => {
+  it('an executor: its entry goes, every other line stays; gone at once (issue #142)', async () => {
     const { a, token } = await start(TWO_EXECUTORS);
     const version = (await report(a)).config.version;
     const r = await a.ui<Reply>('/ui/api/plugins', { action: 'remove', role: 'executor', name: 'herdr-b', version }, { token });
     expect(r.status).toBe(200);
     expect(read(a)).toBe(TWO_EXECUTORS.replace('  - { name: herdr-b, plugin: herdr-claude, options: { session: hopper-b, pollMs: 1000 } }\n', ''));
     expect(r.body.instances.some((i: { instance: { name: string } }) => i.instance.name === 'herdr-b')).toBe(false);
-    expect(r.body.executors.pending?.status).toBe('changed — restart pending');
+    expect(r.body.executors.pending).toBeUndefined();
   });
 
   it('the last job source: the section stays, empty (no jobs come in), never the built-in ones', async () => {
