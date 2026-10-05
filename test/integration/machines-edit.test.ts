@@ -286,8 +286,8 @@ describe('POST /ui/api/plugins — remove a machine', () => {
 
     store.jobs.update(parked.id, { status: 'cancelled', resumeOn: undefined });
     const running = store.jobs.create({ executor: 'test', payload: {} }, 50);
-    store.jobs.update(running.id, { status: 'running' });
     const lane = store.lanes.open('desk');
+    store.jobs.update(running.id, { status: 'running', laneId: lane.id });
     store.lanes.update(lane.id, { state: 'busy', jobId: running.id });
     const busy = await plugins(a, token, { action: 'remove', role: 'machine-source', name: 'desk', version: (await config(a)).version });
     expect(busy.status).toBe(409);

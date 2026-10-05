@@ -123,6 +123,11 @@ an idle tick every 2 s would bury the decision log. Every recorded Decision emit
   (so `decision.trigger` names *a* cause, not necessarily the last). Event listeners schedule
   triggers with `setImmediate`; they never run a decision synchronously inside `append`. The tick
   is a safety net: every state change that frees a lane or adds work wakes a Decision itself.
+- **A lane is held only by a running job** (issue #181). Before each Decision the engine frees every
+  lane not idle whose job is not claimed or running on it — a draining one closes, any other goes
+  idle (`freeStrandedLanes`, `src/engine/decision-step.ts`). A job that ended without its outcome
+  freeing the lane (cancelled while no runner held it, a runner that stopped before recording)
+  never leaves the lane shown running, or counted occupied, for good.
 - **Parallel by default.** One Decision claims every admissible waiting job that has room: N free
   lanes and N admissible jobs → N claims in that Decision, N executors started at once (the
   runner never awaits one job before starting the next). A source sync ingests every new item in
