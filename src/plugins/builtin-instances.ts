@@ -33,9 +33,10 @@ export function builtinInstances(answerTimeoutMs = 180_000): PluginsDoc {
       { name: 'test', plugin: 'test' },
       { name: 'herdr-claude', plugin: 'herdr-claude' },
     ],
-    // The names stay `github` and `github-app`: jobs and sync state are keyed by them.
+    // The names stay `github` and `github-app`: jobs and sync state are keyed by them. The gh CLI is
+    // the default (issue #108): `auto` pauses it once this install's own GitHub App key is set.
     jobSources: [
-      { name: 'github', plugin: 'github-gh', options: { enabled: false } },
+      { name: 'github', plugin: 'github-gh', options: { enabled: 'auto' } },
       { name: 'github-app', plugin: 'github-app' },
     ],
     machines: { name: 'local', plugin: 'local', options: { lanes: 4 } },

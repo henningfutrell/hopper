@@ -145,11 +145,11 @@ describe('job-source instances', () => {
     expect(host.report().config.error).toMatch(/jobSources.*twice|twice/);
   });
 
-  it('no jobSources section: the built-in instances — github disabled, github-app with no identity or key; neither runs until authors are set', async () => {
+  it('no jobSources section: the built-in instances — github on auto (the gh CLI, #108), github-app with no identity or key; neither runs until authors are set', async () => {
     const { host } = start({ file: 'version: 1\n' });
     await host.start();
     expect(host.report().jobSources.instances.map((i) => i.instance)).toEqual([
-      { name: 'github', plugin: 'github-gh', options: { enabled: false } },
+      { name: 'github', plugin: 'github-gh', options: { enabled: 'auto' } },
       { name: 'github-app', plugin: 'github-app' },
     ]);
     for (const i of host.report().jobSources.instances) expect(i).toMatchObject({ active: null, reason: expect.stringMatching(/authors/) });
