@@ -1,6 +1,8 @@
 export { GitHubApiError, isPermanent } from './api.ts';
 export type { GitHubApi, GitHubComment, GitHubIssue, GitHubProjectItem } from './api.ts';
 export { createGhCliApi } from './gh-cli.ts';
+export { createGhLogin } from './gh-login.ts';
+export type { GhLoginOptions } from './gh-login.ts';
 export { createFakeGitHub } from './fake.ts';
 export type { FakeAppIdentity, FakeGitHub } from './fake.ts';
 export { CONFIG_URL, CREATE_APP_HINT, createGitHubSource } from './source.ts';

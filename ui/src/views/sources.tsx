@@ -7,6 +7,7 @@ import { useNow } from '@/hooks/use-now';
 import { ago } from '@/model/format';
 import type { SourceStatus } from '@/model/wire';
 import { useHopper } from '@/store';
+import { GhLoginPanel } from './gh-login';
 
 const list = (v: unknown) => (Array.isArray(v) ? v.join(', ') : String(v));
 const str = (v: unknown) => (typeof v === 'string' ? v : undefined);
@@ -50,7 +51,12 @@ function SourceCard({ s }: { s: SourceStatus }) {
 
 export function Sources() {
   const sources = useHopper((s) => s.sources);
-  return sources.length
-    ? <div className="grid gap-3 lg:grid-cols-2">{sources.map((s) => <SourceCard key={s.name} s={s} />)}</div>
-    : <Panel title="Sources" icon={Inbox}><Empty>no job sources configured</Empty></Panel>;
+  return (
+    <div className="grid gap-3 lg:grid-cols-2">
+      <GhLoginPanel />
+      {sources.length
+        ? sources.map((s) => <SourceCard key={s.name} s={s} />)
+        : <Panel title="Sources" icon={Inbox}><Empty>no job sources configured</Empty></Panel>}
+    </div>
+  );
 }

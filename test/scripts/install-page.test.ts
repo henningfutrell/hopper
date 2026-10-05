@@ -70,6 +70,16 @@ describe('the install page', () => {
     expect(podman).toContain('loginctl enable-linger');
   });
 
+  // Issue #138: podman-compose refuses `exec -it` (exec is interactive with a terminal by default), and
+  // gh logs in from the UI, so nothing about GitHub needs a terminal in the container.
+  it('logs gh in from the UI, and runs no `compose exec -it`', () => {
+    const podman = page.slice(page.indexOf('id="podman"'), page.indexOf('id="first-job"'));
+    expect(page).not.toContain('exec -it');
+    expect(podman).not.toContain('gh auth login');
+    expect(podman).toMatch(/Log in to GitHub/);
+    expect(podman).toContain('podman compose exec hopper claude');
+  });
+
   it('covers the gh CLI path only, not a GitHub App (issue #113)', () => {
     expect(page).not.toMatch(/GitHub App/);
   });

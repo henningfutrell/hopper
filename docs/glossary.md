@@ -132,6 +132,7 @@ synonyms. Rename here first, in the same commit as everything else.
 | **LAN peer** | A CIDR range a LAN request may come from (`HOPPER_LAN_PEERS`). Any other non-loopback peer is refused. | allowlist |
 | **Device link** | `http://<LAN name>:<port>/#login=<code>`: a fresh login code as a link a logged-in browser hands another device, shown also as a QR code that changes when its code is used or expires. Works once, for 10 minutes. | pairing link, invite |
 | **Payload version** | `schemaVersion` on every event: the version of that event type's payload schema. | |
+| **gh login** | Logging the gh CLI in to GitHub from the UI (Sources → Log in to GitHub): the hopper runs gh's device flow without a terminal and shows its **device code**, which the GitHub user enters at github.com/login/device. The login is gh's own, kept in gh's config; the hopper keeps none. `GhLoginStatus`, `GET /api/gh-login`, `POST /ui/api/gh-login`. | GitHub sign-in (sign-in is the UI session's) |
 | **GitHub App** | hopper's own GitHub identity (`hopper-<owner>[bot]`), created by the owner via the manifest flow. One per hopper: its private key is that hopper's alone, never shared or reused (issue #108). The other way in, and the default, is the gh CLI as the owner. | bot account |
 | **Installation** | Where the owner installed the app; its repos are the only ones the `github-app` source scans. | |
 | **Bot login** | The app's author name on GitHub; how old hopper comments are identified for the context filter (the marker is secondary). | |

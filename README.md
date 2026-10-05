@@ -23,7 +23,8 @@ Five steps, in this order. Each links to its section below.
 1. **[Run it](#run-it)** — recommended: the published image with Podman, from one compose file;
    or one line installs the daemon, its database and its herdr session on this host.
 2. **[Sign in](#sign-in)** — one command opens the UI, signed in.
-3. **[Connect GitHub](#connect-github)** — `gh auth login`, as you. That is the default; a GitHub App
+3. **[Connect GitHub](#connect-github)** — log gh in as you: **Log in to GitHub** in the UI's Sources
+   view (or `gh auth login` on a host). That is the default; a GitHub App
    of your own is the other path.
 4. **[Give it jobs](#give-it-jobs)** — say whose GitHub issues it takes, then label an issue
    `hopper`.
@@ -61,8 +62,8 @@ mkdir hopper && cd hopper
 curl -fsSLO https://henningfutrell.github.io/hopper/compose.yaml      # compose.yaml in this repository
 podman compose up -d
 podman compose exec hopper hopper login-code --link http://127.0.0.1:4790   # open the printed link
-podman compose exec -it hopper gh auth login                          # once; kept in its home volume
-podman compose exec -it hopper claude                                 # once: /login, then /exit
+podman compose exec hopper claude                                    # once: /login, then /exit
+# GitHub: the UI's Sources view → Log in to GitHub (once; kept in the home volume)
 systemctl --user enable podman-restart.service                        # once: start it again after a reboot
 ```
 
@@ -153,10 +154,15 @@ gh auth login          # GitHub.com → HTTPS → log in with a web browser
 gh auth status         # must say "Logged in to github.com account <you>"
 ```
 
-That is all: the `github` source starts on its own once gh is signed in (no restart), and pauses
-while a GitHub App key is set (`enabled: auto`). With Podman, sign in inside the container
-(`podman compose exec -it hopper gh auth login`), or put a token for your account in `.env` as
-`GH_TOKEN` (`gh auth token` prints one on a machine where gh is signed in).
+Or, on any install, from the UI: **Sources** → **Log in to GitHub** (an admin). The hopper runs gh's
+own device flow and shows its code and `https://github.com/login/device`; enter the code there as the
+GitHub user the hopper should act as. gh keeps the login in its own config — with Podman, in the
+container's home volume, so it outlives restarts and upgrades. This is the way in a container: no
+terminal, no token in `.env`. A `GH_TOKEN` in the environment overrides gh's login; the panel says
+so, and asks you to remove it.
+
+That is all: the `github` source starts on its own once gh is logged in (no restart), and pauses
+while a GitHub App key is set (`enabled: auto`).
 
 ### A GitHub App of your own
 
@@ -183,7 +189,8 @@ hopper only. One App, one key, one hopper.
 
 Named so you know they are not missing steps. None is the path for a self-hosted hopper today:
 
-- **Sign in to GitHub from the UI** (an OAuth app, or a fine-grained personal access token pasted in).
+- **A GitHub token kept by the hopper** (an OAuth app of the hopper's, or a fine-grained personal
+  access token pasted into the UI). Logging gh in from the UI is built (above), and the login stays gh's.
 - **A hosted relay**: one App that somebody else runs, which forwards issues to many hoppers.
 
 ## Give it jobs

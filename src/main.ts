@@ -32,7 +32,7 @@ import { ensurePluginsDocument } from './plugins/builtin-instances.ts';
 import { createDetectionKit } from './plugins/detect.ts';
 import { createQuestionService } from './questions/index.ts';
 import { logFailures } from './engine/failure-log.ts';
-import { createSourceSync, idleStatus, withFixedStatuses, type GitHubApi, type SourceSync } from './sources/index.ts';
+import { createGhLogin, createSourceSync, idleStatus, withFixedStatuses, type GitHubApi, type SourceSync } from './sources/index.ts';
 import { runtimeSecrets } from './secrets/runtime.ts';
 import { openStore } from './store/index.ts';
 import { createInstallScriptBuilder, createRestarter, createUpdater, renameBoot, RESTART_EXIT_CODE, restartBlockers } from './update/index.ts';
@@ -273,6 +273,8 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   });
   const server = createServer({
     engine, store, dispatcher, questions, clock, version: VERSION, sources: registry, plugins, pluginStore, updater,
+    // gh login (issue #138): the gh on the daemon's PATH, the github-gh source's default `bin`.
+    ghLogin: createGhLogin({ bin: 'gh', env }),
     secretProblem: (secretEnv) => secretProblem(secret, secretEnv),
     webhooksEditor: createWebhooksEditor({ store }),
     port: () => port, sessionHours: config.uiSessionHours, signIn,

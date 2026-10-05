@@ -3807,10 +3807,11 @@ set it up, and is never steered toward a shared App private key.
   apart.
 - **`install.sh` names the path** at the end of an install: the App when its key is in `daemon.env`,
   the gh CLI when it is signed in, else the next step for both.
-- **Not built, named only** (README "Connect GitHub"): GitHub sign-in from the UI (OAuth, or a
-  fine-grained personal access token pasted in), and a hosted relay App forwarding to many hoppers.
-  Either would put a credential, or another party, where the hopper now has neither; neither is the
-  path for a self-hosted hopper.
+- **Not built, named only** (README "Connect GitHub"): a GitHub credential the hopper keeps (its own
+  OAuth app, or a fine-grained personal access token pasted in), and a hosted relay App forwarding to
+  many hoppers. Either would put a credential, or another party, where the hopper now has neither;
+  neither is the path for a self-hosted hopper. Logging gh in from the UI is built ("gh login", issue
+  #138): the login stays gh's own, as with `gh auth login`.
 
 ## Plugin store (issue #75, 2026-10-05)
 
@@ -3929,4 +3930,52 @@ in the database.
 - **A subscription naming a variable outside `WEBHOOK_SECRET_*`** (possible before, from the
   document by hand) stays as it is: an edit never changes `secretEnv`. A new one names a
   `WEBHOOK_SECRET_*` variable; renaming the variable is remove + add.
+
+## gh login (issue #138, 2026-10-05)
+
+Owner request: the GitHub path for a hopper in Podman was bad; replace it with one that works there.
+
+**What was bad.** The container docs said `podman compose exec -it hopper gh auth login`, or
+`GH_TOKEN` in `.env`. podman-compose refuses `exec -it` (`unrecognized arguments: -it`; its exec is
+interactive with a terminal by default), so the recommended runtime failed at the first GitHub step.
+`gh auth login` then asked three questions in a terminal to reach the one thing that matters, the
+device code. `GH_TOKEN` meant copying a token out of another machine's gh into a plain file, where it
+also overrides any login and is read only when the container is created.
+
+**The replacement: gh's own device flow, run by the hopper.** The Sources view has a **GitHub (gh)**
+panel; **Log in to GitHub** (admin) posts `POST /ui/api/gh-login` `{ action: 'start' }`. The hopper runs
+`gh auth login --web --hostname github.com --git-protocol https` with no terminal (stdin closed): on
+that path gh asks nothing, prints its device code and `https://github.com/login/device` on stderr, and
+polls GitHub until the code is approved or expires. The hopper reads the two from gh's output and
+answers them (`GhLoginStatus` `waiting`); the panel shows them and reads `GET /api/gh-login` every 2 s
+until gh exits. Exit 0 → `logged-in` (with the account from `gh auth status`); otherwise `failed` with
+gh's last line. `{ action: 'cancel' }` ends a waiting gh. One login at a time: a start while one waits
+answers the same code. No terminal, no compose provider differences, no token to copy, the same on a
+host install as in a container.
+
+- **The hopper keeps nothing.** gh stores the login in its own config, exactly as `gh auth login`
+  does: in a container, `/home/node/.config/gh` on the `home` volume, so it outlives restarts and
+  upgrades. git already reaches GitHub through `gh auth git-credential` (the image's system git
+  config). The device code is GitHub's and useless without the user's approval on github.com; it is
+  never logged.
+- **A token variable wins over a login.** With `GH_TOKEN` or `GITHUB_TOKEN` set, gh uses it and refuses
+  to log in; a start then answers `failed` with the variable's name and what to do (remove it, restart),
+  and runs no gh. A valid one shows as `logged-in`.
+- **No gh** → `unavailable` (the panel is hidden; a start is 409). The gh is the one on the daemon's
+  `PATH`, the github-gh source's default `bin`.
+- **Seams.** `GhLogin` port (`ports.ts`); adapter `src/sources/github/gh-login.ts` (gh CLI through
+  `child_process`, no shell); routes `src/http/gh-login.ts` (read) and `/ui/api/gh-login` (admin).
+  The github-gh source's needs-setup command now names the panel first:
+  `Sources → Log in to GitHub, or gh auth login`.
+- **Claude Code** keeps its sign-in in the container (`podman compose exec hopper claude`, `/login`),
+  now without `-it`.
+- **Not built.** A newer gh in the image (Debian bookworm's is 2.23.0; its device flow and
+  `auth git-credential` are all the hopper uses). Logging gh out from the UI (`gh auth logout` in the
+  container, or `down -v`).
+
+**Verification:** `test/integration/gh-login.test.ts` (a stand-in gh on `PATH`, the real daemon and
+HTTP edge: the device code, one flow at a time, approve → logged in with the account, deny → failed
+and a new start, cancel, a token variable, no gh) and `test/scripts/install-page.test.ts` (no
+`exec -it`; GitHub from the UI). Live: the published image's gh 2.23.0 with stdin closed printed the
+code and URL and waited.
 
