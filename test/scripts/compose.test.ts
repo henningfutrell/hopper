@@ -91,11 +91,11 @@ describe('compose.yaml with a .env beside it', () => {
     expect(hopper.environment?.GH_TOKEN).toBe('t0');
   });
 
-  it('moves the UI port, and builds from another source', () => {
-    const hopper = svc(render('HOPPER_PORT=4800\nHOPPER_SOURCE=/src/hopper\n'), 'hopper');
-    expect(hopper.ports?.[0]?.published).toBe('4800');
+  it('moves the UI port on both sides, so the Host the browser sends names the daemon\'s port; builds from another source', () => {
+    const hopper = svc(render('JOB_HOPPER_PORT=4800\nHOPPER_SOURCE=/src/hopper\n'), 'hopper');
+    expect(hopper.ports).toEqual([expect.objectContaining({ host_ip: '127.0.0.1', published: '4800', target: 4800 })]);
+    expect(hopper.environment?.JOB_HOPPER_PORT).toBe('4800');
     expect(hopper.build?.context).toBe('/src/hopper');
-    expect(hopper.environment?.HOPPER_PORT).toBeUndefined();
   });
 });
 
