@@ -24,7 +24,7 @@ let dir: string;
 let client: Client | undefined;
 afterEach(async () => { await client?.stop(); client = undefined; rmSync(dir, { recursive: true, force: true }); });
 
-async function olderClient(): Promise<{ install: string; loaded: string[]; transport: { machine: string; socket: string; token: () => string } }> {
+async function olderClient(restartOnLoad = false): Promise<{ install: string; loaded: string[]; transport: { machine: string; socket: string; token: () => string } }> {
   dir = mkdtempSync(join(tmpdir(), 'jh-keeper-'));
   process.env.FAKE_HERDR_DIR = dir;
   process.env.FAKE_HERDR_RUNNING = '1';
@@ -34,7 +34,7 @@ async function olderClient(): Promise<{ install: string; loaded: string[]; trans
   mkdirSync(join(dir, 'clients'), { mode: 0o700 });
   const socket = clientSocket(dir, 'studio');
   const loaded: string[] = [];
-  client = await startTestClient(socket, { token: () => TOKEN, herdrBin: HERDR, session: 'job-hopper', installDir: install, onLoaded: (id) => loaded.push(id) });
+  client = await startTestClient(socket, { token: () => TOKEN, herdrBin: HERDR, session: 'job-hopper', installDir: install, onLoaded: (id) => { loaded.push(id); if (restartOnLoad) void client?.stop(); } });
   return { install, loaded, transport: { machine: 'studio', socket, token: () => TOKEN } };
 }
 
@@ -57,6 +57,16 @@ describe('keeping a client target on the hopper\'s release', () => {
     expect(loaded).toEqual([HOPPERS.id]);
     expect(readRelease(install)).toEqual(HOPPERS);
     expect(lines.join('\n')).toMatch(new RegExp(`client studio: loaded release ${HOPPERS.id}`));
+  });
+
+  it('a client that stops its tunnel to restart, as main.ts does, still gets its answer to the hopper first', async () => {
+    const { loaded, transport } = await olderClient(true);
+    const lines: string[] = [];
+    const keep = createClientReleaseKeeper({ release: HOPPERS, logger: { info: (l) => lines.push(l), warn: (l) => lines.push(l) } });
+    await keep(transport, () => false);
+    expect(loaded).toEqual([HOPPERS.id]);
+    expect(lines.join('\n')).toMatch(new RegExp(`client studio: loaded release ${HOPPERS.id}`));
+    expect(lines.join('\n')).not.toMatch(/failed/);
   });
 
   it('a client with no tunnel is offline, and nothing is tried', async () => {
