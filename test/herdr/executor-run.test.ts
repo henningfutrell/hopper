@@ -114,6 +114,13 @@ describe('herdr-claude executor: run', () => {
     expect(workTrees).toEqual([`${homedir()}/proj`]);
   });
 
+  it('reports its work tree when reattached too, so a job started before a restart or an update shows where it works (issue #166)', async () => {
+    const { executor } = setup({ turns: [DONE] });
+    const { ctx, workTrees } = contextFor(jobWith({ prompt: 'go', cwd: '/w/repo' }));
+    await executor.reattach!(ctx);
+    expect(workTrees).toEqual(['/w/repo']);
+  });
+
   it('expands ~ in the cwd', async () => {
     const { herdr, executor } = setup({ turns: [DONE] });
     await executor.run(contextFor(jobWith({ prompt: 'go', cwd: '~/proj' })).ctx);
