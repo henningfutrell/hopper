@@ -145,6 +145,8 @@ synonyms. Rename here first, in the same commit as everything else.
 | **Restart blocker** | A running job a restart would lose — its executor is non-idempotent and cannot reattach. Applying an update waits until there is none. | |
 | **Delivery** | One attempt series sending one event to one subscription. `pending`, `retrying`, `delivered`, `failed`. | |
 | **API reference** | The daemon's description of its own HTTP API (issue #68): the OpenAPI document `src/http/openapi.ts` builds, at `/docs/openapi.json`, rendered by Scalar at `/docs/`. Parameters and bodies are the schemas the routes parse with; the daemon refuses to start when a route under `/api/` or `/ui/` and the reference disagree. | API docs, swagger, spec |
+| **Overview panel** | One part of the Overview the overview layout places: the numbers (KPI cards), lane timeline, attention, lanes, waiting, ended, ended per hour, usage, live activity. | widget, tile, card |
+| **Overview layout** | The viewer's arrangement of the Overview (issue #73): which overview panels show, in what order, how wide (a third, two thirds or the full row), and each panel's settings (lane timeline window, ended-per-hour hours, live activity events). Set from the Overview's Customize; kept per browser (`localStorage` `jh_overview`), not by the hopper. `ui/src/model/overview-layout.ts`. | dashboard config, widgets |
 
 ## Events
 
