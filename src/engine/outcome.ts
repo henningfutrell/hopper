@@ -34,7 +34,8 @@ function ask(c: EngineContext, job: Job, lane: Lane | undefined, laneId: LaneId,
   return { kind: 'question', questionId: q.id };
 }
 
-function releaseLane(c: EngineContext, lane: Lane | undefined, at: string): void {
+/** Frees a lane whose job no longer runs on it: a draining one closes, any other goes idle. */
+export function releaseLane(c: EngineContext, lane: Lane | undefined, at: string): void {
   if (!lane) return;
   if (lane.state === 'draining') {
     c.store.lanes.close(lane.id);

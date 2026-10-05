@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- A lane shows as running only while a job is actually running on it; a lane whose job has ended no longer stays shown as running.
 - A newer version is offered within about a minute of being published, instead of up to a quarter of an hour later.
 - Each lane shows the folder its job works in, and every lane is named with its machine — on the lane board, the timeline, the decision log and the event list — so two lanes with the same number on different machines no longer look the same.
 - For the levels that answer questions and for usage readings, you now pick the machine they run on from your list of machines instead of typing it, and one must always be picked. This machine is in that list like any other; settings that named no machine now name this one.

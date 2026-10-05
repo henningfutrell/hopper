@@ -1,7 +1,8 @@
 // One engine pass: gather inputs → decide() → skip a no-op → apply in one transaction.
 import { decide } from '../decider/index.ts';
-import type { Decision, DecisionInputs, Job, LaneId } from '../domain/types.ts';
+import type { Decision, DecisionInputs, Job, Lane, LaneId } from '../domain/types.ts';
 import { nowIso, type EngineContext } from './context.ts';
+import { releaseLane } from './outcome.ts';
 import { queueOrder } from './queue-order.ts';
 
 export interface Claim { jobId: string; laneId: LaneId }
@@ -80,10 +81,26 @@ function apply(c: EngineContext, d: Decision): Claim[] {
   return claims;
 }
 
+/**
+ * A lane is held only by a job claimed or running on it (issue #181). One whose job ended without
+ * its outcome freeing the lane — cancelled while no runner held it, or a runner that stopped before
+ * recording — is freed here, so it never shows running, or blocks a Decision, for good.
+ */
+function freeStrandedLanes(c: EngineContext): void {
+  const { store } = c;
+  const runs = (l: Lane): boolean => {
+    const job = l.jobId ? store.jobs.get(l.jobId) : undefined;
+    return !!job && (RUNNING as readonly string[]).includes(job.status) && job.laneId === l.id;
+  };
+  const stranded = store.lanes.list().filter((l) => l.state !== 'idle' && !runs(l));
+  if (stranded.length) store.tx(() => { for (const l of stranded) releaseLane(c, l, nowIso(c)); });
+}
+
 /** Returns the claims whose executors the caller must start, outside the transaction. */
 export async function decisionStep(c: EngineContext, trigger: string, decisionId: string): Promise<Claim[]> {
   const inputs = await gather(c, trigger);
   if (c.stopping()) return [];
+  freeStrandedLanes(c);
   const decision = decide(inputs(), decisionId);
   if (isNoOp(decision)) return [];
   return c.store.tx(() => apply(c, decision));
