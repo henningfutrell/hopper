@@ -10,7 +10,7 @@ import { BUILTIN_PLUGINS } from '../../src/plugins/builtin.ts';
 import herdrClaude, { herdrClaudePlugin } from '../../src/plugins/executor/herdr-claude/index.ts';
 import testExecutor from '../../src/plugins/executor/test/index.ts';
 import { optionsJsonSchema, parseOptions } from '../../src/plugins/options.ts';
-import jevRouter from '../../src/plugins/router/jev-router/index.ts';
+import gateRouter from '../../src/plugins/router/gate-router/index.ts';
 import type { PluginDefinition, Role } from '../../src/plugins/sdk.ts';
 import { createFakeHerdrClient } from '../../src/executors/herdr/index.ts';
 import { fakeKit, fixedClock, useTempDirs } from './support.ts';
@@ -97,7 +97,7 @@ describe('command-bearing options carry the mark into JSON Schema (design.md "UI
     ['herdr-claude', herdrClaude, ['bin', 'claudeBin', 'args', 'cwd']],
     ['claude-cli', claudeCli, ['bin']],
     ['claude-cli-assessor', claudeCliAssessor, ['bin']],
-    ['jev-router', jevRouter, ['jevSrc', 'python', 'claudeBin']],
+    ['gate-router', gateRouter, ['grokBotJevSrc', 'python', 'claudeBin']],
   ] as [string, PluginDefinition, string[]][])('%s', (_id, def, marked) => {
     const p = props(def);
     const bearing = Object.keys(p).filter((k) => p[k]!.commandBearing === true).sort();

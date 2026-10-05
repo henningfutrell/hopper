@@ -67,7 +67,7 @@ Version 2 (`docs/schemas/job.prioritized.v2.json`). The router's advice arrived 
     "reason": "ok",
     "details": {
       "intent": "x",
-      "jevUsed": true
+      "gatesAsked": true
     },
     "source": "fake",
     "at": "2026-10-02T00:00:00.000Z"

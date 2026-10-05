@@ -30,10 +30,10 @@ const table: [string, Partial<JobSpec>, string, boolean][] = [
 describe('fake router precedence (test double at the Router seam)', () => {
   it('is named fake', () => expect(router.name).toBe('fake'));
 
-  it.each(table)('%s', async (_name, spec, action, jevUsed) => {
+  it.each(table)('%s', async (_name, spec, action, gatesAsked) => {
     const advice = await router.advise(makeJob(spec));
     expect(advice.action).toBe(action);
-    expect(advice.details.jevUsed).toBe(jevUsed);
+    expect(advice.details.gatesAsked).toBe(gatesAsked);
     expect(advice.source).toBe('fake');
     expect(advice.at).toBe('2026-10-02T12:00:00.000Z');
     expect(advice.reason).not.toBe('');

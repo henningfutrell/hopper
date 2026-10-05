@@ -47,7 +47,7 @@ describe('fieldKind', () => {
 
 describe('instanceState', () => {
   const report = {
-    router: { instance: { name: 'jev', plugin: 'jev-router' }, active: 'pass-through', fallback: true, reason: 'no python' },
+    router: { instance: { name: 'gate-router', plugin: 'gate-router' }, active: 'pass-through', fallback: true, reason: 'no python' },
     answerer: { instance: null, active: null, fallback: false },
     assessor: { instance: { name: 'fable', plugin: 'claude-cli-assessor' }, active: 'claude-cli-assessor', fallback: false },
     executors: { instances: [{ instance: { name: 'test', plugin: 'test' }, detection: { status: 'available' }, active: 'test' }] },
@@ -59,7 +59,7 @@ describe('instanceState', () => {
 
   it('a live role: active, or the fallback answering', () => {
     expect(instanceState(report, 'assessor', 'fable')).toMatchObject({ tone: 'ok', label: 'active' });
-    expect(instanceState(report, 'router', 'jev')).toMatchObject({ tone: 'warn', label: 'fallback: pass-through', reason: 'no python' });
+    expect(instanceState(report, 'router', 'gate-router')).toMatchObject({ tone: 'warn', label: 'fallback: pass-through', reason: 'no python' });
   });
 
   it('a restart role: active, cannot run (with the reason), or not built yet (restart pending)', () => {

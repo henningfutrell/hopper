@@ -54,7 +54,7 @@ describe('jobs', () => {
     const path = t.url();
     const s = t.open(path);
     const j = s.jobs.create(spec, 70);
-    const advice = { action: 'chat_only' as const, reason: 'r', details: { x: 1, jevUsed: true }, source: 'fake', at: 'a' };
+    const advice = { action: 'chat_only' as const, reason: 'r', details: { x: 1, gatesAsked: true }, source: 'fake', at: 'a' };
     const u = s.jobs.update(j.id, { advice: advice, status: 'finished', result: { ok: [1] }, approved: true });
     s.close();
     const s2 = t.open(path);

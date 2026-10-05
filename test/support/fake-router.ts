@@ -1,5 +1,5 @@
 // The fake router: a test double at the ports.ts `Router` seam (never a plugin). Deterministic, no
-// network; mirrors grok-bot-jev's router precedence from job metadata (design.md "Jev").
+// network; mirrors grok-bot-jev's router precedence from job metadata (design.md "Gate router").
 import type { Clock, Router } from '../../src/domain/ports.ts';
 import type { Advice, AdviceAction, Job } from '../../src/domain/types.ts';
 
@@ -34,8 +34,8 @@ export function createFakeRouter(o: { clock: Clock }): Router {
     name: 'fake',
     async advise(job: Job): Promise<Advice> {
       const at = o.clock.now().toISOString();
-      if (bypassed(job)) return { action: 'proceed_full', reason: 'bypass marker', details: { jevUsed: false }, source: 'fake', at };
-      return { ...classify(job), details: { jevUsed: true }, source: 'fake', at };
+      if (bypassed(job)) return { action: 'proceed_full', reason: 'bypass marker', details: { gatesAsked: false }, source: 'fake', at };
+      return { ...classify(job), details: { gatesAsked: true }, source: 'fake', at };
     },
   };
 }

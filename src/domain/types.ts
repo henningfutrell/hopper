@@ -36,15 +36,15 @@ export interface JobSpec {
   payload: Record<string, unknown>;
   /** 0..100, higher runs first. Default 50. */
   priority?: number;
-  /** Short human goal; given to the router (Jev reads it as `goal`). */
+  /** Short human goal; given to the router (grok-bot-jev's router reads it as `goal`). */
   goal?: string;
-  /** Kind hint for the router (Jev's `kind`): chat | lookup | research | browser | coding | write | account. */
+  /** Kind hint for the router (grok-bot-jev's `kind`): chat | lookup | research | browser | coding | write | account. */
   kind?: string;
   /** Who pushed it (e.g. "grok-bot"). */
   submittedBy?: string;
   /** Pin to a machine; absent = any. */
   machineId?: MachineId;
-  /** Free metadata for the router (Jev state: cached_artifact, prior_error, same_error_count, ...). */
+  /** Free metadata for the router (grok-bot-jev state: cached_artifact, prior_error, same_error_count, ...). */
   meta?: Record<string, unknown>;
   /** The routing rule that set this job's machine, executor or priority at intake (issue #18). */
   routedBy?: RoutedBy;
@@ -120,9 +120,9 @@ export type AdviceAction =
 export interface Advice {
   action: AdviceAction;
   reason: string;
-  /** The router's own details verbatim (jev-router: intent, confidences, jevUsed, ...). */
+  /** The router's own details verbatim (gate-router: intent, confidences, gatesAsked, gatesBy, ...). */
   details: Record<string, unknown>;
-  /** Who produced it: the router plugin ("jev-router", "pass-through", ...), or "fallback". */
+  /** Who produced it: the router plugin ("gate-router", "pass-through", ...), or "fallback". */
   source: string;
   at: string;
 }

@@ -27,8 +27,8 @@ async function start(o: { before?: (dbPath: string) => void; plugins?: Record<st
 
 const installAlwaysProceed = (dbPath: string) => cpSync(ALWAYS_PROCEED_DIR, join(dirname(dbPath), 'plugins', 'always-proceed'), { recursive: true });
 
-// jevSrc has no default: without it jev-router needs setup and is never chosen, whatever is on this machine.
-describe('router chosen from what is detected, no Jev checkout', () => {
+// grokBotJevSrc has no default: without it gate-router needs setup and is never chosen, whatever is on this machine.
+describe('router chosen from what is detected, no grok-bot-jev checkout', () => {
   it('no router in plugins.yaml → pass-through, chosen, not a fallback; /api/health and /api/router say so', async () => {
     const a = await start();
     const health = (await a.api('GET', '/api/health')).body;
@@ -54,22 +54,22 @@ describe('router chosen from what is detected, no Jev checkout', () => {
     });
     const ids = body.plugins.map((p: { id: string; builtin: boolean }) => [p.id, p.builtin]).sort();
     expect(ids).toEqual([
-      ['always-escalate', true], ['always-proceed', false], ['claude-cli', true], ['claude-cli-assessor', true], ['claude-plan', true], ['command', true], ['github-app', true], ['github-gh', true],
-      ['grokbot-routine', true], ['herdr-claude', true], ['jev-router', true], ['local', true], ['newest-first', true], ['oldest-first', true], ['pass-through', true], ['priority', true],
+      ['always-escalate', true], ['always-proceed', false], ['claude-cli', true], ['claude-cli-assessor', true], ['claude-plan', true], ['command', true], ['gate-router', true], ['github-app', true], ['github-gh', true],
+      ['grokbot-routine', true], ['herdr-claude', true], ['local', true], ['newest-first', true], ['oldest-first', true], ['pass-through', true], ['priority', true],
       ['test', true],
     ]);
-    const jev = body.plugins.find((p: { id: string }) => p.id === 'jev-router');
-    expect(jev).toMatchObject({ role: 'router', describe: expect.any(String), detection: { status: 'needs-setup' }, options: { type: 'object', properties: { jevSrc: {}, python: {} } } });
+    const gates = body.plugins.find((p: { id: string }) => p.id === 'gate-router');
+    expect(gates).toMatchObject({ role: 'router', describe: expect.any(String), detection: { status: 'needs-setup' }, options: { type: 'object', properties: { grokBotJevSrc: {}, python: {} } } });
     expect(body.errors).toEqual([]);
   });
 
   it('a router named in plugins.yaml that cannot run → pass-through as fallback', async () => {
-    const a = await start({ before: (d) => writePluginsYaml(d, 'version: 1\nrouter: { name: jev, plugin: jev-router, options: { jevSrc: /nonexistent/grok-bot-jev } }\n') });
+    const a = await start({ before: (d) => writePluginsYaml(d, 'version: 1\nrouter: { name: gate-router, plugin: gate-router, options: { grokBotJevSrc: /nonexistent/grok-bot-jev } }\n') });
     expect((await a.api('GET', '/api/router')).body).toEqual({
-      mode: 'shadow', router: 'jev', plugin: 'pass-through', fallback: true, reason: expect.stringContaining('/nonexistent/grok-bot-jev/src/router.py'),
+      mode: 'shadow', router: 'gate-router', plugin: 'pass-through', fallback: true, reason: expect.stringContaining('/nonexistent/grok-bot-jev/src/router.py'),
     });
     const job = await a.pull({ op: 'echo' });
-    expect(await waitFor(async () => (await a.job(job.id)).advice, { what: 'advice' })).toMatchObject({ source: 'fallback', reason: expect.stringMatching(/^router jev unavailable: /) });
+    expect(await waitFor(async () => (await a.job(job.id)).advice, { what: 'advice' })).toMatchObject({ source: 'fallback', reason: expect.stringMatching(/^router gate-router unavailable: /) });
   });
 });
 

@@ -1,6 +1,6 @@
 // Shadow mode exists to measure the router. A job that starts before the router answers must
 // still have its advice recorded, or shadow mode measures only the jobs that happened to wait.
-// These run the real jev-router (spawning the shim), so they need a Jev checkout; without one
+// These run the real gate-router (spawning the shim), so they need a grok-bot-jev checkout; without one
 // they skip cleanly.
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -11,9 +11,9 @@ import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { manualItem } from '../support/manual-source.ts';
 import { waitFor } from '../support/wait.ts';
 
-const HAVE_JEV = existsSync(join(homedir(), 'workbench/jev-src/grok-bot-jev', 'src', 'router.py'));
+const HAVE_GROK_BOT_JEV = existsSync(join(homedir(), 'workbench/jev-src/grok-bot-jev', 'src', 'router.py'));
 
-describe.skipIf(!HAVE_JEV)('advice that arrives after the job left the queue (real jev-router)', () => {
+describe.skipIf(!HAVE_GROK_BOT_JEV)('advice that arrives after the job left the queue (real gate-router)', () => {
   let t: TestApp | undefined;
   let cleanup: (() => void) | undefined;
 
@@ -32,7 +32,7 @@ describe.skipIf(!HAVE_JEV)('advice that arrives after the job left the queue (re
     expect(done.advice).toBeUndefined(); // the python spawn is slower than an echo job
 
     const advised = await waitFor(async () => (await t!.job(job.id)).advice, { timeoutMs: 10000, what: 'late advice' });
-    expect(advised).toMatchObject({ action: 'proceed_full', source: 'jev-router', details: { jevUsed: false } });
+    expect(advised).toMatchObject({ action: 'proceed_full', source: 'gate-router', details: { gatesAsked: false } });
     const prioritized = (await t.events('types=job.prioritized')).filter((e) => e.jobId === job.id);
     expect(prioritized).toHaveLength(1);
     expect(prioritized[0]!.data).toMatchObject({ mode: 'shadow', statusAtAdvice: 'finished' });
@@ -51,7 +51,7 @@ describe.skipIf(!HAVE_JEV)('advice that arrives after the job left the queue (re
 
     await waitFor(async () => {
       const all = await Promise.all(jobs.map((j) => t!.job(j.id)));
-      return all.every((j) => j.advice?.source === 'jev-router');
+      return all.every((j) => j.advice?.source === 'gate-router');
     }, { timeoutMs: 12000, what: 'advice on every burst job' });
   });
 });

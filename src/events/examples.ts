@@ -2,7 +2,7 @@
 // Used by docs/events.md and by the schema tests.
 import type { EventType } from '../domain/types.ts';
 
-const advice = { action: 'proceed_full', reason: 'ok', details: { intent: 'x', jevUsed: true }, source: 'fake', at: '2026-10-02T00:00:00.000Z' };
+const advice = { action: 'proceed_full', reason: 'ok', details: { intent: 'x', gatesAsked: true }, source: 'fake', at: '2026-10-02T00:00:00.000Z' };
 const start = { jobId: 'j1', laneId: 'm/lane-1', machineId: 'm', effectivePriority: 50, reason: 'idle lane' };
 const lanePlan = { machineId: 'm', current: 0, target: 1, open: 1, close: [], drain: [], reason: 'work waiting' };
 

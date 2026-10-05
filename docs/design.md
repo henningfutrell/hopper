@@ -167,7 +167,7 @@ an idle tick every 2 s would bury the decision log. Every recorded Decision emit
   herdr pane is left as it is), waits up to 5 s, closes the store. Nothing is written or
   cleaned up after that; the next start recovers by the rule above.
 
-## Jev
+## Gate router
 
 Jev (`~/workbench/jev-src/grok-bot-jev`, Python) is a per-request classifier: TypeSafe's
 `system_one` answers intent / reuse_cache / needs_subagent / stop_retry / complexity, and
@@ -175,11 +175,13 @@ Jev (`~/workbench/jev-src/grok-bot-jev`, Python) is a per-request classifier: Ty
 budgets**, so it cannot be the usage source. hopper uses it for what it is: the
 **admission and prioritization layer** per job. Usage budgets come from `UsageSource`.
 
-> **Phase 5:** Jev is one **router plugin**, `jev-router` (`src/plugins/router/jev-router/`);
-> the `JevAdvisor` port is the `Router` port; `fake` is a test double at that seam
-> (`test/support/fake-router.ts`), never configured. Advice no longer has `jevUsed` at top
-> level: jev-router puts it in `details.jevUsed`. Mode is the **router mode**
-> (`settings.routerMode`, `POST /ui/api/router-mode`). The text below describes the shim.
+grok-bot-jev (`~/workbench/jev-src/grok-bot-jev`, Python) is the open-source reference router around
+Jev: its `route_task` asks **gates** — intent / reuse_cache / needs_subagent / stop_retry /
+complexity — through `system_one`, and maps the answers to one action. It has **no notion of
+machines, lanes, or usage budgets**, so it cannot be the usage source. The gate router uses it for
+what it is: the **admission and prioritization layer** per job. Usage budgets come from
+`UsageSource`. `fake` is a test double at the `Router` seam (`test/support/fake-router.ts`), never
+configured. Mode is the **router mode** (`settings.routerMode`, `POST /ui/api/router-mode`).
 
 - `jev-router`: spawns `<python> src/plugins/router/jev-router/jev_shim.py` with JSON on stdin, in its
   own process group (a timeout kills the group, so no `claude` outlives it) and with the Claude Code
@@ -217,8 +219,8 @@ budgets**, so it cannot be the usage source. hopper uses it for what it is: the
 - Job → Jev state: `goal` ← `spec.goal`, `kind` ← `spec.kind`, plus `spec.meta` keys
   `cached_artifact`, `cached_note`, `prior_error`, `same_error_count`, `sources_found`,
   `constraints`.
-- `fake` router (test double): deterministic, no network, mirrors the router's precedence from job
-  metadata: bypass marker → `proceed_full` (jevUsed false); `meta.cached_artifact` →
+- `fake` router (test double): deterministic, no network, mirrors grok-bot-jev's precedence from job
+  metadata: bypass marker → `proceed_full` (gatesAsked false); `meta.cached_artifact` →
   `reuse_cache`; `meta.prior_error` and `same_error_count >= 1` → `stop_retry`; kind
   `lookup` → `run_deterministic`; `chat` → `chat_only`; `account` → `ask_human`;
   `meta.needs_subagent` → `allow_subagent`; `research`/`browser` → `research_capped`; else
@@ -1628,7 +1630,7 @@ A **role** is a slot the engine calls through one port. A **plugin** implements 
 
 | role | port | slots | built-in plugins | reload |
 |---|---|---|---|---|
-| `router` | `Router { name; advise(job) → Advice }` (was `JevAdvisor`) | 1 | `jev-router`, `pass-through` | live |
+| `router` | `Router { name; advise(job) → Advice }` (was `JevAdvisor`) | 1 | `gate-router`, `pass-through` | live |
 | `answerer` | `Answerer { name; answer(req, signal) → { answer, confident, reason } }` | 0..1 | `claude-cli` | live |
 | `assessor` | `Assessor { name; assess(req, draft, signal) → { answer?, escalate, reason } }` | 1 | `claude-cli-assessor`, `always-escalate` | live |
 | `executor` | `Executor` (unchanged) | 1..n | `herdr-claude`, `test` | restart |
@@ -1738,7 +1740,7 @@ Live roles (router, answerer, assessor) swap between calls; restart roles show
 
 ```yaml
 version: 1
-router:    { name: jev, plugin: jev-router, options: { jevSrc: ~/workbench/jev-src/grok-bot-jev, python: python3, claudeBin: claude, model: haiku } }
+router:    { name: gate-router, plugin: gate-router, options: { grokBotJevSrc: ~/workbench/jev-src/grok-bot-jev, python: python3, claudeBin: claude, claudeModel: haiku } }
 answerer:  { name: opus, plugin: claude-cli, options: { model: opus } }
 assessor:  { name: fable, plugin: claude-cli-assessor, options: { model: fable } }
 executors: [ { name: herdr-claude, plugin: herdr-claude, options: { cwd: ~/workbench/app-workflows } }, { name: test, plugin: test } ]
@@ -1781,7 +1783,7 @@ as UI-session mutations.
 
 **Command-bearing options** (owner decision, 2026-10-03, issue #6 option (a)): an
 option that names a program, its arguments, a working directory, an interpreter, or a file
-that is sourced or executed — `bin`, `args`, `cwd`, `python`, `jevSrc`, `claudeBin`, `envFile` and their
+that is sourced or executed — `bin`, `args`, `cwd`, `python`, `grokBotJevSrc`, `claudeBin`, `envFile` and their
 kind. A plugin marks each in its schema with `.meta({ commandBearing: true })`; zod 4 carries
 the mark into `z.toJSONSchema()`, so `/api/plugins` and the UI see it. The UI shows these
 read-only; they are edited only in `plugins.yaml`. Why: a UI session is readable by jobs
@@ -1852,8 +1854,8 @@ stored old events are not rewritten (read raw by version; v1 schemas stay in doc
 
 - **Roles are what exists.** `Role` is `'router'` only; each later slice adds its role to
   `ROLES` (`src/domain/plugins.ts`) with its port. No role is declared before its code.
-- **`detect(sys, options)`.** Detection gets the validated options: whether jev-router can run
-  depends on its `jevSrc` and `python`. The catalogue in `/api/plugins` detects each plugin
+- **`detect(sys, options)`.** Detection gets the validated options: whether gate-router can run
+  depends on its `grokBotJevSrc` and `python`. The catalogue in `/api/plugins` detects each plugin
   with its default options (`{}` parsed); a plugin whose options have no defaults shows
   `needs-setup`. The configured instance is detected with its own options.
 - **Router context carries the router mode.** `create(ctx, options)` gets
@@ -1864,7 +1866,7 @@ stored old events are not rewritten (read raw by version; v1 schemas stay in doc
   <name> unavailable: …`). A router whose `advise` throws (custom plugins may break the
   contract) → fallback advice for that call. `fallback: true` in `/api/health` and
   `/api/router` while either holds, or while the router's own last advice was `source:
-  fallback` (jev-router's shim failing); it clears on the next real advice.
+  fallback` (gate-router's shim failing); it clears on the next real advice.
 - **plugins.yaml in slice 1** (router part superseded by "Router selection"): no file, or a file without `router` → the env-derived instance
   `{ name: jev, plugin: jev-router, options: { jevSrc: HOPPER_JEV_SRC, python:
   HOPPER_PYTHON } }`. An invalid file → the last good router is kept (at start: the
@@ -1877,7 +1879,7 @@ stored old events are not rewritten (read raw by version; v1 schemas stay in doc
   `HOPPER_JEV_MODE` and `HOPPER_JEV_CHEAP_BOOST` keep their names until slice 4 removes
   part-choosing env; they feed `routerMode` and `routerCheapBoost`.
 - **Scratch dir** is `<dataDir>/plugin-data/<id>` — not under the plugin dir, which holds only
-  plugin code. jev-router keeps writing `jev-runs.jsonl` in the data dir.
+  plugin code. gate-router keeps writing `gate-router-runs.jsonl` in the data dir.
 - **Migration 4** (`src/store/migrate-router.ts`, a function migration — the runner now takes
   SQL or a function): `jevUsed` moves into `details.jevUsed` for **every** stored advice
   (fake and fallback rows too), so no field is lost. Decision bodies are renamed including
@@ -1894,7 +1896,7 @@ stored old events are not rewritten (read raw by version; v1 schemas stay in doc
 
 Owner decision: use a router, configurable from what is on the system and swappable; the Fable
 advisor only assesses questions, to decide whether they escalate to the owner. Fable is the **assessor** (`claude-cli-assessor`, model `fable`);
-it never routes. The router was `jev-router` only because the env named it.
+it never routes. The router was `gate-router` only because the env named it.
 
 Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) and
 "`HOPPER_JEV_ADVISOR`":
@@ -1902,7 +1904,7 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
 - **No router named in plugins.yaml** (no file, no `router` section, or an invalid file at
   start) → the host chooses one from what is detected: the first router plugin in catalogue
   order (built-ins in `BUILTIN_PLUGINS` order, then custom) that detects `available` with its
-  default options and starts; the instance is named after the plugin (`jev-router`). None →
+  default options and starts; the instance is named after the plugin (`gate-router`). None →
   `pass-through`, **chosen, not a fallback** (`fallback: false`, advice `source: pass-through`).
   Detection re-runs on every plugins.yaml reload.
 - **Named in plugins.yaml** → that instance, exactly; when it cannot run, pass-through stands in
@@ -2014,7 +2016,7 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
   runnable names only; `/api/plugins` `executors.instances[]` = `{ instance, detection, active,
   reason? }`, `active: null` for one that cannot run.
 - **Command-bearing marks** (`.meta({ commandBearing: true })`): herdr-claude `bin`, `claudeBin`,
-  `args`, `cwd`; claude-cli and claude-cli-assessor `bin`; jev-router `jevSrc`, `python`, `claudeBin`. zod
+  `args`, `cwd`; claude-cli and claude-cli-assessor `bin`; gate-router `grokBotJevSrc`, `python`, `claudeBin`. zod
   carries the mark into `z.toJSONSchema()`; `/api/plugins` shows it. `session` is not marked (it
   names a herdr session, not a program).
 - **Tests:** `AppSeams.herdr` swaps the herdr-claude built-in for `herdrClaudePlugin(seam)`
@@ -3006,7 +3008,7 @@ Owner request: the router, queue sorter and routing rules can be set in the UI; 
 scope. So no rule targets a lane.
 
 **Router.** The Routing view lists every router plugin with its detection. One that cannot run is
-shown with its reason or its setup command and is never offered (on the hopper host `jev-router` is
+shown with its reason or its setup command and is never offered (on the hopper host `gate-router` is
 unavailable while the Jev checkout is missing, so the reason is on screen). Selecting a router uses
 `POST /ui/api/plugins` `select`; shadow/active uses `POST /ui/api/router-mode`; the configured
 instance's options use the shared options form (`ui/src/components/plugin-form.tsx`, also used
@@ -3547,7 +3549,7 @@ redirect a credential:
 | github-app source | `privateKeyEnv` (`GITHUB_APP_PRIVATE_KEY`; a PEM, real newlines or `\n` escapes) + `appId`, `slug` options | `appFile` → github-app.json + .pem |
 | github-gh source | `appKeyEnv` (`GITHUB_APP_PRIVATE_KEY`; null: never pause): `enabled: auto` pauses while it is set | `appFile` readable |
 | grokbot-routine notifier | `urlEnv`, `keyEnv` (`GROKBOT_WEBHOOK_URL`, `GROKBOT_WEBHOOK_KEY`) | `envFile` |
-| jev-router | `TYPESAFE_API_KEY` | `typesafeKeyFile` |
+| gate-router | `TYPESAFE_API_KEY` (Jev, through TypeSafe) | `typesafeKeyFile` |
 | webhook subscription | `secretEnv`, always (from the UI: `WEBHOOK_SECRET_*` only) | inline `secret` (sealed), `secretFile` |
 | identity provider (auth.yaml) | `clientSecretEnv` only; a SAML `idpCert` is public and inline | `clientSecret`, `clientSecretFile`, `idpCertFile` |
 
@@ -3592,7 +3594,7 @@ database from `HOPPER_DATABASE_URL`, else that line of `HOPPER_ENV_FILE` (defaul
 
 `HOPPER_WORK_DIR` (default `<system temp dir>/hopper`) holds scratch only: claude's working
 directory for answerer and assessor calls, each plugin's scratch dir, ssh control sockets, Jev's own
-`jev-runs.jsonl` debug log (Jev's file, not the hopper's state), self-update's mirror and next
+`gate-router-runs.jsonl` debug log (grok-bot-jev's run log, not the hopper's state), self-update's mirror and next
 install. Losing it loses nothing the hopper needs; the host unit points it at the user's cache dir
 (`%C/hopper`) so the update mirror survives restarts. Defaults that named one machine's layout are
 gone: `jevSrc` has no default, and a job's working directory defaults to `~` (herdr-claude `cwd`,

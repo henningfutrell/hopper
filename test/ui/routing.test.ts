@@ -14,7 +14,7 @@ const REPORT = {
   router: { instance: { name: 'pass-through', plugin: 'pass-through' } },
   queueSorter: { instance: { name: 'priority', plugin: 'priority' } },
   plugins: [
-    plugin('jev-router', 'router', { status: 'unavailable', reason: 'no Jev checkout at ~/workbench/jev-src/grok-bot-jev' }),
+    plugin('gate-router', 'router', { status: 'unavailable', reason: 'no grok-bot-jev checkout at ~/workbench/jev-src/grok-bot-jev' }),
     plugin('pass-through', 'router', { status: 'available' }),
     plugin('needs-it', 'router', { status: 'needs-setup', reason: 'not logged in', command: 'tool login' }, false),
     plugin('priority', 'queue-sorter', { status: 'available' }),
@@ -26,7 +26,7 @@ const REPORT = {
 describe('choices', () => {
   it('lists every plugin of the role, the current one marked, the unavailable ones with why and not selectable', () => {
     expect(choices(REPORT, 'router')).toEqual([
-      { id: 'jev-router', describe: 'jev-router does things', builtin: true, current: false, selectable: false, status: 'unavailable', why: 'no Jev checkout at ~/workbench/jev-src/grok-bot-jev' },
+      { id: 'gate-router', describe: 'gate-router does things', builtin: true, current: false, selectable: false, status: 'unavailable', why: 'no grok-bot-jev checkout at ~/workbench/jev-src/grok-bot-jev' },
       { id: 'pass-through', describe: 'pass-through does things', builtin: true, current: true, selectable: true, status: 'available' },
       { id: 'needs-it', describe: 'needs-it does things', builtin: false, current: false, selectable: false, status: 'needs-setup', why: 'not logged in', command: 'tool login' },
     ]);
