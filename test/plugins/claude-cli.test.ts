@@ -108,8 +108,8 @@ describe('claude-cli (answerer)', () => {
     expect(env.KEEP_ME).toBe('yes');
   });
 
-  it('returns the validated draft', async () => {
-    expect(await (await answerer()).answer(req(), signal())).toEqual({ answer: 'use postgres', confident: true, reason: 'rules' });
+  it('returns the validated draft, with the model the CLI reports it ran (modelUsage)', async () => {
+    expect(await (await answerer()).answer(req(), signal())).toEqual({ answer: 'use postgres', confident: true, reason: 'rules', model: 'claude-opus-resolved' });
   });
 
   it.each(['malformed', 'invalid', 'exit1'])('%s output returns { error }', async (mode) => {
@@ -138,15 +138,15 @@ describe('claude-cli-assessor', () => {
     expect(parseOptions(claudeCliAssessor, {})).toEqual({ ok: true, options: { bin: 'claude', model: 'fable', timeoutMs: 180_000 } });
   });
 
-  it('spawns with the same lockdown and the assessment schema { escalate, reason }', async () => {
-    process.env.FAKE_CLAUDE_STRUCTURED = JSON.stringify({ escalate: false, reason: 'routine' });
+  it('spawns with the same lockdown and the assessment schema { answer, escalate, reason }', async () => {
+    process.env.FAKE_CLAUDE_STRUCTURED = JSON.stringify({ answer: 'use sqlite', escalate: false, reason: 'routine' });
     await (await assessor()).assess(req(), draft, signal());
     const { argv, schema } = argvAndSchema();
     expect(argv).toEqual(['-p', '--model', 'fable', '--output-format', 'json', '--json-schema', '<schema>', ...LOCKDOWN_TAIL]);
     expect(schema).toEqual({
       type: 'object',
-      properties: { escalate: { type: 'boolean' }, reason: { type: 'string' } },
-      required: ['escalate', 'reason'],
+      properties: { answer: { type: 'string' }, escalate: { type: 'boolean' }, reason: { type: 'string' } },
+      required: ['answer', 'escalate', 'reason'],
       additionalProperties: false,
     });
     const { env, cwd } = rec();
@@ -156,24 +156,25 @@ describe('claude-cli-assessor', () => {
   });
 
   it('the prompt carries the rules, the job prompt, the question, the draft and the answerer reason', async () => {
-    process.env.FAKE_CLAUDE_STRUCTURED = JSON.stringify({ escalate: true, reason: 'x' });
+    process.env.FAKE_CLAUDE_STRUCTURED = JSON.stringify({ answer: 'a', escalate: true, reason: 'x' });
     await (await assessor()).assess(req(), draft, signal());
     const { stdin } = rec();
     for (const s of ['RULE: prefer sqlite', 'Build the invoicing service', 'Which database should I use?', 'use sqlite', 'the rules prefer it']) expect(stdin).toContain(s);
   });
 
   it.each([
-    [{ escalate: false, reason: 'routine' }, { escalate: false, reason: 'routine' }],
-    [{ escalate: true, reason: 'irreversible' }, { escalate: true, reason: 'irreversible' }],
-  ])('returns a schema-valid assessment %j', async (structured, want) => {
+    [{ answer: 'use sqlite', escalate: false, reason: 'routine' }, { answer: 'use sqlite', escalate: false, reason: 'routine', model: 'claude-fable-resolved' }],
+    [{ answer: 'pick option 1', escalate: true, reason: 'irreversible' }, { answer: 'pick option 1', escalate: true, reason: 'irreversible', model: 'claude-fable-resolved' }],
+  ])('returns a schema-valid assessment %j, with the model that ran', async (structured, want) => {
     process.env.FAKE_CLAUDE_STRUCTURED = JSON.stringify(structured);
     expect(await (await assessor()).assess(req(), draft, signal())).toEqual(want);
   });
 
   it.each([
-    ['escalate as a string', { escalate: 'false', reason: 'r' }],
-    ['escalate missing', { reason: 'r' }],
-    ['reason missing', { escalate: false }],
+    ['escalate as a string', { answer: 'a', escalate: 'false', reason: 'r' }],
+    ['escalate missing', { answer: 'a', reason: 'r' }],
+    ['reason missing', { answer: 'a', escalate: false }],
+    ['answer missing', { escalate: false, reason: 'r' }],
   ])('%s returns { error }', async (_n, structured) => {
     process.env.FAKE_CLAUDE_STRUCTURED = JSON.stringify(structured);
     expect(await (await assessor()).assess(req(), draft, signal())).toEqual({ error: expect.any(String) });

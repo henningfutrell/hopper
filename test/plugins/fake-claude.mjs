@@ -2,7 +2,8 @@
 /* global process, setInterval */
 // Fake `claude` executable. Records argv, stdin, env and cwd to $FAKE_CLAUDE_OUT (JSON), then
 // behaves per $FAKE_CLAUDE_MODE: ok (default) | malformed | invalid | exit1 | hang. In `ok` mode
-// the structured_output is $FAKE_CLAUDE_STRUCTURED (JSON) when set, else an answerer draft.
+// the structured_output is $FAKE_CLAUDE_STRUCTURED (JSON) when set, else an answerer draft, and
+// modelUsage names `claude-<--model>-resolved`, as the real CLI names the model an alias ran.
 import { writeFileSync } from 'node:fs';
 
 let stdin = '';
@@ -22,6 +23,7 @@ process.stdin.on('end', () => {
   }
   process.stdout.write(JSON.stringify({
     type: 'result', is_error: false, result: '',
+    modelUsage: { [`claude-${process.argv[process.argv.indexOf('--model') + 1]}-resolved`]: { outputTokens: 1 } },
     structured_output: process.env.FAKE_CLAUDE_STRUCTURED
       ? JSON.parse(process.env.FAKE_CLAUDE_STRUCTURED)
       : { answer: 'use postgres', confident: true, reason: 'rules' },

@@ -27,11 +27,11 @@ const handled = {
 interface Call { path: string; method: string; headers: Record<string, string>; body?: unknown }
 
 type Role = 'viewer' | 'operator' | 'admin';
-interface Boot { authed: boolean; hash?: string; role?: Role; mutationStatus?: number; needs?: Role; providers?: { name: string; label: string; type: string }[] }
+interface Boot { attempts?: unknown[]; authed: boolean; hash?: string; role?: Role; mutationStatus?: number; needs?: Role; providers?: { name: string; label: string; type: string }[] }
 
 function fakeDaemon(o: Boot) {
   const calls: Call[] = [];
-  const open = { ...question } as Record<string, unknown>;
+  const open = { ...question, attempts: o.attempts ?? [] } as Record<string, unknown>;
   const json = (status: number, b: unknown) => new Response(JSON.stringify(b), { status, headers: { 'content-type': 'application/json' } });
   const routes: Record<string, unknown> = {
     '/api/health': { ok: true, version: '0', routerMode: 'shadow', router: 'pass-through', fallback: false, executors: [], uptimeS: 1 },
@@ -188,6 +188,24 @@ describe('question card', () => {
 });
 
 const badge = () => document.querySelector('a[href="#questions"] [data-slot="nav-badge"]');
+
+describe("the assessor's best answer on an escalated question", () => {
+  const attempts = [
+    { tier: 'opus', role: 'answerer', model: 'claude-opus-x', startedAt: '2026-10-03T20:00:00.000Z', answer: 'wait for the owner', confident: false, outcome: 'drafted' },
+    { tier: 'fable', role: 'assessor', model: 'claude-fable-x', startedAt: '2026-10-03T20:00:01.000Z', answer: 'take option 1', escalate: true, reason: 'the owner picks', outcome: 'escalated' },
+  ];
+
+  it('shows on the trail with the model that ran; Use answer puts it in the answer box to send or edit', async () => {
+    await boot({ authed: true, attempts });
+    await vi.waitFor(() => expect(card()!.querySelector('textarea')).not.toBeNull());
+    expect(card()!.textContent).toContain('take option 1');
+    expect(card()!.textContent).toContain('claude-fable-x');
+    const use = [...card()!.querySelectorAll('button')].filter((b) => b.textContent?.trim() === 'Use answer');
+    expect(use).toHaveLength(1);
+    await click(use[0]);
+    expect(card()!.querySelector('textarea')!.value).toBe('take option 1');
+  });
+});
 
 describe('the Questions badge', () => {
   it('counts the owner\'s unseen questions; opening Questions marks them seen and the badge clears', async () => {

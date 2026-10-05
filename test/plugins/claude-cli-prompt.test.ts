@@ -1,6 +1,6 @@
 // The prompts of the claude question plugins: the answerer drafts on the owner's behalf; the
-// assessor only decides whether the owner must see the question, and reads the question and the
-// draft as untrusted data.
+// assessor gives its own best answer, decides whether the owner must see the question, and reads
+// the question and the draft as untrusted data.
 import { describe, expect, it } from 'vitest';
 import type { AnswerDraft, AnswerRequest } from '../../src/domain/ports.ts';
 import type { Question } from '../../src/domain/types.ts';
@@ -44,13 +44,20 @@ describe('buildAnswerPrompt (claude-cli)', () => {
 });
 
 describe('buildAssessPrompt (claude-cli-assessor)', () => {
-  it('states its sole job: decide whether the owner must see this, never answer', () => {
+  it('states its job: give its own best answer, then decide whether the owner must see this', () => {
     const p = buildAssessPrompt(req(), draft);
-    expect(p).toMatch(/sole job/i);
+    expect(p).toMatch(/best answer/i);
     expect(p).toMatch(/whether the owner must see/i);
-    expect(p).toMatch(/never answer/i);
+    expect(p).toMatch(/"answer": string/);
     expect(p).toMatch(/"escalate": boolean/);
     expect(p).toMatch(/"reason": string/);
+  });
+
+  it('keeps the owner out of the loop: an unsure draft is its to fix, escalation only for a human choice', () => {
+    const p = buildAssessPrompt(req(), { ...draft, confident: false });
+    expect(p).toMatch(/not confident.*answer it yourself/is);
+    expect(p).toMatch(/even when you escalate/i);
+    expect(p).not.toMatch(/you are unsure/i);
   });
 
   it('includes the standing rules, the job prompt, the question, the draft and the answerer reason', () => {
