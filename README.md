@@ -17,8 +17,8 @@ Install page, step by step: https://henningfutrell.github.io/hopper/ (`site/`).
 
 Five steps, in this order. Each links to its section below.
 
-1. **[Run it](#run-it)** — one line installs the daemon, its database and its herdr session on this
-   host.
+1. **[Run it](#run-it)** — recommended: the published image with Podman, from one compose file;
+   or one line installs the daemon, its database and its herdr session on this host.
 2. **[Sign in](#sign-in)** — one command opens the UI, signed in.
 3. **[Connect GitHub](#connect-github)** — `gh auth login`, as you. That is the default; a GitHub App
    of your own is the other path.
@@ -29,21 +29,45 @@ Five steps, in this order. Each links to its section below.
 
 ## What you need
 
-On Windows, all of this goes inside WSL (Ubuntu with systemd on); the install page has the steps:
-https://henningfutrell.github.io/hopper/#windows
+With Podman ([recommended](#with-podman-recommended)): only Podman with a compose provider; the image
+carries the rest. The table is for the install on this host. On Windows, either goes inside WSL; the
+install page has the steps: https://henningfutrell.github.io/hopper/#windows
 
 | | for |
 |---|---|
 | Node.js ≥ 24 | the daemon (TypeScript, run directly) |
 | Postgres (any; `deploy/compose.yaml` has one) | everything the daemon keeps |
-| Docker | the Docker Compose install, the bundled Postgres, `npm test` |
+| Docker | the bundled Postgres of the host install, `npm test` |
 | herdr ([herdr.dev](https://herdr.dev)), at `~/.local/bin/herdr` | the panes jobs run in (`herdr-claude` executor), on each machine that runs Claude jobs |
 | the `claude` CLI, signed in | jobs (on each machine that runs them), the answerer, the assessor, usage readings |
 | the `gh` CLI signed in as you (default), or a GitHub App you create | reading and labelling the GitHub issues that are jobs ([Connect GitHub](#connect-github)) |
 
 ## Run it
 
-Pick one. Each needs a Postgres URL; the bundled one is `deploy/compose.yaml`.
+Pick one. Recommended: the published image with Podman.
+
+### With Podman (recommended)
+
+The daemon, its Postgres and the herdr session jobs run in, all in containers from the public image
+`ghcr.io/henningfutrell/hopper` (`latest` follows `main`; Intel/AMD and ARM): no host install, nothing to
+build, nothing to set first. Needs Podman ≥ 4.7 with `podman-compose` (or Docker's compose; `docker
+compose` works the same everywhere below).
+
+```sh
+mkdir job-hopper && cd job-hopper
+curl -fsSLO https://henningfutrell.github.io/hopper/compose.yaml      # compose.yaml in this repository
+podman compose up -d
+podman compose exec hopper job-hopper login-code --link http://127.0.0.1:4790   # open the printed link
+podman compose exec -it hopper gh auth login                          # once; kept in its home volume
+podman compose exec -it hopper claude                                 # once: /login, then /exit
+systemctl --user enable podman-restart.service                        # once: start it again after a reboot
+```
+
+Jobs run in the container (`/home/node`; clone their repositories there). Settings and secrets: a
+`.env` beside `compose.yaml` (`.env.example`). Upgrade: `podman compose pull && podman compose up -d`.
+Details: `docs/deploy.md` "In containers, with Podman".
+
+The other ways each need a Postgres URL; the bundled one is `deploy/compose.yaml`.
 
 ### On this host, with one line
 
@@ -72,24 +96,6 @@ bash ~/.local/lib/job-hopper/scripts/open-ui.sh        # signs this browser in a
 
 `install.sh` writes the database URL to `~/.config/job-hopper/daemon.env` (mode 600); put secrets
 there too. Run it again to upgrade. Remove with `scripts/uninstall.sh`.
-
-### With Docker Compose
-
-The daemon, its Postgres and the herdr session jobs run in, all in containers: no host install, nothing
-to set first. Needs Docker with compose, nothing else.
-
-```sh
-mkdir job-hopper && cd job-hopper
-curl -fsSLO https://henningfutrell.github.io/hopper/compose.yaml      # compose.yaml in this repository
-docker compose up -d --build
-docker compose exec hopper job-hopper login-code --link http://127.0.0.1:4790   # open the printed link
-docker compose exec -it hopper gh auth login                          # once; kept in its home volume
-docker compose exec -it hopper claude                                 # once: /login, then /exit
-```
-
-Jobs run in the container (`/home/node`; clone their repositories there). Settings and secrets: a
-`.env` beside `compose.yaml` (`.env.example`). Upgrade with the same `up -d --build`. Details:
-`docs/deploy.md` "Docker Compose".
 
 ### From a checkout, in the foreground
 
@@ -145,8 +151,8 @@ gh auth status         # must say "Logged in to github.com account <you>"
 ```
 
 That is all: the `github` source starts on its own once gh is signed in (no restart), and pauses
-while a GitHub App key is set (`enabled: auto`). With Docker Compose, sign in inside the container
-(`docker compose exec -it hopper gh auth login`), or put a token for your account in `.env` as
+while a GitHub App key is set (`enabled: auto`). With Podman, sign in inside the container
+(`podman compose exec -it hopper gh auth login`), or put a token for your account in `.env` as
 `GH_TOKEN` (`gh auth token` prints one on a machine where gh is signed in).
 
 ### A GitHub App of your own
@@ -162,7 +168,7 @@ hopper only. One App, one key, one hopper.
 
    GitHub shows a prefilled "Create GitHub App" page; click create. The script writes the key into
    `~/.config/job-hopper/daemon.env` as `GITHUB_APP_PRIVATE_KEY` and prints the App's `appId`, `slug`
-   and install link. With Docker Compose, add `--secrets-file .env` (in the folder of `compose.yaml`).
+   and install link. In containers, add `--secrets-file .env` (in the folder of `compose.yaml`).
 2. Install it: open the printed install link and pick the repositories it may read. Those are the
    only repositories it takes jobs from.
 3. `job-hopper config edit plugins.yaml`: set `appId` and `slug` on the `github-app` instance, with
@@ -232,7 +238,7 @@ host, set its `executors` option (`job-hopper config edit plugins.yaml`):
 machines: { name: local, plugin: local, options: { lanes: 4, executors: [test, herdr-claude] } }
 ```
 
-With [Docker Compose](#with-docker-compose) this machine is the hopper's container: it has its own
+With [Podman](#with-podman-recommended) this machine is the hopper's container: it has its own
 herdr session, and jobs run there.
 
 ### An ssh target

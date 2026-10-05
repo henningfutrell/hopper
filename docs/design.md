@@ -2749,7 +2749,7 @@ With LAN names set the daemon binds `::` (every interface); without, `127.0.0.1`
 |---|---|---|
 | loopback | `127.0.0.1:<port>` / `localhost:<port>` | local — as before: reads open |
 | loopback or in `LAN_PEERS` | `<LAN name>:<port>` | LAN |
-| in `LAN_PEERS` | loopback name with the port | LAN — since issue #119: a port a container publishes on its host's loopback arrives so ("Docker Compose") |
+| in `LAN_PEERS` | loopback name with the port | LAN — since issue #119: a port a container publishes on its host's loopback arrives so ("Docker Compose"; under rootless Podman the same) |
 | anything else | any | 403 — a peer on another interface (VPN `tun0`, docker bridges) is refused before routing |
 | any | any other Host | 421 — DNS rebinding, as before |
 
@@ -3325,8 +3325,10 @@ with no host install path.
 `compose.yaml` at the root, served by the install page beside `install.sh`. Three services: `secrets`
 (once per start; the database password is made on the first one and kept in a volume, each file
 readable only by its one reader), `postgres` (no host port), `hopper` (built from the public repository's
-`main`, or `HOPPER_SOURCE`). Settings and secrets come from an optional `.env` beside it. Operating
-detail: `docs/deploy.md` "Docker Compose".
+`main`, or `HOPPER_SOURCE`). Settings and secrets come from an optional `.env` beside it. Since issue
+#125 the hopper is the published image, the `secrets` service is folded into `postgres`, and Podman is
+the recommended runtime ("The published image, with Podman" below). Operating detail: `docs/deploy.md`
+"In containers, with Podman".
 
 **Jobs run in the hopper's container.** Until now the image had no herdr and ran jobs only on
 attached machines; a compose install with no other machine could run nothing. The image now carries
@@ -3354,6 +3356,49 @@ from an empty directory, as downloaded). Live: the stack built from a checkout o
 healthy; the `local` machine was online with `herdr-claude`; a login code signed in through the
 published port; Claude Code started in a pane of the container's herdr session at its prompt; the
 stack came back after `down`/`up` with its data and password.
+
+## The published image, with Podman (issue #125, 2026-10-05)
+
+Owner request: publish a public container image people can pull and run, so the hopper is not
+installed on the host; running from it is the recommended path, other installs stay but are
+secondary; install and run docs focus on Podman.
+
+**The image.** `.github/workflows/image.yml` builds the `Dockerfile` on every push to `main` (and by
+hand) and pushes `ghcr.io/henningfutrell/hopper`: `latest` follows `main`, `sha-<commit>` pins one
+build; `linux/amd64` and `linux/arm64` (QEMU; herdr ships both). It logs in with the workflow's own
+`GITHUB_TOKEN` (`packages: write`): no registry credential exists to keep or rotate. The package is
+public, so a pull needs no sign-in. Nothing in the image is specific to one install: everything the
+hopper keeps is in its database, its secrets come from the runtime ("Deployable", "Secrets").
+
+**compose.yaml pulls it.** The `hopper` service is `image: ${HOPPER_IMAGE:-ghcr.io/henningfutrell/hopper:latest}`
+— the full name, so Podman never asks which registry a short name means. No build: the first start is
+a download. `HOPPER_SOURCE` is gone (no compatibility); an image built from a checkout is
+`HOPPER_IMAGE=localhost/hopper`. Upgrade: `podman compose pull && podman compose up -d`. Self-update
+still does not apply to a container.
+
+**No one-shot service.** podman-compose maps `depends_on` to Podman's `--requires`, which refuses to
+start a container whose dependency has exited, so the `secrets` service (run once, then exited) stopped
+the stack: `container state improper`. The `postgres` service now makes the password and the database
+URL in the `secrets` volume itself, as root, before it execs Postgres's own entrypoint; the hopper waits
+for a healthy Postgres and mounts the volume read-only. Same files, same owners and modes, same volume
+names: an existing stack starts on its data unchanged.
+
+**Podman first.** `podman compose` runs whichever compose provider is installed: `docker-compose`
+(through Podman's API socket, `podman.socket`) or `podman-compose`. The docs install `podman-compose`;
+the page's troubleshooting names the socket for the other. Rootless Podman has no daemon to restart
+containers after a reboot: `podman-restart.service` (user unit) and lingering do it. Docker keeps
+working with the same file (`docker compose`). The install page leads with this path; the host install
+(`install.sh`) is its own secondary section; Windows runs the same Podman steps in WSL.
+
+**Not built.** A `podman kube play` or Quadlet file beside compose.yaml: a second description of the
+same stack to keep in step, for no user that compose does not already serve.
+
+**Verification:** `test/scripts/compose.test.ts` (the rendered file pulls the image, no build, no
+one-shot service; the workflow publishes the tag compose pulls, both architectures, with the workflow's
+token) and `test/scripts/install-page.test.ts` (Podman first; podman-restart; WSL). Live: the image
+built with Podman; the stack under rootless Podman with podman-compose and again with docker-compose
+through the socket, on a spare port: Postgres healthy, the hopper up, a login code signed in through the
+published port, the `local` machine online with `herdr-claude`; down/up kept the data and password.
 
 ## Deployable: a database, config documents, secrets from the environment (issue #40, 2026-10-04)
 
@@ -3522,7 +3567,8 @@ has it (`git log -- src/migrate/local.ts`).
   on attached machines over ssh (their keys and `~/.ssh/config` mounted, or the machine source
   configured for none). Self-update does not apply (no install.json; an image is updated by
   rebuilding it). Since issue #119 the image carries herdr and runs jobs itself, and the container
-  deploy is `compose.yaml` at the root ("Docker Compose").
+  deploy is `compose.yaml` at the root ("Docker Compose"; since issue #125 the published image,
+"The published image, with Podman").
 
 ### Settled (issue #40)
 

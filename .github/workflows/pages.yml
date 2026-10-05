@@ -1,6 +1,6 @@
 # Publishes site/ (the install page) to GitHub Pages, with scripts/get.sh as install.sh beside it, so
 # `curl -fsSL https://henningfutrell.github.io/hopper/install.sh | bash` installs, and compose.yaml, the
-# Docker Compose install (issue #119). No build step.
+# container install, which pulls the published image (issues #119, #125). No build step.
 name: pages
 
 on:
