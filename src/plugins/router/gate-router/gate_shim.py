@@ -1,8 +1,4 @@
-<<<<<<< HEAD:src/plugins/router/jev-router/jev_shim.py
-"""Run grok-bot-jev's router once, for hopper.
-=======
 """Run grok-bot-jev's router once, for job-hopper's gate router.
->>>>>>> d836e15 (feat: router is a role, Jev a model — router plugin gate-router (#76)):src/plugins/router/gate-router/gate_shim.py
 
 Reads {"grokBotJevSrc", "mode", "logPath", "state", "jevGates", "claude": {"argv", "cwd"}} as JSON
 on stdin and prints one JSON line: {"ok": true, "route": ...} or {"ok": false, "error":

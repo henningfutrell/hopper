@@ -1,8 +1,4 @@
-<<<<<<< HEAD
-import { isMap, isSeq, parseDocument, type YAMLMap } from 'yaml';
-=======
-import { isMap, isScalar, parseDocument } from 'yaml';
->>>>>>> d836e15 (feat: router is a role, Jev a model — router plugin gate-router (#76))
+import { isMap, isScalar, isSeq, parseDocument, type YAMLMap } from 'yaml';
 import type { Db } from './db.ts';
 
 // Schema changes never drop a queue (persisted state is the user's). A migration is SQL, or a
