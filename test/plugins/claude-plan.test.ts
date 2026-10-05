@@ -125,8 +125,8 @@ describe('claude-plan plugin', () => {
   it('detection is `which bin` only: never a call to claude', async () => {
     let ran = false;
     const kit = fakeKit({ version: async () => { ran = true; return 'x'; }, succeeds: async () => { ran = true; return true; } });
-    expect(await claudePlan.detect(kit, { bin: 'claude', intervalSeconds: 600 })).toMatchObject({ status: 'available' });
-    expect(await claudePlan.detect(fakeKit({ which: async () => undefined }), { bin: 'claude', intervalSeconds: 600 }))
+    expect(await claudePlan.detect(kit, { bin: 'claude', intervalSeconds: 600, sshBin: 'ssh', dockerBin: 'docker' })).toMatchObject({ status: 'available' });
+    expect(await claudePlan.detect(fakeKit({ which: async () => undefined }), { bin: 'claude', intervalSeconds: 600, sshBin: 'ssh', dockerBin: 'docker' }))
       .toEqual({ status: 'unavailable', reason: 'claude not found: claude' });
     expect(ran).toBe(false);
   });

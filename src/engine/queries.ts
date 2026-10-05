@@ -1,6 +1,6 @@
 // Read models for the HTTP edge.
 import { effectivePriority, order } from '../decider/assign.ts';
-import { laneCap, machineUsage } from '../decider/usage.ts';
+import { laneCap, machineUsage, readingsOf } from '../decider/usage.ts';
 import { TERMINAL_STATUSES, type Job, type Lane, type MachineSnapshot, type UsageReading, type UsageReport, type UsageSourceReport } from '../domain/types.ts';
 import type { EngineContext } from './context.ts';
 import { queueOrder } from './queue-order.ts';
@@ -56,7 +56,7 @@ export function createQueries(c: EngineContext): Queries {
       return machines.map((m) => ({
         ...m,
         lanes: lanes.filter((l) => l.machineId === m.id),
-        usage: usage.filter((u) => u.machineId === undefined || u.machineId === m.id),
+        usage: readingsOf(m.id, usage),
       }));
     },
     getUsage,
