@@ -43,7 +43,7 @@ install page has the steps: https://henningfutrell.github.io/hopper/#windows
 | Postgres (any; `deploy/compose.yaml` has one) | everything the daemon keeps |
 | Docker | the bundled Postgres of the host install, `npm test` |
 | herdr ([herdr.dev](https://herdr.dev)), at `~/.local/bin/herdr` | the panes jobs run in (`herdr-claude` executor), on each machine that runs Claude jobs |
-| the `claude` CLI, signed in | jobs (on each machine that runs them), the escalation levels, usage readings |
+| the `claude` CLI, signed in | jobs (on each machine that runs them), the escalation levels (here, or on the machine each designates; or none, with an API key), usage readings |
 | the `gh` CLI signed in as you (default), or a GitHub App you create | reading and labelling the GitHub issues that are jobs ([Connect GitHub](#connect-github)) |
 
 ## Run it
@@ -220,7 +220,9 @@ Named so you know they are not missing steps. None is the path for a self-hosted
 When a job asks a question, it climbs the escalation levels: Opus answers what it can settle,
 Fable takes what Opus escalates, and what neither should decide waits for you in the UI's
 Questions view. The levels, their order and each one's model (picked from the models your `claude`
-offers) are yours to change in Settings → Question gates.
+offers) are yours to change in Settings → Question gates, and so is where each one runs: on this
+machine, on an attached machine you designate (`machine`), or through the Claude API with a key the
+runtime gives (`anthropic-api`, `ANTHROPIC_API_KEY`) — the way a hopper in a container answers.
 
 ## Add machines
 

@@ -79,8 +79,12 @@ podman compose exec hopper hopper login-code --link http://127.0.0.1:4790
   runs. A pinned build: `HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:sha-<commit>` in `.env`.
 - **Remove:** `podman compose down` keeps the volumes; `down -v` deletes the database and the sign-ins.
 - **An image from a checkout:** `podman build -t localhost/hopper .`, then `HOPPER_IMAGE=localhost/hopper`
-  in `.env`. Without the claude CLI: `--build-arg INSTALL_CLAUDE=false` (then jobs and the escalation levels need
-  attached machines).
+  in `.env`. Without the claude CLI: `--build-arg INSTALL_CLAUDE=false` (then jobs need attached machines, and
+  the escalation levels a designated machine or an API key).
+- **Who answers questions:** the container has no Claude sign-in of its own, so its escalation levels
+  escalate every question to you until one can run. In Settings → Question gates: set a level's
+  `machine` to an attached ssh machine signed in to claude, or add an `anthropic-api` level and give the
+  container `ANTHROPIC_API_KEY` (or `ANTHROPIC_API_KEY_FILE`, a mounted secret) in `.env`.
 
 **From the build-from-source compose file** (before issue #125): the volumes are the same, so the new
 file, downloaded into the same folder, starts on the old data with `docker compose up -d`. Docker and

@@ -4,6 +4,7 @@
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+import anthropicApi from '../../src/plugins/escalation-level/anthropic-api/index.ts';
 import claudeCli from '../../src/plugins/escalation-level/claude-cli/index.ts';
 import { BUILTIN_PLUGINS } from '../../src/plugins/builtin.ts';
 import cursorAgent from '../../src/plugins/executor/cursor-agent/index.ts';
@@ -121,7 +122,8 @@ describe('test', () => {
 describe('command-bearing options carry the mark into JSON Schema (design.md "UI and mutation")', () => {
   it.each([
     ['herdr-claude', herdrClaude, ['bin', 'claudeBin', 'args', 'cwd']],
-    ['claude-cli', claudeCli, ['bin']],
+    ['claude-cli', claudeCli, ['bin', 'sshBin']],
+    ['anthropic-api', anthropicApi, ['apiKeyEnv', 'baseUrl']],
     ['gate-router', gateRouter, ['grokBotJevSrc', 'python', 'claudeBin']],
   ] as [string, PluginDefinition, string[]][])('%s', (_id, def, marked) => {
     const p = props(def);

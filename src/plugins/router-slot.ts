@@ -23,7 +23,7 @@ export interface SlotDeps {
   executors(): string[];
   /** How an attached machine is reached (RoleContext['machine-source']). */
   target: MachineSourceContext['target'];
-  /** A machine by its id, as the machine sources list it now (RoleContext['usage-source']). */
+  /** A machine by its id, as the machine sources list it now (RoleContext['usage-source'], RoleContext['escalation-level']). */
   machine: UsageSourceContext['machine'];
   find(id: string): PluginDefinition | undefined;
 }

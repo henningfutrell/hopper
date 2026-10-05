@@ -123,7 +123,8 @@ describe('GET /api/plugins: the executor role', () => {
       .filter(([, s]) => s.commandBearing === true).map(([k]) => k).sort();
     expect(marked('herdr-claude')).toEqual(['args', 'bin', 'claudeBin', 'cwd']);
     expect(marked('test')).toEqual([]);
-    expect(marked('claude-cli')).toEqual(['bin']);
+    expect(marked('claude-cli')).toEqual(['bin', 'sshBin']);
+    expect(marked('anthropic-api')).toEqual(['apiKeyEnv', 'baseUrl']);
     expect(marked('gate-router')).toEqual(['claudeBin', 'grokBotJevSrc', 'python']);
     expect(marked('github-gh')).toEqual(['appKeyEnv', 'bin', 'defaultCwd', 'repoPaths']);
     expect(marked('github-app')).toEqual(['apiUrl', 'appId', 'defaultCwd', 'privateKeyEnv', 'repoPaths', 'slug']);

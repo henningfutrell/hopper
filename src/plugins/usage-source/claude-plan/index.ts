@@ -14,6 +14,7 @@ import type { UsageSource } from '../../../domain/ports.ts';
 import { commandOn } from '../../../executors/command.ts';
 import { dockerHost } from '../../../executors/docker.ts';
 import { hopperSshAuth } from '../../../executors/ssh.ts';
+import { ON_MACHINE } from '../../claude-print.ts';
 import type { PluginContext, PluginDefinition, UsageSourceContext } from '../../sdk.ts';
 import { parseAuthStatus, parseUsageEnvelope, type PlanWindow } from './parse.ts';
 import { runCli, type CliRun } from './run.ts';
@@ -35,12 +36,6 @@ const failed = (what: string, r: CliRun): string => `claude ${what} failed: ${'e
 /** The project dir `claude` keeps for a working directory: every non-alphanumeric as `-`. */
 const projectDirOf = (cwd: string): string =>
   join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'projects', cwd.replace(/[^A-Za-z0-9]/g, '-'));
-
-/**
- * On an attached machine: claude in a fresh private dir there, removed after with the project dir
- * claude keeps for it. `"$@"` is claude and its arguments, passed as words, never parsed as script.
- */
-const ON_MACHINE = 'd=$(mktemp -d) && cd "$d" || exit 1; "$@"; s=$?; cd /; rm -rf "$d" "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/$(printf %s "$d" | tr -c A-Za-z0-9 -)"; exit $s';
 
 type Ctx = Pick<PluginContext, 'clock' | 'logger' | 'scratchDir' | 'instanceName' | 'dataDir' | 'env'> & UsageSourceContext;
 

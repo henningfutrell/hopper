@@ -17,9 +17,9 @@ const routerJs = (id: string) => `export default {
 `;
 
 describe('built-in plugins', () => {
-  it('are the routers gate-router and pass-through, the escalation level claude-cli, the executors herdr-claude, cursor-agent, command and test, the job sources github-gh and github-app, the machine sources local, ssh, docker and client, the usage source claude-plan, the notifier grokbot-routine', () => {
+  it('are the routers gate-router and pass-through, the escalation levels claude-cli and anthropic-api, the executors herdr-claude, cursor-agent, command and test, the job sources github-gh and github-app, the machine sources local, ssh, docker and client, the usage source claude-plan, the notifier grokbot-routine', () => {
     expect(BUILTIN_PLUGINS.map((p) => [p.id, p.role]).sort()).toEqual([
-      ['claude-cli', 'escalation-level'], ['claude-plan', 'usage-source'], ['client', 'machine-source'], ['command', 'executor'], ['cursor-agent', 'executor'], ['docker', 'machine-source'], ['gate-router', 'router'], ['github-app', 'job-source'], ['github-gh', 'job-source'],
+      ['anthropic-api', 'escalation-level'], ['claude-cli', 'escalation-level'], ['claude-plan', 'usage-source'], ['client', 'machine-source'], ['command', 'executor'], ['cursor-agent', 'executor'], ['docker', 'machine-source'], ['gate-router', 'router'], ['github-app', 'job-source'], ['github-gh', 'job-source'],
       ['grokbot-routine', 'notifier'], ['herdr-claude', 'executor'], ['local', 'machine-source'], ['newest-first', 'queue-sorter'], ['oldest-first', 'queue-sorter'],
       ['pass-through', 'router'], ['priority', 'queue-sorter'], ['ssh', 'machine-source'], ['test', 'executor'],
     ]);
