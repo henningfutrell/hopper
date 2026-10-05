@@ -50,11 +50,11 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/auth/` | sign-in through identity providers (issue #39): `auth.yaml` load (`config.ts`), the role rules (`roles.ts`, pure), the identity provider port (`provider.ts`) and its adapters `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), password sign-in (`password.ts`, argon2), the sign-in flow — flows, tickets, bindings, no sign-in (`index.ts`) | engine, http, store, plugins, decider, questions |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets") | everything |
 | `src/update/` | self-update ("Self-update"): install.json, the git mirror of the update repository, the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers | engine, http, plugins, decider |
-| `src/http/` | Fastify routes, SSE, static UI; the UI session, its role check and the sign-in routes (`ui/`) | executors, plugins (reads them through the `PluginsView` port) |
+| `src/http/` | Fastify routes, SSE, static UI; the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `api-reference.ts` Scalar at `/docs/`) | executors, plugins (reads them through the `PluginsView` port) |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
 | `examples/plugins/` | one minimal runnable custom plugin per role, for authors (`docs/plugins.md`); imports only `job-hopper/plugin` types and `node:` builtins | everything in `src/` at runtime |
 | `src/main.ts` | composition root: config → store → plugins.yaml (written when absent) → plugin host (every part) → engine → server | — |
-| `src/cli.ts` | the operator CLI `job-hopper`: config documents, login codes — against the daemon's database | engine, executors |
+| `src/cli.ts` | the operator CLI `job-hopper`: config documents, login codes, `help` — against the daemon's database | engine, executors |
 
 ## The decider
 
@@ -3347,6 +3347,8 @@ about the daemon's surface; the CLI is beside it, like editing a file was.
   `config edit <document>` ($EDITOR, written back against the version read). A document that would
   not load (plugins/webhooks/auth schema, rules size) is refused; a moved one is refused.
 - `login-code [--link <base url>]`.
+- `password-hash`; `help` (also `--help`, `-h`): every command, exit 0. No command or an unknown
+  one prints the same text on stderr, exit 2.
 
 Residual risk, unchanged in kind: a job on the hopper host runs as the daemon's user and can read
 the env file and so the database URL, as it could read the 0600 yaml files before.
@@ -3380,3 +3382,36 @@ has it (`git log -- src/migrate/local.ts`).
   data.
 - **Process settings stay environment variables** (`JOB_HOPPER_*`: port, LAN, tick, limits, the
   database itself). They configure the process, not a part; a deploy sets them where it sets secrets.
+
+## Deployable for others: help, instructions, the API reference (issue #68, 2026-10-05)
+
+Owner direction: someone who is not the owner can run the hopper and use it from what it ships.
+
+- **`README.md`**: what it is, what it needs, the three ways to run it (this host, a container, a
+  checkout in the foreground), first sign-in, how to give it jobs, where everything else is.
+- **`job-hopper help`** (`--help`, `-h`): every operator command, what it needs, where to read on.
+- **`node src/main.ts --help`** (`-h`): every `JOB_HOPPER_*` setting with its default and what it
+  does, built from the config schema (`SETTINGS`, `daemonHelp` in `src/config.ts`; the help text is
+  keyed by the schema, so a new setting does not typecheck without its line). Needs no database.
+- **The API reference**: `src/http/openapi.ts` builds an OpenAPI 3.1 document of every route under
+  `/api/` and `/ui/` (not `/ui/assets/`, not `/`). Query parameters and request bodies are the zod
+  schemas the routes parse with (`z.toJSONSchema`, input side), so they cannot drift; summaries, the
+  least UI role of each mutation, and what each answers are written there. `src/http/api-reference.ts`
+  serves it with Scalar (`@scalar/fastify-api-reference`): `/docs/` the page, `/docs/openapi.json` and
+  `/docs/openapi.yaml` the document, `/docs/js/scalar.js` the bundle from the package. The page loads
+  nothing from anywhere else: no CDN, no default fonts, telemetry off, Scalar's agent and MCP off, no
+  request proxy, no client button. The UI's top bar links it.
+- **Drift fails the start.** `apiReferenceRoutes` records every route as it is added (`onRoute`) and,
+  on ready, compares them with the document (`referenceDrift`); a route served but not documented,
+  or documented but not served, stops the daemon with both named. Every integration test starts a
+  daemon, so a new route without its entry fails the suite, not a deploy.
+- **Readable without a session.** `/docs/` is outside `/api/`, so a LAN or public request reads it
+  as it reads the UI's page; the Host guard still applies. It holds the route list and request
+  shapes, which the source already shows; no state, no secret. Trying a route from the page needs
+  what the route needs: nothing on loopback for a read, the `x-jobhopper-session` token beyond it and
+  for every `POST /ui/api/*` (with the page's own Origin, which is a UI origin).
+- **Responses are described, not schematised**, except the error shape and the event envelope
+  (`ENVELOPE_SCHEMA`): the wire types are TypeScript (`src/domain/types.ts`), and a second hand-kept
+  schema of each would drift. A generator from the types was rejected: a build step and a dependency
+  for a reference one person reads.
+

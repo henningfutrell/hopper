@@ -10,6 +10,7 @@
 //   job-hopper config edit <document>                     $EDITOR on it, written back against the version read
 //   job-hopper login-code [--link <base url>]             mint a one-time UI login code (stdout)
 //   job-hopper password-hash                              an argon2id hash of a password (stdin) for auth.yaml
+//   job-hopper help                                       what each command does
 //
 // <document>: plugins.yaml, webhooks.yaml, rules.md or auth.yaml. A document that would not load is refused.
 import { spawnSync } from 'node:child_process';
@@ -39,14 +40,26 @@ export interface CliIo {
   password?(): Promise<string>;
 }
 
-const USAGE = `usage:
-  job-hopper config get <document>
-  job-hopper config version <document>
-  job-hopper config set <document> --if-version <version>   (text on stdin; version "missing" for a new one)
-  job-hopper config edit <document>
-  job-hopper login-code [--link <base url>]
-  job-hopper password-hash   (the password on stdin, or typed without echo; prints the hash for auth.yaml password.users)
-documents: ${CONFIG_DOCUMENTS.join(', ')}`;
+const USAGE = `job-hopper: the operator command line. It works on the daemon's database directly.
+
+usage:
+  job-hopper config get <document>                       print a config document
+  job-hopper config version <document>                   print its version
+  job-hopper config set <document> --if-version <v>      replace it from stdin, if still at <v> ("missing" for a new one)
+  job-hopper config edit <document>                      edit it in $EDITOR, written back against the version read
+  job-hopper login-code [--link <base url>]              a one-time UI login code (${LOGIN_CODE_MINUTES} minutes), or a link with it
+  job-hopper password-hash                               an argon2id hash for auth.yaml password.users (password on stdin, or typed)
+  job-hopper help                                        this text
+
+documents: ${CONFIG_DOCUMENTS.join(', ')}
+
+Every command but password-hash and help needs JOB_HOPPER_DATABASE_URL (or JOB_HOPPER_DATABASE_URL_FILE):
+the database the daemon uses, postgres://user:password@host:port/database.
+
+First sign-in:  job-hopper login-code --link http://127.0.0.1:4790   then open the link
+The daemon:     node src/main.ts --help   (its settings)
+API reference:  http://127.0.0.1:4790/docs/ on a running daemon
+Read on:        README.md, docs/deploy.md, docs/sign-in.md`;
 
 class CliError extends Error {}
 
@@ -146,6 +159,10 @@ async function passwordHash(io: CliIo): Promise<number> {
 /** Run one command; the exit code (a promise for password-hash, the one command that hashes). */
 export function runCli(argv: string[], io: CliIo): number | Promise<number> {
   const [command, ...rest] = argv;
+  if (command === 'help' || command === '--help' || command === '-h') {
+    io.out(`${USAGE}\n`);
+    return 0;
+  }
   if (command === 'password-hash') return passwordHash(io);
   if (command !== 'config' && command !== 'login-code') {
     io.err(`${USAGE}\n`);

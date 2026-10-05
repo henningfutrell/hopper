@@ -11,7 +11,7 @@ import type { WebhookConfigStatus } from '../webhooks/config.ts';
 export interface WebhookConfigView { status(): WebhookConfigStatus; secretProblem(secretEnv: string): string | undefined }
 import { parseWith } from './errors.ts';
 
-const deliveriesQuery = z.object({
+export const deliveriesQuery = z.object({
   subscriptionId: z.string().min(1).optional(),
   limit: z.coerce.number().int().min(1).max(1000).default(100),
 });

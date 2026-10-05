@@ -8,7 +8,7 @@ const STATUSES = [
   'queued', 'held', 'claimed', 'running', 'waiting_answer', 'finished', 'failed', 'cancelled',
 ] as const satisfies JobStatus[];
 
-const listQuery = z.object({
+export const jobsQuery = z.object({
   status: z.string().optional().transform((s, ctx) => {
     if (!s) return undefined;
     const parts = s.split(',').map((x) => x.trim()).filter(Boolean);
@@ -27,7 +27,7 @@ export function jobRoutes(app: FastifyInstance, o: { store: Store }): void {
   const { store } = o;
 
   app.get('/api/jobs', async (req) => {
-    const q = parseWith(listQuery, req.query);
+    const q = parseWith(jobsQuery, req.query);
     return { jobs: store.jobs.list({ ...(q.status ? { status: q.status } : {}), limit: q.limit }) };
   });
 

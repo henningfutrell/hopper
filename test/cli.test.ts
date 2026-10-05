@@ -150,3 +150,26 @@ describe('job-hopper password-hash', () => {
     expect(err.join('')).toMatch(/empty/);
   });
 });
+
+describe('job-hopper help (issue #68)', () => {
+  it.each([['help'], ['--help'], ['-h']])('%s prints every command with what it does, and where to read on; needs no database', (arg) => {
+    const r = cli(undefined, [arg]);
+    expect(r.code).toBe(0);
+    expect(r.err).toBe('');
+    for (const command of ['config get', 'config version', 'config set', 'config edit', 'login-code', 'password-hash', 'help']) {
+      expect(r.out).toContain(`job-hopper ${command}`);
+    }
+    expect(r.out).toMatch(/JOB_HOPPER_DATABASE_URL/);
+    expect(r.out).toMatch(/node src\/main\.ts --help/);
+    expect(r.out).toMatch(/\/docs\//);
+  });
+
+  it('no command or an unknown one: the same text on stderr, exit 2', () => {
+    for (const argv of [[], ['frobnicate']]) {
+      const r = cli(undefined, argv);
+      expect(r.code).toBe(2);
+      expect(r.out).toBe('');
+      expect(r.err).toContain('job-hopper config edit');
+    }
+  });
+});

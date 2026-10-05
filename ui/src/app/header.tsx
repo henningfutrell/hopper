@@ -1,7 +1,7 @@
 // The top bar: version (opens the update panel), connection, router mode (switchable by an admin),
-// router health, uptime, who is signed in and with which role, logout, and a device link for another
-// browser.
-import { LogOut, Moon, Rabbit, Sun } from 'lucide-react';
+// router health, uptime, the API reference, who is signed in and with which role, logout, and a
+// device link for another browser.
+import { BookOpen, LogOut, Moon, Rabbit, Sun } from 'lucide-react';
 import { setTheme, useTheme } from '@/hooks/use-theme';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -52,6 +52,14 @@ export function Header({ nav }: { nav?: React.ReactNode }) {
           <span className="flex items-center gap-1.5 text-muted-foreground">
             <Dot tone={conn === 'live' ? 'ok' : 'warn'} pulse={conn === 'live'} /><span className="hidden sm:inline">{conn}</span>
           </span>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon-sm" asChild>
+                <a href="/docs/" target="_blank" rel="noopener" aria-label="API reference"><BookOpen /></a>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>API reference</TooltipContent>
+          </Tooltip>
           <Button variant="ghost" size="icon-sm" aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
             onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <Sun /> : <Moon />}</Button>
           {user && (
