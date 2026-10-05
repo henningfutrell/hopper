@@ -15,6 +15,10 @@ import { openDb } from '../../src/store/db.ts';
 import { migrateInstance } from '../../src/store/migrations.ts';
 import { databaseUrlFor } from '../support/database.ts';
 import { runCli } from '../../src/cli.ts';
+import { rmSync } from 'node:fs';
+import { createStickyExecutor } from '../support/doubles.ts';
+import { copyBuilder, createInstall, createUpstream, tempDir } from '../update/support.ts';
+import { createStoreRepo, entry } from '../plugin-store/support.ts';
 
 let t: TestApp | undefined;
 let cleanup: (() => void) | undefined;
@@ -202,6 +206,51 @@ describe('a user\'s runtime', () => {
     expect(tabs[0]).not.toHaveProperty('CLAUDE_CONFIG_DIR');
     expect(tabs[0]).not.toHaveProperty('GH_CONFIG_DIR');
     expect(tabs[1]).toMatchObject({ CLAUDE_CONFIG_DIR: `${a.dataDir}/users/bea/claude`, GH_CONFIG_DIR: `${a.dataDir}/users/bea/gh` });
+  });
+});
+
+describe('the instance\'s parts are shared', () => {
+  it('an update check is announced to every user; a job of any user that a restart would lose holds the restart', async () => {
+    const root = tempDir('jh-users-update-');
+    const up = createUpstream(root);
+    const c1 = up.commit('first', 'v1');
+    up.commit('second', 'v2');
+    const appDir = createInstall(root, up.dir, c1);
+    const restarts: number[] = [];
+    const sticky = createStickyExecutor();
+    try {
+      const a = await start({ seams: { executors: [sticky], update: { appDir, builder: copyBuilder(), restart: async () => { restarts.push(1); } } } });
+      const owner = await a.login();
+      await a.addUser('Bea');
+      const job = await a.pull({}, { executor: 'sticky' }, 'bea');
+      await a.waitForStatusOf(job.id, 'running', 'bea');
+      expect((await a.ui('/ui/api/update', { action: 'check' }, { token: owner })).status).toBe(200);
+      const beaEvents = (await a.api('GET', '/api/events?limit=1000', undefined, { 'x-hopper-user': 'bea' })).body.events as DomainEvent[];
+      expect(beaEvents.map((e) => e.type)).toContain('update.available');
+      expect((await a.ui('/ui/api/update', { action: 'apply' }, { token: owner })).status).toBe(200);
+      await waitFor(async () => ((await a.api('GET', '/api/update')).body.apply?.detail as string | undefined)?.includes(job.id));
+      expect(restarts).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('a store install is every user\'s plugin', async () => {
+    const root = tempDir('jh-users-store-');
+    const repo = createStoreRepo(root);
+    repo.addExample('queue-sorter', 'word-first');
+    repo.commit('one plugin', [entry('queue-sorter', 'word-first')]);
+    try {
+      const a = await start({ env: { HOPPER_PLUGIN_STORE: repo.dir } });
+      const owner = await a.login();
+      await a.addUser('Bea');
+      await waitFor(async () => (await a.api('GET', '/api/plugin-store')).body.commit !== undefined);
+      expect((await a.ui('/ui/api/plugin-store', { action: 'install', id: 'word-first' }, { token: owner })).status).toBe(200);
+      const beaPlugins = (await a.api('GET', '/api/plugins', undefined, { 'x-hopper-user': 'bea' })).body.plugins as { id: string }[];
+      expect(beaPlugins.map((p) => p.id)).toContain('word-first');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 
