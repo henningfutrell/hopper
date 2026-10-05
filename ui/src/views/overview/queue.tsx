@@ -18,7 +18,7 @@ export function WaitingPanel() {
   const authed = useCanOperate();
   const rows = waitingRows(board, latest);
   return (
-    <Panel title="Waiting" icon={Hourglass} count={rows.length || ''} bodyClassName="divide-y p-0">
+    <Panel title="Waiting" icon={Hourglass} count={rows.length || ''} list bodyClassName="divide-y p-0">
       {rows.length ? rows.map(({ job, position, effectivePriority }) => (
         <div key={job.id} data-job-group="waiting" data-job-id={job.id} data-status={job.status} className="space-y-1.5 px-4 py-3">
           <div className="flex items-start gap-2">
@@ -61,7 +61,7 @@ export function EndedPanel() {
   const { ended } = useJobBoard();
   const now = useNow();
   return (
-    <Panel title="Ended" icon={Archive} count={ended.length ? `${ended.length} in 24 h` : ''} bodyClassName="divide-y p-0 xl:max-h-[36rem] xl:overflow-y-auto">
+    <Panel title="Ended" icon={Archive} count={ended.length ? `${ended.length} in 24 h` : ''} list bodyClassName="divide-y p-0">
       {ended.length ? ended.map((job) => (
         <div key={job.id} data-job-group="ended" data-job-id={job.id} data-status={job.status} className="space-y-1.5 px-4 py-3">
           <div className="flex items-start gap-2">

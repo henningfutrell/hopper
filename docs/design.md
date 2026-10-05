@@ -2667,6 +2667,11 @@ responsive and fast. Builds on the at-a-glance board (issue #5).
   takes its default, an unknown panel goes, a panel added since comes back at the end, shown — so a new
   panel needs no migration of what browsers stored. Reset removes the key. Tested through the rendered
   app: `test/ui/overview-customize.test.ts`.
+- **List boxes are bounded** (issue #84). An overview panel fills its grid cell, so the panels of one
+  row line up. A list box (attention, lanes, waiting, ended, live activity) holds its list in a body of
+  one height bound (`max-h-96`, at every screen width) and scrolls past it, so one long list does not
+  stretch its row and leave its neighbours ragged. `Panel` `list` in `ui/src/components/panel.tsx`.
+  Tested through the rendered app: `test/ui/overview-list-boxes.test.ts`.
 
 ## Reaching the UI across the LAN (issue #16, 2026-10-03)
 
