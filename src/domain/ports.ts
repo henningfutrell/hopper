@@ -472,8 +472,10 @@ export interface EventLog {
 }
 
 export interface WebhookRepository {
-  /** Insert or replace by `name` (webhooks.yaml is the source of truth). */
-  upsertByName(input: { name: string; url: string; events: string[]; secretEnv: string; active: boolean }): WebhookSubscription;
+  /** A new subscription; undefined (nothing written) when the name is taken. The table is the source of truth (issue #78). */
+  add(input: { name: string; url: string; events: string[]; secretEnv: string; active: boolean }): WebhookSubscription | undefined;
+  /** Changes only the fields given; undefined when there is no such subscription. */
+  update(id: string, patch: { url?: string; events?: string[]; active?: boolean }): WebhookSubscription | undefined;
   get(id: string): WebhookSubscription | undefined;
   list(): WebhookSubscription[];
   /** Deletes the subscription and marks its pending/retrying deliveries `failed`. */
@@ -553,7 +555,7 @@ export interface LoginCodeRepository {
 }
 
 /** The config documents the store holds (design.md "Config documents"). */
-export const CONFIG_DOCUMENTS = ['plugins.yaml', 'webhooks.yaml', 'rules.md', 'auth.yaml'] as const;
+export const CONFIG_DOCUMENTS = ['plugins.yaml', 'rules.md', 'auth.yaml'] as const;
 export type ConfigDocumentName = (typeof CONFIG_DOCUMENTS)[number];
 
 /**

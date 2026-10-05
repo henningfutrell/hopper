@@ -32,21 +32,10 @@ export interface Health {
   uptimeS: number;
 }
 
-export interface WebhookConfig {
-  /** The config document: `webhooks.yaml`. */
-  document?: string;
-  loadedAt?: string;
-  error?: string;
-  warnings?: string[];
-  /** webhooks.yaml's sha-256, or `missing`: what a POST /ui/api/webhooks edit is made against. */
-  version?: string;
-}
-
 /** A subscription as GET /api/webhooks shows it: the variable its secret is in, and why the runtime gives none (if so). Never a secret. */
 export type WebhookView = WebhookSubscription & { secretProblem?: string };
 
 /** GET /api/webhooks, and the answer to POST /ui/api/webhooks. */
 export interface WebhooksView {
   subscriptions: WebhookView[];
-  config?: WebhookConfig;
 }

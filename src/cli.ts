@@ -12,7 +12,7 @@
 //   hopper password-hash                              an argon2id hash of a password (stdin) for auth.yaml
 //   hopper help                                       what each command does
 //
-// <document>: plugins.yaml, webhooks.yaml, rules.md or auth.yaml. A document that would not load is refused.
+// <document>: plugins.yaml, rules.md or auth.yaml. A document that would not load is refused.
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -27,7 +27,6 @@ import { pluginsFileProblem } from './plugins/plugins-file.ts';
 import { RULES_MAX_BYTES } from './questions/index.ts';
 import { openStore } from './store/index.ts';
 import { runtimeSecrets } from './secrets/runtime.ts';
-import { webhooksFileProblem } from './webhooks/config.ts';
 
 export interface CliIo {
   env: Record<string, string | undefined>;
@@ -76,8 +75,7 @@ export function documentProblem(name: ConfigDocumentName, text: string): string 
   }
   let raw: unknown;
   try { raw = parse(text); } catch (e) { return `not valid YAML: ${(e as Error).message}`; }
-  if (name === 'auth.yaml') return authDocumentProblem(raw);
-  return name === 'plugins.yaml' ? pluginsFileProblem(raw) : webhooksFileProblem(raw);
+  return name === 'auth.yaml' ? authDocumentProblem(raw) : pluginsFileProblem(raw);
 }
 
 function put(store: Store, name: ConfigDocumentName, text: string, version: string): void {

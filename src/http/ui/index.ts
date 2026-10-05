@@ -15,7 +15,7 @@ import { lanHosts, uiOrigins, type Lan } from '../reach.ts';
 import { writeRules } from '../../questions/index.ts';
 import { routerView } from '../state.ts';
 import { webhooksView } from '../webhooks.ts';
-import type { WebhookConfigView } from '../webhooks.ts';
+import type { SecretProblem } from '../webhooks.ts';
 import type { WebhooksEditor } from '../../webhooks/edit.ts';
 import { SESSION_HEADER, mutationRefusal } from './guard.ts';
 import { loginCodeLive, mintLoginCode } from './login-code.ts';
@@ -35,7 +35,7 @@ export interface UiRouteOptions {
   lan: Lan;
   clock: Clock;
   store: Pick<Store, 'webhooks' | 'documents' | 'loginCodes'>;
-  webhookConfig: WebhookConfigView;
+  secretProblem: SecretProblem;
   webhooksEditor: WebhooksEditor;
   updater: Updater;
 }
@@ -61,10 +61,10 @@ export const pluginStoreBody = z.discriminatedUnion('action', [
 // The device link (issue #95): `keep` names the code the dialog shows; while it is live the same links come back.
 export const deviceLinkBody = z.strictObject({ keep: z.string().optional() });
 export const rulesBody = z.strictObject({ text: z.string(), version: z.string().min(1) });
-// The content (url, events) is checked against webhooks.yaml's own schema in the editor, so the UI
-// shows the file's messages; here only the shape. No secret (issue #56), no secretFile, no new name;
-// secretEnv only on add, and only a WEBHOOK_SECRET_* variable (checked in the editor).
-const webhookFields = { name: z.string().min(1), version: z.string().min(1) };
+// The content (url, events) is checked in the editor, so the UI shows one set of messages; here only
+// the shape. No secret (issue #56), no secretFile, no new name; secretEnv only on add, and only a
+// WEBHOOK_SECRET_* variable (checked in the editor).
+const webhookFields = { name: z.string().min(1) };
 export const webhooksEditBody = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('add'), ...webhookFields, url: z.string(), events: z.array(z.string()), secretEnv: z.string(), active: z.boolean().optional() }),
   z.strictObject({ action: z.literal('edit'), ...webhookFields, url: z.string().optional(), events: z.array(z.string()).optional(), active: z.boolean().optional() }),
@@ -181,12 +181,12 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     return r.view;
   });
 
-  // Issue #18: one webhooks.yaml entry added, edited or removed. Answers the new GET /api/webhooks
+  // Issue #18: one webhook subscription added, edited or removed (a row, issue #78). Answers the new GET /api/webhooks
   // view. No secret passes either way (issue #56): the runtime holds them.
   app.post('/ui/api/webhooks', admin, async (req) => {
     const r = o.webhooksEditor.edit(parseWith(webhooksEditBody, req.body));
     if (!r.ok) throw new HttpError(EDIT_STATUS[r.code], r.error);
-    return webhooksView(o.store, o.webhookConfig);
+    return webhooksView(o.store, o.secretProblem);
   });
 
   // design.md "Machines from the UI" (issue #18): add, edit or remove one attached machine in

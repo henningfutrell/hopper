@@ -873,8 +873,8 @@ the engine.
 
 `GET /api/health` · `/api/jobs` · `/api/jobs/:id` · `/api/queue` · `/api/machines` ·
 `/api/decisions[/:id]` · `/api/events` · `/api/events/stream` (SSE) · `/api/router` (was `/api/jev`) ·
-`/api/usage` · `/api/questions[/:id]` · `/api/webhooks` (from `webhooks.yaml`, secrets
-omitted, plus `config: { path, loadedAt, error?, warnings, version }`; `version` since issue #18) · `/api/webhooks/deliveries` ·
+`/api/usage` · `/api/questions[/:id]` · `/api/webhooks` (`{ subscriptions }`, rows of the store,
+secrets omitted; the `config` status went with the document, issue #78) · `/api/webhooks/deliveries` ·
 **new** `GET /api/sources` → `{ sources: SourceStatus[] }`.
 omitted, plus `config: { path, loadedAt, error? }`) · `/api/webhooks/deliveries` ·
 **new** `GET /api/sources` → `{ sources: SourceStatus[] }` · `GET /api/machines/config` (issue #18,
@@ -927,7 +927,7 @@ token and send any `Origin`. Cookies are no better here: they ignore ports, so a
 | POST | `/ui/api/router-mode` | `{ mode }` | set router mode (phase 5; was `/ui/api/jev`) |
 | POST | `/ui/api/plugins` | `{ action, … }` | edit plugins.yaml: one instance's options, select a plugin, add or remove a list role's instance, rescan (phase 5 slice 7, issue #4; "Settled in slice 7") |
 | POST | `/ui/api/rules-file` | `{ text, version }` | replace the rules file whole (issue #18, "Question gates"): 400 over 64 KiB, 409 stale `version` |
-| POST | `/ui/api/webhooks` | `{ action, name, … }` | edit webhooks.yaml: add (naming a `WEBHOOK_SECRET_*` variable), edit (url, events, active), remove one entry; answers `GET /api/webhooks`, never a secret (issues #18, #56) (issue #18, "Webhook subscriptions in the UI") |
+| POST | `/ui/api/webhooks` | `{ action, name, … }` | edit the webhook subscriptions (rows in the store, issue #78): add (naming a `WEBHOOK_SECRET_*` variable), edit (url, events, active), remove one; answers `GET /api/webhooks`, never a secret (issues #18, #56) (issue #18, "Webhook subscriptions in the UI") |
 | POST | `/ui/api/machines` | `{ action, … }` | add, edit or remove one attached machine in plugins.yaml, applied without a restart (issue #18; "Machines from the UI") |
 | POST | `/ui/api/device-link` | `{ keep? }` | `{ links }`: `keep`'s code again while it is live, else a fresh login code, as `http://<LAN name>:<port>/#login=<code>`, one per LAN name; 409 without LAN names ("Reaching the UI across the LAN") |
 | POST | `/ui/api/logout` | `{}` | drop the session |
@@ -1643,7 +1643,7 @@ A new agent CLI (codex, cursor-agent, opencode, hermes — all present on the ho
 `executor` plugin; nothing is generic over CLIs.
 
 **Not plugins — invariants:** the decider, store, engine loop, HTTP guard and UI session, the
-event log, **webhook subscriptions** (`webhooks.yaml` stays: a core subsystem with stored
+event log, **webhook subscriptions** (rows in the store since issue #78: a core subsystem with stored
 deliveries and signing, not a swappable part), the **risk rules** (`src/questions/risk.ts`,
 code, not config — no setting can weaken the guard), the **rules file** (the owner's standing
 rules, given to answerer and assessor), and the human as the last question stop.
@@ -2836,8 +2836,9 @@ which steer the answerer and assessor; the assessor's fail-closed contract and t
 
 Owner request: webhook subscriptions can be changed in the UI. Settles 6b.
 
-- **Source of truth.** `webhooks.yaml` stays the only source of subscriptions; the UI session
-  edits it. Not the store (the file would become a seed nobody trusts), not the notifier editor of
+- **Source of truth** (superseded by issue #78, "Webhook subscriptions in the database": the
+  store's rows are the only source, and an edit carries no `version`). `webhooks.yaml` stays the
+  only source of subscriptions; the UI session edits it. Not the store (the file would become a seed nobody trusts), not the notifier editor of
   slice 7 (a subscription has a store row and deliveries; a notifier has neither).
 - **`POST /ui/api/webhooks`** (session-guarded, "UI session and mutations"), body by `action`,
   each with the file's `version`:
@@ -3520,7 +3521,8 @@ hopper uses `deploy/compose.yaml`'s Postgres (optional: any Postgres it is given
 
 ### Config documents
 
-`plugins.yaml`, `webhooks.yaml`, `rules.md` and `auth.yaml` are **config documents**: named texts in
+`plugins.yaml`, `rules.md` and `auth.yaml` are **config documents** (a fourth, for webhooks, went
+in issue #78: "Webhook subscriptions in the database"): named texts in
 the store (`config_documents`, port `ConfigDocuments`), each replaced whole against its `version` —
 the sha-256 of its text, or `missing`. The YAML stays the format, comments and all; every UI edit
 already splices into the text against the version it read, and now writes it back the same way
@@ -3571,7 +3573,7 @@ themselves, so no `_FILE` form for them.
 
 | kept | how |
 |------|-----|
-| a webhook subscription | its `secretEnv`, a variable's name — in the `webhooks.yaml` document and the `webhooks` table (`secret_env`, migration 11, which dropped the sealed `secret` column) |
+| a webhook subscription | its `secretEnv`, a variable's name — in the `webhooks` table (`secret_env`, migration 11, which dropped the sealed `secret` column; the only place since migration 12, issue #78) |
 | UI session tokens, login codes | SHA-256 only (32 random bytes: no dictionary to try) — the hopper's own short-lived state; a hash is not a usable credential |
 | password sign-in passwords | argon2id hashes in `auth.yaml` ("Sign-in") — a verifier the operator writes, not a credential |
 

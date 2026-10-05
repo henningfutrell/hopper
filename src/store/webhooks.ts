@@ -22,13 +22,20 @@ export function createWebhookRepository(c: StoreContext): WebhookRepository {
   };
 
   return {
-    upsertByName(input) {
-      c.db.run(
+    add(input) {
+      const id = c.idGen();
+      const added = c.db.run(
         `INSERT INTO webhooks (id, name, url, events, secret_env, active, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT (name) DO UPDATE SET url = excluded.url, events = excluded.events,
-           secret_env = excluded.secret_env, active = excluded.active`,
-      c.idGen(), input.name, input.url, JSON.stringify(input.events), input.secretEnv, input.active ? 1 : 0, c.clock.now().toISOString());
-      return toSub(c.db.get('SELECT * FROM webhooks WHERE name = ?', input.name)!);
+         ON CONFLICT (name) DO NOTHING`,
+        id, input.name, input.url, JSON.stringify(input.events), input.secretEnv, input.active ? 1 : 0, c.clock.now().toISOString()).changes > 0;
+      return added ? toSub(c.db.get('SELECT * FROM webhooks WHERE id = ?', id)!) : undefined;
+    },
+    update(id, patch) {
+      const cur = c.db.get('SELECT * FROM webhooks WHERE id = ?', id);
+      if (!cur) return undefined;
+      const next = { ...toSub(cur), ...Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined)) };
+      c.db.run('UPDATE webhooks SET url = ?, events = ?, active = ? WHERE id = ?', next.url, JSON.stringify(next.events), next.active ? 1 : 0, id);
+      return toSub(c.db.get('SELECT * FROM webhooks WHERE id = ?', id)!);
     },
     get(id) {
       const r = c.db.get('SELECT * FROM webhooks WHERE id = ?', id);

@@ -1,6 +1,6 @@
-// Webhook subscriptions and their deliveries, live. webhooks.yaml is the source of truth; a UI
-// session edits it through POST /ui/api/webhooks (issue #18): add, edit (url, events, active),
-// remove. The hopper keeps no secret (issue #56): a subscription names the WEBHOOK_SECRET_* variable
+// Webhook subscriptions and their deliveries, live. The subscriptions are kept in the database
+// (issue #78); a UI session edits them through POST /ui/api/webhooks (issue #18): add, edit (url,
+// events, active), remove. The hopper keeps no secret (issue #56): a subscription names the WEBHOOK_SECRET_* variable
 // the runtime gives its secret in, and the card says whether the runtime gives it.
 import { KeyRound, Pencil, Plus, Trash2, Webhook } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -33,7 +33,7 @@ function useSend(): { send: Send; busy: boolean } {
     } catch (e) {
       if (e instanceof SessionRejected) useHopper.setState({ authed: false });
       toast.error((e as Error).message);
-      // A stale version or a file edited by hand: show what the file says now.
+      // Another session may have changed them: show what the database holds now.
       refreshWebhooks().catch(() => {});
       return null;
     } finally {
@@ -80,7 +80,7 @@ function SubscriptionForm({ initial, adding, busy, onSubmit, onCancel }: {
   return (
     <form onSubmit={submit} className="space-y-3">
       {adding && (
-        <label className="block space-y-1"><Label>Name — the key in webhooks.yaml; fixed once added</Label>
+        <label className="block space-y-1"><Label>Name — the subscription's key; fixed once added</Label>
           <Input className="h-9 font-mono text-sm" value={v.name} required autoCapitalize="off" autoCorrect="off" spellCheck={false}
             onChange={(e) => setV({ ...v, name: e.target.value })} /></label>
       )}
@@ -102,8 +102,8 @@ function SubscriptionForm({ initial, adding, busy, onSubmit, onCancel }: {
   );
 }
 
-function SubscriptionCard({ sub, authed, version, send, busy }: {
-  sub: WebhookView; authed: boolean; version: string; send: Send; busy: boolean;
+function SubscriptionCard({ sub, authed, send, busy }: {
+  sub: WebhookView; authed: boolean; send: Send; busy: boolean;
 }) {
   const deliveries = useHopper((s) => s.deliveries);
   const [editing, setEditing] = useState(false);
@@ -115,12 +115,12 @@ function SubscriptionCard({ sub, authed, version, send, busy }: {
         <span className="min-w-0 flex-1 truncate font-mono text-sm font-semibold">{sub.name}</span>
         <StatusBadge status={sub.active ? 'active' : 'paused'} tone={sub.active ? 'ok' : 'warn'} />
         <Switch aria-label={`${sub.name} active`} checked={sub.active} disabled={!can}
-          onCheckedChange={(active) => void send({ action: 'edit', name: sub.name, active, version }, `${sub.name}: ${active ? 'active' : 'paused'}`)} />
+          onCheckedChange={(active) => void send({ action: 'edit', name: sub.name, active }, `${sub.name}: ${active ? 'active' : 'paused'}`)} />
       </div>
       {editing ? (
         <SubscriptionForm adding={false} busy={busy} initial={{ name: sub.name, url: sub.url, events: sub.events, active: sub.active, secretEnv: sub.secretEnv }} onCancel={() => setEditing(false)}
           onSubmit={async ({ url, events, active }) => {
-            if (await send({ action: 'edit', name: sub.name, url, events, active, version }, `${sub.name}: saved`)) setEditing(false);
+            if (await send({ action: 'edit', name: sub.name, url, events, active }, `${sub.name}: saved`)) setEditing(false);
           }} />
       ) : (
         <>
@@ -139,8 +139,8 @@ function SubscriptionCard({ sub, authed, version, send, busy }: {
           {authed && (
             <div className="flex flex-wrap gap-2 pt-1">
               <Button size="sm" variant="outline" disabled={!can} onClick={() => setEditing(true)}><Pencil />Edit</Button>
-              <Confirm title={`Remove ${sub.name}?`} action="Remove" onConfirm={() => void send({ action: 'remove', name: sub.name, version }, `${sub.name}: removed`)}
-                description="Its entry leaves webhooks.yaml and its pending deliveries fail.">
+              <Confirm title={`Remove ${sub.name}?`} action="Remove" onConfirm={() => void send({ action: 'remove', name: sub.name }, `${sub.name}: removed`)}
+                description="The subscription is deleted and its pending deliveries fail.">
                 <Button size="sm" variant="destructive" disabled={!can}><Trash2 />Remove</Button>
               </Confirm>
             </div>
@@ -154,34 +154,29 @@ function SubscriptionCard({ sub, authed, version, send, busy }: {
 export function Webhooks() {
   const subs = useHopper((s) => s.subscriptions);
   const deliveries = useHopper((s) => s.deliveries);
-  const cfg = useHopper((s) => s.webhookConfig);
   const authed = useCanAdmin();
   const { send, busy } = useSend();
   const [adding, setAdding] = useState(false);
-  const version = cfg?.version ?? 'missing';
   const byId = new Map(subs.map((s) => [s.id, s]));
-  // The document may have been edited by hand since load: read its version and entries afresh.
+  // Another session may have changed them since load: read them afresh.
   useEffect(() => { refreshWebhooks().catch(() => {}); }, []);
   return (
     <div className="space-y-3">
       <Panel title="Subscriptions" icon={Webhook} count={subs.length || ''} bodyClassName="space-y-3"
         action={authed && !adding && <Button size="sm" variant="outline" onClick={() => setAdding(true)}><Plus />Add subscription</Button>}>
-        {cfg && <div className="text-xs break-all text-muted-foreground">config <code className="font-mono text-foreground/80">{cfg.document ?? '?'}</code>{cfg.loadedAt && <> · loaded {clock(cfg.loadedAt)}</>}</div>}
-        {cfg?.error && <div className="text-xs break-words text-bad">error: {cfg.error}</div>}
-        {(cfg?.warnings ?? []).map((w) => <div key={w} className="text-xs break-words text-warn">warning: {w}</div>)}
         {adding && (
           <div className="rounded-lg border border-dashed p-3">
             <SubscriptionForm adding busy={busy} initial={{ name: '', url: '', events: [], active: true, secretEnv: '' }} onCancel={() => setAdding(false)}
               onSubmit={async (v) => {
-                if (await send({ action: 'add', ...v, version }, `${v.name}: added; set ${v.secretEnv} in the runtime`)) setAdding(false);
+                if (await send({ action: 'add', ...v }, `${v.name}: added; set ${v.secretEnv} in the runtime`)) setAdding(false);
               }} />
           </div>
         )}
         {subs.length ? (
           <ul className="space-y-2">
-            {subs.map((s) => <SubscriptionCard key={s.id} sub={s} authed={authed} version={version} send={send} busy={busy} />)}
+            {subs.map((s) => <SubscriptionCard key={s.id} sub={s} authed={authed} send={send} busy={busy} />)}
           </ul>
-        ) : !adding && <Empty>no subscriptions in webhooks.yaml</Empty>}
+        ) : !adding && <Empty>no subscriptions</Empty>}
       </Panel>
       <Panel title="Deliveries" icon={Webhook} count={deliveries.length || ''} bodyClassName="p-0">
         {deliveries.length ? (

@@ -1,7 +1,21 @@
 import type { Clock, Store, WebhookDispatcher } from '../domain/ports.ts';
 import type { DomainEvent, WebhookDelivery, WebhookSubscription } from '../domain/types.ts';
-import { subscriptionSecret } from './config.ts';
 import { sign } from './signer.ts';
+
+/**
+ * A subscription's secret from the runtime (design.md "Secrets", issue #56): the subscription names
+ * the variable, read at each delivery. Throws, naming the variable, when the runtime gives none.
+ */
+export function subscriptionSecret(secret: (name: string) => string | undefined, secretEnv: string): string {
+  const value = secret(secretEnv);
+  if (!value) throw new Error(`${secretEnv || 'its secret variable'} is not set`);
+  return value;
+}
+
+/** Why the runtime gives no secret in `secretEnv`, or undefined when it does. Never the secret. */
+export function secretProblem(secret: (name: string) => string | undefined, secretEnv: string): string | undefined {
+  try { subscriptionSecret(secret, secretEnv); return undefined; } catch (e) { return (e as Error).message; }
+}
 
 export interface WebhookDispatcherOptions {
   store: Store;

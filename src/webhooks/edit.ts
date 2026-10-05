@@ -1,14 +1,11 @@
-// A UI edit of webhooks.yaml (design.md "Webhook subscriptions in the UI", issue #18): add, edit or
-// remove one entry. The document stays the source of truth: each edit rewrites only that entry's part
-// of it (comments and every other entry as written), against the document's version, then reloads it
-// into the store before answering. No secret passes through here (issue #56): an added entry names
-// the `WEBHOOK_SECRET_*` variable the runtime gives its secret in.
-import { isDeepStrictEqual } from 'node:util';
-import { isMap, isScalar, isSeq, parse, parseDocument, stringify, type Document, type Scalar, type YAMLMap } from 'yaml';
-import type { ConfigDocuments } from '../domain/ports.ts';
-import type { WebhooksEdit } from '../domain/types.ts';
+// A UI edit of the webhook subscriptions (design.md "Webhook subscriptions in the UI", issue #18): add,
+// edit or remove one. The store's table is the only place they are kept (issue #78): each edit checks
+// the subscription and writes its row. No secret passes through here (issue #56): an added
+// subscription names the `WEBHOOK_SECRET_*` variable the runtime gives its secret in.
+import { z } from 'zod';
+import type { Store } from '../domain/ports.ts';
+import { EVENT_TYPES, type WebhooksEdit } from '../domain/types.ts';
 import { UI_SECRET_ENV } from '../domain/webhooks.ts';
-import { WEBHOOKS, webhooksFileProblem } from './config.ts';
 
 export type WebhooksEditRefusal = { ok: false; code: 'invalid' | 'not_found' | 'conflict'; error: string };
 export type WebhooksEditResult = { ok: true } | WebhooksEditRefusal;
@@ -19,38 +16,23 @@ export interface WebhooksEditor {
 
 const refuse = (code: WebhooksEditRefusal['code'], error: string): WebhooksEditRefusal => ({ ok: false, code, error });
 
-/** One change to webhooks.yaml, applied to the parsed Document (the meaning) and spliced into the text (the bytes). */
-type Change =
-  | { kind: 'append'; entry: Record<string, unknown> }
-  | { kind: 'set'; at: number; key: string; value: unknown }
-  | { kind: 'delete'; at: number };
+const eventName = z.string().refine((e) => e === '*' || (EVENT_TYPES as readonly string[]).includes(e), {
+  message: 'must be an event type or "*"',
+});
+/** What an edit may change. */
+const editable = { url: z.url({ protocol: /^https?$/ }), events: z.array(eventName).min(1), active: z.boolean() };
+/** A new subscription: also its name and its secret's variable, both fixed once added. */
+const added = z.strictObject({
+  name: z.string().min(1),
+  secretEnv: z.string().regex(UI_SECRET_ENV, 'a WEBHOOK_SECRET_* variable (A-Z, 0-9, _)'),
+  ...editable,
+});
+const edited = z.strictObject(editable);
 
-/** A value as YAML text on one line: a scalar as yaml writes it, a list in flow style. */
-const inline = (v: unknown): string =>
-  Array.isArray(v) ? `[${v.map((x) => JSON.stringify(x)).join(', ')}]` : stringify(v).trimEnd();
-
-const lineStart = (text: string, pos: number): number => text.lastIndexOf('\n', pos - 1) + 1;
-const insertAt = (text: string, pos: number, lines: string): string =>
-  text.slice(0, pos) + (pos > 0 && text[pos - 1] !== '\n' ? '\n' : '') + lines + text.slice(pos);
-
-/** The entry's map, the `webhooks` sequence's item `at`. */
-const entryMap = (doc: Document, at: number): YAMLMap => doc.getIn(['webhooks', at], true) as YAMLMap;
-
-function applyToDocument(doc: Document, c: Change): void {
-  if (c.kind === 'append') {
-    const seq = doc.get('webhooks', true);
-    if (isSeq(seq) && seq.items.length === 0) seq.flow = false;
-    const node = doc.createNode(c.entry) as YAMLMap;
-    const events = node.get('events', true);
-    if (isSeq(events)) events.flow = true;
-    doc.addIn(['webhooks'], node);
-  } else if (c.kind === 'set') {
-    const node = doc.createNode(c.value);
-    if (isSeq(node)) node.flow = true;
-    doc.setIn(['webhooks', c.at, c.key], node);
-  } else {
-    doc.deleteIn(['webhooks', c.at]);
-  }
+/** Why `value` is refused by `schema`, or undefined. */
+function problem(schema: z.ZodType, value: unknown): string | undefined {
+  const parsed = schema.safeParse(value);
+  return parsed.success ? undefined : parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
 }
 
 /**
@@ -103,46 +85,22 @@ export function createWebhooksEditor(o: {
   const path = WEBHOOKS;
 
   function edit(e: WebhooksEdit): WebhooksEditResult {
-    const original = o.documents.read(WEBHOOKS);
-    if (o.documents.version(WEBHOOKS) !== e.version) return refuse('conflict', CHANGED);
-    let doc = parseDocument(original ?? 'version: 1\nwebhooks: []\n');
-    if (doc.errors.length) return refuse('conflict', `${path} is not valid YAML; fix it by hand (${BY_HAND}): ${doc.errors[0]!.message}`);
-    const before = webhooksFileProblem(doc.toJS());
-    if (before) return refuse('conflict', `${path} is invalid; fix it by hand (${BY_HAND}): ${before}`);
-
-    const at = indexOf(doc, e.name);
-    const changes: Change[] = [];
+    const current = webhooks.list().find((s) => s.name === e.name);
     if (e.action === 'add') {
-      if (!UI_SECRET_ENV.test(e.secretEnv)) return refuse('invalid', `secretEnv: from the UI, a WEBHOOK_SECRET_* variable (A-Z, 0-9, _); ${BY_HAND} names any other`);
-      if (at >= 0) return refuse('conflict', `webhook "${e.name}" is already in ${path}`);
-      changes.push({ kind: 'append', entry: { name: e.name, url: e.url, events: e.events, secretEnv: e.secretEnv, active: e.active ?? true } });
-    } else {
-      if (at < 0) return refuse('not_found', `no webhook "${e.name}" in ${path}`);
-      if (e.action === 'edit') {
-        for (const key of ['url', 'events', 'active'] as const) {
-          if (e[key] !== undefined) changes.push({ kind: 'set', at, key, value: e[key] });
-        }
-      } else {
-        changes.push({ kind: 'delete', at });
-      }
+      const sub = { name: e.name, url: e.url, events: e.events, secretEnv: e.secretEnv, active: e.active ?? true };
+      const why = problem(added, sub);
+      if (why) return refuse('invalid', why);
+      return webhooks.add(sub) ? { ok: true } : refuse('conflict', `webhook "${e.name}" already exists`);
     }
-
-    // Splice each change into the text; the Document says what the result must mean. A layout the
-    // splice does not handle, or a splice that means anything else, is written from the Document
-    // instead: comments kept, spacing normalised.
-    let text: string | undefined = original;
-    for (const c of changes) {
-      text = text === undefined ? undefined : splice(text, doc, c);
-      applyToDocument(doc, c);
-      if (text !== undefined && !means(text, doc.toJS())) text = undefined;
-      if (text !== undefined) doc = parseDocument(text);
+    if (!current) return refuse('not_found', `no webhook "${e.name}"`);
+    if (e.action === 'remove') {
+      webhooks.delete(current.id);
+      return { ok: true };
     }
-    const problem = webhooksFileProblem(doc.toJS());
-    if (problem) return refuse('invalid', problem);
-    // lineWidth 0: never refold lines the owner wrote long.
-    if (!o.documents.write(WEBHOOKS, text ?? doc.toString({ lineWidth: 0 }), e.version)) return refuse('conflict', CHANGED);
-    o.reload();
-    return { ok: true };
+    const patch = { url: e.url, events: e.events, active: e.active };
+    const why = problem(edited, { url: patch.url ?? current.url, events: patch.events ?? current.events, active: patch.active ?? current.active });
+    if (why) return refuse('invalid', why);
+    return webhooks.update(current.id, patch) ? { ok: true } : refuse('not_found', `no webhook "${e.name}"`);
   }
 
   return { edit };

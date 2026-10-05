@@ -1,7 +1,7 @@
 // Vitest setup, run in every worker before any test file: tests never read the owner's real
 // config and never send a request off this machine.
 // - HOME, XDG_CONFIG_HOME, XDG_DATA_HOME, XDG_STATE_HOME point at a fresh temp dir, so every
-//   `~/` default (grokbot-webhook.env, webhooks.yaml, plugins.yaml, github-app.json, the db)
+//   `~/` default (grokbot-webhook.env, plugins.yaml, github-app.json, the db)
 //   resolves to an empty throwaway dir, and child processes inherit the same.
 //   Exception: HOPPER_REAL_HERDR=1 keeps HOME, because Claude in a real herdr pane needs
 //   the real login; the fetch guard below still applies.
