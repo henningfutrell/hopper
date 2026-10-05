@@ -5,10 +5,12 @@ import { fixedClock, useTempStore } from './helpers.ts';
 const t = useTempStore();
 const input = { name: 'hook', url: 'http://127.0.0.1:9/h', events: ['*'], secretEnv: 'S3', active: true };
 
+// The table is the source of truth for webhook subscriptions (issue #78): rows are added, changed and
+// removed one by one, never reconciled from a document.
 describe('webhook subscriptions', () => {
   it('creates active, gets, lists, deletes', () => {
     const s = t.open(t.url());
-    const w = s.webhooks.upsertByName(input);
+    const w = s.webhooks.add(input)!;
     expect(w).toMatchObject({ ...input, active: true, createdAt: '2026-10-02T10:00:00.000Z' });
     expect(s.webhooks.get(w.id)).toEqual(w);
     expect(s.webhooks.list()).toEqual([w]);
@@ -20,17 +22,27 @@ describe('webhook subscriptions', () => {
   });
 });
 
-describe('webhook upsertByName', () => {
-  it('inserts, then replaces by name keeping the id stable', () => {
+describe('webhook add and update', () => {
+  it('add refuses a name already there: undefined, the row as it was', () => {
     const s = t.open(t.url());
-    const a = s.webhooks.upsertByName(input);
-    expect(a).toMatchObject({ ...input, createdAt: '2026-10-02T10:00:00.000Z' });
-    const b = s.webhooks.upsertByName({ ...input, url: 'http://127.0.0.1:9/new', secretEnv: 'Z', active: false });
-    expect(b).toMatchObject({ id: a.id, name: 'hook', url: 'http://127.0.0.1:9/new', secretEnv: 'Z', active: false });
-    const c = s.webhooks.upsertByName({ ...input, name: 'second' });
+    const a = s.webhooks.add(input)!;
+    expect(s.webhooks.add({ ...input, url: 'http://127.0.0.1:9/new' })).toBeUndefined();
+    expect(s.webhooks.list()).toEqual([a]);
+    const c = s.webhooks.add({ ...input, name: 'second' })!;
     expect(c.id).not.toBe(a.id);
-    expect(s.webhooks.list()).toEqual([b, c]);
-    expect(s.webhooks.get(a.id)).toEqual(b);
+    expect(s.webhooks.list()).toEqual([a, c]);
+    s.close();
+  });
+
+  it('update changes only the fields given, keeping id, name, secretEnv and createdAt', () => {
+    const s = t.open(t.url());
+    const a = s.webhooks.add(input)!;
+    const b = s.webhooks.update(a.id, { active: false });
+    expect(b).toEqual({ ...a, active: false });
+    const c = s.webhooks.update(a.id, { url: 'http://127.0.0.1:9/new', events: ['job.failed'] });
+    expect(c).toEqual({ ...a, active: false, url: 'http://127.0.0.1:9/new', events: ['job.failed'] });
+    expect(s.webhooks.get(a.id)).toEqual(c);
+    expect(s.webhooks.update('nope', { active: true })).toBeUndefined();
     s.close();
   });
 });
@@ -38,7 +50,7 @@ describe('webhook upsertByName', () => {
 describe('webhook deliveries', () => {
   function setup(path = t.url(), clock = fixedClock()) {
     const s = t.open(path, clock);
-    const w = s.webhooks.upsertByName(input);
+    const w = s.webhooks.add(input)!;
     const e: DomainEvent = s.events.append({ type: 'job.queued', jobId: 'j', data: {} });
     return { s, w, e, clock, path };
   }
@@ -70,7 +82,7 @@ describe('webhook deliveries', () => {
 
   it('lists newest first, filtered by subscription, with limit', () => {
     const { s, w, e, clock } = setup();
-    const w2 = s.webhooks.upsertByName({ ...input, name: 'other' });
+    const w2 = s.webhooks.add({ ...input, name: 'other' })!;
     const ids: string[] = [];
     for (let i = 1; i <= 3; i++) { clock.set(`2026-10-02T10:0${i}:00.000Z`); ids.push(s.webhooks.createDelivery(w.id, e).id); }
     clock.set('2026-10-02T10:09:00.000Z');

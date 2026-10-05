@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Job } from '../../src/domain/types.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
-import { writeWebhooksFile } from '../support/files.ts';
+import { writeWebhooks } from '../support/files.ts';
 import { createManualSource } from '../support/manual-source.ts';
 import { waitFor } from '../support/wait.ts';
 
@@ -18,7 +18,7 @@ describe('persistence across restart', () => {
   it('requeues the interrupted job, keeps queued jobs, file webhooks and the router mode, and never re-ingests an item', async () => {
     const db = tempDbPath();
     cleanup = db.cleanup;
-    writeWebhooksFile(db.dbPath, [{ name: 'h', url: 'http://127.0.0.1:9/h', events: ['lane.opened'], secretEnv: 'WEBHOOK_SECRET_H' }]);
+    writeWebhooks(db.dbPath, [{ name: 'h', url: 'http://127.0.0.1:9/h', events: ['lane.opened'], secretEnv: 'WEBHOOK_SECRET_H' }]);
     const source = createManualSource();
     const first = await startTestApp({ dbPath: db.dbPath, plugins: { machines: lanes(1) }, source });
     apps.push(first);

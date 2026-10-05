@@ -55,7 +55,7 @@ describe('hopper config', () => {
   });
 
   it('refuses an unknown document or command', () => {
-    expect(cli(db(), ['config', 'get', 'sources.yaml']).err).toMatch(/unknown document sources.yaml; one of plugins.yaml, webhooks.yaml, rules.md/);
+    expect(cli(db(), ['config', 'get', 'sources.yaml']).err).toMatch(/unknown document sources.yaml; one of plugins.yaml, rules.md, auth.yaml/);
     expect(cli(db(), ['deploy']).code).toBe(2);
   });
 

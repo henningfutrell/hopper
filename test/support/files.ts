@@ -1,5 +1,6 @@
-// Config documents a test app reads (design.md "Config documents"): plugins.yaml, webhooks.yaml and
-// rules.md, written into the test app's database before it starts, or while it runs.
+// What a test app reads from its database, written before it starts or while it runs: config
+// documents (design.md "Config documents") — plugins.yaml, rules.md, auth.yaml — and webhook
+// subscriptions, which are rows (issue #78).
 import { stringify } from 'yaml';
 import type { ConfigDocumentName } from '../../src/domain/ports.ts';
 import { openStore } from '../../src/store/index.ts';
@@ -27,6 +28,12 @@ export function readDocument(dbPath: string, name: ConfigDocumentName): string |
   }
 }
 
-export function writeWebhooksFile(dbPath: string, webhooks: WebhookEntry[]): void {
-  writeDocument(dbPath, 'webhooks.yaml', { version: 1, webhooks });
+/** Add webhook subscriptions to the database of `dbPath`. */
+export function writeWebhooks(dbPath: string, webhooks: WebhookEntry[]): void {
+  const store = openStore({ url: databaseUrlFor(dbPath), clock: { now: () => new Date() } });
+  try {
+    for (const w of webhooks) store.webhooks.add({ ...w, active: w.active ?? true });
+  } finally {
+    store.close();
+  }
 }
