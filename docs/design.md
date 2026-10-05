@@ -903,7 +903,7 @@ token and send any `Origin`. Cookies are no better here: they ignore ports, so a
 | POST | `/ui/api/rules-file` | `{ text, version }` | replace the rules file whole (issue #18, "Question gates"): 400 over 64 KiB, 409 stale `version` |
 | POST | `/ui/api/webhooks` | `{ action, name, … }` | edit webhooks.yaml: add (naming a `WEBHOOK_SECRET_*` variable), edit (url, events, active), remove one entry; answers `GET /api/webhooks`, never a secret (issues #18, #56) (issue #18, "Webhook subscriptions in the UI") |
 | POST | `/ui/api/machines` | `{ action, … }` | add, edit or remove one attached machine in plugins.yaml, applied without a restart (issue #18; "Machines from the UI") |
-| POST | `/ui/api/device-link` | `{}` | `{ links }`: the current login code as `http://<LAN name>:<port>/#login=<code>`, one per LAN name; 409 without LAN names ("Reaching the UI across the LAN") |
+| POST | `/ui/api/device-link` | `{ keep? }` | `{ links }`: `keep`'s code again while it is live, else a fresh login code, as `http://<LAN name>:<port>/#login=<code>`, one per LAN name; 409 without LAN names ("Reaching the UI across the LAN") |
 | POST | `/ui/api/logout` | `{}` | drop the session |
 
 Since issue #39 a session may also come from an identity provider, and each mutation needs a UI
@@ -2728,8 +2728,12 @@ check in "UI session and mutations" 5 stands.
 **Logging a device in.** `open-ui.sh` works only on this machine. Two other ways, both through
 the same one-time login code (`POST /ui/login`; using it rotates it):
 1. **Device link** — a logged-in browser's header button calls `POST /ui/api/device-link` and shows
-   `http://<LAN name>:<port>/#login=<code>` per LAN name. The code rides in the fragment, which the
-   browser never sends; the page strips it from the address bar and history, then posts it.
+   `http://<LAN name>:<port>/#login=<code>` per LAN name, each also as a QR code for a phone's camera
+   (issue #95, `qrcode.react`). The code rides in the fragment, which the browser never sends; the
+   page strips it from the address bar and history, then posts it. The QR follows the code: while the
+   dialog is open it posts `{ keep: <code> }` every 2 s; the daemon answers the same links while that
+   code is live (`loginCodes.live`, which spends nothing), else mints a fresh code, and the dialog
+   redraws. Closing the dialog stops it; a shown code still expires after 10 minutes.
 2. **Paste a login code** into the logged-out banner (from `ui-login-code` on this machine).
 
 Sessions are already in the store (migration 6), so a daemon restart does not log a device out; a

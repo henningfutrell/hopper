@@ -539,6 +539,8 @@ export interface LoginCodeRepository {
   create(codeHash: string, expiresAt: string): void;
   /** True, and the code is gone, when it exists and `expiresAt > now`. Expired codes are deleted first. */
   take(codeHash: string, now: string): boolean;
+  /** True when it exists and `expiresAt > now`; the code stays. */
+  live(codeHash: string, now: string): boolean;
 }
 
 /** The config documents the store holds (design.md "Config documents"). */

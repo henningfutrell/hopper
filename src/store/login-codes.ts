@@ -12,5 +12,8 @@ export function createLoginCodeRepository(c: StoreContext): LoginCodeRepository 
         return c.db.run('DELETE FROM login_codes WHERE code_hash = ?', codeHash).changes > 0;
       });
     },
+    live(codeHash, now) {
+      return c.db.get('SELECT 1 FROM login_codes WHERE code_hash = ? AND expires_at > ?', codeHash, now) !== undefined;
+    },
   };
 }

@@ -18,7 +18,7 @@ import { webhooksView } from '../webhooks.ts';
 import type { WebhookConfigView } from '../webhooks.ts';
 import type { WebhooksEditor } from '../../webhooks/edit.ts';
 import { SESSION_HEADER, mutationRefusal } from './guard.ts';
-import { mintLoginCode } from './login-code.ts';
+import { loginCodeLive, mintLoginCode } from './login-code.ts';
 import { sessionUser, type UiSessions } from './sessions.ts';
 import { registerSignInRoutes } from './sign-in.ts';
 
@@ -58,6 +58,8 @@ export const pluginStoreBody = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('install'), id: pluginId }),
   z.strictObject({ action: z.literal('remove'), id: pluginId }),
 ]);
+// The device link (issue #95): `keep` names the code the dialog shows; while it is live the same links come back.
+export const deviceLinkBody = z.strictObject({ keep: z.string().optional() });
 export const rulesBody = z.strictObject({ text: z.string(), version: z.string().min(1) });
 // The content (url, events) is checked against webhooks.yaml's own schema in the editor, so the UI
 // shows the file's messages; here only the shape. No secret (issue #56), no secretFile, no new name;
@@ -217,12 +219,14 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     return r.status;
   });
 
-  // A fresh login code as a link per LAN name, in the fragment (never sent to a server). The links
-  // share one code: it works once, and expires like any other.
-  app.post('/ui/api/device-link', admin, async () => {
+  // A login code as a link per LAN name, in the fragment (never sent to a server). The links
+  // share one code: it works once, and expires like any other. `keep` (issue #95): the code the
+  // dialog shows comes back while it is live; once used or expired, a fresh one is minted.
+  app.post('/ui/api/device-link', admin, async (req) => {
     if (!signIn.local) throw new HttpError(409, 'local sign-in is off in auth.yaml: no login code to hand on');
     if (o.lan.names.length === 0) throw new HttpError(409, 'no LAN names: set JOB_HOPPER_LAN_NAMES and JOB_HOPPER_LAN_PEERS to reach the UI from another device');
-    const code = mintLoginCode(o.store, o.clock);
+    const { keep } = parseWith(deviceLinkBody, req.body ?? {});
+    const code = keep !== undefined && loginCodeLive(o.store, o.clock, keep) ? keep : mintLoginCode(o.store, o.clock);
     return { links: lanHosts(o.port(), o.lan).map((h) => `http://${h}/#login=${code}`) };
   });
 
