@@ -195,7 +195,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
   };
 
   async function scan(): Promise<void> {
-    loaded = o.pluginDir === undefined ? { plugins: [], errors: [], warnings: [] } : await loadCustomPlugins(o.pluginDir, new Set(builtins.map((b) => b.id)));
+    loaded = await loadCustomPlugins([o.pluginDir, o.installedDir].filter((d) => d !== undefined), new Set(builtins.map((b) => b.id)));
     for (const e of loaded.errors) o.logger.warn(`job-hopper: plugin ${e.path} refused: ${e.error}`);
     for (const w of loaded.warnings) o.logger.warn(`job-hopper: ${w}`);
     const all: { definition: PluginDefinition; builtin: boolean; path?: string }[] = [

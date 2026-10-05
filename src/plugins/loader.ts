@@ -39,12 +39,17 @@ export async function importPlugin(path: string): Promise<{ definition: PluginDe
   return problem ? { error: problem } : { definition: mod.default as PluginDefinition };
 }
 
-/** Load every plugin under `dir`. `reserved`: the built-in ids, which a custom plugin may not take. */
-export async function loadCustomPlugins(dir: string, reserved: ReadonlySet<string>): Promise<LoadResult> {
+/** Load every plugin under each of `dirs`, in order. `reserved`: the built-in ids, which a custom plugin may not take. */
+export async function loadCustomPlugins(dirs: readonly string[], reserved: ReadonlySet<string>): Promise<LoadResult> {
   const out: LoadResult = { plugins: [], errors: [], warnings: [] };
-  if (!existsSync(dir)) return out;
-  if (statSync(dir).mode & 0o077) out.warnings.push(`plugin dir ${dir} is accessible by group/other (chmod 700 ${dir})`);
   const taken = new Set(reserved);
+  for (const dir of dirs) await loadDir(dir, reserved, taken, out);
+  return out;
+}
+
+async function loadDir(dir: string, reserved: ReadonlySet<string>, taken: Set<string>, out: LoadResult): Promise<void> {
+  if (!existsSync(dir)) return;
+  if (statSync(dir).mode & 0o077) out.warnings.push(`plugin dir ${dir} is accessible by group/other (chmod 700 ${dir})`);
   // Dot directories are not plugins: the plugin store stages its installs in them (design.md "Plugin store").
   const names = readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory() && !e.name.startsWith('.')).map((e) => e.name).sort();
   for (const name of names) {
@@ -67,5 +72,4 @@ export async function loadCustomPlugins(dir: string, reserved: ReadonlySet<strin
     taken.add(id);
     out.plugins.push({ definition: r.definition, path: entry });
   }
-  return out;
 }

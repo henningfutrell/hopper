@@ -19,8 +19,8 @@ export interface StoreMirror {
   show(commit: string, path: string): Promise<string | undefined>;
   /** The tree id of directory `path` at `commit`, or undefined when there is none. */
   tree(commit: string, path: string): Promise<string | undefined>;
-  /** Directory `path` at `commit`, unpacked into `dir` (created, emptied first). */
-  extract(commit: string, path: string, dir: string): Promise<void>;
+  /** A tree (`<commit>:<path>`, or a tree id), unpacked into `dir` (created, emptied first). */
+  extract(tree: string, dir: string): Promise<void>;
 }
 
 export function createStoreMirror(dir: string): StoreMirror {
@@ -46,11 +46,11 @@ export function createStoreMirror(dir: string): StoreMirror {
       if (!id) return undefined;
       return (await maybe(git('cat-file', '-t', id)))?.trim() === 'tree' ? id : undefined;
     },
-    async extract(commit, path, target) {
+    async extract(tree, target) {
       rmSync(target, { recursive: true, force: true });
       mkdirSync(target, { recursive: true, mode: 0o700 });
       const tar = `${target}.tar`;
-      await git('archive', '--format=tar', '-o', tar, `${commit}:${path}`);
+      await git('archive', '--format=tar', '-o', tar, tree);
       try {
         await exec('tar', ['-xf', tar, '-C', target], { timeout: TIMEOUT_MS });
       } finally {

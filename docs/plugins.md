@@ -19,10 +19,12 @@ Short guide for authors. The contract is `docs/design.md` "Plugin contract"; the
 ## From the plugin store
 
 With `JOB_HOPPER_PLUGIN_STORE` set to a git repository holding `plugin-store.yaml` (design.md "Plugin
-store"), the UI's Plugins view lists what that plugin store offers and installs it into the plugin dir:
+store"), the UI's Plugins view lists what that plugin store offers and installs it:
 Install, Update (the store's directory changed), Remove (refused while plugins.yaml names it). An
-installed plugin is a custom plugin like any other; it runs once plugins.yaml names it. A plugin put in
-the plugin dir by hand is never overwritten or removed from the UI.
+installed plugin is a custom plugin like any other; it runs once plugins.yaml names it. It needs no
+plugin dir: what is installed is kept in the database and its code is unpacked into the work dir,
+restored from the plugin store at start, so an ephemeral container keeps its plugins. A plugin in the
+plugin dir is never replaced or removed from the UI.
 
 This repository is a plugin store: its `plugin-store.yaml` lists `examples/plugins/`. To publish your
 own, list each plugin in a repository's `plugin-store.yaml`:

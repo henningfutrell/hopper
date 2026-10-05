@@ -1,12 +1,10 @@
 #!/usr/bin/env bash
-# Remove the job-hopper services (daemon + its herdr session) and code. Keeps the queue
-# database (data dir) and every config file (rules.md, plugins.yaml, webhooks.yaml, and the
-# GitHub App's github-app.json, github-app.pem, github-app-webhook.secret).
+# Remove the job-hopper services (daemon + its herdr session) and code. Keeps the database (it holds
+# the queue and every config document) and $CONFIG_DIR (daemon.env, the secret files it names).
 set -euo pipefail
 
 DEST="$HOME/.local/lib/job-hopper"
 UNIT_DIR="$HOME/.config/systemd/user"
-DATA="$HOME/.local/share/job-hopper"
 CONFIG_DIR="$HOME/.config/job-hopper"
 
 step() { printf '==> %s\n' "$*"; }
@@ -27,7 +25,7 @@ systemctl --user daemon-reload
 step "remove $DEST"
 rm -rf "$DEST"
 
-echo "Kept $DATA — the queue database is your data. Delete it by hand to discard the queue."
-echo "Kept $CONFIG_DIR — your rules.md, plugins.yaml, webhooks.yaml and the GitHub App files (github-app.json, .pem, webhook secret)."
+echo "Kept the database JOB_HOPPER_DATABASE_URL names — the queue and every config document are your data. Drop it by hand to discard them."
+echo "Kept $CONFIG_DIR — daemon.env and the secret files it names."
 echo "The GitHub App itself stays on GitHub; delete it at https://github.com/settings/apps if you no longer want it."
 echo "The herdr session directory ~/.config/herdr/sessions/job-hopper is kept; remove it with: herdr session delete job-hopper"

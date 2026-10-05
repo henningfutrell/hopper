@@ -13,6 +13,8 @@ import type { DetectionKit, JobSourceContext, PluginDefinition, PluginLogger, Qu
 export interface PluginHostOptions {
   /** Custom plugins, one directory each; undefined: none (design.md "Where plugins live"). */
   pluginDir?: string;
+  /** Store installs, unpacked into the work dir (the plugin store's `installedDir`); undefined: none. */
+  installedDir?: string;
   /** Where plugins.yaml is kept: the store's config documents. */
   documents: ConfigDocuments;
   /** The answerer instance when plugins.yaml has no `answerer` section; null = none. Default: the built-in one. */

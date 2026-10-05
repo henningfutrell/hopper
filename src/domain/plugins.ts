@@ -162,6 +162,12 @@ export interface PluginsReport {
   warnings: string[];
 }
 
+/**
+ * A store install, kept in the database (issue #93): what was installed from the plugin store. Its
+ * code is unpacked into the work dir and restored from the store by `tree` (design.md "Plugin store").
+ */
+export interface PluginInstall { id: string; role: Role; describe: string; commit: string; tree: string; installedAt: string }
+
 /** One plugin of the plugin store in GET /api/plugin-store (design.md "Plugin store"). */
 export interface PluginStoreEntry {
   id: string;
@@ -169,14 +175,14 @@ export interface PluginStoreEntry {
   describe: string;
   /** In the store catalogue now; false: a store install the catalogue no longer lists. */
   listed: boolean;
-  /** A store install under the plugin dir. `current`: its directory equals the catalogue's at the store's head. */
+  /** A store install. `current`: its directory equals the catalogue's at the store's head. */
   installed?: { commit: string; installedAt: string; current: boolean };
   /** Installed again since start: the daemon still runs the code it first loaded. */
   restartPending: boolean;
 }
 
 /**
- * GET /api/plugin-store. `unavailable`: no plugin store or no plugin dir (`reason`). `error`: the last
+ * GET /api/plugin-store. `unavailable`: no plugin store (`reason`). `error`: the last
  * read failed (`error`); `commit`, `checkedAt` and the plugins are the last good read's.
  */
 export interface PluginStoreReport {
