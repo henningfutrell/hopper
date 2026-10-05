@@ -30,8 +30,8 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   interface only when `HOPPER_LAN_PEERS` is set; a peer outside
   loopback and the LAN peers is refused, and a LAN or public request reads `/api/` only with a UI session
   (`docs/design.md` "Reaching the UI across the LAN", issue #16). No route creates or changes a job, question, webhook or setting except
-  through the UI session below: jobs come only from job sources; webhooks come only from the
-  `webhooks.yaml` config document, which the UI session may edit (`POST /ui/api/webhooks`, issue #18). Every request passes the Host guard
+  through the UI session below: jobs come only from job sources; webhook subscriptions are rows in the
+  database and nothing else (issue #78), which the UI session may edit (`POST /ui/api/webhooks`, issue #18). Every request passes the Host guard
   (`127.0.0.1:<port>` / `localhost:<port>` / a LAN name with the port / the public URL's host, else 421). The only mutations are the UI's
   `POST /ui/api/*`, behind a UI session (`x-hopper-session`,
   exact Origin, same-origin, JSON — else 403) whose UI role allows it; a new mutation goes there and

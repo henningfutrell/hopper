@@ -8,7 +8,7 @@ import type { DomainEvent, Job, Question } from '../../src/domain/types.ts';
 import { CLOSED_ANSWER, createFakeAnswerer, createFakeAssessor } from '../../src/questions/index.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { createAskerExecutor } from '../support/doubles.ts';
-import { writeWebhooksFile } from '../support/files.ts';
+import { writeWebhooks } from '../support/files.ts';
 import { startReceiver, type Receiver } from '../support/receiver.ts';
 import { waitFor } from '../support/wait.ts';
 
@@ -257,10 +257,10 @@ describe('a question escalated to the human', () => {
     expect(queue.waitingAnswer.map((j: Job) => j.id)).toEqual([first.id]);
   });
 
-  it('delivers question.escalated with target human to a webhook from webhooks.yaml', async () => {
+  it('delivers question.escalated with target human to a webhook subscription', async () => {
     receiver = await startReceiver();
     const url = receiver.url;
-    const a = await start({}, { secrets: { WEBHOOK_SECRET_R: 's' }, before: (db) => writeWebhooksFile(db, [{ name: 'r', url, events: ['question.escalated'], secretEnv: 'WEBHOOK_SECRET_R' }]) });
+    const a = await start({}, { secrets: { WEBHOOK_SECRET_R: 's' }, before: (db) => writeWebhooks(db, [{ name: 'r', url, events: ['question.escalated'], secretEnv: 'WEBHOOK_SECRET_R' }]) });
     const job = await a.pull(ask('Is this risky?'), { title: 'tidy up' });
     const q = await a.waitForQuestion(job.id, (x) => x.tier === 'human');
     const body = await waitFor(() => receiver!.received.map((r) => JSON.parse(r.body) as DomainEvent).find((e) => e.data.target === 'human'));

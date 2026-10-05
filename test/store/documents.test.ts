@@ -1,4 +1,4 @@
-// Config documents (design.md "Config documents"): plugins.yaml, webhooks.yaml and rules.md are
+// Config documents (design.md "Config documents"): plugins.yaml, rules.md and auth.yaml are
 // named texts in the store, each replaced whole against its version.
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
@@ -32,11 +32,11 @@ describe('config documents', () => {
     const url = t.url();
     const s = t.open(url, fixedClock());
     s.documents.write('plugins.yaml', 'version: 1\n', 'missing');
-    s.documents.write('webhooks.yaml', 'version: 1\nwebhooks: []\n', 'missing');
+    s.documents.write('auth.yaml', 'version: 1\n', 'missing');
     s.close();
     const again = t.open(url);
     expect(again.documents.read('plugins.yaml')).toBe('version: 1\n');
-    expect(again.documents.read('webhooks.yaml')).toBe('version: 1\nwebhooks: []\n');
+    expect(again.documents.read('auth.yaml')).toBe('version: 1\n');
     expect(again.documents.read('rules.md')).toBeUndefined();
     again.close();
   });

@@ -1,10 +1,10 @@
-// The event log over HTTP and SSE, and webhooks configured by webhooks.yaml (not by the API):
-// signed deliveries carrying schemaVersion, reload when the file changes.
+// The event log over HTTP and SSE, and webhook subscriptions, rows in the database (issue #78):
+// signed deliveries carrying schemaVersion.
 import { createHmac } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
 import { EVENT_SCHEMA_VERSIONS, type DomainEvent, type WebhookDelivery } from '../../src/domain/types.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
-import { writeDocument, writeWebhooksFile } from '../support/files.ts';
+import { writeWebhooks } from '../support/files.ts';
 import { startReceiver, type Receiver } from '../support/receiver.ts';
 import { openSse, type SseClient } from '../support/sse.ts';
 import { waitFor } from '../support/wait.ts';
@@ -21,7 +21,7 @@ async function start(before?: (dbPath: string) => void): Promise<TestApp> {
   const db = tempDbPath();
   cleanup = db.cleanup;
   before?.(db.dbPath);
-  t = await startTestApp({ dbPath: db.dbPath, seams: { webhookConfigIntervalMs: 50 }, secrets: { ...SECRETS } });
+  t = await startTestApp({ dbPath: db.dbPath, secrets: { ...SECRETS } });
   return t;
 }
 async function receiver(): Promise<Receiver> {
@@ -104,20 +104,19 @@ describe('events', () => {
   });
 });
 
-describe('webhooks from webhooks.yaml', () => {
-  it('lists file subscriptions by name without secrets, with the config status', async () => {
-    const a = await start((db) => writeWebhooksFile(db, [{ name: 'one', url: 'http://127.0.0.1:9/x', events: ['job.finished'], secretEnv: 'WH_ONE' }]));
+describe('webhook subscriptions', () => {
+  it('lists the subscriptions by name without secrets, and nothing else', async () => {
+    const a = await start((db) => writeWebhooks(db, [{ name: 'one', url: 'http://127.0.0.1:9/x', events: ['job.finished'], secretEnv: 'WH_ONE' }]));
     const body = (await a.api('GET', '/api/webhooks')).body;
     expect(body.subscriptions).toEqual([expect.objectContaining({ name: 'one', url: 'http://127.0.0.1:9/x', events: ['job.finished'], active: true })]);
     for (const s of body.subscriptions) expect(s).not.toHaveProperty('secret');
     expect(JSON.stringify(body)).not.toContain('abc');
-    expect(body.config).toMatchObject({ document: 'webhooks.yaml', loadedAt: expect.any(String), warnings: [] });
-    expect(body.config.error).toBeUndefined();
+    expect(Object.keys(body)).toEqual(['subscriptions']);
   });
 
   it('a real receiver gets signed deliveries with schemaVersion; deliveries are listed and streamed', async () => {
     const r = await receiver();
-    const a = await start((db) => writeWebhooksFile(db, [{ name: 'r', url: r.url, events: ['job.finished'], secretEnv: 'WH_R' }]));
+    const a = await start((db) => writeWebhooks(db, [{ name: 'r', url: r.url, events: ['job.finished'], secretEnv: 'WH_R' }]));
     const sub = (await a.api('GET', '/api/webhooks')).body.subscriptions[0];
     sse = await openSse(`${a.url}/api/events/stream`);
     const job = await a.pull({ op: 'echo', message: 'ping' });
@@ -134,30 +133,5 @@ describe('webhooks from webhooks.yaml', () => {
     expect(got.headers['x-hopper-delivery']).toBe(deliveries[0]!.id);
     const update = await waitFor(() => sse!.messages.find((m) => m.event === 'delivery.updated' && (JSON.parse(m.data) as WebhookDelivery).status === 'delivered'));
     expect(update.id).toBeUndefined();
-  });
-
-  it('reloads when the file changes: a changed filter applies, a removed name is deleted, an invalid file keeps the last good set', async () => {
-    const r1 = await receiver();
-    const r2 = await receiver();
-    let path = '';
-    const a = await start((db) => { path = db; writeWebhooksFile(db, [{ name: 'r1', url: r1.url, events: ['job.finished'], secretEnv: 'WH_R1' }]); });
-    writeWebhooksFile(path, [{ name: 'r2', url: r2.url, events: ['job.queued'], secretEnv: 'WH_R2' }]);
-    await waitFor(async () => {
-      const subs = (await a.api('GET', '/api/webhooks')).body.subscriptions as { name: string }[];
-      return subs.length === 1 && subs[0]!.name === 'r2';
-    }, { what: 'reload to r2' });
-    const job = await a.pull({ op: 'echo' });
-    await a.waitForStatus(job.id, 'finished');
-    const got = await waitFor(() => r2.received[0], { what: 'delivery to r2' });
-    expect(JSON.parse(got.body)).toMatchObject({ type: 'job.queued', jobId: job.id });
-    await new Promise((res) => setTimeout(res, 150));
-    expect(r1.received).toEqual([]);
-
-    writeDocument(path, 'webhooks.yaml', 'version: 2\nwebhooks: nope\n');
-    const cfg = await waitFor(async () => {
-      const b = (await a.api('GET', '/api/webhooks')).body;
-      return b.config.error ? b : undefined;
-    }, { what: 'config error' });
-    expect(cfg.subscriptions.map((s: { name: string }) => s.name)).toEqual(['r2']);
   });
 });

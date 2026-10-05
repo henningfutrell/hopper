@@ -290,7 +290,7 @@ export type NewEvent = Omit<DomainEvent, 'seq' | 'id' | 'at' | 'schemaVersion'> 
 
 export interface WebhookSubscription {
   id: string;
-  /** Name from webhooks.yaml — the reconcile key. */
+  /** Unique; the key a UI edit names. Never changed. */
   name: string;
   url: string;
   /** Event types to deliver; ['*'] = all. */

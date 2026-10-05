@@ -35,7 +35,8 @@ export function createFakeStore(): FakeStore {
       },
     },
     webhooks: {
-      upsertByName: (i: { name: string; url: string; events: string[]; secretEnv: string; active: boolean }) => fakeStore.subscribe(i),
+      add: (i: { name: string; url: string; events: string[]; secretEnv: string; active: boolean }) => fakeStore.subscribe(i),
+      update: (id: string, patch: Partial<WebhookSubscription>) => { const s = subs.get(id); if (s) Object.assign(s, patch); return s; },
       get: (id: string) => subs.get(id),
       list: () => [...subs.values()],
       delete: (id: string) => subs.delete(id),

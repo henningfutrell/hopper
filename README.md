@@ -8,8 +8,9 @@ Install page, step by step: https://henningfutrell.github.io/hopper/ (`site/`).
 
 - **Jobs are pulled, never pushed.** A job is an issue with the `hopper` label, by an author you
   allow. No route creates a job.
-- **Everything it keeps is in its database.** Config is four config documents in that database
-  (`plugins.yaml`, `webhooks.yaml`, `rules.md`, `auth.yaml`); secrets come from its environment.
+- **Everything it keeps is in its database.** Config is three config documents in that database
+  (`plugins.yaml`, `rules.md`, `auth.yaml`) and the webhook subscriptions, rows there edited from
+  the UI; secrets come from its environment.
 - **Every part is a plugin**: router, queue sorter, answerer, assessor, executors, job sources,
   machines, usage sources, notifiers (`docs/plugins.md`); the UI installs more from a plugin store.
 

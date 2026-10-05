@@ -6,7 +6,7 @@ import { apiReferenceRoutes } from './api-reference.ts';
 import type { SignIn } from '../auth/index.ts';
 import type { Clock, PluginStoreView, PluginsView, QuestionService, SourceRegistry, Store, Updater, WebhookDispatcher } from '../domain/ports.ts';
 import type { Engine } from '../engine/index.ts';
-import type { WebhookConfigView } from './webhooks.ts';
+import type { SecretProblem } from './webhooks.ts';
 import type { WebhooksEditor } from '../webhooks/edit.ts';
 import { accountRoutes } from './accounts.ts';
 import { installErrorHandling } from './errors.ts';

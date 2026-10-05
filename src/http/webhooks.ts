@@ -1,36 +1,33 @@
-// Webhook subscriptions come from webhooks.yaml (src/webhooks/config.ts), which the UI session may
-// edit (POST /ui/api/webhooks, src/http/ui/): these routes only read — the subscriptions (each with
-// the variable its secret is in and whether the runtime gives it; never a secret), the file's status
-// and version, the deliveries.
+// Webhook subscriptions are rows in the store (issue #78), which the UI session may edit
+// (POST /ui/api/webhooks, src/http/ui/): these routes only read — the subscriptions (each with the
+// variable its secret is in and whether the runtime gives it; never a secret), the deliveries.
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { Store } from '../domain/ports.ts';
-import type { WebhookConfigStatus } from '../webhooks/config.ts';
-
-/** What the webhooks routes read of the webhooks.yaml watcher. */
-export interface WebhookConfigView { status(): WebhookConfigStatus; secretProblem(secretEnv: string): string | undefined }
 import { parseWith } from './errors.ts';
+
+/** Why the runtime gives no secret in `secretEnv`, or undefined when it does. Never the secret. */
+export type SecretProblem = (secretEnv: string) => string | undefined;
 
 export const deliveriesQuery = z.object({
   subscriptionId: z.string().min(1).optional(),
   limit: z.coerce.number().int().min(1).max(1000).default(100),
 });
 
-/** GET /api/webhooks: every subscription, with why the runtime gives no secret for it (if so), and the file's status. */
-export function webhooksView(store: Pick<Store, 'webhooks'>, config: WebhookConfigView) {
+/** GET /api/webhooks: every subscription, with why the runtime gives no secret for it (if so). */
+export function webhooksView(store: Pick<Store, 'webhooks'>, secretProblem: SecretProblem) {
   return {
     subscriptions: store.webhooks.list().map((sub) => {
-      const secretProblem = config.secretProblem(sub.secretEnv);
-      return secretProblem === undefined ? sub : { ...sub, secretProblem };
+      const problem = secretProblem(sub.secretEnv);
+      return problem === undefined ? sub : { ...sub, secretProblem: problem };
     }),
-    config: config.status(),
   };
 }
 
-export function webhookRoutes(app: FastifyInstance, o: { store: Store; webhookConfig: WebhookConfigView }): void {
+export function webhookRoutes(app: FastifyInstance, o: { store: Store; secretProblem: SecretProblem }): void {
   const { webhooks } = o.store;
 
-  app.get('/api/webhooks', async () => webhooksView(o.store, o.webhookConfig));
+  app.get('/api/webhooks', async () => webhooksView(o.store, o.secretProblem));
 
   app.get('/api/webhooks/deliveries', async (req) => {
     const q = parseWith(deliveriesQuery, req.query);

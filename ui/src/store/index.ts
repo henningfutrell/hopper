@@ -9,7 +9,7 @@ import { signInWithoutCredential, wantsNoSignIn } from '@/lib/login';
 import { HISTORY_TYPES } from '@/model/event-types';
 import { reloadNeeded } from '@/model/update';
 import type { SessionUser, SessionView } from '@/model/wire';
-import type { Decision, DomainEvent, Health, Job, MachineView, PartAccount, PluginsReport, Question, Queue, RoutingReport, SourceStatus, UpdateStatus, UsageReport, WebhookConfig, WebhookDelivery, WebhookView, WebhooksView } from '@/model/wire';
+import type { Decision, DomainEvent, Health, Job, MachineView, PartAccount, PluginsReport, Question, Queue, RoutingReport, SourceStatus, UpdateStatus, UsageReport, WebhookDelivery, WebhookView, WebhooksView } from '@/model/wire';
 
 export const CAP = { events: 500, history: 5000, decisions: 100, deliveries: 100 };
 export type Conn = 'connecting' | 'live' | 'reconnecting';
@@ -41,7 +41,6 @@ export interface HopperState {
   sources: SourceStatus[];
   deliveries: WebhookDelivery[];
   subscriptions: WebhookView[];
-  webhookConfig: WebhookConfig | null;
   /** GET /api/plugins, fetched by the Plugins view; `pluginsError` when that failed. */
   plugins: PluginsReport | null;
   pluginsError: string | null;
@@ -60,7 +59,7 @@ export interface HopperState {
 
 export const useHopper = create<HopperState>(() => ({
   loaded: false, loadError: null, conn: 'connecting', authed: false, user: null, signIn: null, health: null, jobs: {}, waitingOrder: [], machines: [],
-  decisions: [], questions: [], handled: [], events: [], history: [], sources: [], deliveries: [], subscriptions: [], webhookConfig: null,
+  decisions: [], questions: [], handled: [], events: [], history: [], sources: [], deliveries: [], subscriptions: [],
   plugins: null, pluginsError: null, usage: null, accounts: [], routing: null, routingError: null, update: null, loadedCommit: undefined,
 }));
 const set = useHopper.setState;
@@ -81,7 +80,7 @@ export async function refreshPlugins() {
   try { set({ plugins: await get<PluginsReport>('/api/plugins'), pluginsError: null }); } catch (e) { set({ pluginsError: (e as Error).message }); }
 }
 /** GET /api/webhooks, or the answer to a webhooks edit: the subscriptions (never a secret) and the file's status. */
-export const setWebhooks = (v: WebhooksView) => set({ subscriptions: v.subscriptions, webhookConfig: v.config ?? null });
+export const setWebhooks = (v: WebhooksView) => set({ subscriptions: v.subscriptions });
 export async function refreshWebhooks() { setWebhooks(await get<WebhooksView>('/api/webhooks')); }
 export const setPlugins = (plugins: PluginsReport) => set({ plugins, pluginsError: null });
 export async function refreshRouting() {
@@ -210,7 +209,7 @@ export async function load() {
   set({
     loaded: true, loadError: null, health, ...jobsOf(queue), machines: machines.machines, decisions: decisions.decisions,
     events: events.events.slice().sort((a, b) => b.seq - a.seq), history: history.events.slice().sort((a, b) => a.seq - b.seq),
-    subscriptions: subs.subscriptions, webhookConfig: subs.config ?? null, deliveries: deliveries.deliveries,
+    subscriptions: subs.subscriptions, deliveries: deliveries.deliveries,
     questions: questions.questions, handled: handledOf(allQuestions.questions), sources: sources.sources, usage, accounts: accounts.accounts,
   });
   refreshUpdate().catch(() => {});

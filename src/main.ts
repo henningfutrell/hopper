@@ -38,7 +38,7 @@ import { openStore } from './store/index.ts';
 import { createInstallScriptBuilder, createRestarter, createUpdater, renameBoot, RESTART_EXIT_CODE, restartBlockers } from './update/index.ts';
 import { createWebhookConfigWatcher, type WebhookConfigWatcher } from './webhooks/config.ts';
 import { createWebhooksEditor } from './webhooks/edit.ts';
-import { createWebhookDispatcher } from './webhooks/index.ts';
+import { createWebhookDispatcher, secretProblem } from './webhooks/index.ts';
 
 export interface App {
   /** Always the loopback URL, whatever the bind address. */
@@ -49,14 +49,13 @@ export interface App {
   /** The UI link to one question, as notifications carry it: the first LAN name, else loopback. */
   answerUrl(questionId: string): string;
   routerMode(): string;
-  /** For tests: the store, the engine (setFakeUsage), the sync loop (syncNow), the webhooks.yaml watcher. */
+  /** For tests: the store, the engine (setFakeUsage), the sync loop (syncNow). */
   plugins: PluginsView;
   store: Store;
   engine: Engine;
   sources: SourceSync;
-  webhookConfig: WebhookConfigWatcher;
   updater: Updater;
-  /** Close the server; stop the sync loop, question service, engine (≤ 5 s), dispatcher, watcher; close the store. */
+  /** Close the server; stop the sync loop, question service, engine (≤ 5 s), dispatcher, notifiers, plugin host; close the store. */
   stop(): Promise<void>;
 }
 
@@ -74,8 +73,6 @@ export interface AppSeams {
   fakeUsage?: SettableUsageSource;
   /** Run after the configured sources, polled every SEAM_SOURCE_POLL_MS. */
   sources?: JobSource[];
-  /** How often webhooks.yaml's version is checked; default WEBHOOKS_FILE_CHECK_MS. */
-  webhookConfigIntervalMs?: number;
   /** First retry delay of every grokbot-routine notifier instance; default 1000. */
   grokbotBaseMs?: number;
   /** Replaces the configured router (the plugin host still loads, for /api/plugins). */
@@ -98,7 +95,6 @@ export interface AppSeams {
   update?: { appDir?: string; builder?: UpdateBuilder; restart?: Restarter };
 }
 
-const WEBHOOKS_FILE_CHECK_MS = 5000;
 const PLUGINS_FILE_CHECK_MS = 5000;
 const SEAM_SOURCE_POLL_MS = 1000;
 const UI_DIR = fileURLToPath(new URL('../ui/dist', import.meta.url));
@@ -269,9 +265,6 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     pollMs: (name) => running.find((r) => r.source.name === name)?.pollMs ?? SEAM_SOURCE_POLL_MS,
   });
   const registry: SourceRegistry = withFixedStatuses(sync, fixed);
-  const webhookConfig = createWebhookConfigWatcher({
-    documents: store.documents, store, clock, secret, intervalMs: seams.webhookConfigIntervalMs ?? WEBHOOKS_FILE_CHECK_MS,
-  });
   const signIn = createSignIn({ config: auth, clock, origin: () => config.publicUrl ?? `http://localhost:${port}` });
   // Self-update (issue #44): the restart reaches app.stop() through `restartApp`, set below.
   let restartApp: Restarter = async () => {};
@@ -290,7 +283,6 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     lan: { names: config.lanNames, peers: config.lanPeers, publicUrl: config.publicUrl }, uiDir: seams.uiDir ?? UI_DIR,
   });
 
-  webhookConfig.start();
   dispatcher.start();
   host.startNotifiers({ subscribe: (l) => store.events.subscribe(l), job: (id) => store.jobs.get(id) });
   // Before listening: the boot after an update records update.applied before anything is answered.
@@ -312,7 +304,6 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     store,
     engine,
     sources: sync,
-    webhookConfig,
     updater,
     stop() {
       stopped ??= (async () => {
@@ -323,7 +314,6 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
         await engine.stop();
         await dispatcher.stop();
         await host.stopNotifiers();
-        webhookConfig.stop();
         stopFailureLog();
         host.stop();
         store.close();

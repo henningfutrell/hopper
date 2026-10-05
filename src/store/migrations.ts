@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { isMap, isScalar, isSeq, parseDocument, type YAMLMap } from 'yaml';
 import type { Db } from './db.ts';
 
@@ -112,6 +113,8 @@ const MIGRATIONS: readonly Migration[] = [
   // 13: the router is a role, Jev is a model (issue #76). The router plugin `jev-router` is
   // `gate-router`, and its options say which model answers a gate.
   renameGateRouter,
+  // 14: webhook subscriptions live in the table and nothing else (issue #78).
+  webhooksDocumentToRows,
 ];
 
 /**
