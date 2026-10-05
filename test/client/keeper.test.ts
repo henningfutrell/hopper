@@ -13,6 +13,7 @@ import { mintToken } from '../../src/client/signature.ts';
 import { clientSocket } from '../../src/executors/client.ts';
 import { createClientReleaseKeeper } from '../../src/machines/client-release.ts';
 import { startTestClient } from '../support/client.ts';
+import { waitFor } from '../support/wait.ts';
 
 const HERDR = fileURLToPath(new URL('../herdr/fake-herdr-bin.mjs', import.meta.url));
 chmodSync(HERDR, 0o755);
@@ -24,7 +25,7 @@ let dir: string;
 let client: Client | undefined;
 afterEach(async () => { await client?.stop(); client = undefined; rmSync(dir, { recursive: true, force: true }); });
 
-async function olderClient(): Promise<{ install: string; loaded: string[]; transport: { machine: string; socket: string; token: () => string } }> {
+async function olderClient(restartOnLoad = false): Promise<{ install: string; loaded: string[]; transport: { machine: string; socket: string; token: () => string } }> {
   dir = mkdtempSync(join(tmpdir(), 'jh-keeper-'));
   process.env.FAKE_HERDR_DIR = dir;
   process.env.FAKE_HERDR_RUNNING = '1';
@@ -34,7 +35,7 @@ async function olderClient(): Promise<{ install: string; loaded: string[]; trans
   mkdirSync(join(dir, 'clients'), { mode: 0o700 });
   const socket = clientSocket(dir, 'studio');
   const loaded: string[] = [];
-  client = await startTestClient(socket, { token: () => TOKEN, herdrBin: HERDR, session: 'job-hopper', installDir: install, onLoaded: (id) => loaded.push(id) });
+  client = await startTestClient(socket, { token: () => TOKEN, herdrBin: HERDR, session: 'job-hopper', installDir: install, onLoaded: (id) => { loaded.push(id); if (restartOnLoad) void client?.stop(); } });
   return { install, loaded, transport: { machine: 'studio', socket, token: () => TOKEN } };
 }
 
@@ -54,9 +55,21 @@ describe('keeping a client target on the hopper\'s release', () => {
     const lines: string[] = [];
     const keep = createClientReleaseKeeper({ release: HOPPERS, logger: { info: (l) => lines.push(l), warn: (l) => lines.push(l) } });
     await keep(transport, () => false);
+    await waitFor(() => (loaded.length > 0 ? true : undefined), { timeoutMs: 5000, what: 'the restart asked for' });
     expect(loaded).toEqual([HOPPERS.id]);
     expect(readRelease(install)).toEqual(HOPPERS);
     expect(lines.join('\n')).toMatch(new RegExp(`client studio: loaded release ${HOPPERS.id}`));
+  });
+
+  it('a client that stops its tunnel to restart, as main.ts does, still gets its answer to the hopper first', async () => {
+    const { loaded, transport } = await olderClient(true);
+    const lines: string[] = [];
+    const keep = createClientReleaseKeeper({ release: HOPPERS, logger: { info: (l) => lines.push(l), warn: (l) => lines.push(l) } });
+    await keep(transport, () => false);
+    await waitFor(() => (loaded.length > 0 ? true : undefined), { timeoutMs: 5000, what: 'the restart asked for' });
+    expect(loaded).toEqual([HOPPERS.id]);
+    expect(lines.join('\n')).toMatch(new RegExp(`client studio: loaded release ${HOPPERS.id}`));
+    expect(lines.join('\n')).not.toMatch(/failed/);
   });
 
   it('a client with no tunnel is offline, and nothing is tried', async () => {

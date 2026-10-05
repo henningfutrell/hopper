@@ -2491,7 +2491,8 @@ client target runs a client the hopper did not release.
   client process runs (read from its install dir at start); `POST /load {release: {id, files}}` → the
   client checks the release whole (exactly `CLIENT_FILES`, all text, the id its files') before writing a
   byte, writes it to `<install>.next`, swaps it in (the one before kept as `<install>.prev`), answers
-  `{release}`, then exits 75; its unit (`Restart=always`) starts the new files. A load of the release
+  `{release}`, and 1 s after that answer has left (time for it to cross the tunnel) exits 75; its unit
+  (`Restart=always`) starts the new files. A load of the release
   already installed writes nothing.
 - **Keeping it current** (`src/machines/client-release.ts`): each probe of a client target (every 30 s)
   asks `POST /release` after `status server`; when it is not the hopper's id, the hopper loads its
