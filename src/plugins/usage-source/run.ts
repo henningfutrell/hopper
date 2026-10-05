@@ -1,7 +1,7 @@
-// One run of the claude CLI for claude-plan: argv only (no shell), the env without the Claude Code
-// markers, killed at the timeout or on abort. Never throws.
+// One run of a usage source's command (claude-plan's claude CLI, command-usage's command): argv only
+// (no shell), the env without the Claude Code markers, killed at the timeout or on abort. Never throws.
 import { execFile } from 'node:child_process';
-import { scrubbedEnv } from '../../claude-print.ts';
+import { scrubbedEnv } from '../claude-print.ts';
 
 /** It ran (any exit code), or it could not run or finish. */
 export type CliRun = { code: number; stdout: string; stderr: string } | { error: string };

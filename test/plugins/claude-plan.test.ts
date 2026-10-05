@@ -134,7 +134,7 @@ describe('claude-plan plugin', () => {
 
   it('with a machine, detection never looks for claude here: claude runs on that machine', async () => {
     const kit = fakeKit({ which: async () => undefined });
-    expect(await claudePlan.detect(kit, { bin: 'claude', intervalSeconds: 600, machine: 'laptop', sshBin: 'ssh', dockerBin: 'docker' }))
+    expect(await claudePlan.detect(kit, { bin: 'claude', intervalSeconds: 600, machine: 'laptop', sshBin: 'ssh', dockerBin: 'docker', executors: ['herdr-claude'] }))
       .toEqual({ status: 'available', detail: 'claude on machine laptop' });
   });
 

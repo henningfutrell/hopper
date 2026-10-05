@@ -59,8 +59,8 @@ describe('claude-plan through the composition root', () => {
       `Current week (all models): 30% used · resets ${when}`,
       `Current week (Fable): 99% used · resets ${when}`,
     ].join('\n'));
-    // The test executor stands in for Claude Code: the budget names the executor whose jobs it limits.
-    const a = await boot({ plugins: { machines: lanes(4), usageSources: [{ name: 'claude', plugin: 'claude-plan', options: { bin: FAKE_CLAUDE, executors: ['test'] } }] } });
+    // The scripted executor runs the pulled jobs and stands in for Claude Code: the budget names it.
+    const a = await boot({ plugins: { machines: lanes(4), usageSources: [{ name: 'claude', plugin: 'claude-plan', options: { bin: FAKE_CLAUDE, executors: ['scripted'] } }] } });
 
     const report = await waitFor(async () => { const u = await usage(a); return u.readings.some((r) => r.source === 'claude') && u.sources[0]?.account ? u : undefined; }, { what: 'claude readings and account' });
     expect(report.readings.filter((r) => r.source === 'claude').map((r) => [r.window, r.used, r.limit, r.unit, r.informational ?? false])).toEqual([
@@ -71,9 +71,10 @@ describe('claude-plan through the composition root', () => {
       { name: 'fake' },
     ]);
     expect(report.limits).toEqual({ soft: 0.7, hard: 0.95 });
+    // The machine's lanes stay open for its other executor; the scripted executor's jobs are capped at 2.
     expect(report.machines).toEqual([{
-      machineId: 'local', label: expect.any(String), online: true, maxLanes: 4, usedFrac: 0.8, cap: 2, band: 'soft',
-      executors: [{ executor: 'test', usedFrac: 0.8, cap: 2, band: 'soft' }],
+      machineId: 'local', label: expect.any(String), online: true, maxLanes: 4, usedFrac: 0, cap: 4, band: 'free',
+      executors: [{ executor: 'test', usedFrac: 0, cap: 4, band: 'free' }, { executor: 'scripted', usedFrac: 0.8, cap: 2, band: 'soft' }],
     }]);
 
     const jobs: Job[] = [];

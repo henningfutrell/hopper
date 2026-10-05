@@ -63,6 +63,16 @@ describe('usage per executor', () => {
     expect(plan(decide(inputs({ machines: [mixed], usage: both, lanes, running }), 'd2')).drain).toEqual(['local/lane-2', 'local/lane-1']);
   });
 
+  it('a machine\'s own readings win per executor (issue #139): its own Claude account caps its Claude jobs, a budget read for every machine still caps another framework there', () => {
+    const usage = [
+      claudeAt(99), // this hopper's Claude account
+      reading(10, 100, { source: 'claude-local', machineId: 'local', executors: ['claude'] }), // the machine's own
+      reading(96, 100, { source: 'codex', executors: ['codex'] }),
+    ];
+    const effect = laneEffect(mixed, usage, policy);
+    expect(effect.executors.map((e) => [e.executor, e.usedFrac])).toEqual([['claude', 0.1], ['codex', 0.96]]);
+  });
+
   it('the lane effect: the machine\'s cap is its least constrained executor\'s; each executor\'s own effect beside it', () => {
     const effect = laneEffect(mixed, [claudeAt(82.5), reading(10, 100, { executors: ['codex'] })], policy);
     expect(effect).toEqual({

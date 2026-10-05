@@ -6,7 +6,7 @@ import { ReadingGauge } from '@/components/reading';
 import { StatusBadge, type Tone } from '@/components/status';
 import { useNow } from '@/hooks/use-now';
 import { usePoll } from '@/hooks/use-poll';
-import { accountFacts, laneEffectText, orderReadings, serviceLabel, sourceLine } from '@/model/usage';
+import { accountFacts, executorEffectLines, laneEffectText, orderReadings, serviceLabel, sourceLine } from '@/model/usage';
 import type { MachineLaneEffect, PartAccount, UsageReport } from '@/model/wire';
 import { refreshUsage, useHopper } from '@/store';
 
@@ -62,6 +62,7 @@ function LaneEffect({ usage }: { usage: UsageReport }) {
                 {[soft, hard].map((x) => <div key={x} className="absolute top-0 h-full w-0.5 bg-background" style={{ left: pct(x) }} />)}
               </div>
               <div className="num text-xs text-muted-foreground">{pct(m.usedFrac)} used · {laneEffectText(m)}</div>
+              {executorEffectLines(m).map((line) => <div key={line} className="num text-xs text-muted-foreground">{line}</div>)}
             </li>
           ))}
         </ul>
