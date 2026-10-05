@@ -1,11 +1,12 @@
 # Publishes site/ (the install page) to GitHub Pages, with scripts/get.sh as install.sh beside it, so
-# `curl -fsSL https://henningfutrell.github.io/hopper/install.sh | bash` installs. No build step.
+# `curl -fsSL https://henningfutrell.github.io/hopper/install.sh | bash` installs, and compose.yaml, the
+# Docker Compose install (issue #119). No build step.
 name: pages
 
 on:
   push:
     branches: [main]
-    paths: [site/**, scripts/get.sh, .github/workflows/pages.yml]
+    paths: [site/**, scripts/get.sh, compose.yaml, .github/workflows/pages.yml]
   workflow_dispatch:
 
 permissions:
@@ -25,7 +26,7 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      - run: cp scripts/get.sh site/install.sh
+      - run: cp scripts/get.sh site/install.sh && cp compose.yaml site/compose.yaml
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

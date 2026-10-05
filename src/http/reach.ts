@@ -1,7 +1,8 @@
 // Who is asking (design.md "Reaching the UI across the LAN", "Sign-in: none, password, local, OIDC and SAML"). A
 // request is local (loopback peer, Host 127.0.0.1:<port> or localhost:<port>), LAN (Host a LAN name
 // with the port) or public (Host the public URL's host, as a reverse proxy passes it on); a LAN or
-// public request comes from loopback or a LAN peer range. Anything else is refused: another Host is
+// public request comes from loopback or a LAN peer range. A LAN peer naming a loopback Host is a LAN
+// request: a port a container publishes on its host's loopback arrives that way (issue #119). Anything else is refused: another Host is
 // 421 (DNS rebinding), another peer is 403. A LAN or public request reads /api/ only with a UI session.
 import { BlockList, isIPv4, isIPv6 } from 'node:net';
 
@@ -46,9 +47,9 @@ export function classifyRequest(req: { host: string | undefined; peer: string | 
   if (!local) {
     const listed = peer !== '' && lan.peers.length > 0 && peers.check(peer, isIPv6(peer) ? 'ipv6' : 'ipv4');
     if (!listed) return { refuse: 403, why: `peer ${peer || '(unknown)'} is not on loopback or in JOB_HOPPER_LAN_PEERS` };
-    if (lanHosts(port, lan).includes(host)) return { reach: 'lan' };
+    if (lanHosts(port, lan).includes(host) || loopbackHosts(port).includes(host)) return { reach: 'lan' };
     if (publicHosts(lan).includes(host)) return { reach: 'public' };
-    return { refuse: 421, why: `misdirected request: Host must be ${[...lanHosts(port, lan), ...publicHosts(lan)].join(' or ')}` };
+    return { refuse: 421, why: `misdirected request: Host must be ${known.join(' or ')}` };
   }
   if (loopbackHosts(port).includes(host)) return { reach: 'local' };
   if (lanHosts(port, lan).includes(host)) return { reach: 'lan' };

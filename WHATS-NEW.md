@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- You can run the hopper with Docker alone: download one file, start it, and the hopper, its database and the place its jobs run all come up together, with nothing else to install.
 - You can install the hopper on Windows. It runs in WSL, from the same one-line install, and the install page shows each step.
 - When an update is ready, "What's new" now lists the changes in plain words instead of a technical change log.
 - When a job needs a decision, the hopper first works out its own best answer and only asks you when the choice really is yours.

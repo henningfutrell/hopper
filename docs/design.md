@@ -2726,7 +2726,7 @@ With LAN names set the daemon binds `::` (every interface); without, `127.0.0.1`
 |---|---|---|
 | loopback | `127.0.0.1:<port>` / `localhost:<port>` | local — as before: reads open |
 | loopback or in `LAN_PEERS` | `<LAN name>:<port>` | LAN |
-| in `LAN_PEERS` | loopback name | 421 |
+| in `LAN_PEERS` | loopback name with the port | LAN — since issue #119: a port a container publishes on its host's loopback arrives so ("Docker Compose") |
 | anything else | any | 403 — a peer on another interface (VPN `tun0`, docker bridges) is refused before routing |
 | any | any other Host | 421 — DNS rebinding, as before |
 
@@ -3294,6 +3294,44 @@ supervisor restarting it; recovery by hand is swapping `<install>.prev` back and
 records `update.failed`). Signature checks on the fetched code: the repository the owner installed
 from is trusted as the install itself was.
 
+## Docker Compose (issue #119, 2026-10-05)
+
+Owner request: install the hopper as a Docker Compose setup — one file that brings up what is needed,
+with no host install path.
+
+`compose.yaml` at the root, served by the install page beside `install.sh`. Three services: `secrets`
+(once per start; the database password is made on the first one and kept in a volume, each file
+readable only by its one reader), `postgres` (no host port), `hopper` (built from the public repository's
+`main`, or `HOPPER_SOURCE`). Settings and secrets come from an optional `.env` beside it. Operating
+detail: `docs/deploy.md` "Docker Compose".
+
+**Jobs run in the hopper's container.** Until now the image had no herdr and ran jobs only on
+attached machines; a compose install with no other machine could run nothing. The image now carries
+herdr (herdr.dev's installer, which checks the release's SHA-256), and its entrypoint
+(`scripts/container-start.sh`) starts job-hopper's herdr session and starts it again when it stops,
+before it runs the daemon. The built-in `local` machine with `herdr-claude` then works unchanged. The
+image seeds Claude Code's first-run state (onboarding done; the `--dangerously-skip-permissions`
+prompt skipped) into `/home/node`, the `home` volume; the workspace trust dialog is answered by
+`trustWorkdir` as on a host. git reaches GitHub through `gh auth git-credential`.
+
+**A loopback Host from a LAN peer is a LAN request.** Docker publishes the UI port on the host's
+loopback and forwards it from the compose network: the browser sends `Host: 127.0.0.1:<port>` and the
+daemon sees a peer in the network's range. It was refused 421 (the LAN table above); it is now a LAN
+request — a UI session for `/api/`, the exact Origin for mutations — never a local one. DNS
+rebinding is unaffected: another Host is 421 as before. The compose file publishes the daemon's own
+port (`JOB_HOPPER_PORT`, both sides) so the Host names it, sets `JOB_HOPPER_LAN_PEERS` to the private
+ranges and `JOB_HOPPER_LAN_NAMES` to `hopper`, the service name.
+
+**The earlier container profile is gone** (`deploy/compose.yaml --profile container`, no
+compatibility): `deploy/compose.yaml` is the host install's Postgres alone, project `job-hopper`;
+the compose install is project `hopper`, so their volumes never meet.
+
+**Verification:** `test/scripts/compose.test.ts` asserts the rendered file (`docker compose config`,
+from an empty directory, as downloaded). Live: the stack built from a checkout on a spare port, came up
+healthy; the `local` machine was online with `herdr-claude`; a login code signed in through the
+published port; Claude Code started in a pane of the container's herdr session at its prompt; the
+stack came back after `down`/`up` with its data and password.
+
 ## Deployable: a database, config documents, secrets from the environment (issue #40, 2026-10-04)
 
 Owner direction: the hopper must not lean on the computer it runs on — config in local files, state
@@ -3460,7 +3498,8 @@ has it (`git log -- src/migrate/local.ts`).
   python3 + PyYAML, gh, the claude CLI; the UI built in a first stage. No herdr in the image: jobs run
   on attached machines over ssh (their keys and `~/.ssh/config` mounted, or the machine source
   configured for none). Self-update does not apply (no install.json; an image is updated by
-  rebuilding it).
+  rebuilding it). Since issue #119 the image carries herdr and runs jobs itself, and the container
+  deploy is `compose.yaml` at the root ("Docker Compose").
 
 ### Settled (issue #40)
 
