@@ -61,15 +61,15 @@ describe('compose.yaml, downloaded alone and started with no settings', () => {
   });
 
   it('answers the forwarded port: LAN peers are the private ranges, its LAN name the service name', () => {
-    expect(hopper.environment?.JOB_HOPPER_LAN_PEERS).toBe('10.0.0.0/8,172.16.0.0/12,192.168.0.0/16');
-    expect(hopper.environment?.JOB_HOPPER_LAN_NAMES).toBe('hopper');
+    expect(hopper.environment?.HOPPER_LAN_PEERS).toBe('10.0.0.0/8,172.16.0.0/12,192.168.0.0/16');
+    expect(hopper.environment?.HOPPER_LAN_NAMES).toBe('hopper');
   });
 
   it('gives the database a password made on first start, never one written in a file you edit', () => {
     expect(postgres.environment?.POSTGRES_PASSWORD).toBeUndefined();
     expect(postgres.environment?.POSTGRES_PASSWORD_FILE).toMatch(/^\/run\/hopper-secrets\//);
-    expect(hopper.environment?.JOB_HOPPER_DATABASE_URL).toBeUndefined();
-    expect(hopper.environment?.JOB_HOPPER_DATABASE_URL_FILE).toMatch(/^\/run\/hopper-secrets\//);
+    expect(hopper.environment?.HOPPER_DATABASE_URL).toBeUndefined();
+    expect(hopper.environment?.HOPPER_DATABASE_URL_FILE).toMatch(/^\/run\/hopper-secrets\//);
     // Postgres makes it, before the database starts; the hopper waits for a healthy Postgres and only reads.
     expect(postgres.command?.join('\n')).toContain('/dev/urandom');
     expect(postgres.command?.join('\n')).toMatch(/exec docker-entrypoint\.sh postgres/);
@@ -94,15 +94,15 @@ describe('compose.yaml, downloaded alone and started with no settings', () => {
 
 describe('compose.yaml with a .env beside it', () => {
   it('passes its settings and secrets to the hopper', () => {
-    const hopper = svc(render('JOB_HOPPER_PUBLIC_URL=https://hopper.example.com\nGH_TOKEN=t0\n'), 'hopper');
-    expect(hopper.environment?.JOB_HOPPER_PUBLIC_URL).toBe('https://hopper.example.com');
+    const hopper = svc(render('HOPPER_PUBLIC_URL=https://hopper.example.com\nGH_TOKEN=t0\n'), 'hopper');
+    expect(hopper.environment?.HOPPER_PUBLIC_URL).toBe('https://hopper.example.com');
     expect(hopper.environment?.GH_TOKEN).toBe('t0');
   });
 
   it('moves the UI port on both sides, so the Host the browser sends names the daemon\'s port; runs another image', () => {
-    const hopper = svc(render('JOB_HOPPER_PORT=4800\nHOPPER_IMAGE=localhost/hopper:dev\n'), 'hopper');
+    const hopper = svc(render('HOPPER_PORT=4800\nHOPPER_IMAGE=localhost/hopper:dev\n'), 'hopper');
     expect(hopper.ports).toEqual([expect.objectContaining({ host_ip: '127.0.0.1', published: '4800', target: 4800 })]);
-    expect(hopper.environment?.JOB_HOPPER_PORT).toBe('4800');
+    expect(hopper.environment?.HOPPER_PORT).toBe('4800');
     expect(hopper.image).toBe('localhost/hopper:dev');
   });
 });
@@ -110,11 +110,11 @@ describe('compose.yaml with a .env beside it', () => {
 describe('the image runs jobs itself', () => {
   const dockerfile = readFileSync(join(ROOT, 'Dockerfile'), 'utf8');
 
-  it('carries herdr, and starts job-hopper\'s herdr session before the daemon', () => {
+  it('carries herdr, and starts the hopper\'s herdr session before the daemon', () => {
     expect(dockerfile).toContain('https://herdr.dev/install.sh');
     expect(dockerfile).toMatch(/ENTRYPOINT \["\/app\/scripts\/container-start\.sh"\]/);
     const start = readFileSync(join(ROOT, 'scripts', 'container-start.sh'), 'utf8');
-    expect(start).toContain('herdr --session job-hopper server');
+    expect(start).toContain('herdr --session hopper server');
     expect(start).toMatch(/exec "\$@"/);
   });
 });
@@ -135,10 +135,15 @@ describe('the install page', () => {
     expect(workflow).toMatch(/paths:.*compose\.yaml/);
   });
 
+  it('names the renamed command and settings, never the old ones (issue #112)', () => {
+    expect(page).not.toMatch(/exec hopper job-hopper|JOB_HOPPER_/);
+    expect(readFileSync(join(ROOT, 'compose.yaml'), 'utf8')).not.toMatch(/JOB_HOPPER_|job-hopper/);
+  });
+
   it('gives the container install with Podman as commands to copy', () => {
     expect(page).toContain('data-copy="curl -fsSLO https://henningfutrell.github.io/hopper/compose.yaml"');
     expect(page).toContain('data-copy="podman compose up -d"');
-    expect(page).toContain('podman compose exec hopper job-hopper login-code --link http://127.0.0.1:4790');
+    expect(page).toContain('podman compose exec hopper hopper login-code --link http://127.0.0.1:4790');
     expect(page).toContain('data-copy="podman compose pull &amp;&amp; podman compose up -d"');
   });
 
