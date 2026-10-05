@@ -1,7 +1,7 @@
 // The Machines view's model (design.md "Machines from the UI", issue #18): which machine is this one
 // and which are attached (with their plugins.yaml entry), why an Add form may not be sent yet, and
 // the bodies POST /ui/api/machines takes. herdrBin and session are never part of a body.
-import type { AttachedMachine, MachineEdit, MachinesConfig } from '../../../src/domain/types.ts';
+import type { AttachedMachine, MachineEdit, MachineSnapshot, MachinesConfig } from '../../../src/domain/types.ts';
 
 /** The local plugin's default lane count. */
 const DEFAULT_LANES = 4;
@@ -57,4 +57,11 @@ export function editBody(entry: AttachedMachine, d: MachineEditDraft, version: s
   if (!sameExecutors) body.executors = [...d.executors];
   if (label !== (entry.label ?? '')) body.label = label || null;
   return Object.keys(body).length > 3 ? body : null;
+}
+
+/** A client target's client release, as the Machines view says it (issue #70); null before a probe found it online, or for any other machine. */
+export function clientReleaseText(client: MachineSnapshot['client']): string | null {
+  if (client?.current === undefined) return null;
+  if (!client.release) return 'none: older than releases, install it again (scripts/attach-client.sh)';
+  return client.current ? `${client.release} (the hopper's)` : `${client.release} (not the hopper's: loaded once no job runs there)`;
 }

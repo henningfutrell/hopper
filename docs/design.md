@@ -42,8 +42,8 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/webhooks/` | signing, dispatcher, retry/backoff, `webhooks.yaml` load + watch (`config.ts`), the UI edit of it (`edit.ts`) | engine, http, decider |
 | `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `job-hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, `plugins.yaml` + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `question-slots.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), a machine edit of `attachedMachines:` (`attached-edit.ts`, spliced into the file; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `answerer/claude-cli/`, `assessor/claude-cli-assessor/`, `assessor/always-escalate/` hold their prompts; `executor/herdr-claude/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-gh/` and `job-source/github-app/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser, runner, background refresh); `notifier/grokbot-routine/` is the Grok Bot routine webhook — env-file reader and notifier; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`) | engine, http, store, decider, questions |
 | `src/executors/` | `Executor` adapters (`test`, `herdr/`, `command.ts` — a job's body run on its machine through its connection) and the registry; reached through the executor plugins. The connections and their target authentication ("Target authentication"): `ssh.ts` (key-only ssh to pinned host keys), `docker.ts` (the docker socket check, the proxy's allowlist), `client.ts` (a client target's tunnel, signed calls); `env.ts` the scrubbed child environment | engine, http, store, plugins |
-| `src/client/` | the hopper client ("Client targets"), installed on a client target as plain files: `server.ts` (signed `POST /herdr` over HTTP/2 on the tunnel), `tunnel.ts` (its ssh to the hopper), `main.ts`; `relay.ts`, the forced command of its key on the hopper's machine; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`); `ssh-options.ts` (the hardened ssh options, shared with `src/executors/ssh.ts`) | everything in `src/` outside `src/client/` |
-| `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following plugins.yaml; ssh probe and herdr path resolution through the herdr CLI client's ssh argv; the container probe, `docker container inspect`), the detected ssh targets (`ssh-config.ts`), `combineMachineSources` | engine, http, store, plugins |
+| `src/client/` | the hopper client ("Client targets"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load` over HTTP/2 on the tunnel), `tunnel.ts` (its ssh to the hopper), `release.ts` (the client release: its files, its id, checking and installing one — "Client releases"), `main.ts`; `relay.ts`, the forced command of its key on the hopper's machine; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`); `ssh-options.ts` (the hardened ssh options, shared with `src/executors/ssh.ts`) | everything in `src/` outside `src/client/` |
+| `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following plugins.yaml; ssh probe and herdr path resolution through the herdr CLI client's ssh argv; the container probe, `docker container inspect`), the detected ssh targets (`ssh-config.ts`), keeping each client target on the hopper's client release (`client-release.ts`), `combineMachineSources` | engine, http, store, plugins |
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin) | engine, http, store, plugins |
 | `src/routing/` | routing rules: the plugins.yaml `routing:` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
 | `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`); job lifecycle; routing at intake (`source-host.ts`); restart recovery | http |
@@ -2465,7 +2465,8 @@ itself.
 
 **Installing one** (on this machine, as the daemon's user): `bash scripts/attach-client.sh <name>
 <ssh-target> <user@this-host> [lanes]` — over the user's ssh: checks node ≥ 24 and herdr there,
-installs `src/client/{main,server,signature,tunnel,ssh-options}.ts` to `~/.local/lib/job-hopper-client/`,
+installs the hopper's client release (the client files of `$JOB_HOPPER_APP_DIR/src/client`, "Client
+releases") to `~/.local/lib/job-hopper-client/`,
 the token, the pinned host key and `client.env` to `~/.config/job-hopper-client/` (mode 700; files
 600), the units `job-hopper-client` and `job-hopper-client-herdr` (its own herdr session,
 `job-hopper-client` unless `JOB_HOPPER_CLIENT_SESSION`), and starts them; here: mints the token to
@@ -2475,6 +2476,36 @@ and the key.
 
 **Residual risk.** The client's key logs in as the daemon's user, restricted to the relay; the relay is
 the only thing it can run. The daemon trusts nothing from a client but the herdr answers it signed.
+
+## Client releases (issue #70, 2026-10-05)
+
+The hopper client is released from the hopper and loaded onto its client targets by the hopper: no
+client target runs a client the hopper did not release.
+
+- **The release** (`src/client/release.ts`) is the client's files — `CLIENT_FILES`: `main.ts`,
+  `release.ts`, `server.ts`, `signature.ts`, `ssh-options.ts`, `tunnel.ts`; never `relay.ts`, which runs
+  here — and an id, the first 16 hex of a SHA-256 over every name and content. Same files, same id. The
+  hopper's release is the client files of the install it runs from (`<app>/src/client`), read at boot:
+  `scripts/install.sh` and a self-update ("Self-update") release a new client whenever its files change.
+- **The calls**, signed like `POST /herdr`: `POST /release {}` → `{release}`, the id of the release the
+  client process runs (read from its install dir at start); `POST /load {release: {id, files}}` → the
+  client checks the release whole (exactly `CLIENT_FILES`, all text, the id its files') before writing a
+  byte, writes it to `<install>.next`, swaps it in (the one before kept as `<install>.prev`), answers
+  `{release}`, then exits 75; its unit (`Restart=always`) starts the new files. A load of the release
+  already installed writes nothing.
+- **Keeping it current** (`src/machines/client-release.ts`): each probe of a client target (every 30 s)
+  asks `POST /release` after `status server`; when it is not the hopper's id, the hopper loads its
+  release — never while a job runs on that machine (a running job's herdr calls must not meet a
+  restarting client; it loads after). Each outcome is one log line per machine: `runs the hopper's
+  release`, `loaded release <id> (was <id>)`, `loading it once no job runs there`, a failed load, or a
+  client older than releases (it answers no release: still online; `scripts/attach-client.sh` installs it
+  again, once).
+- **`/api/machines`**: a client target, once probed online, carries `client: {tokenEnv, release,
+  current}` — the release its client runs and whether it is the hopper's; `release` absent for a client
+  older than releases.
+- **Residual risk.** A load runs new code on the client target. It is only ever believed signed with the
+  client token, which already lets the hopper run herdr — and so Claude jobs — there: a load gives the
+  token no power it did not have. The body's hash is in the signature, so the files arrive as sent.
 
 ## Phase 6 — owner direction, not yet built (2026-10-03)
 

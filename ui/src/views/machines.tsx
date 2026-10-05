@@ -11,7 +11,7 @@ import { StatusBadge } from '@/components/status';
 import { Button } from '@/components/ui/button';
 import { useNow } from '@/hooks/use-now';
 import { get, post, SessionRejected } from '@/lib/api';
-import { kindOf, type MachineKind } from '@/model/machines';
+import { clientReleaseText, kindOf, type MachineKind } from '@/model/machines';
 import { orderReadings, readingKey } from '@/model/usage';
 import type { MachineEdit, MachinesConfig, MachineView } from '@/model/wire';
 import { refreshLive, useHopper } from '@/store';
@@ -72,6 +72,8 @@ function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
         {m.docker && <Fact label="container (docker exec)">{m.docker}</Fact>}
         {m.herdr && <Fact label="herdr">{m.herdr.bin}</Fact>}
         {m.herdr && <Fact label="herdr session">{m.herdr.session}</Fact>}
+        {m.client && <Fact label="connection">client, over its reverse tunnel</Fact>}
+        {clientReleaseText(m.client) && <Fact label="client release">{clientReleaseText(m.client)}</Fact>}
       </dl>
       {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
       {editing && kind.kind === 'attached' && ctx.config && (
