@@ -36,7 +36,6 @@ import { createSourceSync, idleStatus, withFixedStatuses, type GitHubApi, type S
 import { runtimeSecrets } from './secrets/runtime.ts';
 import { openStore } from './store/index.ts';
 import { createInstallScriptBuilder, createRestarter, createUpdater, renameBoot, RESTART_EXIT_CODE, restartBlockers } from './update/index.ts';
-import { createWebhookConfigWatcher, type WebhookConfigWatcher } from './webhooks/config.ts';
 import { createWebhooksEditor } from './webhooks/edit.ts';
 import { createWebhookDispatcher, secretProblem } from './webhooks/index.ts';
 
@@ -277,8 +276,9 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     checkMs: config.updateCheckMs,
   });
   const server = createServer({
-    engine, store, dispatcher, questions, clock, version: VERSION, sources: registry, webhookConfig, plugins, pluginStore, updater,
-    webhooksEditor: createWebhooksEditor({ documents: store.documents, reload: webhookConfig.reload }),
+    engine, store, dispatcher, questions, clock, version: VERSION, sources: registry, plugins, pluginStore, updater,
+    secretProblem: (secretEnv) => secretProblem(secret, secretEnv),
+    webhooksEditor: createWebhooksEditor({ store }),
     port: () => port, sessionHours: config.uiSessionHours, signIn,
     lan: { names: config.lanNames, peers: config.lanPeers, publicUrl: config.publicUrl }, uiDir: seams.uiDir ?? UI_DIR,
   });

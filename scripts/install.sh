@@ -6,8 +6,9 @@
 # Everything the daemon keeps is in its database: HOPPER_DATABASE_URL in
 # ~/.config/hopper/daemon.env (the unit's EnvironmentFile, mode 600) says which. The first
 # install needs it: set it there, or run with HOPPER_DATABASE_URL set and it is written there.
-# Config is config documents in that database (plugins.yaml, webhooks.yaml, rules.md, auth.yaml),
-# edited from the UI or with `hopper config edit <document>`; secrets are daemon.env lines.
+# Config is config documents in that database (plugins.yaml, rules.md, auth.yaml), edited from the
+# UI or with `hopper config edit <document>`, and webhook subscriptions there, edited from the
+# UI; secrets are daemon.env lines.
 #
 # Build-only mode (HOPPER_INSTALL_INTO=<dir>, used by the daemon's self-update, design.md
 # "Self-update"): build the install into <dir> and stop there — no service, unit or config is

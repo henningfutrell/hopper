@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { isMap, isScalar, isSeq, parseDocument, type YAMLMap } from 'yaml';
+import { isMap, isScalar, isSeq, parse, parseDocument, type YAMLMap } from 'yaml';
 import type { Db } from './db.ts';
 
 // Schema changes never drop a queue (persisted state is the user's). A migration is SQL, or a
@@ -170,6 +170,60 @@ function renameGateRouter(db: Db): void {
     }
   }
   db.run("UPDATE config_documents SET text = ? WHERE name = 'plugins.yaml'", doc.toString({ lineWidth: 0 }));
+}
+
+interface DocumentEntry { name: string; url: string; events: string[]; secretEnv: string; active: boolean }
+const ENTRY_KEYS = new Set(['name', 'url', 'events', 'secretEnv', 'active']);
+const isText = (v: unknown): v is string => typeof v === 'string' && v.length > 0;
+
+/** The webhooks document's entries, or undefined when it would not have loaded (its rules as of migration 11). */
+function documentEntries(text: string): DocumentEntry[] | undefined {
+  let raw: unknown;
+  try { raw = parse(text); } catch { return undefined; }
+  const doc = raw as { version?: unknown; webhooks?: unknown } | null;
+  if (doc?.version !== 1 || !Array.isArray(doc.webhooks)) return undefined;
+  const entries: DocumentEntry[] = [];
+  for (const e of doc.webhooks as Record<string, unknown>[]) {
+    if (typeof e !== 'object' || e === null || Object.keys(e).some((k) => !ENTRY_KEYS.has(k))) return undefined;
+    const { name, url, events, secretEnv, active = true } = e;
+    if (!isText(name) || !isText(url) || !isText(secretEnv) || typeof active !== 'boolean') return undefined;
+    if (!Array.isArray(events) || events.length === 0 || !events.every(isText)) return undefined;
+    if (entries.some((x) => x.name === name)) return undefined;
+    entries.push({ name, url, events, secretEnv, active });
+  }
+  return entries;
+}
+
+/**
+ * Migration 14. The table was a projection of the `webhooks.yaml` config document, rewritten at each
+ * load of it; the document's subscriptions become the rows (by name: a row kept keeps its id and
+ * deliveries), a row it does not name goes with its open deliveries failed, and the document goes. A
+ * document that would not have loaded never reached the table: the rows stay as the daemon last ran them.
+ */
+function webhooksDocumentToRows(db: Db): void {
+  const doc = db.get("SELECT text FROM config_documents WHERE name = 'webhooks.yaml'");
+  if (!doc) return;
+  const entries = documentEntries(String(doc.text));
+  if (entries) {
+    const at = new Date().toISOString();
+    for (const w of entries) {
+      db.run(
+        `INSERT INTO webhooks (id, name, url, events, secret_env, active, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (name) DO UPDATE SET url = excluded.url, events = excluded.events, secret_env = excluded.secret_env, active = excluded.active`,
+        randomUUID(), w.name, w.url, JSON.stringify(w.events), w.secretEnv, w.active ? 1 : 0, at);
+    }
+    const names = new Set(entries.map((w) => w.name));
+    for (const row of db.all('SELECT id, name FROM webhooks')) {
+      if (names.has(String(row.name))) continue;
+      for (const d of db.all("SELECT id, body FROM deliveries WHERE subscription_id = ? AND status IN ('pending', 'retrying')", row.id as string)) {
+        const { nextAttemptAt: _due, ...rest } = JSON.parse(String(d.body)) as Record<string, unknown>;
+        const body = { ...rest, status: 'failed', updatedAt: at };
+        db.run("UPDATE deliveries SET status = 'failed', next_attempt_at = NULL, body = ? WHERE id = ?", JSON.stringify(body), d.id as string);
+      }
+      db.run('DELETE FROM webhooks WHERE id = ?', row.id as string);
+    }
+  }
+  db.run("DELETE FROM config_documents WHERE name = 'webhooks.yaml'");
 }
 
 /** The schema version a store is at once migrated. */

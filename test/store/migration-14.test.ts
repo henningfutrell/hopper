@@ -1,4 +1,4 @@
-// Migration 12 (issue #78): webhook subscriptions live in the database, nothing else. The `webhooks`
+// Migration 14 (issue #78): webhook subscriptions live in the database, nothing else. The `webhooks`
 // table had been a projection of a config document; the migration makes the document's subscriptions
 // the table's rows and removes the document. Persisted state is the user's: a subscription in the
 // document reaches the table, and a document that does not load leaves the table as it was.
@@ -9,7 +9,7 @@ import { useTempStore } from './helpers.ts';
 const t = useTempStore();
 const DOC = 'webhooks.yaml';
 
-/** A store at version 11 holding `doc` as the webhooks document and the given rows, then migrated. */
+/** A store at version 13 holding `doc` as the webhooks document and the given rows, then migrated. */
 function migrateFrom13(doc: string | undefined, rows: [id: string, name: string, secretEnv: string][] = []) {
   const url = t.url();
   t.open(url).close();

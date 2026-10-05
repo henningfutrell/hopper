@@ -46,7 +46,7 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   issue of a finished job, and posts no comments. The job prompt carries the rule (`src/executors/herdr/screen.ts` `PUBLISHING_RULE`).
 - **Nothing leans on the machine** (issue #40, `docs/design.md` "Deployable"). Everything the daemon
   keeps is in the database `HOPPER_DATABASE_URL` names; config is config documents in it
-  (`plugins.yaml`, `webhooks.yaml`, `rules.md`, `auth.yaml`). **Every secret comes from the runtime**
+  (`plugins.yaml`, `rules.md`, `auth.yaml`) and the webhook subscriptions, rows of its own. **Every secret comes from the runtime**
   (issue #56): the variable `NAME` or the mounted file `NAME_FILE` names (`src/secrets/runtime.ts`),
   named by a command-bearing option. The hopper stores no secret — not in the database, not in a file
   of its own; a token or code it mints is only hashed (`docs/design.md` "Secrets"). No default names a path on one

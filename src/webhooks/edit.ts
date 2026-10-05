@@ -35,54 +35,8 @@ function problem(schema: z.ZodType, value: unknown): string | undefined {
   return parsed.success ? undefined : parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
 }
 
-/**
- * The text with only the changed entry's bytes rewritten, or undefined for a layout this does not
- * splice (a flow or empty `webhooks` list). Everything outside the change stays as written.
- */
-function splice(text: string, doc: Document, c: Change): string | undefined {
-  const seq = doc.get('webhooks', true);
-  if (!isSeq(seq) || seq.flow || seq.items.length === 0 || !seq.range) return undefined;
-  const first = seq.items[0];
-  if (!isMap(first) || first.flow || !first.range) return undefined;
-  // "  - " before the first key: the item prefix; its width is the indent of the other keys.
-  const prefix = text.slice(lineStart(text, first.range[0]), first.range[0]);
-  if (!/^ *- +$/.test(prefix)) return undefined;
-  const indent = ' '.repeat(prefix.length);
-  if (c.kind === 'append') {
-    const lines = Object.entries(c.entry).map(([k, v], i) => `${i === 0 ? prefix : indent}${k}: ${inline(v)}\n`).join('');
-    return insertAt(text, seq.range[1], lines);
-  }
-  const map = entryMap(doc, c.at);
-  if (map.flow || !map.range) return undefined;
-  if (c.kind === 'delete') return text.slice(0, lineStart(text, map.range[0])) + text.slice(map.range[1]);
-  const pair = map.items.find((p) => isScalar(p.key) && p.key.value === c.key);
-  if (!pair) return insertAt(text, map.range[1], `${indent}${c.key}: ${inline(c.value)}\n`);
-  const key = pair.key as Scalar;
-  const value = pair.value as { range?: [number, number, number] } | null;
-  if (!key.range || !value?.range) return undefined;
-  return text.slice(0, key.range[1]) + `: ${inline(c.value)}` + text.slice(value.range[1]);
-}
-
-/** True when `text` parses to exactly `js`. */
-function means(text: string, js: unknown): boolean {
-  try { return isDeepStrictEqual(parse(text), js); } catch { return false; }
-}
-
-/** The `webhooks` sequence's entry named `name`, by index, or -1. */
-function indexOf(doc: Document, name: string): number {
-  const seq = doc.get('webhooks', true);
-  return isSeq(seq) ? seq.items.findIndex((item) => isMap(item) && item.get('name') === name) : -1;
-}
-
-const CHANGED = `${WEBHOOKS} changed since it was read; reload and edit again`;
-const BY_HAND = 'hopper config edit webhooks.yaml';
-
-export function createWebhooksEditor(o: {
-  documents: ConfigDocuments;
-  /** Re-read the document into the store; runs after every write, before the answer. */
-  reload(): void;
-}): WebhooksEditor {
-  const path = WEBHOOKS;
+export function createWebhooksEditor(o: { store: Pick<Store, 'webhooks'> }): WebhooksEditor {
+  const { webhooks } = o.store;
 
   function edit(e: WebhooksEdit): WebhooksEditResult {
     const current = webhooks.list().find((s) => s.name === e.name);

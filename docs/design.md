@@ -39,7 +39,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts; `machines.ts` attached machines and their edit; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`), ports | anything else in `src/` |
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock | everything but `domain/` |
 | `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations, repositories, event log, config documents, login codes | engine, http, decider |
-| `src/webhooks/` | signing, dispatcher, retry/backoff, `webhooks.yaml` load + watch (`config.ts`), the UI edit of it (`edit.ts`) | engine, http, decider |
+| `src/webhooks/` | signing, dispatcher, retry/backoff, the secret of a subscription from the runtime (`dispatcher.ts`), the UI edit of the subscriptions (`edit.ts`, rows in the store) | engine, http, decider |
 | `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, `plugins.yaml` + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `question-slots.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), a machine edit of `attachedMachines:` (`attached-edit.ts`, spliced into the file; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `answerer/claude-cli/`, `assessor/claude-cli-assessor/`, `assessor/always-escalate/` hold their prompts; `executor/herdr-claude/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-gh/` and `job-source/github-app/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser, runner, background refresh); `notifier/grokbot-routine/` is the Grok Bot routine webhook — env-file reader and notifier; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
 | `src/executors/` | `Executor` adapters (`test`, `herdr/`, `command.ts` — a job's body run on its machine through its connection) and the registry; reached through the executor plugins. The connections and their target authentication ("Target authentication"): `ssh.ts` (key-only ssh to pinned host keys), `docker.ts` (the docker socket check, the proxy's allowlist), `client.ts` (a client target's tunnel, signed calls); `env.ts` the scrubbed child environment | engine, http, store, plugins |
 | `src/client/` | the hopper client ("Client targets"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load` over HTTP/2 on the tunnel), `tunnel.ts` (its ssh to the hopper), `release.ts` (the client release: its files, its id, checking and installing one — "Client releases"), `main.ts`; `relay.ts`, the forced command of its key on the hopper's machine; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`); `ssh-options.ts` (the hardened ssh options, shared with `src/executors/ssh.ts`) | everything in `src/` outside `src/client/` |
@@ -1167,6 +1167,9 @@ A failure never goes to the issue as text. It is one stderr line in the daemon l
 **Authors outside the allowlist are never acted on** — not as issues, not as answers.
 
 ## Webhooks from a file
+
+**Superseded** by "Webhook subscriptions in the database" (issue #78): no file and no document holds
+them. Kept as the record of phase 2.
 
 `~/.config/hopper/webhooks.yaml` (`HOPPER_WEBHOOKS_FILE`):
 
@@ -3573,15 +3576,15 @@ themselves, so no `_FILE` form for them.
 
 | kept | how |
 |------|-----|
-| a webhook subscription | its `secretEnv`, a variable's name — in the `webhooks` table (`secret_env`, migration 11, which dropped the sealed `secret` column; the only place since migration 12, issue #78) |
+| a webhook subscription | its `secretEnv`, a variable's name — in the `webhooks` table (`secret_env`, migration 11, which dropped the sealed `secret` column; the only place since migration 14, issue #78) |
 | UI session tokens, login codes | SHA-256 only (32 random bytes: no dictionary to try) — the hopper's own short-lived state; a hash is not a usable credential |
 | password sign-in passwords | argon2id hashes in `auth.yaml` ("Sign-in") — a verifier the operator writes, not a credential |
 
 `HOPPER_SECRET_KEY`, the secret box (`src/secrets/box.ts`) and the UI's rotate-secret are gone:
 with no secret to keep there is nothing to seal. A leftover `HOPPER_SECRET_KEY` is a leftover
-variable (boot warning; delete the line). A `webhooks.yaml` entry with an inline `secret` — sealed or
-clear, from before — is refused at load with what to do (put the secret in the runtime, name it with
-`secretEnv`); the document is left as it is, never rewritten, so nothing is lost silently. The one
+variable (boot warning; delete the line). A webhooks-document entry with an inline `secret` — sealed or
+clear, from before — was refused at load, and is left out by migration 14 (issue #78) for the same
+reason: the rows stay as the daemon last ran them. The one
 install there was had no subscription when this landed.
 
 **systemd credentials.** `LoadCredential=<name>:<path>` (or `LoadCredentialEncrypted=`) in a drop-in
@@ -3799,3 +3802,36 @@ install the catalogue no longer lists is still listed (`listed: false`), so it c
 plugin its role, description, and Install, Update (not current) or Remove (confirmed); `restart
 pending` where it applies. Installing does not configure: the plugin then shows under its role,
 selected or added as any custom plugin.
+
+## Webhook subscriptions in the database (issue #78, 2026-10-05)
+
+Owner request: webhook setup does not say or use `webhooks.yaml`; every webhook setting is stored
+in the database.
+
+- **The `webhooks` table is the source of truth**, and the only place a subscription is kept. No
+  config document holds them: `CONFIG_DOCUMENTS` is `plugins.yaml`, `rules.md`, `auth.yaml`, and
+  `hopper config` knows no other. The watcher (`src/webhooks/config.ts`, a re-read every 5 s)
+  and the YAML splice editor are gone: nothing to watch, nothing to reconcile.
+- **`POST /ui/api/webhooks`** writes one row: `add` inserts (409 when the name is there — the insert
+  is `ON CONFLICT (name) DO NOTHING`, so two sessions adding one name cannot both win), `edit`
+  changes only the fields sent (url, events, active), `remove` deletes the row and fails its
+  pending and retrying deliveries. No `version`: each edit names one subscription by `name` and is
+  one statement; a concurrent edit of the same subscription is last-write-wins, which one admin
+  can live with. The content check is the editor's own zod schema (`src/webhooks/edit.ts`); 400
+  names the field (`url: …`, `events.0: must be an event type or "*"`).
+- **`GET /api/webhooks`** is `{ subscriptions }`: the `config` status (document, loadedAt, error,
+  warnings, version) described a document, and there is none.
+- **Store port.** `WebhookRepository.add` (undefined when the name is taken) and `update` (only the
+  fields given) replace `upsertByName`, which existed to reconcile a document.
+- **Migration 14** (a function: the document is YAML) moves an existing `webhooks.yaml` document
+  into the table and deletes it. The table had been the document's projection, so a running hopper
+  already held its rows; the migration covers a document edited while the daemon was down, and the
+  rows migration 11 left with no `secret_env`. A document that loads (its rules as of migration 11:
+  version 1, every entry with name, url, events, secretEnv, no inline `secret`, names unique)
+  becomes the rows — by name, so a kept row keeps its id and deliveries; a row it does not name is
+  deleted, its open deliveries failed. A document that would not have loaded never reached the
+  table, so the rows stay as the daemon last ran them. Either way the document goes.
+- **A subscription naming a variable outside `WEBHOOK_SECRET_*`** (possible before, from the
+  document by hand) stays as it is: an edit never changes `secretEnv`. A new one names a
+  `WEBHOOK_SECRET_*` variable; renaming the variable is remove + add.
+

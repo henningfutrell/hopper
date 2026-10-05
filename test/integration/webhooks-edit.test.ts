@@ -59,6 +59,7 @@ const list = async (a: TestApp) => (await a.api('GET', '/api/webhooks')).body;
 const edit = (a: TestApp, token: string, body: Record<string, unknown>) => a.ui<Record<string, any>>('/ui/api/webhooks', body, { token }); // eslint-disable-line @typescript-eslint/no-explicit-any
 const signatureOf = (secret: string, got: { headers: Record<string, unknown>; body: string }) =>
   `sha256=${createHmac('sha256', secret).update(`${String(got.headers['x-hopper-timestamp'])}.${got.body}`).digest('hex')}`;
+const BEFORE = TWO.map((w) => ({ ...w, active: w.active ?? true }));
 
 describe('GET /api/webhooks: what the UI edits', () => {
   it('carries each subscription\'s variable and whether the runtime provides it; never a secret, no document', async () => {
@@ -149,11 +150,10 @@ describe('POST /ui/api/webhooks — add', () => {
     expect(stored(a)).toEqual(BEFORE);
   });
 
-  it('a secret in the body, no secretEnv, or a variable outside WEBHOOK_SECRET_*: 400, nothing written', async () => {
-    const { a, token } = await start(COMMENTED);
-    const v = await version(a);
-    for (const extra of [{ secretEnv: 'WEBHOOK_SECRET_N', secret: 'mine' }, {}, { secretEnv: 'GITHUB_APP_PRIVATE_KEY' }, { secretEnv: 'HOPPER_DATABASE_URL' }]) {
-      const r = await edit(a, token, { action: 'add', name: 'n', url: 'http://127.0.0.1:1/x', events: ['*'], version: v, ...extra });
+  it('a secret in the body, no secretEnv, a variable outside WEBHOOK_SECRET_*, or a version: 400, nothing written', async () => {
+    const { a, token } = await start(TWO);
+    for (const extra of [{ secretEnv: 'WEBHOOK_SECRET_N', secret: 'mine' }, {}, { secretEnv: 'GITHUB_APP_PRIVATE_KEY' }, { secretEnv: 'HOPPER_DATABASE_URL' }, { secretEnv: 'WEBHOOK_SECRET_N', version: 'missing' }]) {
+      const r = await edit(a, token, { action: 'add', name: 'n', url: 'http://127.0.0.1:1/x', events: ['*'], ...extra });
       expect(r.status).toBe(400);
     }
     expect(stored(a)).toEqual(BEFORE);

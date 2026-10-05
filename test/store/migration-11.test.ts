@@ -1,6 +1,6 @@
 // Migration 11 (issue #56): the hopper keeps no secret. A webhook subscription row names the variable
 // its secret is in (`secret_env`); the `secret` column — sealed secrets, since migration 10 — is
-// dropped. The rows named no variable until the webhooks document filled them (migration 12 does it).
+// dropped. The rows named no variable until the webhooks document filled them (migration 14 does it).
 import { describe, expect, it } from 'vitest';
 import { openDb } from '../../src/store/db.ts';
 import { useTempStore } from './helpers.ts';
