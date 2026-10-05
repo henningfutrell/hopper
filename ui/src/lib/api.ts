@@ -37,8 +37,8 @@ export async function post<T = unknown>(path: string, body: unknown = {}): Promi
   return out as T;
 }
 
-/** The current login code as a link per LAN name, for another device. */
-export const deviceLinks = () => post<{ links: string[] }>('/ui/api/device-link');
+/** A login code as a link per LAN name, for another device: `keep` again while it is live, else a fresh one. */
+export const deviceLinks = (keep?: string) => post<{ links: string[] }>('/ui/api/device-link', keep === undefined ? {} : { keep });
 
 /** The session the stored token names (or none), and the ways to sign in. Throws only when the daemon is unreachable. */
 export async function readSession(): Promise<SessionView> {

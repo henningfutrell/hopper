@@ -11,7 +11,7 @@ import { streamQuery } from './sse.ts';
 import { decisionsQuery, eventsQuery } from './state.ts';
 import { SESSION_HEADER } from './ui/guard.ts';
 import {
-  answerBody, machinesEditBody, pluginStoreBody, pluginsEditBody, routerModeBody, routingEditBody, rulesBody, updateBody, webhooksEditBody,
+  answerBody, deviceLinkBody, machinesEditBody, pluginStoreBody, pluginsEditBody, routerModeBody, routingEditBody, rulesBody, updateBody, webhooksEditBody,
 } from './ui/index.ts';
 import { completeBody, loginBody, passwordBody, startQuery } from './ui/sign-in.ts';
 import { deliveriesQuery } from './webhooks.ts';
@@ -89,7 +89,7 @@ const OPERATIONS: Operation[] = [
   { method: 'post', path: '/ui/auth/:name/callback', tag: 'Sign-in', summary: 'SAML posts its response here', answers: 'html', returns: 'a page that completes the sign-in' },
   { method: 'post', path: '/ui/auth/complete', tag: 'Sign-in', summary: 'Trade a sign-in ticket for a session', body: completeBody, returns: '`{ token, expiresAt, user }`' },
   { method: 'get', path: '/ui/auth/:name/metadata', tag: 'Sign-in', summary: 'SAML service provider metadata', answers: 'xml', returns: 'SAML metadata', errors: [404] },
-  { method: 'post', path: '/ui/api/device-link', tag: 'Sign-in', summary: 'A login link for another device, per LAN name', role: 'admin', returns: '`{ links: string[] }`', errors: [409] },
+  { method: 'post', path: '/ui/api/device-link', tag: 'Sign-in', summary: 'A login link for another device, per LAN name', description: '`keep` names the code shown: while it is live the same links come back; once it is used or expired, a fresh code.', role: 'admin', body: deviceLinkBody, returns: '`{ links: string[] }`', errors: [409] },
   { method: 'post', path: '/ui/api/logout', tag: 'Sign-in', summary: 'End this session', role: 'viewer', returns: '`{ ok: true }`' },
 ];
 

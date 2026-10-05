@@ -130,7 +130,7 @@ synonyms. Rename here first, in the same commit as everything else.
 | **Public URL** | `JOB_HOPPER_PUBLIC_URL`: the origin people reach the UI at through a reverse proxy. Its host passes the Host guard (a **public request**: `/api/` only with a UI session), its origin may mutate, and it is the sign-in origin. | external URL |
 | **LAN name** | A host name or address the UI answers to from other machines (`JOB_HOPPER_LAN_NAMES`), with the port. A request naming one is a **LAN request**: it reads `/api/` only with a UI session. | remote host |
 | **LAN peer** | A CIDR range a LAN request may come from (`JOB_HOPPER_LAN_PEERS`). Any other non-loopback peer is refused. | allowlist |
-| **Device link** | `http://<LAN name>:<port>/#login=<code>`: a fresh login code as a link a logged-in browser hands another device. Works once, for 10 minutes. | pairing link, invite |
+| **Device link** | `http://<LAN name>:<port>/#login=<code>`: a fresh login code as a link a logged-in browser hands another device, shown also as a QR code that changes when its code is used or expires. Works once, for 10 minutes. | pairing link, invite |
 | **Payload version** | `schemaVersion` on every event: the version of that event type's payload schema. | |
 | **GitHub App** | job-hopper's own GitHub identity (`job-hopper-<owner>[bot]`), created by the owner via the manifest flow. | bot account |
 | **Installation** | Where the owner installed the app; its repos are the only ones the `github-app` source scans. | |

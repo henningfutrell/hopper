@@ -16,6 +16,11 @@ export function mintLoginCode(store: Pick<Store, 'loginCodes'>, clock: Clock): s
   return code;
 }
 
+/** True when `code` was minted, is not yet used, and has not expired. The code stays. */
+export function loginCodeLive(store: Pick<Store, 'loginCodes'>, clock: Clock, code: string): boolean {
+  return /^[0-9a-f]{64}$/.test(code) && store.loginCodes.live(hash(code), clock.now().toISOString());
+}
+
 /** True, and the code is spent, when `code` was minted and has not expired. */
 export function useLoginCode(store: Pick<Store, 'loginCodes'>, clock: Clock, code: string): boolean {
   return /^[0-9a-f]{64}$/.test(code) && store.loginCodes.take(hash(code), clock.now().toISOString());

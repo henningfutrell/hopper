@@ -34,7 +34,8 @@ async function render() {
   vi.stubGlobal('fetch', fakeDaemon());
   const mod = '../../ui/src/app/device-link.tsx'; // browser code, type-checked by ui/tsconfig.json: imported by path
   const { DeviceLink } = (await import(mod)) as { DeviceLink: (p: { pollMs?: number }) => ReturnType<typeof createElement> };
-  const { TooltipProvider } = await import('../../ui/src/components/ui/tooltip.tsx');
+  const tooltip = '../../ui/src/components/ui/tooltip.tsx';
+  const { TooltipProvider } = (await import(tooltip)) as { TooltipProvider: (p: { children?: unknown }) => ReturnType<typeof createElement> };
   await act(async () => {
     root = createRoot(document.getElementById('root')!);
     root.render(createElement(TooltipProvider, null, createElement(DeviceLink, { pollMs: 20 })));
