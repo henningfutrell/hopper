@@ -191,11 +191,11 @@ describe('a user\'s runtime', () => {
 
   it('the processes of a user added later find the CLIs\' config in its own work dir; owner\'s environment is unchanged', async () => {
     const herdr = createFakeHerdrClient({ session: 'fake', turns: [{ output: ['● Done.', '  HOPPER_DONE'] }, { output: ['● Done.', '  HOPPER_DONE'] }] });
-    const executors = [{ name: 'herdr-claude', plugin: 'herdr-claude', options: { pollMs: 10, idleQuestionMs: 5000 } }];
+    const executors = [{ name: 'herdr-claude', plugin: 'herdr-claude', options: { pollMs: 10, idleNudgeMs: 5000 } }];
     const a = await start({ plugins: { executors }, seams: { herdr } });
     const bea = await a.addUser('Bea');
     const doc = a.user(bea.id).store.documents;
-    doc.write('plugins.yaml', `version: 1\nexecutors: [ { name: herdr-claude, plugin: herdr-claude, options: { pollMs: 10, idleQuestionMs: 5000 } } ]\njobSources: []\nusageSources: []\nnotifiers: []\n`, doc.version('plugins.yaml'));
+    doc.write('plugins.yaml', `version: 1\nexecutors: [ { name: herdr-claude, plugin: herdr-claude, options: { pollMs: 10, idleNudgeMs: 5000 } } ]\njobSources: []\nusageSources: []\nnotifiers: []\n`, doc.version('plugins.yaml'));
     await waitFor(async () => (await a.api('GET', '/api/plugins', undefined, { 'x-hopper-user': 'bea' })).body.config.version === doc.version('plugins.yaml'));
     const item = { executor: 'herdr-claude', prompt: 'Paint the shed', cwd: '/tmp', env: {} };
     const ownerJob = await a.pull({}, item);

@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- A job that only reports how it is getting on no longer asks you a question or sends a question alert: it is told to carry on, and only real questions reach you.
 - Several people can now use one hopper, each with their own jobs, questions and settings, kept apart from everyone else's.
 - The Sources page now shows GitHub as one section: it says whether issues are read through gh or through your GitHub App, puts that one first, and says why the other is not in use. Logging in to GitHub is shown beside them as what jobs push with.
 - The container image you pull is now always built from the newest version. Before, changes made close together could leave it hours behind, so a container could lack features such as logging in to GitHub from the Sources view.

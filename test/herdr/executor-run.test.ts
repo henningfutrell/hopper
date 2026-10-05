@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { homedir } from 'node:os';
-import { protocolFooter } from '../../src/executors/herdr/index.ts';
+import { STATUS_NOTE_NUDGE, protocolFooter } from '../../src/executors/herdr/index.ts';
 import { CWD, JOB_ID, LANE, contextFor, jobWith, setup, until } from './support.ts';
 
 const SCRATCH = `${CWD}/.hopper-scratch`;
@@ -164,11 +164,31 @@ describe('herdr-claude executor: run', () => {
     expect(out.question.text).toContain('2. Blue');
   });
 
-  it('asks after idleQuestionMs idle with no marker, not before', async () => {
-    const { clock, executor } = setup({ turns: [{ output: ['● I made the change. Anything else?'] }] }, { idleQuestionMs: 20000 });
-    const out = await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx);
-    expect(out).toMatchObject({ kind: 'question', question: { detectedBy: 'idle', text: 'I made the change. Anything else?' } });
+  // Issue #163: a turn that ends without a marker is a status note, never a question.
+  it('a status note opens no question: after idleNudgeMs idle the hopper nudges, and the job goes on', async () => {
+    const note = { output: ['● Tests are running in the background; I will report when they finish.'] };
+    const { herdr, clock, executor } = setup({ turns: [note, DONE] }, { idleNudgeMs: 20000 });
+    const { ctx, progress, saved } = contextFor(jobWith({ prompt: 'go' }));
+    const out = await executor.run(ctx);
+    expect(out).toMatchObject({ kind: 'finished', result: { summary: expect.stringContaining('Wrote hello.txt.') } });
+    expect(herdr.prompts.map((p) => p.text)).toEqual([expect.stringContaining('go'), STATUS_NOTE_NUDGE]);
     expect(clock.elapsed()).toBeGreaterThanOrEqual(20000);
+    expect(progress.map((p) => p.message)).toContain('Tests are running in the background; I will report when they finish.');
+    expect(saved.at(-1)).toMatchObject({ turn: { anchor: STATUS_NOTE_NUDGE } });
+  });
+
+  it('a question asked without the marker is nudged, and asked again with it', async () => {
+    const { executor } = setup({ turns: [{ output: ['● I made the change. Anything else?'] }, { output: ['● Should I also update the README?', '  HOPPER_QUESTION'] }] });
+    const out = await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx);
+    expect(out).toMatchObject({ kind: 'question', question: { detectedBy: 'marker', text: 'Should I also update the README?' } });
+  });
+
+  it('each further status note in a row waits twice as long before the next nudge', async () => {
+    const note = { output: ['● Still waiting for the build.'] };
+    const { herdr, clock, executor } = setup({ turns: [note, note, note, DONE] }, { idleNudgeMs: 20000 });
+    expect(await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx)).toMatchObject({ kind: 'finished' });
+    expect(herdr.prompts.slice(1).map((p) => p.text)).toEqual([STATUS_NOTE_NUDGE, STATUS_NOTE_NUDGE, STATUS_NOTE_NUDGE]);
+    expect(clock.elapsed()).toBeGreaterThanOrEqual(20000 + 40000 + 80000);
   });
 
   it('fails when Claude exits, with its last output', async () => {

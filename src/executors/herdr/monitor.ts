@@ -15,12 +15,16 @@ export type Sleep = (ms: number, signal: AbortSignal) => Promise<void>;
 /** Why the turn stopped without an outcome; the executor decides what to do with the pane. */
 export type Interrupt = { interrupt: 'cancel' | 'shutdown' | 'timeout' };
 
+/** The turn ended without a marker (issue #163): progress, never a question. The executor nudges. */
+export type StatusNote = { statusNote: string };
+
 export interface TurnWatch {
   herdr: HerdrClient;
   clock: Clock;
   sleep: Sleep;
   pollMs: number;
-  idleQuestionMs: number;
+  /** How long the turn sits idle without a marker before it counts as a status note. */
+  idleNudgeMs: number;
   ctx: ExecutionContext;
   agentName: string;
   paneId: string;
@@ -32,6 +36,8 @@ export interface TurnWatch {
   blockedAtSend: boolean;
   timeoutMs: number;
   expectedMs: number;
+  /** When the job's turn began, for `timeoutMs` and progress: a nudge goes on the same turn. Default now. */
+  startedAt?: number;
   /** Called with state_change_seq when the turn parks on a question, before the outcome returns. */
   parked?: (seq: number) => void;
 }
@@ -56,9 +62,9 @@ async function blockedQuestion(w: TurnWatch, recent: string): Promise<ExecutionO
   return { kind: 'question', question: { text: tail(visible, 30), recentOutput: tail(recent, OUTPUT_LINES), detectedBy: 'blocked' } };
 }
 
-export async function watchTurn(w: TurnWatch): Promise<ExecutionOutcome | Interrupt> {
+export async function watchTurn(w: TurnWatch): Promise<ExecutionOutcome | Interrupt | StatusNote> {
   const { herdr, clock, ctx } = w;
-  const started = clock.now().getTime();
+  const started = w.startedAt ?? clock.now().getTime();
   let lastLine = '';
   let idleSince: number | null = null;
   let errors = 0;
@@ -94,10 +100,7 @@ export async function watchTurn(w: TurnWatch): Promise<ExecutionOutcome | Interr
         return park({ kind: 'question', question: { text: turn.assistantText, recentOutput: tail(recent, OUTPUT_LINES), detectedBy: 'marker' } });
       } else {
         idleSince ??= now;
-        if (now - idleSince >= w.idleQuestionMs) {
-          const text = turn.assistantText || 'stopped waiting for input';
-          return park({ kind: 'question', question: { text, recentOutput: tail(recent, OUTPUT_LINES), detectedBy: 'idle' } });
-        }
+        if (now - idleSince >= w.idleNudgeMs) return { statusNote: turn.assistantText };
       }
       errors = 0;
     } catch (err) {

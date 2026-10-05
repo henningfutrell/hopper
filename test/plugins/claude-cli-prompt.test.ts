@@ -63,11 +63,6 @@ describe('buildLevelPrompt (claude-cli)', () => {
     expect(p).not.toContain('row-79\n');
   });
 
-  it('adds the idle hint only when detected by idle', () => {
-    expect(buildLevelPrompt(req({ question: q({ detectedBy: 'idle' }) }))).toContain('If the job is complete, end your message with HOPPER_DONE');
-    expect(buildLevelPrompt(req())).not.toContain('HOPPER_DONE');
-  });
-
   it('includes the trail so far: the levels below with their recommendations', () => {
     const previous = [{ tier: 'opus', role: 'level' as const, startedAt: 'a', answer: 'LOWER-ANSWER', escalate: true, outcome: 'escalated' as const, reason: 'LOWER-REASON' }];
     const p = buildLevelPrompt(req({ previous, level: { number: 2, of: 2 } }));

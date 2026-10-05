@@ -102,7 +102,7 @@ describe('a herdr-claude question frees its lane at once', () => {
     const held = heldLevel();
     const a = await start(
       1,
-      { seams: { herdr, levels: [held.level] }, plugins: { executors: [{ name: 'test', plugin: 'test' }, { name: 'herdr-claude', plugin: 'herdr-claude', options: { pollMs: 10, idleQuestionMs: 5000 } }] } },
+      { seams: { herdr, levels: [held.level] }, plugins: { executors: [{ name: 'test', plugin: 'test' }, { name: 'herdr-claude', plugin: 'herdr-claude', options: { pollMs: 10, idleNudgeMs: 5000 } }] } },
     );
     const herdrItem = (prompt: string) => ({ executor: 'herdr-claude', prompt, cwd: '/tmp', env: {} });
     const [asker, next] = await pullAll(a, [herdrItem('Paint the shed'), herdrItem('Mow the lawn')], true);

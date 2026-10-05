@@ -18,6 +18,12 @@ const PROTOCOL_LINES = [
   'If the job cannot be done, end with a line containing only: HOPPER_FAILED followed by the reason.',
 ];
 
+/**
+ * What the hopper types into a job whose turn ended without a marker (issue #163): that turn was a
+ * status note, so nothing answers it and no question opens. One line: it is its own turn anchor.
+ */
+export const STATUS_NOTE_NUDGE = '[hopper] Your message ended without a marker, so the hopper took it as a status note: no question was opened and nobody will answer it. Go on with the job; if you are waiting for background work, keep waiting. If you need an answer from the user, ask exactly one question and end your message with a line containing only HOPPER_QUESTION. When the job is finished, end with a line containing only HOPPER_DONE; if it cannot be done, a line HOPPER_FAILED followed by the reason.';
+
 /** What follows a job's prompt on its first send: the rules, its work tree, the protocol. */
 export const protocolFooter = (cwd: string): string => [PUBLISHING_RULE, workTreeRule(cwd), ...PROTOCOL_LINES].join('\n');
 

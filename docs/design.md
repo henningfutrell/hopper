@@ -511,7 +511,7 @@ marker still on screen, a marker in backticks or bold. Then:
 | last marker `HOPPER_FAILED` | `failed`, error = text after the marker on that line or the next line |
 | last marker `HOPPER_QUESTION` | `question`, `detectedBy: marker`, text = the assistant message before the marker |
 | status `blocked` (question/approval UI) | `question`, `detectedBy: blocked`, text = the visible dialog |
-| idle/done with no marker after the anchor for `HOPPER_IDLE_QUESTION_MS` (20000) | `question`, `detectedBy: idle`, text = last assistant message ("stopped waiting for input") |
+| idle/done with no marker after the anchor for `idleNudgeMs` (20000) | **status note** (issue #163): no question, no outcome. The executor types `STATUS_NOTE_NUDGE` into the pane as the next turn of the same job (anchor = the nudge, same `timeoutMs` clock) and watches again; each further status note in a row waits twice as long before its nudge |
 | agent gone (`agent get` error / pane closed) | `failed`, `claude exited` + last output |
 | `timeoutMs` (default 3600000) exceeded | interrupt, `failed` `timed out` |
 
@@ -644,9 +644,18 @@ UI since issue #18 ("Question gates" at the end); an edit applies to the next qu
 only if the job is `waiting_answer` with that `questionId`.
 
 **Question budget (B6).** At most `HOPPER_MAX_QUESTIONS` (5) questions per job; the
-next question fails the job `too many questions` (and cleans up). When `detectedBy` is
-`idle`, the claude-cli level's prompt says the agent may simply have finished and that a valid answer
-is "If the job is complete, end your message with HOPPER_DONE".
+next question fails the job `too many questions` (and cleans up).
+
+**Status note (issue #163).** Only a real question opens a question: the `HOPPER_QUESTION` marker,
+or Claude's own dialog (`blocked`). A turn that ends without a marker is a status note — progress
+("the tests run in the background, I will report"), often a turn ended while background work runs.
+It opens no question, fires no `question.*` event or webhook, and holds nothing: its last line is
+already the job's progress, and the executor nudges the agent (`STATUS_NOTE_NUDGE`, `screen.ts`):
+go on; ask with the marker if an answer is needed; end with `HOPPER_DONE` or `HOPPER_FAILED`. An
+agent that asked in prose asks again with the marker. herdr-claude nudges after `idleNudgeMs`,
+doubling per status note in a row, until the turn's `timeoutMs`; cursor-agent resumes its chat
+with the nudge, at most three times in a row, then fails the job (a print-mode turn never waits on
+background work). Questions stored before keep `detectedBy: idle`; no new one carries it.
 
 **Recovery at startup (B2, B3).** `install.sh` restarts the daemon, not `hopper-herdr`,
 so a running job's pane and Claude outlive a restart.
@@ -2034,7 +2043,7 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
 - **herdr-claude options:** `bin` (`herdr`), `claudeBin` (`claude`), `session` (`hopper`;
   `default` refused), `args` (`[--dangerously-skip-permissions]`), `cwd`
   (`~/workbench/app-workflows`, `~` expanded), `trustWorkdir` (true), `pollMs` (1000),
-  `idleQuestionMs` (20000). Detection: `which bin`, then `which claudeBin` — never `--version`,
+  `idleNudgeMs` (20000; `idleQuestionMs` before issue #163, renamed by tenant migration 2). Detection: `which bin`, then `which claudeBin` — never `--version`,
   never a model call, nothing launched. `claudeBin` exists for detection only: herdr starts
   `claude` itself (`--kind claude`, resolved on herdr's PATH). `test`: no options, always available.
 - **6d, as built:** no `kind` option. `screen.ts` parses only Claude Code's TUI, so a `kind`
@@ -4139,8 +4148,8 @@ supported; defaults must be configurable. Read as three changes; none breaks a d
   path there). The first turn's text is the prompt and `protocolFooter(cwd)`; a resumed turn's is the answer.
 - **The answer** is Cursor's JSON result (`result`, `session_id`, `is_error`). Its last line is the marker:
   `HOPPER_DONE` → finished `{ machine, summary, chatId }`; `HOPPER_FAILED <reason>` → failed;
-  `HOPPER_QUESTION` → question (`detectedBy: marker`); no marker → question with the whole answer
-  (`detectedBy: idle`): the agent stopped and waits. A question saves `{ chatId, cwd }`; `resume` runs
+  `HOPPER_QUESTION` → question (`detectedBy: marker`); no marker → a status note (issue #163): its
+  text is progress and the chat is resumed with the nudge, at most three in a row, then the job fails. A question saves `{ chatId, cwd }`; `resume` runs
   the next turn with `--resume <chatId>`. A non-zero exit, an error result, no JSON or no chat id fails the
   job with what Cursor said.
 - **Where it runs**: this machine and ssh targets, with or without herdr. A container target (no agent,

@@ -20,7 +20,7 @@ export interface HerdrClaudeOptions {
   cwd: string;
   trustWorkdir: boolean;
   pollMs: number;
-  idleQuestionMs: number;
+  idleNudgeMs: number;
 }
 
 /**
@@ -45,7 +45,7 @@ export function herdrClaudePlugin(seam?: HerdrClient, defaultSession = 'hopper')
         .meta({ commandBearing: true, description: 'working directory of a job whose payload names none' }),
       trustWorkdir: z.boolean().default(true),
       pollMs: z.number().int().positive().default(1000),
-      idleQuestionMs: z.number().int().positive().default(20000),
+      idleNudgeMs: z.number().int().positive().default(20000),
     }),
     async detect(sys, o) {
       if (seam) return { status: 'available', detail: 'herdr seam (tests)' };
@@ -80,7 +80,7 @@ export function herdrClaudePlugin(seam?: HerdrClient, defaultSession = 'hopper')
       return createHerdrClaudeExecutor({
         herdr: seam ?? createHerdrCliClient({ bin: o.bin, session: o.session, userEnv: ctx.userEnv }), remote, paneEnv: ctx.userEnv,
         clock: ctx.clock, defaultCwd: o.cwd, claudeArgs: o.args, trustWorkdir: o.trustWorkdir,
-        pollMs: o.pollMs, idleQuestionMs: o.idleQuestionMs,
+        pollMs: o.pollMs, idleNudgeMs: o.idleNudgeMs,
       });
     },
   };
