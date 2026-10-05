@@ -1,6 +1,6 @@
 # hopper in containers (docs/deploy.md "In containers, with Podman", issues #119 and #125): its
-# Postgres and the hopper's public image, which runs jobs in its own herdr session inside its
-# container. No host install, nothing to build, nothing to set before the first start:
+# Postgres and the hopper's public image. The container is not a machine (issue #141): jobs run on
+# attached machines. No host install, nothing to build, nothing to set before the first start:
 #
 #   curl -fsSLO https://henningfutrell.github.io/hopper/compose.yaml
 #   podman compose up -d
@@ -66,7 +66,7 @@ services:
       HOPPER_LAN_PEERS: ${HOPPER_LAN_PEERS:-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
     volumes:
       - secrets:/run/hopper-secrets:ro
-      # Its home: the herdr session, the claude and gh sign-ins, and what jobs check out.
+      # Its home: the claude and gh sign-ins.
       - home:/home/node
     ports:
       - "127.0.0.1:${HOPPER_PORT:-4790}:${HOPPER_PORT:-4790}"

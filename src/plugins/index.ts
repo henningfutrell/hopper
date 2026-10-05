@@ -71,7 +71,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
     escalationLevels: o.defaultLevels ?? builtin.escalationLevels,
     executors: o.defaultExecutors ?? builtin.executors,
     jobSources: builtin.jobSources,
-    machines: builtin.machines,
+    machines: o.defaultMachines ?? builtin.machines,
     usageSources: builtin.usageSources,
     notifiers: builtin.notifiers,
   };

@@ -2162,6 +2162,7 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
 | `HOPPER_RESUME_BOOST` | `20` |
 | `HOPPER_MAX_QUESTIONS` | `5` |
 | `HOPPER_KEEP_PANES` | `false` |
+| `HOPPER_LOCAL_MACHINE` | `true` (`false` in the image: the container is not a machine, issue #141) |
 | `HOPPER_WEBHOOKS_FILE` | `~/.config/hopper/webhooks.yaml` |
 | `HOPPER_UI_SESSION_HOURS` | `12` |
 | `HOPPER_PLUGIN_DIR` | `~/.config/hopper/plugins` |
@@ -3475,6 +3476,14 @@ before it runs the daemon. The built-in `local` machine with `herdr-claude` then
 image seeds Claude Code's first-run state (onboarding done; the `--dangerously-skip-permissions`
 prompt skipped) into `/home/node`, the `home` volume; the workspace trust dialog is answered by
 `trustWorkdir` as on a host. git reaches GitHub through `gh auth git-credential`.
+
+**The container is not a machine (issue #141, replaces the paragraph above).** The container has
+none of a machine's abilities — no repositories, no sign-ins of the jobs' own — yet registered itself
+as the `local` machine. The image now sets `HOPPER_LOCAL_MACHINE=false`: the built-in instances list
+no machine, and the boot removes every `local` instance from plugins.yaml `machines:` (one an earlier
+boot of the container wrote), keeping every other line. The entrypoint that started the container's
+herdr session is gone. The image keeps herdr's CLI: `herdr-claude` detects it before it runs jobs on
+attached machines. A container install runs jobs on attached machines only.
 
 **A loopback Host from a LAN peer is a LAN request.** Docker publishes the UI port on the host's
 loopback and forwards it from the compose network: the browser sends `Host: 127.0.0.1:<port>` and the
