@@ -3493,6 +3493,27 @@ Owner direction: someone who is not the owner can run the hopper and use it from
   for a reference one person reads.
 
 
+## Connecting GitHub: the gh CLI by default, an App of one's own (issue #108, 2026-10-05)
+
+Owner direction: a self-hoster leaves the install knowing which GitHub path they are on and how to
+set it up, and is never steered toward a shared App private key.
+
+- **The gh CLI is the default.** A fresh store's plugins.yaml has the `github` instance (github-gh)
+  on `enabled: auto` (`builtinInstances`): it runs as the owner through `gh auth login`, and pauses
+  while `GITHUB_APP_PRIVATE_KEY` is set. Until #108 the built-in was `enabled: false`, so a new hopper
+  had no working path until the owner created an App. An existing plugins.yaml is never rewritten
+  ("Settled in slice 4"); a hopper set up before keeps what it has.
+- **Each owner creates their own GitHub App** with `scripts/create-github-app.sh` (the manifest
+  flow): one App, one key, one hopper. job-hopper ships no App and no key. A shared key would let every
+  holder act on every repository the App is installed on, and nothing in the hopper could tell them
+  apart.
+- **`install.sh` names the path** at the end of an install: the App when its key is in `daemon.env`,
+  the gh CLI when it is signed in, else the next step for both.
+- **Not built, named only** (README "Connect GitHub"): GitHub sign-in from the UI (OAuth, or a
+  fine-grained personal access token pasted in), and a hosted relay App forwarding to many hoppers.
+  Either would put a credential, or another party, where the hopper now has neither; neither is the
+  path for a self-hosted hopper.
+
 ## Plugin store (issue #75, 2026-10-05)
 
 Owner direction: there is a store to install plugins from. Code: `src/plugins/plugin-store.ts`

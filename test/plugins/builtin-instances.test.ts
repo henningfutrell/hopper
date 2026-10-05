@@ -18,6 +18,14 @@ describe('ensurePluginsDocument', () => {
     expect(ensurePluginsDocument({ documents, answerTimeoutMs: 1000, logger })).toEqual({ action: 'kept' });
   });
 
+  it('a fresh install takes jobs through the gh CLI; the App source waits for an App of its own (#108)', () => {
+    const { jobSources } = builtinInstances(1000);
+    expect(jobSources).toEqual([
+      { name: 'github', plugin: 'github-gh', options: { enabled: 'auto' } },
+      { name: 'github-app', plugin: 'github-app' },
+    ]);
+  });
+
   it('keeps an existing document untouched', () => {
     const documents = docs();
     documents.set(PLUGINS, 'version: 1\nnotifiers: []\n');

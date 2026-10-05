@@ -132,7 +132,7 @@ synonyms. Rename here first, in the same commit as everything else.
 | **LAN peer** | A CIDR range a LAN request may come from (`JOB_HOPPER_LAN_PEERS`). Any other non-loopback peer is refused. | allowlist |
 | **Device link** | `http://<LAN name>:<port>/#login=<code>`: a fresh login code as a link a logged-in browser hands another device, shown also as a QR code that changes when its code is used or expires. Works once, for 10 minutes. | pairing link, invite |
 | **Payload version** | `schemaVersion` on every event: the version of that event type's payload schema. | |
-| **GitHub App** | job-hopper's own GitHub identity (`job-hopper-<owner>[bot]`), created by the owner via the manifest flow. | bot account |
+| **GitHub App** | job-hopper's own GitHub identity (`job-hopper-<owner>[bot]`), created by the owner via the manifest flow. One per hopper: its private key is that hopper's alone, never shared or reused (issue #108). The other way in, and the default, is the gh CLI as the owner. | bot account |
 | **Installation** | Where the owner installed the app; its repos are the only ones the `github-app` source scans. | |
 | **Bot login** | The app's author name on GitHub; how old hopper comments are identified for the context filter (the marker is secondary). | |
 | **Paused** (source) | A job source that must not discover new items right now — the gh source while a GitHub App is configured, the app source while none is. It still checks and reports its own active jobs. Only for sources; a job waiting on a question is *waiting answer*, never "paused". | |

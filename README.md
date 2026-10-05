@@ -14,14 +14,16 @@ web UI, and an HTTP API with its reference at `/docs/`.
 
 ## Getting started
 
-Four steps, in this order. Each links to its section below.
+Five steps, in this order. Each links to its section below.
 
 1. **[Run it](#run-it)** — one line installs the daemon, its database and its herdr session on this
    host.
 2. **[Sign in](#sign-in)** — one command opens the UI, signed in.
-3. **[Give it jobs](#give-it-jobs)** — say whose GitHub issues it takes, then label an issue
+3. **[Connect GitHub](#connect-github)** — `gh auth login`, as you. That is the default; a GitHub App
+   of your own is the other path.
+4. **[Give it jobs](#give-it-jobs)** — say whose GitHub issues it takes, then label an issue
    `hopper`.
-4. **[Add machines](#add-machines)** — optional: jobs run on this host from step 1; add other
+5. **[Add machines](#add-machines)** — optional: jobs run on this host from step 1; add other
    computers, or a sandbox container, when you want more room.
 
 ## What you need
@@ -33,7 +35,7 @@ Four steps, in this order. Each links to its section below.
 | Docker | the container deploy, the bundled Postgres, `npm test` |
 | herdr, at `~/.local/bin/herdr` | the panes jobs run in (`herdr-claude` executor), on each machine that runs Claude jobs |
 | the `claude` CLI, signed in | jobs (on each machine that runs them), the answerer, the assessor, usage readings |
-| the `gh` CLI signed in, or a GitHub App | the GitHub job source |
+| the `gh` CLI signed in as you (default), or a GitHub App you create | reading and labelling the GitHub issues that are jobs ([Connect GitHub](#connect-github)) |
 
 ## Run it
 
@@ -107,17 +109,77 @@ Elsewhere (a container, a checkout, a browser without the script), mint a one-ti
 minutes). For other people and other devices: password sign-in, OIDC,
 GitHub or SAML in `auth.yaml`, and the LAN or a public URL — `docs/sign-in.md`.
 
+## Connect GitHub
+
+The hopper reads issues, sets their labels and closes finished ones. It does that as one GitHub
+identity. Pick the path; a new hopper is on the first one.
+
+| Path | Use it when | The hopper acts as | Job source |
+|---|---|---|---|
+| [**The gh CLI**](#the-gh-cli-default) (default) | a personal hopper: your own repos, one person | you | `github` |
+| [**A GitHub App of your own**](#a-github-app-of-your-own) | labels and closes must come from a bot, not from you; or an organization's repos, chosen by where you install the App | the App's bot, `<slug>[bot]` | `github-app` |
+
+**Each hopper has its own identity. Never use a GitHub App or a private key from somebody else's
+hopper**, and never give yours to anyone. A private key acts on every repository its App is installed
+on; whoever holds a copy can do what the hopper can. job-hopper ships no shared App and no shared key:
+if a guide or a person offers you one, do not use it.
+
+Which path you are on: the UI's **Sources** view. The source that is not `paused` is the one taking
+jobs; its badge says `gh` or `app`. `GET /api/accounts` names the GitHub account it acts as.
+
+### The gh CLI (default)
+
+On the hopper's host, as the user the daemon runs as:
+
+```sh
+gh auth login          # GitHub.com → HTTPS → log in with a web browser
+gh auth status         # must say "Logged in to github.com account <you>"
+```
+
+That is all: the `github` source starts on its own once gh is signed in (no restart), and pauses
+while a GitHub App key is set (`enabled: auto`). In a container there is no browser: put a token for
+your account in `deploy/hopper.env` as `GH_TOKEN` (`gh auth token` prints one on a machine where gh
+is signed in).
+
+### A GitHub App of your own
+
+You create the App; it lives on your GitHub account (or your organization), and its key on your
+hopper only. One App, one key, one hopper.
+
+1. Create it. On the hopper's host, with a browser:
+
+   ```sh
+   bash ~/.local/lib/job-hopper/scripts/create-github-app.sh            # --org <org> for an organization
+   ```
+
+   GitHub shows a prefilled "Create GitHub App" page; click create. The script writes the key into
+   `~/.config/job-hopper/daemon.env` as `GITHUB_APP_PRIVATE_KEY` and prints the App's `appId`, `slug`
+   and install link. For a container, add `--secrets-file deploy/hopper.env`.
+2. Install it: open the printed install link and pick the repositories it may read. Those are the
+   only repositories it takes jobs from.
+3. `job-hopper config edit plugins.yaml`: set `appId` and `slug` on the `github-app` instance, with
+   `authors` as in [Give it jobs](#give-it-jobs).
+4. `systemctl --user restart job-hopper` (or the container), so the daemon reads the key. The
+   `github` source now pauses and `github-app` takes the jobs.
+
+### Not built: other ways in
+
+Named so you know they are not missing steps. None is the path for a self-hosted hopper today:
+
+- **Sign in to GitHub from the UI** (an OAuth app, or a fine-grained personal access token pasted in).
+- **A hosted relay**: one App that somebody else runs, which forwards issues to many hoppers.
+
 ## Give it jobs
 
 1. Say whose issues it takes. `job-hopper config edit plugins.yaml`, under `jobSources`, on the
-   `github` instance (the gh CLI) or `github-app` (a GitHub App, `scripts/create-github-app.sh`):
+   instance of your [path](#connect-github): `github` (the gh CLI) or `github-app` (your App):
 
    ```yaml
    jobSources:
      - name: github
        plugin: github-gh
        options:
-         enabled: true
+         enabled: auto                         # on until a GitHub App key is set
          authors: [your-github-login]          # required: whose issues are accepted
          repos: [your-org/your-repo]           # optional allowlist
          repoPaths: { your-org/your-repo: /srv/checkouts/your-repo }   # where each repo's jobs run
