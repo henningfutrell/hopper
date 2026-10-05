@@ -41,20 +41,26 @@ export function claudeArgv(o: Pick<ClaudePrintOptions, 'model' | 'effort' | 'jso
   ];
 }
 
-function parse<T>(stdout: string, schema: z.ZodType<T>): T | { error: string } {
+type Ran<T extends object> = T & { model?: string };
+
+function parse<T extends object>(stdout: string, schema: z.ZodType<T>): Ran<T> | { error: string } {
   let json: unknown;
   try {
     json = JSON.parse(stdout);
   } catch {
     return { error: 'claude output is not JSON' };
   }
-  const out = (json as { structured_output?: unknown } | null)?.structured_output;
-  const parsed = schema.safeParse(out);
-  return parsed.success ? parsed.data : { error: 'claude structured_output missing or invalid' };
+  const result = json as { structured_output?: unknown; modelUsage?: unknown } | null;
+  const parsed = schema.safeParse(result?.structured_output);
+  if (!parsed.success) return { error: 'claude structured_output missing or invalid' };
+  // modelUsage is keyed by the model ids that ran: what an alias such as `fable` resolved to.
+  const usage = result?.modelUsage;
+  const ran = usage && typeof usage === 'object' ? Object.keys(usage).join(', ') : '';
+  return ran ? { ...parsed.data, model: ran } : parsed.data;
 }
 
-/** Run one prompt; resolve the schema-valid structured_output, or `{ error }`. */
-export function claudePrint<T>(o: ClaudePrintOptions, schema: z.ZodType<T>, prompt: string, signal: AbortSignal): Promise<T | { error: string }> {
+/** Run one prompt; resolve the schema-valid structured_output with the model that ran, or `{ error }`. */
+export function claudePrint<T extends object>(o: ClaudePrintOptions, schema: z.ZodType<T>, prompt: string, signal: AbortSignal): Promise<Ran<T> | { error: string }> {
   return new Promise((resolve) => {
     const timeout = AbortSignal.timeout(o.timeoutMs);
     const stop = AbortSignal.any([signal, timeout]);
@@ -62,7 +68,7 @@ export function claudePrint<T>(o: ClaudePrintOptions, schema: z.ZodType<T>, prom
     let stdout = '';
     let stderr = '';
     let settled = false;
-    const finish = (r: T | { error: string }) => {
+    const finish = (r: Ran<T> | { error: string }) => {
       if (settled) return;
       settled = true;
       stop.removeEventListener('abort', onAbort);
@@ -98,6 +104,7 @@ export async function detectClaude(sys: DetectionKit, bin: string) {
 /** One trail entry as a prompt line (both claude prompts list earlier attempts). */
 export function attemptLine(a: QuestionAttempt): string {
   const why = a.error ? `error: ${a.error}` : (a.reason ?? 'no reason given');
-  const what = a.answer ?? (a.escalate === undefined ? '(no answer)' : `escalate=${a.escalate}`);
+  const verdict = a.escalate === undefined ? '' : `escalate=${a.escalate}`;
+  const what = a.answer ? `${a.answer}${verdict ? ` (${verdict})` : ''}` : (verdict || '(no answer)');
   return `- ${a.tier}${a.role ? ` [${a.role}]` : ''}${a.model ? ` (${a.model})` : ''}: ${what} — ${why}`;
 }

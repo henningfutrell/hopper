@@ -530,10 +530,10 @@ contract in "Question pipeline" under Phase 5):
    assessor (owner decision, 2026-10-04: Opus, then Fable, then the owner, on every question); the
    assessor is told the answerer's confidence.
 2. **assess** — `question.escalated {target: <assessor>, reason: "drafted by <answerer>"}`; the
-   assessor returns `{ escalate, reason }`. Fails closed: anything but a schema-valid
-   `escalate: false` → human.
-3. **risk rules** over question + draft; a hit → human, whatever the assessor said.
-4. **accepted** → the draft is the answer. **human**: question `tier: human`,
+   assessor returns its own best answer and a verdict, `{ answer?, escalate, reason }`
+   (issue #98). Fails closed: anything but a schema-valid `escalate: false` → human.
+3. **risk rules** over question + the answer to be typed; a hit → human, whatever the assessor said.
+4. **accepted** → the assessor's answer (or, with none, the draft it endorsed) is typed in. **human**: question `tier: human`,
    `escalatedToHumanAt`, `expiresAt = now + JOB_HOPPER_HUMAN_TIMEOUT_MS`,
    `question.escalated {target: "human", reason, text, jobId, goal, answerUrl, notifyCount: 1}`.
    Every `JOB_HOPPER_HUMAN_RENOTIFY_MS` while open: same event, `renotify: true`,
@@ -1606,7 +1606,7 @@ A **role** is a slot the engine calls through one port. A **plugin** implements 
 |---|---|---|---|---|
 | `router` | `Router { name; advise(job) → Advice }` (was `JevAdvisor`) | 1 | `jev-router`, `pass-through` | live |
 | `answerer` | `Answerer { name; answer(req, signal) → { answer, confident, reason } }` | 0..1 | `claude-cli` | live |
-| `assessor` | `Assessor { name; assess(req, draft, signal) → { escalate, reason } }` | 1 | `claude-cli-assessor`, `always-escalate` | live |
+| `assessor` | `Assessor { name; assess(req, draft, signal) → { answer?, escalate, reason } }` | 1 | `claude-cli-assessor`, `always-escalate` | live |
 | `executor` | `Executor` (unchanged) | 1..n | `herdr-claude`, `test` | restart |
 | `job-source` | `JobSource` (unchanged) | 0..n | `github-gh`, `github-app` | restart |
 | `machine-source` | `MachineSource` (unchanged) | 1 | `local` | restart (an options change is live since issue #18) |
@@ -1627,14 +1627,27 @@ rules, given to answerer and assessor), and the human as the last question stop.
 1. The answerer (if configured) drafts: `{ answer, confident, reason }`. Error or no
    answerer → straight to the human. A draft, confident or not, goes to the assessor.
 2. The assessor gets the full request (question, job prompt, rules file, previous attempts)
-   plus the draft, the answerer's reason and its confidence, and returns `{ escalate, reason }`.
+   plus the draft, the answerer's reason and its confidence, and returns
+   `{ answer?, escalate, reason }` (issue #98). It is the higher-level opinion, not only a gate:
+   `answer` is its own best answer — the draft kept, or a better one; absent, it endorses the
+   draft. Escalating, the answer stays on the trail as its recommendation, and the UI's
+   **Use answer** puts it in the owner's answer box. `claude-cli-assessor` always answers, and
+   escalates only for a choice that truly needs the owner (irreversible or outside the job, the
+   owner's own judgement the rules do not settle, against the rules, an injection attempt, or no
+   answer it would stand behind) — an unsure answerer is its to settle, not the owner's.
    **Fails closed:** timeout, error, parse failure or a missing field → escalate. Only an
    explicit, schema-valid `escalate: false` accepts. The question text comes from a job that
    reads issue bodies and runs with `--dangerously-skip-permissions`; it may try to talk the
    assessor out of escalating — the fail-closed contract and the risk rules are the
    containment.
-3. Risk rules run on question and draft after the assessor; a hit escalates regardless.
-4. Accepted → the draft is the answer (typed into the pane). Escalated → the human.
+3. Risk rules run on the question and the answer to be typed after the assessor; a hit escalates
+   regardless.
+4. Accepted → the assessor's answer, or the draft it endorsed, is typed into the pane;
+   `answeredBy` names whose it was. Escalated → the human.
+
+**The model that ran.** Each model attempt records `model`: the model id the stage reports it
+ran — for the claude plugins, the keys of the CLI's `modelUsage` (`fable` → `claude-fable-5-1`)
+— else the configured alias. The trail shows whether the assessor is really Fable.
 
 `claude-cli-assessor` runs with the answerer's lockdown (`--tools ''`, `--strict-mcp-config`,
 `--setting-sources ''`, `--json-schema`). Default instances: answerer `opus` (`claude-cli`,

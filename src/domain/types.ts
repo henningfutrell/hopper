@@ -337,16 +337,18 @@ export interface QuestionAttempt {
   /** Who: the answerer's or assessor's instance name, or `human` (before slice 2: `opus` / `fable`). */
   tier: string;
   role?: AttemptRole;
+  /** The model that ran, as the stage reports it, else the configured one. */
   model?: string;
   startedAt: string;
   finishedAt?: string;
+  /** The answerer's draft, the assessor's own best answer, or the human's answer. */
   answer?: string;
   confident?: boolean;
   /** Before slice 2 only: the answerer judged risk itself. Judging risk is now the assessor's job. */
   risky?: boolean;
   /** Assessor: its verdict, when it returned a schema-valid one. */
   escalate?: boolean;
-  /** Risk patterns that matched the question or the draft, independent of any model. */
+  /** Risk patterns that matched the question or the answer to be typed, independent of any model. */
   riskRules?: string[];
   reason?: string;
   error?: string;
@@ -371,7 +373,7 @@ export interface Question {
   tier: string;
   attempts: QuestionAttempt[];
   answer?: string;
-  /** The answerer instance whose draft was accepted, or `human` (also for a closed question). */
+  /** Whose answer was typed: the answerer instance (its draft), the assessor instance (its own answer), or `human` (also for a closed question). */
   answeredBy?: string;
   /** Human tier: when it was first and last notified, and how often. */
   escalatedToHumanAt?: string;

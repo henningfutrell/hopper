@@ -1,7 +1,7 @@
-// claude-cli-assessor: decides with the `claude` CLI whether the owner must see a question, under the
-// same lockdown as the claude-cli answerer (design.md "Question pipeline"). Returns
-// `{ escalate, reason }` or `{ error }`; the core escalates on anything but a valid
-// `escalate: false`.
+// claude-cli-assessor: gives its own best answer with the `claude` CLI and decides whether the owner
+// must see a question, under the same lockdown as the claude-cli answerer (design.md "Question
+// pipeline"). Returns `{ answer, escalate, reason }` or `{ error }`; the core escalates on anything
+// but a valid `escalate: false`.
 import { z } from 'zod';
 import { CLAUDE_TIMEOUT_MS, claudePrint, detectClaude } from '../../claude-print.ts';
 import type { Assessment, PluginDefinition } from '../../sdk.ts';
@@ -15,17 +15,17 @@ export interface ClaudeCliAssessorOptions {
 
 const JSON_SCHEMA = {
   type: 'object',
-  properties: { escalate: { type: 'boolean' }, reason: { type: 'string' } },
-  required: ['escalate', 'reason'],
+  properties: { answer: { type: 'string' }, escalate: { type: 'boolean' }, reason: { type: 'string' } },
+  required: ['answer', 'escalate', 'reason'],
   additionalProperties: false,
 };
 
-const ASSESSMENT: z.ZodType<Assessment> = z.object({ escalate: z.boolean(), reason: z.string() });
+const ASSESSMENT: z.ZodType<Assessment> = z.object({ answer: z.string(), escalate: z.boolean(), reason: z.string() });
 
 const claudeCliAssessor: PluginDefinition<'assessor', ClaudeCliAssessorOptions> = {
   id: 'claude-cli-assessor',
   role: 'assessor',
-  describe: 'Decides with the claude CLI (print mode, no tools) whether the owner must see a question; never answers',
+  describe: 'Gives its own best answer with the claude CLI (print mode, no tools) and decides whether the owner must see a question',
   options: (zod) => zod.object({
     bin: zod.string().min(1).default('claude').meta({ commandBearing: true }),
     model: zod.string().min(1).default('fable'),

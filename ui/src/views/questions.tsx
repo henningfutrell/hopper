@@ -24,7 +24,8 @@ import { useCanOperate, useJobIndex } from '@/store/selectors';
 
 const Mark = ({ ok }: { ok: boolean }) => <span className={ok ? 'text-ok' : 'text-bad'}>{ok ? '✓' : '✗'}</span>;
 
-function Attempt({ a }: { a: QuestionAttempt }) {
+/** `onUse`: puts the attempt's answer in the answer box (an assessor's best answer, for the owner to send or edit). */
+function Attempt({ a, onUse }: { a: QuestionAttempt; onUse?: (answer: string) => void }) {
   return (
     <div className="space-y-1 border-l-2 border-border py-1 pl-3 text-xs">
       <div className="flex flex-wrap items-center gap-1.5">
@@ -40,6 +41,7 @@ function Attempt({ a }: { a: QuestionAttempt }) {
       {a.answer && <pre className="rounded-md bg-muted/50 p-2 font-mono text-xs whitespace-pre-wrap">{a.answer}</pre>}
       {a.reason && <div className="text-muted-foreground">{a.reason}</div>}
       {a.error && <div className="text-bad">{a.error}</div>}
+      {onUse && a.answer && <Button size="sm" variant="outline" onClick={() => onUse(a.answer!)} title="Put this answer in the answer box to send or edit">Use answer</Button>}
     </div>
   );
 }
@@ -82,7 +84,7 @@ function QuestionCard({ q }: { q: Question }) {
         </CollapsibleTrigger>
         <CollapsibleContent><pre className="mt-2 max-h-80 overflow-auto rounded-md bg-muted/40 p-3 font-mono text-[11px] leading-relaxed">{lines.slice(-40).join('\n')}</pre></CollapsibleContent>
       </Collapsible>
-      {q.attempts.length > 0 && <div className="space-y-1.5"><div className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">Escalation trail</div>{q.attempts.map((a, i) => <Attempt key={i} a={a} />)}</div>}
+      {q.attempts.length > 0 && <div className="space-y-1.5"><div className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">Escalation trail</div>{q.attempts.map((a, i) => <Attempt key={i} a={a} onUse={canAnswer && q.tier === 'human' && a.role === 'assessor' ? setDraft : undefined} />)}</div>}
       {canAnswer && (
         <div className="space-y-2">
           <Textarea rows={3} value={draft} disabled={sending} placeholder="Answer to type into the job (Ctrl/Cmd+Enter sends)"

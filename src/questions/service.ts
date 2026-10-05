@@ -1,11 +1,11 @@
-// The question pipeline (design.md "Question pipeline"): the answerer drafts; the assessor decides
-// whether the owner must see it and fails closed; the risk rules run after it; accepted → the draft
-// is typed into the job, otherwise the human stage. The answerer and assessor are looked up per
-// question (live roles), and every result is validated here: a plugin that breaks its contract
-// escalates, it never answers.
-import { z } from 'zod';
+// The question pipeline (design.md "Question pipeline"): the answerer drafts; the assessor gives its
+// own best answer and decides whether the owner must see it, and fails closed; the risk rules run
+// after it on the answer to be typed; accepted → that answer is typed into the job, otherwise the
+// human stage. The answerer and assessor are looked up per question (live roles), and every result
+// is validated here: a plugin that breaks its contract escalates, it never answers.
 import type { AnswerByHumanResult, AnswerDraft, AnswerRequest, Answerer, Assessor, Clock, ConfigDocuments, QuestionService, Store } from '../domain/ports.ts';
 import type { AttemptRole, Question, QuestionAttempt } from '../domain/types.ts';
+import { ASSESSMENT, DRAFT, check } from './results.ts';
 import { riskRules } from './risk.ts';
 import { readRules } from './rules.ts';
 
@@ -35,22 +35,6 @@ export const HUMAN = 'human';
 
 /** Typed into the job in place of an answer when the owner closes its question. */
 export const CLOSED_ANSWER = 'The owner closed this question without answering. Continue on your own judgement; if you cannot, end with JOB_HOPPER_FAILED and say why.';
-
-const DRAFT = z.object({ answer: z.string(), confident: z.boolean(), reason: z.string() });
-// Only this accepts: a boolean `escalate` and a string `reason`. `"false"`, a missing field or
-// anything else is an error, and an error escalates.
-const ASSESSMENT = z.object({ escalate: z.boolean(), reason: z.string() });
-
-type Checked<T> = { ok: true; value: T } | { ok: false; error: string };
-
-const message = (e: unknown): string => (e instanceof Error ? e.message : String(e));
-
-function check<T>(schema: z.ZodType<T>, what: string, r: unknown): Checked<T> {
-  if (typeof r === 'object' && r !== null && 'error' in r && typeof r.error === 'string') return { ok: false, error: r.error };
-  const parsed = schema.safeParse(r);
-  if (parsed.success) return { ok: true, value: parsed.data };
-  return { ok: false, error: `${what} is malformed: ${parsed.error.issues.map((i) => `${i.path.join('.') || what}: ${i.message}`).join('; ')}` };
-}
 
 interface Timers { renotify?: NodeJS.Timeout; expiry?: NodeJS.Timeout }
 
@@ -175,7 +159,7 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
       }, o.stageTimeoutMs);
     });
     try {
-      const result = await Promise.race([fn(ac.signal).catch((e: unknown) => ({ error: `threw: ${message(e)}` })), timeout]);
+      const result = await Promise.race([fn(ac.signal).catch((e: unknown) => ({ error: `threw: ${e instanceof Error ? e.message : String(e)}` })), timeout]);
       return { result, ac };
     } finally {
       clearTimeout(timer);
@@ -221,8 +205,9 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
     const assessor = store.tx((): Assessor | undefined => {
       const q = stillAt(id, answerer.name);
       if (!q) return void superseded(id, answerer, 'answerer', answeredAt);
+      const model = (draft.ok ? draft.value.model : undefined) ?? answerer.model;
       const base: QuestionAttempt = {
-        tier: answerer.name, role: 'answerer', ...(answerer.model ? { model: answerer.model } : {}),
+        tier: answerer.name, role: 'answerer', ...(model ? { model } : {}),
         startedAt: answeredAt, finishedAt: iso(), outcome: 'escalated',
       };
       if (!draft.ok) {
@@ -230,7 +215,8 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
         return void toHuman(q, `answerer ${answerer.name} failed: ${draft.error}`);
       }
       // Every draft goes to the assessor, confident or not (owner decision, 2026-10-04: Opus, then
-      // Fable, then the owner on every question); the assessor sees the answerer's confidence.
+      // Fable, then the owner on every question); the assessor sees the answerer's confidence and
+      // gives its own best answer (issue #98).
       const { answer, confident, reason: why } = draft.value;
       store.questions.addAttempt(id, { ...base, answer, confident, reason: `${why}${rulesNote}`, outcome: 'drafted' });
       const next = o.assessor();
@@ -239,7 +225,8 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
     });
     if (!assessor || !draft.ok) return;
 
-    // 2. The assessor decides whether the owner must see it; 3. the risk rules run after it.
+    // 2. The assessor answers and decides whether the owner must see it; 3. the risk rules run after
+    // it on the answer to be typed: the assessor's own, or the draft it endorsed.
     const assessedAt = iso();
     const assessed = await call(id, (signal) => assessor.assess(req, draft.value, signal));
     if (stopped) return;
@@ -247,10 +234,15 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
     store.tx(() => {
       const q = stillAt(id, assessor.name);
       if (!q) return superseded(id, assessor, 'assessor', assessedAt);
-      const hits = riskRules(`${q.text}\n${draft.value.answer}`);
+      const own = verdict.ok ? verdict.value.answer : undefined;
+      const typed = own ?? draft.value.answer;
+      const by = own === undefined ? answerer.name : assessor.name;
+      const hits = riskRules(`${q.text}\n${typed}`);
+      const model = (verdict.ok ? verdict.value.model : undefined) ?? assessor.model;
       const base: QuestionAttempt = {
-        tier: assessor.name, role: 'assessor', ...(assessor.model ? { model: assessor.model } : {}),
+        tier: assessor.name, role: 'assessor', ...(model ? { model } : {}),
         startedAt: assessedAt, finishedAt: iso(), riskRules: hits, outcome: 'escalated',
+        ...(own === undefined ? {} : { answer: own }),
       };
       if (!verdict.ok) {
         store.questions.addAttempt(id, { ...base, error: verdict.error });
@@ -265,10 +257,10 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
         store.questions.addAttempt(id, { ...base, escalate, reason: why });
         return toHuman(q, `risk rules: ${hits.join(', ')}`);
       }
-      // 4. Accepted: the draft is the answer.
+      // 4. Accepted: the assessor's own answer, or the draft it endorsed, is typed into the job.
       store.questions.addAttempt(id, { ...base, escalate, reason: why, outcome: 'accepted' });
-      const updated = store.questions.update(id, { status: 'answered', answer: draft.value.answer, answeredBy: answerer.name });
-      emit(updated, 'question.answered', { by: answerer.name, answer: draft.value.answer });
+      const updated = store.questions.update(id, { status: 'answered', answer: typed, answeredBy: by });
+      emit(updated, 'question.answered', { by, answer: typed });
       o.onAnswered(updated);
     });
   }

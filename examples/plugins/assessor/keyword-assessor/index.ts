@@ -1,5 +1,6 @@
-// An assessor: decides whether a question escalates to the owner, given the request and the draft.
-// It never answers. The core fails closed: anything but a valid `escalate: false` escalates.
+// An assessor: gives its own best answer (optional: absent, it endorses the draft) and decides
+// whether a question escalates to the owner, given the request and the draft. This one never
+// answers on its own. The core fails closed: anything but a valid `escalate: false` escalates.
 // This one escalates when the question names a listed word, or the draft is not confident.
 //   assessor: { name: words, plugin: keyword-assessor, options: { words: [delete, deploy, money] } }
 import type { PluginDefinition } from 'job-hopper/plugin';

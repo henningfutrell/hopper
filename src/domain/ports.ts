@@ -208,6 +208,8 @@ export interface AnswerDraft {
   answer: string;
   confident: boolean;
   reason: string;
+  /** The model that ran, as its provider reports it (the trail shows it in place of the configured alias). */
+  model?: string;
 }
 
 /**
@@ -222,16 +224,23 @@ export interface Answerer {
   answer(req: AnswerRequest, signal: AbortSignal): Promise<AnswerDraft | { error: string }>;
 }
 
-/** The assessor's verdict on a draft: must the owner see this question? */
+/**
+ * The assessor's assessment of a draft: its own best answer, and must the owner see this question?
+ * `answer` absent: the assessor endorses the draft as it is. Escalating, the answer is the
+ * assessor's recommendation to the owner, on the trail.
+ */
 export interface Assessment {
+  answer?: string;
   escalate: boolean;
   reason: string;
+  /** The model that ran, as its provider reports it. */
+  model?: string;
 }
 
 /**
- * The assessor role: decides whether a question escalates to the human; it never answers. The
- * question service fails closed on its result: only a schema-valid `escalate: false` accepts;
- * an error, a throw, a timeout or anything malformed escalates.
+ * The assessor role: gives its own best answer and decides whether the question escalates to the
+ * human. The question service fails closed on its result: only a schema-valid `escalate: false`
+ * accepts; an error, a throw, a timeout or anything malformed escalates.
  */
 export interface Assessor {
   /** The instance name (plugins.yaml), which is also the question's stage while it assesses. */
