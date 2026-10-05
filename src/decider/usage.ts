@@ -6,9 +6,18 @@ export interface MachineUsage {
   ignored: UsageReading[];
 }
 
-/** Step 1: max of used/limit over the readings that apply to the machine; informational readings never do. */
+/**
+ * The readings of one machine: its own (machine-scoped: its own account, issue #139) when it has any
+ * that throttle, else those of every machine.
+ */
+export function readingsOf(machineId: string, readings: UsageReading[]): UsageReading[] {
+  const own = readings.filter((r) => r.machineId === machineId);
+  return own.some((r) => !r.informational) ? own : readings.filter((r) => r.machineId === undefined || r.machineId === machineId);
+}
+
+/** Step 1: max of used/limit over the readings of the machine; informational readings never count. */
 export function machineUsage(machineId: string, readings: UsageReading[]): MachineUsage {
-  const applicable = readings.filter((r) => !r.informational && (r.machineId === undefined || r.machineId === machineId));
+  const applicable = readingsOf(machineId, readings).filter((r) => !r.informational);
   const ignored = applicable.filter((r) => r.limit <= 0);
   const fracs = applicable.filter((r) => r.limit > 0).map((r) => r.used / r.limit);
   return { usedFrac: fracs.length === 0 ? 0 : Math.max(...fracs), ignored };

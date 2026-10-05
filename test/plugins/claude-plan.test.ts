@@ -7,13 +7,16 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { UsageSource } from '../../src/domain/ports.ts';
+import type { MachineSnapshot } from '../../src/domain/types.ts';
 import { optionsJsonSchema, parseOptions } from '../../src/plugins/options.ts';
 import claudePlan from '../../src/plugins/usage-source/claude-plan/index.ts';
 import { parseAuthStatus, parseUsageEnvelope, parseUsageText, resetsAtOf } from '../../src/plugins/usage-source/claude-plan/parse.ts';
+import { testSshAuth } from '../support/ssh.ts';
 import { waitFor } from '../support/wait.ts';
 import { fakeKit, useTempDirs } from './support.ts';
 
 const BIN = join(import.meta.dirname, 'fake-claude-plan.mjs');
+const FAKE_SSH = join(import.meta.dirname, '..', 'herdr', 'fake-ssh-bin.mjs');
 // 2026-08-08 12:00 in Chicago (CDT, UTC-5).
 const AUG8_NOON = new Date('2026-08-08T17:00:00.000Z');
 
@@ -97,7 +100,7 @@ describe('claude-plan plugin', () => {
     if (saved === undefined) delete process.env.FAKE_PLAN_DIR; else process.env.FAKE_PLAN_DIR = saved;
   });
 
-  const ctx = () => ({ clock: { now: () => now }, logger: { info() {}, warn() {} }, dataDir: scratch, scratchDir: scratch, instanceName: 'claude', env: () => undefined });
+  const ctx = () => ({ clock: { now: () => now }, logger: { info() {}, warn() {} }, dataDir: scratch, scratchDir: scratch, instanceName: 'claude', env: () => undefined, machine: async () => undefined });
   async function create(raw: Record<string, unknown> = {}): Promise<UsageSource> {
     const p = parseOptions(claudePlan, { bin: BIN, ...raw });
     if (!p.ok) throw new Error(p.error);
@@ -109,20 +112,29 @@ describe('claude-plan plugin', () => {
 
   it('is a usage source; options bin (command-bearing, default claude) and intervalSeconds (default 600, at least 120)', () => {
     expect(claudePlan).toMatchObject({ id: 'claude-plan', role: 'usage-source' });
-    expect(parseOptions(claudePlan, {})).toEqual({ ok: true, options: { bin: 'claude', intervalSeconds: 600 } });
+    expect(parseOptions(claudePlan, {})).toEqual({ ok: true, options: { bin: 'claude', intervalSeconds: 600, sshBin: 'ssh', dockerBin: 'docker' } });
     expect(parseOptions(claudePlan, { intervalSeconds: 60 }).ok).toBe(false);
     const schema = optionsJsonSchema(claudePlan) as { properties: Record<string, { commandBearing?: boolean }> };
     expect(schema.properties.bin!.commandBearing).toBe(true);
     expect(schema.properties.intervalSeconds!.commandBearing).toBeUndefined();
+    expect(schema.properties.machine!.commandBearing).toBeUndefined();
+    expect(schema.properties.sshBin!.commandBearing).toBe(true);
+    expect(schema.properties.dockerBin!.commandBearing).toBe(true);
   });
 
   it('detection is `which bin` only: never a call to claude', async () => {
     let ran = false;
     const kit = fakeKit({ version: async () => { ran = true; return 'x'; }, succeeds: async () => { ran = true; return true; } });
-    expect(await claudePlan.detect(kit, { bin: 'claude', intervalSeconds: 600 })).toMatchObject({ status: 'available' });
-    expect(await claudePlan.detect(fakeKit({ which: async () => undefined }), { bin: 'claude', intervalSeconds: 600 }))
+    expect(await claudePlan.detect(kit, { bin: 'claude', intervalSeconds: 600, sshBin: 'ssh', dockerBin: 'docker' })).toMatchObject({ status: 'available' });
+    expect(await claudePlan.detect(fakeKit({ which: async () => undefined }), { bin: 'claude', intervalSeconds: 600, sshBin: 'ssh', dockerBin: 'docker' }))
       .toEqual({ status: 'unavailable', reason: 'claude not found: claude' });
     expect(ran).toBe(false);
+  });
+
+  it('with a machine, detection never looks for claude here: claude runs on that machine', async () => {
+    const kit = fakeKit({ which: async () => undefined });
+    expect(await claudePlan.detect(kit, { bin: 'claude', intervalSeconds: 600, machine: 'laptop', sshBin: 'ssh', dockerBin: 'docker' }))
+      .toEqual({ status: 'available', detail: 'claude on machine laptop' });
   });
 
   it('poll never waits for claude: no readings and a reason until the first read lands, then every window as a % reading', async () => {
@@ -184,5 +196,79 @@ describe('claude-plan plugin', () => {
     expect(await s.poll()).toEqual([]);
     expect(s.state!().problem).toBe('stale: last read 2026-10-03T17:00:00.000Z');
     expect(s.state!().refreshedAt).toBe('2026-10-03T17:00:00.000Z');
+  });
+});
+
+describe('claude-plan on an attached machine (issue #139)', () => {
+  const temp = useTempDirs();
+  let control: string;
+  let scratch: string;
+  let ssh: string;
+  const sources: UsageSource[] = [];
+  const saved = { plan: process.env.FAKE_PLAN_DIR, herdr: process.env.FAKE_HERDR_DIR };
+  const now = new Date('2026-10-03T17:00:00.000Z');
+  const LAPTOP: MachineSnapshot = { id: 'laptop', label: 'laptop', maxLanes: 1, online: true, executors: ['herdr-claude'], ssh: 'laptop' };
+
+  beforeEach(() => {
+    control = temp();
+    ssh = temp();
+    scratch = join(temp(), 'plugin-data', 'claude-plan');
+    mkdirSync(scratch, { recursive: true });
+    process.env.FAKE_PLAN_DIR = control;
+    process.env.FAKE_HERDR_DIR = ssh;
+  });
+  afterEach(() => {
+    for (const s of sources.splice(0)) s.stop?.();
+    for (const [k, v] of [['FAKE_PLAN_DIR', saved.plan], ['FAKE_HERDR_DIR', saved.herdr]] as const) {
+      if (v === undefined) delete process.env[k]; else process.env[k] = v;
+    }
+  });
+
+  async function create(machines: MachineSnapshot[]): Promise<UsageSource> {
+    const auth = testSshAuth(join(ssh, 'auth'))();
+    const ctx = {
+      clock: { now: () => now }, logger: { info() {}, warn() {} }, dataDir: scratch, scratchDir: scratch, instanceName: 'laptop-claude',
+      env: (n: string) => (n === 'HOPPER_SSH_KEY_FILE' ? auth.identityFile : undefined),
+      machine: async (id: string) => machines.find((m) => m.id === id),
+    };
+    const p = parseOptions(claudePlan, { bin: BIN, machine: 'laptop', sshBin: FAKE_SSH });
+    if (!p.ok) throw new Error(p.error);
+    const s = await claudePlan.create(ctx, p.options as never);
+    sources.push(s);
+    return s;
+  }
+  const sshCalls = () => readFileSync(join(ssh, 'ssh-calls.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as { argv: string[] });
+
+  it('reads usage and the account over the machine\'s connection; every reading is that machine\'s', async () => {
+    const s = await create([LAPTOP]);
+    const readings = await waitFor(async () => { const r = await s.poll(); return r.length ? r : undefined; }, { what: 'readings' });
+    expect(readings.map((r) => [r.window, r.used, r.machineId])).toEqual([['session', 80, 'laptop'], ['week', 30, 'laptop'], ['week (Fable)', 99, 'laptop']]);
+    await waitFor(() => s.state!().account, { what: 'account' });
+    expect(s.state!().account).toEqual({ service: 'claude', identity: 'user@example.com', detail: { plan: 'max', organization: 'Example Org', authMethod: 'claude.ai', machine: 'laptop' } });
+    const calls = sshCalls();
+    expect(calls).toHaveLength(2);
+    for (const c of calls) expect(c.argv.slice(c.argv.indexOf('--') + 1, -1)).toEqual(['laptop.example']);
+    // On the machine: a fresh private dir, removed with the project dir claude keeps for it.
+    const ran = readFileSync(join(control, 'calls.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as { argv: string[]; cwd: string });
+    expect(ran.map((c) => c.argv)).toEqual([['-p', '/usage', '--output-format', 'json', '--no-session-persistence'], ['auth', 'status', '--json']]);
+    for (const c of ran) {
+      expect(existsSync(c.cwd)).toBe(false);
+      expect(existsSync(join(homedir(), '.claude', 'projects', c.cwd.replace(/[^A-Za-z0-9]/g, '-')))).toBe(false);
+    }
+  });
+
+  it('a machine not configured, offline, or a client target: no readings, and the reason', async () => {
+    const gone = await create([]);
+    await waitFor(() => (gone.state!().problem !== 'not read yet' ? true : undefined), { what: 'the first read' });
+    expect(await gone.poll()).toEqual([]);
+    expect(gone.state!().problem).toBe('machine laptop is not configured');
+
+    const offline = await create([{ ...LAPTOP, online: false }]);
+    await waitFor(() => (offline.state!().problem !== 'not read yet' ? true : undefined), { what: 'the first read' });
+    expect(offline.state!().problem).toBe('machine laptop is offline');
+
+    const client = await create([{ id: 'laptop', label: 'laptop', maxLanes: 1, online: true, executors: [], client: { tokenEnv: 'T' } }]);
+    await waitFor(() => (client.state!().problem !== 'not read yet' ? true : undefined), { what: 'the first read' });
+    expect(client.state!().problem).toMatch(/client target/);
   });
 });

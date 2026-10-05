@@ -63,8 +63,9 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 `decide(inputs: DecisionInputs, decisionId: string): Decision`. Deterministic: same inputs,
 same Decision. Algorithm, in order:
 
-1. **Usage fraction per machine.** `usedFrac(m)` = max of `used/limit` over readings whose
-   `machineId` is `m` or absent. Readings with `limit <= 0` are ignored and noted in
+1. **Usage fraction per machine.** `usedFrac(m)` = max of `used/limit` over the readings of
+   `m` (`readingsOf`): those whose `machineId` is `m` when any of them throttles — that machine's
+   own account (issue #139) — else those whose `machineId` is `m` or absent. Readings with `limit <= 0` are ignored and noted in
    `reasons`. **Informational readings** (`informational: true` — a window that limits one
    model only, issue #18) are skipped. No readings → `0`.
 2. **Lane cap per machine** (`policy.softLimit`, `policy.hardLimit`):
@@ -2073,7 +2074,8 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
   `enabled: false`) — listed `disabled` in `/api/sources`, never run. A source that cannot run is a
   fixed `error` status with the reason (kind = plugin id). `RoleContext['job-source']` = `knownKeys`,
   `rerunnable`; `RoleContext['machine-source']` = `executors()` (asked on every list, so
-  seam executors registered after the host count).
+  seam executors registered after the host count); `RoleContext['usage-source']` = `machine(id)`
+  (issue #139).
 - **The gh source's pause** no longer reads the app source's config: github-gh has its own `appFile`
   (default `~/.config/hopper/github-app.json`; `null` never pauses). The migration writes the app
   source's app file there, or `null` when `githubApp.enabled` was false — the phase-4 rule as before.
@@ -2911,8 +2913,18 @@ Owner request: the UI shows the accounts in use and their usage, and usage throt
 subscription usage comes from `claude -p /usage --output-format json --no-session-persistence`: a
 local slash command, zero turns, zero tokens; Claude Code refreshes its own OAuth, so hopper
 holds no credential. Prior art: `a status-bar script`.
-- Options: `bin` (command-bearing, default `claude`), `intervalSeconds` (default 600, min 120).
-  Detection: `which bin` only — never a call to claude.
+- Options: `bin` (command-bearing, default `claude`), `intervalSeconds` (default 600, min 120),
+  `machine` (an attached machine; absent: this machine), `sshBin` and `dockerBin` (command-bearing,
+  default `ssh`, `docker`). Detection: `which bin` only — never a call to claude; with `machine`,
+  none (claude is on that machine).
+- **On an attached machine** (issue #139): with `machine`, both calls run there through its
+  connection — `commandOn`, as the command executor: ssh with the hopper's ssh key, or `docker exec`;
+  a client target serves herdr only, so it cannot — in a fresh `mktemp -d` dir there, removed after
+  with the project dir claude keeps for it. Its `PATH` is the machine's own. The machine is found
+  through the usage-source context's `machine(id)` (as the machine sources list it now); not
+  configured or offline → no readings and the reason. Every reading carries `machineId`, and the
+  account's detail names the `machine`. A machine with throttling readings of its own is capped by
+  those alone, not by the readings of every machine (decider step 1): one Claude account per machine.
 - Runs in the background: once at create, then every `intervalSeconds`, each call killed after 45 s,
   in `<scratchDir>/probe` (mode 0700, ours alone); the project dir claude keeps for that cwd under
   `$CLAUDE_CONFIG_DIR` or `~/.claude/projects/` is removed after every run. `poll` answers from the

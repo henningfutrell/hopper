@@ -93,6 +93,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
     kit, clock: o.clock, logger: o.logger, dataDir: o.dataDir, routerMode: o.routerMode, find,
     jobSource: o.jobSourceContext ?? NO_SOURCE_CONTEXT, executors: o.machineContext?.executors ?? runnableExecutors,
     target: o.machineContext?.target ?? createTargetPool({ probe: async () => ({ online: false }) }),
+    machine: async (id) => (await liveMachines.list()).find((m) => m.id === id),
   };
 
   /** Build a restart role once; afterwards only record whether plugins.yaml now names something else. */

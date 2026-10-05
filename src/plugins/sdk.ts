@@ -81,7 +81,7 @@ export interface RoleInstance {
 /**
  * What each role adds to the context. The router passes hopper's router mode on (Jev reads it);
  * a job source learns which source keys already have jobs; a machine
- * source learns the executors registered when it is asked.
+ * source learns the executors registered when it is asked; a usage source finds a machine.
  */
 export interface RoleContext {
   router: { routerMode(): RouterMode };
@@ -90,8 +90,16 @@ export interface RoleContext {
   executor: object;
   'job-source': JobSourceContext;
   'machine-source': MachineSourceContext;
-  'usage-source': object;
+  'usage-source': UsageSourceContext;
   notifier: object;
+}
+
+/**
+ * What a usage source learns: a machine by its id, as the machine sources list it now (absent: not
+ * configured, or its source cannot run) — so a source can read the account of that machine (issue #139).
+ */
+export interface UsageSourceContext {
+  machine(id: string): Promise<MachineSnapshot | undefined>;
 }
 
 /**

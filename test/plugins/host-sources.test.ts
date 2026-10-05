@@ -31,6 +31,22 @@ const fixedUsage: PluginDefinition<'usage-source'> = {
   },
 };
 
+/** A usage source reporting, as its one reading's window, the machine its context finds under `machine` (issue #139). */
+const machineUsage: PluginDefinition<'usage-source'> = {
+  id: 'machine-usage', role: 'usage-source', describe: 'the machine it finds',
+  options: (z) => z.object({ machine: z.string() }),
+  async detect() { return { status: 'available' }; },
+  create(ctx, o): UsageSource {
+    return {
+      name: 'machine-usage',
+      poll: async () => {
+        const m = await ctx.machine(o.machine);
+        return [{ source: 'machine-usage', window: m ? `${m.id} ${m.ssh ?? ''} ${m.online}` : 'none', used: 0, limit: 100, unit: '%', at: ctx.clock.now().toISOString() }];
+      },
+    };
+  },
+};
+
 /** Each attached machine as a source listing it online, and the machines it was asked for, in order. */
 function targets() {
   const asked: AttachedMachine[] = [];
@@ -48,7 +64,7 @@ function start(o: { file?: string; kit?: DetectionKit; executors?: () => string[
   host = createPluginHost({
     pluginDir: join(dir, 'plugins'), documents, dataDir: dir, clock: fixedClock,
     logger: { info() {}, warn() {} }, routerMode: () => 'shadow', kit: o.kit ?? fakeKit({ exists: async () => false }),
-    builtins: [...BUILTIN_PLUGINS, fixedUsage],
+    builtins: [...BUILTIN_PLUGINS, fixedUsage, machineUsage],
     defaultLevels: [],
     defaultExecutors: [{ name: 'test', plugin: 'test' }],
     machineContext: { ...(o.executors ? { executors: o.executors } : {}), ...(o.target ? { target: o.target } : {}) },
@@ -280,5 +296,19 @@ describe('the usage-source role', () => {
     expect(u!.name).toBe('budget');
     expect(await u!.poll()).toEqual([expect.objectContaining({ used: 42 })]);
     expect(host.report().usageSources.instances.map((i) => [i.instance.name, i.active])).toEqual([['budget', 'fixed-usage'], ['nope', null]]);
+  });
+
+  it('a usage source finds a machine by its id, as the machine sources list it now (issue #139)', async () => {
+    const t = targets();
+    const { host, documents } = start({
+      file: 'version: 1\nmachines:\n  - { name: local, plugin: local }\n  - { name: laptop, plugin: ssh, options: { ssh: laptop, lanes: 1, herdrBin: /h/herdr } }\nusageSources: [ { name: on-laptop, plugin: machine-usage, options: { machine: laptop } } ]\n',
+      target: (m) => ({ list: async () => [{ ...(await t.target(m).list())[0]!, ssh: 'laptop' }] }),
+    });
+    await host.start();
+    const [u] = host.usageSources();
+    expect((await u!.poll())[0]!.window).toBe('laptop laptop true');
+    documents.set(PLUGINS, 'version: 1\nmachines:\n  - { name: local, plugin: local }\nusageSources: [ { name: on-laptop, plugin: machine-usage, options: { machine: laptop } } ]\n');
+    await host.reload();
+    expect((await u!.poll())[0]!.window).toBe('none');
   });
 });
