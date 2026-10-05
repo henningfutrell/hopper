@@ -17,6 +17,11 @@ describe('sourcesView', () => {
     expect(v.summary).toBe('Issues are read through the GitHub App, as its bot. gh is paused while the GitHub App is set up.');
   });
 
+  it('a paused source with no active jobs reports state disabled; it is still paused, not disabled', () => {
+    const v = sourcesView([gh('disabled', 'GitHub App configured'), app()]);
+    expect(v.github.map((c) => [c.source.name, c.use])).toEqual([['github-app', 'in-use'], ['github', 'paused']]);
+  });
+
   it('gh in use and no GitHub App: the app is paused with its own reason', () => {
     const v = sourcesView([app('ok', 'no GitHub App configured'), gh()]);
     expect(v.github.map((c) => [c.source.name, c.use])).toEqual([['github', 'in-use'], ['github-app', 'paused']]);
