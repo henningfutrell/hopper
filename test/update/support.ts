@@ -43,7 +43,7 @@ export function createUpstream(root: string): Upstream {
   };
 }
 
-/** An install dir: install.json naming `commit` of `repo`, and the app as built (app.txt, src/main.ts). */
+/** An install dir: install.json naming `commit` of `repo`, and the app as built (app.txt, src/main.ts, WHATS-NEW.md when the commit has one). */
 export function createInstall(root: string, repo: string, commit: string, branch = 'main'): string {
   const appDir = join(root, 'app');
   mkdirSync(join(appDir, 'src'), { recursive: true });
@@ -51,6 +51,8 @@ export function createInstall(root: string, repo: string, commit: string, branch
   writeFileSync(join(appDir, 'install.json'), JSON.stringify(info));
   writeFileSync(join(appDir, 'app.txt'), git(repo, 'show', `${commit}:app.txt`));
   writeFileSync(join(appDir, 'src', 'main.ts'), 'export {};\n');
+  const notes = git(repo, 'ls-tree', '--name-only', commit, 'WHATS-NEW.md').trim();
+  if (notes) writeFileSync(join(appDir, 'WHATS-NEW.md'), git(repo, 'show', `${commit}:WHATS-NEW.md`));
   return appDir;
 }
 

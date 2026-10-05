@@ -50,6 +50,8 @@ export interface UpdateStatus extends UpdateSettings {
   release?: UpdateRelease;
   /** What's new: the target's WHATS-NEW.md bullets the installed version lacks, newest first, in plain words. */
   whatsNew: string[];
+  /** What the installed version brought: the newest bullets of its own WHATS-NEW.md, update or not. */
+  installedWhatsNew: string[];
   checkedAt?: string;
   apply?: UpdateApply;
 }

@@ -1,4 +1,4 @@
-// The top bar: version (opens the update panel), connection, router mode (switchable by an admin),
+// The top bar: version (opens the version and update panel, on every screen), connection, router mode (switchable by an admin),
 // router health, uptime, the API reference, the user the session acts for (issue #158) with its role,
 // logout, and a device link for another browser.
 import { BookOpen, LogOut, Moon, Sun } from 'lucide-react';

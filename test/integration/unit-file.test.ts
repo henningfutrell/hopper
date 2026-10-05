@@ -56,6 +56,10 @@ describe('systemd/hopper.service', () => {
     expect(readFileSync(fileURLToPath(new URL('../../.env.example', import.meta.url)), 'utf8')).not.toMatch(/HOPPER_SECRET_KEY/);
   });
 
+  it('install.sh copies WHATS-NEW.md into the install: the Updates panel says what the installed version brought (issue #165)', () => {
+    expect(readFileSync(INSTALL, 'utf8')).toMatch(/cp "\$APP_DIR\/WHATS-NEW\.md" "\$target\/"/);
+  });
+
   it('install.sh offers Postgres only: no SQLite file, no migrate-local (issue #53)', () => {
     const text = readFileSync(INSTALL, 'utf8');
     expect(text).not.toMatch(/sqlite/i);
