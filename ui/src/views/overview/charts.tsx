@@ -8,7 +8,8 @@ import { COLOR } from '@/components/status';
 import { useNow } from '@/hooks/use-now';
 import { usePoll } from '@/hooks/use-poll';
 import { ReadingGauge } from '@/components/reading';
-import { orderReadings, readingKey } from '@/model/usage';
+import { orderReadings, readingKey, shownSource } from '@/model/usage';
+import type { UsageSourceReport } from '@/model/wire';
 import { TIMELINE_WINDOWS, type TimelineWindow } from '@/model/overview-layout';
 import { refreshUsage, useHopper } from '@/store';
 import { useJobBoard, useJobName, useLaneSpans } from '@/store/selectors';
@@ -55,16 +56,35 @@ export function TimelinePanel({ window: win, onWindow }: { window: TimelineWindo
   );
 }
 
-export function UsagePanel() {
+/** One usage source's readings (issue #85): with several, a tab per source picks it; `source` is the overview layout's. */
+export function UsagePanel({ source, onSource }: { source: string | undefined; onSource: (name: string) => void }) {
   const usage = useHopper((s) => s.usage);
   const now = useNow();
   usePoll(refreshUsage, 60_000);
-  const readings = orderReadings(usage?.readings ?? []);
+  const sources = usage?.sources ?? [];
+  const shown = shownSource(sources, source);
+  const several = sources.length > 1;
+  const readings = orderReadings((usage?.readings ?? []).filter((r) => !several || r.source === shown));
+  const identity = several ? sources.find((s) => s.name === shown)?.account?.identity : undefined;
   return (
-    <Panel title="Usage" icon={GaugeIcon} count={readings.length || ''} action={<a href="#usage" className="text-xs text-muted-foreground hover:text-foreground">details</a>}
-      bodyClassName="flex flex-wrap justify-around gap-x-2 gap-y-4">
-      {readings.length ? readings.map((r) => <ReadingGauge key={readingKey(r)} r={r} now={now} showSource />)
-        : <Empty>{usage?.sources.some((s) => s.problem) ? `no readings: ${usage.sources.find((s) => s.problem)!.problem}` : 'no usage sources: lanes are capped by machines only'}</Empty>}
+    <Panel title="Usage" icon={GaugeIcon} count={readings.length || ''} action={<>
+      {several && (
+        <Tabs value={shown} onValueChange={onSource}>
+          <TabsList className="h-7">{sources.map((s) => <TabsTrigger key={s.name} value={s.name} className="px-2 text-xs" title={s.account?.identity}>{s.name}</TabsTrigger>)}</TabsList>
+        </Tabs>
+      )}
+      <a href="#usage" className="text-xs text-muted-foreground hover:text-foreground">details</a>
+    </>} bodyClassName="flex flex-wrap justify-around gap-x-2 gap-y-4">
+      {identity && <div className="w-full truncate text-center font-mono text-xs text-muted-foreground">{identity}</div>}
+      {readings.length ? readings.map((r) => <ReadingGauge key={readingKey(r)} r={r} now={now} showSource={!several} />)
+        : <Empty>{usageEmpty(sources, shown, several)}</Empty>}
     </Panel>
   );
+}
+
+/** Why the panel has no gauges: the shown source's problem, else any source's, else that there is none. */
+function usageEmpty(sources: UsageSourceReport[], shown: string | undefined, several: boolean): string {
+  const problem = several ? sources.find((s) => s.name === shown)?.problem : sources.find((s) => s.problem)?.problem;
+  if (problem) return `no readings: ${problem}`;
+  return sources.length ? 'no readings now' : 'no usage sources: lanes are capped by machines only';
 }

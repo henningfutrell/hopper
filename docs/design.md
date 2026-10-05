@@ -2867,7 +2867,9 @@ installer adds `- { name: claude, plugin: claude-plan }`. A restart role, as bef
 `test/ui/usage.test.ts`): Accounts, Lane effect (limits, per machine used %, cap of max lanes,
 band), and per usage source its state line and one gauge per window with "resets in" and a "does
 not throttle" tag on informational ones. The Overview's usage gauges and the Machines view read
-the same readings (`/api/usage`, polled every 30-60 s and refreshed with every event: a usage
+the same readings; with more than one usage source the Overview's Usage panel shows one account's
+readings at a time — a tab per usage source, the account's identity above its gauges, the choice
+kept in the overview layout (`usageSource`, issue #85) (`/api/usage`, polled every 30-60 s and refreshed with every event: a usage
 source reads without emitting events).
 
 **Tests never run the real claude.** `test/support/isolate.ts` puts a guard `claude` first on PATH

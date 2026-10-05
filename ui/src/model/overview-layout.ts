@@ -28,6 +28,8 @@ export interface OverviewSettings {
   timelineWindow: TimelineWindow;
   throughputHours: typeof THROUGHPUT_HOURS[number];
   liveEvents: typeof LIVE_EVENTS[number];
+  /** The usage source the Usage panel shows when there are several (issue #85); absent = the first. */
+  usageSource?: string;
 }
 
 export interface OverviewLayout { panels: PanelPlacement[]; settings: OverviewSettings }
@@ -68,6 +70,7 @@ export function parseLayout(text: string | null): OverviewLayout {
       timelineWindow: oneOf(TIMELINE_WINDOWS, s.timelineWindow, d.timelineWindow),
       throughputHours: oneOf(THROUGHPUT_HOURS, s.throughputHours, d.throughputHours),
       liveEvents: oneOf(LIVE_EVENTS, s.liveEvents, d.liveEvents),
+      ...(typeof s.usageSource === 'string' && s.usageSource ? { usageSource: s.usageSource } : {}),
     },
   };
 }

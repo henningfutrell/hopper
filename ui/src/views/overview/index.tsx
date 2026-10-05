@@ -24,7 +24,7 @@ function OverviewPanel({ id, layout }: { id: PanelId; layout: OverviewLayout }) 
     case 'waiting': return <WaitingPanel />;
     case 'ended': return <EndedPanel />;
     case 'throughput': return <ThroughputPanel hours={s.throughputHours} />;
-    case 'usage': return <UsagePanel />;
+    case 'usage': return <UsagePanel source={s.usageSource} onSource={(n) => setOverviewLayout(setSetting(layout, 'usageSource', n))} />;
     case 'live': return <LivePanel count={s.liveEvents} />;
   }
 }
