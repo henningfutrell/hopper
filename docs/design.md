@@ -3447,3 +3447,76 @@ Owner direction: someone who is not the owner can run the hopper and use it from
   schema of each would drift. A generator from the types was rejected: a build step and a dependency
   for a reference one person reads.
 
+
+## Plugin store (issue #75, 2026-10-05)
+
+Owner direction: there is a store to install plugins from. Code: `src/plugins/plugin-store.ts`
+(the service), `src/plugins/plugin-store-catalogue.ts` (the catalogue, pure), `src/plugins/plugin-store-git.ts`
+(the git CLI); routes `GET /api/plugin-store`, `POST /ui/api/plugin-store`; the UI's Plugins view.
+
+**What a plugin store is.** A git repository, named by the process setting `JOB_HOPPER_PLUGIN_STORE`
+(anything `git fetch` takes: ssh or https URL, a local path; no default — unset, there is no plugin
+store). Its default branch's root holds the **store catalogue** `plugin-store.yaml`:
+
+```yaml
+version: 1
+plugins:
+  - { id: echo-executor, role: executor, describe: Finishes every job at once with its prompt as the result, path: examples/plugins/executor/echo-executor }
+```
+
+`id` matches the custom-plugin id rule; `role` is a role; `path` is a relative directory inside the
+repository (no `..`, not absolute); ids are unique; unknown keys are refused. This repository is a
+plugin store: its `plugin-store.yaml` lists `examples/plugins/`.
+
+**Why the store is a process setting and not a UI choice.** Installing a plugin runs its code in
+the daemon (the import runs the module). A UI session is readable by jobs running with
+`--dangerously-skip-permissions` ("UI session and mutations"), which is why command-bearing options
+are never UI-editable. The same rule applies here: the UI chooses only among what the operator's
+plugin store lists; which repository that is, the operator sets where the UI cannot. It is the trust
+self-update already makes: the repository the operator named is trusted as the install itself is.
+No signature check.
+
+**Reading.** A bare mirror at `<work dir>/plugin-store/repo.git`; each read fetches the store's
+`HEAD` (its default branch) with the update mirror's git environment (never prompts, ssh batch
+mode). Read at start in the background (a slow or unreachable store never delays the boot), and on
+`refresh`. A catalogue that cannot be fetched or parsed → state `error` with the reason; the last
+good catalogue stays listed. No plugin dir → state `unavailable`: there is nowhere to install.
+
+**Installing** (`{ action: 'install', id }`; also how a store install is updated to the store's head):
+
+1. Refused — 404 an id the catalogue does not list; 409 a built-in id, or a plugin directory of
+   that id under the plugin dir that is not a store install (the operator's own, never overwritten).
+2. The plugin's directory at the store's head (`git archive <commit>:<path>`) is unpacked into
+   `<plugin dir>/.install-<id>` (the loader skips dot directories).
+3. Proof it loads: it must have `index.ts` or `index.js`, import with the custom-plugin loader, and
+   declare the catalogue's `id` and `role`. Else 409 with the reason; the staging directory is removed
+   and nothing changes.
+4. `.plugin-store.json` (`{ commit, tree, installedAt }`, `tree` the directory's git tree id) is
+   written into it; the old directory (an update) is removed and the new one renamed into place.
+5. Rescan (the plugin host): a new plugin is in `/api/plugins` at once. An updated one keeps its
+   old code until the daemon restarts (Node caches the import): `restartPending: true`.
+6. `plugin.installed` `{ id, role, commit }`.
+
+A store install is **current** while its `tree` equals the catalogue directory's tree at the
+store's head — a store commit that does not touch the plugin does not offer an update.
+
+**Removing** (`{ action: 'remove', id }`): only a store install (404 otherwise). Refused (409) while
+plugins.yaml names it in any instance, or it is the router in use (a detected router) — change those
+first, as for an executor ("Settled in slice 7"). Then the directory is removed, rescan,
+`plugin.removed` `{ id }`.
+
+**Not built.** Installing dependencies: a store plugin imports `node:` builtins and its own files,
+or ships its `node_modules` in its directory (the plugin contract already says so) — no `npm install`
+runs. Several plugin stores. Pinning a store to a branch or tag other than its default branch.
+
+**Report** `GET /api/plugin-store` (`PluginStoreReport`): `state` (`unavailable` + `reason`,
+`ready`, `error` + `error`), the store's `repo`, `commit` and `checkedAt`, and per plugin the
+catalogue entry with `installed` (`{ commit, installedAt, current }`) and `restartPending`. A store
+install the catalogue no longer lists is still listed (`listed: false`), so it can be removed.
+`POST /ui/api/plugin-store` (admin): `{ action: 'refresh' }`, `{ action: 'install', id }`,
+`{ action: 'remove', id }`; answers the new report. Edits run one at a time.
+
+**UI.** The Plugins view's **Plugin store** card: the store, its commit and last read, Refresh; per
+plugin its role, description, and Install, Update (not current) or Remove (confirmed); `restart
+pending` where it applies. Installing does not configure: the plugin then shows under its role,
+selected or added as any custom plugin.
