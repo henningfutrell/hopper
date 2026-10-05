@@ -42,7 +42,7 @@ describe('the install page', () => {
   });
 
   it('says the service runs /usr/bin/node, so a Node.js from nvm will not do', () => {
-    expect(page).toMatch(/\/usr\/bin\/node[^.]*not[^.]*nvm/);
+    expect(page).toContain('the service runs <code>/usr/bin/node</code>, so a Node.js from nvm or fnm will not do');
   });
 
   it('checks every prerequisite with one command to copy', () => {

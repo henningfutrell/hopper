@@ -4,32 +4,36 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Install job-hopper</title>
-<meta name="description" content="Install job-hopper with one command, then sign in, connect GitHub and give it its first job.">
+<meta name="description" content="Install job-hopper on a Linux machine, connect GitHub, and watch it finish its first job.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230c4a6e'/%3E%3Cpath d='M9 22V10l7 6 7-6v12' fill='none' stroke='%237dd3fc' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <style>
 :root {
   --bg: #ffffff; --text: #1c1f23; --muted: #5b6370; --line: #d9dde3;
-  --code-bg: #f4f5f7; --accent: #0b5cad; --ok: #1d7a3e;
+  --code-bg: #f4f5f7; --accent: #0b5cad; --ok: #1d7a3e; --warn-bg: #fff6e0; --warn-line: #e3b341;
 }
 @media (prefers-color-scheme: dark) {
-  :root { --bg: #111317; --text: #e6e8eb; --muted: #9aa2ad; --line: #2c3139; --code-bg: #1b1e24; --accent: #6cb0f5; --ok: #6fcf8f; }
+  :root { --bg: #111317; --text: #e6e8eb; --muted: #9aa2ad; --line: #2c3139; --code-bg: #1b1e24; --accent: #6cb0f5; --ok: #6fcf8f; --warn-bg: #2a2416; --warn-line: #9e7a1f; }
 }
 * { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; }
+html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
 body {
   margin: 0; background: var(--bg); color: var(--text);
   font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 main { max-width: 760px; margin: 0 auto; padding: 32px 16px 64px; }
 h1 { font-size: 28px; line-height: 1.25; margin: 0 0 8px; }
-h2 { font-size: 20px; margin: 40px 0 8px; padding-top: 16px; border-top: 1px solid var(--line); }
+h2 { font-size: 20px; margin: 40px 0 8px; padding-top: 16px; border-top: 1px solid var(--line); scroll-margin-top: 8px; }
 h3 { font-size: 16px; margin: 24px 0 4px; }
 p, ul, ol { margin: 8px 0; }
 li { margin: 4px 0; }
 a { color: var(--accent); }
-.lead { color: var(--muted); margin: 0 0 24px; }
+.lead { margin: 0 0 16px; }
 code, pre { font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 :not(pre) > code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+pre.out {
+  margin: 8px 0 12px; padding: 10px 14px; border-left: 3px solid var(--line);
+  color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere;
+}
 .cmd { position: relative; margin: 8px 0 12px; }
 .cmd pre {
   margin: 0; padding: 12px 84px 12px 14px; background: var(--code-bg);
@@ -41,110 +45,199 @@ code, pre { font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monosp
   background: var(--bg); color: var(--text); cursor: pointer;
 }
 .cmd button.done { color: var(--ok); border-color: var(--ok); }
+.cmd.yaml pre { white-space: pre; overflow-x: auto; overflow-wrap: normal; }
 .main-cmd pre { font-size: 15px; padding-top: 16px; padding-bottom: 16px; }
 table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 15px; }
 th, td { text-align: left; vertical-align: top; padding: 6px 8px; border-bottom: 1px solid var(--line); }
 th { font-weight: 600; }
 .table-wrap { overflow-x: auto; }
+@media (max-width: 600px) {
+  table.stack, table.stack tbody, table.stack tr, table.stack td { display: block; width: 100%; }
+  table.stack tr:first-child { display: none; }
+  table.stack tr { padding: 8px 0; border-bottom: 1px solid var(--line); }
+  table.stack td { border: 0; padding: 2px 0; }
+  table.stack td:first-child { font-weight: 600; }
+}
 .steps { padding-left: 22px; }
+.toc { margin: 16px 0 8px; padding: 12px 16px 12px 36px; border: 1px solid var(--line); border-radius: 6px; }
+.toc li { margin: 2px 0; }
 .note { color: var(--muted); font-size: 15px; }
+.ok { color: var(--ok); font-weight: 600; }
+.warn { margin: 12px 0; padding: 10px 14px; background: var(--warn-bg); border-left: 3px solid var(--warn-line); border-radius: 4px; }
+details { margin: 8px 0; }
+summary { cursor: pointer; font-weight: 600; }
+details[open] summary { margin-bottom: 4px; }
 footer { margin-top: 48px; color: var(--muted); font-size: 14px; }
 </style>
 </head>
 <body>
 <main>
 <h1>Install job-hopper</h1>
-<p class="lead">job-hopper takes GitHub issues labelled <code>hopper</code> and runs each one as a Claude Code
-session on a machine you own. This page gets it running on one Linux host.
+<p class="lead">job-hopper turns GitHub issues into finished work. You label an issue <code>hopper</code>;
+job-hopper starts a Claude Code session on your machine with the issue as its instructions, answers
+the questions it can, asks you the rest, and labels and closes the issue when the work is done.</p>
+<p>This page takes you from nothing to a first finished job on one Linux machine. It takes about
+15 minutes, most of it the install building itself. You need a terminal on that machine and a GitHub account.</p>
+<p class="note">Systems: Linux with systemd (Ubuntu, Debian, Fedora, Arch and most others).
 On Windows it runs inside WSL, with the same install: start at <a href="#windows">On Windows</a>.
-Full documentation: <a href="https://github.com/henningfutrell/hopper#readme">the README</a>.</p>
+Not yet macOS.</p>
 
-<h2 id="before">1. Before you start</h2>
-<p>On the host that will run the hopper:</p>
-<div class="table-wrap"><table>
-<tr><th>Need</th><th>Check</th><th>Why</th></tr>
-<tr><td>Linux with <code>systemd --user</code></td><td><code>systemctl --user status</code></td><td>the daemon runs as a user service</td></tr>
-<tr><td>git, Node.js ≥ 24, npm</td><td><code>node --version</code></td><td>the install clones and builds the source</td></tr>
-<tr><td>Docker, <em>or</em> a Postgres URL</td><td><code>docker compose version</code></td><td>the hopper keeps everything in Postgres; with docker the install starts one</td></tr>
-<tr><td>herdr at <code>~/.local/bin/herdr</code></td><td><code>ls ~/.local/bin/herdr</code></td><td>jobs run in herdr panes</td></tr>
-<tr><td>the <code>claude</code> CLI, signed in</td><td><code>claude --version</code>, then run <code>claude</code> once</td><td>it runs the jobs and answers their questions</td></tr>
-<tr><td>the <code>gh</code> CLI</td><td><code>gh --version</code></td><td>reads and labels the issues that are jobs (step 4)</td></tr>
+<ol class="toc">
+<li><a href="#before">Get what it needs</a></li>
+<li><a href="#install">Install</a></li>
+<li><a href="#running">Keep it running</a></li>
+<li><a href="#ui">Open the UI</a></li>
+<li><a href="#github">Connect GitHub</a></li>
+<li><a href="#first-job">Give it its first job</a></li>
+</ol>
+<p class="note">Then: <a href="#windows">on Windows</a> · <a href="#upgrade">upgrade</a> · <a href="#remove">uninstall</a> · <a href="#trouble">when something goes wrong</a> · <a href="#more">more</a></p>
+
+<h2 id="before">1. Get what it needs</h2>
+<p>Do this on the machine that will run job-hopper, as the user it will run as (not root).
+First see what is there already:</p>
+<div class="cmd"><pre>for c in git /usr/bin/node npm curl systemctl gh claude docker ~/.local/bin/herdr; do command -v $c &gt;/dev/null &amp;&amp; echo found: $c || echo MISSING: $c; done; /usr/bin/node --version</pre><button type="button" data-copy="for c in git /usr/bin/node npm curl systemctl gh claude docker ~/.local/bin/herdr; do command -v $c &gt;/dev/null &amp;&amp; echo found: $c || echo MISSING: $c; done; /usr/bin/node --version">Copy</button></div>
+<p>Then install whatever it says is missing:</p>
+<div class="table-wrap"><table class="stack">
+<tr><th>Program</th><th>What it is for</th><th>How to get it</th></tr>
+<tr><td>git, curl</td><td>fetching the source</td><td>your package manager, for example <code>sudo apt install git curl</code></td></tr>
+<tr><td>Node.js 24 or later, with npm, at <code>/usr/bin/node</code></td><td>runs job-hopper</td><td>A system-wide install: the service runs <code>/usr/bin/node</code>, so a Node.js from nvm or fnm will not do. Your package manager if it has version 24, else the <a href="https://github.com/nodesource/distributions">NodeSource packages</a> (other ways: <a href="https://nodejs.org/en/download">nodejs.org/en/download</a>). <code>/usr/bin/node --version</code> must print <code>v24</code> or higher</td></tr>
+<tr><td>systemd</td><td>keeps job-hopper running in the background</td><td>already there on most Linux systems. <code>systemctl --user status</code> must not print an error</td></tr>
+<tr><td>Docker, with compose</td><td>runs the database for you</td><td><a href="https://docs.docker.com/engine/install/">docs.docker.com/engine/install</a>, then let your user use it without sudo (<a href="https://docs.docker.com/engine/install/linux-postinstall/">post-install steps</a>). Not needed if you have a Postgres database of your own (<a href="#own-postgres">see below</a>)</td></tr>
+<tr><td>herdr</td><td>the terminal panes jobs run in</td><td><code>curl -fsSL https://herdr.dev/install.sh | sh</code> — installs to <code>~/.local/bin/herdr</code>, where job-hopper looks for it. About herdr: <a href="https://herdr.dev">herdr.dev</a></td></tr>
+<tr><td>Claude Code (<code>claude</code>)</td><td>does the work of each job</td><td><code>curl -fsSL https://claude.ai/install.sh | bash</code>, then run <code>claude</code> once and sign in. Details: <a href="https://code.claude.com/docs/en/setup">Claude Code setup</a></td></tr>
+<tr><td>GitHub CLI (<code>gh</code>)</td><td>reads your issues and sets their labels</td><td><a href="https://cli.github.com/">cli.github.com</a>. You sign it in at <a href="#github">step 5</a></td></tr>
 </table></div>
+<p>Run the check again until everything says <code>found</code> (docker may stay missing if you use your own Postgres).</p>
 
 <h2 id="install">2. Install</h2>
 <div class="cmd main-cmd"><pre>curl -fsSL https://henningfutrell.github.io/hopper/install.sh | bash</pre><button type="button" data-copy="curl -fsSL https://henningfutrell.github.io/hopper/install.sh | bash">Copy</button></div>
-<p>It takes a few minutes. It does this, printing each step as <code>==&gt; …</code>:</p>
+<p>It prints each step as <code>==&gt; …</code> and takes a few minutes. It worked when the last lines show a
+<code>health</code> line and <code>UI: http://127.0.0.1:4790/</code>. If it stops with a message instead, find
+the message under <a href="#trouble">When something goes wrong</a>.</p>
+<p class="note">You can read the script first: <a href="install.sh">install.sh</a> (the same file as
+<a href="https://github.com/henningfutrell/hopper/blob/main/scripts/get.sh"><code>scripts/get.sh</code></a> in the source).</p>
+
+<details>
+<summary>What the install does</summary>
 <ul>
-<li>checks for git, Node.js ≥ 24, npm and systemctl, and stops with a reason if one is missing;</li>
-<li>clones the source into <code>~/.local/share/job-hopper/source</code>;</li>
-<li>starts a Postgres in docker on <code>127.0.0.1:5433</code> with a new password;</li>
-<li>installs the daemon to <code>~/.local/lib/job-hopper</code> and the <code>job-hopper</code> command to <code>~/.local/bin</code>;</li>
-<li>writes the settings file <code>~/.config/job-hopper/daemon.env</code> (mode 600);</li>
-<li>starts two user services: <code>job-hopper</code> and <code>job-hopper-herdr</code>.</li>
+<li>checks for git, Node.js 24 or later, npm and systemctl, and stops with a reason if one is missing;</li>
+<li>downloads the source to <code>~/.local/share/job-hopper/source</code>;</li>
+<li>starts a Postgres database in docker on <code>127.0.0.1:5433</code>, with a new random password;</li>
+<li>installs job-hopper to <code>~/.local/lib/job-hopper</code> and the <code>job-hopper</code> command to <code>~/.local/bin</code>;</li>
+<li>writes the settings file <code>~/.config/job-hopper/daemon.env</code>, readable only by you (it holds the database password);</li>
+<li>starts two background services for your user: <code>job-hopper</code> and <code>job-hopper-herdr</code>.</li>
 </ul>
-<p>Read the script before you run it: <a href="install.sh">install.sh</a> (the same file as
-<a href="https://github.com/henningfutrell/hopper/blob/main/scripts/get.sh"><code>scripts/get.sh</code></a>).</p>
+<p>Nothing is installed system-wide and nothing runs as root. The web UI listens on this machine only
+(<code>127.0.0.1:4790</code>).</p>
+</details>
 
-<h3>Your own Postgres instead of docker</h3>
+<details id="own-postgres">
+<summary>Use your own Postgres instead of docker</summary>
+<p>Give its address in front of <code>bash</code>. The database must exist and be empty or job-hopper's own:</p>
 <div class="cmd"><pre>curl -fsSL https://henningfutrell.github.io/hopper/install.sh | JOB_HOPPER_DATABASE_URL=postgres://user:password@host:5432/hopper bash</pre><button type="button" data-copy="curl -fsSL https://henningfutrell.github.io/hopper/install.sh | JOB_HOPPER_DATABASE_URL=postgres://user:password@host:5432/hopper bash">Copy</button></div>
+</details>
 
-<h3>Other settings</h3>
+<details>
+<summary>Other install settings</summary>
 <p>Set them in front of <code>bash</code>, the same way:</p>
-<div class="table-wrap"><table>
+<div class="table-wrap"><table class="stack">
 <tr><th>Variable</th><th>Default</th><th>What it sets</th></tr>
 <tr><td><code>JOB_HOPPER_REF</code></td><td><code>main</code></td><td>the branch to install and to update from</td></tr>
-<tr><td><code>JOB_HOPPER_REPO</code></td><td>this repository</td><td>where to clone from (your fork, for example)</td></tr>
-<tr><td><code>JOB_HOPPER_SRC</code></td><td><code>~/.local/share/job-hopper/source</code></td><td>where the source clone lives</td></tr>
-<tr><td><code>POSTGRES_PORT</code></td><td><code>5433</code></td><td>the loopback port of the docker Postgres</td></tr>
+<tr><td><code>JOB_HOPPER_REPO</code></td><td>this repository</td><td>where to download the source from (your fork, for example)</td></tr>
+<tr><td><code>JOB_HOPPER_SRC</code></td><td><code>~/.local/share/job-hopper/source</code></td><td>where the source is kept</td></tr>
+<tr><td><code>POSTGRES_PORT</code></td><td><code>5433</code></td><td>the port of the docker Postgres, on this machine only</td></tr>
 </table></div>
+</details>
 
-<h3>Check that it runs</h3>
+<h2 id="running">3. Keep it running</h2>
+<p>Services for your user stop when you log out, unless you allow them to stay. Allow it once:</p>
+<div class="cmd"><pre>sudo loginctl enable-linger "$USER"</pre><button type="button" data-copy="sudo loginctl enable-linger &quot;$USER&quot;">Copy</button></div>
+<p>Then check both services:</p>
 <div class="cmd"><pre>systemctl --user status job-hopper job-hopper-herdr</pre><button type="button" data-copy="systemctl --user status job-hopper job-hopper-herdr">Copy</button></div>
-<p>Both must say <code>active (running)</code>. If not, read the log:</p>
-<div class="cmd"><pre>journalctl --user -u job-hopper -n 50</pre><button type="button" data-copy="journalctl --user -u job-hopper -n 50">Copy</button></div>
-<p class="note">To keep the services running after you log out: <code>sudo loginctl enable-linger "$USER"</code>.</p>
+<p>Both must say <span class="ok">active (running)</span>. Press <code>q</code> to leave. If one does not,
+see <a href="#trouble">When something goes wrong</a>.</p>
 
-<h2 id="sign-in">3. Open the UI</h2>
+<h2 id="ui">4. Open the UI</h2>
+<p>On the machine itself, with a desktop and a browser:</p>
 <div class="cmd"><pre>bash ~/.local/lib/job-hopper/scripts/open-ui.sh</pre><button type="button" data-copy="bash ~/.local/lib/job-hopper/scripts/open-ui.sh">Copy</button></div>
-<p>This signs your browser in and opens <code>http://127.0.0.1:4790/</code>. No browser on this host?
-Run <code>job-hopper login-code --link http://127.0.0.1:4790</code> and open the link it prints
-(it works once, for 10 minutes). Other ways to sign in:
+<p>Your browser opens <code>http://127.0.0.1:4790/</code>, signed in.</p>
+
+<h3>From another computer (a server with no browser)</h3>
+<p>The UI listens on the server only, so reach it through ssh. On your own computer, connect with a tunnel
+and leave this terminal open:</p>
+<div class="cmd"><pre>ssh -L 4790:127.0.0.1:4790 you@your-server</pre><button type="button" data-copy="ssh -L 4790:127.0.0.1:4790 you@your-server">Copy</button></div>
+<p>In that ssh session, make a sign-in link:</p>
+<div class="cmd"><pre>job-hopper login-code --link http://127.0.0.1:4790</pre><button type="button" data-copy="job-hopper login-code --link http://127.0.0.1:4790">Copy</button></div>
+<p>Open the link it prints in the browser on your own computer. It works once, for 10 minutes; make another
+the same way when you need one. Passwords, other people and other devices:
 <a href="https://github.com/henningfutrell/hopper/blob/main/docs/sign-in.md">docs/sign-in.md</a>.</p>
 
-<h2 id="github">4. Connect GitHub</h2>
-<p>On the same host, as the same user:</p>
-<div class="cmd"><pre>gh auth login
-gh auth status</pre><button type="button" data-copy="gh auth login && gh auth status">Copy</button></div>
-<p>Pick GitHub.com, HTTPS, and log in with a web browser. <code>gh auth status</code> must say
-<code>Logged in to github.com</code>. The hopper picks it up on its own; no restart.
-To have a bot of your own act instead of your account, see
-<a href="https://github.com/henningfutrell/hopper#a-github-app-of-your-own">A GitHub App of your own</a>.</p>
+<h2 id="github">5. Connect GitHub</h2>
+<p>job-hopper uses the GitHub CLI, signed in as you, to read issues and set their labels. On the same
+machine, as the same user:</p>
+<div class="cmd"><pre>gh auth login</pre><button type="button" data-copy="gh auth login">Copy</button></div>
+<p>Answer <strong>GitHub.com</strong>, <strong>HTTPS</strong>, and <strong>Login with a web browser</strong>.
+On a server with no browser, it prints a one-time code and a web address: open the address on any device and
+enter the code. Then check:</p>
+<div class="cmd"><pre>gh auth status</pre><button type="button" data-copy="gh auth status">Copy</button></div>
+<p>It must say <span class="ok">Logged in to github.com</span>. job-hopper notices on its own; there is
+nothing to restart.</p>
 
-<h2 id="jobs">5. Give it its first job</h2>
+<h2 id="first-job">6. Give it its first job</h2>
+<div class="warn">A job runs Claude Code with every permission, without asking you, in the folder you
+give it. It can change files and run commands there as your user. Start with a test repository, and only
+let issues written by you become jobs.</div>
 <ol class="steps">
-<li><p>Say whose issues it takes, and in which repositories:</p>
+<li><p><strong>Pick a repository and a folder for its jobs.</strong> Use a repository on GitHub you can
+write to, and a clone of it on this machine — for example:</p>
+<div class="cmd"><pre>git clone https://github.com/your-login/your-repo ~/your-repo</pre><button type="button" data-copy="git clone https://github.com/your-login/your-repo ~/your-repo">Copy</button></div></li>
+<li><p><strong>Tell job-hopper whose issues to take, and from where.</strong> Open its settings in your
+terminal editor:</p>
 <div class="cmd"><pre>job-hopper config edit plugins.yaml</pre><button type="button" data-copy="job-hopper config edit plugins.yaml">Copy</button></div>
-<p>Under <code>jobSources</code>, on the <code>github</code> entry, set its options:</p>
-<div class="cmd"><pre>authors: [your-github-login]
-repos: [your-org/your-repo]
-repoPaths: { your-org/your-repo: /path/to/a/checkout/of/your-repo }</pre><button type="button" data-copy="authors: [your-github-login]
-repos: [your-org/your-repo]
-repoPaths: { your-org/your-repo: /path/to/a/checkout/of/your-repo }">Copy</button></div>
-<p><code>authors</code> is required: issues by anyone else are not taken. A job runs in the checkout
-<code>repoPaths</code> names; without one, in your home directory.</p></li>
-<li><p>Restart the daemon so it reads the change:</p>
+<p>Under <code>jobSources:</code>, find the entry with <code>name: github</code> and replace it with this,
+using your GitHub login, your repository and the folder from step 1:</p>
+<div class="cmd yaml"><pre>  - name: github
+    plugin: github-gh
+    options:
+      enabled: auto
+      authors: [your-login]
+      repos: [your-login/your-repo]
+      repoPaths: { your-login/your-repo: ~/your-repo }</pre><button type="button" data-copy="  - name: github
+    plugin: github-gh
+    options:
+      enabled: auto
+      authors: [your-login]
+      repos: [your-login/your-repo]
+      repoPaths: { your-login/your-repo: ~/your-repo }">Copy</button></div>
+<p>Save and close the editor. <code>authors</code> is required: issues opened by anyone else are never
+taken. <code>repos</code> limits which repositories it looks at; without it, it looks at every repository
+you own. A job from a repository not in <code>repoPaths</code> runs in your home folder. The editor is
+<code>$EDITOR</code>, or <code>vi</code> if that is not set: run <code>EDITOR=nano job-hopper config edit plugins.yaml</code>
+for a simpler one.</p></li>
+<li><p><strong>Restart job-hopper</strong> so it reads the change:</p>
 <div class="cmd"><pre>systemctl --user restart job-hopper</pre><button type="button" data-copy="systemctl --user restart job-hopper">Copy</button></div></li>
-<li><p>Open an issue in that repository and add the label <code>hopper</code>. The issue text is the
-job's instructions.</p></li>
-<li><p>Watch it in the UI. The issue's labels show where it is: <code>hopper:claimed</code> while it runs,
-<code>hopper:done</code> and the issue closed when it finishes, <code>hopper:failed</code> if it fails
-(remove that label to run it again). Questions a job asks that need you wait in the UI's
+<li><p><strong>Create the <code>hopper</code> label</strong> in the repository, once:</p>
+<div class="cmd"><pre>gh label create hopper -R your-login/your-repo</pre><button type="button" data-copy="gh label create hopper -R your-login/your-repo">Copy</button></div></li>
+<li><p><strong>Open an issue with the label <code>hopper</code>.</strong> The issue text is the job's
+instructions. A small first job works best, for example <em>"Add a line to README.md saying this repository
+is a test."</em></p></li>
+<li><p><strong>Watch it.</strong> job-hopper checks GitHub every minute, so the job starts within a minute.
+The issue's labels show where it is:</p>
+<div class="table-wrap"><table class="stack">
+<tr><th>Label</th><th>Means</th></tr>
+<tr><td><code>hopper:claimed</code></td><td>it is running; the UI's board shows it</td></tr>
+<tr><td><code>hopper:done</code></td><td>it finished, and the issue is closed</td></tr>
+<tr><td><code>hopper:failed</code></td><td>it failed; remove this label to run it again</td></tr>
+</table></div>
+<p>When a job asks something it cannot answer for itself, the question waits for you in the UI's
 <strong>Questions</strong> view.</p></li>
 </ol>
+<p>That is the whole loop. From here, label any issue <code>hopper</code> to hand it over. <code>hopper:high</code>
+and <code>hopper:low</code> change its priority; <code>hopper:backburner</code> keeps it waiting.</p>
 
 <h2 id="windows">On Windows</h2>
-<p>The hopper runs inside WSL (the Linux that comes with Windows 10 and 11), from the same install
-command as on Linux. Do these steps first, then follow steps 1–5 above inside Ubuntu.</p>
+<p>job-hopper runs inside WSL (the Linux that comes with Windows 10 and 11), with the same install
+command as on Linux. Do these steps first; then continue with <a href="#github">step 5, Connect GitHub</a>, in Ubuntu.</p>
 <ol class="steps">
 <li><p>Open PowerShell as administrator and install Ubuntu in WSL:</p>
 <div class="cmd"><pre>wsl --install -d Ubuntu-24.04</pre><button type="button" data-copy="wsl --install -d Ubuntu-24.04">Copy</button></div>
@@ -155,53 +248,70 @@ and password. Every command below runs in that Ubuntu window, not in PowerShell,
 <p>If it says <code>System has not been booted with systemd</code>, turn systemd on:</p>
 <div class="cmd"><pre>printf '[boot]\nsystemd=true\n' | sudo tee -a /etc/wsl.conf</pre><button type="button" data-copy="printf '[boot]\nsystemd=true\n' | sudo tee -a /etc/wsl.conf">Copy</button></div>
 <p>Then run <code>wsl --shutdown</code> in PowerShell, open Ubuntu again, and check again.</p></li>
-<li><p>Install git, Node.js 24 and Docker in Ubuntu. The service runs <code>/usr/bin/node</code>, so take
-Node.js from NodeSource, not from nvm:</p>
+<li><p>Install git, Node.js 24, Docker and the GitHub CLI in Ubuntu. Node.js comes from NodeSource, so it
+is at <code>/usr/bin/node</code>:</p>
 <div class="cmd"><pre>curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
 sudo apt-get install -y git nodejs docker.io docker-compose-v2 gh
 sudo usermod -aG docker "$USER"</pre><button type="button" data-copy="curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash - &amp;&amp; sudo apt-get install -y git nodejs docker.io docker-compose-v2 gh &amp;&amp; sudo usermod -aG docker &quot;$USER&quot;">Copy</button></div>
-<p>Close Ubuntu and open it again, so that you can use docker. Then install herdr and the
-<code>claude</code> CLI in Ubuntu as <a href="#before">step 1</a> says, and sign in to <code>claude</code>.</p></li>
-<li><p>Install the hopper with the same command as on Linux:</p>
+<p>Close Ubuntu and open it again, so that you can use docker. Then install herdr and Claude Code
+as <a href="#before">step 1</a> says, sign in to <code>claude</code>, and run the check from step 1.</p></li>
+<li><p>Install job-hopper with the same command as on Linux:</p>
 <div class="cmd"><pre>curl -fsSL https://henningfutrell.github.io/hopper/install.sh | bash</pre><button type="button" data-copy="curl -fsSL https://henningfutrell.github.io/hopper/install.sh | bash">Copy</button></div></li>
 <li><p>Open the UI in your Windows browser. In Ubuntu, make a sign-in link:</p>
 <div class="cmd"><pre>job-hopper login-code --link http://127.0.0.1:4790</pre><button type="button" data-copy="job-hopper login-code --link http://127.0.0.1:4790">Copy</button></div>
 <p>Open the link it prints in your Windows browser (it works once, for 10 minutes). WSL passes
 <code>127.0.0.1</code> through to Windows.</p></li>
-<li><p>Continue with <a href="#github">step 4, Connect GitHub</a>, in Ubuntu.</p></li>
+<li><p>Continue with <a href="#github">step 5, Connect GitHub</a>, in Ubuntu, and then step 6.</p></li>
 </ol>
-<p class="note">WSL stops Ubuntu, and the hopper with it, soon after you close the last Ubuntu window.
-Keep one Ubuntu window open while jobs run. Keep the repositories jobs work in inside Ubuntu
-(for example <code>~/src</code>), not under <code>/mnt/c</code>: it is much faster.</p>
+<p class="note">WSL stops Ubuntu, and job-hopper with it, soon after you close the last Ubuntu window;
+<a href="#running">step 3</a> does not change that. Keep one Ubuntu window open while jobs run. Keep the
+repositories jobs work in inside Ubuntu (for example <code>~/src</code>), not under <code>/mnt/c</code>: it is much faster.</p>
 
 <h2 id="upgrade">Upgrade</h2>
-<p>Run the install command again. It updates the source and reinstalls; your settings and database stay.
-The UI also tells you when an update is available, and can apply it.</p>
+<p>Run the install command again. It updates job-hopper and keeps your settings, database and running jobs.
+The UI also tells you when an update is out, says what is new, and can apply it for you.</p>
 
 <h2 id="remove">Uninstall</h2>
 <div class="cmd"><pre>bash ~/.local/share/job-hopper/source/scripts/uninstall.sh</pre><button type="button" data-copy="bash ~/.local/share/job-hopper/source/scripts/uninstall.sh">Copy</button></div>
-<p>This removes the services and the installed code. It keeps the database,
-<code>~/.config/job-hopper</code> and the source clone in <code>~/.local/share/job-hopper</code>;
-delete those yourself if you want them gone.</p>
+<p>This stops the services, closes running jobs, and removes the installed program. It keeps your data: the database,
+<code>~/.config/job-hopper</code> and the source in <code>~/.local/share/job-hopper</code>.
+Delete those yourself if you want them gone. The docker database also stays; to delete it and its data:
+<code>docker rm -f job-hopper-postgres-1 &amp;&amp; docker volume rm job-hopper_postgres</code>.</p>
 
-<h2 id="trouble">If the install stops</h2>
-<div class="table-wrap"><table>
+<h2 id="trouble">When something goes wrong</h2>
+<h3>The install stops</h3>
+<div class="table-wrap"><table class="stack">
 <tr><th>It says</th><th>Do this</th></tr>
-<tr><td><code>needs node on PATH</code> (or git, npm, systemctl)</td><td>Install it, open a new shell, run the command again.</td></tr>
-<tr><td><code>needs Node.js &gt;= 24</code></td><td>Install Node.js 24 or later (for example with your package manager, or nvm).</td></tr>
+<tr><td><code>needs node on PATH</code> (or git, npm, systemctl)</td><td>Install it (<a href="#before">step 1</a>), open a new terminal, run the install again.</td></tr>
+<tr><td><code>needs Node.js &gt;= 24</code></td><td>Your Node.js is too old. Install a newer one from <a href="https://nodejs.org/en/download">nodejs.org</a>, open a new terminal, check <code>node --version</code>.</td></tr>
 <tr><td><code>needs systemd running for this user</code></td><td>On Windows, turn systemd on in WSL: <a href="#windows">On Windows</a>, step 2. On Linux, log in to a normal session (not <code>su</code> or a bare container shell).</td></tr>
-<tr><td><code>no database</code></td><td>Install docker, or give a Postgres URL as in <a href="#install">Your own Postgres</a>.</td></tr>
-<tr><td><code>the docker volume job-hopper_postgres exists</code></td><td>An earlier install left its database. Give its URL with <code>JOB_HOPPER_DATABASE_URL</code>, or remove the volume with <code>docker volume rm job-hopper_postgres</code> (this deletes its data).</td></tr>
-<tr><td><code>job-hopper: command not found</code> (after the install)</td><td>Add <code>~/.local/bin</code> to your <code>PATH</code>, or run <code>~/.local/bin/job-hopper</code>.</td></tr>
-<tr><td><code>… has local changes</code></td><td>Someone edited the source clone. Commit or discard the changes there, or set <code>JOB_HOPPER_SRC</code> to another directory.</td></tr>
+<tr><td><code>no database</code></td><td>Install docker, or give a Postgres address as in <a href="#own-postgres">Use your own Postgres</a>.</td></tr>
+<tr><td><code>permission denied</code> … <code>docker.sock</code></td><td>Your user may not use docker yet. Follow docker's <a href="https://docs.docker.com/engine/install/linux-postinstall/">post-install steps</a>, log out and back in, run the install again.</td></tr>
+<tr><td><code>the docker volume job-hopper_postgres exists</code></td><td>An earlier install left its database. Give its address with <code>JOB_HOPPER_DATABASE_URL</code>, or delete it with <code>docker volume rm job-hopper_postgres</code> (this deletes its data) and run the install again.</td></tr>
+<tr><td><code>… has local changes</code></td><td>Someone edited the downloaded source. Undo the changes there, or set <code>JOB_HOPPER_SRC</code> to another folder.</td></tr>
+<tr><td><code>did not answer /api/health</code></td><td>job-hopper did not start. Read why with <code>journalctl --user -u job-hopper -n 50</code>.</td></tr>
 </table></div>
+
+<h3>After the install</h3>
+<div class="table-wrap"><table class="stack">
+<tr><th>What you see</th><th>Do this</th></tr>
+<tr><td><code>job-hopper: command not found</code></td><td>Add <code>~/.local/bin</code> to your <code>PATH</code> (open a new terminal; many systems add it when it exists), or run <code>~/.local/bin/job-hopper</code>.</td></tr>
+<tr><td><code>job-hopper-herdr</code> is <code>failed</code></td><td>herdr is missing from <code>~/.local/bin/herdr</code>. Install it (<a href="#before">step 1</a>), then <code>systemctl --user restart job-hopper-herdr</code>.</td></tr>
+<tr><td><code>job-hopper</code> is not running</td><td>Read why: <code>journalctl --user -u job-hopper -n 50</code>. If it says <code>/usr/bin/node</code> is missing or too old, install Node.js system-wide (<a href="#before">step 1</a>), then <code>systemctl --user restart job-hopper</code>.</td></tr>
+<tr><td>The services are gone after you log out</td><td>Do <a href="#running">step 3</a>, then <code>systemctl --user start job-hopper-herdr job-hopper</code>.</td></tr>
+<tr><td>The UI does not open, or asks you to sign in</td><td>Make a new sign-in link: <code>job-hopper login-code --link http://127.0.0.1:4790</code>. From another computer, use the <a href="#ui">ssh tunnel</a>.</td></tr>
+<tr><td>A labelled issue is not picked up after a few minutes</td><td>Check: you opened it, and your login is in <code>authors</code>; its repository is in <code>repos</code>; the label is exactly <code>hopper</code>; <code>gh auth status</code> says logged in; you restarted job-hopper after editing. The UI's <strong>Sources</strong> view shows whether the GitHub source is running or paused.</td></tr>
+<tr><td>A job is <code>hopper:failed</code> at once</td><td>Its folder in <code>repoPaths</code> may not exist, or <code>claude</code> is not signed in: run <code>claude</code> once. The job in the UI says why it failed.</td></tr>
+</table></div>
+<p>Still stuck? <a href="https://github.com/henningfutrell/hopper/issues">Open an issue</a> with the message you see.</p>
 
 <h2 id="more">More</h2>
 <ul>
-<li><a href="https://github.com/henningfutrell/hopper#add-machines">Add machines</a>: run jobs on other computers or in a sandbox container.</li>
-<li><a href="https://github.com/henningfutrell/hopper#in-a-container">Run the hopper in a container</a> instead of as user services.</li>
+<li><a href="https://github.com/henningfutrell/hopper#add-machines">Add machines</a>: run jobs on other computers too, or in a sandbox container.</li>
+<li><a href="https://github.com/henningfutrell/hopper#send-jobs-to-one-machine">Routing rules</a>: send some jobs to one machine.</li>
+<li><a href="https://github.com/henningfutrell/hopper#in-a-container">Run job-hopper in a container</a> instead of as services for your user.</li>
 <li><a href="https://github.com/henningfutrell/hopper/blob/main/docs/deploy.md">docs/deploy.md</a>: every install path in detail.</li>
-<li><a href="https://github.com/henningfutrell/hopper/issues">Issues</a>: report a problem with the install.</li>
+<li><a href="https://github.com/henningfutrell/hopper#readme">The README</a>: everything else.</li>
 </ul>
 
 <footer>job-hopper · <a href="https://github.com/henningfutrell/hopper">source on GitHub</a></footer>
