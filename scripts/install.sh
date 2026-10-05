@@ -54,8 +54,9 @@ fi
 # clone with no node_modules installs the same way.
 BUILD="$(mktemp -d "${TMPDIR:-/tmp}/hopper-ui.XXXXXX")"
 trap 'rm -rf "$BUILD"' EXIT
-step "build the UI bundle in $BUILD (copy ui/, src/, package*.json; npm ci with dev dependencies; npm run build:ui)"
+step "build the UI bundle in $BUILD (copy ui/, src/, site/hopper-logo.svg, package*.json; npm ci with dev dependencies; npm run build:ui)"
 cp -r "$APP_DIR/ui" "$APP_DIR/src" "$APP_DIR/package.json" "$APP_DIR/package-lock.json" "$BUILD/"
+mkdir -p "$BUILD/site" && cp "$APP_DIR/site/hopper-logo.svg" "$BUILD/site/"
 rm -rf "$BUILD/ui/dist" "$BUILD/ui/node_modules"
 npm ci --prefix "$BUILD" --no-audit --no-fund
 npm run build:ui --prefix "$BUILD"

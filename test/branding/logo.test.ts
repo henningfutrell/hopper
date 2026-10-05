@@ -31,6 +31,11 @@ describe('the hopper logo', () => {
     expect(header).not.toMatch(/\bRabbit\b/);
   });
 
+  it('is in every copy the UI is built from: the install script and the container build', () => {
+    expect(read('scripts', 'install.sh')).toContain('cp "$APP_DIR/site/hopper-logo.svg" "$BUILD/site/"');
+    expect(read('Dockerfile')).toContain('COPY site/hopper-logo.svg ./site/hopper-logo.svg');
+  });
+
   it('heads the README', () => {
     expect(read('README.md')).toMatch(/^<img src="site\/hopper-logo\.svg"/);
   });
