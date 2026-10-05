@@ -4,7 +4,7 @@
 // EVENT_SCHEMA_VERSIONS in src/domain/types.ts and move the old schema to legacy.ts (its
 // docs/schemas file stays, re-exported from there).
 import { z } from 'zod';
-import { EVENT_SCHEMA_VERSIONS, EVENT_TYPES, type EventType } from '../domain/types.ts';
+import { EVENT_SCHEMA_VERSIONS, EVENT_TYPES, ROLES, type EventType } from '../domain/types.ts';
 import { LEGACY_EVENT_SCHEMAS, LEGACY_EVENT_TYPES } from './legacy.ts';
 import { advice, adviceAction, holdPlan, jobSourceRef, jobSpec, jobStatus, lanePlan, startPlan } from './parts.ts';
 
@@ -62,6 +62,9 @@ export const EVENT_SCHEMAS = {
   'update.started': strict({ from: z.string(), to: z.string(), ref: z.string() }),
   'update.applied': strict({ from: z.string(), to: z.string(), ref: z.string() }),
   'update.failed': strict({ to: z.string(), error: z.string() }),
+  // The plugin store (issue #75): `commit` is the store's full sha the plugin was installed from.
+  'plugin.installed': strict({ id: z.string(), role: z.enum(ROLES), commit: z.string() }),
+  'plugin.removed': strict({ id: z.string() }),
 } satisfies Record<EventType, z.ZodType>;
 
 export const ENVELOPE_SCHEMA = strict({

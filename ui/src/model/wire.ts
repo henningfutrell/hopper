@@ -3,13 +3,13 @@
 import type {
   AttachedMachine, Decision, DomainEvent, InstanceSpec, Job, JobStatus, Lane, MachineEdit, MachineLaneEffect, MachineSnapshot, MachinesConfig, PartAccount, PluginsEdit, PluginsReport,
   Question, QuestionAttempt, QuestionGatesView, QuestionStatus, RiskRuleView, Role, RoutingReport, RulesView, SelectableRole, ListRole, SourceStatus, UsageReading, UsageReport, UsageSourceReport, WebhookDelivery,
-  WebhookSubscription, WebhooksEdit, SessionUser, SessionView, SignInProviderView, UiRole, UpdateStatus, UpdateChannel,
+  WebhookSubscription, WebhooksEdit, SessionUser, SessionView, SignInProviderView, UiRole, UpdateStatus, UpdateChannel, PluginStoreEdit, PluginStoreEntry, PluginStoreReport,
 } from '../../../src/domain/types.ts';
 
 export type {
   AttachedMachine, Decision, DomainEvent, InstanceSpec, Job, JobStatus, Lane, MachineEdit, MachineLaneEffect, MachinesConfig, PartAccount, PluginsEdit, PluginsReport,
   Question, QuestionAttempt, QuestionGatesView, QuestionStatus, RiskRuleView, Role, RoutingReport, RulesView, SelectableRole, ListRole, SourceStatus, UsageReading, UsageReport, UsageSourceReport, WebhookDelivery,
-  WebhookSubscription, WebhooksEdit, SessionUser, SessionView, SignInProviderView, UiRole, UpdateStatus, UpdateChannel,
+  WebhookSubscription, WebhooksEdit, SessionUser, SessionView, SignInProviderView, UiRole, UpdateStatus, UpdateChannel, PluginStoreEdit, PluginStoreEntry, PluginStoreReport,
 };
 
 export interface Queue {

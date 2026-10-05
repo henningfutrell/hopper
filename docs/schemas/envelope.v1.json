@@ -47,6 +47,8 @@
         "update.started",
         "update.applied",
         "update.failed",
+        "plugin.installed",
+        "plugin.removed",
         "jev.mode_changed"
       ]
     },

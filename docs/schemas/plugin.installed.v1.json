@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "role": {
+      "type": "string",
+      "enum": [
+        "router",
+        "queue-sorter",
+        "answerer",
+        "assessor",
+        "executor",
+        "job-source",
+        "machine-source",
+        "usage-source",
+        "notifier"
+      ]
+    },
+    "commit": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "role",
+    "commit"
+  ],
+  "additionalProperties": false
+}

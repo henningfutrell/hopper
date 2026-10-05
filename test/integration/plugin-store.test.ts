@@ -39,7 +39,8 @@ async function start(w: ReturnType<typeof world>, env: Record<string, string> = 
 }
 
 const read = async (app: TestApp) => (await app.api<PluginStoreReport>('GET', '/api/plugin-store')).body;
-const ready = (app: TestApp) => waitFor(async () => (await read(app)).state !== 'unavailable' || undefined);
+/** The first read of the store, done in the background at start. */
+const ready = (app: TestApp) => waitFor(async () => { const r = await read(app); return r.commit !== undefined || r.error !== undefined; });
 const plugin = (r: PluginStoreReport, id: string) => r.plugins.find((p) => p.id === id);
 
 describe('the plugin store over HTTP', () => {
@@ -138,6 +139,7 @@ describe('the plugin store over HTTP', () => {
     expect(existsSync(join(w.pluginDir, 'echo-executor'))).toBe(true);
 
     expect((await app.ui('/ui/api/plugin-store', { action: 'install', id: 'nope' }, { token })).status).toBe(404);
+    expect((await app.ui('/ui/api/plugin-store', { action: 'remove', id: '../plugins/echo-executor' }, { token })).status).toBe(400);
   });
 
   it('refuses a store plugin that does not load as the catalogue says, and leaves nothing behind', async () => {

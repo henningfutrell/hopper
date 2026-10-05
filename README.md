@@ -10,7 +10,7 @@ web UI, and an HTTP API with its reference at `/docs/`.
 - **Everything it keeps is in its database.** Config is four config documents in that database
   (`plugins.yaml`, `webhooks.yaml`, `rules.md`, `auth.yaml`); secrets come from its environment.
 - **Every part is a plugin**: router, queue sorter, answerer, assessor, executors, job sources,
-  machines, usage sources, notifiers (`docs/plugins.md`).
+  machines, usage sources, notifiers (`docs/plugins.md`); the UI installs more from a plugin store.
 
 ## What you need
 
@@ -119,7 +119,7 @@ The OpenAPI document is `/docs/openapi.json` (or `.yaml`).
 |---|---|
 | `docs/deploy.md` | deploy recipes, secrets, mounted secret files |
 | `docs/sign-in.md` | sign-in, roles, reaching the UI across the LAN or a public URL |
-| `docs/plugins.md` | writing a plugin |
+| `docs/plugins.md` | writing a plugin; the plugin store |
 | `docs/events.md` | the event log and webhooks |
 | `docs/design.md` | how it works, and why |
 | `docs/glossary.md` | the words |

@@ -36,6 +36,8 @@ export interface Config {
   uiSessionHours: number;
   /** Custom plugins, one directory each; unset: none. */
   pluginDir?: string;
+  /** The plugin store: a git repository holding plugin-store.yaml; unset: none (design.md "Plugin store"). */
+  pluginStore?: string;
   /** The URL people reach the UI at through a reverse proxy (origin only), or undefined. The sign-in origin when set. */
   publicUrl: string | undefined;
   /** Host names the UI answers to on the LAN (lowercase, no port); empty: loopback only. */
@@ -93,6 +95,7 @@ const schema = z.object({
   JOB_HOPPER_KEEP_PANES: flag(false),
   JOB_HOPPER_UI_SESSION_HOURS: z.coerce.number().finite().positive().default(12),
   JOB_HOPPER_PLUGIN_DIR: z.string().min(1).optional(),
+  JOB_HOPPER_PLUGIN_STORE: z.string().min(1).optional(),
   JOB_HOPPER_UPDATE_CHECK_MS: int(0).default(900000),
   JOB_HOPPER_RESTART: z.enum(['exit', 'respawn']).optional(),
 }).refine((e) => e.JOB_HOPPER_SOFT_LIMIT < e.JOB_HOPPER_HARD_LIMIT, {
@@ -115,6 +118,7 @@ const SETTING_HELP: Record<keyof typeof schema.shape, string> = {
   JOB_HOPPER_LAN_PEERS: 'CIDR ranges LAN or proxy requests may come from, comma-separated (192.0.2.0/24); binds every interface',
   JOB_HOPPER_WORK_DIR: 'scratch space: working files, ssh control sockets. Nothing kept',
   JOB_HOPPER_PLUGIN_DIR: 'a directory of custom plugins, one directory each (docs/plugins.md). Unset: none',
+  JOB_HOPPER_PLUGIN_STORE: 'the plugin store the UI installs plugins from into JOB_HOPPER_PLUGIN_DIR: a git repository (URL or path) holding plugin-store.yaml. Unset: none',
   JOB_HOPPER_TICK_MS: 'how often the engine decides',
   JOB_HOPPER_ROUTER_MODE: 'router mode until one is stored: shadow (advice is logged) or active (advice is applied)',
   JOB_HOPPER_SOFT_LIMIT: 'usage fraction where a machine starts to close lanes',
@@ -213,6 +217,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     keepPanes: e.JOB_HOPPER_KEEP_PANES,
     uiSessionHours: e.JOB_HOPPER_UI_SESSION_HOURS,
     ...(e.JOB_HOPPER_PLUGIN_DIR ? { pluginDir: e.JOB_HOPPER_PLUGIN_DIR } : {}),
+    ...(e.JOB_HOPPER_PLUGIN_STORE ? { pluginStore: e.JOB_HOPPER_PLUGIN_STORE } : {}),
     publicUrl: e.JOB_HOPPER_PUBLIC_URL,
     lanNames: e.JOB_HOPPER_LAN_NAMES,
     lanPeers: e.JOB_HOPPER_LAN_PEERS,

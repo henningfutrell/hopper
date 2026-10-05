@@ -243,34 +243,15 @@ export interface Decision {
 // ---- Events ------------------------------------------------------------------------
 // Wire type is the dotted form; the glossary carries the domain name (JobQueued, ...).
 
-export type EventType =
-  | 'job.queued'
-  | 'job.prioritized'
-  | 'job.held'
-  | 'job.approved'
-  | 'job.claimed'
-  | 'job.started'
-  | 'job.progressed'
-  | 'job.finished'
-  | 'job.failed'
-  | 'job.cancelled'
-  | 'job.requeued'
-  | 'job.reattached'
-  | 'job.reprioritized'
-  | 'lane.opened'
-  | 'lane.closed'
-  | 'decision.made'
-  | 'router.mode_changed'
-  | 'question.asked'
-  | 'question.escalated'
-  | 'question.answered'
-  | 'question.closed'
-  | 'question.dismissed'
-  | 'question.expired'
-  | 'update.available'
-  | 'update.started'
-  | 'update.applied'
-  | 'update.failed';
+export const EVENT_TYPES = [
+  'job.queued', 'job.prioritized', 'job.held', 'job.approved', 'job.claimed', 'job.started',
+  'job.progressed', 'job.finished', 'job.failed', 'job.cancelled', 'job.requeued', 'job.reattached', 'job.reprioritized',
+  'lane.opened', 'lane.closed', 'decision.made', 'router.mode_changed',
+  'question.asked', 'question.escalated', 'question.answered', 'question.closed', 'question.dismissed', 'question.expired',
+  'update.available', 'update.started', 'update.applied', 'update.failed',
+  'plugin.installed', 'plugin.removed',
+] as const;
+export type EventType = typeof EVENT_TYPES[number];
 
 /**
  * Payload schema version per event type (docs/schemas/<type>.v<N>.json). Additive field →
@@ -283,15 +264,8 @@ export const EVENT_SCHEMA_VERSIONS: Readonly<Record<EventType, number>> = {
   'decision.made': 2, 'router.mode_changed': 1, 'question.asked': 1, 'question.escalated': 2,
   'question.answered': 2, 'question.closed': 1, 'question.dismissed': 1, 'question.expired': 1,
   'update.available': 1, 'update.started': 1, 'update.applied': 1, 'update.failed': 1,
+  'plugin.installed': 1, 'plugin.removed': 1,
 };
-
-export const EVENT_TYPES: readonly EventType[] = [
-  'job.queued', 'job.prioritized', 'job.held', 'job.approved', 'job.claimed', 'job.started',
-  'job.progressed', 'job.finished', 'job.failed', 'job.cancelled', 'job.requeued', 'job.reattached', 'job.reprioritized',
-  'lane.opened', 'lane.closed', 'decision.made', 'router.mode_changed',
-  'question.asked', 'question.escalated', 'question.answered', 'question.closed', 'question.dismissed', 'question.expired',
-  'update.available', 'update.started', 'update.applied', 'update.failed',
-];
 
 export interface DomainEvent<T = Record<string, unknown>> {
   /** Monotonic, assigned by the store on append. */

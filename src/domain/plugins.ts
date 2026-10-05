@@ -161,3 +161,42 @@ export interface PluginsReport {
   errors: { path: string; error: string }[];
   warnings: string[];
 }
+
+/** One plugin of the plugin store in GET /api/plugin-store (design.md "Plugin store"). */
+export interface PluginStoreEntry {
+  id: string;
+  role: Role;
+  describe: string;
+  /** In the store catalogue now; false: a store install the catalogue no longer lists. */
+  listed: boolean;
+  /** A store install under the plugin dir. `current`: its directory equals the catalogue's at the store's head. */
+  installed?: { commit: string; installedAt: string; current: boolean };
+  /** Installed again since start: the daemon still runs the code it first loaded. */
+  restartPending: boolean;
+}
+
+/**
+ * GET /api/plugin-store. `unavailable`: no plugin store or no plugin dir (`reason`). `error`: the last
+ * read failed (`error`); `commit`, `checkedAt` and the plugins are the last good read's.
+ */
+export interface PluginStoreReport {
+  state: 'unavailable' | 'ready' | 'error';
+  reason?: string;
+  error?: string;
+  /** JOB_HOPPER_PLUGIN_STORE. */
+  repo?: string;
+  /** The store's head the catalogue was read at. */
+  commit?: string;
+  checkedAt?: string;
+  plugins: PluginStoreEntry[];
+}
+
+/** POST /ui/api/plugin-store. `install` also updates a store install to the store's head. */
+export type PluginStoreEdit =
+  | { action: 'refresh' }
+  | { action: 'install'; id: string }
+  | { action: 'remove'; id: string };
+
+export type PluginStoreEditOutcome =
+  | { ok: true; report: PluginStoreReport }
+  | { ok: false; code: 'not_found' | 'conflict'; error: string };

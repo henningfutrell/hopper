@@ -16,6 +16,27 @@ Short guide for authors. The contract is `docs/design.md` "Plugin contract"; the
   in the role's section (`router`, `queueSorter`, `answerer`, `assessor`, `executors`, `jobSources`, `machines`,
   `usageSources`, `notifiers`). Executors, sources and notifiers apply at the next restart.
 
+## From the plugin store
+
+With `JOB_HOPPER_PLUGIN_STORE` set to a git repository holding `plugin-store.yaml` (design.md "Plugin
+store"), the UI's Plugins view lists what that plugin store offers and installs it into the plugin dir:
+Install, Update (the store's directory changed), Remove (refused while plugins.yaml names it). An
+installed plugin is a custom plugin like any other; it runs once plugins.yaml names it. A plugin put in
+the plugin dir by hand is never overwritten or removed from the UI.
+
+This repository is a plugin store: its `plugin-store.yaml` lists `examples/plugins/`. To publish your
+own, list each plugin in a repository's `plugin-store.yaml`:
+
+```yaml
+version: 1
+plugins:
+  - { id: my-plugin, role: executor, describe: What it does, path: plugins/my-plugin }
+```
+
+`path` is the plugin's directory (with its `index.ts` or `index.js`); its module must declare the same
+`id` and `role`. No `npm install` runs: a store plugin imports `node:` builtins and its own files, or
+ships its `node_modules`.
+
 ## How to write one
 
 Start from `examples/plugins/<role>/<id>/index.ts` — one minimal runnable plugin per role. Copy

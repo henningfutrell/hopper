@@ -34,4 +34,6 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'update.started': { from: 'a1b2c3d', to: 'e4f5a6b', ref: 'main' },
   'update.applied': { from: 'a1b2c3d', to: 'e4f5a6b', ref: 'main' },
   'update.failed': { to: 'e4f5a6b', error: 'the new build does not load: SyntaxError' },
+  'plugin.installed': { id: 'echo-executor', role: 'executor', commit: 'e4f5a6b' },
+  'plugin.removed': { id: 'echo-executor' },
 };

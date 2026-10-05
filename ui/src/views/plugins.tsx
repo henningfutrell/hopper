@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Empty, Panel } from '@/components/panel';
 import { AddInstance, InstanceForm, PluginSelector, pluginEditsUnsaved, sendPluginsEdit } from '@/components/plugin-form';
 import { StatusBadge } from '@/components/status';
+import { PluginStore } from '@/views/plugin-store';
 import { instanceState, isListRole, isSelectable, ROLE_TITLES } from '@/model/plugins';
 import type { PluginsReport, Role } from '@/model/wire';
 import { refreshPlugins, useHopper } from '@/store';
@@ -58,6 +59,7 @@ export function Plugins() {
         {[...c.warnings, ...report.warnings].map((w) => <div key={w} className="text-warn">{w}</div>)}
         {report.errors.map((e) => <div key={e.path} className="text-bad">refused plugin {e.path}: {e.error}</div>)}
       </Panel>
+      <PluginStore />
       <div className="grid gap-3 xl:grid-cols-2">{report.roles.map((r) => <RoleBlock key={r} role={r} report={report} />)}</div>
     </div>
   );
