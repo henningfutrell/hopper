@@ -2,6 +2,7 @@
 // (no shell), the env without the Claude Code markers, killed at the timeout or on abort. Never throws.
 import { execFile } from 'node:child_process';
 import { scrubbedEnv } from '../claude-print.ts';
+import { userProcessEnv } from '../../executors/env.ts';
 
 /** It ran (any exit code), or it could not run or finish. */
 export type CliRun = { code: number; stdout: string; stderr: string } | { error: string };
@@ -10,7 +11,7 @@ export type CliRun = { code: number; stdout: string; stderr: string } | { error:
 export function runCli(bin: string, args: string[], o: { cwd: string; timeoutMs: number; signal: AbortSignal; userEnv?: Readonly<Record<string, string>> }): Promise<CliRun> {
   return new Promise((resolve) => {
     execFile(bin, args, {
-      cwd: o.cwd, env: scrubbedEnv({ ...process.env, ...o.userEnv }), timeout: o.timeoutMs, killSignal: 'SIGKILL', signal: o.signal, encoding: 'utf8', maxBuffer: 4 * 1024 * 1024,
+      cwd: o.cwd, env: scrubbedEnv(userProcessEnv(o.userEnv)), timeout: o.timeoutMs, killSignal: 'SIGKILL', signal: o.signal, encoding: 'utf8', maxBuffer: 4 * 1024 * 1024,
     }, (err, stdout, stderr) => {
       if (!err) return resolve({ code: 0, stdout, stderr });
       const e = err as NodeJS.ErrnoException & { killed?: boolean; code?: number | string };

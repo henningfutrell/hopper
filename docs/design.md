@@ -4318,6 +4318,13 @@ each with its own lanes. As before, every local account of the host reads the GE
 without a session — now any user's, by `x-hopper-user`; deploy on a host only the operator uses. Jobs
 of every user run as the daemon's account: one user's job on the hopper host can read files another
 user's job wrote there; the separation is the hopper's, not the operating system's.
+A user added later starts every process of theirs (gh, claude, the herdr server and its panes, commands)
+from the machine's variables only (`PATH`, `HOME`, `USER`, `LOGNAME`, `SHELL`, `LANG`, `LANGUAGE`, `TERM`,
+`TZ`, `TMPDIR`, `XDG_RUNTIME_DIR`, `LC_*`) plus their CLI config dirs (`userProcessEnv`,
+`src/executors/env.ts`): never the daemon's environment, which holds owner's runtime secrets and the
+database URL. Owner's processes keep the daemon's environment. This closes the easy read, not the
+account: a later user's job can still read the daemon account's files. A user who needs a boundary
+the operating system enforces runs their jobs on a machine of their own (an ssh, client or container target).
 
 ### UI
 

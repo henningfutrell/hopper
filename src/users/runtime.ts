@@ -37,6 +37,7 @@ import { createGhLogin, createSourceSync, idleStatus, withFixedStatuses, type Gi
 import { createWebhooksEditor, type WebhooksEditor } from '../webhooks/edit.ts';
 import { createWebhookDispatcher, secretProblem } from '../webhooks/index.ts';
 import { userCliEnv, userHerdrSession, userSecrets, userWorkDir } from './env.ts';
+import { userProcessEnv } from '../executors/env.ts';
 
 /** Doubles at ports.ts seams for one user's parts, for integration tests. Production passes none. */
 export interface UserSeams {
@@ -269,7 +270,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   return {
     user, store, engine, sources: sync, registry: withFixedStatuses(sync, fixed), plugins, host, questions, dispatcher, executors,
     // gh login (issue #138): the gh on the daemon's PATH, the github-gh source's default `bin`, with the user's gh config.
-    ghLogin: createGhLogin({ bin: 'gh', env: { ...o.env, ...cliEnv } }),
+    ghLogin: createGhLogin({ bin: 'gh', env: Object.keys(cliEnv).length === 0 ? o.env : userProcessEnv(cliEnv, o.env) }),
     webhooksEditor: createWebhooksEditor({ store }),
     // The variable the user's runtime reads: the subscription's, under the user's prefix.
     secretProblem: (secretEnv) => secretProblem(raw, `${user.secretPrefix}${secretEnv}`),

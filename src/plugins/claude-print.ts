@@ -6,6 +6,7 @@
 import { spawn } from 'node:child_process';
 import type { z } from 'zod';
 import type { DetectionKit, OptionChoice, QuestionAttempt } from './sdk.ts';
+import { userProcessEnv } from '../executors/env.ts';
 
 export interface ClaudePrintOptions {
   bin: string;
@@ -87,7 +88,7 @@ export function claudePrint<T extends object>(o: ClaudePrintOptions, schema: z.Z
       resolve(r);
     };
     const [file, args] = o.wrap ? o.wrap([o.bin, ...claudeArgv(o)]) : [o.bin, claudeArgv(o)];
-    const child = spawn(file, args, { cwd: o.cwd, env: scrubbedEnv({ ...process.env, ...(o.wrap ? {} : o.userEnv) }), stdio: ['pipe', 'pipe', 'pipe'] });
+    const child = spawn(file, args, { cwd: o.cwd, env: scrubbedEnv(userProcessEnv(o.wrap ? {} : o.userEnv)), stdio: ['pipe', 'pipe', 'pipe'] });
     const onAbort = () => {
       child.kill('SIGKILL');
       finish({ error: reasonOf() });

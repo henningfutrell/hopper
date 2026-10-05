@@ -7,6 +7,7 @@ import { mkdirSync } from 'node:fs';
 import type { ExecutionContext, ExecutionOutcome, Executor } from '../domain/ports.ts';
 import type { MachineSnapshot } from '../domain/types.ts';
 import { dockerArgv, dockerEnv } from './docker.ts';
+import { userProcessEnv } from './env.ts';
 import { shellQuote, sshArgv, type SshAuth } from './ssh.ts';
 
 /** Per stream, the tail kept in the job's result. */
@@ -55,7 +56,7 @@ export interface Ran { exitCode: number; stdout: string; stderr: string }
 export function run(file: string, args: string[], timeoutMs: number, signal: AbortSignal, userEnv: Readonly<Record<string, string>> = {}): Promise<Ran | 'aborted' | 'timeout'> {
   return new Promise((resolve, reject) => {
     execFile(file, args, {
-      env: dockerEnv({ ...process.env, ...userEnv }), timeout: timeoutMs, killSignal: 'SIGKILL', signal, maxBuffer: 64 * 1024 * 1024, encoding: 'utf8',
+      env: dockerEnv(userProcessEnv(userEnv)), timeout: timeoutMs, killSignal: 'SIGKILL', signal, maxBuffer: 64 * 1024 * 1024, encoding: 'utf8',
     }, (err, stdout, stderr) => {
       if (!err) return resolve({ exitCode: 0, stdout, stderr });
       const e = err as NodeJS.ErrnoException & { killed?: boolean; code?: number | string };

@@ -6,6 +6,7 @@ import { execFile } from 'node:child_process';
 import { GitHubApiError, isPermanent } from './api.ts';
 import type { GitHubApi, GitHubComment, GitHubIssue, GitHubProjectItem } from './api.ts';
 import { CLOSING_PULL_REQUEST_QUERY, closingPullRequestFrom } from './closer.ts';
+import { userProcessEnv } from '../../executors/env.ts';
 
 const DEFAULT_TIMEOUT_MS = 30000;
 const SEARCH_FIELDS = 'url,number,title,body,author,labels,repository,updatedAt,state';
@@ -60,7 +61,7 @@ export function createGhCliApi(o: { bin: string; timeoutMs?: number; userEnv?: R
 
   const exec = (args: string[], stdin?: string): Promise<string> => new Promise((resolve, reject) => {
     const child = execFile(o.bin, args, {
-      env: { ...process.env, ...o.userEnv }, timeout, killSignal: 'SIGKILL', maxBuffer: 64 * 1024 * 1024, encoding: 'utf8',
+      env: userProcessEnv(o.userEnv), timeout, killSignal: 'SIGKILL', maxBuffer: 64 * 1024 * 1024, encoding: 'utf8',
     }, (err, stdout, stderr) => {
       if (!err) return resolve(stdout);
       const e = err as NodeJS.ErrnoException & { killed?: boolean };

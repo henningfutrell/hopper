@@ -6,7 +6,7 @@
 
 import { execFile } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
-import { scrubbedEnv } from '../env.ts';
+import { scrubbedEnv, userProcessEnv } from '../env.ts';
 import { clientHerdr, type ClientTransport } from '../client.ts';
 import { SSH_FAILED, shellQuote, sshArgv, type SshTransport } from '../ssh.ts';
 import { HerdrError } from './client.ts';
@@ -79,7 +79,7 @@ function viaCli(o: CliOptions): Exec {
       return reject(new HerdrError('ssh', `ssh ${ssh!.target}: ${(e as Error).message}`));
     }
     execFile(file, fileArgs, {
-      env: scrubbedEnv({ ...process.env, ...(ssh ? {} : o.userEnv) }), timeout: timeoutMs, killSignal: 'SIGKILL', maxBuffer: 16 * 1024 * 1024, encoding: 'utf8',
+      env: scrubbedEnv(ssh ? process.env : userProcessEnv(o.userEnv)), timeout: timeoutMs, killSignal: 'SIGKILL', maxBuffer: 16 * 1024 * 1024, encoding: 'utf8',
     }, (err, stdout, stderr) => {
       if (!err) return resolve(stdout);
       const e = err as NodeJS.ErrnoException & { killed?: boolean; code?: number | string };
