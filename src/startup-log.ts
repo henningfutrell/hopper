@@ -9,8 +9,8 @@ function unavailableNote(plugins: PluginsView): string {
 
 export function logStartup(app: App): void {
   const r = app.plugins.routerStatus();
-  const { answerer, assessor } = app.plugins.report();
-  const q = `answerer ${answerer.instance ? `${answerer.instance.name} [${answerer.active ?? 'unavailable'}]` : 'none'}, assessor ${assessor.instance?.name} [${assessor.active}${assessor.fallback ? ', fallback' : ''}]`;
+  const levels = app.plugins.report().escalationLevels.map((l) => `${l.instance.name} [${l.active ?? 'unavailable'}]`);
+  const q = `escalation levels ${levels.length ? levels.join(' → ') : 'none'} → owner`;
   const lan = app.config.lanNames.length ? ` and ${app.config.lanNames.map((n) => `http://${n}:${new URL(app.url).port}`).join(', ')} (LAN peers ${app.config.lanPeers.join(', ')})` : '';
   console.log(`hopper listening on ${app.url}${lan} (router ${r.name} [${r.plugin}${r.fallback ? ', fallback' : ''}] ${app.routerMode()}, executors ${app.engine.executorNames.join(',') || 'none'}${unavailableNote(app.plugins)}, ${q})`);
   for (const s of app.sources.statuses()) console.log(`hopper: source ${s.name} (${s.kind}) ${s.state}`);

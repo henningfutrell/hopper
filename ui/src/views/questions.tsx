@@ -24,7 +24,7 @@ import { useCanOperate, useJobIndex } from '@/store/selectors';
 
 const Mark = ({ ok }: { ok: boolean }) => <span className={ok ? 'text-ok' : 'text-bad'}>{ok ? '✓' : '✗'}</span>;
 
-/** `onUse`: puts the attempt's answer in the answer box (an assessor's best answer, for the owner to send or edit). */
+/** `onUse`: puts the attempt's answer in the answer box (a level's recommendation, for the owner to send or edit). */
 function Attempt({ a, onUse }: { a: QuestionAttempt; onUse?: (answer: string) => void }) {
   return (
     <div className="space-y-1 border-l-2 border-border py-1 pl-3 text-xs">
@@ -84,7 +84,7 @@ function QuestionCard({ q }: { q: Question }) {
         </CollapsibleTrigger>
         <CollapsibleContent><pre className="mt-2 max-h-80 overflow-auto rounded-md bg-muted/40 p-3 font-mono text-[11px] leading-relaxed">{lines.slice(-40).join('\n')}</pre></CollapsibleContent>
       </Collapsible>
-      {q.attempts.length > 0 && <div className="space-y-1.5"><div className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">Escalation trail</div>{q.attempts.map((a, i) => <Attempt key={i} a={a} onUse={canAnswer && q.tier === 'human' && a.role === 'assessor' ? setDraft : undefined} />)}</div>}
+      {q.attempts.length > 0 && <div className="space-y-1.5"><div className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">Escalation trail</div>{q.attempts.map((a, i) => <Attempt key={i} a={a} onUse={canAnswer && q.tier === 'human' && a.role === 'level' ? setDraft : undefined} />)}</div>}
       {canAnswer && (
         <div className="space-y-2">
           <Textarea rows={3} value={draft} disabled={sending} placeholder="Answer to type into the job (Ctrl/Cmd+Enter sends)"

@@ -10,8 +10,7 @@
       "enum": [
         "router",
         "queue-sorter",
-        "answerer",
-        "assessor",
+        "escalation-level",
         "executor",
         "job-source",
         "machine-source",

@@ -3,14 +3,10 @@
 version: 1
 plugins:
   - id: canned-answer
-    role: answerer
-    describe: Drafts one fixed answer to every question
-    path: examples/plugins/answerer/canned-answer
-  - id: keyword-assessor
-    role: assessor
-    describe: Escalates when the question names a listed word, or the draft is not
-      confident
-    path: examples/plugins/assessor/keyword-assessor
+    role: escalation-level
+    describe: Answers every question with one fixed text; escalates a question that
+      names a listed word
+    path: examples/plugins/escalation-level/canned-answer
   - id: echo-executor
     role: executor
     describe: Finishes every job at once with its prompt as the result

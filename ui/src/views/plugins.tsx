@@ -28,7 +28,7 @@ function RoleBlock({ role, report }: { role: Role; report: PluginsReport }) {
       {role === 'machine-source' && <div className="text-xs text-muted-foreground">attach an ssh machine from the Machines view; a container or client target with its script</div>}
       {instances.length
         ? instances.map((i) => <InstanceForm key={i.instance.name} role={role} inst={i.instance} />)
-        : <Empty>{role === 'answerer' ? 'none — questions go straight to the owner' : 'none'}</Empty>}
+        : <Empty>{role === 'escalation-level' ? 'none — questions go straight to the owner' : 'none'}</Empty>}
     </Panel>
   );
 }

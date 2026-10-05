@@ -13,7 +13,7 @@ Install page, step by step: https://henningfutrell.github.io/hopper/ (`site/`).
 - **Everything it keeps is in its database.** Config is three config documents in that database
   (`plugins.yaml`, `rules.md`, `auth.yaml`) and the webhook subscriptions, rows there edited from
   the UI; secrets come from its environment.
-- **Every part is a plugin**: router, queue sorter, answerer, assessor, executors, job sources,
+- **Every part is a plugin**: router, queue sorter, escalation levels, executors, job sources,
   machines, usage sources, notifiers (`docs/plugins.md`); the UI installs more from a plugin store.
 
 ## Getting started
@@ -42,7 +42,7 @@ install page has the steps: https://henningfutrell.github.io/hopper/#windows
 | Postgres (any; `deploy/compose.yaml` has one) | everything the daemon keeps |
 | Docker | the bundled Postgres of the host install, `npm test` |
 | herdr ([herdr.dev](https://herdr.dev)), at `~/.local/bin/herdr` | the panes jobs run in (`herdr-claude` executor), on each machine that runs Claude jobs |
-| the `claude` CLI, signed in | jobs (on each machine that runs them), the answerer, the assessor, usage readings |
+| the `claude` CLI, signed in | jobs (on each machine that runs them), the escalation levels, usage readings |
 | the `gh` CLI signed in as you (default), or a GitHub App you create | reading and labelling the GitHub issues that are jobs ([Connect GitHub](#connect-github)) |
 
 ## Run it
@@ -210,8 +210,9 @@ Named so you know they are not missing steps. None is the path for a self-hosted
    the issue closed), `hopper:failed`. Remove `hopper:failed` to run it again. `hopper:high` and
    `hopper:low` set the priority; `hopper:backburner` parks an issue.
 
-When a job asks a question, the answerer (Claude) answers it, the assessor decides whether a
-person must, and the UI's Questions view shows what waits for you.
+When a job asks a question, it climbs the escalation levels: Opus answers what it can settle,
+Fable takes what Opus escalates, and what neither should decide waits for you in the UI's
+Questions view. The levels and their order are yours to change there.
 
 ## Add machines
 

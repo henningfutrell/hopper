@@ -1,5 +1,5 @@
-// The `claude` CLI in print mode, locked down, for the built-in question plugins (claude-cli and
-// claude-cli-assessor; design.md "Question pipeline"): no tools, no MCP, no settings, no session,
+// The `claude` CLI in print mode, locked down, for the built-in escalation level (claude-cli;
+// design.md "Question pipeline"): no tools, no MCP, no settings, no session,
 // output bound to a JSON Schema, prompt on stdin, cwd = hopper's data dir (so no project
 // CLAUDE.md loads), env scrubbed of the Claude Code markers. Never throws.
 import { spawn } from 'node:child_process';
@@ -101,7 +101,7 @@ export async function detectClaude(sys: DetectionKit, bin: string) {
   return { status: 'available' as const, detail: version };
 }
 
-/** One trail entry as a prompt line (both claude prompts list earlier attempts). */
+/** One trail entry as a prompt line (the claude-cli prompt lists the trail so far). */
 export function attemptLine(a: QuestionAttempt): string {
   const why = a.error ? `error: ${a.error}` : (a.reason ?? 'no reason given');
   const verdict = a.escalate === undefined ? '' : `escalate=${a.escalate}`;

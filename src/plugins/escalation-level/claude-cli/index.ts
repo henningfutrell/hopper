@@ -1,9 +1,10 @@
-// claude-cli: the answerer that drafts with the `claude` CLI in print mode, locked down
-// (design.md "Question pipeline"). Returns `{ answer, confident, reason }` or `{ error }`.
+// claude-cli: an escalation level that answers with the `claude` CLI in print mode, locked down
+// (design.md "Question pipeline"). Returns `{ answer, escalate, reason }` or `{ error }`; the core
+// escalates on anything but a valid `escalate: false` with an answer.
 import { z } from 'zod';
 import { CLAUDE_TIMEOUT_MS, claudePrint, detectClaude } from '../../claude-print.ts';
-import type { AnswerDraft, PluginDefinition } from '../../sdk.ts';
-import { buildAnswerPrompt } from './prompt.ts';
+import type { LevelReply, PluginDefinition } from '../../sdk.ts';
+import { buildLevelPrompt } from './prompt.ts';
 
 export interface ClaudeCliOptions {
   bin: string;
@@ -14,17 +15,17 @@ export interface ClaudeCliOptions {
 
 const JSON_SCHEMA = {
   type: 'object',
-  properties: { answer: { type: 'string' }, confident: { type: 'boolean' }, reason: { type: 'string' } },
-  required: ['answer', 'confident', 'reason'],
+  properties: { answer: { type: 'string' }, escalate: { type: 'boolean' }, reason: { type: 'string' } },
+  required: ['answer', 'escalate', 'reason'],
   additionalProperties: false,
 };
 
-const DRAFT: z.ZodType<AnswerDraft> = z.object({ answer: z.string(), confident: z.boolean(), reason: z.string() });
+const REPLY: z.ZodType<LevelReply> = z.object({ answer: z.string(), escalate: z.boolean(), reason: z.string() });
 
-const claudeCli: PluginDefinition<'answerer', ClaudeCliOptions> = {
+const claudeCli: PluginDefinition<'escalation-level', ClaudeCliOptions> = {
   id: 'claude-cli',
-  role: 'answerer',
-  describe: "Drafts answers with the claude CLI (print mode, no tools); a model alias such as opus, sonnet or fable",
+  role: 'escalation-level',
+  describe: 'Answers or escalates with the claude CLI (print mode, no tools); a model alias such as opus, sonnet or fable',
   options: (zod) => zod.object({
     bin: zod.string().min(1).default('claude').meta({ commandBearing: true }),
     model: zod.string().min(1).default('opus'),
@@ -37,7 +38,7 @@ const claudeCli: PluginDefinition<'answerer', ClaudeCliOptions> = {
     return {
       name: 'claude-cli',
       model: o.model,
-      answer: (req, signal) => claudePrint(run, DRAFT, buildAnswerPrompt(req), signal),
+      answer: (req, signal) => claudePrint(run, REPLY, buildLevelPrompt(req), signal),
     };
   },
 };

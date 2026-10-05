@@ -3,13 +3,13 @@
 // type stripping erases, so a plugin needs nothing of hopper at runtime. Types only here.
 import type { z } from 'zod';
 import type {
-  AnswerDraft, AnswerRequest, Answerer, Assessment, Assessor, Clock, ExecutionContext, ExecutionOutcome, Executor, JobSource,
+  AnswerRequest, Clock, EscalationLevel, ExecutionContext, ExecutionOutcome, Executor, JobSource, LevelReply,
   MachineSource, Notifier, NotifierEvents, QueueEntry, QueueSorter, Router, SourceItem, SourceReport, SourceSignal, UsageSource,
 } from '../domain/ports.ts';
 import type { Advice, AdviceAction, AttachedMachine, Detection, DomainEvent, Job, MachineSnapshot, Question, QuestionAttempt, Role, RouterMode, UsageReading } from '../domain/types.ts';
 
 export type {
-  Advice, AdviceAction, AnswerDraft, AnswerRequest, Answerer, Assessment, Assessor, AttachedMachine, Clock, Detection, DomainEvent, ExecutionContext,
+  Advice, AdviceAction, AnswerRequest, AttachedMachine, Clock, Detection, DomainEvent, EscalationLevel, ExecutionContext, LevelReply,
   ExecutionOutcome, Executor, Job, JobSource, MachineSnapshot, MachineSource, Notifier, NotifierEvents, Question, QuestionAttempt, QueueEntry,
   QueueSorter, Role, Router, RouterMode, SourceItem, SourceReport, SourceSignal, UsageReading, UsageSource,
 };
@@ -64,14 +64,13 @@ export type JobSourceInstance =
 
 /**
  * What each role's `create` returns. The core names the instance after plugins.yaml (`name` is
- * overridden: jobs name an executor instance, a question's stage names an answerer or assessor
- * instance), validates every answerer draft and assessor result, and fails closed on them.
+ * overridden: jobs name an executor instance, a question's stage names an escalation-level
+ * instance), validates every level's reply, and fails closed on it.
  */
 export interface RoleInstance {
   router: Router;
   'queue-sorter': QueueSorter;
-  answerer: Answerer;
-  assessor: Assessor;
+  'escalation-level': EscalationLevel;
   executor: Executor;
   'job-source': JobSourceInstance;
   'machine-source': MachineSource;
@@ -87,8 +86,7 @@ export interface RoleInstance {
 export interface RoleContext {
   router: { routerMode(): RouterMode };
   'queue-sorter': object;
-  answerer: object;
-  assessor: object;
+  'escalation-level': object;
   executor: object;
   'job-source': JobSourceContext;
   'machine-source': MachineSourceContext;

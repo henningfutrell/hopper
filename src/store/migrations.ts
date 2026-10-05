@@ -118,6 +118,8 @@ const MIGRATIONS: readonly Migration[] = [
   // 15: attached machines are machine-source instances (issue #74): plugins.yaml `machines:` becomes
   // the list of them, and `attachedMachines:` goes.
   attachedMachinesToInstances,
+  // 16: the question path is escalation levels (issue #134), in plugins.yaml and in the stored trails.
+  (db) => { escalationLevelsSection(db); levelAttempts(db); },
 ];
 
 /**
@@ -173,6 +175,67 @@ function renameGateRouter(db: Db): void {
     }
   }
   db.run("UPDATE config_documents SET text = ? WHERE name = 'plugins.yaml'", doc.toString({ lineWidth: 0 }));
+}
+
+/** The built-in instance a left-out `answerer` / `assessor` section meant, as an escalation level. */
+const BUILTIN_LEVEL: Readonly<Record<'answerer' | 'assessor', Record<string, unknown>>> = {
+  answerer: { name: 'opus', plugin: 'claude-cli', options: { model: 'opus' } },
+  assessor: { name: 'fable', plugin: 'claude-cli', options: { model: 'fable' } },
+};
+
+/**
+ * plugins.yaml's `answerer` and `assessor` sections become `escalationLevels`, in the place of the
+ * first, with the meaning they had: the answerer (none when null), then the assessor, then the
+ * owner. A section left out meant the built-in instance, which is written in its place. The
+ * assessor `claude-cli-assessor` is the level plugin `claude-cli`; `always-escalate` meant the owner
+ * decides every question, which is no levels. A custom plugin keeps its id. A document with neither
+ * section keeps the built-in levels; one that does not parse is left for the owner.
+ */
+function escalationLevelsSection(db: Db): void {
+  const row = db.get("SELECT text FROM config_documents WHERE name = 'plugins.yaml'");
+  if (!row) return;
+  const doc = parseDocument(String(row.text));
+  if (doc.errors.length > 0 || !isMap(doc.contents) || (!doc.has('answerer') && !doc.has('assessor'))) return;
+  const section = (key: 'answerer' | 'assessor'): Record<string, unknown> | null => {
+    if (!doc.has(key)) return BUILTIN_LEVEL[key];
+    const node = doc.get(key);
+    return isMap(node) ? (node.toJSON() as Record<string, unknown>) : null;
+  };
+  const answerer = section('answerer');
+  const assessor = section('assessor');
+  const levels = assessor?.plugin === 'always-escalate' ? [] : [answerer, assessor]
+    .filter((l): l is Record<string, unknown> => l !== null)
+    .map((l) => (l.plugin === 'claude-cli-assessor' ? { ...l, plugin: 'claude-cli' } : l));
+  const map: YAMLMap = doc.contents;
+  const old = (p: { key: unknown }) => isScalar(p.key) && (p.key.value === 'answerer' || p.key.value === 'assessor');
+  const at = map.items.findIndex(old);
+  map.items = map.items.filter((p) => !old(p));
+  map.items.splice(at, 0, doc.createPair('escalationLevels', levels));
+  db.run("UPDATE config_documents SET text = ? WHERE name = 'plugins.yaml'", doc.toString({ lineWidth: 0 }));
+}
+
+/**
+ * Every model attempt on a stored question's trail is a `level` attempt: the answerer's and the
+ * assessor's, and one from before roles that is not the human's. An answerer's draft that went on to
+ * the assessor (`drafted`) escalated.
+ */
+function levelAttempts(db: Db): void {
+  for (const row of db.all('SELECT id, body FROM questions')) {
+    const q = JSON.parse(String(row.body)) as { attempts?: Array<Record<string, unknown>> };
+    if (!Array.isArray(q.attempts)) continue;
+    let changed = false;
+    q.attempts = q.attempts.map((a) => {
+      const role = a.role ?? (a.tier === 'human' ? 'human' : 'level');
+      if (role === 'human') {
+        if (a.role === 'human') return a;
+        changed = true;
+        return { ...a, role };
+      }
+      changed = true;
+      return a.outcome === 'drafted' ? { ...a, role: 'level', escalate: true, outcome: 'escalated' } : { ...a, role: 'level' };
+    });
+    if (changed) db.run('UPDATE questions SET body = ? WHERE id = ?', JSON.stringify(q), row.id as string);
+  }
 }
 
 interface DocumentEntry { name: string; url: string; events: string[]; secretEnv: string; active: boolean }

@@ -8,7 +8,7 @@ Type=simple
 ExecStart=/usr/bin/node %h/.local/lib/hopper/src/main.ts
 Environment=HOPPER_PORT=4790
 Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin
-# Process settings only. Every part — job sources, executors, router, answerer, assessor, the machine
+# Process settings only. Every part — job sources, executors, router, escalation levels, the machine
 # and its lanes — is configured in plugins.yaml, and sign-in in auth.yaml: config documents in the
 # database (docs/design.md "Config documents"; edit by hand with `hopper config edit <document>`).
 # daemon.env, this machine's (written by install.sh, mode 600): HOPPER_DATABASE_URL (required),

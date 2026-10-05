@@ -24,7 +24,7 @@ RUN apt-get update \
  && git config --system credential.https://github.com.helper '!gh auth git-credential'
 # herdr, the panes jobs run in (herdr.dev; the installer checks the release's SHA-256).
 RUN curl -fsSL https://herdr.dev/install.sh | HERDR_INSTALL_DIR=/usr/local/bin sh && herdr --version
-# The claude CLI, for the answerer, the assessor, the usage reading and Jev's Haiku gates. It signs
+# The claude CLI, for the escalation levels, the usage reading and Jev's Haiku gates. It signs
 # in from the environment (CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY). INSTALL_CLAUDE=false skips it.
 ARG INSTALL_CLAUDE=true
 RUN if [ "$INSTALL_CLAUDE" = true ]; then npm install -g --no-audit --no-fund @anthropic-ai/claude-code && npm cache clean --force; fi

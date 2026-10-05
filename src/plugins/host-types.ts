@@ -1,7 +1,7 @@
 // The plugin host's contract (index.ts builds it): what it is given, and what it offers the
 // composition root and the HTTP edge.
 import type { ConfigDocuments } from '../domain/ports.ts';
-import type { Answerer, Assessor, Clock, MachineSource, Notifier, NotifierEvents, UsageSource } from '../domain/ports.ts';
+import type { Clock, EscalationLevel, MachineSource, Notifier, NotifierEvents, UsageSource } from '../domain/ports.ts';
 import type {
   AttachedMachine, InstanceSpec, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit, PluginsEditOutcome, PluginsReport, RouterMode, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule,
 } from '../domain/types.ts';
@@ -17,10 +17,8 @@ export interface PluginHostOptions {
   installedDir?: string;
   /** Where plugins.yaml is kept: the store's config documents. */
   documents: ConfigDocuments;
-  /** The answerer instance when plugins.yaml has no `answerer` section; null = none. Default: the built-in one. */
-  defaultAnswerer?: InstanceSpec | null;
-  /** The assessor instance when plugins.yaml has no `assessor` section. Default: the built-in one. */
-  defaultAssessor?: InstanceSpec;
+  /** The escalation levels when plugins.yaml has no `escalationLevels` section. Default: the built-in ones. */
+  defaultLevels?: InstanceSpec[];
   /** The executor instances when plugins.yaml has no `executors` section. Default: the built-in ones. */
   defaultExecutors?: InstanceSpec[];
   /** What job sources are told. Default (tests): no key known, nothing re-runnable. */
@@ -54,10 +52,8 @@ export interface PluginHost {
   routerStatus(): RouterStatus;
   /** Live: the queue-sorter instance now (priority answering for one that cannot run or misbehaves). Valid after start(). */
   readonly queueSorter: QueueSorter;
-  /** The answerer now, or undefined (none configured, or it cannot run). Valid after start(). */
-  answerer(): Answerer | undefined;
-  /** The assessor now (always-escalate standing in when the configured one cannot run). Valid after start(). */
-  assessor(): Assessor;
+  /** The escalation levels now, lowest first; one that cannot run escalates every question it gets. Valid after start(). */
+  levels(): EscalationLevel[];
   /** The executor instances built at start, runnable or not. Fixed until restart. Valid after start(). */
   executors(): BuiltExecutor[];
   /** The job source instances built at start, running, disabled or not. Fixed until restart. Valid after start(). */

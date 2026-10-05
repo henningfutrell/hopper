@@ -13,8 +13,8 @@ Short guide for authors. The contract is `docs/design.md` "Plugin contract"; the
 - It runs only once `plugins.yaml` names it. `plugins.yaml` is a config document in the database:
   edit it from the UI, or by hand with `hopper config edit plugins.yaml`. Command-bearing
   options are set only the second way. The entry is `{ name: <instance>, plugin: <id>, options: { … } }`
-  in the role's section (`router`, `queueSorter`, `answerer`, `assessor`, `executors`, `jobSources`, `machines`,
-  `usageSources`, `notifiers`). Executors, sources and notifiers apply at the next restart.
+  in the role's section (`router`, `queueSorter`, `escalationLevels`, `executors`, `jobSources`, `machines`,
+  `usageSources`, `notifiers`). Executors, sources and notifiers apply at the next restart; the escalation levels are a list in order, lowest first.
 
 ## From the plugin store
 

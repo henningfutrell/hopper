@@ -1,4 +1,4 @@
-// The rules: the owner's standing rules, given to the answerer and the assessor — the config document
+// The rules: the owner's standing rules, given to every escalation level — the config document
 // `rules.md` (design.md "Config documents"). Read on every ask, so an edit (from the UI or the CLI)
 // applies to the next question without a restart. A UI edit replaces it whole against the version it
 // was read at (issue #18).
@@ -13,7 +13,7 @@ export interface Rules {
   missing: boolean;
 }
 
-/** The most a UI edit may write: rules go into every answerer and assessor prompt. */
+/** The most a UI edit may write: rules go into every escalation level's prompt. */
 export const RULES_MAX_BYTES = 64 * 1024;
 
 /** Read on every ask, so edits apply to the next question. None yet → empty, flagged. */

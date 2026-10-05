@@ -10,7 +10,7 @@ import { advice, adviceAction, holdPlan, jobSourceRef, jobSpec, jobStatus, laneP
 
 const strict = z.strictObject;
 const routerMode = z.enum(['shadow', 'active']);
-/** A question stage: the answerer's or assessor's instance name, or `human`. */
+/** A question stage: an escalation level's instance name, or `human`. */
 const stage = z.string().min(1);
 
 const divergence = strict({
@@ -49,8 +49,7 @@ export const EVENT_SCHEMAS = {
     goal: z.string().optional(), answerUrl: z.string().optional(),
     notifyCount: z.number().int().optional(), renotify: z.boolean().optional(),
   }),
-  // v2: `by` is whose answer was typed: the answerer instance (its draft), the assessor instance
-  // (its own answer, issue #98), or `human`.
+  // v2: `by` is whose answer was typed: the escalation level instance that answered, or `human`.
   // `via: "pane"`: the owner typed it into the job's pane, not the UI (additive, still v2).
   'question.answered': strict({ questionId: z.string(), by: stage, answer: z.string(), via: z.literal('pane').optional() }),
   // `answer` is the close text typed into the job in place of an answer.

@@ -1,8 +1,9 @@
-// One plugin instance's options form (Remove for a list role's instance), a one-instance role's plugin
-// selector and a list role's Add form (design.md "UI and mutation"), shared by the Plugins view, the Routing view and the Question gates panel. Each form keeps its own
+// One plugin instance's options form (Remove for a list role's instance; an escalation level also
+// moves earlier or later), a one-instance role's plugin selector and a list role's Add form (design.md "UI and mutation"), shared by the Plugins view, the Routing view and the Question gates panel. Each form keeps its own
 // unsaved edits; command-bearing options are shown, never edited (plugins.yaml only). One Save sends
 // one instance's whole options object through POST /ui/api/plugins against GET /api/plugins'
 // version. Reads the report and the session from the store.
+import { ArrowDown, ArrowUp } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -104,9 +105,23 @@ export function InstanceForm({ role, inst }: { role: Role; inst: InstanceSpec })
     await sendPluginsEdit({ action: 'remove', role: list, name: inst.name, version: report.config.version }, `Removed ${inst.name}`);
     setBusy(false);
   };
+  // An escalation level's place: 0 is the lowest, the first a question meets.
+  const levels = report.instances.filter((i) => i.role === 'escalation-level').map((i) => i.instance.name);
+  const at = role === 'escalation-level' ? levels.indexOf(inst.name) : -1;
+  const move = async (to: number) => {
+    setBusy(true);
+    await sendPluginsEdit({ action: 'move', role: 'escalation-level', name: inst.name, to, version: report.config.version }, `Moved ${inst.name}`);
+    setBusy(false);
+  };
+  const removeWhat = role === 'escalation-level'
+    ? `${inst.name} leaves plugins.yaml; the next question skips it.`
+    : role === 'machine-source'
+      ? `${inst.name} leaves plugins.yaml and stops taking jobs at once. Refused while a job runs there or waits for an answer in a pane there.`
+      : `${inst.name} leaves plugins.yaml; ${ROLE_TITLES[role].toLowerCase()} change at the next restart.`;
   return (
     <div className="space-y-2 rounded-md border p-3">
       <div className="flex flex-wrap items-center gap-2">
+        {at >= 0 && <span className="num text-xs text-muted-foreground">level {at + 1}</span>}
         <span className="font-medium">{inst.name}</span>
         <span className="font-mono text-xs text-muted-foreground">{inst.plugin}</span>
         <StatusBadge status={st.label} tone={st.tone} />
@@ -123,11 +138,11 @@ export function InstanceForm({ role, inst }: { role: Role; inst: InstanceSpec })
         <div className="flex flex-wrap gap-2">
           {props.length > 0 && <Button size="sm" disabled={busy || !dirty} onClick={() => void save()}>Save {inst.name}</Button>}
           {dirty && <Button size="sm" variant="ghost" disabled={busy} onClick={() => setDraft({})}>Discard</Button>}
+          {at > 0 && <Button size="sm" variant="ghost" aria-label={`Move ${inst.name} earlier`} title="Earlier in the climb: a question meets it sooner" disabled={busy} onClick={() => void move(at - 1)}><ArrowUp /></Button>}
+          {at >= 0 && at < levels.length - 1 && <Button size="sm" variant="ghost" aria-label={`Move ${inst.name} later`} title="Later in the climb: a question meets it after the one before" disabled={busy} onClick={() => void move(at + 1)}><ArrowDown /></Button>}
           {isListRole(role) && (
             <Confirm title={`Remove ${inst.name}?`} action="Remove"
-              description={role === 'machine-source'
-                ? `${inst.name} leaves plugins.yaml and stops taking jobs at once. Refused while a job runs there or waits for an answer in a pane there.`
-                : `${inst.name} leaves plugins.yaml; ${ROLE_TITLES[role].toLowerCase()} change at the next restart.`}
+              description={removeWhat}
               onConfirm={() => void remove(role)}>
               <Button size="sm" variant="ghost" className="ml-auto text-bad" disabled={busy}>Remove</Button>
             </Confirm>
@@ -144,14 +159,13 @@ function Picker({ role, current, report }: { role: SelectableRole; current: stri
   const choices = report.plugins.filter((p) => p.role === role);
   const use = async () => {
     setBusy(true);
-    await sendPluginsEdit({ action: 'select', role, plugin: pick || null, version: report.config.version }, `${ROLE_TITLES[role]}: ${pick || 'none'}`);
+    await sendPluginsEdit({ action: 'select', role, plugin: pick, version: report.config.version }, `${ROLE_TITLES[role]}: ${pick}`);
     setBusy(false);
   };
   return (
     <div className="flex flex-wrap items-center gap-2 text-xs">
       <span className="text-muted-foreground">plugin</span>
       <select name={`plugin-${role}`} className={`${FIELD} w-auto max-w-full`} value={pick} disabled={busy} onChange={(e) => setPick(e.target.value)}>
-        {role === 'answerer' && <option value="">none</option>}
         {choices.map((p) => <option key={p.id} value={p.id} disabled={p.detection.status !== 'available'}>{p.id}{p.builtin ? '' : ' (custom)'} — {p.detection.status}</option>)}
       </select>
       <Button size="sm" variant="outline" disabled={busy || pick === current} onClick={() => void use()}>Use</Button>
@@ -159,7 +173,7 @@ function Picker({ role, current, report }: { role: SelectableRole; current: stri
   );
 }
 
-/** The plugin filling a one-instance role (the answerer: or none). Shown only with a UI session. */
+/** The plugin filling a one-instance role. Shown only with a UI session. */
 export function PluginSelector({ role }: { role: SelectableRole }) {
   const report = useHopper((s) => s.plugins);
   const authed = useCanAdmin();

@@ -1,15 +1,16 @@
-// The question gates' model (issue #18): the chain a question goes through — answerer, assessor,
-// risk rules, owner — as GET /api/plugins reports it, and the rules editor's draft, kept in
-// the browser so unsaved edits survive a reload, sent back with the version it was based on.
+// The question gates' model (issues #18, #134): the chain a question goes through — the escalation
+// levels lowest first, the risk rules, the owner — as GET /api/plugins reports it, and the rules
+// editor's draft, kept in the browser so unsaved edits survive a reload, sent back with the version
+// it was based on.
 import type { PluginsReport, RulesView } from '../../../src/domain/types.ts';
 import { instanceState } from './plugins.ts';
 
-export type GateStage = 'answerer' | 'assessor' | 'risk-rules' | 'human';
+export type GateStage = 'level' | 'risk-rules' | 'human';
 type Tone = 'ok' | 'warn' | 'bad' | 'muted';
 
 export interface Gate {
   stage: GateStage;
-  /** The instance name; null when no answerer is configured. */
+  /** The level's instance name; null for the gate that says there are no levels. */
   name: string | null;
   plugin?: string;
   label: string;
@@ -17,19 +18,16 @@ export interface Gate {
   reason?: string;
 }
 
-function liveGate(report: PluginsReport, stage: 'answerer' | 'assessor'): Gate {
-  const s = report[stage];
-  if (!s.instance) return { stage, name: null, label: 'none — straight to the owner', tone: 'muted' };
-  const st = instanceState(report, stage, s.instance.name);
-  const why = st.reason ?? (st.detection && st.detection.status !== 'available' ? `${st.detection.status}: ${st.detection.reason}` : undefined);
-  return { stage, name: s.instance.name, plugin: s.instance.plugin, label: st.label, tone: st.tone, ...(why ? { reason: why } : {}) };
-}
-
 /** The gates in the order a question meets them. */
 export function gateChain(report: PluginsReport, riskRuleCount: number): Gate[] {
+  const levels: Gate[] = report.escalationLevels.map(({ instance }) => {
+    const st = instanceState(report, 'escalation-level', instance.name);
+    const why = st.reason ?? (st.detection && st.detection.status !== 'available' ? `${st.detection.status}: ${st.detection.reason}` : undefined);
+    const label = st.label === 'cannot run' ? 'cannot run — escalates' : st.label;
+    return { stage: 'level', name: instance.name, plugin: instance.plugin, label, tone: st.tone, ...(why ? { reason: why } : {}) };
+  });
   return [
-    liveGate(report, 'answerer'),
-    liveGate(report, 'assessor'),
+    ...(levels.length ? levels : [{ stage: 'level' as const, name: null, label: 'none — straight to the owner', tone: 'muted' as const }]),
     { stage: 'risk-rules', name: `${riskRuleCount} rules`, label: 'code, cannot be weakened', tone: 'muted' },
     { stage: 'human', name: 'Owner', label: 'last stop', tone: 'muted' },
   ];
