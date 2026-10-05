@@ -96,7 +96,7 @@ describe('the Windows install (WSL)', () => {
   });
 
   it('signs the Windows browser in with a login link', () => {
-    expect(windows).toContain('job-hopper login-code --link http://127.0.0.1:4790');
+    expect(windows).toContain('hopper login-code --link http://127.0.0.1:4790');
   });
 });
 

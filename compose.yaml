@@ -1,13 +1,13 @@
-# job-hopper in containers (docs/deploy.md "In containers, with Podman", issues #119 and #125): its
+# hopper in containers (docs/deploy.md "In containers, with Podman", issues #119 and #125): its
 # Postgres and the hopper's public image, which runs jobs in its own herdr session inside its
 # container. No host install, nothing to build, nothing to set before the first start:
 #
 #   curl -fsSLO https://henningfutrell.github.io/hopper/compose.yaml
 #   podman compose up -d
-#   podman compose exec hopper job-hopper login-code --link http://127.0.0.1:4790
+#   podman compose exec hopper hopper login-code --link http://127.0.0.1:4790
 #
 # `docker compose` works the same. Settings and secrets, all optional, go in a .env file beside this
-# one: JOB_HOPPER_* settings, GH_TOKEN, CLAUDE_CODE_OAUTH_TOKEN, … JOB_HOPPER_PORT moves the UI port;
+# one: HOPPER_* settings, GH_TOKEN, CLAUDE_CODE_OAUTH_TOKEN, … HOPPER_PORT moves the UI port;
 # HOPPER_IMAGE runs another image (one built from a checkout: `podman build -t localhost/hopper .`,
 # HOPPER_IMAGE=localhost/hopper). Upgrade: `podman compose pull && podman compose up -d`.
 name: hopper
@@ -55,20 +55,20 @@ services:
       - path: .env
         required: false
     environment:
-      JOB_HOPPER_DATABASE_URL_FILE: /run/hopper-secrets/database_url
+      HOPPER_DATABASE_URL_FILE: /run/hopper-secrets/database_url
       # The same port inside and out: the Host the browser sends must name the daemon's port.
-      JOB_HOPPER_PORT: ${JOB_HOPPER_PORT:-4790}
+      HOPPER_PORT: ${HOPPER_PORT:-4790}
       # The published port reaches the daemon from the compose network, not its loopback: those
       # requests are LAN requests and read the API only with a UI session (docs/design.md
       # "Reaching the UI across the LAN"). `hopper` is the name other containers reach it by.
-      JOB_HOPPER_LAN_NAMES: ${JOB_HOPPER_LAN_NAMES:-hopper}
-      JOB_HOPPER_LAN_PEERS: ${JOB_HOPPER_LAN_PEERS:-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
+      HOPPER_LAN_NAMES: ${HOPPER_LAN_NAMES:-hopper}
+      HOPPER_LAN_PEERS: ${HOPPER_LAN_PEERS:-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
     volumes:
       - secrets:/run/hopper-secrets:ro
       # Its home: the herdr session, the claude and gh sign-ins, and what jobs check out.
       - home:/home/node
     ports:
-      - "127.0.0.1:${JOB_HOPPER_PORT:-4790}:${JOB_HOPPER_PORT:-4790}"
+      - "127.0.0.1:${HOPPER_PORT:-4790}:${HOPPER_PORT:-4790}"
 
 volumes:
   secrets:

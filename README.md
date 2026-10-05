@@ -167,13 +167,8 @@ hopper only. One App, one key, one hopper.
    ```
 
    GitHub shows a prefilled "Create GitHub App" page; click create. The script writes the key into
-<<<<<<< HEAD
-   `~/.config/job-hopper/daemon.env` as `GITHUB_APP_PRIVATE_KEY` and prints the App's `appId`, `slug`
-   and install link. In containers, add `--secrets-file .env` (in the folder of `compose.yaml`).
-=======
    `~/.config/hopper/daemon.env` as `GITHUB_APP_PRIVATE_KEY` and prints the App's `appId`, `slug`
-   and install link. For a container, add `--secrets-file deploy/hopper.env`.
->>>>>>> b83bcfa (feat: rename the product to hopper everywhere; migrate job-hopper installs (#112))
+   and install link. In containers, add `--secrets-file .env` (in the folder of `compose.yaml`).
 2. Install it: open the printed install link and pick the repositories it may read. Those are the
    only repositories it takes jobs from.
 3. `hopper config edit plugins.yaml`: set `appId` and `slug` on the `github-app` instance, with
