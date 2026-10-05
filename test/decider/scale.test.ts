@@ -79,6 +79,16 @@ describe('usage limits', () => {
     expect(plan(d, 'other').target).toBe(0);
   });
 
+  it('a machine with readings of its own (its own account) is not capped by the readings of every machine', () => {
+    const d = decide(inputs({
+      machines: [machine(), machine({ id: 'laptop', label: 'laptop' })],
+      usage: [reading(99), reading(10, 100, { machineId: 'laptop' }), reading(99, 100, { machineId: 'laptop', informational: true })],
+      waiting: [job('a')],
+    }), 'd1');
+    expect(plan(d).target).toBe(0);
+    expect(d.start[0]!.machineId).toBe('laptop');
+  });
+
   it('hard limit: cap 0, idle closed, busy drained, nothing starts, hold mentions usage', () => {
     const lanes = [lane(1), busy(2, 'r1'), busy(3, 'r2')];
     const running = [job('r1', { status: 'running' }), job('r2', { status: 'running' })];
