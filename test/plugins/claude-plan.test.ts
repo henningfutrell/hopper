@@ -206,7 +206,7 @@ describe('claude-plan on an attached machine (issue #139)', () => {
   let ssh: string;
   const sources: UsageSource[] = [];
   const saved = { plan: process.env.FAKE_PLAN_DIR, herdr: process.env.FAKE_HERDR_DIR };
-  const now = new Date('2026-10-03T17:00:00.000Z');
+  let now = new Date('2026-10-03T17:00:00.000Z');
   const LAPTOP: MachineSnapshot = { id: 'laptop', label: 'laptop', maxLanes: 1, online: true, executors: ['herdr-claude'], ssh: 'laptop' };
 
   beforeEach(() => {
@@ -216,6 +216,7 @@ describe('claude-plan on an attached machine (issue #139)', () => {
     mkdirSync(scratch, { recursive: true });
     process.env.FAKE_PLAN_DIR = control;
     process.env.FAKE_HERDR_DIR = ssh;
+    now = new Date('2026-10-03T17:00:00.000Z');
   });
   afterEach(() => {
     for (const s of sources.splice(0)) s.stop?.();
@@ -255,6 +256,18 @@ describe('claude-plan on an attached machine (issue #139)', () => {
       expect(existsSync(c.cwd)).toBe(false);
       expect(existsSync(join(homedir(), '.claude', 'projects', c.cwd.replace(/[^A-Za-z0-9]/g, '-')))).toBe(false);
     }
+  });
+
+  it('a machine not ready yet (offline at the first read, before its probe) is read again 30 s later, not an interval later', async () => {
+    const machines = [{ ...LAPTOP, online: false }];
+    const s = await create(machines);
+    await waitFor(() => (s.state!().problem === 'machine laptop is offline' ? true : undefined), { what: 'the first read' });
+    machines[0] = LAPTOP;
+    expect(await s.poll()).toEqual([]);
+    now = new Date(now.getTime() + 31_000);
+    await s.poll();
+    const readings = await waitFor(async () => { const r = await s.poll(); return r.length ? r : undefined; }, { what: 'readings after the retry' });
+    expect(readings[0]).toMatchObject({ machineId: 'laptop', window: 'session' });
   });
 
   it('a machine not configured, offline, or a client target: no readings, and the reason', async () => {
