@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- Turn a plugin that ships with the hopper on or off with one switch on the Plugins page. A new way to run jobs, such as Cursor's agent, works the moment you switch it on, with no restart.
 - Jobs can now run in Cursor's agent instead of Claude, on this computer or on another one you reach over ssh; that computer no longer needs herdr. What a newly added machine starts with — how many jobs it runs at once and what it runs — is now yours to set in Machines, under Defaults.
 - You can connect the hopper to GitHub from its own pages: press Log in to GitHub, then enter the code it shows on GitHub's site. Nothing to type in a terminal, which makes this the easy way when the hopper runs with Podman.
 - An attached machine can show the Claude usage and account it runs on: add a Claude usage reading for that machine, and its usage caps that machine's jobs, not every machine's.

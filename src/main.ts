@@ -4,7 +4,7 @@
 import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Clock, EscalationLevel, Executor, JobSource, PluginsView, Restarter, Router, SettableUsageSource, SourceRegistry, Store, UpdateBuilder, Updater } from './domain/ports.ts';
+import type { Clock, EscalationLevel, Executor, ExecutorRegistry, JobSource, PluginsView, Restarter, Router, SettableUsageSource, SourceRegistry, Store, UpdateBuilder, Updater } from './domain/ports.ts';
 import type { AttachedMachine, Question, SourceStatus } from './domain/types.ts';
 import { isRerunnable } from './domain/types.ts';
 import { daemonHelp, loadConfig, type Config } from './config.ts';
@@ -197,6 +197,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     },
     machineContext: { executors: () => executorNames(), target },
     intervalMs: seams.pluginsFileIntervalMs ?? PLUGINS_FILE_CHECK_MS,
+    executorInUse: (name) => store.jobs.list({ status: ['queued', 'held', 'claimed', 'running', 'waiting_answer'] }).filter((j) => j.spec.executor === name).map((j) => j.id),
     attached: { inUse: (name) => jobsOnMachine(name), sshAuth, ...(seams.resolveTarget ? { resolveTarget: seams.resolveTarget } : {}) },
   });
   // The plugin store (issue #75): its installs are kept in the database (issue #93) and unpacked into
@@ -214,11 +215,16 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     return machines;
   };
   pinned(host.targets());
-  const built = host.executors();
-  const executors = createExecutorRegistry(
-    [...built.flatMap((b): Executor[] => (b.executor ? [b.executor] : [])), ...(seams.executors ?? [])],
-    unavailableExecutors(built),
-  );
+  // Executors follow plugins.yaml live (issue #142): every lookup reads the host's instances now.
+  const currentExecutors = (): ExecutorRegistry => {
+    const built = host.executors();
+    return createExecutorRegistry([...built.flatMap((b): Executor[] => (b.executor ? [b.executor] : [])), ...(seams.executors ?? [])], unavailableExecutors(built));
+  };
+  const executors: ExecutorRegistry = {
+    get: (name) => currentExecutors().get(name),
+    names: () => currentExecutors().names(),
+    unavailable: () => currentExecutors().unavailable(),
+  };
   executorNames = () => executors.names();
   const plugins: PluginsView = seams.router ? seamPlugins(seams.router, host) : host;
   const router = seams.router ?? host.router;

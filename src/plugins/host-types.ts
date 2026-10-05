@@ -38,6 +38,8 @@ export interface PluginHostOptions {
   builtins?: readonly PluginDefinition[];
   /** How often plugins.yaml's version is checked; default 5000. */
   intervalMs?: number;
+  /** Jobs that need executor `name` (not ended): its removal is refused while any do (issue #142). Default: none. */
+  executorInUse?(name: string): string[];
   /** What attaching a machine, or removing one, needs (issues #18, #74). */
   attached?: AttachedEditOptions;
 }

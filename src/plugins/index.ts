@@ -1,9 +1,10 @@
 // The plugin host (design.md "Phase 5"): built-in + custom plugins, plugins.yaml watched by version,
 // detection of every plugin, the live roles (the router — from plugins.yaml, else chosen from what
 // is detected — the queue sorter and the escalation levels, each swapped between calls) and the restart roles
-// (executors, job sources, usage sources, notifiers): built once at start; a later change is
-// reported as pending. The machine sources — this machine and the attached ones, each an instance
-// (issue #74) — follow plugins.yaml live (issue #18). Notifiers are started with the event feed by the caller. A section plugins.yaml leaves out means the built-in instances.
+// (job sources, usage sources, notifiers): built once at start; a later change is reported as pending.
+// The machine sources — this machine and the attached ones, each an instance (issue #74) — follow
+// plugins.yaml live (issue #18), and so do the executors (issue #142: a shipped plugin is enabled in the
+// UI and runs at once). Notifiers are started with the event feed by the caller. A section plugins.yaml leaves out means the built-in instances.
 // UI edits (edit.ts, attached-edit.ts) replace plugins.yaml in the store and apply like any other change.
 import type { MachineSource, Notifier, UsageSource } from '../domain/ports.ts';
 import {
@@ -17,7 +18,7 @@ import { loadCustomPlugins, type LoadedPlugin, type LoadResult } from './loader.
 import { optionsJsonSchema, parseOptions } from './options.ts';
 import { applyEdit, configuredInstances, type Configured } from './edit.ts';
 import { BY_HAND, PLUGINS, loadPluginsFile } from './plugins-file.ts';
-import { buildExecutors, executorStatus, type BuiltExecutor } from './executor-slot.ts';
+import { applyExecutorSpecs, executorStatus, type BuiltExecutor } from './executor-slot.ts';
 import { builtinInstances } from './builtin-instances.ts';
 import { buildNotifiers, startNotifiers, stopNotifiers } from './notifier-slot.ts';
 import { applyMachineSpecs, buildJobSources, buildUsageSources, instanceStatus, type Built, type BuiltJobSource } from './source-slots.ts';
@@ -74,7 +75,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
     usageSources: builtin.usageSources,
     notifiers: builtin.notifiers,
   };
-  const executors: RestartSlot<BuiltExecutor> = {};
+  const executors: { built?: BuiltExecutor[] } = {};
   const jobSources: RestartSlot<BuiltJobSource> = {};
   const machines: { built?: Built<MachineSource>[] } = {};
   const usageSources: RestartSlot<Built<UsageSource>> = {};
@@ -167,7 +168,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
       const names = levels.map((l) => `${l.spec.name} (${l.plugin ?? 'unavailable'})`);
       o.logger.info(`hopper: escalation levels ${names.length ? names.join(' → ') : 'none'} → owner`);
     }
-    await restart(executors, 'executors', spec.executors, () => buildExecutors(spec.executors, deps));
+    await applyExecutorSpecs(executors, spec.executors, deps);
     await restart(jobSources, 'job sources', spec.jobSources, () => buildJobSources(spec.jobSources, deps));
     await applyMachineSpecs(machines, spec.machines, deps);
     await restart(usageSources, 'usage sources', spec.usageSources, () => buildUsageSources(spec.usageSources, deps));
@@ -279,7 +280,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
         // Act on what the document says now, not on a reload the watch timer has not run yet.
         if (sign() !== signature) await enqueue();
         const r = applyEdit(e, {
-          documents: o.documents, configured: instances(), find: (id) => entries.find((x) => x.definition.id === id), inUse: o.attached?.inUse ?? (() => []),
+          documents: o.documents, configured: instances(), find: (id) => entries.find((x) => x.definition.id === id), inUse: (role, name) => (role === 'machine-source' ? o.attached?.inUse?.(name) ?? [] : role === 'executor' ? o.executorInUse?.(name) ?? [] : []),
         });
         if (!r.ok) return r;
         if (r.changed) {
@@ -302,7 +303,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
         },
         queueSorter: started(sorter).status(),
         escalationLevels: started(levels).map(levelStatus),
-        executors: restartStatus(executors, executorStatus),
+        executors: { instances: (executors.built ?? []).map(executorStatus) },
         jobSources: restartStatus(jobSources, instanceStatus),
         machines: { instances: (machines.built ?? []).map(instanceStatus) },
         usageSources: restartStatus(usageSources, instanceStatus),

@@ -1,7 +1,8 @@
-// Phase 5 slice 3: the executor role in the plugin host. Executors are a restart role: built once
-// at start from plugins.yaml `executors:` (or the env-derived instances); an instance that cannot
-// run is reported with its reason so its jobs are held; a later edit of the section shows
-// `changed — restart pending` and changes nothing until restart.
+// Phase 5 slice 3: the executor role in the plugin host, built from plugins.yaml `executors:` (or the
+// env-derived instances); an instance that cannot run is reported with its reason so its jobs are
+// held. Since the owner decision on issue #142 (shipped plugins are enabled and disabled in the UI,
+// never by a restart) executors follow plugins.yaml live: an unchanged instance is kept, a new or
+// changed one built, a removed one dropped.
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Executor } from '../../src/domain/ports.ts';
@@ -9,7 +10,6 @@ import type { InstanceSpec } from '../../src/domain/types.ts';
 import { BUILTIN_PLUGINS } from '../../src/plugins/builtin.ts';
 import { createPluginHost, type PluginHost } from '../../src/plugins/index.ts';
 import type { DetectionKit, PluginDefinition } from '../../src/plugins/sdk.ts';
-import { waitFor } from '../support/wait.ts';
 import { PLUGINS } from '../../src/plugins/plugins-file.ts';
 import { useTempDocuments } from '../support/documents.ts';
 import { fakeKit, fixedClock, useTempDirs } from './support.ts';
@@ -67,7 +67,7 @@ describe('executor instances', () => {
       { instance: { name: 'test', plugin: 'test' }, detection: { status: 'available' }, active: 'test' },
       { instance: ENV_EXECUTORS[1], detection: { status: 'available', detail: expect.any(String) }, active: 'herdr-claude' },
     ]);
-    expect(r.executors.pending).toBeUndefined();
+    expect(r.executors).not.toHaveProperty('pending');
   });
 
   it('plugins.yaml `executors:` wins over the env', async () => {
@@ -119,38 +119,37 @@ describe('executor instances', () => {
   });
 });
 
-describe('executors are a restart role', () => {
-  it('an edit of `executors:` shows changed — restart pending and changes nothing; reverting clears it', async () => {
+describe('executors follow plugins.yaml live (issue #142)', () => {
+  it('an added instance runs at once, an unchanged one is kept as it is, a removed one is gone; nothing is pending', async () => {
     const { host, documents } = start({ file: 'version: 1\nexecutors: [ { name: test, plugin: test } ]\n' });
     await host.start();
+    const before = host.executors()[0]!.executor;
     documents.set(PLUGINS, 'version: 1\nexecutors: [ { name: test, plugin: test }, { name: t2, plugin: test } ]\n');
     await host.reload();
-    expect(host.report().executors.pending).toEqual({
-      status: 'changed — restart pending',
-      instances: [{ name: 'test', plugin: 'test', options: {} }, { name: 't2', plugin: 'test', options: {} }],
-    });
-    expect(names(host)).toEqual(['test']);
-    expect(host.report().executors.instances.map((i) => i.instance.name)).toEqual(['test']);
+    expect(names(host)).toEqual(['test', 't2']);
+    expect(host.executors()[0]!.executor).toBe(before);
+    expect(host.report().executors).not.toHaveProperty('pending');
+    expect(host.report().executors.instances.map((i) => i.instance.name)).toEqual(['test', 't2']);
 
-    documents.set(PLUGINS, 'version: 1\nexecutors: [ { name: test, plugin: test } ]\n');
-    await waitFor(() => host.report().executors.pending === undefined, { what: 'pending to clear' });
+    documents.set(PLUGINS, 'version: 1\nexecutors: [ { name: t2, plugin: test } ]\n');
+    await host.reload();
+    expect(names(host)).toEqual(['t2']);
   });
 
-  it('removing the section falls back to the env-derived instances: pending if they differ', async () => {
+  it('removing the section brings back the env-derived instances', async () => {
     const { host, documents } = start({ file: 'version: 1\nexecutors: [ { name: test, plugin: test } ]\n' });
     await host.start();
     documents.set(PLUGINS, 'version: 1\n');
     await host.reload();
-    expect(host.report().executors.pending).toEqual({ status: 'changed — restart pending', instances: ENV_EXECUTORS });
+    expect(host.executors().map((e) => e.spec)).toEqual(ENV_EXECUTORS);
   });
 
-  it('an invalid file keeps the running executors and shows no change', async () => {
+  it('an invalid file keeps the running executors', async () => {
     const { host, documents } = start({ file: 'version: 1\nexecutors: [ { name: test, plugin: test } ]\n' });
     await host.start();
     documents.set(PLUGINS, 'version: 1\nexecutors: []\n');
     await host.reload();
     expect(host.report().config.error).toMatch(/executors/);
-    expect(host.report().executors.pending).toBeUndefined();
     expect(names(host)).toEqual(['test']);
   });
 });
