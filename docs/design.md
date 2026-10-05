@@ -4089,6 +4089,31 @@ and a new start, cancel, a token variable, no gh) and `test/scripts/install-page
 `exec -it`; GitHub from the UI). Live: the published image's gh 2.23.0 with stdin closed printed the
 code and URL and waited.
 
+## Sources view: one GitHub section (issue #160, 2026-10-05)
+
+Owner request: the Sources view showed three overlapping GitHub cards — gh logged in, a github source
+that read `disabled` and `paused: GitHub App configured`, and the github-app source — with nothing
+saying how they relate or which one is in use.
+
+**Cause of the disabled/paused mix.** The sync loop reports a paused source with no active jobs as
+state `disabled` (`src/sources/sync.ts`), and the card showed state, mode and the raw pause reason side
+by side.
+
+**As built.** The Sources view has one **GitHub** section. `ui/src/model/sources.ts`
+(`sourcesView`, pure) takes the sources of kind `github` and `github-app` and gives each a use —
+`in-use`, `paused` (from `detail.paused`, checked before state) or `disabled` (state `disabled` with no
+pause: switched off in its options) — with the reason in plain words, and orders them in use, paused,
+disabled. One sentence above the cards says which connection reads issues and how the other relates
+(the GitHub App wins while it is set up; gh takes over otherwise). Each card names its connection
+("through gh, as the logged-in GitHub user" / "through the GitHub App, as its bot") and, when not in
+use, why. The gh login panel is titled **gh login** and sits last: it is not a source, it is who jobs
+push as, whichever connection reads issues. Other job sources render after the section, as before.
+No wire or daemon change.
+
+**Verification:** `test/ui/sources.test.ts` (the model: order, reasons, the paused-reported-disabled
+case, the summary sentences) and `test/ui/sources-view.test.ts` (the whole app in happy-dom against a
+fake daemon: the section's order, the reasons, no raw pause text, no "GitHub (gh)" title).
+
 ## Cursor executor and machine defaults (issue #142, 2026-10-05)
 
 Owner request: a machine (WSL) attached from the UI defaulted to herdr-claude, and some machine
