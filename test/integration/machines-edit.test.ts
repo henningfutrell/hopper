@@ -21,11 +21,13 @@ type PluginsReply = PluginsReport & { error: string };
 let t: TestApp | undefined;
 let cleanup: (() => void) | undefined;
 const resolved: string[] = [];
+const withHerdr: boolean[] = [];
 
 beforeEach(() => {
   mkdirSync(join(homedir(), '.ssh'), { recursive: true, mode: 0o700 });
   writeFileSync(join(homedir(), '.ssh', 'config'), 'Host laptop\n  HostName 192.0.2.10\nHost desk unreachable\nHost *.lan\n');
   resolved.length = 0;
+  withHerdr.length = 0;
 });
 
 afterEach(async () => {
@@ -54,10 +56,11 @@ async function start(file = FILE): Promise<{ a: TestApp; token: string }> {
     dbPath: db.dbPath,
     seams: {
       machineProbe: async () => ({ online: true }),
-      resolveTarget: async (ssh) => {
+      resolveTarget: async (ssh, o) => {
         resolved.push(ssh);
+        withHerdr.push(o.herdr);
         if (ssh === 'unreachable') throw new Error('ssh unreachable: No route to host');
-        return { herdrBin: `/home/user/.local/bin/herdr`, hostKey: TEST_HOST_KEY };
+        return o.herdr ? { herdrBin: `/home/user/.local/bin/herdr`, hostKey: TEST_HOST_KEY } : { hostKey: TEST_HOST_KEY };
       },
     },
   });
@@ -120,13 +123,24 @@ describe('POST /ui/api/machines — attach over ssh', () => {
   });
 
   it('into a document with no machines section: the built-in local is written first', async () => {
-    const { a, token } = await start('version: 1\nexecutors: [ { name: test, plugin: test } ]\n');
-    const r = await a.ui<Reply>('/ui/api/machines', { name: 'laptop', ssh: 'laptop', lanes: 1, executors: ['test'], version: (await config(a)).version }, { token });
+    const { a, token } = await start('version: 1\nexecutors: [ { name: test, plugin: test }, { name: herdr-claude, plugin: herdr-claude } ]\n');
+    const r = await a.ui<Reply>('/ui/api/machines', { name: 'laptop', ssh: 'laptop', lanes: 1, executors: ['herdr-claude'], version: (await config(a)).version }, { token });
     expect(r.status).toBe(200);
     expect(parse(read(a)).machines).toEqual([
       { name: 'local', plugin: 'local', options: { lanes: 4 } },
-      { name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop', lanes: 1, executors: ['test'], herdrBin: '/home/user/.local/bin/herdr', hostKey: TEST_HOST_KEY } },
+      { name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop', lanes: 1, executors: ['herdr-claude'], herdrBin: '/home/user/.local/bin/herdr', hostKey: TEST_HOST_KEY } },
     ]);
+  });
+
+  it('a machine none of whose executors uses herdr runs no herdr (issue #142): herdr is not looked for, only the host key and the connection', async () => {
+    const { a, token } = await start(FILE.replace('jobSources: []', '  - { name: cursor, plugin: cursor-agent }\njobSources: []'));
+    const r = await a.ui<Reply>('/ui/api/machines', { name: 'wsl', ssh: 'laptop', lanes: 1, executors: ['cursor', 'test'], version: (await config(a)).version }, { token });
+    expect(r.status).toBe(200);
+    expect(withHerdr).toEqual([false]);
+    expect(parse(read(a)).machines[2]).toEqual({
+      name: 'wsl', plugin: 'ssh', options: { ssh: 'laptop', lanes: 1, executors: ['cursor', 'test'], herdr: false, hostKey: TEST_HOST_KEY },
+    });
+    await waitFor(async () => (await a.api('GET', '/api/machines')).body.machines.find((m: { id: string; online: boolean }) => m.id === 'wsl' && m.online));
   });
 
   it('an ssh target not among the detected Host aliases: 400, never probed, nothing written', async () => {
@@ -149,10 +163,10 @@ describe('POST /ui/api/machines — attach over ssh', () => {
     expect((await a.ui('/ui/api/machines', { name: 'laptop', ssh: 'laptop', lanes: 1, hostKey: TEST_HOST_KEY, version }, { token })).status).toBe(400);
   });
 
-  it('herdr cannot be resolved there: 409 with the reason, nothing written', async () => {
+  it('the machine cannot be reached, or herdr not resolved there: 409 with the reason, nothing written', async () => {
     const { a, token } = await start();
     const before = read(a);
-    const r = await a.ui<Reply>('/ui/api/machines', { name: 'gone', ssh: 'unreachable', lanes: 1, executors: ['test'], version: (await config(a)).version }, { token });
+    const r = await a.ui<Reply>('/ui/api/machines', { name: 'gone', ssh: 'unreachable', lanes: 1, executors: ['herdr-claude'], version: (await config(a)).version }, { token });
     expect(r.status).toBe(409);
     expect(r.body.error).toMatch(/No route to host/);
     expect(read(a)).toBe(before);
@@ -181,6 +195,41 @@ describe('POST /ui/api/machines — attach over ssh', () => {
     expect(r.status).toBe(409);
     expect(r.body.error).toMatch(/changed since it was read/);
     expect(read(a)).toBe(`${FILE}# edited by hand\n`);
+  });
+});
+
+// Issue #142: what a new machine starts with — its lanes and the executors it runs — is plugins.yaml
+// `machineDefaults:`, edited in the Machines view; absent, one lane and herdr-claude.
+describe('machine defaults', () => {
+  it('absent: one lane and herdr-claude; the config reports them', async () => {
+    const { a } = await start();
+    expect((await config(a)).defaults).toEqual({ lanes: 1, executors: ['herdr-claude'] });
+  });
+
+  it('POST /ui/api/machines/defaults writes machineDefaults, keeps the comments, and a machine attached without lanes or executors takes them', async () => {
+    const { a, token } = await start();
+    const r = await a.ui<Reply>('/ui/api/machines/defaults', { lanes: 3, executors: ['test'], version: (await config(a)).version }, { token });
+    expect(r.status).toBe(200);
+    expect(r.body.defaults).toEqual({ lanes: 3, executors: ['test'] });
+    const text = read(a);
+    expect(text).toContain("# The owner's note: kept across UI edits");
+    expect(parse(text).machineDefaults).toEqual({ lanes: 3, executors: ['test'] });
+    const added = await a.ui<Reply>('/ui/api/machines', { name: 'laptop', ssh: 'laptop', version: r.body.version }, { token });
+    expect(added.status).toBe(200);
+    expect(parse(read(a)).machines[2].options).toEqual({ ssh: 'laptop', lanes: 3, executors: ['test'], herdr: false, hostKey: TEST_HOST_KEY });
+  });
+
+  it('refused: no UI session (403), lanes < 1 or an executor that is not configured (400), a stale version (409); nothing written', async () => {
+    const { a, token } = await start();
+    const before = read(a);
+    const version = (await config(a)).version;
+    expect((await a.ui('/ui/api/machines/defaults', { lanes: 2, executors: ['test'], version })).status).toBe(403);
+    expect((await a.ui('/ui/api/machines/defaults', { lanes: 0, executors: ['test'], version }, { token })).status).toBe(400);
+    const unknown = await a.ui<Reply>('/ui/api/machines/defaults', { lanes: 1, executors: ['nope'], version }, { token });
+    expect(unknown.status).toBe(400);
+    expect(unknown.body.error).toMatch(/nope/);
+    expect((await a.ui('/ui/api/machines/defaults', { lanes: 1, executors: ['test'], version: 'stale' }, { token })).status).toBe(409);
+    expect(read(a)).toBe(before);
   });
 });
 

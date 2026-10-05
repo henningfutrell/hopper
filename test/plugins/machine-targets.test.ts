@@ -26,7 +26,7 @@ describe('the attached-machine plugins', () => {
   });
 
   it('what reaches the machine is command-bearing; lanes, executors and label are not', () => {
-    expect(commandBearing('ssh')).toEqual(['herdrBin', 'hostKey', 'session', 'ssh']);
+    expect(commandBearing('ssh')).toEqual(['herdr', 'herdrBin', 'hostKey', 'session', 'ssh']);
     expect(commandBearing('docker')).toEqual(['docker']);
     expect(commandBearing('client')).toEqual(['tokenEnv']);
   });
@@ -35,11 +35,15 @@ describe('the attached-machine plugins', () => {
 describe('targetOf: an instance as the attached machine it names', () => {
   it('an ssh instance, with its defaults', () => {
     expect(targetOf({ name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop', lanes: 2 } })).toEqual({
-      name: 'laptop', ssh: 'laptop', lanes: 2, executors: ['herdr-claude'], session: 'hopper', herdrBin: 'herdr',
+      name: 'laptop', ssh: 'laptop', lanes: 2, executors: ['herdr-claude'], herdr: true, session: 'hopper', herdrBin: 'herdr',
     });
     expect(targetOf({ name: 'pi', plugin: 'ssh', options: { ssh: 'user@pi.example', label: 'Pi', lanes: 1, executors: ['herdr-claude', 'other'], session: 'jh', herdrBin: '/opt/herdr', hostKey: TEST_HOST_KEY } })).toEqual({
-      name: 'pi', ssh: 'user@pi.example', label: 'Pi', lanes: 1, executors: ['herdr-claude', 'other'], session: 'jh', herdrBin: '/opt/herdr', hostKey: TEST_HOST_KEY,
+      name: 'pi', ssh: 'user@pi.example', label: 'Pi', lanes: 1, executors: ['herdr-claude', 'other'], herdr: true, session: 'jh', herdrBin: '/opt/herdr', hostKey: TEST_HOST_KEY,
     });
+  });
+
+  it('an ssh instance that runs no herdr (issue #142): Cursor or commands over ssh', () => {
+    expect(targetOf({ name: 'wsl', plugin: 'ssh', options: { ssh: 'wsl', lanes: 1, executors: ['cursor'], herdr: false } })).toMatchObject({ name: 'wsl', ssh: 'wsl', executors: ['cursor'], herdr: false });
   });
 
   it('a docker instance: no herdr, the command executor by default', () => {

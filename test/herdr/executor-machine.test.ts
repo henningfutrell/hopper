@@ -32,6 +32,14 @@ describe('herdr-claude executor on an attached machine', () => {
     expect(herdr.calls).toEqual([]);
   });
 
+  it('an ssh target that runs no herdr: the job fails there and nothing runs on this machine (issue #142)', async () => {
+    const { herdr, executor } = setup({ turns: [DONE] });
+    const wsl = { id: 'wsl', label: 'wsl', maxLanes: 1, online: true, executors: ['herdr-claude'], ssh: 'wsl' };
+    const { ctx } = contextFor(jobWith({ prompt: 'go' }), 'wsl/lane-1', wsl);
+    expect(await executor.run(ctx)).toEqual({ kind: 'failed', error: 'herdr-claude does not run on wsl: it runs no herdr; give it another executor' });
+    expect(herdr.calls).toEqual([]);
+  });
+
   it('on a client target: that client\'s herdr, reached through its tunnel with its token; the pane state says so (issue #59)', async () => {
     const { herdr, remotes, reached, executor } = setup({}, { remote: { studio: { turns: [ASK, DONE] } } });
     const first = contextFor(jobWith({ prompt: 'go' }), 'studio/lane-1', STUDIO);
