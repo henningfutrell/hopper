@@ -70,11 +70,16 @@ describe('compose.yaml, downloaded alone and started with no settings', () => {
     expect(postgres.environment?.POSTGRES_PASSWORD_FILE).toMatch(/^\/run\/hopper-secrets\//);
     expect(hopper.environment?.JOB_HOPPER_DATABASE_URL).toBeUndefined();
     expect(hopper.environment?.JOB_HOPPER_DATABASE_URL_FILE).toMatch(/^\/run\/hopper-secrets\//);
-    for (const s of [hopper, postgres]) {
-      expect(s.depends_on?.secrets?.condition).toBe('service_completed_successfully');
-      expect(s.volumes).toContainEqual(expect.objectContaining({ source: 'secrets', target: '/run/hopper-secrets', read_only: true }));
-    }
+    // Postgres makes it, before the database starts; the hopper waits for a healthy Postgres and only reads.
+    expect(postgres.command?.join('\n')).toContain('/dev/urandom');
+    expect(postgres.command?.join('\n')).toMatch(/exec docker-entrypoint\.sh postgres/);
+    expect(postgres.volumes).toContainEqual(expect.objectContaining({ source: 'secrets', target: '/run/hopper-secrets' }));
+    expect(hopper.volumes).toContainEqual(expect.objectContaining({ source: 'secrets', target: '/run/hopper-secrets', read_only: true }));
     expect(hopper.depends_on?.postgres?.condition).toBe('service_healthy');
+  });
+
+  it('has no one-shot service: podman-compose cannot start a container whose dependency has exited (issue #125)', () => {
+    expect(Object.keys(r.services).sort()).toEqual(['hopper', 'postgres']);
   });
 
   it('keeps Postgres off every host port', () => {
