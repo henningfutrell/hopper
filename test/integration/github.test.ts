@@ -96,16 +96,45 @@ describe('GitHub issue → job → issue', () => {
     expect(bodies(gh, issue.number)).toEqual([]);
   });
 
-  it('a finished job closes its open issue as completed, without a comment', async () => {
+  it('a job that ends done with nothing shipped ends failed: no hopper:done, the issue stays open (issue #171)', async () => {
     const gh = createFakeGitHub();
     const a = await boot(gh);
     const issue = gh.createIssue({ repo: REPO, body: body({ op: 'echo' }), labels: ['hopper'] });
     await a.sync();
     const job = (await jobFor(a, issue.url))!;
-    await a.waitForStatus(job.id, 'finished');
-    await waitFor(() => gh.issue(REPO, issue.number).state === 'closed', { what: 'issue closed' });
-    expect(gh.issue(REPO, issue.number).labels).toEqual(['hopper', 'hopper:done']);
-    expect(bodies(gh, issue.number)).toEqual([]);
+    const failed = await a.waitForStatus(job.id, 'failed');
+    expect(failed.error).toBe(`nothing shipped: no merged pull request opened by this job closes ${issue.url}`);
+    await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:failed'), { what: 'hopper:failed' });
+    expect(gh.issue(REPO, issue.number).labels).not.toContain('hopper:done');
+    expect(gh.issue(REPO, issue.number).state).toBe('open');
+    expect(gh.calls.map((c) => c.method)).not.toContain('closeAsCompleted');
+    expect(await a.events('types=job.finished')).toEqual([]);
+  });
+
+  it('a pull request merged before the job began is not the job shipping: it ends failed (issue #171)', async () => {
+    const gh = createFakeGitHub();
+    const a = await boot(gh);
+    const issue = gh.createIssue({ repo: REPO, body: body({ op: 'echo' }), labels: ['hopper'] });
+    a.scripted.ships((j) => gh.closeByPullRequest(REPO, j.source!.number!, { createdAt: '2020-01-01T00:00:00.000Z', mergedAt: '2020-01-02T00:00:00.000Z' }));
+    await a.sync();
+    const job = (await jobFor(a, issue.url))!;
+    await a.waitForStatus(job.id, 'failed');
+    await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:failed'), { what: 'hopper:failed' });
+    expect(gh.issue(REPO, issue.number).labels).not.toContain('hopper:done');
+  });
+
+  it('when GitHub cannot say whether the work shipped, the job is not recorded done (issue #171)', async () => {
+    const gh = createFakeGitHub();
+    const a = await boot(gh);
+    const issue = gh.createIssue({ repo: REPO, body: body({ op: 'sleep', ms: 300 }), labels: ['hopper'] });
+    await a.sync();
+    const job = (await jobFor(a, issue.url))!;
+    await a.waitForStatus(job.id, 'running');
+    gh.failNext('closingPullRequest', new GitHubApiError('gh: timeout', false));
+    const failed = await a.waitForStatus(job.id, 'failed');
+    expect(failed.error).toBe('could not confirm the work shipped: gh: timeout');
+    await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:failed'), { what: 'hopper:failed' });
+    expect(gh.issue(REPO, issue.number).state).toBe('open');
   });
 
   it('a failed job labels the issue hopper:failed, leaves no comment, and logs one line', async () => {
