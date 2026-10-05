@@ -1,22 +1,19 @@
 // plugins.yaml: which instance fills which role (design.md "Configuration — plugins.yaml"), a config
 // document in the store (design.md "Config documents"). Read: router, queueSorter, answerer,
-// assessor, executors, jobSources, machines, usageSources, notifiers, attachedMachines, routing. A UI
-// edit (edit.ts, attached-edit.ts) replaces it against its version.
+// assessor, executors, jobSources, machines (this machine and the attached ones, issue #74),
+// usageSources, notifiers, routing. A UI edit (edit.ts, attached-edit.ts) replaces it against its version.
 import { parse } from 'yaml';
 import { z } from 'zod';
-import type { AttachedMachine, InstanceSpec, RoutingRule } from '../domain/types.ts';
+import type { InstanceSpec, RoutingRule } from '../domain/types.ts';
 import { ROUTING_RULES } from '../routing/index.ts';
-import { HOST_KEY } from '../executors/ssh.ts';
-
-const CLIENT_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 
 export type PluginsFileResult =
   | { missing: true }
   /** `answerer: null` = no answerer configured; absent = derive it. */
   | {
     router?: InstanceSpec; queueSorter?: InstanceSpec; answerer?: InstanceSpec | null; assessor?: InstanceSpec; executors?: InstanceSpec[];
-    jobSources?: InstanceSpec[]; machines?: InstanceSpec; usageSources?: InstanceSpec[]; notifiers?: InstanceSpec[];
-    attachedMachines?: AttachedMachine[]; routing?: RoutingRule[]; warnings: string[];
+    jobSources?: InstanceSpec[]; machines?: InstanceSpec[]; usageSources?: InstanceSpec[]; notifiers?: InstanceSpec[];
+    routing?: RoutingRule[]; warnings: string[];
   }
   | { error: string };
 
@@ -40,42 +37,6 @@ const uniqueList = (section: string, keyedBy: string) => z.array(instance).super
   }
 });
 
-/**
- * One attached machine: a target reached over `ssh` (with its herdr) or a container target reached
- * over `docker` exec (issue #58: commands only, no herdr). Exactly one of the two.
- */
-const attachedMachine = z.strictObject({
-  name: z.string().min(1).refine((n) => n !== 'local', 'local is this machine; name an attached machine something else'),
-  label: z.string().min(1).optional(),
-  ssh: z.string().min(1).refine((s) => !s.startsWith('-'), 'ssh must be a destination, not an option').optional(),
-  docker: z.string().min(1).refine((s) => !s.startsWith('-'), 'docker must be a container, not an option').optional(),
-  lanes: z.number().int().min(1, 'lanes must be at least 1'),
-  executors: z.array(z.string().min(1)).optional(),
-  session: z.string().min(1).refine((s) => s !== 'default', 'must not be the default herdr session').optional(),
-  herdrBin: z.string().min(1).optional(),
-  client: z.strictObject({ tokenEnv: z.string().regex(/^[A-Z_][A-Z0-9_]*$/, 'tokenEnv must name an environment variable (A-Z, 0-9, _)') }).optional(),
-  hostKey: z.string().regex(HOST_KEY, 'hostKey must be a public host key, `<type> <base64>`, as ssh_host_*_key.pub holds it (comment dropped)').optional(),
-}).superRefine((m, ctx) => {
-  const reached = [m.ssh, m.docker, m.client].filter((x) => x !== undefined).length;
-  if (reached === 0) ctx.addIssue({ code: 'custom', message: 'name how it is reached: ssh, docker or client' });
-  if (reached > 1) ctx.addIssue({ code: 'custom', message: 'name exactly one of ssh, docker or client' });
-  if (m.client !== undefined && (m.session !== undefined || m.herdrBin !== undefined || m.hostKey !== undefined)) {
-    ctx.addIssue({ code: 'custom', message: 'session, herdrBin and hostKey are not for a client target: a client target names its herdr itself, and its tunnel pins the keys' });
-  }
-  if (m.client !== undefined && !CLIENT_NAME.test(m.name)) ctx.addIssue({ code: 'custom', message: 'a client target name is letters, digits, _, . and - (it names its tunnel\'s socket)' });
-  if (m.docker !== undefined && (m.session !== undefined || m.herdrBin !== undefined || m.hostKey !== undefined)) {
-    ctx.addIssue({ code: 'custom', message: 'session, herdrBin and hostKey are for ssh targets; a container target has no herdr and no sshd' });
-  }
-}).transform((m): AttachedMachine => {
-  const base = { name: m.name, ...(m.label !== undefined ? { label: m.label } : {}), lanes: m.lanes };
-  if (m.docker !== undefined) return { ...base, docker: m.docker, executors: m.executors ?? ['command'] };
-  if (m.client !== undefined) return { ...base, client: { tokenEnv: m.client.tokenEnv }, executors: m.executors ?? ['herdr-claude'] };
-  return {
-    ...base, ssh: m.ssh!, executors: m.executors ?? ['herdr-claude'], session: m.session ?? 'hopper', herdrBin: m.herdrBin ?? 'herdr',
-    ...(m.hostKey !== undefined ? { hostKey: m.hostKey } : {}),
-  };
-});
-
 const FILE = z.strictObject({
   version: z.literal(1),
   router: instance.optional(),
@@ -86,25 +47,15 @@ const FILE = z.strictObject({
   executors: uniqueList('executors', 'jobs name their executor').min(1, 'name at least one executor').optional(),
   // 0..n each; a job source's name keys its jobs and sync state.
   jobSources: uniqueList('jobSources', 'jobs and sync state are keyed by it').optional(),
-  machines: instance.optional(),
+  // 0..n: this machine and the attached ones (issue #74); lanes and jobs are stored under a machine's name.
+  machines: uniqueList('machines', 'lanes and jobs are stored under it').optional(),
   usageSources: uniqueList('usageSources', 'readings name their source').optional(),
   notifiers: uniqueList('notifiers', 'logs and /api/plugins name a notifier by it').optional(),
-  // Other machines that run jobs, over ssh or docker exec, beside the machine source's machine; ids unique.
-  attachedMachines: z.array(attachedMachine).superRefine((list, ctx) => {
-    const seen = new Set<string>();
-    for (const m of list) {
-      if (seen.has(m.name)) ctx.addIssue({ code: 'custom', message: `machine ${m.name} named twice` });
-      seen.add(m.name);
-    }
-  }).optional(),
   // Routing rules, in order (issue #18); absent: none.
   routing: ROUTING_RULES.optional(),
 }).refine((f) => !f.answerer || !f.assessor || f.answerer.name !== f.assessor.name, {
   message: 'answerer and assessor have the same name; a question stage must say which one holds it',
   path: ['assessor', 'name'],
-}).refine((f) => !f.machines || !f.attachedMachines?.some((m) => m.name === f.machines!.name), {
-  message: 'an attached machine has the machine source\'s name; machine ids are unique',
-  path: ['attachedMachines'],
 });
 
 /** Why a parsed plugins.yaml is refused, or undefined when it is valid. */
@@ -126,7 +77,7 @@ export function loadPluginsFile(text: string | undefined): PluginsFileResult {
   const parsed = FILE.safeParse(raw);
   if (!parsed.success) return { error: `${PLUGINS}: ${pluginsFileProblem(raw)}` };
   const warnings: string[] = [];
-  const { router, queueSorter, answerer, assessor, executors, jobSources, machines, usageSources, notifiers, attachedMachines, routing } = parsed.data;
+  const { router, queueSorter, answerer, assessor, executors, jobSources, machines, usageSources, notifiers, routing } = parsed.data;
   return {
     ...(router ? { router } : {}),
     ...(queueSorter ? { queueSorter } : {}),
@@ -137,7 +88,6 @@ export function loadPluginsFile(text: string | undefined): PluginsFileResult {
     ...(machines ? { machines } : {}),
     ...(usageSources ? { usageSources } : {}),
     ...(notifiers ? { notifiers } : {}),
-    ...(attachedMachines ? { attachedMachines } : {}),
     ...(routing ? { routing } : {}),
     warnings,
   };

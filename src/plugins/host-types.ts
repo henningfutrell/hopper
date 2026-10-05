@@ -8,7 +8,7 @@ import type {
 import type { AttachedEditOptions } from './attached-slot.ts';
 import type { BuiltExecutor } from './executor-slot.ts';
 import type { BuiltJobSource } from './source-slots.ts';
-import type { DetectionKit, JobSourceContext, PluginDefinition, PluginLogger, QueueSorter, Router } from './sdk.ts';
+import type { DetectionKit, JobSourceContext, MachineSourceContext, PluginDefinition, PluginLogger, QueueSorter, Router } from './sdk.ts';
 
 export interface PluginHostOptions {
   /** Custom plugins, one directory each; undefined: none (design.md "Where plugins live"). */
@@ -25,8 +25,11 @@ export interface PluginHostOptions {
   defaultExecutors?: InstanceSpec[];
   /** What job sources are told. Default (tests): no key known, nothing re-runnable. */
   jobSourceContext?: JobSourceContext;
-  /** What the machine source is told. Default: the runnable executors this host built. */
-  machineContext?: { executors(): string[] };
+  /**
+   * What the machine sources are told. Default executors: the runnable ones this host built. Default
+   * target: the attached machine, never probed, so offline.
+   */
+  machineContext?: Partial<MachineSourceContext>;
   dataDir: string;
   clock: Clock;
   logger: PluginLogger;
@@ -37,7 +40,7 @@ export interface PluginHostOptions {
   builtins?: readonly PluginDefinition[];
   /** How often plugins.yaml's version is checked; default 5000. */
   intervalMs?: number;
-  /** What a machine edit needs (issue #18). */
+  /** What attaching a machine, or removing one, needs (issues #18, #74). */
   attached?: AttachedEditOptions;
 }
 
@@ -59,7 +62,7 @@ export interface PluginHost {
   executors(): BuiltExecutor[];
   /** The job source instances built at start, running, disabled or not. Fixed until restart. Valid after start(). */
   jobSources(): BuiltJobSource[];
-  /** The machine source (no machine at all when it cannot run); follows an options change. Valid after start(). */
+  /** Every machine of every machine source, in plugins.yaml order; follows plugins.yaml live. One that cannot run lists none. Valid after start(). */
   machines(): MachineSource;
   /** The usage sources built at start that run. Valid after start(). */
   usageSources(): UsageSource[];
@@ -69,16 +72,16 @@ export interface PluginHost {
   startNotifiers(events: NotifierEvents): void;
   /** Stop every started notifier, awaiting in-flight work. Once; never throws. */
   stopNotifiers(): Promise<void>;
-  /** plugins.yaml `attachedMachines:` now: the last good configuration (design.md "Attached machines", issue #18). */
-  attachedMachines(): AttachedMachine[];
+  /** The attached machines the machine-source instances name now, those whose options are valid (design.md "Attached machines", issue #74). */
+  targets(): AttachedMachine[];
   /** GET /api/machines/config. Valid after start(). */
   machinesConfig(): MachinesConfig;
-  /** A UI edit of `attachedMachines:`; resolves once plugins.yaml is reloaded. */
+  /** POST /ui/api/machines: attach an ssh target; resolves once plugins.yaml is reloaded. */
   editMachines(e: MachineEdit): Promise<MachineEditOutcome>;
   report(): PluginsReport;
   /** plugins.yaml `routing:` now (none when absent; the last good list on an invalid file). */
   routingRules(): RoutingRule[];
-  /** The machine ids running now (the machine source's, when it runs, and the attached machines): what intake routes to. */
+  /** The machine ids running now (every machine-source instance that runs): what intake routes to. */
   machineIds(): string[];
   /** GET /api/routing. */
   routing(): RoutingReport;

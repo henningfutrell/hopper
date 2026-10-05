@@ -14,7 +14,7 @@ export interface PluginsDoc {
   assessor: InstanceSpec;
   executors: InstanceSpec[];
   jobSources: InstanceSpec[];
-  machines: InstanceSpec;
+  machines: InstanceSpec[];
   usageSources: InstanceSpec[];
   notifiers: InstanceSpec[];
 }
@@ -39,7 +39,8 @@ export function builtinInstances(answerTimeoutMs = 180_000): PluginsDoc {
       { name: 'github', plugin: 'github-gh', options: { enabled: 'auto' } },
       { name: 'github-app', plugin: 'github-app' },
     ],
-    machines: { name: 'local', plugin: 'local', options: { lanes: 4 } },
+    // This machine; attached machines are added beside it (issue #74).
+    machines: [{ name: 'local', plugin: 'local', options: { lanes: 4 } }],
     // Claude subscription usage throttles lanes (issue #18); unavailable where claude is not installed.
     usageSources: [{ name: 'claude', plugin: 'claude-plan', options: { bin: 'claude', intervalSeconds: 600 } }],
     notifiers: [{ name: 'grok-bot', plugin: 'grokbot-routine' }],

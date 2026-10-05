@@ -1,9 +1,10 @@
-// Attached machines and editing them from the UI (design.md "Attached machines", "Machines from
-// the UI"; docs/glossary.md "Attached machine", "Machine edit", "Detected ssh target").
+// Attached machines and attaching one from the UI (design.md "Attached machines", "Machines from
+// the UI"; docs/glossary.md "Attached machine", "Machine edit", "Detected ssh target"). An attached
+// machine is a machine-source instance of the `ssh`, `docker` or `client` plugin (issue #74).
 import type { InstanceSpec } from './plugins.ts';
 
 /**
- * An attached machine as plugins.yaml `attachedMachines:` names it (design.md "Attached machines",
+ * An attached machine as its machine-source instance names it (design.md "Attached machines",
  * "Container targets", "Client targets"): a target reached over ssh, with its own herdr; a container
  * reached over docker exec, which runs commands only; or a client target, a machine running the
  * hopper client that connects back over a reverse tunnel.
@@ -49,16 +50,13 @@ export interface ClientMachine extends AttachedBase {
 }
 
 /**
- * POST /ui/api/machines (design.md "Machines from the UI", issue #18): one attached machine's
- * entry in plugins.yaml. `ssh` must be a detected ssh target; `herdrBin` is resolved over ssh by
- * the daemon and `session` stays the default — neither is ever sent. Edit never changes `ssh`.
- * `version` is `MachinesConfig.version`.
+ * POST /ui/api/machines (design.md "Machines from the UI", issues #18, #74): attach an ssh target as
+ * a new `ssh` instance in plugins.yaml `machines:`. `ssh` must be a detected ssh target; `herdrBin`
+ * and `hostKey` are resolved by the daemon and `session` stays the default — none is ever sent. A
+ * machine is edited and removed like any plugin instance (POST /ui/api/plugins). `version` is
+ * `MachinesConfig.version`.
  */
-export type MachineEdit =
-  | { action: 'add'; name: string; ssh: string; lanes: number; executors?: string[]; label?: string; version: string }
-  /** `label: null` drops the label (it falls back to the name). */
-  | { action: 'edit'; name: string; lanes?: number; executors?: string[]; label?: string | null; version: string }
-  | { action: 'remove'; name: string; version: string };
+export interface MachineEdit { name: string; ssh: string; lanes: number; executors?: string[]; label?: string; version: string }
 
 /** GET /api/machines/config: what the Machines view edits. */
 export interface MachinesConfig {
@@ -68,10 +66,8 @@ export interface MachinesConfig {
   version: string;
   /** plugins.yaml could not be used; the last good configuration runs. */
   error?: string;
-  /** The machine source's instance: this machine; its `lanes` option is the lane count. */
-  machine: InstanceSpec;
-  /** plugins.yaml `attachedMachines:` as it applies now. */
-  attached: AttachedMachine[];
+  /** Every machine-source instance as it applies now: this machine (`local`) and each attached one. */
+  machines: InstanceSpec[];
   /** The configured executor instances: what an attached machine may run. */
   executors: string[];
   /** The detected ssh targets: the Host aliases of ~/.ssh/config; `notes` say what could not be read. */

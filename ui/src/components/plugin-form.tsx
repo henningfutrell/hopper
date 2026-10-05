@@ -125,7 +125,9 @@ export function InstanceForm({ role, inst }: { role: Role; inst: InstanceSpec })
           {dirty && <Button size="sm" variant="ghost" disabled={busy} onClick={() => setDraft({})}>Discard</Button>}
           {isListRole(role) && (
             <Confirm title={`Remove ${inst.name}?`} action="Remove"
-              description={`${inst.name} leaves plugins.yaml; ${ROLE_TITLES[role].toLowerCase()} change at the next restart.`}
+              description={role === 'machine-source'
+                ? `${inst.name} leaves plugins.yaml and stops taking jobs at once. Refused while a job runs there or waits for an answer in a pane there.`
+                : `${inst.name} leaves plugins.yaml; ${ROLE_TITLES[role].toLowerCase()} change at the next restart.`}
               onConfirm={() => void remove(role)}>
               <Button size="sm" variant="ghost" className="ml-auto text-bad" disabled={busy}>Remove</Button>
             </Confirm>

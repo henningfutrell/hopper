@@ -1,12 +1,12 @@
-// The Machines view's forms (design.md "Machines from the UI", issue #18): attach a machine, edit an
-// attached one, edit this machine's lane count. The ssh target is picked from ~/.ssh/config's Host
+// The Machines view's forms (design.md "Machines from the UI", issues #18, #74): attach a machine over
+// ssh, edit an attached one's lanes, executors and label, edit a local one's lane count. The ssh target is picked from ~/.ssh/config's Host
 // aliases, never typed; herdr's path is resolved by the daemon over ssh. Phone width first: every
 // field stacks, every control is at least 36 px tall.
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { addBody, addProblem, editBody, type MachineDraft, type MachineEditDraft } from '@/model/machines';
-import type { AttachedMachine, MachineEdit, MachinesConfig } from '@/model/wire';
+import { addBody, addProblem, editBody, type MachineDraft, type MachineEditDraft, type MachineKind } from '@/model/machines';
+import type { MachineEdit, MachinesConfig, PluginsEdit } from '@/model/wire';
 
 const SELECT = 'h-9 w-full rounded-lg border border-input bg-transparent px-2.5 text-base md:text-sm dark:bg-input/30';
 
@@ -83,32 +83,34 @@ export function AddMachineForm({ config, busy, send, onDone }: {
   );
 }
 
-/** Edit an attached machine: lanes, executors, label. ssh, herdrBin and session are plugins.yaml only. */
-export function EditMachineForm({ entry, config, busy, send, onDone }: {
-  entry: AttachedMachine; config: MachinesConfig; busy: boolean; send: (e: MachineEdit, done: string) => Promise<boolean>; onDone: () => void;
+/** Edit an attached machine: lanes, executors, label. How it is reached (ssh, herdr, container, token) is plugins.yaml only. */
+export function EditMachineForm({ machine, config, busy, send, onDone }: {
+  machine: Extract<MachineKind, { kind: 'attached' }>; config: MachinesConfig; busy: boolean;
+  send: (e: Extract<PluginsEdit, { action: 'options' }>, done: string) => Promise<boolean>; onDone: () => void;
 }) {
-  const [d, setD] = useState<MachineEditDraft>({ lanes: String(entry.lanes), executors: [...entry.executors], label: entry.label ?? '' });
+  const name = machine.instance.name;
+  const [d, setD] = useState<MachineEditDraft>({ lanes: String(machine.lanes), executors: [...machine.executors], label: machine.label ?? '' });
   const set = (over: Partial<MachineEditDraft>) => setD((x) => ({ ...x, ...over }));
-  const body = editBody(entry, d, config.version);
+  const body = editBody(machine, d, config.version);
   const lanesOk = /^\d+$/.test(d.lanes.trim()) && Number(d.lanes) >= 1;
-  const all = [...config.executors, ...entry.executors.filter((x) => !config.executors.includes(x))];
-  const submit = async () => { if (body && await send(body, `Saved ${entry.name}`)) onDone(); };
+  const all = [...config.executors, ...machine.executors.filter((x) => !config.executors.includes(x))];
+  const submit = async () => { if (body && await send(body, `Saved ${name}`)) onDone(); };
   return (
     <form className="grid gap-3 rounded-md border p-3" onSubmit={(e) => { e.preventDefault(); void submit(); }}>
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="lanes"><Input className="h-9" type="number" inputMode="numeric" min={1} step={1} value={d.lanes} disabled={busy} onChange={(e) => set({ lanes: e.target.value })} /></Field>
-        <Field label="label" hint="empty: the name"><Input className="h-9" value={d.label} disabled={busy} placeholder={entry.name} onChange={(e) => set({ label: e.target.value })} /></Field>
+        <Field label="label" hint="empty: the name"><Input className="h-9" value={d.label} disabled={busy} placeholder={name} onChange={(e) => set({ label: e.target.value })} /></Field>
       </div>
       <ExecutorChecks all={all} picked={d.executors} disabled={busy} onChange={(executors) => set({ executors })} />
       <div className="flex flex-wrap gap-2">
-        <Button type="submit" size="lg" disabled={busy || !body || !lanesOk}>Save {entry.name}</Button>
+        <Button type="submit" size="lg" disabled={busy || !body || !lanesOk}>Save {name}</Button>
         <Button type="button" size="lg" variant="ghost" disabled={busy} onClick={onDone}>Cancel</Button>
       </div>
     </form>
   );
 }
 
-/** This machine's lane count: the machine source instance's `lanes` option (POST /ui/api/plugins). */
+/** A local machine's lane count: its instance's `lanes` option (POST /ui/api/plugins). */
 export function LocalLanesForm({ lanes, busy, save, onDone }: { lanes: number; busy: boolean; save: (lanes: number) => Promise<boolean>; onDone: () => void }) {
   const [v, setV] = useState(String(lanes));
   const ok = /^\d+$/.test(v.trim());

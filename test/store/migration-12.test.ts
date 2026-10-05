@@ -46,10 +46,11 @@ function migrate(text: string | undefined): string | undefined {
 describe('migration 12 (the herdr session renamed)', () => {
   it('names job-hopper on ssh machines that named no session, and drops it from herdr-claude', () => {
     const text = migrate(BEFORE)!;
-    const doc = parse(text) as { executors: { options?: Record<string, unknown> }[]; attachedMachines: Record<string, unknown>[] };
+    const doc = parse(text) as { executors: { options?: Record<string, unknown> }[]; machines: { name: string; options: Record<string, unknown> }[] };
     expect(doc.executors[0]).toEqual({ name: 'herdr-claude', plugin: 'herdr-claude' });
     expect(doc.executors[1]!.options).toEqual({ session: 'mine', trustWorkdir: true });
-    expect(doc.attachedMachines.map((m) => m.session)).toEqual(['job-hopper', 'own-session', undefined]);
+    // Migration 15 runs after: each attached machine is a machines: instance, its fields its options (issue #74).
+    expect(doc.machines.slice(1).map((m) => [m.name, m.options.session])).toEqual([['box', 'job-hopper'], ['pinned', 'own-session'], ['laptop', undefined]]);
     expect(text.startsWith('# my plugins\n')).toBe(true);
   });
 

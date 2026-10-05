@@ -110,6 +110,6 @@ Add to daemon.env on this machine (then restart the daemon), so it holds the cli
 ${TOKEN_ENV}_FILE=$TOKENS/$NAME.token
 
 Add to plugins.yaml (hopper config edit plugins.yaml):
-attachedMachines:
-  - { name: $NAME, client: { tokenEnv: $TOKEN_ENV }, lanes: $LANES }
+machines:
+  - { name: $NAME, plugin: client, options: { tokenEnv: $TOKEN_ENV, lanes: $LANES } }
 EOF2

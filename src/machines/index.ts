@@ -1,5 +1,6 @@
 // MachineSource adapters: `local`, this machine (reached through the `local` machine-source plugin),
-// the attached machines (ssh targets and container targets), and the ssh targets ~/.ssh/config names.
+// the attached machines (ssh, container and client targets, reached through the target pool), and the
+// ssh targets ~/.ssh/config names.
 import { hostname } from 'node:os';
 import type { MachineSource } from '../domain/ports.ts';
 
@@ -23,11 +24,6 @@ export function createLocalMachineSource(o: {
   };
 }
 
-export { createAttachedMachineSource, createAttachedMachines, probeClient, probeContainer, knownHostKey, probeHerdrOverSsh, resolveSshTarget, type MachineProbe } from './attached.ts';
+export { createAttachedMachineSource, createTargetPool, probeClient, probeContainer, knownHostKey, probeHerdrOverSsh, resolveSshTarget, type MachineProbe } from './attached.ts';
 export { createClientReleaseKeeper, type ClientReleaseKeeper } from './client-release.ts';
 export { readSshTargets, type SshTargets } from './ssh-config.ts';
-
-/** Every machine of every source, in source order: this machine first, then the attached ones. */
-export function combineMachineSources(sources: MachineSource[]): MachineSource {
-  return { list: async () => (await Promise.all(sources.map((s) => s.list()))).flat() };
-}

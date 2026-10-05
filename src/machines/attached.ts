@@ -2,8 +2,8 @@
 // (design.md "Attached machines"), or a container target reached over docker exec that only runs
 // commands (issue #58, "Container targets"). Online while that session answers, or that container runs. The probe runs in the
 // background, at most once per `probeEveryMs`; list() never waits for it, so a machine that is off
-// or asleep never stalls a Decision. Offline until the first probe says otherwise. The set follows
-// plugins.yaml without a restart (issue #18): createAttachedMachines reads it on every list().
+// or asleep never stalls a Decision. Offline until the first probe says otherwise. Each is a
+// machine-source instance (issue #74), reached through createTargetPool.
 import { execFile } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -121,39 +121,25 @@ export function probeContainer(o: { container: string; dockerHost: () => string;
 }
 
 /**
- * Every attached machine plugins.yaml names now, in its order. A machine keeps what its probe knows
- * while only its lanes, executors or label change; another ssh target, herdr binary, session or container
- * is another machine (probed afresh). A removed machine is dropped and logged.
+ * How the hopper reaches its attached machines (issue #74: the machine-source context's `target`): one
+ * source per machine. A machine keeps its source — and what its probe knows — while only its lanes,
+ * executors or label change; another ssh target, herdr binary, session, container or token variable is
+ * another machine, probed afresh.
  */
-export function createAttachedMachines(o: AttachedOptions & {
-  machines: () => AttachedMachine[];
-  probe: (machine: AttachedMachine) => Promise<MachineProbe>;
-}): MachineSource {
+export function createTargetPool(o: AttachedOptions & { probe: (machine: AttachedMachine) => Promise<MachineProbe> }): (machine: AttachedMachine) => MachineSource {
   const known = new Map<string, { source: MachineSource; current: AttachedMachine }>();
   const identity = (m: AttachedMachine): string => JSON.stringify('docker' in m ? [m.name, 'docker', m.docker]
     : 'client' in m ? [m.name, 'client', m.client.tokenEnv] : [m.name, m.ssh, m.herdrBin, m.session]);
-  return {
-    async list() {
-      const now = o.machines();
-      const keep = new Set(now.map(identity));
-      for (const [key, e] of known) {
-        if (keep.has(key)) continue;
-        known.delete(key);
-        if (!now.some((m) => m.name === e.current.name)) o.logger?.info(`hopper: attached machine ${e.current.name} removed`);
-      }
-      const sources = now.map((m) => {
-        const key = identity(m);
-        let e = known.get(key);
-        if (!e) {
-          const fresh = { current: m } as { source: MachineSource; current: AttachedMachine };
-          fresh.source = createAttachedMachineSource({ ...o, machine: () => fresh.current, probe: () => o.probe(fresh.current) });
-          known.set(key, (e = fresh));
-        }
-        e.current = m;
-        return e.source;
-      });
-      return (await Promise.all(sources.map((s) => s.list()))).flat();
-    },
+  return (m) => {
+    const key = identity(m);
+    let e = known.get(key);
+    if (!e) {
+      const fresh = { current: m } as { source: MachineSource; current: AttachedMachine };
+      fresh.source = createAttachedMachineSource({ ...o, machine: () => fresh.current, probe: () => o.probe(fresh.current) });
+      known.set(key, (e = fresh));
+    }
+    e.current = m;
+    return e.source;
   };
 }
 

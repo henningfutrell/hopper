@@ -47,7 +47,10 @@ async function boot(daemonToken: string | undefined, clientToken?: string): Prom
     dbPath: db.dbPath,
     plugins: {
       executors: [{ name: 'test', plugin: 'test' }],
-      attachedMachines: [{ name: 'studio', client: { tokenEnv: 'STUDIO_CLIENT_TOKEN' }, lanes: 2, executors: ['test'] }],
+      machines: [
+        { name: 'local', plugin: 'local' },
+        { name: 'studio', plugin: 'client', options: { tokenEnv: 'STUDIO_CLIENT_TOKEN', lanes: 2, executors: ['test'] } },
+      ],
     },
     secrets: daemonToken ? { STUDIO_CLIENT_TOKEN: daemonToken } : {},
   });

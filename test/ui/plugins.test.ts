@@ -69,8 +69,11 @@ describe('instanceState', () => {
   });
 
   it('a restart role whose section changed says so', () => {
-    expect(instanceState(report, 'machine-source', 'local').rolePending).toBe(true);
     expect(instanceState(report, 'executor', 'test').rolePending).toBe(false);
+  });
+
+  it('the machine sources are live (issue #74): never restart pending', () => {
+    expect(instanceState(report, 'machine-source', 'local')).toMatchObject({ tone: 'ok', label: 'active', rolePending: false });
   });
 });
 
@@ -81,7 +84,7 @@ describe('adding an instance (issue #4)', () => {
 
   it('only the list roles take added and removed instances', () => {
     expect(['executor', 'job-source', 'usage-source', 'notifier', 'router', 'assessor', 'machine-source'].map((r) => isListRole(r as Role))).toEqual(
-      [true, true, true, true, false, false, false],
+      [true, true, true, true, false, false, true],
     );
   });
 

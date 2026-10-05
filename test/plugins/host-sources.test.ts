@@ -1,12 +1,13 @@
 // Phase 5 slice 4: the job-source, machine-source and usage-source roles in the plugin host, built
 // at start from plugins.yaml (or the built-in instances when a section is absent). Job and usage
-// sources are restart roles: a later edit shows `changed — restart pending`. The machine source
-// applies an options edit live (issue #18); another instance still waits for a restart. Detection
+// sources are restart roles: a later edit shows `changed — restart pending`. The machine sources —
+// this machine and every attached one (issue #74) — follow plugins.yaml live (issue #18). Detection
 // never makes a paid call: github-gh asks `gh auth status`, github-app looks for the app's identity and key in the environment,
 // claude-plan `which`es claude.
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { UsageSource } from '../../src/domain/ports.ts';
+import type { MachineSource, UsageSource } from '../../src/domain/ports.ts';
+import type { AttachedMachine } from '../../src/domain/types.ts';
 import { BUILTIN_PLUGINS } from '../../src/plugins/builtin.ts';
 import { createPluginHost, type PluginHost } from '../../src/plugins/index.ts';
 import type { DetectionKit, PluginDefinition } from '../../src/plugins/sdk.ts';
@@ -30,7 +31,17 @@ const fixedUsage: PluginDefinition<'usage-source'> = {
   },
 };
 
-function start(o: { file?: string; kit?: DetectionKit; executors?: () => string[] } = {}) {
+/** Each attached machine as a source listing it online, and the machines it was asked for, in order. */
+function targets() {
+  const asked: AttachedMachine[] = [];
+  const target = (m: AttachedMachine): MachineSource => {
+    asked.push(m);
+    return { list: async () => [{ id: m.name, label: m.label ?? m.name, maxLanes: m.lanes, online: true, executors: [...m.executors] }] };
+  };
+  return { asked, target };
+}
+
+function start(o: { file?: string; kit?: DetectionKit; executors?: () => string[]; target?: (m: AttachedMachine) => MachineSource } = {}) {
   const dir = temp();
   const documents = docs();
   if (o.file !== undefined) documents.set(PLUGINS, o.file);
@@ -41,7 +52,7 @@ function start(o: { file?: string; kit?: DetectionKit; executors?: () => string[
     defaultAnswerer: null,
     defaultAssessor: { name: 'a', plugin: 'always-escalate' },
     defaultExecutors: [{ name: 'test', plugin: 'test' }],
-    ...(o.executors ? { machineContext: { executors: o.executors } } : {}),
+    machineContext: { ...(o.executors ? { executors: o.executors } : {}), ...(o.target ? { target: o.target } : {}) },
     intervalMs: 30,
   });
   return { host, documents, dir };
@@ -167,7 +178,7 @@ describe('job-source instances', () => {
 
 describe('the machine-source role', () => {
   it('local: one machine named after the instance, lanes from its option, the executors the context names', async () => {
-    const { host } = start({ file: 'version: 1\nmachines: { name: local, plugin: local, options: { lanes: 2 } }\n', executors: () => ['test', 'scripted'] });
+    const { host } = start({ file: 'version: 1\nmachines: [ { name: local, plugin: local, options: { lanes: 2 } } ]\n', executors: () => ['test', 'scripted'] });
     await host.start();
     expect(await host.machines().list()).toEqual([expect.objectContaining({ id: 'local', maxLanes: 2, online: true, executors: ['test', 'scripted'] })]);
     expect(host.report().machines.instances).toEqual([
@@ -181,53 +192,72 @@ describe('the machine-source role', () => {
     expect(await host.machines().list()).toEqual([expect.objectContaining({ id: 'local', maxLanes: 4 })]);
   });
 
-  it('a machine source that cannot run: no machine at all (every job held), never a guessed one — with the reason', async () => {
-    const { host } = start({ file: 'version: 1\nmachines: { name: local, plugin: local, options: { lanes: -1 } }\n' });
+  it('a machine source that cannot run lists no machine, never a guessed one — with the reason; the others still run', async () => {
+    const t = targets();
+    const { host } = start({
+      file: 'version: 1\nmachines:\n  - { name: local, plugin: local, options: { lanes: -1 } }\n  - { name: laptop, plugin: ssh, options: { ssh: laptop, lanes: 1 } }\n',
+      target: t.target,
+    });
     await host.start();
-    expect(await host.machines().list()).toEqual([]);
+    expect((await host.machines().list()).map((m) => m.id)).toEqual(['laptop']);
     expect(host.report().machines.instances[0]).toMatchObject({ active: null, reason: expect.stringMatching(/lanes/) });
   });
 
   it('a lanes edit applies live (issue #18): same instance, new options, no restart pending', async () => {
-    const { host, documents } = start({ file: 'version: 1\nmachines: { name: local, plugin: local, options: { lanes: 2 } }\n' });
+    const { host, documents } = start({ file: 'version: 1\nmachines: [ { name: local, plugin: local, options: { lanes: 2 } } ]\n' });
     await host.start();
     const machines = host.machines();
-    documents.set(PLUGINS, 'version: 1\nmachines: { name: local, plugin: local, options: { lanes: 3 } }\n');
+    documents.set(PLUGINS, 'version: 1\nmachines: [ { name: local, plugin: local, options: { lanes: 3 } } ]\n');
     await host.reload();
-    expect(host.report().machines.pending).toBeUndefined();
     expect(host.report().machines.instances[0]!.instance.options).toEqual({ lanes: 3 });
     expect((await machines.list())[0]!.maxLanes).toBe(3);
   });
 
-  it('another instance name or plugin still waits for a restart: lanes are stored under the machine id', async () => {
-    const { host, documents } = start({ file: 'version: 1\nmachines: { name: local, plugin: local, options: { lanes: 2 } }\n' });
+  it('another instance name applies live too: the machines are what plugins.yaml names now', async () => {
+    const { host, documents } = start({ file: 'version: 1\nmachines: [ { name: local, plugin: local, options: { lanes: 2 } } ]\n' });
     await host.start();
-    documents.set(PLUGINS, 'version: 1\nmachines: { name: server, plugin: local, options: { lanes: 3 } }\n');
+    documents.set(PLUGINS, 'version: 1\nmachines: [ { name: server, plugin: local, options: { lanes: 3 } } ]\n');
     await host.reload();
-    expect(host.report().machines.pending).toEqual({ status: 'changed — restart pending', instances: [{ name: 'server', plugin: 'local', options: { lanes: 3 } }] });
-    expect((await host.machines().list())[0]).toMatchObject({ id: 'local', maxLanes: 2 });
+    expect(await host.machines().list()).toEqual([expect.objectContaining({ id: 'server', maxLanes: 3 })]);
   });
 });
 
-describe('attached machines in the host (issue #18)', () => {
-  it('attachedMachines() follows plugins.yaml: added, changed and removed without a restart', async () => {
-    const { host, documents } = start({ file: 'version: 1\n' });
+describe('attached machines in the host (issues #18, #74)', () => {
+  it('an attached machine is a machine-source instance: added, changed and removed without a restart', async () => {
+    const t = targets();
+    const { host, documents } = start({ file: 'version: 1\n', target: t.target });
     await host.start();
-    expect(host.attachedMachines()).toEqual([]);
-    documents.set(PLUGINS, 'version: 1\nattachedMachines:\n  - { name: laptop, ssh: laptop, lanes: 2, herdrBin: /h/herdr }\n');
+    expect(host.targets()).toEqual([]);
+    documents.set(PLUGINS, 'version: 1\nmachines:\n  - { name: local, plugin: local }\n  - { name: laptop, plugin: ssh, options: { ssh: laptop, lanes: 2, herdrBin: /h/herdr } }\n');
     await host.reload();
-    expect(host.attachedMachines()).toEqual([{ name: 'laptop', ssh: 'laptop', lanes: 2, herdrBin: '/h/herdr', session: 'hopper', executors: ['herdr-claude'] }]);
-    documents.set(PLUGINS, 'version: 1\nattachedMachines: []\n');
+    const laptop = { name: 'laptop', ssh: 'laptop', lanes: 2, herdrBin: '/h/herdr', session: 'hopper', executors: ['herdr-claude'] };
+    expect(host.targets()).toEqual([laptop]);
+    expect(t.asked).toEqual([laptop]);
+    expect((await host.machines().list()).map((m) => `${m.id}:${m.maxLanes}`)).toEqual(['local:4', 'laptop:2']);
+    expect(host.machineIds()).toEqual(['local', 'laptop']);
+    documents.set(PLUGINS, 'version: 1\nmachines:\n  - { name: local, plugin: local }\n');
     await host.reload();
-    expect(host.attachedMachines()).toEqual([]);
+    expect(host.targets()).toEqual([]);
+    expect((await host.machines().list()).map((m) => m.id)).toEqual(['local']);
   });
 
-  it('an invalid plugins.yaml keeps the last good attached machines', async () => {
-    const { host, documents } = start({ file: 'version: 1\nattachedMachines:\n  - { name: laptop, ssh: laptop, lanes: 2 }\n' });
+  it('an attached machine whose options are invalid cannot run, with the reason; it is no target', async () => {
+    const t = targets();
+    const { host } = start({ file: 'version: 1\nmachines:\n  - { name: local, plugin: local }\n  - { name: laptop, plugin: ssh, options: { ssh: -oProxy, lanes: 2 } }\n', target: t.target });
     await host.start();
-    documents.set(PLUGINS, 'version: 1\nattachedMachines:\n  - { name: laptop, ssh: -oProxy, lanes: 2 }\n');
+    expect(host.targets()).toEqual([]);
+    expect(t.asked).toEqual([]);
+    expect(host.report().machines.instances[1]).toMatchObject({ active: null, reason: expect.stringMatching(/ssh must be a destination/) });
+  });
+
+  it('an invalid plugins.yaml keeps the last good machines', async () => {
+    const t = targets();
+    const { host, documents } = start({ file: 'version: 1\nmachines:\n  - { name: local, plugin: local }\n  - { name: laptop, plugin: ssh, options: { ssh: laptop, lanes: 2 } }\n', target: t.target });
+    await host.start();
+    documents.set(PLUGINS, 'version: 1\nmachines: { name: laptop }\n');
     await host.reload();
-    expect(host.attachedMachines().map((m) => ('ssh' in m ? m.ssh : 'docker' in m ? m.docker : m.name))).toEqual(['laptop']);
+    expect(host.targets().map((m) => m.name)).toEqual(['laptop']);
+    expect((await host.machines().list()).map((m) => m.id)).toEqual(['local', 'laptop']);
   });
 });
 

@@ -83,7 +83,7 @@ const FILE = `version: 1
 # The owner's note: kept across UI edits
 executors: [ { name: test, plugin: test } ]
 jobSources: []
-machines: { name: local, plugin: local, options: { lanes: 2 } }
+machines: [ { name: local, plugin: local, options: { lanes: 2 } } ]
 `;
 
 describe('GET /api/routing and POST /ui/api/routing', () => {

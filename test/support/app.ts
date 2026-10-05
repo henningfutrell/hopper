@@ -72,8 +72,8 @@ export function tempDbPath(): { dbPath: string; cleanup(): void } {
   return { dbPath: join(dir, 'db.sqlite'), cleanup: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
-/** plugins.yaml `machines:` with this many lanes on the local machine. */
-export const lanes = (n: number) => ({ name: 'local', plugin: 'local', options: { lanes: n } });
+/** plugins.yaml `machines:`: only the local machine, with this many lanes. */
+export const lanes = (n: number) => [{ name: 'local', plugin: 'local', options: { lanes: n } }];
 
 /** The plugins.yaml a test app gets unless it brings its own: executor `test`, no job or usage sources. */
 export const TEST_PLUGINS = { version: 1, executors: [{ name: 'test', plugin: 'test' }], jobSources: [], usageSources: [] };

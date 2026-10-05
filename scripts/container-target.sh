@@ -37,7 +37,7 @@ step "container $NAME runs; attach it in plugins.yaml (hopper config edit plugin
 cat <<YAML
 executors:
   - { name: command, plugin: command }
-attachedMachines:
-  - { name: $NAME, docker: $NAME, lanes: $LANES, executors: [command] }
+machines:
+  - { name: $NAME, plugin: docker, options: { docker: $NAME, lanes: $LANES, executors: [command] } }
 YAML
 step "the hopper reaches it only through its socket proxy (issue #59): bash scripts/docker-proxy.sh <every container target, $NAME among them>"

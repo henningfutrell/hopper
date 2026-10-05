@@ -1,0 +1,24 @@
+// What the attached-machine plugins share (design.md "Attached machines", issue #74): `ssh`, `docker`
+// and `client` each make one attached machine of their instance, named after it. Its lanes, executors
+// and label are plain options; how it is reached is command-bearing (plugins.yaml only). The hopper
+// reaches it through the machine-source context's `target`, never on its own.
+import type { z as Z } from 'zod';
+import type { AttachedMachine } from '../../domain/types.ts';
+import type { MachineSource, MachineSourceContext } from '../sdk.ts';
+
+/** The options every attached machine has; `executors` defaults to what its connection runs. */
+export function attachedShape(z: typeof Z, executors: readonly string[]) {
+  return {
+    label: z.string().min(1).optional().meta({ description: 'shown instead of the name' }),
+    lanes: z.number().int().min(1, 'lanes must be at least 1').default(1).meta({ description: 'jobs it runs at once' }),
+    executors: z.array(z.string().min(1)).default([...executors]).meta({ description: 'executor instances that run there' }),
+  };
+}
+
+export interface AttachedOptions { label?: string; lanes: number; executors: string[] }
+
+/** The plain fields of an attached machine named `name`. */
+export const attachedBase = (name: string, o: AttachedOptions) => ({ name, ...(o.label !== undefined ? { label: o.label } : {}), lanes: o.lanes, executors: [...o.executors] });
+
+/** An attached machine's source: the host reaches it. */
+export const reach = (ctx: MachineSourceContext, machine: AttachedMachine): MachineSource => ctx.target(machine);

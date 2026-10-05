@@ -52,7 +52,8 @@ the directory into the plugin dir and change it.
 - `options: (z) => z.object({ … })` uses the `z` passed in (zod 4). Give **every option a default**:
   the catalogue and `plugin:check` parse `{}`.
 - `create(ctx, options)`: `ctx` has `clock`, `logger`, `env(name)`, `dataDir`, `scratchDir`, `instanceName`, plus
-  the role's own fields (a job source's `knownKeys`/`rerunnable`, a machine source's `executors()`,
+  the role's own fields (a job source's `knownKeys`/`rerunnable`, a machine source's `executors()` and
+  `target(machine)` — the hopper's own way to reach an attached machine (issue #74) —
   the router's `routerMode()`). A usage source's `poll` must answer at once from what it already has (every Decision polls it); it may add `state()` (when it last read, why it has no readings, its account) and `stop()`. A job source and a machine source must call themselves
   `ctx.instanceName`.
 - A **queue sorter** (`examples/plugins/queue-sorter/word-first/`) gets every waiting job with its

@@ -6,10 +6,10 @@ import type {
   AnswerDraft, AnswerRequest, Answerer, Assessment, Assessor, Clock, ExecutionContext, ExecutionOutcome, Executor, JobSource,
   MachineSource, Notifier, NotifierEvents, QueueEntry, QueueSorter, Router, SourceItem, SourceReport, SourceSignal, UsageSource,
 } from '../domain/ports.ts';
-import type { Advice, AdviceAction, Detection, DomainEvent, Job, MachineSnapshot, Question, QuestionAttempt, Role, RouterMode, UsageReading } from '../domain/types.ts';
+import type { Advice, AdviceAction, AttachedMachine, Detection, DomainEvent, Job, MachineSnapshot, Question, QuestionAttempt, Role, RouterMode, UsageReading } from '../domain/types.ts';
 
 export type {
-  Advice, AdviceAction, AnswerDraft, AnswerRequest, Answerer, Assessment, Assessor, Clock, Detection, DomainEvent, ExecutionContext,
+  Advice, AdviceAction, AnswerDraft, AnswerRequest, Answerer, Assessment, Assessor, AttachedMachine, Clock, Detection, DomainEvent, ExecutionContext,
   ExecutionOutcome, Executor, Job, JobSource, MachineSnapshot, MachineSource, Notifier, NotifierEvents, Question, QuestionAttempt, QueueEntry,
   QueueSorter, Role, Router, RouterMode, SourceItem, SourceReport, SourceSignal, UsageReading, UsageSource,
 };
@@ -91,9 +91,20 @@ export interface RoleContext {
   assessor: object;
   executor: object;
   'job-source': JobSourceContext;
-  'machine-source': { executors(): string[] };
+  'machine-source': MachineSourceContext;
   'usage-source': object;
   notifier: object;
+}
+
+/**
+ * What a machine source learns: the executors registered when it is asked, and how the hopper reaches
+ * an attached machine (design.md "Attached machines", issue #74) — a source listing it, online while
+ * its probe says so, probed in the background. One machine keeps its probe while only its lanes,
+ * executors or label change.
+ */
+export interface MachineSourceContext {
+  executors(): string[];
+  target(machine: AttachedMachine): MachineSource;
 }
 
 export interface JobSourceContext {

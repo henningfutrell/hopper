@@ -73,12 +73,11 @@ export const webhooksEditBody = z.discriminatedUnion('action', [
 const machineName = z.string().trim().min(1).max(64);
 const machineLanes = z.number().int().min(1, 'lanes must be at least 1');
 const machineExecutors = z.array(z.string().min(1));
-// ssh is checked against the detected ssh targets, herdrBin and session are never accepted (strict).
-export const machinesEditBody = z.discriminatedUnion('action', [
-  z.strictObject({ action: z.literal('add'), name: machineName, ssh: z.string().min(1), lanes: machineLanes, executors: machineExecutors.optional(), label: z.string().trim().min(1).optional(), version: z.string().min(1) }),
-  z.strictObject({ action: z.literal('edit'), name: machineName, lanes: machineLanes.optional(), executors: machineExecutors.optional(), label: z.string().trim().min(1).nullable().optional(), version: z.string().min(1) }),
-  z.strictObject({ action: z.literal('remove'), name: machineName, version: z.string().min(1) }),
-]);
+// Attach an ssh target (issue #74: editing and removing a machine is a plugins edit). ssh is checked
+// against the detected ssh targets; herdrBin, session and hostKey are never accepted (strict).
+export const machinesEditBody = z.strictObject({
+  name: machineName, ssh: z.string().min(1), lanes: machineLanes, executors: machineExecutors.optional(), label: z.string().trim().min(1).optional(), version: z.string().min(1),
+});
 // Self-update (issue #44): check now, apply the available update, or set the channel / auto-update.
 export const updateBody = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('check') }),
@@ -189,8 +188,8 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     return webhooksView(o.store, o.secretProblem);
   });
 
-  // design.md "Machines from the UI" (issue #18): add, edit or remove one attached machine in
-  // plugins.yaml; applies without a restart. Answers the new GET /api/machines/config.
+  // design.md "Machines from the UI" (issues #18, #74): attach an ssh target as a new `ssh` instance
+  // in plugins.yaml `machines:`; applies without a restart. Answers the new GET /api/machines/config.
   app.post('/ui/api/machines', admin, async (req) => {
     const r = await o.plugins.editMachines(parseWith(machinesEditBody, req.body));
     if (!r.ok) throw new HttpError(EDIT_STATUS[r.code], r.error);

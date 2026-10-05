@@ -15,6 +15,8 @@ export type EditResult = { ok: true; changed: boolean } | EditRefusal;
 
 export interface EditContext {
   documents: ConfigDocuments;
+  /** Jobs that need machine `name` (busy lanes there, panes parked there): its removal is refused while any do. */
+  inUse(name: string): string[];
   /** What plugins.yaml (or the built-in instances, for a role with no section) names now. */
   configured: readonly ConfiguredInstance[];
   find(id: string): { definition: PluginDefinition; detection: Detection } | undefined;
@@ -28,7 +30,7 @@ const SECTIONS: Record<Role, { key: string; many: boolean }> = {
   assessor: { key: 'assessor', many: false },
   executor: { key: 'executors', many: true },
   'job-source': { key: 'jobSources', many: true },
-  'machine-source': { key: 'machines', many: false },
+  'machine-source': { key: 'machines', many: true },
   'usage-source': { key: 'usageSources', many: true },
   notifier: { key: 'notifiers', many: true },
 };
@@ -36,7 +38,7 @@ const SECTIONS: Record<Role, { key: string; many: boolean }> = {
 /** What plugins.yaml (or the built-in instances) names now, section by section. */
 export interface Configured {
   router?: InstanceSpec; queueSorter: InstanceSpec; answerer: InstanceSpec | null; assessor: InstanceSpec; executors: InstanceSpec[];
-  jobSources: InstanceSpec[]; machines: InstanceSpec; usageSources: InstanceSpec[]; notifiers: InstanceSpec[];
+  jobSources: InstanceSpec[]; machines: InstanceSpec[]; usageSources: InstanceSpec[]; notifiers: InstanceSpec[];
   /** plugins.yaml `routing:`, in order; absent: none. */
   routing: RoutingRule[];
 }
@@ -50,7 +52,7 @@ export function configuredInstances(c: Configured, detectedRouter: InstanceSpec)
     { role: 'assessor', instance: c.assessor },
     ...c.executors.map((instance) => ({ role: 'executor' as const, instance })),
     ...c.jobSources.map((instance) => ({ role: 'job-source' as const, instance })),
-    { role: 'machine-source', instance: c.machines },
+    ...c.machines.map((instance) => ({ role: 'machine-source' as const, instance })),
     ...c.usageSources.map((instance) => ({ role: 'usage-source' as const, instance })),
     ...c.notifiers.map((instance) => ({ role: 'notifier' as const, instance })),
   ];
@@ -103,7 +105,7 @@ function place(doc: Document, role: Role, name: string, next: InstanceSpec | nul
 }
 
 /** Append `next` to a list role, or remove instance `name` from it (`next` null); nothing else changes. */
-function list(doc: Document, role: ListRole, name: string, next: InstanceSpec | null, configured: readonly ConfiguredInstance[]): void {
+export function list(doc: Document, role: ListRole, name: string, next: InstanceSpec | null, configured: readonly ConfiguredInstance[]): void {
   const { key } = SECTIONS[role];
   const section = doc.get(key, true);
   if (isSeq(section)) {
@@ -124,21 +126,22 @@ function list(doc: Document, role: ListRole, name: string, next: InstanceSpec | 
 }
 
 /**
- * What still names executor `name` in the file as it is now: job sources (their `executor`, the
- * plugin's default when unset; no section: the built-in ones), routing rules, attached machines.
+ * What still names executor `name` in the file as it is now: job sources (their `executor`), machines
+ * (their `executors`; absent on a `local` instance: every one, which names none) — each option the
+ * plugin's default when unset, a section absent: the built-in instances — and routing rules.
  */
 function executorUsers(name: string, doc: Document, ctx: EditContext): string[] {
-  const file = (doc.toJS() ?? {}) as { jobSources?: InstanceSpec[]; routing?: RoutingRule[]; attachedMachines?: { name: string; executors?: string[] }[] };
-  const sources = file.jobSources ?? ctx.configured.filter((c) => c.role === 'job-source').map((c) => c.instance);
-  const named = sources.filter((i) => {
+  const file = (doc.toJS() ?? {}) as { jobSources?: InstanceSpec[]; machines?: InstanceSpec[]; routing?: RoutingRule[] };
+  const options = (i: InstanceSpec): Record<string, unknown> => {
     const def = ctx.find(i.plugin)?.definition;
     const parsed = def ? parseOptions(def, i.options ?? {}) : undefined;
-    return (parsed?.ok ? parsed.options : (i.options ?? {})).executor === name;
-  });
+    return parsed?.ok ? parsed.options : (i.options ?? {});
+  };
+  const section = (role: Role, key: 'jobSources' | 'machines') => file[key] ?? ctx.configured.filter((c) => c.role === role).map((c) => c.instance);
   return [
-    ...named.map((i) => `job source ${i.name}`),
+    ...section('job-source', 'jobSources').filter((i) => options(i).executor === name).map((i) => `job source ${i.name}`),
+    ...section('machine-source', 'machines').filter((i) => { const x = options(i).executors; return Array.isArray(x) && x.includes(name); }).map((i) => `machine ${i.name}`),
     ...(file.routing ?? []).filter((r) => r.set?.executor === name).map((r) => `routing rule ${r.name}`),
-    ...(file.attachedMachines ?? []).filter((m) => (m.executors ?? ['herdr-claude']).includes(name)).map((m) => `attached machine ${m.name}`),
   ];
 }
 
@@ -211,6 +214,8 @@ function applyListEdit(e: Extract<PluginsEdit, { action: 'add' | 'remove' }>, ct
   const current = ctx.configured.find((c) => c.role === e.role && c.instance.name === e.name);
   if (e.action === 'remove') {
     if (!current) return refuse('not_found', `no ${e.role} instance named ${e.name}`);
+    const jobs = e.role === 'machine-source' ? ctx.inUse(e.name) : [];
+    if (jobs.length) return refuse('conflict', `${e.name} still has jobs (${jobs.join(', ')}): wait for them to end, or cancel them, then remove it`);
     return writePlugins(ctx.documents, e.version, (doc) => {
       const users = e.role === 'executor' ? executorUsers(e.name, doc, ctx) : [];
       if (users.length) return refuse('conflict', `executor ${e.name} is named by ${users.join(', ')}; change ${users.length === 1 ? 'it' : 'them'} first`);

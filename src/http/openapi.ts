@@ -64,7 +64,7 @@ const OPERATIONS: Operation[] = [
   { method: 'post', path: '/ui/api/rules', tag: 'Questions', summary: 'Replace the rules (rules.md)', description: '`version` is the one read from GET /api/question-gates.', role: 'admin', body: rulesBody, returns: 'the new rules view', errors: [409] },
   { method: 'get', path: '/api/machines', tag: 'Machines and usage', summary: 'Machines, their lanes and usage', returns: '`{ machines: (MachineSnapshot & { lanes, usage })[] }`' },
   { method: 'get', path: '/api/machines/config', tag: 'Machines and usage', summary: 'What the Machines view edits', returns: 'the machine source, the attached machines, the detected ssh targets, the plugins.yaml version' },
-  { method: 'post', path: '/ui/api/machines', tag: 'Machines and usage', summary: 'Add, edit or remove an attached machine', role: 'admin', body: machinesEditBody, returns: 'the new machines config', errors: [404, 409] },
+  { method: 'post', path: '/ui/api/machines', tag: 'Machines and usage', summary: 'Attach a machine over ssh (edit or remove it through /ui/api/plugins)', role: 'admin', body: machinesEditBody, returns: 'the new machines config', errors: [409] },
   { method: 'get', path: '/api/usage', tag: 'Machines and usage', summary: 'Usage readings', returns: '`UsageReport`' },
   { method: 'get', path: '/api/plugins', tag: 'Plugins and routing', summary: 'Every role, instance and plugin', returns: '`PluginsReport`' },
   { method: 'get', path: '/api/plugin-store', tag: 'Plugins and routing', summary: 'The plugin store: its catalogue and the store installs', returns: '`PluginStoreReport`' },

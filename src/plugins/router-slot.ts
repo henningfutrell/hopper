@@ -8,7 +8,7 @@ import type { Advice, Detection, InstanceSpec, RouterStatus } from '../domain/ty
 import { parseOptions } from './options.ts';
 import passThrough from './router/pass-through/index.ts';
 import type {
-  Clock, DetectionKit, JobSourceContext, PluginContext, PluginDefinition, Role, RoleContext, RoleInstance, Router, RouterMode,
+  Clock, DetectionKit, JobSourceContext, MachineSourceContext, PluginContext, PluginDefinition, Role, RoleContext, RoleInstance, Router, RouterMode,
 } from './sdk.ts';
 
 export interface SlotDeps {
@@ -21,6 +21,8 @@ export interface SlotDeps {
   jobSource: JobSourceContext;
   /** The executors a machine source names (RoleContext['machine-source']). */
   executors(): string[];
+  /** How an attached machine is reached (RoleContext['machine-source']). */
+  target: MachineSourceContext['target'];
   find(id: string): PluginDefinition | undefined;
 }
 
@@ -58,7 +60,7 @@ function contextFor(deps: SlotDeps, id: string, instanceName: string) {
   mkdirSync(scratchDir, { recursive: true, mode: 0o700 });
   return {
     clock: deps.clock, logger: deps.logger, dataDir: deps.dataDir, scratchDir, instanceName, routerMode: deps.routerMode, env: deps.kit.env,
-    ...deps.jobSource, executors: deps.executors,
+    ...deps.jobSource, executors: deps.executors, target: deps.target,
   };
 }
 
