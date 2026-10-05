@@ -22,7 +22,7 @@ const command: PluginDefinition<'executor', CommandOptions> = {
   create: (ctx, o) => createCommandExecutor({
     name: ctx.instanceName, timeoutMs: o.timeoutMs, dockerBin: o.dockerBin, sshBin: o.sshBin, sshControlDir: join(ctx.dataDir, 'ssh'),
     sshAuth: () => hopperSshAuth({ env: ctx.env, dataDir: ctx.dataDir }),
-    dockerHost: () => dockerHost(ctx.env),
+    dockerHost: () => dockerHost(ctx.env), userEnv: ctx.userEnv,
   }),
 };
 

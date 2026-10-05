@@ -48,6 +48,8 @@ export interface GateRouterShimOptions {
   mode: () => RouterMode;
   clock: Clock;
   timeoutMs: number;
+  /** Over the daemon's environment: the user's CLI config dirs, for the claude the shim starts (issue #158). */
+  userEnv?: Readonly<Record<string, string>>;
 }
 
 interface Route {
@@ -70,7 +72,7 @@ function routerState(job: Job): Record<string, unknown> {
  */
 function runShim(o: GateRouterShimOptions, key: string | undefined, request: unknown): Promise<string> {
   return new Promise((resolve, reject) => {
-    const env: NodeJS.ProcessEnv = { ...scrubbedEnv(), PYTHONDONTWRITEBYTECODE: '1' };
+    const env: NodeJS.ProcessEnv = { ...scrubbedEnv({ ...process.env, ...o.userEnv }), PYTHONDONTWRITEBYTECODE: '1' };
     if (key) env.TYPESAFE_API_KEY = key;
     const child = spawn(o.python, [SHIM], {
       env,

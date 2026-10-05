@@ -12,7 +12,7 @@ const DOC = 'webhooks.yaml';
 /** A store at version 13 holding `doc` as the webhooks document and the given rows, then migrated. */
 function migrateFrom13(doc: string | undefined, rows: [id: string, name: string, secretEnv: string][] = []) {
   const url = t.url();
-  t.open(url).close();
+  t.at(url, 16).close();
   const raw = openDb(url);
   for (const [id, name, secretEnv] of rows) {
     raw.run("INSERT INTO webhooks (id, name, url, events, secret_env, active, created_at) VALUES (?, ?, 'http://127.0.0.1:1/old', '[\"*\"]', ?, 1, '2026-10-01T00:00:00.000Z')", id, name, secretEnv);
@@ -24,7 +24,7 @@ function migrateFrom13(doc: string | undefined, rows: [id: string, name: string,
   if (doc !== undefined) raw.run("INSERT INTO config_documents (name, text, updated_at) VALUES (?, ?, 'x')", DOC, doc);
   raw.run('UPDATE schema_version SET version = 13');
   raw.close();
-  t.open(url).close();
+  t.at(url, 16).close();
   const after = openDb(url);
   try {
     return {

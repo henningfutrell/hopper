@@ -154,7 +154,7 @@ describe('jobs pulled from a source', () => {
       ids.push(j.id);
     }
     // Age the first one past the window, as the store would hold it a day later.
-    t.app.store.jobs.update(ids[0]!, { finishedAt: new Date(Date.now() - 25 * 3_600_000).toISOString() });
+    t.user().store.jobs.update(ids[0]!, { finishedAt: new Date(Date.now() - 25 * 3_600_000).toISOString() });
     const ended = (await t.api('GET', '/api/queue')).body.ended.map((j: Job) => j.id);
     expect(ended).toEqual(ids.slice(1).reverse());
   });

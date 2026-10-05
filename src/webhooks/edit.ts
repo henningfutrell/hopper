@@ -3,7 +3,7 @@
 // the subscription and writes its row. No secret passes through here (issue #56): an added
 // subscription names the `WEBHOOK_SECRET_*` variable the runtime gives its secret in.
 import { z } from 'zod';
-import type { Store } from '../domain/ports.ts';
+import type { UserStore } from '../domain/ports.ts';
 import { EVENT_TYPES, type WebhooksEdit } from '../domain/types.ts';
 import { UI_SECRET_ENV } from '../domain/webhooks.ts';
 
@@ -35,7 +35,7 @@ function problem(schema: z.ZodType, value: unknown): string | undefined {
   return parsed.success ? undefined : parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
 }
 
-export function createWebhooksEditor(o: { store: Pick<Store, 'webhooks'> }): WebhooksEditor {
+export function createWebhooksEditor(o: { store: Pick<UserStore, 'webhooks'> }): WebhooksEditor {
   const { webhooks } = o.store;
 
   function edit(e: WebhooksEdit): WebhooksEditResult {

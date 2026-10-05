@@ -20,7 +20,7 @@ const tokenOf = (text: string): string => (JSON.parse(text) as { token: string }
 
 describe('an identity signs in as its user', () => {
   it('a new identity a role rule grants gets a user of its own; signing in again is the same user', async () => {
-    const idp = await oidcIdp(h, { claims: { sub: 'sub-ada', preferred_username: 'ada', name: 'Ada Lovelace', email: 'ada@example.com', email_verified: true } });
+    const idp = await oidcIdp(h, { claims: { sub: 'sub-ada', preferred_username: 'ada', name: 'Ada Lovelace', email: 'ada@example.com', email_verified: true }, userinfo: { sub: 'sub-ada' } });
     const { app, origin } = await startWithAuth(h, { version: 1, providers: [oidcProvider(idp, { defaultRole: 'operator' })] });
     const first = (await signIn(app.url, origin, 'corp')).token!;
     expect((await session(app, first)).user).toEqual({ id: 'ada', name: 'ada', role: 'operator', provider: 'corp', identity: 'Ada Lovelace' });
@@ -29,6 +29,7 @@ describe('an identity signs in as its user', () => {
     expect(app.app.users().map((u) => u.id)).toEqual(['owner', 'ada']);
     // Another identity with the same username gets a user of its own, under a name made unique.
     Object.assign(idp.claims, { sub: 'sub-other' });
+    Object.assign(idp.userinfo, { sub: 'sub-other' });
     const other = (await signIn(app.url, origin, 'corp')).token!;
     expect((await session(app, other)).user).toMatchObject({ id: 'ada_2', name: 'ada 2' });
     // The new user's reads are its own: owner's job is not there.
@@ -38,7 +39,7 @@ describe('an identity signs in as its user', () => {
   });
 
   it('an identity no rule grants gets no session and no user', async () => {
-    const idp = await oidcIdp(h, { claims: { sub: 'sub-x', preferred_username: 'x' } });
+    const idp = await oidcIdp(h, { claims: { sub: 'sub-x', preferred_username: 'x' }, userinfo: { sub: 'sub-x' } });
     const { app, origin } = await startWithAuth(h, { version: 1, providers: [oidcProvider(idp, { admin: { usernames: ['someone-else'] } })] });
     expect((await signIn(app.url, origin, 'corp')).token).toBeUndefined();
     expect(app.app.users().map((u) => u.id)).toEqual(['owner']);

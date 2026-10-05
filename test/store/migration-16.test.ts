@@ -12,7 +12,7 @@ const t = useTempStore();
 /** Store `plugins` and `questions` at version 15, migrate, and read them back. */
 function migrateFrom15(o: { plugins?: string; questions?: unknown[] }): { plugins: string | undefined; questions: unknown[] } {
   const url = t.url();
-  t.open(url).close();
+  t.at(url, 16).close();
   const raw = openDb(url);
   if (o.plugins !== undefined) raw.run("INSERT INTO config_documents (name, text, updated_at) VALUES ('plugins.yaml', ?, 'x')", o.plugins);
   for (const [i, q] of (o.questions ?? []).entries()) {
@@ -20,7 +20,7 @@ function migrateFrom15(o: { plugins?: string; questions?: unknown[] }): { plugin
   }
   raw.run('UPDATE schema_version SET version = 15');
   raw.close();
-  t.open(url).close();
+  t.at(url, 16).close();
   const after = openDb(url);
   const row = after.get("SELECT text FROM config_documents WHERE name = 'plugins.yaml'");
   const questions = after.all('SELECT body FROM questions ORDER BY created_at').map((r) => JSON.parse(String(r.body)) as unknown);

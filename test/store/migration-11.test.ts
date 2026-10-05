@@ -10,7 +10,7 @@ const t = useTempStore();
 describe('migration 11 (no secret in the store)', () => {
   it('drops the secret column and its values; rows stay, naming no variable until the next load', () => {
     const url = t.url();
-    t.open(url).close();
+    t.at(url, 16).close();
     const raw = openDb(url);
     // The table as migration 10 left it.
     raw.exec('ALTER TABLE webhooks DROP COLUMN secret_env');
@@ -18,7 +18,7 @@ describe('migration 11 (no secret in the store)', () => {
     raw.run("INSERT INTO webhooks (id, name, url, events, secret, active, created_at) VALUES ('a', 'hook', 'http://127.0.0.1:1/a', '[]', 'sealed:v1:abc', 1, 'x')");
     raw.run('UPDATE schema_version SET version = 10');
     raw.close();
-    t.open(url).close();
+    t.at(url, 16).close();
     const after = openDb(url);
     expect(after.all('SELECT * FROM webhooks')).toEqual([expect.objectContaining({ name: 'hook', secret_env: '' })]);
     expect(after.all('SELECT * FROM webhooks')[0]).not.toHaveProperty('secret');

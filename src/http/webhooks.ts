@@ -1,10 +1,11 @@
 // Webhook subscriptions are rows in the store (issue #78), which the UI session may edit
 // (POST /ui/api/webhooks, src/http/ui/): these routes only read — the subscriptions (each with the
 // variable its secret is in and whether the runtime gives it; never a secret), the deliveries.
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import type { Store } from '../domain/ports.ts';
+import type { UserStore } from '../domain/ports.ts';
 import { parseWith } from './errors.ts';
+import type { TenantParts } from './tenants.ts';
 
 /** Why the runtime gives no secret in `secretEnv`, or undefined when it does. Never the secret. */
 export type SecretProblem = (secretEnv: string) => string | undefined;
@@ -15,7 +16,7 @@ export const deliveriesQuery = z.object({
 });
 
 /** GET /api/webhooks: every subscription, with why the runtime gives no secret for it (if so). */
-export function webhooksView(store: Pick<Store, 'webhooks'>, secretProblem: SecretProblem) {
+export function webhooksView(store: Pick<UserStore, 'webhooks'>, secretProblem: SecretProblem) {
   return {
     subscriptions: store.webhooks.list().map((sub) => {
       const problem = secretProblem(sub.secretEnv);
@@ -24,13 +25,11 @@ export function webhooksView(store: Pick<Store, 'webhooks'>, secretProblem: Secr
   };
 }
 
-export function webhookRoutes(app: FastifyInstance, o: { store: Store; secretProblem: SecretProblem }): void {
-  const { webhooks } = o.store;
-
-  app.get('/api/webhooks', async () => webhooksView(o.store, o.secretProblem));
+export function webhookRoutes(app: FastifyInstance, o: { tenant: (req: FastifyRequest) => TenantParts }): void {
+  app.get('/api/webhooks', async (req) => { const t = o.tenant(req); return webhooksView(t.store, t.secretProblem); });
 
   app.get('/api/webhooks/deliveries', async (req) => {
     const q = parseWith(deliveriesQuery, req.query);
-    return { deliveries: webhooks.listDeliveries({ ...(q.subscriptionId ? { subscriptionId: q.subscriptionId } : {}), limit: q.limit }) };
+    return { deliveries: o.tenant(req).store.webhooks.listDeliveries({ ...(q.subscriptionId ? { subscriptionId: q.subscriptionId } : {}), limit: q.limit }) };
   });
 }

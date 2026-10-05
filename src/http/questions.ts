@@ -2,9 +2,10 @@
 // human answer is a UI session mutation (src/http/ui/).
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import type { Store } from '../domain/ports.ts';
+import type { FastifyRequest } from 'fastify';
 import type { QuestionStatus } from '../domain/types.ts';
 import { HttpError, parseWith } from './errors.ts';
+import type { TenantParts } from './tenants.ts';
 
 const STATUSES = ['open', 'answered', 'closed', 'dismissed', 'expired', 'cancelled'] as const satisfies QuestionStatus[];
 
@@ -14,17 +15,15 @@ export const questionsQuery = z.object({
 });
 const idParams = z.object({ id: z.string() });
 
-export function questionRoutes(app: FastifyInstance, o: { store: Store }): void {
-  const { store } = o;
-
+export function questionRoutes(app: FastifyInstance, o: { tenant: (req: FastifyRequest) => TenantParts }): void {
   app.get('/api/questions', async (req) => {
     const q = parseWith(questionsQuery, req.query);
-    return { questions: store.questions.list({ ...(q.status === 'all' ? {} : { status: [q.status] }), limit: q.limit }) };
+    return { questions: o.tenant(req).store.questions.list({ ...(q.status === 'all' ? {} : { status: [q.status] }), limit: q.limit }) };
   });
 
   app.get('/api/questions/:id', async (req) => {
     const { id } = parseWith(idParams, req.params);
-    const q = store.questions.get(id);
+    const q = o.tenant(req).store.questions.get(id);
     if (!q) throw new HttpError(404, `question ${id} not found`);
     return q;
   });

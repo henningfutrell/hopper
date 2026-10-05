@@ -13,7 +13,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { CONFIG_DOCUMENTS } from '../../src/domain/ports.ts';
 import { openDb } from '../../src/store/db.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
-import { databaseUrlFor } from '../support/database.ts';
+import { ownerSchemaUrlFor } from '../support/database.ts';
 import { writeWebhooks, type WebhookEntry } from '../support/files.ts';
 import { startReceiver, type Receiver } from '../support/receiver.ts';
 import { waitFor } from '../support/wait.ts';
@@ -46,7 +46,7 @@ async function start(webhooks: WebhookEntry[] = [], secrets: Record<string, stri
 
 /** Every row of the store's subscriptions, as stored. */
 const storedRows = (a: TestApp): Record<string, unknown>[] => {
-  const db = openDb(databaseUrlFor(a.dbPath));
+  const db = openDb(ownerSchemaUrlFor(a.dbPath));
   try {
     return db.all('SELECT * FROM webhooks ORDER BY seq');
   } finally {
@@ -54,7 +54,7 @@ const storedRows = (a: TestApp): Record<string, unknown>[] => {
   }
 };
 /** The subscriptions as the store holds them, without ids and timestamps. */
-const stored = (a: TestApp) => a.app.store.webhooks.list().map(({ name, url, events, secretEnv, active }) => ({ name, url, events, secretEnv, active }));
+const stored = (a: TestApp) => a.user().store.webhooks.list().map(({ name, url, events, secretEnv, active }) => ({ name, url, events, secretEnv, active }));
 const list = async (a: TestApp) => (await a.api('GET', '/api/webhooks')).body;
 const edit = (a: TestApp, token: string, body: Record<string, unknown>) => a.ui<Record<string, any>>('/ui/api/webhooks', body, { token }); // eslint-disable-line @typescript-eslint/no-explicit-any
 const signatureOf = (secret: string, got: { headers: Record<string, unknown>; body: string }) =>
@@ -171,11 +171,11 @@ describe('POST /ui/api/webhooks — edit', () => {
 
   it('only the fields sent change; the id stays', async () => {
     const { a, token } = await start(TWO);
-    const id = a.app.store.webhooks.list()[0]!.id;
+    const id = a.user().store.webhooks.list()[0]!.id;
     const r = await edit(a, token, { action: 'edit', name: 'grok-bot', active: false });
     expect(r.status).toBe(200);
     expect(stored(a)).toEqual([{ ...BEFORE[0], active: false }, BEFORE[1]]);
-    expect(a.app.store.webhooks.list()[0]!.id).toBe(id);
+    expect(a.user().store.webhooks.list()[0]!.id).toBe(id);
   });
 
   it('no such name: 404; a name, secret, secretEnv or bad url in the body: 400', async () => {

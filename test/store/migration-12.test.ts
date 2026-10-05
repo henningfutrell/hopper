@@ -31,12 +31,12 @@ attachedMachines:
 
 function migrate(text: string | undefined): string | undefined {
   const url = t.url();
-  t.open(url).close();
+  t.at(url, 16).close();
   const raw = openDb(url);
   if (text !== undefined) raw.run("INSERT INTO config_documents (name, text, updated_at) VALUES ('plugins.yaml', ?, 'x')", text);
   raw.run('UPDATE schema_version SET version = 11');
   raw.close();
-  t.open(url).close();
+  t.at(url, 16).close();
   const after = openDb(url);
   const row = after.get("SELECT text FROM config_documents WHERE name = 'plugins.yaml'");
   after.close();

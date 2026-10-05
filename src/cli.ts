@@ -20,12 +20,12 @@ import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { read } from 'read';
 import { parse } from 'yaml';
-import { CONFIG_DOCUMENTS, type ConfigDocumentName, type Store } from './domain/ports.ts';
+import { CONFIG_DOCUMENTS, type ConfigDocumentName, type ConfigDocuments, type InstanceStore } from './domain/ports.ts';
 import { authDocumentProblem, hashPassword } from './auth/index.ts';
 import { LOGIN_CODE_MINUTES, mintLoginCode } from './http/ui/login-code.ts';
 import { pluginsFileProblem } from './plugins/plugins-file.ts';
 import { RULES_MAX_BYTES } from './questions/index.ts';
-import { openStore } from './store/index.ts';
+import { openInstanceStore } from './store/index.ts';
 import { runtimeSecrets } from './secrets/runtime.ts';
 
 export interface CliIo {
@@ -78,11 +78,25 @@ export function documentProblem(name: ConfigDocumentName, text: string): string 
   return name === 'auth.yaml' ? authDocumentProblem(raw) : pluginsFileProblem(raw);
 }
 
-function put(store: Store, name: ConfigDocumentName, text: string, version: string): void {
+/** One config document wherever it lives: a user's (plugins.yaml, rules.md) or the instance's (auth.yaml). */
+type Documents = ConfigDocuments<ConfigDocumentName>;
+
+function put(documents: Documents, name: ConfigDocumentName, text: string, version: string): void {
   const problem = documentProblem(name, text);
   if (problem) throw new CliError(`${name} refused, nothing written: ${problem}`);
-  if (!store.documents.write(name, text, version)) {
-    throw new CliError(`${name} changed since version ${version} (now ${store.documents.version(name)}); nothing written`);
+  if (!documents.write(name, text, version)) {
+    throw new CliError(`${name} changed since version ${version} (now ${documents.version(name)}); nothing written`);
+  }
+}
+
+/** Run `fn` with the documents `name` lives in: auth.yaml the instance's, the others owner's. */
+function withDocuments<T>(instance: InstanceStore, name: ConfigDocumentName, fn: (documents: Documents) => T): T {
+  if (name === 'auth.yaml') return fn(instance.documents as Documents);
+  const store = instance.userStore(instance.users.owner());
+  try {
+    return fn(store.documents as Documents);
+  } finally {
+    store.close();
   }
 }
 
@@ -93,34 +107,38 @@ function defaultEditor(env: CliIo['env']) {
   };
 }
 
-function config(store: Store, args: string[], io: CliIo): void {
+function config(instance: InstanceStore, args: string[], io: CliIo): void {
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { 'if-version': { type: 'string' } } });
   const [verb, rawName] = positionals;
   const name = documentName(rawName);
+  withDocuments(instance, name, (documents) => configVerb(documents, name, verb, values['if-version'], io));
+}
+
+function configVerb(documents: Documents, name: ConfigDocumentName, verb: string | undefined, ifVersion: string | undefined, io: CliIo): void {
   if (verb === 'get') {
-    const text = store.documents.read(name);
+    const text = documents.read(name);
     if (text === undefined) throw new CliError(`${name}: none yet (version missing)`);
     io.out(text);
   } else if (verb === 'version') {
-    io.out(`${store.documents.version(name)}\n`);
+    io.out(`${documents.version(name)}\n`);
   } else if (verb === 'set') {
-    const version = values['if-version'];
+    const version = ifVersion;
     if (!version) throw new CliError('config set needs --if-version <version> (hopper config version <document>), so nobody else\'s edit is overwritten');
-    put(store, name, io.stdin(), version);
-    io.err(`${name} written (version ${store.documents.version(name)})\n`);
+    put(documents, name, io.stdin(), version);
+    io.err(`${name} written (version ${documents.version(name)})\n`);
   } else if (verb === 'edit') {
-    const version = store.documents.version(name);
+    const version = documents.version(name);
     const dir = mkdtempSync(join(tmpdir(), 'hopper-edit-'));
     const file = join(dir, name);
     try {
-      const before = store.documents.read(name) ?? '';
+      const before = documents.read(name) ?? '';
       writeFileSync(file, before, { mode: 0o600 });
       const status = (io.edit ?? defaultEditor(io.env))(file);
       if (status !== 0) throw new CliError(`the editor exited ${status}; nothing written`);
       const after = readFileSync(file, 'utf8');
       if (after === before) { io.err(`${name} unchanged\n`); return; }
-      put(store, name, after, version);
-      io.err(`${name} written (version ${store.documents.version(name)})\n`);
+      put(documents, name, after, version);
+      io.err(`${name} written (version ${documents.version(name)})\n`);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -130,9 +148,9 @@ function config(store: Store, args: string[], io: CliIo): void {
 }
 
 /** One fresh login code on stdout (or the device link with it); its expiry on stderr. */
-function loginCode(store: Store, args: string[], io: CliIo): void {
+function loginCode(instance: InstanceStore, args: string[], io: CliIo): void {
   const { values } = parseArgs({ args, options: { link: { type: 'string' } } });
-  const code = mintLoginCode(store, { now: () => new Date() });
+  const code = mintLoginCode(instance, { now: () => new Date() }, instance.users.owner().id);
   io.out(values.link ? `${values.link.replace(/\/+$/, '')}/#login=${code}\n` : `${code}\n`);
   io.err(`login code minted: works once, for ${LOGIN_CODE_MINUTES} minutes\n`);
 }
@@ -177,9 +195,9 @@ export function runCli(argv: string[], io: CliIo): number | Promise<number> {
     io.err('HOPPER_DATABASE_URL is not set (nor HOPPER_DATABASE_URL_FILE): the database the daemon uses (postgres://…)\n');
     return 2;
   }
-  let store: Store | undefined;
+  let store: InstanceStore | undefined;
   try {
-    store = openStore({ url, clock: { now: () => new Date() } });
+    store = openInstanceStore({ url, clock: { now: () => new Date() } });
     if (command === 'login-code') loginCode(store, rest, io);
     else config(store, rest, io);
     return 0;

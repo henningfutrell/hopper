@@ -31,7 +31,7 @@ const ENTRIES = [
   entry('old', 10, '2026-10-03T10:00:00.000Z'),
   entry('new', 90, '2026-10-03T10:05:00.000Z'),
 ];
-const ctx = { clock: fixedClock, logger: { info() {}, warn() {} }, dataDir: '/tmp', scratchDir: '/tmp', instanceName: 'q', env: () => undefined };
+const ctx = { clock: fixedClock, logger: { info() {}, warn() {} }, dataDir: '/tmp', userEnv: {}, scratchDir: '/tmp', instanceName: 'q', env: () => undefined };
 const sorter = async (def: PluginDefinition<'queue-sorter'>) => def.create(ctx, {});
 
 describe('the queue-sorter role', () => {

@@ -1,16 +1,24 @@
-import type { SettingsRepository } from '../domain/ports.ts';
+import type { InstanceSettingsRepository, UserSettingsRepository } from '../domain/ports.ts';
 import type { PluginInstall, RouterMode, UpdateChannel, UpdateSettings } from '../domain/types.ts';
 import { UPDATE_CHANNELS } from '../domain/types.ts';
 import type { StoreContext } from './context.ts';
 
-export function createSettingsRepository(c: StoreContext): SettingsRepository {
-  const read = (key: string): string | undefined => {
-    const r = c.db.get('SELECT value FROM settings WHERE key = ?', key);
-    return r ? (r.value as string) : undefined;
+/** `settings` rows by key, in whichever schema the context's connection reads. */
+function keyValues(c: StoreContext) {
+  return {
+    read: (key: string): string | undefined => {
+      const r = c.db.get('SELECT value FROM settings WHERE key = ?', key);
+      return r ? (r.value as string) : undefined;
+    },
+    write: (key: string, value: string): void => {
+      c.db.run('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value', key, value);
+    },
   };
-  const write = (key: string, value: string): void => {
-    c.db.run('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value', key, value);
-  };
+}
+
+/** A user's settings: the router mode. */
+export function createUserSettingsRepository(c: StoreContext): UserSettingsRepository {
+  const { read, write } = keyValues(c);
   return {
     getRouterMode() {
       return read('routerMode') as RouterMode | undefined;
@@ -18,6 +26,13 @@ export function createSettingsRepository(c: StoreContext): SettingsRepository {
     setRouterMode(mode) {
       write('routerMode', mode);
     },
+  };
+}
+
+/** The instance's settings: self-update and the store installs. */
+export function createInstanceSettingsRepository(c: StoreContext): InstanceSettingsRepository {
+  const { read, write } = keyValues(c);
+  return {
     getUpdateSettings() {
       const out: Partial<UpdateSettings> = {};
       const channel = read('updateChannel');

@@ -54,6 +54,12 @@ export interface PluginContext {
    * set or the file cannot be read.
    */
   env(name: string): string | undefined;
+  /**
+   * What the user's processes add to the daemon's environment (issue #158): the gh and claude CLIs'
+   * config dirs (`GH_CONFIG_DIR`, `CLAUDE_CONFIG_DIR`) of a user added later; empty for the first
+   * user. A part that starts a process on this machine starts it with these over `process.env`.
+   */
+  userEnv: Readonly<Record<string, string>>;
 }
 
 /**

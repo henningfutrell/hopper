@@ -1,0 +1,48 @@
+// One user's store (issue #158): the tables of their user schema, over a connection of its own whose
+// search_path is that schema (the `?schema=` of the database URL, db.ts).
+import { USER_DOCUMENTS, type Clock, type IdGen, type UserStore } from '../domain/ports.ts';
+import { createContext } from './context.ts';
+import { openDb } from './db.ts';
+import { createDecisionRepository } from './decisions.ts';
+import { createConfigDocuments } from './documents.ts';
+import { createEventLog } from './events.ts';
+import { createJobRepository } from './jobs.ts';
+import { createLaneRepository } from './lanes.ts';
+import { createQuestionRepository } from './questions.ts';
+import { createUserSettingsRepository } from './settings.ts';
+import { migrateTenant } from './tenant-migrations.ts';
+import { createWebhookRepository } from './webhooks.ts';
+
+/** The database URL with `?schema=<schema>`: the user schema, created when absent. */
+export function schemaUrl(url: string, schema: string): string {
+  const u = new URL(url);
+  u.searchParams.set('schema', schema);
+  return u.toString();
+}
+
+/** Open the store of the user schema `url` names (`?schema=`), migrated on the tenant track. */
+export function openUserStore(o: { url: string; clock: Clock; idGen: IdGen }): UserStore {
+  const db = openDb(o.url);
+  try {
+    migrateTenant(db);
+  } catch (e) {
+    db.close();
+    throw e;
+  }
+  // eslint-disable-next-line prefer-const -- events needs ctx, ctx's commit needs events
+  let events: ReturnType<typeof createEventLog>;
+  const ctx = createContext({ db, clock: o.clock, idGen: o.idGen, onCommit: () => events.flush(), onRollback: () => events.discard() });
+  events = createEventLog(ctx, ctx.inTx);
+  return {
+    jobs: createJobRepository(ctx),
+    lanes: createLaneRepository(ctx),
+    decisions: createDecisionRepository(ctx),
+    events,
+    webhooks: createWebhookRepository(ctx),
+    questions: createQuestionRepository(ctx),
+    settings: createUserSettingsRepository(ctx),
+    documents: createConfigDocuments(ctx, USER_DOCUMENTS),
+    tx: ctx.tx,
+    close: () => db.close(),
+  };
+}

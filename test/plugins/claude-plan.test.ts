@@ -100,7 +100,7 @@ describe('claude-plan plugin', () => {
     if (saved === undefined) delete process.env.FAKE_PLAN_DIR; else process.env.FAKE_PLAN_DIR = saved;
   });
 
-  const ctx = () => ({ clock: { now: () => now }, logger: { info() {}, warn() {} }, dataDir: scratch, scratchDir: scratch, instanceName: 'claude', env: () => undefined, machine: async () => undefined });
+  const ctx = () => ({ clock: { now: () => now }, logger: { info() {}, warn() {} }, dataDir: scratch, userEnv: {}, scratchDir: scratch, instanceName: 'claude', env: () => undefined, machine: async () => undefined });
   async function create(raw: Record<string, unknown> = {}): Promise<UsageSource> {
     const p = parseOptions(claudePlan, { bin: BIN, ...raw });
     if (!p.ok) throw new Error(p.error);
@@ -229,7 +229,7 @@ describe('claude-plan on an attached machine (issue #139)', () => {
   async function create(machines: MachineSnapshot[]): Promise<UsageSource> {
     const auth = testSshAuth(join(ssh, 'auth'))();
     const ctx = {
-      clock: { now: () => now }, logger: { info() {}, warn() {} }, dataDir: scratch, scratchDir: scratch, instanceName: 'laptop-claude',
+      clock: { now: () => now }, logger: { info() {}, warn() {} }, dataDir: scratch, userEnv: {}, scratchDir: scratch, instanceName: 'laptop-claude',
       env: (n: string) => (n === 'HOPPER_SSH_KEY_FILE' ? auth.identityFile : undefined),
       machine: async (id: string) => machines.find((m) => m.id === id),
     };

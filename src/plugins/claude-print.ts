@@ -21,6 +21,8 @@ export interface ClaudePrintOptions {
   jsonSchema: Record<string, unknown>;
   /** Where claude runs: given `[bin, ...argv]`, the program and argv that run it there. Absent: here. */
   wrap?: (argv: string[]) => [string, string[]];
+  /** Over the daemon's environment: the user's CLI config dirs (PluginContext.userEnv, issue #158). */
+  userEnv?: Readonly<Record<string, string>>;
 }
 
 /**
@@ -33,9 +35,9 @@ export const ON_MACHINE = 'd=$(mktemp -d) && cd "$d" || exit 1; "$@"; s=$?; cd /
 /** Default `timeoutMs` of the claude plugins. */
 export const CLAUDE_TIMEOUT_MS = 180_000;
 
-/** process.env without the Claude Code markers, so a child claude does not think it runs inside one. */
-export function scrubbedEnv(): NodeJS.ProcessEnv {
-  const env = { ...process.env };
+/** `base` (process.env) without the Claude Code markers, so a child claude does not think it runs inside one. */
+export function scrubbedEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const env = { ...base };
   for (const key of Object.keys(env)) {
     if (key === 'CLAUDECODE' || key.startsWith('CLAUDE_CODE_')) delete env[key];
   }
@@ -85,7 +87,7 @@ export function claudePrint<T extends object>(o: ClaudePrintOptions, schema: z.Z
       resolve(r);
     };
     const [file, args] = o.wrap ? o.wrap([o.bin, ...claudeArgv(o)]) : [o.bin, claudeArgv(o)];
-    const child = spawn(file, args, { cwd: o.cwd, env: scrubbedEnv(), stdio: ['pipe', 'pipe', 'pipe'] });
+    const child = spawn(file, args, { cwd: o.cwd, env: scrubbedEnv({ ...process.env, ...(o.wrap ? {} : o.userEnv) }), stdio: ['pipe', 'pipe', 'pipe'] });
     const onAbort = () => {
       child.kill('SIGKILL');
       finish({ error: reasonOf() });

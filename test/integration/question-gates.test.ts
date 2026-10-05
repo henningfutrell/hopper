@@ -26,7 +26,7 @@ async function start(o: { rules?: string; seams?: Parameters<typeof startTestApp
   t = await startTestApp({ dbPath: db.dbPath, ...(o.seams ? { seams: o.seams } : {}) });
   return { a: t };
 }
-const rulesText = (a: TestApp) => a.app.store.documents.read('rules.md');
+const rulesText = (a: TestApp) => a.user().store.documents.read('rules.md');
 
 const sha = (s: string) => createHash('sha256').update(s).digest('hex');
 const gates = async (a: TestApp) => (await a.api<QuestionGatesView>('GET', '/api/question-gates')).body;

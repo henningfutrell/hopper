@@ -31,6 +31,8 @@ export interface PluginHostOptions {
    */
   machineContext?: Partial<MachineSourceContext>;
   dataDir: string;
+  /** PluginContext.userEnv: what the user's processes add to the daemon's environment; default none. */
+  userEnv?: Readonly<Record<string, string>>;
   clock: Clock;
   logger: PluginLogger;
   routerMode(): RouterMode;

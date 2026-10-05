@@ -18,7 +18,7 @@ import { fakeKit, fixedClock, useTempDirs } from './support.ts';
 
 const temp = useTempDirs();
 const logger = { info() {}, warn() {} };
-const ctx = (dir: string) => ({ clock: fixedClock, logger, dataDir: dir, scratchDir: join(dir, 'scratch'), instanceName: 'x', env: () => undefined });
+const ctx = (dir: string) => ({ clock: fixedClock, logger, dataDir: dir, userEnv: {}, scratchDir: join(dir, 'scratch'), instanceName: 'x', env: () => undefined });
 
 /** The options `def` would get from `raw`, as its own options type. */
 function options<O>(def: PluginDefinition<Role, O>, raw: unknown = {}): O {

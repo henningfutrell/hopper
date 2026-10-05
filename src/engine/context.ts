@@ -1,10 +1,10 @@
 import type {
-  Clock, ExecutorRegistry, IdGen, MachineSource, QuestionService, QueueSorter, Router, RoutingView, SettableUsageSource, Store, UsageSource,
+  Clock, ExecutorRegistry, IdGen, MachineSource, QuestionService, QueueSorter, Router, RoutingView, SettableUsageSource, UserStore, UsageSource,
 } from '../domain/ports.ts';
 import type { DeciderPolicy, RouterMode } from '../domain/types.ts';
 
 export interface EngineOptions {
-  store: Store;
+  store: UserStore;
   clock: Clock;
   /** Decision ids. Defaults to randomUUID. */
   idGen?: IdGen;

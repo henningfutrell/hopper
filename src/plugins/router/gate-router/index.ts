@@ -45,7 +45,7 @@ const gateRouter: PluginDefinition<'router', GateRouterOptions> = {
     return createGateRouter({
       grokBotJevSrc: expandHome(o.grokBotJevSrc), python: o.python, claudeBin: o.claudeBin, claudeModel: o.claudeModel,
       jevGates: o.jevGates, typesafeKey: () => ctx.env('TYPESAFE_API_KEY'), timeoutMs: o.timeoutMs,
-      dataDir: ctx.dataDir, mode: ctx.routerMode, clock: ctx.clock,
+      dataDir: ctx.dataDir, mode: ctx.routerMode, clock: ctx.clock, userEnv: ctx.userEnv,
     });
   },
 };

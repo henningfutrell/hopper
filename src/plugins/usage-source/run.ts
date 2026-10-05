@@ -6,10 +6,11 @@ import { scrubbedEnv } from '../claude-print.ts';
 /** It ran (any exit code), or it could not run or finish. */
 export type CliRun = { code: number; stdout: string; stderr: string } | { error: string };
 
-export function runCli(bin: string, args: string[], o: { cwd: string; timeoutMs: number; signal: AbortSignal }): Promise<CliRun> {
+/** `userEnv`: over the daemon's environment, the user's CLI config dirs (PluginContext.userEnv, issue #158). */
+export function runCli(bin: string, args: string[], o: { cwd: string; timeoutMs: number; signal: AbortSignal; userEnv?: Readonly<Record<string, string>> }): Promise<CliRun> {
   return new Promise((resolve) => {
     execFile(bin, args, {
-      cwd: o.cwd, env: scrubbedEnv(), timeout: o.timeoutMs, killSignal: 'SIGKILL', signal: o.signal, encoding: 'utf8', maxBuffer: 4 * 1024 * 1024,
+      cwd: o.cwd, env: scrubbedEnv({ ...process.env, ...o.userEnv }), timeout: o.timeoutMs, killSignal: 'SIGKILL', signal: o.signal, encoding: 'utf8', maxBuffer: 4 * 1024 * 1024,
     }, (err, stdout, stderr) => {
       if (!err) return resolve({ code: 0, stdout, stderr });
       const e = err as NodeJS.ErrnoException & { killed?: boolean; code?: number | string };

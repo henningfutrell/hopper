@@ -25,6 +25,8 @@ export interface HerdrClaudeExecutorOptions {
   trustWorkdir: boolean;
   pollMs: number;
   idleQuestionMs: number;
+  /** Set on the tab of a job in this machine's herdr: the user's CLI config dirs (issue #158). Default none. */
+  paneEnv?: Readonly<Record<string, string>>;
   /** Injectable for tests; default an abortable setTimeout. */
   sleep?: Sleep;
 }
@@ -185,8 +187,10 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       const p = resolvePayload(ctx.job.spec.payload, o.defaultCwd);
       let state: PaneState | undefined;
       return onLane(ctx, () => state, async () => {
-        const deps = depsOn(whereOn(ctx.machine));
-        const opened = await openPane(deps, ctx, p.cwd, p.env);
+        const where = whereOn(ctx.machine);
+        const deps = depsOn(where);
+        const local = !where.ssh && !where.client;
+        const opened = await openPane(deps, ctx, p.cwd, local ? { ...p.env, ...o.paneEnv } : p.env);
         const refused = heldElsewhere(ctx.laneId, opened);
         if (refused) return refused;
         state = opened;

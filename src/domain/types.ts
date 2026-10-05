@@ -423,6 +423,11 @@ export type { QuestionGatesView, RiskRuleView, RulesView } from './question-gate
 export type { Identity, IdentityProviderType, SessionUser, SessionView, SignInProviderView, UiRole } from './sign-in.ts';
 export { UI_ROLES, roleAllows } from './sign-in.ts';
 
+// ---- Users (issue #158): src/domain/users.ts (re-exported here) ---------------------------
+
+export type { User, UserAdded, UserView } from './users.ts';
+export { OWNER_ID } from './users.ts';
+
 // ---- Self-update (issue #44) ------------------------------------------------------------
 
 export type { InstallInfo, UpdateApply, UpdateChannel, UpdateRelease, UpdateSettings, UpdateState, UpdateStatus } from './update.ts';

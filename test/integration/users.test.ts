@@ -54,7 +54,7 @@ describe('two users of one hopper', () => {
     const ownerJob = await a.pull(hard, { title: 'owner work' });
     const ownerQuestion = await a.waitForQuestion(ownerJob.id, (q) => q.tier === 'human');
     const beaJob = await a.pull(sleep, { title: 'bea work' }, 'bea');
-    expect((await a.ui('/ui/api/webhooks', { action: 'add', name: 'hook', url: 'http://127.0.0.1:9/hook', events: ['job.*'], secretEnv: 'WEBHOOK_SECRET_A' }, { token: owner })).status).toBe(200);
+    expect((await a.ui('/ui/api/webhooks', { action: 'add', name: 'hook', url: 'http://127.0.0.1:9/hook', events: ['*'], secretEnv: 'WEBHOOK_SECRET_A' }, { token: owner })).status).toBe(200);
 
     const read = async <T>(path: string, token: string): Promise<T> => (await a.api<T>('GET', path, undefined, session(token))).body;
     expect((await read<{ jobs: Job[] }>('/api/jobs', owner)).jobs.map((j) => j.id)).toEqual([ownerJob.id]);
@@ -80,7 +80,9 @@ describe('two users of one hopper', () => {
     }
     expect((await a.ui(`/ui/api/jobs/${job.id}/cancel`, {}, { token: bea })).status).toBe(404);
     expect((await a.job(job.id)).status).toBe('waiting_answer');
-    expect((await a.questionsOf(job.id))[0]).toMatchObject({ status: 'open', seenAt: undefined });
+    const after = (await a.questionsOf(job.id))[0]!;
+    expect(after.status).toBe('open');
+    expect(after.seenAt).toBeUndefined();
   });
 
   it('an admin of one user changing plugins changes only that user\'s plugins.yaml', async () => {
@@ -160,7 +162,7 @@ describe('a user\'s runtime', () => {
     const plugins = parse(a.user(bea.id).store.documents.read('plugins.yaml')!) as { executors: { plugin: string; options?: { session?: string } }[] };
     expect(plugins.executors.filter((e) => e.plugin === 'herdr-claude').map((e) => e.options?.session)).toEqual(['hopper-bea']);
     const report = (await a.api('GET', '/api/plugins', undefined, { 'x-hopper-user': 'bea' })).body;
-    expect(report.executors.instances.find((i: { plugin: string }) => i.plugin === 'herdr-claude').options.session).toBe('hopper-bea');
+    expect(report.executors.instances.find((i: { instance: { plugin: string } }) => i.instance.plugin === 'herdr-claude').instance.options.session).toBe('hopper-bea');
     expect(parse(a.user().store.documents.read('plugins.yaml')!).executors).toEqual([{ name: 'test', plugin: 'test' }]);
     const job = await a.pull({ op: 'echo', message: 'hi' }, { executor: 'scripted' }, 'bea');
     expect((await a.waitForStatusOf(job.id, 'finished', 'bea')).status).toBe('finished');
@@ -172,7 +174,7 @@ describe('a user\'s runtime', () => {
     const owner = await a.login();
     const bea = await a.addUser('Bea');
     const beaToken = await a.loginWith(mintLoginCode(a.app.instance, { now: () => new Date() }, bea.id));
-    const hook = { action: 'add', name: 'hook', url: 'http://127.0.0.1:9/hook', events: ['job.*'], secretEnv: 'WEBHOOK_SECRET_A' };
+    const hook = { action: 'add', name: 'hook', url: 'http://127.0.0.1:9/hook', events: ['*'], secretEnv: 'WEBHOOK_SECRET_A' };
     expect((await a.ui('/ui/api/webhooks', hook, { token: owner })).status).toBe(200);
     expect((await a.ui('/ui/api/webhooks', hook, { token: beaToken })).status).toBe(200);
     const subs = async (token: string) => (await a.api('GET', '/api/webhooks', undefined, session(token))).body.subscriptions;

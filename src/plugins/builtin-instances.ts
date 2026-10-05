@@ -21,8 +21,9 @@ export interface PluginsDoc {
 /**
  * The built-in instances. Neither GitHub source runs until plugins.yaml names its `authors` (no
  * default); the App also needs its `appId` and key. Secrets come from the environment, named by the options (design.md "Secrets").
+ * `herdrSession`: a user's own herdr session (issue #158), named on the herdr-claude instance; absent: the plugin's default.
  */
-export function builtinInstances(answerTimeoutMs = 180_000, localMachine = true): PluginsDoc {
+export function builtinInstances(answerTimeoutMs = 180_000, localMachine = true, herdrSession?: string): PluginsDoc {
   const question = { bin: 'claude', timeoutMs: answerTimeoutMs };
   return {
     queueSorter: { name: 'priority', plugin: 'priority' },
@@ -33,7 +34,7 @@ export function builtinInstances(answerTimeoutMs = 180_000, localMachine = true)
     ],
     executors: [
       { name: 'test', plugin: 'test' },
-      { name: 'herdr-claude', plugin: 'herdr-claude' },
+      { name: 'herdr-claude', plugin: 'herdr-claude', ...(herdrSession ? { options: { session: herdrSession } } : {}) },
     ],
     // The names stay `github` and `github-app`: jobs and sync state are keyed by them. The gh CLI is
     // the default (issue #108): `auto` pauses it once this install's own GitHub App key is set.
@@ -57,12 +58,12 @@ export type EnsureResult = { action: 'kept' | 'default' | 'removed-local' };
  * Where this host is not a machine (`localMachine` false), remove every `local` instance from
  * `machines:` — one an earlier boot of the container wrote (issue #141); every other line is kept.
  */
-export function ensurePluginsDocument(o: { documents: ConfigDocuments; answerTimeoutMs: number; localMachine?: boolean; logger: PluginLogger }): EnsureResult {
+export function ensurePluginsDocument(o: { documents: ConfigDocuments; answerTimeoutMs: number; localMachine?: boolean; herdrSession?: string; logger: PluginLogger }): EnsureResult {
   const localMachine = o.localMachine ?? true;
   const version = o.documents.version(PLUGINS);
   const text = o.documents.read(PLUGINS);
   if (text !== undefined) return localMachine ? { action: 'kept' } : removeLocalMachines(o.documents, text, version, o.logger);
-  const out = new Document({ version: 1, ...builtinInstances(o.answerTimeoutMs, localMachine) });
+  const out = new Document({ version: 1, ...builtinInstances(o.answerTimeoutMs, localMachine, o.herdrSession) });
   out.commentBefore = ' hopper plugins.yaml: which plugin instance fills which role (docs/design.md "Phase 5").\n Written by the daemon from the built-in instances.';
   if (!o.documents.write(PLUGINS, out.toString({ lineWidth: 0 }), 'missing')) return { action: 'kept' };
   o.logger.info(`hopper: wrote ${PLUGINS} from the built-in instances. It is the only configuration of every part.`);

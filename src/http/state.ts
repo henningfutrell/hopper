@@ -1,7 +1,8 @@
 // Read routes over engine state. Nothing here changes anything (router mode is a UI mutation).
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import type { Clock, PluginsView, Store } from '../domain/ports.ts';
+import type { Clock, PluginsView, UserStore } from '../domain/ports.ts';
+import type { TenantParts } from './tenants.ts';
 import { EVENT_TYPES } from '../domain/types.ts';
 import type { DomainEvent, EventType } from '../domain/types.ts';
 import type { Engine } from '../engine/index.ts';
@@ -27,7 +28,7 @@ export const decisionsQuery = z.object({ limit: z.coerce.number().int().min(1).m
 const PAGE = 1000;
 
 /** Events after `after`, oldest first, filtered by type; walks the log in pages. */
-function eventsAfter(store: Store, after: number, limit: number, types?: EventType[]): DomainEvent[] {
+function eventsAfter(store: UserStore, after: number, limit: number, types?: EventType[]): DomainEvent[] {
   if (!types) return store.events.since(after, limit);
   const out: DomainEvent[] = [];
   let cursor = after;
@@ -45,29 +46,30 @@ export function routerView(engine: Engine, plugins: PluginsView) {
   return { mode: engine.routerMode(), router: s.name, plugin: s.plugin, fallback: s.fallback, ...(s.reason === undefined ? {} : { reason: s.reason }) };
 }
 
-export function stateRoutes(app: FastifyInstance, o: { engine: Engine; store: Store; clock: Clock; version: string; plugins: PluginsView }): void {
-  const { engine, store, plugins } = o;
+/** The request's user's engine state (issue #158); `/api/health`'s version and uptime are the instance's. */
+export function stateRoutes(app: FastifyInstance, o: { tenant: (req: FastifyRequest) => TenantParts; clock: Clock; version: string }): void {
   const startedAt = o.clock.now().getTime();
 
-  app.get('/api/health', async () => {
+  app.get('/api/health', async (req) => {
+    const { engine, plugins } = o.tenant(req);
     const r = plugins.routerStatus();
     return {
       ok: true, version: o.version, routerMode: engine.routerMode(), router: r.name, fallback: r.fallback, executors: engine.executorNames,
       uptimeS: Math.floor((o.clock.now().getTime() - startedAt) / 1000),
     };
   });
-  app.get('/api/queue', async () => engine.getQueue());
-  app.get('/api/machines', async () => ({ machines: await engine.getMachines() }));
+  app.get('/api/queue', async (req) => o.tenant(req).engine.getQueue());
+  app.get('/api/machines', async (req) => ({ machines: await o.tenant(req).engine.getMachines() }));
   // What the Machines view edits (issue #18): the machine source, the attached machines, the detected ssh targets, the file version.
-  app.get('/api/machines/config', async () => plugins.machinesConfig());
+  app.get('/api/machines/config', async (req) => o.tenant(req).plugins.machinesConfig());
 
   app.get('/api/decisions', async (req) => {
     const { limit } = parseWith(decisionsQuery, req.query);
-    return { decisions: store.decisions.list(limit) };
+    return { decisions: o.tenant(req).store.decisions.list(limit) };
   });
   app.get('/api/decisions/:id', async (req) => {
     const { id } = req.params as { id: string };
-    const d = store.decisions.get(id);
+    const d = o.tenant(req).store.decisions.get(id);
     if (!d) throw new HttpError(404, `decision ${id} not found`);
     return d;
   });
@@ -75,13 +77,14 @@ export function stateRoutes(app: FastifyInstance, o: { engine: Engine; store: St
   // Without `after`, the newest `limit` events (oldest first) — what a fresh UI wants.
   app.get('/api/events', async (req) => {
     const q = parseWith(eventsQuery, req.query);
+    const { store } = o.tenant(req);
     if (q.after === undefined) return { events: store.events.recent(q.limit, q.types).reverse() };
     return { events: eventsAfter(store, q.after, q.limit, q.types) };
   });
 
-  app.get('/api/router', async () => routerView(engine, plugins));
-  app.get('/api/plugins', async () => plugins.report());
-  app.get('/api/routing', async () => plugins.routing());
+  app.get('/api/router', async (req) => { const t = o.tenant(req); return routerView(t.engine, t.plugins); });
+  app.get('/api/plugins', async (req) => o.tenant(req).plugins.report());
+  app.get('/api/routing', async (req) => o.tenant(req).plugins.routing());
 
-  app.get('/api/usage', async () => engine.getUsageReport());
+  app.get('/api/usage', async (req) => o.tenant(req).engine.getUsageReport());
 }

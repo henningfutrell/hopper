@@ -27,13 +27,15 @@ export interface GitHubSourceDeps {
   env(name: string): string | undefined;
   /** A double at the GitHubApi seam (tests). */
   api?: GitHubApi;
+  /** Over the daemon's environment for the gh CLI: the user's gh config dir (issue #158). */
+  userEnv?: Readonly<Record<string, string>>;
 }
 
 export function createGhSource(o: GitHubSourceDeps, options: GitHubGhOptions): JobSource {
   const keyEnv = options.appKeyEnv;
   return createGitHubSource({
     name: o.name, kind: 'github', mode: 'gh', config: sourceConfig(options), clock: o.clock, knownKeys: o.knownKeys, rerunnable: o.rerunnable,
-    api: o.api ?? createGhCliApi({ bin: options.bin }),
+    api: o.api ?? createGhCliApi({ bin: options.bin, ...(o.userEnv ? { userEnv: o.userEnv } : {}) }),
     paused: () => (options.enabled === 'auto' && keyEnv !== null && o.env(keyEnv)?.trim() ? GH_PAUSED : undefined),
   });
 }

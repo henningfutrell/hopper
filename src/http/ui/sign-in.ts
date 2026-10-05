@@ -13,8 +13,8 @@ import rateLimit from '@fastify/rate-limit';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { LOCAL_IDENTITY, NO_SIGN_IN_IDENTITY, SignInRefused, type SignIn } from '../../auth/index.ts';
-import type { Clock, Store } from '../../domain/ports.ts';
-import type { Identity, UiRole } from '../../domain/types.ts';
+import type { Clock, InstanceStore } from '../../domain/ports.ts';
+import type { Identity, UiRole, User } from '../../domain/types.ts';
 import { parseWith } from '../errors.ts';
 import { useLoginCode } from './login-code.ts';
 import { sessionUser, type UiSessions } from './sessions.ts';
@@ -61,7 +61,11 @@ const html = (reply: FastifyReply, status: number, body: string) =>
   reply.code(status).type('text/html; charset=utf-8').header('cache-control', 'no-store').header('referrer-policy', 'no-referrer').send(body);
 
 export function registerSignInRoutes(parent: FastifyInstance, o: {
-  sessions: UiSessions; signIn: SignIn; store: Pick<Store, 'loginCodes'>; clock: Clock;
+  sessions: UiSessions; signIn: SignIn; instance: Pick<InstanceStore, 'loginCodes'>; clock: Clock;
+  /** The user an identity signs in as (issue #158): linked, owner for no sign-in, or a new one. */
+  userFor: (who: Identity) => Promise<User>;
+  /** A user's name by id (a login code names its user by id). */
+  userName: (id: string) => string;
   /** An origin UI mutations come from (loopback, a LAN name, the public URL): no sign-in and password sign-in answer there. */
   isUiOrigin: (origin: string) => boolean;
   refuse: (req: FastifyRequest, reply: FastifyReply, why: string, needs?: UiRole) => unknown;
@@ -78,11 +82,13 @@ export function registerSignInRoutes(parent: FastifyInstance, o: {
 function routes(app: FastifyInstance, o: Parameters<typeof registerSignInRoutes>[1]): void {
   const { signIn, sessions } = o;
 
-  /** A session for `who`, answered as JSON: the UI stores the token. */
-  const started = (reply: FastifyReply, who: Identity, role: UiRole) => {
-    const s = sessions.create({ role, identity: who });
-    console.warn(`hopper: UI session started: ${who.provider} ${sessionUser(s).name}, role ${role}`);
-    return reply.header('cache-control', 'no-store').send({ token: s.token, expiresAt: s.expiresAt, user: sessionUser(s) });
+  /** A session for `who`, as its user, answered as JSON: the UI stores the token. */
+  const started = async (reply: FastifyReply, who: Identity, role: UiRole) => {
+    const user = await o.userFor(who);
+    const s = sessions.create({ role, identity: who, userId: user.id });
+    const shown = sessionUser(s, user.name);
+    console.warn(`hopper: UI session started: ${who.provider} ${shown.identity} as user ${user.id}, role ${role}`);
+    return reply.header('cache-control', 'no-store').send({ token: s.token, expiresAt: s.expiresAt, user: shown });
   };
   const fromSignInOrigin = (req: FastifyRequest): boolean => req.headers.origin?.toLowerCase() === signIn.origin();
   // No provider redirect comes back, so these answer on any UI origin, not only the sign-in origin.
@@ -92,9 +98,10 @@ function routes(app: FastifyInstance, o: Parameters<typeof registerSignInRoutes>
   app.post('/ui/login', async (req, reply) => {
     const parsed = loginBody.safeParse(req.body);
     if (!signIn.local) return o.refuse(req, reply, 'local sign-in is off in auth.yaml');
-    if (!parsed.success || !useLoginCode(o.store, o.clock, parsed.data.code)) return o.refuse(req, reply, 'wrong, used, expired or missing login code');
-    const s = sessions.create({ role: 'admin', identity: LOCAL_IDENTITY });
-    console.warn('hopper: UI session started: local login code, role admin');
+    const userId = parsed.success ? useLoginCode(o.instance, o.clock, parsed.data.code) : undefined;
+    if (userId === undefined) return o.refuse(req, reply, 'wrong, used, expired or missing login code');
+    const s = sessions.create({ role: 'admin', identity: LOCAL_IDENTITY, userId });
+    console.warn(`hopper: UI session started: local login code as user ${userId} (${o.userName(userId)}), role admin`);
     return reply.type('text/html; charset=utf-8').header('cache-control', 'no-store').header('referrer-policy', 'no-referrer')
       .send(loginPage(s.token));
   });

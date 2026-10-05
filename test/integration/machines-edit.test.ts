@@ -276,7 +276,7 @@ describe('POST /ui/api/plugins — remove a machine', () => {
   it('refused (409, naming the jobs) while a lane there is busy or a job waits for an answer in a pane there', async () => {
     const { a, token } = await start();
     const before = read(a);
-    const store = a.app.store;
+    const store = a.user().store;
     const parked = store.jobs.create({ executor: 'test', payload: {} }, 50);
     store.jobs.update(parked.id, { status: 'waiting_answer', resumeOn: 'desk' });
     const r = await plugins(a, token, { action: 'remove', role: 'machine-source', name: 'desk', version: (await config(a)).version });

@@ -6,7 +6,8 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
 import { runCli, type CliIo } from '../src/cli.ts';
-import { openStore } from '../src/store/index.ts';
+import { openInstanceStore } from '../src/store/index.ts';
+import { openOwnerStore } from './support/files.ts';
 import { testDatabaseUrl } from './support/database.ts';
 
 const dirs: string[] = [];
@@ -30,7 +31,7 @@ function cli(url: string | undefined, argv: string[], o: { stdin?: string; edit?
 }
 
 function documentIn(url: string, name: 'plugins.yaml' | 'rules.md'): string | undefined {
-  const s = openStore({ url, clock: { now: () => new Date() } });
+  const s = openOwnerStore(url);
   try { return s.documents.read(name); } finally { s.close(); }
 }
 
@@ -104,7 +105,7 @@ describe('hopper config', () => {
     expect(cli(url, ['config', 'edit', 'rules.md'], { edit: () => 0 }).err).toMatch(/rules.md unchanged/);
     const raced = cli(url, ['config', 'edit', 'rules.md'], {
       edit: (f) => {
-        const other = openStore({ url, clock: { now: () => new Date() } });
+        const other = openOwnerStore(url);
         other.documents.write('rules.md', 'from the UI', other.documents.version('rules.md'));
         other.close();
         writeFileSync(f, 'from the editor');
@@ -123,10 +124,10 @@ describe('hopper login-code', () => {
     expect(a).toMatchObject({ code: 0, out: expect.stringMatching(/^[0-9a-f]{64}\n$/) });
     const b = cli(url, ['login-code', '--link', 'https://hopper.example.com/']);
     expect(b.out).toMatch(/^https:\/\/hopper\.example\.com\/#login=[0-9a-f]{64}\n$/);
-    const s = openStore({ url, clock: { now: () => new Date() } });
+    const s = openInstanceStore({ url, clock: { now: () => new Date() } });
     const hash = (c: string) => createHash('sha256').update(c).digest('hex');
-    expect(s.loginCodes.take(hash(a.out.trim()), new Date().toISOString())).toBe(true);
-    expect(s.loginCodes.take(hash(a.out.trim()), new Date().toISOString())).toBe(false);
+    expect(s.loginCodes.take(hash(a.out.trim()), new Date().toISOString())).toBe('owner');
+    expect(s.loginCodes.take(hash(a.out.trim()), new Date().toISOString())).toBeUndefined();
     s.close();
   });
 });

@@ -11,7 +11,8 @@ import type { UiSessions } from './ui/sessions.ts';
 
 const STREAM = '/api/events/stream';
 
-function sessionToken(req: FastifyRequest): string | undefined {
+/** The request's UI session token: the header, or for the event stream its `session` query parameter. */
+export function sessionToken(req: FastifyRequest): string | undefined {
   const header = req.headers[SESSION_HEADER];
   if (typeof header === 'string') return header;
   if (req.url.split('?')[0] !== STREAM) return undefined;

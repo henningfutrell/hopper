@@ -25,6 +25,8 @@ export interface CommandExecutorOptions {
   sshAuth: () => SshAuth;
   /** The docker socket only the hopper may open (design.md "Target authentication"); throws when there is none. */
   dockerHost: () => string;
+  /** Over the daemon's environment for what runs on this machine: the user's CLI config dirs (issue #158). */
+  userEnv?: Readonly<Record<string, string>>;
 }
 
 /** The script a body carries: its first fenced code block when it has one, else the whole body. */
@@ -49,11 +51,11 @@ export function commandOn(machine: MachineSnapshot, argv: string[], o: Pick<Comm
 
 export interface Ran { exitCode: number; stdout: string; stderr: string }
 
-/** Runs a program to its end: what it printed and its exit code, or how it was stopped. */
-export function run(file: string, args: string[], timeoutMs: number, signal: AbortSignal): Promise<Ran | 'aborted' | 'timeout'> {
+/** Runs a program to its end: what it printed and its exit code, or how it was stopped. `userEnv` over the daemon's environment. */
+export function run(file: string, args: string[], timeoutMs: number, signal: AbortSignal, userEnv: Readonly<Record<string, string>> = {}): Promise<Ran | 'aborted' | 'timeout'> {
   return new Promise((resolve, reject) => {
     execFile(file, args, {
-      env: dockerEnv(), timeout: timeoutMs, killSignal: 'SIGKILL', signal, maxBuffer: 64 * 1024 * 1024, encoding: 'utf8',
+      env: dockerEnv({ ...process.env, ...userEnv }), timeout: timeoutMs, killSignal: 'SIGKILL', signal, maxBuffer: 64 * 1024 * 1024, encoding: 'utf8',
     }, (err, stdout, stderr) => {
       if (!err) return resolve({ exitCode: 0, stdout, stderr });
       const e = err as NodeJS.ErrnoException & { killed?: boolean; code?: number | string };
@@ -79,7 +81,7 @@ export function createCommandExecutor(o: CommandExecutorOptions): Executor {
       const where = ctx.machine.id;
       try {
         const [file, args] = commandOn(ctx.machine, ['env', ...vars, 'sh', '-c', scriptOf(body)], o);
-        const r = await run(file, args, o.timeoutMs, ctx.signal);
+        const r = await run(file, args, o.timeoutMs, ctx.signal, o.userEnv);
         if (r === 'aborted') return ABORTED;
         if (r === 'timeout') return { kind: 'failed', error: `command on ${where} timed out after ${o.timeoutMs} ms` };
         if (r.exitCode !== 0) return { kind: 'failed', error: `command exited ${r.exitCode} on ${where}: ${tail((r.stderr.trim() || r.stdout.trim()))}` };

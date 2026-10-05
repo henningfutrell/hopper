@@ -66,7 +66,7 @@ const commandUsage: PluginDefinition<'usage-source', CommandUsageOptions> = {
       async read(signal) {
         mkdirSync(probe, { recursive: true, mode: 0o700 });
         chmodSync(probe, 0o700);
-        const r = await runCli(bin, args, { cwd: probe, timeoutMs: TIMEOUT_MS, signal });
+        const r = await runCli(bin, args, { cwd: probe, timeoutMs: TIMEOUT_MS, signal, userEnv: ctx.userEnv });
         if ('error' in r) return { problem: `usage command failed: ${r.error}` };
         if (r.code !== 0) return { problem: `usage command failed: exited ${r.code}: ${r.stderr.trim().slice(0, 300)}` };
         return parseOutput(r.stdout);

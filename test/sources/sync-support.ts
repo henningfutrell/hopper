@@ -2,7 +2,7 @@
 // a SourceHost over a minimal store (events, jobs, questions). Only what the sync loop reads.
 
 import type {
-  Clock, JobSource, SourceHost, SourceItem, SourceReport, SourceSignal, Store,
+  Clock, JobSource, SourceHost, SourceItem, SourceReport, SourceSignal, UserStore,
 } from '../../src/domain/ports.ts';
 import type { DomainEvent, EventType, Job, Question } from '../../src/domain/types.ts';
 import { TERMINAL_STATUSES, isRerunnable } from '../../src/domain/types.ts';
@@ -15,7 +15,7 @@ export function item(key: string, over: Partial<SourceItem> = {}): SourceItem {
 }
 
 export interface World {
-  store: Store;
+  store: UserStore;
   host: SourceHost;
   clock: Clock & { advance(ms: number): void };
   jobs: Map<string, Job>;
@@ -60,7 +60,7 @@ export function createWorld(): World {
         .filter((q) => (!f?.jobId || q.jobId === f.jobId) && (!f?.status || f.status.includes(q.status))),
     },
     tx: <T>(fn: () => T) => fn(),
-  } as unknown as Store;
+  } as unknown as UserStore;
 
   function patchJob(id: string, patch: Partial<Job>): Job {
     const next = { ...jobs.get(id)!, ...patch };

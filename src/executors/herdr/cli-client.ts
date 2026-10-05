@@ -31,7 +31,11 @@ export interface HerdrCliClient extends HerdrClient {
 }
 
 /** This machine's herdr or an ssh target's: the binary and session are the hopper's to name. */
-interface CliOptions { bin: string; session: string; timeoutMs?: number; ssh?: SshTransport }
+interface CliOptions {
+  bin: string; session: string; timeoutMs?: number; ssh?: SshTransport;
+  /** Over the daemon's environment for this machine's herdr: the user's CLI config dirs (issue #158). Not sent over ssh. */
+  userEnv?: Readonly<Record<string, string>>;
+}
 /** A client target's herdr: its binary and session are the client's own (design.md "Client targets"). */
 interface ClientOptions { client: ClientTransport; timeoutMs?: number }
 
@@ -75,7 +79,7 @@ function viaCli(o: CliOptions): Exec {
       return reject(new HerdrError('ssh', `ssh ${ssh!.target}: ${(e as Error).message}`));
     }
     execFile(file, fileArgs, {
-      env: scrubbedEnv(), timeout: timeoutMs, killSignal: 'SIGKILL', maxBuffer: 16 * 1024 * 1024, encoding: 'utf8',
+      env: scrubbedEnv({ ...process.env, ...(ssh ? {} : o.userEnv) }), timeout: timeoutMs, killSignal: 'SIGKILL', maxBuffer: 16 * 1024 * 1024, encoding: 'utf8',
     }, (err, stdout, stderr) => {
       if (!err) return resolve(stdout);
       const e = err as NodeJS.ErrnoException & { killed?: boolean; code?: number | string };

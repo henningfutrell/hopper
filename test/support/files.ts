@@ -44,3 +44,10 @@ export function writeWebhooks(dbPath: string, webhooks: WebhookEntry[]): void {
     for (const w of webhooks) owner.webhooks.add({ ...w, active: w.active ?? true });
   });
 }
+
+/** Owner's store in the database `url` names (its instance store closed with it). */
+export function openOwnerStore(url: string): UserStore {
+  const instance = openInstanceStore({ url, clock: { now: () => new Date() } });
+  const owner = instance.userStore(instance.users.owner());
+  return { ...owner, close: () => { owner.close(); instance.close(); } };
+}

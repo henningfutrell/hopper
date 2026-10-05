@@ -1,9 +1,9 @@
 // GET /api/events/stream (design.md "SSE"): replay after a seq, then live; delivery updates and
 // source status updates (`source.updated`) interleaved without an id; a comment ping every 15 s.
 import type { ServerResponse } from 'node:http';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import type { SourceRegistry, Store, WebhookDispatcher } from '../domain/ports.ts';
+import type { TenantParts } from './tenants.ts';
 import type { DomainEvent } from '../domain/types.ts';
 import { parseWith } from './errors.ts';
 
@@ -13,7 +13,8 @@ const REPLAY_PAGE = 1000;
 const seq = z.coerce.number().int().min(0);
 export const streamQuery = z.object({ after: seq.optional() });
 
-export function sseRoutes(app: FastifyInstance, o: { store: Store; dispatcher: WebhookDispatcher; sources: SourceRegistry }): void {
+/** The request's user's events, deliveries and source statuses only (issue #158). */
+export function sseRoutes(app: FastifyInstance, o: { tenant: (req: FastifyRequest) => TenantParts }): void {
   const open = new Set<ServerResponse>();
   app.addHook('onClose', async () => {
     for (const res of open) res.end();
@@ -25,6 +26,7 @@ export function sseRoutes(app: FastifyInstance, o: { store: Store; dispatcher: W
     // where it actually is, so the header wins.
     const header = req.headers['last-event-id'];
     const after = (typeof header === 'string' && header !== '' ? parseWith(seq, header) : undefined) ?? q.after;
+    const { store, dispatcher, registry } = o.tenant(req);
 
     reply.hijack();
     const res = reply.raw;
@@ -44,15 +46,15 @@ export function sseRoutes(app: FastifyInstance, o: { store: Store; dispatcher: W
       res.write(`id: ${e.seq}\nevent: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`);
     };
     // Subscribe first, then replay, so nothing appended in between is lost.
-    const unsubscribe = o.store.events.subscribe(send);
-    const offDelivery = o.dispatcher.onDeliveryUpdated((d) => {
+    const unsubscribe = store.events.subscribe(send);
+    const offDelivery = dispatcher.onDeliveryUpdated((d) => {
       res.write(`event: delivery.updated\ndata: ${JSON.stringify(d)}\n\n`);
     });
-    const offSource = o.sources.onStatus((st) => {
+    const offSource = registry.onStatus((st) => {
       res.write(`event: source.updated\ndata: ${JSON.stringify(st)}\n\n`);
     });
     if (after !== undefined) {
-      for (let page = o.store.events.since(lastSeq, REPLAY_PAGE); page.length > 0; page = o.store.events.since(lastSeq, REPLAY_PAGE)) {
+      for (let page = store.events.since(lastSeq, REPLAY_PAGE); page.length > 0; page = store.events.since(lastSeq, REPLAY_PAGE)) {
         for (const e of page) send(e);
         if (page.length < REPLAY_PAGE) break;
       }

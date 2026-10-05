@@ -19,7 +19,7 @@ describe('no auth.yaml: local sign-in only', () => {
   it('the login code signs in as admin, provider local', async () => {
     const { app } = await start(undefined);
     const token = await app.login();
-    expect(await session(app, token)).toMatchObject({ authenticated: true, expiresAt: expect.any(String), user: { role: 'admin', provider: 'local', name: 'login code' } });
+    expect(await session(app, token)).toMatchObject({ authenticated: true, expiresAt: expect.any(String), user: { id: 'owner', name: 'owner', role: 'admin', provider: 'local', identity: 'login code' } });
   });
 });
 

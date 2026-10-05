@@ -16,6 +16,8 @@ export interface SlotDeps {
   clock: Clock;
   logger: PluginContext['logger'];
   dataDir: string;
+  /** PluginContext.userEnv. */
+  userEnv: Readonly<Record<string, string>>;
   routerMode(): RouterMode;
   /** What a job source is told (RoleContext['job-source']). */
   jobSource: JobSourceContext;
@@ -61,7 +63,7 @@ function contextFor(deps: SlotDeps, id: string, instanceName: string) {
   const scratchDir = join(deps.dataDir, 'plugin-data', id);
   mkdirSync(scratchDir, { recursive: true, mode: 0o700 });
   return {
-    clock: deps.clock, logger: deps.logger, dataDir: deps.dataDir, scratchDir, instanceName, routerMode: deps.routerMode, env: deps.kit.env,
+    clock: deps.clock, logger: deps.logger, dataDir: deps.dataDir, scratchDir, instanceName, routerMode: deps.routerMode, env: deps.kit.env, userEnv: deps.userEnv,
     ...deps.jobSource, executors: deps.executors, target: deps.target, machine: deps.machine,
   };
 }

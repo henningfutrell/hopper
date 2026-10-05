@@ -29,7 +29,7 @@ describe('no sign-in (auth.yaml none)', () => {
     expect((await session(app)).signIn.none).toBe('operator');
     const res = await rawRequest(app.url, { path: '/ui/auth/none', ...json(host, origin, {}) });
     expect(res.status).toBe(200);
-    expect(await session(app, tokenOf(res.text))).toMatchObject({ authenticated: true, user: { role: 'operator', provider: 'none', name: 'no sign-in' } });
+    expect(await session(app, tokenOf(res.text))).toMatchObject({ authenticated: true, user: { id: 'owner', name: 'owner', role: 'operator', provider: 'none', identity: 'no sign-in' } });
   });
 
   it('the session acts within its role: an operator may not switch the router mode', async () => {
