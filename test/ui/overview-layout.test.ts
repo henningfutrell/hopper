@@ -43,6 +43,12 @@ describe('parseLayout', () => {
     expect(l.settings).toEqual({ ...DEFAULT_LAYOUT.settings, throughputHours: 12 });
   });
 
+  it('keeps the usage source chosen for the overview (issue #85); anything but a name is dropped', () => {
+    expect(parseLayout(JSON.stringify({ panels: [], settings: { usageSource: 'personal' } })).settings.usageSource).toBe('personal');
+    expect(parseLayout(JSON.stringify({ panels: [], settings: { usageSource: 3 } })).settings).toEqual(DEFAULT_LAYOUT.settings);
+    expect(parseLayout(JSON.stringify({ panels: [], settings: { usageSource: '' } })).settings).toEqual(DEFAULT_LAYOUT.settings);
+  });
+
   it('a panel stored twice counts once, where it first stands', () => {
     const stored = { panels: [DEFAULT_LAYOUT.panels[1], ...DEFAULT_LAYOUT.panels], settings: DEFAULT_LAYOUT.settings };
     expect(ids(parseLayout(JSON.stringify(stored)))).toEqual([ids()[1], ...ids().filter((_, i) => i !== 1)]);
