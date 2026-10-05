@@ -7,6 +7,7 @@
 import scalar from '@scalar/fastify-api-reference';
 import type { FastifyInstance } from 'fastify';
 import { openApiDocument, referenceDrift } from './openapi.ts';
+import { FAVICON_PATH } from './static.ts';
 
 export const API_REFERENCE_PATH = '/docs';
 
@@ -26,6 +27,7 @@ export function apiReferenceRoutes(app: FastifyInstance, version: string): void 
     configuration: {
       content: document,
       pageTitle: 'hopper API',
+      favicon: FAVICON_PATH,
       telemetry: false,
       withDefaultFonts: false,
       agent: { disabled: true },

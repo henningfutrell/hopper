@@ -63,9 +63,24 @@ describe('the built UI', () => {
     expect((await fetch(app.url + '/ui/assets/index-def456.css')).headers.get('content-type')).toMatch(/text\/css/);
   });
 
+  it('serves the icon the UI page names as the favicon, at /favicon.svg and /favicon.ico (issue #183)', async () => {
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"/>';
+    const app = await start(bundle({
+      'index.html': '<!doctype html><link rel="icon" type="image/svg+xml" href="/ui/assets/hopper-logo-abc123.svg" />',
+      'assets/hopper-logo-abc123.svg': svg,
+      'assets/other-def456.svg': '<svg/>',
+    }));
+    for (const path of ['/favicon.svg', '/favicon.ico']) {
+      const res = await fetch(app.url + path);
+      expect(res.status, path).toBe(200);
+      expect(res.headers.get('content-type'), path).toBe('image/svg+xml');
+      expect(await res.text(), path).toBe(svg);
+    }
+  });
+
   it('serves nothing outside the assets directory', async () => {
     const app = await start(bundle({ 'index.html': 'x', 'assets/a.js': 'a', 'secret.txt': 's' }));
-    for (const path of ['/ui/assets/../secret.txt', '/ui/assets/%2e%2e/secret.txt', '/ui/assets/%2e%2e%2fsecret.txt', '/ui/assets/missing.js', '/ui/app.js']) {
+    for (const path of ['/favicon.svg', '/favicon.ico', '/ui/assets/../secret.txt', '/ui/assets/%2e%2e/secret.txt', '/ui/assets/%2e%2e%2fsecret.txt', '/ui/assets/missing.js', '/ui/app.js']) {
       expect(await statusOf(app.url, path), path).toBe(404);
     }
   });

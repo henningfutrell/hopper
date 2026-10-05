@@ -16,6 +16,7 @@ import { LOCAL_IDENTITY, NO_SIGN_IN_IDENTITY, SignInRefused, type SignIn } from 
 import type { Clock, InstanceStore } from '../../domain/ports.ts';
 import type { Identity, UiRole, User } from '../../domain/types.ts';
 import { parseWith } from '../errors.ts';
+import { FAVICON_LINK } from '../static.ts';
 import { useLoginCode } from './login-code.ts';
 import { sessionUser, type UiSessions } from './sessions.ts';
 
@@ -29,7 +30,7 @@ export const loginBody = z.object({ code: z.string() });
 export const passwordBody = z.object({ username: z.string().max(128), password: z.string().max(1024) });
 
 /** The login answer: store the token (hex, safe inline) for this exact origin, then go to the UI. */
-const loginPage = (token: string): string => `<!doctype html><meta charset="utf-8"><title>hopper</title>
+const loginPage = (token: string): string => `<!doctype html><meta charset="utf-8"><title>hopper</title>${FAVICON_LINK}
 <script>try { localStorage.setItem('jh_session', '${token}'); } catch (e) {} location.replace('/');</script>
 <noscript>JavaScript is needed to keep the UI session.</noscript>
 `;
@@ -38,14 +39,14 @@ const esc = (s: string): string => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeA
 
 /** A plain page saying what happened, with the way back. */
 const page = (title: string, text: string): string => `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width">
-<title>hopper — ${esc(title)}</title><body style="font-family:system-ui,sans-serif;max-width:40rem;margin:3rem auto;padding:0 1rem">
+<title>hopper — ${esc(title)}</title>${FAVICON_LINK}<body style="font-family:system-ui,sans-serif;max-width:40rem;margin:3rem auto;padding:0 1rem">
 <h1 style="font-size:1.2rem">${esc(title)}</h1><p>${esc(text)}</p><p><a href="/">Back to hopper</a></p>`;
 
 /**
  * The callback's answer: post the ticket with this browser's binding (kept in localStorage when the
  * sign-in began), store the session token, go to the UI. Ticket is hex: safe inline.
  */
-const ticketPage = (ticket: string): string => `<!doctype html><meta charset="utf-8"><title>hopper — signing in</title>
+const ticketPage = (ticket: string): string => `<!doctype html><meta charset="utf-8"><title>hopper — signing in</title>${FAVICON_LINK}
 <body style="font-family:system-ui,sans-serif"><p id="m">Signing in…</p><script>
 (async () => {
   let binding = null;
