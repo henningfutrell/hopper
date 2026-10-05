@@ -1,22 +1,21 @@
-// The question pipeline (design.md "Question pipeline"): the answerer drafts; the assessor gives its
-// own best answer and decides whether the owner must see it, and fails closed; the risk rules run
-// after it on the answer to be typed; accepted → that answer is typed into the job, otherwise the
-// human stage. The answerer and assessor are looked up per question (live roles), and every result
-// is validated here: a plugin that breaks its contract escalates, it never answers.
-import type { AnswerByHumanResult, AnswerDraft, AnswerRequest, Answerer, Assessor, Clock, ConfigDocuments, QuestionService, Store } from '../domain/ports.ts';
-import type { AttemptRole, Question, QuestionAttempt } from '../domain/types.ts';
-import { ASSESSMENT, DRAFT, check } from './results.ts';
+// The question pipeline (design.md "Question pipeline"): the escalation levels, lowest first. Each
+// level answers the question or escalates it to the next level up; above the top level is the
+// owner. An answer is typed into the job unless a risk rule matches, which sends the question to
+// the owner whatever level answered. The levels are looked up per question (a live role), and every
+// reply is validated here: a level that breaks its contract, fails or times out escalates, it never
+// answers.
+import type { AnswerByHumanResult, AnswerRequest, Clock, ConfigDocuments, EscalationLevel, QuestionService, Store } from '../domain/ports.ts';
+import type { Question, QuestionAttempt } from '../domain/types.ts';
+import { REPLY, check } from './results.ts';
 import { riskRules } from './risk.ts';
 import { readRules } from './rules.ts';
 
 export interface QuestionServiceOptions {
   store: Store;
   clock: Clock;
-  /** The answerer role's current instance, or undefined (none configured, or it cannot run). Called per question. */
-  answerer(): Answerer | undefined;
-  /** The assessor role's current instance (`always-escalate` stands in when the configured one cannot run). Called per question. */
-  assessor(): Assessor;
-  /** Ceiling on one answerer or assessor call. Past it the call is aborted and counts as an error. */
+  /** The escalation levels now, lowest first; empty: questions go straight to the human. Called per question. */
+  levels(): readonly EscalationLevel[];
+  /** Ceiling on one level's call. Past it the call is aborted and counts as an error. */
   stageTimeoutMs: number;
   /** Where rules.md is read, on every ask. */
   documents: ConfigDocuments;
@@ -124,7 +123,7 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
     queueMicrotask(() => armHuman(q.id));
   }
 
-  // ---- the answer and assess stages -----------------------------------------------------
+  // ---- the escalation levels -------------------------------------------------------------
 
   /** Inside a tx. The question as it is now, if it is still open at `stage`. */
   function stillAt(id: string, stage: string): Question | undefined {
@@ -132,11 +131,11 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
     return q && q.status === 'open' && q.tier === stage ? q : undefined;
   }
 
-  /** Inside a tx. A stage result that lost the race (human answer, cancel, restart) is logged and ignored. */
-  function superseded(id: string, who: { name: string; model?: string }, role: AttemptRole, startedAt: string) {
+  /** Inside a tx. A reply that lost the race (human answer, cancel, restart) is logged and ignored. */
+  function superseded(id: string, level: EscalationLevel, startedAt: string) {
     if (!store.questions.get(id)) return;
     store.questions.addAttempt(id, {
-      tier: who.name, role, ...(who.model ? { model: who.model } : {}), startedAt, finishedAt: iso(), outcome: 'escalated', reason: 'superseded',
+      tier: level.name, role: 'level', ...(level.model ? { model: level.model } : {}), startedAt, finishedAt: iso(), outcome: 'escalated', reason: 'superseded',
     });
   }
 
@@ -147,8 +146,8 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
     return updated;
   }
 
-  /** One stage call: aborted by cancel, a human answer, shutdown, or the stage timeout; a throw is an error. */
-  async function call<T>(id: string, fn: (signal: AbortSignal) => Promise<T>): Promise<{ result: T | { error: string }; ac: AbortController }> {
+  /** One level's call: aborted by cancel, a human answer, shutdown, or the stage timeout; a throw is an error. */
+  async function call<T>(id: string, fn: (signal: AbortSignal) => Promise<T>): Promise<T | { error: string }> {
     const ac = new AbortController();
     inflight.set(id, ac);
     let timer: NodeJS.Timeout | undefined;
@@ -159,15 +158,14 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
       }, o.stageTimeoutMs);
     });
     try {
-      const result = await Promise.race([fn(ac.signal).catch((e: unknown) => ({ error: `threw: ${e instanceof Error ? e.message : String(e)}` })), timeout]);
-      return { result, ac };
+      return await Promise.race([fn(ac.signal).catch((e: unknown) => ({ error: `threw: ${e instanceof Error ? e.message : String(e)}` })), timeout]);
     } finally {
       clearTimeout(timer);
       if (inflight.get(id) === ac) inflight.delete(id);
     }
   }
 
-  function requestFor(q: Question): { req: AnswerRequest; rulesNote: string } {
+  function requestFor(q: Question, number: number, of: number): { req: AnswerRequest; rulesNote: string } {
     const rules = readRules(o.documents);
     const job = store.jobs.get(q.jobId);
     return {
@@ -177,91 +175,70 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
         jobGoal: job?.spec.goal,
         rules: rules.text,
         previous: q.attempts,
+        level: { number, of },
       },
       rulesNote: rules.missing ? ' (no rules.md yet)' : '',
     };
   }
 
-  async function run(id: string, reason: string): Promise<void> {
-    if (stopped) return;
-    const answerer = o.answerer();
+  /**
+   * One level holds the question: its reply is recorded, then the question is answered, goes to the
+   * human (a risk rule hit), or climbs on. Returns why it climbs, or undefined when it does not
+   * (answered, at the human stage, or taken from this level meanwhile).
+   */
+  async function ask(id: string, level: EscalationLevel, number: number, of: number, reason: string): Promise<string | undefined> {
     const entered = store.tx((): Question | undefined => {
       const q = store.questions.get(id);
-      if (!q || q.status !== 'open') return undefined;
-      if (!answerer) {
-        toHuman(q, 'no answerer configured');
-        return undefined;
-      }
-      return enter(q, answerer.name, reason);
+      return q && q.status === 'open' ? enter(q, level.name, reason) : undefined;
     });
-    if (!entered || !answerer) return;
-    const { req, rulesNote } = requestFor(entered);
-
-    // 1. The answerer drafts.
-    const answeredAt = iso();
-    const drafted = await call(id, (signal) => answerer.answer(req, signal));
-    if (stopped) return;
-    const draft = check<AnswerDraft>(DRAFT, 'draft', drafted.result);
-    const assessor = store.tx((): Assessor | undefined => {
-      const q = stillAt(id, answerer.name);
-      if (!q) return void superseded(id, answerer, 'answerer', answeredAt);
-      const model = (draft.ok ? draft.value.model : undefined) ?? answerer.model;
-      const base: QuestionAttempt = {
-        tier: answerer.name, role: 'answerer', ...(model ? { model } : {}),
-        startedAt: answeredAt, finishedAt: iso(), outcome: 'escalated',
-      };
-      if (!draft.ok) {
-        store.questions.addAttempt(id, { ...base, error: draft.error, reason: `error${rulesNote}` });
-        return void toHuman(q, `answerer ${answerer.name} failed: ${draft.error}`);
+    if (!entered) return undefined;
+    const { req, rulesNote } = requestFor(entered, number, of);
+    const startedAt = iso();
+    const replied = await call(id, (signal) => level.answer(req, signal));
+    if (stopped) return undefined;
+    const reply = check(REPLY, 'reply', replied);
+    return store.tx((): string | undefined => {
+      const q = stillAt(id, level.name);
+      if (!q) return void superseded(id, level, startedAt);
+      const model = (reply.ok ? reply.value.model : undefined) ?? level.model;
+      const base: QuestionAttempt = { tier: level.name, role: 'level', ...(model ? { model } : {}), startedAt, finishedAt: iso(), outcome: 'escalated' };
+      if (!reply.ok) {
+        store.questions.addAttempt(id, { ...base, error: reply.error, reason: `error${rulesNote}` });
+        return `${level.name} failed: ${reply.error}`;
       }
-      // Every draft goes to the assessor, confident or not (owner decision, 2026-10-04: Opus, then
-      // Fable, then the owner on every question); the assessor sees the answerer's confidence and
-      // gives its own best answer (issue #98).
-      const { answer, confident, reason: why } = draft.value;
-      store.questions.addAttempt(id, { ...base, answer, confident, reason: `${why}${rulesNote}`, outcome: 'drafted' });
-      const next = o.assessor();
-      enter(q, next.name, `drafted by ${answerer.name}`);
-      return next;
-    });
-    if (!assessor || !draft.ok) return;
-
-    // 2. The assessor answers and decides whether the owner must see it; 3. the risk rules run after
-    // it on the answer to be typed: the assessor's own, or the draft it endorsed.
-    const assessedAt = iso();
-    const assessed = await call(id, (signal) => assessor.assess(req, draft.value, signal));
-    if (stopped) return;
-    const verdict = check(ASSESSMENT, 'assessment', assessed.result);
-    store.tx(() => {
-      const q = stillAt(id, assessor.name);
-      if (!q) return superseded(id, assessor, 'assessor', assessedAt);
-      const own = verdict.ok ? verdict.value.answer : undefined;
-      const typed = own ?? draft.value.answer;
-      const by = own === undefined ? answerer.name : assessor.name;
-      const hits = riskRules(`${q.text}\n${typed}`);
-      const model = (verdict.ok ? verdict.value.model : undefined) ?? assessor.model;
-      const base: QuestionAttempt = {
-        tier: assessor.name, role: 'assessor', ...(model ? { model } : {}),
-        startedAt: assessedAt, finishedAt: iso(), riskRules: hits, outcome: 'escalated',
-        ...(own === undefined ? {} : { answer: own }),
-      };
-      if (!verdict.ok) {
-        store.questions.addAttempt(id, { ...base, error: verdict.error });
-        return toHuman(q, `assessor ${assessor.name} failed: ${verdict.error}`);
+      const { answer, escalate, reason: why } = reply.value;
+      const replyFields = { ...(answer === undefined ? {} : { answer }), escalate, reason: `${why}${rulesNote}` };
+      if (escalate || answer === undefined) {
+        store.questions.addAttempt(id, { ...base, ...replyFields });
+        return `${level.name}: ${why}`;
       }
-      const { escalate, reason: why } = verdict.value;
-      if (escalate !== false) {
-        store.questions.addAttempt(id, { ...base, escalate, reason: why });
-        return toHuman(q, `assessor ${assessor.name}: ${why}`);
-      }
+      // The level answers. The risk rules run on the question and the answer to be typed; a hit goes
+      // to the owner, past every level above: no model approves what the rules guard.
+      const hits = riskRules(`${q.text}\n${answer}`);
       if (hits.length > 0) {
-        store.questions.addAttempt(id, { ...base, escalate, reason: why });
-        return toHuman(q, `risk rules: ${hits.join(', ')}`);
+        store.questions.addAttempt(id, { ...base, ...replyFields, riskRules: hits });
+        return void toHuman(q, `risk rules: ${hits.join(', ')}`);
       }
-      // 4. Accepted: the assessor's own answer, or the draft it endorsed, is typed into the job.
-      store.questions.addAttempt(id, { ...base, escalate, reason: why, outcome: 'accepted' });
-      const updated = store.questions.update(id, { status: 'answered', answer: typed, answeredBy: by });
-      emit(updated, 'question.answered', { by, answer: typed });
+      store.questions.addAttempt(id, { ...base, ...replyFields, riskRules: hits, outcome: 'accepted' });
+      const updated = store.questions.update(id, { status: 'answered', answer, answeredBy: level.name });
+      emit(updated, 'question.answered', { by: level.name, answer });
       o.onAnswered(updated);
+      return undefined;
+    });
+  }
+
+  async function run(id: string, reason: string): Promise<void> {
+    if (stopped) return;
+    const levels = [...o.levels()];
+    let why: string | undefined = reason;
+    for (const [i, level] of levels.entries()) {
+      why = await ask(id, level, i + 1, levels.length, why);
+      if (why === undefined) return;
+    }
+    // Past the top level (or no levels at all): the owner.
+    store.tx(() => {
+      const q = store.questions.get(id);
+      if (q && q.status === 'open') toHuman(q, levels.length === 0 ? 'no escalation levels configured' : why);
     });
   }
 
@@ -272,8 +249,7 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
     running.add(p);
   }
 
-  /** The owner settles an open question: their answer, or the close text. Wins over any stage in flight. */
-  /** Inside a tx. Ends an open question as the owner's; the caller decides what the job does. */
+  /** Inside a tx. The owner settles an open question — their answer, or the close text — over any level in flight; the caller decides what the job does. */
   function settle(q: Question, answer: string, status: 'answered' | 'closed', via?: 'pane'): Question {
     abortStage(q.id, 'superseded');
     clearTimers(q.id);
@@ -300,7 +276,7 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
   }
 
   return {
-    firstStage: () => o.answerer()?.name ?? HUMAN,
+    firstStage: () => o.levels()[0]?.name ?? HUMAN,
 
     handle(id) {
       start(id, 'asked');
@@ -350,8 +326,8 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
       for (const q of store.questions.list({ status: ['open'] })) {
         if (q.tier !== HUMAN) start(q.id, 'restarted after a daemon restart');
         else if (q.expiresAt) armHuman(q.id);
-        // Created at the human stage (no answerer), the daemon stopped before it was announced.
-        else store.tx(() => toHuman(q, 'no answerer configured'));
+        // Created at the human stage (no levels), the daemon stopped before it was announced.
+        else store.tx(() => toHuman(q, 'no escalation levels configured'));
       }
     },
 
