@@ -40,8 +40,10 @@ async function boot(container: string): Promise<{ a: TestApp; gh: ReturnType<typ
     plugins: {
       executors: [{ name: 'test', plugin: 'test' }, { name: 'command', plugin: 'command' }],
       // This machine does not run commands: a command job waits for its target.
-      machines: { name: 'local', plugin: 'local', options: { lanes: 2, executors: ['test'] } },
-      attachedMachines: [{ name: 'box', docker: container, lanes: 1 }],
+      machines: [
+        { name: 'local', plugin: 'local', options: { lanes: 2, executors: ['test'] } },
+        { name: 'box', plugin: 'docker', options: { docker: container, lanes: 1 } },
+      ],
       jobSources: [{ name: 'github', plugin: 'github-gh', options: { enabled: true, pollSeconds: 3600, repos: [REPO], authors: ['owner'], executor: 'test', defaultCwd: '/tmp' } }],
       routing: [{ name: 'commands to the box', match: { label: 'on-box' }, set: { machine: 'box', executor: 'command' } }],
     },
@@ -62,8 +64,10 @@ describe('a container target reached over docker exec', () => {
       dbPath: db.dbPath,
       plugins: {
         executors: [{ name: 'test', plugin: 'test' }, { name: 'command', plugin: 'command' }],
-        machines: { name: 'local', plugin: 'local', options: { lanes: 1, executors: ['test'] } },
-        attachedMachines: [{ name: 'box', docker: CONTAINER, lanes: 1 }],
+        machines: [
+          { name: 'local', plugin: 'local', options: { lanes: 1, executors: ['test'] } },
+          { name: 'box', plugin: 'docker', options: { docker: CONTAINER, lanes: 1 } },
+        ],
       },
     });
     await new Promise((r) => setTimeout(r, 1500));

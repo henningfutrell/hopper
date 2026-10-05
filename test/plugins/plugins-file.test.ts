@@ -33,7 +33,7 @@ describe('plugins.yaml (router, answerer, assessor, executors, jobSources, machi
       'assessor: { name: fable, plugin: claude-cli-assessor }',
       'executors: [ { name: test, plugin: test } ]',
       'jobSources: []',
-      'machines: { name: local, plugin: local }',
+      'machines: [ { name: local, plugin: local } ]',
       'usageSources: []',
       'notifiers: [ { name: grok-bot, plugin: grokbot-routine, options: { envFile: /x/g.env } } ]',
     ].join('\n')));
@@ -43,7 +43,7 @@ describe('plugins.yaml (router, answerer, assessor, executors, jobSources, machi
       assessor: { name: 'fable', plugin: 'claude-cli-assessor', options: {} },
       executors: [{ name: 'test', plugin: 'test', options: {} }],
       jobSources: [],
-      machines: { name: 'local', plugin: 'local', options: {} },
+      machines: [{ name: 'local', plugin: 'local', options: {} }],
       usageSources: [],
       notifiers: [{ name: 'grok-bot', plugin: 'grokbot-routine', options: { envFile: '/x/g.env' } }],
       warnings: [],
@@ -112,91 +112,13 @@ describe('plugins.yaml (router, answerer, assessor, executors, jobSources, machi
     ['executor without a plugin', 'version: 1\nexecutors: [ { name: t } ]\n', /executors\.0\.plugin/],
     ['two job sources with one name (sync state is keyed by it)', 'version: 1\njobSources: [ { name: g, plugin: github-gh }, { name: g, plugin: github-app } ]\n', /jobSources.*g.*twice/],
     ['two usage sources with one name', 'version: 1\nusageSources: [ { name: u, plugin: a }, { name: u, plugin: b } ]\n', /usageSources.*u.*twice/],
-    ['machines: null (the machine slot is never empty)', 'version: 1\nmachines: null\n', /machines/],
-    ['machines as a list (one machine source)', 'version: 1\nmachines: [ { name: local, plugin: local } ]\n', /machines/],
+    ['machines: null', 'version: 1\nmachines: null\n', /machines/],
+    ['machines as a map (issue #74: a list, this machine and the attached ones)', 'version: 1\nmachines: { name: local, plugin: local }\n', /machines/],
+    ['two machines with one name (lanes and jobs are stored under it)', 'version: 1\nmachines: [ { name: m, plugin: local }, { name: m, plugin: ssh, options: { ssh: x, lanes: 1 } } ]\n', /machines: m named twice/],
+    ['attachedMachines (issue #74: machine-source instances in machines:)', 'version: 1\nattachedMachines: []\n', /attachedMachines/],
     ['answerer and assessor with one name', 'version: 1\nanswerer: { name: x, plugin: claude-cli }\nassessor: { name: x, plugin: always-escalate }\n', /same name/],
   ])('%s is an error naming the problem', (_name, text, why) => {
     const r = loadPluginsFile(file(text));
     expect(r).toEqual({ error: expect.stringMatching(why) });
-  });
-});
-
-describe('plugins.yaml attachedMachines (design.md "Attached machines")', () => {
-  it('reads each attached machine with its defaults', () => {
-    const r = loadPluginsFile(file([
-      'version: 1',
-      'attachedMachines:',
-      '  - { name: laptop, ssh: laptop, lanes: 2 }',
-      '  - { name: pi, ssh: user@laptop.example, label: Pi, lanes: 1, executors: [herdr-claude, other], session: jh, herdrBin: /opt/herdr }',
-    ].join('\n')));
-    expect(r).toEqual({
-      attachedMachines: [
-        { name: 'laptop', ssh: 'laptop', lanes: 2, executors: ['herdr-claude'], session: 'hopper', herdrBin: 'herdr' },
-        { name: 'pi', ssh: 'user@laptop.example', label: 'Pi', lanes: 1, executors: ['herdr-claude', 'other'], session: 'jh', herdrBin: '/opt/herdr' },
-      ],
-      warnings: [],
-    });
-  });
-
-  it.each([
-    ['  - { name: local, ssh: laptop, lanes: 1 }', /local is this machine/],
-    ['  - { name: a, ssh: laptop, lanes: 1 }\n  - { name: a, ssh: other, lanes: 1 }', /machine a named twice/],
-    ['  - { name: a, ssh: -oProxyCommand=x, lanes: 1 }', /ssh/],
-    ['  - { name: a, ssh: laptop, lanes: 0 }', /lanes/],
-    ['  - { name: a, ssh: laptop, lanes: 1, session: default }', /default herdr session/],
-    ['  - { name: a, lanes: 1 }', /ssh, docker or client/],
-    ['  - { name: a, ssh: laptop, docker: box, lanes: 1 }', /one of ssh, docker or client/],
-    ['  - { name: a, docker: -H=tcp://x, lanes: 1 }', /docker must be a container/],
-    ['  - { name: a, docker: box, lanes: 1, session: jh }', /session, herdrBin and hostKey are for ssh/],
-    ['  - { name: a, docker: box, lanes: 1, herdrBin: /opt/herdr }', /session, herdrBin and hostKey are for ssh/],
-    [`  - { name: a, docker: box, lanes: 1, hostKey: ${TEST_HOST_KEY} }`, /session, herdrBin and hostKey are for ssh/],
-    ['  - { name: a, ssh: laptop, lanes: 1, hostKey: ssh-ed25519 }', /hostKey must be a public host key/],
-    ['  - { name: a, ssh: laptop, client: { tokenEnv: T }, lanes: 1 }', /one of ssh, docker or client/],
-    ['  - { name: a, client: { tokenEnv: T }, lanes: 1, herdrBin: /opt/herdr }', /a client target names its herdr itself/],
-    ['  - { name: a, client: {}, lanes: 1 }', /tokenEnv/],
-    ['  - { name: ../x, client: { tokenEnv: T }, lanes: 1 }', /client target name/],
-    ['  - { name: a, ssh: laptop, lanes: 1, hostKey: "ssh-dss AAAAB3Nz" }', /hostKey must be a public host key/],
-  ])('refuses %s', (entry, why) => {
-    const r = loadPluginsFile(file(`version: 1\nattachedMachines:\n${entry}\n`));
-    expect(r).toHaveProperty('error');
-    expect((r as { error: string }).error).toMatch(why);
-  });
-
-  it('a client target names the variable its token is in; herdr-claude runs there by default (issue #59)', () => {
-    const r = loadPluginsFile(file('version: 1\nattachedMachines:\n  - { name: studio, client: { tokenEnv: STUDIO_CLIENT_TOKEN }, lanes: 2 }\n'));
-    expect(r).not.toHaveProperty('error');
-    expect((r as { attachedMachines: unknown[] }).attachedMachines[0]).toEqual({ name: 'studio', client: { tokenEnv: 'STUDIO_CLIENT_TOKEN' }, lanes: 2, executors: ['herdr-claude'] });
-  });
-
-  it('an ssh target pins its host key (issue #59)', () => {
-    const r = loadPluginsFile(file(`version: 1\nattachedMachines:\n  - { name: laptop, ssh: laptop, lanes: 1, hostKey: ${TEST_HOST_KEY} }\n`));
-    expect(r).not.toHaveProperty('error');
-    expect((r as { attachedMachines: unknown[] }).attachedMachines[0]).toMatchObject({ ssh: 'laptop', hostKey: TEST_HOST_KEY });
-  });
-
-  it('reads a container target reached over docker: no herdr, the command executor by default', () => {
-    const r = loadPluginsFile(file([
-      'version: 1',
-      'attachedMachines:',
-      '  - { name: box, docker: hopper-target, lanes: 1 }',
-      '  - { name: box2, docker: other, label: Box, lanes: 2, executors: [command, test] }',
-    ].join('\n')));
-    expect(r).toEqual({
-      attachedMachines: [
-        { name: 'box', docker: 'hopper-target', lanes: 1, executors: ['command'] },
-        { name: 'box2', docker: 'other', label: 'Box', lanes: 2, executors: ['command', 'test'] },
-      ],
-      warnings: [],
-    });
-  });
-
-  it('refuses an attached machine named like the machine source\'s machine (machine ids are unique)', () => {
-    const r = loadPluginsFile(file([
-      'version: 1',
-      'machines: { name: server, plugin: local, options: { lanes: 2 } }',
-      'attachedMachines:',
-      '  - { name: server, ssh: laptop, lanes: 1 }',
-    ].join('\n')));
-    expect((r as { error: string }).error).toMatch(/attached machine has the machine source's name/);
   });
 });

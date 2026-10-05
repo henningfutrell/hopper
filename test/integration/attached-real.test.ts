@@ -34,8 +34,9 @@ describe.skipIf(!TARGET)('a real job on an attached machine (opt-in)', () => {
     writeFileSync(join(dirname(db.dbPath), 'plugins.yaml'), [
       'version: 1',
       `executors: [ { name: herdr-claude, plugin: herdr-claude, options: { cwd: /tmp } } ]`,
-      'attachedMachines:',
-      `  - { name: remote, ssh: ${TARGET}, lanes: 8, session: ${SESSION}, herdrBin: ${herdrBin}, hostKey: ${hostKey} }`,
+      'machines:',
+      '  - { name: local, plugin: local }',
+      `  - { name: remote, plugin: ssh, options: { ssh: ${TARGET}, lanes: 8, session: ${SESSION}, herdrBin: ${herdrBin}, hostKey: ${hostKey} } }`,
     ].join('\n'), { mode: 0o600 });
     a = await startTestApp({ dbPath: db.dbPath, secrets: { HOPPER_SSH_KEY_FILE: process.env.HOPPER_SSH_KEY_FILE } });
     await waitFor(async () => (await a.api('GET', '/api/machines')).body.machines.some((m: { id: string; online: boolean }) => m.id === 'remote' && m.online), { timeoutMs: 60000 });

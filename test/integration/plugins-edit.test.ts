@@ -122,14 +122,14 @@ describe('POST /ui/api/plugins — one instance\'s options', () => {
     expect(r.body.executors.pending?.status).toBe('changed — restart pending');
   });
 
-  it('the machine instance: its lane count is edited in place (one map, not a list) and applies live (issue #18)', async () => {
-    const { a, token } = await start(`${TWO_EXECUTORS}machines: { name: local, plugin: local, options: { lanes: 4 } }\n`);
+  it('a machine instance: its lane count is edited in place and applies live (issue #18)', async () => {
+    const { a, token } = await start(`${TWO_EXECUTORS}machines: [ { name: local, plugin: local, options: { lanes: 4 } } ]\n`);
     const body = await report(a);
     expect(body.instances).toEqual(expect.arrayContaining([{ role: 'machine-source', instance: { name: 'local', plugin: 'local', options: { lanes: 4 } } }]));
     const r = await a.ui<Reply>('/ui/api/plugins', { action: 'options', role: 'machine-source', name: 'local', options: { lanes: 2 }, version: body.config.version }, { token });
     expect(r.status).toBe(200);
     const doc = parse(read(a));
-    expect(doc.machines).toEqual({ name: 'local', plugin: 'local', options: { lanes: 2 } });
+    expect(doc.machines).toEqual([{ name: 'local', plugin: 'local', options: { lanes: 2 } }]);
     expect(doc.executors).toHaveLength(3);
     expect(r.body.machines.pending).toBeUndefined();
     const local = (await a.api('GET', '/api/machines')).body.machines.find((m: { id: string }) => m.id === 'local');
@@ -296,8 +296,9 @@ describe('POST /ui/api/plugins — remove an instance', () => {
   - { name: gh, plugin: github-gh, options: { enabled: false, executor: test } }
 routing:
   - { name: to-a, match: { label: a }, set: { executor: herdr-a } }
-attachedMachines:
-  - { name: laptop, ssh: laptop, lanes: 1, executors: [herdr-b] }
+machines:
+  - { name: local, plugin: local }
+  - { name: laptop, plugin: ssh, options: { ssh: laptop, lanes: 1, executors: [herdr-b] } }
 `;
     const { a, token } = await start(yaml);
     const version = (await report(a)).config.version;

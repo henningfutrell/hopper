@@ -61,7 +61,10 @@ async function boot(install: string, clientToken = TOKEN): Promise<{ a: TestApp;
     dbPath: db.dbPath,
     plugins: {
       executors: [{ name: 'test', plugin: 'test' }],
-      attachedMachines: [{ name: 'studio', client: { tokenEnv: 'STUDIO_CLIENT_TOKEN' }, lanes: 1, executors: ['test'] }],
+      machines: [
+        { name: 'local', plugin: 'local' },
+        { name: 'studio', plugin: 'client', options: { tokenEnv: 'STUDIO_CLIENT_TOKEN', lanes: 1, executors: ['test'] } },
+      ],
     },
     secrets: { STUDIO_CLIENT_TOKEN: TOKEN },
   });

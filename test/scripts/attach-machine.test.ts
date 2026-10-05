@@ -67,8 +67,8 @@ describe('attach-machine.sh', () => {
     expect(log()).toMatch(/systemctl --user daemon-reload\nsystemctl --user enable --now hopper-herdr/);
     expect(r.stdout).toContain('herdr session hopper is running on laptop');
     // The plugins.yaml lines to add, ready to paste.
-    expect(r.stdout).toContain('attachedMachines:');
-    expect(r.stdout).toContain(`- { name: laptop, ssh: laptop, lanes: 2, herdrBin: ${bin}/herdr, hostKey: ${HOST_KEY} }`);
+    expect(r.stdout).toContain('machines:');
+    expect(r.stdout).toContain(`- { name: laptop, plugin: ssh, options: { ssh: laptop, lanes: 2, herdrBin: ${bin}/herdr, hostKey: ${HOST_KEY} } }`);
   });
 
   it('lets the hopper in with its own key only, restricted, once however often it runs (issue #59)', () => {

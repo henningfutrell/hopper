@@ -1,0 +1,78 @@
+// The machine-source plugins for attached machines (issue #74, design.md "Attached machines"): `ssh`
+// (an ssh target with its own herdr), `docker` (a container target, commands only) and `client` (a
+// client target). Each instance is one attached machine, named after the instance; its options are
+// what an `attachedMachines:` entry held. What reaches a machine — ssh, herdr, the container, the
+// variable the client token is in, the pinned host key — is command-bearing: plugins.yaml only.
+import { describe, expect, it } from 'vitest';
+import { BUILTIN_PLUGINS } from '../../src/plugins/builtin.ts';
+import { optionsJsonSchema } from '../../src/plugins/options.ts';
+import { targetOf } from '../../src/plugins/machine-source/targets.ts';
+import { TEST_HOST_KEY } from '../support/ssh.ts';
+
+const commandBearing = (id: string): string[] => {
+  const def = BUILTIN_PLUGINS.find((p) => p.id === id)!;
+  const props = optionsJsonSchema(def).properties as Record<string, { commandBearing?: boolean }>;
+  return Object.entries(props).filter(([, p]) => p.commandBearing).map(([k]) => k).sort();
+};
+
+const why = (f: () => unknown): string => {
+  try { f(); } catch (e) { return (e as Error).message; }
+  return 'accepted';
+};
+
+describe('the attached-machine plugins', () => {
+  it('are built-in machine-source plugins named by their connection', () => {
+    expect(BUILTIN_PLUGINS.filter((p) => p.role === 'machine-source').map((p) => p.id).sort()).toEqual(['client', 'docker', 'local', 'ssh']);
+  });
+
+  it('what reaches the machine is command-bearing; lanes, executors and label are not', () => {
+    expect(commandBearing('ssh')).toEqual(['herdrBin', 'hostKey', 'session', 'ssh']);
+    expect(commandBearing('docker')).toEqual(['docker']);
+    expect(commandBearing('client')).toEqual(['tokenEnv']);
+  });
+});
+
+describe('targetOf: an instance as the attached machine it names', () => {
+  it('an ssh instance, with its defaults', () => {
+    expect(targetOf({ name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop', lanes: 2 } })).toEqual({
+      name: 'laptop', ssh: 'laptop', lanes: 2, executors: ['herdr-claude'], session: 'job-hopper', herdrBin: 'herdr',
+    });
+    expect(targetOf({ name: 'pi', plugin: 'ssh', options: { ssh: 'user@pi.example', label: 'Pi', lanes: 1, executors: ['herdr-claude', 'other'], session: 'jh', herdrBin: '/opt/herdr', hostKey: TEST_HOST_KEY } })).toEqual({
+      name: 'pi', ssh: 'user@pi.example', label: 'Pi', lanes: 1, executors: ['herdr-claude', 'other'], session: 'jh', herdrBin: '/opt/herdr', hostKey: TEST_HOST_KEY,
+    });
+  });
+
+  it('a docker instance: no herdr, the command executor by default', () => {
+    expect(targetOf({ name: 'box', plugin: 'docker', options: { docker: 'job-hopper-target', lanes: 1 } })).toEqual({ name: 'box', docker: 'job-hopper-target', lanes: 1, executors: ['command'] });
+  });
+
+  it('a client instance names the variable its token is in; herdr-claude runs there by default', () => {
+    expect(targetOf({ name: 'studio', plugin: 'client', options: { tokenEnv: 'STUDIO_CLIENT_TOKEN', lanes: 2 } })).toEqual({
+      name: 'studio', client: { tokenEnv: 'STUDIO_CLIENT_TOKEN' }, lanes: 2, executors: ['herdr-claude'],
+    });
+  });
+
+  it('any other plugin is not an attached machine', () => {
+    expect(targetOf({ name: 'local', plugin: 'local', options: { lanes: 2 } })).toBeUndefined();
+  });
+
+  it.each([
+    ['ssh', { lanes: 1 }, /ssh/],
+    ['ssh', { ssh: '-oProxyCommand=x', lanes: 1 }, /ssh must be a destination/],
+    ['ssh', { ssh: 'laptop', lanes: 0 }, /lanes/],
+    ['ssh', { ssh: 'laptop', lanes: 1, session: 'default' }, /default herdr session/],
+    ['ssh', { ssh: 'laptop', lanes: 1, hostKey: 'ssh-ed25519' }, /hostKey must be a public host key/],
+    ['ssh', { ssh: 'laptop', lanes: 1, docker: 'box' }, /docker/],
+    ['docker', { docker: '-H=tcp://x', lanes: 1 }, /docker must be a container/],
+    ['docker', { docker: 'box', lanes: 1, herdrBin: '/opt/herdr' }, /herdrBin/],
+    ['client', { lanes: 1 }, /tokenEnv/],
+    ['client', { tokenEnv: 'lower', lanes: 1 }, /tokenEnv must name an environment variable/],
+    ['client', { tokenEnv: 'T', lanes: 1, session: 'jh' }, /session/],
+  ])('refuses %s options %j', (plugin, options, reason) => {
+    expect(why(() => targetOf({ name: 'a', plugin, options }))).toMatch(reason);
+  });
+
+  it('a client target\'s name names its tunnel\'s socket: letters, digits, _ and -', () => {
+    expect(why(() => targetOf({ name: '../x', plugin: 'client', options: { tokenEnv: 'T', lanes: 1 } }))).toMatch(/client target name/);
+  });
+});

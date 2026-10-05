@@ -1,5 +1,5 @@
-// Issue #10 through the real composition root: a machine named in plugins.yaml
-// `attachedMachines:` is a machine the decider assigns jobs to, and the executor is told it is
+// Issue #10 through the real composition root: an attached machine — a machine-source instance of
+// the `ssh` plugin in plugins.yaml `machines:` (issue #74) — is a machine the decider assigns jobs to, and the executor is told it is
 // running there (design.md "Attached machines"). The probe is the seam: no ssh in this test.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -33,8 +33,9 @@ function configure(laptopLanes: number): string {
   writePluginsYaml(db.dbPath, [
     'version: 1',
     'executors: [ { name: test, plugin: test }, { name: where, plugin: where } ]',
-    'attachedMachines:',
-    `  - { name: laptop, label: arch-laptop, ssh: laptop, lanes: ${laptopLanes}, executors: [where] }`,
+    'machines:',
+    '  - { name: local, plugin: local }',
+    `  - { name: laptop, plugin: ssh, options: { label: arch-laptop, ssh: laptop, lanes: ${laptopLanes}, executors: [where] } }`,
   ].join('\n'));
   return db.dbPath;
 }

@@ -12,11 +12,11 @@ const inspect = (format: string): string => execFileSync('docker', ['container',
 afterAll(() => { spawnSync('docker', ['rm', '-f', NAME]); });
 
 describe('container-target.sh', () => {
-  it('starts the container without network, restarted with docker, and prints its attachedMachines entry', () => {
+  it('starts the container without network, restarted with docker, and prints its machines: entry', () => {
     const r = spawnSync('bash', [SCRIPT, NAME, '2'], { encoding: 'utf8' });
     expect(r.status, r.stderr).toBe(0);
     expect(inspect('{{.State.Running}} {{.HostConfig.NetworkMode}} {{.HostConfig.RestartPolicy.Name}} {{.HostConfig.ReadonlyRootfs}}')).toBe('true none unless-stopped true');
-    expect(r.stdout).toContain(`  - { name: ${NAME}, docker: ${NAME}, lanes: 2, executors: [command] }`);
+    expect(r.stdout).toContain(`  - { name: ${NAME}, plugin: docker, options: { docker: ${NAME}, lanes: 2, executors: [command] } }`);
     expect(r.stderr).toContain('bash scripts/docker-proxy.sh');
     expect(execFileSync('docker', ['exec', NAME, 'sh', '-c', 'echo ok'], { encoding: 'utf8' })).toBe('ok\n');
   });
