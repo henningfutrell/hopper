@@ -3,6 +3,7 @@ import { ChevronRight, Scale } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
+import { startTarget, machineName } from '@/model/board';
 import { clock } from '@/model/format';
 import type { Decision } from '@/model/wire';
 import { useHopper } from '@/store';
@@ -15,6 +16,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 function DecisionRow({ d }: { d: Decision }) {
   const nameOf = useJobName();
+  const machines = useHopper((s) => s.machines);
   const row = 'text-xs leading-relaxed';
   return (
     <Collapsible className="border-b last:border-0">
@@ -28,9 +30,9 @@ function DecisionRow({ d }: { d: Decision }) {
         <span className="ml-auto hidden truncate font-mono text-muted-foreground/60 sm:block">{d.id.slice(0, 8)}</span>
       </CollapsibleTrigger>
       <CollapsibleContent className="space-y-3 px-4 pb-4 pl-10">
-        <Section title="Starts">{d.start.map((s) => <div key={s.jobId} className={row}><b className="font-medium">{nameOf(s.jobId)}</b> → {s.machineId}/{s.laneId?.split('/').pop() ?? 'new lane'} · eff {s.effectivePriority} — <span className="text-muted-foreground">{s.reason}</span></div>)}</Section>
+        <Section title="Starts">{d.start.map((s) => <div key={s.jobId} className={row}><b className="font-medium">{nameOf(s.jobId)}</b> → {startTarget(s, machines)} · eff {s.effectivePriority} — <span className="text-muted-foreground">{s.reason}</span></div>)}</Section>
         <Section title="Holds">{d.hold.map((h) => <div key={h.jobId} className={row}><b className="font-medium">{nameOf(h.jobId)}</b> — <span className="text-muted-foreground">{h.reason}</span></div>)}</Section>
-        <Section title="Lane plans">{d.lanes.map((p) => <div key={p.machineId} className={row}><span className="font-mono">{p.machineId}</span> {p.current} → {p.target}, open {p.open}, close {p.close.length}, drain {p.drain.length} — <span className="text-muted-foreground">{p.reason}</span></div>)}</Section>
+        <Section title="Lane plans">{d.lanes.map((p) => <div key={p.machineId} className={row}><span className="font-medium">{machineName(p.machineId, machines)}</span> {p.current} → {p.target}, open {p.open}, close {p.close.length}, drain {p.drain.length} — <span className="text-muted-foreground">{p.reason}</span></div>)}</Section>
         <Section title="Divergences">{d.advice.map((v) => <div key={v.jobId} className={`${row} text-warn`}>{nameOf(v.jobId)}: {v.advice} — native {v.native}, with advice {v.withAdvice} — {v.note}</div>)}</Section>
         <Section title="Reasons">{d.reasons.map((r, i) => <div key={i} className={`${row} text-muted-foreground`}>· {r}</div>)}</Section>
         <Collapsible>

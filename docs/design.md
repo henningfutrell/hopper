@@ -2422,7 +2422,8 @@ lane is never named by its number alone: the UI names it `<machine label> (<mach
 (the id once when it is the label; `ui/src/model/board.ts` `laneName`), since labels can repeat and ids
 cannot. An executor with a work tree reports it once resolved, `ExecutionContext.workTree(path)`, and
 the runner keeps it on the job (`job.workTree`); the lane running the job shows that path. The
-command executor has none and reports none.
+command executor has none and reports none. Every place that names a lane uses `laneName` — the lane board, the lane
+timeline, a Decision's starts, the event lines — and a machine, `machineName`.
 
 **Working directories are the same paths there.** A job's `cwd` (payload, or the instance's `cwd`) is
 resolved on this machine (`~` expanded here) and must exist on the attached one; the laptop has
