@@ -3581,7 +3581,9 @@ secondary; install and run docs focus on Podman.
 
 **The image.** `.github/workflows/image.yml` builds the `Dockerfile` on every push to `main` (and by
 hand) and pushes `ghcr.io/henningfutrell/hopper`: `latest` follows `main`, `sha-<commit>` pins one
-build; `linux/amd64` and `linux/arm64` (QEMU; herdr ships both). It logs in with the workflow's own
+build; `linux/amd64` and `linux/arm64` (QEMU; herdr ships both). A newer push never cancels a build
+in progress: runs queue, and GitHub keeps only the newest pending one, so the last commit of a merge
+stream is always published (issue #156: cancelling left `latest` hours behind `main`). It logs in with the workflow's own
 `GITHUB_TOKEN` (`packages: write`): no registry credential exists to keep or rotate. The package is
 public, so a pull needs no sign-in. Nothing in the image is specific to one install: everything the
 hopper keeps is in its database, its secrets come from the runtime ("Deployable", "Secrets").

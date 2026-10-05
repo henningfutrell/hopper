@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- The container image you pull is now always built from the newest version. Before, changes made close together could leave it hours behind, so a container could lack features such as logging in to GitHub from the Sources view.
 - One assistant's usage limit no longer stops jobs that run on another: a machine can run several kinds of coding assistant, and each one's budget holds back only its own jobs. Usage and the account of any assistant can now be read by a command you choose.
 - Questions can be answered on a machine you choose, or through the Claude API with your own key, so a hopper in a container no longer sends every question to you.
 - The hopper's container no longer shows itself as a machine jobs can run on. It never had what a job needs; jobs run on the machines you add.
