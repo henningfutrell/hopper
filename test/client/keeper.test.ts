@@ -13,6 +13,7 @@ import { mintToken } from '../../src/client/signature.ts';
 import { clientSocket } from '../../src/executors/client.ts';
 import { createClientReleaseKeeper } from '../../src/machines/client-release.ts';
 import { startTestClient } from '../support/client.ts';
+import { waitFor } from '../support/wait.ts';
 
 const HERDR = fileURLToPath(new URL('../herdr/fake-herdr-bin.mjs', import.meta.url));
 chmodSync(HERDR, 0o755);
@@ -54,6 +55,7 @@ describe('keeping a client target on the hopper\'s release', () => {
     const lines: string[] = [];
     const keep = createClientReleaseKeeper({ release: HOPPERS, logger: { info: (l) => lines.push(l), warn: (l) => lines.push(l) } });
     await keep(transport, () => false);
+    await waitFor(() => (loaded.length > 0 ? true : undefined), { timeoutMs: 5000, what: 'the restart asked for' });
     expect(loaded).toEqual([HOPPERS.id]);
     expect(readRelease(install)).toEqual(HOPPERS);
     expect(lines.join('\n')).toMatch(new RegExp(`client studio: loaded release ${HOPPERS.id}`));
@@ -64,6 +66,7 @@ describe('keeping a client target on the hopper\'s release', () => {
     const lines: string[] = [];
     const keep = createClientReleaseKeeper({ release: HOPPERS, logger: { info: (l) => lines.push(l), warn: (l) => lines.push(l) } });
     await keep(transport, () => false);
+    await waitFor(() => (loaded.length > 0 ? true : undefined), { timeoutMs: 5000, what: 'the restart asked for' });
     expect(loaded).toEqual([HOPPERS.id]);
     expect(lines.join('\n')).toMatch(new RegExp(`client studio: loaded release ${HOPPERS.id}`));
     expect(lines.join('\n')).not.toMatch(/failed/);

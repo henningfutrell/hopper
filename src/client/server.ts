@@ -96,7 +96,7 @@ async function serve(o: ClientOptions, nonces: ReturnType<typeof createNonceCach
   }
   nonce = v.nonce;
   if (path === '/release') return answer(200, { release: releases.running });
-  if (path === '/load') return load(o, releases, body, answer);
+  if (path === '/load') return load(o, releases, stream, body, answer);
   let parsed: { args?: unknown; timeoutMs?: unknown };
   try { parsed = JSON.parse(body) as typeof parsed; } catch { return answer(400, { error: 'body must be JSON' }); }
   if (!validArgs(parsed.args)) return answer(400, { error: 'args must be a non-empty list of strings, without --session' });
@@ -104,8 +104,11 @@ async function serve(o: ClientOptions, nonces: ReturnType<typeof createNonceCach
   answer(200, await herdr(o, parsed.args, timeoutMs));
 }
 
-/** A signed load: the release checked whole, written into the install dir, then a restart asked for. */
-function load(o: ClientOptions, releases: Releases, body: string, answer: (status: number, payload: unknown) => void): void {
+/** After the load's answer leaves this end, how long the tunnel stays up for it to reach the hopper before the restart. */
+const RESTART_GRACE_MS = 1000;
+
+/** A signed load: the release checked whole, written into the install dir, then — once the answer is on its way — a restart asked for. */
+function load(o: ClientOptions, releases: Releases, stream: ServerHttp2Stream, body: string, answer: (status: number, payload: unknown) => void): void {
   let parsed: { release?: unknown };
   try { parsed = JSON.parse(body) as typeof parsed; } catch { return answer(400, { error: 'body must be JSON' }); }
   const release = checkRelease(parsed.release);
@@ -115,8 +118,8 @@ function load(o: ClientOptions, releases: Releases, body: string, answer: (statu
     releases.installed = release.id;
     o.log?.(`job-hopper-client: loaded release ${release.id} into ${o.installDir} (running ${releases.running}); restarting`);
   }
+  if (release.id !== releases.running) stream.once('close', () => setTimeout(() => o.onLoaded?.(release.id), RESTART_GRACE_MS));
   answer(200, { release: release.id });
-  if (release.id !== releases.running) setImmediate(() => o.onLoaded?.(release.id));
 }
 
 /** What the relay sends first; anything before it is the hopper machine's login shell talking. */
