@@ -55,7 +55,7 @@ a fresh password unless `daemon.env` or `JOB_HOPPER_DATABASE_URL` already names 
 `scripts/install.sh`:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/henningfutrell/hopper/main/scripts/get.sh | bash
+curl -fsSL https://henningfutrell.github.io/hopper/install.sh | bash
 ```
 
 `JOB_HOPPER_REF` installs and tracks another branch; `JOB_HOPPER_REPO` another repository. By hand,

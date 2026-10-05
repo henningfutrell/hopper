@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # The curl install (issue #87):
 #
-#   curl -fsSL https://raw.githubusercontent.com/henningfutrell/hopper/main/scripts/get.sh | bash
+#   curl -fsSL https://henningfutrell.github.io/hopper/install.sh | bash
+#
+# The install page (site/index.html) serves this file as install.sh (.github/workflows/pages.yml);
+# the raw URL of scripts/get.sh on main works the same.
 #
 # Checks what the install needs, clones the hopper's source into $JOB_HOPPER_SRC (or updates the
 # clone already there), gives it a database, and runs that source's scripts/install.sh — which

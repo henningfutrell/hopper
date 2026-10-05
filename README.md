@@ -4,7 +4,7 @@ A self-hosted job queue for coding agents. It pulls jobs from GitHub issues, run
 Claude Code session in a herdr pane on a machine it manages, answers or escalates the questions a
 job asks, and keeps every machine inside its usage budget. One daemon, one Postgres database, a
 web UI, and an HTTP API with its reference at `/docs/`.
-Install page: https://henningfutrell.github.io/hopper/ (`site/`).
+Install page, step by step: https://henningfutrell.github.io/hopper/ (`site/`).
 
 - **Jobs are pulled, never pushed.** A job is an issue with the `hopper` label, by an author you
   allow. No route creates a job.
@@ -47,7 +47,7 @@ Pick one. Each needs a Postgres URL; the bundled one is `deploy/compose.yaml`.
 The daemon and its own herdr session as user services, and Postgres in docker. Jobs run on this host.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/henningfutrell/hopper/main/scripts/get.sh | bash
+curl -fsSL https://henningfutrell.github.io/hopper/install.sh | bash
 bash ~/.local/lib/job-hopper/scripts/open-ui.sh        # signs this browser in and opens the UI
 ```
 
