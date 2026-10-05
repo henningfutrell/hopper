@@ -22,6 +22,8 @@ export interface ClaudePlanOptions { bin: string; intervalSeconds: number; machi
 
 /** Each claude call is killed after this long. */
 const TIMEOUT_MS = 45_000;
+/** A machine not ready (not listed yet, or not probed online yet) is read again after this long, on a poll. */
+const NOT_READY_RETRY_MS = 30_000;
 /** Readings older than this many intervals are stale: none are returned. */
 const STALE_INTERVALS = 3;
 
@@ -53,6 +55,7 @@ function createClaudePlanSource(ctx: Ctx, o: ClaudePlanOptions): UsageSource {
   let lastError: string | undefined;
   let account: Account | undefined;
   let running: Promise<void> | undefined;
+  let retryAt: number | undefined;
   let stopped = false;
   const abort = new AbortController();
 
@@ -97,6 +100,8 @@ function createClaudePlanSource(ctx: Ctx, o: ClaudePlanOptions): UsageSource {
   const refresh = async (): Promise<void> => {
     const usage = await run(USAGE_ARGS);
     if (stopped) return;
+    // At start an attached machine is offline until its first probe: no reason to wait an interval.
+    retryAt = 'error' in usage && o.machine && usage.error.startsWith('machine ') ? ctx.clock.now().getTime() + NOT_READY_RETRY_MS : undefined;
     const parsed = 'stdout' in usage && usage.code === 0 ? parseUsageEnvelope(usage.stdout, ctx.clock.now()) : { problem: failure('-p /usage', usage) };
     if ('windows' in parsed) {
       windows = parsed.windows;
@@ -127,6 +132,10 @@ function createClaudePlanSource(ctx: Ctx, o: ClaudePlanOptions): UsageSource {
     name: ctx.instanceName,
     async poll(): Promise<UsageReading[]> {
       const now = ctx.clock.now();
+      if (retryAt !== undefined && now.getTime() >= retryAt && !running) {
+        retryAt = undefined;
+        kick();
+      }
       if (!refreshedAt || stale(now)) return [];
       const at = refreshedAt.toISOString();
       // A window past its reset no longer says anything: it is left out until the next read.
