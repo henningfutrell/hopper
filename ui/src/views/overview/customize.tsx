@@ -14,12 +14,13 @@ import { cn } from '@/lib/utils';
 
 const WIDTH_MARK = { 1: '⅓', 2: '⅔', 3: 'full' } as const;
 
-/** A row of buttons, the chosen one pressed. */
-function Choice<T extends string | number>({ label, options, value, onChoose, name = String, title }: {
-  label: string; options: readonly T[]; value: T; onChoose: (v: T) => void; name?: (v: T) => string; title?: (v: T) => string;
+/** A row of buttons, the chosen one pressed; a setting's group carries its caption. */
+function Choice<T extends string | number>({ label, options, value, onChoose, name = String, title, caption }: {
+  label: string; options: readonly T[]; value: T; onChoose: (v: T) => void; name?: (v: T) => string; title?: (v: T) => string; caption?: boolean;
 }) {
   return (
     <div role="group" aria-label={label} className="flex items-center gap-0.5 rounded-md border p-0.5">
+      {caption && <span className="px-1.5 text-[11px] text-muted-foreground">{label}</span>}
       {options.map((o) => (
         <Button key={o} size="xs" variant="ghost" aria-pressed={o === value} {...(title ? { 'aria-label': title(o), title: title(o) } : {})}
           className={cn('h-6 px-2 text-xs', o === value ? 'bg-muted text-foreground' : 'text-muted-foreground')} onClick={() => onChoose(o)}>
@@ -35,9 +36,9 @@ function PanelSettings({ p, layout }: { p: PanelPlacement; layout: OverviewLayou
   const set = <K extends keyof OverviewSettings>(k: K) => (v: OverviewSettings[K]) => setOverviewLayout(setSetting(layout, k, v));
   const s = layout.settings;
   switch (p.id) {
-    case 'timeline': return <Choice label="Window" options={TIMELINE_WINDOWS} value={s.timelineWindow} onChoose={set('timelineWindow')} />;
-    case 'throughput': return <Choice label="Hours" options={THROUGHPUT_HOURS} value={s.throughputHours} onChoose={set('throughputHours')} name={(h) => `${h} h`} />;
-    case 'live': return <Choice label="Events" options={LIVE_EVENTS} value={s.liveEvents} onChoose={set('liveEvents')} name={(n) => `${n} events`} />;
+    case 'timeline': return <Choice label="window" caption options={TIMELINE_WINDOWS} value={s.timelineWindow} onChoose={set('timelineWindow')} />;
+    case 'throughput': return <Choice label="last" caption options={THROUGHPUT_HOURS} value={s.throughputHours} onChoose={set('throughputHours')} name={(h) => `${h} h`} />;
+    case 'live': return <Choice label="events" caption options={LIVE_EVENTS} value={s.liveEvents} onChoose={set('liveEvents')} />;
     default: return null;
   }
 }
@@ -71,7 +72,7 @@ export function Customize({ layout, children }: { layout: OverviewLayout; childr
           <SheetTitle>Customize the overview</SheetTitle>
           <SheetDescription>Which panels show, in what order and how wide. Kept by this browser only.</SheetDescription>
         </SheetHeader>
-        <ol className="flex-1 divide-y overflow-y-auto">
+        <ol className="min-w-0 flex-1 divide-y overflow-x-hidden overflow-y-auto">
           {layout.panels.map((p, i) => <PanelRow key={p.id} p={p} i={i} layout={layout} />)}
         </ol>
         <SheetFooter className="border-t">
