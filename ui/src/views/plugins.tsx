@@ -1,14 +1,16 @@
 // Plugins (design.md "UI and mutation"): per role, the configured instances, each with its own
 // options form (components/plugin-form.tsx), and for a list role Add and Remove; command-bearing options are shown, never edited
-// (plugins.yaml only). Refreshes every 15 s unless a form holds unsaved edits.
-import { Puzzle, RefreshCw } from 'lucide-react';
+// (plugins.yaml only). Refreshes every 15 s unless a form holds unsaved edits. Every shipped plugin of a
+// list role has a switch that enables or disables it (issue #142: users never edit plugins.yaml).
+import { Package, Puzzle, RefreshCw } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import { Empty, Panel } from '@/components/panel';
 import { AddInstance, InstanceForm, PluginSelector, pluginEditsUnsaved, sendPluginsEdit } from '@/components/plugin-form';
 import { StatusBadge } from '@/components/status';
 import { PluginStore } from '@/views/plugin-store';
-import { instanceState, isListRole, isSelectable, ROLE_TITLES } from '@/model/plugins';
+import { instanceState, isListRole, isSelectable, ROLE_TITLES, shippedPlugins, toggleEdit } from '@/model/plugins';
 import type { PluginsReport, Role } from '@/model/wire';
 import { refreshPlugins, useHopper } from '@/store';
 import { useCanAdmin } from '@/store/selectors';
@@ -29,6 +31,38 @@ function RoleBlock({ role, report }: { role: Role; report: PluginsReport }) {
       {instances.length
         ? instances.map((i) => <InstanceForm key={i.instance.name} role={role} inst={i.instance} />)
         : <Empty>{role === 'escalation-level' ? 'none — questions go straight to the owner' : 'none'}</Empty>}
+    </Panel>
+  );
+}
+
+/** The shipped plugins, each with its switch (issue #142). A job source, usage source or notifier applies after a restart. */
+function ShippedPlugins({ report }: { report: PluginsReport }) {
+  const authed = useCanAdmin();
+  const [busy, setBusy] = useState<string | null>(null);
+  const shipped = shippedPlugins(report);
+  const flip = async (p: (typeof shipped)[number]) => {
+    const edit = toggleEdit(report, p);
+    if (!edit) return;
+    setBusy(p.id);
+    await sendPluginsEdit(edit, `${p.enabled ? 'Disabled' : 'Enabled'} ${p.id}`);
+    setBusy(null);
+  };
+  return (
+    <Panel title="Shipped plugins" icon={Package} count={shipped.filter((p) => p.enabled).length || ''} bodyClassName="divide-y">
+      {shipped.map((p) => (
+        <div key={`${p.role}:${p.id}`} className="flex items-start gap-3 py-2 first:pt-0 last:pb-0">
+          <Switch className="mt-0.5" checked={p.enabled} aria-label={`${p.enabled ? 'Disable' : 'Enable'} ${p.id}`}
+            disabled={!authed || busy !== null || p.blocked !== undefined} onCheckedChange={() => void flip(p)} />
+          <div className="min-w-0 text-xs">
+            <div className="flex flex-wrap items-baseline gap-x-2">
+              <span className="font-mono text-sm">{p.id}</span>
+              <span className="text-muted-foreground">{ROLE_TITLES[p.role]}</span>
+            </div>
+            <div className="text-muted-foreground">{p.describe}</div>
+            {p.blocked && <div className="text-warn">{p.blocked}</div>}
+          </div>
+        </div>
+      ))}
     </Panel>
   );
 }
@@ -60,6 +94,7 @@ export function Plugins() {
         {[...c.warnings, ...report.warnings].map((w) => <div key={w} className="text-warn">{w}</div>)}
         {report.errors.map((e) => <div key={e.path} className="text-bad">refused plugin {e.path}: {e.error}</div>)}
       </Panel>
+      <ShippedPlugins report={report} />
       <PluginStore />
       <div className="grid gap-3 xl:grid-cols-2">{report.roles.map((r) => <RoleBlock key={r} role={r} report={report} />)}</div>
     </div>

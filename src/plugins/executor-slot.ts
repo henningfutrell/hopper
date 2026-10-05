@@ -1,5 +1,5 @@
-// The executor role's slots (design.md "Failure"): 1..n instances, built once at start (a restart
-// role). An instance that cannot run (unknown plugin, invalid options, not detected, create threw)
+// The executor role's slots (design.md "Failure"): 1..n instances, following plugins.yaml live (issue
+// #142): an unchanged instance is kept, a new or changed one built, a removed one dropped. An instance that cannot run (unknown plugin, invalid options, not detected, create threw)
 // has no executor and a reason: the engine holds the jobs naming it. The instance is named after
 // plugins.yaml whatever the plugin calls itself: jobs name the instance (`spec.executor`).
 import type { Executor } from '../domain/ports.ts';
@@ -22,6 +22,18 @@ export async function buildExecutors(specs: InstanceSpec[], deps: SlotDeps): Pro
     deps.logger.warn(`hopper: executor ${spec.name} (${spec.plugin}) unavailable, its jobs are held: ${built.why}`);
     return { spec, detection: built.detection, plugin: null, reason: built.why };
   }));
+}
+
+/** Follow plugins.yaml: keep each unchanged instance (same spec), build the others; log what changed after the first build. */
+export async function applyExecutorSpecs(slot: { built?: BuiltExecutor[] }, specs: InstanceSpec[], deps: SlotDeps): Promise<void> {
+  const before = slot.built;
+  const same = (b: BuiltExecutor, spec: InstanceSpec) => JSON.stringify(b.spec) === JSON.stringify(spec);
+  const kept = (spec: InstanceSpec) => before?.find((b) => same(b, spec));
+  const fresh = await buildExecutors(specs.filter((s) => !kept(s)), deps);
+  slot.built = specs.map((spec) => kept(spec) ?? fresh.find((b) => b.spec === spec)!);
+  if (!before) return;
+  for (const b of fresh) deps.logger.info(`hopper: executor ${b.spec.name} (${b.spec.plugin}) applied`);
+  for (const b of before) if (!specs.some((s) => s.name === b.spec.name)) deps.logger.info(`hopper: executor ${b.spec.name} removed`);
 }
 
 export function executorStatus(b: BuiltExecutor): InstanceStatus {

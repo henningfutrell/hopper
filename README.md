@@ -363,18 +363,13 @@ of it shows in a herdr pane.
 1. **On each machine that runs it**: install the Cursor CLI
    (https://cursor.com/docs/cli/installation) and sign it in once: `cursor-agent login`, or set
    `CURSOR_API_KEY` in that machine's environment. The hopper holds no Cursor credential.
-2. `hopper config edit plugins.yaml`: add the executor, then `systemctl --user restart hopper`:
-
-   ```yaml
-   executors:
-     - { name: herdr-claude, plugin: herdr-claude }
-     - { name: cursor, plugin: cursor-agent }
-   ```
-
-3. Attach the machine in the Machines view with only `cursor` ticked: a machine whose executors
+2. In the UI's Plugins view, under **Shipped plugins**, switch `cursor-agent` on. It runs at once; no
+   restart.
+3. Attach the machine in the Machines view with only `cursor-agent` ticked: a machine whose executors
    need no herdr is checked over ssh alone, so it needs no herdr. To make it the usual choice, tick
-   `cursor` under **Defaults**.
-4. Send jobs to it with a routing rule, e.g. `set: { machine: wsl, executor: cursor }`.
+   `cursor-agent` under **Defaults**.
+4. Send jobs to it with a routing rule in the Routing view: set its machine and the executor
+   `cursor-agent`.
 
 ### Send jobs to one machine
 

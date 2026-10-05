@@ -130,17 +130,14 @@ describe('GET /api/plugins: the executor role', () => {
     expect(marked('local')).toEqual([]);
   });
 
-  it('editing executors in plugins.yaml shows changed — restart pending; the running set is unchanged', async () => {
+  it('an executor added to plugins.yaml runs without a restart (issue #142)', async () => {
     const dbPath = newDb();
     writePluginsYaml(dbPath, 'version: 1\nexecutors: [ { name: test, plugin: test } ]\n');
     const a = await boot(dbPath);
     writePluginsYaml(dbPath, 'version: 1\nexecutors: [ { name: test, plugin: test }, { name: t2, plugin: test } ]\n');
-    const pending = await waitFor(async () => (await a.api('GET', '/api/plugins')).body.executors.pending, { what: 'restart pending' });
-    expect(pending).toEqual({
-      status: 'changed — restart pending',
-      instances: [{ name: 'test', plugin: 'test', options: {} }, { name: 't2', plugin: 'test', options: {} }],
-    });
-    expect((await a.api('GET', '/api/plugins')).body.executors.instances.map((i: { instance: { name: string } }) => i.instance.name)).toEqual(['test']);
-    expect((await a.api('GET', '/api/health')).body.executors).toEqual(['test', 'scripted']);
+    await waitFor(async () => ((await a.api('GET', '/api/health')).body.executors as string[]).includes('t2'), { what: 't2 running' });
+    const report = (await a.api('GET', '/api/plugins')).body;
+    expect(report.executors.pending).toBeUndefined();
+    expect(report.executors.instances.map((i: { instance: { name: string } }) => i.instance.name)).toEqual(['test', 't2']);
   });
 });

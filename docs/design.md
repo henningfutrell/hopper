@@ -4067,3 +4067,30 @@ defaults.
 (a container started by its script and let through the socket proxy; the client installed on the target
 and its token in the daemon's runtime), so they stay `scripts/` plus `hopper config edit plugins.yaml`.
 
+### Shipped plugins are switched on in the UI (issue #142, owner decision 2026-10-05)
+
+Owner, on the first cut of this issue: plugins.yaml editing cannot be how users get a plugin. **Users
+never edit plugins.yaml**: for now the shipped plugins are enabled and disabled in the UI; installing
+plugins from a store URL is a separate issue.
+
+- **The switch.** The Plugins view lists every **shipped plugin** (built-in) of a list role but
+  `machine-source` (attached in the Machines view) with a switch. On sends `POST /ui/api/plugins`
+  `{ action: 'add', role, plugin: <id>, name: <id> }` (the plugin's defaults); off sends
+  `{ action: 'remove', name: <its one instance> }`. Blocked, with the reason, when the plugin is not
+  available here (its detection reason: `needs-setup` for one whose options have no defaults), when
+  another instance already has its id as name, or when it has several instances (remove them in its
+  role block). The existing add, remove and options edits are unchanged; no new route.
+- **Executors are live.** The executor role follows plugins.yaml like the machine sources
+  (`applyExecutorSpecs`: an unchanged instance kept, a new or changed one built, a removed one dropped;
+  logged). `/api/plugins` `executors` is `{ instances }`, never pending. The daemon's registry reads the
+  host's executors on every lookup, so a job routed to a just-enabled executor runs; `/api/health`
+  `executors` is current. A running job keeps the executor object it started with; a resume or
+  reattach looks the name up again.
+- **Removal while in use.** Removing an executor is refused (409, naming the jobs) while a job that has
+  not ended (`queued`, `held`, `claimed`, `running`, `waiting_answer`) names it — the machine rule,
+  extended (`inUse(role, name)`). The other refusals (named by a job source, routing rule or machine;
+  the last executor) stand.
+- **Still restart roles**: job sources, usage sources, notifiers. Switching one shows `changed —
+  restart pending`, and the UI has no restart. Making them live too belongs with the store issue.
+- **Docs** give the UI path (README "Cursor's agent"); no user step says `hopper config edit`.
+

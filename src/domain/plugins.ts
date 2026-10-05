@@ -140,8 +140,9 @@ export interface PluginsReport {
   queueSorter: QueueSorterStatus;
   /** The escalation levels now, lowest first (a live role). `active` null: that level cannot run, and escalates every question it gets. */
   escalationLevels: InstanceStatus[];
+  /** The executors as plugins.yaml names them now: live since issue #142, never pending. */
+  executors: { instances: InstanceStatus[] };
   /** The restart roles, as built at start. */
-  executors: RestartRoleStatus;
   jobSources: RestartRoleStatus;
   /** The machine sources — this machine and the attached ones (issue #74) — as plugins.yaml names them now: live, never pending. */
   machines: { instances: InstanceStatus[] };
