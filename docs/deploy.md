@@ -83,7 +83,7 @@ podman compose exec hopper hopper login-code --link http://127.0.0.1:4790
   the escalation levels a designated machine or an API key).
 - **Who answers questions:** the container has no Claude sign-in of its own, so its escalation levels
   escalate every question to you until one can run. In Settings → Question gates: set a level's
-  `machine` to an attached ssh machine signed in to claude, or add an `anthropic-api` level and give the
+  `machine` (picked from the machines) to an attached ssh machine signed in to claude, or add an `anthropic-api` level and give the
   container `ANTHROPIC_API_KEY` (or `ANTHROPIC_API_KEY_FILE`, a mounted secret) in `.env`.
 
 **From the build-from-source compose file** (before issue #125): the volumes are the same, so the new

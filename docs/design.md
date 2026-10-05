@@ -610,9 +610,21 @@ ON_MACHINE sh claude <argv>` — the same argv, the prompt on stdin, in a fresh 
 removed after with the project dir claude keeps for it (`ON_MACHINE`, shared with `claude-plan`).
 The level finds the machine by id through `RoleContext['escalation-level'].machine` (`MachineLookup`,
 as a usage source does); a machine not configured, offline, a client target or a container target
-(`docker exec` passes no stdin) is `{ error }`, so the question escalates. Absent: this machine, as
-before. `machine` is not command-bearing: the owner designates it in the Question gates panel; it
-can only name a machine already attached.
+(`docker exec` passes no stdin) is `{ error }`, so the question escalates. `machine` is not
+command-bearing: the owner designates it in the Question gates panel; it can only name a machine
+already configured.
+
+**Always a machine** (issue #174). `machine` is a **machine option** (`.meta({ machine: true })`):
+required, and picked from the configured machines — the UI offers a select of them (`choices`
+filled by the host from `machines:`), never a text field, and no empty choice. This machine is no
+default: it is the `local` machine in the list, like any other; on it claude runs here, as before
+(the snapshot has no `ssh`, `docker` or `client`). The built-in levels name `local` where this host
+is a machine and none in the container, where one must be picked. `POST /ui/api/plugins` refuses an
+`options` or `add` edit whose machine option is missing or names no configured machine (`add`
+carries `options` for it), and the removal of a machine an instance's machine option still names.
+Tenant migration 3 names the `local` machine in every claude-cli level and claude-plan usage source
+that named none: they ran here. Detection runs nothing here: claude runs on the machine, and whether
+it does shows in each question's trail.
 
 **Anthropic API plugin** (`anthropic-api`, an escalation level, not in the built-in instances). The
 other way a hopper without a claude CLI answers: one Messages request per question through
@@ -2992,10 +3004,10 @@ subscription usage comes from `claude -p /usage --output-format json --no-sessio
 local slash command, zero turns, zero tokens; Claude Code refreshes its own OAuth, so hopper
 holds no credential. Prior art: `a status-bar script`.
 - Options: `bin` (command-bearing, default `claude`), `intervalSeconds` (default 600, min 120),
-  `machine` (an attached machine; absent: this machine), `sshBin` and `dockerBin` (command-bearing,
-  default `ssh`, `docker`). Detection: `which bin` only — never a call to claude; with `machine`,
-  none (claude is on that machine).
-- **On an attached machine** (issue #139): with `machine`, both calls run there through its
+  `machine` (a machine option, required: this machine as `local`, or an attached one; issue #174),
+  `sshBin` and `dockerBin` (command-bearing, default `ssh`, `docker`). Detection: none — never a
+  call to claude; claude is on that machine, and the source's state says whether it runs.
+- **On an attached machine** (issue #139): on one, both calls run there through its
   connection — `commandOn`, as the command executor: ssh with the hopper's ssh key, or `docker exec`;
   a client target serves herdr only, so it cannot — in a fresh `mktemp -d` dir there, removed after
   with the project dir claude keeps for it. Its `PATH` is the machine's own. The machine is found

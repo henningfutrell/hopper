@@ -13,7 +13,7 @@ export type Detection =
   | { status: 'unavailable'; reason: string }
   | { status: 'needs-setup'; reason: string; command: string };
 
-/** One value an option may take, as the plugin read it from the system (a model the `claude` CLI offers). */
+/** One value an option may take, as the plugin read it from the system (a model the `claude` CLI offers), or a configured machine for a machine option. */
 export interface OptionChoice {
   value: string;
   label?: string;
@@ -113,8 +113,11 @@ export type PluginsEdit =
   | { action: 'options'; role: Role; name: string; options: Record<string, unknown>; version: string }
   /** A plugin, detected available, fills the role under its own id. */
   | { action: 'select'; role: SelectableRole; plugin: string; version: string }
-  /** A plugin, detected available, as a new instance `name` of a list role, with the plugin's defaults. */
-  | { action: 'add'; role: ListRole; plugin: string; name: string; version: string }
+  /**
+   * A plugin, detected available, as a new instance `name` of a list role, with the plugin's defaults
+   * and `options`. A plugin with a machine option needs it named here (issue #174).
+   */
+  | { action: 'add'; role: ListRole; plugin: string; name: string; options?: Record<string, unknown>; version: string }
   /** Instance `name` of a list role leaves plugins.yaml; an executor still named elsewhere is refused. */
   | { action: 'remove'; role: ListRole; name: string; version: string }
   /** Escalation level `name` moves to position `to` (0 is the lowest level); the others keep their order. */

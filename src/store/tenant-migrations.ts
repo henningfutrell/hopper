@@ -104,10 +104,48 @@ function renameIdleQuestionMs(db: Db): void {
   if (changed) db.run("UPDATE config_documents SET text = ?, updated_at = ? WHERE name = 'plugins.yaml'", doc.toString({ lineWidth: 0 }), new Date().toISOString());
 }
 
+/** The plugins that run on a machine, by plugins.yaml section, as they were before issue #174: none named ran here. */
+const RAN_HERE = { escalationLevels: 'claude-cli', usageSources: 'claude-plan' } as const;
+
+/**
+ * Tenant migration 3 (issue #174): a part that runs on a machine names it; this machine is no default.
+ * A claude-cli escalation level or a claude-plan usage source that named no `machine` ran here: it
+ * names this machine — the `local` instance of `machines:`, or the built-in `local` where the section
+ * is absent. Where there is none (the container) nothing is named, and the owner picks one. Comments
+ * and everything else in the document stay; a document that does not parse is left for the owner.
+ */
+function nameTheLocalMachine(db: Db): void {
+  const row = db.get("SELECT text FROM config_documents WHERE name = 'plugins.yaml'");
+  if (!row) return;
+  const doc = parseDocument(String(row.text));
+  if (doc.errors.length > 0) return;
+  const machines = doc.get('machines');
+  const local = !doc.has('machines') ? 'local'
+    : isSeq(machines) ? machines.items.find((m) => isMap(m) && m.get('plugin') === 'local') : undefined;
+  const name = isMap(local) ? local.get('name') : local;
+  if (typeof name !== 'string' || !name) return;
+  let changed = false;
+  for (const [section, plugin] of Object.entries(RAN_HERE)) {
+    const list = doc.get(section);
+    if (!isSeq(list)) continue;
+    for (const item of list.items) {
+      if (!isMap(item) || item.get('plugin') !== plugin) continue;
+      const options = item.get('options');
+      if (isMap(options) && options.has('machine')) continue;
+      if (isMap(options)) options.set('machine', name);
+      else item.set('options', doc.createNode({ machine: name }, { flow: true }));
+      changed = true;
+    }
+  }
+  if (changed) db.run("UPDATE config_documents SET text = ?, updated_at = ? WHERE name = 'plugins.yaml'", doc.toString({ lineWidth: 0 }), new Date().toISOString());
+}
+
 /** Tenant migrations 2 on. */
 const TENANT_MIGRATIONS: readonly Migration[] = [
   // 2: herdr-claude's idleQuestionMs is idleNudgeMs (issue #163).
   renameIdleQuestionMs,
+  // 3: a claude-cli level or claude-plan usage source names its machine (issue #174).
+  nameTheLocalMachine,
 ];
 
 /** A user schema's version once migrated. */

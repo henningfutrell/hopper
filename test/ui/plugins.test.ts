@@ -152,3 +152,25 @@ describe('shipped plugins', () => {
     expect(toggleEdit(report, herdr!)).toBeNull();
   });
 });
+
+// Issue #174: a plugin with a machine option is never added without its machine.
+describe('a shipped plugin that runs on a machine', () => {
+  const report = {
+    config: { version: 'v1' },
+    instances: [{ role: 'machine-source', instance: { name: 'local', plugin: 'local' } }],
+    plugins: [{
+      id: 'claude-plan', role: 'usage-source', describe: 'usage', builtin: true, detection: { status: 'available' },
+      options: { type: 'object', properties: { machine: { type: 'string', machine: true } }, required: ['machine'] },
+    }],
+  } as unknown as PluginsReport;
+
+  it('is not switched on: it is added where its machine is picked', () => {
+    const [plan] = shippedPlugins(report);
+    expect(plan).toMatchObject({ id: 'claude-plan', enabled: false, blocked: 'runs on a machine: add it under Usage sources, picking the machine' });
+    expect(toggleEdit(report, plan!)).toBeNull();
+  });
+
+  it('a machine option is always a choice, even before any machine is listed', () => {
+    expect(fieldKind({ type: 'string', machine: true } as never)).toBe('choice');
+  });
+});

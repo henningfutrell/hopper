@@ -100,9 +100,11 @@ describe('claude-plan plugin', () => {
     if (saved === undefined) delete process.env.FAKE_PLAN_DIR; else process.env.FAKE_PLAN_DIR = saved;
   });
 
-  const ctx = () => ({ clock: { now: () => now }, logger: { info() {}, warn() {} }, dataDir: scratch, userEnv: {}, scratchDir: scratch, instanceName: 'claude', env: () => undefined, machine: async () => undefined });
+  /** This machine, the hopper's own: in the machine list like any other, named `local` (issue #174). */
+  const LOCAL: MachineSnapshot = { id: 'local', label: 'local', maxLanes: 4, online: true, executors: ['herdr-claude'] };
+  const ctx = () => ({ clock: { now: () => now }, logger: { info() {}, warn() {} }, dataDir: scratch, userEnv: {}, scratchDir: scratch, instanceName: 'claude', env: () => undefined, machine: async (id: string) => (id === 'local' ? LOCAL : undefined) });
   async function create(raw: Record<string, unknown> = {}): Promise<UsageSource> {
-    const p = parseOptions(claudePlan, { bin: BIN, ...raw });
+    const p = parseOptions(claudePlan, { bin: BIN, machine: 'local', ...raw });
     if (!p.ok) throw new Error(p.error);
     const s = await claudePlan.create(ctx(), p.options as never);
     sources.push(s);
@@ -110,12 +112,15 @@ describe('claude-plan plugin', () => {
   }
   const calls = () => (existsSync(join(control, 'calls.jsonl')) ? readFileSync(join(control, 'calls.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as { argv: string[]; cwd: string }) : []);
 
-  it('is a usage source; options bin (command-bearing, default claude), intervalSeconds (default 600, at least 120) and executors (default the built-in herdr-claude)', () => {
+  it('is a usage source; options machine (required), bin (command-bearing, default claude), intervalSeconds (default 600, at least 120) and executors (default the built-in herdr-claude)', () => {
     expect(claudePlan).toMatchObject({ id: 'claude-plan', role: 'usage-source' });
-    expect(parseOptions(claudePlan, {})).toEqual({ ok: true, options: { bin: 'claude', intervalSeconds: 600, sshBin: 'ssh', dockerBin: 'docker', executors: ['herdr-claude'] } });
-    expect(parseOptions(claudePlan, { executors: ['claude-big'] })).toMatchObject({ ok: true, options: { executors: ['claude-big'] } });
-    expect(parseOptions(claudePlan, { intervalSeconds: 60 }).ok).toBe(false);
-    const schema = optionsJsonSchema(claudePlan) as { properties: Record<string, { commandBearing?: boolean }> };
+    expect(parseOptions(claudePlan, {})).toEqual({ ok: false, error: expect.stringContaining('machine') });
+    expect(parseOptions(claudePlan, { machine: 'local' })).toEqual({ ok: true, options: { machine: 'local', bin: 'claude', intervalSeconds: 600, sshBin: 'ssh', dockerBin: 'docker', executors: ['herdr-claude'] } });
+    expect(parseOptions(claudePlan, { machine: 'local', executors: ['claude-big'] })).toMatchObject({ ok: true, options: { executors: ['claude-big'] } });
+    expect(parseOptions(claudePlan, { machine: 'local', intervalSeconds: 60 }).ok).toBe(false);
+    const schema = optionsJsonSchema(claudePlan) as { properties: Record<string, { commandBearing?: boolean; machine?: boolean }>; required?: string[] };
+    expect(schema.properties.machine!.machine).toBe(true);
+    expect(schema.required).toContain('machine');
     expect(schema.properties.bin!.commandBearing).toBe(true);
     expect(schema.properties.intervalSeconds!.commandBearing).toBeUndefined();
     expect(schema.properties.machine!.commandBearing).toBeUndefined();
@@ -123,19 +128,12 @@ describe('claude-plan plugin', () => {
     expect(schema.properties.dockerBin!.commandBearing).toBe(true);
   });
 
-  it('detection is `which bin` only: never a call to claude', async () => {
+  it('detection never calls claude nor looks for it: claude runs on the machine the source names, this one too (#174)', async () => {
     let ran = false;
-    const kit = fakeKit({ version: async () => { ran = true; return 'x'; }, succeeds: async () => { ran = true; return true; } });
-    expect(await claudePlan.detect(kit, { bin: 'claude', intervalSeconds: 600, sshBin: 'ssh', dockerBin: 'docker', executors: ['herdr-claude'] })).toMatchObject({ status: 'available' });
-    expect(await claudePlan.detect(fakeKit({ which: async () => undefined }), { bin: 'claude', intervalSeconds: 600, sshBin: 'ssh', dockerBin: 'docker', executors: ['herdr-claude'] }))
-      .toEqual({ status: 'unavailable', reason: 'claude not found: claude' });
-    expect(ran).toBe(false);
-  });
-
-  it('with a machine, detection never looks for claude here: claude runs on that machine', async () => {
-    const kit = fakeKit({ which: async () => undefined });
+    const kit = fakeKit({ which: async () => undefined, version: async () => { ran = true; return 'x'; }, succeeds: async () => { ran = true; return true; } });
     expect(await claudePlan.detect(kit, { bin: 'claude', intervalSeconds: 600, machine: 'laptop', sshBin: 'ssh', dockerBin: 'docker', executors: ['herdr-claude'] }))
       .toEqual({ status: 'available', detail: 'claude on machine laptop' });
+    expect(ran).toBe(false);
   });
 
   it('poll never waits for claude: no readings and a reason until the first read lands, then every window as a % reading', async () => {
@@ -146,14 +144,14 @@ describe('claude-plan plugin', () => {
     const readings = await waitFor(async () => { const r = await s.poll(); return r.length ? r : undefined; }, { what: 'readings' });
     const at = now.toISOString();
     expect(readings).toEqual([
-      { source: 'claude', window: 'session', used: 80, limit: 100, unit: '%', resetsAt: '2026-10-03T17:15:00.000Z', executors: ['herdr-claude'], at },
-      { source: 'claude', window: 'week', used: 30, limit: 100, unit: '%', resetsAt: '2026-10-06T17:00:00.000Z', executors: ['herdr-claude'], at },
-      { source: 'claude', window: 'week (Fable)', used: 99, limit: 100, unit: '%', resetsAt: '2026-10-06T17:00:00.000Z', informational: true, executors: ['herdr-claude'], at },
+      { source: 'claude', machineId: 'local', window: 'session', used: 80, limit: 100, unit: '%', resetsAt: '2026-10-03T17:15:00.000Z', executors: ['herdr-claude'], at },
+      { source: 'claude', machineId: 'local', window: 'week', used: 30, limit: 100, unit: '%', resetsAt: '2026-10-06T17:00:00.000Z', executors: ['herdr-claude'], at },
+      { source: 'claude', machineId: 'local', window: 'week (Fable)', used: 99, limit: 100, unit: '%', resetsAt: '2026-10-06T17:00:00.000Z', informational: true, executors: ['herdr-claude'], at },
     ]);
     await waitFor(() => s.state!().account, { what: 'account' });
     expect(s.state!()).toEqual({
       refreshedAt: at,
-      account: { service: 'claude', identity: 'user@example.com', detail: { plan: 'max', organization: 'Example Org', authMethod: 'claude.ai' } },
+      account: { service: 'claude', identity: 'user@example.com', detail: { plan: 'max', organization: 'Example Org', authMethod: 'claude.ai', machine: 'local' } },
     });
     expect(JSON.stringify(s.state!())).not.toContain('SECRET');
   });
@@ -185,7 +183,7 @@ describe('claude-plan plugin', () => {
     writeFileSync(join(control, 'mode'), 'logged-out');
     const u = await create();
     await waitFor(() => u.state!().account, { what: 'the account' });
-    expect(u.state!().account).toEqual({ service: 'claude', detail: {}, problem: 'not logged in' });
+    expect(u.state!().account).toEqual({ service: 'claude', detail: { machine: 'local' }, problem: 'not logged in' });
   });
 
   it('a window past its reset is left out; readings older than 3 intervals are stale: none, and the reason', async () => {

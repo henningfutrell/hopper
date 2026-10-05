@@ -41,7 +41,12 @@ const question = {
 const req = (over: Partial<AnswerRequest> = {}): AnswerRequest => ({
   question, jobPrompt: 'Build the invoicing service', jobGoal: 'invoicing', rules: 'RULE: prefer sqlite', previous: [], level: { number: 1, of: 2 }, ...over,
 });
-const ctx = () => ({ clock: fixedClock, logger: { info() {}, warn() {} }, dataDir: dir, userEnv: {}, scratchDir: join(dir, 'scratch'), instanceName: 'opus', env: (_n: string): string | undefined => undefined, machine: async (): Promise<MachineSnapshot | undefined> => undefined });
+/** This machine, the hopper's own: in the machine list like any other, named `local` (issue #174). */
+const LOCAL: MachineSnapshot = { id: 'local', label: 'local', maxLanes: 4, online: true, executors: ['herdr-claude'] };
+const ctx = (machines: MachineSnapshot[] = [LOCAL]) => ({
+  clock: fixedClock, logger: { info() {}, warn() {} }, dataDir: dir, userEnv: {}, scratchDir: join(dir, 'scratch'), instanceName: 'opus',
+  env: (_n: string): string | undefined => undefined, machine: async (id: string): Promise<MachineSnapshot | undefined> => machines.find((m) => m.id === id),
+});
 const signal = () => new AbortController().signal;
 const rec = () => JSON.parse(readFileSync(out, 'utf8')) as { argv: string[]; stdin: string; env: Record<string, string>; cwd: string };
 
@@ -51,7 +56,7 @@ function opts(def: typeof claudeCli, raw: Record<string, unknown>): never {
   if (!p.ok) throw new Error(p.error);
   return p.options as never;
 }
-const level = (raw: Record<string, unknown> = {}) => claudeCli.create(ctx(), opts(claudeCli, { bin: BIN, timeoutMs: 5000, ...raw }));
+const level = (raw: Record<string, unknown> = {}, machines?: MachineSnapshot[]) => claudeCli.create(ctx(machines), opts(claudeCli, { bin: BIN, timeoutMs: 5000, machine: 'local', ...raw }));
 
 /** argv with the --json-schema value replaced, and the parsed schema. */
 function argvAndSchema(): { argv: string[]; schema: Record<string, unknown> } {
@@ -63,11 +68,18 @@ function argvAndSchema(): { argv: string[]; schema: Record<string, unknown> } {
 const LOCKDOWN_TAIL = ['--no-session-persistence', '--setting-sources', '', '--strict-mcp-config', '--tools', ''];
 
 describe('claude-cli (escalation level)', () => {
-  it('is an escalation level; options bin, model (default opus), timeoutMs, effort (optional)', async () => {
+  it('is an escalation level; options machine (required), bin, model (default opus), timeoutMs, effort (optional)', async () => {
     expect(claudeCli).toMatchObject({ id: 'claude-cli', role: 'escalation-level' });
-    expect(parseOptions(claudeCli, {})).toEqual({ ok: true, options: { bin: 'claude', model: 'opus', timeoutMs: 180_000, sshBin: 'ssh' } });
-    expect(parseOptions(claudeCli, { effort: 'high' })).toMatchObject({ ok: true, options: { effort: 'high' } });
-    expect(parseOptions(claudeCli, { effort: 'enormous' }).ok).toBe(false);
+    expect(parseOptions(claudeCli, {})).toEqual({ ok: false, error: expect.stringContaining('machine') });
+    expect(parseOptions(claudeCli, { machine: 'local' })).toEqual({ ok: true, options: { machine: 'local', bin: 'claude', model: 'opus', timeoutMs: 180_000, sshBin: 'ssh' } });
+    expect(parseOptions(claudeCli, { machine: 'local', effort: 'high' })).toMatchObject({ ok: true, options: { effort: 'high' } });
+    expect(parseOptions(claudeCli, { machine: 'local', effort: 'enormous' }).ok).toBe(false);
+  });
+
+  it('this machine is no default: one not configured or offline returns { error } and claude never runs here (#174)', async () => {
+    expect(await (await level({}, [])).answer(req(), signal())).toEqual({ error: 'machine local is not configured' });
+    expect(await (await level({}, [{ ...LOCAL, online: false }])).answer(req(), signal())).toEqual({ error: 'machine local is offline' });
+    expect(existsSync(out)).toBe(false);
   });
 
   it('spawns locked down with the reply schema { answer, escalate, reason }, --tools "" last, in the data dir', async () => {
@@ -142,19 +154,10 @@ describe('claude-cli (escalation level)', () => {
   });
 });
 
-describe('detection: which + version, never a model call', () => {
-  it('available with the version when the bin is on PATH', async () => {
-    const calls: string[][] = [];
-    const kit = fakeKit({ version: async (bin, args) => { calls.push([bin, ...(args ?? [])]); return '2.1.0 (Claude Code)'; } });
-    expect(await claudeCli.detect(kit, opts(claudeCli, {}))).toEqual({ status: 'available', detail: '2.1.0 (Claude Code)' });
-    expect(calls).toEqual([['claude', '--version']]);
-  });
-
-  it('unavailable when the bin is missing or its --version fails', async () => {
-    expect(await claudeCli.detect(fakeKit({ which: async () => undefined }), opts(claudeCli, { bin: 'claude' }))).toEqual({
-      status: 'unavailable', reason: expect.stringContaining('claude'),
-    });
-    expect(await claudeCli.detect(fakeKit({ version: async () => undefined }), opts(claudeCli, {}))).toMatchObject({ status: 'unavailable' });
+describe('detection: never a model call', () => {
+  it('claude runs on the machine the level names, this one too: whether it runs shows in each question\'s trail (#174)', async () => {
+    const kit = fakeKit({ which: async () => undefined, version: async () => undefined });
+    expect(await claudeCli.detect(kit, opts(claudeCli, { machine: 'local' }))).toEqual({ status: 'available', detail: 'claude on machine local' });
   });
 });
 
@@ -181,10 +184,12 @@ describe('claude-cli on a designated machine (issue #150)', () => {
   };
   const sshCalls = () => readFileSync(join(sshDir, 'ssh-calls.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as { argv: string[] });
 
-  it('options machine (optional, editable in the UI) and sshBin (command-bearing)', () => {
+  it('options machine (a machine option: required, picked in the UI from the known machines) and sshBin (command-bearing)', () => {
     expect(parseOptions(claudeCli, { machine: 'laptop' })).toMatchObject({ ok: true, options: { machine: 'laptop', sshBin: 'ssh' } });
-    const schema = optionsJsonSchema(claudeCli) as { properties: Record<string, { commandBearing?: boolean }> };
+    const schema = optionsJsonSchema(claudeCli) as { properties: Record<string, { commandBearing?: boolean; machine?: boolean }>; required?: string[] };
     expect(schema.properties.machine!.commandBearing).toBeUndefined();
+    expect(schema.properties.machine!.machine).toBe(true);
+    expect(schema.required).toContain('machine');
     expect(schema.properties.sshBin!.commandBearing).toBe(true);
   });
 

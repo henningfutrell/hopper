@@ -4,9 +4,10 @@
 // `intervalSeconds` (`polled.ts`); `poll` answers from the last good read and never waits on claude.
 // The session and the week of all models throttle the jobs of `executors` — the Claude executors, not
 // every job (issue #140); a window of one model is informational. `claude auth status` gives the
-// account, refreshed with the usage. With `machine`, both run on that attached machine through its
-// connection (ssh or docker exec, as the command executor), and the readings are that machine's: its
-// own Claude account (issue #139).
+// account, refreshed with the usage. Both run on the source's `machine` — this machine, the `local`
+// one in the list, or an attached one through its connection (ssh or docker exec, as the command
+// executor) — and the readings are that machine's: its own Claude account (issue #139). The machine is
+// always named, never a default (issue #174).
 import { chmodSync, mkdirSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -19,7 +20,7 @@ import { createPolledUsageSource, EXECUTORS_DESCRIPTION } from '../polled.ts';
 import { runCli, type CliRun } from '../run.ts';
 import { parseAuthStatus, parseUsageEnvelope } from './parse.ts';
 
-export interface ClaudePlanOptions { bin: string; intervalSeconds: number; machine?: string; sshBin: string; dockerBin: string; executors: string[] }
+export interface ClaudePlanOptions { bin: string; intervalSeconds: number; machine: string; sshBin: string; dockerBin: string; executors: string[] }
 
 /** Each claude call is killed after this long. */
 const TIMEOUT_MS = 45_000;
@@ -36,22 +37,18 @@ const projectDirOf = (cwd: string, userEnv: Readonly<Record<string, string>>): s
 const claudePlan: PluginDefinition<'usage-source', ClaudePlanOptions> = {
   id: 'claude-plan',
   role: 'usage-source',
-  describe: 'Claude subscription usage (session and week throttle the Claude executors\' jobs; a window of one model is shown only) and the Claude account, from the claude CLI — here, or on an attached machine',
+  describe: 'Claude subscription usage (session and week throttle the Claude executors\' jobs; a window of one model is shown only) and the Claude account, from the claude CLI on the machine it names',
   options: (z) => z.object({
     bin: z.string().min(1).default('claude').meta({ commandBearing: true, description: 'the claude CLI' }),
     intervalSeconds: z.number().int().min(120).default(600).meta({ description: 'seconds between reads (each is a local command: no tokens)' }),
-    machine: z.string().min(1).optional().meta({ description: 'an attached machine to read the Claude account of (its usage caps that machine only); absent: this machine' }),
+    machine: z.string().min(1).meta({ machine: true, description: 'the machine to read the Claude account of (its usage caps that machine only): this one, or an attached one' }),
     sshBin: z.string().min(1).default('ssh').meta({ commandBearing: true, description: 'the ssh client, for an ssh target' }),
     dockerBin: z.string().min(1).default('docker').meta({ commandBearing: true, description: 'the docker CLI, for a container target' }),
     // The built-in Claude Code executor instance; name the others that run Claude.
     executors: z.array(z.string().min(1)).min(1).default(['herdr-claude']).meta({ description: EXECUTORS_DESCRIPTION }),
   }),
-  // `which` only: never a call to claude, so never a paid one. On a machine, nothing to look for here.
-  async detect(sys, o) {
-    if (o.machine) return { status: 'available', detail: `claude on machine ${o.machine}` };
-    const path = await sys.which(o.bin);
-    return path ? { status: 'available', detail: path } : { status: 'unavailable', reason: `claude not found: ${o.bin}` };
-  },
+  // claude runs on the machine, whichever it is: never a call to claude here. Whether it runs shows in the source's state.
+  detect: async (_sys, o) => ({ status: 'available', detail: `claude on machine ${o.machine}` }),
   create(ctx, o) {
     // 0700 and ours alone: `/usage` reads no context from its cwd today, but a shared or
     // world-writable one would be an injection point if that changed. Its project dir under
@@ -66,10 +63,12 @@ const claudePlan: PluginDefinition<'usage-source', ClaudePlanOptions> = {
         rmSync(projectDirOf(probe, ctx.userEnv), { recursive: true, force: true });
       }
     };
-    const runOn = async (id: string, args: string[], signal: AbortSignal): Promise<CliRun> => {
+    const run = async (args: string[], signal: AbortSignal): Promise<CliRun> => {
+      const id = o.machine;
       const m = await ctx.machine(id);
       if (!m) return { error: `machine ${id} is not configured` };
       if (!m.online) return { error: `machine ${id} is offline` };
+      if (!m.ssh && !m.docker && !m.client) return runHere(args, signal);
       let file: string;
       let argv: string[];
       try {
@@ -82,19 +81,18 @@ const claudePlan: PluginDefinition<'usage-source', ClaudePlanOptions> = {
       }
       return runCli(file, argv, { cwd: ctx.scratchDir, timeoutMs: TIMEOUT_MS, signal });
     };
-    const run = (args: string[], signal: AbortSignal): Promise<CliRun> => (o.machine ? runOn(o.machine, args, signal) : runHere(args, signal));
     /** A failure of the run itself (no machine, offline): the reason as it is, not as claude's. */
-    const notReady = (r: CliRun): boolean => 'error' in r && o.machine !== undefined && r.error.startsWith('machine ');
+    const notReady = (r: CliRun): boolean => 'error' in r && r.error.startsWith('machine ');
     const failure = (what: string, r: CliRun): string => (notReady(r) && 'error' in r ? r.error : failed(what, r));
     return createPolledUsageSource(ctx, {
-      intervalSeconds: o.intervalSeconds, executors: o.executors, ...(o.machine ? { machineId: o.machine } : {}),
+      intervalSeconds: o.intervalSeconds, executors: o.executors, machineId: o.machine,
       async read(signal) {
         const usage = await run(USAGE_ARGS, signal);
         const parsed = 'stdout' in usage && usage.code === 0 ? parseUsageEnvelope(usage.stdout, ctx.clock.now()) : { problem: failure('-p /usage', usage) };
         const auth = await run(AUTH_ARGS, signal);
         // Logged out, `auth status` exits non-zero and still prints its JSON.
         const read = 'stdout' in auth && auth.stdout.trim() ? parseAuthStatus(auth.stdout) : { service: 'claude', detail: {}, problem: failure('auth status', auth) };
-        const account = o.machine ? { ...read, detail: { ...read.detail, machine: o.machine } } : read;
+        const account = { ...read, detail: { ...read.detail, machine: o.machine } };
         // At start an attached machine is offline until its first probe: no reason to wait an interval.
         const retry = notReady(usage) ? { notReady: true } : {};
         if ('problem' in parsed) return { problem: parsed.problem, account, ...retry };

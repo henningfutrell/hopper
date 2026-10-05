@@ -24,7 +24,10 @@ export interface PluginsDoc {
  * `herdrSession`: a user's own herdr session (issue #158), named on the herdr-claude instance; absent: the plugin's default.
  */
 export function builtinInstances(answerTimeoutMs = 180_000, localMachine = true, herdrSession?: string): PluginsDoc {
-  const question = { bin: 'claude', timeoutMs: answerTimeoutMs };
+  // A part that runs on a machine names it (issue #174): this one, as the `local` machine; none where
+  // this host is no machine, until one is picked.
+  const here = localMachine ? { machine: 'local' } : {};
+  const question = { ...here, bin: 'claude', timeoutMs: answerTimeoutMs };
   return {
     queueSorter: { name: 'priority', plugin: 'priority' },
     // Lowest first: Opus answers what it can settle, Fable what Opus escalates; then the owner.
@@ -46,7 +49,7 @@ export function builtinInstances(answerTimeoutMs = 180_000, localMachine = true,
     // a machine (the container, issue #141).
     machines: localMachine ? [{ name: 'local', plugin: 'local', options: { lanes: 4 } }] : [],
     // Claude subscription usage throttles lanes (issue #18); unavailable where claude is not installed.
-    usageSources: [{ name: 'claude', plugin: 'claude-plan', options: { bin: 'claude', intervalSeconds: 600 } }],
+    usageSources: [{ name: 'claude', plugin: 'claude-plan', options: { ...here, bin: 'claude', intervalSeconds: 600 } }],
     notifiers: [{ name: 'grok-bot', plugin: 'grokbot-routine' }],
   };
 }

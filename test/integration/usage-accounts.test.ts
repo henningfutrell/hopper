@@ -60,14 +60,14 @@ describe('claude-plan through the composition root', () => {
       `Current week (Fable): 99% used · resets ${when}`,
     ].join('\n'));
     // The scripted executor runs the pulled jobs and stands in for Claude Code: the budget names it.
-    const a = await boot({ plugins: { machines: lanes(4), usageSources: [{ name: 'claude', plugin: 'claude-plan', options: { bin: FAKE_CLAUDE, executors: ['scripted'] } }] } });
+    const a = await boot({ plugins: { machines: lanes(4), usageSources: [{ name: 'claude', plugin: 'claude-plan', options: { machine: 'local', bin: FAKE_CLAUDE, executors: ['scripted'] } }] } });
 
     const report = await waitFor(async () => { const u = await usage(a); return u.readings.some((r) => r.source === 'claude') && u.sources[0]?.account ? u : undefined; }, { what: 'claude readings and account' });
     expect(report.readings.filter((r) => r.source === 'claude').map((r) => [r.window, r.used, r.limit, r.unit, r.informational ?? false])).toEqual([
       ['session', 80, 100, '%', false], ['week', 30, 100, '%', false], ['week (Fable)', 99, 100, '%', true],
     ]);
     expect(report.sources).toEqual([
-      { name: 'claude', refreshedAt: expect.any(String), account: { service: 'claude', identity: 'user@example.com', detail: { plan: 'max', organization: 'Example Org', authMethod: 'claude.ai' } } },
+      { name: 'claude', refreshedAt: expect.any(String), account: { service: 'claude', identity: 'user@example.com', detail: { plan: 'max', organization: 'Example Org', authMethod: 'claude.ai', machine: 'local' } } },
       { name: 'fake' },
     ]);
     expect(report.limits).toEqual({ soft: 0.7, hard: 0.95 });
@@ -89,9 +89,9 @@ describe('claude-plan through the composition root', () => {
   });
 
   it('GET /api/accounts: the Claude account the usage source reads for — email, plan, organization; never an id or a token', async () => {
-    const a = await boot({ plugins: { usageSources: [{ name: 'claude', plugin: 'claude-plan', options: { bin: FAKE_CLAUDE } }] } });
+    const a = await boot({ plugins: { usageSources: [{ name: 'claude', plugin: 'claude-plan', options: { machine: 'local', bin: FAKE_CLAUDE } }] } });
     const list = await waitFor(async () => { const l = await accounts(a); return l.some((x) => x.service === 'claude') ? l : undefined; }, { what: 'the claude account' });
-    expect(list).toEqual([{ role: 'usage-source', instance: 'claude', service: 'claude', identity: 'user@example.com', detail: { plan: 'max', organization: 'Example Org', authMethod: 'claude.ai' } }]);
+    expect(list).toEqual([{ role: 'usage-source', instance: 'claude', service: 'claude', identity: 'user@example.com', detail: { plan: 'max', organization: 'Example Org', authMethod: 'claude.ai', machine: 'local' } }]);
     const raw = JSON.stringify(await a.api('GET', '/api/accounts'));
     expect(raw).not.toContain('SECRET');
     expect(raw).not.toContain('org-1');
@@ -99,7 +99,7 @@ describe('claude-plan through the composition root', () => {
 
   it('claude unavailable: no claude readings, the reason in GET /api/usage, lanes uncapped', async () => {
     writeFileSync(join(control, 'mode'), 'header-only');
-    const a = await boot({ plugins: { machines: lanes(4), usageSources: [{ name: 'claude', plugin: 'claude-plan', options: { bin: FAKE_CLAUDE } }] } });
+    const a = await boot({ plugins: { machines: lanes(4), usageSources: [{ name: 'claude', plugin: 'claude-plan', options: { machine: 'local', bin: FAKE_CLAUDE } }] } });
     const report = await waitFor(async () => { const u = await usage(a); return u.sources[0]?.problem !== 'not read yet' ? u : undefined; }, { what: 'the first read' });
     expect(report.sources[0]).toMatchObject({ name: 'claude', problem: expect.stringMatching(/^usage unavailable: /) });
     expect(report.readings.filter((r) => r.source === 'claude')).toEqual([]);

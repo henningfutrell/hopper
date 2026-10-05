@@ -11,6 +11,8 @@ export interface OptionSchema {
   items?: { type?: string };
   /** `.meta({ commandBearing: true })`: shown, never edited from the UI. */
   commandBearing?: boolean;
+  /** `.meta({ machine: true })` (issue #174): a machine, picked from the configured ones; always set. */
+  machine?: boolean;
 }
 export interface OptionsSchema { type?: string; properties?: Record<string, OptionSchema> }
 
@@ -24,6 +26,7 @@ const isStringList = (p: OptionSchema) => p.type === 'array' && p.items?.type ==
 /** `choices`: the values the plugin listed for this option; any makes it a choice, never a typed value. */
 export function fieldKind(p: OptionSchema, choices?: OptionChoice[]): FieldKind {
   if (p.commandBearing) return 'readonly';
+  if (p.machine) return 'choice';
   if (choices?.length) return 'choice';
   if (p.type === 'boolean') return 'boolean';
   if (Array.isArray(p.enum)) return 'enum';
@@ -60,6 +63,11 @@ export function collectOptions(current: Record<string, unknown>, schema: Options
     }
   }
   return out;
+}
+
+/** A plugin's machine options (issue #174): each names a configured machine, picked, never typed. */
+export function machineOptions(schema: OptionsSchema | undefined): string[] {
+  return Object.entries(schema?.properties ?? {}).filter(([, p]) => p.machine === true).map(([k]) => k);
 }
 
 /** The restart roles, by their key in GET /api/plugins. */
@@ -144,7 +152,9 @@ export function shippedPlugins(report: PluginsReport): ShippedPlugin[] {
       ? (instances.length > 1 ? `${instances.length} instances: remove them below` : undefined)
       : p.detection.status !== 'available'
         ? (p.detection.reason ?? p.detection.status)
-        : newInstance(report, p.role, p.id, '').problem;
+        : machineOptions(p.options as OptionsSchema).length
+          ? `runs on a machine: add it under ${ROLE_TITLES[p.role]}, picking the machine`
+          : newInstance(report, p.role, p.id, '').problem;
     return [{ id: p.id, role: p.role, describe: p.describe, enabled, instances, ...(blocked ? { blocked } : {}) }];
   });
 }

@@ -7,7 +7,7 @@ import { isMap, isSeq, parseDocument, type Document } from 'yaml';
 import type { ConfigDocuments } from '../domain/ports.ts';
 import type { ConfiguredInstance, Detection, InstanceSpec, ListRole, MachineDefaults, PluginsEdit, Role, RoutingEdit, RoutingRule } from '../domain/types.ts';
 import { parseRoutingRules } from '../routing/index.ts';
-import { optionsJsonSchema, parseOptions } from './options.ts';
+import { machineOptions, optionsJsonSchema, parseOptions } from './options.ts';
 import { BY_HAND, PLUGINS, pluginsFileProblem } from './plugins-file.ts';
 import type { PluginDefinition } from './sdk.ts';
 
@@ -163,6 +163,29 @@ function executorUsers(name: string, doc: Document, ctx: EditContext): string[] 
   ];
 }
 
+/**
+ * Why `options` do not name a configured machine in every machine option of `def` (issue #174): a
+ * machine is always named, and only one the machine sources list. Undefined when they do.
+ */
+function machineProblem(def: PluginDefinition, options: Record<string, unknown>, ctx: EditContext): string | undefined {
+  const known = ctx.configured.filter((c) => c.role === 'machine-source').map((c) => c.instance.name);
+  const pick = known.length ? `pick one of ${known.join(', ')}` : 'attach one first';
+  for (const key of machineOptions(def)) {
+    const v = options[key];
+    if (v === undefined || v === '') return `${def.id} runs on a machine: ${pick}`;
+    if (typeof v !== 'string' || !known.includes(v)) return `${key}: machine ${String(v)} is not a configured machine: ${pick}`;
+  }
+  return undefined;
+}
+
+/** What still names machine `name` in a machine option (issue #174): escalation levels, usage sources, any instance of a plugin with one. */
+function machineUsers(name: string, ctx: EditContext): string[] {
+  return ctx.configured.filter(({ instance }) => {
+    const def = ctx.find(instance.plugin)?.definition;
+    return def !== undefined && machineOptions(def).some((k) => instance.options?.[k] === name);
+  }).map(({ role, instance }) => `${role} ${instance.name}`);
+}
+
 const CHANGED = `${PLUGINS} changed since it was read; reload and edit again`;
 
 /** Apply `change` to the plugins document read now, and replace it if it is still at `version`. */
@@ -210,6 +233,8 @@ export function applyEdit(e: Exclude<PluginsEdit, { action: 'rescan' }>, ctx: Ed
     if (!current) return refuse('not_found', `no ${e.role} instance named ${e.name}`);
     const def = ctx.find(current.instance.plugin)?.definition;
     if (!def) return refuse('conflict', `plugin ${current.instance.plugin} is not loaded; edit ${e.name} by hand (${BY_HAND})`);
+    const noMachine = machineProblem(def, e.options, ctx);
+    if (noMachine) return refuse('invalid', noMachine);
     const parsed = parseOptions(def, e.options);
     if (!parsed.ok) return refuse('invalid', parsed.error);
     const changed = changedCommandBearing(def, current.instance.options ?? {}, e.options);
@@ -238,8 +263,8 @@ function applyListEdit(e: Extract<PluginsEdit, { action: 'add' | 'remove' }>, ct
     const jobs = ctx.inUse(e.role, e.name);
     if (jobs.length) return refuse('conflict', `${e.name} still has jobs (${jobs.join(', ')}): wait for them to end, or cancel them, then remove it`);
     return writePlugins(ctx.documents, e.version, (doc) => {
-      const users = e.role === 'executor' ? executorUsers(e.name, doc, ctx) : [];
-      if (users.length) return refuse('conflict', `executor ${e.name} is named by ${users.join(', ')}; change ${users.length === 1 ? 'it' : 'them'} first`);
+      const users = e.role === 'executor' ? executorUsers(e.name, doc, ctx) : e.role === 'machine-source' ? machineUsers(e.name, ctx) : [];
+      if (users.length) return refuse('conflict', `${e.role === 'executor' ? 'executor' : 'machine'} ${e.name} is named by ${users.join(', ')}; change ${users.length === 1 ? 'it' : 'them'} first`);
       list(doc, e.role, e.name, null, ctx.configured);
       return undefined;
     });
@@ -251,5 +276,11 @@ function applyListEdit(e: Extract<PluginsEdit, { action: 'add' | 'remove' }>, ct
   if (found.detection.status !== 'available') {
     return refuse('conflict', `${e.plugin} is ${found.detection.status} here: ${found.detection.reason}`);
   }
-  return writePlugins(ctx.documents, e.version, (doc) => list(doc, e.role, e.name, { name: e.name, plugin: e.plugin }, ctx.configured));
+  const noMachine = machineProblem(found.definition, e.options ?? {}, ctx);
+  if (noMachine) return refuse('invalid', noMachine);
+  if (e.options) {
+    const parsed = parseOptions(found.definition, e.options);
+    if (!parsed.ok) return refuse('invalid', parsed.error);
+  }
+  return writePlugins(ctx.documents, e.version, (doc) => list(doc, e.role, e.name, { name: e.name, plugin: e.plugin, ...(e.options ? { options: e.options } : {}) }, ctx.configured));
 }

@@ -3,7 +3,8 @@
 // app against a fake of the daemon's HTTP surface. It shows the chain a question goes through, lets
 // the owner add, remove, reorder and tune the escalation levels through POST /ui/api/plugins, and
 // edits the rules through POST /ui/api/rules with the version the draft was based on. An unsaved
-// draft survives a reload. A level's model is chosen from the models the plugin lists, not typed.
+// draft survives a reload. A level's model is chosen from the models the plugin lists, not typed; its
+// machine from the configured machines, and always set (issue #174).
 import { createElement } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -23,12 +24,15 @@ const claudeSchema = {
     bin: { type: 'string', default: 'claude', commandBearing: true },
     model: { type: 'string', default: 'opus' },
     timeoutMs: { type: 'integer', default: 180000 },
+    machine: { type: 'string', machine: true, description: 'the machine that runs claude' },
   },
+  required: ['machine'],
 };
 const LEVELS = [
-  { name: 'opus', plugin: 'claude-cli', options: { model: 'opus' } },
+  { name: 'opus', plugin: 'claude-cli', options: { model: 'opus', machine: 'local' } },
   { name: 'fable', plugin: 'claude-cli', options: { model: 'claude-fable-0' } },
 ];
+const MACHINES = [{ value: 'local', description: 'this machine' }, { value: 'box', description: 'ssh machine' }];
 const MODELS = [
   { value: 'opus', label: 'Opus 5.5', description: 'complex work' },
   { value: 'fable', label: 'Fable 5.1' },
@@ -42,7 +46,7 @@ const PLUGINS = {
   escalationLevels: LEVELS.map((instance) => ({ instance, detection: { status: 'available' }, active: 'claude-cli' })),
   executors: { instances: [] }, jobSources: { instances: [] }, machines: { instances: [] }, usageSources: { instances: [] }, notifiers: { instances: [] },
   plugins: [
-    { id: 'claude-cli', role: 'escalation-level', describe: 'claude -p', builtin: true, detection: { status: 'available' }, options: claudeSchema, choices: { model: MODELS } },
+    { id: 'claude-cli', role: 'escalation-level', describe: 'claude -p', builtin: true, detection: { status: 'available' }, options: claudeSchema, choices: { model: MODELS, machine: MACHINES } },
   ],
   errors: [], warnings: [],
 };
@@ -177,7 +181,7 @@ describe('question gates panel', () => {
     });
     await click(button('Save opus'));
     await vi.waitFor(() => expect(pluginsCall(daemon)).toBeDefined());
-    expect(pluginsCall(daemon)).toEqual({ action: 'options', role: 'escalation-level', name: 'opus', options: { model: 'sonnet' }, version: 'p1' });
+    expect(pluginsCall(daemon)).toEqual({ action: 'options', role: 'escalation-level', name: 'opus', options: { model: 'sonnet', machine: 'local' }, version: 'p1' });
   });
 
   it('a level moves earlier or later through POST /ui/api/plugins', async () => {
@@ -189,15 +193,42 @@ describe('question gates panel', () => {
     expect(pluginsCall(daemon)).toEqual({ action: 'move', role: 'escalation-level', name: 'fable', to: 0, version: 'p1' });
   });
 
-  it('a level is added on top under the name typed', async () => {
+  const pick = (select: HTMLSelectElement, value: string) => act(async () => {
+    select.value = value;
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+
+  it('a level is added on top under the name typed, on the machine picked: Add waits for the machine (#174)', async () => {
     const daemon = await boot();
     const name = panel()!.querySelector<HTMLInputElement>('input[name="add-name-escalation-level"]')!;
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(name, 'sonnet');
       name.dispatchEvent(new Event('input', { bubbles: true }));
     });
+    const machine = panel()!.querySelector<HTMLSelectElement>('select[name="add-machine-escalation-level"]')!;
+    expect([...machine.options].filter((o) => !o.disabled).map((o) => o.value)).toEqual(['local', 'box']);
+    expect(button('Add')!.disabled).toBe(true);
+    await pick(machine, 'box');
     await click(button('Add'));
     await vi.waitFor(() => expect(pluginsCall(daemon)).toBeDefined());
-    expect(pluginsCall(daemon)).toEqual({ action: 'add', role: 'escalation-level', plugin: 'claude-cli', name: 'sonnet', version: 'p1' });
+    expect(pluginsCall(daemon)).toEqual({ action: 'add', role: 'escalation-level', plugin: 'claude-cli', name: 'sonnet', options: { machine: 'box' }, version: 'p1' });
+  });
+
+  it('a level\'s machine is picked from the configured machines, never typed, and never left empty (#174)', async () => {
+    const daemon = await boot();
+    const opus = levelForm('opus');
+    expect(opus.querySelector('input[name="machine"]')).toBeNull();
+    const select = opus.querySelector<HTMLSelectElement>('select[name="machine"]')!;
+    expect(select.value).toBe('local');
+    expect([...select.options].filter((o) => !o.disabled).map((o) => o.value)).toEqual(['local', 'box']);
+    // A level that names none shows it must be picked; it offers no empty choice.
+    const fable = levelForm('fable').querySelector<HTMLSelectElement>('select[name="machine"]')!;
+    expect(fable.value).toBe('');
+    expect([...fable.options].find((o) => o.value === '')!.disabled).toBe(true);
+    expect(fable.textContent).toContain('pick a machine');
+    await pick(fable, 'box');
+    await click(button('Save fable'));
+    await vi.waitFor(() => expect(pluginsCall(daemon)).toBeDefined());
+    expect(pluginsCall(daemon)).toEqual({ action: 'options', role: 'escalation-level', name: 'fable', options: { model: 'claude-fable-0', machine: 'box' }, version: 'p1' });
   });
 });

@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- For the levels that answer questions and for usage readings, you now pick the machine they run on from your list of machines instead of typing it, and one must always be picked. This machine is in that list like any other; settings that named no machine now name this one.
 - A job from a GitHub issue now counts as done only when its change has really shipped: its own pull request was merged and closed the issue. If nothing shipped, the job shows as failed with the reason, and the issue stays open instead of being closed as done.
 - The top bar always shows who you are: your name and what you may do, or "not signed in" and whose work you see. When several people use the hopper, you sign in first and see only your own work.
 - See which version you run, and what it brought, at any time and on a phone too: tap the version at the top. Before, it showed only when an update was waiting.

@@ -34,8 +34,8 @@ describe('POST /ui/api/plugins — escalation levels', () => {
   const LEVELS = `version: 1
 # levels, lowest first
 escalationLevels:
-  - { name: opus, plugin: claude-cli, options: { model: opus } }
-  - { name: fable, plugin: claude-cli, options: { model: fable } }
+  - { name: opus, plugin: claude-cli, options: { model: opus, machine: local } }
+  - { name: fable, plugin: claude-cli, options: { model: fable, machine: local } }
 executors:
   - { name: test, plugin: test }
 `;
@@ -44,7 +44,7 @@ executors:
   it('add appends a level on top; remove takes one out; both apply live, no restart pending', async () => {
     const { a, token } = await start(LEVELS);
     let version = (await report(a)).config.version;
-    let r = await a.ui<Reply>('/ui/api/plugins', { action: 'add', role: 'escalation-level', plugin: 'claude-cli', name: 'sonnet', version }, { token });
+    let r = await a.ui<Reply>('/ui/api/plugins', { action: 'add', role: 'escalation-level', plugin: 'claude-cli', name: 'sonnet', options: { machine: 'local' }, version }, { token });
     expect(r.status).toBe(200);
     expect(names(r)).toEqual(['opus', 'fable', 'sonnet']);
     expect(read(a)).toContain('# levels, lowest first');
@@ -72,7 +72,7 @@ executors:
     expect(names(r)).toEqual(['fable', 'opus']);
     const text = read(a);
     expect(text).toContain('# levels, lowest first');
-    expect(text).toContain('  - { name: fable, plugin: claude-cli, options: { model: fable } }\n  - { name: opus, plugin: claude-cli, options: { model: opus } }\n');
+    expect(text).toContain('  - { name: fable, plugin: claude-cli, options: { model: fable, machine: local } }\n  - { name: opus, plugin: claude-cli, options: { model: opus, machine: local } }\n');
   });
 
   it('move with no section: the built-in levels are written, in the new order', async () => {
