@@ -2,7 +2,7 @@
 // "herdr-claude executor"). The screen protocol parses Claude Code's TUI, so the agent kind is
 // fixed: another agent CLI is another executor plugin. `args` are the agent's own arguments —
 // where its tools are chosen (design.md "6d"). A job on an attached machine runs in that machine's
-// own herdr (binary and session from its attachedMachines entry), reached over ssh (design.md "Attached machines"),
+// own herdr (binary and session from its `ssh` machine instance), reached over ssh (design.md "Attached machines"),
 // or a client target's herdr, through its reverse tunnel (design.md "Client targets").
 import { join } from 'node:path';
 import type { HerdrClient, RemoteHerdr } from '../../../executors/herdr/index.ts';

@@ -38,7 +38,8 @@ describe('migration 13 (router plugin jev-router is gate-router)', () => {
     expect(parse(after)).toEqual({
       version: 1,
       router: { name: 'gate-router', plugin: 'gate-router', options: { grokBotJevSrc: '/j/grok-bot-jev', python: 'python3', claudeModel: 'haiku', jevGates: ['intent'] } },
-      machines: { name: 'local', plugin: 'local', options: { lanes: 2 } },
+      // Migration 15 runs after: machines: becomes a list (issue #74).
+      machines: [{ name: 'local', plugin: 'local', options: { lanes: 2 } }],
     });
   });
 

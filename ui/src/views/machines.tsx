@@ -1,6 +1,7 @@
 // Machines: what each can run, its lanes, and the usage budgets that cap them. Logged in, attach a
-// machine, edit or remove an attached one, and change this machine's lane count — each applied by
-// the daemon without a restart (design.md "Machines from the UI", issue #18).
+// machine over ssh (POST /ui/api/machines), edit or remove any machine — each a machine-source
+// instance, edited like every plugin instance (POST /ui/api/plugins, issue #74) — each applied by the
+// daemon without a restart (design.md "Machines from the UI", issue #18).
 import { Pencil, Plus, Server, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
@@ -13,7 +14,7 @@ import { useNow } from '@/hooks/use-now';
 import { get, post, SessionRejected } from '@/lib/api';
 import { clientReleaseText, kindOf, type MachineKind } from '@/model/machines';
 import { orderReadings, readingKey } from '@/model/usage';
-import type { MachineEdit, MachinesConfig, MachineView } from '@/model/wire';
+import type { MachineEdit, MachinesConfig, MachineView, PluginsEdit } from '@/model/wire';
 import { refreshLive, useHopper } from '@/store';
 import { AddMachineForm, EditMachineForm, LocalLanesForm } from './machine-forms';
 import { useCanAdmin } from '@/store/selectors';
@@ -36,8 +37,8 @@ interface Ctx {
   busy: boolean;
   editing: string | null;
   setEditing: (id: string | null) => void;
-  send: (e: MachineEdit, done: string) => Promise<boolean>;
-  saveLocalLanes: (lanes: number) => Promise<boolean>;
+  attach: (e: MachineEdit, done: string) => Promise<boolean>;
+  edit: (e: Exclude<PluginsEdit, { action: 'rescan' }>, done: string) => Promise<boolean>;
 }
 
 function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
@@ -48,13 +49,11 @@ function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
   const actions = ctx.authed && !editing && kind.kind !== 'unknown' && (
     <>
       <Button size="sm" variant="outline" disabled={ctx.busy} onClick={() => ctx.setEditing(m.id)} aria-label={`Edit ${m.id}`}><Pencil />Edit</Button>
-      {kind.kind === 'attached' && (
-        <Confirm title={`Remove ${m.id}?`} action="Remove"
-          description={<>Its entry leaves plugins.yaml and it stops taking jobs at once. Refused while a job runs there or waits for an answer in a pane there.</>}
-          onConfirm={() => void ctx.send({ action: 'remove', name: m.id, version: ctx.config!.version }, `Removed ${m.id}`)}>
-          <Button size="sm" variant="outline" disabled={ctx.busy} aria-label={`Remove ${m.id}`}><Trash2 />Remove</Button>
-        </Confirm>
-      )}
+      <Confirm title={`Remove ${m.id}?`} action="Remove"
+        description={<>It leaves plugins.yaml and stops taking jobs at once. Refused while a job runs there or waits for an answer in a pane there.</>}
+        onConfirm={() => void ctx.edit({ action: 'remove', role: 'machine-source', name: m.id, version: ctx.config!.version }, `Removed ${m.id}`)}>
+        <Button size="sm" variant="outline" disabled={ctx.busy} aria-label={`Remove ${m.id}`}><Trash2 />Remove</Button>
+      </Confirm>
     </>
   );
   return (
@@ -67,6 +66,7 @@ function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
       </div>
       <dl className="grid gap-1.5">
         <Fact label="id">{m.id}{kind.kind === 'local' && <span className="ml-1.5 font-sans text-muted-foreground">this machine</span>}</Fact>
+        {kind.kind !== 'unknown' && <Fact label="plugin">{kind.instance.plugin}</Fact>}
         <Fact label="runs">{m.executors.length ? m.executors.join(', ') : '—'}</Fact>
         {m.ssh && <Fact label="ssh target">{m.ssh}</Fact>}
         {m.docker && <Fact label="container (docker exec)">{m.docker}</Fact>}
@@ -77,10 +77,13 @@ function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
       </dl>
       {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
       {editing && kind.kind === 'attached' && ctx.config && (
-        <EditMachineForm entry={kind.entry} config={ctx.config} busy={ctx.busy} send={ctx.send} onDone={() => ctx.setEditing(null)} />
+        <EditMachineForm machine={kind} config={ctx.config} busy={ctx.busy} send={ctx.edit} onDone={() => ctx.setEditing(null)} />
       )}
-      {editing && kind.kind === 'local' && (
-        <LocalLanesForm lanes={kind.lanes} busy={ctx.busy} save={ctx.saveLocalLanes} onDone={() => ctx.setEditing(null)} />
+      {editing && kind.kind === 'local' && ctx.config && (
+        <LocalLanesForm lanes={kind.lanes} busy={ctx.busy} onDone={() => ctx.setEditing(null)}
+          save={(lanes) => ctx.edit({
+            action: 'options', role: 'machine-source', name: kind.instance.name, options: { ...kind.instance.options, lanes }, version: ctx.config!.version,
+          }, `${kind.instance.name} runs ${lanes} lane${lanes === 1 ? '' : 's'}`)} />
       )}
       <div className="flex flex-wrap gap-x-2 gap-y-4">
         {orderReadings(m.usage).map((r) => <ReadingGauge key={readingKey(r)} r={r} now={now} showSource />)}
@@ -125,19 +128,14 @@ export function Machines() {
   };
   const ctx: Ctx = {
     config, authed, busy, editing, setEditing,
-    send: (e, done) => run(async () => setConfig(await post<MachinesConfig>('/ui/api/machines', e)), done),
-    saveLocalLanes: (lanes) => run(async () => {
-      if (!config) return;
-      const m = config.machine;
-      await post('/ui/api/plugins', { action: 'options', role: 'machine-source', name: m.name, options: { ...m.options, lanes }, version: config.version });
-      await load();
-    }, `This machine runs ${lanes} lane${lanes === 1 ? '' : 's'}`),
+    attach: (e, done) => run(async () => setConfig(await post<MachinesConfig>('/ui/api/machines', e)), done),
+    edit: (e, done) => run(async () => { await post('/ui/api/plugins', e); await load(); }, done),
   };
 
   return (
     <div className="space-y-3">
       {authed && config && (adding
-        ? <Panel title="Attach a machine" icon={Plus}><AddMachineForm config={config} busy={busy} send={ctx.send} onDone={() => setAdding(false)} /></Panel>
+        ? <Panel title="Attach a machine" icon={Plus}><AddMachineForm config={config} busy={busy} send={ctx.attach} onDone={() => setAdding(false)} /></Panel>
         : <div className="flex justify-end"><Button size="lg" onClick={() => setAdding(true)}><Plus />Add machine</Button></div>)}
       {config?.error && <div className="rounded-md border border-bad/40 p-3 text-xs break-words text-bad">{config.error}</div>}
       {machines.length

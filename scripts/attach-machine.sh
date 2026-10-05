@@ -78,8 +78,8 @@ for _ in 1 2 3 4 5 6 7 8 9 10; do
 Add to plugins.yaml (hopper config edit plugins.yaml); the daemon follows it without a restart.
 The daemon needs HOPPER_SSH_KEY_FILE=$KEY in its environment (daemon.env).
 
-attachedMachines:
-  - { name: $TARGET, ssh: $TARGET, lanes: $LANES, herdrBin: $HERDR_BIN, hostKey: $HOST_KEY }
+machines:
+  - { name: $TARGET, plugin: ssh, options: { ssh: $TARGET, lanes: $LANES, herdrBin: $HERDR_BIN, hostKey: $HOST_KEY } }
 
 Jobs there run in the same working directories as here: each job's cwd must exist on $TARGET.
 EOF

@@ -2,8 +2,8 @@
 // detection of every plugin, the live roles (the router — from plugins.yaml, else chosen from what
 // is detected — the answerer and the assessor, each swapped between calls) and the restart roles
 // (executors, job sources, usage sources, notifiers): built once at start; a later change is
-// reported as pending. The machine source applies an options change (its lane count) live; another
-// instance waits for a restart. Attached machines follow plugins.yaml live (issue #18). Notifiers are started with the event feed by the caller. A section plugins.yaml leaves out means the built-in instances.
+// reported as pending. The machine sources — this machine and the attached ones, each an instance
+// (issue #74) — follow plugins.yaml live (issue #18). Notifiers are started with the event feed by the caller. A section plugins.yaml leaves out means the built-in instances.
 // UI edits (edit.ts, attached-edit.ts) replace plugins.yaml in the store and apply like any other change.
 import type { MachineSource, Notifier, UsageSource } from '../domain/ports.ts';
 import {
@@ -20,7 +20,9 @@ import { BY_HAND, PLUGINS, loadPluginsFile } from './plugins-file.ts';
 import { buildExecutors, executorStatus, type BuiltExecutor } from './executor-slot.ts';
 import { builtinInstances } from './builtin-instances.ts';
 import { buildNotifiers, startNotifiers, stopNotifiers } from './notifier-slot.ts';
-import { NO_MACHINE, applyMachineSpec, buildJobSources, buildUsageSources, instanceStatus, type Built, type BuiltJobSource } from './source-slots.ts';
+import { applyMachineSpecs, buildJobSources, buildUsageSources, instanceStatus, type Built, type BuiltJobSource } from './source-slots.ts';
+import { targetOf } from './machine-source/targets.ts';
+import { createTargetPool } from '../machines/index.ts';
 import { buildQueueSorter, createLiveQueueSorter, type LiveQueueSorter } from './queue-sorter-slot.ts';
 import { answererStatus, assessorStatus, buildAnswerer, buildAssessor, type BuiltAnswerer, type BuiltAssessor } from './question-slots.ts';
 import { buildRouter, createLiveRouter, detectRouter, safeDetect, type BuiltRouter, type LiveRouter, type SlotDeps } from './router-slot.ts';
@@ -75,14 +77,11 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
   };
   const executors: RestartSlot<BuiltExecutor> = {};
   const jobSources: RestartSlot<BuiltJobSource> = {};
-  const machines: RestartSlot<Built<MachineSource>> = {};
+  const machines: { built?: Built<MachineSource>[] } = {};
   const usageSources: RestartSlot<Built<UsageSource>> = {};
   const notifiers: RestartSlot<Built<Notifier>> = {};
   let notifiersStarted = false;
   let notifiersStopped: Promise<void> | undefined;
-  /** plugins.yaml `attachedMachines:`, re-read with every good reload. */
-  let attached: AttachedMachine[] | undefined;
-  /** plugins.yaml `attachedMachines:` now (what a routing rule may name before the restart). */
   let timer: NodeJS.Timeout | undefined;
   let signature: string | undefined;
   let chain: Promise<void> = Promise.resolve();
@@ -95,6 +94,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
   const deps: SlotDeps = {
     kit, clock: o.clock, logger: o.logger, dataDir: o.dataDir, routerMode: o.routerMode, find,
     jobSource: o.jobSourceContext ?? NO_SOURCE_CONTEXT, executors: o.machineContext?.executors ?? runnableExecutors,
+    target: o.machineContext?.target ?? createTargetPool({ probe: async () => ({ online: false }) }),
   };
 
   /** Build a restart role once; afterwards only record whether plugins.yaml now names something else. */
@@ -173,16 +173,20 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
       assessor = await buildAssessor(spec.assessor, deps);
       o.logger.info(`hopper: assessor ${spec.assessor.name} (${assessor.plugin}${assessor.fallback ? ', fallback' : ''})`);
     }
-    attached = error ? (attached ?? []) : (file?.attachedMachines ?? []);
     await restart(executors, 'executors', spec.executors, () => buildExecutors(spec.executors, deps));
     await restart(jobSources, 'job sources', spec.jobSources, () => buildJobSources(spec.jobSources, deps));
-    await applyMachineSpec(machines, spec.machines, deps);
+    await applyMachineSpecs(machines, spec.machines, deps);
     await restart(usageSources, 'usage sources', spec.usageSources, () => buildUsageSources(spec.usageSources, deps));
     await restart(notifiers, 'notifiers', spec.notifiers, () => buildNotifiers(spec.notifiers, deps));
   }
 
-  const liveMachine: MachineSource = { list: () => (machines.built?.[0]?.instance ?? NO_MACHINE).list() };
-  const copyAttached = (): AttachedMachine[] => started(attached).map((m) => ({ ...m, executors: [...m.executors] }));
+  const liveMachines: MachineSource = {
+    list: async () => (await Promise.all((machines.built ?? []).map((b) => b.instance?.list() ?? []))).flat(),
+  };
+  /** The attached machines the configured instances name, those whose options are valid. */
+  const targets = (): AttachedMachine[] => (configured?.machines ?? []).flatMap((spec) => {
+    try { return targetOf(spec) ?? []; } catch { return []; }
+  });
 
   function started<T>(value: T | undefined): T {
     if (value === undefined) throw new Error('plugin host not started');
@@ -216,17 +220,15 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
 
   const machinesEditor = createMachinesEditor({
     ...o.attached, documents: o.documents, dataDir: o.dataDir, logger: o.logger,
-    configured: () => started(configured), attached: copyAttached, version: fileVersion, error: () => config.error, reload: enqueue,
+    configured: () => started(configured), version: fileVersion, error: () => config.error, reload: enqueue,
   });
-  const machineIds = (): string[] => [
-    ...(machines.built ?? []).flatMap((b) => (b.instance ? [b.spec.name] : [])), ...(attached ?? []).map((m) => m.name),
-  ];
+  const machineIds = (): string[] => (machines.built ?? []).flatMap((b) => (b.instance ? [b.spec.name] : []));
   const routingConfig = createRoutingConfig({
     documents: o.documents,
     rules: () => configured?.routing ?? [],
     running: () => ({ machines: machineIds(), executors: (executors.built ?? []).map((b) => b.spec.name) }),
     configured: () => ({
-      machines: configured ? [configured.machines.name, ...(attached ?? []).map((m) => m.name)] : [],
+      machines: (configured?.machines ?? []).map((m) => m.name),
       executors: (configured?.executors ?? []).map((e) => e.name),
     }),
     version: fileVersion,
@@ -256,7 +258,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
     },
     executors: () => [...started(executors.built)],
     jobSources: () => [...started(jobSources.built)],
-    machines: () => { started(machines.built); return liveMachine; },
+    machines: () => { started(machines.built); return liveMachines; },
     usageSources: () => started(usageSources.built).flatMap((b) => (b.instance ? [b.instance] : [])),
     notifiers: () => started(notifiers.built).flatMap((b) => (b.instance ? [b.instance] : [])),
     startNotifiers(events) {
@@ -269,7 +271,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
       notifiersStopped ??= stopNotifiers(started(notifiers.built), o.logger);
       return notifiersStopped;
     },
-    attachedMachines: copyAttached,
+    targets,
     machinesConfig: () => machinesEditor.config(),
     editMachines: (e) => machinesEditor.edit(e),
     reload: enqueue,
@@ -285,7 +287,9 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
       } else {
         // Act on what the document says now, not on a reload the watch timer has not run yet.
         if (sign() !== signature) await enqueue();
-        const r = applyEdit(e, { documents: o.documents, configured: instances(), find: (id) => entries.find((x) => x.definition.id === id) });
+        const r = applyEdit(e, {
+          documents: o.documents, configured: instances(), find: (id) => entries.find((x) => x.definition.id === id), inUse: o.attached?.inUse ?? (() => []),
+        });
         if (!r.ok) return r;
         if (r.changed) {
           o.logger.info(`hopper: plugins.yaml edited in the UI: ${e.action} ${e.role} ${e.action === 'select' ? String(e.plugin) : e.name}`);
@@ -310,7 +314,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
         assessor: assessor ? assessorStatus(assessor) : { instance: defaults.assessor, active: null, fallback: false },
         executors: restartStatus(executors, executorStatus),
         jobSources: restartStatus(jobSources, instanceStatus),
-        machines: restartStatus(machines, instanceStatus),
+        machines: { instances: (machines.built ?? []).map(instanceStatus) },
         usageSources: restartStatus(usageSources, instanceStatus),
         notifiers: restartStatus(notifiers, instanceStatus),
         plugins: entries.map((e) => ({

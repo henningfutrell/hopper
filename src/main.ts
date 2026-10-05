@@ -17,7 +17,7 @@ import { dockerHost } from './executors/docker.ts';
 import { hopperSshAuth, pinHostKeys } from './executors/ssh.ts';
 import { createServer } from './http/index.ts';
 import { AUTH, createSignIn, loadAuthDocument, type AuthConfig } from './auth/index.ts';
-import { combineMachineSources, createAttachedMachines, createClientReleaseKeeper, probeContainer, probeHerdrOverSsh, type MachineProbe } from './machines/index.ts';
+import { createClientReleaseKeeper, createTargetPool, probeContainer, probeHerdrOverSsh, type MachineProbe } from './machines/index.ts';
 import { readRelease } from './client/release.ts';
 import { BUILTIN_PLUGINS } from './plugins/builtin.ts';
 import { herdrClaudePlugin } from './plugins/executor/herdr-claude/index.ts';
@@ -175,6 +175,17 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   const routerMode = () => store.settings.getRouterMode() ?? config.routerMode;
   let executorNames = (): string[] => [];
   let jobsOnMachine = (_name: string): string[] => [];
+  // How the hopper reaches each attached machine (issue #74: the machine-source context's `target`).
+  const target = createTargetPool({
+    clock, logger,
+    probe: seams.machineProbe
+      ?? ((m) => ('client' in m
+        ? keepClient(clientTransport(m.name, m.client.tokenEnv), () => jobsOnMachine(m.name).length > 0)
+        : ('docker' in m
+          ? probeContainer({ container: m.docker, dockerHost: () => dockerHost(secret) })
+          : probeHerdrOverSsh({ target: m.ssh, herdrBin: m.herdrBin, session: m.session, controlDir: join(dataDir, 'ssh'), auth: sshAuth })
+        ).then((online) => ({ online })))),
+  });
   const host = createPluginHost({
     ...(config.pluginDir ? { pluginDir: config.pluginDir } : {}), installedDir: installedDirOf(dataDir),
     documents: store.documents, dataDir, clock, routerMode, logger,
@@ -184,7 +195,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
       knownKeys: (keys) => new Set(keys.filter((k) => store.jobs.getBySourceKey(k))),
       rerunnable: (keys) => new Set(keys.filter((k) => { const j = store.jobs.getBySourceKey(k); return j !== undefined && isRerunnable(j); })),
     },
-    machineContext: { executors: () => executorNames() },
+    machineContext: { executors: () => executorNames(), target },
     intervalMs: seams.pluginsFileIntervalMs ?? PLUGINS_FILE_CHECK_MS,
     attached: { inUse: (name) => jobsOnMachine(name), sshAuth, ...(seams.resolveTarget ? { resolveTarget: seams.resolveTarget } : {}) },
   });
@@ -202,7 +213,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     for (const p of pinHostKeys(dataDir, machines)) if (!pinProblems.has(p)) { pinProblems.add(p); logger.warn(`hopper: ${p}`); }
     return machines;
   };
-  pinned(host.attachedMachines());
+  pinned(host.targets());
   const built = host.executors();
   const executors = createExecutorRegistry(
     [...built.flatMap((b): Executor[] => (b.executor ? [b.executor] : [])), ...(seams.executors ?? [])],
@@ -232,20 +243,8 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     store, clock, executors, router, questions, queueSorter: host.queueSorter,
     routing: { rules: () => host.routingRules(), machines: () => host.machineIds() },
     ...(seams.fakeUsage ? { fakeUsage: seams.fakeUsage } : {}),
-    // Both follow plugins.yaml without a restart (issue #18).
-    machines: combineMachineSources([
-      host.machines(),
-      createAttachedMachines({
-        machines: () => pinned(host.attachedMachines()), clock, logger,
-        probe: seams.machineProbe
-          ?? ((m) => ('client' in m
-            ? keepClient(clientTransport(m.name, m.client.tokenEnv), () => jobsOnMachine(m.name).length > 0)
-            : ('docker' in m
-              ? probeContainer({ container: m.docker, dockerHost: () => dockerHost(secret) })
-              : probeHerdrOverSsh({ target: m.ssh, herdrBin: m.herdrBin, session: m.session, controlDir: join(dataDir, 'ssh'), auth: sshAuth })
-            ).then((online) => ({ online })))),
-      }),
-    ]),
+    // Every machine follows plugins.yaml without a restart (issues #18, #74); the pinned host keys with it.
+    machines: { list: () => { pinned(host.targets()); return host.machines().list(); } },
     usage: [...host.usageSources(), ...(seams.fakeUsage ? [seams.fakeUsage] : [])],
     policy: {
       softLimit: config.softLimit, hardLimit: config.hardLimit, routerCheapBoost: config.routerCheapBoost,

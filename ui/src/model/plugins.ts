@@ -62,16 +62,16 @@ export function collectOptions(current: Record<string, unknown>, schema: Options
 
 /** The restart roles, by their key in GET /api/plugins. */
 const RESTART = {
-  executor: 'executors', 'job-source': 'jobSources', 'machine-source': 'machines', 'usage-source': 'usageSources', notifier: 'notifiers',
+  executor: 'executors', 'job-source': 'jobSources', 'usage-source': 'usageSources', notifier: 'notifiers',
 } as const satisfies Partial<Record<Role, keyof PluginsReport>>;
 
 export const SELECTABLE: readonly SelectableRole[] = ['router', 'queue-sorter', 'answerer', 'assessor'];
 export const isSelectable = (role: Role): role is SelectableRole => (SELECTABLE as readonly Role[]).includes(role);
 
-export const LIST: readonly ListRole[] = ['executor', 'job-source', 'usage-source', 'notifier'];
+export const LIST: readonly ListRole[] = ['executor', 'job-source', 'machine-source', 'usage-source', 'notifier'];
 export const isListRole = (role: Role): role is ListRole => (LIST as readonly Role[]).includes(role);
 
-const ONE: Record<ListRole, string> = { executor: 'an executor', 'job-source': 'a job source', 'usage-source': 'a usage source', notifier: 'a notifier' };
+const ONE: Record<ListRole, string> = { executor: 'an executor', 'job-source': 'a job source', 'machine-source': 'a machine', 'usage-source': 'a usage source', notifier: 'a notifier' };
 
 /** The name an added instance gets — what was typed, else the plugin id — and why it cannot have it. */
 export function newInstance(report: PluginsReport, role: ListRole, plugin: string, typed: string): { name: string; problem?: string } {
@@ -92,6 +92,13 @@ export interface InstanceState {
 export function instanceState(report: PluginsReport, role: Role, name: string): InstanceState {
   const key = (RESTART as Partial<Record<Role, (typeof RESTART)[keyof typeof RESTART]>>)[role];
   const pending = { tone: 'warn' as const, label: 'restart pending' };
+  if (role === 'machine-source') {
+    // Live (issue #74): what plugins.yaml names is what runs, once the reload after an edit is done.
+    const s = report.machines.instances.find((i) => i.instance.name === name);
+    if (!s) return { tone: 'warn', label: 'applying', rolePending: false };
+    const base = { ...(s.reason ? { reason: s.reason } : {}), detection: s.detection, rolePending: false };
+    return s.active === null ? { tone: 'bad', label: 'cannot run', ...base } : { tone: 'ok', label: 'active', ...base };
+  }
   if (key) {
     const slot = report[key];
     const rolePending = slot.pending !== undefined;
@@ -109,5 +116,5 @@ export function instanceState(report: PluginsReport, role: Role, name: string): 
 
 export const ROLE_TITLES: Record<Role, string> = {
   router: 'Router', 'queue-sorter': 'Queue sorter', answerer: 'Answerer', assessor: 'Assessor', executor: 'Executors',
-  'job-source': 'Job sources', 'machine-source': 'Machine source', 'usage-source': 'Usage sources', notifier: 'Notifiers',
+  'job-source': 'Job sources', 'machine-source': 'Machine sources', 'usage-source': 'Usage sources', notifier: 'Notifiers',
 };

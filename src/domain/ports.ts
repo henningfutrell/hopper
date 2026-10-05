@@ -162,9 +162,9 @@ export interface PluginsView {
   report(): PluginsReport;
   /** A UI edit of plugins.yaml (or a rescan); applied like a file edit before it resolves. */
   edit(e: PluginsEdit): Promise<PluginsEditOutcome>;
-  /** GET /api/machines/config: the machine source, the attached machines, the detected ssh targets. */
+  /** GET /api/machines/config: every machine-source instance, the executors, the detected ssh targets. */
   machinesConfig(): MachinesConfig;
-  /** A UI edit of plugins.yaml `attachedMachines:`; applied (live) before it resolves. */
+  /** Attach an ssh target as an `ssh` instance in plugins.yaml `machines:`; applied (live) before it resolves. */
   editMachines(e: MachineEdit): Promise<MachineEditOutcome>;
   /** GET /api/routing: plugins.yaml `routing:` and what a rule may name. */
   routing(): RoutingReport;

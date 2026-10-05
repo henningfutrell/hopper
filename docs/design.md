@@ -40,7 +40,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock | everything but `domain/` |
 | `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations, repositories, event log, config documents, login codes | engine, http, decider |
 | `src/webhooks/` | signing, dispatcher, retry/backoff, the secret of a subscription from the runtime (`dispatcher.ts`), the UI edit of the subscriptions (`edit.ts`, rows in the store) | engine, http, decider |
-| `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, `plugins.yaml` + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `question-slots.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), a machine edit of `attachedMachines:` (`attached-edit.ts`, spliced into the file; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `answerer/claude-cli/`, `assessor/claude-cli-assessor/`, `assessor/always-escalate/` hold their prompts; `executor/herdr-claude/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-gh/` and `job-source/github-app/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser, runner, background refresh); `notifier/grokbot-routine/` is the Grok Bot routine webhook — env-file reader and notifier; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
+| `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, `plugins.yaml` + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `question-slots.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `answerer/claude-cli/`, `assessor/claude-cli-assessor/`, `assessor/always-escalate/` hold their prompts; `executor/herdr-claude/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-gh/` and `job-source/github-app/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser, runner, background refresh); `notifier/grokbot-routine/` is the Grok Bot routine webhook — env-file reader and notifier; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
 | `src/executors/` | `Executor` adapters (`test`, `herdr/`, `command.ts` — a job's body run on its machine through its connection) and the registry; reached through the executor plugins. The connections and their target authentication ("Target authentication"): `ssh.ts` (key-only ssh to pinned host keys), `docker.ts` (the docker socket check, the proxy's allowlist), `client.ts` (a client target's tunnel, signed calls); `env.ts` the scrubbed child environment | engine, http, store, plugins |
 | `src/client/` | the hopper client ("Client targets"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load` over HTTP/2 on the tunnel), `tunnel.ts` (its ssh to the hopper), `release.ts` (the client release: its files, its id, checking and installing one — "Client releases"), `main.ts`; `relay.ts`, the forced command of its key on the hopper's machine; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`); `ssh-options.ts` (the hardened ssh options, shared with `src/executors/ssh.ts`) | everything in `src/` outside `src/client/` |
 | `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following plugins.yaml; ssh probe and herdr path resolution through the herdr CLI client's ssh argv; the container probe, `docker container inspect`), the detected ssh targets (`ssh-config.ts`), keeping each client target on the hopper's client release (`client-release.ts`), `combineMachineSources` | engine, http, store, plugins |
@@ -2280,18 +2280,21 @@ It is a machine beside `local`: the decider sees it in `DecisionInputs.machines`
 to it by the unchanged rule (online, runs the executor, most remaining room). Nothing else in the
 decider changes.
 
-**Configuration** — plugins.yaml, followed without a restart since issue #18 ("Machines from the UI"):
+**Configuration** — plugins.yaml, followed without a restart since issue #18 ("Machines from the UI").
+An instance of the machine-source plugin `ssh` since issue #74 ("Attached machines are machine-source
+instances"); the fields below are its options, its instance name the machine id:
 
 ```yaml
-attachedMachines:
-  - { name: laptop, ssh: laptop, lanes: 2, herdrBin: /home/user/.local/bin/herdr }
+machines:
+  - { name: local, plugin: local }
+  - { name: laptop, plugin: ssh, options: { ssh: laptop, lanes: 2, herdrBin: /home/user/.local/bin/herdr } }
 ```
 
 | field | default | |
 |---|---|---|
-| `name` | — | the machine id; never `local`; unique |
+| `name` | — | the instance name: the machine id; unique among `machines:` |
 | `ssh` | — | ssh destination (`~/.ssh/config` alias or `user@host`); must not start with `-` |
-| `lanes` | — | its `maxLanes`, ≥ 1 |
+| `lanes` | `1` | its `maxLanes`, ≥ 1 |
 | `executors` | `[herdr-claude]` | executor instances that run there |
 | `label` | `name` | |
 | `session` | `hopper` | hopper's herdr session there; never `default` |
@@ -2335,13 +2338,11 @@ linger, confirms the session runs, and prints the plugins.yaml lines with the re
 runs a real Claude job there (throwaway session) through the composition root. Passed against
 `laptop` 2026-10-04.
 
-**Live since issue #18:** `attachedMachines:` is followed like a live role, so `/api/plugins` never
-shows it pending; the Machines view adds, edits and removes machines ("Machines from the UI"). **Beside the machine-source role, not
-in it** (merged after slice 4, 2026-10-03): the `machines:` instance supplies this machine and
-`attachedMachines:` adds the others, combined in `main.ts` (`combineMachineSources`). An attached
-machine may not take the machine instance's name. Folding attached machines into the
-machine-source role (a plugin wrapping `src/machines/attached.ts`, `ssh` and `herdrBin`
-command-bearing) is open.
+**Live since issue #18:** attached machines are followed live, so `/api/plugins` never
+shows them pending; the Machines view adds, edits and removes machines ("Machines from the UI").
+**In the machine-source role since issue #74**: each attached machine is an instance of `ssh`,
+`docker` or `client` beside `local` in `machines:` ("Attached machines are machine-source instances").
+Until then it sat beside the role, in its own `attachedMachines:` section.
 
 ## Container targets (issue #58, 2026-10-04)
 
@@ -2360,18 +2361,18 @@ and it runs no sshd and no herdr.
 ```yaml
 executors:
   - { name: command, plugin: command }
-machines: { name: local, plugin: local, options: { lanes: 4, executors: [test, herdr-claude] } }
-attachedMachines:
-  - { name: box, docker: hopper-target, lanes: 1 }        # executors default: [command]
+machines:
+  - { name: local, plugin: local, options: { lanes: 4, executors: [test, herdr-claude] } }
+  - { name: box, plugin: docker, options: { docker: hopper-target, lanes: 1 } }   # executors default: [command]
 routing:
   - { name: commands to the box, match: { label: on-box }, set: { machine: box, executor: command } }
 ```
 
 | field | default | |
 |---|---|---|
-| `docker` | — | the container's name or id; must not start with `-`; exactly one of `ssh`, `docker` |
+| `docker` | — | the container's name or id; must not start with `-` (plugin `docker`) |
 | `executors` | `[command]` | `[herdr-claude]` for an ssh target |
-| `session`, `herdrBin` | — | refused on a container target: it has no herdr |
+| `session`, `herdrBin`, `hostKey` | — | refused (unknown options of `docker`): it has no herdr |
 
 **Reached** only through the hopper's **docker socket** (`HOPPER_DOCKER_HOST`, "Target authentication"):
 `docker --host <it> exec …`; without it a container target stays offline.
@@ -2474,15 +2475,15 @@ A **client target** is an attached machine that runs the **hopper client** and d
 the hopper never connects to it directly.
 
 ```yaml
-attachedMachines:
-  - { name: studio, client: { tokenEnv: CLIENT_TOKEN_STUDIO }, lanes: 1 }   # executors default: [herdr-claude]
+machines:
+  - { name: studio, plugin: client, options: { tokenEnv: CLIENT_TOKEN_STUDIO, lanes: 1 } }   # executors default: [herdr-claude]
 ```
 
 | field | | |
 |---|---|---|
-| `client.tokenEnv` | — | the variable holding the client token in the daemon's runtime (or `<it>_FILE`); `[A-Z_][A-Z0-9_]*` |
-| `name` | — | letters, digits, `_`, `-`: it names the tunnel's socket |
-| `session`, `herdrBin`, `hostKey` | — | refused: the client names its herdr itself, and its tunnel pins the keys |
+| `tokenEnv` | — | the variable holding the client token in the daemon's runtime (or `<it>_FILE`); `[A-Z_][A-Z0-9_]*` (plugin `client`) |
+| `name` | — | letters, digits, `_`, `-`: it names the tunnel's socket (else the instance cannot run) |
+| `session`, `herdrBin`, `hostKey` | — | refused (unknown options of `client`): the client names its herdr itself, and its tunnel pins the keys |
 
 **The tunnel.** The client (`src/client/tunnel.ts`) runs `ssh -T` to this machine with the hardened
 options, its own key (made on the client; the private half never leaves it) and this machine's pinned
@@ -2949,6 +2950,11 @@ name `test/plugins/fake-claude-plan.mjs` as `bin`.
 
 ### Machines from the UI (issue #18)
 
+**Amended by issue #74** ("Attached machines are machine-source instances" below): the read
+carries `machines` (every machine-source instance) instead of `machine` and `attached`;
+`POST /ui/api/machines` only attaches an ssh target; edit and remove are plugins edits. The rest
+of this section is as it landed.
+
 Owner request: machines can be added in the UI. The Machines view adds, edits and removes attached machines, and
 edits this machine's lane count. Every change is written to plugins.yaml and applies without a
 restart.
@@ -3013,6 +3019,62 @@ answer in a pane there (`resumeOn`) — the error names the jobs.
 Residual risk: a session holder can attach any machine already in `~/.ssh/config` and point jobs
 at it; that needs the owner's ssh config to name it and the machine to run herdr. Every local user can
 read the detected ssh targets (`GET /api/machines/config`, like every loopback read).
+
+### Attached machines are machine-source instances (issue #74, 2026-10-05)
+
+Owner request: "Plugins can be configured in the UI"; owner's choice of the gap to close: fold the
+attached machines into the machine-source role. Before, they were the one part beside the plugin
+architecture (`attachedMachines:`, its own schema, its own edit route) — against the north star.
+
+- **plugins.yaml `machines:` is a list** of machine-source instances, 0..n, unique names (a name is
+  the machine id: lanes and jobs are stored under it). Absent: the built-in `local` alone.
+  `attachedMachines:` is gone; the file schema refuses it.
+- **Three built-in machine-source plugins, named by their connection** (glossary "Connection"):
+  `ssh` (options `ssh`, `lanes`, `executors` default `[herdr-claude]`, `label`, `session` default
+  `hopper`, `herdrBin` default `herdr`, `hostKey`), `docker` (`docker`, `lanes`, `executors`
+  default `[command]`, `label`) and `client` (`tokenEnv`, `lanes`, `executors` default
+  `[herdr-claude]`, `label`). `lanes` defaults to 1. Each schema is strict, so a field of another
+  connection is refused. **Command-bearing**: `ssh`, `session`, `herdrBin`, `hostKey`, `docker`,
+  `tokenEnv` — what reaches the machine is never changed from a UI session ("UI and mutation").
+  A `client` instance whose name cannot name its tunnel's socket cannot run, with the reason.
+  `src/plugins/machine-source/<id>/`; the shared options in `machine-source/attached.ts`;
+  `machine-source/targets.ts` `targetOf(spec)` turns an instance into its `AttachedMachine`.
+- **How a machine is reached stays the host's.** The machine-source context gains
+  `target(machine): MachineSource` (`MachineSourceContext` in `sdk.ts`); a plugin hands its
+  `AttachedMachine` to it. `main.ts` supplies it: `createTargetPool` (`src/machines/attached.ts`)
+  with the probes (herdr over ssh with the hopper's key, docker through the hopper's socket, the
+  client through its tunnel, which also loads the client release). The pool keeps one source per
+  machine identity (name + connection fields), so an options change of lanes, executors or label
+  rebuilds the instance without losing what the probe knows. Without a `target` (tests) a machine
+  is never probed, so offline. A custom machine-source plugin may use `target` too.
+- **Live, never pending.** The machine sources follow plugins.yaml on every good reload
+  (`applyMachineSpecs`): an unchanged instance is kept, a new or changed one built, a removed one
+  dropped (logged). `/api/plugins` `machines` is `{ instances }`, without `pending`. Renaming the
+  `local` instance applies live too: its lanes are then those of a new machine id, as when an
+  attached machine is renamed. An invalid plugins.yaml keeps the last good machines.
+- **Pinned host keys** follow `host.targets()` (every instance `targetOf` accepts), rewritten
+  before each machine listing.
+- **The UI.** The Plugins view lists every machine under "Machine sources" with its options form
+  (lanes, executors, label editable; the command-bearing ones read-only), Remove, and Add (only
+  `local` is available there: `ssh`, `docker` and `client` need options without defaults, so they
+  show `needs-setup`). The Machines view sends its Edit and Remove as `POST /ui/api/plugins`
+  (`options`, `remove`, role `machine-source`), and Edit's body is the instance's whole options
+  with lanes, executors and label as typed. Attaching over ssh stays `POST /ui/api/machines`, now
+  `{ name, ssh, lanes, executors?, label?, version }` (no `action`): the detected-ssh-target check
+  and resolving `herdrBin` and the host key need the daemon; it appends an `ssh` instance with the
+  Document API (comments kept), the built-in `local` first when `machines:` was absent. A docker
+  or client target is still attached with its script and `hopper config edit plugins.yaml`.
+- **Removing a machine** (`remove`, role `machine-source`) is refused (409, naming the jobs) while a
+  lane there is busy or draining or a job waits in a pane there, as the old machine edit was. An
+  executor named by a machine's `executors` cannot be removed ("machine <name>").
+- **Migration 15** (`src/store/migrations.ts`) rewrites the stored plugins.yaml: `machines:` becomes
+  the list — the old instance, or the built-in `local` (`lanes: 4`) when there was none — then each
+  `attachedMachines:` entry as an instance of the plugin its `ssh`, `docker` or `client` field
+  names, the other fields its options (`client.tokenEnv` → `tokenEnv`); comments kept. A document
+  that does not parse is left alone. The attach scripts print the new entry.
+- Dropped: the byte-splicing machine edit (`attached-edit.ts` now only appends), `combineMachineSources`,
+  `createAttachedMachines`, `host.attachedMachines()`, the "attached machine has the machine
+  source's name" rule (uniqueness covers it).
 
 ### Router, queue sorter and routing rules (issue #18)
 

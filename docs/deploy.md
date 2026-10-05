@@ -18,7 +18,7 @@ with Podman** ("In containers, with Podman"); the host install is the other way.
 | Plugins | Optional. `HOPPER_PLUGIN_DIR` (plugins put there by hand; a container mounts it read-only) and `HOPPER_PLUGIN_STORE` (a git repository the UI installs plugins from — this repository is one: docs/plugins.md). Store installs are kept in the database and restored into the work dir at start: they need no plugin dir and no volume. |
 | Config | the documents `plugins.yaml`, `rules.md`, `auth.yaml`: from the UI, or `hopper config edit <document>`; webhook subscriptions, rows in the database: from the UI (Webhooks). The first boot writes the built-in plugins.yaml. |
 | GitHub | the gh CLI signed in as the owner (default; `GH_TOKEN` in a container), or a GitHub App the owner creates for this hopper with `scripts/create-github-app.sh` (its key in `GITHUB_APP_PRIVATE_KEY`). Each hopper has its own App and key; there is no shared one. Setting up either: `README.md` "Connect GitHub". |
-| Where jobs run | machines: this host's herdr session (`hopper-herdr`), and attached machines in plugins.yaml `attachedMachines:` — ssh targets, client targets, container targets. Setting each one up, step by step: `README.md` "Add machines". |
+| Where jobs run | machines: this host's herdr session (`hopper-herdr`), and attached machines, instances in plugins.yaml `machines:` — `ssh` targets, `client` targets, `docker` container targets. Setting each one up, step by step: `README.md` "Add machines". |
 
 `hopper` is the operator CLI (`hopper config …`, `hopper login-code`); it needs `HOPPER_DATABASE_URL` (or `_FILE`) and nothing else. `hopper help` lists its commands; `node src/main.ts --help` lists every daemon setting with its default.
 

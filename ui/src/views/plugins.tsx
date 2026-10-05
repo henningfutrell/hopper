@@ -25,6 +25,7 @@ function RoleBlock({ role, report }: { role: Role; report: PluginsReport }) {
         {rolePending && <StatusBadge status="changed — restart pending" tone="warn" />}</>}>
       {isSelectable(role) && <PluginSelector role={role} />}
       {isListRole(role) && <AddInstance role={role} />}
+      {role === 'machine-source' && <div className="text-xs text-muted-foreground">attach an ssh machine from the Machines view; a container or client target with its script</div>}
       {instances.length
         ? instances.map((i) => <InstanceForm key={i.instance.name} role={role} inst={i.instance} />)
         : <Empty>{role === 'answerer' ? 'none — questions go straight to the owner' : 'none'}</Empty>}

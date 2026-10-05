@@ -86,8 +86,8 @@ export type SelectableRole = 'router' | 'queue-sorter' | 'answerer' | 'assessor'
 export const SELECTABLE_ROLES: readonly SelectableRole[] = ['router', 'queue-sorter', 'answerer', 'assessor'];
 
 /** The roles with 0..n instances (executors: 1..n), each added or removed from the UI under its own name. */
-export type ListRole = 'executor' | 'job-source' | 'usage-source' | 'notifier';
-export const LIST_ROLES: readonly ListRole[] = ['executor', 'job-source', 'usage-source', 'notifier'];
+export type ListRole = 'executor' | 'job-source' | 'machine-source' | 'usage-source' | 'notifier';
+export const LIST_ROLES: readonly ListRole[] = ['executor', 'job-source', 'machine-source', 'usage-source', 'notifier'];
 
 /** The queue order (DecisionInputs.queueOrder): the waiting jobs as the queue sorter ordered them, and which instance did. */
 export interface QueueOrder {
@@ -147,8 +147,8 @@ export interface PluginsReport {
   /** The restart roles, as built at start. */
   executors: RestartRoleStatus;
   jobSources: RestartRoleStatus;
-  /** One instance (the machine source); a list like the others. */
-  machines: RestartRoleStatus;
+  /** The machine sources — this machine and the attached ones (issue #74) — as plugins.yaml names them now: live, never pending. */
+  machines: { instances: InstanceStatus[] };
   usageSources: RestartRoleStatus;
   notifiers: RestartRoleStatus;
   plugins: {

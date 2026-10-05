@@ -35,7 +35,7 @@ describe('the attached-machine plugins', () => {
 describe('targetOf: an instance as the attached machine it names', () => {
   it('an ssh instance, with its defaults', () => {
     expect(targetOf({ name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop', lanes: 2 } })).toEqual({
-      name: 'laptop', ssh: 'laptop', lanes: 2, executors: ['herdr-claude'], session: 'job-hopper', herdrBin: 'herdr',
+      name: 'laptop', ssh: 'laptop', lanes: 2, executors: ['herdr-claude'], session: 'hopper', herdrBin: 'herdr',
     });
     expect(targetOf({ name: 'pi', plugin: 'ssh', options: { ssh: 'user@pi.example', label: 'Pi', lanes: 1, executors: ['herdr-claude', 'other'], session: 'jh', herdrBin: '/opt/herdr', hostKey: TEST_HOST_KEY } })).toEqual({
       name: 'pi', ssh: 'user@pi.example', label: 'Pi', lanes: 1, executors: ['herdr-claude', 'other'], session: 'jh', herdrBin: '/opt/herdr', hostKey: TEST_HOST_KEY,
@@ -43,7 +43,7 @@ describe('targetOf: an instance as the attached machine it names', () => {
   });
 
   it('a docker instance: no herdr, the command executor by default', () => {
-    expect(targetOf({ name: 'box', plugin: 'docker', options: { docker: 'job-hopper-target', lanes: 1 } })).toEqual({ name: 'box', docker: 'job-hopper-target', lanes: 1, executors: ['command'] });
+    expect(targetOf({ name: 'box', plugin: 'docker', options: { docker: 'hopper-target', lanes: 1 } })).toEqual({ name: 'box', docker: 'hopper-target', lanes: 1, executors: ['command'] });
   });
 
   it('a client instance names the variable its token is in; herdr-claude runs there by default', () => {
