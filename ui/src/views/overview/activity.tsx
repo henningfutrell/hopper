@@ -15,7 +15,7 @@ export function LivePanel({ count }: { count: number }) {
   const nameOf = useJobName();
   return (
     <Panel title="Live activity" icon={Radio} action={<a href="#events" className="text-xs text-muted-foreground hover:text-foreground">all events →</a>}
-      count={<Dot tone={conn === 'live' ? 'ok' : 'warn'} pulse={conn === 'live'} />} bodyClassName="space-y-1.5">
+      count={<Dot tone={conn === 'live' ? 'ok' : 'warn'} pulse={conn === 'live'} />} list bodyClassName="space-y-1.5">
       {events.length ? events.slice(0, count).map((e) => <EventLine key={e.seq} e={e} nameOf={nameOf} className="animate-in fade-in slide-in-from-top-1 duration-300" />) : <Empty>no events yet</Empty>}
     </Panel>
   );
@@ -37,7 +37,7 @@ export function AttentionPanel() {
     ...ended.filter((j) => j.status === 'failed').slice(0, 5).map((j): Alert => ({ key: j.id, tone: 'bad', label: 'failed', text: `${nameOf(j.id)} — ${j.error ?? ''}`, ...(j.finishedAt ? { at: j.finishedAt } : {}) })),
   ];
   return (
-    <Panel title="Attention" icon={BellRing} count={alerts.length || ''} bodyClassName="divide-y p-0">
+    <Panel title="Attention" icon={BellRing} count={alerts.length || ''} list bodyClassName="divide-y p-0">
       {alerts.length ? alerts.map((a) => {
         const body = (
           <div className="flex items-start gap-2.5 px-4 py-2.5">
