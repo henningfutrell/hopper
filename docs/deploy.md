@@ -48,6 +48,18 @@ docker compose -f deploy/compose.yaml exec hopper job-hopper login-code --link h
 
 ## This host (systemd --user)
 
+One line, the curl install (`scripts/get.sh`, issue #87): it checks what the install needs, clones
+the source into `~/.local/share/job-hopper/source` (or updates it), starts the bundled Postgres with
+a fresh password unless `daemon.env` or `JOB_HOPPER_DATABASE_URL` already names a database, and runs
+`scripts/install.sh`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/henningfutrell/hopper/main/scripts/get.sh | bash
+```
+
+`JOB_HOPPER_REF` installs and tracks another branch; `JOB_HOPPER_REPO` another repository. By hand,
+from a clone:
+
 ```sh
 export POSTGRES_PASSWORD=<a long random password>
 docker compose -f deploy/compose.yaml up -d postgres          # published on 127.0.0.1:${POSTGRES_PORT:-5433}
