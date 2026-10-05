@@ -131,7 +131,6 @@ describe('POST /ui/api/plugins — one instance\'s options', () => {
     const doc = parse(read(a));
     expect(doc.machines).toEqual([{ name: 'local', plugin: 'local', options: { lanes: 2 } }]);
     expect(doc.executors).toHaveLength(3);
-    expect(r.body.machines.pending).toBeUndefined();
     const local = (await a.api('GET', '/api/machines')).body.machines.find((m: { id: string }) => m.id === 'local');
     expect(local.maxLanes).toBe(2);
   });

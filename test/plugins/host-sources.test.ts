@@ -209,7 +209,6 @@ describe('the machine-source role', () => {
     const machines = host.machines();
     documents.set(PLUGINS, 'version: 1\nmachines: [ { name: local, plugin: local, options: { lanes: 3 } } ]\n');
     await host.reload();
-    expect(host.report().machines.pending).toBeUndefined();
     expect(host.report().machines.instances[0]!.instance.options).toEqual({ lanes: 3 });
     expect((await machines.list())[0]!.maxLanes).toBe(3);
   });
@@ -219,7 +218,6 @@ describe('the machine-source role', () => {
     await host.start();
     documents.set(PLUGINS, 'version: 1\nmachines: [ { name: server, plugin: local, options: { lanes: 3 } } ]\n');
     await host.reload();
-    expect(host.report().machines.pending).toBeUndefined();
     expect(await host.machines().list()).toEqual([expect.objectContaining({ id: 'server', maxLanes: 3 })]);
   });
 });

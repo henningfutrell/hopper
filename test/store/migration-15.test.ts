@@ -40,6 +40,7 @@ describe('migration 15 (attached machines are machine-source instances)', () => 
       '',
     ].join('\n'))!;
     expect(text).toContain('# the owner\'s note');
+    expect(text).toMatch(/# the desk\n.*name: desk/);
     const doc = parse(text);
     expect(doc.attachedMachines).toBeUndefined();
     expect(doc.executors).toEqual([{ name: 'test', plugin: 'test' }]);

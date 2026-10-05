@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { loadPluginsFile } from '../../src/plugins/plugins-file.ts';
-import { TEST_HOST_KEY } from '../support/ssh.ts';
 
 /** The document text as the store holds it. */
 const file = (text: string): string => text;
