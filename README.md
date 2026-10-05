@@ -27,9 +27,22 @@ web UI, and an HTTP API with its reference at `/docs/`.
 
 Pick one. Each needs a Postgres URL; the bundled one is `deploy/compose.yaml`.
 
-### On this host (systemd --user)
+### On this host, with one line
 
-The daemon and its own herdr session as user services. Jobs run on this host.
+The daemon and its own herdr session as user services, and Postgres in docker. Jobs run on this host.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/henningfutrell/hopper/main/scripts/get.sh | bash
+bash ~/.local/lib/job-hopper/scripts/open-ui.sh        # signs this browser in and opens the UI
+```
+
+It clones the source into `~/.local/share/job-hopper/source` and runs its `scripts/install.sh`.
+Without docker, give it a database: `curl … | JOB_HOPPER_DATABASE_URL=postgres://… bash`. Run the
+same line again to upgrade. Settings: the head of `scripts/get.sh`.
+
+### On this host (systemd --user), from a clone
+
+The same install, step by step.
 
 ```sh
 git clone <this repository> job-hopper && cd job-hopper
