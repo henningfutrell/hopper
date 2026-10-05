@@ -1,0 +1,41 @@
+# The store catalogue of this repository as a plugin store (docs/design.md "Plugin store"):
+# set JOB_HOPPER_PLUGIN_STORE to this repository and the UI offers these example plugins.
+version: 1
+plugins:
+  - id: canned-answer
+    role: answerer
+    describe: Drafts one fixed answer to every question
+    path: examples/plugins/answerer/canned-answer
+  - id: keyword-assessor
+    role: assessor
+    describe: Escalates when the question names a listed word, or the draft is not
+      confident
+    path: examples/plugins/assessor/keyword-assessor
+  - id: echo-executor
+    role: executor
+    describe: Finishes every job at once with its prompt as the result
+    path: examples/plugins/executor/echo-executor
+  - id: static-items
+    role: job-source
+    describe: Offers a fixed list of items from its options
+    path: examples/plugins/job-source/static-items
+  - id: fixed-machine
+    role: machine-source
+    describe: One machine running every registered executor on a fixed number of lanes
+    path: examples/plugins/machine-source/fixed-machine
+  - id: log-events
+    role: notifier
+    describe: Logs every event of the listed types
+    path: examples/plugins/notifier/log-events
+  - id: word-first
+    role: queue-sorter
+    describe: Jobs whose goal mentions a word first, then by effective priority
+    path: examples/plugins/queue-sorter/word-first
+  - id: proceed-all
+    role: router
+    describe: Admits every job as proceed_full
+    path: examples/plugins/router/proceed-all
+  - id: fixed-usage
+    role: usage-source
+    describe: Reports one fixed usage reading
+    path: examples/plugins/usage-source/fixed-usage

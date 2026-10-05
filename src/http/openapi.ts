@@ -11,7 +11,7 @@ import { streamQuery } from './sse.ts';
 import { decisionsQuery, eventsQuery } from './state.ts';
 import { SESSION_HEADER } from './ui/guard.ts';
 import {
-  answerBody, machinesEditBody, pluginsEditBody, routerModeBody, routingEditBody, rulesBody, updateBody, webhooksEditBody,
+  answerBody, machinesEditBody, pluginStoreBody, pluginsEditBody, routerModeBody, routingEditBody, rulesBody, updateBody, webhooksEditBody,
 } from './ui/index.ts';
 import { completeBody, loginBody, passwordBody, startQuery } from './ui/sign-in.ts';
 import { deliveriesQuery } from './webhooks.ts';
@@ -67,6 +67,8 @@ const OPERATIONS: Operation[] = [
   { method: 'post', path: '/ui/api/machines', tag: 'Machines and usage', summary: 'Add, edit or remove an attached machine', role: 'admin', body: machinesEditBody, returns: 'the new machines config', errors: [404, 409] },
   { method: 'get', path: '/api/usage', tag: 'Machines and usage', summary: 'Usage readings', returns: '`UsageReport`' },
   { method: 'get', path: '/api/plugins', tag: 'Plugins and routing', summary: 'Every role, instance and plugin', returns: '`PluginsReport`' },
+  { method: 'get', path: '/api/plugin-store', tag: 'Plugins and routing', summary: 'The plugin store: its catalogue and the store installs', returns: '`PluginStoreReport`' },
+  { method: 'post', path: '/ui/api/plugin-store', tag: 'Plugins and routing', summary: 'Install, update or remove a plugin from the plugin store', description: 'Read the plugin store again, install a plugin its catalogue lists into the plugin dir (again: an update to the store\'s head), or remove a store install that plugins.yaml does not name.', role: 'admin', body: pluginStoreBody, returns: 'the new `PluginStoreReport`', errors: [404, 409] },
   { method: 'post', path: '/ui/api/plugins', tag: 'Plugins and routing', summary: 'Edit plugin instances', description: 'Set an instance\'s options (never a command-bearing one), select the plugin of a one-instance role, add or remove an instance, or rescan.', role: 'admin', body: pluginsEditBody, returns: 'the new `PluginsReport`', errors: [404, 409] },
   { method: 'get', path: '/api/routing', tag: 'Plugins and routing', summary: 'Routing rules', returns: 'the rules as configured and their report' },
   { method: 'post', path: '/ui/api/routing', tag: 'Plugins and routing', summary: 'Replace the routing rules', description: 'Applies to new jobs only.', role: 'admin', body: routingEditBody, returns: 'the new routing report', errors: [409] },

@@ -7,7 +7,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { SignIn } from '../../auth/index.ts';
-import type { Clock, PluginsView, QuestionService, Store, Updater } from '../../domain/ports.ts';
+import type { Clock, PluginStoreView, PluginsView, QuestionService, Store, Updater } from '../../domain/ports.ts';
 import { LIST_ROLES, ROLES, SELECTABLE_ROLES, UPDATE_CHANNELS, type SessionView, type UiRole } from '../../domain/types.ts';
 import type { Engine } from '../../engine/index.ts';
 import { HttpError, parseWith } from '../errors.ts';
@@ -29,6 +29,7 @@ export interface UiRouteOptions {
   sessions: UiSessions;
   signIn: SignIn;
   plugins: PluginsView;
+  pluginStore: PluginStoreView;
   /** The bound port (known only after listen). */
   port: () => number;
   lan: Lan;
@@ -48,6 +49,14 @@ export const pluginsEditBody = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('add'), role: z.enum(LIST_ROLES), plugin: z.string().min(1), name: z.string().min(1), version: z.string().min(1) }),
   z.strictObject({ action: z.literal('remove'), role: z.enum(LIST_ROLES), name: z.string().min(1), version: z.string().min(1) }),
   z.strictObject({ action: z.literal('rescan') }),
+]);
+// The plugin store (issue #75): ids only — what is installed is what the store catalogue lists.
+// A plugin id, never a path: it names a directory under the plugin dir.
+const pluginId = z.string().regex(/^[a-z0-9][a-z0-9-]*$/, 'id must be a plugin id');
+export const pluginStoreBody = z.discriminatedUnion('action', [
+  z.strictObject({ action: z.literal('refresh') }),
+  z.strictObject({ action: z.literal('install'), id: pluginId }),
+  z.strictObject({ action: z.literal('remove'), id: pluginId }),
 ]);
 export const rulesBody = z.strictObject({ text: z.string(), version: z.string().min(1) });
 // The content (url, events) is checked against webhooks.yaml's own schema in the editor, so the UI
@@ -149,6 +158,14 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   // filling a one-instance role, or a rescan. Answers the new GET /api/plugins report.
   app.post('/ui/api/plugins', admin, async (req) => {
     const r = await o.plugins.edit(parseWith(pluginsEditBody, req.body));
+    if (!r.ok) throw new HttpError(EDIT_STATUS[r.code], r.error);
+    return r.report;
+  });
+
+  // design.md "Plugin store": read the store again, install (or update) a plugin it lists into the
+  // plugin dir, or remove a store install. Answers the new GET /api/plugin-store report.
+  app.post('/ui/api/plugin-store', admin, async (req) => {
+    const r = await o.pluginStore.edit(parseWith(pluginStoreBody, req.body));
     if (!r.ok) throw new HttpError(EDIT_STATUS[r.code], r.error);
     return r.report;
   });

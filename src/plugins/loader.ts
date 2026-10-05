@@ -45,7 +45,8 @@ export async function loadCustomPlugins(dir: string, reserved: ReadonlySet<strin
   if (!existsSync(dir)) return out;
   if (statSync(dir).mode & 0o077) out.warnings.push(`plugin dir ${dir} is accessible by group/other (chmod 700 ${dir})`);
   const taken = new Set(reserved);
-  const names = readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort();
+  // Dot directories are not plugins: the plugin store stages its installs in them (design.md "Plugin store").
+  const names = readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory() && !e.name.startsWith('.')).map((e) => e.name).sort();
   for (const name of names) {
     const entry = ['index.ts', 'index.js'].map((f) => join(dir, name, f)).find((p) => existsSync(p));
     if (!entry) {

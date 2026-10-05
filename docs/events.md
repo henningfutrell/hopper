@@ -522,3 +522,35 @@ Version 1 (`docs/schemas/update.failed.v1.json`). Applying an update failed (fet
   "error": "the new build does not load: SyntaxError"
 }
 ```
+
+## `plugin.installed`
+
+Version 1 (`docs/schemas/plugin.installed.v1.json`). A plugin was installed from the plugin store into the plugin dir (UI Install or Update), at the store's commit `commit`. A plugin new to this process is loaded at once; one installed again runs its new code after a restart.
+
+| field | type | required |
+|---|---|---|
+| `id` | string | yes |
+| `role` | `router` \| `queue-sorter` \| `answerer` \| `assessor` \| `executor` \| `job-source` \| `machine-source` \| `usage-source` \| `notifier` | yes |
+| `commit` | string | yes |
+
+```json
+{
+  "id": "echo-executor",
+  "role": "executor",
+  "commit": "e4f5a6b"
+}
+```
+
+## `plugin.removed`
+
+Version 1 (`docs/schemas/plugin.removed.v1.json`). A store install was removed from the plugin dir (UI Remove). Nothing in plugins.yaml named it.
+
+| field | type | required |
+|---|---|---|
+| `id` | string | yes |
+
+```json
+{
+  "id": "echo-executor"
+}
+```

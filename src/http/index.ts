@@ -4,7 +4,7 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import { apiReferenceRoutes } from './api-reference.ts';
 import type { SignIn } from '../auth/index.ts';
-import type { Clock, PluginsView, QuestionService, SourceRegistry, Store, Updater, WebhookDispatcher } from '../domain/ports.ts';
+import type { Clock, PluginStoreView, PluginsView, QuestionService, SourceRegistry, Store, Updater, WebhookDispatcher } from '../domain/ports.ts';
 import type { Engine } from '../engine/index.ts';
 import type { WebhookConfigView } from './webhooks.ts';
 import type { WebhooksEditor } from '../webhooks/edit.ts';
@@ -13,6 +13,7 @@ import { installErrorHandling } from './errors.ts';
 import { installHostGuard } from './host-guard.ts';
 import type { Lan } from './reach.ts';
 import { jobRoutes } from './jobs.ts';
+import { pluginStoreRoutes } from './plugin-store.ts';
 import { questionGatesRoutes } from './question-gates.ts';
 import { questionRoutes } from './questions.ts';
 import { sourceRoutes } from './sources.ts';
@@ -32,6 +33,8 @@ export interface ServerOptions {
   sources: SourceRegistry;
   /** The router's status and GET /api/plugins. */
   plugins: PluginsView;
+  /** The plugin store: GET /api/plugin-store, POST /ui/api/plugin-store. */
+  pluginStore: PluginStoreView;
   webhookConfig: WebhookConfigView;
   /** UI edits of webhooks.yaml (POST /ui/api/webhooks). */
   webhooksEditor: WebhooksEditor;
@@ -69,10 +72,11 @@ export function createServer(o: ServerOptions): FastifyInstance {
   sourceRoutes(app, o);
   accountRoutes(app, o);
   updateRoutes(app, o);
+  pluginStoreRoutes(app, o);
   sseRoutes(app, o);
   staticRoutes(app, o.uiDir);
   registerUiRoutes(app, {
-    engine: o.engine, questions: o.questions, sessions, signIn: o.signIn, plugins: o.plugins, port: o.port, lan: o.lan, clock: o.clock,
+    engine: o.engine, questions: o.questions, sessions, signIn: o.signIn, plugins: o.plugins, pluginStore: o.pluginStore, port: o.port, lan: o.lan, clock: o.clock,
     store: o.store, webhookConfig: o.webhookConfig, webhooksEditor: o.webhooksEditor, updater: o.updater,
   });
   return app;

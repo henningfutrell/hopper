@@ -8,6 +8,7 @@ import type { Answerer, Assessor, Clock, Executor, JobSource, PluginsView, Resta
 import type { AttachedMachine, Question, SourceStatus } from './domain/types.ts';
 import { isRerunnable } from './domain/types.ts';
 import { daemonHelp, loadConfig, type Config } from './config.ts';
+import { logStartup } from './startup-log.ts';
 import { createEngine, type Engine } from './engine/index.ts';
 import { createExecutorRegistry } from './executors/index.ts';
 import type { HerdrClient } from './executors/herdr/index.ts';
@@ -21,6 +22,7 @@ import { readRelease } from './client/release.ts';
 import { BUILTIN_PLUGINS } from './plugins/builtin.ts';
 import { herdrClaudePlugin } from './plugins/executor/herdr-claude/index.ts';
 import { createPluginHost, type BuiltJobSource } from './plugins/index.ts';
+import { createPluginStore } from './plugins/plugin-store.ts';
 import type { JobSourceInstance } from './plugins/sdk.ts';
 import { unavailableExecutors } from './plugins/executor-slot.ts';
 import { githubAppPlugin } from './plugins/job-source/github-app/index.ts';
@@ -273,8 +275,13 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     restartBlockers: () => restartBlockers(store.jobs.list({ status: ['running'] }), (name) => executors.get(name)),
     checkMs: config.updateCheckMs,
   });
+  // The plugin store (issue #75): installs into the plugin dir; the host rescans.
+  const pluginStore = createPluginStore({
+    ...(config.pluginStore ? { repo: config.pluginStore } : {}), ...(config.pluginDir ? { pluginDir: config.pluginDir } : {}),
+    workDir: dataDir, builtinIds: new Set(BUILTIN_PLUGINS.map((p) => p.id)), plugins: host, events: store.events, clock, logger,
+  });
   const server = createServer({
-    engine, store, dispatcher, questions, clock, version: VERSION, sources: registry, webhookConfig, plugins, updater,
+    engine, store, dispatcher, questions, clock, version: VERSION, sources: registry, webhookConfig, plugins, pluginStore, updater,
     webhooksEditor: createWebhooksEditor({ documents: store.documents, reload: webhookConfig.reload }),
     port: () => port, sessionHours: config.uiSessionHours, signIn,
     lan: { names: config.lanNames, peers: config.lanPeers, publicUrl: config.publicUrl }, uiDir: seams.uiDir ?? UI_DIR,
@@ -285,6 +292,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   host.startNotifiers({ subscribe: (l) => store.events.subscribe(l), job: (id) => store.jobs.get(id) });
   // Before listening: the boot after an update records update.applied before anything is answered.
   updater.start();
+  pluginStore.start();
   await server.listen({ host: config.host, port: config.port });
   port = (server.server.address() as { port: number }).port;
   await engine.start();
@@ -324,26 +332,9 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   return app;
 }
 
-function unavailableNote(plugins: PluginsView): string {
-  const down = plugins.report().executors.instances.filter((i) => i.active === null).map((i) => i.instance.name);
-  return down.length ? ` (unavailable, jobs held: ${down.join(',')})` : '';
-}
-
 async function main(): Promise<void> {
   const app = await startApp(loadConfig(process.env));
-  const r = app.plugins.routerStatus();
-  const { answerer, assessor } = app.plugins.report();
-  const q = `answerer ${answerer.instance ? `${answerer.instance.name} [${answerer.active ?? 'unavailable'}]` : 'none'}, assessor ${assessor.instance?.name} [${assessor.active}${assessor.fallback ? ', fallback' : ''}]`;
-  const lan = app.config.lanNames.length ? ` and ${app.config.lanNames.map((n) => `http://${n}:${new URL(app.url).port}`).join(', ')} (LAN peers ${app.config.lanPeers.join(', ')})` : '';
-  console.log(`job-hopper listening on ${app.url}${lan} (router ${r.name} [${r.plugin}${r.fallback ? ', fallback' : ''}] ${app.routerMode()}, executors ${app.engine.executorNames.join(',') || 'none'}${unavailableNote(app.plugins)}, ${q})`);
-  for (const s of app.sources.statuses()) console.log(`job-hopper: source ${s.name} (${s.kind}) ${s.state}`);
-  const { auth } = app;
-  if (app.config.publicUrl) console.log(`job-hopper: public URL ${app.config.publicUrl} (sign-in origin)`);
-  if (auth.providers.length) console.log(`job-hopper: sign-in with ${auth.providers.map((p) => `${p.name} (${p.type})`).join(', ')}`);
-  if (auth.local.enabled) console.log('job-hopper: local sign-in on; a login code: job-hopper login-code');
-  else console.log('job-hopper: local sign-in is off (auth.yaml)');
-  if (auth.password) console.log(`job-hopper: password sign-in on (${auth.password.users.length} account(s))`);
-  if (auth.none) console.warn(`job-hopper: NO SIGN-IN is on (auth.yaml none): anyone who reaches the UI acts as ${auth.none.role}`);
+  logStartup(app);
   const shutdown = (signal: string): void => {
     console.log(`job-hopper: ${signal}, shutting down`);
     app.stop().then(() => process.exit(0), (e) => {

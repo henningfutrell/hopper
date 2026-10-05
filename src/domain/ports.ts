@@ -6,7 +6,7 @@ import type {
   RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule,
   JobSourceRef, LaneId, MachineId, MachineSnapshot, NewEvent, Question, QuestionAttempt, QuestionStatus,
   Identity, SourceStatus, UiRole, UsageReading, UsageSourceState, WebhookDelivery, WebhookSubscription,
-  InstallInfo, UpdateSettings, UpdateStatus,
+  InstallInfo, UpdateSettings, UpdateStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport,
 } from './types.ts';
 
 // ---- Execution -----------------------------------------------------------------------
@@ -170,6 +170,13 @@ export interface PluginsView {
   routing(): RoutingReport;
   /** POST /ui/api/routing: the whole ordered list; applied before it resolves. */
   editRouting(e: RoutingEdit): Promise<RoutingEditOutcome>;
+}
+
+/** The plugin store (design.md "Plugin store"): GET /api/plugin-store, POST /ui/api/plugin-store. */
+export interface PluginStoreView {
+  report(): PluginStoreReport;
+  /** Refresh, install (or update) or remove one store install; the new report. */
+  edit(e: PluginStoreEdit): Promise<PluginStoreEditOutcome>;
 }
 
 /** What intake reads to route a source item (design.md "Routing rules (issue #18)"): the rules now, and the machine ids running. */

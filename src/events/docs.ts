@@ -32,6 +32,8 @@ const WHEN: Record<EventType, string> = {
   'update.started': 'Applying an update began (UI, or auto-update): the target is built beside the running install. Running jobs keep running.',
   'update.applied': 'The first boot on an applied update: the install now runs `to`. Recovery reattached what was running.',
   'update.failed': 'Applying an update failed (fetch, build, the new build not loading, or the swap) and the install is unchanged — or a boot after an update is not on the applied commit.',
+  'plugin.installed': 'A plugin was installed from the plugin store into the plugin dir (UI Install or Update), at the store\'s commit `commit`. A plugin new to this process is loaded at once; one installed again runs its new code after a restart.',
+  'plugin.removed': 'A store install was removed from the plugin dir (UI Remove). Nothing in plugins.yaml named it.',
 };
 
 type Prop = Record<string, unknown>;
