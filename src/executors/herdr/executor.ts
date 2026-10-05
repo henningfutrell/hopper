@@ -237,6 +237,8 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
     reattach(ctx) {
       const saved = paneStateOf(ctx.job);
       const p = resolvePayload(ctx.job.spec.payload, o.defaultCwd);
+      // A job started before an install that reported work trees has none on it yet.
+      ctx.workTree(p.cwd);
       return onLane(ctx, () => saved, async () => {
         const state = await liveTurn(ctx.job);
         if (!state) return { kind: 'failed', error: 'interrupted by daemon restart' };
