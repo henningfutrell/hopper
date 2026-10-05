@@ -4,7 +4,8 @@
 // how to log in where the answer box would be; logged in, it offers Send answer and Close (Close
 // asks first, in a dialog); a 403 on a mutation logs the UI out and shows the same notice. Dismiss
 // drops a question (asks first); opening the view marks the owner's questions seen, which clears
-// the nav badge; handled questions are a compact list below, each opening to its question and answer.
+// the nav badge. The Questions view holds the open questions only (issue #151): the handled ones are
+// the question history in Settings, a compact list, each opening to its question and answer.
 // A session whose role cannot answer (viewer, issue #39) says so; a 403 naming the role needed keeps
 // the session.
 import { createElement } from 'react';
@@ -219,8 +220,14 @@ describe('the Questions badge', () => {
 });
 
 describe('handled questions', () => {
-  it('are a compact list below the open ones; a row opens to the question, the answer and who gave it', async () => {
-    await boot({ authed: false });
+  it('are not on the Questions view, nor are the question gates', async () => {
+    await boot({ authed: true });
+    expect(document.querySelector('[data-slot="handled-questions"]')).toBeNull();
+    expect(document.querySelector('[data-slot="question-gates"]')).toBeNull();
+  });
+
+  it('are the question history in Settings, a compact list; a row opens to the question, the answer and who gave it', async () => {
+    await boot({ authed: false, hash: '#settings/history' });
     const list = await vi.waitFor(() => { const l = document.querySelector('[data-slot="handled-questions"]'); expect(l).not.toBeNull(); return l!; });
     const rows = list.querySelectorAll('[data-slot="handled-question"]');
     expect(rows).toHaveLength(1);

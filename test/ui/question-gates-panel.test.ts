@@ -1,9 +1,9 @@
 // @vitest-environment happy-dom
-// The Question gates panel in the Questions view (issue #18), rendered in happy-dom inside the whole
+// The Question gates panel in the Settings view (issues #18, #151), rendered in happy-dom inside the whole
 // app against a fake of the daemon's HTTP surface. It shows the chain a question goes through, lets
 // the owner add, remove, reorder and tune the escalation levels through POST /ui/api/plugins, and
 // edits the rules through POST /ui/api/rules with the version the draft was based on. An unsaved
-// draft survives a reload.
+// draft survives a reload. A level's model is chosen from the models the plugin lists, not typed.
 import { createElement } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -27,7 +27,12 @@ const claudeSchema = {
 };
 const LEVELS = [
   { name: 'opus', plugin: 'claude-cli', options: { model: 'opus' } },
-  { name: 'fable', plugin: 'claude-cli', options: { model: 'fable' } },
+  { name: 'fable', plugin: 'claude-cli', options: { model: 'claude-fable-0' } },
+];
+const MODELS = [
+  { value: 'opus', label: 'Opus 5.5', description: 'complex work' },
+  { value: 'fable', label: 'Fable 5.1' },
+  { value: 'sonnet', label: 'Sonnet 5.5' },
 ];
 const PLUGINS = {
   roles: ['router', 'escalation-level'],
@@ -37,7 +42,7 @@ const PLUGINS = {
   escalationLevels: LEVELS.map((instance) => ({ instance, detection: { status: 'available' }, active: 'claude-cli' })),
   executors: { instances: [] }, jobSources: { instances: [] }, machines: { instances: [] }, usageSources: { instances: [] }, notifiers: { instances: [] },
   plugins: [
-    { id: 'claude-cli', role: 'escalation-level', describe: 'claude -p', builtin: true, detection: { status: 'available' }, options: claudeSchema },
+    { id: 'claude-cli', role: 'escalation-level', describe: 'claude -p', builtin: true, detection: { status: 'available' }, options: claudeSchema, choices: { model: MODELS } },
   ],
   errors: [], warnings: [],
 };
@@ -88,7 +93,7 @@ let root: Root | undefined;
 async function boot(o: { keepStorage?: boolean } = {}) {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
-  window.location.hash = '#questions';
+  window.location.hash = '#settings/questions';
   if (!o.keepStorage) localStorage.clear();
   localStorage.setItem('jh_session', 'a'.repeat(64));
   const daemon = fakeDaemon();
@@ -147,6 +152,33 @@ describe('question gates panel', () => {
   });
 
   const pluginsCall = (daemon: { calls: Call[] }) => daemon.calls.find((c) => c.path === '/ui/api/plugins')?.body;
+
+  const levelForm = (name: string) => panel()!.querySelector(`[data-slot="instance-form"][data-instance="${name}"]`)!;
+
+  it('a level\'s model is a choice of the models the plugin lists; a configured model it does not list stays shown', async () => {
+    await boot();
+    const opus = levelForm('opus');
+    expect(opus.querySelector('input[name="model"]')).toBeNull();
+    const select = opus.querySelector<HTMLSelectElement>('select[name="model"]')!;
+    expect(select.value).toBe('opus');
+    expect([...select.options].map((o) => o.value)).toEqual(['', 'opus', 'fable', 'sonnet']);
+    expect(select.textContent).toContain('Opus 5.5');
+    const fable = levelForm('fable').querySelector<HTMLSelectElement>('select[name="model"]')!;
+    expect(fable.value).toBe('claude-fable-0');
+    expect([...fable.options].find((o) => o.value === 'claude-fable-0')!.textContent).toContain('not listed');
+  });
+
+  it('a chosen model is saved as the level\'s option', async () => {
+    const daemon = await boot();
+    const select = levelForm('opus').querySelector<HTMLSelectElement>('select[name="model"]')!;
+    await act(async () => {
+      select.value = 'sonnet';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await click(button('Save opus'));
+    await vi.waitFor(() => expect(pluginsCall(daemon)).toBeDefined());
+    expect(pluginsCall(daemon)).toEqual({ action: 'options', role: 'escalation-level', name: 'opus', options: { model: 'sonnet' }, version: 'p1' });
+  });
 
   it('a level moves earlier or later through POST /ui/api/plugins', async () => {
     const daemon = await boot();

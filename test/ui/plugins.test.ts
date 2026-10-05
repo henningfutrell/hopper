@@ -17,6 +17,16 @@ const SCHEMA: OptionsSchema = {
   },
 };
 
+describe('fieldKind', () => {
+  it('an option the plugin lists choices for is a choice, whatever its type; command-bearing stays read-only', () => {
+    const choices = [{ value: 'opus' }, { value: 'haiku' }];
+    expect(fieldKind({ type: 'string' }, choices)).toBe('choice');
+    expect(fieldKind({ type: 'string' }, [])).toBe('string');
+    expect(fieldKind({ type: 'string' })).toBe('string');
+    expect(fieldKind({ type: 'string', commandBearing: true }, choices)).toBe('readonly');
+  });
+});
+
 describe('collectOptions', () => {
   it('keeps configured values with no draft, and command-bearing ones whatever the draft says', () => {
     const out = collectOptions({ cwd: '/w', pollMs: 500, unknown: 1 }, SCHEMA, { cwd: '/elsewhere' });
