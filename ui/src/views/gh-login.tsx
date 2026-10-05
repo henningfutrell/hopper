@@ -35,8 +35,8 @@ export function GhLoginPanel() {
   };
   const tone = s.state === 'logged-in' ? 'ok' : s.state === 'failed' ? 'bad' : 'warn';
   return (
-    <Panel title="GitHub (gh)" icon={GitBranch} action={<StatusBadge status={s.state} tone={tone} />} bodyClassName="space-y-2 text-xs">
-      {s.state === 'logged-in' && <div>gh is logged in{s.account && <> as <span className="font-mono">{s.account}</span></>}; the github source and jobs' git use it.</div>}
+    <Panel title="gh login" icon={GitBranch} action={<StatusBadge status={s.state} tone={tone} />} bodyClassName="space-y-2 text-xs">
+      {s.state === 'logged-in' && <div>gh is logged in{s.account && <> as <span className="font-mono">{s.account}</span></>}. Jobs push as this user; the gh connection reads issues as them while it is in use.</div>}
       {s.state === 'waiting' && <>
         <div>Open <a className="underline" href={s.verificationUri} target="_blank" rel="noreferrer">{s.verificationUri}</a>, sign in as the GitHub user the hopper should act as, and enter this code:</div>
         <div className="flex items-center gap-3">
@@ -47,7 +47,7 @@ export function GhLoginPanel() {
       </>}
       {(s.state === 'logged-out' || s.state === 'failed') && <>
         {s.state === 'failed' && <div className="rounded-md border border-bad/30 bg-bad/5 p-2 break-words text-bad">{s.error}</div>}
-        <div>gh is not logged in: the github source cannot read issues and jobs cannot push.</div>
+        <div>gh is not logged in: jobs cannot push, and the gh connection cannot read issues.</div>
         <Button size="xs" disabled={!canAdmin} title={canAdmin ? 'Shows a code to enter on github.com' : 'An admin can log gh in: sign in as one'} onClick={() => void act('start')}><LogIn />Log in to GitHub</Button>
       </>}
     </Panel>
