@@ -2,7 +2,7 @@
 // events.append, tx). Records the tx depth at every event so tests can assert that
 // onAnswered/onExpired run inside the transaction. tx rolls back on throw.
 import { vi } from 'vitest';
-import type { AnswerDraft, ConfigDocuments, AnswerRequest, Answerer, Assessment, Assessor, QuestionService, Store } from '../../src/domain/ports.ts';
+import type { AnswerRequest, ConfigDocuments, EscalationLevel, LevelReply, QuestionService, Store } from '../../src/domain/ports.ts';
 import { EVENT_SCHEMA_VERSIONS, type DomainEvent, type Job, type NewEvent, type Question, type QuestionAttempt } from '../../src/domain/types.ts';
 import { createQuestionService } from '../../src/questions/index.ts';
 
@@ -80,22 +80,17 @@ export function createMemoryStore(): MemoryStore {
   } as MemoryStore;
 }
 
-export const SAFE: AnswerDraft = { answer: 'use postgres', confident: true, reason: 'rules say so' };
-export const PROCEED: Assessment = { escalate: false, reason: 'routine, the rules settle it' };
+/** A level that answers: what is typed into the job when no risk rule matches. */
+export const ANSWERED: LevelReply = { answer: 'use postgres', escalate: false, reason: 'rules say so' };
+/** A level that escalates, with its recommendation for the next level up. */
+export const UP: LevelReply = { answer: 'maybe postgres', escalate: true, reason: 'beyond what I can settle' };
 
-type Result<T> = T | { error: string };
-/** A scripted answerer stage: may throw, hang, or return anything (the service must cope). */
-export type AnswerScript = (req: AnswerRequest, signal: AbortSignal) => Result<AnswerDraft> | Promise<Result<AnswerDraft>>;
-export type AssessScript = (req: AnswerRequest, draft: AnswerDraft, signal: AbortSignal) => unknown;
+/** A scripted level: may throw, hang, or return anything, garbage included (the service must cope). */
+export type LevelScript = (req: AnswerRequest, signal: AbortSignal) => unknown;
 
-/** Answerer double at the Answerer seam. No safety net: a throw reaches the service. */
-export function scriptedAnswerer(name: string, script: AnswerScript, model = `${name}-m`): Answerer {
-  return { name, model, answer: async (req, signal) => script(req, signal) };
-}
-
-/** Assessor double at the Assessor seam. Returns whatever the script returns, garbage included. */
-export function scriptedAssessor(name: string, script: AssessScript, model = `${name}-m`): Assessor {
-  return { name, model, assess: async (req, draft, signal) => (await script(req, draft, signal)) as Assessment };
+/** Level double at the EscalationLevel seam. No safety net: a throw reaches the service. */
+export function scriptedLevel(name: string, script: LevelScript, model = `${name}-m`): EscalationLevel {
+  return { name, model, answer: async (req, signal) => (await script(req, signal)) as LevelReply };
 }
 
 export interface Rig {
@@ -104,14 +99,13 @@ export interface Rig {
   answered: Array<{ q: Question; depth: number }>;
   expired: Array<{ q: Question; depth: number }>;
   dismissed: Array<{ q: Question; depth: number }>;
-  /** Calls the assessor received, in order. */
-  assessed: Array<{ req: AnswerRequest; draft: AnswerDraft }>;
+  /** Calls the levels received, in order. */
+  asked: Array<{ level: string; req: AnswerRequest }>;
   /** Create a question the way the engine does: at the service's first stage. */
   question(text?: string): Question;
   eventsOf(type: string): DomainEvent[];
-  /** Swap the live answerer / assessor (plugins.yaml reload). `null` → no answerer. */
-  setAnswerer(a: Answerer | null): void;
-  setAssessor(a: Assessor): void;
+  /** Swap the live levels (plugins.yaml reload). */
+  setLevels(levels: EscalationLevel[]): void;
 }
 
 /** The config documents at the ports seam: a map; `rules.md` holds `rules` when given. */
@@ -126,10 +120,9 @@ function rulesDocuments(rules: string | undefined): ConfigDocuments {
 }
 
 export interface RigOptions {
-  /** Script of the answerer instance `opus`; `null` → no answerer configured. */
-  answer?: AnswerScript | null;
-  /** Script of the assessor instance `fable`. */
-  assess?: AssessScript;
+  /** The levels, lowest first, by instance name. Default: `opus` answers. `{}`: no levels. */
+  levels?: Record<string, LevelScript>;
+  /** rules.md; default a one-line rule, `null`: no rules.md. */
   rules?: string | null;
   renotifyMs?: number;
   humanTimeoutMs?: number;
@@ -138,22 +131,20 @@ export interface RigOptions {
 
 export function rig(o: RigOptions = {}): Rig {
   const mem = createMemoryStore();
-  const documents = rulesDocuments(o.rules ?? undefined);
+  const documents = rulesDocuments(o.rules === null ? undefined : (o.rules ?? 'Prefer postgres.'));
   const answered: Rig['answered'] = [];
   const expired: Rig['expired'] = [];
   const dismissed: Rig['dismissed'] = [];
-  const assessed: Rig['assessed'] = [];
-  let answerer: Answerer | undefined = o.answer === null ? undefined : scriptedAnswerer('opus', o.answer ?? (() => SAFE));
-  const script = o.assess ?? (() => PROCEED);
-  let assessor: Assessor = scriptedAssessor('fable', (req, draft, signal) => {
-    assessed.push({ req, draft });
-    return script(req, draft, signal);
+  const asked: Rig['asked'] = [];
+  const recorded = (name: string, script: LevelScript) => scriptedLevel(name, (req, signal) => {
+    asked.push({ level: name, req });
+    return script(req, signal);
   });
+  let levels: EscalationLevel[] = Object.entries(o.levels ?? { opus: () => ANSWERED }).map(([name, script]) => recorded(name, script));
   const svc = createQuestionService({
     store: mem.store,
     clock: { now: () => new Date() },
-    answerer: () => answerer,
-    assessor: () => assessor,
+    levels: () => levels,
     stageTimeoutMs: o.stageTimeoutMs ?? 60_000,
     documents,
     renotifyMs: o.renotifyMs ?? 1000,
@@ -165,12 +156,11 @@ export function rig(o: RigOptions = {}): Rig {
   });
   const job = mem.addJob('build the thing', 'ship it');
   return {
-    mem, svc, answered, expired, dismissed, assessed,
+    mem, svc, answered, expired, dismissed, asked,
     question: (text = 'Which database?') =>
       mem.store.questions.create({ jobId: job.id, text, recentOutput: 'line1\nline2', detectedBy: 'marker', tier: svc.firstStage() }),
     eventsOf: (type) => mem.events.filter((e) => e.type === type),
-    setAnswerer: (a) => { answerer = a ?? undefined; },
-    setAssessor: (a) => { assessor = a; },
+    setLevels: (l) => { levels = l; },
   };
 }
 

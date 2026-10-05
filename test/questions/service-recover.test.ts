@@ -1,17 +1,15 @@
 // The question pipeline after the question left the model stages: the human stage's timers, and
 // restart recovery (design.md "Recovery at startup"). Same seams as service.test.ts.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AnswerDraft, AnswerRequest } from '../../src/domain/ports.ts';
-import { SAFE, rig, scriptedAnswerer, settle } from './support.ts';
+import type { AnswerRequest } from '../../src/domain/ports.ts';
+import { ANSWERED, UP, rig, scriptedLevel, settle } from './support.ts';
 
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date('2026-10-02T10:00:00Z')); });
 afterEach(() => { vi.useRealTimers(); });
 
-const unsure: AnswerDraft = { ...SAFE, confident: false, reason: 'the rules do not say' };
-
 describe('human timers', () => {
   it('renotifies every interval, then expires and calls onExpired in the tx', async () => {
-    const r = rig({ answer: () => unsure, assess: () => ({ escalate: true, reason: 'The owner decides' }), renotifyMs: 1000, humanTimeoutMs: 3500 });
+    const r = rig({ levels: { opus: () => UP }, renotifyMs: 1000, humanTimeoutMs: 3500 });
     const q = r.question();
     r.svc.handle(q.id);
     await settle();
@@ -24,7 +22,7 @@ describe('human timers', () => {
   });
 
   it('a human answer stops the timers', async () => {
-    const r = rig({ answer: () => unsure, assess: () => ({ escalate: true, reason: 'The owner decides' }) });
+    const r = rig({ levels: { opus: () => UP } });
     const q = r.question();
     r.svc.handle(q.id);
     await settle();
@@ -35,23 +33,25 @@ describe('human timers', () => {
   });
 });
 
-describe('recover: every open non-human question restarts at the answer stage', () => {
-  it.each(['opus', 'fable', 'some-old-assessor'])('a stored open question at tier %s is drafted and assessed again', async (tier) => {
+describe('recover: every open non-human question restarts at the first level', () => {
+  it.each(['opus', 'fable', 'some-old-assessor'])('a stored open question at tier %s climbs the levels again from the first', async (tier) => {
     const r = rig();
     const q = r.question();
     r.mem.store.questions.update(q.id, { tier });
-    let asked = 0;
-    r.setAnswerer(scriptedAnswerer('opus', (req: AnswerRequest) => { asked++; expect(req.question.id).toBe(q.id); return SAFE; }));
+    const asked: string[] = [];
+    r.setLevels([
+      scriptedLevel('opus', (req: AnswerRequest) => { asked.push('opus'); expect(req.question.id).toBe(q.id); return UP; }),
+      scriptedLevel('fable', () => { asked.push('fable'); return ANSWERED; }),
+    ]);
     r.svc.recover();
     await settle();
-    expect(asked).toBe(1);
-    expect(r.assessed).toHaveLength(1);
-    expect(r.mem.store.questions.get(q.id)).toMatchObject({ status: 'answered', answeredBy: 'opus' });
+    expect(asked).toEqual(['opus', 'fable']);
+    expect(r.mem.store.questions.get(q.id)).toMatchObject({ status: 'answered', answeredBy: 'fable' });
     expect(r.eventsOf('question.escalated').map((e) => e.data.target)).toEqual(['opus', 'fable']);
   });
 
   it('a question created at the human stage but never escalated (crash before handle) goes to the human', () => {
-    const r = rig({ answer: null });
+    const r = rig({ levels: {} });
     const q = r.question();
     r.svc.recover();
     expect(r.mem.store.questions.get(q.id)).toMatchObject({ tier: 'human', notifyCount: 1, expiresAt: '2026-10-02T10:00:10.000Z' });
