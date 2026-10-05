@@ -2672,6 +2672,16 @@ responsive and fast. Builds on the at-a-glance board (issue #5).
   one height bound (`max-h-96`, at every screen width) and scrolls past it, so one long list does not
   stretch its row and leave its neighbours ragged. `Panel` `list` in `ui/src/components/panel.tsx`.
   Tested through the rendered app: `test/ui/overview-list-boxes.test.ts`.
+- **Dismissed notices** (issue #83). Each Attention item and the update notice has a Dismiss button
+  (X); toasts have a close button. A dismissed notice is kept per browser like the overview layout
+  (`localStorage` `jh_dismissed`, `ui/src/model/dismissed.ts` pure, `ui/src/hooks/use-dismissed.ts`):
+  a viewer preference, so no route, no role, nothing in the database, and it changes nothing at the
+  daemon — dismissing a question's Attention item leaves the question open. The notice key names one
+  occurrence, so a new question, failure, source error text or update target shows again; once the
+  daemon reports a router, source or update condition cleared, its dismissal is forgotten, so the next
+  occurrence shows too. Question and failed-job keys keep the newest 200. Attention's header offers
+  *N dismissed · show* to bring its items back; a dismissed update notice still leaves the dot on the
+  header version. Tested through the rendered app: `test/ui/attention-dismiss.test.ts`.
 
 ## Reaching the UI across the LAN (issue #16, 2026-10-03)
 

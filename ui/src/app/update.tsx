@@ -1,14 +1,16 @@
 // Self-update (issue #44): the notice when an update is available, applying or failed — with what
 // changed — and the panel behind the header's version (installed commit, channel, auto-update,
 // check now). Applying keeps running jobs running; the page reloads once the daemon runs the new commit.
-import { ArrowUpCircle, ChevronDown, ExternalLink, RefreshCw } from 'lucide-react';
+import { ArrowUpCircle, ChevronDown, ExternalLink, RefreshCw, X } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Switch } from '@/components/ui/switch';
 import { Dot, TEXT, type Tone } from '@/components/status';
+import { dismissNotice, useDismissed } from '@/hooks/use-dismissed';
 import { useNow } from '@/hooks/use-now';
+import { noticeKey } from '@/model/dismissed';
 import { ago } from '@/model/format';
 import { compareUrl, headline, showNotice } from '@/model/update';
 import type { UpdateStatus } from '@/model/wire';
@@ -51,11 +53,12 @@ function ApplyButton({ s }: { s: UpdateStatus }) {
 
 export function UpdateNotice() {
   const s = useHopper((st) => st.update);
+  const dismissed = useDismissed();
   const [open, setOpen] = useState(false);
-  if (!s || !showNotice(s)) return null;
+  if (!s || !showNotice(s) || dismissed.includes(noticeKey.update(s))) return null;
   const tone = TONE[s.state];
   return (
-    <Collapsible open={open} onOpenChange={setOpen}
+    <Collapsible open={open} onOpenChange={setOpen} data-update-notice
       className={cn('rounded-lg border px-3 py-2 text-sm', tone === 'bad' ? 'border-bad/40 bg-bad/5' : tone === 'warn' ? 'border-warn/40 bg-warn/5' : 'border-busy/40 bg-busy/5')}>
       <div className="flex flex-wrap items-center gap-2">
         <Dot tone={tone} pulse={s.state === 'applying'} />
@@ -66,6 +69,8 @@ export function UpdateNotice() {
           </CollapsibleTrigger>
         )}
         <ApplyButton s={s} />
+        <Button variant="ghost" size="icon-xs" aria-label="Dismiss" title="Dismiss: hide here, in this browser; the header version still shows the update"
+          className="text-muted-foreground" onClick={() => dismissNotice(noticeKey.update(s))}><X /></Button>
       </div>
       <CollapsibleContent className="pt-2"><Changes s={s} /></CollapsibleContent>
     </Collapsible>
