@@ -110,6 +110,10 @@ describe('compose.yaml with a .env beside it', () => {
 describe('the image is not a machine (issue #141)', () => {
   const dockerfile = readFileSync(join(ROOT, 'Dockerfile'), 'utf8');
 
+  it('carries WHATS-NEW.md, so the Updates panel says what the running version brought (issue #165)', () => {
+    expect(dockerfile).toMatch(/^COPY WHATS-NEW\.md \.\/$/m);
+  });
+
   it('registers no `local` machine: it sets HOPPER_LOCAL_MACHINE=false and starts no herdr session of its own', () => {
     expect(dockerfile).toMatch(/HOPPER_LOCAL_MACHINE=false/);
     // herdr stays: the herdr-claude executor detects it before it runs jobs on attached machines.

@@ -1,7 +1,7 @@
 // Self-update (issue #44) against real git repositories: detecting newer commits and releases,
 // applying one beside the running install, waiting for jobs a restart would lose, and reporting
 // the result on the next boot. The build (scripts/install.sh build-only mode) and the restart are seams.
-import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { testDatabaseUrl } from '../support/database.ts';
@@ -92,6 +92,27 @@ describe('detecting an update', () => {
     const s = await u2.check();
     expect(s.state).toBe('current');
     expect(s.whatsNew).toEqual([]);
+  });
+
+  it('says what the installed version brought, from its own What\'s new, with no update and before any check (issue #165)', async () => {
+    const w = world();
+    w.up.whatsNew(['Seventh.', 'Sixth.', 'Fifth.', 'Fourth.', 'Third.', 'Second.', 'First.']);
+    const c1 = w.up.commit('first');
+    const { u } = updater(w, createInstall(w.root, w.up.dir, c1));
+    expect(u.status().installedWhatsNew).toEqual(['Seventh.', 'Sixth.', 'Fifth.', 'Fourth.', 'Third.']);
+    const s = await u.check();
+    expect(s.state).toBe('current');
+    expect(s.installedWhatsNew).toEqual(['Seventh.', 'Sixth.', 'Fifth.', 'Fourth.', 'Third.']);
+  });
+
+  it('says what the installed version brought even when self-update is unavailable; none when it has no What\'s new', async () => {
+    const w = world();
+    const bare = join(w.root, 'bare');
+    mkdirSync(bare);
+    writeFileSync(join(bare, 'WHATS-NEW.md'), "# What's new\n\n- Jobs show their machine.\n");
+    expect((await updater(w, bare).u.check()).installedWhatsNew).toEqual(['Jobs show their machine.']);
+    const c1 = w.up.commit('first');
+    expect(updater(w, createInstall(w.root, w.up.dir, c1)).u.status().installedWhatsNew).toEqual([]);
   });
 
   it('on the release channel targets the newest v<semver> tag, and reports the newest release on either channel', async () => {
