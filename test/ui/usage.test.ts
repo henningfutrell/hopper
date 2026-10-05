@@ -2,11 +2,11 @@
 // an account are written. Pure; the view renders what these return.
 import { describe, expect, it } from 'vitest';
 import type { MachineLaneEffect, PartAccount, UsageReading } from '../../src/domain/types.ts';
-import { accountFacts, laneEffectText, orderReadings, readingKey, readingLabel, resetsIn, serviceLabel, shownSource, sourceLine } from '../../ui/src/model/usage.ts';
+import { accountFacts, executorEffectLines, laneEffectText, orderReadings, readingKey, readingLabel, resetsIn, serviceLabel, shownSource, sourceLine } from '../../ui/src/model/usage.ts';
 
 const NOW = Date.parse('2026-10-03T12:00:00Z');
 const r = (over: Partial<UsageReading>): UsageReading => ({ source: 'claude', used: 10, limit: 100, unit: '%', at: '2026-10-03T11:58:00Z', ...over });
-const m = (over: Partial<MachineLaneEffect>): MachineLaneEffect => ({ machineId: 'local', label: 'server', online: true, maxLanes: 4, usedFrac: 0.1, cap: 4, band: 'free', ...over });
+const m = (over: Partial<MachineLaneEffect>): MachineLaneEffect => ({ machineId: 'local', label: 'server', online: true, maxLanes: 4, usedFrac: 0.1, cap: 4, band: 'free', executors: [], ...over });
 
 describe('usage model', () => {
   it('a reading is labelled by its window, else by its source; keys tell windows and machines apart', () => {
@@ -41,6 +41,17 @@ describe('usage model', () => {
     expect(laneEffectText(m({ usedFrac: 0.8, cap: 2, band: 'soft' }))).toBe('capped at 2 of 4 lanes (past the soft limit)');
     expect(laneEffectText(m({ usedFrac: 0.96, cap: 0, band: 'hard' }))).toBe('stopped: 0 of 4 lanes (hard limit)');
     expect(laneEffectText(m({ online: false, cap: 0, band: 'offline' }))).toBe('offline: no lanes');
+  });
+
+  it('an executor whose budget limits it apart from the machine gets its own line; one the same as the machine gets none', () => {
+    const mixed = m({ executors: [
+      { executor: 'herdr-claude', usedFrac: 0.8, cap: 2, band: 'soft' },
+      { executor: 'herdr-codex', usedFrac: 0.1, cap: 4, band: 'free' },
+    ] });
+    expect(executorEffectLines(mixed)).toEqual(['herdr-claude: 80% used, capped at 2 of 4 lanes (past the soft limit)']);
+    expect(executorEffectLines(m({ executors: [{ executor: 'test', usedFrac: 0.1, cap: 4, band: 'free' }] }))).toEqual([]);
+    expect(executorEffectLines(m({ executors: [{ executor: 'herdr-claude', usedFrac: 0.96, cap: 0, band: 'hard' }, { executor: 'command', usedFrac: 0, cap: 4, band: 'free' }] })))
+      .toEqual(['herdr-claude: 96% used, stopped: 0 of 4 lanes (hard limit)']);
   });
 
   it('an account: the service by name, its facts as label/value pairs (lists joined, empty ones left out)', () => {
