@@ -6,11 +6,15 @@ import type { HerdrClient } from './client.ts';
 import type { Sleep } from './monitor.ts';
 import { tail } from './monitor.ts';
 import type { ClaudeJobPayload } from './payload.ts';
-import { isTrustDialog } from './screen.ts';
+import { SCRATCH_DIR, isTrustDialog } from './screen.ts';
+import { shellQuote } from '../ssh.ts';
 
 export const WORKSPACE_LABEL = 'job-hopper';
 const START_TIMEOUT_MS = 60000;
 const SHELL_RETRY_MS = 100;
+/** What the scratch command prints last, so the hopper knows the shell ran it. */
+const SCRATCH_READY = 'hopper-scratch-ready';
+const SCRATCH_WAIT_MS = 1000;
 
 /** What a job keeps in `job.executorState`. */
 export interface PaneState {
@@ -54,13 +58,20 @@ export interface StartDeps {
 
 export const agentNameFor = (jobId: string): string => `jh-${jobId.slice(0, 8)}`;
 
-/** Create the tab and record it at once, before anything can fail in it. */
+/** The job's scratch dir: Claude's scratchpad and every temp file, inside its work tree (design.md "Work tree"). */
+export const scratchDirOf = (cwd: string): string => `${cwd.replace(/\/+$/, '')}/${SCRATCH_DIR}`;
+
+/**
+ * Create the tab and record it at once, before anything can fail in it. The tab's environment
+ * points Claude's scratchpad and every temp file at the scratch dir.
+ */
 export async function openPane(d: StartDeps, ctx: ExecutionContext, cwd: string, env: Record<string, string>): Promise<PaneState> {
+  const scratch = scratchDirOf(cwd);
   const workspaceId = await d.herdr.ensureWorkspace(WORKSPACE_LABEL, cwd);
   const { tabId, paneId } = await d.herdr.createTab({
     workspaceId, cwd, label: `${ctx.laneId} · ${ctx.job.id.slice(0, 8)}`,
-    // HOPPER_JOB_ID comes from the job itself; a payload cannot forge it.
-    env: { ...env, HOPPER_JOB_ID: ctx.job.id },
+    // HOPPER_JOB_ID and the scratch dir come from the hopper; a payload cannot move them.
+    env: { ...env, CLAUDE_CODE_TMPDIR: scratch, TMPDIR: scratch, HOPPER_JOB_ID: ctx.job.id },
   });
   const state: PaneState = {
     ...(d.herdr.session ? { session: d.herdr.session } : {}),
@@ -86,10 +97,28 @@ async function waitReady(d: StartDeps, ctx: ExecutionContext, s: PaneState): Pro
 }
 
 /**
+ * Make the scratch dir in the pane's own shell, so on whichever machine the work tree is; its
+ * `.gitignore` hides it from git. A fresh shell drops what is typed before its prompt, so the
+ * command runs again until its output shows. Null when made, else the failure.
+ */
+async function makeScratch(d: StartDeps, ctx: ExecutionContext, s: PaneState): Promise<ExecutionOutcome | null> {
+  const scratch = scratchDirOf(s.cwd);
+  const command = `mkdir -p ${shellQuote(scratch)} && printf '*\\n' > ${shellQuote(`${scratch}/.gitignore`)} && printf 'hopper-scratch-%s\\n' ready`;
+  for (let waited = 0; waited < START_TIMEOUT_MS; waited += SCRATCH_WAIT_MS) {
+    if (ctx.signal.aborted) return null;
+    await d.herdr.runInPane(s.paneId, command);
+    if (await d.herdr.waitOutput(s.paneId, SCRATCH_READY, SCRATCH_WAIT_MS)) return null;
+  }
+  return { kind: 'failed', error: `pane ${s.paneId} never ran the scratch dir command within ${START_TIMEOUT_MS} ms` };
+}
+
+/**
  * Start Claude in the pane. Resolves null when Claude is ready for the prompt (or the signal
  * fired — the caller checks), else the failure to report; the caller closes the pane.
  */
 export async function startClaude(d: StartDeps, ctx: ExecutionContext, s: PaneState, p: ClaudeJobPayload): Promise<ExecutionOutcome | null> {
+  const unmade = await makeScratch(d, ctx, s);
+  if (unmade || ctx.signal.aborted) return unmade;
   const args = [...d.claudeArgs, ...(p.model ? ['--model', p.model] : [])];
   const until = d.clock.now().getTime() + START_TIMEOUT_MS;
   let started = await d.herdr.startAgent({ name: s.agentName, paneId: s.paneId, args, timeoutMs: START_TIMEOUT_MS });

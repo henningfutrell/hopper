@@ -46,6 +46,10 @@ export interface HerdrClient {
   sendKeys(paneId: string, keys: string[]): Promise<void>;
   /** Write raw text to the pane (e.g. an escape sequence herdr has no key name for). */
   sendText(paneId: string, text: string): Promise<void>;
+  /** Type a shell command into the pane's shell (`herdr pane run`); does not wait for it, and a shell not at its prompt yet may drop it. */
+  runInPane(paneId: string, command: string): Promise<void>;
+  /** True once the pane's recent output holds `text`; false when `timeoutMs` passes first. */
+  waitOutput(paneId: string, text: string, timeoutMs: number): Promise<boolean>;
   /** Rejects `pane_not_found` for a pane already gone. */
   closePane(paneId: string): Promise<void>;
 }

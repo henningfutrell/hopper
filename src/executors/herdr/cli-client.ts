@@ -139,6 +139,16 @@ function withCalls(session: string, call: Exec, callTimeout: number): HerdrCliCl
     async prompt(name, text) { await run(['agent', 'prompt', name, text]); },
     async sendKeys(paneId, keys) { await exec(['pane', 'send-keys', paneId, ...keys]); },
     async sendText(paneId, text) { await exec(['pane', 'send-text', paneId, text]); },
+    async runInPane(paneId, command) { await exec(['pane', 'run', paneId, command]); },
+    async waitOutput(paneId, text, timeoutMs) {
+      try {
+        await exec(['pane', 'wait-output', paneId, '--match', text, '--source', 'recent-unwrapped', '--timeout', String(timeoutMs)], timeoutMs + callTimeout);
+        return true;
+      } catch (err) {
+        if (err instanceof HerdrError && err.code === 'timeout') return false;
+        throw err;
+      }
+    },
     async closePane(paneId) { await run(['pane', 'close', paneId]); },
   };
 }

@@ -28,6 +28,8 @@ export interface FakeHerdrOptions {
   trustDialogFor?: string;
   /** Startup blocks on some other screen. */
   startupBlockedBy?: string[];
+  /** The first N `runInPane` commands are lost, as a shell not at its prompt yet drops what is typed. */
+  shellDropsRuns?: number;
   /** The first N `startAgent` calls answer `paneBusy`, as herdr does for a pane spawned a moment ago. */
   shellNotReadyStarts?: number;
   session?: string;
@@ -99,6 +101,7 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
   const failures = new Map<string, string>();
   let n = 0;
   let busyStarts = o.shellNotReadyStarts ?? 0;
+  let droppedRuns = o.shellDropsRuns ?? 0;
   let workspaceId: string | undefined;
 
   const record = (method: keyof HerdrClient, ...args: unknown[]): void => {
@@ -219,6 +222,19 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
           settle(p, 'idle');
         } else if (key === 'ctrl+c' && p.agent && ++p.ctrlC >= 2) exit(p);
       }
+    },
+    async runInPane(paneId, command) {
+      record('runInPane', paneId, command);
+      const p = livePane(paneId);
+      if (droppedRuns-- > 0) return;
+      // What a trailing `printf 'a%s\n' b` prints: the shell ran the command.
+      const printed = /printf '([^']*)%s\\n' (\S+)$/.exec(command);
+      p.lines.push(`$ ${command}`, ...(printed ? [`${printed[1]}${printed[2]}`] : []), '$ ');
+    },
+    async waitOutput(paneId, text, timeoutMs) {
+      record('waitOutput', paneId, text, timeoutMs);
+      livePane(paneId);
+      return fake.screen(paneId).includes(text);
     },
     async closePane(paneId) {
       record('closePane', paneId);

@@ -104,6 +104,8 @@ synonyms. Rename here first, in the same commit as everything else.
 | **Resume** | Delivering an accepted answer to a job's parked pane and continuing it. | restart |
 | **herdr session** | The named herdr server (`job-hopper`) that hosts job panes. Never the user's default session. | |
 | **Pane** | The herdr terminal a herdr-claude job runs in; one tab per job run. | window |
+| **Work tree** | A herdr-claude job's cwd, and everything under it: where all of the job's work happens — clones, git worktrees, builds, temporary files. Work done in a copy outside it is a job that drifted (design.md "Work tree"). | checkout, job dir |
+| **Scratch dir** | `<work tree>/.hopper-scratch`: a job's temporary files and Claude's scratchpad (`TMPDIR`, `CLAUDE_CODE_TMPDIR`), git-ignored by its own `.gitignore`. Not the work dir, which is the daemon's. | tmp dir, scratchpad dir |
 | **Parked pane** | The pane of a job waiting on an answer. | |
 | **Job source** | Where the hopper pulls jobs from: the `job-source` role's 0..n instances (plugins.yaml `jobSources:`). Built-in plugins `github-gh` (instance `github`) and `github-app` (instance `github-app`); the instance name keys its jobs and sync state. Nothing pushes jobs. | inbox, feed |
 | **Source item** | One eligible thing a source offers — for GitHub, an open issue labelled `hopper` by an allowlisted author. | |
