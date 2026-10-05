@@ -12,9 +12,12 @@ permissions:
   contents: read
   packages: write
 
+# Runs queue, never cancel: a newer push waits for the build in progress, and GitHub keeps only the
+# newest pending run. Cancelling left `latest` hours behind main whenever merges came a few minutes
+# apart (issue #156).
 concurrency:
   group: image
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   publish:

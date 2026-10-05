@@ -170,6 +170,12 @@ describe('the published image (issue #125)', () => {
     expect(workflow).toContain('linux/amd64,linux/arm64');
   });
 
+  it('publishes every merge stream\'s last commit: a newer push never cancels a build in progress (issue #156)', () => {
+    // Cancelling in progress meant merges a few minutes apart left `latest` hours behind main, without
+    // the UI's GitHub login. Runs queue instead; GitHub keeps only the newest pending one.
+    expect(workflow).toMatch(/concurrency:\s*\n\s*group: image\s*\n\s*cancel-in-progress: false/);
+  });
+
   it('pushes with the workflow\'s own token: no registry credential to keep', () => {
     expect(workflow).toContain('packages: write');
     expect(workflow).toContain('secrets.GITHUB_TOKEN');
