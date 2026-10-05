@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
 // The Question gates panel in the Questions view (issue #18), rendered in happy-dom inside the whole
 // app against a fake of the daemon's HTTP surface. It shows the chain a question goes through, lets
-// the owner pick the answerer (or none) and the assessor through POST /ui/api/plugins, and edits the
-// rules through POST /ui/api/rules with the version the draft was based on. An unsaved
+// the owner add, remove, reorder and tune the escalation levels through POST /ui/api/plugins, and
+// edits the rules through POST /ui/api/rules with the version the draft was based on. An unsaved
 // draft survives a reload.
 import { createElement } from 'react';
 import { act } from 'react';
@@ -25,21 +25,19 @@ const claudeSchema = {
     timeoutMs: { type: 'integer', default: 180000 },
   },
 };
+const LEVELS = [
+  { name: 'opus', plugin: 'claude-cli', options: { model: 'opus' } },
+  { name: 'fable', plugin: 'claude-cli', options: { model: 'fable' } },
+];
 const PLUGINS = {
-  roles: ['router', 'answerer', 'assessor'],
+  roles: ['router', 'escalation-level'],
   config: { document: 'plugins.yaml', source: 'document', version: 'p1', warnings: [] },
-  instances: [
-    { role: 'answerer', instance: { name: 'opus', plugin: 'claude-cli', options: { model: 'opus' } } },
-    { role: 'assessor', instance: { name: 'fable', plugin: 'claude-cli-assessor', options: { model: 'fable' } } },
-  ],
+  instances: LEVELS.map((instance) => ({ role: 'escalation-level', instance })),
   router: { instance: { name: 'pass-through', plugin: 'pass-through' }, selection: 'detected', detection: { status: 'available' }, active: 'pass-through', fallback: false },
-  answerer: { instance: { name: 'opus', plugin: 'claude-cli', options: { model: 'opus' } }, detection: { status: 'available' }, active: 'claude-cli', fallback: false },
-  assessor: { instance: { name: 'fable', plugin: 'claude-cli-assessor', options: { model: 'fable' } }, detection: { status: 'available' }, active: 'claude-cli-assessor', fallback: false },
+  escalationLevels: LEVELS.map((instance) => ({ instance, detection: { status: 'available' }, active: 'claude-cli' })),
   executors: { instances: [] }, jobSources: { instances: [] }, machines: { instances: [] }, usageSources: { instances: [] }, notifiers: { instances: [] },
   plugins: [
-    { id: 'claude-cli', role: 'answerer', describe: 'claude -p', builtin: true, detection: { status: 'available' }, options: claudeSchema },
-    { id: 'claude-cli-assessor', role: 'assessor', describe: 'claude -p', builtin: true, detection: { status: 'available' }, options: claudeSchema },
-    { id: 'always-escalate', role: 'assessor', describe: 'always', builtin: true, detection: { status: 'available' }, options: { type: 'object', properties: {} } },
+    { id: 'claude-cli', role: 'escalation-level', describe: 'claude -p', builtin: true, detection: { status: 'available' }, options: claudeSchema },
   ],
   errors: [], warnings: [],
 };
@@ -123,7 +121,7 @@ describe('question gates panel', () => {
   it('shows the chain, the risk rules read-only, and the rules', async () => {
     await boot();
     const text = panel()!.textContent!;
-    for (const s of ['Answerer', 'Assessor', 'Risk rules', 'Owner', 'opus', 'fable', 'delete', 'deploying or publishing', RULES.document]) expect(text).toContain(s);
+    for (const s of ['Escalation levels', 'Risk rules', 'Owner', 'opus', 'fable', 'delete', 'deploying or publishing', RULES.document]) expect(text).toContain(s);
     expect(rulesBox()!.value).toBe(RULES.text);
   });
 
@@ -148,12 +146,26 @@ describe('question gates panel', () => {
     await vi.waitFor(() => expect(rulesBox()!.value).toBe(RULES.text));
   });
 
-  it('the answerer can be set to none through the plugins select', async () => {
+  const pluginsCall = (daemon: { calls: Call[] }) => daemon.calls.find((c) => c.path === '/ui/api/plugins')?.body;
+
+  it('a level moves earlier or later through POST /ui/api/plugins', async () => {
     const daemon = await boot();
-    const select = panel()!.querySelector<HTMLSelectElement>('select[name="plugin-answerer"]')!;
-    await act(async () => { select.value = ''; select.dispatchEvent(new Event('change', { bubbles: true })); });
-    await click(button('Use'));
-    await vi.waitFor(() => expect(daemon.calls.some((c) => c.path === '/ui/api/plugins')).toBe(true));
-    expect(daemon.calls.find((c) => c.path === '/ui/api/plugins')!.body).toEqual({ action: 'select', role: 'answerer', plugin: null, version: 'p1' });
+    expect(panel()!.querySelector('button[aria-label="Move opus later"]')).not.toBeNull();
+    expect(panel()!.querySelector('button[aria-label="Move opus earlier"]')).toBeNull();
+    await click(panel()!.querySelector<HTMLButtonElement>('button[aria-label="Move fable earlier"]')!);
+    await vi.waitFor(() => expect(pluginsCall(daemon)).toBeDefined());
+    expect(pluginsCall(daemon)).toEqual({ action: 'move', role: 'escalation-level', name: 'fable', to: 0, version: 'p1' });
+  });
+
+  it('a level is added on top under the name typed', async () => {
+    const daemon = await boot();
+    const name = panel()!.querySelector<HTMLInputElement>('input[name="add-name-escalation-level"]')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(name, 'sonnet');
+      name.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await click(button('Add'));
+    await vi.waitFor(() => expect(pluginsCall(daemon)).toBeDefined());
+    expect(pluginsCall(daemon)).toEqual({ action: 'add', role: 'escalation-level', plugin: 'claude-cli', name: 'sonnet', version: 'p1' });
   });
 });

@@ -1,5 +1,6 @@
 // A UI edit of plugins.yaml (design.md "UI and mutation"): one instance's options, the plugin
-// filling a one-instance role, or an instance of a list role added or removed. Each edit rewrites only that instance's part of the document; comments
+// filling a one-instance role, an instance of a list role added or removed, or an escalation level
+// moved. Each edit rewrites only that instance's part of the document; comments
 // and every other section stay as written. Command-bearing options are never changed from here:
 // they are the operator's, set with `hopper config edit plugins.yaml` (design.md "Config documents").
 import { isMap, isSeq, parseDocument, type Document } from 'yaml';
@@ -26,8 +27,7 @@ export interface EditContext {
 const SECTIONS: Record<Role, { key: string; many: boolean }> = {
   router: { key: 'router', many: false },
   'queue-sorter': { key: 'queueSorter', many: false },
-  answerer: { key: 'answerer', many: false },
-  assessor: { key: 'assessor', many: false },
+  'escalation-level': { key: 'escalationLevels', many: true },
   executor: { key: 'executors', many: true },
   'job-source': { key: 'jobSources', many: true },
   'machine-source': { key: 'machines', many: true },
@@ -37,7 +37,7 @@ const SECTIONS: Record<Role, { key: string; many: boolean }> = {
 
 /** What plugins.yaml (or the built-in instances) names now, section by section. */
 export interface Configured {
-  router?: InstanceSpec; queueSorter: InstanceSpec; answerer: InstanceSpec | null; assessor: InstanceSpec; executors: InstanceSpec[];
+  router?: InstanceSpec; queueSorter: InstanceSpec; escalationLevels: InstanceSpec[]; executors: InstanceSpec[];
   jobSources: InstanceSpec[]; machines: InstanceSpec[]; usageSources: InstanceSpec[]; notifiers: InstanceSpec[];
   /** plugins.yaml `routing:`, in order; absent: none. */
   routing: RoutingRule[];
@@ -48,8 +48,7 @@ export function configuredInstances(c: Configured, detectedRouter: InstanceSpec)
   return [
     { role: 'router', instance: c.router ?? detectedRouter },
     { role: 'queue-sorter', instance: c.queueSorter },
-    ...(c.answerer ? [{ role: 'answerer' as const, instance: c.answerer }] : []),
-    { role: 'assessor', instance: c.assessor },
+    ...c.escalationLevels.map((instance) => ({ role: 'escalation-level' as const, instance })),
     ...c.executors.map((instance) => ({ role: 'executor' as const, instance })),
     ...c.jobSources.map((instance) => ({ role: 'job-source' as const, instance })),
     ...c.machines.map((instance) => ({ role: 'machine-source' as const, instance })),
@@ -81,18 +80,18 @@ function specNode(spec: InstanceSpec): Record<string, unknown> {
 }
 
 /** Put `next` in place of the configured instance `name` of `role`, touching nothing else. */
-function place(doc: Document, role: Role, name: string, next: InstanceSpec | null, configured: readonly ConfiguredInstance[]): void {
+function place(doc: Document, role: Role, name: string, next: InstanceSpec, configured: readonly ConfiguredInstance[]): void {
   const { key, many } = SECTIONS[role];
   const section = doc.get(key, true);
   if (!many) {
-    if (next && isMap(section) && section.get('plugin') === next.plugin && section.get('name') === next.name) {
+    if (isMap(section) && section.get('plugin') === next.plugin && section.get('name') === next.name) {
       doc.setIn([key, 'options'], doc.createNode(next.options ?? {}));
     } else {
-      doc.set(key, next === null ? null : doc.createNode(specNode(next)));
+      doc.set(key, doc.createNode(specNode(next)));
     }
     return;
   }
-  if (isSeq(section) && next) {
+  if (isSeq(section)) {
     const at = section.items.findIndex((item) => isMap(item) && item.get('name') === name);
     if (at >= 0) {
       doc.setIn([key, at, 'options'], doc.createNode(next.options ?? {}));
@@ -100,7 +99,7 @@ function place(doc: Document, role: Role, name: string, next: InstanceSpec | nul
     }
   }
   // No section yet: the built-in instances fill this role; write them all, this one changed.
-  const all = configured.filter((c) => c.role === role).map((c) => (c.instance.name === name && next ? next : c.instance));
+  const all = configured.filter((c) => c.role === role).map((c) => (c.instance.name === name ? next : c.instance));
   doc.set(key, doc.createNode(all.map(specNode)));
 }
 
@@ -123,6 +122,20 @@ export function list(doc: Document, role: ListRole, name: string, next: Instance
   // No section yet: the built-in instances fill this role; write them, with this change.
   const now = configured.filter((c) => c.role === role).map((c) => c.instance).filter((i) => next || i.name !== name);
   doc.set(key, doc.createNode([...now, ...(next ? [next] : [])].map(specNode)));
+}
+
+/** Move escalation level `name` to position `to` (clamped); every other entry keeps its order and its text. */
+function move(doc: Document, name: string, to: number, configured: readonly ConfiguredInstance[]): void {
+  const { key } = SECTIONS['escalation-level'];
+  if (!isSeq(doc.get(key, true))) {
+    // No section yet: the built-in levels fill the role; write them, so there is an order to change.
+    doc.set(key, doc.createNode(configured.filter((c) => c.role === 'escalation-level').map((c) => specNode(c.instance))));
+  }
+  const section = doc.get(key, true);
+  if (!isSeq(section)) return;
+  const from = section.items.findIndex((item) => isMap(item) && item.get('name') === name);
+  const [node] = section.items.splice(from, 1);
+  section.items.splice(Math.max(0, Math.min(to, section.items.length)), 0, node!);
 }
 
 /**
@@ -179,6 +192,14 @@ export function applyRoutingEdit(e: RoutingEdit, documents: ConfigDocuments, tar
 
 export function applyEdit(e: Exclude<PluginsEdit, { action: 'rescan' }>, ctx: EditContext): EditResult {
   if (e.action === 'add' || e.action === 'remove') return applyListEdit(e, ctx);
+  if (e.action === 'move') {
+    const levels = ctx.configured.filter((c) => c.role === 'escalation-level');
+    const at = levels.findIndex((c) => c.instance.name === e.name);
+    if (at < 0) return refuse('not_found', `no escalation-level instance named ${e.name}`);
+    if (!Number.isInteger(e.to) || e.to < 0 || e.to >= levels.length) return refuse('invalid', `to must be a position from 0 to ${levels.length - 1}`);
+    if (at === e.to) return { ok: true, changed: false };
+    return writePlugins(ctx.documents, e.version, (doc) => move(doc, e.name, e.to, ctx.configured));
+  }
   if (e.action === 'options') {
     const current = ctx.configured.find((c) => c.role === e.role && c.instance.name === e.name);
     if (!current) return refuse('not_found', `no ${e.role} instance named ${e.name}`);
@@ -195,11 +216,6 @@ export function applyEdit(e: Exclude<PluginsEdit, { action: 'rescan' }>, ctx: Ed
   }
 
   const current = ctx.configured.find((c) => c.role === e.role);
-  if (e.plugin === null) {
-    if (e.role !== 'answerer') return refuse('invalid', `the ${e.role} is never empty; select a plugin`);
-    if (!current) return { ok: true, changed: false };
-    return writePlugins(ctx.documents, e.version, (doc) => place(doc, 'answerer', current.instance.name, null, ctx.configured));
-  }
   const found = ctx.find(e.plugin);
   if (!found) return refuse('not_found', `no plugin ${e.plugin}`);
   if (found.definition.role !== e.role) return refuse('conflict', `${e.plugin} is a ${found.definition.role} plugin, not a ${e.role} plugin`);
@@ -207,7 +223,7 @@ export function applyEdit(e: Exclude<PluginsEdit, { action: 'rescan' }>, ctx: Ed
     return refuse('conflict', `${e.plugin} is ${found.detection.status} here: ${found.detection.reason}`);
   }
   if (current?.instance.plugin === e.plugin) return { ok: true, changed: false };
-  return writePlugins(ctx.documents, e.version, (doc) => place(doc, e.role, current?.instance.name ?? e.plugin!, { name: e.plugin!, plugin: e.plugin! }, ctx.configured));
+  return writePlugins(ctx.documents, e.version, (doc) => place(doc, e.role, current?.instance.name ?? e.plugin, { name: e.plugin, plugin: e.plugin }, ctx.configured));
 }
 
 function applyListEdit(e: Extract<PluginsEdit, { action: 'add' | 'remove' }>, ctx: EditContext): EditResult {

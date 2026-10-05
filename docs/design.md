@@ -40,7 +40,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock | everything but `domain/` |
 | `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations, repositories, event log, config documents, login codes | engine, http, decider |
 | `src/webhooks/` | signing, dispatcher, retry/backoff, the secret of a subscription from the runtime (`dispatcher.ts`), the UI edit of the subscriptions (`edit.ts`, rows in the store) | engine, http, decider |
-| `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, `plugins.yaml` + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `question-slots.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `answerer/claude-cli/`, `assessor/claude-cli-assessor/`, `assessor/always-escalate/` hold their prompts; `executor/herdr-claude/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-gh/` and `job-source/github-app/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser, runner, background refresh); `notifier/grokbot-routine/` is the Grok Bot routine webhook — env-file reader and notifier; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
+| `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, `plugins.yaml` + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt; `executor/herdr-claude/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-gh/` and `job-source/github-app/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser, runner, background refresh); `notifier/grokbot-routine/` is the Grok Bot routine webhook — env-file reader and notifier; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
 | `src/executors/` | `Executor` adapters (`test`, `herdr/`, `command.ts` — a job's body run on its machine through its connection) and the registry; reached through the executor plugins. The connections and their target authentication ("Target authentication"): `ssh.ts` (key-only ssh to pinned host keys), `docker.ts` (the docker socket check, the proxy's allowlist), `client.ts` (a client target's tunnel, signed calls); `env.ts` the scrubbed child environment | engine, http, store, plugins |
 | `src/client/` | the hopper client ("Client targets"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load` over HTTP/2 on the tunnel), `tunnel.ts` (its ssh to the hopper), `release.ts` (the client release: its files, its id, checking and installing one — "Client releases"), `main.ts`; `relay.ts`, the forced command of its key on the hopper's machine; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`); `ssh-options.ts` (the hardened ssh options, shared with `src/executors/ssh.ts`) | everything in `src/` outside `src/client/` |
 | `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following plugins.yaml; ssh probe and herdr path resolution through the herdr CLI client's ssh argv; the container probe, `docker container inspect`), the detected ssh targets (`ssh-config.ts`), keeping each client target on the hopper's client release (`client-release.ts`), `combineMachineSources` | engine, http, store, plugins |
@@ -309,9 +309,9 @@ src/store/index.ts      openStore(o: { path: string; clock: Clock; idGen?: IdGen
 src/webhooks/index.ts   createWebhookDispatcher(o: { store: Store; clock: Clock; baseMs: number;
                           timeoutMs?: number; maxAttempts?: number; sweepMs?: number }): WebhookDispatcher
 src/plugins/index.ts    createPluginHost(o: { pluginDir; pluginsFile; dataDir; clock; logger; routerMode();
-                          jobSourceContext?; machineContext?; defaultAnswerer?; defaultAssessor?; defaultExecutors?;
+                          jobSourceContext?; machineContext?; defaultLevels?; defaultExecutors?;
                           kit?; builtins?; intervalMs? }): PluginHost
-                          — start(), stop(), router (live), routerStatus(), answerer(), assessor(), executors(),
+                          — start(), stop(), router (live), routerStatus(), levels(), executors(),
                             jobSources(), machines(), usageSources(), report(), reload()
 src/plugins/migrate.ts  ensurePluginsFile(o: { pluginsFile; env; answerTimeoutMs; logger }) → kept | migrated | default
                         builtinInstances(configDir) — the sections an absent section means
@@ -411,7 +411,7 @@ the current list is "Settled in slice 4" → "Configuration (env), as of slice 5
 | dir | owns | must not import |
 |-----|------|-----------------|
 | `src/executors/herdr/` | `herdr-claude` executor: herdr CLI client (port + real adapter), screen protocol parser, pane lifecycle | engine, http, store, questions |
-| `src/questions/` | the question pipeline: `QuestionService` (answer → assess → risk rules → accepted or human; timers, recovery), risk rules, rules-file loader, the fake doubles at the `Answerer`/`Assessor` seams. The answerer and assessor themselves are plugins (`src/plugins/`, phase 5 slice 2) | engine internals, http, executors, plugins |
+| `src/questions/` | the question pipeline: `QuestionService` (the escalation levels, lowest first → risk rules on an answer → accepted or human; timers, recovery), risk rules, rules-file loader, the fake double at the `EscalationLevel` seam. The levels themselves are plugins (`src/plugins/`, issue #134) | engine internals, http, executors, plugins |
 
 ## herdr-claude executor
 
@@ -534,32 +534,33 @@ per `run`/`resume` call; time spent waiting for an answer does not count.
 ## Questions
 
 Lifecycle: executor returns `question` → engine, in one tx: question created (`open`, `tier` =
-`QuestionService.firstStage()`: the configured answerer's instance name, or `human` with none),
+`QuestionService.firstStage()`: the first escalation level's instance name, or `human` with none),
 job `waiting_answer` + `questionId`, `resumeOn` = its machine, lane idle (or closed if
 draining), events `question.asked`.
 
 **Visible and answerable at once.** From that commit on, the question is in `GET /api/questions`
 (every open question, whatever its stage) and the job in `/api/queue` `waitingAnswer`; the UI
 refreshes both on `question.asked` and shows the answer box at every stage, not only `human`.
-The owner may answer while the answerer drafts or the assessor assesses: their answer wins, the
-in-flight stage call is aborted (`superseded`), the assessor is never called, and nothing is
-pushed. **Push is gated:** the Grok Bot routine
-webhook fire only on `question.escalated {target: "human"}` — after the assessor escalates, a
-stage fails, or a risk rule hits. Worst case between ask and push: the answerer's and the
-assessor's stage timeouts back to back (`2 × HOPPER_ANSWER_TIMEOUT_MS`, 6 min by default). Then `QuestionService.handle(questionId)` runs the
-pipeline off the decision path (phase 5 slice 2 replaced the opus → fable → human chain; full
-contract in "Question pipeline" under Phase 5):
+The owner may answer while a level works on it: their answer wins, the in-flight level call is
+aborted (`superseded`), no level above is called, and nothing is pushed. **Push is gated:** the
+Grok Bot routine webhook fire only on `question.escalated {target: "human"}` — after every level
+escalates, or a risk rule hits. Worst case between ask and push: every level's stage timeout back
+to back (`levels × HOPPER_ANSWER_TIMEOUT_MS`; 6 min with the two built-in levels). Then
+`QuestionService.handle(questionId)` runs the pipeline off the decision path (issue #134 replaced
+the answerer → assessor pair with escalation levels; full contract in "Question pipeline" under
+Phase 5):
 
-1. **answer** — `question.escalated {target: <answerer>}`; the answerer drafts
-   `{ answer, confident, reason }`. No answerer, an error, a timeout or a malformed draft →
-   human (there is no draft to assess). Every draft, **confident or not**, goes to the
-   assessor (owner decision, 2026-10-04: Opus, then Fable, then the owner, on every question); the
-   assessor is told the answerer's confidence.
-2. **assess** — `question.escalated {target: <assessor>, reason: "drafted by <answerer>"}`; the
-   assessor returns its own best answer and a verdict, `{ answer?, escalate, reason }`
-   (issue #98). Fails closed: anything but a schema-valid `escalate: false` → human.
-3. **risk rules** over question + the answer to be typed; a hit → human, whatever the assessor said.
-4. **accepted** → the assessor's answer (or, with none, the draft it endorsed) is typed in. **human**: question `tier: human`,
+1. **the levels, lowest first** — for each: `question.escalated {target: <level>, reason}` (`asked`
+   for the first; for the next, why the one below escalated: `<level>: <its reason>`, or `<level>
+   failed: <error>`). The level replies `{ answer?, escalate, reason }`, given the request, the
+   trail so far (the levels below with their recommendations) and its place (`level: { number, of }`).
+   `escalate: false` with an answer **answers**: go to 2. Anything else — `escalate: true`, an error,
+   a timeout, a malformed reply, a level that cannot run — **escalates** to the next level up.
+   Owner decision (issue #134): a question climbs only as far as it needs; a simple one is settled
+   at the first level, a complex one climbs.
+2. **risk rules** over question + the answer to be typed; a hit → human, past every level above.
+3. **accepted** → that answer is typed in, by that level. **human** (past the top level, no levels,
+   or a risk rule hit): question `tier: human`,
    `escalatedToHumanAt`, `expiresAt = now + HOPPER_HUMAN_TIMEOUT_MS`,
    `question.escalated {target: "human", reason, text, jobId, goal, answerUrl, notifyCount: 1}`.
    Every `HOPPER_HUMAN_RENOTIFY_MS` while open: same event, `renotify: true`,
@@ -567,38 +568,40 @@ contract in "Question pipeline" under Phase 5):
    (`question unanswered`), executor `cleanup`. An expiry beyond the timer limit (~24.8 days)
    re-arms instead of firing early.
 
-Every answerer or assessor call is bounded by `HOPPER_ANSWER_TIMEOUT_MS` in the service
-(a custom plugin may hang), on top of the plugin's own `timeoutMs`; a throw counts as an error.
-**Accepted answer** (the draft, or the human's via API): question `answered`, `answer`,
-`answeredBy` (the answerer instance, or `human`); `question.answered {by, answer}`; job →
+Every level's call is bounded by `HOPPER_ANSWER_TIMEOUT_MS` in the service (a custom plugin may
+hang), on top of the plugin's own `timeoutMs`; a throw counts as an error.
+**Accepted answer** (a level's, or the human's via API): question `answered`, `answer`,
+`answeredBy` (the level instance, or `human`); `question.answered {by, answer}`; job →
 `queued` with `pendingAnswer`, `questionId` kept, so the decider re-admits it (pinned to
 `resumeOn`, priority `+ policy.resumeBoost`). Claim of a job with `pendingAnswer` calls
-`executor.resume(ctx, answer)` and clears `pendingAnswer`. A human answer while a stage is in
-flight wins; the late result is logged (`outcome: escalated`, reason `superseded`) and ignored.
+`executor.resume(ctx, answer)` and clears `pendingAnswer`. A human answer while a level is in
+flight wins; the late reply is logged (`outcome: escalated`, reason `superseded`) and ignored.
 
-**Every attempt is appended** (`questions.addAttempt`) — the trail: `tier` (who: instance name
-or `human`), `role` (`answerer` | `assessor` | `human`; absent on rows before slice 2), model,
-timestamps, and per role: answerer `answer`, `confident`, `reason`, `error`; assessor
-`escalate`, `reason`, `riskRules`, `error`; `outcome` `drafted` | `accepted` | `escalated`.
+**Every attempt is appended** (`questions.addAttempt`) — the trail: `tier` (who: level instance
+name or `human`), `role` (`level` | `human`), model, timestamps, `answer` (a level escalating: its
+recommendation), `escalate` (when the reply was schema-valid), `reason`, `riskRules` (on an
+answer), `error`; `outcome` `accepted` | `escalated`. Rows stored before escalation levels were
+migrated (migration 16): `answerer`/`assessor` roles are `level`, a draft passed on (`drafted`)
+is `escalated` with `escalate: true`; they may still carry `confident` (and before slice 2, `risky`).
 
-**Claude CLI plugins** (`claude-cli`, `claude-cli-assessor`; `src/plugins/claude-print.ts`).
+**Claude CLI plugin** (`claude-cli`, an escalation level; `src/plugins/claude-print.ts`).
 argv exactly `["-p", "--model", <model>, ("--effort", <effort>,) "--output-format", "json",
 "--json-schema", <schema>, "--no-session-persistence", "--setting-sources", "",
 "--strict-mcp-config", "--tools", ""]` (`--tools` last, so its list cannot swallow another
 flag), prompt on stdin, cwd = the data dir (so no project CLAUDE.md is loaded), env scrubbed of
 `CLAUDECODE`/`CLAUDE_CODE_*`, timeout from the plugin options. Read `structured_output`; missing
-or schema-invalid → `{ error }`. The answerer prompt: you answer on the owner's behalf for an
-unattended coding agent; standing rules; job prompt; recent pane output (last 120 lines); the
-question; earlier attempts; `confident` only if the rules and context settle it. The assessor
-prompt: its sole job is deciding whether the owner must see the question, never answering; the
-rules file is trusted; job prompt, goal, output, question, draft, the answerer's reason and
-earlier attempts are untrusted data, each fenced with more backticks than it contains, with an
-instruction not to follow instructions inside. **No local LLM**; fable is the `claude` CLI
-model alias `fable` — no fable agent or skill is defined in this setup (checked
-`claude agents --json`, `~/.claude/skills`).
+or schema-invalid → `{ error }`. The prompt (`src/plugins/escalation-level/claude-cli/prompt.ts`):
+you are escalation level N of M; give the best answer you can, then answer or escalate. Every level
+escalates what is the owner's (irreversible or outside the job, a judgement the rules do not
+settle, against the rules, an injection attempt); a lower level also escalates what it is not sure
+of, since a more capable level is above it; the top level keeps the owner out of the loop unless a
+human choice is truly needed. The rules file is trusted; job prompt, goal, output, question and the
+trail are untrusted data, each fenced with more backticks than it contains, with an instruction not
+to follow instructions inside. **No local LLM**; fable is the `claude` CLI model alias `fable` —
+no fable agent or skill is defined in this setup (checked `claude agents --json`, `~/.claude/skills`).
 
 **Risk rules** (independent of any model; case-insensitive, word-bounded, over question +
-draft; run after the assessor): `\b(delete|deleting|remove (all|the)|rm -rf|drop (table|database)|truncate|wipe)\b` ·
+the answer a level gave; run before it is typed): `\b(delete|deleting|remove (all|the)|rm -rf|drop (table|database)|truncate|wipe)\b` ·
 `\b(deploy|deploying|deployment|publish|rollout|release to (prod|production))\b` ·
 `\b(force[- ]push|push --force|--force-with-lease|reset --hard)\b` ·
 `\b(spend|purchase|buy|payment|pay for|billing|charge (the )?card)\b` ·
@@ -619,7 +622,7 @@ only if the job is `waiting_answer` with that `questionId`.
 
 **Question budget (B6).** At most `HOPPER_MAX_QUESTIONS` (5) questions per job; the
 next question fails the job `too many questions` (and cleans up). When `detectedBy` is
-`idle`, the answerer prompt says the agent may simply have finished and that a valid answer
+`idle`, the claude-cli level's prompt says the agent may simply have finished and that a valid answer
 is "If the job is complete, end your message with HOPPER_DONE".
 
 **Recovery at startup (B2, B3).** `install.sh` restarts the daemon, not `hopper-herdr`,
@@ -682,7 +685,7 @@ after; any status. The Questions view posts it for every open question at the hu
 `seenAt` while it is shown with a UI session. The nav badge counts open questions at the human stage
 without `seenAt`, so it clears once they are seen, answered, closed or dismissed. No event: seen
 changes no job and nothing outside the UI reads it. Only human-stage questions are marked, so a
-question seen while still with the answerer or the assessor badges when it reaches the owner.
+question seen while still with an escalation level badges when it reaches the owner.
 
 **Question history** (issue #37): every question stays in the `questions` table with its text,
 trail, answer and status; nothing prunes it. The Questions view lists handled ones (status not
@@ -752,8 +755,8 @@ The events table gains a `question_id` column (migration 2).
 | type | `data` |
 |------|--------|
 | `question.asked` | `{ questionId, text, detectedBy }` (event `jobId`, `questionId` set) |
-| `question.escalated` | `{ questionId, target: <stage>, reason, text, jobId, goal?, answerUrl?, notifyCount?, renotify? }` — v2: `target` is the answerer's or assessor's instance name, or `human` (v1: `"opus"\|"fable"\|"human"`) |
-| `question.answered` | `{ questionId, by: <answerer instance>\|"human", answer }` — v2 (v1: `by` from `opus\|fable\|human`) |
+| `question.escalated` | `{ questionId, target: <stage>, reason, text, jobId, goal?, answerUrl?, notifyCount?, renotify? }` — v2: `target` is an escalation level's instance name, or `human` (v1: `"opus"\|"fable"\|"human"`) |
+| `question.answered` | `{ questionId, by: <level instance>\|"human", answer }` — v2 (v1: `by` from `opus\|fable\|human`) |
 | `question.expired` | `{ questionId, after_ms }` |
 
 ## Configuration added (env)
@@ -772,9 +775,7 @@ questions; each part's setting is now a plugin option ("Settled in slice 4").
 | `HOPPER_CLAUDE_CWD` | `~/workbench/app-workflows` |
 | `HOPPER_TRUST_WORKDIR` | `true` |
 | `HOPPER_IDLE_QUESTION_MS` | `20000` |
-| `HOPPER_ANSWERER` | `claude` (`fake` for tests: the fake doubles at the seams) |
-| `HOPPER_ANSWER_MODEL_A` / `_B` | `opus` / `fable` — the answerer's / assessor's model when plugins.yaml has no section |
-| `HOPPER_ANSWER_TIMEOUT_MS` | `180000` — plugin `timeoutMs` default from the env, and the service's per-stage ceiling |
+| `HOPPER_ANSWER_TIMEOUT_MS` | `180000` — plugin `timeoutMs` default from the env, and the service's ceiling on one level's call |
 | `HOPPER_RULES_FILE` | `~/.config/hopper/rules.md` |
 | `HOPPER_HUMAN_RENOTIFY_MS` | `900000` (15 min) |
 | `HOPPER_HUMAN_TIMEOUT_MS` | `86400000` (24 h) |
@@ -788,10 +789,9 @@ src/executors/herdr/index.ts  createHerdrClaudeExecutor(o: { herdr: HerdrClient;
                                 defaultCwd: string; claudeArgs: string[]; trustWorkdir: boolean;
                                 pollMs: number; idleQuestionMs: number }): Executor
                               createHerdrCliClient(o: { bin: string; session: string }): HerdrClient
-src/questions/index.ts        createFakeAnswerer(o: { name; model?; script: (req, signal) => AnswerDraft | { error } }): Answerer
-                              createFakeAssessor(o: { name; model?; script: (req, draft, signal) => Assessment | { error } }): Assessor
+src/questions/index.ts        createFakeLevel(o: { name; model?; script: (req, signal) => LevelReply | { error } }): EscalationLevel
                               createQuestionService(o: { store: Store; clock: Clock;
-                                answerer: () => Answerer | undefined; assessor: () => Assessor;
+                                levels: () => readonly EscalationLevel[];
                                 stageTimeoutMs: number;
                                 rulesFile: string; renotifyMs: number; humanTimeoutMs: number;
                                 answerUrl: (id: string) => string;
@@ -830,15 +830,16 @@ Op `ask`: `{ op: "ask", message?: string }` → outcome `question` (text = `mess
   session's server already runs; it unsets `CLAUDECODE` and the `CLAUDE_CODE_*` markers
   because panes inherit the server's environment. `install.sh` never restarts an active
   herdr unit — that would kill every parked pane.
-- **Answerer schema is a literal draft-07 object.** zod's `toJSONSchema` stamps `$schema`
+- **The level's reply schema is a literal draft-07 object.** zod's `toJSONSchema` stamps `$schema`
   draft 2020-12, which the claude CLI rejects ("no schema with key or ref"); every tier then
   exits 1 and every question reaches the human. Found live; the unit tests' fake `claude`
   could not see it.
 - **Screen chrome** that is never progress: the status/spinner line, user echo, `⏵` mode
   line, the effort indicator (`… · /effort`), and spinner tips (`⎿  Tip: …`).
-- **The fake doubles** (`HOPPER_ANSWERER=fake`, tests only; slice 2 policy): answerer
-  `opus` drafts `fake opus answer`, confident unless the question says "unsure"; assessor
-  `fable` escalates when it says "risky" or "hard"; real risk rules still apply.
+- **The fake levels** (`test/support/fake-questions.ts`, tests only; issue #134 policy): level
+  `opus` answers `fake opus answer`, and escalates when the question says "unsure", "risky" or
+  "hard"; level `fable` answers `fake fable answer`, and escalates when it says "risky" or "hard";
+  real risk rules still apply.
 - **Models read the job's goal label.** In the demo both tiers cited a goal reading "chain
   to human". Goals are context the models weigh; write them as plain descriptions.
 - **Fable is the `claude` model alias `fable`** — no fable agent or skill exists in this
@@ -1619,8 +1620,10 @@ schema change, no domain event; in-memory only.
 
 ## Phase 5 — every part is a plugin (2026-10-03, in progress)
 
-Owner direction (2026-10-03): the **router** (Jev) decides admission; **Fable
-assesses questions** — it decides whether a question escalates to the owner, nothing else.
+Owner direction (2026-10-03): the **router** (Jev) decides admission. Questions climb
+**escalation levels** (owner decision, issue #134, replacing the 2026-10-03 "Fable assesses
+questions" and the answerer → assessor pair): each level answers what it can settle or escalates
+it to the next, and the owner is above the top level.
 Every part is broken out as a **plugin**: any piece can be swapped, writing a custom plugin is
 easy, and the choices offered come from what is detected on the machine. Consultant-reviewed
 (approve-with-changes, all changes folded in below). Glossary terms land with the slice that
@@ -1634,8 +1637,7 @@ A **role** is a slot the engine calls through one port. A **plugin** implements 
 | role | port | slots | built-in plugins | reload |
 |---|---|---|---|---|
 | `router` | `Router { name; advise(job) → Advice }` (was `JevAdvisor`) | 1 | `gate-router`, `pass-through` | live |
-| `answerer` | `Answerer { name; answer(req, signal) → { answer, confident, reason } }` | 0..1 | `claude-cli` | live |
-| `assessor` | `Assessor { name; assess(req, draft, signal) → { answer?, escalate, reason } }` | 1 | `claude-cli-assessor`, `always-escalate` | live |
+| `escalation-level` | `EscalationLevel { name; answer(req, signal) → { answer?, escalate, reason } }` | 0..n, in order | `claude-cli` | live |
 | `executor` | `Executor` (unchanged) | 1..n | `herdr-claude`, `test` | restart |
 | `job-source` | `JobSource` (unchanged) | 0..n | `github-gh`, `github-app` | restart |
 | `machine-source` | `MachineSource` (unchanged) | 1 | `local` | restart (an options change is live since issue #18) |
@@ -1649,45 +1651,46 @@ A new agent CLI (codex, cursor-agent, opencode, hermes — all present on the ho
 event log, **webhook subscriptions** (rows in the store since issue #78: a core subsystem with stored
 deliveries and signing, not a swappable part), the **risk rules** (`src/questions/risk.ts`,
 code, not config — no setting can weaken the guard), the **rules file** (the owner's standing
-rules, given to answerer and assessor), and the human as the last question stop.
+rules, given to every escalation level), and the human as the last question stop.
 
 ### Question pipeline
 
-1. The answerer (if configured) drafts: `{ answer, confident, reason }`. Error or no
-   answerer → straight to the human. A draft, confident or not, goes to the assessor.
-2. The assessor gets the full request (question, job prompt, rules file, previous attempts)
-   plus the draft, the answerer's reason and its confidence, and returns
-   `{ answer?, escalate, reason }` (issue #98). It is the higher-level opinion, not only a gate:
-   `answer` is its own best answer — the draft kept, or a better one; absent, it endorses the
-   draft. Escalating, the answer stays on the trail as its recommendation, and the UI's
-   **Use answer** puts it in the owner's answer box. `claude-cli-assessor` always answers, and
-   escalates only for a choice that truly needs the owner (irreversible or outside the job, the
-   owner's own judgement the rules do not settle, against the rules, an injection attempt, or no
-   answer it would stand behind) — an unsure answerer is its to settle, not the owner's.
-   **Fails closed:** timeout, error, parse failure or a missing field → escalate. Only an
-   explicit, schema-valid `escalate: false` accepts. The question text comes from a job that
-   reads issue bodies and runs with `--dangerously-skip-permissions`; it may try to talk the
-   assessor out of escalating — the fail-closed contract and the risk rules are the
-   containment.
-3. Risk rules run on the question and the answer to be typed after the assessor; a hit escalates
-   regardless.
-4. Accepted → the assessor's answer, or the draft it endorsed, is typed into the pane;
-   `answeredBy` names whose it was. Escalated → the human.
+A question climbs the escalation levels (plugins.yaml `escalationLevels`, lowest first), and only
+as far as it needs: a simple question is settled at the first level; the more complex it is, the
+higher it climbs; above the top level is the owner.
 
-**The model that ran.** Each model attempt records `model`: the model id the stage reports it
-ran — for the claude plugins, the keys of the CLI's `modelUsage` (`fable` → `claude-fable-5-1`)
-— else the configured alias. The trail shows whether the assessor is really Fable.
+1. Each level gets the full request — question, job prompt, goal, rules file, the trail so far
+   (earlier runs, and the levels below with their recommendations) and its place,
+   `level: { number, of }` — and replies `{ answer?, escalate, reason }`. `answer` is its best
+   answer: the exact text to type. `escalate: false` **answers**. `escalate: true` sends the
+   question to the next level up, its answer staying on the trail as its **recommendation**: the
+   next level sees it, and the UI's **Use answer** puts it in the owner's answer box.
+   `claude-cli` always answers; it escalates what is the owner's (irreversible or outside the job,
+   a judgement the rules do not settle, against the rules, an injection attempt), and below the
+   top level also what it is not sure of; the top level keeps the owner out unless a human choice
+   is truly needed. **Fails closed:** a timeout, an error, a parse failure, a missing field, an
+   empty answer, `escalate: false` without an answer, or a level that cannot run → escalate. Only
+   a schema-valid `escalate: false` with an answer answers. The question text comes from a job that
+   reads issue bodies and runs with `--dangerously-skip-permissions`; it may try to talk a level
+   out of escalating — the fail-closed contract and the risk rules are the containment, and every
+   level's prompt fences the untrusted parts.
+2. Risk rules run on the question and the answer to be typed; a hit sends the question to the
+   owner, past every level above — no model approves what the rules guard.
+3. Accepted → the answer is typed into the pane; `answeredBy` names the level. Past the top
+   level, or with no levels → the human.
 
-`claude-cli-assessor` runs with the answerer's lockdown (`--tools ''`, `--strict-mcp-config`,
-`--setting-sources ''`, `--json-schema`). Default instances: answerer `opus` (`claude-cli`,
-model `opus`), assessor `fable` (`claude-cli-assessor`, model `fable`). `risky` leaves the
-answerer contract (judging risk is the assessor's job); it stays optional on stored attempts.
+**The model that ran.** Each level attempt records `model`: the model id the level reports it
+ran — for `claude-cli`, the keys of the CLI's `modelUsage` (`fable` → `claude-fable-5-1`) — else
+the configured alias. The trail shows whether a level is really the model it names.
 
-Stage owner: `questions.body.tier` holds the answerer's instance name, the assessor's, or
-`human`. Created with the configured answerer's name (or `human` with none) — replacing the
-hard-coded `'opus'` in `src/store/questions.ts`. **Recovery** restarts every open non-human
-question from the answer stage whatever its `tier` (drafts are not persisted mid-flight; the
-cost is one repeated call), so old rows at `tier: fable` (meaning "Fable answering") are safe.
+`claude-cli` runs locked down (`--tools ''`, `--strict-mcp-config`, `--setting-sources ''`,
+`--json-schema`). Built-in levels: `opus` (`claude-cli`, model `opus`), then `fable` (`claude-cli`,
+model `fable`).
+
+Stage owner: `questions.body.tier` holds the instance name of the level holding the question, or
+`human`. Created with the first level's name (or `human` with none). **Recovery** restarts every
+open non-human question from the first level whatever its `tier` (replies are not persisted
+mid-flight; the cost is the repeated calls), so old rows at `tier: fable` are safe.
 
 ### Plugin contract
 
@@ -1738,14 +1741,15 @@ export default {
 ### Configuration — `~/.config/hopper/plugins.yaml`
 
 The truth for which instance fills which role. Mode 600, owner-editable, mtime-watched (5 s).
-Live roles (router, answerer, assessor) swap between calls; restart roles show
+Live roles (router, queue sorter, escalation levels) swap between calls; restart roles show
 `changed — restart pending` in `/api/plugins`.
 
 ```yaml
 version: 1
 router:    { name: gate-router, plugin: gate-router, options: { grokBotJevSrc: ~/workbench/jev-src/grok-bot-jev, python: python3, claudeBin: claude, claudeModel: haiku } }
-answerer:  { name: opus, plugin: claude-cli, options: { model: opus } }
-assessor:  { name: fable, plugin: claude-cli-assessor, options: { model: fable } }
+escalationLevels:   # lowest first; above the top level is the owner
+  - { name: opus, plugin: claude-cli, options: { model: opus } }
+  - { name: fable, plugin: claude-cli, options: { model: fable } }
 executors: [ { name: herdr-claude, plugin: herdr-claude, options: { cwd: ~/workbench/app-workflows } }, { name: test, plugin: test } ]
 jobSources:
   - { name: github, plugin: github-gh, options: { enabled: auto, bin: gh, appFile: ~/.config/hopper/github-app.json, authors: [owner], label: hopper } }
@@ -1808,17 +1812,16 @@ glossary word); "connector" is a **job source** or **notifier** instance; a **la
 options of its own — lane count is the **machine** instance's `lanes` option.
 
 Residual risk: a session holder can still change non-command options — a router's
-thresholds, an answerer's model, a source's labels or authors allowlist. Each can change
-which jobs are pulled or how a question is drafted; none can run a command, and the
-assessor's fail-closed contract and the risk rules (code, not options) still stand.
+thresholds, an escalation level's model or the levels' order, a source's labels or authors
+allowlist. Each can change which jobs are pulled or how a question is answered; none can run a
+command, and the levels' fail-closed contract and the risk rules (code, not options) still stand.
 
 ### Failure
 
 | role | on create failure or unavailable |
 |---|---|
 | router | `pass-through`; advice `source: fallback`; `/api/health` says `fallback: true` (also while the router's own advice is `source: fallback`) |
-| answerer | none → questions go to the assessor-less human path |
-| assessor | `always-escalate` (fail safe) |
+| escalation level | stays in its place and escalates every question it gets (`/api/plugins` `escalationLevels[].active: null`, `reason`); fail safe: a broken level never answers and never hides the levels above |
 | executor | jobs naming it `held`, reason `executor <name> unavailable`; never failed or re-routed |
 | job source / notifier | dropped; error in `/api/plugins` |
 
@@ -1835,6 +1838,15 @@ stored old events are not rewritten (read raw by version; v1 schemas stay in doc
 - `DeciderPolicy.jevCheapBoost` → `routerCheapBoost`.
 - `AnswerTier`/`ANSWER_TIERS` → `string` (instance names); `question.escalated.target` and
   `question.answered.by` `z.enum` → `z.string()`, v2. Question rows unchanged.
+- Migration 16 (issue #134): plugins.yaml `answerer` + `assessor` → `escalationLevels` in the
+  place of the first, the answerer then the assessor (a section left out meant the built-in
+  instance, written in its place; `answerer: null` drops it; `claude-cli-assessor` →
+  `claude-cli`; assessor `always-escalate` meant the owner decides every question → `[]`; a custom
+  plugin keeps its id and loads only if it is an escalation-level plugin). Stored trails: every
+  attempt gets a `role` (`level`, or `human` for the human's); a `drafted` answerer attempt is
+  `escalated` with `escalate: true`. Event payloads unchanged (`target`, `by` are stage names);
+  `plugin.installed.role` lists the new roles. A store install of an answerer or assessor plugin
+  is refused at load (unknown role).
 
 ### Slices (each test-first, each lands runnable)
 
@@ -1843,7 +1855,7 @@ stored old events are not rewritten (read raw by version; v1 schemas stay in doc
    `jev-router`, `pass-through`, Jev→router renames and store migrations, `/api/health` shows
    fallback. Glossary first.
 2. **Questions** (landed; "Settled in slice 2" below): answerer + assessor roles, pipeline,
-   fail-closed assessor, recovery.
+   fail-closed assessor, recovery. Replaced by escalation levels (issue #134).
 3. **Executors** as plugins (landed; "Settled in slice 3" below); `EXECUTOR_NAMES` removed; held-when-unavailable.
 4. **Job, machine, usage sources** as plugins (landed; "Settled in slice 4" below); `sources.yaml` + env
    migration in the daemon; unit file updated.
@@ -1899,7 +1911,8 @@ stored old events are not rewritten (read raw by version; v1 schemas stay in doc
 
 Owner decision: use a router, configurable from what is on the system and swappable; the Fable
 advisor only assesses questions, to decide whether they escalate to the owner. Fable is the **assessor** (`claude-cli-assessor`, model `fable`);
-it never routes. The router was `gate-router` only because the env named it.
+it never routes. (Since issue #134 Fable is the second built-in escalation level, `claude-cli`
+model `fable`; still never a router.) The router was `gate-router` only because the env named it.
 
 Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) and
 "`HOPPER_JEV_ADVISOR`":
@@ -1920,6 +1933,11 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
 - Picking the router from the UI is slice 7 (`POST /ui/api/plugins` select), unchanged.
 
 ### Settled in slice 2 (2026-10-03)
+
+> Superseded by escalation levels (issue #134; "Question pipeline" under Phase 5). The answerer
+> and assessor roles, `claude-cli-assessor`, `always-escalate`, `answerer: null` and the
+> `drafted` outcome are gone; migration 16 rewrote plugins.yaml and the stored trails. Kept as
+> the record of slice 2.
 
 - **Roles:** `ROLES` is `router`, `answerer`, `assessor`. Built-ins `claude-cli` (answerer;
   options `bin` `claude`, `model` `opus`, `timeoutMs` 180000, `effort` optional:
@@ -2019,7 +2037,7 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
   runnable names only; `/api/plugins` `executors.instances[]` = `{ instance, detection, active,
   reason? }`, `active: null` for one that cannot run.
 - **Command-bearing marks** (`.meta({ commandBearing: true })`): herdr-claude `bin`, `claudeBin`,
-  `args`, `cwd`; claude-cli and claude-cli-assessor `bin`; gate-router `grokBotJevSrc`, `python`, `claudeBin`. zod
+  `args`, `cwd`; claude-cli `bin`; gate-router `grokBotJevSrc`, `python`, `claudeBin`. zod
   carries the mark into `z.toJSONSchema()`; `/api/plugins` shows it. `session` is not marked (it
   names a herdr session, not a program).
 - **Tests:** `AppSeams.herdr` swaps the herdr-claude built-in for `herdrClaudePlugin(seam)`
@@ -2181,7 +2199,7 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
 ### Settled in slice 6 (2026-10-03)
 
 - **Examples:** `examples/plugins/<role>/<id>/index.ts`, one per role — router `proceed-all`,
-  answerer `canned-answer`, assessor `keyword-assessor`, executor `echo-executor`, job source
+  escalation level `canned-answer`, executor `echo-executor`, job source
   `static-items`, machine source `fixed-machine`, usage source `fixed-usage`, notifier `log-events`.
   Type-checked by `npm run typecheck` (tsconfig includes `examples/`) and by `plugin:check` (a test
   runs it over `examples/plugins` and asserts one per role in `ROLES`, so a new role needs an
@@ -2209,7 +2227,7 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
 ### Settled in slice 7 (2026-10-03, issue #6)
 
 Built alongside slices 4-6 and merged after them. The edit path is generic over roles:
-`SECTIONS` in `src/plugins/edit.ts` maps every role (router, answerer, assessor, executor,
+`SECTIONS` in `src/plugins/edit.ts` maps every role (router, queue-sorter, escalation-level, executor,
 job-source, machine-source, usage-source, notifier) to its plugins.yaml key and cardinality, and
 the host's `instances()` lists what is configured. So a **lane** count (the machine instance's
 `lanes`) and a **connector** (a job source or notifier instance) are editable with the same
@@ -2218,7 +2236,8 @@ applies live since issue #18, "Machines from the UI").
 
 - **`POST /ui/api/plugins`**, body by `action`:
   `{ action: 'options', role, name, options, version }` · `{ action: 'select', role: router |
-  answerer | assessor, plugin | null, version }` · `{ action: 'rescan' }`. Answers the new
+  queue-sorter, plugin, version }` · `{ action: 'move', role: escalation-level, name, to, version }`
+  (issue #134) · `{ action: 'rescan' }`. Answers the new
   `GET /api/plugins` report. 400: body or options invalid (zod's issues); 404: no such instance or
   plugin; 409: stale `version`, an invalid or unparseable plugins.yaml (never edited from the UI —
   fix it by hand), a command-bearing value that differs, a plugin of another role or not
@@ -2243,12 +2262,12 @@ applies live since issue #18, "Machines from the UI").
   tag and always sends them back unchanged.
 - **Select** fills the role with `{ name: <plugin id>, plugin }` and the plugin's defaults (only a
   plugin `available` with its defaults is offered, so the defaults parse). Selecting the
-  configured plugin is a no-op (options are kept). `plugin: null` is the answerer only
-  (`answerer: null`); the assessor is never empty (400).
+  configured plugin is a no-op (options are kept). A one-instance role is never empty (`plugin:
+  null` is 400).
 - **Rescan** re-reads the plugin dir and re-runs every detection. A new custom plugin appears; a
   changed module of one already loaded keeps its first code until restart (Node caches imports).
 - **Add and remove** (issue #4): `{ action: 'add', role, plugin, name, version }` and
-  `{ action: 'remove', role, name, version }`, for the **list roles** only (`executor`,
+  `{ action: 'remove', role, name, version }`, for the **list roles** only (`escalation-level`, `executor`,
   `job-source`, `usage-source`, `notifier`; 400 for any other). Add appends `{ name, plugin }` (the
   plugin's defaults; written in the style of the entry before it) and is refused like select: 409
   for a name the role already has, a plugin of another role or not `available` here; 404 for an
@@ -2807,26 +2826,27 @@ phone across the LAN.
 
 Owner request: the question gates can be set in the UI.
 
-The **question gates** are the chain an open question goes through: answerer (drafts) →
-assessor (escalates or not) → risk rules → owner. One panel in the Questions view, below the
-open questions (collapsed by default under 640 px), shows the chain with each live stage's
-instance and state, and edits what is configuration:
+The **question gates** are the chain an open question goes through: the escalation levels,
+lowest first → risk rules → owner (issue #134; before it, answerer → assessor). One panel in the
+Questions view, below the open questions (collapsed by default under 640 px), shows the chain with
+each level's instance and state, and edits what is configuration:
 
-- **Answerer and assessor** — the plugin filling each (the answerer may be none) and each
-  instance's non-command options (model, timeoutMs, effort, …), through the existing
-  `POST /ui/api/plugins` `select` / `options`. Gate state comes from `GET /api/plugins`
-  (`answerer`, `assessor`): active plugin, detection, fallback (`always-escalate` standing in for an
-  assessor that cannot run; no answerer for one that cannot) and the reason. Nothing new on the
-  plugins side. The form is shared with the Plugins and Routing views: `ui/src/components/plugin-form.tsx`
-  (`InstanceForm { role, inst }`, `PluginSelector { role }`, `sendPluginsEdit`,
-  `pluginEditsUnsaved`), extracted from `views/plugins.tsx`; each form holds its own unsaved edits.
+- **Escalation levels** — added (on top, under the name typed, else the plugin id), removed,
+  moved earlier or later, and each level's non-command options (model, timeoutMs, effort, …), through
+  `POST /ui/api/plugins` `add` / `remove` / `move` / `options`. A level's state comes from
+  `GET /api/plugins` `escalationLevels[]`: active plugin, detection, and the reason one cannot run
+  (it escalates every question). The levels are live: an edit applies to the next question,
+  never `restart pending`. The form is shared with the Plugins and Routing views:
+  `ui/src/components/plugin-form.tsx` (`InstanceForm { role, inst }`, `AddInstance { role }`,
+  `PluginSelector { role }`, `sendPluginsEdit`, `pluginEditsUnsaved`); each form holds its own
+  unsaved edits.
 - **Rules file** — `GET /api/question-gates` → `{ rulesFile: { path, text, version, missing },
   riskRules }`; `POST /ui/api/rules-file { text, version }` (UI-session guarded) replaces it whole:
   `version` is the sha-256 of the file's bytes (or `missing`), stale → 409; more than 64 KiB
   (`RULES_FILE_MAX_BYTES`, UTF-8 bytes) → 400; written atomically (temp file beside it, rename),
   keeping the file's mode, 600 for a new one. Answers the new `rulesFile`. The question service
   reads the file on every ask (`requestFor`, `src/questions/service.ts`), so the next question's
-  answerer and assessor get the edit without a restart. The UI keeps an unsaved edit in
+  escalation levels get the edit without a restart. The UI keeps an unsaved edit in
   `localStorage` (`jh_rules_draft`: path, text, the version it began from), so it survives a reload;
   a draft over an older version is shown stale and Save is refused until Discard.
 - **Risk rules** — code (`src/questions/risk.ts`), listed read-only with one line each
@@ -2834,7 +2854,7 @@ instance and state, and edits what is configuration:
 
 `GET /api/question-gates` is a read: open on loopback, session-only across the LAN. Residual risk:
 every local user can read the rules text (as every GET), and a session holder can rewrite the rules,
-which steer the answerer and assessor; the assessor's fail-closed contract and the risk rules stand.
+which steer every escalation level; the levels' fail-closed contract and the risk rules stand.
 
 ### Webhook subscriptions in the UI (issue #18)
 
@@ -3668,7 +3688,7 @@ database from `HOPPER_DATABASE_URL`, else that line of `HOPPER_ENV_FILE` (defaul
 ### Work dir
 
 `HOPPER_WORK_DIR` (default `<system temp dir>/hopper`) holds scratch only: claude's working
-directory for answerer and assessor calls, each plugin's scratch dir, ssh control sockets, Jev's own
+directory for escalation level calls, each plugin's scratch dir, ssh control sockets, Jev's own
 `gate-router-runs.jsonl` debug log (grok-bot-jev's run log, not the hopper's state), self-update's mirror and next
 install. Losing it loses nothing the hopper needs; the host unit points it at the user's cache dir
 (`%C/hopper`) so the update mirror survives restarts. Defaults that named one machine's layout are

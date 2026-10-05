@@ -17,8 +17,7 @@ const PLUGINS = {
   ],
   router: { instance: { name: 'pass-through', plugin: 'pass-through' }, selection: 'detected', detection: { status: 'available' }, active: 'pass-through', fallback: false },
   queueSorter: { instance: { name: 'priority', plugin: 'priority' }, detection: { status: 'available' }, active: 'priority', fallback: false },
-  answerer: { detection: { status: 'available' }, active: null, fallback: false },
-  assessor: { instance: { name: 'fable', plugin: 'always-escalate' }, detection: { status: 'available' }, active: 'always-escalate', fallback: false },
+  escalationLevels: [],
   executors: { instances: [] }, jobSources: { instances: [] }, machines: { instances: [] }, usageSources: { instances: [] }, notifiers: { instances: [] },
   plugins: [
     { id: 'pass-through', role: 'router', describe: 'admits every job', builtin: true, detection: { status: 'available' }, options: empty },

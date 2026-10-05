@@ -1,25 +1,25 @@
 // The owner's other two moves on a question (design.md "Dismiss", "Seen"): dismiss drops it with
 // no answer and hands it to onDismissed inside the tx; seen stamps seenAt once. Same rig as
-// service.test.ts: doubles at the Answerer / Assessor seams, the in-memory Store.
+// service.test.ts: doubles at the EscalationLevel seam, the in-memory Store.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Assessment } from '../../src/domain/ports.ts';
-import { PROCEED, deferred, rig, settle } from './support.ts';
+import type { LevelReply } from '../../src/domain/ports.ts';
+import { ANSWERED, deferred, rig, settle } from './support.ts';
 
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date('2026-10-02T10:00:00Z')); });
 afterEach(() => { vi.useRealTimers(); });
 
 describe('dismiss and seen', () => {
-  it('dismissByHuman while the assessor is in flight wins: question dismissed with no answer, the stage aborted, question.dismissed, onDismissed inside the tx', async () => {
-    const gate = deferred<Assessment>();
+  it('dismissByHuman while a level is in flight wins: question dismissed with no answer, the stage aborted, question.dismissed, onDismissed inside the tx', async () => {
+    const gate = deferred<LevelReply>();
     let sig: AbortSignal | undefined;
-    const r = rig({ assess: (_req, _d, signal) => { sig = signal; return gate.promise; } });
+    const r = rig({ levels: { opus: (_req, signal) => { sig = signal; return gate.promise; } } });
     const q = r.question();
     r.svc.handle(q.id);
     await settle();
     const res = r.svc.dismissByHuman(q.id);
     expect(res).toMatchObject({ ok: true, question: { status: 'dismissed' } });
     expect(sig?.aborted).toBe(true);
-    gate.resolve(PROCEED);
+    gate.resolve(ANSWERED);
     await settle();
     const got = r.mem.store.questions.get(q.id)!;
     expect(got.status).toBe('dismissed');
@@ -33,7 +33,7 @@ describe('dismiss and seen', () => {
   });
 
   it('a dismissed human question is never re-notified nor expired', async () => {
-    const r = rig({ answer: null, renotifyMs: 1000, humanTimeoutMs: 5000 });
+    const r = rig({ levels: {}, renotifyMs: 1000, humanTimeoutMs: 5000 });
     const q = r.question();
     r.svc.handle(q.id);
     await settle();
@@ -44,7 +44,7 @@ describe('dismiss and seen', () => {
   });
 
   it('markSeen sets seenAt once and keeps it; not_found for an unknown question', async () => {
-    const r = rig({ answer: null });
+    const r = rig({ levels: {} });
     const q = r.question();
     const first = r.svc.markSeen(q.id);
     expect(first).toMatchObject({ ok: true, question: { seenAt: '2026-10-02T10:00:00.000Z' } });

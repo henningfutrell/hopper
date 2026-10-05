@@ -4,10 +4,10 @@
 // marks the question answered by the human with the typed text, aborts the answer chain, and
 // watches the new turn on a lane (reattach) until the job ends.
 import { afterEach, describe, expect, it } from 'vitest';
-import type { AnswerDraft } from '../../src/domain/ports.ts';
+import type { LevelReply } from '../../src/domain/ports.ts';
 import type { DomainEvent } from '../../src/domain/types.ts';
 import { createFakeHerdrClient, type FakeHerdrClient } from '../../src/executors/herdr/index.ts';
-import { createFakeAnswerer } from '../../src/questions/index.ts';
+import { createFakeLevel } from '../../src/questions/index.ts';
 import type { AppSeams } from '../../src/main.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { waitFor } from '../support/wait.ts';
@@ -23,7 +23,7 @@ const item = { executor: 'herdr-claude', prompt: 'Paint the shed', cwd: '/tmp', 
 async function start(herdr: FakeHerdrClient, seams: AppSeams = {}, laneCount = 4): Promise<TestApp> {
   const db = tempDbPath();
   cleanup = db.cleanup;
-  t = await startTestApp({ dbPath: db.dbPath, plugins: { executors: EXECUTORS, machines: lanes(laneCount) }, seams: { herdr, answerer: null, ...seams } });
+  t = await startTestApp({ dbPath: db.dbPath, plugins: { executors: EXECUTORS, machines: lanes(laneCount) }, seams: { herdr, levels: [], ...seams } });
   return t;
 }
 
@@ -63,16 +63,16 @@ describe('a question answered by typing into the pane', () => {
     expect(types.filter((x) => x === 'job.requeued')).toEqual([]);
   });
 
-  it('the answer chain in flight is aborted, as for a UI answer', async () => {
+  it('the level in flight is aborted, as for a UI answer', async () => {
     const aborted: unknown[] = [];
-    const answerer = createFakeAnswerer({
+    const level = createFakeLevel({
       name: 'drafter',
-      script: (_req, signal) => new Promise<AnswerDraft>((resolve) => {
-        signal.addEventListener('abort', () => { aborted.push(signal.reason); resolve({ answer: 'late', confident: true, reason: 'late' }); }, { once: true });
+      script: (_req, signal) => new Promise<LevelReply>((resolve) => {
+        signal.addEventListener('abort', () => { aborted.push(signal.reason); resolve({ answer: 'late', escalate: false, reason: 'late' }); }, { once: true });
       }),
     });
     const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [ASK, DONE] });
-    const a = await start(herdr, { answerer });
+    const a = await start(herdr, { levels: [level] });
     const job = await a.pull({}, item);
     await a.waitForQuestion(job.id, (x) => x.tier === 'drafter');
     const { agentName } = (await a.job(job.id)).executorState as { agentName: string };
@@ -80,7 +80,7 @@ describe('a question answered by typing into the pane', () => {
     await herdr.prompt(agentName, 'Blue.');
 
     await a.waitForStatus(job.id, 'finished', 8000);
-    await waitFor(() => aborted.length > 0, { what: 'the answerer aborted' });
+    await waitFor(() => aborted.length > 0, { what: 'the level aborted' });
     expect(aborted).toEqual(['superseded']);
     const [after] = await a.questionsOf(job.id);
     expect(after).toMatchObject({ status: 'answered', answeredBy: 'human', answer: 'Blue.' });

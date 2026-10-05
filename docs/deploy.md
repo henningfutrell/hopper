@@ -79,7 +79,7 @@ podman compose exec hopper hopper login-code --link http://127.0.0.1:4790
   runs. A pinned build: `HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:sha-<commit>` in `.env`.
 - **Remove:** `podman compose down` keeps the volumes; `down -v` deletes the database and the sign-ins.
 - **An image from a checkout:** `podman build -t localhost/hopper .`, then `HOPPER_IMAGE=localhost/hopper`
-  in `.env`. Without the claude CLI: `--build-arg INSTALL_CLAUDE=false` (then jobs and the answerer need
+  in `.env`. Without the claude CLI: `--build-arg INSTALL_CLAUDE=false` (then jobs and the escalation levels need
   attached machines).
 
 **From the build-from-source compose file** (before issue #125): the volumes are the same, so the new

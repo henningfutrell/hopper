@@ -4,8 +4,7 @@
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import claudeCli from '../../src/plugins/answerer/claude-cli/index.ts';
-import claudeCliAssessor from '../../src/plugins/assessor/claude-cli-assessor/index.ts';
+import claudeCli from '../../src/plugins/escalation-level/claude-cli/index.ts';
 import { BUILTIN_PLUGINS } from '../../src/plugins/builtin.ts';
 import herdrClaude, { herdrClaudePlugin } from '../../src/plugins/executor/herdr-claude/index.ts';
 import testExecutor from '../../src/plugins/executor/test/index.ts';
@@ -96,7 +95,6 @@ describe('command-bearing options carry the mark into JSON Schema (design.md "UI
   it.each([
     ['herdr-claude', herdrClaude, ['bin', 'claudeBin', 'args', 'cwd']],
     ['claude-cli', claudeCli, ['bin']],
-    ['claude-cli-assessor', claudeCliAssessor, ['bin']],
     ['gate-router', gateRouter, ['grokBotJevSrc', 'python', 'claudeBin']],
   ] as [string, PluginDefinition, string[]][])('%s', (_id, def, marked) => {
     const p = props(def);

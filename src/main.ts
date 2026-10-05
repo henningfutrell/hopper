@@ -4,7 +4,7 @@
 import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Answerer, Assessor, Clock, Executor, JobSource, PluginsView, Restarter, Router, SettableUsageSource, SourceRegistry, Store, UpdateBuilder, Updater } from './domain/ports.ts';
+import type { Clock, EscalationLevel, Executor, JobSource, PluginsView, Restarter, Router, SettableUsageSource, SourceRegistry, Store, UpdateBuilder, Updater } from './domain/ports.ts';
 import type { AttachedMachine, Question, SourceStatus } from './domain/types.ts';
 import { isRerunnable } from './domain/types.ts';
 import { daemonHelp, loadConfig, type Config } from './config.ts';
@@ -76,10 +76,8 @@ export interface AppSeams {
   grokbotBaseMs?: number;
   /** Replaces the configured router (the plugin host still loads, for /api/plugins). */
   router?: Router;
-  /** Replaces the configured answerer; null = no answerer. The report stays the host's. */
-  answerer?: Answerer | null;
-  /** Replaces the configured assessor. The report stays the host's. */
-  assessor?: Assessor;
+  /** Replace the configured escalation levels, lowest first; [] = none. The report stays the host's. */
+  levels?: EscalationLevel[];
   /** How often plugins.yaml's version is checked; default PLUGINS_FILE_CHECK_MS. */
   /** The environment the parts read their secrets from (design.md "Secrets"); default process.env. */
   env?: Record<string, string | undefined>;
@@ -223,8 +221,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   const plugins: PluginsView = seams.router ? seamPlugins(seams.router, host) : host;
   const router = seams.router ?? host.router;
   // Seam doubles win over the host's live instances (looked up per question).
-  const answerer = (): Answerer | undefined => (seams.answerer !== undefined ? (seams.answerer ?? undefined) : host.answerer());
-  const assessor = (): Assessor => seams.assessor ?? host.assessor();
+  const levels = (): readonly EscalationLevel[] => seams.levels ?? host.levels();
   const dispatcher = createWebhookDispatcher({ store, clock, secret, baseMs: config.webhookBaseMs });
   // The service calls the engine and the engine calls the service: the engine's handlers are
   // reached through closures that run only after `engine` exists (design.md "Construction
@@ -232,7 +229,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   let port = config.port;
   const answerUrl = (id: string): string => `http://${config.lanNames[0] ?? '127.0.0.1'}:${port}/#question-${id}`;
   const questions = createQuestionService({
-    store, clock, answerer, assessor, stageTimeoutMs: config.answerTimeoutMs, documents: store.documents,
+    store, clock, levels, stageTimeoutMs: config.answerTimeoutMs, documents: store.documents,
     renotifyMs: config.humanRenotifyMs, humanTimeoutMs: config.humanTimeoutMs,
     answerUrl,
     onAnswered: (q: Question) => engine.onAnswered(q),

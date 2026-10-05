@@ -19,7 +19,7 @@ const REPORT = {
     plugin('needs-it', 'router', { status: 'needs-setup', reason: 'not logged in', command: 'tool login' }, false),
     plugin('priority', 'queue-sorter', { status: 'available' }),
     plugin('oldest-first', 'queue-sorter', { status: 'available' }),
-    plugin('claude-cli', 'answerer', { status: 'available' }),
+    plugin('claude-cli', 'escalation-level', { status: 'available' }),
   ],
 } as unknown as PluginsReport;
 

@@ -1,8 +1,8 @@
 // Plugin vocabulary (design.md "Phase 5 — every part is a plugin"; docs/glossary.md).
 
 /** A slot the engine calls through one port. Each slice adds the roles it builds. */
-export type Role = 'router' | 'queue-sorter' | 'answerer' | 'assessor' | 'executor' | 'job-source' | 'machine-source' | 'usage-source' | 'notifier';
-export const ROLES: readonly Role[] = ['router', 'queue-sorter', 'answerer', 'assessor', 'executor', 'job-source', 'machine-source', 'usage-source', 'notifier'];
+export type Role = 'router' | 'queue-sorter' | 'escalation-level' | 'executor' | 'job-source' | 'machine-source' | 'usage-source' | 'notifier';
+export const ROLES: readonly Role[] = ['router', 'queue-sorter', 'escalation-level', 'executor', 'job-source', 'machine-source', 'usage-source', 'notifier'];
 
 /** The roles built once at start; a later plugins.yaml change applies at the next restart. */
 export type RestartRole = 'executor' | 'job-source' | 'machine-source' | 'usage-source' | 'notifier';
@@ -30,19 +30,6 @@ export interface RouterStatus {
   /** The plugin answering now: the instance's, or "pass-through" when it fell back. */
   plugin: string;
   /** True while advice is falling back: the instance could not start, or its last advice was `source: fallback`. */
-  fallback: boolean;
-  reason?: string;
-}
-
-/**
- * A question role in GET /api/plugins. `instance` null: no answerer configured (plugins.yaml
- * `answerer: null`). `active` is the plugin answering now: null for an answerer that cannot run
- * (questions go to the human), `always-escalate` for an assessor that cannot (`fallback` true).
- */
-export interface QuestionRoleStatus {
-  instance: InstanceSpec | null;
-  detection?: Detection;
-  active: string | null;
   fallback: boolean;
   reason?: string;
 }
@@ -81,13 +68,13 @@ export interface ConfiguredInstance {
   instance: InstanceSpec;
 }
 
-/** The roles with exactly one instance (the answerer: 0..1), whose plugin the UI may select. */
-export type SelectableRole = 'router' | 'queue-sorter' | 'answerer' | 'assessor';
-export const SELECTABLE_ROLES: readonly SelectableRole[] = ['router', 'queue-sorter', 'answerer', 'assessor'];
+/** The roles with exactly one instance, whose plugin the UI may select. */
+export type SelectableRole = 'router' | 'queue-sorter';
+export const SELECTABLE_ROLES: readonly SelectableRole[] = ['router', 'queue-sorter'];
 
 /** The roles with 0..n instances (executors: 1..n), each added or removed from the UI under its own name. */
-export type ListRole = 'executor' | 'job-source' | 'machine-source' | 'usage-source' | 'notifier';
-export const LIST_ROLES: readonly ListRole[] = ['executor', 'job-source', 'machine-source', 'usage-source', 'notifier'];
+export type ListRole = 'escalation-level' | 'executor' | 'job-source' | 'machine-source' | 'usage-source' | 'notifier';
+export const LIST_ROLES: readonly ListRole[] = ['escalation-level', 'executor', 'job-source', 'machine-source', 'usage-source', 'notifier'];
 
 /** The queue order (DecisionInputs.queueOrder): the waiting jobs as the queue sorter ordered them, and which instance did. */
 export interface QueueOrder {
@@ -117,12 +104,14 @@ export interface QueueSorterStatus {
 export type PluginsEdit =
   /** One instance's whole options object; command-bearing values must equal the file's. */
   | { action: 'options'; role: Role; name: string; options: Record<string, unknown>; version: string }
-  /** A plugin, detected available, fills the role under its own id; `null`: no answerer. */
-  | { action: 'select'; role: SelectableRole; plugin: string | null; version: string }
+  /** A plugin, detected available, fills the role under its own id. */
+  | { action: 'select'; role: SelectableRole; plugin: string; version: string }
   /** A plugin, detected available, as a new instance `name` of a list role, with the plugin's defaults. */
   | { action: 'add'; role: ListRole; plugin: string; name: string; version: string }
   /** Instance `name` of a list role leaves plugins.yaml; an executor still named elsewhere is refused. */
   | { action: 'remove'; role: ListRole; name: string; version: string }
+  /** Escalation level `name` moves to position `to` (0 is the lowest level); the others keep their order. */
+  | { action: 'move'; role: 'escalation-level'; name: string; to: number; version: string }
   /** Load custom plugins added since start and re-run every detection. */
   | { action: 'rescan' };
 
@@ -142,8 +131,8 @@ export interface PluginsReport {
   instances: ConfiguredInstance[];
   router: { instance: InstanceSpec; selection: RouterSelection; detection: Detection; active: string; fallback: boolean; reason?: string };
   queueSorter: QueueSorterStatus;
-  answerer: QuestionRoleStatus;
-  assessor: QuestionRoleStatus;
+  /** The escalation levels now, lowest first (a live role). `active` null: that level cannot run, and escalates every question it gets. */
+  escalationLevels: InstanceStatus[];
   /** The restart roles, as built at start. */
   executors: RestartRoleStatus;
   jobSources: RestartRoleStatus;

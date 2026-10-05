@@ -47,8 +47,7 @@ function start(o: { file?: string; kit?: DetectionKit; defaultExecutors?: Instan
     pluginDir: join(dir, 'plugins'), documents, dataDir: dir, clock: fixedClock,
     logger: { info() {}, warn() {} }, routerMode: () => 'shadow', kit: o.kit ?? fakeKit(),
     builtins: [...BUILTIN_PLUGINS, brokenExecutor, selfNamed],
-    defaultAnswerer: null,
-    defaultAssessor: { name: 'a', plugin: 'always-escalate' },
+    defaultLevels: [],
     defaultExecutors: o.defaultExecutors ?? ENV_EXECUTORS,
     intervalMs: 30,
   });

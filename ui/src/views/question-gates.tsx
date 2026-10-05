@@ -1,8 +1,8 @@
-// Question gates (issue #18): the chain a question goes through — answerer (drafts), assessor
-// (escalates or not), risk rules (code), owner — with each live stage's instance and state from
-// GET /api/plugins, the answerer and assessor chosen and tuned through the shared plugin form, and
-// the rules edited whole (POST /ui/api/rules). An unsaved rules edit is kept in this
-// browser, so it survives a reload. Collapsed by default at phone width.
+// Question gates (issues #18, #134): the chain a question goes through — the escalation levels,
+// lowest first (each answers or escalates to the next), the risk rules (code), the owner — with each
+// level's instance and state from GET /api/plugins, the levels added, removed, reordered and tuned
+// through the shared plugin form, and the rules edited whole (POST /ui/api/rules). An unsaved rules
+// edit is kept in this browser, so it survives a reload. Collapsed by default at phone width.
 import { ArrowRight, ChevronRight, ShieldCheck } from 'lucide-react';
 import { Fragment, useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Textarea } from '@/components/ui/textarea';
 import { Empty, Panel } from '@/components/panel';
-import { InstanceForm, PluginSelector, pluginEditsUnsaved } from '@/components/plugin-form';
+import { AddInstance, InstanceForm, pluginEditsUnsaved } from '@/components/plugin-form';
 import { StatusBadge } from '@/components/status';
 import { get, post, SessionRejected } from '@/lib/api';
 import { DRAFT_KEY, gateChain, readDraft, rulesEditor, RULES_MAX_BYTES, type Gate, type StoredDraft } from '@/model/question-gates';
@@ -19,7 +19,7 @@ import { refreshPlugins, useHopper } from '@/store';
 import { useCanAdmin } from '@/store/selectors';
 
 const REFRESH_MS = 15000;
-const STAGE_TITLE: Record<Gate['stage'], string> = { answerer: 'Answerer', assessor: 'Assessor', 'risk-rules': 'Risk rules', human: 'Owner' };
+const STAGE_TITLE: Record<Gate['stage'], string> = { level: 'Level', 'risk-rules': 'Risk rules', human: 'Owner' };
 
 const loadStored = (): StoredDraft | undefined => { try { return readDraft(localStorage.getItem(DRAFT_KEY)); } catch { return undefined; } };
 const keepStored = (d: StoredDraft | undefined) => {
@@ -31,10 +31,10 @@ function Chain({ gates }: { gates: Gate[] }) {
   return (
     <ol className="flex flex-wrap items-center gap-x-1.5 gap-y-2 text-xs">
       {gates.map((g, i) => (
-        <Fragment key={g.stage}>
+        <Fragment key={`${g.stage}:${g.name ?? ''}`}>
           {i > 0 && <ArrowRight aria-hidden className="size-3.5 text-muted-foreground" />}
           <li className="flex flex-wrap items-center gap-1.5 rounded-md border px-2 py-1">
-            <span className="text-muted-foreground">{STAGE_TITLE[g.stage]}</span>
+            <span className="text-muted-foreground">{g.stage === 'level' && g.name ? `${STAGE_TITLE.level} ${i + 1}` : STAGE_TITLE[g.stage]}</span>
             {g.name && g.name !== STAGE_TITLE[g.stage] && <span className="font-medium">{g.name}</span>}
             <StatusBadge status={g.label} tone={g.tone} />
           </li>
@@ -86,7 +86,7 @@ function RulesEditorPanel({ server, onSaved }: { server: RulesView; onSaved: (v:
         {ed.dirty && <StatusBadge status="unsaved" tone="warn" />}
       </div>
       <Textarea name="rules" rows={8} className="font-mono text-xs" value={ed.text} readOnly={!authed} disabled={busy}
-        placeholder="One rule per line. Given to the answerer and the assessor with every question." onChange={(e) => change(e.target.value)} />
+        placeholder="One rule per line. Given to every escalation level with every question." onChange={(e) => change(e.target.value)} />
       {ed.stale && <div className="text-xs text-warn">The rules changed since this draft began; Save will be refused. Copy what you need, then Discard to load it.</div>}
       <div className="flex flex-wrap items-center gap-2">
         {authed && <Button size="sm" disabled={busy || !ed.dirty || ed.tooLarge} onClick={() => void save()}>Save rules</Button>}
@@ -110,8 +110,7 @@ export function QuestionGates() {
     return () => clearInterval(t);
   }, []);
 
-  const answerer = report?.instances.find((i) => i.role === 'answerer')?.instance;
-  const assessor = report?.instances.find((i) => i.role === 'assessor')?.instance;
+  const levels = report?.instances.filter((i) => i.role === 'escalation-level').map((i) => i.instance) ?? [];
   return (
     <div data-slot="question-gates">
       <Panel title="Question gates" icon={ShieldCheck} bodyClassName="space-y-3">
@@ -122,30 +121,26 @@ export function QuestionGates() {
           </CollapsibleTrigger>
           <CollapsibleContent className="space-y-5 pt-3">
             {gates && (
-              <Stage title="Standing rules" what="rules.md, given to the answerer and the assessor; read with every question">
+              <Stage title="Standing rules" what="rules.md, given to every escalation level; read with every question">
                 <RulesEditorPanel server={gates.rules} onSaved={(rules) => setGates({ ...gates, rules })} />
               </Stage>
             )}
             {report && (
-              <>
-                <Stage n={1} title="Answerer" what="drafts an answer; none, or not confident, goes straight to the owner">
-                  <PluginSelector role="answerer" />
-                  {answerer ? <InstanceForm role="answerer" inst={answerer} /> : <div className="text-xs text-muted-foreground">none — questions go straight to the owner</div>}
-                </Stage>
-                <Stage n={2} title="Assessor" what="decides whether the owner must see the draft; fails closed">
-                  <PluginSelector role="assessor" />
-                  {assessor && <InstanceForm role="assessor" inst={assessor} />}
-                </Stage>
-              </>
+              <Stage n={1} title="Escalation levels" what="lowest first: each answers the question or escalates it to the next; one that fails or cannot run escalates">
+                <AddInstance role="escalation-level" />
+                {levels.length
+                  ? levels.map((inst) => <InstanceForm key={inst.name} role="escalation-level" inst={inst} />)
+                  : <div className="text-xs text-muted-foreground">none — questions go straight to the owner</div>}
+              </Stage>
             )}
             {gates && (
-              <Stage n={3} title="Risk rules" what="code, not configuration: a hit sends the question to the owner, whatever the assessor said">
+              <Stage n={2} title="Risk rules" what="code, not configuration: a hit on an answer sends the question to the owner, whatever level gave it">
                 <ul className="grid gap-1.5 text-xs sm:grid-cols-2">
                   {gates.riskRules.map((r) => <li key={r.name} className="flex flex-wrap items-baseline gap-1.5"><StatusBadge status={r.name} tone="bad" /><span className="text-muted-foreground">{r.describe}</span></li>)}
                 </ul>
               </Stage>
             )}
-            <Stage n={4} title="Owner" what="the last stop">
+            <Stage n={3} title="Owner" what="above the top level: the last stop">
               <div className="text-xs text-muted-foreground">An escalated question waits above until you answer or close it.</div>
             </Stage>
           </CollapsibleContent>

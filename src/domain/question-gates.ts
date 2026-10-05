@@ -17,7 +17,7 @@ export interface RiskRuleView {
   describe: string;
 }
 
-/** GET /api/question-gates: what the gates that are not plugins hold. The answerer and assessor are in GET /api/plugins. */
+/** GET /api/question-gates: what the gates that are not plugins hold. The escalation levels are in GET /api/plugins. */
 export interface QuestionGatesView {
   rules: RulesView;
   riskRules: RiskRuleView[];

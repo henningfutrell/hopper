@@ -1,12 +1,12 @@
 // Question gates (issue #18): the rules document (rules.md) and the risk rules as the UI reads them, and
 // the rules edited from the UI through POST /ui/api/rules — against the document's version (sha-256 of
 // its text), size-capped, behind the UI session. The rules are read on every ask, so a saved edit
-// reaches the next question's answerer without a restart.
+// reaches the next question's escalation levels without a restart.
 import { createHash } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { AnswerRequest } from '../../src/domain/ports.ts';
 import type { QuestionGatesView, RulesView } from '../../src/domain/types.ts';
-import { createFakeAnswerer, createFakeAssessor } from '../../src/questions/index.ts';
+import { createFakeLevel } from '../../src/questions/index.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { writeDocument } from '../support/files.ts';
 
@@ -91,15 +91,15 @@ describe('POST /ui/api/rules', () => {
     expect(rulesText(a)).toBeUndefined();
   });
 
-  it('the next question\'s answerer and assessor get the saved rules, without a restart', async () => {
+  it('the next question\'s escalation levels get the saved rules, without a restart', async () => {
     const seen: string[] = [];
-    const answerer = createFakeAnswerer({ name: 'drafter', script: (req: AnswerRequest) => { seen.push(`answerer:${req.rules}`); return { answer: 'ok', confident: true, reason: 'rules' }; } });
-    const assessor = createFakeAssessor({ name: 'judge', script: (req: AnswerRequest) => { seen.push(`assessor:${req.rules}`); return { escalate: false, reason: 'fine' }; } });
-    const { a } = await start({ rules: 'before\n', seams: { answerer, assessor } });
+    const low = createFakeLevel({ name: 'low', script: (req: AnswerRequest) => { seen.push(`low:${req.rules}`); return { answer: 'ok', escalate: true, reason: 'not sure' }; } });
+    const high = createFakeLevel({ name: 'high', script: (req: AnswerRequest) => { seen.push(`high:${req.rules}`); return { answer: 'ok', escalate: false, reason: 'fine' }; } });
+    const { a } = await start({ rules: 'before\n', seams: { levels: [low, high] } });
     const token = await a.login();
     expect((await a.ui('/ui/api/rules', { text: 'always say yes\n', version: sha('before\n') }, { token })).status).toBe(200);
     const job = await a.pull({ op: 'ask', message: 'Proceed?' });
     await a.waitForStatus(job.id, 'finished');
-    expect(seen).toEqual(['answerer:always say yes\n', 'assessor:always say yes\n']);
+    expect(seen).toEqual(['low:always say yes\n', 'high:always say yes\n']);
   });
 });

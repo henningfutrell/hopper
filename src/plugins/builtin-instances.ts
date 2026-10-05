@@ -10,8 +10,7 @@ import type { PluginLogger } from './sdk.ts';
 /** Every plugins.yaml section the built-in instances fill. */
 export interface PluginsDoc {
   queueSorter: InstanceSpec;
-  answerer: InstanceSpec;
-  assessor: InstanceSpec;
+  escalationLevels: InstanceSpec[];
   executors: InstanceSpec[];
   jobSources: InstanceSpec[];
   machines: InstanceSpec[];
@@ -27,8 +26,11 @@ export function builtinInstances(answerTimeoutMs = 180_000): PluginsDoc {
   const question = { bin: 'claude', timeoutMs: answerTimeoutMs };
   return {
     queueSorter: { name: 'priority', plugin: 'priority' },
-    answerer: { name: 'opus', plugin: 'claude-cli', options: { ...question, model: 'opus' } },
-    assessor: { name: 'fable', plugin: 'claude-cli-assessor', options: { ...question, model: 'fable' } },
+    // Lowest first: Opus answers what it can settle, Fable what Opus escalates; then the owner.
+    escalationLevels: [
+      { name: 'opus', plugin: 'claude-cli', options: { ...question, model: 'opus' } },
+      { name: 'fable', plugin: 'claude-cli', options: { ...question, model: 'fable' } },
+    ],
     executors: [
       { name: 'test', plugin: 'test' },
       { name: 'herdr-claude', plugin: 'herdr-claude' },

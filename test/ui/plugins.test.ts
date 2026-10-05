@@ -48,8 +48,10 @@ describe('fieldKind', () => {
 describe('instanceState', () => {
   const report = {
     router: { instance: { name: 'gate-router', plugin: 'gate-router' }, active: 'pass-through', fallback: true, reason: 'no python' },
-    answerer: { instance: null, active: null, fallback: false },
-    assessor: { instance: { name: 'fable', plugin: 'claude-cli-assessor' }, active: 'claude-cli-assessor', fallback: false },
+    escalationLevels: [
+      { instance: { name: 'opus', plugin: 'claude-cli' }, detection: { status: 'available' }, active: 'claude-cli' },
+      { instance: { name: 'fable', plugin: 'claude-cli' }, detection: { status: 'unavailable', reason: 'no claude' }, active: null, reason: 'no claude' },
+    ],
     executors: { instances: [{ instance: { name: 'test', plugin: 'test' }, detection: { status: 'available' }, active: 'test' }] },
     jobSources: { instances: [{ instance: { name: 'github', plugin: 'github-gh' }, detection: { status: 'unavailable', reason: 'no gh' }, active: null, reason: 'no gh' }] },
     machines: { instances: [{ instance: { name: 'local', plugin: 'local' }, detection: { status: 'available' }, active: 'local' }], pending: { status: 'changed — restart pending', instances: [] } },
@@ -58,8 +60,13 @@ describe('instanceState', () => {
   } as unknown as PluginsReport;
 
   it('a live role: active, or the fallback answering', () => {
-    expect(instanceState(report, 'assessor', 'fable')).toMatchObject({ tone: 'ok', label: 'active' });
     expect(instanceState(report, 'router', 'gate-router')).toMatchObject({ tone: 'warn', label: 'fallback: pass-through', reason: 'no python' });
+  });
+
+  it('an escalation level: active, or cannot run (it escalates every question), never restart pending', () => {
+    expect(instanceState(report, 'escalation-level', 'opus')).toMatchObject({ tone: 'ok', label: 'active', rolePending: false });
+    expect(instanceState(report, 'escalation-level', 'fable')).toMatchObject({ tone: 'bad', label: 'cannot run', reason: 'no claude' });
+    expect(instanceState(report, 'escalation-level', 'new-one')).toMatchObject({ tone: 'warn', label: 'loading' });
   });
 
   it('a restart role: active, cannot run (with the reason), or not built yet (restart pending)', () => {
@@ -83,8 +90,8 @@ describe('adding an instance (issue #4)', () => {
   } as unknown as PluginsReport;
 
   it('only the list roles take added and removed instances', () => {
-    expect(['executor', 'job-source', 'usage-source', 'notifier', 'router', 'assessor', 'machine-source'].map((r) => isListRole(r as Role))).toEqual(
-      [true, true, true, true, false, false, true],
+    expect(['escalation-level', 'executor', 'job-source', 'usage-source', 'notifier', 'router', 'queue-sorter', 'machine-source'].map((r) => isListRole(r as Role))).toEqual(
+      [true, true, true, true, true, false, false, true],
     );
   });
 

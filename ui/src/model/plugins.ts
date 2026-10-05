@@ -65,13 +65,13 @@ const RESTART = {
   executor: 'executors', 'job-source': 'jobSources', 'usage-source': 'usageSources', notifier: 'notifiers',
 } as const satisfies Partial<Record<Role, keyof PluginsReport>>;
 
-export const SELECTABLE: readonly SelectableRole[] = ['router', 'queue-sorter', 'answerer', 'assessor'];
+export const SELECTABLE: readonly SelectableRole[] = ['router', 'queue-sorter'];
 export const isSelectable = (role: Role): role is SelectableRole => (SELECTABLE as readonly Role[]).includes(role);
 
-export const LIST: readonly ListRole[] = ['executor', 'job-source', 'machine-source', 'usage-source', 'notifier'];
+export const LIST: readonly ListRole[] = ['escalation-level', 'executor', 'job-source', 'machine-source', 'usage-source', 'notifier'];
 export const isListRole = (role: Role): role is ListRole => (LIST as readonly Role[]).includes(role);
 
-const ONE: Record<ListRole, string> = { executor: 'an executor', 'job-source': 'a job source', 'machine-source': 'a machine', 'usage-source': 'a usage source', notifier: 'a notifier' };
+const ONE: Record<ListRole, string> = { 'escalation-level': 'an escalation level', executor: 'an executor', 'job-source': 'a job source', 'machine-source': 'a machine', 'usage-source': 'a usage source', notifier: 'a notifier' };
 
 /** The name an added instance gets — what was typed, else the plugin id — and why it cannot have it. */
 export function newInstance(report: PluginsReport, role: ListRole, plugin: string, typed: string): { name: string; problem?: string } {
@@ -107,14 +107,21 @@ export function instanceState(report: PluginsReport, role: Role, name: string): 
     const base = { ...(s.reason ? { reason: s.reason } : {}), detection: s.detection, rolePending };
     return s.active === null ? { tone: 'bad', label: 'cannot run', ...base } : { tone: 'ok', label: 'active', ...base };
   }
-  const s = role === 'router' ? report.router : role === 'queue-sorter' ? report.queueSorter : role === 'answerer' ? report.answerer : report.assessor;
-  if (!s.instance || s.instance.name !== name) return { ...pending, rolePending: false };
+  if (role === 'escalation-level') {
+    // A live role: an edit applies before the report comes back, so a level not in it is still loading.
+    const l = report.escalationLevels.find((x) => x.instance.name === name);
+    if (!l) return { tone: 'warn', label: 'loading', rolePending: false };
+    const base = { ...(l.reason ? { reason: l.reason } : {}), detection: l.detection, rolePending: false };
+    return l.active === null ? { tone: 'bad', label: 'cannot run', ...base } : { tone: 'ok', label: 'active', ...base };
+  }
+  const s = role === 'router' ? report.router : report.queueSorter;
+  if (s.instance.name !== name) return { ...pending, rolePending: false };
   const base = { ...(s.reason ? { reason: s.reason } : {}), ...(s.detection ? { detection: s.detection } : {}), rolePending: false };
   if (s.active === null) return { tone: 'bad', label: 'cannot run', ...base };
   return s.fallback ? { tone: 'warn', label: `fallback: ${s.active}`, ...base } : { tone: 'ok', label: 'active', ...base };
 }
 
 export const ROLE_TITLES: Record<Role, string> = {
-  router: 'Router', 'queue-sorter': 'Queue sorter', answerer: 'Answerer', assessor: 'Assessor', executor: 'Executors',
+  router: 'Router', 'queue-sorter': 'Queue sorter', 'escalation-level': 'Escalation levels', executor: 'Executors',
   'job-source': 'Job sources', 'machine-source': 'Machine sources', 'usage-source': 'Usage sources', notifier: 'Notifiers',
 };

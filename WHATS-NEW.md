@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- A question a job asks now climbs levels: a first model answers what it can, a stronger one takes what the first is unsure of, and only what neither should decide reaches you. You choose the levels and their order on the Questions page.
 - You can run the hopper from a ready-made image with Podman: nothing to build or install on the machine but Podman, and an upgrade is one download. This is now the recommended way, and the install page leads with it.
 - Jobs keep all their work, temporary files included, inside the folder they start in, instead of wandering off to other places on the machine.
 - You can run the hopper with Docker alone: download one file, start it, and the hopper, its database and the place its jobs run all come up together, with nothing else to install.

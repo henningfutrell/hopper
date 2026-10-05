@@ -1,6 +1,6 @@
 // The plugin host (design.md "Phase 5"): built-in + custom plugins, plugins.yaml watched by version,
 // detection of every plugin, the live roles (the router — from plugins.yaml, else chosen from what
-// is detected — the answerer and the assessor, each swapped between calls) and the restart roles
+// is detected — the queue sorter and the escalation levels, each swapped between calls) and the restart roles
 // (executors, job sources, usage sources, notifiers): built once at start; a later change is
 // reported as pending. The machine sources — this machine and the attached ones, each an instance
 // (issue #74) — follow plugins.yaml live (issue #18). Notifiers are started with the event feed by the caller. A section plugins.yaml leaves out means the built-in instances.
@@ -24,7 +24,7 @@ import { applyMachineSpecs, buildJobSources, buildUsageSources, instanceStatus, 
 import { targetOf } from './machine-source/targets.ts';
 import { createTargetPool } from '../machines/index.ts';
 import { buildQueueSorter, createLiveQueueSorter, type LiveQueueSorter } from './queue-sorter-slot.ts';
-import { answererStatus, assessorStatus, buildAnswerer, buildAssessor, type BuiltAnswerer, type BuiltAssessor } from './question-slots.ts';
+import { buildLevel, levelStatus, type BuiltLevel } from './level-slot.ts';
 import { buildRouter, createLiveRouter, detectRouter, safeDetect, type BuiltRouter, type LiveRouter, type SlotDeps } from './router-slot.ts';
 import type { JobSourceContext, PluginDefinition } from './sdk.ts';
 import type { PluginHost, PluginHostOptions } from './host-types.ts';
@@ -61,14 +61,12 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
   let live: LiveRouter | undefined;
   let selection: RouterSelection = 'detected';
   let sorter: LiveQueueSorter | undefined;
-  let answerer: BuiltAnswerer | undefined;
-  let assessor: BuiltAssessor | undefined;
+  let levels: BuiltLevel[] | undefined;
   const builtin = builtinInstances();
   const defaults = {
     routing: [] as RoutingRule[],
     queueSorter: builtin.queueSorter,
-    answerer: o.defaultAnswerer === undefined ? builtin.answerer : o.defaultAnswerer,
-    assessor: o.defaultAssessor ?? builtin.assessor,
+    escalationLevels: o.defaultLevels ?? builtin.escalationLevels,
     executors: o.defaultExecutors ?? builtin.executors,
     jobSources: builtin.jobSources,
     machines: builtin.machines,
@@ -123,18 +121,14 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
       router: file?.router,
       routing: file?.routing ?? defaults.routing,
       queueSorter: file?.queueSorter ?? defaults.queueSorter,
-      answerer: file?.answerer !== undefined ? file.answerer : defaults.answerer,
-      assessor: file?.assessor ?? defaults.assessor,
+      escalationLevels: file?.escalationLevels ?? defaults.escalationLevels,
       executors: file?.executors ?? defaults.executors,
       jobSources: file?.jobSources ?? defaults.jobSources,
       machines: file?.machines ?? defaults.machines,
       usageSources: file?.usageSources ?? defaults.usageSources,
       notifiers: file?.notifiers ?? defaults.notifiers,
     };
-    let error = 'error' in r ? r.error : undefined;
-    if (!error && spec.answerer && spec.answerer.name === spec.assessor.name) {
-      error = `${PLUGINS}: answerer and assessor have the same name (${spec.answerer.name}); a question stage must say which one holds it`;
-    }
+    const error = 'error' in r ? r.error : undefined;
     if (error) {
       config.error = error;
       o.logger.warn(`hopper: ${error}`);
@@ -165,13 +159,10 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
       else sorter = createLiveQueueSorter(built, o.logger);
       o.logger.info(`hopper: queue sorter ${spec.queueSorter.name} (${built.plugin}${built.fallback ? ', fallback' : ''})`);
     }
-    if (!answerer || !same(answerer.spec, spec.answerer)) {
-      answerer = await buildAnswerer(spec.answerer, deps);
-      o.logger.info(`hopper: answerer ${spec.answerer ? `${spec.answerer.name} (${answerer.plugin ?? 'unavailable'})` : 'none'}`);
-    }
-    if (!assessor || !same(assessor.spec, spec.assessor)) {
-      assessor = await buildAssessor(spec.assessor, deps);
-      o.logger.info(`hopper: assessor ${spec.assessor.name} (${assessor.plugin}${assessor.fallback ? ', fallback' : ''})`);
+    if (!levels || !same(levels.map((l) => l.spec), spec.escalationLevels)) {
+      levels = await Promise.all(spec.escalationLevels.map((s) => buildLevel(s, deps)));
+      const names = levels.map((l) => `${l.spec.name} (${l.plugin ?? 'unavailable'})`);
+      o.logger.info(`hopper: escalation levels ${names.length ? names.join(' → ') : 'none'} → owner`);
     }
     await restart(executors, 'executors', spec.executors, () => buildExecutors(spec.executors, deps));
     await restart(jobSources, 'job sources', spec.jobSources, () => buildJobSources(spec.jobSources, deps));
@@ -251,11 +242,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
     get router() { return need().router; },
     routerStatus: () => need().status(),
     get queueSorter() { return started(sorter).sorter; },
-    answerer: () => answerer?.answerer,
-    assessor() {
-      if (!assessor) throw new Error('plugin host not started');
-      return assessor.assessor;
-    },
+    levels: () => started(levels).map((l) => l.level),
     executors: () => [...started(executors.built)],
     jobSources: () => [...started(jobSources.built)],
     machines: () => { started(machines.built); return liveMachines; },
@@ -310,8 +297,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
           ...(status.reason === undefined ? {} : { reason: status.reason }),
         },
         queueSorter: started(sorter).status(),
-        answerer: answerer ? answererStatus(answerer) : { instance: null, active: null, fallback: false },
-        assessor: assessor ? assessorStatus(assessor) : { instance: defaults.assessor, active: null, fallback: false },
+        escalationLevels: started(levels).map(levelStatus),
         executors: restartStatus(executors, executorStatus),
         jobSources: restartStatus(jobSources, instanceStatus),
         machines: { instances: (machines.built ?? []).map(instanceStatus) },

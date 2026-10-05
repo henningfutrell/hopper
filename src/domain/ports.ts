@@ -191,7 +191,7 @@ export interface Clock {
 
 // ---- Questions -----------------------------------------------------------------------
 
-/** Everything the answerer is given, and (with the draft) the assessor. */
+/** Everything an escalation level is given. */
 export interface AnswerRequest {
   question: Question;
   /** The job's full prompt. */
@@ -199,54 +199,36 @@ export interface AnswerRequest {
   jobGoal?: string;
   /** The owner's standing rules, read from the rules file at ask time. */
   rules: string;
-  /** The question's trail so far (attempts of earlier runs), so a stage sees what was tried. */
+  /** The question's trail so far — earlier runs, and the levels below this one with their recommendations. */
   previous: QuestionAttempt[];
+  /** Where this level stands: `number` of `of` (1 is the lowest). Above level `of` is the owner. */
+  level: { number: number; of: number };
 }
 
-/** The answerer's draft: the text to type into the job, whether the rules and context settle it, why. */
-export interface AnswerDraft {
-  answer: string;
-  confident: boolean;
+/**
+ * An escalation level's reply: answer the question (`escalate: false`, with the `answer` to type
+ * into the job), or send it to the next level up (`escalate: true`; `answer`, when given, is this
+ * level's recommendation, on the trail).
+ */
+export interface LevelReply {
+  answer?: string;
+  escalate: boolean;
   reason: string;
   /** The model that ran, as its provider reports it (the trail shows it in place of the configured alias). */
   model?: string;
 }
 
 /**
- * The answerer role: drafts an answer. Never throws by contract; the question service still
- * treats a throw, a timeout or a malformed draft as an error, which sends the question to the human.
+ * The escalation-level role: one rung a question climbs. Never throws by contract; the question
+ * service fails closed on its reply all the same: only a schema-valid `escalate: false` with an
+ * answer answers; an error, a throw, a timeout or anything malformed escalates to the next level up.
  */
-export interface Answerer {
-  /** The instance name (plugins.yaml), which is also the question's stage while it drafts. */
+export interface EscalationLevel {
+  /** The instance name (plugins.yaml), which is also the question's stage while this level holds it. */
   readonly name: string;
   /** The model it runs, for the trail. */
   readonly model?: string;
-  answer(req: AnswerRequest, signal: AbortSignal): Promise<AnswerDraft | { error: string }>;
-}
-
-/**
- * The assessor's assessment of a draft: its own best answer, and must the owner see this question?
- * `answer` absent: the assessor endorses the draft as it is. Escalating, the answer is the
- * assessor's recommendation to the owner, on the trail.
- */
-export interface Assessment {
-  answer?: string;
-  escalate: boolean;
-  reason: string;
-  /** The model that ran, as its provider reports it. */
-  model?: string;
-}
-
-/**
- * The assessor role: gives its own best answer and decides whether the question escalates to the
- * human. The question service fails closed on its result: only a schema-valid `escalate: false`
- * accepts; an error, a throw, a timeout or anything malformed escalates.
- */
-export interface Assessor {
-  /** The instance name (plugins.yaml), which is also the question's stage while it assesses. */
-  readonly name: string;
-  readonly model?: string;
-  assess(req: AnswerRequest, draft: AnswerDraft, signal: AbortSignal): Promise<Assessment | { error: string }>;
+  answer(req: AnswerRequest, signal: AbortSignal): Promise<LevelReply | { error: string }>;
 }
 
 export type IdGen = () => string;
@@ -287,7 +269,7 @@ export type AnswerByHumanResult =
  * change together or not at all.
  */
 export interface QuestionService {
-  /** The stage a new question starts at: the configured answerer's instance name, or `human`. */
+  /** The stage a new question starts at: the first escalation level's instance name, or `human` with none. */
   firstStage(): string;
   /** Start the pipeline for a newly asked question (created at `firstStage()`). */
   handle(questionId: string): void;
@@ -489,7 +471,7 @@ export interface WebhookRepository {
 }
 
 export interface QuestionRepository {
-  /** `tier`: the stage it starts at (the answerer's instance name, or `human`). */
+  /** `tier`: the stage it starts at (the first escalation level's instance name, or `human`). */
   create(input: { jobId: JobId; text: string; recentOutput: string; detectedBy: string; tier: string }): Question;
   get(id: string): Question | undefined;
   /** Newest first. */

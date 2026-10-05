@@ -125,13 +125,13 @@ describe('question events name stages by instance (slice 2)', () => {
   it('question.escalated and question.answered are v2: target and by are any instance name', () => {
     expect(EVENT_SCHEMA_VERSIONS['question.escalated']).toBe(2);
     expect(EVENT_SCHEMA_VERSIONS['question.answered']).toBe(2);
-    expect(validateEvent(event('question.escalated', { ...escalated, target: 'my-assessor' }))).toEqual({ ok: true });
+    expect(validateEvent(event('question.escalated', { ...escalated, target: 'my-level' }))).toEqual({ ok: true });
     expect(validateEvent(event('question.answered', { questionId: 'q1', by: 'sonnet', answer: 'a' }))).toEqual({ ok: true });
   });
 
   it('stored v1 events (target and by from opus | fable | human) still validate against v1', () => {
     for (const target of ['opus', 'fable', 'human']) expect(validateEvent(old('question.escalated', { ...escalated, target }))).toEqual({ ok: true });
     expect(validateEvent(old('question.answered', { questionId: 'q1', by: 'fable', answer: 'a' }))).toEqual({ ok: true });
-    expect(validateEvent(old('question.escalated', { ...escalated, target: 'my-assessor' })).ok).toBe(false);
+    expect(validateEvent(old('question.escalated', { ...escalated, target: 'my-level' })).ok).toBe(false);
   });
 });

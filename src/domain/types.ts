@@ -326,37 +326,32 @@ export interface WebhookDelivery {
 /** `dismissed`: the owner dropped it; nothing is typed into the job, and a job still waiting on it is cancelled. */
 export type QuestionStatus = 'open' | 'answered' | 'closed' | 'dismissed' | 'expired' | 'cancelled';
 
-/** Who made an attempt. Absent on attempts stored before slice 2, when every model attempt was an answer. */
-export type AttemptRole = 'answerer' | 'assessor' | 'human';
+/** Who made an attempt: an escalation level, or the human. */
+export type AttemptRole = 'level' | 'human';
 
-/**
- * One entry in a question's trail: an answerer's draft, an assessor's assessment, or the human's
- * answer. Human attempts carry only the answer.
- */
+/** One entry in a question's trail: an escalation level's reply, or the human's answer. Human attempts carry only the answer. */
 export interface QuestionAttempt {
-  /** Who: the answerer's or assessor's instance name, or `human` (before slice 2: `opus` / `fable`). */
+  /** Who: the level's instance name, or `human`. */
   tier: string;
-  role?: AttemptRole;
-  /** The model that ran, as the stage reports it, else the configured one. */
+  role: AttemptRole;
+  /** The model that ran, as the level reports it, else the configured one. */
   model?: string;
   startedAt: string;
   finishedAt?: string;
-  /** The answerer's draft, the assessor's own best answer, or the human's answer. */
+  /** The level's answer (escalating: its recommendation), or the human's answer. */
   answer?: string;
+  /** Rows stored before escalation levels only: the answerer judged its draft settled. */
   confident?: boolean;
-  /** Before slice 2 only: the answerer judged risk itself. Judging risk is now the assessor's job. */
+  /** Rows stored before slice 2 only: the answerer judged risk itself. */
   risky?: boolean;
-  /** Assessor: its verdict, when it returned a schema-valid one. */
+  /** The level's reply, when it returned a schema-valid one: true sent the question up. */
   escalate?: boolean;
   /** Risk patterns that matched the question or the answer to be typed, independent of any model. */
   riskRules?: string[];
   reason?: string;
   error?: string;
-  /**
-   * drafted: an answerer's draft passed to the assessor. accepted: its answer was typed into the
-   * job. escalated: the question went to the human (or, before slice 2, to the next tier).
-   */
-  outcome: 'drafted' | 'accepted' | 'escalated';
+  /** accepted: its answer was typed into the job. escalated: the question went up a level, or to the human. */
+  outcome: 'accepted' | 'escalated';
 }
 
 export interface Question {
@@ -367,13 +362,13 @@ export interface Question {
   detectedBy: string;
   status: QuestionStatus;
   /**
-   * The stage holding the question (or the last one that held it): the answerer's instance name,
-   * the assessor's, or `human`. Stored before slice 2: `opus` / `fable` / `human`.
+   * The stage holding the question (or the last one that held it): an escalation level's instance
+   * name, or `human`.
    */
   tier: string;
   attempts: QuestionAttempt[];
   answer?: string;
-  /** Whose answer was typed: the answerer instance (its draft), the assessor instance (its own answer), or `human` (also for a closed question). */
+  /** Whose answer was typed: the level instance that answered, or `human` (also for a closed question). */
   answeredBy?: string;
   /** Human tier: when it was first and last notified, and how often. */
   escalatedToHumanAt?: string;

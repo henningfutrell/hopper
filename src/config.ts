@@ -126,7 +126,7 @@ const SETTING_HELP: Record<keyof typeof schema.shape, string> = {
   HOPPER_ROUTER_CHEAP_BOOST: 'priority boost for a job the router calls cheap',
   HOPPER_WEBHOOK_BASE_MS: 'first webhook retry delay; doubles each retry',
   HOPPER_LANE_IDLE_GRACE_MS: 'how long an idle lane stays open',
-  HOPPER_ANSWER_TIMEOUT_MS: 'ceiling per question stage (answerer, assessor)',
+  HOPPER_ANSWER_TIMEOUT_MS: 'ceiling per escalation level\'s call on a question',
   HOPPER_HUMAN_RENOTIFY_MS: 'how often an unanswered question is notified again',
   HOPPER_HUMAN_TIMEOUT_MS: 'when an unanswered question expires',
   HOPPER_RESUME_BOOST: 'priority boost for a job resumed after a question',

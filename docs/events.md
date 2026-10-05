@@ -358,7 +358,7 @@ Version 1 (`docs/schemas/question.asked.v1.json`). A running job paused on a que
 
 ## `question.escalated`
 
-Version 2 (`docs/schemas/question.escalated.v2.json`). A question entered a stage — `target` is the answerer's instance name, the assessor's, or `human` — or the human was re-notified.
+Version 2 (`docs/schemas/question.escalated.v2.json`). A question entered a stage — `target` is an escalation level's instance name, or `human` — or the human was re-notified. `reason` says why it climbed: the reply or the failure of the level below, or a risk rule hit.
 
 | field | type | required |
 |---|---|---|
@@ -388,7 +388,7 @@ Version 2 (`docs/schemas/question.escalated.v2.json`). A question entered a stag
 
 ## `question.answered`
 
-Version 2 (`docs/schemas/question.answered.v2.json`). An answer was accepted: an answerer's draft the assessor let through (`by` = the answerer instance), or the human's (`via: "pane"` when they typed it into the job's pane: the job already runs again, nothing is typed for them).
+Version 2 (`docs/schemas/question.answered.v2.json`). An answer was accepted: an escalation level's (`by` = the level instance), or the human's (`via: "pane"` when they typed it into the job's pane: the job already runs again, nothing is typed for them).
 
 | field | type | required |
 |---|---|---|
@@ -407,7 +407,7 @@ Version 2 (`docs/schemas/question.answered.v2.json`). An answer was accepted: an
 
 ## `question.closed`
 
-Version 1 (`docs/schemas/question.closed.v1.json`). The owner closed an open question without answering (UI Close). The job resumes with `answer`, the fixed close text, typed in; any answerer or assessor call in flight is aborted.
+Version 1 (`docs/schemas/question.closed.v1.json`). The owner closed an open question without answering (UI Close). The job resumes with `answer`, the fixed close text, typed in; any escalation level call in flight is aborted.
 
 | field | type | required |
 |---|---|---|
@@ -423,7 +423,7 @@ Version 1 (`docs/schemas/question.closed.v1.json`). The owner closed an open que
 
 ## `question.dismissed`
 
-Version 1 (`docs/schemas/question.dismissed.v1.json`). The owner dismissed an open question (UI Dismiss): it needs no action any more. Nothing is typed into the job; a job still waiting on it is cancelled (`job.cancelled`, reason `question dismissed`); any answerer or assessor call in flight is aborted.
+Version 1 (`docs/schemas/question.dismissed.v1.json`). The owner dismissed an open question (UI Dismiss): it needs no action any more. Nothing is typed into the job; a job still waiting on it is cancelled (`job.cancelled`, reason `question dismissed`); any escalation level call in flight is aborted.
 
 | field | type | required |
 |---|---|---|
@@ -453,7 +453,7 @@ Version 1 (`docs/schemas/question.expired.v1.json`). The human stage timed out a
 
 ## `update.available`
 
-Version 1 (`docs/schemas/update.available.v1.json`). A check found a newer target on the update channel than the installed commit (once per target). `ref` is the branch or the release tag; `changes` counts its commits not installed (capped at 100).
+Version 1 (`docs/schemas/update.available.v1.json`). A check found a newer target on the update channel than the installed commit (once per target). `ref` is the branch or the release tag; `changes` counts its commits not installed (an operator detail; the UI shows the bullets of WHATS-NEW.md instead).
 
 | field | type | required |
 |---|---|---|
@@ -530,7 +530,7 @@ Version 1 (`docs/schemas/plugin.installed.v1.json`). A plugin was installed from
 | field | type | required |
 |---|---|---|
 | `id` | string | yes |
-| `role` | `router` \| `queue-sorter` \| `answerer` \| `assessor` \| `executor` \| `job-source` \| `machine-source` \| `usage-source` \| `notifier` | yes |
+| `role` | `router` \| `queue-sorter` \| `escalation-level` \| `executor` \| `job-source` \| `machine-source` \| `usage-source` \| `notifier` | yes |
 | `commit` | string | yes |
 
 ```json
