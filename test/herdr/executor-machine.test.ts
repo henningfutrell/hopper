@@ -17,6 +17,8 @@ describe('herdr-claude executor on an attached machine', () => {
     expect(out).toMatchObject({ kind: 'finished', result: { summary: 'Done on the laptop.' } });
     expect(herdr.calls).toEqual([]);
     expect(remotes.get('laptop')!.agentStarts).toHaveLength(1);
+    // The scratch dir is made on that machine, where the work tree is.
+    expect(remotes.get('laptop')!.calls.filter((c) => c.method === 'runInPane')).toHaveLength(1);
     // The machine's own herdr binary and session, by absolute path: never its PATH.
     expect(reached[0]).toEqual({ ssh: 'laptop', bin: '/home/user/.local/bin/herdr', session: 'jh-there' });
     expect(saved[0]).toMatchObject({ ssh: 'laptop', herdrBin: '/home/user/.local/bin/herdr', session: 'jh-there', paneId: 'w1:p1', laneId: 'laptop/lane-1' });

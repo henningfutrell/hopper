@@ -93,6 +93,11 @@ describe('herdr CLI client', () => {
     expect(calls()[0]!.argv.slice(2)).toEqual(['pane', 'read', 'w7:p5', '--source', 'recent-unwrapped', '--lines', '200']);
   });
 
+  it('runInPane types a shell command into the pane with pane run', async () => {
+    await herdr().runInPane('w7:p5', "mkdir -p '/w/x'");
+    expect(calls()[0]!.argv.slice(2)).toEqual(['pane', 'run', 'w7:p5', "mkdir -p '/w/x'"]);
+  });
+
   it('prompt, sendKeys and closePane issue the documented commands', async () => {
     const h = herdr();
     await h.prompt('jh-a', 'line 1\nline 2');

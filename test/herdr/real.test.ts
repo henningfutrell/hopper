@@ -4,7 +4,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { execFileSync, spawn } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { scrubbedEnv } from '../../src/executors/env.ts';
@@ -66,6 +66,32 @@ describe.skipIf(!REAL)('herdr-claude against a real herdr and Claude (opt-in)', 
     expect(readFileSync(file, 'utf8')).toContain('pineapple');
 
     await executor.cleanup!(second.ctx.job);
+  }, 600000);
+
+  it('keeps a job in its work tree: its temp files and scratchpad are in the git-ignored scratch dir', async () => {
+    const tree = join(dir, 'tree');
+    mkdirSync(tree);
+    execFileSync('git', ['init', '-q', tree]);
+    const executor = createHerdrClaudeExecutor({
+      herdr: createHerdrCliClient({ bin: BIN, session: SESSION }),
+      clock: { now: () => new Date() }, defaultCwd: tree, claudeArgs: ['--dangerously-skip-permissions'],
+      trustWorkdir: true, pollMs: 1000, idleQuestionMs: 30000,
+    });
+    const payload = {
+      prompt: 'Run `mktemp` once in the shell and write the path it prints into where.txt in the current directory. '
+        + 'Then write the full path of your scratchpad directory into scratchpad.txt in the current directory, and finish.',
+      model: process.env.JOB_HOPPER_REAL_MODEL ?? 'sonnet', timeoutMs: 240000,
+    };
+    const { ctx } = contextFor(jobWith(payload, { id: randomUUID() }));
+    const done = await executor.run(ctx);
+    expect(done.kind, JSON.stringify(done)).toBe('finished');
+    const scratch = join(tree, '.hopper-scratch');
+    expect(readFileSync(join(tree, 'where.txt'), 'utf8').trim().startsWith(`${scratch}/`)).toBe(true);
+    expect(readFileSync(join(tree, 'scratchpad.txt'), 'utf8').trim().startsWith(`${scratch}/`)).toBe(true);
+    // Only the job's own files show: the scratch dir ignores itself.
+    expect(execFileSync('git', ['-C', tree, 'status', '--porcelain'], { encoding: 'utf8' }).split('\n').filter(Boolean).sort())
+      .toEqual(['?? scratchpad.txt', '?? where.txt']);
+    await executor.cleanup!(ctx.job);
   }, 600000);
 
   it('8 jobs started at once in fresh tabs all reach Claude ready (no start race)', async () => {

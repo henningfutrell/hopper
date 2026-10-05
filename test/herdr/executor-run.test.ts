@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { homedir } from 'node:os';
-import { PROTOCOL_FOOTER } from '../../src/executors/herdr/index.ts';
+import { protocolFooter } from '../../src/executors/herdr/index.ts';
 import { CWD, JOB_ID, LANE, contextFor, jobWith, setup, until } from './support.ts';
 
+const SCRATCH = `${CWD}/.hopper-scratch`;
 const DONE = { output: ['● Wrote hello.txt.', '  JOB_HOPPER_DONE'] };
 
 describe('herdr-claude executor: shape and validation', () => {
@@ -49,7 +50,7 @@ describe('herdr-claude executor: run', () => {
     const { ctx, saved } = contextFor(jobWith({ prompt: 'Write hello.txt', model: 'opus' }));
     await executor.run(ctx);
     expect(herdr.calls.find((c) => c.method === 'ensureWorkspace')!.args).toEqual(['job-hopper', CWD]);
-    expect(herdr.calls.find((c) => c.method === 'createTab')!.args).toEqual([{ workspaceId: 'w1', cwd: CWD, label: `${LANE} · abcdef12`, env: { HOPPER_JOB_ID: JOB_ID } }]);
+    expect(herdr.calls.find((c) => c.method === 'createTab')!.args).toEqual([{ workspaceId: 'w1', cwd: CWD, label: `${LANE} · abcdef12`, env: { CLAUDE_CODE_TMPDIR: SCRATCH, TMPDIR: SCRATCH, HOPPER_JOB_ID: JOB_ID } }]);
     expect(herdr.agentStarts).toEqual([{ name: 'jh-abcdef12', paneId: 'w1:p1', args: ['--dangerously-skip-permissions', '--model', 'opus'], timeoutMs: 60000 }]);
     expect(saved[0]).toEqual({ session: 'jh-test', workspaceId: 'w1', tabId: 'w1:t1', paneId: 'w1:p1', agentName: 'jh-abcdef12', cwd: CWD, laneId: LANE });
     const order = herdr.calls.map((c) => c.method);
@@ -60,6 +61,35 @@ describe('herdr-claude executor: run', () => {
     const { herdr, executor } = setup({ turns: [DONE] });
     await executor.run(contextFor(jobWith({ prompt: 'go', env: { HOPPER_REPO: 'o/r', HOPPER_JOB_ID: 'forged' } })).ctx);
     expect(herdr.calls.find((c) => c.method === 'createTab')!.args[0]).toMatchObject({ env: { HOPPER_REPO: 'o/r', HOPPER_JOB_ID: JOB_ID } });
+  });
+
+  it('keeps the job in its work tree: Claude\'s scratchpad and temp files point at a scratch dir inside it, which a payload cannot move', async () => {
+    const { herdr, executor } = setup({ turns: [DONE] });
+    await executor.run(contextFor(jobWith({ prompt: 'go', env: { TMPDIR: '/tmp', CLAUDE_CODE_TMPDIR: '/tmp' } })).ctx);
+    expect(herdr.calls.find((c) => c.method === 'createTab')!.args[0]).toMatchObject({ env: { CLAUDE_CODE_TMPDIR: SCRATCH, TMPDIR: SCRATCH } });
+  });
+
+  it('prepares the scratch dir in the pane before Claude starts, git-ignored by its own .gitignore', async () => {
+    const { herdr, executor } = setup({ turns: [DONE] });
+    await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx);
+    expect(herdr.calls.find((c) => c.method === 'runInPane')!.args).toEqual(['w1:p1', `mkdir -p '${SCRATCH}' && printf '*\\n' > '${SCRATCH}/.gitignore'`]);
+    const order = herdr.calls.map((c) => c.method);
+    expect(order.indexOf('runInPane')).toBeGreaterThan(order.indexOf('createTab'));
+    expect(order.indexOf('runInPane')).toBeLessThan(order.indexOf('startAgent'));
+  });
+
+  it('quotes a work tree path for the shell', async () => {
+    const { herdr, executor } = setup({ turns: [DONE] });
+    await executor.run(contextFor(jobWith({ prompt: 'go', cwd: "/w/it's here" })).ctx);
+    expect(herdr.calls.find((c) => c.method === 'runInPane')!.args[1]).toBe(`mkdir -p '/w/it'\\''s here/.hopper-scratch' && printf '*\\n' > '/w/it'\\''s here/.hopper-scratch/.gitignore'`);
+  });
+
+  it('every job prompt names its work tree and keeps the work in it', async () => {
+    const { herdr, executor } = setup({ turns: [DONE] });
+    await executor.run(contextFor(jobWith({ prompt: 'go', cwd: '/w/repo' })).ctx);
+    const sent = herdr.prompts[0]!.text;
+    expect(sent).toContain("[job-hopper work tree] This job's work tree is /w/repo.");
+    expect(sent).toContain('Never make or work in a copy of the code outside it, under /tmp or anywhere else.');
   });
 
   it('expands ~ in the cwd', async () => {
@@ -82,7 +112,7 @@ describe('herdr-claude executor: run', () => {
   it('sends the prompt exactly once, with the protocol footer', async () => {
     const { herdr, executor } = setup({ turns: [{ steps: ['● a', '● b', '● c'], ...DONE }] });
     await executor.run(contextFor(jobWith({ prompt: 'Write hello.txt' })).ctx);
-    expect(herdr.prompts).toEqual([{ name: 'jh-abcdef12', text: `Write hello.txt\n\n${PROTOCOL_FOOTER}` }]);
+    expect(herdr.prompts).toEqual([{ name: 'jh-abcdef12', text: `Write hello.txt\n\n${protocolFooter(CWD)}` }]);
   });
 
   it('finishes on JOB_HOPPER_DONE with the final assistant text and the pane id', async () => {
