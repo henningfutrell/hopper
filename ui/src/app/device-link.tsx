@@ -52,21 +52,24 @@ export function DeviceLink({ pollMs = POLL_MS }: { pollMs?: number }) {
         <TooltipContent>Log in another device</TooltipContent>
       </Tooltip>
       <AlertDialog open={links !== null} onOpenChange={(o) => { if (!o) setLinks(null); }}>
-        <AlertDialogContent>
+        <AlertDialogContent className="max-h-[90dvh] overflow-y-auto data-[size=default]:sm:max-w-lg">
           <AlertDialogHeader>
             <AlertDialogTitle>Log in another device</AlertDialogTitle>
             <AlertDialogDescription>Scan a code with the other device, or open its link there. It works once; when it is used or expires, a new one appears here.</AlertDialogDescription>
           </AlertDialogHeader>
-          <ul className="space-y-4">
-            {links?.map((l) => (
-              <li key={l} data-device-link={l} className="flex flex-col items-center gap-2">
-                <QRCodeSVG value={l} size={176} marginSize={2} bgColor="#ffffff" fgColor="#000000" title={`QR code: ${new URL(l).host}`} className="rounded" />
-                <div className="flex w-full items-center gap-2">
-                  <code className="min-w-0 flex-1 truncate rounded bg-muted px-2 py-1 font-mono text-xs">{l}</code>
-                  <Button variant="outline" size="icon-xs" aria-label="Copy link" onClick={() => copy(l)}><Copy /></Button>
-                </div>
-              </li>
-            ))}
+          <ul className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-4">
+            {links?.map((l) => {
+              const host = new URL(l).host;
+              return (
+                <li key={l} data-device-link={l} className="flex min-w-0 flex-col items-center gap-2">
+                  <QRCodeSVG value={l} size={144} marginSize={2} bgColor="#ffffff" fgColor="#000000" title={`QR code: ${host}`} className="rounded" />
+                  <div className="flex w-full min-w-0 items-center justify-center gap-1">
+                    <code className="min-w-0 truncate font-mono text-xs text-muted-foreground" title={l}>{host}</code>
+                    <Button variant="ghost" size="icon-xs" aria-label="Copy link" onClick={() => copy(l)}><Copy /></Button>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
           <AlertDialogFooter><AlertDialogCancel>Done</AlertDialogCancel></AlertDialogFooter>
         </AlertDialogContent>
