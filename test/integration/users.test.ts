@@ -160,6 +160,24 @@ describe('users, sessions and login codes', () => {
   });
 });
 
+describe('who you are, and signing in with several users (issue #167)', () => {
+  it('logged out on loopback, the session names the user a read shows; one user needs no sign-in', async () => {
+    const a = await start();
+    expect((await a.api('GET', '/ui/api/session')).body).toMatchObject({ authenticated: false, viewing: { id: 'owner', name: 'owner' }, signIn: { required: false } });
+  });
+
+  it('with several users sign-in is required; signed in, the session names its own user and no other', async () => {
+    const a = await start();
+    await a.addUser('Bea');
+    expect((await a.api('GET', '/ui/api/session')).body).toMatchObject({ authenticated: false, viewing: { id: 'owner', name: 'owner' }, signIn: { required: true } });
+    expect((await a.api('GET', '/ui/api/session', undefined, { 'x-hopper-user': 'bea' })).body.viewing).toEqual({ id: 'bea', name: 'Bea' });
+    expect((await a.api('GET', '/ui/api/session', undefined, { 'x-hopper-user': 'nobody' })).body.viewing).toBeUndefined();
+    const view = (await a.api('GET', '/ui/api/session', undefined, session(await a.login('bea')))).body;
+    expect(view).toMatchObject({ authenticated: true, user: { id: 'bea', name: 'Bea' }, signIn: { required: true } });
+    expect(view.viewing).toBeUndefined();
+  });
+});
+
 describe('a user\'s runtime', () => {
   it('a user added while the daemon runs gets its runtime: its plugins.yaml, its herdr session hopper-<id>, its jobs run', async () => {
     const a = await start();

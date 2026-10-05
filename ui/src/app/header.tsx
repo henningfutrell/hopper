@@ -1,6 +1,7 @@
 // The top bar: version (opens the version and update panel, on every screen), connection, router mode (switchable by an admin),
-// router health, uptime, the API reference, the user the session acts for (issue #158) with its role,
-// logout, and a device link for another browser.
+// router health, uptime, the API reference, who you are at every width (issue #167: the user the session
+// acts for with its role, or "not signed in" and whose work the page shows), logout, and a device link
+// for another browser.
 import { BookOpen, LogOut, Moon, Sun } from 'lucide-react';
 import logo from '../../../site/hopper-logo.svg';
 import { setTheme, useTheme } from '@/hooks/use-theme';
@@ -18,6 +19,7 @@ export function Header({ nav }: { nav?: React.ReactNode }) {
   const conn = useHopper((s) => s.conn);
   const authed = useHopper((s) => s.authed);
   const user = useHopper((s) => s.user);
+  const viewing = useHopper((s) => s.viewing);
   const local = useHopper((s) => s.signIn?.local ?? false);
   const canAdmin = useCanAdmin();
   const theme = useTheme();
@@ -63,9 +65,14 @@ export function Header({ nav }: { nav?: React.ReactNode }) {
           </Tooltip>
           <Button variant="ghost" size="icon-sm" aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
             onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <Sun /> : <Moon />}</Button>
-          {user && (
-            <span className="hidden items-center gap-1.5 md:flex" title={`${user.identity}, signed in with ${user.provider}`}>
-              <span className="max-w-40 truncate">{user.name}</span><StatusBadge status={user.role} tone="muted" />
+          {user ? (
+            <span data-who className="flex items-center gap-1.5" title={`Signed in as ${user.name}: ${user.identity}, with ${user.provider}`}>
+              <span className="max-w-24 truncate sm:max-w-40">{user.name}</span><StatusBadge status={user.role} tone="muted" />
+            </span>
+          ) : !authed && (
+            <span data-who className="flex items-center gap-1.5 text-muted-foreground"
+              title={viewing ? `Not signed in. Showing ${viewing.name}'s work, read-only.` : 'Not signed in.'}>
+              not signed in{viewing && <span className="hidden sm:inline">· showing <span className="text-foreground">{viewing.name}</span></span>}
             </span>
           )}
           {canAdmin && local && <DeviceLink />}

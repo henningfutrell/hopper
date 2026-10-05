@@ -21,6 +21,8 @@ export interface HopperState {
   authed: boolean;
   /** Who the session belongs to; null logged out. */
   user: SessionUser | null;
+  /** Logged out: the user whose work a read without a session shows; null signed in, or on the LAN. */
+  viewing: SessionView['viewing'] | null;
   /** The ways to sign in (GET /ui/api/session); null until read. */
   signIn: SessionView['signIn'] | null;
   health: Health | null;
@@ -58,7 +60,7 @@ export interface HopperState {
 }
 
 export const useHopper = create<HopperState>(() => ({
-  loaded: false, loadError: null, conn: 'connecting', authed: false, user: null, signIn: null, health: null, jobs: {}, waitingOrder: [], machines: [],
+  loaded: false, loadError: null, conn: 'connecting', authed: false, user: null, viewing: null, signIn: null, health: null, jobs: {}, waitingOrder: [], machines: [],
   decisions: [], questions: [], handled: [], events: [], history: [], sources: [], deliveries: [], subscriptions: [],
   plugins: null, pluginsError: null, usage: null, accounts: [], routing: null, routingError: null, update: null, loadedCommit: undefined,
 }));
@@ -145,7 +147,7 @@ export async function checkSession() {
     let s = await readSession();
     // auth.yaml `none`: nobody signs in; take the session at once (design.md "Sign-in", issue #53).
     if (wantsNoSignIn(s.authenticated, s.signIn) && (await signInWithoutCredential()) === null) s = await readSession();
-    set({ authed: s.authenticated, user: s.user ?? null, signIn: s.signIn });
+    set({ authed: s.authenticated, user: s.user ?? null, viewing: s.viewing ?? null, signIn: s.signIn });
   } catch { /* daemon unreachable: keep the current mode */ }
 }
 
@@ -166,6 +168,8 @@ export async function act(path: string, body: unknown = {}, done?: string): Prom
 export async function logout() {
   try { await post('/ui/api/logout'); } catch { /* already gone */ }
   clearToken();
+  // Several users (issue #167): drop this user's work from the page; it comes back as the sign-in screen.
+  if (state().signIn?.required) { location.reload(); return; }
   set({ authed: false, user: null });
 }
 
@@ -193,8 +197,13 @@ export const onDelivery = (d: WebhookDelivery) => set({ deliveries: upsert(state
 export const onSource = (src: SourceStatus) => set({ sources: upsert(state().sources, src, (x) => x.name === src.name, Infinity) });
 export const setConn = (conn: Conn) => set({ conn });
 
-export async function load() {
+/** True when the page must show only the ways to sign in: logged out, and several users (issue #167). */
+export const mustSignIn = (s: Pick<HopperState, 'authed' | 'signIn'>): boolean => !s.authed && (s.signIn?.required ?? false);
+
+/** Reads everything once. Resolves false, having read no user's work, when the page must sign in first. */
+export async function load(): Promise<boolean> {
   await checkSession();
+  if (mustSignIn(state())) return false;
   const since = encodeURIComponent(HISTORY_TYPES.join(','));
   const [health, queue, machines, decisions, events, history, subs, deliveries, questions, allQuestions, sources, usage, accounts] = await Promise.all([
     get<Health>('/api/health'), get<Queue>('/api/queue'), get<{ machines: MachineView[] }>('/api/machines'),
@@ -213,5 +222,6 @@ export async function load() {
     questions: questions.questions, handled: handledOf(allQuestions.questions), sources: sources.sources, usage, accounts: accounts.accounts,
   });
   refreshUpdate().catch(() => {});
+  return true;
 }
 export const setLoadError = (loadError: string) => set({ loadError });

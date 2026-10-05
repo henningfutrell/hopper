@@ -13,7 +13,7 @@ const oidc = (o?: Parameters<typeof oidcIdp>[1]) => oidcIdp(h, o);
 describe('no auth.yaml: local sign-in only', () => {
   it('the session view offers the login code and no providers', async () => {
     const { app, origin } = await start(undefined);
-    expect(await session(app)).toEqual({ authenticated: false, signIn: { local: true, none: null, password: false, origin, providers: [] } });
+    expect(await session(app)).toEqual({ authenticated: false, viewing: { id: 'owner', name: 'owner' }, signIn: { local: true, none: null, password: false, origin, providers: [], required: false } });
   });
 
   it('the login code signs in as admin, provider local', async () => {
