@@ -37,7 +37,7 @@ https://henningfutrell.github.io/hopper/#windows
 | Node.js ≥ 24 | the daemon (TypeScript, run directly) |
 | Postgres (any; `deploy/compose.yaml` has one) | everything the daemon keeps |
 | Docker | the container deploy, the bundled Postgres, `npm test` |
-| herdr, at `~/.local/bin/herdr` | the panes jobs run in (`herdr-claude` executor), on each machine that runs Claude jobs |
+| herdr ([herdr.dev](https://herdr.dev)), at `~/.local/bin/herdr` | the panes jobs run in (`herdr-claude` executor), on each machine that runs Claude jobs |
 | the `claude` CLI, signed in | jobs (on each machine that runs them), the answerer, the assessor, usage readings |
 | the `gh` CLI signed in as you (default), or a GitHub App you create | reading and labelling the GitHub issues that are jobs ([Connect GitHub](#connect-github)) |
 

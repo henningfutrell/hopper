@@ -2,6 +2,8 @@
 // fetches install.sh from the same site; .github/workflows/pages.yml publishes scripts/get.sh as that
 // install.sh. Every hopper script the page tells you to run must exist in scripts/. Windows installs
 // the same way, inside WSL (issue #116).
+// Issue #115: the page is the main install path for someone new, so it says where to get every
+// prerequisite, checks them in one command, and walks through to a first finished job (gh CLI only).
 import { spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -32,6 +34,37 @@ describe('the install page', () => {
 
   it('loads nothing from another site', () => {
     expect(page).not.toMatch(/<(script|link)[^>]+(src|href)="https?:/);
+  });
+
+  it('says where to get each prerequisite, not only that it is needed', () => {
+    for (const source of ['https://herdr.dev', 'https://nodejs.org', 'https://docs.docker.com', 'https://cli.github.com', 'https://claude.ai/install.sh'])
+      expect(page, source).toContain(source);
+  });
+
+  it('says the service runs /usr/bin/node, so a Node.js from nvm will not do', () => {
+    expect(page).toContain('the service runs <code>/usr/bin/node</code>, so a Node.js from nvm or fnm will not do');
+  });
+
+  it('checks every prerequisite with one command to copy', () => {
+    expect(page).toMatch(/data-copy="for c in [^"]*herdr/);
+  });
+
+  it('keeps the services running after logout as a step, not a footnote', () => {
+    expect(page).toMatch(/<h2[^>]*>[^<]*[Kk]eep it running/);
+    expect(page).toContain('loginctl enable-linger');
+  });
+
+  it('walks to a first job: the hopper label is created, and a job is picked up within a minute', () => {
+    expect(page).toContain('gh label create hopper');
+    expect(page).toMatch(/within a minute/);
+  });
+
+  it('reaches the UI of a host without a browser through an ssh tunnel', () => {
+    expect(page).toContain('ssh -L 4790:127.0.0.1:4790');
+  });
+
+  it('covers the gh CLI path only, not a GitHub App (issue #113)', () => {
+    expect(page).not.toMatch(/GitHub App/);
   });
 });
 
