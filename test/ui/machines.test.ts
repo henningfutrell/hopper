@@ -3,7 +3,7 @@
 // POST /ui/api/machines and an Edit form to POST /ui/api/plugins, and why it may not yet.
 import { describe, expect, it } from 'vitest';
 import type { MachinesConfig } from '../../src/domain/types.ts';
-import { addBody, addProblem, clientReleaseText, editBody, kindOf, type MachineDraft } from '../../ui/src/model/machines.ts';
+import { addBody, addProblem, clientReleaseText, defaultsBody, editBody, kindOf, newDraft, type MachineDraft } from '../../ui/src/model/machines.ts';
 
 const CONFIG: MachinesConfig = {
   document: 'plugins.yaml',
@@ -15,6 +15,7 @@ const CONFIG: MachinesConfig = {
     { name: 'odd', plugin: 'custom-machines' },
   ],
   executors: ['herdr-claude', 'test'],
+  defaults: { lanes: 1, executors: ['herdr-claude'] },
   ssh: { targets: ['laptop', 'desk'], notes: [] },
 };
 
@@ -72,6 +73,20 @@ describe('the bodies sent', () => {
       options: { ssh: 'desk', herdrBin: '/usr/bin/herdr', lanes: 1, executors: ['herdr-claude', 'test'] },
     });
     expect(editBody(desk, { lanes: '1', executors: ['test'], label: 'old' }, 'v1')).toBeNull();
+  });
+});
+
+// Issue #142: a new machine starts from the machine defaults, which the Machines view edits.
+describe('machine defaults', () => {
+  it('the Add form starts from them: their lanes, and their executors that are configured', () => {
+    expect(newDraft(CONFIG)).toEqual({ name: '', ssh: '', lanes: '1', executors: ['herdr-claude'], label: '' });
+    expect(newDraft({ ...CONFIG, defaults: { lanes: 3, executors: ['cursor', 'test'] } })).toEqual({ name: '', ssh: '', lanes: '3', executors: ['test'], label: '' });
+  });
+
+  it('the defaults form sends lanes as a number and the executors picked; null while lanes is not a whole number ≥ 1', () => {
+    expect(defaultsBody({ lanes: '2', executors: ['test'] }, 'v1')).toEqual({ lanes: 2, executors: ['test'], version: 'v1' });
+    expect(defaultsBody({ lanes: '0', executors: ['test'] }, 'v1')).toBeNull();
+    expect(defaultsBody({ lanes: 'x', executors: [] }, 'v1')).toBeNull();
   });
 });
 

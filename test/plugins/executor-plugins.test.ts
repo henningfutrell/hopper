@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import claudeCli from '../../src/plugins/escalation-level/claude-cli/index.ts';
 import { BUILTIN_PLUGINS } from '../../src/plugins/builtin.ts';
+import cursorAgent from '../../src/plugins/executor/cursor-agent/index.ts';
 import herdrClaude, { herdrClaudePlugin } from '../../src/plugins/executor/herdr-claude/index.ts';
 import testExecutor from '../../src/plugins/executor/test/index.ts';
 import { optionsJsonSchema, parseOptions } from '../../src/plugins/options.ts';
@@ -29,9 +30,35 @@ function options<O>(def: PluginDefinition<Role, O>, raw: unknown = {}): O {
 const props = (def: PluginDefinition) => (optionsJsonSchema(def) as { properties: Record<string, Record<string, unknown>> }).properties;
 
 describe('built-in executor plugins are listed', () => {
-  it('herdr-claude, command and test, role executor', () => {
+  it('herdr-claude, cursor-agent, command and test, role executor', () => {
     const executors = BUILTIN_PLUGINS.filter((p) => p.role === 'executor').map((p) => p.id).sort();
-    expect(executors).toEqual(['command', 'herdr-claude', 'test']);
+    expect(executors).toEqual(['command', 'cursor-agent', 'herdr-claude', 'test']);
+  });
+});
+
+describe('cursor-agent (issue #142)', () => {
+  it('options: Cursor\'s CLI agent, allowed to run its tools and trusting the work tree; every option command-bearing', () => {
+    expect(options(cursorAgent)).toEqual({ bin: 'cursor-agent', args: ['--force', '--trust'], cwd: homedir(), sshBin: 'ssh' });
+    expect(options(cursorAgent, { cwd: '~/w' }).cwd).toBe(join(homedir(), 'w'));
+    const p = props(cursorAgent);
+    for (const key of ['bin', 'args', 'cwd', 'sshBin']) expect(p[key]!.commandBearing, key).toBe(true);
+  });
+
+  it('detect: available either way, `which` only — a machine over ssh may have Cursor where this one has none', async () => {
+    const version = vi.fn(async () => '1');
+    expect(await cursorAgent.detect(fakeKit({ which: async (b: string) => `/usr/bin/${b}`, version }), options(cursorAgent)))
+      .toEqual({ status: 'available', detail: '/usr/bin/cursor-agent' });
+    expect(await cursorAgent.detect(fakeKit({ which: async () => undefined, version }), options(cursorAgent)))
+      .toEqual({ status: 'available', detail: 'cursor-agent is not on this machine: its jobs run only on machines that have it' });
+    expect(version).not.toHaveBeenCalled();
+  });
+
+  it('create: the executor under the instance name, never idempotent', async () => {
+    const dir = temp();
+    const ex = await cursorAgent.create({ ...ctx(dir), instanceName: 'cursor' }, options(cursorAgent));
+    expect(ex.name).toBe('cursor');
+    expect(ex.idempotent).toBe(false);
+    expect(typeof ex.resume).toBe('function');
   });
 });
 

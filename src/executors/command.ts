@@ -47,9 +47,10 @@ export function commandOn(machine: MachineSnapshot, argv: string[], o: Pick<Comm
   return [argv[0]!, argv.slice(1)];
 }
 
-interface Ran { exitCode: number; stdout: string; stderr: string }
+export interface Ran { exitCode: number; stdout: string; stderr: string }
 
-function run(file: string, args: string[], timeoutMs: number, signal: AbortSignal): Promise<Ran | 'aborted' | 'timeout'> {
+/** Runs a program to its end: what it printed and its exit code, or how it was stopped. */
+export function run(file: string, args: string[], timeoutMs: number, signal: AbortSignal): Promise<Ran | 'aborted' | 'timeout'> {
   return new Promise((resolve, reject) => {
     execFile(file, args, {
       env: dockerEnv(), timeout: timeoutMs, killSignal: 'SIGKILL', signal, maxBuffer: 64 * 1024 * 1024, encoding: 'utf8',

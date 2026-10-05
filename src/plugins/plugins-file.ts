@@ -1,10 +1,10 @@
 // plugins.yaml: which instance fills which role (design.md "Configuration — plugins.yaml"), a config
 // document in the store (design.md "Config documents"). Read: router, queueSorter,
 // escalationLevels, executors, jobSources, machines (this machine and the attached ones, issue #74),
-// usageSources, notifiers, routing. A UI edit (edit.ts, attached-edit.ts) replaces it against its version.
+// usageSources, notifiers, routing, machineDefaults. A UI edit (edit.ts, attached-edit.ts) replaces it against its version.
 import { parse } from 'yaml';
 import { z } from 'zod';
-import type { InstanceSpec, RoutingRule } from '../domain/types.ts';
+import type { InstanceSpec, MachineDefaults, RoutingRule } from '../domain/types.ts';
 import { ROUTING_RULES } from '../routing/index.ts';
 
 export type PluginsFileResult =
@@ -13,7 +13,7 @@ export type PluginsFileResult =
   | {
     router?: InstanceSpec; queueSorter?: InstanceSpec; escalationLevels?: InstanceSpec[]; executors?: InstanceSpec[];
     jobSources?: InstanceSpec[]; machines?: InstanceSpec[]; usageSources?: InstanceSpec[]; notifiers?: InstanceSpec[];
-    routing?: RoutingRule[]; warnings: string[];
+    routing?: RoutingRule[]; machineDefaults?: Partial<MachineDefaults>; warnings: string[];
   }
   | { error: string };
 
@@ -50,6 +50,11 @@ const FILE = z.strictObject({
   notifiers: uniqueList('notifiers', 'logs and /api/plugins name a notifier by it').optional(),
   // Routing rules, in order (issue #18); absent: none.
   routing: ROUTING_RULES.optional(),
+  // What a machine attached from the UI starts with (issue #142); a field left out: the ssh plugin's default.
+  machineDefaults: z.strictObject({
+    lanes: z.number().int().min(1, 'machineDefaults.lanes must be at least 1').optional(),
+    executors: z.array(z.string().min(1)).optional(),
+  }).optional(),
 });
 
 /** Why a parsed plugins.yaml is refused, or undefined when it is valid. */
@@ -71,7 +76,7 @@ export function loadPluginsFile(text: string | undefined): PluginsFileResult {
   const parsed = FILE.safeParse(raw);
   if (!parsed.success) return { error: `${PLUGINS}: ${pluginsFileProblem(raw)}` };
   const warnings: string[] = [];
-  const { router, queueSorter, escalationLevels, executors, jobSources, machines, usageSources, notifiers, routing } = parsed.data;
+  const { router, queueSorter, escalationLevels, executors, jobSources, machines, usageSources, notifiers, routing, machineDefaults } = parsed.data;
   return {
     ...(router ? { router } : {}),
     ...(queueSorter ? { queueSorter } : {}),
@@ -82,6 +87,7 @@ export function loadPluginsFile(text: string | undefined): PluginsFileResult {
     ...(usageSources ? { usageSources } : {}),
     ...(notifiers ? { notifiers } : {}),
     ...(routing ? { routing } : {}),
+    ...(machineDefaults ? { machineDefaults } : {}),
     warnings,
   };
 }

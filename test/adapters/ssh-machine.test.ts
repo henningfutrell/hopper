@@ -6,7 +6,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, wr
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createAttachedMachineSource, probeHerdrOverSsh, resolveSshTarget } from '../../src/machines/index.ts';
+import { createAttachedMachineSource, probeHerdrOverSsh, probeSsh, resolveSshTarget } from '../../src/machines/index.ts';
 import { TEST_HOST_KEY, testSshAuth } from '../support/ssh.ts';
 
 const HERDR = fileURLToPath(new URL('../herdr/fake-herdr-bin.mjs', import.meta.url));
@@ -16,12 +16,12 @@ chmodSync(SSH, 0o755);
 
 const flush = () => new Promise((r) => setImmediate(r));
 
-function harness(results: (boolean | Error)[]) {
+function harness(results: (boolean | Error)[], herdr = true) {
   let t = 0;
   const lines: string[] = [];
   let calls = 0;
   const src = createAttachedMachineSource({
-    machine: () => ({ name: 'laptop', ssh: 'laptop', lanes: 2, executors: ['herdr-claude'], session: 'hopper', herdrBin: '/home/user/.local/bin/herdr' }),
+    machine: () => ({ name: 'laptop', ssh: 'laptop', lanes: 2, executors: ['herdr-claude'], herdr, session: 'hopper', herdrBin: '/home/user/.local/bin/herdr' }),
     clock: { now: () => new Date(t) },
     probeEveryMs: 30000,
     probe: async () => {
@@ -44,6 +44,11 @@ describe('attached machine source', () => {
     await flush();
     expect((await h.src.list())[0]).toMatchObject({ online: true });
     expect(h.lines).toEqual(['hopper: attached machine laptop online (ssh laptop)']);
+  });
+
+  it('one that runs no herdr has no herdr in its snapshot, so no herdr executor reaches it (issue #142)', async () => {
+    const [m] = await harness([true], false).src.list();
+    expect(m).toEqual({ id: 'laptop', label: 'laptop', maxLanes: 2, online: false, executors: ['herdr-claude'], ssh: 'laptop' });
   });
 
   it('probes at most once per interval, and again after it', async () => {
@@ -73,7 +78,7 @@ describe('attached machine source', () => {
 
   it('honours a label', async () => {
     const h = createAttachedMachineSource({
-      machine: () => ({ name: 'laptop', label: 'arch-laptop', ssh: 'laptop', lanes: 1, executors: [], session: 'hopper', herdrBin: 'herdr' }), probe: async () => ({ online: true }),
+      machine: () => ({ name: 'laptop', label: 'arch-laptop', ssh: 'laptop', lanes: 1, executors: [], herdr: true, session: 'hopper', herdrBin: 'herdr' }), probe: async () => ({ online: true }),
     });
     expect((await h.list())[0]!.label).toBe('arch-laptop');
   });
@@ -99,6 +104,28 @@ describe('probeHerdrOverSsh', () => {
 
   it('false when the session is not running', async () => {
     expect(await probe('laptop')).toBe(false);
+  });
+
+  it('rejects with the ssh failure when the machine cannot be reached', async () => {
+    await expect(probe('unreachable')).rejects.toThrow(/ssh unreachable/);
+  });
+});
+
+// Issue #142: an ssh target that runs no herdr (its executors are Cursor or commands) is online while
+// it answers over ssh.
+describe('probeSsh', () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'jh-ssh-plain-'));
+    process.env.FAKE_HERDR_DIR = dir;
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+  const probe = (target: string) => probeSsh({ target, sshBin: SSH, controlDir: join(dir, 's'), auth: testSshAuth(join(dir, 'auth')) });
+
+  it('true when the machine answers over ssh, with the hopper\'s key; nothing of herdr asked', async () => {
+    expect(await probe('laptop')).toBe(true);
+    const argv = (JSON.parse(readFileSync(join(dir, 'ssh-calls.jsonl'), 'utf8').trim()) as { argv: string[] }).argv;
+    expect(argv.at(-1)).toBe('true');
   });
 
   it('rejects with the ssh failure when the machine cannot be reached', async () => {
@@ -133,8 +160,8 @@ describe('resolveSshTarget', () => {
     mkdirSync(join(path, '..'), { recursive: true });
     writeFileSync(path, '#!/bin/sh\necho herdr\n', { mode: 0o755 });
   };
-  const resolve = (target: string) => resolveSshTarget({
-    target, sshBin: SSH, controlDir: join(home, 's'), auth: testSshAuth(join(home, 'auth')), knownHosts: join(home, '.ssh', 'known_hosts'),
+  const resolve = (target: string, herdr = true) => resolveSshTarget({
+    target, herdr, sshBin: SSH, controlDir: join(home, 's'), auth: testSshAuth(join(home, 'auth')), knownHosts: join(home, '.ssh', 'known_hosts'),
   });
   const sshCalls = (): string[][] => readFileSync(join(home, 'ssh-calls.jsonl'), 'utf8').trim().split('\n').map((l) => (JSON.parse(l) as { argv: string[] }).argv);
 
@@ -167,5 +194,11 @@ describe('resolveSshTarget', () => {
   it('rejects with the reason when herdr is nowhere, or the machine cannot be reached', async () => {
     await expect(resolve('laptop')).rejects.toThrow(/herdr not found/);
     await expect(resolve('unreachable')).rejects.toThrow(/ssh unreachable/);
+  });
+
+  it('a machine that runs no herdr (issue #142): only its pinned host key, once it answers over ssh', async () => {
+    expect(await resolve('laptop', false)).toEqual({ hostKey: TEST_HOST_KEY });
+    expect(sshCalls()).toHaveLength(1);
+    await expect(resolve('unreachable', false)).rejects.toThrow(/ssh unreachable/);
   });
 });

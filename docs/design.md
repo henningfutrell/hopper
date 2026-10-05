@@ -40,8 +40,8 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock | everything but `domain/` |
 | `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations, repositories, event log, config documents, login codes | engine, http, decider |
 | `src/webhooks/` | signing, dispatcher, retry/backoff, the secret of a subscription from the runtime (`dispatcher.ts`), the UI edit of the subscriptions (`edit.ts`, rows in the store) | engine, http, decider |
-| `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, `plugins.yaml` + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt; `executor/herdr-claude/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-gh/` and `job-source/github-app/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser, runner, background refresh); `notifier/grokbot-routine/` is the Grok Bot routine webhook — env-file reader and notifier; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
-| `src/executors/` | `Executor` adapters (`test`, `herdr/`, `command.ts` — a job's body run on its machine through its connection) and the registry; reached through the executor plugins. The connections and their target authentication ("Target authentication"): `ssh.ts` (key-only ssh to pinned host keys), `docker.ts` (the docker socket check, the proxy's allowlist), `client.ts` (a client target's tunnel, signed calls); `env.ts` the scrubbed child environment | engine, http, store, plugins |
+| `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, `plugins.yaml` + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-gh/` and `job-source/github-app/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser, runner, background refresh); `notifier/grokbot-routine/` is the Grok Bot routine webhook — env-file reader and notifier; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
+| `src/executors/` | `Executor` adapters (`test`, `herdr/`, `command.ts` — a job's body run on its machine through its connection, `cursor.ts` — Cursor's CLI agent there, issue #142) and the registry; reached through the executor plugins. The connections and their target authentication ("Target authentication"): `ssh.ts` (key-only ssh to pinned host keys), `docker.ts` (the docker socket check, the proxy's allowlist), `client.ts` (a client target's tunnel, signed calls); `env.ts` the scrubbed child environment | engine, http, store, plugins |
 | `src/client/` | the hopper client ("Client targets"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load` over HTTP/2 on the tunnel), `tunnel.ts` (its ssh to the hopper), `release.ts` (the client release: its files, its id, checking and installing one — "Client releases"), `main.ts`; `relay.ts`, the forced command of its key on the hopper's machine; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`); `ssh-options.ts` (the hardened ssh options, shared with `src/executors/ssh.ts`) | everything in `src/` outside `src/client/` |
 | `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following plugins.yaml; ssh probe and herdr path resolution through the herdr CLI client's ssh argv; the container probe, `docker container inspect`), the detected ssh targets (`ssh-config.ts`), keeping each client target on the hopper's client release (`client-release.ts`), `combineMachineSources` | engine, http, store, plugins |
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin) | engine, http, store, plugins |
@@ -2320,6 +2320,7 @@ machines:
 | `label` | `name` | |
 | `session` | `hopper` | hopper's herdr session there; never `default` |
 | `hostKey` | — | the **pinned host key**, `<type> <base64>`; absent → the hopper does not connect ("Target authentication") |
+| `herdr` | `true` | it runs herdr. `false` (issue #142, "Cursor executor and machine defaults"): online while it answers over ssh (`true` there), herdr-claude refuses it; `session` and `herdrBin` unused |
 | `herdrBin` | `herdr` | **give the absolute path.** Each call is a fresh login shell there; on the laptop the shell env file is a symlink that every new pane's shell updates, and a call racing that update lost its PATH (`zsh:1: command not found: herdr`, exit 127, seen live) |
 
 **Reaching it** (authentication: "Target authentication" below; the argv here predates it). `createHerdrCliClient({ ssh: { target, controlDir } })` runs the same herdr argv as
@@ -3978,4 +3979,64 @@ HTTP edge: the device code, one flow at a time, approve → logged in with the a
 and a new start, cancel, a token variable, no gh) and `test/scripts/install-page.test.ts` (no
 `exec -it`; GitHub from the UI). Live: the published image's gh 2.23.0 with stdin closed printed the
 code and URL and waited.
+
+## Cursor executor and machine defaults (issue #142, 2026-10-05)
+
+Owner request: a machine (WSL) attached from the UI defaulted to herdr-claude, and some machine
+defaults were not configurable; attaching assumed ssh with herdr and Claude Code. Cursor must be
+supported; defaults must be configurable. Read as three changes; none breaks a document.
+
+**The Cursor executor** — built-in executor plugin `cursor-agent` (`src/plugins/executor/cursor-agent/`,
+`src/executors/cursor.ts`); opt-in, not in the built-in instances.
+
+| option | default | |
+|---|---|---|
+| `bin` | `cursor-agent` | Cursor's CLI agent on the job's machine (command-bearing) |
+| `args` | `[--force, --trust]` | its own arguments: run tools without asking, trust the work tree (command-bearing) |
+| `cwd` | `~` | the work tree of a job whose payload names none (command-bearing) |
+| `sshBin` | `ssh` | the ssh client, for ssh targets (command-bearing) |
+
+- **One turn is one print-mode run**: `sh -c 'mkdir -p <scratch> && printf "*\n" > <scratch>/.gitignore && cd <cwd> && exec env <payload env> TMPDIR=<scratch> HOPPER_JOB_ID=<id> <bin> -p --output-format json --workspace <cwd> <args> [--model m] [--resume <chat>] -- <text>'`,
+  through the machine's connection (`commandOn`: here, or POSIX-quoted over ssh with the hopper's key). The
+  payload is herdr-claude's (`prompt`, `cwd`, `model`, `env`, `timeoutMs`; `cwd` resolved here and the same
+  path there). The first turn's text is the prompt and `protocolFooter(cwd)`; a resumed turn's is the answer.
+- **The answer** is Cursor's JSON result (`result`, `session_id`, `is_error`). Its last line is the marker:
+  `HOPPER_DONE` → finished `{ machine, summary, chatId }`; `HOPPER_FAILED <reason>` → failed;
+  `HOPPER_QUESTION` → question (`detectedBy: marker`); no marker → question with the whole answer
+  (`detectedBy: idle`): the agent stopped and waits. A question saves `{ chatId, cwd }`; `resume` runs
+  the next turn with `--resume <chatId>`. A non-zero exit, an error result, no JSON or no chat id fails the
+  job with what Cursor said.
+- **Where it runs**: this machine and ssh targets, with or without herdr. A container target (no agent,
+  issue #58) and a client target (serves herdr only) are refused with the reason.
+- **Not idempotent, nothing to reattach**: the process ends with its turn, so a restart fails a running job
+  and never runs the agent twice; a parked job resumes its chat after a restart. Cancel kills the client process.
+- **Detection** is `which` only and always `available`: absent here, its detail says jobs run only on
+  machines that have it (a WSL or server target may have Cursor where the hopper's host has none).
+- **Credentials**: Cursor signs in on each machine (`cursor-agent login`, or `CURSOR_API_KEY` in that
+  machine's environment). The hopper holds no Cursor credential ("Secrets").
+- **Not built**: Cursor in a herdr pane. herdr starts `--kind cursor`, but the screen protocol parses
+  Claude Code's TUI ("Turn anchor (B1)"); print mode needs no screen parsing and ends with each turn.
+  Visible panes for Cursor would be another executor with its own screen protocol.
+
+**An ssh target without herdr** — `ssh` option `herdr` (default `true`, command-bearing). With `false` the
+probe is `true` over ssh (`probeSsh`), the snapshot has no `herdr`, and herdr-claude refuses the machine
+(`it runs no herdr`): without that refusal the job would run in this machine's herdr. Attaching from the UI
+sets it from the executors chosen: herdr is looked for (`resolveSshTarget({ herdr: true })`) only when one
+of them is an instance of `herdr-claude`; otherwise only the pinned host key is resolved and the connection
+made once, and the entry carries `herdr: false` and no `herdrBin`. A document without the option keeps
+herdr: no migration.
+
+**Machine defaults** — plugins.yaml `machineDefaults: { lanes?, executors? }` (strict; `lanes` ≥ 1). A field
+left out is the `ssh` plugin's own default (one lane, `[herdr-claude]`), so an absent section changes nothing.
+`GET /api/machines/config` carries `defaults` (resolved). `POST /ui/api/machines` takes `lanes` and
+`executors` as optional: left out, the defaults. `POST /ui/api/machines/defaults { lanes, executors, version }`
+(admin) replaces the section (Document API, comments kept), refusing an executor that is not a configured
+instance (400) and a stale version (409). The Machines view shows them ("a new machine: …"), edits them
+(**Defaults**), and starts the Add form from them. They seed new machines only: a machine already attached
+keeps its own lanes and executors, and a hand-written instance without them still takes the plugin's
+defaults.
+
+**Not built: attaching a docker or client target from the UI.** Both need setup the daemon cannot do
+(a container started by its script and let through the socket proxy; the client installed on the target
+and its token in the daemon's runtime), so they stay `scripts/` plus `hopper config edit plugins.yaml`.
 

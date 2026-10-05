@@ -65,6 +65,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
   const builtin = builtinInstances();
   const defaults = {
     routing: [] as RoutingRule[],
+    machineDefaults: {},
     queueSorter: builtin.queueSorter,
     escalationLevels: o.defaultLevels ?? builtin.escalationLevels,
     executors: o.defaultExecutors ?? builtin.executors,
@@ -121,6 +122,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
     let spec = {
       router: file?.router,
       routing: file?.routing ?? defaults.routing,
+      machineDefaults: file?.machineDefaults ?? defaults.machineDefaults,
       queueSorter: file?.queueSorter ?? defaults.queueSorter,
       escalationLevels: file?.escalationLevels ?? defaults.escalationLevels,
       executors: file?.executors ?? defaults.executors,
@@ -262,6 +264,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
     targets,
     machinesConfig: () => machinesEditor.config(),
     editMachines: (e) => machinesEditor.edit(e),
+    editMachineDefaults: (e) => machinesEditor.editDefaults(e),
     reload: enqueue,
     routingRules: () => [...(configured?.routing ?? [])],
     machineIds,

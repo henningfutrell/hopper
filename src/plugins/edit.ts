@@ -5,7 +5,7 @@
 // they are the operator's, set with `hopper config edit plugins.yaml` (design.md "Config documents").
 import { isMap, isSeq, parseDocument, type Document } from 'yaml';
 import type { ConfigDocuments } from '../domain/ports.ts';
-import type { ConfiguredInstance, Detection, InstanceSpec, ListRole, PluginsEdit, Role, RoutingEdit, RoutingRule } from '../domain/types.ts';
+import type { ConfiguredInstance, Detection, InstanceSpec, ListRole, MachineDefaults, PluginsEdit, Role, RoutingEdit, RoutingRule } from '../domain/types.ts';
 import { parseRoutingRules } from '../routing/index.ts';
 import { optionsJsonSchema, parseOptions } from './options.ts';
 import { BY_HAND, PLUGINS, pluginsFileProblem } from './plugins-file.ts';
@@ -41,6 +41,8 @@ export interface Configured {
   jobSources: InstanceSpec[]; machines: InstanceSpec[]; usageSources: InstanceSpec[]; notifiers: InstanceSpec[];
   /** plugins.yaml `routing:`, in order; absent: none. */
   routing: RoutingRule[];
+  /** plugins.yaml `machineDefaults:`; absent: none set. */
+  machineDefaults: Partial<MachineDefaults>;
 }
 
 /** Every configured instance by role; with no `router` section, the router chosen by detection. */

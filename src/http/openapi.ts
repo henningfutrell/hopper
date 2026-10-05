@@ -11,7 +11,7 @@ import { streamQuery } from './sse.ts';
 import { decisionsQuery, eventsQuery } from './state.ts';
 import { SESSION_HEADER } from './ui/guard.ts';
 import {
-  answerBody, deviceLinkBody, ghLoginBody, machinesEditBody, pluginStoreBody, pluginsEditBody, routerModeBody, routingEditBody, rulesBody, updateBody, webhooksEditBody,
+  answerBody, deviceLinkBody, ghLoginBody, machineDefaultsBody, machinesEditBody, pluginStoreBody, pluginsEditBody, routerModeBody, routingEditBody, rulesBody, updateBody, webhooksEditBody,
 } from './ui/index.ts';
 import { completeBody, loginBody, passwordBody, startQuery } from './ui/sign-in.ts';
 import { deliveriesQuery } from './webhooks.ts';
@@ -67,6 +67,7 @@ const OPERATIONS: Operation[] = [
   { method: 'get', path: '/api/machines', tag: 'Machines and usage', summary: 'Machines, their lanes and usage', returns: '`{ machines: (MachineSnapshot & { lanes, usage })[] }`' },
   { method: 'get', path: '/api/machines/config', tag: 'Machines and usage', summary: 'What the Machines view edits', returns: 'the machine source, the attached machines, the detected ssh targets, the plugins.yaml version' },
   { method: 'post', path: '/ui/api/machines', tag: 'Machines and usage', summary: 'Attach a machine over ssh (edit or remove it through /ui/api/plugins)', role: 'admin', body: machinesEditBody, returns: 'the new machines config', errors: [409] },
+  { method: 'post', path: '/ui/api/machines/defaults', tag: 'Machines and usage', summary: 'Set what a machine attached here starts with: its lanes and executors', role: 'admin', body: machineDefaultsBody, returns: 'the new machines config', errors: [409] },
   { method: 'get', path: '/api/usage', tag: 'Machines and usage', summary: 'Usage readings', returns: '`UsageReport`' },
   { method: 'get', path: '/api/plugins', tag: 'Plugins and routing', summary: 'Every role, instance and plugin', returns: '`PluginsReport`' },
   { method: 'get', path: '/api/plugin-store', tag: 'Plugins and routing', summary: 'The plugin store: its catalogue and the store installs', returns: '`PluginStoreReport`' },

@@ -24,6 +24,6 @@ export function createLocalMachineSource(o: {
   };
 }
 
-export { createAttachedMachineSource, createTargetPool, probeClient, probeContainer, knownHostKey, probeHerdrOverSsh, resolveSshTarget, type MachineProbe } from './attached.ts';
+export { createAttachedMachineSource, createTargetPool, probeClient, probeContainer, knownHostKey, probeHerdrOverSsh, probeSsh, resolveSshTarget, type MachineProbe, type ResolvedTarget } from './attached.ts';
 export { createClientReleaseKeeper, type ClientReleaseKeeper } from './client-release.ts';
 export { readSshTargets, type SshTargets } from './ssh-config.ts';

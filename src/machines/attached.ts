@@ -44,7 +44,10 @@ export function createAttachedMachineSource(o: AttachedOptions & {
     const m = o.machine();
     return 'docker' in m ? `docker ${m.docker}` : 'client' in m ? 'client, over its reverse tunnel' : `ssh ${m.ssh}`;
   };
-  const down = (): string => ('docker' in o.machine() ? 'its container is not running' : 'its herdr session is not running');
+  const down = (): string => {
+    const m = o.machine();
+    return 'docker' in m ? 'its container is not running' : 'ssh' in m && !m.herdr ? 'it does not answer over ssh' : 'its herdr session is not running';
+  };
   const now = (): number => (o.clock ? o.clock.now().getTime() : Date.now());
   const every = o.probeEveryMs ?? PROBE_EVERY_MS;
   let online = false;
@@ -77,7 +80,7 @@ export function createAttachedMachineSource(o: AttachedOptions & {
       const base: MachineSnapshot = { id: m.name, label: m.label ?? m.name, maxLanes: m.lanes, online, executors: [...m.executors] };
       if ('docker' in m) return [{ ...base, docker: m.docker }];
       if ('client' in m) return [{ ...base, client: { tokenEnv: m.client.tokenEnv, ...clientRelease } }];
-      return [{ ...base, ssh: m.ssh, herdr: { bin: m.herdrBin, session: m.session } }];
+      return [{ ...base, ssh: m.ssh, ...(m.herdr ? { herdr: { bin: m.herdrBin, session: m.session } } : {}) }];
     },
   };
 }
@@ -89,6 +92,25 @@ export async function probeHerdrOverSsh(o: { target: string; herdrBin: string; s
     ssh: { target: o.target, controlDir: o.controlDir, auth: o.auth, ...(o.sshBin ? { bin: o.sshBin } : {}) },
   });
   return /^status: running$/m.test(await herdr.exec(['status', 'server']));
+}
+
+/** Whether an ssh target that runs no herdr answers over ssh (issue #142): `true` there, with the hopper's key. Rejects when ssh fails. */
+export function probeSsh(o: { target: string; controlDir: string; sshBin?: string; auth: () => SshAuth; timeoutMs?: number }): Promise<boolean> {
+  return new Promise((resolve, reject) => {
+    let argv: string[];
+    try {
+      mkdirSync(o.controlDir, { recursive: true, mode: 0o700 });
+      argv = sshArgv({ target: o.target, controlDir: o.controlDir, auth: o.auth, ...(o.sshBin ? { bin: o.sshBin } : {}) }, 'true');
+    } catch (e) {
+      return reject(e instanceof Error ? e : new Error(String(e)));
+    }
+    execFile(o.sshBin ?? 'ssh', argv, { env: scrubbedEnv(), timeout: o.timeoutMs ?? 15000, killSignal: 'SIGKILL', encoding: 'utf8' }, (err, _stdout, stderr) => {
+      const e = err as (Error & { killed?: boolean; code?: number | string }) | null;
+      if (!e) return resolve(true);
+      if (e.killed) return reject(new Error(`ssh ${o.target}: no answer within ${o.timeoutMs ?? 15000} ms`));
+      reject(new Error(`ssh ${o.target}: ${stderr.trim() || e.message}`));
+    });
+  });
 }
 
 /** Whether a client target's herdr session runs: `status server` through its tunnel, signed. Rejects when the client cannot be reached or does not prove itself. */
@@ -129,7 +151,7 @@ export function probeContainer(o: { container: string; dockerHost: () => string;
 export function createTargetPool(o: AttachedOptions & { probe: (machine: AttachedMachine) => Promise<MachineProbe> }): (machine: AttachedMachine) => MachineSource {
   const known = new Map<string, { source: MachineSource; current: AttachedMachine }>();
   const identity = (m: AttachedMachine): string => JSON.stringify('docker' in m ? [m.name, 'docker', m.docker]
-    : 'client' in m ? [m.name, 'client', m.client.tokenEnv] : [m.name, m.ssh, m.herdrBin, m.session]);
+    : 'client' in m ? [m.name, 'client', m.client.tokenEnv] : [m.name, m.ssh, m.herdr, m.herdrBin, m.session]);
   return (m) => {
     const key = identity(m);
     let e = known.get(key);
@@ -167,25 +189,29 @@ export function knownHostKey(o: { target: string; sshBin?: string; keygenBin?: s
   });
 }
 
+/** A new ssh target as resolved: its pinned host key, and herdr's path there when it runs herdr. */
+export interface ResolvedTarget { hostKey: string; herdrBin?: string }
+
 /**
- * Adding an ssh target from the UI (issues #18, #59): its pinned host key (knownHostKey) and the
- * absolute path of herdr there — what `command -v herdr` says in a login shell, else
- * `~/.local/bin/herdr` when it is executable — asked over the same authenticated connection as every
- * herdr call, trusting only that host key. Rejects with the reason.
+ * Adding an ssh target from the UI (issues #18, #59): its pinned host key (knownHostKey) and, when it
+ * is to run herdr, the absolute path of herdr there — what `command -v herdr` says in a login shell,
+ * else `~/.local/bin/herdr` when it is executable — asked over the same authenticated connection as
+ * every herdr call, trusting only that host key. Without herdr (issue #142) the connection is still
+ * made, so a machine the hopper cannot reach is not added. Rejects with the reason.
  */
 export async function resolveSshTarget(o: {
-  target: string; controlDir: string; auth: () => SshAuth; sshBin?: string; keygenBin?: string; knownHosts?: string; timeoutMs?: number;
-}): Promise<{ herdrBin: string; hostKey: string }> {
+  target: string; herdr: boolean; controlDir: string; auth: () => SshAuth; sshBin?: string; keygenBin?: string; knownHosts?: string; timeoutMs?: number;
+}): Promise<ResolvedTarget> {
   mkdirSync(o.controlDir, { recursive: true, mode: 0o700 });
   const hostKey = await knownHostKey(o);
   const pinned = join(o.controlDir, `known_hosts.add-${randomBytes(6).toString('hex')}`);
   writeFileSync(pinned, `${o.target} ${hostKey}\n`, { mode: 0o600 });
-  const command = [
+  const command = o.herdr ? [
     `p=$("$SHELL" -lc 'command -v herdr' 2>/dev/null </dev/null | tail -n 1)`,
     'case "$p" in /*) printf \'%s\\n\' "$p"; exit 0;; esac',
     'if [ -x "$HOME/.local/bin/herdr" ]; then printf \'%s\\n\' "$HOME/.local/bin/herdr"; exit 0; fi',
     "echo 'herdr not found: not on the login PATH, not in ~/.local/bin' >&2; exit 3",
-  ].join('; ');
+  ].join('; ') : 'true';
   try {
     const argv = sshArgv({ target: o.target, ...(o.sshBin ? { bin: o.sshBin } : {}), auth: () => ({ ...o.auth(), knownHostsFile: pinned }) }, command);
     const herdrBin = await new Promise<string>((resolve, reject) => {
@@ -196,12 +222,13 @@ export async function resolveSshTarget(o: {
         if (e?.killed) return reject(new Error(`ssh ${o.target}: no answer within ${o.timeoutMs ?? 15000} ms`));
         if (e && e.code === SSH_FAILED) return reject(new Error(`ssh ${o.target}: ${stderr.trim() || e.message}`));
         if (e) return reject(new Error(`${o.target}: ${stderr.trim() || e.message}`));
+        if (!o.herdr) return resolve('');
         const path = stdout.trim().split('\n').at(-1) ?? '';
         if (!/^\/[^\s]+$/.test(path)) return reject(new Error(`${o.target}: herdr path is not absolute: ${JSON.stringify(path)}`));
         resolve(path);
       });
     });
-    return { herdrBin, hostKey };
+    return o.herdr ? { herdrBin, hostKey } : { hostKey };
   } finally {
     rmSync(pinned, { force: true });
   }

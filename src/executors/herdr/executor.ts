@@ -180,6 +180,8 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
     async run(ctx) {
       // A container target (issue #58) has no herdr; without this the job would run on this machine.
       if (ctx.machine.docker) return { kind: 'failed', error: `herdr-claude does not run on container target ${ctx.machine.id}: it has no herdr; give it the command executor` };
+      // An ssh target that runs no herdr (issue #142): without this the job would run in this machine's herdr.
+      if (ctx.machine.ssh && !ctx.machine.herdr) return { kind: 'failed', error: `herdr-claude does not run on ${ctx.machine.id}: it runs no herdr; give it another executor` };
       const p = resolvePayload(ctx.job.spec.payload, o.defaultCwd);
       let state: PaneState | undefined;
       return onLane(ctx, () => state, async () => {

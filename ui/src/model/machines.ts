@@ -1,8 +1,9 @@
 // The Machines view's model (design.md "Machines from the UI", issues #18, #74): which machine is a
 // `local` instance and which an attached one (an instance of `ssh`, `docker` or `client`), why an Add
 // form may not be sent yet, the body POST /ui/api/machines takes, and the options edit an Edit form
-// sends to POST /ui/api/plugins. herdrBin, session and hostKey are never part of a body.
-import type { InstanceSpec, MachineEdit, MachineSnapshot, MachinesConfig, PluginsEdit } from '../../../src/domain/types.ts';
+// sends to POST /ui/api/plugins. herdrBin, session and hostKey are never part of a body. A new machine
+// starts from the machine defaults (issue #142), edited through POST /ui/api/machines/defaults.
+import type { InstanceSpec, MachineDefaultsEdit, MachineEdit, MachineSnapshot, MachinesConfig, PluginsEdit } from '../../../src/domain/types.ts';
 
 /** The local plugin's default lane count. */
 const DEFAULT_LANES = 4;
@@ -35,6 +36,20 @@ export interface MachineDraft { name: string; ssh: string; lanes: string; execut
 export type MachineEditDraft = Pick<MachineDraft, 'lanes' | 'executors' | 'label'>;
 
 const lanesOf = (s: string): number | undefined => (/^\d+$/.test(s.trim()) && Number(s) >= 1 ? Number(s) : undefined);
+
+/** A fresh Add form: the machine defaults' lanes, and those of their executors that are configured. */
+export function newDraft(config: MachinesConfig): MachineDraft {
+  return { name: '', ssh: '', lanes: String(config.defaults.lanes), executors: config.defaults.executors.filter((x) => config.executors.includes(x)), label: '' };
+}
+
+/** The machine defaults form as typed. */
+export type MachineDefaultsDraft = Pick<MachineDraft, 'lanes' | 'executors'>;
+
+/** POST /ui/api/machines/defaults, or null while lanes is not a whole number ≥ 1. */
+export function defaultsBody(d: MachineDefaultsDraft, version: string): MachineDefaultsEdit | null {
+  const lanes = lanesOf(d.lanes);
+  return lanes === undefined ? null : { lanes, executors: [...d.executors], version };
+}
 
 /** Why the Add form cannot be sent yet, or null. The daemon checks again. */
 export function addProblem(d: MachineDraft, config: MachinesConfig): string | null {
