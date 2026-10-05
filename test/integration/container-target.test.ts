@@ -86,10 +86,12 @@ describe('a container target reached over docker exec', () => {
 
   it('an issue routed to the box runs its body there as a command; the job finishes with the output', async () => {
     const { a, gh } = await boot(CONTAINER);
-    const issue = gh.createIssue({ repo: REPO, title: 'Where am I', body: 'Run:\n\n```sh\nhostname\n```\n', labels: ['hopper', 'on-box'] });
+    const issue = gh.createIssue({ repo: REPO, title: 'Where am I', body: 'Run:\n\n```sh\nsleep 1; hostname\n```\n', labels: ['hopper', 'on-box'] });
     await a.sync();
     const job = await jobFor(a, issue.url);
     expect(job.spec).toMatchObject({ executor: 'command', machineId: 'box' });
+    // The job's pull request merges while it runs: only a job that shipped is finished (issue #171).
+    gh.closeByPullRequest(REPO, issue.number, { createdAt: job.createdAt, mergedAt: new Date().toISOString() });
     const done = await a.waitForStatus(job.id, 'finished');
     expect(done.result).toEqual({ machine: 'box', exitCode: 0, stdout: 'target-box\n', stderr: '' });
   });

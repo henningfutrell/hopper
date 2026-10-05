@@ -12,6 +12,7 @@ import { TERMINAL_STATUSES, type Account } from '../../domain/types.ts';
 import type { GitHubApi, GitHubIssue } from './api.ts';
 import type { GitHubSourceConfig } from '../config.ts';
 import { checkJobs } from './check.ts';
+import { notShipped } from './shipped.ts';
 import { contextBlock, contextComments, issueEnv, issuePrompt } from './context.ts';
 import type { SourceMode } from './context.ts';
 import { discoverIssues } from './discover.ts';
@@ -192,6 +193,9 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     },
     report(r) {
       return reportToGitHub({ api, labelledRepos }, r);
+    },
+    notShipped(job) {
+      return notShipped(api, job);
     },
   };
 }

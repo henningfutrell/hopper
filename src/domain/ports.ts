@@ -371,6 +371,12 @@ export interface JobSource {
    * body), `false` means retry on a later sync.
    */
   report(report: SourceReport): Promise<Record<string, unknown>>;
+  /**
+   * Why a job that ended done has not shipped (its change is not in the product), or undefined when
+   * it shipped (issue #171). Asked before the job is recorded finished: a reason fails the job with
+   * it, and so does a throw (it could not tell). Absent: the source does not judge shipping.
+   */
+  notShipped?(job: Job): Promise<string | undefined>;
 }
 
 export class SourceError extends Error {

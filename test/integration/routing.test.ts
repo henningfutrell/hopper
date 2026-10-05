@@ -8,6 +8,7 @@ import type { Job, RoutingReport } from '../../src/domain/types.ts';
 import { createFakeGitHub, type FakeGitHub } from '../../src/sources/index.ts';
 import { lanes, startTestApp, tempDbPath, TEST_PLUGINS, writePluginsYaml, type TestApp } from '../support/app.ts';
 import { readDocument } from '../support/files.ts';
+import { mergesPullRequest } from '../support/scripted-executor.ts';
 import { waitFor } from '../support/wait.ts';
 
 const REPO = 'owner/hopper-sandbox';
@@ -44,6 +45,7 @@ describe('routing rules at intake', () => {
         { name: 'urgent sandbox', match: { repo: 'owner/*', label: 'URGENT' }, set: { priority: 90, machine: 'local' } },
       ],
     }, gh);
+    a.scripted.ships(mergesPullRequest(gh));
     a.setUsage(100); // keep it waiting: the source's re-sort must not undo the rule's priority
     const urgent = gh.createIssue({ repo: REPO, body: body({ op: 'echo' }), labels: ['hopper', 'urgent'] });
     const plain = gh.createIssue({ repo: REPO, body: body({ op: 'echo' }), labels: ['hopper'] });

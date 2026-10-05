@@ -8,6 +8,7 @@
 import type { ExecutionContext, ExecutionOutcome, Executor } from '../../src/domain/ports.ts';
 import type { Job } from '../../src/domain/types.ts';
 import { createTestExecutor } from '../../src/executors/index.ts';
+import type { FakeGitHub } from '../../src/sources/index.ts';
 
 export interface ScriptedExecutor extends Executor {
   /** The sourced payloads of every run and resume, in order. */
@@ -60,3 +61,9 @@ export function createScriptedExecutor(): ScriptedExecutor {
     resume: (ctx, answer) => shipped(ctx, inner.resume!(scripted(ctx), answer)),
   };
 }
+
+/** For `ships`: the job's pull request, opened and merged now, closes its issue in the fake GitHub. */
+export const mergesPullRequest = (gh: FakeGitHub) => (job: Job): void => {
+  const now = new Date().toISOString();
+  gh.closeByPullRequest(job.source!.repo!, job.source!.number!, { createdAt: now, mergedAt: now });
+};

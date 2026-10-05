@@ -15,6 +15,7 @@ import { GitHubApiError } from './api.ts';
 import type { GitHubApi } from './api.ts';
 import type { GitHubSourceConfig } from '../config.ts';
 import { LABEL_BACKBURNER } from './labels.ts';
+import { isOwnPullRequest } from './shipped.ts';
 
 type CheckConfig = Pick<GitHubSourceConfig, 'label'>;
 
@@ -27,7 +28,7 @@ async function closedByOwnPullRequest(api: GitHubApi, job: Job, repo: string, nu
     if (err instanceof GitHubApiError && err.permanent) return false;
     throw err;
   }
-  return pr !== undefined && Date.parse(pr.createdAt) >= Date.parse(job.createdAt);
+  return isOwnPullRequest(pr, job);
 }
 
 async function checkJob(api: GitHubApi, config: CheckConfig, job: Job): Promise<SourceSignal | undefined> {

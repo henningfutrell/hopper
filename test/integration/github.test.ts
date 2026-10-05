@@ -6,6 +6,7 @@ import type { Job } from '../../src/domain/types.ts';
 import { createFakeGitHub, type FakeGitHub } from '../../src/sources/index.ts';
 import { GitHubApiError } from '../../src/sources/github/index.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
+import { mergesPullRequest } from '../support/scripted-executor.ts';
 import { waitFor } from '../support/wait.ts';
 
 const REPO = 'owner/hopper-sandbox';
@@ -242,6 +243,7 @@ describe('GitHub issue → job → issue', () => {
     await first.stop();
 
     const second = await boot(gh, { dbPath });
+    second.scripted.ships(mergesPullRequest(gh));
     await second.sync();
     const jobs = (await second.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=100')).body.jobs;
     expect(jobs.map((j) => j.id)).toEqual([job.id]);
@@ -272,6 +274,7 @@ describe('GitHub issue → job → issue', () => {
     gh.failNext('getIssue', refused);
     gh.failNext('getIssue', refused);
     const second = await boot(gh, { dbPath });
+    second.scripted.ships(mergesPullRequest(gh));
     await second.sync();
     expect(gh.calls.filter((c) => c.method === 'getIssue').length - before).toBeGreaterThanOrEqual(2);
     expect((await second.job(r.id)).status).not.toBe('cancelled');

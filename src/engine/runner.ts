@@ -39,6 +39,20 @@ async function execute(executor: Executor | undefined, job: Job, ctx: ExecutionC
   return executor.resume(ctx, job.pendingAnswer);
 }
 
+/**
+ * A job that ended done is finished only when its change shipped (issue #171): otherwise, or when
+ * that cannot be told, it fails, and its source never reports it done.
+ */
+async function shippedOrFailed(c: EngineContext, job: Job, outcome: ExecutionOutcome): Promise<ExecutionOutcome> {
+  if (outcome.kind !== 'finished') return outcome;
+  try {
+    const why = await c.notShipped(job);
+    return why === undefined ? outcome : { kind: 'failed', error: `nothing shipped: ${why}` };
+  } catch (e) {
+    return { kind: 'failed', error: `could not confirm the work shipped: ${e instanceof Error ? e.message : String(e)}` };
+  }
+}
+
 export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
   const running = new Map<string, Running>();
 
@@ -94,6 +108,7 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
     } catch (e) {
       outcome = { kind: 'failed', error: e instanceof Error ? e.message : String(e) };
     }
+    if (entry.cancelReason === undefined) outcome = await shippedOrFailed(c, started, outcome);
     // Shutdown: leave the job running in the store; restart recovery decides its fate.
     if (c.stopping() && entry.cancelReason === undefined) return;
     progress.flush();
