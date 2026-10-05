@@ -1,7 +1,6 @@
 // Every place that names a lane names its machine too (issue #166): the decision log and event lines.
 import { describe, expect, it } from 'vitest';
-import { subjectOf } from '../../ui/src/components/event-line.tsx';
-import { startTarget } from '../../ui/src/model/board.ts';
+import { startTarget, subjectOf } from '../../ui/src/model/board.ts';
 import type { DomainEvent, MachineView } from '../../ui/src/model/wire.ts';
 
 const on = (id: string, label: string): MachineView => ({ id, label, maxLanes: 1, online: true, executors: [], lanes: [], usage: [] });
