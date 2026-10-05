@@ -4314,7 +4314,10 @@ reconciled with `auth.yaml` at start as before; their user stays.
 that had expired is not linked; its next sign-in provisions a new, empty user. `hopper login-code`
 (default `owner`) always reaches `owner`. An admin of any user can add users and update the daemon:
 instance mutations are not owner-only. Two users' `local` machines run on the same host side by side,
-each with its own lanes.
+each with its own lanes. As before, every local account of the host reads the GET API on loopback
+without a session — now any user's, by `x-hopper-user`; deploy on a host only the operator uses. Jobs
+of every user run as the daemon's account: one user's job on the hopper host can read files another
+user's job wrote there; the separation is the hopper's, not the operating system's.
 
 ### UI
 
@@ -4332,4 +4335,6 @@ from the UI; `--user <id>` on `login-code` and `config` (a user's `plugins.yaml`
 ### Not built
 
 Removing a user; moving an identity between users; per-user plugin installs (installs are the
-instance's by decision).
+instance's by decision). A client target of a user added later is attached with
+`HOPPER_WORK_DIR=<work dir>/users/<id> scripts/attach-client.sh …` (its relay socket is in that
+user's work dir) and its token variable under the user's prefix; the script does not take a user.
