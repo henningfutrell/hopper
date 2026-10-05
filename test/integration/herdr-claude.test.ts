@@ -38,6 +38,7 @@ describe('herdr-claude job through the daemon', () => {
     expect(q).toMatchObject({ status: 'answered', answeredBy: 'opus', detectedBy: 'marker' });
     expect(herdr.prompts.map((p) => p.text)).toEqual([expect.stringContaining('Paint the shed'), 'fake opus answer']);
     expect(done.result).toMatchObject({ summary: expect.stringContaining('Painted the shed.') });
+    expect(done.workTree).toBe('/tmp');
     const paneId = (done.executorState as { paneId: string }).paneId;
     await waitFor(() => herdr.closed.includes(paneId));
   });

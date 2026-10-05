@@ -10,7 +10,7 @@ function ctxFor(payload: Record<string, unknown>, signal = new AbortController()
     id: 'j1', spec: { executor: 'test', payload }, priority: 50, status: 'running', approved: false,
     createdAt: '', updatedAt: '', attempts: 1,
   };
-  const ctx: ExecutionContext = { job, laneId: 'local/lane-1', machine: { id: 'local', label: 'l', maxLanes: 1, online: true, executors: ['test'] }, signal, progress: (f) => progress.push(f), saveState: (s) => saved.push(s) };
+  const ctx: ExecutionContext = { job, laneId: 'local/lane-1', machine: { id: 'local', label: 'l', maxLanes: 1, online: true, executors: ['test'] }, signal, progress: (f) => progress.push(f), saveState: (s) => saved.push(s), workTree() {} };
   return { ctx, progress, saved };
 }
 

@@ -107,6 +107,13 @@ describe('herdr-claude executor: run', () => {
     expect(sent).toContain('Never make or work in a copy of the code outside it, under /tmp or anywhere else.');
   });
 
+  it('reports its work tree, ~ expanded, so the lane running it shows where it works (issue #166)', async () => {
+    const { executor } = setup({ turns: [DONE] });
+    const { ctx, workTrees } = contextFor(jobWith({ prompt: 'go', cwd: '~/proj' }));
+    await executor.run(ctx);
+    expect(workTrees).toEqual([`${homedir()}/proj`]);
+  });
+
   it('expands ~ in the cwd', async () => {
     const { herdr, executor } = setup({ turns: [DONE] });
     await executor.run(contextFor(jobWith({ prompt: 'go', cwd: '~/proj' })).ctx);
