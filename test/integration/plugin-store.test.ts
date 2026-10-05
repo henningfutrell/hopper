@@ -1,8 +1,10 @@
 // The plugin store through the HTTP edge (issue #75, design.md "Plugin store"): a real git
 // repository holding a store catalogue, a real daemon. GET /api/plugin-store reads; POST
 // /ui/api/plugin-store refreshes, installs (and updates) and removes, behind an admin UI session.
-// Installed plugins land in the plugin dir and show in /api/plugins without a restart.
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+// Installs are kept in the database (issue #93): their code is unpacked into the work dir, which is
+// scratch, and restored from the plugin store at the next start; the plugin dir is never written.
+// Installed plugins show in /api/plugins without a restart.
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { PluginStoreReport, PluginsReport } from '../../src/domain/types.ts';
@@ -52,13 +54,45 @@ describe('the plugin store over HTTP', () => {
     expect(r.reason).toMatch(/JOB_HOPPER_PLUGIN_STORE/);
   });
 
-  it('is unavailable without a plugin dir: there is nowhere to install', async () => {
+  it('needs no plugin dir: installs are kept in the database', async () => {
     const w = world();
-    // Unset: the test app sets a plugin dir by default.
     const app = await start(w, { JOB_HOPPER_PLUGIN_STORE: w.store.dir, JOB_HOPPER_PLUGIN_DIR: undefined } as unknown as Record<string, string>);
-    const r = await read(app);
-    expect(r.state).toBe('unavailable');
-    expect(r.reason).toMatch(/JOB_HOPPER_PLUGIN_DIR/);
+    await ready(app);
+    expect((await read(app)).state).toBe('ready');
+    const token = await app.login();
+    const r = await app.ui<PluginStoreReport>('/ui/api/plugin-store', { action: 'install', id: 'word-first' }, { token });
+    expect(r.status).toBe(200);
+    expect(plugin(r.body, 'word-first')?.installed).toMatchObject({ commit: w.first });
+  });
+
+  it('restores its installs on a fresh work dir, as an ephemeral container starts', async () => {
+    const w = world();
+    const first = await start(w);
+    await ready(first);
+    await first.ui('/ui/api/plugin-store', { action: 'install', id: 'echo-executor' }, { token: await first.login() });
+    await first.stop();
+    apps.splice(apps.indexOf(first), 1);
+
+    const fresh = tempDir('jh-plugin-store-work-');
+    cleanups.push(() => rmSync(fresh, { recursive: true, force: true }));
+    const app = await start(w, { JOB_HOPPER_PLUGIN_STORE: w.store.dir, JOB_HOPPER_WORK_DIR: fresh });
+    expect(plugin(await read(app), 'echo-executor')?.installed).toMatchObject({ commit: w.first });
+    const plugins = (await app.api<PluginsReport>('GET', '/api/plugins')).body;
+    expect(plugins.plugins.find((p) => p.id === 'echo-executor')).toMatchObject({ role: 'executor', builtin: false, detection: { status: 'available' } });
+    expect(existsSync(w.pluginDir) ? readdirSync(w.pluginDir) : []).toEqual([]);
+  });
+
+  it('moves a store install left in the plugin dir into the database', async () => {
+    const w = world();
+    const legacy = join(w.pluginDir, 'word-first');
+    mkdirSync(w.pluginDir, { recursive: true });
+    cpSync(join(w.store.dir, 'plugins', 'word-first'), legacy, { recursive: true });
+    const marker = { role: 'queue-sorter', describe: 'the word-first example', commit: w.first, tree: 'unknown', installedAt: '2026-10-01T00:00:00.000Z' };
+    writeFileSync(join(legacy, '.plugin-store.json'), JSON.stringify(marker));
+    const app = await start(w);
+    expect(plugin(await read(app), 'word-first')?.installed).toMatchObject({ commit: w.first, installedAt: marker.installedAt });
+    expect(existsSync(legacy)).toBe(false);
+    expect((await app.api<PluginsReport>('GET', '/api/plugins')).body.plugins.find((p) => p.id === 'word-first')).toMatchObject({ builtin: false });
   });
 
   it('lists the catalogue, installs a plugin that then shows in /api/plugins, and removes it', async () => {
@@ -76,8 +110,7 @@ describe('the plugin store over HTTP', () => {
     const installed = await app.ui<PluginStoreReport>('/ui/api/plugin-store', { action: 'install', id: 'echo-executor' }, { token });
     expect(installed.status).toBe(200);
     expect(plugin(installed.body, 'echo-executor')).toMatchObject({ installed: { commit: w.first, current: true }, restartPending: false });
-    expect(existsSync(join(w.pluginDir, 'echo-executor', 'index.ts'))).toBe(true);
-    expect(JSON.parse(readFileSync(join(w.pluginDir, 'echo-executor', '.plugin-store.json'), 'utf8'))).toMatchObject({ commit: w.first });
+    expect(existsSync(join(w.pluginDir, 'echo-executor'))).toBe(false);
 
     const plugins = (await app.api<PluginsReport>('GET', '/api/plugins')).body;
     expect(plugins.plugins.find((p) => p.id === 'echo-executor')).toMatchObject({ role: 'executor', builtin: false, detection: { status: 'available' } });
@@ -85,7 +118,6 @@ describe('the plugin store over HTTP', () => {
     const removed = await app.ui<PluginStoreReport>('/ui/api/plugin-store', { action: 'remove', id: 'echo-executor' }, { token });
     expect(removed.status).toBe(200);
     expect(plugin(removed.body, 'echo-executor')?.installed).toBeUndefined();
-    expect(existsSync(join(w.pluginDir, 'echo-executor'))).toBe(false);
     expect((await app.api<PluginsReport>('GET', '/api/plugins')).body.plugins.some((p) => p.id === 'echo-executor')).toBe(false);
 
     const events = (await app.events()).filter((e) => e.type.startsWith('plugin.'));
@@ -114,7 +146,6 @@ describe('the plugin store over HTTP', () => {
 
     r = (await app.ui<PluginStoreReport>('/ui/api/plugin-store', { action: 'install', id: 'word-first' }, { token })).body;
     expect(plugin(r, 'word-first')).toMatchObject({ installed: { commit: changed, current: true }, restartPending: true });
-    expect(existsSync(join(w.pluginDir, 'word-first', 'NOTES.md'))).toBe(true);
   });
 
   it('refuses to remove a plugin plugins.yaml names, and to touch a plugin the operator put there by hand', async () => {
@@ -127,7 +158,7 @@ describe('the plugin store over HTTP', () => {
 
     const own = await app.ui<{ error: string }>('/ui/api/plugin-store', { action: 'install', id: 'word-first' }, { token });
     expect(own.status).toBe(409);
-    expect(own.body.error).toMatch(/not a store install/);
+    expect(own.body.error).toMatch(/plugin dir/);
     expect((await app.ui('/ui/api/plugin-store', { action: 'remove', id: 'word-first' }, { token })).status).toBe(404);
     expect(readFileSync(join(w.pluginDir, 'word-first', 'index.ts'), 'utf8')).toMatch(/describe: 'mine'/);
 
@@ -136,7 +167,7 @@ describe('the plugin store over HTTP', () => {
     const named = await app.ui<{ error: string }>('/ui/api/plugin-store', { action: 'remove', id: 'echo-executor' }, { token });
     expect(named.status).toBe(409);
     expect(named.body.error).toMatch(/echo/);
-    expect(existsSync(join(w.pluginDir, 'echo-executor'))).toBe(true);
+    expect(plugin(await read(app), 'echo-executor')?.installed).toMatchObject({ commit: w.first });
 
     expect((await app.ui('/ui/api/plugin-store', { action: 'install', id: 'nope' }, { token })).status).toBe(404);
     expect((await app.ui('/ui/api/plugin-store', { action: 'remove', id: '../plugins/echo-executor' }, { token })).status).toBe(400);
@@ -159,6 +190,7 @@ describe('the plugin store over HTTP', () => {
       expect(r.body.error).toMatch(why);
     }
     expect(existsSync(w.pluginDir) ? readdirSync(w.pluginDir) : []).toEqual([]);
+    expect((await read(app)).plugins.filter((p) => p.installed)).toEqual([]);
   });
 
   it('keeps the last good catalogue and reports the error when the store breaks', async () => {
