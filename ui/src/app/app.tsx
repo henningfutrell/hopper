@@ -3,6 +3,7 @@ import { AlertTriangle } from 'lucide-react';
 import { useEffect } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Toaster } from '@/components/ui/sonner';
+import { useForgetCleared } from '@/hooks/use-dismissed';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { load, setLoadError, useHopper } from '@/store';
 import { connect } from '@/store/stream';
@@ -38,6 +39,7 @@ export function App() {
   const view = useView();
   const loaded = useHopper((s) => s.loaded);
   const loadError = useHopper((s) => s.loadError);
+  useForgetCleared();
   useEffect(() => {
     let close: (() => void) | undefined;
     let cancelled = false;
@@ -64,7 +66,7 @@ export function App() {
           </main>
         </div>
       </div>
-      <Toaster position="bottom-right" />
+      <Toaster position="bottom-right" closeButton />
     </TooltipProvider>
   );
 }

@@ -2,10 +2,12 @@
 // browser keeps it dismissed. Each notice key names one occurrence; a condition seen cleared is
 // forgotten, so the next occurrence shows again. The model is pure; what a browser stored never throws.
 import { describe, expect, it } from 'vitest';
+import type { SourceStatus } from '../../src/domain/types.ts';
 import { DISMISSED_CAP, dismiss, forgetCleared, noticeKey, parseDismissed } from '../../ui/src/model/dismissed.ts';
 
 const health = (fallback: boolean) => ({ ok: true, version: '0', routerMode: 'active' as const, router: 'jev', fallback, executors: [], uptimeS: 1 });
-const source = (name: string, state: 'ok' | 'error', lastError?: string) => ({ name, kind: 'github', state, itemsSeen: 0, jobsCreated: 0, ...(lastError ? { lastError } : {}) });
+const source = (name: string, state: 'ok' | 'error', lastError?: string): SourceStatus =>
+  ({ name, kind: 'github', state, itemsSeen: 0, jobsCreated: 0, activeJobs: 0, detail: {}, ...(lastError ? { lastError } : {}) });
 
 describe('parseDismissed', () => {
   it('nothing stored, or not a list of keys: nothing dismissed', () => {
