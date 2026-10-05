@@ -1,7 +1,9 @@
-// The Docker Compose install (issue #119): one compose.yaml brings up everything — its Postgres and
+// The container install (issue #119): one compose.yaml brings up everything — its Postgres and
 // the hopper, which runs jobs in its own herdr session inside its container — with no host install
-// and no settings to start. The install page serves it as compose.yaml. Asserted on the rendered form
-// docker compose runs (`docker compose config`), from an empty directory: the file as downloaded.
+// and no settings to start. The install page serves it as compose.yaml. Issue #125: the hopper is the
+// public image pulled from GitHub's registry, nothing is built, and Podman is the recommended runtime.
+// Asserted on the rendered form compose runs (`docker compose config`, the provider `podman compose`
+// uses too), from an empty directory: the file as downloaded.
 import { spawnSync } from 'node:child_process';
 import { copyFileSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -9,7 +11,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const ROOT = join(import.meta.dirname, '..', '..');
-const SOURCE = 'https://github.com/henningfutrell/hopper.git#main';
+const IMAGE = 'ghcr.io/henningfutrell/hopper:latest';
 
 interface Service {
   image?: string;
@@ -49,8 +51,9 @@ describe('compose.yaml, downloaded alone and started with no settings', () => {
     expect(r.name).toBe('hopper');
   });
 
-  it('builds the hopper from the public repository\'s main branch: no clone needed', () => {
-    expect(hopper.build?.context).toBe(SOURCE);
+  it('pulls the hopper\'s public image by its full name: no clone, no build, no short-name prompt in Podman', () => {
+    expect(hopper.image).toBe(IMAGE);
+    expect(hopper.build).toBeUndefined();
   });
 
   it('serves the UI on this computer\'s loopback only', () => {
@@ -91,11 +94,11 @@ describe('compose.yaml with a .env beside it', () => {
     expect(hopper.environment?.GH_TOKEN).toBe('t0');
   });
 
-  it('moves the UI port on both sides, so the Host the browser sends names the daemon\'s port; builds from another source', () => {
-    const hopper = svc(render('JOB_HOPPER_PORT=4800\nHOPPER_SOURCE=/src/hopper\n'), 'hopper');
+  it('moves the UI port on both sides, so the Host the browser sends names the daemon\'s port; runs another image', () => {
+    const hopper = svc(render('JOB_HOPPER_PORT=4800\nHOPPER_IMAGE=localhost/hopper:dev\n'), 'hopper');
     expect(hopper.ports).toEqual([expect.objectContaining({ host_ip: '127.0.0.1', published: '4800', target: 4800 })]);
     expect(hopper.environment?.JOB_HOPPER_PORT).toBe('4800');
-    expect(hopper.build?.context).toBe('/src/hopper');
+    expect(hopper.image).toBe('localhost/hopper:dev');
   });
 });
 
@@ -127,9 +130,38 @@ describe('the install page', () => {
     expect(workflow).toMatch(/paths:.*compose\.yaml/);
   });
 
-  it('gives the Docker Compose install as commands to copy', () => {
+  it('gives the container install with Podman as commands to copy', () => {
     expect(page).toContain('data-copy="curl -fsSLO https://henningfutrell.github.io/hopper/compose.yaml"');
-    expect(page).toContain('data-copy="docker compose up -d --build"');
-    expect(page).toContain('docker compose exec hopper job-hopper login-code --link http://127.0.0.1:4790');
+    expect(page).toContain('data-copy="podman compose up -d"');
+    expect(page).toContain('podman compose exec hopper job-hopper login-code --link http://127.0.0.1:4790');
+    expect(page).toContain('data-copy="podman compose pull &amp;&amp; podman compose up -d"');
+  });
+
+  it('recommends the container: its first command is the Podman one, before the install on the machine itself', () => {
+    const first = (cmd: string): number => page.indexOf(`data-copy="${cmd}`);
+    expect(first('podman compose up -d')).toBeGreaterThan(0);
+    expect(first('podman compose up -d')).toBeLessThan(first('curl -fsSL https://henningfutrell.github.io/hopper/install.sh | bash'));
+    expect(page).toMatch(/[Rr]ecommended/);
+  });
+});
+
+describe('the published image (issue #125)', () => {
+  const workflow = readFileSync(join(ROOT, '.github', 'workflows', 'image.yml'), 'utf8');
+
+  it('is built from the Dockerfile and pushed to GitHub\'s registry as the image compose.yaml pulls', () => {
+    expect(workflow).toMatch(/registry: ghcr\.io/);
+    expect(workflow).toContain('images: ghcr.io/henningfutrell/hopper');
+    expect(workflow).toMatch(/type=raw,value=latest/);
+    expect(workflow).toMatch(/push: true/);
+  });
+
+  it('is built on every change to main, for Intel/AMD and ARM machines', () => {
+    expect(workflow).toMatch(/branches: \[main\]/);
+    expect(workflow).toContain('linux/amd64,linux/arm64');
+  });
+
+  it('pushes with the workflow\'s own token: no registry credential to keep', () => {
+    expect(workflow).toContain('packages: write');
+    expect(workflow).toContain('secrets.GITHUB_TOKEN');
   });
 });
