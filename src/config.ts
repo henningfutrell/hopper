@@ -118,7 +118,7 @@ const SETTING_HELP: Record<keyof typeof schema.shape, string> = {
   JOB_HOPPER_LAN_PEERS: 'CIDR ranges LAN or proxy requests may come from, comma-separated (192.0.2.0/24); binds every interface',
   JOB_HOPPER_WORK_DIR: 'scratch space: working files, ssh control sockets. Nothing kept',
   JOB_HOPPER_PLUGIN_DIR: 'a directory of custom plugins, one directory each (docs/plugins.md). Unset: none',
-  JOB_HOPPER_PLUGIN_STORE: 'the plugin store the UI installs plugins from into JOB_HOPPER_PLUGIN_DIR: a git repository (URL or path) holding plugin-store.yaml. Unset: none',
+  JOB_HOPPER_PLUGIN_STORE: 'the plugin store the UI installs plugins from (kept in the database, restored at start): a git repository (URL or path) holding plugin-store.yaml. Unset: none',
   JOB_HOPPER_TICK_MS: 'how often the engine decides',
   JOB_HOPPER_ROUTER_MODE: 'router mode until one is stored: shadow (advice is logged) or active (advice is applied)',
   JOB_HOPPER_SOFT_LIMIT: 'usage fraction where a machine starts to close lanes',

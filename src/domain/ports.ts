@@ -6,7 +6,7 @@ import type {
   RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule,
   JobSourceRef, LaneId, MachineId, MachineSnapshot, NewEvent, Question, QuestionAttempt, QuestionStatus,
   Identity, SourceStatus, UiRole, UsageReading, UsageSourceState, WebhookDelivery, WebhookSubscription,
-  InstallInfo, UpdateSettings, UpdateStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport,
+  InstallInfo, UpdateSettings, UpdateStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, PluginInstall,
 } from './types.ts';
 
 // ---- Execution -----------------------------------------------------------------------
@@ -495,6 +495,9 @@ export interface SettingsRepository {
   /** Self-update settings the owner chose; absent fields were never set. */
   getUpdateSettings(): Partial<UpdateSettings>;
   setUpdateSettings(patch: Partial<UpdateSettings>): void;
+  /** The store installs, by id (issue #93). */
+  getPluginInstalls(): PluginInstall[];
+  setPluginInstalls(installs: readonly PluginInstall[]): void;
 }
 
 // ---- Self-update (issue #44) ------------------------------------------------------------

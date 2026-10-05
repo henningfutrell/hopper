@@ -10,7 +10,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { PluginStoreReport, PluginsReport } from '../../src/domain/types.ts';
 import { startTestApp, tempDbPath, writePluginsYaml, TEST_PLUGINS, type TestApp } from '../support/app.ts';
 import { waitFor } from '../support/wait.ts';
-import { tempDir } from '../update/support.ts';
+import { git, tempDir } from '../update/support.ts';
 import { createStoreRepo, entry } from '../plugin-store/support.ts';
 
 const apps: TestApp[] = [];
@@ -87,7 +87,7 @@ describe('the plugin store over HTTP', () => {
     const legacy = join(w.pluginDir, 'word-first');
     mkdirSync(w.pluginDir, { recursive: true });
     cpSync(join(w.store.dir, 'plugins', 'word-first'), legacy, { recursive: true });
-    const marker = { role: 'queue-sorter', describe: 'the word-first example', commit: w.first, tree: 'unknown', installedAt: '2026-10-01T00:00:00.000Z' };
+    const marker = { role: 'queue-sorter', describe: 'the word-first example', commit: w.first, tree: git(w.store.dir, 'rev-parse', `${w.first}:plugins/word-first`), installedAt: '2026-10-01T00:00:00.000Z' };
     writeFileSync(join(legacy, '.plugin-store.json'), JSON.stringify(marker));
     const app = await start(w);
     expect(plugin(await read(app), 'word-first')?.installed).toMatchObject({ commit: w.first, installedAt: marker.installedAt });

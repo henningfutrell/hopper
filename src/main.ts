@@ -22,7 +22,7 @@ import { readRelease } from './client/release.ts';
 import { BUILTIN_PLUGINS } from './plugins/builtin.ts';
 import { herdrClaudePlugin } from './plugins/executor/herdr-claude/index.ts';
 import { createPluginHost, type BuiltJobSource } from './plugins/index.ts';
-import { createPluginStore } from './plugins/plugin-store.ts';
+import { createPluginStore, installedDirOf } from './plugins/plugin-store.ts';
 import type { JobSourceInstance } from './plugins/sdk.ts';
 import { unavailableExecutors } from './plugins/executor-slot.ts';
 import { githubAppPlugin } from './plugins/job-source/github-app/index.ts';
@@ -181,7 +181,8 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   let executorNames = (): string[] => [];
   let jobsOnMachine = (_name: string): string[] => [];
   const host = createPluginHost({
-    ...(config.pluginDir ? { pluginDir: config.pluginDir } : {}), documents: store.documents, dataDir, clock, routerMode, logger,
+    ...(config.pluginDir ? { pluginDir: config.pluginDir } : {}), installedDir: installedDirOf(dataDir),
+    documents: store.documents, dataDir, clock, routerMode, logger,
     kit: createDetectionKit({ env, secret }),
     builtins: withSeams(seams),
     jobSourceContext: {
@@ -192,6 +193,13 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     intervalMs: seams.pluginsFileIntervalMs ?? PLUGINS_FILE_CHECK_MS,
     attached: { inUse: (name) => jobsOnMachine(name), sshAuth, ...(seams.resolveTarget ? { resolveTarget: seams.resolveTarget } : {}) },
   });
+  // The plugin store (issue #75): its installs are kept in the database (issue #93) and unpacked into
+  // the work dir, scratch, so they are restored before the host loads plugins; the host rescans after an edit.
+  const pluginStore = createPluginStore({
+    ...(config.pluginStore ? { repo: config.pluginStore } : {}), ...(config.pluginDir ? { pluginDir: config.pluginDir } : {}),
+    workDir: dataDir, installs: store.settings, builtinIds: new Set(BUILTIN_PLUGINS.map((p) => p.id)), plugins: host, events: store.events, clock, logger,
+  });
+  await pluginStore.restore();
   await host.start();
   // The pinned host keys follow plugins.yaml: rewritten when it changes, each problem logged once.
   const pinProblems = new Set<string>();
@@ -274,11 +282,6 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     restart: seams.update?.restart ?? (() => restartApp()),
     restartBlockers: () => restartBlockers(store.jobs.list({ status: ['running'] }), (name) => executors.get(name)),
     checkMs: config.updateCheckMs,
-  });
-  // The plugin store (issue #75): installs into the plugin dir; the host rescans.
-  const pluginStore = createPluginStore({
-    ...(config.pluginStore ? { repo: config.pluginStore } : {}), ...(config.pluginDir ? { pluginDir: config.pluginDir } : {}),
-    workDir: dataDir, builtinIds: new Set(BUILTIN_PLUGINS.map((p) => p.id)), plugins: host, events: store.events, clock, logger,
   });
   const server = createServer({
     engine, store, dispatcher, questions, clock, version: VERSION, sources: registry, webhookConfig, plugins, pluginStore, updater,

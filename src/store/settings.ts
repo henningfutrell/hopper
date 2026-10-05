@@ -1,5 +1,5 @@
 import type { SettingsRepository } from '../domain/ports.ts';
-import type { RouterMode, UpdateChannel, UpdateSettings } from '../domain/types.ts';
+import type { PluginInstall, RouterMode, UpdateChannel, UpdateSettings } from '../domain/types.ts';
 import { UPDATE_CHANNELS } from '../domain/types.ts';
 import type { StoreContext } from './context.ts';
 
@@ -29,6 +29,13 @@ export function createSettingsRepository(c: StoreContext): SettingsRepository {
     setUpdateSettings(patch) {
       if (patch.channel !== undefined) write('updateChannel', patch.channel);
       if (patch.autoUpdate !== undefined) write('autoUpdate', String(patch.autoUpdate));
+    },
+    getPluginInstalls() {
+      const text = read('pluginInstalls');
+      return text === undefined ? [] : JSON.parse(text) as PluginInstall[];
+    },
+    setPluginInstalls(installs) {
+      write('pluginInstalls', JSON.stringify([...installs].sort((a, b) => a.id.localeCompare(b.id))));
     },
   };
 }

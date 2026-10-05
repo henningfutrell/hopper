@@ -31,7 +31,7 @@ describe('custom plugin loader', () => {
     const dir = temp();
     cpSync(ALWAYS_PROCEED_DIR, join(dir, 'always-proceed'), { recursive: true });
     writePlugin(dir, 'js-router', routerJs('js-router'), 'index.js');
-    const r = await loadCustomPlugins(dir, BUILTIN_IDS);
+    const r = await loadCustomPlugins([dir], BUILTIN_IDS);
     expect(r.errors).toEqual([]);
     expect(r.plugins.map((p) => [p.definition.id, p.path]).sort()).toEqual([
       ['always-proceed', join(dir, 'always-proceed', 'index.ts')],
@@ -43,13 +43,13 @@ describe('custom plugin loader', () => {
   });
 
   it('an absent plugin dir is no plugins and no error', async () => {
-    expect(await loadCustomPlugins(join(temp(), 'nope'), BUILTIN_IDS)).toEqual({ plugins: [], errors: [], warnings: [] });
+    expect(await loadCustomPlugins([join(temp(), 'nope')], BUILTIN_IDS)).toEqual({ plugins: [], errors: [], warnings: [] });
   });
 
   it('refuses a custom id that collides with a built-in', async () => {
     const dir = temp();
     writePlugin(dir, 'mine', routerJs('pass-through'), 'index.js');
-    const r = await loadCustomPlugins(dir, BUILTIN_IDS);
+    const r = await loadCustomPlugins([dir], BUILTIN_IDS);
     expect(r.plugins).toEqual([]);
     expect(r.errors).toEqual([{ path: join(dir, 'mine', 'index.js'), error: expect.stringMatching(/pass-through.*built-in/) }]);
   });
@@ -58,7 +58,7 @@ describe('custom plugin loader', () => {
     const dir = temp();
     writePlugin(dir, 'a', routerJs('twin'), 'index.js');
     writePlugin(dir, 'b', routerJs('twin'), 'index.js');
-    const r = await loadCustomPlugins(dir, BUILTIN_IDS);
+    const r = await loadCustomPlugins([dir], BUILTIN_IDS);
     expect(r.plugins.map((p) => p.definition.id)).toEqual(['twin']);
     expect(r.errors).toEqual([{ path: join(dir, 'b', 'index.js'), error: expect.stringMatching(/twin.*already/) }]);
   });
@@ -73,7 +73,7 @@ describe('custom plugin loader', () => {
     const dir = temp();
     writePlugin(dir, 'bad', source, 'index.js');
     writePlugin(dir, 'good', routerJs('good'), 'index.js');
-    const r = await loadCustomPlugins(dir, BUILTIN_IDS);
+    const r = await loadCustomPlugins([dir], BUILTIN_IDS);
     expect(r.plugins.map((p) => p.definition.id)).toEqual(['good']);
     expect(r.errors).toHaveLength(1);
     expect(r.errors[0]!.error).toMatch(why);
@@ -82,16 +82,16 @@ describe('custom plugin loader', () => {
   it('a directory without index.ts or index.js is an error', async () => {
     const dir = temp();
     writePlugin(dir, 'empty', 'x', 'README.md');
-    const r = await loadCustomPlugins(dir, BUILTIN_IDS);
+    const r = await loadCustomPlugins([dir], BUILTIN_IDS);
     expect(r.errors).toEqual([{ path: join(dir, 'empty'), error: expect.stringMatching(/index\.ts or index\.js/) }]);
   });
 
   it('warns when the plugin dir is readable by group or other', async () => {
     const dir = temp();
     chmodSync(dir, 0o755);
-    const r = await loadCustomPlugins(dir, BUILTIN_IDS);
+    const r = await loadCustomPlugins([dir], BUILTIN_IDS);
     expect(r.warnings).toEqual([expect.stringMatching(/group\/other.*chmod 700/)]);
     chmodSync(dir, 0o700);
-    expect((await loadCustomPlugins(dir, BUILTIN_IDS)).warnings).toEqual([]);
+    expect((await loadCustomPlugins([dir], BUILTIN_IDS)).warnings).toEqual([]);
   });
 });

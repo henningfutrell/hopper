@@ -1683,10 +1683,11 @@ export default {
 ### Where plugins live, and loading
 
 - Built-in: `src/plugins/<role>/<id>/index.ts`, listed in `src/plugins/builtin.ts`.
-- Custom: `~/.config/job-hopper/plugins/<id>/index.ts` (`JOB_HOPPER_PLUGIN_DIR`), loaded by
+- Custom: `<plugin dir>/<id>/index.ts` (`JOB_HOPPER_PLUGIN_DIR`, no default), then the store installs
+  (`<work dir>/plugin-store/installed/<id>/`, "Plugin store"), loaded by
   dynamic `import()` at start and on rescan. Same contract and validation. A custom id equal
   to a built-in id is refused. Plugin dir readable by group/other → warning.
-- Types for out-of-tree authors: `install.sh` writes `~/.config/job-hopper/plugins/tsconfig.json`
+- Types for out-of-tree authors: `install.sh` writes `<plugin dir>/tsconfig.json`
   mapping `job-hopper/plugin` to `<install>/src/plugins/sdk.ts`. `npm run plugin:check <dir>`
   type-checks with that mapping, then runs the real loader and `detect`.
   `examples/plugins/<role>/` holds one minimal runnable plugin per role. Author guide:
@@ -2155,8 +2156,8 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
   may start real work). Needs the dev dependencies: run it from a checkout, not the install (which
   is `npm ci --omit=dev`) — it says so when typescript is missing.
 - **Plugin tsconfig:** `install.sh` runs `scripts/write-plugin-tsconfig.ts "$PLUGIN_DIR"
-  "$DEST/src/plugins/sdk.ts"` (`PLUGIN_DIR` = `JOB_HOPPER_PLUGIN_DIR`, default
-  `~/.config/job-hopper/plugins`), mode 600, the dir created 700. **No-clobber rule, chosen:** the
+  "$DEST/src/plugins/sdk.ts"` (`PLUGIN_DIR` = `JOB_HOPPER_PLUGIN_DIR`; skipped
+  when it is unset), mode 600, the dir created 700. **No-clobber rule, chosen:** the
   file starts with a job-hopper marker line and is rewritten on every install while that line is
   there (an install can move the SDK); without it the file is the owner's and is kept byte for
   byte, with a note. Deleting the line is how the owner takes it over. The install has no
@@ -3507,19 +3508,32 @@ No signature check.
 `HEAD` (its default branch) with the update mirror's git environment (never prompts, ssh batch
 mode). Read at start in the background (a slow or unreachable store never delays the boot), and on
 `refresh`. A catalogue that cannot be fetched or parsed → state `error` with the reason; the last
-good catalogue stays listed. No plugin dir → state `unavailable`: there is nowhere to install.
+good catalogue stays listed. No plugin store → state `unavailable`.
+
+**Where store installs are kept (issue #93).** Nothing durable lives on the machine: an ephemeral
+container has no config directory to keep. A store install is a row of the database (`settings` key
+`pluginInstalls`: `{ id, role, describe, commit, tree, installedAt }`, `PluginInstall`); its code is
+unpacked into `<work dir>/plugin-store/installed/<id>`, scratch, which the plugin host loads after the
+plugin dir. **Restore:** at start, before the plugin host loads plugins, every store install whose
+directory is missing (a fresh work dir) is unpacked again from the store by its `tree` id, so
+plugins.yaml finds it at the first load; the store is fetched only then (a boot with every install in
+place, or none, never waits for it). One that cannot be restored is logged and left out; it stays in
+the database. The plugin dir is the operator's and never written. A store install an earlier version
+left in the plugin dir (a directory holding `.plugin-store.json`) is moved into the database and the
+work dir at the first start, its directory removed.
 
 **Installing** (`{ action: 'install', id }`; also how a store install is updated to the store's head):
 
-1. Refused — 404 an id the catalogue does not list; 409 a built-in id, or a plugin directory of
-   that id under the plugin dir that is not a store install (the operator's own, never overwritten).
+1. Refused — 404 an id the catalogue does not list; 409 a built-in id, or a directory of that id in
+   the plugin dir (the operator's own, never replaced).
 2. The plugin's directory at the store's head (`git archive <commit>:<path>`) is unpacked into
-   `<plugin dir>/.install-<id>` (the loader skips dot directories).
+   `<work dir>/plugin-store/installed/.install-<id>` (the loader skips dot directories).
 3. Proof it loads: it must have `index.ts` or `index.js`, import with the custom-plugin loader, and
    declare the catalogue's `id` and `role`. Else 409 with the reason; the staging directory is removed
    and nothing changes.
-4. `.plugin-store.json` (`{ role, describe, commit, tree, installedAt }`, `tree` the directory's git tree id) is
-   written into it; the old directory (an update) is removed and the new one renamed into place.
+4. The old directory (an update) is removed, the new one renamed into place, and the store install
+   (`{ id, role, describe, commit, tree, installedAt }`, `tree` the directory's git tree id) written to
+   the database.
 5. Rescan (the plugin host): a new plugin is in `/api/plugins` at once. An updated one keeps its
    old code until the daemon restarts (Node caches the import): `restartPending: true`.
 6. `plugin.installed` `{ id, role, commit }`.
@@ -3529,7 +3543,7 @@ store's head — a store commit that does not touch the plugin does not offer an
 
 **Removing** (`{ action: 'remove', id }`): only a store install (404 otherwise). Refused (409) while
 plugins.yaml names it in any instance, or it is the router in use (a detected router) — change those
-first, as for an executor ("Settled in slice 7"). Then the directory is removed, rescan,
+first, as for an executor ("Settled in slice 7"). Then the database row and the directory go, rescan,
 `plugin.removed` `{ id }`.
 
 **Not built.** Installing dependencies: a store plugin imports `node:` builtins and its own files,
