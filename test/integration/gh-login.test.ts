@@ -26,7 +26,7 @@ case "$1 $2" in
     if [ -f "$dir/logged-in" ]; then echo "github.com" >&2; echo "  ✓ Logged in to github.com account octo-user (keyring)" >&2; exit 0; fi
     echo "You are not logged into any GitHub hosts. To log in, run: gh auth login" >&2; exit 1 ;;
   "auth login")
-    echo "$*" > "$dir/login-args"
+    echo "$*" >> "$dir/login-args"
     echo "! First copy your one-time code: ABCD-1234" >&2
     echo "Open this URL to continue in your web browser: https://github.com/login/device" >&2
     while :; do
@@ -64,7 +64,8 @@ describe('gh login from the UI', () => {
     expect((await app.ui('/ui/api/gh-login', { action: 'start' })).status).toBe(403);
 
     const token = await app.login();
-    const started = await app.ui<GhLoginStatus>('/ui/api/gh-login', { action: 'start' }, { token });
+    const [started, twice] = await Promise.all([1, 2].map(() => app.ui<GhLoginStatus>('/ui/api/gh-login', { action: 'start' }, { token })));
+    expect(twice.body).toEqual(started.body);
     expect(started.status).toBe(200);
     expect(started.body).toEqual({ state: 'waiting', userCode: 'ABCD-1234', verificationUri: 'https://github.com/login/device' });
     // No terminal: gh's web flow, HTTPS for git, github.com — nothing for gh to ask.

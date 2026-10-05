@@ -30,6 +30,8 @@ export function createGhLogin(o: GhLoginOptions): GhLogin {
   let child: ChildProcess | undefined;
   let waiting: { userCode: string; verificationUri: string } | undefined;
   let failure: string | undefined;
+  /** A start in flight: a second start while gh has not shown its code yet answers the same one. */
+  let starting: Promise<GhLoginStatus> | undefined;
 
   const authStatus = () => new Promise<GhLoginStatus>((resolve) => {
     execFile(o.bin, ['auth', 'status'], { env: o.env, timeout: STATUS_TIMEOUT_MS }, (err, stdout, stderr) => {
@@ -83,13 +85,16 @@ export function createGhLogin(o: GhLoginOptions): GhLogin {
 
   return {
     status,
-    async start() {
-      if (waiting) return { state: 'waiting', ...waiting };
-      const now = await authStatus();
-      if (now.state === 'unavailable' || now.state === 'logged-in') return now;
-      const variable = ['GH_TOKEN', 'GITHUB_TOKEN'].find((n) => o.env[n]);
-      if (variable) return { state: 'failed', error: TOKEN_SET(variable) };
-      return begin();
+    start() {
+      if (waiting) return Promise.resolve({ state: 'waiting', ...waiting });
+      starting ??= (async (): Promise<GhLoginStatus> => {
+        const now = await authStatus();
+        if (now.state === 'unavailable' || now.state === 'logged-in') return now;
+        const variable = ['GH_TOKEN', 'GITHUB_TOKEN'].find((n) => o.env[n]);
+        if (variable) return { state: 'failed', error: TOKEN_SET(variable) };
+        return begin();
+      })().finally(() => { starting = undefined; });
+      return starting;
     },
     async cancel() {
       const p = child;
