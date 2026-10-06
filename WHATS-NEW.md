@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- When you are not signed in, the hopper shows only a page to sign in, and nothing else of it, not even for a moment while it loads.
 - The gate router's settings now say what they are: where Jev is installed, the Python that runs it, the Claude model and a timeout in seconds. Two settings nobody needed are gone. Saved settings carry over.
 - With several users, an admin sees only totals across everyone — jobs waiting and running, open questions, busy lanes — and no longer anyone else's work. You can now change your own password under Settings → Users, which signs out your other sessions.
 - You can always sign in with a username and password: a new hopper starts with an admin account whose first password is shown once when it starts, and Settings will not let the last admin password account be removed or turned off.

@@ -1,7 +1,6 @@
 // @vitest-environment happy-dom
-// Issue #167: the top bar always says who you are — the signed-in user and role, or "not signed in"
-// and whose work a read without a session shows. With several users, a logged-out page reads none of
-// it: the daemon's answer says sign-in is required, and the page offers only the ways to sign in.
+// Issue #167: the top bar always says who you are — the signed-in user and role. Logged out there is
+// no top bar (issue #213): the page reads no work and offers only the ways to sign in.
 // Rendered against a fake of the daemon's HTTP.
 import { createElement } from 'react';
 import { act } from 'react';
@@ -52,33 +51,25 @@ afterEach(async () => {
 describe('the top bar says who you are', () => {
   it('signed in: the user and role, at every width', async () => {
     await render('../../ui/src/app/header.tsx', 'Header', {
-      authed: true, signIn: offer(true), viewing: null, user: { id: 'bea', name: 'Bea', role: 'operator', realm: 'password', identity: 'bea' },
+      authed: true, signIn: offer(true), user: { id: 'bea', name: 'Bea', role: 'operator', realm: 'password', identity: 'bea' },
     });
     expect(who()?.textContent).toContain('Bea');
     expect(who()?.textContent).toContain('operator');
     expect(who()?.className).not.toMatch(/(^|\s)hidden(\s|$)/);
   });
-
-  it('logged out: not signed in, and whose work the page shows', async () => {
-    await render('../../ui/src/app/header.tsx', 'Header', { authed: false, user: null, signIn: offer(false), viewing: { id: 'owner', name: 'owner' } });
-    expect(who()?.textContent).toContain('not signed in');
-    expect(who()?.textContent).toContain('owner');
-    expect(who()?.className).not.toMatch(/(^|\s)hidden(\s|$)/);
-  });
 });
 
-describe('several users: sign in first', () => {
-  it('a logged-out page reads no user\'s work when sign-in is required', async () => {
+describe('sign in first', () => {
+  it('a logged-out page reads no user\'s work', async () => {
     vi.stubGlobal('fetch', fakeDaemon({ authenticated: false, viewing: { id: 'owner', name: 'owner' }, signIn: offer(true) }));
     const { load } = (await import(store)) as Store;
     expect(await load()).toBe(false);
     expect(reads).toEqual(['/ui/api/session']);
   });
 
-  it('the sign-in screen offers the ways to sign in, and shows no work', async () => {
-    await render('../../ui/src/app/banner.tsx', 'SignInRequired', { authed: false, user: null, signIn: offer(true), viewing: null });
-    const text = document.body.textContent ?? '';
-    expect(text).toContain('Several people use this hopper');
+  it('the landing page offers the ways to sign in, and shows no work', async () => {
+    await render('../../ui/src/app/landing.tsx', 'Landing', { authed: false, user: null, signIn: offer(true) });
+    expect(document.querySelector('[data-slot="landing"]')).not.toBeNull();
     expect(document.querySelector('input[aria-label="Username"]')).toBeTruthy();
     expect(document.querySelector('input[aria-label="Login code"]')).toBeTruthy();
   });

@@ -1,10 +1,11 @@
-// Logged out: the ways to sign in — a button per OIDC, GitHub or SAML realm (the sign-in config), a username
+// Logged out, the page is only the landing page (issue #213): the hopper's name and the ways to sign in — a button per OIDC, GitHub or SAML realm (the sign-in config), a username
 // and password form while an LDAP realm, or a password realm with an account, is on, continuing without sign-in while `none` is on, and,
 // while local sign-in is on, the login code (the command on this machine, a device link or a pasted
 // code across the LAN). Design: design.md "Sign-in: realms", "Reaching
-// the UI across the LAN". With several users (issue #167) a logged-out page shows only these, as the
-// sign-in screen: no user's work until someone signs in.
-import { Copy, Lock, LogIn, Users } from 'lucide-react';
+// the UI across the LAN". Nothing of the app — navigation, views, notices — and no read but the
+// session's until someone signs in (issues #167, #213).
+import { AlertTriangle, Copy, LogIn } from 'lucide-react';
+import logo from '../../../site/hopper-logo.svg';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -12,19 +13,18 @@ import { Input } from '@/components/ui/input';
 import { LOGIN_CMD } from '@/lib/api';
 import { beginSignIn, onLan, signInThroughGateway, signInWithPassword, signInWithoutCredential, submitLogin } from '@/lib/login';
 import type { SessionView } from '@/model/wire';
-import { checkSession, useHopper } from '@/store';
+import { useHopper } from '@/store';
 
-/** Ends a JSON sign-in: toast its error, or read the new session (the sign-in screen read nothing yet: load the page). */
-const finish = async (error: string | null) => {
+/** Ends a JSON sign-in: toast its error, or load the page (the landing page read nothing yet). */
+const finish = (error: string | null) => {
   if (error) toast.error(error);
-  else if (useHopper.getState().signIn?.required) location.reload();
-  else await checkSession();
+  else location.reload();
 };
 
 function PasswordSignIn() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const submit = async () => { await finish(await signInWithPassword(username.trim(), password)); setPassword(''); };
+  const submit = async () => { finish(await signInWithPassword(username.trim(), password)); setPassword(''); };
   return (
     <form className="flex items-center gap-1.5" onSubmit={(e) => { e.preventDefault(); if (username.trim() && password) void submit(); }}>
       <Input aria-label="Username" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="username"
@@ -74,25 +74,19 @@ function SignInOptions({ signIn, lead }: { signIn: SessionView['signIn']; lead: 
   );
 }
 
-export function ReadOnlyBanner() {
-  const authed = useHopper((s) => s.authed);
+/** Logged out: the hopper's name and the ways to sign in, or that the hopper could not be reached. Nothing else. */
+export function Landing() {
   const signIn = useHopper((s) => s.signIn);
-  if (authed || !signIn) return null;
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed px-3 py-2 text-xs text-muted-foreground">
-      <Lock className="size-3.5" />Read-only. <SignInOptions signIn={signIn} lead="To act, sign in" />
-    </div>
-  );
-}
-
-/** Several users and nobody signed in: only the ways to sign in, no user's work. */
-export function SignInRequired() {
-  const signIn = useHopper((s) => s.signIn);
-  if (!signIn) return null;
-  return (
-    <div className="mx-auto mt-8 max-w-2xl space-y-3 rounded-lg border p-5">
-      <div className="flex items-center gap-2 font-medium"><Users className="size-4" />Several people use this hopper. Sign in to see your work.</div>
-      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"><SignInOptions signIn={signIn} lead="Sign in" /></div>
+    <div data-slot="landing" className="flex min-h-dvh items-center justify-center p-4">
+      <div className="w-full max-w-xl space-y-4 rounded-lg border p-5">
+        <div className="flex items-center gap-2 font-semibold tracking-tight"><img src={logo} alt="" className="h-8 w-auto" />hopper</div>
+        {signIn ? (
+          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"><SignInOptions signIn={signIn} lead="Sign in" /></div>
+        ) : (
+          <div className="flex items-center gap-2 text-sm text-bad"><AlertTriangle className="size-4" />Could not reach the hopper. Reload the page to try again.</div>
+        )}
+      </div>
     </div>
   );
 }

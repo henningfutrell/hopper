@@ -1,4 +1,5 @@
-// The shell: header, navigation, the current view. Loads once, then lives on SSE.
+// The page: nothing until the session is read, then the landing page logged out (issue #213), or the
+// shell — header, navigation, the current view — signed in. Loads once, then lives on SSE.
 import { AlertTriangle } from 'lucide-react';
 import { useEffect } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -16,8 +17,8 @@ import { Queue } from '@/views/queue';
 import { Settings } from '@/views/settings';
 import { Sources } from '@/views/sources';
 import { Usage } from '@/views/usage';
-import { ReadOnlyBanner, SignInRequired } from './banner';
 import { Header } from './header';
+import { Landing } from './landing';
 import { UpdateNotice } from './update';
 import { MobileNav, Sidebar, useView, viewLabel, type View } from './nav';
 
@@ -34,38 +35,46 @@ function Loading() {
   );
 }
 
-export function App() {
+function Shell() {
   const view = useView();
   const loaded = useHopper((s) => s.loaded);
   const loadError = useHopper((s) => s.loadError);
-  const signInFirst = useHopper(mustSignIn);
   useForgetCleared();
+  useEffect(() => { document.title = view === 'overview' ? 'hopper' : `${viewLabel(view)} · hopper`; }, [view]);
+  const Current = VIEW[view];
+  return (
+    <div className="min-h-dvh">
+      <Header nav={<MobileNav view={view} />} />
+      <div className="flex">
+        <Sidebar view={view} />
+        <main className="min-w-0 flex-1 space-y-3 p-3 sm:p-4 lg:p-6">
+          <UpdateNotice />
+          {loadError && (
+            <div className="flex items-center gap-2 rounded-lg border border-bad/40 bg-bad/5 p-3 text-sm text-bad">
+              <AlertTriangle className="size-4" />Could not load from the daemon: {loadError}
+            </div>
+          )}
+          {loaded ? <Current /> : !loadError && <Loading />}
+        </main>
+      </div>
+    </div>
+  );
+}
+
+export function App() {
+  const sessionRead = useHopper((s) => s.sessionRead);
+  const signInFirst = useHopper(mustSignIn);
   useEffect(() => {
     let close: (() => void) | undefined;
     let cancelled = false;
     load().then((ok) => { if (ok && !cancelled) close = connect(); }, (e: Error) => setLoadError(e.message));
     return () => { cancelled = true; close?.(); };
   }, []);
-  useEffect(() => { document.title = view === 'overview' ? 'hopper' : `${viewLabel(view)} · hopper`; }, [view]);
-  const Current = VIEW[view];
+  // Nothing until the session is read: no flash of the app before the landing page.
+  if (!sessionRead) return null;
   return (
     <TooltipProvider delayDuration={300}>
-      <div className="min-h-dvh">
-        <Header nav={<MobileNav view={view} />} />
-        <div className="flex">
-          <Sidebar view={view} />
-          <main className="min-w-0 flex-1 space-y-3 p-3 sm:p-4 lg:p-6">
-            {signInFirst ? <SignInRequired /> : <ReadOnlyBanner />}
-            <UpdateNotice />
-            {loadError && (
-              <div className="flex items-center gap-2 rounded-lg border border-bad/40 bg-bad/5 p-3 text-sm text-bad">
-                <AlertTriangle className="size-4" />Could not load from the daemon: {loadError}
-              </div>
-            )}
-            {signInFirst ? null : loaded ? <Current /> : !loadError && <Loading />}
-          </main>
-        </div>
-      </div>
+      {signInFirst ? <Landing /> : <Shell />}
       <Toaster position="bottom-right" closeButton />
     </TooltipProvider>
   );
