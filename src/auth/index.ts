@@ -1,9 +1,9 @@
 // Signing in through the realms (design.md "Sign-in: realms"). The sign-in config as it applies now, swapped at
 // once by `apply` when Settings → Sign-in changes it.
 //
-// Form realms (password, ldap): the username and password form is tried against each one that is on,
-// in order; the first that accepts the password decides. A password realm with no account is not
-// tried; one that is on with an admin account always exists (the password fallback, `fallback.ts`).
+// Form realms (ldap): the username and password form is tried against each one that is on, in order;
+// the first that accepts the password decides. The hopper keeps no password accounts of its own (issue
+// #237): a fresh hopper's first sign-in is the login code (`start.ts`).
 //
 // Redirect realms (oidc, github, saml): three steps, no cookies (they ignore ports; see "UI session and
 // mutations"):
@@ -26,17 +26,14 @@ import { createGatewayRealm } from './gateway.ts';
 import { createGithubRealm } from './github.ts';
 import { createLdapRealm } from './ldap.ts';
 import { createOidcRealm } from './oidc.ts';
-import { createPasswordRealm, passwordRoleOf } from './password.ts';
 import type { FlowSecrets, FormRealm, GatewayRealm, RealmCallback, RedirectRealm } from './realm.ts';
 import { roleFor } from './roles.ts';
 import { createSamlRealm } from './saml.ts';
 
 export { SIGN_IN, loadSignInConfig, signInConfigProblem, type AuthConfig } from './config.ts';
-export { accountOf, AuthEditError, editSignIn, realmsView, type SignInEdit } from './edit.ts';
-export { hasPasswordFallback, withPasswordFallback } from './fallback.ts';
-export { hashPassword, verifyPassword } from './password.ts';
+export { AuthEditError, editSignIn, realmsView, type SignInEdit } from './edit.ts';
 export { claimGithubAdmin } from './github-admin.ts';
-export { prepareSignIn } from './start.ts';
+export { firstSignInLine, prepareSignIn } from './start.ts';
 
 const FLOW_MS = 10 * 60_000;
 const TICKET_MS = 2 * 60_000;
@@ -69,7 +66,7 @@ export interface SignIn {
   readonly local: boolean;
   /** No sign-in: the role everyone gets; null when off. */
   readonly none: UiRole | null;
-  /** Password sign-in is on: an LDAP realm is, or a password realm with an account. */
+  /** Password sign-in is on: an LDAP realm is. */
   readonly password: boolean;
   /** The username and password tried against the form realms that are on, in order. */
   checkPassword(username: string, password: string): Promise<PasswordOutcome>;
@@ -112,7 +109,6 @@ export function roleIn(config: AuthConfig, who: Identity): UiRole | null {
   if (who.realm === 'none') return config.none?.role ?? null;
   const r = config.realms.find((x) => x.name === who.realm);
   if (!r?.enabled) return null;
-  if (r.type === 'password') return passwordRoleOf(r, who.subject);
   const first = config.githubAdmin;
   if (r.type === 'github' && first?.realm === who.realm && first.subject === who.subject) return 'admin';
   return roleFor(who, r.roles);
@@ -124,8 +120,6 @@ function buildRedirect(r: Extract<RealmConfig, { type: 'oidc' | 'github' | 'saml
   if (r.type === 'github') return createGithubRealm(r, callback);
   return createSamlRealm(r, callback, r.entityId ?? `${origin}/ui/auth/${r.name}/metadata`);
 }
-
-const buildForm = (r: Extract<RealmConfig, { type: 'password' | 'ldap' }>): FormRealm => (r.type === 'password' ? createPasswordRealm(r) : createLdapRealm(r));
 
 /**
  * `claimGithubAdmin`: record a GitHub sign-in as the first GitHub admin (issue #239), answering the sign-in
@@ -140,7 +134,7 @@ export function createSignIn(o: { config: AuthConfig; origin: () => string; cloc
   let redirects: Map<string, RedirectRealm> | undefined;
   const on = (): RealmConfig[] => config.realms.filter((r) => r.enabled);
   const build = (): void => {
-    forms = on().filter(isFormRealm).filter((r) => r.type !== 'password' || r.users.length > 0).map(buildForm);
+    forms = on().filter(isFormRealm).map(createLdapRealm);
     gateways = on().filter(isGatewayRealm).map(createGatewayRealm);
     redirects = undefined;
   };

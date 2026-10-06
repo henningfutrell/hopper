@@ -18,7 +18,6 @@ export interface RealmField {
 
 
 export const REALM_FIELDS: Record<RealmType, RealmField[]> = {
-  password: [],
   ldap: [
     { path: 'url', label: 'Directory URL', kind: 'text', placeholder: 'ldaps://ldap.example.com' },
     { path: 'startTls', label: 'StartTLS', kind: 'switch', help: 'needed for a plain ldap:// URL that is not on this machine' },
@@ -79,7 +78,6 @@ export const REALM_FIELDS: Record<RealmType, RealmField[]> = {
 };
 
 export const REALM_TYPE_LABELS: { type: RealmType; label: string }[] = [
-  { type: 'password', label: 'Password (accounts kept here)' },
   { type: 'ldap', label: 'LDAP or Active Directory' },
   { type: 'oidc', label: 'OpenID Connect' },
   { type: 'github', label: 'GitHub' },
@@ -154,17 +152,15 @@ export function realmOf(d: RealmDraft): { name: string; label?: string; type: Re
     if (text === '') continue;
     setAt(settings, f.path, f.kind === 'words' ? text.split(/[\s,]+/).filter(Boolean) : text);
   }
-  if (d.type !== 'password') {
-    const roles: Record<string, unknown> = {};
-    for (const r of d.rules) {
-      const values = r.values.split('\n').map((v) => v.trim()).filter(Boolean);
-      if (values.length === 0) continue;
-      const rule = (roles[r.role] ??= {}) as Record<string, string[]>;
-      rule[r.match] = [...(rule[r.match] ?? []), ...values];
-    }
-    if (d.defaultRole !== '') roles.defaultRole = d.defaultRole;
-    if (Object.keys(roles).length > 0) settings.roles = roles;
+  const roles: Record<string, unknown> = {};
+  for (const r of d.rules) {
+    const values = r.values.split('\n').map((v) => v.trim()).filter(Boolean);
+    if (values.length === 0) continue;
+    const rule = (roles[r.role] ??= {}) as Record<string, string[]>;
+    rule[r.match] = [...(rule[r.match] ?? []), ...values];
   }
+  if (d.defaultRole !== '') roles.defaultRole = d.defaultRole;
+  if (Object.keys(roles).length > 0) settings.roles = roles;
   const label = d.label.trim();
   return { name: d.name.trim(), ...(label === '' ? {} : { label }), type: d.type, ...settings };
 }

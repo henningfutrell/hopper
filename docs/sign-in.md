@@ -1,7 +1,7 @@
 # Signing in — realms
 
-How people sign in to the hopper UI. A **realm** is one way of checking who signs in: password
-accounts, an LDAP or Active Directory directory, OpenID Connect, GitHub, SAML, or an auth gateway in
+How people sign in to the hopper UI. A **realm** is one way of checking who signs in: an LDAP
+or Active Directory directory, OpenID Connect, GitHub, SAML, or an auth gateway in
 front of the hopper that has already signed people in. The realms are an
 ordered list, each on or off, managed in **Settings → Sign-in**; a change works at once. Beside them:
 the one-time login code and no sign-in. The design and its reasons: `docs/design.md` "Sign-in: realms".
@@ -11,7 +11,7 @@ Every way of signing in ends the same: a **UI session** with a **UI role**, acti
 
 - [Pick a setup](#pick-a-setup)
 - [Managing sign-in in Settings](#managing-sign-in-in-settings) · [Realm settings](#realm-settings) · [Sign-in from the environment](#sign-in-from-the-environment) · [The sign-in config from the CLI](#the-sign-in-config-from-the-cli)
-- [No sign-in](#no-sign-in) · [Password realm](#password-realm) · [LDAP realm](#ldap-realm) · [Behind an auth gateway](#behind-an-auth-gateway)
+- [No sign-in](#no-sign-in) · [First sign-in: the login code](#first-sign-in-the-login-code) · [LDAP realm](#ldap-realm) · [Behind an auth gateway](#behind-an-auth-gateway)
 - [UI roles and role rules](#ui-roles-and-role-rules)
 - [Who signs in as which user](#who-signs-in-as-which-user)
 - [The sign-in origin and a public URL](#the-sign-in-origin-and-a-public-url)
@@ -26,37 +26,35 @@ Every way of signing in ends the same: a **UI session** with a **UI role**, acti
 
 | setup | what to do |
 |---|---|
-| One person, one machine | Nothing. The one-time login code works: `hopper login-code` mints one (good once, 10 minutes); on the host install `bash ~/.local/lib/hopper/scripts/open-ui.sh` opens the UI already logged in. It signs in as `admin`. To sign in with a username and password instead, add an account to the **Password** realm. |
-| One person, a few devices on a home LAN | `HOPPER_LAN_NAMES` / `HOPPER_LAN_PEERS` (`docs/design.md` "Reaching the UI across the LAN") and device links, or a password account. |
+| One person, one machine | Nothing. The one-time login code works: `hopper login-code` mints one (good once, 10 minutes); on the host install `bash ~/.local/lib/hopper/scripts/open-ui.sh` opens the UI already logged in. It signs in as `admin`. A start logs one for you while nothing else signs `admin` in: [First sign-in](#first-sign-in-the-login-code). |
+| One person, a few devices on a home LAN | `HOPPER_LAN_NAMES` / `HOPPER_LAN_PEERS` (`docs/design.md` "Reaching the UI across the LAN") and device links. |
 | Behind a proxy or network that already decides who gets in | [No sign-in](#no-sign-in), with a role. Everyone who reaches the UI acts with that role. |
-| A few people, no directory or identity provider | The [password realm](#password-realm): an account per person, added in Settings → Sign-in. |
+| A few people, no directory or identity provider | A [GitHub](#github) realm: each person signs in with their own GitHub account. The hopper keeps no username-and-password accounts of its own. |
 | A company directory (OpenLDAP, Active Directory, FreeIPA) | An [LDAP realm](#ldap-realm): people sign in with their directory username and password; directory groups grant roles. |
 | Behind an auth gateway that signs people in (Envoy Gateway with OIDC, oauth2-proxy, …) | A [gateway realm](#behind-an-auth-gateway): the gateway signs people in and forwards their token; the hopper checks the token, gives roles by its claims, and asks nobody to sign in. |
 | A team, or anyone reaching it over the internet | A reverse proxy with TLS, `HOPPER_PUBLIC_URL`, one or more realms, role rules, and usually the login code off. |
-| A deploy that sets everything up at launch (container, Kubernetes) | [Sign-in from the environment](#sign-in-from-the-environment): the realms as `HOPPER_SIGN_IN_*` variables, secrets as mounted files, and `HOPPER_SIGN_IN_ADMIN_PASSWORD` for the [password fallback](#password-fallback). |
+| A deploy that sets everything up at launch (container, Kubernetes) | [Sign-in from the environment](#sign-in-from-the-environment): the realms as `HOPPER_SIGN_IN_*` variables, secrets as mounted files; the first sign-in is the login code the start logs. |
 
 ## Managing sign-in in Settings
 
-Sign-in is not a file. Everything about it — the realms, their settings, the password accounts, the
-login code and no sign-in — is kept in the daemon's database and changed in **Settings → Sign-in**,
+Sign-in is not a file. Everything about it — the realms, their settings, the login code and no
+sign-in — is kept in the daemon's database and changed in **Settings → Sign-in**,
 by an admin. Every setting is a field of a form; nothing is written as YAML or JSON.
 
 The page lists the realms in order, each with its type, a switch to turn it on or off, and — for
 OIDC, GitHub and SAML — the callback URL (and SAML metadata URL) to register with the identity
-provider, ready to copy. A new hopper starts with one realm, **Password**, holding one account,
-**admin**: the [password fallback](#password-fallback).
+provider, ready to copy. A new hopper starts with no realm: its first sign-in is the login code
+([First sign-in](#first-sign-in-the-login-code)).
 
 - **Add realm**: pick a type, fill in its fields (every one: [Realm settings](#realm-settings)) and
   **Save**. A field left empty takes its default, shown greyed in the field.
 - **Edit** (pencil): the same form, filled in. The name stays: sign-ins are linked to users by it,
   and the identity provider holds it in the callback URL. To rename, remove the realm and add a new one.
-- **Move up / down**: the order. The username and password form tries the password and LDAP realms
-  that are on in this order, and the first that accepts the password signs in. The OIDC, GitHub and
+- **Move up / down**: the order. The username and password form tries the LDAP realms that are on in
+  this order, and the first that accepts the password signs in. The OIDC, GitHub and
   SAML realms that are on are sign-in buttons, in this order.
 - **On / off**: a realm that is off signs nobody in, and the sessions it made end at once. Its secret
   need not be set while it is off.
-- **Accounts** (under a password realm): add, change the role of, give a new password to, or remove
-  an account: [Password realm](#password-realm).
 - **Without a realm**: the login code on or off, and no sign-in with its role.
 
 A change **works at once**, without a restart: the sign-in page follows it, and sessions follow it as
@@ -81,13 +79,11 @@ set up, secret and all, from the daemon's environment: [Sign-in from the environ
 ## Realm settings
 
 Every type has a **Name** (lowercase letters, digits, dashes; part of the callback URL), a **Label**
-(shown in Settings and on the sign-in button; default: the name), and is on or off. Every type but
-password has **role rules** and a **default role** ([UI roles and role rules](#ui-roles-and-role-rules)).
+(shown in Settings and on the sign-in button; default: the name), and is on or off. Every type has **role rules** and a **default role** ([UI roles and role rules](#ui-roles-and-role-rules)).
 The setting's name in error messages is in brackets.
 
 | type | field | default | |
 |---|---|---|---|
-| `password` | — | | Its accounts, under the realm: [Password realm](#password-realm). |
 | `ldap` | Directory URL (`url`) | — | `ldaps://host[:port]`, or `ldap://` with StartTLS on; plain `ldap://` only to `127.0.0.1`/`localhost`. |
 | | StartTLS (`startTls`) | off | Upgrade an `ldap://` connection with StartTLS. |
 | | Bind DN, Bind password (`bindDn`, `bindPassword`) | none (anonymous search) | The account that searches for the user, and its password (a secret: stored, never shown). |
@@ -125,16 +121,15 @@ Grafana takes its settings: for a container or Kubernetes deploy that is set up 
 with no config file and no persistent volume. The variables are read at **every start** and written to
 the database, so the environment wins: a realm it sets up replaces the stored realm of the same name,
 in its place (or is added at the end), and a change made to it in Settings lasts until the next start
-(Settings marks it *set from the environment*). Realms the environment does not name, and the password
-accounts, are left as they are. Remove the variables and the realm stays as last set.
+(Settings marks it *set from the environment*). Realms the environment does not name are left as they
+are. Remove the variables and the realm stays as last set.
 
 | variable | |
 |---|---|
-| `HOPPER_SIGN_IN_REALM_<NAME>_TYPE` | Sets up the realm `<name>`: `password`, `ldap`, `oidc`, `github`, `saml` or `gateway`. The name is `<NAME>` in lowercase, `_` as `-`: `HOPPER_SIGN_IN_REALM_COMPANY_SSO_TYPE` is the realm `company-sso`. |
+| `HOPPER_SIGN_IN_REALM_<NAME>_TYPE` | Sets up the realm `<name>`: `ldap`, `oidc`, `github`, `saml` or `gateway`. The name is `<NAME>` in lowercase, `_` as `-`: `HOPPER_SIGN_IN_REALM_COMPANY_SSO_TYPE` is the realm `company-sso`. |
 | `HOPPER_SIGN_IN_REALM_<NAME>_<SETTING>` | One setting of it: the setting's name in [Realm settings](#realm-settings) in upper snake case — `LABEL`, `ENABLED`, `ISSUER`, `CLIENT_ID`, `CLIENT_SECRET`, `SCOPES`, `CLAIMS_GROUPS`, `BIND_DN`, `BIND_PASSWORD`, `ATTRIBUTES_SUBJECT`, `GROUP_SEARCH_BASE`, `IDP_CERT`, `AUDIENCE`, … Role rules: `ROLES_<ROLE>_<MATCH>` (`ROLES_ADMIN_GROUPS`, `ROLES_OPERATOR_EMAIL_DOMAINS`) and `ROLES_DEFAULT_ROLE`. |
 | `HOPPER_SIGN_IN_LOCAL_ENABLED` | The login code: `true` or `false`. |
 | `HOPPER_SIGN_IN_NONE_ROLE` | No sign-in: `viewer`, `operator`, `admin`, or `off`. |
-| `HOPPER_SIGN_IN_ADMIN_PASSWORD` | The password of the account `admin` when a start adds the [password fallback](#password-fallback), in place of a random one; then it is not logged. A start that adds no account does not read it. |
 
 Values: a switch is `true` or `false`; scopes and audiences are separated by spaces or commas; a role
 rule's values by commas, or a JSON array when a value holds a comma (an LDAP group DN). **Every one can
@@ -163,8 +158,7 @@ HOPPER_SIGN_IN_LOCAL_ENABLED=false
 
 For scripts, and to mend sign-in that locks everyone out, the operator CLI reads and replaces the
 **sign-in config** — the realms with their settings, the login code and no sign-in, the config record
-`sign-in`, as one JSON value — on the daemon's host. It does not hold the password accounts: those are only changed in
-Settings → Sign-in, and a record that carries them is refused. `hopper config get sign-in` prints it,
+`sign-in`, as one JSON value — on the daemon's host. `hopper config get sign-in` prints it,
 `hopper config version sign-in` prints its version, and `hopper config set sign-in --if-version
 <version>` replaces it with the JSON on stdin. A record that does not load, or that changed since you
 read its version, is refused and nothing is written. A change made with the CLI applies at the next
@@ -187,12 +181,14 @@ the [first GitHub admin](#ui-roles-and-role-rules) (absent: nobody yet), and `re
 the realms in order, each with `name`, `label`, `type`, `enabled` (absent: on) and `roles`.
 
 **From before.** Older installs were migrated when the daemon updated: the sign-in document of an
-earlier version became realms (issue #185), then the JSON record (issue #198), then its password
-accounts moved out of it into a table of their own (issue #200), each with its username, hash and
-role. A realm that named the variable holding its secret (`clientSecretEnv`, `bindPasswordEnv`) takes
+earlier version became realms (issue #185), then the JSON record (issue #198). A realm that named the variable holding its secret (`clientSecretEnv`, `bindPasswordEnv`) takes
 the secret from that variable into the database at the first start after the update (issue #216);
-after that the variable can go. Nothing to do; sign-ins and sessions carry on. `hopper password-hash` is gone: an admin sets a
-password in Settings → Sign-in.
+after that the variable can go. Nothing to do; sign-ins and sessions carry on. **The password user
+realm is gone** (issue #237): the update removes every password realm, its accounts, and the links
+of their sign-ins to users; the users and their work stay. Sign in with a login code (the start logs
+one while nothing else signs `admin` in) or another realm. A sign-in config left with no way in turns
+the login code on. `HOPPER_SIGN_IN_ADMIN_PASSWORD` and a `password` realm type stop the daemon at
+start, naming the variable.
 
 ## No sign-in
 
@@ -207,55 +203,30 @@ you reach — already decides who gets in. As admin, anyone who reaches the UI c
 No sign-in signs everyone in as `admin`, so it stays off while the hopper has more than one user, and
 no user is added while it is on.
 
-## Password realm
+## First sign-in: the login code
 
-Its **accounts** are listed under it in Settings → Sign-in: username, role, and the user each signs
-in as.
+The hopper keeps no username-and-password accounts of its own (issue #237): its first sign-in, the
+way Jenkins hands out its first admin's key, is the **login code** — one-time, good for 10 minutes,
+signing in as the default admin account, `admin`.
 
-- **Add account**: a username, a password (8 characters or more), a role (viewer, operator or admin),
-  and **Signs in as**: your own user, or "a new user of its own", made at its first sign-in
-  ([Who signs in as which user](#who-signs-in-as-which-user)). To sign in to your own work with a
-  password, pick your user. An account for someone else is "a new user of its own": an admin never
-  links an account to another user's work.
-- **Role**: change it in the account's row; it applies at once, also to its open sessions.
-- **New password** (key): sets a new one; the old one stops working at once. Only on an account that
-  signs in as your own user, or that nobody signed in with yet: an account that signs in as another
-  user is theirs, and only they change its password.
-- **Change your password** (Settings → Users): everyone signed in with a password account changes its
-  password there, the current one first; their other sessions end. Hand a new account its password,
-  and ask its user to change it: until then the admin who set it knows it.
-- **Remove** (bin): its sessions end at once. The user it signed in as, and their work, stay.
-
-The hopper keeps only an **argon2id hash** of each password, never the password. Usernames are
-unique within the realm, case ignored. The user an account signs in as is fixed once it has signed
-in; to change it, remove the account and add it again — not under the same username when it signed in
-as another user: that name keeps signing in as them, so it is theirs. A wrong password, an unknown username and an
-empty password get the same 403, and an unknown username costs the same time as a wrong password.
-A password realm with no account is not tried. The form works on every UI origin (loopback, a LAN
-name, the public URL).
-
-### Password fallback
-
-Password sign-in is the fallback, so it always exists: the sign-in config always holds an **admin
-account in a password realm that is on**, and the username and password form is always offered.
-Nobody depends on a login code or an already signed-in browser to get in.
-
-- **At start**, when there is no such account — a new hopper, or a sign-in config changed with
-  `hopper config … sign-in` — the hopper adds the account `admin` (or `admin-2`, … when taken) to the
-  first password realm, turning it on, or to a new realm **Password** when there is none. The account
-  signs in as the default admin account, `admin`, role admin. Its password is `HOPPER_SIGN_IN_ADMIN_PASSWORD` when that is set
-  ([Sign-in from the environment](#sign-in-from-the-environment)); else it is random and is shown
-  **only once**, in the start lines (`journalctl --user -u hopper`, or the container's log):
+- **At start**, while the login code is on, no sign-in is off, `admin` signs in through no realm that
+  is on, and no [first GitHub admin](#ui-roles-and-role-rules) signs in through one, the hopper mints
+  a login code for `admin` and logs it with its link (`journalctl --user -u hopper`, or the
+  container's log):
 
   ```
-  hopper: password fallback: no admin account signs in with a password; added account admin to realm password, password <random> (shown only this once: sign in with it and change it in Settings → Sign-in)
+  hopper: first sign-in: login code <code> signs in once as admin, for 10 minutes: http://localhost:4790/#login=<code> (another: hopper login-code)
   ```
 
-  Only its argon2id hash is kept. Sign in with it and give it a new password (key) at once. Lost
-  before that: sign in with a login code (`hopper login-code`) and give it a new password there.
-- **In Settings → Sign-in**, a change that would leave none — turning off or removing the last such
-  realm, removing or demoting the last admin account in one — is refused (409). Add another admin
-  account first.
+  Open the link (on another device: the hopper's address with `/#login=<code>`), or paste the code
+  into the sign-in page. Only its SHA-256 is kept. Expired or used: `hopper login-code` mints another
+  where the hopper runs (`docker exec <container> hopper login-code` in a container).
+- **Then** sign in through a realm — inside the hopper, GitHub: the first person to do so becomes admin
+  — and, to reach `admin`'s work from it, link it with [`hopper user transfer`](#who-signs-in-as-which-user).
+  From then on a start logs no code.
+- **No way in.** A sign-in config with no realm that is on, the login code off and no sign-in off would
+  let nobody in: the start turns the login code on and says so
+  (`hopper: the sign-in config had no way to sign in …`).
 
 **Rate limit.** Every sign-in route (`/ui/login`, `/ui/auth/…`) together accepts 20 attempts a
 minute per client address; past that, 429 until the minute is over. Behind a reverse proxy every
@@ -312,7 +283,7 @@ Active Directory:
   `emailDomains` rules apply.
 - **TLS**: `ldaps://`, or `ldap://` with **StartTLS** on; the server's certificate must be trusted by
   Node (a private CA: `NODE_EXTRA_CA_CERTS=/path/ca.pem` in the daemon's environment).
-- With a password realm and an LDAP realm both on, the form tries them in their order; the first that
+- With two LDAP realms on, the form tries them in their order; the first that
   accepts the password signs in. When none accepts and a directory could not be reached, the answer
   is "sign-in could not be checked", naming the realm — not "wrong password".
 
@@ -371,7 +342,7 @@ in. `HOPPER_PUBLIC_URL` is the address people reach through the gateway.
 - **The session is the hopper's own**, as for every realm: it outlives the gateway's sign-in until it
   expires or the realm changes. Logging out of the hopper ends the hopper session only; with the
   gateway still signed in, the next visit takes a new one.
-- The gateway realm composes with the others: with a password realm also on, the sign-in page shows
+- The gateway realm composes with the others: with an LDAP realm also on, the sign-in page shows
   both, and **Sign in through the gateway** tries the token again.
 
 ## UI roles and role rules
@@ -382,8 +353,7 @@ in. `HOPPER_PUBLIC_URL` is the address people reach through the gateway.
 | `operator` | + cancel and approve jobs; answer, close, dismiss questions and mark them seen |
 | `admin` | + change configuration: plugins, machines, routing rules, webhooks, the rules, the queue gate, sign-in realms; apply updates; hand out device links |
 
-The login code always signs in as `admin`, a password account as its own role. For every other
-realm, its **role rules** decide, the same way for every type:
+The login code always signs in as `admin`. For every realm, its **role rules** decide, the same way for every type:
 
 - A rule grants a role — `admin`, `operator` or `viewer` — to the subjects, usernames, emails, email
   domains or groups it lists, one per line. Any one match grants the role; **the highest matching
@@ -433,7 +403,7 @@ all its work, sign-ins, sessions and login codes, became `admin` on update (issu
 |---|---|
 | login code | the user it was minted for: `hopper login-code --user <id>` (default `admin`); a device link is for the session's own user; a new user's login link for that user |
 | no sign-in (`none`) | `admin` |
-| a realm (password, LDAP, OIDC, GitHub, SAML) | the user its identity (realm and subject) is linked to; the **first** sign-in of an identity a role rule lets in creates a new user for it, named after its username, else its name, else its email (made unique: `ada`, `ada 2`), and links it |
+| a realm (LDAP, OIDC, GitHub, SAML, gateway) | the user its identity (realm and subject) is linked to; the **first** sign-in of an identity a role rule lets in creates a new user for it, named after its username, else its name, else its email (made unique: `ada`, `ada 2`), and links it |
 
 - An admin adds a user from **Settings → Users** (or `hopper user add <name>`) and hands over the
   one-time login link it shows.
@@ -451,9 +421,9 @@ all its work, sign-ins, sessions and login codes, became `admin` on update (issu
   own record and schema are removed. The record keeps its id, schema, work dir, secret prefix and
   herdr session, so running jobs and their panes are untouched. Refused while a daemon holds the
   database, and when `<to>` has jobs, questions, decisions or webhooks of its own; its config,
-  settings and events go with its schema. Typical use: `admin` signed in by login code only, and a
-  password account added later for the same person — after the transfer, signing in with the
-  password (from any device) reaches the work.
+  settings and events go with its schema. Typical use: `admin` signed in by login code only, and the
+  same person signs in later with GitHub, as a new user — after the transfer, signing in with GitHub
+  (from any device) reaches the work.
 
   ```sh
   systemctl --user stop hopper
@@ -781,9 +751,8 @@ The same for every realm, no sign-in and the login code:
 - **Log out** (the header's button) ends the hopper session. It does not sign you out of the
   identity provider: signing in again may need no password.
 - Every change saved in Settings → Sign-in, and every start, applies the sign-in config to the stored
-  sessions: a realm removed or turned off, a removed password account, no sign-in turned off, or an
-  account no rule grants a role any more, loses its session; a changed rule (or account or `none`
-  role) changes its role. To cut someone off at once: change the realm in Settings → Sign-in.
+  sessions: a realm removed or turned off, no sign-in turned off, or an
+  account no rule grants a role any more, loses its session; a changed rule (or `none` role) changes its role. To cut someone off at once: change the realm in Settings → Sign-in.
 - Sign-ins, refusals and logouts are logged to the journal
   (`journalctl --user -u hopper | grep 'UI session\|sign-in'`).
 

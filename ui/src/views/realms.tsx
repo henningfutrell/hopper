@@ -1,7 +1,7 @@
-// Sign-in (issues #185, #200): the realms, in the order the username and password form tries them and
-// the sign-in buttons show them, each on or off, moved, edited in a form of its type's fields or
-// removed; a realm added from the form of the chosen type; a password realm's accounts under it
-// (realm-accounts.tsx); the login code and no sign-in. No YAML: every setting is a field. In Settings,
+// Sign-in (issues #185, #200, #237): the realms, in the order the username and password form tries them
+// and the sign-in buttons show them, each on or off, moved, edited in a form of its type's fields or
+// removed; a realm added from the form of the chosen type; the login code and no sign-in. The hopper
+// keeps no password accounts of its own. No YAML: every setting is a field. In Settings,
 // admin only (GET /api/realms). Every change is POST /ui/api/realms against the version read, and
 // applies at once; the daemon refuses one that would not load, or that would end your own admin
 // session, and the refusal is shown where the change was made.
@@ -17,10 +17,11 @@ import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { get, post, SessionRejected } from '@/lib/api';
 import { draftOf, emptyDraft, realmOf, REALM_FIELDS, REALM_TYPE_LABELS, RULE_MATCHES, type RealmDraft, type RealmField, type RuleMatch } from '@/model/realms';
-import type { RealmType, RealmView, RealmsEdit, RealmsView, UiRole, UserView } from '@/model/wire';
+import type { RealmType, RealmView, RealmsEdit, RealmsView, UiRole } from '@/model/wire';
 import { useHopper } from '@/store';
 import { useCanAdmin } from '@/store/selectors';
-import { RealmAccounts, SELECT, type AccountChange } from './realm-accounts';
+
+const SELECT = 'h-8 rounded-lg border border-input bg-transparent px-2 text-base md:text-sm dark:bg-input/30';
 
 /** The editor: a realm being added (`editing` undefined) or changed (its name). */
 type Editing = { editing?: string; draft: RealmDraft; environment?: boolean };
@@ -28,16 +29,14 @@ type Editing = { editing?: string; draft: RealmDraft; environment?: boolean };
 export function Realms() {
   const canAdmin = useCanAdmin();
   const [view, setView] = useState<RealmsView | null>(null);
-  const [users, setUsers] = useState<UserView[]>([]);
   const [editing, setEditing] = useState<Editing | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // GET /api/realms and /api/users answer an admin session (or loopback without one): nobody else reads them.
+  // GET /api/realms answers an admin session (or loopback without one): nobody else reads it.
   useEffect(() => {
     if (!canAdmin) return;
     void get<RealmsView>('/api/realms').then(setView, (e: unknown) => toast.error((e as Error).message));
-    void get<{ users: UserView[] }>('/api/users').then((r) => setUsers(r.users), () => {});
   }, [canAdmin]);
 
   /** One change; true when it was made. The refusal goes to the editor while it is open, else a toast. */
@@ -67,7 +66,6 @@ export function Realms() {
     const ok = await change({ action: 'save', realm: realmOf(editing.draft), version, ...(editing.editing === undefined ? {} : { name: editing.editing }) }, 'Saved: sign-in follows it now');
     if (ok) setEditing(null);
   };
-  const accountChange = (c: AccountChange, done?: string) => change({ ...c, version } as RealmsEdit, done);
 
   return (
     <div className="space-y-3">
@@ -75,7 +73,7 @@ export function Realms() {
         action={!editing ? <Button size="xs" variant="outline" className="gap-1" onClick={() => { setError(null); setEditing({ draft: emptyDraft('oidc') }); }}><Plus />Add realm</Button> : undefined}>
         <div className="space-y-3">
           <p className="text-sm text-muted-foreground">
-            A realm is one way people sign in. The username and password form tries the password and LDAP realms in this order; the first that accepts the password signs in. The others are sign-in buttons, in this order. A change applies at once.
+            A realm is one way people sign in. The username and password form tries the LDAP realms in this order; the first that accepts the password signs in. The others are sign-in buttons, in this order. A change applies at once.
           </p>
           {editing && <Editor editing={editing} setEditing={setEditing} error={error} busy={busy} onSave={() => void save()} onCancel={() => { setEditing(null); setError(null); }} />}
           {view.realms.length === 0 ? <Empty>No realms: people sign in with the login code{view.none ? ' or without signing in' : ''}.</Empty> : (
@@ -86,9 +84,7 @@ export function Realms() {
                   onMove={(to) => void change({ action: 'move', name: r.name, to, version })}
                   onEdit={() => { setError(null); setEditing({ editing: r.name, draft: draftOf(r), ...(r.environment ? { environment: true } : {}) }); }}
                   onRemove={() => void change({ action: 'remove', name: r.name, version }, `${r.label} removed`)}
-                  position={i}>
-                  {r.type === 'password' && <RealmAccounts realm={r.name} accounts={r.accounts ?? []} users={users} busy={busy} change={accountChange} />}
-                </RealmRow>
+                  position={i} />
               ))}
             </ul>
           )}
@@ -117,9 +113,9 @@ export function Realms() {
   );
 }
 
-function RealmRow({ realm: r, first, last, busy, position, onEnable, onMove, onEdit, onRemove, children }: {
+function RealmRow({ realm: r, first, last, busy, position, onEnable, onMove, onEdit, onRemove }: {
   realm: RealmView; first: boolean; last: boolean; busy: boolean; position: number;
-  onEnable: (enabled: boolean) => void; onMove: (to: number) => void; onEdit: () => void; onRemove: () => void; children?: React.ReactNode;
+  onEnable: (enabled: boolean) => void; onMove: (to: number) => void; onEdit: () => void; onRemove: () => void;
 }) {
   const copy = (l: string) => navigator.clipboard?.writeText(l).then(() => toast.success('Copied'), () => toast.error('Clipboard blocked'));
   return (
@@ -136,7 +132,7 @@ function RealmRow({ realm: r, first, last, busy, position, onEnable, onMove, onE
           <Button variant="ghost" size="icon-xs" aria-label="Move down" disabled={busy || last} onClick={() => onMove(position + 1)}><ArrowDown /></Button>
           <Button variant="ghost" size="icon-xs" aria-label="Edit" disabled={busy} onClick={onEdit}><Pencil /></Button>
           <Confirm title={`Remove ${r.label}?`} action="Remove" onConfirm={onRemove}
-            description={`People who signed in with it are signed out at once, and nobody can sign in with it any more.${r.type === 'password' ? ' Its accounts go with it.' : ''}`}>
+            description={`People who signed in with it are signed out at once, and nobody can sign in with it any more.`}>
             <Button variant="ghost" size="icon-xs" aria-label="Remove" disabled={busy}><Trash2 /></Button>
           </Confirm>
         </span>
@@ -155,7 +151,6 @@ function RealmRow({ realm: r, first, last, busy, position, onEnable, onMove, onE
           <Button variant="ghost" size="icon-xs" aria-label="Copy metadata URL" onClick={() => copy(r.metadata!)}><Copy /></Button>
         </div>
       )}
-      {children}
     </li>
   );
 }
@@ -270,9 +265,7 @@ function Editor({ editing, setEditing, error, busy, onSave, onCancel }: {
           ? <SecretInput key={f.path} f={f} value={draft.values[f.path] as string | null | undefined} stored={draft.secrets.includes(f.path)} disabled={busy}
               set={(v) => set({ ...draft, values: { ...draft.values, [f.path]: v } })} />
           : <FieldInput key={f.path} f={f} value={draft.values[f.path]} disabled={busy} set={(v) => set({ ...draft, values: { ...draft.values, [f.path]: v } })} />))}
-        {draft.type === 'password'
-          ? <p className="text-xs text-muted-foreground sm:col-span-2">Its accounts are added under the realm once it is saved: each with a username, a password and a role.</p>
-          : <RoleRules draft={draft} set={set} disabled={busy} />}
+        <RoleRules draft={draft} set={set} disabled={busy} />
       </div>
       <p className="text-xs text-muted-foreground">Every setting: docs/sign-in.md in the hopper's install.{editing.environment ? ' This realm is set up by the environment: the next start sets it from there again.' : ''}</p>
       {error && <div role="alert" className="rounded-md border border-destructive/40 bg-destructive/5 px-2 py-1.5 text-xs text-destructive">{error}</div>}

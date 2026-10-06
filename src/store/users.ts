@@ -83,8 +83,8 @@ export function createIdentityLinks(c: StoreContext): IdentityLinks {
     link(realm, subject, userId) {
       c.db.run('INSERT INTO user_identities (realm, subject, user_id) VALUES (?, ?, ?) ON CONFLICT DO NOTHING', realm, subject, userId);
     },
-    replace(realm, subject, userId) {
-      c.db.run('INSERT INTO user_identities (realm, subject, user_id) VALUES (?, ?, ?) ON CONFLICT (realm, subject) DO UPDATE SET user_id = excluded.user_id', realm, subject, userId);
+    realmsOf(userId) {
+      return c.db.all('SELECT DISTINCT realm FROM user_identities WHERE user_id = ? ORDER BY realm', userId).map((r) => String(r.realm));
     },
     anyIn(realms) {
       return realms.some((realm) => c.db.get('SELECT 1 FROM user_identities WHERE realm = ? LIMIT 1', realm) !== undefined);

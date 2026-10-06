@@ -2,7 +2,7 @@
 // Settings → Users (issue #158): the users of this hopper, and for an admin "Add user", which shows the
 // one-time login link the daemon answers, to copy and hand over. A session that is not admin neither
 // lists nor adds users (GET /api/users answers an admin). An admin reads the users' work only as totals
-// across all of them (issue #221); a session signed in with a password account changes its own password.
+// across all of them (issue #221).
 // Rendered against a fake of the daemon's HTTP.
 import { createElement } from 'react';
 import { act } from 'react';
@@ -19,10 +19,6 @@ function fakeDaemon() {
     const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
     if (String(input) === '/api/users') return json({ users });
     if (String(input) === '/api/instance') return json(TOTALS);
-    if (String(input) === '/ui/api/password') {
-      posts.push(JSON.parse(String(init.body)));
-      return json({ ok: true });
-    }
     if (String(input) === '/ui/api/users') {
       const body = JSON.parse(String(init.body)) as { name: string };
       posts.push(body);
@@ -106,22 +102,4 @@ describe('Settings: Users', () => {
     expect(document.querySelector('[data-instance-totals]')).toBeNull();
   });
 
-  it('a session signed in with a password account changes its own password', async () => {
-    await render('operator', 'staff');
-    await vi.waitFor(() => expect(button('Change your password')).toBeTruthy());
-    await act(async () => { button('Change your password')!.click(); });
-    const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
-    for (const [label, value] of [['Current password', 'first-password'], ['New password', 'only-mine-now']]) {
-      const input = document.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!;
-      await act(async () => { set.call(input, value); input.dispatchEvent(new Event('input', { bubbles: true })); });
-    }
-    await act(async () => { button('Change')!.click(); });
-    await vi.waitFor(() => expect(posts).toEqual([{ current: 'first-password', password: 'only-mine-now' }]));
-  });
-
-  it('a session signed in with the login code has no password to change', async () => {
-    await render('admin');
-    await vi.waitFor(() => expect(rows()).toEqual(['admin']));
-    expect(button('Change your password')).toBeUndefined();
-  });
 });

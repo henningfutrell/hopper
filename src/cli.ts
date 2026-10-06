@@ -14,9 +14,8 @@
 //   hopper user transfer <from> <to>                  <to> takes over <from>'s work (issue #212)
 //   hopper help                                       what each command does
 //
-// <record>: plugins or rules (a user's: --user, default admin), or sign-in (the instance's, without
-// the password accounts: Settings → Sign-in keeps them, issue #200). A record that would not load is
-// refused.
+// <record>: plugins or rules (a user's: --user, default admin), or sign-in (the instance's). A record
+// that would not load is refused.
 import { readFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { CONFIG_NAMES, type ConfigName, type ConfigRecords, type InstanceStore } from './domain/ports.ts';
@@ -49,8 +48,8 @@ usage:
                                                      The daemon must be stopped; refused when <to> holds work of its own
   hopper help                                        this text
 
-records: ${CONFIG_NAMES.join(', ')}. plugins and rules are one user's; sign-in is shared, and its password accounts are
-kept apart: Settings → Sign-in adds them. Every one is edited in the UI too.
+records: ${CONFIG_NAMES.join(', ')}. plugins and rules are one user's; sign-in is shared. Every one is edited
+in the UI too.
 --user <id> on config and login-code names the user (default: admin, the default admin account).
 
 Every command but help needs HOPPER_DATABASE_URL (or HOPPER_DATABASE_URL_FILE):
@@ -68,18 +67,10 @@ function recordName(raw: string | undefined): ConfigName {
   throw new CliError(`unknown config record ${raw ?? '(none)'}; one of ${CONFIG_NAMES.join(', ')}`);
 }
 
-/** A password realm in `value` that holds accounts: they are rows of their own (issue #200), never part of the record. */
-function accountsInRecord(value: unknown): string | undefined {
-  const realms = (value as { realms?: unknown } | null)?.realms;
-  if (!Array.isArray(realms)) return undefined;
-  const i = realms.findIndex((r) => typeof r === 'object' && r !== null && 'users' in r);
-  return i < 0 ? undefined : `realms.${i}.users: password accounts are not part of the record; add them in Settings → Sign-in`;
-}
-
 /** Why `value` would not load as `name`, or undefined. */
 export function recordProblem(name: ConfigName, value: unknown): string | undefined {
   if (name === 'rules') return rulesProblem(value);
-  return name === 'sign-in' ? accountsInRecord(value) ?? signInConfigProblem(value) : pluginsConfigProblem(value);
+  return name === 'sign-in' ? signInConfigProblem(value) : pluginsConfigProblem(value);
 }
 
 /** One config record wherever it lives: a user's (plugins, rules) or the instance's (sign-in). */

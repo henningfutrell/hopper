@@ -1,8 +1,9 @@
 // What an admin sees of the users' work (issue #221, design.md "What an admin sees"), through the real
 // HTTP server and the real store: the totals across users, never one user's work; sign-in changes that
-// would hand an admin a way into another user's work are refused; a user changes their own password.
+// would hand an admin a way into another user's work are refused.
 import { afterEach, describe, expect, it } from 'vitest';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
+import { writeConfig } from '../support/files.ts';
 
 let t: TestApp | undefined;
 let cleanup: (() => void) | undefined;
@@ -34,18 +35,6 @@ async function twoUsers(a: TestApp): Promise<{ admin: string; bea: string }> {
 }
 
 describe('an admin reads the totals, never a user\'s work', () => {
-  /** A password realm `pw` with the account `cy`, added by admin's admin session; cy signed in once (so a user of its own). */
-  async function cyByPassword(a: TestApp, admin: string): Promise<string> {
-    const realms = async () => (await a.api('GET', '/api/realms', undefined, session(admin))).body as { version: string };
-    expect((await a.ui('/ui/api/realms', { action: 'save', realm: { name: 'pw', type: 'password' }, version: (await realms()).version }, { token: admin })).status).toBe(200);
-    expect((await a.ui('/ui/api/realms', { action: 'account', realm: 'pw', username: 'cy', role: 'admin', password: 'first-password', version: (await realms()).version }, { token: admin })).status).toBe(200);
-    return passwordSignIn(a, 'cy', 'first-password');
-  }
-  async function passwordSignIn(a: TestApp, username: string, password: string): Promise<string> {
-    const r = await a.ui<{ token: string }>('/ui/auth/password', { username, password });
-    expect(r.status, `${username} signs in`).toBe(200);
-    return r.body.token;
-  }
   const version = async (a: TestApp, token: string): Promise<string> => (await a.api('GET', '/api/realms', undefined, session(token))).body.version;
 
   it('GET /api/instance: the totals across users, no job, question or user of anyone; only an admin', async () => {
@@ -67,44 +56,14 @@ describe('an admin reads the totals, never a user\'s work', () => {
     expect((await a.api('GET', '/api/instance', undefined, session(bea))).status).toBe(200);
   });
 
-  it('an admin may not set the password of, link, or re-add an account that signs in as another user', async () => {
-    const a = await start();
-    const admin = await a.login();
-    const cy = await cyByPassword(a, admin);
-    expect((await a.api('GET', '/ui/api/session', undefined, session(cy))).body.user).toMatchObject({ id: 'cy' });
-    await a.addUser('Bea');
-    const account = { action: 'account', realm: 'pw', role: 'admin' };
-    const reset = await a.ui<{ error: string }>('/ui/api/realms', { ...account, username: 'cy', password: 'admin-knows-it', version: await version(a, admin) }, { token: admin });
-    expect(reset.status).toBe(409);
-    expect(reset.body.error).toContain('signs in as another user');
-    expect((await a.ui('/ui/api/realms', { ...account, username: 'dee', password: 'admin-knows-it', user: 'bea', version: await version(a, admin) }, { token: admin })).status).toBe(409);
-    expect((await a.ui('/ui/api/realms', { action: 'account-remove', realm: 'pw', username: 'cy', version: await version(a, admin) }, { token: admin })).status).toBe(200);
-    expect((await a.ui('/ui/api/realms', { ...account, username: 'cy', password: 'admin-knows-it', version: await version(a, admin) }, { token: admin })).status).toBe(409);
-    expect((await a.ui('/ui/auth/password', { username: 'cy', password: 'admin-knows-it' })).status).not.toBe(200);
-    expect((await a.ui('/ui/api/realms', { ...account, username: 'eve', password: 'own-account', user: 'admin', version: await version(a, admin) }, { token: admin })).status).toBe(200);
-  });
-
-  it('an admin may change the role of an account that signs in as another user; the totals need admin', async () => {
-    const a = await start();
-    const admin = await a.login();
-    const cy = await cyByPassword(a, admin);
-    expect((await a.ui('/ui/api/realms', { action: 'account', realm: 'pw', username: 'cy', role: 'viewer', version: await version(a, admin) }, { token: admin })).status).toBe(200);
-    expect((await a.api('GET', '/api/instance', undefined, session(cy))).status).toBe(403);
-  });
-
-  it('a user changes their own password; their other sessions end; the old password no longer signs in', async () => {
-    const a = await start();
-    const admin = await a.login();
-    const cy = await cyByPassword(a, admin);
-    const other = await passwordSignIn(a, 'cy', 'first-password');
-    expect((await a.ui('/ui/api/password', { current: 'wrong-password', password: 'only-cy-knows' }, { token: cy })).status).toBe(400);
-    expect((await a.ui('/ui/api/password', { current: 'first-password', password: 'only-cy-knows' }, { token: cy })).status).toBe(200);
-    expect((await a.api('GET', '/ui/api/session', undefined, session(cy))).body.authenticated).toBe(true);
-    expect((await a.api('GET', '/ui/api/session', undefined, session(other))).body.authenticated).toBe(false);
-    expect((await a.ui('/ui/auth/password', { username: 'cy', password: 'first-password' })).status).not.toBe(200);
-    const again = await passwordSignIn(a, 'cy', 'only-cy-knows');
-    expect((await a.api('GET', '/ui/api/session', undefined, session(again))).body.user).toMatchObject({ id: 'cy' });
-    expect((await a.ui('/ui/api/password', { current: 'x', password: 'not-a-password-account' }, { token: admin })).status).toBe(409);
+  it('the totals need admin: a viewer session is refused', async () => {
+    const db = tempDbPath();
+    cleanup = db.cleanup;
+    writeConfig(db.dbPath, 'sign-in', { version: 1, none: { role: 'viewer' } });
+    t = await startTestApp({ dbPath: db.dbPath });
+    const viewer = await t.ui<{ token: string }>('/ui/auth/none', {});
+    expect(viewer.status).toBe(200);
+    expect((await t.api('GET', '/api/instance', undefined, session(viewer.body.token))).status).toBe(403);
   });
 
   it('no sign-in stays off while the hopper has more than one user, and a user is not added while it is on', async () => {

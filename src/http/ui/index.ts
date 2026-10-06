@@ -64,26 +64,17 @@ export const usersEditBody = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('add'), name: z.string().trim().min(1, 'name must not be empty').max(64) }),
 ]);
 export const rulesBody = z.strictObject({ text: z.string(), version: z.string().min(1) });
-// Realms (issues #185, #200): one change to the sign-in config against the version read. A realm's own
+// Realms (issue #185): one change to the sign-in config against the version read. A realm's own
 // settings are checked by loading the changed settings, so a refusal names the field as a start would.
 const realmName = z.string().min(1).max(64);
 const realmsVersion = { version: z.string().min(1) };
-const username = z.string().trim().min(1, 'username must not be empty').max(128);
 export const realmsEditBody = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('save'), name: realmName.optional(), realm: z.looseObject({ name: realmName, label: z.string().max(128).optional(), type: z.enum(REALM_TYPES) }), ...realmsVersion }),
   z.strictObject({ action: z.literal('remove'), name: realmName, ...realmsVersion }),
   z.strictObject({ action: z.literal('move'), name: realmName, to: z.number().int().min(0), ...realmsVersion }),
   z.strictObject({ action: z.literal('enable'), name: realmName, enabled: z.boolean(), ...realmsVersion }),
   z.strictObject({ action: z.literal('settings'), local: z.boolean().optional(), none: z.enum(UI_ROLES).nullable().optional(), ...realmsVersion }),
-  z.strictObject({
-    action: z.literal('account'), realm: realmName, username, role: z.enum(UI_ROLES),
-    password: z.string().min(8, 'a password has at least 8 characters').max(1024).optional(), user: z.string().min(1).max(64).optional(), ...realmsVersion,
-  }),
-  z.strictObject({ action: z.literal('account-remove'), realm: realmName, username, ...realmsVersion }),
 ]);
-export const passwordChangeBody = z.strictObject({
-  current: z.string().max(1024), password: z.string().min(8, 'a password has at least 8 characters').max(1024),
-});
 // The content (url, events) is checked in the editor, so the UI shows one set of messages; here only
 // the shape. No secret (issue #56), no secretFile, no new name; secretEnv only on add, and only a
 // WEBHOOK_SECRET_* variable (checked in the editor).
@@ -310,15 +301,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   // Answers the new GET /api/realms view.
   app.post('/ui/api/realms', admin, async (req): Promise<RealmsView> => {
     const s = sessionOf(req)!;
-    return o.realms.edit(parseWith(realmsEditBody, req.body) as RealmsEdit, s.identity, s.userId);
-  });
-
-  // A user changes the password of the account they signed in with (issue #221): what an admin handed over stops being theirs to know.
-  app.post('/ui/api/password', allow('viewer'), async (req) => {
-    const s = sessionOf(req)!;
-    const { current, password } = parseWith(passwordChangeBody, req.body);
-    await o.realms.changePassword(s.identity, { current, password, keep: s.token });
-    return { ok: true };
+    return o.realms.edit(parseWith(realmsEditBody, req.body) as RealmsEdit, s.identity);
   });
 
   app.post('/ui/api/logout', allow('viewer'), async (req) => {

@@ -32,7 +32,7 @@ describe('migration 21: owner → the default admin account', () => {
     const bea = before.users.add('bea');
     before.close();
     const raw = t.at(url, 20);
-    raw.run("INSERT INTO user_identities (realm, subject, user_id) VALUES ('password', 'ada', 'owner'), ('corp', 'sub-1', 'bea')");
+    raw.run("INSERT INTO user_identities (realm, subject, user_id) VALUES ('dir', 'ada', 'owner'), ('corp', 'sub-1', 'bea')");
     raw.run("INSERT INTO ui_sessions (token_hash, expires_at, role, identity, user_id) VALUES ('t1', '2099-01-01T00:00:00.000Z', 'admin', '{}', 'owner')");
     raw.run("INSERT INTO login_codes (code_hash, expires_at, user_id) VALUES ('c1', '2099-01-01T00:00:00.000Z', 'owner')");
     raw.close();
@@ -48,7 +48,7 @@ describe('migration 21: owner → the default admin account', () => {
     expect(admin.jobs.get(job.id)?.status).toBe('queued');
     expect(admin.config.read('rules')).toBe('be kind');
     admin.close();
-    expect(instance.identities.userOf('password', 'ada')).toBe('admin');
+    expect(instance.identities.userOf('dir', 'ada')).toBe('admin');
     expect(instance.identities.userOf('corp', 'sub-1')).toBe('bea');
     expect(instance.uiSessions.find('t1', '2026-10-02T10:00:00.000Z')?.userId).toBe('admin');
     expect(instance.loginCodes.take('c1', '2026-10-02T10:00:00.000Z')).toBe('admin');

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { YAMLSeq, isMap, isScalar, isSeq, parse, parseDocument, type Document, type Node, type YAMLMap } from 'yaml';
 import type { Db } from './db.ts';
 import { passwordAccountsTable } from './migration-accounts.ts';
+import { noPasswordRealm } from './migration-no-password-realm.ts';
 import { documentsToRecords } from './migration-config.ts';
 import { signInRealms } from './migration-realms.ts';
 import { usersAndOwner } from './migration-users.ts';
@@ -141,6 +142,9 @@ const MIGRATIONS: readonly Migration[] = [
   // 21: the built-in user `owner` becomes the default admin account, `admin` (issue #220): its schema,
   // links, sessions and codes move to it; sessions and login codes name their user, with no default.
   ownerToAdmin,
+  // 22: no password user realm (issue #237): password realms, `password_accounts` and their identity
+  // links go; a sign-in config left with no way in turns the login code on.
+  noPasswordRealm,
 ];
 
 /**

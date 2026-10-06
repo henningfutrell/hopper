@@ -9,10 +9,10 @@ export const UI_ROLES: readonly UiRole[] = ['viewer', 'operator', 'admin'];
 export const roleAllows = (role: UiRole, needs: UiRole): boolean => UI_ROLES.indexOf(role) >= UI_ROLES.indexOf(needs);
 
 /** The realm types the sign-in config offers. `local` (the login code) and `none` (no sign-in) are not realms. */
-export type RealmType = 'password' | 'ldap' | 'oidc' | 'github' | 'saml' | 'gateway';
-export const REALM_TYPES: readonly RealmType[] = ['password', 'ldap', 'oidc', 'github', 'saml', 'gateway'];
-/** Realm types the username and password form signs in with. */
-export const FORM_REALM_TYPES: readonly RealmType[] = ['password', 'ldap'];
+export type RealmType = 'ldap' | 'oidc' | 'github' | 'saml' | 'gateway';
+export const REALM_TYPES: readonly RealmType[] = ['ldap', 'oidc', 'github', 'saml', 'gateway'];
+/** Realm types the username and password form signs in with: a directory's, never an account of the hopper's own (issue #237). */
+export const FORM_REALM_TYPES: readonly RealmType[] = ['ldap'];
 /** Realm types that send the browser to an identity provider. A `gateway` realm is neither: an auth gateway in front of the hopper signed the person in. */
 export const REDIRECT_REALM_TYPES: readonly RealmType[] = ['oidc', 'github', 'saml'];
 
@@ -20,7 +20,7 @@ export const REDIRECT_REALM_TYPES: readonly RealmType[] = ['oidc', 'github', 'sa
 export interface Identity {
   /** The realm's name in the sign-in config (`local` the login code, `none` no sign-in). */
   realm: string;
-  /** The realm's stable id for the user (account username, LDAP DN or the configured attribute, OIDC `sub`, GitHub user id, SAML NameID). */
+  /** The realm's stable id for the user (LDAP DN or the configured attribute, OIDC `sub`, GitHub user id, SAML NameID). */
   subject: string;
   /** Only an address the realm vouches for. */
   email?: string;
@@ -50,14 +50,6 @@ export interface SignInRealmView {
   type: RealmType;
 }
 
-/** A password account as Settings → Sign-in shows it: never its hash. */
-export interface PasswordAccountView {
-  username: string;
-  role: UiRole;
-  /** The user it signs in as; absent: none yet — its first sign-in makes a user of its own. */
-  user?: { id: string; name: string };
-}
-
 /**
  * A realm type's settings, by field (`issuer`, `clientId`, `attributes: { email }`, `roles`, …; every one:
  * docs/sign-in.md). Read back, never a secret (`RealmView.secrets` names those set); saved, a secret
@@ -77,8 +69,6 @@ export interface RealmView {
   secrets: string[];
   /** Set up by HOPPER_SIGN_IN_REALM_<NAME>_* variables: the next start sets it from them again (issue #216). */
   environment?: boolean;
-  /** A password realm: its accounts, by username. */
-  accounts?: PasswordAccountView[];
   /** OIDC, GitHub, SAML: the callback URL to register with the identity provider. */
   callback?: string;
   /** SAML: the service provider metadata URL (also its entity id unless `entityId` is set). */
@@ -97,7 +87,7 @@ export interface RealmsView {
 
 /** POST /ui/api/realms: one change to the sign-in config, made against the version it read. */
 export type RealmsEdit = { version: string } & (
-  /** Add a realm from its fields, or replace the one named `name` (its name stays; whether it is on, and a password realm's accounts, stay too). */
+  /** Add a realm from its fields, or replace the one named `name` (its name stays; whether it is on stays too). */
   | { action: 'save'; name?: string; realm: { name: string; label?: string; type: RealmType } & RealmSettings }
   | { action: 'remove'; name: string }
   /** Move to position `to` (0 first). */
@@ -105,12 +95,6 @@ export type RealmsEdit = { version: string } & (
   | { action: 'enable'; name: string; enabled: boolean }
   /** Local sign-in (the login code) on or off; the role of no sign-in, or null for off. */
   | { action: 'settings'; local?: boolean; none?: UiRole | null }
-  /**
-   * Add a password account (`password` needed), or change one's role and, when `password` is given, its
-   * password. `user`: the user a new account signs in as (absent: a user of its own at its first sign-in).
-   */
-  | { action: 'account'; realm: string; username: string; role: UiRole; password?: string; user?: string }
-  | { action: 'account-remove'; realm: string; username: string }
 );
 
 /** GET /ui/api/session. */
@@ -125,7 +109,7 @@ export interface SessionView {
     local: boolean;
     /** No sign-in: the role anyone gets from POST /ui/auth/none; null when off. */
     none: UiRole | null;
-    /** Password sign-in (POST /ui/auth/password) is on: a password or LDAP realm is. */
+    /** Password sign-in (POST /ui/auth/password) is on: an LDAP realm is. */
     password: boolean;
     /** A gateway realm is on: POST /ui/auth/gateway turns the token the auth gateway forwards into a session. */
     gateway: boolean;

@@ -31,13 +31,13 @@ async function otherIssuer(hh: Harness): Promise<OidcIdp> {
 }
 
 describe('a gateway realm, checking JWTs', () => {
-  it('the session view offers the gateway, not a sign-in button; the password fallback form stays (issue #219)', async () => {
+  it('the session view offers the gateway, not a sign-in button nor a password form', async () => {
     const idp = await oidcIdp(h);
     const { app } = await start({ version: 1, local: { enabled: false }, realms: [gatewayRealm(idp, { defaultRole: 'viewer' })] });
     const offer = (await session(app)).signIn;
     expect(offer.gateway).toBe(true);
     expect(offer.realms).toEqual([]);
-    expect(offer.password).toBe(true);
+    expect(offer.password).toBe(false);
   });
 
   it('a token the gateway forwards becomes a session: role from its groups, the user named from its claims', async () => {
