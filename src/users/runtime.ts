@@ -26,6 +26,7 @@ import { builtinInstances, ensurePluginsConfig } from '../plugins/builtin-instan
 import { createDetectionKit } from '../plugins/detect.ts';
 import { unavailableExecutors } from '../plugins/executor-slot.ts';
 import { herdrClaudePlugin } from '../plugins/executor/herdr-claude/index.ts';
+import { localPlugin, startHerdrSession } from '../plugins/machine-source/local/index.ts';
 import { createPluginHost, type BuiltJobSource, type PluginHost } from '../plugins/index.ts';
 import { githubAppPlugin } from '../plugins/job-source/github-app/index.ts';
 import { githubGhPlugin } from '../plugins/job-source/github-gh/index.ts';
@@ -65,6 +66,8 @@ export interface UserSeams {
   machineProbe?: (machine: AttachedMachine) => Promise<MachineProbe>;
   /** Replaces resolving a new ssh target when the UI adds a machine (issues #18, #59): its herdr path and pinned host key, or a rejection with the reason. */
   resolveTarget?: (ssh: string, o: { herdr: boolean }) => Promise<ResolvedTarget>;
+  /** Replaces starting this machine's herdr session (issue #260): when it is added, and while it is a machine. */
+  herdrSession?: (session: string) => Promise<void>;
 }
 
 /** What the instance gives each user runtime. */
@@ -122,6 +125,7 @@ const SEAM_SOURCE_POLL_MS = 1000;
 function withSeams(seams: UserSeams) {
   return BUILTIN_PLUGINS.map((p) => {
     if (p.id === 'herdr-claude') return herdrClaudePlugin(seams.herdr);
+    if (p.id === 'local' && seams.herdrSession) return localPlugin(seams.herdrSession);
     if (p.id === 'github-gh' && seams.github) return githubGhPlugin(seams.github);
     if (p.id === 'github-app' && seams.githubApp) return githubAppPlugin(seams.githubApp);
     if (p.id === 'grokbot-routine' && seams.grokbotBaseMs) return grokbotRoutinePlugin({ baseMs: seams.grokbotBaseMs });
@@ -218,6 +222,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     attached: {
       inUse: (name) => jobsOnMachine(name), pinned: (name) => notEnded().filter((j) => j.spec.machineId === name).map((j) => j.id),
       sshAuth, ...(seams.resolveTarget ? { resolveTarget: seams.resolveTarget } : {}),
+      startSession: seams.herdrSession ?? ((s) => startHerdrSession(s, cliEnv)),
     },
   });
   await host.start();

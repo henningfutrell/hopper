@@ -1,12 +1,12 @@
-// The Machines view's forms (design.md "Machines from the UI", issues #18, #74, #142, #205): attach a machine over
-// ssh, edit an attached one's name, lanes, executors, label and how it is reached, edit a local one's name and
+// The Machines view's forms (design.md "Machines from the UI", issues #18, #74, #142, #205, #260): add this machine
+// (no ssh target: its name and herdr session), attach a machine over ssh, edit an attached one's name, lanes, executors, label and how it is reached, edit a local one's name and
 // lane count, edit the machine defaults a new machine starts from. On attach the ssh target is picked from
 // ~/.ssh/config's Host aliases, never typed; herdr's path is resolved by the daemon over ssh when one of the
 // machine's executors needs herdr. Phone width first: every field stacks, every control is at least 36 px tall.
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { addBody, addProblem, defaultsBody, DETAILS, editBody, editDraft, editProblem, localBody, newDraft, type LocalDraft, type MachineDefaultsDraft, type MachineDraft, type MachineEditDraft, type MachineKind } from '@/model/machines';
+import { addBody, addProblem, defaultsBody, DETAILS, editBody, editDraft, editProblem, localBody, newDraft, newThisDraft, thisBody, thisProblem, type LocalDraft, type MachineDefaultsDraft, type MachineDraft, type MachineEditDraft, type MachineKind, type ThisDraft } from '@/model/machines';
 import type { MachineDefaultsEdit, MachineEdit, MachinesConfig, PluginsEdit } from '@/model/wire';
 
 const SELECT = 'h-9 w-full rounded-lg border border-input bg-transparent px-2.5 text-base md:text-sm dark:bg-input/30';
@@ -36,6 +36,39 @@ function ExecutorChecks({ all, picked, onChange, disabled }: { all: string[]; pi
         ))}
       </div>
     </fieldset>
+  );
+}
+
+/** Add this machine (issue #260): no ssh target — its name, the herdr session its jobs run in (started by the hopper), lanes, label. */
+export function AddThisMachineForm({ config, busy, send, onDone }: {
+  config: MachinesConfig; busy: boolean; send: (e: MachineEdit, done: string) => Promise<boolean>; onDone: () => void;
+}) {
+  const [d, setD] = useState<ThisDraft>(newThisDraft);
+  const set = (over: Partial<ThisDraft>) => setD((x) => ({ ...x, ...over }));
+  const problem = thisProblem(d, config);
+  const submit = async () => { if (await send(thisBody(d, config.version), `Added this machine as ${d.name.trim()}`)) onDone(); };
+  return (
+    <form className="grid gap-3" onSubmit={(e) => { e.preventDefault(); void submit(); }}>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="name" hint="the machine id; lanes and jobs are stored under it">
+          <Input className="h-9" value={d.name} disabled={busy} autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder="workstation" onChange={(e) => set({ name: e.target.value })} />
+        </Field>
+        <Field label="herdr session" hint="where its jobs run; the hopper starts it when it is not running">
+          <Input className="h-9 font-mono" value={d.session} disabled={busy} autoCapitalize="none" autoCorrect="off" spellCheck={false} onChange={(e) => set({ session: e.target.value })} />
+        </Field>
+        <Field label="lanes" hint="jobs it runs at once">
+          <Input className="h-9" type="number" inputMode="numeric" min={1} step={1} value={d.lanes} disabled={busy} onChange={(e) => set({ lanes: e.target.value })} />
+        </Field>
+        <Field label="label" hint="optional; shown instead of the name">
+          <Input className="h-9" value={d.label} disabled={busy} placeholder={d.name.trim() || 'workstation'} onChange={(e) => set({ label: e.target.value })} />
+        </Field>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button type="submit" size="lg" disabled={busy || problem !== null}>{busy ? 'Starting its herdr session…' : 'Add this machine'}</Button>
+        <Button type="button" size="lg" variant="ghost" disabled={busy} onClick={onDone}>Cancel</Button>
+        {problem && d.name.trim() !== '' && <span className="text-xs text-muted-foreground">{problem}</span>}
+      </div>
+    </form>
   );
 }
 
@@ -159,10 +192,10 @@ export function LocalMachineForm({ machine, config, busy, send, onDone }: {
   send: (e: Extract<PluginsEdit, { action: 'options' }>, done: string) => Promise<boolean>; onDone: () => void;
 }) {
   const name = machine.machine.name;
-  const [d, setD] = useState<LocalDraft>({ name, lanes: String(machine.lanes) });
+  const [d, setD] = useState<LocalDraft>({ name, lanes: String(machine.lanes), session: typeof machine.machine.options?.session === 'string' ? machine.machine.options.session : '' });
   const taken = d.name.trim() !== name && config.machines.some((m) => m.name === d.name.trim());
   const body = taken ? null : localBody(machine, d, config.version);
-  const submit = async () => { if (body && await send(body, body.rename ? `Renamed ${name} to ${body.rename}` : `${name} runs ${d.lanes} lane${d.lanes === '1' ? '' : 's'}`)) onDone(); };
+  const submit = async () => { if (body && await send(body, body.rename ? `Renamed ${name} to ${body.rename}` : `Saved ${name}`)) onDone(); };
   return (
     <form className="grid gap-3 rounded-md border p-3" onSubmit={(e) => { e.preventDefault(); void submit(); }}>
       <div className="grid gap-3 sm:grid-cols-2">
@@ -171,6 +204,9 @@ export function LocalMachineForm({ machine, config, busy, send, onDone }: {
         </Field>
         <Field label="lanes" hint="jobs this machine runs at once; 0 runs none here">
           <Input className="h-9" type="number" inputMode="numeric" min={0} step={1} value={d.lanes} disabled={busy} onChange={(e) => setD((x) => ({ ...x, lanes: e.target.value }))} />
+        </Field>
+        <Field label="herdr session" hint="where its jobs run; the hopper starts it when it is not running. Empty: herdr-claude's own">
+          <Input className="h-9 font-mono" value={d.session ?? ''} disabled={busy} autoCapitalize="none" autoCorrect="off" spellCheck={false} onChange={(e) => setD((x) => ({ ...x, session: e.target.value }))} />
         </Field>
       </div>
       <div className="flex flex-wrap gap-2">

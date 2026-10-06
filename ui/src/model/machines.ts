@@ -2,7 +2,8 @@
 // this one (connection `local`) and which an attached one (connection `ssh`, `docker` or `client`), why an Add
 // form may not be sent yet, the body POST /ui/api/machines takes, and the options edit an Edit form
 // sends to POST /ui/api/plugins — its name and every detail of how it is reached too (issue #205). An
-// Add body never carries herdrBin, session or hostKey. A new machine starts from the machine defaults
+// Add body over ssh never carries herdrBin, session or hostKey; this machine is added with no ssh target,
+// its name and its herdr session (issue #260). A new machine starts from the machine defaults
 // (issue #142), edited through POST /ui/api/machines/defaults.
 import type { ConfiguredMachine, MachineDefaultsEdit, MachineEdit, MachineSnapshot, MachinesConfig, PluginsEdit } from '../../../src/domain/types.ts';
 
@@ -128,14 +129,56 @@ export function editBody(m: Extract<MachineKind, { kind: 'attached' }>, d: Machi
   }, version);
 }
 
-/** A local machine's Edit form as typed: its name and lane count. */
-export interface LocalDraft { name: string; lanes: string }
+/** A local machine's Edit form as typed: its name, lane count and (issue #260) its herdr session; empty: the herdr-claude instance's own. */
+export interface LocalDraft { name: string; lanes: string; session?: string }
 
-/** Its whole options with the lane count as typed (0 runs none here), and its new name; null when nothing changed or while either is invalid. */
+/** Its whole options with the lane count and session as typed (0 lanes runs none here), and its new name; null when nothing changed or while any is invalid. */
 export function localBody(m: Extract<MachineKind, { kind: 'local' }>, d: LocalDraft, version: string): Extract<PluginsEdit, { action: 'options' }> | null {
   const name = d.name.trim();
   if (!name || !/^\d+$/.test(d.lanes.trim())) return null;
-  return optionsEdit(m, name, { ...m.machine.options, lanes: Number(d.lanes) }, version);
+  const options: Record<string, unknown> = { ...m.machine.options, lanes: Number(d.lanes) };
+  if (d.session !== undefined) {
+    const session = d.session.trim();
+    if (session && sessionProblem(session)) return null;
+    if (session) options.session = session;
+    else delete options.session;
+  }
+  return optionsEdit(m, name, options, version);
+}
+
+/** A herdr session name, as the daemon takes it: plain, never `default`. */
+const SESSION = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+
+function sessionProblem(session: string): string | null {
+  if (!session) return 'give the herdr session its jobs run in';
+  if (session === 'default') return 'not the default herdr session: pick another name';
+  if (!SESSION.test(session)) return 'a herdr session is a plain name: letters, digits, dot, dash, underscore';
+  return null;
+}
+
+/** Whether a machine is this one already: then there is no adding it (issue #260). */
+export const hasThisMachine = (config: MachinesConfig): boolean => config.machines.some((m) => m.connection === 'local');
+
+/** The Add form for this machine as typed (issue #260): no ssh target — a name, its herdr session, lanes, a label. */
+export interface ThisDraft { name: string; session: string; lanes: string; label: string }
+
+export const newThisDraft = (): ThisDraft => ({ name: '', session: 'hopper', lanes: String(DEFAULT_LANES), label: '' });
+
+/** Why this machine cannot be added as typed yet, or null. The daemon checks again. */
+export function thisProblem(d: ThisDraft, config: MachinesConfig): string | null {
+  const name = d.name.trim();
+  if (!name) return 'give this machine a name';
+  if (config.machines.some((m) => m.name === name)) return `a machine is already named ${name}; pick another name`;
+  const session = sessionProblem(d.session.trim());
+  if (session) return session;
+  if (lanesOf(d.lanes) === undefined) return 'lanes must be a whole number, at least 1';
+  return null;
+}
+
+/** POST /ui/api/machines without an ssh target: this machine. */
+export function thisBody(d: ThisDraft, version: string): MachineEdit {
+  const label = d.label.trim();
+  return { name: d.name.trim(), session: d.session.trim(), lanes: lanesOf(d.lanes) ?? 0, ...(label ? { label } : {}), version };
 }
 
 /** A client target's client release, as the Machines view says it (issue #70); null before a probe found it online, or for any other machine. */

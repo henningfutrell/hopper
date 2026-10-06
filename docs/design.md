@@ -2580,7 +2580,8 @@ carries on its command line `src/client/ssh-options.ts`: `PreferredAuthenticatio
 agent, X11 or port forwarding, `BatchMode=yes`; then `-i <the hopper's key>`,
 `UserKnownHostsFile=<workdir>/ssh/known_hosts`, `HostKeyAlias=<target>`. The key is the mounted secret
 file `HOPPER_SSH_KEY_FILE` names (a variable is refused: ssh reads keys from files only; others
-must not be able to read it). The known_hosts file holds one line per ssh target, written from each
+must not be able to read it); none set (issue #260), the key files `ssh -G` names for the target that
+exist, as the user's own `ssh` would offer them. The known_hosts file holds one line per ssh target, written from each
 machine's `hostKey` whenever plugins.yaml changes; a machine without one, or two machines pinning
 different keys for one target, is never connected to (logged once). A target name is a plain name
 (`[A-Za-z0-9_.-]`, optionally `user@`). On the target the key is installed with `restrict` (no pty, no
@@ -3337,6 +3338,39 @@ view's Edit form showed lanes, executors and label only, and nothing renamed an 
   client — token variable. An emptied optional detail goes (its default). The local machine's form
   (`LocalMachineForm`) edits its name and lane count. A changed ssh target is not re-probed: its host
   key is edited beside it, and without the right one the hopper does not connect.
+
+### Adding this machine (issue #260, 2026-10-06)
+
+Owner request: this machine is added from the Machines view as easily as any other — no ssh target to
+pick, a name typed, and the herdr session named there created by the hopper — so that a hopper whose
+plugins config names no machine (a wipe, `HOPPER_LOCAL_MACHINE=false` at the first boot) can run jobs
+again without editing anything by hand.
+
+- **`POST /ui/api/machines` without `ssh`** adds **this machine**: `{ name, session?, lanes?,
+  executors?, label?, version }` → a `local` instance named `name` with options `{ lanes (default 4),
+  executors?, session (default hopper), label? }`. 409 while a `local` instance exists ("this machine
+  is already added, as <name>") or the name is taken; 400 for the default session or a session that is
+  not a plain name (`HERDR_SESSION`: letters, digits, `.`, `_`, `-`). With `ssh` the body is as before,
+  and still never carries `session`.
+- **The herdr session is started** before the instance is written, when a configured executor is a
+  herdr-claude instance (`ensureHerdrSession`, `src/executors/herdr/session.ts`): `herdr --session <s>
+  status server`, and when it is not running `herdr --session <s> server` — as the transient user unit
+  `hopper-herdr-<s>` through `systemd-run --user` where there is a user manager, so it outlives a
+  restart of the daemon, else a detached process —, then waited for (10 s). One that does not start
+  refuses the add with the reason (409), nothing written. While it is a machine the `local` source
+  checks again, at most every 30 s and never blocking a Decision, and starts it when it stopped.
+- **Its jobs run in that session.** The `local` plugin's optional `session` option is listed on its
+  snapshot as `herdr: { bin: 'herdr', session }` (no `ssh`); herdr-claude runs a job there through a
+  client of that session (`local(session)`), the instance's own when they are the same. Pane state
+  records the session, so resume, reattach and cleanup reach the same server. Absent, the instance's
+  own session, as before. The local Edit form changes it too.
+- **Parts that run on a machine follow it.** Each escalation level and usage source in the plugins
+  config whose machine option is unset gets the new machine's name in the same write.
+- **Adding a machine over ssh needs no key setting** ("Target authentication", amended): without
+  `HOPPER_SSH_KEY_FILE` the hopper offers the key files `ssh -G <target>` names that exist — what the
+  user's own `ssh <target>` uses —, still never the agent; without any, the reason says to create one
+  with ssh-keygen and install it on the target. A failed add reads `could not add <name>: <reason>`.
+  No error a person sees points at a document.
 
 ### Router, queue sorter and routing rules (issue #18)
 

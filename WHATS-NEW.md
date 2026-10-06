@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- You can add this machine from the Machines page with no ssh target: give it a name and the herdr session its jobs run in, and the hopper starts that session for you. Adding a machine over ssh no longer stops at a missing key setting: it uses the keys your own ssh would.
 - A new hopper, and each person who joins one, no longer adds the hopper's own computer as a machine on its own: you add the machines your jobs run on, this computer among them if you want it.
 - Jobs of someone who signed in with GitHub run again: every job runs in the hopper's usual terminal session, instead of looking for a separate per-person session that was never started.
 - A new hopper no longer makes a starting admin account, password or login code, and there is no sign-in command to run on the machine: you sign in with GitHub, the first person to do so is the admin, and each person who signs in gets a space of their own.

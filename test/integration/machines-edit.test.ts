@@ -158,7 +158,7 @@ describe('POST /ui/api/machines — attach over ssh', () => {
     const before = read(a);
     const r = await a.ui<Reply>('/ui/api/machines', { name: 'gone', ssh: 'unreachable', lanes: 1, executors: ['herdr-claude'], version: (await config(a)).version }, { token });
     expect(r.status).toBe(409);
-    expect(r.body.error).toMatch(/No route to host/);
+    expect(r.body.error).toBe('could not add gone: ssh unreachable: No route to host');
     expect(read(a)).toEqual(before);
     expect(await machineIds(a)).toEqual(['local', 'desk']);
   });

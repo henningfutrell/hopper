@@ -3,7 +3,7 @@
 // POST /ui/api/machines and an Edit form to POST /ui/api/plugins, and why it may not yet.
 import { describe, expect, it } from 'vitest';
 import type { MachinesConfig } from '../../src/domain/types.ts';
-import { addBody, addProblem, clientReleaseText, defaultsBody, DETAILS, editBody, editDraft, editProblem, kindOf, localBody, newDraft, type MachineDraft } from '../../ui/src/model/machines.ts';
+import { addBody, addProblem, clientReleaseText, defaultsBody, DETAILS, editBody, editDraft, editProblem, hasThisMachine, kindOf, localBody, newDraft, newThisDraft, thisBody, thisProblem, type MachineDraft } from '../../ui/src/model/machines.ts';
 
 const CONFIG: MachinesConfig = {
   version: 'v1',
@@ -157,5 +157,43 @@ describe('clientReleaseText (issue #70)', () => {
     expect(clientReleaseText({ tokenEnv: 'T', current: false })).toBe('none: older than releases, install it again (scripts/attach-client.sh)');
     expect(clientReleaseText({ tokenEnv: 'T' })).toBeNull();
     expect(clientReleaseText(undefined)).toBeNull();
+  });
+});
+
+// Issue #260: this machine is added with no ssh target — a name, its herdr session and lanes.
+describe('adding this machine', () => {
+  const NONE: MachinesConfig = { ...CONFIG, machines: CONFIG.machines.filter((m) => m.connection !== 'local') };
+
+  it('offered only while no machine is this one', () => {
+    expect(hasThisMachine(CONFIG)).toBe(true);
+    expect(hasThisMachine(NONE)).toBe(false);
+  });
+
+  it('starts with the hopper session and four lanes', () => {
+    expect(newThisDraft()).toEqual({ name: '', session: 'hopper', lanes: '4', label: '' });
+  });
+
+  it('refused as the daemon would: no name, a taken name, no session, the default session, a session that is not a plain name, lanes not ≥ 1', () => {
+    const d = { name: 'archbox', session: 'jobs', lanes: '2', label: '' };
+    expect(thisProblem(d, NONE)).toBeNull();
+    expect(thisProblem({ ...d, name: ' ' }, NONE)).toMatch(/name/);
+    expect(thisProblem({ ...d, name: 'desk' }, NONE)).toMatch(/desk/);
+    expect(thisProblem({ ...d, session: '' }, NONE)).toMatch(/session/);
+    expect(thisProblem({ ...d, session: 'default' }, NONE)).toMatch(/default/);
+    expect(thisProblem({ ...d, session: 'a b' }, NONE)).toMatch(/session/);
+    expect(thisProblem({ ...d, lanes: '0' }, NONE)).toMatch(/lanes/);
+  });
+
+  it('the body: name, session, lanes as a number, label when given; never an ssh target', () => {
+    expect(thisBody({ name: ' archbox ', session: ' jobs ', lanes: '2', label: ' main ' }, 'v1')).toEqual({ name: 'archbox', session: 'jobs', lanes: 2, label: 'main', version: 'v1' });
+    expect(thisBody({ name: 'archbox', session: 'jobs', lanes: '2', label: '' }, 'v1')).not.toHaveProperty('label');
+  });
+
+  it('its Edit form changes its herdr session too; an emptied session goes back to the default', () => {
+    const local = kindOf({ ...CONFIG, machines: [{ name: 'local', connection: 'local', options: { lanes: 4, session: 'jobs' } }] }, 'local');
+    if (local.kind !== 'local') throw new Error('local is local');
+    expect(localBody(local, { name: 'local', lanes: '4', session: 'work' }, 'v1')).toEqual({ action: 'options', role: 'machine-source', name: 'local', version: 'v1', options: { lanes: 4, session: 'work' } });
+    expect(localBody(local, { name: 'local', lanes: '4', session: '' }, 'v1')).toEqual({ action: 'options', role: 'machine-source', name: 'local', version: 'v1', options: { lanes: 4 } });
+    expect(localBody(local, { name: 'local', lanes: '4', session: 'jobs' }, 'v1')).toBeNull();
   });
 });

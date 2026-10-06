@@ -160,7 +160,7 @@ export interface MachineSnapshot {
   executors: string[];
   /** An attached machine: the ssh destination its executors reach it by. Absent → this machine. */
   ssh?: string;
-  /** An attached machine's herdr: its binary (absolute, so never its PATH) and hopper's session there. */
+  /** An attached machine's herdr: its binary (absolute, so never its PATH) and hopper's session there; this machine's, the herdr session it was added with (issue #260). */
   herdr?: { bin: string; session: string };
   /** A container target: the container its executors reach it in, through `docker exec`. */
   docker?: string;
@@ -414,6 +414,7 @@ export interface SourceStatus {
 // ---- Attached machines: src/domain/machines.ts (re-exported here) ------------------------
 
 export type { AttachedMachine, ClientMachine, ConfiguredMachine, ContainerMachine, MachineDefaults, MachineDefaultsEdit, MachineEdit, SshMachine, MachineEditOutcome, MachinesConfig } from './machines.ts';
+export { HERDR_SESSION } from './machines.ts';
 
 // ---- Routing rules: src/domain/routing.ts; plugins: src/domain/plugins.ts (re-exported here, one vocabulary) ----
 
