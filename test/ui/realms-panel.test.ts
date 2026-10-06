@@ -16,7 +16,7 @@ let refuse: string | undefined;
 const VIEW = {
   version: 'v1', local: true, none: null, origin: 'http://localhost:4790',
   realms: [
-    { name: 'staff', label: 'Staff', type: 'password', enabled: true, settings: {}, accounts: [{ username: 'ada', role: 'viewer', user: { id: 'owner', name: 'owner' } }] },
+    { name: 'staff', label: 'Staff', type: 'password', enabled: true, settings: {}, accounts: [{ username: 'ada', role: 'viewer', user: { id: 'owner', name: 'owner' } }, { username: 'cy', role: 'viewer', user: { id: 'bea', name: 'Bea' } }] },
     {
       name: 'corp', label: 'Corp SSO', type: 'oidc', enabled: false, callback: 'http://localhost:4790/ui/auth/corp/callback',
       settings: { issuer: 'https://idp.example.com', clientId: 'c', roles: { admin: { emails: ['a@example.com'] }, defaultRole: 'viewer' } },
@@ -129,7 +129,7 @@ describe('Settings: Sign-in', () => {
     await vi.waitFor(() => expect(document.querySelector('[role="alert"]')?.textContent).toContain('SSO_SECRET is not set'));
   });
 
-  it('a password realm lists its accounts and adds one, with its password, role and user', async () => {
+  it('a password realm lists its accounts and adds one, with its password, role and the admin\'s own user — never another user', async () => {
     await render('admin');
     await vi.waitFor(() => expect(rows()).toHaveLength(2));
     const ada = document.querySelector<HTMLElement>('[data-account="ada"]')!;
@@ -142,10 +142,11 @@ describe('Settings: Sign-in', () => {
     await act(async () => type(field('Username'), 'bea'));
     await act(async () => type(field('Password'), 'correct horse'));
     await act(async () => type(field('Role'), 'admin'));
-    await vi.waitFor(() => expect(field('Signs in as').querySelectorAll('option').length).toBe(3));
-    await act(async () => type(field('Signs in as'), 'bea'));
+    await vi.waitFor(() => expect(field('Signs in as').querySelectorAll('option').length).toBe(2));
+    expect([...field('Signs in as').querySelectorAll('option')].map((o) => (o as HTMLOptionElement).value)).toEqual(['', 'owner']);
+    await act(async () => type(field('Signs in as'), 'owner'));
     await click(buttonIn(row('staff'), 'Add'));
-    await vi.waitFor(() => expect(posts).toContainEqual({ action: 'account', realm: 'staff', username: 'bea', password: 'correct horse', role: 'admin', user: 'bea', version: 'v2' }));
+    await vi.waitFor(() => expect(posts).toContainEqual({ action: 'account', realm: 'staff', username: 'bea', password: 'correct horse', role: 'admin', user: 'owner', version: 'v2' }));
   });
 
   it('gives an account a new password', async () => {
@@ -156,6 +157,15 @@ describe('Settings: Sign-in', () => {
     await act(async () => type(field('New password for ada'), 'battery staple'));
     await click(buttonIn(ada, 'Set'));
     await vi.waitFor(() => expect(posts).toContainEqual({ action: 'account', realm: 'staff', username: 'ada', role: 'viewer', password: 'battery staple', version: 'v1' }));
+  });
+
+  it('offers no new password for an account that signs in as another user: only they change it', async () => {
+    await render('admin');
+    await vi.waitFor(() => expect(rows()).toHaveLength(2));
+    const cy = document.querySelector<HTMLElement>('[data-account="cy"]')!;
+    expect(cy.textContent).toContain('signs in as Bea');
+    expect(buttonIn(cy, 'New password')).toBeUndefined();
+    expect(cy.textContent).toContain('their password');
   });
 
   it('a session that is not admin sees no realms', async () => {
