@@ -67,6 +67,23 @@ describe('herdr-claude executor: resume', () => {
     expect(herdr.prompts).toHaveLength(1);
   });
 
+  // Issue #278: a pick that never reaches the dialog leaves Claude waiting; the job must not stay running.
+  it('asks again when a dialog pick is lost and Claude still waits at the same dialog after idleNudgeMs', async () => {
+    const dialog = {
+      output: ['● Bash(rm -rf build)', ' Do you want to proceed?', ' ❯ 1. Yes', '   2. No, and tell Claude what to do differently (esc)'],
+      end: 'blocked' as const,
+    };
+    const s = setup({ turns: [dialog, DONE_FR], dropsDialogPicks: 1 }, { idleNudgeMs: 20000 });
+    const first = contextFor(jobWith({ prompt: 'Write a greeting' }));
+    expect((await s.executor.run(first.ctx)).kind).toBe('question');
+    const job = jobWith({ prompt: 'Write a greeting' }, { executorState: first.saved.at(-1), status: 'running' });
+    const before = s.clock.elapsed();
+    const out = await s.executor.resume!(contextFor(job).ctx, '1');
+    expect(out).toMatchObject({ kind: 'question', question: { detectedBy: 'blocked', text: expect.stringContaining('Do you want to proceed?') } });
+    expect(s.clock.elapsed() - before).toBeGreaterThanOrEqual(20000);
+    expect(s.clock.elapsed() - before).toBeLessThan(40000);
+  });
+
   it('fails with pane lost when the agent is gone', async () => {
     const { herdr, executor, job } = await parked([ASK]);
     herdr.killAgent('jh-abcdef12');
