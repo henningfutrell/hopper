@@ -27,7 +27,7 @@ async function start(o: { before?: (dbPath: string) => void; plugins?: Record<st
 
 const installAlwaysProceed = (dbPath: string) => cpSync(ALWAYS_PROCEED_DIR, join(dirname(dbPath), 'plugins', 'always-proceed'), { recursive: true });
 
-// grokBotJevSrc has no default: without it gate-router needs setup and is never chosen, whatever is on this machine.
+// jevPath has no default: without it gate-router needs setup and is never chosen, whatever is on this machine.
 describe('router chosen from what is detected, no grok-bot-jev checkout', () => {
   it('no router in the plugins config → pass-through, chosen, not a fallback; /api/health and /api/router say so', async () => {
     const a = await start();
@@ -60,12 +60,12 @@ describe('router chosen from what is detected, no grok-bot-jev checkout', () => 
       ['test', true],
     ]);
     const gates = body.plugins.find((p: { id: string }) => p.id === 'gate-router');
-    expect(gates).toMatchObject({ role: 'router', describe: expect.any(String), detection: { status: 'needs-setup' }, options: { type: 'object', properties: { grokBotJevSrc: {}, python: {} } } });
+    expect(gates).toMatchObject({ role: 'router', describe: expect.any(String), detection: { status: 'needs-setup' }, options: { type: 'object', properties: { jevPath: {}, python: {} } } });
     expect(body.errors).toEqual([]);
   });
 
   it('a router named in the plugins config that cannot run → pass-through as fallback', async () => {
-    const a = await start({ before: (d) => writePlugins(d, { version: 1, router: { name: 'gate-router', plugin: 'gate-router', options: { grokBotJevSrc: '/nonexistent/grok-bot-jev' } } }) });
+    const a = await start({ before: (d) => writePlugins(d, { version: 1, router: { name: 'gate-router', plugin: 'gate-router', options: { jevPath: '/nonexistent/grok-bot-jev' } } }) });
     expect((await a.api('GET', '/api/router')).body).toEqual({
       mode: 'shadow', router: 'gate-router', plugin: 'pass-through', fallback: true, reason: expect.stringContaining('/nonexistent/grok-bot-jev/src/router.py'),
     });

@@ -90,8 +90,8 @@ describe('router chosen from what is detected (no router in the plugins config)'
     expect(host.report().router).toMatchObject({ instance: { name: 'pass-through' }, selection: 'detected', fallback: false });
   });
 
-  it('gate-router named in the plugins config with its grokBotJevSrc is the router, not a fallback', async () => {
-    const { host } = start({ builtins: [...BUILTIN_PLUGINS], file: { version: 1, router: { name: 'gate-router', plugin: 'gate-router', options: { grokBotJevSrc: '/j/grok-bot-jev' } } } });
+  it('gate-router named in the plugins config with its jevPath is the router, not a fallback', async () => {
+    const { host } = start({ builtins: [...BUILTIN_PLUGINS], file: { version: 1, router: { name: 'gate-router', plugin: 'gate-router', options: { jevPath: '/j/grok-bot-jev' } } } });
     await host.start();
     expect(host.routerStatus()).toEqual({ name: 'gate-router', plugin: 'gate-router', fallback: false });
     expect(host.report().router).toMatchObject({ instance: { name: 'gate-router', plugin: 'gate-router' }, selection: 'file', fallback: false });
@@ -216,7 +216,7 @@ describe('custom plugins through the host', () => {
     const byId = new Map(r.plugins.map((p) => [p.id, p]));
     expect(byId.get('gate-router')).toMatchObject({
       role: 'router', builtin: true, detection: { status: 'needs-setup' },
-      options: { type: 'object', properties: { grokBotJevSrc: { type: 'string' }, python: { type: 'string' } } },
+      options: { type: 'object', properties: { jevPath: { type: 'string' }, python: { type: 'string' } } },
     });
     expect(byId.get('pass-through')).toMatchObject({ builtin: true, detection: { status: 'available' } });
     expect(byId.get('always-proceed')).toMatchObject({

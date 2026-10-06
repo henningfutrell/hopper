@@ -1,5 +1,5 @@
 // The Claude model options are chosen, not typed (issue #151): claude-cli's `model` and
-// gate-router's `claudeModel` offer the models the `claude` CLI on PATH lists — its stream-json
+// gate-router's `model` offer the models the `claude` CLI on PATH lists — its stream-json
 // initialize handshake, which makes no model call — against a fake `claude` and the real kit.
 import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -43,9 +43,9 @@ describe('Claude model choices', () => {
     expect(JSON.parse(stdin.trim())).toMatchObject({ type: 'control_request', request: { subtype: 'initialize' } });
   });
 
-  it('gate-router offers the same models for claudeModel', async () => {
+  it('gate-router offers the same models for model', async () => {
     expect(await gateRouter.choices!(kitWithClaude())).toEqual({
-      claudeModel: [
+      model: [
         { value: 'opus', label: 'Opus X', description: 'complex work' },
         { value: 'haiku', label: 'Haiku X', description: 'quick answers' },
       ],

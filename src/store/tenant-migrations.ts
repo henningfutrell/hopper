@@ -6,6 +6,7 @@
 import { isMap, isScalar, isSeq, parseDocument } from 'yaml';
 import type { Db } from './db.ts';
 import { documentsToRecords } from './migration-config.ts';
+import { gateRouterSettingsAsConcepts } from './migration-gate-router-settings.ts';
 import { levelsNamedAsLevels } from './migration-level-names.ts';
 
 type Migration = string | ((db: Db) => void);
@@ -153,6 +154,8 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
   (db) => documentsToRecords(db, { 'plugins.yaml': 'plugins', 'rules.md': 'rules' }),
   // 5: an escalation level is named as a level, never after a model (issue #209).
   levelsNamedAsLevels,
+  // 6: the gate router's settings are concepts, not leftovers (issue #217).
+  gateRouterSettingsAsConcepts,
 ];
 
 /** A user schema's version once migrated. */

@@ -1,21 +1,21 @@
 // gate-router: a router that runs grok-bot-jev's gates, through gate_shim.py against a stand-in
-// grok-bot-jev checkout (fixtures/grok-bot-jev), a fake `claude` (the Claude model, Haiku) and a fake
-// typesafe_sdk (Jev through TypeSafe). Jev answers the gates named in `jevGates` once the TypeSafe key
-// is set; the Claude model answers the rest, and every gate while Jev is off or failing. The key comes
-// from the daemon's environment (TYPESAFE_API_KEY), asked on every call.
-import { chmodSync, cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+// grok-bot-jev checkout (fixtures/grok-bot-jev), a fake `claude` on PATH (the Claude model, Haiku) and a
+// fake typesafe_sdk (Jev through TypeSafe). Jev answers its gates (intent, reuse_cache, stop_retry) once
+// the TypeSafe key is set; the Claude model answers the rest, and every gate while Jev is off or failing.
+// The key comes from the daemon's environment (TYPESAFE_API_KEY), asked on every call.
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Job, JobSpec } from '../../src/domain/types.ts';
 import gateRouter from '../../src/plugins/router/gate-router/index.ts';
-import { parseOptions } from '../../src/plugins/options.ts';
+import { optionsJsonSchema, parseOptions } from '../../src/plugins/options.ts';
 import { fakeKit, fixedClock } from './support.ts';
 
 const CHECKOUT = join(import.meta.dirname, 'fixtures', 'grok-bot-jev');
 const FAKE_TYPESAFE = join(import.meta.dirname, 'fixtures', 'fake-typesafe');
 const CLAUDE = join(import.meta.dirname, 'fake-claude.mjs');
-const KEYS = ['CLAUDECODE', 'FAKE_CLAUDE_OUT', 'FAKE_CLAUDE_MODE', 'FAKE_CLAUDE_STRUCTURED', 'FAKE_TYPESAFE_OUT', 'FAKE_TYPESAFE_MODE', 'TYPESAFE_API_KEY', 'PYTHONPATH'];
+const KEYS = ['CLAUDECODE', 'FAKE_CLAUDE_OUT', 'FAKE_CLAUDE_MODE', 'FAKE_CLAUDE_STRUCTURED', 'FAKE_TYPESAFE_OUT', 'FAKE_TYPESAFE_MODE', 'TYPESAFE_API_KEY', 'PYTHONPATH', 'PATH'];
 const saved: Record<string, string | undefined> = {};
 let dataDir: string;
 const scratch: string[] = [];
@@ -35,6 +35,11 @@ beforeEach(() => {
   process.env.FAKE_TYPESAFE_OUT = join(dataDir, 'typesafe.json');
   process.env.FAKE_CLAUDE_STRUCTURED = JSON.stringify(HAIKU_ALL);
   process.env.CLAUDECODE = '1';
+  // The router runs the `claude` on PATH: here, the fake.
+  const bin = join(dataDir, 'bin');
+  mkdirSync(bin);
+  symlinkSync(CLAUDE, join(bin, 'claude'));
+  process.env.PATH = `${bin}:${saved.PATH ?? ''}`;
   for (const k of ['FAKE_CLAUDE_MODE', 'FAKE_TYPESAFE_MODE', 'TYPESAFE_API_KEY', 'PYTHONPATH']) delete process.env[k];
 });
 afterEach(() => {
@@ -55,7 +60,7 @@ function makeJob(spec: Partial<JobSpec> = {}): Job {
   };
 }
 
-type Opts = { grokBotJevSrc: string; python: string; claudeBin: string; claudeModel: string; jevGates: string[]; timeoutMs: number };
+type Opts = { jevPath: string; python: string; model: string; timeoutSeconds: number };
 
 function options(raw: Record<string, unknown> = {}): Opts {
   const r = parseOptions(gateRouter, raw);
@@ -65,7 +70,7 @@ function options(raw: Record<string, unknown> = {}): Opts {
 
 function router(o: Partial<Opts> = {}) {
   const ctx = { clock: fixedClock, logger: { info() {}, warn() {} }, dataDir, userEnv: {}, scratchDir: dataDir, instanceName: 'jev', env: (n: string) => process.env[n], routerMode: () => 'shadow' as const };
-  return gateRouter.create(ctx, options({ grokBotJevSrc: CHECKOUT, claudeBin: CLAUDE, ...o }));
+  return gateRouter.create(ctx, options({ jevPath: CHECKOUT, ...o }));
 }
 
 const claudeCall = () => JSON.parse(readFileSync(process.env.FAKE_CLAUDE_OUT!, 'utf8')) as { argv: string[]; stdin: string; env: Record<string, string>; cwd: string };
@@ -86,50 +91,53 @@ function snapshot(root: string): string[] {
 }
 
 describe('gate-router options and detection', () => {
-  it('defaults: python3, Haiku through claude, Jev for the crisp gates, 60 s; grokBotJevSrc has no default', () => {
-    expect(parseOptions(gateRouter, {})).toEqual({ ok: false, error: expect.stringMatching(/grokBotJevSrc/) });
-    expect(options({ grokBotJevSrc: '/jev' })).toEqual({
-      grokBotJevSrc: '/jev', python: 'python3', claudeBin: 'claude', claudeModel: 'haiku',
-      jevGates: ['intent', 'reuse_cache', 'stop_retry'], timeoutMs: 60000,
-    });
+  it('settings: where Jev is, the Python that runs it, the Claude model, a timeout in seconds; jevPath has no default', () => {
+    expect(parseOptions(gateRouter, {})).toEqual({ ok: false, error: expect.stringMatching(/jevPath/) });
+    expect(options({ jevPath: '/jev' })).toEqual({ jevPath: '/jev', python: 'python3', model: 'haiku', timeoutSeconds: 60 });
   });
 
-  it('the grok-bot-jev checkout, python and claude are command-bearing', async () => {
+  it('every setting is described; none is a leftover (no claudeBin, no jevGates)', () => {
+    const schema = optionsJsonSchema(gateRouter) as { properties: Record<string, { description?: string }> };
+    expect(Object.keys(schema.properties).sort()).toEqual(['jevPath', 'model', 'python', 'timeoutSeconds']);
+    for (const [name, p] of Object.entries(schema.properties)) expect(p.description, name).toEqual(expect.any(String));
+  });
+
+  it('where Jev is and its Python are command-bearing', async () => {
     const { commandBearingKeys } = await import('../../src/plugins/edit.ts');
-    expect([...commandBearingKeys(gateRouter)].sort()).toEqual(['claudeBin', 'grokBotJevSrc', 'python']);
+    expect([...commandBearingKeys(gateRouter)].sort()).toEqual(['jevPath', 'python']);
   });
 
   it('available when python, the grok-bot-jev router and claude are present; says Jev is off without a key', async () => {
     const seen: string[] = [];
     const kit = fakeKit({ exists: async (p) => { seen.push(p); return true; } });
-    const d = await gateRouter.detect(kit, options({ grokBotJevSrc: '/jev' }));
+    const d = await gateRouter.detect(kit, options({ jevPath: '/jev' }));
     expect(d).toMatchObject({ status: 'available', detail: expect.stringMatching(/Jev off until TYPESAFE_API_KEY is set; Claude haiku answers the other gates/) });
     expect(seen).toContain('/jev/src/router.py');
   });
 
   it('says Jev is on with a key and typesafe_sdk', async () => {
     const kit = fakeKit({ env: (n) => (n === 'TYPESAFE_API_KEY' ? 'k' : undefined), pythonImports: async () => true });
-    expect(await gateRouter.detect(kit, options({ grokBotJevSrc: '/jev' }))).toMatchObject({ status: 'available', detail: expect.stringContaining('Jev through TypeSafe for intent, reuse_cache, stop_retry') });
+    expect(await gateRouter.detect(kit, options({ jevPath: '/jev' }))).toMatchObject({ status: 'available', detail: expect.stringContaining('Jev through TypeSafe for intent, reuse_cache, stop_retry') });
   });
 
   it('says Jev is off with a key but no typesafe_sdk', async () => {
     const kit = fakeKit({ env: (n) => (n === 'TYPESAFE_API_KEY' ? 'k' : undefined), pythonImports: async () => false });
-    expect(await gateRouter.detect(kit, options({ grokBotJevSrc: '/jev', python: 'py' }))).toMatchObject({ detail: expect.stringContaining('Jev off: py cannot import typesafe_sdk') });
+    expect(await gateRouter.detect(kit, options({ jevPath: '/jev', python: 'py' }))).toMatchObject({ detail: expect.stringContaining('Jev off: py cannot import typesafe_sdk') });
   });
 
   it('unavailable without the grok-bot-jev checkout', async () => {
-    const d = await gateRouter.detect(fakeKit({ exists: async () => false }), options({ grokBotJevSrc: '/nowhere' }));
+    const d = await gateRouter.detect(fakeKit({ exists: async () => false }), options({ jevPath: '/nowhere' }));
     expect(d).toEqual({ status: 'unavailable', reason: expect.stringContaining('/nowhere/src/router.py') });
   });
 
   it('unavailable without python', async () => {
-    const d = await gateRouter.detect(fakeKit({ which: async (b) => (b === 'python9' ? undefined : `/usr/bin/${b}`) }), options({ grokBotJevSrc: '/jev', python: 'python9' }));
+    const d = await gateRouter.detect(fakeKit({ which: async (b) => (b === 'python9' ? undefined : `/usr/bin/${b}`) }), options({ jevPath: '/jev', python: 'python9' }));
     expect(d).toEqual({ status: 'unavailable', reason: expect.stringContaining('python9') });
   });
 
-  it('unavailable without claude', async () => {
-    const d = await gateRouter.detect(fakeKit({ which: async (b) => (b === 'claude9' ? undefined : `/usr/bin/${b}`) }), options({ grokBotJevSrc: '/jev', claudeBin: 'claude9' }));
-    expect(d).toEqual({ status: 'unavailable', reason: expect.stringContaining('claude9') });
+  it('unavailable without claude on PATH', async () => {
+    const d = await gateRouter.detect(fakeKit({ which: async (b) => (b === 'claude' ? undefined : `/usr/bin/${b}`) }), options({ jevPath: '/jev' }));
+    expect(d).toEqual({ status: 'unavailable', reason: expect.stringContaining('claude not found') });
   });
 });
 
@@ -139,7 +147,7 @@ describe('gate-router asks grok-bot-jev\'s gates', () => {
     scratch.push(copy);
     cpSync(CHECKOUT, copy, { recursive: true });
     writeFileSync(join(copy, 'config.json'), '{"enabled": false}');
-    const advice = await (await router({ grokBotJevSrc: copy })).advise(makeJob({ goal: 'check status' }));
+    const advice = await (await router({ jevPath: copy })).advise(makeJob({ goal: 'check status' }));
     expect(advice).toMatchObject({ action: 'proceed_full', source: 'gate-router', details: { gatesAsked: false } });
     expect(existsSync(process.env.FAKE_CLAUDE_OUT!)).toBe(false);
   });
@@ -167,7 +175,7 @@ describe('gate-router asks grok-bot-jev\'s gates', () => {
     expect(readFileSync(join(dataDir, 'gate-router-runs.jsonl'), 'utf8')).toContain('check the deploy status');
   });
 
-  it('Jev on: it answers the gates in `jevGates`, Haiku the rest', async () => {
+  it('Jev on: it answers intent, reuse_cache and stop_retry, Haiku the rest', async () => {
     jevOn();
     process.env.FAKE_CLAUDE_STRUCTURED = JSON.stringify({ choices: {}, nouls: { needs_subagent: 0.2 }, scores: { complexity: 2 } });
     const advice = await (await router()).advise(makeJob({ goal: 'fix the login form' }));
@@ -203,13 +211,6 @@ describe('gate-router asks grok-bot-jev\'s gates', () => {
     const advice = await (await router()).advise(makeJob({ goal: 'g' }));
     expect(advice.details).toMatchObject({ gatesBy: { intent: 'claude' } });
     expect(advice.details).not.toHaveProperty('jevError');
-  });
-
-  it('Jev for every gate: Haiku is not asked', async () => {
-    jevOn();
-    const advice = await (await router({ jevGates: ['intent', 'reuse_cache', 'needs_subagent', 'stop_retry', 'complexity'] })).advise(makeJob({ goal: 'g' }));
-    expect(Object.values(advice.details.gatesBy as Record<string, string>)).toEqual(Array(5).fill('jev'));
-    expect(existsSync(process.env.FAKE_CLAUDE_OUT!)).toBe(false);
   });
 
   it('Jev failing: Haiku answers its gates too, and the error is in the advice', async () => {
@@ -260,7 +261,7 @@ describe('gate-router failures fall back', () => {
     writeFileSync(slow, `#!/bin/sh\nsleep 30 &\necho $! > ${pidFile}\nwait\n`);
     chmodSync(slow, 0o755);
     const started = Date.now();
-    const advice = await (await router({ python: slow, timeoutMs: 500 })).advise(makeJob());
+    const advice = await (await router({ python: slow, timeoutSeconds: 0.5 })).advise(makeJob());
     expect(Date.now() - started).toBeLessThan(3000);
     expect(advice).toMatchObject({ source: 'fallback', details: { gatesAsked: false } });
     expect(advice.reason).toContain('timed out');
