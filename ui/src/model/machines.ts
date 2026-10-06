@@ -2,7 +2,9 @@
 // this one (connection `local`) and which an attached one (connection `ssh`, `docker` or `client`), why an Add
 // form may not be sent yet, the body POST /ui/api/machines takes, and the options edit an Edit form
 // sends to POST /ui/api/plugins — its name and every detail of how it is reached too (issue #205). An
-// Add body over ssh never carries herdrBin, session or hostKey; this machine is added with no ssh target,
+// Add body over ssh never carries herdrBin or session; its ssh target is a detected one or a typed plain
+// [user@]host, and its hostKey only the one the person confirmed (issue #293: an ephemeral container has
+// no durable ~/.ssh); this machine is added with no ssh target,
 // its name and its herdr session (issue #260), and so is an ssh target the daemon found is this machine
 // (issue #275); in a container this machine cannot be added. A new machine starts from the machine
 // defaults (issue #142), edited through POST /ui/api/machines/defaults.
@@ -91,17 +93,31 @@ export function addProblem(d: MachineDraft, config: MachinesConfig): string | nu
   const name = d.name.trim();
   if (!name) return 'give the machine a name';
   if (config.machines.some((m) => m.name === name)) return `a machine is already named ${name}; pick another name`;
-  if (!config.ssh.targets.includes(d.ssh)) return 'pick an ssh target from ~/.ssh/config';
+  if (!d.ssh) return 'give its ssh target: you@host, or a Host alias from ~/.ssh/config';
+  if (!config.ssh.targets.includes(d.ssh) && !PLAIN_TARGET.test(d.ssh)) return 'an ssh target is a plain you@host (letters, digits, dot, dash, underscore), or a Host alias from ~/.ssh/config';
   const here = isThisMachineTarget(config, d.ssh) && config.machines.find((m) => m.connection === 'local');
   if (here) return `${d.ssh} is this machine, already added as ${here.name}; edit that one`;
   if (lanesOf(d.lanes) === undefined) return 'lanes must be a whole number, at least 1';
   return null;
 }
 
-export function addBody(d: MachineDraft, version: string): MachineEdit {
+/** A typed ssh target, as the daemon takes it: a plain `[user@]host`, which can carry no ssh option. */
+const PLAIN_TARGET = /^[A-Za-z0-9_][A-Za-z0-9._-]*(@[A-Za-z0-9_][A-Za-z0-9._-]*)?$/;
+
+/** POST /ui/api/machines over ssh; `hostKey` the one the person confirmed (issue #293), else none. */
+export function addBody(d: MachineDraft, version: string, hostKey?: string): MachineEdit {
   const label = d.label.trim();
-  return { name: d.name.trim(), ssh: d.ssh, lanes: lanesOf(d.lanes) ?? 0, executors: [...d.executors], ...(label ? { label } : {}), version };
+  return { name: d.name.trim(), ssh: d.ssh, lanes: lanesOf(d.lanes) ?? 0, executors: [...d.executors], ...(label ? { label } : {}), ...(hostKey ? { hostKey } : {}), version };
 }
+
+/** The command that prints, on the machine itself, the fingerprint of the host key it presents: `ssh-rsa` → rsa, `ecdsa-sha2-nistp256` → ecdsa. */
+export function hostKeyCheck(hostKey: string): string {
+  const type = (hostKey.split(' ')[0] ?? '').replace(/^ssh-/, '').replace(/-sha2-nistp\d+$/, '');
+  return `ssh-keygen -lf /etc/ssh/ssh_host_${type}_key.pub`;
+}
+
+/** The line to add to a machine's ~/.ssh/authorized_keys so the hopper may reach it (issue #293): its own key, restricted; null when none is shown. */
+export const authorizedKeysLine = (config: MachinesConfig): string | null => (config.ssh.publicKey ? `restrict ${config.ssh.publicKey}` : null);
 
 /** The same options, whatever their key order and the order of executors. */
 function sameOptions(a: Record<string, unknown>, b: Record<string, unknown>): boolean {

@@ -4,9 +4,9 @@
 // seam here), never sent by the UI — and edits or removes any machine through POST /ui/api/plugins,
 // like every other plugin instance. Each applies without a restart. Real HTTP server, the
 // plugins config in the database, the sealed HOME.
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { globSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { MachinesConfig, PluginsReport } from '../../src/domain/types.ts';
 import { startTestApp, tempDbPath, writePlugins, type TestApp } from '../support/app.ts';
@@ -21,12 +21,15 @@ let t: TestApp | undefined;
 let cleanup: (() => void) | undefined;
 const resolved: string[] = [];
 const withHerdr: boolean[] = [];
+const pins: (string | undefined)[] = [];
+const OTHER_HOST_KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICvgalHxcabio+TdTXsu+bZgR377KnQGos9ENVpQoKjP';
 
 beforeEach(() => {
   mkdirSync(join(homedir(), '.ssh'), { recursive: true, mode: 0o700 });
   writeFileSync(join(homedir(), '.ssh', 'config'), 'Host laptop\n  HostName 192.0.2.10\nHost desk unreachable\nHost *.lan\n');
   resolved.length = 0;
   withHerdr.length = 0;
+  pins.length = 0;
 });
 
 afterEach(async () => {
@@ -48,8 +51,14 @@ async function start(file: object = FILE): Promise<{ a: TestApp; token: string }
       resolveTarget: async (ssh, o) => {
         resolved.push(ssh);
         withHerdr.push(o.herdr);
+        pins.push(o.hostKey);
         if (ssh === 'unreachable') throw new Error('ssh unreachable: No route to host');
-        return o.herdr ? { herdrBin: `/home/user/.local/bin/herdr`, hostKey: TEST_HOST_KEY } : { hostKey: TEST_HOST_KEY };
+        const hostKey = o.hostKey ?? TEST_HOST_KEY;
+        return o.herdr ? { herdrBin: `/home/user/.local/bin/herdr`, hostKey } : { hostKey };
+      },
+      hostKeyOffer: async (ssh) => {
+        if (ssh === 'unreachable') throw new Error('ssh unreachable: No route to host');
+        return { ssh, hostKey: OTHER_HOST_KEY, fingerprint: 'SHA256:test', known: ssh === 'laptop' };
       },
     },
   });
@@ -133,24 +142,35 @@ describe('POST /ui/api/machines — attach over ssh', () => {
     await waitFor(async () => (await a.api('GET', '/api/machines')).body.machines.find((m: { id: string; online: boolean }) => m.id === 'wsl' && m.online));
   });
 
-  it('an ssh target not among the detected Host aliases: 400, never probed, nothing written', async () => {
+  // Issue #293: the hopper may run in an ephemeral container with no ~/.ssh/config, so a target is typed
+  // too: a plain `[user@]host`, which can carry no ssh option. Anything else is refused, never probed.
+  it('a typed plain [user@]host is attached like a detected alias; anything that is not a plain name: 400, never probed', async () => {
     const { a, token } = await start();
+    const typed = await a.ui<Reply>('/ui/api/machines', { name: 'box', ssh: 'user@192.0.2.20', lanes: 1, executors: ['test'], version: (await config(a)).version }, { token });
+    expect(typed.status).toBe(200);
+    expect(resolved).toEqual(['user@192.0.2.20']);
+    expect(read(a).machines[2]).toMatchObject({ name: 'box', plugin: 'ssh', options: { ssh: 'user@192.0.2.20', hostKey: TEST_HOST_KEY } });
     const before = read(a);
-    for (const ssh of ['user@10.0.0.9', 'x.lan', '-oProxyCommand=sh']) {
+    for (const ssh of ['-oProxyCommand=sh', 'two words', 'a,b', 'x:22']) {
       const r = await a.ui<Reply>('/ui/api/machines', { name: 'x', ssh, lanes: 1, version: (await config(a)).version }, { token });
       expect(r.status).toBe(400);
-      expect(r.body.error).toMatch(/ssh/);
+      expect(r.body.error).toMatch(/ssh target/);
     }
-    expect(resolved).toEqual([]);
+    expect(resolved).toEqual(['user@192.0.2.20']);
     expect(read(a)).toEqual(before);
   });
 
-  it('herdrBin, session and the host key are never taken from the UI: 400', async () => {
+  it('herdrBin and session are never taken from the UI: 400; a host key the person confirmed is the pin (issue #293)', async () => {
     const { a, token } = await start();
     const version = (await config(a)).version;
     expect((await a.ui('/ui/api/machines', { name: 'laptop', ssh: 'laptop', lanes: 1, herdrBin: '/tmp/evil', version }, { token })).status).toBe(400);
     expect((await a.ui('/ui/api/machines', { name: 'laptop', ssh: 'laptop', lanes: 1, session: 'default', version }, { token })).status).toBe(400);
-    expect((await a.ui('/ui/api/machines', { name: 'laptop', ssh: 'laptop', lanes: 1, hostKey: TEST_HOST_KEY, version }, { token })).status).toBe(400);
+    expect((await a.ui('/ui/api/machines', { name: 'laptop', ssh: 'laptop', lanes: 1, hostKey: 'not a key', version }, { token })).status).toBe(400);
+    expect(resolved).toEqual([]);
+    const r = await a.ui<Reply>('/ui/api/machines', { name: 'laptop', ssh: 'laptop', lanes: 1, executors: ['test'], hostKey: OTHER_HOST_KEY, version }, { token });
+    expect(r.status).toBe(200);
+    expect(pins).toEqual([OTHER_HOST_KEY]);
+    expect(read(a).machines[2].options.hostKey).toBe(OTHER_HOST_KEY);
   });
 
   it('the machine cannot be reached, or herdr not resolved there: 409 with the reason, nothing written', async () => {
@@ -186,6 +206,38 @@ describe('POST /ui/api/machines — attach over ssh', () => {
     expect(r.status).toBe(409);
     expect(r.body.error).toMatch(/changed since it was read/);
     expect(read(a)).toEqual(edited);
+  });
+});
+
+// Issue #293: the hopper runs in ephemeral containers, so a machine is attached with nothing from ~/.ssh:
+// the hopper's own key (its public half shown, to install on the machine) and the host key the machine
+// presents, confirmed by the person from its fingerprint.
+describe('attaching with no ~/.ssh', () => {
+  it('POST /ui/api/machines/host-key: the key the target presents, its fingerprint, and whether known_hosts knew it; nothing written', async () => {
+    const { a, token } = await start();
+    const before = read(a);
+    const r = await a.ui<{ ssh: string; hostKey: string; fingerprint: string; known: boolean }>('/ui/api/machines/host-key', { ssh: 'user@192.0.2.20' }, { token });
+    expect(r.status).toBe(200);
+    expect(r.body).toEqual({ ssh: 'user@192.0.2.20', hostKey: OTHER_HOST_KEY, fingerprint: 'SHA256:test', known: false });
+    expect((await a.ui<Reply>('/ui/api/machines/host-key', { ssh: 'unreachable' }, { token })).body.error).toBe('ssh unreachable: No route to host');
+    expect((await a.ui('/ui/api/machines/host-key', { ssh: '-oProxyCommand=sh' }, { token })).status).toBe(400);
+    expect((await a.ui('/ui/api/machines/host-key', { ssh: 'laptop' })).status).toBe(403);
+    expect(read(a)).toEqual(before);
+  });
+
+  it('the config shows the hopper\'s own public key; a restart on a fresh work dir has the same one (it is kept in the database)', async () => {
+    const { a } = await start();
+    const key = (await config(a)).ssh.publicKey;
+    expect(key).toMatch(/^ssh-ed25519 [A-Za-z0-9+/]+={0,2} hopper$/);
+    const dbPath = a.dbPath;
+    await a.stop();
+    // The container is gone: its work dir with it.
+    const work = dirname(dbPath);
+    const files = globSync('**/hopper_ed25519', { cwd: work });
+    expect(files.length).toBeGreaterThan(0);
+    for (const f of files) rmSync(join(work, f));
+    t = await startTestApp({ dbPath, seams: { machineProbe: async () => ({ online: true }) } });
+    expect((await config(t)).ssh.publicKey).toBe(key);
   });
 });
 

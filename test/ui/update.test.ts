@@ -12,6 +12,8 @@ describe('update model', () => {
   it('headline: what is newer, what is happening, or why not; never commits', () => {
     expect(headline(status({ state: 'available', target: { commit: B, ref: 'main' }, whatsNew: ['x', 'y'] }))).toBe('Update available');
     expect(headline(status({ state: 'available', channel: 'release', target: { commit: B, ref: 'v1.2.0' } }))).toBe('Update available: release v1.2.0');
+    expect(headline(status({ state: 'available', channel: 'beta', target: { commit: B, ref: 'beta' } }))).toBe('Update available: move to the beta channel');
+    expect(headline(status({ state: 'available', channel: 'dev', installed: { ...installed, branch: 'dev' }, target: { commit: B, ref: 'dev' } }))).toBe('Update available');
     expect(headline(status({ state: 'applying', apply: { phase: 'waiting', detail: 'waiting for job j1', target: B, startedAt: '' } }))).toBe('Updating: waiting for job j1');
     expect(headline(status({ state: 'error', reason: 'fetch failed' }))).toBe('Update problem: fetch failed');
     expect(headline(status({}))).toBe('Up to date');

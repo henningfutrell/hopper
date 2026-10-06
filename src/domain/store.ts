@@ -96,6 +96,9 @@ export interface UserSettingsRepository {
   /** The user's queue gate (issue #159); absent: never set. */
   getQueueGate(): QueueGate | undefined;
   setQueueGate(gate: QueueGate): void;
+  /** The hopper's own ssh key for this user's machines (issue #293): a secret, never answered by any route but its public half. */
+  getSshKey(): { privateKey: string; publicKey: string } | undefined;
+  setSshKey(key: { privateKey: string; publicKey: string }): void;
 }
 
 /** The instance's settings (in the instance schema): self-update and the store installs. */

@@ -59,12 +59,14 @@ There is no bootstrap login: a new hopper creates no user, no password and no lo
   `local` machine, and the boot removes one an earlier version wrote into the plugins config. Jobs run on
   attached machines (`README.md` "Add machines"); the image carries herdr's CLI for them. The Machines
   view offers no **Add this machine** here. To run jobs on the computer the container runs on, attach
-  it over ssh like any other: on the computer, sshd running and herdr installed; in the container
-  (`podman compose exec hopper sh`), a key (`ssh-keygen -t ed25519`, kept in the home volume) whose
-  public half goes into the computer's `~/.ssh/authorized_keys`, and a Host in `~/.ssh/config` with
-  `HostName host.containers.internal` (Podman; Docker: `host.docker.internal`, which on Linux needs
-  `extra_hosts: ["host.docker.internal:host-gateway"]` on the hopper service), then `ssh <that Host>`
-  once to accept its host key. Then **Add machine over ssh** picks it.
+  it over ssh like any other, with nothing set up inside the container (issue #293: the container may
+  be ephemeral, so nothing leans on a `~/.ssh` there): on the computer, sshd running and herdr
+  installed. In **Attach a machine over ssh**, type the ssh target `you@host.containers.internal`
+  (Podman; Docker: `you@host.docker.internal`, which on Linux needs
+  `extra_hosts: ["host.docker.internal:host-gateway"]` on the hopper service), add the line the form
+  shows — the hopper's own key, kept in the database — to `~/.ssh/authorized_keys` on the computer,
+  and confirm the host key fingerprint the form shows after checking it there
+  (`ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`).
 - **Sign-ins.** GitHub: the UI's Sources view → **Log in to GitHub**, once (gh's device flow, run by the
   hopper; no terminal). Claude Code: `podman compose exec hopper claude` (`/login`), once. Both are kept
   in the home volume. No `-it`: `podman compose exec` is interactive with a terminal by default, and

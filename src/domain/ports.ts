@@ -2,7 +2,7 @@
 // these. Adapters live in src/{executors,machines,usage,plugins,store,webhooks}.
 
 import type {
-  Advice, DomainEvent, PreSortReject, ExecutorUnavailable, Job, JobId, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit,
+  Advice, DomainEvent, HostKeyOfferOutcome, PreSortReject, ExecutorUnavailable, Job, JobId, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit,
   PluginsEditOutcome, PluginsReport, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule, LaneId, MachineSnapshot,
   Question, QuestionAttempt, SourceStatus, UsageReading, UsageSourceState, WebhookDelivery, InstallInfo, UpdateSettings, UpdateStatus, VersionHistory,
   GhLoginStatus, ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport,
@@ -185,6 +185,8 @@ export interface PluginsView {
   machinesConfig(): Promise<MachinesConfig>;
   /** Attach an ssh target as an `ssh` instance in the plugins config `machines:`; applied (live) before it resolves. */
   editMachines(e: MachineEdit): Promise<MachineEditOutcome>;
+  /** POST /ui/api/machines/host-key (issue #293): the host key a new ssh target would be pinned to, for the person to confirm; nothing written. */
+  machineHostKey(ssh: string): Promise<HostKeyOfferOutcome>;
   /** POST /ui/api/machines/defaults (issue #142): the plugins config `machineDefaults:`. */
   editMachineDefaults(e: MachineDefaultsEdit): Promise<MachineEditOutcome>;
   /** GET /api/routing: the plugins config `routing:` and what a rule may name. */

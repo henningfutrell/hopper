@@ -9,7 +9,7 @@ import type {
   Clock, EscalationLevel, Executor, ExecutorRegistry, GhLogin, JobSource, PluginsView, QuestionService, Router, SettableUsageSource, SourceRegistry,
   UserStore, WebhookDispatcher,
 } from '../domain/ports.ts';
-import type { AttachedMachine, ConnectedAccountProvider, Question, SourceStatus, User } from '../domain/types.ts';
+import type { AttachedMachine, ConnectedAccountProvider, HostKeyOffer, Question, SourceStatus, User } from '../domain/types.ts';
 import { isRerunnable } from '../domain/types.ts';
 import type { Config } from '../config.ts';
 import { createEngine, type Engine } from '../engine/index.ts';
@@ -19,6 +19,7 @@ import type { HerdrClient } from '../executors/herdr/index.ts';
 import { clientSocket, type ClientTransport } from '../executors/client.ts';
 import { dockerHost } from '../executors/docker.ts';
 import { hopperSshAuth, pinHostKeys } from '../executors/ssh.ts';
+import { ensureOwnSshKey, type StoredSshKey } from '../executors/ssh-key.ts';
 import { createClientReleaseKeeper, createTargetPool, probeContainer, probeHerdrOverSsh, probeSsh, type MachineProbe, type ResolvedTarget } from '../machines/index.ts';
 import type { ClientRelease } from '../client/release.ts';
 import { BUILTIN_PLUGINS } from '../plugins/builtin.ts';
@@ -65,7 +66,9 @@ export interface UserSeams {
   /** Replaces the probe of every attached machine: online = its herdr session (ssh) or its container (docker) is running. */
   machineProbe?: (machine: AttachedMachine) => Promise<MachineProbe>;
   /** Replaces resolving a new ssh target when the UI adds a machine (issues #18, #59): its herdr path and pinned host key, or a rejection with the reason. */
-  resolveTarget?: (ssh: string, o: { herdr: boolean }) => Promise<ResolvedTarget>;
+  resolveTarget?: (ssh: string, o: { herdr: boolean; hostKey?: string }) => Promise<ResolvedTarget>;
+  /** Replaces reading the host key a new ssh target would be pinned to (issue #293): known_hosts, else what it presents. */
+  hostKeyOffer?: (ssh: string) => Promise<HostKeyOffer>;
   /** Replaces starting this machine's herdr session (issue #260): when it is added, and while it is a machine. */
   herdrSession?: (session: string) => Promise<void>;
 }
@@ -151,7 +154,7 @@ function splitSources(built: BuiltJobSource[]): { running: RunningSource[]; fixe
 function seamPlugins(router: Router, host: PluginsView): PluginsView {
   return {
     routerStatus: () => ({ name: router.name, plugin: router.name, fallback: false }), report: host.report, edit: host.edit,
-    machinesConfig: host.machinesConfig, editMachines: host.editMachines, editMachineDefaults: host.editMachineDefaults,
+    machinesConfig: host.machinesConfig, editMachines: host.editMachines, machineHostKey: host.machineHostKey, editMachineDefaults: host.editMachineDefaults,
     routing: host.routing, editRouting: host.editRouting,
   };
 }
@@ -168,6 +171,16 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   // The CLIs' logins of a user added later are their own (GH_CONFIG_DIR, CLAUDE_CONFIG_DIR in their work dir).
   const cliEnv = userCliEnv(config.workDir, user);
   for (const dir of Object.values(cliEnv)) mkdirSync(dir, { recursive: true, mode: 0o700 });
+  // The hopper's own ssh key (issue #293): kept in the database, written to the work dir at every start —
+  // an ephemeral container has no durable ~/.ssh. A key the runtime mounts is used instead.
+  let ownKey: StoredSshKey | undefined;
+  if (!secret('HOPPER_SSH_KEY_FILE')) {
+    try {
+      ownKey = ensureOwnSshKey({ stored: () => store.settings.getSshKey(), store: (k) => store.settings.setSshKey(k), dataDir });
+    } catch (e) {
+      logger.warn(`hopper: no ssh key of the hopper's own could be made (${e instanceof Error ? e.message : String(e)}); ssh targets are reached with the keys ~/.ssh holds`);
+    }
+  }
   // How the hopper proves itself to an ssh target, asked at every connection (design.md "Target authentication").
   const sshAuth = () => hopperSshAuth({ env: secret, dataDir });
   // Where client targets' reverse tunnels open their sockets: this user's alone (design.md "Client targets").
@@ -221,7 +234,8 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     executorInUse: (name) => notEnded().filter((j) => j.spec.executor === name).map((j) => j.id),
     attached: {
       inUse: (name) => jobsOnMachine(name), pinned: (name) => notEnded().filter((j) => j.spec.machineId === name).map((j) => j.id),
-      sshAuth, ...(seams.resolveTarget ? { resolveTarget: seams.resolveTarget } : {}),
+      sshAuth, ...(seams.resolveTarget ? { resolveTarget: seams.resolveTarget } : {}), ...(seams.hostKeyOffer ? { hostKeyOffer: seams.hostKeyOffer } : {}),
+      publicKey: () => (secret('HOPPER_SSH_KEY_FILE') ? undefined : ownKey?.publicKey),
       startSession: seams.herdrSession ?? ((s) => startHerdrSession(s, cliEnv)),
       localMachine: config.localMachine,
     },

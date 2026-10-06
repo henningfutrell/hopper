@@ -54,6 +54,7 @@ describe('self-update over HTTP', () => {
     const set = await app.ui<UpdateStatus>('/ui/api/update', { action: 'settings', channel: 'release' }, { token });
     expect(set.body.channel).toBe('release');
     expect((await app.ui('/ui/api/update', { action: 'settings', channel: 'nightly' }, { token })).status).toBe(400);
+    expect((await app.ui<UpdateStatus>('/ui/api/update', { action: 'settings', channel: 'dev' }, { token })).body.channel).toBe('dev');
     await app.ui('/ui/api/update', { action: 'settings', channel: 'main' }, { token });
     await waitFor(async () => (await app.api<UpdateStatus>('GET', '/api/update')).body.target?.ref === 'main');
 

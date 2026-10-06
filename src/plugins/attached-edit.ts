@@ -1,7 +1,8 @@
 // Attaching an ssh target from the UI (design.md "Machines from the UI", issues #18, #74): a new
 // `ssh` instance appended to the plugins config's `machines`, every other entry kept. The ssh
-// target must be a detected one; herdrBin is resolved over ssh here and its host key pinned from the
-// user's known_hosts (design.md "Target authentication"), neither ever sent. The result is checked
+// target is a detected one or a typed plain `[user@]host` (issue #293: an ephemeral container has no
+// ~/.ssh/config); herdrBin is resolved over ssh here, never sent, and its host key is the one the person
+// confirmed (issue #293) or the user's known_hosts holds (design.md "Target authentication"). The result is checked
 // against the plugins config's schema and the ssh plugin's options before it replaces the record,
 // against the version the edit was read at. Editing and removing a machine is a plugins edit (edit.ts).
 // It runs herdr only when one of its executors is herdr-claude (issue #142); lanes and executors left
@@ -11,6 +12,7 @@
 // not a machine, adding this machine is refused with the way that works there, and no target is this machine.
 import type { ConfigRecords } from '../domain/ports.ts';
 import type { ConfiguredInstance, InstanceSpec, MachineDefaults, MachineDefaultsEdit, MachineEdit } from '../domain/types.ts';
+import { isPlainTarget } from '../executors/ssh.ts';
 import type { ResolvedTarget } from '../machines/index.ts';
 import { list, writePlugins, type EditRefusal, type EditResult } from './edit.ts';
 import local from './machine-source/local/index.ts';
@@ -27,8 +29,8 @@ export interface MachineEditContext {
   /** What a machine attached without lanes or executors gets. */
   defaults: MachineDefaults;
   sshTargets(): { targets: string[] };
-  /** The host key that ssh target is pinned to and, when it is to run herdr, herdr's absolute path there; rejects with the reason. */
-  resolveTarget(ssh: string, o: { herdr: boolean }): Promise<ResolvedTarget>;
+  /** The host key that ssh target is pinned to (`hostKey`: the one confirmed) and, when it is to run herdr, herdr's absolute path there; rejects with the reason. */
+  resolveTarget(ssh: string, o: { herdr: boolean; hostKey?: string }): Promise<ResolvedTarget>;
   /** Starts this machine's herdr session (issue #260); rejects with the reason. */
   startSession(session: string): Promise<unknown>;
   /** A plugin's machine options: each part naming no machine runs on this machine once it is added. */
@@ -43,7 +45,7 @@ export interface MachineEditContext {
  * Why this machine cannot be added in a container (issue #275), and the way that works there: the
  * container is not a machine (issue #141), so the computer it runs on is attached like any other.
  */
-export const IN_A_CONTAINER = 'the hopper runs in a container, and the container is not a machine. To run jobs on the computer it runs on, attach that computer over ssh: in the container\'s ~/.ssh/config, a Host whose HostName is host.containers.internal (Podman) or host.docker.internal (Docker), with a key of the container\'s that the computer accepts. Or attach it as a client target';
+export const IN_A_CONTAINER = 'the hopper runs in a container, and the container is not a machine. To run jobs on the computer it runs on, attach that computer over ssh: type its ssh target as you@host.containers.internal (Podman) or you@host.docker.internal (Docker), add the hopper\'s public key shown in the Add machine form to ~/.ssh/authorized_keys there, and confirm the host key it presents. Or attach it as a client target';
 
 /** The sections whose parts run on a machine they name (issue #174). */
 const ON_A_MACHINE = ['escalationLevels', 'usageSources'] as const;
@@ -77,7 +79,9 @@ export function applyMachineDefaultsEdit(e: MachineDefaultsEdit, config: ConfigR
 export async function applyMachineEdit(e: MachineEdit, ctx: MachineEditContext): Promise<EditResult> {
   if (ctx.config.version(PLUGINS) !== e.version) return refuse('conflict', 'the plugins config changed since it was read; reload and edit again');
   if (e.ssh === undefined) return ctx.localMachine ? addThisMachine(e, ctx) : refuse('conflict', `could not add ${e.name}: ${IN_A_CONTAINER}`);
-  if (!ctx.sshTargets().targets.includes(e.ssh)) return refuse('invalid', `ssh target ${e.ssh} is not a Host alias in ~/.ssh/config; add it there first`);
+  if (!ctx.sshTargets().targets.includes(e.ssh) && !isPlainTarget(e.ssh)) {
+    return refuse('invalid', `ssh target ${JSON.stringify(e.ssh)} is not a Host alias in ~/.ssh/config, nor a plain [user@]host`);
+  }
   if (ctx.localMachine && await ctx.isThisMachine(e.ssh)) {
     const { ssh: target, ...rest } = e;
     return addThisMachine(rest, ctx, target);
@@ -92,7 +96,7 @@ export async function applyMachineEdit(e: MachineEdit, ctx: MachineEditContext):
   const herdr = executors.some((x) => ctx.executors.find((i) => i.name === x)?.plugin === HERDR_EXECUTOR);
   let resolved: ResolvedTarget;
   try {
-    resolved = await ctx.resolveTarget(e.ssh, { herdr });
+    resolved = await ctx.resolveTarget(e.ssh, { herdr, ...(e.hostKey !== undefined ? { hostKey: e.hostKey } : {}) });
     if (herdr && !resolved.herdrBin) throw new Error('herdr not found there');
   } catch (err) {
     return refuse('conflict', `could not add ${e.name}: ${err instanceof Error ? err.message : String(err)}`);

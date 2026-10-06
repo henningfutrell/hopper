@@ -413,8 +413,8 @@ export interface SourceStatus {
 
 // ---- Attached machines: src/domain/machines.ts (re-exported here) ------------------------
 
-export type { AttachedMachine, ClientMachine, ConfiguredMachine, ContainerMachine, MachineDefaults, MachineDefaultsEdit, MachineEdit, SshMachine, MachineEditOutcome, MachinesConfig } from './machines.ts';
-export { HERDR_SESSION } from './machines.ts';
+export type { AttachedMachine, ClientMachine, ConfiguredMachine, ContainerMachine, HostKeyOffer, HostKeyOfferOutcome, MachineDefaults, MachineDefaultsEdit, MachineEdit, SshMachine, MachineEditOutcome, MachinesConfig } from './machines.ts';
+export { HERDR_SESSION, HOST_KEY } from './machines.ts';
 
 // ---- Routing rules: src/domain/routing.ts; plugins: src/domain/plugins.ts (re-exported here, one vocabulary) ----
 
@@ -448,8 +448,8 @@ export { ENDED_STATUSES, IN_FLIGHT_STATUSES, ADMIN_ID } from './users.ts';
 
 // ---- Self-update (issue #44) ------------------------------------------------------------
 
-export type { InstallInfo, UpdateApply, UpdateChannel, UpdateRelease, UpdateSettings, UpdateState, UpdateStatus, VersionEntry, VersionHistory } from './update.ts';
-export { UPDATE_CHANNELS } from './update.ts';
+export type { BranchChannel, InstallInfo, UpdateApply, UpdateChannel, UpdateRelease, UpdateSettings, UpdateState, UpdateStatus, VersionEntry, VersionHistory } from './update.ts';
+export { BRANCH_CHANNELS, isBranchChannel, UPDATE_CHANNELS } from './update.ts';
 
 // ---- gh login (issue #138) -------------------------------------------------------------
 
