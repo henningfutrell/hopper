@@ -10,7 +10,7 @@ import type { User } from './domain/types.ts';
 import { daemonHelp, loadConfig, type Config } from './config.ts';
 import { logStartup } from './startup-log.ts';
 import { createServer } from './http/index.ts';
-import { createSignIn, prepareSignIn, type AuthConfig } from './auth/index.ts';
+import { claimGithubAdmin, createSignIn, prepareSignIn, type AuthConfig } from './auth/index.ts';
 import { readRelease } from './client/release.ts';
 import { BUILTIN_PLUGINS } from './plugins/builtin.ts';
 import { createPluginStore, installedDirOf } from './plugins/plugin-store.ts';
@@ -126,7 +126,10 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     instance.close();
     throw e;
   }
-  const signIn = createSignIn({ config: auth, clock, origin: () => config.publicUrl ?? `http://localhost:${port}` });
+  const signIn = createSignIn({
+    config: auth, clock, origin: () => config.publicUrl ?? `http://localhost:${port}`,
+    claimGithubAdmin: (who) => claimGithubAdmin(instance, who),
+  });
   // Self-update (issue #44): the restart reaches app.stop() through `restartApp`, set below.
   let restartApp: Restarter = async () => {};
   const appDir = seams.update?.appDir ?? APP_DIR;

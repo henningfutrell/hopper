@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- The first person to sign in with GitHub becomes an admin, so a new hopper can be set up by whoever signs in first.
 - The router's advice now always decides which jobs wait and which go first. The shadow and active switch is gone from the top bar and from the routing settings.
 - The install guide now shows, step by step, how to let a team sign in through your own single sign-on, SAML, directory or sign-in gateway, set up from the hopper's settings at launch.
 - The built-in "owner" account is now the default admin account, "admin": everything it had — work, settings, sign-ins — moved over, and "owner" is gone.

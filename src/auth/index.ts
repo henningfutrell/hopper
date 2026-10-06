@@ -35,6 +35,7 @@ export { SIGN_IN, loadSignInConfig, signInConfigProblem, type AuthConfig } from 
 export { accountOf, AuthEditError, editSignIn, realmsView, type SignInEdit } from './edit.ts';
 export { hasPasswordFallback, withPasswordFallback } from './fallback.ts';
 export { hashPassword, verifyPassword } from './password.ts';
+export { claimGithubAdmin } from './github-admin.ts';
 export { prepareSignIn } from './start.ts';
 
 const FLOW_MS = 10 * 60_000;
@@ -111,7 +112,10 @@ export function roleIn(config: AuthConfig, who: Identity): UiRole | null {
   if (who.realm === 'none') return config.none?.role ?? null;
   const r = config.realms.find((x) => x.name === who.realm);
   if (!r?.enabled) return null;
-  return r.type === 'password' ? passwordRoleOf(r, who.subject) : roleFor(who, r.roles);
+  if (r.type === 'password') return passwordRoleOf(r, who.subject);
+  const first = config.githubAdmin;
+  if (r.type === 'github' && first?.realm === who.realm && first.subject === who.subject) return 'admin';
+  return roleFor(who, r.roles);
 }
 
 function buildRedirect(r: Extract<RealmConfig, { type: 'oidc' | 'github' | 'saml' }>, origin: string): RedirectRealm {
@@ -123,7 +127,11 @@ function buildRedirect(r: Extract<RealmConfig, { type: 'oidc' | 'github' | 'saml
 
 const buildForm = (r: Extract<RealmConfig, { type: 'password' | 'ldap' }>): FormRealm => (r.type === 'password' ? createPasswordRealm(r) : createLdapRealm(r));
 
-export function createSignIn(o: { config: AuthConfig; origin: () => string; clock: Clock; maxFlows?: number }): SignIn {
+/**
+ * `claimGithubAdmin`: record a GitHub sign-in as the first GitHub admin (issue #239), answering the sign-in
+ * config with it; undefined when it is not the first. Absent: nobody becomes admin by being first.
+ */
+export function createSignIn(o: { config: AuthConfig; origin: () => string; clock: Clock; maxFlows?: number; claimGithubAdmin?: (who: Identity) => AuthConfig | undefined }): SignIn {
   const maxFlows = o.maxFlows ?? MAX_FLOWS;
   let config = o.config;
   let forms: FormRealm[] = [];
@@ -213,6 +221,13 @@ export function createSignIn(o: { config: AuthConfig; origin: () => string; cloc
         who = await r.finish(cb, flow.secrets);
       } catch (e) {
         return { ok: false, status: 502, error: `${r.label} sign-in failed: ${(e as Error).message}` };
+      }
+      if (r.type === 'github' && config.githubAdmin === null) {
+        const claimed = o.claimGithubAdmin?.(who);
+        if (claimed) {
+          config = claimed;
+          build();
+        }
       }
       const role = roleOf(who);
       if (role === null) return { ok: false, status: 403, error: 'signed in, but the sign-in config grants this account no role', who };

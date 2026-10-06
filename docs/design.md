@@ -3688,6 +3688,14 @@ session**. Only an email the provider vouches for is an Identity's `email`: OIDC
 `email_verified: true` unless `trustUnverifiedEmail`; GitHub's primary verified email; SAML's
 asserted one.
 
+**The first GitHub admin** (issue #239): the first identity a GitHub realm signs in is `admin` before
+any rule is read, for as long as that realm is on. The callback records it once — `githubAdmin` in the
+config record `sign-in` (`src/auth/github-admin.ts`), written by compare-and-swap in one transaction —
+and only while no record exists and no identity of a GitHub realm is linked to a user. The second
+condition is the update path: a hopper with earlier GitHub sign-ins records nobody, so the update
+promotes no one. It sits in the record, not in a realm's `roles`, because realms from the environment
+replace the stored realm at every start; the top-level field survives that.
+
 ### The flow (no cookies)
 
 Cookies ignore ports ("UI session and mutations"), and a SAML response is a cross-site POST that a
