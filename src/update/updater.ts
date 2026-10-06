@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import type { Clock, EventLog, InstanceSettingsRepository, Restarter, UpdateBuilder, Updater } from '../domain/ports.ts';
-import type { InstallInfo, UpdateApply, UpdateRelease, UpdateSettings, UpdateStatus } from '../domain/types.ts';
+import type { InstallInfo, UpdateApply, UpdateRelease, UpdateSettings, UpdateStatus, VersionHistory } from '../domain/types.ts';
 import { createGitMirror, type GitMirror } from './git.ts';
 import { bullets, newSince, WHATS_NEW_FILE } from './whats-new.ts';
 import { nextDirOf, readInstallInfo, swapInstall } from './install.ts';
@@ -245,10 +245,26 @@ export function createUpdater(o: UpdaterOptions): RunningUpdater {
     append('update.failed', { to: pending.to, error: `the boot after the update runs ${on}, not ${short(pending.to)}` });
   }
 
+  // A commit's history never changes: computed once per installed commit.
+  let history: { commit: string; versions: VersionHistory['versions'] } | undefined;
+
+  async function versionHistory(): Promise<VersionHistory> {
+    const read = readInstallInfo(o.appDir);
+    if (!read.ok) return { versions: [], reason: read.reason };
+    const { commit } = read.info;
+    if (history?.commit === commit) return { versions: history.versions };
+    if (!(await mirror.has(commit))) await check();
+    if (!(await mirror.has(commit))) return { versions: [], reason: checked.reason ?? `the installed commit ${short(commit)} is not in ${read.info.repo}` };
+    const versions = (await mirror.added(commit, WHATS_NEW_FILE)).map((v) => ({ commit: v.commit, at: v.at, changes: v.lines }));
+    history = { commit, versions };
+    return { versions };
+  }
+
   return {
     status,
     check,
     apply,
+    history: versionHistory,
     settings(patch) {
       const before = settings();
       o.settings.setUpdateSettings(patch);

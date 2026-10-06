@@ -8,6 +8,7 @@ import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
+import { bullets } from './whats-new.ts';
 
 const exec = promisify(execFile);
 const TIMEOUT_MS = 120_000;
@@ -26,6 +27,8 @@ export interface GitMirror {
   count(from: string, to: string): Promise<number>;
   /** The text of `path` at `commit`, or undefined when it has no such file. */
   read(commit: string, path: string): Promise<string | undefined>;
+  /** Along the first-parent line ending at `commit`, each commit that added `- ` lines to `path`: when, and those lines, newest first. */
+  added(commit: string, path: string): Promise<{ commit: string; at: string; lines: string[] }[]>;
   /** The tree of `commit`, unpacked into `dir` (created). */
   extract(commit: string, dir: string): Promise<void>;
 }
@@ -72,6 +75,16 @@ export function createGitMirror(dir: string): GitMirror {
     },
     async read(commit, path) {
       return (await this.has(commit)) ? git('show', `${commit}:${path}`).catch(() => undefined) : undefined;
+    },
+    async added(commit, path) {
+      // First parent only: a merged pull request is one version, dated when it landed.
+      const log = await git('log', '--first-parent', '--diff-merges=first-parent', '-p', '--unified=0', '--format=%x00%H %cI', commit, '--', path);
+      return log.split('\0').flatMap((chunk) => {
+        const [head = '', ...diff] = chunk.split('\n');
+        const [sha, at] = head.split(' ');
+        const lines = bullets(diff.filter((l) => l.startsWith('+') && !l.startsWith('+++')).map((l) => l.slice(1)).join('\n'));
+        return sha && at && lines.length ? [{ commit: sha, at, lines }] : [];
+      });
     },
     async extract(commit, target) {
       rmSync(target, { recursive: true, force: true });

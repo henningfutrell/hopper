@@ -1,8 +1,8 @@
 // Settings (issue #151): the configuration plane, one view with a section per part — the question
 // gates (escalation levels, standing rules, risk rules), the question history, routing, plugins,
-// webhooks, the users (issue #158), sign-in (issue #185) and the version (issue #165) — each routed by hash (#settings/routing), so a link and the back button work. #settings
+// webhooks, the users (issue #158), sign-in (issue #185), the version (issue #165) and the version history (issue #246) — each routed by hash (#settings/routing), so a link and the back button work. #settings
 // alone opens the question gates.
-import { History, Info, KeyRound, Puzzle, Route, ShieldCheck, Users as UsersIcon, Webhook, type LucideIcon } from 'lucide-react';
+import { History, Info, KeyRound, Puzzle, Route, ScrollText, ShieldCheck, Users as UsersIcon, Webhook, type LucideIcon } from 'lucide-react';
 import { useSection } from '@/app/nav';
 import { VersionDetails } from '@/app/update';
 import { cn } from '@/lib/utils';
@@ -12,9 +12,10 @@ import { QuestionHistory } from '@/views/question-history';
 import { Realms } from '@/views/realms';
 import { Routing } from '@/views/routing';
 import { Users } from '@/views/users';
+import { VersionHistory } from '@/views/version-history';
 import { Webhooks } from '@/views/webhooks';
 
-const SECTIONS = ['questions', 'history', 'routing', 'plugins', 'webhooks', 'users', 'sign-in', 'version'] as const;
+const SECTIONS = ['questions', 'history', 'routing', 'plugins', 'webhooks', 'users', 'sign-in', 'version', 'version-history'] as const;
 type Section = (typeof SECTIONS)[number];
 const ITEMS: Record<Section, { label: string; icon: LucideIcon; view: () => React.ReactNode }> = {
   questions: { label: 'Question gates', icon: ShieldCheck, view: QuestionGates },
@@ -25,6 +26,7 @@ const ITEMS: Record<Section, { label: string; icon: LucideIcon; view: () => Reac
   users: { label: 'Users', icon: UsersIcon, view: Users },
   'sign-in': { label: 'Sign-in', icon: KeyRound, view: Realms },
   version: { label: 'Version', icon: Info, view: Version },
+  'version-history': { label: 'Version history', icon: ScrollText, view: VersionHistory },
 };
 
 function Version() {
