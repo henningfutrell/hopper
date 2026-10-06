@@ -10,7 +10,7 @@ Every way of signing in ends the same: a **UI session** with a **UI role**, acti
 (issue #158). Sessions, roles and logout behave the same whichever realm signed the user in.
 
 - [Pick a setup](#pick-a-setup)
-- [Managing sign-in in Settings](#managing-sign-in-in-settings) · [Realm settings](#realm-settings) · [The sign-in config from the CLI](#the-sign-in-config-from-the-cli)
+- [Managing sign-in in Settings](#managing-sign-in-in-settings) · [Realm settings](#realm-settings) · [Sign-in from the environment](#sign-in-from-the-environment) · [The sign-in config from the CLI](#the-sign-in-config-from-the-cli)
 - [No sign-in](#no-sign-in) · [Password realm](#password-realm) · [LDAP realm](#ldap-realm) · [Behind an auth gateway](#behind-an-auth-gateway)
 - [UI roles and role rules](#ui-roles-and-role-rules)
 - [Who signs in as which user](#who-signs-in-as-which-user)
@@ -33,6 +33,7 @@ Every way of signing in ends the same: a **UI session** with a **UI role**, acti
 | A company directory (OpenLDAP, Active Directory, FreeIPA) | An [LDAP realm](#ldap-realm): people sign in with their directory username and password; directory groups grant roles. |
 | Behind an auth gateway that signs people in (Envoy Gateway with OIDC, oauth2-proxy, …) | A [gateway realm](#behind-an-auth-gateway): the gateway signs people in and forwards their token; the hopper checks the token, gives roles by its claims, and asks nobody to sign in. |
 | A team, or anyone reaching it over the internet | A reverse proxy with TLS, `HOPPER_PUBLIC_URL`, one or more realms, role rules, and usually the login code off. |
+| A deploy that sets everything up at launch (container, Kubernetes) | [Sign-in from the environment](#sign-in-from-the-environment): the realms as `HOPPER_SIGN_IN_*` variables, secrets as mounted files, and `HOPPER_SIGN_IN_ADMIN_PASSWORD` for the [password fallback](#password-fallback). |
 
 ## Managing sign-in in Settings
 
@@ -53,7 +54,7 @@ provider, ready to copy. A new hopper starts with one realm, **Password**, holdi
   that are on in this order, and the first that accepts the password signs in. The OIDC, GitHub and
   SAML realms that are on are sign-in buttons, in this order.
 - **On / off**: a realm that is off signs nobody in, and the sessions it made end at once. Its secret
-  variable need not be set while it is off.
+  need not be set while it is off.
 - **Accounts** (under a password realm): add, change the role of, give a new password to, or remove
   an account: [Password realm](#password-realm).
 - **Without a realm**: the login code on or off, and no sign-in with its role.
@@ -61,7 +62,7 @@ provider, ready to copy. A new hopper starts with one realm, **Password**, holdi
 A change **works at once**, without a restart: the sign-in page follows it, and sessions follow it as
 they would at a restart (a realm off or removed, or an account no rule lets in any more, loses its
 sessions; a changed role applies). A change that would not load is refused with the reason, naming
-the field (a missing secret variable is named too) — nothing is saved. A change that would end **your
+the field (a missing secret is named too) — nothing is saved. A change that would end **your
 own** admin session (turning off or removing the realm you signed in with, lowering your own role,
 turning off the login code you signed in with) is refused: sign in as an admin another way first.
 Invalid sign-in config stop the daemon at start, with a message naming the field (`journalctl
@@ -70,12 +71,12 @@ Invalid sign-in config stop the daemon at start, with a message naming the field
 **Locked out.** If nobody can sign in as admin any more, turn the login code back on in
 [the sign-in config from the CLI](#the-sign-in-config-from-the-cli) where the hopper runs, restart it, and sign in with a code.
 
-Secrets are never entered into a realm: it names the variable that holds one (**Client secret
-variable**, **Bind password variable**). Set the variable in the daemon's environment — `daemon.env`
-on the host install, the container's env file otherwise — or mount the secret as a file and set
-`<variable>_FILE` to its path (design.md "Secrets"), and restart once; after that the realm can be
-changed in Settings without a restart. The SAML certificate is not a secret: it is pasted into its
-field (PEM or bare base64).
+**Secrets are typed into the realm's form** (**Client secret**, **Bind password**) and stored with the
+realm in the database, like every other setting. They are never shown again: the field says whether
+one is set, a save with the field left empty keeps it, and the cross beside it removes it (an OIDC
+realm without one is a public client). Nothing to set where the daemon runs, and no restart. The SAML
+certificate is not a secret: it is pasted into its field (PEM or bare base64). A realm can also be
+set up, secret and all, from the daemon's environment: [Sign-in from the environment](#sign-in-from-the-environment).
 
 ## Realm settings
 
@@ -89,7 +90,7 @@ The setting's name in error messages is in brackets.
 | `password` | — | | Its accounts, under the realm: [Password realm](#password-realm). |
 | `ldap` | Directory URL (`url`) | — | `ldaps://host[:port]`, or `ldap://` with StartTLS on; plain `ldap://` only to `127.0.0.1`/`localhost`. |
 | | StartTLS (`startTls`) | off | Upgrade an `ldap://` connection with StartTLS. |
-| | Bind DN, Bind password variable (`bindDn`, `bindPasswordEnv`) | none (anonymous search) | The account that searches for the user, and the variable holding its password. |
+| | Bind DN, Bind password (`bindDn`, `bindPassword`) | none (anonymous search) | The account that searches for the user, and its password (a secret: stored, never shown). |
 | | User base (`userBase`) | — | Where people are: `ou=people,dc=example,dc=com`. |
 | | User filter (`userFilter`) | `(uid={username})` | `{username}` is the typed username, escaped. Active Directory: `(sAMAccountName={username})`. |
 | | Subject attribute (`attributes.subject`) | the entry's DN | A stable id: `entryUUID` (OpenLDAP), `objectGUID` (AD). |
@@ -97,11 +98,11 @@ The setting's name in error messages is in brackets.
 | | Group search base, filter, name attribute (`groupSearch.…`) | none; `(member={dn})`; `cn` | Groups found by search, for a directory without `memberOf`; the group is known by its name attribute. |
 | `oidc` | Issuer URL (`issuer`) | — | Discovery reads `<issuer>/.well-known/openid-configuration`. https (http only to `127.0.0.1`/`localhost`). |
 | | Client ID (`clientId`) | — | |
-| | Client secret variable (`clientSecretEnv`) | none | The environment variable holding the secret. Empty for a public client (PKCE only). |
+| | Client secret (`clientSecret`) | none | A secret: stored, never shown. None for a public client (PKCE only). |
 | | Scopes (`scopes`) | `openid email profile` | Space-separated. Add what your groups claim needs (`groups` at Okta). |
 | | Email / Username / Name / Groups claim (`claims.…`) | `email` / `preferred_username` / `name` / `groups` | Claim names, read from the ID token, then userinfo. Groups may be a list or one string. |
 | | Trust unverified email (`trustUnverifiedEmail`) | off | Count the email even without `email_verified: true`. Only for an issuer whose emails you control. |
-| `github` | Client ID, Client secret variable (`clientId`, `clientSecretEnv`) | — | An OAuth app (not a GitHub App). Both are required. |
+| `github` | Client ID, Client secret (`clientId`, `clientSecret`) | — | An OAuth app (not a GitHub App). Both are required (the secret once the realm is on). |
 | | GitHub URL / API URL (`webUrl` / `apiUrl`) | `https://github.com` / `https://api.github.com` | GitHub Enterprise Server: `https://ghe.example.com` and `https://ghe.example.com/api/v3`. |
 | `saml` | Sign-on URL (`entryPoint`) | — | The IdP's single sign-on URL (HTTP-Redirect binding). |
 | | Identity provider certificate (`idpCert`) | — | The IdP's signing certificate: PEM or bare base64. |
@@ -113,9 +114,47 @@ The setting's name in error messages is in brackets.
 | | Check (`check`) | `jwt` | `jwt`: verify the token's signature against the issuer's keys, and its issuer, audience and times. `introspection`: ask the issuer whether the token is active (RFC 7662), for opaque tokens. |
 | | Audience (`audience`) | — | Space-separated. A token must name one of them in `aud`. Required for `jwt`; for `introspection`, checked when set. |
 | | Token header (`header`) | `authorization` | The request header the gateway forwards the token in. `authorization` carries `Bearer <token>`; any other header carries the token alone (`x-forwarded-access-token` for oauth2-proxy). |
-| | Client ID, Client secret variable (`clientId`, `clientSecretEnv`) | none | `introspection` only, and then both required: the hopper's client at the issuer, sent with HTTP Basic. |
+| | Client ID, Client secret (`clientId`, `clientSecret`) | none | `introspection` only, and then both required (the secret once the realm is on): the hopper's client at the issuer, sent with HTTP Basic. The secret is stored, never shown. |
 | | Email / Username / Name / Groups claim (`claims.…`) | `email` / `preferred_username` / `name` / `groups` | Claim names, read from the token or the introspection answer. |
 | | Trust unverified email (`trustUnverifiedEmail`) | off | Count the email even without `email_verified: true`. |
+
+## Sign-in from the environment
+
+Realms, the login code and no sign-in can be set up at launch by the daemon's environment, the way
+Grafana takes its settings: for a container or Kubernetes deploy that is set up from its manifests,
+with no config file and no persistent volume. The variables are read at **every start** and written to
+the database, so the environment wins: a realm it sets up replaces the stored realm of the same name,
+in its place (or is added at the end), and a change made to it in Settings lasts until the next start
+(Settings marks it *set from the environment*). Realms the environment does not name, and the password
+accounts, are left as they are. Remove the variables and the realm stays as last set.
+
+| variable | |
+|---|---|
+| `HOPPER_SIGN_IN_REALM_<NAME>_TYPE` | Sets up the realm `<name>`: `password`, `ldap`, `oidc`, `github`, `saml` or `gateway`. The name is `<NAME>` in lowercase, `_` as `-`: `HOPPER_SIGN_IN_REALM_COMPANY_SSO_TYPE` is the realm `company-sso`. |
+| `HOPPER_SIGN_IN_REALM_<NAME>_<SETTING>` | One setting of it: the setting's name in [Realm settings](#realm-settings) in upper snake case — `LABEL`, `ENABLED`, `ISSUER`, `CLIENT_ID`, `CLIENT_SECRET`, `SCOPES`, `CLAIMS_GROUPS`, `BIND_DN`, `BIND_PASSWORD`, `ATTRIBUTES_SUBJECT`, `GROUP_SEARCH_BASE`, `IDP_CERT`, `AUDIENCE`, … Role rules: `ROLES_<ROLE>_<MATCH>` (`ROLES_ADMIN_GROUPS`, `ROLES_OPERATOR_EMAIL_DOMAINS`) and `ROLES_DEFAULT_ROLE`. |
+| `HOPPER_SIGN_IN_LOCAL_ENABLED` | The login code: `true` or `false`. |
+| `HOPPER_SIGN_IN_NONE_ROLE` | No sign-in: `viewer`, `operator`, `admin`, or `off`. |
+| `HOPPER_SIGN_IN_ADMIN_PASSWORD` | The password of the account `admin` when a start adds the [password fallback](#password-fallback), in place of a random one; then it is not logged. A start that adds no account does not read it. |
+
+Values: a switch is `true` or `false`; scopes and audiences are separated by spaces or commas; a role
+rule's values by commas, or a JSON array when a value holds a comma (an LDAP group DN). **Every one can
+come from a file**: `<variable>_FILE` names it (a mounted secret; one trailing newline dropped) — the way
+to hand in a client secret or a certificate. A variable the hopper cannot use — an unknown setting, a
+value the realm refuses, a realm without its `_TYPE` — stops the daemon at start, naming the variable;
+nothing is written.
+
+An OIDC realm in a compose file or a Kubernetes manifest:
+
+```sh
+HOPPER_SIGN_IN_REALM_CORP_TYPE=oidc
+HOPPER_SIGN_IN_REALM_CORP_LABEL=Corp SSO
+HOPPER_SIGN_IN_REALM_CORP_ISSUER=https://idp.example.com/realms/corp
+HOPPER_SIGN_IN_REALM_CORP_CLIENT_ID=hopper
+HOPPER_SIGN_IN_REALM_CORP_CLIENT_SECRET_FILE=/run/secrets/corp_client_secret
+HOPPER_SIGN_IN_REALM_CORP_ROLES_ADMIN_GROUPS=hopper-admins
+HOPPER_SIGN_IN_REALM_CORP_ROLES_DEFAULT_ROLE=viewer
+HOPPER_SIGN_IN_LOCAL_ENABLED=false
+```
 
 ## The sign-in config from the CLI
 
@@ -138,14 +177,17 @@ systemctl --user restart hopper
 hopper login-code --link http://127.0.0.1:4790
 ```
 
-In the record each field has the name in brackets in [Realm settings](#realm-settings); `version` is
+The record holds the realms' secrets as stored: whoever runs the CLI holds the database's credentials,
+which open them anyway. In the record each field has the name in brackets in [Realm settings](#realm-settings); `version` is
 `1`, `local.enabled` the login code (default on), `none.role` no sign-in (absent: off), and `realms`
 the realms in order, each with `name`, `label`, `type`, `enabled` (absent: on) and `roles`.
 
 **From before.** Older installs were migrated when the daemon updated: the sign-in document of an
 earlier version became realms (issue #185), then the JSON record (issue #198), then its password
 accounts moved out of it into a table of their own (issue #200), each with its username, hash and
-role. Nothing to do; sign-ins and sessions carry on. `hopper password-hash` is gone: an admin sets a
+role. A realm that named the variable holding its secret (`clientSecretEnv`, `bindPasswordEnv`) takes
+the secret from that variable into the database at the first start after the update (issue #216);
+after that the variable can go. Nothing to do; sign-ins and sessions carry on. `hopper password-hash` is gone: an admin sets a
 password in Settings → Sign-in.
 
 ## No sign-in
@@ -197,8 +239,9 @@ Nobody depends on a login code or an already signed-in browser to get in.
 - **At start**, when there is no such account — a new hopper, or a sign-in config changed with
   `hopper config … sign-in` — the hopper adds the account `admin` (or `admin-2`, … when taken) to the
   first password realm, turning it on, or to a new realm **Password** when there is none. The account
-  signs in as `owner`, role admin. Its password is random and is shown **only once**, in the start
-  lines (`journalctl --user -u hopper`, or the container's log):
+  signs in as `owner`, role admin. Its password is `HOPPER_SIGN_IN_ADMIN_PASSWORD` when that is set
+  ([Sign-in from the environment](#sign-in-from-the-environment)); else it is random and is shown
+  **only once**, in the start lines (`journalctl --user -u hopper`, or the container's log):
 
   ```
   hopper: password fallback: no admin account signs in with a password; added account admin to realm password, password <random> (shown only this once: sign in with it and change it in Settings → Sign-in)
@@ -231,7 +274,7 @@ OpenLDAP or FreeIPA:
 | Label | Directory |
 | Directory URL | `ldaps://ldap.example.com` |
 | Bind DN | `cn=hopper,ou=services,dc=example,dc=com` |
-| Bind password variable | `LDAP_BIND_PASSWORD` |
+| Bind password | the search account's password |
 | User base | `ou=people,dc=example,dc=com` |
 | Subject attribute | `entryUUID` |
 | Role rules | admin for these groups: `cn=hopper-admins,ou=groups,dc=example,dc=com`; operator for these groups: `cn=hopper-operators,ou=groups,dc=example,dc=com` |
@@ -245,7 +288,7 @@ Active Directory:
 | Label | Company account |
 | Directory URL | `ldaps://dc1.corp.example.com` |
 | Bind DN | `CN=hopper,OU=Service Accounts,DC=corp,DC=example,DC=com` |
-| Bind password variable | `AD_BIND_PASSWORD` |
+| Bind password | the search account's password |
 | User base | `DC=corp,DC=example,DC=com` |
 | User filter | `(sAMAccountName={username})` |
 | Subject attribute | `objectGUID` |
@@ -253,8 +296,6 @@ Active Directory:
 | Name attribute | `displayName` |
 | Role rules | admin for these groups: `CN=Hopper Admins,OU=Groups,DC=corp,DC=example,DC=com` |
 
-In the daemon's environment: `LDAP_BIND_PASSWORD=<password>` (or `AD_BIND_PASSWORD`), then restart
-once.
 
 - **Groups** are the values of the **Group attribute** (default `memberOf`): full group DNs, compared
   exactly as the directory gives them. A directory without `memberOf` (an OpenLDAP without the
@@ -482,8 +523,7 @@ machine only you and the proxy use. With several users, such a request reads no 
 
 Each section: what to create at the identity provider, then the realm's fields — fill them in at
 **Settings → Sign-in → Add realm**; a field not listed stays empty (its default). Replace `<origin>`
-with the sign-in origin. Put each client secret variable, as `NAME=<secret>`, in the daemon's
-environment (`daemon.env` on the host install), and restart once so the daemon has it.
+with the sign-in origin. The client secret is typed into the realm's **Client secret** field.
 
 ### Google
 
@@ -499,10 +539,9 @@ environment (`daemon.env` on the host install), and restart once so the daemon h
 | Label | Google |
 | Issuer URL | `https://accounts.google.com` |
 | Client ID | `1234-abc.apps.googleusercontent.com` |
-| Client secret variable | `GOOGLE_CLIENT_SECRET` |
+| Client secret | the client secret |
 | Role rules | admin for these emails: `ada@example.com` |
 
-In the daemon's environment: `GOOGLE_CLIENT_SECRET=<secret>`.
 
 Google sends no groups. For "everyone in our Google Workspace", match the hosted-domain claim
 rather than the email domain (a personal Google account can carry a verified address at any domain):
@@ -523,7 +562,7 @@ set **Groups claim** to `hd` and add the rule "groups: `example.com`".
 | Label | Microsoft |
 | Issuer URL | `https://login.microsoftonline.com/<tenant-id>/v2.0` |
 | Client ID | `<application (client) id>` |
-| Client secret variable | `ENTRA_CLIENT_SECRET` |
+| Client secret | the client secret |
 | Groups claim | `roles` |
 | Role rules | admin for these groups: `Hopper.Admin`; operator for these groups: `Hopper.Operator` |
 
@@ -546,7 +585,7 @@ match on groups, app roles or `usernames` (the UPN in `preferred_username`), not
 | Label | Okta |
 | Issuer URL | `https://<your-org>.okta.com` |
 | Client ID | `<client id>` |
-| Client secret variable | `OKTA_CLIENT_SECRET` |
+| Client secret | the client secret |
 | Scopes | `openid email profile groups` |
 | Role rules | admin for these groups: `hopper-admins`; operator for these groups: `hopper-operators` |
 
@@ -566,7 +605,7 @@ With a custom authorization server the issuer is `https://<your-org>.okta.com/oa
 | Label | Auth0 |
 | Issuer URL | `https://<tenant>.auth0.com/` |
 | Client ID | `<client id>` |
-| Client secret variable | `AUTH0_CLIENT_SECRET` |
+| Client secret | the client secret |
 | Groups claim | `https://hopper.example.com/roles` |
 | Role rules | admin for these groups: `hopper-admin` |
 | Default role | viewer |
@@ -587,7 +626,7 @@ Keep the trailing slash of `issuer`: it is part of Auth0's issuer.
 | Label | Keycloak |
 | Issuer URL | `https://keycloak.example.com/realms/<realm>` |
 | Client ID | `hopper` |
-| Client secret variable | `KEYCLOAK_CLIENT_SECRET` |
+| Client secret | the client secret |
 | Role rules | admin for these groups: `hopper-admins`; operator for these groups: `hopper-operators` |
 
 ### GitHub
@@ -607,7 +646,7 @@ verified email and (when a rule names groups) their teams from the API.
 | Name | `github` |
 | Label | GitHub |
 | Client ID | `<client id>` |
-| Client secret variable | `GITHUB_OAUTH_CLIENT_SECRET` |
+| Client secret | the client secret |
 | Role rules | admin for these subjects: `583231`; operator for these groups: `acme/platform` |
 
 A subject is the numeric user id: `id` in `https://api.github.com/users/<login>`. A group is a team,
@@ -725,10 +764,12 @@ The same for every realm, no sign-in and the login code:
 | symptom | cause |
 |---|---|
 | Daemon will not start, or Settings refuses a change: `invalid sign-in config: realms.0.…` | The named field of the first realm (`realms.1` the second, …) is wrong; the message says how. |
-| `realms.0.bindPasswordEnv: environment variable … is not set` | Put the variable in the daemon's environment and restart, or save the realm turned off until then. |
+| `realms.0.clientSecret: …` or `realms.0.bindPassword: …` | The realm is on without its secret: type it into the field, or save the realm turned off until you have it. |
+| `invalid sign-in environment: HOPPER_SIGN_IN_…` | A sign-in variable the hopper cannot use; the message names it and says why ([Sign-in from the environment](#sign-in-from-the-environment)). |
+| `environment variable … is not set; the realm's secret is taken from it into the database once` | A realm from before still names its secret's variable, and the daemon's environment lacks it: set it for one start, or turn the realm off with `hopper config set sign-in` and type the secret in Settings. |
 | "this change would end your own admin session" | You signed in with the realm (or the login code) the change turns off, or the change lowers your own role. Sign in as an admin another way, then make the change. |
 | Nobody can sign in as an admin any more | Turn the login code back on in [the sign-in config from the CLI](#the-sign-in-config-from-the-cli) on the daemon's host, restart it, then `hopper login-code`. |
-| LDAP: "sign-in could not be checked: <realm>: …" | The directory did not answer, or the search account's bind failed: check `url`, the certificate (`NODE_EXTRA_CA_CERTS`), `bindDn` and its variable. |
+| LDAP: "sign-in could not be checked: <realm>: …" | The directory did not answer, or the search account's bind failed: check `url`, the certificate (`NODE_EXTRA_CA_CERTS`), `bindDn` and its password. |
 | LDAP: "wrong username or password" for a real account | `userFilter` under `userBase` finds no entry, or finds two. Try the filter with `ldapsearch -H <url> -D <bindDn> -W -b <userBase> '<filter>'`. |
 | LDAP: groups do not match | Group values are full DNs, compared exactly, one per line in the rule. No `memberOf` on the entry: set a group search base. |
 | 429 "too many sign-in attempts" | Over 20 sign-in attempts a minute from one address. Wait a minute. |

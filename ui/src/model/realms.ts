@@ -1,10 +1,11 @@
 // A realm's form (issue #200, docs/sign-in.md): the fields of each realm type, and the conversion
 // between a realm's stored settings and the form's draft. A field left empty is left out, so the
-// daemon's default applies (shown as the placeholder). Role rules are rows — a role, what it matches,
-// one value per line — and a default role. Pure: the view renders it, the daemon checks the result.
+// daemon's default applies (shown as the placeholder). A secret (issue #216) is typed, never shown: left
+// empty it keeps the stored one, removed it is sent as null. Role rules are rows — a role, what it
+// matches, one value per line — and a default role. Pure: the view renders it, the daemon checks the result.
 import type { RealmSettings, RealmType, UiRole } from './wire';
 
-export type FieldKind = 'text' | 'multiline' | 'switch' | 'words';
+export type FieldKind = 'text' | 'multiline' | 'switch' | 'words' | 'secret';
 
 export interface RealmField {
   /** Where it sits in the settings: `url`, `attributes.email`. */
@@ -15,7 +16,6 @@ export interface RealmField {
   help?: string;
 }
 
-const secretHelp = 'the name of the daemon\'s environment variable that holds it; never the secret itself';
 
 export const REALM_FIELDS: Record<RealmType, RealmField[]> = {
   password: [],
@@ -23,7 +23,7 @@ export const REALM_FIELDS: Record<RealmType, RealmField[]> = {
     { path: 'url', label: 'Directory URL', kind: 'text', placeholder: 'ldaps://ldap.example.com' },
     { path: 'startTls', label: 'StartTLS', kind: 'switch', help: 'needed for a plain ldap:// URL that is not on this machine' },
     { path: 'bindDn', label: 'Bind DN', kind: 'text', placeholder: 'cn=hopper,ou=services,dc=example,dc=com', help: 'empty: an anonymous search' },
-    { path: 'bindPasswordEnv', label: 'Bind password variable', kind: 'text', placeholder: 'LDAP_BIND_PASSWORD', help: secretHelp },
+    { path: 'bindPassword', label: 'Bind password', kind: 'secret' },
     { path: 'userBase', label: 'User base', kind: 'text', placeholder: 'ou=people,dc=example,dc=com' },
     { path: 'userFilter', label: 'User filter', kind: 'text', placeholder: '(uid={username})' },
     { path: 'attributes.subject', label: 'Subject attribute', kind: 'text', placeholder: 'the entry\'s DN', help: 'a stable id, such as entryUUID or objectGUID' },
@@ -38,7 +38,7 @@ export const REALM_FIELDS: Record<RealmType, RealmField[]> = {
   oidc: [
     { path: 'issuer', label: 'Issuer URL', kind: 'text', placeholder: 'https://idp.example.com' },
     { path: 'clientId', label: 'Client ID', kind: 'text' },
-    { path: 'clientSecretEnv', label: 'Client secret variable', kind: 'text', placeholder: 'SSO_CLIENT_SECRET', help: `${secretHelp}; empty: a public client` },
+    { path: 'clientSecret', label: 'Client secret', kind: 'secret', help: 'none: a public client' },
     { path: 'scopes', label: 'Scopes', kind: 'words', placeholder: 'openid email profile' },
     { path: 'claims.email', label: 'Email claim', kind: 'text', placeholder: 'email' },
     { path: 'claims.username', label: 'Username claim', kind: 'text', placeholder: 'preferred_username' },
@@ -48,7 +48,7 @@ export const REALM_FIELDS: Record<RealmType, RealmField[]> = {
   ],
   github: [
     { path: 'clientId', label: 'Client ID', kind: 'text' },
-    { path: 'clientSecretEnv', label: 'Client secret variable', kind: 'text', placeholder: 'GITHUB_OAUTH_CLIENT_SECRET', help: secretHelp },
+    { path: 'clientSecret', label: 'Client secret', kind: 'secret' },
     { path: 'webUrl', label: 'GitHub URL', kind: 'text', placeholder: 'https://github.com' },
     { path: 'apiUrl', label: 'API URL', kind: 'text', placeholder: 'https://api.github.com' },
   ],
@@ -58,7 +58,7 @@ export const REALM_FIELDS: Record<RealmType, RealmField[]> = {
     { path: 'audience', label: 'Audience', kind: 'words', placeholder: 'hopper', help: 'a token must name one of these in aud; needed to check JWTs' },
     { path: 'header', label: 'Token header', kind: 'text', placeholder: 'authorization', help: 'the header the gateway forwards the token in; authorization carries "Bearer <token>"' },
     { path: 'clientId', label: 'Client ID', kind: 'text', help: 'introspection: the hopper\'s client at the issuer' },
-    { path: 'clientSecretEnv', label: 'Client secret variable', kind: 'text', placeholder: 'GATEWAY_CLIENT_SECRET', help: `introspection: ${secretHelp}` },
+    { path: 'clientSecret', label: 'Client secret', kind: 'secret', help: 'introspection: the hopper\'s client secret at the issuer' },
     { path: 'claims.email', label: 'Email claim', kind: 'text', placeholder: 'email' },
     { path: 'claims.username', label: 'Username claim', kind: 'text', placeholder: 'preferred_username' },
     { path: 'claims.name', label: 'Name claim', kind: 'text', placeholder: 'name' },
@@ -105,7 +105,10 @@ export interface RealmDraft {
   name: string;
   label: string;
   type: RealmType;
-  values: Record<string, string | boolean>;
+  /** A secret's value is only what was typed; null: remove the stored one. */
+  values: Record<string, string | boolean | null>;
+  /** The secrets the stored realm has. */
+  secrets: string[];
   rules: RoleRule[];
   /** '' : no default — someone no rule matches gets no session. */
   defaultRole: UiRole | '';
@@ -121,12 +124,13 @@ function setAt(o: Record<string, unknown>, path: string, value: unknown): void {
 }
 
 /** A new realm's draft. */
-export const emptyDraft = (type: RealmType): RealmDraft => ({ name: '', label: '', type, values: {}, rules: [], defaultRole: '' });
+export const emptyDraft = (type: RealmType): RealmDraft => ({ name: '', label: '', type, values: {}, secrets: [], rules: [], defaultRole: '' });
 
 /** The draft of a stored realm. */
-export function draftOf(r: { name: string; label: string; type: RealmType; settings: RealmSettings }): RealmDraft {
-  const values: Record<string, string | boolean> = {};
+export function draftOf(r: { name: string; label: string; type: RealmType; settings: RealmSettings; secrets: string[] }): RealmDraft {
+  const values: Record<string, string | boolean | null> = {};
   for (const f of REALM_FIELDS[r.type]) {
+    if (f.kind === 'secret') continue;
     const v = at(r.settings, f.path);
     if (v === undefined || v === null) continue;
     values[f.path] = f.kind === 'switch' ? v === true : Array.isArray(v) ? v.join(' ') : String(v);
@@ -136,7 +140,7 @@ export function draftOf(r: { name: string; label: string; type: RealmType; setti
     const list = roles[role]?.[match];
     return list?.length ? [{ role, match, values: list.join('\n') }] : [];
   }));
-  return { name: r.name, label: r.label === r.name ? '' : r.label, type: r.type, values, rules, defaultRole: roles.defaultRole ?? '' };
+  return { name: r.name, label: r.label === r.name ? '' : r.label, type: r.type, values, secrets: r.secrets, rules, defaultRole: roles.defaultRole ?? '' };
 }
 
 /** The realm a draft saves: name, label (when set), type, and the fields that are filled in. */
@@ -145,6 +149,7 @@ export function realmOf(d: RealmDraft): { name: string; label?: string; type: Re
   for (const f of REALM_FIELDS[d.type]) {
     const v = d.values[f.path];
     if (f.kind === 'switch') { if (v === true) setAt(settings, f.path, true); continue; }
+    if (f.kind === 'secret' && v === null) { setAt(settings, f.path, null); continue; }
     const text = typeof v === 'string' ? v.trim() : '';
     if (text === '') continue;
     setAt(settings, f.path, f.kind === 'words' ? text.split(/[\s,]+/).filter(Boolean) : text);

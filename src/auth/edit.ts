@@ -2,7 +2,9 @@
 // #200): one change — a realm added or replaced from its fields, removed, moved, turned on or off; the
 // login code and no sign-in set; a password account added, changed or removed. A new copy is answered;
 // the one given is left as it was. Whether the result loads is the caller's check (loadSignInConfig),
-// so one schema decides.
+// so one schema decides. A realm's secrets are written, never read back (issue #216): a save that
+// leaves one out keeps the stored one, `null` removes it, and the view names which are set.
+import { SECRET_SETTINGS } from './config.ts';
 import type { StoredAccount, StoredRealm, StoredSignIn } from '../domain/store.ts';
 import type { PasswordAccountView, RealmType, RealmView, UiRole } from '../domain/types.ts';
 
@@ -13,7 +15,10 @@ export class AuthEditError extends Error {
 
 /** One change. A password arrives hashed: the HTTP edge hashes it (argon2) before it gets here. */
 export type SignInEdit =
-  /** Add a realm, or replace the one named `name` (its name stays). A password realm's accounts are kept, never set here. */
+  /**
+   * Add a realm, or replace the one named `name` (its name stays). A password realm's accounts are kept, never set here.
+   * A secret left out keeps the stored one; `null` removes it.
+   */
   | { action: 'save'; name?: string; realm: { name: string; type: string } & Record<string, unknown> }
   | { action: 'remove'; name: string }
   /** Move to position `to` (0 first). */
@@ -26,6 +31,20 @@ export type SignInEdit =
   | { action: 'account-remove'; realm: string; username: string };
 
 const sameName = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();
+
+const secretsOf = (type: string): readonly string[] => SECRET_SETTINGS[type as RealmType] ?? [];
+
+/** The realm's fields with its secrets as the save says: given → set, null → gone, left out → kept from `before` (same type). */
+function withSecrets(fields: StoredRealm, before: StoredRealm | undefined): StoredRealm {
+  const out: StoredRealm = { ...fields };
+  for (const key of secretsOf(fields.type)) {
+    if (out[key] === null) delete out[key];
+    else if (out[key] === undefined && before?.type === fields.type && before[key] !== undefined) out[key] = before[key];
+  }
+  // A bind password is the bind DN's: an anonymous search keeps none.
+  if (fields.type === 'ldap' && out.bindDn === undefined) delete out.bindPassword;
+  return out;
+}
 
 function indexOf(realms: StoredRealm[], name: string): number {
   const i = realms.findIndex((r) => r.name === name);
@@ -52,14 +71,15 @@ export function editSignIn(current: StoredSignIn, edit: SignInEdit): StoredSignI
     const { users: _users, enabled: _enabled, ...fields } = edit.realm;
     if (edit.name === undefined) {
       if (realms.some((r) => r.name === fields.name)) throw new AuthEditError(400, `a realm ${fields.name} is already there`);
-      realms.push(fields.type === 'password' ? { ...fields, users: [] } : fields);
+      const added = withSecrets(fields, undefined);
+      realms.push(fields.type === 'password' ? { ...added, users: [] } : added);
     } else {
       const i = indexOf(realms, edit.name);
       // Its sign-ins are linked to users by name, and the identity provider holds its callback URL.
       if (fields.name !== edit.name) throw new AuthEditError(400, `a realm's name stays ${edit.name}: remove it and add a new one to rename it`);
       const before = realms[i]!;
       realms[i] = {
-        ...fields,
+        ...withSecrets(fields, before),
         ...(before.enabled === false ? { enabled: false } : {}),
         ...(fields.type === 'password' ? { users: before.type === 'password' ? before.users ?? [] : [] } : {}),
       };
@@ -98,16 +118,23 @@ export function accountOf(s: StoredSignIn, realm: string, username: string): Sto
   return s.realms.find((r) => r.name === realm)?.users?.find((u) => sameName(u.username, username));
 }
 
-type RealmRow = Omit<RealmView, 'callback' | 'metadata' | 'accounts'> & { accounts?: Omit<PasswordAccountView, 'user'>[] };
+type RealmRow = Omit<RealmView, 'callback' | 'metadata' | 'accounts' | 'environment'> & { accounts?: Omit<PasswordAccountView, 'user'>[] };
 
-/** The realms in order, each with its settings (a password realm with its accounts, never a hash), the login code and no sign-in. */
+/**
+ * The realms in order, each with its settings — never a secret: the names of those that are set — (a
+ * password realm with its accounts, never a hash), the login code and no sign-in.
+ */
 export function realmsView(s: StoredSignIn): { local: boolean; none: UiRole | null; realms: RealmRow[] } {
   return {
     local: s.local?.enabled !== false,
     none: s.none?.role ?? null,
-    realms: s.realms.map(({ name, type, label, enabled, users, ...settings }) => ({
-      name, label: label ?? name, type: type as RealmType, enabled: enabled !== false, settings,
-      ...(type === 'password' ? { accounts: (users ?? []).map((u) => ({ username: u.username, role: u.role })) } : {}),
-    })),
+    realms: s.realms.map(({ name, type, label, enabled, users, ...all }) => {
+      const settings = Object.fromEntries(Object.entries(all).filter(([k]) => !secretsOf(type).includes(k)));
+      return {
+        name, label: label ?? name, type: type as RealmType, enabled: enabled !== false, settings,
+        secrets: secretsOf(type).filter((k) => all[k] !== undefined),
+        ...(type === 'password' ? { accounts: (users ?? []).map((u) => ({ username: u.username, role: u.role })) } : {}),
+      };
+    }),
   };
 }

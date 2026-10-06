@@ -60,7 +60,8 @@ export interface PasswordAccountView {
 
 /**
  * A realm type's settings, by field (`issuer`, `clientId`, `attributes: { email }`, `roles`, …; every one:
- * docs/sign-in.md). A secret is never here: a setting names the variable that holds it.
+ * docs/sign-in.md). Read back, never a secret (`RealmView.secrets` names those set); saved, a secret
+ * (`clientSecret`, `bindPassword`) left out keeps the stored one and `null` removes it (issue #216).
  */
 export type RealmSettings = { [field: string]: unknown };
 
@@ -70,8 +71,12 @@ export interface RealmView {
   label: string;
   type: RealmType;
   enabled: boolean;
-  /** Its type's settings: what the realm's form shows and saves. */
+  /** Its type's settings: what the realm's form shows and saves. Never a secret. */
   settings: RealmSettings;
+  /** The secret settings that are set (`clientSecret`, `bindPassword`); their values are never answered. */
+  secrets: string[];
+  /** Set up by HOPPER_SIGN_IN_REALM_<NAME>_* variables: the next start sets it from them again (issue #216). */
+  environment?: boolean;
   /** A password realm: its accounts, by username. */
   accounts?: PasswordAccountView[];
   /** OIDC, GitHub, SAML: the callback URL to register with the identity provider. */

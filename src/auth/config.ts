@@ -4,8 +4,9 @@
 // Sign-in; an invalid one stops the daemon at start, naming the field, and is refused by the UI (sign-in
 // fails closed). None → the one-time login code only. `realms` is the ordered list of realms, each of a
 // realm type, on unless `enabled: false`; `local` (the login code) and `none` (no sign-in) are not realms.
-// A secret comes from the environment only (`clientSecretEnv`, `bindPasswordEnv`, design.md "Secrets"),
-// read only for a realm that is on; a SAML IdP certificate is public and sits inline.
+// A realm's secrets (`clientSecret`, `bindPassword`) are its own settings, set in the UI or from the
+// environment and stored with it (issue #216, design.md "Secrets"); a realm that is off need not have
+// them yet. A SAML IdP certificate is public and sits inline.
 import { z } from 'zod';
 import { FORM_REALM_TYPES, REDIRECT_REALM_TYPES, UI_ROLES, type RealmType, type UiRole } from '../domain/types.ts';
 import type { RoleRules } from './roles.ts';
@@ -20,7 +21,7 @@ export interface LdapRealmConfig extends RealmBase {
   startTls: boolean;
   /** Absent: an anonymous search. */
   bindDn?: string;
-  /** From `bindPasswordEnv`; absent with `bindDn`. Empty when the realm is off. */
+  /** Present with `bindDn` while the realm is on. */
   bindPassword?: string;
   userBase: string;
   /** `{username}` is replaced by the escaped username. */
@@ -47,7 +48,7 @@ export interface OidcRealmConfig extends RealmBase {
 export interface GithubRealmConfig extends RealmBase {
   type: 'github';
   clientId: string;
-  /** Empty when the realm is off. */
+  /** Empty only while the realm is off. */
   clientSecret: string;
   webUrl: string;
   apiUrl: string;
@@ -113,14 +114,13 @@ const roles = z.strictObject({
   admin: roleMatch.optional(), operator: roleMatch.optional(), viewer: roleMatch.optional(),
   defaultRole: z.enum(UI_ROLES).nullable().optional(),
 }).default({});
-const envName = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/, 'must be an environment variable name');
 const base = {
   name: z.string().regex(/^[a-z0-9][a-z0-9-]{0,31}$/, 'must be lowercase letters, digits and dashes (it is a URL path segment)')
     .refine((n) => !RESERVED.includes(n), `must not be ${RESERVED.join(' or ')}`),
   label: z.string().min(1).optional(),
   enabled: z.boolean().default(true),
 };
-const secret = { clientSecretEnv: envName.optional() };
+const secret = { clientSecret: z.string().min(1).optional() };
 const passwordUser = z.strictObject({
   username: z.string().min(1).max(128),
   passwordHash: z.string().startsWith('$argon2id$', 'must be an argon2id hash'),
@@ -131,7 +131,7 @@ const password = z.strictObject({ ...base, type: z.literal('password'), users: z
 const ldapUrl = z.string().refine((u) => { try { return ['ldap:', 'ldaps:'].includes(new URL(u).protocol); } catch { return false; } }, 'must be an ldap:// or ldaps:// URL');
 const ldap = z.strictObject({
   ...base, type: z.literal('ldap'), url: ldapUrl, startTls: z.boolean().default(false),
-  bindDn: z.string().min(1).optional(), bindPasswordEnv: envName.optional(),
+  bindDn: z.string().min(1).optional(), bindPassword: z.string().min(1).optional(),
   userBase: z.string().min(1),
   userFilter: z.string().includes('{username}', 'must contain {username}').default('(uid={username})'),
   attributes: z.strictObject({
@@ -190,16 +190,17 @@ const schema = z.strictObject({
   doc.realms.forEach((r, i) => {
     const at = (...path: (string | number)[]) => ['realms', i, ...path];
     if (doc.realms.findIndex((q) => q.name === r.name) !== i) ctx.addIssue({ code: 'custom', path: at('name'), message: `${r.name} is named twice; names must be unique` });
+    // A realm can be set up before its secret is at hand; it needs it to be on.
     if (r.type === 'gateway') {
       if (r.check === 'jwt' && !r.audience?.length) ctx.addIssue({ code: 'custom', path: at('audience'), message: 'checking JWTs needs audience: the aud values a token for the hopper carries' });
       if (r.check === 'introspection' && r.clientId === undefined) ctx.addIssue({ code: 'custom', path: at('clientId'), message: 'introspection needs clientId: the hopper\'s client at the issuer' });
-      if (r.check === 'introspection' && r.clientSecretEnv === undefined) ctx.addIssue({ code: 'custom', path: at('clientSecretEnv'), message: 'introspection needs clientSecretEnv: the variable holding the client secret' });
+      if (r.enabled && r.check === 'introspection' && r.clientSecret === undefined) ctx.addIssue({ code: 'custom', path: at('clientSecret'), message: 'introspection needs its client secret' });
     }
-    if (r.type === 'github' && r.clientSecretEnv === undefined) ctx.addIssue({ code: 'custom', path: at('clientSecretEnv'), message: 'GitHub needs clientSecretEnv: the variable holding its client secret' });
+    if (r.type === 'github' && r.enabled && r.clientSecret === undefined) ctx.addIssue({ code: 'custom', path: at('clientSecret'), message: 'GitHub needs its client secret' });
     if (r.type === 'ldap') {
       const u = new URL(r.url);
       if (u.protocol === 'ldap:' && !r.startTls && !LOOPBACK.includes(u.hostname)) ctx.addIssue({ code: 'custom', path: at('url'), message: 'must be ldaps://, or ldap:// with startTls: true (plain ldap only to 127.0.0.1 or localhost)' });
-      if (r.bindDn !== undefined && r.bindPasswordEnv === undefined) ctx.addIssue({ code: 'custom', path: at('bindPasswordEnv'), message: 'a bindDn needs bindPasswordEnv: the variable holding its password' });
+      if (r.enabled && r.bindDn !== undefined && r.bindPassword === undefined) ctx.addIssue({ code: 'custom', path: at('bindPassword'), message: 'a bindDn needs its bind password' });
     }
     if (r.type === 'password') {
       r.users.forEach((u, j) => {
@@ -211,45 +212,33 @@ const schema = z.strictObject({
   });
 });
 
-type Env = (name: string) => string | undefined;
 type ParsedRealm = z.output<typeof realm>;
 
-function readSecretEnv(env: Env, name: string, field: string): string {
-  const v = env(name);
-  if (v === undefined || v === '') throw new Error(`invalid sign-in config: ${field}: environment variable ${name} is not set`);
-  return v;
-}
-
-/** The realm with its label and, when it is on, its secret from the environment. */
-function resolve(r: ParsedRealm, i: number, env: Env): RealmConfig {
+/** The realm with its label. */
+function resolve(r: ParsedRealm): RealmConfig {
   const label = r.label ?? r.name;
-  const secretOf = (name: string | undefined, field: string): string | undefined =>
-    (name === undefined ? undefined : r.enabled ? readSecretEnv(env, name, `realms.${i}.${field}`) : '');
-  if (r.type === 'password' || r.type === 'saml') return { ...r, label };
-  if (r.type === 'ldap') {
-    const { bindPasswordEnv, ...rest } = r;
-    const s = secretOf(bindPasswordEnv, 'bindPasswordEnv');
-    return { ...rest, label, ...(s === undefined ? {} : { bindPassword: s }) };
-  }
-  const { clientSecretEnv, ...rest } = r;
-  const s = secretOf(clientSecretEnv, 'clientSecretEnv');
-  if (rest.type === 'gateway') return { ...rest, label, ...(s === undefined ? {} : { clientSecret: s }) };
-  return rest.type === 'github' ? { ...rest, label, clientSecret: s! } : { ...rest, label, ...(s === undefined ? {} : { clientSecret: s }) };
+  return r.type === 'github' ? { ...r, label, clientSecret: r.clientSecret ?? '' } : { ...r, label };
 }
 
-/** Why `raw` is not a valid sign-in config, or undefined; the variables it names are not checked. */
-export function signInConfigProblem(raw: unknown): string | undefined {
+/** What is wrong with `raw` as a sign-in config, each where it is; empty when it is valid. */
+export function signInConfigIssues(raw: unknown): { path: PropertyKey[]; message: string }[] {
   const r = schema.safeParse(raw ?? {});
-  return r.success ? undefined : r.error.issues.map((x) => `${x.path.join('.') || '(config)'}: ${x.message}`).join('; ');
+  return r.success ? [] : r.error.issues.map((x) => ({ path: x.path, message: x.message }));
 }
 
-/** The sign-in config (undefined: none yet → local sign-in only), its secrets from `env`. Throws on anything invalid. */
-export function loadSignInConfig(raw: unknown, env: Env): AuthConfig {
+/** Why `raw` is not a valid sign-in config, or undefined. */
+export function signInConfigProblem(raw: unknown): string | undefined {
+  const issues = signInConfigIssues(raw);
+  return issues.length ? issues.map((x) => `${x.path.map(String).join('.') || '(config)'}: ${x.message}`).join('; ') : undefined;
+}
+
+/** The sign-in config (undefined: none yet → local sign-in only). Throws on anything invalid. */
+export function loadSignInConfig(raw: unknown): AuthConfig {
   if (raw === undefined) return { local: { enabled: true }, none: null, realms: [] };
   const problem = signInConfigProblem(raw);
   if (problem) throw new Error(`invalid sign-in config: ${problem}`);
   const r = schema.parse(raw ?? {});
-  return { local: r.local, none: r.none ?? null, realms: r.realms.map((x, i) => resolve(x, i, env)) };
+  return { local: r.local, none: r.none ?? null, realms: r.realms.map(resolve) };
 }
 
 /** The realm types that send the browser to an identity provider. */
@@ -257,4 +246,9 @@ export const isRedirectRealm = (r: { type: RealmType }): r is OidcRealmConfig | 
 export const isGatewayRealm = (r: { type: RealmType }): r is GatewayRealmConfig => r.type === 'gateway';
 
 /** The realm types whose people sign in through the username and password form. */
+/** The settings of each realm type that are secrets: stored, never answered back (issue #216). */
+export const SECRET_SETTINGS: Readonly<Record<RealmType, readonly string[]>> = {
+  password: [], saml: [], ldap: ['bindPassword'], oidc: ['clientSecret'], github: ['clientSecret'], gateway: ['clientSecret'],
+};
+
 export const isFormRealm = (r: { type: RealmType }): r is PasswordRealmConfig | LdapRealmConfig => FORM_REALM_TYPES.includes(r.type);

@@ -16,7 +16,7 @@ const SIGN_IN: StoredSignIn = {
   local: { enabled: false },
   none: { role: 'operator' },
   realms: [
-    { name: 'gh', label: 'GitHub', type: 'github', clientId: 'g', clientSecretEnv: 'GH', roles: { admin: { subjects: ['1'] } } },
+    { name: 'gh', label: 'GitHub', type: 'github', clientId: 'g', clientSecret: 'gh-secret', roles: { admin: { subjects: ['1'] } } },
     { name: 'staff', type: 'password', enabled: false, users: [{ username: 'bea', passwordHash: HASH, role: 'admin' }, { username: 'ada', passwordHash: HASH, role: 'viewer' }] },
   ],
 };

@@ -23,7 +23,7 @@ import { useCanAdmin } from '@/store/selectors';
 import { RealmAccounts, SELECT, type AccountChange } from './realm-accounts';
 
 /** The editor: a realm being added (`editing` undefined) or changed (its name). */
-type Editing = { editing?: string; draft: RealmDraft };
+type Editing = { editing?: string; draft: RealmDraft; environment?: boolean };
 
 export function Realms() {
   const canAdmin = useCanAdmin();
@@ -84,7 +84,7 @@ export function Realms() {
                 <RealmRow key={r.name} realm={r} first={i === 0} last={i === view.realms.length - 1} busy={busy || editing !== null}
                   onEnable={(enabled) => void change({ action: 'enable', name: r.name, enabled, version })}
                   onMove={(to) => void change({ action: 'move', name: r.name, to, version })}
-                  onEdit={() => { setError(null); setEditing({ editing: r.name, draft: draftOf(r) }); }}
+                  onEdit={() => { setError(null); setEditing({ editing: r.name, draft: draftOf(r), ...(r.environment ? { environment: true } : {}) }); }}
                   onRemove={() => void change({ action: 'remove', name: r.name, version }, `${r.label} removed`)}
                   position={i}>
                   {r.type === 'password' && <RealmAccounts realm={r.name} accounts={r.accounts ?? []} users={users} busy={busy} change={accountChange} />}
@@ -130,6 +130,7 @@ function RealmRow({ realm: r, first, last, busy, position, onEnable, onMove, onE
         <StatusBadge status={r.type} tone="muted" />
         {r.label !== r.name && <span className="truncate font-mono text-xs text-muted-foreground">{r.name}</span>}
         {!r.enabled && <span className="text-xs text-muted-foreground">off</span>}
+        {r.environment && <span className="text-xs text-muted-foreground" title="HOPPER_SIGN_IN_REALM_* variables set it up: a change here lasts until the next start">set from the environment</span>}
         <span className="ml-auto flex items-center gap-0.5">
           <Button variant="ghost" size="icon-xs" aria-label="Move up" disabled={busy || first} onClick={() => onMove(position - 1)}><ArrowUp /></Button>
           <Button variant="ghost" size="icon-xs" aria-label="Move down" disabled={busy || last} onClick={() => onMove(position + 1)}><ArrowDown /></Button>
@@ -161,7 +162,25 @@ function RealmRow({ realm: r, first, last, busy, position, onEnable, onMove, onE
 
 const LABEL = 'grid gap-1 text-xs';
 
-function FieldInput({ f, value, disabled, set }: { f: RealmField; value: string | boolean | undefined; disabled: boolean; set: (v: string | boolean) => void }) {
+function SecretInput({ f, value, stored, disabled, set }: { f: RealmField; value: string | null | undefined; stored: boolean; disabled: boolean; set: (v: string | null) => void }) {
+  const removing = value === null;
+  const placeholder = removing ? 'removed when saved' : stored ? 'set — empty keeps it' : 'not set';
+  return (
+    <label className={LABEL}>
+      <span className="font-medium">{f.label}</span>
+      <span className="flex items-center gap-1">
+        <Input aria-label={f.label} type="password" autoComplete="new-password" spellCheck={false} className="font-mono text-xs" placeholder={placeholder}
+          value={typeof value === 'string' ? value : ''} disabled={disabled} onChange={(e) => set(e.target.value)} />
+        {stored && !removing && (
+          <Button type="button" variant="ghost" size="icon-xs" aria-label={`Remove ${f.label.toLowerCase()}`} disabled={disabled} onClick={() => set(null)}><X /></Button>
+        )}
+      </span>
+      <span className="text-muted-foreground">stored by the hopper, never shown again{f.help ? `; ${f.help}` : ''}</span>
+    </label>
+  );
+}
+
+function FieldInput({ f, value, disabled, set }: { f: RealmField; value: string | boolean | null | undefined; disabled: boolean; set: (v: string | boolean) => void }) {
   const help = f.help && <span className="text-muted-foreground">{f.help}</span>;
   if (f.kind === 'switch') {
     return (
@@ -247,14 +266,15 @@ function Editor({ editing, setEditing, error, busy, onSave, onCancel }: {
           <Input aria-label="Label" placeholder={draft.name || 'Company SSO'} value={draft.label} disabled={busy} onChange={(e) => set({ ...draft, label: e.target.value })} />
           <span className="text-muted-foreground">shown on the sign-in button; empty: the name</span>
         </label>
-        {REALM_FIELDS[draft.type].map((f) => (
-          <FieldInput key={f.path} f={f} value={draft.values[f.path]} disabled={busy} set={(v) => set({ ...draft, values: { ...draft.values, [f.path]: v } })} />
-        ))}
+        {REALM_FIELDS[draft.type].map((f) => (f.kind === 'secret'
+          ? <SecretInput key={f.path} f={f} value={draft.values[f.path] as string | null | undefined} stored={draft.secrets.includes(f.path)} disabled={busy}
+              set={(v) => set({ ...draft, values: { ...draft.values, [f.path]: v } })} />
+          : <FieldInput key={f.path} f={f} value={draft.values[f.path]} disabled={busy} set={(v) => set({ ...draft, values: { ...draft.values, [f.path]: v } })} />))}
         {draft.type === 'password'
           ? <p className="text-xs text-muted-foreground sm:col-span-2">Its accounts are added under the realm once it is saved: each with a username, a password and a role.</p>
           : <RoleRules draft={draft} set={set} disabled={busy} />}
       </div>
-      <p className="text-xs text-muted-foreground">Secrets are never entered here: name the daemon's environment variable that holds one, and set it where the daemon runs. Every setting: docs/sign-in.md in the hopper's install.</p>
+      <p className="text-xs text-muted-foreground">Every setting: docs/sign-in.md in the hopper's install.{editing.environment ? ' This realm is set up by the environment: the next start sets it from there again.' : ''}</p>
       {error && <div role="alert" className="rounded-md border border-destructive/40 bg-destructive/5 px-2 py-1.5 text-xs text-destructive">{error}</div>}
       <div className="flex gap-2">
         <Button type="submit" disabled={busy || !draft.name.trim()}>Save</Button>

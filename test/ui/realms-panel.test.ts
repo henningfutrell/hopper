@@ -16,9 +16,9 @@ let refuse: string | undefined;
 const VIEW = {
   version: 'v1', local: true, none: null, origin: 'http://localhost:4790',
   realms: [
-    { name: 'staff', label: 'Staff', type: 'password', enabled: true, settings: {}, accounts: [{ username: 'ada', role: 'viewer', user: { id: 'owner', name: 'owner' } }, { username: 'cy', role: 'viewer', user: { id: 'bea', name: 'Bea' } }] },
+    { name: 'staff', label: 'Staff', type: 'password', enabled: true, settings: {}, secrets: [], accounts: [{ username: 'ada', role: 'viewer', user: { id: 'owner', name: 'owner' } }, { username: 'cy', role: 'viewer', user: { id: 'bea', name: 'Bea' } }] },
     {
-      name: 'corp', label: 'Corp SSO', type: 'oidc', enabled: false, callback: 'http://localhost:4790/ui/auth/corp/callback',
+      name: 'corp', label: 'Corp SSO', type: 'oidc', enabled: false, callback: 'http://localhost:4790/ui/auth/corp/callback', secrets: ['clientSecret'],
       settings: { issuer: 'https://idp.example.com', clientId: 'c', roles: { admin: { emails: ['a@example.com'] }, defaultRole: 'viewer' } },
     },
   ],
@@ -119,14 +119,42 @@ describe('Settings: Sign-in', () => {
     expect(field('Default role').value).toBe('viewer');
     expect(field('Rule 1 values').value).toBe('a@example.com');
     await act(async () => type(field('Client ID'), 'hopper'));
-    await act(async () => type(field('Client secret variable'), 'SSO_SECRET'));
-    refuse = 'invalid sign-in config: realms.1.clientSecretEnv: environment variable SSO_SECRET is not set';
+    refuse = 'invalid sign-in config: realms.1.scopes: must not be empty';
     await click(buttonIn(document, 'Save'));
     await vi.waitFor(() => expect(posts).toContainEqual({
       action: 'save', name: 'corp', version: 'v1',
-      realm: { name: 'corp', label: 'Corp SSO', type: 'oidc', issuer: 'https://idp.example.com', clientId: 'hopper', clientSecretEnv: 'SSO_SECRET', roles: { admin: { emails: ['a@example.com'] }, defaultRole: 'viewer' } },
+      realm: { name: 'corp', label: 'Corp SSO', type: 'oidc', issuer: 'https://idp.example.com', clientId: 'hopper', roles: { admin: { emails: ['a@example.com'] }, defaultRole: 'viewer' } },
     }));
-    await vi.waitFor(() => expect(document.querySelector('[role="alert"]')?.textContent).toContain('SSO_SECRET is not set'));
+    await vi.waitFor(() => expect(document.querySelector('[role="alert"]')?.textContent).toContain('must not be empty'));
+  });
+
+  it('a secret is typed into a password field, never shown; empty keeps the stored one, Remove clears it (issue #216)', async () => {
+    await render('admin');
+    await vi.waitFor(() => expect(rows()).toHaveLength(2));
+    await click(buttonIn(row('corp'), 'Edit'));
+    const secret = field('Client secret');
+    expect(secret.type).toBe('password');
+    expect(secret.value).toBe('');
+    expect(secret.placeholder).toMatch(/set.*empty keeps it/i);
+    await act(async () => type(secret, 'typed-in'));
+    await click(buttonIn(document, 'Save'));
+    await vi.waitFor(() => expect(posts.at(-1)).toMatchObject({ action: 'save', realm: { clientSecret: 'typed-in' } }));
+    await click(buttonIn(row('corp'), 'Edit'));
+    await click(buttonIn(document, 'Remove client secret'));
+    await click(buttonIn(document, 'Save'));
+    await vi.waitFor(() => expect(posts.at(-1)).toMatchObject({ action: 'save', realm: { clientSecret: null } }));
+  });
+
+  it('a realm set up by the environment says so: the next start sets it again', async () => {
+    (VIEW.realms[1] as { environment?: boolean }).environment = true;
+    try {
+      await render('admin');
+      await vi.waitFor(() => expect(rows()).toHaveLength(2));
+      expect(row('corp').textContent).toContain('from the environment');
+      expect(row('staff').textContent).not.toContain('from the environment');
+    } finally {
+      delete (VIEW.realms[1] as { environment?: boolean }).environment;
+    }
   });
 
   it('a password realm lists its accounts and adds one, with its password, role and the admin\'s own user — never another user', async () => {

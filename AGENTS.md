@@ -51,7 +51,9 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   (issue #198) — and the webhook subscriptions, rows of its own. **Every secret comes from the runtime**
   (issue #56): the variable `NAME` or the mounted file `NAME_FILE` names (`src/secrets/runtime.ts`),
   named by a command-bearing option. The hopper stores no secret — not in the database, not in a file
-  of its own; a token or code it mints is only hashed (`docs/design.md` "Secrets"). No default names a path on one
+  of its own; a token or code it mints is only hashed (`docs/design.md` "Secrets"). One exception, by
+  owner direction (issue #216): a realm's own secrets (`clientSecret`, `bindPassword`) are stored in the
+  database, set in the UI or from the `HOPPER_SIGN_IN_*` environment, and never answered back by any route. No default names a path on one
   machine; the work dir (`HOPPER_WORK_DIR`) is scratch only. The operator CLI (`src/cli.ts`,
   `hopper`) writes the database directly: whoever runs it holds its credentials.
 - **Never write into the Jev repo.** The shim reads it; logs go to hopper's work dir.

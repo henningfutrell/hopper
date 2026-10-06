@@ -31,7 +31,7 @@ afterEach(() => stopAll(h));
 
 const dir = (extra: Record<string, unknown> = {}) => ({
   name: 'dir', label: 'Planet Express', type: 'ldap', url,
-  bindDn: `cn=admin,${BASE}`, bindPasswordEnv: 'LDAP_BIND_PASSWORD', userBase: PEOPLE,
+  bindDn: `cn=admin,${BASE}`, bindPassword: 'GoodNewsEveryone', userBase: PEOPLE,
   attributes: { subject: 'entryUUID', name: 'displayName' },
   roles: { admin: { groups: [ADMIN_STAFF] }, defaultRole: 'viewer' },
   ...extra,

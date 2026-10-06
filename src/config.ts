@@ -165,6 +165,13 @@ Secrets come from the environment too: NAME, or NAME_FILE naming a file holding 
 settings [default]:
 ${lines.join('\n')}
 
+Sign-in set up at launch (each also NAME_FILE; written to the database at every start; docs/sign-in.md):
+  HOPPER_SIGN_IN_REALM_<NAME>_TYPE        a realm: password, ldap, oidc, github or saml
+  HOPPER_SIGN_IN_REALM_<NAME>_<SETTING>   its settings: ISSUER, CLIENT_ID, CLIENT_SECRET, ROLES_ADMIN_GROUPS, …
+  HOPPER_SIGN_IN_LOCAL_ENABLED            the login code: true or false
+  HOPPER_SIGN_IN_NONE_ROLE                no sign-in: viewer, operator, admin or off
+  HOPPER_SIGN_IN_ADMIN_PASSWORD           the password fallback's password, when the start adds admin (else a random one, logged once)
+
 Once it runs (default port 4790):
   UI              http://127.0.0.1:4790/        sign in: hopper login-code --link http://127.0.0.1:4790
   API reference   http://127.0.0.1:4790/docs/
@@ -193,7 +200,8 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
   } catch (e) {
     throw new Error(`invalid configuration: ${(e as Error).message}`, { cause: e });
   }
-  const leftoverEnv = Object.fromEntries(set.filter(([k]) => !READ.has(k)));
+  // HOPPER_SIGN_IN_* set sign-in up; the daemon reads them at start (src/auth/environment.ts).
+  const leftoverEnv = Object.fromEntries(set.filter(([k]) => !READ.has(k) && !k.startsWith('HOPPER_SIGN_IN_')));
   const parsed = schema.safeParse(relevant);
   if (!parsed.success) {
     const problems = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');

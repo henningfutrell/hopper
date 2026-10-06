@@ -15,7 +15,7 @@ describe('the gateway realm type', () => {
 
   it('has a field for every setting, none for a secret itself', () => {
     expect(REALM_FIELDS.gateway.map((f) => f.path)).toEqual([
-      'issuer', 'check', 'audience', 'header', 'clientId', 'clientSecretEnv',
+      'issuer', 'check', 'audience', 'header', 'clientId', 'clientSecret',
       'claims.email', 'claims.username', 'claims.name', 'claims.groups', 'trustUnverifiedEmail',
     ]);
   });

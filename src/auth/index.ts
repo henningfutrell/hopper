@@ -35,6 +35,7 @@ export { SIGN_IN, loadSignInConfig, signInConfigProblem, type AuthConfig } from 
 export { accountOf, AuthEditError, editSignIn, realmsView, type SignInEdit } from './edit.ts';
 export { hasPasswordFallback, withPasswordFallback } from './fallback.ts';
 export { hashPassword, verifyPassword } from './password.ts';
+export { prepareSignIn } from './start.ts';
 
 const FLOW_MS = 10 * 60_000;
 const TICKET_MS = 2 * 60_000;

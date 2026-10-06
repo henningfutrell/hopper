@@ -1,8 +1,9 @@
 // Sign-in managed from Settings → Sign-in (issues #185, #198, #200, design.md "Sign-in: realms"): GET /api/realms
-// reads the realms, with each one's settings and a password realm's accounts (an instance read: an
-// admin session, or loopback without one), and `realmsAdmin.edit` behind POST /ui/api/realms (src/http/ui/)
-// makes one change. A password is hashed here (argon2) and only the hash is stored. A change is loaded
-// with its secrets before it is stored — settings that would not load are refused, naming the field —
+// reads the realms, with each one's settings — never a secret — and a password realm's accounts (an
+// instance read: an admin session, or loopback without one), and `realmsAdmin.edit` behind POST
+// /ui/api/realms (src/http/ui/) makes one change. A password is hashed here (argon2) and only the hash is
+// stored; a realm's secrets are stored as typed (issue #216). A change is loaded before it is stored —
+// settings that would not load are refused, naming the field —
 // then written against the version read, applied to sign-in at once, and applied to the stored sessions
 // as a start would. A change that would leave the acting session without admin is refused: nobody
 // locks themselves out from the UI. So is one that would leave no admin account in a password realm
@@ -38,7 +39,10 @@ const NOT_YOURS = 'signs in as another user: only that user changes its password
 const MOVED = 'the sign-in config changed since they were read: reload and make the change again';
 
 export function createRealmsAdmin(o: {
-  instance: Pick<InstanceStore, 'signInConfig' | 'identities' | 'users' | 'tx'>; secret: (name: string) => string | undefined; signIn: SignIn; sessions: UiSessions;
+  instance: Pick<InstanceStore, 'signInConfig' | 'identities' | 'users' | 'settings' | 'tx'>;
+  /** The realms the environment set up at start. */
+  environment: string[];
+  signIn: SignIn; sessions: UiSessions;
 }): RealmsAdmin {
   const store = o.instance.signInConfig;
   /** The user an account signs in as, when it is linked to one. */
@@ -52,7 +56,8 @@ export function createRealmsAdmin(o: {
     const v = realmsView(store.read());
     return {
       version: store.version(), local: v.local, none: v.none, origin,
-      realms: v.realms.map((r) => {
+      realms: v.realms.map((row) => {
+        const r = o.environment.includes(row.name) ? { ...row, environment: true } : row;
         if (r.type === 'password') return { ...r, accounts: (r.accounts ?? []).map((a) => ({ ...a, ...userOf(r.name, a.username) })) };
         if (r.type === 'ldap' || r.type === 'gateway') return r;
         const urls = { callback: `${origin}/ui/auth/${r.name}/callback` };
@@ -101,7 +106,7 @@ export function createRealmsAdmin(o: {
       }
       let config;
       try {
-        config = loadSignInConfig(next, o.secret);
+        config = loadSignInConfig(next);
       } catch (e) {
         throw new HttpError(400, (e as Error).message);
       }
@@ -132,7 +137,7 @@ export function createRealmsAdmin(o: {
       if (!await verifyPassword(account.passwordHash, current)) throw new HttpError(400, 'the current password is wrong');
       const version = store.version();
       const next = editSignIn(before, { action: 'account', realm: actor.realm, username: account.username, role: account.role, passwordHash: await hashPassword(password) });
-      const config = loadSignInConfig(next, o.secret);
+      const config = loadSignInConfig(next);
       if (!store.write(next, version)) throw new HttpError(409, MOVED);
       o.signIn.apply(config);
       const ended = o.sessions.endOthers(actor, keep);
