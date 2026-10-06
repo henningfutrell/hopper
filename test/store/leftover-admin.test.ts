@@ -38,16 +38,17 @@ function twoUsers(o: { recordAdmin?: boolean } = {}) {
   instance.identities.link('github', '42', octoUser.id);
   const octo = instance.userStore(octoUser);
   const octoJob = octo.jobs.create(spec, 60);
-  octo.events.append({ type: 'job.queued', jobId: octoJob.id, data: {} });
+  const octoEvent = octo.events.append({ type: 'job.queued', jobId: octoJob.id, data: {} });
   octo.config.write('rules', 'octo rules', 'missing');
   octo.config.write('plugins', {
     version: 1,
     machines: [{ name: 'local', plugin: 'local', options: { lanes: 2, session: 'octo' } }],
     jobSources: [{ name: 'github-account', plugin: 'github-account', options: {} }],
   }, octo.config.version('plugins'));
-  octo.settings.setQueueGate({ mode: 'auto', autoAcceptPerHour: 5 });
+  octo.settings.setQueueGate({ mode: 'auto-accept', autoAcceptPerHour: 5 });
   octo.webhooks.add({ name: 'hook', url: 'http://127.0.0.1:1/octo', events: ['job.*'], secretEnv: 'S', active: true });
-  octo.webhooks.add({ name: 'octo-hook', url: 'http://127.0.0.1:1/octo-2', events: ['job.*'], secretEnv: 'S', active: true });
+  const octoHook = octo.webhooks.add({ name: 'octo-hook', url: 'http://127.0.0.1:1/octo-2', events: ['job.*'], secretEnv: 'S', active: true })!;
+  const delivery = octo.webhooks.createDelivery(octoHook.id, octoEvent);
   octo.connectedAccounts.put({ provider: 'github', account: 'octo', subject: '42', accessToken: 'tok', connectedAt: NOW });
   octo.close();
 
@@ -57,12 +58,12 @@ function twoUsers(o: { recordAdmin?: boolean } = {}) {
     const store = instance.signInConfig;
     expect(store.write({ ...store.read(), githubAdmin: { realm: 'github', subject: '42' } }, store.version())).toBe(true);
   }
-  return { url, instance, adminJob, adminQuestion, octoJob };
+  return { url, instance, adminJob, adminQuestion, octoJob, octoEvent, delivery };
 }
 
 describe('the leftover default admin account is folded into the first GitHub admin\'s user (issue #265)', () => {
   it('leaves one user, the real one, holding everything both held', () => {
-    const { url, instance, adminJob, adminQuestion, octoJob } = twoUsers();
+    const { url, instance, adminJob, adminQuestion, octoJob, octoEvent, delivery } = twoUsers();
     expect(foldLeftoverAdmin(instance)).toEqual({ from: 'admin', into: 'octo' });
 
     expect(instance.users.list()).toEqual([expect.objectContaining({ id: 'octo', name: 'octo' })]);
@@ -87,6 +88,9 @@ describe('the leftover default admin account is folded into the first GitHub adm
     });
     expect(store.settings.getQueueGate()).toEqual({ mode: 'review', autoAcceptPerHour: null });
     expect(store.webhooks.list().map((w) => [w.name, w.url]).sort()).toEqual([['hook', 'http://127.0.0.1:1/admin'], ['octo-hook', 'http://127.0.0.1:1/octo-2']]);
+    // A pending delivery goes with its subscription, naming its event where it now is.
+    const moved = store.events.since(0).find((e) => e.id === octoEvent.id)!;
+    expect(store.webhooks.dueDeliveries(new Date(FUTURE))).toEqual([expect.objectContaining({ id: delivery.id, eventSeq: moved.seq })]);
     // The real user's own GitHub connection stays theirs.
     expect(store.connectedAccounts.get('github')).toMatchObject({ account: 'octo', accessToken: 'tok' });
     // New rows go on after everything moved.

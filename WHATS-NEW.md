@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- The old built-in user from before GitHub sign-in is gone: everything it held now belongs to you, the admin who signed in with GitHub, and Settings → Users lists only real people.
 - An install or update can no longer leave the hopper's pages unstyled: a version whose look did not build properly is refused, and the running one stays.
 - The sign-in page has a fresh look: on a wide screen it shows what the hopper does in three steps beside the sign-in, over a backdrop of jobs moving along their lanes.
 - Someone you add with a login link sets up everything of their own, but only the hopper's admins manage sign-in, users, updates and the plugin store.

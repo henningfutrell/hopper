@@ -21,6 +21,7 @@ import { createInstallScriptBuilder, createRestarter, createUpdater, renameBoot,
 import { userForIdentity } from './users/identities.ts';
 import type { UserRuntime, UserSeams } from './users/runtime.ts';
 import { createRuntimes } from './users/runtimes.ts';
+import { foldLeftoverAdmin } from './users/leftover-admin.ts';
 
 export type { UserSeams } from './users/runtime.ts';
 
@@ -93,6 +94,14 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   let signInEnvironment: string[];
   try {
     ({ config: auth, environment: signInEnvironment } = prepareSignIn({ instance, env, secret: runtimeSecrets(env), logger }));
+  } catch (e) {
+    instance.close();
+    throw e;
+  }
+  // The leftover default admin account goes into the first GitHub admin's user (issue #265), before any runtime.
+  try {
+    const folded = foldLeftoverAdmin(instance);
+    if (folded) logger.info(`hopper: the leftover user ${folded.from} is folded into ${folded.into}, the first GitHub admin's user: its work is theirs`);
   } catch (e) {
     instance.close();
     throw e;
