@@ -18,8 +18,8 @@ export interface PluginsDoc {
 }
 
 /**
- * The built-in instances. Neither GitHub source runs until the plugins config names its `authors` (no
- * default); the App also needs its `appId` and key. Secrets come from the environment, named by the options (design.md "Secrets").
+ * The built-in instances. A connected account's source reads its own issues once the user connects it
+ * (issue #214). The gh source does not run until the plugins config names its `authors` (no default). Secrets come from the environment, named by the options (design.md "Secrets").
  * `herdrSession`: a user's own herdr session (issue #158), named on the herdr-claude instance; absent: the plugin's default.
  */
 export function builtinInstances(answerTimeoutMs = 180_000, localMachine = true, herdrSession?: string): PluginsDoc {
@@ -39,11 +39,12 @@ export function builtinInstances(answerTimeoutMs = 180_000, localMachine = true,
       { name: 'test', plugin: 'test' },
       { name: 'herdr-claude', plugin: 'herdr-claude', ...(herdrSession ? { options: { session: herdrSession } } : {}) },
     ],
-    // The names stay `github` and `github-app`: jobs and sync state are keyed by them. The gh CLI is
-    // the default (issue #108): `auto` pauses it once this install's own GitHub App key is set.
+    // The GitHub account the user signs in with or connects (issue #214), paused until it is connected. The gh CLI (issue #108), named `github` (jobs and sync state are keyed by it), is
+    // paused by `auto` while a GitHub account is connected. The app-as-itself source (`github-app`, an
+    // admin's own GitHub App and its private key) is no built-in: an admin adds it where it suits.
     jobSources: [
+      { name: 'github-account', plugin: 'github-account' },
       { name: 'github', plugin: 'github-gh', options: { enabled: 'auto' } },
-      { name: 'github-app', plugin: 'github-app' },
     ],
     // This machine; attached machines are added beside it (issue #74). None where this host is not
     // a machine (the container, issue #141).

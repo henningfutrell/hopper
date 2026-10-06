@@ -21,13 +21,13 @@ import { PLUGINS, loadPluginsConfig } from './plugins-config.ts';
 import { applyExecutorSpecs, executorStatus, type BuiltExecutor } from './executor-slot.ts';
 import { builtinInstances } from './builtin-instances.ts';
 import { buildNotifiers, startNotifiers, stopNotifiers } from './notifier-slot.ts';
-import { applyMachineSpecs, buildJobSources, buildUsageSources, instanceStatus, type Built, type BuiltJobSource } from './source-slots.ts';
+import { NO_SOURCE_CONTEXT, applyMachineSpecs, buildJobSources, buildUsageSources, instanceStatus, type Built, type BuiltJobSource } from './source-slots.ts';
 import { targetOf } from './machine-source/targets.ts';
 import { createTargetPool } from '../machines/index.ts';
 import { buildQueueSorter, createLiveQueueSorter, type LiveQueueSorter } from './queue-sorter-slot.ts';
 import { buildLevel, levelStatus, type BuiltLevel } from './level-slot.ts';
 import { buildRouter, createLiveRouter, detectRouter, safeDetect, type BuiltRouter, type LiveRouter, type SlotDeps } from './router-slot.ts';
-import type { JobSourceContext, PluginDefinition } from './sdk.ts';
+import type { PluginDefinition } from './sdk.ts';
 import type { PluginHost, PluginHostOptions } from './host-types.ts';
 
 export type { PluginHost, PluginHostOptions } from './host-types.ts';
@@ -52,7 +52,6 @@ function restartStatus<B extends { spec: InstanceSpec }>(slot: RestartSlot<B>, s
   };
 }
 
-const NO_SOURCE_CONTEXT: JobSourceContext = { knownKeys: () => new Set(), rerunnable: () => new Set() };
 
 export function createPluginHost(o: PluginHostOptions): PluginHost {
   const kit = o.kit ?? createDetectionKit();

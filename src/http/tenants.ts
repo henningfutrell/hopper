@@ -4,7 +4,7 @@
 // reads another user's work (issue #221, design.md "What an admin sees"). A LAN or public request
 // without a session never gets this far for /api/ (the Host guard answers 401).
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import type { GhLogin, PluginsView, QuestionService, SourceRegistry, UserStore, WebhookDispatcher } from '../domain/ports.ts';
+import type { ConnectedAccounts, GhLogin, PluginsView, QuestionService, SourceRegistry, UserStore, WebhookDispatcher } from '../domain/ports.ts';
 import type { Identity, User } from '../domain/types.ts';
 import type { Engine } from '../engine/index.ts';
 import type { WebhooksEditor } from '../webhooks/edit.ts';
@@ -24,6 +24,8 @@ export interface TenantParts {
   plugins: PluginsView;
   dispatcher: WebhookDispatcher;
   ghLogin: GhLogin;
+  /** The user's connected GitHub account (issue #214). */
+  connectedAccounts: ConnectedAccounts;
   webhooksEditor: WebhooksEditor;
   /** Why the user's runtime gives no secret for a webhook subscription's variable. */
   secretProblem: SecretProblem;

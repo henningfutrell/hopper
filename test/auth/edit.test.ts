@@ -92,8 +92,8 @@ describe('editSignIn: a realm\'s secrets (issue #216)', () => {
   });
 
   it('a new realm stores the secret it is given', () => {
-    const after = editSignIn(SIGN_IN, { action: 'save', realm: { name: 'gh', type: 'github', clientId: 'g', clientSecret: 'gh-secret' } });
-    expect(after.realms[3]).toEqual({ name: 'gh', type: 'github', clientId: 'g', clientSecret: 'gh-secret' });
+    const after = editSignIn(SIGN_IN, { action: 'save', realm: { name: 'corp2', type: 'oidc', issuer: 'https://idp', clientId: 'g', clientSecret: 'oidc-secret' } });
+    expect(after.realms[3]).toEqual({ name: 'corp2', type: 'oidc', issuer: 'https://idp', clientId: 'g', clientSecret: 'oidc-secret' });
   });
 
   it('an ldap realm keeps its bind password only while it has a bind DN', () => {

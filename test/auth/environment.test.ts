@@ -45,7 +45,7 @@ describe('readSignInEnvironment', () => {
   it('a realm name\'s underscores are dashes; realms come in name order', () => {
     const e = readSignInEnvironment({
       ...CORP,
-      HOPPER_SIGN_IN_REALM_ACME_GH_TYPE: 'github', HOPPER_SIGN_IN_REALM_ACME_GH_CLIENT_ID: 'g', HOPPER_SIGN_IN_REALM_ACME_GH_CLIENT_SECRET: 's',
+      HOPPER_SIGN_IN_REALM_ACME_GH_TYPE: 'github',
       HOPPER_SIGN_IN_REALM_ACME_GH_ENABLED: 'false',
     });
     expect(e.realms.map((r) => [r.name, r.enabled])).toEqual([['acme-gh', false], ['corp', undefined]]);
@@ -93,7 +93,8 @@ describe('readSignInEnvironment', () => {
     ['a realm without its type', { HOPPER_SIGN_IN_REALM_X_ISSUER: 'https://idp' }, /HOPPER_SIGN_IN_REALM_X_ISSUER.*HOPPER_SIGN_IN_REALM_<NAME>_TYPE/],
     ['an unknown type', { HOPPER_SIGN_IN_REALM_X_TYPE: 'kerberos' }, /HOPPER_SIGN_IN_REALM_X_TYPE/],
     ['a value the realm refuses', { ...CORP, HOPPER_SIGN_IN_REALM_CORP_ISSUER: 'http://idp.example.com' }, /HOPPER_SIGN_IN_REALM_CORP_ISSUER.*https/],
-    ['a missing setting', { HOPPER_SIGN_IN_REALM_GH_TYPE: 'github', HOPPER_SIGN_IN_REALM_GH_CLIENT_SECRET: 's' }, /HOPPER_SIGN_IN_REALM_GH_CLIENT_ID/],
+    ['a missing setting', { HOPPER_SIGN_IN_REALM_CORP_TYPE: 'oidc', HOPPER_SIGN_IN_REALM_CORP_CLIENT_SECRET: 's' }, /HOPPER_SIGN_IN_REALM_CORP_(ISSUER|CLIENT_ID)/],
+    ['an app of its own on a github realm (issue #214: the hopper\'s app)', { HOPPER_SIGN_IN_REALM_GH_TYPE: 'github', HOPPER_SIGN_IN_REALM_GH_CLIENT_ID: 'g' }, /HOPPER_SIGN_IN_REALM_GH_CLIENT_ID/],
     ['a switch that is not true or false', { ...CORP, HOPPER_SIGN_IN_REALM_CORP_ENABLED: 'yes' }, /HOPPER_SIGN_IN_REALM_CORP_ENABLED.*true or false/],
     ['an unknown role', { HOPPER_SIGN_IN_NONE_ROLE: 'owner' }, /HOPPER_SIGN_IN_NONE_ROLE/],
     ['an admin password: there is no password user realm', { HOPPER_SIGN_IN_ADMIN_PASSWORD: 'long enough' }, /HOPPER_SIGN_IN_ADMIN_PASSWORD.*unknown/],
@@ -116,13 +117,13 @@ describe('applySignInEnvironment', () => {
   };
 
   it('an environment realm replaces the stored realm of its name, in its place; a new one is added at the end; the rest stay', () => {
-    const env = readSignInEnvironment({ ...CORP, HOPPER_SIGN_IN_REALM_GH_TYPE: 'github', HOPPER_SIGN_IN_REALM_GH_CLIENT_ID: 'g', HOPPER_SIGN_IN_REALM_GH_CLIENT_SECRET: 's' });
+    const env = readSignInEnvironment({ ...CORP, HOPPER_SIGN_IN_REALM_GH_TYPE: 'github', HOPPER_SIGN_IN_REALM_GH_ROLES_ADMIN_USERNAMES: 'octo' });
     const after = applySignInEnvironment(STORED, env);
     expect(after.realms).toEqual([
       STORED.realms[0],
       { name: 'corp', label: 'Corp SSO', type: 'oidc', issuer: 'https://idp.example.com', clientId: 'hopper', clientSecret: 'shh' },
       STORED.realms[2],
-      { name: 'gh', type: 'github', clientId: 'g', clientSecret: 's' },
+      { name: 'gh', type: 'github', roles: { admin: { usernames: ['octo'] } } },
     ]);
   });
 

@@ -5,6 +5,7 @@
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';
+import { hopperApps, type HopperApps } from './connected-accounts/hopper-app.ts';
 import { runtimeSecrets } from './secrets/runtime.ts';
 import { parseDatabaseUrl } from './store/db.ts';
 
@@ -54,6 +55,8 @@ export interface Config {
    * daemon warns about them at boot.
    */
   leftoverEnv: Record<string, string>;
+  /** The hopper's app — its GitHub App — people sign in and connect through (issue #214): the shipped one unless the environment names another. */
+  hopperApps: HopperApps;
 }
 
 const int = (min: number, max = Number.MAX_SAFE_INTEGER) => z.coerce.number().int().min(min).max(max);
@@ -98,6 +101,9 @@ const schema = z.object({
   HOPPER_PLUGIN_STORE: z.string().min(1).optional(),
   HOPPER_UPDATE_CHECK_MS: int(0).default(60000),
   HOPPER_RESTART: z.enum(['exit', 'respawn']).optional(),
+  HOPPER_GITHUB_URL: z.url({ protocol: /^https?$/, error: 'must be an http(s) URL' }).optional(),
+  HOPPER_GITHUB_CLIENT_ID: z.string().min(1).optional(),
+  HOPPER_GITHUB_APP_SLUG: z.string().regex(/^[a-z0-9][a-z0-9-]*$/, 'a GitHub App slug: lowercase letters, digits and dashes').optional(),
 }).refine((e) => e.HOPPER_SOFT_LIMIT < e.HOPPER_HARD_LIMIT, {
   message: 'must be below HOPPER_HARD_LIMIT',
   path: ['HOPPER_SOFT_LIMIT'],
@@ -135,6 +141,9 @@ const SETTING_HELP: Record<keyof typeof schema.shape, string> = {
   HOPPER_UI_SESSION_HOURS: 'lifetime of a UI session',
   HOPPER_UPDATE_CHECK_MS: 'how often self-update checks for a newer version; 0: only when asked',
   HOPPER_RESTART: 'how the daemon starts again after an update: exit (a supervisor restarts it) or respawn. Unset: detected',
+  HOPPER_GITHUB_URL: 'the GitHub people sign in with and connect (a GitHub Enterprise origin). Unset: https://github.com',
+  HOPPER_GITHUB_CLIENT_ID: 'the client id of the GitHub App (device flow on) people sign in and connect through. Unset: the hopper\'s own',
+  HOPPER_GITHUB_APP_SLUG: 'that GitHub App\'s slug, for its install link. Unset: the hopper\'s own',
 };
 
 /** Every setting the daemon reads: name, default (`required`, `unset` or the value), what it does. */
@@ -231,5 +240,11 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     updateCheckMs: e.HOPPER_UPDATE_CHECK_MS,
     ...(e.HOPPER_RESTART ? { restart: e.HOPPER_RESTART } : {}),
     leftoverEnv,
+    hopperApps: hopperApps({
+      github: {
+        ...(e.HOPPER_GITHUB_URL ? { url: e.HOPPER_GITHUB_URL } : {}), ...(e.HOPPER_GITHUB_CLIENT_ID ? { clientId: e.HOPPER_GITHUB_CLIENT_ID } : {}),
+        ...(e.HOPPER_GITHUB_APP_SLUG ? { slug: e.HOPPER_GITHUB_APP_SLUG } : {}),
+      }
+    }),
   };
 }

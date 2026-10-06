@@ -8,7 +8,7 @@
 // search), and tells hopper comments by the bot author (marker secondary).
 
 import type { Clock, JobSource, SourceItem } from '../../domain/ports.ts';
-import { TERMINAL_STATUSES, type Account } from '../../domain/types.ts';
+import { CONNECTED_VIA, TERMINAL_STATUSES, type Account } from '../../domain/types.ts';
 import type { GitHubApi, GitHubIssue } from './api.ts';
 import type { GitHubSourceConfig } from '../config.ts';
 import { checkJobs } from './check.ts';
@@ -77,8 +77,9 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     return knownBot;
   };
 
+  /** gh: no owners and no repos means the gh user's own repos. A connected account's: anywhere, by its authors. */
   const ghScope = async (): Promise<DiscoverScope> => {
-    if (owners.length === 0 && config.repos.length === 0) {
+    if (mode === 'gh' && owners.length === 0 && config.repos.length === 0) {
       login ??= await api.whoami();
       owners = [login];
     }
@@ -138,7 +139,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     const problem = paused ?? (typeof detail.appError === 'string' ? detail.appError : undefined);
     return {
       service: 'github', ...(identity ? { identity } : {}),
-      detail: app ? { via: 'GitHub App', ...(typeof detail.slug === 'string' ? { app: detail.slug } : {}), installedRepos } : { via: 'gh CLI' },
+      detail: app ? { via: 'GitHub App', ...(typeof detail.slug === 'string' ? { app: detail.slug } : {}), installedRepos } : { via: mode === 'account' ? CONNECTED_VIA : 'gh CLI' },
       ...(problem ? { problem } : {}),
     };
   };
@@ -149,7 +150,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     ...(o.paused ? { paused: o.paused } : {}),
     describe() {
       const paused = o.paused?.();
-      const detail = app ? appDetail() : { mode: 'gh', enabledSetting: String(config.enabled ?? true), owners, ...(login ? { login } : {}) };
+      const detail = app ? appDetail() : mode === 'account' ? { mode, owners, ...(login ? { login } : {}) } : { mode: 'gh', enabledSetting: String(config.enabled ?? true), owners, ...(login ? { login } : {}) };
       return {
         ...detail,
         account: account(paused, detail),

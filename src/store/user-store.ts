@@ -5,6 +5,7 @@ import { createContext } from './context.ts';
 import { openDb } from './db.ts';
 import { createDecisionRepository } from './decisions.ts';
 import { createConfigRecords } from './config.ts';
+import { createConnectedAccountRepository } from './connected-accounts.ts';
 import { createEventLog } from './events.ts';
 import { createJobRepository } from './jobs.ts';
 import { createLaneRepository } from './lanes.ts';
@@ -41,6 +42,7 @@ export function openUserStore(o: { url: string; clock: Clock; idGen: IdGen }): U
     webhooks: createWebhookRepository(ctx),
     questions: createQuestionRepository(ctx),
     settings: createUserSettingsRepository(ctx),
+    connectedAccounts: createConnectedAccountRepository(ctx),
     config: createConfigRecords(ctx, USER_CONFIG),
     tx: ctx.tx,
     close: () => db.close(),

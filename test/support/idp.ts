@@ -1,10 +1,9 @@
-// Identity providers for sign-in tests, all on loopback: an OIDC issuer (oauth2-mock-server), a
-// GitHub OAuth fake, and a SAML IdP that signs responses with a throwaway key (openssl). Plus
+// Identity providers for sign-in tests, all on loopback: an OIDC issuer (oauth2-mock-server) and a
+// SAML IdP that signs responses with a throwaway key (openssl). Plus
 // `signIn`, which drives a whole browser sign-in through the daemon's HTTP routes.
 import { execFileSync } from 'node:child_process';
-import { createHash, randomBytes } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { inflateRawSync } from 'node:zlib';
@@ -40,68 +39,6 @@ export async function startOidcIdp(): Promise<OidcIdp> {
   server.service.on('beforeTokenSigning', (token: { payload: Record<string, unknown> }) => { Object.assign(token.payload, idp.claims); });
   server.service.on('beforeUserinfo', (res: { body: Record<string, unknown> }) => { Object.assign(res.body, idp.userinfo); });
   return idp;
-}
-
-// ---- GitHub --------------------------------------------------------------------------------
-
-export interface GithubFake {
-  url: string;
-  user: { id: number; login: string; name: string | null };
-  emails: { email: string; primary: boolean; verified: boolean }[];
-  teams: { slug: string; organization: { login: string } }[];
-  /** The scope of the last authorize request. */
-  lastScope?: string;
-  stop(): Promise<void>;
-}
-
-/** GitHub's OAuth web flow and the three REST reads, web and API on one loopback server. */
-export async function startGithubFake(): Promise<GithubFake> {
-  const codes = new Map<string, string>(); // code → code_challenge
-  const token = randomBytes(16).toString('hex');
-  const fake = {
-    url: '', user: { id: 4242, login: 'octo', name: 'Octo Cat' },
-    emails: [{ email: 'octo@example.com', primary: true, verified: true }], teams: [] as GithubFake['teams'],
-  } as GithubFake;
-  const server: Server = createServer((req, res) => {
-    const u = new URL(req.url!, 'http://x');
-    const json = (status: number, body: unknown) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(body)); };
-    if (u.pathname === '/login/oauth/authorize') {
-      fake.lastScope = u.searchParams.get('scope') ?? '';
-      const code = randomBytes(8).toString('hex');
-      codes.set(code, u.searchParams.get('code_challenge') ?? '');
-      const back = new URL(u.searchParams.get('redirect_uri')!);
-      back.searchParams.set('code', code);
-      back.searchParams.set('state', u.searchParams.get('state')!);
-      res.writeHead(302, { location: back.href });
-      res.end();
-      return;
-    }
-    if (u.pathname === '/login/oauth/access_token') {
-      let body = '';
-      req.on('data', (c: Buffer) => (body += c.toString()));
-      req.on('end', () => {
-        const p = new URLSearchParams(body);
-        const challenge = codes.get(p.get('code') ?? '');
-        const verifier = p.get('code_verifier') ?? '';
-        if (challenge === undefined || createHash('sha256').update(verifier).digest('base64url') !== challenge || p.get('client_secret') !== 'gh-secret') {
-          json(200, { error: 'bad_verification_code' });
-          return;
-        }
-        codes.delete(p.get('code')!);
-        json(200, { access_token: token, token_type: 'bearer', scope: fake.lastScope });
-      });
-      return;
-    }
-    if (req.headers.authorization !== `Bearer ${token}`) { json(401, { message: 'Bad credentials' }); return; }
-    if (u.pathname === '/user') { json(200, fake.user); return; }
-    if (u.pathname === '/user/emails') { json(200, fake.emails); return; }
-    if (u.pathname === '/user/teams') { json(200, fake.teams); return; }
-    json(404, { message: 'Not Found' });
-  });
-  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
-  fake.url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
-  fake.stop = () => new Promise<void>((r) => { server.closeAllConnections(); server.close(() => r()); });
-  return fake;
 }
 
 // ---- SAML ----------------------------------------------------------------------------------

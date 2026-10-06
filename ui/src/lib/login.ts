@@ -47,6 +47,28 @@ export function beginSignIn(realm: string, origin: string): void {
   location.assign(signInPath(realm, binding));
 }
 
+/** A GitHub sign-in begun (issue #214): the code to show and where to enter it. */
+export interface DeviceSignIn { flow: string; binding: string; userCode: string; verificationUri: string }
+
+/** Start signing in with a GitHub realm: the device code. Resolves it, or the error. */
+export async function beginDeviceSignIn(realm: string): Promise<DeviceSignIn | { error: string }> {
+  const binding = newBinding();
+  const res = await fetch(`/ui/auth/${encodeURIComponent(realm)}/device`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ binding }) });
+  const out = await res.json().catch(() => ({})) as Partial<DeviceSignIn> & { error?: string };
+  if (!res.ok || !out.flow || !out.userCode || !out.verificationUri) return { error: res.status === 429 ? 'too many sign-in attempts; wait a minute' : (out.error ?? `${res.status}`) };
+  return { flow: out.flow, binding, userCode: out.userCode, verificationUri: out.verificationUri };
+}
+
+/** One poll of a device sign-in: still waiting (null), signed in (the token is kept; ''), or the error. */
+export async function pollDeviceSignIn(s: Pick<DeviceSignIn, 'flow' | 'binding'>): Promise<string | null> {
+  const res = await fetch('/ui/auth/device/poll', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ flow: s.flow, binding: s.binding }) });
+  const out = await res.json().catch(() => ({})) as { state?: string; token?: string; error?: string };
+  if (res.ok && out.state === 'waiting') return null;
+  if (!res.ok || !out.token) return out.error ?? `${res.status}`;
+  try { localStorage.setItem('jh_session', out.token); } catch { return 'browser storage is blocked: the session cannot be kept'; }
+  return '';
+}
+
 /** True when the UI should take a no-sign-in session by itself: logged out, and the sign-in config's `none` is on. */
 export const wantsNoSignIn = (authed: boolean, offer: Pick<SessionView['signIn'], 'none'> | null): boolean => !authed && (offer?.none ?? null) !== null;
 

@@ -64,7 +64,26 @@ export const githubAppOptions = z.object({
   ...sharedKeys,
 }).strict();
 
+/**
+ * A connected account's source (issue #214): who it acts as is the account the user connected, so
+ * nothing names an identity or a credential. `authors` empty: the connected account alone. `owners`
+ * and `repos` empty: wherever the authors' issues are.
+ */
+const accountKeys = {
+  enabled: z.boolean().default(true),
+  ...sharedKeys,
+  authors: z.array(z.string().min(1)).default([])
+    .meta({ description: 'logins whose issues and comments the source accepts; empty: the connected account alone' }),
+  owners: z.array(z.string().min(1)).default([])
+    .meta({ description: 'only issues in repos of these owners ; empty: any' }),
+};
+
+/** github-account: the GitHub account the user connected. */
+export const githubAccountOptions = z.object(accountKeys).strict();
+
+
 export type GitHubProjectConfig = z.infer<typeof projectSchema>;
+export type GitHubAccountOptions = z.output<typeof githubAccountOptions>;
 export type GitHubGhOptions = z.output<typeof githubGhOptions>;
 export type GitHubAppOptions = z.output<typeof githubAppOptions>;
 

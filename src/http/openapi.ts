@@ -11,9 +11,9 @@ import { streamQuery } from './sse.ts';
 import { decisionsQuery, eventsQuery } from './state.ts';
 import { SESSION_HEADER } from './ui/guard.ts';
 import {
-  answerBody, deviceLinkBody, ghLoginBody, queueGateBody, queueOrderBody, machineDefaultsBody, machinesEditBody, pluginStoreBody, pluginsEditBody, realmsEditBody, routingEditBody, rulesBody, updateBody, usersEditBody, webhooksEditBody,
+  answerBody, connectedAccountsBody, deviceLinkBody, ghLoginBody, queueGateBody, queueOrderBody, machineDefaultsBody, machinesEditBody, pluginStoreBody, pluginsEditBody, realmsEditBody, routingEditBody, rulesBody, updateBody, usersEditBody, webhooksEditBody,
 } from './ui/index.ts';
-import { completeBody, loginBody, passwordBody, startQuery } from './ui/sign-in.ts';
+import { completeBody, devicePollBody, deviceStartBody, loginBody, passwordBody, startQuery } from './ui/sign-in.ts';
 import { deliveriesQuery } from './webhooks.ts';
 
 type Tag = 'State' | 'Jobs' | 'Questions' | 'Machines and usage' | 'Plugins and routing' | 'Webhooks' | 'Events' | 'Self-update' | 'Users' | 'Sign-in';
@@ -52,6 +52,8 @@ const OPERATIONS: Operation[] = [
   { method: 'get', path: '/api/sources', tag: 'Jobs', summary: 'Job sources and their sync status', returns: '`{ sources: SourceStatus[] }`' },
   { method: 'get', path: '/api/gh-login', tag: 'Jobs', summary: 'The gh CLI\'s login', description: 'Logged in (with the account), logged out, failed, or waiting with the device code to approve at github.com/login/device.', returns: '`GhLoginStatus`' },
   { method: 'post', path: '/ui/api/gh-login', tag: 'Jobs', summary: 'Log the gh CLI in to GitHub, or cancel', description: '`start` runs gh\'s device flow and answers once it shows the device code; a waiting login answers its own code. gh keeps the token; the hopper keeps none.', role: 'admin', body: ghLoginBody, returns: '`GhLoginStatus`', errors: [409] },
+  { method: 'get', path: '/api/connected-accounts', tag: 'Jobs', summary: 'The GitHub account you connected', description: 'Per provider: connected (the account, when, its scopes), not connected, failed, or waiting with the device code to approve. Facts only, never a token.', returns: '`{ accounts: ConnectedAccountStatus[] }`' },
+  { method: 'post', path: '/ui/api/connected-accounts', tag: 'Jobs', summary: 'Connect GitHub, cancel, or disconnect', description: '`connect` runs the provider\'s device flow through the hopper\'s app (its public client id, no secret) and answers once it shows the device code; a waiting one answers its own code. Once approved, the account\'s issues become jobs, and the jobs act through it. Signing in with GitHub connects it too. `disconnect` forgets the account and its token.', role: 'admin', body: connectedAccountsBody, returns: '`ConnectedAccountStatus`' },
   { method: 'get', path: '/api/jobs', tag: 'Jobs', summary: 'List jobs', description: 'Jobs come only from job sources; no route creates one.', query: jobsQuery, returns: '`{ jobs: Job[] }`, newest first' },
   { method: 'get', path: '/api/jobs/:id', tag: 'Jobs', summary: 'One job', returns: '`Job`', errors: [404] },
   { method: 'post', path: '/ui/api/jobs/:id/cancel', tag: 'Jobs', summary: 'Cancel a job', role: 'operator', returns: 'the `Job`', errors: [404, 409] },
@@ -98,6 +100,8 @@ const OPERATIONS: Operation[] = [
   { method: 'get', path: '/ui/auth/:name/start', tag: 'Sign-in', summary: 'Begin sign-in with an OIDC, GitHub or SAML realm', query: startQuery, answers: 'redirect', returns: 'a redirect to the realm\'s identity provider' },
   { method: 'get', path: '/ui/auth/:name/callback', tag: 'Sign-in', summary: 'OIDC and GitHub return here', answers: 'html', returns: 'a page that completes the sign-in' },
   { method: 'post', path: '/ui/auth/:name/callback', tag: 'Sign-in', summary: 'SAML posts its response here', answers: 'html', returns: 'a page that completes the sign-in' },
+  { method: 'post', path: '/ui/auth/:name/device', tag: 'Sign-in', summary: 'Start signing in with GitHub', description: 'A github realm (issue #214): the device code to enter at the provider and where, through the hopper\'s app (its public client id, no secret). `binding`: a random value this browser keeps; only it can take the session.', body: deviceStartBody, returns: '`{ flow, userCode, verificationUri, expiresAt }`', errors: [400, 404, 502] },
+  { method: 'post', path: '/ui/auth/device/poll', tag: 'Sign-in', summary: 'Follow a GitHub sign-in', description: '`waiting` until the code is approved; then the session, once — and the token the provider granted becomes the user\'s connected account, what their jobs work through. 403 when no role rule grants the account a role, or for another browser.', body: devicePollBody, returns: '`{ state: waiting }` or `{ state: signed-in, token, expiresAt, user }`' },
   { method: 'post', path: '/ui/auth/complete', tag: 'Sign-in', summary: 'Trade a sign-in ticket for a session', body: completeBody, returns: '`{ token, expiresAt, user }`' },
   { method: 'get', path: '/ui/auth/:name/metadata', tag: 'Sign-in', summary: 'SAML service provider metadata', answers: 'xml', returns: 'SAML metadata', errors: [404] },
   { method: 'post', path: '/ui/api/device-link', tag: 'Sign-in', summary: 'A login link for another device, per LAN name', description: '`keep` names the code shown: while it is live the same links come back; once it is used or expired, a fresh code.', role: 'admin', body: deviceLinkBody, returns: '`{ links: string[] }`', errors: [409] },

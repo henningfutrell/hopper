@@ -3,13 +3,13 @@
 // type stripping erases, so a plugin needs nothing of hopper at runtime. Types only here.
 import type { z } from 'zod';
 import type {
-  AnswerRequest, Clock, EscalationLevel, ExecutionContext, ExecutionOutcome, Executor, JobSource, LevelReply,
+  AnswerRequest, Clock, ConnectedAccountTokens, EscalationLevel, ExecutionContext, ExecutionOutcome, Executor, JobSource, LevelReply,
   MachineSource, Notifier, NotifierEvents, QueueEntry, QueueSorter, Router, SourceItem, SourceReport, SourceSignal, UsageSource,
 } from '../domain/ports.ts';
 import type { Advice, AdviceAction, AttachedMachine, Detection, OptionChoice, DomainEvent, Job, MachineSnapshot, PreSortReject, Question, QuestionAttempt, Role, UsageReading } from '../domain/types.ts';
 
 export type {
-  Advice, AdviceAction, AnswerRequest, AttachedMachine, Clock, Detection, DomainEvent, EscalationLevel, ExecutionContext, LevelReply,
+  Advice, AdviceAction, AnswerRequest, AttachedMachine, Clock, ConnectedAccountTokens, Detection, DomainEvent, EscalationLevel, ExecutionContext, LevelReply,
   ExecutionOutcome, Executor, Job, JobSource, MachineSnapshot, MachineSource, Notifier, NotifierEvents, PreSortReject, Question, QuestionAttempt, QueueEntry,
   QueueSorter, Role, Router, SourceItem, SourceReport, SourceSignal, UsageReading, UsageSource,
 };
@@ -128,6 +128,8 @@ export interface JobSourceContext {
   knownKeys(keys: string[]): Set<string>;
   /** Of these source keys, those whose newest job may be re-run. */
   rerunnable(keys: string[]): Set<string>;
+  /** The user's connected GitHub account (issue #214): who it is, and a token for a call. */
+  connectedAccounts: ConnectedAccountTokens;
 }
 
 export type { OptionChoice };

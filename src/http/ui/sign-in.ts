@@ -6,8 +6,11 @@
 //                                           realms in order → a session (exact UI Origin)
 //   POST /ui/auth/gateway                 ← the token an auth gateway forwards, checked by the gateway
 //                                           realms in order → a session (exact UI Origin)
+//   POST /ui/auth/<name>/device           ← { binding }: a GitHub realm's device code (issue #214)
+//   POST /ui/auth/device/poll             ← { flow, binding }: waiting, failed, or the session — and the
+//                                           token the provider granted becomes the user's connection
 //   GET  /ui/auth/<name>/start?binding=…  → 302 to the realm's identity provider
-//   GET  /ui/auth/<name>/callback         ← OIDC and GitHub send the browser back here
+//   GET  /ui/auth/<name>/callback         ← OIDC sends the browser back here
 //   POST /ui/auth/<name>/callback         ← SAML posts its response here (assertion consumer service)
 //   POST /ui/auth/complete                ← the callback page: { ticket, binding } → { token, … }
 //   GET  /ui/auth/<name>/metadata         → SAML service provider metadata
@@ -15,7 +18,7 @@ import rateLimit from '@fastify/rate-limit';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { LOCAL_IDENTITY, NO_SIGN_IN_IDENTITY, SignInRefused, type SignIn } from '../../auth/index.ts';
-import type { Clock, InstanceStore } from '../../domain/ports.ts';
+import type { Clock, Connection, InstanceStore } from '../../domain/ports.ts';
 import type { Identity, UiRole, User } from '../../domain/types.ts';
 import { parseWith } from '../errors.ts';
 import { FAVICON_LINK } from '../static.ts';
@@ -30,6 +33,8 @@ export const startQuery = z.object({ binding: z.string().optional() });
 export const completeBody = z.object({ ticket: z.string(), binding: z.string() });
 export const loginBody = z.object({ code: z.string() });
 export const passwordBody = z.object({ username: z.string().max(128), password: z.string().max(1024) });
+export const deviceStartBody = z.object({ binding: z.string().max(128) });
+export const devicePollBody = z.object({ flow: z.string().max(128), binding: z.string().max(128) });
 
 /** The login answer: store the token (hex, safe inline) for this exact origin, then go to the UI. */
 const loginPage = (token: string): string => `<!doctype html><meta charset="utf-8"><title>hopper</title>${FAVICON_LINK}
@@ -67,6 +72,8 @@ export function registerSignInRoutes(parent: FastifyInstance, o: {
   sessions: UiSessions; signIn: SignIn; instance: Pick<InstanceStore, 'loginCodes'>; clock: Clock;
   /** The user an identity signs in as (issue #158): linked, admin for no sign-in, or a new one. */
   userFor: (who: Identity) => Promise<User>;
+  /** A GitHub sign-in's connection, handed to the session's user (issue #214). */
+  connect: (userId: string, connection: Connection) => void;
   /** A user's name by id (a login code names its user by id). */
   userName: (id: string) => string;
   /** An origin UI mutations come from (loopback, a LAN name, the public URL): no sign-in and password sign-in answer there. */
@@ -85,13 +92,14 @@ export function registerSignInRoutes(parent: FastifyInstance, o: {
 function routes(app: FastifyInstance, o: Parameters<typeof registerSignInRoutes>[1]): void {
   const { signIn, sessions } = o;
 
-  /** A session for `who`, as its user, answered as JSON: the UI stores the token. */
-  const started = async (reply: FastifyReply, who: Identity, role: UiRole) => {
+  /** A session for `who`, as its user, answered as JSON: the UI stores the token. A GitHub sign-in's connection becomes the user's. */
+  const started = async (reply: FastifyReply, who: Identity, role: UiRole, connection?: Connection, extra: Record<string, unknown> = {}) => {
     const user = await o.userFor(who);
+    if (connection) o.connect(user.id, connection);
     const s = sessions.create({ role, identity: who, userId: user.id });
     const shown = sessionUser(s, user.name);
     console.warn(`hopper: UI session started: ${who.realm} ${shown.identity} as user ${user.id}, role ${role}`);
-    return reply.header('cache-control', 'no-store').send({ token: s.token, expiresAt: s.expiresAt, user: shown });
+    return reply.header('cache-control', 'no-store').send({ ...extra, token: s.token, expiresAt: s.expiresAt, user: shown });
   };
   const fromSignInOrigin = (req: FastifyRequest): boolean => req.headers.origin?.toLowerCase() === signIn.origin();
   // Nothing comes back from an identity provider, so these answer on any UI origin, not only the sign-in origin.
@@ -143,6 +151,36 @@ function routes(app: FastifyInstance, o: Parameters<typeof registerSignInRoutes>
       return reply.code(r.status).send({ error: r.error });
     }
     return started(reply, r.who, r.role);
+  });
+
+  // A GitHub realm (issue #214): the code comes back as JSON; no identity provider sends the
+  // browser anywhere, so any UI origin may begin it. The binding keeps the session for this browser.
+  app.post('/ui/auth/:name/device', async (req, reply) => {
+    if (!fromUiOrigin(req)) return o.refuse(req, reply, `origin ${req.headers.origin ?? '(none)'} not allowed`);
+    const { name } = parseWith(nameParams, req.params);
+    try {
+      return reply.header('cache-control', 'no-store').send(await signIn.beginDevice(name, parseWith(deviceStartBody, req.body).binding));
+    } catch (e) {
+      if (e instanceof SignInRefused) return reply.code(e.status).send({ error: e.message });
+      console.warn(`hopper: sign-in with ${name} could not start: ${(e as Error).message}`);
+      return reply.code(502).send({ error: (e as Error).message });
+    }
+  });
+
+  // Polled every 2 s while the person enters the code: not counted against the sign-in rate limit. Only
+  // the browser holding the flow's binding (random, never sent anywhere else) gets anything from it.
+  app.post('/ui/auth/device/poll', { config: { rateLimit: false } }, async (req, reply) => {
+    if (!fromUiOrigin(req)) return o.refuse(req, reply, `origin ${req.headers.origin ?? '(none)'} not allowed`);
+    const { flow, binding } = parseWith(devicePollBody, req.body);
+    const r = signIn.pollDevice(flow, binding);
+    if (!r) return o.refuse(req, reply, 'unknown, finished or expired sign-in, or another browser began it');
+    if (r.state === 'waiting') return reply.header('cache-control', 'no-store').send(r);
+    if (r.state === 'failed') {
+      const who = r.who ? ` (${r.who.realm} ${r.who.username ?? r.who.subject})` : '';
+      console.warn(`hopper: device sign-in refused${who}: ${r.error}`);
+      return reply.code(r.status).send({ state: 'failed', error: r.error });
+    }
+    return started(reply, r.who, r.role, r.connection, { state: 'signed-in' });
   });
 
   app.get('/ui/auth/:name/start', async (req, reply) => {

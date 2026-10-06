@@ -9,7 +9,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { SignIn } from '../../auth/index.ts';
 import type { Clock, InstanceStore, PluginStoreView, Updater } from '../../domain/ports.ts';
-import { LIST_ROLES, QUEUE_GATE_MODES, REALM_TYPES, ROLES, SELECTABLE_ROLES, UI_ROLES, UPDATE_CHANNELS, type RealmsEdit, type RealmsView, type SessionView, type UiRole, type UserAdded } from '../../domain/types.ts';
+import { CONNECTED_ACCOUNT_PROVIDERS, LIST_ROLES, QUEUE_GATE_MODES, REALM_TYPES, ROLES, SELECTABLE_ROLES, UI_ROLES, UPDATE_CHANNELS, type RealmsEdit, type RealmsView, type SessionView, type UiRole, type UserAdded } from '../../domain/types.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { lanHosts, uiOrigins, type Lan } from '../reach.ts';
 import type { RealmsAdmin } from '../realms.ts';
@@ -107,6 +107,8 @@ export const queueOrderBody = z.strictObject({
 export const queueGateBody = z.strictObject({ mode: z.enum(QUEUE_GATE_MODES), autoAcceptPerHour: z.number().int().min(1).nullable() });
 // gh login (issue #138): start gh's device flow, or end a waiting one.
 export const ghLoginBody = z.strictObject({ action: z.enum(['start', 'cancel']) });
+// Connected accounts (issue #214): connect (start the device flow), cancel a waiting code, disconnect.
+export const connectedAccountsBody = z.strictObject({ action: z.enum(['connect', 'cancel', 'disconnect']), provider: z.enum(CONNECTED_ACCOUNT_PROVIDERS) });
 const EDIT_STATUS = { invalid: 400, not_found: 404, conflict: 409 } as const;
 /** The rules themselves are validated by the plugin host (the plugins config schema), so a refusal names the field. */
 export const routingEditBody = z.strictObject({ rules: z.array(z.any()), version: z.string().min(1) });
@@ -128,7 +130,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   app.get('/ui/api/session', async (req): Promise<SessionView> => {
     const s = sessionOf(req);
     const offer = {
-      local: signIn.local, none: signIn.none, password: signIn.password, gateway: signIn.gateway, origin: signIn.origin(), realms: signIn.realms(), required: o.instance.users.list().length > 1,
+      local: signIn.local, none: signIn.none, password: signIn.password, gateway: signIn.gateway, origin: signIn.origin(), realms: signIn.realms(), devices: signIn.devices(), required: o.instance.users.list().length > 1,
     };
     if (s) return { authenticated: true, expiresAt: s.expiresAt, user: sessionUser(s, userName(s)), signIn: offer };
     const id = userIdOf(req);
@@ -138,7 +140,9 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
 
   registerSignInRoutes(app, {
     sessions, signIn, refuse, instance: o.instance, clock: o.clock, isUiOrigin: (origin) => uiOrigins(o.port(), o.lan).includes(origin),
-    userFor: (who) => o.tenants.signInAs(who), userName: (id) => o.instance.users.get(id)?.name ?? id,
+    userFor: (who) => o.tenants.signInAs(who),
+    connect: (userId, connection) => o.tenants.user(userId)?.connectedAccounts.adopt(connection),
+    userName: (id) => o.instance.users.get(id)?.name ?? id,
   });
 
   // Each mutation names the least role that may make it (design.md "Sign-in" Roles).
@@ -267,6 +271,15 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     const s = action === 'start' ? await ghLogin.start() : await ghLogin.cancel();
     if (s.state === 'unavailable') throw new HttpError(409, s.reason);
     return s;
+  });
+
+  // design.md "Connected accounts": answers the provider's new GET /api/connected-accounts status — the
+  // device code once the provider shows it. The user's own accounts: their session's user alone.
+  app.post('/ui/api/connected-accounts', admin, async (req) => {
+    const { action, provider } = parseWith(connectedAccountsBody, req.body);
+    const { connectedAccounts } = o.tenant(req);
+    if (action === 'connect') return connectedAccounts.connect(provider);
+    return action === 'cancel' ? connectedAccounts.cancel(provider) : connectedAccounts.disconnect(provider);
   });
 
   // A login code as a link per LAN name, in the fragment (never sent to a server). The links

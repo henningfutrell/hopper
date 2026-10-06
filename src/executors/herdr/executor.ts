@@ -201,7 +201,9 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
         const where = whereOn(ctx.machine);
         const deps = depsOn(where);
         const local = !where.ssh && !where.client;
-        const opened = await openPane(deps, ctx, p.cwd, local ? { ...p.env, ...o.paneEnv } : p.env);
+        // The job acts through its source's connection (issue #214): its token in the pane's environment, never in the payload.
+        const env = { ...p.env, ...ctx.credentials };
+        const opened = await openPane(deps, ctx, p.cwd, local ? { ...env, ...o.paneEnv } : env);
         const refused = heldElsewhere(ctx.laneId, opened);
         if (refused) return refused;
         state = opened;

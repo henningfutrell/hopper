@@ -137,7 +137,7 @@ describe('hopper config set sign-in (issue #237)', () => {
     const record = { version: 1, realms: [{ name: 'staff', type: 'password' }] };
     expect(cli(url, ['config', 'set', 'sign-in', '--if-version', version], { stdin: JSON.stringify(record) }))
       .toMatchObject({ code: 2, err: expect.stringMatching(/realms\.0\.type/) });
-    const gh = { version: 1, local: { enabled: true }, realms: [{ name: 'gh', type: 'github', clientId: 'g', clientSecret: 's' }] };
+    const gh = { version: 1, local: { enabled: true }, realms: [{ name: 'gh', type: 'github' }] };
     expect(cli(url, ['config', 'set', 'sign-in', '--if-version', version], { stdin: JSON.stringify(gh) }).code).toBe(0);
   });
 });

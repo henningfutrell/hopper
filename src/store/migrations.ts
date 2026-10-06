@@ -1,3 +1,4 @@
+import { githubRealmsThroughTheApp } from './migration-device-realms.ts';
 import { randomUUID } from 'node:crypto';
 import { YAMLSeq, isMap, isScalar, isSeq, parse, parseDocument, type Document, type Node, type YAMLMap } from 'yaml';
 import type { Db } from './db.ts';
@@ -145,6 +146,9 @@ const MIGRATIONS: readonly Migration[] = [
   // 22: no password user realm (issue #237): password realms, `password_accounts` and their identity
   // links go; a sign-in config left with no way in turns the login code on.
   noPasswordRealm,
+  // 23: a github realm signs in through the hopper's GitHub App by the device flow (issue #214): its own
+  // OAuth app's settings and client secret leave the `sign-in` record, and a hopper without one gets one.
+  githubRealmsThroughTheApp,
 ];
 
 /**

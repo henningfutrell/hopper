@@ -30,6 +30,8 @@ export interface EngineOptions {
   keepPanes: boolean;
   /** Why a job that ended done is not complete, asked of its source (JobSource.notComplete, issues #171, #187). */
   notComplete: (job: Job) => Promise<string | undefined>;
+  /** The variables a job's processes run with, from its source's connection (JobSource.credentials, issue #214). */
+  credentials: (job: Job) => Promise<Record<string, string>>;
 }
 
 /** What the engine's modules share. */

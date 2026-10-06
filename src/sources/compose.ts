@@ -1,14 +1,21 @@
-// The two GitHub sources over one source logic, as the job-source plugins build them: `github-gh`
-// (gh CLI, as the owner) and `github-app` (the App adapter, as the bot). Each pauses itself
-// (JobSource.paused): gh while `enabled: auto` and the App's key variable is set, the app while its
-// identity (appId, slug, key) is incomplete.
-import type { Clock, JobSource } from '../domain/ports.ts';
+// The GitHub sources over one source logic, as the job-source plugins build them: `github-gh`
+// (gh CLI, as the owner), `github-app` (the App adapter, as the bot), and a connected account's —
+// `github-account` (issue #214), through the account the user signed in with or connected. Each
+// pauses itself (JobSource.paused): gh while `enabled: auto` and a GitHub account is connected or the
+// App's key variable is set, the app while its identity (appId, slug, key) is incomplete, an account's
+// while it is not connected.
+import { SourceError, type Clock, type ConnectedAccountTokens, type JobSource } from '../domain/ports.ts';
+import { CONNECTED_VIA, type ConnectedAccountProvider } from '../domain/types.ts';
+import { notConnected } from '../connected-accounts/service.ts';
+import { createAccountGitHubApi } from './github/account/api.ts';
+import { GitHubApiError } from './github/api.ts';
 import { createGitHubAppApi, loadGitHubApp, type GitHubAppLoad } from './github/app/index.ts';
 import type { GitHubApi } from './github/index.ts';
 import { createGhCliApi, createGitHubSource } from './github/index.ts';
-import { sourceConfig, type GitHubAppOptions, type GitHubGhOptions } from './config.ts';
+import { sourceConfig, type GitHubAccountOptions, type GitHubAppOptions, type GitHubGhOptions } from './config.ts';
 
 export const GH_PAUSED = 'GitHub App configured';
+export const GH_PAUSED_ACCOUNT = 'GitHub account connected';
 export const APP_MISSING = 'no GitHub App configured';
 
 /** Why the app cannot be used right now, or undefined when its identity is complete. */
@@ -29,6 +36,8 @@ export interface GitHubSourceDeps {
   api?: GitHubApi;
   /** Over the daemon's environment for the gh CLI: the user's gh config dir (issue #158). */
   userEnv?: Readonly<Record<string, string>>;
+  /** The user's connected accounts (issue #214). */
+  accounts?: ConnectedAccountTokens;
 }
 
 export function createGhSource(o: GitHubSourceDeps, options: GitHubGhOptions): JobSource {
@@ -36,7 +45,11 @@ export function createGhSource(o: GitHubSourceDeps, options: GitHubGhOptions): J
   return createGitHubSource({
     name: o.name, kind: 'github', mode: 'gh', config: sourceConfig(options), clock: o.clock, knownKeys: o.knownKeys, rerunnable: o.rerunnable,
     api: o.api ?? createGhCliApi({ bin: options.bin, ...(o.userEnv ? { userEnv: o.userEnv } : {}) }),
-    paused: () => (options.enabled === 'auto' && keyEnv !== null && o.env(keyEnv)?.trim() ? GH_PAUSED : undefined),
+    paused: () => {
+      if (options.enabled !== 'auto') return undefined;
+      if (o.accounts?.account('github')) return GH_PAUSED_ACCOUNT;
+      return keyEnv !== null && o.env(keyEnv)?.trim() ? GH_PAUSED : undefined;
+    },
   });
 }
 
@@ -57,4 +70,59 @@ export function createAppSource(o: GitHubSourceDeps, options: GitHubAppOptions):
     paused: () => appProblem(app()),
     ...(real ? { appInfo: () => real.appStatus() } : {}),
   });
+}
+
+/**
+ * A connected account's source (issue #214): the GitHub source logic over the account the user
+ * connected, rebuilt when the account changes — its login is the default author. Paused, and saying
+ * why, while none is connected; a report then waits for a connection (transient).
+ */
+export function createAccountSource(o: GitHubSourceDeps & { provider: ConnectedAccountProvider; accounts: ConnectedAccountTokens },
+  options: GitHubAccountOptions): JobSource {
+  const { provider, accounts } = o;
+  const kind = `${provider}-account`;
+  // The token at each call: a disconnect stops the next call, not only the next sync.
+  const token = async (): Promise<string> => {
+    try { return await accounts.token(provider); } catch (err) { throw new GitHubApiError((err as Error).message, false); }
+  };
+  const api = o.api ?? createAccountGitHubApi({ apiUrl: accounts.endpoints(provider).apiUrl, token });
+  let built: { login: string; source: JobSource } | undefined;
+  const current = (): JobSource | undefined => {
+    const login = accounts.account(provider);
+    if (!login) return undefined;
+    if (built?.login !== login) {
+      const config = { ...sourceConfig(options), authors: options.authors.length > 0 ? options.authors : [login] };
+      built = {
+        login,
+        source: createGitHubSource({ name: o.name, kind, mode: 'account', whoami: login, config, api, clock: o.clock, knownKeys: o.knownKeys, rerunnable: o.rerunnable }),
+      };
+    }
+    return built.source;
+  };
+  const unconnected = () => ({
+    mode: 'account', owners: options.owners, repos: options.repos, authors: options.authors, label: options.label,
+    account: { service: provider, detail: { via: CONNECTED_VIA }, problem: notConnected(provider) },
+  });
+  return {
+    name: o.name,
+    kind,
+    paused: () => (current() ? undefined : notConnected(provider)),
+    describe: () => current()?.describe() ?? unconnected(),
+    discover: () => current()?.discover() ?? Promise.resolve([]),
+    check: (active) => current()?.check(active) ?? Promise.resolve([]),
+    report(r) {
+      const s = current();
+      return s ? s.report(r) : Promise.reject(new SourceError(notConnected(provider), false));
+    },
+    notComplete(job) {
+      const s = current();
+      return s?.notComplete ? s.notComplete(job) : Promise.reject(new Error(notConnected(provider)));
+    },
+    // The job acts as the account's user, with the hopper's app marked on what it does: gh reads GH_TOKEN.
+    // A job of an account no longer connected runs with none.
+    async credentials(): Promise<Record<string, string>> {
+      if (!accounts.account(provider)) return {};
+      return { GH_TOKEN: await accounts.token(provider) };
+    },
+  };
 }

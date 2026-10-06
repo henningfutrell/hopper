@@ -10,7 +10,7 @@ const load = (value: unknown) => loadSignInConfig(value);
 const realms = (...rs: Record<string, unknown>[]) => ({ version: 1, realms: rs });
 
 const LDAP = { name: 'dir', type: 'ldap', url: 'ldaps://ldap.example.com', userBase: 'ou=people,dc=example,dc=com' };
-const GH = { type: 'github', clientId: 'a', clientSecret: 'gh-secret' };
+const GH = { type: 'github' };
 
 describe('loadSignInConfig', () => {
   it('no config: local sign-in only', () => {
@@ -30,7 +30,7 @@ describe('loadSignInConfig', () => {
           name: 'google', type: 'oidc', issuer: 'https://accounts.google.com', clientId: 'id-1', clientSecret: 'oidc-secret',
           roles: { admin: { emails: ['a@example.com'] } },
         },
-        { name: 'github', label: 'GitHub', type: 'github', clientId: 'id-2', clientSecret: 'gh-secret', enabled: false, roles: { defaultRole: 'viewer' } },
+        { name: 'github', label: 'GitHub', type: 'github', enabled: false, roles: { defaultRole: 'viewer' } },
         {
           name: 'corp', type: 'saml', entryPoint: 'https://idp.example.com/sso',
           idpCert: '-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n',
@@ -52,7 +52,8 @@ describe('loadSignInConfig', () => {
       label: 'google', clientSecret: 'oidc-secret', scopes: ['openid', 'email', 'profile'],
       claims: { email: 'email', username: 'preferred_username', name: 'name', groups: 'groups' }, trustUnverifiedEmail: false,
     });
-    expect(gh).toMatchObject({ label: 'GitHub', clientSecret: 'gh-secret', webUrl: 'https://github.com', apiUrl: 'https://api.github.com' });
+    // GitHub signs in through the hopper's app (issue #214): nothing of an app, and no secret, in the realm.
+    expect(gh).toEqual({ name: 'github', label: 'GitHub', type: 'github', enabled: false, roles: { defaultRole: 'viewer' } });
     expect(s).toMatchObject({ idpCert: expect.stringContaining('BEGIN CERTIFICATE'), requireSignedResponse: false, roles: {} });
   });
 
@@ -62,8 +63,9 @@ describe('loadSignInConfig', () => {
     ['a reserved name', realms({ name: 'local', ...GH }), /realms\.0\.name/],
     ['a realm named none', realms({ name: 'none', ...GH }), /realms\.0\.name/],
     ['a name unfit for a URL', realms({ name: 'My IdP', ...GH }), /realms\.0\.name/],
-    ['github without a secret', realms({ name: 'x', type: 'github', clientId: 'a' }), /realms\.0\.clientSecret/],
-    ['an empty client secret', realms({ name: 'x', type: 'github', clientId: 'a', clientSecret: '' }), /clientSecret/],
+    ['github with an app of its own (issue #214: the hopper\'s app)', realms({ name: 'x', type: 'github', clientId: 'a' }), /realms\.0.*clientId|unrecognized/i],
+    ['github with a client secret', realms({ name: 'x', type: 'github', clientSecret: 's' }), /clientSecret|unrecognized/i],
+    ['an empty client secret', realms({ name: 'x', type: 'oidc', issuer: 'https://idp', clientId: 'a', clientSecret: '' }), /clientSecret/],
     ['a secret file', realms({ name: 'x', type: 'oidc', issuer: 'https://idp', clientId: 'a', clientSecretFile: '/x' }), /clientSecretFile|unrecognized/i],
     ['an IdP certificate file', realms({ name: 'x', type: 'saml', entryPoint: 'https://idp/sso', idpCertFile: '/x' }), /idpCert/],
     ['saml without a certificate', realms({ name: 'x', type: 'saml', entryPoint: 'https://idp/sso' }), /idpCert/],
@@ -95,7 +97,7 @@ describe('loadSignInConfig', () => {
   });
 
   it('a client secret is the realm\'s own setting, as stored', () => {
-    expect(load(realms({ name: 'x', type: 'github', clientId: 'a', clientSecret: 'stored' })).realms[0]).toMatchObject({ clientSecret: 'stored' });
+    expect(load(realms({ name: 'x', type: 'oidc', issuer: 'https://idp', clientId: 'a', clientSecret: 'stored' })).realms[0]).toMatchObject({ clientSecret: 'stored' });
   });
 
   it('a public OIDC client needs no secret', () => {
@@ -140,8 +142,8 @@ describe('loadSignInConfig', () => {
   });
 
   it('a realm that is off still has to be valid, but its secret need not be set yet', () => {
-    expect(load({ version: 1, realms: [{ name: 'x', type: 'github', clientId: 'a', enabled: false }] }).realms[0]).toMatchObject({ enabled: false });
+    expect(load({ version: 1, realms: [{ name: 'x', type: 'oidc', issuer: 'https://idp', clientId: 'a', enabled: false }] }).realms[0]).toMatchObject({ enabled: false });
     expect(load(realms({ ...LDAP, bindDn: 'cn=x', enabled: false })).realms[0]).toMatchObject({ enabled: false });
-    expect(() => load({ version: 1, realms: [{ name: 'x', type: 'github', enabled: false }] })).toThrow(/clientId/);
+    expect(() => load({ version: 1, realms: [{ name: 'x', type: 'oidc', issuer: 'https://idp', enabled: false }] })).toThrow(/clientId/);
   });
 });

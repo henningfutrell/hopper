@@ -17,7 +17,7 @@ const tokenOf = (text: string): string => (JSON.parse(text) as { token: string }
 describe('no sign-in (the sign-in config\'s none)', () => {
   it('off by default: the offer says so, POST /ui/auth/none is refused', async () => {
     const { app, origin, host } = await start(undefined);
-    expect((await session(app)).signIn).toEqual({ local: true, none: null, password: false, gateway: false, origin, realms: [], required: false });
+    expect((await session(app)).signIn).toEqual({ local: true, none: null, password: false, gateway: false, origin, realms: [], devices: [{ name: 'github', label: 'GitHub', type: 'github' }], required: false });
     expect((await rawRequest(app.url, { path: '/ui/auth/none', ...json(host, origin, {}) })).status).toBe(403);
   });
 

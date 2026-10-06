@@ -33,17 +33,17 @@ export async function startWithAuth(h: Harness, auth: unknown, env: Record<strin
 }
 
 /** Restart on the same store with this sign-in config. */
-export async function restartWithAuth(h: Harness, app: TestApp, auth: unknown): Promise<TestApp> {
+export async function restartWithAuth(h: Harness, app: TestApp, auth: unknown, env: Record<string, string> = {}): Promise<TestApp> {
   await app.stop();
   writeConfig(app.dbPath, 'sign-in', auth);
-  h.t = await startTestApp({ dbPath: app.dbPath, secrets: { ...SECRETS } });
+  h.t = await startTestApp({ dbPath: app.dbPath, env, secrets: { ...SECRETS } });
   return h.t;
 }
 
-/** Restart on the same store, its sign-in config as it is. */
-export async function restartSame(h: Harness, app: TestApp): Promise<TestApp> {
+/** Restart on the same store, its sign-in config as it is. `env`: the daemon's HOPPER_* config. */
+export async function restartSame(h: Harness, app: TestApp, env: Record<string, string> = {}): Promise<TestApp> {
   await app.stop();
-  h.t = await startTestApp({ dbPath: app.dbPath, secrets: { ...SECRETS } });
+  h.t = await startTestApp({ dbPath: app.dbPath, env, secrets: { ...SECRETS } });
   return h.t;
 }
 

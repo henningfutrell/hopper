@@ -1,8 +1,9 @@
 # Signing in — realms
 
-How people sign in to the hopper UI. A **realm** is one way of checking who signs in: an LDAP
-or Active Directory directory, OpenID Connect, GitHub, SAML, or an auth gateway in
-front of the hopper that has already signed people in. The realms are an
+How people sign in to the hopper UI. A **realm** is one way of checking who signs in: GitHub (through
+the hopper's app; every hopper has it), an LDAP or Active Directory directory, OpenID Connect, SAML, or an
+auth gateway in front of the hopper that has already signed people in. Signing in with GitHub also
+connects it: that is the GitHub the person's jobs work through (issue #214). The realms are an
 ordered list, each on or off, managed in **Settings → Sign-in**; a change works at once. Beside them:
 the one-time login code and no sign-in. The design and its reasons: `docs/design.md` "Sign-in: realms".
 
@@ -32,6 +33,7 @@ Every way of signing in ends the same: a **UI session** with a **UI role**, acti
 | A few people, no directory or identity provider | A [GitHub](#github) realm: each person signs in with their own GitHub account. The hopper keeps no username-and-password accounts of its own. |
 | A company directory (OpenLDAP, Active Directory, FreeIPA) | An [LDAP realm](#ldap-realm): people sign in with their directory username and password; directory groups grant roles. |
 | Behind an auth gateway that signs people in (Envoy Gateway with OIDC, oauth2-proxy, …) | A [gateway realm](#behind-an-auth-gateway): the gateway signs people in and forwards their token; the hopper checks the token, gives roles by its claims, and asks nobody to sign in. |
+| People whose work is on GitHub (the hopper's main way) | Nothing: every hopper has the [GitHub realm](#github). People sign in with a device code through the hopper's app, the first of them becomes admin, and that connection is what their jobs work through. Role rules name everyone after by username or id. |
 | A team, or anyone reaching it over the internet | A reverse proxy with TLS, `HOPPER_PUBLIC_URL`, one or more realms, role rules, and usually the login code off. |
 | A deploy that sets everything up at launch (container, Kubernetes) | [Sign-in from the environment](#sign-in-from-the-environment): the realms as `HOPPER_SIGN_IN_*` variables, secrets as mounted files; the first sign-in is the login code the start logs. |
 
@@ -42,8 +44,9 @@ sign-in — is kept in the daemon's database and changed in **Settings → Sign-
 by an admin. Every setting is a field of a form; nothing is written as YAML or JSON.
 
 The page lists the realms in order, each with its type, a switch to turn it on or off, and — for
-OIDC, GitHub and SAML — the callback URL (and SAML metadata URL) to register with the identity
-provider, ready to copy. A new hopper starts with no realm: its first sign-in is the login code
+OIDC and SAML — the callback URL (and SAML metadata URL) to register with the identity
+provider, ready to copy. A new hopper starts with one realm, **GitHub** ([GitHub](#github)): the first
+person to sign in with it becomes admin. Its first sign-in can also be the login code
 ([First sign-in](#first-sign-in-the-login-code)).
 
 - **Add realm**: pick a type, fill in its fields (every one: [Realm settings](#realm-settings)) and
@@ -51,7 +54,7 @@ provider, ready to copy. A new hopper starts with no realm: its first sign-in is
 - **Edit** (pencil): the same form, filled in. The name stays: sign-ins are linked to users by it,
   and the identity provider holds it in the callback URL. To rename, remove the realm and add a new one.
 - **Move up / down**: the order. The username and password form tries the LDAP realms that are on in
-  this order, and the first that accepts the password signs in. The OIDC, GitHub and
+  this order, and the first that accepts the password signs in. The GitHub, OIDC and
   SAML realms that are on are sign-in buttons, in this order.
 - **On / off**: a realm that is off signs nobody in, and the sessions it made end at once. Its secret
   need not be set while it is off.
@@ -98,8 +101,7 @@ The setting's name in error messages is in brackets.
 | | Scopes (`scopes`) | `openid email profile` | Space-separated. Add what your groups claim needs (`groups` at Okta). |
 | | Email / Username / Name / Groups claim (`claims.…`) | `email` / `preferred_username` / `name` / `groups` | Claim names, read from the ID token, then userinfo. Groups may be a list or one string. |
 | | Trust unverified email (`trustUnverifiedEmail`) | off | Count the email even without `email_verified: true`. Only for an issuer whose emails you control. |
-| `github` | Client ID, Client secret (`clientId`, `clientSecret`) | — | An OAuth app (not a GitHub App). Both are required (the secret once the realm is on). |
-| | GitHub URL / API URL (`webUrl` / `apiUrl`) | `https://github.com` / `https://api.github.com` | GitHub Enterprise Server: `https://ghe.example.com` and `https://ghe.example.com/api/v3`. |
+| `github` | Role rules only | — | It signs in through the hopper's app (its public client id, no secret): nothing of an app is set on the realm. Another app or GitHub Enterprise: `HOPPER_GITHUB_URL`, `HOPPER_GITHUB_CLIENT_ID`, `HOPPER_GITHUB_APP_SLUG` in the daemon's environment. |
 | `saml` | Sign-on URL (`entryPoint`) | — | The IdP's single sign-on URL (HTTP-Redirect binding). |
 | | Identity provider certificate (`idpCert`) | — | The IdP's signing certificate: PEM or bare base64. |
 | | Identity provider issuer (`idpIssuer`) | none | The IdP's entity id. Set it: a response from another issuer is then refused. |
@@ -382,7 +384,7 @@ What fills each field:
 | subject | `attributes.subject`, else the DN | `sub` | numeric user id | NameID |
 | username | `attributes.username` | `claims.username` | login | `attributes.username`, else NameID |
 | email | `attributes.email` | `claims.email` if verified | primary verified email | `attributes.email` |
-| groups | `attributes.groups`, plus `groupSearch` | `claims.groups` | teams as `org/team-slug` (asks for `read:org` only when a rule names groups) | `attributes.groups` |
+| groups | `attributes.groups`, plus `groupSearch` | `claims.groups` | none | `attributes.groups` |
 
 A UI role is not a plugin role: see `docs/glossary.md`.
 
@@ -433,7 +435,7 @@ all its work, sign-ins, sessions and login codes, became `admin` on update (issu
 
 ## The sign-in origin and a public URL
 
-An OIDC, GitHub or SAML realm's identity provider sends the browser back to one fixed address, the **sign-in origin**:
+An OIDC or SAML realm's identity provider sends the browser back to one fixed address, the **sign-in origin**:
 
 - `HOPPER_PUBLIC_URL` when set (origin only: `https://hopper.example.com`), else
 - `http://localhost:<port>` — fine for one machine; most providers accept `localhost` redirects.
@@ -443,7 +445,7 @@ name; Settings → Sign-in shows them for each realm):
 
 | | URL |
 |---|---|
-| redirect / callback URI (OIDC, GitHub) | `<origin>/ui/auth/<name>/callback` |
+| redirect / callback URI (OIDC) | `<origin>/ui/auth/<name>/callback` |
 | assertion consumer service, HTTP-POST (SAML) | `<origin>/ui/auth/<name>/callback` |
 | SP entity id and metadata (SAML) | `<origin>/ui/auth/<name>/metadata` |
 
@@ -629,30 +631,40 @@ Keep the trailing slash of `issuer`: it is part of Auth0's issuer.
 
 ### GitHub
 
-GitHub's OAuth apps are OAuth 2.0, not OIDC; the `github` type reads the user, their primary
-verified email and (when a rule names groups) their teams from the API.
-
-1. https://github.com/settings/developers → **OAuth Apps → New OAuth App** (for an organization:
-   the organization's *Settings → Developer settings*). Authorization callback URL:
-   `<origin>/ui/auth/github/callback`.
-2. **Generate a new client secret**.
-3. Team rules need the organization to allow the app (*Third-party access* policy).
+GitHub is how people sign in to the hopper and how it works for them (issue #214). Every hopper has a
+`github` realm, a new one too (migration 23 adds it where there is none): **Sign in with GitHub** on the
+sign-in page shows a code; the person enters it at `https://github.com/login/device` and approves the
+hopper's GitHub App; the page signs them in. Nothing secret is involved — the hopper ships only the app's
+public client id. The first person to sign in with GitHub becomes admin (below); the realm's role rules
+grant everyone after. The same sign-in **connects** their GitHub: their issues labelled `hopper` become
+their jobs, and their jobs act as them on GitHub, with GitHub showing the hopper's app on what they do.
 
 | field | value |
 |---|---|
 | Type | GitHub |
 | Name | `github` |
 | Label | GitHub |
-| Client ID | `<client id>` |
-| Client secret | the client secret |
-| Role rules | admin for these subjects: `583231`; operator for these groups: `acme/platform` |
+| Role rules | admin for these subjects: `583231`; operator for these usernames: `octocat` |
 
-A subject is the numeric user id: `id` in `https://api.github.com/users/<login>`. A group is a team,
-as `org/team-slug`. Grant by `subjects` (the numeric id) or teams, not `usernames`: a GitHub login can be renamed, and
-the old name registered by someone else.
+A subject is the numeric user id (`id` in `https://api.github.com/users/<login>`). Prefer subjects for
+anything that matters: a GitHub login can be renamed and the old name registered by someone else. Teams
+are not read: a group rule matches nothing here.
 
-GitHub Enterprise Server: set **GitHub URL** `https://ghe.example.com` and **API URL**
-`https://ghe.example.com/api/v3`. Teams are read from the first page (100).
+The hopper's GitHub App reaches only the repositories it is **installed** on. After signing in, the
+Sources page says where it is installed and links to install it or choose its repositories.
+
+Someone signed in at the edge (SSO, SAML, an auth gateway) connects their GitHub from **Sources → GitHub
+account → Connect GitHub**, the same code at the same address. That account is then linked to their
+user: signing in with it later lands in the same user.
+
+**Running your own GitHub App instead of the hopper's** (a fork, GitHub Enterprise):
+https://github.com/settings/apps/new (or the organization's *Developer settings → GitHub Apps*). Homepage
+URL: anything. Callback URL: required by the form, never used. Webhook: off. **Enable Device Flow**: on.
+Optional features: **opt out of user-to-server token expiration** — GitHub renews an expiring token only
+with the app's client secret, which the hopper never has. Repository permissions: Issues read/write, Pull
+requests read/write, Contents read/write, Metadata read; organization Projects read; account Email
+addresses read. Where can it be installed: any account. Generate no private key and no client secret.
+Set `HOPPER_GITHUB_CLIENT_ID` (the app's client id) and `HOPPER_GITHUB_APP_SLUG`.
 
 ### SAML (any identity provider)
 

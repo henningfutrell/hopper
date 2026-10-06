@@ -1,4 +1,4 @@
-// Logged out, the page is only the landing page (issue #213): the hopper's name and the ways to sign in — a button per OIDC, GitHub or SAML realm (the sign-in config), a username
+// Logged out, the page is only the landing page (issue #213): the hopper's name and the ways to sign in — a button per GitHub realm (a device code, issue #214), per OIDC or SAML realm (the sign-in config), a username
 // and password form while an LDAP realm is on, and continuing without sign-in while `none` is on. The
 // login code is not offered here (issue #247): its device link signs a browser in by itself (main.tsx).
 // Design: design.md "Sign-in: realms", "Reaching
@@ -6,11 +6,11 @@
 // session's until someone signs in (issues #167, #213).
 import { AlertTriangle, LogIn } from 'lucide-react';
 import logo from '../../../site/hopper-logo.svg';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { beginSignIn, signInThroughGateway, signInWithPassword, signInWithoutCredential } from '@/lib/login';
+import { beginDeviceSignIn, beginSignIn, pollDeviceSignIn, signInThroughGateway, signInWithPassword, signInWithoutCredential, type DeviceSignIn } from '@/lib/login';
 import type { SessionView } from '@/model/wire';
 import { useHopper } from '@/store';
 
@@ -35,15 +35,51 @@ function PasswordSignIn() {
   );
 }
 
+const POLL_MS = 2000;
+
+/**
+ * Sign in with GitHub (issue #214): the device code through the hopper's app, entered at the
+ * provider; the page follows the sign-in and loads signed in once it is approved. The same sign-in
+ * connects the account the person's jobs work through.
+ */
+function DeviceSignInButton({ realm }: { realm: { name: string; label: string } }) {
+  const [s, setS] = useState<DeviceSignIn | null>(null);
+  useEffect(() => {
+    if (!s) return;
+    let live = true;
+    const t = setInterval(() => {
+      void pollDeviceSignIn(s).then((r) => {
+        if (!live || r === null) return;
+        setS(null);
+        finish(r === '' ? null : r);
+      });
+    }, POLL_MS);
+    return () => { live = false; clearInterval(t); };
+  }, [s]);
+  const start = async () => {
+    const r = await beginDeviceSignIn(realm.name);
+    if ('error' in r) toast.error(r.error); else setS(r);
+  };
+  if (!s) return <Button size="xs" variant="outline" onClick={() => void start()}><LogIn />Sign in with {realm.label}</Button>;
+  return (
+    <div data-device-sign-in={realm.name} className="w-full space-y-1.5 rounded-md border p-2 text-foreground">
+      <div>Open <a className="underline" href={s.verificationUri} target="_blank" rel="noreferrer">{s.verificationUri}</a>, sign in to {realm.label}, and enter this code:</div>
+      <code data-device-code className="inline-block rounded border px-2 py-1 font-mono text-lg font-semibold tracking-widest select-all">{s.userCode}</code>
+      <div className="text-muted-foreground">waiting for {realm.label} — this page signs you in once the code is approved. It also connects your {realm.label}: your jobs work through it.</div>
+    </div>
+  );
+}
+
 /** Every way the sign-in config offers to sign in, as buttons and forms. */
 function SignInOptions({ signIn, lead }: { signIn: SessionView['signIn']; lead: string }) {
-  if (!signIn.password && !signIn.gateway && !signIn.none && signIn.realms.length === 0) {
+  if (!signIn.password && !signIn.gateway && !signIn.none && signIn.realms.length === 0 && (signIn.devices ?? []).length === 0) {
     return <>Sign-in with GitHub is not set up on this hopper yet.</>;
   }
   const elsewhere = signIn.realms.length > 0 && location.origin !== signIn.origin;
   return (
     <>
       {lead}{elsewhere && <> at <a className="text-foreground underline" href={signIn.origin}>{signIn.origin}</a></>}:
+      {(signIn.devices ?? []).map((p) => <DeviceSignInButton key={p.name} realm={p} />)}
       {signIn.realms.map((p) => (
         <Button key={p.name} size="xs" variant="outline" onClick={() => beginSignIn(p.name, signIn.origin)}><LogIn />Sign in with {p.label}</Button>
       ))}

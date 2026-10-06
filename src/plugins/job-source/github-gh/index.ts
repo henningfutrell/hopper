@@ -14,7 +14,7 @@ export function githubGhPlugin(seam?: GitHubApi): PluginDefinition<'job-source',
   return {
     id: 'github-gh',
     role: 'job-source',
-    describe: 'GitHub issues labelled hopper, through the gh CLI as the owner (pauses while a GitHub App is configured)',
+    describe: 'GitHub issues labelled hopper, through the gh CLI as the owner (pauses while a GitHub account is connected or a GitHub App is configured)',
     options: () => githubGhOptions,
     async detect(sys, o) {
       if (seam) return { status: 'available', detail: 'GitHub seam (tests)' };
@@ -25,7 +25,7 @@ export function githubGhPlugin(seam?: GitHubApi): PluginDefinition<'job-source',
     },
     create(ctx, o) {
       if (o.enabled === false) return { disabled: { kind: 'github', detail: { mode: 'gh', enabledSetting: 'false' } } };
-      const source = createGhSource({ name: ctx.instanceName, clock: ctx.clock, knownKeys: ctx.knownKeys, rerunnable: ctx.rerunnable, env: ctx.env, userEnv: ctx.userEnv, ...(seam ? { api: seam } : {}) }, o);
+      const source = createGhSource({ name: ctx.instanceName, clock: ctx.clock, knownKeys: ctx.knownKeys, rerunnable: ctx.rerunnable, env: ctx.env, userEnv: ctx.userEnv, accounts: ctx.connectedAccounts, ...(seam ? { api: seam } : {}) }, o);
       return { source, pollMs: o.pollSeconds * 1000 };
     },
   };

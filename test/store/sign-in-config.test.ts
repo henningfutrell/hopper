@@ -13,7 +13,7 @@ const SIGN_IN: StoredSignIn = {
   local: { enabled: false },
   none: { role: 'operator' },
   realms: [
-    { name: 'gh', label: 'GitHub', type: 'github', clientId: 'g', clientSecret: 'gh-secret', roles: { admin: { subjects: ['1'] } } },
+    { name: 'gh', label: 'GitHub', type: 'github', roles: { admin: { subjects: ['1'] } } },
     { name: 'corp', type: 'saml', enabled: false, entryPoint: 'https://idp.example.com/sso', idpCert: 'abc' },
   ],
 };
