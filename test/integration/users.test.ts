@@ -1,7 +1,7 @@
 // Several users of one hopper (issue #158, design.md "Users: one hopper, separate users"), through
 // the real HTTP server and the real store: each user's jobs, questions, events, plugins and webhooks
 // are their own; an admin adds a user and hands over its login link; a loopback read without a session
-// is owner's unless `x-hopper-user` names another user.
+// reads a user's work only while the hopper has one user; an admin reads the totals, never a user's work.
 import { afterEach, describe, expect, it } from 'vitest';
 import { createFakeHerdrClient } from '../../src/executors/herdr/index.ts';
 import type { DomainEvent, Job, Question } from '../../src/domain/types.ts';
@@ -148,14 +148,23 @@ describe('users, sessions and login codes', () => {
     expect((await a.api('GET', '/api/users', undefined, session(owner))).status).toBe(200);
   });
 
-  it('a loopback read without a session is owner\'s, or the user x-hopper-user names; an unknown user is 404', async () => {
+  it('with one user, a loopback read without a session reads that user\'s work', async () => {
+    const a = await start();
+    const job = await a.pull(sleep);
+    expect((await a.api('GET', '/api/jobs')).body.jobs.map((j: Job) => j.id)).toEqual([job.id]);
+  });
+
+  it('with several users, a loopback read without a session reads no user\'s work, whatever x-hopper-user says', async () => {
     const a = await start();
     await a.addUser('Bea');
-    const ownerJob = await a.pull(sleep);
-    const beaJob = await a.pull(sleep, {}, 'bea');
-    expect((await a.api('GET', '/api/jobs')).body.jobs.map((j: Job) => j.id)).toEqual([ownerJob.id]);
-    expect((await a.api('GET', '/api/jobs', undefined, { 'x-hopper-user': 'bea' })).body.jobs.map((j: Job) => j.id)).toEqual([beaJob.id]);
-    expect((await a.api('GET', '/api/jobs', undefined, { 'x-hopper-user': 'nobody' })).status).toBe(404);
+    await a.pull(sleep);
+    await a.pull(sleep, {}, 'bea');
+    for (const headers of [{}, { 'x-hopper-user': 'bea' }, { 'x-hopper-user': 'owner' }]) {
+      for (const path of ['/api/jobs', '/api/questions', '/api/events', '/api/plugins', '/api/webhooks']) {
+        expect((await a.api('GET', path, undefined, headers)).status, `${path} ${JSON.stringify(headers)}`).toBe(401);
+      }
+    }
+    expect((await a.api('GET', '/api/users')).status).toBe(200);
   });
 });
 
@@ -168,9 +177,10 @@ describe('who you are, and signing in with several users (issue #167)', () => {
   it('with several users sign-in is required; signed in, the session names its own user and no other', async () => {
     const a = await start();
     await a.addUser('Bea');
-    expect((await a.api('GET', '/ui/api/session')).body).toMatchObject({ authenticated: false, viewing: { id: 'owner', name: 'owner' }, signIn: { required: true } });
-    expect((await a.api('GET', '/ui/api/session', undefined, { 'x-hopper-user': 'bea' })).body.viewing).toEqual({ id: 'bea', name: 'Bea' });
-    expect((await a.api('GET', '/ui/api/session', undefined, { 'x-hopper-user': 'nobody' })).body.viewing).toBeUndefined();
+    const loggedOut = (await a.api('GET', '/ui/api/session')).body;
+    expect(loggedOut).toMatchObject({ authenticated: false, signIn: { required: true } });
+    expect(loggedOut.viewing).toBeUndefined();
+    expect((await a.api('GET', '/ui/api/session', undefined, { 'x-hopper-user': 'bea' })).body.viewing).toBeUndefined();
     const view = (await a.api('GET', '/ui/api/session', undefined, session(await a.login('bea')))).body;
     expect(view).toMatchObject({ authenticated: true, user: { id: 'bea', name: 'Bea' }, signIn: { required: true } });
     expect(view.viewing).toBeUndefined();
@@ -183,7 +193,7 @@ describe('a user\'s runtime', () => {
     const bea = await a.addUser('Bea');
     const plugins = a.user(bea.id).store.config.read('plugins') as { executors: { plugin: string; options?: { session?: string } }[] };
     expect(plugins.executors.filter((e) => e.plugin === 'herdr-claude').map((e) => e.options?.session)).toEqual(['hopper-bea']);
-    const report = (await a.api('GET', '/api/plugins', undefined, { 'x-hopper-user': 'bea' })).body;
+    const report = (await a.api('GET', '/api/plugins', undefined, session(await a.login('bea')))).body;
     expect(report.executors.instances.find((i: { instance: { plugin: string } }) => i.instance.plugin === 'herdr-claude').instance.options.session).toBe('hopper-bea');
     expect((a.user().store.config.read('plugins') as { executors?: unknown }).executors).toEqual([{ name: 'test', plugin: 'test' }]);
     const job = await a.pull({ op: 'echo', message: 'hi' }, { executor: 'scripted' }, 'bea');
@@ -213,7 +223,8 @@ describe('a user\'s runtime', () => {
     const bea = await a.addUser('Bea');
     const doc = a.user(bea.id).store.config;
     doc.write('plugins', { version: 1, executors, jobSources: [], usageSources: [], notifiers: [] }, doc.version('plugins'));
-    await waitFor(async () => (await a.api('GET', '/api/plugins', undefined, { 'x-hopper-user': 'bea' })).body.config.version === doc.version('plugins'));
+    const beaToken = await a.login('bea');
+    await waitFor(async () => (await a.api('GET', '/api/plugins', undefined, session(beaToken))).body.config.version === doc.version('plugins'));
     const item = { executor: 'herdr-claude', prompt: 'Paint the shed', cwd: '/tmp', env: {} };
     const ownerJob = await a.pull({}, item);
     await a.waitForStatus(ownerJob.id, 'finished', 8000);
@@ -227,7 +238,7 @@ describe('a user\'s runtime', () => {
 });
 
 describe('the instance\'s parts are shared', () => {
-  it('an update check is announced to every user; a job of any user that a restart would lose holds the restart', async () => {
+  it('an update check is announced to every user; a job of any user that a restart would lose holds the restart, counted, never named', async () => {
     const root = tempDir('jh-users-update-');
     const up = createUpstream(root);
     const c1 = up.commit('first', 'v1');
@@ -242,10 +253,15 @@ describe('the instance\'s parts are shared', () => {
       const job = await a.pull({}, { executor: 'sticky' }, 'bea');
       await a.waitForStatusOf(job.id, 'running', 'bea');
       expect((await a.ui('/ui/api/update', { action: 'check' }, { token: owner })).status).toBe(200);
-      const beaEvents = (await a.api('GET', '/api/events?limit=1000', undefined, { 'x-hopper-user': 'bea' })).body.events as DomainEvent[];
+      const beaEvents = (await a.api('GET', '/api/events?limit=1000', undefined, session(await a.login('bea')))).body.events as DomainEvent[];
       expect(beaEvents.map((e) => e.type)).toContain('update.available');
       expect((await a.ui('/ui/api/update', { action: 'apply' }, { token: owner })).status).toBe(200);
-      await waitFor(async () => ((await a.api('GET', '/api/update')).body.apply?.detail as string | undefined)?.includes(job.id));
+      const detail = await waitFor(async () => {
+        const d = (await a.api('GET', '/api/update')).body.apply?.detail as string | undefined;
+        return d?.startsWith('waiting for') ? d : undefined;
+      });
+      expect(detail).toBe('waiting for 1 running job: a restart would lose it');
+      expect(JSON.stringify(a.user().store.events.since(0, 1000))).not.toContain(job.id);
       expect(restarts).toEqual([]);
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -263,11 +279,98 @@ describe('the instance\'s parts are shared', () => {
       await a.addUser('Bea');
       await waitFor(async () => (await a.api('GET', '/api/plugin-store')).body.commit !== undefined);
       expect((await a.ui('/ui/api/plugin-store', { action: 'install', id: 'word-first' }, { token: owner })).status).toBe(200);
-      const beaPlugins = (await a.api('GET', '/api/plugins', undefined, { 'x-hopper-user': 'bea' })).body.plugins as { id: string }[];
+      const beaPlugins = (await a.api('GET', '/api/plugins', undefined, session(await a.login('bea')))).body.plugins as { id: string }[];
       expect(beaPlugins.map((p) => p.id)).toContain('word-first');
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+});
+
+describe('an admin reads the totals, never a user\'s work (issue #221)', () => {
+  /** A password realm `pw` with the account `cy`, added by owner's admin session; cy signed in once (so a user of its own). */
+  async function cyByPassword(a: TestApp, owner: string): Promise<string> {
+    const realms = async () => (await a.api('GET', '/api/realms', undefined, session(owner))).body as { version: string };
+    expect((await a.ui('/ui/api/realms', { action: 'save', realm: { name: 'pw', type: 'password' }, version: (await realms()).version }, { token: owner })).status).toBe(200);
+    expect((await a.ui('/ui/api/realms', { action: 'account', realm: 'pw', username: 'cy', role: 'admin', password: 'first-password', version: (await realms()).version }, { token: owner })).status).toBe(200);
+    return passwordSignIn(a, 'cy', 'first-password');
+  }
+  async function passwordSignIn(a: TestApp, username: string, password: string): Promise<string> {
+    const r = await a.ui<{ token: string }>('/ui/auth/password', { username, password });
+    expect(r.status, `${username} signs in`).toBe(200);
+    return r.body.token;
+  }
+  const version = async (a: TestApp, token: string): Promise<string> => (await a.api('GET', '/api/realms', undefined, session(token))).body.version;
+
+  it('GET /api/instance: the totals across users, no job, question or user of anyone; only an admin', async () => {
+    const a = await start();
+    const { owner, bea } = await twoUsers(a);
+    const ownerJob = await a.pull(hard);
+    await a.waitForQuestion(ownerJob.id, (q) => q.tier === 'human');
+    const beaJob = await a.pull(sleep, {}, 'bea');
+    await a.waitForStatusOf(beaJob.id, 'running', 'bea');
+    const r = await a.api('GET', '/api/instance', undefined, session(owner));
+    expect(r.status).toBe(200);
+    expect(r.body).toEqual({
+      users: 2,
+      jobs: { queued: 0, held: 0, claimed: 0, running: 1, waiting_answer: 1 },
+      questions: { open: 1 },
+      lanes: { busy: 1, total: expect.any(Number) },
+    });
+    expect(JSON.stringify(r.body)).not.toMatch(new RegExp(`${ownerJob.id}|${beaJob.id}|bea|Bea`));
+    expect((await a.api('GET', '/api/instance', undefined, session(bea))).status).toBe(200);
+  });
+
+  it('an admin may not set the password of, link, or re-add an account that signs in as another user', async () => {
+    const a = await start();
+    const owner = await a.login();
+    const cy = await cyByPassword(a, owner);
+    expect((await a.api('GET', '/ui/api/session', undefined, session(cy))).body.user).toMatchObject({ id: 'cy' });
+    await a.addUser('Bea');
+    const account = { action: 'account', realm: 'pw', role: 'admin' };
+    const reset = await a.ui<{ error: string }>('/ui/api/realms', { ...account, username: 'cy', password: 'admin-knows-it', version: await version(a, owner) }, { token: owner });
+    expect(reset.status).toBe(403);
+    expect(reset.body.error).toContain('signs in as another user');
+    expect((await a.ui('/ui/api/realms', { ...account, username: 'dee', password: 'admin-knows-it', user: 'bea', version: await version(a, owner) }, { token: owner })).status).toBe(403);
+    expect((await a.ui('/ui/api/realms', { action: 'account-remove', realm: 'pw', username: 'cy', version: await version(a, owner) }, { token: owner })).status).toBe(200);
+    expect((await a.ui('/ui/api/realms', { ...account, username: 'cy', password: 'admin-knows-it', version: await version(a, owner) }, { token: owner })).status).toBe(403);
+    expect((await a.ui('/ui/auth/password', { username: 'cy', password: 'admin-knows-it' })).status).not.toBe(200);
+    expect((await a.ui('/ui/api/realms', { ...account, username: 'eve', password: 'own-account', user: 'owner', version: await version(a, owner) }, { token: owner })).status).toBe(200);
+  });
+
+  it('an admin may change the role of an account that signs in as another user; the totals need admin', async () => {
+    const a = await start();
+    const owner = await a.login();
+    const cy = await cyByPassword(a, owner);
+    expect((await a.ui('/ui/api/realms', { action: 'account', realm: 'pw', username: 'cy', role: 'viewer', version: await version(a, owner) }, { token: owner })).status).toBe(200);
+    expect((await a.api('GET', '/api/instance', undefined, session(cy))).status).toBe(403);
+  });
+
+  it('a user changes their own password; their other sessions end; the old password no longer signs in', async () => {
+    const a = await start();
+    const owner = await a.login();
+    const cy = await cyByPassword(a, owner);
+    const other = await passwordSignIn(a, 'cy', 'first-password');
+    expect((await a.ui('/ui/api/password', { current: 'wrong-password', password: 'only-cy-knows' }, { token: cy })).status).toBe(403);
+    expect((await a.ui('/ui/api/password', { current: 'first-password', password: 'only-cy-knows' }, { token: cy })).status).toBe(200);
+    expect((await a.api('GET', '/ui/api/session', undefined, session(cy))).body.authenticated).toBe(true);
+    expect((await a.api('GET', '/ui/api/session', undefined, session(other))).body.authenticated).toBe(false);
+    expect((await a.ui('/ui/auth/password', { username: 'cy', password: 'first-password' })).status).not.toBe(200);
+    const again = await passwordSignIn(a, 'cy', 'only-cy-knows');
+    expect((await a.api('GET', '/ui/api/session', undefined, session(again))).body.user).toMatchObject({ id: 'cy' });
+    expect((await a.ui('/ui/api/password', { current: 'x', password: 'not-a-password-account' }, { token: owner })).status).toBe(409);
+  });
+
+  it('no sign-in stays off while the hopper has more than one user, and a user is not added while it is on', async () => {
+    const a = await start();
+    const owner = await a.login();
+    expect((await a.ui('/ui/api/realms', { action: 'settings', none: 'viewer', version: await version(a, owner) }, { token: owner })).status).toBe(200);
+    expect((await a.ui('/ui/api/users', { action: 'add', name: 'Bea' }, { token: owner })).status).toBe(409);
+    expect((await a.ui('/ui/api/realms', { action: 'settings', none: null, version: await version(a, owner) }, { token: owner })).status).toBe(200);
+    expect((await a.ui('/ui/api/users', { action: 'add', name: 'Bea' }, { token: owner })).status).toBe(200);
+    const on = await a.ui<{ error: string }>('/ui/api/realms', { action: 'settings', none: 'viewer', version: await version(a, owner) }, { token: owner });
+    expect(on.status).toBe(409);
+    expect(on.body.error).toContain('more than one user');
   });
 });
 
@@ -277,7 +380,7 @@ describe('a user added with the operator CLI', () => {
     const r = runCli(['user', 'add', 'Cy'], { env: { HOPPER_DATABASE_URL: databaseUrlFor(a.dbPath) }, stdin: () => '', out: () => {}, err: () => {} });
     expect(r).toBe(0);
     await waitFor(() => a.app.users().some((u) => u.id === 'cy') && (() => { try { return a.user('cy'); } catch { return undefined; } })());
-    expect((await a.api('GET', '/api/jobs', undefined, { 'x-hopper-user': 'cy' })).status).toBe(200);
+    expect((await a.api('GET', '/api/jobs', undefined, session(await a.login('cy')))).status).toBe(200);
   });
 });
 

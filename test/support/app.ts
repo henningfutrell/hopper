@@ -8,7 +8,9 @@
 // (seams.env): the same object, so a test may set or unset a variable while the app runs. Jobs are PULLED: a
 // manual JobSource (manual-source.ts) offers items, run by the "scripted" executor
 // (scripted-executor.ts). Every user (issue #158) has a manual source of its own (`sourceOf(id)`;
-// `source` is owner's); `api` reads as owner unless a session or `x-hopper-user` header says otherwise.
+// `source` is owner's); `api` reads without a session (loopback: the one user's work, while there is one
+// user) unless its headers carry one; the helpers that read a user's work (`job`, `pull`, …) carry a
+// session of that user once the hopper has several (issue #221).
 // Every event the app emits is validated against its schema; stop() fails the test on any
 // nonconforming event (tracker + a scan of every user's whole event log).
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -56,7 +58,7 @@ export interface TestApp {
   user(id?: string): ReturnType<App['user']>;
   /** A new user, its runtime started (as POST /ui/api/users does). */
   addUser(name: string): Promise<User>;
-  /** A request without a session (loopback: owner's), with `headers` (`x-hopper-user`, `x-hopper-session`). */
+  /** A request without a session (loopback: the one user's work; nothing of a user's with several), with `headers` (`x-hopper-session`). */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- tests read loose JSON
   api<T = any>(method: string, path: string, body?: unknown, headers?: Record<string, string>): Promise<ApiResponse<T>>;
   /** Offer one item through the user's manual source (default owner), sync, and return its job. `script` is the scripted executor's op. */
@@ -159,10 +161,6 @@ export async function startTestApp(o: {
     const text = await res.text();
     return { status: res.status, body: text ? JSON.parse(text) : undefined } as ApiResponse<T>;
   };
-  const job = async (id: string): Promise<Job> => (await api<Job>('GET', `/api/jobs/${id}`)).body;
-  const questionsOf = async (jobId: string): Promise<Question[]> => (await api<{ questions: Question[] }>(
-    'GET', '/api/questions?status=all&limit=1000')).body.questions.filter((q) => q.jobId === jobId);
-  const sync = () => app.user(OWNER_ID).sources.syncNow();
   const loginWith = async (code: string): Promise<string> => {
     const res = await rawRequest(app.url, {
       method: 'POST', path: '/ui/login', body: `code=${code}`,
@@ -172,6 +170,21 @@ export async function startTestApp(o: {
     if (res.status !== 200 || !m) throw new Error(`login failed ${res.status}: ${res.text}`);
     return m[1]!;
   };
+  /** Headers that read `userId`'s work: none while the hopper has one user, else a session of that user (minted once). */
+  const tokens = new Map<string, string>();
+  const as = async (userId: string): Promise<Record<string, string>> => {
+    if (app.users().length === 1) return {};
+    let token = tokens.get(userId);
+    if (token === undefined) {
+      token = await loginWith(mintLoginCode(app.instance, { now: () => new Date() }, userId));
+      tokens.set(userId, token);
+    }
+    return { 'x-hopper-session': token };
+  };
+  const job = async (id: string): Promise<Job> => (await api<Job>('GET', `/api/jobs/${id}`, undefined, await as(OWNER_ID))).body;
+  const questionsOf = async (jobId: string): Promise<Question[]> => (await api<{ questions: Question[] }>(
+    'GET', '/api/questions?status=all&limit=1000', undefined, await as(OWNER_ID))).body.questions.filter((q) => q.jobId === jobId);
+  const sync = () => app.user(OWNER_ID).sources.syncNow();
   let stopped = false;
   return {
     app, url: app.url, dbPath: o.dbPath, dataDir, source, sourceOf, scripted, api, sync, job, questionsOf, loginWith,
@@ -182,7 +195,7 @@ export async function startTestApp(o: {
       const s = sourceOf(userId);
       s.add(item);
       await app.user(userId).sources.syncNow(s.name);
-      const jobs = (await api<{ jobs: Job[] }>('GET', '/api/jobs?limit=1000', undefined, { 'x-hopper-user': userId })).body.jobs;
+      const jobs = (await api<{ jobs: Job[] }>('GET', '/api/jobs?limit=1000', undefined, await as(userId))).body.jobs;
       const found = jobs.find((j) => j.source?.key === item.key);
       if (!found) throw new Error(`no job was pulled for ${item.key}`);
       return found;
@@ -192,10 +205,10 @@ export async function startTestApp(o: {
       return j.status === status ? j : undefined;
     }, { timeoutMs, what: `job ${id} to be ${status}` }),
     waitForStatusOf: (id, status, userId, timeoutMs) => waitFor(async () => {
-      const j = (await api<Job>('GET', `/api/jobs/${id}`, undefined, { 'x-hopper-user': userId })).body;
+      const j = (await api<Job>('GET', `/api/jobs/${id}`, undefined, await as(userId))).body;
       return j.status === status ? j : undefined;
     }, { timeoutMs, what: `job ${id} of ${userId} to be ${status}` }),
-    events: async (query = 'limit=1000') => (await api<{ events: DomainEvent[] }>('GET', `/api/events?${query}`)).body.events,
+    events: async (query = 'limit=1000') => (await api<{ events: DomainEvent[] }>('GET', `/api/events?${query}`, undefined, await as(OWNER_ID))).body.events,
     waitForQuestion: (jobId, ok, timeoutMs) => waitFor(async () => {
       const q = (await questionsOf(jobId))[0];
       return q && ok(q) ? q : undefined;
