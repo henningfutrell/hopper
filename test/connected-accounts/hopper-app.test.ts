@@ -13,6 +13,10 @@ describe("the hopper's app", () => {
     expect(installUrl(app)).toBe(`https://github.com/apps/${SHIPPED_APPS.github.slug}/installations/new`);
   });
 
+  it('is the hopper\'s own GitHub App, hopper-qm (#214, #248)', () => {
+    expect(SHIPPED_APPS.github).toEqual({ clientId: 'Iv23liKJ2NjhKAsv0JxL', slug: 'hopper-qm' });
+  });
+
   it('ships nothing but the public identity', () => {
     expect(Object.keys(SHIPPED_APPS.github).sort()).toEqual(['clientId', 'slug']);
   });

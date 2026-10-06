@@ -70,6 +70,7 @@ describe('loadSignInConfig', () => {
     ['an IdP certificate file', realms({ name: 'x', type: 'saml', entryPoint: 'https://idp/sso', idpCertFile: '/x' }), /idpCert/],
     ['saml without a certificate', realms({ name: 'x', type: 'saml', entryPoint: 'https://idp/sso' }), /idpCert/],
     ['an unknown field', realms({ name: 'x', ...GH, colour: 'red' }), /colour|unrecognized/i],
+    ['a gitlab realm: GitLab is not part of signing in (#214)', realms({ name: 'x', type: 'gitlab' }), /realms\.0\.type|invalid/i],
     ['an unknown role', realms({ name: 'x', ...GH, roles: { owner: {} } }), /owner|unrecognized/i],
     ['the old providers list', { version: 1, providers: [] }, /providers|unrecognized/i],
     ['the old password section', { version: 1, password: { users: [] } }, /password|unrecognized/i],
