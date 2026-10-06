@@ -1,6 +1,6 @@
 // Sign-in maps an identity to a user (issue #158, design.md "Users: one hopper, separate users"): a
 // linked identity signs in as its user; an unlinked one a role rule grants a role gets a new user of its
-// own; no sign-in is owner.
+// own; no sign-in is admin.
 import argon2 from 'argon2';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { rawRequest } from '../support/http.ts';
@@ -26,13 +26,13 @@ describe('an identity signs in as its user', () => {
     expect((await session(app, first)).user).toEqual({ id: 'ada', name: 'ada', role: 'operator', realm: 'corp', identity: 'Ada Lovelace' });
     const again = (await signIn(app.url, origin, 'corp')).token!;
     expect((await session(app, again)).user.id).toBe('ada');
-    expect(app.app.users().map((u) => u.id)).toEqual(['owner', 'ada']);
+    expect(app.app.users().map((u) => u.id)).toEqual(['admin', 'ada']);
     // Another identity with the same username gets a user of its own, under a name made unique.
     Object.assign(idp.claims, { sub: 'sub-other' });
     Object.assign(idp.userinfo, { sub: 'sub-other' });
     const other = (await signIn(app.url, origin, 'corp')).token!;
     expect((await session(app, other)).user).toMatchObject({ id: 'ada_2', name: 'ada 2' });
-    // The new user's reads are its own: owner's job is not there.
+    // The new user's reads are its own: admin's job is not there.
     const job = await app.pull({ op: 'sleep', ms: 60_000 });
     expect((await app.api('GET', '/api/jobs', undefined, { 'x-hopper-session': first })).body.jobs).toEqual([]);
     expect((await app.api('GET', '/api/jobs', undefined, { 'x-hopper-session': await app.login() })).body.jobs.map((j: { id: string }) => j.id)).toEqual([job.id]);
@@ -42,7 +42,7 @@ describe('an identity signs in as its user', () => {
     const idp = await oidcIdp(h, { claims: { sub: 'sub-x', preferred_username: 'x' }, userinfo: { sub: 'sub-x' } });
     const { app, origin } = await startWithAuth(h, { version: 1, realms: [oidcRealm(idp, { admin: { usernames: ['someone-else'] } })] });
     expect((await signIn(app.url, origin, 'corp')).token).toBeUndefined();
-    expect(app.app.users().map((u) => u.id)).toEqual(['owner']);
+    expect(app.app.users().map((u) => u.id)).toEqual(['admin']);
   });
 
   it('a password account gets a user named after it', async () => {
@@ -51,10 +51,10 @@ describe('an identity signs in as its user', () => {
     expect((await session(app, tokenOf(res.text))).user).toEqual({ id: 'ada', name: 'ada', role: 'admin', realm: 'password', identity: 'ada' });
   });
 
-  it('no sign-in is owner', async () => {
+  it('no sign-in is admin', async () => {
     const { app, origin, host } = await startWithAuth(h, { version: 1, none: { role: 'viewer' } });
     const res = await rawRequest(app.url, { path: '/ui/auth/none', ...json(host, origin, {}) });
-    expect((await session(app, tokenOf(res.text))).user).toEqual({ id: 'owner', name: 'owner', role: 'viewer', realm: 'none', identity: 'no sign-in' });
+    expect((await session(app, tokenOf(res.text))).user).toEqual({ id: 'admin', name: 'admin', role: 'viewer', realm: 'none', identity: 'no sign-in' });
   });
 
   it('a session outside admin may not add users: users are an instance mutation', async () => {

@@ -149,7 +149,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
       user: (id) => runtimes.get(id),
       list: () => instance.users.list(),
       add: addUser,
-      // Sign-in (issue #158): a linked identity's user, owner for no sign-in, else a new user with its runtime.
+      // Sign-in (issue #158): a linked identity's user, admin for no sign-in, else a new user with its runtime.
       async signInAs(who) {
         const { user } = userForIdentity(instance, who);
         await runtimes.ensure(user);

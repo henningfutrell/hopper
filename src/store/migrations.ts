@@ -5,6 +5,7 @@ import { passwordAccountsTable } from './migration-accounts.ts';
 import { documentsToRecords } from './migration-config.ts';
 import { signInRealms } from './migration-realms.ts';
 import { usersAndOwner } from './migration-users.ts';
+import { ownerToAdmin } from './migration-admin.ts';
 
 // Schema changes never drop a queue (persisted state is the user's). A migration is SQL, or a
 // function for a rewrite SQL cannot say plainly (JSON bodies); each runs in one transaction.
@@ -137,6 +138,9 @@ const MIGRATIONS: readonly Migration[] = [
   // 20: the password accounts are a table (issue #200): `password_accounts` takes each password realm's
   // `users` out of `sign-in`; a hopper with no `sign-in` gets the realm `password`, no accounts yet.
   passwordAccountsTable,
+  // 21: the built-in user `owner` becomes the default admin account, `admin` (issue #220): its schema,
+  // links, sessions and codes move to it; sessions and login codes name their user, with no default.
+  ownerToAdmin,
 ];
 
 /**

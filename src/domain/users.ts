@@ -3,19 +3,24 @@
 
 /** A user, as the instance schema's `users` row holds it. */
 export interface User {
-  /** `owner`, or a slug of the name: names the user schema, the work dir and the secret prefix. */
+  /** `admin`, or a slug of the name: names the user schema, the work dir and the secret prefix. */
   id: string;
   /** Unique among the users. */
   name: string;
   createdAt: string;
-  /** The user work dir, relative to HOPPER_WORK_DIR: '' for `owner`, `users/<id>` for a user added later. */
+  /** The user work dir, relative to HOPPER_WORK_DIR: '' for `admin`, `users/<id>` for a user added later. */
   workDir: string;
-  /** What the user's secret names start with: '' for `owner`, `HOPPER_USER_<ID>_` for a user added later. */
+  /** What the user's secret names start with: '' for `admin`, `HOPPER_USER_<ID>_` for a user added later. */
   secretPrefix: string;
 }
 
-/** The first user of every hopper: an install from before several users holds its work. */
-export const OWNER_ID = 'owner';
+/**
+ * The default admin account (issue #220), as Nexus, Argo CD and Grafana have one: the first user of every
+ * hopper, who holds the work of an install from before several users and everything the built-in user
+ * `owner` held before it (instance migration 21). No sign-in, the login code and the operator CLI without
+ * `--user`, and the password fallback's account act for it.
+ */
+export const ADMIN_ID = 'admin';
 
 /** GET /api/users: who the users are, nothing of their own data. */
 export interface UserView {

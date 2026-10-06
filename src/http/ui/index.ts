@@ -304,7 +304,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   app.post('/ui/api/users', admin, async (req): Promise<UserAdded> => {
     const { name } = parseWith(usersEditBody, req.body);
     if (o.tenants.list().some((u) => u.name.toLowerCase() === name.toLowerCase())) throw new HttpError(409, `the name ${name} is taken`);
-    if (signIn.none !== null) throw new HttpError(409, 'no sign-in is on, and it signs everyone in as owner: turn it off (Settings → Sign-in) before adding a user');
+    if (signIn.none !== null) throw new HttpError(409, 'no sign-in is on, and it signs everyone in as admin: turn it off (Settings → Sign-in) before adding a user');
     const user = await o.tenants.add(name);
     console.warn(`hopper: user ${user.id} added by ${sessionUser(sessionOf(req)!, userName(sessionOf(req)!)).identity}`);
     const code = signIn.local ? mintLoginCode(o.instance, o.clock, user.id) : undefined;

@@ -19,8 +19,8 @@ export function useTempConfig(): () => TempConfig {
   });
   return () => {
     const instance = openInstanceStore({ url: testDatabaseUrl(), clock: { now: () => new Date() } });
-    const owner = instance.userStore(instance.users.owner());
-    const store: UserStore = { ...owner, close: () => { owner.close(); instance.close(); } };
+    const admin = instance.userStore(instance.users.admin());
+    const store: UserStore = { ...admin, close: () => { admin.close(); instance.close(); } };
     open.push(store);
     const c = store.config;
     return {

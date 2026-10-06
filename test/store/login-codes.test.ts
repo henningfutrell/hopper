@@ -10,30 +10,30 @@ const t = { url: temp.url, open: (url: string, clock = fixedClock()) => openInst
 describe('login codes', () => {
   it('a stored code is taken once, before it expires', () => {
     const s = t.open(t.url());
-    s.loginCodes.create('h1', '2026-10-02T10:10:00.000Z', 'owner');
-    expect(s.loginCodes.take('h1', '2026-10-02T10:05:00.000Z')).toBe('owner');
+    s.loginCodes.create('h1', '2026-10-02T10:10:00.000Z', 'admin');
+    expect(s.loginCodes.take('h1', '2026-10-02T10:05:00.000Z')).toBe('admin');
     expect(s.loginCodes.take('h1', '2026-10-02T10:05:00.000Z')).toBeUndefined();
     s.close();
   });
 
   it('an expired or unknown code is refused, and expired ones are dropped', () => {
     const s = t.open(t.url(), fixedClock());
-    s.loginCodes.create('old', '2026-10-02T10:00:00.000Z', 'owner');
-    s.loginCodes.create('new', '2026-10-02T11:00:00.000Z', 'owner');
+    s.loginCodes.create('old', '2026-10-02T10:00:00.000Z', 'admin');
+    s.loginCodes.create('new', '2026-10-02T11:00:00.000Z', 'admin');
     expect(s.loginCodes.take('old', '2026-10-02T10:00:00.000Z')).toBeUndefined();
     expect(s.loginCodes.take('nope', '2026-10-02T10:00:00.000Z')).toBeUndefined();
-    expect(s.loginCodes.take('new', '2026-10-02T10:30:00.000Z')).toBe('owner');
+    expect(s.loginCodes.take('new', '2026-10-02T10:30:00.000Z')).toBe('admin');
     s.close();
   });
 
   it('a code is live until it is taken or expires; asking does not spend it (issue #95)', () => {
     const s = t.open(t.url());
-    s.loginCodes.create('h3', '2026-10-02T10:10:00.000Z', 'owner');
-    expect(s.loginCodes.live('h3', '2026-10-02T10:05:00.000Z')).toBe('owner');
-    expect(s.loginCodes.live('h3', '2026-10-02T10:05:00.000Z')).toBe('owner');
+    s.loginCodes.create('h3', '2026-10-02T10:10:00.000Z', 'admin');
+    expect(s.loginCodes.live('h3', '2026-10-02T10:05:00.000Z')).toBe('admin');
+    expect(s.loginCodes.live('h3', '2026-10-02T10:05:00.000Z')).toBe('admin');
     expect(s.loginCodes.live('h3', '2026-10-02T10:10:00.000Z')).toBeUndefined();
     expect(s.loginCodes.live('nope', '2026-10-02T10:05:00.000Z')).toBeUndefined();
-    expect(s.loginCodes.take('h3', '2026-10-02T10:05:00.000Z')).toBe('owner');
+    expect(s.loginCodes.take('h3', '2026-10-02T10:05:00.000Z')).toBe('admin');
     expect(s.loginCodes.live('h3', '2026-10-02T10:05:00.000Z')).toBeUndefined();
     s.close();
   });
@@ -42,9 +42,9 @@ describe('login codes', () => {
     const url = t.url();
     const cli = t.open(url);
     const daemon = t.open(url);
-    cli.loginCodes.create('h2', '2099-01-01T00:00:00.000Z', 'owner');
+    cli.loginCodes.create('h2', '2099-01-01T00:00:00.000Z', 'admin');
     cli.close();
-    expect(daemon.loginCodes.take('h2', '2026-10-02T10:00:00.000Z')).toBe('owner');
+    expect(daemon.loginCodes.take('h2', '2026-10-02T10:00:00.000Z')).toBe('admin');
     daemon.close();
   });
 });

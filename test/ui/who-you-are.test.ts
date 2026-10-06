@@ -61,7 +61,7 @@ describe('the top bar says who you are', () => {
 
 describe('sign in first', () => {
   it('a logged-out page reads no user\'s work', async () => {
-    vi.stubGlobal('fetch', fakeDaemon({ authenticated: false, viewing: { id: 'owner', name: 'owner' }, signIn: offer(true) }));
+    vi.stubGlobal('fetch', fakeDaemon({ authenticated: false, viewing: { id: 'admin', name: 'admin' }, signIn: offer(true) }));
     const { load } = (await import(store)) as Store;
     expect(await load()).toBe(false);
     expect(reads).toEqual(['/ui/api/session']);

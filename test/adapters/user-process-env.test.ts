@@ -1,11 +1,11 @@
 // A user added later starts their processes from the machine's variables only (issue #158, design.md
-// "Users: one hopper, separate users"): the daemon's environment holds owner's runtime secrets, and a
-// later user's gh, claude, herdr server and panes must not inherit them. Owner's processes are unchanged.
+// "Users: one hopper, separate users"): the daemon's environment holds admin's runtime secrets, and a
+// later user's gh, claude, herdr server and panes must not inherit them. Admin's processes are unchanged.
 import { afterEach, describe, expect, it } from 'vitest';
 import { run } from '../../src/executors/command.ts';
 import { userProcessEnv } from '../../src/executors/env.ts';
 
-const SECRET = 'HOPPER_TEST_OWNER_SECRET';
+const SECRET = 'HOPPER_TEST_ADMIN_SECRET';
 afterEach(() => { delete process.env[SECRET]; });
 
 const envOf = async (userEnv: Record<string, string>): Promise<string> => {
@@ -15,7 +15,7 @@ const envOf = async (userEnv: Record<string, string>): Promise<string> => {
 };
 
 describe('userProcessEnv', () => {
-  it("is the daemon's environment for owner (no user env)", () => {
+  it("is the daemon's environment for admin (no user env)", () => {
     const env = { PATH: '/bin', GITHUB_APP_PRIVATE_KEY: 'k' };
     expect(userProcessEnv({}, env)).toEqual(env);
   });
@@ -27,10 +27,10 @@ describe('userProcessEnv', () => {
 });
 
 describe('a process a user added later starts', () => {
-  it("does not see a variable of the daemon's environment; owner's still does", async () => {
-    process.env[SECRET] = 'owner-only';
+  it("does not see a variable of the daemon's environment; admin's still does", async () => {
+    process.env[SECRET] = 'admin-only';
     expect(await envOf({ GH_CONFIG_DIR: '/u/gh' })).not.toContain(SECRET);
     expect(await envOf({ GH_CONFIG_DIR: '/u/gh' })).toContain('GH_CONFIG_DIR=/u/gh');
-    expect(await envOf({})).toContain(`${SECRET}=owner-only`);
+    expect(await envOf({})).toContain(`${SECRET}=admin-only`);
   });
 });

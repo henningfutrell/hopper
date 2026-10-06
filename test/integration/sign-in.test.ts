@@ -15,13 +15,13 @@ const ICON = '<link rel="icon" type="image/svg+xml" href="/favicon.svg">';
 describe('a fresh hopper: the login code and the password fallback', () => {
   it('the session view offers the login code, the password form and no redirect realms', async () => {
     const { app, origin } = await start(undefined);
-    expect(await session(app)).toEqual({ authenticated: false, viewing: { id: 'owner', name: 'owner' }, signIn: { local: true, none: null, password: true, gateway: false, origin, realms: [], required: false } });
+    expect(await session(app)).toEqual({ authenticated: false, viewing: { id: 'admin', name: 'admin' }, signIn: { local: true, none: null, password: true, gateway: false, origin, realms: [], required: false } });
   });
 
   it('the login code signs in as admin, provider local', async () => {
     const { app } = await start(undefined);
     const token = await app.login();
-    expect(await session(app, token)).toMatchObject({ authenticated: true, expiresAt: expect.any(String), user: { id: 'owner', name: 'owner', role: 'admin', realm: 'local', identity: 'login code' } });
+    expect(await session(app, token)).toMatchObject({ authenticated: true, expiresAt: expect.any(String), user: { id: 'admin', name: 'admin', role: 'admin', realm: 'local', identity: 'login code' } });
   });
 });
 

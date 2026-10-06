@@ -8,7 +8,7 @@
 // (seams.env): the same object, so a test may set or unset a variable while the app runs. Jobs are PULLED: a
 // manual JobSource (manual-source.ts) offers items, run by the "scripted" executor
 // (scripted-executor.ts). Every user (issue #158) has a manual source of its own (`sourceOf(id)`;
-// `source` is owner's); `api` reads without a session (loopback: the one user's work, while there is one
+// `source` is admin's); `api` reads without a session (loopback: the one user's work, while there is one
 // user) unless its headers carry one; the helpers that read a user's work (`job`, `pull`, …) carry a
 // session of that user once the hopper has several (issue #221).
 // Every event the app emits is validated against its schema; stop() fails the test on any
@@ -20,7 +20,7 @@ import { loadConfig } from '../../src/config.ts';
 import { startApp, type App, type AppSeams } from '../../src/main.ts';
 import type { SourceItem } from '../../src/domain/ports.ts';
 import type { DomainEvent, Job, Question, User } from '../../src/domain/types.ts';
-import { OWNER_ID } from '../../src/domain/types.ts';
+import { ADMIN_ID } from '../../src/domain/types.ts';
 import { validateEvent } from '../../src/events/index.ts';
 import { assertAllConform, trackConformance } from './conformance.ts';
 import { rawRequest } from './http.ts';
@@ -54,16 +54,16 @@ export interface TestApp {
   /** A user's manual source. */
   sourceOf(userId: string): ManualSource;
   scripted: ScriptedExecutor;
-  /** A user's running parts (store, engine, sources, plugins); default owner. */
+  /** A user's running parts (store, engine, sources, plugins); default admin. */
   user(id?: string): ReturnType<App['user']>;
   /** A new user, its runtime started (as POST /ui/api/users does). */
   addUser(name: string): Promise<User>;
   /** A request without a session (loopback: the one user's work; nothing of a user's with several), with `headers` (`x-hopper-session`). */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- tests read loose JSON
   api<T = any>(method: string, path: string, body?: unknown, headers?: Record<string, string>): Promise<ApiResponse<T>>;
-  /** Offer one item through the user's manual source (default owner), sync, and return its job. `script` is the scripted executor's op. */
+  /** Offer one item through the user's manual source (default admin), sync, and return its job. `script` is the scripted executor's op. */
   pull(script: Record<string, unknown>, item?: Partial<SourceItem>, userId?: string): Promise<Job>;
-  /** One sync of every source of owner. */
+  /** One sync of every source of admin. */
   sync(): Promise<void>;
   job(id: string): Promise<Job>;
   waitForStatus(id: string, status: string, timeoutMs?: number): Promise<Job>;
@@ -74,7 +74,7 @@ export interface TestApp {
   waitForQuestion(jobId: string, ok: (q: Question) => boolean, timeoutMs?: number): Promise<Question>;
   /** Set the fake usage reading (through the engine; there is no HTTP route). */
   setUsage(used: number, limit?: number): void;
-  /** Log in like open-ui.sh does: mint a code for the user (`hopper login-code --user`; default owner), POST /ui/login. Returns the session token. */
+  /** Log in like open-ui.sh does: mint a code for the user (`hopper login-code --user`; default admin), POST /ui/login. Returns the session token. */
   login(userId?: string): Promise<string>;
   /** POST /ui/login with this code. Returns the session token. */
   loginWith(code: string): Promise<string>;
@@ -130,7 +130,7 @@ export async function startTestApp(o: {
     ...o.env,
   });
   const source = o.source ?? createManualSource();
-  const sources = new Map<string, ManualSource>([[OWNER_ID, source]]);
+  const sources = new Map<string, ManualSource>([[ADMIN_ID, source]]);
   const sourceOf = (id: string): ManualSource => {
     let s = sources.get(id);
     if (!s) sources.set(id, (s = createManualSource()));
@@ -144,14 +144,14 @@ export async function startTestApp(o: {
     ...(o.realLevels ? {} : fakeLevels()),
     ...o.seams,
     executors: [scripted, ...(o.seams?.executors ?? [])],
-    // Each user's own manual source and fake usage; the seams' sources run for owner only.
+    // Each user's own manual source and fake usage; the seams' sources run for admin only.
     perUser: (id) => ({
       fakeUsage: createFakeUsageSource({ now: () => new Date() }),
-      sources: [sourceOf(id), ...(id === OWNER_ID ? o.seams?.sources ?? [] : [])],
+      sources: [sourceOf(id), ...(id === ADMIN_ID ? o.seams?.sources ?? [] : [])],
       ...o.seams?.perUser?.(id),
     }),
   });
-  const tracker = trackConformance(app.user(OWNER_ID).store);
+  const tracker = trackConformance(app.user(ADMIN_ID).store);
   const api = async <T>(method: string, path: string, body?: unknown, headers: Record<string, string> = {}): Promise<ApiResponse<T>> => {
     const res = await fetch(app.url + path, {
       method,
@@ -181,16 +181,16 @@ export async function startTestApp(o: {
     }
     return { 'x-hopper-session': token };
   };
-  const job = async (id: string): Promise<Job> => (await api<Job>('GET', `/api/jobs/${id}`, undefined, await as(OWNER_ID))).body;
+  const job = async (id: string): Promise<Job> => (await api<Job>('GET', `/api/jobs/${id}`, undefined, await as(ADMIN_ID))).body;
   const questionsOf = async (jobId: string): Promise<Question[]> => (await api<{ questions: Question[] }>(
-    'GET', '/api/questions?status=all&limit=1000', undefined, await as(OWNER_ID))).body.questions.filter((q) => q.jobId === jobId);
-  const sync = () => app.user(OWNER_ID).sources.syncNow();
+    'GET', '/api/questions?status=all&limit=1000', undefined, await as(ADMIN_ID))).body.questions.filter((q) => q.jobId === jobId);
+  const sync = () => app.user(ADMIN_ID).sources.syncNow();
   let stopped = false;
   return {
     app, url: app.url, dbPath: o.dbPath, dataDir, source, sourceOf, scripted, api, sync, job, questionsOf, loginWith,
-    user: (id = OWNER_ID) => app.user(id),
+    user: (id = ADMIN_ID) => app.user(id),
     addUser: (name) => app.addUser(name),
-    async pull(op, over = {}, userId = OWNER_ID) {
+    async pull(op, over = {}, userId = ADMIN_ID) {
       const item = manualItem({ prompt: JSON.stringify(op), ...over });
       const s = sourceOf(userId);
       s.add(item);
@@ -208,13 +208,13 @@ export async function startTestApp(o: {
       const j = (await api<Job>('GET', `/api/jobs/${id}`, undefined, await as(userId))).body;
       return j.status === status ? j : undefined;
     }, { timeoutMs, what: `job ${id} of ${userId} to be ${status}` }),
-    events: async (query = 'limit=1000') => (await api<{ events: DomainEvent[] }>('GET', `/api/events?${query}`, undefined, await as(OWNER_ID))).body.events,
+    events: async (query = 'limit=1000') => (await api<{ events: DomainEvent[] }>('GET', `/api/events?${query}`, undefined, await as(ADMIN_ID))).body.events,
     waitForQuestion: (jobId, ok, timeoutMs) => waitFor(async () => {
       const q = (await questionsOf(jobId))[0];
       return q && ok(q) ? q : undefined;
     }, { timeoutMs, what: `a matching question on job ${jobId}` }),
-    setUsage(used, limit = 100) { app.user(OWNER_ID).engine.setFakeUsage({ used, limit, unit: '%' }); },
-    login: (userId = OWNER_ID) => loginWith(mintLoginCode(app.instance, { now: () => new Date() }, userId)),
+    setUsage(used, limit = 100) { app.user(ADMIN_ID).engine.setFakeUsage({ used, limit, unit: '%' }); },
+    login: (userId = ADMIN_ID) => loginWith(mintLoginCode(app.instance, { now: () => new Date() }, userId)),
     async ui<T>(path: string, body: unknown = {}, u: UiOptions = {}) {
       const defaults: Record<string, string | null> = {
         'content-type': 'application/json', origin: app.url, ...(u.token ? { 'x-hopper-session': u.token } : {}),

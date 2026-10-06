@@ -29,7 +29,7 @@ function world(): World {
   dirs.push(root);
   const dataDir = join(root, 'data');
   const instance = openInstanceStore({ url: testDatabaseUrl(), clock: { now: () => new Date() } });
-  const store = instance.userStore(instance.users.owner());
+  const store = instance.userStore(instance.users.admin());
   stores.push(store, instance);
   return { root, up: createUpstream(root), instance, store, dataDir };
 }

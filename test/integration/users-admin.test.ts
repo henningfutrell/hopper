@@ -25,20 +25,20 @@ const sleep = { op: 'sleep', ms: 60_000 };
 const session = (token: string) => ({ 'x-hopper-session': token });
 
 /** Owner signed in; the user `bea` added from the UI, signed in with the link the answer carried. */
-async function twoUsers(a: TestApp): Promise<{ owner: string; bea: string }> {
-  const owner = await a.login();
-  const added = await a.ui<{ links: string[] }>('/ui/api/users', { action: 'add', name: 'Bea' }, { token: owner });
+async function twoUsers(a: TestApp): Promise<{ admin: string; bea: string }> {
+  const admin = await a.login();
+  const added = await a.ui<{ links: string[] }>('/ui/api/users', { action: 'add', name: 'Bea' }, { token: admin });
   expect(added.status).toBe(200);
   const code = /#login=([0-9a-f]{64})$/.exec(added.body.links[0]!)![1]!;
-  return { owner, bea: await a.loginWith(code) };
+  return { admin, bea: await a.loginWith(code) };
 }
 
 describe('an admin reads the totals, never a user\'s work', () => {
-  /** A password realm `pw` with the account `cy`, added by owner's admin session; cy signed in once (so a user of its own). */
-  async function cyByPassword(a: TestApp, owner: string): Promise<string> {
-    const realms = async () => (await a.api('GET', '/api/realms', undefined, session(owner))).body as { version: string };
-    expect((await a.ui('/ui/api/realms', { action: 'save', realm: { name: 'pw', type: 'password' }, version: (await realms()).version }, { token: owner })).status).toBe(200);
-    expect((await a.ui('/ui/api/realms', { action: 'account', realm: 'pw', username: 'cy', role: 'admin', password: 'first-password', version: (await realms()).version }, { token: owner })).status).toBe(200);
+  /** A password realm `pw` with the account `cy`, added by admin's admin session; cy signed in once (so a user of its own). */
+  async function cyByPassword(a: TestApp, admin: string): Promise<string> {
+    const realms = async () => (await a.api('GET', '/api/realms', undefined, session(admin))).body as { version: string };
+    expect((await a.ui('/ui/api/realms', { action: 'save', realm: { name: 'pw', type: 'password' }, version: (await realms()).version }, { token: admin })).status).toBe(200);
+    expect((await a.ui('/ui/api/realms', { action: 'account', realm: 'pw', username: 'cy', role: 'admin', password: 'first-password', version: (await realms()).version }, { token: admin })).status).toBe(200);
     return passwordSignIn(a, 'cy', 'first-password');
   }
   async function passwordSignIn(a: TestApp, username: string, password: string): Promise<string> {
@@ -50,12 +50,12 @@ describe('an admin reads the totals, never a user\'s work', () => {
 
   it('GET /api/instance: the totals across users, no job, question or user of anyone; only an admin', async () => {
     const a = await start();
-    const { owner, bea } = await twoUsers(a);
-    const ownerJob = await a.pull(hard);
-    await a.waitForQuestion(ownerJob.id, (q) => q.tier === 'human');
+    const { admin, bea } = await twoUsers(a);
+    const adminJob = await a.pull(hard);
+    await a.waitForQuestion(adminJob.id, (q) => q.tier === 'human');
     const beaJob = await a.pull(sleep, {}, 'bea');
     await a.waitForStatusOf(beaJob.id, 'running', 'bea');
-    const r = await a.api('GET', '/api/instance', undefined, session(owner));
+    const r = await a.api('GET', '/api/instance', undefined, session(admin));
     expect(r.status).toBe(200);
     expect(r.body).toEqual({
       users: 2,
@@ -63,39 +63,39 @@ describe('an admin reads the totals, never a user\'s work', () => {
       questions: { open: 1 },
       lanes: { busy: 1, total: expect.any(Number) },
     });
-    expect(JSON.stringify(r.body)).not.toMatch(new RegExp(`${ownerJob.id}|${beaJob.id}|bea|Bea`));
+    expect(JSON.stringify(r.body)).not.toMatch(new RegExp(`${adminJob.id}|${beaJob.id}|bea|Bea`));
     expect((await a.api('GET', '/api/instance', undefined, session(bea))).status).toBe(200);
   });
 
   it('an admin may not set the password of, link, or re-add an account that signs in as another user', async () => {
     const a = await start();
-    const owner = await a.login();
-    const cy = await cyByPassword(a, owner);
+    const admin = await a.login();
+    const cy = await cyByPassword(a, admin);
     expect((await a.api('GET', '/ui/api/session', undefined, session(cy))).body.user).toMatchObject({ id: 'cy' });
     await a.addUser('Bea');
     const account = { action: 'account', realm: 'pw', role: 'admin' };
-    const reset = await a.ui<{ error: string }>('/ui/api/realms', { ...account, username: 'cy', password: 'admin-knows-it', version: await version(a, owner) }, { token: owner });
+    const reset = await a.ui<{ error: string }>('/ui/api/realms', { ...account, username: 'cy', password: 'admin-knows-it', version: await version(a, admin) }, { token: admin });
     expect(reset.status).toBe(409);
     expect(reset.body.error).toContain('signs in as another user');
-    expect((await a.ui('/ui/api/realms', { ...account, username: 'dee', password: 'admin-knows-it', user: 'bea', version: await version(a, owner) }, { token: owner })).status).toBe(409);
-    expect((await a.ui('/ui/api/realms', { action: 'account-remove', realm: 'pw', username: 'cy', version: await version(a, owner) }, { token: owner })).status).toBe(200);
-    expect((await a.ui('/ui/api/realms', { ...account, username: 'cy', password: 'admin-knows-it', version: await version(a, owner) }, { token: owner })).status).toBe(409);
+    expect((await a.ui('/ui/api/realms', { ...account, username: 'dee', password: 'admin-knows-it', user: 'bea', version: await version(a, admin) }, { token: admin })).status).toBe(409);
+    expect((await a.ui('/ui/api/realms', { action: 'account-remove', realm: 'pw', username: 'cy', version: await version(a, admin) }, { token: admin })).status).toBe(200);
+    expect((await a.ui('/ui/api/realms', { ...account, username: 'cy', password: 'admin-knows-it', version: await version(a, admin) }, { token: admin })).status).toBe(409);
     expect((await a.ui('/ui/auth/password', { username: 'cy', password: 'admin-knows-it' })).status).not.toBe(200);
-    expect((await a.ui('/ui/api/realms', { ...account, username: 'eve', password: 'own-account', user: 'owner', version: await version(a, owner) }, { token: owner })).status).toBe(200);
+    expect((await a.ui('/ui/api/realms', { ...account, username: 'eve', password: 'own-account', user: 'admin', version: await version(a, admin) }, { token: admin })).status).toBe(200);
   });
 
   it('an admin may change the role of an account that signs in as another user; the totals need admin', async () => {
     const a = await start();
-    const owner = await a.login();
-    const cy = await cyByPassword(a, owner);
-    expect((await a.ui('/ui/api/realms', { action: 'account', realm: 'pw', username: 'cy', role: 'viewer', version: await version(a, owner) }, { token: owner })).status).toBe(200);
+    const admin = await a.login();
+    const cy = await cyByPassword(a, admin);
+    expect((await a.ui('/ui/api/realms', { action: 'account', realm: 'pw', username: 'cy', role: 'viewer', version: await version(a, admin) }, { token: admin })).status).toBe(200);
     expect((await a.api('GET', '/api/instance', undefined, session(cy))).status).toBe(403);
   });
 
   it('a user changes their own password; their other sessions end; the old password no longer signs in', async () => {
     const a = await start();
-    const owner = await a.login();
-    const cy = await cyByPassword(a, owner);
+    const admin = await a.login();
+    const cy = await cyByPassword(a, admin);
     const other = await passwordSignIn(a, 'cy', 'first-password');
     expect((await a.ui('/ui/api/password', { current: 'wrong-password', password: 'only-cy-knows' }, { token: cy })).status).toBe(400);
     expect((await a.ui('/ui/api/password', { current: 'first-password', password: 'only-cy-knows' }, { token: cy })).status).toBe(200);
@@ -104,17 +104,17 @@ describe('an admin reads the totals, never a user\'s work', () => {
     expect((await a.ui('/ui/auth/password', { username: 'cy', password: 'first-password' })).status).not.toBe(200);
     const again = await passwordSignIn(a, 'cy', 'only-cy-knows');
     expect((await a.api('GET', '/ui/api/session', undefined, session(again))).body.user).toMatchObject({ id: 'cy' });
-    expect((await a.ui('/ui/api/password', { current: 'x', password: 'not-a-password-account' }, { token: owner })).status).toBe(409);
+    expect((await a.ui('/ui/api/password', { current: 'x', password: 'not-a-password-account' }, { token: admin })).status).toBe(409);
   });
 
   it('no sign-in stays off while the hopper has more than one user, and a user is not added while it is on', async () => {
     const a = await start();
-    const owner = await a.login();
-    expect((await a.ui('/ui/api/realms', { action: 'settings', none: 'viewer', version: await version(a, owner) }, { token: owner })).status).toBe(200);
-    expect((await a.ui('/ui/api/users', { action: 'add', name: 'Bea' }, { token: owner })).status).toBe(409);
-    expect((await a.ui('/ui/api/realms', { action: 'settings', none: null, version: await version(a, owner) }, { token: owner })).status).toBe(200);
-    expect((await a.ui('/ui/api/users', { action: 'add', name: 'Bea' }, { token: owner })).status).toBe(200);
-    const on = await a.ui<{ error: string }>('/ui/api/realms', { action: 'settings', none: 'viewer', version: await version(a, owner) }, { token: owner });
+    const admin = await a.login();
+    expect((await a.ui('/ui/api/realms', { action: 'settings', none: 'viewer', version: await version(a, admin) }, { token: admin })).status).toBe(200);
+    expect((await a.ui('/ui/api/users', { action: 'add', name: 'Bea' }, { token: admin })).status).toBe(409);
+    expect((await a.ui('/ui/api/realms', { action: 'settings', none: null, version: await version(a, admin) }, { token: admin })).status).toBe(200);
+    expect((await a.ui('/ui/api/users', { action: 'add', name: 'Bea' }, { token: admin })).status).toBe(200);
+    const on = await a.ui<{ error: string }>('/ui/api/realms', { action: 'settings', none: 'viewer', version: await version(a, admin) }, { token: admin });
     expect(on.status).toBe(409);
     expect(on.body.error).toContain('more than one user');
   });

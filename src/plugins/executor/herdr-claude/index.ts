@@ -26,7 +26,7 @@ export interface HerdrClaudeOptions {
 /**
  * The plugin. `seam` (tests, `UserSeams.herdr`) replaces the herdr CLI client; detection then
  * says available, since nothing is run. `defaultSession`: the user's herdr session (issue #158) —
- * `hopper` for owner, `hopper-<id>` for a user added later.
+ * `hopper` for admin, `hopper-<id>` for a user added later.
  */
 export function herdrClaudePlugin(seam?: HerdrClient, defaultSession = 'hopper'): PluginDefinition<'executor', HerdrClaudeOptions> {
   return {

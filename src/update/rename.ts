@@ -254,11 +254,11 @@ export function startHandover(appDir: string): void {
 }
 
 /** The pane jobs in the database the env file names (under either prefix), read with the daemon stopped; none named: none. */
-/** Owner's store (a job-hopper install had one user: issue #158 made its work owner's), closed after `fn`. */
-function withOwnerStore<T>(url: string, fn: (store: UserStore) => T): T {
+/** The admin account's store (a job-hopper install had one user: its work is admin's, issues #158, #220), closed after `fn`. */
+function withAdminStore<T>(url: string, fn: (store: UserStore) => T): T {
   const instance = openInstanceStore({ url, clock: { now: () => new Date() } });
   try {
-    const store = instance.userStore(instance.users.owner());
+    const store = instance.userStore(instance.users.admin());
     try { return fn(store); } finally { store.close(); }
   } finally {
     instance.close();
@@ -268,7 +268,7 @@ function withOwnerStore<T>(url: string, fn: (store: UserStore) => T): T {
 function paneJobsIn(env: Record<string, string | undefined>): string[] {
   const url = runtimeSecrets(renamedEnv(env))('HOPPER_DATABASE_URL');
   if (!url) return [];
-  return withOwnerStore(url, (store) => paneJobs(store.jobs.list({ status: [...PANE_JOB_STATUSES] })));
+  return withAdminStore(url, (store) => paneJobs(store.jobs.list({ status: [...PANE_JOB_STATUSES] })));
 }
 
 const waitsFor = (jobs: string[]): string =>
@@ -294,7 +294,7 @@ export function renameBoot(o: {
   }
   const env = renamedEnv(o.env);
   const url = runtimeSecrets(env)('HOPPER_DATABASE_URL')!;
-  const jobs = withOwnerStore(url, (store) => {
+  const jobs = withAdminStore(url, (store) => {
     const held = paneJobs(store.jobs.list({ status: [...PANE_JOB_STATUSES] }));
     if (held.length > 0) {
       const pendingFile = join(env.HOPPER_WORK_DIR ?? '', 'update', 'pending.json');

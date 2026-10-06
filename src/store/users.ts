@@ -1,6 +1,6 @@
 // The users of one hopper and their identity links (issue #158), in the instance schema.
 import type { IdentityLinks, UserRepository } from '../domain/ports.ts';
-import type { User } from '../domain/types.ts';
+import { ADMIN_ID, type User } from '../domain/types.ts';
 import type { StoreContext } from './context.ts';
 import { quoteIdent } from './tenant-migrations.ts';
 
@@ -31,10 +31,10 @@ export function createUserRepository(c: StoreContext, onAdded: (user: User) => v
       const r = c.db.get('SELECT * FROM users WHERE id = ?', id);
       return r ? rowOf(r) : undefined;
     },
-    owner() {
-      const first = list()[0];
-      if (!first) throw new Error('the store has no user (migration 17 creates owner)');
-      return first;
+    admin() {
+      const r = c.db.get('SELECT * FROM users WHERE id = ?', ADMIN_ID);
+      if (!r) throw new Error('the store has no default admin account (migration 21 makes it)');
+      return rowOf(r);
     },
     add(name) {
       const trimmed = name.trim();

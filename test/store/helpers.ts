@@ -15,7 +15,7 @@ export const spec: JobSpec = { executor: 'test', payload: { n: 1 }, goal: 'g' };
 
 /**
  * Temp stores: `url()` is a fresh, empty database (support/database.ts: a new Postgres schema).
- * `open` is the store of the user `owner` (its instance closed with it); `at` the raw database
+ * `open` is the store of the user `admin` (its instance closed with it); `at` the raw database
  * migrated to one instance version, for a migration's own test.
  */
 export function useTempStore() {
@@ -23,8 +23,8 @@ export function useTempStore() {
     url: () => testDatabaseUrl(),
     open: (url: string, clock = fixedClock(), idGen?: () => string): UserStore => {
       const instance = openInstanceStore({ url, clock, ...(idGen ? { idGen } : {}) });
-      const owner = instance.userStore(instance.users.owner());
-      return { ...owner, close: () => { owner.close(); instance.close(); } };
+      const admin = instance.userStore(instance.users.admin());
+      return { ...admin, close: () => { admin.close(); instance.close(); } };
     },
     at: (url: string, version: number): Db => {
       const db = openDb(url);
@@ -34,7 +34,7 @@ export function useTempStore() {
     /** A user schema of its own (no instance), migrated to one tenant version, for a tenant migration's own test. */
     tenantAt: (url: string, version: number): Db => {
       const u = new URL(url);
-      u.searchParams.set('schema', `${u.searchParams.get('schema')!}_u_owner`);
+      u.searchParams.set('schema', `${u.searchParams.get('schema')!}_u_admin`);
       const db = openDb(u.toString());
       migrateTenant(db, version);
       return db;

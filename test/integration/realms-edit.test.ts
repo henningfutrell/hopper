@@ -41,7 +41,7 @@ const fallbackOf = (warn: MockInstance): { username: string; password: string } 
 };
 
 describe('a fresh hopper', () => {
-  it('offers the password form at once: the account admin, with a password made at start and shown once in its start lines, signs in as owner, admin', async () => {
+  it('offers the password form at once: the account admin, with a password made at start and shown once in its start lines, signs in as the default admin account, admin', async () => {
     const warn = vi.spyOn(console, 'warn');
     const o = await startWithAuth(h, undefined);
     const { username, password } = fallbackOf(warn);
@@ -50,9 +50,9 @@ describe('a fresh hopper', () => {
     expect(password).toMatch(/^[A-Za-z0-9_-]{24,}$/);
     expect((await session(o.app)).signIn.password).toBe(true);
     const admin = (await passwordSignIn(o, username, password)).token;
-    expect(await session(o.app, admin)).toMatchObject({ user: { id: 'owner', realm: 'password', role: 'admin' } });
+    expect(await session(o.app, admin)).toMatchObject({ user: { id: 'admin', realm: 'password', role: 'admin' } });
     const v = await realms(o.app, admin!);
-    expect(v.realms).toEqual([{ name: 'password', label: 'Password', type: 'password', enabled: true, settings: {}, secrets: [], accounts: [{ username: 'admin', role: 'admin', user: { id: 'owner', name: 'owner' } }] }]);
+    expect(v.realms).toEqual([{ name: 'password', label: 'Password', type: 'password', enabled: true, settings: {}, secrets: [], accounts: [{ username: 'admin', role: 'admin', user: { id: 'admin', name: 'admin' } }] }]);
     expect(JSON.stringify(o.app.app.instance.signInConfig.read())).not.toContain(password);
   });
 
@@ -226,24 +226,24 @@ describe('POST /ui/api/realms: password accounts', () => {
   it('a new account signs in as the user it names; without one, as a new user of its own', async () => {
     const o = await startWithAuth(h, { version: 1, realms: [{ name: 'staff', type: 'password', users: [] }, fallback()] });
     const admin = await o.app.login();
-    expect((await change(o.app, admin, { action: 'account', realm: 'staff', username: 'boss', password: 'correct horse', role: 'admin', user: 'owner' })).status).toBe(200);
+    expect((await change(o.app, admin, { action: 'account', realm: 'staff', username: 'boss', password: 'correct horse', role: 'admin', user: 'admin' })).status).toBe(200);
     expect((await change(o.app, admin, { action: 'account', realm: 'staff', username: 'bea', password: 'correct horse', role: 'viewer' })).status).toBe(200);
     expect((await realms(o.app, admin)).realms[0].accounts).toEqual([
       { username: 'bea', role: 'viewer' },
-      { username: 'boss', role: 'admin', user: { id: 'owner', name: 'owner' } },
+      { username: 'boss', role: 'admin', user: { id: 'admin', name: 'admin' } },
     ]);
     const boss = (await passwordSignIn(o, 'boss', 'correct horse')).token;
-    expect((await session(o.app, boss)).user).toMatchObject({ id: 'owner', role: 'admin' });
+    expect((await session(o.app, boss)).user).toMatchObject({ id: 'admin', role: 'admin' });
     const bea = (await passwordSignIn(o, 'bea', 'correct horse')).token;
     expect((await session(o.app, bea)).user).toMatchObject({ name: 'bea', role: 'viewer' });
-    expect((await session(o.app, bea)).user.id).not.toBe('owner');
+    expect((await session(o.app, bea)).user.id).not.toBe('admin');
   });
 
   it.each([
     ['a new account without a password', { username: 'bea', role: 'viewer' }, /password/],
     ['a password shorter than 8 characters', { username: 'bea', role: 'viewer', password: 'short' }, /8 characters/],
     ['a user that does not exist', { username: 'bea', role: 'viewer', password: 'correct horse', user: 'nobody' }, /nobody/],
-    ['moving an account that signed in to another user', { username: 'ada', role: 'viewer', user: 'owner' }, /ada.*signs in as/],
+    ['moving an account that signed in to another user', { username: 'ada', role: 'viewer', user: 'admin' }, /ada.*signs in as/],
   ])('refuses %s', async (_what, body, msg) => {
     const o = await startWithAuth(h, staff());
     const admin = await o.app.login();
