@@ -2,7 +2,7 @@
 # Agent boxes for testing (design.md "Agent boxes", issue #295): one container per agent CLI — claude,
 # codex, cursor, omp, opencode — on this machine's docker, each an ssh target with its own herdr
 # session, so the hopper attaches to all of them and so can you. Per box `<prefix>-<agent>`:
-#   - the image `<prefix>-<agent>` from deploy/agent-box/Dockerfile, with this machine's herdr in it;
+#   - the image `<prefix>-<agent>` from scripts/agent-box/Dockerfile, with this machine's herdr in it;
 #   - the container, restarted with docker, its sshd published on 127.0.0.1 only (a free port), its
 #     home the volume `<prefix>-<agent>-home` (the agent's sign-in lives there, and outlives the box);
 #   - authorized there: the hopper's key (HOPPER_SSH_KEY_FILE, or its public line HOPPER_SSH_PUBLIC_KEY)
@@ -119,7 +119,7 @@ HERDR="${HOPPER_BOX_HERDR:-$(command -v herdr || true)}"
 
 CONTEXT="$(mktemp -d)"
 trap 'rm -rf "$CONTEXT"' EXIT
-cp "$SRC/deploy/agent-box/Dockerfile" "$SRC/deploy/agent-box/entrypoint.sh" "$CONTEXT/"
+cp "$SRC/scripts/agent-box/Dockerfile" "$SRC/scripts/agent-box/entrypoint.sh" "$CONTEXT/"
 cp "$HERDR" "$CONTEXT/herdr"
 
 # Who may log in to a box: the hopper's key restricted, then each of your own keys that is not it.
