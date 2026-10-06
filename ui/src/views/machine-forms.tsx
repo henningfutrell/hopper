@@ -1,12 +1,12 @@
-// The Machines view's forms (design.md "Machines from the UI", issues #18, #74, #142): attach a machine over
-// ssh, edit an attached one's lanes, executors and label, edit a local one's lane count, edit the machine
-// defaults a new machine starts from. The ssh target is picked from ~/.ssh/config's Host aliases, never
-// typed; herdr's path is resolved by the daemon over ssh when one of the machine's executors needs herdr. Phone width first: every
-// field stacks, every control is at least 36 px tall.
+// The Machines view's forms (design.md "Machines from the UI", issues #18, #74, #142, #205): attach a machine over
+// ssh, edit an attached one's name, lanes, executors, label and how it is reached, edit a local one's name and
+// lane count, edit the machine defaults a new machine starts from. On attach the ssh target is picked from
+// ~/.ssh/config's Host aliases, never typed; herdr's path is resolved by the daemon over ssh when one of the
+// machine's executors needs herdr. Phone width first: every field stacks, every control is at least 36 px tall.
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { addBody, addProblem, defaultsBody, editBody, newDraft, type MachineDefaultsDraft, type MachineDraft, type MachineEditDraft, type MachineKind } from '@/model/machines';
+import { addBody, addProblem, defaultsBody, DETAILS, editBody, editDraft, editProblem, localBody, newDraft, type LocalDraft, type MachineDefaultsDraft, type MachineDraft, type MachineEditDraft, type MachineKind } from '@/model/machines';
 import type { MachineDefaultsEdit, MachineEdit, MachinesConfig, PluginsEdit } from '@/model/wire';
 
 const SELECT = 'h-9 w-full rounded-lg border border-input bg-transparent px-2.5 text-base md:text-sm dark:bg-input/30';
@@ -82,28 +82,49 @@ export function AddMachineForm({ config, busy, send, onDone }: {
   );
 }
 
-/** Edit an attached machine: lanes, executors, label. How it is reached (ssh, herdr, container, token) is edited in Plugins. */
+/** Edit an attached machine: its name, lanes, executors, label, and how it is reached — its connection's details (issue #205). */
 export function EditMachineForm({ machine, config, busy, send, onDone }: {
   machine: Extract<MachineKind, { kind: 'attached' }>; config: MachinesConfig; busy: boolean;
   send: (e: Extract<PluginsEdit, { action: 'options' }>, done: string) => Promise<boolean>; onDone: () => void;
 }) {
   const name = machine.machine.name;
-  const [d, setD] = useState<MachineEditDraft>({ lanes: String(machine.lanes), executors: [...machine.executors], label: machine.label ?? '' });
+  const [d, setD] = useState<MachineEditDraft>(() => editDraft(machine));
   const set = (over: Partial<MachineEditDraft>) => setD((x) => ({ ...x, ...over }));
-  const body = editBody(machine, d, config.version);
-  const lanesOk = /^\d+$/.test(d.lanes.trim()) && Number(d.lanes) >= 1;
+  const detail = (key: string, v: string) => setD((x) => ({ ...x, details: { ...x.details, [key]: v } }));
+  const problem = editProblem(machine, d, config);
+  const body = problem ? null : editBody(machine, d, config.version);
   const all = [...config.executors, ...machine.executors.filter((x) => !config.executors.includes(x))];
-  const submit = async () => { if (body && await send(body, `Saved ${name}`)) onDone(); };
+  const targets = `ssh-targets-${name}`;
+  const submit = async () => { if (body && await send(body, body.rename ? `Renamed ${name} to ${body.rename}` : `Saved ${name}`)) onDone(); };
   return (
     <form className="grid gap-3 rounded-md border p-3" onSubmit={(e) => { e.preventDefault(); void submit(); }}>
       <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="name" hint="the machine id; refused while a job runs there, waits there or is pinned to it">
+          <Input className="h-9" value={d.name} disabled={busy} autoCapitalize="none" autoCorrect="off" spellCheck={false} onChange={(e) => set({ name: e.target.value })} />
+        </Field>
+        <Field label="label" hint="empty: the name"><Input className="h-9" value={d.label} disabled={busy} placeholder={d.name.trim() || name} onChange={(e) => set({ label: e.target.value })} /></Field>
         <Field label="lanes"><Input className="h-9" type="number" inputMode="numeric" min={1} step={1} value={d.lanes} disabled={busy} onChange={(e) => set({ lanes: e.target.value })} /></Field>
-        <Field label="label" hint="empty: the name"><Input className="h-9" value={d.label} disabled={busy} placeholder={name} onChange={(e) => set({ label: e.target.value })} /></Field>
+        {(DETAILS[machine.machine.connection] ?? []).map((f) => (
+          <Field key={f.key} label={f.label} hint={f.hint}>
+            <Input className="h-9 font-mono" value={d.details[f.key] ?? ''} disabled={busy} autoCapitalize="none" autoCorrect="off" spellCheck={false}
+              list={f.key === 'ssh' ? targets : undefined} onChange={(e) => detail(f.key, e.target.value)} />
+          </Field>
+        ))}
       </div>
+      {machine.machine.connection === 'ssh' && (
+        <>
+          <datalist id={targets}>{config.ssh.targets.map((t) => <option key={t} value={t} />)}</datalist>
+          <label className="flex min-h-9 items-center gap-2 text-xs">
+            <input type="checkbox" className="size-4" checked={d.herdr} disabled={busy} onChange={(e) => set({ herdr: e.target.checked })} />
+            runs herdr (off: probed over ssh alone; herdr-claude does not run there)
+          </label>
+        </>
+      )}
       <ExecutorChecks all={all} picked={d.executors} disabled={busy} onChange={(executors) => set({ executors })} />
-      <div className="flex flex-wrap gap-2">
-        <Button type="submit" size="lg" disabled={busy || !body || !lanesOk}>Save {name}</Button>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button type="submit" size="lg" disabled={busy || !body}>Save {name}</Button>
         <Button type="button" size="lg" variant="ghost" disabled={busy} onClick={onDone}>Cancel</Button>
+        {problem && <span className="text-xs text-muted-foreground">{problem}</span>}
       </div>
     </form>
   );
@@ -132,18 +153,28 @@ export function MachineDefaultsForm({ config, busy, send, onDone }: {
   );
 }
 
-/** A local machine's lane count: its instance's `lanes` option (POST /ui/api/plugins). */
-export function LocalLanesForm({ lanes, busy, save, onDone }: { lanes: number; busy: boolean; save: (lanes: number) => Promise<boolean>; onDone: () => void }) {
-  const [v, setV] = useState(String(lanes));
-  const ok = /^\d+$/.test(v.trim());
-  const submit = async () => { if (await save(Number(v))) onDone(); };
+/** A local machine's name and lane count: its instance's `lanes` option (POST /ui/api/plugins, issue #205). */
+export function LocalMachineForm({ machine, config, busy, send, onDone }: {
+  machine: Extract<MachineKind, { kind: 'local' }>; config: MachinesConfig; busy: boolean;
+  send: (e: Extract<PluginsEdit, { action: 'options' }>, done: string) => Promise<boolean>; onDone: () => void;
+}) {
+  const name = machine.machine.name;
+  const [d, setD] = useState<LocalDraft>({ name, lanes: String(machine.lanes) });
+  const taken = d.name.trim() !== name && config.machines.some((m) => m.name === d.name.trim());
+  const body = taken ? null : localBody(machine, d, config.version);
+  const submit = async () => { if (body && await send(body, body.rename ? `Renamed ${name} to ${body.rename}` : `${name} runs ${d.lanes} lane${d.lanes === '1' ? '' : 's'}`)) onDone(); };
   return (
     <form className="grid gap-3 rounded-md border p-3" onSubmit={(e) => { e.preventDefault(); void submit(); }}>
-      <Field label="lanes" hint="jobs this machine runs at once; 0 runs none here">
-        <Input className="h-9" type="number" inputMode="numeric" min={0} step={1} value={v} disabled={busy} onChange={(e) => setV(e.target.value)} />
-      </Field>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="name" hint={taken ? `a machine is already named ${d.name.trim()}` : 'the machine id; refused while a job runs here, waits here or is pinned to it'}>
+          <Input className="h-9" value={d.name} disabled={busy} autoCapitalize="none" autoCorrect="off" spellCheck={false} onChange={(e) => setD((x) => ({ ...x, name: e.target.value }))} />
+        </Field>
+        <Field label="lanes" hint="jobs this machine runs at once; 0 runs none here">
+          <Input className="h-9" type="number" inputMode="numeric" min={0} step={1} value={d.lanes} disabled={busy} onChange={(e) => setD((x) => ({ ...x, lanes: e.target.value }))} />
+        </Field>
+      </div>
       <div className="flex flex-wrap gap-2">
-        <Button type="submit" size="lg" disabled={busy || !ok || Number(v) === lanes}>Save lanes</Button>
+        <Button type="submit" size="lg" disabled={busy || !body}>Save {name}</Button>
         <Button type="button" size="lg" variant="ghost" disabled={busy} onClick={onDone}>Cancel</Button>
       </div>
     </form>

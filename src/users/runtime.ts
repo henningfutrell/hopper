@@ -187,6 +187,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
             : probeSsh({ target: m.ssh, controlDir: join(dataDir, 'ssh'), auth: sshAuth })
         ).then((online) => ({ online })))),
   });
+  const notEnded = () => store.jobs.list({ status: ['queued', 'held', 'claimed', 'running', 'waiting_answer'] });
   const builtin = builtinInstances(config.answerTimeoutMs, config.localMachine, user.id === OWNER_ID ? undefined : session);
   const host = createPluginHost({
     ...(config.pluginDir ? { pluginDir: config.pluginDir } : {}), installedDir: o.installedDir,
@@ -200,8 +201,11 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     },
     machineContext: { executors: () => executorNames(), target },
     intervalMs: o.pluginsConfigIntervalMs,
-    executorInUse: (name) => store.jobs.list({ status: ['queued', 'held', 'claimed', 'running', 'waiting_answer'] }).filter((j) => j.spec.executor === name).map((j) => j.id),
-    attached: { inUse: (name) => jobsOnMachine(name), sshAuth, ...(seams.resolveTarget ? { resolveTarget: seams.resolveTarget } : {}) },
+    executorInUse: (name) => notEnded().filter((j) => j.spec.executor === name).map((j) => j.id),
+    attached: {
+      inUse: (name) => jobsOnMachine(name), pinned: (name) => notEnded().filter((j) => j.spec.machineId === name).map((j) => j.id),
+      sshAuth, ...(seams.resolveTarget ? { resolveTarget: seams.resolveTarget } : {}),
+    },
   });
   await host.start();
   // The pinned host keys follow the plugins config: rewritten when it changes, each problem logged once.

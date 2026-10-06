@@ -82,7 +82,7 @@ describe('editing a machine\'s name and details', () => {
   const box = kindOf(CONFIG, 'box');
   if (desk.kind !== 'attached' || box.kind !== 'attached') throw new Error('desk and box are attached');
 
-  it('the Edit form starts from the instance: its name, and the details of its plugin as set (empty when unset)', () => {
+  it('the Edit form starts from the instance: its name, and the details of its connection as set (empty when unset)', () => {
     expect(editDraft(desk)).toEqual({
       name: 'desk', lanes: '1', executors: ['test'], label: '', herdr: true,
       details: { ssh: 'desk', session: '', herdrBin: '/usr/bin/herdr', hostKey: '' },
@@ -107,7 +107,7 @@ describe('editing a machine\'s name and details', () => {
   it('herdr switched off is written as herdr: false; switched back on, the option goes', () => {
     const d = editDraft(desk);
     expect(editBody(desk, { ...d, herdr: false }, 'v1')?.options).toEqual({ ssh: 'desk', herdrBin: '/usr/bin/herdr', lanes: 1, executors: ['test'], herdr: false });
-    const off = kindOf({ ...CONFIG, machines: [{ name: 'desk', plugin: 'ssh', options: { ssh: 'desk', herdr: false } }] }, 'desk');
+    const off = kindOf({ ...CONFIG, machines: [{ name: 'desk', connection: 'ssh', options: { ssh: 'desk', herdr: false } }] }, 'desk');
     if (off.kind !== 'attached') throw new Error('attached');
     expect(editDraft(off).herdr).toBe(false);
     expect(editBody(off, { ...editDraft(off), herdr: true }, 'v1')?.options).toEqual({ ssh: 'desk', lanes: 1, executors: ['herdr-claude'] });

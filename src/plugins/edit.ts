@@ -19,6 +19,8 @@ export interface EditContext {
    * executor (a job naming it that has not ended, issue #142): its removal is refused while any do.
    */
   inUse(role: Role, name: string): string[];
+  /** Jobs not ended that are pinned to machine `name`: with those of `inUse`, its rename is refused while any are (issue #205). */
+  pinned?(name: string): string[];
   /** What the plugins config (or the built-in instances, for a role with no section) names now. */
   configured: readonly ConfiguredInstance[];
   find(id: string): { definition: PluginDefinition; detection: Detection } | undefined;
@@ -79,7 +81,7 @@ type Plugins = Record<string, unknown>;
 const isObject = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x);
 const isInstance = (x: unknown): x is InstanceSpec => isObject(x);
 
-/** Put `next` in place of the configured instance `name` of `role`, touching nothing else. */
+/** Put `next` (its options, and its name: a rename) in place of the configured instance `name` of `role`, touching nothing else. */
 function place(doc: Plugins, role: Role, name: string, next: InstanceSpec, configured: readonly ConfiguredInstance[]): void {
   const { key, many } = SECTIONS[role];
   const section = doc[key];
@@ -92,7 +94,7 @@ function place(doc: Plugins, role: Role, name: string, next: InstanceSpec, confi
   if (Array.isArray(section)) {
     const at = section.findIndex((item) => isInstance(item) && item.name === name);
     if (at >= 0) {
-      section[at] = { ...(section[at] as InstanceSpec), options: next.options ?? {} };
+      section[at] = { ...(section[at] as InstanceSpec), name: next.name, options: next.options ?? {} };
       return;
     }
   }
@@ -218,6 +220,7 @@ export function applyEdit(e: Exclude<PluginsEdit, { action: 'rescan' }>, ctx: Ed
     const parsed = parseOptions(def, e.options);
     if (!parsed.ok) return refuse('invalid', parsed.error);
     const next = { ...current.instance, options: e.options };
+    if (e.rename !== undefined && e.rename !== e.name) return applyRename(e.name, e.rename, next, e.version, e.role, ctx);
     return writePlugins(ctx.config, e.version, (doc) => place(doc, e.role, e.name, next, ctx.configured));
   }
 
@@ -230,6 +233,29 @@ export function applyEdit(e: Exclude<PluginsEdit, { action: 'rescan' }>, ctx: Ed
   }
   if (current?.instance.plugin === e.plugin) return { ok: true, changed: false };
   return writePlugins(ctx.config, e.version, (doc) => place(doc, e.role, current?.instance.name ?? e.plugin, { name: e.plugin, plugin: e.plugin }, ctx.configured));
+}
+
+/**
+ * Machine `name` takes the name `to`, with options as `next` holds them, in one write (issue #205): every
+ * machine option and routing rule naming it follows. Refused while a job runs there, waits in a pane
+ * there or waits pinned to it: those name the machine by its id. Only a machine is renamed.
+ */
+function applyRename(name: string, to: string, next: InstanceSpec, version: string, role: Role, ctx: EditContext): EditResult {
+  if (role !== 'machine-source') return refuse('invalid', `only a machine is renamed; ${name} is a ${role} instance`);
+  if (ctx.configured.some((c) => c.role === role && c.instance.name === to)) return refuse('conflict', `a machine is already named ${to}`);
+  const jobs = [...new Set([...ctx.inUse(role, name), ...(ctx.pinned?.(name) ?? [])])];
+  if (jobs.length) return refuse('conflict', `${name} still has jobs (${jobs.join(', ')}): wait for them to end, or cancel them, then rename it`);
+  return writePlugins(ctx.config, version, (doc) => {
+    place(doc, role, name, { ...next, name: to }, ctx.configured);
+    for (const { role: r, instance } of ctx.configured) {
+      const def = ctx.find(instance.plugin)?.definition;
+      const keys = def ? machineOptions(def).filter((k) => instance.options?.[k] === name) : [];
+      if (keys.length) place(doc, r, instance.name, { ...instance, options: { ...instance.options, ...Object.fromEntries(keys.map((k) => [k, to])) } }, ctx.configured);
+    }
+    if (Array.isArray(doc.routing)) {
+      doc.routing = doc.routing.map((rule: unknown) => (isObject(rule) && isObject(rule.set) && rule.set.machine === name ? { ...rule, set: { ...rule.set, machine: to } } : rule));
+    }
+  });
 }
 
 function applyListEdit(e: Extract<PluginsEdit, { action: 'add' | 'remove' }>, ctx: EditContext): EditResult {

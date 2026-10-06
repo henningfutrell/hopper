@@ -44,7 +44,7 @@ const idParams = z.object({ id: z.string() });
 export const answerBody = z.object({ answer: z.string().trim().min(1, 'answer must not be empty') });
 export const routerModeBody = z.object({ mode: z.enum(['shadow', 'active']) });
 export const pluginsEditBody = z.discriminatedUnion('action', [
-  z.strictObject({ action: z.literal('options'), role: z.enum(ROLES), name: z.string().min(1), options: z.record(z.string(), z.unknown()), version: z.string().min(1) }),
+  z.strictObject({ action: z.literal('options'), role: z.enum(ROLES), name: z.string().min(1), options: z.record(z.string(), z.unknown()), rename: z.string().trim().min(1).max(64).optional(), version: z.string().min(1) }),
   z.strictObject({ action: z.literal('select'), role: z.enum(SELECTABLE_ROLES), plugin: z.string().min(1), version: z.string().min(1) }),
   z.strictObject({ action: z.literal('add'), role: z.enum(LIST_ROLES), plugin: z.string().min(1), name: z.string().min(1), options: z.record(z.string(), z.unknown()).optional(), version: z.string().min(1) }),
   z.strictObject({ action: z.literal('remove'), role: z.enum(LIST_ROLES), name: z.string().min(1), version: z.string().min(1) }),

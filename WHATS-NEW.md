@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- A machine can be edited after it is added: change its name, its ssh target, its herdr session and every other detail from its Edit button on the Machines page. A new name is refused while a job runs there or waits for it.
 - The Machines page no longer shows a "plugin" line on each machine: the line that says how a machine is reached is enough.
 - Sign-in is set up in Settings → Sign-in with plain form fields, and people get a username and password there: add an account, pick its role and who it signs in as, and it works at once — nothing to type in as code.
 - Every setting is now edited in the app and kept in its database — there are no config files to edit any more. Settings that name a program, its arguments or a folder (such as the program an advice level runs, or the ssh client it uses) can be changed on the Plugins page like any other setting.
