@@ -52,7 +52,7 @@ describe('a fresh hopper', () => {
     const admin = (await passwordSignIn(o, username, password)).token;
     expect(await session(o.app, admin)).toMatchObject({ user: { id: 'owner', realm: 'password', role: 'admin' } });
     const v = await realms(o.app, admin!);
-    expect(v.realms).toEqual([{ name: 'password', label: 'Password', type: 'password', enabled: true, settings: {}, accounts: [{ username: 'admin', role: 'admin', user: { id: 'owner', name: 'owner' } }] }]);
+    expect(v.realms).toEqual([{ name: 'password', label: 'Password', type: 'password', enabled: true, settings: {}, secrets: [], accounts: [{ username: 'admin', role: 'admin', user: { id: 'owner', name: 'owner' } }] }]);
     expect(JSON.stringify(o.app.app.instance.signInConfig.read())).not.toContain(password);
   });
 
@@ -105,14 +105,16 @@ describe('POST /ui/api/realms: the password fallback (issue #219)', () => {
 
 describe('GET /api/realms', () => {
   it('an admin reads every realm, in order, with its settings, the accounts without their hashes, and the version', async () => {
-    const o = await startWithAuth(h, { version: 1, realms: [staff().realms[0], { name: 'gh', type: 'github', clientId: 'g', clientSecretEnv: 'GITHUB_CLIENT_SECRET', enabled: false }, fallback()] });
+    const o = await startWithAuth(h, { version: 1, realms: [staff().realms[0], { name: 'gh', type: 'github', clientId: 'g', clientSecret: 'gh-secret', enabled: false }, fallback()] });
     const v = await realms(o.app, await o.app.login());
     expect(v).toMatchObject({ local: true, none: null, origin: o.origin, version: expect.any(String) });
     expect(v.realms.map((r: { name: string; type: string; enabled: boolean }) => [r.name, r.type, r.enabled])).toEqual([['staff', 'password', true], ['gh', 'github', false], ['password', 'password', true]]);
     expect(v.realms[0].accounts).toEqual([{ username: 'ada', role: 'operator' }]);
-    expect(v.realms[1].settings).toEqual({ clientId: 'g', clientSecretEnv: 'GITHUB_CLIENT_SECRET' });
+    expect(v.realms[1].settings).toEqual({ clientId: 'g' });
+    expect(v.realms[1].secrets).toEqual(['clientSecret']);
     expect(v.realms[1].callback).toBe(`${o.origin}/ui/auth/gh/callback`);
     expect(JSON.stringify(v)).not.toContain('argon2');
+    expect(JSON.stringify(v)).not.toContain('gh-secret');
   });
 
   it('a session that is not admin is refused', async () => {
@@ -132,7 +134,7 @@ describe('POST /ui/api/realms: realms', () => {
     expect((await change(o.app, admin, { action: 'move', name: 'corp', to: 0 })).status).toBe(200);
     expect((await session(o.app)).signIn.realms).toEqual([{ name: 'corp', label: 'Corp SSO', type: 'oidc' }]);
     expect((await realms(o.app, admin)).realms.map((r: { name: string }) => r.name)).toEqual(['corp', 'staff', 'password']);
-    expect(o.app.app.instance.signInConfig.read().realms[0]).toMatchObject({ name: 'corp', type: 'oidc', issuer: idp.issuer, clientSecretEnv: 'CORP_CLIENT_SECRET' });
+    expect(o.app.app.instance.signInConfig.read().realms[0]).toMatchObject({ name: 'corp', type: 'oidc', issuer: idp.issuer, clientSecret: 'shh' });
   });
 
   it('a realm turned off ends its sessions at once; turned on, it signs people in again', async () => {
@@ -151,10 +153,10 @@ describe('POST /ui/api/realms: realms', () => {
     const admin = await o.app.login();
     const bad = await change(o.app, admin, { action: 'save', realm: { name: 'gh', type: 'github', clientId: 'g' } });
     expect(bad.status).toBe(400);
-    expect(bad.body.error).toMatch(/realms\.1\.clientSecretEnv/);
-    const unset = await change(o.app, admin, { action: 'save', realm: { name: 'gh', type: 'github', clientId: 'g', clientSecretEnv: 'NOT_SET_ANYWHERE' } });
-    expect(unset.status).toBe(400);
-    expect(unset.body.error).toMatch(/NOT_SET_ANYWHERE/);
+    expect(bad.body.error).toMatch(/realms\.1\.clientSecret/);
+    const named = await change(o.app, admin, { action: 'save', realm: { name: 'gh', type: 'github', clientId: 'g', clientSecretEnv: 'GITHUB_CLIENT_SECRET' } });
+    expect(named.status).toBe(400);
+    expect(named.body.error).toMatch(/clientSecretEnv/);
     expect(o.app.app.instance.signInConfig.read().realms.map((r) => r.name)).toEqual(['password']);
     expect(o.app.app.instance.config.read('sign-in')).toEqual({ version: 1, realms: [{ name: 'password', label: 'Password', type: 'password' }] });
   });

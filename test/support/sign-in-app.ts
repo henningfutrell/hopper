@@ -5,7 +5,7 @@ import { writeConfig } from './files.ts';
 import { rawRequest } from './http.ts';
 import { startOidcIdp, type OidcIdp } from './idp.ts';
 
-/** The environment the daemon reads provider client secrets from (`clientSecretEnv`). */
+/** The daemon's environment: the variables a sign-in config from before issue #216 named its secrets by (`clientSecretEnv`). */
 export const SECRETS = { CORP_CLIENT_SECRET: 'shh', GITHUB_CLIENT_SECRET: 'gh-secret', LDAP_BIND_PASSWORD: 'GoodNewsEveryone' };
 
 export interface Harness { t: TestApp | undefined; cleanup: (() => void) | undefined; stops: (() => unknown)[] }
@@ -18,12 +18,16 @@ export async function stopAll(h: Harness): Promise<void> {
   h.cleanup?.();
 }
 
-/** The app with this sign-in config (a fresh hopper's when undefined: the password realm, whose account admin the start adds), and its sign-in origin (http://localhost:<port>). */
-export async function startWithAuth(h: Harness, auth: unknown, env: Record<string, string> = {}): Promise<{ app: TestApp; origin: string; host: string }> {
+/**
+ * The app with this sign-in config (a fresh hopper's when undefined: the password realm, whose account admin
+ * the start adds), and its sign-in origin (http://localhost:<port>). `env`: the daemon's HOPPER_* config;
+ * `runtime`: more of its environment over SECRETS (HOPPER_SIGN_IN_* variables).
+ */
+export async function startWithAuth(h: Harness, auth: unknown, env: Record<string, string> = {}, runtime: Record<string, string> = {}): Promise<{ app: TestApp; origin: string; host: string }> {
   const db = tempDbPath();
   h.cleanup = db.cleanup;
   if (auth !== undefined) writeConfig(db.dbPath, 'sign-in', auth);
-  h.t = await startTestApp({ dbPath: db.dbPath, env, secrets: { ...SECRETS } });
+  h.t = await startTestApp({ dbPath: db.dbPath, env, secrets: { ...SECRETS, ...runtime } });
   const port = new URL(h.t.url).port;
   return { app: h.t, origin: `http://localhost:${port}`, host: `localhost:${port}` };
 }
@@ -57,4 +61,4 @@ export async function oidcIdp(h: Harness, o: { claims?: Record<string, unknown>;
 }
 
 export const oidcRealm = (idp: Pick<OidcIdp, 'issuer'>, roles: unknown, extra: Record<string, unknown> = {}) =>
-  ({ name: 'corp', label: 'Corp SSO', type: 'oidc', issuer: idp.issuer, clientId: 'hopper', clientSecretEnv: 'CORP_CLIENT_SECRET', roles, ...extra });
+  ({ name: 'corp', label: 'Corp SSO', type: 'oidc', issuer: idp.issuer, clientId: 'hopper', clientSecret: 'shh', roles, ...extra });

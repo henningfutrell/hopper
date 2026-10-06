@@ -115,7 +115,7 @@ describe('a gateway realm, checking JWTs', () => {
 
 describe('a gateway realm, introspecting tokens', () => {
   const introspecting = (idp: OidcIdp, roles: unknown, extra: Record<string, unknown> = {}) =>
-    gatewayRealm(idp, roles, { check: 'introspection', clientId: 'hopper', clientSecretEnv: 'CORP_CLIENT_SECRET', audience: undefined, ...extra });
+    gatewayRealm(idp, roles, { check: 'introspection', clientId: 'hopper', clientSecret: 'shh', audience: undefined, ...extra });
 
   it('an active token becomes a session, with the claims the issuer answers; the hopper authenticates as its client', async () => {
     const idp = await oidcIdp(h);
