@@ -22,7 +22,9 @@ const edit = (app: TestApp, token: string, body: Record<string, unknown>) => app
 /** One change against the version read now. */
 const change = async (app: TestApp, token: string, body: Record<string, unknown>) => edit(app, token, { ...body, version: (await realms(app, token)).version });
 
-const staff = (role = 'operator') => ({ version: 1, realms: [{ name: 'staff', type: 'password', users: [{ username: 'ada', passwordHash: hash, role }] }] });
+/** The password fallback (issue #219), so a test may change staff freely. */
+const fallback = () => ({ name: 'password', type: 'password', users: [{ username: 'root', passwordHash: hash, role: 'admin' }] });
+const staff = (role = 'operator') => ({ version: 1, realms: [{ name: 'staff', type: 'password', users: [{ username: 'ada', passwordHash: hash, role }] }, fallback()] });
 const passwordSignIn = async (o: { app: TestApp; origin: string; host: string }, username: string, password: string) => {
   const res = await rawRequest(o.app.url, {
     path: '/ui/auth/password', method: 'POST', body: JSON.stringify({ username, password }),
@@ -34,7 +36,7 @@ const passwordSignIn = async (o: { app: TestApp; origin: string; host: string },
 /** The account and password a start added for the password fallback, from its start line (issue #219). */
 const fallbackOf = (warn: MockInstance): { username: string; password: string } => {
   const line = warn.mock.calls.map((c) => String(c[0])).find((l) => l.includes('password fallback'))!;
-  const m = /account (\S+) .* password (\S+)/.exec(line)!;
+  const m = /added account (\S+) to realm \S+, password (\S+) /.exec(line)!;
   return { username: m[1]!, password: m[2]! };
 };
 
@@ -68,7 +70,7 @@ describe('a fresh hopper', () => {
 
   it('a sign-in config left without an admin password account gets one at the next start', async () => {
     const warn = vi.spyOn(console, 'warn');
-    const o = await startWithAuth(h, staff('viewer'));
+    const o = await startWithAuth(h, { version: 1, realms: [staff('viewer').realms[0]] });
     const { username, password } = fallbackOf(warn);
     warn.mockRestore();
     expect(username).toBe('admin');
@@ -85,7 +87,7 @@ describe('POST /ui/api/realms: the password fallback (issue #219)', () => {
     ['removing the last admin account', { action: 'account-remove', realm: 'staff', username: 'ada' }],
     ['demoting the last admin account', { action: 'account', realm: 'staff', username: 'ada', role: 'operator' }],
   ])('refuses %s', async (_what, body) => {
-    const o = await startWithAuth(h, staff('admin'));
+    const o = await startWithAuth(h, { version: 1, realms: [staff('admin').realms[0]] });
     const admin = await o.app.login();
     const r = await change(o.app, admin, body);
     expect(r.status).toBe(409);
@@ -94,7 +96,7 @@ describe('POST /ui/api/realms: the password fallback (issue #219)', () => {
   });
 
   it('allows it once another admin account in a password realm that is on holds the fallback', async () => {
-    const o = await startWithAuth(h, staff('admin'));
+    const o = await startWithAuth(h, { version: 1, realms: [staff('admin').realms[0]] });
     const admin = await o.app.login();
     expect((await change(o.app, admin, { action: 'account', realm: 'staff', username: 'bea', password: 'correct horse', role: 'admin' })).status).toBe(200);
     expect((await change(o.app, admin, { action: 'account-remove', realm: 'staff', username: 'ada' })).status).toBe(200);
@@ -103,10 +105,10 @@ describe('POST /ui/api/realms: the password fallback (issue #219)', () => {
 
 describe('GET /api/realms', () => {
   it('an admin reads every realm, in order, with its settings, the accounts without their hashes, and the version', async () => {
-    const o = await startWithAuth(h, { version: 1, realms: [staff().realms[0], { name: 'gh', type: 'github', clientId: 'g', clientSecretEnv: 'GITHUB_CLIENT_SECRET', enabled: false }] });
+    const o = await startWithAuth(h, { version: 1, realms: [staff().realms[0], { name: 'gh', type: 'github', clientId: 'g', clientSecretEnv: 'GITHUB_CLIENT_SECRET', enabled: false }, fallback()] });
     const v = await realms(o.app, await o.app.login());
     expect(v).toMatchObject({ local: true, none: null, origin: o.origin, version: expect.any(String) });
-    expect(v.realms.map((r: { name: string; type: string; enabled: boolean }) => [r.name, r.type, r.enabled])).toEqual([['staff', 'password', true], ['gh', 'github', false]]);
+    expect(v.realms.map((r: { name: string; type: string; enabled: boolean }) => [r.name, r.type, r.enabled])).toEqual([['staff', 'password', true], ['gh', 'github', false], ['password', 'password', true]]);
     expect(v.realms[0].accounts).toEqual([{ username: 'ada', role: 'operator' }]);
     expect(v.realms[1].settings).toEqual({ clientId: 'g', clientSecretEnv: 'GITHUB_CLIENT_SECRET' });
     expect(v.realms[1].callback).toBe(`${o.origin}/ui/auth/gh/callback`);
@@ -129,7 +131,7 @@ describe('POST /ui/api/realms: realms', () => {
     expect((await change(o.app, admin, { action: 'save', realm: oidcRealm(idp, { defaultRole: 'viewer' }) })).status).toBe(200);
     expect((await change(o.app, admin, { action: 'move', name: 'corp', to: 0 })).status).toBe(200);
     expect((await session(o.app)).signIn.realms).toEqual([{ name: 'corp', label: 'Corp SSO', type: 'oidc' }]);
-    expect((await realms(o.app, admin)).realms.map((r: { name: string }) => r.name)).toEqual(['corp', 'staff']);
+    expect((await realms(o.app, admin)).realms.map((r: { name: string }) => r.name)).toEqual(['corp', 'staff', 'password']);
     expect(o.app.app.instance.signInConfig.read().realms[0]).toMatchObject({ name: 'corp', type: 'oidc', issuer: idp.issuer, clientSecretEnv: 'CORP_CLIENT_SECRET' });
   });
 
@@ -149,12 +151,12 @@ describe('POST /ui/api/realms: realms', () => {
     const admin = await o.app.login();
     const bad = await change(o.app, admin, { action: 'save', realm: { name: 'gh', type: 'github', clientId: 'g' } });
     expect(bad.status).toBe(400);
-    expect(bad.body.error).toMatch(/realms\.0\.clientSecretEnv/);
+    expect(bad.body.error).toMatch(/realms\.1\.clientSecretEnv/);
     const unset = await change(o.app, admin, { action: 'save', realm: { name: 'gh', type: 'github', clientId: 'g', clientSecretEnv: 'NOT_SET_ANYWHERE' } });
     expect(unset.status).toBe(400);
     expect(unset.body.error).toMatch(/NOT_SET_ANYWHERE/);
-    expect(o.app.app.instance.signInConfig.read().realms).toEqual([]);
-    expect(o.app.app.instance.config.read('sign-in')).toEqual({ version: 1, realms: [] });
+    expect(o.app.app.instance.signInConfig.read().realms.map((r) => r.name)).toEqual(['password']);
+    expect(o.app.app.instance.config.read('sign-in')).toEqual({ version: 1, realms: [{ name: 'password', label: 'Password', type: 'password' }] });
   });
 
   it('a stale version is refused', async () => {
@@ -220,7 +222,7 @@ describe('POST /ui/api/realms: password accounts', () => {
   });
 
   it('a new account signs in as the user it names; without one, as a new user of its own', async () => {
-    const o = await startWithAuth(h, { version: 1, realms: [{ name: 'staff', type: 'password', users: [] }] });
+    const o = await startWithAuth(h, { version: 1, realms: [{ name: 'staff', type: 'password', users: [] }, fallback()] });
     const admin = await o.app.login();
     expect((await change(o.app, admin, { action: 'account', realm: 'staff', username: 'boss', password: 'correct horse', role: 'admin', user: 'owner' })).status).toBe(200);
     expect((await change(o.app, admin, { action: 'account', realm: 'staff', username: 'bea', password: 'correct horse', role: 'viewer' })).status).toBe(200);

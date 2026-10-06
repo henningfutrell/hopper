@@ -2,8 +2,8 @@
 // once by `apply` when Settings → Sign-in changes it.
 //
 // Form realms (password, ldap): the username and password form is tried against each one that is on,
-// in order; the first that accepts the password decides. A password realm with no account yet is not
-// tried, and alone it offers no form.
+// in order; the first that accepts the password decides. A password realm with no account is not
+// tried; one that is on with an admin account always exists (the password fallback, `fallback.ts`).
 //
 // Redirect realms (oidc, github, saml): three steps, no cookies (they ignore ports; see "UI session and
 // mutations"):
@@ -33,6 +33,7 @@ import { createSamlRealm } from './saml.ts';
 
 export { SIGN_IN, loadSignInConfig, signInConfigProblem, type AuthConfig } from './config.ts';
 export { accountOf, AuthEditError, editSignIn, realmsView, type SignInEdit } from './edit.ts';
+export { hasPasswordFallback, withPasswordFallback } from './fallback.ts';
 export { hashPassword } from './password.ts';
 
 const FLOW_MS = 10 * 60_000;
