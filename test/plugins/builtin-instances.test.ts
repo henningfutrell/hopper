@@ -25,6 +25,10 @@ describe('ensurePluginsConfig', () => {
     ]);
   });
 
+  it('the built-in levels are named as levels, not after the model each uses (#209)', () => {
+    expect(builtinInstances(1000).escalationLevels.map((l) => [l.name, l.options?.model])).toEqual([['level-1', 'opus'], ['level-2', 'fable']]);
+  });
+
   it('the built-in levels and usage source run on this machine, named as the `local` machine; where this host is no machine they name none (#174)', () => {
     const here = builtinInstances(1000);
     expect(here.escalationLevels.map((l) => l.options?.machine)).toEqual(['local', 'local']);
