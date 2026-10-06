@@ -6,7 +6,7 @@ A self-hosted job queue for coding agents. It pulls jobs from GitHub issues, run
 Claude Code session in a herdr pane on a machine it manages, answers or escalates the questions a
 job asks, and keeps every machine inside its usage budget. One daemon, one Postgres database, a
 web UI, and an HTTP API with its reference at `/docs/`.
-Install page, step by step: https://henningfutrell.github.io/hopper/ (`site/`).
+Install page, step by step: https://henningfutrell.github.io/hopper/install.html (`site/install.html`).
 
 - **Jobs are pulled, never pushed.** A job is an issue with the `hopper` label, by an author you
   allow. No route creates a job.
@@ -39,7 +39,7 @@ Five steps, in this order. Each links to its section below.
 
 With Podman ([recommended](#with-podman-recommended)): only Podman with a compose provider; the image
 carries the rest. The table is for the install on this host. On Windows, either goes inside WSL; the
-install page has the steps: https://henningfutrell.github.io/hopper/#windows
+install page has the steps: https://henningfutrell.github.io/hopper/install.html#windows
 
 | | for |
 |---|---|

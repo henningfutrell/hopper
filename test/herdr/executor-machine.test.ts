@@ -11,22 +11,22 @@ const ASK: FakeTurn = { output: ['● Which branch?', '  HOPPER_QUESTION'] };
 
 // Issue #260: this machine added with a herdr session of its own runs its jobs in that session.
 describe('herdr-claude executor on this machine with its own herdr session', () => {
-  const HERE = { id: 'archbox', label: 'archbox', maxLanes: 2, online: true, executors: ['herdr-claude'], herdr: { bin: 'herdr', session: 'jobs' } };
+  const HERE = { id: 'workstation', label: 'workstation', maxLanes: 2, online: true, executors: ['herdr-claude'], herdr: { bin: 'herdr', session: 'jobs' } };
 
   it('runs the job in that session of this machine\'s herdr; the executor\'s own session and every attached machine see nothing', async () => {
     const { herdr, locals, reached, executor } = setup({}, { local: { jobs: { turns: [DONE] } } });
-    const { ctx, saved } = contextFor(jobWith({ prompt: 'go' }), 'archbox/lane-1', HERE);
+    const { ctx, saved } = contextFor(jobWith({ prompt: 'go' }), 'workstation/lane-1', HERE);
     expect(await executor.run(ctx)).toMatchObject({ kind: 'finished' });
     expect(herdr.calls).toEqual([]);
     expect(reached).toEqual([]);
     expect(locals.get('jobs')!.agentStarts).toHaveLength(1);
-    expect(saved[0]).toMatchObject({ session: 'jobs', paneId: 'w1:p1', laneId: 'archbox/lane-1' });
+    expect(saved[0]).toMatchObject({ session: 'jobs', paneId: 'w1:p1', laneId: 'workstation/lane-1' });
     expect(saved[0]).not.toHaveProperty('ssh');
   });
 
   it('this machine naming the executor\'s own session uses the executor\'s herdr', async () => {
     const { herdr, locals, executor } = setup({ turns: [DONE] }, { local: { jobs: {} } });
-    const { ctx } = contextFor(jobWith({ prompt: 'go' }), 'archbox/lane-1', { ...HERE, herdr: { bin: 'herdr', session: 'jh-test' } });
+    const { ctx } = contextFor(jobWith({ prompt: 'go' }), 'workstation/lane-1', { ...HERE, herdr: { bin: 'herdr', session: 'jh-test' } });
     expect(await executor.run(ctx)).toMatchObject({ kind: 'finished' });
     expect(herdr.agentStarts).toHaveLength(1);
     expect(locals.get('jobs')!.calls).toEqual([]);

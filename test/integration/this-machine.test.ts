@@ -64,14 +64,14 @@ describe('POST /ui/api/machines — this machine', () => {
 
   it('adds a local instance under the name given, with its herdr session, and starts that session; no ssh target, nothing reached over ssh', async () => {
     const { a, token } = await start(NONE);
-    const r = await a.ui<Reply>('/ui/api/machines', { name: 'archbox', session: 'jobs', lanes: 3, version: (await config(a)).version }, { token });
+    const r = await a.ui<Reply>('/ui/api/machines', { name: 'workstation', session: 'jobs', lanes: 3, version: (await config(a)).version }, { token });
     expect(r.status).toBe(200);
     expect(resolved).toEqual([]);
     expect(sessions).toContain('jobs');
-    expect(read(a).machines).toEqual([DESK, { name: 'archbox', plugin: 'local', options: { lanes: 3, session: 'jobs' } }]);
-    expect(r.body.machines.find((m) => m.name === 'archbox')).toEqual({ name: 'archbox', connection: 'local', options: { lanes: 3, session: 'jobs' } });
-    await waitFor(async () => (await a.api('GET', '/api/machines')).body.machines.find((m: { id: string; online: boolean }) => m.id === 'archbox' && m.online));
-    const listed = (await a.api('GET', '/api/machines')).body.machines.find((m: { id: string }) => m.id === 'archbox');
+    expect(read(a).machines).toEqual([DESK, { name: 'workstation', plugin: 'local', options: { lanes: 3, session: 'jobs' } }]);
+    expect(r.body.machines.find((m) => m.name === 'workstation')).toEqual({ name: 'workstation', connection: 'local', options: { lanes: 3, session: 'jobs' } });
+    await waitFor(async () => (await a.api('GET', '/api/machines')).body.machines.find((m: { id: string; online: boolean }) => m.id === 'workstation' && m.online));
+    const listed = (await a.api('GET', '/api/machines')).body.machines.find((m: { id: string }) => m.id === 'workstation');
     expect(listed.herdr).toMatchObject({ session: 'jobs' });
     expect(listed.ssh).toBeUndefined();
   });
@@ -93,11 +93,11 @@ describe('POST /ui/api/machines — this machine', () => {
       ],
       usageSources: [{ name: 'claude', plugin: 'claude-plan', options: { bin: 'claude', intervalSeconds: 600 } }],
     });
-    const r = await a.ui<Reply>('/ui/api/machines', { name: 'archbox', version: (await config(a)).version }, { token });
+    const r = await a.ui<Reply>('/ui/api/machines', { name: 'workstation', version: (await config(a)).version }, { token });
     expect(r.status).toBe(200);
     const doc = read(a);
-    expect(doc.escalationLevels.map((l: { options: { machine?: string } }) => l.options.machine)).toEqual(['archbox', 'desk']);
-    expect(doc.usageSources[0].options.machine).toBe('archbox');
+    expect(doc.escalationLevels.map((l: { options: { machine?: string } }) => l.options.machine)).toEqual(['workstation', 'desk']);
+    expect(doc.usageSources[0].options.machine).toBe('workstation');
   });
 
   it('refused: this machine is already added, a name another machine has, the default herdr session, a session name that is not plain', async () => {
@@ -120,7 +120,7 @@ describe('POST /ui/api/machines — this machine', () => {
     const { a, token } = await start(NONE);
     const before = read(a);
     sessionFails = true;
-    const r = await a.ui<Reply>('/ui/api/machines', { name: 'archbox', session: 'jobs', version: (await config(a)).version }, { token });
+    const r = await a.ui<Reply>('/ui/api/machines', { name: 'workstation', session: 'jobs', version: (await config(a)).version }, { token });
     expect(r.status).toBe(409);
     expect(r.body.error).toMatch(/herdr session jobs.*herdr not found/);
     expect(read(a)).toEqual(before);
@@ -142,11 +142,11 @@ describe('POST /ui/api/machines — an ssh target that is this machine', () => {
 
   it('is added as this machine: a local instance, its herdr session started, nothing reached over ssh', async () => {
     const { a, token } = await start(NONE);
-    const r = await a.ui<Reply>('/ui/api/machines', { name: 'archbox', ssh: 'self', lanes: 2, executors: ['herdr-claude'], version: (await config(a)).version }, { token });
+    const r = await a.ui<Reply>('/ui/api/machines', { name: 'workstation', ssh: 'self', lanes: 2, executors: ['herdr-claude'], version: (await config(a)).version }, { token });
     expect(r.status).toBe(200);
     expect(resolved).toEqual([]);
     expect(sessions).toEqual(['hopper']);
-    expect(read(a).machines).toEqual([DESK, { name: 'archbox', plugin: 'local', options: { lanes: 2, executors: ['herdr-claude'], session: 'hopper' } }]);
+    expect(read(a).machines).toEqual([DESK, { name: 'workstation', plugin: 'local', options: { lanes: 2, executors: ['herdr-claude'], session: 'hopper' } }]);
   });
 
   it('refused while this machine is already added, saying which it is', async () => {

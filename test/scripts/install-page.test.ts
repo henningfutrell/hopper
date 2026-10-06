@@ -1,4 +1,5 @@
-// The install page on GitHub Pages (issue #113): site/index.html gives one install command, which
+// The install page on GitHub Pages (issue #113): site/install.html (the front page is the README, issue
+// #88) gives one install command, which
 // fetches install.sh from the same site; .github/workflows/pages.yml publishes scripts/get.sh as that
 // install.sh. Every hopper script the page tells you to run must exist in scripts/. Windows installs
 // the same way, inside WSL (issue #116).
@@ -12,7 +13,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const ROOT = join(import.meta.dirname, '..', '..');
-const page = readFileSync(join(ROOT, 'site', 'index.html'), 'utf8');
+const page = readFileSync(join(ROOT, 'site', 'install.html'), 'utf8');
 const workflow = readFileSync(join(ROOT, '.github', 'workflows', 'pages.yml'), 'utf8');
 
 const INSTALL = 'curl -fsSL https://henningfutrell.github.io/hopper/install.sh | bash';

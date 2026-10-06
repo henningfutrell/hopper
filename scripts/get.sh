@@ -3,7 +3,7 @@
 #
 #   curl -fsSL https://henningfutrell.github.io/hopper/install.sh | bash
 #
-# The install page (site/index.html) serves this file as install.sh (.github/workflows/pages.yml);
+# The install page (site/install.html) serves this file as install.sh (.github/workflows/pages.yml);
 # the raw URL of scripts/get.sh on main works the same.
 #
 # Checks what the install needs, clones the hopper's source into $HOPPER_SRC (or updates the
@@ -23,7 +23,7 @@
 # Over a job-hopper install (the name before issue #112) it is an upgrade: its source clone moves to the
 # new default, its database is the one its daemon.env names, and install.sh moves the rest.
 #
-# On Windows it runs inside WSL, with systemd on (site/index.html "On Windows", issue #116).
+# On Windows it runs inside WSL, with systemd on (site/install.html "On Windows", issue #116).
 #
 # Everything is in main(), called on the last line, so a download cut short runs nothing.
 set -euo pipefail
