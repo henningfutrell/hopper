@@ -56,6 +56,7 @@
 }
 
 :root {
+    color-scheme: light;
     --background: oklch(1 0 0);
     --foreground: oklch(0.145 0 0);
     --card: oklch(1 0 0);
@@ -96,6 +97,7 @@
 }
 
 .dark {
+    color-scheme: dark;
     --background: oklch(0.13 0.004 286);
     --foreground: oklch(0.975 0 0);
     --card: oklch(0.175 0.005 286);
@@ -140,6 +142,11 @@
     }
   body {
     @apply bg-background text-foreground;
+    }
+  /* The browser draws a select's list; without these its options keep the field's text colour on the
+     list's own background (issue #193). */
+  option, optgroup {
+    @apply bg-popover text-popover-foreground;
     }
   html {
     @apply font-sans antialiased;
