@@ -13,7 +13,7 @@ export interface Box { name: string; ssh: string; hostKey: string }
 interface Instance { name: string; plugin: string; options?: Record<string, unknown> }
 type Config = Record<string, unknown> & { machines?: Instance[] };
 
-/** Where herdr is in every agent box (deploy/agent-box/Dockerfile). */
+/** Where herdr is in every agent box (scripts/agent-box/Dockerfile). */
 export const BOX_HERDR = '/usr/local/bin/herdr';
 
 /** `config` with each box an `ssh` machine instance. Throws when a box's name is another kind of machine. */

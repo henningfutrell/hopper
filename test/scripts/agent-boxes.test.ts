@@ -6,8 +6,8 @@
 // test database. HOME is the worker's throwaway one, so ~/.ssh is too; the box and its home volume are
 // removed afterwards.
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { attachBoxes, BOX_HERDR, detachBoxes } from '../../scripts/agent-boxes.ts';
@@ -60,6 +60,23 @@ describe('agent-boxes.sh', () => {
       expect(r.status).toBe(2);
       expect(r.stderr).toContain('agents: claude codex cursor omp opencode');
     }
+  });
+
+  it('builds from the box files an install carries: its scripts directory, nothing else of the checkout', () => {
+    // As scripts/install.sh lays out the app: scripts/ copied, deploy/ and the rest not. A stand-in docker
+    // answers `info`, and on `build` lists its build context and fails, so nothing is built.
+    const d = mkdtempSync(join(tmpdir(), 'jh-boxes-app-'));
+    cpSync(join(ROOT, 'scripts'), join(d, 'app', 'scripts'), { recursive: true });
+    mkdirSync(join(d, 'bin'));
+    writeFileSync(join(d, 'bin', 'docker'), `#!/bin/sh\ncase "$1" in info) exit 0 ;; build) for a; do c="$a"; done; ls "$c" > "${d}/context"; exit 1 ;; esac\nexit 1\n`);
+    writeFileSync(join(d, 'bin', 'herdr'), '#!/bin/sh\n');
+    chmodSync(join(d, 'bin', 'docker'), 0o755);
+    chmodSync(join(d, 'bin', 'herdr'), 0o755);
+    const r = spawnSync('bash', [join(d, 'app', 'scripts', 'agent-boxes.sh'), 'codex'], {
+      encoding: 'utf8', env: { ...process.env, PATH: `${join(d, 'bin')}:${process.env.PATH ?? ''}`, HOPPER_SSH_PUBLIC_KEY: KEY_A },
+    });
+    expect(r.stderr).toContain('building hopper-box-codex failed');
+    expect(readFileSync(join(d, 'context'), 'utf8').split('\n').filter(Boolean).sort()).toEqual(['Dockerfile', 'entrypoint.sh', 'herdr']);
   });
 
   it('needs the hopper\'s key: its file, or its public line', () => {

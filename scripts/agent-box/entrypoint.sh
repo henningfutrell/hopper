@@ -1,5 +1,5 @@
 #!/bin/sh
-# An agent box's main process (deploy/agent-box/Dockerfile): host keys on its first start, sshd, then the
+# An agent box's main process (scripts/agent-box/Dockerfile): host keys on its first start, sshd, then the
 # box's herdr session `hopper` as its user — the container ends when that session does, and docker
 # starts it again.
 set -eu
