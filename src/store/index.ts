@@ -17,11 +17,12 @@ import { createIdentityLinks, createUserRepository } from './users.ts';
 export type { UserStore, InstanceStore } from '../domain/ports.ts';
 
 /** `url`: HOPPER_DATABASE_URL, `postgres://…` (design.md "Database"). Migrates the instance schema. */
-export function openInstanceStore(o: { url: string; clock: Clock; idGen?: IdGen }): InstanceStore {
+/** `version`: migrate only up to it (a migration's own test); default the latest. */
+export function openInstanceStore(o: { url: string; clock: Clock; idGen?: IdGen; version?: number }): InstanceStore {
   const db = openDb(o.url);
   let instanceSchema: string;
   try {
-    migrateInstance(db);
+    migrateInstance(db, o.version);
     instanceSchema = String(db.get('SELECT current_schema() AS s')!.s);
   } catch (e) {
     db.close();

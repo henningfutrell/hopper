@@ -10,8 +10,8 @@ export interface Runtimes {
   /** The running user's runtime, or undefined. */
   get(id: string): UserRuntime | undefined;
   all(): UserRuntime[];
-  /** The oldest user's (owner's). */
-  owner(): UserRuntime;
+  /** The default admin account's. */
+  admin(): UserRuntime;
   /** The user's runtime, created (and started, once the instance started) when it has none. */
   ensure(user: User): Promise<UserRuntime>;
   /** Create a runtime for every user that has none: at boot, and on every watch tick. */
@@ -20,9 +20,9 @@ export interface Runtimes {
   start(): Promise<void>;
   /** Check the users table every `intervalMs` for users added outside this process (the CLI). */
   watch(intervalMs: number): void;
-  /** The instance's events, appended to every user's event log; the newest read from owner's. */
+  /** The instance's events, appended to every user's event log; the newest read from admin's. */
   events: Pick<EventLog, 'append' | 'recent'>;
-  /** What the plugin store reads and drives: owner's report; a rescan of every user's host. */
+  /** What the plugin store reads and drives: admin's report; a rescan of every user's host. */
   plugins: Pick<PluginsView, 'report' | 'edit'>;
   stop(): Promise<void>;
 }
@@ -60,9 +60,9 @@ export function createRuntimes(o: {
     made.catch(() => pending.delete(user.id));
     return made;
   };
-  const owner = (): UserRuntime => {
-    const rt = running.get(o.instance.users.owner().id);
-    if (!rt) throw new Error('owner\'s runtime is not running');
+  const admin = (): UserRuntime => {
+    const rt = running.get(o.instance.users.admin().id);
+    if (!rt) throw new Error('the admin account\'s runtime is not running');
     return rt;
   };
   const sync = async (): Promise<void> => {
@@ -72,7 +72,7 @@ export function createRuntimes(o: {
   return {
     get: (id) => running.get(id),
     all: () => [...running.values()],
-    owner,
+    admin,
     ensure,
     sync,
     async start() {
@@ -96,13 +96,13 @@ export function createRuntimes(o: {
         if (!first) throw new Error('no user runtime to record the event in');
         return first;
       },
-      recent: (limit?: number, types?: EventType[]) => owner().store.events.recent(limit, types),
+      recent: (limit?: number, types?: EventType[]) => admin().store.events.recent(limit, types),
     },
     plugins: {
-      report: (): PluginsReport => owner().plugins.report(),
+      report: (): PluginsReport => admin().plugins.report(),
       async edit(e: PluginsEdit): Promise<PluginsEditOutcome> {
         const outcomes = await Promise.all([...running.values()].map((rt) => rt.plugins.edit(e)));
-        return outcomes[0] ?? owner().plugins.edit(e);
+        return outcomes[0] ?? admin().plugins.edit(e);
       },
     },
     async stop() {

@@ -5,7 +5,7 @@
 //      it; it needs the daemon's environment, which a schema migration (also run by the CLI) has not.
 //   2. What the HOPPER_SIGN_IN_* variables set (src/auth/environment.ts) is applied: the environment wins.
 //   3. The password fallback (issue #219, src/auth/fallback.ts): a config without an admin account in a
-//      password realm that is on gets `admin`, signing in as owner — the way Nexus, Jenkins and Argo
+//      password realm that is on gets `admin`, signing in as the default admin account — the way Nexus, Jenkins and Argo
 //      bootstrap their first admin — with HOPPER_SIGN_IN_ADMIN_PASSWORD, else a random password shown
 //      once in the start lines. Only its argon2id hash is stored.
 // The result must load: an invalid one stops the daemon (sign-in fails closed) and nothing is written.
@@ -51,7 +51,7 @@ export async function prepareSignIn(o: { instance: Instance; env: Record<string,
   if (JSON.stringify(next) !== JSON.stringify(before)) {
     o.instance.tx(() => {
       if (!store.write(next, version)) throw new Error('the sign-in config changed while the daemon started: start it again');
-      if (added) o.instance.identities.replace(added.realm, added.username, o.instance.users.owner().id);
+      if (added) o.instance.identities.replace(added.realm, added.username, o.instance.users.admin().id);
     });
   }
   if (env.realms.length) o.logger.info(`hopper: sign-in from the environment: realms ${env.realms.map((r) => r.name).join(', ')}`);

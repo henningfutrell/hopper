@@ -36,7 +36,7 @@ export interface Tenants {
   list(): User[];
   /** A new user under a unique name (throws when it is taken), its runtime started. */
   add(name: string): Promise<User>;
-  /** The user an identity signs in as: linked, owner for no sign-in, or new (its runtime started). */
+  /** The user an identity signs in as: linked, admin for no sign-in, or new (its runtime started). */
   signInAs(who: Identity): Promise<User>;
 }
 

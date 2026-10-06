@@ -201,67 +201,67 @@ describe('several users (issue #158)', () => {
 describe('hopper user transfer (issue #212)', () => {
   const instanceOf = (url: string) => openInstanceStore({ url, clock: { now: () => new Date() } });
 
-  /** owner with work (a job, its rules), and `bea`, signing in on the password realm, with none. */
-  function ownerAndBea(): string {
+  /** admin with work (a job, its rules), and `bea`, signing in on the password realm, with none. */
+  function adminAndBea(): string {
     const url = db();
     cli(url, ['user', 'add', 'bea']);
     const s = instanceOf(url);
     s.identities.link('password', 'bea', 'bea');
     s.close();
-    const owner = openOwnerStore(url);
-    owner.jobs.create({ executor: 'test', payload: {} }, 5);
-    owner.close();
-    expect(cli(url, ['config', 'set', 'rules', '--if-version', 'missing'], { stdin: json('owner rules') }).code).toBe(0);
+    const admin = openAdminStore(url);
+    admin.jobs.create({ executor: 'test', payload: {} }, 5);
+    admin.close();
+    expect(cli(url, ['config', 'set', 'rules', '--if-version', 'missing'], { stdin: json('admin rules') }).code).toBe(0);
     return url;
   }
 
-  it('bea takes over everything owner held; bea\'s own empty record is gone', () => {
-    const url = ownerAndBea();
-    const r = cli(url, ['user', 'transfer', 'owner', 'bea']);
-    expect(r).toMatchObject({ code: 0, err: expect.stringMatching(/bea now holds owner's work/) });
-    expect(cli(url, ['users']).out).toMatch(/^owner\tbea\t\S+\n$/);
+  it('bea takes over everything admin held; bea\'s own empty record is gone', () => {
+    const url = adminAndBea();
+    const r = cli(url, ['user', 'transfer', 'admin', 'bea']);
+    expect(r).toMatchObject({ code: 0, err: expect.stringMatching(/bea now holds admin's work/) });
+    expect(cli(url, ['users']).out).toMatch(/^admin\tbea\t\S+\n$/);
     const s = instanceOf(url);
-    expect(s.identities.userOf('password', 'bea')).toBe('owner');
-    const store = s.userStore(s.users.owner());
+    expect(s.identities.userOf('password', 'bea')).toBe('admin');
+    const store = s.userStore(s.users.admin());
     expect(store.jobs.list()).toHaveLength(1);
     store.close();
     s.close();
-    expect(cli(url, ['config', 'get', 'rules']).out).toBe(`${json('owner rules')}\n`);
+    expect(cli(url, ['config', 'get', 'rules']).out).toBe(`${json('admin rules')}\n`);
   });
 
   it('moves the sessions and login codes of the user that takes over', () => {
-    const url = ownerAndBea();
+    const url = adminAndBea();
     const code = cli(url, ['login-code', '--user', 'bea']).out.trim();
-    expect(cli(url, ['user', 'transfer', 'owner', 'bea']).code).toBe(0);
+    expect(cli(url, ['user', 'transfer', 'admin', 'bea']).code).toBe(0);
     const s = instanceOf(url);
-    expect(s.loginCodes.take(createHash('sha256').update(code).digest('hex'), new Date().toISOString())).toBe('owner');
+    expect(s.loginCodes.take(createHash('sha256').update(code).digest('hex'), new Date().toISOString())).toBe('admin');
     s.close();
   });
 
   it('refuses when the user taking over holds work of its own: nothing is lost, nothing changes', () => {
-    const url = ownerAndBea();
+    const url = adminAndBea();
     const s = instanceOf(url);
     const bea = s.userStore(s.users.get('bea')!);
     bea.jobs.create({ executor: 'test', payload: {} }, 5);
     bea.close();
     s.close();
-    expect(cli(url, ['user', 'transfer', 'owner', 'bea'])).toMatchObject({ code: 2, err: expect.stringMatching(/bea holds work of its own \(1 job\)/) });
+    expect(cli(url, ['user', 'transfer', 'admin', 'bea'])).toMatchObject({ code: 2, err: expect.stringMatching(/bea holds work of its own \(1 job\)/) });
     expect(cli(url, ['users']).out.split('\n').filter(Boolean)).toHaveLength(2);
   });
 
   it('refuses while a daemon has the database: stop it first', () => {
-    const url = ownerAndBea();
+    const url = adminAndBea();
     const daemon = instanceOf(url);
     expect(daemon.holdDaemonLock()).toBe(true);
-    expect(cli(url, ['user', 'transfer', 'owner', 'bea'])).toMatchObject({ code: 2, err: expect.stringMatching(/a running daemon has this database; stop it first/) });
+    expect(cli(url, ['user', 'transfer', 'admin', 'bea'])).toMatchObject({ code: 2, err: expect.stringMatching(/a running daemon has this database; stop it first/) });
     daemon.close();
-    expect(cli(url, ['user', 'transfer', 'owner', 'bea']).code).toBe(0);
+    expect(cli(url, ['user', 'transfer', 'admin', 'bea']).code).toBe(0);
   });
 
   it('refuses unknown users, one user onto itself, and a wrong shape', () => {
-    const url = ownerAndBea();
-    expect(cli(url, ['user', 'transfer', 'owner', 'nobody'])).toMatchObject({ code: 2, err: expect.stringMatching(/no user nobody/) });
+    const url = adminAndBea();
+    expect(cli(url, ['user', 'transfer', 'admin', 'nobody'])).toMatchObject({ code: 2, err: expect.stringMatching(/no user nobody/) });
     expect(cli(url, ['user', 'transfer', 'bea', 'bea'])).toMatchObject({ code: 2, err: expect.stringMatching(/two different users/) });
-    expect(cli(url, ['user', 'transfer', 'owner'])).toMatchObject({ code: 2, err: expect.stringMatching(/user transfer <from> <to>/) });
+    expect(cli(url, ['user', 'transfer', 'admin'])).toMatchObject({ code: 2, err: expect.stringMatching(/user transfer <from> <to>/) });
   });
 });

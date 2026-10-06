@@ -2,10 +2,10 @@
 // dir, the secrets the runtime gives under the user's secret prefix, and the CLI config dirs every
 // process of theirs starts with.
 import { join } from 'node:path';
-import { OWNER_ID, type User } from '../domain/types.ts';
+import { ADMIN_ID, type User } from '../domain/types.ts';
 import { runtimeSecrets, type RuntimeSecrets } from '../secrets/runtime.ts';
 
-/** The user work dir: HOPPER_WORK_DIR itself for owner, `<work dir>/users/<id>` for a user added later. */
+/** The user work dir: HOPPER_WORK_DIR itself for admin, `<work dir>/users/<id>` for a user added later. */
 export const userWorkDir = (workDir: string, user: User): string => (user.workDir ? join(workDir, user.workDir) : workDir);
 
 /** The user's secret NAME: the runtime's `<secret prefix>NAME` (or `<secret prefix>NAME_FILE`). */
@@ -16,7 +16,7 @@ export function userSecrets(env: Record<string, string | undefined>, user: User)
 
 /**
  * What the user's processes add to the daemon's environment: for a user with a work dir of their own,
- * the gh and claude CLIs' config dirs in it (their logins); none for owner, whose environment is
+ * the gh and claude CLIs' config dirs in it (their logins); none for admin, whose environment is
  * the daemon's.
  */
 export function userCliEnv(workDir: string, user: User): Record<string, string> {
@@ -25,5 +25,5 @@ export function userCliEnv(workDir: string, user: User): Record<string, string> 
   return { GH_CONFIG_DIR: join(dir, 'gh'), CLAUDE_CONFIG_DIR: join(dir, 'claude') };
 }
 
-/** The herdr session the user's jobs run in on this machine: `hopper` for owner, `hopper-<id>` for a user added later. */
-export const userHerdrSession = (user: User): string => (user.id === OWNER_ID ? 'hopper' : `hopper-${user.id}`);
+/** The herdr session the user's jobs run in on this machine: `hopper` for admin, `hopper-<id>` for a user added later. */
+export const userHerdrSession = (user: User): string => (user.id === ADMIN_ID ? 'hopper' : `hopper-${user.id}`);

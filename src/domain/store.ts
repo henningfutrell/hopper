@@ -150,8 +150,8 @@ export interface ConfigRecords<N extends string = UserConfigName> {
 export interface UserRepository {
   list(): User[];
   get(id: string): User | undefined;
-  /** The oldest user: `owner` in every store. */
-  owner(): User;
+  /** The default admin account, `admin` (issue #220). */
+  admin(): User;
   /** A new user under a unique name (throws when taken): its row and its user schema. */
   add(name: string): User;
   /**

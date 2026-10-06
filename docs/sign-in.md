@@ -200,7 +200,7 @@ visitor's browser). The daemon logs `NO SIGN-IN is on` at every start. It combin
 no sign-in as viewer plus a realm or the login code means everyone may look and those who sign
 in may act. Use it only where something in front — a VPN, a proxy with its own login, a network only
 you reach — already decides who gets in. As admin, anyone who reaches the UI can change every setting.
-No sign-in signs everyone in as `owner`, so it stays off while the hopper has more than one user, and
+No sign-in signs everyone in as `admin`, so it stays off while the hopper has more than one user, and
 no user is added while it is on.
 
 ## Password realm
@@ -239,7 +239,7 @@ Nobody depends on a login code or an already signed-in browser to get in.
 - **At start**, when there is no such account — a new hopper, or a sign-in config changed with
   `hopper config … sign-in` — the hopper adds the account `admin` (or `admin-2`, … when taken) to the
   first password realm, turning it on, or to a new realm **Password** when there is none. The account
-  signs in as `owner`, role admin. Its password is `HOPPER_SIGN_IN_ADMIN_PASSWORD` when that is set
+  signs in as the default admin account, `admin`, role admin. Its password is `HOPPER_SIGN_IN_ADMIN_PASSWORD` when that is set
   ([Sign-in from the environment](#sign-in-from-the-environment)); else it is random and is shown
   **only once**, in the start lines (`journalctl --user -u hopper`, or the container's log):
 
@@ -413,38 +413,40 @@ the plugin store, updates, sign-in realms — needs `admin`.
 
 One hopper can work for several people (issue #158, `docs/design.md` "Users: one hopper, separate
 users"). Each **user** has their own jobs, questions, events, machines, plugins, routing, rules,
-webhooks and credentials; nobody sees or touches another user's. Every hopper starts with the user
-`owner`, which holds everything from before there were several.
+webhooks and credentials; nobody sees or touches another user's. Every hopper starts with the
+**default admin account**, `admin` (as Nexus, Argo CD and Grafana have one), which holds everything
+from before there were several. There is no `owner` user any more: an earlier hopper's `owner`, with
+all its work, sign-ins, sessions and login codes, became `admin` on update (issue #220).
 
 | sign-in | user |
 |---|---|
-| login code | the user it was minted for: `hopper login-code --user <id>` (default `owner`); a device link is for the session's own user; a new user's login link for that user |
-| no sign-in (`none`) | `owner` |
+| login code | the user it was minted for: `hopper login-code --user <id>` (default `admin`); a device link is for the session's own user; a new user's login link for that user |
+| no sign-in (`none`) | `admin` |
 | a realm (password, LDAP, OIDC, GitHub, SAML) | the user its identity (realm and subject) is linked to; the **first** sign-in of an identity a role rule lets in creates a new user for it, named after its username, else its name, else its email (made unique: `ada`, `ada 2`), and links it |
 
 - An admin adds a user from **Settings → Users** (or `hopper user add <name>`) and hands over the
   one-time login link it shows.
 - A user added later reads its secrets under its own prefix: a plugin option naming `GITHUB_TOKEN`
   reads `HOPPER_USER_<ID>_GITHUB_TOKEN` (or its `_FILE`), so set the variable for that user in the
-  daemon's environment. `owner` reads the names as they are.
+  daemon's environment. `admin` reads the names as they are.
 - Its `gh` and `claude` logins are its own: they live in `<work dir>/users/<id>/gh` and `…/claude`.
   Log it in to GitHub from its own Sources view.
-- An identity that signed in before there were several users is linked to `owner` when its session
+- An identity that signed in before there were several users is linked to `admin` when its session
   was still stored; one whose sessions had all expired gets a new user at its next sign-in.
-  `hopper login-code` always reaches `owner`.
+  `hopper login-code` always reaches `admin`.
 - **Moving work to the user a person signs in as** (issue #212): `hopper user transfer <from> <to>`,
   with the daemon stopped. `<to>` takes over everything `<from>` holds: `<to>`'s sign-ins (realm
   links), sessions and login codes move onto `<from>`'s record, which takes `<to>`'s name; `<to>`'s
   own record and schema are removed. The record keeps its id, schema, work dir, secret prefix and
   herdr session, so running jobs and their panes are untouched. Refused while a daemon holds the
   database, and when `<to>` has jobs, questions, decisions or webhooks of its own; its config,
-  settings and events go with its schema. Typical use: `owner` signed in by login code only, and a
+  settings and events go with its schema. Typical use: `admin` signed in by login code only, and a
   password account added later for the same person — after the transfer, signing in with the
   password (from any device) reaches the work.
 
   ```sh
   systemctl --user stop hopper
-  hopper user transfer owner <user id>
+  hopper user transfer admin <user id>
   systemctl --user start hopper
   ```
 

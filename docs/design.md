@@ -38,7 +38,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 |-----|------|-----------------|
 | `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts; `machines.ts` attached machines and their edit; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate), ports (`ports.ts`, re-exporting the store's from `store.ts`) | anything else in `src/` |
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock | everything but `domain/` |
-| `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations (the instance's `migrations.ts` with migration 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — the record and the password accounts, `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209) | engine, http, decider |
+| `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations (the instance's `migrations.ts` with migration 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — the record and the password accounts, `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209) | engine, http, decider |
 | `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), identity → user (`identities.ts`: link or provision) | http, decider |
 | `src/webhooks/` | signing, dispatcher, retry/backoff, the secret of a subscription from the runtime (`dispatcher.ts`), the UI edit of the subscriptions (`edit.ts`, rows in the store) | engine, http, decider |
 | `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, the plugins config (`plugins-config.ts`) + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt, `escalation-level/anthropic-api/` asks the Claude API with the same prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-gh/` and `job-source/github-app/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser); `usage-source/command-usage/` reads any agent framework's usage and account from a command that prints them as JSON; `usage-source/polled.ts` the background refresh both share, `usage-source/run.ts` their command runner; `notifier/grokbot-routine/` is the Grok Bot routine webhook — env-file reader and notifier; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
@@ -3516,8 +3516,8 @@ fallback that cannot fix sign-in is not one — and the first one is made the wa
 - **At start** (`ensurePasswordFallback`, `src/main.ts`, before the sign-in config loads): a config
   without it gets it from `withPasswordFallback` — the account `admin` (`admin-2`, … when taken) in the
   first password realm, turned on, or in a new realm `password` ("Password") after the others; role
-  admin; its identity linked to owner (`IdentityLinks.replace`), so the sign-in is owner's, not a new
-  user's. Written against the version read, in one transaction with the link. Its password is 18
+  admin; its identity linked to the default admin account (`IdentityLinks.replace`), so the sign-in is
+  `admin`'s, not a new user's. Written against the version read, in one transaction with the link. Its password is 18
   random bytes, base64url, shown once in a start line (`console.warn`); only the argon2id hash is
   stored. Every start checks, so a config made without it by `hopper config set sign-in`, or by
   migration 20, gets it at the next start.
@@ -3527,7 +3527,7 @@ fallback that cannot fix sign-in is not one — and the first one is made the wa
 - **The login code is unchanged**: still on by default, still the operator's way in from the host.
 
 **Residual risk, stated.** The first password sits in the daemon's log until rotated: whoever reads
-the journal (or the container's log) before the admin changes it can sign in as owner, admin. That is
+the journal (or the container's log) before the admin changes it can sign in as `admin`, role admin. That is
 the Jenkins and Argo trade, and the same reach as `hopper login-code` (the host's operator). The form
 is now always offered, so a public URL always answers password attempts; argon2id and the sign-in
 rate limit bound them. The lockout guard for the acting session still applies; this guard is for
@@ -4580,7 +4580,8 @@ document, routing, router mode, usage sources, webhook subscriptions and credent
 never visible to or touchable by another user. The **instance** is what they share: the daemon
 process and its port, sign-in (`auth.yaml`), the plugin store and its installs, self-update. No API
 keeps its old shape (no shims, every caller changed); persisted state migrates without loss: an
-install from before holds one user's work, and it becomes the first user's, `owner`.
+install from before holds one user's work, and it becomes the first user's — `owner` until issue
+#220, the **default admin account** `admin` since ("The default admin account" below).
 
 ### Store: an instance schema and one user schema per user
 
@@ -4610,6 +4611,30 @@ install from before holds one user's work, and it becomes the first user's, `own
   connection whose `search_path` is the user schema (the `?schema=` mechanism), and runs the tenant
   track. `openInstanceStore` replaces `openStore`.
 
+### The default admin account (issue #220, 2026-10-06)
+
+Owner decision: no built-in `owner` account. Like Nexus, Argo CD and Grafana, every hopper has a
+**default admin account**, the user `admin` (`ADMIN_ID`, `src/domain/users.ts`), and it is the one
+account that receives everything: the work dir itself, an empty secret prefix (the daemon's variables
+as they are), the herdr session `hopper`, and every default — no sign-in, `hopper login-code` and the
+operator CLI without `--user`, the password fallback's account, the instance's own events and plugin
+report (`UserRepository.admin()`, `Runtimes.admin()`).
+
+- **Instance migration 21** (`src/store/migration-admin.ts`) gives the user `owner` the id `admin`: the
+  row keeps its place, created date, work dir and secret prefix; its name `owner` becomes `admin`; its
+  identity links, UI sessions and login codes name `admin`; its user schema is renamed
+  (`ALTER SCHEMA … RENAME`, every table, sequence and index with it). `owner` is gone. A user already
+  called `admin` moves aside first — id `admin_2` (schema renamed the same way, its work dir and secret
+  prefix kept), name `Admin 2` — so nothing of theirs is lost. `ui_sessions.user_id` and
+  `login_codes.user_id` lose their default: each row names its user. One transaction.
+- **Sign-in.** Every way the owner signed in now signs in as `admin`: its login codes, sessions and
+  linked identities. The password fallback's account `admin` (issue #219, "Password sign-in is the
+  fallback") was linked to `owner`, so it signs in as `admin`; a fresh hopper's start links it to
+  `admin` directly. The default admin account is then complete: the user `admin`, its password
+  account `admin` (first password shown once at start), and the login code.
+- **Not an account: the question stage.** *Owner* stays the glossary's word for the last stage of the
+  question gates — whichever user's job asked — never a user.
+
 ### User runtime
 
 `startApp` (`src/main.ts`) is the instance: it opens the instance store, loads `auth.yaml`, sign-in,
@@ -4620,11 +4645,11 @@ notifiers, failure log — over that user's store. A user added while the daemon
 at once. `App.user(id)` returns a runtime's parts (store, engine, sources, plugins) for tests; `stop`
 stops every runtime, then the instance.
 
-- **User work dir** — `HOPPER_WORK_DIR` joined with the user's `work_dir`: `''` for `owner` (its ssh
+- **User work dir** — `HOPPER_WORK_DIR` joined with the user's `work_dir`: `''` for `admin` (its ssh
   control dir, client sockets, plugin scratch stay where they were), `users/<id>` for a user added
   later. The store installs and the update mirror stay in the work dir itself: they are the instance's.
 - **Secrets** — a user's runtime reads secret `NAME` as `<secret_prefix>NAME` (and
-  `<secret_prefix>NAME_FILE`), through the same `runtimeSecrets`. `owner`'s prefix is empty (nothing
+  `<secret_prefix>NAME_FILE`), through the same `runtimeSecrets`. `admin`'s prefix is empty (nothing
   changes for an install from before); a user added later gets `HOPPER_USER_<ID>_` (id upper-cased),
   so one user's plugins.yaml can never name another user's variable. The instance's own secrets
   (`HOPPER_DATABASE_URL`, `auth.yaml`'s `clientSecretEnv`) keep their names.
@@ -4634,10 +4659,10 @@ stops every runtime, then the instance.
   starts with `GH_CONFIG_DIR=<user work dir>/gh` and `CLAUDE_CONFIG_DIR=<user work dir>/claude`
   added. The runtime builds that environment once (`userProcessEnv`) and hands it to the parts as
   `PluginContext.processEnv` and the detection kit's environment, never `process.env` directly. A
-  herdr pane gets it through the tab's environment (`createTab` `env`). `owner`'s environment is the
+  herdr pane gets it through the tab's environment (`createTab` `env`). `admin`'s environment is the
   daemon's, unchanged. On an attached machine the target's own login applies, as before.
 - **herdr session** — the herdr-claude plugin's default `session` is the user's: `hopper` for
-  `owner`, `hopper-<id>` for a user added later; `ensurePluginsDocument` also writes it into a new
+  `admin`, `hopper-<id>` for a user added later; `ensurePluginsDocument` also writes it into a new
   user's plugins.yaml on every herdr-claude instance. Panes and restart recovery of one user never
   touch another user's session.
 - **Instance parts** — store installs are the instance's: after an install or removal every user's
@@ -4673,13 +4698,13 @@ stops every runtime, then the instance.
 whose identity is linked signs in as that user; an unlinked identity that a role rule grants a role
 gets a **new user** — named from the identity's username, else name, else email, else subject, made
 unique — and the link (`provisionUser`). A login code carries its user (`login_codes.user_id`):
-`hopper login-code [--user <id>]` (default `owner`), a device link mints one for the session's own
-user, a new user's login link for that user. No sign-in (`none`) is `owner`. Stored sessions are
+`hopper login-code [--user <id>]` (default `admin`), a device link mints one for the session's own
+user, a new user's login link for that user. No sign-in (`none`) is `admin`. Stored sessions are
 reconciled with `auth.yaml` at start as before; their user stays.
 
 **Residual risk, stated.** An identity that signed in before the migration only through sessions
 that had expired is not linked; its next sign-in provisions a new, empty user. `hopper login-code`
-(default `owner`) always reaches `owner`. An admin of any user can add users and update the daemon:
+(default `admin`) always reaches `admin`. An admin of any user can add users and update the daemon:
 instance mutations are not owner-only. Two users' `local` machines run on the same host side by side,
 each with its own lanes. As before, every local account of the host reads the GET API on loopback
 without a session — only while the hopper has one user (issue #221). Jobs
@@ -4688,8 +4713,8 @@ user's job wrote there; the separation is the hopper's, not the operating system
 A user added later starts every process of theirs (gh, claude, the herdr server and its panes, commands)
 from the machine's variables only (`PATH`, `HOME`, `USER`, `LOGNAME`, `SHELL`, `LANG`, `LANGUAGE`, `TERM`,
 `TZ`, `TMPDIR`, `XDG_RUNTIME_DIR`, `LC_*`) plus their CLI config dirs (`userProcessEnv`,
-`src/executors/env.ts`): never the daemon's environment, which holds owner's runtime secrets and the
-database URL. Owner's processes keep the daemon's environment. This closes the easy read, not the
+`src/executors/env.ts`): never the daemon's environment, which holds admin's runtime secrets and the
+database URL. Admin's processes keep the daemon's environment. This closes the easy read, not the
 account: a later user's job can still read the daemon account's files. A user who needs a boundary
 the operating system enforces runs their jobs on a machine of their own (an ssh, client or container target).
 
@@ -4764,7 +4789,7 @@ never the jobs (they named `job <id> (executor <name>)` of any user before).
     link of realm and username to that user stays, so it would sign in as them);
   - an account is linked (`user`) only to the acting admin's own user; an account nobody signed in
     with yet gets a user of its own at its first sign-in;
-  - **no sign-in** signs everyone in as `owner`: it stays off while the hopper has more than one user,
+  - **no sign-in** signs everyone in as `admin`: it stays off while the hopper has more than one user,
     and no user is added while it is on.
 - **A user owns their password** (`POST /ui/api/password`, any role). The account the session signed in
   with takes a new password, the current one checked first (400 when wrong; 409 for a session that did

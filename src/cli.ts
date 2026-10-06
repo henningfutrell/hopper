@@ -14,7 +14,7 @@
 //   hopper user transfer <from> <to>                  <to> takes over <from>'s work (issue #212)
 //   hopper help                                       what each command does
 //
-// <record>: plugins or rules (a user's: --user, default owner), or sign-in (the instance's, without
+// <record>: plugins or rules (a user's: --user, default admin), or sign-in (the instance's, without
 // the password accounts: Settings → Sign-in keeps them, issue #200). A record that would not load is
 // refused.
 import { readFileSync } from 'node:fs';
@@ -51,7 +51,7 @@ usage:
 
 records: ${CONFIG_NAMES.join(', ')}. plugins and rules are one user's; sign-in is shared, and its password accounts are
 kept apart: Settings → Sign-in adds them. Every one is edited in the UI too.
---user <id> on config and login-code names the user (default: owner, the first user).
+--user <id> on config and login-code names the user (default: admin, the default admin account).
 
 Every command but help needs HOPPER_DATABASE_URL (or HOPPER_DATABASE_URL_FILE):
 the database the daemon uses, postgres://user:password@host:port/database.
@@ -95,15 +95,15 @@ function put(records: Records, name: ConfigName, json: string, version: string):
   }
 }
 
-/** The user `--user` names, or owner. */
+/** The user `--user` names, or the default admin account. */
 function userOf(instance: InstanceStore, id: string | undefined): User {
-  if (id === undefined) return instance.users.owner();
+  if (id === undefined) return instance.users.admin();
   const user = instance.users.get(id);
   if (!user) throw new CliError(`no user ${id}; hopper users lists them`);
   return user;
 }
 
-/** Run `fn` with the records `name` lives in: sign-in the instance's, the others the user's (default owner). */
+/** Run `fn` with the records `name` lives in: sign-in the instance's, the others the user's (default admin). */
 function withRecords<T>(instance: InstanceStore, name: ConfigName, userId: string | undefined, fn: (records: Records) => T): T {
   if (name === 'sign-in') {
     if (userId !== undefined) throw new CliError('sign-in is the instance\'s (sign-in is shared): no --user');

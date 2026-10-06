@@ -10,7 +10,7 @@ import type {
   UserStore, WebhookDispatcher,
 } from '../domain/ports.ts';
 import type { AttachedMachine, Question, SourceStatus, User } from '../domain/types.ts';
-import { isRerunnable, OWNER_ID } from '../domain/types.ts';
+import { ADMIN_ID, isRerunnable } from '../domain/types.ts';
 import type { Config } from '../config.ts';
 import { createEngine, type Engine } from '../engine/index.ts';
 import { logFailures } from '../engine/failure-log.ts';
@@ -154,7 +154,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   // The plugins config is the one truth: the built-in instances are written on the start that finds none.
   ensurePluginsConfig({
     config: store.config, answerTimeoutMs: config.answerTimeoutMs, localMachine: config.localMachine, logger,
-    ...(user.id === OWNER_ID ? {} : { herdrSession: session }),
+    ...(user.id === ADMIN_ID ? {} : { herdrSession: session }),
   });
   // Every secret comes from the runtime, under the user's prefix (issue #56, #158).
   const secret = userSecrets(o.env, user);
@@ -188,7 +188,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
         ).then((online) => ({ online })))),
   });
   const notEnded = () => store.jobs.list({ status: ['queued', 'held', 'claimed', 'running', 'waiting_answer'] });
-  const builtin = builtinInstances(config.answerTimeoutMs, config.localMachine, user.id === OWNER_ID ? undefined : session);
+  const builtin = builtinInstances(config.answerTimeoutMs, config.localMachine, user.id === ADMIN_ID ? undefined : session);
   const host = createPluginHost({
     ...(config.pluginDir ? { pluginDir: config.pluginDir } : {}), installedDir: o.installedDir,
     config: store.config, dataDir, clock, routerMode, logger, userEnv: cliEnv,

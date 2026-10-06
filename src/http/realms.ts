@@ -13,7 +13,7 @@
 // no change here gives the acting admin a credential that signs in as another user — no password set
 // on, and no account added under the name of, an account that signs in as another user; no account
 // linked to another user; no sign-in kept off while the hopper has more than one user (it signs
-// everyone in as owner). The account's own user changes its password (`changePassword`), which ends
+// everyone in as admin). The account's own user changes its password (`changePassword`), which ends
 // the account's other sessions: a password an admin handed over stops being one the admin knows.
 import type { FastifyInstance } from 'fastify';
 import { accountOf, AuthEditError, editSignIn, hashPassword, hasPasswordFallback, loadSignInConfig, verifyPassword, realmsView, roleIn, type SignIn, type SignInEdit } from '../auth/index.ts';
@@ -89,7 +89,7 @@ export function createRealmsAdmin(o: {
       const { version } = edit;
       if (version !== store.version()) throw new HttpError(409, MOVED);
       if (edit.action === 'settings' && edit.none !== undefined && edit.none !== null && o.instance.users.list().length > 1) {
-        throw new HttpError(409, 'no sign-in signs everyone in as owner: it stays off while the hopper has more than one user');
+        throw new HttpError(409, 'no sign-in signs everyone in as admin: it stays off while the hopper has more than one user');
       }
       let change: SignInEdit;
       if (edit.action === 'account') change = await accountChange(before, edit, actorUser);

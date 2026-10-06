@@ -65,7 +65,7 @@ const html = (reply: FastifyReply, status: number, body: string) =>
 
 export function registerSignInRoutes(parent: FastifyInstance, o: {
   sessions: UiSessions; signIn: SignIn; instance: Pick<InstanceStore, 'loginCodes'>; clock: Clock;
-  /** The user an identity signs in as (issue #158): linked, owner for no sign-in, or a new one. */
+  /** The user an identity signs in as (issue #158): linked, admin for no sign-in, or a new one. */
   userFor: (who: Identity) => Promise<User>;
   /** A user's name by id (a login code names its user by id). */
   userName: (id: string) => string;

@@ -17,7 +17,7 @@ Install page, step by step: https://henningfutrell.github.io/hopper/ (`site/`).
   machines, usage sources, notifiers (`docs/plugins.md`); the UI installs more from a plugin store.
 - **Several people, kept apart.** One hopper can work for several users: each has their own jobs,
   questions, machines, plugins, webhooks and logins, and sees nobody else's. It starts with one,
-  `owner`; an admin adds more in Settings → Users (`docs/sign-in.md` "Who signs in as which user").
+  the default admin account `admin`; an admin adds more in Settings → Users (`docs/sign-in.md` "Who signs in as which user").
 
 ## Getting started
 
