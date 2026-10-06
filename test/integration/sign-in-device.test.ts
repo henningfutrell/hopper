@@ -64,6 +64,8 @@ describe('sign in with GitHub through the hopper\'s GitHub App', () => {
     const github = await forge();
     const { app, origin } = await startWithAuth(h, undefined, ENV(github));
     expect((await session(app)).signIn.devices).toEqual([{ name: 'github', label: 'GitHub', type: 'github' }]);
+    // Settings → Sign-in (issue #256): nobody is the GitHub admin yet.
+    expect((await app.api<{ githubAdmin: unknown }>('GET', '/api/realms')).body.githubAdmin).toBeNull();
 
     const started = await post(app.url, origin, '/ui/auth/github/device', { binding: BINDING });
     expect(started.status).toBe(200);
@@ -82,6 +84,9 @@ describe('sign in with GitHub through the hopper\'s GitHub App', () => {
     // The first person to sign in with GitHub is admin, though no rule names them (issue #239).
     expect(done.body).toMatchObject({ state: 'signed-in', token: expect.any(String), user: { role: 'admin', realm: 'github', name: 'octo-user' } });
     expect(app.app.auth().githubAdmin).toMatchObject({ realm: 'github' });
+    // Settings → Sign-in names who that is: the user they signed in as (issue #256).
+    expect((await app.api<{ githubAdmin: unknown }>('GET', '/api/realms', undefined, { 'x-hopper-session': done.body.token })).body.githubAdmin)
+      .toEqual({ realm: 'github', user: 'octo-user' });
 
     // The same connection is the user's GitHub: their job source reads through it.
     const accounts = (await app.api<{ accounts: ConnectedAccountStatus[] }>('GET', '/api/connected-accounts', undefined, { 'x-hopper-session': done.body.token })).body.accounts;
