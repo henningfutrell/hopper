@@ -4100,7 +4100,7 @@ build, `restart.ts` the restart, `blockers.ts`); routes `GET /api/update`, `POST
 **The install knows where it came from.** `install.json` in the install (beside `src/`):
 `{ repo, branch, commit, installedAt }`. `scripts/install.sh` writes it from the clone's `origin`
 and `HEAD`; the branch is `main` unless `HOPPER_UPDATE_BRANCH` names another. An update writes
-the new one. No install.json (a checkout run with `npm start`, a clone without `origin`) → state
+the new one, with the channel's branch on a branch channel. No install.json (a checkout run with `npm start`, a clone without `origin`) → state
 `unavailable` with the reason; nothing else changes.
 
 **Detecting.** A bare mirror at `<data dir>/update/repo.git`, fetched from install.json's `repo` on
@@ -4113,10 +4113,22 @@ Check now. Checking cannot be turned off (issue #177): `0` used to mean "only wh
 hopper left with it set offered nothing merged after it; now `0` (or less) is the default minute, with a
 warning in the log. One minute, not fifteen (issue #177): a change merged to the
 tracked branch is not shipped until the running hopper offers it, and a 15-minute check left merged work
-unoffered for up to that long; a fetch that brings nothing is one round trip. The **update channel** decides the target: `main` → the head
-of the tracked branch; `release` → the newest `v<major>.<minor>.<patch>` tag. An update is
+unoffered for up to that long; a fetch that brings nothing is one round trip. The **update channel** decides the target: `dev`, `beta`, `main` → the head
+of the branch of that name (issue #282); `release` → the newest `v<major>.<minor>.<patch>` tag. With no
+channel set, it is the branch install.json names when that is a channel, else `main`. An update is
 **available** when the installed commit does not contain the target (an install ahead of it, e.g.
-from a feature branch, is `current`). **What's new** (issue #104): the bullets of `WHATS-NEW.md`
+from a feature branch, is `current`) — or, on a branch channel, when install.json names another
+channel's branch and the target is not the installed commit: moving from `dev` to `main` goes back
+to `main`'s head, though the `dev` install contains it (its What's new is then empty; the notice says
+"move to the main channel").
+
+**Channels and promotion (issue #282).** Changes land on `dev`; `beta` is promoted from `dev`, and
+`main` from `beta`, each a fast-forward to a commit the less steady branch already ran
+(`git push origin <commit>:beta`, then `git push origin <commit>:main`). A hopper on `dev` gets every
+change first; one on `main` gets only what ran on `beta`, so a change that breaks is caught before it
+reaches every hopper. Which branch pull requests merge to (the repository's default branch) is the
+owner's choice; while it is `main`, `dev` and `beta` are fast-forwarded to it after each merge, and
+the channels only differ once changes merge to `dev` first. **What's new** (issue #104): the bullets of `WHATS-NEW.md`
 at the target that `WHATS-NEW.md` at the installed commit lacks, newest first (`whatsNew`; all of
 them when the installed commit has no such file) — plain words for people who use the hopper,
 written by hand in the change that makes them true (AGENTS.md "What's new"); `src/update/whats-new.ts`.
@@ -4180,7 +4192,7 @@ an available update as soon as a check finds it, and at once when switched on wi
 ("Update available", or the release), "What's new" (the bullets), Update now. The header's
 version (a bordered button with an info icon, the installed commit from `sm` up) shows on every screen
 and opens the Version and updates panel at any time (issue #165): version, installed, installed on,
-newest, release, last check, Check now, Update now, auto-update, channel (`commits` / `releases`), the
+newest, release, last check, Check now, Update now, auto-update, channel (`dev` / `beta` / `main` / `release`, each with what it pulls), the
 update's What's new, In this version. The same details are Settings → Version (`#settings/version`).
 
 **Any deployment.** The updater needs: install.json, git and network access to the repository,

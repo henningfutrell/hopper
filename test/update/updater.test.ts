@@ -3,49 +3,11 @@
 // the result on the next boot. The build (scripts/install.sh build-only mode) and the restart are seams.
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { installFromBefore, testDatabaseUrl } from '../support/database.ts';
-import type { InstanceStore, UserStore } from '../../src/domain/ports.ts';
-import { ADMIN_ID, type UpdateStatus } from '../../src/domain/types.ts';
-import { openInstanceStore } from '../../src/store/index.ts';
-import { createUpdater, type UpdaterOptions } from '../../src/update/index.ts';
+import { describe, expect, it, vi } from 'vitest';
+import type { UpdateStatus } from '../../src/domain/types.ts';
 import { waitFor } from '../support/wait.ts';
-import { copyBuilder, createInstall, createUpstream, git, readInstall, tempDir, type Upstream } from './support.ts';
-
-const dirs: string[] = [];
-const stores: { close(): void }[] = [];
-const updaters: { stop(): void }[] = [];
-
-afterEach(() => {
-  for (const u of updaters.splice(0)) u.stop();
-  for (const s of stores.splice(0)) s.close();
-  for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
-});
-
-interface World { root: string; up: Upstream; instance: InstanceStore; store: UserStore; dataDir: string }
-
-function world(): World {
-  const root = tempDir('jh-update-');
-  dirs.push(root);
-  const dataDir = join(root, 'data');
-  const instance = openInstanceStore({ url: installFromBefore(testDatabaseUrl()), clock: { now: () => new Date() } });
-  const store = instance.userStore(instance.users.get(ADMIN_ID)!);
-  stores.push(store, instance);
-  return { root, up: createUpstream(root), instance, store, dataDir };
-}
-
-function updater(w: World, appDir: string, o: Partial<UpdaterOptions> = {}) {
-  const restarts: number[] = [];
-  const u = createUpdater({
-    appDir, dataDir: w.dataDir, settings: w.instance.settings, events: w.store.events, clock: { now: () => new Date() }, logger: { info: () => {}, warn: () => {} },
-    builder: copyBuilder(), restart: async () => { restarts.push(Date.now()); }, restartBlockers: () => 0, checkMs: 0, waitMs: 20,
-    ...o,
-  });
-  updaters.push(u);
-  return { u, restarts };
-}
-
-const types = (w: World, prefix = 'update.') => w.store.events.since(0).filter((e) => e.type.startsWith(prefix)).map((e) => e.type);
+import { copyBuilder, createInstall, git, readInstall } from './support.ts';
+import { types, updater, world, type World } from './world.ts';
 
 describe('detecting an update', () => {
   it('is unavailable without install.json, and says why', async () => {
@@ -264,81 +226,6 @@ describe('applying an update', () => {
     await u.check();
     await waitFor(async () => restarts.length === 1);
     expect(readFileSync(join(appDir, 'app.txt'), 'utf8')).toBe('v2');
-  });
-});
-
-describe('the dev, beta and main channels (issue #282)', () => {
-  /** main ← beta ← dev: each branch one commit ahead of the next more stable one. */
-  function branches(w: World) {
-    w.up.whatsNew(['Stable news.']);
-    const main = w.up.commit('stable', 'main');
-    git(w.up.dir, 'checkout', '-q', '-b', 'beta');
-    w.up.whatsNew(['Beta news.', 'Stable news.']);
-    const beta = w.up.commit('beta', 'beta');
-    git(w.up.dir, 'checkout', '-q', '-b', 'dev');
-    w.up.whatsNew(['Dev news.', 'Beta news.', 'Stable news.']);
-    const dev = w.up.commit('dev', 'dev');
-    git(w.up.dir, 'checkout', '-q', 'main');
-    return { main, beta, dev };
-  }
-
-  it('each channel follows the head of its own branch', async () => {
-    const w = world();
-    const b = branches(w);
-    const { u } = updater(w, createInstall(w.root, w.up.dir, b.main));
-    expect(await u.check()).toMatchObject({ state: 'current', channel: 'main', target: { commit: b.main, ref: 'main' } });
-    u.settings({ channel: 'beta' });
-    expect(await u.check()).toMatchObject({ state: 'available', channel: 'beta', target: { commit: b.beta, ref: 'beta' }, whatsNew: ['Beta news.'] });
-    u.settings({ channel: 'dev' });
-    expect(await u.check()).toMatchObject({ state: 'available', channel: 'dev', target: { commit: b.dev, ref: 'dev' }, whatsNew: ['Dev news.', 'Beta news.'] });
-  });
-
-  it('with no channel chosen, follows the branch it was installed from when that is a channel', async () => {
-    const w = world();
-    const b = branches(w);
-    const { u } = updater(w, createInstall(w.root, w.up.dir, b.beta, 'beta'));
-    expect(u.status().channel).toBe('beta');
-    expect(await u.check()).toMatchObject({ state: 'current', target: { commit: b.beta, ref: 'beta' } });
-    rmSync(join(w.root, 'app'), { recursive: true });
-    expect(updater(w, createInstall(w.root, w.up.dir, b.main, 'feature')).u.status().channel).toBe('main');
-  });
-
-  it('applying a channel\'s update installs from that branch, so the next check follows it', async () => {
-    const w = world();
-    const b = branches(w);
-    const appDir = createInstall(w.root, w.up.dir, b.main);
-    const { u, restarts } = updater(w, appDir);
-    u.settings({ channel: 'dev' });
-    await u.check();
-    u.apply();
-    await waitFor(async () => restarts.length === 1);
-    expect(readInstall(appDir)).toMatchObject({ commit: b.dev, branch: 'dev' });
-    expect(readFileSync(join(appDir, 'app.txt'), 'utf8')).toBe('dev');
-  });
-
-  it('moving to a more stable channel offers that channel\'s head, though the install already contains it', async () => {
-    const w = world();
-    const b = branches(w);
-    const appDir = createInstall(w.root, w.up.dir, b.dev, 'dev');
-    const { u, restarts } = updater(w, appDir);
-    expect((await u.check()).state).toBe('current');
-    u.settings({ channel: 'main' });
-    const s = await u.check();
-    expect(s).toMatchObject({ state: 'available', channel: 'main', target: { commit: b.main, ref: 'main' }, whatsNew: [] });
-    u.apply();
-    await waitFor(async () => restarts.length === 1);
-    expect(readInstall(appDir)).toMatchObject({ commit: b.main, branch: 'main' });
-    expect(readFileSync(join(appDir, 'app.txt'), 'utf8')).toBe('main');
-  });
-
-  it('says so when the channel\'s branch does not exist', async () => {
-    const w = world();
-    const c1 = w.up.commit('first');
-    const { u } = updater(w, createInstall(w.root, w.up.dir, c1));
-    u.settings({ channel: 'beta' });
-    const s = await u.check();
-    expect(s.state).toBe('error');
-    expect(s.reason).toMatch(/branch beta not found/);
   });
 });
 

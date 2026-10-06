@@ -1,15 +1,20 @@
 // Self-update (issue #44): what is installed, what is newer on the update channel, and how
 // applying it stands. design.md "Self-update".
 
-export const UPDATE_CHANNELS = ['main', 'release'] as const;
-/** What counts as newer: every commit on the tracked branch (`main`), or release tags only (`release`). */
+/** The channels that follow a branch of the same name, least stable first (issue #282): changes land on `dev`, are promoted to `beta`, then to `main`. */
+export const BRANCH_CHANNELS = ['dev', 'beta', 'main'] as const;
+export const UPDATE_CHANNELS = [...BRANCH_CHANNELS, 'release'] as const;
+/** What counts as newer: every commit on the channel's branch (`dev`, `beta`, `main`), or release tags only (`release`). */
 export type UpdateChannel = (typeof UPDATE_CHANNELS)[number];
+export type BranchChannel = (typeof BRANCH_CHANNELS)[number];
+
+export const isBranchChannel = (name: string): name is BranchChannel => (BRANCH_CHANNELS as readonly string[]).includes(name);
 
 /** `install.json` beside `src/`: what this install was built from. Written by scripts/install.sh and by an update. */
 export interface InstallInfo {
   /** The git repository updates come from (the clone's `origin`). */
   repo: string;
-  /** The tracked branch: the `main` channel follows its head. */
+  /** The branch it was installed from: an update on a branch channel writes that channel's branch. */
   branch: string;
   commit: string;
   installedAt: string;
@@ -61,7 +66,7 @@ export interface UpdateStatus extends UpdateSettings {
   /** Why updates are unavailable, or the last check's or apply's error. */
   reason?: string;
   installed?: InstallInfo;
-  /** The newest commit of the channel: the branch head (`main`) or the newest release's commit (`release`). */
+  /** The newest commit of the channel: its branch head (`dev`, `beta`, `main`) or the newest release's commit (`release`). */
   target?: { commit: string; ref: string };
   release?: UpdateRelease;
   /** What's new: the target's WHATS-NEW.md bullets the installed version lacks, newest first, in plain words. */
