@@ -1,7 +1,7 @@
 // A device link (design.md "Reaching the UI across the LAN") carries the login code in the URL
 // fragment, which the browser never sends to the server; the page reads it once and posts it.
 import { describe, expect, it } from 'vitest';
-import { loginCodeFromHash, newBinding, signInPath, wantsNoSignIn } from '../../ui/src/lib/login.ts';
+import { loginCodeFromHash, newBinding, signInPath, wantsGatewaySignIn, wantsNoSignIn } from '../../ui/src/lib/login.ts';
 
 const CODE = 'a'.repeat(64);
 
@@ -37,5 +37,16 @@ describe('no sign-in and password sign-in (issue #53)', () => {
     expect(wantsNoSignIn(true, offer({ none: 'viewer' }))).toBe(false);
     expect(wantsNoSignIn(false, offer({}))).toBe(false);
     expect(wantsNoSignIn(false, null)).toBe(false);
+  });
+});
+
+describe('behind an auth gateway (issue #215)', () => {
+  const offer = (gateway: boolean) => ({ local: false, none: null, password: false, gateway, origin: 'http://localhost:1', realms: [] });
+
+  it('takes the session from the gateway\'s token by itself only when logged out and a gateway realm is on', () => {
+    expect(wantsGatewaySignIn(false, offer(true))).toBe(true);
+    expect(wantsGatewaySignIn(true, offer(true))).toBe(false);
+    expect(wantsGatewaySignIn(false, offer(false))).toBe(false);
+    expect(wantsGatewaySignIn(false, null)).toBe(false);
   });
 });
