@@ -182,7 +182,8 @@ hopper login-code --link http://127.0.0.1:4790
 
 The record holds the realms' secrets as stored: whoever runs the CLI holds the database's credentials,
 which open them anyway. In the record each field has the name in brackets in [Realm settings](#realm-settings); `version` is
-`1`, `local.enabled` the login code (default on), `none.role` no sign-in (absent: off), and `realms`
+`1`, `local.enabled` the login code (default on), `none.role` no sign-in (absent: off), `githubAdmin`
+the [first GitHub admin](#ui-roles-and-role-rules) (absent: nobody yet), and `realms`
 the realms in order, each with `name`, `label`, `type`, `enabled` (absent: on) and `roles`.
 
 **From before.** Older installs were migrated when the daemon updated: the sign-in document of an
@@ -396,6 +397,13 @@ realm, its **role rules** decide, the same way for every type:
   grants this account no role"). A realm with no rules and no default role lets nobody in — on purpose.
 - Only an email the realm vouches for counts: OIDC `email_verified: true` (or
   `trustUnverifiedEmail`), GitHub's primary verified email, SAML's asserted email, LDAP's `mail`.
+- **The first person to sign in with GitHub becomes admin** (issue #239), whatever the GitHub realm's
+  rules say, and stays admin while that realm is on — across restarts and realms set from the
+  environment. The hopper records them once, as `githubAdmin` (the realm and the GitHub user id) in
+  [the sign-in config](#the-sign-in-config-from-the-cli); everyone after them gets what the rules grant.
+  Only a hopper nobody has signed in to with GitHub yet records one: one where someone already has
+  makes nobody admin this way. Sign in with GitHub yourself before you let anyone else reach the UI.
+  To take it back, remove `githubAdmin` from the record with the CLI and restart.
 
 What fills each field:
 

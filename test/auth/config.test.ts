@@ -18,7 +18,7 @@ const PW = (users: unknown[], more: Record<string, unknown> = {}) => realms({ na
 
 describe('loadSignInConfig', () => {
   it('no config: local sign-in only', () => {
-    expect(load(undefined)).toEqual({ local: { enabled: true }, none: null, realms: [] });
+    expect(load(undefined)).toEqual({ local: { enabled: true }, none: null, githubAdmin: null, realms: [] });
   });
 
   it('reads every realm type, in order, with their defaults', () => {

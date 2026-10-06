@@ -167,6 +167,8 @@ export interface IdentityLinks {
   link(realm: string, subject: string, userId: string): void;
   /** Link the identity to the user, in place of any link it had (a new password account names its user). */
   replace(realm: string, subject: string, userId: string): void;
+  /** True when an identity of one of these realms is linked to a user: someone has signed in with it. */
+  anyIn(realms: readonly string[]): boolean;
 }
 
 /** A password account as stored (`password_accounts`, issue #200): its argon2id hash, never the password. */
@@ -189,6 +191,8 @@ export interface StoredSignIn {
   local?: { enabled: boolean };
   /** No sign-in: the role everyone gets; absent: off. */
   none?: { role: UiRole };
+  /** The first person to sign in with GitHub, admin from then on (issue #239); absent: nobody yet. */
+  githubAdmin?: { realm: string; subject: string };
   /** In order: the order the form tries them and the buttons show them. */
   realms: StoredRealm[];
 }
