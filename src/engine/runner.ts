@@ -100,8 +100,10 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
     const progress = progressReporter(job.id, claim.laneId);
     let outcome: ExecutionOutcome;
     try {
+      // Asked now, never stored: the job acts through its source's connection as it is at this start.
+      const credentials = machine ? await c.credentials(started) : {};
       outcome = !machine ? { kind: 'failed', error: `machine of lane ${claim.laneId} is not attached` } : await execute(executor, started, {
-        job: started, laneId: claim.laneId, machine, signal: entry.controller.signal,
+        job: started, laneId: claim.laneId, machine, signal: entry.controller.signal, credentials,
         progress: (f, m) => progress.report(f, m),
         saveState: (state) => { if (!c.stopping()) store.jobs.update(job.id, { executorState: state }); },
         workTree: (path) => { if (!c.stopping()) store.jobs.update(job.id, { workTree: path }); },

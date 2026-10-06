@@ -46,7 +46,8 @@ const SETTINGS: Record<RealmType, [string, Kind][]> = {
     ...COMMON, ...text('issuer', 'clientId', 'clientSecret'), ['scopes', 'words'],
     ...text('claims.email', 'claims.username', 'claims.name', 'claims.groups'), ['trustUnverifiedEmail', 'switch'], ...ROLE_RULES,
   ],
-  github: [...COMMON, ...text('clientId', 'clientSecret', 'webUrl', 'apiUrl'), ...ROLE_RULES],
+  // GitHub signs in through the hopper's app (issue #214): nothing of an app here.
+  github: [...COMMON, ...ROLE_RULES],
   gateway: [
     ...COMMON, ...text('issuer', 'check'), ['audience', 'words'], ...text('header', 'clientId', 'clientSecret',
       'claims.email', 'claims.username', 'claims.name', 'claims.groups'), ['trustUnverifiedEmail', 'switch'], ...ROLE_RULES,

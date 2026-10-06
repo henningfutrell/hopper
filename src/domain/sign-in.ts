@@ -14,7 +14,13 @@ export const REALM_TYPES: readonly RealmType[] = ['ldap', 'oidc', 'github', 'sam
 /** Realm types the username and password form signs in with: a directory's, never an account of the hopper's own (issue #237). */
 export const FORM_REALM_TYPES: readonly RealmType[] = ['ldap'];
 /** Realm types that send the browser to an identity provider. A `gateway` realm is neither: an auth gateway in front of the hopper signed the person in. */
-export const REDIRECT_REALM_TYPES: readonly RealmType[] = ['oidc', 'github', 'saml'];
+export const REDIRECT_REALM_TYPES: readonly RealmType[] = ['oidc', 'saml'];
+/**
+ * Realm types the person signs in with by a device code entered at the provider, through the hopper's
+ * app (issue #214): GitHub, through its GitHub App. The token that signs them in is also their connected
+ * account: what their jobs work through.
+ */
+export const DEVICE_REALM_TYPES: readonly RealmType[] = ['github'];
 
 /** Who signed in, as every realm reports it. */
 export interface Identity {
@@ -69,7 +75,7 @@ export interface RealmView {
   secrets: string[];
   /** Set up by HOPPER_SIGN_IN_REALM_<NAME>_* variables: the next start sets it from them again (issue #216). */
   environment?: boolean;
-  /** OIDC, GitHub, SAML: the callback URL to register with the identity provider. */
+  /** OIDC, SAML: the callback URL to register with the identity provider. */
   callback?: string;
   /** SAML: the service provider metadata URL (also its entity id unless `entityId` is set). */
   metadata?: string;
@@ -117,6 +123,8 @@ export interface SessionView {
     origin: string;
     /** The OIDC, GitHub and SAML realms that are on, in order. */
     realms: SignInRealmView[];
+    /** The GitHub realms that are on, in order: each a "Sign in with" button showing a device code (issue #214). */
+    devices: SignInRealmView[];
     /** Several users: the UI shows no user's work until someone signs in (issue #167). */
     required: boolean;
   };

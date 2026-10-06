@@ -5,7 +5,7 @@ import type {
   Advice, DomainEvent, PreSortReject, ExecutorUnavailable, Job, JobId, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit,
   PluginsEditOutcome, PluginsReport, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule, LaneId, MachineSnapshot,
   Question, QuestionAttempt, SourceStatus, UsageReading, UsageSourceState, WebhookDelivery, InstallInfo, UpdateSettings, UpdateStatus, VersionHistory,
-  GhLoginStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport,
+  GhLoginStatus, ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport,
 } from './types.ts';
 import type { UserStore } from './store.ts';
 
@@ -31,6 +31,12 @@ export interface ExecutionContext {
   saveState(state: Record<string, unknown>): void;
   /** Report the job's work tree (its cwd on the lane's machine) once resolved: `job.workTree`, shown on its lane. */
   workTree(path: string): void;
+  /**
+   * Variables the job's own processes run with, from its source's connection (issue #214): GH_TOKEN of
+   * the GitHub account the job came from, so what the job does on GitHub acts as that user with the
+   * hopper's app marked on it. Asked when the job starts or resumes; never stored on the job.
+   */
+  credentials?: Readonly<Record<string, string>>;
 }
 
 /** What the executor needs answered before the job can continue. */
@@ -386,6 +392,8 @@ export interface JobSource {
    * tell). Absent: the source does not judge completion.
    */
   notComplete?(job: Job): Promise<string | undefined>;
+  /** The variables the job's processes run with to act through the source's connection (ExecutionContext.credentials); absent: none. */
+  credentials?(job: Job): Promise<Record<string, string>>;
 }
 
 export class SourceError extends Error {
@@ -453,6 +461,40 @@ export interface GhLogin {
   start(): Promise<GhLoginStatus>;
   /** End a waiting login; answers the new status. */
   cancel(): Promise<GhLoginStatus>;
+}
+
+/** A token GitHub granted the hopper's app, with who it belongs to (issue #214): a GitHub sign-in hands it to the session's user. */
+export interface Connection {
+  provider: ConnectedAccountProvider;
+  subject: string;
+  account: string;
+  accessToken: string;
+  /** ISO time; absent: the token does not expire. */
+  expiresAt?: string;
+}
+
+/** A user's connected accounts (issue #214): GET /api/connected-accounts, POST /ui/api/connected-accounts. */
+export interface ConnectedAccounts {
+  /** Every provider's, in CONNECTED_ACCOUNT_PROVIDERS order; GitHub's with where the app is installed. */
+  status(): Promise<ConnectedAccountStatus[]>;
+  /** Keep the connection a GitHub sign-in made (it replaces the account there was). */
+  adopt(connection: Connection): void;
+  /** Start the provider's device flow and answer once it shows the device code; a waiting one answers its own code. */
+  connect(provider: ConnectedAccountProvider): Promise<ConnectedAccountStatus>;
+  /** End a waiting device code. */
+  cancel(provider: ConnectedAccountProvider): ConnectedAccountStatus;
+  /** Forget the account and its token. */
+  disconnect(provider: ConnectedAccountProvider): ConnectedAccountStatus;
+}
+
+/** What a connected account's job source asks (issue #214): who the account is, a token for a call, where its provider is. */
+export interface ConnectedAccountTokens {
+  /** The connected account's login, or undefined while none is connected. */
+  account(provider: ConnectedAccountProvider): string | undefined;
+  /** Its access token now; throws while none is connected, or once it expired. */
+  token(provider: ConnectedAccountProvider): Promise<string>;
+  /** The provider's web origin and REST API base. */
+  endpoints(provider: ConnectedAccountProvider): { url: string; apiUrl: string };
 }
 
 // ---- Persistence: src/domain/store.ts (re-exported here, one vocabulary) ----------------

@@ -7,6 +7,7 @@ import { isMap, isScalar, isSeq, parseDocument } from 'yaml';
 import type { Db } from './db.ts';
 import { documentsToRecords } from './migration-config.ts';
 import { gateRouterSettingsAsConcepts } from './migration-gate-router-settings.ts';
+import { connectedAccounts } from './migration-connected-accounts.ts';
 import { levelsNamedAsLevels } from './migration-level-names.ts';
 
 type Migration = string | ((db: Db) => void);
@@ -158,6 +159,8 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
   gateRouterSettingsAsConcepts,
   // 7: there is no router mode (issue #211): the router's advice is always applied.
   "DELETE FROM settings WHERE key = 'routerMode'",
+  // 8: a user's connected accounts (issue #214), and a job source for each in the plugins config.
+  connectedAccounts,
 ];
 
 /** A user schema's version once migrated. */

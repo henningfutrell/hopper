@@ -8,7 +8,7 @@
 // environment and stored with it (issue #216, design.md "Secrets"); a realm that is off need not have
 // them yet. A SAML IdP certificate is public and sits inline.
 import { z } from 'zod';
-import { FORM_REALM_TYPES, REDIRECT_REALM_TYPES, UI_ROLES, type RealmType, type UiRole } from '../domain/types.ts';
+import { DEVICE_REALM_TYPES, FORM_REALM_TYPES, REDIRECT_REALM_TYPES, UI_ROLES, type RealmType, type UiRole } from '../domain/types.ts';
 import type { RoleRules } from './roles.ts';
 
 interface RealmBase { name: string; label: string; enabled: boolean }
@@ -42,13 +42,13 @@ export interface OidcRealmConfig extends RealmBase {
   trustUnverifiedEmail: boolean;
   roles: RoleRules;
 }
-export interface GithubRealmConfig extends RealmBase {
+/**
+ * A device realm (issue #214): GitHub, signed in with by a device code through the hopper's GitHub App —
+ * its public client id, no secret, the app and GitHub's address from the instance's configuration
+ * (HOPPER_GITHUB_*), not the realm. The token that signs a person in is their connected account.
+ */
+export interface DeviceRealmConfig extends RealmBase {
   type: 'github';
-  clientId: string;
-  /** Empty only while the realm is off. */
-  clientSecret: string;
-  webUrl: string;
-  apiUrl: string;
   roles: RoleRules;
 }
 export interface SamlRealmConfig extends RealmBase {
@@ -85,7 +85,7 @@ export interface GatewayRealmConfig extends RealmBase {
   trustUnverifiedEmail: boolean;
   roles: RoleRules;
 }
-export type RealmConfig = LdapRealmConfig | OidcRealmConfig | GithubRealmConfig | SamlRealmConfig | GatewayRealmConfig;
+export type RealmConfig = LdapRealmConfig | OidcRealmConfig | DeviceRealmConfig | SamlRealmConfig | GatewayRealmConfig;
 /** No sign-in: everyone who reaches the UI gets a session with this role. */
 export interface NoSignInConfig { role: UiRole }
 /** Who the first person to sign in with GitHub was (issue #239): admin while their realm is a GitHub realm that is on. */
@@ -150,11 +150,7 @@ const oidc = z.strictObject({
   trustUnverifiedEmail: z.boolean().default(false),
   roles,
 });
-const github = z.strictObject({
-  ...base, ...secret, type: z.literal('github'), clientId: z.string().min(1),
-  webUrl: endpoint.default('https://github.com'), apiUrl: endpoint.default('https://api.github.com'),
-  roles,
-});
+const github = z.strictObject({ ...base, type: z.literal('github'), roles });
 const saml = z.strictObject({
   ...base, type: z.literal('saml'), entryPoint: endpoint,
   idpCert: z.string().min(1),
@@ -193,7 +189,6 @@ const schema = z.strictObject({
       if (r.check === 'introspection' && r.clientId === undefined) ctx.addIssue({ code: 'custom', path: at('clientId'), message: 'introspection needs clientId: the hopper\'s client at the issuer' });
       if (r.enabled && r.check === 'introspection' && r.clientSecret === undefined) ctx.addIssue({ code: 'custom', path: at('clientSecret'), message: 'introspection needs its client secret' });
     }
-    if (r.type === 'github' && r.enabled && r.clientSecret === undefined) ctx.addIssue({ code: 'custom', path: at('clientSecret'), message: 'GitHub needs its client secret' });
     if (r.type === 'ldap') {
       const u = new URL(r.url);
       if (u.protocol === 'ldap:' && !r.startTls && !LOOPBACK.includes(u.hostname)) ctx.addIssue({ code: 'custom', path: at('url'), message: 'must be ldaps://, or ldap:// with startTls: true (plain ldap only to 127.0.0.1 or localhost)' });
@@ -207,7 +202,7 @@ type ParsedRealm = z.output<typeof realm>;
 /** The realm with its label. */
 function resolve(r: ParsedRealm): RealmConfig {
   const label = r.label ?? r.name;
-  return r.type === 'github' ? { ...r, label, clientSecret: r.clientSecret ?? '' } : { ...r, label };
+  return { ...r, label };
 }
 
 /** What is wrong with `raw` as a sign-in config, each where it is; empty when it is valid. */
@@ -232,12 +227,13 @@ export function loadSignInConfig(raw: unknown): AuthConfig {
 }
 
 /** The realm types that send the browser to an identity provider. */
-export const isRedirectRealm = (r: { type: RealmType }): r is OidcRealmConfig | GithubRealmConfig | SamlRealmConfig => REDIRECT_REALM_TYPES.includes(r.type);
+export const isRedirectRealm = (r: { type: RealmType }): r is OidcRealmConfig | SamlRealmConfig => REDIRECT_REALM_TYPES.includes(r.type);
+export const isDeviceRealm = (r: { type: RealmType }): r is DeviceRealmConfig => DEVICE_REALM_TYPES.includes(r.type);
 export const isGatewayRealm = (r: { type: RealmType }): r is GatewayRealmConfig => r.type === 'gateway';
 
 /** The settings of each realm type that are secrets: stored, never answered back (issue #216). */
 export const SECRET_SETTINGS: Readonly<Record<RealmType, readonly string[]>> = {
-  saml: [], ldap: ['bindPassword'], oidc: ['clientSecret'], github: ['clientSecret'], gateway: ['clientSecret'],
+  saml: [], ldap: ['bindPassword'], oidc: ['clientSecret'], github: [], gateway: ['clientSecret'],
 };
 
 /** The realm types whose people sign in through the username and password form. */

@@ -17,12 +17,14 @@ export const COMMENT_CAP = 1000;
 
 const oneLine = (s: string) => s.replace(/\s*[\r\n]+\s*/g, ' ').trim();
 
-export type SourceMode = 'gh' | 'app';
+/** Who the source acts as: the gh CLI's user, the App's bot, or a connected account (issue #214). */
+export type SourceMode = 'gh' | 'app' | 'account';
 
 
 const COMMENTS_HEADER: Record<SourceMode, string> = {
   gh: 'only allowlisted authors, no hopper-marked comments',
   app: 'only allowlisted authors, no hopper comments',
+  account: 'only allowlisted authors, no hopper-marked comments',
 };
 
 export function contextComments(comments: GitHubComment[], authors: string[], limit: number, botLogin?: BotLogin): GitHubComment[] {

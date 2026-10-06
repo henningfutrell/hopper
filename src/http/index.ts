@@ -7,6 +7,7 @@ import type { SignIn } from '../auth/index.ts';
 import type { Clock, InstanceStore, PluginStoreView, Updater } from '../domain/ports.ts';
 import { accountRoutes } from './accounts.ts';
 import { installErrorHandling } from './errors.ts';
+import { connectedAccountsRoutes } from './connected-accounts.ts';
 import { ghLoginRoutes } from './gh-login.ts';
 import { installHostGuard } from './host-guard.ts';
 import type { Lan } from './reach.ts';
@@ -74,6 +75,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   sourceRoutes(app, tenant);
   accountRoutes(app, tenant);
   ghLoginRoutes(app, tenant);
+  connectedAccountsRoutes(app, tenant);
   sseRoutes(app, tenant);
   updateRoutes(app, o);
   pluginStoreRoutes(app, o);

@@ -434,7 +434,7 @@ export type { QuestionGatesView, RiskRuleView, RulesView } from './question-gate
 // ---- Sign-in: src/domain/sign-in.ts (re-exported here) ------------------------------------
 
 export type { Identity, RealmSettings, RealmType, RealmView, RealmsEdit, RealmsView, SessionUser, SessionView, SignInRealmView, UiRole } from './sign-in.ts';
-export { FORM_REALM_TYPES, REALM_TYPES, REDIRECT_REALM_TYPES, UI_ROLES, roleAllows } from './sign-in.ts';
+export { DEVICE_REALM_TYPES, FORM_REALM_TYPES, REALM_TYPES, REDIRECT_REALM_TYPES, UI_ROLES, roleAllows } from './sign-in.ts';
 
 // ---- Users (issue #158): src/domain/users.ts (re-exported here) ---------------------------
 
@@ -459,3 +459,8 @@ export type GhLoginStatus =
   | { state: 'waiting'; userCode: string; verificationUri: string }
   | { state: 'failed'; error: string }
   | { state: 'unavailable'; reason: string };
+
+// ---- Connected accounts (issue #214): src/domain/connected-accounts.ts --------------------------
+
+export { CONNECTED_ACCOUNT_PROVIDERS, CONNECTED_VIA } from './connected-accounts.ts';
+export type { ConnectedAccountProvider, ConnectedAccountStatus } from './connected-accounts.ts';

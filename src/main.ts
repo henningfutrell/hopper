@@ -110,6 +110,15 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     options: (user) => ({
       config, seams: seamsOf(seams, user.id), env, clock, logger, clientRelease,
       installedDir: installedDirOf(workDir), pluginsConfigIntervalMs: intervalMs, answerUrl,
+      // A GitHub account connected from Sources is linked to its user under each realm of that
+      // type (issue #214): signing in with it later lands in the same user. A link to another user stays.
+      linkIdentity: (provider, subject) => {
+        for (const r of signIn.config().realms.filter((x) => x.type === provider)) {
+          const linked = instance.identities.userOf(r.name, subject);
+          if (linked === undefined) instance.identities.link(r.name, subject, user.id);
+          else if (linked !== user.id) logger.warn(`hopper: the ${provider} account connected by ${user.id} already signs in as ${linked}; left as it is`);
+        }
+      },
     }),
   });
   // The plugin store (issue #75): the instance's. Its installs are kept in the database (issue #93) and
@@ -129,7 +138,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     throw e;
   }
   const signIn = createSignIn({
-    config: auth, clock, origin: () => config.publicUrl ?? `http://localhost:${port}`,
+    config: auth, clock, origin: () => config.publicUrl ?? `http://localhost:${port}`, apps: config.hopperApps,
     claimGithubAdmin: (who) => claimGithubAdmin(instance, who),
   });
   // Self-update (issue #44): the restart reaches app.stop() through `restartApp`, set below.

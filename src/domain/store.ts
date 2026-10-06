@@ -5,6 +5,7 @@ import type {
   DomainEvent, Decision, EventType, Job, JobId, JobSpec, JobStatus, Lane, JobSourceRef, LaneId, MachineId, NewEvent, Question, QuestionAttempt, QuestionStatus,
   Identity, QueueGate, UiRole, WebhookDelivery, WebhookSubscription, UpdateSettings, PluginInstall, User,
 } from './types.ts';
+import type { ConnectedAccountProvider } from './types.ts';
 
 // ---- Persistence -----------------------------------------------------------------------
 
@@ -205,6 +206,31 @@ export interface SignInConfigRepository {
 }
 
 /** One user's store: the tables of their user schema. Repositories share one connection. */
+/**
+ * A user's connected account (issue #214): what the provider granted the hopper's app when the user
+ * approved its device code — signing in with GitHub, or connecting it from Sources. The token is the hopper's own credential, given to it by that grant
+ * — not one the runtime holds — so it is kept here, in the user's schema, and never leaves the daemon.
+ */
+export interface ConnectedAccount {
+  provider: ConnectedAccountProvider;
+  /** The account's GitHub login. */
+  account: string;
+  /** GitHub's stable numeric id for the account: what a GitHub sign-in knows it by. */
+  subject: string;
+  accessToken: string;
+  /** When the access token expires; absent: it does not (a GitHub App that opts out of token expiration). */
+  expiresAt?: string;
+  connectedAt: string;
+}
+
+export interface ConnectedAccountRepository {
+  get(provider: ConnectedAccountProvider): ConnectedAccount | undefined;
+  /** Insert or replace the provider's account. */
+  put(account: ConnectedAccount): void;
+  /** True when there was one. */
+  delete(provider: ConnectedAccountProvider): boolean;
+}
+
 export interface UserStore {
   jobs: JobRepository;
   lanes: LaneRepository;
@@ -213,6 +239,7 @@ export interface UserStore {
   webhooks: WebhookRepository;
   questions: QuestionRepository;
   settings: UserSettingsRepository;
+  connectedAccounts: ConnectedAccountRepository;
   /** `plugins` and `rules`. */
   config: ConfigRecords<UserConfigName>;
   /** Run fn in one transaction. Re-entrant: a nested tx joins the outer one. Throw = rollback. */

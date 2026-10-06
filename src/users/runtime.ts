@@ -9,7 +9,7 @@ import type {
   Clock, EscalationLevel, Executor, ExecutorRegistry, GhLogin, JobSource, PluginsView, QuestionService, Router, SettableUsageSource, SourceRegistry,
   UserStore, WebhookDispatcher,
 } from '../domain/ports.ts';
-import type { AttachedMachine, Question, SourceStatus, User } from '../domain/types.ts';
+import type { AttachedMachine, ConnectedAccountProvider, Question, SourceStatus, User } from '../domain/types.ts';
 import { ADMIN_ID, isRerunnable } from '../domain/types.ts';
 import type { Config } from '../config.ts';
 import { createEngine, type Engine } from '../engine/index.ts';
@@ -34,6 +34,8 @@ import type { JobSourceInstance } from '../plugins/sdk.ts';
 import { createQuestionService } from '../questions/index.ts';
 import { runtimeSecrets } from '../secrets/runtime.ts';
 import { createGhLogin, createSourceSync, idleStatus, withFixedStatuses, type GitHubApi, type SourceSync } from '../sources/index.ts';
+import { createConnectedAccounts, type ConnectedAccountsService } from '../connected-accounts/service.ts';
+import { installations, whoIs } from '../connected-accounts/identity.ts';
 import { createWebhooksEditor, type WebhooksEditor } from '../webhooks/edit.ts';
 import { createWebhookDispatcher, secretProblem } from '../webhooks/index.ts';
 import { userCliEnv, userHerdrSession, userSecrets, userWorkDir } from './env.ts';
@@ -84,6 +86,8 @@ export interface UserRuntimeOptions {
   pluginsConfigIntervalMs: number;
   /** The UI link to one question (notifications carry it). */
   answerUrl(questionId: string): string;
+  /** A GitHub account this user connected from Sources: link it, so signing in with it lands here (issue #214). */
+  linkIdentity?(provider: ConnectedAccountProvider, subject: string): void;
 }
 
 /** One user's running parts: what the HTTP edge reads and changes for that user, and tests drive. */
@@ -101,6 +105,8 @@ export interface UserRuntime {
   dispatcher: WebhookDispatcher;
   executors: ExecutorRegistry;
   ghLogin: GhLogin;
+  /** The user's connected GitHub account (issue #214). */
+  connectedAccounts: ConnectedAccountsService;
   webhooksEditor: WebhooksEditor;
   /** Why the user's runtime gives no secret for a webhook subscription's variable; undefined when it does. */
   secretProblem: (secretEnv: string) => string | undefined;
@@ -185,6 +191,18 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
             : probeSsh({ target: m.ssh, controlDir: join(dataDir, 'ssh'), auth: sshAuth })
         ).then((online) => ({ online })))),
   });
+  // The GitHub account the user's work comes through (issue #214): from signing in with it, or
+  // connected from Sources, through the hopper's app; their job sources and jobs ask here for tokens.
+  const connectedAccounts = createConnectedAccounts({
+    store, apps: config.hopperApps, clock, logger,
+    whoIs: (provider, token) => whoIs(config.hopperApps[provider], token),
+    installations: (token) => installations(config.hopperApps.github, token),
+    ...(o.linkIdentity ? { link: o.linkIdentity } : {}),
+    // Reached only after `sync` exists: a connection is made long after the runtime starts.
+    onChange: (provider) => {
+      for (const s of jobSources.filter((j) => j.kind === `${provider}-account`)) void sync.syncNow(s.name).catch(() => undefined);
+    },
+  });
   const notEnded = () => store.jobs.list({ status: ['queued', 'held', 'claimed', 'running', 'waiting_answer'] });
   const builtin = builtinInstances(config.answerTimeoutMs, config.localMachine, user.id === ADMIN_ID ? undefined : session);
   const host = createPluginHost({
@@ -196,6 +214,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     jobSourceContext: {
       knownKeys: (keys) => new Set(keys.filter((k) => store.jobs.getBySourceKey(k))),
       rerunnable: (keys) => new Set(keys.filter((k) => { const j = store.jobs.getBySourceKey(k); return j !== undefined && isRerunnable(j); })),
+      connectedAccounts,
     },
     machineContext: { executors: () => executorNames(), target },
     intervalMs: o.pluginsConfigIntervalMs,
@@ -258,6 +277,8 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     keepPanes: config.keepPanes,
     // Completion is the job's source's to judge (issues #171, #187); a job of no source, or of one that does not judge, is complete.
     notComplete: async (job) => jobSources.find((s) => s.name === job.source?.source)?.notComplete?.(job),
+    // A job of a connected account acts through it (issue #214); any other job runs with nothing added.
+    credentials: async (job) => (await jobSources.find((s) => s.name === job.source?.source)?.credentials?.(job)) ?? {},
   });
   jobsOnMachine = (name) => engine.jobsOnMachine(name);
   const sync = createSourceSync({
@@ -275,6 +296,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     user, store, engine, sources: sync, registry: withFixedStatuses(sync, fixed), plugins, host, questions, dispatcher, executors,
     // gh login (issue #138): the gh on the daemon's PATH, the github-gh source's default `bin`, with the user's gh config.
     ghLogin: createGhLogin({ bin: 'gh', env: Object.keys(cliEnv).length === 0 ? o.env : userProcessEnv(cliEnv, o.env) }),
+    connectedAccounts,
     webhooksEditor: createWebhooksEditor({ store }),
     // The variable the user's runtime reads: the subscription's, under the user's prefix.
     secretProblem: (secretEnv) => secretProblem(raw, `${user.secretPrefix}${secretEnv}`),
@@ -287,6 +309,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     stop() {
       stopped ??= (async () => {
         await sync.stop();
+        connectedAccounts.stop();
         await questions.stop();
         await engine.stop();
         await dispatcher.stop();

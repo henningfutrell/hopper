@@ -5,6 +5,7 @@ import command from './executor/command/index.ts';
 import cursorAgent from './executor/cursor-agent/index.ts';
 import herdrClaude from './executor/herdr-claude/index.ts';
 import testExecutor from './executor/test/index.ts';
+import githubAccount from './job-source/github-account/index.ts';
 import githubApp from './job-source/github-app/index.ts';
 import githubGh from './job-source/github-gh/index.ts';
 import client from './machine-source/client/index.ts';
@@ -22,5 +23,5 @@ import commandUsage from './usage-source/command-usage/index.ts';
 import type { PluginDefinition } from './sdk.ts';
 
 export const BUILTIN_PLUGINS: readonly PluginDefinition[] = [
-  gateRouter, passThrough, priority, oldestFirst, newestFirst, claudeCli, anthropicApi, herdrClaude, cursorAgent, testExecutor, command, githubGh, githubApp, local, ssh, docker, client, claudePlan, commandUsage, grokbotRoutine,
+  gateRouter, passThrough, priority, oldestFirst, newestFirst, claudeCli, anthropicApi, herdrClaude, cursorAgent, testExecutor, command, githubAccount, githubGh, githubApp, local, ssh, docker, client, claudePlan, commandUsage, grokbotRoutine,
 ];

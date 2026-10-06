@@ -1,6 +1,6 @@
 // Job sources: where jobs come from, when each last synced, and what is wrong with it. The GitHub
-// sources are one section (issue #160): which connection reads issues, why the other is paused, and
-// gh login beside them.
+// sources are one section (issue #160): the GitHub account a user connects first (issue #214), which
+// connection reads issues, why the others are paused, and gh login beside them.
 import { Inbox } from 'lucide-react';
 import { Countdown, GhLink } from '@/components/job';
 import { Empty, Panel } from '@/components/panel';
@@ -10,6 +10,7 @@ import { ago } from '@/model/format';
 import { sourcesView, type GitHubConnection, type SourceUse } from '@/model/sources';
 import type { SourceStatus } from '@/model/wire';
 import { useHopper } from '@/store';
+import { ConnectedAccountPanel } from './connected-account';
 import { GhLoginPanel } from './gh-login';
 
 const list = (v: unknown) => (Array.isArray(v) ? v.join(', ') : String(v));
@@ -23,7 +24,9 @@ function Stat({ label, value }: { label: string; value: React.ReactNode }) {
 const USE: Record<SourceUse, { label: string; tone: 'ok' | 'warn' | 'muted' }> = {
   'in-use': { label: 'in use', tone: 'ok' }, paused: { label: 'paused', tone: 'warn' }, disabled: { label: 'disabled', tone: 'muted' },
 };
-const VIA_LABEL: Record<GitHubConnection['via'], string> = { gh: 'through gh, as the logged-in GitHub user', app: 'through the GitHub App, as its bot' };
+const VIA_LABEL: Record<GitHubConnection['via'], string> = {
+  account: 'through the connected account, by the hopper\'s app', gh: 'through gh, as the logged-in GitHub user', app: 'through the GitHub App, as its bot',
+};
 
 function SourceCard({ s, c }: { s: SourceStatus; c?: GitHubConnection }) {
   const now = useNow();
@@ -73,6 +76,7 @@ export function Sources() {
           <p data-github-summary className="text-xs text-muted-foreground">{v.summary} gh login is separate: it is who jobs push as, whichever connection reads issues.</p>
         </div>
         <div className="grid gap-3 lg:grid-cols-2">
+          <ConnectedAccountPanel provider="github" />
           {v.github.map((c) => <SourceCard key={c.source.name} s={c.source} c={c} />)}
           <GhLoginPanel />
         </div>

@@ -45,12 +45,8 @@ export const REALM_FIELDS: Record<RealmType, RealmField[]> = {
     { path: 'claims.groups', label: 'Groups claim', kind: 'text', placeholder: 'groups' },
     { path: 'trustUnverifiedEmail', label: 'Trust unverified email', kind: 'switch', help: 'count the email even when the identity provider does not mark it verified' },
   ],
-  github: [
-    { path: 'clientId', label: 'Client ID', kind: 'text' },
-    { path: 'clientSecret', label: 'Client secret', kind: 'secret' },
-    { path: 'webUrl', label: 'GitHub URL', kind: 'text', placeholder: 'https://github.com' },
-    { path: 'apiUrl', label: 'API URL', kind: 'text', placeholder: 'https://api.github.com' },
-  ],
+  // GitHub signs in through the hopper's app (issue #214): nothing to set but the role rules.
+  github: [],
   gateway: [
     { path: 'issuer', label: 'Issuer URL', kind: 'text', placeholder: 'https://idp.example.com', help: 'the issuer of the tokens the auth gateway forwards' },
     { path: 'check', label: 'Check', kind: 'text', placeholder: 'jwt', help: 'jwt: verify the token against the issuer\'s keys; introspection: ask the issuer' },
@@ -80,7 +76,7 @@ export const REALM_FIELDS: Record<RealmType, RealmField[]> = {
 export const REALM_TYPE_LABELS: { type: RealmType; label: string }[] = [
   { type: 'ldap', label: 'LDAP or Active Directory' },
   { type: 'oidc', label: 'OpenID Connect' },
-  { type: 'github', label: 'GitHub' },
+  { type: 'github', label: 'GitHub (through the hopper\'s app)' },
   { type: 'saml', label: 'SAML' },
   { type: 'gateway', label: 'Auth gateway in front of the hopper (it signs people in)' },
 ];

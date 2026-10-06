@@ -1,7 +1,8 @@
 // Which issues are eligible: open, labelled, by an allowlisted author, not done/failed/rejected/on the
 // backburner, in an allowed repo, and not addressed to another hopper (`hopper@<name>`, issue #159). Claimed issues without a local job are skipped (never re-run blind). The scope
 // is given: a repo list (gh `repos`, or the app's installed repos) is listed repo by repo; an
-// empty one searches over `owners` — gh mode only, the app source never passes an empty list.
+// empty one searches over `owners` (none: anywhere, by the allowlisted authors) — never in app mode,
+// which never passes an empty list.
 
 import type { GitHubApi, GitHubIssue } from './api.ts';
 import type { GitHubSourceConfig } from '../config.ts';
@@ -24,8 +25,9 @@ export interface DiscoverScope {
 async function fetchIssues(api: GitHubApi, config: DiscoverConfig, { repos, owners }: DiscoverScope):
 Promise<{ issues: GitHubIssue[]; repoErrors: Record<string, string> }> {
   if (repos.length === 0) {
-    const found = await api.searchOpenIssues({ owners, label: config.label });
-    return { issues: found.filter((i) => owners.includes(i.repo.split('/')[0]!)), repoErrors: {} };
+    const found = await api.searchOpenIssues({ owners, label: config.label, authors: config.authors });
+    // No owners (a connected account's source, issue #214): wherever the allowlisted authors' issues are.
+    return { issues: owners.length === 0 ? found : found.filter((i) => owners.includes(i.repo.split('/')[0]!)), repoErrors: {} };
   }
   const issues: GitHubIssue[] = [];
   const repoErrors: Record<string, string> = {};

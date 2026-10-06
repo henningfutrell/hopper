@@ -38,7 +38,8 @@ export function createRealmsAdmin(o: {
       version: store.version(), local: v.local, none: v.none, origin,
       realms: v.realms.map((row) => {
         const r = o.environment.includes(row.name) ? { ...row, environment: true } : row;
-        if (r.type === 'ldap' || r.type === 'gateway') return r;
+        // A form, gateway or device realm (GitHub: issue #214) has no callback to register.
+        if (r.type === 'ldap' || r.type === 'gateway' || r.type === 'github') return r;
         const urls = { callback: `${origin}/ui/auth/${r.name}/callback` };
         return r.type === 'saml' ? { ...r, ...urls, metadata: `${origin}/ui/auth/${r.name}/metadata` } : { ...r, ...urls };
       }),

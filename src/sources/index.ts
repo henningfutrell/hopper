@@ -6,9 +6,10 @@ import type { SourceStatus } from '../domain/types.ts';
 
 export { createGitHubSource, createGhCliApi, createGhLogin, createFakeGitHub } from './github/index.ts';
 export type { FakeGitHub, GitHubApi, GitHubSourceOptions } from './github/index.ts';
-export { githubAppOptions, githubGhOptions, sourceConfig } from './config.ts';
-export type { GitHubAppOptions, GitHubGhOptions, GitHubSourceConfig } from './config.ts';
-export { APP_MISSING, GH_PAUSED, appProblem, createAppSource, createGhSource } from './compose.ts';
+export { githubAccountOptions, githubAppOptions, githubGhOptions, sourceConfig } from './config.ts';
+export type { GitHubAccountOptions, GitHubAppOptions, GitHubGhOptions, GitHubSourceConfig } from './config.ts';
+export { APP_MISSING, GH_PAUSED, GH_PAUSED_ACCOUNT, appProblem, createAccountSource, createAppSource, createGhSource } from './compose.ts';
+export { createAccountGitHubApi } from './github/account/api.ts';
 export { loadGitHubApp } from './github/app/index.ts';
 export { createSourceSync } from './sync.ts';
 export type { SourceSync, SourceSyncOptions } from './sync.ts';
