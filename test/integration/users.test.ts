@@ -159,7 +159,8 @@ describe('users, sessions and login codes', () => {
     await a.addUser('Bea');
     await a.pull(sleep);
     await a.pull(sleep, {}, 'bea');
-    for (const headers of [{}, { 'x-hopper-user': 'bea' }, { 'x-hopper-user': 'owner' }]) {
+    const tries: Record<string, string>[] = [{}, { 'x-hopper-user': 'bea' }, { 'x-hopper-user': 'owner' }];
+    for (const headers of tries) {
       for (const path of ['/api/jobs', '/api/questions', '/api/events', '/api/plugins', '/api/webhooks']) {
         expect((await a.api('GET', path, undefined, headers)).status, `${path} ${JSON.stringify(headers)}`).toBe(401);
       }
