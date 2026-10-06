@@ -6,7 +6,8 @@
 // removed; one added from the form of the chosen type. Device links and no sign-in come last, each saying
 // what it does. Every switch says On or Off in words. No password accounts (issue #237). No YAML anywhere.
 // Every change posts POST /ui/api/realms with the version it read; a refusal is shown where it was made.
-// A session that is not admin sees none of it. Rendered against a fake of the daemon's HTTP.
+// Admins (issue #242): everyone who has signed in, with their role; any admin makes someone admin, a super
+// admin also makes them super admin or hands theirs over. A session that is not admin sees none of it. Rendered against a fake of the daemon's HTTP.
 import { createElement } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -19,6 +20,11 @@ const GITHUB = { name: 'github', label: 'GitHub', type: 'github', enabled: true,
 let VIEW: Record<string, unknown> & { realms: Record<string, unknown>[] };
 const BASE = {
   version: 'v1', local: true, none: null, origin: 'http://localhost:4790', githubAdmin: { realm: 'github', user: 'octo' },
+  people: [
+    { realm: 'github', subject: '1', user: 'octo', role: 'admin', superAdmin: true },
+    { realm: 'github', subject: '2', user: 'bea', role: 'operator', superAdmin: false },
+    { realm: 'corp', subject: 'ada', user: 'ada', role: 'admin', superAdmin: false },
+  ],
   realms: [
     GITHUB,
     { name: 'staff', label: 'Staff', type: 'saml', enabled: true, settings: { entryPoint: 'https://idp.example.com/sso', idpCert: 'abc' }, secrets: [], callback: 'http://localhost:4790/ui/auth/staff/callback', metadata: 'http://localhost:4790/ui/auth/staff/metadata' },
@@ -44,7 +50,7 @@ function fakeDaemon() {
 
 let root: Root | undefined;
 
-async function render(role: 'admin' | 'operator') {
+async function render(role: 'admin' | 'operator', superAdmin = false) {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
   posts = [];
@@ -53,7 +59,7 @@ async function render(role: 'admin' | 'operator') {
   vi.stubGlobal('fetch', fakeDaemon());
   const store = '../../ui/src/store/index.ts'; // browser code, type-checked by ui/tsconfig.json: imported by path
   const { useHopper } = (await import(store)) as { useHopper: { setState(s: Record<string, unknown>): void } };
-  useHopper.setState({ authed: true, user: { id: 'admin', name: 'admin', role, realm: 'local', identity: 'login code' } });
+  useHopper.setState({ authed: true, user: { id: 'admin', name: 'admin', role, realm: 'local', identity: 'login code', superAdmin } });
   const mod = '../../ui/src/views/realms.tsx';
   const { Realms } = (await import(mod)) as { Realms: () => ReturnType<typeof createElement> };
   await act(async () => {
@@ -245,6 +251,38 @@ describe('Settings: Sign-in', () => {
     expect(none.textContent).toMatch(/proxy or network that already decides who gets in/);
     await act(async () => type(field('No sign-in'), 'viewer'));
     await vi.waitFor(() => expect(posts).toContainEqual({ action: 'settings', none: 'viewer', version: 'v1' }));
+  });
+
+  it('lists everyone who signed in with their role; a super admin makes them admin or super admin, or hands it over (issue #242)', async () => {
+    await render('admin', true);
+    const person = (name: string) => section('admins').querySelector<HTMLElement>(`[data-person="${name}"]`)!;
+    await vi.waitFor(() => expect(person('octo')).not.toBeNull());
+    expect(person('octo').textContent).toContain('super admin');
+    expect(person('bea').textContent).toContain('operator');
+    expect(person('ada').textContent).toContain('admin');
+    expect(buttonIn(person('octo'), 'Make admin')).toBeUndefined();
+    expect(buttonIn(person('octo'), 'Make super admin')).toBeUndefined();
+    expect(buttonIn(person('ada'), 'Make admin')).toBeUndefined();
+    await click(buttonIn(person('bea'), 'Make admin'));
+    await vi.waitFor(() => expect(posts).toContainEqual({ action: 'admin', who: { realm: 'github', subject: '2' }, version: 'v1' }));
+    await click(buttonIn(person('ada'), 'Make super admin'));
+    await vi.waitFor(() => expect(posts).toContainEqual({ action: 'super-admin', who: { realm: 'corp', subject: 'ada' }, version: 'v2' }));
+    await click(buttonIn(person('ada'), 'Hand over super admin'));
+    const dialog = await vi.waitFor(() => { const d = document.querySelector<HTMLElement>('[role="alertdialog"]'); expect(d).not.toBeNull(); return d!; });
+    expect(dialog.textContent).toContain('You stay admin');
+    await click(buttonIn(dialog, 'Hand over'));
+    await vi.waitFor(() => expect(posts).toContainEqual({ action: 'super-admin', who: { realm: 'corp', subject: 'ada' }, transfer: true, version: 'v2' }));
+  });
+
+  it('a regular admin makes someone admin, and is offered no super admin change (issue #242)', async () => {
+    await render('admin', false);
+    const person = (name: string) => section('admins').querySelector<HTMLElement>(`[data-person="${name}"]`)!;
+    await vi.waitFor(() => expect(person('bea')).not.toBeNull());
+    expect(section('admins').textContent).toContain('You are not a super admin');
+    expect(buttonIn(section('admins'), 'Make super admin')).toBeUndefined();
+    expect(buttonIn(section('admins'), 'Hand over super admin')).toBeUndefined();
+    await click(buttonIn(person('bea'), 'Make admin'));
+    await vi.waitFor(() => expect(posts).toContainEqual({ action: 'admin', who: { realm: 'github', subject: '2' }, version: 'v1' }));
   });
 
   it('a session that is not admin sees no realms', async () => {
