@@ -55,6 +55,10 @@ BUILD="$(mktemp -d "${TMPDIR:-/tmp}/hopper-ui.XXXXXX")"
 trap 'rm -rf "$BUILD"' EXIT
 step "build the UI bundle in $BUILD (copy ui/, src/, site/hopper-logo.svg, package*.json; npm ci with dev dependencies; npm run build:ui)"
 cp -r "$APP_DIR/ui" "$APP_DIR/src" "$APP_DIR/package.json" "$APP_DIR/package-lock.json" "$BUILD/"
+# Tailwind finds the classes the UI uses by scanning its files, and skips what a .gitignore ignores, up
+# to the filesystem root: a TMPDIR inside an ignored directory hid them all, and the UI shipped unstyled
+# (issue #266). The copy's own .gitignore takes everything back in.
+printf '!*\n' > "$BUILD/.gitignore"
 mkdir -p "$BUILD/site" && cp "$APP_DIR/site/hopper-logo.svg" "$BUILD/site/"
 rm -rf "$BUILD/ui/dist" "$BUILD/ui/node_modules"
 npm ci --prefix "$BUILD" --no-audit --no-fund

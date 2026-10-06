@@ -5394,6 +5394,16 @@ phone always the code) and stay as they are. This change is the layout and the b
   job — a short bright streak in teal or violet — going along it at its own pace. Still for reduced motion
   (each streak stops part way along); pure CSS, nothing fetched.
 
+- **Why it looked unstyled where it runs.** Installed here, the page came out with no layout at all —
+  everything stacked at the left. That was the build, not the design: `scripts/install.sh` builds the UI
+  in a copy under `TMPDIR`, and Tailwind's automatic source detection skips whatever a `.gitignore` ignores,
+  looking up to the filesystem root, so with a `TMPDIR` inside an ignored directory it found no file and
+  emitted no utility class. Naming the sources in the stylesheet (`@source`) does not help, since
+  an ancestor's ignore still applies. So the copy gets its own `.gitignore` of `!*`, which takes everything back in.
+  Self-update builds through the same script. `test/scripts/ui-build-ignored-dir.test.ts` builds the UI in
+  an ignored directory both ways: without the line the classes are lost, with install.sh's own line they
+  are all there.
+
 **Verification:** `test/ui/signed-out-landing.test.ts` (the card beside the panel, its headline and the
 three steps, the lanes; the card not inside the panel), `test/ui/sign-in-device.test.ts` (unchanged: the
 redirect button, the centred code panel), and the built page drawn in a headless browser against a fake
