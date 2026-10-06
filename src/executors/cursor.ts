@@ -110,7 +110,7 @@ export function createCursorExecutor(o: CursorExecutorOptions): Executor {
     run(ctx) {
       const p = resolvePayload(ctx.job.spec.payload, o.defaultCwd);
       ctx.workTree(p.cwd);
-      return turn(ctx, p.cwd, `${p.prompt}\n\n${protocolFooter(p.cwd)}`);
+      return turn(ctx, p.cwd, `${p.prompt}\n\n${protocolFooter(p.cwd, ctx.jobRules)}`);
     },
     resume(ctx, answer) {
       const s = ctx.job.executorState as Partial<CursorState> | undefined;

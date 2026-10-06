@@ -248,7 +248,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
           return failed;
         }
         if (ctx.signal.aborted) return { interrupt: abortReason(ctx.signal) };
-        return send(ctx, state, p, `${p.prompt}\n\n${protocolFooter(p.cwd)}`, FOOTER_ANCHOR);
+        return send(ctx, state, p, `${p.prompt}\n\n${protocolFooter(p.cwd, ctx.jobRules)}`, FOOTER_ANCHOR);
       });
     },
 

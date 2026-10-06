@@ -1,22 +1,9 @@
 // The hopper screen protocol over a Claude Code pane: pure functions, no I/O.
 // docs/design.md "Phase 2" → "Turn anchor (B1)".
 
-// The publishing rule comes first, then the work tree; the protocol lines follow and the last one
-// stays the turn anchor.
-const PUBLISHING_RULE = "[hopper publishing rule] Any text you send to GitHub (commit messages, branch names, pull request titles and bodies, issue text) describes the change and how it was verified, in neutral terms. Never quote or name the repository owner or any other person. Never include personal or machine details: email addresses, people's names, IP addresses, hostnames, tailnet names, home directory paths, usernames, machine or pane ids, port numbers of local machines, codes, tokens or secrets.";
+import { DEFAULT_JOB_RULES, PROTOCOL_LINES, workTreeRule } from '../../job-rules/index.ts';
 
-/** Where a job's temporary files go, inside its work tree (design.md "Work tree"). */
-export const SCRATCH_DIR = '.hopper-scratch';
-
-const workTreeRule = (cwd: string): string => `[hopper work tree] This job's work tree is ${cwd}. Do all of the job's work inside it: clones, git worktrees, edits, builds, test runs, scratch and temporary files go under it. Never make or work in a copy of the code outside it, under /tmp or anywhere else. Temporary files go in ${cwd}/${SCRATCH_DIR}: git ignores it, and TMPDIR and your scratchpad point there. Running or installing what you built, and reading files elsewhere, is fine. If the job seems to need a work tree outside this one, ask instead.`;
-
-const PROTOCOL_LINES = [
-  '[hopper parallel work] Other jobs run at the same time as this one, possibly in the same repos. Nothing orders or holds jobs for each other: no job waits for another.',
-  'If your work overlaps another job\'s, sort it out yourself. Either state the assumptions you made about the other work, or make the needed fix in the other project and annotate it with which way the dependency runs (which work depends on which).',
-  '[hopper protocol] When you need an answer from the user, ask exactly one question and end your message with a line containing only: HOPPER_QUESTION',
-  'When the job is completely finished, end your final message with a line containing only: HOPPER_DONE',
-  'If the job cannot be done, end with a line containing only: HOPPER_FAILED followed by the reason.',
-];
+export { SCRATCH_DIR } from '../../job-rules/index.ts';
 
 /**
  * What the hopper types into a job whose turn ended without a marker (issue #163): that turn was a
@@ -24,8 +11,14 @@ const PROTOCOL_LINES = [
  */
 export const STATUS_NOTE_NUDGE = '[hopper] Your message ended without a marker, so the hopper took it as a status note: no question was opened and nobody will answer it. Go on with the job; if you are waiting for background work, keep waiting. If you need an answer from the user, ask exactly one question and end your message with a line containing only HOPPER_QUESTION. When the job is finished, end with a line containing only HOPPER_DONE; if it cannot be done, a line HOPPER_FAILED followed by the reason.';
 
-/** What follows a job's prompt on its first send: the rules, its work tree, the protocol. */
-export const protocolFooter = (cwd: string): string => [PUBLISHING_RULE, workTreeRule(cwd), ...PROTOCOL_LINES].join('\n');
+/**
+ * What follows a job's prompt on its first send: the job rules (issue #172; the default unless given),
+ * its work tree, the protocol. The job rules are editable; the work tree and the protocol are not.
+ */
+export function protocolFooter(cwd: string, jobRules: string = DEFAULT_JOB_RULES): string {
+  const rules = jobRules.trim();
+  return [...(rules ? [rules] : []), workTreeRule(cwd), ...PROTOCOL_LINES].join('\n');
+}
 
 /** The last footer line as Claude echoes it: the turn anchor of the first send. */
 export const FOOTER_ANCHOR = PROTOCOL_LINES.at(-1)!;

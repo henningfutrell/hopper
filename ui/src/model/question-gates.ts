@@ -62,10 +62,11 @@ export interface RulesEditor {
   tooLarge: boolean;
 }
 
-export function rulesEditor(server: RulesView, stored: StoredDraft | undefined): RulesEditor {
+/** The editor over `server` and a draft; the job rules (issue #172) use it too, with their own cap. */
+export function rulesEditor(server: Pick<RulesView, 'text' | 'version'>, stored: StoredDraft | undefined, maxBytes = RULES_MAX_BYTES): RulesEditor {
   const d = stored;
   const text = d ? d.text : server.text;
   const base = d ? d.base : server.version;
   const bytes = new TextEncoder().encode(text).length;
-  return { text, base, dirty: d !== undefined && (d.text !== server.text || d.base !== server.version), stale: base !== server.version, bytes, tooLarge: bytes > RULES_MAX_BYTES };
+  return { text, base, dirty: d !== undefined && (d.text !== server.text || d.base !== server.version), stale: base !== server.version, bytes, tooLarge: bytes > maxBytes };
 }

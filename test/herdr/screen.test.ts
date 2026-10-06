@@ -32,17 +32,25 @@ const screen = (...parts: string[][]): string => parts.flat().join('\n');
 
 const PUBLISHING_RULE = "[hopper publishing rule] Any text you send to GitHub (commit messages, branch names, pull request titles and bodies, issue text) describes the change and how it was verified, in neutral terms. Never quote or name the repository owner or any other person. Never include personal or machine details: email addresses, people's names, IP addresses, hostnames, tailnet names, home directory paths, usernames, machine or pane ids, port numbers of local machines, codes, tokens or secrets.";
 
+const WORK_TREE = "[hopper work tree] This job's work tree is /w/repo. Do all of the job's work inside it: clones, git worktrees, edits, builds, test runs, scratch and temporary files go under it. Never make or work in a copy of the code outside it, under /tmp or anywhere else. Temporary files go in /w/repo/.hopper-scratch: git ignores it, and TMPDIR and your scratchpad point there. Running or installing what you built, and reading files elsewhere, is fine. If the job seems to need a work tree outside this one, ask instead.";
+const PROTOCOL = '[hopper protocol] When you need an answer from the user, ask exactly one question and end your message with a line containing only: HOPPER_QUESTION\n'
+  + 'When the job is completely finished, end your final message with a line containing only: HOPPER_DONE\n'
+  + 'If the job cannot be done, end with a line containing only: HOPPER_FAILED followed by the reason.';
+
 describe('protocol footer', () => {
-  it('is the design text verbatim: the publishing rule, the work tree, parallel work, then the three protocol lines', () => {
+  it('is the design text verbatim: the default job rules (publishing rule, parallel work), the work tree, then the three protocol lines', () => {
     expect(protocolFooter('/w/repo')).toBe(
       PUBLISHING_RULE + '\n'
-      + "[hopper work tree] This job's work tree is /w/repo. Do all of the job's work inside it: clones, git worktrees, edits, builds, test runs, scratch and temporary files go under it. Never make or work in a copy of the code outside it, under /tmp or anywhere else. Temporary files go in /w/repo/.hopper-scratch: git ignores it, and TMPDIR and your scratchpad point there. Running or installing what you built, and reading files elsewhere, is fine. If the job seems to need a work tree outside this one, ask instead.\n"
       + '[hopper parallel work] Other jobs run at the same time as this one, possibly in the same repos. Nothing orders or holds jobs for each other: no job waits for another.\n'
       + 'If your work overlaps another job\'s, sort it out yourself. Either state the assumptions you made about the other work, or make the needed fix in the other project and annotate it with which way the dependency runs (which work depends on which).\n'
-      + '[hopper protocol] When you need an answer from the user, ask exactly one question and end your message with a line containing only: HOPPER_QUESTION\n'
-      + 'When the job is completely finished, end your final message with a line containing only: HOPPER_DONE\n'
-      + 'If the job cannot be done, end with a line containing only: HOPPER_FAILED followed by the reason.',
+      + WORK_TREE + '\n'
+      + PROTOCOL,
     );
+  });
+
+  it('carries the job rules it is given in place of the default; the work tree and the protocol stay (issue #172)', () => {
+    expect(protocolFooter('/w/repo', 'Be brief.\nNever touch main.\n\n')).toBe(`Be brief.\nNever touch main.\n${WORK_TREE}\n${PROTOCOL}`);
+    expect(protocolFooter('/w/repo', '  \n')).toBe(`${WORK_TREE}\n${PROTOCOL}`);
   });
 
   it('names the job\'s own work tree, whatever it is', () => {
@@ -50,8 +58,9 @@ describe('protocol footer', () => {
     expect(protocolFooter('/srv/other')).toContain('Temporary files go in /srv/other/.hopper-scratch');
   });
 
-  it('anchors turn 1 on its last line', () => {
+  it('anchors turn 1 on its last line, whatever the job rules', () => {
     expect(protocolFooter('/w/repo').split('\n').at(-1)).toBe(FOOTER_ANCHOR);
+    expect(protocolFooter('/w/repo', 'my rule').split('\n').at(-1)).toBe(FOOTER_ANCHOR);
     expect(FOOTER_ANCHOR).toBe('If the job cannot be done, end with a line containing only: HOPPER_FAILED followed by the reason.');
   });
 });

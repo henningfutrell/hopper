@@ -13,6 +13,7 @@ import { installHostGuard } from './host-guard.ts';
 import type { Lan } from './reach.ts';
 import { jobRoutes } from './jobs.ts';
 import { pluginStoreRoutes } from './plugin-store.ts';
+import { jobRulesRoutes } from './job-rules.ts';
 import { questionGatesRoutes } from './question-gates.ts';
 import { questionRoutes } from './questions.ts';
 import { createRealmsAdmin, realmRoutes } from './realms.ts';
@@ -72,6 +73,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   stateRoutes(app, { ...tenant, clock: o.clock, version: o.version });
   questionRoutes(app, tenant);
   questionGatesRoutes(app, tenant);
+  jobRulesRoutes(app, tenant);
   webhookRoutes(app, tenant);
   sourceRoutes(app, tenant);
   accountRoutes(app, tenant);
