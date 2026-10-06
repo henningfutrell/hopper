@@ -8,6 +8,7 @@ import type { Clock, InstanceStore, PluginStoreView, Updater } from '../domain/p
 import { accountRoutes } from './accounts.ts';
 import { installErrorHandling } from './errors.ts';
 import { ghLoginRoutes } from './gh-login.ts';
+import { createTerminalTickets, herdrTerminalRoutes } from './herdr-terminal.ts';
 import { installHostGuard } from './host-guard.ts';
 import type { Lan } from './reach.ts';
 import { jobRoutes } from './jobs.ts';
@@ -73,6 +74,8 @@ export function createServer(o: ServerOptions): FastifyInstance {
   sourceRoutes(app, tenant);
   accountRoutes(app, tenant);
   ghLoginRoutes(app, tenant);
+  const tickets = createTerminalTickets(o.clock);
+  herdrTerminalRoutes(app, { ...tenant, tenants: o.tenants, tickets, port: o.port, lan: o.lan });
   sseRoutes(app, tenant);
   updateRoutes(app, o);
   pluginStoreRoutes(app, o);
@@ -82,7 +85,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   staticRoutes(app, o.uiDir);
   registerUiRoutes(app, {
     ...tenant, tenants: o.tenants, instance: o.instance, sessions, signIn: o.signIn, realms, pluginStore: o.pluginStore, port: o.port, lan: o.lan, clock: o.clock,
-    updater: o.updater,
+    updater: o.updater, tickets,
   });
   return app;
 }

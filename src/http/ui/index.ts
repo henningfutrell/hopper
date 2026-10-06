@@ -11,6 +11,7 @@ import type { SignIn } from '../../auth/index.ts';
 import type { Clock, InstanceStore, PluginStoreView, Updater } from '../../domain/ports.ts';
 import { LIST_ROLES, QUEUE_GATE_MODES, ROLES, SELECTABLE_ROLES, UI_ROLES, UPDATE_CHANNELS, type RealmsView, type SessionView, type UiRole, type UserAdded } from '../../domain/types.ts';
 import { HttpError, parseWith } from '../errors.ts';
+import type { TerminalTickets } from '../herdr-terminal.ts';
 import { lanHosts, uiOrigins, type Lan } from '../reach.ts';
 import type { RealmsAdmin } from '../realms.ts';
 import { writeRules } from '../../questions/index.ts';
@@ -38,6 +39,8 @@ export interface UiRouteOptions {
   lan: Lan;
   clock: Clock;
   updater: Updater;
+  /** The herdr terminal's tickets (issue #189). */
+  tickets: TerminalTickets;
 }
 
 const idParams = z.object({ id: z.string() });
@@ -276,6 +279,11 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     if (s.state === 'unavailable') throw new HttpError(409, s.reason);
     return s;
   });
+
+  // The herdr terminal (issue #189, design.md "The herdr terminal"): a one-time ticket for its WebSocket,
+  // for the session's own user. admin: the terminal is a shell on the hopper's machine, and its root
+  // herdr reaches every machine with the hopper's ssh key.
+  app.post('/ui/api/herdr-terminal/ticket', admin, async (req) => ({ ticket: o.tickets.mint(sessionOf(req)!.userId) }));
 
   // A login code as a link per LAN name, in the fragment (never sent to a server). The links
   // share one code: it works once, and expires like any other. `keep` (issue #95): the code the

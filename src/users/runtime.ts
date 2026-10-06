@@ -6,8 +6,8 @@
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type {
-  Clock, EscalationLevel, Executor, ExecutorRegistry, GhLogin, JobSource, PluginsView, QuestionService, Router, SettableUsageSource, SourceRegistry,
-  UserStore, WebhookDispatcher,
+  Clock, EscalationLevel, Executor, ExecutorRegistry, GhLogin, HerdrTerminal, JobSource, PluginsView, QuestionService, Router, SettableUsageSource, SourceRegistry,
+  SpawnTerminal, SyncHerdrMachines, UserStore, WebhookDispatcher,
 } from '../domain/ports.ts';
 import type { AttachedMachine, Question, SourceStatus, User } from '../domain/types.ts';
 import { isRerunnable, OWNER_ID } from '../domain/types.ts';
@@ -18,7 +18,10 @@ import { createExecutorRegistry } from '../executors/index.ts';
 import type { HerdrClient } from '../executors/herdr/index.ts';
 import { clientSocket, type ClientTransport } from '../executors/client.ts';
 import { dockerHost } from '../executors/docker.ts';
-import { hopperSshAuth, pinHostKeys } from '../executors/ssh.ts';
+import { hopperSshAuth, pinHostKeys, resolveDestination } from '../executors/ssh.ts';
+import { createHerdrTerminal } from '../herdr-terminal/index.ts';
+import { syncHerdrMachines } from '../herdr-terminal/machines.ts';
+import { spawnTerminal } from '../herdr-terminal/pty.ts';
 import { createClientReleaseKeeper, createTargetPool, probeContainer, probeHerdrOverSsh, probeSsh, type MachineProbe, type ResolvedTarget } from '../machines/index.ts';
 import type { ClientRelease } from '../client/release.ts';
 import { BUILTIN_PLUGINS } from '../plugins/builtin.ts';
@@ -63,6 +66,10 @@ export interface UserSeams {
   machineProbe?: (machine: AttachedMachine) => Promise<MachineProbe>;
   /** Replaces resolving a new ssh target when the UI adds a machine (issues #18, #59): its herdr path and pinned host key, or a rejection with the reason. */
   resolveTarget?: (ssh: string, o: { herdr: boolean }) => Promise<ResolvedTarget>;
+  /** Replaces the pseudo-terminal the herdr terminal runs the root herdr's client on. */
+  terminal?: SpawnTerminal;
+  /** Replaces herdr's saved-machine CLI the herdr terminal syncs the root herdr's machines with. */
+  herdrMachines?: SyncHerdrMachines;
 }
 
 /** What the instance gives each user runtime. */
@@ -102,6 +109,8 @@ export interface UserRuntime {
   executors: ExecutorRegistry;
   ghLogin: GhLogin;
   webhooksEditor: WebhooksEditor;
+  /** The herdr terminal (issue #189): the root herdr, in the browser. */
+  herdrTerminal: HerdrTerminal;
   /** Why the user's runtime gives no secret for a webhook subscription's variable; undefined when it does. */
   secretProblem: (secretEnv: string) => string | undefined;
   routerMode(): string;
@@ -275,6 +284,10 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     // gh login (issue #138): the gh on the daemon's PATH, the github-gh source's default `bin`, with the user's gh config.
     ghLogin: createGhLogin({ bin: 'gh', env: Object.keys(cliEnv).length === 0 ? o.env : userProcessEnv(cliEnv, o.env) }),
     webhooksEditor: createWebhooksEditor({ store }),
+    herdrTerminal: createHerdrTerminal({
+      session, dataDir, machines: () => host.targets(), sshAuth, resolve: (t) => resolveDestination('ssh', t),
+      env: o.env, userEnv: cliEnv, spawn: seams.terminal ?? spawnTerminal, sync: seams.herdrMachines ?? syncHerdrMachines, logger,
+    }),
     // The variable the user's runtime reads: the subscription's, under the user's prefix.
     secretProblem: (secretEnv) => secretProblem(raw, `${user.secretPrefix}${secretEnv}`),
     routerMode,

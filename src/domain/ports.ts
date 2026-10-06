@@ -457,3 +457,6 @@ export interface GhLogin {
 
 export type * from './store.ts';
 export { CONFIG_DOCUMENTS, INSTANCE_DOCUMENTS, USER_DOCUMENTS } from './store.ts';
+
+// The herdr terminal's seams (issue #189): the pseudo-terminal and herdr's saved-machine CLI.
+export type { HerdrMachineProfile, HerdrMachineSync, HerdrTerminal, SpawnTerminal, SyncHerdrMachines, Terminal, TerminalSpawn } from './herdr-terminal.ts';
