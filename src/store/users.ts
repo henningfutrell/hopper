@@ -81,5 +81,9 @@ export function createIdentityLinks(c: StoreContext): IdentityLinks {
     anyIn(realms) {
       return realms.some((realm) => c.db.get('SELECT 1 FROM user_identities WHERE realm = ? LIMIT 1', realm) !== undefined);
     },
+    all() {
+      return c.db.all('SELECT realm, subject, user_id FROM user_identities ORDER BY realm, subject')
+        .map((r) => ({ realm: String(r.realm), subject: String(r.subject), userId: String(r.user_id) }));
+    },
   };
 }
