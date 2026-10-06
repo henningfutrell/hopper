@@ -19,10 +19,17 @@ const UPDATE = {
 };
 let root: Root | undefined;
 
+const HISTORY = {
+  versions: [
+    { commit: COMMIT, at: '2026-10-05T15:00:00Z', changes: ['You can now do the newest thing.'] },
+    { commit: 'abcdef1'.padEnd(40, '0'), at: '2026-10-01T09:00:00Z', changes: ['An older change.', 'Another older change.'] },
+  ],
+};
+
 async function render(mod: string, name: string) {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
-  vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 404 })));
+  vi.stubGlobal('fetch', vi.fn(async (path: string) => path === '/api/update/history' ? Response.json(HISTORY) : new Response('{}', { status: 404 })));
   const { useHopper } = (await import(store)) as Store;
   useHopper.setState({ authed: true, update: UPDATE, health: { ok: true, version: '0.1.0', uptimeS: 1 } });
   const view = (await import(mod)) as Record<string, () => El>;
@@ -67,5 +74,28 @@ describe('the version, without an update notice', () => {
     expect(button?.textContent).toContain('0.1.0');
     expect(button?.querySelector('svg')).not.toBeNull();
     expect(button?.className).toMatch(/(^|\s)border(\s|$)/);
+  });
+});
+
+describe('the version history (issue #246)', () => {
+  it('Settings has a Version history section in its navigation', async () => {
+    window.location.hash = '#settings';
+    await render('../../ui/src/views/settings.tsx', 'Settings');
+    const link = document.querySelector<HTMLAnchorElement>('[data-slot="settings-nav"] a[href="#settings/version-history"]');
+    expect(link?.textContent).toBe('Version history');
+  });
+
+  it('Settings → Version history lists each version, newest first, with its day and what it brought; the installed one marked', async () => {
+    window.location.hash = '#settings/version-history';
+    await render('../../ui/src/views/settings.tsx', 'Settings');
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+    const rows = [...document.querySelectorAll('[data-slot="version-history"] [data-slot="version"]')];
+    expect(rows).toHaveLength(2);
+    expect(rows[0]!.textContent).toContain('c0ffee1');
+    expect(rows[0]!.textContent).toContain('installed');
+    expect(rows[0]!.textContent).toContain('You can now do the newest thing.');
+    expect(rows[1]!.textContent).toContain('abcdef1');
+    expect(rows[1]!.textContent).not.toContain('installed');
+    expect(rows[1]!.textContent).toContain('Another older change.');
   });
 });

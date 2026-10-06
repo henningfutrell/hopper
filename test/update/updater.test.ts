@@ -115,6 +115,36 @@ describe('detecting an update', () => {
     expect(updater(w, createInstall(w.root, w.up.dir, c1)).u.status().installedWhatsNew).toEqual([]);
   });
 
+  it('lists the version history: every version the install is made of that brought What\'s new, with the day it landed, newest first (issue #246)', async () => {
+    const w = world();
+    w.up.whatsNew(['First.']);
+    const c1 = w.up.commit('first');
+    w.up.commit('no change people notice');
+    git(w.up.dir, 'checkout', '-q', '-b', 'feature');
+    w.up.whatsNew(['Second.', 'First.']);
+    w.up.commit('feature work');
+    git(w.up.dir, 'checkout', '-q', 'main');
+    git(w.up.dir, 'merge', '-q', '--no-ff', '-m', 'Merge feature', 'feature');
+    const merged = git(w.up.dir, 'rev-parse', 'HEAD');
+    w.up.whatsNew(['Third.', 'Second.', 'First.']);
+    w.up.commit('newer than the install');
+    const { u } = updater(w, createInstall(w.root, w.up.dir, merged));
+    const h = await u.history();
+    expect(h.reason).toBeUndefined();
+    expect(h.versions.map((v) => ({ commit: v.commit, changes: v.changes }))).toEqual([
+      { commit: merged, changes: ['Second.'] },
+      { commit: c1, changes: ['First.'] },
+    ]);
+    for (const v of h.versions) expect(new Date(v.at).getTime()).not.toBeNaN();
+  });
+
+  it('has no version history without install.json, and says why', async () => {
+    const w = world();
+    const h = await updater(w, join(w.root, 'bare')).u.history();
+    expect(h.versions).toEqual([]);
+    expect(h.reason).toMatch(/install\.json/);
+  });
+
   it('on the release channel targets the newest v<semver> tag, and reports the newest release on either channel', async () => {
     const w = world();
     const c1 = w.up.commit('first');

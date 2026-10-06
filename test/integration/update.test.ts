@@ -3,7 +3,7 @@
 // reports update.applied. The update repository is a real git repo; the build and the restart are seams.
 import { rmSync } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { UpdateStatus } from '../../src/domain/types.ts';
+import type { UpdateStatus, VersionHistory } from '../../src/domain/types.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { waitFor } from '../support/wait.ts';
 import { copyBuilder, createInstall, createUpstream, readInstall, tempDir } from '../update/support.ts';
@@ -64,6 +64,16 @@ describe('self-update over HTTP', () => {
     expect(readInstall(w.appDir).commit).toBe(w.c2);
     expect((await app.ui('/ui/api/update', { action: 'apply' }, { token })).status).toBe(409);
     expect((await app.events()).filter((e) => e.type.startsWith('update.')).map((e) => e.type)).toEqual(['update.available', 'update.started']);
+  });
+
+  it('answers the version history at GET /api/update/history (issue #246)', async () => {
+    const w = world();
+    const root = tempDir('jh-update-it-');
+    cleanups.push(() => rmSync(root, { recursive: true, force: true }));
+    const app = await startTestApp({ dbPath: w.dbPath, seams: { update: { appDir: createInstall(root, w.up.dir, w.c2), builder: copyBuilder(), restart: async () => {} } } });
+    apps.push(app);
+    const h = (await app.api<VersionHistory>('GET', '/api/update/history')).body;
+    expect(h.versions.map((v) => ({ commit: v.commit, changes: v.changes }))).toEqual([{ commit: w.c2, changes: ['Updates arrive on their own.'] }]);
   });
 
   it('reports update.applied on the boot after, and keeps the settings and the queue', async () => {
