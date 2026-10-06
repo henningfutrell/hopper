@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- A job no longer sits running while Claude waits idle: when its instructions never reach Claude, the hopper sends them again, and fails the job if they still do not arrive.
 - The lane timeline now shows when a job is sitting on a question: a hatched strip on its lane from the moment it asked until it is answered.
 - The old built-in user from before GitHub sign-in is gone: everything it held now belongs to you, the admin who signed in with GitHub, and Settings → Users lists only real people.
 - Claude jobs no longer get stuck on Claude's "bypass permissions" warning: yolo is now a switch on each Claude runner, on by default. Turn it off for a runner that should ask before it acts; its questions come to you (or your answering levels), and answering with an option's number or words picks it.
