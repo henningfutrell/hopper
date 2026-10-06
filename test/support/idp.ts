@@ -14,14 +14,29 @@ import { rawRequest, type RawResponse } from './http.ts';
 
 // ---- OIDC ----------------------------------------------------------------------------------
 
-export interface OidcIdp { issuer: string; claims: Record<string, unknown>; userinfo: Record<string, unknown>; stop(): Promise<void> }
+export interface OidcIdp {
+  issuer: string; claims: Record<string, unknown>; userinfo: Record<string, unknown>;
+  /** A JWT the issuer signs (as a gateway in front of the hopper would forward it), with these claims. */
+  token(claims: Record<string, unknown>, expiresIn: number): Promise<string>;
+  /** Answer token introspection: `answer` fills the response body; `authorization` is the request's header. */
+  onIntrospect(answer: (body: Record<string, unknown>, authorization: string) => void): void;
+  stop(): Promise<void>;
+}
 
 /** An OIDC issuer. Every ID token carries `claims` (sub stays `johndoe`); userinfo answers `userinfo`. */
 export async function startOidcIdp(): Promise<OidcIdp> {
   const server = new OAuth2Server();
   await server.issuer.keys.generate('RS256');
   await server.start(0, '127.0.0.1');
-  const idp: OidcIdp = { issuer: server.issuer.url!, claims: {}, userinfo: {}, stop: () => server.stop() };
+  const idp: OidcIdp = {
+    issuer: server.issuer.url!, claims: {}, userinfo: {}, stop: () => server.stop(),
+    token: (claims, expiresIn) => server.issuer.buildToken({ expiresIn, scopesOrTransform: (_header, payload) => { Object.assign(payload, claims); } }),
+    onIntrospect: (answer) => {
+      server.service.on('beforeIntrospect', (res: { body: Record<string, unknown> }, req: { headers: Record<string, string | undefined> }) => {
+        answer(res.body, req.headers.authorization ?? '');
+      });
+    },
+  };
   server.service.on('beforeTokenSigning', (token: { payload: Record<string, unknown> }) => { Object.assign(token.payload, idp.claims); });
   server.service.on('beforeUserinfo', (res: { body: Record<string, unknown> }) => { Object.assign(res.body, idp.userinfo); });
   return idp;
