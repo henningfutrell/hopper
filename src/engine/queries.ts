@@ -43,10 +43,9 @@ export function createQueries(c: EngineContext): Queries {
     getQueue() {
       const all = c.store.jobs.list();
       // The decider's own order: the queue sorter's, then effective priority, then age.
-      const mode = c.routerMode();
       const queued = all.filter((j) => j.status === 'queued' || j.status === 'held');
-      const ids = queueOrder(c, queued, mode).jobIds;
-      const waiting = order(queued.map((job) => ({ job, effectivePriority: effectivePriority(job, mode, c.policy) })), ids).map((x) => x.job);
+      const ids = queueOrder(c, queued).jobIds;
+      const waiting = order(queued.map((job) => ({ job, effectivePriority: effectivePriority(job, c.policy) })), ids).map((x) => x.job);
       const running = all.filter((j) => j.status === 'claimed' || j.status === 'running').reverse();
       const waitingAnswer = all.filter((j) => j.status === 'waiting_answer').reverse();
       const end = (j: Job) => j.finishedAt ?? j.updatedAt;

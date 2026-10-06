@@ -1,4 +1,4 @@
-import type { DeciderPolicy, ExecutorUnavailable, Job, JobId, Lane, MachineSnapshot, RouterMode, StartPlan, HoldPlan } from '../domain/types.ts';
+import type { DeciderPolicy, ExecutorUnavailable, Job, JobId, Lane, MachineSnapshot, StartPlan, HoldPlan } from '../domain/types.ts';
 import { routerVerdict } from './router-verdict.ts';
 import type { CapBand } from './usage.ts';
 
@@ -59,13 +59,13 @@ export function nativeHold(job: Job, machines: MachineSnapshot[], unavailable: E
 }
 
 /**
- * A waiting job's effective priority: a resuming job's priority plus the resume boost (either
- * mode); in active mode, plus the router's boost; in shadow mode, its priority. The engine reads it
- * for the queue sorter's input, so the sorter and the decider agree on one notion.
+ * A waiting job's effective priority: a resuming job's priority plus the resume boost; any other
+ * job's priority plus the router's boost. The engine reads it for the queue sorter's input, so the
+ * sorter and the decider agree on one notion.
  */
-export function effectivePriority(job: Job, mode: RouterMode, policy: DeciderPolicy): number {
+export function effectivePriority(job: Job, policy: DeciderPolicy): number {
   if (job.pendingAnswer !== undefined) return job.priority + policy.resumeBoost;
-  return mode === 'active' ? job.priority + routerVerdict(job, policy.routerCheapBoost).boost : job.priority;
+  return job.priority + routerVerdict(job, policy.routerCheapBoost).boost;
 }
 
 /**

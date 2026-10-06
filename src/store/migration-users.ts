@@ -4,7 +4,7 @@
 import type { Db } from './db.ts';
 import { TENANT_BASE_VERSION, TENANT_TABLES, quoteIdent, userSchemaName } from './tenant-migrations.ts';
 
-/** The instance settings; every other key (routerMode) is a user's. */
+/** The instance settings; every other key is a user's. */
 const INSTANCE_SETTINGS = ['updateChannel', 'autoUpdate', 'pluginInstalls'];
 
 /**

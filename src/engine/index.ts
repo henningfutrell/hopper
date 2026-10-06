@@ -1,7 +1,7 @@
 // The engine: gather → decide → apply, on a tick and on the events that change admission.
 import { randomUUID } from 'node:crypto';
 import type { SourceHost } from '../domain/ports.ts';
-import type { EventType, RouterMode } from '../domain/types.ts';
+import type { EventType } from '../domain/types.ts';
 import { createAnswerHandlers, type AnswerHandlers } from './answers.ts';
 import { createClassifier } from './classifier.ts';
 import { createCleanup } from './cleanup.ts';
@@ -25,7 +25,7 @@ const SHUTDOWN_WAIT_MS = 5000;
 /** Events that can change admission, so they wake the engine. A question frees a lane; an
  * answer or a close requeues a job; an expiry fails one; a source re-sort changes the order. */
 const TRIGGERS: ReadonlySet<EventType> = new Set<EventType>([
-  'job.queued', 'job.prioritized', 'job.reprioritized', 'job.approved', 'job.finished', 'job.failed', 'job.cancelled', 'router.mode_changed',
+  'job.queued', 'job.prioritized', 'job.reprioritized', 'job.approved', 'job.finished', 'job.failed', 'job.cancelled',
   'question.asked', 'question.answered', 'question.closed', 'question.dismissed', 'question.expired',
   'job.accepted', 'job.rejected', 'queue.ordered', 'queue.gate_changed',
 ]);
@@ -36,7 +36,6 @@ export interface Engine extends Commands, QueueGateCommands, Queries, AnswerHand
   readonly executorNames: string[];
   /** What the sync loop may do to the hopper (ingest, cancel, answer, reprioritize, setSourceState). */
   readonly sourceHost: SourceHost;
-  routerMode(): RouterMode;
   /** Recover from a previous run (jobs — reattaching live ones —, then questions), ask the router, take the first Decision, start the tick. */
   start(): Promise<void>;
   /** Abort running executors (≤ 5 s) and stop deciding. The caller closes the store. */
@@ -45,7 +44,6 @@ export interface Engine extends Commands, QueueGateCommands, Queries, AnswerHand
 
 export function createEngine(o: EngineOptions): Engine {
   const { store } = o;
-  if (store.settings.getRouterMode() === undefined) store.settings.setRouterMode(o.initialRouterMode);
   let stopping = false;
   let timer: NodeJS.Timeout | undefined;
   let unsubscribe: (() => void) | undefined;
@@ -60,7 +58,6 @@ export function createEngine(o: EngineOptions): Engine {
     usage: o.usage, router: o.router, queueSorter: o.queueSorter, routing: o.routing, policy: o.policy,
     questions: o.questions, maxQuestions: o.maxQuestions, keepPanes: o.keepPanes, notComplete: o.notComplete,
     ...(o.fakeUsage ? { fakeUsage: o.fakeUsage } : {}),
-    routerMode: () => store.settings.getRouterMode() ?? o.initialRouterMode,
     trigger: (reason) => serial.trigger(reason),
     stopping: () => stopping,
   };
@@ -73,7 +70,6 @@ export function createEngine(o: EngineOptions): Engine {
   return {
     get executorNames() { return o.executors.names(); },
     sourceHost: createSourceHost(c, commands),
-    routerMode: c.routerMode,
     ...commands,
     ...createQueueGateCommands(c, (jobId) => { void cleanup(jobId); }),
     ...createQueries(c),

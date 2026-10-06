@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { claudeArgv, scrubbedEnv } from '../../claude-print.ts';
-import type { Advice, AdviceAction, Clock, Job, Router, RouterMode } from '../../sdk.ts';
+import type { Advice, AdviceAction, Clock, Job, Router } from '../../sdk.ts';
 import { userProcessEnv } from '../../../executors/env.ts';
 
 const SHIM = fileURLToPath(new URL('./gate_shim.py', import.meta.url));
@@ -49,7 +49,6 @@ export interface GateRouterShimOptions {
   /** The TypeSafe key (TYPESAFE_API_KEY), asked on every call; undefined: Jev off. */
   typesafeKey(): string | undefined;
   dataDir: string;
-  mode: () => RouterMode;
   clock: Clock;
   timeoutMs: number;
   /** Over the daemon's environment: the user's CLI config dirs, for the claude the shim starts (issue #158). */
@@ -127,7 +126,8 @@ export function createGateRouter(o: GateRouterShimOptions): Router {
       try {
         const stdout = await runShim(o, o.typesafeKey() || undefined, {
           jevPath: o.jevPath,
-          mode: o.mode(),
+          // The hopper always applies the advice (issue #211): Jev is told it is active.
+          mode: 'active',
           logPath: join(o.dataDir, 'gate-router-runs.jsonl'),
           state: routerState(job),
           jevGates: JEV_GATES,

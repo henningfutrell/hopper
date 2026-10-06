@@ -14,7 +14,6 @@ import { HttpError, parseWith } from '../errors.ts';
 import { lanHosts, uiOrigins, type Lan } from '../reach.ts';
 import type { RealmsAdmin } from '../realms.ts';
 import { writeRules } from '../../questions/index.ts';
-import { routerView } from '../state.ts';
 import { userIdOf, type TenantParts, type Tenants } from '../tenants.ts';
 import { webhooksView } from '../webhooks.ts';
 import { SESSION_HEADER, mutationRefusal } from './guard.ts';
@@ -42,7 +41,6 @@ export interface UiRouteOptions {
 
 const idParams = z.object({ id: z.string() });
 export const answerBody = z.object({ answer: z.string().trim().min(1, 'answer must not be empty') });
-export const routerModeBody = z.object({ mode: z.enum(['shadow', 'active']) });
 export const pluginsEditBody = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('options'), role: z.enum(ROLES), name: z.string().min(1), options: z.record(z.string(), z.unknown()), rename: z.string().trim().min(1).max(64).optional(), version: z.string().min(1) }),
   z.strictObject({ action: z.literal('select'), role: z.enum(SELECTABLE_ROLES), plugin: z.string().min(1), version: z.string().min(1) }),
@@ -197,12 +195,6 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     const r = o.tenant(req).questions.markSeen(id);
     if (r.ok) return r.question;
     throw new HttpError(404, `question ${id} not found`);
-  });
-
-  app.post('/ui/api/router-mode', admin, async (req) => {
-    const t = o.tenant(req);
-    t.engine.setRouterMode(parseWith(routerModeBody, req.body).mode);
-    return routerView(t.engine, t.plugins);
   });
 
   // design.md "UI and mutation": one instance's options (command-bearing ones too, issue #198), the

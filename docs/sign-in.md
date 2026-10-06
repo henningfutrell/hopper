@@ -379,7 +379,7 @@ in. `HOPPER_PUBLIC_URL` is the address people reach through the gateway.
 |---|---|
 | `viewer` | read everything the UI shows |
 | `operator` | + cancel and approve jobs; answer, close, dismiss questions and mark them seen |
-| `admin` | + change configuration: plugins, machines, routing rules, webhooks, the rules, router mode, sign-in realms; apply updates; hand out device links |
+| `admin` | + change configuration: plugins, machines, routing rules, webhooks, the rules, the queue gate, sign-in realms; apply updates; hand out device links |
 
 The login code always signs in as `admin`, a password account as its own role. For every other
 realm, its **role rules** decide, the same way for every type:
@@ -409,7 +409,7 @@ What fills each field:
 A UI role is not a plugin role: see `docs/glossary.md`.
 
 A role acts only inside the session's own user: an admin changes their own plugins, machines,
-routing, webhooks, rules and router mode, never another user's. What all users share — adding users,
+routing, webhooks, rules and the queue gate, never another user's. What all users share — adding users,
 the plugin store, updates, sign-in realms — needs `admin`.
 
 ## Who signs in as which user

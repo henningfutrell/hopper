@@ -15,7 +15,7 @@ import {
   blankRule, choices, draftsProblem, fromDraft, machineOptions, MATCH_FIELDS, move, toDraft, type Choice, type RuleDraft,
 } from '@/model/routing';
 import type { PluginsEdit, PluginsReport, RoutingReport } from '@/model/wire';
-import { act, refreshHealth, refreshPlugins, refreshRouting, setRouting, useHopper } from '@/store';
+import { refreshPlugins, refreshRouting, setRouting, useHopper } from '@/store';
 import { useCanAdmin } from '@/store/selectors';
 
 const REFRESH_MS = 15000;
@@ -56,12 +56,8 @@ function Picker({ role, ctx }: { role: 'router' | 'queue-sorter'; ctx: PluginCtx
 }
 
 function RouterPanel({ ctx }: { ctx: PluginCtx }) {
-  const mode = useHopper((s) => s.health?.routerMode ?? 'shadow');
   const r = ctx.report.router;
   const inst = ctx.report.instances.find((i) => i.role === 'router')?.instance;
-  const setMode = async (m: 'shadow' | 'active') => {
-    if (await act('/ui/api/router-mode', { mode: m }, `Router mode: ${m}`)) await refreshHealth().catch(() => {});
-  };
   return (
     <Panel title="Router" icon={Waypoints} bodyClassName="space-y-3"
       action={<span className="text-xs text-muted-foreground">{r.selection === 'file' ? 'picked' : 'detected'}</span>}>
@@ -71,15 +67,6 @@ function RouterPanel({ ctx }: { ctx: PluginCtx }) {
           {r.fallback ? <StatusBadge status="fallback" tone="warn" /> : <StatusBadge status="active" tone="ok" />}
         </div>
         {r.reason && <div className="text-xs break-words text-warn">{r.reason}</div>}
-      </div>
-      <div className="space-y-1.5">
-        <div className="text-xs text-muted-foreground">Mode — shadow records advice and never applies it; active lets it hold and reorder jobs.</div>
-        <div className="flex gap-2" role="group" aria-label="Router mode">
-          {(['shadow', 'active'] as const).map((m) => (
-            <Button key={m} size="lg" className="flex-1 sm:flex-none" variant={mode === m ? 'default' : 'outline'} aria-pressed={mode === m}
-              disabled={!ctx.authed || mode === m} onClick={() => void setMode(m)}>{m}</Button>
-          ))}
-        </div>
       </div>
       <Picker role="router" ctx={ctx} />
       {inst && <InstanceForm role="router" inst={inst} />}

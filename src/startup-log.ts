@@ -17,7 +17,7 @@ export function logStartup(app: App): void {
     const r = rt.plugins.routerStatus();
     const levels = rt.plugins.report().escalationLevels.map((l) => `${l.instance.name} [${l.active ?? 'unavailable'}]`);
     const q = `escalation levels ${levels.length ? levels.join(' → ') : 'none'} → owner`;
-    console.log(`hopper: user ${u.id}: router ${r.name} [${r.plugin}${r.fallback ? ', fallback' : ''}] ${rt.routerMode()}, executors ${rt.engine.executorNames.join(',') || 'none'}${unavailableNote(rt.plugins)}, ${q}`);
+    console.log(`hopper: user ${u.id}: router ${r.name} [${r.plugin}${r.fallback ? ', fallback' : ''}], executors ${rt.engine.executorNames.join(',') || 'none'}${unavailableNote(rt.plugins)}, ${q}`);
     for (const s of rt.registry.statuses()) console.log(`hopper: user ${u.id}: source ${s.name} (${s.kind}) ${s.state}`);
   }
   const auth = app.auth();

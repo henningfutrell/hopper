@@ -190,7 +190,6 @@ export function onDomainEvent(e: DomainEvent) {
   });
   refreshLiveSoon();
   if (e.type.startsWith('question.')) refreshQuestionsSoon();
-  if (e.type === 'router.mode_changed') refreshHealth().catch(() => {});
   if (e.type.startsWith('update.')) refreshUpdate().catch(() => {});
   if (e.type === 'decision.made') {
     const id = e.decisionId ?? String(e.data.decisionId);

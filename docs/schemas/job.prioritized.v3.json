@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "advice": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "proceed_full",
+            "reuse_cache",
+            "stop_retry",
+            "run_deterministic",
+            "chat_only",
+            "ask_human",
+            "allow_subagent",
+            "research_capped"
+          ]
+        },
+        "reason": {
+          "type": "string"
+        },
+        "details": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {}
+        },
+        "source": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "action",
+        "reason",
+        "details",
+        "source",
+        "at"
+      ],
+      "additionalProperties": false
+    },
+    "statusAtAdvice": {
+      "type": "string",
+      "enum": [
+        "queued",
+        "held",
+        "claimed",
+        "running",
+        "waiting_answer",
+        "finished",
+        "failed",
+        "cancelled",
+        "rejected"
+      ]
+    }
+  },
+  "required": [
+    "advice",
+    "statusAtAdvice"
+  ],
+  "additionalProperties": false
+}

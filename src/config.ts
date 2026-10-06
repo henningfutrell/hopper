@@ -17,8 +17,6 @@ export interface Config {
   /** Scratch only — claude's working directory, ssh control sockets, probes; nothing kept. */
   workDir: string;
   tickMs: number;
-  /** Router mode used only until the store has one. */
-  routerMode: 'shadow' | 'active';
   softLimit: number;
   hardLimit: number;
   routerCheapBoost: number;
@@ -83,7 +81,6 @@ const schema = z.object({
     .superRefine((v, ctx) => { try { parseDatabaseUrl(v); } catch (e) { ctx.addIssue({ code: 'custom', message: (e as Error).message }); } }),
   HOPPER_WORK_DIR: z.string().min(1).default(join(tmpdir(), 'hopper')),
   HOPPER_TICK_MS: int(1).default(2000),
-  HOPPER_ROUTER_MODE: z.enum(['shadow', 'active']).default('shadow'),
   HOPPER_SOFT_LIMIT: fraction().default(0.7),
   HOPPER_HARD_LIMIT: fraction().default(0.95),
   HOPPER_ROUTER_CHEAP_BOOST: z.coerce.number().default(10),
@@ -123,7 +120,6 @@ const SETTING_HELP: Record<keyof typeof schema.shape, string> = {
   HOPPER_PLUGIN_DIR: 'a directory of custom plugins, one directory each (docs/plugins.md). Unset: none',
   HOPPER_PLUGIN_STORE: 'the plugin store the UI installs plugins from (kept in the database, restored at start): a git repository (URL or path) holding plugin-store.yaml. Unset: none',
   HOPPER_TICK_MS: 'how often the engine decides',
-  HOPPER_ROUTER_MODE: 'router mode until one is stored: shadow (advice is logged) or active (advice is applied)',
   HOPPER_SOFT_LIMIT: 'usage fraction where a machine starts to close lanes',
   HOPPER_HARD_LIMIT: 'usage fraction where a machine starts nothing',
   HOPPER_ROUTER_CHEAP_BOOST: 'priority boost for a job the router calls cheap',
@@ -215,7 +211,6 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     databaseUrl: e.HOPPER_DATABASE_URL,
     workDir: e.HOPPER_WORK_DIR,
     tickMs: e.HOPPER_TICK_MS,
-    routerMode: e.HOPPER_ROUTER_MODE,
     softLimit: e.HOPPER_SOFT_LIMIT,
     hardLimit: e.HOPPER_HARD_LIMIT,
     routerCheapBoost: e.HOPPER_ROUTER_CHEAP_BOOST,

@@ -3,7 +3,7 @@
 import type { ConfigRecords } from '../domain/ports.ts';
 import type { Clock, EscalationLevel, MachineSource, Notifier, NotifierEvents, UsageSource } from '../domain/ports.ts';
 import type {
-  AttachedMachine, InstanceSpec, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit, PluginsEditOutcome, PluginsReport, RouterMode, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule,
+  AttachedMachine, InstanceSpec, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit, PluginsEditOutcome, PluginsReport, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule,
 } from '../domain/types.ts';
 import type { AttachedEditOptions } from './attached-slot.ts';
 import type { BuiltExecutor } from './executor-slot.ts';
@@ -35,7 +35,6 @@ export interface PluginHostOptions {
   userEnv?: Readonly<Record<string, string>>;
   clock: Clock;
   logger: PluginLogger;
-  routerMode(): RouterMode;
   /** Default: the real kit. */
   kit?: DetectionKit;
   /** Default: BUILTIN_PLUGINS. */

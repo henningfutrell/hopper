@@ -8,7 +8,7 @@ import type { Advice, Detection, InstanceSpec, RouterStatus } from '../domain/ty
 import { parseOptions } from './options.ts';
 import passThrough from './router/pass-through/index.ts';
 import type {
-  Clock, DetectionKit, JobSourceContext, MachineSourceContext, PluginContext, PluginDefinition, Role, RoleContext, RoleInstance, Router, RouterMode, UsageSourceContext,
+  Clock, DetectionKit, JobSourceContext, MachineSourceContext, PluginContext, PluginDefinition, Role, RoleContext, RoleInstance, Router, UsageSourceContext,
 } from './sdk.ts';
 
 export interface SlotDeps {
@@ -18,7 +18,6 @@ export interface SlotDeps {
   dataDir: string;
   /** PluginContext.userEnv. */
   userEnv: Readonly<Record<string, string>>;
-  routerMode(): RouterMode;
   /** What a job source is told (RoleContext['job-source']). */
   jobSource: JobSourceContext;
   /** The executors a machine source names (RoleContext['machine-source']). */
@@ -63,7 +62,7 @@ function contextFor(deps: SlotDeps, id: string, instanceName: string) {
   const scratchDir = join(deps.dataDir, 'plugin-data', id);
   mkdirSync(scratchDir, { recursive: true, mode: 0o700 });
   return {
-    clock: deps.clock, logger: deps.logger, dataDir: deps.dataDir, scratchDir, instanceName, routerMode: deps.routerMode, env: deps.kit.env, userEnv: deps.userEnv,
+    clock: deps.clock, logger: deps.logger, dataDir: deps.dataDir, scratchDir, instanceName, env: deps.kit.env, userEnv: deps.userEnv,
     ...deps.jobSource, executors: deps.executors, target: deps.target, machine: deps.machine,
   };
 }

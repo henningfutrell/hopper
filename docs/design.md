@@ -21,7 +21,7 @@ plugin" is its current enactment; Phase 6 items are judged against it.
                       │                 │
                       ▼                 │
    tick / trigger ─► engine ── gather inputs ──► decide() (pure) ──► Decision
-                      │   machines · lanes · usage · waiting · running · router mode
+                      │   machines · lanes · usage · waiting · running · advice
                       └── apply: lanes open/close/drain, claim+start jobs, holds
                                  │
                               executors (plugin instances: herdr-claude, test)
@@ -75,9 +75,9 @@ same Decision. Algorithm, in order:
    - `usedFrac < soft` → `maxLanes`
    - `usedFrac >= hard` → `0` (stop: close idle lanes, drain busy ones, start nothing)
    - between → `floor(maxLanes * (hard - usedFrac) / (hard - soft))` (linear scale-down)
-3. **Router verdict per waiting job** (from `job.advice`) — always computed, in both modes:
-   - no advice yet → hold `awaiting router advice` (so in active mode nothing starts
-     before the router has spoken; in shadow mode the native verdict ignores it)
+3. **Router verdict per waiting job** (from `job.advice`), always applied (issue #211):
+   - no advice yet → hold `awaiting router advice` (nothing starts before the router has
+     spoken)
    - `approved` → proceed, whatever the advice (a human override ends every router hold)
    - `ask_human` → hold `router ask_human: awaiting approval`
    - `stop_retry` → hold `router stop_retry: …`
@@ -86,9 +86,9 @@ same Decision. Algorithm, in order:
    - anything else → proceed
    A `Divergence` is recorded for every job where the router verdict (start/hold or order)
    differs from the native one.
-4. **Mode** (router mode). `active`: admission and effective priority use the router
-   verdict. `shadow`: native verdict (everything admissible, priority = `job.priority`); the
-   router's verdict appears only in `decision.advice`.
+4. **Apply the verdict.** Admission and effective priority use the router verdict. There is no
+   router mode: issue #211 removed `shadow` (advice recorded, never applied); what was `active`
+   is the only behaviour.
 5. **Native holds.** A job not yet accepted at the queue gate (`accepted: false`) → hold
    `awaiting acceptance`, before anything else is judged ("Queue gate"). No online machine runs the job's executor → hold. Pinned machine
    unknown or offline → hold.
@@ -112,13 +112,13 @@ same Decision. Algorithm, in order:
 **A no-op decision is not recorded.** The engine discards a Decision with no lane change,
 no start, and no hold whose reason differs from the job's current `holdReason`. Otherwise
 an idle tick every 2 s would bury the decision log. Every recorded Decision emits
-`decision.made` with `{ decisionId, starts, holds, lanes, routerMode, divergences }` (v2).
+`decision.made` with `{ decisionId, trigger, starts, holds, lanes, divergences }` (v3).
 
 ## The engine
 
 - **Triggers:** interval tick (`HOPPER_TICK_MS`, default 2000) plus the events
   `job.queued`, `job.prioritized`, `job.reprioritized`, `job.approved`, `job.finished`,
-  `job.failed`, `job.cancelled`, `router.mode_changed`, `question.asked`, `question.answered`,
+  `job.failed`, `job.cancelled`, `question.asked`, `question.answered`,
   `question.expired`, and the queue gate's `job.accepted`, `job.rejected`, `queue.ordered`, `queue.gate_changed` (`TRIGGERS`, `src/engine/index.ts`). Decisions are serialized; triggers
   arriving mid-decision coalesce into one follow-up, which keeps the first waiting trigger's name
   (so `decision.trigger` names *a* cause, not necessarily the last). Event listeners schedule
@@ -138,9 +138,8 @@ an idle tick every 2 s would bury the decision log. Every recorded Decision emit
   while the answer pipeline runs. The only things that keep an admissible job waiting:
   - the **lane cap** — `maxLanes` per machine (the machine instance's `lanes` option, default 4), scaled down
     past the usage soft limit, 0 at the hard limit (hold `all lanes busy (cap N)` / `usage …`);
-  - **router mode `active`**: no advice yet, or advice that holds (`ask_human`, `stop_retry`,
-    `reuse_cache`) — the router speaking first is the point of active mode; shadow (the
-    default) never holds;
+  - the **router**: no advice yet, or advice that holds (`ask_human`, `stop_retry`,
+    `reuse_cache`) — the router speaks first; an approval ends a router hold;
   - a **native hold** (no online machine runs the executor; pinned machine unknown/offline);
   - a resumed job **pinned** to the machine holding its pane (`resumeOn`).
   Nothing else orders jobs against each other: no per-source, per-repo or per-author cap, no
@@ -190,7 +189,7 @@ complexity — through `system_one`, and maps the answers to one action. It has 
 machines, lanes, or usage budgets**, so it cannot be the usage source. The gate router uses it for
 what it is: the **admission and prioritization layer** per job. Usage budgets come from
 `UsageSource`. `fake` is a test double at the `Router` seam (`test/support/fake-router.ts`), never
-configured. Mode is the **router mode** (`settings.routerMode`, `POST /ui/api/router-mode`).
+configured. Its advice is always applied: there is no router mode (issue #211).
 
 - `gate-router`: spawns `<python> src/plugins/router/gate-router/gate_shim.py` with JSON on stdin, in
   its own process group (a timeout kills the group, so no `claude` outlives it) and with the Claude Code
@@ -236,9 +235,8 @@ configured. Mode is the **router mode** (`settings.routerMode`, `POST /ui/api/ro
   `lookup` → `run_deterministic`; `chat` → `chat_only`; `account` → `ask_human`;
   `meta.needs_subagent` → `allow_subagent`; `research`/`browser` → `research_capped`; else
   `proceed_full`.
-- **Mode** (router mode) is hopper's, persisted in the store (`settings.routerMode`),
-  initialised from `HOPPER_ROUTER_MODE` (default `shadow`), switched at runtime in the UI
-  (`POST /ui/api/router-mode`).
+- **No mode.** The router's advice is always applied (issue #211). Jev is told `mode: active`
+  by the shim, since the hopper honours its advice.
 
 ## HTTP API
 
@@ -251,7 +249,7 @@ Loopback (`127.0.0.1`), plus the LAN names when set — "Reaching the UI across 
 
 | method | path | body / query | returns |
 |--------|------|--------------|---------|
-| GET | `/api/health` | | `{ ok, version, routerMode, router, fallback, executors, uptimeS }` (phase 5) |
+| GET | `/api/health` | | `{ ok, version, router, fallback, executors, uptimeS }` (phase 5; no `routerMode` since issue #211) |
 | POST | `/api/jobs` | `JobSpec` | 201 `Job` · 400 unknown executor / invalid payload |
 | GET | `/api/jobs` | `?status=queued,held&limit=100` | `{ jobs: Job[] }` newest first |
 | GET | `/api/jobs/:id` | | `Job` · 404 |
@@ -319,7 +317,7 @@ constructs adapters.
 src/store/index.ts      openStore(o: { path: string; clock: Clock; idGen?: IdGen }): Store
 src/webhooks/index.ts   createWebhookDispatcher(o: { store: Store; clock: Clock; baseMs: number;
                           timeoutMs?: number; maxAttempts?: number; sweepMs?: number }): WebhookDispatcher
-src/plugins/index.ts    createPluginHost(o: { pluginDir; pluginsFile; dataDir; clock; logger; routerMode();
+src/plugins/index.ts    createPluginHost(o: { pluginDir; pluginsFile; dataDir; clock; logger;
                           jobSourceContext?; machineContext?; defaultLevels?; defaultExecutors?;
                           kit?; builtins?; intervalMs? }): PluginHost
                           — start(), stop(), router (live), routerStatus(), levels(), executors(),
@@ -370,8 +368,8 @@ Every event: `{ seq, id, type, at, jobId?, laneId?, machineId?, decisionId?, dat
 | `job.reprioritized` | `{ from, to, reason }` — phase 3, source re-sort |
 | `lane.opened` | `{}` |
 | `lane.closed` | `{ reason }` — the lane plan's reason, `drained`, or `daemon restart` |
-| `decision.made` | v2 `{ decisionId, trigger, routerMode, starts, holds, lanes, divergences }` |
-| `router.mode_changed` | `{ from, to }` (was `jev.mode_changed`) |
+| `decision.made` | v3 `{ decisionId, trigger, starts, holds, lanes, divergences }` |
+| `router.mode_changed` | retired (issue #211): nothing emits it; stored ones still read |
 
 The usage-change trigger is named `usage.changed`; it is a trigger, not an event.
 
@@ -380,8 +378,8 @@ The usage-change trigger is named `usage.changed`; it is a trigger, not an event
 - **Jev is not a usage source.** It classifies one request; it knows no machines, lanes or
   budgets. It is the per-job admission and prioritization layer; budgets come from a
   `UsageSource`.
-- **Jev advice is recorded for every job.** In shadow mode a job may start, or finish,
-  before Jev answers; the advice still lands on the job and in `job.prioritized`
+- **Jev advice is recorded for every job.** In shadow mode (removed by issue #211: a job now
+  waits for its advice) a job could start, or finish, before Jev answered; the advice still lands on the job and in `job.prioritized`
   (`statusAtAdvice` says when). Classification starts when a job is queued; a sweep of
   waiting jobs without advice is the retry path.
 - **Divergence is recorded only for jobs Jev had classified at decision time.** A shadow
@@ -406,7 +404,7 @@ the current list is "Settled in slice 4" → "Configuration (env), as of slice 5
 | `HOPPER_PORT` | `4790` |
 | `HOPPER_DB` | `~/.local/share/hopper/hopper.db` |
 | `HOPPER_TICK_MS` | `2000` |
-| `HOPPER_JEV_MODE` | `shadow` (initial router mode only; the stored setting wins once set) |
+| `HOPPER_JEV_MODE` | `shadow` (initial router mode only; the stored setting wins once set). *Removed with the router mode, issue #211.* |
 | `HOPPER_LOCAL_LANES` | `4` |
 | `HOPPER_SOFT_LIMIT` / `HARD_LIMIT` | `0.7` / `0.95` |
 | `HOPPER_JEV_CHEAP_BOOST` | `10` |
@@ -977,7 +975,6 @@ token and send any `Origin`. Cookies are no better here: they ignore ports, so a
 | POST | `/ui/api/questions/:id/close` | `{}` | `QuestionService.closeByHuman` (404/409): close without answering ("Questions" → Close) |
 | POST | `/ui/api/questions/:id/dismiss` | `{}` | `QuestionService.dismissByHuman` (404/409): drop the question; a job still waiting on it is cancelled ("Questions" → Dismiss) |
 | POST | `/ui/api/questions/:id/seen` | `{}` | `QuestionService.markSeen` (404): `seenAt` once; clears the nav badge |
-| POST | `/ui/api/router-mode` | `{ mode }` | set router mode (phase 5; was `/ui/api/jev`) |
 | POST | `/ui/api/plugins` | `{ action, … }` | edit plugins.yaml: one instance's options, select a plugin, add or remove a list role's instance, rescan (phase 5 slice 7, issue #4; "Settled in slice 7") |
 | POST | `/ui/api/rules-file` | `{ text, version }` | replace the rules file whole (issue #18, "Question gates"): 400 over 64 KiB, 409 stale `version` |
 | POST | `/ui/api/webhooks` | `{ action, name, … }` | edit the webhook subscriptions (rows in the store, issue #78): add (naming a `WEBHOOK_SECRET_*` variable), edit (url, events, active), remove one; answers `GET /api/webhooks`, never a secret (issues #18, #56) (issue #18, "Webhook subscriptions in the UI") |
@@ -2257,7 +2254,7 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
 | `HOPPER_PORT` | `4790` |
 | `HOPPER_DB` | `~/.local/share/hopper/hopper.db` |
 | `HOPPER_TICK_MS` | `2000` |
-| `HOPPER_ROUTER_MODE` | `shadow` (initial router mode only; the stored setting wins once set) |
+| `HOPPER_ROUTER_MODE` | *Removed by issue #211: there is no router mode.* |
 | `HOPPER_SOFT_LIMIT` / `HARD_LIMIT` | `0.7` / `0.95` |
 | `HOPPER_ROUTER_CHEAP_BOOST` | `10` |
 | `HOPPER_WEBHOOK_BASE_MS` | `1000` |
@@ -2848,7 +2845,7 @@ responsive and fast. Builds on the at-a-glance board (issue #5).
   waiting / ended, ended-per-hour chart, usage gauges, live activity), Questions, Decisions,
   Events, Sources, Machines, Plugins (#13's panel, ported: "Settled in slice 7"), Webhooks. Charts read `/api/events?types=…&limit=5000`
   (`HISTORY_TYPES`): lane spans are derived client-side, no new API; ended-per-hour counts the job store's ended jobs.
-- **Mutations unchanged**: cancel (now behind a confirm dialog), approve, answer, router mode,
+- **Mutations unchanged**: cancel (now behind a confirm dialog), approve, answer, router mode (removed by issue #211),
   question close, plugins (options, select, rescan), logout — same `/ui/api/*` routes and session header.
 - **Theme.** Dark by default, light by toggle, remembered in `localStorage` (`jh_theme`).
 - **Overview layout** (issue #73). The Overview's panels are laid out on one three-column grid by the
@@ -3345,7 +3342,7 @@ scope. So no rule targets a lane.
 **Router.** The Routing view lists every router plugin with its detection. One that cannot run is
 shown with its reason or its setup command and is never offered (on the hopper host `gate-router` is
 unavailable while the Jev checkout is missing, so the reason is on screen). Selecting a router uses
-`POST /ui/api/plugins` `select`; shadow/active uses `POST /ui/api/router-mode`; the configured
+`POST /ui/api/plugins` `select`; the configured
 instance's options use the shared options form (`ui/src/components/plugin-form.tsx`, also used
 by the Plugins view and the question gates).
 
@@ -3681,7 +3678,7 @@ first sign-in, not at boot: an unreachable issuer must not stop the daemon.
 |---|---|
 | `viewer` | `POST /ui/api/logout` |
 | `operator` | + jobs `cancel`, `approve`; questions `answer`, `close`, `dismiss`, `seen` |
-| `admin` | + `router-mode`, `plugins`, `rules-file`, `webhooks`, `machines`, `routing`, `device-link`, `update`, `plugin-store`, `users` (issue #158: every role acts inside the session's own user; `update`, `plugin-store` and `users` are the instance's) |
+| `admin` | + `queue-gate`, `plugins`, `rules-file`, `webhooks`, `machines`, `routing`, `device-link`, `update`, `plugin-store`, `users` (issue #158: every role acts inside the session's own user; `update`, `plugin-store` and `users` are the instance's) |
 
 A live session whose role is short gets 403 `{ error, needs }` — the UI keeps the session and
 toasts; any other 403 still means "log in again". The login code always gives `admin`. A provider's
@@ -4576,7 +4573,7 @@ plugins from a store URL is a separate issue.
 
 Owner decision: several people use one hopper, and **each user is fundamentally separate**. A user's
 jobs, questions, events, decisions, lanes, job sources, machines, executors, escalation levels, rules
-document, routing, router mode, usage sources, webhook subscriptions and credentials are their own,
+document, routing, queue gate, usage sources, webhook subscriptions and credentials are their own,
 never visible to or touchable by another user. The **instance** is what they share: the daemon
 process and its port, sign-in (`auth.yaml`), the plugin store and its installs, self-update. No API
 keeps its old shape (no shims, every caller changed); persisted state migrates without loss: an
@@ -4607,7 +4604,7 @@ install from before holds one user's work, and it becomes the first user's — `
 - **Ports** — `InstanceStore` (`users`, `identities`, `uiSessions`, `loginCodes`, `documents` —
   `auth.yaml` —, `settings` — the instance's —, `userStore(user)`, `tx`, `close`) and `UserStore`
   (the store shape from before, without UI sessions and login codes; its `documents` hold
-  `plugins.yaml` and `rules.md`, its `settings` the router mode). `userStore(user)` opens one more
+  `plugins.yaml` and `rules.md`, its `settings` the user's settings). `userStore(user)` opens one more
   connection whose `search_path` is the user schema (the `?schema=` mechanism), and runs the tenant
   track. `openInstanceStore` replaces `openStore`.
 
@@ -4766,7 +4763,7 @@ shares one database login.
 
 | Side | What | Who reads it |
 |------|------|--------------|
-| **A user's own — sensitive** | jobs (payload, prompt, title, source item, result, failure), questions and answers, events, decisions, lanes and what runs in them, job sources, machines and their ssh names, executors, escalation levels, the rules record, routing, router mode, the queue gate and order, usage sources and their accounts (email, plan, usage), webhook subscriptions and deliveries, the `plugins` record and every option in it, gh login and every CLI's config in the user work dir, the user's secret variables, the event stream, the user schema | that user's own sessions only — never an admin of the instance, never a request without a session once there is more than one user |
+| **A user's own — sensitive** | jobs (payload, prompt, title, source item, result, failure), questions and answers, events, decisions, lanes and what runs in them, job sources, machines and their ssh names, executors, escalation levels, the rules record, routing, the queue gate and order, usage sources and their accounts (email, plan, usage), webhook subscriptions and deliveries, the `plugins` record and every option in it, gh login and every CLI's config in the user work dir, the user's secret variables, the event stream, the user schema | that user's own sessions only — never an admin of the instance, never a request without a session once there is more than one user |
 | **The instance's** | the users list (id, name, when added), the sign-in config (realms, password accounts and the user each signs in as, role rules — never a hash), the plugin store and its installs, self-update and its status, the instance schema | an admin (`GET /api/users`, `/api/realms`, `/api/plugin-store`, `/api/update`); loopback without a session reads them as before |
 | **Instance totals** | users; jobs not ended by status (`queued`, `held`, `claimed`, `running`, `waiting_answer`); open questions; lanes open and busy — summed over every user | an admin (`GET /api/instance`, Settings → Users); never one user's share, nothing named |
 
@@ -4928,3 +4925,26 @@ The plugin store's catalogue `plugin-store.yaml` is a file of the store's reposi
 **Verification.** `test/store/config.test.ts`, `test/store/migration-19.test.ts`,
 `test/store/tenant-migration-4.test.ts`, `test/integration/plugins-edit.test.ts` (a command-bearing
 option edited from the UI), `test/ui/plugins.test.ts`, `test/auth/edit.test.ts`, `test/cli.test.ts`.
+
+## No router mode (issue #211, 2026-10-06)
+
+Owner decision: the router is the queue manager, and its advice is applied. The router mode
+(`shadow`: advice recorded, never applied; `active`: advice holds and reorders jobs) was a
+leftover from measuring Jev before trusting it, so it is gone, and `active` is the only behaviour.
+
+- **Decider.** Step 3's verdict is always applied: a job with no advice yet waits (`awaiting router
+  advice`); `ask_human`, `stop_retry` and `reuse_cache` hold it until it is approved; `chat_only` and
+  `run_deterministic` add `routerCheapBoost`. `DecisionInputs` and `Decision` carry no mode;
+  `effectivePriority(job, policy)`. A Divergence still records what the advice changed.
+- **Gone:** `HOPPER_ROUTER_MODE` (now an unread variable in `leftoverEnv`), the `routerMode` setting,
+  `POST /ui/api/router-mode`, `routerMode` in `/api/health`, `mode` in `/api/router`, the router's
+  `ctx.routerMode()` (`RoleContext.router` adds nothing), the top bar's mode button, the Routing
+  view's shadow/active buttons, the mode badge on a Decision.
+- **Events.** `job.prioritized` v3 `{ advice, statusAtAdvice }` and `decision.made` v3 drop the
+  mode; `router.mode_changed` is retired. v2 of both and `router.mode_changed` v1 stay readable
+  (`src/events/legacy.ts`).
+- **Persisted state.** Tenant migration 7 deletes the `routerMode` setting. Stored Decisions keep
+  their `routerMode` field as history; nothing reads it.
+- **Jev** is told `mode: active` by the gate router's shim: the hopper honours its advice.
+- **Admission is by advice.** A Decision claims every job advised by then, so a burst of jobs may
+  start over a few Decisions as the advice arrives, never held for a lane that is free.

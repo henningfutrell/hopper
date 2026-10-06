@@ -2,7 +2,7 @@
 // Each command validates, writes in one transaction, emits its event, and lets the event
 // listener schedule the next Decision. Jobs are created only by ingest (source-host.ts).
 import { TERMINAL_STATUSES } from '../domain/types.ts';
-import type { Job, RouterMode, UsageReading } from '../domain/types.ts';
+import type { Job, UsageReading } from '../domain/types.ts';
 import { nowIso, type EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
 import type { Cleanup } from './cleanup.ts';
@@ -21,7 +21,6 @@ export interface Commands {
   /** Cancel a non-terminal job; `reason` is recorded on job.cancelled (and told to its source). */
   cancel(id: string, reason: string): Job;
   approve(id: string): Job;
-  setRouterMode(mode: RouterMode): RouterMode;
   /** Tests only: the fake usage source has no HTTP route. */
   setFakeUsage(reading: Omit<UsageReading, 'source' | 'at'>): UsageReading[];
 }
@@ -54,16 +53,6 @@ export function createCommands(c: EngineContext, runner: Runner, cleanup: Cleanu
         store.events.append({ type: 'job.approved', jobId: id, data: {} });
         return next;
       });
-    },
-
-    setRouterMode(mode) {
-      const from = c.routerMode();
-      if (from === mode) return mode;
-      store.tx(() => {
-        store.settings.setRouterMode(mode);
-        store.events.append({ type: 'router.mode_changed', data: { from, to: mode } });
-      });
-      return mode;
     },
 
     setFakeUsage(reading) {

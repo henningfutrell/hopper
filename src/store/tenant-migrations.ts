@@ -156,6 +156,8 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
   levelsNamedAsLevels,
   // 6: the gate router's settings are concepts, not leftovers (issue #217).
   gateRouterSettingsAsConcepts,
+  // 7: there is no router mode (issue #211): the router's advice is always applied.
+  "DELETE FROM settings WHERE key = 'routerMode'",
 ];
 
 /** A user schema's version once migrated. */

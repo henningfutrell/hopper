@@ -8,7 +8,7 @@ const lanePlan = { machineId: 'm', current: 0, target: 1, open: 1, close: [], dr
 
 export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'job.queued': { spec: { executor: 'test', payload: { op: 'echo' }, priority: 60, goal: 'g' }, priority: 60, source: { source: 'github', kind: 'github', key: 'https://x/1', number: 1 } },
-  'job.prioritized': { advice, mode: 'shadow', statusAtAdvice: 'queued' },
+  'job.prioritized': { advice, statusAtAdvice: 'queued' },
   'job.held': { reason: 'budget' },
   'job.approved': {},
   'job.claimed': { attempts: 1, effectivePriority: 50, reason: 'idle lane' },
@@ -22,8 +22,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'job.reprioritized': { from: 50, to: 80, reason: 'project:Priority=P1' },
   'lane.opened': {},
   'lane.closed': { reason: 'drained' },
-  'decision.made': { decisionId: 'd1', trigger: 'tick', routerMode: 'shadow', starts: [start], holds: [{ jobId: 'j2', reason: 'full' }], lanes: [lanePlan], divergences: [{ jobId: 'j1', advice: 'ask_human', native: 'start', withAdvice: 'hold', note: 'n' }] },
-  'router.mode_changed': { from: 'shadow', to: 'active' },
+  'decision.made': { decisionId: 'd1', trigger: 'tick', starts: [start], holds: [{ jobId: 'j2', reason: 'full' }], lanes: [lanePlan], divergences: [{ jobId: 'j1', advice: 'ask_human', native: 'start', withAdvice: 'hold', note: 'n' }] },
   'question.asked': { questionId: 'q1', text: 'which?', detectedBy: 'marker' },
   'question.escalated': { questionId: 'q1', target: 'human', reason: 'asked', text: 'which?', jobId: 'j1', goal: 'g', answerUrl: 'http://127.0.0.1/q', notifyCount: 0, renotify: true },
   'question.answered': { questionId: 'q1', by: 'human', answer: 'yes' },

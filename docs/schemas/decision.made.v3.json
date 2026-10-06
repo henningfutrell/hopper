@@ -1,0 +1,168 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "decisionId": {
+      "type": "string"
+    },
+    "trigger": {
+      "type": "string"
+    },
+    "starts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "jobId": {
+            "type": "string"
+          },
+          "laneId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "machineId": {
+            "type": "string"
+          },
+          "effectivePriority": {
+            "type": "number"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "jobId",
+          "laneId",
+          "machineId",
+          "effectivePriority",
+          "reason"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "holds": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "jobId": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "jobId",
+          "reason"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "lanes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "machineId": {
+            "type": "string"
+          },
+          "current": {
+            "type": "number"
+          },
+          "target": {
+            "type": "number"
+          },
+          "open": {
+            "type": "number"
+          },
+          "close": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "drain": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "machineId",
+          "current",
+          "target",
+          "open",
+          "close",
+          "drain",
+          "reason"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "divergences": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "jobId": {
+            "type": "string"
+          },
+          "advice": {
+            "type": "string",
+            "enum": [
+              "proceed_full",
+              "reuse_cache",
+              "stop_retry",
+              "run_deterministic",
+              "chat_only",
+              "ask_human",
+              "allow_subagent",
+              "research_capped"
+            ]
+          },
+          "native": {
+            "type": "string",
+            "enum": [
+              "start",
+              "hold"
+            ]
+          },
+          "withAdvice": {
+            "type": "string",
+            "enum": [
+              "start",
+              "hold"
+            ]
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "jobId",
+          "advice",
+          "native",
+          "withAdvice",
+          "note"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "decisionId",
+    "trigger",
+    "starts",
+    "holds",
+    "lanes",
+    "divergences"
+  ],
+  "additionalProperties": false
+}

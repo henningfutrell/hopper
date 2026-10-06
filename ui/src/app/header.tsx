@@ -1,4 +1,4 @@
-// The top bar: version (opens the version and update panel, on every screen), connection, router mode (switchable by an admin),
+// The top bar: version (opens the version and update panel, on every screen), connection,
 // router health, uptime, the API reference, who you are at every width (issue #167: the user the session
 // acts for with its role), logout, and a device link for another browser. Shown only signed in (issue #213).
 import { BookOpen, LogOut, Moon, Sun } from 'lucide-react';
@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Dot, StatusBadge } from '@/components/status';
 import { duration } from '@/model/format';
-import { act, logout, refreshHealth, useHopper } from '@/store';
+import { logout, useHopper } from '@/store';
 import { useCanAdmin } from '@/store/selectors';
 import { DeviceLink } from './device-link';
 import { UpdateButton } from './update';
@@ -20,8 +20,6 @@ export function Header({ nav }: { nav?: React.ReactNode }) {
   const local = useHopper((s) => s.signIn?.local ?? false);
   const canAdmin = useCanAdmin();
   const theme = useTheme();
-  const mode = health?.routerMode;
-  const next = mode === 'active' ? 'shadow' : 'active';
   return (
     <header className="sticky top-0 z-30 border-b bg-background/80 backdrop-blur-md">
       <div className="flex h-14 items-center gap-3 px-4 lg:px-6">
@@ -37,17 +35,6 @@ export function Header({ nav }: { nav?: React.ReactNode }) {
             <span className="font-mono">{health?.router ?? '…'}</span>
             {health?.fallback && <StatusBadge status="fallback" tone="warn" />}
           </div>
-          {mode && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="outline" size="xs" disabled={!canAdmin} className="gap-1.5"
-                  onClick={() => act('/ui/api/router-mode', { mode: next }, `Router mode: ${next}`).then(() => refreshHealth())}>
-                  <span className={mode === 'active' ? 'text-warn' : 'text-muted-foreground'}>{mode}</span>
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>{canAdmin ? `Router mode. Click to switch to ${next}.` : 'Router mode. Only an admin can switch it.'}</TooltipContent>
-            </Tooltip>
-          )}
           <span className="num hidden text-muted-foreground sm:inline">up {health ? duration(health.uptimeS) : '…'}</span>
           <span className="flex items-center gap-1.5 text-muted-foreground">
             <Dot tone={conn === 'live' ? 'ok' : 'warn'} pulse={conn === 'live'} /><span className="hidden sm:inline">{conn}</span>

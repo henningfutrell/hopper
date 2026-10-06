@@ -17,15 +17,14 @@ export function createClassifier(c: EngineContext): Classifier {
   async function classify(job: Job): Promise<void> {
     const advice = await c.router.advise(job);
     if (c.stopping()) return;
-    // Advice is recorded whatever the job's status now: in shadow mode a job may start, or
-    // even finish, before the router answers, and shadow mode exists to measure every job.
+    // Advice is recorded whatever the job's status now: a job the user approved, or one cancelled,
+    // may have moved on before the router answers.
     const current = c.store.jobs.get(job.id);
     if (!current || current.advice) return;
-    const mode = c.routerMode();
     c.store.tx(() => {
       c.store.jobs.update(job.id, { advice });
       c.store.events.append({
-        type: 'job.prioritized', jobId: job.id, data: { advice, mode, statusAtAdvice: current.status },
+        type: 'job.prioritized', jobId: job.id, data: { advice, statusAtAdvice: current.status },
       });
     });
   }
