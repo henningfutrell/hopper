@@ -464,6 +464,3 @@ export type GhLoginStatus =
   | { state: 'waiting'; userCode: string; verificationUri: string }
   | { state: 'failed'; error: string }
   | { state: 'unavailable'; reason: string };
-
-// The herdr terminal (issue #189).
-export type { HerdrMachineProfile, HerdrMachineSync, HerdrTerminalMachine, HerdrTerminalStatus } from './herdr-terminal.ts';

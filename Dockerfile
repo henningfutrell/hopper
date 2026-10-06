@@ -7,19 +7,11 @@
 FROM node:26-bookworm-slim AS ui
 WORKDIR /build
 COPY package.json package-lock.json ./
-# The UI build needs no native module.
-RUN npm ci --no-audit --no-fund --ignore-scripts
+RUN npm ci --no-audit --no-fund
 COPY ui ./ui
 COPY site/hopper-logo.svg ./site/hopper-logo.svg
 COPY src ./src
 RUN npm run build:ui && test -s ui/dist/index.html
-
-# ---- production node_modules: node-pty (the herdr terminal's pseudo-terminal) is built here --------
-FROM node:26-bookworm-slim AS deps
-RUN apt-get update && apt-get install -y --no-install-recommends make g++ python3 && rm -rf /var/lib/apt/lists/*
-WORKDIR /app
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev --no-audit --no-fund && test -f node_modules/node-pty/build/Release/pty.node
 
 # ---- the daemon --------------------------------------------------------------------------------
 FROM node:26-bookworm-slim
@@ -31,7 +23,7 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/* \
  && git config --system credential.https://github.com.helper '!gh auth git-credential'
 # herdr's CLI (herdr.dev; the installer checks the release's SHA-256): the herdr-claude executor
-# detects it before it runs jobs on attached machines, and the herdr terminal's root herdr runs here.
+# detects it before it runs jobs on attached machines.
 RUN curl -fsSL https://herdr.dev/install.sh | HERDR_INSTALL_DIR=/usr/local/bin sh && herdr --version
 # The claude CLI, for the escalation levels, the usage reading and Jev's Haiku gates. It signs
 # in from the environment (CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY). INSTALL_CLAUDE=false skips it.
@@ -46,7 +38,7 @@ RUN install -d -o node -g node /home/node/.claude \
 
 WORKDIR /app
 COPY package.json package-lock.json ./
-COPY --from=deps /app/node_modules ./node_modules
+RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
 COPY src ./src
 COPY scripts ./scripts
 COPY WHATS-NEW.md ./

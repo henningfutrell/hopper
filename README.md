@@ -249,13 +249,6 @@ Every command below runs on the hopper's host, as the user the daemon runs as, f
 machine online or offline; the daemon's log says why one is offline
 (`journalctl --user -u hopper`).
 
-**Every machine's herdr in the browser.** The UI's **herdr** view (admins) is a real terminal running
-herdr on the hopper's host (in its container, when it runs in one). Its sidebar lists every ssh target
-that runs herdr and has a pinned host key, beside Local: click one to work in that machine's herdr
-session. The hopper reaches them with its own ssh key, as it does for jobs. A strip above the terminal
-says which machines are listed and why the others are not (a container target or a client target has
-no herdr the hopper can ssh to).
-
 **Machine defaults.** A machine added in the Machines view starts with the machine defaults: its
 lanes and the executors it runs (one lane and `herdr-claude` until you change them). Change them
 there with **Defaults**; they apply to machines added afterwards, never to ones already there.
