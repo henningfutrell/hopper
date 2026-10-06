@@ -14,5 +14,10 @@ const MACHINE_VARIABLE = /^(PATH|HOME|USER|LOGNAME|SHELL|LANG|LANGUAGE|TERM|TZ|T
  */
 export function userProcessEnv(userEnv: Readonly<Record<string, string>> = {}, env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   if (Object.keys(userEnv).length === 0) return env;
-  return { ...Object.fromEntries(Object.entries(env).filter(([k]) => MACHINE_VARIABLE.test(k))), ...userEnv };
+  return { ...machineEnv(env), ...userEnv };
+}
+
+/** Only the machine's variables of an environment: no secret, no marker of a parent session. */
+export function machineEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return Object.fromEntries(Object.entries(env).filter(([k]) => MACHINE_VARIABLE.test(k)));
 }

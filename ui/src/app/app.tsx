@@ -1,6 +1,6 @@
 // The shell: header, navigation, the current view. Loads once, then lives on SSE.
 import { AlertTriangle } from 'lucide-react';
-import { useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Toaster } from '@/components/ui/sonner';
 import { useForgetCleared } from '@/hooks/use-dismissed';
@@ -21,8 +21,12 @@ import { Header } from './header';
 import { UpdateNotice } from './update';
 import { MobileNav, Sidebar, useView, viewLabel, type View } from './nav';
 
+// The herdr view carries xterm.js: loaded when opened, not with every page.
+const LazyHerdr = lazy(() => import('@/views/herdr').then((m) => ({ default: m.Herdr })));
+const Herdr = () => <Suspense fallback={<Skeleton className="h-64" />}><LazyHerdr /></Suspense>;
+
 const VIEW: Record<View, () => React.ReactNode> = {
-  overview: Overview, queue: Queue, questions: Questions, decisions: Decisions, events: Events, sources: Sources, machines: Machines, usage: Usage, settings: Settings,
+  overview: Overview, queue: Queue, questions: Questions, decisions: Decisions, events: Events, sources: Sources, machines: Machines, herdr: Herdr, usage: Usage, settings: Settings,
 };
 
 function Loading() {
