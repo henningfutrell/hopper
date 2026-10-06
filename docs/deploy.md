@@ -268,22 +268,19 @@ A group DN holds commas: give the groups as a JSON array. Active Directory adds
 
 ### GitHub sign-in
 
-People sign in with their GitHub account, through a GitHub OAuth app made for this hopper
-(https://github.com/settings/developers → **OAuth Apps → New OAuth App**; callback URL
-`https://hopper.example.com/ui/auth/github/callback`). This is a way to sign in only.
+Every hopper offers GitHub sign-in: a device code through the hopper's GitHub App, nothing to register,
+no secret. The first person to sign in with it becomes admin; these variables set the rules for everyone
+after. The same sign-in connects their GitHub, which their jobs work through (`docs/sign-in.md` "GitHub").
 
 ```sh
-HOPPER_PUBLIC_URL=https://hopper.example.com
 HOPPER_SIGN_IN_REALM_GITHUB_TYPE=github
-HOPPER_SIGN_IN_REALM_GITHUB_CLIENT_ID=Iv1.0123456789abcdef
-HOPPER_SIGN_IN_REALM_GITHUB_CLIENT_SECRET_FILE=/run/secrets/github_client_secret
 HOPPER_SIGN_IN_REALM_GITHUB_ROLES_ADMIN_SUBJECTS=583231
-HOPPER_SIGN_IN_REALM_GITHUB_ROLES_OPERATOR_GROUPS=acme/platform
+HOPPER_SIGN_IN_REALM_GITHUB_ROLES_OPERATOR_USERNAMES=octocat
 HOPPER_SIGN_IN_LOCAL_ENABLED=false
 ```
 
-A subject is the numeric user id (`id` in `https://api.github.com/users/<login>`); a group is a team,
-`org/team-slug`. GitHub Enterprise Server: `WEB_URL` and `API_URL`.
+A subject is the numeric user id (`id` in `https://api.github.com/users/<login>`). Another GitHub App or
+GitHub Enterprise: `HOPPER_GITHUB_URL`, `HOPPER_GITHUB_CLIENT_ID`, `HOPPER_GITHUB_APP_SLUG`.
 
 ## Rename from job-hopper
 

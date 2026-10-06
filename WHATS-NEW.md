@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- Sign in with GitHub: press the button, enter the code it shows on GitHub, and you are in — on a new hopper too, where the first person to sign in with GitHub becomes admin. That same sign-in connects your GitHub: your issues labelled hopper become your jobs, and your jobs act as you there, marked as done through the hopper. The page says plainly when GitHub is not connected.
 - The sign-in page no longer tells you to run a script or paste a login code: it offers only the ways to sign in, such as GitHub.
 - Settings now has a Version history page: every version of the hopper you run, newest first, with the day it came out and what it brought.
 - Admins see, under Settings → Users, how many jobs every user together finished, failed, cancelled or turned away in the last day, and their usage added up, without seeing any one person's work or account.

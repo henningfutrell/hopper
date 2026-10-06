@@ -1,6 +1,6 @@
 # hopper — repo law
 
-Local job-queue daemon that pulls its jobs. Loopback plus an opt-in LAN or public URL behind a reverse proxy, sign-in through the login code, no sign-in, or realms (LDAP, OIDC, GitHub, SAML, or an auth gateway in front that signed people in); no password accounts of its own, and a fresh hopper bootstraps with the login code. TypeScript run directly by Node ≥ 24.
+Local job-queue daemon that pulls its jobs. Loopback plus an opt-in LAN or public URL behind a reverse proxy, sign-in through the login code, no sign-in, or realms (GitHub through the hopper's app — the main way, and the connection jobs work through —, LDAP, OIDC, SAML, or an auth gateway in front that signed people in); no password accounts of its own, and a fresh hopper bootstraps with the login code. TypeScript run directly by Node ≥ 24.
 
 North star (owner decision): an extendable and plugin architecture; every part must serve it. `docs/design.md` "North star".
 
@@ -53,7 +53,9 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   named by a command-bearing option. The hopper stores no secret — not in the database, not in a file
   of its own; a token or code it mints is only hashed (`docs/design.md` "Secrets"). One exception, by
   owner direction (issue #216): a realm's own secrets (`clientSecret`, `bindPassword`) are stored in the
-  database, set in the UI or from the `HOPPER_SIGN_IN_*` environment, and never answered back by any route. No default names a path on one
+  database, set in the UI or from the `HOPPER_SIGN_IN_*` environment, and never answered back by any route. A second: a **connected account**'s token (issue #214), which the
+  provider grants the hopper's app and no runtime holds — kept in that user's schema, never answered
+  by any route. No default names a path on one
   machine; the work dir (`HOPPER_WORK_DIR`) is scratch only. The operator CLI (`src/cli.ts`,
   `hopper`) writes the database directly: whoever runs it holds its credentials.
 - **Never write into the Jev repo.** The shim reads it; logs go to hopper's work dir.
