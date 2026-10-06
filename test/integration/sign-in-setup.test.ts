@@ -1,7 +1,7 @@
 // Setting sign-in up (issue #216, docs/sign-in.md): a realm's secrets are set in the UI and stored with
 // it, never answered back; realms, the login code and no sign-in can be injected through HOPPER_SIGN_IN_*
-// variables at launch, written to the database at each start. The first sign-in is the login code
-// (issue #237): login-key-bootstrap.test.ts.
+// variables at launch, written to the database at each start. No bootstrap login (issue #238):
+// first-sign-in.test.ts.
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { startTestApp, type TestApp } from '../support/app.ts';
 import { signIn } from '../support/idp.ts';

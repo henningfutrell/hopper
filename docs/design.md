@@ -38,7 +38,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 |-----|------|-----------------|
 | `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts; `machines.ts` attached machines and their edit; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate), ports (`ports.ts`, re-exporting the store's from `store.ts`) | anything else in `src/` |
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock | everything but `domain/` |
-| `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations (the instance's `migrations.ts` with migration 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214) | engine, http, decider |
+| `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations (the instance's `migrations.ts` with migration 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238) | engine, http, decider |
 | `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), identity → user (`identities.ts`: link or provision) | http, decider |
 | `src/webhooks/` | signing, dispatcher, retry/backoff, the secret of a subscription from the runtime (`dispatcher.ts`), the UI edit of the subscriptions (`edit.ts`, rows in the store) | engine, http, decider |
 | `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, the plugins config (`plugins-config.ts`) + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt, `escalation-level/anthropic-api/` asks the Claude API with the same prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-gh/`, `job-source/github-app/` and `job-source/github-account/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser); `usage-source/command-usage/` reads any agent framework's usage and account from a command that prints them as JSON; `usage-source/polled.ts` the background refresh both share, `usage-source/run.ts` their command runner; `notifier/grokbot-routine/` is the Grok Bot routine webhook — env-file reader and notifier; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
@@ -48,7 +48,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin) | engine, http, store, plugins |
 | `src/routing/` | routing rules: the plugins config's `routing` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
 | `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; routing at intake (`source-host.ts`); restart recovery | http |
-| `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the sign-in config at start — named secrets taken in, the environment applied, a way in ensured, the first sign-in decided (`start.ts`, issues #216, #237) — and the `HOPPER_SIGN_IN_*` variables (`environment.ts`), the role rules (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm, gateway realm) and their adapters `ldap.ts` (ldapts), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), `gateway.ts` (jose + openid-client), the sign-in service — form realms in order, gateway realms in order, flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
+| `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the sign-in config at start — named secrets taken in, the environment applied (`start.ts`, issue #216; no bootstrap login, issue #238) — and the `HOPPER_SIGN_IN_*` variables (`environment.ts`), the role rules (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm, gateway realm) and their adapters `ldap.ts` (ldapts), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), `gateway.ts` (jose + openid-client), the sign-in service — form realms in order, gateway realms in order, flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
 | `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`) | engine, http, store, plugins, decider |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets") | everything |
 | `src/update/` | self-update ("Self-update"): install.json, the git mirror of the update repository, the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
@@ -56,7 +56,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
 | `site/` | the install page, published to GitHub Pages by `.github/workflows/pages.yml` with `scripts/get.sh` beside it as `install.sh`: one static `index.html`, no build step, nothing loaded from another site | everything in the repo at runtime; it links to the docs on GitHub |
 | `examples/plugins/` | one minimal runnable custom plugin per role, for authors (`docs/plugins.md`); imports only `hopper/plugin` types and `node:` builtins | everything in `src/` at runtime |
-| `src/main.ts` | composition root: config → instance store → sign-in config (`prepareSignIn`: the environment applied, a way in ensured; the first sign-in's login code logged once listening) → plugin store → updater → server → one user runtime per user (`src/users/`) | — |
+| `src/main.ts` | composition root: config → instance store → sign-in config (`prepareSignIn`: the environment applied) → plugin store → updater → server → one user runtime per user (`src/users/`) | — |
 | `src/startup-log.ts` | the daemon's startup lines (listening, parts, sign-in) | — |
 | `src/cli.ts` | the operator CLI `hopper`: config records as JSON, login codes, users, `help` — against the daemon's database | engine, executors |
 
@@ -3410,9 +3410,47 @@ up/down, delete; one Save for the whole list). The machine select uses `/api/mac
 routing targets; the executor select uses the configured executors. Forms stack at 390 px width;
 there is no horizontal page scroll.
 
-## Sign-in: realms (issues #39, #53, #185, #200, #215, #216, #237)
+## Sign-in: realms (issues #39, #53, #185, #200, #215, #216, #237, #238)
 
-### No password user realm; the first sign-in is the login code (issue #237, 2026-10-06)
+### No bootstrap login (issue #238, 2026-10-06)
+
+Owner request: "There is no bootstrap login for first start. Each user gets their own whole
+environment." Requirements: no bootstrap login — first start creates no bootstrap user or password;
+each user gets their own whole environment. The issue's third requirement, an admin pane behind a
+special login, was withdrawn by owner direction (issue #240): there is no special admin login, and the
+admin is the first person to sign in with GitHub (issue #239), which every hopper offers (issue #214).
+What the admin can do is issue #241's, not this one's. This also takes back issue #237's bootstrap with
+the login code ("No password user realm" below), which #237's own text marks as superseded by this issue.
+
+- **No bootstrap user** (instance migration 24, `src/store/migration-no-bootstrap.ts`). A new store ends
+  with no user: the default admin account that migrations 17 and 21 make on the way is dropped with its
+  user schema, which holds nothing yet. A migration function is given the version the store had when the
+  run began (`from`, 0 for a new store), so the same migration keeps `admin` on an install from before —
+  its work is persisted state, never dropped — and links no sign-in's identity (`none`/`anonymous`) to it,
+  which it signed in as there. `UserRepository.admin()`, `Runtimes.admin()` and `IdentityLinks.realmsOf`
+  are gone: nothing assumes a user exists. The instance's events go to every user's log and are kept
+  nowhere while there is none (`InstanceEvents.append` returns nothing); the newest are read, and the
+  plugin store's report taken, from the oldest user's runtime.
+- **No bootstrap login code.** The start hands out no login code (`firstSignInLine` and the start's
+  first-sign-in decision are gone), on a new hopper or one from before, and no longer turns the login
+  code on when nothing else lets anyone in: a code nobody can mint is no way in.
+- **No special admin login.** `hopper login-code` and `scripts/open-ui.sh` are gone. A login code still
+  exists, minted only from a signed-in session: a device link (for the session's own user) and a new
+  user's login link.
+- **Each user their own environment.** Every identity's first sign-in makes its user (as since issue
+  #158); no sign-in is now one identity like the others — its first visitor makes its user, everyone
+  after signs in as that user — instead of always reaching `admin`.
+- **The operator CLI** without `--user` acts on the one user; with none yet or several it refuses,
+  naming what to do.
+
+**Residual risk, stated.** The first person to sign in with GitHub becomes admin (issue #239): on a new
+hopper reachable by others, sign in first. A hopper from before whose operator reached `admin` only by
+login code loses that way in: they sign in with GitHub, which makes a new user, and `hopper user transfer
+admin <that user>` (daemon stopped) moves `admin`'s work to it (docs/sign-in.md "Who signs in as which
+user"). A lockout is mended with a role rule from the CLI or the environment (docs/sign-in.md "The
+sign-in config from the CLI").
+
+### No password user realm; the first sign-in is the login code (issue #237, 2026-10-06; the first sign-in gone since issue #238)
 
 Owner request: "Inside the hopper, sign-in is GitHub only. The password user realm is gone." Remove
 the password user realm (no username-and-password sign-in for users); bootstrap with the login key
@@ -4230,11 +4268,10 @@ database and its backups hold no secret but the realms' own (issue #216); the da
 
 ### Login codes
 
-The daemon writes no login code file. `hopper login-code` mints a one-time code into the
-database (`login_codes`: its SHA-256 and an expiry, 10 minutes); `POST /ui/login` takes it once. A
-device link mints its own (one code for all its links). `scripts/open-ui.sh` runs the CLI — the
-database from `HOPPER_DATABASE_URL`, else that line of `HOPPER_ENV_FILE` (default the unit's
-`daemon.env`) — and writes its auto-posting page under `$XDG_RUNTIME_DIR/hopper/` (0700/0600).
+The daemon writes no login code file. A device link, or a new user's login link, mints a one-time code
+into the database (`login_codes`: its SHA-256 and an expiry, 10 minutes; one code for all the links);
+`POST /ui/login` takes it once. Nothing on the host mints one: `hopper login-code` and
+`scripts/open-ui.sh` went with issue #238 ("No bootstrap login").
 
 ### Work dir
 
@@ -4257,9 +4294,9 @@ about the daemon's surface; the CLI is beside it, like editing a file was.
 - `config get|version <document>`; `config set <document> --if-version <version>` (stdin);
   `config edit <document>` ($EDITOR, written back against the version read). A document that would
   not load (plugins/webhooks/auth schema, rules size) is refused; a moved one is refused.
-- `login-code [--link <base url>]`.
-- Since issue #158: `users`, `user add <name>`, and `--user <id>` on `config` and `login-code`
-  ("Users: one hopper, separate users").
+- Since issue #158: `users`, `user add <name>`, and `--user <id>` on `config`
+  ("Users: one hopper, separate users"). Without `--user`, the one user; with none yet or several,
+  refused, naming what to do (issue #238). `login-code` went with issue #238.
 - Since issue #212: `user transfer <from> <to>` — `<to>` takes over `<from>`'s work (docs/sign-in.md).
   The daemon holds a session-level advisory lock per instance schema while it runs; the command
   takes it or refuses, because the daemon keeps a runtime per user and the command removes one.
@@ -4675,7 +4712,7 @@ install from before holds one user's work, and it becomes the first user's — `
   connection whose `search_path` is the user schema (the `?schema=` mechanism), and runs the tenant
   track. `openInstanceStore` replaces `openStore`.
 
-### The default admin account (issue #220, 2026-10-06)
+### The default admin account (issue #220, 2026-10-06; a new hopper has none since issue #238)
 
 Owner decision: no built-in `owner` account. Like Nexus, Argo CD and Grafana, every hopper has a
 **default admin account**, the user `admin` (`ADMIN_ID`, `src/domain/users.ts`), and it is the one

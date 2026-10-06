@@ -177,7 +177,7 @@ Sign-in set up at launch (each also NAME_FILE; written to the database at every 
   HOPPER_SIGN_IN_NONE_ROLE                no sign-in: viewer, operator, admin or off
 
 Once it runs (default port 4790):
-  UI              http://127.0.0.1:4790/        sign in: hopper login-code --link http://127.0.0.1:4790
+  UI              http://127.0.0.1:4790/        sign in with GitHub: the first person to do so is the admin
   API reference   http://127.0.0.1:4790/docs/
   operator CLI    hopper help
 

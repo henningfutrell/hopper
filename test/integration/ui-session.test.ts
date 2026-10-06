@@ -1,9 +1,10 @@
 // The UI session (design.md "UI session and mutations"): a one-time login code minted in the
-// database (`hopper login-code`), POST /ui/login → a page that stores the token in localStorage, and mutations only with that
+// database (a device link's, for the user admin of an install from before), POST /ui/login → a page that stores the token in localStorage, and mutations only with that
 // token in x-hopper-session plus exact Origin, same-origin Sec-Fetch-Site and a JSON body.
-import { runCli } from '../../src/cli.ts';
+import { mintLoginCode } from '../../src/http/ui/login-code.ts';
 import { openDb, parseDatabaseUrl } from '../../src/store/db.ts';
 import { databaseUrlFor } from '../support/database.ts';
+import { withInstance } from '../support/files.ts';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { TOKEN_RE, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { rawRequest } from '../support/http.ts';
@@ -21,13 +22,8 @@ afterEach(async () => {
   cleanup();
 });
 
-/** A fresh code, as `hopper login-code` mints it: into the daemon's database. */
-const readCode = (): string => {
-  let out = '';
-  const code = runCli(['login-code'], { env: { HOPPER_DATABASE_URL: databaseUrlFor(t.dbPath) }, stdin: () => '', out: (x) => { out += x; }, err: () => {} });
-  if (code !== 0) throw new Error(`login-code exited ${code}`);
-  return out.trim();
-};
+/** A fresh code for admin, minted into the daemon's database as a device link mints it. */
+const readCode = (): string => withInstance(t.dbPath, (instance) => mintLoginCode(instance, { now: () => new Date() }, 'admin'));
 const login = (code: string, headers: Record<string, string> = {}) => rawRequest(t.url, {
   method: 'POST', path: '/ui/login', body: `code=${encodeURIComponent(code)}`,
   headers: { 'content-type': 'application/x-www-form-urlencoded', origin: 'null', ...headers },
@@ -35,7 +31,7 @@ const login = (code: string, headers: Record<string, string> = {}) => rawRequest
 const session = (token?: string) => rawRequest(t.url, { path: '/ui/api/session', headers: token ? { 'x-hopper-session': token } : {} });
 
 describe('login', () => {
-  it('hopper login-code mints a 64-hex code; the daemon writes no code anywhere', async () => {
+  it('a login code is 64 hex; the daemon writes no code anywhere', async () => {
     expect(readCode()).toMatch(/^[0-9a-f]{64}$/);
     const { readdirSync } = await import('node:fs');
     expect(readdirSync(t.dataDir).filter((f) => f.includes('login'))).toEqual([]);

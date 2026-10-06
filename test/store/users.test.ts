@@ -6,7 +6,7 @@ import { openDb } from '../../src/store/db.ts';
 import { openInstanceStore } from '../../src/store/index.ts';
 import { INSTANCE_SCHEMA_VERSION } from '../../src/store/migrations.ts';
 import { TENANT_SCHEMA_VERSION } from '../../src/store/tenant-migrations.ts';
-import { testPostgres } from '../support/database.ts';
+import { installFromBefore, testPostgres } from '../support/database.ts';
 import { fixedClock, spec, useTempStore } from './helpers.ts';
 
 const t = useTempStore();
@@ -33,29 +33,36 @@ function shape(schema: string): Record<string, string[]> {
 }
 
 describe('a fresh store', () => {
-  it('starts with the default admin account, admin, whose tables live in a user schema of their own', () => {
+  it('holds no user: no bootstrap user, no user schema (issue #238)', () => {
     const url = t.url();
     const instance = openInstanceStore({ url, clock: fixedClock() });
-    const users = instance.users.list();
-    expect(users).toEqual([{ id: 'admin', name: 'admin', createdAt: expect.any(String), workDir: '', secretPrefix: '' }]);
-    expect(instance.users.admin().id).toBe('admin');
-    const admin = instance.userStore(users[0]!);
-    const job = admin.jobs.create(spec, 50);
-    admin.close();
+    expect(instance.users.list()).toEqual([]);
+    expect(instance.identities.userOf('none', 'anonymous')).toBeUndefined();
     instance.close();
     const raw = openDb(testPostgres());
-    const at = (schema: string, table: string) => Number(raw.get('SELECT count(*) AS n FROM information_schema.tables WHERE table_schema = ? AND table_name = ?', schema, table)!.n);
-    expect(at(schemaOf(url), 'jobs')).toBe(0);
-    expect(at(schemaOf(url), 'users')).toBe(1);
-    expect(at(`${schemaOf(url)}_u_admin`, 'jobs')).toBe(1);
-    expect(raw.get(`SELECT id FROM "${schemaOf(url)}_u_admin".jobs`)).toEqual({ id: job.id });
+    expect(raw.all('SELECT schema_name FROM information_schema.schemata WHERE schema_name LIKE ?', `${schemaOf(url)}_u_%`)).toEqual([]);
     expect(raw.get(`SELECT version FROM "${schemaOf(url)}".schema_version`)).toEqual({ version: INSTANCE_SCHEMA_VERSION });
-    expect(raw.get(`SELECT version FROM "${schemaOf(url)}_u_admin".schema_version`)).toEqual({ version: TENANT_SCHEMA_VERSION });
     raw.close();
   });
 
-  it('a user added later gets a slug id, a work dir, a secret prefix and a schema of the same shape as admin\'s', () => {
+  it('a user added to it gets a user schema of its own, on the latest tenant version', () => {
     const url = t.url();
+    const instance = openInstanceStore({ url, clock: fixedClock() });
+    const ada = instance.users.add('ada');
+    const store = instance.userStore(ada);
+    const job = store.jobs.create(spec, 50);
+    store.close();
+    instance.close();
+    const raw = openDb(testPostgres());
+    expect(raw.get(`SELECT id FROM "${schemaOf(url)}_u_ada".jobs`)).toEqual({ id: job.id });
+    expect(raw.get(`SELECT version FROM "${schemaOf(url)}_u_ada".schema_version`)).toEqual({ version: TENANT_SCHEMA_VERSION });
+    raw.close();
+  });
+});
+
+describe('an install from before (issue #238: its default admin account stays)', () => {
+  it('a user added later gets a slug id, a work dir, a secret prefix and a schema of the same shape as admin\'s', () => {
+    const url = installFromBefore(t.url());
     const instance = openInstanceStore({ url, clock: fixedClock() });
     const ada = instance.users.add('Ada Lovelace');
     expect(ada).toEqual({ id: 'ada_lovelace', name: 'Ada Lovelace', createdAt: expect.any(String), workDir: 'users/ada_lovelace', secretPrefix: 'HOPPER_USER_ADA_LOVELACE_' });
@@ -66,14 +73,14 @@ describe('a fresh store', () => {
     expect(instance.users.get('ada_lovelace')?.name).toBe('Ada Lovelace');
     expect(instance.users.get('nobody')).toBeUndefined();
     // Owner's schema is migrated on the tenant track when its store opens, as at every start.
-    instance.userStore(instance.users.admin()).close();
+    instance.userStore(instance.users.get('admin')!).close();
     instance.close();
     expect(shape(`${schemaOf(url)}_u_ada_lovelace`)).toEqual(shape(`${schemaOf(url)}_u_admin`));
   });
 
   it('one user never sees another\'s jobs, questions, events, config, settings or webhooks', () => {
-    const instance = openInstanceStore({ url: t.url(), clock: fixedClock() });
-    const a = instance.userStore(instance.users.admin());
+    const instance = openInstanceStore({ url: installFromBefore(t.url()), clock: fixedClock() });
+    const a = instance.userStore(instance.users.get('admin')!);
     const b = instance.userStore(instance.users.add('bea'));
     const job = a.jobs.create(spec, 50);
     a.questions.create({ jobId: job.id, text: 'q?', recentOutput: '', detectedBy: 'marker', tier: 'human' });
@@ -148,7 +155,7 @@ describe('migrations 17 and 21: an install from before becomes the default admin
 
     const instance = openInstanceStore({ url, clock: fixedClock() });
     expect(instance.users.list().map((u) => u.id)).toEqual(['admin']);
-    const admin = instance.userStore(instance.users.admin());
+    const admin = instance.userStore(instance.users.get('admin')!);
     expect(admin.jobs.get('j1')?.status).toBe('queued');
     expect(admin.jobs.getBySourceKey('k1')?.id).toBe('j1');
     expect(admin.questions.get('q1')?.text).toBe('q?');

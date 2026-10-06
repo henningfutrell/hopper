@@ -16,7 +16,7 @@ import { execFile, spawn } from 'node:child_process';
 import { chmodSync, cpSync, existsSync, lstatSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { promisify } from 'node:util';
-import type { Job } from '../domain/types.ts';
+import { ADMIN_ID, type Job } from '../domain/types.ts';
 import { runtimeSecrets } from '../secrets/runtime.ts';
 import type { UserStore } from '../domain/ports.ts';
 import { openInstanceStore } from '../store/index.ts';
@@ -258,7 +258,9 @@ export function startHandover(appDir: string): void {
 function withAdminStore<T>(url: string, fn: (store: UserStore) => T): T {
   const instance = openInstanceStore({ url, clock: { now: () => new Date() } });
   try {
-    const store = instance.userStore(instance.users.admin());
+    const admin = instance.users.get(ADMIN_ID);
+    if (!admin) throw new Error(`no user ${ADMIN_ID}: this database was not a job-hopper install's`);
+    const store = instance.userStore(admin);
     try { return fn(store); } finally { store.close(); }
   } finally {
     instance.close();

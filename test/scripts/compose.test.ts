@@ -147,7 +147,8 @@ describe('the install page', () => {
   it('gives the container install with Podman as commands to copy', () => {
     expect(page).toContain('data-copy="curl -fsSLO https://henningfutrell.github.io/hopper/compose.yaml"');
     expect(page).toContain('data-copy="podman compose up -d"');
-    expect(page).toContain('podman compose exec hopper hopper login-code --link http://127.0.0.1:4790');
+    expect(page).not.toContain('login-code');
+    expect(page).toContain('The first person to sign in with GitHub is the admin');
     expect(page).toContain('data-copy="podman compose pull &amp;&amp; podman compose up -d"');
   });
 

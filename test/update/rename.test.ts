@@ -10,6 +10,7 @@ import {
 import type { Job } from '../../src/domain/types.ts';
 import { useTempDirs } from '../plugins/support.ts';
 import { spec, useTempStore } from '../store/helpers.ts';
+import { installFromBefore } from '../support/database.ts';
 
 const temp = useTempDirs();
 const stores = useTempStore();
@@ -152,7 +153,7 @@ describe('renameBoot (the first boot of a job-hopper install\'s self-update)', (
     const t = oldInstall();
     writeFileSync(join(t.lib, 'new'), '');
     writeFileSync(join(`${t.lib}.prev`, 'old'), '');
-    const url = stores.url();
+    const url = installFromBefore(stores.url());
     const work = t.at('.cache', 'job-hopper');
     mkdirSync(join(work, 'update'), { recursive: true });
     writeFileSync(join(work, 'update', 'pending.json'), JSON.stringify({ from: 'a', to: 'b'.repeat(40), ref: 'main' }));

@@ -12,7 +12,7 @@ Every way of signing in ends the same: a **UI session** with a **UI role**, acti
 
 - [Pick a setup](#pick-a-setup)
 - [Managing sign-in in Settings](#managing-sign-in-in-settings) · [Realm settings](#realm-settings) · [Sign-in from the environment](#sign-in-from-the-environment) · [The sign-in config from the CLI](#the-sign-in-config-from-the-cli)
-- [No sign-in](#no-sign-in) · [First sign-in: the login code](#first-sign-in-the-login-code) · [LDAP realm](#ldap-realm) · [Behind an auth gateway](#behind-an-auth-gateway)
+- [No sign-in](#no-sign-in) · [No bootstrap login](#no-bootstrap-login) · [LDAP realm](#ldap-realm) · [Behind an auth gateway](#behind-an-auth-gateway)
 - [UI roles and role rules](#ui-roles-and-role-rules)
 - [Who signs in as which user](#who-signs-in-as-which-user)
 - [The sign-in origin and a public URL](#the-sign-in-origin-and-a-public-url)
@@ -27,7 +27,7 @@ Every way of signing in ends the same: a **UI session** with a **UI role**, acti
 
 | setup | what to do |
 |---|---|
-| One person, one machine | Nothing. The one-time login code works: `hopper login-code` mints one (good once, 10 minutes); on the host install `bash ~/.local/lib/hopper/scripts/open-ui.sh` opens the UI already logged in. It signs in as `admin`. A start logs one for you while nothing else signs `admin` in: [First sign-in](#first-sign-in-the-login-code). |
+| One person, one machine | Nothing: sign in with GitHub, which every hopper offers ([GitHub](#github)). The first person to sign in with GitHub is the admin. There is [no bootstrap login](#no-bootstrap-login). |
 | One person, a few devices on a home LAN | `HOPPER_LAN_NAMES` / `HOPPER_LAN_PEERS` (`docs/design.md` "Reaching the UI across the LAN") and device links. |
 | Behind a proxy or network that already decides who gets in | [No sign-in](#no-sign-in), with a role. Everyone who reaches the UI acts with that role. |
 | A few people, no directory or identity provider | A [GitHub](#github) realm: each person signs in with their own GitHub account. The hopper keeps no username-and-password accounts of its own. |
@@ -35,7 +35,7 @@ Every way of signing in ends the same: a **UI session** with a **UI role**, acti
 | Behind an auth gateway that signs people in (Envoy Gateway with OIDC, oauth2-proxy, …) | A [gateway realm](#behind-an-auth-gateway): the gateway signs people in and forwards their token; the hopper checks the token, gives roles by its claims, and asks nobody to sign in. |
 | People whose work is on GitHub (the hopper's main way) | Nothing: every hopper has the [GitHub realm](#github). People sign in with a device code through the hopper's app, the first of them becomes admin, and that connection is what their jobs work through. Role rules name everyone after by username or id. |
 | A team, or anyone reaching it over the internet | A reverse proxy with TLS, `HOPPER_PUBLIC_URL`, one or more realms, role rules, and usually the login code off. |
-| A deploy that sets everything up at launch (container, Kubernetes) | [Sign-in from the environment](#sign-in-from-the-environment): the realms as `HOPPER_SIGN_IN_*` variables, secrets as mounted files; the first sign-in is the login code the start logs. |
+| A deploy that sets everything up at launch (container, Kubernetes) | [Sign-in from the environment](#sign-in-from-the-environment): the realms as `HOPPER_SIGN_IN_*` variables, secrets as mounted files. |
 
 ## Managing sign-in in Settings
 
@@ -46,8 +46,8 @@ by an admin. Every setting is a field of a form; nothing is written as YAML or J
 The page lists the realms in order, each with its type, a switch to turn it on or off, and — for
 OIDC and SAML — the callback URL (and SAML metadata URL) to register with the identity
 provider, ready to copy. A new hopper starts with one realm, **GitHub** ([GitHub](#github)): the first
-person to sign in with it becomes admin. Its first sign-in can also be the login code
-([First sign-in](#first-sign-in-the-login-code)).
+person to sign in with it becomes admin. There is [no bootstrap login](#no-bootstrap-login): a new
+hopper holds no user until someone signs in.
 
 - **Add realm**: pick a type, fill in its fields (every one: [Realm settings](#realm-settings)) and
   **Save**. A field left empty takes its default, shown greyed in the field.
@@ -69,8 +69,8 @@ turning off the login code you signed in with) is refused: sign in as an admin a
 Invalid sign-in config stop the daemon at start, with a message naming the field (`journalctl
 --user -u hopper`): sign-in fails closed, never open.
 
-**Locked out.** If nobody can sign in as admin any more, turn the login code back on in
-[the sign-in config from the CLI](#the-sign-in-config-from-the-cli) where the hopper runs, restart it, and sign in with a code.
+**Locked out.** If nobody can sign in as admin any more, give yourself admin with a role rule in
+[the sign-in config from the CLI](#the-sign-in-config-from-the-cli) where the hopper runs, and restart it.
 
 **Secrets are typed into the realm's form** (**Client secret**, **Bind password**) and stored with the
 realm in the database, like every other setting. They are never shown again: the field says whether
@@ -166,15 +166,18 @@ For scripts, and to mend sign-in that locks everyone out, the operator CLI reads
 read its version, is refused and nothing is written. A change made with the CLI applies at the next
 start (`systemctl --user restart hopper` on the host install).
 
-To turn the login code back on after a lockout:
+After a lockout, give yourself admin with a role rule in a realm you can sign in with — your GitHub user
+id (`id` in `https://api.github.com/users/<login>`) in the GitHub realm's `roles.admin.subjects`:
 
 ```sh
-hopper config get sign-in > sign-in.json      # set "local": { "enabled": true } in it
+hopper config get sign-in > sign-in.json      # add your id to the GitHub realm's "roles": { "admin": { "subjects": [...] } }
 hopper config version sign-in
 hopper config set sign-in --if-version <version> < sign-in.json
 systemctl --user restart hopper
-hopper login-code --link http://127.0.0.1:4790
 ```
+
+For a realm set from the environment, set `HOPPER_SIGN_IN_REALM_<NAME>_ROLES_ADMIN_SUBJECTS` instead and
+restart: the environment wins.
 
 The record holds the realms' secrets as stored: whoever runs the CLI holds the database's credentials,
 which open them anyway. In the record each field has the name in brackets in [Realm settings](#realm-settings); `version` is
@@ -202,33 +205,30 @@ visitor's browser). The daemon logs `NO SIGN-IN is on` at every start. It combin
 no sign-in as viewer plus a realm or the login code means everyone may look and those who sign
 in may act. Use it only where something in front — a VPN, a proxy with its own login, a network only
 you reach — already decides who gets in. As admin, anyone who reaches the UI can change every setting.
-No sign-in signs everyone in as `admin`, so it stays off while the hopper has more than one user, and
-no user is added while it is on.
+No sign-in signs everyone in as one user — its own, made by its first visitor (`admin` on a hopper from
+before, issue #238) — so it stays off while the hopper has more than one user, and no user is added
+while it is on.
 
-## First sign-in: the login code
+## No bootstrap login
 
-The hopper keeps no username-and-password accounts of its own (issue #237): its first sign-in, the
-way Jenkins hands out its first admin's key, is the **login code** — one-time, good for 10 minutes,
-signing in as the default admin account, `admin`.
+There is no bootstrap login (issue #238). A new hopper creates no user, no account, no password and no
+login code, and no command on the host signs anyone in (`hopper login-code` and `open-ui.sh` are gone;
+the first sign-in by login code of issue #237 is gone too). The hopper keeps no username-and-password
+accounts of its own (issue #237). The way in is a realm:
 
-- **At start**, while the login code is on, no sign-in is off, `admin` signs in through no realm that
-  is on, and no [first GitHub admin](#ui-roles-and-role-rules) signs in through one, the hopper mints
-  a login code for `admin` and logs it with its link (`journalctl --user -u hopper`, or the
-  container's log):
+- **Sign in with GitHub**, which every hopper offers ([GitHub](#github)). [The first person to sign in
+  with GitHub](#ui-roles-and-role-rules) is the admin, so sign in before anyone else can reach the UI.
+- **Each person gets a whole environment of their own**: the first sign-in of each identity makes its
+  user ([Who signs in as which user](#who-signs-in-as-which-user)).
+- **A hopper from before** keeps its default admin account `admin` and its work. Its start hands out no
+  login code any more: sign in with GitHub (which makes a new user) and move `admin`'s work to it with
+  [`hopper user transfer`](#who-signs-in-as-which-user).
+- **No way in** — no realm that is on, no sign-in off — is left as it is: the sign-in page says that
+  sign-in with GitHub is not set up. Turn the GitHub realm back on from
+  [the sign-in config from the CLI](#the-sign-in-config-from-the-cli) or the environment.
 
-  ```
-  hopper: first sign-in: login code <code> signs in once as admin, for 10 minutes: http://localhost:4790/#login=<code> (another: hopper login-code)
-  ```
-
-  Open the link (on another device: the hopper's address with `/#login=<code>`); the sign-in page
-  takes no pasted code. Only its SHA-256 is kept. Expired or used: `hopper login-code` mints another
-  where the hopper runs (`docker exec <container> hopper login-code` in a container).
-- **Then** sign in through a realm — inside the hopper, GitHub: the first person to do so becomes admin
-  — and, to reach `admin`'s work from it, link it with [`hopper user transfer`](#who-signs-in-as-which-user).
-  From then on a start logs no code.
-- **No way in.** A sign-in config with no realm that is on, the login code off and no sign-in off would
-  let nobody in: the start turns the login code on and says so
-  (`hopper: the sign-in config had no way to sign in …`).
+A login code still exists, minted only from a signed-in session: a device link (for the session's own
+user) and a new user's login link. It signs in with role `admin`.
 
 **Rate limit.** Every sign-in route (`/ui/login`, `/ui/auth/…`) together accepts 20 attempts a
 minute per client address; past that, 429 until the minute is over. Behind a reverse proxy every
@@ -355,7 +355,7 @@ in. `HOPPER_PUBLIC_URL` is the address people reach through the gateway.
 | `operator` | + cancel and approve jobs; answer, close, dismiss questions and mark them seen |
 | `admin` | + change configuration: plugins, machines, routing rules, webhooks, the rules, the queue gate, sign-in realms; apply updates; hand out device links |
 
-The login code always signs in as `admin`. For every realm, its **role rules** decide, the same way for every type:
+A login code signs in with role `admin`, to the user it was minted for. For every realm, its **role rules** decide, the same way for every type:
 
 - A rule grants a role — `admin`, `operator` or `viewer` — to the subjects, usernames, emails, email
   domains or groups it lists, one per line. Any one match grants the role; **the highest matching
@@ -396,15 +396,17 @@ the plugin store, updates, sign-in realms — needs `admin`.
 
 One hopper can work for several people (issue #158, `docs/design.md` "Users: one hopper, separate
 users"). Each **user** has their own jobs, questions, events, machines, plugins, routing, rules,
-webhooks and credentials; nobody sees or touches another user's. Every hopper starts with the
-**default admin account**, `admin` (as Nexus, Argo CD and Grafana have one), which holds everything
-from before there were several. There is no `owner` user any more: an earlier hopper's `owner`, with
-all its work, sign-ins, sessions and login codes, became `admin` on update (issue #220).
+webhooks and credentials; nobody sees or touches another user's. **Each person gets a whole
+environment of their own**: a new hopper holds no user, and the first sign-in of each identity makes
+its user (issue #238). A hopper from before keeps its **default admin account**, `admin`, which holds
+everything from before there were several (an earlier hopper's `owner` became `admin` on update, issue
+#220); it is reached through the identities linked to it, and `hopper user transfer` moves its work to
+the user a person signs in as (below).
 
 | sign-in | user |
 |---|---|
-| login code | the user it was minted for: `hopper login-code --user <id>` (default `admin`); a device link is for the session's own user; a new user's login link for that user |
-| no sign-in (`none`) | `admin` |
+| login code | the user it was minted for: a device link is for the session's own user; a new user's login link for that user |
+| no sign-in (`none`) | its own user, made by its first visitor (on a hopper from before: `admin`, which it signed in as there) |
 | a realm (LDAP, OIDC, GitHub, SAML, gateway) | the user its identity (realm and subject) is linked to; the **first** sign-in of an identity a role rule lets in creates a new user for it, named after its username, else its name, else its email (made unique: `ada`, `ada 2`), and links it |
 
 - An admin adds a user from **Settings → Users** (or `hopper user add <name>`) and hands over the
@@ -416,7 +418,6 @@ all its work, sign-ins, sessions and login codes, became `admin` on update (issu
   Log it in to GitHub from its own Sources view.
 - An identity that signed in before there were several users is linked to `admin` when its session
   was still stored; one whose sessions had all expired gets a new user at its next sign-in.
-  `hopper login-code` always reaches `admin`.
 - **Moving work to the user a person signs in as** (issue #212): `hopper user transfer <from> <to>`,
   with the daemon stopped. `<to>` takes over everything `<from>` holds: `<to>`'s sign-ins (realm
   links), sessions and login codes move onto `<from>`'s record, which takes `<to>`'s name; `<to>`'s
@@ -777,7 +778,7 @@ The same for every realm, no sign-in and the login code:
 | `invalid sign-in environment: HOPPER_SIGN_IN_…` | A sign-in variable the hopper cannot use; the message names it and says why ([Sign-in from the environment](#sign-in-from-the-environment)). |
 | `environment variable … is not set; the realm's secret is taken from it into the database once` | A realm from before still names its secret's variable, and the daemon's environment lacks it: set it for one start, or turn the realm off with `hopper config set sign-in` and type the secret in Settings. |
 | "this change would end your own admin session" | You signed in with the realm (or the login code) the change turns off, or the change lowers your own role. Sign in as an admin another way, then make the change. |
-| Nobody can sign in as an admin any more | Turn the login code back on in [the sign-in config from the CLI](#the-sign-in-config-from-the-cli) on the daemon's host, restart it, then `hopper login-code`. |
+| Nobody can sign in as an admin any more | Give yourself admin with a role rule, from [the sign-in config from the CLI](#the-sign-in-config-from-the-cli) or the environment, and restart. |
 | LDAP: "sign-in could not be checked: <realm>: …" | The directory did not answer, or the search account's bind failed: check `url`, the certificate (`NODE_EXTRA_CA_CERTS`), `bindDn` and its password. |
 | LDAP: "wrong username or password" for a real account | `userFilter` under `userBase` finds no entry, or finds two. Try the filter with `ldapsearch -H <url> -D <bindDn> -W -b <userBase> '<filter>'`. |
 | LDAP: groups do not match | Group values are full DNs, compared exactly, one per line in the rule. No `memberOf` on the entry: set a group search base. |

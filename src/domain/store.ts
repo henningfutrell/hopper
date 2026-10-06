@@ -53,6 +53,15 @@ export interface EventLog {
   subscribe(listener: (event: DomainEvent) => void): () => void;
 }
 
+/**
+ * The instance's events (`update.*`, `plugin.installed`, `plugin.removed`): appended to every user's
+ * event log, the newest read from the first user's. With no user yet (issue #238) they are kept nowhere.
+ */
+export interface InstanceEvents {
+  append(event: NewEvent): void;
+  recent(limit?: number, types?: EventType[]): DomainEvent[];
+}
+
 export interface WebhookRepository {
   /** A new subscription; undefined (nothing written) when the name is taken. The table is the source of truth (issue #78). */
   add(input: { name: string; url: string; events: string[]; secretEnv: string; active: boolean }): WebhookSubscription | undefined;
@@ -149,8 +158,6 @@ export interface ConfigRecords<N extends string = UserConfigName> {
 export interface UserRepository {
   list(): User[];
   get(id: string): User | undefined;
-  /** The default admin account, `admin` (issue #220). */
-  admin(): User;
   /** A new user under a unique name (throws when taken): its row and its user schema. */
   add(name: string): User;
   /**
@@ -168,8 +175,6 @@ export interface IdentityLinks {
   link(realm: string, subject: string, userId: string): void;
   /** True when an identity of one of these realms is linked to a user: someone has signed in with it. */
   anyIn(realms: readonly string[]): boolean;
-  /** The realms the user has an identity linked in. */
-  realmsOf(userId: string): string[];
 }
 
 /**

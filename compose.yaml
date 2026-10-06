@@ -4,7 +4,7 @@
 #
 #   curl -fsSLO https://henningfutrell.github.io/hopper/compose.yaml
 #   podman compose up -d
-#   podman compose exec hopper hopper login-code --link http://127.0.0.1:4790
+#   then open http://localhost:4790/ and sign in with GitHub: the first person to do so is the admin
 #
 # `docker compose` works the same. Settings and secrets, all optional, go in a .env file beside this
 # one: HOPPER_* settings, CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY (an anthropic-api escalation level), … (GitHub needs none: the UI's Sources view →

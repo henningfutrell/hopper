@@ -4,9 +4,9 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { testDatabaseUrl } from '../support/database.ts';
+import { installFromBefore, testDatabaseUrl } from '../support/database.ts';
 import type { InstanceStore, UserStore } from '../../src/domain/ports.ts';
-import type { UpdateStatus } from '../../src/domain/types.ts';
+import { ADMIN_ID, type UpdateStatus } from '../../src/domain/types.ts';
 import { openInstanceStore } from '../../src/store/index.ts';
 import { createUpdater, type UpdaterOptions } from '../../src/update/index.ts';
 import { waitFor } from '../support/wait.ts';
@@ -28,8 +28,8 @@ function world(): World {
   const root = tempDir('jh-update-');
   dirs.push(root);
   const dataDir = join(root, 'data');
-  const instance = openInstanceStore({ url: testDatabaseUrl(), clock: { now: () => new Date() } });
-  const store = instance.userStore(instance.users.admin());
+  const instance = openInstanceStore({ url: installFromBefore(testDatabaseUrl()), clock: { now: () => new Date() } });
+  const store = instance.userStore(instance.users.get(ADMIN_ID)!);
   stores.push(store, instance);
   return { root, up: createUpstream(root), instance, store, dataDir };
 }

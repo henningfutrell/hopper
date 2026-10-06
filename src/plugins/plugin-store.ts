@@ -6,7 +6,7 @@
 import { randomUUID } from 'node:crypto';
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Clock, EventLog, PluginsView, InstanceSettingsRepository } from '../domain/ports.ts';
+import type { Clock, InstanceEvents, PluginsView, InstanceSettingsRepository } from '../domain/ports.ts';
 import { ROLES, type PluginInstall, type PluginStoreEdit, type PluginStoreEditOutcome, type PluginStoreEntry, type PluginStoreReport, type Role } from '../domain/types.ts';
 import { importPlugin } from './loader.ts';
 import { CATALOGUE, parseCatalogue, type CatalogueEntry } from './plugin-store-catalogue.ts';
@@ -28,7 +28,7 @@ export interface PluginStoreOptions {
   installs: Pick<InstanceSettingsRepository, 'getPluginInstalls' | 'setPluginInstalls'>;
   builtinIds: ReadonlySet<string>;
   plugins: Pick<PluginsView, 'report' | 'edit'>;
-  events: Pick<EventLog, 'append'>;
+  events: Pick<InstanceEvents, 'append'>;
   clock: Clock;
   logger: PluginLogger;
   mirror?: StoreMirror;

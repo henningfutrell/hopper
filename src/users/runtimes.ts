@@ -2,16 +2,14 @@
 // user, created at boot and for a user added while the daemon runs — from the UI, by sign-in, or with
 // `hopper user add` (noticed by the watch). The instance's events go to every user's event log; a
 // store install makes every user's plugin host rescan.
-import type { DomainEvent, EventType, NewEvent, PluginsEditOutcome, PluginsEdit, PluginsReport, User } from '../domain/types.ts';
-import type { EventLog, InstanceStore, PluginsView } from '../domain/ports.ts';
+import type { EventType, NewEvent, PluginsEditOutcome, PluginsEdit, PluginsReport, User } from '../domain/types.ts';
+import type { InstanceEvents, InstanceStore, PluginsView } from '../domain/ports.ts';
 import { createUserRuntime, type UserRuntime, type UserRuntimeOptions } from './runtime.ts';
 
 export interface Runtimes {
   /** The running user's runtime, or undefined. */
   get(id: string): UserRuntime | undefined;
   all(): UserRuntime[];
-  /** The default admin account's. */
-  admin(): UserRuntime;
   /** The user's runtime, created (and started, once the instance started) when it has none. */
   ensure(user: User): Promise<UserRuntime>;
   /** Create a runtime for every user that has none: at boot, and on every watch tick. */
@@ -20,9 +18,8 @@ export interface Runtimes {
   start(): Promise<void>;
   /** Check the users table every `intervalMs` for users added outside this process (the CLI). */
   watch(intervalMs: number): void;
-  /** The instance's events, appended to every user's event log; the newest read from admin's. */
-  events: Pick<EventLog, 'append' | 'recent'>;
-  /** What the plugin store reads and drives: admin's report; a rescan of every user's host. */
+  events: InstanceEvents;
+  /** What the plugin store reads and drives: the first user's report; a rescan of every user's host. */
   plugins: Pick<PluginsView, 'report' | 'edit'>;
   stop(): Promise<void>;
 }
@@ -60,11 +57,8 @@ export function createRuntimes(o: {
     made.catch(() => pending.delete(user.id));
     return made;
   };
-  const admin = (): UserRuntime => {
-    const rt = running.get(o.instance.users.admin().id);
-    if (!rt) throw new Error('the admin account\'s runtime is not running');
-    return rt;
-  };
+  /** The oldest user's runtime: every user's host and event log see what the instance does. */
+  const first = (): UserRuntime | undefined => running.get(o.instance.users.list()[0]?.id ?? '');
   const sync = async (): Promise<void> => {
     for (const user of o.instance.users.list()) await ensure(user);
   };
@@ -72,7 +66,6 @@ export function createRuntimes(o: {
   return {
     get: (id) => running.get(id),
     all: () => [...running.values()],
-    admin,
     ensure,
     sync,
     async start() {
@@ -87,22 +80,21 @@ export function createRuntimes(o: {
       timer = setTimeout(tick, intervalMs);
     },
     events: {
-      append(event: NewEvent): DomainEvent {
-        let first: DomainEvent | undefined;
-        for (const rt of running.values()) {
-          const e = rt.store.events.append(event);
-          first ??= e;
-        }
-        if (!first) throw new Error('no user runtime to record the event in');
-        return first;
+      append(event: NewEvent): void {
+        for (const rt of running.values()) rt.store.events.append(event);
       },
-      recent: (limit?: number, types?: EventType[]) => admin().store.events.recent(limit, types),
+      recent: (limit?: number, types?: EventType[]) => first()?.store.events.recent(limit, types) ?? [],
     },
     plugins: {
-      report: (): PluginsReport => admin().plugins.report(),
+      report: (): PluginsReport => {
+        const rt = first();
+        if (!rt) throw new Error('no user yet: the plugin report is a user\'s');
+        return rt.plugins.report();
+      },
       async edit(e: PluginsEdit): Promise<PluginsEditOutcome> {
         const outcomes = await Promise.all([...running.values()].map((rt) => rt.plugins.edit(e)));
-        return outcomes[0] ?? admin().plugins.edit(e);
+        if (outcomes[0]) return outcomes[0];
+        throw new Error('no user yet: the plugins config is a user\'s');
       },
     },
     async stop() {

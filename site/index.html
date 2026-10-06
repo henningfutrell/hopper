@@ -106,11 +106,11 @@ the image, which takes a minute or two:</p>
 <div class="cmd main-cmd"><pre>podman compose up -d</pre><button type="button" data-copy="podman compose up -d">Copy</button></div>
 <p>Run the later commands in this folder too. You can read the file first: <a href="compose.yaml">compose.yaml</a>.
 Docker works the same: <code>docker compose</code> in place of <code>podman compose</code>.</p></li>
-<li><p><strong>Open the UI.</strong> Make a sign-in link and open it in your browser:</p>
-<div class="cmd"><pre>podman compose exec hopper hopper login-code --link http://127.0.0.1:4790</pre><button type="button" data-copy="podman compose exec hopper hopper login-code --link http://127.0.0.1:4790">Copy</button></div>
-<p>It works once, for 10 minutes; make another the same way when you need one. The UI listens on this
-machine only (<code>127.0.0.1:4790</code>). From another computer, connect with
-<code>ssh -L 4790:127.0.0.1:4790 you@your-server</code> first, then open the link there.</p></li>
+<li><p><strong>Open the UI and sign in with GitHub.</strong> Open <code>http://localhost:4790/</code> and press
+<strong>Sign in with GitHub</strong>. The first person to sign in with GitHub is the admin, so sign in yourself
+before anyone else can reach the UI. There is no starting account or password to look up. The UI listens on
+this machine only. From another computer, connect with <code>ssh -L 4790:127.0.0.1:4790 you@your-server</code>
+first, then open <code>http://localhost:4790/</code> there.</p></li>
 <li><p><strong>Sign in to GitHub and to Claude Code.</strong> Once is enough: both are kept when the hopper
 restarts or upgrades.</p>
 <p>GitHub: in the UI, open <strong>Sources</strong> and press <strong>Log in to GitHub</strong>. It shows a
@@ -286,18 +286,15 @@ the message under <a href="#trouble">When something goes wrong</a>.</p>
 see <a href="#trouble">When something goes wrong</a>.</p>
 
 <h3 id="ui">4. Open the UI</h3>
-<p>On the machine itself, with a desktop and a browser:</p>
-<div class="cmd"><pre>bash ~/.local/lib/hopper/scripts/open-ui.sh</pre><button type="button" data-copy="bash ~/.local/lib/hopper/scripts/open-ui.sh">Copy</button></div>
-<p>Your browser opens <code>http://127.0.0.1:4790/</code>, signed in.</p>
+<p>On the machine itself, open <code>http://localhost:4790/</code> and press <strong>Sign in with GitHub</strong>.
+The first person to sign in with GitHub is the admin, so sign in yourself before anyone else can reach the
+UI. There is no starting account or password to look up.</p>
 
 <p><strong>From another computer (a server with no browser).</strong></p>
 <p>The UI listens on the server only, so reach it through ssh. On your own computer, connect with a tunnel
 and leave this terminal open:</p>
 <div class="cmd"><pre>ssh -L 4790:127.0.0.1:4790 you@your-server</pre><button type="button" data-copy="ssh -L 4790:127.0.0.1:4790 you@your-server">Copy</button></div>
-<p>In that ssh session, make a sign-in link:</p>
-<div class="cmd"><pre>hopper login-code --link http://127.0.0.1:4790</pre><button type="button" data-copy="hopper login-code --link http://127.0.0.1:4790">Copy</button></div>
-<p>Open the link it prints in the browser on your own computer. It works once, for 10 minutes; make another
-the same way when you need one. Passwords, other people and other devices:
+<p>Then open <code>http://localhost:4790/</code> in the browser on your own computer and sign in with GitHub. Passwords, other people and other devices:
 <a href="https://github.com/henningfutrell/hopper/blob/main/docs/sign-in.md">docs/sign-in.md</a>.</p>
 
 <h3 id="github">5. Connect GitHub</h3>
@@ -344,10 +341,8 @@ sudo usermod -aG docker "$USER"</pre><button type="button" data-copy="curl -fsSL
 as <a href="#before">step 1</a> says, sign in to <code>claude</code>, and run the check from step 1.</p></li>
 <li><p>Install hopper with the same command as on Linux:</p>
 <div class="cmd"><pre>curl -fsSL https://henningfutrell.github.io/hopper/install.sh | bash</pre><button type="button" data-copy="curl -fsSL https://henningfutrell.github.io/hopper/install.sh | bash">Copy</button></div></li>
-<li><p>Open the UI in your Windows browser. In Ubuntu, make a sign-in link:</p>
-<div class="cmd"><pre>hopper login-code --link http://127.0.0.1:4790</pre><button type="button" data-copy="hopper login-code --link http://127.0.0.1:4790">Copy</button></div>
-<p>Open the link it prints in your Windows browser (it works once, for 10 minutes). WSL passes
-<code>127.0.0.1</code> through to Windows.</p></li>
+<li><p>Open <code>http://localhost:4790/</code> in your Windows browser and sign in with GitHub. WSL passes
+<code>localhost</code> through to Windows.</p></li>
 <li><p>Continue with <a href="#github">step 5, Connect GitHub</a>, in Ubuntu, and then step 6.</p></li>
 </ol>
 <p class="note">Keep the repositories jobs work in inside Ubuntu (for example <code>~/src</code>), not under
@@ -355,7 +350,7 @@ as <a href="#before">step 1</a> says, sign in to <code>claude</code>, and run th
 </details>
 
 <h2 id="sign-in">Sign-in for a team</h2>
-<p>Alone on one machine, the sign-in link is enough. For a team, or a hopper reached over the internet, people
+<p>Alone on one machine, signing in with GitHub is enough. For a team, or a hopper reached over the internet, people
 sign in through your own sign-in service, set up from the hopper's environment: no clicks and no files. Put the
 variables in <code>.env</code> beside <code>compose.yaml</code> (with Podman) or in
 <code>~/.config/hopper/daemon.env</code> (on the machine itself), and restart the hopper.</p>
@@ -425,7 +420,7 @@ Delete those yourself if you want them gone. The docker database also stays; to 
 <tr><td><code>hopper-herdr</code> is <code>failed</code></td><td>herdr is missing from <code>~/.local/bin/herdr</code>. Install it (<a href="#before">step 1</a>), then <code>systemctl --user restart hopper-herdr</code>.</td></tr>
 <tr><td><code>hopper</code> is not running</td><td>Read why: <code>journalctl --user -u hopper -n 50</code>. If it says <code>/usr/bin/node</code> is missing or too old, install Node.js system-wide (<a href="#before">step 1</a>), then <code>systemctl --user restart hopper</code>.</td></tr>
 <tr><td>The services are gone after you log out</td><td>Do <a href="#running">step 3</a>, then <code>systemctl --user start hopper-herdr hopper</code>.</td></tr>
-<tr><td>The UI does not open, or asks you to sign in</td><td>Make a new sign-in link: <code>hopper login-code --link http://127.0.0.1:4790</code>. From another computer, use the <a href="#ui">ssh tunnel</a>.</td></tr>
+<tr><td>The UI does not open, or asks you to sign in</td><td>Open <code>http://localhost:4790/</code> and sign in with GitHub. From another computer, use the <a href="#ui">ssh tunnel</a>.</td></tr>
 <tr><td>A labelled issue is not picked up after a few minutes</td><td>Check: you opened it, and your login is in <code>authors</code>; its repository is in <code>repos</code>; the label is exactly <code>hopper</code>; <code>gh auth status</code> says logged in; you restarted hopper after editing. The UI's <strong>Sources</strong> view shows whether the GitHub source is running or paused.</td></tr>
 <tr><td>A job is <code>hopper:failed</code> at once</td><td>Its folder in <code>repoPaths</code> may not exist, or <code>claude</code> is not signed in: run <code>claude</code> once. The job in the UI says why it failed.</td></tr>
 </table></div>

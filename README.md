@@ -16,8 +16,9 @@ Install page, step by step: https://henningfutrell.github.io/hopper/ (`site/`).
 - **Every part is a plugin**: router, queue sorter, escalation levels, executors, job sources,
   machines, usage sources, notifiers (`docs/plugins.md`); the UI installs more from a plugin store.
 - **Several people, kept apart.** One hopper can work for several users: each has their own jobs,
-  questions, machines, plugins, webhooks and logins, and sees nobody else's. It starts with one,
-  the default admin account `admin`; an admin adds more in Settings → Users (`docs/sign-in.md` "Who signs in as which user").
+  questions, machines, plugins, webhooks and logins, and sees nobody else's. A new hopper starts with
+  none: each person's first sign-in makes their user, and the first person to sign in with GitHub is the
+  admin (`docs/sign-in.md` "Who signs in as which user").
 
 ## Getting started
 
@@ -64,7 +65,7 @@ compose` works the same everywhere below).
 mkdir hopper && cd hopper
 curl -fsSLO https://henningfutrell.github.io/hopper/compose.yaml      # compose.yaml in this repository
 podman compose up -d
-podman compose exec hopper hopper login-code --link http://127.0.0.1:4790   # open the printed link
+# open http://localhost:4790/ and sign in with GitHub: the first person to do so is the admin
 podman compose exec hopper claude                                    # once: /login, then /exit
 # GitHub: the UI's Sources view → Log in to GitHub (once; kept in the home volume)
 systemctl --user enable podman-restart.service                        # once: start it again after a reboot
@@ -82,7 +83,6 @@ The daemon and its own herdr session as user services, and Postgres in docker. J
 
 ```sh
 curl -fsSL https://henningfutrell.github.io/hopper/install.sh | bash
-bash ~/.local/lib/hopper/scripts/open-ui.sh        # signs this browser in and opens the UI
 ```
 
 It clones the source into `~/.local/share/hopper/source` and runs its `scripts/install.sh`.
@@ -98,7 +98,6 @@ git clone <this repository> hopper && cd hopper
 export POSTGRES_PASSWORD="$(openssl rand -hex 24)"
 docker compose -f deploy/compose.yaml up -d postgres
 HOPPER_DATABASE_URL="postgres://hopper:$POSTGRES_PASSWORD@127.0.0.1:5433/hopper" bash scripts/install.sh
-bash ~/.local/lib/hopper/scripts/open-ui.sh        # signs this browser in and opens the UI
 ```
 
 `install.sh` writes the database URL to `~/.config/hopper/daemon.env` (mode 600); put secrets
@@ -113,22 +112,14 @@ npm ci && npm run build:ui
 docker compose -f deploy/compose.yaml up -d postgres          # POSTGRES_PASSWORD set as above
 export HOPPER_DATABASE_URL="postgres://hopper:$POSTGRES_PASSWORD@127.0.0.1:5433/hopper"
 node src/main.ts                                              # node src/main.ts --help: every setting
-node src/cli.ts login-code --link http://127.0.0.1:4790       # in another terminal; open the link
 ```
 
 ## Sign in
 
-The UI is at `http://127.0.0.1:4790/` on the daemon's host. On that host, after the systemd
-install, one command signs this browser in as admin and opens the UI:
-
-```sh
-bash ~/.local/lib/hopper/scripts/open-ui.sh
-```
-
-Elsewhere (a container, a checkout, a browser without the script), mint a one-time login code:
-`hopper login-code --link http://127.0.0.1:4790`, then open the link (it works once, for 10
-minutes). A new hopper also logs one at start while nothing else signs its admin in. For other people
-and other devices: sign-in realms — GitHub, LDAP, OIDC, SAML or an auth gateway in front (the hopper
+The UI is at `http://localhost:4790/` on the daemon's host: sign in with GitHub, which every hopper
+offers. The first person to sign in with GitHub is the admin. There is no bootstrap login: a new hopper
+creates no user, no password and no login code, and no command on the host signs anyone in. For other
+people and other devices: sign-in realms — GitHub, LDAP, OIDC, SAML or an auth gateway in front (the hopper
 keeps no password accounts of its own), set up in Settings → Sign-in or from the environment at
 launch (`docs/deploy.md` "Sign-in set up at launch") — and the LAN or a public URL — `docs/sign-in.md`.
 

@@ -1,6 +1,7 @@
 // The daemon side of sign-in tests: start the real app with a sign-in config, read GET /ui/api/session,
 // start loopback OIDC issuers. Everything started is stopped by `stopAll` (call it in afterEach).
 import { startTestApp, tempDbPath, type TestApp } from './app.ts';
+import { newHopper } from './database.ts';
 import { writeConfig } from './files.ts';
 import { rawRequest } from './http.ts';
 import { startOidcIdp, type OidcIdp } from './idp.ts';
@@ -19,18 +20,23 @@ export async function stopAll(h: Harness): Promise<void> {
 }
 
 /**
- * The app with this sign-in config (a fresh hopper's when undefined: no realm, the login code on), and
- * its sign-in origin (http://localhost:<port>). `env`: the daemon's HOPPER_* config;
+ * The app with this sign-in config (a new store's when undefined: no realm, the login code on), and its
+ * sign-in origin (http://localhost:<port>). An install from before, holding the default admin account
+ * `admin`, unless `fresh` (issue #238: a new hopper holds no user). `env`: the daemon's HOPPER_* config;
  * `runtime`: more of its environment over SECRETS (HOPPER_SIGN_IN_* variables).
  */
-export async function startWithAuth(h: Harness, auth: unknown, env: Record<string, string> = {}, runtime: Record<string, string> = {}): Promise<{ app: TestApp; origin: string; host: string }> {
+export async function startWithAuth(h: Harness, auth: unknown, env: Record<string, string> = {}, runtime: Record<string, string> = {}, fresh = false): Promise<{ app: TestApp; origin: string; host: string }> {
   const db = tempDbPath();
   h.cleanup = db.cleanup;
+  if (fresh) newHopper(db.dbPath);
   if (auth !== undefined) writeConfig(db.dbPath, 'sign-in', auth);
   h.t = await startTestApp({ dbPath: db.dbPath, env, secrets: { ...SECRETS, ...runtime } });
   const port = new URL(h.t.url).port;
   return { app: h.t, origin: `http://localhost:${port}`, host: `localhost:${port}` };
 }
+
+/** A new hopper (issue #238: no user, no bootstrap login) with this sign-in config. */
+export const startNewHopper = (h: Harness, auth: unknown, env: Record<string, string> = {}) => startWithAuth(h, auth, env, {}, true);
 
 /** Restart on the same store with this sign-in config. */
 export async function restartWithAuth(h: Harness, app: TestApp, auth: unknown, env: Record<string, string> = {}): Promise<TestApp> {

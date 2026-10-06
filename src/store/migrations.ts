@@ -8,6 +8,7 @@ import { documentsToRecords } from './migration-config.ts';
 import { signInRealms } from './migration-realms.ts';
 import { usersAndOwner } from './migration-users.ts';
 import { ownerToAdmin } from './migration-admin.ts';
+import { noBootstrapUser } from './migration-no-bootstrap.ts';
 
 // Schema changes never drop a queue (persisted state is the user's). A migration is SQL, or a
 // function for a rewrite SQL cannot say plainly (JSON bodies); each runs in one transaction.
@@ -16,7 +17,8 @@ import { ownerToAdmin } from './migration-admin.ts';
 // BASE, version 6; every migration after it is appended to MIGRATIONS. This is the instance track:
 // since migration 17 (issue #158) a user's tables live in a user schema with a track of its own
 // (tenant-migrations.ts); a change to them goes there.
-type Migration = string | ((db: Db) => void);
+// A function migration is given the version the store had when this run began: 0 for a new store.
+type Migration = string | ((db: Db, from: number) => void);
 
 const BASE_VERSION = 6;
 
@@ -100,7 +102,7 @@ const MIGRATIONS: readonly Migration[] = [
   `
   CREATE TABLE IF NOT EXISTS config_documents (name TEXT PRIMARY KEY, text TEXT NOT NULL, updated_at TEXT NOT NULL);
   `,
-  // 9: one-time UI login codes live in the store (minted by `hopper login-code`), not in a file.
+  // 9: one-time UI login codes live in the store, not in a file.
   // Only the code's SHA-256 is kept.
   `
   CREATE TABLE IF NOT EXISTS login_codes (code_hash TEXT PRIMARY KEY, expires_at TEXT NOT NULL);
@@ -149,6 +151,9 @@ const MIGRATIONS: readonly Migration[] = [
   // 23: a github realm signs in through the hopper's GitHub App by the device flow (issue #214): its own
   // OAuth app's settings and client secret leave the `sign-in` record, and a hopper without one gets one.
   githubRealmsThroughTheApp,
+  // 24: no bootstrap user (issue #238): a new store ends with no user; an install from before keeps admin,
+  // and no sign-in is linked to it.
+  noBootstrapUser,
 ];
 
 /**
@@ -366,11 +371,11 @@ function attachedMachinesToInstances(db: Db): void {
 /** The instance schema's version once migrated. */
 export const INSTANCE_SCHEMA_VERSION = BASE_VERSION + MIGRATIONS.length;
 
-function step(db: Db, m: Migration, record: () => void): void {
+function step(db: Db, m: Migration, from: number, record: () => void): void {
   db.exec('BEGIN');
   try {
     if (typeof m === 'string') db.exec(m);
-    else m(db);
+    else m(db, from);
     record();
     db.exec('COMMIT');
   } catch (e) {
@@ -387,6 +392,7 @@ export function migrateInstance(db: Db, to = INSTANCE_SCHEMA_VERSION): void {
     db.run('DELETE FROM schema_version');
     db.run('INSERT INTO schema_version (version) VALUES (?)', v);
   };
-  if (version() === 0) step(db, BASE, record(BASE_VERSION));
-  for (let v = version(); v < to; v++) step(db, MIGRATIONS[v - BASE_VERSION]!, record(v + 1));
+  const from = version();
+  if (from === 0) step(db, BASE, from, record(BASE_VERSION));
+  for (let v = version(); v < to; v++) step(db, MIGRATIONS[v - BASE_VERSION]!, from, record(v + 1));
 }

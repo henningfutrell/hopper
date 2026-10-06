@@ -20,7 +20,7 @@ with Podman** ("In containers, with Podman"); the host install is the other way.
 | GitHub | the gh CLI logged in as the owner (default; from the UI, Sources → Log in to GitHub — design.md "gh login"), or a GitHub App the owner creates for this hopper with `scripts/create-github-app.sh` (its key in `GITHUB_APP_PRIVATE_KEY`). Each hopper has its own App and key; there is no shared one. Setting up either: `README.md` "Connect GitHub". |
 | Where jobs run | machines: this host's herdr session (`hopper-herdr`; not in a container, issue #141), and attached machines, instances in the plugins config's machine sources (Settings → Plugins → Machine sources, or the Machines view) — `ssh` targets, `client` targets, `docker` container targets. Setting each one up, step by step: `README.md` "Add machines". |
 
-`hopper` is the operator CLI (`hopper config …`, `hopper login-code`, `hopper user add`, `hopper user transfer`); it needs `HOPPER_DATABASE_URL` (or `_FILE`) and nothing else. `hopper help` lists its commands; `node src/main.ts --help` lists every daemon setting with its default.
+`hopper` is the operator CLI (`hopper config …`, `hopper users`, `hopper user add`, `hopper user transfer`); it needs `HOPPER_DATABASE_URL` (or `_FILE`) and nothing else. `hopper help` lists its commands; `node src/main.ts --help` lists every daemon setting with its default.
 
 Once it runs, the API reference is at `/docs/` (Scalar; the OpenAPI document at `/docs/openapi.json`), on every address the UI answers on. A first-time walkthrough is `README.md`.
 
@@ -44,8 +44,10 @@ works the same — `docker compose` in place of `podman compose` everywhere belo
 ```sh
 curl -fsSLO https://henningfutrell.github.io/hopper/compose.yaml
 podman compose up -d
-podman compose exec hopper hopper login-code --link http://127.0.0.1:4790
 ```
+
+Then open `http://localhost:4790/` and sign in with GitHub: the first person to do so is the admin.
+There is no bootstrap login: a new hopper creates no user, no password and no login code (issue #238).
 
 | service | |
 |---|---|
@@ -120,7 +122,7 @@ installs `hopper.service` and `hopper-herdr.service`, writes `HOPPER_DATABASE_UR
 `~/.config/hopper/daemon.env` (mode 600, the unit's EnvironmentFile) when it is not there yet,
 and writes the starter rules when the database has none (edit them in Settings → Question gates).
 Secrets go in the same `daemon.env`.
-Open the UI: `bash ~/.local/lib/hopper/scripts/open-ui.sh`.
+Open the UI at `http://localhost:4790/` and sign in with GitHub: the first person to do so is the admin.
 
 A managed Postgres works the same: put its URL (with `sslmode=require`) in `daemon.env`.
 
@@ -157,14 +159,11 @@ their own GitHub from the UI (issue #214, `README.md` "Connect GitHub"), whichev
 3. Give the realm a role rule that makes you admin (`ROLES_ADMIN_GROUPS`, `ROLES_ADMIN_EMAILS`, …) and
    a default role for everyone else it lets in (`ROLES_DEFAULT_ROLE`; without it, a person no rule
    matches gets no session). Rules and their matches: docs/sign-in.md "UI roles and role rules".
-4. The first sign-in needs nothing set: while nothing else signs the default admin account in, each
-   start logs a one-time login code for it with its link (`hopper: first sign-in: login code …`,
-   docs/sign-in.md "First sign-in: the login code"). There are no password accounts of the hopper's own.
-5. Start or restart the hopper. Its start lines say
+4. Start or restart the hopper. Its start lines say
    `hopper: sign-in from the environment: realms <name>`, and Settings → Sign-in marks the realm *set
    from the environment*. A line `invalid sign-in environment: <variable>: …` names what to fix.
-6. Sign in through the new realm, and check that you are admin (Settings is there).
-7. Turn the login code off: `HOPPER_SIGN_IN_LOCAL_ENABLED=false`, and start again.
+5. Sign in through the new realm, and check that you are admin (Settings is there).
+6. Turn the login code off: `HOPPER_SIGN_IN_LOCAL_ENABLED=false`, and start again.
 
 To remove a realm the environment set up: delete its variables, start again, and remove the realm in
 Settings → Sign-in (with the variables gone, it stays as last set).

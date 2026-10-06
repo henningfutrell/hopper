@@ -3,7 +3,7 @@
 // rate limit. Password sign-in against a directory: realms-ldap.test.ts.
 import { afterEach, describe, expect, it } from 'vitest';
 import { rawRequest } from '../support/http.ts';
-import { harness, restartWithAuth, session, startWithAuth, stopAll } from '../support/sign-in-app.ts';
+import { harness, restartWithAuth, session, startNewHopper, startWithAuth, stopAll } from '../support/sign-in-app.ts';
 
 const h = harness();
 afterEach(() => stopAll(h));
@@ -19,6 +19,16 @@ describe('no sign-in (the sign-in config\'s none)', () => {
     const { app, origin, host } = await start(undefined);
     expect((await session(app)).signIn).toEqual({ local: true, none: null, password: false, gateway: false, origin, realms: [], devices: [{ name: 'github', label: 'GitHub', type: 'github' }], required: false });
     expect((await rawRequest(app.url, { path: '/ui/auth/none', ...json(host, origin, {}) })).status).toBe(403);
+  });
+
+  it('on a new hopper (issue #238): its first visitor gets a user of their own, and every visit after is that user', async () => {
+    const { app, origin, host } = await startNewHopper(h, { version: 1, none: { role: 'admin' } });
+    expect(app.app.instance.users.list()).toEqual([]);
+    const first = await session(app, tokenOf((await rawRequest(app.url, { path: '/ui/auth/none', ...json(host, origin, {}) })).text));
+    expect(first).toMatchObject({ authenticated: true, user: { name: 'no sign-in', role: 'admin', realm: 'none' } });
+    const again = await session(app, tokenOf((await rawRequest(app.url, { path: '/ui/auth/none', ...json(host, origin, {}) })).text));
+    expect(again.user.id).toBe(first.user.id);
+    expect(app.app.instance.users.list().map((u) => [u.id])).toEqual([[first.user.id]]);
   });
 
   it('on: anyone gets a session with the configured role, no credential', async () => {
