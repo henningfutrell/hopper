@@ -99,7 +99,7 @@ describe('the herdr terminal', () => {
     const token = await a.login();
     const { ws, got } = await connect(socketUrl(a, `ticket=${await ticket(a, token)}&cols=132&rows=41`), { origin: origin(a) });
     expect(ws).toBeDefined();
-    await waitFor(() => terminals.length === 1, 3000);
+    await waitFor(() => terminals.length === 1, { timeoutMs: 3000 });
     const term = terminals[0]!;
     expect([term.spawn.file, term.spawn.args, term.spawn.cols, term.spawn.rows]).toEqual(['herdr', ['--session', 'hopper-root'], 132, 41]);
     // Its own herdr state (the root herdr's saved machines are the hopper's), the ssh wrapper first on PATH.
@@ -110,7 +110,7 @@ describe('the herdr terminal', () => {
     // No secret of the daemon's reaches the terminal, and no herdr nesting marker.
     expect(Object.keys(term.spawn.env).filter((k) => k.startsWith('HOPPER_') || k.startsWith('HERDR_'))).toEqual([]);
     // The root herdr's saved machines follow the plan; the pins and the wrapper are written.
-    await waitFor(() => synced.length === 1, 3000);
+    await waitFor(() => synced.length === 1, { timeoutMs: 3000 });
     expect(synced[0]).toEqual([{ machine: 'laptop', label: 'Laptop (laptop)', target: 'ssh://me@192.0.2.10:22', session: 'hopper', hostKey: TEST_HOST_KEY }]);
     expect(readFileSync(join(dir, 'known_hosts'), 'utf8')).toBe(`192.0.2.10 ${TEST_HOST_KEY}\n`);
     expect(statSync(join(dir, 'bin', 'ssh')).mode & 0o777).toBe(0o700);
@@ -119,25 +119,25 @@ describe('the herdr terminal', () => {
 
     ws!.send(JSON.stringify({ type: 'input', data: 'ls\r' }));
     ws!.send(JSON.stringify({ type: 'resize', cols: 100, rows: 30 }));
-    await waitFor(() => term.input.length === 1 && term.sizes.length === 1, 3000);
+    await waitFor(() => term.input.length === 1 && term.sizes.length === 1, { timeoutMs: 3000 });
     expect(term.input).toEqual(['ls\r']);
     expect(term.sizes).toEqual([[100, 30]]);
     term.emit('\x1b[2Jherdr');
-    await waitFor(() => got.join('') === '\x1b[2Jherdr', 3000);
+    await waitFor(() => got.join('') === '\x1b[2Jherdr', { timeoutMs: 3000 });
 
     // Closing the page ends the terminal's client; the root herdr server keeps running.
     ws!.close();
-    await waitFor(() => term.killed, 3000);
+    await waitFor(() => term.killed, { timeoutMs: 3000 });
   });
 
   it('closes the socket when the terminal\'s program ends', async () => {
     const { a, terminals } = await start();
     const { ws } = await connect(socketUrl(a, `ticket=${await ticket(a, await a.login())}&cols=80&rows=24`), { origin: origin(a) });
-    await waitFor(() => terminals.length === 1, 3000);
+    await waitFor(() => terminals.length === 1, { timeoutMs: 3000 });
     let closed = false;
     ws!.onclose = () => { closed = true; };
     terminals[0]!.exit(0);
-    await waitFor(() => closed, 3000);
+    await waitFor(() => closed, { timeoutMs: 3000 });
   });
 
   it('a ticket needs an admin\'s UI session, opens one socket, from a UI origin only', async () => {

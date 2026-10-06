@@ -12,12 +12,12 @@ describe('the terminal adapter', () => {
     let exit: number | undefined;
     term.onExit((code) => { exit = code; });
     term.write('tty; stty size\r');
-    await waitFor(() => /\/dev\/pts\/\d+/.test(out) && out.includes('40 120'), 5000);
+    await waitFor(() => /\/dev\/pts\/\d+/.test(out) && out.includes('40 120'), { timeoutMs: 5000 });
     term.resize(90, 30);
     term.write('stty size\r');
-    await waitFor(() => out.includes('30 90'), 5000);
+    await waitFor(() => out.includes('30 90'), { timeoutMs: 5000 });
     term.write('exit 3\r');
-    await waitFor(() => exit !== undefined, 5000);
+    await waitFor(() => exit !== undefined, { timeoutMs: 5000 });
     expect(exit).toBe(3);
   });
 
@@ -26,6 +26,6 @@ describe('the terminal adapter', () => {
     let exited = false;
     term.onExit(() => { exited = true; });
     term.kill();
-    await waitFor(() => exited, 5000);
+    await waitFor(() => exited, { timeoutMs: 5000 });
   });
 });
