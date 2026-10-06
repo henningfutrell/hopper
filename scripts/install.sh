@@ -163,7 +163,7 @@ for i in $(seq 1 20); do
   if health="$(curl -fsS "$URL/api/health" 2>/dev/null)"; then
     printf 'health (try %s): %s\n' "$i" "$health"
     printf 'executors: %s\n' "$(printf '%s' "$health" | node -e 'let s="";process.stdin.on("data",(c)=>s+=c).on("end",()=>console.log((JSON.parse(s).executors??[]).join(", ")))')"
-    printf 'UI: %s/ (read-only until you log in)\n' "$URL"
+    printf 'UI: %s/ (shows only the sign-in page until you sign in)\n' "$URL"
     if cli config version rules 2>/dev/null | grep -qx missing; then
       step "no rules in the database yet: write the starter (edit them in the UI, Settings → Question gates)"
       node -e 'process.stdout.write(JSON.stringify(require("fs").readFileSync(0, "utf8")))' < "$APP_DIR/scripts/starter-rules.md" \
