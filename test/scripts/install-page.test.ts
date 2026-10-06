@@ -132,3 +132,23 @@ describe('get.sh without a running systemd (WSL with systemd off)', () => {
     expect(run.stderr).not.toContain('git ran');
   });
 });
+
+describe('sign-in for a team (issue #234)', () => {
+  const team = page.slice(page.indexOf('id="sign-in"'), page.indexOf('id="upgrade"'));
+
+  it('has its own section, linked from the top of the page', () => {
+    expect(page).toContain('href="#sign-in"');
+    expect(team.length).toBeGreaterThan(0);
+    expect(team.length).toBeLessThan(page.length);
+  });
+
+  it('names each way in, set from the environment, and links the steps for each', () => {
+    for (const way of ['auth gateway', 'OIDC', 'SAML', 'LDAP', 'GitHub']) expect(team).toContain(way);
+    expect(team).toContain('HOPPER_SIGN_IN_');
+    expect(team).toContain('docs/deploy.md#sign-in-set-up-at-launch');
+  });
+
+  it('says each person still connects their own GitHub inside the hopper', () => {
+    expect(team).toMatch(/connects? (their|your) own GitHub/);
+  });
+});
