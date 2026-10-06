@@ -6,7 +6,8 @@
 // jobs, and the jobs act as them with the app marked on what they do. GitHub: the app reaches only the
 // repositories it is installed on — the panel lists them for each account it is installed on, with a link
 // to choose them; only where it is installed nowhere does it link to install it (issue #253). Disconnect
-// forgets the account and its token.
+// forgets the account and its token. The connection's job source is shown in it, its sync under the
+// account (issue #254): one GitHub piece, not a card beside it.
 import { Link2, Unlink } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -15,16 +16,17 @@ import { Button } from '@/components/ui/button';
 import { Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
 import { get, post, SessionRejected } from '@/lib/api';
-import type { AppInstallation, ConnectedAccountStatus } from '@/model/wire';
+import type { AppInstallation, ConnectedAccountStatus, SourceStatus } from '@/model/wire';
 import { useHopper } from '@/store';
 import { useCanAdmin } from '@/store/selectors';
+import { SourceSync } from './source-sync';
 
 const POLL_MS = 2000;
 type Provider = ConnectedAccountStatus['provider'];
 const NAME: Record<Provider, string> = { github: 'GitHub' };
 const LABEL: Record<ConnectedAccountStatus['state'], string> = { connected: 'connected', 'not-connected': 'not connected', waiting: 'waiting', failed: 'failed' };
 
-export function ConnectedAccountPanel({ provider }: { provider: Provider }) {
+export function ConnectedAccountPanel({ provider, source }: { provider: Provider; source?: SourceStatus | undefined }) {
   const [s, setS] = useState<ConnectedAccountStatus | null>(null);
   const canAdmin = useCanAdmin();
   const waiting = s?.state === 'waiting';
@@ -64,6 +66,7 @@ export function ConnectedAccountPanel({ provider }: { provider: Provider }) {
                 <div className="text-warn">The app is not installed on any account you can see: it reaches no repository yet.</div>
                 {s.installUrl && <div><a className="underline" href={s.installUrl} target="_blank" rel="noreferrer">Install the app</a></div>}
               </div>}
+          {source && <SourceSync s={source} />}
           <Button size="xs" variant="outline" disabled={!canAdmin} title={adminOnly} onClick={() => void act('disconnect')}><Unlink />Disconnect</Button>
         </>}
         {s.state === 'waiting' && (
