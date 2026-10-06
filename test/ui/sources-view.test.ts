@@ -2,7 +2,10 @@
 // The Sources view (issue #160) rendered in the whole app against a fake of the daemon's HTTP surface:
 // gh and the GitHub App are one GitHub section, the one in use first, the paused one saying why, and
 // gh login beside them under its own name. The GitHub account is connected from there
-// (issue #214): the panel says how the hopper connects, and shows the device code to enter.
+// (issue #214): the panel says how the hopper connects, and shows the device code to enter. Signed in
+// with GitHub, that connection is the one GitHub piece (issue #254). Once connected it shows the
+// repositories the app reaches on each account it is installed on, and asks to install it only where it is
+// installed nowhere (issue #253).
 import { createElement } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -15,7 +18,7 @@ const SOURCES = [
   source('github-app', 'github-app', 'ok', { mode: 'app', slug: 'hopper-app' }),
 ];
 
-function fakeDaemon() {
+function fakeDaemon(over: Record<string, unknown> = {}) {
   const routes: Record<string, unknown> = {
     '/api/health': { ok: true, version: '0', router: 'pass-through', fallback: false, executors: [], uptimeS: 1 },
     '/api/queue': { waiting: [], running: [], waitingAnswer: [], ended: [] },
@@ -24,10 +27,9 @@ function fakeDaemon() {
     '/api/questions': { questions: [] }, '/api/sources': { sources: SOURCES },
     '/api/usage': { readings: [], sources: [], limits: { soft: 0.7, hard: 0.95 }, machines: [] }, '/api/accounts': { accounts: [] },
     '/api/gh-login': { state: 'logged-in', account: 'someone' },
-    '/api/connected-accounts': { accounts: [
-      { provider: 'github', via: 'the hopper\'s app', state: 'not-connected' },
-    ] },
+    '/api/connected-accounts': { accounts: [{ provider: 'github', via: 'the hopper\'s app', state: 'not-connected' }] },
     '/ui/api/connected-accounts': { provider: 'github', via: 'the hopper\'s app', state: 'waiting', userCode: 'WDJB-MJHT', verificationUri: 'https://github.com/login/device', expiresAt: '2099-01-01T00:00:00.000Z' },
+    ...over,
   };
   const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
   return vi.fn(async (input: string, init?: RequestInit) => {
@@ -52,13 +54,13 @@ class FakeEventSource {
 
 let root: Root | undefined;
 
-async function boot() {
+async function boot(over?: Record<string, unknown>) {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
   window.location.hash = '#sources';
   localStorage.clear();
   localStorage.setItem('jh_session', 'a'.repeat(64));
-  vi.stubGlobal('fetch', fakeDaemon());
+  vi.stubGlobal('fetch', fakeDaemon(over));
   vi.stubGlobal('EventSource', FakeEventSource);
   vi.resetModules();
   const app = '../../ui/src/app/app.tsx'; // browser code, type-checked by ui/tsconfig.json: imported by path
@@ -98,5 +100,66 @@ describe('Sources view: GitHub', () => {
     await act(async () => { button.click(); });
     await vi.waitFor(() => expect(panel()!.querySelector('[data-device-code]')?.textContent).toBe('WDJB-MJHT'));
     expect(document.querySelector('[aria-labelledby="sources-gitlab"]')).toBeNull();
+  });
+
+  it('signed in with GitHub: the connection is the one GitHub piece, with its sync; no gh, gh login or unset GitHub App (#254)', async () => {
+    await boot({
+      '/api/sources': { sources: [
+        source('github-account', 'github-account', 'ok', { mode: 'account', login: 'octo-user', authors: ['octo-user'], label: 'hopper' }),
+        source('github', 'github', 'disabled', { mode: 'gh', enabledSetting: 'auto', paused: 'GitHub account connected' }),
+        source('github-app', 'github-app', 'ok', { mode: 'app', paused: 'no GitHub App configured' }),
+      ] },
+      '/api/gh-login': { state: 'logged-out' },
+      '/api/connected-accounts': { accounts: [{ provider: 'github', via: 'the hopper\'s app', state: 'connected', account: 'octo-user', installations: [{ account: 'octo-user', repositorySelection: 'all', repositories: ['octo-user/hopper'], settingsUrl: 'https://github.com/settings/installations/1' }] }] },
+    });
+    const panel = () => document.querySelector('[data-connected-account="github"]');
+    await vi.waitFor(() => expect(panel()?.querySelector('[data-source-sync="github-account"]')).not.toBeNull());
+    expect(titles()).toEqual(['GitHub', 'GitHub account']);
+    expect(document.querySelector('[data-github-summary]')?.textContent).toBe('Issues are read, and jobs work, through your GitHub connection, octo-user.');
+    expect(panel()!.textContent).toContain('Connected as octo-user.');
+    expect(document.querySelectorAll('[data-source-use]')).toHaveLength(0);
+    expect(document.body.textContent).not.toContain('gh login');
+    expect(document.body.textContent).not.toContain('gh is not logged in');
+    expect(document.body.textContent).not.toContain('github-app');
+  });
+
+  const connected = (installations?: unknown[]) => ({
+    provider: 'github', via: 'the hopper\'s app', state: 'connected', account: 'octo-user', connectedAt: '2026-10-01T00:00:00.000Z',
+    installUrl: 'https://github.com/apps/hopper-qm/installations/new', ...(installations ? { installations } : {}),
+  });
+  const withAccount = (github: unknown) => ({ '/api/connected-accounts': { accounts: [github] } });
+  const panel = () => document.querySelector('[data-connected-account="github"]');
+  const links = () => [...panel()!.querySelectorAll('a')].map((a) => [a.textContent, a.getAttribute('href')]);
+
+  it('installed: the repositories it reaches on each account, a link to choose them, and no install nudge (#253)', async () => {
+    await boot(withAccount(connected([
+      { account: 'octo-user', repositorySelection: 'all', repositories: ['octo-user/hopper', 'octo-user/tools'], settingsUrl: 'https://github.com/settings/installations/1' },
+      { account: 'octo-org', repositorySelection: 'selected', repositories: ['octo-org/site'], settingsUrl: 'https://github.com/organizations/octo-org/settings/installations/2' },
+    ])));
+    await vi.waitFor(() => expect(panel()?.textContent).toContain('Connected as octo-user.'));
+    const installs = [...panel()!.querySelectorAll('[data-installation]')];
+    expect(installs.map((e) => e.getAttribute('data-installation'))).toEqual(['octo-user', 'octo-org']);
+    expect([...installs[0]!.querySelectorAll('[data-repository]')].map((e) => e.textContent)).toEqual(['octo-user/hopper', 'octo-user/tools']);
+    expect(installs[0]!.textContent).toContain('all repositories');
+    expect([...installs[1]!.querySelectorAll('[data-repository]')].map((e) => e.textContent)).toEqual(['octo-org/site']);
+    expect(installs[1]!.textContent).toContain('chosen repositories');
+    expect(links()).toEqual([
+      ['Choose its repositories', 'https://github.com/settings/installations/1'],
+      ['Choose its repositories', 'https://github.com/organizations/octo-org/settings/installations/2'],
+    ]);
+    expect(panel()!.textContent).not.toMatch(/install the app/i);
+  });
+
+  it('installed nowhere: says so, and links to install it (#253)', async () => {
+    await boot(withAccount(connected([])));
+    await vi.waitFor(() => expect(panel()?.textContent).toContain('Connected as octo-user.'));
+    expect(panel()!.textContent).toContain('not installed');
+    expect(links()).toEqual([['Install the app', 'https://github.com/apps/hopper-qm/installations/new']]);
+  });
+
+  it('an install that reaches no repository says so, with the link to choose them', async () => {
+    await boot(withAccount(connected([{ account: 'octo-user', repositorySelection: 'selected', repositories: [], settingsUrl: 'https://github.com/settings/installations/1' }])));
+    await vi.waitFor(() => expect(panel()?.querySelector('[data-installation="octo-user"]')?.textContent).toContain('no repository'));
+    expect(links()).toEqual([['Choose its repositories', 'https://github.com/settings/installations/1']]);
   });
 });

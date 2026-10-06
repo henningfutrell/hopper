@@ -14,7 +14,15 @@ const GH = { type: 'github' };
 
 describe('loadSignInConfig', () => {
   it('no config: local sign-in only', () => {
-    expect(load(undefined)).toEqual({ local: { enabled: true }, none: null, githubAdmin: null, realms: [] });
+    expect(load(undefined)).toEqual({ local: { enabled: true }, none: null, githubAdmin: null, superAdmins: [], realms: [] });
+  });
+
+  it('the super admins: the first GitHub admin until the record names them (issue #242)', () => {
+    const first = { realm: 'github', subject: '1' };
+    expect(load({ version: 1, realms: [] }).superAdmins).toEqual([]);
+    expect(load({ version: 1, githubAdmin: first, realms: [] }).superAdmins).toEqual([first]);
+    expect(load({ version: 1, githubAdmin: first, superAdmins: [{ realm: 'github', subject: '2' }], realms: [] }).superAdmins).toEqual([{ realm: 'github', subject: '2' }]);
+    expect(() => load({ version: 1, superAdmins: [{ realm: 'github' }], realms: [] })).toThrow(/superAdmins/);
   });
 
   it('reads every realm type, in order, with their defaults', () => {

@@ -1,6 +1,6 @@
 // Changing the sign-in config from Settings → Sign-in (design.md "Sign-in: realms", issues #185, #198):
 // one change — a realm added or replaced from its fields, removed, moved, turned on or off; the login
-// code and no sign-in set. A new copy is answered;
+// code and no sign-in set; an identity made admin, or super admin (issue #242). A new copy is answered;
 // the one given is left as it was. Whether the result loads is the caller's check (loadSignInConfig),
 // so one schema decides. A realm's secrets are written, never read back (issue #216): a save that
 // leaves one out keeps the stored one, `null` removes it, and the view names which are set.
@@ -22,7 +22,11 @@ export type SignInEdit =
   | { action: 'move'; name: string; to: number }
   | { action: 'enable'; name: string; enabled: boolean }
   /** The login code on or off; the role of no sign-in, or null for off. */
-  | { action: 'settings'; local?: boolean; none?: UiRole | null };
+  | { action: 'settings'; local?: boolean; none?: UiRole | null }
+  /** Add the identity to its realm's admin rule, by subject (issue #242). */
+  | { action: 'admin'; who: { realm: string; subject: string } }
+  /** Add the identity to the super admins; with `transfer`, take `from` out of them (issue #242). Who may is the caller's check. */
+  | { action: 'super-admin'; who: { realm: string; subject: string }; transfer?: boolean; from?: { realm: string; subject: string } };
 
 const secretsOf = (type: string): readonly string[] => SECRET_SETTINGS[type as RealmType] ?? [];
 
@@ -67,6 +71,22 @@ export function editSignIn(current: StoredSignIn, edit: SignInEdit): StoredSignI
         ...(before.enabled === false ? { enabled: false } : {}),
       };
     }
+  } else if (edit.action === 'admin') {
+    const r = realms[indexOf(realms, edit.who.realm)]!;
+    const roles = (r.roles ?? {}) as { admin?: { subjects?: string[] } };
+    const subjects = roles.admin?.subjects ?? [];
+    if (!subjects.includes(edit.who.subject)) r.roles = { ...roles, admin: { ...roles.admin, subjects: [...subjects, edit.who.subject] } };
+  } else if (edit.action === 'super-admin') {
+    indexOf(realms, edit.who.realm);
+    const same = (a: { realm: string; subject: string }, b: { realm: string; subject: string }) => a.realm === b.realm && a.subject === b.subject;
+    let supers = s.superAdmins ?? (s.githubAdmin ? [s.githubAdmin] : []);
+    if (!supers.some((a) => same(a, edit.who))) supers = [...supers, { ...edit.who }];
+    const from = edit.from;
+    if (edit.transfer && from) {
+      if (same(from, edit.who)) throw new AuthEditError(400, 'you are a super admin already: hand it over to someone else');
+      supers = supers.filter((a) => !same(a, from));
+    }
+    s.superAdmins = supers;
   } else if (edit.action === 'remove') {
     realms.splice(indexOf(realms, edit.name), 1);
   } else if (edit.action === 'move') {

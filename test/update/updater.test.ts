@@ -3,7 +3,7 @@
 // the result on the next boot. The build (scripts/install.sh build-only mode) and the restart are seams.
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { installFromBefore, testDatabaseUrl } from '../support/database.ts';
 import type { InstanceStore, UserStore } from '../../src/domain/ports.ts';
 import { ADMIN_ID, type UpdateStatus } from '../../src/domain/types.ts';
@@ -77,6 +77,25 @@ describe('detecting an update', () => {
     const c4 = w.up.commit('fourth');
     expect((await u.check()).target?.commit).toBe(c4);
     expect(types(w)).toEqual(['update.available', 'update.available']);
+  });
+
+  it('checks on its own and offers a newer version even when the check interval is set to 0: checking cannot be turned off (issue #177)', async () => {
+    const w = world();
+    const c1 = w.up.commit('first');
+    const c2 = w.up.commit('merged to main');
+    const warned: string[] = [];
+    const { u } = updater(w, createInstall(w.root, w.up.dir, c1), { checkMs: 0, logger: { info: () => {}, warn: (l) => { warned.push(l); } } });
+    vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval', 'clearTimeout', 'clearInterval'] });
+    try {
+      u.start();
+      await vi.advanceTimersByTimeAsync(10_000);
+    } finally {
+      vi.useRealTimers();
+    }
+    await waitFor(async () => u.status().state === 'available');
+    expect(u.status().target?.commit).toBe(c2);
+    expect(types(w)).toEqual(['update.available']);
+    expect(warned.join('\n')).toMatch(/HOPPER_UPDATE_CHECK_MS/);
   });
 
   it('is current when installed at the head, or ahead of it', async () => {

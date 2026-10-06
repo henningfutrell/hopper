@@ -2274,7 +2274,7 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
 | `HOPPER_PLUGINS_FILE` | `~/.config/hopper/plugins.yaml` |
 | `HOPPER_AUTH_FILE` | `~/.config/hopper/auth.yaml` (issue #39, "Sign-in: realms") |
 | `HOPPER_PUBLIC_URL` | unset (issue #39) |
-| `HOPPER_UPDATE_CHECK_MS` | `900000` — self-update check interval; `0` only when asked ("Self-update") |
+| `HOPPER_UPDATE_CHECK_MS` | `60000` — self-update check interval; `0` is the default, never off ("Self-update") |
 | `HOPPER_RESTART` | unset (detected) — `exit` or `respawn` after an update ("Self-update") |
 
 ### Settled in slice 5 (2026-10-03)
@@ -3861,6 +3861,18 @@ condition is the update path: a hopper with earlier GitHub sign-ins records nobo
 promotes no one. It sits in the record, not in a realm's `roles`, because realms from the environment
 replace the stored realm at every start; the top-level field survives that.
 
+**Super admins** (issue #242): two tiers of admin. `superAdmins` in the record (realm and subject each;
+absent: `[githubAdmin]`, so the first GitHub admin is the first super admin with no migration) lists
+identities that are `admin` whatever their realm's rules, while that realm is on (`isSuperAdmin`,
+`src/auth/index.ts`); not a UI role, a mark on an admin, answered as `SessionUser.superAdmin`. Two
+changes ride `POST /ui/api/realms` (least role `admin`): `admin` adds an identity's subject to its realm's
+`roles.admin.subjects` — any admin; `super-admin` adds it to `superAdmins`, with `transfer` taking the
+acting identity out — only a super admin (403 otherwise). Both name someone who has signed in
+(`IdentityLinks`, else 404). A regular admin's change that would change the super admins in effect —
+turning off or removing their realm — is refused (403). The login code and no sign-in are never super
+admin. `GET /api/realms` lists `people`: every linked identity with the role the config grants it now (by
+a live session's identity when there is one, else by subject alone) and whether it is a super admin.
+
 ### The flow (no cookies)
 
 Cookies ignore ports ("UI session and mutations"), and a SAML response is a cross-site POST that a
@@ -3973,8 +3985,10 @@ every check — the git CLI, never prompting (`GIT_TERMINAL_PROMPT=0`, ssh `Batc
 only the user's ssh config: `-F ~/.ssh/config`, since the unit's `PrivateTmp` puts the daemon in a
 user namespace where root-owned `/etc/ssh` files show as owned by nobody and ssh refuses them), so any
 git URL the daemon's user can fetch works: GitHub by ssh or https, another host, a local path. A
-check runs 10 s after start, then every `HOPPER_UPDATE_CHECK_MS` (default 60000; 0: only when
-asked), and from the UI's Check now. One minute, not fifteen (issue #177): a change merged to the
+check runs 10 s after start, then every `HOPPER_UPDATE_CHECK_MS` (default 60000), and from the UI's
+Check now. Checking cannot be turned off (issue #177): `0` used to mean "only when asked", and one
+hopper left with it set offered nothing merged after it; now `0` (or less) is the default minute, with a
+warning in the log. One minute, not fifteen (issue #177): a change merged to the
 tracked branch is not shipped until the running hopper offers it, and a 15-minute check left merged work
 unoffered for up to that long; a fetch that brings nothing is one round trip. The **update channel** decides the target: `main` → the head
 of the tracked branch; `release` → the newest `v<major>.<minor>.<patch>` tag. An update is
@@ -5319,3 +5333,30 @@ without it no redirect and the device code; a denial; another browser's binding 
 `test/ui/sign-in-device.test.ts` (the redirect button, Use a code instead, the centred code panel with copy
 and Open GitHub, Cancel), `test/integration/unit-file.test.ts` (the secret is read without a warning and kept
 in no config).
+
+## Sources: signed in with GitHub, one GitHub piece (issue #254, 2026-10-06)
+
+Owner request: after signing in with GitHub through the hopper's app (#214), Sources still showed the
+overlapping GitHub pieces — the **gh login** panel (logged out), the `github` card (gh, paused because a
+GitHub account is connected) and the `github-account` card beside the **GitHub account** panel. Signing in
+with GitHub is the connection, and jobs work through it; the app-as-itself source (`github-app`) is only for
+an admin's own GitHub App in particular environments, not a built-in beside the user's connection.
+
+**As built** (`ui/src/model/sources.ts`, `ui/src/views/sources.tsx`, `ui/src/views/connected-account.tsx`,
+`ui/src/views/source-sync.tsx`; no wire or daemon change):
+- The connected account's source (`github-account`) is the connection itself: its sync (seen, created,
+  active, last and next sync, errors, authors and label) is shown inside the **GitHub account** panel while
+  connected, never as a card of its own.
+- **Connected** (that source neither paused nor switched off): the gh source and the **gh login** panel are
+  not shown, and the summary says issues are read, and jobs work, through the GitHub connection. A job gets
+  the account's token as `GH_TOKEN` (#214), so gh login on the host is not what jobs push as.
+- The `github-app` source is shown only where an admin set up an app: not while it is paused with `no GitHub
+  App configured`; a set-up app that is broken (another pause reason) or in use stays, connected or not.
+- Not connected: gh and gh login show as before (#160), with the summary pointing at Connect GitHub.
+The instances stay in the plugins config (Settings → Plugins shows and edits them); only Sources stops
+listing what is not a connection.
+
+**Verification:** `test/ui/sources.test.ts` (the model: connected shows no gh, gh login or unset app; an
+admin's app in use stays; a broken app stays; not connected) and `test/ui/sources-view.test.ts` (the whole
+app against a fake daemon, signed in with GitHub: the section holds only the GitHub account panel with its
+source's sync; no gh login, gh card or github-app).
