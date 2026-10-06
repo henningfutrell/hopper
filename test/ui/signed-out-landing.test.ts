@@ -82,6 +82,22 @@ describe('logged out: only the landing page', () => {
     expect(shellSeen).toBe(false);
   });
 
+  // Issue #266: a page, not a lone card. Beside the sign-in card, a panel says what the hopper does in
+  // three steps (wide screens; a phone gets the card alone, by CSS); the backdrop is lanes of jobs.
+  it('the sign-in card beside a panel that says what the hopper does, in three steps, over lanes', async () => {
+    await boot(async () => json({ authenticated: false, signIn: offer(false) }));
+    await vi.waitFor(() => expect(landing()).not.toBeNull());
+    const card = landing()!.querySelector('[data-landing-card]');
+    const showcase = landing()!.querySelector('[data-landing-showcase]');
+    expect(card!.querySelector('input[aria-label="Username"]')).not.toBeNull();
+    expect(showcase?.querySelector('h2')?.textContent).toContain('Your GitHub issues, worked on your machines');
+    expect([...showcase!.querySelectorAll('[data-landing-step]')].map((s) => s.querySelector('h3')?.textContent)).toEqual([
+      'Label an issue', 'It runs on your machine', 'Review the pull request',
+    ]);
+    expect(showcase!.contains(card)).toBe(false);
+    expect(landing()!.querySelectorAll('.landing-lane').length).toBeGreaterThanOrEqual(3);
+  });
+
   it('the daemon unreachable: the landing page says so, and nothing of the app shows', async () => {
     await boot(async () => { throw new TypeError('Failed to fetch'); });
     await vi.waitFor(() => expect(landing()).not.toBeNull());
