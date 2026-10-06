@@ -49,12 +49,12 @@ export function createUserRepository(c: StoreContext, onAdded: (user: User) => v
 
 export function createIdentityLinks(c: StoreContext): IdentityLinks {
   return {
-    userOf(provider, subject) {
-      const r = c.db.get('SELECT user_id FROM user_identities WHERE provider = ? AND subject = ?', provider, subject);
+    userOf(realm, subject) {
+      const r = c.db.get('SELECT user_id FROM user_identities WHERE realm = ? AND subject = ?', realm, subject);
       return r ? String(r.user_id) : undefined;
     },
-    link(provider, subject, userId) {
-      c.db.run('INSERT INTO user_identities (provider, subject, user_id) VALUES (?, ?, ?) ON CONFLICT DO NOTHING', provider, subject, userId);
+    link(realm, subject, userId) {
+      c.db.run('INSERT INTO user_identities (realm, subject, user_id) VALUES (?, ?, ?) ON CONFLICT DO NOTHING', realm, subject, userId);
     },
   };
 }

@@ -1,15 +1,15 @@
-// GitHub (github.com or GitHub Enterprise Server) as an identity provider. GitHub's OAuth app is
+// The github realm: GitHub (github.com or GitHub Enterprise Server) as the identity provider. GitHub's OAuth app is
 // OAuth 2.0, not OIDC: no ID token, so the identity comes from the REST API with the user's token —
 // the user, their primary verified email, and, when a role rule names groups, their teams as
 // `org/team-slug`. openid-client drives the authorization code grant with PKCE and state.
 import * as client from 'openid-client';
 import type { Identity } from '../domain/types.ts';
-import type { GithubProviderConfig } from './config.ts';
-import { isLoopbackHttp, stringOf, type IdentityProvider } from './provider.ts';
+import type { GithubRealmConfig } from './config.ts';
+import { isLoopbackHttp, stringOf, type RedirectRealm } from './realm.ts';
 
-const usesGroups = (c: GithubProviderConfig): boolean => [c.roles.admin, c.roles.operator, c.roles.viewer].some((m) => (m?.groups?.length ?? 0) > 0);
+const usesGroups = (c: GithubRealmConfig): boolean => [c.roles.admin, c.roles.operator, c.roles.viewer].some((m) => (m?.groups?.length ?? 0) > 0);
 
-export function createGithubProvider(c: GithubProviderConfig, redirectUri: string): IdentityProvider {
+export function createGithubRealm(c: GithubRealmConfig, redirectUri: string): RedirectRealm {
   const web = c.webUrl.replace(/\/$/, '');
   const api = c.apiUrl.replace(/\/$/, '');
   const config = new client.Configuration(
@@ -43,7 +43,7 @@ export function createGithubProvider(c: GithubProviderConfig, redirectUri: strin
       const emails = await read<{ email: string; primary: boolean; verified: boolean }[]>(tokens.access_token, '/user/emails');
       const email = emails.find((e) => e.primary && e.verified)?.email;
       const teams = usesGroups(c) ? await read<{ slug: string; organization: { login: string } }[]>(tokens.access_token, '/user/teams?per_page=100') : [];
-      const who: Identity = { provider: c.name, subject: String(user.id), username: user.login, groups: teams.map((t) => `${t.organization.login}/${t.slug}`) };
+      const who: Identity = { realm: c.name, subject: String(user.id), username: user.login, groups: teams.map((t) => `${t.organization.login}/${t.slug}`) };
       const name = stringOf(user.name);
       return { ...who, ...(email ? { email } : {}), ...(name ? { name } : {}) };
     },

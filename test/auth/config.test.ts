@@ -32,7 +32,7 @@ realms:
     bindDn: cn=hopper,dc=example,dc=com
     bindPasswordEnv: LDAP_BIND
     userBase: ou=people,dc=example,dc=com
-    roles: { admin: { groups: [cn=admins,dc=example,dc=com] } }
+    roles: { admin: { groups: ["cn=admins,dc=example,dc=com"] } }
   - name: google
     type: oidc
     issuer: https://accounts.google.com
@@ -70,7 +70,8 @@ realms:
       label: 'google', clientSecret: 'from-env', scopes: ['openid', 'email', 'profile'],
       claims: { email: 'email', username: 'preferred_username', name: 'name', groups: 'groups' }, trustUnverifiedEmail: false,
     });
-    expect(gh).toMatchObject({ label: 'GitHub', clientSecret: 'gh-env', webUrl: 'https://github.com', apiUrl: 'https://api.github.com' });
+    // Off: its secret is not read.
+    expect(gh).toMatchObject({ label: 'GitHub', clientSecret: '', webUrl: 'https://github.com', apiUrl: 'https://api.github.com' });
     expect(s).toMatchObject({ idpCert: expect.stringContaining('BEGIN CERTIFICATE'), requireSignedResponse: false, roles: {} });
   });
 

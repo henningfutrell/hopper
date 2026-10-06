@@ -48,7 +48,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin) | engine, http, store, plugins |
 | `src/routing/` | routing rules: the plugins.yaml `routing:` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
 | `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`); job lifecycle; routing at intake (`source-host.ts`); restart recovery | http |
-| `src/auth/` | sign-in through identity providers (issue #39): `auth.yaml` load (`config.ts`), the role rules (`roles.ts`, pure), the identity provider port (`provider.ts`) and its adapters `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), password sign-in (`password.ts`, argon2), the sign-in flow — flows, tickets, bindings, no sign-in (`index.ts`) | engine, http, store, plugins, decider, questions |
+| `src/auth/` | sign-in through realms (issues #39, #185): `auth.yaml` load (`config.ts`) and edits that keep its comments (`edit.ts`), the role rules (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm) and their adapters `password.ts` (argon2), `ldap.ts` (ldapts), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), the sign-in service — form realms in order, flows, tickets, bindings, no sign-in, a changed auth.yaml applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets") | everything |
 | `src/update/` | self-update ("Self-update"): install.json, the git mirror of the update repository, the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
 | `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `api-reference.ts` Scalar at `/docs/`); the plugin store's read side (`plugin-store.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
@@ -982,8 +982,8 @@ token and send any `Origin`. Cookies are no better here: they ignore ports, so a
 | POST | `/ui/api/device-link` | `{ keep? }` | `{ links }`: `keep`'s code again while it is live, else a fresh login code, as `http://<LAN name>:<port>/#login=<code>`, one per LAN name; 409 without LAN names ("Reaching the UI across the LAN") |
 | POST | `/ui/api/logout` | `{}` | drop the session |
 
-Since issue #39 a session may also come from an identity provider, and each mutation needs a UI
-role: "Sign-in: none, password, local, OIDC and SAML" (Roles).
+Since issue #39 a session may also come from a realm, and each mutation needs a UI
+role: "Sign-in: realms" (Roles).
 
 **Residual risk, stated.** Still able to act or read:
 - A process running **as the owner** that reads `ui-login-code`/`ui-login.html` or the
@@ -2230,7 +2230,7 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
 | `HOPPER_UI_SESSION_HOURS` | `12` |
 | `HOPPER_PLUGIN_DIR` | `~/.config/hopper/plugins` |
 | `HOPPER_PLUGINS_FILE` | `~/.config/hopper/plugins.yaml` |
-| `HOPPER_AUTH_FILE` | `~/.config/hopper/auth.yaml` (issue #39, "Sign-in: none, password, local, OIDC and SAML") |
+| `HOPPER_AUTH_FILE` | `~/.config/hopper/auth.yaml` (issue #39, "Sign-in: realms") |
 | `HOPPER_PUBLIC_URL` | unset (issue #39) |
 | `HOPPER_UPDATE_CHECK_MS` | `900000` — self-update check interval; `0` only when asked ("Self-update") |
 | `HOPPER_RESTART` | unset (detected) — `exit` or `respawn` after an update ("Self-update") |
@@ -3335,7 +3335,72 @@ up/down, delete; one Save for the whole list). The machine select uses `/api/mac
 routing targets; the executor select uses the configured executors. Forms stack at 390 px width;
 there is no horizontal page scroll.
 
-## Sign-in: none, password, local, OIDC and SAML (issues #39, #53, 2026-10-04)
+## Sign-in: realms (issues #39, #53, #185)
+
+### Realms (issue #185, 2026-10-05)
+
+Owner request: authentication realms for sign-in, with OIDC, SAML and similar as realm types, the way
+Sonatype Nexus or Jenkins handle it. What that settles, taken from both: a **realm** is one named way
+of checking who signs in, of a **realm type**; the realms form an **ordered list**, each **on or off**;
+an admin manages them **in the UI**, and a change applies **without a restart**. What the issue left
+open was taken from the obvious reading, not asked: the types are the ones the hopper already had plus
+LDAP, the one realm both Nexus and Jenkins ship that it lacked; the login code and no sign-in stay
+outside the list (Nexus's anonymous access and its bootstrap admin are not realms either).
+
+- **`auth.yaml`** — `realms:` replaces `providers:` and `password:`. Each entry: `name` (a URL path
+  segment, fixed once made: identity links and the identity provider's callback URL hold it), `type`,
+  `label`, `enabled` (default `true`), the type's settings, and `roles` (role rules; a password realm's
+  accounts carry their role instead). Types: `password` (accounts with argon2id hashes), `ldap`, `oidc`,
+  `github`, `saml`. Schema: `src/auth/config.ts`. A realm that is off must still be valid, but its
+  secret variable is not read, so it can be set up before the variable exists.
+- **Two kinds, one port each** (`src/auth/realm.ts`). A **form realm** (`password`, `ldap`) checks a
+  username and password: `POST /ui/auth/password` tries every form realm that is on, **in order**, and
+  the first that accepts the password decides (when it grants no role: no session — later realms are
+  not asked). None accepting is 403 "wrong username or password"; none accepting while one could not be
+  reached is **502 naming the realm**, never a false "wrong password". A **redirect realm** (`oidc`,
+  `github`, `saml`) sends the browser to its identity provider (the flow below, unchanged); the sign-in
+  buttons are the redirect realms that are on, in order.
+- **LDAP** (`src/auth/ldap.ts`, `ldapts`): search, then bind — bind as `bindDn` (password from
+  `bindPasswordEnv`) or anonymously, find exactly one entry `userFilter` (`{username}` escaped by the
+  library's filter escape) names under `userBase`, bind as that entry with the password. An empty
+  password is refused before any bind: a directory takes it as an anonymous bind. Identity: `subject` =
+  `attributes.subject` (e.g. `entryUUID`, `objectGUID`) else the DN; `groups` = the entry's
+  `attributes.groups` values (default `memberOf`, full DNs), plus a `groupSearch` (`filter` default
+  `(member={dn})`, the group's `name` attribute) when set; the email counts as verified (the directory
+  vouches for it). `ldaps://`, or `ldap://` with `startTls: true`; plain `ldap://` only to loopback. A
+  fresh connection per sign-in, 10 s timeouts.
+- **Managed in the UI** — Settings → Sign-in, admin only. `GET /api/realms` (an admin session, or
+  loopback): `RealmsView` — each realm's entry as YAML, on or off, the callback (and SAML metadata) URL
+  to register; local sign-in, no sign-in, the document version. `POST /ui/api/realms` (admin):
+  `save` (add from a YAML entry, or replace by name — the name stays), `remove`, `move`, `enable`,
+  `settings` (local sign-in, no sign-in), each against the `version` read. The edit is made on the YAML
+  document (`src/auth/edit.ts`, comments kept), then **loaded with its secrets** — a document that would
+  not load is refused with the load's own message, naming the field — then written if the version still
+  holds (else 409), applied to the sign-in service (`SignIn.apply`), and applied to the stored sessions
+  as a start would (`reconcile`). Journal line per change.
+- **No self-lockout.** A change after which the acting session's identity would not be `admin` is
+  refused (409), whatever kind: turning off or removing the realm one signed in with, demoting one's own
+  account, turning off the login code while signed in with it. The CLI (`hopper config edit
+  auth.yaml`) stays the way back, and needs a restart, as before.
+- **Migration 18** (`src/store/migration-realms.ts`): a stored `auth.yaml`'s `password` section becomes
+  the first realm, named `password` (label "Password"), and its `providers` follow in order, comments
+  kept; `user_identities.provider` becomes `realm`, and every stored session's identity names `realm`.
+  A password sign-in's identity was named `password` before, so its links and sessions keep working.
+  `Identity.provider`, `SessionUser.provider` and `SessionView.signIn.providers` are `realm` and
+  `realms` now; no shim.
+
+**Residual risk, stated.** An admin can now change who signs in from the browser: an admin session is
+as strong as the weakest realm that grants admin. The lockout guard protects the acting session only;
+another admin's session can be ended by a change, by design (that is how someone is cut off). LDAP
+group membership and an LDAP account's state are read at sign-in; a session outlives a change in the
+directory until it expires, the realm changes, or the daemon restarts — as for the other realm types.
+With several form realms, a wrong password costs every realm's check (the argon2 hash, the directory
+round trips), so a timing difference can tell which realm knows a username; the rate limit bounds it.
+
+### Before realms (issues #39, #53, 2026-10-04)
+
+What follows is the sign-in as first built. Realms (above) renamed its identity providers and its
+password sign-in section; where they differ, the section above holds.
 
 Owner request: the hopper deployable by anyone, plugged into a personal or enterprise identity
 setup — any OIDC provider (Google, Microsoft Entra ID, Okta, Auth0, Keycloak, …), GitHub, and SAML
@@ -3829,7 +3894,7 @@ redirect a credential:
 | gate-router | `TYPESAFE_API_KEY` (Jev, through TypeSafe) | `typesafeKeyFile` |
 | anthropic-api escalation level | `apiKeyEnv` (`ANTHROPIC_API_KEY`) | — |
 | webhook subscription | `secretEnv`, always (from the UI: `WEBHOOK_SECRET_*` only) | inline `secret` (sealed), `secretFile` |
-| identity provider (auth.yaml) | `clientSecretEnv` only; a SAML `idpCert` is public and inline | `clientSecret`, `clientSecretFile`, `idpCertFile` |
+| realm (auth.yaml) | `clientSecretEnv` (oidc, github), `bindPasswordEnv` (ldap) only, read only while the realm is on; a SAML `idpCert` is public and inline | `clientSecret`, `clientSecretFile`, `bindPassword`, `idpCertFile` |
 
 The App's bot is `<slug>[bot]`, its page `https://github.com/apps/<slug>`. `create-github-app.sh`
 writes the key (and webhook secret) as lines of an env file (`--secrets-file`, default the host

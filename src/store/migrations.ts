@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { YAMLSeq, isMap, isScalar, isSeq, parse, parseDocument, type Document, type Node, type YAMLMap } from 'yaml';
 import type { Db } from './db.ts';
+import { signInRealms } from './migration-realms.ts';
 import { usersAndOwner } from './migration-users.ts';
 
 // Schema changes never drop a queue (persisted state is the user's). A migration is SQL, or a
@@ -126,6 +127,9 @@ const MIGRATIONS: readonly Migration[] = [
   // 17: several users (issue #158). The instance keeps users, identity links, UI sessions, login codes,
   // auth.yaml and its own settings; everything else becomes the first user's, `owner`.
   usersAndOwner,
+  // 18: sign-in is realms (issue #185): auth.yaml's password and providers become `realms`, and stored
+  // sessions and identity links name their realm.
+  signInRealms,
 ];
 
 /**

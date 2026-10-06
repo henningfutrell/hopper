@@ -11,7 +11,7 @@ import { streamQuery } from './sse.ts';
 import { decisionsQuery, eventsQuery } from './state.ts';
 import { SESSION_HEADER } from './ui/guard.ts';
 import {
-  answerBody, deviceLinkBody, ghLoginBody, machineDefaultsBody, machinesEditBody, pluginStoreBody, pluginsEditBody, routerModeBody, routingEditBody, rulesBody, updateBody, usersEditBody, webhooksEditBody,
+  answerBody, deviceLinkBody, ghLoginBody, machineDefaultsBody, machinesEditBody, pluginStoreBody, pluginsEditBody, realmsEditBody, routerModeBody, routingEditBody, rulesBody, updateBody, usersEditBody, webhooksEditBody,
 } from './ui/index.ts';
 import { completeBody, loginBody, passwordBody, startQuery } from './ui/sign-in.ts';
 import { deliveriesQuery } from './webhooks.ts';
@@ -40,7 +40,7 @@ interface Operation {
 }
 
 const id = (what: string) => ({ name: 'id', in: 'path', required: true, description: `the ${what}'s id`, schema: { type: 'string' } });
-const name = { name: 'name', in: 'path', required: true, description: 'the identity provider, as auth.yaml names it', schema: { type: 'string' } };
+const name = { name: 'name', in: 'path', required: true, description: 'the realm, as auth.yaml names it', schema: { type: 'string' } };
 
 const OPERATIONS: Operation[] = [
   { method: 'get', path: '/api/health', tag: 'State', summary: 'Health and version', returns: '`{ ok, version, routerMode, router, fallback, executors, uptimeS }`' },
@@ -88,14 +88,16 @@ const OPERATIONS: Operation[] = [
   { method: 'get', path: '/ui/api/session', tag: 'Sign-in', summary: 'This session (logged out: whose work a read shows), the sign-in on offer, and whether several users make sign-in required', returns: '`SessionView`' },
   { method: 'post', path: '/ui/login', tag: 'Sign-in', summary: 'Sign in with a one-time login code', description: 'Mint a code with `hopper login-code`. Answers a page that stores the session token for the UI.', body: loginBody, form: true, answers: 'html', returns: 'a page holding the session token' },
   { method: 'post', path: '/ui/auth/none', tag: 'Sign-in', summary: 'Start a session with no sign-in (auth.yaml `none`)', returns: '`{ token, expiresAt, user }`' },
-  { method: 'post', path: '/ui/auth/password', tag: 'Sign-in', summary: 'Sign in with a password (auth.yaml `password`)', body: passwordBody, returns: '`{ token, expiresAt, user }`' },
-  { method: 'get', path: '/ui/auth/:name/start', tag: 'Sign-in', summary: 'Begin sign-in with an identity provider', query: startQuery, answers: 'redirect', returns: 'a redirect to the provider' },
+  { method: 'post', path: '/ui/auth/password', tag: 'Sign-in', summary: 'Sign in with a username and password', description: 'Tried against the password and LDAP realms that are on, in order: the first that accepts the password signs in. 502 when none accepted it and a realm could not be reached.', body: passwordBody, returns: '`{ token, expiresAt, user }`', errors: [502] },
+  { method: 'get', path: '/ui/auth/:name/start', tag: 'Sign-in', summary: 'Begin sign-in with an OIDC, GitHub or SAML realm', query: startQuery, answers: 'redirect', returns: 'a redirect to the realm\'s identity provider' },
   { method: 'get', path: '/ui/auth/:name/callback', tag: 'Sign-in', summary: 'OIDC and GitHub return here', answers: 'html', returns: 'a page that completes the sign-in' },
   { method: 'post', path: '/ui/auth/:name/callback', tag: 'Sign-in', summary: 'SAML posts its response here', answers: 'html', returns: 'a page that completes the sign-in' },
   { method: 'post', path: '/ui/auth/complete', tag: 'Sign-in', summary: 'Trade a sign-in ticket for a session', body: completeBody, returns: '`{ token, expiresAt, user }`' },
   { method: 'get', path: '/ui/auth/:name/metadata', tag: 'Sign-in', summary: 'SAML service provider metadata', answers: 'xml', returns: 'SAML metadata', errors: [404] },
   { method: 'post', path: '/ui/api/device-link', tag: 'Sign-in', summary: 'A login link for another device, per LAN name', description: '`keep` names the code shown: while it is live the same links come back; once it is used or expired, a fresh code.', role: 'admin', body: deviceLinkBody, returns: '`{ links: string[] }`', errors: [409] },
   { method: 'post', path: '/ui/api/logout', tag: 'Sign-in', summary: 'End this session', role: 'viewer', returns: '`{ ok: true }`' },
+  { method: 'get', path: '/api/realms', tag: 'Sign-in', summary: 'The realms in auth.yaml, in order', description: 'Each realm\'s entry as YAML, whether it is on, and for OIDC, GitHub and SAML the URLs to register with the identity provider; local sign-in, no sign-in, and the document version. Loopback, or a UI session with role **admin**.', returns: '`RealmsView`', errors: [403] },
+  { method: 'post', path: '/ui/api/realms', tag: 'Sign-in', summary: 'Change the realms (auth.yaml)', description: 'Add or replace a realm from its YAML entry, remove, move, or turn one on or off, or set local sign-in and no sign-in — against the `version` read. Applies at once: sign-in and the stored sessions follow it. Refused (400) when the result would not load, naming the field; (409) when auth.yaml moved, or when the change would end the acting session\'s admin role.', role: 'admin', body: realmsEditBody, returns: 'the new view, as GET /api/realms', errors: [404, 409] },
 ];
 
 const TAGS: Record<Tag, string> = {

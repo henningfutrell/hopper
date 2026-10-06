@@ -16,11 +16,11 @@ export function uniqueName(taken: readonly string[], base: string): string {
 
 /** The user `who` signs in as: its linked user, owner for no sign-in, else a new user, linked. */
 export function userForIdentity(instance: Pick<InstanceStore, 'users' | 'identities'>, who: Identity): { user: User; added: boolean } {
-  if (who.provider === 'none') return { user: instance.users.owner(), added: false };
-  const linked = instance.identities.userOf(who.provider, who.subject);
+  if (who.realm === 'none') return { user: instance.users.owner(), added: false };
+  const linked = instance.identities.userOf(who.realm, who.subject);
   const user = linked === undefined ? undefined : instance.users.get(linked);
   if (user) return { user, added: false };
   const added = instance.users.add(uniqueName(instance.users.list().map((u) => u.name), nameOf(who)));
-  instance.identities.link(who.provider, who.subject, added.id);
+  instance.identities.link(who.realm, who.subject, added.id);
   return { user: added, added: true };
 }

@@ -6,7 +6,7 @@
 import argon2 from 'argon2';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { rawRequest } from '../support/http.ts';
-import { harness, oidcIdp, oidcProvider, session, startWithAuth, stopAll } from '../support/sign-in-app.ts';
+import { harness, oidcIdp, oidcRealm, session, startWithAuth, stopAll } from '../support/sign-in-app.ts';
 import type { TestApp } from '../support/app.ts';
 
 const h = harness();
@@ -64,7 +64,7 @@ describe('POST /ui/api/realms', () => {
     const idp = await oidcIdp(h);
     const o = await startWithAuth(h, { version: 1, realms: [{ name: 'staff', type: 'password', users: [] }] });
     const admin = await o.app.login();
-    const entry = JSON.stringify(oidcProvider(idp, { defaultRole: 'viewer' }));
+    const entry = JSON.stringify(oidcRealm(idp, { defaultRole: 'viewer' }));
     let { version } = await realms(o.app, admin);
     expect((await edit(o.app, admin, { action: 'save', entry, version })).status).toBe(200);
     ({ version } = await realms(o.app, admin));

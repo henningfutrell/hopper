@@ -33,18 +33,18 @@ export function newBinding(): string {
   return btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-export const signInPath = (provider: string, binding: string): string => `/ui/auth/${encodeURIComponent(provider)}/start?binding=${binding}`;
+export const signInPath = (realm: string, binding: string): string => `/ui/auth/${encodeURIComponent(realm)}/start?binding=${binding}`;
 export const BINDING_KEY = 'jh_sign_in';
 
 /**
- * Navigates away: to the provider through the daemon. The binding is kept in this origin's
+ * Navigates away: to the realm's identity provider through the daemon. The binding is kept in this origin's
  * localStorage, so sign-in must start on the sign-in origin: elsewhere, go there first.
  */
-export function beginSignIn(provider: string, origin: string): void {
+export function beginSignIn(realm: string, origin: string): void {
   if (location.origin !== origin) { location.assign(origin); return; }
   const binding = newBinding();
   try { localStorage.setItem(BINDING_KEY, binding); } catch { /* storage blocked: the sign-in will be refused at the end */ }
-  location.assign(signInPath(provider, binding));
+  location.assign(signInPath(realm, binding));
 }
 
 /** True when the UI should take a no-sign-in session by itself: logged out, and auth.yaml `none` is on. */

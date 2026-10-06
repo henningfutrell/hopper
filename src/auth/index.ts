@@ -1,24 +1,33 @@
-// Signing in through an identity provider (design.md "Sign-in: none, password, local, OIDC and SAML"). Three steps,
-// no cookies (they ignore ports; see "UI session and mutations"):
+// Signing in through the realms (design.md "Sign-in: realms"). auth.yaml as it applies now, swapped at
+// once by `apply` when Settings → Sign-in changes it.
+//
+// Form realms (password, ldap): the username and password form is tried against each one that is on,
+// in order; the first that accepts the password decides.
+//
+// Redirect realms (oidc, github, saml): three steps, no cookies (they ignore ports; see "UI session and
+// mutations"):
 //   1. begin: the browser keeps a random binding in localStorage and asks for /ui/auth/<name>/start;
-//      a flow (provider secrets, the binding's hash) is kept here and the browser goes to the provider.
-//   2. callback: the provider sends the browser back; its answer becomes an Identity and a role,
-//      held under a one-time ticket.
+//      a flow (the realm's secrets, the binding's hash) is kept here and the browser goes to the
+//      identity provider.
+//   2. callback: the identity provider sends the browser back; its answer becomes an Identity and a
+//      role, held under a one-time ticket.
 //   3. complete: the callback page posts the ticket with the binding from localStorage. Only the
 //      browser that began the flow has it, so a callback link handed to someone else signs nobody in.
 // Flows and tickets live in memory: a restart mid-sign-in means signing in again.
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { Clock } from '../domain/ports.ts';
-import type { Identity, SignInProviderView, UiRole } from '../domain/types.ts';
-import type { AuthConfig, ProviderConfig } from './config.ts';
-import { createGithubProvider } from './github.ts';
-import { createOidcProvider } from './oidc.ts';
-import { checkPassword, passwordRoleOf } from './password.ts';
-import type { FlowSecrets, IdentityProvider, ProviderCallback } from './provider.ts';
+import type { Identity, SignInRealmView, UiRole } from '../domain/types.ts';
+import { isFormRealm, type AuthConfig, type RealmConfig } from './config.ts';
+import { createGithubRealm } from './github.ts';
+import { createLdapRealm } from './ldap.ts';
+import { createOidcRealm } from './oidc.ts';
+import { createPasswordRealm, passwordRoleOf } from './password.ts';
+import type { FlowSecrets, FormRealm, RealmCallback, RedirectRealm } from './realm.ts';
 import { roleFor } from './roles.ts';
-import { createSamlProvider } from './saml.ts';
+import { createSamlRealm } from './saml.ts';
 
 export { AUTH, authDocumentProblem, loadAuthDocument, type AuthConfig } from './config.ts';
+export { AuthEditError, editAuthDocument, realmsView } from './edit.ts';
 export { hashPassword } from './password.ts';
 
 const FLOW_MS = 10 * 60_000;
@@ -31,34 +40,43 @@ const TICKET_MS = 2 * 60_000;
 const MAX_FLOWS = 10_000;
 const BINDING = /^[A-Za-z0-9_-]{32,128}$/;
 
-export const LOCAL_IDENTITY: Identity = { provider: 'local', subject: 'local', name: 'login code', groups: [] };
+export const LOCAL_IDENTITY: Identity = { realm: 'local', subject: 'local', name: 'login code', groups: [] };
 /** Who a no-sign-in session belongs to: nobody in particular. */
-export const NO_SIGN_IN_IDENTITY: Identity = { provider: 'none', subject: 'anonymous', name: 'no sign-in', groups: [] };
+export const NO_SIGN_IN_IDENTITY: Identity = { realm: 'none', subject: 'anonymous', name: 'no sign-in', groups: [] };
 
 export type CallbackOutcome =
   | { ok: true; ticket: string; who: Identity; role: UiRole }
   | { ok: false; status: 400 | 403 | 502; error: string; who?: Identity };
+
+export type PasswordOutcome =
+  | { ok: true; who: Identity; role: UiRole }
+  | { ok: false; status: 403 | 502; error: string; who?: Identity };
 
 export interface SignIn {
   /** The one-time login code works. */
   readonly local: boolean;
   /** No sign-in: the role everyone gets; null when off. */
   readonly none: UiRole | null;
-  /** Password sign-in is on. */
+  /** Password sign-in is on: a password or LDAP realm is. */
   readonly password: boolean;
-  /** The identity and role of a password sign-in account, or undefined (off, unknown, wrong). */
-  checkPassword(username: string, password: string): Promise<{ who: Identity; role: UiRole } | undefined>;
-  /** Where provider sign-in starts and ends (known once the daemon listens). */
+  /** The username and password tried against the form realms that are on, in order. */
+  checkPassword(username: string, password: string): Promise<PasswordOutcome>;
+  /** Where an OIDC, GitHub or SAML sign-in starts and ends (known once the daemon listens). */
   origin(): string;
-  providers(): SignInProviderView[];
-  provider(name: string): IdentityProvider | undefined;
-  /** The provider URL to send the browser to. Throws SignInRefused. */
+  /** The OIDC, GitHub and SAML realms that are on, in order. */
+  realms(): SignInRealmView[];
+  redirectRealm(name: string): RedirectRealm | undefined;
+  /** The identity provider URL to send the browser to. Throws SignInRefused. */
   begin(name: string, binding: string): Promise<string>;
-  callback(name: string, cb: ProviderCallback): Promise<CallbackOutcome>;
+  callback(name: string, cb: RealmCallback): Promise<CallbackOutcome>;
   /** The identity and role behind a ticket, once, for the browser holding the binding. */
   complete(ticket: string, binding: string): { who: Identity; role: UiRole } | undefined;
-  /** The role auth.yaml grants this identity now; null: none, or its provider is gone. */
+  /** The role auth.yaml grants this identity now; null: none, or its realm is gone or off. */
   roleOf(who: Identity): UiRole | null;
+  /** auth.yaml as it applies now. */
+  config(): AuthConfig;
+  /** Apply a changed auth.yaml at once: the realms, local sign-in and no sign-in. Flows in progress stay. */
+  apply(config: AuthConfig): void;
 }
 
 export class SignInRefused extends Error {
@@ -66,25 +84,44 @@ export class SignInRefused extends Error {
   constructor(status: 400 | 404, message: string) { super(message); this.status = status; }
 }
 
-interface Flow { provider: string; binding: string; secrets: FlowSecrets; expires: number }
+interface Flow { realm: string; binding: string; secrets: FlowSecrets; expires: number }
 interface Ticket { who: Identity; role: UiRole; binding: string; expires: number }
 
 const hash = (s: string): Buffer => createHash('sha256').update(s, 'utf8').digest();
 const random = (): string => randomBytes(32).toString('hex');
 
-function build(p: ProviderConfig, origin: string): IdentityProvider {
-  const callback = `${origin}/ui/auth/${p.name}/callback`;
-  if (p.type === 'oidc') return createOidcProvider(p, callback);
-  if (p.type === 'github') return createGithubProvider(p, callback);
-  return createSamlProvider(p, callback, p.entityId ?? `${origin}/ui/auth/${p.name}/metadata`);
+/** The role `config` grants `who`; null: none, or its realm is gone or off. */
+export function roleIn(config: AuthConfig, who: Identity): UiRole | null {
+  if (who.realm === 'local') return config.local.enabled ? 'admin' : null;
+  if (who.realm === 'none') return config.none?.role ?? null;
+  const r = config.realms.find((x) => x.name === who.realm);
+  if (!r?.enabled) return null;
+  return r.type === 'password' ? passwordRoleOf(r, who.subject) : roleFor(who, r.roles);
 }
+
+function buildRedirect(r: Exclude<RealmConfig, { type: 'password' | 'ldap' }>, origin: string): RedirectRealm {
+  const callback = `${origin}/ui/auth/${r.name}/callback`;
+  if (r.type === 'oidc') return createOidcRealm(r, callback);
+  if (r.type === 'github') return createGithubRealm(r, callback);
+  return createSamlRealm(r, callback, r.entityId ?? `${origin}/ui/auth/${r.name}/metadata`);
+}
+
+const buildForm = (r: Extract<RealmConfig, { type: 'password' | 'ldap' }>): FormRealm => (r.type === 'password' ? createPasswordRealm(r) : createLdapRealm(r));
 
 export function createSignIn(o: { config: AuthConfig; origin: () => string; clock: Clock; maxFlows?: number }): SignIn {
   const maxFlows = o.maxFlows ?? MAX_FLOWS;
-  const configs = new Map(o.config.providers.map((p) => [p.name, p]));
+  let config = o.config;
+  let forms: FormRealm[] = [];
   // Built on first use: the redirect URIs need the bound port.
-  let providers: Map<string, IdentityProvider> | undefined;
-  const built = (): Map<string, IdentityProvider> => (providers ??= new Map(o.config.providers.map((p) => [p.name, build(p, o.origin())])));
+  let redirects: Map<string, RedirectRealm> | undefined;
+  const on = (): RealmConfig[] => config.realms.filter((r) => r.enabled);
+  const build = (): void => {
+    forms = on().filter(isFormRealm).map(buildForm);
+    redirects = undefined;
+  };
+  build();
+  const redirect = (): Map<string, RedirectRealm> =>
+    (redirects ??= new Map(on().flatMap((r) => (isFormRealm(r) ? [] : [[r.name, buildRedirect(r, o.origin())] as const]))));
   const flows = new Map<string, Flow>();
   const tickets = new Map<string, Ticket>();
   const now = (): number => o.clock.now().getTime();
@@ -92,48 +129,58 @@ export function createSignIn(o: { config: AuthConfig; origin: () => string; cloc
     for (const [k, f] of flows) if (f.expires <= now()) flows.delete(k);
     for (const [k, t] of tickets) if (t.expires <= now()) tickets.delete(k);
   };
-  const roleOf = (who: Identity): UiRole | null => {
-    if (who.provider === 'local') return o.config.local.enabled ? 'admin' : null;
-    if (who.provider === 'none') return o.config.none?.role ?? null;
-    if (who.provider === 'password') return o.config.password ? passwordRoleOf(o.config.password.users, who.subject) : null;
-    const c = configs.get(who.provider);
-    return c ? roleFor(who, c.roles) : null;
-  };
+  const roleOf = (who: Identity): UiRole | null => roleIn(config, who);
 
   return {
-    local: o.config.local.enabled,
-    none: o.config.none?.role ?? null,
-    password: o.config.password !== null,
-    checkPassword: async (username, password) => (o.config.password ? checkPassword(o.config.password.users, username, password) : undefined),
+    get local() { return config.local.enabled; },
+    get none() { return config.none?.role ?? null; },
+    get password() { return forms.length > 0; },
+    async checkPassword(username, password) {
+      const errors: string[] = [];
+      for (const realm of forms) {
+        const r = await realm.check(username, password);
+        if (r.ok) {
+          // The first realm that accepts the password decides, even when it grants no role.
+          return r.role === null ? { ok: false, status: 403, error: 'signed in, but auth.yaml grants this account no role', who: r.who } : { ok: true, who: r.who, role: r.role };
+        }
+        if ('error' in r) errors.push(r.error);
+      }
+      return errors.length ? { ok: false, status: 502, error: `sign-in could not be checked: ${errors.join('; ')}` } : { ok: false, status: 403, error: 'wrong username or password' };
+    },
     origin: o.origin,
-    providers: () => o.config.providers.map((p) => ({ name: p.name, label: p.label, type: p.type })),
-    provider: (name) => built().get(name),
+    realms: () => on().filter((r) => !isFormRealm(r)).map((r) => ({ name: r.name, label: r.label, type: r.type })),
+    redirectRealm: (name) => redirect().get(name),
     roleOf,
+    config: () => config,
+    apply(next) {
+      config = next;
+      build();
+    },
     async begin(name, binding) {
-      const p = built().get(name);
-      if (!p) throw new SignInRefused(404, `no identity provider ${name}`);
+      const r = redirect().get(name);
+      if (!r) throw new SignInRefused(404, `no realm ${name} to sign in with`);
       if (!BINDING.test(binding)) throw new SignInRefused(400, 'missing or malformed binding');
       prune();
       // A Map iterates in insertion order: the first key is the oldest flow.
       while (flows.size >= maxFlows) flows.delete(flows.keys().next().value!);
       const id = random();
-      const { url, secrets } = await p.start(id);
-      flows.set(id, { provider: name, binding: hash(binding).toString('hex'), secrets, expires: now() + FLOW_MS });
+      const { url, secrets } = await r.start(id);
+      flows.set(id, { realm: name, binding: hash(binding).toString('hex'), secrets, expires: now() + FLOW_MS });
       return url;
     },
     async callback(name, cb) {
-      const p = built().get(name);
-      if (!p) return { ok: false, status: 400, error: `no identity provider ${name}` };
+      const r = redirect().get(name);
+      if (!r) return { ok: false, status: 400, error: `no realm ${name} to sign in with` };
       prune();
-      const id = p.flowIdOf(cb);
+      const id = r.flowIdOf(cb);
       const flow = id === undefined ? undefined : flows.get(id);
-      if (!flow || flow.provider !== name) return { ok: false, status: 400, error: 'unknown or expired sign-in; start again' };
+      if (!flow || flow.realm !== name) return { ok: false, status: 400, error: 'unknown or expired sign-in; start again' };
       flows.delete(id!);
       let who: Identity;
       try {
-        who = await p.finish(cb, flow.secrets);
+        who = await r.finish(cb, flow.secrets);
       } catch (e) {
-        return { ok: false, status: 502, error: `${p.label} sign-in failed: ${(e as Error).message}` };
+        return { ok: false, status: 502, error: `${r.label} sign-in failed: ${(e as Error).message}` };
       }
       const role = roleOf(who);
       if (role === null) return { ok: false, status: 403, error: 'signed in, but auth.yaml grants this account no role', who };

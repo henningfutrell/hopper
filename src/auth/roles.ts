@@ -1,5 +1,5 @@
-// The role a signed-in identity gets (design.md "Sign-in: none, password, local, OIDC and SAML" — Roles). Pure. Every
-// identity provider fills the same Identity, so the rules read the same everywhere. The highest
+// The role a signed-in identity gets (design.md "Sign-in: realms" — Roles). Pure. Every
+// realm fills the same Identity, so the rules read the same everywhere. The highest
 // matching role wins; nothing matching and no default role → no role, no session.
 import type { Identity, UiRole } from '../domain/types.ts';
 

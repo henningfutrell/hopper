@@ -15,20 +15,21 @@ export interface UiSessions {
   find(token: string | undefined): UiSession | undefined;
   drop(token: string): void;
   /**
-   * Apply auth.yaml as it is now to every stored session (at start): `roleOf` null drops it (its
-   * provider is gone, or no rule grants it a role any more); another role replaces the stored one.
+   * Apply auth.yaml as it is now to every stored session (at start, and after every change from
+   * Settings → Sign-in): `roleOf` null drops it (its realm is gone or off, or no rule grants it a role
+   * any more); another role replaces the stored one.
    */
   reconcile(roleOf: (who: Identity) => UiRole | null): { dropped: number; changed: number };
 }
 
 const hashOf = (token: string): string => createHash('sha256').update(token, 'utf8').digest('hex');
 
-/** Who signed in, as the UI shows it: the first name the provider gave. */
+/** Who signed in, as the UI shows it: the first name the realm gave. */
 export const identityName = (who: Identity): string => who.name ?? who.username ?? who.email ?? who.subject;
 
 /** Who a session acts for: its user (id, name), its role, and who signed in. */
 export const sessionUser = (s: UiSession, userName: string): SessionUser => ({
-  id: s.userId, name: userName, role: s.role, provider: s.identity.provider, identity: identityName(s.identity),
+  id: s.userId, name: userName, role: s.role, realm: s.identity.realm, identity: identityName(s.identity),
 });
 
 export function createUiSessions(o: { repo: UiSessionRepository; clock: Clock; hours: number }): UiSessions {
