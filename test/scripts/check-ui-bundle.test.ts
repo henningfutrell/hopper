@@ -71,6 +71,13 @@ describe('check-ui-bundle', () => {
     expect(init).toBeLessThan(text.indexOf('npm run build:ui --prefix "$BUILD"'));
   });
 
+  it("the image's UI stage has the check before it builds", () => {
+    const text = readFileSync(join(ROOT, 'Dockerfile'), 'utf8');
+    const copy = text.indexOf('COPY scripts/check-ui-bundle.ts ./scripts/check-ui-bundle.ts');
+    expect(copy).toBeGreaterThan(-1);
+    expect(copy).toBeLessThan(text.indexOf('RUN npm run build:ui'));
+  });
+
   // The real failure: a copy of the UI built under a parent dir whose .gitignore is `*`, as a job's
   // scratch dir is. Without a git root of its own Tailwind skips every source and the check fails it;
   // with one (what install.sh does) the bundle is whole.
