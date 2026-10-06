@@ -137,7 +137,7 @@ const SETTING_HELP: Record<keyof typeof schema.shape, string> = {
   HOPPER_RESUME_BOOST: 'priority boost for a job resumed after a question',
   HOPPER_MAX_QUESTIONS: 'questions one job may ask; the next one fails it',
   HOPPER_KEEP_PANES: 'true: keep a job\'s pane open after it ends, for inspection',
-  HOPPER_LOCAL_MACHINE: 'false: this host is not a machine (the container): no `local` machine, and the boot removes one from the plugins config',
+  HOPPER_LOCAL_MACHINE: 'false: this host is not a machine (the container): the boot removes a `local` machine from the plugins config. A fresh plugins config lists none either way',
   HOPPER_UI_SESSION_HOURS: 'lifetime of a UI session',
   HOPPER_UPDATE_CHECK_MS: 'how often self-update checks for a newer version; 0: only when asked',
   HOPPER_RESTART: 'how the daemon starts again after an update: exit (a supervisor restarts it) or respawn. Unset: detected',

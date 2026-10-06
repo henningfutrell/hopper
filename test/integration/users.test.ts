@@ -192,11 +192,14 @@ describe('a user\'s runtime', () => {
   it('a user added while the daemon runs gets its runtime: its plugins config, the supervised herdr session `hopper` (never `hopper-<id>`, #261), its jobs run', async () => {
     const a = await start();
     const bea = await a.addUser('Bea');
-    const plugins = a.user(bea.id).store.config.read('plugins') as { executors: { plugin: string; options?: { session?: string } }[] };
+    const plugins = a.user(bea.id).store.config.read('plugins') as { executors: { plugin: string; options?: { session?: string } }[]; machines: unknown[] };
     expect(plugins.executors.filter((e) => e.plugin === 'herdr-claude').map((e) => e.options?.session)).toEqual([undefined]);
+    // No machine of its own until the user adds one (issue #259).
+    expect(plugins.machines).toEqual([]);
     const report = (await a.api('GET', '/api/plugins', undefined, session(await a.login('bea')))).body;
     expect(report.executors.instances.find((i: { instance: { plugin: string } }) => i.instance.plugin === 'herdr-claude').instance.options?.session).toBeUndefined();
     expect((a.user().store.config.read('plugins') as { executors?: unknown }).executors).toEqual([{ name: 'test', plugin: 'test' }]);
+    await a.addThisMachine('bea');
     const job = await a.pull({ op: 'echo', message: 'hi' }, { executor: 'scripted' }, 'bea');
     expect((await a.waitForStatusOf(job.id, 'finished', 'bea')).status).toBe('finished');
   });
@@ -251,6 +254,7 @@ describe('the instance\'s parts are shared', () => {
       const a = await start({ seams: { executors: [sticky], update: { appDir, builder: copyBuilder(), restart: async () => { restarts.push(1); } } } });
       const admin = await a.login();
       await a.addUser('Bea');
+      await a.addThisMachine('bea');
       const job = await a.pull({}, { executor: 'sticky' }, 'bea');
       await a.waitForStatusOf(job.id, 'running', 'bea');
       expect((await a.ui('/ui/api/update', { action: 'check' }, { token: admin })).status).toBe(200);

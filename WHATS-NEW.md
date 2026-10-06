@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- A new hopper, and each person who joins one, no longer adds the hopper's own computer as a machine on its own: you add the machines your jobs run on, this computer among them if you want it.
 - Jobs of someone who signed in with GitHub run again: every job runs in the hopper's usual terminal session, instead of looking for a separate per-person session that was never started.
 - A new hopper no longer makes a starting admin account, password or login code, and there is no sign-in command to run on the machine: you sign in with GitHub, the first person to do so is the admin, and each person who signs in gets a space of their own.
 - Sign in with GitHub: press the button, enter the code it shows on GitHub, and you are in — on a new hopper too, where the first person to sign in with GitHub becomes admin. That same sign-in connects your GitHub: your issues labelled hopper become your jobs, and your jobs act as you there, marked as done through the hopper. The page says plainly when GitHub is not connected.

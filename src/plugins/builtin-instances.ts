@@ -21,6 +21,8 @@ export interface PluginsDoc {
  * The built-in instances. A connected account's source reads its own issues once the user connects it
  * (issue #214). The gh source does not run until the plugins config names its `authors` (no default). Secrets come from the environment, named by the options (design.md "Secrets").
  * The herdr-claude instance names no session: every user's jobs run in the supervised `hopper` session (issue #261).
+ * With `localMachine`, what a config without a section means: this machine (`local`), as before issue
+ * #259; a fresh store is written without it (`ensurePluginsConfig`).
  */
 export function builtinInstances(answerTimeoutMs = 180_000, localMachine = true): PluginsDoc {
   // A part that runs on a machine names it (issue #174): this one, as the `local` machine; none where
@@ -59,9 +61,11 @@ export type EnsureResult = { action: 'kept' | 'default' | 'removed-local' | 'rem
 
 /**
  * Make sure the store holds the plugins config: on the boot that finds none, write the built-in
- * instances. Where this host is not a machine (`localMachine` false), remove every `local` instance
- * from `machines` — one an earlier boot of the container wrote (issue #141). For `userId`, remove the
- * `hopper-<userId>` session an earlier boot wrote on a herdr-claude instance (issue #261); everything else is kept.
+ * instances with no machine (issue #259): the hopper does not register its own host as a machine by
+ * default; this machine is added like any other, and its parts name it once it is picked. Where this
+ * host is not a machine (`localMachine` false), remove every `local` instance from `machines` — one an
+ * earlier boot of the container wrote (issue #141). For `userId`, remove the `hopper-<userId>` session
+ * an earlier boot wrote on a herdr-claude instance (issue #261); everything else is kept.
  */
 export function ensurePluginsConfig(o: { config: ConfigRecords; answerTimeoutMs: number; localMachine?: boolean; userId?: string; logger: PluginLogger }): EnsureResult {
   const localMachine = o.localMachine ?? true;
@@ -72,7 +76,7 @@ export function ensurePluginsConfig(o: { config: ConfigRecords; answerTimeoutMs:
     const local = removeLocalMachines(o.config, o.config.read(PLUGINS), o.config.version(PLUGINS), o.logger);
     return local.action === 'kept' ? session : local;
   }
-  if (!o.config.write(PLUGINS, { version: 1, ...builtinInstances(o.answerTimeoutMs, localMachine) }, 'missing')) return { action: 'kept' };
+  if (!o.config.write(PLUGINS, { version: 1, ...builtinInstances(o.answerTimeoutMs, false) }, 'missing')) return { action: 'kept' };
   o.logger.info('hopper: wrote the plugins config from the built-in instances. It is the only configuration of every part; edit it in the UI.');
   return { action: 'default' };
 }
