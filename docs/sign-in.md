@@ -143,6 +143,9 @@ to hand in a client secret or a certificate. A variable the hopper cannot use �
 value the realm refuses, a realm without its `_TYPE` — stops the daemon at start, naming the variable;
 nothing is written.
 
+Step by step for each way in — an auth gateway, OIDC, SAML, a directory, GitHub — with where the
+variables go in each deploy and how to check it worked: `docs/deploy.md` "Sign-in set up at launch".
+
 An OIDC realm in a compose file or a Kubernetes manifest:
 
 ```sh

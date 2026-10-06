@@ -128,7 +128,8 @@ bash ~/.local/lib/hopper/scripts/open-ui.sh
 Elsewhere (a container, a checkout, a browser without the script), mint a one-time login code:
 `hopper login-code --link http://127.0.0.1:4790`, then open the link (it works once, for 10
 minutes). For other people and other devices: sign-in realms — password accounts, LDAP, OIDC,
-GitHub or SAML, set up in Settings → Sign-in — and the LAN or a public URL — `docs/sign-in.md`.
+GitHub, SAML or an auth gateway in front, set up in Settings → Sign-in or from the environment at
+launch (`docs/deploy.md` "Sign-in set up at launch") — and the LAN or a public URL — `docs/sign-in.md`.
 
 ## Connect GitHub
 

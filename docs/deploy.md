@@ -124,6 +124,167 @@ Open the UI: `bash ~/.local/lib/hopper/scripts/open-ui.sh`.
 
 A managed Postgres works the same: put its URL (with `sslmode=require`) in `daemon.env`.
 
+## Sign-in set up at launch
+
+Who may use the UI is set by sign-in: the realms (an auth gateway in front, OIDC or SAML single
+sign-on, a directory, GitHub, password accounts), the login code and no sign-in (docs/sign-in.md). Every
+part of it can be set by the daemon's environment, with no click and no file: the `HOPPER_SIGN_IN_*`
+variables (the **sign-in environment**, docs/sign-in.md "Sign-in from the environment" lists every one).
+They are read at **every start** and written to the database: the environment wins over a change made
+in Settings → Sign-in. A variable the hopper cannot use stops the start and names the variable; nothing
+is written. A secret (a client secret, a bind password) may be the value itself or a mounted file:
+`<variable>_FILE` names it.
+
+Sign-in decides who uses the hopper. It does not connect GitHub: inside the hopper, each user connects
+their own GitHub from the UI (issue #214, `README.md` "Connect GitHub"), whichever realm signed them in.
+
+**Where the variables go**
+
+| deploy | variables | secret files | apply |
+|---|---|---|---|
+| containers (`compose.yaml`) | `.env` beside `compose.yaml` (mode 600) | a `secrets:` entry added to `compose.yaml`, then `<variable>_FILE=/run/secrets/<name>` in `.env`; or the secret's value in `.env` itself | `podman compose up -d` |
+| this host (systemd `--user`) | `~/.config/hopper/daemon.env` (mode 600) | `LoadCredential=<name>:<path>` in a drop-in (`systemctl --user edit hopper`), with `Environment=<variable>_FILE=%d/<name>` | `systemctl --user restart hopper` |
+| Kubernetes, or another platform | the container's environment (a ConfigMap) | a Secret volume, and `<variable>_FILE` naming the file in it | roll out the change |
+
+**Steps, for every way in**
+
+1. Give the hopper its public address: `HOPPER_PUBLIC_URL=https://hopper.example.com`, behind a
+   reverse proxy with TLS (docs/sign-in.md "The sign-in origin and a public URL"). The identity
+   provider sends people back to it.
+2. Pick one way in below. Register the hopper at the identity provider as it says, and set its
+   variables. `<NAME>` in a variable is the realm's name in upper case, `-` as `_`: the variables
+   `HOPPER_SIGN_IN_REALM_CORP_*` set up the realm `corp`.
+3. Give the realm a role rule that makes you admin (`ROLES_ADMIN_GROUPS`, `ROLES_ADMIN_EMAILS`, …) and
+   a default role for everyone else it lets in (`ROLES_DEFAULT_ROLE`; without it, a person no rule
+   matches gets no session). Rules and their matches: docs/sign-in.md "UI roles and role rules".
+4. Set the password fallback's password: `HOPPER_SIGN_IN_ADMIN_PASSWORD_FILE` naming a secret file (8
+   characters or more). The password fallback always exists (docs/sign-in.md "Password fallback");
+   without this variable a new hopper makes a random password and shows it once, in its start lines.
+5. Start or restart the hopper. Its start lines say
+   `hopper: sign-in from the environment: realms <name>`, and Settings → Sign-in marks the realm *set
+   from the environment*. A line `invalid sign-in environment: <variable>: …` names what to fix.
+6. Sign in through the new realm, and check that you are admin (Settings is there).
+7. Turn the login code off: `HOPPER_SIGN_IN_LOCAL_ENABLED=false`, and start again.
+
+To remove a realm the environment set up: delete its variables, start again, and remove the realm in
+Settings → Sign-in (with the variables gone, it stays as last set).
+
+### Behind an auth gateway
+
+An auth gateway in front of the hopper (Envoy Gateway with OIDC, oauth2-proxy, an ingress with OIDC)
+signs people in and forwards their token; the hopper only checks the token, and nobody sees a sign-in
+form. Set the gateway up to forward the access token (Envoy Gateway: `forwardAccessToken: true`;
+oauth2-proxy: `--pass-access-token`, header `x-forwarded-access-token`), then:
+
+```sh
+HOPPER_PUBLIC_URL=https://hopper.example.com
+HOPPER_SIGN_IN_REALM_GATEWAY_TYPE=gateway
+HOPPER_SIGN_IN_REALM_GATEWAY_ISSUER=https://idp.example.com/realms/corp
+HOPPER_SIGN_IN_REALM_GATEWAY_AUDIENCE=hopper
+HOPPER_SIGN_IN_REALM_GATEWAY_ROLES_ADMIN_GROUPS=hopper-admins
+HOPPER_SIGN_IN_REALM_GATEWAY_ROLES_DEFAULT_ROLE=viewer
+HOPPER_SIGN_IN_LOCAL_ENABLED=false
+```
+
+- `ISSUER` is the issuer of the tokens; `AUDIENCE` the `aud` they carry for this gateway (required).
+- oauth2-proxy: add `HOPPER_SIGN_IN_REALM_GATEWAY_HEADER=x-forwarded-access-token`.
+- Opaque tokens: `HOPPER_SIGN_IN_REALM_GATEWAY_CHECK=introspection`, with the hopper's own client at
+  the issuer: `HOPPER_SIGN_IN_REALM_GATEWAY_CLIENT_ID` and `HOPPER_SIGN_IN_REALM_GATEWAY_CLIENT_SECRET_FILE`.
+- **Reach the hopper only through the gateway**: the token is the credential. Keep the hopper's port on
+  a network only the gateway reaches, with `HOPPER_LAN_PEERS` naming the gateway's address.
+
+Envoy Gateway's `SecurityPolicy`, and how the token is checked: docs/sign-in.md "Behind an auth gateway".
+
+### OIDC single sign-on
+
+Google, Microsoft Entra ID, Okta, Auth0, Keycloak, or any OpenID Connect provider. At the provider, make
+a web application with the redirect URI `https://hopper.example.com/ui/auth/corp/callback` (`corp` is
+the realm's name), and take its client id and secret. What to click at each provider, and its issuer
+URL: docs/sign-in.md "Identity providers".
+
+```sh
+HOPPER_PUBLIC_URL=https://hopper.example.com
+HOPPER_SIGN_IN_REALM_CORP_TYPE=oidc
+HOPPER_SIGN_IN_REALM_CORP_LABEL=Corp SSO
+HOPPER_SIGN_IN_REALM_CORP_ISSUER=https://idp.example.com/realms/corp
+HOPPER_SIGN_IN_REALM_CORP_CLIENT_ID=hopper
+HOPPER_SIGN_IN_REALM_CORP_CLIENT_SECRET_FILE=/run/secrets/corp_client_secret
+HOPPER_SIGN_IN_REALM_CORP_ROLES_ADMIN_GROUPS=hopper-admins
+HOPPER_SIGN_IN_REALM_CORP_ROLES_DEFAULT_ROLE=viewer
+HOPPER_SIGN_IN_LOCAL_ENABLED=false
+```
+
+- Groups need the provider to send a groups claim; `SCOPES` adds a scope it asks for
+  (`openid email profile groups` at Okta), `CLAIMS_GROUPS` names another claim (`roles` for Entra app roles).
+- A provider that sends no groups (Google): match on emails, `ROLES_ADMIN_EMAILS=ada@example.com`.
+
+### SAML
+
+Microsoft Entra ID, Okta, Keycloak, ADFS, or any SAML identity provider. At the provider, make a SAML
+application with:
+
+- entity id (Identifier, Audience URI): `https://hopper.example.com/ui/auth/corp-saml/metadata`
+- assertion consumer service, HTTP-POST (Reply URL, Single sign-on URL): `https://hopper.example.com/ui/auth/corp-saml/callback`
+- signed assertions, a persistent NameID, and `email`, `displayName` and `groups` attributes.
+
+Take its single sign-on URL, its entity id and its signing certificate (Base64). The certificate is not
+a secret: the bare base64 on one line, or a file.
+
+```sh
+HOPPER_PUBLIC_URL=https://hopper.example.com
+HOPPER_SIGN_IN_REALM_CORP_SAML_TYPE=saml
+HOPPER_SIGN_IN_REALM_CORP_SAML_LABEL=Corp SSO
+HOPPER_SIGN_IN_REALM_CORP_SAML_ENTRY_POINT=https://idp.example.com/sso/saml
+HOPPER_SIGN_IN_REALM_CORP_SAML_IDP_ISSUER=https://idp.example.com/metadata
+HOPPER_SIGN_IN_REALM_CORP_SAML_IDP_CERT_FILE=/run/secrets/corp_saml_cert.pem
+HOPPER_SIGN_IN_REALM_CORP_SAML_ROLES_ADMIN_GROUPS=hopper-admins
+HOPPER_SIGN_IN_REALM_CORP_SAML_ROLES_DEFAULT_ROLE=viewer
+HOPPER_SIGN_IN_LOCAL_ENABLED=false
+```
+
+- Other attribute names (Entra sends URIs): `ATTRIBUTES_EMAIL`, `ATTRIBUTES_NAME`, `ATTRIBUTES_GROUPS`.
+  Entra, Okta and Keycloak: docs/sign-in.md "Identity providers".
+- The hopper's metadata, for a provider that imports it: `https://hopper.example.com/ui/auth/corp-saml/metadata`.
+
+### A directory (LDAP, Active Directory)
+
+People sign in on the username and password form with their directory account.
+
+```sh
+HOPPER_SIGN_IN_REALM_DIRECTORY_TYPE=ldap
+HOPPER_SIGN_IN_REALM_DIRECTORY_LABEL=Directory
+HOPPER_SIGN_IN_REALM_DIRECTORY_URL=ldaps://ldap.example.com
+HOPPER_SIGN_IN_REALM_DIRECTORY_BIND_DN=cn=hopper,ou=services,dc=example,dc=com
+HOPPER_SIGN_IN_REALM_DIRECTORY_BIND_PASSWORD_FILE=/run/secrets/directory_bind_password
+HOPPER_SIGN_IN_REALM_DIRECTORY_USER_BASE=ou=people,dc=example,dc=com
+HOPPER_SIGN_IN_REALM_DIRECTORY_ATTRIBUTES_SUBJECT=entryUUID
+HOPPER_SIGN_IN_REALM_DIRECTORY_ROLES_ADMIN_GROUPS=["cn=hopper-admins,ou=groups,dc=example,dc=com"]
+HOPPER_SIGN_IN_REALM_DIRECTORY_ROLES_DEFAULT_ROLE=viewer
+HOPPER_SIGN_IN_LOCAL_ENABLED=false
+```
+
+A group DN holds commas: give the groups as a JSON array. Active Directory adds
+`USER_FILTER=(sAMAccountName={username})`; more: docs/sign-in.md "LDAP realm".
+
+### GitHub sign-in
+
+People sign in with their GitHub account, through a GitHub OAuth app made for this hopper
+(https://github.com/settings/developers → **OAuth Apps → New OAuth App**; callback URL
+`https://hopper.example.com/ui/auth/github/callback`). This is a way to sign in only.
+
+```sh
+HOPPER_PUBLIC_URL=https://hopper.example.com
+HOPPER_SIGN_IN_REALM_GITHUB_TYPE=github
+HOPPER_SIGN_IN_REALM_GITHUB_CLIENT_ID=Iv1.0123456789abcdef
+HOPPER_SIGN_IN_REALM_GITHUB_CLIENT_SECRET_FILE=/run/secrets/github_client_secret
+HOPPER_SIGN_IN_REALM_GITHUB_ROLES_ADMIN_SUBJECTS=583231
+HOPPER_SIGN_IN_REALM_GITHUB_ROLES_OPERATOR_GROUPS=acme/platform
+HOPPER_SIGN_IN_LOCAL_ENABLED=false
+```
+
+A subject is the numeric user id (`id` in `https://api.github.com/users/<login>`); a group is a team,
+`org/team-slug`. GitHub Enterprise Server: `WEB_URL` and `API_URL`.
+
 ## Rename from job-hopper
 
 The product was called job-hopper (issue #112). An install from before keeps its config, secrets and
