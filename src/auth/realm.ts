@@ -39,6 +39,37 @@ export interface FormRealm {
   check(username: string, password: string): Promise<FormOutcome>;
 }
 
+/** What a gateway realm makes of the token an auth gateway forwarded. */
+export type GatewayOutcome =
+  /** The token is valid: who it was issued to. */
+  | { ok: true; who: Identity }
+  /** No token, or one the realm refuses (bad signature, wrong audience, expired, not active). */
+  | { ok: false; refused: string }
+  /** The realm could not decide (its issuer is unreachable). */
+  | { ok: false; error: string };
+
+/** A gateway realm: an auth gateway in front of the hopper signed the person in; the realm checks the token it forwards. */
+export interface GatewayRealm {
+  name: string;
+  label: string;
+  check(headers: Record<string, string | string[] | undefined>): Promise<GatewayOutcome>;
+}
+
+/** The claim names an OIDC token or an introspection answer is read by. */
+export interface ClaimNames { email: string; username: string; name: string; groups: string }
+
+/** The Identity in a set of verified claims; `email` only when the issuer vouches for it (`email_verified`) or `trustUnverifiedEmail`. */
+export function claimsIdentity(realm: string, subject: string, claims: Record<string, unknown>, names: ClaimNames, trustUnverifiedEmail: boolean): Identity {
+  const email = stringOf(claims[names.email]);
+  const verified = trustUnverifiedEmail || claims.email_verified === true;
+  const username = stringOf(claims[names.username]);
+  const name = stringOf(claims[names.name]);
+  return {
+    realm, subject, groups: stringList(claims[names.groups]),
+    ...(email && verified ? { email } : {}), ...(username ? { username } : {}), ...(name ? { name } : {}),
+  };
+}
+
 /** A loopback http endpoint (a local test or dev IdP) may skip https; the sign-in config allows nothing else. */
 export const isLoopbackHttp = (u: string): boolean => {
   const x = new URL(u);

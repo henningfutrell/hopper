@@ -1,7 +1,8 @@
 # Signing in — realms
 
 How people sign in to the hopper UI. A **realm** is one way of checking who signs in: password
-accounts, an LDAP or Active Directory directory, OpenID Connect, GitHub or SAML. The realms are an
+accounts, an LDAP or Active Directory directory, OpenID Connect, GitHub, SAML, or an auth gateway in
+front of the hopper that has already signed people in. The realms are an
 ordered list, each on or off, managed in **Settings → Sign-in**; a change works at once. Beside them:
 the one-time login code and no sign-in. The design and its reasons: `docs/design.md` "Sign-in: realms".
 
@@ -10,7 +11,7 @@ Every way of signing in ends the same: a **UI session** with a **UI role**, acti
 
 - [Pick a setup](#pick-a-setup)
 - [Managing sign-in in Settings](#managing-sign-in-in-settings) · [Realm settings](#realm-settings) · [The sign-in config from the CLI](#the-sign-in-config-from-the-cli)
-- [No sign-in](#no-sign-in) · [Password realm](#password-realm) · [LDAP realm](#ldap-realm)
+- [No sign-in](#no-sign-in) · [Password realm](#password-realm) · [LDAP realm](#ldap-realm) · [Behind an auth gateway](#behind-an-auth-gateway)
 - [UI roles and role rules](#ui-roles-and-role-rules)
 - [Who signs in as which user](#who-signs-in-as-which-user)
 - [The sign-in origin and a public URL](#the-sign-in-origin-and-a-public-url)
@@ -30,6 +31,7 @@ Every way of signing in ends the same: a **UI session** with a **UI role**, acti
 | Behind a proxy or network that already decides who gets in | [No sign-in](#no-sign-in), with a role. Everyone who reaches the UI acts with that role. |
 | A few people, no directory or identity provider | The [password realm](#password-realm): an account per person, added in Settings → Sign-in. |
 | A company directory (OpenLDAP, Active Directory, FreeIPA) | An [LDAP realm](#ldap-realm): people sign in with their directory username and password; directory groups grant roles. |
+| Behind an auth gateway that signs people in (Envoy Gateway with OIDC, oauth2-proxy, …) | A [gateway realm](#behind-an-auth-gateway): the gateway signs people in and forwards their token; the hopper checks the token, gives roles by its claims, and asks nobody to sign in. |
 | A team, or anyone reaching it over the internet | A reverse proxy with TLS, `HOPPER_PUBLIC_URL`, one or more realms, role rules, and usually the login code off. |
 
 ## Managing sign-in in Settings
@@ -40,7 +42,8 @@ by an admin. Every setting is a field of a form; nothing is written as YAML or J
 
 The page lists the realms in order, each with its type, a switch to turn it on or off, and — for
 OIDC, GitHub and SAML — the callback URL (and SAML metadata URL) to register with the identity
-provider, ready to copy. A new hopper starts with one realm, **Password**, with no accounts.
+provider, ready to copy. A new hopper starts with one realm, **Password**, holding one account,
+**admin**: the [password fallback](#password-fallback).
 
 - **Add realm**: pick a type, fill in its fields (every one: [Realm settings](#realm-settings)) and
   **Save**. A field left empty takes its default, shown greyed in the field.
@@ -106,6 +109,13 @@ The setting's name in error messages is in brackets.
 | | Entity ID (`entityId`) | `<sign-in origin>/ui/auth/<name>/metadata` | This service's entity id (the IdP calls it Identifier or Audience). |
 | | Email / Name / Groups / Username attribute (`attributes.…`) | `email` / `displayName` / `groups` / NameID | Attribute names in the assertion. |
 | | Require a signed response (`requireSignedResponse`) | off | Also require the whole response signed. The assertion must be signed either way. |
+| `gateway` | Issuer URL (`issuer`) | — | The issuer of the tokens the gateway forwards. Discovery reads `<issuer>/.well-known/openid-configuration` for its keys or its introspection endpoint. https (http only to `127.0.0.1`/`localhost`). |
+| | Check (`check`) | `jwt` | `jwt`: verify the token's signature against the issuer's keys, and its issuer, audience and times. `introspection`: ask the issuer whether the token is active (RFC 7662), for opaque tokens. |
+| | Audience (`audience`) | — | Space-separated. A token must name one of them in `aud`. Required for `jwt`; for `introspection`, checked when set. |
+| | Token header (`header`) | `authorization` | The request header the gateway forwards the token in. `authorization` carries `Bearer <token>`; any other header carries the token alone (`x-forwarded-access-token` for oauth2-proxy). |
+| | Client ID, Client secret variable (`clientId`, `clientSecretEnv`) | none | `introspection` only, and then both required: the hopper's client at the issuer, sent with HTTP Basic. |
+| | Email / Username / Name / Groups claim (`claims.…`) | `email` / `preferred_username` / `name` / `groups` | Claim names, read from the token or the introspection answer. |
+| | Trust unverified email (`trustUnverifiedEmail`) | off | Count the email even without `email_verified: true`. |
 
 ## The sign-in config from the CLI
 
@@ -175,8 +185,30 @@ unique within the realm, case ignored. The user an account signs in as is fixed 
 in; to change it, remove the account and add it again — not under the same username when it signed in
 as another user: that name keeps signing in as them, so it is theirs. A wrong password, an unknown username and an
 empty password get the same 403, and an unknown username costs the same time as a wrong password.
-A password realm with no account offers no username and password form. The form works on every UI
-origin (loopback, a LAN name, the public URL).
+A password realm with no account is not tried. The form works on every UI origin (loopback, a LAN
+name, the public URL).
+
+### Password fallback
+
+Password sign-in is the fallback, so it always exists: the sign-in config always holds an **admin
+account in a password realm that is on**, and the username and password form is always offered.
+Nobody depends on a login code or an already signed-in browser to get in.
+
+- **At start**, when there is no such account — a new hopper, or a sign-in config changed with
+  `hopper config … sign-in` — the hopper adds the account `admin` (or `admin-2`, … when taken) to the
+  first password realm, turning it on, or to a new realm **Password** when there is none. The account
+  signs in as `owner`, role admin. Its password is random and is shown **only once**, in the start
+  lines (`journalctl --user -u hopper`, or the container's log):
+
+  ```
+  hopper: password fallback: no admin account signs in with a password; added account admin to realm password, password <random> (shown only this once: sign in with it and change it in Settings → Sign-in)
+  ```
+
+  Only its argon2id hash is kept. Sign in with it and give it a new password (key) at once. Lost
+  before that: sign in with a login code (`hopper login-code`) and give it a new password there.
+- **In Settings → Sign-in**, a change that would leave none — turning off or removing the last such
+  realm, removing or demoting the last admin account in one — is refused (409). Add another admin
+  account first.
 
 **Rate limit.** Every sign-in route (`/ui/login`, `/ui/auth/…`) together accepts 20 attempts a
 minute per client address; past that, 429 until the minute is over. Behind a reverse proxy every
@@ -238,6 +270,64 @@ once.
 - With a password realm and an LDAP realm both on, the form tries them in their order; the first that
   accepts the password signs in. When none accepts and a directory could not be reached, the answer
   is "sign-in could not be checked", naming the realm — not "wrong password".
+
+## Behind an auth gateway
+
+When an auth gateway in front of the hopper already signs people in — Envoy Gateway with its OIDC
+filter, oauth2-proxy, an ingress with OIDC plugged in — the hopper does not sign anyone in itself. The
+gateway gets the token from the identity provider and forwards it on every request; a **gateway realm**
+checks that token and turns it into a UI session. Nobody sees a sign-in form: the UI takes the session
+by itself when it opens.
+
+The token is checked one of two ways, each through an established library:
+
+- **`jwt`** (the default): the signature against the issuer's published keys (JWKS), and the token's
+  issuer, audience (`aud`), expiry and not-before, with 30 seconds of clock difference allowed (`jose`).
+- **`introspection`**: the issuer's introspection endpoint answers whether the token is active, as the
+  hopper's own client (RFC 7662, `openid-client`). For opaque access tokens.
+
+Envoy Gateway with OIDC, its access token in `Authorization`:
+
+```yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: SecurityPolicy
+metadata: { name: hopper-oidc }
+spec:
+  targetRefs: [{ group: gateway.networking.k8s.io, kind: HTTPRoute, name: hopper }]
+  oidc:
+    provider: { issuer: https://idp.example.com/realms/corp }
+    clientID: hopper-gateway
+    clientSecret: { name: hopper-gateway-secret }
+    redirectURL: https://hopper.example.com/oauth2/callback
+    forwardAccessToken: true
+```
+
+and in Settings → Sign-in (or the sign-in config), the realm:
+
+| field | value |
+|---|---|
+| Type | Auth gateway in front of the hopper |
+| Name | `gateway` |
+| Issuer URL | `https://idp.example.com/realms/corp` |
+| Audience | the `aud` the identity provider puts in access tokens for this gateway (Keycloak: add an audience mapper naming `hopper`) |
+| Role rules | admin for these groups: `hopper-admins`; default role `viewer` |
+
+Then turn the login code off, and remove or turn off the other realms, so the gateway is the only way
+in. `HOPPER_PUBLIC_URL` is the address people reach through the gateway.
+
+- **Reach the hopper only through the gateway.** The token is the credential: anyone who holds a valid
+  token for the audience and reaches the hopper's port directly signs in too. Keep the port on
+  loopback or a network only the gateway reaches (`HOPPER_LAN_PEERS` naming the gateway's address).
+- **The audience matters.** Without it, any token the issuer gave any client would do; `jwt` refuses
+  to start without one.
+- **Several gateway realms** are tried in order; the first that accepts the token signs in. A token
+  refused by all of them is 403 with the reasons; an issuer that could not be reached is 502, naming
+  the realm.
+- **The session is the hopper's own**, as for every realm: it outlives the gateway's sign-in until it
+  expires or the realm changes. Logging out of the hopper ends the hopper session only; with the
+  gateway still signed in, the next visit takes a new one.
+- The gateway realm composes with the others: with a password realm also on, the sign-in page shows
+  both, and **Sign in through the gateway** tries the token again.
 
 ## UI roles and role rules
 

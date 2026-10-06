@@ -1,7 +1,7 @@
 // Logging a browser in (design.md "UI session and mutations", "Reaching the UI across the LAN"):
 // the one-time login code goes to POST /ui/login as a plain form, whose answer stores the session
 // token and reloads. A device link carries the code in the URL fragment, never sent to a server. No
-// sign-in and password sign-in answer JSON with the token (design.md "Sign-in", issue #53).
+// sign-in, password sign-in and a gateway realm answer JSON with the token (design.md "Sign-in", issues #53, #215).
 import type { SessionView } from '../model/wire.ts';
 
 const CODE = /^[0-9a-f]{64}$/;
@@ -50,6 +50,9 @@ export function beginSignIn(realm: string, origin: string): void {
 /** True when the UI should take a no-sign-in session by itself: logged out, and the sign-in config's `none` is on. */
 export const wantsNoSignIn = (authed: boolean, offer: Pick<SessionView['signIn'], 'none'> | null): boolean => !authed && (offer?.none ?? null) !== null;
 
+/** True when the UI should take a session from the auth gateway's token by itself: logged out, and a gateway realm is on. */
+export const wantsGatewaySignIn = (authed: boolean, offer: Pick<SessionView['signIn'], 'gateway'> | null): boolean => !authed && (offer?.gateway ?? false);
+
 /** POST a sign-in that answers `{ token }` as JSON (no sign-in, password); keeps the token. Resolves the error, or null. */
 async function jsonSignIn(path: string, body: unknown): Promise<string | null> {
   const res = await fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
@@ -60,6 +63,8 @@ async function jsonSignIn(path: string, body: unknown): Promise<string | null> {
 }
 
 export const signInWithoutCredential = (): Promise<string | null> => jsonSignIn('/ui/auth/none', {});
+/** The auth gateway in front of the hopper adds the token to this request; the daemon checks it. */
+export const signInThroughGateway = (): Promise<string | null> => jsonSignIn('/ui/auth/gateway', {});
 export const signInWithPassword = (username: string, password: string): Promise<string | null> => jsonSignIn('/ui/auth/password', { username, password });
 
 /** True when this page was reached on a LAN name, not on loopback. */

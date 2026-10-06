@@ -9,10 +9,12 @@ export const UI_ROLES: readonly UiRole[] = ['viewer', 'operator', 'admin'];
 export const roleAllows = (role: UiRole, needs: UiRole): boolean => UI_ROLES.indexOf(role) >= UI_ROLES.indexOf(needs);
 
 /** The realm types the sign-in config offers. `local` (the login code) and `none` (no sign-in) are not realms. */
-export type RealmType = 'password' | 'ldap' | 'oidc' | 'github' | 'saml';
-export const REALM_TYPES: readonly RealmType[] = ['password', 'ldap', 'oidc', 'github', 'saml'];
-/** Realm types the username and password form signs in with; the others send the browser to an identity provider. */
+export type RealmType = 'password' | 'ldap' | 'oidc' | 'github' | 'saml' | 'gateway';
+export const REALM_TYPES: readonly RealmType[] = ['password', 'ldap', 'oidc', 'github', 'saml', 'gateway'];
+/** Realm types the username and password form signs in with. */
 export const FORM_REALM_TYPES: readonly RealmType[] = ['password', 'ldap'];
+/** Realm types that send the browser to an identity provider. A `gateway` realm is neither: an auth gateway in front of the hopper signed the person in. */
+export const REDIRECT_REALM_TYPES: readonly RealmType[] = ['oidc', 'github', 'saml'];
 
 /** Who signed in, as every realm reports it. */
 export interface Identity {
@@ -111,7 +113,7 @@ export interface SessionView {
   authenticated: boolean;
   expiresAt?: string;
   user?: SessionUser;
-  /** Logged out: the user a read without a session shows (loopback only: owner, or the one `x-hopper-user` names). */
+  /** Logged out: the user a read without a session shows (loopback on a one-user hopper only: that user). */
   viewing?: { id: string; name: string };
   signIn: {
     /** The one-time login code works. */
@@ -120,6 +122,8 @@ export interface SessionView {
     none: UiRole | null;
     /** Password sign-in (POST /ui/auth/password) is on: a password or LDAP realm is. */
     password: boolean;
+    /** A gateway realm is on: POST /ui/auth/gateway turns the token the auth gateway forwards into a session. */
+    gateway: boolean;
     /** The origin an OIDC, GitHub or SAML sign-in starts and ends on (HOPPER_PUBLIC_URL, else http://localhost:<port>). */
     origin: string;
     /** The OIDC, GitHub and SAML realms that are on, in order. */

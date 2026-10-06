@@ -77,9 +77,23 @@ describe('loadSignInConfig', () => {
     ['an unknown role', realms({ name: 'x', ...GH, roles: { owner: {} } }), /owner|unrecognized/i],
     ['the old providers list', { version: 1, providers: [] }, /providers|unrecognized/i],
     ['the old password section', { version: 1, password: { users: [] } }, /password|unrecognized/i],
+    ['a gateway realm checking JWTs with no audience', realms({ name: 'x', type: 'gateway', issuer: 'https://idp' }), /realms\.0\.audience/],
+    ['a gateway realm introspecting with no client', realms({ name: 'x', type: 'gateway', issuer: 'https://idp', check: 'introspection', clientSecretEnv: 'OIDC_SECRET' }), /realms\.0\.clientId/],
+    ['a gateway realm introspecting with no client secret', realms({ name: 'x', type: 'gateway', issuer: 'https://idp', check: 'introspection', clientId: 'a' }), /realms\.0\.clientSecretEnv/],
+    ['a gateway realm with a plain-http issuer', realms({ name: 'x', type: 'gateway', issuer: 'http://idp.example.com', audience: ['h'] }), /realms\.0\.issuer/],
     ['a wrong version', { version: 2 }, /version/],
   ])('refuses %s, naming the field', (_what, value, msg) => {
     expect(() => load(value)).toThrow(msg);
+  });
+
+  it('a gateway realm (issue #215): checks JWTs by default, the token in authorization; the header named lowercase', () => {
+    expect(load(realms({ name: 'edge', type: 'gateway', issuer: 'https://idp.example.com', audience: ['hopper'] })).realms[0]).toMatchObject({
+      type: 'gateway', check: 'jwt', header: 'authorization', audience: ['hopper'], trustUnverifiedEmail: false,
+      claims: { email: 'email', username: 'preferred_username', name: 'name', groups: 'groups' },
+    });
+    expect(load(realms({
+      name: 'edge', type: 'gateway', issuer: 'https://idp.example.com', check: 'introspection', clientId: 'hopper', clientSecretEnv: 'OIDC_SECRET', header: 'X-Forwarded-Access-Token',
+    })).realms[0]).toMatchObject({ check: 'introspection', clientId: 'hopper', clientSecret: 'from-env', header: 'x-forwarded-access-token' });
   });
 
   it('names the field in an error that starts "invalid sign-in config: "', () => {

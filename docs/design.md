@@ -48,14 +48,14 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin) | engine, http, store, plugins |
 | `src/routing/` | routing rules: the plugins config's `routing` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
 | `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; routing at intake (`source-host.ts`); restart recovery | http |
-| `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the role rules (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm) and their adapters `password.ts` (argon2), `ldap.ts` (ldapts), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), the sign-in service — form realms in order, flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
+| `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the password fallback (`fallback.ts`, pure), the role rules (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm, gateway realm) and their adapters `password.ts` (argon2), `ldap.ts` (ldapts), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), `gateway.ts` (jose + openid-client), the sign-in service — form realms in order, gateway realms in order, flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets") | everything |
 | `src/update/` | self-update ("Self-update"): install.json, the git mirror of the update repository, the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
 | `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `api-reference.ts` Scalar at `/docs/`); the plugin store's read side (`plugin-store.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
 | `site/` | the install page, published to GitHub Pages by `.github/workflows/pages.yml` with `scripts/get.sh` beside it as `install.sh`: one static `index.html`, no build step, nothing loaded from another site | everything in the repo at runtime; it links to the docs on GitHub |
 | `examples/plugins/` | one minimal runnable custom plugin per role, for authors (`docs/plugins.md`); imports only `hopper/plugin` types and `node:` builtins | everything in `src/` at runtime |
-| `src/main.ts` | composition root: config → instance store → sign-in config → plugin store → updater → server → one user runtime per user (`src/users/`) | — |
+| `src/main.ts` | composition root: config → instance store → sign-in config (the password fallback ensured) → plugin store → updater → server → one user runtime per user (`src/users/`) | — |
 | `src/startup-log.ts` | the daemon's startup lines (listening, parts, sign-in) | — |
 | `src/cli.ts` | the operator CLI `hopper`: config records as JSON, login codes, users, `help` — against the daemon's database | engine, executors |
 
@@ -3408,7 +3408,79 @@ up/down, delete; one Save for the whole list). The machine select uses `/api/mac
 routing targets; the executor select uses the configured executors. Forms stack at 390 px width;
 there is no horizontal page scroll.
 
-## Sign-in: realms (issues #39, #53, #185, #200)
+## Sign-in: realms (issues #39, #53, #185, #200, #215)
+
+### Behind an auth gateway (issue #215, 2026-10-06)
+
+Owner request: the server must be able to run downstream of an auth boundary — for example Envoy
+Gateway with OIDC plugged in. Tokens are obtained outside the hopper, at the gateway; the hopper only
+introspects or validates them and runs no sign-in of its own in that setup. Related: #185. What that
+settles, taken from the issue, not asked: a new realm type, so it sits in the ordered list with the
+others, is managed in Settings → Sign-in, grants roles by the same role rules, and composes with them;
+both checks the issue names (validate a JWT, introspect a token).
+
+- **A third kind of realm: the gateway realm** (`type: gateway`, port `GatewayRealm` in
+  `src/auth/realm.ts`, adapter `src/auth/gateway.ts`). Neither a form realm nor a redirect realm:
+  it has no form, no flow, no callback. Settings: `issuer` (https, or http to loopback), `check`
+  (`jwt` default, or `introspection`), `audience` (required for `jwt`; checked for `introspection`
+  when set), `header` (default `authorization`, carrying `Bearer <token>`; any other header carries the
+  token alone — oauth2-proxy's `x-forwarded-access-token`), `clientId` and `clientSecretEnv`
+  (introspection only, both required), `claims` and `trustUnverifiedEmail` as for `oidc`, `roles`.
+- **Libraries.** The issuer's discovery document through `openid-client` (on first use, retried after
+  a failure, as for `oidc`). `jwt`: `jose` `jwtVerify` against `createRemoteJWKSet(jwks_uri)` — the
+  signature, `iss` (the discovered issuer), `aud`, `exp`, `nbf`, 30 s clock tolerance. `introspection`:
+  `openid-client` `tokenIntrospection`, the client authenticated with HTTP Basic; `active` must be
+  `true`. `jose` was already in the tree under `openid-client`; it is now a direct dependency.
+- **The exchange.** `POST /ui/auth/gateway` (no session, the sign-in rate limit, exact UI Origin like
+  no sign-in and password sign-in): every gateway realm that is on checks the token on the request, in
+  order; the first that accepts it decides (no role: no session, 403). None accepting: 403 with each
+  realm's reason (no token, refused, not active, another audience); none accepting while an issuer
+  could not be reached: 502 naming the realm. The identity is `{ realm, subject: sub, … }` from the
+  claims, built as the oidc realm builds it (`claimsIdentity`). The answer is the usual
+  `{ token, expiresAt, user }`: the gateway's token becomes an ordinary UI session, so the mutation
+  guard (session header, exact Origin, role) is unchanged.
+- **The UI** reads `signIn.gateway` (`SessionView`) and, logged out, takes the session by itself (as for
+  no sign-in, tried first); the sign-in banner offers "Sign in through the gateway" to try again. The
+  gateway realm is no sign-in button (`signIn.realms` is the redirect realms only) and has no callback
+  URL in Settings.
+
+**Residual risk, stated.** The token is the credential: whoever reaches the port with a valid token for
+the audience signs in, through the gateway or not; deploy so only the gateway reaches the hopper. A
+hopper session outlives the token and the gateway's own session until it expires, the realm changes or
+the daemon restarts, as for every realm; logging out of the hopper does not log out of the gateway, and
+the next visit takes a new session. With `introspection`, the issuer is asked once per exchange, not
+per request.
+
+
+### Password fallback (issue #219, 2026-10-06)
+
+Owner request: "Password sign-in is the fallback. Right now the password realm starts with no
+accounts, so the username and password form never appears, and the only ways in are a login code or a
+link from an already signed-in browser. Requirement: the password fallback always exists." Related:
+#216 (bootstrap with a random password, like Nexus, Jenkins and Argo). What that settles, taken from
+the issue, not asked: the invariant is an **admin account in a password realm that is on** — a
+fallback that cannot fix sign-in is not one — and the first one is made the way #216 names.
+
+- **The invariant** — `hasPasswordFallback` (`src/auth/fallback.ts`, pure, on `StoredSignIn`).
+- **At start** (`ensurePasswordFallback`, `src/main.ts`, before the sign-in config loads): a config
+  without it gets it from `withPasswordFallback` — the account `admin` (`admin-2`, … when taken) in the
+  first password realm, turned on, or in a new realm `password` ("Password") after the others; role
+  admin; its identity linked to owner (`IdentityLinks.replace`), so the sign-in is owner's, not a new
+  user's. Written against the version read, in one transaction with the link. Its password is 18
+  random bytes, base64url, shown once in a start line (`console.warn`); only the argon2id hash is
+  stored. Every start checks, so a config made without it by `hopper config set sign-in`, or by
+  migration 20, gets it at the next start.
+- **In Settings → Sign-in**: `POST /ui/api/realms` refuses (409) a change after which the config
+  would not hold it, checked after the self-lockout guard: turning off or removing the last such
+  realm, removing or demoting the last admin account in one.
+- **The login code is unchanged**: still on by default, still the operator's way in from the host.
+
+**Residual risk, stated.** The first password sits in the daemon's log until rotated: whoever reads
+the journal (or the container's log) before the admin changes it can sign in as owner, admin. That is
+the Jenkins and Argo trade, and the same reach as `hopper login-code` (the host's operator). The form
+is now always offered, so a public URL always answers password attempts; argon2id and the sign-in
+rate limit bound them. The lockout guard for the acting session still applies; this guard is for
+everyone else.
 
 ### Password accounts and realm forms (issue #200, 2026-10-05)
 
@@ -3432,7 +3504,8 @@ realm setting is a form field; nobody writes YAML or JSON to sign people in.
   password (8 characters or more) is hashed at the HTTP edge (`hashPassword`, argon2id); only the
   hash is stored or loaded. `GET /api/realms` shows each account's username, role and linked user,
   never a hash. An account's user is fixed once linked (a sign-in links it, as before): naming
-  another is refused (400). A password realm with no account is not tried, and alone offers no form.
+  another is refused (400). A password realm with no account is not tried (one with an admin account
+  always exists since issue #219: "Password fallback" above).
 - **Fields, not JSON.** `save` takes the realm as an object (`realm: { name, label?, type, …settings }`),
   not a text entry; `GET /api/realms` answers each realm's `settings` (`RealmView.entry` is gone). The
   UI renders one form per realm type from a field list (`ui/src/model/realms.ts`: label, path, kind,
@@ -3440,8 +3513,8 @@ realm setting is a form field; nobody writes YAML or JSON to sign people in.
   a default role. An empty field is left out, so the daemon's default applies.
 - **Starts working.** Migration 20 (`src/store/migration-accounts.ts`) moves each password realm's
   `users` out of `sign-in` into rows; a hopper with no `sign-in` record gets one with the realm
-  `password` ("Password") and no accounts, so an admin adds the first account in Settings → Sign-in
-  and the username and password form appears.
+  `password` ("Password") and no accounts; the start after it adds the account `admin` (issue #219,
+  "Password fallback" above).
 - **The CLI** keeps `hopper config … sign-in` for the record (the way back from a lockout) and refuses
   a record that carries accounts. `hopper password-hash` is gone, and with it the `read` dependency.
 
@@ -4648,7 +4721,7 @@ never the jobs (they named `job <id> (executor <name>)` of any user before).
   ("Users: one hopper, separate users", Residual risk). The line above is the hopper's, drawn between
   UI sessions; it binds what an admin does through the hopper, not what the host's operator does
   outside it. A database login per user is not built.
-- **An admin who controls identity can still become an identity.** An OIDC, GitHub, SAML or LDAP realm
+- **An admin who controls identity can still become an identity.** An OIDC, GitHub, SAML, LDAP or gateway realm
   is the admin's to point at an identity provider; an admin who points a realm at a provider they
   control, and makes it answer with a subject a user's identity is linked to, signs in as that user.
   Not closed: realm settings are the admin's job, and the hopper cannot tell a provider move from an

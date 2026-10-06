@@ -10,7 +10,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { LOGIN_CMD } from '@/lib/api';
-import { beginSignIn, onLan, signInWithPassword, signInWithoutCredential, submitLogin } from '@/lib/login';
+import { beginSignIn, onLan, signInThroughGateway, signInWithPassword, signInWithoutCredential, submitLogin } from '@/lib/login';
 import type { SessionView } from '@/model/wire';
 import { checkSession, useHopper } from '@/store';
 
@@ -65,10 +65,11 @@ function SignInOptions({ signIn, lead }: { signIn: SessionView['signIn']; lead: 
       {signIn.realms.map((p) => (
         <Button key={p.name} size="xs" variant="outline" onClick={() => beginSignIn(p.name, signIn.origin)}><LogIn />Sign in with {p.label}</Button>
       ))}
+      {signIn.gateway && <Button size="xs" variant="outline" onClick={() => void signInThroughGateway().then(finish)}><LogIn />Sign in through the gateway</Button>}
       {signIn.password && <PasswordSignIn />}
       {signIn.none && <Button size="xs" variant="outline" onClick={() => void signInWithoutCredential().then(finish)}><LogIn />Continue as {signIn.none}</Button>}
       {signIn.local && <LoginCode />}
-      {!signIn.local && !signIn.password && !signIn.none && signIn.realms.length === 0 && <>no way to sign in is on: where the hopper runs, turn the login code on in its sign-in config (<code className="font-mono">hopper config get sign-in</code>, then <code className="font-mono">hopper config set sign-in</code>) and restart it.</>}
+      {!signIn.local && !signIn.password && !signIn.gateway && !signIn.none && signIn.realms.length === 0 && <>no way to sign in is on: where the hopper runs, turn the login code on in its sign-in config (<code className="font-mono">hopper config get sign-in</code>, then <code className="font-mono">hopper config set sign-in</code>) and restart it.</>}
     </>
   );
 }

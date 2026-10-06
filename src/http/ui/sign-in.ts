@@ -4,6 +4,8 @@
 //   POST /ui/auth/none                    → a no-sign-in session (exact UI Origin)
 //   POST /ui/auth/password                ← { username, password }, tried against the password and LDAP
 //                                           realms in order → a session (exact UI Origin)
+//   POST /ui/auth/gateway                 ← the token an auth gateway forwards, checked by the gateway
+//                                           realms in order → a session (exact UI Origin)
 //   GET  /ui/auth/<name>/start?binding=…  → 302 to the realm's identity provider
 //   GET  /ui/auth/<name>/callback         ← OIDC and GitHub send the browser back here
 //   POST /ui/auth/<name>/callback         ← SAML posts its response here (assertion consumer service)
@@ -123,6 +125,21 @@ function routes(app: FastifyInstance, o: Parameters<typeof registerSignInRoutes>
       const who = r.who ? ` (${r.who.realm} ${r.who.subject})` : '';
       if (r.status === 403) return o.refuse(req, reply, `${r.error}${who}`);
       console.warn(`hopper: password sign-in failed: ${r.error}`);
+      return reply.code(r.status).send({ error: r.error });
+    }
+    return started(reply, r.who, r.role);
+  });
+
+  // The credential is the token the auth gateway adds to the request; the exact Origin keeps another site
+  // from minting sessions in a browser the gateway lets through.
+  app.post('/ui/auth/gateway', async (req, reply) => {
+    if (!signIn.gateway) return o.refuse(req, reply, 'no gateway realm is on (Settings → Sign-in)');
+    if (!fromUiOrigin(req)) return o.refuse(req, reply, `origin ${req.headers.origin ?? '(none)'} not allowed`);
+    const r = await signIn.checkGateway(req.headers);
+    if (!r.ok) {
+      const who = r.who ? ` (${r.who.realm} ${r.who.subject})` : '';
+      if (r.status === 403) return o.refuse(req, reply, `${r.error}${who}`);
+      console.warn(`hopper: gateway sign-in failed: ${r.error}`);
       return reply.code(r.status).send({ error: r.error });
     }
     return started(reply, r.who, r.role);

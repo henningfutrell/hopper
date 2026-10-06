@@ -5,7 +5,8 @@
 // with its secrets before it is stored — settings that would not load are refused, naming the field —
 // then written against the version read, applied to sign-in at once, and applied to the stored sessions
 // as a start would. A change that would leave the acting session without admin is refused: nobody
-// locks themselves out from the UI.
+// locks themselves out from the UI. So is one that would leave no admin account in a password realm
+// that is on: password sign-in is the fallback (issue #219).
 //
 // An admin runs the instance, never another user's work (issue #221, design.md "What an admin sees"):
 // no change here gives the acting admin a credential that signs in as another user — no password set
@@ -14,7 +15,7 @@
 // everyone in as owner). The account's own user changes its password (`changePassword`), which ends
 // the account's other sessions: a password an admin handed over stops being one the admin knows.
 import type { FastifyInstance } from 'fastify';
-import { accountOf, AuthEditError, editSignIn, hashPassword, loadSignInConfig, verifyPassword, realmsView, roleIn, type SignIn, type SignInEdit } from '../auth/index.ts';
+import { accountOf, AuthEditError, editSignIn, hashPassword, hasPasswordFallback, loadSignInConfig, verifyPassword, realmsView, roleIn, type SignIn, type SignInEdit } from '../auth/index.ts';
 import type { InstanceStore } from '../domain/store.ts';
 import { roleAllows, type Identity, type RealmsEdit, type RealmsView } from '../domain/types.ts';
 import { HttpError } from './errors.ts';
@@ -23,7 +24,7 @@ import type { UiSessions } from './ui/sessions.ts';
 
 export interface RealmsAdmin {
   view(): RealmsView;
-  /** Make `edit` as `actor`, signed in as user `actorUser`; throws HttpError (400 invalid, 404 no such realm or account, 409 moved, a lockout, or another user's account). */
+  /** Make `edit` as `actor`, signed in as user `actorUser`; throws HttpError (400 invalid, 404 no such realm or account, 409 moved, a lockout, no password fallback, or another user's account). */
   edit(edit: RealmsEdit, actor: Identity, actorUser: string): Promise<RealmsView>;
   /**
    * The password account `actor` signed in with takes `password`, `current` checked first; every other session
@@ -53,7 +54,7 @@ export function createRealmsAdmin(o: {
       version: store.version(), local: v.local, none: v.none, origin,
       realms: v.realms.map((r) => {
         if (r.type === 'password') return { ...r, accounts: (r.accounts ?? []).map((a) => ({ ...a, ...userOf(r.name, a.username) })) };
-        if (r.type === 'ldap') return r;
+        if (r.type === 'ldap' || r.type === 'gateway') return r;
         const urls = { callback: `${origin}/ui/auth/${r.name}/callback` };
         return r.type === 'saml' ? { ...r, ...urls, metadata: `${origin}/ui/auth/${r.name}/metadata` } : { ...r, ...urls };
       }),
@@ -107,6 +108,10 @@ export function createRealmsAdmin(o: {
       const role = roleIn(config, actor);
       if (role === null || !roleAllows(role, 'admin')) {
         throw new HttpError(409, `this change would end your own admin session (${actor.realm}): sign in as an admin another way first, or change it with hopper config set sign-in`);
+      }
+      // Issue #219: password sign-in is the fallback, never left without an account to sign in with.
+      if (!hasPasswordFallback(next)) {
+        throw new HttpError(409, 'password sign-in is the fallback: keep an admin account in a password realm that is on (add another admin account first)');
       }
       o.instance.tx(() => {
         if (!store.write(next, version)) throw new HttpError(409, MOVED);

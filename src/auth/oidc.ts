@@ -2,9 +2,8 @@
 // openid-client: discovery, authorization code with PKCE, state and nonce, ID token validation,
 // then userinfo for the claims the ID token left out.
 import * as client from 'openid-client';
-import type { Identity } from '../domain/types.ts';
 import type { OidcRealmConfig } from './config.ts';
-import { isLoopbackHttp, stringList, stringOf, type RedirectRealm } from './realm.ts';
+import { claimsIdentity, isLoopbackHttp, type RedirectRealm } from './realm.ts';
 
 export function createOidcRealm(c: OidcRealmConfig, redirectUri: string): RedirectRealm {
   let discovered: Promise<client.Configuration> | undefined;
@@ -37,12 +36,7 @@ export function createOidcRealm(c: OidcRealmConfig, redirectUri: string): Redire
       const info = cfg.serverMetadata().userinfo_endpoint ? await client.fetchUserInfo(cfg, tokens.access_token, idClaims.sub) : {};
       // The ID token is signed and checked; userinfo only fills what it lacks.
       const claims: Record<string, unknown> = { ...info, ...idClaims };
-      const email = stringOf(claims[c.claims.email]);
-      const verified = c.trustUnverifiedEmail || claims.email_verified === true;
-      const who: Identity = { realm: c.name, subject: idClaims.sub, groups: stringList(claims[c.claims.groups]) };
-      const username = stringOf(claims[c.claims.username]);
-      const name = stringOf(claims[c.claims.name]);
-      return { ...who, ...(email && verified ? { email } : {}), ...(username ? { username } : {}), ...(name ? { name } : {}) };
+      return claimsIdentity(c.name, idClaims.sub, claims, c.claims, c.trustUnverifiedEmail);
     },
   };
 }
