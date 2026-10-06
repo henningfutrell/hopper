@@ -105,7 +105,7 @@ describe('identity links, sessions and login codes belong to a user', () => {
   it('a UI session carries its user', () => {
     const instance = openInstanceStore({ url: t.url(), clock: fixedClock() });
     const bea = instance.users.add('bea');
-    const identity = { provider: 'local', subject: 'local', groups: [] };
+    const identity = { realm: 'local', subject: 'local', groups: [] };
     instance.uiSessions.create({ tokenHash: 'h', expiresAt: '2099-01-01T00:00:00.000Z', role: 'admin', identity, userId: bea.id });
     expect(instance.uiSessions.find('h', '2026-10-02T10:00:00.000Z')).toEqual({ tokenHash: 'h', expiresAt: '2099-01-01T00:00:00.000Z', role: 'admin', identity, userId: 'bea' });
     instance.close();

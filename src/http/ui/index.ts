@@ -1,17 +1,18 @@
 // The UI session and the only mutations left (design.md "UI session and mutations"): a one-time
-// login code (when auth.yaml leaves local sign-in on) or an identity provider (sign-in.ts) → a page
+// login code (when auth.yaml leaves local sign-in on), no sign-in or a realm (sign-in.ts) → a page
 // that keeps the session token in localStorage → POST /ui/api/* with that token in
 // x-hopper-session, exact Origin, same-origin, JSON, and a role that allows it (design.md
-// "Sign-in: none, password, local, OIDC and SAML"). Every refusal is a logged 403. A logged-in admin hands another
+// "Sign-in: realms"). Every refusal is a logged 403. A logged-in admin hands another
 // device a login link per LAN name (design.md "Reaching the UI across the LAN"). A mutation acts for the
-// session's user only (issue #158); the instance's (update, plugin store, users) need admin.
+// session's user only (issue #158); the instance's (update, plugin store, users, realms) need admin.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { SignIn } from '../../auth/index.ts';
 import type { Clock, InstanceStore, PluginStoreView, Updater } from '../../domain/ports.ts';
-import { LIST_ROLES, ROLES, SELECTABLE_ROLES, UPDATE_CHANNELS, type SessionView, type UiRole, type UserAdded } from '../../domain/types.ts';
+import { LIST_ROLES, ROLES, SELECTABLE_ROLES, UI_ROLES, UPDATE_CHANNELS, type RealmsView, type SessionView, type UiRole, type UserAdded } from '../../domain/types.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { lanHosts, uiOrigins, type Lan } from '../reach.ts';
+import type { RealmsAdmin } from '../realms.ts';
 import { writeRules } from '../../questions/index.ts';
 import { routerView } from '../state.ts';
 import { userIdOf, type TenantParts, type Tenants } from '../tenants.ts';
@@ -29,6 +30,8 @@ export interface UiRouteOptions {
   instance: Pick<InstanceStore, 'loginCodes' | 'users'>;
   sessions: UiSessions;
   signIn: SignIn;
+  /** Settings → Sign-in: auth.yaml's realms (issue #185). */
+  realms: RealmsAdmin;
   pluginStore: PluginStoreView;
   /** The bound port (known only after listen). */
   port: () => number;
@@ -63,6 +66,17 @@ export const usersEditBody = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('add'), name: z.string().trim().min(1, 'name must not be empty').max(64) }),
 ]);
 export const rulesBody = z.strictObject({ text: z.string(), version: z.string().min(1) });
+// Realms (issue #185): one change to auth.yaml against the version read. A realm's own settings are
+// checked by loading the changed document, so a refusal names the field as a start would.
+const realmName = z.string().min(1).max(64);
+const realmsVersion = { version: z.string().min(1) };
+export const realmsEditBody = z.discriminatedUnion('action', [
+  z.strictObject({ action: z.literal('save'), name: realmName.optional(), entry: z.string().min(1).max(64_000), ...realmsVersion }),
+  z.strictObject({ action: z.literal('remove'), name: realmName, ...realmsVersion }),
+  z.strictObject({ action: z.literal('move'), name: realmName, to: z.number().int().min(0), ...realmsVersion }),
+  z.strictObject({ action: z.literal('enable'), name: realmName, enabled: z.boolean(), ...realmsVersion }),
+  z.strictObject({ action: z.literal('settings'), local: z.boolean().optional(), none: z.enum(UI_ROLES).nullable().optional(), ...realmsVersion }),
+]);
 // The content (url, events) is checked in the editor, so the UI shows one set of messages; here only
 // the shape. No secret (issue #56), no secretFile, no new name; secretEnv only on add, and only a
 // WEBHOOK_SECRET_* variable (checked in the editor).
@@ -111,7 +125,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   app.get('/ui/api/session', async (req): Promise<SessionView> => {
     const s = sessionOf(req);
     const offer = {
-      local: signIn.local, none: signIn.none, password: signIn.password, origin: signIn.origin(), providers: signIn.providers(), required: o.instance.users.list().length > 1,
+      local: signIn.local, none: signIn.none, password: signIn.password, origin: signIn.origin(), realms: signIn.realms(), required: o.instance.users.list().length > 1,
     };
     if (s) return { authenticated: true, expiresAt: s.expiresAt, user: sessionUser(s, userName(s)), signIn: offer };
     const id = userIdOf(req);
@@ -281,9 +295,13 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     };
   });
 
+  // Realms (issue #185, design.md "Sign-in: realms"): one change to auth.yaml, applied at once.
+  // Answers the new GET /api/realms view.
+  app.post('/ui/api/realms', admin, async (req): Promise<RealmsView> => o.realms.edit(parseWith(realmsEditBody, req.body), sessionOf(req)!.identity));
+
   app.post('/ui/api/logout', allow('viewer'), async (req) => {
     const s = sessions.find(String(req.headers[SESSION_HEADER]));
-    if (s) console.warn(`hopper: UI session ended: ${s.identity.provider} ${sessionUser(s, userName(s)).identity}`);
+    if (s) console.warn(`hopper: UI session ended: ${s.identity.realm} ${sessionUser(s, userName(s)).identity}`);
     sessions.drop(String(req.headers[SESSION_HEADER]));
     return { ok: true };
   });

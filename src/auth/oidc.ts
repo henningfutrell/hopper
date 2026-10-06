@@ -1,12 +1,12 @@
-// OpenID Connect (any compliant issuer: Google, Microsoft Entra, Okta, Auth0, Keycloak, …) through
+// The oidc realm: OpenID Connect (any compliant issuer: Google, Microsoft Entra, Okta, Auth0, Keycloak, …) through
 // openid-client: discovery, authorization code with PKCE, state and nonce, ID token validation,
 // then userinfo for the claims the ID token left out.
 import * as client from 'openid-client';
 import type { Identity } from '../domain/types.ts';
-import type { OidcProviderConfig } from './config.ts';
-import { isLoopbackHttp, stringList, stringOf, type IdentityProvider } from './provider.ts';
+import type { OidcRealmConfig } from './config.ts';
+import { isLoopbackHttp, stringList, stringOf, type RedirectRealm } from './realm.ts';
 
-export function createOidcProvider(c: OidcProviderConfig, redirectUri: string): IdentityProvider {
+export function createOidcRealm(c: OidcRealmConfig, redirectUri: string): RedirectRealm {
   let discovered: Promise<client.Configuration> | undefined;
   // Discovered on first use, not at boot: an unreachable issuer must not stop the daemon. A failure is retried next time.
   const config = (): Promise<client.Configuration> => {
@@ -39,7 +39,7 @@ export function createOidcProvider(c: OidcProviderConfig, redirectUri: string): 
       const claims: Record<string, unknown> = { ...info, ...idClaims };
       const email = stringOf(claims[c.claims.email]);
       const verified = c.trustUnverifiedEmail || claims.email_verified === true;
-      const who: Identity = { provider: c.name, subject: idClaims.sub, groups: stringList(claims[c.claims.groups]) };
+      const who: Identity = { realm: c.name, subject: idClaims.sub, groups: stringList(claims[c.claims.groups]) };
       const username = stringOf(claims[c.claims.username]);
       const name = stringOf(claims[c.claims.name]);
       return { ...who, ...(email && verified ? { email } : {}), ...(username ? { username } : {}), ...(name ? { name } : {}) };

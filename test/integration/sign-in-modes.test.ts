@@ -20,7 +20,7 @@ const tokenOf = (text: string): string => (JSON.parse(text) as { token: string }
 describe('no sign-in (auth.yaml none)', () => {
   it('off by default: the offer says so, POST /ui/auth/none is refused', async () => {
     const { app, origin, host } = await start(undefined);
-    expect((await session(app)).signIn).toEqual({ local: true, none: null, password: false, origin, providers: [], required: false });
+    expect((await session(app)).signIn).toEqual({ local: true, none: null, password: false, origin, realms: [], required: false });
     expect((await rawRequest(app.url, { path: '/ui/auth/none', ...json(host, origin, {}) })).status).toBe(403);
   });
 
@@ -29,7 +29,7 @@ describe('no sign-in (auth.yaml none)', () => {
     expect((await session(app)).signIn.none).toBe('operator');
     const res = await rawRequest(app.url, { path: '/ui/auth/none', ...json(host, origin, {}) });
     expect(res.status).toBe(200);
-    expect(await session(app, tokenOf(res.text))).toMatchObject({ authenticated: true, user: { id: 'owner', name: 'owner', role: 'operator', provider: 'none', identity: 'no sign-in' } });
+    expect(await session(app, tokenOf(res.text))).toMatchObject({ authenticated: true, user: { id: 'owner', name: 'owner', role: 'operator', realm: 'none', identity: 'no sign-in' } });
   });
 
   it('the session acts within its role: an operator may not switch the router mode', async () => {
@@ -56,7 +56,7 @@ describe('no sign-in (auth.yaml none)', () => {
 });
 
 describe('password sign-in (auth.yaml password)', () => {
-  const auth = () => ({ version: 1, local: { enabled: false }, password: { users: [{ username: 'ada', passwordHash: adaHash, role: 'operator' }] } });
+  const auth = () => ({ version: 1, local: { enabled: false }, realms: [{ name: 'password', type: 'password', users: [{ username: 'ada', passwordHash: adaHash, role: 'operator' }] }] });
 
   it('the offer says password sign-in is on', async () => {
     const { app } = await start(auth());
@@ -67,7 +67,7 @@ describe('password sign-in (auth.yaml password)', () => {
     const { app, origin, host } = await start(auth());
     const res = await rawRequest(app.url, { path: '/ui/auth/password', ...json(host, origin, { username: 'ada', password: 'correct horse' }) });
     expect(res.status).toBe(200);
-    expect(await session(app, tokenOf(res.text))).toMatchObject({ authenticated: true, user: { role: 'operator', provider: 'password', name: 'ada' } });
+    expect(await session(app, tokenOf(res.text))).toMatchObject({ authenticated: true, user: { role: 'operator', realm: 'password', name: 'ada' } });
   });
 
   it.each([
@@ -95,14 +95,14 @@ describe('password sign-in (auth.yaml password)', () => {
   it('a user removed from auth.yaml loses the session at the next start', async () => {
     const { app, origin, host } = await start(auth());
     const token = tokenOf((await rawRequest(app.url, { path: '/ui/auth/password', ...json(host, origin, { username: 'ada', password: 'correct horse' }) })).text);
-    const after = await restartWithAuth(h, app, { version: 1, password: { users: [] } });
+    const after = await restartWithAuth(h, app, { version: 1, realms: [{ name: 'password', type: 'password', users: [] }] });
     expect((await session(after, token)).authenticated).toBe(false);
   });
 });
 
 describe('sign-in routes are rate limited', () => {
   it('past 20 attempts a minute from one address: 429', async () => {
-    const { app, origin, host } = await start({ version: 1, password: { users: [{ username: 'ada', passwordHash: adaHash, role: 'admin' }] } });
+    const { app, origin, host } = await start({ version: 1, realms: [{ name: 'password', type: 'password', users: [{ username: 'ada', passwordHash: adaHash, role: 'admin' }] }] });
     const statuses: number[] = [];
     for (let i = 0; i < 21; i++) {
       statuses.push((await rawRequest(app.url, { path: '/ui/auth/password', ...json(host, origin, { username: 'ada', password: 'wrong' }) })).status);

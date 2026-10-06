@@ -151,9 +151,9 @@ export interface UserRepository {
 
 /** Which user an identity signs in as (`user_identities`). */
 export interface IdentityLinks {
-  userOf(provider: string, subject: string): string | undefined;
+  userOf(realm: string, subject: string): string | undefined;
   /** Link the identity to the user; an existing link is kept. */
-  link(provider: string, subject: string, userId: string): void;
+  link(realm: string, subject: string, userId: string): void;
 }
 
 /** One user's store: the tables of their user schema. Repositories share one connection. */

@@ -1,10 +1,10 @@
-// The sign-in routes (design.md "Sign-in: none, password, local, OIDC and SAML"); the provider flow
-// itself is src/auth/index.ts. None of them needs a session, so all of them sit behind one per-address
+// The sign-in routes (design.md "Sign-in: realms"); the realms themselves are src/auth/. None of them needs a session, so all of them sit behind one per-address
 // rate limit (@fastify/rate-limit, SIGN_IN_RATE a minute) in their own Fastify context. Routes:
 //   POST /ui/login                        ← the one-time login code (a form)
 //   POST /ui/auth/none                    → a no-sign-in session (exact UI Origin)
-//   POST /ui/auth/password                ← { username, password } → a session (exact UI Origin)
-//   GET  /ui/auth/<name>/start?binding=…  → 302 to the provider
+//   POST /ui/auth/password                ← { username, password }, tried against the password and LDAP
+//                                           realms in order → a session (exact UI Origin)
+//   GET  /ui/auth/<name>/start?binding=…  → 302 to the realm's identity provider
 //   GET  /ui/auth/<name>/callback         ← OIDC and GitHub send the browser back here
 //   POST /ui/auth/<name>/callback         ← SAML posts its response here (assertion consumer service)
 //   POST /ui/auth/complete                ← the callback page: { ticket, binding } → { token, … }
@@ -88,11 +88,11 @@ function routes(app: FastifyInstance, o: Parameters<typeof registerSignInRoutes>
     const user = await o.userFor(who);
     const s = sessions.create({ role, identity: who, userId: user.id });
     const shown = sessionUser(s, user.name);
-    console.warn(`hopper: UI session started: ${who.provider} ${shown.identity} as user ${user.id}, role ${role}`);
+    console.warn(`hopper: UI session started: ${who.realm} ${shown.identity} as user ${user.id}, role ${role}`);
     return reply.header('cache-control', 'no-store').send({ token: s.token, expiresAt: s.expiresAt, user: shown });
   };
   const fromSignInOrigin = (req: FastifyRequest): boolean => req.headers.origin?.toLowerCase() === signIn.origin();
-  // No provider redirect comes back, so these answer on any UI origin, not only the sign-in origin.
+  // Nothing comes back from an identity provider, so these answer on any UI origin, not only the sign-in origin.
   const fromUiOrigin = (req: FastifyRequest): boolean => { const x = req.headers.origin?.toLowerCase(); return x !== undefined && o.isUiOrigin(x); };
 
   // Origin may be null (a local file posts it); the code is the credential.
@@ -115,17 +115,22 @@ function routes(app: FastifyInstance, o: Parameters<typeof registerSignInRoutes>
   });
 
   app.post('/ui/auth/password', async (req, reply) => {
-    if (!signIn.password) return o.refuse(req, reply, 'password sign-in is off in auth.yaml');
+    if (!signIn.password) return o.refuse(req, reply, 'password sign-in is off: no password or LDAP realm is on in auth.yaml');
     if (!fromUiOrigin(req)) return o.refuse(req, reply, `origin ${req.headers.origin ?? '(none)'} not allowed`);
     const { username, password } = parseWith(passwordBody, req.body);
     const r = await signIn.checkPassword(username, password);
-    if (!r) return o.refuse(req, reply, 'wrong username or password');
+    if (!r.ok) {
+      const who = r.who ? ` (${r.who.realm} ${r.who.subject})` : '';
+      if (r.status === 403) return o.refuse(req, reply, `${r.error}${who}`);
+      console.warn(`hopper: password sign-in failed: ${r.error}`);
+      return reply.code(r.status).send({ error: r.error });
+    }
     return started(reply, r.who, r.role);
   });
 
   app.get('/ui/auth/:name/start', async (req, reply) => {
     const { name } = parseWith(nameParams, req.params);
-    // The binding lives in this origin's localStorage; the provider returns to the sign-in origin.
+    // The binding lives in this origin's localStorage; the identity provider returns to the sign-in origin.
     if (req.headers.host?.toLowerCase() !== new URL(signIn.origin()).host) {
       return html(reply, 409, page('Sign in on the sign-in address', `Open ${signIn.origin()} and sign in there.`));
     }
@@ -143,7 +148,7 @@ function routes(app: FastifyInstance, o: Parameters<typeof registerSignInRoutes>
     const body = req.body && typeof req.body === 'object' ? req.body as Record<string, string> : undefined;
     const r = await signIn.callback(name, { url: new URL(req.url, signIn.origin()), ...(body ? { body } : {}) });
     if (!r.ok) {
-      const who = r.who ? ` (${r.who.provider} ${r.who.email ?? r.who.username ?? r.who.subject})` : '';
+      const who = r.who ? ` (${r.who.realm} ${r.who.email ?? r.who.username ?? r.who.subject})` : '';
       console.warn(`hopper: sign-in with ${name} refused${who}: ${r.error}`);
       return html(reply, r.status, page('Not signed in', r.error));
     }
@@ -161,8 +166,8 @@ function routes(app: FastifyInstance, o: Parameters<typeof registerSignInRoutes>
   });
 
   app.get('/ui/auth/:name/metadata', async (req, reply) => {
-    const p = signIn.provider(parseWith(nameParams, req.params).name);
-    if (!p?.metadata) return reply.code(404).send({ error: 'no SAML identity provider by that name' });
+    const p = signIn.redirectRealm(parseWith(nameParams, req.params).name);
+    if (!p?.metadata) return reply.code(404).send({ error: 'no SAML realm by that name is on' });
     return reply.type('application/samlmetadata+xml; charset=utf-8').send(p.metadata());
   });
 }

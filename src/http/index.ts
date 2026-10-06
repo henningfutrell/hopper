@@ -14,6 +14,7 @@ import { jobRoutes } from './jobs.ts';
 import { pluginStoreRoutes } from './plugin-store.ts';
 import { questionGatesRoutes } from './question-gates.ts';
 import { questionRoutes } from './questions.ts';
+import { createRealmsAdmin, realmRoutes } from './realms.ts';
 import { sourceRoutes } from './sources.ts';
 import { sseRoutes } from './sse.ts';
 import { stateRoutes } from './state.ts';
@@ -28,8 +29,8 @@ import { webhookRoutes } from './webhooks.ts';
 export type { TenantParts, Tenants } from './tenants.ts';
 
 export interface ServerOptions {
-  /** The instance store: UI sessions, login codes, the users. */
-  instance: Pick<InstanceStore, 'uiSessions' | 'loginCodes' | 'users'>;
+  /** The instance store: UI sessions, login codes, the users, auth.yaml. */
+  instance: Pick<InstanceStore, 'uiSessions' | 'loginCodes' | 'users' | 'documents'>;
   /** Every user's running parts (issue #158): a tenant route reads and changes the request's user's. */
   tenants: Tenants;
   /** The plugin store (the instance's): GET /api/plugin-store, POST /ui/api/plugin-store. */
@@ -41,8 +42,10 @@ export interface ServerOptions {
   /** The bound port, for the Host guard and the UI Origin check (known only after listen). */
   port: () => number;
   sessionHours: number;
-  /** auth.yaml as loaded: local sign-in and the identity providers. */
+  /** auth.yaml as it applies: local sign-in, no sign-in and the realms. */
   signIn: SignIn;
+  /** The instance's own secrets (a realm's clientSecretEnv, bindPasswordEnv): read when auth.yaml changes in the UI. */
+  secret: (name: string) => string | undefined;
   /** The LAN names and peers (design.md "Reaching the UI across the LAN"); empty: loopback only. */
   lan: Lan;
   /** The built UI bundle (ui/dist). */
@@ -55,7 +58,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   const app = Fastify({ logger: o.logger ?? false, forceCloseConnections: true });
   installErrorHandling(app);
   const sessions = createUiSessions({ repo: o.instance.uiSessions, clock: o.clock, hours: o.sessionHours });
-  // auth.yaml may have changed since the sessions were made: a removed provider or rule ends them.
+  // auth.yaml may have changed since the sessions were made: a realm removed or off, or a rule, ends them.
   const r = sessions.reconcile(o.signIn.roleOf);
   if (r.dropped + r.changed > 0) console.warn(`hopper: auth.yaml applied to stored UI sessions: ${r.dropped} ended, ${r.changed} changed role`);
   installHostGuard(app, { port: o.port, lan: o.lan, sessions });
@@ -74,9 +77,11 @@ export function createServer(o: ServerOptions): FastifyInstance {
   updateRoutes(app, o);
   pluginStoreRoutes(app, o);
   userRoutes(app, { tenants: o.tenants, sessions });
+  const realms = createRealmsAdmin({ documents: o.instance.documents, secret: o.secret, signIn: o.signIn, sessions });
+  realmRoutes(app, { realms, sessions });
   staticRoutes(app, o.uiDir);
   registerUiRoutes(app, {
-    ...tenant, tenants: o.tenants, instance: o.instance, sessions, signIn: o.signIn, pluginStore: o.pluginStore, port: o.port, lan: o.lan, clock: o.clock,
+    ...tenant, tenants: o.tenants, instance: o.instance, sessions, signIn: o.signIn, realms, pluginStore: o.pluginStore, port: o.port, lan: o.lan, clock: o.clock,
     updater: o.updater,
   });
   return app;

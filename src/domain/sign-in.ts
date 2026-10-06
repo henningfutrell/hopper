@@ -1,5 +1,5 @@
-// Signing in (design.md "Sign-in: none, password, local, OIDC and SAML", issues #39, #53): who a UI session belongs to,
-// and what its role lets it do. The same for every identity provider.
+// Signing in (design.md "Sign-in: realms", issues #39, #53, #185): who a UI session belongs to,
+// and what its role lets it do. The same for every realm.
 
 /** What a UI session may do. Each role includes the ones before it. */
 export type UiRole = 'viewer' | 'operator' | 'admin';
@@ -8,16 +8,19 @@ export const UI_ROLES: readonly UiRole[] = ['viewer', 'operator', 'admin'];
 /** True when `role` includes `needs`. */
 export const roleAllows = (role: UiRole, needs: UiRole): boolean => UI_ROLES.indexOf(role) >= UI_ROLES.indexOf(needs);
 
-/** The identity provider types auth.yaml offers. `local` (the login code), `none` and `password` are built in, not providers. */
-export type IdentityProviderType = 'oidc' | 'github' | 'saml';
+/** The realm types auth.yaml offers. `local` (the login code) and `none` (no sign-in) are not realms. */
+export type RealmType = 'password' | 'ldap' | 'oidc' | 'github' | 'saml';
+export const REALM_TYPES: readonly RealmType[] = ['password', 'ldap', 'oidc', 'github', 'saml'];
+/** Realm types the username and password form signs in with; the others send the browser to an identity provider. */
+export const FORM_REALM_TYPES: readonly RealmType[] = ['password', 'ldap'];
 
-/** Who signed in, as every identity provider reports it. */
+/** Who signed in, as every realm reports it. */
 export interface Identity {
-  /** The provider instance name in auth.yaml (`local` the login code, `none` no sign-in, `password` password sign-in). */
-  provider: string;
-  /** The provider's stable id for the user (OIDC `sub`, GitHub user id, SAML NameID). */
+  /** The realm's name in auth.yaml (`local` the login code, `none` no sign-in). */
+  realm: string;
+  /** The realm's stable id for the user (account username, LDAP DN or the configured attribute, OIDC `sub`, GitHub user id, SAML NameID). */
   subject: string;
-  /** Only an address the provider vouches for. */
+  /** Only an address the realm vouches for. */
   email?: string;
   username?: string;
   /** Shown in the UI. */
@@ -32,17 +35,54 @@ export interface SessionUser {
   /** The user's name. */
   name: string;
   role: UiRole;
-  provider: string;
-  /** Who signed in: name, username, email or subject, the first the provider gave. */
+  /** The realm the session's identity signed in with. */
+  realm: string;
+  /** Who signed in: name, username, email or subject, the first the realm gave. */
   identity: string;
 }
 
-/** One way to sign in, as the logged-out UI offers it. */
-export interface SignInProviderView {
+/** A realm the logged-out UI offers a button for (an OIDC, GitHub or SAML realm that is on). */
+export interface SignInRealmView {
   name: string;
   label: string;
-  type: IdentityProviderType;
+  type: RealmType;
 }
+
+/** One realm as Settings → Sign-in shows it (GET /api/realms): its auth.yaml entry as YAML. */
+export interface RealmView {
+  name: string;
+  label: string;
+  type: RealmType;
+  enabled: boolean;
+  /** The realm's entry in auth.yaml, as YAML: what the editor shows and saves. */
+  entry: string;
+  /** OIDC, GitHub, SAML: the callback URL to register with the identity provider. */
+  callback?: string;
+  /** SAML: the service provider metadata URL (also its entity id unless `entityId` is set). */
+  metadata?: string;
+}
+
+/** GET /api/realms (admin): auth.yaml's realms in order, local sign-in and no sign-in, at `version`. */
+export interface RealmsView {
+  version: string;
+  local: boolean;
+  none: UiRole | null;
+  /** The sign-in origin the callbacks are on. */
+  origin: string;
+  realms: RealmView[];
+}
+
+/** POST /ui/api/realms: one change to auth.yaml, made against the version it read. */
+export type RealmsEdit = { version: string } & (
+  /** Add a realm from its YAML entry, or replace the one named `name` (its name stays). */
+  | { action: 'save'; name?: string; entry: string }
+  | { action: 'remove'; name: string }
+  /** Move to position `to` (0 first). */
+  | { action: 'move'; name: string; to: number }
+  | { action: 'enable'; name: string; enabled: boolean }
+  /** Local sign-in (the login code) on or off; the role of no sign-in, or null for off. */
+  | { action: 'settings'; local?: boolean; none?: UiRole | null }
+);
 
 /** GET /ui/api/session. */
 export interface SessionView {
@@ -56,11 +96,12 @@ export interface SessionView {
     local: boolean;
     /** No sign-in: the role anyone gets from POST /ui/auth/none; null when off. */
     none: UiRole | null;
-    /** Password sign-in (POST /ui/auth/password) is on. */
+    /** Password sign-in (POST /ui/auth/password) is on: a password or LDAP realm is. */
     password: boolean;
-    /** The origin a provider sign-in starts and ends on (HOPPER_PUBLIC_URL, else http://localhost:<port>). */
+    /** The origin an OIDC, GitHub or SAML sign-in starts and ends on (HOPPER_PUBLIC_URL, else http://localhost:<port>). */
     origin: string;
-    providers: SignInProviderView[];
+    /** The OIDC, GitHub and SAML realms that are on, in order. */
+    realms: SignInRealmView[];
     /** Several users: the UI shows no user's work until someone signs in (issue #167). */
     required: boolean;
   };

@@ -27,8 +27,8 @@ export interface App {
   /** Always the loopback URL, whatever the bind address. */
   url: string;
   config: Config;
-  /** auth.yaml as loaded at start. */
-  auth: AuthConfig;
+  /** auth.yaml as it applies now (loaded at start, changed from Settings → Sign-in). */
+  auth: () => AuthConfig;
   /** The UI link to one question, as notifications carry it: the first LAN name, else loopback. */
   answerUrl(questionId: string): string;
   /** The instance store: users, identity links, sessions, login codes, auth.yaml, instance settings. */
@@ -155,7 +155,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
         return user;
       },
     },
-    port: () => port, sessionHours: config.uiSessionHours, signIn,
+    port: () => port, sessionHours: config.uiSessionHours, signIn, secret,
     lan: { names: config.lanNames, peers: config.lanPeers, publicUrl: config.publicUrl }, uiDir: seams.uiDir ?? UI_DIR,
   });
 
@@ -171,7 +171,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   const app: App = {
     url: `http://127.0.0.1:${port}`,
     config,
-    auth,
+    auth: () => signIn.config(),
     answerUrl,
     instance,
     updater,

@@ -4,17 +4,17 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { TestApp } from '../support/app.ts';
 import { rawRequest } from '../support/http.ts';
 import { signIn } from '../support/idp.ts';
-import { harness, oidcIdp, oidcProvider, restartWithAuth, session, startWithAuth, stopAll } from '../support/sign-in-app.ts';
+import { harness, oidcIdp, oidcRealm, restartWithAuth, session, startWithAuth, stopAll } from '../support/sign-in-app.ts';
 
 const h = harness();
 afterEach(() => stopAll(h));
 const start = (auth: unknown, env?: Record<string, string>) => startWithAuth(h, auth, env);
 const oidc = (o?: Parameters<typeof oidcIdp>[1]) => oidcIdp(h, o);
 
-describe('roles, sessions and logout: the same for every provider', () => {
+describe('roles, sessions and logout: the same for every realm', () => {
   async function as(role: 'viewer' | 'operator' | 'admin', env: Record<string, string> = {}) {
     const idp = await oidc();
-    const s = await start({ version: 1, providers: [oidcProvider(idp, { defaultRole: role })] }, env);
+    const s = await start({ version: 1, realms: [oidcRealm(idp, { defaultRole: role })] }, env);
     const token = (await signIn(s.app.url, s.origin, 'corp')).token!;
     return { ...s, token };
   }
@@ -55,15 +55,15 @@ describe('roles, sessions and logout: the same for every provider', () => {
 
   it('a session outlives a restart; a provider removed from auth.yaml ends its sessions', async () => {
     const { app, token } = await as('viewer');
-    const same = await restartWithAuth(h, app, { version: 1, providers: [oidcProvider({ issuer: 'http://127.0.0.1:1/' }, { defaultRole: 'viewer' })] });
+    const same = await restartWithAuth(h, app, { version: 1, realms: [oidcRealm({ issuer: 'http://127.0.0.1:1/' }, { defaultRole: 'viewer' })] });
     expect((await session(same, token)).authenticated).toBe(true);
-    const gone = await restartWithAuth(h, same, { version: 1, providers: [] });
+    const gone = await restartWithAuth(h, same, { version: 1, realms: [] });
     expect((await session(gone, token)).authenticated).toBe(false);
   });
 
   it('a role changed in auth.yaml applies to live sessions at the next start', async () => {
     const { app, token } = await as('admin');
-    const again = await restartWithAuth(h, app, { version: 1, providers: [oidcProvider({ issuer: 'http://127.0.0.1:1/' }, { defaultRole: 'viewer' })] });
+    const again = await restartWithAuth(h, app, { version: 1, realms: [oidcRealm({ issuer: 'http://127.0.0.1:1/' }, { defaultRole: 'viewer' })] });
     expect((await session(again, token)).user.role).toBe('viewer');
   });
 });
@@ -73,7 +73,7 @@ describe('a public URL (behind a reverse proxy)', () => {
 
   it('the sign-in origin is the public URL; its Host is served; /api/ needs a session there', async () => {
     const idp = await oidc();
-    const { app } = await start({ version: 1, providers: [oidcProvider(idp, { defaultRole: 'viewer' })] }, env);
+    const { app } = await start({ version: 1, realms: [oidcRealm(idp, { defaultRole: 'viewer' })] }, env);
     expect((await session(app)).signIn.origin).toBe('https://hopper.example.com');
     const host = 'hopper.example.com';
     expect((await rawRequest(app.url, { path: '/ui/api/session', headers: { host } })).status).toBe(200);
@@ -85,7 +85,7 @@ describe('a public URL (behind a reverse proxy)', () => {
 
   it('mutations accept the public origin', async () => {
     const idp = await oidc();
-    const { app } = await start({ version: 1, providers: [oidcProvider(idp, { defaultRole: 'admin' })] }, env);
+    const { app } = await start({ version: 1, realms: [oidcRealm(idp, { defaultRole: 'admin' })] }, env);
     const run = await signIn(app.url, 'https://hopper.example.com', 'corp');
     const res = await app.ui('/ui/api/router-mode', { mode: 'active' }, { token: run.token!, headers: { host: 'hopper.example.com', origin: 'https://hopper.example.com' } });
     expect(res.status).toBe(200);
@@ -94,6 +94,6 @@ describe('a public URL (behind a reverse proxy)', () => {
 
 describe('an invalid auth.yaml', () => {
   it('stops the daemon at start, naming the field', async () => {
-    await expect(start({ version: 1, providers: [{ name: 'x', type: 'ldap' }] })).rejects.toThrow(/invalid auth\.yaml: providers\.0/);
+    await expect(start({ version: 1, realms: [{ name: 'x', type: 'kerberos' }] })).rejects.toThrow(/invalid auth\.yaml: realms\.0/);
   });
 });

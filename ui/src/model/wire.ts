@@ -3,15 +3,15 @@
 import type {
   AttachedMachine, Decision, DomainEvent, InstanceSpec, Job, JobStatus, Lane, MachineDefaultsEdit, MachineEdit, MachineLaneEffect, MachineSnapshot, MachinesConfig, OptionChoice, PartAccount, PluginsEdit, PluginsReport,
   Question, QuestionAttempt, QuestionGatesView, QuestionStatus, RiskRuleView, Role, RoutingReport, RulesView, SelectableRole, ListRole, SourceStatus, UsageReading, UsageReport, UsageSourceReport, WebhookDelivery,
-  WebhookSubscription, WebhooksEdit, SessionUser, SessionView, SignInProviderView, UiRole, UpdateStatus, UpdateChannel, PluginStoreEdit, PluginStoreEntry, PluginStoreReport, GhLoginStatus,
-  UserAdded, UserView,
+  WebhookSubscription, WebhooksEdit, SessionUser, SessionView, SignInRealmView, UiRole, UpdateStatus, UpdateChannel, PluginStoreEdit, PluginStoreEntry, PluginStoreReport, GhLoginStatus,
+  UserAdded, UserView, RealmType, RealmView, RealmsEdit, RealmsView,
 } from '../../../src/domain/types.ts';
 
 export type {
   AttachedMachine, Decision, DomainEvent, InstanceSpec, Job, JobStatus, Lane, MachineDefaultsEdit, MachineEdit, MachineLaneEffect, MachinesConfig, OptionChoice, PartAccount, PluginsEdit, PluginsReport,
   Question, QuestionAttempt, QuestionGatesView, QuestionStatus, RiskRuleView, Role, RoutingReport, RulesView, SelectableRole, ListRole, SourceStatus, UsageReading, UsageReport, UsageSourceReport, WebhookDelivery,
-  WebhookSubscription, WebhooksEdit, SessionUser, SessionView, SignInProviderView, UiRole, UpdateStatus, UpdateChannel, PluginStoreEdit, PluginStoreEntry, PluginStoreReport, GhLoginStatus,
-  UserAdded, UserView,
+  WebhookSubscription, WebhooksEdit, SessionUser, SessionView, SignInRealmView, UiRole, UpdateStatus, UpdateChannel, PluginStoreEdit, PluginStoreEntry, PluginStoreReport, GhLoginStatus,
+  UserAdded, UserView, RealmType, RealmView, RealmsEdit, RealmsView,
 };
 
 export interface Queue {

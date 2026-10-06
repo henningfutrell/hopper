@@ -28,7 +28,7 @@ const handled = {
 interface Call { path: string; method: string; headers: Record<string, string>; body?: unknown }
 
 type Role = 'viewer' | 'operator' | 'admin';
-interface Boot { attempts?: unknown[]; authed: boolean; hash?: string; role?: Role; mutationStatus?: number; needs?: Role; providers?: { name: string; label: string; type: string }[] }
+interface Boot { attempts?: unknown[]; authed: boolean; hash?: string; role?: Role; mutationStatus?: number; needs?: Role; realms?: { name: string; label: string; type: string }[] }
 
 function fakeDaemon(o: Boot) {
   const calls: Call[] = [];
@@ -50,10 +50,10 @@ function fakeDaemon(o: Boot) {
     const [path, query = ''] = String(input).split('?') as [string, string?];
     const headers = Object.fromEntries(Object.entries((init.headers ?? {}) as Record<string, string>));
     calls.push({ path, method: init.method ?? 'GET', headers, ...(init.body ? { body: JSON.parse(String(init.body)) } : {}) });
-    const signIn = { local: true, origin: location.origin, providers: o.providers ?? [] };
+    const signIn = { local: true, origin: location.origin, realms: o.realms ?? [] };
     if (path === '/ui/api/session') {
       return json(200, o.authed
-        ? { authenticated: true, expiresAt: '2099-01-01T00:00:00.000Z', user: { role: o.role ?? 'admin', provider: 'local', name: 'login code' }, signIn }
+        ? { authenticated: true, expiresAt: '2099-01-01T00:00:00.000Z', user: { role: o.role ?? 'admin', realm: 'local', name: 'login code' }, signIn }
         : { authenticated: false, signIn });
     }
     if (path === '/api/questions') return json(200, { questions: new URLSearchParams(query).get('status') === 'all' ? [open, handled] : [open] });
@@ -169,8 +169,8 @@ describe('question card', () => {
     expect(localStorage.getItem('jh_session')).toBe('a'.repeat(64));
   });
 
-  it('logged out with identity providers: the banner offers a sign-in button per provider', async () => {
-    await boot({ authed: false, providers: [{ name: 'corp', label: 'Corp SSO', type: 'oidc' }] });
+  it('logged out with OIDC, GitHub or SAML realms: the banner offers a sign-in button per realm', async () => {
+    await boot({ authed: false, realms: [{ name: 'corp', label: 'Corp SSO', type: 'oidc' }] });
     await vi.waitFor(() => expect(button('Sign in with Corp SSO', document.body)).toBeDefined());
   });
 

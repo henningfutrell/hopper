@@ -130,7 +130,7 @@ describe('users, sessions and login codes', () => {
     const bea = await a.addUser('Bea');
     const token = await a.loginWith(mintLoginCode(a.app.instance, { now: () => new Date() }, bea.id));
     const view = (await a.api('GET', '/ui/api/session', undefined, session(token))).body;
-    expect(view).toMatchObject({ authenticated: true, user: { id: 'bea', name: 'Bea', role: 'admin', provider: 'local', identity: 'login code' } });
+    expect(view).toMatchObject({ authenticated: true, user: { id: 'bea', name: 'Bea', role: 'admin', realm: 'local', identity: 'login code' } });
     const owner = await a.login();
     expect((await a.api('GET', '/ui/api/session', undefined, session(owner))).body.user).toMatchObject({ id: 'owner', name: 'owner' });
   });

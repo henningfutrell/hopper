@@ -66,7 +66,7 @@ export function Header({ nav }: { nav?: React.ReactNode }) {
           <Button variant="ghost" size="icon-sm" aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
             onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <Sun /> : <Moon />}</Button>
           {user ? (
-            <span data-who className="flex items-center gap-1.5" title={`Signed in as ${user.name}: ${user.identity}, with ${user.provider}`}>
+            <span data-who className="flex items-center gap-1.5" title={`Signed in as ${user.name}: ${user.identity}, with ${user.realm}`}>
               <span className="max-w-24 truncate sm:max-w-40">{user.name}</span><StatusBadge status={user.role} tone="muted" />
             </span>
           ) : !authed && (

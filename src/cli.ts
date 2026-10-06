@@ -53,7 +53,7 @@ usage:
   hopper login-code [--link <base url>]              a one-time UI login code (${LOGIN_CODE_MINUTES} minutes), or a link with it
   hopper users                                       the users of this hopper: id, name, when added
   hopper user add <name>                             add a user: their own jobs, questions and settings, kept apart
-  hopper password-hash                               an argon2id hash for auth.yaml password.users (password on stdin, or typed)
+  hopper password-hash                               an argon2id hash for a password realm's users in auth.yaml (password on stdin, or typed)
   hopper help                                        this text
 
 documents: ${CONFIG_DOCUMENTS.join(', ')}. plugins.yaml and rules.md are one user's; auth.yaml (sign-in) is shared.
@@ -188,7 +188,7 @@ function userCommand(instance: InstanceStore, args: string[], io: CliIo): void {
   io.err(`user ${user.id} added: hopper login-code --user ${user.id} gives a first sign-in\n`);
 }
 
-/** An argon2id hash of one password on stdout, for auth.yaml `password.users` (design.md "Sign-in"). Needs no database. */
+/** An argon2id hash of one password on stdout, for a password realm's `users` in auth.yaml (design.md "Sign-in: realms"). Needs no database. */
 async function passwordHash(io: CliIo): Promise<number> {
   let password: string;
   try {

@@ -9,7 +9,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 type El = ReturnType<typeof createElement>;
-const offer = (required: boolean) => ({ local: true, none: null, password: true, origin: 'http://localhost:4790', providers: [], required });
+const offer = (required: boolean) => ({ local: true, none: null, password: true, origin: 'http://localhost:4790', realms: [], required });
 let reads: string[] = [];
 
 function fakeDaemon(session: unknown) {
@@ -52,7 +52,7 @@ afterEach(async () => {
 describe('the top bar says who you are', () => {
   it('signed in: the user and role, at every width', async () => {
     await render('../../ui/src/app/header.tsx', 'Header', {
-      authed: true, signIn: offer(true), viewing: null, user: { id: 'bea', name: 'Bea', role: 'operator', provider: 'password', identity: 'bea' },
+      authed: true, signIn: offer(true), viewing: null, user: { id: 'bea', name: 'Bea', role: 'operator', realm: 'password', identity: 'bea' },
     });
     expect(who()?.textContent).toContain('Bea');
     expect(who()?.textContent).toContain('operator');

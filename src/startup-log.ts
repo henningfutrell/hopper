@@ -20,11 +20,10 @@ export function logStartup(app: App): void {
     console.log(`hopper: user ${u.id}: router ${r.name} [${r.plugin}${r.fallback ? ', fallback' : ''}] ${rt.routerMode()}, executors ${rt.engine.executorNames.join(',') || 'none'}${unavailableNote(rt.plugins)}, ${q}`);
     for (const s of rt.registry.statuses()) console.log(`hopper: user ${u.id}: source ${s.name} (${s.kind}) ${s.state}`);
   }
-  const { auth } = app;
+  const auth = app.auth();
   if (app.config.publicUrl) console.log(`hopper: public URL ${app.config.publicUrl} (sign-in origin)`);
-  if (auth.providers.length) console.log(`hopper: sign-in with ${auth.providers.map((p) => `${p.name} (${p.type})`).join(', ')}`);
+  if (auth.realms.length) console.log(`hopper: realms, in order: ${auth.realms.map((r) => `${r.name} (${r.type}${r.enabled ? '' : ', off'})`).join(', ')}`);
   if (auth.local.enabled) console.log('hopper: local sign-in on; a login code: hopper login-code');
   else console.log('hopper: local sign-in is off (auth.yaml)');
-  if (auth.password) console.log(`hopper: password sign-in on (${auth.password.users.length} account(s))`);
   if (auth.none) console.warn(`hopper: NO SIGN-IN is on (auth.yaml none): anyone who reaches the UI acts as ${auth.none.role}`);
 }

@@ -1,10 +1,10 @@
-// The role a signed-in identity gets (design.md "Sign-in: none, password, local, OIDC and SAML" — Roles): the same
+// The role a signed-in identity gets (design.md "Sign-in: realms" — Roles): the same
 // rules for every identity provider; the highest matching role wins; no match is no session.
 import { describe, expect, it } from 'vitest';
 import { roleFor } from '../../src/auth/roles.ts';
 import type { Identity } from '../../src/domain/types.ts';
 
-const who = (o: Partial<Identity> = {}): Identity => ({ provider: 'corp', subject: 's-1', groups: [], ...o });
+const who = (o: Partial<Identity> = {}): Identity => ({ realm: 'corp', subject: 's-1', groups: [], ...o });
 
 describe('roleFor', () => {
   it('no rules and no default role: no role', () => {

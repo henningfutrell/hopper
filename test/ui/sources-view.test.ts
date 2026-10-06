@@ -27,7 +27,7 @@ function fakeDaemon() {
   const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
   return vi.fn(async (input: string) => {
     const path = String(input).split('?')[0]!;
-    if (path === '/ui/api/session') return json(200, { authenticated: true, expiresAt: '2099-01-01T00:00:00.000Z', user: { role: 'admin', provider: 'local', name: 'login code' }, signIn: { local: true, origin: location.origin, providers: [] } });
+    if (path === '/ui/api/session') return json(200, { authenticated: true, expiresAt: '2099-01-01T00:00:00.000Z', user: { role: 'admin', realm: 'local', name: 'login code' }, signIn: { local: true, origin: location.origin, realms: [] } });
     if (path in routes) return json(200, routes[path]);
     return json(404, { error: 'not found' });
   });

@@ -1,16 +1,37 @@
-// auth.yaml (design.md "Sign-in: none, password, local, OIDC and SAML" — Configuration): how people sign in, a config
-// document in the store (design.md "Config documents"). Read once at start; an invalid document stops
-// the daemon, naming the field (sign-in fails closed). None → the one-time login code only. `none`
-// (no sign-in) and `password` (argon2id hashes, never a password) are built in beside the providers.
-// A client secret comes from the environment only (`clientSecretEnv`, design.md "Secrets"); a SAML IdP
-// certificate is public and sits inline.
+// auth.yaml (design.md "Sign-in: realms"): how people sign in, a config document in the store
+// (design.md "Config documents"). Loaded at start and after every change from Settings → Sign-in; an
+// invalid document stops the daemon at start, naming the field, and is refused by the UI (sign-in
+// fails closed). None → the one-time login code only. `realms` is the ordered list of realms, each of a
+// realm type, on unless `enabled: false`; `local` (the login code) and `none` (no sign-in) are not realms.
+// A secret comes from the environment only (`clientSecretEnv`, `bindPasswordEnv`, design.md "Secrets"),
+// read only for a realm that is on; a SAML IdP certificate is public and sits inline.
 import { parse } from 'yaml';
 import { z } from 'zod';
-import { UI_ROLES, type UiRole } from '../domain/types.ts';
+import { FORM_REALM_TYPES, UI_ROLES, type RealmType, type UiRole } from '../domain/types.ts';
 import type { RoleRules } from './roles.ts';
 
-interface ProviderBase { name: string; label: string; roles: RoleRules }
-export interface OidcProviderConfig extends ProviderBase {
+interface RealmBase { name: string; label: string; enabled: boolean }
+/** One password realm account: an argon2id hash (`hopper password-hash`), never the password. */
+export interface PasswordUser { username: string; passwordHash: string; role: UiRole }
+export interface PasswordRealmConfig extends RealmBase { type: 'password'; users: PasswordUser[] }
+export interface LdapRealmConfig extends RealmBase {
+  type: 'ldap';
+  url: string;
+  startTls: boolean;
+  /** Absent: an anonymous search. */
+  bindDn?: string;
+  /** From `bindPasswordEnv`; absent with `bindDn`. Empty when the realm is off. */
+  bindPassword?: string;
+  userBase: string;
+  /** `{username}` is replaced by the escaped username. */
+  userFilter: string;
+  /** Attribute names. `subject` absent: the entry's DN. */
+  attributes: { subject?: string; username: string; email: string; name: string; groups: string };
+  /** Groups found by search; `filter`'s `{dn}` is the user's escaped DN, `name` the attribute a group is known by. */
+  groupSearch?: { base: string; filter: string; name: string };
+  roles: RoleRules;
+}
+export interface OidcRealmConfig extends RealmBase {
   type: 'oidc';
   issuer: string;
   clientId: string;
@@ -21,15 +42,18 @@ export interface OidcProviderConfig extends ProviderBase {
   claims: { email: string; username: string; name: string; groups: string };
   /** Count `email` even when `email_verified` is not true. */
   trustUnverifiedEmail: boolean;
+  roles: RoleRules;
 }
-export interface GithubProviderConfig extends ProviderBase {
+export interface GithubRealmConfig extends RealmBase {
   type: 'github';
   clientId: string;
+  /** Empty when the realm is off. */
   clientSecret: string;
   webUrl: string;
   apiUrl: string;
+  roles: RoleRules;
 }
-export interface SamlProviderConfig extends ProviderBase {
+export interface SamlRealmConfig extends RealmBase {
   type: 'saml';
   entryPoint: string;
   idpCert: string;
@@ -39,24 +63,22 @@ export interface SamlProviderConfig extends ProviderBase {
   idpIssuer?: string;
   attributes: { email: string; username?: string; name: string; groups: string };
   requireSignedResponse: boolean;
+  roles: RoleRules;
 }
-export type ProviderConfig = OidcProviderConfig | GithubProviderConfig | SamlProviderConfig;
+export type RealmConfig = PasswordRealmConfig | LdapRealmConfig | OidcRealmConfig | GithubRealmConfig | SamlRealmConfig;
 /** No sign-in: everyone who reaches the UI gets a session with this role. */
 export interface NoSignInConfig { role: UiRole }
-/** One password sign-in account: an argon2id hash (`hopper password-hash`), never the password. */
-export interface PasswordUser { username: string; passwordHash: string; role: UiRole }
 export interface AuthConfig {
   local: { enabled: boolean };
   /** null: off. */
   none: NoSignInConfig | null;
-  /** null: off. */
-  password: { users: PasswordUser[] } | null;
-  providers: ProviderConfig[];
+  /** In order: the order the username and password form tries them and the sign-in buttons show. */
+  realms: RealmConfig[];
 }
 
 export const AUTH = 'auth.yaml';
-/** Provider names are URL path segments; these are taken by the routes and the built-in sign-in kinds. */
-const RESERVED = ['local', 'complete', 'none', 'password'];
+/** Identities of the login code and no sign-in carry these as their realm; `complete` is a sign-in route. */
+const RESERVED = ['local', 'complete', 'none'];
 
 const LOOPBACK = ['127.0.0.1', 'localhost', '[::1]'];
 /** https, or http to loopback (a local test IdP). */
@@ -68,13 +90,36 @@ const roles = z.strictObject({
   admin: roleMatch.optional(), operator: roleMatch.optional(), viewer: roleMatch.optional(),
   defaultRole: z.enum(UI_ROLES).nullable().optional(),
 }).default({});
+const envName = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/, 'must be an environment variable name');
 const base = {
   name: z.string().regex(/^[a-z0-9][a-z0-9-]{0,31}$/, 'must be lowercase letters, digits and dashes (it is a URL path segment)')
     .refine((n) => !RESERVED.includes(n), `must not be ${RESERVED.join(' or ')}`),
   label: z.string().min(1).optional(),
-  roles,
+  enabled: z.boolean().default(true),
 };
-const secret = { clientSecretEnv: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/, 'must be an environment variable name').optional() };
+const secret = { clientSecretEnv: envName.optional() };
+const passwordUser = z.strictObject({
+  username: z.string().min(1).max(128),
+  passwordHash: z.string().startsWith('$argon2id$', 'must be an argon2id hash: hopper password-hash'),
+  role: z.enum(UI_ROLES),
+});
+const password = z.strictObject({ ...base, type: z.literal('password'), users: z.array(passwordUser) });
+/** ldaps, or ldap with StartTLS, or ldap to loopback (a local test directory). */
+const ldapUrl = z.string().refine((u) => { try { return ['ldap:', 'ldaps:'].includes(new URL(u).protocol); } catch { return false; } }, 'must be an ldap:// or ldaps:// URL');
+const ldap = z.strictObject({
+  ...base, type: z.literal('ldap'), url: ldapUrl, startTls: z.boolean().default(false),
+  bindDn: z.string().min(1).optional(), bindPasswordEnv: envName.optional(),
+  userBase: z.string().min(1),
+  userFilter: z.string().includes('{username}', 'must contain {username}').default('(uid={username})'),
+  attributes: z.strictObject({
+    subject: z.string().min(1).optional(), username: z.string().default('uid'), email: z.string().default('mail'),
+    name: z.string().default('cn'), groups: z.string().default('memberOf'),
+  }).default({ username: 'uid', email: 'mail', name: 'cn', groups: 'memberOf' }),
+  groupSearch: z.strictObject({
+    base: z.string().min(1), filter: z.string().includes('{dn}', 'must contain {dn}').default('(member={dn})'), name: z.string().default('cn'),
+  }).optional(),
+  roles,
+});
 const oidc = z.strictObject({
   ...base, ...secret, type: z.literal('oidc'), issuer: endpoint, clientId: z.string().min(1),
   scopes: z.array(z.string().min(1)).default(['openid', 'email', 'profile']),
@@ -83,10 +128,12 @@ const oidc = z.strictObject({
     name: z.string().default('name'), groups: z.string().default('groups'),
   }).default({ email: 'email', username: 'preferred_username', name: 'name', groups: 'groups' }),
   trustUnverifiedEmail: z.boolean().default(false),
+  roles,
 });
 const github = z.strictObject({
   ...base, ...secret, type: z.literal('github'), clientId: z.string().min(1),
   webUrl: endpoint.default('https://github.com'), apiUrl: endpoint.default('https://api.github.com'),
+  roles,
 });
 const saml = z.strictObject({
   ...base, type: z.literal('saml'), entryPoint: endpoint,
@@ -97,33 +144,36 @@ const saml = z.strictObject({
     email: z.string().default('email'), username: z.string().optional(), name: z.string().default('displayName'), groups: z.string().default('groups'),
   }).default({ email: 'email', name: 'displayName', groups: 'groups' }),
   requireSignedResponse: z.boolean().default(false),
+  roles,
 });
-const provider = z.discriminatedUnion('type', [oidc, github, saml]);
-const passwordUser = z.strictObject({
-  username: z.string().min(1).max(128),
-  passwordHash: z.string().startsWith('$argon2id$', 'must be an argon2id hash: hopper password-hash'),
-  role: z.enum(UI_ROLES),
-});
+const realm = z.discriminatedUnion('type', [password, ldap, oidc, github, saml]);
 const schema = z.strictObject({
   version: z.literal(1),
   local: z.strictObject({ enabled: z.boolean().default(true) }).default({ enabled: true }),
   none: z.strictObject({ role: z.enum(UI_ROLES) }).optional(),
-  password: z.strictObject({ users: z.array(passwordUser) }).optional(),
-  providers: z.array(provider).default([]),
+  realms: z.array(realm).default([]),
 }).superRefine((doc, ctx) => {
-  const users = doc.password?.users ?? [];
-  users.forEach((u, i) => {
-    if (users.findIndex((v) => v.username.toLowerCase() === u.username.toLowerCase()) !== i) {
-      ctx.addIssue({ code: 'custom', path: ['password', 'users', i, 'username'], message: `${u.username} is named twice; usernames must be unique (case does not count)` });
+  doc.realms.forEach((r, i) => {
+    const at = (...path: (string | number)[]) => ['realms', i, ...path];
+    if (doc.realms.findIndex((q) => q.name === r.name) !== i) ctx.addIssue({ code: 'custom', path: at('name'), message: `${r.name} is named twice; names must be unique` });
+    if (r.type === 'github' && r.clientSecretEnv === undefined) ctx.addIssue({ code: 'custom', path: at('clientSecretEnv'), message: 'GitHub needs clientSecretEnv: the variable holding its client secret' });
+    if (r.type === 'ldap') {
+      const u = new URL(r.url);
+      if (u.protocol === 'ldap:' && !r.startTls && !LOOPBACK.includes(u.hostname)) ctx.addIssue({ code: 'custom', path: at('url'), message: 'must be ldaps://, or ldap:// with startTls: true (plain ldap only to 127.0.0.1 or localhost)' });
+      if (r.bindDn !== undefined && r.bindPasswordEnv === undefined) ctx.addIssue({ code: 'custom', path: at('bindPasswordEnv'), message: 'a bindDn needs bindPasswordEnv: the variable holding its password' });
     }
-  });
-  doc.providers.forEach((p, i) => {
-    if (doc.providers.findIndex((q) => q.name === p.name) !== i) ctx.addIssue({ code: 'custom', path: ['providers', i, 'name'], message: `${p.name} is named twice; names must be unique` });
-    if (p.type === 'github' && p.clientSecretEnv === undefined) ctx.addIssue({ code: 'custom', path: ['providers', i, 'clientSecretEnv'], message: 'GitHub needs clientSecretEnv: the variable holding its client secret' });
+    if (r.type === 'password') {
+      r.users.forEach((u, j) => {
+        if (r.users.findIndex((v) => v.username.toLowerCase() === u.username.toLowerCase()) !== j) {
+          ctx.addIssue({ code: 'custom', path: at('users', j, 'username'), message: `${u.username} is named twice; usernames must be unique (case does not count)` });
+        }
+      });
+    }
   });
 });
 
 type Env = (name: string) => string | undefined;
+type ParsedRealm = z.output<typeof realm>;
 
 function readSecretEnv(env: Env, name: string, field: string): string {
   const v = env(name);
@@ -131,13 +181,20 @@ function readSecretEnv(env: Env, name: string, field: string): string {
   return v;
 }
 
-function resolve(p: z.output<typeof provider>, i: number, env: Env): ProviderConfig {
-  const label = p.label ?? p.name;
-  if (p.type === 'saml') return { ...p, label };
-  const { clientSecretEnv, ...rest } = p;
-  const s = clientSecretEnv === undefined ? undefined : readSecretEnv(env, clientSecretEnv, `providers.${i}.clientSecretEnv`);
-  return p.type === 'github' ? { ...rest, type: 'github', label, clientSecret: s! } as GithubProviderConfig
-    : { ...rest, type: 'oidc', label, ...(s === undefined ? {} : { clientSecret: s }) } as OidcProviderConfig;
+/** The realm with its label and, when it is on, its secret from the environment. */
+function resolve(r: ParsedRealm, i: number, env: Env): RealmConfig {
+  const label = r.label ?? r.name;
+  const secretOf = (name: string | undefined, field: string): string | undefined =>
+    (name === undefined ? undefined : r.enabled ? readSecretEnv(env, name, `realms.${i}.${field}`) : '');
+  if (r.type === 'password' || r.type === 'saml') return { ...r, label };
+  if (r.type === 'ldap') {
+    const { bindPasswordEnv, ...rest } = r;
+    const s = secretOf(bindPasswordEnv, 'bindPasswordEnv');
+    return { ...rest, label, ...(s === undefined ? {} : { bindPassword: s }) };
+  }
+  const { clientSecretEnv, ...rest } = r;
+  const s = secretOf(clientSecretEnv, 'clientSecretEnv');
+  return rest.type === 'github' ? { ...rest, label, clientSecret: s! } : { ...rest, label, ...(s === undefined ? {} : { clientSecret: s }) };
 }
 
 /** Why `raw` (parsed YAML) is not a valid auth.yaml, or undefined; the variables it names are not checked. */
@@ -148,11 +205,14 @@ export function authDocumentProblem(raw: unknown): string | undefined {
 
 /** auth.yaml's text (undefined: none yet → local sign-in only), its secrets from `env`. Throws on anything invalid. */
 export function loadAuthDocument(text: string | undefined, env: Env): AuthConfig {
-  if (text === undefined) return { local: { enabled: true }, none: null, password: null, providers: [] };
+  if (text === undefined) return { local: { enabled: true }, none: null, realms: [] };
   let doc: unknown;
   try { doc = parse(text); } catch (e) { throw new Error(`invalid auth.yaml: ${(e as Error).message}`, { cause: e }); }
   const problem = authDocumentProblem(doc);
   if (problem) throw new Error(`invalid auth.yaml: ${problem}`);
   const r = schema.parse(doc ?? {});
-  return { local: r.local, none: r.none ?? null, password: r.password ?? null, providers: r.providers.map((p, i) => resolve(p, i, env)) };
+  return { local: r.local, none: r.none ?? null, realms: r.realms.map((x, i) => resolve(x, i, env)) };
 }
+
+/** The realm types whose people sign in through the username and password form. */
+export const isFormRealm = (r: { type: RealmType }): r is PasswordRealmConfig | LdapRealmConfig => FORM_REALM_TYPES.includes(r.type);

@@ -47,7 +47,7 @@ function fakeDaemon() {
     const path = String(input).split('?')[0]!;
     const body = init.body ? JSON.parse(String(init.body)) as Record<string, unknown> : undefined;
     calls.push({ path, method: init.method ?? 'GET', ...(body ? { body } : {}) });
-    if (path === '/ui/api/session') return json(200, { authenticated: true, expiresAt: '2099-01-01T00:00:00.000Z', user: { role: 'admin', provider: 'local', name: 'login code' }, signIn: { local: true, origin: location.origin, providers: [] } });
+    if (path === '/ui/api/session') return json(200, { authenticated: true, expiresAt: '2099-01-01T00:00:00.000Z', user: { role: 'admin', realm: 'local', name: 'login code' }, signIn: { local: true, origin: location.origin, realms: [] } });
     if (path === '/ui/api/plugins') return json(200, PLUGINS);
     if (path in routes) return json(200, routes[path]);
     return json(404, { error: 'not found' });
@@ -89,7 +89,7 @@ afterEach(async () => {
 });
 
 describe('Settings', () => {
-  it('one navigation entry holds the configuration: question gates, question history, routing, plugins, webhooks, users', async () => {
+  it('one navigation entry holds the configuration: question gates, question history, routing, plugins, webhooks, users, sign-in', async () => {
     await boot();
     const main = document.querySelector('aside nav')!;
     const hrefs = [...main.querySelectorAll('a')].map((a) => a.getAttribute('href'));
@@ -97,7 +97,7 @@ describe('Settings', () => {
     for (const gone of ['#routing', '#plugins', '#webhooks']) expect(hrefs).not.toContain(gone);
     const sections = await vi.waitFor(() => { const n = document.querySelector('[data-slot="settings-nav"]'); expect(n).not.toBeNull(); return n!; });
     expect([...sections.querySelectorAll('a')].map((a) => a.getAttribute('href')))
-      .toEqual(['#settings/questions', '#settings/history', '#settings/routing', '#settings/plugins', '#settings/webhooks', '#settings/users']);
+      .toEqual(['#settings/questions', '#settings/history', '#settings/routing', '#settings/plugins', '#settings/webhooks', '#settings/users', '#settings/sign-in']);
     expect(sections.querySelector('a[aria-current="page"]')!.getAttribute('href')).toBe('#settings/routing');
   });
 });
