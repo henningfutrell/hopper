@@ -3865,9 +3865,10 @@ an available update as soon as a check finds it, and at once when switched on wi
 
 **UI.** A notice above the views while an update is available, applying or failed — headline
 ("Update available", or the release), "What's new" (the bullets), Update now. The header's
-version (with the installed commit from `sm` up) shows on every screen and opens the Version and
-updates panel at any time (issue #165): version, installed, newest, release, last check, Check now,
-Update now, auto-update, channel (`commits` / `releases`), the update's What's new, In this version.
+version (a bordered button with an info icon, the installed commit from `sm` up) shows on every screen
+and opens the Version and updates panel at any time (issue #165): version, installed, installed on,
+newest, release, last check, Check now, Update now, auto-update, channel (`commits` / `releases`), the
+update's What's new, In this version. The same details are Settings → Version (`#settings/version`).
 
 **Any deployment.** The updater needs: install.json, git and network access to the repository,
 npm (the build), write access to the install's parent directory (the swap), and a supervisor or the

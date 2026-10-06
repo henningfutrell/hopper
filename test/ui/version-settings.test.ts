@@ -26,7 +26,8 @@ async function render(mod: string, name: string) {
   const { useHopper } = (await import(store)) as Store;
   useHopper.setState({ authed: true, update: UPDATE, health: { ok: true, version: '0.1.0', uptimeS: 1 } });
   const view = (await import(mod)) as Record<string, () => El>;
-  const { TooltipProvider } = (await import('../../ui/src/components/ui/tooltip.tsx')) as { TooltipProvider: (p: { children?: unknown }) => El };
+  const tooltip = '../../ui/src/components/ui/tooltip.tsx';
+  const { TooltipProvider } = (await import(tooltip)) as { TooltipProvider: (p: { children?: unknown }) => El };
   await act(async () => {
     root = createRoot(document.getElementById('root')!);
     root.render(createElement(TooltipProvider, null, createElement(view[name]!)));
