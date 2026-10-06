@@ -42,7 +42,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), identity → user (`identities.ts`: link or provision), the leftover default admin account folded into the first GitHub admin's user at start (`leftover-admin.ts`, issue #265) | http, decider |
 | `src/webhooks/` | signing, dispatcher, retry/backoff, the secret of a subscription from the runtime (`dispatcher.ts`), the UI edit of the subscriptions (`edit.ts`, rows in the store) | engine, http, decider |
 | `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, the plugins config (`plugins-config.ts`) + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt, `escalation-level/anthropic-api/` asks the Claude API with the same prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-gh/`, `job-source/github-app/` and `job-source/github-account/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser); `usage-source/command-usage/` reads any agent framework's usage and account from a command that prints them as JSON; `usage-source/polled.ts` the background refresh both share, `usage-source/run.ts` their command runner; `notifier/grokbot-routine/` is the Grok Bot routine webhook — env-file reader and notifier; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
-| `src/executors/` | `Executor` adapters (`test`, `herdr/`, `command.ts` — a job's body run on its machine through its connection, `cursor.ts` — Cursor's CLI agent there, issue #142) and the registry; reached through the executor plugins. The connections and their target authentication ("Target authentication"): `ssh.ts` (key-only ssh to pinned host keys), `docker.ts` (the docker socket check, the proxy's allowlist), `client.ts` (a client target's tunnel, signed calls); `env.ts` the scrubbed child environment | engine, http, store, plugins |
+| `src/executors/` | `Executor` adapters (`test`, `herdr/`, `command.ts` — a job's body run on its machine through its connection, `cursor.ts` — Cursor's CLI agent there, issue #142) and the registry; reached through the executor plugins. The connections and their target authentication ("Target authentication"): `ssh.ts` (key-only ssh to pinned host keys), `ssh-key.ts` (the hopper's own ssh key, kept in the user's store, issue #293), `docker.ts` (the docker socket check, the proxy's allowlist), `client.ts` (a client target's tunnel, signed calls); `env.ts` the scrubbed child environment | engine, http, store, plugins |
 | `src/client/` | the hopper client ("Client targets"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load` over HTTP/2 on the tunnel), `tunnel.ts` (its ssh to the hopper), `release.ts` (the client release: its files, its id, checking and installing one — "Client releases"), `main.ts`; `relay.ts`, the forced command of its key on the hopper's machine; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`); `ssh-options.ts` (the hardened ssh options, shared with `src/executors/ssh.ts`) | everything in `src/` outside `src/client/` |
 | `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following the plugins config; ssh probe and herdr path resolution through the herdr CLI client's ssh argv; the container probe, `docker container inspect`), the detected ssh targets (`ssh-config.ts`) and which of them is this machine (`this-machine.ts`, issue #275), keeping each client target on the hopper's client release (`client-release.ts`), `combineMachineSources` | engine, http, store, plugins |
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin) | engine, http, store, plugins |
@@ -2624,15 +2624,16 @@ carries on its command line `src/client/ssh-options.ts`: `PreferredAuthenticatio
 agent, X11 or port forwarding, `BatchMode=yes`; then `-i <the hopper's key>`,
 `UserKnownHostsFile=<workdir>/ssh/known_hosts`, `HostKeyAlias=<target>`. The key is the mounted secret
 file `HOPPER_SSH_KEY_FILE` names (a variable is refused: ssh reads keys from files only; others
-must not be able to read it); none set (issue #260), the key files `ssh -G` names for the target that
-exist, as the user's own `ssh` would offer them. The known_hosts file holds one line per ssh target, written from each
+must not be able to read it); none set, the hopper's own key (issue #293, "Machines with no durable
+~/.ssh"), then (issue #260) the key files `ssh -G` names for the target that exist, as the user's own
+`ssh` would offer them. The known_hosts file holds one line per ssh target, written from each
 machine's `hostKey` whenever plugins.yaml changes; a machine without one, or two machines pinning
 different keys for one target, is never connected to (logged once). A target name is a plain name
 (`[A-Za-z0-9_.-]`, optionally `user@`). On the target the key is installed with `restrict` (no pty, no
 forwarding): `HOPPER_SSH_KEY_FILE=<key> bash scripts/attach-machine.sh <target>` adds it once and
 prints the entry with its `hostKey` — the key the user's own `~/.ssh/known_hosts` holds for the
 target, never one learned from a connection. Adding a machine from the UI pins the same way
-(`resolveSshTarget`): a target the user has never connected to by hand is refused. The target's own
+(`resolveSshTarget`), or (issue #293) pins the host key the person confirmed from its fingerprint. The target's own
 sshd may still accept passwords from others; the hopper never offers one (proven against a real sshd
 that does: `test/integration/ssh-auth-real.test.ts`).
 
@@ -3271,7 +3272,8 @@ invalid plugins.yaml (fix it by hand); a name already attached; herdr not resolv
 reason; machine not added); a removal while a lane there is busy or draining, or a job waits for an
 answer in a pane there (`resumeOn`) — the error names the jobs.
 
-- **The ssh target is never typed.** The add form offers only detected ssh targets, and the route
+- **The ssh target is never typed** (amended by issue #293, "Machines with no durable ~/.ssh": a plain
+  `[user@]host` may be typed, which can carry no option). The add form offers only detected ssh targets, and the route
   refuses any other value: an ssh destination is command-bearing-adjacent (`-oProxyCommand=…`, a
   host that runs whatever it likes). Adding a Host alias stays a `~/.ssh/config` edit.
 - **`herdrBin` is never taken from the UI.** On add the daemon resolves it over ssh, with the same
@@ -3450,10 +3452,54 @@ tricky and need a path of their own, which the detection does not give them.
   Host in the container's `~/.ssh/config` whose HostName is `host.containers.internal` (Podman) or
   `host.docker.internal` (Docker), with a key of the container's the computer accepts — or as a client
   target. The Machines view shows that in place of **Add this machine**.
-- **Still open.** The container path is still set up by hand (deploy.md "In containers, with Podman":
-  the computer's sshd, a key in the home volume, the Host alias, `host.docker.internal` needing
-  `--add-host host.docker.internal:host-gateway` under Docker on Linux). The hopper detects that it
-  cannot be the machine there; it does not yet reach the computer by itself.
+- **Still open** then, and closed by issue #293 ("Machines with no durable ~/.ssh" below): the
+  container path was set up by hand inside the container (a key in the home volume, a Host alias, an
+  `ssh` by hand to accept the host key).
+
+### Machines with no durable ~/.ssh (issue #293, 2026-10-06)
+
+Owner direction: the hopper will run in ephemeral containers, so it "can't use .ssh so easily": adding
+a machine must not depend on a durable `~/.ssh` (config, keys or known_hosts) on the hopper's host, nor
+on a sticky local machine. Everything an ssh target needs is in the database.
+
+- **The hopper's own ssh key** (`src/executors/ssh-key.ts`). When the runtime mounts none
+  (`HOPPER_SSH_KEY_FILE`), each user's runtime takes the key kept in their user schema's `settings`
+  (`sshKey`: the OpenSSH private key and its public line), or mints one at its start (`ssh-keygen -t
+  ed25519`, comment `hopper`) and keeps it there; then writes the private half to
+  `<workdir>/<user>/ssh/hopper_ed25519` (mode 600) whenever the file there is not it — a fresh container
+  gets the same key back. `hopperSshAuth` offers it (`ownKey`) first, then the key files `ssh -G` names
+  that exist (issue #260, so a machine attached with the user's own key keeps working); a mounted key is
+  still offered alone. A third stored-secret exception (AGENTS.md "Nothing leans on the machine"): no
+  runtime holds it, and a container that keeps nothing cannot keep it either. No route answers it; its
+  public half is `GET /api/machines/config` `ssh.publicKey` (absent while a key is mounted), shown in the
+  Add form as the authorized_keys line `restrict <public key>`. A key that cannot be minted (no
+  ssh-keygen) is logged; ssh then falls back to `~/.ssh` as before. A target that refuses the key fails
+  the add with `<target> does not accept the hopper's ssh key: add the hopper's public key, shown in the
+  Add machine form, to ~/.ssh/authorized_keys there`.
+- **A typed ssh target.** `POST /ui/api/machines` takes a detected ssh target or a typed plain
+  `[user@]host` (`isPlainTarget`: the same name ssh-safe pattern every connection checks, so it can carry
+  no option; no port: port 22, or a `~/.ssh/config` alias for another). The destination is still
+  resolved by `ssh -G` (the user's config when there is one, else none), so a typed name matching a
+  pattern with a ProxyJump or ProxyCommand is refused as before. The Add form's ssh target is a text
+  field offering the detected targets.
+- **A confirmed host key.** `POST /ui/api/machines/host-key { ssh }` (admin; writes nothing) answers a
+  **host key offer** `{ ssh, hostKey, fingerprint, known }`: the key `~/.ssh/known_hosts` holds for the
+  resolved host (`known: true`), else the one the target presents now (`ssh-keyscan -T 5 -p <port> -t
+  ed25519,ecdsa,rsa`, ed25519 first; `known: false`) with its SHA256 fingerprint as `ssh-keygen -l`
+  prints it. The Add form asks for it on **Attach machine**; known, it attaches as before; not known, it
+  shows the fingerprint and how to check it on the machine (`ssh-keygen -lf
+  /etc/ssh/ssh_host_<type>_key.pub`), and **Trust this key and attach** sends the add with `hostKey`.
+  The add pins that key and connects only to a target presenting it (`resolveSshTarget`, as before);
+  without `hostKey` it pins the known_hosts one, and a target known_hosts lacks is refused. **Residual
+  risk:** the person must check the fingerprint; one who confirms it unchecked trusts whatever answered
+  that address at that moment.
+- **In the container** `thisMachineRefused` now says to type the computer's target as
+  `you@host.containers.internal` (Podman) or `you@host.docker.internal` (Docker), add the hopper's key
+  there and confirm the host key — nothing inside the container. deploy.md and README "An ssh target"
+  say the same.
+- **Not changed.** A client target's tunnel still dials the hopper's host over ssh, with its key in that
+  host's authorized_keys (`scripts/attach-client.sh`): that leans on the hopper's host, and stays open
+  for a hopper in an ephemeral container. Container targets need the hopper's docker socket, as before.
 
 ### Router, queue sorter and routing rules (issue #18)
 

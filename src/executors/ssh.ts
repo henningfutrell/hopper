@@ -1,7 +1,8 @@
 // The hopper's ssh connection to an ssh target (design.md "Target authentication", issue #59). The
 // hopper proves itself with a key and nothing else: public-key authentication only (never a
 // password, keyboard-interactive, GSSAPI or host-based login), only the key the runtime mounts — or,
-// none mounted (issue #260), the key files ssh would use for that target — never the user's agent,
+// none mounted, the hopper's own key, kept in the database (issue #293, ssh-key.ts), then the key files
+// ssh would use for that target (issue #260) — never the user's agent,
 // and only to a target whose host key
 // the plugins config pins (`hostKey`), checked strictly against a known_hosts file the hopper writes from
 // those pins. Nothing is forwarded. The ssh config is read once, to resolve the destination (`ssh -G`
@@ -14,6 +15,7 @@ import { join } from 'node:path';
 import type { AttachedMachine } from '../domain/types.ts';
 import { HARDENED_SSH_OPTIONS } from '../client/ssh-options.ts';
 import { scrubbedEnv } from './env.ts';
+import { ownKeyFile } from './ssh-key.ts';
 
 /** ssh's exit status for its own failures (connection, authentication). */
 export const SSH_FAILED = 255;
@@ -28,6 +30,8 @@ export interface SshAuth {
    * would use for the target — those `ssh -G` names that exist —, as the user does running `ssh <target>`.
    */
   identityFile?: string;
+  /** The hopper's own key (issue #293), offered first when no key is mounted: it needs no ~/.ssh. */
+  ownKey?: string;
   /** The pinned host keys, one line per ssh target (written by pinHostKeys). */
   knownHostsFile: string;
 }
@@ -56,8 +60,10 @@ export function userSshConfig(home = homedir()): string {
 /** A target is a plain name: it is also the host key's name in known_hosts, and an argument to ssh. */
 const TARGET = /^[A-Za-z0-9_][A-Za-z0-9._-]*(@[A-Za-z0-9_][A-Za-z0-9._-]*)?$/;
 
-/** A pinned host key: `<type> <base64>`, as a host's `ssh_host_*_key.pub` holds it (comment dropped). */
-export const HOST_KEY = /^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(256|384|521)|sk-ssh-ed25519@openssh\.com|sk-ecdsa-sha2-nistp256@openssh\.com) [A-Za-z0-9+/]+={0,2}$/;
+/** Whether an ssh destination is a plain `[user@]host` name: one typed in the UI (issue #293) can carry no ssh option. */
+export const isPlainTarget = (target: string): boolean => TARGET.test(target);
+
+export { HOST_KEY } from '../domain/machines.ts';
 
 
 /** Paths ssh reads from `-o` split at whitespace: refuse them rather than quote them. */
@@ -95,7 +101,8 @@ export function sshArgv(t: SshTransport, command: string): string[] {
   if (!TARGET.test(t.target)) throw new Error(`bad ssh target: ${JSON.stringify(t.target)}`);
   const auth = t.auth();
   const d = resolveDestination(t.bin ?? 'ssh', t.target);
-  const keys = auth.identityFile ? [auth.identityFile] : d.identityFiles.filter((f) => existsSync(f));
+  const keys = auth.identityFile ? [auth.identityFile]
+    : [...(auth.ownKey ? [auth.ownKey] : []), ...d.identityFiles.filter((f) => f !== auth.ownKey && existsSync(f))];
   if (keys.length === 0) {
     throw new Error(`no ssh key on this machine to reach ${t.target}: create one with ssh-keygen, then add its public key to ${t.target}'s ~/.ssh/authorized_keys (ssh-copy-id ${t.target})`);
   }
@@ -115,14 +122,16 @@ export const knownHostsFile = (dataDir: string): string => join(dataDir, 'ssh', 
 
 /**
  * The hopper's ssh key (a mounted file: ssh reads keys only from files) and the pinned host keys. No key
- * set (issue #260): none of its own — the keys ssh would use for each target (sshArgv). Throws when the
- * key is given as a variable, or others can read it.
+ * set: the hopper's own key once written to the data dir (issue #293, ensureOwnSshKey), then the keys ssh
+ * would use for each target (issue #260, sshArgv). Throws when the key is given as a variable, or others
+ * can read it.
  */
 export function hopperSshAuth(o: { env: (name: string) => string | undefined; dataDir: string }): SshAuth {
   const identityFile = o.env(`${SSH_KEY}_FILE`);
   if (!identityFile) {
     if (o.env(SSH_KEY)) throw new Error(`${SSH_KEY} must be a mounted file (${SSH_KEY}_FILE): ssh reads a key only from a file`);
-    return { knownHostsFile: knownHostsFile(o.dataDir) };
+    const own = ownKeyFile(o.dataDir);
+    return { ...(existsSync(own) ? { ownKey: plainPath('ssh key', own) } : {}), knownHostsFile: knownHostsFile(o.dataDir) };
   }
   let st;
   try {

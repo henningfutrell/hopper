@@ -9,7 +9,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { isSuperAdmin, type SignIn } from '../../auth/index.ts';
 import type { Clock, InstanceStore, PluginStoreView, Updater } from '../../domain/ports.ts';
-import { CONNECTED_ACCOUNT_PROVIDERS, HERDR_SESSION, LIST_ROLES, QUEUE_GATE_MODES, REALM_TYPES, ROLES, SELECTABLE_ROLES, UI_ROLES, UPDATE_CHANNELS, type RealmsEdit, type RealmsView, type SessionView, type UiRole, type UserAdded } from '../../domain/types.ts';
+import { CONNECTED_ACCOUNT_PROVIDERS, HERDR_SESSION, HOST_KEY, LIST_ROLES, QUEUE_GATE_MODES, REALM_TYPES, ROLES, SELECTABLE_ROLES, UI_ROLES, UPDATE_CHANNELS, type RealmsEdit, type RealmsView, type SessionView, type UiRole, type UserAdded } from '../../domain/types.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { lanHosts, uiOrigins, type Lan } from '../reach.ts';
 import type { RealmsAdmin } from '../realms.ts';
@@ -96,11 +96,13 @@ export const webhooksEditBody = z.discriminatedUnion('action', [
 const machineName = z.string().trim().min(1).max(64);
 const machineLanes = z.number().int().min(1, 'lanes must be at least 1');
 const machineExecutors = z.array(z.string().min(1));
-// Attach an ssh target (issue #74: editing and removing a machine is a plugins edit). ssh is checked
-// against the detected ssh targets; herdrBin, session and hostKey are never accepted (strict).
+// Attach an ssh target (issue #74: editing and removing a machine is a plugins edit). ssh is a detected
+// ssh target or a typed plain [user@]host (issue #293); herdrBin and session are never accepted (strict);
+// hostKey is the one the person confirmed from POST /ui/api/machines/host-key (issue #293).
 export const machinesEditBody = z.union([
   z.strictObject({
-    name: machineName, ssh: z.string().min(1), lanes: machineLanes.optional(), executors: machineExecutors.optional(), label: z.string().trim().min(1).optional(), version: z.string().min(1),
+    name: machineName, ssh: z.string().min(1), lanes: machineLanes.optional(), executors: machineExecutors.optional(), label: z.string().trim().min(1).optional(),
+    hostKey: z.string().regex(HOST_KEY, 'must be <type> <base64>, as the host key offer gives it').optional(), version: z.string().min(1),
   }),
   // This machine (issue #260): no ssh target; the herdr session its jobs run in, started by the daemon.
   z.strictObject({
@@ -109,6 +111,8 @@ export const machinesEditBody = z.union([
   }),
 ]);
 // The machine defaults (issue #142): what a machine attached from the UI starts with.
+export const machineHostKeyBody = z.strictObject({ ssh: z.string().min(1) });
+
 export const machineDefaultsBody = z.strictObject({ lanes: machineLanes, executors: machineExecutors, version: z.string().min(1) });
 // Self-update (issue #44): check now, apply the available update, or set the channel / auto-update.
 export const updateBody = z.discriminatedUnion('action', [
@@ -265,6 +269,14 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     const r = await o.tenant(req).plugins.editMachines(parseWith(machinesEditBody, req.body));
     if (!r.ok) throw new HttpError(EDIT_STATUS[r.code], r.error);
     return r.config;
+  });
+
+  // Issue #293: the host key a new ssh target would be pinned to — the one ~/.ssh/known_hosts holds, else
+  // the one it presents now — with its fingerprint, for the person to confirm before the add. Writes nothing.
+  app.post('/ui/api/machines/host-key', admin, async (req) => {
+    const r = await o.tenant(req).plugins.machineHostKey(parseWith(machineHostKeyBody, req.body).ssh);
+    if (!r.ok) throw new HttpError(EDIT_STATUS[r.code], r.error);
+    return r.offer;
   });
 
   // Issue #142: the plugins config `machineDefaults:`, what a machine attached here starts with. Answers the new GET /api/machines/config.

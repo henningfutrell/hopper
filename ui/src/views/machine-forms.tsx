@@ -1,15 +1,17 @@
 // The Machines view's forms (design.md "Machines from the UI", issues #18, #74, #142, #205, #260): add this machine
 // (no ssh target: its name and herdr session), attach a machine over ssh, edit an attached one's name, lanes, executors, label and how it is reached, edit a local one's name and
-// lane count, edit the machine defaults a new machine starts from. On attach the ssh target is picked from
-// ~/.ssh/config's Host aliases, never typed; herdr's path is resolved by the daemon over ssh when one of the
-// machine's executors needs herdr. Phone width first: every field stacks, every control is at least 36 px tall.
+// lane count, edit the machine defaults a new machine starts from. On attach the ssh target is a Host alias
+// from ~/.ssh/config or a typed plain you@host (issue #293: an ephemeral container has no durable ~/.ssh), the
+// hopper's own key is shown to install there, and a host key known_hosts lacks is confirmed from its
+// fingerprint; herdr's path is resolved by the daemon over ssh when one of the machine's executors needs herdr. Phone width first: every field stacks, every control is at least 36 px tall.
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { addBody, addProblem, defaultsBody, isThisMachineTarget, DETAILS, editBody, editDraft, editProblem, localBody, newDraft, newThisDraft, thisBody, thisProblem, type LocalDraft, type MachineDefaultsDraft, type MachineDraft, type MachineEditDraft, type MachineKind, type ThisDraft } from '@/model/machines';
-import type { MachineDefaultsEdit, MachineEdit, MachinesConfig, PluginsEdit } from '@/model/wire';
+import { toast } from 'sonner';
+import { post } from '@/lib/api';
+import { addBody, addProblem, authorizedKeysLine, defaultsBody, hostKeyCheck, isThisMachineTarget, DETAILS, editBody, editDraft, editProblem, localBody, newDraft, newThisDraft, thisBody, thisProblem, type LocalDraft, type MachineDefaultsDraft, type MachineDraft, type MachineEditDraft, type MachineKind, type ThisDraft } from '@/model/machines';
+import type { HostKeyOffer, MachineDefaultsEdit, MachineEdit, MachinesConfig, PluginsEdit } from '@/model/wire';
 
-const SELECT = 'h-9 w-full rounded-lg border border-input bg-transparent px-2.5 text-base md:text-sm dark:bg-input/30';
 
 function Field({ label, hint, children }: { label: string; hint?: React.ReactNode; children: React.ReactNode }) {
   return (
@@ -72,50 +74,95 @@ export function AddThisMachineForm({ config, busy, send, onDone }: {
   );
 }
 
-/** Attach a machine: name, ssh target (detected), lanes, executors, label. */
+/**
+ * Attach a machine: name, ssh target (a detected Host alias, or typed: issue #293), lanes, executors, label.
+ * The hopper reaches it with its own key, shown here to add to the machine's authorized_keys; a host key
+ * ~/.ssh/known_hosts does not hold is shown with its fingerprint and pinned only once confirmed.
+ */
 export function AddMachineForm({ config, busy, send, onDone }: {
   config: MachinesConfig; busy: boolean; send: (e: MachineEdit, done: string) => Promise<boolean>; onDone: () => void;
 }) {
   const [d, setD] = useState<MachineDraft>(() => newDraft(config));
-  const set = (over: Partial<MachineDraft>) => setD((x) => ({ ...x, ...over }));
+  const [offer, setOffer] = useState<HostKeyOffer | null>(null);
+  const [checking, setChecking] = useState(false);
+  const set = (over: Partial<MachineDraft>) => { setD((x) => ({ ...x, ...over })); if (over.ssh !== undefined) setOffer(null); };
   const problem = addProblem(d, config);
   // An ssh target that is this machine (issue #275) is added as this machine: no ssh, its herdr session started here.
   const here = isThisMachineTarget(config, d.ssh);
-  const submit = async () => { if (await send(addBody(d, config.version), here ? `Added this machine as ${d.name.trim()}, without ssh` : `Attached ${d.name.trim()}`)) onDone(); };
+  const keyLine = authorizedKeysLine(config);
+  const attach = async (hostKey?: string) => { if (await send(addBody(d, config.version, hostKey), here ? `Added this machine as ${d.name.trim()}, without ssh` : `Attached ${d.name.trim()}`)) onDone(); };
+  const submit = async () => {
+    if (here) return attach();
+    if (offer?.ssh === d.ssh) return attach(offer.known ? undefined : offer.hostKey);
+    setChecking(true);
+    try {
+      const o = await post<HostKeyOffer>('/ui/api/machines/host-key', { ssh: d.ssh });
+      if (o.known) await attach();
+      else setOffer(o);
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setChecking(false);
+    }
+  };
+  const working = busy || checking;
+  const confirming = offer !== null && offer.ssh === d.ssh && !offer.known;
+  const copy = (text: string) => navigator.clipboard?.writeText(text).then(() => toast.success('Copied'), () => toast.error('Clipboard blocked'));
   return (
     <form className="grid gap-3" onSubmit={(e) => { e.preventDefault(); void submit(); }}>
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="name" hint="the machine id; lanes and jobs are stored under it">
-          <Input className="h-9" value={d.name} disabled={busy} autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder="laptop" onChange={(e) => set({ name: e.target.value })} />
+          <Input className="h-9" value={d.name} disabled={working} autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder="laptop" onChange={(e) => set({ name: e.target.value })} />
         </Field>
         <Field label="ssh target" hint={here
           ? 'this machine: added as this machine, with no ssh; its jobs run in the herdr session hopper, which the hopper starts'
-          : config.ssh.targets.length ? 'a Host alias from ~/.ssh/config' : 'no Host aliases in ~/.ssh/config: add one there first'}>
-          <select className={SELECT} value={d.ssh} disabled={busy || !config.ssh.targets.length} onChange={(e) => set({ ssh: e.target.value })}>
-            <option value="">choose…</option>
+          : config.ssh.targets.length ? 'you@host, or a Host alias from ~/.ssh/config' : 'you@host: the account the hopper logs in to there'}>
+          <Input className="h-9 font-mono" value={d.ssh} disabled={working} autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder="you@laptop.lan"
+            list="ssh-targets-new" onChange={(e) => set({ ssh: e.target.value.trim() })} />
+          <datalist id="ssh-targets-new">
             {config.ssh.targets.map((t) => <option key={t} value={t}>{isThisMachineTarget(config, t) ? `${t} (this machine)` : t}</option>)}
-          </select>
+          </datalist>
         </Field>
         <Field label="lanes" hint="jobs it runs at once">
-          <Input className="h-9" type="number" inputMode="numeric" min={1} step={1} value={d.lanes} disabled={busy} onChange={(e) => set({ lanes: e.target.value })} />
+          <Input className="h-9" type="number" inputMode="numeric" min={1} step={1} value={d.lanes} disabled={working} onChange={(e) => set({ lanes: e.target.value })} />
         </Field>
         <Field label="label" hint="optional; shown instead of the name">
-          <Input className="h-9" value={d.label} disabled={busy} placeholder={d.name.trim() || 'spare laptop'} onChange={(e) => set({ label: e.target.value })} />
+          <Input className="h-9" value={d.label} disabled={working} placeholder={d.name.trim() || 'spare laptop'} onChange={(e) => set({ label: e.target.value })} />
         </Field>
       </div>
-      <ExecutorChecks all={config.executors} picked={d.executors} disabled={busy} onChange={(executors) => set({ executors })} />
+      <ExecutorChecks all={config.executors} picked={d.executors} disabled={working} onChange={(executors) => set({ executors })} />
       {config.ssh.notes.map((n) => <div key={n} className="text-xs text-warn">{n}</div>)}
       {config.thisMachineRefused && <p className="text-xs text-muted-foreground">{config.thisMachineRefused}.</p>}
+      {!here && keyLine && (
+        <div className="grid gap-1 text-xs">
+          <span className="font-medium text-foreground/90">the hopper&apos;s key: add this line to ~/.ssh/authorized_keys on the machine</span>
+          <div className="flex flex-wrap items-start gap-2">
+            <code className="min-w-0 flex-1 rounded-md border bg-muted/40 p-2 font-mono break-all">{keyLine}</code>
+            <Button type="button" size="sm" variant="outline" className="min-h-9" onClick={() => void copy(keyLine)}>Copy</Button>
+          </div>
+        </div>
+      )}
       {!here && <p className="text-xs text-muted-foreground">
         When an executor it runs needs herdr (herdr-claude), the daemon finds herdr there over ssh and writes its path; otherwise it
         only checks the machine answers over ssh. Prepare the machine first:
         {' '}<code className="font-mono break-all">bash scripts/attach-machine.sh {d.ssh || '<ssh-target>'}</code>
       </p>}
+      {confirming && (
+        <div className="grid gap-1 rounded-md border border-warn/50 p-3 text-xs">
+          <span className="font-medium text-foreground/90">{offer.ssh} presents this host key, which the hopper has not seen before:</span>
+          <code className="font-mono break-all">{offer.fingerprint}</code>
+          <span className="text-muted-foreground">
+            Check it on that machine first (<code className="font-mono">{hostKeyCheck(offer.hostKey)}</code>).
+            Once trusted, the hopper talks to it only while it presents this key.
+          </span>
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-2">
-        <Button type="submit" size="lg" disabled={busy || problem !== null}>
-          {busy ? (here ? 'Starting its herdr session…' : 'Reaching it over ssh…') : here ? 'Add as this machine' : 'Attach machine'}
+        <Button type="submit" size="lg" disabled={working || problem !== null}>
+          {checking ? 'Asking for its host key…' : busy ? (here ? 'Starting its herdr session…' : 'Reaching it over ssh…')
+            : here ? 'Add as this machine' : confirming ? 'Trust this key and attach' : 'Attach machine'}
         </Button>
-        <Button type="button" size="lg" variant="ghost" disabled={busy} onClick={onDone}>Cancel</Button>
+        <Button type="button" size="lg" variant="ghost" disabled={working} onClick={onDone}>Cancel</Button>
         {problem && d.name.trim() !== '' && <span className="text-xs text-muted-foreground">{problem}</span>}
       </div>
     </form>

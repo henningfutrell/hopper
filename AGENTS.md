@@ -55,7 +55,9 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   owner direction (issue #216): a realm's own secrets (`clientSecret`, `bindPassword`) are stored in the
   database, set in the UI or from the `HOPPER_SIGN_IN_*` environment, and never answered back by any route. A second: a **connected account**'s token (issue #214), which the
   provider grants the hopper's app and no runtime holds — kept in that user's schema, never answered
-  by any route. No default names a path on one
+  by any route. A third (issue #293: the hopper runs in ephemeral containers with no durable `~/.ssh`): the
+  **hopper's ssh key**, minted by the hopper when the runtime mounts none, kept in that user's schema,
+  written to the work dir for ssh at each start, and never answered by any route but its public half. No default names a path on one
   machine; the work dir (`HOPPER_WORK_DIR`) is scratch only. The operator CLI (`src/cli.ts`,
   `hopper`) writes the database directly: whoever runs it holds its credentials.
 - **Never write into the Jev repo.** The shim reads it; logs go to hopper's work dir.
