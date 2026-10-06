@@ -43,19 +43,27 @@ describe('in-memory fake GitHub', () => {
     await expect(gh.listComments('h/a', 2)).rejects.toMatchObject({ status: 404 });
   });
 
-  it('closeByPullRequest closes the issue and closingPullRequest returns that pull request; closeAsCompleted closes', async () => {
+  it('closeByPullRequest closes the issue and closingPullRequest returns that pull request; a person closing it is none', async () => {
     const gh = createFakeGitHub();
-    for (let i = 0; i < 3; i++) gh.createIssue({ repo: 'h/a', labels: ['hopper'] });
+    for (let i = 0; i < 2; i++) gh.createIssue({ repo: 'h/a', labels: ['hopper'] });
     gh.closeByPullRequest('h/a', 1, { createdAt: '2026-10-02T10:30:00.000Z', mergedAt: '2026-10-02T11:00:00.000Z' });
     gh.closeIssue('h/a', 2);
-    await gh.closeAsCompleted('h/a', 3);
     expect((await gh.getIssue('h/a', 1)).state).toBe('closed');
     expect(await gh.closingPullRequest('h/a', 1)).toEqual({
       url: 'https://github.com/h/a/pull/1001', createdAt: '2026-10-02T10:30:00.000Z', mergedAt: '2026-10-02T11:00:00.000Z',
     });
     expect(await gh.closingPullRequest('h/a', 2)).toBeUndefined();
-    expect(gh.issue('h/a', 3).state).toBe('closed');
-    expect(await gh.closingPullRequest('h/a', 3)).toBeUndefined();
+  });
+
+  it('openPullRequest leaves the issue open and openClosingPullRequests lists it; a merge takes it off the list', async () => {
+    const gh = createFakeGitHub();
+    gh.createIssue({ repo: 'h/a', labels: ['hopper'] });
+    const pr = gh.openPullRequest('h/a', 1, { createdAt: '2026-10-02T10:30:00.000Z', isDraft: true });
+    expect(pr).toEqual({ url: 'https://github.com/h/a/pull/1001', createdAt: '2026-10-02T10:30:00.000Z', isDraft: true });
+    expect(gh.issue('h/a', 1).state).toBe('open');
+    expect(await gh.openClosingPullRequests('h/a', 1)).toEqual([pr]);
+    gh.closeByPullRequest('h/a', 1, { createdAt: '2026-10-02T10:30:00.000Z', mergedAt: '2026-10-02T11:00:00.000Z' });
+    expect(await gh.openClosingPullRequests('h/a', 1)).toEqual([]);
   });
 
   it('failNext fails exactly the next call of that method', async () => {

@@ -8,7 +8,7 @@ import type { GitHubApi } from '../api.ts';
 import { createAuth } from './auth.ts';
 import type { AppAuth } from './auth.ts';
 import type { GitHubApp, GitHubAppLoad } from './config.ts';
-import { closingPullRequest, projectItems } from './graphql.ts';
+import { closingPullRequest, openClosingPullRequests, projectItems } from './graphql.ts';
 import { makeRequest, paginate, splitRepo, statusOf, toApiError } from './http.ts';
 import * as rest from './rest.ts';
 
@@ -135,7 +135,8 @@ export function createGitHubAppApi(o: { app(): GitHubAppLoad; keyEnv: string; ba
       rest.removeLabels(req, await tokenFor(l, repo), repo, number, labels)),
     closingPullRequest: (repo, number) => call(`closer of ${repo}#${number}`, async (l) =>
       closingPullRequest(req, await tokenFor(l, repo), repo, number)),
-    closeAsCompleted: (repo, number) => call(`close ${repo}#${number}`, async (l) => rest.closeAsCompleted(req, await tokenFor(l, repo), repo, number)),
+    openClosingPullRequests: (repo, number) => call(`pull requests of ${repo}#${number}`, async (l) =>
+      openClosingPullRequests(req, await tokenFor(l, repo), repo, number)),
     projectItems: (owner, number) => call(`project ${owner}/projects/${number}`, async (l) => {
       if (!l.accounts) await listInstallations(l);
       const id = l.accounts!.get(owner) ?? l.accounts!.values().next().value;

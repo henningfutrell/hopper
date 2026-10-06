@@ -139,9 +139,16 @@ describe('gh CLI GitHubApi', () => {
     expect(await gh().closingPullRequest('o/r', 8)).toBeUndefined();
   });
 
-  it('closeAsCompleted closes the issue with state_reason completed and posts nothing', async () => {
-    await gh().closeAsCompleted('o/r', 5);
-    expect(calls()[0]!.argv).toEqual(['api', '-X', 'PATCH', 'repos/o/r/issues/5', '-f', 'state=closed', '-f', 'state_reason=completed']);
+  it('openClosingPullRequests asks GraphQL for the open pull requests that close the issue on merge (issue #187)', async () => {
+    expect(await gh().openClosingPullRequests('o/r', 5)).toEqual([
+      { url: 'https://github.com/o/r/pull/10', createdAt: '2026-10-02T09:30:00Z', isDraft: false },
+      { url: 'https://github.com/o/r/pull/11', createdAt: '2026-10-02T09:40:00Z', isDraft: true },
+    ]);
+    const argv = calls()[0]!.argv;
+    expect(argv.slice(0, 2)).toEqual(['api', 'graphql']);
+    expect(argv).toEqual(expect.arrayContaining(['-F', 'owner=o', '-F', 'name=r', '-F', 'number=5']));
+    expect(argv[argv.indexOf('-f') + 1]).toMatch(/^query=.*closedByPullRequestsReferences/s);
+    expect(await gh().openClosingPullRequests('o/r', 6)).toEqual([]);
   });
 
   it('projectItems lists up to 1000 open issue items and maps url, index and fields', async () => {

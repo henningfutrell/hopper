@@ -15,6 +15,8 @@ export interface FakeIssueInput {
   closedBy?: string;
   /** The merged pull request that closed it (GraphQL ClosedEvent closer). */
   closedByPullRequest?: { url: string; createdAt: string; mergedAt: string };
+  /** Open pull requests whose merge will close it (GraphQL closedByPullRequestsReferences). */
+  openPullRequests?: { url: string; createdAt: string; isDraft: boolean }[];
   comments?: FakeCommentInput[];
 }
 
@@ -57,7 +59,7 @@ export interface FakeIssue {
   pullRequest: boolean;
   closedBy?: string;
   closedByPullRequest?: { url: string; createdAt: string; mergedAt: string };
-  stateReason?: string;
+  openPullRequests: { url: string; createdAt: string; isDraft: boolean }[];
   updatedAt: string;
   comments: FakeComment[];
 }
@@ -110,7 +112,8 @@ export function buildState(o: FakeGitHubOptions, now: string): FakeState {
           number: i.number, title: i.title ?? `Issue ${i.number}`, body: i.body ?? '', author: i.author ?? 'owner',
           labels: [...(i.labels ?? [])], state: i.state ?? 'open', pullRequest: i.pullRequest ?? false,
           ...(i.closedBy ? { closedBy: i.closedBy } : {}),
-          ...(i.closedByPullRequest ? { closedByPullRequest: { ...i.closedByPullRequest } } : {}), updatedAt: now, comments,
+          ...(i.closedByPullRequest ? { closedByPullRequest: { ...i.closedByPullRequest } } : {}),
+          openPullRequests: (i.openPullRequests ?? []).map((pr) => ({ ...pr })), updatedAt: now, comments,
         });
       }
       state.repos.set(`${r.owner}/${r.name}`, {

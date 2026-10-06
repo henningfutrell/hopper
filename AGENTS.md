@@ -43,8 +43,8 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   ldapts, argon2); no hand-rolled protocol or password code. A realm change from the UI is loaded
   before it is stored and never ends the acting admin's own admin session. No sign-in (`none`) is only ever explicit.
 - **GitHub text is neutral.** Text the hopper or a job writes to GitHub names no person and
-  carries no personal or machine details. The hopper writes only labels to issues, closes the
-  issue of a finished job, and posts no comments. The job prompt carries the rule (`src/executors/herdr/screen.ts` `PUBLISHING_RULE`).
+  carries no personal or machine details. The hopper writes only labels to issues, never closes
+  one (the merge of a job's pull request does), and posts no comments. The job prompt carries the rule (`src/executors/herdr/screen.ts` `PUBLISHING_RULE`).
 - **Nothing leans on the machine** (issue #40, `docs/design.md` "Deployable"). Everything the daemon
   keeps is in the database `HOPPER_DATABASE_URL` names; config is config documents in it
   (`plugins.yaml`, `rules.md`, `auth.yaml`) and the webhook subscriptions, rows of its own. **Every secret comes from the runtime**

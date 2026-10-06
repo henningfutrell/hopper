@@ -29,7 +29,7 @@ describe('GitHub source report', () => {
     expect(gh.calls.filter((c) => c.method === 'ensureLabel')).toHaveLength(3);
   });
 
-  it('finished: claimed → done, the issue closed as completed, no comment; state unchanged', async () => {
+  it('finished: claimed → done, no comment, the issue left to the merge that closes it (issue #187); state unchanged', async () => {
     const { gh, source } = withIssue();
     const job = jobForIssue(1, {
       id: 'abcdef12-3456-7890-abcd-ef1234567890', status: 'finished', result: { summary: 'README added, mindless prose' },
@@ -40,8 +40,8 @@ describe('GitHub source report', () => {
     const state = await source.report({ kind: 'finished', job });
     expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:done']);
     expect(gh.commentsOn(REPO, 1)).toEqual([]);
-    expect(gh.calls.map((c) => c.method)).toEqual(['removeLabels', 'addLabels', 'closeAsCompleted']);
-    expect(gh.issue(REPO, 1).state).toBe('closed');
+    expect(gh.calls.map((c) => c.method)).toEqual(['removeLabels', 'addLabels']);
+    expect(gh.issue(REPO, 1).state).toBe('open');
     expect(state).toEqual(claimed);
   });
 

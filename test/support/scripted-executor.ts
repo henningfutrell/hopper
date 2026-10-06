@@ -67,3 +67,8 @@ export const mergesPullRequest = (gh: FakeGitHub) => (job: Job): void => {
   const now = new Date().toISOString();
   gh.closeByPullRequest(job.source!.repo!, job.source!.number!, { createdAt: now, mergedAt: now });
 };
+
+/** For `ships`: the job's pull request, opened now and ready for review, will close its issue when merged. */
+export const opensPullRequest = (gh: FakeGitHub) => (job: Job): void => {
+  gh.openPullRequest(job.source!.repo!, job.source!.number!, { createdAt: new Date().toISOString() });
+};

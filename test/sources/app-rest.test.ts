@@ -62,12 +62,15 @@ describe('App adapter: issues and comments', () => {
     expect(asked.every((r) => r.auth === 'token')).toBe(true);
   });
 
-  it('closeAsCompleted closes the issue with state_reason completed', async () => {
-    h = await startApp({ installations: [{ id: 11, account: 'owner', repos: [{ owner: 'owner', name: 'a', issues: [issue(1)] }] }] });
-    await h.api.closeAsCompleted('owner/a', 1);
-    expect(await h.api.getIssue('owner/a', 1)).toMatchObject({ state: 'closed' });
-    const patch = h.fake.state.requests.find((r) => r.method === 'PATCH' && r.path === '/repos/owner/a/issues/1');
-    expect(patch).toMatchObject({ auth: 'token', body: { state: 'closed', state_reason: 'completed' } });
+  it('openClosingPullRequests reads the open pull requests that close the issue on merge over GraphQL (issue #187)', async () => {
+    const pr = { url: 'https://github.com/owner/a/pull/9', createdAt: '2026-10-02T10:30:00Z', isDraft: false };
+    h = await startApp({ installations: [{ id: 11, account: 'owner', repos: [{ owner: 'owner', name: 'a', issues: [
+      issue(1, { openPullRequests: [pr] }), issue(2),
+    ] }] }] });
+    expect(await h.api.openClosingPullRequests('owner/a', 1)).toEqual([pr]);
+    expect(await h.api.openClosingPullRequests('owner/a', 2)).toEqual([]);
+    const asked = h.fake.state.requests.filter((r) => r.path === '/graphql');
+    expect(asked.every((r) => r.auth === 'token')).toBe(true);
   });
 
   it('lists every comment oldest first across pages', async () => {

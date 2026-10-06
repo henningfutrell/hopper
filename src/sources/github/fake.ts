@@ -1,11 +1,12 @@
 // In-memory GitHub implementing GitHubApi, plus helpers for tests to play the owner (or a
-// stranger) on the other side: create issues, reply, close (by hand or by merging a pull request),
+// stranger) on the other side: create issues, reply, open a pull request that closes one on merge,
+// close (by hand or by merging a pull request),
 // unlabel, delete, set project items.
 // Default identity: gh (writes appear as `login`). With `app`, writes appear as the bot and the
 // app-only methods exist: the bot login and the installed repos.
 
 import { GitHubApiError } from './api.ts';
-import type { ClosingPullRequest, GitHubApi, GitHubComment, GitHubIssue, GitHubProjectItem } from './api.ts';
+import type { ClosingPullRequest, GitHubApi, GitHubComment, GitHubIssue, GitHubProjectItem, OpenPullRequest } from './api.ts';
 
 type Method = keyof GitHubApi;
 
@@ -14,7 +15,9 @@ export interface FakeGitHub extends GitHubApi {
   addComment(repo: string, number: number, author: string, body: string): GitHubComment;
   closeIssue(repo: string, number: number, closedBy?: string): void;
   reopenIssue(repo: string, number: number): void;
-  /** The merge of a pull request (opened at createdAt) closes the issue. */
+  /** A pull request (opened at createdAt) whose merge will close the issue; the issue stays open. */
+  openPullRequest(repo: string, number: number, pr: { createdAt: string; isDraft?: boolean }): OpenPullRequest;
+  /** The merge of a pull request (opened at createdAt) closes the issue; no open one is left. */
   closeByPullRequest(repo: string, number: number, pr: { createdAt: string; mergedAt: string }): ClosingPullRequest;
   deleteIssue(repo: string, number: number): void;
   addLabel(repo: string, number: number, label: string): void;
@@ -45,6 +48,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
   const comments = new Map<string, GitHubComment[]>();
   const labels = new Map<string, Set<string>>();
   const closers = new Map<string, ClosingPullRequest>();
+  const opened = new Map<string, OpenPullRequest[]>();
   let pullNumber = 1000;
   const projects = new Map<string, GitHubProjectItem[] | Error>();
   const failures = new Map<Method, Error[]>();
@@ -110,10 +114,10 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
       const pr = closers.get(key(repo, n));
       return pr ? { ...pr } : undefined;
     },
-    async closeAsCompleted(repo, n) {
-      enter('closeAsCompleted', [repo, n]);
-      const i = find(repo, n);
-      if (i.state === 'open') { i.state = 'closed'; i.closedBy = login; closers.delete(key(repo, n)); }
+    async openClosingPullRequests(repo, n) {
+      enter('openClosingPullRequests', [repo, n]);
+      find(repo, n);
+      return (opened.get(key(repo, n)) ?? []).map((pr) => ({ ...pr }));
     },
   };
 
@@ -145,8 +149,15 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
     },
     closeIssue(repo, n, closedBy) { const i = find(repo, n); i.state = 'closed'; i.closedBy = closedBy ?? human; closers.delete(key(repo, n)); },
     reopenIssue(repo, n) { const i = find(repo, n); i.state = 'open'; delete i.closedBy; },
+    openPullRequest(repo, n, { createdAt, isDraft }) {
+      find(repo, n);
+      const pr = { url: `https://github.com/${repo}/pull/${++pullNumber}`, createdAt, isDraft: isDraft ?? false };
+      opened.set(key(repo, n), [...(opened.get(key(repo, n)) ?? []), pr]);
+      return { ...pr };
+    },
     closeByPullRequest(repo, n, { createdAt, mergedAt }) {
       const i = find(repo, n);
+      opened.delete(key(repo, n));
       i.state = 'closed';
       i.closedBy = human;
       const pr = { url: `https://github.com/${repo}/pull/${++pullNumber}`, createdAt, mergedAt };

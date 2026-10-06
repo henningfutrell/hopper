@@ -138,7 +138,7 @@ describe.each<Mode>(['gh', 'app'])('issue writes (%s source)', (mode) => {
 });
 
 describe('issue writes through HTTP (node:http fake GitHub, real App adapter)', () => {
-  it('only label writes and the close of a finished job reach GitHub, no comment POST; no repo-scoped token is minted', async () => {
+  it('only label writes reach GitHub, no close and no comment POST; no repo-scoped token is minted', async () => {
     const fake = await createFakeGitHubServer({
       appId: APP_ID, publicKeyPem: KEYS.publicKey, slug: SLUG,
       installations: [{ id: 7, account: 'owner', repos: [{ owner: 'owner', name: 'hopper-sandbox', labels: ['hopper'], issues: [
@@ -169,10 +169,8 @@ describe('issue writes through HTTP (node:http fake GitHub, real App adapter)', 
     const writes = fake.state.requests
       .filter((r) => r.method !== 'GET' && !r.path.startsWith('/app/') && !r.path.startsWith('/graphql'))
       .map((r) => `${r.method} ${r.path.replace(/\/labels\/.+$/, '/labels/:name')}`);
-    expect(writes.filter((w) => !/\/labels(\/:name)?$/.test(w))).toEqual([`PATCH /repos/${REPO}/issues/1`]);
-    const close = fake.state.requests.find((r) => r.method === 'PATCH')!;
-    expect(close.body).toEqual({ state: 'closed', state_reason: 'completed' });
-    expect(issue.state).toBe('closed');
+    expect(writes.filter((w) => !/\/labels(\/:name)?$/.test(w))).toEqual([]);
+    expect(issue.state).toBe('closed'); // by the job's merged pull request, not the hopper (issue #187)
     expect(writes.some((w) => /comments/.test(w))).toBe(false);
     expect(writes.filter((w) => w.endsWith('/issues/1/labels'))).toEqual([`POST /repos/${REPO}/issues/1/labels`, `POST /repos/${REPO}/issues/1/labels`]);
     expect(writes.filter((w) => w.endsWith('/labels/:name'))).toEqual([`DELETE /repos/${REPO}/issues/1/labels/:name`]);

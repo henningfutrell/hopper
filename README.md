@@ -216,9 +216,13 @@ Named so you know they are not missing steps. None is the path for a self-hosted
    home directory). That path must exist on whichever machine runs the job ([Add machines](#add-machines)). Restart the daemon
    (`systemctl --user restart hopper`, or the container).
 2. Label an issue `hopper`. The issue body is the job's prompt.
-3. Watch it in the UI. The labels say where it is: `hopper:claimed` (running), `hopper:done` (and
-   the issue closed), `hopper:failed`. Remove `hopper:failed` to run it again. `hopper:high` and
+3. Watch it in the UI. The labels say where it is: `hopper:claimed` (running), `hopper:done`,
+   `hopper:failed`. Remove `hopper:failed` to run it again. `hopper:high` and
    `hopper:low` set the priority; `hopper:backburner` parks an issue.
+   A job is done when its pull request is merged — the merge closes the issue. To have jobs stop at
+   an open pull request for you to review and merge, set the source's `completion` to
+   `pull-request` in the Plugins view; `hopper:complete-at-pr` or `hopper:complete-at-merge` on an
+   issue sets it for that issue alone.
 
 When a job asks a question, it climbs the escalation levels: Opus answers what it can settle,
 Fable takes what Opus escalates, and what neither should decide waits for you in the UI's

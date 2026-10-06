@@ -3,6 +3,31 @@ import { REPO, discoverOne, setup } from './fixtures/github-support.ts';
 
 const URL1 = `https://github.com/${REPO}/issues/1`;
 
+const DONE_AT_MERGE = 'done (completion: merge): only once the change ships — the repo\'s own checks pass, the change is pushed, a pull request this job opens with "Closes #1" in its body is merged to the default branch, and the merged change is verified where the product runs. A local commit, an unpushed branch or an open pull request is not done; a job that ends done without the merge ends failed';
+const DONE_AT_PR = 'done (completion: pull-request): once the change is ready for review — the repo\'s own checks pass, the change is pushed, and a pull request this job opens with "Closes #1" in its body is open and not a draft. Do not merge it: a person reviews and merges it. A local commit, an unpushed branch or a draft is not done; a job that ends done without the pull request ends failed';
+
+describe('GitHub source: the done line follows the completion (issue #187)', () => {
+  const doneLine = (prompt: string) => prompt.split('\n').find((l) => l.startsWith('done '));
+
+  it('the configured completion: merge by default, pull-request when set', async () => {
+    const merge = setup();
+    merge.gh.createIssue({ repo: REPO, labels: ['hopper'] });
+    expect(doneLine((await discoverOne(merge.source)).prompt)).toBe(DONE_AT_MERGE);
+    const pr = setup({ completion: 'pull-request' });
+    pr.gh.createIssue({ repo: REPO, labels: ['hopper'] });
+    expect(doneLine((await discoverOne(pr.source)).prompt)).toBe(DONE_AT_PR);
+  });
+
+  it('a completion label on the issue overrides the configured completion', async () => {
+    const toPr = setup();
+    toPr.gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:complete-at-pr'] });
+    expect(doneLine((await discoverOne(toPr.source)).prompt)).toBe(DONE_AT_PR);
+    const toMerge = setup({ completion: 'pull-request' });
+    toMerge.gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:complete-at-merge'] });
+    expect(doneLine((await discoverOne(toMerge.source)).prompt)).toBe(DONE_AT_MERGE);
+  });
+});
+
 describe('GitHub source: full issue context and job environment', () => {
   it('the prompt is the body, then the context block in the documented shape', async () => {
     const { gh, source } = setup();
@@ -17,7 +42,7 @@ describe('GitHub source: full issue context and job environment', () => {
       'title: Add a README',
       'labels: hopper, hopper:high · author: owner',
       'priority: 75 (label:hopper:high) · project item: none',
-      'done: only once the change ships — a pull request this job opens, with "Closes #1" in its body, is merged; until then the job is not done, and a job that ends done without it ends failed',
+      DONE_AT_MERGE,
       'recent comments (oldest first, up to 10; only allowlisted authors, no hopper-marked comments):',
       `- owner at ${c.createdAt}: Keep it short.`,
     ].join('\n'));
