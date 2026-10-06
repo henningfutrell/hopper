@@ -118,4 +118,14 @@ describe('an admin reads the totals, never a user\'s work', () => {
     expect(on.status).toBe(409);
     expect(on.body.error).toContain('more than one user');
   });
+
+  it('with several users, /api/health without a session answers the instance\'s health only: install and self-update probe it', async () => {
+    const a = await start();
+    await a.addUser('Bea');
+    const r = await a.api('GET', '/api/health');
+    expect(r.status).toBe(200);
+    expect(r.body).toEqual({ ok: true, version: expect.any(String), uptimeS: expect.any(Number) });
+    const full = await a.api('GET', '/api/health', undefined, session(await a.login()));
+    expect(full.body).toMatchObject({ ok: true, routerMode: 'shadow', executors: expect.any(Array) });
+  });
 });
