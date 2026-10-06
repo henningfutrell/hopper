@@ -16,10 +16,13 @@ const ADMIN_STAFF = `cn=admin_staff,${PEOPLE}`;
 let ldap: StartedTestContainer;
 let url = '';
 let hermesHash = '';
+/** The professor's directory password, also held by a password realm account: both realms accept it. */
+let professorHash = '';
 beforeAll(async () => {
   ldap = await new GenericContainer(IMAGE).withExposedPorts(389).withWaitStrategy(Wait.forLogMessage('slapd starting')).start();
   url = `ldap://127.0.0.1:${ldap.getMappedPort(389)}`;
   hermesHash = await argon2.hash('local pass', { type: argon2.argon2id });
+  professorHash = await argon2.hash('professor', { type: argon2.argon2id });
 }, 120_000);
 afterAll(async () => { await ldap?.stop(); });
 
@@ -91,11 +94,20 @@ describe('the username and password form tries the realms in order', () => {
     expect(await session(o.app, fry.body.token)).toMatchObject({ user: { realm: 'dir' } });
   });
 
-  it('the same username in both: the first realm that accepts the password wins', async () => {
+  it('the same username in both: a realm that refuses the password passes it on to the next', async () => {
     const realms = [local([{ username: 'professor', passwordHash: hermesHash, role: 'viewer' }]), dir()];
     const o = await startWithAuth(h, { version: 1, realms });
     expect(await session(o.app, (await signIn(o, 'professor', 'local pass')).body.token)).toMatchObject({ user: { realm: 'staff', role: 'viewer' } });
     expect(await session(o.app, (await signIn(o, 'professor', 'professor')).body.token)).toMatchObject({ user: { realm: 'dir', role: 'admin' } });
+  });
+
+  it.each([
+    ['the password realm first', ['staff', 'dir'], { realm: 'staff', role: 'viewer' }],
+    ['the LDAP realm first', ['dir', 'staff'], { realm: 'dir', role: 'admin' }],
+  ])('both accept the password: the realm first in order signs in (%s)', async (_what, order, user) => {
+    const by: Record<string, unknown> = { staff: local([{ username: 'professor', passwordHash: professorHash, role: 'viewer' }]), dir: dir() };
+    const o = await startWithAuth(h, { version: 1, realms: order.map((n) => by[n]) });
+    expect(await session(o.app, (await signIn(o, 'professor', 'professor')).body.token)).toMatchObject({ user });
   });
 
   it('a realm that is off is skipped', async () => {
