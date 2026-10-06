@@ -42,6 +42,11 @@ export interface FakeHerdrOptions {
    * idle at an empty prompt, nothing echoed and its state never changes.
    */
   dropsPrompts?: number;
+  /**
+   * The first N prompts are pasted into Claude's input box but never submitted (seen live): the box
+   * shows "[Pasted text #1 +N lines]", Claude stays idle and its state never changes, until Enter.
+   */
+  promptsLeftInInput?: number;
   /** The first N option picks at a dialog are lost: Claude stays at the dialog, its state unchanged. */
   dropsDialogPicks?: number;
   session?: string;
@@ -62,6 +67,8 @@ interface Pane {
   ctrlC: number;
   sawDown: boolean;
   hidden?: string[];
+  /** Text pasted into the input box, not submitted. */
+  input?: string;
 }
 
 export interface FakeHerdrClient extends HerdrClient {
@@ -127,6 +134,7 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
   let droppedRuns = o.shellDropsRuns ?? 0;
   let droppedPrompts = o.dropsPrompts ?? 0;
   let droppedPicks = o.dropsDialogPicks ?? 0;
+  let leftInInput = o.promptsLeftInInput ?? 0;
   let workspaceId: string | undefined;
 
   const record = (method: keyof HerdrClient, ...args: unknown[]): void => {
@@ -145,6 +153,14 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
   const byAgent = (name: string): Pane | undefined => [...panes.values()].find((p) => !p.closed && p.agent === name);
   const settle = (p: Pane, status: AgentStatus): void => { p.status = status; p.seq++; };
   const exit = (p: Pane): void => { p.agent = undefined; p.status = 'unknown'; p.lines.push('$ '); };
+
+  const submit = (p: Pane, text: string): void => {
+    p.input = undefined;
+    p.lines.push(...wrap(text, width));
+    p.turn = turns.shift() ?? { output: [] };
+    p.step = 0;
+    settle(p, 'working');
+  };
 
   const advance = (p: Pane): void => {
     if (p.status !== 'working' || !p.turn) return;
@@ -171,7 +187,8 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
     screen: (id) => {
       const p = panes.get(id);
       const indicator = p?.hidden ? ['                                               1 new message (ctrl+End) ↓'] : [];
-      return [...(p?.lines ?? []), ...indicator, ...CHROME].join('\n');
+      const chrome = p?.input === undefined ? CHROME : [CHROME[0]!, `❯ [Pasted text #1 +${p.input.split('\n').length - 1} lines]`, ...CHROME.slice(2)];
+      return [...(p?.lines ?? []), ...indicator, ...chrome].join('\n');
     },
 
     async ensureWorkspace(label, cwd) {
@@ -228,10 +245,8 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
       if (p.status === 'blocked') throw new HerdrError('agent_blocked', `agent ${name} is blocked`);
       fake.prompts.push({ name, text });
       if (droppedPrompts-- > 0) return;
-      p.lines.push(...wrap(text, width));
-      p.turn = turns.shift() ?? { output: [] };
-      p.step = 0;
-      settle(p, 'working');
+      if (leftInInput-- > 0) { p.input = (p.input ?? '') + text; return; }
+      submit(p, text);
     },
     async sendText(paneId, text) {
       record('sendText', paneId, text);
@@ -251,7 +266,8 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
       fake.keys.push({ paneId, keys });
       for (const key of keys) {
         if (key !== 'ctrl+c') p.ctrlC = 0;
-        if (key === 'down') p.sawDown = true;
+        if (key === 'enter' && p.input !== undefined && p.agent && p.status !== 'blocked') submit(p, p.input);
+        else if (key === 'down') p.sawDown = true;
         else if (key === 'enter' && p.mode === 'trust' && p.sawDown && o.bypassDialog) {
           p.mode = 'bypass';
           p.sawDown = false;

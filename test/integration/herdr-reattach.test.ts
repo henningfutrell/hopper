@@ -105,6 +105,18 @@ describe('herdr-claude job across a daemon restart', () => {
     expect(herdr.agentStarts).toHaveLength(1);
   });
 
+  it('a prompt left unsent in Claude\'s input box is submitted after the restart, never pasted twice', async () => {
+    freshDb();
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [LONG], promptsLeftInInput: 1 });
+    const { job, paneId } = await runThenStop(herdr);
+
+    const second = await boot(herdr);
+    const done = await second.waitForStatus(job.id, 'finished', 15000);
+    expect(done.result).toMatchObject({ summary: expect.stringContaining('Painted the shed.') });
+    expect(herdr.prompts).toHaveLength(1);
+    expect(herdr.keys).toContainEqual({ paneId, keys: ['enter'] });
+  });
+
   it('Claude gone from the pane → failed "interrupted by daemon restart" and the pane closed', async () => {
     freshDb();
     const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [LONG] });
