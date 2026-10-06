@@ -445,8 +445,8 @@ agentName, cwd }` with `ctx.saveState` the moment the pane exists. A job in
 is claimed onto maps to the parked pane.
 
 **Start.** `agent start jh-<jobId first 8> --kind claude --pane <pane> --timeout 60000 --
-<HOPPER_CLAUDE_ARGS> [--model <payload.model>]`, default args
-`--dangerously-skip-permissions`. **Readiness wait:** herdr refuses `agent start` until the new pane is at its shell
+<claudeArgsFor(yolo, args)> [--model <payload.model>]`; the default instance is yolo
+(`--dangerously-skip-permissions`, see **Yolo** below). **Readiness wait:** herdr refuses `agent start` until the new pane is at its shell
 prompt, answering `agent_pane_busy` ("agent target pane … is not an available shell") when
 it is sent a few ms after `tab create` — seen live with 4 jobs claimed at once. The CLI
 client maps that code to `paneBusy`; the executor retries `agent start` every 100 ms on
@@ -458,6 +458,42 @@ screen; if it is Claude's folder-trust dialog (contains `trust this folder`) **a
 dialog names the job's cwd** and `HOPPER_TRUST_WORKDIR` is true → send `down enter`,
 log it via progress message `trusted workdir <cwd>`, wait for `idle`. Anything else blocking
 startup → `failed` with the screen text.
+
+**Yolo** (issue #267). Whether Claude has every permission is the herdr-claude instance's own
+option `yolo` (default on, command-bearing), never an argument in its `args`; it is picked like the
+instance itself — two instances, one yolo and one not, and a routing rule or a job's executor picks
+which one runs a job. `claudeArgsFor(yolo, args)` (`src/executors/herdr/start.ts`) builds the command:
+
+- **yolo** — `--dangerously-skip-permissions --settings {"skipDangerousModePermissionPrompt":true}`
+  then the other args. The setting is Claude Code's own "the bypass permissions warning was accepted";
+  on the command line it holds in any config dir (the per-user ones of issue #158 never accepted it, so
+  job panes sat on the warning). Args that name `--settings` of their own keep theirs, and the warning
+  is answered on screen instead.
+- **not yolo** — the args, minus every argument that would grant every permission
+  (`--dangerously-skip-permissions`, `--allow-dangerously-skip-permissions`, `--permission-mode
+  bypassPermissions`). Claude asks before it acts; each permission dialog parks the job as a
+  question (`detectedBy: blocked`, the dialog's screen as its text), and the escalation levels or the
+  owner answer it.
+
+**Startup dialogs** (`settleStartup`). After `agent start` — refused with `agent_not_ready`, or
+started while a dialog is up — the executor polls `agent get` and judges each blocked screen once
+per `state_change_seq`, so keys meant for one dialog never land on the next: the folder-trust dialog
+naming the job's cwd (with `trustWorkdir`) → `down enter`, `trusted workdir <cwd>`; the bypass
+permissions warning ("WARNING: Claude Code running in Bypass Permissions mode", options `No, exit` /
+`Yes, I accept`) with `yolo` → `down enter`, `accepted bypass permissions mode`. Anything else, the
+warning on an instance that is not yolo, or more than 4 dialogs → `failed`, `claude blocked at
+startup: <screen>`.
+
+**Answering a dialog.** On `resume`, when Claude still waits at a dialog and the answer names one
+of its options — its number, or its own words, case and spacing aside (`dialogOption` in
+`screen.ts`: the options around the last `❯ N.` line, so a numbered list in the transcript is not a
+dialog) — the executor types that digit and watches the parked turn go on (its anchor kept, no new
+prompt). Any other answer dismisses the dialog with `esc` and is typed to Claude as text, as before.
+
+**Migration** (tenant migration 9, `src/store/migration-yolo.ts`). A herdr-claude instance in the
+`plugins` config record whose `args` granted every permission gets `yolo: true` and loses those
+args; one whose args did not gets `yolo: false`, so it keeps asking. One with no args (the old
+default was yolo) or already naming `yolo` is left as it is.
 
 **Work tree** (issue #121). A job's **work tree** is its cwd: all of its coding work happens
 under it — clones, git worktrees, builds, scratch and temporary files — never in a copy

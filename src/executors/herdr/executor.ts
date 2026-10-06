@@ -8,7 +8,7 @@ import { RECENT_LINES, abortReason, watchTurn } from './monitor.ts';
 import type { Interrupt, Sleep } from './monitor.ts';
 import { resolvePayload, validatePayload } from './payload.ts';
 import type { ClaudeJobPayload } from './payload.ts';
-import { FOOTER_ANCHOR, STATUS_NOTE_NUDGE, protocolFooter, typedAfterQuestion } from './screen.ts';
+import { FOOTER_ANCHOR, STATUS_NOTE_NUDGE, dialogOption, protocolFooter, typedAfterQuestion } from './screen.ts';
 import { openPane, startClaude } from './start.ts';
 import type { PaneState, StartDeps, TurnAnchor } from './start.ts';
 
@@ -23,8 +23,11 @@ export interface HerdrClaudeExecutorOptions {
   local?: (session: string) => HerdrClient;
   clock: Clock;
   defaultCwd: string;
+  /** Claude's arguments as it starts: `claudeArgsFor(yolo, args)`. */
   claudeArgs: string[];
   trustWorkdir: boolean;
+  /** Claude starts with every permission granted (issue #267): its warning is accepted at startup. Default false. */
+  yolo?: boolean;
   pollMs: number;
   /** Idle without a marker this long, a turn is a status note and the agent is nudged; each further one in a row waits twice as long. */
   idleNudgeMs: number;
@@ -97,7 +100,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
   };
 
   const depsOn = (where: Where): StartDeps => ({
-    herdr: herdrOn(where), clock, sleep, pollMs: o.pollMs, claudeArgs: o.claudeArgs, trustWorkdir: o.trustWorkdir,
+    herdr: herdrOn(where), clock, sleep, pollMs: o.pollMs, claudeArgs: o.claudeArgs, trustWorkdir: o.trustWorkdir, yolo: o.yolo ?? false,
   });
 
   /** The refusal when the pane is already mapped to another lane; a lane never shares a pane. */
@@ -230,9 +233,22 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       const refused = heldElsewhere(ctx.laneId, state);
       if (refused) return Promise.resolve(refused);
       return onLane(ctx, () => state, async () => {
-        if (!(await herdrOn(state).getAgent(state.agentName))) return { kind: 'failed', error: 'pane lost' };
+        const herdr = herdrOn(state);
+        const agent = await herdr.getAgent(state.agentName);
+        if (!agent) return { kind: 'failed', error: 'pane lost' };
         lanes.set(ctx.laneId, heldOf(state));
-        return send(ctx, { ...state, laneId: ctx.laneId }, p, answer, lastLineOf(answer));
+        const s = { ...state, laneId: ctx.laneId };
+        // Claude waits at a dialog (a permission it asks for without yolo, issue #267) and the answer
+        // names one of its options: pick it, and the parked turn goes on. Any other answer dismisses
+        // the dialog and goes to Claude as text.
+        const option = agent.status === 'blocked' && s.turn
+          ? dialogOption(await herdr.read(s.paneId, { source: 'visible', lines: 60 }), answer) : undefined;
+        if (!option || !s.turn) return send(ctx, s, p, answer, lastLineOf(answer));
+        const turn: TurnAnchor = { seq: agent.stateChangeSeq, anchor: s.turn.anchor, blockedAtSend: true };
+        ctx.saveState({ ...s, turn, parkedSeq: undefined });
+        await herdr.sendText(s.paneId, option);
+        ctx.progress(0, `picked option ${option} of the dialog`);
+        return watch(ctx, s, p, turn);
       });
     },
 

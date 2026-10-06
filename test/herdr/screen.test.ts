@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FOOTER_ANCHOR, isTrustDialog, protocolFooter, readTurn, typedAfterQuestion } from '../../src/executors/herdr/screen.ts';
+import { FOOTER_ANCHOR, dialogOption, isBypassDialog, isTrustDialog, protocolFooter, readTurn, typedAfterQuestion } from '../../src/executors/herdr/screen.ts';
 
 const CHROME = [
   '──────────────────────────────',
@@ -209,6 +209,75 @@ describe('isTrustDialog', () => {
   it('rejects a screen that is not the trust dialog', () => {
     expect(isTrustDialog('Accessing workspace:\n/tmp/x\nsomething else', '/tmp/x')).toBe(false);
     expect(isTrustDialog('', '/tmp/x')).toBe(false);
+  });
+});
+
+// Claude Code's warning when it starts with every permission granted (issue #267), as drawn.
+const BYPASS_DIALOG = [
+  '────────────────────────────────────────',
+  ' WARNING: Claude Code running in Bypass Permissions mode',
+  '',
+  ' In Bypass Permissions mode, Claude Code will not ask for your approval before running potentially dangerous commands.',
+  ' This mode should only be used in a sandboxed container/VM that has restricted internet access and can easily be restored if damaged.',
+  '',
+  ' By proceeding, you accept all responsibility for actions taken while running in Bypass Permissions mode.',
+  '',
+  ' ❯ No, exit',
+  '   Yes, I accept',
+  '',
+  ' Enter to confirm · Esc to cancel',
+].join('\n');
+
+describe('isBypassDialog', () => {
+  it('matches the bypass permissions warning', () => {
+    expect(isBypassDialog(BYPASS_DIALOG)).toBe(true);
+  });
+
+  it('rejects the trust dialog, a turn and the bypass status line under the input box', () => {
+    expect(isBypassDialog(DIALOG(['/tmp/x']))).toBe(false);
+    expect(isBypassDialog(screen(TURN_1, CHROME))).toBe(false);
+  });
+});
+
+// A permission dialog as Claude Code draws it when it runs without every permission granted.
+const PERMISSION = [
+  '● Here is the plan:',
+  '  1. Remove the build dir',
+  '  2. Rebuild',
+  '',
+  '● Bash(rm -rf build)',
+  '────────────────────────────────────────',
+  ' Bash command',
+  '',
+  '   rm -rf build',
+  '   Remove the build dir',
+  '',
+  ' Do you want to proceed?',
+  ' ❯ 1. Yes',
+  "   2. Yes, and don't ask again for rm commands in /tmp/jh-work",
+  '   3. No, and tell Claude what to do differently (esc)',
+  '',
+].join('\n');
+
+describe('dialogOption', () => {
+  it('an option number picks that option of the dialog', () => {
+    expect(dialogOption(PERMISSION, '1')).toBe('1');
+    expect(dialogOption(PERMISSION, ' 2. ')).toBe('2');
+  });
+
+  it("an option's own words pick it, case and spacing aside", () => {
+    expect(dialogOption(PERMISSION, 'yes')).toBe('1');
+    expect(dialogOption(PERMISSION, "Yes, and don't ask again for rm commands in /tmp/jh-work")).toBe('2');
+    expect(dialogOption(PERMISSION, 'No, and tell Claude what to do differently')).toBe('3');
+  });
+
+  it('a number past the options, or any other answer, picks nothing (it goes to Claude as text)', () => {
+    expect(dialogOption(PERMISSION, '4')).toBeUndefined();
+    expect(dialogOption(PERMISSION, 'Remove only build/cache instead')).toBeUndefined();
+  });
+
+  it('a numbered list in the transcript is not a dialog', () => {
+    expect(dialogOption(['● Here is the plan:', '  1. Remove the build dir', '  2. Rebuild', ...CHROME].join('\n'), '1')).toBeUndefined();
   });
 });
 

@@ -266,6 +266,34 @@ describe('herdr-claude executor: run', () => {
     expect(herdr.prompts).toEqual([]);
   });
 
+  // Issue #267: a yolo instance starts Claude with every permission granted; its warning never holds the job.
+  it.each(['not-ready', 'started'] as const)('yolo: accepts the bypass permissions warning at startup (%s) and says so', async (when) => {
+    const { herdr, executor } = setup({ bypassDialog: when, turns: [DONE] }, { yolo: true });
+    const { ctx, progress } = contextFor(jobWith({ prompt: 'go' }));
+    const out = await executor.run(ctx);
+    expect(out.kind, JSON.stringify(out)).toBe('finished');
+    expect(herdr.keys[0]).toEqual({ paneId: 'w1:p1', keys: ['down', 'enter'] });
+    expect(progress.map((p) => p.message)).toContain('accepted bypass permissions mode');
+    expect(herdr.prompts).toHaveLength(1);
+  });
+
+  it('yolo: the trust dialog, then the bypass permissions warning: both answered, once each', async () => {
+    const { herdr, executor } = setup({ trustDialogFor: CWD, bypassDialog: 'not-ready', turns: [DONE] }, { yolo: true });
+    const { ctx, progress } = contextFor(jobWith({ prompt: 'go' }));
+    expect((await executor.run(ctx)).kind).toBe('finished');
+    expect(herdr.keys.map((k) => k.keys)).toEqual([['down', 'enter'], ['down', 'enter']]);
+    expect(progress.map((p) => p.message)).toEqual(expect.arrayContaining([`trusted workdir ${CWD}`, 'accepted bypass permissions mode']));
+  });
+
+  it('not yolo: the bypass permissions warning is never accepted: failed with the screen, pane closed', async () => {
+    const { herdr, executor } = setup({ bypassDialog: 'not-ready', turns: [DONE] }, { yolo: false });
+    const out = await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx);
+    expect(out.kind === 'failed' && out.error).toContain('Bypass Permissions mode');
+    expect(herdr.keys.some((k) => k.keys.includes('down'))).toBe(false);
+    expect(herdr.prompts).toEqual([]);
+    expect(herdr.closed).toEqual(['w1:p1']);
+  });
+
   it('fails with the screen on any other startup block', async () => {
     const { executor } = setup({ startupBlockedBy: ['Claude Code needs to update. Press enter.'] });
     const out = await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx);
