@@ -543,7 +543,7 @@ Version 1 (`docs/schemas/plugin.installed.v1.json`). A plugin was installed from
 
 ## `plugin.removed`
 
-Version 1 (`docs/schemas/plugin.removed.v1.json`). A store install was removed from the plugin dir (UI Remove). Nothing in plugins.yaml named it.
+Version 1 (`docs/schemas/plugin.removed.v1.json`). A store install was removed from the plugin dir (UI Remove). Nothing in the plugins config named it.
 
 | field | type | required |
 |---|---|---|

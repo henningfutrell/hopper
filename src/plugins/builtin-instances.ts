@@ -1,13 +1,12 @@
-// The built-in instances (design.md "Settled in slice 4", "Config documents"): what an absent
-// plugins.yaml section means, and what the first boot against an empty store writes as plugins.yaml.
-// plugins.yaml is always there after that boot; it is never replaced from here.
-import { Document, isMap, isSeq, parseDocument } from 'yaml';
-import type { ConfigDocuments } from '../domain/ports.ts';
+// The built-in instances (design.md "Settled in slice 4", "Config in the database"): what an absent
+// section of the plugins config means, and what the first boot against an empty store writes as it.
+// The plugins config is always there after that boot; it is never replaced from here.
+import type { ConfigRecords } from '../domain/ports.ts';
 import type { InstanceSpec } from '../domain/types.ts';
-import { PLUGINS } from './plugins-file.ts';
+import { PLUGINS } from './plugins-config.ts';
 import type { PluginLogger } from './sdk.ts';
 
-/** Every plugins.yaml section the built-in instances fill. */
+/** Every section of the plugins config the built-in instances fill. */
 export interface PluginsDoc {
   queueSorter: InstanceSpec;
   escalationLevels: InstanceSpec[];
@@ -19,7 +18,7 @@ export interface PluginsDoc {
 }
 
 /**
- * The built-in instances. Neither GitHub source runs until plugins.yaml names its `authors` (no
+ * The built-in instances. Neither GitHub source runs until the plugins config names its `authors` (no
  * default); the App also needs its `appId` and key. Secrets come from the environment, named by the options (design.md "Secrets").
  * `herdrSession`: a user's own herdr session (issue #158), named on the herdr-claude instance; absent: the plugin's default.
  */
@@ -57,34 +56,27 @@ export function builtinInstances(answerTimeoutMs = 180_000, localMachine = true,
 export type EnsureResult = { action: 'kept' | 'default' | 'removed-local' };
 
 /**
- * Make sure the store holds plugins.yaml: on the boot that finds none, write the built-in instances.
- * Where this host is not a machine (`localMachine` false), remove every `local` instance from
- * `machines:` — one an earlier boot of the container wrote (issue #141); every other line is kept.
+ * Make sure the store holds the plugins config: on the boot that finds none, write the built-in
+ * instances. Where this host is not a machine (`localMachine` false), remove every `local` instance
+ * from `machines` — one an earlier boot of the container wrote (issue #141); everything else is kept.
  */
-export function ensurePluginsDocument(o: { documents: ConfigDocuments; answerTimeoutMs: number; localMachine?: boolean; herdrSession?: string; logger: PluginLogger }): EnsureResult {
+export function ensurePluginsConfig(o: { config: ConfigRecords; answerTimeoutMs: number; localMachine?: boolean; herdrSession?: string; logger: PluginLogger }): EnsureResult {
   const localMachine = o.localMachine ?? true;
-  const version = o.documents.version(PLUGINS);
-  const text = o.documents.read(PLUGINS);
-  if (text !== undefined) return localMachine ? { action: 'kept' } : removeLocalMachines(o.documents, text, version, o.logger);
-  const out = new Document({ version: 1, ...builtinInstances(o.answerTimeoutMs, localMachine, o.herdrSession) });
-  out.commentBefore = ' hopper plugins.yaml: which plugin instance fills which role (docs/design.md "Phase 5").\n Written by the daemon from the built-in instances.';
-  if (!o.documents.write(PLUGINS, out.toString({ lineWidth: 0 }), 'missing')) return { action: 'kept' };
-  o.logger.info(`hopper: wrote ${PLUGINS} from the built-in instances. It is the only configuration of every part.`);
+  const version = o.config.version(PLUGINS);
+  const value = o.config.read(PLUGINS);
+  if (value !== undefined) return localMachine ? { action: 'kept' } : removeLocalMachines(o.config, value, version, o.logger);
+  if (!o.config.write(PLUGINS, { version: 1, ...builtinInstances(o.answerTimeoutMs, localMachine, o.herdrSession) }, 'missing')) return { action: 'kept' };
+  o.logger.info('hopper: wrote the plugins config from the built-in instances. It is the only configuration of every part; edit it in the UI.');
   return { action: 'default' };
 }
 
-function removeLocalMachines(documents: ConfigDocuments, text: string, version: string, logger: PluginLogger): EnsureResult {
-  const doc = parseDocument(text);
-  const machines = doc.get('machines', true);
-  if (doc.errors.length > 0 || !isSeq(machines)) return { action: 'kept' };
-  const removed: string[] = [];
-  machines.items = machines.items.filter((m) => {
-    if (!isMap(m) || m.get('plugin') !== 'local') return true;
-    removed.push(String(m.get('name')));
-    return false;
-  });
+function removeLocalMachines(config: ConfigRecords, value: unknown, version: string, logger: PluginLogger): EnsureResult {
+  const machines = (value as { machines?: unknown } | null)?.machines;
+  if (!Array.isArray(machines)) return { action: 'kept' };
+  const isLocal = (m: unknown): m is { name: unknown } => typeof m === 'object' && m !== null && (m as { plugin?: unknown }).plugin === 'local';
+  const removed = machines.filter(isLocal).map((m) => String(m.name));
   if (removed.length === 0) return { action: 'kept' };
-  if (!documents.write(PLUGINS, doc.toString({ lineWidth: 0 }), version)) return { action: 'kept' };
-  for (const name of removed) logger.info(`hopper: removed the machine \`${name}\` from ${PLUGINS}: this host is not a machine (HOPPER_LOCAL_MACHINE=false).`);
+  if (!config.write(PLUGINS, { ...(value as object), machines: machines.filter((m) => !isLocal(m)) }, version)) return { action: 'kept' };
+  for (const name of removed) logger.info(`hopper: removed the machine \`${name}\` from the plugins config: this host is not a machine (HOPPER_LOCAL_MACHINE=false).`);
   return { action: 'removed-local' };
 }

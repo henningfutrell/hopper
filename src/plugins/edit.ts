@@ -1,32 +1,30 @@
-// A UI edit of plugins.yaml (design.md "UI and mutation"): one instance's options, the plugin
-// filling a one-instance role, an instance of a list role added or removed, or an escalation level
-// moved. Each edit rewrites only that instance's part of the document; comments
-// and every other section stay as written. Command-bearing options are never changed from here:
-// they are the operator's, set with `hopper config edit plugins.yaml` (design.md "Config documents").
-import { isMap, isSeq, parseDocument, type Document } from 'yaml';
-import type { ConfigDocuments } from '../domain/ports.ts';
+// A UI edit of the plugins config (design.md "UI and mutation", issue #198): one instance's options —
+// every one of them, command-bearing ones too —, the plugin filling a one-instance role, an instance of
+// a list role added or removed, or an escalation level moved. Each edit changes only that instance's
+// part of the config record and is written against the version it was read at.
+import type { ConfigRecords } from '../domain/ports.ts';
 import type { ConfiguredInstance, Detection, InstanceSpec, ListRole, MachineDefaults, PluginsEdit, Role, RoutingEdit, RoutingRule } from '../domain/types.ts';
 import { parseRoutingRules } from '../routing/index.ts';
 import { machineOptions, optionsJsonSchema, parseOptions } from './options.ts';
-import { BY_HAND, PLUGINS, pluginsFileProblem } from './plugins-file.ts';
+import { PLUGINS, pluginsConfigProblem } from './plugins-config.ts';
 import type { PluginDefinition } from './sdk.ts';
 
 export type EditRefusal = { ok: false; code: 'invalid' | 'not_found' | 'conflict'; error: string };
 export type EditResult = { ok: true; changed: boolean } | EditRefusal;
 
 export interface EditContext {
-  documents: ConfigDocuments;
+  config: ConfigRecords;
   /**
    * Jobs that need instance `name` of `role` — a machine (busy lanes there, panes parked there) or an
    * executor (a job naming it that has not ended, issue #142): its removal is refused while any do.
    */
   inUse(role: Role, name: string): string[];
-  /** What plugins.yaml (or the built-in instances, for a role with no section) names now. */
+  /** What the plugins config (or the built-in instances, for a role with no section) names now. */
   configured: readonly ConfiguredInstance[];
   find(id: string): { definition: PluginDefinition; detection: Detection } | undefined;
 }
 
-/** Where each role's instances live in plugins.yaml. */
+/** Where each role's instances live in the plugins config. */
 const SECTIONS: Record<Role, { key: string; many: boolean }> = {
   router: { key: 'router', many: false },
   'queue-sorter': { key: 'queueSorter', many: false },
@@ -38,13 +36,13 @@ const SECTIONS: Record<Role, { key: string; many: boolean }> = {
   notifier: { key: 'notifiers', many: true },
 };
 
-/** What plugins.yaml (or the built-in instances) names now, section by section. */
+/** What the plugins config (or the built-in instances) names now, section by section. */
 export interface Configured {
   router?: InstanceSpec; queueSorter: InstanceSpec; escalationLevels: InstanceSpec[]; executors: InstanceSpec[];
   jobSources: InstanceSpec[]; machines: InstanceSpec[]; usageSources: InstanceSpec[]; notifiers: InstanceSpec[];
-  /** plugins.yaml `routing:`, in order; absent: none. */
+  /** `routing`, in order; absent: none. */
   routing: RoutingRule[];
-  /** plugins.yaml `machineDefaults:`; absent: none set. */
+  /** `machineDefaults`; absent: none set. */
   machineDefaults: Partial<MachineDefaults>;
 }
 
@@ -71,85 +69,68 @@ export function commandBearingKeys(def: PluginDefinition): string[] {
   return Object.entries(props as Record<string, { commandBearing?: unknown }>).filter(([, p]) => p?.commandBearing === true).map(([k]) => k);
 }
 
-/** Command-bearing keys whose value would change, each side parsed with the plugin's schema. */
-function changedCommandBearing(def: PluginDefinition, before: Record<string, unknown>, after: Record<string, unknown>): string[] {
-  const a = parseOptions(def, before);
-  const b = parseOptions(def, after);
-  const was = a.ok ? a.options : before;
-  const now = b.ok ? b.options : after;
-  return commandBearingKeys(def).filter((k) => JSON.stringify(was[k]) !== JSON.stringify(now[k]));
-}
-
 function specNode(spec: InstanceSpec): Record<string, unknown> {
   return { name: spec.name, plugin: spec.plugin, ...(spec.options && Object.keys(spec.options).length ? { options: spec.options } : {}) };
 }
 
+/** The plugins config as edited: a plain object, a section an array (a list role) or one instance. */
+type Plugins = Record<string, unknown>;
+
+const isObject = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x);
+const isInstance = (x: unknown): x is InstanceSpec => isObject(x);
+
 /** Put `next` in place of the configured instance `name` of `role`, touching nothing else. */
-function place(doc: Document, role: Role, name: string, next: InstanceSpec, configured: readonly ConfiguredInstance[]): void {
+function place(doc: Plugins, role: Role, name: string, next: InstanceSpec, configured: readonly ConfiguredInstance[]): void {
   const { key, many } = SECTIONS[role];
-  const section = doc.get(key, true);
+  const section = doc[key];
   if (!many) {
-    if (isMap(section) && section.get('plugin') === next.plugin && section.get('name') === next.name) {
-      doc.setIn([key, 'options'], doc.createNode(next.options ?? {}));
-    } else {
-      doc.set(key, doc.createNode(specNode(next)));
-    }
+    doc[key] = isInstance(section) && section.plugin === next.plugin && section.name === next.name
+      ? { ...section, options: next.options ?? {} }
+      : specNode(next);
     return;
   }
-  if (isSeq(section)) {
-    const at = section.items.findIndex((item) => isMap(item) && item.get('name') === name);
+  if (Array.isArray(section)) {
+    const at = section.findIndex((item) => isInstance(item) && item.name === name);
     if (at >= 0) {
-      doc.setIn([key, at, 'options'], doc.createNode(next.options ?? {}));
+      section[at] = { ...(section[at] as InstanceSpec), options: next.options ?? {} };
       return;
     }
   }
   // No section yet: the built-in instances fill this role; write them all, this one changed.
-  const all = configured.filter((c) => c.role === role).map((c) => (c.instance.name === name ? next : c.instance));
-  doc.set(key, doc.createNode(all.map(specNode)));
+  doc[key] = configured.filter((c) => c.role === role).map((c) => specNode(c.instance.name === name ? next : c.instance));
 }
 
 /** Append `next` to a list role, or remove instance `name` from it (`next` null); nothing else changes. */
-export function list(doc: Document, role: ListRole, name: string, next: InstanceSpec | null, configured: readonly ConfiguredInstance[]): void {
+export function list(doc: Plugins, role: ListRole, name: string, next: InstanceSpec | null, configured: readonly ConfiguredInstance[]): void {
   const { key } = SECTIONS[role];
-  const section = doc.get(key, true);
-  if (isSeq(section)) {
-    if (next) {
-      const node = doc.createNode(specNode(next));
-      // Written like the entry before it: one flow line when that one is.
-      const last = section.items.at(-1);
-      if (isMap(node) && isMap(last)) node.flow = last.flow ?? false;
-      section.add(node);
-    } else {
-      section.items.splice(section.items.findIndex((item) => isMap(item) && item.get('name') === name), 1);
-    }
+  const section = doc[key];
+  if (Array.isArray(section)) {
+    doc[key] = next ? [...section, specNode(next)] : section.filter((item) => !(isInstance(item) && item.name === name));
     return;
   }
   // No section yet: the built-in instances fill this role; write them, with this change.
   const now = configured.filter((c) => c.role === role).map((c) => c.instance).filter((i) => next || i.name !== name);
-  doc.set(key, doc.createNode([...now, ...(next ? [next] : [])].map(specNode)));
+  doc[key] = [...now, ...(next ? [next] : [])].map(specNode);
 }
 
-/** Move escalation level `name` to position `to` (clamped); every other entry keeps its order and its text. */
-function move(doc: Document, name: string, to: number, configured: readonly ConfiguredInstance[]): void {
+/** Move escalation level `name` to position `to` (clamped); every other entry keeps its order. */
+function move(doc: Plugins, name: string, to: number, configured: readonly ConfiguredInstance[]): void {
   const { key } = SECTIONS['escalation-level'];
-  if (!isSeq(doc.get(key, true))) {
-    // No section yet: the built-in levels fill the role; write them, so there is an order to change.
-    doc.set(key, doc.createNode(configured.filter((c) => c.role === 'escalation-level').map((c) => specNode(c.instance))));
-  }
-  const section = doc.get(key, true);
-  if (!isSeq(section)) return;
-  const from = section.items.findIndex((item) => isMap(item) && item.get('name') === name);
-  const [node] = section.items.splice(from, 1);
-  section.items.splice(Math.max(0, Math.min(to, section.items.length)), 0, node!);
+  // No section yet: the built-in levels fill the role; write them, so there is an order to change.
+  const section = Array.isArray(doc[key]) ? [...doc[key] as unknown[]] : configured.filter((c) => c.role === 'escalation-level').map((c) => specNode(c.instance));
+  const from = section.findIndex((item) => isInstance(item) && item.name === name);
+  const [entry] = section.splice(from, 1);
+  section.splice(Math.max(0, Math.min(to, section.length)), 0, entry);
+  doc[key] = section;
 }
 
 /**
- * What still names executor `name` in the file as it is now: job sources (their `executor`), machines
+ * What still names executor `name` in the plugins config as it is now: job sources (their `executor`), machines
  * (their `executors`; absent on a `local` instance: every one, which names none) — each option the
  * plugin's default when unset, a section absent: the built-in instances — and routing rules.
  */
-function executorUsers(name: string, doc: Document, ctx: EditContext): string[] {
-  const file = (doc.toJS() ?? {}) as { jobSources?: InstanceSpec[]; machines?: InstanceSpec[]; routing?: RoutingRule[] };
+function executorUsers(name: string, doc: Plugins, ctx: EditContext): string[] {
+  const file = doc as { jobSources?: InstanceSpec[]; machines?: InstanceSpec[]; routing?: RoutingRule[] };
   const options = (i: InstanceSpec): Record<string, unknown> => {
     const def = ctx.find(i.plugin)?.definition;
     const parsed = def ? parseOptions(def, i.options ?? {}) : undefined;
@@ -186,36 +167,35 @@ function machineUsers(name: string, ctx: EditContext): string[] {
   }).map(({ role, instance }) => `${role} ${instance.name}`);
 }
 
-const CHANGED = `${PLUGINS} changed since it was read; reload and edit again`;
+const CHANGED = 'the plugins config changed since it was read; reload and edit again';
 
-/** Apply `change` to the plugins document read now, and replace it if it is still at `version`. */
-export function writePlugins(documents: ConfigDocuments, version: string, change: (doc: Document) => EditRefusal | void): EditResult {
-  const text = documents.read(PLUGINS);
-  if (documents.version(PLUGINS) !== version) return refuse('conflict', CHANGED);
-  const doc = text === undefined ? parseDocument('version: 1\n') : parseDocument(text);
-  if (doc.errors.length) return refuse('conflict', `${PLUGINS} is not valid YAML; fix it by hand (${BY_HAND}): ${doc.errors[0]!.message}`);
-  const before = pluginsFileProblem(doc.toJS());
-  if (before) return refuse('conflict', `${PLUGINS} is invalid; fix it by hand (${BY_HAND}): ${before}`);
+/**
+ * Apply `change` to the plugins config read now, and replace it if it is still at `version`. The
+ * result must be a valid plugins config; what was stored before need not be, so an edit can mend it.
+ */
+export function writePlugins(config: ConfigRecords, version: string, change: (doc: Plugins) => EditRefusal | void): EditResult {
+  const value = config.read(PLUGINS);
+  if (config.version(PLUGINS) !== version) return refuse('conflict', CHANGED);
+  const doc: Plugins = isObject(value) ? structuredClone(value) : { version: 1 };
   const refused = change(doc);
   if (refused) return refused;
-  const problem = pluginsFileProblem(doc.toJS());
+  const problem = pluginsConfigProblem(doc);
   if (problem) return refuse('invalid', problem);
-  // lineWidth 0: never refold lines the owner wrote long.
-  if (!documents.write(PLUGINS, doc.toString({ lineWidth: 0 }), version)) return refuse('conflict', CHANGED);
+  if (!config.write(PLUGINS, doc, version)) return refuse('conflict', CHANGED);
   return { ok: true, changed: true };
 }
 
 /**
  * POST /ui/api/routing (design.md "Routing rules (issue #18)"): the whole ordered list replaces the
- * `routing` node; nothing else in the file changes. `targetProblem`: why a rule names a machine or
+ * `routing` section; nothing else changes. `targetProblem`: why a rule names a machine or
  * executor that is not configured, refused like an invalid rule.
  */
-export function applyRoutingEdit(e: RoutingEdit, documents: ConfigDocuments, targetProblem: (rules: RoutingRule[]) => string | undefined): EditResult {
+export function applyRoutingEdit(e: RoutingEdit, config: ConfigRecords, targetProblem: (rules: RoutingRule[]) => string | undefined): EditResult {
   const parsed = parseRoutingRules(e.rules);
   if (!parsed.ok) return refuse('invalid', parsed.error);
   const problem = targetProblem(parsed.rules);
   if (problem) return refuse('invalid', problem);
-  return writePlugins(documents, e.version, (doc) => { doc.set('routing', doc.createNode(parsed.rules)); });
+  return writePlugins(config, e.version, (doc) => { doc.routing = parsed.rules; });
 }
 
 export function applyEdit(e: Exclude<PluginsEdit, { action: 'rescan' }>, ctx: EditContext): EditResult {
@@ -226,23 +206,19 @@ export function applyEdit(e: Exclude<PluginsEdit, { action: 'rescan' }>, ctx: Ed
     if (at < 0) return refuse('not_found', `no escalation-level instance named ${e.name}`);
     if (!Number.isInteger(e.to) || e.to < 0 || e.to >= levels.length) return refuse('invalid', `to must be a position from 0 to ${levels.length - 1}`);
     if (at === e.to) return { ok: true, changed: false };
-    return writePlugins(ctx.documents, e.version, (doc) => move(doc, e.name, e.to, ctx.configured));
+    return writePlugins(ctx.config, e.version, (doc) => move(doc, e.name, e.to, ctx.configured));
   }
   if (e.action === 'options') {
     const current = ctx.configured.find((c) => c.role === e.role && c.instance.name === e.name);
     if (!current) return refuse('not_found', `no ${e.role} instance named ${e.name}`);
     const def = ctx.find(current.instance.plugin)?.definition;
-    if (!def) return refuse('conflict', `plugin ${current.instance.plugin} is not loaded; edit ${e.name} by hand (${BY_HAND})`);
+    if (!def) return refuse('conflict', `plugin ${current.instance.plugin} is not loaded: its options cannot be checked; install it again, or remove ${e.name}`);
     const noMachine = machineProblem(def, e.options, ctx);
     if (noMachine) return refuse('invalid', noMachine);
     const parsed = parseOptions(def, e.options);
     if (!parsed.ok) return refuse('invalid', parsed.error);
-    const changed = changedCommandBearing(def, current.instance.options ?? {}, e.options);
-    if (changed.length) {
-      return refuse('conflict', `${changed.join(', ')} ${changed.length === 1 ? 'is' : 'are'} command-bearing: edit ${changed.length === 1 ? 'it' : 'them'} by hand (${BY_HAND}), not from the UI`);
-    }
     const next = { ...current.instance, options: e.options };
-    return writePlugins(ctx.documents, e.version, (doc) => place(doc, e.role, e.name, next, ctx.configured));
+    return writePlugins(ctx.config, e.version, (doc) => place(doc, e.role, e.name, next, ctx.configured));
   }
 
   const current = ctx.configured.find((c) => c.role === e.role);
@@ -253,7 +229,7 @@ export function applyEdit(e: Exclude<PluginsEdit, { action: 'rescan' }>, ctx: Ed
     return refuse('conflict', `${e.plugin} is ${found.detection.status} here: ${found.detection.reason}`);
   }
   if (current?.instance.plugin === e.plugin) return { ok: true, changed: false };
-  return writePlugins(ctx.documents, e.version, (doc) => place(doc, e.role, current?.instance.name ?? e.plugin, { name: e.plugin, plugin: e.plugin }, ctx.configured));
+  return writePlugins(ctx.config, e.version, (doc) => place(doc, e.role, current?.instance.name ?? e.plugin, { name: e.plugin, plugin: e.plugin }, ctx.configured));
 }
 
 function applyListEdit(e: Extract<PluginsEdit, { action: 'add' | 'remove' }>, ctx: EditContext): EditResult {
@@ -262,7 +238,7 @@ function applyListEdit(e: Extract<PluginsEdit, { action: 'add' | 'remove' }>, ct
     if (!current) return refuse('not_found', `no ${e.role} instance named ${e.name}`);
     const jobs = ctx.inUse(e.role, e.name);
     if (jobs.length) return refuse('conflict', `${e.name} still has jobs (${jobs.join(', ')}): wait for them to end, or cancel them, then remove it`);
-    return writePlugins(ctx.documents, e.version, (doc) => {
+    return writePlugins(ctx.config, e.version, (doc) => {
       const users = e.role === 'executor' ? executorUsers(e.name, doc, ctx) : e.role === 'machine-source' ? machineUsers(e.name, ctx) : [];
       if (users.length) return refuse('conflict', `${e.role === 'executor' ? 'executor' : 'machine'} ${e.name} is named by ${users.join(', ')}; change ${users.length === 1 ? 'it' : 'them'} first`);
       list(doc, e.role, e.name, null, ctx.configured);
@@ -282,5 +258,5 @@ function applyListEdit(e: Extract<PluginsEdit, { action: 'add' | 'remove' }>, ct
     const parsed = parseOptions(found.definition, e.options);
     if (!parsed.ok) return refuse('invalid', parsed.error);
   }
-  return writePlugins(ctx.documents, e.version, (doc) => list(doc, e.role, e.name, { name: e.name, plugin: e.plugin, ...(e.options ? { options: e.options } : {}) }, ctx.configured));
+  return writePlugins(ctx.config, e.version, (doc) => list(doc, e.role, e.name, { name: e.name, plugin: e.plugin, ...(e.options ? { options: e.options } : {}) }, ctx.configured));
 }

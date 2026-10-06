@@ -6,7 +6,7 @@ export interface Choice {
   id: string;
   describe: string;
   builtin: boolean;
-  /** The plugin plugins.yaml names for the role now. */
+  /** The plugin the plugins config names for the role now. */
   current: boolean;
   /** Only a plugin detected available here can be selected. */
   selectable: boolean;

@@ -1,4 +1,4 @@
-// Logged out: the ways to sign in — a button per OIDC, GitHub or SAML realm (auth.yaml), a username
+// Logged out: the ways to sign in — a button per OIDC, GitHub or SAML realm (the sign-in config), a username
 // and password form while a password or LDAP realm is on, continuing without sign-in while `none` is on, and,
 // while local sign-in is on, the login code (the command on this machine, a device link or a pasted
 // code across the LAN). Design: design.md "Sign-in: realms", "Reaching
@@ -56,7 +56,7 @@ function LoginCode() {
   );
 }
 
-/** Every way auth.yaml offers to sign in, as buttons and forms. */
+/** Every way the sign-in config offers to sign in, as buttons and forms. */
 function SignInOptions({ signIn, lead }: { signIn: SessionView['signIn']; lead: string }) {
   const elsewhere = signIn.realms.length > 0 && location.origin !== signIn.origin;
   return (
@@ -68,7 +68,7 @@ function SignInOptions({ signIn, lead }: { signIn: SessionView['signIn']; lead: 
       {signIn.password && <PasswordSignIn />}
       {signIn.none && <Button size="xs" variant="outline" onClick={() => void signInWithoutCredential().then(finish)}><LogIn />Continue as {signIn.none}</Button>}
       {signIn.local && <LoginCode />}
-      {!signIn.local && !signIn.password && !signIn.none && signIn.realms.length === 0 && <>no way to sign in is configured (auth.yaml).</>}
+      {!signIn.local && !signIn.password && !signIn.none && signIn.realms.length === 0 && <>no way to sign in is configured (Settings → Sign-in).</>}
     </>
   );
 }

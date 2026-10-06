@@ -1,11 +1,10 @@
 // Issue #174: where a part runs on a machine — an escalation level (claude-cli), a usage source
 // (claude-plan) — the machine is always set, and picked from the known machines, never typed. This
 // machine is no default: it is the `local` machine in the list, like any other.
-import { parse } from 'yaml';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { PluginsReport } from '../../src/domain/types.ts';
-import { startTestApp, tempDbPath, writePluginsYaml, type TestApp } from '../support/app.ts';
-import { readDocument } from '../support/files.ts';
+import { startTestApp, tempDbPath, writePlugins, type TestApp } from '../support/app.ts';
+import { readConfig } from '../support/files.ts';
 
 type Reply = PluginsReport & { error: string };
 
@@ -18,25 +17,18 @@ afterEach(async () => {
   cleanup?.();
 });
 
-async function start(pluginsYaml: string): Promise<{ a: TestApp; token: string }> {
+async function start(plugins: object): Promise<{ a: TestApp; token: string }> {
   const db = tempDbPath();
   cleanup = db.cleanup;
-  writePluginsYaml(db.dbPath, pluginsYaml);
+  writePlugins(db.dbPath, plugins);
   t = await startTestApp({ dbPath: db.dbPath });
   return { a: t, token: await t.login() };
 }
 
 const report = async (a: TestApp): Promise<PluginsReport> => (await a.api('GET', '/api/plugins')).body as PluginsReport;
-const read = (a: TestApp) => parse(readDocument(a.dbPath, 'plugins.yaml')!) as Record<string, { name: string; options?: Record<string, unknown> }[]>;
+const read = (a: TestApp) => readConfig(a.dbPath, 'plugins') as Record<string, { name: string; options?: Record<string, unknown> }[]>;
 
-const MACHINES = `version: 1
-machines:
-  - { name: local, plugin: local, options: { lanes: 2 } }
-  - { name: box, plugin: docker, options: { docker: box } }
-escalationLevels:
-  - { name: opus, plugin: claude-cli, options: { model: opus, machine: local } }
-usageSources: []
-`;
+const MACHINES = { version: 1, machines: [{ name: 'local', plugin: 'local', options: { lanes: 2 } }, { name: 'box', plugin: 'docker', options: { docker: 'box' } }], escalationLevels: [{ name: 'opus', plugin: 'claude-cli', options: { model: 'opus', machine: 'local' } }], usageSources: [] };
 
 describe('a machine option is picked from the known machines (#174)', () => {
   it('GET /api/plugins marks it a machine option, required, and lists every configured machine as its choices', async () => {
@@ -83,7 +75,7 @@ describe('a machine option is picked from the known machines (#174)', () => {
 
 describe('a machine a part runs on stays while it is named (#174)', () => {
   it('removing a machine an escalation level names is refused until the level names another', async () => {
-    const { a, token } = await start(MACHINES.replace('machine: local', 'machine: box'));
+    const { a, token } = await start({ ...MACHINES, escalationLevels: [{ name: 'opus', plugin: 'claude-cli', options: { model: 'opus', machine: 'box' } }] });
     const version = (await report(a)).config.version;
     const r = await a.ui<Reply>('/ui/api/plugins', { action: 'remove', role: 'machine-source', name: 'box', version }, { token });
     expect(r.status).toBe(409);

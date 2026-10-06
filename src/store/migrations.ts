@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { YAMLSeq, isMap, isScalar, isSeq, parse, parseDocument, type Document, type Node, type YAMLMap } from 'yaml';
 import type { Db } from './db.ts';
+import { documentsToRecords } from './migration-config.ts';
 import { signInRealms } from './migration-realms.ts';
 import { usersAndOwner } from './migration-users.ts';
 
@@ -130,6 +131,8 @@ const MIGRATIONS: readonly Migration[] = [
   // 18: sign-in is realms (issue #185): auth.yaml's password and providers become `realms`, and stored
   // sessions and identity links name their realm.
   signInRealms,
+  // 19: no config files and no YAML (issue #198): auth.yaml becomes the config record `sign-in`.
+  (db) => documentsToRecords(db, { 'auth.yaml': 'sign-in' }),
 ];
 
 /**

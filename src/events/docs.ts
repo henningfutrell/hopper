@@ -33,7 +33,7 @@ const WHEN: Record<EventType, string> = {
   'update.applied': 'The first boot on an applied update: the install now runs `to`. Recovery reattached what was running.',
   'update.failed': 'Applying an update failed (fetch, build, the new build not loading, or the swap) and the install is unchanged — or a boot after an update is not on the applied commit.',
   'plugin.installed': 'A plugin was installed from the plugin store into the plugin dir (UI Install or Update), at the store\'s commit `commit`. A plugin new to this process is loaded at once; one installed again runs its new code after a restart.',
-  'plugin.removed': 'A store install was removed from the plugin dir (UI Remove). Nothing in plugins.yaml named it.',
+  'plugin.removed': 'A store install was removed from the plugin dir (UI Remove). Nothing in the plugins config named it.',
   'job.accepted': 'A job passed the queue gate and may run: `by` `pre-sort` (the gate auto-accepts, or the user took the pre-sort with Accept pre-sort), or `user` (moved into the user order).',
   'job.rejected': 'A waiting job was turned away at the queue gate: it ends `rejected`, is kept, and never runs. `by` `user` (UI Reject) or `pre-sort` (the queue sorter rejected it); `reason` is also the job\'s `error`. Its source is told (on GitHub: the `hopper:rejected` label).',
   'queue.ordered': 'The user ordered the queue: `jobIds`, first to last, run before every job not in it.',

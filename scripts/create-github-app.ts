@@ -3,7 +3,7 @@
 // file as GITHUB_APP_PRIVATE_KEY= (newlines as \n) and GITHUB_APP_WEBHOOK_SECRET= lines — by default
 // ~/.config/hopper/daemon.env, the host unit's EnvironmentFile; --secrets-file for any other deploy,
 // whose secret store takes them from there. The app's id and slug are config: set them as the
-// github-app instance's appId and slug (`hopper config edit plugins.yaml`); the helper prints both.
+// github-app instance's appId and slug (in the UI: Plugins → Job sources); the helper prints both.
 // Exit codes: 0 created, 1 failure/timeout, 2 refused (the env file already holds a key, no --force).
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
@@ -135,7 +135,7 @@ async function finish(code: string, res: http.ServerResponse): Promise<void> {
     const install = `${web}/apps/${c.slug}/installations/new`;
     page(200, `<h1>App created</h1><p><a href="${escapeHtml(install)}">Install it on your repositories</a></p>`, res);
     process.stdout.write(`\nApp created: ${c.slug}\nInstall it: ${install}\nKey: GITHUB_APP_PRIVATE_KEY in ${path}\n` +
-      `Set the github-app instance's options (hopper config edit plugins.yaml): appId: ${c.id}, slug: ${c.slug}\n` +
+      `Set the github-app instance's options in the UI (Plugins → Job sources): appId: ${c.id}, slug: ${c.slug}\n` +
       `HOPPER_APP_CREATED ${c.id} ${c.slug}\n`);
     res.on('close', () => process.exit(0));
     setTimeout(() => process.exit(0), 1000).unref();

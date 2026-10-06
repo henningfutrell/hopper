@@ -3,26 +3,17 @@
 // machine: it names that machine now. Comments and everything else in the document stay.
 import { parse } from 'yaml';
 import { describe, expect, it } from 'vitest';
-import { openDb } from '../../src/store/db.ts';
-import { openInstanceStore } from '../../src/store/index.ts';
-import { testPostgres } from '../support/database.ts';
-import { fixedClock, useTempStore } from './helpers.ts';
+import { migrateTenant } from '../../src/store/tenant-migrations.ts';
+import { useTempStore } from './helpers.ts';
 
 const t = useTempStore();
 
-/** Store `plugins` in owner's user schema at tenant version 2, migrate, and read it back. */
+/** Store `plugins` in a user schema at tenant version 2, migrate to 3, and read it back. */
 function migrateFrom2(plugins: string): string {
-  const url = t.url();
-  t.open(url).close();
-  const owner = `"${new URL(url).searchParams.get('schema')!}_u_owner"`;
-  const raw = openDb(testPostgres());
-  raw.run(`INSERT INTO ${owner}.config_documents (name, text, updated_at) VALUES ('plugins.yaml', ?, 'x')
-    ON CONFLICT (name) DO UPDATE SET text = excluded.text`, plugins);
-  raw.run(`UPDATE ${owner}.schema_version SET version = 2`);
-  const instance = openInstanceStore({ url, clock: fixedClock() });
-  instance.userStore(instance.users.owner()).close();
-  instance.close();
-  const text = String(raw.get(`SELECT text FROM ${owner}.config_documents WHERE name = 'plugins.yaml'`)!.text);
+  const raw = t.tenantAt(t.url(), 2);
+  raw.run("INSERT INTO config_documents (name, text, updated_at) VALUES ('plugins.yaml', ?, 'x')", plugins);
+  migrateTenant(raw, 3);
+  const text = String(raw.get("SELECT text FROM config_documents WHERE name = 'plugins.yaml'")!.text);
   raw.close();
   return text;
 }

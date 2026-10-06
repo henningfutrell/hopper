@@ -1,4 +1,4 @@
-// Routing rules (design.md "Routing rules (issue #18)"; docs/glossary.md "Routing rule"): plugins.yaml
+// Routing rules (design.md "Routing rules (issue #18)"; docs/glossary.md "Routing rule"): the plugins config
 // `routing:`, an ordered list applied at intake. The first matching rule sets a job's machine pin,
 // executor and/or priority. Never a lane.
 
@@ -53,13 +53,11 @@ export interface SkippedRule {
   reason: string;
 }
 
-/** GET /api/routing. `version` is plugins.yaml's (as in /api/plugins); an edit carries it back. */
+/** GET /api/routing. `version` is the plugins config's (as in /api/plugins); an edit carries it back. */
 export interface RoutingReport {
-  /** The config document: `plugins.yaml`. */
-  document: string;
   version: string;
   rules: RoutingRule[];
-  /** plugins.yaml could not be read: the last good rules apply. */
+  /** the plugins config could not be read: the last good rules apply. */
   error?: string;
   /** What a rule may name (a save naming anything else is refused). */
   targets: { machines: string[]; executors: string[] };

@@ -37,7 +37,7 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   exact Origin, same-origin, JSON — else 403) whose UI role allows it; a new mutation goes there and
   nowhere else, and names its least UI role. `docs/design.md` "UI session and mutations" and
   "Sign-in: realms" state the residual risk.
-- **Sign-in fails closed.** An invalid `auth.yaml` stops the daemon; an identity no role rule
+- **Sign-in fails closed.** An invalid sign-in config stops the daemon; an identity no role rule
   matches gets no session; sign-in is never a plugin (`docs/design.md` "Sign-in"). Every sign-in
   kind uses an established library for its protocol or hash (openid-client, @node-saml/node-saml,
   ldapts, argon2); no hand-rolled protocol or password code. A realm change from the UI is loaded
@@ -46,8 +46,9 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   carries no personal or machine details. The hopper writes only labels to issues, never closes
   one (the merge of a job's pull request does), and posts no comments. The job prompt carries the rule (`src/executors/herdr/screen.ts` `PUBLISHING_RULE`).
 - **Nothing leans on the machine** (issue #40, `docs/design.md` "Deployable"). Everything the daemon
-  keeps is in the database `HOPPER_DATABASE_URL` names; config is config documents in it
-  (`plugins.yaml`, `rules.md`, `auth.yaml`) and the webhook subscriptions, rows of its own. **Every secret comes from the runtime**
+  keeps is in the database `HOPPER_DATABASE_URL` names; config is config records in it — JSON values
+  (`plugins`, `rules`, `sign-in`), every setting edited in the UI, none set only in a file, no YAML
+  (issue #198) — and the webhook subscriptions, rows of its own. **Every secret comes from the runtime**
   (issue #56): the variable `NAME` or the mounted file `NAME_FILE` names (`src/secrets/runtime.ts`),
   named by a command-bearing option. The hopper stores no secret — not in the database, not in a file
   of its own; a token or code it mints is only hashed (`docs/design.md` "Secrets"). No default names a path on one
@@ -56,8 +57,8 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
 - **Never write into the Jev repo.** The shim reads it; logs go to hopper's work dir.
 - **Persisted state is the user's.** A schema change ships a migration in
   `src/store/migrations.ts` (`SHARED`, in SQL both databases mean the same way); it never drops a
-  queue. A change to persisted state outside the store's tables (a document's shape) migrates the
-  documents too.
+  queue. A change to persisted state inside a config record (its value's shape) migrates the
+  records too.
 - **The UI is the one built part.** `ui/` → `npm run build:ui` → `ui/dist` (gitignored), served
   by the daemon. It imports nothing of `src/` at runtime; types only, from `src/domain/types.ts`.
 - **What's new.** A change people who use the hopper would notice adds one line at the top of

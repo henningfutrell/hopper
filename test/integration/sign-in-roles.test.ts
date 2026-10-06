@@ -1,5 +1,5 @@
 // Roles, sessions and logout are the same whichever provider signed the user in (issue #39); a public
-// URL behind a reverse proxy; an invalid auth.yaml stops the daemon.
+// URL behind a reverse proxy; an invalid sign-in config stops the daemon.
 import { afterEach, describe, expect, it } from 'vitest';
 import type { TestApp } from '../support/app.ts';
 import { rawRequest } from '../support/http.ts';
@@ -53,7 +53,7 @@ describe('roles, sessions and logout: the same for every realm', () => {
     expect((await session(app, token)).authenticated).toBe(false);
   });
 
-  it('a session outlives a restart; a provider removed from auth.yaml ends its sessions', async () => {
+  it('a session outlives a restart; a provider removed from the sign-in config ends its sessions', async () => {
     const { app, token } = await as('viewer');
     const same = await restartWithAuth(h, app, { version: 1, realms: [oidcRealm({ issuer: 'http://127.0.0.1:1/' }, { defaultRole: 'viewer' })] });
     expect((await session(same, token)).authenticated).toBe(true);
@@ -61,7 +61,7 @@ describe('roles, sessions and logout: the same for every realm', () => {
     expect((await session(gone, token)).authenticated).toBe(false);
   });
 
-  it('a role changed in auth.yaml applies to live sessions at the next start', async () => {
+  it('a role changed in the sign-in config applies to live sessions at the next start', async () => {
     const { app, token } = await as('admin');
     const again = await restartWithAuth(h, app, { version: 1, realms: [oidcRealm({ issuer: 'http://127.0.0.1:1/' }, { defaultRole: 'viewer' })] });
     expect((await session(again, token)).user.role).toBe('viewer');
@@ -92,8 +92,8 @@ describe('a public URL (behind a reverse proxy)', () => {
   });
 });
 
-describe('an invalid auth.yaml', () => {
+describe('an invalid sign-in config', () => {
   it('stops the daemon at start, naming the field', async () => {
-    await expect(start({ version: 1, realms: [{ name: 'x', type: 'kerberos' }] })).rejects.toThrow(/invalid auth\.yaml: realms\.0/);
+    await expect(start({ version: 1, realms: [{ name: 'x', type: 'kerberos' }] })).rejects.toThrow(/invalid sign-in config: realms\.0/);
   });
 });

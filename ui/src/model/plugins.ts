@@ -9,7 +9,7 @@ export interface OptionSchema {
   default?: unknown;
   description?: string;
   items?: { type?: string };
-  /** `.meta({ commandBearing: true })`: shown, never edited from the UI. */
+  /** `.meta({ commandBearing: true })`: names a program, its arguments, a directory, an executed file or where a credential goes; edited like any option (issue #198). */
   commandBearing?: boolean;
   /** `.meta({ machine: true })` (issue #174): a machine, picked from the configured ones; always set. */
   machine?: boolean;
@@ -19,13 +19,12 @@ export interface OptionsSchema { type?: string; properties?: Record<string, Opti
 /** What the form holds for one option, as typed: a string, or a boolean for a checkbox. */
 export type Draft = Record<string, string | boolean>;
 
-export type FieldKind = 'readonly' | 'boolean' | 'enum' | 'choice' | 'number' | 'string' | 'lines' | 'json';
+export type FieldKind = 'boolean' | 'enum' | 'choice' | 'number' | 'string' | 'lines' | 'json';
 
 const isStringList = (p: OptionSchema) => p.type === 'array' && p.items?.type === 'string';
 
 /** `choices`: the values the plugin listed for this option; any makes it a choice, never a typed value. */
 export function fieldKind(p: OptionSchema, choices?: OptionChoice[]): FieldKind {
-  if (p.commandBearing) return 'readonly';
   if (p.machine) return 'choice';
   if (choices?.length) return 'choice';
   if (p.type === 'boolean') return 'boolean';
@@ -42,12 +41,12 @@ export function shown(p: OptionSchema, v: unknown): string {
   return typeof v === 'string' ? v : JSON.stringify(v);
 }
 
-/** Drafts over the configured options; command-bearing and unknown keys exactly as configured. Throws on bad JSON. */
+/** Drafts over the configured options; unknown keys exactly as configured. Throws on bad JSON. */
 export function collectOptions(current: Record<string, unknown>, schema: OptionsSchema | undefined, draft: Draft): Record<string, unknown> {
   const props = schema?.properties ?? {};
   const out: Record<string, unknown> = Object.fromEntries(Object.entries(current).filter(([k]) => !(k in props)));
   for (const [k, p] of Object.entries(props)) {
-    if (p.commandBearing || !(k in draft)) {
+    if (!(k in draft)) {
       if (k in current) out[k] = current[k];
       continue;
     }
@@ -95,7 +94,7 @@ export interface InstanceState {
   label: string;
   reason?: string;
   detection?: { status: string; reason?: string };
-  /** A restart role whose plugins.yaml section differs from what runs. */
+  /** A restart role whose section of the plugins config differs from what runs. */
   rolePending: boolean;
 }
 
@@ -103,7 +102,7 @@ export function instanceState(report: PluginsReport, role: Role, name: string): 
   const key = (RESTART as Partial<Record<Role, (typeof RESTART)[keyof typeof RESTART]>>)[role];
   const pending = { tone: 'warn' as const, label: 'restart pending' };
   if (role === 'machine-source' || role === 'executor') {
-    // Live (issues #74, #142): what plugins.yaml names is what runs, once the reload after an edit is done.
+    // Live (issues #74, #142): what the plugins config names is what runs, once the reload after an edit is done.
     const s = (role === 'executor' ? report.executors : report.machines).instances.find((i) => i.instance.name === name);
     if (!s) return { tone: 'warn', label: 'applying', rolePending: false };
     const base = { ...(s.reason ? { reason: s.reason } : {}), detection: s.detection, rolePending: false };
@@ -138,7 +137,7 @@ export const ROLE_TITLES: Record<Role, string> = {
 
 /**
  * A shipped plugin as the Plugins view's switch shows it (issue #142; owner decision: users never edit
- * plugins.yaml). `blocked`: why a click cannot change it here.
+ * the plugins config). `blocked`: why a click cannot change it here.
  */
 export interface ShippedPlugin { id: string; role: ListRole; describe: string; enabled: boolean; instances: string[]; blocked?: string }
 

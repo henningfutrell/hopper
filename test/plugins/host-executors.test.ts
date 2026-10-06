@@ -1,7 +1,7 @@
-// Phase 5 slice 3: the executor role in the plugin host, built from plugins.yaml `executors:` (or the
+// Phase 5 slice 3: the executor role in the plugin host, built from the plugins config `executors:` (or the
 // env-derived instances); an instance that cannot run is reported with its reason so its jobs are
 // held. Since the owner decision on issue #142 (shipped plugins are enabled and disabled in the UI,
-// never by a restart) executors follow plugins.yaml live: an unchanged instance is kept, a new or
+// never by a restart) executors follow the plugins config live: an unchanged instance is kept, a new or
 // changed one built, a removed one dropped.
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -10,12 +10,12 @@ import type { InstanceSpec } from '../../src/domain/types.ts';
 import { BUILTIN_PLUGINS } from '../../src/plugins/builtin.ts';
 import { createPluginHost, type PluginHost } from '../../src/plugins/index.ts';
 import type { DetectionKit, PluginDefinition } from '../../src/plugins/sdk.ts';
-import { PLUGINS } from '../../src/plugins/plugins-file.ts';
-import { useTempDocuments } from '../support/documents.ts';
+import { PLUGINS } from '../../src/plugins/plugins-config.ts';
+import { useTempConfig } from '../support/config.ts';
 import { fakeKit, fixedClock, useTempDirs } from './support.ts';
 
 const temp = useTempDirs();
-const docs = useTempDocuments();
+const records = useTempConfig();
 let host: PluginHost | undefined;
 afterEach(() => { host?.stop(); host = undefined; });
 
@@ -39,25 +39,25 @@ const ENV_EXECUTORS: InstanceSpec[] = [
   { name: 'herdr-claude', plugin: 'herdr-claude', options: { bin: 'herdr', claudeBin: 'claude', cwd: '/w' } },
 ];
 
-function start(o: { file?: string; kit?: DetectionKit; defaultExecutors?: InstanceSpec[] } = {}) {
+function start(o: { file?: object; kit?: DetectionKit; defaultExecutors?: InstanceSpec[] } = {}) {
   const dir = temp();
-  const documents = docs();
-  if (o.file !== undefined) documents.set(PLUGINS, o.file);
+  const config = records();
+  if (o.file !== undefined) config.set(PLUGINS, o.file);
   host = createPluginHost({
-    pluginDir: join(dir, 'plugins'), documents, dataDir: dir, clock: fixedClock,
+    pluginDir: join(dir, 'plugins'), config, dataDir: dir, clock: fixedClock,
     logger: { info() {}, warn() {} }, routerMode: () => 'shadow', kit: o.kit ?? fakeKit(),
     builtins: [...BUILTIN_PLUGINS, brokenExecutor, selfNamed],
     defaultLevels: [],
     defaultExecutors: o.defaultExecutors ?? ENV_EXECUTORS,
     intervalMs: 30,
   });
-  return { host, documents };
+  return { host, config };
 }
 
 const names = (h: PluginHost) => h.executors().filter((e) => e.executor).map((e) => e.executor!.name);
 
 describe('executor instances', () => {
-  it('no plugins.yaml: the env-derived instances, built and detected', async () => {
+  it('no plugins config: the env-derived instances, built and detected', async () => {
     const { host } = start();
     await host.start();
     expect(names(host)).toEqual(['test', 'herdr-claude']);
@@ -70,15 +70,15 @@ describe('executor instances', () => {
     expect(r.executors).not.toHaveProperty('pending');
   });
 
-  it('plugins.yaml `executors:` wins over the env', async () => {
-    const { host } = start({ file: 'version: 1\nexecutors: [ { name: t2, plugin: test } ]\n' });
+  it('the plugins config `executors:` wins over the env', async () => {
+    const { host } = start({ file: { version: 1, executors: [{ name: 't2', plugin: 'test' }] } });
     await host.start();
     expect(names(host)).toEqual(['t2']);
     expect(host.report().executors.instances.map((i) => i.instance.name)).toEqual(['t2']);
   });
 
   it('the instance name wins over what the plugin calls itself', async () => {
-    const { host } = start({ file: 'version: 1\nexecutors: [ { name: mine, plugin: self-named } ]\n' });
+    const { host } = start({ file: { version: 1, executors: [{ name: 'mine', plugin: 'self-named' }] } });
     await host.start();
     const [built] = host.executors();
     expect(built!.executor!.name).toBe('mine');
@@ -86,12 +86,12 @@ describe('executor instances', () => {
   });
 
   it.each([
-    ['unknown plugin', '{ name: x, plugin: no-such-executor }', /unknown executor plugin no-such-executor/],
-    ['invalid options', '{ name: x, plugin: self-named, options: { tag: 3 } }', /options.*tag/],
-    ['create throws', '{ name: x, plugin: broken-executor }', /cannot create: no backend/],
-    ['a router plugin named as an executor', '{ name: x, plugin: pass-through }', /unknown executor plugin pass-through/],
+    ['unknown plugin', { name: 'x', plugin: 'no-such-executor' }, /unknown executor plugin no-such-executor/],
+    ['invalid options', { name: 'x', plugin: 'self-named', options: { tag: 3 } }, /options.*tag/],
+    ['create throws', { name: 'x', plugin: 'broken-executor' }, /cannot create: no backend/],
+    ['a router plugin named as an executor', { name: 'x', plugin: 'pass-through' }, /unknown executor plugin pass-through/],
   ])('%s: unavailable with the reason; the others still run', async (_n, entry, why) => {
-    const { host } = start({ file: `version: 1\nexecutors: [ { name: test, plugin: test }, ${entry} ]\n` });
+    const { host } = start({ file: { version: 1, executors: [{ name: 'test', plugin: 'test' }, entry] } });
     await host.start();
     expect(names(host)).toEqual(['test']);
     const x = host.executors().find((e) => e.spec.name === 'x')!;
@@ -119,35 +119,35 @@ describe('executor instances', () => {
   });
 });
 
-describe('executors follow plugins.yaml live (issue #142)', () => {
+describe('executors follow the plugins config live (issue #142)', () => {
   it('an added instance runs at once, an unchanged one is kept as it is, a removed one is gone; nothing is pending', async () => {
-    const { host, documents } = start({ file: 'version: 1\nexecutors: [ { name: test, plugin: test } ]\n' });
+    const { host, config } = start({ file: { version: 1, executors: [{ name: 'test', plugin: 'test' }] } });
     await host.start();
     const before = host.executors()[0]!.executor;
-    documents.set(PLUGINS, 'version: 1\nexecutors: [ { name: test, plugin: test }, { name: t2, plugin: test } ]\n');
+    config.set(PLUGINS, { version: 1, executors: [{ name: 'test', plugin: 'test' }, { name: 't2', plugin: 'test' }] });
     await host.reload();
     expect(names(host)).toEqual(['test', 't2']);
     expect(host.executors()[0]!.executor).toBe(before);
     expect(host.report().executors).not.toHaveProperty('pending');
     expect(host.report().executors.instances.map((i) => i.instance.name)).toEqual(['test', 't2']);
 
-    documents.set(PLUGINS, 'version: 1\nexecutors: [ { name: t2, plugin: test } ]\n');
+    config.set(PLUGINS, { version: 1, executors: [{ name: 't2', plugin: 'test' }] });
     await host.reload();
     expect(names(host)).toEqual(['t2']);
   });
 
   it('removing the section brings back the env-derived instances', async () => {
-    const { host, documents } = start({ file: 'version: 1\nexecutors: [ { name: test, plugin: test } ]\n' });
+    const { host, config } = start({ file: { version: 1, executors: [{ name: 'test', plugin: 'test' }] } });
     await host.start();
-    documents.set(PLUGINS, 'version: 1\n');
+    config.set(PLUGINS, { version: 1 });
     await host.reload();
     expect(host.executors().map((e) => e.spec)).toEqual(ENV_EXECUTORS);
   });
 
-  it('an invalid file keeps the running executors', async () => {
-    const { host, documents } = start({ file: 'version: 1\nexecutors: [ { name: test, plugin: test } ]\n' });
+  it('an invalid config keeps the running executors', async () => {
+    const { host, config } = start({ file: { version: 1, executors: [{ name: 'test', plugin: 'test' }] } });
     await host.start();
-    documents.set(PLUGINS, 'version: 1\nexecutors: []\n');
+    config.set(PLUGINS, { version: 1, executors: [] });
     await host.reload();
     expect(host.report().config.error).toMatch(/executors/);
     expect(names(host)).toEqual(['test']);

@@ -10,7 +10,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 const empty = { type: 'object', properties: {} };
 const PLUGINS = {
   roles: ['router', 'queue-sorter'],
-  config: { document: 'plugins.yaml', source: 'document', version: 'p1', warnings: [] },
+  config: { source: 'stored', version: 'p1', warnings: [] },
   instances: [
     { role: 'router', instance: { name: 'pass-through', plugin: 'pass-through' } },
     { role: 'queue-sorter', instance: { name: 'priority', plugin: 'priority' } },
@@ -27,7 +27,7 @@ const PLUGINS = {
   ],
   errors: [], warnings: [],
 };
-const ROUTING = { document: PLUGINS.config.document, version: 'p1', rules: [], targets: { machines: ['local'], executors: ['herdr-claude'] }, skipped: [] };
+const ROUTING = { version: 'p1', rules: [], targets: { machines: ['local'], executors: ['herdr-claude'] }, skipped: [] };
 
 interface Call { path: string; method: string; body?: Record<string, unknown> }
 

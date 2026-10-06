@@ -5,6 +5,7 @@
 // user schema as its store opens. Schema changes never drop a queue (persisted state is the user's).
 import { isMap, isScalar, isSeq, parseDocument } from 'yaml';
 import type { Db } from './db.ts';
+import { documentsToRecords } from './migration-config.ts';
 
 type Migration = string | ((db: Db) => void);
 
@@ -146,6 +147,9 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
   renameIdleQuestionMs,
   // 3: a claude-cli level or claude-plan usage source names its machine (issue #174).
   nameTheLocalMachine,
+  // 4: no config files and no YAML (issue #198): plugins.yaml and rules.md become the config records
+  // `plugins` and `rules`.
+  (db) => documentsToRecords(db, { 'plugins.yaml': 'plugins', 'rules.md': 'rules' }),
 ];
 
 /** A user schema's version once migrated. */
@@ -171,8 +175,8 @@ function step(db: Db, m: Migration, record: () => void): void {
   }
 }
 
-/** Migrate the user schema `db` is connected to (its search_path) to the latest tenant version. */
-export function migrateTenant(db: Db): void {
+/** Migrate the user schema `db` is connected to (its search_path) up to `to` (default: the latest; a lower one only for a migration's own test). */
+export function migrateTenant(db: Db, to = TENANT_SCHEMA_VERSION): void {
   db.exec('CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)');
   const version = (): number => Number(db.get('SELECT version FROM schema_version')?.version ?? 0);
   const record = (v: number) => () => {
@@ -180,5 +184,5 @@ export function migrateTenant(db: Db): void {
     db.run('INSERT INTO schema_version (version) VALUES (?)', v);
   };
   if (version() === 0) step(db, TENANT_BASE, record(TENANT_BASE_VERSION));
-  for (let v = version(); v < TENANT_SCHEMA_VERSION; v++) step(db, TENANT_MIGRATIONS[v - TENANT_BASE_VERSION]!, record(v + 1));
+  for (let v = version(); v < to; v++) step(db, TENANT_MIGRATIONS[v - TENANT_BASE_VERSION]!, record(v + 1));
 }

@@ -1,8 +1,7 @@
-// The routing rules as the plugin host holds them (design.md "Routing rules (issue #18)"): plugins.yaml
-// `routing:` (re-read with the file, the last good list kept on an invalid file), what a rule may
+// The routing rules as the plugin host holds them (design.md "Routing rules (issue #18)"): the plugins
+// config's `routing` (re-read with it, the last good list kept on an invalid config), what a rule may
 // name, the report for GET /api/routing, and the UI's edit.
-import type { ConfigDocuments } from '../domain/ports.ts';
-import { PLUGINS } from './plugins-file.ts';
+import type { ConfigRecords } from '../domain/ports.ts';
 import type { RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule } from '../domain/types.ts';
 import { ruleProblem, skippedRules, type RoutingTargets } from '../routing/index.ts';
 import { applyRoutingEdit } from './edit.ts';
@@ -10,21 +9,21 @@ import { applyRoutingEdit } from './edit.ts';
 const unique = (xs: string[]): string[] => [...new Set(xs)];
 
 export interface RoutingConfigDeps {
-  documents: ConfigDocuments;
-  /** The rules plugins.yaml names now (none when absent). */
+  config: ConfigRecords;
+  /** The rules the plugins config names now (none when absent). */
   rules(): RoutingRule[];
   /** What runs now: the machine ids and executor instances intake checks a rule against. */
   running(): RoutingTargets;
-  /** What plugins.yaml configures now (it may differ from what runs until a restart). */
+  /** What the plugins config configures now (it may differ from what runs until a restart). */
   configured(): RoutingTargets;
   version(): string;
   error(): string | undefined;
-  /** Re-read plugins.yaml; resolves once the new rules are in place. */
+  /** Re-read the plugins config; resolves once the new rules are in place. */
   reload(): Promise<void>;
 }
 
 export function createRoutingConfig(d: RoutingConfigDeps) {
-  /** A save may name what runs or what plugins.yaml configures. */
+  /** A save may name what runs or what the plugins config configures. */
   const targets = (): RoutingTargets => {
     const r = d.running();
     const c = d.configured();
@@ -34,7 +33,7 @@ export function createRoutingConfig(d: RoutingConfigDeps) {
     const t = targets();
     const error = d.error();
     return {
-      document: PLUGINS, version: d.version(), rules: d.rules(), ...(error ? { error } : {}),
+      version: d.version(), rules: d.rules(), ...(error ? { error } : {}),
       targets: { machines: [...t.machines], executors: [...t.executors] },
       skipped: skippedRules(d.rules(), d.running()),
     };
@@ -43,7 +42,7 @@ export function createRoutingConfig(d: RoutingConfigDeps) {
     report,
     async edit(e: RoutingEdit): Promise<RoutingEditOutcome> {
       const known = targets();
-      const r = applyRoutingEdit(e, d.documents, (rules) => {
+      const r = applyRoutingEdit(e, d.config, (rules) => {
         for (const rule of rules) {
           const why = ruleProblem(rule, known);
           if (why) return `rule ${rule.name}: ${why}`;

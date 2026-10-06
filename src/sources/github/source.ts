@@ -51,7 +51,7 @@ export interface GitHubSourceOptions {
 }
 
 export const CONFIG_URL = 'https://github.com/settings/installations';
-export const CREATE_APP_HINT = 'create the app (scripts/create-github-app.sh), set its appId and slug in plugins.yaml (hopper config edit plugins.yaml) and its key in GITHUB_APP_PRIVATE_KEY';
+export const CREATE_APP_HINT = 'create the app (scripts/create-github-app.sh), set its appId and slug on the github-app instance in Plugins and its key in GITHUB_APP_PRIVATE_KEY';
 
 export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   const { config, api } = o;

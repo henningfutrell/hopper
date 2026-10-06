@@ -28,7 +28,7 @@ function Entry({ e, busy, act }: { e: PluginStoreEntry; busy: boolean; act: (edi
         <div className="ml-auto flex gap-2">
           {v.install && <Button size="sm" variant="outline" disabled={busy} onClick={() => act({ action: 'install', id: e.id }, `${e.id}: ${v.install === 'Install' ? 'installed' : 'updated'}`)}><Download />{v.install}</Button>}
           {v.removable && (
-            <Confirm title={`Remove ${e.id}?`} action="Remove" description={`${e.id} leaves the plugin dir. It is refused while plugins.yaml names it.`}
+            <Confirm title={`Remove ${e.id}?`} action="Remove" description={`${e.id} leaves the plugin dir. It is refused while a plugin instance uses it.`}
               onConfirm={() => act({ action: 'remove', id: e.id }, `${e.id}: removed`)}>
               <Button size="sm" variant="ghost" className="text-bad" disabled={busy}>Remove</Button>
             </Confirm>

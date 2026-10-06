@@ -32,7 +32,7 @@ const TRIGGERS: ReadonlySet<EventType> = new Set<EventType>([
 
 export interface Engine extends Commands, QueueGateCommands, Queries, AnswerHandlers {
   /** Registered executor names. */
-  /** The runnable executors now: they follow plugins.yaml (issue #142). */
+  /** The runnable executors now: they follow the plugins config (issue #142). */
   readonly executorNames: string[];
   /** What the sync loop may do to the hopper (ingest, cancel, answer, reprioritize, setSourceState). */
   readonly sourceHost: SourceHost;

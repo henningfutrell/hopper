@@ -1,6 +1,6 @@
 // Issue #141: a hopper that is not a machine (the container: HOPPER_LOCAL_MACHINE=false) registers no
-// `local` machine. plugins.yaml without a `machines:` section means the built-in instances, and for it
-// those are none. Real HTTP server, plugins.yaml in the database.
+// `local` machine. the plugins config without a `machines` section means the built-in instances, and for it
+// those are none. Real HTTP server, the plugins config in the database.
 import { afterEach, describe, expect, it } from 'vitest';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 
@@ -21,7 +21,7 @@ async function machineIds(env: Record<string, string>): Promise<string[]> {
 }
 
 describe('the hopper as a machine (issue #141)', () => {
-  it('HOPPER_LOCAL_MACHINE=false: no `local` machine where plugins.yaml names no machines', async () => {
+  it('HOPPER_LOCAL_MACHINE=false: no `local` machine where the plugins config names no machines', async () => {
     expect(await machineIds({ HOPPER_LOCAL_MACHINE: 'false' })).toEqual([]);
   });
 

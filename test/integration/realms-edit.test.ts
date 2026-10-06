@@ -19,7 +19,7 @@ beforeAll(async () => { hash = await argon2.hash('correct horse', { type: argon2
 const realms = async (app: TestApp, token: string): Promise<any> => (await app.api('GET', '/api/realms', undefined, { 'x-hopper-session': token })).body;
 const edit = (app: TestApp, token: string, body: Record<string, unknown>) => app.ui<{ error?: string; version?: string }>('/ui/api/realms', body, { token });
 
-const passwordRealm = (role = 'operator') => `name: staff\ntype: password\nusers:\n  - { username: ada, passwordHash: "${hash}", role: ${role} }\n`;
+const passwordRealm = (role = 'operator') => JSON.stringify({ name: 'staff', type: 'password', users: [{ username: 'ada', passwordHash: hash, role }] });
 const passwordSignIn = async (o: { app: TestApp; origin: string; host: string }, username: string, password: string) => {
   const res = await rawRequest(o.app.url, {
     path: '/ui/auth/password', method: 'POST', body: JSON.stringify({ username, password }),
@@ -29,12 +29,12 @@ const passwordSignIn = async (o: { app: TestApp; origin: string; host: string },
 };
 
 describe('GET /api/realms', () => {
-  it('an admin reads every realm, in order, as its YAML, with the document version', async () => {
+  it('an admin reads every realm, in order, as its JSON, with the config version', async () => {
     const o = await startWithAuth(h, { version: 1, realms: [{ name: 'staff', type: 'password', users: [] }, { name: 'gh', type: 'github', clientId: 'g', clientSecretEnv: 'GITHUB_CLIENT_SECRET', enabled: false }] });
     const v = await realms(o.app, await o.app.login());
     expect(v).toMatchObject({ local: true, none: null, origin: o.origin, version: expect.any(String) });
     expect(v.realms.map((r: { name: string; type: string; enabled: boolean }) => [r.name, r.type, r.enabled])).toEqual([['staff', 'password', true], ['gh', 'github', false]]);
-    expect(v.realms[1].entry).toContain('clientSecretEnv: GITHUB_CLIENT_SECRET');
+    expect(JSON.parse(v.realms[1].entry)).toEqual({ name: 'gh', type: 'github', clientId: 'g', clientSecretEnv: 'GITHUB_CLIENT_SECRET', enabled: false });
     expect(v.realms[1].callback).toBe(`${o.origin}/ui/auth/gh/callback`);
   });
 
@@ -57,7 +57,7 @@ describe('POST /ui/api/realms', () => {
     expect((await session(o.app)).signIn.password).toBe(true);
     const ada = await passwordSignIn(o, 'ada', 'correct horse');
     expect(await session(o.app, ada.token)).toMatchObject({ user: { realm: 'staff', role: 'operator' } });
-    expect(o.app.app.instance.documents.read('auth.yaml')).toContain('name: staff');
+    expect(o.app.app.instance.config.read('sign-in')).toMatchObject({ realms: [{ name: 'staff', type: 'password' }] });
   });
 
   it('an OIDC realm added is offered at once, in realm order', async () => {
@@ -99,13 +99,26 @@ describe('POST /ui/api/realms', () => {
     const o = await startWithAuth(h, undefined);
     const admin = await o.app.login();
     const { version } = await realms(o.app, admin);
-    const bad = await edit(o.app, admin, { action: 'save', entry: 'name: gh\ntype: github\nclientId: g\n', version });
+    const bad = await edit(o.app, admin, { action: 'save', entry: JSON.stringify({ name: 'gh', type: 'github', clientId: 'g' }), version });
     expect(bad.status).toBe(400);
     expect(bad.body.error).toMatch(/realms\.0\.clientSecretEnv/);
-    const unset = await edit(o.app, admin, { action: 'save', entry: 'name: gh\ntype: github\nclientId: g\nclientSecretEnv: NOT_SET_ANYWHERE\n', version });
+    const unset = await edit(o.app, admin, { action: 'save', entry: JSON.stringify({ name: 'gh', type: 'github', clientId: 'g', clientSecretEnv: 'NOT_SET_ANYWHERE' }), version });
     expect(unset.status).toBe(400);
     expect(unset.body.error).toMatch(/NOT_SET_ANYWHERE/);
-    expect(o.app.app.instance.documents.read('auth.yaml')).toBeUndefined();
+    expect(o.app.app.instance.config.read('sign-in')).toBeUndefined();
+  });
+
+  it('a realm in YAML, or not an object, is refused; nothing is stored', async () => {
+    const o = await startWithAuth(h, undefined);
+    const admin = await o.app.login();
+    const { version } = await realms(o.app, admin);
+    const yaml = await edit(o.app, admin, { action: 'save', entry: 'name: gh\ntype: github\nclientId: g\n', version });
+    expect(yaml.status).toBe(400);
+    expect(yaml.body.error).toMatch(/^the realm is not valid JSON: /);
+    const list = await edit(o.app, admin, { action: 'save', entry: '["gh"]', version });
+    expect(list.status).toBe(400);
+    expect(list.body.error).toBe('a realm is an object: name, type and its settings');
+    expect(o.app.app.instance.config.read('sign-in')).toBeUndefined();
   });
 
   it('a stale version is refused', async () => {

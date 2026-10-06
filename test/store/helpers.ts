@@ -3,6 +3,7 @@ import type { JobSpec } from '../../src/domain/types.ts';
 import { openDb, type Db } from '../../src/store/db.ts';
 import { openInstanceStore } from '../../src/store/index.ts';
 import { migrateInstance } from '../../src/store/migrations.ts';
+import { migrateTenant } from '../../src/store/tenant-migrations.ts';
 import { testDatabaseUrl } from '../support/database.ts';
 
 export function fixedClock(iso = '2026-10-02T10:00:00.000Z'): Clock & { set(iso: string): void } {
@@ -28,6 +29,14 @@ export function useTempStore() {
     at: (url: string, version: number): Db => {
       const db = openDb(url);
       migrateInstance(db, version);
+      return db;
+    },
+    /** A user schema of its own (no instance), migrated to one tenant version, for a tenant migration's own test. */
+    tenantAt: (url: string, version: number): Db => {
+      const u = new URL(url);
+      u.searchParams.set('schema', `${u.searchParams.get('schema')!}_u_owner`);
+      const db = openDb(u.toString());
+      migrateTenant(db, version);
       return db;
     },
   };

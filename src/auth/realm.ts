@@ -39,7 +39,7 @@ export interface FormRealm {
   check(username: string, password: string): Promise<FormOutcome>;
 }
 
-/** A loopback http endpoint (a local test or dev IdP) may skip https; auth.yaml allows nothing else. */
+/** A loopback http endpoint (a local test or dev IdP) may skip https; the sign-in config allows nothing else. */
 export const isLoopbackHttp = (u: string): boolean => {
   const x = new URL(u);
   return x.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(x.hostname);

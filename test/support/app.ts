@@ -25,7 +25,7 @@ import { rawRequest } from './http.ts';
 import { createFakeUsageSource } from '../../src/usage/index.ts';
 import { databaseUrlFor } from './database.ts';
 import { mintLoginCode } from '../../src/http/ui/login-code.ts';
-import { readDocument, writeDocument } from './files.ts';
+import { readConfig, writeConfig } from './files.ts';
 import { fakeLevels } from './fake-questions.ts';
 import { createFakeRouter } from './fake-router.ts';
 import { createManualSource, manualItem, type ManualSource } from './manual-source.ts';
@@ -87,24 +87,24 @@ export function tempDbPath(): { dbPath: string; cleanup(): void } {
   return { dbPath: join(dir, 'db.sqlite'), cleanup: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
-/** plugins.yaml `machines:`: only the local machine, with this many lanes. */
+/** The plugins config's `machines`: only the local machine, with this many lanes. */
 export const lanes = (n: number) => [{ name: 'local', plugin: 'local', options: { lanes: n } }];
 
-/** The plugins.yaml a test app gets unless it brings its own: executor `test`, no job or usage sources. */
+/** The plugins config a test app gets unless it brings its own: executor `test`, no job or usage sources. */
 export const TEST_PLUGINS = { version: 1, executors: [{ name: 'test', plugin: 'test' }], jobSources: [], usageSources: [] };
 
-/** Replace plugins.yaml in the database of `dbPath`. */
-export function writePluginsYaml(dbPath: string, doc: unknown): void {
-  writeDocument(dbPath, 'plugins.yaml', doc);
+/** Replace the plugins config in the database of `dbPath`. */
+export function writePlugins(dbPath: string, value: unknown): void {
+  writeConfig(dbPath, 'plugins', value);
 }
 
 export const TOKEN_RE = /localStorage\.setItem\(\s*['"]jh_session['"]\s*,\s*['"]([0-9a-f]{64})['"]\s*\)/;
 
 export async function startTestApp(o: {
   dbPath: string; env?: Record<string, string>; seams?: AppSeams; source?: ManualSource;
-  /** Run the configured router (plugins.yaml through the plugin host) instead of the fake. */
+  /** Run the configured router (the plugins config through the plugin host) instead of the fake. */
   realRouter?: boolean;
-  /** Sections over TEST_PLUGINS, written on this start; absent: TEST_PLUGINS unless the data dir has a plugins.yaml; false: none. */
+  /** Sections over TEST_PLUGINS, written on this start; absent: TEST_PLUGINS unless the database has a plugins config; false: none. */
   plugins?: Record<string, unknown> | false;
   /** Run the plugin host's escalation levels instead of the fake doubles. */
   realLevels?: boolean;
@@ -112,8 +112,8 @@ export async function startTestApp(o: {
   secrets?: Record<string, string | undefined>;
 }): Promise<TestApp> {
   const dataDir = dirname(o.dbPath);
-  if (o.plugins) writePluginsYaml(o.dbPath, { ...TEST_PLUGINS, ...o.plugins });
-  else if (o.plugins === undefined && readDocument(o.dbPath, 'plugins.yaml') === undefined) writePluginsYaml(o.dbPath, TEST_PLUGINS);
+  if (o.plugins) writePlugins(o.dbPath, { ...TEST_PLUGINS, ...o.plugins });
+  else if (o.plugins === undefined && readConfig(o.dbPath, 'plugins') === undefined) writePlugins(o.dbPath, TEST_PLUGINS);
   const secrets = o.secrets ?? {};
   if (secrets.PATH === undefined) secrets.PATH = process.env.PATH;
   const config = loadConfig({
@@ -136,7 +136,7 @@ export async function startTestApp(o: {
   };
   const scripted = createScriptedExecutor();
   const app = await startApp(config, {
-    pluginsFileIntervalMs: 50,
+    pluginsConfigIntervalMs: 50,
     env: secrets,
     ...(o.realRouter ? {} : { router: createFakeRouter({ clock: { now: () => new Date() } }) }),
     ...(o.realLevels ? {} : fakeLevels()),

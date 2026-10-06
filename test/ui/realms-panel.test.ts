@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 // Settings → Sign-in (issue #185): the realms in the order sign-in tries and shows them, each on or off,
-// moved up or down, edited as its YAML or removed; a realm added from a starting entry of its type; the
+// moved up or down, edited as its JSON or removed; a realm added from a starting entry of its type; the
 // login code and no sign-in. Every change posts POST /ui/api/realms with the version it read; a refusal
 // is shown where it was made. A session that is not admin sees none of it. Rendered against a fake of
 // the daemon's HTTP.
@@ -15,8 +15,8 @@ let refuse: string | undefined;
 const VIEW = {
   version: 'v1', local: true, none: null, origin: 'http://localhost:4790',
   realms: [
-    { name: 'staff', label: 'Staff', type: 'password', enabled: true, entry: 'name: staff\nlabel: Staff\ntype: password\nusers: []\n' },
-    { name: 'corp', label: 'Corp SSO', type: 'oidc', enabled: false, entry: 'name: corp\nlabel: Corp SSO\ntype: oidc\nissuer: https://idp.example.com\nclientId: c\nenabled: false\n', callback: 'http://localhost:4790/ui/auth/corp/callback' },
+    { name: 'staff', label: 'Staff', type: 'password', enabled: true, entry: JSON.stringify({ name: 'staff', label: 'Staff', type: 'password', users: [] }, null, 2) },
+    { name: 'corp', label: 'Corp SSO', type: 'oidc', enabled: false, entry: JSON.stringify({ name: 'corp', label: 'Corp SSO', type: 'oidc', issuer: 'https://idp.example.com', clientId: 'c', enabled: false }, null, 2), callback: 'http://localhost:4790/ui/auth/corp/callback' },
   ],
 };
 
@@ -93,19 +93,20 @@ describe('Settings: Sign-in', () => {
     await click(buttonIn(document, 'Add realm'));
     await act(async () => type(document.querySelector<HTMLSelectElement>('select[aria-label="Realm type"]')!, 'ldap'));
     const editor = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Realm"]')!;
-    expect(editor.value).toContain('type: ldap');
-    await act(async () => type(editor, 'name: dir\ntype: ldap\nurl: ldaps://ldap.example.com\nuserBase: dc=example,dc=com\n'));
+    expect(JSON.parse(editor.value)).toMatchObject({ type: 'ldap' });
+    const entry = JSON.stringify({ name: 'dir', type: 'ldap', url: 'ldaps://ldap.example.com', userBase: 'dc=example,dc=com' }, null, 2);
+    await act(async () => type(editor, entry));
     await click(buttonIn(document, 'Save'));
-    await vi.waitFor(() => expect(posts).toContainEqual({ action: 'save', entry: 'name: dir\ntype: ldap\nurl: ldaps://ldap.example.com\nuserBase: dc=example,dc=com\n', version: 'v1' }));
+    await vi.waitFor(() => expect(posts).toContainEqual({ action: 'save', entry, version: 'v1' }));
   });
 
-  it('edits a realm as its YAML; a refusal is shown in place', async () => {
+  it('edits a realm as its JSON; a refusal is shown in place', async () => {
     await render('admin');
     await vi.waitFor(() => expect(rows()).toHaveLength(2));
     await click(buttonIn(row('staff'), 'Edit'));
     const editor = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Realm"]')!;
     expect(editor.value).toBe(VIEW.realms[0]!.entry);
-    refuse = 'invalid auth.yaml: realms.0.users.0.passwordHash: must be an argon2id hash';
+    refuse = 'invalid sign-in config: realms.0.users.0.passwordHash: must be an argon2id hash';
     await click(buttonIn(document, 'Save'));
     await vi.waitFor(() => expect(posts).toContainEqual({ action: 'save', name: 'staff', entry: VIEW.realms[0]!.entry, version: 'v1' }));
     await vi.waitFor(() => expect(document.querySelector('[role="alert"]')?.textContent).toContain('must be an argon2id hash'));

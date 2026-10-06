@@ -46,7 +46,7 @@ export interface PluginContext {
   dataDir: string;
   /** This plugin's own scratch dir (`<dataDir>/plugin-data/<id>`), created before `create`. */
   scratchDir: string;
-  /** The instance's name in plugins.yaml. A job source and a machine source are known by it. */
+  /** The instance's name in the plugins config. A job source and a machine source are known by it. */
   instanceName: string;
   /**
    * A value the runtime gives: the variable `name`, or the mounted file the variable `<name>_FILE`
@@ -71,7 +71,7 @@ export type JobSourceInstance =
   | { disabled: { kind: string; detail: Record<string, unknown> } };
 
 /**
- * What each role's `create` returns. The core names the instance after plugins.yaml (`name` is
+ * What each role's `create` returns. The core names the instance after the plugins config (`name` is
  * overridden: jobs name an executor instance, a question's stage names an escalation-level
  * instance), validates every level's reply, and fails closed on it.
  */
@@ -150,8 +150,8 @@ export interface PluginDefinition<R extends Role = Role, O = any> {
   /**
    * Options schema built from the core's zod. Absent → no options. Validated before detect and
    * create. Mark every option naming a program, its arguments, a working directory, an
-   * interpreter, a sourced file, or where a credential is read or sent with `.meta({ commandBearing: true })`: the UI shows it
-   * read-only (design.md "UI and mutation").
+   * interpreter, a sourced file, or where a credential is read or sent with `.meta({ commandBearing: true })`: the UI edits it
+   * like any option and says what it is (design.md "UI and mutation", issue #198).
    */
   options?: (z: Zod) => z.ZodType<O>;
   /** Can it run here, with these options? */

@@ -17,9 +17,9 @@ RUN npm run build:ui && test -s ui/dist/index.html
 FROM node:26-bookworm-slim
 # git: self-update's mirror and Jev; openssh-client: attached machines; python3 + PyYAML: the Jev
 # shim; gh: the github-gh job source, and git's GitHub sign-in for jobs; ca-certificates: TLS to GitHub
-# and the identity providers; curl: herdr's installer; nano: `hopper config edit` (EDITOR).
+# and the identity providers; curl: herdr's installer.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates curl git nano openssh-client python3 python3-yaml gh \
+ && apt-get install -y --no-install-recommends ca-certificates curl git openssh-client python3 python3-yaml gh \
  && rm -rf /var/lib/apt/lists/* \
  && git config --system credential.https://github.com.helper '!gh auth git-credential'
 # herdr's CLI (herdr.dev; the installer checks the release's SHA-256): the herdr-claude executor
@@ -47,7 +47,6 @@ RUN chmod 755 src/cli.ts && ln -s /app/src/cli.ts /usr/local/bin/hopper
 
 USER node
 ENV NODE_ENV=production \
-    EDITOR=nano \
     HOPPER_LOCAL_MACHINE=false \
     HOPPER_PORT=4790 \
     HOPPER_WORK_DIR=/tmp/hopper

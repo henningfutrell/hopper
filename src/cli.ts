@@ -1,34 +1,30 @@
 #!/usr/bin/env node
-// The operator's command line (design.md "Config documents", "Operator CLI"): it opens the same
-// database as the daemon (HOPPER_DATABASE_URL, or the file HOPPER_DATABASE_URL_FILE names), so whoever runs it holds the database's
-// credentials — the same trust as the daemon's own environment, more than a UI session's. This is
-// where command-bearing options are set: the UI never edits them.
+// The operator's command line (design.md "Config in the database", "Operator CLI"): it opens the same
+// database as the daemon (HOPPER_DATABASE_URL, or the file HOPPER_DATABASE_URL_FILE names), so whoever
+// runs it holds the database's credentials — the same trust as the daemon's own environment. Every
+// setting is edited in the UI; `config` reads and replaces a config record as JSON, for scripts and for
+// mending one the UI cannot load.
 //
-//   hopper config get <document> [--user <id>]       print it (stdout)
-//   hopper config version <document> [--user <id>]   print its version
-//   hopper config set <document> --if-version <v>     replace it from stdin, if still at <v>
-//   hopper config edit <document>                     $EDITOR on it, written back against the version read
+//   hopper config get <record> [--user <id>]         print it as JSON (stdout)
+//   hopper config version <record> [--user <id>]     print its version
+//   hopper config set <record> --if-version <v>       replace it with the JSON on stdin, if still at <v>
 //   hopper login-code [--user <id>] [--link <url>]    mint a one-time UI login code for a user (stdout)
 //   hopper users                                      list the users (issue #158)
 //   hopper user add <name>                            add a user
-//   hopper password-hash                              an argon2id hash of a password (stdin) for auth.yaml
+//   hopper password-hash                              an argon2id hash of a password (stdin) for a password realm
 //   hopper help                                       what each command does
 //
-// <document>: plugins.yaml or rules.md (a user's: --user, default owner), or auth.yaml (the
-// instance's). A document that would not load is refused.
-import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+// <record>: plugins or rules (a user's: --user, default owner), or sign-in (the instance's). A
+// record that would not load is refused.
+import { readFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { read } from 'read';
-import { parse } from 'yaml';
-import { CONFIG_DOCUMENTS, type ConfigDocumentName, type ConfigDocuments, type InstanceStore } from './domain/ports.ts';
+import { CONFIG_NAMES, type ConfigName, type ConfigRecords, type InstanceStore } from './domain/ports.ts';
 import type { User } from './domain/types.ts';
-import { authDocumentProblem, hashPassword } from './auth/index.ts';
+import { hashPassword, signInConfigProblem } from './auth/index.ts';
 import { LOGIN_CODE_MINUTES, mintLoginCode } from './http/ui/login-code.ts';
-import { pluginsFileProblem } from './plugins/plugins-file.ts';
-import { RULES_MAX_BYTES } from './questions/index.ts';
+import { pluginsConfigProblem } from './plugins/plugins-config.ts';
+import { rulesProblem } from './questions/index.ts';
 import { openInstanceStore } from './store/index.ts';
 import { runtimeSecrets } from './secrets/runtime.ts';
 
@@ -37,8 +33,6 @@ export interface CliIo {
   stdin(): string;
   out(text: string): void;
   err(text: string): void;
-  /** Run the editor on a file; resolves when it exits. Default: $VISUAL / $EDITOR / vi on the terminal. */
-  edit?(file: string): number;
   /** The password for password-hash. Default: the first line of stdin. */
   password?(): Promise<string>;
 }
@@ -46,17 +40,16 @@ export interface CliIo {
 const USAGE = `hopper: the operator command line. It works on the daemon's database directly.
 
 usage:
-  hopper config get <document>                       print a config document
-  hopper config version <document>                   print its version
-  hopper config set <document> --if-version <v>      replace it from stdin, if still at <v> ("missing" for a new one)
-  hopper config edit <document>                      edit it in $EDITOR, written back against the version read
+  hopper config get <record>                         print a config record as JSON
+  hopper config version <record>                     print its version
+  hopper config set <record> --if-version <v>        replace it with the JSON on stdin, if still at <v> ("missing" for a new one)
   hopper login-code [--link <base url>]              a one-time UI login code (${LOGIN_CODE_MINUTES} minutes), or a link with it
   hopper users                                       the users of this hopper: id, name, when added
   hopper user add <name>                             add a user: their own jobs, questions and settings, kept apart
-  hopper password-hash                               an argon2id hash for a password realm's users in auth.yaml (password on stdin, or typed)
+  hopper password-hash                               an argon2id hash for a password realm's users (password on stdin, or typed)
   hopper help                                        this text
 
-documents: ${CONFIG_DOCUMENTS.join(', ')}. plugins.yaml and rules.md are one user's; auth.yaml (sign-in) is shared.
+records: ${CONFIG_NAMES.join(', ')}. plugins and rules are one user's; sign-in is shared. Every one is edited in the UI too.
 --user <id> on config and login-code names the user (default: owner, the first user).
 
 Every command but password-hash and help needs HOPPER_DATABASE_URL (or HOPPER_DATABASE_URL_FILE):
@@ -69,30 +62,27 @@ Read on:        README.md, docs/deploy.md, docs/sign-in.md`;
 
 class CliError extends Error {}
 
-function documentName(raw: string | undefined): ConfigDocumentName {
-  if (raw && (CONFIG_DOCUMENTS as readonly string[]).includes(raw)) return raw as ConfigDocumentName;
-  throw new CliError(`unknown document ${raw ?? '(none)'}; one of ${CONFIG_DOCUMENTS.join(', ')}`);
+function recordName(raw: string | undefined): ConfigName {
+  if (raw && (CONFIG_NAMES as readonly string[]).includes(raw)) return raw as ConfigName;
+  throw new CliError(`unknown config record ${raw ?? '(none)'}; one of ${CONFIG_NAMES.join(', ')}`);
 }
 
-/** Why `text` would not load as `name`, or undefined. */
-export function documentProblem(name: ConfigDocumentName, text: string): string | undefined {
-  if (name === 'rules.md') {
-    const bytes = Buffer.byteLength(text, 'utf8');
-    return bytes > RULES_MAX_BYTES ? `the rules may hold at most 64 KiB; this is ${bytes} bytes` : undefined;
-  }
-  let raw: unknown;
-  try { raw = parse(text); } catch (e) { return `not valid YAML: ${(e as Error).message}`; }
-  return name === 'auth.yaml' ? authDocumentProblem(raw) : pluginsFileProblem(raw);
+/** Why `value` would not load as `name`, or undefined. */
+export function recordProblem(name: ConfigName, value: unknown): string | undefined {
+  if (name === 'rules') return rulesProblem(value);
+  return name === 'sign-in' ? signInConfigProblem(value) : pluginsConfigProblem(value);
 }
 
-/** One config document wherever it lives: a user's (plugins.yaml, rules.md) or the instance's (auth.yaml). */
-type Documents = ConfigDocuments<ConfigDocumentName>;
+/** One config record wherever it lives: a user's (plugins, rules) or the instance's (sign-in). */
+type Records = ConfigRecords<ConfigName>;
 
-function put(documents: Documents, name: ConfigDocumentName, text: string, version: string): void {
-  const problem = documentProblem(name, text);
+function put(records: Records, name: ConfigName, json: string, version: string): void {
+  let value: unknown;
+  try { value = JSON.parse(json); } catch (e) { throw new CliError(`${name} refused, nothing written: not valid JSON: ${(e as Error).message}`); }
+  const problem = recordProblem(name, value);
   if (problem) throw new CliError(`${name} refused, nothing written: ${problem}`);
-  if (!documents.write(name, text, version)) {
-    throw new CliError(`${name} changed since version ${version} (now ${documents.version(name)}); nothing written`);
+  if (!records.write(name, value, version)) {
+    throw new CliError(`${name} changed since version ${version} (now ${records.version(name)}); nothing written`);
   }
 }
 
@@ -104,62 +94,38 @@ function userOf(instance: InstanceStore, id: string | undefined): User {
   return user;
 }
 
-/** Run `fn` with the documents `name` lives in: auth.yaml the instance's, the others the user's (default owner). */
-function withDocuments<T>(instance: InstanceStore, name: ConfigDocumentName, userId: string | undefined, fn: (documents: Documents) => T): T {
-  if (name === 'auth.yaml') {
-    if (userId !== undefined) throw new CliError('auth.yaml is the instance\'s (sign-in is shared): no --user');
-    return fn(instance.documents as Documents);
+/** Run `fn` with the records `name` lives in: sign-in the instance's, the others the user's (default owner). */
+function withRecords<T>(instance: InstanceStore, name: ConfigName, userId: string | undefined, fn: (records: Records) => T): T {
+  if (name === 'sign-in') {
+    if (userId !== undefined) throw new CliError('sign-in is the instance\'s (sign-in is shared): no --user');
+    return fn(instance.config as Records);
   }
   const store = instance.userStore(userOf(instance, userId));
   try {
-    return fn(store.documents as Documents);
+    return fn(store.config as Records);
   } finally {
     store.close();
   }
 }
 
-function defaultEditor(env: CliIo['env']) {
-  return (file: string): number => {
-    const editor = env.VISUAL || env.EDITOR || 'vi';
-    return spawnSync('/bin/sh', ['-c', `${editor} "$1"`, 'editor', file], { stdio: 'inherit' }).status ?? 1;
-  };
-}
-
 function config(instance: InstanceStore, args: string[], io: CliIo): void {
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { 'if-version': { type: 'string' }, user: { type: 'string' } } });
   const [verb, rawName] = positionals;
-  const name = documentName(rawName);
-  withDocuments(instance, name, values.user, (documents) => configVerb(documents, name, verb, values['if-version'], io));
+  const name = recordName(rawName);
+  withRecords(instance, name, values.user, (records) => configVerb(records, name, verb, values['if-version'], io));
 }
 
-function configVerb(documents: Documents, name: ConfigDocumentName, verb: string | undefined, ifVersion: string | undefined, io: CliIo): void {
+function configVerb(records: Records, name: ConfigName, verb: string | undefined, ifVersion: string | undefined, io: CliIo): void {
   if (verb === 'get') {
-    const text = documents.read(name);
-    if (text === undefined) throw new CliError(`${name}: none yet (version missing)`);
-    io.out(text);
+    const value = records.read(name);
+    if (value === undefined) throw new CliError(`${name}: none yet (version missing)`);
+    io.out(`${JSON.stringify(value, null, 2)}\n`);
   } else if (verb === 'version') {
-    io.out(`${documents.version(name)}\n`);
+    io.out(`${records.version(name)}\n`);
   } else if (verb === 'set') {
-    const version = ifVersion;
-    if (!version) throw new CliError('config set needs --if-version <version> (hopper config version <document>), so nobody else\'s edit is overwritten');
-    put(documents, name, io.stdin(), version);
-    io.err(`${name} written (version ${documents.version(name)})\n`);
-  } else if (verb === 'edit') {
-    const version = documents.version(name);
-    const dir = mkdtempSync(join(tmpdir(), 'hopper-edit-'));
-    const file = join(dir, name);
-    try {
-      const before = documents.read(name) ?? '';
-      writeFileSync(file, before, { mode: 0o600 });
-      const status = (io.edit ?? defaultEditor(io.env))(file);
-      if (status !== 0) throw new CliError(`the editor exited ${status}; nothing written`);
-      const after = readFileSync(file, 'utf8');
-      if (after === before) { io.err(`${name} unchanged\n`); return; }
-      put(documents, name, after, version);
-      io.err(`${name} written (version ${documents.version(name)})\n`);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
+    if (!ifVersion) throw new CliError('config set needs --if-version <version> (hopper config version <record>), so nobody else\'s edit is overwritten');
+    put(records, name, io.stdin(), ifVersion);
+    io.err(`${name} written (version ${records.version(name)})\n`);
   } else {
     throw new CliError(USAGE);
   }
@@ -188,7 +154,7 @@ function userCommand(instance: InstanceStore, args: string[], io: CliIo): void {
   io.err(`user ${user.id} added: hopper login-code --user ${user.id} gives a first sign-in\n`);
 }
 
-/** An argon2id hash of one password on stdout, for a password realm's `users` in auth.yaml (design.md "Sign-in: realms"). Needs no database. */
+/** An argon2id hash of one password on stdout, for a password realm's `users` in the sign-in config (design.md "Sign-in: realms"). Needs no database. */
 async function passwordHash(io: CliIo): Promise<number> {
   let password: string;
   try {

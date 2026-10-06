@@ -1,5 +1,5 @@
 // A double at the EscalationLevel seam, for tests (AppSeams.levels). Not a plugin: nothing in
-// plugins.yaml can select it. The script may be async; a throw comes back as `{ error }`. It returns
+// the plugins config can select it. The script may be async; a throw comes back as `{ error }`. It returns
 // whatever its script returns, so a test can hand the question service a malformed reply.
 import type { AnswerRequest, EscalationLevel, LevelReply } from '../domain/ports.ts';
 

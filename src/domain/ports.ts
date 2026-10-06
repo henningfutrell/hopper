@@ -167,15 +167,15 @@ export interface QueueSorter {
 export interface PluginsView {
   routerStatus(): RouterStatus;
   report(): PluginsReport;
-  /** A UI edit of plugins.yaml (or a rescan); applied like a file edit before it resolves. */
+  /** A UI edit of the plugins config (or a rescan); applied like a file edit before it resolves. */
   edit(e: PluginsEdit): Promise<PluginsEditOutcome>;
   /** GET /api/machines/config: every machine-source instance, the executors, the detected ssh targets. */
   machinesConfig(): MachinesConfig;
-  /** Attach an ssh target as an `ssh` instance in plugins.yaml `machines:`; applied (live) before it resolves. */
+  /** Attach an ssh target as an `ssh` instance in the plugins config `machines:`; applied (live) before it resolves. */
   editMachines(e: MachineEdit): Promise<MachineEditOutcome>;
-  /** POST /ui/api/machines/defaults (issue #142): plugins.yaml `machineDefaults:`. */
+  /** POST /ui/api/machines/defaults (issue #142): the plugins config `machineDefaults:`. */
   editMachineDefaults(e: MachineDefaultsEdit): Promise<MachineEditOutcome>;
-  /** GET /api/routing: plugins.yaml `routing:` and what a rule may name. */
+  /** GET /api/routing: the plugins config `routing:` and what a rule may name. */
   routing(): RoutingReport;
   /** POST /ui/api/routing: the whole ordered list; applied before it resolves. */
   editRouting(e: RoutingEdit): Promise<RoutingEditOutcome>;
@@ -233,7 +233,7 @@ export interface LevelReply {
  * answer answers; an error, a throw, a timeout or anything malformed escalates to the next level up.
  */
 export interface EscalationLevel {
-  /** The instance name (plugins.yaml), which is also the question's stage while this level holds it. */
+  /** The instance name (the plugins config), which is also the question's stage while this level holds it. */
   readonly name: string;
   /** The model it runs, for the trail. */
   readonly model?: string;
@@ -456,4 +456,4 @@ export interface GhLogin {
 // ---- Persistence: src/domain/store.ts (re-exported here, one vocabulary) ----------------
 
 export type * from './store.ts';
-export { CONFIG_DOCUMENTS, INSTANCE_DOCUMENTS, USER_DOCUMENTS } from './store.ts';
+export { CONFIG_NAMES, INSTANCE_CONFIG, USER_CONFIG } from './store.ts';

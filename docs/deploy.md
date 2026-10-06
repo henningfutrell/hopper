@@ -2,7 +2,7 @@
 
 Everything the daemon keeps is in one Postgres database it is given — the only store; it keeps no
 local file. Its secrets come from its runtime — environment variables or mounted secret files — and it
-stores none; its config is config documents in that database
+stores none; its config is config records in that database, edited in the UI, with no config file
 (docs/design.md "Deployable"). It runs as a self-hosted service anywhere it can reach its database:
 containers from one compose file, systemd `--user` units on a host that also runs the jobs, or any
 platform that runs a container and hands it a managed Postgres. **Recommended: the published image,
@@ -16,11 +16,11 @@ with Podman** ("In containers, with Podman"); the host install is the other way.
 | Secrets | from the runtime (docs/design.md "Secrets"): each one the variable `NAME`, or the mounted file the variable `NAME_FILE` names (never both) — `GITHUB_APP_PRIVATE_KEY`, `GROKBOT_WEBHOOK_URL`, `GROKBOT_WEBHOOK_KEY`, `TYPESAFE_API_KEY`, each webhook's `secretEnv` (`WEBHOOK_SECRET_<NAME>` from the UI; `openssl rand -hex 32`, given to the subscriber too), an identity provider's `clientSecretEnv`; `GH_TOKEN` for the gh CLI, `CLAUDE_CODE_OAUTH_TOKEN` for the claude CLI where their own login is not on the machine (variables only: those CLIs read them). The hopper stores no secret. A leftover `HOPPER_SECRET_KEY` line: delete it. |
 | Process settings | `HOPPER_*` variables: port, LAN names and peers, public URL, tick, limits (`src/config.ts`). |
 | Plugins | Optional. `HOPPER_PLUGIN_DIR` (plugins put there by hand; a container mounts it read-only) and `HOPPER_PLUGIN_STORE` (a git repository the UI installs plugins from — this repository is one: docs/plugins.md). Store installs are kept in the database and restored into the work dir at start: they need no plugin dir and no volume. |
-| Config | the documents `plugins.yaml`, `rules.md`, `auth.yaml`: from the UI, or `hopper config edit <document>`; webhook subscriptions, rows in the database: from the UI (Webhooks). The first boot writes the built-in plugins.yaml. |
+| Config | the plugins, rules and sign-in configs and the webhook subscriptions, all in the database, all edited in the UI (Settings → Plugins, Settings → Question gates, Settings → Sign-in, Settings → Webhooks); no config file. The first boot writes the built-in plugins config. |
 | GitHub | the gh CLI logged in as the owner (default; from the UI, Sources → Log in to GitHub — design.md "gh login"), or a GitHub App the owner creates for this hopper with `scripts/create-github-app.sh` (its key in `GITHUB_APP_PRIVATE_KEY`). Each hopper has its own App and key; there is no shared one. Setting up either: `README.md` "Connect GitHub". |
-| Where jobs run | machines: this host's herdr session (`hopper-herdr`; not in a container, issue #141), and attached machines, instances in plugins.yaml `machines:` — `ssh` targets, `client` targets, `docker` container targets. Setting each one up, step by step: `README.md` "Add machines". |
+| Where jobs run | machines: this host's herdr session (`hopper-herdr`; not in a container, issue #141), and attached machines, instances in the plugins config's machine sources (Settings → Plugins → Machine sources, or the Machines view) — `ssh` targets, `client` targets, `docker` container targets. Setting each one up, step by step: `README.md` "Add machines". |
 
-`hopper` is the operator CLI (`hopper config …`, `hopper login-code`); it needs `HOPPER_DATABASE_URL` (or `_FILE`) and nothing else. `hopper help` lists its commands; `node src/main.ts --help` lists every daemon setting with its default.
+`hopper` is the operator CLI (`hopper config …`, `hopper login-code`, `hopper user add`); it needs `HOPPER_DATABASE_URL` (or `_FILE`) and nothing else. `hopper help` lists its commands; `node src/main.ts --help` lists every daemon setting with its default.
 
 Once it runs, the API reference is at `/docs/` (Scalar; the OpenAPI document at `/docs/openapi.json`), on every address the UI answers on. A first-time walkthrough is `README.md`.
 
@@ -54,7 +54,7 @@ podman compose exec hopper hopper login-code --link http://127.0.0.1:4790
 | `hopper` | the image `HOPPER_IMAGE` names (default `ghcr.io/henningfutrell/hopper:latest`). `HOPPER_DATABASE_URL_FILE` from `secrets`. Its home, `/home/node`, is the `home` volume: the gh and claude sign-ins and git's identity. |
 
 - **The container is not a machine** (issue #141). The image sets `HOPPER_LOCAL_MACHINE=false`: no
-  `local` machine, and the boot removes one an earlier version wrote into plugins.yaml. Jobs run on
+  `local` machine, and the boot removes one an earlier version wrote into the plugins config. Jobs run on
   attached machines (`README.md` "Add machines"); the image carries herdr's CLI for them.
 - **Sign-ins.** GitHub: the UI's Sources view → **Log in to GitHub**, once (gh's device flow, run by the
   hopper; no terminal). Claude Code: `podman compose exec hopper claude` (`/login`), once. Both are kept
@@ -118,7 +118,8 @@ HOPPER_DATABASE_URL="postgres://hopper:$POSTGRES_PASSWORD@127.0.0.1:5433/hopper"
 `install.sh` copies the install to `~/.local/lib/hopper`, links `~/.local/bin/hopper`,
 installs `hopper.service` and `hopper-herdr.service`, writes `HOPPER_DATABASE_URL` into
 `~/.config/hopper/daemon.env` (mode 600, the unit's EnvironmentFile) when it is not there yet,
-and writes the starter `rules.md` when the database has none. Secrets go in the same `daemon.env`.
+and writes the starter rules when the database has none (edit them in Settings → Question gates).
+Secrets go in the same `daemon.env`.
 Open the UI: `bash ~/.local/lib/hopper/scripts/open-ui.sh`.
 
 A managed Postgres works the same: put its URL (with `sslmode=require`) in `daemon.env`.

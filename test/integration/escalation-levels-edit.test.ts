@@ -1,11 +1,10 @@
 // Issue #134: the escalation levels are a live list role in order, lowest first, edited from the UI
 // through POST /ui/api/plugins. Added, removed or moved, they apply to the next question without a
-// restart; one edit touches the escalationLevels section of plugins.yaml and nothing else.
-import { parse } from 'yaml';
+// restart; one edit touches the escalationLevels section of the plugins config and nothing else.
 import { afterEach, describe, expect, it } from 'vitest';
 import type { PluginsReport } from '../../src/domain/types.ts';
-import { startTestApp, tempDbPath, writePluginsYaml, type TestApp } from '../support/app.ts';
-import { readDocument } from '../support/files.ts';
+import { startTestApp, tempDbPath, writePlugins, type TestApp } from '../support/app.ts';
+import { readConfig } from '../support/files.ts';
 
 /** A POST /ui/api/plugins answer: the new report, or `{ error }`. */
 type Reply = PluginsReport & { error: string };
@@ -19,26 +18,20 @@ afterEach(async () => {
   cleanup?.();
 });
 
-async function start(pluginsYaml: string): Promise<{ a: TestApp; token: string }> {
+async function start(plugins: object): Promise<{ a: TestApp; token: string }> {
   const db = tempDbPath();
   cleanup = db.cleanup;
-  writePluginsYaml(db.dbPath, pluginsYaml);
+  writePlugins(db.dbPath, plugins);
   t = await startTestApp({ dbPath: db.dbPath });
   return { a: t, token: await t.login() };
 }
 
 const report = async (a: TestApp) => (await a.api('GET', '/api/plugins')).body;
-const read = (a: TestApp) => readDocument(a.dbPath, 'plugins.yaml')!;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- loose JSON
+const read = (a: TestApp) => readConfig(a.dbPath, 'plugins') as any;
 
 describe('POST /ui/api/plugins — escalation levels', () => {
-  const LEVELS = `version: 1
-# levels, lowest first
-escalationLevels:
-  - { name: opus, plugin: claude-cli, options: { model: opus, machine: local } }
-  - { name: fable, plugin: claude-cli, options: { model: fable, machine: local } }
-executors:
-  - { name: test, plugin: test }
-`;
+  const LEVELS = { version: 1, escalationLevels: [{ name: 'opus', plugin: 'claude-cli', options: { model: 'opus', machine: 'local' } }, { name: 'fable', plugin: 'claude-cli', options: { model: 'fable', machine: 'local' } }], executors: [{ name: 'test', plugin: 'test' }] };
   const names = (r: { body: Reply }) => r.body.escalationLevels.map((l) => l.instance.name);
 
   it('add appends a level on top; remove takes one out; both apply live, no restart pending', async () => {
@@ -47,40 +40,38 @@ executors:
     let r = await a.ui<Reply>('/ui/api/plugins', { action: 'add', role: 'escalation-level', plugin: 'claude-cli', name: 'sonnet', options: { machine: 'local' }, version }, { token });
     expect(r.status).toBe(200);
     expect(names(r)).toEqual(['opus', 'fable', 'sonnet']);
-    expect(read(a)).toContain('# levels, lowest first');
+    expect(read(a).executors).toEqual(LEVELS.executors);
     version = r.body.config.version;
     r = await a.ui<Reply>('/ui/api/plugins', { action: 'remove', role: 'escalation-level', name: 'opus', version }, { token });
     expect(r.status).toBe(200);
     expect(names(r)).toEqual(['fable', 'sonnet']);
-    expect(parse(read(a)).escalationLevels.map((l: { name: string }) => l.name)).toEqual(['fable', 'sonnet']);
+    expect(read(a).escalationLevels.map((l: { name: string }) => l.name)).toEqual(['fable', 'sonnet']);
   });
 
   it('the last level removed: no levels, questions go straight to the owner', async () => {
-    const { a, token } = await start('version: 1\nescalationLevels:\n  - { name: opus, plugin: claude-cli }\n');
+    const { a, token } = await start({ version: 1, escalationLevels: [{ name: 'opus', plugin: 'claude-cli' }] });
     const version = (await report(a)).config.version;
     const r = await a.ui<Reply>('/ui/api/plugins', { action: 'remove', role: 'escalation-level', name: 'opus', version }, { token });
     expect(r.status).toBe(200);
     expect(r.body.escalationLevels).toEqual([]);
-    expect(parse(read(a)).escalationLevels).toEqual([]);
+    expect(read(a).escalationLevels).toEqual([]);
   });
 
-  it('move puts a level at a position; the others keep their order, their text and the comments', async () => {
+  it('move puts a level at a position; the others keep their order and their options; other sections stay', async () => {
     const { a, token } = await start(LEVELS);
     const version = (await report(a)).config.version;
     const r = await a.ui<Reply>('/ui/api/plugins', { action: 'move', role: 'escalation-level', name: 'fable', to: 0, version }, { token });
     expect(r.status).toBe(200);
     expect(names(r)).toEqual(['fable', 'opus']);
-    const text = read(a);
-    expect(text).toContain('# levels, lowest first');
-    expect(text).toContain('  - { name: fable, plugin: claude-cli, options: { model: fable, machine: local } }\n  - { name: opus, plugin: claude-cli, options: { model: opus, machine: local } }\n');
+    expect(read(a)).toEqual({ ...LEVELS, escalationLevels: [LEVELS.escalationLevels[1], LEVELS.escalationLevels[0]] });
   });
 
   it('move with no section: the built-in levels are written, in the new order', async () => {
-    const { a, token } = await start('version: 1\nexecutors:\n  - { name: test, plugin: test }\n');
+    const { a, token } = await start({ version: 1, executors: [{ name: 'test', plugin: 'test' }] });
     const version = (await report(a)).config.version;
     const r = await a.ui<Reply>('/ui/api/plugins', { action: 'move', role: 'escalation-level', name: 'fable', to: 0, version }, { token });
     expect(r.status).toBe(200);
-    expect(parse(read(a)).escalationLevels.map((l: { name: string }) => l.name)).toEqual(['fable', 'opus']);
+    expect(read(a).escalationLevels.map((l: { name: string }) => l.name)).toEqual(['fable', 'opus']);
   });
 
   it('move refused, nothing written: an unknown level (404), a position out of range (400), another role (400), no session (403)', async () => {
@@ -92,6 +83,6 @@ executors:
     expect((await move({ to: -1 })).status).toBe(400);
     expect((await move({ role: 'executor', name: 'test' })).status).toBe(400);
     expect((await move({}, false)).status).toBe(403);
-    expect(read(a)).toBe(LEVELS);
+    expect(read(a)).toEqual(LEVELS);
   });
 });

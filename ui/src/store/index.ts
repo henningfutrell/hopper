@@ -150,7 +150,7 @@ const refreshQuestionsSoon = debounced(refreshQuestions);
 export async function checkSession() {
   try {
     let s = await readSession();
-    // auth.yaml `none`: nobody signs in; take the session at once (design.md "Sign-in", issue #53).
+    // The sign-in config's `none`: nobody signs in; take the session at once (design.md "Sign-in", issue #53).
     if (wantsNoSignIn(s.authenticated, s.signIn) && (await signInWithoutCredential()) === null) s = await readSession();
     set({ authed: s.authenticated, user: s.user ?? null, viewing: s.viewing ?? null, signIn: s.signIn });
   } catch { /* daemon unreachable: keep the current mode */ }

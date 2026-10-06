@@ -1,21 +1,20 @@
-// The built-in instances are written as plugins.yaml once, into an empty store; an existing
-// document is never replaced.
+// The built-in instances are written as the plugins config once, into an empty store; an existing
+// config is never replaced.
 import { describe, expect, it } from 'vitest';
-import { parse } from 'yaml';
-import { builtinInstances, ensurePluginsDocument } from '../../src/plugins/builtin-instances.ts';
-import { PLUGINS } from '../../src/plugins/plugins-file.ts';
-import { useTempDocuments } from '../support/documents.ts';
+import { builtinInstances, ensurePluginsConfig } from '../../src/plugins/builtin-instances.ts';
+import { PLUGINS } from '../../src/plugins/plugins-config.ts';
+import { useTempConfig } from '../support/config.ts';
 
-const docs = useTempDocuments();
+const records = useTempConfig();
 const logger = { info() {}, warn() {} };
 
-describe('ensurePluginsDocument', () => {
+describe('ensurePluginsConfig', () => {
   it('writes the built-in instances once into an empty store', () => {
-    const documents = docs();
-    expect(ensurePluginsDocument({ documents, answerTimeoutMs: 1000, logger })).toEqual({ action: 'default' });
-    const written = parse(documents.read(PLUGINS)!);
+    const config = records();
+    expect(ensurePluginsConfig({ config, answerTimeoutMs: 1000, logger })).toEqual({ action: 'default' });
+    const written = config.read(PLUGINS);
     expect(written).toMatchObject({ version: 1, ...JSON.parse(JSON.stringify(builtinInstances(1000))) });
-    expect(ensurePluginsDocument({ documents, answerTimeoutMs: 1000, logger })).toEqual({ action: 'kept' });
+    expect(ensurePluginsConfig({ config, answerTimeoutMs: 1000, logger })).toEqual({ action: 'kept' });
   });
 
   it('a fresh install takes jobs through the gh CLI; the App source waits for an App of its own (#108)', () => {
@@ -34,47 +33,43 @@ describe('ensurePluginsDocument', () => {
     expect([...container.escalationLevels, ...container.usageSources].map((i) => i.options?.machine)).toEqual([undefined, undefined, undefined]);
   });
 
-  it('keeps an existing document untouched', () => {
-    const documents = docs();
-    documents.set(PLUGINS, 'version: 1\nnotifiers: []\n');
-    expect(ensurePluginsDocument({ documents, answerTimeoutMs: 1000, logger })).toEqual({ action: 'kept' });
-    expect(documents.read(PLUGINS)).toBe('version: 1\nnotifiers: []\n');
+  it('keeps an existing config untouched', () => {
+    const config = records();
+    config.set(PLUGINS, { version: 1, notifiers: [] });
+    expect(ensurePluginsConfig({ config, answerTimeoutMs: 1000, logger })).toEqual({ action: 'kept' });
+    expect(config.read(PLUGINS)).toEqual({ version: 1, notifiers: [] });
   });
 
   it('a host that is not a machine (the container) lists no machine: an empty store gets `machines: []` (#141)', () => {
     expect(builtinInstances(1000, false).machines).toEqual([]);
-    const documents = docs();
-    expect(ensurePluginsDocument({ documents, answerTimeoutMs: 1000, localMachine: false, logger })).toEqual({ action: 'default' });
-    expect(parse(documents.read(PLUGINS)!).machines).toEqual([]);
+    const config = records();
+    expect(ensurePluginsConfig({ config, answerTimeoutMs: 1000, localMachine: false, logger })).toEqual({ action: 'default' });
+    expect((config.read(PLUGINS) as { machines: unknown }).machines).toEqual([]);
   });
 
   it('a host that is not a machine removes the `local` instance an earlier boot wrote, and keeps every other machine (#141)', () => {
-    const documents = docs();
-    documents.set(PLUGINS, [
-      'version: 1',
-      '# the machines',
-      'machines:',
-      '  - { name: local, plugin: local, options: { lanes: 4 } }',
-      '  - { name: box, plugin: docker, options: { docker: box } }',
-      'notifiers: []',
-      '',
-    ].join('\n'));
+    const config = records();
+    config.set(PLUGINS, {
+      version: 1,
+      machines: [
+        { name: 'local', plugin: 'local', options: { lanes: 4 } },
+        { name: 'box', plugin: 'docker', options: { docker: 'box' } },
+      ],
+      notifiers: [],
+    });
     const lines: string[] = [];
-    const r = ensurePluginsDocument({ documents, answerTimeoutMs: 1000, localMachine: false, logger: { info: (l) => lines.push(l), warn() {} } });
+    const r = ensurePluginsConfig({ config, answerTimeoutMs: 1000, localMachine: false, logger: { info: (l: string) => lines.push(l), warn() {} } });
     expect(r).toEqual({ action: 'removed-local' });
-    const doc = parse(documents.read(PLUGINS)!);
-    expect(doc.machines).toEqual([{ name: 'box', plugin: 'docker', options: { docker: 'box' } }]);
-    expect(doc.notifiers).toEqual([]);
-    expect(documents.read(PLUGINS)).toContain('# the machines');
+    expect(config.read(PLUGINS)).toEqual({ version: 1, machines: [{ name: 'box', plugin: 'docker', options: { docker: 'box' } }], notifiers: [] });
     expect(lines.join('\n')).toMatch(/removed the machine `local`/);
-    expect(ensurePluginsDocument({ documents, answerTimeoutMs: 1000, localMachine: false, logger })).toEqual({ action: 'kept' });
+    expect(ensurePluginsConfig({ config, answerTimeoutMs: 1000, localMachine: false, logger })).toEqual({ action: 'kept' });
   });
 
   it('a machine keeps its `local` instance', () => {
-    const documents = docs();
-    const text = 'version: 1\nmachines:\n  - { name: local, plugin: local, options: { lanes: 2 } }\n';
-    documents.set(PLUGINS, text);
-    expect(ensurePluginsDocument({ documents, answerTimeoutMs: 1000, logger })).toEqual({ action: 'kept' });
-    expect(documents.read(PLUGINS)).toBe(text);
+    const config = records();
+    const value = { version: 1, machines: [{ name: 'local', plugin: 'local', options: { lanes: 2 } }] };
+    config.set(PLUGINS, value);
+    expect(ensurePluginsConfig({ config, answerTimeoutMs: 1000, logger })).toEqual({ action: 'kept' });
+    expect(config.read(PLUGINS)).toEqual(value);
   });
 });

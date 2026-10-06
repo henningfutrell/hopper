@@ -2,7 +2,7 @@
 // hopper proves itself with its own key and nothing else: public-key authentication only (never a
 // password, keyboard-interactive, GSSAPI or host-based login), only the key the runtime mounts
 // (never the user's agent or the user's other keys), and only to a target whose host key
-// plugins.yaml pins (`hostKey`), checked strictly against a known_hosts file the hopper writes from
+// the plugins config pins (`hostKey`), checked strictly against a known_hosts file the hopper writes from
 // those pins. Nothing is forwarded. The ssh config is read once, to resolve the destination (`ssh -G`
 // on the user's config only); the connection itself reads none (`-F /dev/null`), so nothing in a
 // config can add an identity, a jump host or a weaker option.

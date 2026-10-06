@@ -51,7 +51,7 @@ export function createGitHubAppApi(o: { app(): GitHubAppLoad; keyEnv: string; ba
   const need = (): Loaded => {
     const c = current();
     if ('reason' in c) {
-      const why = c.reason === 'missing' ? `set appId and slug in plugins.yaml and ${o.keyEnv} in the environment (create-github-app.sh)` : c.reason;
+      const why = c.reason === 'missing' ? `set appId and slug in the plugins config and ${o.keyEnv} in the environment (create-github-app.sh)` : c.reason;
       throw new GitHubApiError(`no app configured: ${why}`, true);
     }
     return c;

@@ -3,8 +3,8 @@
 # machine's docker that the hopper reaches through `docker exec`, not ssh. No agent, no herdr, no
 # sshd runs in it: its main process only sleeps, and the command executor runs each job in it.
 # No network, read-only root, every capability dropped; /tmp is a tmpfs. Restarted with docker.
-# Re-running is safe: a running container is kept, a stopped one started. Then print the
-# plugins.yaml lines that attach it.
+# Re-running is safe: a running container is kept, a stopped one started. Then print how to
+# attach it in the UI (Plugins).
 #   usage: container-target.sh <container> [lanes]
 set -euo pipefail
 
@@ -33,11 +33,12 @@ else
 fi
 
 docker exec -- "$NAME" true || { echo "container-target: docker exec into $NAME failed" >&2; exit 1; }
-step "container $NAME runs; attach it in plugins.yaml (hopper config edit plugins.yaml):"
-cat <<YAML
-executors:
-  - { name: command, plugin: command }
-machines:
-  - { name: $NAME, plugin: docker, options: { docker: $NAME, lanes: $LANES, executors: [command] } }
-YAML
+step "container $NAME runs; attach it in the UI:"
+cat <<EOF
+Plugins → Executors: add a command instance named command.
+Plugins → Machine sources: add a docker instance named $NAME, then set its options:
+  docker: $NAME
+  lanes: $LANES
+  executors: command
+EOF
 step "the hopper reaches it only through its socket proxy (issue #59): bash scripts/docker-proxy.sh <every container target, $NAME among them>"

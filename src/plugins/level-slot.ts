@@ -1,8 +1,8 @@
 // The escalation-level role's slot (design.md "Question pipeline", "Failure"): 0..n instances,
-// lowest first, live — the host rebuilds them when plugins.yaml changes and the question service
+// lowest first, live — the host rebuilds them when the plugins config changes and the question service
 // looks them up per question. A level that cannot run stays in its place and escalates every
 // question it gets (fail safe: a broken level never answers, and never hides the levels above it).
-// The instance is named after plugins.yaml whatever the plugin calls itself: that name is the
+// The instance is named after the plugins config whatever the plugin calls itself: that name is the
 // question's stage.
 import type { AnswerRequest, EscalationLevel, LevelReply } from '../domain/ports.ts';
 import type { Detection, InstanceSpec, InstanceStatus } from '../domain/types.ts';

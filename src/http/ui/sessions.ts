@@ -15,7 +15,7 @@ export interface UiSessions {
   find(token: string | undefined): UiSession | undefined;
   drop(token: string): void;
   /**
-   * Apply auth.yaml as it is now to every stored session (at start, and after every change from
+   * Apply the sign-in config as it is now to every stored session (at start, and after every change from
    * Settings → Sign-in): `roleOf` null drops it (its realm is gone or off, or no rule grants it a role
    * any more); another role replaces the stored one.
    */

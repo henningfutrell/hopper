@@ -38,26 +38,26 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 |-----|------|-----------------|
 | `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts; `machines.ts` attached machines and their edit; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate), ports (`ports.ts`, re-exporting the store's from `store.ts`) | anything else in `src/` |
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock | everything but `domain/` |
-| `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations (the instance's `migrations.ts` with migration 17 in `migration-users.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, `auth.yaml`, instance settings) and each user store (`user-store.ts`: repositories, event log, config documents) | engine, http, decider |
+| `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations (the instance's `migrations.ts` with migration 17 in `migration-users.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198) | engine, http, decider |
 | `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), identity → user (`identities.ts`: link or provision) | http, decider |
 | `src/webhooks/` | signing, dispatcher, retry/backoff, the secret of a subscription from the runtime (`dispatcher.ts`), the UI edit of the subscriptions (`edit.ts`, rows in the store) | engine, http, decider |
-| `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, `plugins.yaml` + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt, `escalation-level/anthropic-api/` asks the Claude API with the same prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-gh/` and `job-source/github-app/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser); `usage-source/command-usage/` reads any agent framework's usage and account from a command that prints them as JSON; `usage-source/polled.ts` the background refresh both share, `usage-source/run.ts` their command runner; `notifier/grokbot-routine/` is the Grok Bot routine webhook — env-file reader and notifier; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
+| `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, the plugins config (`plugins-config.ts`) + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt, `escalation-level/anthropic-api/` asks the Claude API with the same prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-gh/` and `job-source/github-app/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser); `usage-source/command-usage/` reads any agent framework's usage and account from a command that prints them as JSON; `usage-source/polled.ts` the background refresh both share, `usage-source/run.ts` their command runner; `notifier/grokbot-routine/` is the Grok Bot routine webhook — env-file reader and notifier; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
 | `src/executors/` | `Executor` adapters (`test`, `herdr/`, `command.ts` — a job's body run on its machine through its connection, `cursor.ts` — Cursor's CLI agent there, issue #142) and the registry; reached through the executor plugins. The connections and their target authentication ("Target authentication"): `ssh.ts` (key-only ssh to pinned host keys), `docker.ts` (the docker socket check, the proxy's allowlist), `client.ts` (a client target's tunnel, signed calls); `env.ts` the scrubbed child environment | engine, http, store, plugins |
 | `src/client/` | the hopper client ("Client targets"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load` over HTTP/2 on the tunnel), `tunnel.ts` (its ssh to the hopper), `release.ts` (the client release: its files, its id, checking and installing one — "Client releases"), `main.ts`; `relay.ts`, the forced command of its key on the hopper's machine; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`); `ssh-options.ts` (the hardened ssh options, shared with `src/executors/ssh.ts`) | everything in `src/` outside `src/client/` |
-| `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following plugins.yaml; ssh probe and herdr path resolution through the herdr CLI client's ssh argv; the container probe, `docker container inspect`), the detected ssh targets (`ssh-config.ts`), keeping each client target on the hopper's client release (`client-release.ts`), `combineMachineSources` | engine, http, store, plugins |
+| `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following the plugins config; ssh probe and herdr path resolution through the herdr CLI client's ssh argv; the container probe, `docker container inspect`), the detected ssh targets (`ssh-config.ts`), keeping each client target on the hopper's client release (`client-release.ts`), `combineMachineSources` | engine, http, store, plugins |
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin) | engine, http, store, plugins |
-| `src/routing/` | routing rules: the plugins.yaml `routing:` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
+| `src/routing/` | routing rules: the plugins config's `routing` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
 | `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; routing at intake (`source-host.ts`); restart recovery | http |
-| `src/auth/` | sign-in through realms (issues #39, #185): `auth.yaml` load (`config.ts`) and edits that keep its comments (`edit.ts`), the role rules (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm) and their adapters `password.ts` (argon2), `ldap.ts` (ldapts), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), the sign-in service — form realms in order, flows, tickets, bindings, no sign-in, a changed auth.yaml applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
+| `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the role rules (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm) and their adapters `password.ts` (argon2), `ldap.ts` (ldapts), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), the sign-in service — form realms in order, flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets") | everything |
 | `src/update/` | self-update ("Self-update"): install.json, the git mirror of the update repository, the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
 | `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `api-reference.ts` Scalar at `/docs/`); the plugin store's read side (`plugin-store.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
 | `site/` | the install page, published to GitHub Pages by `.github/workflows/pages.yml` with `scripts/get.sh` beside it as `install.sh`: one static `index.html`, no build step, nothing loaded from another site | everything in the repo at runtime; it links to the docs on GitHub |
 | `examples/plugins/` | one minimal runnable custom plugin per role, for authors (`docs/plugins.md`); imports only `hopper/plugin` types and `node:` builtins | everything in `src/` at runtime |
-| `src/main.ts` | composition root: config → instance store → auth.yaml → plugin store → updater → server → one user runtime per user (`src/users/`) | — |
+| `src/main.ts` | composition root: config → instance store → sign-in config → plugin store → updater → server → one user runtime per user (`src/users/`) | — |
 | `src/startup-log.ts` | the daemon's startup lines (listening, parts, sign-in) | — |
-| `src/cli.ts` | the operator CLI `hopper`: config documents, login codes, users, `help` — against the daemon's database | engine, executors |
+| `src/cli.ts` | the operator CLI `hopper`: config records as JSON, login codes, users, `help` — against the daemon's database | engine, executors |
 
 ## The decider
 
@@ -1839,6 +1839,9 @@ export default {
 
 ### Configuration — `~/.config/hopper/plugins.yaml`
 
+**Superseded by issue #198** ("Config in the database: no config files"): the plugins config is the
+config record `plugins`, a JSON value in the database, edited in the UI. The shape below is unchanged.
+
 The truth for which instance fills which role. Mode 600, owner-editable, mtime-watched (5 s).
 Live roles (router, queue sorter, escalation levels) swap between calls; restart roles show
 `changed — restart pending` in `/api/plugins`.
@@ -1886,6 +1889,9 @@ role, enable/disable an instance, or **edit one instance's options** — except 
 **command-bearing options**, writing `plugins.yaml` atomically (mode 600). This amends "No
 route creates or changes a … setting": plugin selection and option editing join router mode
 as UI-session mutations.
+
+**Amended by issue #198** (owner decision, 2026-10-05): command-bearing options are edited in the UI
+like any option (admin only); the 409 below is gone. "Config in the database: no config files".
 
 **Command-bearing options** (owner decision, 2026-10-03, issue #6 option (a)): an
 option that names a program, its arguments, a working directory, an interpreter, or a file
@@ -3879,6 +3885,9 @@ hopper uses `deploy/compose.yaml`'s Postgres (optional: any Postgres it is given
 
 ### Config documents
 
+**Superseded by issue #198** ("Config in the database: no config files"): the documents are config
+records — JSON values, no YAML — and `hopper config edit` is gone.
+
 `plugins.yaml`, `rules.md` and `auth.yaml` are **config documents** (a fourth, for webhooks, went
 in issue #78: "Webhook subscriptions in the database"): named texts in
 the store (`config_documents`, port `ConfigDocuments`), each replaced whole against its `version` —
@@ -4567,3 +4576,54 @@ Waiting panel links an unaccepted job to it. Since issue #201 the gate names the
 sorter** link to Settings → Routing, and the Queue nav entry carries a badge counting the jobs waiting on
 the pre-sort (`awaitingSort`, `ui/src/model/queue.ts`); the Routing view's Queue sorter panel says it is
 the pre-sort and links back.
+
+## Config in the database: no config files (issue #198, 2026-10-05)
+
+Owner direction: the hopper does not do files for config — no YAML and no other config file. Config lives
+in the database, every setting is editable in the UI, and nothing can be set only in a file. Before, the
+config documents were YAML and markdown texts in the database (`plugins.yaml`, `auth.yaml`, `rules.md`),
+and the command-bearing options of a plugin could be set only with `hopper config edit plugins.yaml`.
+
+- **Config records.** Table `config (name, value, updated_at)`: each a JSON value (`ConfigRecords` port,
+  `src/store/config.ts`), replaced whole against its `version` — the sha-256 of its JSON, or `missing`
+  — by compare-and-swap, as the documents were. A user's `plugins` (the plugins config, the same shape
+  as before) and `rules` (a text); the instance's `sign-in` (the sign-in config). `UserStore.config` and
+  `InstanceStore.config` replace `.documents`. The 5 s version watch is unchanged.
+- **Migrations.** Instance migration 19 and tenant migration 4 (`src/store/migration-config.ts`): each
+  YAML document becomes its value, `rules.md` its text, and `config_documents` is dropped. Every value
+  comes across; YAML comments do not (JSON has none). A YAML document that does not parse stops the
+  migration with the reason and changes nothing — the daemon does not start until it is fixed in the
+  `config_documents` table — rather than being dropped: persisted state is the user's.
+- **Every option in the UI.** The Plugins view edits every option of an instance, command-bearing ones
+  too (marked "runs a command"); `POST /ui/api/plugins` `options` no longer refuses a changed
+  command-bearing value. Admin only, as every plugins edit already was. The `.meta({ commandBearing: true })`
+  mark stays in the JSON Schema: it says what an option is, and the UI shows it.
+- **Sign-in realms as JSON.** Settings → Sign-in edits a realm's entry as JSON (`RealmView.entry`,
+  `POST /ui/api/realms` `save.entry`); YAML is refused.
+- **An edit can mend.** A plugins edit checks only the result: a stored plugins config that does not
+  load (one migrated as it was) is mended by any edit that leaves it valid, instead of being refused.
+- **The CLI.** `hopper config get|version|set <record>` (`plugins`, `rules`, `sign-in`) reads and
+  replaces a record as JSON, for scripts and for mending a sign-in config that locks everyone out;
+  `hopper config edit` (a temporary file in `$EDITOR`) is gone, and nano with it from the image. The
+  install writes the starter rules as a JSON string.
+- **Wire.** `PluginsReport.config` has no `document`, `source` is `stored` or `defaults`; `RulesView`,
+  `RoutingReport` and `MachinesConfig` have no `document`.
+- **Scripts.** `attach-machine.sh`, `attach-client.sh` and `container-target.sh` print how to attach the
+  machine in the UI (Plugins → Machine sources) and the options to set, instead of YAML to paste.
+
+**Residual risk, accepted by the owner.** Issue #6 kept command-bearing options out of the UI because a
+UI session is readable by jobs running with `--dangerously-skip-permissions` ("UI session and
+mutations"): a job holding an admin session can now set an executor's `bin`, `args` or `cwd`, a level's
+`sshBin`, or where a credential is sent, and so run its own commands at the next job or question. What
+still stands: only an admin session edits plugins; every edit is logged (`plugins config edited in the
+UI`); the options are validated by each plugin's schema.
+
+**Not changed.** Process settings stay environment variables (`HOPPER_*`), and secrets come from the
+runtime (`NAME` or `NAME_FILE`): the database URL is needed before the database, and a secret is never
+stored ("Secrets"). Attaching an ssh machine from the Machines view still offers the `Host` aliases of
+the machine's own `~/.ssh/config` — ssh's file, not the hopper's; its `ssh` option is editable in Plugins.
+The plugin store's catalogue `plugin-store.yaml` is a file of the store's repository, not config.
+
+**Verification.** `test/store/config.test.ts`, `test/store/migration-19.test.ts`,
+`test/store/tenant-migration-4.test.ts`, `test/integration/plugins-edit.test.ts` (a command-bearing
+option edited from the UI), `test/ui/plugins.test.ts`, `test/auth/edit.test.ts`, `test/cli.test.ts`.

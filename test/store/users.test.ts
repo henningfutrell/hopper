@@ -65,25 +65,27 @@ describe('a fresh store', () => {
     expect(instance.users.list().map((u) => u.id)).toEqual(['owner', 'ada_lovelace', 'ada_lovelace_2', 'u42']);
     expect(instance.users.get('ada_lovelace')?.name).toBe('Ada Lovelace');
     expect(instance.users.get('nobody')).toBeUndefined();
+    // Owner's schema is migrated on the tenant track when its store opens, as at every start.
+    instance.userStore(instance.users.owner()).close();
     instance.close();
     expect(shape(`${schemaOf(url)}_u_ada_lovelace`)).toEqual(shape(`${schemaOf(url)}_u_owner`));
   });
 
-  it('one user never sees another\'s jobs, questions, events, documents, settings or webhooks', () => {
+  it('one user never sees another\'s jobs, questions, events, config, settings or webhooks', () => {
     const instance = openInstanceStore({ url: t.url(), clock: fixedClock() });
     const a = instance.userStore(instance.users.owner());
     const b = instance.userStore(instance.users.add('bea'));
     const job = a.jobs.create(spec, 50);
     a.questions.create({ jobId: job.id, text: 'q?', recentOutput: '', detectedBy: 'marker', tier: 'human' });
     a.events.append({ type: 'job.queued', jobId: job.id, data: {} });
-    a.documents.write('rules.md', 'a rules', 'missing');
+    a.config.write('rules', 'a rules', 'missing');
     a.settings.setRouterMode('active');
     a.webhooks.add({ name: 'w', url: 'http://127.0.0.1:1/', events: ['job.*'], secretEnv: 'S', active: true });
     expect(b.jobs.list()).toEqual([]);
     expect(b.jobs.get(job.id)).toBeUndefined();
     expect(b.questions.list()).toEqual([]);
     expect(b.events.since(0)).toEqual([]);
-    expect(b.documents.read('rules.md')).toBeUndefined();
+    expect(b.config.read('rules')).toBeUndefined();
     expect(b.settings.getRouterMode()).toBeUndefined();
     expect(b.webhooks.list()).toEqual([]);
     a.close();
@@ -155,13 +157,13 @@ describe('migration 17: an install from before becomes the user owner, nothing l
     expect(owner.webhooks.listDeliveries().map((d) => d.id)).toEqual(['d1']);
     expect(owner.lanes.list().map((l) => l.id)).toEqual(['l1']);
     expect(owner.decisions.list().length).toBe(1);
-    expect(owner.documents.read('plugins.yaml')).toBe('version: 1\n');
-    expect(owner.documents.read('rules.md')).toBe('be kind');
+    expect(owner.config.read('plugins')).toEqual({ version: 1 });
+    expect(owner.config.read('rules')).toBe('be kind');
     expect(owner.settings.getRouterMode()).toBe('active');
     // The sequence moved with its table: the next event follows the last one.
     const next = owner.events.append({ type: 'job.started', jobId: 'j1', data: {} });
     expect(next.seq).toBeGreaterThan(owner.events.since(0)[1]!.seq);
-    expect(instance.documents.read('auth.yaml')).toBe('version: 1\n');
+    expect(instance.config.read('sign-in')).toEqual({ version: 1 });
     expect(instance.settings.getUpdateSettings()).toEqual({ channel: 'main', autoUpdate: true });
     expect(instance.settings.getPluginInstalls()).toEqual([]);
     expect(instance.uiSessions.find('t1', '2026-10-02T10:00:00.000Z')?.userId).toBe('owner');
@@ -171,8 +173,8 @@ describe('migration 17: an install from before becomes the user owner, nothing l
     instance.close();
     const raw = openDb(testPostgres());
     const left = raw.all("SELECT table_name FROM information_schema.tables WHERE table_schema = ? ORDER BY table_name", schemaOf(url)).map((r) => r.table_name);
-    expect(left).toEqual(['config_documents', 'login_codes', 'schema_version', 'settings', 'ui_sessions', 'user_identities', 'users']);
-    expect(raw.all(`SELECT name FROM "${schemaOf(url)}".config_documents`)).toEqual([{ name: 'auth.yaml' }]);
+    expect(left).toEqual(['config', 'login_codes', 'schema_version', 'settings', 'ui_sessions', 'user_identities', 'users']);
+    expect(raw.all(`SELECT name FROM "${schemaOf(url)}".config`)).toEqual([{ name: 'sign-in' }]);
     expect(raw.all(`SELECT key FROM "${schemaOf(url)}".settings ORDER BY key`).map((r) => r.key)).toEqual(['autoUpdate', 'pluginInstalls', 'updateChannel']);
     raw.close();
   });

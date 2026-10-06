@@ -6,12 +6,11 @@
 // the target, and ssh in batch mode.
 import { execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { knownHostKey } from '../../src/machines/index.ts';
-import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
+import { startTestApp, tempDbPath, writePlugins, type TestApp } from '../support/app.ts';
 import { waitFor } from '../support/wait.ts';
 
 const TARGET = process.env.HOPPER_REAL_SSH;
@@ -31,13 +30,14 @@ describe.skipIf(!TARGET)('a real job on an attached machine (opt-in)', () => {
     ssh(`nohup ${herdrBin} --session ${SESSION} server >/dev/null 2>&1 </dev/null &`);
     const db = tempDbPath();
     cleanup = db.cleanup;
-    writeFileSync(join(dirname(db.dbPath), 'plugins.yaml'), [
-      'version: 1',
-      `executors: [ { name: herdr-claude, plugin: herdr-claude, options: { cwd: /tmp } } ]`,
-      'machines:',
-      '  - { name: local, plugin: local }',
-      `  - { name: remote, plugin: ssh, options: { ssh: ${TARGET}, lanes: 8, session: ${SESSION}, herdrBin: ${herdrBin}, hostKey: ${hostKey} } }`,
-    ].join('\n'), { mode: 0o600 });
+    writePlugins(db.dbPath, {
+      version: 1,
+      executors: [{ name: 'herdr-claude', plugin: 'herdr-claude', options: { cwd: '/tmp' } }],
+      machines: [
+        { name: 'local', plugin: 'local' },
+        { name: 'remote', plugin: 'ssh', options: { ssh: TARGET, lanes: 8, session: SESSION, herdrBin, hostKey } },
+      ],
+    });
     a = await startTestApp({ dbPath: db.dbPath, secrets: { HOPPER_SSH_KEY_FILE: process.env.HOPPER_SSH_KEY_FILE } });
     await waitFor(async () => (await a.api('GET', '/api/machines')).body.machines.some((m: { id: string; online: boolean }) => m.id === 'remote' && m.online), { timeoutMs: 60000 });
   }, 90000);

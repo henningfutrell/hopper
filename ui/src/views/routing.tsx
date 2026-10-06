@@ -64,7 +64,7 @@ function RouterPanel({ ctx }: { ctx: PluginCtx }) {
   };
   return (
     <Panel title="Router" icon={Waypoints} bodyClassName="space-y-3"
-      action={<span className="text-xs text-muted-foreground">{r.selection === 'file' ? 'named in plugins.yaml' : 'detected'}</span>}>
+      action={<span className="text-xs text-muted-foreground">{r.selection === 'file' ? 'picked' : 'detected'}</span>}>
       <div className="space-y-1 text-sm">
         <div className="flex flex-wrap items-center gap-2">
           <span>Advising now:</span><span className="font-mono">{r.active}</span>
@@ -180,7 +180,7 @@ function RulesPanel({ ctx }: { ctx: PluginCtx }) {
     const t = setInterval(() => { if (!dirty.current) void refreshRouting(); }, REFRESH_MS);
     return () => clearInterval(t);
   }, []);
-  // On open, and after any edit of plugins.yaml (a router or sorter picked above changes its version).
+  // On open, and after any edit of the plugins config (a router or sorter picked above changes its version).
   const fileVersion = ctx.report.config.version;
   useEffect(() => { if (!dirty.current) void refreshRouting(); }, [fileVersion]);
 
@@ -195,7 +195,7 @@ function RulesPanel({ ctx }: { ctx: PluginCtx }) {
     try {
       setRouting(await post<RoutingReport>('/ui/api/routing', { rules: list.map(fromDraft), version: report.version }));
       setDrafts(null);
-      void refreshPlugins(); // plugins.yaml has a new version
+      void refreshPlugins(); // the plugins config has a new version
       toast.success('Routing rules saved — they apply to new jobs');
     } catch (e) {
       if (e instanceof SessionRejected) useHopper.setState({ authed: false });

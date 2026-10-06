@@ -13,7 +13,7 @@ import { REQUEST_HEADER, RESPONSE_HEADER, checkToken, nonceOf, signRequest, veri
 
 /** Reaching a client target. */
 export interface ClientTransport {
-  /** The machine's name in plugins.yaml. */
+  /** The machine's name in the plugins config. */
   machine: string;
   /** The tunnel's socket on this machine. */
   socket: string;

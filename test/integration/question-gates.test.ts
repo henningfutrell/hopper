@@ -1,6 +1,6 @@
-// Question gates (issue #18): the rules document (rules.md) and the risk rules as the UI reads them, and
-// the rules edited from the UI through POST /ui/api/rules — against the document's version (sha-256 of
-// its text), size-capped, behind the UI session. The rules are read on every ask, so a saved edit
+// Question gates (issue #18): the rules (config record `rules`) and the risk rules as the UI reads them, and
+// the rules edited from the UI through POST /ui/api/rules — against the rules' version (sha-256 of
+// their JSON value), size-capped, behind the UI session. The rules are read on every ask, so a saved edit
 // reaches the next question's escalation levels without a restart.
 import { createHash } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -8,7 +8,7 @@ import type { AnswerRequest } from '../../src/domain/ports.ts';
 import type { QuestionGatesView, RulesView } from '../../src/domain/types.ts';
 import { createFakeLevel } from '../../src/questions/index.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
-import { writeDocument } from '../support/files.ts';
+import { writeConfig } from '../support/files.ts';
 
 let t: TestApp | undefined;
 let cleanup: (() => void) | undefined;
@@ -22,27 +22,28 @@ afterEach(async () => {
 async function start(o: { rules?: string; seams?: Parameters<typeof startTestApp>[0]['seams'] } = {}) {
   const db = tempDbPath();
   cleanup = db.cleanup;
-  if (o.rules !== undefined) writeDocument(db.dbPath, 'rules.md', o.rules);
+  if (o.rules !== undefined) writeConfig(db.dbPath, 'rules', o.rules);
   t = await startTestApp({ dbPath: db.dbPath, ...(o.seams ? { seams: o.seams } : {}) });
   return { a: t };
 }
-const rulesText = (a: TestApp) => a.user().store.documents.read('rules.md');
+const rulesText = (a: TestApp) => a.user().store.config.read('rules');
 
-const sha = (s: string) => createHash('sha256').update(s).digest('hex');
+/** The version of rules `text`: the sha-256 of its JSON value. */
+const sha = (text: string) => createHash('sha256').update(JSON.stringify(text)).digest('hex');
 const gates = async (a: TestApp) => (await a.api<QuestionGatesView>('GET', '/api/question-gates')).body;
 
 describe('GET /api/question-gates', () => {
-  it('reads the rules with their document name and version, and lists every risk rule with one line', async () => {
+  it('reads the rules with their version, and lists every risk rule with one line', async () => {
     const { a } = await start({ rules: '- never push to main\n' });
     const g = await gates(a);
-    expect(g.rules).toEqual({ document: 'rules.md', text: '- never push to main\n', version: sha('- never push to main\n'), missing: false });
+    expect(g.rules).toEqual({ text: '- never push to main\n', version: sha('- never push to main\n'), missing: false });
     expect(g.riskRules.map((r) => r.name)).toEqual(['delete', 'deploy', 'force-push', 'spend', 'credentials', 'send-message']);
     for (const r of g.riskRules) expect(r.describe).toMatch(/\S/);
   });
 
   it('missing rules read as empty, version `missing`', async () => {
     const { a } = await start();
-    expect((await gates(a)).rules).toEqual({ document: 'rules.md', text: '', version: 'missing', missing: true });
+    expect((await gates(a)).rules).toEqual({ text: '', version: 'missing', missing: true });
   });
 });
 
@@ -52,7 +53,7 @@ describe('POST /ui/api/rules', () => {
     const token = await a.login();
     const res = await a.ui<RulesView>('/ui/api/rules', { text: 'new rules\n', version: sha('old\n') }, { token });
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ document: 'rules.md', text: 'new rules\n', version: sha('new rules\n'), missing: false });
+    expect(res.body).toEqual({ text: 'new rules\n', version: sha('new rules\n'), missing: false });
     expect(rulesText(a)).toBe('new rules\n');
     expect((await gates(a)).rules.version).toBe(sha('new rules\n'));
   });
@@ -68,11 +69,11 @@ describe('POST /ui/api/rules', () => {
   it('a stale version is 409 and nothing is written', async () => {
     const { a } = await start({ rules: 'v1\n' });
     const token = await a.login();
-    writeDocument(a.dbPath, 'rules.md', 'edited by hand\n');
+    writeConfig(a.dbPath, 'rules', 'edited elsewhere\n');
     const res = await a.ui<{ error: string }>('/ui/api/rules', { text: 'from the UI\n', version: sha('v1\n') }, { token });
     expect(res.status).toBe(409);
-    expect(res.body.error).toMatch(/changed since it was read/);
-    expect(rulesText(a)).toBe('edited by hand\n');
+    expect(res.body.error).toMatch(/the rules changed since they were read; reload and edit again/);
+    expect(rulesText(a)).toBe('edited elsewhere\n');
   });
 
   it('text over 64 KiB is 400 and nothing is written', async () => {

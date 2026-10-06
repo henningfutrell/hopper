@@ -12,12 +12,12 @@ import oldestFirst from '../../src/plugins/queue-sorter/oldest-first/index.ts';
 import priority from '../../src/plugins/queue-sorter/priority/index.ts';
 import type { PluginDefinition } from '../../src/plugins/sdk.ts';
 import { waitFor } from '../support/wait.ts';
-import { PLUGINS } from '../../src/plugins/plugins-file.ts';
-import { useTempDocuments } from '../support/documents.ts';
+import { PLUGINS } from '../../src/plugins/plugins-config.ts';
+import { useTempConfig } from '../support/config.ts';
 import { fakeKit, fixedClock, useTempDirs } from './support.ts';
 
 const temp = useTempDirs();
-const docs = useTempDocuments();
+const records = useTempConfig();
 let host: PluginHost | undefined;
 afterEach(() => { host?.stop(); host = undefined; });
 
@@ -71,31 +71,31 @@ const unavailable: PluginDefinition<'queue-sorter'> = {
   create() { throw new Error('unreachable'); },
 };
 
-async function start(file?: string) {
+async function start(file?: object) {
   const dir = temp();
-  const documents = docs();
-  if (file !== undefined) documents.set(PLUGINS, file);
+  const config = records();
+  if (file !== undefined) config.set(PLUGINS, file);
   host = createPluginHost({
-    pluginDir: join(dir, 'plugins'), documents, dataDir: dir, clock: fixedClock, logger: { info() {}, warn() {} },
+    pluginDir: join(dir, 'plugins'), config, dataDir: dir, clock: fixedClock, logger: { info() {}, warn() {} },
     routerMode: () => 'shadow', kit: fakeKit(), builtins: [...BUILTIN_PLUGINS, throwing, garbage, duplicating, unavailable],
     defaultExecutors: [{ name: 'test', plugin: 'test' }], intervalMs: 30,
   });
   await host.start();
-  return { host, documents };
+  return { host, config };
 }
 
 describe('the plugin host\'s queue sorter', () => {
   it('no queueSorter section: the built-in priority instance', async () => {
-    const { host } = await start('version: 1\n');
+    const { host } = await start({ version: 1 });
     expect(host.queueSorter.name).toBe('priority');
     expect(host.report().queueSorter).toEqual({ instance: { name: 'priority', plugin: 'priority' }, detection: { status: 'available' }, active: 'priority', fallback: false });
     expect(host.report().instances).toContainEqual({ role: 'queue-sorter', instance: { name: 'priority', plugin: 'priority' } });
   });
 
-  it('named in plugins.yaml: that instance; a file change swaps it live', async () => {
-    const { host, documents } = await start('version: 1\nqueueSorter: { name: fifo, plugin: oldest-first }\n');
+  it('named in the plugins config: that instance; a config change swaps it live', async () => {
+    const { host, config } = await start({ version: 1, queueSorter: { name: 'fifo', plugin: 'oldest-first' } });
     expect(host.queueSorter.sort(ENTRIES)).toEqual(['old', 'a', 'b', 'new']);
-    documents.set(PLUGINS, 'version: 1\nqueueSorter: { name: lifo, plugin: newest-first }\n# changed\n');
+    config.set(PLUGINS, { version: 1, queueSorter: { name: 'lifo', plugin: 'newest-first' } });
     await waitFor(() => host.report().queueSorter.active === 'newest-first', { what: 'the sorter to swap' });
     expect(host.queueSorter.name).toBe('lifo');
     expect(host.queueSorter.sort(ENTRIES)).toEqual(['new', 'a', 'b', 'old']);
@@ -105,7 +105,7 @@ describe('the plugin host\'s queue sorter', () => {
     ['unknown plugin', 'no-such-sorter', /unknown queue-sorter plugin no-such-sorter/],
     ['unavailable', 'absent-sorter', /not on this machine/],
   ])('%s: priority answers, fallback with the reason', async (_n, plugin, why) => {
-    const { host } = await start(`version: 1\nqueueSorter: { name: s, plugin: ${plugin} }\n`);
+    const { host } = await start({ version: 1, queueSorter: { name: 's', plugin } });
     expect(host.queueSorter.sort(ENTRIES)).toEqual(['new', 'a', 'b', 'old']);
     expect(host.report().queueSorter).toMatchObject({ instance: { name: 's', plugin }, active: 'priority', fallback: true, reason: expect.stringMatching(why) });
   });
@@ -115,17 +115,17 @@ describe('the plugin host\'s queue sorter', () => {
     ['returns garbage', 'garbage-sorter', /not a list of job ids/],
     ['names a job twice', 'duplicating-sorter', /names job b twice/],
   ])('a sorter that %s: that call answers with priority; fallback with the reason', async (_n, plugin, why) => {
-    const { host } = await start(`version: 1\nqueueSorter: { name: s, plugin: ${plugin} }\n`);
+    const { host } = await start({ version: 1, queueSorter: { name: 's', plugin } });
     expect(host.report().queueSorter.fallback).toBe(false);
     expect(host.queueSorter.sort(ENTRIES)).toEqual(['new', 'a', 'b', 'old']);
     expect(host.report().queueSorter).toMatchObject({ active: plugin, fallback: true, reason: expect.stringMatching(why) });
   });
 
   it('the UI selects a queue sorter like the router', async () => {
-    const { host, documents } = await start('version: 1\n');
+    const { host, config } = await start({ version: 1 });
     const r = await host.edit({ action: 'select', role: 'queue-sorter', plugin: 'oldest-first', version: host.report().config.version });
     expect(r.ok).toBe(true);
     expect(host.report().queueSorter.instance).toMatchObject({ name: 'oldest-first', plugin: 'oldest-first' });
-    expect(documents.read(PLUGINS)).toContain('queueSorter:');
+    expect(config.read(PLUGINS)).toMatchObject({ queueSorter: { name: 'oldest-first', plugin: 'oldest-first' } });
   });
 });

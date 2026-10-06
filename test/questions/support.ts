@@ -2,7 +2,7 @@
 // events.append, tx). Records the tx depth at every event so tests can assert that
 // onAnswered/onExpired run inside the transaction. tx rolls back on throw.
 import { vi } from 'vitest';
-import type { AnswerRequest, ConfigDocuments, EscalationLevel, LevelReply, QuestionService, UserStore } from '../../src/domain/ports.ts';
+import type { AnswerRequest, ConfigRecords, EscalationLevel, LevelReply, QuestionService, UserStore } from '../../src/domain/ports.ts';
 import { EVENT_SCHEMA_VERSIONS, type DomainEvent, type Job, type NewEvent, type Question, type QuestionAttempt } from '../../src/domain/types.ts';
 import { createQuestionService } from '../../src/questions/index.ts';
 
@@ -104,25 +104,25 @@ export interface Rig {
   /** Create a question the way the engine does: at the service's first stage. */
   question(text?: string): Question;
   eventsOf(type: string): DomainEvent[];
-  /** Swap the live levels (plugins.yaml reload). */
+  /** Swap the live levels (a plugins config reload). */
   setLevels(levels: EscalationLevel[]): void;
 }
 
-/** The config documents at the ports seam: a map; `rules.md` holds `rules` when given. */
-function rulesDocuments(rules: string | undefined): ConfigDocuments {
-  const texts = new Map<string, string>(rules === undefined ? [] : [['rules.md', rules]]);
-  const version = (n: string) => (texts.has(n) ? `v:${texts.get(n)}` : 'missing');
+/** The config records at the ports seam: a map; `rules` holds the rules when given. */
+function rulesConfig(rules: string | undefined): ConfigRecords {
+  const values = new Map<string, unknown>(rules === undefined ? [] : [['rules', rules]]);
+  const version = (n: string) => (values.has(n) ? `v:${JSON.stringify(values.get(n))}` : 'missing');
   return {
-    read: (n) => texts.get(n),
+    read: (n) => values.get(n),
     version,
-    write(n, text, v) { if (v !== version(n)) return false; texts.set(n, text); return true; },
+    write(n, value, v) { if (v !== version(n)) return false; values.set(n, value); return true; },
   };
 }
 
 export interface RigOptions {
   /** The levels, lowest first, by instance name. Default: `opus` answers. `{}`: no levels. */
   levels?: Record<string, LevelScript>;
-  /** rules.md; default a one-line rule, `null`: no rules.md. */
+  /** The rules; default a one-line rule, `null`: no rules. */
   rules?: string | null;
   renotifyMs?: number;
   humanTimeoutMs?: number;
@@ -131,7 +131,7 @@ export interface RigOptions {
 
 export function rig(o: RigOptions = {}): Rig {
   const mem = createMemoryStore();
-  const documents = rulesDocuments(o.rules === null ? undefined : (o.rules ?? 'Prefer postgres.'));
+  const config = rulesConfig(o.rules === null ? undefined : (o.rules ?? 'Prefer postgres.'));
   const answered: Rig['answered'] = [];
   const expired: Rig['expired'] = [];
   const dismissed: Rig['dismissed'] = [];
@@ -146,7 +146,7 @@ export function rig(o: RigOptions = {}): Rig {
     clock: { now: () => new Date() },
     levels: () => levels,
     stageTimeoutMs: o.stageTimeoutMs ?? 60_000,
-    documents,
+    config,
     renotifyMs: o.renotifyMs ?? 1000,
     humanTimeoutMs: o.humanTimeoutMs ?? 10_000,
     answerUrl: (id) => `http://localhost/q/${id}`,

@@ -1,5 +1,5 @@
 // Composition root (design.md "Users: one hopper, separate users"): config → instance store →
-// auth.yaml → plugin store → one user runtime per user (src/users/: plugins.yaml, plugin host, engine,
+// sign-in config → plugin store → one user runtime per user (src/users/: the plugins config, plugin host, engine,
 // sources, questions, webhooks, notifiers) → updater → server. Adapters are built by their plugins,
 // through each user's host (integration tests call startApp, with doubles at the seams).
 import { mkdirSync, readFileSync } from 'node:fs';
@@ -10,7 +10,7 @@ import type { User } from './domain/types.ts';
 import { daemonHelp, loadConfig, type Config } from './config.ts';
 import { logStartup } from './startup-log.ts';
 import { createServer } from './http/index.ts';
-import { AUTH, createSignIn, loadAuthDocument, type AuthConfig } from './auth/index.ts';
+import { SIGN_IN, createSignIn, loadSignInConfig, type AuthConfig } from './auth/index.ts';
 import { readRelease } from './client/release.ts';
 import { BUILTIN_PLUGINS } from './plugins/builtin.ts';
 import { createPluginStore, installedDirOf } from './plugins/plugin-store.ts';
@@ -27,11 +27,11 @@ export interface App {
   /** Always the loopback URL, whatever the bind address. */
   url: string;
   config: Config;
-  /** auth.yaml as it applies now (loaded at start, changed from Settings → Sign-in). */
+  /** The sign-in config as it applies now (loaded at start, changed from Settings → Sign-in). */
   auth: () => AuthConfig;
   /** The UI link to one question, as notifications carry it: the first LAN name, else loopback. */
   answerUrl(questionId: string): string;
-  /** The instance store: users, identity links, sessions, login codes, auth.yaml, instance settings. */
+  /** The instance store: users, identity links, sessions, login codes, the sign-in config, instance settings. */
   instance: InstanceStore;
   updater: Updater;
   /** Every user, oldest first. */
@@ -48,8 +48,8 @@ export interface App {
 export interface AppSeams extends UserSeams {
   /** The environment the parts read their secrets from (design.md "Secrets"); default process.env. */
   env?: Record<string, string | undefined>;
-  /** How often plugins.yaml's version (and the users table) is checked; default PLUGINS_FILE_CHECK_MS. */
-  pluginsFileIntervalMs?: number;
+  /** How often the plugins config's version (and the users table) is checked; default PLUGINS_CONFIG_CHECK_MS. */
+  pluginsConfigIntervalMs?: number;
   /** One user's seams over the shared ones (each user its own job source, in tests). */
   perUser?(userId: string): UserSeams;
   /** The built UI bundle; default UI_DIR. */
@@ -58,7 +58,7 @@ export interface AppSeams extends UserSeams {
   update?: { appDir?: string; builder?: UpdateBuilder; restart?: Restarter };
 }
 
-const PLUGINS_FILE_CHECK_MS = 5000;
+const PLUGINS_CONFIG_CHECK_MS = 5000;
 const UI_DIR = fileURLToPath(new URL('../ui/dist', import.meta.url));
 /** The install (or checkout) this process runs from: install.json and src/ live here. */
 const APP_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -69,12 +69,12 @@ const VERSION = (JSON.parse(readFileSync(new URL('../package.json', import.meta.
 function warnLeftoverEnv(config: Config): void {
   const names = Object.keys(config.leftoverEnv).sort();
   if (names.length === 0) return;
-  console.warn(`hopper: WARNING: set but no longer read (plugins.yaml configures every part; remove them from the unit): ${names.join(', ')}`);
+  console.warn(`hopper: WARNING: set but no longer read (the plugins config configures every part; remove them from the unit): ${names.join(', ')}`);
 }
 
 /** The user seams of one user: the shared ones, `perUser`'s over them. */
 function seamsOf(seams: AppSeams, userId: string): UserSeams {
-  const { env: _env, pluginsFileIntervalMs: _ms, perUser, uiDir: _ui, update: _up, ...shared } = seams;
+  const { env: _env, pluginsConfigIntervalMs: _ms, perUser, uiDir: _ui, update: _up, ...shared } = seams;
   return { ...shared, ...perUser?.(userId) };
 }
 
@@ -84,12 +84,12 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   warnLeftoverEnv(config);
   const instance = openInstanceStore({ url: config.databaseUrl, clock });
   const env = seams.env ?? process.env;
-  // The instance's own secrets (auth.yaml's clientSecretEnv) keep their names: no user prefix.
+  // The instance's own secrets (the sign-in config's clientSecretEnv) keep their names: no user prefix.
   const secret = runtimeSecrets(env);
-  // Before anything starts: an invalid auth.yaml stops the daemon (sign-in fails closed).
+  // Before anything starts: an invalid sign-in config stops the daemon (sign-in fails closed).
   let auth: AuthConfig;
   try {
-    auth = loadAuthDocument(instance.documents.read(AUTH), secret);
+    auth = loadSignInConfig(instance.config.read(SIGN_IN), secret);
   } catch (e) {
     instance.close();
     throw e;
@@ -98,14 +98,14 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   mkdirSync(workDir, { recursive: true, mode: 0o700 });
   let port = config.port;
   const answerUrl = (id: string): string => `http://${config.lanNames[0] ?? '127.0.0.1'}:${port}/#question-${id}`;
-  const intervalMs = seams.pluginsFileIntervalMs ?? PLUGINS_FILE_CHECK_MS;
+  const intervalMs = seams.pluginsConfigIntervalMs ?? PLUGINS_CONFIG_CHECK_MS;
   // The client release this hopper loads onto its client targets: the client files of the install it runs from (issue #70).
   const clientRelease = readRelease(join(APP_DIR, 'src', 'client'));
   const runtimes = createRuntimes({
     instance, logger,
     options: (user) => ({
       config, seams: seamsOf(seams, user.id), env, clock, logger, clientRelease,
-      installedDir: installedDirOf(workDir), pluginsFileIntervalMs: intervalMs, answerUrl,
+      installedDir: installedDirOf(workDir), pluginsConfigIntervalMs: intervalMs, answerUrl,
     }),
   });
   // The plugin store (issue #75): the instance's. Its installs are kept in the database (issue #93) and

@@ -157,7 +157,7 @@ describe('create-github-app.ts', () => {
     const lines = r.out().trim().split('\n');
     expect(lines.at(-1)).toBe('HOPPER_APP_CREATED 123456 renamed-by-owner');
     expect(r.out()).toContain('appId: 123456, slug: renamed-by-owner');
-    expect(r.out()).toContain('plugins.yaml');
+    expect(r.out()).toContain('in the UI (Plugins → Job sources)');
     expect(r.out()).toContain(`${fake.url}/apps/renamed-by-owner/installations/new`);
     expect(r.out()).toContain(r.startUrl);
     expect(r.out()).not.toContain('BEGIN RSA');

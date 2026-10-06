@@ -1,13 +1,13 @@
-// plugins.yaml: which instance fills which role (design.md "Configuration — plugins.yaml"), a config
-// document in the store (design.md "Config documents"). Read: router, queueSorter,
-// escalationLevels, executors, jobSources, machines (this machine and the attached ones, issue #74),
-// usageSources, notifiers, routing, machineDefaults. A UI edit (edit.ts, attached-edit.ts) replaces it against its version.
-import { parse } from 'yaml';
+// The plugins config: which instance fills which role (design.md "Configuration — the plugins
+// config"), the config record `plugins` in the store (design.md "Config in the database"). Read:
+// router, queueSorter, escalationLevels, executors, jobSources, machines (this machine and the
+// attached ones, issue #74), usageSources, notifiers, routing, machineDefaults. A UI edit (edit.ts,
+// attached-edit.ts) replaces it against its version.
 import { z } from 'zod';
 import type { InstanceSpec, MachineDefaults, RoutingRule } from '../domain/types.ts';
 import { ROUTING_RULES } from '../routing/index.ts';
 
-export type PluginsFileResult =
+export type PluginsConfigResult =
   | { missing: true }
   /** `escalationLevels: []` = no levels (questions go straight to the owner); absent = the built-in ones. */
   | {
@@ -32,7 +32,7 @@ const uniqueList = (section: string, keyedBy: string) => z.array(instance).super
   }
 });
 
-const FILE = z.strictObject({
+const CONFIG = z.strictObject({
   version: z.literal(1),
   router: instance.optional(),
   queueSorter: instance.optional(),
@@ -57,24 +57,20 @@ const FILE = z.strictObject({
   }).optional(),
 });
 
-/** Why a parsed plugins.yaml is refused, or undefined when it is valid. */
-export function pluginsFileProblem(raw: unknown): string | undefined {
-  const parsed = FILE.safeParse(raw);
-  return parsed.success ? undefined : parsed.error.issues.map((i) => `${i.path.join('.') || 'file'}: ${i.message}`).join('; ');
+/** Why a plugins config is refused, or undefined when it is valid. */
+export function pluginsConfigProblem(raw: unknown): string | undefined {
+  const parsed = CONFIG.safeParse(raw);
+  return parsed.success ? undefined : parsed.error.issues.map((i) => `${i.path.join('.') || '(config)'}: ${i.message}`).join('; ');
 }
 
-export const PLUGINS = 'plugins.yaml';
+/** The config record that holds it. */
+export const PLUGINS = 'plugins';
 
-/** How the operator edits a config document by hand: the CLI against the same database (design.md "Config documents"). */
-export const BY_HAND = 'hopper config edit plugins.yaml';
-
-/** The plugins document's text parsed and checked; `undefined` text: there is none yet. */
-export function loadPluginsFile(text: string | undefined): PluginsFileResult {
-  if (text === undefined) return { missing: true };
-  let raw: unknown;
-  try { raw = parse(text); } catch (e) { return { error: `${PLUGINS}: ${(e as Error).message}` }; }
-  const parsed = FILE.safeParse(raw);
-  if (!parsed.success) return { error: `${PLUGINS}: ${pluginsFileProblem(raw)}` };
+/** The plugins config checked; `undefined`: there is none yet. */
+export function loadPluginsConfig(raw: unknown): PluginsConfigResult {
+  if (raw === undefined) return { missing: true };
+  const parsed = CONFIG.safeParse(raw);
+  if (!parsed.success) return { error: `the plugins config: ${pluginsConfigProblem(raw)}` };
   const warnings: string[] = [];
   const { router, queueSorter, escalationLevels, executors, jobSources, machines, usageSources, notifiers, routing, machineDefaults } = parsed.data;
   return {

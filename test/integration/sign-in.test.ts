@@ -12,7 +12,7 @@ const oidc = (o?: Parameters<typeof oidcIdp>[1]) => oidcIdp(h, o);
 // Issue #183: every page the daemon serves shows the app's icon.
 const ICON = '<link rel="icon" type="image/svg+xml" href="/favicon.svg">';
 
-describe('no auth.yaml: local sign-in only', () => {
+describe('no sign-in config: local sign-in only', () => {
   it('the session view offers the login code and no realms', async () => {
     const { app, origin } = await start(undefined);
     expect(await session(app)).toEqual({ authenticated: false, viewing: { id: 'owner', name: 'owner' }, signIn: { local: true, none: null, password: false, origin, realms: [], required: false } });

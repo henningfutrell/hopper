@@ -1,4 +1,4 @@
-// The GitHub job sources' options (plugins.yaml `jobSources[].options` of `github-gh` and
+// The GitHub job sources' options (the plugins config `jobSources[].options` of `github-gh` and
 // `github-app`; until phase 5 slice 4 the `github:` / `githubApp:` blocks of sources.yaml), and the
 // source config they turn into: `~` expanded, `model: null` dropped. The plugin host validates
 // them with these schemas; an invalid instance is dropped with the error shown.
@@ -17,7 +17,7 @@ const projectSchema = z.object({
 /** Where the App's private key is, by default (design.md "Secrets"). */
 export const DEFAULT_APP_KEY_ENV = 'GITHUB_APP_PRIVATE_KEY';
 
-/** Keys both GitHub sources share. A working directory is command-bearing: the UI never edits it. */
+/** Keys both GitHub sources share. A working directory is command-bearing. */
 const sharedKeys = {
   pollSeconds: z.number().int().positive().default(60),
   repos: z.array(z.string().regex(/^[^/\s]+\/[^/\s]+$/, 'owner/repo')).default([]),

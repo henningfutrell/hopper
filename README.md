@@ -10,9 +10,9 @@ Install page, step by step: https://henningfutrell.github.io/hopper/ (`site/`).
 
 - **Jobs are pulled, never pushed.** A job is an issue with the `hopper` label, by an author you
   allow. No route creates a job.
-- **Everything it keeps is in its database.** Config is three config documents in that database
-  (`plugins.yaml`, `rules.md`, `auth.yaml`) and the webhook subscriptions, rows there edited from
-  the UI; secrets come from its environment.
+- **Everything it keeps is in its database.** Config is the plugins, rules and sign-in configs and
+  the webhook subscriptions, all in that database and all edited in the UI; there is no config file.
+  Secrets come from its environment.
 - **Every part is a plugin**: router, queue sorter, escalation levels, executors, job sources,
   machines, usage sources, notifiers (`docs/plugins.md`); the UI installs more from a plugin store.
 - **Several people, kept apart.** One hopper can work for several users: each has their own jobs,
@@ -183,8 +183,9 @@ hopper only. One App, one key, one hopper.
    and install link. In containers, add `--secrets-file .env` (in the folder of `compose.yaml`).
 2. Install it: open the printed install link and pick the repositories it may read. Those are the
    only repositories it takes jobs from.
-3. `hopper config edit plugins.yaml`: set `appId` and `slug` on the `github-app` instance, with
-   `authors` as in [Give it jobs](#give-it-jobs).
+3. In the UI, Settings → Plugins → Job sources, open the `github-app` instance and set `appId` and
+   `slug` (marked "runs a command"; an admin edits them), with `authors` as in
+   [Give it jobs](#give-it-jobs).
 4. `systemctl --user restart hopper` (or the container), so the daemon reads the key. The
    `github` source now pauses and `github-app` takes the jobs.
 
@@ -198,19 +199,16 @@ Named so you know they are not missing steps. None is the path for a self-hosted
 
 ## Give it jobs
 
-1. Say whose issues it takes. `hopper config edit plugins.yaml`, under `jobSources`, on the
-   instance of your [path](#connect-github): `github` (the gh CLI) or `github-app` (your App):
+1. Say whose issues it takes. In the UI, Settings → Plugins → Job sources, open the instance of
+   your [path](#connect-github), `github` (the gh CLI) or `github-app` (your App), and set its
+   options:
 
-   ```yaml
-   jobSources:
-     - name: github
-       plugin: github-gh
-       options:
-         enabled: auto                         # on until a GitHub App key is set
-         authors: [your-github-login]          # required: whose issues are accepted
-         repos: [your-org/your-repo]           # optional allowlist
-         repoPaths: { your-org/your-repo: /srv/checkouts/your-repo }   # where each repo's jobs run
-   ```
+   | option | |
+   |---|---|
+   | `authors` | required: whose issues are accepted (`your-github-login`) |
+   | `repos` | optional allowlist (`your-org/your-repo`) |
+   | `repoPaths` | where each repo's jobs run (`your-org/your-repo` → `/srv/checkouts/your-repo`) |
+   | `enabled` | `auto`: on until a GitHub App key is set |
 
    A job runs in `repoPaths[<repo>]` (a checkout of that repo), else in `defaultCwd` (default: the
    home directory). That path must exist on whichever machine runs the job ([Add machines](#add-machines)). Restart the daemon
@@ -257,11 +255,8 @@ there with **Defaults**; they apply to machines added afterwards, never to ones 
 
 Set up by [Run it](#run-it): `install.sh` starts its herdr session (`hopper-herdr`). It runs 4
 lanes. To change that: the UI's Machines view, Edit on this machine. To keep some executors off this
-host, set its `executors` option (`hopper config edit plugins.yaml`):
-
-```yaml
-machines: { name: local, plugin: local, options: { lanes: 4, executors: [test, herdr-claude] } }
-```
+host, set the `executors` option of the `local` instance in Settings → Plugins → Machine sources
+(for example `test` and `herdr-claude`).
 
 With [Podman](#with-podman-recommended) the hopper's container is not a machine: it lists no `local`
 machine (`HOPPER_LOCAL_MACHINE=false`), and jobs run on the machines attached below.
@@ -281,7 +276,7 @@ machine (`HOPPER_LOCAL_MACHINE=false`), and jobs run on the machines attached be
 
 3. Prepare the target. This makes the hopper's own ssh key when it is missing, lets that key in on
    the target (restricted: no forwarding, no pty), installs and starts the target's herdr
-   session, and prints the `plugins.yaml` entry:
+   session, and prints the options to set in Plugins → Machine sources:
 
    ```sh
    export HOPPER_SSH_KEY_FILE="$HOME/.config/hopper/ssh_key"
@@ -295,8 +290,8 @@ machine (`HOPPER_LOCAL_MACHINE=false`), and jobs run on the machines attached be
    systemctl --user restart hopper
    ```
 
-5. Attach it: in the UI, Machines → Add machine, pick `my-desktop`. Or paste the printed entry under
-   `attachedMachines:` with `hopper config edit plugins.yaml`. No restart.
+5. Attach it: in the UI, Machines → Add machine, pick `my-desktop`. Or, in Settings → Plugins →
+   Machine sources, add an `ssh` instance named `my-desktop` and set the printed options. No restart.
 6. Make the jobs' working directories exist there, at the same paths (`repoPaths`, `defaultCwd`):
    a job whose directory is missing fails.
 
@@ -320,8 +315,9 @@ hopper never connects to it after setup. The hopper loads each new client releas
 
 4. Add the line it prints to `~/.config/hopper/daemon.env` (`CLIENT_TOKEN_LAPTOP_FILE=…`), then
    `systemctl --user restart hopper`.
-5. Paste the printed entry under `attachedMachines:` with `hopper config edit plugins.yaml` (the
-   UI's Add machine attaches ssh targets only).
+5. Attach it: in the UI, Settings → Plugins → Machine sources, add a `client` instance named
+   `laptop` and set the printed options (`tokenEnv`, `lanes`). The Machines view's Add machine
+   attaches ssh targets only. No restart.
 6. Make the jobs' working directories exist there, as for an ssh target.
 
 ### A container target
@@ -343,22 +339,15 @@ runs in it: the `command` executor runs an issue's first fenced code block (else
    ```
 
 3. Add the line it prints (`HOPPER_DOCKER_HOST=unix://…`) to `~/.config/hopper/daemon.env`.
-4. `hopper config edit plugins.yaml`: add the `command` executor, the container, keep commands
-   off this host, and send labelled issues to the container:
-
-   ```yaml
-   executors:
-     - { name: test, plugin: test }
-     - { name: herdr-claude, plugin: herdr-claude }
-     - { name: command, plugin: command }
-   machines: { name: local, plugin: local, options: { lanes: 4, executors: [test, herdr-claude] } }
-   attachedMachines:
-     - { name: box, docker: box, lanes: 1, executors: [command] }
-   routing:
-     - { name: commands to the box, match: { label: on-box }, set: { machine: box, executor: command } }
-   ```
-
-5. `systemctl --user restart hopper` (a new executor needs a restart).
+4. Attach it in the UI, as the script prints:
+   - Settings → Plugins → Executors: **Add** a `command` instance named `command`.
+   - Settings → Plugins → Machine sources: **Add** a `docker` instance named `box`, and set its
+     options `docker: box`, `lanes: 1`, `executors: command`.
+   - Keep commands off this host: on the `local` instance there, set `executors` to the others
+     (`test`, `herdr-claude`).
+5. Send labelled issues to the container: a routing rule in Settings → Routing, named
+   `commands to the box`, matching the label `on-box`, setting machine `box` and executor
+   `command`. No restart: executors and machines follow the plugins config.
 
 An issue labelled `hopper` and `on-box` now runs its script in the container.
 
@@ -383,13 +372,12 @@ of it shows in a herdr pane.
 ### Send jobs to one machine
 
 A routing rule sets a job's machine, executor or priority when the job comes in; the first rule that
-matches wins. Edit them in the UI's Settings → Routing, or under `routing:` in `plugins.yaml`:
+matches wins. Edit them in the UI's Settings → Routing. Two examples:
 
-```yaml
-routing:
-  - { name: app work on the desktop, match: { repo: "your-org/app-*" }, set: { machine: my-desktop } }
-  - { name: by label, match: { label: on-laptop }, set: { machine: laptop } }
-```
+| rule | matches | sets |
+|---|---|---|
+| app work on the desktop | repo `your-org/app-*` | machine `my-desktop` |
+| by label | label `on-laptop` | machine `laptop` |
 
 A job pinned to a machine that is offline waits for it. How each kind works and why:
 `docs/design.md` "Attached machines", "Container targets", "Client targets", "Target
@@ -401,7 +389,7 @@ authentication".
 |---|---|
 | UI, `/` | the board, questions, machines, usage, plugins, routing, webhooks, events, decisions |
 | API reference, `/docs/` | every route, with parameters and bodies; try them from the page. The book icon in the UI's top bar opens it |
-| `hopper help` | the operator CLI: config documents, login codes, password hashes |
+| `hopper help` | the operator CLI: config records as JSON, login codes, users, password hashes |
 | `node src/main.ts --help` | the daemon's settings, with defaults |
 
 The API: `GET /api/*` reads, free on loopback and with a UI session (`x-hopper-session`) from

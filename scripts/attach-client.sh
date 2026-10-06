@@ -7,10 +7,10 @@
 # (the private half never leaves it). Here: pin the client's key in ~/.ssh/authorized_keys as
 #   restrict,command="node <app>/src/client/relay.ts <workdir>/clients/<name>.sock" <key>
 # so the key opens that one tunnel and nothing else — no shell, no forwarding. The client pins this
-# machine's own host key, read here, never learned from a connection. Then print the plugins.yaml entry
-# and the daemon.env line. Re-running keeps the token and the key, and replaces the rest.
+# machine's own host key, read here, never learned from a connection. Then print how to attach it
+# in the UI (Plugins) and the daemon.env line. Re-running keeps the token and the key, and replaces the rest.
 #   usage: attach-client.sh <name> <ssh-target> <hopper> [lanes]
-#     <name>        the machine's name in plugins.yaml (letters, digits, _ and -)
+#     <name>        the machine's name in Plugins (letters, digits, _ and -)
 #     <ssh-target>  how this user reaches that machine now (a ~/.ssh/config alias or user@host)
 #     <hopper>      how that machine reaches this one: user@host (HOPPER_CLIENT_HOPPER_PORT, default 22)
 set -euo pipefail
@@ -109,7 +109,7 @@ cat <<EOF2
 Add to daemon.env on this machine (then restart the daemon), so it holds the client's token:
 ${TOKEN_ENV}_FILE=$TOKENS/$NAME.token
 
-Add to plugins.yaml (hopper config edit plugins.yaml):
-machines:
-  - { name: $NAME, plugin: client, options: { tokenEnv: $TOKEN_ENV, lanes: $LANES } }
+Attach it in the UI: Plugins → Machine sources, add a client instance named $NAME, then set its options:
+  tokenEnv: $TOKEN_ENV
+  lanes: $LANES
 EOF2

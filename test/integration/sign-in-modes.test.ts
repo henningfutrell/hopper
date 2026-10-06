@@ -1,5 +1,5 @@
 // No sign-in and password sign-in (issue #53, design.md "Sign-in"): through the daemon's HTTP routes,
-// with auth.yaml in the database; and the sign-in routes' rate limit.
+// with the sign-in config in the database; and the sign-in routes' rate limit.
 import argon2 from 'argon2';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { rawRequest } from '../support/http.ts';
@@ -17,7 +17,7 @@ const json = (host: string, origin: string, body: unknown) => ({
 });
 const tokenOf = (text: string): string => (JSON.parse(text) as { token: string }).token;
 
-describe('no sign-in (auth.yaml none)', () => {
+describe('no sign-in (the sign-in config\'s none)', () => {
   it('off by default: the offer says so, POST /ui/auth/none is refused', async () => {
     const { app, origin, host } = await start(undefined);
     expect((await session(app)).signIn).toEqual({ local: true, none: null, password: false, origin, realms: [], required: false });
@@ -55,7 +55,7 @@ describe('no sign-in (auth.yaml none)', () => {
   });
 });
 
-describe('password sign-in (auth.yaml password)', () => {
+describe('password sign-in (a password realm)', () => {
   const auth = () => ({ version: 1, local: { enabled: false }, realms: [{ name: 'password', type: 'password', users: [{ username: 'ada', passwordHash: adaHash, role: 'operator' }] }] });
 
   it('the offer says password sign-in is on', async () => {
@@ -92,7 +92,7 @@ describe('password sign-in (auth.yaml password)', () => {
     expect((await rawRequest(app.url, { path: '/ui/auth/password', ...json(host, origin, { username: 'ada', password: 'x' }) })).status).toBe(403);
   });
 
-  it('a user removed from auth.yaml loses the session at the next start', async () => {
+  it('a user removed from the sign-in config loses the session at the next start', async () => {
     const { app, origin, host } = await start(auth());
     const token = tokenOf((await rawRequest(app.url, { path: '/ui/auth/password', ...json(host, origin, { username: 'ada', password: 'correct horse' }) })).text);
     const after = await restartWithAuth(h, app, { version: 1, realms: [{ name: 'password', type: 'password', users: [] }] });

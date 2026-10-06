@@ -1,7 +1,7 @@
-// The daemon side of sign-in tests: start the real app with an auth.yaml, read GET /ui/api/session,
+// The daemon side of sign-in tests: start the real app with a sign-in config, read GET /ui/api/session,
 // start loopback OIDC issuers. Everything started is stopped by `stopAll` (call it in afterEach).
 import { startTestApp, tempDbPath, type TestApp } from './app.ts';
-import { writeDocument } from './files.ts';
+import { writeConfig } from './files.ts';
 import { rawRequest } from './http.ts';
 import { startOidcIdp, type OidcIdp } from './idp.ts';
 
@@ -18,20 +18,20 @@ export async function stopAll(h: Harness): Promise<void> {
   h.cleanup?.();
 }
 
-/** The app with this auth.yaml (none when undefined), and its sign-in origin (http://localhost:<port>). */
+/** The app with this sign-in config (none when undefined), and its sign-in origin (http://localhost:<port>). */
 export async function startWithAuth(h: Harness, auth: unknown, env: Record<string, string> = {}): Promise<{ app: TestApp; origin: string; host: string }> {
   const db = tempDbPath();
   h.cleanup = db.cleanup;
-  if (auth !== undefined) writeDocument(db.dbPath, 'auth.yaml', auth);
+  if (auth !== undefined) writeConfig(db.dbPath, 'sign-in', auth);
   h.t = await startTestApp({ dbPath: db.dbPath, env, secrets: { ...SECRETS } });
   const port = new URL(h.t.url).port;
   return { app: h.t, origin: `http://localhost:${port}`, host: `localhost:${port}` };
 }
 
-/** Restart on the same store with this auth.yaml. */
+/** Restart on the same store with this sign-in config. */
 export async function restartWithAuth(h: Harness, app: TestApp, auth: unknown): Promise<TestApp> {
   await app.stop();
-  writeDocument(app.dbPath, 'auth.yaml', auth);
+  writeConfig(app.dbPath, 'sign-in', auth);
   h.t = await startTestApp({ dbPath: app.dbPath, secrets: { ...SECRETS } });
   return h.t;
 }

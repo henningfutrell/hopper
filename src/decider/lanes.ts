@@ -38,7 +38,7 @@ export function planLanes(
   return { machineId: s.machine.id, current: mine.length, target, open: opening, close, drain, reason };
 }
 
-/** Lanes stored for a machine no source lists any more (removed from plugins.yaml): close the idle, drain the busy. */
+/** Lanes stored for a machine no source lists any more (removed from the plugins config): close the idle, drain the busy. */
 export function planGoneLanes(machineId: string, lanes: Lane[]): LanePlan {
   const mine = lanes.filter((l) => l.machineId === machineId);
   const close = mine.filter((l) => l.state === 'idle').map((l) => l.id).sort();

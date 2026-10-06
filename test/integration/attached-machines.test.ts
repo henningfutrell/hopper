@@ -1,11 +1,11 @@
 // Issue #10 through the real composition root: an attached machine — a machine-source instance of
-// the `ssh` plugin in plugins.yaml `machines:` (issue #74) — is a machine the decider assigns jobs to, and the executor is told it is
+// the `ssh` plugin in the plugins config's `machines` (issue #74) — is a machine the decider assigns jobs to, and the executor is told it is
 // running there (design.md "Attached machines"). The probe is the seam: no ssh in this test.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { AttachedMachine } from '../../src/domain/types.ts';
-import { startTestApp, tempDbPath, writePluginsYaml, type TestApp } from '../support/app.ts';
+import { startTestApp, tempDbPath, writePlugins, type TestApp } from '../support/app.ts';
 import { waitFor } from '../support/wait.ts';
 
 const apps: TestApp[] = [];
@@ -17,7 +17,7 @@ afterEach(async () => {
   cleanup = undefined;
 });
 
-/** plugins.yaml with a `where` executor (reports ctx.machine) and one attached machine `laptop`. */
+/** A database whose plugins config has a `where` executor (reports ctx.machine) and one attached machine `laptop`. */
 function configure(laptopLanes: number): string {
   const db = tempDbPath();
   cleanup = db.cleanup;
@@ -30,13 +30,14 @@ function configure(laptopLanes: number): string {
     "  create() { return { name: 'where', idempotent: true, validate() { return null; },",
     "    async run(ctx) { return { kind: 'finished', result: { machine: ctx.machine.id, ssh: ctx.machine.ssh ?? null } }; } }; } };",
   ].join('\n'), { mode: 0o600 });
-  writePluginsYaml(db.dbPath, [
-    'version: 1',
-    'executors: [ { name: test, plugin: test }, { name: where, plugin: where } ]',
-    'machines:',
-    '  - { name: local, plugin: local }',
-    `  - { name: laptop, plugin: ssh, options: { label: arch-laptop, ssh: laptop, lanes: ${laptopLanes}, executors: [where] } }`,
-  ].join('\n'));
+  writePlugins(db.dbPath, {
+    version: 1,
+    executors: [{ name: 'test', plugin: 'test' }, { name: 'where', plugin: 'where' }],
+    machines: [
+      { name: 'local', plugin: 'local' },
+      { name: 'laptop', plugin: 'ssh', options: { label: 'arch-laptop', ssh: 'laptop', lanes: laptopLanes, executors: ['where'] } },
+    ],
+  });
   return db.dbPath;
 }
 

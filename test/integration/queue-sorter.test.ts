@@ -1,12 +1,12 @@
 // Issue #18: the queue sorter through the real daemon. The engine asks the live queue-sorter
-// instance for an order each Decision; a plugins.yaml change swaps it between Decisions (the
+// instance for an order each Decision; a plugins config change swaps it between Decisions (the
 // file is checked every 5 s in production); a sorter that throws gives priority's order and shows
 // as a fallback in /api/plugins.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Job } from '../../src/domain/types.ts';
-import { lanes, startTestApp, tempDbPath, TEST_PLUGINS, writePluginsYaml, type TestApp } from '../support/app.ts';
+import { lanes, startTestApp, tempDbPath, TEST_PLUGINS, writePlugins, type TestApp } from '../support/app.ts';
 import { waitFor } from '../support/wait.ts';
 
 let t: TestApp | undefined;
@@ -55,10 +55,10 @@ describe('the queue sorter in the engine', () => {
     expect(await firstClaimed(a, blocker, [older.id, newer.id])).toBe(newer.id);
   });
 
-  it('a plugins.yaml change swaps the sorter within 5 s: oldest-first starts the older job first', async () => {
+  it('a plugins config change swaps the sorter within 5 s: oldest-first starts the older job first', async () => {
     const a = await boot();
     const { blocker, older, newer } = await queueBehindBlocker(a);
-    writePluginsYaml(a.dbPath, { ...TEST_PLUGINS, machines: lanes(1), queueSorter: { name: 'fifo', plugin: 'oldest-first' } });
+    writePlugins(a.dbPath, { ...TEST_PLUGINS, machines: lanes(1), queueSorter: { name: 'fifo', plugin: 'oldest-first' } });
     await waitFor(async () => (await a.api('GET', '/api/plugins')).body.queueSorter.active === 'oldest-first', { timeoutMs: 5000, what: 'the sorter swap' });
     expect((await a.api('GET', '/api/queue')).body.waiting.map((j: Job) => j.id)).toEqual([older.id, newer.id]);
     expect(await firstClaimed(a, blocker, [older.id, newer.id])).toBe(older.id);

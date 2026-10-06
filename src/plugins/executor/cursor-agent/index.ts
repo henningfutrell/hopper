@@ -1,6 +1,6 @@
 // cursor-agent: one job is Cursor's CLI agent in print mode, on the job's machine — this one or an ssh
 // target — in the job's work tree (issue #142, design.md "Cursor executor"). A question resumes the
-// same Cursor chat. Not in the built-in instances: plugins.yaml names it to use it. Cursor signs in
+// same Cursor chat. Not in the built-in instances: the plugins config names it to use it. Cursor signs in
 // on each machine it runs on (`cursor-agent login`, or CURSOR_API_KEY in that machine's environment):
 // the hopper holds no Cursor credential.
 import { join } from 'node:path';

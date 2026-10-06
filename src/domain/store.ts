@@ -123,23 +123,27 @@ export interface LoginCodeRepository {
   live(codeHash: string, now: string): string | undefined;
 }
 
-/** The config documents the store holds (design.md "Config documents"): a user's, and the instance's. */
-export const USER_DOCUMENTS = ['plugins.yaml', 'rules.md'] as const;
-export const INSTANCE_DOCUMENTS = ['auth.yaml'] as const;
-export const CONFIG_DOCUMENTS = [...USER_DOCUMENTS, ...INSTANCE_DOCUMENTS] as const;
-export type UserDocumentName = (typeof USER_DOCUMENTS)[number];
-export type InstanceDocumentName = (typeof INSTANCE_DOCUMENTS)[number];
-export type ConfigDocumentName = (typeof CONFIG_DOCUMENTS)[number];
+/**
+ * The config records the store holds (design.md "Config in the database", issue #198): a user's
+ * `plugins` and `rules`, and the instance's `sign-in`. No config lives in a file.
+ */
+export const USER_CONFIG = ['plugins', 'rules'] as const;
+export const INSTANCE_CONFIG = ['sign-in'] as const;
+export const CONFIG_NAMES = [...USER_CONFIG, ...INSTANCE_CONFIG] as const;
+export type UserConfigName = (typeof USER_CONFIG)[number];
+export type InstanceConfigName = (typeof INSTANCE_CONFIG)[number];
+export type ConfigName = (typeof CONFIG_NAMES)[number];
 
 /**
- * Config documents: named texts, each edited whole against its `version` — the sha-256 of its
- * text, or `missing` while there is none.
+ * Config records: named JSON values, each replaced whole against its `version` — the sha-256 of its
+ * JSON, or `missing` while there is none.
  */
-export interface ConfigDocuments<N extends string = UserDocumentName> {
-  read(name: N): string | undefined;
+export interface ConfigRecords<N extends string = UserConfigName> {
+  /** The value, or undefined while there is none. */
+  read(name: N): unknown;
   version(name: N): string;
-  /** Replace the text if the document is still at `version`; false (nothing written) when it moved. */
-  write(name: N, text: string, version: string): boolean;
+  /** Replace the value if the record is still at `version`; false (nothing written) when it moved. */
+  write(name: N, value: unknown, version: string): boolean;
 }
 
 /** The users of this hopper (issue #158), oldest first. */
@@ -168,8 +172,8 @@ export interface UserStore {
   webhooks: WebhookRepository;
   questions: QuestionRepository;
   settings: UserSettingsRepository;
-  /** plugins.yaml and rules.md. */
-  documents: ConfigDocuments<UserDocumentName>;
+  /** `plugins` and `rules`. */
+  config: ConfigRecords<UserConfigName>;
   /** Run fn in one transaction. Re-entrant: a nested tx joins the outer one. Throw = rollback. */
   tx<T>(fn: () => T): T;
   close(): void;
@@ -181,8 +185,8 @@ export interface InstanceStore {
   identities: IdentityLinks;
   uiSessions: UiSessionRepository;
   loginCodes: LoginCodeRepository;
-  /** auth.yaml. */
-  documents: ConfigDocuments<InstanceDocumentName>;
+  /** `sign-in`. */
+  config: ConfigRecords<InstanceConfigName>;
   settings: InstanceSettingsRepository;
   /** Open the user's store: one more connection, its schema migrated on the tenant track. The caller closes it. */
   userStore(user: User): UserStore;

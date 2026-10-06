@@ -3,7 +3,6 @@
 // are their own; an admin adds a user and hands over its login link; a loopback read without a session
 // is owner's unless `x-hopper-user` names another user.
 import { afterEach, describe, expect, it } from 'vitest';
-import { parse } from 'yaml';
 import { createFakeHerdrClient } from '../../src/executors/herdr/index.ts';
 import type { DomainEvent, Job, Question } from '../../src/domain/types.ts';
 import { mintLoginCode } from '../../src/http/ui/login-code.ts';
@@ -90,14 +89,14 @@ describe('two users of one hopper', () => {
     expect(after.seenAt).toBeUndefined();
   });
 
-  it('an admin of one user changing plugins changes only that user\'s plugins.yaml', async () => {
+  it('an admin of one user changing plugins changes only that user\'s plugins config', async () => {
     const a = await start();
     const { bea } = await twoUsers(a);
     const report = (await a.api('GET', '/api/plugins', undefined, session(bea))).body;
     const r = await a.ui('/ui/api/plugins', { action: 'select', role: 'queue-sorter', plugin: 'oldest-first', version: report.config.version }, { token: bea });
     expect(r.status).toBe(200);
-    expect(parse(a.user('bea').store.documents.read('plugins.yaml')!).queueSorter).toMatchObject({ plugin: 'oldest-first' });
-    expect(parse(a.user().store.documents.read('plugins.yaml')!).queueSorter).toBeUndefined();
+    expect((a.user('bea').store.config.read('plugins') as { queueSorter?: unknown }).queueSorter).toMatchObject({ plugin: 'oldest-first' });
+    expect((a.user().store.config.read('plugins') as { queueSorter?: unknown }).queueSorter).toBeUndefined();
     expect((await a.api('GET', '/api/plugins')).body.queueSorter.instance.plugin).toBe('priority');
   });
 
@@ -179,14 +178,14 @@ describe('who you are, and signing in with several users (issue #167)', () => {
 });
 
 describe('a user\'s runtime', () => {
-  it('a user added while the daemon runs gets its runtime: its plugins.yaml, its herdr session hopper-<id>, its jobs run', async () => {
+  it('a user added while the daemon runs gets its runtime: its plugins config, its herdr session hopper-<id>, its jobs run', async () => {
     const a = await start();
     const bea = await a.addUser('Bea');
-    const plugins = parse(a.user(bea.id).store.documents.read('plugins.yaml')!) as { executors: { plugin: string; options?: { session?: string } }[] };
+    const plugins = a.user(bea.id).store.config.read('plugins') as { executors: { plugin: string; options?: { session?: string } }[] };
     expect(plugins.executors.filter((e) => e.plugin === 'herdr-claude').map((e) => e.options?.session)).toEqual(['hopper-bea']);
     const report = (await a.api('GET', '/api/plugins', undefined, { 'x-hopper-user': 'bea' })).body;
     expect(report.executors.instances.find((i: { instance: { plugin: string } }) => i.instance.plugin === 'herdr-claude').instance.options.session).toBe('hopper-bea');
-    expect(parse(a.user().store.documents.read('plugins.yaml')!).executors).toEqual([{ name: 'test', plugin: 'test' }]);
+    expect((a.user().store.config.read('plugins') as { executors?: unknown }).executors).toEqual([{ name: 'test', plugin: 'test' }]);
     const job = await a.pull({ op: 'echo', message: 'hi' }, { executor: 'scripted' }, 'bea');
     expect((await a.waitForStatusOf(job.id, 'finished', 'bea')).status).toBe('finished');
   });
@@ -212,9 +211,9 @@ describe('a user\'s runtime', () => {
     const executors = [{ name: 'herdr-claude', plugin: 'herdr-claude', options: { pollMs: 10, idleNudgeMs: 5000 } }];
     const a = await start({ plugins: { executors }, seams: { herdr } });
     const bea = await a.addUser('Bea');
-    const doc = a.user(bea.id).store.documents;
-    doc.write('plugins.yaml', `version: 1\nexecutors: [ { name: herdr-claude, plugin: herdr-claude, options: { pollMs: 10, idleNudgeMs: 5000 } } ]\njobSources: []\nusageSources: []\nnotifiers: []\n`, doc.version('plugins.yaml'));
-    await waitFor(async () => (await a.api('GET', '/api/plugins', undefined, { 'x-hopper-user': 'bea' })).body.config.version === doc.version('plugins.yaml'));
+    const doc = a.user(bea.id).store.config;
+    doc.write('plugins', { version: 1, executors, jobSources: [], usageSources: [], notifiers: [] }, doc.version('plugins'));
+    await waitFor(async () => (await a.api('GET', '/api/plugins', undefined, { 'x-hopper-user': 'bea' })).body.config.version === doc.version('plugins'));
     const item = { executor: 'herdr-claude', prompt: 'Paint the shed', cwd: '/tmp', env: {} };
     const ownerJob = await a.pull({}, item);
     await a.waitForStatus(ownerJob.id, 'finished', 8000);
@@ -295,7 +294,7 @@ describe('an install from before several users', () => {
     });
     const done = await a.waitForStatus('old-job', 'finished');
     expect(done.result).toEqual({ echo: 'kept' });
-    expect(withStores(a.dbPath, (instance, owner) => ({ users: instance.users.list().map((u) => u.id), rules: owner.documents.read('rules.md') })))
+    expect(withStores(a.dbPath, (instance, owner) => ({ users: instance.users.list().map((u) => u.id), rules: owner.config.read('rules') })))
       .toEqual({ users: ['owner'], rules: 'old rules' });
   });
 });

@@ -22,7 +22,7 @@ function Field({ label, hint, children }: { label: string; hint?: React.ReactNod
 }
 
 function ExecutorChecks({ all, picked, onChange, disabled }: { all: string[]; picked: string[]; onChange: (next: string[]) => void; disabled: boolean }) {
-  if (!all.length) return <div className="text-xs text-muted-foreground">no executor instances in plugins.yaml</div>;
+  if (!all.length) return <div className="text-xs text-muted-foreground">no executor instances configured</div>;
   return (
     <fieldset className="grid gap-1 text-xs">
       <legend className="mb-1 font-medium text-foreground/90">executors it runs</legend>
@@ -82,7 +82,7 @@ export function AddMachineForm({ config, busy, send, onDone }: {
   );
 }
 
-/** Edit an attached machine: lanes, executors, label. How it is reached (ssh, herdr, container, token) is plugins.yaml only. */
+/** Edit an attached machine: lanes, executors, label. How it is reached (ssh, herdr, container, token) is edited in Plugins. */
 export function EditMachineForm({ machine, config, busy, send, onDone }: {
   machine: Extract<MachineKind, { kind: 'attached' }>; config: MachinesConfig; busy: boolean;
   send: (e: Extract<PluginsEdit, { action: 'options' }>, done: string) => Promise<boolean>; onDone: () => void;

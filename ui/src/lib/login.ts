@@ -47,7 +47,7 @@ export function beginSignIn(realm: string, origin: string): void {
   location.assign(signInPath(realm, binding));
 }
 
-/** True when the UI should take a no-sign-in session by itself: logged out, and auth.yaml `none` is on. */
+/** True when the UI should take a no-sign-in session by itself: logged out, and the sign-in config's `none` is on. */
 export const wantsNoSignIn = (authed: boolean, offer: Pick<SessionView['signIn'], 'none'> | null): boolean => !authed && (offer?.none ?? null) !== null;
 
 /** POST a sign-in that answers `{ token }` as JSON (no sign-in, password); keeps the token. Resolves the error, or null. */

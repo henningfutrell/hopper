@@ -1,59 +1,47 @@
-// auth.yaml (design.md "Sign-in: realms", issue #185): absent → local sign-in only; `realms` is the
-// ordered list of realms, each of a realm type, on unless `enabled: false`; every mistake is refused at
-// load, naming the field; secrets come from the environment only.
+// The sign-in config (design.md "Sign-in: realms", issue #185): absent → local sign-in only; `realms` is
+// the ordered list of realms, each of a realm type, on unless `enabled: false`; every mistake is refused
+// at load, naming the field; secrets come from the environment only.
 import { describe, expect, it } from 'vitest';
-import { loadAuthDocument } from '../../src/auth/config.ts';
+import { loadSignInConfig } from '../../src/auth/config.ts';
 
 /** An argon2id PHC string (of "correct horse"). */
 const HASH = '$argon2id$v=19$m=65536,t=3,p=4$c2FsdHNhbHRzYWx0c2FsdA$9b3MzyRk2xr6m1nZQ1kq4cXf3A2c5o8gV7x0Lr0bq0s';
 
 const ENV: Record<string, string> = { OIDC_SECRET: 'from-env', GH_SECRET: 'gh-env', LDAP_BIND: 'bind-env' };
-const load = (text: string | undefined, env: Record<string, string> = ENV) => loadAuthDocument(text, (n) => env[n]);
+const load = (value: unknown, env: Record<string, string> = ENV) => loadSignInConfig(value, (n) => env[n]);
+/** A sign-in config of version 1 with these realms. */
+const realms = (...rs: Record<string, unknown>[]) => ({ version: 1, realms: rs });
 
-const LDAP = 'name: dir, type: ldap, url: "ldaps://ldap.example.com", userBase: "ou=people,dc=example,dc=com"';
+const LDAP = { name: 'dir', type: 'ldap', url: 'ldaps://ldap.example.com', userBase: 'ou=people,dc=example,dc=com' };
+const GH = { type: 'github', clientId: 'a', clientSecretEnv: 'GH_SECRET' };
+const PW = (users: unknown[], more: Record<string, unknown> = {}) => realms({ name: 'p', type: 'password', users, ...more });
 
-describe('loadAuthDocument', () => {
-  it('no document: local sign-in only', () => {
+describe('loadSignInConfig', () => {
+  it('no config: local sign-in only', () => {
     expect(load(undefined)).toEqual({ local: { enabled: true }, none: null, realms: [] });
   });
 
   it('reads every realm type, in order, with their defaults', () => {
-    const auth = load(`
-version: 1
-local: { enabled: false }
-realms:
-  - name: staff
-    type: password
-    users:
-      - { username: ada, passwordHash: "${HASH}", role: operator }
-  - name: dir
-    type: ldap
-    url: ldaps://ldap.example.com
-    bindDn: cn=hopper,dc=example,dc=com
-    bindPasswordEnv: LDAP_BIND
-    userBase: ou=people,dc=example,dc=com
-    roles: { admin: { groups: ["cn=admins,dc=example,dc=com"] } }
-  - name: google
-    type: oidc
-    issuer: https://accounts.google.com
-    clientId: id-1
-    clientSecretEnv: OIDC_SECRET
-    roles: { admin: { emails: [a@example.com] } }
-  - name: github
-    label: GitHub
-    type: github
-    clientId: id-2
-    clientSecretEnv: GH_SECRET
-    enabled: false
-    roles: { defaultRole: viewer }
-  - name: corp
-    type: saml
-    entryPoint: https://idp.example.com/sso
-    idpCert: |
-      -----BEGIN CERTIFICATE-----
-      MIIB
-      -----END CERTIFICATE-----
-`);
+    const auth = load({
+      version: 1,
+      local: { enabled: false },
+      realms: [
+        { name: 'staff', type: 'password', users: [{ username: 'ada', passwordHash: HASH, role: 'operator' }] },
+        {
+          name: 'dir', type: 'ldap', url: 'ldaps://ldap.example.com', bindDn: 'cn=hopper,dc=example,dc=com', bindPasswordEnv: 'LDAP_BIND',
+          userBase: 'ou=people,dc=example,dc=com', roles: { admin: { groups: ['cn=admins,dc=example,dc=com'] } },
+        },
+        {
+          name: 'google', type: 'oidc', issuer: 'https://accounts.google.com', clientId: 'id-1', clientSecretEnv: 'OIDC_SECRET',
+          roles: { admin: { emails: ['a@example.com'] } },
+        },
+        { name: 'github', label: 'GitHub', type: 'github', clientId: 'id-2', clientSecretEnv: 'GH_SECRET', enabled: false, roles: { defaultRole: 'viewer' } },
+        {
+          name: 'corp', type: 'saml', entryPoint: 'https://idp.example.com/sso',
+          idpCert: '-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n',
+        },
+      ],
+    });
     expect(auth.local.enabled).toBe(false);
     expect(auth.realms.map((r) => [r.name, r.type, r.enabled])).toEqual([
       ['staff', 'password', true], ['dir', 'ldap', true], ['google', 'oidc', true], ['github', 'github', false], ['corp', 'saml', true],
@@ -76,80 +64,84 @@ realms:
   });
 
   it.each([
-    ['an unknown type', 'realms: [{ name: x, type: kerberos }]', /realms\.0/],
-    ['two realms with one name', 'realms: [{ name: x, type: github, clientId: a, clientSecretEnv: GH_SECRET }, { name: x, type: github, clientId: a, clientSecretEnv: GH_SECRET }]', /realms.*twice|unique/i],
-    ['a reserved name', 'realms: [{ name: local, type: github, clientId: a, clientSecretEnv: GH_SECRET }]', /realms\.0\.name/],
-    ['a realm named none', 'realms: [{ name: none, type: github, clientId: a, clientSecretEnv: GH_SECRET }]', /realms\.0\.name/],
-    ['a name unfit for a URL', 'realms: [{ name: "My IdP", type: github, clientId: a, clientSecretEnv: GH_SECRET }]', /realms\.0\.name/],
-    ['github without a secret', 'realms: [{ name: x, type: github, clientId: a }]', /clientSecretEnv/],
-    ['a secret file', 'realms: [{ name: x, type: oidc, issuer: "https://idp", clientId: a, clientSecretFile: /x }]', /clientSecretFile|unrecognized/i],
-    ['an IdP certificate file', 'realms: [{ name: x, type: saml, entryPoint: "https://idp/sso", idpCertFile: /x }]', /idpCert/],
-    ['saml without a certificate', 'realms: [{ name: x, type: saml, entryPoint: "https://idp/sso" }]', /idpCert/],
-    ['an unknown field', 'realms: [{ name: x, type: github, clientId: a, clientSecretEnv: GH_SECRET, colour: red }]', /colour|unrecognized/i],
-    ['an unknown role', 'realms: [{ name: x, type: github, clientId: a, clientSecretEnv: GH_SECRET, roles: { owner: {} } }]', /owner|unrecognized/i],
-    ['the old providers list', 'providers: []', /providers|unrecognized/i],
-    ['the old password section', 'password: { users: [] }', /password|unrecognized/i],
-    ['a wrong version', 'version: 2', /version/],
-  ])('refuses %s, naming the field', (_what, yaml, msg) => {
-    expect(() => load(`version: 1\n${yaml}`.replace('version: 1\nversion: 2', 'version: 2'))).toThrow(msg);
+    ['an unknown type', realms({ name: 'x', type: 'kerberos' }), /realms\.0/],
+    ['two realms with one name', realms({ name: 'x', ...GH }, { name: 'x', ...GH }), /realms.*twice|unique/i],
+    ['a reserved name', realms({ name: 'local', ...GH }), /realms\.0\.name/],
+    ['a realm named none', realms({ name: 'none', ...GH }), /realms\.0\.name/],
+    ['a name unfit for a URL', realms({ name: 'My IdP', ...GH }), /realms\.0\.name/],
+    ['github without a secret', realms({ name: 'x', type: 'github', clientId: 'a' }), /clientSecretEnv/],
+    ['a secret file', realms({ name: 'x', type: 'oidc', issuer: 'https://idp', clientId: 'a', clientSecretFile: '/x' }), /clientSecretFile|unrecognized/i],
+    ['an IdP certificate file', realms({ name: 'x', type: 'saml', entryPoint: 'https://idp/sso', idpCertFile: '/x' }), /idpCert/],
+    ['saml without a certificate', realms({ name: 'x', type: 'saml', entryPoint: 'https://idp/sso' }), /idpCert/],
+    ['an unknown field', realms({ name: 'x', ...GH, colour: 'red' }), /colour|unrecognized/i],
+    ['an unknown role', realms({ name: 'x', ...GH, roles: { owner: {} } }), /owner|unrecognized/i],
+    ['the old providers list', { version: 1, providers: [] }, /providers|unrecognized/i],
+    ['the old password section', { version: 1, password: { users: [] } }, /password|unrecognized/i],
+    ['a wrong version', { version: 2 }, /version/],
+  ])('refuses %s, naming the field', (_what, value, msg) => {
+    expect(() => load(value)).toThrow(msg);
+  });
+
+  it('names the field in an error that starts "invalid sign-in config: "', () => {
+    expect(() => load({ version: 2 })).toThrow(/^invalid sign-in config: version/);
   });
 
   it('reads a client secret from an environment variable; an unset variable is refused by name', () => {
-    expect(load('version: 1\nrealms: [{ name: x, type: github, clientId: a, clientSecretEnv: JH_TEST_SECRET }]', { JH_TEST_SECRET: 'from-env' }).realms[0])
+    expect(load(realms({ name: 'x', type: 'github', clientId: 'a', clientSecretEnv: 'JH_TEST_SECRET' }), { JH_TEST_SECRET: 'from-env' }).realms[0])
       .toMatchObject({ clientSecret: 'from-env' });
-    expect(() => load('version: 1\nrealms: [{ name: x, type: github, clientId: a, clientSecretEnv: JH_TEST_UNSET }]')).toThrow(/realms\.0\.clientSecretEnv.*JH_TEST_UNSET/);
+    expect(() => load(realms({ name: 'x', type: 'github', clientId: 'a', clientSecretEnv: 'JH_TEST_UNSET' }))).toThrow(/realms\.0\.clientSecretEnv.*JH_TEST_UNSET/);
   });
 
   it('a public OIDC client needs no secret', () => {
-    expect(load('version: 1\nrealms: [{ name: x, type: oidc, issuer: "https://idp", clientId: a }]').realms[0]).not.toHaveProperty('clientSecret');
+    expect(load(realms({ name: 'x', type: 'oidc', issuer: 'https://idp', clientId: 'a' })).realms[0]).not.toHaveProperty('clientSecret');
   });
 
-  it.each(['clientSecret: s', 'clientSecretFile: /x'])('refuses %s in the document', (field) => {
-    expect(() => load(`version: 1\nrealms: [{ name: x, type: oidc, issuer: "https://idp", clientId: a, ${field} }]`)).toThrow(/unrecognized|clientSecret/i);
+  it.each(['clientSecret', 'clientSecretFile'])('refuses %s in the config', (field) => {
+    expect(() => load(realms({ name: 'x', type: 'oidc', issuer: 'https://idp', clientId: 'a', [field]: 's' }))).toThrow(/unrecognized|clientSecret/i);
   });
 
   it('no sign-in: absent is off; `none.role` is the role everyone gets', () => {
-    expect(load('version: 1').none).toBeNull();
-    expect(load('version: 1\nnone: { role: viewer }').none).toEqual({ role: 'viewer' });
-    expect(() => load('version: 1\nnone: { role: owner }')).toThrow(/none\.role/);
-    expect(() => load('version: 1\nnone: {}')).toThrow(/none\.role/);
+    expect(load({ version: 1 }).none).toBeNull();
+    expect(load({ version: 1, none: { role: 'viewer' } }).none).toEqual({ role: 'viewer' });
+    expect(() => load({ version: 1, none: { role: 'owner' } })).toThrow(/none\.role/);
+    expect(() => load({ version: 1, none: {} })).toThrow(/none\.role/);
   });
 
   it.each([
-    ['a plaintext password', 'realms: [{ name: p, type: password, users: [{ username: ada, passwordHash: hunter2, role: admin }] }]', /realms\.0\.users\.0\.passwordHash/],
-    ['a bcrypt hash', 'realms: [{ name: p, type: password, users: [{ username: ada, passwordHash: "$2b$10$abcdefghijklmnopqrstuv", role: admin }] }]', /passwordHash/],
-    ['a user named twice', 'realms: [{ name: p, type: password, users: [{ username: ada, passwordHash: "<hash>", role: admin }, { username: ADA, passwordHash: "<hash>", role: viewer }] }]', /ada.*twice|unique/i],
-    ['a user without a role', 'realms: [{ name: p, type: password, users: [{ username: ada, passwordHash: "<hash>" }] }]', /role/],
-    ['role rules on a password realm', 'realms: [{ name: p, type: password, users: [], roles: { defaultRole: admin } }]', /roles|unrecognized/i],
-  ])('a password realm refuses %s', (_what, yaml, msg) => {
-    expect(() => load(`version: 1\n${yaml.replaceAll('<hash>', HASH)}`)).toThrow(msg);
+    ['a plaintext password', PW([{ username: 'ada', passwordHash: 'hunter2', role: 'admin' }]), /realms\.0\.users\.0\.passwordHash/],
+    ['a bcrypt hash', PW([{ username: 'ada', passwordHash: '$2b$10$abcdefghijklmnopqrstuv', role: 'admin' }]), /passwordHash/],
+    ['a user named twice', PW([{ username: 'ada', passwordHash: HASH, role: 'admin' }, { username: 'ADA', passwordHash: HASH, role: 'viewer' }]), /ada.*twice|unique/i],
+    ['a user without a role', PW([{ username: 'ada', passwordHash: HASH }]), /role/],
+    ['role rules on a password realm', PW([], { roles: { defaultRole: 'admin' } }), /roles|unrecognized/i],
+  ])('a password realm refuses %s', (_what, value, msg) => {
+    expect(() => load(value)).toThrow(msg);
   });
 
   it.each([
-    ['plain ldap to another host', `realms: [{ ${LDAP.replace('ldaps://ldap.example.com', 'ldap://ldap.example.com')} }]`, /realms\.0\.url/],
-    ['an http URL', `realms: [{ ${LDAP.replace('ldaps://ldap.example.com', 'https://ldap.example.com')} }]`, /realms\.0\.url/],
-    ['a bind password inline', `realms: [{ ${LDAP}, bindDn: "cn=x", bindPassword: s }]`, /bindPassword|unrecognized/i],
-    ['a bind DN without its password', `realms: [{ ${LDAP}, bindDn: "cn=x" }]`, /bindPasswordEnv/],
-    ['a user filter without {username}', `realms: [{ ${LDAP}, userFilter: "(uid=ada)" }]`, /userFilter/],
-    ['no user base', 'realms: [{ name: dir, type: ldap, url: "ldaps://ldap.example.com" }]', /userBase/],
-  ])('an ldap realm refuses %s', (_what, yaml, msg) => {
-    expect(() => load(`version: 1\n${yaml}`)).toThrow(msg);
+    ['plain ldap to another host', realms({ ...LDAP, url: 'ldap://ldap.example.com' }), /realms\.0\.url/],
+    ['an http URL', realms({ ...LDAP, url: 'https://ldap.example.com' }), /realms\.0\.url/],
+    ['a bind password inline', realms({ ...LDAP, bindDn: 'cn=x', bindPassword: 's' }), /bindPassword|unrecognized/i],
+    ['a bind DN without its password', realms({ ...LDAP, bindDn: 'cn=x' }), /bindPasswordEnv/],
+    ['a user filter without {username}', realms({ ...LDAP, userFilter: '(uid=ada)' }), /userFilter/],
+    ['no user base', realms({ name: 'dir', type: 'ldap', url: 'ldaps://ldap.example.com' }), /userBase/],
+  ])('an ldap realm refuses %s', (_what, value, msg) => {
+    expect(() => load(value)).toThrow(msg);
   });
 
   it('an ldap realm: plain ldap with StartTLS, or to loopback; a group search', () => {
-    const r = load(`version: 1\nrealms:\n  - { ${LDAP.replace('ldaps://ldap.example.com', 'ldap://ldap.example.com')}, startTls: true, groupSearch: { base: "ou=groups,dc=example,dc=com" } }`).realms[0];
+    const r = load(realms({ ...LDAP, url: 'ldap://ldap.example.com', startTls: true, groupSearch: { base: 'ou=groups,dc=example,dc=com' } })).realms[0];
     expect(r).toMatchObject({ startTls: true, groupSearch: { base: 'ou=groups,dc=example,dc=com', filter: '(member={dn})', name: 'cn' } });
-    expect(load(`version: 1\nrealms: [{ ${LDAP.replace('ldaps://ldap.example.com', 'ldap://127.0.0.1:3389')} }]`).realms).toHaveLength(1);
+    expect(load(realms({ ...LDAP, url: 'ldap://127.0.0.1:3389' })).realms).toHaveLength(1);
   });
 
   it('an http issuer only on loopback', () => {
-    expect(() => load(('version: 1\nrealms: [{ name: x, type: oidc, issuer: "http://idp.example.com", clientId: a }]'))).toThrow(/https/);
-    expect(load(('version: 1\nrealms: [{ name: x, type: oidc, issuer: "http://127.0.0.1:8080/realms/r", clientId: a }]')).realms).toHaveLength(1);
+    expect(() => load({ version: 1, realms: [{ name: 'x', type: 'oidc', issuer: 'http://idp.example.com', clientId: 'a' }] })).toThrow(/https/);
+    expect(load({ version: 1, realms: [{ name: 'x', type: 'oidc', issuer: 'http://127.0.0.1:8080/realms/r', clientId: 'a' }] }).realms).toHaveLength(1);
   });
 
   it('a disabled realm still has to be valid, but its secret variable need not be set', () => {
-    expect(load('version: 1\nrealms: [{ name: x, type: github, clientId: a, clientSecretEnv: JH_TEST_UNSET, enabled: false }]').realms[0])
+    expect(load({ version: 1, realms: [{ name: 'x', type: 'github', clientId: 'a', clientSecretEnv: 'JH_TEST_UNSET', enabled: false }] }).realms[0])
       .toMatchObject({ enabled: false });
-    expect(() => load('version: 1\nrealms: [{ name: x, type: github, clientId: a, enabled: false }]')).toThrow(/clientSecretEnv/);
+    expect(() => load({ version: 1, realms: [{ name: 'x', type: 'github', clientId: 'a', enabled: false }] })).toThrow(/clientSecretEnv/);
   });
 });

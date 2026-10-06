@@ -1,5 +1,5 @@
 // Building a role's instance (resolve → options → detect → create; `instantiate`, shared by every
-// role), and the router role's one slot: the router named in plugins.yaml (pass-through standing in
+// role), and the router role's one slot: the router named in the plugins config (pass-through standing in
 // when it cannot run), else the first router that can run here; answered through a live Router
 // whose instance can be swapped between calls (design.md "Failure", "Router selection").
 import { mkdirSync } from 'node:fs';
@@ -107,7 +107,7 @@ export async function buildRouter(spec: InstanceSpec, deps: SlotDeps): Promise<B
 }
 
 /**
- * No router named in plugins.yaml: the first router plugin, in catalogue order, that detects
+ * No router named in the plugins config: the first router plugin, in catalogue order, that detects
  * available and starts with its default options. pass-through when none does — chosen, not a
  * fallback.
  */

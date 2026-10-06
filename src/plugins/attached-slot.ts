@@ -1,8 +1,7 @@
 // The Machines view's part of the plugin host (design.md "Machines from the UI", issues #18, #74):
 // what GET /api/machines/config reports, and attaching an ssh target — written by attached-edit.ts,
-// then plugins.yaml reloaded, so the machines follow it without a restart.
-import type { ConfigDocuments } from '../domain/ports.ts';
-import { PLUGINS } from './plugins-file.ts';
+// then the plugins config reloaded, so the machines follow it without a restart.
+import type { ConfigRecords } from '../domain/ports.ts';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { InstanceSpec, MachineDefaults, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig } from '../domain/types.ts';
@@ -23,10 +22,10 @@ export interface AttachedEditOptions {
 }
 
 export function createMachinesEditor(o: AttachedEditOptions & {
-  documents: ConfigDocuments;
+  config: ConfigRecords;
   dataDir: string;
   logger: PluginLogger;
-  /** What plugins.yaml names now: the machine sources, the executor instances and the machine defaults set. */
+  /** What the plugins config names now: the machine sources, the executor instances and the machine defaults set. */
   configured(): { machines: InstanceSpec[]; executors: InstanceSpec[]; machineDefaults: Partial<MachineDefaults> };
   version(): string;
   error(): string | undefined;
@@ -40,7 +39,7 @@ export function createMachinesEditor(o: AttachedEditOptions & {
     const c = o.configured();
     const error = o.error();
     return {
-      document: PLUGINS, version: o.version(), ...(error ? { error } : {}),
+      version: o.version(), ...(error ? { error } : {}),
       machines: c.machines, executors: c.executors.map((x) => x.name), defaults: machineDefaults(c.machineDefaults), ssh: readSshTargets(sshConfig),
     };
   }
@@ -48,21 +47,21 @@ export function createMachinesEditor(o: AttachedEditOptions & {
   async function edit(e: MachineEdit): Promise<MachineEditOutcome> {
     const c = o.configured();
     const r = await applyMachineEdit(e, {
-      documents: o.documents, configured: c.machines.map((instance) => ({ role: 'machine-source' as const, instance })), executors: c.executors,
+      config: o.config, configured: c.machines.map((instance) => ({ role: 'machine-source' as const, instance })), executors: c.executors,
       defaults: machineDefaults(c.machineDefaults), sshTargets: () => readSshTargets(sshConfig), resolveTarget,
     });
     if (!r.ok) return r;
     if (r.changed) {
-      o.logger.info(`hopper: plugins.yaml edited in the UI: attached machine ${e.name} over ssh ${e.ssh}`);
+      o.logger.info(`hopper: plugins config edited in the UI: attached machine ${e.name} over ssh ${e.ssh}`);
       await o.reload();
     }
     return { ok: true, config: config() };
   }
 
   async function editDefaults(e: MachineDefaultsEdit): Promise<MachineEditOutcome> {
-    const r = applyMachineDefaultsEdit(e, o.documents, o.configured().executors);
+    const r = applyMachineDefaultsEdit(e, o.config, o.configured().executors);
     if (!r.ok) return { ok: false, code: r.code === 'not_found' ? 'invalid' : r.code, error: r.error };
-    o.logger.info(`hopper: plugins.yaml edited in the UI: machine defaults ${e.lanes} lane(s), executors ${e.executors.join(', ') || 'none'}`);
+    o.logger.info(`hopper: plugins config edited in the UI: machine defaults ${e.lanes} lane(s), executors ${e.executors.join(', ') || 'none'}`);
     await o.reload();
     return { ok: true, config: config() };
   }

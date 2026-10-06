@@ -5,7 +5,7 @@
 # design.md "Target authentication"): the public half of HOPPER_SSH_KEY_FILE goes into the
 # machine's authorized_keys with `restrict` (no forwarding, no pty), and the machine's host key is
 # pinned as the one this user's ~/.ssh/known_hosts already trusts — never learned from a connection.
-# Then print the plugins.yaml lines that attach it. Re-running is safe: the unit is replaced and
+# Then print how to attach it in the UI (Plugins). Re-running is safe: the unit is replaced and
 # restarted only if it is not running, and the key is added once.
 #   usage: HOPPER_SSH_KEY_FILE=<hopper key> attach-machine.sh <ssh-target> [lanes]
 #   (<ssh-target>: a ~/.ssh/config alias or user@host; the key file is created when missing)
@@ -75,20 +75,22 @@ for _ in 1 2 3 4 5 6 7 8 9 10; do
     echo "herdr session $SESSION is running on $TARGET"
     cat <<EOF
 
-Add to plugins.yaml (hopper config edit plugins.yaml); the daemon follows it without a restart.
+Attach it in the UI: Plugins → Machine sources, add an ssh instance named $TARGET, then set its
+options (the daemon follows them without a restart):
+  ssh: $TARGET
+  lanes: $LANES
+  herdrBin: $HERDR_BIN
+  hostKey: $HOST_KEY
 The daemon needs HOPPER_SSH_KEY_FILE=$KEY in its environment (daemon.env).
-
-machines:
-  - { name: $TARGET, plugin: ssh, options: { ssh: $TARGET, lanes: $LANES, herdrBin: $HERDR_BIN, hostKey: $HOST_KEY } }
 
 Jobs there run in the same working directories as here: each job's cwd must exist on $TARGET.
 EOF
     # Attached before the rename (issue #112): its old unit still runs session job-hopper, which the
-    # stored plugins.yaml entry names (store migration 12) until it is attached again, as now.
+    # stored plugins config entry names (store migration 12) until it is attached again, as now.
     if remote 'test -e ~/.config/systemd/user/job-hopper-herdr.service'; then
       cat <<EOF
-$TARGET was attached as job-hopper: its entry in plugins.yaml names session: job-hopper. Once no job runs
-there, drop that line from the entry, then remove the old unit there:
+$TARGET was attached as job-hopper: its instance in Plugins names session job-hopper. Once no job runs
+there, clear that option in Plugins, then remove the old unit there:
   ssh $TARGET 'systemctl --user disable --now job-hopper-herdr && rm ~/.config/systemd/user/job-hopper-herdr.service'
 EOF
     fi

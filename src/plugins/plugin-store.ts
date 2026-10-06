@@ -218,14 +218,14 @@ export function createPluginStore(o: PluginStoreOptions): PluginStore {
 
   async function remove(id: string): Promise<PluginStoreEditOutcome> {
     if (!installs().has(id)) return refuse('not_found', `${id} is not a store install`);
-    // Rescan first: it reloads plugins.yaml, so a change the watch has not read yet counts.
+    // Rescan first: it reloads the plugins config, so a change the watch has not read yet counts.
     await o.plugins.edit({ action: 'rescan' });
     const r = o.plugins.report();
     const users = [
       ...r.instances.filter((i) => i.instance.plugin === id).map((i) => `${i.role} ${i.instance.name}`),
       ...(r.router.active === id && !r.instances.some((i) => i.role === 'router' && i.instance.plugin === id) ? ['the detected router'] : []),
     ];
-    if (users.length > 0) return refuse('conflict', `${id} is in use by ${users.join(', ')}: change plugins.yaml first`);
+    if (users.length > 0) return refuse('conflict', `${id} is in use by ${users.join(', ')}: change the plugins config first`);
     keep(id, undefined);
     rmSync(join(dir, id), { recursive: true, force: true });
     pending.delete(id);

@@ -2,7 +2,7 @@
 // and nothing that pushes or mutates (those routes are gone, 404).
 import { afterEach, describe, expect, it } from 'vitest';
 import type { SourceStatus } from '../../src/domain/types.ts';
-import { TEST_PLUGINS, startTestApp, tempDbPath, writePluginsYaml, type TestApp } from '../support/app.ts';
+import { TEST_PLUGINS, startTestApp, tempDbPath, writePlugins, type TestApp } from '../support/app.ts';
 import { rawRequest } from '../support/http.ts';
 
 let t: TestApp | undefined;
@@ -63,8 +63,8 @@ describe('Host guard (DNS rebinding)', () => {
 });
 
 describe('GET /api/sources', () => {
-  it('lists the running sources with their sync status; plugins.yaml without jobSources → github and github-app in error until authors are set', async () => {
-    const a = await start((db) => writePluginsYaml(db, { version: 1, executors: TEST_PLUGINS.executors }));
+  it('lists the running sources with their sync status; a plugins config without jobSources → github and github-app in error until authors are set', async () => {
+    const a = await start((db) => writePlugins(db, { version: 1, executors: TEST_PLUGINS.executors }));
     await a.sync();
     const { sources } = (await a.api<{ sources: SourceStatus[] }>('GET', '/api/sources')).body;
     expect(sources.find((s) => s.name === 'github')).toMatchObject({ state: 'error', lastError: expect.stringMatching(/authors/) });
@@ -73,7 +73,7 @@ describe('GET /api/sources', () => {
   });
 
   it('a job source with invalid options shows in state error with the message, and nothing is pulled from it', async () => {
-    const a = await start((db) => writePluginsYaml(db, { ...TEST_PLUGINS, jobSources: [{ name: 'github', plugin: 'github-gh', options: { pollSeconds: -5 } }] }));
+    const a = await start((db) => writePlugins(db, { ...TEST_PLUGINS, jobSources: [{ name: 'github', plugin: 'github-gh', options: { pollSeconds: -5 } }] }));
     const { sources } = (await a.api<{ sources: SourceStatus[] }>('GET', '/api/sources')).body;
     const gh = sources.find((s) => s.name === 'github')!;
     expect(gh.state).toBe('error');
@@ -82,7 +82,7 @@ describe('GET /api/sources', () => {
   });
 
   it('github enabled: false is listed disabled', async () => {
-    const a = await start((db) => writePluginsYaml(db, { ...TEST_PLUGINS, jobSources: [{ name: 'github', plugin: 'github-gh', options: { enabled: false, authors: ['owner'] } }] }));
+    const a = await start((db) => writePlugins(db, { ...TEST_PLUGINS, jobSources: [{ name: 'github', plugin: 'github-gh', options: { enabled: false, authors: ['owner'] } }] }));
     const { sources } = (await a.api<{ sources: SourceStatus[] }>('GET', '/api/sources')).body;
     expect(sources.find((s) => s.name === 'github')).toMatchObject({ kind: 'github', state: 'disabled' });
   });
