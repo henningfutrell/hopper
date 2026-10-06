@@ -184,6 +184,41 @@ export function isTrustDialog(text: string, cwd: string): boolean {
 }
 
 /**
+ * Claude's warning when it starts with every permission granted (yolo, issue #267): its title, and
+ * the option that accepts it. The status line under the input box ("bypass permissions on") is not it.
+ */
+export function isBypassDialog(text: string): boolean {
+  return text.includes('running in Bypass Permissions mode') && text.includes('Yes, I accept');
+}
+
+/** One option of a select dialog: "❯ 1. Yes", "  2. No, and tell Claude what to do differently (esc)". */
+const DIALOG_OPTION = /^\s*(❯\s*)?(\d+)\.\s+(.*\S)\s*$/;
+
+const optionWords = (s: string): string => s.replace(/\(esc\)\s*$/, '').replace(/[\s.]+$/, '').replace(/\s+/g, ' ').trim().toLowerCase();
+
+/**
+ * The option of the dialog on screen that `answer` names (issue #267), as the digit that picks it:
+ * its number, or its own words (case and spacing aside). The dialog is the block of lines, without a
+ * blank line, around the last option the cursor (❯) is on; a numbered list in the transcript has no
+ * cursor. Undefined when no dialog is on screen or the answer names none of its options.
+ */
+export function dialogOption(text: string, answer: string): string | undefined {
+  const lines = text.split('\n');
+  let at = -1;
+  for (let i = lines.length - 1; i >= 0 && at < 0; i--) if (DIALOG_OPTION.exec(lines[i]!)?.[1]) at = i;
+  if (at < 0) return undefined;
+  let from = at;
+  let to = at;
+  while (from > 0 && lines[from - 1]!.trim() !== '') from--;
+  while (to < lines.length - 1 && lines[to + 1]!.trim() !== '') to++;
+  const options = lines.slice(from, to + 1).map((l) => DIALOG_OPTION.exec(l)).filter((m) => m !== null).map((m) => ({ n: m[2]!, words: optionWords(m[3]!) }));
+  const number = /^\s*(\d+)\.?\s*$/.exec(answer)?.[1];
+  if (number !== undefined) return options.find((o) => o.n === number)?.n;
+  const words = optionWords(answer);
+  return options.find((o) => o.words === words)?.n;
+}
+
+/**
  * What was typed into the pane after the turn that parked the job: the first user echo (❯ and
  * its continuation lines) after Claude's reply to `anchor`, above the input box. Undefined when
  * nothing was typed (text still in the input box does not count). Lines are trimmed, ❯ removed.

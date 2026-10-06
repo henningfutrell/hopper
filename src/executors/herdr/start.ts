@@ -1,12 +1,12 @@
 // Opening a job's pane and getting Claude ready in it: workspace, tab, agent start, and the
-// folder-trust dialog. docs/design.md "Phase 2" → "Start".
+// startup dialogs (folder trust; the bypass permissions warning when yolo). docs/design.md "Phase 2" → "Start".
 
 import type { Clock, ExecutionContext, ExecutionOutcome } from '../../domain/ports.ts';
 import type { HerdrClient } from './client.ts';
 import type { Sleep } from './monitor.ts';
 import { tail } from './monitor.ts';
 import type { ClaudeJobPayload } from './payload.ts';
-import { SCRATCH_DIR, isTrustDialog } from './screen.ts';
+import { SCRATCH_DIR, isBypassDialog, isTrustDialog } from './screen.ts';
 import { shellQuote } from '../ssh.ts';
 
 export const WORKSPACE_LABEL = 'hopper';
@@ -15,6 +15,32 @@ const SHELL_RETRY_MS = 100;
 /** What the scratch command prints last, so the hopper knows the shell ran it. */
 const SCRATCH_READY = 'hopper-scratch-ready';
 const SCRATCH_WAIT_MS = 1000;
+/** Startup dialogs answered at most: folder trust and the bypass permissions warning, with room to spare. */
+const MAX_STARTUP_DIALOGS = 4;
+
+/** What grants Claude every permission: the flag, and the permission mode that means the same. */
+const YOLO_FLAG = '--dangerously-skip-permissions';
+const GRANTS_ALL = new Set([YOLO_FLAG, '--allow-dangerously-skip-permissions', '--permission-mode=bypassPermissions']);
+/** Claude's own setting that the bypass permissions warning was accepted, given on the command line. */
+export const YOLO_SETTINGS = JSON.stringify({ skipDangerousModePermissionPrompt: true });
+
+/**
+ * The arguments Claude starts with (issue #267, design.md "Yolo"): the instance's `yolo` decides
+ * whether Claude has every permission, never its `args`. Yolo puts the flag first, with the setting that
+ * its warning was accepted unless the args name settings of their own; not yolo drops every argument
+ * that would grant it, so Claude asks and the hopper takes each dialog to the job's answerers.
+ */
+export function claudeArgsFor(yolo: boolean, args: readonly string[]): string[] {
+  const rest: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    if (GRANTS_ALL.has(args[i]!)) continue;
+    if (args[i] === '--permission-mode' && args[i + 1] === 'bypassPermissions') { i++; continue; }
+    rest.push(args[i]!);
+  }
+  if (!yolo) return rest;
+  const named = rest.some((a) => a === '--settings' || a.startsWith('--settings='));
+  return [YOLO_FLAG, ...(named ? [] : ['--settings', YOLO_SETTINGS]), ...rest];
+}
 
 /** What a job keeps in `job.executorState`. */
 export interface PaneState {
@@ -54,6 +80,8 @@ export interface StartDeps {
   pollMs: number;
   claudeArgs: string[];
   trustWorkdir: boolean;
+  /** Claude starts with every permission granted: its warning about that is accepted at startup. */
+  yolo: boolean;
 }
 
 export const agentNameFor = (jobId: string): string => `jh-${jobId.slice(0, 8)}`;
@@ -83,17 +111,39 @@ export async function openPane(d: StartDeps, ctx: ExecutionContext, cwd: string,
   return state;
 }
 
-async function waitReady(d: StartDeps, ctx: ExecutionContext, s: PaneState): Promise<ExecutionOutcome | null> {
+/**
+ * Wait until Claude is ready for the prompt, answering the startup dialogs the hopper may answer: the
+ * folder-trust dialog naming the job's cwd (when `trustWorkdir`), and the bypass permissions warning
+ * (when yolo). Any other dialog fails the job with the screen. A dialog is judged once per state
+ * change, so keys sent to one never land on the next. `started`: herdr's agent start found Claude
+ * ready, so anything but a dialog is; else herdr found it held at one. Null when ready (or aborted),
+ * else the failure.
+ */
+async function settleStartup(d: StartDeps, ctx: ExecutionContext, s: PaneState, started: boolean): Promise<ExecutionOutcome | null> {
   const until = d.clock.now().getTime() + START_TIMEOUT_MS;
+  let answeredAt = -1;
+  let answered = 0;
   while (d.clock.now().getTime() < until) {
     if (ctx.signal.aborted) return null;
     const agent = await d.herdr.getAgent(s.agentName);
     if (!agent) return { kind: 'failed', error: 'claude exited at startup' };
-    if (agent.status === 'idle' || agent.status === 'done') return null;
+    if (agent.status === 'idle' || agent.status === 'done' || (started && answered === 0 && agent.status !== 'blocked')) return null;
+    if ((agent.status === 'blocked' || (!started && answered === 0)) && agent.stateChangeSeq !== answeredAt) {
+      const screen = await d.herdr.read(s.paneId, { source: 'visible', lines: 60 });
+      const dialog = d.trustWorkdir && isTrustDialog(screen, s.cwd) ? `trusted workdir ${s.cwd}`
+        : d.yolo && isBypassDialog(screen) ? 'accepted bypass permissions mode' : undefined;
+      if (!dialog || answered >= MAX_STARTUP_DIALOGS) return { kind: 'failed', error: `claude blocked at startup: ${tail(screen, 30)}` };
+      // Both dialogs open on their refusing option; the next one down accepts.
+      await d.herdr.sendKeys(s.paneId, ['down', 'enter']);
+      ctx.progress(0, dialog);
+      answeredAt = agent.stateChangeSeq;
+      answered++;
+      continue;
+    }
     await d.sleep(d.pollMs, ctx.signal);
   }
   const screen = await d.herdr.read(s.paneId, { source: 'visible', lines: 60 });
-  return { kind: 'failed', error: `claude not ready after trusting the workdir: ${tail(screen, 30)}` };
+  return { kind: 'failed', error: `claude not ready at startup: ${tail(screen, 30)}` };
 }
 
 /**
@@ -129,12 +179,6 @@ export async function startClaude(d: StartDeps, ctx: ExecutionContext, s: PaneSt
     await d.sleep(SHELL_RETRY_MS, ctx.signal);
     started = await d.herdr.startAgent({ name: s.agentName, paneId: s.paneId, args, timeoutMs: START_TIMEOUT_MS });
   }
-  if (started.ok) return null;
-  const screen = await d.herdr.read(s.paneId, { source: 'visible', lines: 60 });
-  if (!(d.trustWorkdir && isTrustDialog(screen, s.cwd))) {
-    return { kind: 'failed', error: `claude blocked at startup: ${tail(screen, 30)}` };
-  }
-  await d.herdr.sendKeys(s.paneId, ['down', 'enter']);
-  ctx.progress(0, `trusted workdir ${s.cwd}`);
-  return waitReady(d, ctx, s);
+  // Started, or held at a dialog (herdr's agent_not_ready): either way, a dialog may stand before the prompt.
+  return settleStartup(d, ctx, s, started.ok);
 }

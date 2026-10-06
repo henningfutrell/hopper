@@ -9,6 +9,7 @@ import { documentsToRecords } from './migration-config.ts';
 import { gateRouterSettingsAsConcepts } from './migration-gate-router-settings.ts';
 import { connectedAccounts } from './migration-connected-accounts.ts';
 import { levelsNamedAsLevels } from './migration-level-names.ts';
+import { yoloOption } from './migration-yolo.ts';
 
 type Migration = string | ((db: Db) => void);
 
@@ -161,6 +162,8 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
   "DELETE FROM settings WHERE key = 'routerMode'",
   // 8: a user's connected accounts (issue #214), and a job source for each in the plugins config.
   connectedAccounts,
+  // 9: yolo is a herdr-claude executor's own option, out of its args (issue #267).
+  yoloOption,
 ];
 
 /** A user schema's version once migrated. */

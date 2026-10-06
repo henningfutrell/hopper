@@ -1,12 +1,13 @@
 // herdr-claude: one Claude Code job per tab of hopper's own herdr session (design.md
 // "herdr-claude executor"). The screen protocol parses Claude Code's TUI, so the agent kind is
-// fixed: another agent CLI is another executor plugin. `args` are the agent's own arguments —
+// fixed: another agent CLI is another executor plugin. `yolo` is the instance's choice whether Claude
+// has every permission (design.md "Yolo", issue #267); `args` are the agent's other arguments —
 // where its tools are chosen (design.md "6d"). A job on an attached machine runs in that machine's
 // own herdr (binary and session from its `ssh` machine instance), reached over ssh (design.md "Attached machines"),
 // or a client target's herdr, through its reverse tunnel (design.md "Client targets").
 import { join } from 'node:path';
 import type { HerdrClient, RemoteHerdr } from '../../../executors/herdr/index.ts';
-import { createHerdrClaudeExecutor, createHerdrCliClient } from '../../../executors/herdr/index.ts';
+import { claudeArgsFor, createHerdrClaudeExecutor, createHerdrCliClient } from '../../../executors/herdr/index.ts';
 import { clientSocket } from '../../../executors/client.ts';
 import { hopperSshAuth } from '../../../executors/ssh.ts';
 import { expandHome } from '../../expand-home.ts';
@@ -16,6 +17,7 @@ export interface HerdrClaudeOptions {
   bin: string;
   claudeBin: string;
   session: string;
+  yolo: boolean;
   args: string[];
   cwd: string;
   trustWorkdir: boolean;
@@ -39,8 +41,12 @@ export function herdrClaudePlugin(seam?: HerdrClient): PluginDefinition<'executo
         .meta({ commandBearing: true, description: 'the claude CLI herdr starts (detection checks it is on PATH)' }),
       // Never the user's default herdr session (herdr's own doctrine; design.md "herdr session").
       session: z.string().min(1).refine((s) => s !== 'default', 'must not be the default herdr session').default('hopper'),
-      args: z.array(z.string()).default(['--dangerously-skip-permissions'])
-        .meta({ commandBearing: true, description: "Claude Code's arguments: permissions, allowed tools, MCP config" }),
+      yolo: z.boolean().default(true).meta({
+        commandBearing: true,
+        description: 'yolo: Claude runs with every permission granted (--dangerously-skip-permissions) and never stops to ask. Off: Claude asks before it acts, and each dialog goes to the job\'s answerers',
+      }),
+      args: z.array(z.string()).default([])
+        .meta({ commandBearing: true, description: "Claude Code's other arguments: allowed tools, MCP config (yolo decides the permissions)" }),
       cwd: z.string().min(1).default('~').transform(expandHome)
         .meta({ commandBearing: true, description: 'working directory of a job whose payload names none' }),
       trustWorkdir: z.boolean().default(true),
@@ -86,7 +92,7 @@ export function herdrClaudePlugin(seam?: HerdrClient): PluginDefinition<'executo
       // (which starts the session's server) and every pane, through its tab's environment.
       return createHerdrClaudeExecutor({
         herdr: seam ?? createHerdrCliClient({ bin: o.bin, session: o.session, userEnv: ctx.userEnv }), remote, local, paneEnv: ctx.userEnv,
-        clock: ctx.clock, defaultCwd: o.cwd, claudeArgs: o.args, trustWorkdir: o.trustWorkdir,
+        clock: ctx.clock, defaultCwd: o.cwd, claudeArgs: claudeArgsFor(o.yolo, o.args), trustWorkdir: o.trustWorkdir, yolo: o.yolo,
         pollMs: o.pollMs, idleNudgeMs: o.idleNudgeMs,
       });
     },

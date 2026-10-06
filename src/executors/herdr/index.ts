@@ -7,6 +7,7 @@ export type { Marker, TurnView } from './screen.ts';
 export { createHerdrClaudeExecutor } from './executor.ts';
 export type { HerdrClaudeExecutor, HerdrClaudeExecutorOptions, RemoteHerdr } from './executor.ts';
 export type { Sleep } from './monitor.ts';
+export { claudeArgsFor } from './start.ts';
 export type { PaneState } from './start.ts';
 export { validatePayload } from './payload.ts';
 export { CTRL_END, createFakeHerdrClient } from './fake-client.ts';

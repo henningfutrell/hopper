@@ -2,6 +2,9 @@
 // the herdr session its jobs run in, which the hopper starts (the seam here). Parts that run on a machine
 // and name none (escalation levels, usage sources) run on it. Real HTTP server, the plugins config in the
 // database, the sealed HOME.
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { homedir, userInfo } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { MachinesConfig } from '../../src/domain/types.ts';
 import { startTestApp, tempDbPath, writePlugins, type TestApp } from '../support/app.ts';
@@ -17,6 +20,9 @@ const sessions: string[] = [];
 let sessionFails = false;
 
 beforeEach(() => {
+  // `self` is this machine: ssh would reach this host's loopback as the user the hopper runs as.
+  mkdirSync(join(homedir(), '.ssh'), { recursive: true, mode: 0o700 });
+  writeFileSync(join(homedir(), '.ssh', 'config'), `Host self\n  HostName 127.0.0.1\n  User ${userInfo().username}\nHost laptop\n  HostName 192.0.2.10\n`);
   resolved.length = 0;
   sessions.length = 0;
   sessionFails = false;
@@ -31,12 +37,12 @@ afterEach(async () => {
 const DESK = { name: 'desk', plugin: 'ssh', options: { ssh: 'desk', lanes: 1, executors: ['test'], herdrBin: '/usr/bin/herdr' } };
 const FILE = { version: 1, executors: [{ name: 'test', plugin: 'test' }, { name: 'herdr-claude', plugin: 'herdr-claude' }], jobSources: [], machines: [{ name: 'local', plugin: 'local' }, DESK] };
 
-async function start(file: object = FILE): Promise<{ a: TestApp; token: string }> {
+async function start(file: object = FILE, env: Record<string, string> = {}): Promise<{ a: TestApp; token: string }> {
   const db = tempDbPath();
   cleanup = db.cleanup;
   writePlugins(db.dbPath, file);
   t = await startTestApp({
-    dbPath: db.dbPath,
+    dbPath: db.dbPath, env,
     seams: {
       machineProbe: async () => ({ online: true }),
       resolveTarget: async (ssh) => { resolved.push(ssh); throw new Error('never reached over ssh'); },
@@ -121,3 +127,74 @@ describe('POST /ui/api/machines — this machine', () => {
   });
 });
 
+
+// Issue #275: the hopper detects an ssh target that is this machine, so adding it needs no ssh.
+describe('POST /ui/api/machines — an ssh target that is this machine', () => {
+  const NONE = { ...FILE, machines: [DESK] };
+
+  it('the machines config marks the ssh targets that are this machine', async () => {
+    const { a } = await start(NONE);
+    const c = await config(a);
+    expect(c.ssh.targets).toEqual(['self', 'laptop']);
+    expect(c.ssh.here).toEqual(['self']);
+    expect(c.thisMachineRefused).toBeUndefined();
+  });
+
+  it('is added as this machine: a local instance, its herdr session started, nothing reached over ssh', async () => {
+    const { a, token } = await start(NONE);
+    const r = await a.ui<Reply>('/ui/api/machines', { name: 'archbox', ssh: 'self', lanes: 2, executors: ['herdr-claude'], version: (await config(a)).version }, { token });
+    expect(r.status).toBe(200);
+    expect(resolved).toEqual([]);
+    expect(sessions).toEqual(['hopper']);
+    expect(read(a).machines).toEqual([DESK, { name: 'archbox', plugin: 'local', options: { lanes: 2, executors: ['herdr-claude'], session: 'hopper' } }]);
+  });
+
+  it('refused while this machine is already added, saying which it is', async () => {
+    const { a, token } = await start();
+    const before = read(a);
+    const r = await a.ui<Reply>('/ui/api/machines', { name: 'again', ssh: 'self', version: (await config(a)).version }, { token });
+    expect(r.status).toBe(409);
+    expect(r.body.error).toMatch(/self is this machine, already added as local/);
+    expect(resolved).toEqual([]);
+    expect(read(a)).toEqual(before);
+  });
+
+  it('another ssh target is still attached over ssh', async () => {
+    const { a, token } = await start(NONE);
+    await a.ui<Reply>('/ui/api/machines', { name: 'lap', ssh: 'laptop', version: (await config(a)).version }, { token });
+    expect(resolved).toEqual(['laptop']);
+  });
+});
+
+// Issue #275: in the container (HOPPER_LOCAL_MACHINE=false) this machine is the container, which is not a
+// machine: nothing is detected as this machine there, and adding it is refused with the way that works.
+describe('POST /ui/api/machines — the hopper in a container', () => {
+  const NONE = { ...FILE, machines: [DESK] };
+  const CONTAINER = { HOPPER_LOCAL_MACHINE: 'false' };
+
+  it('the machines config says why this machine cannot be added and how to attach the computer it runs on', async () => {
+    const { a } = await start(NONE, CONTAINER);
+    const c = await config(a);
+    expect(c.thisMachineRefused).toMatch(/container/);
+    expect(c.thisMachineRefused).toMatch(/host\.containers\.internal/);
+    expect(c.thisMachineRefused).toMatch(/host\.docker\.internal/);
+    expect(c.ssh.here).toEqual([]);
+  });
+
+  it('adding this machine is refused with that reason, nothing written, no session started', async () => {
+    const { a, token } = await start(NONE, CONTAINER);
+    const before = read(a);
+    const r = await a.ui<Reply>('/ui/api/machines', { name: 'box', version: (await config(a)).version }, { token });
+    expect(r.status).toBe(409);
+    expect(r.body.error).toMatch(/container/);
+    expect(sessions).toEqual([]);
+    expect(read(a)).toEqual(before);
+  });
+
+  it('an ssh target that resolves to the container\'s own addresses is attached over ssh, never as this machine', async () => {
+    const { a, token } = await start(NONE, CONTAINER);
+    await a.ui<Reply>('/ui/api/machines', { name: 'host', ssh: 'self', version: (await config(a)).version }, { token });
+    expect(resolved).toEqual(['self']);
+    expect(read(a).machines.every((m: { plugin: string }) => m.plugin !== 'local')).toBe(true);
+  });
+});

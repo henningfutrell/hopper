@@ -9,6 +9,8 @@ numbers, no commit hashes, no file names, no code words. Never edit a line once 
 update notice would show it again as new.
 
 - The old built-in user from before GitHub sign-in is gone: everything it held now belongs to you, the admin who signed in with GitHub, and Settings → Users lists only real people.
+- Claude jobs no longer get stuck on Claude's "bypass permissions" warning: yolo is now a switch on each Claude runner, on by default. Turn it off for a runner that should ask before it acts; its questions come to you (or your answering levels), and answering with an option's number or words picks it.
+- Picking this computer as a machine to add over ssh now adds it directly, without ssh. When the hopper runs in a container, Machines says how to attach the computer it runs on instead of offering to add the container.
 - An install or update can no longer leave the hopper's pages unstyled: a version whose look did not build properly is refused, and the running one stays.
 - The sign-in page has a fresh look: on a wide screen it shows what the hopper does in three steps beside the sign-in, over a backdrop of jobs moving along their lanes.
 - Someone you add with a login link sets up everything of their own, but only the hopper's admins manage sign-in, users, updates and the plugin store.

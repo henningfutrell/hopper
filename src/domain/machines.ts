@@ -60,6 +60,9 @@ export interface ClientMachine extends AttachedBase {
  * are the machine defaults. A machine is edited and removed like any plugin instance (POST
  * /ui/api/plugins). `version` is `MachinesConfig.version`.
  *
+ * An `ssh` target that is this machine (issue #275, `MachinesConfig.ssh.here`) is added as this machine
+ * the same way, with no ssh.
+ *
  * Without `ssh` (issue #260) it adds **this machine**: a `local` instance under `name`, its jobs in the
  * herdr session `session` (default `hopper`), which the daemon starts; `lanes` left out is four,
  * `executors` left out every registered one. Refused while a machine is this one already.
@@ -97,8 +100,16 @@ export interface MachinesConfig {
   executors: string[];
   /** What a machine attached from the UI starts with. */
   defaults: MachineDefaults;
-  /** The detected ssh targets: the Host aliases of ~/.ssh/config; `notes` say what could not be read. */
-  ssh: { targets: string[]; notes: string[] };
+  /**
+   * The detected ssh targets: the Host aliases of ~/.ssh/config; `notes` say what could not be read;
+   * `here` (issue #275) those that are this machine, which a machine edit adds as this machine, no ssh.
+   */
+  ssh: { targets: string[]; notes: string[]; here: string[] };
+  /**
+   * Why this machine cannot be added (issue #275), and how to run jobs on the computer the hopper runs
+   * on instead: the hopper runs in a container, which is not a machine. Absent: it can be.
+   */
+  thisMachineRefused?: string;
 }
 
 export type MachineEditOutcome =

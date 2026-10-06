@@ -3,7 +3,7 @@
 // POST /ui/api/machines and an Edit form to POST /ui/api/plugins, and why it may not yet.
 import { describe, expect, it } from 'vitest';
 import type { MachinesConfig } from '../../src/domain/types.ts';
-import { addBody, addProblem, clientReleaseText, defaultsBody, DETAILS, editBody, editDraft, editProblem, hasThisMachine, kindOf, localBody, newDraft, newThisDraft, thisBody, thisProblem, type MachineDraft } from '../../ui/src/model/machines.ts';
+import { addBody, addProblem, clientReleaseText, defaultsBody, DETAILS, editBody, editDraft, editProblem, hasThisMachine, isThisMachineTarget, kindOf, mayAddThisMachine, localBody, newDraft, newThisDraft, thisBody, thisProblem, type MachineDraft } from '../../ui/src/model/machines.ts';
 
 const CONFIG: MachinesConfig = {
   version: 'v1',
@@ -15,7 +15,7 @@ const CONFIG: MachinesConfig = {
   ],
   executors: ['herdr-claude', 'test'],
   defaults: { lanes: 1, executors: ['herdr-claude'] },
-  ssh: { targets: ['laptop', 'desk'], notes: [] },
+  ssh: { targets: ['laptop', 'desk'], notes: [], here: [] },
 };
 
 const draft = (over: Partial<MachineDraft> = {}): MachineDraft => ({ name: 'laptop', ssh: 'laptop', lanes: '2', executors: ['herdr-claude'], label: '', ...over });
@@ -195,5 +195,28 @@ describe('adding this machine', () => {
     expect(localBody(local, { name: 'local', lanes: '4', session: 'work' }, 'v1')).toEqual({ action: 'options', role: 'machine-source', name: 'local', version: 'v1', options: { lanes: 4, session: 'work' } });
     expect(localBody(local, { name: 'local', lanes: '4', session: '' }, 'v1')).toEqual({ action: 'options', role: 'machine-source', name: 'local', version: 'v1', options: { lanes: 4 } });
     expect(localBody(local, { name: 'local', lanes: '4', session: 'jobs' }, 'v1')).toBeNull();
+  });
+});
+
+// Issue #275: an ssh target that is this machine is added as this machine, no ssh; in a container this machine cannot be added.
+describe('an ssh target that is this machine', () => {
+  const HERE: MachinesConfig = { ...CONFIG, machines: CONFIG.machines.filter((m) => m.connection !== 'local'), ssh: { targets: ['laptop', 'self'], notes: [], here: ['self'] } };
+
+  it('is marked, and the Add form may send it while no machine is this one', () => {
+    expect(isThisMachineTarget(HERE, 'self')).toBe(true);
+    expect(isThisMachineTarget(HERE, 'laptop')).toBe(false);
+    expect(addProblem(draft({ name: 'archbox', ssh: 'self' }), HERE)).toBeNull();
+    expect(addBody(draft({ name: 'archbox', ssh: 'self' }), 'v1')).toMatchObject({ name: 'archbox', ssh: 'self' });
+  });
+
+  it('refused in the form once this machine is added, naming it', () => {
+    const added: MachinesConfig = { ...HERE, machines: CONFIG.machines };
+    expect(addProblem(draft({ name: 'archbox', ssh: 'self' }), added)).toMatch(/self is this machine, already added as local/);
+  });
+
+  it('this machine may be added unless it is one already or the hopper runs in a container', () => {
+    expect(mayAddThisMachine(HERE)).toBe(true);
+    expect(mayAddThisMachine(CONFIG)).toBe(false);
+    expect(mayAddThisMachine({ ...HERE, thisMachineRefused: 'the hopper runs in a container' })).toBe(false);
   });
 });

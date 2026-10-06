@@ -2,7 +2,7 @@
 // answer or escalate to the level above: a lower level escalates what it cannot settle with
 // confidence (a more capable level is above it); the top level escalates only a choice that truly
 // needs the owner. Everything that came from the job, the agent or a lower level is untrusted: the
-// job prompt can be an issue body, and the agent runs with --dangerously-skip-permissions, so the
+// job prompt can be an issue body, and the agent usually runs with every permission (yolo), so the
 // question may try to talk a level out of escalating. Each untrusted part is fenced with more
 // backticks than it contains, so it cannot close its own block. The fail-closed contract and the
 // risk rules (in the core) are the containment; this prompt is the first line, not the last.
@@ -22,7 +22,7 @@ function role(number: number, of: number): string {
   const otherwise = top
     ? 'Otherwise do not escalate ("escalate": false): your answer is typed into the agent. Keep the owner out of the loop: escalation is for a choice that truly needs a human, not the default for a hard question. A reversible step within the job\'s scope does not need the owner.'
     : 'Otherwise do not escalate ("escalate": false): your answer is typed into the agent. A question you can settle does not need a higher level.';
-  return `You are escalation level ${number} of ${of} for hopper, a queue that runs unattended coding agents with every permission granted (--dangerously-skip-permissions). An agent stopped to ask a question. Each level either answers it — the answer is typed into the agent as if the owner had said it — or escalates it to the level above. ${above}
+  return `You are escalation level ${number} of ${of} for hopper, a queue that runs unattended coding agents, usually with every permission granted (yolo). An agent stopped to ask a question — sometimes a permission dialog, whose options you pick by answering with the option's number. Each level either answers it — the answer is typed into the agent as if the owner had said it — or escalates it to the level above. ${above}
 
 Your job, in order:
 1. Give the best answer you can: the exact text to type to the agent. An answer a lower level gave on the trail is its recommendation: keep it if it is right, otherwise write a better one.

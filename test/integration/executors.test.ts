@@ -122,7 +122,7 @@ describe('GET /api/plugins: the executor role', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- loose JSON
     const marked = (id: string) => Object.entries((byId.get(id) as any).options.properties as Record<string, { commandBearing?: boolean }>)
       .filter(([, s]) => s.commandBearing === true).map(([k]) => k).sort();
-    expect(marked('herdr-claude')).toEqual(['args', 'bin', 'claudeBin', 'cwd']);
+    expect(marked('herdr-claude')).toEqual(['args', 'bin', 'claudeBin', 'cwd', 'yolo']);
     expect(marked('test')).toEqual([]);
     expect(marked('claude-cli')).toEqual(['bin', 'sshBin']);
     expect(marked('anthropic-api')).toEqual(['apiKeyEnv', 'baseUrl']);
