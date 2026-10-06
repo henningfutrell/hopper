@@ -53,7 +53,7 @@ const writePlugin = (dataDir: string, id: string, text: string) => {
   writeFileSync(join(dataDir, 'plugins', id, 'index.js'), text);
 };
 
-const TWO_EXECUTORS = { version: 1, escalationLevels: [{ name: 'fable', plugin: 'claude-cli', options: { model: 'fable', machine: 'local' } }], executors: [{ name: 'herdr-a', plugin: 'herdr-claude', options: { session: 'hopper-a', pollMs: 1000 } }, { name: 'herdr-b', plugin: 'herdr-claude', options: { session: 'hopper-b', pollMs: 1000 } }, { name: 'test', plugin: 'test' }] };
+const TWO_EXECUTORS = { version: 1, escalationLevels: [{ name: 'level-2', plugin: 'claude-cli', options: { model: 'fable', machine: 'local' } }], executors: [{ name: 'herdr-a', plugin: 'herdr-claude', options: { session: 'hopper-a', pollMs: 1000 } }, { name: 'herdr-b', plugin: 'herdr-claude', options: { session: 'hopper-b', pollMs: 1000 } }, { name: 'test', plugin: 'test' }] };
 
 describe('GET /api/plugins: what the UI edits', () => {
   it('carries the config version and every configured instance by role', async () => {
@@ -61,7 +61,7 @@ describe('GET /api/plugins: what the UI edits', () => {
     const body = await report(a);
     expect(body.config.version).toMatch(/^[0-9a-f]{64}$/);
     const names = body.instances.map((i: { role: string; instance: { name: string } }) => `${i.role}:${i.instance.name}`);
-    expect(names).toEqual(expect.arrayContaining(['escalation-level:fable', 'executor:herdr-a', 'executor:herdr-b', 'executor:test']));
+    expect(names).toEqual(expect.arrayContaining(['escalation-level:level-2', 'executor:herdr-a', 'executor:herdr-b', 'executor:test']));
     expect(names.some((n: string) => n.startsWith('router:'))).toBe(true);
     const herdr = body.plugins.find((p: { id: string }) => p.id === 'herdr-claude');
     expect(herdr.options.properties.cwd.commandBearing).toBe(true);
@@ -78,7 +78,7 @@ describe('POST /ui/api/plugins — one instance\'s options', () => {
   it('without a UI session: 403, the plugins config unchanged', async () => {
     const { a } = await start(TWO_EXECUTORS);
     const version = (await report(a)).config.version;
-    const r = await a.ui('/ui/api/plugins', { action: 'options', role: 'escalation-level', name: 'fable', options: { model: 'sonnet', machine: 'local' }, version });
+    const r = await a.ui('/ui/api/plugins', { action: 'options', role: 'escalation-level', name: 'level-2', options: { model: 'sonnet', machine: 'local' }, version });
     expect(r.status).toBe(403);
     expect(read(a)).toEqual(TWO_EXECUTORS);
   });
@@ -86,9 +86,9 @@ describe('POST /ui/api/plugins — one instance\'s options', () => {
   it('a live role: the escalation level swaps to the new options; other sections stay', async () => {
     const { a, token } = await start(TWO_EXECUTORS);
     const version = (await report(a)).config.version;
-    const r = await a.ui<Reply>('/ui/api/plugins', { action: 'options', role: 'escalation-level', name: 'fable', options: { model: 'sonnet', machine: 'local' }, version }, { token });
+    const r = await a.ui<Reply>('/ui/api/plugins', { action: 'options', role: 'escalation-level', name: 'level-2', options: { model: 'sonnet', machine: 'local' }, version }, { token });
     expect(r.status).toBe(200);
-    expect(r.body.escalationLevels[0]!.instance).toEqual({ name: 'fable', plugin: 'claude-cli', options: { model: 'sonnet', machine: 'local' } });
+    expect(r.body.escalationLevels[0]!.instance).toEqual({ name: 'level-2', plugin: 'claude-cli', options: { model: 'sonnet', machine: 'local' } });
     expect(r.body.config.version).not.toBe(version);
     const doc = read(a);
     expect(doc.escalationLevels[0].options).toEqual({ model: 'sonnet', machine: 'local' });
@@ -137,10 +137,10 @@ describe('POST /ui/api/plugins — one instance\'s options', () => {
     const { a, token } = await start(TWO_EXECUTORS);
     const version = (await report(a)).config.version;
     const options = { model: 'fable', machine: 'local', bin: '/opt/claude/bin/claude', sshBin: '/usr/local/bin/ssh' };
-    const r = await a.ui<Reply>('/ui/api/plugins', { action: 'options', role: 'escalation-level', name: 'fable', options, version }, { token });
+    const r = await a.ui<Reply>('/ui/api/plugins', { action: 'options', role: 'escalation-level', name: 'level-2', options, version }, { token });
     expect(r.status).toBe(200);
-    expect(r.body.escalationLevels[0]!.instance).toEqual({ name: 'fable', plugin: 'claude-cli', options });
-    expect(read(a).escalationLevels[0]).toEqual({ name: 'fable', plugin: 'claude-cli', options });
+    expect(r.body.escalationLevels[0]!.instance).toEqual({ name: 'level-2', plugin: 'claude-cli', options });
+    expect(read(a).escalationLevels[0]).toEqual({ name: 'level-2', plugin: 'claude-cli', options });
   });
 
   it('a command-bearing option sent unchanged (or its default) is accepted', async () => {
@@ -167,7 +167,7 @@ describe('POST /ui/api/plugins — one instance\'s options', () => {
     const edited = structuredClone(TWO_EXECUTORS);
     edited.escalationLevels[0]!.options.model = 'opus';
     writePlugins(a.dbPath, edited);
-    const r = await a.ui<Reply>('/ui/api/plugins', { action: 'options', role: 'escalation-level', name: 'fable', options: { model: 'sonnet', machine: 'local' }, version }, { token });
+    const r = await a.ui<Reply>('/ui/api/plugins', { action: 'options', role: 'escalation-level', name: 'level-2', options: { model: 'sonnet', machine: 'local' }, version }, { token });
     expect(r.status).toBe(409);
     expect(r.body.error).toMatch(/changed/);
     expect(read(a)).toEqual(edited);

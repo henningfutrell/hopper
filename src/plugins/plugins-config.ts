@@ -4,6 +4,7 @@
 // attached ones, issue #74), usageSources, notifiers, routing, machineDefaults. A UI edit (edit.ts,
 // attached-edit.ts) replaces it against its version.
 import { z } from 'zod';
+import { isModelName } from '../domain/plugins.ts';
 import type { InstanceSpec, MachineDefaults, RoutingRule } from '../domain/types.ts';
 import { ROUTING_RULES } from '../routing/index.ts';
 
@@ -37,8 +38,12 @@ const CONFIG = z.strictObject({
   router: instance.optional(),
   queueSorter: instance.optional(),
   // 0..n, lowest first; a level's name is also a question stage, so it is one level and never `human`.
+  // It names the level, not a model (issue #209): the model is only its `model` option.
   escalationLevels: uniqueList('escalationLevels', 'a question stage names its level').superRefine((list, ctx) => {
     if (list.some((e) => e.name === 'human')) ctx.addIssue({ code: 'custom', message: 'escalationLevels: human is the human stage; name the level something else' });
+    for (const e of list.filter((l) => isModelName(l.name, l.options.model))) {
+      ctx.addIssue({ code: 'custom', message: `escalationLevels: ${e.name} is a model name; name the level as a level (its model is its model option)` });
+    }
   }).optional(),
   // 1..n; jobs name an executor instance, so a name is one instance.
   executors: uniqueList('executors', 'jobs name their executor').min(1, 'name at least one executor').optional(),

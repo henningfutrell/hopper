@@ -7,8 +7,8 @@ import { gateChain, readDraft, rulesEditor, RULES_MAX_BYTES } from '../../ui/src
 
 const base = {
   escalationLevels: [
-    { instance: { name: 'opus', plugin: 'claude-cli', options: { model: 'opus' } }, detection: { status: 'available' }, active: 'claude-cli' },
-    { instance: { name: 'fable', plugin: 'claude-cli' }, detection: { status: 'unavailable', reason: 'no claude' }, active: null, reason: 'no claude' },
+    { instance: { name: 'level-1', plugin: 'claude-cli', options: { model: 'opus' } }, detection: { status: 'available' }, active: 'claude-cli' },
+    { instance: { name: 'level-2', plugin: 'claude-cli' }, detection: { status: 'unavailable', reason: 'no claude' }, active: null, reason: 'no claude' },
   ],
 } as unknown as PluginsReport;
 
@@ -16,13 +16,13 @@ describe('gateChain', () => {
   it('the escalation levels lowest first, then the risk rules, then the owner — each level with its instance and state', () => {
     const chain = gateChain(base, 6);
     expect(chain.map((s) => s.stage)).toEqual(['level', 'level', 'risk-rules', 'human']);
-    expect(chain[0]).toMatchObject({ name: 'opus', plugin: 'claude-cli', label: 'active', tone: 'ok' });
+    expect(chain[0]).toMatchObject({ name: 'level-1', plugin: 'claude-cli', label: 'active', tone: 'ok' });
     expect(chain[2]).toMatchObject({ name: '6 rules', label: 'code, cannot be weakened', tone: 'muted' });
     expect(chain[3]).toMatchObject({ name: 'Owner', label: 'last stop' });
   });
 
   it('a level that cannot run says so: it escalates every question', () => {
-    expect(gateChain(base, 6)[1]).toMatchObject({ name: 'fable', label: 'cannot run — escalates', tone: 'bad', reason: 'no claude' });
+    expect(gateChain(base, 6)[1]).toMatchObject({ name: 'level-2', label: 'cannot run — escalates', tone: 'bad', reason: 'no claude' });
   });
 
   it('no levels: questions go straight to the owner', () => {

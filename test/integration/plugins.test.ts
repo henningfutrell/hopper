@@ -108,12 +108,12 @@ describe('the plugins config and a custom plugin', () => {
 });
 
 describe('escalation levels in /api/plugins', () => {
-  it('no section: the built-in levels, opus then fable, both claude-cli', async () => {
+  it('no section: the built-in levels, level-1 then level-2, both claude-cli', async () => {
     const a = await start();
     const body = (await a.api('GET', '/api/plugins')).body;
     expect(body.escalationLevels.map((l: { instance: unknown }) => l.instance)).toEqual([
-      { name: 'opus', plugin: 'claude-cli', options: { machine: 'local', bin: 'claude', model: 'opus', timeoutMs: 180000 } },
-      { name: 'fable', plugin: 'claude-cli', options: { machine: 'local', bin: 'claude', model: 'fable', timeoutMs: 180000 } },
+      { name: 'level-1', plugin: 'claude-cli', options: { machine: 'local', bin: 'claude', model: 'opus', timeoutMs: 180000 } },
+      { name: 'level-2', plugin: 'claude-cli', options: { machine: 'local', bin: 'claude', model: 'fable', timeoutMs: 180000 } },
     ]);
   });
 
@@ -130,9 +130,9 @@ describe('escalation levels in /api/plugins', () => {
   });
 
   it('a level that names no machine is shown unable to run, with the reason: this machine is no default (#174)', async () => {
-    const a = await start({ plugins: { escalationLevels: [{ name: 'opus', plugin: 'claude-cli', options: { bin: 'claude' } }] } });
+    const a = await start({ plugins: { escalationLevels: [{ name: 'level-1', plugin: 'claude-cli', options: { bin: 'claude' } }] } });
     const body = (await a.api('GET', '/api/plugins')).body;
-    expect(body.escalationLevels).toEqual([expect.objectContaining({ instance: expect.objectContaining({ name: 'opus' }), detection: expect.objectContaining({ status: 'unavailable' }), active: null, reason: expect.stringContaining('machine') })]);
+    expect(body.escalationLevels).toEqual([expect.objectContaining({ instance: expect.objectContaining({ name: 'level-1' }), detection: expect.objectContaining({ status: 'unavailable' }), active: null, reason: expect.stringContaining('machine') })]);
   });
 
   it('escalationLevels: [] — no levels', async () => {

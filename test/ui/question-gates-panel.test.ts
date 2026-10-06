@@ -29,8 +29,8 @@ const claudeSchema = {
   required: ['machine'],
 };
 const LEVELS = [
-  { name: 'opus', plugin: 'claude-cli', options: { model: 'opus', machine: 'local' } },
-  { name: 'fable', plugin: 'claude-cli', options: { model: 'claude-fable-0' } },
+  { name: 'level-1', plugin: 'claude-cli', options: { model: 'opus', machine: 'local' } },
+  { name: 'level-2', plugin: 'claude-cli', options: { model: 'claude-fable-0' } },
 ];
 const MACHINES = [{ value: 'local', description: 'this machine' }, { value: 'box', description: 'ssh machine' }];
 const MODELS = [
@@ -130,7 +130,7 @@ describe('question gates panel', () => {
   it('shows the chain, the risk rules read-only, and the rules', async () => {
     await boot();
     const text = panel()!.textContent!;
-    for (const s of ['Escalation levels', 'Risk rules', 'Owner', 'opus', 'fable', 'delete', 'deploying or publishing', 'Standing rules']) expect(text).toContain(s);
+    for (const s of ['Escalation levels', 'Risk rules', 'Owner', 'level-1', 'level-2', 'delete', 'deploying or publishing', 'Standing rules']) expect(text).toContain(s);
     expect(rulesBox()!.value).toBe(RULES.text);
   });
 
@@ -161,36 +161,36 @@ describe('question gates panel', () => {
 
   it('a level\'s model is a choice of the models the plugin lists; a configured model it does not list stays shown', async () => {
     await boot();
-    const opus = levelForm('opus');
-    expect(opus.querySelector('input[name="model"]')).toBeNull();
-    const select = opus.querySelector<HTMLSelectElement>('select[name="model"]')!;
+    const first = levelForm('level-1');
+    expect(first.querySelector('input[name="model"]')).toBeNull();
+    const select = first.querySelector<HTMLSelectElement>('select[name="model"]')!;
     expect(select.value).toBe('opus');
     expect([...select.options].map((o) => o.value)).toEqual(['', 'opus', 'fable', 'sonnet']);
     expect(select.textContent).toContain('Opus 5.5');
-    const fable = levelForm('fable').querySelector<HTMLSelectElement>('select[name="model"]')!;
-    expect(fable.value).toBe('claude-fable-0');
-    expect([...fable.options].find((o) => o.value === 'claude-fable-0')!.textContent).toContain('not listed');
+    const second = levelForm('level-2').querySelector<HTMLSelectElement>('select[name="model"]')!;
+    expect(second.value).toBe('claude-fable-0');
+    expect([...second.options].find((o) => o.value === 'claude-fable-0')!.textContent).toContain('not listed');
   });
 
   it('a chosen model is saved as the level\'s option', async () => {
     const daemon = await boot();
-    const select = levelForm('opus').querySelector<HTMLSelectElement>('select[name="model"]')!;
+    const select = levelForm('level-1').querySelector<HTMLSelectElement>('select[name="model"]')!;
     await act(async () => {
       select.value = 'sonnet';
       select.dispatchEvent(new Event('change', { bubbles: true }));
     });
-    await click(button('Save opus'));
+    await click(button('Save level-1'));
     await vi.waitFor(() => expect(pluginsCall(daemon)).toBeDefined());
-    expect(pluginsCall(daemon)).toEqual({ action: 'options', role: 'escalation-level', name: 'opus', options: { model: 'sonnet', machine: 'local' }, version: 'p1' });
+    expect(pluginsCall(daemon)).toEqual({ action: 'options', role: 'escalation-level', name: 'level-1', options: { model: 'sonnet', machine: 'local' }, version: 'p1' });
   });
 
   it('a level moves earlier or later through POST /ui/api/plugins', async () => {
     const daemon = await boot();
-    expect(panel()!.querySelector('button[aria-label="Move opus later"]')).not.toBeNull();
-    expect(panel()!.querySelector('button[aria-label="Move opus earlier"]')).toBeNull();
-    await click(panel()!.querySelector<HTMLButtonElement>('button[aria-label="Move fable earlier"]')!);
+    expect(panel()!.querySelector('button[aria-label="Move level-1 later"]')).not.toBeNull();
+    expect(panel()!.querySelector('button[aria-label="Move level-1 earlier"]')).toBeNull();
+    await click(panel()!.querySelector<HTMLButtonElement>('button[aria-label="Move level-2 earlier"]')!);
     await vi.waitFor(() => expect(pluginsCall(daemon)).toBeDefined());
-    expect(pluginsCall(daemon)).toEqual({ action: 'move', role: 'escalation-level', name: 'fable', to: 0, version: 'p1' });
+    expect(pluginsCall(daemon)).toEqual({ action: 'move', role: 'escalation-level', name: 'level-2', to: 0, version: 'p1' });
   });
 
   const pick = (select: HTMLSelectElement, value: string) => act(async () => {
@@ -202,7 +202,7 @@ describe('question gates panel', () => {
     const daemon = await boot();
     const name = panel()!.querySelector<HTMLInputElement>('input[name="add-name-escalation-level"]')!;
     await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(name, 'sonnet');
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(name, 'level-3');
       name.dispatchEvent(new Event('input', { bubbles: true }));
     });
     const machine = panel()!.querySelector<HTMLSelectElement>('select[name="add-machine-escalation-level"]')!;
@@ -211,24 +211,24 @@ describe('question gates panel', () => {
     await pick(machine, 'box');
     await click(button('Add'));
     await vi.waitFor(() => expect(pluginsCall(daemon)).toBeDefined());
-    expect(pluginsCall(daemon)).toEqual({ action: 'add', role: 'escalation-level', plugin: 'claude-cli', name: 'sonnet', options: { machine: 'box' }, version: 'p1' });
+    expect(pluginsCall(daemon)).toEqual({ action: 'add', role: 'escalation-level', plugin: 'claude-cli', name: 'level-3', options: { machine: 'box' }, version: 'p1' });
   });
 
   it('a level\'s machine is picked from the configured machines, never typed, and never left empty (#174)', async () => {
     const daemon = await boot();
-    const opus = levelForm('opus');
-    expect(opus.querySelector('input[name="machine"]')).toBeNull();
-    const select = opus.querySelector<HTMLSelectElement>('select[name="machine"]')!;
+    const first = levelForm('level-1');
+    expect(first.querySelector('input[name="machine"]')).toBeNull();
+    const select = first.querySelector<HTMLSelectElement>('select[name="machine"]')!;
     expect(select.value).toBe('local');
     expect([...select.options].filter((o) => !o.disabled).map((o) => o.value)).toEqual(['local', 'box']);
     // A level that names none shows it must be picked; it offers no empty choice.
-    const fable = levelForm('fable').querySelector<HTMLSelectElement>('select[name="machine"]')!;
-    expect(fable.value).toBe('');
-    expect([...fable.options].find((o) => o.value === '')!.disabled).toBe(true);
-    expect(fable.textContent).toContain('pick a machine');
-    await pick(fable, 'box');
-    await click(button('Save fable'));
+    const second = levelForm('level-2').querySelector<HTMLSelectElement>('select[name="machine"]')!;
+    expect(second.value).toBe('');
+    expect([...second.options].find((o) => o.value === '')!.disabled).toBe(true);
+    expect(second.textContent).toContain('pick a machine');
+    await pick(second, 'box');
+    await click(button('Save level-2'));
     await vi.waitFor(() => expect(pluginsCall(daemon)).toBeDefined());
-    expect(pluginsCall(daemon)).toEqual({ action: 'options', role: 'escalation-level', name: 'fable', options: { model: 'claude-fable-0', machine: 'box' }, version: 'p1' });
+    expect(pluginsCall(daemon)).toEqual({ action: 'options', role: 'escalation-level', name: 'level-2', options: { model: 'claude-fable-0', machine: 'box' }, version: 'p1' });
   });
 });

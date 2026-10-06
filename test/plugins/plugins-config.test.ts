@@ -25,7 +25,7 @@ describe('the plugins config (router, escalationLevels, executors, jobSources, m
     const r = loadPluginsConfig({
       version: 1,
       router: { name: 'gate-router', plugin: 'gate-router' },
-      escalationLevels: [{ name: 'opus', plugin: 'claude-cli', options: { model: 'opus' } }, { name: 'fable', plugin: 'claude-cli' }],
+      escalationLevels: [{ name: 'level-1', plugin: 'claude-cli', options: { model: 'opus' } }, { name: 'level-2', plugin: 'claude-cli' }],
       executors: [{ name: 'test', plugin: 'test' }],
       jobSources: [],
       machines: [{ name: 'local', plugin: 'local' }],
@@ -35,8 +35,8 @@ describe('the plugins config (router, escalationLevels, executors, jobSources, m
     expect(r).toEqual({
       router: { name: 'gate-router', plugin: 'gate-router', options: {} },
       escalationLevels: [
-        { name: 'opus', plugin: 'claude-cli', options: { model: 'opus' } },
-        { name: 'fable', plugin: 'claude-cli', options: {} },
+        { name: 'level-1', plugin: 'claude-cli', options: { model: 'opus' } },
+        { name: 'level-2', plugin: 'claude-cli', options: {} },
       ],
       executors: [{ name: 'test', plugin: 'test', options: {} }],
       jobSources: [],
@@ -102,6 +102,9 @@ describe('the plugins config (router, escalationLevels, executors, jobSources, m
     ['options not a map', { version: 1, router: { name: 'a', plugin: 'b', options: 3 } }, /router\.options/],
     ['escalationLevels: null', { version: 1, escalationLevels: null }, /escalationLevels/],
     ['a level named human (the human stage)', { version: 1, escalationLevels: [{ name: 'human', plugin: 'claude-cli' }] }, /human is the human stage/],
+    ['a level named after a model (issue #209)', { version: 1, escalationLevels: [{ name: 'fable', plugin: 'claude-cli', options: { model: 'sonnet' } }] }, /escalationLevels: fable is a model name; name the level as a level/],
+    ['a level named after a full model id', { version: 1, escalationLevels: [{ name: 'claude-sonnet-4-5', plugin: 'anthropic-api' }] }, /claude-sonnet-4-5 is a model name/],
+    ['a level named after its own model option', { version: 1, escalationLevels: [{ name: 'mine', plugin: 'anthropic-api', options: { model: 'mine' } }] }, /mine is a model name/],
     ['two levels with one name (a question stage names its level)', { version: 1, escalationLevels: [{ name: 'x', plugin: 'claude-cli' }, { name: 'x', plugin: 'claude-cli' }] }, /escalationLevels: x named twice/],
     ['the old answerer section', { version: 1, answerer: { name: 'opus', plugin: 'claude-cli' } }, /answerer/],
     ['executors: [] (at least one executor)', { version: 1, executors: [] }, /executors/],
