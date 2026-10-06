@@ -5,9 +5,10 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
 import { runCli, type CliIo } from '../src/cli.ts';
+import { mintLoginCode } from '../src/http/ui/login-code.ts';
 import { openInstanceStore } from '../src/store/index.ts';
 import { openAdminStore } from './support/files.ts';
-import { testDatabaseUrl } from './support/database.ts';
+import { installFromBefore, testDatabaseUrl } from './support/database.ts';
 
 const dirs: string[] = [];
 afterEach(() => { for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true }); });
@@ -15,7 +16,7 @@ afterEach(() => { for (const d of dirs.splice(0)) rmSync(d, { recursive: true, f
 function db(): string {
   const d = mkdtempSync(`${tmpdir()}/jh-cli-`);
   dirs.push(d);
-  return testDatabaseUrl();
+  return installFromBefore(testDatabaseUrl());
 }
 
 function cli(url: string | undefined, argv: string[], o: { stdin?: string } = {}) {
@@ -115,18 +116,22 @@ describe('hopper config', () => {
   });
 });
 
-describe('hopper login-code', () => {
-  it('mints a one-time code into the database and prints it; --link prints the device link', () => {
-    const url = db();
-    const a = cli(url, ['login-code']);
-    expect(a).toMatchObject({ code: 0, out: expect.stringMatching(/^[0-9a-f]{64}\n$/) });
-    const b = cli(url, ['login-code', '--link', 'https://hopper.example.com/']);
-    expect(b.out).toMatch(/^https:\/\/hopper\.example\.com\/#login=[0-9a-f]{64}\n$/);
-    const s = openInstanceStore({ url, clock: { now: () => new Date() } });
-    const hash = (c: string) => createHash('sha256').update(c).digest('hex');
-    expect(s.loginCodes.take(hash(a.out.trim()), new Date().toISOString())).toBe('admin');
-    expect(s.loginCodes.take(hash(a.out.trim()), new Date().toISOString())).toBeUndefined();
-    s.close();
+describe('no bootstrap login (issue #238)', () => {
+  it('there is no hopper login-code: the same text as an unknown command, exit 2', () => {
+    const r = cli(db(), ['login-code']);
+    expect(r.code).toBe(2);
+    expect(r.err).toContain('hopper config set');
+    expect(cli(undefined, ['help']).out).not.toContain('login-code');
+  });
+
+  it('a user\'s records without --user: the one user; none yet, or several, names what to do', () => {
+    const fresh = testDatabaseUrl();
+    expect(cli(fresh, ['config', 'get', 'rules'])).toMatchObject({ code: 2, err: expect.stringMatching(/no user yet: the first sign-in makes one/) });
+    expect(cli(fresh, ['user', 'add', 'ada']).code).toBe(0);
+    expect(cli(fresh, ['config', 'set', 'rules', '--if-version', 'missing'], { stdin: json('ada rules') }).code).toBe(0);
+    expect(cli(fresh, ['config', 'get', 'rules', '--user', 'ada']).out).toBe(`${json('ada rules')}\n`);
+    expect(cli(fresh, ['user', 'add', 'bea']).code).toBe(0);
+    expect(cli(fresh, ['config', 'get', 'rules'])).toMatchObject({ code: 2, err: expect.stringMatching(/several users: name one with --user/) });
   });
 });
 
@@ -147,7 +152,7 @@ describe('hopper help (issue #68)', () => {
     const r = cli(undefined, [arg]);
     expect(r.code).toBe(0);
     expect(r.err).toBe('');
-    for (const command of ['config get', 'config version', 'config set', 'login-code', 'users', 'user add', 'help']) {
+    for (const command of ['config get', 'config version', 'config set', 'users', 'user add', 'user transfer', 'help']) {
       expect(r.out).toContain(`hopper ${command}`);
     }
     expect(r.out).toMatch(/HOPPER_DATABASE_URL/);
@@ -167,8 +172,6 @@ describe('hopper help (issue #68)', () => {
 });
 
 describe('several users (issue #158)', () => {
-  const hash = (c: string) => createHash('sha256').update(c).digest('hex');
-
   it('hopper users lists every user; hopper user add adds one under a free name', () => {
     const url = db();
     expect(cli(url, ['users'])).toMatchObject({ code: 0, out: expect.stringMatching(/^admin\tadmin\t\S+\n$/) });
@@ -176,16 +179,6 @@ describe('several users (issue #158)', () => {
     expect(cli(url, ['user', 'add', 'bea smith'])).toMatchObject({ code: 2, err: expect.stringMatching(/name bea smith is taken/) });
     expect(cli(url, ['user', 'add'])).toMatchObject({ code: 2, err: expect.stringMatching(/user add <name>/) });
     expect(cli(url, ['users']).out.split('\n').filter(Boolean).map((l) => l.split('\t').slice(0, 2))).toEqual([['admin', 'admin'], ['bea_smith', 'Bea Smith']]);
-  });
-
-  it('login-code --user mints a code for that user; an unknown user is refused', () => {
-    const url = db();
-    cli(url, ['user', 'add', 'bea']);
-    const code = cli(url, ['login-code', '--user', 'bea']).out.trim();
-    const s = openInstanceStore({ url, clock: { now: () => new Date() } });
-    expect(s.loginCodes.take(hash(code), new Date().toISOString())).toBe('bea');
-    s.close();
-    expect(cli(url, ['login-code', '--user', 'nobody'])).toMatchObject({ code: 2, err: expect.stringMatching(/no user nobody/) });
   });
 
   it('config --user edits that user\'s records; sign-in is the instance\'s and refuses --user', () => {
@@ -212,7 +205,7 @@ describe('hopper user transfer (issue #212)', () => {
     const admin = openAdminStore(url);
     admin.jobs.create({ executor: 'test', payload: {} }, 5);
     admin.close();
-    expect(cli(url, ['config', 'set', 'rules', '--if-version', 'missing'], { stdin: json('admin rules') }).code).toBe(0);
+    expect(cli(url, ['config', 'set', 'rules', '--user', 'admin', '--if-version', 'missing'], { stdin: json('admin rules') }).code).toBe(0);
     return url;
   }
 
@@ -223,7 +216,7 @@ describe('hopper user transfer (issue #212)', () => {
     expect(cli(url, ['users']).out).toMatch(/^admin\tbea\t\S+\n$/);
     const s = instanceOf(url);
     expect(s.identities.userOf('corp', 'bea')).toBe('admin');
-    const store = s.userStore(s.users.admin());
+    const store = s.userStore(s.users.get('admin')!);
     expect(store.jobs.list()).toHaveLength(1);
     store.close();
     s.close();
@@ -232,7 +225,9 @@ describe('hopper user transfer (issue #212)', () => {
 
   it('moves the sessions and login codes of the user that takes over', () => {
     const url = adminAndBea();
-    const code = cli(url, ['login-code', '--user', 'bea']).out.trim();
+    const minting = instanceOf(url);
+    const code = mintLoginCode(minting, { now: () => new Date() }, 'bea');
+    minting.close();
     expect(cli(url, ['user', 'transfer', 'admin', 'bea']).code).toBe(0);
     const s = instanceOf(url);
     expect(s.loginCodes.take(createHash('sha256').update(code).digest('hex'), new Date().toISOString())).toBe('admin');

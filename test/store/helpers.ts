@@ -1,10 +1,10 @@
 import type { Clock, UserStore } from '../../src/domain/ports.ts';
-import type { JobSpec } from '../../src/domain/types.ts';
+import { ADMIN_ID, type JobSpec } from '../../src/domain/types.ts';
 import { openDb, type Db } from '../../src/store/db.ts';
 import { openInstanceStore } from '../../src/store/index.ts';
 import { migrateInstance } from '../../src/store/migrations.ts';
 import { migrateTenant } from '../../src/store/tenant-migrations.ts';
-import { testDatabaseUrl } from '../support/database.ts';
+import { installFromBefore, testDatabaseUrl } from '../support/database.ts';
 
 export function fixedClock(iso = '2026-10-02T10:00:00.000Z'): Clock & { set(iso: string): void } {
   let t = new Date(iso);
@@ -22,8 +22,8 @@ export function useTempStore() {
   return {
     url: () => testDatabaseUrl(),
     open: (url: string, clock = fixedClock(), idGen?: () => string): UserStore => {
-      const instance = openInstanceStore({ url, clock, ...(idGen ? { idGen } : {}) });
-      const admin = instance.userStore(instance.users.admin());
+      const instance = openInstanceStore({ url: installFromBefore(url), clock, ...(idGen ? { idGen } : {}) });
+      const admin = instance.userStore(instance.users.get(ADMIN_ID)!);
       return { ...admin, close: () => { admin.close(); instance.close(); } };
     },
     at: (url: string, version: number): Db => {

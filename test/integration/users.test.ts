@@ -12,7 +12,7 @@ import { withStores } from '../support/files.ts';
 import { waitFor } from '../support/wait.ts';
 import { openDb } from '../../src/store/db.ts';
 import { migrateInstance } from '../../src/store/migrations.ts';
-import { databaseUrlFor } from '../support/database.ts';
+import { databaseUrlFor, untouchedUrlFor } from '../support/database.ts';
 import { runCli } from '../../src/cli.ts';
 import { rmSync } from 'node:fs';
 import { createStickyExecutor } from '../support/doubles.ts';
@@ -302,7 +302,7 @@ describe('an install from before several users', () => {
   it('migrations 17 and 21 make its jobs and config admin\'s, and admin\'s runtime runs the job that was waiting', async () => {
     const at = '2026-10-01T00:00:00.000Z';
     const a = await start({}, (dbPath) => {
-      const v16 = openDb(databaseUrlFor(dbPath));
+      const v16 = openDb(untouchedUrlFor(dbPath));
       migrateInstance(v16, 16);
       const job = { id: 'old-job', spec: { executor: 'scripted', payload: { prompt: JSON.stringify({ op: 'echo', message: 'kept' }), cwd: '/tmp', env: {} } }, priority: 50, status: 'queued', approved: false, createdAt: at, updatedAt: at, attempts: 0 };
       v16.run("INSERT INTO jobs (id, status, created_at, body) VALUES ('old-job', 'queued', ?, ?)", at, JSON.stringify(job));

@@ -25,7 +25,7 @@ import { validateEvent } from '../../src/events/index.ts';
 import { assertAllConform, trackConformance } from './conformance.ts';
 import { rawRequest } from './http.ts';
 import { createFakeUsageSource } from '../../src/usage/index.ts';
-import { databaseUrlFor } from './database.ts';
+import { databaseUrlFor, isNewHopper } from './database.ts';
 import { mintLoginCode } from '../../src/http/ui/login-code.ts';
 import { readConfig, writeConfig } from './files.ts';
 import { fakeLevels } from './fake-questions.ts';
@@ -74,7 +74,7 @@ export interface TestApp {
   waitForQuestion(jobId: string, ok: (q: Question) => boolean, timeoutMs?: number): Promise<Question>;
   /** Set the fake usage reading (through the engine; there is no HTTP route). */
   setUsage(used: number, limit?: number): void;
-  /** Log in like open-ui.sh does: mint a code for the user (`hopper login-code --user`; default admin), POST /ui/login. Returns the session token. */
+  /** Log in with a login code minted for the user (default admin), as a device link does: POST /ui/login. Returns the session token. */
   login(userId?: string): Promise<string>;
   /** POST /ui/login with this code. Returns the session token. */
   loginWith(code: string): Promise<string>;
@@ -114,8 +114,9 @@ export async function startTestApp(o: {
   secrets?: Record<string, string | undefined>;
 }): Promise<TestApp> {
   const dataDir = dirname(o.dbPath);
+  // A new hopper (issue #238) has no user whose plugins config to write: its users start with the defaults.
   if (o.plugins) writePlugins(o.dbPath, { ...TEST_PLUGINS, ...o.plugins });
-  else if (o.plugins === undefined && readConfig(o.dbPath, 'plugins') === undefined) writePlugins(o.dbPath, TEST_PLUGINS);
+  else if (o.plugins === undefined && !isNewHopper(o.dbPath) && readConfig(o.dbPath, 'plugins') === undefined) writePlugins(o.dbPath, TEST_PLUGINS);
   const secrets = o.secrets ?? {};
   if (secrets.PATH === undefined) secrets.PATH = process.env.PATH;
   const config = loadConfig({
@@ -151,7 +152,8 @@ export async function startTestApp(o: {
       ...o.seams?.perUser?.(id),
     }),
   });
-  const tracker = trackConformance(app.user(ADMIN_ID).store);
+  // A new hopper (issue #238) has no admin to track; the scan of every user's log at stop still runs.
+  const tracker = app.users().some((u) => u.id === ADMIN_ID) ? trackConformance(app.user(ADMIN_ID).store) : undefined;
   const api = async <T>(method: string, path: string, body?: unknown, headers: Record<string, string> = {}): Promise<ApiResponse<T>> => {
     const res = await fetch(app.url + path, {
       method,
@@ -238,8 +240,10 @@ export async function startTestApp(o: {
         all.push(...mine);
       }
       await app.stop();
-      tracker.stop();
-      assertAllConform(tracker);
+      if (tracker) {
+        tracker.stop();
+        assertAllConform(tracker);
+      }
       const bad = all.map((e) => ({ e, r: validateEvent(e) })).filter((x) => !x.r.ok);
       if (bad.length) {
         throw new Error(`${bad.length} stored event(s) violate their schema:\n${bad

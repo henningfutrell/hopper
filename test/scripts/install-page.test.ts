@@ -28,7 +28,7 @@ describe('the install page', () => {
   });
 
   it('names only hopper scripts that exist', () => {
-    const named = [...page.matchAll(/hopper\/scripts\/([\w-]+\.sh)/g)].map((m) => m[1] ?? '');
+    const named = [...page.matchAll(/\/scripts\/([\w-]+\.sh)/g)].map((m) => m[1] ?? '');
     expect(named.length).toBeGreaterThan(0);
     for (const script of new Set(named)) expect(existsSync(join(ROOT, 'scripts', script)), script).toBe(true);
   });
@@ -105,8 +105,9 @@ describe('the Windows install (WSL)', () => {
     expect(windows).toContain(`data-copy="${INSTALL}"`);
   });
 
-  it('signs the Windows browser in with a login link', () => {
-    expect(windows).toContain('hopper login-code --link http://127.0.0.1:4790');
+  it('signs the Windows browser in with GitHub, no login link (issue #238)', () => {
+    expect(windows).not.toContain('login-code');
+    expect(windows).toContain('sign in with GitHub');
   });
 });
 

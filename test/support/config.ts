@@ -3,7 +3,8 @@
 import { afterEach } from 'vitest';
 import type { ConfigRecords, UserConfigName, UserStore } from '../../src/domain/ports.ts';
 import { openInstanceStore } from '../../src/store/index.ts';
-import { testDatabaseUrl } from './database.ts';
+import { ADMIN_ID } from '../../src/domain/types.ts';
+import { installFromBefore, testDatabaseUrl } from './database.ts';
 
 export interface TempConfig extends ConfigRecords {
   /** Replace a record whatever its version. */
@@ -18,8 +19,8 @@ export function useTempConfig(): () => TempConfig {
     for (const store of open.splice(0)) store.close();
   });
   return () => {
-    const instance = openInstanceStore({ url: testDatabaseUrl(), clock: { now: () => new Date() } });
-    const admin = instance.userStore(instance.users.admin());
+    const instance = openInstanceStore({ url: installFromBefore(testDatabaseUrl()), clock: { now: () => new Date() } });
+    const admin = instance.userStore(instance.users.get(ADMIN_ID)!);
     const store: UserStore = { ...admin, close: () => { admin.close(); instance.close(); } };
     open.push(store);
     const c = store.config;

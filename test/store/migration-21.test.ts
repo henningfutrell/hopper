@@ -43,8 +43,8 @@ describe('migration 21: owner → the default admin account', () => {
       { ...bea, createdAt: expect.any(String) },
     ]);
     expect(instance.users.get('owner')).toBeUndefined();
-    expect(instance.users.admin().id).toBe('admin');
-    const admin = instance.userStore(instance.users.admin());
+    expect(instance.users.get('admin')?.id).toBe('admin');
+    const admin = instance.userStore(instance.users.get('admin')!);
     expect(admin.jobs.get(job.id)?.status).toBe('queued');
     expect(admin.config.read('rules')).toBe('be kind');
     admin.close();
