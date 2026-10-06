@@ -210,8 +210,9 @@ way Jenkins hands out its first admin's key, is the **login code** — one-time,
 signing in as the default admin account, `admin`.
 
 - **At start**, while the login code is on, no sign-in is off, `admin` signs in through no realm that
-  is on, and no [first GitHub admin](#ui-roles-and-role-rules) signs in through one, the hopper mints a login code for `admin` and logs it with its link
-  (`journalctl --user -u hopper`, or the container's log):
+  is on, and no [first GitHub admin](#ui-roles-and-role-rules) signs in through one, the hopper mints
+  a login code for `admin` and logs it with its link (`journalctl --user -u hopper`, or the
+  container's log):
 
   ```
   hopper: first sign-in: login code <code> signs in once as admin, for 10 minutes: http://localhost:4790/#login=<code> (another: hopper login-code)
