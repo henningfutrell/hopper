@@ -5,7 +5,7 @@
 import { toast } from 'sonner';
 import { create } from 'zustand';
 import { get, post, SessionRejected, clearToken, readSession } from '@/lib/api';
-import { signInWithoutCredential, wantsNoSignIn } from '@/lib/login';
+import { signInThroughGateway, signInWithoutCredential, wantsGatewaySignIn, wantsNoSignIn } from '@/lib/login';
 import { HISTORY_TYPES } from '@/model/event-types';
 import { reloadNeeded } from '@/model/update';
 import type { SessionUser, SessionView } from '@/model/wire';
@@ -151,6 +151,8 @@ export async function checkSession() {
   try {
     let s = await readSession();
     // The sign-in config's `none`: nobody signs in; take the session at once (design.md "Sign-in", issue #53).
+    // A gateway realm: the auth gateway in front signed the person in; take the session from its token (issue #215).
+    if (wantsGatewaySignIn(s.authenticated, s.signIn) && (await signInThroughGateway()) === null) s = await readSession();
     if (wantsNoSignIn(s.authenticated, s.signIn) && (await signInWithoutCredential()) === null) s = await readSession();
     set({ authed: s.authenticated, user: s.user ?? null, viewing: s.viewing ?? null, signIn: s.signIn });
   } catch { /* daemon unreachable: keep the current mode */ }

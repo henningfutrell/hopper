@@ -52,6 +52,19 @@ export const REALM_FIELDS: Record<RealmType, RealmField[]> = {
     { path: 'webUrl', label: 'GitHub URL', kind: 'text', placeholder: 'https://github.com' },
     { path: 'apiUrl', label: 'API URL', kind: 'text', placeholder: 'https://api.github.com' },
   ],
+  gateway: [
+    { path: 'issuer', label: 'Issuer URL', kind: 'text', placeholder: 'https://idp.example.com', help: 'the issuer of the tokens the auth gateway forwards' },
+    { path: 'check', label: 'Check', kind: 'text', placeholder: 'jwt', help: 'jwt: verify the token against the issuer\'s keys; introspection: ask the issuer' },
+    { path: 'audience', label: 'Audience', kind: 'words', placeholder: 'hopper', help: 'a token must name one of these in aud; needed to check JWTs' },
+    { path: 'header', label: 'Token header', kind: 'text', placeholder: 'authorization', help: 'the header the gateway forwards the token in; authorization carries "Bearer <token>"' },
+    { path: 'clientId', label: 'Client ID', kind: 'text', help: 'introspection: the hopper\'s client at the issuer' },
+    { path: 'clientSecretEnv', label: 'Client secret variable', kind: 'text', placeholder: 'GATEWAY_CLIENT_SECRET', help: `introspection: ${secretHelp}` },
+    { path: 'claims.email', label: 'Email claim', kind: 'text', placeholder: 'email' },
+    { path: 'claims.username', label: 'Username claim', kind: 'text', placeholder: 'preferred_username' },
+    { path: 'claims.name', label: 'Name claim', kind: 'text', placeholder: 'name' },
+    { path: 'claims.groups', label: 'Groups claim', kind: 'text', placeholder: 'groups' },
+    { path: 'trustUnverifiedEmail', label: 'Trust unverified email', kind: 'switch', help: 'count the email even when the issuer does not mark it verified' },
+  ],
   saml: [
     { path: 'entryPoint', label: 'Sign-on URL', kind: 'text', placeholder: 'https://idp.example.com/sso/saml' },
     { path: 'idpCert', label: 'Identity provider certificate', kind: 'multiline', placeholder: '-----BEGIN CERTIFICATE-----' },
@@ -71,6 +84,7 @@ export const REALM_TYPE_LABELS: { type: RealmType; label: string }[] = [
   { type: 'oidc', label: 'OpenID Connect' },
   { type: 'github', label: 'GitHub' },
   { type: 'saml', label: 'SAML' },
+  { type: 'gateway', label: 'Auth gateway in front of the hopper (it signs people in)' },
 ];
 
 /** What a role rule matches on. */

@@ -39,7 +39,7 @@ export function createRealmsAdmin(o: {
       version: store.version(), local: v.local, none: v.none, origin,
       realms: v.realms.map((r) => {
         if (r.type === 'password') return { ...r, accounts: (r.accounts ?? []).map((a) => ({ ...a, ...userOf(r.name, a.username) })) };
-        if (r.type === 'ldap') return r;
+        if (r.type === 'ldap' || r.type === 'gateway') return r;
         const urls = { callback: `${origin}/ui/auth/${r.name}/callback` };
         return r.type === 'saml' ? { ...r, ...urls, metadata: `${origin}/ui/auth/${r.name}/metadata` } : { ...r, ...urls };
       }),
