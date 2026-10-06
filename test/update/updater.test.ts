@@ -38,7 +38,7 @@ function updater(w: World, appDir: string, o: Partial<UpdaterOptions> = {}) {
   const restarts: number[] = [];
   const u = createUpdater({
     appDir, dataDir: w.dataDir, settings: w.instance.settings, events: w.store.events, clock: { now: () => new Date() }, logger: { info: () => {}, warn: () => {} },
-    builder: copyBuilder(), restart: async () => { restarts.push(Date.now()); }, restartBlockers: () => [], checkMs: 0, waitMs: 20,
+    builder: copyBuilder(), restart: async () => { restarts.push(Date.now()); }, restartBlockers: () => 0, checkMs: 0, waitMs: 20,
     ...o,
   });
   updaters.push(u);
@@ -161,16 +161,16 @@ describe('applying an update', () => {
     const c1 = w.up.commit('first', 'v1');
     const c2 = w.up.commit('second', 'v2');
     const appDir = createInstall(w.root, w.up.dir, c1);
-    let blockers = ['job-1 (test)'];
+    let blockers = 2;
     const { u, restarts } = updater(w, appDir, { restartBlockers: () => blockers });
     await u.check();
     const r = u.apply();
     expect(r.ok).toBe(true);
     expect(u.apply()).toEqual({ ok: false, error: 'an update is already being applied' });
     const waiting = await waitFor(async () => (u.status().apply?.phase === 'waiting' ? u.status() : undefined));
-    expect(waiting.apply?.detail).toMatch(/job-1 \(test\)/);
+    expect(waiting.apply?.detail).toBe('waiting for 2 running jobs: a restart would lose them');
     expect(readFileSync(join(appDir, 'app.txt'), 'utf8')).toBe('v1');
-    blockers = [];
+    blockers = 0;
     await waitFor(async () => restarts.length === 1);
     expect(readFileSync(join(appDir, 'app.txt'), 'utf8')).toBe('v2');
     expect(readInstall(appDir)).toMatchObject({ commit: c2, branch: 'main', repo: w.up.dir });

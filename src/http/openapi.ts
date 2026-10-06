@@ -11,7 +11,7 @@ import { streamQuery } from './sse.ts';
 import { decisionsQuery, eventsQuery } from './state.ts';
 import { SESSION_HEADER } from './ui/guard.ts';
 import {
-  answerBody, deviceLinkBody, ghLoginBody, queueGateBody, queueOrderBody, machineDefaultsBody, machinesEditBody, pluginStoreBody, pluginsEditBody, realmsEditBody, routerModeBody, routingEditBody, rulesBody, updateBody, usersEditBody, webhooksEditBody,
+  answerBody, deviceLinkBody, ghLoginBody, queueGateBody, queueOrderBody, machineDefaultsBody, machinesEditBody, pluginStoreBody, pluginsEditBody, passwordChangeBody, realmsEditBody, routerModeBody, routingEditBody, rulesBody, updateBody, usersEditBody, webhooksEditBody,
 } from './ui/index.ts';
 import { completeBody, loginBody, passwordBody, startQuery } from './ui/sign-in.ts';
 import { deliveriesQuery } from './webhooks.ts';
@@ -88,6 +88,7 @@ const OPERATIONS: Operation[] = [
   { method: 'get', path: '/api/update', tag: 'Self-update', summary: 'Installed version and available update', returns: '`UpdateStatus`' },
   { method: 'post', path: '/ui/api/update', tag: 'Self-update', summary: 'Check, apply, or change update settings', role: 'admin', body: updateBody, returns: '`UpdateStatus`', errors: [409] },
   { method: 'get', path: '/api/users', tag: 'Users', summary: 'The users of this hopper', description: 'Id, name and when each was added: nothing of a user\'s own data. Loopback, or a UI session with role **admin**.', returns: '`{ users: UserView[] }`, oldest first', errors: [403] },
+  { method: 'get', path: '/api/instance', tag: 'Users', summary: 'The totals across every user', description: 'Users, jobs not ended by status, open questions, lanes (open and busy): summed over every user, never one user\'s share, nothing named. What an admin reads of the users\' work. Loopback, or a UI session with role **admin**.', returns: '`InstanceTotals`', errors: [403] },
   { method: 'post', path: '/ui/api/users', tag: 'Users', summary: 'Add a user', description: 'A user of its own: its jobs, questions, events, plugins, webhooks and credentials apart from every other user\'s. Answers a one-time login link for it per UI origin, to hand over (none when local sign-in is off).', role: 'admin', body: usersEditBody, returns: '`UserAdded`: `{ user, links }`', errors: [409] },
   { method: 'get', path: '/ui/api/session', tag: 'Sign-in', summary: 'This session (logged out: whose work a read shows), the sign-in on offer, and whether several users make sign-in required', returns: '`SessionView`' },
   { method: 'post', path: '/ui/login', tag: 'Sign-in', summary: 'Sign in with a one-time login code', description: 'Mint a code with `hopper login-code`. Answers a page that stores the session token for the UI.', body: loginBody, form: true, answers: 'html', returns: 'a page holding the session token' },
@@ -100,9 +101,10 @@ const OPERATIONS: Operation[] = [
   { method: 'post', path: '/ui/auth/complete', tag: 'Sign-in', summary: 'Trade a sign-in ticket for a session', body: completeBody, returns: '`{ token, expiresAt, user }`' },
   { method: 'get', path: '/ui/auth/:name/metadata', tag: 'Sign-in', summary: 'SAML service provider metadata', answers: 'xml', returns: 'SAML metadata', errors: [404] },
   { method: 'post', path: '/ui/api/device-link', tag: 'Sign-in', summary: 'A login link for another device, per LAN name', description: '`keep` names the code shown: while it is live the same links come back; once it is used or expired, a fresh code.', role: 'admin', body: deviceLinkBody, returns: '`{ links: string[] }`', errors: [409] },
+  { method: 'post', path: '/ui/api/password', tag: 'Sign-in', summary: 'Change your own password', description: 'The password account this session signed in with takes a new password, the current one checked first; every other session of that account ends.', role: 'viewer', body: passwordChangeBody, returns: '`{ ok: true }`', errors: [400, 409] },
   { method: 'post', path: '/ui/api/logout', tag: 'Sign-in', summary: 'End this session', role: 'viewer', returns: '`{ ok: true }`' },
   { method: 'get', path: '/api/realms', tag: 'Sign-in', summary: 'The realms, in order, with their settings and password accounts', description: 'Each realm\'s settings, whether it is on, a password realm\'s accounts (username, role, the user each signs in as; never a hash), and for OIDC, GitHub and SAML the URLs to register with the identity provider; local sign-in, no sign-in, and the version of it all. Loopback, or a UI session with role **admin**.', returns: '`RealmsView`', errors: [403] },
-  { method: 'post', path: '/ui/api/realms', tag: 'Sign-in', summary: 'Change sign-in: realms and password accounts', description: 'Add or replace a realm from its fields, remove, move, or turn one on or off; set local sign-in and no sign-in; add a password account (with its password, which only the daemon hashes, its role, and optionally the user it signs in as), change its role or password, or remove it — against the `version` read. Applies at once: sign-in and the stored sessions follow it. Refused (400) when the result would not load, naming the field; (409) when the sign-in config moved, or when the change would end the acting session\'s admin role.', role: 'admin', body: realmsEditBody, returns: 'the new view, as GET /api/realms', errors: [404, 409] },
+  { method: 'post', path: '/ui/api/realms', tag: 'Sign-in', summary: 'Change sign-in: realms and password accounts', description: 'Add or replace a realm from its fields, remove, move, or turn one on or off; set local sign-in and no sign-in; add a password account (with its password, which only the daemon hashes, its role, and optionally your own user to sign in as), change its role or password, or remove it — against the `version` read. Applies at once: sign-in and the stored sessions follow it. Refused (400) when the result would not load, naming the field; (409) when the sign-in config moved, when the change would end the acting session\'s admin role, when it would turn no sign-in on while the hopper has more than one user, or when it would set a password on, add an account under the name of, or link an account to another user — an admin never gets a way into another user\'s work.', role: 'admin', body: realmsEditBody, returns: 'the new view, as GET /api/realms', errors: [404, 409] },
 ];
 
 const TAGS: Record<Tag, string> = {
@@ -120,7 +122,7 @@ const TAGS: Record<Tag, string> = {
 
 const DESCRIPTION = `The hopper daemon's HTTP API.
 
-**Users.** Every user's work is their own. A read or a change acts for the session's user. A loopback read without a session reads the user the \`x-hopper-user\` header names (a user id), else the first user, \`owner\`. The users, the plugin store, self-update and sign-in are shared.
+**Users.** Every user's work is their own. A read or a change acts for the session's user. A loopback read without a session reads the one user's work while the hopper has one user; with more, it reads no user's work (401). An admin runs the instance — the users, the plugin store, self-update and sign-in — and reads the users' work only as totals (\`GET /api/instance\`).
 
 **Reading.** Every \`GET /api/*\` route reads. From loopback (\`127.0.0.1\` or \`localhost\` with the port) it needs nothing. From a LAN name or the public URL it needs a UI session: the token in the \`${SESSION_HEADER}\` header.
 
@@ -132,7 +134,7 @@ const DESCRIPTION = `The hopper daemon's HTTP API.
 
 **Errors.** \`{ "error": string }\` with the status: 400 a malformed request, 401 no session for a LAN or public read, 403 a refused change, 404 nothing by that id, 409 not possible in the current state, 421 a misdirected Host.`;
 
-const ERROR_TEXT: Record<number, string> = { 400: 'malformed request', 401: 'no session for a LAN or public read', 403: 'refused: no session, role too low, wrong Origin, or not JSON', 404: 'not found', 409: 'not possible in the current state' };
+const ERROR_TEXT: Record<number, string> = { 400: 'malformed request', 401: 'no session for a LAN or public read, or for a user\'s work on a hopper with several users', 403: 'refused: no session, role too low, wrong Origin, or not JSON', 404: 'not found', 409: 'not possible in the current state' };
 
 /** JSON Schema for a request part, as the route parses its input. */
 const schemaOf = (s: z.ZodType): Record<string, unknown> => {

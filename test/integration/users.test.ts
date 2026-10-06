@@ -1,7 +1,7 @@
 // Several users of one hopper (issue #158, design.md "Users: one hopper, separate users"), through
 // the real HTTP server and the real store: each user's jobs, questions, events, plugins and webhooks
 // are their own; an admin adds a user and hands over its login link; a loopback read without a session
-// is owner's unless `x-hopper-user` names another user.
+// reads a user's work only while the hopper has one user; an admin reads the totals, never a user's work.
 import { afterEach, describe, expect, it } from 'vitest';
 import { createFakeHerdrClient } from '../../src/executors/herdr/index.ts';
 import type { DomainEvent, Job, Question } from '../../src/domain/types.ts';
@@ -91,13 +91,13 @@ describe('two users of one hopper', () => {
 
   it('an admin of one user changing plugins changes only that user\'s plugins config', async () => {
     const a = await start();
-    const { bea } = await twoUsers(a);
+    const { owner, bea } = await twoUsers(a);
     const report = (await a.api('GET', '/api/plugins', undefined, session(bea))).body;
     const r = await a.ui('/ui/api/plugins', { action: 'select', role: 'queue-sorter', plugin: 'oldest-first', version: report.config.version }, { token: bea });
     expect(r.status).toBe(200);
     expect((a.user('bea').store.config.read('plugins') as { queueSorter?: unknown }).queueSorter).toMatchObject({ plugin: 'oldest-first' });
     expect((a.user().store.config.read('plugins') as { queueSorter?: unknown }).queueSorter).toBeUndefined();
-    expect((await a.api('GET', '/api/plugins')).body.queueSorter.instance.plugin).toBe('priority');
+    expect((await a.api('GET', '/api/plugins', undefined, session(owner))).body.queueSorter.instance.plugin).toBe('priority');
   });
 
   it('the router mode is each user\'s own', async () => {
@@ -148,14 +148,24 @@ describe('users, sessions and login codes', () => {
     expect((await a.api('GET', '/api/users', undefined, session(owner))).status).toBe(200);
   });
 
-  it('a loopback read without a session is owner\'s, or the user x-hopper-user names; an unknown user is 404', async () => {
+  it('with one user, a loopback read without a session reads that user\'s work', async () => {
+    const a = await start();
+    const job = await a.pull(sleep);
+    expect((await a.api('GET', '/api/jobs')).body.jobs.map((j: Job) => j.id)).toEqual([job.id]);
+  });
+
+  it('with several users, a loopback read without a session reads no user\'s work, whatever x-hopper-user says', async () => {
     const a = await start();
     await a.addUser('Bea');
-    const ownerJob = await a.pull(sleep);
-    const beaJob = await a.pull(sleep, {}, 'bea');
-    expect((await a.api('GET', '/api/jobs')).body.jobs.map((j: Job) => j.id)).toEqual([ownerJob.id]);
-    expect((await a.api('GET', '/api/jobs', undefined, { 'x-hopper-user': 'bea' })).body.jobs.map((j: Job) => j.id)).toEqual([beaJob.id]);
-    expect((await a.api('GET', '/api/jobs', undefined, { 'x-hopper-user': 'nobody' })).status).toBe(404);
+    await a.pull(sleep);
+    await a.pull(sleep, {}, 'bea');
+    const tries: Record<string, string>[] = [{}, { 'x-hopper-user': 'bea' }, { 'x-hopper-user': 'owner' }];
+    for (const headers of tries) {
+      for (const path of ['/api/jobs', '/api/questions', '/api/events', '/api/plugins', '/api/webhooks']) {
+        expect((await a.api('GET', path, undefined, headers)).status, `${path} ${JSON.stringify(headers)}`).toBe(401);
+      }
+    }
+    expect((await a.api('GET', '/api/users')).status).toBe(200);
   });
 });
 
@@ -168,9 +178,10 @@ describe('who you are, and signing in with several users (issue #167)', () => {
   it('with several users sign-in is required; signed in, the session names its own user and no other', async () => {
     const a = await start();
     await a.addUser('Bea');
-    expect((await a.api('GET', '/ui/api/session')).body).toMatchObject({ authenticated: false, viewing: { id: 'owner', name: 'owner' }, signIn: { required: true } });
-    expect((await a.api('GET', '/ui/api/session', undefined, { 'x-hopper-user': 'bea' })).body.viewing).toEqual({ id: 'bea', name: 'Bea' });
-    expect((await a.api('GET', '/ui/api/session', undefined, { 'x-hopper-user': 'nobody' })).body.viewing).toBeUndefined();
+    const loggedOut = (await a.api('GET', '/ui/api/session')).body;
+    expect(loggedOut).toMatchObject({ authenticated: false, signIn: { required: true } });
+    expect(loggedOut.viewing).toBeUndefined();
+    expect((await a.api('GET', '/ui/api/session', undefined, { 'x-hopper-user': 'bea' })).body.viewing).toBeUndefined();
     const view = (await a.api('GET', '/ui/api/session', undefined, session(await a.login('bea')))).body;
     expect(view).toMatchObject({ authenticated: true, user: { id: 'bea', name: 'Bea' }, signIn: { required: true } });
     expect(view.viewing).toBeUndefined();
@@ -183,7 +194,7 @@ describe('a user\'s runtime', () => {
     const bea = await a.addUser('Bea');
     const plugins = a.user(bea.id).store.config.read('plugins') as { executors: { plugin: string; options?: { session?: string } }[] };
     expect(plugins.executors.filter((e) => e.plugin === 'herdr-claude').map((e) => e.options?.session)).toEqual(['hopper-bea']);
-    const report = (await a.api('GET', '/api/plugins', undefined, { 'x-hopper-user': 'bea' })).body;
+    const report = (await a.api('GET', '/api/plugins', undefined, session(await a.login('bea')))).body;
     expect(report.executors.instances.find((i: { instance: { plugin: string } }) => i.instance.plugin === 'herdr-claude').instance.options.session).toBe('hopper-bea');
     expect((a.user().store.config.read('plugins') as { executors?: unknown }).executors).toEqual([{ name: 'test', plugin: 'test' }]);
     const job = await a.pull({ op: 'echo', message: 'hi' }, { executor: 'scripted' }, 'bea');
@@ -213,7 +224,8 @@ describe('a user\'s runtime', () => {
     const bea = await a.addUser('Bea');
     const doc = a.user(bea.id).store.config;
     doc.write('plugins', { version: 1, executors, jobSources: [], usageSources: [], notifiers: [] }, doc.version('plugins'));
-    await waitFor(async () => (await a.api('GET', '/api/plugins', undefined, { 'x-hopper-user': 'bea' })).body.config.version === doc.version('plugins'));
+    const beaToken = await a.login('bea');
+    await waitFor(async () => (await a.api('GET', '/api/plugins', undefined, session(beaToken))).body.config.version === doc.version('plugins'));
     const item = { executor: 'herdr-claude', prompt: 'Paint the shed', cwd: '/tmp', env: {} };
     const ownerJob = await a.pull({}, item);
     await a.waitForStatus(ownerJob.id, 'finished', 8000);
@@ -227,7 +239,7 @@ describe('a user\'s runtime', () => {
 });
 
 describe('the instance\'s parts are shared', () => {
-  it('an update check is announced to every user; a job of any user that a restart would lose holds the restart', async () => {
+  it('an update check is announced to every user; a job of any user that a restart would lose holds the restart, counted, never named', async () => {
     const root = tempDir('jh-users-update-');
     const up = createUpstream(root);
     const c1 = up.commit('first', 'v1');
@@ -242,10 +254,15 @@ describe('the instance\'s parts are shared', () => {
       const job = await a.pull({}, { executor: 'sticky' }, 'bea');
       await a.waitForStatusOf(job.id, 'running', 'bea');
       expect((await a.ui('/ui/api/update', { action: 'check' }, { token: owner })).status).toBe(200);
-      const beaEvents = (await a.api('GET', '/api/events?limit=1000', undefined, { 'x-hopper-user': 'bea' })).body.events as DomainEvent[];
+      const beaEvents = (await a.api('GET', '/api/events?limit=1000', undefined, session(await a.login('bea')))).body.events as DomainEvent[];
       expect(beaEvents.map((e) => e.type)).toContain('update.available');
       expect((await a.ui('/ui/api/update', { action: 'apply' }, { token: owner })).status).toBe(200);
-      await waitFor(async () => ((await a.api('GET', '/api/update')).body.apply?.detail as string | undefined)?.includes(job.id));
+      const detail = await waitFor(async () => {
+        const d = (await a.api('GET', '/api/update')).body.apply?.detail as string | undefined;
+        return d?.startsWith('waiting for') ? d : undefined;
+      });
+      expect(detail).toBe('waiting for 1 running job: a restart would lose it');
+      expect(JSON.stringify(a.user().store.events.since(0, 1000))).not.toContain(job.id);
       expect(restarts).toEqual([]);
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -263,7 +280,7 @@ describe('the instance\'s parts are shared', () => {
       await a.addUser('Bea');
       await waitFor(async () => (await a.api('GET', '/api/plugin-store')).body.commit !== undefined);
       expect((await a.ui('/ui/api/plugin-store', { action: 'install', id: 'word-first' }, { token: owner })).status).toBe(200);
-      const beaPlugins = (await a.api('GET', '/api/plugins', undefined, { 'x-hopper-user': 'bea' })).body.plugins as { id: string }[];
+      const beaPlugins = (await a.api('GET', '/api/plugins', undefined, session(await a.login('bea')))).body.plugins as { id: string }[];
       expect(beaPlugins.map((p) => p.id)).toContain('word-first');
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -277,7 +294,7 @@ describe('a user added with the operator CLI', () => {
     const r = runCli(['user', 'add', 'Cy'], { env: { HOPPER_DATABASE_URL: databaseUrlFor(a.dbPath) }, stdin: () => '', out: () => {}, err: () => {} });
     expect(r).toBe(0);
     await waitFor(() => a.app.users().some((u) => u.id === 'cy') && (() => { try { return a.user('cy'); } catch { return undefined; } })());
-    expect((await a.api('GET', '/api/jobs', undefined, { 'x-hopper-user': 'cy' })).status).toBe(200);
+    expect((await a.api('GET', '/api/jobs', undefined, session(await a.login('cy')))).status).toBe(200);
   });
 });
 

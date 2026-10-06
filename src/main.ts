@@ -152,7 +152,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     builder: seams.update?.builder ?? createInstallScriptBuilder({ logFile: join(workDir, 'update', 'build.log') }),
     restart: seams.update?.restart ?? (() => restartApp()),
     // A restart would lose the running jobs of every user.
-    restartBlockers: () => runtimes.all().flatMap((rt) => restartBlockers(rt.store.jobs.list({ status: ['running'] }), (name) => rt.executors.get(name))),
+    restartBlockers: () => runtimes.all().reduce((n, rt) => n + restartBlockers(rt.store.jobs.list({ status: ['running'] }), (name) => rt.executors.get(name)), 0),
     checkMs: config.updateCheckMs,
   });
   const addUser = async (name: string): Promise<User> => {
@@ -164,7 +164,6 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     instance, clock, version: VERSION, pluginStore, updater,
     tenants: {
       user: (id) => runtimes.get(id),
-      ownerId: () => instance.users.owner().id,
       list: () => instance.users.list(),
       add: addUser,
       // Sign-in (issue #158): a linked identity's user, owner for no sign-in, else a new user with its runtime.

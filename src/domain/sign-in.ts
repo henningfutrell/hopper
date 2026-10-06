@@ -113,7 +113,7 @@ export interface SessionView {
   authenticated: boolean;
   expiresAt?: string;
   user?: SessionUser;
-  /** Logged out: the user a read without a session shows (loopback only: owner, or the one `x-hopper-user` names). */
+  /** Logged out: the user a read without a session shows (loopback on a one-user hopper only: that user). */
   viewing?: { id: string; name: string };
   signIn: {
     /** The one-time login code works. */

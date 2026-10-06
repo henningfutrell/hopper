@@ -158,6 +158,8 @@ visitor's browser). The daemon logs `NO SIGN-IN is on` at every start. It combin
 no sign-in as viewer plus a realm or the login code means everyone may look and those who sign
 in may act. Use it only where something in front — a VPN, a proxy with its own login, a network only
 you reach — already decides who gets in. As admin, anyone who reaches the UI can change every setting.
+No sign-in signs everyone in as `owner`, so it stays off while the hopper has more than one user, and
+no user is added while it is on.
 
 ## Password realm
 
@@ -165,16 +167,23 @@ Its **accounts** are listed under it in Settings → Sign-in: username, role, an
 in as.
 
 - **Add account**: a username, a password (8 characters or more), a role (viewer, operator or admin),
-  and **Signs in as**: an existing user (Settings → Users), or "a new user of its own", made at its
-  first sign-in ([Who signs in as which user](#who-signs-in-as-which-user)). To sign in to your own
-  work with a password, pick your user — `owner` on a hopper with one user.
+  and **Signs in as**: your own user, or "a new user of its own", made at its first sign-in
+  ([Who signs in as which user](#who-signs-in-as-which-user)). To sign in to your own work with a
+  password, pick your user. An account for someone else is "a new user of its own": an admin never
+  links an account to another user's work.
 - **Role**: change it in the account's row; it applies at once, also to its open sessions.
-- **New password** (key): sets a new one; the old one stops working at once.
+- **New password** (key): sets a new one; the old one stops working at once. Only on an account that
+  signs in as your own user, or that nobody signed in with yet: an account that signs in as another
+  user is theirs, and only they change its password.
+- **Change your password** (Settings → Users): everyone signed in with a password account changes its
+  password there, the current one first; their other sessions end. Hand a new account its password,
+  and ask its user to change it: until then the admin who set it knows it.
 - **Remove** (bin): its sessions end at once. The user it signed in as, and their work, stay.
 
 The hopper keeps only an **argon2id hash** of each password, never the password. Usernames are
 unique within the realm, case ignored. The user an account signs in as is fixed once it has signed
-in; to change it, remove the account and add it again. A wrong password, an unknown username and an
+in; to change it, remove the account and add it again — not under the same username when it signed in
+as another user: that name keeps signing in as them, so it is theirs. A wrong password, an unknown username and an
 empty password get the same 403, and an unknown username costs the same time as a wrong password.
 A password realm with no account is not tried. The form works on every UI origin (loopback, a LAN
 name, the public URL).
@@ -465,8 +474,9 @@ server {
 }
 ```
 
-Use TLS for anything beyond one machine. Requests straight to `127.0.0.1:<port>` stay readable
-without a session by any process on the host — keep the daemon on a machine only you and the proxy use.
+Use TLS for anything beyond one machine. On a hopper with one user, requests straight to
+`127.0.0.1:<port>` stay readable without a session by any process on the host — keep the daemon on a
+machine only you and the proxy use. With several users, such a request reads no user's work.
 
 ## Identity providers
 

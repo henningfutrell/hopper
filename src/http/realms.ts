@@ -7,8 +7,15 @@
 // as a start would. A change that would leave the acting session without admin is refused: nobody
 // locks themselves out from the UI. So is one that would leave no admin account in a password realm
 // that is on: password sign-in is the fallback (issue #219).
+//
+// An admin runs the instance, never another user's work (issue #221, design.md "What an admin sees"):
+// no change here gives the acting admin a credential that signs in as another user — no password set
+// on, and no account added under the name of, an account that signs in as another user; no account
+// linked to another user; no sign-in kept off while the hopper has more than one user (it signs
+// everyone in as owner). The account's own user changes its password (`changePassword`), which ends
+// the account's other sessions: a password an admin handed over stops being one the admin knows.
 import type { FastifyInstance } from 'fastify';
-import { accountOf, AuthEditError, editSignIn, hashPassword, hasPasswordFallback, loadSignInConfig, realmsView, roleIn, type SignIn, type SignInEdit } from '../auth/index.ts';
+import { accountOf, AuthEditError, editSignIn, hashPassword, hasPasswordFallback, loadSignInConfig, verifyPassword, realmsView, roleIn, type SignIn, type SignInEdit } from '../auth/index.ts';
 import type { InstanceStore } from '../domain/store.ts';
 import { roleAllows, type Identity, type RealmsEdit, type RealmsView } from '../domain/types.ts';
 import { HttpError } from './errors.ts';
@@ -17,9 +24,16 @@ import type { UiSessions } from './ui/sessions.ts';
 
 export interface RealmsAdmin {
   view(): RealmsView;
-  /** Make `edit` as `actor`; throws HttpError (400 invalid, 404 no such realm or account, 409 moved, a lockout, or no password fallback). */
-  edit(edit: RealmsEdit, actor: Identity): Promise<RealmsView>;
+  /** Make `edit` as `actor`, signed in as user `actorUser`; throws HttpError (400 invalid, 404 no such realm or account, 409 moved, a lockout, no password fallback, or another user's account). */
+  edit(edit: RealmsEdit, actor: Identity, actorUser: string): Promise<RealmsView>;
+  /**
+   * The password account `actor` signed in with takes `password`, `current` checked first; every other session
+   * of that account ends (`keep` stays). Throws HttpError (400 wrong current password, 409 not a password account).
+   */
+  changePassword(actor: Identity, o: { current: string; password: string; keep: string }): Promise<void>;
 }
+
+const NOT_YOURS = 'signs in as another user: only that user changes its password (an admin runs the hopper, never another user\'s work)';
 
 const MOVED = 'the sign-in config changed since they were read: reload and make the change again';
 
@@ -48,11 +62,15 @@ export function createRealmsAdmin(o: {
   };
 
   /** The account change with its password hashed; refuses a user that does not exist or an account moved to another. */
-  const accountChange = async (before: ReturnType<typeof store.read>, edit: Extract<RealmsEdit, { action: 'account' }>): Promise<SignInEdit> => {
+  const accountChange = async (before: ReturnType<typeof store.read>, edit: Extract<RealmsEdit, { action: 'account' }>, actorUser: string): Promise<SignInEdit> => {
     const { password, user, version: _version, ...rest } = edit;
+    const existing = accountOf(before, edit.realm, edit.username);
+    // The user the account signs in as now: an existing account's link, or a link left by an account of this name removed before.
+    const signsInAs = o.instance.identities.userOf(edit.realm, existing?.username ?? edit.username);
+    if (signsInAs !== undefined && signsInAs !== actorUser && (password !== undefined || !existing)) throw new HttpError(409, `${edit.username} ${NOT_YOURS}`);
     if (user !== undefined) {
       if (!o.instance.users.get(user)) throw new HttpError(400, `no user ${user}: Settings → Users lists them`);
-      const existing = accountOf(before, edit.realm, edit.username);
+      if (user !== actorUser) throw new HttpError(409, `an account is linked only to your own user: one for user ${user} would hand you a way into their work; an account nobody signed in with yet gets a user of its own on its first sign-in`);
       const linked = existing && o.instance.identities.userOf(edit.realm, existing.username);
       if (linked !== undefined && linked !== user) throw new HttpError(400, `${existing!.username} signs in as user ${linked}: an account keeps its user; remove it and add it again to change that`);
     }
@@ -61,12 +79,15 @@ export function createRealmsAdmin(o: {
 
   return {
     view,
-    async edit(edit, actor) {
+    async edit(edit, actor, actorUser) {
       const before = store.read();
       const { version } = edit;
       if (version !== store.version()) throw new HttpError(409, MOVED);
+      if (edit.action === 'settings' && edit.none !== undefined && edit.none !== null && o.instance.users.list().length > 1) {
+        throw new HttpError(409, 'no sign-in signs everyone in as owner: it stays off while the hopper has more than one user');
+      }
       let change: SignInEdit;
-      if (edit.action === 'account') change = await accountChange(before, edit);
+      if (edit.action === 'account') change = await accountChange(before, edit, actorUser);
       else {
         const { version: _version, ...rest } = edit;
         change = rest;
@@ -103,6 +124,19 @@ export function createRealmsAdmin(o: {
           : 'name' in edit ? `${edit.action} ${edit.name}` : edit.action;
       console.warn(`hopper: sign-in changed in the UI by ${actor.realm} ${actor.subject} (${what}): applied; ${r.dropped} session(s) ended, ${r.changed} changed role`);
       return view();
+    },
+    async changePassword(actor, { current, password, keep }) {
+      const before = store.read();
+      const account = accountOf(before, actor.realm, actor.subject);
+      if (!account) throw new HttpError(409, `you signed in with ${actor.realm}, not a password account: your password is kept there`);
+      if (!await verifyPassword(account.passwordHash, current)) throw new HttpError(400, 'the current password is wrong');
+      const version = store.version();
+      const next = editSignIn(before, { action: 'account', realm: actor.realm, username: account.username, role: account.role, passwordHash: await hashPassword(password) });
+      const config = loadSignInConfig(next, o.secret);
+      if (!store.write(next, version)) throw new HttpError(409, MOVED);
+      o.signIn.apply(config);
+      const ended = o.sessions.endOthers(actor, keep);
+      console.warn(`hopper: password changed by its own account ${actor.realm} ${actor.subject}; ${ended} other session(s) ended`);
     },
   };
 }

@@ -1,7 +1,8 @@
 // Users (issue #158): the people this hopper works for, each with their own jobs, questions and
 // settings, kept apart. In Settings. An admin adds one (POST /ui/api/users) and is shown the one-time
 // login link the daemon answers, one per address the UI is reached at, to copy and hand over. Only an
-// admin lists the users.
+// admin lists the users, and reads the users' work only as totals across all of them (GET /api/instance,
+// issue #221). Everyone signed in with a password account changes their own password here.
 import { Copy, Plus, Users as UsersIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -11,9 +12,10 @@ import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
 import { get, post, SessionRejected } from '@/lib/api';
 import { clock } from '@/model/format';
-import type { UserAdded, UserView } from '@/model/wire';
+import type { InstanceTotals, UserAdded, UserView } from '@/model/wire';
 import { useHopper } from '@/store';
 import { useCanAdmin } from '@/store/selectors';
+import { OwnPassword } from '@/views/own-password';
 
 export function Users() {
   const canAdmin = useCanAdmin();
@@ -23,8 +25,12 @@ export function Users() {
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [added, setAdded] = useState<UserAdded | null>(null);
+  const [totals, setTotals] = useState<InstanceTotals | null>(null);
 
-  const load = () => get<{ users: UserView[] }>('/api/users').then((r) => setUsers(r.users), (e: unknown) => toast.error((e as Error).message));
+  const load = () => Promise.all([
+    get<{ users: UserView[] }>('/api/users').then((r) => setUsers(r.users)),
+    get<InstanceTotals>('/api/instance').then(setTotals),
+  ]).catch((e: unknown) => toast.error((e as Error).message));
   // GET /api/users answers an admin session (or loopback without one): nobody else lists the users.
   useEffect(() => { if (canAdmin) void load(); }, [canAdmin]);
 
@@ -51,7 +57,9 @@ export function Users() {
     <Panel title="Users" icon={UsersIcon} count={users?.length}
       action={canAdmin && !adding ? <Button size="xs" variant="outline" className="gap-1" onClick={() => { setAdding(true); setAdded(null); }}><Plus />Add user</Button> : undefined}>
       <div className="space-y-3">
-        <p className="text-sm text-muted-foreground">Each user has their own jobs, questions, machines, plugins and webhooks. Nobody sees another user's work.</p>
+        <p className="text-sm text-muted-foreground">Each user has their own jobs, questions, machines, plugins and webhooks. Nobody sees another user's work, admins included: an admin sees only the totals across all users.</p>
+        <OwnPassword />
+        {canAdmin && totals && <Totals totals={totals} />}
         {adding && (
           <form onSubmit={(e) => void add(e)} className="flex flex-wrap items-end gap-2">
             <label className="block min-w-48 flex-1 space-y-1">
@@ -90,5 +98,26 @@ export function Users() {
         )}
       </div>
     </Panel>
+  );
+}
+
+/** The users' work as an admin reads it: totals across every user, nobody's share. */
+function Totals({ totals: t }: { totals: InstanceTotals }) {
+  const items: [string, number][] = [
+    ['waiting', t.jobs.queued + t.jobs.held + t.jobs.claimed], ['running', t.jobs.running], ['waiting for an answer', t.jobs.waiting_answer],
+    ['open questions', t.questions.open], ['lanes busy', t.lanes.busy], ['lanes open', t.lanes.total],
+  ];
+  return (
+    <div data-instance-totals className="space-y-1.5 rounded-lg border p-3">
+      <div className="text-xs font-medium text-muted-foreground">All users together</div>
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm sm:grid-cols-3">
+        {items.map(([label, n]) => (
+          <div key={label} className="flex items-baseline justify-between gap-2">
+            <dt className="text-muted-foreground">{label}</dt>
+            <dd className="num font-medium">{n}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
   );
 }

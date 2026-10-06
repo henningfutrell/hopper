@@ -20,6 +20,8 @@ export interface UiSessions {
    * any more); another role replaces the stored one.
    */
   reconcile(roleOf: (who: Identity) => UiRole | null): { dropped: number; changed: number };
+  /** End every session of `who` (same realm and subject) but the one with token `keep`; how many ended. */
+  endOthers(who: Identity, keep: string): number;
 }
 
 const hashOf = (token: string): string => createHash('sha256').update(token, 'utf8').digest('hex');
@@ -55,6 +57,14 @@ export function createUiSessions(o: { repo: UiSessionRepository; clock: Clock; h
         if (role === null) { o.repo.drop(r.tokenHash); dropped++; } else if (role !== r.role) { o.repo.setRole(r.tokenHash, role); changed++; }
       }
       return { dropped, changed };
+    },
+    endOthers(who, keep) {
+      const kept = hashOf(keep);
+      let ended = 0;
+      for (const r of o.repo.all()) {
+        if (r.tokenHash !== kept && r.identity.realm === who.realm && r.identity.subject === who.subject) { o.repo.drop(r.tokenHash); ended++; }
+      }
+      return ended;
     },
   };
 }

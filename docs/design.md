@@ -51,7 +51,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the password fallback (`fallback.ts`, pure), the role rules (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm, gateway realm) and their adapters `password.ts` (argon2), `ldap.ts` (ldapts), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), `gateway.ts` (jose + openid-client), the sign-in service — form realms in order, gateway realms in order, flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets") | everything |
 | `src/update/` | self-update ("Self-update"): install.json, the git mirror of the update repository, the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
-| `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `api-reference.ts` Scalar at `/docs/`); the plugin store's read side (`plugin-store.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
+| `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `api-reference.ts` Scalar at `/docs/`); the plugin store's read side (`plugin-store.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
 | `site/` | the install page, published to GitHub Pages by `.github/workflows/pages.yml` with `scripts/get.sh` beside it as `install.sh`: one static `index.html`, no build step, nothing loaded from another site | everything in the repo at runtime; it links to the docs on GitHub |
 | `examples/plugins/` | one minimal runnable custom plugin per role, for authors (`docs/plugins.md`); imports only `hopper/plugin` types and `node:` builtins | everything in `src/` at runtime |
@@ -4594,9 +4594,9 @@ stops every runtime, then the instance.
 - A UI session belongs to a user (`ui_sessions.user_id`). Every tenant route — `/api/*` except the
   instance routes below, `/api/events/stream`, and the tenant `POST /ui/api/*` mutations — reads and
   changes the user runtime of the request's user: the session's user; else, for a **loopback request
-  without a session** (allowed for reads, as before), the user named by the header
-  `x-hopper-user: <id>`, else `owner` (the oldest user). An unknown user is 404. A LAN or public
-  request without a session stays refused (401). A question, job or webhook id of another user is
+  without a session**, the one user while the hopper has only one, and nobody (401) once it has more
+  (issue #221, "What an admin sees" below; the `x-hopper-user` header that named any user is gone). A
+  LAN or public request without a session stays refused (401). A question, job or webhook id of another user is
   simply not there: 404.
 - Instance routes: sign-in, `GET /api/update` + `POST /ui/api/update`, `GET /api/plugin-store` +
   `POST /ui/api/plugin-store`, `GET /api/users` + `POST /ui/api/users`, the docs. UI roles keep their
@@ -4626,7 +4626,7 @@ that had expired is not linked; its next sign-in provisions a new, empty user. `
 (default `owner`) always reaches `owner`. An admin of any user can add users and update the daemon:
 instance mutations are not owner-only. Two users' `local` machines run on the same host side by side,
 each with its own lanes. As before, every local account of the host reads the GET API on loopback
-without a session — now any user's, by `x-hopper-user`; deploy on a host only the operator uses. Jobs
+without a session — only while the hopper has one user (issue #221). Jobs
 of every user run as the daemon's account: one user's job on the hopper host can read files another
 user's job wrote there; the separation is the hopper's, not the operating system's.
 A user added later starts every process of theirs (gh, claude, the herdr server and its panes, commands)
@@ -4644,15 +4644,15 @@ The top bar shows the session's user (its name; the identity that signed in on h
 **Who you are, and sign-in first (issue #167).** The top bar says who you are at every width: the
 session's user and role, or `not signed in` and the user whose work the page shows. `GET
 /ui/api/session` answers, logged out, `viewing: { id, name }` — the user a read without a session
-reads (loopback: `owner`, or the one `x-hopper-user` names; absent on a LAN or public request) — and
+reads (loopback on a one-user hopper: that user; absent with several users and on a LAN or public request) — and
 `signIn.required`, true while the instance has more than one user. Then a logged-out page reads no
 user's work: `load` stops after the session read (no `/api/` read, no event stream) and the page shows
 only the ways to sign in. A JSON sign-in (password, no sign-in) or a logout on that page reloads it.
-The API is unchanged: a loopback read without a session still reads `owner` (the residual risk above
-stands); the sign-in screen stops a browser from showing one user's work to another, not a process
-on the host.
+With several users the API agrees (issue #221): a loopback read without a session reads no user's work,
+so neither a browser nor a process on the host reads one user's work without that user's session.
 Settings gains a **Users** section (admin only, as `GET /api/users`): the list, and **Add user**, which
-shows the one-time login link the daemon answers to copy and hand over.
+shows the one-time login link the daemon answers to copy and hand over; since issue #221 also the
+instance totals (admin) and **Change your password** (everyone signed in with a password account).
 
 ### Operator CLI
 
@@ -4667,6 +4667,69 @@ Removing a user; moving an identity between users; per-user plugin installs (ins
 instance's by decision). A client target of a user added later is attached with
 `HOPPER_WORK_DIR=<work dir>/users/<id> scripts/attach-client.sh …` (its relay socket is in that
 user's work dir) and its token variable under the user's prefix; the script does not take a user.
+
+## What an admin sees (issue #221, 2026-10-06)
+
+Owner decision: one organization runs one hopper for many users, and **users are locked away from each
+other and from admins**. An admin must not see a user's sensitive information; an admin gets totals
+across users instead. Inputs, from a read-only audit of `main` at `072b329`: the UI role `admin` is one
+role over the instance and the session's own user, with no limit on whose work an admin's sign-in
+powers reach; a loopback request without a session read any user's work (`x-hopper-user`); every user
+shares one database login.
+
+### The line
+
+| Side | What | Who reads it |
+|------|------|--------------|
+| **A user's own — sensitive** | jobs (payload, prompt, title, source item, result, failure), questions and answers, events, decisions, lanes and what runs in them, job sources, machines and their ssh names, executors, escalation levels, the rules record, routing, router mode, the queue gate and order, usage sources and their accounts (email, plan, usage), webhook subscriptions and deliveries, the `plugins` record and every option in it, gh login and every CLI's config in the user work dir, the user's secret variables, the event stream, the user schema | that user's own sessions only — never an admin of the instance, never a request without a session once there is more than one user |
+| **The instance's** | the users list (id, name, when added), the sign-in config (realms, password accounts and the user each signs in as, role rules — never a hash), the plugin store and its installs, self-update and its status, the instance schema | an admin (`GET /api/users`, `/api/realms`, `/api/plugin-store`, `/api/update`); loopback without a session reads them as before |
+| **Instance totals** | users; jobs not ended by status (`queued`, `held`, `claimed`, `running`, `waiting_answer`); open questions; lanes open and busy — summed over every user | an admin (`GET /api/instance`, Settings → Users); never one user's share, nothing named |
+
+What crosses from a user's side to the instance's is a **count**, never a name or an id. The instance's
+own events (`update.*`, `plugin.installed`, `plugin.removed`) go to every user's event log, so they
+carry nothing of any one user: the update's restart blockers read `waiting for <n> running job(s)`,
+never the jobs (they named `job <id> (executor <name>)` of any user before).
+
+### The seams that enforce it
+
+- **Whose request it is** (`src/http/tenants.ts`). A session reads its own user. A loopback request
+  without a session reads the one user only while the hopper has one user — a one-user install reads
+  as before — and no user's work once there are more: 401. No header names a user.
+- **Sign-in is the instance's, and gives an admin no way in** (`src/http/realms.ts`). An admin changes
+  realms, accounts and roles, but no change made from an admin's session may hand that admin a
+  credential that signs in as another user (409, never 403: the UI reads a 403 as a dead session):
+  - no password set on an account that signs in as another user; its role may change;
+  - no account added under the name of an account that signed in as another user and was removed (the
+    link of realm and username to that user stays, so it would sign in as them);
+  - an account is linked (`user`) only to the acting admin's own user; an account nobody signed in
+    with yet gets a user of its own at its first sign-in;
+  - **no sign-in** signs everyone in as `owner`: it stays off while the hopper has more than one user,
+    and no user is added while it is on.
+- **A user owns their password** (`POST /ui/api/password`, any role). The account the session signed in
+  with takes a new password, the current one checked first (400 when wrong; 409 for a session that did
+  not sign in with a password account); every other session of that account ends. A password an admin
+  set for a new account stops being one the admin knows once its user changes it, and a session the
+  admin opened with it ends.
+- **The instance totals** (`src/http/instance.ts`, `GET /api/instance`): admin, or loopback without a
+  session.
+
+### Residual risk, stated
+
+- **The operator of the host is not an admin.** Whoever holds the database credentials (the operator
+  CLI, `hopper login-code --user <id>`, `hopper config --user`) or the daemon's account reads every
+  user's work: every user shares one database login, and every user's jobs run as the daemon's account
+  ("Users: one hopper, separate users", Residual risk). The line above is the hopper's, drawn between
+  UI sessions; it binds what an admin does through the hopper, not what the host's operator does
+  outside it. A database login per user is not built.
+- **An admin who controls identity can still become an identity.** An OIDC, GitHub, SAML, LDAP or gateway realm
+  is the admin's to point at an identity provider; an admin who points a realm at a provider they
+  control, and makes it answer with a subject a user's identity is linked to, signs in as that user.
+  Not closed: realm settings are the admin's job, and the hopper cannot tell a provider move from an
+  impersonation. The log records every sign-in change and every session started, with its user.
+- **A new user's login link** passes through the admin who added the user. It signs in once: an admin
+  who uses it leaves the user without it, which the user notices; the session the admin opened lasts
+  until it expires.
+- **A password the admin set** stays known to the admin until its user changes it.
 
 ## Queue gate (issue #159, 2026-10-05)
 

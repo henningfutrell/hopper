@@ -29,3 +29,19 @@ export interface UserAdded {
   user: UserView;
   links: string[];
 }
+
+/** The jobs the instance totals count: every one not ended. */
+export const IN_FLIGHT_STATUSES = ['queued', 'held', 'claimed', 'running', 'waiting_answer'] as const;
+
+/**
+ * GET /api/instance (issue #221): what an admin reads of the users' work — totals across every user,
+ * never one user's share, never a job, question, lane or user named.
+ */
+export interface InstanceTotals {
+  users: number;
+  /** Jobs not ended, by status. */
+  jobs: Record<(typeof IN_FLIGHT_STATUSES)[number], number>;
+  questions: { open: number };
+  /** Open lanes, and those holding a job. */
+  lanes: { busy: number; total: number };
+}
