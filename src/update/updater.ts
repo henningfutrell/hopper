@@ -17,6 +17,8 @@ import { nextDirOf, readInstallInfo, swapInstall } from './install.ts';
 const exec = promisify(execFile);
 const DEFAULTS: UpdateSettings = { channel: 'main', autoUpdate: false };
 const FIRST_CHECK_MS = 10_000;
+/** How often to check when the interval given is not positive: checking cannot be turned off (issue #177). */
+const DEFAULT_CHECK_MS = 60_000;
 const LOAD_TIMEOUT_MS = 60_000;
 /** How many of the installed version's What's new lines the Updates panel shows. */
 const INSTALLED_WHATS_NEW = 5;
@@ -37,7 +39,7 @@ export interface UpdaterOptions {
   /** Running jobs a restart would lose (their executor can neither reattach nor re-run them); empty: safe. */
   /** How many running jobs, of every user, a restart would lose. */
   restartBlockers: () => number;
-  /** How often to check on its own; 0: only when asked. */
+  /** How often to check on its own; not positive: every minute, since a hopper that never checks never offers what was merged. */
   checkMs: number;
   /** How often to look again while waiting on restart blockers. */
   waitMs?: number;
@@ -275,9 +277,13 @@ export function createUpdater(o: UpdaterOptions): RunningUpdater {
     },
     start() {
       settlePending();
-      if (o.checkMs <= 0) return;
+      let every = o.checkMs;
+      if (every <= 0) {
+        every = DEFAULT_CHECK_MS;
+        o.logger.warn(`hopper: HOPPER_UPDATE_CHECK_MS=${o.checkMs} does not turn update checks off; checking every ${every / 1000} s`);
+      }
       const tick = () => { void check().catch(() => {}); };
-      timers.push(setTimeout(tick, Math.min(FIRST_CHECK_MS, o.checkMs)), setInterval(tick, o.checkMs));
+      timers.push(setTimeout(tick, Math.min(FIRST_CHECK_MS, every)), setInterval(tick, every));
       for (const t of timers) t.unref();
     },
     stop() {

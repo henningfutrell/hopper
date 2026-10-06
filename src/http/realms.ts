@@ -25,7 +25,7 @@ export interface RealmsAdmin {
 const MOVED = 'the sign-in config changed since they were read: reload and make the change again';
 
 export function createRealmsAdmin(o: {
-  instance: Pick<InstanceStore, 'signInConfig' | 'users'>;
+  instance: Pick<InstanceStore, 'signInConfig' | 'users' | 'identities'>;
   /** The realms the environment set up at start. */
   environment: string[];
   signIn: SignIn; sessions: UiSessions;
@@ -33,9 +33,14 @@ export function createRealmsAdmin(o: {
   const store = o.instance.signInConfig;
   const view = (): RealmsView => {
     const origin = o.signIn.origin();
-    const v = realmsView(store.read());
+    const stored = store.read();
+    const v = realmsView(stored);
+    const first = stored.githubAdmin;
+    const firstUser = first && o.instance.identities.userOf(first.realm, first.subject);
+    const name = firstUser ? o.instance.users.get(firstUser)?.name : undefined;
     return {
       version: store.version(), local: v.local, none: v.none, origin,
+      githubAdmin: first ? { realm: first.realm, ...(name ? { user: name } : {}) } : null,
       realms: v.realms.map((row) => {
         const r = o.environment.includes(row.name) ? { ...row, environment: true } : row;
         // A form, gateway or device realm (GitHub: issue #214) has no callback to register.

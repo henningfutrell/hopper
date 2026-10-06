@@ -1,11 +1,14 @@
-// Sign-in (issues #185, #200, #237): the realms, in the order the username and password form tries them
-// and the sign-in buttons show them, each on or off, moved, edited in a form of its type's fields or
-// removed; a realm added from the form of the chosen type; the login code and no sign-in. The hopper
-// keeps no password accounts of its own. No YAML: every setting is a field. In Settings,
-// admin only (GET /api/realms). Every change is POST /ui/api/realms against the version read, and
-// applies at once; the daemon refuses one that would not load, or that would end your own admin
-// session, and the refusal is shown where the change was made.
-import { ArrowDown, ArrowUp, Copy, KeyRound, Pencil, Plus, Trash2, X } from 'lucide-react';
+// Sign-in (issues #185, #200, #237, #256), as sign-in works: people sign in with GitHub through the
+// hopper's app, signing in also connects the GitHub their jobs work through, and the first of them is
+// the admin (issues #214, #239) — the page says so, names them, and says who else gets in. Then the other
+// ways to sign in, optional (a directory, an identity provider, an auth gateway): each on or off, moved
+// among themselves, edited in a form of its type's fields or removed; one added from the form of the
+// chosen type. Then device links (the login code) and no sign-in, each saying what it does. Every switch
+// says On or Off in words. The hopper keeps no password accounts of its own. No YAML: every setting is a
+// field. In Settings, admin only (GET /api/realms). Every change is POST /ui/api/realms against the
+// version read, and applies at once; the daemon refuses one that would not load, or that would end your
+// own admin session, and the refusal is shown where the change was made.
+import { ArrowDown, ArrowUp, Copy, KeyRound, Link, Pencil, Plus, ShieldOff, Trash2, Users, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Confirm } from '@/components/confirm';
@@ -16,7 +19,7 @@ import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { get, post, SessionRejected } from '@/lib/api';
-import { draftOf, emptyDraft, realmOf, REALM_FIELDS, REALM_TYPE_LABELS, RULE_MATCHES, type RealmDraft, type RealmField, type RuleMatch } from '@/model/realms';
+import { draftOf, emptyDraft, realmOf, REALM_FIELDS, REALM_TYPE_LABELS, REALM_TYPE_SHORT, RULE_MATCHES, whoGetsIn, type RealmDraft, type RealmField, type RuleMatch } from '@/model/realms';
 import type { RealmType, RealmView, RealmsEdit, RealmsView, UiRole } from '@/model/wire';
 import { useHopper } from '@/store';
 import { useCanAdmin } from '@/store/selectors';
@@ -25,6 +28,12 @@ const SELECT = 'h-8 rounded-lg border border-input bg-transparent px-2 text-base
 
 /** The editor: a realm being added (`editing` undefined) or changed (its name). */
 type Editing = { editing?: string; draft: RealmDraft; environment?: boolean };
+
+/** On or Off in words beside a switch: a switch alone reads either way in some themes. */
+const State = ({ on }: { on: boolean }) => <span className={`text-xs font-medium ${on ? 'text-foreground' : 'text-muted-foreground'}`}>{on ? 'On' : 'Off'}</span>;
+
+/** The realm types the other ways to sign in offer: every one but GitHub, which has its own place. */
+const OTHER_TYPES = REALM_TYPE_LABELS.filter((t) => t.type !== 'github');
 
 export function Realms() {
   const canAdmin = useCanAdmin();
@@ -59,83 +68,126 @@ export function Realms() {
 
   if (!canAdmin) return <Panel title="Sign-in" icon={KeyRound}><Empty>Only an admin manages sign-in.</Empty></Panel>;
   if (!view) return <Panel title="Sign-in" icon={KeyRound}><Empty>Loading…</Empty></Panel>;
-  const { version } = view;
+  const { version, githubAdmin } = view;
+  // Each realm with its place in the whole list: a move names that place.
+  const placed = view.realms.map((realm, at) => ({ realm, at }));
+  const github = placed.filter((p) => p.realm.type === 'github');
+  const others = placed.filter((p) => p.realm.type !== 'github');
 
   const save = async () => {
     if (!editing) return;
     const ok = await change({ action: 'save', realm: realmOf(editing.draft), version, ...(editing.editing === undefined ? {} : { name: editing.editing }) }, 'Saved: sign-in follows it now');
     if (ok) setEditing(null);
   };
+  const editor = (group: 'github' | 'other') => editing && (group === 'github') === (editing.draft.type === 'github') && (
+    <Editor editing={editing} setEditing={setEditing} error={error} busy={busy} onSave={() => void save()} onCancel={() => { setEditing(null); setError(null); }} />
+  );
+  const list = (group: typeof placed) => (
+    <ul className="divide-y rounded-lg border">
+      {group.map(({ realm: r }, i) => (
+        <RealmRow key={r.name} realm={r} busy={busy || editing !== null}
+          up={i === 0 ? undefined : group[i - 1]!.at} down={i === group.length - 1 ? undefined : group[i + 1]!.at}
+          onEnable={(enabled) => void change({ action: 'enable', name: r.name, enabled, version })}
+          onMove={(to) => void change({ action: 'move', name: r.name, to, version })}
+          onEdit={() => { setError(null); setEditing({ editing: r.name, draft: draftOf(r), ...(r.environment ? { environment: true } : {}) }); }}
+          onRemove={() => void change({ action: 'remove', name: r.name, version }, `${r.label} removed`)} />
+      ))}
+    </ul>
+  );
 
   return (
     <div className="space-y-3">
-      <Panel title="Realms" icon={KeyRound} count={view.realms.length}
-        action={!editing ? <Button size="xs" variant="outline" className="gap-1" onClick={() => { setError(null); setEditing({ draft: emptyDraft('oidc') }); }}><Plus />Add realm</Button> : undefined}>
-        <div className="space-y-3">
-          <p className="text-sm text-muted-foreground">
-            A realm is one way people sign in. The username and password form tries the LDAP realms in this order; the first that accepts the password signs in. The others are sign-in buttons, in this order. A change applies at once.
+      <Panel title="GitHub" icon={KeyRound}>
+        <div data-section="github" className="space-y-3 text-sm">
+          <p className="text-muted-foreground">
+            People sign in with GitHub, through this hopper's GitHub app. Signing in also connects their GitHub: it is what their jobs work through.
           </p>
-          {editing && <Editor editing={editing} setEditing={setEditing} error={error} busy={busy} onSave={() => void save()} onCancel={() => { setEditing(null); setError(null); }} />}
-          {view.realms.length === 0 ? <Empty>No realms: people sign in with the login code{view.none ? ' or without signing in' : ''}.</Empty> : (
-            <ul className="divide-y rounded-lg border">
-              {view.realms.map((r, i) => (
-                <RealmRow key={r.name} realm={r} first={i === 0} last={i === view.realms.length - 1} busy={busy || editing !== null}
-                  onEnable={(enabled) => void change({ action: 'enable', name: r.name, enabled, version })}
-                  onMove={(to) => void change({ action: 'move', name: r.name, to, version })}
-                  onEdit={() => { setError(null); setEditing({ editing: r.name, draft: draftOf(r), ...(r.environment ? { environment: true } : {}) }); }}
-                  onRemove={() => void change({ action: 'remove', name: r.name, version }, `${r.label} removed`)}
-                  position={i} />
-              ))}
-            </ul>
-          )}
+          <p data-github-admin>
+            {githubAdmin
+              ? githubAdmin.user
+                ? <><span className="font-medium">{githubAdmin.user}</span> is the admin: the first to sign in with GitHub.</>
+                : <>The admin is the first person who signed in with GitHub.</>
+              : <>Nobody has signed in with GitHub yet: the first person who does becomes admin.</>}
+          </p>
+          {editor('github')}
+          {github.length === 0 ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-muted-foreground">GitHub sign-in is not set up: nobody can sign in with GitHub.</span>
+              <Button size="xs" variant="outline" className="gap-1" disabled={busy}
+                onClick={() => void change({ action: 'save', realm: { name: 'github', label: 'GitHub', type: 'github' }, version }, 'GitHub sign-in added')}><Plus />Add GitHub sign-in</Button>
+            </div>
+          ) : list(github)}
         </div>
       </Panel>
-      <Panel title="Without a realm" icon={KeyRound}>
-        <div className="space-y-3 text-sm">
-          <label className="flex items-center gap-2">
-            <Switch checked={view.local} disabled={busy} aria-label="Login code" onCheckedChange={(local) => void change({ action: 'settings', local, version })} />
-            <span><span className="font-medium">Login code</span> <span className="text-muted-foreground">— a one-time code in a device link or a new user's login link; it signs in to that user, role admin.</span></span>
+      <Panel title="Other ways to sign in" icon={Users} count={others.length}
+        action={!editing ? <Button size="xs" variant="outline" className="gap-1" onClick={() => { setError(null); setEditing({ draft: emptyDraft('oidc') }); }}><Plus />Add realm</Button> : undefined}>
+        <div data-section="other" className="space-y-3 text-sm">
+          <p className="text-muted-foreground">
+            Optional, for company accounts: a directory (LDAP or Active Directory: the directory username and password), an identity provider (OpenID Connect or SAML: a sign-in button each), or an auth gateway in front of the hopper that already signed people in. Directories are tried, and buttons shown, in this order.
+          </p>
+          {editor('other')}
+          {others.length === 0 ? <Empty>None: GitHub is the only way to sign in.</Empty> : list(others)}
+        </div>
+      </Panel>
+      <Panel title="Device links" icon={Link}>
+        <div data-section="device-links" className="text-sm">
+          <label className="flex items-start gap-2">
+            <Switch checked={view.local} disabled={busy} aria-label="Device links" className="mt-0.5" onCheckedChange={(local) => void change({ action: 'settings', local, version })} />
+            <span className="mt-0.5"><State on={view.local} /></span>
+            <span className="text-muted-foreground">
+              Someone signed in can open the hopper on another device with a one-time link or QR code, and an admin can give a new user a link that signs them in. Each link works once, for 10 minutes, and signs in as admin of that one user. Off: neither works.
+            </span>
           </label>
-          <label className="flex flex-wrap items-center gap-2">
-            <span className="font-medium">No sign-in</span>
-            <select aria-label="No sign-in" className={SELECT} value={view.none ?? ''} disabled={busy}
-              onChange={(e) => void change({ action: 'settings', none: e.target.value === '' ? null : e.target.value as UiRole, version })}>
-              <option value="">off</option>
-              <option value="viewer">anyone may look (viewer)</option>
-              <option value="operator">anyone may act on jobs (operator)</option>
-              <option value="admin">anyone may change everything (admin)</option>
-            </select>
-            <span className="text-muted-foreground">Only behind something else that decides who gets in.</span>
-          </label>
+        </div>
+      </Panel>
+      <Panel title="No sign-in" icon={ShieldOff}>
+        <div data-section="no-sign-in" className="flex flex-wrap items-center gap-2 text-sm">
+          <select aria-label="No sign-in" className={SELECT} value={view.none ?? ''} disabled={busy}
+            onChange={(e) => void change({ action: 'settings', none: e.target.value === '' ? null : e.target.value as UiRole, version })}>
+            <option value="">Off</option>
+            <option value="viewer">anyone may look (viewer)</option>
+            <option value="operator">anyone may act on jobs (operator)</option>
+            <option value="admin">anyone may change everything (admin)</option>
+          </select>
+          <span className="text-muted-foreground">Anyone who reaches the hopper gets in without signing in. Only for a hopper behind a proxy or network that already decides who gets in, and only while it has one user.</span>
         </div>
       </Panel>
     </div>
   );
 }
 
-function RealmRow({ realm: r, first, last, busy, position, onEnable, onMove, onEdit, onRemove }: {
-  realm: RealmView; first: boolean; last: boolean; busy: boolean; position: number;
+function RealmRow({ realm: r, busy, up, down, onEnable, onMove, onEdit, onRemove }: {
+  realm: RealmView; busy: boolean;
+  /** The place in the whole list to move to: the one before or after it among its own; undefined at an end. */
+  up: number | undefined; down: number | undefined;
   onEnable: (enabled: boolean) => void; onMove: (to: number) => void; onEdit: () => void; onRemove: () => void;
 }) {
   const copy = (l: string) => navigator.clipboard?.writeText(l).then(() => toast.success('Copied'), () => toast.error('Clipboard blocked'));
+  const github = r.type === 'github';
+  const who = whoGetsIn(r.settings);
+  const single = up === undefined && down === undefined;
   return (
     <li data-realm={r.name} className="space-y-1 px-3 py-2 text-sm">
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         <Switch checked={r.enabled} disabled={busy} aria-label={`${r.label} on`} onCheckedChange={onEnable} />
+        <State on={r.enabled} />
         <span className="min-w-0 truncate font-medium">{r.label}</span>
-        <StatusBadge status={r.type} tone="muted" />
-        {r.label !== r.name && <span className="truncate font-mono text-xs text-muted-foreground">{r.name}</span>}
-        {!r.enabled && <span className="text-xs text-muted-foreground">off</span>}
+        {!github && <StatusBadge status={REALM_TYPE_SHORT[r.type]} tone="muted" />}
         {r.environment && <span className="text-xs text-muted-foreground" title="HOPPER_SIGN_IN_REALM_* variables set it up: a change here lasts until the next start">set from the environment</span>}
         <span className="ml-auto flex items-center gap-0.5">
-          <Button variant="ghost" size="icon-xs" aria-label="Move up" disabled={busy || first} onClick={() => onMove(position - 1)}><ArrowUp /></Button>
-          <Button variant="ghost" size="icon-xs" aria-label="Move down" disabled={busy || last} onClick={() => onMove(position + 1)}><ArrowDown /></Button>
+          {!single && <>
+            <Button variant="ghost" size="icon-xs" aria-label="Move up" disabled={busy || up === undefined} onClick={() => onMove(up!)}><ArrowUp /></Button>
+            <Button variant="ghost" size="icon-xs" aria-label="Move down" disabled={busy || down === undefined} onClick={() => onMove(down!)}><ArrowDown /></Button>
+          </>}
           <Button variant="ghost" size="icon-xs" aria-label="Edit" disabled={busy} onClick={onEdit}><Pencil /></Button>
           <Confirm title={`Remove ${r.label}?`} action="Remove" onConfirm={onRemove}
             description={`People who signed in with it are signed out at once, and nobody can sign in with it any more.`}>
             <Button variant="ghost" size="icon-xs" aria-label="Remove" disabled={busy}><Trash2 /></Button>
           </Confirm>
         </span>
+      </div>
+      <div className="text-xs text-muted-foreground">
+        {github ? 'Who else gets in' : 'Who gets in'}: {[...who.rules, `anyone else ${who.anyoneElse ? `gets ${who.anyoneElse}` : 'cannot sign in'}`].join(' · ')}
       </div>
       {r.callback && (
         <div className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
@@ -201,7 +253,7 @@ function RoleRules({ draft, set, disabled }: { draft: RealmDraft; set: (d: Realm
   const rule = (i: number, patch: Partial<RealmDraft['rules'][number]>) => set({ ...draft, rules: draft.rules.map((r, j) => (j === i ? { ...r, ...patch } : r)) });
   return (
     <div className="space-y-2 sm:col-span-2">
-      <div className="text-xs"><span className="font-medium">Role rules</span> <span className="text-muted-foreground">— the highest role a rule grants wins; someone no rule matches gets the default role.</span></div>
+      <div className="text-xs"><span className="font-medium">Role rules</span> <span className="text-muted-foreground">— the highest role a rule grants wins; someone no rule matches gets the default role.{draft.type === 'github' ? ' The first person to sign in with GitHub is admin whatever the rules say.' : ''}</span></div>
       {draft.rules.map((r, i) => (
         <div key={i} className="flex flex-wrap items-start gap-2 rounded-md border p-2">
           <select aria-label={`Rule ${i + 1} role`} className={SELECT} value={r.role} disabled={disabled} onChange={(e) => rule(i, { role: e.target.value as UiRole })}>
@@ -244,7 +296,7 @@ function Editor({ editing, setEditing, error, busy, onSave, onCancel }: {
         {adding && (
           <select aria-label="Realm type" className={SELECT} value={draft.type} disabled={busy}
             onChange={(e) => set({ ...emptyDraft(e.target.value as RealmType), name: draft.name, label: draft.label })}>
-            {REALM_TYPE_LABELS.map((t) => <option key={t.type} value={t.type}>{t.label}</option>)}
+            {OTHER_TYPES.map((t) => <option key={t.type} value={t.type}>{t.label}</option>)}
           </select>
         )}
       </div>

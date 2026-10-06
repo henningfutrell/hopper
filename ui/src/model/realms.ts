@@ -81,6 +81,9 @@ export const REALM_TYPE_LABELS: { type: RealmType; label: string }[] = [
   { type: 'gateway', label: 'Auth gateway in front of the hopper (it signs people in)' },
 ];
 
+/** A realm type in a word or two, as Settings → Sign-in labels a realm of it. */
+export const REALM_TYPE_SHORT: Record<RealmType, string> = { ldap: 'LDAP', oidc: 'OpenID Connect', github: 'GitHub', saml: 'SAML', gateway: 'Auth gateway' };
+
 /** What a role rule matches on. */
 export type RuleMatch = 'subjects' | 'usernames' | 'emails' | 'emailDomains' | 'groups';
 export const RULE_MATCHES: { match: RuleMatch; label: string }[] = [
@@ -159,4 +162,20 @@ export function realmOf(d: RealmDraft): { name: string; label?: string; type: Re
   if (Object.keys(roles).length > 0) settings.roles = roles;
   const label = d.label.trim();
   return { name: d.name.trim(), ...(label === '' ? {} : { label }), type: d.type, ...settings };
+}
+
+/**
+ * Who a realm's role rules let in, in words: one line per role a rule grants ("operator: usernames bea"),
+ * then what anyone else gets ("anyone else: viewer", or no session).
+ */
+export function whoGetsIn(settings: RealmSettings): { rules: string[]; anyoneElse: UiRole | null } {
+  const roles = (settings.roles ?? {}) as Partial<Record<UiRole, Partial<Record<RuleMatch, string[]>>>> & { defaultRole?: UiRole | null };
+  const rules = RULE_ROLES.flatMap((role) => {
+    const parts = RULE_MATCHES.flatMap(({ match, label }) => {
+      const list = roles[role]?.[match];
+      return list?.length ? [`${label} ${list.join(', ')}`] : [];
+    });
+    return parts.length ? [`${role}: ${parts.join('; ')}`] : [];
+  });
+  return { rules, anyoneElse: roles.defaultRole ?? null };
 }
