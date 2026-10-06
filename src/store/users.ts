@@ -2,6 +2,7 @@
 import type { IdentityLinks, UserRepository } from '../domain/ports.ts';
 import type { User } from '../domain/types.ts';
 import type { StoreContext } from './context.ts';
+import { foldUserSchema } from './fold-user.ts';
 import { quoteIdent } from './tenant-migrations.ts';
 
 const MAX_ID = 24;
@@ -64,6 +65,27 @@ export function createUserRepository(c: StoreContext, onAdded: (user: User) => v
         c.db.run('UPDATE users SET name = ? WHERE id = ?', String(to.name), fromId);
         c.db.exec(`DROP SCHEMA ${schema} CASCADE`);
         return rowOf(c.db.get('SELECT * FROM users WHERE id = ?', fromId)!);
+      });
+    },
+    fold(fromId, intoId) {
+      if (fromId === intoId) throw new Error('a fold needs two different users');
+      return c.tx(() => {
+        const from = c.db.get('SELECT * FROM users WHERE id = ?', fromId);
+        const into = c.db.get('SELECT * FROM users WHERE id = ?', intoId);
+        if (!from) throw new Error(`no user ${fromId}`);
+        if (!into) throw new Error(`no user ${intoId}`);
+        // `from`'s record and schema stay, holding the work that ran the hopper; `into`'s work joins them.
+        const kept = schemaOf(fromId);
+        const gone = schemaOf(intoId);
+        foldUserSchema(c.db, kept, gone);
+        c.db.exec('ALTER TABLE user_identities DROP CONSTRAINT user_identities_user_id_fkey');
+        for (const table of ['user_identities', 'ui_sessions', 'login_codes']) c.db.run(`UPDATE ${table} SET user_id = ? WHERE user_id = ?`, intoId, fromId);
+        c.db.run('DELETE FROM users WHERE id = ?', intoId);
+        c.db.exec(`DROP SCHEMA ${quoteIdent(gone)} CASCADE`);
+        c.db.run('UPDATE users SET id = ?, name = ? WHERE id = ?', intoId, String(into.name), fromId);
+        c.db.exec(`ALTER SCHEMA ${quoteIdent(kept)} RENAME TO ${quoteIdent(gone)}`);
+        c.db.exec('ALTER TABLE user_identities ADD CONSTRAINT user_identities_user_id_fkey FOREIGN KEY (user_id) REFERENCES users (id)');
+        return rowOf(c.db.get('SELECT * FROM users WHERE id = ?', intoId)!);
       });
     },
   };

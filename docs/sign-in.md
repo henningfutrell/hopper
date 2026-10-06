@@ -232,9 +232,11 @@ accounts of its own (issue #237). The way in is a realm:
   with GitHub](#ui-roles-and-role-rules) is the admin, so sign in before anyone else can reach the UI.
 - **Each person gets a whole environment of their own**: the first sign-in of each identity makes its
   user ([Who signs in as which user](#who-signs-in-as-which-user)).
-- **A hopper from before** keeps its default admin account `admin` and its work. Its start hands out no
-  login code any more: sign in with GitHub (which makes a new user) and move `admin`'s work to it with
-  [`hopper user transfer`](#who-signs-in-as-which-user).
+- **A hopper from before** keeps its default admin account `admin` and its work until the first person
+  signs in with GitHub. Its start hands out no login code any more: sign in with GitHub (which makes a
+  new user), and the next start folds `admin` into that user (issue #265): `admin` is gone, and
+  everything it held — jobs, questions, history, machines, sources, settings, sign-ins — is yours
+  ([Who signs in as which user](#who-signs-in-as-which-user)).
 - **No way in** — no realm that is on, no sign-in off — is left as it is: the sign-in page says that
   sign-in with GitHub is not set up. Turn the GitHub realm back on from
   [the sign-in config from the CLI](#the-sign-in-config-from-the-cli) or the environment.
@@ -482,8 +484,8 @@ webhooks and credentials; nobody sees or touches another user's. **Each person g
 environment of their own**: a new hopper holds no user, and the first sign-in of each identity makes
 its user (issue #238). A hopper from before keeps its **default admin account**, `admin`, which holds
 everything from before there were several (an earlier hopper's `owner` became `admin` on update, issue
-#220); it is reached through the identities linked to it, and `hopper user transfer` moves its work to
-the user a person signs in as (below).
+#220); it is reached through the identities linked to it until the first GitHub admin signs in as a
+user of their own, and then it is folded into that user at the next start (below).
 
 | sign-in | user |
 |---|---|
@@ -500,6 +502,15 @@ the user a person signs in as (below).
   Log it in to GitHub from its own Sources view.
 - An identity that signed in before there were several users is linked to `admin` when its session
   was still stored; one whose sessions had all expired gets a new user at its next sign-in.
+- **The leftover `admin` goes into the first GitHub admin's user** (issue #265). On a hopper from before,
+  once the first GitHub admin has signed in as a user of their own, every start folds `admin` into that
+  user before any user's work starts: one user is left, with that user's id and name, holding both
+  users' jobs, questions, decisions, events and webhooks, and every sign-in, session and login code of
+  either. It keeps `admin`'s work dir, secret prefix and machines, so `admin`'s running jobs and their
+  panes go on; where both had the same lane, webhook name, setting or config record, `admin`'s stays;
+  the plugins config gains the instances only that user had; their GitHub connection is theirs. The log
+  says `the leftover user admin is folded into <id>`. Nothing happens while no GitHub admin is
+  recorded, or when they sign in as `admin` itself.
 - **Moving work to the user a person signs in as** (issue #212): `hopper user transfer <from> <to>`,
   with the daemon stopped. `<to>` takes over everything `<from>` holds: `<to>`'s sign-ins (realm
   links), sessions and login codes move onto `<from>`'s record, which takes `<to>`'s name; `<to>`'s

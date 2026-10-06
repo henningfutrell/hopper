@@ -38,8 +38,8 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 |-----|------|-----------------|
 | `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts; `machines.ts` attached machines and their edit; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate), ports (`ports.ts`, re-exporting the store's from `store.ts`) | anything else in `src/` |
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock | everything but `domain/` |
-| `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations (the instance's `migrations.ts` with migration 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238) | engine, http, decider |
-| `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), identity → user (`identities.ts`: link or provision) | http, decider |
+| `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations (the instance's `migrations.ts` with migration 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265) | engine, http, decider |
+| `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), identity → user (`identities.ts`: link or provision), the leftover default admin account folded into the first GitHub admin's user at start (`leftover-admin.ts`, issue #265) | http, decider |
 | `src/webhooks/` | signing, dispatcher, retry/backoff, the secret of a subscription from the runtime (`dispatcher.ts`), the UI edit of the subscriptions (`edit.ts`, rows in the store) | engine, http, decider |
 | `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, the plugins config (`plugins-config.ts`) + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt, `escalation-level/anthropic-api/` asks the Claude API with the same prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-gh/`, `job-source/github-app/` and `job-source/github-account/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser); `usage-source/command-usage/` reads any agent framework's usage and account from a command that prints them as JSON; `usage-source/polled.ts` the background refresh both share, `usage-source/run.ts` their command runner; `notifier/grokbot-routine/` is the Grok Bot routine webhook — env-file reader and notifier; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
 | `src/executors/` | `Executor` adapters (`test`, `herdr/`, `command.ts` — a job's body run on its machine through its connection, `cursor.ts` — Cursor's CLI agent there, issue #142) and the registry; reached through the executor plugins. The connections and their target authentication ("Target authentication"): `ssh.ts` (key-only ssh to pinned host keys), `docker.ts` (the docker socket check, the proxy's allowlist), `client.ts` (a client target's tunnel, signed calls); `env.ts` the scrubbed child environment | engine, http, store, plugins |
@@ -4949,6 +4949,51 @@ report (`UserRepository.admin()`, `Runtimes.admin()`).
   account `admin` (first password shown once at start), and the login code.
 - **Not an account: the question stage.** *Owner* stays the glossary's word for the last stage of the
   question gates — whichever user's job asked — never a user.
+
+### The leftover default admin account (issue #265, 2026-10-06)
+
+Owner request: on the Users page of a hopper from before there are still two users — the one from
+before GitHub sign-in (`admin`) and the admin who signed in with GitHub. The earlier one is a leftover
+and no longer applicable: remove it, and whatever is still tied to it belongs to a real user account,
+consistent with #220. Related: #212, #239.
+
+Inputs: since #238 a new hopper has no `admin`, but one from before keeps it with its work, and the
+first GitHub admin's sign-in makes a user of their own beside it (#239 records who that is,
+`githubAdmin`). #238 left the move to the operator: `hopper user transfer admin <user>`, with the
+daemon stopped — refused once that user holds work of its own, which a GitHub sign-in's sources give it
+within minutes.
+
+- **At start, before any user's runtime** (`src/users/leftover-admin.ts`, `foldLeftoverAdmin`, from
+  `startApp`): when the user `admin` exists and the recorded first GitHub admin's identity is linked to
+  another user, `admin` is **folded** into that user, the real account, and the log says so. Nothing
+  happens while no GitHub admin is recorded, when they sign in as `admin` itself (a transfer done
+  before), or on a hopper with no `admin`. Every start checks, so a first GitHub sign-in after the
+  update is folded at the start after it. Not an instance migration: who the real user is comes from
+  sign-in, which a migration of a store nobody signed in to cannot know, and the operator CLI opens the
+  same store while a daemon runs.
+- **The fold** (`UserRepository.fold(from, into)`, `src/store/users.ts`; the rows in
+  `src/store/fold-user.ts`), one transaction, both user schemas first on the latest tenant version. As
+  #220 did for `owner` and #212's transfer does, the record that ran the hopper stays: `admin`'s row —
+  its place, created date, work dir, secret prefix — and its user schema, renamed, take the real user's
+  id and name, so `admin`'s machines (their herdr sessions), lanes and running jobs go on untouched and
+  the user's id, schema name and sign-ins are the real user's. The real user's own work moves in:
+  jobs, questions, decisions, events, webhooks after `admin`'s, in their order, new rows numbered on;
+  their deliveries with their subscription, naming their event by its new seq (the dispatcher reads it
+  by seq); lanes, a webhook's name, settings (the queue gate) and config records `admin` already holds
+  stay `admin`'s, the rest join; the plugins config gains the sections and the executors, job sources,
+  machines, usage sources and notifiers only the real user named (escalation levels and routing are
+  ordered chains: `admin`'s whole); the connected account is the real user's — their own GitHub
+  connection, granted at their sign-in. Identity links, UI sessions and login codes of either name the
+  real user (no sign-in's identity, linked to `admin` by migration 24, with them). The real user's own
+  row and schema are dropped. A job of each for the same source key is kept twice: the job source reads
+  the newest.
+
+**Residual risk, stated.** The real user's running jobs on a lane `admin` also had lose that lane, and
+the start's recovery treats them as it does any job whose lane is gone. The real user's own work dir
+(`users/<id>`: their `gh` and `claude` logins) is no longer theirs: the kept record's work dir is the
+work dir itself, with the daemon's own logins, which `admin`'s sources used; the GitHub connection jobs
+work through is the connected account, which moves. Secrets read under the real user's prefix are read
+under the empty prefix from then on.
 
 ### User runtime
 

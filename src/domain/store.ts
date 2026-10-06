@@ -166,6 +166,12 @@ export interface UserRepository {
    * changed, when `to` holds work of its own (jobs, questions, decisions, webhooks). The record kept.
    */
   transfer(fromId: string, toId: string): User;
+  /**
+   * `from` is folded into `into` and is gone (issue #265): `into` keeps its id and name, on `from`'s
+   * record — its place, work dir, secret prefix and user schema, so `from`'s work runs on untouched — and
+   * `into`'s work, sign-ins, sessions and login codes join it (`src/store/fold-user.ts`). The record kept.
+   */
+  fold(fromId: string, intoId: string): User;
 }
 
 /** Which user an identity signs in as (`user_identities`). */
