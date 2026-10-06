@@ -24,7 +24,8 @@ export function WaitingPanel() {
           <div className="flex items-start gap-2">
             <span className="num mt-0.5 w-5 shrink-0 text-xs text-muted-foreground">{position}</span>
             <JobTitle job={job} className="flex-1" />
-            {authed && job.status === 'held' && !job.approved && (
+            {job.accepted === false && <a href="#queue" className="text-xs text-warn hover:underline">accept in Queue →</a>}
+            {authed && job.status === 'held' && !job.approved && job.accepted !== false && (
               <Button size="xs" variant="outline" onClick={() => act(`/ui/api/jobs/${job.id}/approve`, {}, 'Job approved')}><Check />Approve</Button>
             )}
             <CancelButton job={job} />

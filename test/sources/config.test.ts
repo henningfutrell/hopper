@@ -17,6 +17,7 @@ const SHARED_DEFAULTS = {
   repos: [],
   ...AUTHORS,
   label: 'hopper',
+  hopperName: null,
   priorityLabels: { 'hopper:high': 75, 'hopper:low': 25 },
   defaultPriority: 50,
   repoPaths: {},

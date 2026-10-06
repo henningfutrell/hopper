@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- A new Queue page lets you decide what runs: new jobs can wait for you instead of starting by themselves. Move each into your own order, take the automatic sort as it is, or reject a job — a rejected job is kept and marked, never run. You can also cap how many jobs are let in by themselves each hour, and give an issue a label naming one hopper so only that hopper takes it.
 - You can choose where a job's work stops: merged (as before), or at a pull request left open for you to review and merge — for all issues, or for one issue by a label. A job is only marked done once its work gets there.
 - Set up how people sign in from Settings, under Sign-in: add sign-in through a company directory (LDAP or Active Directory), OpenID Connect, SAML, GitHub or password accounts, put them in the order they are tried, and switch each on or off. Changes work at once, without a restart.
 - The lane timeline no longer keeps drawing a job as running after the hopper restarted and ran that job again; the earlier run ends where the job started again.

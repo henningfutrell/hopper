@@ -8,7 +8,7 @@ export const GROUP = {
   queued: 'waiting', held: 'waiting',
   waiting_answer: 'waitingAnswer',
   claimed: 'running', running: 'running',
-  finished: 'ended', failed: 'ended', cancelled: 'ended',
+  finished: 'ended', failed: 'ended', cancelled: 'ended', rejected: 'ended',
 } as const satisfies Record<JobStatus, string>;
 export type JobGroup = (typeof GROUP)[JobStatus];
 

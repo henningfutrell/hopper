@@ -47,7 +47,7 @@ interface Slot {
 interface NotRerun { key: string; job: string; status: string; reason: string }
 const NOT_REPORTED = 'its end is not reported to the source yet';
 
-const TRIGGERS = new Set(['job.finished', 'job.failed', 'job.cancelled']);
+const TRIGGERS = new Set(['job.finished', 'job.failed', 'job.cancelled', 'job.rejected']);
 const isTerminal = (j: Job) => TERMINAL_STATUSES.includes(j.status);
 const flagsOf = (j: Job): SyncFlags => (j.sourceState?.sync ?? {}) as SyncFlags;
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -127,7 +127,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     const flags = flagsOf(job);
     if (!isTerminal(job) || flags.finalReported) return;
     if (job.status === 'cancelled' && !flags.cancelReason && hint.cancelReason) write(jobId, { ...flags, cancelReason: hint.cancelReason });
-    const kind = job.status === 'finished' ? 'finished' : job.status === 'failed' ? 'failed' : 'cancelled';
+    const kind = job.status === 'finished' || job.status === 'failed' || job.status === 'rejected' ? job.status : 'cancelled';
     await send(slot, jobId, kind, (j) => ({ kind, job: j }), (f) => ({ ...f, finalReported: true }));
   }
 

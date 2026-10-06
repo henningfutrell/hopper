@@ -9,7 +9,7 @@ import { signInWithoutCredential, wantsNoSignIn } from '@/lib/login';
 import { HISTORY_TYPES } from '@/model/event-types';
 import { reloadNeeded } from '@/model/update';
 import type { SessionUser, SessionView } from '@/model/wire';
-import type { Decision, DomainEvent, Health, Job, MachineView, PartAccount, PluginsReport, Question, Queue, RoutingReport, SourceStatus, UpdateStatus, UsageReport, WebhookDelivery, WebhookView, WebhooksView } from '@/model/wire';
+import type { Decision, DomainEvent, Health, Job, MachineView, PartAccount, PluginsReport, PreSort, Question, Queue, QueueGate, RoutingReport, SourceStatus, UpdateStatus, UsageReport, WebhookDelivery, WebhookView, WebhooksView } from '@/model/wire';
 
 export const CAP = { events: 500, history: 5000, decisions: 100, deliveries: 100 };
 export type Conn = 'connecting' | 'live' | 'reconnecting';
@@ -30,6 +30,9 @@ export interface HopperState {
   jobs: Record<string, Job>;
   /** The queue order of the waiting jobs, as /api/queue gave it. */
   waitingOrder: string[];
+  /** The queue gate and the pre-sort of the jobs not yet accepted, as /api/queue gave them (issue #159). */
+  gate: QueueGate | null;
+  presort: PreSort | null;
   machines: MachineView[];
   decisions: Decision[];
   /** Open questions, every stage. */
@@ -60,7 +63,7 @@ export interface HopperState {
 }
 
 export const useHopper = create<HopperState>(() => ({
-  loaded: false, loadError: null, conn: 'connecting', authed: false, user: null, viewing: null, signIn: null, health: null, jobs: {}, waitingOrder: [], machines: [],
+  loaded: false, loadError: null, conn: 'connecting', authed: false, user: null, viewing: null, signIn: null, health: null, jobs: {}, waitingOrder: [], gate: null, presort: null, machines: [],
   decisions: [], questions: [], handled: [], events: [], history: [], sources: [], deliveries: [], subscriptions: [],
   plugins: null, pluginsError: null, usage: null, accounts: [], routing: null, routingError: null, update: null, loadedCommit: undefined,
 }));
@@ -71,10 +74,12 @@ const capped = <T,>(list: T[], cap: number) => (list.length > cap ? list.slice(0
 const upsert = <T,>(list: T[], item: T, same: (x: T) => boolean, cap: number) =>
   list.some(same) ? list.map((x) => (same(x) ? item : x)) : capped([item, ...list], cap);
 
-/** The one way jobs enter the store: an /api/queue answer replaces them all. */
-const jobsOf = (q: Queue): Pick<HopperState, 'jobs' | 'waitingOrder'> => ({
+/** The one way jobs enter the store: an /api/queue answer replaces them all, with the queue gate and its pre-sort. */
+const jobsOf = (q: Queue): Pick<HopperState, 'jobs' | 'waitingOrder' | 'gate' | 'presort'> => ({
   jobs: Object.fromEntries([...q.waiting, ...q.waitingAnswer, ...q.running, ...q.ended].map((j) => [j.id, j])),
   waitingOrder: q.waiting.map((j) => j.id),
+  gate: q.gate,
+  presort: q.presort,
 });
 
 export async function refreshHealth() { set({ health: await get<Health>('/api/health') }); }

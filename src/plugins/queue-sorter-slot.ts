@@ -1,8 +1,9 @@
 // The queue-sorter role's one slot (design.md "Queue sorter (issue #18)"): the instance plugins.yaml
 // names (absent: the built-in `priority`), answered through a live QueueSorter swapped between
 // calls. A sorter that cannot run, throws, or returns anything but distinct ids of the jobs it was
-// given → `priority`'s order for that call, the reason kept for /api/plugins.
-import type { Detection, InstanceSpec, JobId, QueueSorterStatus } from '../domain/types.ts';
+// given → `priority`'s order for that call, the reason kept for /api/plugins. Its rejections of jobs
+// not yet accepted (issue #159) are checked the same way; an unusable answer rejects nothing.
+import type { Detection, InstanceSpec, JobId, PreSortReject, QueueSorterStatus } from '../domain/types.ts';
 import type { QueueEntry, QueueSorter } from '../domain/ports.ts';
 import { byPriority } from './queue-sorter/priority/index.ts';
 import { instantiate, type SlotDeps } from './router-slot.ts';
@@ -40,6 +41,21 @@ function problemWith(out: unknown, entries: readonly QueueEntry[]): string | und
   return undefined;
 }
 
+/** Why a reject result is not usable, or undefined: `{ jobId, reason }` of the given jobs, each once. */
+function problemWithRejects(out: unknown, entries: readonly QueueEntry[]): string | undefined {
+  if (!Array.isArray(out)) return 'rejected with something other than a list';
+  const known = new Set(entries.map((e) => e.job.id));
+  const seen = new Set<string>();
+  for (const r of out as unknown[]) {
+    const { jobId, reason } = (r ?? {}) as Record<string, unknown>;
+    if (typeof jobId !== 'string' || typeof reason !== 'string' || !reason) return 'rejected with something other than { jobId, reason }';
+    if (!known.has(jobId)) return `rejected job ${jobId}, which is not waiting`;
+    if (seen.has(jobId)) return `rejected job ${jobId} twice`;
+    seen.add(jobId);
+  }
+  return undefined;
+}
+
 export interface LiveQueueSorter {
   sorter: QueueSorter;
   current(): BuiltQueueSorter;
@@ -51,6 +67,8 @@ export function createLiveQueueSorter(first: BuiltQueueSorter, logger: SlotDeps[
   let current = first;
   /** Set while the current instance's last sort was unusable. */
   let sortFallback: string | undefined;
+  /** The last unusable reject answer, logged once. */
+  let rejectProblem: string | undefined;
   const sorter: QueueSorter = {
     get name() { return current.spec.name; },
     sort(entries) {
@@ -73,6 +91,23 @@ export function createLiveQueueSorter(first: BuiltQueueSorter, logger: SlotDeps[
       }
       sortFallback = undefined;
       return out as JobId[];
+    },
+    reject(entries) {
+      const c = current;
+      if (!c.sorter?.reject || entries.length === 0) return [];
+      let why: string | undefined;
+      let out: unknown;
+      try {
+        out = c.sorter.reject(entries);
+        why = problemWithRejects(out, entries);
+      } catch (e) {
+        why = `reject failed: ${message(e)}`;
+      }
+      if (!why) return (out as PreSortReject[]).map(({ jobId, reason }) => ({ jobId, reason }));
+      const reason = `queue sorter ${c.spec.name} ${why}; nothing rejected`;
+      if (reason !== rejectProblem) logger.warn(`hopper: ${reason}`);
+      rejectProblem = reason;
+      return [];
     },
   };
   return {

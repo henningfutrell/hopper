@@ -16,13 +16,14 @@ export type JobStatus =
   | 'waiting_answer' // paused on a question; holds no lane; its pane stays open
   | 'finished'
   | 'failed'
-  | 'cancelled';
+  | 'cancelled'
+  | 'rejected'; // turned away at the queue gate: kept, never run
 
-export const TERMINAL_STATUSES: readonly JobStatus[] = ['finished', 'failed', 'cancelled'];
+export const TERMINAL_STATUSES: readonly JobStatus[] = ['finished', 'failed', 'cancelled', 'rejected'];
 
 /**
  * Whether a source item whose newest job is this one gets a new job: the job ended (finished,
- * failed or cancelled) and the source already reported that (so its marker, e.g. `hopper:done` or
+ * failed, cancelled or rejected) and the source already reported that (so its marker, e.g. `hopper:done` or
  * `hopper:failed`, was written at least once). A source that offers the item again then means a
  * human cleared the marker. Unreported, the item is still the same attempt: a failing report must
  * not loop.
@@ -62,6 +63,13 @@ export interface Job {
   holdReason?: string;
   /** True once a human approved a job the router held (`ask_human` and the other router holds). */
   approved: boolean;
+  /**
+   * False while the job waits at the queue gate (issue #159): held `awaiting acceptance` until the
+   * pre-sort or the user accepts it. Absent (jobs from before the gate) or true: accepted.
+   */
+  accepted?: boolean;
+  /** The job's place in the user order (0 first): set when the user orders the queue; ranked jobs run before the rest. */
+  userRank?: number;
   laneId?: LaneId;
   progress?: number; // 0..1
   progressMessage?: string;
@@ -253,6 +261,7 @@ export const EVENT_TYPES = [
   'question.asked', 'question.escalated', 'question.answered', 'question.closed', 'question.dismissed', 'question.expired',
   'update.available', 'update.started', 'update.applied', 'update.failed',
   'plugin.installed', 'plugin.removed',
+  'job.accepted', 'job.rejected', 'queue.ordered', 'queue.gate_changed',
 ] as const;
 export type EventType = typeof EVENT_TYPES[number];
 
@@ -268,6 +277,7 @@ export const EVENT_SCHEMA_VERSIONS: Readonly<Record<EventType, number>> = {
   'question.answered': 2, 'question.closed': 1, 'question.dismissed': 1, 'question.expired': 1,
   'update.available': 1, 'update.started': 1, 'update.applied': 1, 'update.failed': 1,
   'plugin.installed': 1, 'plugin.removed': 1,
+  'job.accepted': 1, 'job.rejected': 1, 'queue.ordered': 1, 'queue.gate_changed': 1,
 };
 
 export interface DomainEvent<T = Record<string, unknown>> {
@@ -416,6 +426,11 @@ export type * from './routing.ts';
 export { LIST_ROLES, ROLES, SELECTABLE_ROLES } from './plugins.ts';
 export type { Account, ExecutorLaneEffect, MachineLaneEffect, PartAccount, UsageReading, UsageReport, UsageSourceReport, UsageSourceState } from './usage.ts';
 export type * from './plugins.ts';
+
+// ---- Queue gate (issue #159): src/domain/queue-gate.ts (re-exported here) ---------------
+
+export type { GateActor, PreSort, PreSortReject, QueueGate, QueueGateMode } from './queue-gate.ts';
+export { DEFAULT_QUEUE_GATE, QUEUE_GATE_MODES } from './queue-gate.ts';
 
 // ---- Question gates: src/domain/question-gates.ts (re-exported here) -------------------
 

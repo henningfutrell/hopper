@@ -49,6 +49,10 @@
         "update.failed",
         "plugin.installed",
         "plugin.removed",
+        "job.accepted",
+        "job.rejected",
+        "queue.ordered",
+        "queue.gate_changed",
         "jev.mode_changed"
       ]
     },

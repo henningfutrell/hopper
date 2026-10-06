@@ -4,12 +4,14 @@
 // EVENT_SCHEMA_VERSIONS in src/domain/types.ts and move the old schema to legacy.ts (its
 // docs/schemas file stays, re-exported from there).
 import { z } from 'zod';
-import { EVENT_SCHEMA_VERSIONS, EVENT_TYPES, ROLES, type EventType } from '../domain/types.ts';
+import { EVENT_SCHEMA_VERSIONS, EVENT_TYPES, QUEUE_GATE_MODES, ROLES, type EventType } from '../domain/types.ts';
 import { LEGACY_EVENT_SCHEMAS, LEGACY_EVENT_TYPES } from './legacy.ts';
 import { advice, adviceAction, holdPlan, jobSourceRef, jobSpec, jobStatus, lanePlan, startPlan } from './parts.ts';
 
 const strict = z.strictObject;
 const routerMode = z.enum(['shadow', 'active']);
+const gateActor = z.enum(['user', 'pre-sort']);
+const queueGate = strict({ mode: z.enum(QUEUE_GATE_MODES), autoAcceptPerHour: z.number().int().min(1).nullable() });
 /** A question stage: an escalation level's instance name, or `human`. */
 const stage = z.string().min(1);
 
@@ -65,6 +67,11 @@ export const EVENT_SCHEMAS = {
   // The plugin store (issue #75): `commit` is the store's full sha the plugin was installed from.
   'plugin.installed': strict({ id: z.string(), role: z.enum(ROLES), commit: z.string() }),
   'plugin.removed': strict({ id: z.string() }),
+  // The queue gate (issue #159): `by` let the job through (the pre-sort, or the user), or turned it away.
+  'job.accepted': strict({ by: gateActor }),
+  'job.rejected': strict({ by: gateActor, reason: z.string().min(1) }),
+  'queue.ordered': strict({ jobIds: z.array(z.string()) }),
+  'queue.gate_changed': strict({ from: queueGate, to: queueGate }),
 } satisfies Record<EventType, z.ZodType>;
 
 export const ENVELOPE_SCHEMA = strict({

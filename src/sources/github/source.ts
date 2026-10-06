@@ -23,7 +23,7 @@ import { reportToGitHub } from './report.ts';
 
 /** What the source reads of its config: the `github:` keys, or `githubApp:` (no owners). */
 export type GitHubSourceSettings = Pick<GitHubSourceConfig,
-  'repos' | 'authors' | 'label' | 'priorityLabels' | 'defaultPriority' | 'repoPaths' | 'defaultCwd' | 'executor' | 'model' | 'recentComments' | 'projects' | 'completion'
+  'repos' | 'authors' | 'label' | 'hopperName' | 'priorityLabels' | 'defaultPriority' | 'repoPaths' | 'defaultCwd' | 'executor' | 'model' | 'recentComments' | 'projects' | 'completion'
 > & { owners?: string[]; enabled?: boolean | 'auto' };
 
 /** The app's identity as the adapter knows it (its `appStatus()` fits), or undefined. */
@@ -154,7 +154,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
         ...detail,
         account: account(paused, detail),
         ...(paused ? { paused } : {}),
-        repos: config.repos, authors: config.authors, label: config.label, completion: config.completion, projectErrors,
+        repos: config.repos, authors: config.authors, label: config.label, hopperName: config.hopperName, completion: config.completion, projectErrors,
         ...(skippedClaimedWithoutJob.length ? { skippedClaimedWithoutJob } : {}),
         ...(Object.keys(repoErrors).length ? { repoErrors } : {}),
         ...(Object.keys(checkErrors).length ? { checkErrors } : {}),

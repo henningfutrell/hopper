@@ -23,6 +23,8 @@ const sharedKeys = {
   repos: z.array(z.string().regex(/^[^/\s]+\/[^/\s]+$/, 'owner/repo')).default([]),
   authors: z.array(z.string().min(1)).min(1).meta({ description: 'GitHub logins whose issues and comments the source accepts; no default' }),
   label: z.string().min(1).default('hopper'),
+  hopperName: z.string().regex(/^[a-z0-9][a-z0-9._-]*$/, 'lowercase letters, digits, . _ -').nullable().default(null)
+    .meta({ description: 'this hopper\'s name: an issue labelled hopper@<name> is taken only by the hopper of that name; null takes only issues addressed to no hopper' }),
   priorityLabels: z.record(z.string(), z.number()).default({ 'hopper:high': 75, 'hopper:low': 25 }),
   defaultPriority: z.number().min(0).max(100).default(50),
   repoPaths: z.record(z.string(), z.string()).default({})

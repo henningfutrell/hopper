@@ -30,4 +30,8 @@ export const INVALID_DATA: Partial<Record<EventType, Record<string, unknown>>> =
   'update.started': { from: 'a' },
   'update.applied': { to: 'b' },
   'update.failed': { error: 3 },
+  'job.accepted': { by: 'someone' },
+  'job.rejected': { by: 'user' },
+  'queue.ordered': { jobIds: 'j1' },
+  'queue.gate_changed': { from: { mode: 'open', autoAcceptPerHour: null }, to: { mode: 'review', autoAcceptPerHour: 0 } },
 };

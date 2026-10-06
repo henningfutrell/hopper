@@ -10,6 +10,7 @@ import type { EngineContext, EngineOptions } from './context.ts';
 import { decisionStep } from './decision-step.ts';
 import { createPaneAnswers } from './pane-answers.ts';
 import { createQueries, type Queries } from './queries.ts';
+import { createQueueGateCommands, type QueueGateCommands } from './queue-gate.ts';
 import { recover } from './recovery.ts';
 import { createRunner } from './runner.ts';
 import { createSerial } from './serial.ts';
@@ -26,9 +27,10 @@ const SHUTDOWN_WAIT_MS = 5000;
 const TRIGGERS: ReadonlySet<EventType> = new Set<EventType>([
   'job.queued', 'job.prioritized', 'job.reprioritized', 'job.approved', 'job.finished', 'job.failed', 'job.cancelled', 'router.mode_changed',
   'question.asked', 'question.answered', 'question.closed', 'question.dismissed', 'question.expired',
+  'job.accepted', 'job.rejected', 'queue.ordered', 'queue.gate_changed',
 ]);
 
-export interface Engine extends Commands, Queries, AnswerHandlers {
+export interface Engine extends Commands, QueueGateCommands, Queries, AnswerHandlers {
   /** Registered executor names. */
   /** The runnable executors now: they follow plugins.yaml (issue #142). */
   readonly executorNames: string[];
@@ -73,6 +75,7 @@ export function createEngine(o: EngineOptions): Engine {
     sourceHost: createSourceHost(c, commands),
     routerMode: c.routerMode,
     ...commands,
+    ...createQueueGateCommands(c, (jobId) => { void cleanup(jobId); }),
     ...createQueries(c),
     ...createAnswerHandlers(c, cleanup),
     async start() {

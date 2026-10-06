@@ -6,11 +6,11 @@ import type {
   AnswerRequest, Clock, EscalationLevel, ExecutionContext, ExecutionOutcome, Executor, JobSource, LevelReply,
   MachineSource, Notifier, NotifierEvents, QueueEntry, QueueSorter, Router, SourceItem, SourceReport, SourceSignal, UsageSource,
 } from '../domain/ports.ts';
-import type { Advice, AdviceAction, AttachedMachine, Detection, OptionChoice, DomainEvent, Job, MachineSnapshot, Question, QuestionAttempt, Role, RouterMode, UsageReading } from '../domain/types.ts';
+import type { Advice, AdviceAction, AttachedMachine, Detection, OptionChoice, DomainEvent, Job, MachineSnapshot, PreSortReject, Question, QuestionAttempt, Role, RouterMode, UsageReading } from '../domain/types.ts';
 
 export type {
   Advice, AdviceAction, AnswerRequest, AttachedMachine, Clock, Detection, DomainEvent, EscalationLevel, ExecutionContext, LevelReply,
-  ExecutionOutcome, Executor, Job, JobSource, MachineSnapshot, MachineSource, Notifier, NotifierEvents, Question, QuestionAttempt, QueueEntry,
+  ExecutionOutcome, Executor, Job, JobSource, MachineSnapshot, MachineSource, Notifier, NotifierEvents, PreSortReject, Question, QuestionAttempt, QueueEntry,
   QueueSorter, Role, Router, RouterMode, SourceItem, SourceReport, SourceSignal, UsageReading, UsageSource,
 };
 

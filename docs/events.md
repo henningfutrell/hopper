@@ -22,7 +22,7 @@ Schema: `docs/schemas/envelope.v1.json`. Payloads are strict: unknown keys are r
 
 ## `job.queued`
 
-Version 1 (`docs/schemas/job.queued.v1.json`). A job was accepted (pushed, or pulled from a source).
+Version 1 (`docs/schemas/job.queued.v1.json`). A job was created from a source item; it waits at the queue gate until accepted (`job.accepted`).
 
 | field | type | required |
 |---|---|---|
@@ -58,7 +58,7 @@ Version 2 (`docs/schemas/job.prioritized.v2.json`). The router's advice arrived 
 |---|---|---|
 | `advice` | object | yes |
 | `mode` | `shadow` \| `active` | yes |
-| `statusAtAdvice` | `queued` \| `held` \| `claimed` \| `running` \| `waiting_answer` \| `finished` \| `failed` \| `cancelled` | yes |
+| `statusAtAdvice` | `queued` \| `held` \| `claimed` \| `running` \| `waiting_answer` \| `finished` \| `failed` \| `cancelled` \| `rejected` | yes |
 
 ```json
 {
@@ -552,5 +552,74 @@ Version 1 (`docs/schemas/plugin.removed.v1.json`). A store install was removed f
 ```json
 {
   "id": "echo-executor"
+}
+```
+
+## `job.accepted`
+
+Version 1 (`docs/schemas/job.accepted.v1.json`). A job passed the queue gate and may run: `by` `pre-sort` (the gate auto-accepts, or the user took the pre-sort with Accept pre-sort), or `user` (moved into the user order).
+
+| field | type | required |
+|---|---|---|
+| `by` | `user` \| `pre-sort` | yes |
+
+```json
+{
+  "by": "pre-sort"
+}
+```
+
+## `job.rejected`
+
+Version 1 (`docs/schemas/job.rejected.v1.json`). A waiting job was turned away at the queue gate: it ends `rejected`, is kept, and never runs. `by` `user` (UI Reject) or `pre-sort` (the queue sorter rejected it); `reason` is also the job's `error`. Its source is told (on GitHub: the `hopper:rejected` label).
+
+| field | type | required |
+|---|---|---|
+| `by` | `user` \| `pre-sort` | yes |
+| `reason` | string | yes |
+
+```json
+{
+  "by": "user",
+  "reason": "rejected by the user"
+}
+```
+
+## `queue.ordered`
+
+Version 1 (`docs/schemas/queue.ordered.v1.json`). The user ordered the queue: `jobIds`, first to last, run before every job not in it.
+
+| field | type | required |
+|---|---|---|
+| `jobIds` | string[] | yes |
+
+```json
+{
+  "jobIds": [
+    "j2",
+    "j1"
+  ]
+}
+```
+
+## `queue.gate_changed`
+
+Version 1 (`docs/schemas/queue.gate_changed.v1.json`). The queue gate was changed: its mode (`auto-accept` or `review`) or its throttle (`autoAcceptPerHour`, null for none).
+
+| field | type | required |
+|---|---|---|
+| `from` | object | yes |
+| `to` | object | yes |
+
+```json
+{
+  "from": {
+    "mode": "auto-accept",
+    "autoAcceptPerHour": null
+  },
+  "to": {
+    "mode": "review",
+    "autoAcceptPerHour": null
+  }
 }
 ```

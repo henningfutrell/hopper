@@ -1,6 +1,6 @@
 // The views, routed by URL hash so a link (#questions) and the back button work. A view may have
 // sections after a slash (#settings/routing): the view is the part before it.
-import { Gauge, Inbox, LayoutDashboard, ListTree, Menu, MessageCircleQuestion, Scale, Server, Settings, type LucideIcon } from 'lucide-react';
+import { Gauge, Inbox, LayoutDashboard, ListOrdered, ListTree, Menu, MessageCircleQuestion, Scale, Server, Settings, type LucideIcon } from 'lucide-react';
 import { useState, useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -8,10 +8,11 @@ import { useHopper } from '@/store';
 import { useUnseenForOwner } from '@/store/selectors';
 import { cn } from '@/lib/utils';
 
-export const VIEWS = ['overview', 'questions', 'decisions', 'events', 'sources', 'machines', 'usage', 'settings'] as const;
+export const VIEWS = ['overview', 'queue', 'questions', 'decisions', 'events', 'sources', 'machines', 'usage', 'settings'] as const;
 export type View = (typeof VIEWS)[number];
 const ITEMS: Record<View, { label: string; icon: LucideIcon }> = {
   overview: { label: 'Overview', icon: LayoutDashboard },
+  queue: { label: 'Queue', icon: ListOrdered },
   questions: { label: 'Questions', icon: MessageCircleQuestion },
   decisions: { label: 'Decisions', icon: Scale },
   events: { label: 'Events', icon: ListTree },

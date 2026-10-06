@@ -11,7 +11,7 @@ import { streamQuery } from './sse.ts';
 import { decisionsQuery, eventsQuery } from './state.ts';
 import { SESSION_HEADER } from './ui/guard.ts';
 import {
-  answerBody, deviceLinkBody, ghLoginBody, machineDefaultsBody, machinesEditBody, pluginStoreBody, pluginsEditBody, realmsEditBody, routerModeBody, routingEditBody, rulesBody, updateBody, usersEditBody, webhooksEditBody,
+  answerBody, deviceLinkBody, ghLoginBody, queueGateBody, queueOrderBody, machineDefaultsBody, machinesEditBody, pluginStoreBody, pluginsEditBody, realmsEditBody, routerModeBody, routingEditBody, rulesBody, updateBody, usersEditBody, webhooksEditBody,
 } from './ui/index.ts';
 import { completeBody, loginBody, passwordBody, startQuery } from './ui/sign-in.ts';
 import { deliveriesQuery } from './webhooks.ts';
@@ -44,7 +44,7 @@ const name = { name: 'name', in: 'path', required: true, description: 'the realm
 
 const OPERATIONS: Operation[] = [
   { method: 'get', path: '/api/health', tag: 'State', summary: 'Health and version', returns: '`{ ok, version, routerMode, router, fallback, executors, uptimeS }`' },
-  { method: 'get', path: '/api/queue', tag: 'State', summary: 'The queue', returns: '`{ waiting, running, waitingAnswer, ended }`, each a `Job[]`; `waiting` in queue order, `ended` the last 24 h' },
+  { method: 'get', path: '/api/queue', tag: 'State', summary: 'The queue', returns: '`{ waiting, running, waitingAnswer, ended, gate, presort }`: each list a `Job[]`, `waiting` in queue order (the user order first), `ended` the last 24 h; `gate` the `QueueGate`; `presort` the `PreSort` of the waiting jobs not yet accepted' },
   { method: 'get', path: '/api/decisions', tag: 'State', summary: 'Recent decisions', query: decisionsQuery, returns: '`{ decisions: Decision[] }`, newest first' },
   { method: 'get', path: '/api/decisions/:id', tag: 'State', summary: 'One decision', returns: '`Decision`', errors: [404] },
   { method: 'get', path: '/api/router', tag: 'State', summary: 'Router mode and status', returns: '`{ mode, router, plugin, fallback, reason? }`' },
@@ -56,6 +56,10 @@ const OPERATIONS: Operation[] = [
   { method: 'get', path: '/api/jobs/:id', tag: 'Jobs', summary: 'One job', returns: '`Job`', errors: [404] },
   { method: 'post', path: '/ui/api/jobs/:id/cancel', tag: 'Jobs', summary: 'Cancel a job', role: 'operator', returns: 'the `Job`', errors: [404, 409] },
   { method: 'post', path: '/ui/api/jobs/:id/approve', tag: 'Jobs', summary: 'Approve a held job', role: 'operator', returns: 'the `Job`', errors: [404, 409] },
+  { method: 'post', path: '/ui/api/jobs/:id/reject', tag: 'Jobs', summary: 'Reject a waiting job', description: 'The job ends `rejected`: kept, never run; its source is told (on GitHub, the `hopper:rejected` label).', role: 'operator', returns: 'the `Job`', errors: [404, 409] },
+  { method: 'post', path: '/ui/api/queue/order', tag: 'Jobs', summary: 'Order the queue', description: 'The user order: these waiting jobs, first to last, run before every other. A job not yet accepted is accepted; a waiting job ranked before and not named loses its rank.', role: 'operator', body: queueOrderBody, returns: '`{ jobs: Job[] }`', errors: [409] },
+  { method: 'post', path: '/ui/api/queue/accept-presort', tag: 'Jobs', summary: 'Accept the pre-sort', description: 'Every waiting job not yet accepted: rejected when the pre-sort rejects it, else accepted, in its order.', role: 'operator', returns: '`{ presort: PreSort }`, as it was applied' },
+  { method: 'post', path: '/ui/api/queue-gate', tag: 'Jobs', summary: 'Set the queue gate', description: '`auto-accept`: the pre-sort is applied as jobs arrive, at most `autoAcceptPerHour` an hour (null: no limit). `review`: each job waits for the user.', role: 'admin', body: queueGateBody, returns: '`{ gate: QueueGate }`' },
   { method: 'get', path: '/api/questions', tag: 'Questions', summary: 'List questions', query: questionsQuery, returns: '`{ questions: Question[] }`' },
   { method: 'get', path: '/api/questions/:id', tag: 'Questions', summary: 'One question, with its escalation trail', returns: '`Question`', errors: [404] },
   { method: 'get', path: '/api/question-gates', tag: 'Questions', summary: 'The rules and the risk rules', returns: '`QuestionGatesView`' },

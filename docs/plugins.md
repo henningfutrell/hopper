@@ -58,9 +58,14 @@ the directory into the plugin dir and change it.
   `ctx.instanceName`.
 - A **queue sorter** (`examples/plugins/queue-sorter/word-first/`) gets every waiting job with its
   effective priority and returns job ids, synchronously, once per Decision. Ids it leaves out run
-  after the ones it names, in the decider's own order. It orders; it never admits or holds a job.
+  after the ones it names, in the decider's own order. It never holds a job.
   A throw, or anything but distinct ids of the jobs it was given, falls back to the built-in
-  `priority` for that call (shown in `/api/plugins` `queueSorter.fallback`).
+  `priority` for that call (shown in `/api/plugins` `queueSorter.fallback`). It is also the
+  **pre-sort** of the queue gate: given the jobs not yet accepted, its order is the Pre-sorted column,
+  and an optional `reject(entries)` returns `{ jobId, reason }[]` — the jobs it turns away. The gate
+  auto-accepting applies them as jobs arrive; in review they are shown, and Accept pre-sort applies
+  them. A throw, or anything but `{ jobId, reason }` of the given jobs, rejects nothing for that call.
+  `word-first` shows both.
 
 ## Secrets
 

@@ -36,4 +36,8 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'update.failed': { to: 'e4f5a6b', error: 'the new build does not load: SyntaxError' },
   'plugin.installed': { id: 'echo-executor', role: 'executor', commit: 'e4f5a6b' },
   'plugin.removed': { id: 'echo-executor' },
+  'job.accepted': { by: 'pre-sort' },
+  'job.rejected': { by: 'user', reason: 'rejected by the user' },
+  'queue.ordered': { jobIds: ['j2', 'j1'] },
+  'queue.gate_changed': { from: { mode: 'auto-accept', autoAcceptPerHour: null }, to: { mode: 'review', autoAcceptPerHour: null } },
 };
