@@ -61,6 +61,16 @@ describe('agent-boxes.sh', () => {
       expect(r.stderr).toContain('agents: claude codex cursor omp opencode');
     }
   });
+
+  it('needs the hopper\'s key: its file, or its public line', () => {
+    const env = { ...process.env, HOPPER_SSH_KEY_FILE: '', HOPPER_SSH_PUBLIC_KEY: '' };
+    const none = spawnSync('bash', [SCRIPT, 'codex'], { encoding: 'utf8', env });
+    expect(none.status).toBe(1);
+    expect(none.stderr).toContain('HOPPER_SSH_KEY_FILE (its file), or HOPPER_SSH_PUBLIC_KEY (its public line, as Machines → Add shows it)');
+    const bad = spawnSync('bash', [SCRIPT, 'codex'], { encoding: 'utf8', env: { ...env, HOPPER_SSH_PUBLIC_KEY: 'not a key' } });
+    expect(bad.status).toBe(1);
+    expect(bad.stderr).toContain('is not a public key line');
+  });
 });
 
 describe.skipIf(process.env.HOPPER_TEST_AGENT_BOX !== '1')('a real agent box (opt-in)', () => {
