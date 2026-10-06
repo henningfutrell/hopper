@@ -2,8 +2,8 @@
 // password, never the user's agent or the user's other keys — and talks only to a target whose host
 // key plugins.yaml pins (design.md "Target authentication"). ssh is the stand-in from test/herdr.
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { AttachedMachine } from '../../src/domain/types.ts';
@@ -85,8 +85,28 @@ describe('the hopper\'s ssh key comes from the runtime, as a mounted file', () =
     expect(hopperSshAuth({ env: env({ [`${SSH_KEY}_FILE`]: key }), dataDir: dir })).toEqual({ identityFile: key, knownHostsFile: join(dir, 'ssh', 'known_hosts') });
   });
 
-  it('none set: refused, with what to set', () => {
-    expect(() => hopperSshAuth({ env: env({}), dataDir: dir })).toThrow(/no ssh key for the hopper: set HOPPER_SSH_KEY_FILE/);
+  // Issue #260: no key of its own set is no dead end — the hopper uses the keys ssh itself would use for
+  // that target (the ones `ssh -G` names that exist), as the user does when they run `ssh <target>`.
+  it('none set: the keys ssh would use for that target, those that exist; still never the agent', () => {
+    const auth = hopperSshAuth({ env: env({}), dataDir: dir });
+    expect(auth).toEqual({ knownHostsFile: join(dir, 'ssh', 'known_hosts') });
+    mkdirSync(join(homedir(), '.ssh'), { recursive: true, mode: 0o700 });
+    writeFileSync(join(homedir(), '.ssh', 'id_user'), 'not a real key\n', { mode: 0o600 });
+    try {
+      const a = sshArgv({ target: 'laptop', bin: SSH, auth: () => auth }, 'true');
+      expect(a.filter((x, i) => a[i - 1] === '-i')).toEqual([join(homedir(), '.ssh', 'id_user')]);
+      expect(opts(a)).toEqual(expect.arrayContaining(['IdentitiesOnly=yes', 'IdentityAgent=none']));
+    } finally {
+      rmSync(join(homedir(), '.ssh', 'id_user'), { force: true });
+    }
+  });
+
+  it('none set and no key on this machine: a plain reason naming what to do, no setting and no document', () => {
+    const auth = hopperSshAuth({ env: env({}), dataDir: dir });
+    let message = '';
+    try { sshArgv({ target: 'laptop', bin: SSH, auth: () => auth }, 'true'); } catch (e) { message = (e as Error).message; }
+    expect(message).toMatch(/no ssh key on this machine to reach laptop: create one with ssh-keygen/);
+    expect(message).not.toMatch(/design\.md|HOPPER_|_FILE/);
   });
 
   it('given as a variable: refused, ssh reads a key only from a file', () => {

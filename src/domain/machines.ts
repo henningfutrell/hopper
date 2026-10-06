@@ -59,8 +59,15 @@ export interface ClientMachine extends AttachedBase {
  * runs herdr only when one of its executors needs it (issue #142). `lanes` and `executors` left out
  * are the machine defaults. A machine is edited and removed like any plugin instance (POST
  * /ui/api/plugins). `version` is `MachinesConfig.version`.
+ *
+ * Without `ssh` (issue #260) it adds **this machine**: a `local` instance under `name`, its jobs in the
+ * herdr session `session` (default `hopper`), which the daemon starts; `lanes` left out is four,
+ * `executors` left out every registered one. Refused while a machine is this one already.
  */
-export interface MachineEdit { name: string; ssh: string; lanes?: number; executors?: string[]; label?: string; version: string }
+/** A herdr session name (issue #260): plain, so it is also a file name and a unit name. Never `default`. */
+export const HERDR_SESSION = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+
+export interface MachineEdit { name: string; ssh?: string; session?: string; lanes?: number; executors?: string[]; label?: string; version: string }
 
 /**
  * The **machine defaults** (issue #142): what a machine attached from the UI starts with — the plugins config

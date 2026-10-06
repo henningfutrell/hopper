@@ -19,6 +19,8 @@ export interface HerdrClaudeExecutorOptions {
   herdr: HerdrClient;
   /** The herdr of an attached machine. Absent → jobs on one fail. */
   remote?: (there: RemoteHerdr) => HerdrClient;
+  /** Another herdr session on this machine: the one this machine was added with (issue #260). Absent → `herdr`'s. */
+  local?: (session: string) => HerdrClient;
   clock: Clock;
   defaultCwd: string;
   claudeArgs: string[];
@@ -47,7 +49,7 @@ const realSleep: Sleep = (ms, signal) => new Promise((resolve) => {
 const lastLineOf = (text: string): string => text.split('\n').map((l) => l.trim()).filter(Boolean).at(-1) ?? text.trim();
 
 const heldOf = (s: PaneState): HeldPane => ({
-  paneId: s.paneId, ...(s.ssh ? { ssh: s.ssh, ...(s.herdrBin ? { herdrBin: s.herdrBin } : {}), ...(s.session ? { session: s.session } : {}) } : {}),
+  paneId: s.paneId, ...(s.ssh ? { ssh: s.ssh, ...(s.herdrBin ? { herdrBin: s.herdrBin } : {}) } : {}), ...(s.session ? { session: s.session } : {}),
   ...(s.client ? { client: s.client } : {}),
 });
 
@@ -62,13 +64,14 @@ export interface ClientTarget { machine: string; tokenEnv: string }
 /** An attached machine's herdr: an ssh target's (where, which binary, which session), or a client target's. */
 export type RemoteHerdr = { ssh: string; bin: string; session: string } | { client: ClientTarget };
 
-/** Which herdr: a client target's, an ssh target's binary and session, or (neither) this machine's. */
+/** Which herdr: a client target's, an ssh target's binary and session, or (neither) this machine's, in `session` when given. */
 interface Where { ssh?: string; herdrBin?: string; session?: string; client?: ClientTarget }
 
 /** A pane on one machine: pane ids are per herdr server, so two machines can share one. */
 interface HeldPane extends Where { paneId: string }
 
-const samePane = (a: HeldPane, b: HeldPane): boolean => a.paneId === b.paneId && a.ssh === b.ssh && a.client?.machine === b.client?.machine;
+const samePane = (a: HeldPane, b: HeldPane): boolean => a.paneId === b.paneId && a.ssh === b.ssh && a.client?.machine === b.client?.machine
+  && (a.ssh !== undefined || a.client !== undefined || a.session === b.session);
 
 export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrClaudeExecutor {
   const { clock } = o;
@@ -81,7 +84,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       if (!o.remote) throw new Error(`cannot reach client target ${p.client.machine}`);
       return o.remote({ client: p.client });
     }
-    if (!p.ssh) return o.herdr;
+    if (!p.ssh) return p.session && o.local && p.session !== o.herdr.session ? o.local(p.session) : o.herdr;
     if (!o.remote || !p.herdrBin || !p.session) throw new Error(`cannot reach attached machine ${p.ssh}: no herdr there`);
     return o.remote({ ssh: p.ssh, bin: p.herdrBin, session: p.session });
   }
@@ -89,7 +92,8 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
   /** Where a job on the lane's machine runs. */
   const whereOn = (m: ExecutionContext['machine']): Where => {
     if (m.client) return { client: { machine: m.id, tokenEnv: m.client.tokenEnv } };
-    return m.ssh ? { ssh: m.ssh, ...(m.herdr ? { herdrBin: m.herdr.bin, session: m.herdr.session } : {}) } : {};
+    if (m.ssh) return { ssh: m.ssh, ...(m.herdr ? { herdrBin: m.herdr.bin, session: m.herdr.session } : {}) };
+    return m.herdr ? { session: m.herdr.session } : {};
   };
 
   const depsOn = (where: Where): StartDeps => ({

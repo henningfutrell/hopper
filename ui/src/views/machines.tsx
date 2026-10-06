@@ -1,5 +1,5 @@
-// Machines: what each can run, its lanes, and the usage budgets that cap them. Logged in, attach a
-// machine over ssh (POST /ui/api/machines), edit (its name and how it is reached too, issue #205) or remove
+// Machines: what each can run, its lanes, and the usage budgets that cap them. Logged in, add this
+// machine — no ssh target, its name and herdr session (issue #260) — or attach a machine over ssh (POST /ui/api/machines), edit (its name and how it is reached too, issue #205) or remove
 // any machine — each a machine-source instance, edited like every plugin instance (POST /ui/api/plugins,
 // issue #74) — each applied by the
 // daemon without a restart (design.md "Machines from the UI", issue #18). The machine defaults — what a
@@ -14,11 +14,11 @@ import { StatusBadge } from '@/components/status';
 import { Button } from '@/components/ui/button';
 import { useNow } from '@/hooks/use-now';
 import { get, post, SessionRejected } from '@/lib/api';
-import { clientReleaseText, kindOf, type MachineKind } from '@/model/machines';
+import { clientReleaseText, hasThisMachine, kindOf, type MachineKind } from '@/model/machines';
 import { orderReadings, readingKey } from '@/model/usage';
 import type { MachineDefaultsEdit, MachineEdit, MachinesConfig, MachineView, PluginsEdit } from '@/model/wire';
 import { refreshLive, useHopper } from '@/store';
-import { AddMachineForm, EditMachineForm, LocalMachineForm, MachineDefaultsForm } from './machine-forms';
+import { AddMachineForm, AddThisMachineForm, EditMachineForm, LocalMachineForm, MachineDefaultsForm } from './machine-forms';
 import { useCanAdmin } from '@/store/selectors';
 
 const REFRESH_MS = 15000;
@@ -97,10 +97,10 @@ export function Machines() {
   const [config, setConfig] = useState<MachinesConfig | null>(null);
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState<false | 'this' | 'ssh'>(false);
   const [defaulting, setDefaulting] = useState(false);
   const open = useRef(false);
-  useEffect(() => { open.current = adding || defaulting || editing !== null; }, [adding, defaulting, editing]);
+  useEffect(() => { open.current = adding !== false || defaulting || editing !== null; }, [adding, defaulting, editing]);
 
   const load = useCallback(() => fetchConfig().then(setConfig, (e: Error) => { toast.error(e.message); }), []);
   useEffect(() => {
@@ -143,16 +143,20 @@ export function Machines() {
               a new machine: {d.lanes} lane{d.lanes === 1 ? '' : 's'}, runs {d.executors.length ? d.executors.join(', ') : 'nothing'}
             </span>
             <Button size="lg" variant="outline" onClick={() => setDefaulting(true)}><SlidersHorizontal />Defaults</Button>
-            <Button size="lg" onClick={() => setAdding(true)}><Plus />Add machine</Button>
+            {!hasThisMachine(config) && <Button size="lg" onClick={() => setAdding('this')}><Plus />Add this machine</Button>}
+            <Button size="lg" variant={hasThisMachine(config) ? 'default' : 'outline'} onClick={() => setAdding('ssh')}><Plus />Add machine over ssh</Button>
           </div>
         ))}
-      {authed && config && adding && !defaulting && (
-        <Panel title="Attach a machine" icon={Plus}><AddMachineForm config={config} busy={busy} send={ctx.attach} onDone={() => setAdding(false)} /></Panel>
+      {authed && config && adding === 'this' && !defaulting && (
+        <Panel title="Add this machine" icon={Plus}><AddThisMachineForm config={config} busy={busy} send={ctx.attach} onDone={() => setAdding(false)} /></Panel>
+      )}
+      {authed && config && adding === 'ssh' && !defaulting && (
+        <Panel title="Attach a machine over ssh" icon={Plus}><AddMachineForm config={config} busy={busy} send={ctx.attach} onDone={() => setAdding(false)} /></Panel>
       )}
       {config?.error && <div className="rounded-md border border-bad/40 p-3 text-xs break-words text-bad">{config.error}</div>}
       {machines.length
         ? <div className="grid gap-3 lg:grid-cols-2">{machines.map((m) => <MachineCard key={m.id} m={m} ctx={ctx} />)}</div>
-        : <Panel title="Machines" icon={Server}><Empty>no machines: every job is held</Empty></Panel>}
+        : <Panel title="Machines" icon={Server}><Empty>no machines: every job is held. Add this machine to run them here.</Empty></Panel>}
     </div>
   );
 }

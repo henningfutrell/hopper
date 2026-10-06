@@ -626,7 +626,8 @@ required, and picked from the configured machines — the UI offers a select of 
 filled by the host from `machines:`), never a text field, and no empty choice. This machine is no
 default: it is the `local` machine in the list, like any other; on it claude runs here, as before
 (the snapshot has no `ssh`, `docker` or `client`). The built-in levels name `local` where this host
-is a machine and none in the container, where one must be picked. `POST /ui/api/plugins` refuses an
+is a machine and none in the container, where one must be picked. A fresh plugins config names none
+either (issue #259, "Built-in instances: no machine of its own"): its levels wait for one to be picked. `POST /ui/api/plugins` refuses an
 `options` or `add` edit whose machine option is missing or names no configured machine (`add`
 carries `options` for it), and the removal of a machine an instance's machine option still names.
 Tenant migration 3 names the `local` machine in every claude-cli level and claude-plan usage source
@@ -2266,7 +2267,7 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
 | `HOPPER_RESUME_BOOST` | `20` |
 | `HOPPER_MAX_QUESTIONS` | `5` |
 | `HOPPER_KEEP_PANES` | `false` |
-| `HOPPER_LOCAL_MACHINE` | `true` (`false` in the image: the container is not a machine, issue #141) |
+| `HOPPER_LOCAL_MACHINE` | `true`: this host may be a machine, though a fresh plugins config lists none (issue #259); `false` in the image: the container is not a machine, and the boot removes a `local` one (issue #141) |
 | `HOPPER_WEBHOOKS_FILE` | `~/.config/hopper/webhooks.yaml` |
 | `HOPPER_UI_SESSION_HOURS` | `12` |
 | `HOPPER_PLUGIN_DIR` | `~/.config/hopper/plugins` |
@@ -2579,7 +2580,8 @@ carries on its command line `src/client/ssh-options.ts`: `PreferredAuthenticatio
 agent, X11 or port forwarding, `BatchMode=yes`; then `-i <the hopper's key>`,
 `UserKnownHostsFile=<workdir>/ssh/known_hosts`, `HostKeyAlias=<target>`. The key is the mounted secret
 file `HOPPER_SSH_KEY_FILE` names (a variable is refused: ssh reads keys from files only; others
-must not be able to read it). The known_hosts file holds one line per ssh target, written from each
+must not be able to read it); none set (issue #260), the key files `ssh -G` names for the target that
+exist, as the user's own `ssh` would offer them. The known_hosts file holds one line per ssh target, written from each
 machine's `hostKey` whenever plugins.yaml changes; a machine without one, or two machines pinning
 different keys for one target, is never connected to (logged once). A target name is a plain name
 (`[A-Za-z0-9_.-]`, optionally `user@`). On the target the key is installed with `restrict` (no pty, no
@@ -3337,6 +3339,39 @@ view's Edit form showed lanes, executors and label only, and nothing renamed an 
   (`LocalMachineForm`) edits its name and lane count. A changed ssh target is not re-probed: its host
   key is edited beside it, and without the right one the hopper does not connect.
 
+### Adding this machine (issue #260, 2026-10-06)
+
+Owner request: this machine is added from the Machines view as easily as any other — no ssh target to
+pick, a name typed, and the herdr session named there created by the hopper — so that a hopper whose
+plugins config names no machine (a wipe, `HOPPER_LOCAL_MACHINE=false` at the first boot) can run jobs
+again without editing anything by hand.
+
+- **`POST /ui/api/machines` without `ssh`** adds **this machine**: `{ name, session?, lanes?,
+  executors?, label?, version }` → a `local` instance named `name` with options `{ lanes (default 4),
+  executors?, session (default hopper), label? }`. 409 while a `local` instance exists ("this machine
+  is already added, as <name>") or the name is taken; 400 for the default session or a session that is
+  not a plain name (`HERDR_SESSION`: letters, digits, `.`, `_`, `-`). With `ssh` the body is as before,
+  and still never carries `session`.
+- **The herdr session is started** before the instance is written, when a configured executor is a
+  herdr-claude instance (`ensureHerdrSession`, `src/executors/herdr/session.ts`): `herdr --session <s>
+  status server`, and when it is not running `herdr --session <s> server` — as the transient user unit
+  `hopper-herdr-<s>` through `systemd-run --user` where there is a user manager, so it outlives a
+  restart of the daemon, else a detached process —, then waited for (10 s). One that does not start
+  refuses the add with the reason (409), nothing written. While it is a machine the `local` source
+  checks again, at most every 30 s and never blocking a Decision, and starts it when it stopped.
+- **Its jobs run in that session.** The `local` plugin's optional `session` option is listed on its
+  snapshot as `herdr: { bin: 'herdr', session }` (no `ssh`); herdr-claude runs a job there through a
+  client of that session (`local(session)`), the instance's own when they are the same. Pane state
+  records the session, so resume, reattach and cleanup reach the same server. Absent, the instance's
+  own session, as before. The local Edit form changes it too.
+- **Parts that run on a machine follow it.** Each escalation level and usage source in the plugins
+  config whose machine option is unset gets the new machine's name in the same write.
+- **Adding a machine over ssh needs no key setting** ("Target authentication", amended): without
+  `HOPPER_SSH_KEY_FILE` the hopper offers the key files `ssh -G <target>` names that exist — what the
+  user's own `ssh <target>` uses —, still never the agent; without any, the reason says to create one
+  with ssh-keygen and install it on the target. A failed add reads `could not add <name>: <reason>`.
+  No error a person sees points at a document.
+
 ### Router, queue sorter and routing rules (issue #18)
 
 Owner request: the router, queue sorter and routing rules can be set in the UI; lane rules are out of
@@ -4013,6 +4048,15 @@ no machine, and the boot removes every `local` instance from plugins.yaml `machi
 boot of the container wrote), keeping every other line. The entrypoint that started the container's
 herdr session is gone. The image keeps herdr's CLI: `herdr-claude` detects it before it runs jobs on
 attached machines. A container install runs jobs on attached machines only.
+
+**Built-in instances: no machine of its own (issue #259).** The hopper no longer registers its own
+host as a machine by default. The plugins config the boot writes for a store that has none (a new
+hopper's users, a user added later) is the built-in instances with `machines: []`, and its claude-cli
+levels and claude-plan usage source name no machine: they are unavailable until one is picked
+(issue #174). This machine is added like any other, as a `local` instance (the Plugins view's add, or
+the Machines view). A config already written is never changed: an existing `local` instance stays,
+and a section left out keeps its meaning (`builtinInstances` with `HOPPER_LOCAL_MACHINE`: `local`,
+4 lanes, where this host may be a machine), which tenant migration 3 relied on.
 
 **A loopback Host from a LAN peer is a LAN request.** Docker publishes the UI port on the host's
 loopback and forwards it from the compose network: the browser sends `Host: 127.0.0.1:<port>` and the
@@ -4762,10 +4806,11 @@ stops every runtime, then the instance.
   `PluginContext.processEnv` and the detection kit's environment, never `process.env` directly. A
   herdr pane gets it through the tab's environment (`createTab` `env`). `admin`'s environment is the
   daemon's, unchanged. On an attached machine the target's own login applies, as before.
-- **herdr session** — the herdr-claude plugin's default `session` is the user's: `hopper` for
-  `admin`, `hopper-<id>` for a user added later; `ensurePluginsDocument` also writes it into a new
-  user's plugins.yaml on every herdr-claude instance. Panes and restart recovery of one user never
-  touch another user's session.
+- **herdr session** — every user's jobs run in the supervised `hopper` session, the herdr-claude
+  plugin's default `session`; no user gets a session of its own (issue #261). The built-in
+  herdr-claude instance names no session, and a start that finds the `hopper-<id>` session an earlier
+  version wrote on a herdr-claude instance removes it (`ensurePluginsConfig`). Panes are one tab per
+  job, so users' jobs share the session without touching each other's panes.
 - **Instance parts** — store installs are the instance's: after an install or removal every user's
   plugin host rescans. The update's restart blockers are the running jobs of every user. The
   instance's events (`update.*`, `plugin.installed`, `plugin.removed`) are appended to every user's

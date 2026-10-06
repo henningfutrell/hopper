@@ -10,7 +10,7 @@ import type {
   UserStore, WebhookDispatcher,
 } from '../domain/ports.ts';
 import type { AttachedMachine, ConnectedAccountProvider, Question, SourceStatus, User } from '../domain/types.ts';
-import { ADMIN_ID, isRerunnable } from '../domain/types.ts';
+import { isRerunnable } from '../domain/types.ts';
 import type { Config } from '../config.ts';
 import { createEngine, type Engine } from '../engine/index.ts';
 import { logFailures } from '../engine/failure-log.ts';
@@ -26,6 +26,7 @@ import { builtinInstances, ensurePluginsConfig } from '../plugins/builtin-instan
 import { createDetectionKit } from '../plugins/detect.ts';
 import { unavailableExecutors } from '../plugins/executor-slot.ts';
 import { herdrClaudePlugin } from '../plugins/executor/herdr-claude/index.ts';
+import { localPlugin, startHerdrSession } from '../plugins/machine-source/local/index.ts';
 import { createPluginHost, type BuiltJobSource, type PluginHost } from '../plugins/index.ts';
 import { githubAppPlugin } from '../plugins/job-source/github-app/index.ts';
 import { githubGhPlugin } from '../plugins/job-source/github-gh/index.ts';
@@ -38,7 +39,7 @@ import { createConnectedAccounts, type ConnectedAccountsService } from '../conne
 import { installations, whoIs } from '../connected-accounts/identity.ts';
 import { createWebhooksEditor, type WebhooksEditor } from '../webhooks/edit.ts';
 import { createWebhookDispatcher, secretProblem } from '../webhooks/index.ts';
-import { userCliEnv, userHerdrSession, userSecrets, userWorkDir } from './env.ts';
+import { userCliEnv, userSecrets, userWorkDir } from './env.ts';
 import { userProcessEnv } from '../executors/env.ts';
 
 /** Doubles at ports.ts seams for one user's parts, for integration tests. Production passes none. */
@@ -65,6 +66,8 @@ export interface UserSeams {
   machineProbe?: (machine: AttachedMachine) => Promise<MachineProbe>;
   /** Replaces resolving a new ssh target when the UI adds a machine (issues #18, #59): its herdr path and pinned host key, or a rejection with the reason. */
   resolveTarget?: (ssh: string, o: { herdr: boolean }) => Promise<ResolvedTarget>;
+  /** Replaces starting this machine's herdr session (issue #260): when it is added, and while it is a machine. */
+  herdrSession?: (session: string) => Promise<void>;
 }
 
 /** What the instance gives each user runtime. */
@@ -119,9 +122,10 @@ export interface UserRuntime {
 const SEAM_SOURCE_POLL_MS = 1000;
 
 /** The built-in plugins with the seams (tests) in place of the herdr CLI and the GitHub adapters, and the user's herdr session as herdr-claude's default. */
-function withSeams(seams: UserSeams, session: string) {
+function withSeams(seams: UserSeams) {
   return BUILTIN_PLUGINS.map((p) => {
-    if (p.id === 'herdr-claude') return herdrClaudePlugin(seams.herdr, session);
+    if (p.id === 'herdr-claude') return herdrClaudePlugin(seams.herdr);
+    if (p.id === 'local' && seams.herdrSession) return localPlugin(seams.herdrSession);
     if (p.id === 'github-gh' && seams.github) return githubGhPlugin(seams.github);
     if (p.id === 'github-app' && seams.githubApp) return githubAppPlugin(seams.githubApp);
     if (p.id === 'grokbot-routine' && seams.grokbotBaseMs) return grokbotRoutinePlugin({ baseMs: seams.grokbotBaseMs });
@@ -155,12 +159,8 @@ function seamPlugins(router: Router, host: PluginsView): PluginsView {
 /** Build one user's parts; start the plugin host, the webhook dispatcher and the notifiers. The engine and source sync start with `start()`. */
 export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRuntime> {
   const { user, store, config, seams, clock, logger } = o;
-  const session = userHerdrSession(user);
   // The plugins config is the one truth: the built-in instances are written on the start that finds none.
-  ensurePluginsConfig({
-    config: store.config, answerTimeoutMs: config.answerTimeoutMs, localMachine: config.localMachine, logger,
-    ...(user.id === ADMIN_ID ? {} : { herdrSession: session }),
-  });
+  ensurePluginsConfig({ config: store.config, answerTimeoutMs: config.answerTimeoutMs, localMachine: config.localMachine, userId: user.id, logger });
   // Every secret comes from the runtime, under the user's prefix (issue #56, #158).
   const secret = userSecrets(o.env, user);
   const dataDir = userWorkDir(config.workDir, user);
@@ -204,13 +204,13 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     },
   });
   const notEnded = () => store.jobs.list({ status: ['queued', 'held', 'claimed', 'running', 'waiting_answer'] });
-  const builtin = builtinInstances(config.answerTimeoutMs, config.localMachine, user.id === ADMIN_ID ? undefined : session);
+  const builtin = builtinInstances(config.answerTimeoutMs, config.localMachine);
   const host = createPluginHost({
     ...(config.pluginDir ? { pluginDir: config.pluginDir } : {}), installedDir: o.installedDir,
     config: store.config, dataDir, clock, logger, userEnv: cliEnv,
     defaultMachines: builtin.machines, defaultExecutors: builtin.executors,
     kit: createDetectionKit({ env: { ...o.env, ...cliEnv }, secret }),
-    builtins: withSeams(seams, session),
+    builtins: withSeams(seams),
     jobSourceContext: {
       knownKeys: (keys) => new Set(keys.filter((k) => store.jobs.getBySourceKey(k))),
       rerunnable: (keys) => new Set(keys.filter((k) => { const j = store.jobs.getBySourceKey(k); return j !== undefined && isRerunnable(j); })),
@@ -222,6 +222,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     attached: {
       inUse: (name) => jobsOnMachine(name), pinned: (name) => notEnded().filter((j) => j.spec.machineId === name).map((j) => j.id),
       sshAuth, ...(seams.resolveTarget ? { resolveTarget: seams.resolveTarget } : {}),
+      startSession: seams.herdrSession ?? ((s) => startHerdrSession(s, cliEnv)),
     },
   });
   await host.start();

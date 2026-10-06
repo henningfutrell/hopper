@@ -271,7 +271,9 @@ there with **Defaults**; they apply to machines added afterwards, never to ones 
 
 ### This host
 
-Set up by [Run it](#run-it): `install.sh` starts its herdr session (`hopper-herdr`). It runs 4
+Set up by [Run it](#run-it): `install.sh` starts its herdr session (`hopper-herdr`). A new hopper
+does not list its own host as a machine: add it in Settings → Plugins → Machine sources (the `local`
+plugin), and pick it as the machine of the escalation levels and the usage source. It runs 4
 lanes. To change that: the UI's Machines view, Edit on this machine. To keep some executors off this
 host, set the `executors` option of the `local` instance in Settings → Plugins → Machine sources
 (for example `test` and `herdr-claude`).

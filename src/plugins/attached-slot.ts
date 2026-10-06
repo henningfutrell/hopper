@@ -1,5 +1,5 @@
 // The Machines view's part of the plugin host (design.md "Machines from the UI", issues #18, #74):
-// what GET /api/machines/config reports, and attaching an ssh target — written by attached-edit.ts,
+// what GET /api/machines/config reports, and attaching an ssh target or adding this machine (issue #260) — written by attached-edit.ts,
 // then the plugins config reloaded, so the machines follow it without a restart.
 import type { ConfigRecords } from '../domain/ports.ts';
 import { homedir } from 'node:os';
@@ -21,6 +21,8 @@ export interface AttachedEditOptions {
   inUse?(name: string): string[];
   /** Jobs not ended that are pinned to the machine (`spec.machineId`): a rename is refused while any are (issue #205). */
   pinned?(name: string): string[];
+  /** Starts this machine's herdr session when it is added (issue #260); rejects with the reason. Default: none started. */
+  startSession?(session: string): Promise<unknown>;
 }
 
 export function createMachinesEditor(o: AttachedEditOptions & {
@@ -29,12 +31,14 @@ export function createMachinesEditor(o: AttachedEditOptions & {
   logger: PluginLogger;
   /** What the plugins config names now: the machine sources, the executor instances and the machine defaults set. */
   configured(): { machines: InstanceSpec[]; executors: InstanceSpec[]; machineDefaults: Partial<MachineDefaults> };
+  /** The machine options of a plugin (`.meta({ machine: true })`): a part that names no machine runs on this machine once it is added. */
+  machineOptionsOf(plugin: string): string[];
   version(): string;
   error(): string | undefined;
   reload(): Promise<void>;
 }) {
   const sshConfig = o.sshConfig ?? join(homedir(), '.ssh', 'config');
-  const noKey = (): SshAuth => { throw new Error('no ssh key for the hopper'); };
+  const noKey = (): SshAuth => { throw new Error('no ssh key on this machine'); };
   const resolveTarget = o.resolveTarget ?? ((ssh: string, r: { herdr: boolean }) => resolveSshTarget({ target: ssh, herdr: r.herdr, controlDir: join(o.dataDir, 'ssh'), auth: o.sshAuth ?? noKey }));
 
   function config(): MachinesConfig {
@@ -51,10 +55,13 @@ export function createMachinesEditor(o: AttachedEditOptions & {
     const r = await applyMachineEdit(e, {
       config: o.config, configured: c.machines.map((instance) => ({ role: 'machine-source' as const, instance })), executors: c.executors,
       defaults: machineDefaults(c.machineDefaults), sshTargets: () => readSshTargets(sshConfig), resolveTarget,
+      startSession: o.startSession ?? (async () => undefined), machineOptionsOf: o.machineOptionsOf,
     });
     if (!r.ok) return r;
     if (r.changed) {
-      o.logger.info(`hopper: plugins config edited in the UI: attached machine ${e.name} over ssh ${e.ssh}`);
+      o.logger.info(e.ssh === undefined
+        ? `hopper: plugins config edited in the UI: this machine added as ${e.name}, herdr session ${e.session ?? 'hopper'}`
+        : `hopper: plugins config edited in the UI: attached machine ${e.name} over ssh ${e.ssh}`);
       await o.reload();
     }
     return { ok: true, config: config() };

@@ -189,6 +189,7 @@ describe('Grok Bot as the grokbot-routine notifier plugin (phase 5, slice 5)', (
     const r = await receiver();
     const { a, secrets } = await start({}, false);
     expect((readConfig(a.dbPath, 'plugins') as { notifiers?: unknown }).notifiers).toEqual([{ name: 'grok-bot', plugin: 'grokbot-routine' }]);
+    await a.addThisMachine();
     setHook(secrets, r.url);
     await humanQuestion(a);
     await waitFor(() => r.hits.length === 1, { what: 'escalation post' });

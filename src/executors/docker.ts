@@ -38,7 +38,7 @@ export function proxyAllowlist(containers: string[]): string[] {
  */
 export function dockerHost(env: (name: string) => string | undefined): string {
   const host = env(DOCKER_HOST);
-  if (!host) throw new Error(`no docker socket for the hopper: set ${DOCKER_HOST} to unix://<a socket only this user may open> (design.md "Target authentication")`);
+  if (!host) throw new Error(`no docker socket for the hopper: set ${DOCKER_HOST} to unix://<a socket only this user may open>`);
   const path = host.startsWith('unix://') ? host.slice('unix://'.length) : '';
   if (!path.startsWith('/')) throw new Error(`${DOCKER_HOST} must be unix://<absolute path>: ${host}`);
   const refused = (why: string) => new Error(`${DOCKER_HOST} ${path} refused: ${why}`);

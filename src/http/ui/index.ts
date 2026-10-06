@@ -9,7 +9,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { SignIn } from '../../auth/index.ts';
 import type { Clock, InstanceStore, PluginStoreView, Updater } from '../../domain/ports.ts';
-import { CONNECTED_ACCOUNT_PROVIDERS, LIST_ROLES, QUEUE_GATE_MODES, REALM_TYPES, ROLES, SELECTABLE_ROLES, UI_ROLES, UPDATE_CHANNELS, type RealmsEdit, type RealmsView, type SessionView, type UiRole, type UserAdded } from '../../domain/types.ts';
+import { CONNECTED_ACCOUNT_PROVIDERS, HERDR_SESSION, LIST_ROLES, QUEUE_GATE_MODES, REALM_TYPES, ROLES, SELECTABLE_ROLES, UI_ROLES, UPDATE_CHANNELS, type RealmsEdit, type RealmsView, type SessionView, type UiRole, type UserAdded } from '../../domain/types.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { lanHosts, uiOrigins, type Lan } from '../reach.ts';
 import type { RealmsAdmin } from '../realms.ts';
@@ -89,9 +89,16 @@ const machineLanes = z.number().int().min(1, 'lanes must be at least 1');
 const machineExecutors = z.array(z.string().min(1));
 // Attach an ssh target (issue #74: editing and removing a machine is a plugins edit). ssh is checked
 // against the detected ssh targets; herdrBin, session and hostKey are never accepted (strict).
-export const machinesEditBody = z.strictObject({
-  name: machineName, ssh: z.string().min(1), lanes: machineLanes.optional(), executors: machineExecutors.optional(), label: z.string().trim().min(1).optional(), version: z.string().min(1),
-});
+export const machinesEditBody = z.union([
+  z.strictObject({
+    name: machineName, ssh: z.string().min(1), lanes: machineLanes.optional(), executors: machineExecutors.optional(), label: z.string().trim().min(1).optional(), version: z.string().min(1),
+  }),
+  // This machine (issue #260): no ssh target; the herdr session its jobs run in, started by the daemon.
+  z.strictObject({
+    name: machineName, session: z.string().regex(HERDR_SESSION).refine((s) => s !== 'default', 'must not be the default herdr session').optional(),
+    lanes: machineLanes.optional(), executors: machineExecutors.optional(), label: z.string().trim().min(1).optional(), version: z.string().min(1),
+  }),
+]);
 // The machine defaults (issue #142): what a machine attached from the UI starts with.
 export const machineDefaultsBody = z.strictObject({ lanes: machineLanes, executors: machineExecutors, version: z.string().min(1) });
 // Self-update (issue #44): check now, apply the available update, or set the channel / auto-update.

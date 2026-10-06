@@ -234,6 +234,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
   const machinesEditor = createMachinesEditor({
     ...o.attached, config: o.config, dataDir: o.dataDir, logger: o.logger,
     configured: () => started(configured), version: fileVersion, error: () => config.error, reload: enqueue,
+    machineOptionsOf: (id) => { const def = find(id); return def ? machineOptions(def) : []; },
   });
   const machineIds = (): string[] => (machines.built ?? []).flatMap((b) => (b.instance ? [b.spec.name] : []));
   const routingConfig = createRoutingConfig({

@@ -58,6 +58,8 @@ export interface TestApp {
   user(id?: string): ReturnType<App['user']>;
   /** A new user, its runtime started (as POST /ui/api/users does). */
   addUser(name: string): Promise<User>;
+  /** Add this machine (`local`) to a user's machines (default admin), as the UI's plugin edit does: a user starts with none (issue #259). */
+  addThisMachine(userId?: string): Promise<void>;
   /** A request without a session (loopback: the one user's work; nothing of a user's with several), with `headers` (`x-hopper-session`). */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- tests read loose JSON
   api<T = any>(method: string, path: string, body?: unknown, headers?: Record<string, string>): Promise<ApiResponse<T>>;
@@ -192,6 +194,11 @@ export async function startTestApp(o: {
     app, url: app.url, dbPath: o.dbPath, dataDir, source, sourceOf, scripted, api, sync, job, questionsOf, loginWith,
     user: (id = ADMIN_ID) => app.user(id),
     addUser: (name) => app.addUser(name),
+    async addThisMachine(userId = ADMIN_ID) {
+      const { plugins } = app.user(userId);
+      const r = await plugins.edit({ action: 'add', role: 'machine-source', plugin: 'local', name: 'local', version: plugins.report().config.version });
+      if (!r.ok) throw new Error(`this machine was not added: ${r.error}`);
+    },
     async pull(op, over = {}, userId = ADMIN_ID) {
       const item = manualItem({ prompt: JSON.stringify(op), ...over });
       const s = sourceOf(userId);
