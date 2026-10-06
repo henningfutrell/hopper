@@ -1,9 +1,10 @@
 // Settings (issue #151): the configuration plane, one view with a section per part — the question
 // gates (escalation levels, standing rules, risk rules), the question history, routing, plugins,
-// webhooks, the users (issue #158) and sign-in (issue #185) — each routed by hash (#settings/routing), so a link and the back button work. #settings
+// webhooks, the users (issue #158), sign-in (issue #185) and the version (issue #165) — each routed by hash (#settings/routing), so a link and the back button work. #settings
 // alone opens the question gates.
-import { History, KeyRound, Puzzle, Route, ShieldCheck, Users as UsersIcon, Webhook, type LucideIcon } from 'lucide-react';
+import { History, Info, KeyRound, Puzzle, Route, ShieldCheck, Users as UsersIcon, Webhook, type LucideIcon } from 'lucide-react';
 import { useSection } from '@/app/nav';
+import { VersionDetails } from '@/app/update';
 import { cn } from '@/lib/utils';
 import { Plugins } from '@/views/plugins';
 import { QuestionGates } from '@/views/question-gates';
@@ -13,7 +14,7 @@ import { Routing } from '@/views/routing';
 import { Users } from '@/views/users';
 import { Webhooks } from '@/views/webhooks';
 
-const SECTIONS = ['questions', 'history', 'routing', 'plugins', 'webhooks', 'users', 'sign-in'] as const;
+const SECTIONS = ['questions', 'history', 'routing', 'plugins', 'webhooks', 'users', 'sign-in', 'version'] as const;
 type Section = (typeof SECTIONS)[number];
 const ITEMS: Record<Section, { label: string; icon: LucideIcon; view: () => React.ReactNode }> = {
   questions: { label: 'Question gates', icon: ShieldCheck, view: QuestionGates },
@@ -23,7 +24,12 @@ const ITEMS: Record<Section, { label: string; icon: LucideIcon; view: () => Reac
   webhooks: { label: 'Webhooks', icon: Webhook, view: Webhooks },
   users: { label: 'Users', icon: UsersIcon, view: Users },
   'sign-in': { label: 'Sign-in', icon: KeyRound, view: Realms },
+  version: { label: 'Version', icon: Info, view: Version },
 };
+
+function Version() {
+  return <section className="max-w-xl rounded-lg border p-4"><h2 className="mb-3 text-sm font-medium">Version and updates</h2><VersionDetails /></section>;
+}
 
 const sectionOf = (s: string): Section => ((SECTIONS as readonly string[]).includes(s) ? (s as Section) : 'questions');
 

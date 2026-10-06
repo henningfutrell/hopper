@@ -1,7 +1,8 @@
 // Self-update (issue #44): the notice when an update is available, applying or failed — with
 // what's new in plain words (issue #104) — and the panel behind the header's version (version, installed commit, what that
-// version brought, channel, auto-update, check now), open at any time and on any screen (issue #165). Applying keeps running jobs running; the page reloads once the daemon runs the new commit.
-import { ArrowUpCircle, ChevronDown, RefreshCw, X } from 'lucide-react';
+// version brought, channel, auto-update, check now), open at any time and on any screen (issue #165), and the same
+// details as Settings → Version. Applying keeps running jobs running; the page reloads once the daemon runs the new commit.
+import { ArrowUpCircle, ChevronDown, Info, RefreshCw, X } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -66,68 +67,78 @@ export function UpdateNotice() {
   );
 }
 
-/** The header's version, on every screen: opens the version and update panel; a dot when an update is available. */
-export function UpdateButton({ version }: { version: string | undefined }) {
+/** The version and update details: version, installed commit, what this version brought, channel, auto-update, check now. */
+export function VersionDetails({ className }: { className?: string }) {
   const s = useHopper((st) => st.update);
+  const version = useHopper((st) => st.health?.version);
   const authed = useCanAdmin();
   const now = useNow();
   const [checking, setChecking] = useState(false);
   const check = async () => { setChecking(true); await updateAct({ action: 'check' }); setChecking(false); };
+  if (!s) return <p className={cn('text-sm text-muted-foreground', className)}>Loading…</p>;
+  return (
+    <div data-slot="version-details" className={cn('space-y-4 text-sm', className)}>
+      <p className={cn('text-xs', TEXT[TONE[s.state]])}>{headline(s)}</p>
+      <dl className="grid grid-cols-[7rem_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs">
+        <dt className="text-muted-foreground">Version</dt>
+        <dd className="font-mono">{version ?? '…'}</dd>
+        <dt className="text-muted-foreground">Installed</dt>
+        <dd className="font-mono">{s.installed ? `${s.installed.branch} ${short(s.installed.commit)}` : '—'}</dd>
+        {s.installed && <><dt className="text-muted-foreground">Installed on</dt><dd>{new Date(s.installed.installedAt).toLocaleString()}</dd></>}
+        {s.target && <><dt className="text-muted-foreground">Newest</dt><dd className="font-mono">{s.target.ref} {short(s.target.commit)}</dd></>}
+        <dt className="text-muted-foreground">Release</dt>
+        <dd className="font-mono">{s.release ? `${s.release.tag}${s.release.newer ? ' (newer)' : ''}` : 'none yet'}</dd>
+        <dt className="text-muted-foreground">Checked</dt>
+        <dd>{s.checkedAt ? ago(s.checkedAt, now) : 'not yet'}</dd>
+      </dl>
+      {s.state === 'applying' && s.apply && <p className={cn('text-xs', TEXT.warn)}>{s.apply.detail}</p>}
+      {(s.state === 'error' || s.state === 'unavailable') && s.reason && <p className={cn('text-xs break-words', s.state === 'error' ? TEXT.bad : TEXT.muted)}>{s.reason}</p>}
+      <div className="flex flex-wrap items-center gap-2">
+        <ApplyButton s={s} />
+        <Button variant="outline" size="xs" disabled={!authed || checking || s.state === 'unavailable' || s.state === 'applying'} onClick={() => void check()}>
+          <RefreshCw className={cn(checking && 'animate-spin')} />Check now
+        </Button>
+      </div>
+      <div className="space-y-2 border-t pt-3">
+        <label className="flex items-center justify-between gap-3 text-xs">
+          <span>Auto-update<span className="block text-muted-foreground">Apply an update as soon as a check finds it.</span></span>
+          <Switch aria-label="Auto-update" checked={s.autoUpdate} disabled={!authed}
+            onCheckedChange={(autoUpdate) => void updateAct({ action: 'settings', autoUpdate }, autoUpdate ? 'Auto-update on' : 'Auto-update off')} />
+        </label>
+        <div className="flex items-center justify-between gap-3 text-xs">
+          <span>Channel<span className="block text-muted-foreground">Every commit on {s.installed?.branch ?? 'main'}, or release tags only.</span></span>
+          <div className="flex gap-1">
+            {(['main', 'release'] as const).map((c) => (
+              <Button key={c} size="xs" variant={s.channel === c ? 'secondary' : 'ghost'} disabled={!authed || s.channel === c}
+                onClick={() => void updateAct({ action: 'settings', channel: c }, `Channel: ${c}`)}>{c === 'main' ? 'commits' : 'releases'}</Button>
+            ))}
+          </div>
+        </div>
+      </div>
+      {s.whatsNew.length > 0 && <div className="space-y-1 border-t pt-3"><h3 className="text-xs font-medium">What's new in the update</h3><WhatsNew lines={s.whatsNew} /></div>}
+      {s.installedWhatsNew.length > 0 && <div className="space-y-1 border-t pt-3"><h3 className="text-xs font-medium">In this version</h3><WhatsNew lines={s.installedWhatsNew} /></div>}
+      {!authed && <p className="text-xs text-muted-foreground">Read-only: an admin can update or change these settings.</p>}
+    </div>
+  );
+}
+
+/** The header's version, on every screen: a button that opens the version and update panel; a dot when an update is available. */
+export function UpdateButton({ version }: { version: string | undefined }) {
+  const s = useHopper((st) => st.update);
   return (
     <Sheet>
       <SheetTrigger asChild>
-        <button type="button" className="inline-flex items-center gap-1.5 rounded px-1 font-mono text-[11px] text-muted-foreground hover:text-foreground" aria-label="Version and updates" title="Version and updates">
-          {version}{s?.installed && <span className="hidden sm:inline">· {short(s.installed.commit)}</span>}
+        <button type="button" className="inline-flex shrink-0 items-center gap-1.5 rounded-md border px-2 py-0.5 font-mono text-[11px] text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground" aria-label="Version and updates" title="Version and updates: what you run and what it brought">
+          <Info className="size-3" />{version}{s?.installed && <span className="hidden sm:inline">· {short(s.installed.commit)}</span>}
           {s && showNotice(s) && <Dot tone={TONE[s.state]} pulse={s.state === 'applying'} />}
         </button>
       </SheetTrigger>
       <SheetContent className="w-full gap-0 overflow-y-auto sm:max-w-md">
         <SheetHeader>
           <SheetTitle>Version and updates</SheetTitle>
-          <SheetDescription>{s ? headline(s) : 'Loading…'}</SheetDescription>
+          <SheetDescription>What you run, what it brought, and how it updates. Also under Settings → Version.</SheetDescription>
         </SheetHeader>
-        {s && (
-          <div className="space-y-4 px-4 pb-4 text-sm">
-            <dl className="grid grid-cols-[7rem_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs">
-              <dt className="text-muted-foreground">Version</dt>
-              <dd className="font-mono">{version ?? '…'}</dd>
-              <dt className="text-muted-foreground">Installed</dt>
-              <dd className="font-mono">{s.installed ? `${s.installed.branch} ${short(s.installed.commit)}` : '—'}</dd>
-              {s.target && <><dt className="text-muted-foreground">Newest</dt><dd className="font-mono">{s.target.ref} {short(s.target.commit)}</dd></>}
-              <dt className="text-muted-foreground">Release</dt>
-              <dd className="font-mono">{s.release ? `${s.release.tag}${s.release.newer ? ' (newer)' : ''}` : 'none yet'}</dd>
-              <dt className="text-muted-foreground">Checked</dt>
-              <dd>{s.checkedAt ? ago(s.checkedAt, now) : 'not yet'}</dd>
-            </dl>
-            {s.state === 'applying' && s.apply && <p className={cn('text-xs', TEXT.warn)}>{s.apply.detail}</p>}
-            {(s.state === 'error' || s.state === 'unavailable') && s.reason && <p className={cn('text-xs break-words', s.state === 'error' ? TEXT.bad : TEXT.muted)}>{s.reason}</p>}
-            <div className="flex flex-wrap items-center gap-2">
-              <ApplyButton s={s} />
-              <Button variant="outline" size="xs" disabled={!authed || checking || s.state === 'unavailable' || s.state === 'applying'} onClick={() => void check()}>
-                <RefreshCw className={cn(checking && 'animate-spin')} />Check now
-              </Button>
-            </div>
-            <div className="space-y-2 border-t pt-3">
-              <label className="flex items-center justify-between gap-3 text-xs">
-                <span>Auto-update<span className="block text-muted-foreground">Apply an update as soon as a check finds it.</span></span>
-                <Switch aria-label="Auto-update" checked={s.autoUpdate} disabled={!authed}
-                  onCheckedChange={(autoUpdate) => void updateAct({ action: 'settings', autoUpdate }, autoUpdate ? 'Auto-update on' : 'Auto-update off')} />
-              </label>
-              <div className="flex items-center justify-between gap-3 text-xs">
-                <span>Channel<span className="block text-muted-foreground">Every commit on {s.installed?.branch ?? 'main'}, or release tags only.</span></span>
-                <div className="flex gap-1">
-                  {(['main', 'release'] as const).map((c) => (
-                    <Button key={c} size="xs" variant={s.channel === c ? 'secondary' : 'ghost'} disabled={!authed || s.channel === c}
-                      onClick={() => void updateAct({ action: 'settings', channel: c }, `Channel: ${c}`)}>{c === 'main' ? 'commits' : 'releases'}</Button>
-                  ))}
-                </div>
-              </div>
-            </div>
-            {s.whatsNew.length > 0 && <div className="space-y-1 border-t pt-3"><h3 className="text-xs font-medium">What's new in the update</h3><WhatsNew lines={s.whatsNew} /></div>}
-            {s.installedWhatsNew.length > 0 && <div className="space-y-1 border-t pt-3"><h3 className="text-xs font-medium">In this version</h3><WhatsNew lines={s.installedWhatsNew} /></div>}
-            {!authed && <p className="text-xs text-muted-foreground">Read-only: an admin can update or change these settings.</p>}
-          </div>
-        )}
+        <VersionDetails className="px-4 pb-4" />
       </SheetContent>
     </Sheet>
   );
