@@ -44,7 +44,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, the plugins config (`plugins-config.ts`) + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt, `escalation-level/anthropic-api/` asks the Claude API with the same prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-gh/`, `job-source/github-app/` and `job-source/github-account/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser); `usage-source/command-usage/` reads any agent framework's usage and account from a command that prints them as JSON; `usage-source/polled.ts` the background refresh both share, `usage-source/run.ts` their command runner; `notifier/grokbot-routine/` is the Grok Bot routine webhook — env-file reader and notifier; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
 | `src/executors/` | `Executor` adapters (`test`, `herdr/`, `command.ts` — a job's body run on its machine through its connection, `cursor.ts` — Cursor's CLI agent there, issue #142) and the registry; reached through the executor plugins. The connections and their target authentication ("Target authentication"): `ssh.ts` (key-only ssh to pinned host keys), `docker.ts` (the docker socket check, the proxy's allowlist), `client.ts` (a client target's tunnel, signed calls); `env.ts` the scrubbed child environment | engine, http, store, plugins |
 | `src/client/` | the hopper client ("Client targets"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load` over HTTP/2 on the tunnel), `tunnel.ts` (its ssh to the hopper), `release.ts` (the client release: its files, its id, checking and installing one — "Client releases"), `main.ts`; `relay.ts`, the forced command of its key on the hopper's machine; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`); `ssh-options.ts` (the hardened ssh options, shared with `src/executors/ssh.ts`) | everything in `src/` outside `src/client/` |
-| `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following the plugins config; ssh probe and herdr path resolution through the herdr CLI client's ssh argv; the container probe, `docker container inspect`), the detected ssh targets (`ssh-config.ts`), keeping each client target on the hopper's client release (`client-release.ts`), `combineMachineSources` | engine, http, store, plugins |
+| `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following the plugins config; ssh probe and herdr path resolution through the herdr CLI client's ssh argv; the container probe, `docker container inspect`), the detected ssh targets (`ssh-config.ts`) and which of them is this machine (`this-machine.ts`, issue #275), keeping each client target on the hopper's client release (`client-release.ts`), `combineMachineSources` | engine, http, store, plugins |
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin) | engine, http, store, plugins |
 | `src/routing/` | routing rules: the plugins config's `routing` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
 | `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; routing at intake (`source-host.ts`); restart recovery | http |
@@ -3379,6 +3379,35 @@ again without editing anything by hand.
   user's own `ssh <target>` uses —, still never the agent; without any, the reason says to create one
   with ssh-keygen and install it on the target. A failed add reads `could not add <name>: <reason>`.
   No error a person sees points at a document.
+
+### Knowing this machine, and the container (issue #275, 2026-10-06)
+
+Owner request: detect when the hopper is on the machine, so adding it needs no ssh; containers stay
+tricky and need a path of their own, which the detection does not give them.
+
+- **An ssh target that is this machine is detected** (`isThisMachine`, `src/machines/this-machine.ts`):
+  what `ssh -G <target>` makes of it — the user's own ssh config, nothing reached — is this host when its
+  User is the user the hopper runs as, its Port is 22, and its HostName is `localhost`, this host's own
+  name, a loopback or interface address of this host, or a name that resolves (within 2 s) to one.
+  Another user is another account; another port is another machine (a container's published sshd); a
+  target that cannot be resolved, or goes through a ProxyJump or ProxyCommand, is not this machine.
+- **`GET /api/machines/config`** lists them as `ssh.here`. The Add form marks such a target "(this
+  machine)", says it is added with no ssh, and sends it as before.
+- **`POST /ui/api/machines` with such a target adds this machine** (issue #260's path): a `local` instance
+  under the name given, its lanes and executors as sent, the herdr session `hopper`, started first;
+  nothing is reached over ssh and no host key is pinned. While a machine is this one already it is
+  refused: `ssh target <t> is this machine, already added as <name>`.
+- **In a container** (`HOPPER_LOCAL_MACHINE=false`, issue #141) this machine is the container, which is
+  not a machine. Nothing is detected as this machine there: with host networking the container would
+  share the computer's addresses and pass for it. Adding this machine is refused (409) and
+  `thisMachineRefused` says why and what works: attach the computer the container runs on over ssh — a
+  Host in the container's `~/.ssh/config` whose HostName is `host.containers.internal` (Podman) or
+  `host.docker.internal` (Docker), with a key of the container's the computer accepts — or as a client
+  target. The Machines view shows that in place of **Add this machine**.
+- **Still open.** The container path is still set up by hand (deploy.md "In containers, with Podman":
+  the computer's sshd, a key in the home volume, the Host alias, `host.docker.internal` needing
+  `--add-host host.docker.internal:host-gateway` under Docker on Linux). The hopper detects that it
+  cannot be the machine there; it does not yet reach the computer by itself.
 
 ### Router, queue sorter and routing rules (issue #18)
 

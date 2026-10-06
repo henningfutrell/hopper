@@ -6,8 +6,8 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { InstanceSpec, MachineDefaults, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig } from '../domain/types.ts';
 import type { SshAuth } from '../executors/ssh.ts';
-import { readSshTargets, resolveSshTarget, type ResolvedTarget } from '../machines/index.ts';
-import { applyMachineDefaultsEdit, applyMachineEdit, machineDefaults } from './attached-edit.ts';
+import { isThisMachine, readSshTargets, resolveSshTarget, type ResolvedTarget } from '../machines/index.ts';
+import { applyMachineDefaultsEdit, applyMachineEdit, IN_A_CONTAINER, machineDefaults } from './attached-edit.ts';
 import type { PluginLogger } from './sdk.ts';
 
 /** What attaching or removing a machine needs. Defaults: ~/.ssh/config, the target resolved over ssh, no job in use. */
@@ -23,7 +23,14 @@ export interface AttachedEditOptions {
   pinned?(name: string): string[];
   /** Starts this machine's herdr session when it is added (issue #260); rejects with the reason. Default: none started. */
   startSession?(session: string): Promise<unknown>;
+  /** Whether this host may be a machine (`HOPPER_LOCAL_MACHINE`); default true. False: the container (issues #141, #275). */
+  localMachine?: boolean;
+  /** Whether an ssh target is this machine (issue #275); default isThisMachine, through the user's ssh config. */
+  isThisMachine?(ssh: string): Promise<boolean>;
 }
+
+/** How long an ssh target's answer to "is it this machine" is kept (issue #275). */
+const THIS_MACHINE_TTL_MS = 60000;
 
 export function createMachinesEditor(o: AttachedEditOptions & {
   config: ConfigRecords;
@@ -41,12 +48,27 @@ export function createMachinesEditor(o: AttachedEditOptions & {
   const noKey = (): SshAuth => { throw new Error('no ssh key on this machine'); };
   const resolveTarget = o.resolveTarget ?? ((ssh: string, r: { herdr: boolean }) => resolveSshTarget({ target: ssh, herdr: r.herdr, controlDir: join(o.dataDir, 'ssh'), auth: o.sshAuth ?? noKey }));
 
-  function config(): MachinesConfig {
+  const localMachine = o.localMachine ?? true;
+  // The Machines view asks every 15 s; a target's answer is kept a minute, as ssh -G's is.
+  const known = new Map<string, { at: number; here: Promise<boolean> }>();
+  const thisMachine = o.isThisMachine ?? ((ssh: string) => {
+    const hit = known.get(ssh);
+    if (hit && Date.now() - hit.at < THIS_MACHINE_TTL_MS) return hit.here;
+    const here = isThisMachine(ssh);
+    known.set(ssh, { at: Date.now(), here });
+    return here;
+  });
+
+  async function config(): Promise<MachinesConfig> {
     const c = o.configured();
     const error = o.error();
+    const ssh = readSshTargets(sshConfig);
+    // In the container no target is this machine: its addresses are the container's, not the computer's.
+    const here = localMachine ? (await Promise.all(ssh.targets.map(async (t) => ((await thisMachine(t)) ? [t] : [])))).flat() : [];
     return {
-      version: o.version(), ...(error ? { error } : {}),
-      machines: c.machines.map(({ name, plugin, options }) => ({ name, connection: plugin, ...(options ? { options } : {}) })), executors: c.executors.map((x) => x.name), defaults: machineDefaults(c.machineDefaults), ssh: readSshTargets(sshConfig),
+      version: o.version(), ...(error ? { error } : {}), ...(localMachine ? {} : { thisMachineRefused: IN_A_CONTAINER }),
+      machines: c.machines.map(({ name, plugin, options }) => ({ name, connection: plugin, ...(options ? { options } : {}) })), executors: c.executors.map((x) => x.name), defaults: machineDefaults(c.machineDefaults),
+      ssh: { ...ssh, here },
     };
   }
 
@@ -56,15 +78,17 @@ export function createMachinesEditor(o: AttachedEditOptions & {
       config: o.config, configured: c.machines.map((instance) => ({ role: 'machine-source' as const, instance })), executors: c.executors,
       defaults: machineDefaults(c.machineDefaults), sshTargets: () => readSshTargets(sshConfig), resolveTarget,
       startSession: o.startSession ?? (async () => undefined), machineOptionsOf: o.machineOptionsOf,
+      localMachine, isThisMachine: thisMachine,
     });
     if (!r.ok) return r;
     if (r.changed) {
-      o.logger.info(e.ssh === undefined
-        ? `hopper: plugins config edited in the UI: this machine added as ${e.name}, herdr session ${e.session ?? 'hopper'}`
-        : `hopper: plugins config edited in the UI: attached machine ${e.name} over ssh ${e.ssh}`);
       await o.reload();
+      const added = o.configured().machines.find((m) => m.name === e.name);
+      o.logger.info(added?.plugin === 'local'
+        ? `hopper: plugins config edited in the UI: this machine added as ${e.name}${e.ssh ? ` (ssh target ${e.ssh} is this machine)` : ''}, herdr session ${e.session ?? 'hopper'}`
+        : `hopper: plugins config edited in the UI: attached machine ${e.name} over ssh ${e.ssh}`);
     }
-    return { ok: true, config: config() };
+    return { ok: true, config: await config() };
   }
 
   async function editDefaults(e: MachineDefaultsEdit): Promise<MachineEditOutcome> {
@@ -72,7 +96,7 @@ export function createMachinesEditor(o: AttachedEditOptions & {
     if (!r.ok) return { ok: false, code: r.code === 'not_found' ? 'invalid' : r.code, error: r.error };
     o.logger.info(`hopper: plugins config edited in the UI: machine defaults ${e.lanes} lane(s), executors ${e.executors.join(', ') || 'none'}`);
     await o.reload();
-    return { ok: true, config: config() };
+    return { ok: true, config: await config() };
   }
 
   return { config, edit, editDefaults };

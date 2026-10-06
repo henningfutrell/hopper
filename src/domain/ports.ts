@@ -176,7 +176,7 @@ export interface PluginsView {
   /** A UI edit of the plugins config (or a rescan); applied like a file edit before it resolves. */
   edit(e: PluginsEdit): Promise<PluginsEditOutcome>;
   /** GET /api/machines/config: every machine-source instance, the executors, the detected ssh targets. */
-  machinesConfig(): MachinesConfig;
+  machinesConfig(): Promise<MachinesConfig>;
   /** Attach an ssh target as an `ssh` instance in the plugins config `machines:`; applied (live) before it resolves. */
   editMachines(e: MachineEdit): Promise<MachineEditOutcome>;
   /** POST /ui/api/machines/defaults (issue #142): the plugins config `machineDefaults:`. */

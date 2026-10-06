@@ -7,6 +7,8 @@
 // It runs herdr only when one of its executors is herdr-claude (issue #142); lanes and executors left
 // out are the machine defaults, which the Machines view also edits here. Without an ssh target it adds
 // this machine (issue #260): a `local` instance with the herdr session named, which is started first.
+// An ssh target that is this machine is added so too, with no ssh (issue #275). In a container, which is
+// not a machine, adding this machine is refused with the way that works there, and no target is this machine.
 import type { ConfigRecords } from '../domain/ports.ts';
 import type { ConfiguredInstance, InstanceSpec, MachineDefaults, MachineDefaultsEdit, MachineEdit } from '../domain/types.ts';
 import type { ResolvedTarget } from '../machines/index.ts';
@@ -31,7 +33,17 @@ export interface MachineEditContext {
   startSession(session: string): Promise<unknown>;
   /** A plugin's machine options: each part naming no machine runs on this machine once it is added. */
   machineOptionsOf(plugin: string): string[];
+  /** Whether this host may be a machine (`HOPPER_LOCAL_MACHINE`): false in the container (issue #141). */
+  localMachine: boolean;
+  /** Whether an ssh target is this machine (issue #275). */
+  isThisMachine(ssh: string): Promise<boolean>;
 }
+
+/**
+ * Why this machine cannot be added in a container (issue #275), and the way that works there: the
+ * container is not a machine (issue #141), so the computer it runs on is attached like any other.
+ */
+export const IN_A_CONTAINER = 'the hopper runs in a container, and the container is not a machine. To run jobs on the computer it runs on, attach that computer over ssh: in the container\'s ~/.ssh/config, a Host whose HostName is host.containers.internal (Podman) or host.docker.internal (Docker), with a key of the container\'s that the computer accepts. Or attach it as a client target';
 
 /** The sections whose parts run on a machine they name (issue #174). */
 const ON_A_MACHINE = ['escalationLevels', 'usageSources'] as const;
@@ -64,8 +76,12 @@ export function applyMachineDefaultsEdit(e: MachineDefaultsEdit, config: ConfigR
 
 export async function applyMachineEdit(e: MachineEdit, ctx: MachineEditContext): Promise<EditResult> {
   if (ctx.config.version(PLUGINS) !== e.version) return refuse('conflict', 'the plugins config changed since it was read; reload and edit again');
-  if (e.ssh === undefined) return addThisMachine(e, ctx);
+  if (e.ssh === undefined) return ctx.localMachine ? addThisMachine(e, ctx) : refuse('conflict', `could not add ${e.name}: ${IN_A_CONTAINER}`);
   if (!ctx.sshTargets().targets.includes(e.ssh)) return refuse('invalid', `ssh target ${e.ssh} is not a Host alias in ~/.ssh/config; add it there first`);
+  if (ctx.localMachine && await ctx.isThisMachine(e.ssh)) {
+    const { ssh: target, ...rest } = e;
+    return addThisMachine(rest, ctx, target);
+  }
   if (ctx.configured.some((c) => c.role === 'machine-source' && c.instance.name === e.name)) return refuse('conflict', `a machine is already named ${e.name}`);
   const executors = e.executors ?? ctx.defaults.executors;
   const options: Record<string, unknown> = { ...(e.label !== undefined ? { label: e.label } : {}), ssh: e.ssh, lanes: e.lanes ?? ctx.defaults.lanes, executors };
@@ -90,11 +106,15 @@ export async function applyMachineEdit(e: MachineEdit, ctx: MachineEditContext):
 /**
  * Adding this machine (issue #260): a `local` instance under the name given — no ssh target —, its jobs
  * in the herdr session named (default `hopper`), started here before it is written. Each escalation
- * level and usage source that names no machine runs on it.
+ * level and usage source that names no machine runs on it. `target`: the ssh target it was picked as (issue #275).
  */
-async function addThisMachine(e: MachineEdit, ctx: MachineEditContext): Promise<EditResult> {
+async function addThisMachine(e: MachineEdit, ctx: MachineEditContext, target?: string): Promise<EditResult> {
   const here = ctx.configured.find((c) => c.role === 'machine-source' && c.instance.plugin === local.id);
-  if (here) return refuse('conflict', `this machine is already added, as ${here.instance.name}; edit that one`);
+  if (here) {
+    return refuse('conflict', target === undefined
+      ? `this machine is already added, as ${here.instance.name}; edit that one`
+      : `ssh target ${target} is this machine, already added as ${here.instance.name}; edit that one`);
+  }
   if (ctx.configured.some((c) => c.role === 'machine-source' && c.instance.name === e.name)) return refuse('conflict', `a machine is already named ${e.name}`);
   const session = e.session ?? 'hopper';
   const options: Record<string, unknown> = {
