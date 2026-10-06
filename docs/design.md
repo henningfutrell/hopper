@@ -3238,6 +3238,15 @@ Residual risk: a session holder can attach any machine already in `~/.ssh/config
 at it; that needs the owner's ssh config to name it and the machine to run herdr. Every local user can
 read the detected ssh targets (`GET /api/machines/config`, like every loopback read).
 
+### The machines API names a connection, not a plugin (issue #206, 2026-10-05)
+
+`GET /api/machines/config` `machines` is `ConfiguredMachine[]` (`src/domain/machines.ts`):
+`{ name, connection, options? }`. `connection` is the machine-source plugin's id — `local`, `ssh`,
+`docker`, `client`, or a custom one's — but the Machines view and its API speak of how a machine is
+reached (glossary "Connection"), not of plugins; the plugins config and `GET /api/plugins` keep
+`plugin`. The Machines view shows no "plugin" line: the ssh target, container or client line already
+says how each machine is reached.
+
 ### Attached machines are machine-source instances (issue #74, 2026-10-05)
 
 Owner request: "Plugins can be configured in the UI"; owner's choice of the gap to close: fold the

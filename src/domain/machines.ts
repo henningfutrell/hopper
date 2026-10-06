@@ -1,8 +1,6 @@
 // Attached machines and attaching one from the UI (design.md "Attached machines", "Machines from
 // the UI"; docs/glossary.md "Attached machine", "Machine edit", "Detected ssh target"). An attached
 // machine is a machine-source instance of the `ssh`, `docker` or `client` plugin (issue #74).
-import type { InstanceSpec } from './plugins.ts';
-
 /**
  * An attached machine as its machine-source instance names it (design.md "Attached machines",
  * "Container targets", "Client targets"): a target reached over ssh, with its own herdr; a container
@@ -73,14 +71,21 @@ export interface MachineDefaults { lanes: number; executors: string[] }
 /** POST /ui/api/machines/defaults: the whole `machineDefaults:` section, against `MachinesConfig.version`. */
 export interface MachineDefaultsEdit extends MachineDefaults { version: string }
 
+/**
+ * A machine as GET /api/machines/config reports it: its name (the machine id), its **connection** —
+ * `local` (this machine), `ssh`, `docker`, `client`, or a custom machine source's id — and its
+ * options. It is edited and removed through POST /ui/api/plugins, role `machine-source`.
+ */
+export interface ConfiguredMachine { name: string; connection: string; options?: Record<string, unknown> }
+
 /** GET /api/machines/config: what the Machines view edits. */
 export interface MachinesConfig {
   /** sha-256 of the plugins config, or `missing`: a machine edit or a lanes edit carries it back. */
   version: string;
   /** the plugins config could not be used; the last good configuration runs. */
   error?: string;
-  /** Every machine-source instance as it applies now: this machine (`local`) and each attached one. */
-  machines: InstanceSpec[];
+  /** Every machine as it applies now: this machine (`local`) and each attached one. */
+  machines: ConfiguredMachine[];
   /** The configured executor instances: what an attached machine may run. */
   executors: string[];
   /** What a machine attached from the UI starts with. */

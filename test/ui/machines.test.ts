@@ -8,10 +8,10 @@ import { addBody, addProblem, clientReleaseText, defaultsBody, editBody, kindOf,
 const CONFIG: MachinesConfig = {
   version: 'v1',
   machines: [
-    { name: 'local', plugin: 'local', options: { lanes: 4 } },
-    { name: 'desk', plugin: 'ssh', options: { ssh: 'desk', lanes: 1, executors: ['test'], herdrBin: '/usr/bin/herdr' } },
-    { name: 'box', plugin: 'docker', options: { docker: 'box', lanes: 2 } },
-    { name: 'odd', plugin: 'custom-machines' },
+    { name: 'local', connection: 'local', options: { lanes: 4 } },
+    { name: 'desk', connection: 'ssh', options: { ssh: 'desk', lanes: 1, executors: ['test'], herdrBin: '/usr/bin/herdr' } },
+    { name: 'box', connection: 'docker', options: { docker: 'box', lanes: 2 } },
+    { name: 'odd', connection: 'custom-machines' },
   ],
   executors: ['herdr-claude', 'test'],
   defaults: { lanes: 1, executors: ['herdr-claude'] },
@@ -22,16 +22,16 @@ const draft = (over: Partial<MachineDraft> = {}): MachineDraft => ({ name: 'lapt
 
 describe('kindOf', () => {
   it('a local instance is local; an ssh, docker or client instance is attached, with its lanes, executors and label; anything else is unknown', () => {
-    expect(kindOf(CONFIG, 'local')).toEqual({ kind: 'local', instance: CONFIG.machines[0], lanes: 4 });
-    expect(kindOf(CONFIG, 'desk')).toEqual({ kind: 'attached', instance: CONFIG.machines[1], lanes: 1, executors: ['test'] });
-    expect(kindOf(CONFIG, 'box')).toEqual({ kind: 'attached', instance: CONFIG.machines[2], lanes: 2, executors: ['command'] });
+    expect(kindOf(CONFIG, 'local')).toEqual({ kind: 'local', machine: CONFIG.machines[0], lanes: 4 });
+    expect(kindOf(CONFIG, 'desk')).toEqual({ kind: 'attached', machine: CONFIG.machines[1], lanes: 1, executors: ['test'] });
+    expect(kindOf(CONFIG, 'box')).toEqual({ kind: 'attached', machine: CONFIG.machines[2], lanes: 2, executors: ['command'] });
     expect(kindOf(CONFIG, 'odd')).toEqual({ kind: 'unknown' });
     expect(kindOf(CONFIG, 'other')).toEqual({ kind: 'unknown' });
     expect(kindOf(null, 'local')).toEqual({ kind: 'unknown' });
   });
 
   it('local lanes default to 4 when the instance sets none', () => {
-    expect(kindOf({ ...CONFIG, machines: [{ name: 'local', plugin: 'local' }] }, 'local')).toMatchObject({ kind: 'local', lanes: 4 });
+    expect(kindOf({ ...CONFIG, machines: [{ name: 'local', connection: 'local' }] }, 'local')).toMatchObject({ kind: 'local', lanes: 4 });
   });
 });
 

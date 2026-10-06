@@ -69,7 +69,7 @@ const OPERATIONS: Operation[] = [
   { method: 'post', path: '/ui/api/questions/:id/seen', tag: 'Questions', summary: 'Mark a question seen', role: 'operator', returns: 'the `Question`', errors: [404] },
   { method: 'post', path: '/ui/api/rules', tag: 'Questions', summary: 'Replace the rules', description: '`version` is the one read from GET /api/question-gates.', role: 'admin', body: rulesBody, returns: 'the new rules view', errors: [409] },
   { method: 'get', path: '/api/machines', tag: 'Machines and usage', summary: 'Machines, their lanes and usage', returns: '`{ machines: (MachineSnapshot & { lanes, usage })[] }`' },
-  { method: 'get', path: '/api/machines/config', tag: 'Machines and usage', summary: 'What the Machines view edits', returns: 'the machine source, the attached machines, the detected ssh targets, the plugins config version' },
+  { method: 'get', path: '/api/machines/config', tag: 'Machines and usage', summary: 'What the Machines view edits', returns: 'every machine (name, connection, options), the executors, the machine defaults, the detected ssh targets, the plugins config version' },
   { method: 'post', path: '/ui/api/machines', tag: 'Machines and usage', summary: 'Attach a machine over ssh (edit or remove it through /ui/api/plugins)', role: 'admin', body: machinesEditBody, returns: 'the new machines config', errors: [409] },
   { method: 'post', path: '/ui/api/machines/defaults', tag: 'Machines and usage', summary: 'Set what a machine attached here starts with: its lanes and executors', role: 'admin', body: machineDefaultsBody, returns: 'the new machines config', errors: [409] },
   { method: 'get', path: '/api/usage', tag: 'Machines and usage', summary: 'Usage readings', returns: '`UsageReport`' },
