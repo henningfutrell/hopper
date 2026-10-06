@@ -16,7 +16,7 @@ function keyValues(c: StoreContext) {
   };
 }
 
-/** A user's settings: the queue gate. */
+/** A user's settings: the queue gate, and the hopper's own ssh key (issue #293). */
 export function createUserSettingsRepository(c: StoreContext): UserSettingsRepository {
   const { read, write } = keyValues(c);
   return {
@@ -26,6 +26,13 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
     },
     setQueueGate(gate) {
       write('queueGate', JSON.stringify({ mode: gate.mode, autoAcceptPerHour: gate.autoAcceptPerHour }));
+    },
+    getSshKey() {
+      const text = read('sshKey');
+      return text === undefined ? undefined : JSON.parse(text) as { privateKey: string; publicKey: string };
+    },
+    setSshKey(key) {
+      write('sshKey', JSON.stringify({ privateKey: key.privateKey, publicKey: key.publicKey }));
     },
   };
 }

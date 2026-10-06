@@ -413,8 +413,8 @@ export interface SourceStatus {
 
 // ---- Attached machines: src/domain/machines.ts (re-exported here) ------------------------
 
-export type { AttachedMachine, ClientMachine, ConfiguredMachine, ContainerMachine, MachineDefaults, MachineDefaultsEdit, MachineEdit, SshMachine, MachineEditOutcome, MachinesConfig } from './machines.ts';
-export { HERDR_SESSION } from './machines.ts';
+export type { AttachedMachine, ClientMachine, ConfiguredMachine, ContainerMachine, HostKeyOffer, HostKeyOfferOutcome, MachineDefaults, MachineDefaultsEdit, MachineEdit, SshMachine, MachineEditOutcome, MachinesConfig } from './machines.ts';
+export { HERDR_SESSION, HOST_KEY } from './machines.ts';
 
 // ---- Routing rules: src/domain/routing.ts; plugins: src/domain/plugins.ts (re-exported here, one vocabulary) ----
 

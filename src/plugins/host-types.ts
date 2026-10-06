@@ -3,7 +3,7 @@
 import type { ConfigRecords } from '../domain/ports.ts';
 import type { Clock, EscalationLevel, MachineSource, Notifier, NotifierEvents, UsageSource } from '../domain/ports.ts';
 import type {
-  AttachedMachine, InstanceSpec, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit, PluginsEditOutcome, PluginsReport, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule,
+  AttachedMachine, HostKeyOfferOutcome, InstanceSpec, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit, PluginsEditOutcome, PluginsReport, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule,
 } from '../domain/types.ts';
 import type { AttachedEditOptions } from './attached-slot.ts';
 import type { BuiltExecutor } from './executor-slot.ts';
@@ -79,6 +79,8 @@ export interface PluginHost {
   machinesConfig(): Promise<MachinesConfig>;
   /** POST /ui/api/machines: attach an ssh target; resolves once the plugins config is reloaded. */
   editMachines(e: MachineEdit): Promise<MachineEditOutcome>;
+  /** POST /ui/api/machines/host-key (issue #293): the host key a new ssh target would be pinned to; nothing written. */
+  machineHostKey(ssh: string): Promise<HostKeyOfferOutcome>;
   /** POST /ui/api/machines/defaults (issue #142): the plugins config `machineDefaults:`. */
   editMachineDefaults(e: MachineDefaultsEdit): Promise<MachineEditOutcome>;
   report(): PluginsReport;

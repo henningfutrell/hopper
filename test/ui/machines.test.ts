@@ -3,7 +3,7 @@
 // POST /ui/api/machines and an Edit form to POST /ui/api/plugins, and why it may not yet.
 import { describe, expect, it } from 'vitest';
 import type { MachinesConfig } from '../../src/domain/types.ts';
-import { addBody, addProblem, authorizedKeysLine, clientReleaseText, defaultsBody, DETAILS, editBody, editDraft, editProblem, hasThisMachine, isThisMachineTarget, kindOf, mayAddThisMachine, localBody, newDraft, newThisDraft, thisBody, thisProblem, type MachineDraft } from '../../ui/src/model/machines.ts';
+import { addBody, addProblem, authorizedKeysLine, hostKeyCheck, clientReleaseText, defaultsBody, DETAILS, editBody, editDraft, editProblem, hasThisMachine, isThisMachineTarget, kindOf, mayAddThisMachine, localBody, newDraft, newThisDraft, thisBody, thisProblem, type MachineDraft } from '../../ui/src/model/machines.ts';
 
 const CONFIG: MachinesConfig = {
   version: 'v1',
@@ -63,6 +63,12 @@ describe('a typed ssh target', () => {
   it('the host key the person confirmed goes with the body; none confirmed, none sent', () => {
     expect(addBody(draft({ ssh: 'user@box' }), 'v1', 'ssh-ed25519 AAAA')).toMatchObject({ ssh: 'user@box', hostKey: 'ssh-ed25519 AAAA' });
     expect(addBody(draft(), 'v1')).not.toHaveProperty('hostKey');
+  });
+
+  it('how to check a host key on the machine itself: the fingerprint of its own host key file', () => {
+    expect(hostKeyCheck('ssh-ed25519 AAAA')).toBe('ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub');
+    expect(hostKeyCheck('ecdsa-sha2-nistp256 AAAA')).toBe('ssh-keygen -lf /etc/ssh/ssh_host_ecdsa_key.pub');
+    expect(hostKeyCheck('ssh-rsa AAAA')).toBe('ssh-keygen -lf /etc/ssh/ssh_host_rsa_key.pub');
   });
 
   it('the line to add to the machine\'s authorized_keys: the hopper\'s key, restricted', () => {

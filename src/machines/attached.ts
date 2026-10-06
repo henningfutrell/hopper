@@ -5,17 +5,17 @@
 // or asleep never stalls a Decision. Offline until the first probe says otherwise. Each is a
 // machine-source instance (issue #74), reached through createTargetPool.
 import { execFile } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { Clock, MachineSource } from '../domain/ports.ts';
-import type { AttachedMachine, MachineSnapshot } from '../domain/types.ts';
+import type { AttachedMachine, HostKeyOffer, MachineSnapshot } from '../domain/types.ts';
 import { dockerArgv, dockerEnv } from '../executors/docker.ts';
 import { scrubbedEnv } from '../executors/env.ts';
 import type { ClientTransport } from '../executors/client.ts';
 import { createHerdrCliClient } from '../executors/herdr/index.ts';
-import { SSH_FAILED, resolveDestination, sshArgv, type SshAuth, HOST_KEY } from '../executors/ssh.ts';
+import { SSH_FAILED, isPlainTarget, resolveDestination, sshArgv, type SshAuth, HOST_KEY } from '../executors/ssh.ts';
 
 const PROBE_EVERY_MS = 30000;
 
@@ -184,9 +184,58 @@ export function knownHostKey(o: { target: string; sshBin?: string; keygenBin?: s
       const keys = (err ? '' : stdout).split('\n').filter((l) => l && !l.startsWith('#')).map((l) => l.split(/\s+/).slice(1, 3).join(' '));
       const key = keys.find((k) => k.startsWith('ssh-ed25519 ')) ?? keys.find((k) => HOST_KEY.test(k));
       if (key && HOST_KEY.test(key)) return resolve(key);
-      reject(new Error(`no host key for ${o.target} (${host}) in ~/.ssh/known_hosts: connect once by hand (ssh ${o.target}), check its fingerprint, then add it`));
+      reject(new Error(`no host key for ${o.target} (${host}) in ~/.ssh/known_hosts: check the host key it presents, then confirm it when adding it`));
     });
   });
+}
+
+/** A host key's fingerprint as `ssh-keygen -l` prints it: `SHA256:` and the base64 of the key's SHA-256, unpadded. */
+export function hostKeyFingerprint(hostKey: string): string {
+  const blob = Buffer.from(hostKey.split(' ')[1] ?? '', 'base64');
+  return `SHA256:${createHash('sha256').update(blob).digest('base64').replace(/=+$/, '')}`;
+}
+
+/**
+ * The host keys a target presents (issue #293): `ssh-keyscan` on its resolved host and port, an
+ * ed25519 key first. Only offered, with its fingerprint, for the person to confirm: the hopper pins it
+ * only once they send it back. Rejects when the target presents none.
+ */
+export function scanHostKey(o: { target: string; sshBin?: string; keyscanBin?: string; timeoutMs?: number }): Promise<string> {
+  let d;
+  try {
+    d = resolveDestination(o.sshBin ?? 'ssh', o.target);
+  } catch (e) {
+    return Promise.reject(e instanceof Error ? e : new Error(String(e)));
+  }
+  const host = d.hostname;
+  return new Promise((resolve, reject) => {
+    execFile(o.keyscanBin ?? 'ssh-keyscan', ['-T', '5', '-p', d.port, '-t', 'ed25519,ecdsa,rsa', '--', host], {
+      env: scrubbedEnv(), timeout: o.timeoutMs ?? 15000, killSignal: 'SIGKILL', encoding: 'utf8',
+    }, (err, stdout) => {
+      const keys = (stdout ?? '').split('\n').filter((l) => l && !l.startsWith('#')).map((l) => l.split(/\s+/).slice(1, 3).join(' ')).filter((k) => HOST_KEY.test(k));
+      const key = keys.find((k) => k.startsWith('ssh-ed25519 ')) ?? keys[0];
+      if (key) return resolve(key);
+      reject(new Error(`${o.target} (${host} port ${d.port}) presented no host key${err ? `: ${(err as Error).message.split('\n')[0]}` : ''}; is its sshd running and reachable from the hopper?`));
+    });
+  });
+}
+
+/**
+ * The host key a new ssh target would be pinned to (issue #293): the one ~/.ssh/known_hosts holds for it
+ * (`known`), else the one it presents now (scanHostKey), with its fingerprint for the person to confirm.
+ */
+export async function hostKeyOffer(o: { target: string; sshBin?: string; keygenBin?: string; keyscanBin?: string; knownHosts?: string }): Promise<HostKeyOffer> {
+  if (!isPlainTarget(o.target)) throw new Error(`bad ssh target: ${JSON.stringify(o.target)}`);
+  let hostKey: string;
+  let known = true;
+  try {
+    hostKey = await knownHostKey(o);
+  } catch (e) {
+    if (/ProxyJump|ProxyCommand|ssh -G/.test((e as Error).message)) throw e;
+    hostKey = await scanHostKey(o);
+    known = false;
+  }
+  return { ssh: o.target, hostKey, fingerprint: hostKeyFingerprint(hostKey), known };
 }
 
 /** A new ssh target as resolved: its pinned host key, and herdr's path there when it runs herdr. */
@@ -201,9 +250,12 @@ export interface ResolvedTarget { hostKey: string; herdrBin?: string }
  */
 export async function resolveSshTarget(o: {
   target: string; herdr: boolean; controlDir: string; auth: () => SshAuth; sshBin?: string; keygenBin?: string; knownHosts?: string; timeoutMs?: number;
+  /** The host key the person confirmed (issue #293); absent: the one ~/.ssh/known_hosts holds. */
+  hostKey?: string;
 }): Promise<ResolvedTarget> {
   mkdirSync(o.controlDir, { recursive: true, mode: 0o700 });
-  const hostKey = await knownHostKey(o);
+  if (o.hostKey !== undefined && !HOST_KEY.test(o.hostKey)) throw new Error(`not a host key: ${JSON.stringify(o.hostKey)}`);
+  const hostKey = o.hostKey ?? await knownHostKey(o);
   const pinned = join(o.controlDir, `known_hosts.add-${randomBytes(6).toString('hex')}`);
   writeFileSync(pinned, `${o.target} ${hostKey}\n`, { mode: 0o600 });
   const command = o.herdr ? [
@@ -220,6 +272,9 @@ export async function resolveSshTarget(o: {
       }, (err, stdout, stderr) => {
         const e = err as (Error & { killed?: boolean; code?: number | string }) | null;
         if (e?.killed) return reject(new Error(`ssh ${o.target}: no answer within ${o.timeoutMs ?? 15000} ms`));
+        if (e && e.code === SSH_FAILED && /Permission denied/.test(stderr)) {
+          return reject(new Error(`${o.target} does not accept the hopper's ssh key: add the hopper's public key, shown in the Add machine form, to ~/.ssh/authorized_keys there`));
+        }
         if (e && e.code === SSH_FAILED) return reject(new Error(`ssh ${o.target}: ${stderr.trim() || e.message}`));
         if (e) return reject(new Error(`${o.target}: ${stderr.trim() || e.message}`));
         if (!o.herdr) return resolve('');

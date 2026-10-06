@@ -67,10 +67,26 @@ export interface ClientMachine extends AttachedBase {
  * herdr session `session` (default `hopper`), which the daemon starts; `lanes` left out is four,
  * `executors` left out every registered one. Refused while a machine is this one already.
  */
+/** A pinned host key: `<type> <base64>`, as a host's `ssh_host_*_key.pub` holds it (comment dropped). */
+export const HOST_KEY = /^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(256|384|521)|sk-ssh-ed25519@openssh\.com|sk-ecdsa-sha2-nistp256@openssh\.com) [A-Za-z0-9+/]+={0,2}$/;
+
 /** A herdr session name (issue #260): plain, so it is also a file name and a unit name. Never `default`. */
 export const HERDR_SESSION = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
-export interface MachineEdit { name: string; ssh?: string; session?: string; lanes?: number; executors?: string[]; label?: string; version: string }
+/**
+ * With `ssh`, `hostKey` (issue #293) is the host key the person confirmed from its fingerprint
+ * (`HostKeyOffer`): the pin. Absent: the one ~/.ssh/known_hosts holds for the target.
+ */
+export interface MachineEdit { name: string; ssh?: string; session?: string; lanes?: number; executors?: string[]; label?: string; hostKey?: string; version: string }
+
+/**
+ * POST /ui/api/machines/host-key (issue #293): the host key a new ssh target would be pinned to, and its
+ * fingerprint for the person to check on the machine. `known`: ~/.ssh/known_hosts already trusts it;
+ * otherwise it is the key the target presents now, pinned only once the person confirms it.
+ */
+export interface HostKeyOffer { ssh: string; hostKey: string; fingerprint: string; known: boolean }
+
+export type HostKeyOfferOutcome = { ok: true; offer: HostKeyOffer } | { ok: false; code: 'invalid' | 'conflict'; error: string };
 
 /**
  * The **machine defaults** (issue #142): what a machine attached from the UI starts with — the plugins config
@@ -102,9 +118,11 @@ export interface MachinesConfig {
   defaults: MachineDefaults;
   /**
    * The detected ssh targets: the Host aliases of ~/.ssh/config; `notes` say what could not be read;
-   * `here` (issue #275) those that are this machine, which a machine edit adds as this machine, no ssh.
+   * `here` (issue #275) those that are this machine, which a machine edit adds as this machine, no ssh;
+   * `publicKey` (issue #293) the hopper's own key, to add to a machine's authorized_keys — absent when the
+   * runtime mounts the hopper's key, or none could be minted.
    */
-  ssh: { targets: string[]; notes: string[]; here: string[] };
+  ssh: { targets: string[]; notes: string[]; here: string[]; publicKey?: string };
   /**
    * Why this machine cannot be added (issue #275), and how to run jobs on the computer the hopper runs
    * on instead: the hopper runs in a container, which is not a machine. Absent: it can be.

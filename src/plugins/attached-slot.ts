@@ -4,9 +4,9 @@
 import type { ConfigRecords } from '../domain/ports.ts';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import type { InstanceSpec, MachineDefaults, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig } from '../domain/types.ts';
-import type { SshAuth } from '../executors/ssh.ts';
-import { isThisMachine, readSshTargets, resolveSshTarget, type ResolvedTarget } from '../machines/index.ts';
+import type { HostKeyOffer, HostKeyOfferOutcome, InstanceSpec, MachineDefaults, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig } from '../domain/types.ts';
+import { isPlainTarget, type SshAuth } from '../executors/ssh.ts';
+import { hostKeyOffer, isThisMachine, readSshTargets, resolveSshTarget, type ResolvedTarget } from '../machines/index.ts';
 import { applyMachineDefaultsEdit, applyMachineEdit, IN_A_CONTAINER, machineDefaults } from './attached-edit.ts';
 import type { PluginLogger } from './sdk.ts';
 
@@ -15,8 +15,12 @@ export interface AttachedEditOptions {
   sshConfig?: string;
   /** How the hopper authenticates to an ssh target (design.md "Target authentication"). */
   sshAuth?: () => SshAuth;
-  /** A new ssh target's pinned host key and, when it runs herdr, herdr's path; default: resolveSshTarget with `sshAuth`. */
-  resolveTarget?(ssh: string, o: { herdr: boolean }): Promise<ResolvedTarget>;
+  /** A new ssh target's pinned host key (`hostKey`: the one confirmed) and, when it runs herdr, herdr's path; default: resolveSshTarget with `sshAuth`. */
+  resolveTarget?(ssh: string, o: { herdr: boolean; hostKey?: string }): Promise<ResolvedTarget>;
+  /** The host key a new ssh target would be pinned to, for the person to confirm (issue #293); default hostKeyOffer. */
+  hostKeyOffer?(ssh: string): Promise<HostKeyOffer>;
+  /** The hopper's own public ssh key (issue #293), to add to a machine's authorized_keys; absent: none to show. */
+  publicKey?(): string | undefined;
   /** Jobs that need the machine (busy lanes there, panes parked there): a removal is refused while any do. */
   inUse?(name: string): string[];
   /** Jobs not ended that are pinned to the machine (`spec.machineId`): a rename is refused while any are (issue #205). */
@@ -46,7 +50,10 @@ export function createMachinesEditor(o: AttachedEditOptions & {
 }) {
   const sshConfig = o.sshConfig ?? join(homedir(), '.ssh', 'config');
   const noKey = (): SshAuth => { throw new Error('no ssh key on this machine'); };
-  const resolveTarget = o.resolveTarget ?? ((ssh: string, r: { herdr: boolean }) => resolveSshTarget({ target: ssh, herdr: r.herdr, controlDir: join(o.dataDir, 'ssh'), auth: o.sshAuth ?? noKey }));
+  const resolveTarget = o.resolveTarget ?? ((ssh: string, r: { herdr: boolean; hostKey?: string }) => resolveSshTarget({
+    target: ssh, herdr: r.herdr, controlDir: join(o.dataDir, 'ssh'), auth: o.sshAuth ?? noKey, ...(r.hostKey !== undefined ? { hostKey: r.hostKey } : {}),
+  }));
+  const offer = o.hostKeyOffer ?? ((ssh: string) => hostKeyOffer({ target: ssh }));
 
   const localMachine = o.localMachine ?? true;
   // The Machines view asks every 15 s; a target's answer is kept a minute, as ssh -G's is.
@@ -65,11 +72,24 @@ export function createMachinesEditor(o: AttachedEditOptions & {
     const ssh = readSshTargets(sshConfig);
     // In the container no target is this machine: its addresses are the container's, not the computer's.
     const here = localMachine ? (await Promise.all(ssh.targets.map(async (t) => ((await thisMachine(t)) ? [t] : [])))).flat() : [];
+    const publicKey = o.publicKey?.();
     return {
       version: o.version(), ...(error ? { error } : {}), ...(localMachine ? {} : { thisMachineRefused: IN_A_CONTAINER }),
       machines: c.machines.map(({ name, plugin, options }) => ({ name, connection: plugin, ...(options ? { options } : {}) })), executors: c.executors.map((x) => x.name), defaults: machineDefaults(c.machineDefaults),
-      ssh: { ...ssh, here },
+      ssh: { ...ssh, here, ...(publicKey ? { publicKey } : {}) },
     };
+  }
+
+  /** POST /ui/api/machines/host-key (issue #293): the key a detected or typed target would be pinned to; nothing written. */
+  async function hostKey(ssh: string): Promise<HostKeyOfferOutcome> {
+    if (!readSshTargets(sshConfig).targets.includes(ssh) && !isPlainTarget(ssh)) {
+      return { ok: false, code: 'invalid', error: `ssh target ${JSON.stringify(ssh)} is not a Host alias in ~/.ssh/config, nor a plain [user@]host` };
+    }
+    try {
+      return { ok: true, offer: await offer(ssh) };
+    } catch (err) {
+      return { ok: false, code: 'conflict', error: err instanceof Error ? err.message : String(err) };
+    }
   }
 
   async function edit(e: MachineEdit): Promise<MachineEditOutcome> {
@@ -99,5 +119,5 @@ export function createMachinesEditor(o: AttachedEditOptions & {
     return { ok: true, config: await config() };
   }
 
-  return { config, edit, editDefaults };
+  return { config, edit, editDefaults, hostKey };
 }

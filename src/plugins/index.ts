@@ -282,9 +282,8 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
       return notifiersStopped;
     },
     targets,
-    machinesConfig: () => machinesEditor.config(),
-    editMachines: (e) => machinesEditor.edit(e),
-    editMachineDefaults: (e) => machinesEditor.editDefaults(e),
+    machinesConfig: () => machinesEditor.config(), editMachines: (e) => machinesEditor.edit(e),
+    machineHostKey: (ssh) => machinesEditor.hostKey(ssh), editMachineDefaults: (e) => machinesEditor.editDefaults(e),
     reload: enqueue,
     routingRules: () => [...(configured?.routing ?? [])],
     machineIds,

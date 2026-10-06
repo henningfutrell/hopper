@@ -40,7 +40,8 @@ describe('the hopper\'s own ssh key', () => {
     expect(readFileSync(file, 'utf8')).toBe(key.privateKey);
     expect(statSync(file).mode & 0o777).toBe(0o600);
     // A real key: ssh-keygen reads its public half back from the file.
-    expect(execFileSync('ssh-keygen', ['-y', '-f', file], { encoding: 'utf8' }).trim()).toBe(key.publicKey.replace(/ hopper$/, ''));
+    const derived = execFileSync('ssh-keygen', ['-y', '-f', file], { encoding: 'utf8' }).trim().split(' ').slice(0, 2).join(' ');
+    expect(derived).toBe(key.publicKey.split(' ').slice(0, 2).join(' '));
     expect(ensureOwnSshKey({ stored: s.get, store: s.set, dataDir: dir })).toEqual(key);
   });
 
