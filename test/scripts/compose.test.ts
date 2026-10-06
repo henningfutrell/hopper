@@ -131,7 +131,7 @@ describe('the host install keeps its own Postgres file', () => {
 });
 
 describe('the install page', () => {
-  const page = readFileSync(join(ROOT, 'site', 'index.html'), 'utf8');
+  const page = readFileSync(join(ROOT, 'site', 'install.html'), 'utf8');
   const workflow = readFileSync(join(ROOT, '.github', 'workflows', 'pages.yml'), 'utf8');
 
   it('publishes compose.yaml beside install.sh, and again when it changes', () => {
