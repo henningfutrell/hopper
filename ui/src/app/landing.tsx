@@ -1,18 +1,25 @@
-// Logged out, the page is only the landing page (issue #213): the hopper's name and the ways to sign in — a button per GitHub realm (a device code, issue #214), per OIDC or SAML realm (the sign-in config), a username
+// Logged out, the page is only the landing page (issue #213): the hopper's name and the ways to sign in — a button per GitHub realm, per OIDC or SAML realm (the sign-in config), a username
 // and password form while an LDAP realm is on, and continuing without sign-in while `none` is on. The
 // login code is not offered here (issue #247): its device link signs a browser in by itself (main.tsx).
+// GitHub (issues #214, #258): to GitHub and back in this browser when the hopper can (`redirect`, on the
+// sign-in origin), else the device code; the code stays a link away. One centred card over a backdrop
+// in the logo's teal (index.css "landing").
 // Design: design.md "Sign-in: realms", "Reaching
 // the UI across the LAN". Nothing of the app — navigation, views, notices — and no read but the
 // session's until someone signs in (issues #167, #213).
-import { AlertTriangle, LogIn } from 'lucide-react';
+import { AlertTriangle, ArrowRight, KeyRound, LogIn } from 'lucide-react';
 import logo from '../../../site/hopper-logo.svg';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
+import { DeviceCode } from '@/components/device-code';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { beginDeviceSignIn, beginSignIn, pollDeviceSignIn, signInThroughGateway, signInWithPassword, signInWithoutCredential, type DeviceSignIn } from '@/lib/login';
 import type { SessionView } from '@/model/wire';
 import { useHopper } from '@/store';
+
+type Offer = SessionView['signIn'];
+type DeviceRealm = Offer['devices'][number];
 
 /** Ends a JSON sign-in: toast its error, or load the page (the landing page read nothing yet). */
 const finish = (error: string | null) => {
@@ -20,17 +27,24 @@ const finish = (error: string | null) => {
   else location.reload();
 };
 
+/** GitHub's mark (Octicons, MIT): the button says whose sign-in it is at a glance. */
+const GitHubMark = () => (
+  <svg viewBox="0 0 16 16" aria-hidden="true" className="size-[1.15rem] fill-current">
+    <path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.37A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z" />
+  </svg>
+);
+
 function PasswordSignIn() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const submit = async () => { finish(await signInWithPassword(username.trim(), password)); setPassword(''); };
   return (
-    <form className="flex items-center gap-1.5" onSubmit={(e) => { e.preventDefault(); if (username.trim() && password) void submit(); }}>
-      <Input aria-label="Username" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="username"
-        autoComplete="username" className="h-7 w-32 text-xs" />
-      <Input aria-label="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="password"
-        autoComplete="current-password" className="h-7 w-32 text-xs" />
-      <Button type="submit" size="xs" variant="outline" disabled={!username.trim() || !password}><LogIn />Sign in</Button>
+    <form className="flex w-full flex-col gap-2" onSubmit={(e) => { e.preventDefault(); if (username.trim() && password) void submit(); }}>
+      <Input aria-label="Username" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Username"
+        autoComplete="username" className="h-10" />
+      <Input aria-label="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password"
+        autoComplete="current-password" className="h-10" />
+      <Button type="submit" variant="outline" className="h-10 w-full" disabled={!username.trim() || !password}><KeyRound />Sign in</Button>
     </form>
   );
 }
@@ -38,71 +52,131 @@ function PasswordSignIn() {
 const POLL_MS = 2000;
 
 /**
- * Sign in with GitHub (issue #214): the device code through the hopper's app, entered at the
+ * Sign in with GitHub by its device code (issue #214): the code through the hopper's app, entered at the
  * provider; the page follows the sign-in and loads signed in once it is approved. The same sign-in
  * connects the account the person's jobs work through.
  */
-function DeviceSignInButton({ realm }: { realm: { name: string; label: string } }) {
-  const [s, setS] = useState<DeviceSignIn | null>(null);
+function DeviceSignInPanel({ realm, s, onEnd }: { realm: DeviceRealm; s: DeviceSignIn; onEnd: () => void }) {
   useEffect(() => {
-    if (!s) return;
     let live = true;
     const t = setInterval(() => {
       void pollDeviceSignIn(s).then((r) => {
         if (!live || r === null) return;
-        setS(null);
+        onEnd();
         finish(r === '' ? null : r);
       });
     }, POLL_MS);
     return () => { live = false; clearInterval(t); };
-  }, [s]);
-  const start = async () => {
-    const r = await beginDeviceSignIn(realm.name);
-    if ('error' in r) toast.error(r.error); else setS(r);
-  };
-  if (!s) return <Button size="xs" variant="outline" onClick={() => void start()}><LogIn />Sign in with {realm.label}</Button>;
+  }, [s, onEnd]);
   return (
-    <div data-device-sign-in={realm.name} className="w-full space-y-1.5 rounded-md border p-2 text-foreground">
-      <div>Open <a className="underline" href={s.verificationUri} target="_blank" rel="noreferrer">{s.verificationUri}</a>, sign in to {realm.label}, and enter this code:</div>
-      <code data-device-code className="inline-block rounded border px-2 py-1 font-mono text-lg font-semibold tracking-widest select-all">{s.userCode}</code>
-      <div className="text-muted-foreground">waiting for {realm.label} — this page signs you in once the code is approved. It also connects your {realm.label}: your jobs work through it.</div>
+    <DeviceCode data-device-sign-in={realm.name} provider={realm.label} userCode={s.userCode} verificationUri={s.verificationUri}
+      {...(s.expiresAt ? { expiresAt: s.expiresAt } : {})}
+      waiting={<>Waiting for you to approve it</>}
+      note={<>This page signs you in once you do. Signing in with {realm.label} also connects it: your jobs work through it.</>}
+      onCancel={onEnd} />
+  );
+}
+
+/** The big button of a GitHub realm, and the device code when the browser cannot go to GitHub and back. */
+function GitHubSignIn({ realm, origin, onCode }: { realm: DeviceRealm; origin: string; onCode: (s: DeviceSignIn) => void }) {
+  const [busy, setBusy] = useState(false);
+  const redirect = realm.redirect === true && location.origin === origin;
+  const code = async () => {
+    setBusy(true);
+    const r = await beginDeviceSignIn(realm.name);
+    setBusy(false);
+    if ('error' in r) toast.error(r.error); else onCode(r);
+  };
+  return (
+    <div className="flex w-full flex-col items-center gap-1.5">
+      <Button disabled={busy} onClick={() => (redirect ? beginSignIn(realm.name, origin) : void code())}
+        className="h-11 w-full gap-2.5 rounded-xl bg-white text-[0.95rem] font-semibold text-neutral-900 shadow-lg shadow-black/30 hover:bg-white/90">
+        <GitHubMark />Sign in with {realm.label}
+      </Button>
+      {redirect && <Button variant="link" size="sm" className="h-6 text-xs text-muted-foreground" disabled={busy} onClick={() => void code()}>Use a code instead</Button>}
     </div>
   );
 }
 
-/** Every way the sign-in config offers to sign in, as buttons and forms. */
-function SignInOptions({ signIn, lead }: { signIn: SessionView['signIn']; lead: string }) {
-  if (!signIn.password && !signIn.gateway && !signIn.none && signIn.realms.length === 0 && (signIn.devices ?? []).length === 0) {
-    return <>Sign-in with GitHub is not set up on this hopper yet.</>;
+/** A thin rule with a word in it, between groups of ways to sign in. */
+const Or = () => (
+  <div className="flex w-full items-center gap-3 text-[0.7rem] tracking-wider text-muted-foreground/70 uppercase" aria-hidden="true">
+    <span className="h-px flex-1 bg-border" />or<span className="h-px flex-1 bg-border" />
+  </div>
+);
+
+/** Every way the sign-in config offers to sign in, as buttons and forms, in groups. */
+function SignInOptions({ signIn, onCode }: { signIn: Offer; onCode: (realm: DeviceRealm, s: DeviceSignIn) => void }) {
+  const devices = signIn.devices ?? [];
+  if (!signIn.password && !signIn.gateway && !signIn.none && signIn.realms.length === 0 && devices.length === 0) {
+    return <p className="text-sm text-muted-foreground">Sign-in with GitHub is not set up on this hopper yet.</p>;
   }
   const elsewhere = signIn.realms.length > 0 && location.origin !== signIn.origin;
-  return (
-    <>
-      {lead}{elsewhere && <> at <a className="text-foreground underline" href={signIn.origin}>{signIn.origin}</a></>}:
-      {(signIn.devices ?? []).map((p) => <DeviceSignInButton key={p.name} realm={p} />)}
-      {signIn.realms.map((p) => (
-        <Button key={p.name} size="xs" variant="outline" onClick={() => beginSignIn(p.name, signIn.origin)}><LogIn />Sign in with {p.label}</Button>
-      ))}
-      {signIn.gateway && <Button size="xs" variant="outline" onClick={() => void signInThroughGateway().then(finish)}><LogIn />Sign in through the gateway</Button>}
-      {signIn.password && <PasswordSignIn />}
-      {signIn.none && <Button size="xs" variant="outline" onClick={() => void signInWithoutCredential().then(finish)}><LogIn />Continue as {signIn.none}</Button>}
-    </>
-  );
+  const groups: ReactNode[] = [];
+  if (devices.length) groups.push(<div key="github" className="flex w-full flex-col gap-2">{devices.map((p) => <GitHubSignIn key={p.name} realm={p} origin={signIn.origin} onCode={(s) => onCode(p, s)} />)}</div>);
+  const others = [
+    ...signIn.realms.map((p) => (
+      <Button key={p.name} variant="outline" className="h-10 w-full" onClick={() => beginSignIn(p.name, signIn.origin)}><LogIn />Sign in with {p.label}</Button>
+    )),
+    ...(signIn.gateway ? [<Button key="gateway" variant="outline" className="h-10 w-full" onClick={() => void signInThroughGateway().then(finish)}><LogIn />Sign in through the gateway</Button>] : []),
+  ];
+  if (others.length) {
+    groups.push(
+      <div key="others" className="flex w-full flex-col gap-2">
+        {elsewhere && <p className="text-xs text-muted-foreground">Single sign-on works at <a className="text-foreground underline underline-offset-2" href={signIn.origin}>{signIn.origin}</a></p>}
+        {others}
+      </div>,
+    );
+  }
+  if (signIn.password) groups.push(<PasswordSignIn key="password" />);
+  if (signIn.none) {
+    groups.push(<Button key="none" variant="ghost" className="h-10 w-full" onClick={() => void signInWithoutCredential().then(finish)}>Continue as {signIn.none}<ArrowRight /></Button>);
+  }
+  // GitHub first; the rest after one rule, not a rule between each.
+  if (!devices.length || groups.length === 1) return <>{groups}</>;
+  return <>{groups[0]}<Or /><div className="flex w-full flex-col gap-3">{groups.slice(1)}</div></>;
 }
+
+/** The night sky behind the card: index.css "landing". */
+const Backdrop = () => (
+  <div className="landing-backdrop" aria-hidden="true">
+    <div className="landing-aurora a" />
+    <div className="landing-aurora b" />
+    <div className="landing-aurora c" />
+    <div className="landing-grid" />
+    <img src={logo} alt="" className="landing-mark" />
+    <div className="landing-grain" />
+    <div className="landing-vignette" />
+  </div>
+);
 
 /** Logged out: the hopper's name and the ways to sign in, or that the hopper could not be reached. Nothing else. */
 export function Landing() {
   const signIn = useHopper((s) => s.signIn);
+  const [device, setDevice] = useState<{ realm: DeviceRealm; s: DeviceSignIn } | null>(null);
+  const [end] = useState(() => () => setDevice(null));
   return (
-    <div data-slot="landing" className="flex min-h-dvh items-center justify-center p-4">
-      <div className="w-full max-w-xl space-y-4 rounded-lg border p-5">
-        <div className="flex items-center gap-2 font-semibold tracking-tight"><img src={logo} alt="" className="h-8 w-auto" />hopper</div>
-        {signIn ? (
-          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"><SignInOptions signIn={signIn} lead="Sign in" /></div>
-        ) : (
-          <div className="flex items-center gap-2 text-sm text-bad"><AlertTriangle className="size-4" />Could not reach the hopper. Reload the page to try again.</div>
-        )}
+    <main data-slot="landing" className="dark relative isolate flex min-h-dvh items-center justify-center overflow-hidden px-4 py-10 text-foreground">
+      <Backdrop />
+      <div className="relative w-full max-w-sm animate-in duration-500 fade-in-0 zoom-in-95 motion-reduce:animate-none">
+        <div className="relative rounded-2xl border border-white/10 bg-card/70 px-7 pt-9 pb-7 shadow-2xl shadow-black/60 backdrop-blur-xl">
+          <div className="landing-glow" />
+          <div className="mb-7 flex flex-col items-center text-center">
+            <img src={logo} alt="" className="h-16 w-auto drop-shadow-[0_0_24px_rgb(30_202_212/0.45)]" />
+            <h1 className="mt-3 text-3xl font-semibold tracking-tight">hopper</h1>
+            <p className="mt-1.5 text-sm text-muted-foreground">Your GitHub issues, worked on your machines.</p>
+          </div>
+          <div className="flex flex-col items-center gap-4">
+            {!signIn ? (
+              <div className="flex items-center justify-center gap-2 text-center text-sm text-bad"><AlertTriangle className="size-4 shrink-0" />Could not reach the hopper. Reload the page to try again.</div>
+            ) : device ? (
+              <DeviceSignInPanel realm={device.realm} s={device.s} onEnd={end} />
+            ) : (
+              <SignInOptions signIn={signIn} onCode={(realm, s) => setDevice({ realm, s })} />
+            )}
+          </div>
+        </div>
       </div>
-    </div>
+    </main>
   );
 }

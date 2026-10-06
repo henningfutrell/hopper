@@ -10,9 +10,10 @@
 //   POST /ui/auth/device/poll             ← { flow, binding }: waiting, failed, or the session — and the
 //                                           token the provider granted becomes the user's connection
 //   GET  /ui/auth/<name>/start?binding=…  → 302 to the realm's identity provider
-//   GET  /ui/auth/<name>/callback         ← OIDC sends the browser back here
+//   GET  /ui/auth/<name>/callback         ← OIDC, or GitHub by redirect (issue #258), sends the browser back here
 //   POST /ui/auth/<name>/callback         ← SAML posts its response here (assertion consumer service)
-//   POST /ui/auth/complete                ← the callback page: { ticket, binding } → { token, … }
+//   POST /ui/auth/complete                ← the callback page: { ticket, binding } → { token, … } (and a
+//                                           GitHub sign-in's token becomes the user's connection)
 //   GET  /ui/auth/<name>/metadata         → SAML service provider metadata
 import rateLimit from '@fastify/rate-limit';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
@@ -44,23 +45,34 @@ const loginPage = (token: string): string => `<!doctype html><meta charset="utf-
 
 const esc = (s: string): string => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
+/** The look of the landing page (issue #258) for the few pages the daemon writes itself: one card on the night backdrop. */
+const LOOK = `<style>
+html{color-scheme:dark}body{margin:0;min-height:100dvh;display:grid;place-items:center;padding:1rem;box-sizing:border-box;font:14px/1.5 system-ui,sans-serif;color:#f4f4f5;
+background:radial-gradient(60vmax 60vmax at 15% 10%,#1ecad433,transparent 60%),radial-gradient(60vmax 60vmax at 90% 20%,#3b4fd633,transparent 60%),linear-gradient(180deg,#0b1220,#070b14)}
+main{width:100%;max-width:24rem;text-align:center;padding:2rem 1.75rem;border:1px solid #ffffff1a;border-radius:1rem;background:#16161ab3;box-shadow:0 25px 50px -12px #0009}
+h1{font-size:1.1rem;font-weight:600;margin:0 0 .5rem}p{margin:.5rem 0;color:#a1a1aa}a{color:#f4f4f5}
+.spin{width:1.25rem;height:1.25rem;margin:0 auto .75rem;border:2px solid #1ecad455;border-top-color:#1ecad4;border-radius:50%;animation:s .8s linear infinite}
+@keyframes s{to{transform:rotate(1turn)}}@media (prefers-reduced-motion:reduce){.spin{animation:none}}
+</style>`;
+
 /** A plain page saying what happened, with the way back. */
 const page = (title: string, text: string): string => `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width">
-<title>hopper — ${esc(title)}</title>${FAVICON_LINK}<body style="font-family:system-ui,sans-serif;max-width:40rem;margin:3rem auto;padding:0 1rem">
-<h1 style="font-size:1.2rem">${esc(title)}</h1><p>${esc(text)}</p><p><a href="/">Back to hopper</a></p>`;
+<title>hopper — ${esc(title)}</title>${FAVICON_LINK}${LOOK}<main>
+<h1>${esc(title)}</h1><p>${esc(text)}</p><p><a href="/">Back to hopper</a></p></main>`;
 
 /**
  * The callback's answer: post the ticket with this browser's binding (kept in localStorage when the
  * sign-in began), store the session token, go to the UI. Ticket is hex: safe inline.
  */
-const ticketPage = (ticket: string): string => `<!doctype html><meta charset="utf-8"><title>hopper — signing in</title>${FAVICON_LINK}
-<body style="font-family:system-ui,sans-serif"><p id="m">Signing in…</p><script>
+const ticketPage = (ticket: string): string => `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>hopper — signing in</title>${FAVICON_LINK}${LOOK}
+<main><div class="spin" id="s"></div><p id="m">Signing in…</p></main><script>
 (async () => {
   let binding = null;
   try { binding = localStorage.getItem('jh_sign_in'); localStorage.removeItem('jh_sign_in'); } catch (e) {}
   const res = await fetch('/ui/auth/complete', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ticket: '${ticket}', binding: binding || '' }) });
   const out = await res.json().catch(() => ({}));
   if (res.ok) { try { localStorage.setItem('jh_session', out.token); } catch (e) {} location.replace('/'); return; }
+  document.getElementById('s').remove();
   document.getElementById('m').textContent = (out.error || 'Sign-in failed') + '. Start again from the hopper page in this browser.';
 })();
 </script><noscript>JavaScript is needed to keep the UI session.</noscript>`;
@@ -217,7 +229,7 @@ function routes(app: FastifyInstance, o: Parameters<typeof registerSignInRoutes>
     const { ticket, binding } = parseWith(completeBody, req.body);
     const r = signIn.complete(ticket, binding);
     if (!r) return o.refuse(req, reply, 'unknown, used or expired sign-in, or another browser began it');
-    return started(reply, r.who, r.role);
+    return started(reply, r.who, r.role, r.connection);
   });
 
   app.get('/ui/auth/:name/metadata', async (req, reply) => {

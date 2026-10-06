@@ -156,3 +156,72 @@
     font-variant-numeric: tabular-nums;
     }
 }
+/* The signed-out page's backdrop (issue #258): a night sky in the logo's teal — slow aurora light, a
+   dot grid that fades out toward the edges, the logo's silhouette, fine grain and a vignette. Pure CSS,
+   nothing fetched; still for people who ask for less motion. */
+.landing-backdrop {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(120% 80% at 50% 120%, oklch(0.32 0.09 200 / 55%), transparent 60%),
+    linear-gradient(180deg, oklch(0.16 0.03 255), oklch(0.12 0.025 240));
+}
+.landing-aurora {
+  position: absolute;
+  width: 70vmax;
+  height: 70vmax;
+  border-radius: 9999px;
+  filter: blur(90px);
+  opacity: 0.45;
+  mix-blend-mode: screen;
+  will-change: transform;
+}
+.landing-aurora.a { left: -20vmax; top: -30vmax; background: radial-gradient(circle, #1ecad4, transparent 65%); animation: landing-drift-a 28s ease-in-out infinite alternate; }
+.landing-aurora.b { right: -25vmax; top: -10vmax; background: radial-gradient(circle, oklch(0.55 0.2 265), transparent 65%); animation: landing-drift-b 34s ease-in-out infinite alternate; opacity: 0.4; }
+.landing-aurora.c { left: 10vmax; bottom: -45vmax; background: radial-gradient(circle, oklch(0.5 0.2 300), transparent 65%); animation: landing-drift-c 40s ease-in-out infinite alternate; opacity: 0.3; }
+@keyframes landing-drift-a { to { transform: translate3d(12vmax, 8vmax, 0) scale(1.1); } }
+@keyframes landing-drift-b { to { transform: translate3d(-10vmax, 12vmax, 0) scale(0.9); } }
+@keyframes landing-drift-c { to { transform: translate3d(8vmax, -10vmax, 0) scale(1.15); } }
+.landing-grid {
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(oklch(1 0 0 / 14%) 1px, transparent 1.2px);
+  background-size: 26px 26px;
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 45%, black 20%, transparent 75%);
+}
+.landing-mark {
+  position: absolute;
+  right: -6vmin;
+  bottom: -10vmin;
+  height: 78vmin;
+  width: auto;
+  opacity: 0.06;
+  transform: rotate(-12deg);
+  filter: blur(0.5px);
+  pointer-events: none;
+}
+.landing-grain {
+  position: absolute;
+  inset: 0;
+  opacity: 0.07;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.landing-vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at center, transparent 45%, oklch(0.08 0.02 250 / 70%) 100%);
+}
+.landing-glow {
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(160deg, oklch(0.8 0.13 200 / 55%), oklch(1 0 0 / 6%) 40%, oklch(0.6 0.2 290 / 35%));
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .landing-aurora { animation: none; }
+}

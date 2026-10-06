@@ -175,6 +175,8 @@ Sign-in set up at launch (each also NAME_FILE; written to the database at every 
   HOPPER_SIGN_IN_REALM_<NAME>_<SETTING>   its settings: ISSUER, CLIENT_ID, CLIENT_SECRET, ROLES_ADMIN_GROUPS, …
   HOPPER_SIGN_IN_LOCAL_ENABLED            the login code: true or false
   HOPPER_SIGN_IN_NONE_ROLE                no sign-in: viewer, operator, admin or off
+  HOPPER_GITHUB_CLIENT_SECRET             the GitHub App's client secret: Sign in with GitHub goes to GitHub and
+                                          back in the browser on the sign-in origin. Unset: the device code only
 
 Once it runs (default port 4790):
   UI              http://127.0.0.1:4790/        sign in with GitHub: the first person to do so is the admin
@@ -187,8 +189,11 @@ Read on: README.md, docs/deploy.md, docs/sign-in.md, docs/plugins.md.
 
 /** A secret among the settings: also read from a mounted file, `<name>_FILE`. */
 const SECRET_SETTINGS = ['HOPPER_DATABASE_URL'];
-/** Read by the parts, not here (design.md "Target authentication"): the hopper's ssh key and its docker socket. */
-const PART_SETTINGS = ['HOPPER_SSH_KEY', 'HOPPER_SSH_KEY_FILE', 'HOPPER_DOCKER_HOST'];
+/**
+ * Read by the parts, not here (design.md "Target authentication"): the hopper's ssh key and its docker socket;
+ * and the GitHub App's client secret, read by sign-in at each use (issue #258).
+ */
+const PART_SETTINGS = ['HOPPER_SSH_KEY', 'HOPPER_SSH_KEY_FILE', 'HOPPER_DOCKER_HOST', 'HOPPER_GITHUB_CLIENT_SECRET', 'HOPPER_GITHUB_CLIENT_SECRET_FILE'];
 const READ = new Set([...Object.keys(schema.shape), ...SECRET_SETTINGS.map((n) => `${n}_FILE`), ...PART_SETTINGS]);
 
 /**

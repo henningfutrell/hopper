@@ -45,6 +45,14 @@ describe('systemd/hopper.service', () => {
     expect(c.leftoverEnv).toEqual({});
   });
 
+  it('the GitHub App\'s client secret is read by sign-in, never warned about or kept in the config (issue #258)', () => {
+    for (const env of [{ HOPPER_GITHUB_CLIENT_SECRET: 'shh' }, { HOPPER_GITHUB_CLIENT_SECRET_FILE: '/run/creds/gh' }]) {
+      const c = loadConfig({ HOPPER_DATABASE_URL: 'postgres://u:p@db:5432/jh', ...env });
+      expect(c.leftoverEnv).toEqual({});
+      expect(JSON.stringify(c)).not.toContain('shh');
+    }
+  });
+
   it('install.sh writes no part-choosing variable and no sources.yaml', () => {
     const text = readFileSync(INSTALL, 'utf8');
     expect(text).not.toMatch(/HOPPER_(EXECUTORS|HERDR_|CLAUDE_|SOURCES_FILE|GH_BIN|LOCAL_LANES|ANSWER_MODEL|JEV_)/);
