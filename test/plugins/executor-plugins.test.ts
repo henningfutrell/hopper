@@ -124,7 +124,7 @@ describe('command-bearing options carry the mark into JSON Schema (design.md "UI
     ['herdr-claude', herdrClaude, ['bin', 'claudeBin', 'args', 'cwd']],
     ['claude-cli', claudeCli, ['bin', 'sshBin']],
     ['anthropic-api', anthropicApi, ['apiKeyEnv', 'baseUrl']],
-    ['gate-router', gateRouter, ['grokBotJevSrc', 'python', 'claudeBin']],
+    ['gate-router', gateRouter, ['jevPath', 'python']],
   ] as [string, PluginDefinition, string[]][])('%s', (_id, def, marked) => {
     const p = props(def);
     const bearing = Object.keys(p).filter((k) => p[k]!.commandBearing === true).sort();
