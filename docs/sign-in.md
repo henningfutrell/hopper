@@ -762,7 +762,8 @@ are not read: a group rule matches nothing here.
 
 The hopper's GitHub App reaches only the repositories it is **installed** on. After signing in, the
 Sources page lists, for each account it is installed on, the repositories it reaches there, with a link
-to choose them; only where it is installed nowhere does it link to install it.
+to choose them; only where it is installed nowhere does it link to install it. When GitHub cannot say
+where it is installed, Sources says why and links to the app's installations on GitHub — never to install it.
 
 Someone signed in at the edge (SSO, SAML, an auth gateway) connects their GitHub from **Sources → GitHub
 account → Connect GitHub**, the same code at the same address. That account is then linked to their

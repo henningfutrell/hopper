@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- Sources no longer asks you to install the hopper's GitHub app when it may already be installed: if GitHub cannot say where the app is installed, it says why and links to where you can see its installs.
 - The lane timeline now shows when a job is sitting on a question: a hatched strip on its lane from the moment it asked until it is answered.
 - The old built-in user from before GitHub sign-in is gone: everything it held now belongs to you, the admin who signed in with GitHub, and Settings → Users lists only real people.
 - Claude jobs no longer get stuck on Claude's "bypass permissions" warning: yolo is now a switch on each Claude runner, on by default. Turn it off for a runner that should ask before it acts; its questions come to you (or your answering levels), and answering with an option's number or words picks it.

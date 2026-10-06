@@ -34,6 +34,9 @@ export const CLIENT_ID_VARIABLE: Record<ConnectedAccountProvider, string> = { gi
 /** The GitHub App's install page: it reaches only the repositories it is installed on. */
 export const installUrl = (app: HopperApp): string | undefined => (app.slug ? `${app.url}/apps/${app.slug}/installations/new` : undefined);
 
+/** Where a person sees the GitHub App's installations and chooses the repositories each reaches. */
+export const configUrl = (app: HopperApp): string => `${app.url}/settings/installations`;
+
 export function hopperApps(o: { github: { url?: string; clientId?: string; slug?: string } }): HopperApps {
   const url = (o.github.url ?? DEFAULT_URLS.github).replace(/\/+$/, '');
   const slug = o.github.slug ?? SHIPPED_APPS.github.slug;
