@@ -54,7 +54,7 @@ describe('hopper config', () => {
   });
 
   it('refuses an unknown record or command', () => {
-    expect(cli(db(), ['config', 'get', 'plugins.yaml']).err).toMatch(/unknown config record plugins.yaml; one of plugins, rules, sign-in/);
+    expect(cli(db(), ['config', 'get', 'plugins.yaml']).err).toMatch(/unknown config record plugins.yaml; one of plugins, rules, job-rules, sign-in/);
     expect(cli(db(), ['deploy']).code).toBe(2);
   });
 

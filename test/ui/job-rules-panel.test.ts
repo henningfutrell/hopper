@@ -23,6 +23,8 @@ function fakeDaemon(view: typeof VIEW) {
     '/api/machines': { machines: [] },
     '/api/decisions': { decisions: [] },
     '/api/events': { events: [] },
+    '/api/webhooks': { subscriptions: [] },
+    '/api/webhooks/deliveries': { deliveries: [] },
     '/api/questions': { questions: [] },
     '/api/sources': { sources: [] },
     '/api/usage': { readings: [], sources: [], limits: { soft: 0.7, hard: 0.95 }, machines: [] },

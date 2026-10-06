@@ -11,7 +11,7 @@ import { streamQuery } from './sse.ts';
 import { decisionsQuery, eventsQuery } from './state.ts';
 import { SESSION_HEADER } from './ui/guard.ts';
 import {
-  answerBody, connectedAccountsBody, deviceLinkBody, ghLoginBody, queueGateBody, queueOrderBody, machineDefaultsBody, machinesEditBody, pluginStoreBody, pluginsEditBody, realmsEditBody, routingEditBody, rulesBody, updateBody, usersEditBody, webhooksEditBody,
+  answerBody, connectedAccountsBody, deviceLinkBody, ghLoginBody, queueGateBody, queueOrderBody, machineDefaultsBody, machinesEditBody, pluginStoreBody, pluginsEditBody, realmsEditBody, routingEditBody, rulesBody, jobRulesBody, updateBody, usersEditBody, webhooksEditBody,
 } from './ui/index.ts';
 import { completeBody, devicePollBody, deviceStartBody, loginBody, passwordBody, startQuery } from './ui/sign-in.ts';
 import { deliveriesQuery } from './webhooks.ts';
@@ -62,6 +62,8 @@ const OPERATIONS: Operation[] = [
   { method: 'post', path: '/ui/api/queue/order', tag: 'Jobs', summary: 'Order the queue', description: 'The user order: these waiting jobs, first to last, run before every other. A job not yet accepted is accepted; a waiting job ranked before and not named loses its rank.', role: 'operator', body: queueOrderBody, returns: '`{ jobs: Job[] }`', errors: [409] },
   { method: 'post', path: '/ui/api/queue/accept-presort', tag: 'Jobs', summary: 'Accept the pre-sort', description: 'Every waiting job not yet accepted: rejected when the pre-sort rejects it, else accepted, in its order.', role: 'operator', returns: '`{ presort: PreSort }`, as it was applied' },
   { method: 'post', path: '/ui/api/queue-gate', tag: 'Jobs', summary: 'Set the queue gate', description: '`auto-accept`: the pre-sort is applied as jobs arrive, at most `autoAcceptPerHour` an hour (null: no limit). `review`: each job waits for the user.', role: 'admin', body: queueGateBody, returns: '`{ gate: QueueGate }`' },
+  { method: 'get', path: '/api/job-rules', tag: 'Jobs', summary: 'The job rules', description: 'What every job\'s prompt carries before its work tree and the protocol: the saved text, or the default while none is saved (`missing`), with the default and the fixed lines.', returns: '`JobRulesView`' },
+  { method: 'post', path: '/ui/api/job-rules', tag: 'Jobs', summary: 'Replace the job rules', description: '`version` is the one read from GET /api/job-rules. The next job to start gets them.', role: 'admin', body: jobRulesBody, returns: 'the new job rules view', errors: [409] },
   { method: 'get', path: '/api/questions', tag: 'Questions', summary: 'List questions', query: questionsQuery, returns: '`{ questions: Question[] }`' },
   { method: 'get', path: '/api/questions/:id', tag: 'Questions', summary: 'One question, with its escalation trail', returns: '`Question`', errors: [404] },
   { method: 'get', path: '/api/question-gates', tag: 'Questions', summary: 'The rules and the risk rules', returns: '`QuestionGatesView`' },

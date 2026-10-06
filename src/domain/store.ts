@@ -133,9 +133,9 @@ export interface LoginCodeRepository {
 
 /**
  * The config records the store holds (design.md "Config in the database", issue #198): a user's
- * `plugins` and `rules`, and the instance's `sign-in`. No config lives in a file.
+ * `plugins`, `rules` and `job-rules`, and the instance's `sign-in`. No config lives in a file.
  */
-export const USER_CONFIG = ['plugins', 'rules'] as const;
+export const USER_CONFIG = ['plugins', 'rules', 'job-rules'] as const;
 export const INSTANCE_CONFIG = ['sign-in'] as const;
 export const CONFIG_NAMES = [...USER_CONFIG, ...INSTANCE_CONFIG] as const;
 export type UserConfigName = (typeof USER_CONFIG)[number];
@@ -255,7 +255,7 @@ export interface UserStore {
   questions: QuestionRepository;
   settings: UserSettingsRepository;
   connectedAccounts: ConnectedAccountRepository;
-  /** `plugins` and `rules`. */
+  /** `plugins`, `rules` and `job-rules`. */
   config: ConfigRecords<UserConfigName>;
   /** Run fn in one transaction. Re-entrant: a nested tx joins the outer one. Throw = rollback. */
   tx<T>(fn: () => T): T;
