@@ -1,7 +1,7 @@
 // What a test app reads from its database, written before it starts or while it runs: config
-// records (design.md "Config in the database") — owner's plugins and rules, the instance's sign-in —
-// and owner's webhook subscriptions, which are rows (issue #78).
-import type { ConfigName, InstanceStore, UserStore } from '../../src/domain/ports.ts';
+// records (design.md "Config in the database") — owner's plugins and rules, the instance's sign-in with
+// its password accounts (issue #200) — and owner's webhook subscriptions, which are rows (issue #78).
+import type { ConfigName, InstanceStore, StoredSignIn, UserStore } from '../../src/domain/ports.ts';
 import { OWNER_ID } from '../../src/domain/types.ts';
 import { openInstanceStore } from '../../src/store/index.ts';
 import { databaseUrlFor } from './database.ts';
@@ -23,17 +23,20 @@ export function withStores<T>(dbPath: string, fn: (instance: InstanceStore, user
   }
 }
 
-/** Replace a config record in the database of `dbPath` (whatever version it is at): sign-in the instance's, the others owner's. */
+/**
+ * Replace a config record in the database of `dbPath` (whatever version it is at): owner's plugins or
+ * rules, or the instance's sign-in config — a password realm's `users` become its password accounts.
+ */
 export function writeConfig(dbPath: string, name: ConfigName, value: unknown): void {
   withStores(dbPath, (instance, owner) => {
-    if (name === 'sign-in') instance.config.write(name, value, instance.config.version(name));
+    if (name === 'sign-in') instance.signInConfig.write({ version: 1, realms: [], ...(value as object) } as StoredSignIn, instance.signInConfig.version());
     else owner.config.write(name, value, owner.config.version(name));
   });
 }
 
-/** A config record in the database of `dbPath`, or undefined. */
+/** A config record in the database of `dbPath` (sign-in with its password accounts), or undefined. */
 export function readConfig(dbPath: string, name: ConfigName): unknown {
-  return withStores(dbPath, (instance, owner) => (name === 'sign-in' ? instance.config.read(name) : owner.config.read(name)));
+  return withStores(dbPath, (instance, owner) => (name === 'sign-in' ? instance.signInConfig.read() : owner.config.read(name)));
 }
 
 /** Add webhook subscriptions to owner's store in the database of `dbPath`. */

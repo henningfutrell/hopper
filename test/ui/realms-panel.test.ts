@@ -1,9 +1,10 @@
 // @vitest-environment happy-dom
-// Settings → Sign-in (issue #185): the realms in the order sign-in tries and shows them, each on or off,
-// moved up or down, edited as its JSON or removed; a realm added from a starting entry of its type; the
-// login code and no sign-in. Every change posts POST /ui/api/realms with the version it read; a refusal
-// is shown where it was made. A session that is not admin sees none of it. Rendered against a fake of
-// the daemon's HTTP.
+// Settings → Sign-in (issues #185, #200): the realms in the order sign-in tries and shows them, each on
+// or off, moved up or down, edited in a form of its own fields or removed; a realm added from the form
+// of the chosen type; a password realm's accounts — username, role, the user each signs in as — added,
+// changed and given a new password; the login code and no sign-in. No YAML anywhere. Every change posts
+// POST /ui/api/realms with the version it read; a refusal is shown where it was made. A session that is
+// not admin sees none of it. Rendered against a fake of the daemon's HTTP.
 import { createElement } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -15,8 +16,11 @@ let refuse: string | undefined;
 const VIEW = {
   version: 'v1', local: true, none: null, origin: 'http://localhost:4790',
   realms: [
-    { name: 'staff', label: 'Staff', type: 'password', enabled: true, entry: JSON.stringify({ name: 'staff', label: 'Staff', type: 'password', users: [] }, null, 2) },
-    { name: 'corp', label: 'Corp SSO', type: 'oidc', enabled: false, entry: JSON.stringify({ name: 'corp', label: 'Corp SSO', type: 'oidc', issuer: 'https://idp.example.com', clientId: 'c', enabled: false }, null, 2), callback: 'http://localhost:4790/ui/auth/corp/callback' },
+    { name: 'staff', label: 'Staff', type: 'password', enabled: true, settings: {}, accounts: [{ username: 'ada', role: 'viewer', user: { id: 'owner', name: 'owner' } }] },
+    {
+      name: 'corp', label: 'Corp SSO', type: 'oidc', enabled: false, callback: 'http://localhost:4790/ui/auth/corp/callback',
+      settings: { issuer: 'https://idp.example.com', clientId: 'c', roles: { admin: { emails: ['a@example.com'] }, defaultRole: 'viewer' } },
+    },
   ],
 };
 
@@ -24,6 +28,7 @@ function fakeDaemon() {
   return vi.fn(async (input: string, init: RequestInit = {}) => {
     const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
     if (String(input) === '/api/realms') return json(VIEW);
+    if (String(input) === '/api/users') return json({ users: [{ id: 'owner', name: 'owner', createdAt: '2026-10-01T00:00:00.000Z' }, { id: 'bea', name: 'Bea', createdAt: '2026-10-02T00:00:00.000Z' }] });
     if (String(input) === '/ui/api/realms') {
       posts.push(JSON.parse(String(init.body)) as Record<string, unknown>);
       return refuse ? json({ error: refuse }, 400) : json({ ...VIEW, version: 'v2' });
@@ -55,8 +60,9 @@ const row = (name: string) => document.querySelector<HTMLElement>(`[data-realm="
 const rows = () => [...document.querySelectorAll<HTMLElement>('[data-realm]')].map((e) => e.dataset.realm);
 const buttonIn = (el: ParentNode, label: string) => [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent?.trim() === label || b.getAttribute('aria-label') === label);
 const click = async (b: HTMLElement | undefined) => { expect(b).toBeDefined(); await act(async () => { b!.click(); }); };
-function type(el: HTMLTextAreaElement | HTMLSelectElement, value: string) {
-  const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLSelectElement.prototype;
+const field = (label: string) => document.querySelector<HTMLInputElement & HTMLSelectElement & HTMLTextAreaElement>(`[aria-label="${label}"]`)!;
+function type(el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement, value: string) {
+  const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : el instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
   Object.getOwnPropertyDescriptor(proto, 'value')!.set!.call(el, value);
   el.dispatchEvent(new Event(el instanceof HTMLSelectElement ? 'change' : 'input', { bubbles: true }));
 }
@@ -87,29 +93,69 @@ describe('Settings: Sign-in', () => {
     await vi.waitFor(() => expect(posts).toContainEqual({ action: 'move', name: 'corp', to: 0, version: 'v2' }));
   });
 
-  it('adds a realm from a starting entry of the chosen type', async () => {
+  it('adds a realm from the fields of the chosen type: no YAML', async () => {
     await render('admin');
     await vi.waitFor(() => expect(rows()).toHaveLength(2));
     await click(buttonIn(document, 'Add realm'));
-    await act(async () => type(document.querySelector<HTMLSelectElement>('select[aria-label="Realm type"]')!, 'ldap'));
-    const editor = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Realm"]')!;
-    expect(JSON.parse(editor.value)).toMatchObject({ type: 'ldap' });
-    const entry = JSON.stringify({ name: 'dir', type: 'ldap', url: 'ldaps://ldap.example.com', userBase: 'dc=example,dc=com' }, null, 2);
-    await act(async () => type(editor, entry));
+    await act(async () => type(field('Realm type'), 'ldap'));
+    expect(document.querySelector('textarea[aria-label="Realm"]')).toBeNull();
+    await act(async () => type(field('Name'), 'dir'));
+    await act(async () => type(field('Label'), 'Directory'));
+    await act(async () => type(field('Directory URL'), 'ldaps://ldap.example.com'));
+    await act(async () => type(field('User base'), 'dc=example,dc=com'));
+    await act(async () => type(field('Group attribute'), 'memberOf'));
     await click(buttonIn(document, 'Save'));
-    await vi.waitFor(() => expect(posts).toContainEqual({ action: 'save', entry, version: 'v1' }));
+    await vi.waitFor(() => expect(posts).toContainEqual({
+      action: 'save', version: 'v1',
+      realm: { name: 'dir', label: 'Directory', type: 'ldap', url: 'ldaps://ldap.example.com', userBase: 'dc=example,dc=com', attributes: { groups: 'memberOf' } },
+    }));
   });
 
-  it('edits a realm as its JSON; a refusal is shown in place', async () => {
+  it('edits a realm in its form, its role rules with it; a refusal is shown in place', async () => {
     await render('admin');
     await vi.waitFor(() => expect(rows()).toHaveLength(2));
-    await click(buttonIn(row('staff'), 'Edit'));
-    const editor = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Realm"]')!;
-    expect(editor.value).toBe(VIEW.realms[0]!.entry);
-    refuse = 'invalid sign-in config: realms.0.users.0.passwordHash: must be an argon2id hash';
+    await click(buttonIn(row('corp'), 'Edit'));
+    expect(field('Issuer URL').value).toBe('https://idp.example.com');
+    expect(field('Default role').value).toBe('viewer');
+    expect(field('Rule 1 values').value).toBe('a@example.com');
+    await act(async () => type(field('Client ID'), 'hopper'));
+    await act(async () => type(field('Client secret variable'), 'SSO_SECRET'));
+    refuse = 'invalid sign-in config: realms.1.clientSecretEnv: environment variable SSO_SECRET is not set';
     await click(buttonIn(document, 'Save'));
-    await vi.waitFor(() => expect(posts).toContainEqual({ action: 'save', name: 'staff', entry: VIEW.realms[0]!.entry, version: 'v1' }));
-    await vi.waitFor(() => expect(document.querySelector('[role="alert"]')?.textContent).toContain('must be an argon2id hash'));
+    await vi.waitFor(() => expect(posts).toContainEqual({
+      action: 'save', name: 'corp', version: 'v1',
+      realm: { name: 'corp', label: 'Corp SSO', type: 'oidc', issuer: 'https://idp.example.com', clientId: 'hopper', clientSecretEnv: 'SSO_SECRET', roles: { admin: { emails: ['a@example.com'] }, defaultRole: 'viewer' } },
+    }));
+    await vi.waitFor(() => expect(document.querySelector('[role="alert"]')?.textContent).toContain('SSO_SECRET is not set'));
+  });
+
+  it('a password realm lists its accounts and adds one, with its password, role and user', async () => {
+    await render('admin');
+    await vi.waitFor(() => expect(rows()).toHaveLength(2));
+    const ada = document.querySelector<HTMLElement>('[data-account="ada"]')!;
+    expect(ada.textContent).toContain('ada');
+    expect(ada.textContent).toContain('owner');
+    expect(ada.querySelector<HTMLSelectElement>('select[aria-label="ada role"]')!.value).toBe('viewer');
+    await act(async () => type(ada.querySelector<HTMLSelectElement>('select[aria-label="ada role"]')!, 'operator'));
+    await vi.waitFor(() => expect(posts).toContainEqual({ action: 'account', realm: 'staff', username: 'ada', role: 'operator', version: 'v1' }));
+    await click(buttonIn(row('staff'), 'Add account'));
+    await act(async () => type(field('Username'), 'bea'));
+    await act(async () => type(field('Password'), 'correct horse'));
+    await act(async () => type(field('Role'), 'admin'));
+    await vi.waitFor(() => expect(field('Signs in as').querySelectorAll('option').length).toBe(3));
+    await act(async () => type(field('Signs in as'), 'bea'));
+    await click(buttonIn(row('staff'), 'Add'));
+    await vi.waitFor(() => expect(posts).toContainEqual({ action: 'account', realm: 'staff', username: 'bea', password: 'correct horse', role: 'admin', user: 'bea', version: 'v2' }));
+  });
+
+  it('gives an account a new password', async () => {
+    await render('admin');
+    await vi.waitFor(() => expect(rows()).toHaveLength(2));
+    const ada = document.querySelector<HTMLElement>('[data-account="ada"]')!;
+    await click(buttonIn(ada, 'New password'));
+    await act(async () => type(field('New password for ada'), 'battery staple'));
+    await click(buttonIn(ada, 'Set'));
+    await vi.waitFor(() => expect(posts).toContainEqual({ action: 'account', realm: 'staff', username: 'ada', role: 'viewer', password: 'battery staple', version: 'v1' }));
   });
 
   it('a session that is not admin sees no realms', async () => {
