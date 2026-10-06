@@ -87,7 +87,9 @@ describe('Settings: Sign-in', () => {
     await render('admin');
     await vi.waitFor(() => expect(rows()).toEqual(['staff', 'corp']));
     expect(row('staff').textContent).toContain('Staff');
-    expect(row('staff').textContent).toContain('saml');
+    expect(row('staff').textContent).toContain('SAML');
+    expect(row('staff').textContent).toContain('On');
+    expect(row('corp').textContent).toContain('Off');
     expect(row('staff').querySelector('[role="switch"]')!.getAttribute('aria-checked')).toBe('true');
     expect(row('corp').querySelector('[role="switch"]')!.getAttribute('aria-checked')).toBe('false');
     expect(row('corp').textContent).toContain('http://localhost:4790/ui/auth/corp/callback');

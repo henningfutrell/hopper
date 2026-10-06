@@ -43,22 +43,33 @@ Sign-in is not a file. Everything about it — the realms, their settings, the l
 sign-in — is kept in the daemon's database and changed in **Settings → Sign-in**,
 by an admin. Every setting is a field of a form; nothing is written as YAML or JSON.
 
-The page lists the realms in order, each with its type, a switch to turn it on or off, and — for
-OIDC and SAML — the callback URL (and SAML metadata URL) to register with the identity
-provider, ready to copy. A new hopper starts with one realm, **GitHub** ([GitHub](#github)): the first
-person to sign in with it becomes admin. There is [no bootstrap login](#no-bootstrap-login): a new
-hopper holds no user until someone signs in.
+The page is laid out the way sign-in works (issue #256), in four parts. Every switch says **On** or
+**Off** in words beside it.
 
-- **Add realm**: pick a type, fill in its fields (every one: [Realm settings](#realm-settings)) and
+1. **GitHub**: people sign in with GitHub through the hopper's app ([GitHub](#github)), and signing in
+   also connects the GitHub their jobs work through. The page names the admin — the user the first
+   person to sign in with GitHub signs in as — or, before anyone has, says the first who does becomes
+   admin. The GitHub realm's row has its switch, and says who else gets in by its role rules and what
+   anyone else gets. A new hopper starts with this realm; there is [no bootstrap login](#no-bootstrap-login):
+   a new hopper holds no user until someone signs in. Removed, the part offers **Add GitHub sign-in**.
+2. **Other ways to sign in**: optional — a directory (LDAP or Active Directory), an identity provider
+   (OpenID Connect or SAML), or an auth gateway in front of the hopper. Each row has its type, its
+   switch, who gets in, and — for OIDC and SAML — the callback URL (and SAML metadata URL) to register
+   with the identity provider, ready to copy. None: GitHub is the only way to sign in.
+3. **Device links**: the login code on or off. On, someone signed in can open the hopper on another
+   device by a one-time link or QR code, and an admin can give a new user a link that signs them in.
+   Off, neither works.
+4. **No sign-in**: off, or the role anyone who reaches the hopper gets ([No sign-in](#no-sign-in)).
+
+- **Add realm** (in Other ways to sign in): pick a type, fill in its fields (every one: [Realm settings](#realm-settings)) and
   **Save**. A field left empty takes its default, shown greyed in the field.
-- **Edit** (pencil): the same form, filled in. The name stays: sign-ins are linked to users by it,
+- **Edit** (pencil): the same form, filled in — for GitHub, its label and role rules. The name stays: sign-ins are linked to users by it,
   and the identity provider holds it in the callback URL. To rename, remove the realm and add a new one.
-- **Move up / down**: the order. The username and password form tries the LDAP realms that are on in
-  this order, and the first that accepts the password signs in. The GitHub, OIDC and
-  SAML realms that are on are sign-in buttons, in this order.
+- **Move up / down**: the order among the other ways. The username and password form tries the LDAP realms that are on in
+  this order, and the first that accepts the password signs in. The OIDC and
+  SAML realms that are on are sign-in buttons, in this order, after GitHub's.
 - **On / off**: a realm that is off signs nobody in, and the sessions it made end at once. Its secret
   need not be set while it is off.
-- **Without a realm**: the login code on or off, and no sign-in with its role.
 
 A change **works at once**, without a restart: the sign-in page follows it, and sessions follow it as
 they would at a restart (a realm off or removed, or an account no rule lets in any more, loses its

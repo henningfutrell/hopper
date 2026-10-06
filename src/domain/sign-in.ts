@@ -83,11 +83,13 @@ export interface RealmView {
   metadata?: string;
 }
 
-/** GET /api/realms (admin): the realms in order, the login code and no sign-in, at `version`. */
+/** GET /api/realms (admin): the realms in order, the first GitHub admin, the login code and no sign-in, at `version`. */
 export interface RealmsView {
   version: string;
   local: boolean;
   none: UiRole | null;
+  /** The first person to sign in with GitHub (issue #239): their realm, and the user they sign in as. null: nobody yet. */
+  githubAdmin: { realm: string; user?: string } | null;
   /** The sign-in origin the callbacks are on. */
   origin: string;
   realms: RealmView[];
