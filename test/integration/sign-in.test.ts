@@ -12,10 +12,10 @@ const oidc = (o?: Parameters<typeof oidcIdp>[1]) => oidcIdp(h, o);
 // Issue #183: every page the daemon serves shows the app's icon.
 const ICON = '<link rel="icon" type="image/svg+xml" href="/favicon.svg">';
 
-describe('no sign-in config: local sign-in only', () => {
-  it('the session view offers the login code and no realms', async () => {
+describe('a fresh hopper: the login code and the password fallback', () => {
+  it('the session view offers the login code, the password form and no redirect realms', async () => {
     const { app, origin } = await start(undefined);
-    expect(await session(app)).toEqual({ authenticated: false, viewing: { id: 'owner', name: 'owner' }, signIn: { local: true, none: null, password: false, gateway: false, origin, realms: [], required: false } });
+    expect(await session(app)).toEqual({ authenticated: false, viewing: { id: 'owner', name: 'owner' }, signIn: { local: true, none: null, password: true, gateway: false, origin, realms: [], required: false } });
   });
 
   it('the login code signs in as admin, provider local', async () => {

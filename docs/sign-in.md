@@ -42,7 +42,8 @@ by an admin. Every setting is a field of a form; nothing is written as YAML or J
 
 The page lists the realms in order, each with its type, a switch to turn it on or off, and — for
 OIDC, GitHub and SAML — the callback URL (and SAML metadata URL) to register with the identity
-provider, ready to copy. A new hopper starts with one realm, **Password**, with no accounts.
+provider, ready to copy. A new hopper starts with one realm, **Password**, holding one account,
+**admin**: the [password fallback](#password-fallback).
 
 - **Add realm**: pick a type, fill in its fields (every one: [Realm settings](#realm-settings)) and
   **Save**. A field left empty takes its default, shown greyed in the field.
@@ -175,8 +176,30 @@ The hopper keeps only an **argon2id hash** of each password, never the password.
 unique within the realm, case ignored. The user an account signs in as is fixed once it has signed
 in; to change it, remove the account and add it again. A wrong password, an unknown username and an
 empty password get the same 403, and an unknown username costs the same time as a wrong password.
-A password realm with no account offers no username and password form. The form works on every UI
-origin (loopback, a LAN name, the public URL).
+A password realm with no account is not tried. The form works on every UI origin (loopback, a LAN
+name, the public URL).
+
+### Password fallback
+
+Password sign-in is the fallback, so it always exists: the sign-in config always holds an **admin
+account in a password realm that is on**, and the username and password form is always offered.
+Nobody depends on a login code or an already signed-in browser to get in.
+
+- **At start**, when there is no such account — a new hopper, or a sign-in config changed with
+  `hopper config … sign-in` — the hopper adds the account `admin` (or `admin-2`, … when taken) to the
+  first password realm, turning it on, or to a new realm **Password** when there is none. The account
+  signs in as `owner`, role admin. Its password is random and is shown **only once**, in the start
+  lines (`journalctl --user -u hopper`, or the container's log):
+
+  ```
+  hopper: password fallback: no admin account signs in with a password; added account admin to realm password, password <random> (shown only this once: sign in with it and change it in Settings → Sign-in)
+  ```
+
+  Only its argon2id hash is kept. Sign in with it and give it a new password (key) at once. Lost
+  before that: sign in with a login code (`hopper login-code`) and give it a new password there.
+- **In Settings → Sign-in**, a change that would leave none — turning off or removing the last such
+  realm, removing or demoting the last admin account in one — is refused (409). Add another admin
+  account first.
 
 **Rate limit.** Every sign-in route (`/ui/login`, `/ui/auth/…`) together accepts 20 attempts a
 minute per client address; past that, 429 until the minute is over. Behind a reverse proxy every

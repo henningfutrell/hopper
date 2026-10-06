@@ -112,7 +112,6 @@ describe('the username and password form tries the realms in order', () => {
 
   it('a realm that is off is skipped', async () => {
     const o = await startWithAuth(h, { version: 1, realms: [dir({ enabled: false })] });
-    expect((await session(o.app)).signIn.password).toBe(false);
     expect((await signIn(o, 'fry', 'fry')).status).toBe(403);
   });
 });

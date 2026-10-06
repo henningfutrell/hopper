@@ -5,9 +5,10 @@
 // with its secrets before it is stored — settings that would not load are refused, naming the field —
 // then written against the version read, applied to sign-in at once, and applied to the stored sessions
 // as a start would. A change that would leave the acting session without admin is refused: nobody
-// locks themselves out from the UI.
+// locks themselves out from the UI. So is one that would leave no admin account in a password realm
+// that is on: password sign-in is the fallback (issue #219).
 import type { FastifyInstance } from 'fastify';
-import { accountOf, AuthEditError, editSignIn, hashPassword, loadSignInConfig, realmsView, roleIn, type SignIn, type SignInEdit } from '../auth/index.ts';
+import { accountOf, AuthEditError, editSignIn, hashPassword, hasPasswordFallback, loadSignInConfig, realmsView, roleIn, type SignIn, type SignInEdit } from '../auth/index.ts';
 import type { InstanceStore } from '../domain/store.ts';
 import { roleAllows, type Identity, type RealmsEdit, type RealmsView } from '../domain/types.ts';
 import { HttpError } from './errors.ts';
@@ -16,7 +17,7 @@ import type { UiSessions } from './ui/sessions.ts';
 
 export interface RealmsAdmin {
   view(): RealmsView;
-  /** Make `edit` as `actor`; throws HttpError (400 invalid, 404 no such realm or account, 409 moved or a lockout). */
+  /** Make `edit` as `actor`; throws HttpError (400 invalid, 404 no such realm or account, 409 moved, a lockout, or no password fallback). */
   edit(edit: RealmsEdit, actor: Identity): Promise<RealmsView>;
 }
 
@@ -86,6 +87,10 @@ export function createRealmsAdmin(o: {
       const role = roleIn(config, actor);
       if (role === null || !roleAllows(role, 'admin')) {
         throw new HttpError(409, `this change would end your own admin session (${actor.realm}): sign in as an admin another way first, or change it with hopper config set sign-in`);
+      }
+      // Issue #219: password sign-in is the fallback, never left without an account to sign in with.
+      if (!hasPasswordFallback(next)) {
+        throw new HttpError(409, 'password sign-in is the fallback: keep an admin account in a password realm that is on (add another admin account first)');
       }
       o.instance.tx(() => {
         if (!store.write(next, version)) throw new HttpError(409, MOVED);

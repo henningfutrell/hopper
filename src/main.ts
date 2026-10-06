@@ -2,6 +2,7 @@
 // sign-in config → plugin store → one user runtime per user (src/users/: the plugins config, plugin host, engine,
 // sources, questions, webhooks, notifiers) → updater → server. Adapters are built by their plugins,
 // through each user's host (integration tests call startApp, with doubles at the seams).
+import { randomBytes } from 'node:crypto';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,7 +11,7 @@ import type { User } from './domain/types.ts';
 import { daemonHelp, loadConfig, type Config } from './config.ts';
 import { logStartup } from './startup-log.ts';
 import { createServer } from './http/index.ts';
-import { createSignIn, loadSignInConfig, type AuthConfig } from './auth/index.ts';
+import { createSignIn, hashPassword, loadSignInConfig, withPasswordFallback, type AuthConfig } from './auth/index.ts';
 import { readRelease } from './client/release.ts';
 import { BUILTIN_PLUGINS } from './plugins/builtin.ts';
 import { createPluginStore, installedDirOf } from './plugins/plugin-store.ts';
@@ -78,6 +79,23 @@ function seamsOf(seams: AppSeams, userId: string): UserSeams {
   return { ...shared, ...perUser?.(userId) };
 }
 
+/**
+ * Password sign-in is the fallback (issue #219): a sign-in config without an admin account in a password
+ * realm that is on gets one, signing in as owner, with a random password shown once, here; only its
+ * hash is stored.
+ */
+async function ensurePasswordFallback(instance: InstanceStore): Promise<void> {
+  const version = instance.signInConfig.version();
+  const password = randomBytes(18).toString('base64url');
+  const added = withPasswordFallback(instance.signInConfig.read(), await hashPassword(password));
+  if (!added) return;
+  instance.tx(() => {
+    if (!instance.signInConfig.write(added.next, version)) throw new Error('the sign-in config changed while the password fallback was added: start again');
+    instance.identities.replace(added.realm, added.username, instance.users.owner().id);
+  });
+  console.warn(`hopper: password fallback: no admin account signs in with a password; added account ${added.username} to realm ${added.realm}, password ${password} (shown only this once: sign in with it and change it in Settings → Sign-in)`);
+}
+
 export async function startApp(config: Config, seams: AppSeams = {}): Promise<App> {
   const clock = { now: () => new Date() };
   const logger = { info: (l: string) => console.log(l), warn: (l: string) => console.warn(l) };
@@ -89,6 +107,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   // Before anything starts: an invalid sign-in config stops the daemon (sign-in fails closed).
   let auth: AuthConfig;
   try {
+    await ensurePasswordFallback(instance);
     auth = loadSignInConfig(instance.signInConfig.read(), secret);
   } catch (e) {
     instance.close();

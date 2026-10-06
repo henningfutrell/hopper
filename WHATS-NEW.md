@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- You can always sign in with a username and password: a new hopper starts with an admin account whose first password is shown once when it starts, and Settings will not let the last admin password account be removed or turned off.
 - The hopper can sit behind a sign-in gateway that already signs people in: it checks the gateway's token and opens without asking anyone to sign in again.
 - Escalation levels are named as levels, not after a model: the two that came with the hopper are now "level-1" and "level-2", whatever model each uses. The model a level uses is shown only as its model. A level can no longer be given a model's name.
 - A machine can be edited after it is added: change its name, its ssh target, its herdr session and every other detail from its Edit button on the Machines page. A new name is refused while a job runs there or waits for it.
