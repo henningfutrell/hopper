@@ -1,5 +1,6 @@
-// The Sources view's GitHub section (issue #160): gh and the GitHub App are two connections to one
-// GitHub, and the view says which one reads issues, why the other is paused, and orders them so.
+// The Sources view's GitHub section (issue #160): the connected GitHub account (issue #214), gh and the
+// GitHub App are three ways to one GitHub, and the view says which one reads issues, why the others
+// are paused, and orders them so.
 import { describe, expect, it } from 'vitest';
 import { sourcesView } from '../../ui/src/model/sources.ts';
 import type { SourceStatus } from '../../ui/src/model/wire.ts';
@@ -8,6 +9,9 @@ const source = (name: string, kind: string, state: SourceStatus['state'], detail
   ({ name, kind, state, itemsSeen: 0, jobsCreated: 0, activeJobs: 0, detail });
 const gh = (state: SourceStatus['state'] = 'ok', paused?: string) => source('github', 'github', state, { mode: 'gh', ...(paused ? { paused } : {}) });
 const app = (state: SourceStatus['state'] = 'ok', paused?: string) => source('github-app', 'github-app', state, { mode: 'app', ...(paused ? { paused } : {}) });
+const account = (kind: 'github-account', login?: string) => source(kind, kind, login ? 'ok' : 'disabled', {
+  mode: 'account', ...(login ? { login } : { paused: 'GitHub is not connected: Sources → Connect GitHub' }),
+});
 
 describe('sourcesView', () => {
   it('a GitHub App in use comes first; gh is paused because of it', () => {
@@ -39,6 +43,20 @@ describe('sourcesView', () => {
     expect(sourcesView([gh(), app()]).summary).toBe('Issues are read through both gh and the GitHub App.');
     expect(sourcesView([gh('disabled'), app('ok', 'no GitHub App configured')]).summary).toBe('No GitHub connection is reading issues.');
     expect(sourcesView([]).summary).toBe('No GitHub connection is configured.');
+  });
+
+  it('a connected GitHub account reads issues and comes first; gh is paused because of it (#214)', () => {
+    const v = sourcesView([gh('disabled', 'GitHub account connected'), app('ok', 'no GitHub App configured'), account('github-account', 'octo-user')]);
+    expect(v.github.map((c) => [c.source.name, c.via, c.use])).toEqual([['github-account', 'account', 'in-use'], ['github', 'gh', 'paused'], ['github-app', 'app', 'paused']]);
+    expect(v.github[1]!.why).toBe('a GitHub account is connected, so issues are read through it instead');
+    expect(v.summary).toBe('Issues are read through the connected GitHub account, octo-user. gh is paused while it is connected.');
+  });
+
+  it('a GitHub account not connected says so, and how (#214)', () => {
+    const v = sourcesView([account('github-account'), gh()]);
+    expect(v.github.map((c) => [c.source.name, c.use, c.why])).toEqual([['github', 'in-use', undefined], ['github-account', 'paused', 'not connected: Connect GitHub above']]);
+    expect(v.summary).toBe('Issues are read through gh, as the logged-in GitHub user. Connect a GitHub account to read its issues instead.');
+    expect(sourcesView([account('github-account')]).summary).toBe('No GitHub connection is reading issues: connect GitHub above.');
   });
 
   it('other sources stay out of the GitHub section', () => {

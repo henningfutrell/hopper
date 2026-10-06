@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { loadConfig } from '../../src/config.ts';
+import { SHIPPED_APPS } from '../../src/connected-accounts/hopper-app.ts';
 
 const DB = { HOPPER_DATABASE_URL: 'postgres://u:p@db:5432/jh' };
 
@@ -57,6 +58,13 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
       lanPeers: [],
       updateCheckMs: 60000,
       leftoverEnv: {},
+      // The hopper's app (issue #214): its GitHub App on github.com.
+      hopperApps: {
+        github: {
+          provider: 'github', url: 'https://github.com', apiUrl: 'https://api.github.com', clientId: SHIPPED_APPS.github.clientId,
+          ...(SHIPPED_APPS.github.slug ? { slug: SHIPPED_APPS.github.slug } : {}),
+        },
+      },
     });
   });
 
@@ -70,6 +78,7 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
       HOPPER_UI_SESSION_HOURS: '1.5', HOPPER_PLUGIN_DIR: '/srv/p', HOPPER_PUBLIC_URL: 'https://Hopper.Example.com/',
       HOPPER_LAN_NAMES: ' Server , 192.0.2.29', HOPPER_LAN_PEERS: '192.0.2.0/24, 100.64.0.0/10',
       HOPPER_UPDATE_CHECK_MS: '0', HOPPER_RESTART: 'respawn',
+      HOPPER_GITHUB_URL: 'https://github.example.com/', HOPPER_GITHUB_CLIENT_ID: 'gh-id', HOPPER_GITHUB_APP_SLUG: 'hopper-x',
     });
     expect(c).toEqual({
       host: '::', port: 0, databaseUrl: 'postgres://jh:pw@db:5432/jh', workDir: '/var/tmp/jh', tickMs: 50,
@@ -77,6 +86,9 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
       humanRenotifyMs: 10, humanTimeoutMs: 20, resumeBoost: 7, maxQuestions: 1, keepPanes: true, localMachine: false,
       uiSessionHours: 1.5, pluginDir: '/srv/p', publicUrl: 'https://hopper.example.com',
       lanNames: ['server', '192.0.2.29'], lanPeers: ['192.0.2.0/24', '100.64.0.0/10'], updateCheckMs: 0, restart: 'respawn', leftoverEnv: {},
+      hopperApps: {
+        github: { provider: 'github', url: 'https://github.example.com', apiUrl: 'https://github.example.com/api/v3', clientId: 'gh-id', slug: 'hopper-x' },
+      },
     });
   });
 

@@ -61,7 +61,7 @@ describe('GitHub source discover', () => {
     gh.createIssue({ repo: 'someone/b', labels: ['hopper'] });
     const items = await source.discover();
     expect(items.map((i) => i.repo)).toEqual(['owner/a']);
-    expect(gh.calls.find((c) => c.method === 'searchOpenIssues')?.args).toEqual([{ owners: ['owner'], label: 'hopper' }]);
+    expect(gh.calls.find((c) => c.method === 'searchOpenIssues')?.args).toEqual([{ owners: ['owner'], label: 'hopper', authors: ['owner'] }]);
     expect(source.describe()).toMatchObject({ owners: ['owner'], repos: [], authors: ['owner'], label: 'hopper' });
   });
 

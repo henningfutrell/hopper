@@ -17,11 +17,11 @@ describe('ensurePluginsConfig', () => {
     expect(ensurePluginsConfig({ config, answerTimeoutMs: 1000, logger })).toEqual({ action: 'kept' });
   });
 
-  it('a fresh install takes jobs through the gh CLI; the App source waits for an App of its own (#108)', () => {
+  it('a fresh install reads the GitHub each user signs in with or connects; gh stays the other way in, and the app-as-itself source is an admin\'s to add (#108, #214)', () => {
     const { jobSources } = builtinInstances(1000);
     expect(jobSources).toEqual([
+      { name: 'github-account', plugin: 'github-account' },
       { name: 'github', plugin: 'github-gh', options: { enabled: 'auto' } },
-      { name: 'github-app', plugin: 'github-app' },
     ]);
   });
 

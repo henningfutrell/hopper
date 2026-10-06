@@ -31,13 +31,14 @@ async function withCorp(role: string) {
 describe('GET /api/realms', () => {
   it('an admin reads every realm, in order, with its settings, never a secret, and the version', async () => {
     const idp = await oidcIdp(h);
-    const o = await startWithAuth(h, { version: 1, realms: [oidcRealm(idp, {}), { name: 'gh', type: 'github', clientId: 'g', clientSecret: 'gh-secret', enabled: false }] });
+    const o = await startWithAuth(h, { version: 1, realms: [oidcRealm(idp, {}), { name: 'gh', type: 'github', enabled: false }] });
     const v = await realms(o.app, await o.app.login());
     expect(v).toMatchObject({ local: true, none: null, origin: o.origin, version: expect.any(String) });
     expect(v.realms.map((r: { name: string; type: string; enabled: boolean }) => [r.name, r.type, r.enabled])).toEqual([['corp', 'oidc', true], ['gh', 'github', false]]);
-    expect(v.realms[1].settings).toEqual({ clientId: 'g' });
-    expect(v.realms[1].secrets).toEqual(['clientSecret']);
-    expect(v.realms[1].callback).toBe(`${o.origin}/ui/auth/gh/callback`);
+    // A GitHub realm signs in through the hopper's app (issue #214): no settings of an app, no secret, no callback.
+    expect(v.realms[1].settings).toEqual({});
+    expect(v.realms[1].secrets).toEqual([]);
+    expect(v.realms[1]).not.toHaveProperty('callback');
     expect(JSON.stringify(v)).not.toContain('gh-secret');
   });
 
@@ -84,10 +85,10 @@ describe('POST /ui/api/realms: realms', () => {
   it('a realm that would not load is refused, naming the field; nothing is stored or applied', async () => {
     const o = await startWithAuth(h, { version: 1 });
     const admin = await o.app.login();
-    const bad = await change(o.app, admin, { action: 'save', realm: { name: 'gh', type: 'github', clientId: 'g' } });
+    const bad = await change(o.app, admin, { action: 'save', realm: { name: 'corp', type: 'oidc', issuer: 'not a url', clientId: 'g' } });
     expect(bad.status).toBe(400);
-    expect(bad.body.error).toMatch(/realms\.0\.clientSecret/);
-    const named = await change(o.app, admin, { action: 'save', realm: { name: 'gh', type: 'github', clientId: 'g', clientSecretEnv: 'GITHUB_CLIENT_SECRET' } });
+    expect(bad.body.error).toMatch(/issuer|Invalid URL/);
+    const named = await change(o.app, admin, { action: 'save', realm: { name: 'corp', type: 'oidc', issuer: 'https://idp.example.com', clientId: 'g', clientSecretEnv: 'GITHUB_CLIENT_SECRET' } });
     expect(named.status).toBe(400);
     expect(named.body.error).toMatch(/clientSecretEnv/);
     expect(o.app.app.instance.config.read('sign-in')).toEqual({ version: 1, realms: [] });

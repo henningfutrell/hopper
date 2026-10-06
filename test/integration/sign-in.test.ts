@@ -17,7 +17,7 @@ const GH = { name: 'gh', type: 'github', clientId: 'g', clientSecret: 's' };
 describe('a fresh hopper: the login code', () => {
   it('the session view offers the login code, no password form and no redirect realms', async () => {
     const { app, origin } = await start(undefined);
-    expect(await session(app)).toEqual({ authenticated: false, viewing: { id: 'admin', name: 'admin' }, signIn: { local: true, none: null, password: false, gateway: false, origin, realms: [], required: false } });
+    expect(await session(app)).toEqual({ authenticated: false, viewing: { id: 'admin', name: 'admin' }, signIn: { local: true, none: null, password: false, gateway: false, origin, realms: [], devices: [{ name: 'github', label: 'GitHub', type: 'github' }], required: false } });
   });
 
   it('the login code signs in as admin, provider local', async () => {

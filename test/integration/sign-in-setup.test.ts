@@ -35,13 +35,13 @@ describe('a realm\'s secret is set in the UI and stored with it', () => {
     expect(await session(o.app, run.token)).toMatchObject({ user: { realm: 'corp', role: 'operator' } });
   });
 
-  it('a GitHub realm without its secret is refused, naming the field; nothing is stored', async () => {
+  it('a GitHub realm with an app of its own is refused, naming the field: it signs in through the hopper\'s app (#214); nothing is stored', async () => {
     const o = await startWithAuth(h, { version: 1 });
     const admin = await o.app.login();
     const r = await change(o.app, admin, { action: 'save', realm: { name: 'gh', type: 'github', clientId: 'g' } });
     expect(r.status).toBe(400);
-    expect(r.body.error).toMatch(/realms\.0\.clientSecret/);
-    expect(stored(o.app).realms).toEqual([]);
+    expect(r.body.error).toMatch(/clientId/);
+    expect(stored(o.app).realms.map((x) => x.name)).toEqual(['password']);
   });
 
   it('a stored realm that named its secret\'s variable takes the secret into the database at the next start', async () => {
@@ -61,12 +61,13 @@ describe('sign-in from the environment', () => {
   it('a realm set up by HOPPER_SIGN_IN_* variables is in the database at start, signs people in, and shows where it came from', async () => {
     const idp = await oidcIdp(h, { claims: { email: 'ada@example.com', email_verified: true } });
     const o = await startWithAuth(h, undefined, {}, ENV(idp));
-    expect(stored(o.app).realms.map((r) => r.name)).toEqual(['corp']);
-    expect(stored(o.app).realms[0]).toMatchObject({ clientSecret: 'from-the-env', roles: { admin: { emails: ['ada@example.com'] } } });
+    // A fresh hopper offers GitHub sign-in (issue #214); the environment's realm comes after.
+    expect(stored(o.app).realms.map((r) => r.name)).toEqual(['github', 'corp']);
+    expect(stored(o.app).realms[1]).toMatchObject({ clientSecret: 'from-the-env', roles: { admin: { emails: ['ada@example.com'] } } });
     const run = await signIn(o.app.url, o.origin, 'corp');
     expect(await session(o.app, run.token)).toMatchObject({ user: { realm: 'corp', role: 'admin' } });
     const v = await realms(o.app, run.token!);
-    expect(v.realms.map((r: { name: string; environment?: boolean }) => [r.name, r.environment === true])).toEqual([['corp', true]]);
+    expect(v.realms.map((r: { name: string; environment?: boolean }) => [r.name, r.environment === true])).toEqual([['github', false], ['corp', true]]);
   });
 
   it('the environment wins at every start; without it the stored realm stays', async () => {
@@ -76,10 +77,10 @@ describe('sign-in from the environment', () => {
     expect((await change(o.app, admin, { action: 'save', name: 'corp', realm: { name: 'corp', type: 'oidc', issuer: idp.issuer, clientId: 'changed-in-ui' } })).status).toBe(200);
     await o.app.stop();
     h.t = await startTestApp({ dbPath: o.app.dbPath, secrets: { ...ENV(idp) } });
-    expect(stored(h.t).realms[0]).toMatchObject({ clientId: 'hopper', clientSecret: 'from-the-env' });
+    expect(stored(h.t).realms.find((r) => r.name === 'corp')).toMatchObject({ clientId: 'hopper', clientSecret: 'from-the-env' });
     await h.t.stop();
     h.t = await startTestApp({ dbPath: o.app.dbPath, secrets: {} });
-    expect(stored(h.t).realms[0]).toMatchObject({ clientId: 'hopper', clientSecret: 'from-the-env' });
+    expect(stored(h.t).realms.find((r) => r.name === 'corp')).toMatchObject({ clientId: 'hopper', clientSecret: 'from-the-env' });
   });
 
   it('the login code and no sign-in from the environment', async () => {

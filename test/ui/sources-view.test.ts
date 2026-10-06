@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 // The Sources view (issue #160) rendered in the whole app against a fake of the daemon's HTTP surface:
 // gh and the GitHub App are one GitHub section, the one in use first, the paused one saying why, and
-// gh login beside them under its own name.
+// gh login beside them under its own name. The GitHub account is connected from there
+// (issue #214): the panel says how the hopper connects, and shows the device code to enter.
 import { createElement } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -23,10 +24,19 @@ function fakeDaemon() {
     '/api/questions': { questions: [] }, '/api/sources': { sources: SOURCES },
     '/api/usage': { readings: [], sources: [], limits: { soft: 0.7, hard: 0.95 }, machines: [] }, '/api/accounts': { accounts: [] },
     '/api/gh-login': { state: 'logged-in', account: 'someone' },
+    '/api/connected-accounts': { accounts: [
+      { provider: 'github', via: 'the hopper\'s app', state: 'not-connected' },
+    ] },
+    '/ui/api/connected-accounts': { provider: 'github', via: 'the hopper\'s app', state: 'waiting', userCode: 'WDJB-MJHT', verificationUri: 'https://github.com/login/device', expiresAt: '2099-01-01T00:00:00.000Z' },
   };
   const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
-  return vi.fn(async (input: string) => {
+  return vi.fn(async (input: string, init?: RequestInit) => {
     const path = String(input).split('?')[0]!;
+    // Connecting starts a device code: the daemon's GET answers it from then on.
+    if (init?.method === 'POST' && path === '/ui/api/connected-accounts') {
+      const accounts = (routes['/api/connected-accounts'] as { accounts: { provider: string }[] }).accounts;
+      routes['/api/connected-accounts'] = { accounts: accounts.map((a) => (a.provider === 'github' ? routes[path] : a)) };
+    }
     if (path === '/ui/api/session') return json(200, { authenticated: true, expiresAt: '2099-01-01T00:00:00.000Z', user: { role: 'admin', realm: 'local', name: 'login code' }, signIn: { local: true, origin: location.origin, realms: [] } });
     if (path in routes) return json(200, routes[path]);
     return json(404, { error: 'not found' });
@@ -67,7 +77,7 @@ const titles = () => [...document.querySelectorAll('[aria-labelledby="sources-gi
 describe('Sources view: GitHub', () => {
   it('one GitHub section: the App in use first, gh paused with the reason, gh login last', async () => {
     await boot();
-    await vi.waitFor(() => expect(titles()).toEqual(['GitHub', 'github-app', 'github', 'gh login']));
+    await vi.waitFor(() => expect(titles()).toEqual(['GitHub', 'GitHub account', 'github-app', 'github', 'gh login']));
     expect(document.querySelector('[data-github-summary]')?.textContent).toContain('Issues are read through the GitHub App, as its bot. gh is paused while the GitHub App is set up.');
     const uses = [...document.querySelectorAll('[data-source-use]')].map((e) => [e.getAttribute('data-source-use'), e.textContent]);
     expect(uses).toEqual([
@@ -76,5 +86,17 @@ describe('Sources view: GitHub', () => {
     ]);
     expect(document.body.textContent).not.toContain('paused: GitHub App configured');
     expect(document.body.textContent).not.toContain('GitHub (gh)');
+  });
+
+  it('connects GitHub from the GitHub account panel: how the hopper connects, then the code to enter (#214)', async () => {
+    await boot();
+    const panel = () => document.querySelector('[data-connected-account="github"]');
+    await vi.waitFor(() => expect(panel()?.textContent).toContain('Not connected.'));
+    expect(panel()!.textContent).toContain('through the hopper\'s app');
+    expect(panel()!.textContent).toContain('Signing in with GitHub connects it too');
+    const button = [...panel()!.querySelectorAll('button')].find((b) => b.textContent === 'Connect GitHub')!;
+    await act(async () => { button.click(); });
+    await vi.waitFor(() => expect(panel()!.querySelector('[data-device-code]')?.textContent).toBe('WDJB-MJHT'));
+    expect(document.querySelector('[aria-labelledby="sources-gitlab"]')).toBeNull();
   });
 });

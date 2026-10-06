@@ -172,14 +172,16 @@ describe('job-source instances', () => {
     expect(host.report().config.error).toMatch(/jobSources.*twice|twice/);
   });
 
-  it('no jobSources section: the built-in instances — github on auto (the gh CLI, #108), github-app with no identity or key; neither runs until authors are set', async () => {
+  it('no jobSources section: the built-in instances — the connected GitHub account\'s (#214), which runs and wait for a connection; github on auto (the gh CLI, #108), which does not run until authors are set; the app-as-itself source is an admin\'s to add', async () => {
     const { host } = start({ file: { version: 1 } });
     await host.start();
     expect(host.report().jobSources.instances.map((i) => i.instance)).toEqual([
+      { name: 'github-account', plugin: 'github-account' },
       { name: 'github', plugin: 'github-gh', options: { enabled: 'auto' } },
-      { name: 'github-app', plugin: 'github-app' },
     ]);
-    for (const i of host.report().jobSources.instances) expect(i).toMatchObject({ active: null, reason: expect.stringMatching(/authors/) });
+    const [github, ...others] = host.report().jobSources.instances;
+    expect(github).toMatchObject({ active: 'github-account' });
+    for (const i of others) expect(i).toMatchObject({ active: null, reason: expect.stringMatching(/authors/) });
   });
 
   it('a restart role: an edit shows changed — restart pending; the built sources stay', async () => {

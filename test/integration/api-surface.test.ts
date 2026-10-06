@@ -63,12 +63,13 @@ describe('Host guard (DNS rebinding)', () => {
 });
 
 describe('GET /api/sources', () => {
-  it('lists the running sources with their sync status; a plugins config without jobSources → github and github-app in error until authors are set', async () => {
+  it('lists the running sources with their sync status; a plugins config without jobSources → the connected accounts\' sources waiting for a connection, github in error until authors are set', async () => {
     const a = await start((db) => writePlugins(db, { version: 1, executors: TEST_PLUGINS.executors }));
     await a.sync();
     const { sources } = (await a.api<{ sources: SourceStatus[] }>('GET', '/api/sources')).body;
     expect(sources.find((s) => s.name === 'github')).toMatchObject({ state: 'error', lastError: expect.stringMatching(/authors/) });
-    expect(sources.find((s) => s.name === 'github-app')).toMatchObject({ state: 'error', lastError: expect.stringMatching(/authors/) });
+    expect(sources.find((s) => s.name === 'github-account')).toMatchObject({ kind: 'github-account', detail: { paused: expect.stringMatching(/not connected/) } });
+    expect(sources.find((s) => s.name === 'github-app')).toBeUndefined();
     expect(sources.find((s) => s.name === 'manual')).toMatchObject({ kind: 'manual', state: 'ok', lastSyncAt: expect.any(String) });
   });
 
