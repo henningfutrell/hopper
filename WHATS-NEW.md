@@ -9,6 +9,8 @@ numbers, no commit hashes, no file names, no code words. Never edit a line once 
 update notice would show it again as new.
 
 - Set up how people sign in from Settings, under Sign-in: add sign-in through a company directory (LDAP or Active Directory), OpenID Connect, SAML, GitHub or password accounts, put them in the order they are tried, and switch each on or off. Changes work at once, without a restart.
+- The lane timeline no longer keeps drawing a job as running after the hopper restarted and ran that job again; the earlier run ends where the job started again.
+- A finished issue runs again when you reopen it and remove its done label, and the Sources page says when an offered issue is not run again and why.
 - A lane shows as running only while a job is actually running on it; a lane whose job has ended no longer stays shown as running.
 - A newer version is offered within about a minute of being published, instead of up to a quarter of an hour later.
 - Each lane shows the folder its job works in, and every lane is named with its machine — on the lane board, the timeline, the decision log and the event list — so two lanes with the same number on different machines no longer look the same.

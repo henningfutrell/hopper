@@ -40,7 +40,8 @@ const LEFT: Record<JobStatus, SpanOutcome> = {
  * One span per job run on a lane, in start order; spans that ended before `since` are dropped.
  * `jobs` (the job store) wins over the log: an open span of a job not running there ends with the
  * job (or goes, when the store no longer holds it), and a running job the log has no start for
- * gets its span from `startedAt`.
+ * gets its span from `startedAt`. A run started again before its earlier run logged an end ends
+ * that earlier span at the new start, as requeued.
  */
 export function laneSpans(events: DomainEvent[], since: number, jobs: ReadonlyMap<string, Job>): LaneSpan[] {
   const spans: LaneSpan[] = [];
@@ -49,6 +50,9 @@ export function laneSpans(events: DomainEvent[], since: number, jobs: ReadonlyMa
     if (!e.jobId) continue;
     const starting = e.type === 'job.started' || (e.type === 'job.reattached' && !open.has(e.jobId));
     if (starting && e.laneId) {
+      // Started again with no end logged for the earlier run (a daemon restart): that run ended here.
+      const earlier = open.get(e.jobId);
+      if (earlier) { earlier.end = Date.parse(e.at); earlier.outcome = 'requeued'; }
       const span: LaneSpan = { laneId: e.laneId, jobId: e.jobId, start: Date.parse(e.at), end: null, outcome: 'running' };
       open.set(e.jobId, span);
       spans.push(span);

@@ -13,6 +13,7 @@ export interface FakeGitHub extends GitHubApi {
   createIssue(o: { repo: string; title?: string; body?: string; author?: string; labels?: string[] }): GitHubIssue;
   addComment(repo: string, number: number, author: string, body: string): GitHubComment;
   closeIssue(repo: string, number: number, closedBy?: string): void;
+  reopenIssue(repo: string, number: number): void;
   /** The merge of a pull request (opened at createdAt) closes the issue. */
   closeByPullRequest(repo: string, number: number, pr: { createdAt: string; mergedAt: string }): ClosingPullRequest;
   deleteIssue(repo: string, number: number): void;
@@ -143,6 +144,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
       return { ...c };
     },
     closeIssue(repo, n, closedBy) { const i = find(repo, n); i.state = 'closed'; i.closedBy = closedBy ?? human; closers.delete(key(repo, n)); },
+    reopenIssue(repo, n) { const i = find(repo, n); i.state = 'open'; delete i.closedBy; },
     closeByPullRequest(repo, n, { createdAt, mergedAt }) {
       const i = find(repo, n);
       i.state = 'closed';

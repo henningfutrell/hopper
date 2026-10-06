@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SourceError } from '../../src/domain/ports.ts';
 import { createSourceSync } from '../../src/sources/sync.ts';
 import { createFakeSource, createWorld, item, settle, type FakeSource, type World } from './sync-support.ts';
@@ -61,7 +61,7 @@ describe('re-run', () => {
     return ctx;
   }
 
-  it.each(['failed', 'cancelled'] as const)('a %s job whose end was reported gives a rediscovered item a new job', async (status) => {
+  it.each(['failed', 'cancelled', 'finished'] as const)('a %s job whose end was reported gives a rediscovered item a new job', async (status) => {
     const { world, source, sync } = await ended(status);
     expect(world.jobs.get('job-1')!.sourceState!.sync).toMatchObject({ finalReported: true });
     await sync.syncNow();
@@ -85,10 +85,25 @@ describe('re-run', () => {
     expect(world.calls.reprioritize).toHaveLength(1);
   });
 
-  it('does not re-run a finished job', async () => {
-    const { world, sync } = await ended('finished');
-    await sync.syncNow();
-    expect(world.jobs.size).toBe(1);
+  it('an offered item whose job ended unreported is shown in status and logged once, not dropped silently', async () => {
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      const { world, source, sync } = await setup();
+      source.items = [item('k1')];
+      await sync.syncNow();
+      source.reportErrors = [new SourceError('boom', false, 502), new SourceError('boom', false, 502)];
+      world.patchJob('job-1', { status: 'finished' });
+      world.emit('job.finished', 'job-1', {});
+      await settle();
+      await sync.syncNow();
+      expect(world.jobs.size).toBe(1);
+      expect(sync.statuses()[0]!.detail).toMatchObject({ notRerun: [{ key: 'k1', job: 'job-1', status: 'finished', reason: 'its end is not reported to the source yet' }] });
+      await sync.syncNow();
+      const lines = spy.mock.calls.map((c) => String(c[0])).filter((l) => l.includes('k1'));
+      expect(lines).toEqual(['hopper: k1 not run again: job job-1 finished, its end is not reported to the source yet']);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('re-runs once: the new job is the newest, so a live one is only re-sorted', async () => {
@@ -142,6 +157,7 @@ describe('reports', () => {
     await sync.syncNow();
     world.patchJob('job-1', { status: 'finished' });
     await sync.syncNow();
+    source.items = []; // the issue is now closed with hopper:done, so the real source stops offering it
     await sync.syncNow();
     expect(kinds(source)).toEqual(['claimed', 'finished']);
   });

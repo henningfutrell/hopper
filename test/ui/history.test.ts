@@ -52,6 +52,17 @@ describe('laneSpans', () => {
     ];
     expect(laneSpans(events, T0 - 60 * 60_000, store()).map((s) => [s.jobId, s.outcome])).toEqual([['x', 'cancelled'], ['y', 'requeued']]);
   });
+  it('a run started again with no end logged for the earlier one ends that one at the restart: no bar stays running (issue #181)', () => {
+    const events = [
+      ev('job.started', -2000, { jobId: 'a', laneId: 'm/lane-1' }),
+      ev('job.started', -30, { jobId: 'a', laneId: 'm/lane-1' }),
+      ev('job.finished', -10, { jobId: 'a' }),
+    ];
+    expect(laneSpans(events, T0 - 24 * 60 * 60_000, store(job('a', { status: 'finished', finishedAt: at(-10) })))).toEqual([
+      { laneId: 'm/lane-1', jobId: 'a', start: T0 - 2000 * 60_000, end: T0 - 30 * 60_000, outcome: 'requeued' },
+      { laneId: 'm/lane-1', jobId: 'a', start: T0 - 30 * 60_000, end: T0 - 10 * 60_000, outcome: 'finished' },
+    ]);
+  });
   it('the job store wins over the event log: an open span of a job no longer running ends with it (issue #45)', () => {
     const events = [ev('job.started', -50, { jobId: 'a', laneId: 'm/lane-1' }), ev('job.started', -40, { jobId: 'q', laneId: 'm/lane-2' }), ev('job.started', -30, { jobId: 'gone', laneId: 'm/lane-2' })];
     const spans = laneSpans(events, T0 - 60 * 60_000, store(
