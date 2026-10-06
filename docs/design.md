@@ -2882,7 +2882,9 @@ responsive and fast. Builds on the at-a-glance board (issue #5).
   the length of the list it names; `test/ui/overview-counts.test.ts` renders the overview and
   checks each card against its list, before and after a stream event. Lane spans come from the
   event log, but the job store wins: a span of a job no longer running ends with the job, and a
-  running job with no start in the log gets its span from `startedAt`. The nav's questions badge
+  running job with no start in the log gets its span from `startedAt`. A span that ended on a question
+  is followed by a *question wait* on the same lane, until the question is answered, closed, dismissed or
+  expired; the job store wins there too (a wait of a job no longer waiting ends with the job). The nav's questions badge
   counts `awaitsOwner` (`ui/src/model/questions.ts`), the same test the Questions view marks seen by.
 - **Realtime.** One SSE connection; each domain event updates the log and chart history at once
   and debounces a `/api/queue` + `/api/machines` refresh (150 ms). One shared 1 s clock drives
