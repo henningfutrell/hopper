@@ -1,11 +1,12 @@
 // Settings (issue #151): the configuration plane, one view with a section per part — the question
-// gates (escalation levels, standing rules, risk rules), the question history, routing, plugins,
+// gates (escalation levels, standing rules, risk rules), the question history, the job rules (issue #172), routing, plugins,
 // webhooks, the users (issue #158), sign-in (issue #185), the version (issue #165) and the version history (issue #246) — each routed by hash (#settings/routing), so a link and the back button work. #settings
 // alone opens the question gates.
-import { History, Info, KeyRound, Puzzle, Route, ScrollText, ShieldCheck, Users as UsersIcon, Webhook, type LucideIcon } from 'lucide-react';
+import { History, Info, KeyRound, ListChecks, Puzzle, Route, ScrollText, ShieldCheck, Users as UsersIcon, Webhook, type LucideIcon } from 'lucide-react';
 import { useSection } from '@/app/nav';
 import { VersionDetails } from '@/app/update';
 import { cn } from '@/lib/utils';
+import { JobRules } from '@/views/job-rules';
 import { Plugins } from '@/views/plugins';
 import { QuestionGates } from '@/views/question-gates';
 import { QuestionHistory } from '@/views/question-history';
@@ -15,11 +16,12 @@ import { Users } from '@/views/users';
 import { VersionHistory } from '@/views/version-history';
 import { Webhooks } from '@/views/webhooks';
 
-const SECTIONS = ['questions', 'history', 'routing', 'plugins', 'webhooks', 'users', 'sign-in', 'version', 'version-history'] as const;
+const SECTIONS = ['questions', 'history', 'job-rules', 'routing', 'plugins', 'webhooks', 'users', 'sign-in', 'version', 'version-history'] as const;
 type Section = (typeof SECTIONS)[number];
 const ITEMS: Record<Section, { label: string; icon: LucideIcon; view: () => React.ReactNode }> = {
   questions: { label: 'Question gates', icon: ShieldCheck, view: QuestionGates },
   history: { label: 'Question history', icon: History, view: QuestionHistory },
+  'job-rules': { label: 'Job rules', icon: ListChecks, view: JobRules },
   routing: { label: 'Routing', icon: Route, view: Routing },
   plugins: { label: 'Plugins', icon: Puzzle, view: Plugins },
   webhooks: { label: 'Webhooks', icon: Webhook, view: Webhooks },

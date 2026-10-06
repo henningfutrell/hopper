@@ -37,6 +37,12 @@ export interface ExecutionContext {
    * hopper's app marked on it. Asked when the job starts or resumes; never stored on the job.
    */
   credentials?: Readonly<Record<string, string>>;
+  /**
+   * The job rules (issue #172): the text a job's prompt carries before its work tree and the protocol —
+   * the config record `job-rules` as it is when the job starts, or the default while none is saved.
+   * Absent → the default job rules.
+   */
+  jobRules?: string;
 }
 
 /** What the executor needs answered before the job can continue. */

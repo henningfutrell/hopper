@@ -3,6 +3,7 @@
 // reattached by restart recovery skips `started` and goes on from its executor's present state.
 import type { ExecutionContext, ExecutionOutcome, Executor } from '../domain/ports.ts';
 import type { Job, LaneId, MachineSnapshot } from '../domain/types.ts';
+import { readJobRules } from '../job-rules/index.ts';
 import type { Cleanup } from './cleanup.ts';
 import { nowIso, type EngineContext } from './context.ts';
 import type { Claim } from './decision-step.ts';
@@ -103,7 +104,8 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
       // Asked now, never stored: the job acts through its source's connection as it is at this start.
       const credentials = machine ? await c.credentials(started) : {};
       outcome = !machine ? { kind: 'failed', error: `machine of lane ${claim.laneId} is not attached` } : await execute(executor, started, {
-        job: started, laneId: claim.laneId, machine, signal: entry.controller.signal, credentials,
+        // The job rules as they are at this start (issue #172): an edit reaches the next job.
+        job: started, laneId: claim.laneId, machine, signal: entry.controller.signal, credentials, jobRules: readJobRules(store.config),
         progress: (f, m) => progress.report(f, m),
         saveState: (state) => { if (!c.stopping()) store.jobs.update(job.id, { executorState: state }); },
         workTree: (path) => { if (!c.stopping()) store.jobs.update(job.id, { workTree: path }); },

@@ -44,10 +44,10 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   before it is stored and never ends the acting admin's own admin session. No sign-in (`none`) is only ever explicit.
 - **GitHub text is neutral.** Text the hopper or a job writes to GitHub names no person and
   carries no personal or machine details. The hopper writes only labels to issues, never closes
-  one (the merge of a job's pull request does), and posts no comments. The job prompt carries the rule (`src/executors/herdr/screen.ts` `PUBLISHING_RULE`).
+  one (the merge of a job's pull request does), and posts no comments. The default job rules carry the rule (`src/job-rules/` `DEFAULT_JOB_RULES`); the job rules are the owner's to edit (issue #172).
 - **Nothing leans on the machine** (issue #40, `docs/design.md` "Deployable"). Everything the daemon
   keeps is in the database `HOPPER_DATABASE_URL` names; config is config records in it — JSON values
-  (`plugins`, `rules`, `sign-in`), every setting edited in the UI, none set only in a file, no YAML
+  (`plugins`, `rules`, `job-rules`, `sign-in`), every setting edited in the UI, none set only in a file, no YAML
   (issue #198) — and the webhook subscriptions, rows of its own. **Every secret comes from the runtime**
   (issue #56): the variable `NAME` or the mounted file `NAME_FILE` names (`src/secrets/runtime.ts`),
   named by a command-bearing option. The hopper stores no secret — not in the database, not in a file

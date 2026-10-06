@@ -432,6 +432,10 @@ export { DEFAULT_QUEUE_GATE, QUEUE_GATE_MODES } from './queue-gate.ts';
 
 export type { QuestionGatesView, RiskRuleView, RulesView } from './question-gates.ts';
 
+// ---- Job rules (issue #172): src/domain/job-rules.ts (re-exported here) -------------------
+
+export type { JobRulesView } from './job-rules.ts';
+
 // ---- Sign-in: src/domain/sign-in.ts (re-exported here) ------------------------------------
 
 export type { Identity, PersonView, RealmSettings, RealmType, RealmView, RealmsEdit, RealmsView, SessionUser, SessionView, SignInRealmView, UiRole } from './sign-in.ts';

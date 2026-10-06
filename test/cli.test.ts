@@ -27,7 +27,7 @@ function cli(url: string | undefined, argv: string[], o: { stdin?: string } = {}
   return { code, out: out.join(''), err: err.join('') };
 }
 
-function recordIn(url: string, name: 'plugins' | 'rules'): unknown {
+function recordIn(url: string, name: 'plugins' | 'rules' | 'job-rules'): unknown {
   const s = openAdminStore(url);
   try { return s.config.read(name); } finally { s.close(); }
 }
@@ -54,7 +54,7 @@ describe('hopper config', () => {
   });
 
   it('refuses an unknown record or command', () => {
-    expect(cli(db(), ['config', 'get', 'plugins.yaml']).err).toMatch(/unknown config record plugins.yaml; one of plugins, rules, sign-in/);
+    expect(cli(db(), ['config', 'get', 'plugins.yaml']).err).toMatch(/unknown config record plugins.yaml; one of plugins, rules, job-rules, sign-in/);
     expect(cli(db(), ['deploy']).code).toBe(2);
   });
 
@@ -72,6 +72,16 @@ describe('hopper config', () => {
     expect(cli(url, ['config', 'set', 'rules', '--if-version', 'missing'], { stdin: json('be brief\n') }).code).toBe(0);
     expect(cli(url, ['config', 'get', 'rules'])).toMatchObject({ code: 0, out: `${json('be brief\n')}\n` });
     expect(cli(url, ['config', 'version', 'rules']).out).toMatch(/^[0-9a-f]{64}\n$/);
+  });
+
+  it('job-rules is a record: set as a JSON text, get prints it; anything but a text is refused (issue #172)', () => {
+    const url = db();
+    expect(cli(url, ['config', 'set', 'job-rules', '--if-version', 'missing'], { stdin: json('Be brief.\n') }).code).toBe(0);
+    expect(cli(url, ['config', 'get', 'job-rules'])).toMatchObject({ code: 0, out: `${json('Be brief.\n')}\n` });
+    const version = cli(url, ['config', 'version', 'job-rules']).out.trim();
+    expect(cli(url, ['config', 'set', 'job-rules', '--if-version', version], { stdin: json({ rules: [] }) }))
+      .toMatchObject({ code: 2, err: expect.stringMatching(/job-rules refused, nothing written: the job rules are a text/) });
+    expect(recordIn(url, 'job-rules')).toBe('Be brief.\n');
   });
 
   it('get plugins prints the plugins config as JSON', () => {

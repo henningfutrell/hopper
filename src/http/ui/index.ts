@@ -13,6 +13,7 @@ import { CONNECTED_ACCOUNT_PROVIDERS, HERDR_SESSION, LIST_ROLES, QUEUE_GATE_MODE
 import { HttpError, parseWith } from '../errors.ts';
 import { lanHosts, uiOrigins, type Lan } from '../reach.ts';
 import type { RealmsAdmin } from '../realms.ts';
+import { writeJobRules } from '../../job-rules/index.ts';
 import { writeRules } from '../../questions/index.ts';
 import { userIdOf, type TenantParts, type Tenants } from '../tenants.ts';
 import { webhooksView } from '../webhooks.ts';
@@ -67,6 +68,7 @@ export const usersEditBody = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('add'), name: z.string().trim().min(1, 'name must not be empty').max(64) }),
 ]);
 export const rulesBody = z.strictObject({ text: z.string(), version: z.string().min(1) });
+export const jobRulesBody = z.strictObject({ text: z.string(), version: z.string().min(1) });
 // Realms (issue #185): one change to the sign-in config against the version read. A realm's own
 // settings are checked by loading the changed settings, so a refusal names the field as a start would.
 const realmName = z.string().min(1).max(64);
@@ -235,6 +237,15 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   app.post('/ui/api/rules', admin, async (req) => {
     const { text, version } = parseWith(rulesBody, req.body);
     const r = writeRules(o.tenant(req).store.config, text, version);
+    if (!r.ok) throw new HttpError(EDIT_STATUS[r.code], r.error);
+    return r.view;
+  });
+
+  // Job rules (issue #172): whole, against the version read (sha-256 of the text); the next job to
+  // start reads them. Answers the new GET /api/job-rules view.
+  app.post('/ui/api/job-rules', admin, async (req) => {
+    const { text, version } = parseWith(jobRulesBody, req.body);
+    const r = writeJobRules(o.tenant(req).store.config, text, version);
     if (!r.ok) throw new HttpError(EDIT_STATUS[r.code], r.error);
     return r.view;
   });

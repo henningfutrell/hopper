@@ -46,6 +46,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/client/` | the hopper client ("Client targets"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load` over HTTP/2 on the tunnel), `tunnel.ts` (its ssh to the hopper), `release.ts` (the client release: its files, its id, checking and installing one — "Client releases"), `main.ts`; `relay.ts`, the forced command of its key on the hopper's machine; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`); `ssh-options.ts` (the hardened ssh options, shared with `src/executors/ssh.ts`) | everything in `src/` outside `src/client/` |
 | `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following the plugins config; ssh probe and herdr path resolution through the herdr CLI client's ssh argv; the container probe, `docker container inspect`), the detected ssh targets (`ssh-config.ts`) and which of them is this machine (`this-machine.ts`, issue #275), keeping each client target on the hopper's client release (`client-release.ts`), `combineMachineSources` | engine, http, store, plugins |
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin) | engine, http, store, plugins |
+| `src/job-rules/` | the job rules (issue #172): the config record `job-rules`, the default job rules, the fixed lines of the footer (work tree, protocol), their read, view and edit — no I/O but the config records port | everything but `domain/` |
 | `src/routing/` | routing rules: the plugins config's `routing` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
 | `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; routing at intake (`source-host.ts`); restart recovery | http |
 | `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the sign-in config at start — named secrets taken in, the environment applied (`start.ts`, issue #216; no bootstrap login, issue #238) — and the `HOPPER_SIGN_IN_*` variables (`environment.ts`), the role rules (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm, gateway realm) and their adapters `ldap.ts` (ldapts), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), `gateway.ts` (jose + openid-client), the sign-in service — form realms in order, gateway realms in order, the API door's token check (issue #255), flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
@@ -517,20 +518,22 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
 Running or installing what a job built, and reading files elsewhere, stays allowed: the rule is
 about where the work is done, not what is touched.
 
-**Prompt, once.** `agent prompt <agent> <prompt + protocol footer>` (no `--wait`). Footer:
+**Prompt, once.** `agent prompt <agent> <prompt + protocol footer>` (no `--wait`). Footer, with the
+default job rules (the first three lines; "Job rules", issue #172):
 
 ```
 [hopper publishing rule] Any text you send to GitHub (commit messages, branch names, pull request titles and bodies, issue text) describes the change and how it was verified, in neutral terms. Never quote or name the repository owner or any other person. Never include personal or machine details: email addresses, people's names, IP addresses, hostnames, tailnet names, home directory paths, usernames, machine or pane ids, port numbers of local machines, codes, tokens or secrets.
-[hopper work tree] This job's work tree is <cwd>. Do all of the job's work inside it: clones, git worktrees, edits, builds, test runs, scratch and temporary files go under it. Never make or work in a copy of the code outside it, under /tmp or anywhere else. Temporary files go in <cwd>/.hopper-scratch: git ignores it, and TMPDIR and your scratchpad point there. Running or installing what you built, and reading files elsewhere, is fine. If the job seems to need a work tree outside this one, ask instead.
 [hopper parallel work] Other jobs run at the same time as this one, possibly in the same repos. Nothing orders or holds jobs for each other: no job waits for another.
 If your work overlaps another job's, sort it out yourself. Either state the assumptions you made about the other work, or make the needed fix in the other project and annotate it with which way the dependency runs (which work depends on which).
+[hopper work tree] This job's work tree is <cwd>. Do all of the job's work inside it: clones, git worktrees, edits, builds, test runs, scratch and temporary files go under it. Never make or work in a copy of the code outside it, under /tmp or anywhere else. Temporary files go in <cwd>/.hopper-scratch: git ignores it, and TMPDIR and your scratchpad point there. Running or installing what you built, and reading files elsewhere, is fine. If the job seems to need a work tree outside this one, ask instead.
 [hopper protocol] When you need an answer from the user, ask exactly one question and end your message with a line containing only: HOPPER_QUESTION
 When the job is completely finished, end your final message with a line containing only: HOPPER_DONE
 If the job cannot be done, end with a line containing only: HOPPER_FAILED followed by the reason.
 ```
 
-The publishing rule leads the footer so every job gets it, whatever its source; the work-tree
-line follows with the job's own cwd (`protocolFooter(cwd)`); the last line stays the turn anchor. It names no comment path: jobs never write to issues.
+The job rules lead the footer so every job gets them, whatever its source; the work-tree line
+follows with the job's own cwd (`protocolFooter(cwd, jobRules)`); the last line stays the turn
+anchor. The default names no comment path: jobs never write to issues.
 
 **Monitor** every `HOPPER_HERDR_POLL_MS` (1000): `agent get` (status, `state_change_seq`)
 and `agent read --source recent-unwrapped --lines 200`.
@@ -5550,3 +5553,32 @@ listing what is not a connection.
 admin's app in use stays; a broken app stays; not connected) and `test/ui/sources-view.test.ts` (the whole
 app against a fake daemon, signed in with GitHub: the section holds only the GitHub account panel with its
 source's sync; no gh login, gh card or github-app).
+
+## Job rules (issue #172, 2026-10-06)
+
+Owner direction: the hopper's rules must be editable, not baked in; what the hopper relies on to read a
+job back stays deterministic. Before, every job's footer was a constant: the publishing rule, the work
+tree, parallel work, the protocol.
+
+- **The record.** A user's config record `job-rules` (`src/job-rules/`), a text of at most 16 KiB. It
+  leads every job's footer. While none is saved, a job gets the **default job rules** — the publishing
+  rule and the parallel-work rule, the text the footer had. A saved empty text gives none. No migration:
+  a missing record is the default.
+- **What stays fixed.** The work tree line (the executor sets up that tree and its scratch dir) and the
+  protocol lines (the markers `screen.ts` reads, the last line the turn anchor) follow the job rules
+  and are not edited; nor is the status-note nudge. Neither are the risk rules ("Question gates"): code,
+  so nothing can weaken them.
+- **When it applies.** The engine reads the record as each job starts and hands it to the executor
+  (`ExecutionContext.jobRules`); herdr-claude and cursor-agent put it in the footer
+  (`protocolFooter(cwd, jobRules)`). A running job keeps what it started with; the next job gets an
+  edit, without a restart. An executor given none uses the default.
+- **Editing.** Settings → Job rules: the text, edited whole against its version
+  (`GET /api/job-rules`, `POST /ui/api/job-rules`, admin), with the default one click away and the
+  fixed lines shown read-only. `hopper config set job-rules` from the CLI.
+- **The publishing rule.** AGENTS.md "GitHub text is neutral" holds through the default job rules; the
+  owner may now change it, as they may any job rule.
+
+**Verification.** `test/job-rules/job-rules.test.ts`, `test/herdr/screen.test.ts`,
+`test/herdr/executor-run.test.ts`, `test/adapters/cursor-executor.test.ts`,
+`test/integration/job-rules.test.ts` (a saved edit reaches the next job), `test/cli.test.ts`,
+`test/ui/job-rules-panel.test.ts`.

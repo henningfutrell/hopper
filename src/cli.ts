@@ -15,13 +15,14 @@
 //
 // There is no login from here (issue #238: no bootstrap login): people sign in through a realm.
 //
-// <record>: plugins or rules (a user's: --user, default the one user), or sign-in (the instance's). A
+// <record>: plugins, rules or job-rules (a user's: --user, default the one user), or sign-in (the instance's). A
 // record that would not load is refused.
 import { readFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { CONFIG_NAMES, type ConfigName, type ConfigRecords, type InstanceStore } from './domain/ports.ts';
 import type { User } from './domain/types.ts';
 import { signInConfigProblem } from './auth/config.ts';
+import { jobRulesProblem } from './job-rules/index.ts';
 import { pluginsConfigProblem } from './plugins/plugins-config.ts';
 import { rulesProblem } from './questions/index.ts';
 import { openInstanceStore } from './store/index.ts';
@@ -47,7 +48,7 @@ usage:
                                                      The daemon must be stopped; refused when <to> holds work of its own
   hopper help                                        this text
 
-records: ${CONFIG_NAMES.join(', ')}. plugins and rules are one user's; sign-in is shared. Every one is edited
+records: ${CONFIG_NAMES.join(', ')}. plugins, rules and job-rules are one user's; sign-in is shared. Every one is edited
 in the UI too.
 --user <id> on config names the user (default: the one user, while there is one).
 
@@ -69,10 +70,11 @@ function recordName(raw: string | undefined): ConfigName {
 /** Why `value` would not load as `name`, or undefined. */
 export function recordProblem(name: ConfigName, value: unknown): string | undefined {
   if (name === 'rules') return rulesProblem(value);
+  if (name === 'job-rules') return jobRulesProblem(value);
   return name === 'sign-in' ? signInConfigProblem(value) : pluginsConfigProblem(value);
 }
 
-/** One config record wherever it lives: a user's (plugins, rules) or the instance's (sign-in). */
+/** One config record wherever it lives: a user's (plugins, rules, job-rules) or the instance's (sign-in). */
 type Records = ConfigRecords<ConfigName>;
 
 function put(records: Records, name: ConfigName, json: string, version: string): void {
