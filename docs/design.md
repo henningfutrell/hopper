@@ -2485,15 +2485,18 @@ machines:
 | `herdrBin` | `herdr` | **give the absolute path.** Each call is a fresh login shell there; on the laptop the shell env file is a symlink that every new pane's shell updates, and a call racing that update lost its PATH (`zsh:1: command not found: herdr`, exit 127, seen live) |
 
 **Reaching it** (authentication: "Target authentication" below; the argv here predates it). `createHerdrCliClient({ ssh: { target, controlDir } })` runs the same herdr argv as
-`ssh -F ~/.ssh/config -o BatchMode=yes -o ConnectTimeout=10 -o ControlMaster=auto -o ControlPath=<dataDir>/ssh/%C
+`ssh -F ~/.ssh/config -o BatchMode=yes -o ConnectTimeout=10 -o ControlMaster=auto -o ControlPath=<dataDir>/ssh/<16 hex>
 -o ControlPersist=60 -- <target> '<argv, POSIX single-quoted>'`. `-F` names the user's config only
 (`/dev/null` when there is none): under the hopper unit (PrivateTmp, so a user namespace) the
 root-owned files in `/etc/ssh` look foreign-owned and ssh refuses them ("Bad owner or permissions",
 seen live 2026-10-04, issue #58), as the self-update mirror found before. The remote login shell must read
 POSIX single quotes (sh, bash, zsh; not fish). One shared connection per target (the probe and every
 job share it). ssh's own failure (exit 255) is `HerdrError` code `ssh`; herdr's JSON errors come back
-as they do locally. A unix socket path is capped at 108 bytes: `<dataDir>/ssh/` plus 40 hex chars
-must fit (`~/.local/share/hopper/ssh/…` does).
+as they do locally. A unix socket path is capped at 104 bytes (macOS; 108 on Linux), and ssh adds 17
+characters to it while it sets the master up. ssh's own `%C` (40 hex) did not fit under a signed-in
+user's data dir (`<work dir>/users/<id>/ssh/`: every ssh machine offline with "too long for Unix domain
+socket", issue #295), so the socket is 16 hex of a hash of `user@host:port`; a control dir too long even
+for that shares no connection rather than fail.
 
 **Online.** `herdr --session <session> status server` over ssh says `status: running`. Probed in the
 background at most every 30 s; `list()` never waits, so a machine that is off or asleep never stalls
@@ -2738,9 +2741,10 @@ image, and they reach the hopper through the plugins config.
   process is the herdr session; a box whose image changed is started again from the new one, a running
   box is kept.
 - **Who gets in**: written into the box through docker — the hopper's key with `restrict`, as
-  `scripts/attach-machine.sh` installs it: the file its runtime mounts (`HOPPER_SSH_KEY_FILE`, made when
-  missing), or, for a hopper that keeps its own key (issue #293), its public line as the Add form shows it
-  (`HOPPER_SSH_PUBLIC_KEY`); the user's own public keys
+  `scripts/attach-machine.sh` installs it: its public line as the Add form shows it
+  (`HOPPER_SSH_PUBLIC_KEY`) — the key a signed-in user's runtime offers (issue #293; a user's secrets
+  carry their prefix, so the daemon's own `HOPPER_SSH_KEY_FILE` is not theirs) — or the file a runtime
+  mounts (`HOPPER_SSH_KEY_FILE`, made when missing); the user's own public keys
   (`~/.ssh/id_*.pub`) unrestricted, for a terminal there (`ssh -t hopper-box-<agent>`, `herdr --remote
   hopper-box-<agent> --session hopper`) and to sign the agent in.
 - **ssh**: a `Host hopper-box-<agent>` (HostName `127.0.0.1`, its Port, User `agent`) in

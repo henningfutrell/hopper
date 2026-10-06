@@ -100,8 +100,8 @@ if [ "$REMOVE" = 1 ]; then
   exit 0
 fi
 
-# The hopper's key: the file its runtime mounts (made when missing), or, for a hopper that keeps its own
-# key (issue #293), its public line as the Machines view's Add form shows it.
+# The hopper's key: the file its runtime mounts (made when missing), or its public line as the Machines
+# view's Add form shows it — the key a signed-in user's runtime offers (issue #293).
 KEY="${HOPPER_SSH_KEY_FILE:-}"
 if [ -n "$KEY" ]; then
   if [ ! -e "$KEY" ]; then
