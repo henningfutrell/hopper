@@ -1,6 +1,7 @@
 // Machines: what each can run, its lanes, and the usage budgets that cap them. Logged in, attach a
-// machine over ssh (POST /ui/api/machines), edit or remove any machine — each a machine-source
-// instance, edited like every plugin instance (POST /ui/api/plugins, issue #74) — each applied by the
+// machine over ssh (POST /ui/api/machines), edit (its name and how it is reached too, issue #205) or remove
+// any machine — each a machine-source instance, edited like every plugin instance (POST /ui/api/plugins,
+// issue #74) — each applied by the
 // daemon without a restart (design.md "Machines from the UI", issue #18). The machine defaults — what a
 // new machine starts with — are edited here too (POST /ui/api/machines/defaults, issue #142).
 import { Pencil, Plus, Server, SlidersHorizontal, Trash2 } from 'lucide-react';
@@ -17,7 +18,7 @@ import { clientReleaseText, kindOf, type MachineKind } from '@/model/machines';
 import { orderReadings, readingKey } from '@/model/usage';
 import type { MachineDefaultsEdit, MachineEdit, MachinesConfig, MachineView, PluginsEdit } from '@/model/wire';
 import { refreshLive, useHopper } from '@/store';
-import { AddMachineForm, EditMachineForm, LocalLanesForm, MachineDefaultsForm } from './machine-forms';
+import { AddMachineForm, EditMachineForm, LocalMachineForm, MachineDefaultsForm } from './machine-forms';
 import { useCanAdmin } from '@/store/selectors';
 
 const REFRESH_MS = 15000;
@@ -80,10 +81,7 @@ function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
         <EditMachineForm machine={kind} config={ctx.config} busy={ctx.busy} send={ctx.edit} onDone={() => ctx.setEditing(null)} />
       )}
       {editing && kind.kind === 'local' && ctx.config && (
-        <LocalLanesForm lanes={kind.lanes} busy={ctx.busy} onDone={() => ctx.setEditing(null)}
-          save={(lanes) => ctx.edit({
-            action: 'options', role: 'machine-source', name: kind.machine.name, options: { ...kind.machine.options, lanes }, version: ctx.config!.version,
-          }, `${kind.machine.name} runs ${lanes} lane${lanes === 1 ? '' : 's'}`)} />
+        <LocalMachineForm machine={kind} config={ctx.config} busy={ctx.busy} send={ctx.edit} onDone={() => ctx.setEditing(null)} />
       )}
       <div className="flex flex-wrap gap-x-2 gap-y-4">
         {orderReadings(m.usage).map((r) => <ReadingGauge key={readingKey(r)} r={r} now={now} showSource />)}

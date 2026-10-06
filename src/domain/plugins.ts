@@ -109,8 +109,11 @@ export interface QueueSorterStatus {
  * `config.version`, read with the form: a config changed since is refused.
  */
 export type PluginsEdit =
-  /** One instance's whole options object, command-bearing options too (issue #198). */
-  | { action: 'options'; role: Role; name: string; options: Record<string, unknown>; version: string }
+  /**
+   * One instance's whole options object, command-bearing options too (issue #198). A machine-source
+   * instance may also take a new name, `rename`, in the same write (issue #205).
+   */
+  | { action: 'options'; role: Role; name: string; options: Record<string, unknown>; rename?: string; version: string }
   /** A plugin, detected available, fills the role under its own id. */
   | { action: 'select'; role: SelectableRole; plugin: string; version: string }
   /**

@@ -3303,6 +3303,29 @@ architecture (`attachedMachines:`, its own schema, its own edit route) — again
   `createAttachedMachines`, `host.attachedMachines()`, the "attached machine has the machine
   source's name" rule (uniqueness covers it).
 
+### Editing a machine: its name and every detail (issue #205, 2026-10-05)
+
+Owner request: a machine's details are editable after it is added — its name, ssh target, herdr session
+and the rest. The details were already options (issue #198: command-bearing ones too), but the Machines
+view's Edit form showed lanes, executors and label only, and nothing renamed an instance.
+
+- **Rename** is the `options` plugins edit with `rename: <new name>` (role `machine-source` only, else
+  400): the instance's options and its name in one write, against `version`. Every machine option naming
+  it (issue #174) and every routing rule whose `set.machine` names it follow in the same write; a section
+  that was absent is written out, as `place` does. The same name is a plain options edit.
+- **Refused (409, naming the jobs)** while the machine is in use as for a removal (a busy or draining
+  lane, a pane parked there) or while a job not ended is pinned to it (`spec.machineId`): those name the
+  machine by id, and the job spec is not rewritten. A name another machine has: 409.
+- **Persisted state**: lanes are stored under the machine id, so the old id's idle lanes are closed as
+  any gone machine's (`planGoneLanes`) and the new id opens its own. Events keep the id they were
+  written with. No migration: nothing stored changes shape.
+- **UI**: the Edit form (`EditMachineForm`) shows the name, label, lanes, executors and the plugin's
+  details (`DETAILS` in `ui/src/model/machines.ts`): ssh — ssh target (detected targets offered, any
+  destination typed), herdr session, herdr binary, host key, a "runs herdr" switch; docker — container;
+  client — token variable. An emptied optional detail goes (its default). The local machine's form
+  (`LocalMachineForm`) edits its name and lane count. A changed ssh target is not re-probed: its host
+  key is edited beside it, and without the right one the hopper does not connect.
+
 ### Router, queue sorter and routing rules (issue #18)
 
 Owner request: the router, queue sorter and routing rules can be set in the UI; lane rules are out of

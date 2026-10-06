@@ -1,8 +1,9 @@
 // The Machines view's model (design.md "Machines from the UI", issues #18, #74): which machine is
 // this one (connection `local`) and which an attached one (connection `ssh`, `docker` or `client`), why an Add
 // form may not be sent yet, the body POST /ui/api/machines takes, and the options edit an Edit form
-// sends to POST /ui/api/plugins. herdrBin, session and hostKey are never part of a body. A new machine
-// starts from the machine defaults (issue #142), edited through POST /ui/api/machines/defaults.
+// sends to POST /ui/api/plugins — its name and every detail of how it is reached too (issue #205). An
+// Add body never carries herdrBin, session or hostKey. A new machine starts from the machine defaults
+// (issue #142), edited through POST /ui/api/machines/defaults.
 import type { ConfiguredMachine, MachineDefaultsEdit, MachineEdit, MachineSnapshot, MachinesConfig, PluginsEdit } from '../../../src/domain/types.ts';
 
 /** This machine's default lane count. */
@@ -32,8 +33,40 @@ export function kindOf(config: MachinesConfig | null, id: string): MachineKind {
 
 /** An Add form as typed. */
 export interface MachineDraft { name: string; ssh: string; lanes: string; executors: string[]; label: string }
-/** An Edit form as typed. */
-export type MachineEditDraft = Pick<MachineDraft, 'lanes' | 'executors' | 'label'>;
+/** One detail of how an attached machine is reached: an option of its connection's plugin, edited as text. */
+export interface DetailField { key: string; label: string; hint: string; required: boolean }
+
+/** The details each connection's Edit form shows, in order (issue #205); `herdr` is a switch beside them. */
+export const DETAILS: Record<string, DetailField[]> = {
+  ssh: [
+    { key: 'ssh', label: 'ssh target', hint: 'a Host alias from ~/.ssh/config, or user@host', required: true },
+    { key: 'session', label: 'herdr session', hint: 'empty: hopper', required: false },
+    { key: 'herdrBin', label: 'herdr binary', hint: 'empty: herdr, as its login shell finds it', required: false },
+    { key: 'hostKey', label: 'host key', hint: '<type> <base64>, the only key accepted from it; empty: not connected. Another ssh target has its own', required: false },
+  ],
+  docker: [{ key: 'docker', label: 'container', hint: 'its name or id; commands run in it through docker exec', required: true }],
+  client: [{ key: 'tokenEnv', label: 'token variable', hint: 'the variable (or <name>_FILE) holding its client token', required: true }],
+};
+
+/** An Edit form as typed: its name, lanes, executors, label, the details of its connection, and (ssh) whether it runs herdr. */
+export type MachineEditDraft = Pick<MachineDraft, 'name' | 'lanes' | 'executors' | 'label'> & { details: Record<string, string>; herdr: boolean };
+
+/** A fresh Edit form: the machine as configured, a detail it does not set empty. */
+export function editDraft(m: Extract<MachineKind, { kind: 'attached' }>): MachineEditDraft {
+  const o = m.machine.options ?? {};
+  const details = Object.fromEntries((DETAILS[m.machine.connection] ?? []).map((f) => [f.key, typeof o[f.key] === 'string' ? o[f.key] as string : '']));
+  return { name: m.machine.name, lanes: String(m.lanes), executors: [...m.executors], label: m.label ?? '', details, herdr: o.herdr !== false };
+}
+
+/** Why the Edit form cannot be sent yet, or null. The daemon checks again. */
+export function editProblem(m: Extract<MachineKind, { kind: 'attached' }>, d: MachineEditDraft, config: MachinesConfig): string | null {
+  const name = d.name.trim();
+  if (!name) return 'give the machine a name';
+  if (name !== m.machine.name && config.machines.some((x) => x.name === name)) return `a machine is already named ${name}; pick another name`;
+  if (lanesOf(d.lanes) === undefined) return 'lanes must be a whole number, at least 1';
+  const missing = (DETAILS[m.machine.connection] ?? []).find((f) => f.required && !(d.details[f.key] ?? '').trim());
+  return missing ? `give the ${missing.label}` : null;
+}
 
 const lanesOf = (s: string): number | undefined => (/^\d+$/.test(s.trim()) && Number(s) >= 1 ? Number(s) : undefined);
 
@@ -66,17 +99,43 @@ export function addBody(d: MachineDraft, version: string): MachineEdit {
   return { name: d.name.trim(), ssh: d.ssh, lanes: lanesOf(d.lanes) ?? 0, executors: [...d.executors], ...(label ? { label } : {}), version };
 }
 
-/** The machine's whole options with lanes, executors and label as typed (a cleared label goes); null when nothing changed. */
+/** The same options, whatever their key order and the order of executors. */
+function sameOptions(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
+  const norm = (o: Record<string, unknown>) => JSON.stringify(Object.keys(o).sort().map((k) => [k, Array.isArray(o[k]) ? [...o[k] as unknown[]].sort() : o[k]]));
+  return norm(a) === norm(b);
+}
+
+/** An options edit, with `rename` when the name typed differs; null when neither changed. */
+function optionsEdit(m: MachineKind & { machine: ConfiguredMachine }, name: string, options: Record<string, unknown>, version: string): Extract<PluginsEdit, { action: 'options' }> | null {
+  const rename = name !== m.machine.name ? name : undefined;
+  if (!rename && sameOptions(options, m.machine.options ?? {})) return null;
+  return { action: 'options', role: 'machine-source', name: m.machine.name, ...(rename ? { rename } : {}), version, options };
+}
+
+/**
+ * The machine's whole options with lanes, executors, label and the details as typed — a cleared label
+ * or optional detail goes; herdr switched off is `herdr: false` — and its new name; null when nothing changed.
+ */
 export function editBody(m: Extract<MachineKind, { kind: 'attached' }>, d: MachineEditDraft, version: string): Extract<PluginsEdit, { action: 'options' }> | null {
-  const lanes = lanesOf(d.lanes) ?? 0;
+  const fields = DETAILS[m.machine.connection] ?? [];
+  const drop = new Set(['label', 'herdr', ...fields.map((f) => f.key)]);
+  const rest = Object.fromEntries(Object.entries(m.machine.options ?? {}).filter(([k]) => !drop.has(k)));
+  const details = Object.fromEntries(fields.flatMap((f) => { const v = (d.details[f.key] ?? '').trim(); return v ? [[f.key, v]] : []; }));
   const label = d.label.trim();
-  const sameExecutors = d.executors.length === m.executors.length && d.executors.every((x) => m.executors.includes(x));
-  if (lanes === m.lanes && sameExecutors && label === (m.label ?? '')) return null;
-  const { label: _old, ...rest } = m.machine.options ?? {};
-  return {
-    action: 'options', role: 'machine-source', name: m.machine.name, version,
-    options: { ...rest, lanes, executors: [...d.executors], ...(label ? { label } : {}) },
-  };
+  return optionsEdit(m, d.name.trim(), {
+    ...details, ...rest, lanes: lanesOf(d.lanes) ?? 0, executors: [...d.executors], ...(label ? { label } : {}),
+    ...(m.machine.connection === 'ssh' && !d.herdr ? { herdr: false } : {}),
+  }, version);
+}
+
+/** A local machine's Edit form as typed: its name and lane count. */
+export interface LocalDraft { name: string; lanes: string }
+
+/** Its whole options with the lane count as typed (0 runs none here), and its new name; null when nothing changed or while either is invalid. */
+export function localBody(m: Extract<MachineKind, { kind: 'local' }>, d: LocalDraft, version: string): Extract<PluginsEdit, { action: 'options' }> | null {
+  const name = d.name.trim();
+  if (!name || !/^\d+$/.test(d.lanes.trim())) return null;
+  return optionsEdit(m, name, { ...m.machine.options, lanes: Number(d.lanes) }, version);
 }
 
 /** A client target's client release, as the Machines view says it (issue #70); null before a probe found it online, or for any other machine. */

@@ -19,6 +19,8 @@ export interface AttachedEditOptions {
   resolveTarget?(ssh: string, o: { herdr: boolean }): Promise<ResolvedTarget>;
   /** Jobs that need the machine (busy lanes there, panes parked there): a removal is refused while any do. */
   inUse?(name: string): string[];
+  /** Jobs not ended that are pinned to the machine (`spec.machineId`): a rename is refused while any are (issue #205). */
+  pinned?(name: string): string[];
 }
 
 export function createMachinesEditor(o: AttachedEditOptions & {

@@ -299,11 +299,11 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
         // Act on what the config says now, not on a reload the watch timer has not run yet.
         if (sign() !== signature) await enqueue();
         const r = applyEdit(e, {
-          config: o.config, configured: instances(), find: (id) => entries.find((x) => x.definition.id === id), inUse: (role, name) => (role === 'machine-source' ? o.attached?.inUse?.(name) ?? [] : role === 'executor' ? o.executorInUse?.(name) ?? [] : []),
+          config: o.config, configured: instances(), find: (id) => entries.find((x) => x.definition.id === id), inUse: (role, name) => (role === 'machine-source' ? o.attached?.inUse?.(name) ?? [] : role === 'executor' ? o.executorInUse?.(name) ?? [] : []), pinned: (name) => o.attached?.pinned?.(name) ?? [],
         });
         if (!r.ok) return r;
         if (r.changed) {
-          o.logger.info(`hopper: plugins config edited in the UI: ${e.action} ${e.role} ${e.action === 'select' ? String(e.plugin) : e.name}`);
+          o.logger.info(`hopper: plugins config edited in the UI: ${e.action} ${e.role} ${e.action === 'select' ? String(e.plugin) : e.name}${e.action === 'options' && e.rename && e.rename !== e.name ? ` renamed ${e.rename}` : ''}`);
           await enqueue();
         }
       }
