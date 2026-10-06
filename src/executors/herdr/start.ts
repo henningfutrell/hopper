@@ -71,6 +71,8 @@ export interface TurnAnchor {
   anchor: string;
   /** Claude was at a dialog when we sent. */
   blockedAtSend: boolean;
+  /** What was sent, to send again when it never reached Claude (issue #278). Absent in turns saved before. */
+  text?: string;
 }
 
 export interface StartDeps {
