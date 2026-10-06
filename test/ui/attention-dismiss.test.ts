@@ -38,7 +38,7 @@ function fakeDaemon() {
   return vi.fn(async (input: string, init: RequestInit = {}) => {
     const path = String(input).split('?')[0]!;
     calls.push({ path, method: init.method ?? 'GET' });
-    if (path === '/ui/api/session') return json({ authenticated: false });
+    if (path === '/ui/api/session') return json({ authenticated: true, user: { role: 'viewer', realm: 'local', name: 'login code' }, signIn: { local: true, origin: location.origin, realms: [] } });
     return path in routes ? json(routes[path]) : new Response('{"error":"not found"}', { status: 404 });
   });
 }

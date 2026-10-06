@@ -1,17 +1,16 @@
 // Open questions: what the job asked, its recent output, the escalation trail, and the answer box
-// with Send answer, Close and Dismiss. Logged out, the box is a notice naming the login command; a
-// 403 on a mutation drops the UI to logged out, so the notice replaces the box. Shown, the owner's
+// with Send answer, Close and Dismiss. A 403 on a mutation drops the UI to logged out: the landing
+// page (issue #213). Shown, the owner's
 // questions are marked seen (the nav badge clears). Only the open questions: the question history and
 // the question gates are in Settings (issue #151). A session whose UI role cannot act (viewer) sees a
 // notice instead of the box.
-import { Archive, ChevronRight, Lock, LogIn, MessageCircleQuestion, Send, X } from 'lucide-react';
+import { Archive, ChevronRight, Lock, MessageCircleQuestion, Send, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Textarea } from '@/components/ui/textarea';
 import { Confirm } from '@/components/confirm';
 import { Countdown, JobTitle } from '@/components/job';
-import { loginHint } from '@/lib/api';
 import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
 import { between, clock } from '@/model/format';
@@ -46,7 +45,6 @@ function Attempt({ a, onUse }: { a: QuestionAttempt; onUse?: (answer: string) =>
 
 function QuestionCard({ q }: { q: Question }) {
   const job = useJobIndex().get(q.jobId);
-  const authed = useHopper((s) => s.authed);
   const role = useHopper((s) => s.user?.role);
   const canAnswer = useCanOperate();
   const [draft, setDraft] = useState('');
@@ -100,12 +98,7 @@ function QuestionCard({ q }: { q: Question }) {
           </div>
         </div>
       )}
-      {!authed && (
-        <div data-slot="login-notice" className="flex flex-wrap items-center gap-2 rounded-md border border-warn/40 bg-warn/5 p-3 text-sm text-warn">
-          <LogIn className="size-4" />Log in to answer or close: <span className="break-all text-foreground">{loginHint()}</span>
-        </div>
-      )}
-      {authed && !canAnswer && (
+      {!canAnswer && (
         <div data-slot="login-notice" className="flex flex-wrap items-center gap-2 rounded-md border border-dashed p-3 text-sm text-muted-foreground">
           <Lock className="size-4" />Your role ({role}) cannot answer, close or dismiss questions; an operator or admin can.
         </div>

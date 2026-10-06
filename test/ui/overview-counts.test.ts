@@ -35,7 +35,7 @@ function fakeDaemon(initial: Job[]) {
   const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
   const fetch = vi.fn(async (input: string) => {
     const path = String(input).split('?')[0]!;
-    if (path === '/ui/api/session') return json({ authenticated: false });
+    if (path === '/ui/api/session') return json({ authenticated: true, user: { role: 'viewer', realm: 'local', name: 'login code' }, signIn: { local: true, origin: location.origin, realms: [] } });
     const r = routes();
     return path in r ? json(r[path]) : new Response('{"error":"not found"}', { status: 404 });
   });

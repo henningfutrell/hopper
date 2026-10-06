@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
 // The UI's question card (ui/src/views/questions.tsx), rendered in happy-dom inside the whole app
-// against a fake of the daemon's HTTP surface: the browser's only seam. Logged out, the card says
-// how to log in where the answer box would be; logged in, it offers Send answer and Close (Close
-// asks first, in a dialog); a 403 on a mutation logs the UI out and shows the same notice. Dismiss
+// against a fake of the daemon's HTTP surface: the browser's only seam. Logged out, there is no card,
+// only the landing page (issue #213); logged in, it offers Send answer and Close (Close asks first, in
+// a dialog); a 403 on a mutation logs the UI out, to the landing page. Dismiss
 // drops a question (asks first); opening the view marks the owner's questions seen, which clears
 // the nav badge. The Questions view holds the open questions only (issue #151): the handled ones are
 // the question history in Settings, a compact list, each opening to its question and answer.
@@ -12,8 +12,6 @@ import { createElement } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-
-const LOGIN_CMD = 'bash ~/.local/lib/hopper/scripts/open-ui.sh';
 
 const question = {
   id: 'bf094266', jobId: '89849c4f', text: 'Which branch?', recentOutput: 'line', detectedBy: 'marker', status: 'open',
@@ -91,13 +89,14 @@ async function boot(o: Boot) {
   const app = '../../ui/src/app/app.tsx'; // browser code, type-checked by ui/tsconfig.json: imported by path
   const { App } = (await import(app)) as { App: () => ReturnType<typeof createElement> };
   await act(async () => { root = createRoot(document.getElementById('root')!); root.render(createElement(App)); });
-  if (!o.hash) await vi.waitFor(() => expect(card()).not.toBeNull());
+  if (!o.hash && o.authed) await vi.waitFor(() => expect(card()).not.toBeNull());
   return daemon;
 }
 
 const card = () => [...document.querySelectorAll('[data-slot="card"]')].find((c) => c.textContent?.includes(question.text)) ?? null;
 const button = (label: string, within: ParentNode = card()!) => [...within.querySelectorAll('button')].find((b) => b.textContent?.trim() === label);
 const notice = () => card()!.querySelector('[data-slot="login-notice"]');
+const landing = () => document.querySelector('[data-slot="landing"]');
 const click = (b: HTMLElement | undefined) => act(async () => { b!.click(); });
 
 afterEach(async () => {
@@ -107,11 +106,11 @@ afterEach(async () => {
 });
 
 describe('question card', () => {
-  it('logged out: where the answer box would be, a notice says how to log in, with the exact command', async () => {
+  it('logged out: no card, only the landing page with the login code', async () => {
     await boot({ authed: false });
-    expect(card()!.querySelector('textarea')).toBeNull();
-    expect(notice()?.textContent).toContain('Log in to answer or close');
-    expect(notice()?.textContent).toContain(LOGIN_CMD);
+    await vi.waitFor(() => expect(landing()).not.toBeNull());
+    expect(card()).toBeNull();
+    expect(document.querySelector('input[aria-label="Login code"]')).not.toBeNull();
   });
 
   it('logged in: the answer box offers Send answer and Close', async () => {
@@ -138,7 +137,7 @@ describe('question card', () => {
     expect(call.body).toEqual({});
   });
 
-  it('a 403 on a mutation logs the UI out and shows the login notice in the card', async () => {
+  it('a 403 on a mutation logs the UI out, to the landing page', async () => {
     await boot({ authed: true, mutationStatus: 403 });
     const box = await vi.waitFor(() => { const t = card()!.querySelector('textarea'); expect(t).not.toBeNull(); return t!; });
     await act(async () => {
@@ -147,8 +146,8 @@ describe('question card', () => {
       box.dispatchEvent(new Event('input', { bubbles: true }));
     });
     await click(button('Send answer'));
-    await vi.waitFor(() => expect(notice()?.textContent).toContain(LOGIN_CMD));
-    expect(card()!.querySelector('textarea')).toBeNull();
+    await vi.waitFor(() => expect(landing()).not.toBeNull());
+    expect(card()).toBeNull();
   });
 
   it('a viewer: no answer box; the card says the role cannot answer', async () => {
@@ -169,7 +168,7 @@ describe('question card', () => {
     expect(localStorage.getItem('jh_session')).toBe('a'.repeat(64));
   });
 
-  it('logged out with OIDC, GitHub or SAML realms: the banner offers a sign-in button per realm', async () => {
+  it('logged out with OIDC, GitHub or SAML realms: the landing page offers a sign-in button per realm', async () => {
     await boot({ authed: false, realms: [{ name: 'corp', label: 'Corp SSO', type: 'oidc' }] });
     await vi.waitFor(() => expect(button('Sign in with Corp SSO', document.body)).toBeDefined());
   });
@@ -227,7 +226,7 @@ describe('handled questions', () => {
   });
 
   it('are the question history in Settings, a compact list; a row opens to the question, the answer and who gave it', async () => {
-    await boot({ authed: false, hash: '#settings/history' });
+    await boot({ authed: true, hash: '#settings/history' });
     const list = await vi.waitFor(() => { const l = document.querySelector('[data-slot="handled-questions"]'); expect(l).not.toBeNull(); return l!; });
     const rows = list.querySelectorAll('[data-slot="handled-question"]');
     expect(rows).toHaveLength(1);

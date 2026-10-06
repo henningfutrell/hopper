@@ -2,15 +2,12 @@
 // the LAN; mutations only through POST /ui/api/* with JSON and that header (design.md "UI session
 // and mutations", "Reaching the UI across the LAN").
 import type { SessionView } from '@/model/wire';
-import { onLan } from './login';
 
 const TOKEN_KEY = 'jh_session';
 export const LOGIN_CMD = 'bash ~/.local/lib/hopper/scripts/open-ui.sh';
-/** How to log in from here: the command on this machine, a device link across the LAN. */
-export const loginHint = (): string => (onLan() ? 'sign in, open a device link from a logged-in browser, or paste a login code' : `sign in, or run ${LOGIN_CMD}`);
 
 export const readToken = (): string | null => { try { return localStorage.getItem(TOKEN_KEY); } catch { return null; } };
-export const clearToken = (): void => { try { localStorage.removeItem(TOKEN_KEY); } catch { /* storage blocked: stay read-only */ } };
+export const clearToken = (): void => { try { localStorage.removeItem(TOKEN_KEY); } catch { /* storage blocked: stay logged out */ } };
 
 export class SessionRejected extends Error {}
 /** A live session whose role is short of what the mutation needs: the session stays. */

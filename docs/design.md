@@ -769,10 +769,10 @@ or closes the extra lane after. **Missed:** a reply turn that starts and ends be
 with no readable echo (e.g. a dialog answered by keys) is not seen; the question stays open and
 can still be answered or closed in the UI.
 
-**Logged out** the card shows, where the answer box would be, "Log in to answer or close:
-`bash ~/.local/lib/hopper/scripts/open-ui.sh`". A 403 on any mutation drops the stored
-token and every card shows the same notice. In the UI rework this is `ui/src/views/questions.tsx`
-(the notice is `data-slot="login-notice"`; Close sits next to Send answer and asks first in a
+**Logged out** there is no card: the page is the landing page (issue #213, "Who you are, and sign-in
+first"). A 403 on any mutation drops the stored token and the page falls to the landing page. A
+session whose role cannot answer sees a notice where the answer box would be. In the UI rework this is
+`ui/src/views/questions.tsx` (the notice is `data-slot="login-notice"`; Close sits next to Send answer and asks first in a
 dialog, `components/confirm.tsx`, never `window.confirm`); `test/ui/questions.test.ts` renders
 the whole app in happy-dom against a fake daemon.
 
@@ -961,8 +961,8 @@ token and send any `Origin`. Cookies are no better here: they ignore ports, so a
    only the token's SHA-256 and the expiry, never the token. Expired rows are deleted on
    lookup. Logout deletes the row.
 4. **`GET /ui/api/session`** with header `x-hopper-session` → `{ authenticated,
-   expiresAt? }`. Without a valid session the page is read-only and says how to log in:
-   `bash ~/.local/lib/hopper/scripts/open-ui.sh`.
+   expiresAt? }`. Without a valid session the page is the landing page and says how to log in:
+   `bash ~/.local/lib/hopper/scripts/open-ui.sh` ("Who you are, and sign-in first").
 5. **Mutations** — `POST` only, JSON body, all of: header `x-hopper-session` = a live
    session token (constant-time); `Origin` exactly `http://127.0.0.1:<port>` or
    `http://localhost:<port>`; `Sec-Fetch-Site`, when present, `same-origin`;
@@ -4644,14 +4644,18 @@ the operating system enforces runs their jobs on a machine of their own (an ssh,
 The top bar shows the session's user (its name; the identity that signed in on hover) and role.
 
 **Who you are, and sign-in first (issue #167).** The top bar says who you are at every width: the
-session's user and role, or `not signed in` and the user whose work the page shows. `GET
-/ui/api/session` answers, logged out, `viewing: { id, name }` — the user a read without a session
-reads (loopback on a one-user hopper: that user; absent with several users and on a LAN or public request) — and
-`signIn.required`, true while the instance has more than one user. Then a logged-out page reads no
-user's work: `load` stops after the session read (no `/api/` read, no event stream) and the page shows
-only the ways to sign in. A JSON sign-in (password, no sign-in) or a logout on that page reloads it.
-With several users the API agrees (issue #221): a loopback read without a session reads no user's work,
-so neither a browser nor a process on the host reads one user's work without that user's session.
+session's user and role. `GET /ui/api/session` answers, logged out, `viewing: { id, name }` — the user a
+read without a session reads (loopback on a one-user hopper: that user; absent with several users and on
+a LAN or public request) — and `signIn.required`, true while the instance has more than one user.
+**Logged out, the page is only the landing page (issue #213)**, however many users: `load` stops after
+the session read (no `/api/` read, no event stream) and the page shows the hopper's name and the ways to
+sign in (`ui/src/app/landing.tsx`) — no navigation, no view, no read-only notice, no top bar. Until the
+session is read the page renders nothing (`sessionRead` in the store), so the app never shows before the
+landing page; a daemon that cannot be reached shows the landing page with that error. A JSON sign-in
+(password, no sign-in, gateway) or a logout reloads the page; a 403 on a mutation drops it to the
+landing page. The UI no longer reads `viewing`. With several users the API agrees (issue #221): a
+loopback read without a session reads no user's work, so neither a browser nor a process on the host
+reads one user's work without that user's session.
 Settings gains a **Users** section (admin only, as `GET /api/users`): the list, and **Add user**, which
 shows the one-time login link the daemon answers to copy and hand over; since issue #221 also the
 instance totals (admin) and **Change your password** (everyone signed in with a password account).
