@@ -4,7 +4,8 @@
 // it here, through the hopper's app. Connect shows the provider's device code, centred (issue #258); the user enters it at
 // the link, and the panel follows until the account is connected. Then its issues become this user's
 // jobs, and the jobs act as them with the app marked on what they do. GitHub: the app reaches only the
-// repositories it is installed on — the panel says where it is, and links to install it. Disconnect
+// repositories it is installed on — the panel lists them for each account it is installed on, with a link
+// to choose them; only where it is installed nowhere does it link to install it (issue #253). Disconnect
 // forgets the account and its token.
 import { Link2, Unlink } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -14,7 +15,7 @@ import { Button } from '@/components/ui/button';
 import { Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
 import { get, post, SessionRejected } from '@/lib/api';
-import type { ConnectedAccountStatus } from '@/model/wire';
+import type { AppInstallation, ConnectedAccountStatus } from '@/model/wire';
 import { useHopper } from '@/store';
 import { useCanAdmin } from '@/store/selectors';
 
@@ -55,14 +56,14 @@ export function ConnectedAccountPanel({ provider }: { provider: Provider }) {
         </div>
         {s.state === 'connected' && <>
           <div>Connected as <span className="font-mono">{s.account}</span>.</div>
-          {s.installations !== undefined && (
-            <div data-installations>
-              {s.installations.length > 0
-                ? <>The app is installed on <span className="font-mono">{s.installations.join(', ')}</span>; it reaches only the repositories chosen there.</>
-                : <span className="text-warn">The app is installed nowhere you can see: it reaches no repository yet.</span>}
-            </div>
-          )}
-          {s.installUrl && <div><a className="underline" href={s.installUrl} target="_blank" rel="noreferrer">Install the app, or choose its repositories</a></div>}
+          {s.installations === undefined
+            ? s.installUrl && <div><a className="underline" href={s.installUrl} target="_blank" rel="noreferrer">Install the app, or choose its repositories</a></div>
+            : s.installations.length > 0
+              ? <div data-installations className="space-y-2">{s.installations.map((i) => <Installation key={i.account} installation={i} />)}</div>
+              : <div data-installations className="space-y-1">
+                <div className="text-warn">The app is not installed on any account you can see: it reaches no repository yet.</div>
+                {s.installUrl && <div><a className="underline" href={s.installUrl} target="_blank" rel="noreferrer">Install the app</a></div>}
+              </div>}
           <Button size="xs" variant="outline" disabled={!canAdmin} title={adminOnly} onClick={() => void act('disconnect')}><Unlink />Disconnect</Button>
         </>}
         {s.state === 'waiting' && (
@@ -78,5 +79,24 @@ export function ConnectedAccountPanel({ provider }: { provider: Provider }) {
         </>}
       </div>
     </Panel>
+  );
+}
+
+/** One installation of the app: the account, the repositories it reaches there, and where to choose them. */
+function Installation({ installation: i }: { installation: AppInstallation }) {
+  const n = i.repositories.length;
+  return (
+    <div data-installation={i.account} className="space-y-1">
+      <div>
+        On <span className="font-mono">{i.account}</span>: {i.repositorySelection === 'all' ? 'all repositories' : 'chosen repositories'}
+        {n === 0 ? <span className="text-warn"> — it reaches no repository there yet.</span> : <> — {n} {n === 1 ? 'repository' : 'repositories'}:</>}
+      </div>
+      {n > 0 && (
+        <ul className="max-h-48 overflow-y-auto rounded-md border bg-muted/30 px-2 py-1">
+          {i.repositories.map((r) => <li key={r} data-repository className="font-mono break-all">{r}</li>)}
+        </ul>
+      )}
+      {i.settingsUrl && <div><a className="underline" href={i.settingsUrl} target="_blank" rel="noreferrer">Choose its repositories</a></div>}
+    </div>
   );
 }

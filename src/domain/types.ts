@@ -464,4 +464,4 @@ export type GhLoginStatus =
 // ---- Connected accounts (issue #214): src/domain/connected-accounts.ts --------------------------
 
 export { CONNECTED_ACCOUNT_PROVIDERS, CONNECTED_VIA } from './connected-accounts.ts';
-export type { ConnectedAccountProvider, ConnectedAccountStatus } from './connected-accounts.ts';
+export type { AppInstallation, ConnectedAccountProvider, ConnectedAccountStatus } from './connected-accounts.ts';
