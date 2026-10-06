@@ -6,7 +6,7 @@ import type { Job } from '../../src/domain/types.ts';
 import { createFakeGitHub, type FakeGitHub } from '../../src/sources/index.ts';
 import { GitHubApiError } from '../../src/sources/github/index.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
-import { mergesPullRequest } from '../support/scripted-executor.ts';
+import { mergesPullRequest, opensPullRequest } from '../support/scripted-executor.ts';
 import { waitFor } from '../support/wait.ts';
 
 const REPO = 'owner/hopper-sandbox';
@@ -104,12 +104,38 @@ describe('GitHub issue → job → issue', () => {
     await a.sync();
     const job = (await jobFor(a, issue.url))!;
     const failed = await a.waitForStatus(job.id, 'failed');
-    expect(failed.error).toBe(`nothing shipped: no merged pull request opened by this job closes ${issue.url}`);
+    expect(failed.error).toBe(`not complete: no merged pull request opened by this job closes ${issue.url}`);
     await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:failed'), { what: 'hopper:failed' });
     expect(gh.issue(REPO, issue.number).labels).not.toContain('hopper:done');
     expect(gh.issue(REPO, issue.number).state).toBe('open');
     expect(gh.calls.map((c) => c.method)).not.toContain('closeAsCompleted');
     expect(await a.events('types=job.finished')).toEqual([]);
+  });
+
+  it('completion pull-request: a job that opens a ready pull request is finished; the issue stays open for the merge (issue #187)', async () => {
+    const gh = createFakeGitHub();
+    const a = await boot(gh, { config: { completion: 'pull-request' } });
+    const issue = gh.createIssue({ repo: REPO, body: body({ op: 'echo' }), labels: ['hopper'] });
+    a.scripted.ships(opensPullRequest(gh));
+    await a.sync();
+    const job = (await jobFor(a, issue.url))!;
+    await a.waitForStatus(job.id, 'finished');
+    await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:done'), { what: 'hopper:done' });
+    expect(gh.issue(REPO, issue.number).state).toBe('open');
+    expect(bodies(gh, issue.number)).toEqual([]);
+    await a.sync();
+    expect(await a.events('types=job.queued')).toHaveLength(1);
+  });
+
+  it('completion merge: an open pull request is not done, the job ends failed (issue #187)', async () => {
+    const gh = createFakeGitHub();
+    const a = await boot(gh);
+    const issue = gh.createIssue({ repo: REPO, body: body({ op: 'echo' }), labels: ['hopper'] });
+    a.scripted.ships(opensPullRequest(gh));
+    await a.sync();
+    const job = (await jobFor(a, issue.url))!;
+    const failed = await a.waitForStatus(job.id, 'failed');
+    expect(failed.error).toBe(`not complete: no merged pull request opened by this job closes ${issue.url}`);
   });
 
   it('a pull request merged before the job began is not the job shipping: it ends failed (issue #171)', async () => {
@@ -133,7 +159,7 @@ describe('GitHub issue → job → issue', () => {
     await a.waitForStatus(job.id, 'running');
     gh.failNext('closingPullRequest', new GitHubApiError('gh: timeout', false));
     const failed = await a.waitForStatus(job.id, 'failed');
-    expect(failed.error).toBe('could not confirm the work shipped: gh: timeout');
+    expect(failed.error).toBe('could not confirm the work is complete: gh: timeout');
     await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:failed'), { what: 'hopper:failed' });
     expect(gh.issue(REPO, issue.number).state).toBe('open');
   });

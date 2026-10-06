@@ -25,6 +25,7 @@ const SHARED_DEFAULTS = {
   model: null,
   recentComments: 10,
   projects: {},
+  completion: 'merge',
 };
 
 const ok = (r: ReturnType<typeof parseOptions>) => {
@@ -66,6 +67,10 @@ describe('github-gh options', () => {
     expect(ok(parseOptions(githubGh, { ...AUTHORS, enabled: v })).enabled).toBe(want);
   });
 
+  it.each(['merge', 'pull-request'] as const)('completion: %s is accepted (issue #187)', (v) => {
+    expect(ok(parseOptions(githubGh, { ...AUTHORS, completion: v })).completion).toBe(v);
+  });
+
   it('appKeyEnv: null — never pauses for an app', () => {
     expect(ok(parseOptions(githubGh, { ...AUTHORS, appKeyEnv: null })).appKeyEnv).toBeNull();
   });
@@ -75,6 +80,7 @@ describe('github-gh options', () => {
     ['an unknown key (typo)', { lable: 'hopper' }, /lable|Unrecognized/],
     ['a wrong type', { pollSeconds: 'soon' }, /pollSeconds/],
     ['enabled: maybe', { enabled: 'maybe' }, /enabled/],
+    ['completion: commit (a local commit is never complete)', { completion: 'commit' }, /completion/],
   ])('%s is an error naming the path', (_n, raw, why) => {
     const r = parseOptions(githubGh, { ...AUTHORS, ...raw });
     expect(r.ok).toBe(false);
