@@ -53,6 +53,20 @@ describe('herdr-claude executor: resume', () => {
     expect(escAt).toBeLessThan(promptAt);
   });
 
+  // Issue #267: without yolo Claude asks before it acts; the answer picks the dialog's option.
+  it('answers a permission dialog with the option the answer names: no esc, no prompt, the turn goes on', async () => {
+    const dialog = {
+      output: ['● Bash(rm -rf build)', ' Do you want to proceed?', ' ❯ 1. Yes', "   2. Yes, and don't ask again for rm commands", '   3. No, and tell Claude what to do differently (esc)'],
+      end: 'blocked' as const,
+    };
+    const { herdr, executor, job } = await parked([dialog, DONE_FR]);
+    const out = await executor.resume!(contextFor(job).ctx, '2');
+    expect(out).toEqual({ kind: 'finished', result: { summary: 'I wrote greeting.txt in French.', paneId: 'w1:p1' } });
+    expect(herdr.texts.map((t) => t.text)).toContain('2');
+    expect(herdr.keys.some((k) => k.keys.includes('esc'))).toBe(false);
+    expect(herdr.prompts).toHaveLength(1);
+  });
+
   it('fails with pane lost when the agent is gone', async () => {
     const { herdr, executor, job } = await parked([ASK]);
     herdr.killAgent('jh-abcdef12');

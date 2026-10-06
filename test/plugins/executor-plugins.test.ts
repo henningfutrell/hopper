@@ -66,7 +66,7 @@ describe('cursor-agent (issue #142)', () => {
 describe('herdr-claude', () => {
   it('options default to what the env defaulted to before plugins', () => {
     expect(options(herdrClaude)).toEqual({
-      bin: 'herdr', claudeBin: 'claude', session: 'hopper', args: ['--dangerously-skip-permissions'],
+      bin: 'herdr', claudeBin: 'claude', session: 'hopper', yolo: true, args: [],
       cwd: homedir(), trustWorkdir: true, pollMs: 1000, idleNudgeMs: 20000,
     });
   });
@@ -107,6 +107,23 @@ describe('herdr-claude', () => {
     const ex = await seamed.create(ctx(temp()), options(seamed));
     expect(ex.name).toBe('herdr-claude');
   });
+
+  // Issue #267: yolo is the instance's choice, on by default; Claude starts with it on the command.
+  it.each([
+    [{}, ['--dangerously-skip-permissions', '--settings', '{"skipDangerousModePermissionPrompt":true}']],
+    [{ yolo: false, args: ['--dangerously-skip-permissions', '--model', 'opus'] }, ['--model', 'opus']],
+  ])('starts Claude with yolo on the command, or without it (%j)', async (raw, args) => {
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [{ output: ['● ok', 'HOPPER_DONE'] }] });
+    const seamed = herdrClaudePlugin(herdr);
+    const ex = await seamed.create(ctx(temp()), options(seamed, { ...raw, cwd: temp(), pollMs: 1 }));
+    const ac = new AbortController();
+    await ex.run({
+      job: { id: 'abcdef12-0000', spec: { executor: 'herdr-claude', payload: { prompt: 'go' } }, priority: 50, status: 'running', approved: false, createdAt: '', updatedAt: '', attempts: 1 },
+      laneId: 'local/lane-1', machine: { id: 'local', label: 'l', maxLanes: 1, online: true, executors: ['herdr-claude'] }, signal: ac.signal,
+      progress() {}, saveState() {}, workTree() {},
+    });
+    expect(herdr.agentStarts.map((s) => s.args)).toEqual([args]);
+  });
 });
 
 describe('test', () => {
@@ -121,7 +138,7 @@ describe('test', () => {
 
 describe('command-bearing options carry the mark into JSON Schema (design.md "UI and mutation")', () => {
   it.each([
-    ['herdr-claude', herdrClaude, ['bin', 'claudeBin', 'args', 'cwd']],
+    ['herdr-claude', herdrClaude, ['bin', 'claudeBin', 'yolo', 'args', 'cwd']],
     ['claude-cli', claudeCli, ['bin', 'sshBin']],
     ['anthropic-api', anthropicApi, ['apiKeyEnv', 'baseUrl']],
     ['gate-router', gateRouter, ['jevPath', 'python']],
