@@ -18,7 +18,7 @@ export async function stopAll(h: Harness): Promise<void> {
   h.cleanup?.();
 }
 
-/** The app with this sign-in config (a fresh hopper's when undefined: the password realm, no accounts), and its sign-in origin (http://localhost:<port>). */
+/** The app with this sign-in config (a fresh hopper's when undefined: the password realm, whose account admin the start adds), and its sign-in origin (http://localhost:<port>). */
 export async function startWithAuth(h: Harness, auth: unknown, env: Record<string, string> = {}): Promise<{ app: TestApp; origin: string; host: string }> {
   const db = tempDbPath();
   h.cleanup = db.cleanup;
@@ -32,6 +32,13 @@ export async function startWithAuth(h: Harness, auth: unknown, env: Record<strin
 export async function restartWithAuth(h: Harness, app: TestApp, auth: unknown): Promise<TestApp> {
   await app.stop();
   writeConfig(app.dbPath, 'sign-in', auth);
+  h.t = await startTestApp({ dbPath: app.dbPath, secrets: { ...SECRETS } });
+  return h.t;
+}
+
+/** Restart on the same store, its sign-in config as it is. */
+export async function restartSame(h: Harness, app: TestApp): Promise<TestApp> {
+  await app.stop();
   h.t = await startTestApp({ dbPath: app.dbPath, secrets: { ...SECRETS } });
   return h.t;
 }

@@ -5,9 +5,9 @@
 // on offer follows it, and stored sessions follow it as they do at start. A change that would end the
 // acting admin's own admin session is refused, so nobody locks themselves out from the UI.
 import argon2 from 'argon2';
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { rawRequest } from '../support/http.ts';
-import { harness, oidcIdp, oidcRealm, session, startWithAuth, stopAll } from '../support/sign-in-app.ts';
+import { harness, oidcIdp, oidcRealm, restartSame, session, startWithAuth, stopAll } from '../support/sign-in-app.ts';
 import type { TestApp } from '../support/app.ts';
 
 const h = harness();
@@ -31,19 +31,73 @@ const passwordSignIn = async (o: { app: TestApp; origin: string; host: string },
   return { status: res.status, token: res.status === 200 ? (JSON.parse(res.text) as { token: string }).token : undefined };
 };
 
+/** The account and password a start added for the password fallback, from its start line (issue #219). */
+const fallbackOf = (warn: MockInstance): { username: string; password: string } => {
+  const line = warn.mock.calls.map((c) => String(c[0])).find((l) => l.includes('password fallback'))!;
+  const m = /account (\S+) .* password (\S+)/.exec(line)!;
+  return { username: m[1]!, password: m[2]! };
+};
+
 describe('a fresh hopper', () => {
-  it('has a password realm with no accounts: no password form until the first account, which signs in at once', async () => {
+  it('offers the password form at once: the account admin, with a password made at start and shown once in its start lines, signs in as owner, admin', async () => {
+    const warn = vi.spyOn(console, 'warn');
     const o = await startWithAuth(h, undefined);
-    const admin = await o.app.login();
-    const v = await realms(o.app, admin);
-    expect(v.realms).toEqual([{ name: 'password', label: 'Password', type: 'password', enabled: true, settings: {}, accounts: [] }]);
-    expect((await session(o.app)).signIn.password).toBe(false);
-    const r = await change(o.app, admin, { action: 'account', realm: 'password', username: 'ada', password: 'correct horse', role: 'operator' });
-    expect(r.status).toBe(200);
+    const { username, password } = fallbackOf(warn);
+    warn.mockRestore();
+    expect(username).toBe('admin');
+    expect(password).toMatch(/^[A-Za-z0-9_-]{24,}$/);
     expect((await session(o.app)).signIn.password).toBe(true);
-    const ada = await passwordSignIn(o, 'ada', 'correct horse');
-    expect(await session(o.app, ada.token)).toMatchObject({ user: { realm: 'password', role: 'operator' } });
-    expect(o.app.app.instance.signInConfig.read().realms[0]!.users).toEqual([{ username: 'ada', passwordHash: expect.stringMatching(/^\$argon2id\$/), role: 'operator' }]);
+    const admin = (await passwordSignIn(o, username, password)).token;
+    expect(await session(o.app, admin)).toMatchObject({ user: { id: 'owner', realm: 'password', role: 'admin' } });
+    const v = await realms(o.app, admin!);
+    expect(v.realms).toEqual([{ name: 'password', label: 'Password', type: 'password', enabled: true, settings: {}, accounts: [{ username: 'admin', role: 'admin', user: { id: 'owner', name: 'owner' } }] }]);
+    expect(JSON.stringify(o.app.app.instance.signInConfig.read())).not.toContain(password);
+  });
+
+  it('a second start keeps the account and makes no new password', async () => {
+    const warn = vi.spyOn(console, 'warn');
+    const o = await startWithAuth(h, undefined);
+    const { username, password } = fallbackOf(warn);
+    warn.mockClear();
+    const again = await restartSame(h, o.app);
+    expect(warn.mock.calls.some((c) => String(c[0]).includes('password fallback'))).toBe(false);
+    warn.mockRestore();
+    const port = new URL(again.url).port;
+    expect((await passwordSignIn({ app: again, origin: `http://localhost:${port}`, host: `localhost:${port}` }, username, password)).status).toBe(200);
+  });
+
+  it('a sign-in config left without an admin password account gets one at the next start', async () => {
+    const warn = vi.spyOn(console, 'warn');
+    const o = await startWithAuth(h, staff('viewer'));
+    const { username, password } = fallbackOf(warn);
+    warn.mockRestore();
+    expect(username).toBe('admin');
+    expect((await passwordSignIn(o, 'ada', 'correct horse')).status).toBe(200);
+    expect((await passwordSignIn(o, username, password)).status).toBe(200);
+    expect(o.app.app.instance.signInConfig.read().realms[0]!.users!.map((u) => [u.username, u.role])).toEqual([['ada', 'viewer'], ['admin', 'admin']]);
+  });
+});
+
+describe('POST /ui/api/realms: the password fallback (issue #219)', () => {
+  it.each([
+    ['turning its realm off', { action: 'enable', name: 'staff', enabled: false }],
+    ['removing its realm', { action: 'remove', name: 'staff' }],
+    ['removing the last admin account', { action: 'account-remove', realm: 'staff', username: 'ada' }],
+    ['demoting the last admin account', { action: 'account', realm: 'staff', username: 'ada', role: 'operator' }],
+  ])('refuses %s', async (_what, body) => {
+    const o = await startWithAuth(h, staff('admin'));
+    const admin = await o.app.login();
+    const r = await change(o.app, admin, body);
+    expect(r.status).toBe(409);
+    expect(r.body.error).toMatch(/fallback/);
+    expect((await session(o.app)).signIn.password).toBe(true);
+  });
+
+  it('allows it once another admin account in a password realm that is on holds the fallback', async () => {
+    const o = await startWithAuth(h, staff('admin'));
+    const admin = await o.app.login();
+    expect((await change(o.app, admin, { action: 'account', realm: 'staff', username: 'bea', password: 'correct horse', role: 'admin' })).status).toBe(200);
+    expect((await change(o.app, admin, { action: 'account-remove', realm: 'staff', username: 'ada' })).status).toBe(200);
   });
 });
 
