@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- Two kinds of admin: the first person to sign in with GitHub is a super admin. Any admin can make someone admin from Settings → Sign-in → Admins; only a super admin can make someone super admin or hand theirs over.
 - Once you sign in with GitHub, Sources shows that one GitHub connection, with what it reads and when, instead of leftover pieces for the command-line GitHub tool and its login.
 - The hopper always looks for a newer version on its own, every minute, and offers it once one is ready: a setting can no longer quietly stop it from checking.
 - The Sign-in settings page now shows sign-in as it works: GitHub first, with who the admin is and who else gets in, then any other ways to sign in, device links and no sign-in, each switch saying On or Off in words.

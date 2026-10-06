@@ -175,6 +175,8 @@ export interface IdentityLinks {
   link(realm: string, subject: string, userId: string): void;
   /** True when an identity of one of these realms is linked to a user: someone has signed in with it. */
   anyIn(realms: readonly string[]): boolean;
+  /** Every identity linked to a user: everyone who has signed in, by realm and subject. */
+  all(): { realm: string; subject: string; userId: string }[];
 }
 
 /**
@@ -195,6 +197,8 @@ export interface StoredSignIn {
   none?: { role: UiRole };
   /** The first person to sign in with GitHub, admin from then on (issue #239); absent: nobody yet. */
   githubAdmin?: { realm: string; subject: string };
+  /** The super admins (issue #242), each an identity by realm and subject; absent: the first GitHub admin, else nobody. */
+  superAdmins?: { realm: string; subject: string }[];
   /** In order: the order the form tries them and the buttons show them. */
   realms: StoredRealm[];
 }

@@ -8,10 +8,12 @@
 // field. In Settings, admin only (GET /api/realms). Every change is POST /ui/api/realms against the
 // version read, and applies at once; the daemon refuses one that would not load, or that would end your
 // own admin session, and the refusal is shown where the change was made.
+// Admins: ./admins.tsx (issue #242).
 import { ArrowDown, ArrowUp, Copy, KeyRound, Link, Pencil, Plus, ShieldOff, Trash2, Users, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Confirm } from '@/components/confirm';
+import { Admins } from '@/views/admins';
 import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
 import { Button } from '@/components/ui/button';
@@ -119,6 +121,7 @@ export function Realms() {
           ) : list(github)}
         </div>
       </Panel>
+      <Admins view={view} busy={busy} change={change} />
       <Panel title="Other ways to sign in" icon={Users} count={others.length}
         action={!editing ? <Button size="xs" variant="outline" className="gap-1" onClick={() => { setError(null); setEditing({ draft: emptyDraft('oidc') }); }}><Plus />Add realm</Button> : undefined}>
         <div data-section="other" className="space-y-3 text-sm">

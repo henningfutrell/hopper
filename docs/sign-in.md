@@ -193,7 +193,8 @@ restart: the environment wins.
 The record holds the realms' secrets as stored: whoever runs the CLI holds the database's credentials,
 which open them anyway. In the record each field has the name in brackets in [Realm settings](#realm-settings); `version` is
 `1`, `local.enabled` the login code (default on), `none.role` no sign-in (absent: off), `githubAdmin`
-the [first GitHub admin](#ui-roles-and-role-rules) (absent: nobody yet), and `realms`
+the [first GitHub admin](#ui-roles-and-role-rules) (absent: nobody yet), `superAdmins` the
+[super admins](#super-admins) (absent: the first GitHub admin), and `realms`
 the realms in order, each with `name`, `label`, `type`, `enabled` (absent: on) and `roles`.
 
 **From before.** Older installs were migrated when the daemon updated: the sign-in document of an
@@ -364,7 +365,9 @@ in. `HOPPER_PUBLIC_URL` is the address people reach through the gateway.
 |---|---|
 | `viewer` | read everything the UI shows |
 | `operator` | + cancel and approve jobs; answer, close, dismiss questions and mark them seen |
-| `admin` | + change configuration: plugins, machines, routing rules, webhooks, the rules, the queue gate, sign-in realms; apply updates; hand out device links |
+| `admin` | + change configuration: plugins, machines, routing rules, webhooks, the rules, the queue gate, sign-in realms; apply updates; hand out device links; make others admin |
+
+A **super admin** is an admin who may also make others super admin or hand that over ([Super admins](#super-admins)).
 
 A login code signs in with role `admin`, to the user it was minted for. For every realm, its **role rules** decide, the same way for every type:
 
@@ -387,6 +390,25 @@ A login code signs in with role `admin`, to the user it was minted for. For ever
   Only a hopper nobody has signed in to with GitHub yet records one: one where someone already has
   makes nobody admin this way. Sign in with GitHub yourself before you let anyone else reach the UI.
   To take it back, remove `githubAdmin` from the record with the CLI and restart.
+
+### Super admins
+
+There are two tiers of admin (issue #242). The first person to sign in with GitHub is a **super admin**;
+every other admin is a regular admin. Settings → Sign-in → **Admins** lists everyone who has signed in,
+with their role:
+
+- **Any admin** can make someone admin (**Make admin**): their realm's admin rule gets their subject,
+  as if you had added it to the rule yourself. A realm set from the environment takes the environment's
+  rules again at the next start.
+- **A super admin** can also make someone super admin (**Make super admin**), or hand their own super
+  admin over (**Hand over super admin**): the other person becomes super admin, and you stay admin. A
+  super admin is admin whatever their realm's rules say, while that realm is on.
+- **A regular admin** can do neither, and no change of theirs may change who is super admin: turning
+  off or removing the realm a super admin signs in with is refused.
+
+A device link or a new user's login link signs in as admin, never as super admin. The record keeps the
+super admins as `superAdmins` (each a realm and a subject); absent, the first GitHub admin is the one. After
+a lockout, set it with the CLI as below.
 
 What fills each field:
 

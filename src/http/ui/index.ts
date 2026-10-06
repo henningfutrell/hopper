@@ -7,7 +7,7 @@
 // session's user only (issue #158); the instance's (update, plugin store, users, realms) need admin.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import type { SignIn } from '../../auth/index.ts';
+import { isSuperAdmin, type SignIn } from '../../auth/index.ts';
 import type { Clock, InstanceStore, PluginStoreView, Updater } from '../../domain/ports.ts';
 import { CONNECTED_ACCOUNT_PROVIDERS, HERDR_SESSION, LIST_ROLES, QUEUE_GATE_MODES, REALM_TYPES, ROLES, SELECTABLE_ROLES, UI_ROLES, UPDATE_CHANNELS, type RealmsEdit, type RealmsView, type SessionView, type UiRole, type UserAdded } from '../../domain/types.ts';
 import { HttpError, parseWith } from '../errors.ts';
@@ -18,7 +18,7 @@ import { userIdOf, type TenantParts, type Tenants } from '../tenants.ts';
 import { webhooksView } from '../webhooks.ts';
 import { SESSION_HEADER, mutationRefusal } from './guard.ts';
 import { loginCodeLive, mintLoginCode } from './login-code.ts';
-import { sessionUser, type UiSession, type UiSessions } from './sessions.ts';
+import { identityName, sessionUser, type UiSession, type UiSessions } from './sessions.ts';
 import { registerSignInRoutes } from './sign-in.ts';
 
 
@@ -68,12 +68,16 @@ export const rulesBody = z.strictObject({ text: z.string(), version: z.string().
 // settings are checked by loading the changed settings, so a refusal names the field as a start would.
 const realmName = z.string().min(1).max(64);
 const realmsVersion = { version: z.string().min(1) };
+const personRef = z.strictObject({ realm: realmName, subject: z.string().min(1).max(512) });
 export const realmsEditBody = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('save'), name: realmName.optional(), realm: z.looseObject({ name: realmName, label: z.string().max(128).optional(), type: z.enum(REALM_TYPES) }), ...realmsVersion }),
   z.strictObject({ action: z.literal('remove'), name: realmName, ...realmsVersion }),
   z.strictObject({ action: z.literal('move'), name: realmName, to: z.number().int().min(0), ...realmsVersion }),
   z.strictObject({ action: z.literal('enable'), name: realmName, enabled: z.boolean(), ...realmsVersion }),
   z.strictObject({ action: z.literal('settings'), local: z.boolean().optional(), none: z.enum(UI_ROLES).nullable().optional(), ...realmsVersion }),
+  // Two admin tiers (issue #242): any admin makes an identity admin; only a super admin makes one super admin or hands it over.
+  z.strictObject({ action: z.literal('admin'), who: personRef, ...realmsVersion }),
+  z.strictObject({ action: z.literal('super-admin'), who: personRef, transfer: z.boolean().optional(), ...realmsVersion }),
 ]);
 // The content (url, events) is checked in the editor, so the UI shows one set of messages; here only
 // the shape. No secret (issue #56), no secretFile, no new name; secretEnv only on add, and only a
@@ -139,7 +143,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     const offer = {
       local: signIn.local, none: signIn.none, password: signIn.password, gateway: signIn.gateway, origin: signIn.origin(), realms: signIn.realms(), devices: signIn.devices(), required: o.instance.users.list().length > 1,
     };
-    if (s) return { authenticated: true, expiresAt: s.expiresAt, user: sessionUser(s, userName(s)), signIn: offer };
+    if (s) return { authenticated: true, expiresAt: s.expiresAt, user: sessionUser(s, userName(s), isSuperAdmin(signIn.config(), s.identity)), signIn: offer };
     const id = userIdOf(req);
     const viewing = id === undefined ? undefined : o.instance.users.get(id);
     return viewing ? { authenticated: false, viewing: { id: viewing.id, name: viewing.name }, signIn: offer } : { authenticated: false, signIn: offer };
@@ -309,7 +313,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     if (o.tenants.list().some((u) => u.name.toLowerCase() === name.toLowerCase())) throw new HttpError(409, `the name ${name} is taken`);
     if (signIn.none !== null) throw new HttpError(409, 'no sign-in is on, and it signs everyone in as admin: turn it off (Settings → Sign-in) before adding a user');
     const user = await o.tenants.add(name);
-    console.warn(`hopper: user ${user.id} added by ${sessionUser(sessionOf(req)!, userName(sessionOf(req)!)).identity}`);
+    console.warn(`hopper: user ${user.id} added by ${identityName(sessionOf(req)!.identity)}`);
     const code = signIn.local ? mintLoginCode(o.instance, o.clock, user.id) : undefined;
     return {
       user: { id: user.id, name: user.name, createdAt: user.createdAt },
@@ -326,7 +330,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
 
   app.post('/ui/api/logout', allow('viewer'), async (req) => {
     const s = sessions.find(String(req.headers[SESSION_HEADER]));
-    if (s) console.warn(`hopper: UI session ended: ${s.identity.realm} ${sessionUser(s, userName(s)).identity}`);
+    if (s) console.warn(`hopper: UI session ended: ${s.identity.realm} ${identityName(s.identity)}`);
     sessions.drop(String(req.headers[SESSION_HEADER]));
     return { ok: true };
   });
