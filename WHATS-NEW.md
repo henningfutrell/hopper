@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- The lane timeline no longer keeps drawing a job as running after the hopper restarted and ran that job again; the earlier run ends where the job started again.
 - A finished issue runs again when you reopen it and remove its done label, and the Sources page says when an offered issue is not run again and why.
 - A lane shows as running only while a job is actually running on it; a lane whose job has ended no longer stays shown as running.
 - A newer version is offered within about a minute of being published, instead of up to a quarter of an hour later.
