@@ -13,7 +13,7 @@ import { dismissNotice, useDismissed } from '@/hooks/use-dismissed';
 import { useNow } from '@/hooks/use-now';
 import { noticeKey } from '@/model/dismissed';
 import { ago } from '@/model/format';
-import { headline, showNotice } from '@/model/update';
+import { CHANNELS, headline, showNotice } from '@/model/update';
 import type { UpdateStatus } from '@/model/wire';
 import { cn } from '@/lib/utils';
 import { updateAct, useHopper } from '@/store';
@@ -105,12 +105,12 @@ export function VersionDetails({ className }: { className?: string }) {
           <Switch aria-label="Auto-update" checked={s.autoUpdate} disabled={!authed}
             onCheckedChange={(autoUpdate) => void updateAct({ action: 'settings', autoUpdate }, autoUpdate ? 'Auto-update on' : 'Auto-update off')} />
         </label>
-        <div className="flex items-center justify-between gap-3 text-xs">
-          <span>Channel<span className="block text-muted-foreground">Every commit on {s.installed?.branch ?? 'main'}, or release tags only.</span></span>
+        <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
+          <span>Channel<span className="block text-muted-foreground">{CHANNELS.find((c) => c.channel === s.channel)?.hint}</span></span>
           <div className="flex gap-1">
-            {(['main', 'release'] as const).map((c) => (
-              <Button key={c} size="xs" variant={s.channel === c ? 'secondary' : 'ghost'} disabled={!authed || s.channel === c}
-                onClick={() => void updateAct({ action: 'settings', channel: c }, `Channel: ${c}`)}>{c === 'main' ? 'commits' : 'releases'}</Button>
+            {CHANNELS.map(({ channel: c, hint }) => (
+              <Button key={c} size="xs" variant={s.channel === c ? 'secondary' : 'ghost'} disabled={!authed || s.channel === c} title={hint}
+                onClick={() => void updateAct({ action: 'settings', channel: c }, `Channel: ${c}`)}>{c}</Button>
             ))}
           </div>
         </div>
