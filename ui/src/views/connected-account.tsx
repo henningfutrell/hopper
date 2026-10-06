@@ -5,7 +5,8 @@
 // the link, and the panel follows until the account is connected. Then its issues become this user's
 // jobs, and the jobs act as them with the app marked on what they do. GitHub: the app reaches only the
 // repositories it is installed on — the panel lists them for each account it is installed on, with a link
-// to choose them; only where it is installed nowhere does it link to install it (issue #253). Disconnect
+// to choose them; only where it is installed nowhere does it link to install it (issue #253). When GitHub
+// cannot say where it is installed, the panel says why and links to see the installs, never to install (#263). Disconnect
 // forgets the account and its token. The connection's job source is shown in it, its sync under the
 // account (issue #254): one GitHub piece, not a card beside it.
 import { Link2, Unlink } from 'lucide-react';
@@ -59,7 +60,10 @@ export function ConnectedAccountPanel({ provider, source }: { provider: Provider
         {s.state === 'connected' && <>
           <div>Connected as <span className="font-mono">{s.account}</span>.</div>
           {s.installations === undefined
-            ? s.installUrl && <div><a className="underline" href={s.installUrl} target="_blank" rel="noreferrer">Install the app, or choose its repositories</a></div>
+            ? <div data-installations className="space-y-1">
+              <div data-installations-error className="text-warn break-words">{s.installationsError ?? `${name} could not say where the app is installed.`}</div>
+              {s.configUrl && <div><a className="underline" href={s.configUrl} target="_blank" rel="noreferrer">See where the app is installed</a></div>}
+            </div>
             : s.installations.length > 0
               ? <div data-installations className="space-y-2">{s.installations.map((i) => <Installation key={i.account} installation={i} />)}</div>
               : <div data-installations className="space-y-1">

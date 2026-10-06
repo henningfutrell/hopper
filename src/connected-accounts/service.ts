@@ -10,7 +10,7 @@ import type { ConnectedAccount, ConnectedAccounts, ConnectedAccountTokens, Conne
 import { CONNECTED_ACCOUNT_PROVIDERS, CONNECTED_VIA, type AppInstallation, type ConnectedAccountProvider, type ConnectedAccountStatus } from '../domain/types.ts';
 import { deviceFlow, deviceFlowFailure, type DeviceFlow, type Grant } from './device-flow.ts';
 import type { AccountIdentity } from './identity.ts';
-import { CLIENT_ID_VARIABLE, installUrl, type HopperApps } from './hopper-app.ts';
+import { CLIENT_ID_VARIABLE, configUrl, installUrl, type HopperApps } from './hopper-app.ts';
 
 export const PROVIDER_NAME: Record<ConnectedAccountProvider, string> = { github: 'GitHub' };
 export const notConnected = (provider: ConnectedAccountProvider) => `${PROVIDER_NAME[provider]} is not connected: Sources → Connect ${PROVIDER_NAME[provider]}`;
@@ -49,19 +49,24 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
     const a = o.store.connectedAccounts.get(provider);
     if (a) {
       const install = installUrl(o.apps[provider]);
-      return { ...base, state: 'connected', account: a.account, connectedAt: a.connectedAt, ...(install ? { installUrl: install } : {}) };
+      return {
+        ...base, state: 'connected', account: a.account, connectedAt: a.connectedAt, configUrl: configUrl(o.apps[provider]),
+        ...(install ? { installUrl: install } : {}),
+      };
     }
     const error = failed.get(provider);
     return error ? { ...base, state: 'failed', error } : { ...base, state: 'not-connected' };
   };
 
-  /** With where the app is installed; GitHub not answering leaves that out. */
+  /** With where the app is installed; GitHub not answering says why instead (never that it is not installed). */
   const withInstallations = async (s: ConnectedAccountStatus): Promise<ConnectedAccountStatus> => {
     if (s.state !== 'connected') return s;
     try {
       return { ...s, installations: await o.installations(await token(s.provider)) };
-    } catch {
-      return s;
+    } catch (e) {
+      const error = `${PROVIDER_NAME[s.provider]} could not say where the app is installed: ${(e as Error).message}`;
+      o.logger.warn(`hopper: ${error}`);
+      return { ...s, installationsError: error };
     }
   };
 
