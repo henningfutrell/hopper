@@ -438,8 +438,8 @@ export { FORM_REALM_TYPES, REALM_TYPES, REDIRECT_REALM_TYPES, UI_ROLES, roleAllo
 
 // ---- Users (issue #158): src/domain/users.ts (re-exported here) ---------------------------
 
-export type { InstanceTotals, User, UserAdded, UserView } from './users.ts';
-export { IN_FLIGHT_STATUSES, ADMIN_ID } from './users.ts';
+export type { InstanceTotals, UsageTotal, User, UserAdded, UserView } from './users.ts';
+export { ENDED_STATUSES, IN_FLIGHT_STATUSES, ADMIN_ID } from './users.ts';
 
 // ---- Self-update (issue #44) ------------------------------------------------------------
 

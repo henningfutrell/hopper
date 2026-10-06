@@ -2,8 +2,10 @@
 // HTTP server and the real store: the totals across users, never one user's work; sign-in changes that
 // would hand an admin a way into another user's work are refused.
 import { afterEach, describe, expect, it } from 'vitest';
+import type { InstanceTotals } from '../../src/domain/types.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { writeConfig } from '../support/files.ts';
+import { waitFor } from '../support/wait.ts';
 
 let t: TestApp | undefined;
 let cleanup: (() => void) | undefined;
@@ -51,8 +53,35 @@ describe('an admin reads the totals, never a user\'s work', () => {
       jobs: { queued: 0, held: 0, claimed: 0, running: 1, waiting_answer: 1 },
       questions: { open: 1 },
       lanes: { busy: 1, total: expect.any(Number) },
+      endedLastDay: { finished: 0, failed: 0, cancelled: 0, rejected: 0 },
+      usage: [{ unit: '%', used: 0, limit: 200, readings: 2 }],
     });
     expect(JSON.stringify(r.body)).not.toMatch(new RegExp(`${adminJob.id}|${beaJob.id}|bea|Bea`));
+    expect((await a.api('GET', '/api/instance', undefined, session(bea))).status).toBe(200);
+  });
+
+  it('GET /api/instance: the jobs every user ended in the last day, by how they ended, and the usage readings summed per unit and usage window (issue #241)', async () => {
+    const db = tempDbPath();
+    cleanup = db.cleanup;
+    const printed = { readings: [{ used: 40, limit: 100, unit: '%', window: 'session' }, { used: 10, limit: 100, unit: '%', window: 'week' }], account: { service: 'claude', identity: 'someone@example.test' } };
+    const command = [process.execPath, '-e', `console.log(${JSON.stringify(JSON.stringify(printed))})`];
+    t = await startTestApp({ dbPath: db.dbPath, plugins: { usageSources: [{ name: 'plan', plugin: 'command-usage', options: { command, intervalSeconds: 60 } }] } });
+    const a = t;
+    const { admin, bea } = await twoUsers(a);
+    const done = await a.pull({ op: 'echo', message: 'hi' });
+    await a.waitForStatus(done.id, 'finished');
+    const failed = await a.pull({ op: 'fail' }, {}, 'bea');
+    await a.waitForStatusOf(failed.id, 'failed', 'bea');
+    await waitFor(async () => ((await a.api('GET', '/api/instance', undefined, session(admin))).body as InstanceTotals).usage.length > 0);
+    const r = await a.api('GET', '/api/instance', undefined, session(admin));
+    expect(r.body).toMatchObject({ endedLastDay: { finished: 1, failed: 1, cancelled: 0, rejected: 0 } });
+    // Each test user also has the harness's fake reading (0 of 100, no window): summed over both users.
+    expect((r.body as InstanceTotals).usage).toEqual(expect.arrayContaining([
+      { unit: '%', window: 'session', used: 40, limit: 100, readings: 1 },
+      { unit: '%', window: 'week', used: 10, limit: 100, readings: 1 },
+      { unit: '%', used: 0, limit: 200, readings: 2 },
+    ]));
+    expect(JSON.stringify(r.body)).not.toMatch(new RegExp(`${done.id}|${failed.id}|someone@example|plan|bea|Bea`));
     expect((await a.api('GET', '/api/instance', undefined, session(bea))).status).toBe(200);
   });
 
