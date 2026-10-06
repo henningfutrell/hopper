@@ -1031,13 +1031,24 @@ source every `pollSeconds`:
 
 **Re-run.** A source key may have many jobs; `jobs.source_key` is an index, not unique, and
 `getBySourceKey` returns the **newest** (`created_at`, then `seq`, descending). An item whose
-newest job is `failed` or `cancelled` **and** whose end was reported (`sourceState.sync.finalReported`,
-so the source's marker — `hopper:failed` on GitHub — was written at least once) gets a new job
-when the source offers it again. The GitHub source stops offering an issue while `hopper:failed`
-is present, so removing that label is the re-run gesture, and a leftover `hopper:claimed` does not
-block it (the old job makes the key known). Unreported, the item stays one attempt, so a failing
-label write cannot loop. `finished` is never re-run. Predicate: `isRerunnable` in
-`src/domain/types.ts`. The key spans sources: an old `github` job and a `github-app` re-run share it.
+newest job ended — `finished`, `failed` or `cancelled` — **and** whose end was reported
+(`sourceState.sync.finalReported`, so the source's marker — `hopper:done` or `hopper:failed` on
+GitHub — was written at least once) gets a new job when the source offers it again. The GitHub
+source stops offering an issue while `hopper:failed` or `hopper:done` is present (and a finished
+job's issue is closed), so removing that label — after reopening, for a finished one — is the
+re-run gesture, and a leftover `hopper:claimed` does not block it (the old job makes the key known).
+Unreported, the item stays one attempt, so a failing label write cannot loop. Predicate:
+`isRerunnable` in `src/domain/types.ts`. The key spans sources: an old `github` job and a
+`github-app` re-run share it. Before issue #186 a finished job was never re-run, so an issue reopened
+after a job that finished without shipping stayed stuck, skipped without a word.
+
+**Not run again, said out loud** (issue #186). An offered item whose newest job ended but cannot
+re-run yet (its end is not reported to the source) is not dropped silently: it is listed in the
+source status `detail.notRerun` (`{ key, job, status, reason }`, shown on the Sources view) and
+logged once per key, `hopper: <key> not run again: job <id> <status>, <reason>`. An item whose job is
+still live is only re-sorted, as before. Residual: gh mode's search can lag about a minute, so a
+just-reported issue may be offered once more with its old labels and re-run; the app source never
+searches.
 
 A source error never stops the daemon or other sources; it is shown in status and retried.
 
@@ -1193,7 +1204,7 @@ shipped. Before this, a job that said it was done was closed as completed with n
 | report | on GitHub |
 |--------|-----------|
 | claimed | ensure labels `hopper:claimed`, `hopper:done`, `hopper:failed` exist (`gh label create --force`, once per repo per process); add `hopper:claimed`. **No comment** |
-| finished | **no comment**; remove `hopper:claimed`, add `hopper:done` (only a job whose work shipped is finished, above) |
+| finished | **no comment**; remove `hopper:claimed`, add `hopper:done` (only a job whose work shipped is finished, above; reopening the issue and removing it is the re-run gesture) |
 | failed | **no comment**; remove `hopper:claimed`, add `hopper:failed` (removing it is the re-run gesture) |
 | cancelled | **no comment**; remove `hopper:claimed` |
 

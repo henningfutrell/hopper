@@ -157,6 +157,7 @@ describe('reports', () => {
     await sync.syncNow();
     world.patchJob('job-1', { status: 'finished' });
     await sync.syncNow();
+    source.items = []; // the issue is now closed with hopper:done, so the real source stops offering it
     await sync.syncNow();
     expect(kinds(source)).toEqual(['claimed', 'finished']);
   });

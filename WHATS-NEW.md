@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- A finished issue runs again when you reopen it and remove its done label, and the Sources page says when an offered issue is not run again and why.
 - A lane shows as running only while a job is actually running on it; a lane whose job has ended no longer stays shown as running.
 - A newer version is offered within about a minute of being published, instead of up to a quarter of an hour later.
 - Each lane shows the folder its job works in, and every lane is named with its machine — on the lane board, the timeline, the decision log and the event list — so two lanes with the same number on different machines no longer look the same.

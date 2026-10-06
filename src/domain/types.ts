@@ -21,13 +21,14 @@ export type JobStatus =
 export const TERMINAL_STATUSES: readonly JobStatus[] = ['finished', 'failed', 'cancelled'];
 
 /**
- * Whether a source item whose newest job is this one gets a new job: the job failed or was
- * cancelled and the source already reported that (so its marker, e.g. `hopper:failed`, was
- * written at least once). A source that offers the item again then means a human cleared the
- * marker. Unreported, the item is still the same attempt: a failing report must not loop.
+ * Whether a source item whose newest job is this one gets a new job: the job ended (finished,
+ * failed or cancelled) and the source already reported that (so its marker, e.g. `hopper:done` or
+ * `hopper:failed`, was written at least once). A source that offers the item again then means a
+ * human cleared the marker. Unreported, the item is still the same attempt: a failing report must
+ * not loop.
  */
 export function isRerunnable(job: Job): boolean {
-  return (job.status === 'failed' || job.status === 'cancelled') && job.sourceState?.sync?.finalReported === true;
+  return TERMINAL_STATUSES.includes(job.status) && job.sourceState?.sync?.finalReported === true;
 }
 
 /** What an agent pushes. `executor` names a registered Executor; `payload` is opaque to the queue. */
