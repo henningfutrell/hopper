@@ -417,26 +417,20 @@ machine (<code>HOPPER_LOCAL_MACHINE=false</code>), and jobs run on the machines 
 in (run <code>claude</code> once). Keep its services running after you log out:
 <code>sudo loginctl enable-linger &quot;$USER&quot;</code>.</p>
 </li>
-<li><p><strong>On the hopper&#39;s host</strong>: give the target a <code>Host</code> alias in <code>~/.ssh/config</code>, then connect once by
-hand and check the host key it shows. The hopper trusts only the host key that
-<code>~/.ssh/known_hosts</code> holds for it; it never learns one from a connection.</p>
-<pre><code class="language-sh">ssh my-desktop true        # must work without a password prompt
-</code></pre>
+<li><p><strong>In the UI</strong>: Machines → Add machine → <strong>Attach a machine over ssh</strong>. Type the ssh target as
+<code>you@my-desktop</code> (or pick a <code>Host</code> alias from <code>~/.ssh/config</code>, when the hopper&#39;s host has one).
+Nothing on the hopper&#39;s host needs a <code>~/.ssh</code>: the hopper has its own key, kept in its database, so
+it works the same when the hopper runs in a container that keeps nothing.</p>
 </li>
-<li><p>Prepare the target. This makes the hopper&#39;s own ssh key when it is missing, lets that key in on
-the target (restricted: no forwarding, no pty), installs and starts the target&#39;s herdr
-session, and prints the options to set in Plugins → Machine sources:</p>
-<pre><code class="language-sh">export HOPPER_SSH_KEY_FILE=&quot;$HOME/.config/hopper/ssh_key&quot;
-bash ~/.local/lib/hopper/scripts/attach-machine.sh my-desktop 2     # 2 lanes
-</code></pre>
+<li><p><strong>On the target</strong>: add the line the form shows (<code>restrict ssh-ed25519 … hopper</code>) to
+<code>~/.ssh/authorized_keys</code>.</p>
 </li>
-<li><p>Give the daemon the key, once for every ssh target, and restart it:</p>
-<pre><code class="language-sh">echo &quot;HOPPER_SSH_KEY_FILE=$HOME/.config/hopper/ssh_key&quot; &gt;&gt; ~/.config/hopper/daemon.env
-systemctl --user restart hopper
-</code></pre>
-</li>
-<li><p>Attach it: in the UI, Machines → Add machine, pick <code>my-desktop</code>. Or, in Settings → Plugins →
-Machine sources, add an <code>ssh</code> instance named <code>my-desktop</code> and set the printed options. No restart.</p>
+<li><p><strong>Attach machine</strong>. When the hopper has not seen the target&#39;s host key, the form shows its
+fingerprint: check it on the target (<code>ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub</code>), then
+<strong>Trust this key and attach</strong>. The hopper then talks to it only while it presents that key. No restart.</p>
+<p>A key of your own instead (optional): mount it as the secret <code>HOPPER_SSH_KEY_FILE</code> and prepare the
+target with <code>bash ~/.local/lib/hopper/scripts/attach-machine.sh my-desktop 2</code>, which lets that key in
+and prints the options to set in Settings → Plugins → Machine sources.</p>
 </li>
 <li><p>Make the jobs&#39; working directories exist there, at the same paths (<code>repoPaths</code>, <code>defaultCwd</code>):
 a job whose directory is missing fails.</p>
