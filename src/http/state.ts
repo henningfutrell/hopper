@@ -2,7 +2,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { Clock, PluginsView, UserStore } from '../domain/ports.ts';
-import type { TenantParts } from './tenants.ts';
+import { userIdOf, type TenantParts } from './tenants.ts';
 import { EVENT_TYPES } from '../domain/types.ts';
 import type { DomainEvent, EventType } from '../domain/types.ts';
 import type { Engine } from '../engine/index.ts';
@@ -50,13 +50,14 @@ export function routerView(engine: Engine, plugins: PluginsView) {
 export function stateRoutes(app: FastifyInstance, o: { tenant: (req: FastifyRequest) => TenantParts; clock: Clock; version: string }): void {
   const startedAt = o.clock.now().getTime();
 
+  // A request with no user (loopback without a session, several users: issue #221) reads the instance's
+  // health only — install.sh and self-update probe it — never a user's router or executors.
   app.get('/api/health', async (req) => {
+    const uptimeS = Math.floor((o.clock.now().getTime() - startedAt) / 1000);
+    if (userIdOf(req) === undefined) return { ok: true, version: o.version, uptimeS };
     const { engine, plugins } = o.tenant(req);
     const r = plugins.routerStatus();
-    return {
-      ok: true, version: o.version, routerMode: engine.routerMode(), router: r.name, fallback: r.fallback, executors: engine.executorNames,
-      uptimeS: Math.floor((o.clock.now().getTime() - startedAt) / 1000),
-    };
+    return { ok: true, version: o.version, routerMode: engine.routerMode(), router: r.name, fallback: r.fallback, executors: engine.executorNames, uptimeS };
   });
   app.get('/api/queue', async (req) => o.tenant(req).engine.getQueue());
   app.get('/api/machines', async (req) => ({ machines: await o.tenant(req).engine.getMachines() }));
