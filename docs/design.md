@@ -626,7 +626,8 @@ required, and picked from the configured machines — the UI offers a select of 
 filled by the host from `machines:`), never a text field, and no empty choice. This machine is no
 default: it is the `local` machine in the list, like any other; on it claude runs here, as before
 (the snapshot has no `ssh`, `docker` or `client`). The built-in levels name `local` where this host
-is a machine and none in the container, where one must be picked. `POST /ui/api/plugins` refuses an
+is a machine and none in the container, where one must be picked. A fresh plugins config names none
+either (issue #259, "Built-in instances: no machine of its own"): its levels wait for one to be picked. `POST /ui/api/plugins` refuses an
 `options` or `add` edit whose machine option is missing or names no configured machine (`add`
 carries `options` for it), and the removal of a machine an instance's machine option still names.
 Tenant migration 3 names the `local` machine in every claude-cli level and claude-plan usage source
@@ -2266,7 +2267,7 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
 | `HOPPER_RESUME_BOOST` | `20` |
 | `HOPPER_MAX_QUESTIONS` | `5` |
 | `HOPPER_KEEP_PANES` | `false` |
-| `HOPPER_LOCAL_MACHINE` | `true` (`false` in the image: the container is not a machine, issue #141) |
+| `HOPPER_LOCAL_MACHINE` | `true`: this host may be a machine, though a fresh plugins config lists none (issue #259); `false` in the image: the container is not a machine, and the boot removes a `local` one (issue #141) |
 | `HOPPER_WEBHOOKS_FILE` | `~/.config/hopper/webhooks.yaml` |
 | `HOPPER_UI_SESSION_HOURS` | `12` |
 | `HOPPER_PLUGIN_DIR` | `~/.config/hopper/plugins` |
@@ -4013,6 +4014,15 @@ no machine, and the boot removes every `local` instance from plugins.yaml `machi
 boot of the container wrote), keeping every other line. The entrypoint that started the container's
 herdr session is gone. The image keeps herdr's CLI: `herdr-claude` detects it before it runs jobs on
 attached machines. A container install runs jobs on attached machines only.
+
+**Built-in instances: no machine of its own (issue #259).** The hopper no longer registers its own
+host as a machine by default. The plugins config the boot writes for a store that has none (a new
+hopper's users, a user added later) is the built-in instances with `machines: []`, and its claude-cli
+levels and claude-plan usage source name no machine: they are unavailable until one is picked
+(issue #174). This machine is added like any other, as a `local` instance (the Plugins view's add, or
+the Machines view). A config already written is never changed: an existing `local` instance stays,
+and a section left out keeps its meaning (`builtinInstances` with `HOPPER_LOCAL_MACHINE`: `local`,
+4 lanes, where this host may be a machine), which tenant migration 3 relied on.
 
 **A loopback Host from a LAN peer is a LAN request.** Docker publishes the UI port on the host's
 loopback and forwards it from the compose network: the browser sends `Host: 127.0.0.1:<port>` and the

@@ -33,6 +33,7 @@ async function twoUsers(a: TestApp): Promise<{ admin: string; bea: string }> {
   const added = await a.ui<{ links: string[] }>('/ui/api/users', { action: 'add', name: 'Bea' }, { token: admin });
   expect(added.status).toBe(200);
   const code = /#login=([0-9a-f]{64})$/.exec(added.body.links[0]!)![1]!;
+  await a.addThisMachine('bea');
   return { admin, bea: await a.loginWith(code) };
 }
 
