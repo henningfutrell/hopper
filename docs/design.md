@@ -52,7 +52,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`) | engine, http, store, plugins, decider |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets") | everything |
 | `src/update/` | self-update ("Self-update"): install.json, the git mirror of the update repository, the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
-| `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `api-reference.ts` Scalar at `/docs/`); the plugin store's read side (`plugin-store.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
+| `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); who the instance admin is (`instance-admin.ts`, issue #240); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `api-reference.ts` Scalar at `/docs/`); the plugin store's read side (`plugin-store.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
 | `site/` | the install page, published to GitHub Pages by `.github/workflows/pages.yml` with `scripts/get.sh` beside it as `install.sh`: one static `index.html`, no build step, nothing loaded from another site | everything in the repo at runtime; it links to the docs on GitHub |
 | `examples/plugins/` | one minimal runnable custom plugin per role, for authors (`docs/plugins.md`); imports only `hopper/plugin` types and `node:` builtins | everything in `src/` at runtime |
@@ -3447,6 +3447,43 @@ there is no horizontal page scroll.
 
 ## Sign-in: realms (issues #39, #53, #185, #200, #215, #216, #237, #238)
 
+### No special admin login; the instance admin (issue #240, 2026-10-06)
+
+Issue #240: there is no special admin login. Requirements: remove the special admin login; the
+admin is the first user to sign in with GitHub (issue #239); what the admin can do is issue #241's —
+manage instance settings, see aggregated usage across users, not see other users' sensitive data. It
+supersedes the special-login part of issue #238.
+
+Inputs, from `main` at `4520f86`: #238 had removed `hopper login-code` and `scripts/open-ui.sh`; #239
+recorded the first GitHub admin and granted their identity role `admin`; #241 added the totals across
+users, behind role `admin`. What was left: a login code signed in with role `admin`, and role `admin` was
+both the user's own configuration and the instance's. So a new user's login link (Settings → Users) made
+its holder an admin of the instance — able to change sign-in, add users, apply updates and read the
+totals across users — without being the first GitHub user. Lowering the login link's role instead would
+take from added users the setup of their own environment, which #238 gives each user.
+
+Decision (on the issue): keep the roles; gate what is the instance's on who the session's user is.
+
+- **The instance admin** (`src/http/instance-admin.ts`, `instanceAdminUser` in
+  `src/auth/github-admin.ts`): the user the first GitHub admin's identity is linked to, while that GitHub
+  realm is on; with none recorded, or that realm off, the oldest user (the default admin account on a
+  hopper from before, the first person in on a new one). A session is the instance admin's when its role
+  allows `admin` and its user is that user — so a device link of theirs is too, and a device link of anyone
+  else gives exactly what its maker's user had. A new user's login link names a user added after the
+  instance admin's, so it never is.
+- **Gated on it**: `POST /ui/api/realms`, `/ui/api/users`, `/ui/api/update`, `/ui/api/plugin-store`, and
+  the reads `GET /api/realms`, `/api/users`, `/api/instance` (403; a mutation's refusal carries `needs`
+  so the UI keeps the session). Loopback without a session reads them as before.
+- **Unchanged**: every other `admin` mutation acts inside the session's own user and stays `admin` —
+  plugins, machines, routing, webhooks, the rules, the queue gate, gh login, connected accounts, device
+  links. No stored role, session or login code changes; there is no migration. `SessionUser.instanceAdmin`
+  tells the UI which of Settings → Sign-in, Users, Updates and the plugin store's actions to offer.
+
+**Residual risk, stated.** On a hopper with no first GitHub admin recorded and several users, only the
+oldest user is the instance admin: an admin a role rule grants (LDAP, OIDC, SAML, gateway) reaches only
+their own user. Recording a GitHub admin, or `hopper user transfer`, moves it. The read-only reports
+`GET /api/plugin-store` and `GET /api/update` stay readable by any session, as before.
+
 ### No bootstrap login (issue #238, 2026-10-06)
 
 Owner request: "There is no bootstrap login for first start. Each user gets their own whole
@@ -4915,8 +4952,8 @@ shares one database login.
 | Side | What | Who reads it |
 |------|------|--------------|
 | **A user's own — sensitive** | jobs (payload, prompt, title, source item, result, failure), questions and answers, events, decisions, lanes and what runs in them, job sources, machines and their ssh names, executors, escalation levels, the rules record, routing, the queue gate and order, usage sources and their accounts (email, plan, usage), webhook subscriptions and deliveries, the `plugins` record and every option in it, gh login and every CLI's config in the user work dir, the user's secret variables, the event stream, the user schema | that user's own sessions only — never an admin of the instance, never a request without a session once there is more than one user |
-| **The instance's** | the users list (id, name, when added), the sign-in config (realms, password accounts and the user each signs in as, role rules — never a hash), the plugin store and its installs, self-update and its status, the instance schema | an admin (`GET /api/users`, `/api/realms`, `/api/plugin-store`, `/api/update`); loopback without a session reads them as before |
-| **Instance totals** | users; jobs not ended by status (`queued`, `held`, `claimed`, `running`, `waiting_answer`); open questions; lanes open and busy; jobs ended in the last 24 hours by how they ended (issue #241); usage readings summed per unit and usage window, with how many readings each sum holds (issue #241) — summed over every user | an admin (`GET /api/instance`, Settings → Users); never one user's share, nothing named — no account, source or machine |
+| **The instance's** | the users list (id, name, when added), the sign-in config (realms, password accounts and the user each signs in as, role rules — never a hash), the plugin store and its installs, self-update and its status, the instance schema | an admin (`GET /api/users`, `/api/realms`: the instance admin only since issue #240; `/api/plugin-store`, `/api/update`); loopback without a session reads them as before |
+| **Instance totals** | users; jobs not ended by status (`queued`, `held`, `claimed`, `running`, `waiting_answer`); open questions; lanes open and busy; jobs ended in the last 24 hours by how they ended (issue #241); usage readings summed per unit and usage window, with how many readings each sum holds (issue #241) — summed over every user | the instance admin (`GET /api/instance`, Settings → Users; issue #240); never one user's share, nothing named — no account, source or machine |
 
 What crosses from a user's side to the instance's is a **count**, never a name or an id. The instance's
 own events (`update.*`, `plugin.installed`, `plugin.removed`) go to every user's event log, so they

@@ -26,6 +26,7 @@ import { createUiSessions } from './ui/sessions.ts';
 import { updateRoutes } from './update.ts';
 import { instanceRoutes } from './instance.ts';
 import { userRoutes } from './users.ts';
+import { createInstanceAdmin } from './instance-admin.ts';
 import { webhookRoutes } from './webhooks.ts';
 
 export type { TenantParts, Tenants } from './tenants.ts';
@@ -79,14 +80,16 @@ export function createServer(o: ServerOptions): FastifyInstance {
   sseRoutes(app, tenant);
   updateRoutes(app, o);
   pluginStoreRoutes(app, o);
-  userRoutes(app, { tenants: o.tenants, sessions });
-  instanceRoutes(app, { tenants: o.tenants, sessions, clock: o.clock });
+  // What is the instance's is the hopper's admin's alone (issue #240).
+  const instanceAdmin = createInstanceAdmin({ signIn: o.signIn, instance: o.instance });
+  userRoutes(app, { tenants: o.tenants, sessions, instanceAdmin });
+  instanceRoutes(app, { tenants: o.tenants, sessions, clock: o.clock, instanceAdmin });
   const realms = createRealmsAdmin({ instance: o.instance, environment: o.signInEnvironment, signIn: o.signIn, sessions });
-  realmRoutes(app, { realms, sessions });
+  realmRoutes(app, { realms, sessions, instanceAdmin });
   staticRoutes(app, o.uiDir);
   registerUiRoutes(app, {
     ...tenant, tenants: o.tenants, instance: o.instance, sessions, signIn: o.signIn, realms, pluginStore: o.pluginStore, port: o.port, lan: o.lan, clock: o.clock,
-    updater: o.updater,
+    updater: o.updater, instanceAdmin,
   });
   return app;
 }

@@ -239,7 +239,8 @@ accounts of its own (issue #237). The way in is a realm:
   [the sign-in config from the CLI](#the-sign-in-config-from-the-cli) or the environment.
 
 A login code still exists, minted only from a signed-in session: a device link (for the session's own
-user) and a new user's login link. It signs in with role `admin`.
+user) and a new user's login link. It is no admin login (issue #240): it signs in with role `admin`
+inside its own user, and makes nobody [the instance admin](#the-instance-admin).
 
 **Rate limit.** Every sign-in route (`/ui/login`, `/ui/auth/…`) together accepts 20 attempts a
 minute per client address; past that, 429 until the minute is over. Behind a reverse proxy every
@@ -364,9 +365,12 @@ in. `HOPPER_PUBLIC_URL` is the address people reach through the gateway.
 |---|---|
 | `viewer` | read everything the UI shows |
 | `operator` | + cancel and approve jobs; answer, close, dismiss questions and mark them seen |
-| `admin` | + change configuration: plugins, machines, routing rules, webhooks, the rules, the queue gate, sign-in realms; apply updates; hand out device links |
+| `admin` | + change their own user's configuration: plugins, machines, routing rules, webhooks, the rules, the queue gate; hand out device links |
 
-A login code signs in with role `admin`, to the user it was minted for. For every realm, its **role rules** decide, the same way for every type:
+What is the instance's — sign-in realms, users, updates, the plugin store, the totals across users —
+is [the instance admin](#the-instance-admin)'s alone, not every `admin`'s.
+
+A login code signs in with role `admin`, to the user it was minted for; it never makes the instance admin. For every realm, its **role rules** decide, the same way for every type:
 
 - A rule grants a role — `admin`, `operator` or `viewer` — to the subjects, usernames, emails, email
   domains or groups it lists, one per line. Any one match grants the role; **the highest matching
@@ -400,8 +404,28 @@ What fills each field:
 A UI role is not a plugin role: see `docs/glossary.md`.
 
 A role acts only inside the session's own user: an admin changes their own plugins, machines,
-routing, webhooks, rules and the queue gate, never another user's. What all users share — adding users,
-the plugin store, updates, sign-in realms — needs `admin`.
+routing, webhooks, rules and the queue gate, never another user's. What all users share is the
+instance admin's (below).
+
+### The instance admin
+
+There is no special admin login (issue #240). The hopper's admin — the **instance admin** — is the first
+person to sign in with GitHub (the `githubAdmin` above), while that realm is on; on a hopper with none
+recorded (one from before, or one whose GitHub realm is off), the oldest user — on a hopper from before,
+its default admin account `admin`. Their sessions with role `admin` — any of them, a device link of
+theirs too — and only theirs:
+
+- change sign-in realms, and read them (`GET /api/realms`, Settings → Sign-in);
+- add users and hand out their login links, and list the users (`GET /api/users`, Settings → Users);
+- read the totals across users (`GET /api/instance`, issue #241) — counts and sums, never one user's work;
+- apply updates and change their settings;
+- install and remove plugins from the plugin store.
+
+Everyone else with role `admin` — a user added by login link, a GitHub user a role rule makes admin, a
+device link of theirs — sets up their own user (plugins, machines, routing, webhooks, the rules, the queue
+gate, their GitHub connection, device links) and is refused (403) the rest. Nobody, the instance admin
+included, reads another user's work ([What an admin sees](design.md#what-an-admin-sees-issue-221-2026-10-06)).
+A loopback request without a session reads the instance's reads as before.
 
 ## Who signs in as which user
 

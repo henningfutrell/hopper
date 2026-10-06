@@ -1,12 +1,13 @@
 // GET /api/instance (issues #221 and #241, design.md "What an admin sees"): the totals across every user —
 // users, jobs not ended by status, open questions, lanes, jobs ended in the last day, usage readings summed
-// per unit and usage window — never one user's share and nothing named. An instance read: an admin session,
+// per unit and usage window — never one user's share and nothing named. An instance read: the hopper's admin (issue #240),
 // or loopback without one (as GET /api/users).
 import type { FastifyInstance } from 'fastify';
 import type { Clock } from '../domain/ports.ts';
 import { ENDED_STATUSES, IN_FLIGHT_STATUSES, roleAllows, type InstanceTotals, type UsageReading, type UsageTotal } from '../domain/types.ts';
 import { HttpError } from './errors.ts';
 import { sessionToken } from './host-guard.ts';
+import { INSTANCE_ADMIN_ONLY, type InstanceAdmin } from './instance-admin.ts';
 import type { Tenants } from './tenants.ts';
 import type { UiSessions } from './ui/sessions.ts';
 
@@ -56,10 +57,11 @@ export async function instanceTotals(tenants: Pick<Tenants, 'list' | 'user'>, no
   return totals;
 }
 
-export function instanceRoutes(app: FastifyInstance, o: { tenants: Pick<Tenants, 'list' | 'user'>; sessions: UiSessions; clock: Clock }): void {
+export function instanceRoutes(app: FastifyInstance, o: { tenants: Pick<Tenants, 'list' | 'user'>; sessions: UiSessions; clock: Clock; instanceAdmin: InstanceAdmin }): void {
   app.get('/api/instance', async (req): Promise<InstanceTotals> => {
     const s = o.sessions.find(sessionToken(req));
     if (s && !roleAllows(s.role, 'admin')) throw new HttpError(403, `role ${s.role} may not read the instance totals; it needs admin`);
+    if (s && !o.instanceAdmin(s)) throw new HttpError(403, `${INSTANCE_ADMIN_ONLY}: read the instance totals`);
     return instanceTotals(o.tenants, o.clock.now());
   });
 }

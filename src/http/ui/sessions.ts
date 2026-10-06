@@ -27,9 +27,9 @@ const hashOf = (token: string): string => createHash('sha256').update(token, 'ut
 /** Who signed in, as the UI shows it: the first name the realm gave. */
 export const identityName = (who: Identity): string => who.name ?? who.username ?? who.email ?? who.subject;
 
-/** Who a session acts for: its user (id, name), its role, and who signed in. */
-export const sessionUser = (s: UiSession, userName: string): SessionUser => ({
-  id: s.userId, name: userName, role: s.role, realm: s.identity.realm, identity: identityName(s.identity),
+/** Who a session acts for: its user (id, name), its role, whether it is the hopper's admin (issue #240), and who signed in. */
+export const sessionUser = (s: UiSession, userName: string, instanceAdmin: boolean): SessionUser => ({
+  id: s.userId, name: userName, role: s.role, instanceAdmin, realm: s.identity.realm, identity: identityName(s.identity),
 });
 
 export function createUiSessions(o: { repo: UiSessionRepository; clock: Clock; hours: number }): UiSessions {

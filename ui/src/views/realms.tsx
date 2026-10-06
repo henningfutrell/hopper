@@ -22,7 +22,7 @@ import { get, post, SessionRejected } from '@/lib/api';
 import { draftOf, emptyDraft, realmOf, REALM_FIELDS, REALM_TYPE_LABELS, REALM_TYPE_SHORT, RULE_MATCHES, whoGetsIn, type RealmDraft, type RealmField, type RuleMatch } from '@/model/realms';
 import type { RealmType, RealmView, RealmsEdit, RealmsView, UiRole } from '@/model/wire';
 import { useHopper } from '@/store';
-import { useCanAdmin } from '@/store/selectors';
+import { useCanAdminInstance } from '@/store/selectors';
 
 const SELECT = 'h-8 rounded-lg border border-input bg-transparent px-2 text-base md:text-sm dark:bg-input/30';
 
@@ -36,7 +36,7 @@ const State = ({ on }: { on: boolean }) => <span className={`text-xs font-medium
 const OTHER_TYPES = REALM_TYPE_LABELS.filter((t) => t.type !== 'github');
 
 export function Realms() {
-  const canAdmin = useCanAdmin();
+  const canAdmin = useCanAdminInstance();
   const [view, setView] = useState<RealmsView | null>(null);
   const [editing, setEditing] = useState<Editing | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -66,7 +66,7 @@ export function Realms() {
     }
   };
 
-  if (!canAdmin) return <Panel title="Sign-in" icon={KeyRound}><Empty>Only an admin manages sign-in.</Empty></Panel>;
+  if (!canAdmin) return <Panel title="Sign-in" icon={KeyRound}><Empty>Only the hopper's admin manages sign-in.</Empty></Panel>;
   if (!view) return <Panel title="Sign-in" icon={KeyRound}><Empty>Loading…</Empty></Panel>;
   const { version, githubAdmin } = view;
   // Each realm with its place in the whole list: a move names that place.

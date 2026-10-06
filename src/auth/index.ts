@@ -46,7 +46,7 @@ import { createSamlRealm } from './saml.ts';
 
 export { SIGN_IN, loadSignInConfig, signInConfigProblem, type AuthConfig } from './config.ts';
 export { AuthEditError, editSignIn, realmsView, type SignInEdit } from './edit.ts';
-export { claimGithubAdmin } from './github-admin.ts';
+export { claimGithubAdmin, instanceAdminUser } from './github-admin.ts';
 export { prepareSignIn } from './start.ts';
 
 const FLOW_MS = 10 * 60_000;

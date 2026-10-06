@@ -17,7 +17,7 @@ import { headline, showNotice } from '@/model/update';
 import type { UpdateStatus } from '@/model/wire';
 import { cn } from '@/lib/utils';
 import { updateAct, useHopper } from '@/store';
-import { useCanAdmin } from '@/store/selectors';
+import { useCanAdminInstance } from '@/store/selectors';
 
 const short = (sha: string | undefined) => sha?.slice(0, 7) ?? '…';
 const TONE: Record<UpdateStatus['state'], Tone> = { available: 'busy', applying: 'warn', error: 'bad', current: 'ok', unavailable: 'muted' };
@@ -31,10 +31,10 @@ function WhatsNew({ lines }: { lines: string[] }) {
 }
 
 function ApplyButton({ s }: { s: UpdateStatus }) {
-  const authed = useCanAdmin();
+  const authed = useCanAdminInstance();
   if (s.state !== 'available') return null;
   return (
-    <Button size="xs" disabled={!authed} title={authed ? 'Build the update beside the running hopper, then restart; running jobs keep running' : 'An admin can update: sign in as one'}
+    <Button size="xs" disabled={!authed} title={authed ? 'Build the update beside the running hopper, then restart; running jobs keep running' : 'Only the hopper\'s admin can update'}
       onClick={() => void updateAct({ action: 'apply' }, 'Updating: running jobs keep running')}>
       <ArrowUpCircle />Update now
     </Button>
@@ -71,7 +71,7 @@ export function UpdateNotice() {
 export function VersionDetails({ className }: { className?: string }) {
   const s = useHopper((st) => st.update);
   const version = useHopper((st) => st.health?.version);
-  const authed = useCanAdmin();
+  const authed = useCanAdminInstance();
   const now = useNow();
   const [checking, setChecking] = useState(false);
   const check = async () => { setChecking(true); await updateAct({ action: 'check' }); setChecking(false); };
@@ -118,7 +118,7 @@ export function VersionDetails({ className }: { className?: string }) {
       {s.whatsNew.length > 0 && <div className="space-y-1 border-t pt-3"><h3 className="text-xs font-medium">What's new in the update</h3><WhatsNew lines={s.whatsNew} /></div>}
       {s.installedWhatsNew.length > 0 && <div className="space-y-1 border-t pt-3"><h3 className="text-xs font-medium">In this version</h3><WhatsNew lines={s.installedWhatsNew} /></div>}
       <a href="#settings/version-history" className="block text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline">Every version and what it brought: Settings → Version history</a>
-      {!authed && <p className="text-xs text-muted-foreground">Read-only: an admin can update or change these settings.</p>}
+      {!authed && <p className="text-xs text-muted-foreground">Read-only: only the hopper's admin can update or change these settings.</p>}
     </div>
   );
 }
