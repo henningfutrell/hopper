@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- You can choose where a job's work stops: merged (as before), or at a pull request left open for you to review and merge — for all issues, or for one issue by a label. A job is only marked done once its work gets there.
 - Set up how people sign in from Settings, under Sign-in: add sign-in through a company directory (LDAP or Active Directory), OpenID Connect, SAML, GitHub or password accounts, put them in the order they are tried, and switch each on or off. Changes work at once, without a restart.
 - The lane timeline no longer keeps drawing a job as running after the hopper restarted and ran that job again; the earlier run ends where the job started again.
 - A finished issue runs again when you reopen it and remove its done label, and the Sources page says when an offered issue is not run again and why.

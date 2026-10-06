@@ -2,11 +2,11 @@
 // then as a user project. Installation tokens can read organization projects
 // (`organization_projects: read`); user-owned projects need a personal token, so for those this
 // ends in a permanent error and the source falls back to labels (projectErrors). Also: the pull
-// request that closed an issue (closer.ts).
+// request that closed an issue, and the open ones whose merge will close it (closer.ts).
 
-import type { ClosingPullRequest, GitHubProjectItem } from '../api.ts';
+import type { ClosingPullRequest, GitHubProjectItem, OpenPullRequest } from '../api.ts';
 import { GitHubApiError } from '../api.ts';
-import { CLOSING_PULL_REQUEST_QUERY, closingPullRequestFrom } from '../closer.ts';
+import { CLOSING_PULL_REQUEST_QUERY, OPEN_PULL_REQUESTS_QUERY, closingPullRequestFrom, openPullRequestsFrom } from '../closer.ts';
 import { splitRepo } from './http.ts';
 import type { Request } from './http.ts';
 
@@ -91,4 +91,12 @@ export async function closingPullRequest(req: Request, token: string, repo: stri
     query: CLOSING_PULL_REQUEST_QUERY, variables: { owner, name, number }, headers: { authorization: `token ${token}` },
   });
   return closingPullRequestFrom(r.data, `closer of ${repo}#${number}`);
+}
+
+export async function openClosingPullRequests(req: Request, token: string, repo: string, number: number): Promise<OpenPullRequest[]> {
+  const { owner, repo: name } = splitRepo(repo);
+  const r = await req('POST /graphql', {
+    query: OPEN_PULL_REQUESTS_QUERY, variables: { owner, name, number }, headers: { authorization: `token ${token}` },
+  });
+  return openPullRequestsFrom(r.data, `pull requests of ${repo}#${number}`);
 }

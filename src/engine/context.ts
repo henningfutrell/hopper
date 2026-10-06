@@ -30,8 +30,8 @@ export interface EngineOptions {
   maxQuestions: number;
   /** Skip executor cleanup on terminal outcomes (HOPPER_KEEP_PANES). */
   keepPanes: boolean;
-  /** Why a job that ended done has not shipped, asked of its source (JobSource.notShipped, issue #171). */
-  notShipped: (job: Job) => Promise<string | undefined>;
+  /** Why a job that ended done is not complete, asked of its source (JobSource.notComplete, issues #171, #187). */
+  notComplete: (job: Job) => Promise<string | undefined>;
 }
 
 /** What the engine's modules share. */

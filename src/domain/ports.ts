@@ -374,11 +374,12 @@ export interface JobSource {
    */
   report(report: SourceReport): Promise<Record<string, unknown>>;
   /**
-   * Why a job that ended done has not shipped (its change is not in the product), or undefined when
-   * it shipped (issue #171). Asked before the job is recorded finished: a reason fails the job with
-   * it, and so does a throw (it could not tell). Absent: the source does not judge shipping.
+   * Why a job that ended done is not complete (its work did not reach the item's completion, e.g. a
+   * merged or an open pull request), or undefined when it is (issues #171, #187). Asked before the
+   * job is recorded finished: a reason fails the job with it, and so does a throw (it could not
+   * tell). Absent: the source does not judge completion.
    */
-  notShipped?(job: Job): Promise<string | undefined>;
+  notComplete?(job: Job): Promise<string | undefined>;
 }
 
 export class SourceError extends Error {

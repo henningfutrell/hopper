@@ -15,7 +15,7 @@ import { GitHubApiError } from './api.ts';
 import type { GitHubApi } from './api.ts';
 import type { GitHubSourceConfig } from '../config.ts';
 import { LABEL_BACKBURNER } from './labels.ts';
-import { isOwnPullRequest } from './shipped.ts';
+import { isOwnPullRequest } from './completion.ts';
 
 type CheckConfig = Pick<GitHubSourceConfig, 'label'>;
 

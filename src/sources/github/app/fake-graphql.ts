@@ -2,7 +2,8 @@
 // `user(login).projectV2(number)` items, behaving as GitHub does for an installation token:
 // organization projects are readable; a user-owned project is FORBIDDEN ("Resource not
 // accessible by integration"); a login of the other kind is NOT_FOUND. Also
-// `repository(owner, name).issue(number)`: the pull request whose merge closed the issue.
+// `repository(owner, name).issue(number)`: the pull request whose merge closed the issue, and the
+// open ones whose merge will close it.
 
 import { tokenReaches } from './fake-routes.ts';
 import type { FakeCtx, FakeReply, FakeReq } from './fake-routes.ts';
@@ -20,6 +21,10 @@ function closer(ctx: FakeCtx, req: FakeReq, b: GqlBody): FakeReply {
   }
   const issue = repo.issues.get(Number(b.variables?.number));
   if (!issue) return { status: 200, body: { data: { repository: { issue: null } }, errors: [{ type: 'NOT_FOUND', path: ['repository', 'issue'], message: 'Could not resolve to an Issue.' }] } };
+  if (/closedByPullRequestsReferences/.test(b.query ?? '')) {
+    const open = issue.openPullRequests.map((p) => ({ ...p, state: 'OPEN' }));
+    return { status: 200, body: { data: { repository: { issue: { closedByPullRequestsReferences: { nodes: open } } } } } };
+  }
   const pr = issue.closedByPullRequest;
   const nodes = issue.state !== 'closed' ? [] : [{ closer: pr ? { __typename: 'PullRequest', ...pr } : null }];
   return { status: 200, body: { data: { repository: { issue: { timelineItems: { nodes } } } } } };

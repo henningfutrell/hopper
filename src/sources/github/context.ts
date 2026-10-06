@@ -7,6 +7,7 @@
 import type { GitHubComment, GitHubIssue } from './api.ts';
 import { isHopperComment } from './identity.ts';
 import type { BotLogin } from './identity.ts';
+import type { Completion } from './completion.ts';
 import { truncate } from './markers.ts';
 import type { Priority } from './priority.ts';
 
@@ -32,20 +33,30 @@ export function contextComments(comments: GitHubComment[], authors: string[], li
     .slice(-limit);
 }
 
+/**
+ * What done means to the job, by its issue's completion (issues #171, #187). JobSource.notComplete
+ * holds the job to it (completion.ts); the rest — checks, push, verifying where it runs — is the
+ * job's to do and nothing the hopper can see.
+ */
+export function doneLine(n: number, completion: Completion): string {
+  return completion === 'merge'
+    ? `done (completion: merge): only once the change ships — the repo's own checks pass, the change is pushed, a pull request this job opens with "Closes #${n}" in its body is merged to the default branch, and the merged change is verified where the product runs. A local commit, an unpushed branch or an open pull request is not done; a job that ends done without the merge ends failed`
+    : `done (completion: pull-request): once the change is ready for review — the repo's own checks pass, the change is pushed, and a pull request this job opens with "Closes #${n}" in its body is open and not a draft. Do not merge it: a person reviews and merges it. A local commit, an unpushed branch or a draft is not done; a job that ends done without the pull request ends failed`;
+}
+
 function commentLine(c: GitHubComment): string {
   const body = truncate(c.body.trim(), COMMENT_CAP, '…').replace(/\r?\n/g, '\n  ');
   return `- ${c.author} at ${c.createdAt}: ${body}`;
 }
 
-export function contextBlock(issue: GitHubIssue, p: Priority, comments: GitHubComment[], limit: number, mode: SourceMode = 'gh'): string {
+export function contextBlock(issue: GitHubIssue, p: Priority, completion: Completion, comments: GitHubComment[], limit: number, mode: SourceMode = 'gh'): string {
   const head = [
     '[hopper issue context]',
     `repo: ${issue.repo} · issue: #${issue.number} · url: ${issue.url}`,
     `title: ${oneLine(issue.title)}`,
     `labels: ${issue.labels.join(', ')} · author: ${issue.author}`,
     `priority: ${p.priority} (${p.reason}) · project item: ${p.projectItem}`,
-    // What finished means (issue #171): JobSource.notShipped holds the job to it (shipped.ts).
-    `done: only once the change ships — a pull request this job opens, with "Closes #${issue.number}" in its body, is merged; until then the job is not done, and a job that ends done without it ends failed`,
+    doneLine(issue.number, completion),
   ].join('\n');
   const lines = comments.map(commentLine);
   const build = (kept: string[]) => kept.length === 0

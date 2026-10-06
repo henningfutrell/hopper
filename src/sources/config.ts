@@ -33,6 +33,8 @@ const sharedKeys = {
   model: z.string().min(1).nullable().default(null),
   recentComments: z.number().int().min(0).default(10),
   projects: z.record(z.string(), projectSchema).default({}),
+  completion: z.enum(['merge', 'pull-request']).default('merge')
+    .meta({ description: "when a job's work is done: merge — its pull request merged; pull-request — its pull request open for review. Issue labels hopper:complete-at-merge and hopper:complete-at-pr override it" }),
 };
 
 /** github-gh: the gh source, acting as the owner through the gh CLI. */

@@ -5,7 +5,7 @@
 import { execFile } from 'node:child_process';
 import { GitHubApiError, isPermanent } from './api.ts';
 import type { GitHubApi, GitHubComment, GitHubIssue, GitHubProjectItem } from './api.ts';
-import { CLOSING_PULL_REQUEST_QUERY, closingPullRequestFrom } from './closer.ts';
+import { CLOSING_PULL_REQUEST_QUERY, OPEN_PULL_REQUESTS_QUERY, closingPullRequestFrom, openPullRequestsFrom } from './closer.ts';
 import { userProcessEnv } from '../../executors/env.ts';
 
 const DEFAULT_TIMEOUT_MS = 30000;
@@ -133,8 +133,11 @@ export function createGhCliApi(o: { bin: string; timeoutMs?: number; userEnv?: R
         '-F', `owner=${owner}`, '-F', `name=${name}`, '-F', `number=${number}`]);
       return closingPullRequestFrom(body, `closer of ${repo}#${number}`);
     },
-    async closeAsCompleted(repo, number) {
-      await exec(['api', '-X', 'PATCH', `repos/${repo}/issues/${number}`, '-f', 'state=closed', '-f', 'state_reason=completed']);
+    async openClosingPullRequests(repo, number) {
+      const [owner, name] = repo.split('/');
+      const body = await json<unknown>(['api', 'graphql', '-f', `query=${OPEN_PULL_REQUESTS_QUERY}`,
+        '-F', `owner=${owner}`, '-F', `name=${name}`, '-F', `number=${number}`]);
+      return openPullRequestsFrom(body, `pull requests of ${repo}#${number}`);
     },
   };
 }

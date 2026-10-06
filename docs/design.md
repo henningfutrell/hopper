@@ -1075,6 +1075,7 @@ github:
   progressCommentSeconds: 300
   recentComments: 10    # comments passed into the job's context
   projects: {}          # per repo, optional — see "Priority"
+  completion: merge     # or pull-request: when a job's work is done — see "Done means complete"
   # projects:
   #   owner/hopper-sandbox:
   #     owner: owner
@@ -1126,16 +1127,13 @@ repo: owner/repo · issue: #N · url: …
 title: …
 labels: a, b · author: owner
 priority: 75 (label:hopper:high) · project item: <project title> · Priority=P1 (or "none")
-done: only once the change ships — a pull request this job opens, with "Closes #N" in its body, is merged; until then the job is not done, and a job that ends done without it ends failed
+done (completion: merge|pull-request): what done means for this issue's completion ("Done means complete" below)
 recent comments (oldest first, up to recentComments; only allowlisted authors, no hopper-marked comments — anyone else's text never reaches the job):
 - <author> at <ISO>: <body, ≤ 1000 chars>
 ...
-[how to report on your issue]
-Your issue is $HOPPER_ISSUE_URL (repo $HOPPER_REPO, number $HOPPER_ISSUE_NUMBER).
-To comment on it: gh issue comment "$HOPPER_ISSUE_NUMBER" -R "$HOPPER_REPO" --body "$(printf '%s\n%s' "$HOPPER_COMMENT_MARKER" "<your text>")"
-Always start your comments with $HOPPER_COMMENT_MARKER. hopper posts your status, questions and result for you.
-Do not close this issue and do not use "Closes #N" — closing the issue cancels you.
 ```
+
+The block ends at the comments list: no footer (write criteria below).
 
 Size caps: body ≤ 64 000 chars, context block ≤ 16 000 chars (comments truncated to fit).
 
@@ -1172,10 +1170,12 @@ labelled `hopper:claimed` with no local job is skipped and shown in status detai
 above; empty body → claimed, then failed with error "empty issue body"; priority per
 "Priority"; cwd = `repoPaths[repo]` (expanded) else `defaultCwd`.
 
-**Write criteria.** The hopper's only issue writes are labels (state) and closing the issue of a
-finished job; it posts no comments at all (owner decision, 2026-10-04: a finished issue needs no
-comment). A finished job's issue is closed with `state_reason: completed` (issue #38: finished work
-leaves no open issue behind); a failed or cancelled job's issue stays open. No claim, progress,
+**Write criteria.** The hopper's only issue writes are labels (state); it posts no comments at all
+(owner decision, 2026-10-04: a finished issue needs no comment). It never closes an issue (issue
+#187): the merge of the job's own pull request does, which is what completion `merge` requires
+before the job is finished, and with completion `pull-request` the issue stays open, labelled
+`hopper:done`, until a person merges. (Issue #38 had the hopper close a finished job's issue; once
+done meant merged, that close only ever met a closed issue.) A failed or cancelled job's issue stays open. No claim, progress,
 question, answered, failure, cancel or completion comment; no reactions, other issue edits, or PR
 comments. Jobs get no way to write to their issue (no token, no helper), and their prompt says
 nothing about commenting (owner decision, 2026-10-04: a job has no reason to talk on its issue): the
@@ -1187,24 +1187,35 @@ Comments the hopper posted before this rule start with a hidden marker line (`<!
 kind=… -->`). They remain on issues, so the context filter still drops any comment carrying the
 `<!-- hopper v1 ` prefix (and, in app mode, any by the bot).
 
-**Done means shipped** (issue #171). A job that ends done (`HOPPER_DONE`, or any executor's
-`finished` outcome) is not recorded finished until its source has said its work shipped
-(`JobSource.notShipped(job)`, asked by the engine's runner before `recordOutcome`). The GitHub
-source (`src/sources/github/shipped.ts`) says it shipped only when the issue's last close event's
-closer is a merged pull request opened at or after the job's `createdAt` — the same "own pull
-request" rule as the signals below; a merge closes an issue only on the default branch, so this is
-the change on main. Anything else — the issue still open, closed by a person, a commit or an older
-pull request — fails the job with `nothing shipped: no merged pull request opened by this job closes
-<issue url>`; an error asking GitHub (transient or not) fails it with `could not confirm the work
-shipped: <error>`. Fail closed: a failed job's issue stays open with `hopper:failed`, never
-`hopper:done`, and removing that label re-runs it. The issue context block says so to the job
-(`done:` line). A source without `notShipped`, and a job of no source, take every done job as
-shipped. Before this, a job that said it was done was closed as completed with nothing on main.
+**Done means complete** (issues #171, #187). A job that ends done (`HOPPER_DONE`, or any
+executor's `finished` outcome) is not recorded finished until its source has said its work reached
+the item's **completion** (`JobSource.notComplete(job)`, asked by the engine's runner before
+`recordOutcome`). The GitHub sources (`src/sources/github/completion.ts`) know two completions,
+set by the `completion` option (default `merge`) or, for one issue, by the labels
+`hopper:complete-at-merge` / `hopper:complete-at-pr` (both: `merge`, the stricter; read when the
+job is judged, and when its prompt is built):
+
+| completion | complete when | the job's prompt says |
+|------------|---------------|-----------------------|
+| `merge` | the issue's last close event's closer is a merged pull request opened at or after the job's `createdAt` (a merge closes an issue only on the default branch, so this is the change on main) | checks pass, pushed, a pull request with `Closes #N` merged, the merged change verified where the product runs |
+| `pull-request` | as `merge`, or an open pull request, not a draft, opened at or after the job's `createdAt`, whose merge will close the issue (GraphQL `closedByPullRequestsReferences`: a closing keyword, on a pull request to the default branch) | checks pass, pushed, a pull request with `Closes #N` open and not a draft; do not merge it |
+
+The prompt's `done (completion: …)` line carries the parts the hopper cannot see — the repo's own
+checks, verifying where the product runs — so a job is told everything done means, and the gate
+holds it to the part GitHub can show. Anything short of the completion — a local commit, a branch,
+a draft, the issue closed by a person, a commit or an older pull request — fails the job with
+`not complete: no merged pull request opened by this job closes <issue url>` (`merge`) or `not
+complete: no pull request opened by this job, ready for review, closes <issue url>`
+(`pull-request`); an error asking GitHub (transient or not) fails it with `could not confirm the
+work is complete: <error>`. Fail closed: a failed job's issue stays open with `hopper:failed`, never
+`hopper:done`, and removing that label re-runs it. A source without `notComplete`, and a job of no
+source, take every done job as complete. Before issue #171, a job that said it was done was closed
+as completed with nothing on main.
 
 | report | on GitHub |
 |--------|-----------|
 | claimed | ensure labels `hopper:claimed`, `hopper:done`, `hopper:failed` exist (`gh label create --force`, once per repo per process); add `hopper:claimed`. **No comment** |
-| finished | **no comment**; remove `hopper:claimed`, add `hopper:done` (only a job whose work shipped is finished, above; reopening the issue and removing it is the re-run gesture) |
+| finished | **no comment**; remove `hopper:claimed`, add `hopper:done` (only a job whose work is complete is finished, above); never a close. Removing `hopper:done` from the open issue — reopened, when a merge closed it — is the re-run gesture |
 | failed | **no comment**; remove `hopper:claimed`, add `hopper:failed` (removing it is the re-run gesture) |
 | cancelled | **no comment**; remove `hopper:claimed` |
 
@@ -1566,9 +1577,10 @@ Manifest:
   "default_events": [] }
 ```
 
-- `issues: write` now covers only labels and closing a finished job's issue (write criteria).
+- `issues: write` now covers only labels (write criteria).
   Reading which pull request closed an issue needs nothing more (verified against the live app,
-  2026-10-04). The
+  2026-10-04). The open pull requests that close an issue (completion `pull-request`) are read
+  the same way, over GraphQL with the installation token; not yet verified against the live app. The
   app could later drop to fewer permissions; not changed here.
 
 - `hook_attributes` exists only to make GitHub issue a webhook secret for later. The URL uses

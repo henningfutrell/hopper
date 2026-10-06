@@ -97,7 +97,7 @@ describe('GitHub issue → job → issue', () => {
     expect(bodies(gh, issue.number)).toEqual([]);
   });
 
-  it('a job that ends done with nothing shipped ends failed: no hopper:done, the issue stays open (issue #171)', async () => {
+  it('a job that ends done with its work not complete ends failed: no hopper:done, the issue stays open (issue #171)', async () => {
     const gh = createFakeGitHub();
     const a = await boot(gh);
     const issue = gh.createIssue({ repo: REPO, body: body({ op: 'echo' }), labels: ['hopper'] });
@@ -108,7 +108,6 @@ describe('GitHub issue → job → issue', () => {
     await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:failed'), { what: 'hopper:failed' });
     expect(gh.issue(REPO, issue.number).labels).not.toContain('hopper:done');
     expect(gh.issue(REPO, issue.number).state).toBe('open');
-    expect(gh.calls.map((c) => c.method)).not.toContain('closeAsCompleted');
     expect(await a.events('types=job.finished')).toEqual([]);
   });
 
@@ -150,7 +149,7 @@ describe('GitHub issue → job → issue', () => {
     expect(gh.issue(REPO, issue.number).labels).not.toContain('hopper:done');
   });
 
-  it('when GitHub cannot say whether the work shipped, the job is not recorded done (issue #171)', async () => {
+  it('when GitHub cannot say whether the work is complete, the job is not recorded done (issue #171)', async () => {
     const gh = createFakeGitHub();
     const a = await boot(gh);
     const issue = gh.createIssue({ repo: REPO, body: body({ op: 'sleep', ms: 300 }), labels: ['hopper'] });

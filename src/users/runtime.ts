@@ -255,8 +255,8 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     initialRouterMode: config.routerMode,
     maxQuestions: config.maxQuestions,
     keepPanes: config.keepPanes,
-    // Shipping is the job's source's to judge (issue #171); a job of no source, or of one that does not judge, is shipped.
-    notShipped: async (job) => jobSources.find((s) => s.name === job.source?.source)?.notShipped?.(job),
+    // Completion is the job's source's to judge (issues #171, #187); a job of no source, or of one that does not judge, is complete.
+    notComplete: async (job) => jobSources.find((s) => s.name === job.source?.source)?.notComplete?.(job),
   });
   jobsOnMachine = (name) => engine.jobsOnMachine(name);
   const sync = createSourceSync({

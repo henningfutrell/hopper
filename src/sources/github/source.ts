@@ -12,7 +12,7 @@ import { TERMINAL_STATUSES, type Account } from '../../domain/types.ts';
 import type { GitHubApi, GitHubIssue } from './api.ts';
 import type { GitHubSourceConfig } from '../config.ts';
 import { checkJobs } from './check.ts';
-import { notShipped } from './shipped.ts';
+import { completionOf, notComplete } from './completion.ts';
 import { contextBlock, contextComments, issueEnv, issuePrompt } from './context.ts';
 import type { SourceMode } from './context.ts';
 import { discoverIssues } from './discover.ts';
@@ -23,7 +23,7 @@ import { reportToGitHub } from './report.ts';
 
 /** What the source reads of its config: the `github:` keys, or `githubApp:` (no owners). */
 export type GitHubSourceSettings = Pick<GitHubSourceConfig,
-  'repos' | 'authors' | 'label' | 'priorityLabels' | 'defaultPriority' | 'repoPaths' | 'defaultCwd' | 'executor' | 'model' | 'recentComments' | 'projects'
+  'repos' | 'authors' | 'label' | 'priorityLabels' | 'defaultPriority' | 'repoPaths' | 'defaultCwd' | 'executor' | 'model' | 'recentComments' | 'projects' | 'completion'
 > & { owners?: string[]; enabled?: boolean | 'auto' };
 
 /** The app's identity as the adapter knows it (its `appStatus()` fits), or undefined. */
@@ -97,7 +97,8 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
 
   const toItem = async (issue: GitHubIssue, known: Set<string>, rerun: Set<string>, p: ReturnType<typeof priorityOf>, bot: BotLogin): Promise<SourceItem> => {
     const comments = (known.has(issue.url) && !rerun.has(issue.url)) || config.recentComments === 0 ? [] : await api.listComments(issue.repo, issue.number);
-    const context = contextBlock(issue, p, contextComments(comments, config.authors, config.recentComments, bot), config.recentComments, mode);
+    const completion = completionOf(issue.labels, config.completion);
+    const context = contextBlock(issue, p, completion, contextComments(comments, config.authors, config.recentComments, bot), config.recentComments, mode);
     return {
       key: issue.url, url: issue.url, title: issue.title, body: issue.body,
       prompt: issuePrompt(issue, context), env: issueEnv(issue),
@@ -153,7 +154,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
         ...detail,
         account: account(paused, detail),
         ...(paused ? { paused } : {}),
-        repos: config.repos, authors: config.authors, label: config.label, projectErrors,
+        repos: config.repos, authors: config.authors, label: config.label, completion: config.completion, projectErrors,
         ...(skippedClaimedWithoutJob.length ? { skippedClaimedWithoutJob } : {}),
         ...(Object.keys(repoErrors).length ? { repoErrors } : {}),
         ...(Object.keys(checkErrors).length ? { checkErrors } : {}),
@@ -194,8 +195,8 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     report(r) {
       return reportToGitHub({ api, labelledRepos }, r);
     },
-    notShipped(job) {
-      return notShipped(api, job);
+    notComplete(job) {
+      return notComplete(api, job, config.completion);
     },
   };
 }
