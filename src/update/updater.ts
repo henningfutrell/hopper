@@ -35,7 +35,8 @@ export interface UpdaterOptions {
   builder: UpdateBuilder;
   restart: Restarter;
   /** Running jobs a restart would lose (their executor can neither reattach nor re-run them); empty: safe. */
-  restartBlockers: () => string[];
+  /** How many running jobs, of every user, a restart would lose. */
+  restartBlockers: () => number;
   /** How often to check on its own; 0: only when asked. */
   checkMs: number;
   /** How often to look again while waiting on restart blockers. */
@@ -195,9 +196,9 @@ export function createUpdater(o: UpdaterOptions): RunningUpdater {
     await build({ repo: installed.repo, branch: installed.branch, commit: target.commit, installedAt: now() });
     for (;;) {
       const blockers = o.restartBlockers();
-      if (blockers.length === 0) break;
+      if (blockers === 0) break;
       if (stopped) throw new Error('stopped while waiting to restart');
-      applying = { ...applying!, phase: 'waiting', detail: `waiting for ${blockers.join(', ')}: a restart would lose ${blockers.length === 1 ? 'it' : 'them'}` };
+      applying = { ...applying!, phase: 'waiting', detail: `waiting for ${blockers} running job${blockers === 1 ? '' : 's'}: a restart would lose ${blockers === 1 ? 'it' : 'them'}` };
       await new Promise((r) => setTimeout(r, o.waitMs ?? 5000));
     }
     applying = { ...applying!, phase: 'restarting', detail: `restarting on ${target.ref} ${short(target.commit)}` };

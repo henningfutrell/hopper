@@ -12,6 +12,15 @@ const NOBODY = '$argon2id$v=19$m=65536,p=4,t=3$XyDvRoNLpnCNFbBfJvBvkQ$nOVuQgcCGC
 
 export const hashPassword = (password: string): Promise<string> => argon2.hash(password, { type: argon2.argon2id });
 
+/** Whether `password` is the one `hash` was made from; a hash that does not parse is no match. */
+export async function verifyPassword(hash: string, password: string): Promise<boolean> {
+  try {
+    return password !== '' && await argon2.verify(hash, password);
+  } catch {
+    return false;
+  }
+}
+
 const findUser = (users: PasswordUser[], username: string): PasswordUser | undefined =>
   users.find((u) => u.username.toLowerCase() === username.toLowerCase());
 

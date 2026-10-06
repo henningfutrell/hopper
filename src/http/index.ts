@@ -23,6 +23,7 @@ import { installTenancy, tenantOf, type Tenants } from './tenants.ts';
 import { registerUiRoutes } from './ui/index.ts';
 import { createUiSessions } from './ui/sessions.ts';
 import { updateRoutes } from './update.ts';
+import { instanceRoutes } from './instance.ts';
 import { userRoutes } from './users.ts';
 import { webhookRoutes } from './webhooks.ts';
 
@@ -77,6 +78,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   updateRoutes(app, o);
   pluginStoreRoutes(app, o);
   userRoutes(app, { tenants: o.tenants, sessions });
+  instanceRoutes(app, { tenants: o.tenants, sessions });
   const realms = createRealmsAdmin({ instance: o.instance, secret: o.secret, signIn: o.signIn, sessions });
   realmRoutes(app, { realms, sessions });
   staticRoutes(app, o.uiDir);

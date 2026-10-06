@@ -1,12 +1,15 @@
 // A password realm's accounts (issue #200), under its row in Settings → Sign-in: username, role and the
 // user each signs in as; an account added with its password, role and user, its role changed, given a
-// new password, or removed. The password goes to the daemon, which keeps only its argon2id hash.
+// new password, or removed. The password goes to the daemon, which keeps only its argon2id hash. An
+// admin never gets a way into another user's work (issue #221): an account is linked only to the admin's
+// own user, and only its own user gives a new password to an account that signs in as another user.
 import { KeyRound, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { Confirm } from '@/components/confirm';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import type { PasswordAccountView, RealmsEdit, UiRole, UserView } from '@/model/wire';
+import { useHopper } from '@/store';
 
 export const SELECT = 'h-8 rounded-lg border border-input bg-transparent px-2 text-base md:text-sm dark:bg-input/30';
 const ROLES: UiRole[] = ['viewer', 'operator', 'admin'];
@@ -17,6 +20,7 @@ export type AccountChange = Extract<RealmsEdit, { action: 'account' | 'account-r
 export function RealmAccounts({ realm, accounts, users, busy, change }: {
   realm: string; accounts: PasswordAccountView[]; users: UserView[]; busy: boolean; change: (c: AccountChange, done?: string) => Promise<boolean>;
 }) {
+  const me = useHopper((s) => s.user?.id);
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState({ username: '', password: '', role: 'viewer' as UiRole, user: '' });
 
@@ -35,7 +39,7 @@ export function RealmAccounts({ realm, accounts, users, busy, change }: {
         ? <p className="text-xs text-muted-foreground">No accounts yet: add one, and the username and password form signs people in with it.</p>
         : (
           <ul className="divide-y rounded-md border">
-            {accounts.map((a) => <AccountRow key={a.username} realm={realm} account={a} busy={busy} change={change} />)}
+            {accounts.map((a) => <AccountRow key={a.username} realm={realm} account={a} mine={a.user === undefined || a.user.id === me} busy={busy} change={change} />)}
           </ul>
         )}
       {adding ? (
@@ -49,7 +53,7 @@ export function RealmAccounts({ realm, accounts, users, busy, change }: {
           </select>
           <select aria-label="Signs in as" className={SELECT} value={draft.user} disabled={busy} onChange={(e) => setDraft({ ...draft, user: e.target.value })}>
             <option value="">a new user of its own</option>
-            {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+            {users.filter((u) => u.id === me).map((u) => <option key={u.id} value={u.id}>{u.name} (you)</option>)}
           </select>
           <Button type="submit" size="sm" disabled={busy || !draft.username.trim() || draft.password.length < 8}>Add</Button>
           <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => setAdding(false)}>Cancel</Button>
@@ -61,8 +65,8 @@ export function RealmAccounts({ realm, accounts, users, busy, change }: {
   );
 }
 
-function AccountRow({ realm, account: a, busy, change }: {
-  realm: string; account: PasswordAccountView; busy: boolean; change: (c: AccountChange, done?: string) => Promise<boolean>;
+function AccountRow({ realm, account: a, mine, busy, change }: {
+  realm: string; account: PasswordAccountView; mine: boolean; busy: boolean; change: (c: AccountChange, done?: string) => Promise<boolean>;
 }) {
   const [password, setPassword] = useState<string | null>(null);
   const setNew = async (e: React.FormEvent) => {
@@ -79,7 +83,9 @@ function AccountRow({ realm, account: a, busy, change }: {
             onChange={(e) => void change({ action: 'account', realm, username: a.username, role: e.target.value as UiRole })}>
             {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
           </select>
-          <Button variant="ghost" size="icon-xs" aria-label="New password" title="New password" disabled={busy} onClick={() => setPassword('')}><KeyRound /></Button>
+          {mine
+            ? <Button variant="ghost" size="icon-xs" aria-label="New password" title="New password" disabled={busy} onClick={() => setPassword('')}><KeyRound /></Button>
+            : <span className="text-xs text-muted-foreground" title="Only they change it, under Settings → Users">their password</span>}
           <Confirm title={`Remove ${a.username}?`} action="Remove" onConfirm={() => void change({ action: 'account-remove', realm, username: a.username }, `${a.username} removed`)}
             description="Signed out at once; the account signs in no more. The user it signed in as, and their work, stay.">
             <Button variant="ghost" size="icon-xs" aria-label={`Remove ${a.username}`} disabled={busy}><Trash2 /></Button>

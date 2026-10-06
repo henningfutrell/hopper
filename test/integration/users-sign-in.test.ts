@@ -35,7 +35,7 @@ describe('an identity signs in as its user', () => {
     // The new user's reads are its own: owner's job is not there.
     const job = await app.pull({ op: 'sleep', ms: 60_000 });
     expect((await app.api('GET', '/api/jobs', undefined, { 'x-hopper-session': first })).body.jobs).toEqual([]);
-    expect((await app.api('GET', '/api/jobs')).body.jobs.map((j: { id: string }) => j.id)).toEqual([job.id]);
+    expect((await app.api('GET', '/api/jobs', undefined, { 'x-hopper-session': await app.login() })).body.jobs.map((j: { id: string }) => j.id)).toEqual([job.id]);
   });
 
   it('an identity no rule grants gets no session and no user', async () => {

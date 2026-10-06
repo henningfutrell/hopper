@@ -83,6 +83,9 @@ export const realmsEditBody = z.discriminatedUnion('action', [
   }),
   z.strictObject({ action: z.literal('account-remove'), realm: realmName, username, ...realmsVersion }),
 ]);
+export const passwordChangeBody = z.strictObject({
+  current: z.string().max(1024), password: z.string().min(8, 'a password has at least 8 characters').max(1024),
+});
 // The content (url, events) is checked in the editor, so the UI shows one set of messages; here only
 // the shape. No secret (issue #56), no secretFile, no new name; secretEnv only on add, and only a
 // WEBHOOK_SECRET_* variable (checked in the editor).
@@ -301,6 +304,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   app.post('/ui/api/users', admin, async (req): Promise<UserAdded> => {
     const { name } = parseWith(usersEditBody, req.body);
     if (o.tenants.list().some((u) => u.name.toLowerCase() === name.toLowerCase())) throw new HttpError(409, `the name ${name} is taken`);
+    if (signIn.none !== null) throw new HttpError(409, 'no sign-in is on, and it signs everyone in as owner: turn it off (Settings → Sign-in) before adding a user');
     const user = await o.tenants.add(name);
     console.warn(`hopper: user ${user.id} added by ${sessionUser(sessionOf(req)!, userName(sessionOf(req)!)).identity}`);
     const code = signIn.local ? mintLoginCode(o.instance, o.clock, user.id) : undefined;
@@ -312,7 +316,18 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
 
   // Realms (issue #185, design.md "Sign-in: realms"): one change to the sign-in config, applied at once.
   // Answers the new GET /api/realms view.
-  app.post('/ui/api/realms', admin, async (req): Promise<RealmsView> => o.realms.edit(parseWith(realmsEditBody, req.body) as RealmsEdit, sessionOf(req)!.identity));
+  app.post('/ui/api/realms', admin, async (req): Promise<RealmsView> => {
+    const s = sessionOf(req)!;
+    return o.realms.edit(parseWith(realmsEditBody, req.body) as RealmsEdit, s.identity, s.userId);
+  });
+
+  // A user changes the password of the account they signed in with (issue #221): what an admin handed over stops being theirs to know.
+  app.post('/ui/api/password', allow('viewer'), async (req) => {
+    const s = sessionOf(req)!;
+    const { current, password } = parseWith(passwordChangeBody, req.body);
+    await o.realms.changePassword(s.identity, { current, password, keep: s.token });
+    return { ok: true };
+  });
 
   app.post('/ui/api/logout', allow('viewer'), async (req) => {
     const s = sessions.find(String(req.headers[SESSION_HEADER]));

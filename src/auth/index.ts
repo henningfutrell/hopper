@@ -29,7 +29,7 @@ import { createSamlRealm } from './saml.ts';
 
 export { SIGN_IN, loadSignInConfig, signInConfigProblem, type AuthConfig } from './config.ts';
 export { accountOf, AuthEditError, editSignIn, realmsView, type SignInEdit } from './edit.ts';
-export { hashPassword } from './password.ts';
+export { hashPassword, verifyPassword } from './password.ts';
 
 const FLOW_MS = 10 * 60_000;
 const TICKET_MS = 2 * 60_000;
