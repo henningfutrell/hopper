@@ -5,7 +5,7 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, statSync,
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
-  handover, moveState, paneJobs, removeOldInstall, renameAuthorizedKeys, renameBoot, renameEnvText, renamePaths,
+  handover, moveState, paneJobs, paneJobsIn, removeOldInstall, renameAuthorizedKeys, renameBoot, renameEnvText, renamePaths,
 } from '../../src/update/rename.ts';
 import type { Job } from '../../src/domain/types.ts';
 import { useTempDirs } from '../plugins/support.ts';
@@ -66,6 +66,19 @@ describe('the daemon.env and authorized_keys rewrites', () => {
     expect(renameAuthorizedKeys(`${own}\n${client}\n`, paths)).toBe(
       `${own}\nrestrict,command="node /h/.local/lib/hopper/src/client/relay.ts /h/.cache/hopper/clients/a.sock" ssh-ed25519 AAAA hopper-client:a\n`,
     );
+  });
+});
+
+// install.sh runs the rename on every install while an old job-hopper dir is left on the host. A hopper
+// whose database has no user admin (a new one since issue #238, or one whose leftover admin was folded
+// away) holds no job-hopper job: nothing to wait for, so the install goes on.
+describe('paneJobsIn', () => {
+  it('a database with no user admin: no pane job, no error', () => {
+    expect(paneJobsIn({ HOPPER_DATABASE_URL: stores.url() })).toEqual([]);
+  });
+
+  it('no database named: none', () => {
+    expect(paneJobsIn({})).toEqual([]);
   });
 });
 

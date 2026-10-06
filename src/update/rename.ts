@@ -253,7 +253,6 @@ export function startHandover(appDir: string): void {
   child.on('error', (e) => console.error(`hopper: rename: systemd-run failed: ${e.message}`));
 }
 
-/** The pane jobs in the database the env file names (under either prefix), read with the daemon stopped; none named: none. */
 /** The admin account's store (a job-hopper install had one user: its work is admin's, issues #158, #220), closed after `fn`. */
 function withAdminStore<T>(url: string, fn: (store: UserStore) => T): T {
   const instance = openInstanceStore({ url, clock: { now: () => new Date() } });
@@ -267,9 +266,18 @@ function withAdminStore<T>(url: string, fn: (store: UserStore) => T): T {
   }
 }
 
-function paneJobsIn(env: Record<string, string | undefined>): string[] {
+/**
+ * The pane jobs a job-hopper install left in the database the env names. A database with no user admin
+ * (a new hopper, or one whose leftover admin was folded away) was not a job-hopper install's, or is one no
+ * longer: no job there is the old install's, so none.
+ */
+export function paneJobsIn(env: Record<string, string | undefined>): string[] {
   const url = runtimeSecrets(renamedEnv(env))('HOPPER_DATABASE_URL');
   if (!url) return [];
+  const instance = openInstanceStore({ url, clock: { now: () => new Date() } });
+  let hasAdmin: boolean;
+  try { hasAdmin = instance.users.get(ADMIN_ID) !== undefined; } finally { instance.close(); }
+  if (!hasAdmin) return [];
   return withAdminStore(url, (store) => paneJobs(store.jobs.list({ status: [...PANE_JOB_STATUSES] })));
 }
 
