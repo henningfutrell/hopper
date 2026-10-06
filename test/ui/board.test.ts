@@ -19,7 +19,7 @@ describe('jobBoard', () => {
     expect(b.waiting.map((j) => j.status).sort()).toEqual(['held', 'queued']);
     expect(b.waitingAnswer.map((j) => j.status)).toEqual(['waiting_answer']);
     expect(b.running.map((j) => j.status).sort()).toEqual(['claimed', 'running']);
-    expect(b.ended.map((j) => j.status).sort()).toEqual(['cancelled', 'failed', 'finished']);
+    expect(b.ended.map((j) => j.status).sort()).toEqual(['cancelled', 'failed', 'finished', 'rejected']);
     expect(Object.values(b).flat()).toHaveLength(STATUSES.length);
   });
   it('waiting in the queue order, ended newest end first, running oldest first', () => {
