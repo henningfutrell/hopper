@@ -43,12 +43,12 @@ describe('herdr-claude executor: resume', () => {
     expect(executor.lanePanes().size).toBe(0);
   });
 
-  it('sends esc first when Claude is blocked at a dialog', async () => {
+  it('sends esc first when Claude is blocked at a dialog and the answer names none of its options', async () => {
     const { herdr, executor, job } = await parked([{ output: ['● Pick one', '  ❯ 1. Red'], end: 'blocked' }, DONE_FR]);
-    const out = await executor.resume!(contextFor(job).ctx, 'Red');
+    const out = await executor.resume!(contextFor(job).ctx, 'Green');
     expect(out.kind).toBe('finished');
     const escAt = herdr.calls.findIndex((c) => c.method === 'sendKeys' && (c.args[1] as string[])[0] === 'esc');
-    const promptAt = herdr.calls.findIndex((c) => c.method === 'prompt' && c.args[1] === 'Red');
+    const promptAt = herdr.calls.findIndex((c) => c.method === 'prompt' && c.args[1] === 'Green');
     expect(escAt).toBeGreaterThanOrEqual(0);
     expect(escAt).toBeLessThan(promptAt);
   });

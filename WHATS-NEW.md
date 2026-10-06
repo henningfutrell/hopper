@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- Claude jobs no longer get stuck on Claude's "bypass permissions" warning: yolo is now a switch on each Claude runner, on by default. Turn it off for a runner that should ask before it acts; its questions come to you (or your answering levels), and answering with an option's number or words picks it.
 - Scripts and tools can read the hopper with the same GitHub or gateway sign-in you use in the browser: send the token, and they see your work and nothing else.
 - Sources now lists the repositories the hopper's GitHub app reaches on each account it is installed on, with a link to change them, and asks you to install the app only when it is not installed yet.
 - Two kinds of admin: the first person to sign in with GitHub is a super admin. Any admin can make someone admin from Settings → Sign-in → Admins; only a super admin can make someone super admin or hand theirs over.

@@ -26,6 +26,11 @@ export interface FakeHerdrOptions {
   turns?: FakeTurn[];
   /** Startup blocks on the folder-trust dialog naming this path. */
   trustDialogFor?: string;
+  /**
+   * Startup shows Claude's bypass permissions warning (after the trust dialog, when both): herdr's agent
+   * start answers `notReady` at it, or (`started`) reports Claude started while the warning is up.
+   */
+  bypassDialog?: 'not-ready' | 'started';
   /** Startup blocks on some other screen. */
   startupBlockedBy?: string[];
   /** The first N `runInPane` commands are lost, as a shell not at its prompt yet drops what is typed. */
@@ -44,7 +49,7 @@ interface Pane {
   agent?: string;
   status: AgentStatus;
   seq: number;
-  mode: 'none' | 'trust' | 'startup';
+  mode: 'none' | 'trust' | 'bypass' | 'startup';
   turn?: FakeTurn;
   step: number;
   ctrlC: number;
@@ -91,6 +96,15 @@ function trustDialog(path: string): string[] {
     ' Quick safety check: Is this a project you created or one you trust? (Like your own code, a well-known open source',
     " project, or work from your team). If not, take a moment to review what's in this folder first.", '',
     ' ❯ No, exit', '   Yes, I trust this folder', '', ' Enter to confirm · Esc to cancel',
+  ];
+}
+
+function bypassDialog(): string[] {
+  return [
+    '─'.repeat(40), ' WARNING: Claude Code running in Bypass Permissions mode', '',
+    ' In Bypass Permissions mode, Claude Code will not ask for your approval before running potentially dangerous commands.', '',
+    ' By proceeding, you accept all responsibility for actions taken while running in Bypass Permissions mode.', '',
+    ' ❯ No, exit', '   Yes, I accept', '', ' Enter to confirm · Esc to cancel',
   ];
 }
 
@@ -167,6 +181,12 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
       const p = livePane(args.paneId);
       p.agent = args.name;
       p.lines.push(`claude ${args.args.join(' ')}`);
+      if (o.trustDialogFor === undefined && o.bypassDialog) {
+        p.mode = 'bypass';
+        p.lines.push(...bypassDialog());
+        settle(p, 'blocked');
+        return o.bypassDialog === 'started' ? { ok: true } : { ok: false, notReady: true };
+      }
       if (o.trustDialogFor !== undefined || o.startupBlockedBy) {
         p.mode = o.trustDialogFor !== undefined ? 'trust' : 'startup';
         p.lines.push(...(o.trustDialogFor !== undefined ? trustDialog(o.trustDialogFor) : o.startupBlockedBy!));
@@ -205,6 +225,12 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
       const p = livePane(paneId);
       fake.texts.push({ paneId, text });
       if (text === CTRL_END && p.hidden) { p.lines.push(...p.hidden); p.hidden = undefined; }
+      // A digit at a dialog picks that option: Claude goes on with the next scripted turn.
+      if (/^\d$/.test(text) && p.agent && p.status === 'blocked' && p.mode === 'none') {
+        p.turn = turns.shift() ?? { output: [] };
+        p.step = 0;
+        settle(p, 'working');
+      }
     },
     async sendKeys(paneId, keys) {
       record('sendKeys', paneId, keys);
@@ -213,9 +239,15 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
       for (const key of keys) {
         if (key !== 'ctrl+c') p.ctrlC = 0;
         if (key === 'down') p.sawDown = true;
-        else if (key === 'enter' && p.mode === 'trust') {
+        else if (key === 'enter' && p.mode === 'trust' && p.sawDown && o.bypassDialog) {
+          p.mode = 'bypass';
+          p.sawDown = false;
+          p.lines = bypassDialog();
+          settle(p, 'blocked');
+        } else if (key === 'enter' && (p.mode === 'trust' || p.mode === 'bypass')) {
           p.mode = 'none';
           if (p.sawDown) { p.lines = ['✻ Welcome to Claude Code']; settle(p, 'idle'); } else exit(p);
+          p.sawDown = false;
         } else if (key === 'esc' && p.agent && (p.status === 'blocked' || p.status === 'working')) {
           p.lines.push('  ⎿  Interrupted');
           p.turn = undefined;
