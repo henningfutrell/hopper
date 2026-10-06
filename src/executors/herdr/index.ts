@@ -11,3 +11,5 @@ export type { PaneState } from './start.ts';
 export { validatePayload } from './payload.ts';
 export { CTRL_END, createFakeHerdrClient } from './fake-client.ts';
 export type { FakeHerdrClient, FakeHerdrOptions, FakeTurn } from './fake-client.ts';
+export { HERDR_SESSION, ensureHerdrSession, sessionProblem } from './session.ts';
+export type { EnsureSessionOptions } from './session.ts';

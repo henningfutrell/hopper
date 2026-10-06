@@ -75,10 +75,17 @@ export function herdrClaudePlugin(seam?: HerdrClient): PluginDefinition<'executo
         }
         return client;
       };
+      // This machine added with a herdr session of its own (issue #260): its jobs run in that session.
+      const sessions = new Map<string, HerdrClient>();
+      const local = (session: string): HerdrClient => {
+        let client = sessions.get(session);
+        if (!client) sessions.set(session, (client = seam ?? createHerdrCliClient({ bin: o.bin, session, userEnv: ctx.userEnv })));
+        return client;
+      };
       // A user's processes on this machine start with their CLI config dirs (issue #158): the herdr CLI
       // (which starts the session's server) and every pane, through its tab's environment.
       return createHerdrClaudeExecutor({
-        herdr: seam ?? createHerdrCliClient({ bin: o.bin, session: o.session, userEnv: ctx.userEnv }), remote, paneEnv: ctx.userEnv,
+        herdr: seam ?? createHerdrCliClient({ bin: o.bin, session: o.session, userEnv: ctx.userEnv }), remote, local, paneEnv: ctx.userEnv,
         clock: ctx.clock, defaultCwd: o.cwd, claudeArgs: o.args, trustWorkdir: o.trustWorkdir,
         pollMs: o.pollMs, idleNudgeMs: o.idleNudgeMs,
       });

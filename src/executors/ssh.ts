@@ -1,7 +1,8 @@
 // The hopper's ssh connection to an ssh target (design.md "Target authentication", issue #59). The
-// hopper proves itself with its own key and nothing else: public-key authentication only (never a
-// password, keyboard-interactive, GSSAPI or host-based login), only the key the runtime mounts
-// (never the user's agent or the user's other keys), and only to a target whose host key
+// hopper proves itself with a key and nothing else: public-key authentication only (never a
+// password, keyboard-interactive, GSSAPI or host-based login), only the key the runtime mounts — or,
+// none mounted (issue #260), the key files ssh would use for that target — never the user's agent,
+// and only to a target whose host key
 // the plugins config pins (`hostKey`), checked strictly against a known_hosts file the hopper writes from
 // those pins. Nothing is forwarded. The ssh config is read once, to resolve the destination (`ssh -G`
 // on the user's config only); the connection itself reads none (`-F /dev/null`), so nothing in a
@@ -22,8 +23,11 @@ export const SSH_KEY = 'HOPPER_SSH_KEY';
 
 /** How the hopper proves itself, and which host keys it trusts. */
 export interface SshAuth {
-  /** The hopper's private key: a file only its owner can read. */
-  identityFile: string;
+  /**
+   * The hopper's private key: a file only its owner can read. Absent (issue #260): the keys ssh itself
+   * would use for the target — those `ssh -G` names that exist —, as the user does running `ssh <target>`.
+   */
+  identityFile?: string;
   /** The pinned host keys, one line per ssh target (written by pinHostKeys). */
   knownHostsFile: string;
 }
@@ -62,7 +66,7 @@ function plainPath(what: string, path: string): string {
   return path;
 }
 
-interface Destination { hostname: string; user: string; port: string }
+interface Destination { hostname: string; user: string; port: string; identityFiles: string[] }
 
 const RESOLVE_TTL_MS = 60000;
 const resolved = new Map<string, { at: number; value: Destination }>();
@@ -73,12 +77,14 @@ export function resolveDestination(bin: string, target: string): Destination {
   const hit = resolved.get(key);
   if (hit && Date.now() - hit.at < RESOLVE_TTL_MS) return hit.value;
   const out = execFileSync(bin, ['-G', '-F', userSshConfig(), '--', target], { env: scrubbedEnv(), encoding: 'utf8', timeout: 10000 });
-  const conf = new Map(out.split('\n').map((l) => { const i = l.indexOf(' '); return [l.slice(0, i).toLowerCase(), l.slice(i + 1).trim()] as const; }));
+  const lines = out.split('\n').map((l) => { const i = l.indexOf(' '); return [l.slice(0, i).toLowerCase(), l.slice(i + 1).trim()] as const; });
+  const conf = new Map(lines);
   const jump = conf.get('proxyjump');
   if (jump && jump !== 'none') throw new Error(`ssh target ${target} goes through a ProxyJump; a target is reached directly`);
   const proxy = conf.get('proxycommand');
   if (proxy && proxy !== 'none') throw new Error(`ssh target ${target} uses a ProxyCommand; a target is reached directly`);
-  const value = { hostname: conf.get('hostname') ?? '', user: conf.get('user') ?? '', port: conf.get('port') ?? '22' };
+  const identityFiles = lines.filter(([k, v]) => k === 'identityfile' && v).map(([, v]) => (v.startsWith('~/') ? join(homedir(), v.slice(2)) : v));
+  const value = { hostname: conf.get('hostname') ?? '', user: conf.get('user') ?? '', port: conf.get('port') ?? '22', identityFiles };
   if (!value.hostname || !value.user || !/^\d+$/.test(value.port)) throw new Error(`ssh target ${target}: ssh -G gave no hostname, user or port`);
   resolved.set(key, { at: Date.now(), value });
   return value;
@@ -89,12 +95,16 @@ export function sshArgv(t: SshTransport, command: string): string[] {
   if (!TARGET.test(t.target)) throw new Error(`bad ssh target: ${JSON.stringify(t.target)}`);
   const auth = t.auth();
   const d = resolveDestination(t.bin ?? 'ssh', t.target);
+  const keys = auth.identityFile ? [auth.identityFile] : d.identityFiles.filter((f) => existsSync(f));
+  if (keys.length === 0) {
+    throw new Error(`no ssh key on this machine to reach ${t.target}: create one with ssh-keygen, then add its public key to ${t.target}'s ~/.ssh/authorized_keys (ssh-copy-id ${t.target})`);
+  }
   const shared = t.controlDir
     ? ['-o', 'ControlMaster=auto', '-o', `ControlPath=${plainPath('ssh control', t.controlDir)}/%C`, '-o', 'ControlPersist=60']
     : [];
   return [
     '-F', '/dev/null', ...HARDENED_SSH_OPTIONS.flatMap((o) => ['-o', o]),
-    '-i', auth.identityFile,
+    ...keys.flatMap((k) => ['-i', plainPath('ssh key', k)]),
     '-o', `UserKnownHostsFile=${plainPath('known_hosts', auth.knownHostsFile)}`, '-o', `HostKeyAlias=${t.target}`,
     ...shared, '-p', d.port, '-l', d.user, '--', d.hostname, command,
   ];
@@ -104,15 +114,15 @@ export function sshArgv(t: SshTransport, command: string): string[] {
 export const knownHostsFile = (dataDir: string): string => join(dataDir, 'ssh', 'known_hosts');
 
 /**
- * The hopper's ssh key (a mounted file: ssh reads keys only from files) and the pinned host keys.
- * Throws when there is no key, it is given as a variable, or others can read it.
+ * The hopper's ssh key (a mounted file: ssh reads keys only from files) and the pinned host keys. No key
+ * set (issue #260): none of its own — the keys ssh would use for each target (sshArgv). Throws when the
+ * key is given as a variable, or others can read it.
  */
 export function hopperSshAuth(o: { env: (name: string) => string | undefined; dataDir: string }): SshAuth {
   const identityFile = o.env(`${SSH_KEY}_FILE`);
   if (!identityFile) {
-    throw new Error(o.env(SSH_KEY)
-      ? `${SSH_KEY} must be a mounted file (${SSH_KEY}_FILE): ssh reads a key only from a file`
-      : `no ssh key for the hopper: set ${SSH_KEY}_FILE to its private key file (design.md "Target authentication")`);
+    if (o.env(SSH_KEY)) throw new Error(`${SSH_KEY} must be a mounted file (${SSH_KEY}_FILE): ssh reads a key only from a file`);
+    return { knownHostsFile: knownHostsFile(o.dataDir) };
   }
   let st;
   try {
