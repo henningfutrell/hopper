@@ -55,6 +55,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/update/` | self-update ("Self-update"): install.json, the git mirror of the update repository, the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
 | `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); whether a session is an instance admin (`instance-admin.ts`, issue #240); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `api-reference.ts` Scalar at `/docs/`); the plugin store's read side (`plugin-store.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
+| `deploy/agent-box/` | the agent box's image (issue #295, "Agent boxes"): `Dockerfile` (one agent CLI per build, sshd, the herdr binary put beside it by `scripts/agent-boxes.sh`) and `entrypoint.sh` (sshd, then the box's herdr session); `scripts/agent-boxes.ts` is the script's plugins-config filter | everything in `src/` |
 | `site/` | the GitHub Pages site, published by `.github/workflows/pages.yml` with `scripts/get.sh` beside it as `install.sh`: `index.html`, the README rendered by `scripts/build-pages.ts` and committed (issue #88), and `install.html`, the install page; static, nothing loaded from another site | everything in the repo at runtime; it links to the docs on GitHub |
 | `examples/plugins/` | one minimal runnable custom plugin per role, for authors (`docs/plugins.md`); imports only `hopper/plugin` types and `node:` builtins | everything in `src/` at runtime |
 | `src/main.ts` | composition root: config → instance store → sign-in config (`prepareSignIn`: the environment applied) → plugin store → updater → server → one user runtime per user (`src/users/`) | — |
@@ -2713,6 +2714,72 @@ and the key.
 
 **Residual risk.** The client's key logs in as the daemon's user, restricted to the relay; the relay is
 the only thing it can run. The daemon trusts nothing from a client but the herdr answers it signed.
+
+## Agent boxes (issue #295, 2026-10-06)
+
+Owner request: for testing, containers that run codex, cursor, omp, opencode and the like, all attached
+— the hopper attached to every one of them, and the owner able to open a terminal in each.
+
+An **agent box** is a container on this machine's docker with one agent CLI in it — `claude`, `codex`,
+`cursor` (`cursor-agent`), `omp`, `opencode` — that is an ordinary **ssh target**: it runs sshd and its
+own herdr session `hopper`, so the hopper attaches it like any machine over ssh (not as a container
+target, which runs no agent and no herdr). Nothing in the daemon is new: the boxes are a script and an
+image, and they reach the hopper through the plugins config.
+
+`bash scripts/agent-boxes.sh [--attach] [--remove] [agent...]` (no agent: all five), per box
+`hopper-box-<agent>` (`HOPPER_BOX_PREFIX` changes the prefix):
+
+- **Image** `hopper-box-<agent>` from `deploy/agent-box/Dockerfile` (`node:24-bookworm-slim`, build argument
+  `AGENT`): the agent CLI outside the home (npm, bun for omp, Cursor's installer for cursor), and this
+  machine's herdr binary (`HOPPER_BOX_HERDR`, else `command -v herdr`) at `/usr/local/bin/herdr`. The
+  login user `agent` has no password and is not locked; sshd takes keys only, `agent` only, no root.
+- **Container**: `--restart unless-stopped`, sshd published on `127.0.0.1` only (a free port), the home
+  the volume `hopper-box-<agent>-home` — the agent's sign-in lives there and outlives the box. Its main
+  process is the herdr session; a box whose image changed is started again from the new one, a running
+  box is kept.
+- **Who gets in**: written into the box through docker — the hopper's key with `restrict`, as
+  `scripts/attach-machine.sh` installs it: the file its runtime mounts (`HOPPER_SSH_KEY_FILE`, made when
+  missing), or, for a hopper that keeps its own key (issue #293), its public line as the Add form shows it
+  (`HOPPER_SSH_PUBLIC_KEY`); the user's own public keys
+  (`~/.ssh/id_*.pub`) unrestricted, for a terminal there (`ssh -t hopper-box-<agent>`, `herdr --remote
+  hopper-box-<agent> --session hopper`) and to sign the agent in.
+- **ssh**: a `Host hopper-box-<agent>` (HostName `127.0.0.1`, its Port, User `agent`) in
+  `~/.ssh/hopper-box.config`, rewritten from the running boxes on every run and Included first in
+  `~/.ssh/config`; the box's host key in `~/.ssh/known_hosts` for `[127.0.0.1]:<port>`, read from the box
+  itself through docker — the source, never a connection ("Target authentication"). So the Machines
+  view's Add form offers and pins it like any ssh target, and the port is not 22, so it is never taken
+  for this machine (issue #275).
+- **Checked** over ssh as the hopper would reach it — the hopper's key alone, the pinned host key —
+  `herdr --session hopper status server` answering `running`; with only the public line, the same
+  check runs in the box through docker.
+- **`--attach`**: each box becomes an `ssh` machine instance named after it (`ssh`, `herdr: true`,
+  `herdrBin: /usr/local/bin/herdr`, its `hostKey`) through the operator CLI (`hopper config get|set
+  plugins`, against its version; the daemon's 5 s watch follows it, no restart), filtered by
+  `scripts/agent-boxes.ts`. A new box is attached with **no executors**: an unpinned job never lands on a
+  test box by chance; the owner lists executors per box in Plugins, and routes test jobs there with a
+  routing rule. Attached again, a box keeps its lanes, executors and label and takes its new connection.
+  A machine of another plugin under a box's name is refused.
+- **`--remove`**: the containers, their Hosts and known_hosts lines; with `--attach` their machines too.
+  The home volumes stay.
+
+**What runs there.** herdr-claude runs on the claude box, `cursor-agent` on the cursor box (both
+already run on ssh targets). codex, omp and opencode have no executor yet ("6d. Backends are
+configuration"): their boxes are attached, online while their herdr session answers, and the owner
+works in them by hand until an executor drives their CLI. A job's work tree is a path of the box: a job
+whose `cwd` exists only on this machine does not run there.
+
+**This host only.** The boxes are on this machine's docker and the Hosts in its `~/.ssh`: they serve a
+hopper installed here. A hopper in a container (issue #293) reaches them by neither; it would attach each
+as a typed `agent@<this computer>` with the box's port, which a typed target cannot carry.
+
+**Residual risk.** The boxes reach the network (the agents need their APIs) and run whatever a job or
+the owner tells their agent; they are not the container target's locked-down sandbox. sshd listens on
+loopback only. The hopper's key is restricted there; the owner's keys are not.
+
+**Verification.** `test/scripts/agent-boxes.test.ts`: the plugins-config filter; opt-in
+(`HOPPER_TEST_AGENT_BOX=1`: it builds an image with an agent CLI from npm) a real codex box on the real docker, reached over real ssh with the hopper's key alone (no pty), its herdr session running,
+attached to a test database through the operator CLI, kept on a second run, then removed. Each of the
+five images was built and its CLI run over ssh by hand.
 
 ## Client releases (issue #70, 2026-10-05)
 
