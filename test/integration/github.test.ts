@@ -182,6 +182,30 @@ describe('GitHub issue → job → issue', () => {
     expect(await jobsFor()).toHaveLength(2); // failed again, reported again: waits for the human
   });
 
+  it('reopening a finished issue and removing hopper:done runs it again (issue #186)', async () => {
+    const gh = createFakeGitHub();
+    const a = await boot(gh);
+    a.scripted.ships(mergesPullRequest(gh));
+    const issue = gh.createIssue({ repo: REPO, body: body({ op: 'echo' }), labels: ['hopper'] });
+    const jobsFor = async () => (await a.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=1000')).body.jobs.filter((j) => j.source?.key === issue.url);
+    await a.sync();
+    const [first] = await jobsFor();
+    await a.waitForStatus(first!.id, 'finished');
+    await waitFor(async () => (await a.job(first!.id)).sourceState?.sync?.finalReported === true, { what: 'finish reported' });
+    expect(gh.issue(REPO, issue.number)).toMatchObject({ state: 'closed', labels: expect.arrayContaining(['hopper:done']) });
+
+    gh.reopenIssue(REPO, issue.number);
+    await a.sync();
+    expect(await jobsFor()).toHaveLength(1); // hopper:done still there: no new job
+
+    gh.removeLabel(REPO, issue.number, 'hopper:done');
+    await a.sync();
+    await waitFor(async () => (await jobsFor()).length === 2, { what: 'second job' });
+    const second = (await jobsFor()).find((j) => j.id !== first!.id)!;
+    await a.waitForStatus(second.id, 'finished');
+    await waitFor(() => gh.issue(REPO, issue.number).state === 'closed', { what: 'closed again' });
+  });
+
   it('priority: label, project wins over label, and a re-sort on the next poll emits job.reprioritized', async () => {
     const gh = createFakeGitHub();
     const projects = { [REPO]: { owner: 'owner', number: 1, mode: 'field', field: 'Priority', map: { P0: 100, P1: 60 } } };

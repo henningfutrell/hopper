@@ -55,6 +55,7 @@ function SourceCard({ s, c }: { s: SourceStatus; c?: GitHubConnection }) {
       <div className="space-y-0.5 text-xs text-muted-foreground">
         {['owners', 'repos', 'authors', 'label'].filter((k) => d[k] != null && list(d[k]) !== '').map((k) => <div key={k}>{k}: <span className="text-foreground/80">{list(d[k])}</span></div>)}
         {['projectErrors', 'permanentErrors'].filter((k) => !empty(d[k])).map((k) => <div key={k} className="text-bad">{k}: {typeof d[k] === 'object' ? JSON.stringify(d[k]) : String(d[k])}</div>)}
+        {Array.isArray(d.notRerun) && d.notRerun.map((n: { key: string; job: string; status: string; reason: string }) => <div key={n.key} data-not-rerun className="text-warn">not run again: <GhLink url={n.key}>{n.key}</GhLink> (job {n.status}, {n.reason})</div>)}
         {d.enabledSetting != null && <div>enabled setting: <code>{String(d.enabledSetting)}</code></div>}
       </div>
     </Panel>

@@ -38,7 +38,14 @@ interface Slot {
   timer?: NodeJS.Timeout;
   /** Last transient report error per job, shown as detail.reportRetries. */
   retrying: Map<string, string>;
+  /** Offered items whose newest job ended but cannot run again yet, shown as detail.notRerun. */
+  notRerun: NotRerun[];
+  /** Keys already logged as not run again, so each is logged once. */
+  loggedNotRerun: Set<string>;
 }
+
+interface NotRerun { key: string; job: string; status: string; reason: string }
+const NOT_REPORTED = 'its end is not reported to the source yet';
 
 const TRIGGERS = new Set(['job.finished', 'job.failed', 'job.cancelled']);
 const isTerminal = (j: Job) => TERMINAL_STATUSES.includes(j.status);
@@ -59,7 +66,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
 
   for (const source of o.sources) {
     slots.set(source.name, {
-      source, chain: Promise.resolve(), retrying: new Map(),
+      source, chain: Promise.resolve(), retrying: new Map(), notRerun: [], loggedNotRerun: new Set(),
       status: { name: source.name, kind: source.kind, state: 'starting', itemsSeen: 0, jobsCreated: 0, activeJobs: 0, detail: source.describe() },
     });
   }
@@ -159,11 +166,19 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
   async function pull(slot: Slot): Promise<{ seen: number; created: number }> {
     const items = await slot.source.discover();
     let created = 0;
+    const notRerun: NotRerun[] = [];
     for (const item of items) {
       const existing = store.jobs.getBySourceKey(item.key);
+      if (existing && isTerminal(existing) && !isRerunnable(existing)) notRerun.push({ key: item.key, job: existing.id, status: existing.status, reason: NOT_REPORTED });
       if (existing && !isRerunnable(existing)) host.reprioritize(existing.id, item.priority, item.priorityReason);
       else if (host.ingest(item, { name: slot.source.name, kind: slot.source.kind })) created++;
     }
+    for (const n of notRerun) {
+      if (slot.loggedNotRerun.has(n.key)) continue;
+      slot.loggedNotRerun.add(n.key);
+      console.warn(`hopper: ${n.key} not run again: job ${n.job} ${n.status}, ${n.reason}`);
+    }
+    slot.notRerun = notRerun;
     return { seen: items.length, created };
   }
 
@@ -178,6 +193,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
         st.jobsCreated += created;
       } else {
         st.itemsSeen = 0;
+        slot.notRerun = [];
       }
       await applySignals(slot, jobsOf(slot).filter((j) => !isTerminal(j)));
       await Promise.all(jobsOf(slot)
@@ -200,6 +216,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
       ...(paused !== undefined ? { paused } : {}),
       permanentErrors: jobs.filter((j) => flagsOf(j).permanentErrors?.length).length,
       reportRetries: slot.retrying.size,
+      ...(slot.notRerun.length ? { notRerun: slot.notRerun } : {}),
     };
     schedule(slot);
     emit(slot);
