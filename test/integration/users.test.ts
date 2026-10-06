@@ -189,13 +189,13 @@ describe('who you are, and signing in with several users (issue #167)', () => {
 });
 
 describe('a user\'s runtime', () => {
-  it('a user added while the daemon runs gets its runtime: its plugins config, its herdr session hopper-<id>, its jobs run', async () => {
+  it('a user added while the daemon runs gets its runtime: its plugins config, the supervised herdr session `hopper` (never `hopper-<id>`, #261), its jobs run', async () => {
     const a = await start();
     const bea = await a.addUser('Bea');
     const plugins = a.user(bea.id).store.config.read('plugins') as { executors: { plugin: string; options?: { session?: string } }[] };
-    expect(plugins.executors.filter((e) => e.plugin === 'herdr-claude').map((e) => e.options?.session)).toEqual(['hopper-bea']);
+    expect(plugins.executors.filter((e) => e.plugin === 'herdr-claude').map((e) => e.options?.session)).toEqual([undefined]);
     const report = (await a.api('GET', '/api/plugins', undefined, session(await a.login('bea')))).body;
-    expect(report.executors.instances.find((i: { instance: { plugin: string } }) => i.instance.plugin === 'herdr-claude').instance.options.session).toBe('hopper-bea');
+    expect(report.executors.instances.find((i: { instance: { plugin: string } }) => i.instance.plugin === 'herdr-claude').instance.options?.session).toBeUndefined();
     expect((a.user().store.config.read('plugins') as { executors?: unknown }).executors).toEqual([{ name: 'test', plugin: 'test' }]);
     const job = await a.pull({ op: 'echo', message: 'hi' }, { executor: 'scripted' }, 'bea');
     expect((await a.waitForStatusOf(job.id, 'finished', 'bea')).status).toBe('finished');

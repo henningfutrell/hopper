@@ -4762,10 +4762,11 @@ stops every runtime, then the instance.
   `PluginContext.processEnv` and the detection kit's environment, never `process.env` directly. A
   herdr pane gets it through the tab's environment (`createTab` `env`). `admin`'s environment is the
   daemon's, unchanged. On an attached machine the target's own login applies, as before.
-- **herdr session** — the herdr-claude plugin's default `session` is the user's: `hopper` for
-  `admin`, `hopper-<id>` for a user added later; `ensurePluginsDocument` also writes it into a new
-  user's plugins.yaml on every herdr-claude instance. Panes and restart recovery of one user never
-  touch another user's session.
+- **herdr session** — every user's jobs run in the supervised `hopper` session, the herdr-claude
+  plugin's default `session`; no user gets a session of its own (issue #261). The built-in
+  herdr-claude instance names no session, and a start that finds the `hopper-<id>` session an earlier
+  version wrote on a herdr-claude instance removes it (`ensurePluginsConfig`). Panes are one tab per
+  job, so users' jobs share the session without touching each other's panes.
 - **Instance parts** — store installs are the instance's: after an install or removal every user's
   plugin host rescans. The update's restart blockers are the running jobs of every user. The
   instance's events (`update.*`, `plugin.installed`, `plugin.removed`) are appended to every user's

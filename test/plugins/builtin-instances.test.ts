@@ -76,4 +76,33 @@ describe('ensurePluginsConfig', () => {
     expect(ensurePluginsConfig({ config, answerTimeoutMs: 1000, logger })).toEqual({ action: 'kept' });
     expect(config.read(PLUGINS)).toEqual(value);
   });
+
+  it('no user gets a herdr session of its own: the built-in herdr-claude instance names none, so it runs in the supervised `hopper` session (#261)', () => {
+    expect(builtinInstances(1000).executors.find((e) => e.plugin === 'herdr-claude')).toEqual({ name: 'herdr-claude', plugin: 'herdr-claude' });
+  });
+
+  it('removes the `hopper-<id>` session an earlier boot wrote for the user, and keeps a session someone set (#261)', () => {
+    const config = records();
+    config.set(PLUGINS, {
+      version: 1,
+      executors: [
+        { name: 'herdr-claude', plugin: 'herdr-claude', options: { session: 'hopper-octocat', pollMs: 10 } },
+        { name: 'bare', plugin: 'herdr-claude', options: { session: 'hopper-octocat' } },
+        { name: 'mine', plugin: 'herdr-claude', options: { session: 'work' } },
+      ],
+    });
+    const lines: string[] = [];
+    const r = ensurePluginsConfig({ config, answerTimeoutMs: 1000, userId: 'octocat', logger: { info: (l: string) => lines.push(l), warn() {} } });
+    expect(r).toEqual({ action: 'removed-user-session' });
+    expect(config.read(PLUGINS)).toEqual({
+      version: 1,
+      executors: [
+        { name: 'herdr-claude', plugin: 'herdr-claude', options: { pollMs: 10 } },
+        { name: 'bare', plugin: 'herdr-claude' },
+        { name: 'mine', plugin: 'herdr-claude', options: { session: 'work' } },
+      ],
+    });
+    expect(lines.join('\n')).toMatch(/`hopper-octocat`.*`hopper`/);
+    expect(ensurePluginsConfig({ config, answerTimeoutMs: 1000, userId: 'octocat', logger })).toEqual({ action: 'kept' });
+  });
 });
