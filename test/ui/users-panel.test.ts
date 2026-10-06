@@ -36,7 +36,7 @@ async function render(role: 'admin' | 'operator') {
   vi.stubGlobal('fetch', fakeDaemon());
   const store = '../../ui/src/store/index.ts'; // browser code, type-checked by ui/tsconfig.json: imported by path
   const { useHopper } = (await import(store)) as { useHopper: { setState(s: Record<string, unknown>): void } };
-  useHopper.setState({ authed: true, user: { id: 'owner', name: 'owner', role, provider: 'local', identity: 'login code' } });
+  useHopper.setState({ authed: true, user: { id: 'owner', name: 'owner', role, realm: 'local', identity: 'login code' } });
   const mod = '../../ui/src/views/users.tsx';
   const { Users } = (await import(mod)) as { Users: () => ReturnType<typeof createElement> };
   await act(async () => {

@@ -30,7 +30,7 @@ describe('provider sign-in (issue #39)', () => {
 });
 
 describe('no sign-in and password sign-in (issue #53)', () => {
-  const offer = (o: Partial<{ none: 'viewer' | 'operator' | 'admin' | null; password: boolean }>) => ({ local: false, none: null, password: false, origin: 'http://localhost:1', providers: [], ...o });
+  const offer = (o: Partial<{ none: 'viewer' | 'operator' | 'admin' | null; password: boolean }>) => ({ local: false, none: null, password: false, origin: 'http://localhost:1', realms: [], ...o });
 
   it('signs in without a credential only when logged out and no sign-in is on', () => {
     expect(wantsNoSignIn(false, offer({ none: 'viewer' }))).toBe(true);

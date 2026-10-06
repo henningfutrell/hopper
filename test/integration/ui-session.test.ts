@@ -51,7 +51,7 @@ describe('login', () => {
     expect(res.text).toMatch(/location\.replace\(\s*['"]\/['"]\s*\)/);
     const s = await session(token);
     expect(s.status).toBe(200);
-    expect(JSON.parse(s.text)).toMatchObject({ authenticated: true, expiresAt: expect.any(String), user: { role: 'admin', provider: 'local' } });
+    expect(JSON.parse(s.text)).toMatchObject({ authenticated: true, expiresAt: expect.any(String), user: { role: 'admin', realm: 'local' } });
   });
 
   it('a code works once; each minted code is its own', async () => {

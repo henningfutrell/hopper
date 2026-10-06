@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { roleFor } from '../../src/auth/roles.ts';
 import type { Identity } from '../../src/domain/types.ts';
 
-const who = (o: Partial<Identity> = {}): Identity => ({ provider: 'corp', subject: 's-1', groups: [], ...o });
+const who = (o: Partial<Identity> = {}): Identity => ({ realm: 'corp', subject: 's-1', groups: [], ...o });
 
 describe('roleFor', () => {
   it('no rules and no default role: no role', () => {

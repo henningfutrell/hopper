@@ -6,7 +6,7 @@ import { rawRequest } from './http.ts';
 import { startOidcIdp, type OidcIdp } from './idp.ts';
 
 /** The environment the daemon reads provider client secrets from (`clientSecretEnv`). */
-export const SECRETS = { CORP_CLIENT_SECRET: 'shh', GITHUB_CLIENT_SECRET: 'gh-secret' };
+export const SECRETS = { CORP_CLIENT_SECRET: 'shh', GITHUB_CLIENT_SECRET: 'gh-secret', LDAP_BIND_PASSWORD: 'GoodNewsEveryone' };
 
 export interface Harness { t: TestApp | undefined; cleanup: (() => void) | undefined; stops: (() => unknown)[] }
 export const harness = (): Harness => ({ t: undefined, cleanup: undefined, stops: [] });
@@ -49,5 +49,5 @@ export async function oidcIdp(h: Harness, o: { claims?: Record<string, unknown>;
   return idp;
 }
 
-export const oidcProvider = (idp: Pick<OidcIdp, 'issuer'>, roles: unknown, extra: Record<string, unknown> = {}) =>
+export const oidcRealm = (idp: Pick<OidcIdp, 'issuer'>, roles: unknown, extra: Record<string, unknown> = {}) =>
   ({ name: 'corp', label: 'Corp SSO', type: 'oidc', issuer: idp.issuer, clientId: 'hopper', clientSecretEnv: 'CORP_CLIENT_SECRET', roles, ...extra });
