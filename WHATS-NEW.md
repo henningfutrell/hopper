@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- The install guide now shows, step by step, how to let a team sign in through your own single sign-on, SAML, directory or sign-in gateway, set up from the hopper's settings at launch.
 - The built-in "owner" account is now the default admin account, "admin": everything it had — work, settings, sign-ins — moved over, and "owner" is gone.
 - Settings now has a Version section: the version you run, when it was installed and what it brought, with or without an update waiting. The version at the top is now a clear button that opens the same.
 - A sign-in provider's client secret or directory password is now typed straight into its settings, with nothing to set up on the server. A deploy can also set up sign-in, and the first admin's password, from its environment.

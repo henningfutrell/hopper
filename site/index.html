@@ -87,7 +87,7 @@ The other way, <a href="#host">installing it on the machine itself</a>, is below
 <li><a href="#podman">Run it with Podman</a></li>
 <li><a href="#first-job">Give it its first job</a></li>
 </ol>
-<p class="note">Then: <a href="#upgrade">upgrade</a> · <a href="#remove">uninstall</a> · <a href="#windows">on Windows</a> · <a href="#host">install on the machine itself</a> · <a href="#trouble">when something goes wrong</a> · <a href="#more">more</a></p>
+<p class="note">Then: <a href="#sign-in">sign-in for a team</a> · <a href="#upgrade">upgrade</a> · <a href="#remove">uninstall</a> · <a href="#windows">on Windows</a> · <a href="#host">install on the machine itself</a> · <a href="#trouble">when something goes wrong</a> · <a href="#more">more</a></p>
 
 <h2 id="podman">Run it with Podman (recommended)</h2>
 <p>hopper and its database, in containers from the published image
@@ -353,6 +353,24 @@ as <a href="#before">step 1</a> says, sign in to <code>claude</code>, and run th
 <p class="note">Keep the repositories jobs work in inside Ubuntu (for example <code>~/src</code>), not under
 <code>/mnt/c</code>: it is much faster.</p>
 </details>
+
+<h2 id="sign-in">Sign-in for a team</h2>
+<p>Alone on one machine, the sign-in link is enough. For a team, or a hopper reached over the internet, people
+sign in through your own sign-in service, set up from the hopper's environment: no clicks and no files. Put the
+variables in <code>.env</code> beside <code>compose.yaml</code> (with Podman) or in
+<code>~/.config/hopper/daemon.env</code> (on the machine itself), and restart the hopper.</p>
+<div class="table-wrap"><table class="stack">
+<tr><th>You have</th><th>People sign in</th></tr>
+<tr><td>An auth gateway in front (Envoy Gateway with OIDC, oauth2-proxy)</td><td>through the gateway; the hopper only checks the token it forwards</td></tr>
+<tr><td>OIDC single sign-on (Google, Microsoft Entra ID, Okta, Auth0, Keycloak)</td><td>with a button that sends them to your provider</td></tr>
+<tr><td>SAML (Entra ID, Okta, Keycloak, ADFS)</td><td>with a button that sends them to your provider</td></tr>
+<tr><td>A directory: LDAP or Active Directory</td><td>with their directory username and password</td></tr>
+<tr><td>GitHub accounts</td><td>with a button that sends them to GitHub</td></tr>
+</table></div>
+<p>Each one is a few <code>HOPPER_SIGN_IN_</code> variables. What to register at your provider, the variables to
+copy, and how to check it works:
+<a href="https://github.com/henningfutrell/hopper/blob/main/docs/deploy.md#sign-in-set-up-at-launch">docs/deploy.md, Sign-in set up at launch</a>.</p>
+<p>However they sign in, each person then connects their own GitHub inside the hopper, from the UI.</p>
 
 <h2 id="upgrade">Upgrade</h2>
 <p><strong>With Podman:</strong> in the hopper's folder, download the newest image and restart on it. It keeps your
