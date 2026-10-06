@@ -48,7 +48,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin) | engine, http, store, plugins |
 | `src/routing/` | routing rules: the plugins config's `routing` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
 | `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; routing at intake (`source-host.ts`); restart recovery | http |
-| `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the sign-in config at start — named secrets taken in, the environment applied (`start.ts`, issue #216; no bootstrap login, issue #238) — and the `HOPPER_SIGN_IN_*` variables (`environment.ts`), the role rules (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm, gateway realm) and their adapters `ldap.ts` (ldapts), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), `gateway.ts` (jose + openid-client), the sign-in service — form realms in order, gateway realms in order, flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
+| `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the sign-in config at start — named secrets taken in, the environment applied (`start.ts`, issue #216; no bootstrap login, issue #238) — and the `HOPPER_SIGN_IN_*` variables (`environment.ts`), the role rules (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm, gateway realm) and their adapters `ldap.ts` (ldapts), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), `gateway.ts` (jose + openid-client), the sign-in service — form realms in order, gateway realms in order, the API door's token check (issue #255), flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
 | `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`) | engine, http, store, plugins, decider |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets") | everything |
 | `src/update/` | self-update ("Self-update"): install.json, the git mirror of the update repository, the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
@@ -3656,6 +3656,49 @@ hopper session outlives the token and the gateway's own session until it expires
 the daemon restarts, as for every realm; logging out of the hopper does not log out of the gateway, and
 the next visit takes a new session. With `introspection`, the issuer is asked once per exchange, not
 per request.
+
+
+### The API door: a token reads as the user it signs in as (issue #255, 2026-10-06)
+
+Owner request: a GitHub OIDC token that signs a person in to the UI must authenticate them against the
+API too, as the same identity: one pipeline, two doors. What that settles, taken from the issue, not asked:
+
+- **GitHub issues no OIDC token for a person.** Signing in with GitHub (issue #214) grants a GitHub token
+  through the hopper's app, which GitHub's API vouches for (`GET /user`); it is no JWT and has no keys to
+  check against. The JWTs a JWKS checks are an OIDC issuer's, which the hopper takes through a **gateway
+  realm** (issue #215) — GitHub Actions' issuer among them, whose subject is a workflow, not a person. So
+  the API door takes both, each through the check the UI door already makes.
+- **One check, `SignIn.checkToken`** (`src/auth/index.ts`): the token in `Authorization: Bearer …`. A JWT
+  goes to the gateway realms that are on (`checkGateway`, the same function `POST /ui/auth/gateway`
+  calls: `jose` against the issuer's JWKS, `iss`, `aud`, `exp`); any other token to GitHub for the first
+  GitHub realm that is on (`whoIs`, as `grantedTo` asks after a device or web sign-in; the identity built
+  by the same `githubIdentity`). The role is `roleOf`, as for every sign-in. GitHub's answer is kept a
+  minute per token hash (at most 1000), emptied when the sign-in config changes; a JWT is checked each time.
+- **The HTTP edge** (`installTenancy`, `src/http/tenants.ts`): a session wins; else a read of `/api/` with
+  `Authorization` is the API door. The identity reads as the user it is **linked** to
+  (`Tenants.linked`); the door signs nobody in and provisions no user — a person signs in through the UI
+  first. A GitHub identity reads only as the user whose **connected account** is that GitHub account
+  (`connectedAccounts.get('github').subject`): disconnecting GitHub closes the door for its tokens. The
+  Host guard lets a LAN or public `/api/` request with `Authorization` through to that check.
+- **Answers.** 401: no token, a token every check refuses (the gateway realms' reasons, as the UI door
+  gives them), a token GitHub does not accept, or an identity not linked (not tied to a connected
+  GitHub account); 403: accepted, but the sign-in config grants no role; 502: the issuer or GitHub could
+  not be asked. A token given and refused is refused on loopback too, where one user's hopper otherwise
+  reads without a credential.
+- **Reads only.** The token is no UI session: every `POST /ui/api/*` still needs one (AGENTS.md). The
+  role still counts: the instance reads (`/api/users`, `/api/instance`, `/api/realms`) read it from the
+  request (`roleOfRequest`), so a viewer's token is refused there as a viewer's session is.
+- **Coherence, tested** (`test/integration/api-bearer.test.ts`): the same token reads as the user its UI
+  sign-in made, only that user's work; the UI door's refusal reason is the API door's; turning the realm
+  off or changing a rule closes both doors at once.
+
+**Residual risk, stated.** A GitHub token revoked at GitHub reads for up to a minute more. Any GitHub
+token of the account reads — the hopper's app's, the gh CLI's, a personal access token —: GitHub says
+whose it is, not which app it is for. Reads only, and only as the connected account's user.
+
+**Not built.** A GitHub Actions OIDC token reading as the person who started the workflow (its `actor_id`
+mapped to a connected account): a gateway realm for Actions' issuer reads only as the identity its
+`sub` names, linked like any other.
 
 
 ### Password fallback (issue #219, 2026-10-06)

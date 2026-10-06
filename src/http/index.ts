@@ -65,7 +65,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   const r = sessions.reconcile(o.signIn.roleOf);
   if (r.dropped + r.changed > 0) console.warn(`hopper: the sign-in config applied to stored UI sessions: ${r.dropped} ended, ${r.changed} changed role`);
   installHostGuard(app, { port: o.port, lan: o.lan, sessions });
-  installTenancy(app, { tenants: o.tenants, sessions, port: o.port, lan: o.lan });
+  installTenancy(app, { tenants: o.tenants, sessions, signIn: o.signIn, port: o.port, lan: o.lan });
   const tenant = { tenant: (req: Parameters<typeof tenantOf>[1]) => tenantOf(o.tenants, req) };
   apiReferenceRoutes(app, o.version);
   jobRoutes(app, tenant);
@@ -80,12 +80,12 @@ export function createServer(o: ServerOptions): FastifyInstance {
   sseRoutes(app, tenant);
   updateRoutes(app, o);
   pluginStoreRoutes(app, o);
-  // What is the instance's is the hopper's admin's alone (issue #240).
+  // What is the instance's is an instance admin's alone (issue #240).
   const instanceAdmin = createInstanceAdmin({ signIn: o.signIn, instance: o.instance });
-  userRoutes(app, { tenants: o.tenants, sessions, instanceAdmin });
-  instanceRoutes(app, { tenants: o.tenants, sessions, clock: o.clock, instanceAdmin });
+  userRoutes(app, { tenants: o.tenants, instanceAdmin });
+  instanceRoutes(app, { tenants: o.tenants, clock: o.clock, instanceAdmin });
   const realms = createRealmsAdmin({ instance: o.instance, environment: o.signInEnvironment, signIn: o.signIn, sessions });
-  realmRoutes(app, { realms, sessions, instanceAdmin });
+  realmRoutes(app, { realms, instanceAdmin });
   staticRoutes(app, o.uiDir);
   registerUiRoutes(app, {
     ...tenant, tenants: o.tenants, instance: o.instance, sessions, signIn: o.signIn, realms, pluginStore: o.pluginStore, port: o.port, lan: o.lan, clock: o.clock,

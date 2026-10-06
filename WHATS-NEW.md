@@ -9,6 +9,7 @@ numbers, no commit hashes, no file names, no code words. Never edit a line once 
 update notice would show it again as new.
 
 - Someone you add with a login link sets up everything of their own, but only the hopper's admins manage sign-in, users, updates and the plugin store.
+- Scripts and tools can read the hopper with the same GitHub or gateway sign-in you use in the browser: send the token, and they see your work and nothing else.
 - Sources now lists the repositories the hopper's GitHub app reaches on each account it is installed on, with a link to change them, and asks you to install the app only when it is not installed yet.
 - Two kinds of admin: the first person to sign in with GitHub is a super admin. Any admin can make someone admin from Settings → Sign-in → Admins; only a super admin can make someone super admin or hand theirs over.
 - Once you sign in with GitHub, Sources shows that one GitHub connection, with what it reads and when, instead of leftover pieces for the command-line GitHub tool and its login.

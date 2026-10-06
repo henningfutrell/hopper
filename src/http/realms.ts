@@ -18,8 +18,7 @@ import { AuthEditError, editSignIn, isSuperAdmin, loadSignInConfig, realmsView, 
 import type { InstanceStore } from '../domain/store.ts';
 import { roleAllows, type Identity, type PersonView, type RealmsEdit, type RealmsView } from '../domain/types.ts';
 import { HttpError } from './errors.ts';
-import { sessionToken } from './host-guard.ts';
-import { INSTANCE_ADMIN_ONLY, type InstanceAdmin } from './instance-admin.ts';
+import { assertInstanceRead, type InstanceAdmin } from './instance-admin.ts';
 import type { UiSessions } from './ui/sessions.ts';
 
 export interface RealmsAdmin {
@@ -124,11 +123,9 @@ export function createRealmsAdmin(o: {
   };
 }
 
-export function realmRoutes(app: FastifyInstance, o: { realms: RealmsAdmin; sessions: UiSessions; instanceAdmin: InstanceAdmin }): void {
+export function realmRoutes(app: FastifyInstance, o: { realms: RealmsAdmin; instanceAdmin: InstanceAdmin }): void {
   app.get('/api/realms', async (req): Promise<RealmsView> => {
-    const s = o.sessions.find(sessionToken(req));
-    if (s && !roleAllows(s.role, 'admin')) throw new HttpError(403, `role ${s.role} may not read the realms; it needs admin`);
-    if (s && !o.instanceAdmin(s)) throw new HttpError(403, `${INSTANCE_ADMIN_ONLY}: read the realms`);
+    assertInstanceRead(req, o.instanceAdmin, 'read the realms');
     return o.realms.view();
   });
 }
