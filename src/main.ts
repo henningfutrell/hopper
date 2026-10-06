@@ -15,6 +15,7 @@ import { readRelease } from './client/release.ts';
 import { BUILTIN_PLUGINS } from './plugins/builtin.ts';
 import { createPluginStore, installedDirOf } from './plugins/plugin-store.ts';
 import { runtimeSecrets } from './secrets/runtime.ts';
+import { CLIENT_SECRET_VARIABLE } from './connected-accounts/web-flow.ts';
 import { openInstanceStore } from './store/index.ts';
 import { createInstallScriptBuilder, createRestarter, createUpdater, renameBoot, RESTART_EXIT_CODE, restartBlockers } from './update/index.ts';
 import { userForIdentity } from './users/identities.ts';
@@ -135,9 +136,20 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     instance.close();
     throw e;
   }
+  // The hopper's app's client secret turns GitHub sign-in by redirect on (issue #258). A bad one (NAME and
+  // NAME_FILE both set, an unreadable file) stops the start; read again at each use, so a rotated one counts.
+  const secret = runtimeSecrets(env);
+  try {
+    secret(CLIENT_SECRET_VARIABLE);
+  } catch (e) {
+    await runtimes.stop();
+    instance.close();
+    throw e;
+  }
   const signIn = createSignIn({
     config: auth, clock, origin: () => config.publicUrl ?? `http://localhost:${port}`, apps: config.hopperApps,
     claimGithubAdmin: (who) => claimGithubAdmin(instance, who),
+    githubClientSecret: () => { try { return secret(CLIENT_SECRET_VARIABLE); } catch { return undefined; } },
   });
   // Self-update (issue #44): the restart reaches app.stop() through `restartApp`, set below.
   let restartApp: Restarter = async () => {};

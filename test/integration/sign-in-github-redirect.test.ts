@@ -70,7 +70,7 @@ describe('sign in with GitHub by a browser redirect', () => {
   it('no client secret: no redirect; the device code stays the way in', async () => {
     const github = await forge();
     const { app, origin } = await start(github, false);
-    expect((await session(app)).signIn.devices).toEqual([{ name: 'github', label: 'GitHub', type: 'github', redirect: false }]);
+    expect((await session(app)).signIn.devices).toEqual([{ name: 'github', label: 'GitHub', type: 'github' }]);
     const run = await signIn(app.url, origin, 'github');
     expect(run.start.status).toBe(404);
     expect(github.requests.some((r) => r.path === '/login/oauth/authorize')).toBe(false);

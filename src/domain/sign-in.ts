@@ -54,6 +54,8 @@ export interface SignInRealmView {
   name: string;
   label: string;
   type: RealmType;
+  /** A GitHub realm (issue #258): the browser can go to GitHub and back on the sign-in origin (the runtime gives the app's client secret); else the device code. */
+  redirect?: boolean;
 }
 
 /**
@@ -123,7 +125,7 @@ export interface SessionView {
     origin: string;
     /** The OIDC, GitHub and SAML realms that are on, in order. */
     realms: SignInRealmView[];
-    /** The GitHub realms that are on, in order: each a "Sign in with" button showing a device code (issue #214). */
+    /** The GitHub realms that are on, in order: each a "Sign in with" button — to GitHub and back when `redirect`, else showing a device code (issues #214, #258). */
     devices: SignInRealmView[];
     /** Several users: the UI shows no user's work until someone signs in (issue #167). */
     required: boolean;

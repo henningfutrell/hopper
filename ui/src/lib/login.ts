@@ -48,7 +48,7 @@ export function beginSignIn(realm: string, origin: string): void {
 }
 
 /** A GitHub sign-in begun (issue #214): the code to show and where to enter it. */
-export interface DeviceSignIn { flow: string; binding: string; userCode: string; verificationUri: string }
+export interface DeviceSignIn { flow: string; binding: string; userCode: string; verificationUri: string; expiresAt?: string }
 
 /** Start signing in with a GitHub realm: the device code. Resolves it, or the error. */
 export async function beginDeviceSignIn(realm: string): Promise<DeviceSignIn | { error: string }> {
@@ -56,7 +56,7 @@ export async function beginDeviceSignIn(realm: string): Promise<DeviceSignIn | {
   const res = await fetch(`/ui/auth/${encodeURIComponent(realm)}/device`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ binding }) });
   const out = await res.json().catch(() => ({})) as Partial<DeviceSignIn> & { error?: string };
   if (!res.ok || !out.flow || !out.userCode || !out.verificationUri) return { error: res.status === 429 ? 'too many sign-in attempts; wait a minute' : (out.error ?? `${res.status}`) };
-  return { flow: out.flow, binding, userCode: out.userCode, verificationUri: out.verificationUri };
+  return { flow: out.flow, binding, userCode: out.userCode, verificationUri: out.verificationUri, ...(out.expiresAt ? { expiresAt: out.expiresAt } : {}) };
 }
 
 /** One poll of a device sign-in: still waiting (null), signed in (the token is kept; ''), or the error. */

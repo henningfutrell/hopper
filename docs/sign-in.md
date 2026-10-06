@@ -637,7 +637,23 @@ GitHub is how people sign in to the hopper and how it works for them (issue #214
 sign-in page shows a code; the person enters it at `https://github.com/login/device` and approves the
 hopper's GitHub App; the page signs them in. Nothing secret is involved — the hopper ships only the app's
 public client id. The first person to sign in with GitHub becomes admin (below); the realm's role rules
-grant everyone after. The same sign-in **connects** their GitHub: their issues labelled `hopper` become
+grant everyone after.
+
+**Straight to GitHub and back, without a code** (issue #258): GitHub's browser sign-in for an app needs the
+app's client secret, which the hopper never ships. Give the daemon one and **Sign in with GitHub** sends the
+browser to GitHub and back, signed in, on the [sign-in origin](#the-sign-in-origin-and-a-public-url); a
+LAN name or a phone that reaches the hopper elsewhere still gets the code (GitHub returns only to a
+callback registered on the app), and **Use a code instead** is always a link under the button.
+1. In the app's settings (*Developer settings → GitHub Apps → the app*), generate a client secret and add
+   the callback `<sign-in origin>/ui/auth/github/callback` (`http://localhost:4790/ui/auth/github/callback`,
+   or `https://hopper.example.com/ui/auth/github/callback` behind `HOPPER_PUBLIC_URL`; a realm named other
+   than `github` uses its own name). GitHub allows up to 10 callbacks.
+2. Give the daemon the secret from its runtime: `HOPPER_GITHUB_CLIENT_SECRET`, or
+   `HOPPER_GITHUB_CLIENT_SECRET_FILE` naming a mounted file. It is read at each sign-in (a rotated one counts at
+   once), sent only to GitHub, stored nowhere and in no answer.
+The flow is the authorization code with PKCE (S256) and the state, through openid-client; the token it
+grants becomes the person's connected account, as the code's does. The hopper's own app ships without a
+secret, so a hopper on it signs in by code until its operator holds one. The same sign-in **connects** their GitHub: their issues labelled `hopper` become
 their jobs, and their jobs act as them on GitHub, with GitHub showing the hopper's app on what they do.
 
 | field | value |

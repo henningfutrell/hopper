@@ -49,7 +49,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/routing/` | routing rules: the plugins config's `routing` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
 | `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; routing at intake (`source-host.ts`); restart recovery | http |
 | `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the sign-in config at start — named secrets taken in, the environment applied (`start.ts`, issue #216; no bootstrap login, issue #238) — and the `HOPPER_SIGN_IN_*` variables (`environment.ts`), the role rules (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm, gateway realm) and their adapters `ldap.ts` (ldapts), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), `gateway.ts` (jose + openid-client), the sign-in service — form realms in order, gateway realms in order, flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
-| `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`) | engine, http, store, plugins, decider |
+| `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`) | engine, http, store, plugins, decider |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets") | everything |
 | `src/update/` | self-update ("Self-update"): install.json, the git mirror of the update repository, the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
 | `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `api-reference.ts` Scalar at `/docs/`); the plugin store's read side (`plugin-store.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
@@ -5162,7 +5162,7 @@ built-in instance: an admin adds it in Plugins where it suits; existing configs 
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/connected-accounts/` | the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`), who a token belongs to and where the app is installed (`identity.ts`), a user's connected account (`service.ts`) | engine, http, store, plugins, decider |
+| `src/connected-accounts/` | the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`), the web flow (`web-flow.ts`, issue #258), who a token belongs to and where the app is installed (`identity.ts`), a user's connected account (`service.ts`) | engine, http, store, plugins, decider |
 | `src/sources/github/account/` | the issue port over a connected GitHub account's token | engine, http, store, plugins |
 
 **Residual risk, stated.** Tokens are in the database in clear, as the realm secrets are (#216): whoever
@@ -5185,3 +5185,49 @@ earlier GitHub sign-ins makes nobody admin; another browser or site refused),
 and labels through the account's token, a job running with `GH_TOKEN` that is never stored, disconnect, a
 denied code, users apart), `test/store/migration-23.test.ts`, `test/store/tenant-migration-8.test.ts`,
 `test/ui/sign-in-device.test.ts`, `test/ui/sources.test.ts`, `test/ui/sources-view.test.ts`.
+
+## A pleasing sign-in page; GitHub by browser redirect when possible (issue #258, 2026-10-06)
+
+Owner request: the sign-in page is not aesthetically pleasing — make it pleasing, use a better layout, maybe
+a compelling background; the device code layout is poor (all left justified for no reason). Auth flow, owner
+decision on the issue: **browser redirect when possible, device flow as fallback.** What that settles, taken
+from GitHub's documentation, not asked: a GitHub App's web flow exchanges its code only with the app's
+client secret, PKCE or not, and a callback must match one registered on the app (no port or host
+wildcards). So "when possible" is: the runtime gives the app's client secret, and the browser is on the
+sign-in origin (whose callback the operator registers); a LAN name, a phone or a hopper without the secret
+gets the device code. Not this issue: whether a new hopper registers itself (#259).
+
+- **The page** (`ui/src/app/landing.tsx`, `index.css` "landing"): one centred card over a backdrop in the
+  logo's teal — slow aurora light, a dot grid fading toward the edges, the logo's silhouette, grain and a
+  vignette; pure CSS, nothing fetched, still for reduced motion; always dark. The card: the logo, the name,
+  one line of what the hopper is, then the ways to sign in in groups — GitHub first as one large button,
+  then after one "or" rule the redirect realms, the gateway, the LDAP form and no sign-in, full width.
+- **The device code** (`ui/src/components/device-code.tsx`, the landing page and Sources' Connect GitHub):
+  centred around the code — large, monospaced, a copy button beside it; **Open GitHub** (a new tab; the press
+  copies the code too) and the address in short under it; what it waits for and how long the code lasts;
+  Cancel.
+- **The browser redirect** (`src/connected-accounts/web-flow.ts`, `src/auth/index.ts`): with
+  `HOPPER_GITHUB_CLIENT_SECRET` (or its `_FILE`), read from the runtime at each use and checked at start (a
+  bad one stops it), a GitHub realm is also a redirect realm on the sign-in origin. The session's
+  `signIn.devices` entry carries `redirect: true`; the button then goes `/ui/auth/<name>/start` → GitHub's
+  `/login/oauth/authorize` (client id, callback `<origin>/ui/auth/<name>/callback`, the flow id as state, an
+  S256 PKCE challenge) → the callback exchanges the code with the secret and the verifier (openid-client, the
+  endpoints named, GitHub being no OpenID provider) → who the token belongs to, the first GitHub admin and
+  the role rules exactly as the device code's (`grantedTo`, shared) → a ticket that also holds the
+  connection → `POST /ui/auth/complete` with the binding, whose session's user gets the connected account.
+  **Use a code instead** under the button starts the device code. Without the secret nothing changes:
+  `/start` for a GitHub realm answers 404, and the device code is the way in.
+- **The pages the daemon writes** (`src/http/ui/sign-in.ts`: signing in, cannot sign in) take the same look.
+
+**Residual risk, stated.** The client secret sits in the daemon's environment or a mounted file, as the
+database URL does; whoever reads it can exchange codes as the hopper's app (not mint them: the person still
+approves at GitHub). The hopper's own app ships without it, so a hopper on it signs in by code until its
+operator holds the secret and registers the callback.
+
+**Verification:** `test/integration/sign-in-github-redirect.test.ts` (the real daemon against a fake GitHub
+with the web flow: with the secret, to GitHub with client id, callback, state and PKCE challenge and back as
+the first admin with the account connected, the exchange with secret and verifier, the secret in no answer;
+without it no redirect and the device code; a denial; another browser's binding refused),
+`test/ui/sign-in-device.test.ts` (the redirect button, Use a code instead, the centred code panel with copy
+and Open GitHub, Cancel), `test/integration/unit-file.test.ts` (the secret is read without a warning and kept
+in no config).

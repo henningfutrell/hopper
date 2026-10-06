@@ -10,7 +10,10 @@
 // binding, starts the flow (/ui/auth/<name>/device) and shows the code; the hopper waits for the
 // provider in the background; the browser polls (/ui/auth/device/poll) with its binding until the
 // sign-in is approved — then its poll is the session, and the token the provider granted becomes the
-// connected account of the session's user. Only the browser that began it has the binding.
+// connected account of the session's user. Only the browser that began it has the binding. When the
+// runtime gives the app's client secret (issue #258), a GitHub realm is also a redirect realm on the
+// sign-in origin: GitHub's web flow, the three steps below, the token again the user's connected account.
+// The device code stays the fallback: a LAN name or a phone has no callback GitHub knows.
 //
 // Redirect realms (oidc, saml): three steps, no cookies (they ignore ports; see "UI session and
 // mutations"):
@@ -29,9 +32,10 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { Clock } from '../domain/ports.ts';
 import type { Identity, SignInRealmView, UiRole } from '../domain/types.ts';
 import type { Connection } from '../domain/ports.ts';
-import { deviceFlow, deviceFlowFailure, type PendingGrant } from '../connected-accounts/device-flow.ts';
+import { deviceFlow, deviceFlowFailure, type Grant, type PendingGrant } from '../connected-accounts/device-flow.ts';
 import { whoIs } from '../connected-accounts/identity.ts';
 import { CLIENT_ID_VARIABLE, hopperApps, type HopperApps } from '../connected-accounts/hopper-app.ts';
+import { webFlow, type WebFlow } from '../connected-accounts/web-flow.ts';
 import { isDeviceRealm, isFormRealm, isGatewayRealm, isRedirectRealm, type AuthConfig, type DeviceRealmConfig, type RealmConfig } from './config.ts';
 import { createGatewayRealm } from './gateway.ts';
 import { createLdapRealm } from './ldap.ts';
@@ -97,7 +101,7 @@ export interface SignIn {
   origin(): string;
   /** The OIDC and SAML realms that are on, in order. */
   realms(): SignInRealmView[];
-  /** The GitHub realms that are on, in order. */
+  /** The GitHub realms that are on, in order; `redirect` when the app's client secret lets the browser go to GitHub and back. */
   devices(): SignInRealmView[];
   /** Start a device sign-in with this realm for the browser holding `binding`. Throws SignInRefused. */
   beginDevice(name: string, binding: string): Promise<DeviceStart>;
@@ -107,8 +111,8 @@ export interface SignIn {
   /** The identity provider URL to send the browser to. Throws SignInRefused. */
   begin(name: string, binding: string): Promise<string>;
   callback(name: string, cb: RealmCallback): Promise<CallbackOutcome>;
-  /** The identity and role behind a ticket, once, for the browser holding the binding. */
-  complete(ticket: string, binding: string): { who: Identity; role: UiRole } | undefined;
+  /** The identity and role behind a ticket, once, for the browser holding the binding; a GitHub sign-in's connection with them. */
+  complete(ticket: string, binding: string): { who: Identity; role: UiRole; connection?: Connection } | undefined;
   /** The role the sign-in config grants this identity now; null: none, or its realm is gone or off. */
   roleOf(who: Identity): UiRole | null;
   /** The sign-in config as it applies now. */
@@ -123,7 +127,7 @@ export class SignInRefused extends Error {
 }
 
 interface Flow { realm: string; binding: string; secrets: FlowSecrets; expires: number }
-interface Ticket { who: Identity; role: UiRole; binding: string; expires: number }
+interface Ticket { who: Identity; role: UiRole; binding: string; expires: number; connection?: Connection }
 
 const hash = (s: string): Buffer => createHash('sha256').update(s, 'utf8').digest();
 const random = (): string => randomBytes(32).toString('hex');
@@ -162,6 +166,8 @@ export function createSignIn(o: {
   claimGithubAdmin?: (who: Identity) => AuthConfig | undefined;
   /** The hopper's app (issue #214) the GitHub realms sign in through; default: the shipped one. */
   apps?: HopperApps;
+  /** The app's client secret, from the runtime, read at each use (issue #258); undefined: no browser redirect, the device code only. */
+  githubClientSecret?: () => string | undefined;
 }): SignIn {
   const apps = o.apps ?? hopperApps({ github: {} });
   const maxFlows = o.maxFlows ?? MAX_FLOWS;
@@ -191,30 +197,34 @@ export function createSignIn(o: {
   };
   const sameBinding = (binding: string, hex: string): boolean => BINDING.test(binding) && timingSafeEqual(hash(binding), Buffer.from(hex, 'hex'));
 
+  /** Who a GitHub grant belongs to, their role (null: none), and the connection it becomes. */
+  async function grantedTo(r: DeviceRealmConfig, g: Grant): Promise<{ who: Identity; role: UiRole | null; connection: Connection }> {
+    const id = await whoIs(apps.github, g.accessToken);
+    const who: Identity = {
+      realm: r.name, subject: id.subject, username: id.account, groups: [],
+      ...(id.email ? { email: id.email } : {}), ...(id.name ? { name: id.name } : {}),
+    };
+    // The first person to sign in with GitHub becomes admin (issue #239).
+    if (r.type === 'github' && config.githubAdmin === null) {
+      const claimed = o.claimGithubAdmin?.(who);
+      if (claimed) {
+        config = claimed;
+        build();
+      }
+    }
+    const connection: Connection = {
+      provider: 'github', subject: id.subject, account: id.account, accessToken: g.accessToken,
+      ...(g.expiresAt ? { expiresAt: g.expiresAt.toISOString() } : {}),
+    };
+    return { who, role: roleOf(who), connection };
+  }
+
   /** Wait for the provider; then who signed in, their role, and the connection — or why not. */
   async function follow(r: DeviceRealmConfig, f: DeviceFlowState, grant: PendingGrant['grant']): Promise<void> {
     const label = r.label;
     try {
-      const g = await grant(f.abort.signal);
-      const id = await whoIs(apps.github, g.accessToken);
-      const who: Identity = {
-        realm: r.name, subject: id.subject, username: id.account, groups: [],
-        ...(id.email ? { email: id.email } : {}), ...(id.name ? { name: id.name } : {}),
-      };
-      // The first person to sign in with GitHub becomes admin (issue #239).
-      if (r.type === 'github' && config.githubAdmin === null) {
-        const claimed = o.claimGithubAdmin?.(who);
-        if (claimed) {
-          config = claimed;
-          build();
-        }
-      }
-      const role = roleOf(who);
+      const { who, role, connection } = await grantedTo(r, await grant(f.abort.signal));
       if (role === null) { f.state = { state: 'failed', status: 403, error: 'signed in, but the sign-in config grants this account no role', who }; return; }
-      const connection: Connection = {
-        provider: 'github', subject: id.subject, account: id.account, accessToken: g.accessToken,
-        ...(g.expiresAt ? { expiresAt: g.expiresAt.toISOString() } : {}),
-      };
       f.state = { state: 'approved', who, role, connection };
     } catch (e) {
       if (f.abort.signal.aborted) return;
@@ -222,6 +232,34 @@ export function createSignIn(o: {
     }
   }
   const roleOf = (who: Identity): UiRole | null => roleIn(config, who);
+
+  /** The GitHub web flow for this realm, when the app has a client id and the runtime its client secret. */
+  const web = (name: string): WebFlow | undefined => {
+    const secret = o.githubClientSecret?.();
+    if (!secret || !apps.github.clientId) return undefined;
+    return webFlow(apps.github, secret, `${o.origin()}/ui/auth/${name}/callback`);
+  };
+
+  /** GitHub sent the browser back (the web flow): the grant, who it belongs to, and a ticket holding the connection. */
+  async function githubCallback(r: DeviceRealmConfig, cb: RealmCallback): Promise<CallbackOutcome> {
+    prune();
+    const id = cb.url.searchParams.get('state') ?? undefined;
+    const flow = id === undefined ? undefined : flows.get(id);
+    if (!flow || flow.realm !== r.name) return { ok: false, status: 400, error: 'unknown or expired sign-in; start again' };
+    flows.delete(id!);
+    const gh = web(r.name);
+    if (!gh) return { ok: false, status: 400, error: `${r.label} sign-in by redirect is off on this hopper; sign in with a code` };
+    let out: Awaited<ReturnType<typeof grantedTo>>;
+    try {
+      out = await grantedTo(r, await gh.finish(cb.url, { verifier: flow.secrets.verifier!, state: flow.secrets.state! }));
+    } catch (e) {
+      return { ok: false, status: 502, error: `${r.label} sign-in failed: ${(e as Error).message}` };
+    }
+    if (out.role === null) return { ok: false, status: 403, error: 'signed in, but the sign-in config grants this account no role', who: out.who };
+    const ticket = random();
+    tickets.set(ticket, { who: out.who, role: out.role, binding: flow.binding, expires: now() + TICKET_MS, connection: out.connection });
+    return { ok: true, ticket, who: out.who, role: out.role };
+  }
 
   return {
     get local() { return config.local.enabled; },
@@ -256,7 +294,10 @@ export function createSignIn(o: {
     },
     origin: o.origin,
     realms: () => on().filter(isRedirectRealm).map((r) => ({ name: r.name, label: r.label, type: r.type })),
-    devices: () => on().filter(isDeviceRealm).map((r) => ({ name: r.name, label: r.label, type: r.type })),
+    devices: () => {
+      const redirect = Boolean(o.githubClientSecret?.() && apps.github.clientId);
+      return on().filter(isDeviceRealm).map((r) => ({ name: r.name, label: r.label, type: r.type, ...(redirect ? { redirect } : {}) }));
+    },
     async beginDevice(name, binding) {
       const r = deviceRealm(name);
       if (!r) throw new SignInRefused(404, `no realm ${name} to sign in with`);
@@ -289,18 +330,21 @@ export function createSignIn(o: {
     },
     async begin(name, binding) {
       const r = redirect().get(name);
-      if (!r) throw new SignInRefused(404, `no realm ${name} to sign in with`);
+      const gh = r ? undefined : (deviceRealm(name) && web(name));
+      if (!r && !gh) throw new SignInRefused(404, `no realm ${name} to sign in with`);
       if (!BINDING.test(binding)) throw new SignInRefused(400, 'missing or malformed binding');
       prune();
       // A Map iterates in insertion order: the first key is the oldest flow.
       while (flows.size >= maxFlows) flows.delete(flows.keys().next().value!);
       const id = random();
-      const { url, secrets } = await r.start(id);
+      const { url, secrets } = r ? await r.start(id) : await gh!.start(id).then((x) => ({ url: x.url, secrets: { verifier: x.verifier, state: id } }));
       flows.set(id, { realm: name, binding: hash(binding).toString('hex'), secrets, expires: now() + FLOW_MS });
       return url;
     },
     async callback(name, cb) {
       const r = redirect().get(name);
+      const device = r ? undefined : deviceRealm(name);
+      if (device) return githubCallback(device, cb);
       if (!r) return { ok: false, status: 400, error: `no realm ${name} to sign in with` };
       prune();
       const id = r.flowIdOf(cb);
@@ -324,7 +368,7 @@ export function createSignIn(o: {
       const t = tickets.get(ticket);
       if (!t || !BINDING.test(binding) || !timingSafeEqual(hash(binding), Buffer.from(t.binding, 'hex'))) return undefined;
       tickets.delete(ticket);
-      return { who: t.who, role: t.role };
+      return { who: t.who, role: t.role, ...(t.connection ? { connection: t.connection } : {}) };
     },
   };
 }

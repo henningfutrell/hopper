@@ -25,7 +25,7 @@ class FakeEventSource {
 
 let root: Root | undefined;
 let approved = false;
-let offer: typeof OFFER = OFFER;
+let offer: Omit<typeof OFFER, 'devices'> & { devices: { name: string; label: string; type: string; redirect?: boolean }[] } = OFFER;
 const posts: { path: string; body: Record<string, unknown> }[] = [];
 
 async function boot() {
@@ -72,7 +72,8 @@ describe('landing: sign in with GitHub', () => {
     });
     await act(async () => { button.click(); });
     await vi.waitFor(() => expect(document.querySelector('[data-device-code]')?.textContent).toBe('WDJB-MJHT'));
-    expect(document.body.textContent).toContain('https://github.com/login/device');
+    expect(document.querySelector<HTMLAnchorElement>('a[data-open-provider]')?.href).toBe('https://github.com/login/device');
+    expect(document.body.textContent).toContain('github.com/login/device');
     const binding = posts.find((p) => p.path === '/ui/auth/github/device')!.body.binding as string;
     expect(binding).toMatch(/^[A-Za-z0-9_-]{32,128}$/);
     approved = true;
@@ -95,7 +96,7 @@ describe('landing: sign in with GitHub', () => {
   });
 
   it('the hopper can redirect: the button goes to GitHub and back; the code is the fallback', async () => {
-    offer = { ...OFFER, devices: [{ ...OFFER.devices[0]!, redirect: true }] } as typeof OFFER;
+    offer = { ...OFFER, devices: [{ ...OFFER.devices[0]!, redirect: true }] };
     await boot();
     const assign = vi.fn();
     vi.stubGlobal('location', { ...location, origin: location.origin, assign });
