@@ -67,5 +67,3 @@ export const signInWithoutCredential = (): Promise<string | null> => jsonSignIn(
 export const signInThroughGateway = (): Promise<string | null> => jsonSignIn('/ui/auth/gateway', {});
 export const signInWithPassword = (username: string, password: string): Promise<string | null> => jsonSignIn('/ui/auth/password', { username, password });
 
-/** True when this page was reached on a LAN name, not on loopback. */
-export const onLan = (): boolean => !['127.0.0.1', 'localhost', '[::1]'].includes(location.hostname);

@@ -1,17 +1,16 @@
 // Logged out, the page is only the landing page (issue #213): the hopper's name and the ways to sign in — a button per OIDC, GitHub or SAML realm (the sign-in config), a username
-// and password form while an LDAP realm is on, continuing without sign-in while `none` is on, and,
-// while local sign-in is on, the login code (the command on this machine, a device link or a pasted
-// code across the LAN). Design: design.md "Sign-in: realms", "Reaching
+// and password form while an LDAP realm is on, and continuing without sign-in while `none` is on. The
+// login code is not offered here (issue #247): its device link signs a browser in by itself (main.tsx).
+// Design: design.md "Sign-in: realms", "Reaching
 // the UI across the LAN". Nothing of the app — navigation, views, notices — and no read but the
 // session's until someone signs in (issues #167, #213).
-import { AlertTriangle, Copy, LogIn } from 'lucide-react';
+import { AlertTriangle, LogIn } from 'lucide-react';
 import logo from '../../../site/hopper-logo.svg';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { LOGIN_CMD } from '@/lib/api';
-import { beginSignIn, onLan, signInThroughGateway, signInWithPassword, signInWithoutCredential, submitLogin } from '@/lib/login';
+import { beginSignIn, signInThroughGateway, signInWithPassword, signInWithoutCredential } from '@/lib/login';
 import type { SessionView } from '@/model/wire';
 import { useHopper } from '@/store';
 
@@ -36,28 +35,11 @@ function PasswordSignIn() {
   );
 }
 
-function LoginCode() {
-  const [code, setCode] = useState('');
-  const copy = () => navigator.clipboard?.writeText(LOGIN_CMD).then(() => toast.success('Copied'), () => toast.error('Clipboard blocked'));
-  return (
-    <>
-      {onLan() ? <>Open a device link from a logged-in browser, or paste a login code:</> : <>
-        Or run
-        <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-foreground/90">{LOGIN_CMD}</code>
-        <Button variant="ghost" size="icon-xs" aria-label="Copy command" onClick={copy}><Copy /></Button>
-        or paste a login code:
-      </>}
-      <form className="flex items-center gap-1.5" onSubmit={(e) => { e.preventDefault(); if (code.trim()) submitLogin(code); }}>
-        <Input aria-label="Login code" value={code} onChange={(e) => setCode(e.target.value)} placeholder="login code"
-          autoComplete="off" spellCheck={false} className="h-7 w-44 font-mono text-xs" />
-        <Button type="submit" size="xs" variant="outline" disabled={!code.trim()}><LogIn />Log in</Button>
-      </form>
-    </>
-  );
-}
-
 /** Every way the sign-in config offers to sign in, as buttons and forms. */
 function SignInOptions({ signIn, lead }: { signIn: SessionView['signIn']; lead: string }) {
+  if (!signIn.password && !signIn.gateway && !signIn.none && signIn.realms.length === 0) {
+    return <>Sign-in with GitHub is not set up on this hopper yet.</>;
+  }
   const elsewhere = signIn.realms.length > 0 && location.origin !== signIn.origin;
   return (
     <>
@@ -68,8 +50,6 @@ function SignInOptions({ signIn, lead }: { signIn: SessionView['signIn']; lead: 
       {signIn.gateway && <Button size="xs" variant="outline" onClick={() => void signInThroughGateway().then(finish)}><LogIn />Sign in through the gateway</Button>}
       {signIn.password && <PasswordSignIn />}
       {signIn.none && <Button size="xs" variant="outline" onClick={() => void signInWithoutCredential().then(finish)}><LogIn />Continue as {signIn.none}</Button>}
-      {signIn.local && <LoginCode />}
-      {!signIn.local && !signIn.password && !signIn.gateway && !signIn.none && signIn.realms.length === 0 && <>no way to sign in is on: where the hopper runs, turn the login code on in its sign-in config (<code className="font-mono">hopper config get sign-in</code>, then <code className="font-mono">hopper config set sign-in</code>) and restart it.</>}
     </>
   );
 }

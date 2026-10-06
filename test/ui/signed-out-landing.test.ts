@@ -64,7 +64,7 @@ describe('logged out: only the landing page', () => {
       await boot(async () => json({ authenticated: false, viewing: { id: 'admin', name: 'admin' }, signIn: offer(required) }));
       await vi.waitFor(() => expect(landing()).not.toBeNull());
       expect(document.querySelector('input[aria-label="Username"]')).not.toBeNull();
-      expect(document.querySelector('input[aria-label="Login code"]')).not.toBeNull();
+      expect(document.querySelector('input[aria-label="Login code"]')).toBeNull();
       expect(shell()).toBeNull();
       for (const label of ['Queue', 'Questions', 'Decisions', 'Events', 'Sources', 'Machines', 'Usage', 'Settings']) expect(text()).not.toContain(label);
       expect(text()).not.toMatch(/Read-only|Could not load/);

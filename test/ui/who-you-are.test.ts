@@ -67,11 +67,35 @@ describe('sign in first', () => {
     expect(reads).toEqual(['/ui/api/session']);
   });
 
-  it('the landing page offers the ways to sign in — the login code, no username and password form — and shows no work', async () => {
+  it('the landing page offers the ways to sign in — no username and password form — and shows no work', async () => {
     await render('../../ui/src/app/landing.tsx', 'Landing', { authed: false, user: null, signIn: offer(true) });
     expect(document.querySelector('[data-slot="landing"]')).not.toBeNull();
     expect(document.querySelector('input[aria-label="Username"]')).toBeNull();
-    expect(document.querySelector('input[aria-label="Login code"]')).toBeTruthy();
+  });
+
+  it('signed out, the page names no open-ui.sh and asks for no login code (issue #247)', async () => {
+    const github = { name: 'github', label: 'GitHub', type: 'github' };
+    for (const signIn of [offer(true), { ...offer(true), realms: [github] }]) {
+      await render('../../ui/src/app/landing.tsx', 'Landing', { authed: false, user: null, signIn });
+      const text = document.body.textContent ?? '';
+      expect(text).not.toMatch(/open-ui|login code/i);
+      expect(document.querySelector('input[aria-label="Login code"]')).toBeNull();
+      await act(async () => root?.unmount());
+    }
+    expect(document.body.textContent).toBe('');
+  });
+
+  it('signed out with GitHub on: Sign in with GitHub', async () => {
+    const github = { name: 'github', label: 'GitHub', type: 'github' };
+    await render('../../ui/src/app/landing.tsx', 'Landing', { authed: false, user: null, signIn: { ...offer(true), realms: [github] } });
+    expect(document.body.textContent).toContain('Sign in with GitHub');
+  });
+
+  it('signed out with no sign-in set up: the page says so, without operator commands', async () => {
+    await render('../../ui/src/app/landing.tsx', 'Landing', { authed: false, user: null, signIn: offer(true) });
+    const text = document.body.textContent ?? '';
+    expect(text).toContain('Sign-in with GitHub is not set up on this hopper yet');
+    expect(text).not.toMatch(/hopper config|bash /);
   });
 });
 

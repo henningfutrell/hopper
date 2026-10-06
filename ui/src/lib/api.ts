@@ -4,7 +4,6 @@
 import type { SessionView } from '@/model/wire';
 
 const TOKEN_KEY = 'jh_session';
-export const LOGIN_CMD = 'bash ~/.local/lib/hopper/scripts/open-ui.sh';
 
 export const readToken = (): string | null => { try { return localStorage.getItem(TOKEN_KEY); } catch { return null; } };
 export const clearToken = (): void => { try { localStorage.removeItem(TOKEN_KEY); } catch { /* storage blocked: stay logged out */ } };
