@@ -44,6 +44,10 @@ const LEFT: Record<JobStatus, SpanOutcome> = {
  * that earlier span at the new start, as requeued.
  */
 export function laneSpans(events: DomainEvent[], since: number, jobs: ReadonlyMap<string, Job>): LaneSpan[] {
+  return allSpans(events, jobs).filter((s) => s.end === null || s.end >= since);
+}
+
+function allSpans(events: DomainEvent[], jobs: ReadonlyMap<string, Job>): LaneSpan[] {
   const spans: LaneSpan[] = [];
   const open = new Map<string, LaneSpan>();
   for (const e of [...events].sort((a, b) => a.seq - b.seq)) {
@@ -76,7 +80,42 @@ export function laneSpans(events: DomainEvent[], since: number, jobs: ReadonlyMa
     if (GROUP[job.status] !== 'running' || open.has(job.id) || !job.laneId || !job.startedAt) continue;
     spans.push({ laneId: job.laneId, jobId: job.id, start: Date.parse(job.startedAt), end: null, outcome: 'running' });
   }
-  return spans.filter((s) => s.end === null || s.end >= since).sort((a, b) => a.start - b.start);
+  return spans.sort((a, b) => a.start - b.start);
+}
+
+/** How a question wait ended, or `waiting` while the job still sits on its question. */
+export type WaitEnd = 'waiting' | 'answered' | 'closed' | 'dismissed' | 'expired';
+export interface QuestionWait { laneId: string; jobId: string; start: number; end: number | null; how: WaitEnd }
+
+const WAIT_ENDS: Partial<Record<DomainEvent['type'], WaitEnd>> = {
+  'question.answered': 'answered', 'question.closed': 'closed', 'question.dismissed': 'dismissed', 'question.expired': 'expired',
+  // Answered in the job's pane: it runs again. A dismissed question cancels the job; an expired one fails it.
+  'job.started': 'answered', 'job.reattached': 'answered', 'job.cancelled': 'dismissed', 'job.failed': 'expired',
+};
+
+/** How a wait ends when the job store says its job no longer waits. */
+const WAIT_LEFT = (status: JobStatus): WaitEnd => (status === 'cancelled' ? 'dismissed' : status === 'failed' ? 'expired' : 'answered');
+
+/**
+ * One question wait per lane span that ended on a question: the job sits on it from the ask until it
+ * is answered, closed, dismissed or expired (or the job runs again), drawn on the lane it asked from.
+ * The job store wins, as for lane spans: an open wait of a job no longer waiting ends with the job's
+ * last change, and goes when the store no longer holds the job. Waits that ended before `since` are dropped.
+ */
+export function questionWaits(events: DomainEvent[], since: number, jobs: ReadonlyMap<string, Job>): QuestionWait[] {
+  const sorted = [...events].sort((a, b) => a.seq - b.seq);
+  const waits: QuestionWait[] = [];
+  for (const span of allSpans(sorted, jobs)) {
+    if (span.outcome !== 'question' || span.end === null) continue;
+    const start = span.end;
+    const ended = sorted.find((e) => e.jobId === span.jobId && WAIT_ENDS[e.type] && Date.parse(e.at) >= start);
+    if (ended) { waits.push({ laneId: span.laneId, jobId: span.jobId, start, end: Date.parse(ended.at), how: WAIT_ENDS[ended.type]! }); continue; }
+    const job = jobs.get(span.jobId);
+    if (!job) continue;
+    if (job.status === 'waiting_answer') waits.push({ laneId: span.laneId, jobId: span.jobId, start, end: null, how: 'waiting' });
+    else waits.push({ laneId: span.laneId, jobId: span.jobId, start, end: Math.max(start, Date.parse(job.updatedAt)), how: WAIT_LEFT(job.status) });
+  }
+  return waits.filter((w) => w.end === null || w.end >= since);
 }
 
 /** How many spans overlap each bucket; buckets aligned as in `throughput`. */

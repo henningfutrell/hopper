@@ -2,7 +2,7 @@
 import { BarChart3, Gauge as GaugeIcon, GanttChart } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Empty, Panel } from '@/components/panel';
-import { LaneTimeline, OUTCOME_TONE } from '@/charts/lane-timeline';
+import { LaneTimeline, OUTCOME_TONE, WAIT_SWATCH } from '@/charts/lane-timeline';
 import { THROUGHPUT_LEGEND, ThroughputChart } from '@/charts/throughput';
 import { COLOR } from '@/components/status';
 import { useNow } from '@/hooks/use-now';
@@ -13,7 +13,7 @@ import { orderReadings, readingKey, shownSource } from '@/model/usage';
 import type { UsageSourceReport } from '@/model/wire';
 import { TIMELINE_WINDOWS, type TimelineWindow } from '@/model/overview-layout';
 import { refreshUsage, useHopper } from '@/store';
-import { useJobBoard, useJobName, useLaneSpans } from '@/store/selectors';
+import { useJobBoard, useJobName, useLaneSpans, useQuestionWaits } from '@/store/selectors';
 import { cn } from '@/lib/utils';
 
 // `show` is the breakpoint from which the legend fits beside the panel's other actions.
@@ -36,7 +36,7 @@ export function ThroughputPanel({ hours }: { hours: number }) {
 }
 
 const WINDOWS: Record<TimelineWindow, number> = { '1h': 3_600_000, '6h': 6 * 3_600_000, '24h': 24 * 3_600_000 };
-const OUTCOMES = Object.entries(OUTCOME_TONE).map(([key, tone]) => ({ key, color: COLOR[tone] }));
+const OUTCOMES = [...Object.entries(OUTCOME_TONE).map(([key, tone]) => ({ key, color: COLOR[tone] })), { key: 'waiting answer', color: WAIT_SWATCH }];
 
 /** `window` is the overview layout's; choosing another on the panel sets it there. */
 export function TimelinePanel({ window: win, onWindow }: { window: TimelineWindow; onWindow: (w: TimelineWindow) => void }) {
@@ -44,6 +44,7 @@ export function TimelinePanel({ window: win, onWindow }: { window: TimelineWindo
   const nameOf = useJobName();
   const now = useNow();
   const spans = useLaneSpans(now - WINDOWS[win]);
+  const waits = useQuestionWaits(now - WINDOWS[win]);
   const lanes = machines.flatMap((m) => m.lanes.map((l) => l.id));
   return (
     <Panel title="Lane timeline" icon={GanttChart} action={<>
@@ -52,7 +53,7 @@ export function TimelinePanel({ window: win, onWindow }: { window: TimelineWindo
         <TabsList className="h-7">{TIMELINE_WINDOWS.map((w) => <TabsTrigger key={w} value={w} className="px-2 text-xs">{w}</TabsTrigger>)}</TabsList>
       </Tabs>
     </>}>
-      <LaneTimeline spans={spans} now={now} windowMs={WINDOWS[win]} lanes={lanes} nameOf={nameOf} laneNameOf={(id) => laneName(id, machines)} />
+      <LaneTimeline spans={spans} waits={waits} now={now} windowMs={WINDOWS[win]} lanes={lanes} nameOf={nameOf} laneNameOf={(id) => laneName(id, machines)} />
     </Panel>
   );
 }

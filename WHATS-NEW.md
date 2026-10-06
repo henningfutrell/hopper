@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- The lane timeline now shows when a job is sitting on a question: a hatched strip on its lane from the moment it asked until it is answered.
 - Claude jobs no longer get stuck on Claude's "bypass permissions" warning: yolo is now a switch on each Claude runner, on by default. Turn it off for a runner that should ask before it acts; its questions come to you (or your answering levels), and answering with an option's number or words picks it.
 - Picking this computer as a machine to add over ssh now adds it directly, without ssh. When the hopper runs in a container, Machines says how to attach the computer it runs on instead of offering to add the container.
 - An install or update can no longer leave the hopper's pages unstyled: a version whose look did not build properly is refused, and the running one stays.

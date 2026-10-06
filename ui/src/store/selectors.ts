@@ -1,7 +1,7 @@
 // Derived reads over the store, memoised so a view re-renders only when what it derives from changes.
 import { useMemo } from 'react';
 import { jobBoard, type JobBoard } from '@/model/board';
-import { laneSpans, type LaneSpan } from '@/model/history';
+import { laneSpans, questionWaits, type LaneSpan, type QuestionWait } from '@/model/history';
 import { goalOf, issueRef } from '@/model/job';
 import { allows } from '@/model/roles';
 import { awaitsOwner } from '@/model/questions';
@@ -27,6 +27,13 @@ export function useLaneSpans(since: number): LaneSpan[] {
   const history = useHopper((s) => s.history);
   const jobs = useJobIndex();
   return useMemo(() => laneSpans(history, since, jobs), [history, since, jobs]);
+}
+
+/** The question waits since `since`: when jobs sat on a question, on the lane they asked from. */
+export function useQuestionWaits(since: number): QuestionWait[] {
+  const history = useHopper((s) => s.history);
+  const jobs = useJobIndex();
+  return useMemo(() => questionWaits(history, since, jobs), [history, since, jobs]);
 }
 
 /** How many open questions wait on the owner and are not yet seen: the nav badge. */
