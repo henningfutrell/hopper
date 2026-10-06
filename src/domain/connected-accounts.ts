@@ -29,8 +29,12 @@ export type ConnectedAccountStatus = { provider: ConnectedAccountProvider; via: 
     state: 'connected'; account: string; connectedAt: string;
     /** GitHub: where to install the hopper's GitHub App — it reaches only the repositories it is installed on. */
     installUrl?: string;
+    /** GitHub: where the app's installations are seen and their repositories chosen. */
+    configUrl?: string;
     /** GitHub: the installations of the app this account can see, each with the repositories it reaches; absent when GitHub could not be asked. */
     installations?: AppInstallation[];
+    /** GitHub: why GitHub could not say where the app is installed (then `installations` is absent). */
+    installationsError?: string;
   }
   | { state: 'not-connected' }
   | { state: 'waiting'; userCode: string; verificationUri: string; expiresAt: string }

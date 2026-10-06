@@ -15,6 +15,7 @@
 //     Then GitHub reads as connected, as that account, through the hopper's app, where the app is installed and the repositories it reaches there
 //     And an issue labelled hopper by that account becomes a job, claimed through the account's token
 //   Scenario: the app installed on two accounts, one with chosen repositories: each with the repositories it reaches, every page of them
+//   Scenario: GitHub cannot say where the app is installed: the status says why and where to see it, never that it is not installed
 //   Scenario: a job of the connected account runs with its token (GH_TOKEN), never stored on the job
 //   Scenario: disconnect
 //     Then GitHub reads as not connected, its source says so, and no issue becomes a job
@@ -102,6 +103,7 @@ describe('a user connects their own GitHub', () => {
       provider: 'github', state: 'connected', account: 'octo-user', via: 'the hopper\'s app',
       // The app reaches only the repositories it is installed on: where, and which repositories there.
       installUrl: `${f.github.url}/apps/hopper-test/installations/new`,
+      configUrl: `${f.github.url}/settings/installations`,
       installations: [{ account: 'octo-user', repositorySelection: 'all', repositories: ['octo-user/tools'], settingsUrl: `${f.github.url}/settings/installations/1` }],
     });
     expect(JSON.stringify(await accounts(app))).not.toMatch(/gho_/); // facts only, never the token
@@ -129,6 +131,21 @@ describe('a user connects their own GitHub', () => {
       { account: 'octo-user', repositorySelection: 'all', repositories: ['octo-user/tools'], settingsUrl: `${f.github.url}/settings/installations/1` },
       { account: 'octo-org', repositorySelection: 'selected', repositories: chosen, settingsUrl: `${f.github.url}/settings/installations/2` },
     ]);
+  });
+
+  it('says why, and where to see the installs, when GitHub cannot say where the app is installed (#263)', async () => {
+    const f = await forges();
+    const app = await start(f);
+    await connect(app, f.github, 'github', 'octo-user', await app.login());
+    f.github.installationsDown = true;
+    const connected = await account(app, 'github');
+    expect(connected).toMatchObject({ state: 'connected', account: 'octo-user', configUrl: `${f.github.url}/settings/installations` });
+    expect(connected).not.toHaveProperty('installations');
+    expect(connected.state === 'connected' && connected.installationsError).toMatch(/^GitHub could not say where the app is installed: .+/);
+    f.github.installationsDown = false;
+    const again = await account(app, 'github');
+    expect(again).not.toHaveProperty('installationsError');
+    expect(again.state === 'connected' && again.installations).toHaveLength(1);
   });
 
   it('runs a job of the connected account with its token as GH_TOKEN, and never stores it on the job', async () => {
