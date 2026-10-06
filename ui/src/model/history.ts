@@ -32,7 +32,7 @@ const ENDS: Partial<Record<DomainEvent['type'], SpanOutcome>> = {
 
 /** How a span ends when the job store says its job no longer runs. */
 const LEFT: Record<JobStatus, SpanOutcome> = {
-  finished: 'finished', failed: 'failed', cancelled: 'cancelled', waiting_answer: 'question', queued: 'requeued', held: 'requeued',
+  finished: 'finished', failed: 'failed', cancelled: 'cancelled', rejected: 'cancelled', waiting_answer: 'question', queued: 'requeued', held: 'requeued',
   claimed: 'running', running: 'running',
 };
 

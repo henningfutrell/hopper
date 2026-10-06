@@ -3,6 +3,7 @@ import { decide } from '../decider/index.ts';
 import type { Decision, DecisionInputs, Job, Lane, LaneId } from '../domain/types.ts';
 import { nowIso, type EngineContext } from './context.ts';
 import { releaseLane } from './outcome.ts';
+import { autoAccept } from './queue-gate.ts';
 import { queueOrder } from './queue-order.ts';
 
 export interface Claim { jobId: string; laneId: LaneId }
@@ -101,6 +102,7 @@ export async function decisionStep(c: EngineContext, trigger: string, decisionId
   const inputs = await gather(c, trigger);
   if (c.stopping()) return [];
   freeStrandedLanes(c);
+  autoAccept(c);
   const decision = decide(inputs(), decisionId);
   if (isNoOp(decision)) return [];
   return c.store.tx(() => apply(c, decision));

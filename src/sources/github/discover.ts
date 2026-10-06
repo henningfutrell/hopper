@@ -1,11 +1,11 @@
-// Which issues are eligible: open, labelled, by an allowlisted author, not done/failed/on the
-// backburner, in an allowed repo. Claimed issues without a local job are skipped (never re-run blind). The scope
+// Which issues are eligible: open, labelled, by an allowlisted author, not done/failed/rejected/on the
+// backburner, in an allowed repo, and not addressed to another hopper (`hopper@<name>`, issue #159). Claimed issues without a local job are skipped (never re-run blind). The scope
 // is given: a repo list (gh `repos`, or the app's installed repos) is listed repo by repo; an
 // empty one searches over `owners` — gh mode only, the app source never passes an empty list.
 
 import type { GitHubApi, GitHubIssue } from './api.ts';
 import type { GitHubSourceConfig } from '../config.ts';
-import { LABEL_BACKBURNER, LABEL_CLAIMED, LABEL_DONE, LABEL_FAILED } from './labels.ts';
+import { ADDRESS_PREFIX, LABEL_BACKBURNER, LABEL_CLAIMED, LABEL_DONE, LABEL_FAILED, LABEL_REJECTED } from './labels.ts';
 
 export interface DiscoverResult {
   issues: GitHubIssue[];
@@ -14,7 +14,7 @@ export interface DiscoverResult {
   skippedClaimedWithoutJob: string[];
 }
 
-type DiscoverConfig = Pick<GitHubSourceConfig, 'label' | 'authors'>;
+type DiscoverConfig = Pick<GitHubSourceConfig, 'label' | 'authors' | 'hopperName'>;
 
 export interface DiscoverScope {
   repos: string[];
@@ -48,7 +48,15 @@ function eligible(i: GitHubIssue, config: DiscoverConfig): boolean {
     && config.authors.includes(i.author)
     && !i.labels.includes(LABEL_DONE)
     && !i.labels.includes(LABEL_FAILED)
-    && !i.labels.includes(LABEL_BACKBURNER);
+    && !i.labels.includes(LABEL_BACKBURNER)
+    && !i.labels.includes(LABEL_REJECTED)
+    && forThisHopper(i, config.hopperName);
+}
+
+/** An issue addressed to hoppers by name goes to those only; an unaddressed one to any. */
+function forThisHopper(i: GitHubIssue, name: string | null): boolean {
+  const addressed = i.labels.filter((l) => l.startsWith(ADDRESS_PREFIX)).map((l) => l.slice(ADDRESS_PREFIX.length));
+  return addressed.length === 0 || (name !== null && addressed.includes(name));
 }
 
 export async function discoverIssues(

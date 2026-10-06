@@ -5,7 +5,7 @@ import { exportJsonSchemas } from './export.ts';
 import { LEGACY_EVENT_SCHEMAS } from './legacy.ts';
 
 const WHEN: Record<EventType, string> = {
-  'job.queued': 'A job was accepted (pushed, or pulled from a source).',
+  'job.queued': 'A job was created from a source item; it waits at the queue gate until accepted (`job.accepted`).',
   'job.prioritized': 'The router\'s advice arrived for a job; once per job, whatever its status then.',
   'job.held': 'A Decision held a job and its hold reason changed.',
   'job.approved': 'A human approved a job the router held (e.g. `ask_human`).',
@@ -34,6 +34,10 @@ const WHEN: Record<EventType, string> = {
   'update.failed': 'Applying an update failed (fetch, build, the new build not loading, or the swap) and the install is unchanged — or a boot after an update is not on the applied commit.',
   'plugin.installed': 'A plugin was installed from the plugin store into the plugin dir (UI Install or Update), at the store\'s commit `commit`. A plugin new to this process is loaded at once; one installed again runs its new code after a restart.',
   'plugin.removed': 'A store install was removed from the plugin dir (UI Remove). Nothing in plugins.yaml named it.',
+  'job.accepted': 'A job passed the queue gate and may run: `by` `pre-sort` (the gate auto-accepts, or the user took the pre-sort with Accept pre-sort), or `user` (moved into the user order).',
+  'job.rejected': 'A waiting job was turned away at the queue gate: it ends `rejected`, is kept, and never runs. `by` `user` (UI Reject) or `pre-sort` (the queue sorter rejected it); `reason` is also the job\'s `error`. Its source is told (on GitHub: the `hopper:rejected` label).',
+  'queue.ordered': 'The user ordered the queue: `jobIds`, first to last, run before every job not in it.',
+  'queue.gate_changed': 'The queue gate was changed: its mode (`auto-accept` or `review`) or its throttle (`autoAcceptPerHour`, null for none).',
 };
 
 type Prop = Record<string, unknown>;

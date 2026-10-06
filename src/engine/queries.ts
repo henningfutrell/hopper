@@ -1,8 +1,9 @@
 // Read models for the HTTP edge.
 import { effectivePriority, order } from '../decider/assign.ts';
 import { laneEffect, readingsOf } from '../decider/usage.ts';
-import { TERMINAL_STATUSES, type Job, type Lane, type MachineSnapshot, type UsageReading, type UsageReport, type UsageSourceReport } from '../domain/types.ts';
+import { TERMINAL_STATUSES, type Job, type Lane, type PreSort, type QueueGate, type MachineSnapshot, type UsageReading, type UsageReport, type UsageSourceReport } from '../domain/types.ts';
 import type { EngineContext } from './context.ts';
+import { gateOf, isUnaccepted, preSort } from './queue-gate.ts';
 import { queueOrder } from './queue-order.ts';
 
 export interface QueueView {
@@ -10,8 +11,12 @@ export interface QueueView {
   running: Job[];
   /** Jobs paused on a question, oldest first. They hold no lane. */
   waitingAnswer: Job[];
-  /** Jobs that ended (finished, failed, cancelled) in the last `ENDED_WINDOW_MS`, newest end first. */
+  /** Jobs that ended (finished, failed, cancelled, rejected) in the last `ENDED_WINDOW_MS`, newest end first. */
   ended: Job[];
+  /** The user's queue gate (issue #159). */
+  gate: QueueGate;
+  /** The pre-sort of the waiting jobs not yet accepted. */
+  presort: PreSort;
 }
 
 /** How far back `ended` reaches: the UI's cards count ended jobs over this window, and list the same jobs. */
@@ -48,7 +53,8 @@ export function createQueries(c: EngineContext): Queries {
       const since = new Date(c.clock.now().getTime() - ENDED_WINDOW_MS).toISOString();
       const ended = all.filter((j) => TERMINAL_STATUSES.includes(j.status) && end(j) >= since)
         .sort((a, b) => end(b).localeCompare(end(a)));
-      return { waiting, running, waitingAnswer, ended };
+      const presort = preSort(c, [...queued].reverse().filter(isUnaccepted));
+      return { waiting, running, waitingAnswer, ended, gate: gateOf(c), presort };
     },
     async getMachines() {
       const [machines, usage] = await Promise.all([c.machines.list(), getUsage()]);

@@ -3,7 +3,7 @@
 
 import type {
   DomainEvent, Decision, EventType, Job, JobId, JobSpec, JobStatus, Lane, JobSourceRef, LaneId, MachineId, NewEvent, Question, QuestionAttempt, QuestionStatus,
-  Identity, RouterMode, UiRole, WebhookDelivery, WebhookSubscription, UpdateSettings, PluginInstall, User,
+  Identity, QueueGate, RouterMode, UiRole, WebhookDelivery, WebhookSubscription, UpdateSettings, PluginInstall, User,
 } from './types.ts';
 
 // ---- Persistence -----------------------------------------------------------------------
@@ -85,6 +85,9 @@ export interface QuestionRepository {
 export interface UserSettingsRepository {
   getRouterMode(): RouterMode | undefined;
   setRouterMode(mode: RouterMode): void;
+  /** The user's queue gate (issue #159); absent: never set. */
+  getQueueGate(): QueueGate | undefined;
+  setQueueGate(gate: QueueGate): void;
 }
 
 /** The instance's settings (in the instance schema): self-update and the store installs. */

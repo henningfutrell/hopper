@@ -2,7 +2,7 @@
 // these. Adapters live in src/{executors,machines,usage,plugins,store,webhooks}.
 
 import type {
-  Advice, DomainEvent, ExecutorUnavailable, Job, JobId, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit,
+  Advice, DomainEvent, PreSortReject, ExecutorUnavailable, Job, JobId, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit,
   PluginsEditOutcome, PluginsReport, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule, LaneId, MachineSnapshot,
   Question, QuestionAttempt, SourceStatus, UsageReading, UsageSourceState, WebhookDelivery, InstallInfo, UpdateSettings, UpdateStatus,
   GhLoginStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport,
@@ -152,10 +152,15 @@ export interface QueueEntry {
  * Decision while the engine gathers inputs. Returns job ids; ids it leaves out follow, by the
  * decider's own rule. Throwing or returning anything but distinct ids of the given jobs is a
  * fallback to `priority` for that call.
+ *
+ * `reject` (optional, issue #159): the jobs not yet accepted at the queue gate that this sorter
+ * turns away, each with a reason — the pre-sort's rejections. Throwing or returning anything but
+ * `{ jobId, reason }` of the given jobs rejects nothing for that call.
  */
 export interface QueueSorter {
   readonly name: string;
   sort(entries: readonly QueueEntry[]): JobId[];
+  reject?(entries: readonly QueueEntry[]): PreSortReject[];
 }
 
 /** What the HTTP edge reads about plugins: the router's status and GET /api/plugins. */
@@ -347,7 +352,8 @@ export type SourceReport =
   | { kind: 'claimed'; job: Job }
   | { kind: 'finished'; job: Job }
   | { kind: 'failed'; job: Job }
-  | { kind: 'cancelled'; job: Job };
+  | { kind: 'cancelled'; job: Job }
+  | { kind: 'rejected'; job: Job };
 
 export interface JobSource {
   readonly name: string;

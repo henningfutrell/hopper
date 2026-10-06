@@ -4,14 +4,14 @@ import type {
   AttachedMachine, Decision, DomainEvent, InstanceSpec, Job, JobStatus, Lane, MachineDefaultsEdit, MachineEdit, MachineLaneEffect, MachineSnapshot, MachinesConfig, OptionChoice, PartAccount, PluginsEdit, PluginsReport,
   Question, QuestionAttempt, QuestionGatesView, QuestionStatus, RiskRuleView, Role, RoutingReport, RulesView, SelectableRole, ListRole, SourceStatus, UsageReading, UsageReport, UsageSourceReport, WebhookDelivery,
   WebhookSubscription, WebhooksEdit, SessionUser, SessionView, SignInRealmView, UiRole, UpdateStatus, UpdateChannel, PluginStoreEdit, PluginStoreEntry, PluginStoreReport, GhLoginStatus,
-  UserAdded, UserView, RealmType, RealmView, RealmsEdit, RealmsView,
+  UserAdded, UserView, RealmType, RealmView, RealmsEdit, RealmsView, PreSort, QueueGate, QueueGateMode,
 } from '../../../src/domain/types.ts';
 
 export type {
   AttachedMachine, Decision, DomainEvent, InstanceSpec, Job, JobStatus, Lane, MachineDefaultsEdit, MachineEdit, MachineLaneEffect, MachinesConfig, OptionChoice, PartAccount, PluginsEdit, PluginsReport,
   Question, QuestionAttempt, QuestionGatesView, QuestionStatus, RiskRuleView, Role, RoutingReport, RulesView, SelectableRole, ListRole, SourceStatus, UsageReading, UsageReport, UsageSourceReport, WebhookDelivery,
   WebhookSubscription, WebhooksEdit, SessionUser, SessionView, SignInRealmView, UiRole, UpdateStatus, UpdateChannel, PluginStoreEdit, PluginStoreEntry, PluginStoreReport, GhLoginStatus,
-  UserAdded, UserView, RealmType, RealmView, RealmsEdit, RealmsView,
+  UserAdded, UserView, RealmType, RealmView, RealmsEdit, RealmsView, PreSort, QueueGate, QueueGateMode,
 };
 
 export interface Queue {
@@ -20,6 +20,10 @@ export interface Queue {
   waitingAnswer: Job[];
   /** Jobs ended in the last 24 hours, newest end first. */
   ended: Job[];
+  /** The queue gate (issue #159). */
+  gate: QueueGate;
+  /** The pre-sort of the waiting jobs not yet accepted. */
+  presort: PreSort;
 }
 
 export type MachineView = MachineSnapshot & { lanes: Lane[]; usage: UsageReading[] };

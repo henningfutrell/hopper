@@ -10,6 +10,7 @@ const ALL: Record<EventType, true> = {
   'question.answered': true, 'question.closed': true, 'question.dismissed': true, 'question.expired': true,
   'update.available': true, 'update.started': true, 'update.applied': true, 'update.failed': true,
   'plugin.installed': true, 'plugin.removed': true,
+  'job.accepted': true, 'job.rejected': true, 'queue.ordered': true, 'queue.gate_changed': true,
 };
 export const EVENT_TYPES = Object.keys(ALL) as EventType[];
 

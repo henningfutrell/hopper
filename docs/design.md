@@ -36,7 +36,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts; `machines.ts` attached machines and their edit; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users), ports (`ports.ts`, re-exporting the store's from `store.ts`) | anything else in `src/` |
+| `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts; `machines.ts` attached machines and their edit; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate), ports (`ports.ts`, re-exporting the store's from `store.ts`) | anything else in `src/` |
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock | everything but `domain/` |
 | `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations (the instance's `migrations.ts` with migration 17 in `migration-users.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, `auth.yaml`, instance settings) and each user store (`user-store.ts`: repositories, event log, config documents) | engine, http, decider |
 | `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), identity → user (`identities.ts`: link or provision) | http, decider |
@@ -47,7 +47,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following plugins.yaml; ssh probe and herdr path resolution through the herdr CLI client's ssh argv; the container probe, `docker container inspect`), the detected ssh targets (`ssh-config.ts`), keeping each client target on the hopper's client release (`client-release.ts`), `combineMachineSources` | engine, http, store, plugins |
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin) | engine, http, store, plugins |
 | `src/routing/` | routing rules: the plugins.yaml `routing:` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
-| `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`); job lifecycle; routing at intake (`source-host.ts`); restart recovery | http |
+| `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; routing at intake (`source-host.ts`); restart recovery | http |
 | `src/auth/` | sign-in through realms (issues #39, #185): `auth.yaml` load (`config.ts`) and edits that keep its comments (`edit.ts`), the role rules (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm) and their adapters `password.ts` (argon2), `ldap.ts` (ldapts), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), the sign-in service — form realms in order, flows, tickets, bindings, no sign-in, a changed auth.yaml applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets") | everything |
 | `src/update/` | self-update ("Self-update"): install.json, the git mirror of the update repository, the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
@@ -89,7 +89,8 @@ same Decision. Algorithm, in order:
 4. **Mode** (router mode). `active`: admission and effective priority use the router
    verdict. `shadow`: native verdict (everything admissible, priority = `job.priority`); the
    router's verdict appears only in `decision.advice`.
-5. **Native holds.** No online machine runs the job's executor → hold. Pinned machine
+5. **Native holds.** A job not yet accepted at the queue gate (`accepted: false`) → hold
+   `awaiting acceptance`, before anything else is judged ("Queue gate"). No online machine runs the job's executor → hold. Pinned machine
    unknown or offline → hold.
 6. **Order.** Admissible jobs by effective priority desc, then `createdAt` asc, then `id`.
 7. **Assign.** For each job in order: candidate machines = online, run its executor, match
@@ -118,7 +119,7 @@ an idle tick every 2 s would bury the decision log. Every recorded Decision emit
 - **Triggers:** interval tick (`HOPPER_TICK_MS`, default 2000) plus the events
   `job.queued`, `job.prioritized`, `job.reprioritized`, `job.approved`, `job.finished`,
   `job.failed`, `job.cancelled`, `router.mode_changed`, `question.asked`, `question.answered`,
-  `question.expired` (`TRIGGERS`, `src/engine/index.ts`). Decisions are serialized; triggers
+  `question.expired`, and the queue gate's `job.accepted`, `job.rejected`, `queue.ordered`, `queue.gate_changed` (`TRIGGERS`, `src/engine/index.ts`). Decisions are serialized; triggers
   arriving mid-decision coalesce into one follow-up, which keeps the first waiting trigger's name
   (so `decision.trigger` names *a* cause, not necessarily the last). Event listeners schedule
   triggers with `setImmediate`; they never run a decision synchronously inside `append`. The tick
@@ -1162,7 +1163,8 @@ timeouts, typed errors; env passes through (gh's keyring auth). Fake: an in-memo
 **Discovery:** `repos` non-empty → `listOpenIssues` per repo (no search lag). Else
 `searchOpenIssues` over `owners` (or `whoami()`), restricted to repos owned by them —
 GitHub search can lag new issues by up to about a minute. Eligible: open, has `label`,
-author in `authors`, no `hopper:done` / `hopper:failed` / `hopper:backburner`, repo allowed. Already-claimed
+author in `authors`, no `hopper:done` / `hopper:failed` / `hopper:rejected` / `hopper:backburner`, repo allowed,
+not addressed to another hopper (`hopper@<name>`, "Queue gate"). Already-claimed
 issues with no job here (another machine, a wiped database) are **not** re-run: an issue
 labelled `hopper:claimed` with no local job is skipped and shown in status detail.
 
@@ -1218,6 +1220,7 @@ as completed with nothing on main.
 | finished | **no comment**; remove `hopper:claimed`, add `hopper:done` (only a job whose work is complete is finished, above); never a close. Removing `hopper:done` from the open issue — reopened, when a merge closed it — is the re-run gesture |
 | failed | **no comment**; remove `hopper:claimed`, add `hopper:failed` (removing it is the re-run gesture) |
 | cancelled | **no comment**; remove `hopper:claimed` |
+| rejected | **no comment**; remove `hopper:claimed`, add `hopper:rejected`; the issue stays open (removing the label is the re-run gesture) |
 
 Progress and questions are not reported to the source at all (`SourceReport` has no such kinds).
 Stored `sourceState.source` keys from before this rule (`claimCommentId`, `progressCommentId`,
@@ -4503,3 +4506,61 @@ Removing a user; moving an identity between users; per-user plugin installs (ins
 instance's by decision). A client target of a user added later is attached with
 `HOPPER_WORK_DIR=<work dir>/users/<id> scripts/attach-client.sh …` (its relay socket is in that
 user's work dir) and its token variable under the user's prefix; the script does not take a user.
+
+## Queue gate (issue #159, 2026-10-05)
+
+Before: anyone who could label an issue `hopper` (by an allowlisted author) started a job that took a
+lane at once; nothing let the user see the queue and order it, turn work away, or limit how much came
+in; and several hoppers watching one GitHub had no way to say which one takes an issue.
+
+**Every new job waits at the gate.** Intake (`SourceHost.ingest`) creates the job `accepted: false`.
+The decider holds it `awaiting acceptance` (step 5) until it is **accepted** — by the **pre-sort** or by
+the user — or **rejected**. A job stored before the gate has no `accepted` field and counts as
+accepted: no migration, no queue changed. Approving (the router's) never passes the gate.
+
+**The pre-sort** is the queue sorter over the unaccepted jobs: its `sort` is their order, and an
+optional `reject(entries) → { jobId, reason }[]` turns jobs away (the "ordering/rejecting model" — any
+queue-sorter plugin; the built-ins only order). The slot checks a reject answer like a sort: anything
+but `{ jobId, reason }` of the given jobs, or a throw, rejects nothing and is logged once.
+
+**The gate** is a user setting (`settings` row `queueGate`, absent → `auto-accept`, no limit):
+- `auto-accept` — before each Decision (`autoAccept`, `src/engine/queue-gate.ts`, after the stranded
+  lanes are freed and before the inputs are read) the pre-sort is applied: what it rejects ends
+  `rejected` (`by: pre-sort`), the rest are accepted in its order — at most `autoAcceptPerHour`
+  (the throttle; null: none) counted over the `job.accepted { by: pre-sort }` events of the last hour.
+  Past the limit a job waits for the user. With the default, nothing changes for a user who never
+  opens the Queue view: a job is accepted in the Decision that would have started it.
+- `review` — nothing is accepted by itself.
+
+**The user order.** `POST /ui/api/queue/order { jobIds }` (operator): those waiting jobs, first to last,
+get `userRank` 0..n-1; an unaccepted one among them is accepted (`by: user`); a waiting job ranked
+before and not named loses its rank; `queue.ordered`. An unknown or not-waiting job → 409, one named
+twice → 400. The queue order (`queue-order.ts`) is the ranked accepted jobs by rank, then the sorter's
+order of the rest — the decider is unchanged (step 6 follows the queue order).
+
+**Reject.** `POST /ui/api/jobs/:id/reject` (operator) on a waiting job (accepted or not; anything else
+→ 409): status `rejected`, a terminal status — ended, kept, never run — with `error` the reason
+(`rejected by the user`, or the pre-sort's); `job.rejected`. Its source is told like any end (report
+kind `rejected`): on GitHub the claim label goes and `hopper:rejected` is added, the issue stays open,
+discovery skips it while the label is set, and removing the label offers it again as a re-run. A
+rejected job is neutralized, not deleted.
+
+**Accept pre-sort.** `POST /ui/api/queue/accept-presort` (operator) applies the pre-sort now, in either
+mode and without the throttle.
+
+**Several hoppers** (`hopperName`, an option of both GitHub sources, editable in the UI). An issue
+labelled `hopper@<name>` is addressed: only the hopper whose source has that name takes it; an issue
+addressed to no hopper goes to any, and the first claim wins (another hopper's `hopper:claimed` is
+skipped, as before). A source with no name takes no addressed issue. Residual: two hoppers that both
+take unaddressed issues can both claim one discovered in the same poll; address the issue to settle it.
+
+**Read.** `/api/queue` adds `gate` and `presort` (`{ sorter, jobIds, reject }` over the unaccepted
+waiting jobs); `waiting` is in the queue order, user order first. Events: `job.accepted { by }`,
+`job.rejected { by, reason }`, `queue.ordered { jobIds }`, `queue.gate_changed { from, to }` — each wakes
+the engine.
+
+**UI.** A Queue view: the gate (mode buttons, the hourly limit; admin), then two columns — **Pre-sorted**
+(unaccepted jobs in the pre-sort's order, each marked with the pre-sort's rejection if any; Accept moves
+a job to the end of the user order, Accept pre-sort takes them all, Reject) and **Your order** (accepted
+waiting jobs in queue order; up, down, to the top, Reject). Columns stack below `lg`. The Overview's
+Waiting panel links an unaccepted job to it.

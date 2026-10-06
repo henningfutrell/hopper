@@ -5,6 +5,9 @@ import { divergence, routerVerdict } from './router-verdict.ts';
 import { planGoneLanes, planLanes } from './lanes.ts';
 import { laneEffect } from './usage.ts';
 
+/** The hold of a job waiting at the queue gate (issue #159). */
+export const AWAITING_ACCEPTANCE = 'awaiting acceptance';
+
 /** Pure: same inputs, same Decision. `inputs.at` is the clock; `decisionId` is supplied. */
 export function decide(inputs: DecisionInputs, decisionId: string): Decision {
   const { policy, machines, lanes } = inputs;
@@ -40,6 +43,11 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
   const advice: Divergence[] = [];
   const candidates: Candidate[] = [];
   for (const job of waiting) {
+    if (job.accepted === false) {
+      // At the queue gate (issue #159): nothing else is judged until it is accepted.
+      hold.push({ jobId: job.id, reason: AWAITING_ACCEPTANCE });
+      continue;
+    }
     const native = nativeHold(job, machines, inputs.unavailableExecutors);
     if (!native && job.pendingAnswer !== undefined) {
       // Admitted once already: the router neither holds nor reorders it.

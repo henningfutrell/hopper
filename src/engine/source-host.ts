@@ -73,7 +73,8 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
       return store.tx((): Job => {
         const job = store.jobs.create(spec, priority, ref);
         store.events.append({ type: 'job.queued', jobId: job.id, data: { spec, priority, source: ref } });
-        if (invalid === undefined) return job;
+        // Every new job waits at the queue gate (issue #159) until the pre-sort or the user accepts it.
+        if (invalid === undefined) return store.jobs.update(job.id, { accepted: false });
         // Created and failed together: the source reports claimed, then failed — once.
         store.events.append({ type: 'job.failed', jobId: job.id, data: { error: invalid } });
         return store.jobs.update(job.id, { status: 'failed', error: invalid, finishedAt: nowIso(c) });

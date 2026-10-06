@@ -9,7 +9,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { SignIn } from '../../auth/index.ts';
 import type { Clock, InstanceStore, PluginStoreView, Updater } from '../../domain/ports.ts';
-import { LIST_ROLES, ROLES, SELECTABLE_ROLES, UI_ROLES, UPDATE_CHANNELS, type RealmsView, type SessionView, type UiRole, type UserAdded } from '../../domain/types.ts';
+import { LIST_ROLES, QUEUE_GATE_MODES, ROLES, SELECTABLE_ROLES, UI_ROLES, UPDATE_CHANNELS, type RealmsView, type SessionView, type UiRole, type UserAdded } from '../../domain/types.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { lanHosts, uiOrigins, type Lan } from '../reach.ts';
 import type { RealmsAdmin } from '../realms.ts';
@@ -102,6 +102,11 @@ export const updateBody = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('apply') }),
   z.strictObject({ action: z.literal('settings'), channel: z.enum(UPDATE_CHANNELS).optional(), autoUpdate: z.boolean().optional() }),
 ]);
+// The queue gate (issue #159): the user order (distinct waiting jobs, first to last) and the gate itself.
+export const queueOrderBody = z.strictObject({
+  jobIds: z.array(z.string().min(1)).refine((ids) => new Set(ids).size === ids.length, 'a job is named twice'),
+});
+export const queueGateBody = z.strictObject({ mode: z.enum(QUEUE_GATE_MODES), autoAcceptPerHour: z.number().int().min(1).nullable() });
 // gh login (issue #138): start gh's device flow, or end a waiting one.
 export const ghLoginBody = z.strictObject({ action: z.enum(['start', 'cancel']) });
 const EDIT_STATUS = { invalid: 400, not_found: 404, conflict: 409 } as const;
@@ -148,6 +153,10 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
 
   app.post('/ui/api/jobs/:id/cancel', operator, async (req) => o.tenant(req).engine.cancel(parseWith(idParams, req.params).id, 'cancelled in UI'));
   app.post('/ui/api/jobs/:id/approve', operator, async (req) => o.tenant(req).engine.approve(parseWith(idParams, req.params).id));
+  app.post('/ui/api/jobs/:id/reject', operator, async (req) => o.tenant(req).engine.reject(parseWith(idParams, req.params).id));
+  app.post('/ui/api/queue/order', operator, async (req) => ({ jobs: o.tenant(req).engine.orderQueue(parseWith(queueOrderBody, req.body).jobIds) }));
+  app.post('/ui/api/queue/accept-presort', operator, async (req) => ({ presort: o.tenant(req).engine.acceptPreSort() }));
+  app.post('/ui/api/queue-gate', admin, async (req) => ({ gate: o.tenant(req).engine.setQueueGate(parseWith(queueGateBody, req.body)) }));
 
   app.post('/ui/api/questions/:id/answer', operator, async (req) => {
     const { id } = parseWith(idParams, req.params);

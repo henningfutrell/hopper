@@ -61,7 +61,8 @@
         "waiting_answer",
         "finished",
         "failed",
-        "cancelled"
+        "cancelled",
+        "rejected"
       ]
     }
   },
