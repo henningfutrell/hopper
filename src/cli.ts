@@ -11,6 +11,7 @@
 //   hopper login-code [--user <id>] [--link <url>]    mint a one-time UI login code for a user (stdout)
 //   hopper users                                      list the users (issue #158)
 //   hopper user add <name>                            add a user
+//   hopper user transfer <from> <to>                  <to> takes over <from>'s work (issue #212)
 //   hopper help                                       what each command does
 //
 // <record>: plugins or rules (a user's: --user, default owner), or sign-in (the instance's, without
@@ -43,6 +44,9 @@ usage:
   hopper login-code [--link <base url>]              a one-time UI login code (${LOGIN_CODE_MINUTES} minutes), or a link with it
   hopper users                                       the users of this hopper: id, name, when added
   hopper user add <name>                             add a user: their own jobs, questions and settings, kept apart
+  hopper user transfer <from> <to>                   <to> takes over everything <from> holds: <to>'s sign-ins land on
+                                                     <from>'s work, under <to>'s name; <to>'s own empty record goes.
+                                                     The daemon must be stopped; refused when <to> holds work of its own
   hopper help                                        this text
 
 records: ${CONFIG_NAMES.join(', ')}. plugins and rules are one user's; sign-in is shared, and its password accounts are
@@ -149,10 +153,33 @@ function users(instance: InstanceStore, io: CliIo): void {
   for (const u of instance.users.list()) io.out(`${u.id}\t${u.name}\t${u.createdAt}\n`);
 }
 
+/**
+ * `hopper user transfer <from> <to>` (issue #212): the user a person signs in as (`to`) takes over the
+ * work another holds (`from`). The record holding the work stays — its user schema, work dir, secrets and
+ * herdr session with it, so running jobs are untouched — and takes `to`'s name and sign-ins. Only with
+ * the daemon stopped: it keeps a runtime per user.
+ */
+function transfer(instance: InstanceStore, args: string[], io: CliIo): void {
+  const [fromId, toId, ...extra] = args;
+  if (!fromId || !toId || extra.length > 0) throw new CliError('usage: hopper user transfer <from> <to>');
+  for (const id of [fromId, toId]) userOf(instance, id);
+  if (fromId === toId) throw new CliError('a transfer needs two different users');
+  if (!instance.holdDaemonLock()) throw new CliError('a running daemon has this database; stop it first (systemctl --user stop hopper), then start it again after');
+  let kept: User;
+  try {
+    kept = instance.users.transfer(fromId, toId);
+  } catch (e) {
+    throw new CliError((e as Error).message);
+  }
+  io.out(`${kept.id}\t${kept.name}\n`);
+  io.err(`${kept.name} now holds ${fromId}'s work: sign in as ${kept.name} to reach it (user id ${kept.id}). Start the daemon again.\n`);
+}
+
 /** `hopper user add <name>`: the new user's id on stdout. A running daemon starts its runtime when it next reads the users. */
 function userCommand(instance: InstanceStore, args: string[], io: CliIo): void {
+  if (args[0] === 'transfer') { transfer(instance, args.slice(1), io); return; }
   const [verb, name, ...extra] = args;
-  if (verb !== 'add' || !name?.trim() || extra.length > 0) throw new CliError('usage: hopper user add <name>');
+  if (verb !== 'add' || !name?.trim() || extra.length > 0) throw new CliError('usage: hopper user add <name> | hopper user transfer <from> <to>');
   if (instance.users.list().some((u) => u.name.toLowerCase() === name.trim().toLowerCase())) throw new CliError(`the name ${name.trim()} is taken`);
   const user = instance.users.add(name);
   io.out(`${user.id}\n`);

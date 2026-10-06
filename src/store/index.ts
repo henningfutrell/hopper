@@ -29,11 +29,12 @@ export function openInstanceStore(o: { url: string; clock: Clock; idGen?: IdGen 
   }
   const idGen = o.idGen ?? randomUUID;
   const ctx = createContext({ db, clock: o.clock, idGen });
+  const schemaOf = (id: string): string => userSchemaName(instanceSchema, id);
   const userStore: InstanceStore['userStore'] = (user) =>
-    openUserStore({ url: schemaUrl(o.url, userSchemaName(instanceSchema, user.id)), clock: o.clock, idGen });
+    openUserStore({ url: schemaUrl(o.url, schemaOf(user.id)), clock: o.clock, idGen });
   const config = createConfigRecords(ctx, INSTANCE_CONFIG);
   return {
-    users: createUserRepository(ctx, (user) => userStore(user).close()),
+    users: createUserRepository(ctx, (user) => userStore(user).close(), schemaOf),
     identities: createIdentityLinks(ctx),
     uiSessions: createUiSessionRepository(ctx),
     loginCodes: createLoginCodeRepository(ctx),
@@ -41,6 +42,8 @@ export function openInstanceStore(o: { url: string; clock: Clock; idGen?: IdGen 
     signInConfig: createSignInConfigRepository(ctx, config),
     settings: createInstanceSettingsRepository(ctx),
     userStore,
+    // Session-level: held while this connection lives, one key per instance schema.
+    holdDaemonLock: () => db.get("SELECT pg_try_advisory_lock(hashtext('hopper daemon ' || current_schema())) AS held")!.held === true,
     tx: ctx.tx,
     close: () => db.close(),
   };

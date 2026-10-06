@@ -154,6 +154,12 @@ export interface UserRepository {
   owner(): User;
   /** A new user under a unique name (throws when taken): its row and its user schema. */
   add(name: string): User;
+  /**
+   * `to` takes over `from`'s work (issue #212): `to`'s sign-ins, sessions and login codes move onto
+   * `from`'s record, which takes `to`'s name; `to`'s record and user schema are removed. Throws, nothing
+   * changed, when `to` holds work of its own (jobs, questions, decisions, webhooks). The record kept.
+   */
+  transfer(fromId: string, toId: string): User;
 }
 
 /** Which user an identity signs in as (`user_identities`). */
@@ -229,6 +235,8 @@ export interface InstanceStore {
   settings: InstanceSettingsRepository;
   /** Open the user's store: one more connection, its schema migrated on the tenant track. The caller closes it. */
   userStore(user: User): UserStore;
+  /** Take the daemon lock on this database for this store's life: false when another process holds it (a running daemon). */
+  holdDaemonLock(): boolean;
   tx<T>(fn: () => T): T;
   close(): void;
 }

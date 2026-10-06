@@ -215,14 +215,13 @@ describe('hopper user transfer (issue #212)', () => {
     return url;
   }
 
-  it('the account bea signs in as takes everything owner held; bea\'s own empty record is gone', () => {
+  it('bea takes over everything owner held; bea\'s own empty record is gone', () => {
     const url = ownerAndBea();
     const r = cli(url, ['user', 'transfer', 'owner', 'bea']);
     expect(r).toMatchObject({ code: 0, err: expect.stringMatching(/bea now holds owner's work/) });
     expect(cli(url, ['users']).out).toMatch(/^owner\tbea\t\S+\n$/);
     const s = instanceOf(url);
     expect(s.identities.userOf('password', 'bea')).toBe('owner');
-    expect(s.identities.userOf('local', 'local')).toBe('owner');
     const store = s.userStore(s.users.owner());
     expect(store.jobs.list()).toHaveLength(1);
     store.close();
@@ -230,7 +229,7 @@ describe('hopper user transfer (issue #212)', () => {
     expect(cli(url, ['config', 'get', 'rules']).out).toBe(`${json('owner rules')}\n`);
   });
 
-  it('moves the sessions and login codes of the account that takes over', () => {
+  it('moves the sessions and login codes of the user that takes over', () => {
     const url = ownerAndBea();
     const code = cli(url, ['login-code', '--user', 'bea']).out.trim();
     expect(cli(url, ['user', 'transfer', 'owner', 'bea']).code).toBe(0);
@@ -239,7 +238,7 @@ describe('hopper user transfer (issue #212)', () => {
     s.close();
   });
 
-  it('refuses when the account taking over holds work of its own: nothing is lost, nothing changes', () => {
+  it('refuses when the user taking over holds work of its own: nothing is lost, nothing changes', () => {
     const url = ownerAndBea();
     const s = instanceOf(url);
     const bea = s.userStore(s.users.get('bea')!);

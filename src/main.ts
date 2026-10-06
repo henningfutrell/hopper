@@ -101,6 +101,8 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   const logger = { info: (l: string) => console.log(l), warn: (l: string) => console.warn(l) };
   warnLeftoverEnv(config);
   const instance = openInstanceStore({ url: config.databaseUrl, clock });
+  // Held while the daemon runs: the operator CLI refuses `user transfer` against a running daemon (issue #212).
+  if (!instance.holdDaemonLock()) logger.warn('hopper: another process holds this database\'s daemon lock (a second daemon?)');
   const env = seams.env ?? process.env;
   // The instance's own secrets (the sign-in config's clientSecretEnv) keep their names: no user prefix.
   const secret = runtimeSecrets(env);
