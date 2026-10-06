@@ -32,6 +32,31 @@ afterEach(() => {
 
 const opts = (argv: string[]): string[] => argv.flatMap((a, i) => (argv[i - 1] === '-o' ? [a] : []));
 
+describe('the shared connection\'s socket', () => {
+  // A unix socket's path is at most 104 bytes on macOS, 108 on Linux; ssh adds `.` and 16 characters
+  // to it while it sets the master up. A user's data dir under HOME can be long (issue #295).
+  const path = (controlDir: string, target = 'laptop'): string | undefined =>
+    opts(sshArgv({ target, bin: SSH, auth, controlDir }, 'true')).find((o) => o.startsWith('ControlPath='))?.slice('ControlPath='.length);
+
+  it('is a short name per destination in the control dir, never ssh\'s 40-character %C', () => {
+    const p = path(join(dir, 'ssh'))!;
+    expect(p).toMatch(new RegExp(`^${join(dir, 'ssh')}/[0-9a-f]{16}$`));
+    expect(path(join(dir, 'ssh'))).toBe(p);
+    expect(path(join(dir, 'ssh'), 'studio')).not.toBe(p);
+  });
+
+  it('fits a unix socket with ssh\'s suffix under a long data dir, as a signed-in user\'s is', () => {
+    const controlDir = `/home/someone/.cache/hopper/users/someone-with-a-name/ssh`;
+    expect(path(controlDir)).not.toContain('%');
+    expect(Buffer.byteLength(`${path(controlDir)!}.0123456789abcdef`)).toBeLessThanOrEqual(104);
+  });
+
+  it('too long a control dir for any socket: no shared connection, never one ssh refuses', () => {
+    const a = sshArgv({ target: 'laptop', bin: SSH, auth, controlDir: `/${'d'.repeat(90)}` }, 'true');
+    expect(opts(a).some((o) => o.startsWith('ControlMaster=') || o.startsWith('ControlPath='))).toBe(false);
+  });
+});
+
 describe('ssh to a target: key-based authentication only', () => {
   const argv = (target = 'laptop') => sshArgv({ target, bin: SSH, auth }, 'true');
 

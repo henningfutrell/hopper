@@ -47,8 +47,9 @@ describe('herdr CLI client over ssh', () => {
     expect(argv[sep + 1]).toBe('laptop.example');
     const opts = argv.slice(0, sep);
     expect(opts).toEqual(expect.arrayContaining([
-      '-o', 'BatchMode=yes', '-o', 'ControlMaster=auto', `-o`, `ControlPath=${join(dir, 'ssh')}/%C`,
+      '-o', 'BatchMode=yes', '-o', 'ControlMaster=auto',
     ]));
+    expect(opts.find((o) => o.startsWith('ControlPath='))).toMatch(new RegExp(`^ControlPath=${join(dir, 'ssh')}/[0-9a-f]{16}$`));
     expect(opts.some((o) => o.startsWith('ControlPersist='))).toBe(true);
     expect(opts.some((o) => o.startsWith('ConnectTimeout='))).toBe(true);
   });

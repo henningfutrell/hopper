@@ -318,8 +318,8 @@ any Postgres will do). `npm test` starts its own throwaway Postgres container (t
 needs docker), each test in its own schema; `HOPPER_TEST_POSTGRES_URL=postgres://…` uses an
 existing database instead.
 
-**Agent boxes for testing** (`docs/design.md` "Agent boxes"): `HOPPER_SSH_KEY_FILE=<the hopper's key> bash
-scripts/agent-boxes.sh --attach` starts one container per agent CLI (claude, codex, cursor, omp, opencode),
+**Agent boxes for testing** (`docs/design.md` "Agent boxes"): `HOPPER_SSH_PUBLIC_KEY='<the hopper's key, as
+Machines → Add shows it>' bash scripts/agent-boxes.sh --attach` starts one container per agent CLI (claude, codex, cursor, omp, opencode),
 each an ssh target with its own herdr session, and attaches them all (`--attach` needs the daemon's
 `HOPPER_DATABASE_URL`); `ssh -t hopper-box-<agent>` opens a terminal there to sign the agent in.
 `--remove` takes them away again.

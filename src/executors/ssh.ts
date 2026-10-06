@@ -9,6 +9,7 @@
 // on the user's config only); the connection itself reads none (`-F /dev/null`), so nothing in a
 // config can add an identity, a jump host or a weaker option.
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -96,6 +97,20 @@ export function resolveDestination(bin: string, target: string): Destination {
   return value;
 }
 
+/** The longest unix socket path (macOS's 104 bytes; Linux allows 108), and what ssh adds while it sets a master up. */
+const SOCKET_PATH_MAX = 104;
+const CONTROL_SUFFIX = '.0123456789abcdef'.length;
+
+/**
+ * The shared connection's socket for a destination: 16 hex of its hash in the control dir — ssh's own %C
+ * is 40, too long for a socket under a signed-in user's data dir (issue #295). Undefined when even that
+ * would not fit: then no connection is shared.
+ */
+function controlPath(controlDir: string, d: { user: string; hostname: string; port: string }): string | undefined {
+  const path = `${plainPath('ssh control', controlDir)}/${createHash('sha256').update(`${d.user}@${d.hostname}:${d.port}`).digest('hex').slice(0, 16)}`;
+  return Buffer.byteLength(path) + CONTROL_SUFFIX <= SOCKET_PATH_MAX ? path : undefined;
+}
+
 /** ssh's argv running one remote shell command on the target, authenticated as above. Throws when it cannot be. */
 export function sshArgv(t: SshTransport, command: string): string[] {
   if (!TARGET.test(t.target)) throw new Error(`bad ssh target: ${JSON.stringify(t.target)}`);
@@ -106,9 +121,8 @@ export function sshArgv(t: SshTransport, command: string): string[] {
   if (keys.length === 0) {
     throw new Error(`no ssh key on this machine to reach ${t.target}: create one with ssh-keygen, then add its public key to ${t.target}'s ~/.ssh/authorized_keys (ssh-copy-id ${t.target})`);
   }
-  const shared = t.controlDir
-    ? ['-o', 'ControlMaster=auto', '-o', `ControlPath=${plainPath('ssh control', t.controlDir)}/%C`, '-o', 'ControlPersist=60']
-    : [];
+  const control = t.controlDir ? controlPath(t.controlDir, d) : undefined;
+  const shared = control ? ['-o', 'ControlMaster=auto', '-o', `ControlPath=${control}`, '-o', 'ControlPersist=60'] : [];
   return [
     '-F', '/dev/null', ...HARDENED_SSH_OPTIONS.flatMap((o) => ['-o', o]),
     ...keys.flatMap((k) => ['-i', plainPath('ssh key', k)]),
