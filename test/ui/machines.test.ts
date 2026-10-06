@@ -3,7 +3,7 @@
 // POST /ui/api/machines and an Edit form to POST /ui/api/plugins, and why it may not yet.
 import { describe, expect, it } from 'vitest';
 import type { MachinesConfig } from '../../src/domain/types.ts';
-import { addBody, addProblem, clientReleaseText, defaultsBody, DETAILS, editBody, editDraft, editProblem, hasThisMachine, isThisMachineTarget, kindOf, mayAddThisMachine, localBody, newDraft, newThisDraft, thisBody, thisProblem, type MachineDraft } from '../../ui/src/model/machines.ts';
+import { addBody, addProblem, authorizedKeysLine, clientReleaseText, defaultsBody, DETAILS, editBody, editDraft, editProblem, hasThisMachine, isThisMachineTarget, kindOf, mayAddThisMachine, localBody, newDraft, newThisDraft, thisBody, thisProblem, type MachineDraft } from '../../ui/src/model/machines.ts';
 
 const CONFIG: MachinesConfig = {
   version: 'v1',
@@ -46,9 +46,28 @@ describe('addProblem', () => {
     expect(addProblem(draft({ name: 'desk' }), CONFIG)).toMatch(/desk/);
     expect(addProblem(draft({ name: 'odd' }), CONFIG)).toMatch(/odd/);
     expect(addProblem(draft({ ssh: '' }), CONFIG)).toMatch(/ssh target/);
-    expect(addProblem(draft({ ssh: 'typed@host' }), CONFIG)).toMatch(/ssh target/);
+    expect(addProblem(draft({ ssh: '-oProxyCommand=x' }), CONFIG)).toMatch(/ssh target/);
+    expect(addProblem(draft({ ssh: 'two words' }), CONFIG)).toMatch(/ssh target/);
     expect(addProblem(draft({ lanes: '0' }), CONFIG)).toMatch(/lanes/);
     expect(addProblem(draft({ lanes: '1.5' }), CONFIG)).toMatch(/lanes/);
+  });
+});
+
+// Issue #293: in an ephemeral container there is no ~/.ssh/config to pick from, so a target is typed too.
+describe('a typed ssh target', () => {
+  it('a plain [user@]host may be sent, as a detected alias may', () => {
+    expect(addProblem(draft({ ssh: 'user@host.containers.internal' }), CONFIG)).toBeNull();
+    expect(addProblem(draft({ ssh: '192.0.2.20' }), { ...CONFIG, ssh: { ...CONFIG.ssh, targets: [] } })).toBeNull();
+  });
+
+  it('the host key the person confirmed goes with the body; none confirmed, none sent', () => {
+    expect(addBody(draft({ ssh: 'user@box' }), 'v1', 'ssh-ed25519 AAAA')).toMatchObject({ ssh: 'user@box', hostKey: 'ssh-ed25519 AAAA' });
+    expect(addBody(draft(), 'v1')).not.toHaveProperty('hostKey');
+  });
+
+  it('the line to add to the machine\'s authorized_keys: the hopper\'s key, restricted', () => {
+    expect(authorizedKeysLine({ ...CONFIG, ssh: { ...CONFIG.ssh, publicKey: 'ssh-ed25519 AAAA hopper' } })).toBe('restrict ssh-ed25519 AAAA hopper');
+    expect(authorizedKeysLine(CONFIG)).toBeNull();
   });
 });
 
