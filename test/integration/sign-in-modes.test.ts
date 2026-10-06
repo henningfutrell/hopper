@@ -1,16 +1,13 @@
-// No sign-in and password sign-in (issue #53, design.md "Sign-in"): through the daemon's HTTP routes,
-// with the sign-in config in the database; and the sign-in routes' rate limit.
-import argon2 from 'argon2';
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+// No sign-in (issue #53, design.md "Sign-in"), and no password sign-in without a directory (issue #237):
+// through the daemon's HTTP routes, with the sign-in config in the database; and the sign-in routes'
+// rate limit. Password sign-in against a directory: realms-ldap.test.ts.
+import { afterEach, describe, expect, it } from 'vitest';
 import { rawRequest } from '../support/http.ts';
 import { harness, restartWithAuth, session, startWithAuth, stopAll } from '../support/sign-in-app.ts';
 
 const h = harness();
 afterEach(() => stopAll(h));
 const start = (auth: unknown) => startWithAuth(h, auth);
-
-let adaHash = '';
-beforeAll(async () => { adaHash = await argon2.hash('correct horse', { type: argon2.argon2id }); });
 
 const json = (host: string, origin: string, body: unknown) => ({
   method: 'POST', body: JSON.stringify(body), headers: { host, origin, 'content-type': 'application/json' },
@@ -20,7 +17,7 @@ const tokenOf = (text: string): string => (JSON.parse(text) as { token: string }
 describe('no sign-in (the sign-in config\'s none)', () => {
   it('off by default: the offer says so, POST /ui/auth/none is refused', async () => {
     const { app, origin, host } = await start(undefined);
-    expect((await session(app)).signIn).toEqual({ local: true, none: null, password: true, gateway: false, origin, realms: [], required: false });
+    expect((await session(app)).signIn).toEqual({ local: true, none: null, password: false, gateway: false, origin, realms: [], required: false });
     expect((await rawRequest(app.url, { path: '/ui/auth/none', ...json(host, origin, {}) })).status).toBe(403);
   });
 
@@ -55,54 +52,19 @@ describe('no sign-in (the sign-in config\'s none)', () => {
   });
 });
 
-describe('password sign-in (a password realm)', () => {
-  const auth = () => ({ version: 1, local: { enabled: false }, realms: [{ name: 'password', type: 'password', users: [{ username: 'ada', passwordHash: adaHash, role: 'operator' }] }] });
-
-  it('the offer says password sign-in is on', async () => {
-    const { app } = await start(auth());
-    expect((await session(app)).signIn.password).toBe(true);
-  });
-
-  it('the right password signs in with the user\'s role', async () => {
-    const { app, origin, host } = await start(auth());
-    const res = await rawRequest(app.url, { path: '/ui/auth/password', ...json(host, origin, { username: 'ada', password: 'correct horse' }) });
-    expect(res.status).toBe(200);
-    expect(await session(app, tokenOf(res.text))).toMatchObject({ authenticated: true, user: { role: 'operator', realm: 'password', name: 'ada' } });
-  });
-
-  it.each([
-    ['a wrong password', { username: 'ada', password: 'battery staple' }],
-    ['an unknown user', { username: 'bob', password: 'correct horse' }],
-    ['an empty password', { username: 'ada', password: '' }],
-  ])('%s is refused', async (_what, body) => {
-    const { app, origin, host } = await start(auth());
-    const res = await rawRequest(app.url, { path: '/ui/auth/password', ...json(host, origin, body) });
+describe('password sign-in without an LDAP realm (no password user realm, issue #237)', () => {
+  it('the offer says password sign-in is off, and POST /ui/auth/password is refused', async () => {
+    const { app, origin, host } = await start(undefined);
+    expect((await session(app)).signIn.password).toBe(false);
+    const res = await rawRequest(app.url, { path: '/ui/auth/password', ...json(host, origin, { username: 'admin', password: 'correct horse' }) });
     expect(res.status).toBe(403);
     expect(res.text).not.toMatch(/token/);
-  });
-
-  it('from another origin it is refused, even with the right password', async () => {
-    const { app, host } = await start(auth());
-    const res = await rawRequest(app.url, { path: '/ui/auth/password', ...json(host, 'http://evil.example', { username: 'ada', password: 'correct horse' }) });
-    expect(res.status).toBe(403);
-  });
-
-  it('an account nobody added: refused', async () => {
-    const { app, origin, host } = await start(undefined);
-    expect((await rawRequest(app.url, { path: '/ui/auth/password', ...json(host, origin, { username: 'ada', password: 'x' }) })).status).toBe(403);
-  });
-
-  it('a user removed from the sign-in config loses the session at the next start', async () => {
-    const { app, origin, host } = await start(auth());
-    const token = tokenOf((await rawRequest(app.url, { path: '/ui/auth/password', ...json(host, origin, { username: 'ada', password: 'correct horse' }) })).text);
-    const after = await restartWithAuth(h, app, { version: 1, realms: [{ name: 'password', type: 'password', users: [] }] });
-    expect((await session(after, token)).authenticated).toBe(false);
   });
 });
 
 describe('sign-in routes are rate limited', () => {
   it('past 20 attempts a minute from one address: 429', async () => {
-    const { app, origin, host } = await start({ version: 1, realms: [{ name: 'password', type: 'password', users: [{ username: 'ada', passwordHash: adaHash, role: 'admin' }] }] });
+    const { app, origin, host } = await start(undefined);
     const statuses: number[] = [];
     for (let i = 0; i < 21; i++) {
       statuses.push((await rawRequest(app.url, { path: '/ui/auth/password', ...json(host, origin, { username: 'ada', password: 'wrong' }) })).status);

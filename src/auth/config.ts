@@ -1,6 +1,6 @@
 // The sign-in config (design.md "Sign-in: realms"): how people sign in, the instance's config record
-// `sign-in` (design.md "Config in the database") with the password accounts (`password_accounts`, issue
-// #200) in each password realm's `users`. Loaded at start and after every change from Settings →
+// `sign-in` (design.md "Config in the database"). There is no password user realm (issue #237): the
+// hopper keeps no username-and-password accounts of its own. Loaded at start and after every change from Settings →
 // Sign-in; an invalid one stops the daemon at start, naming the field, and is refused by the UI (sign-in
 // fails closed). None → the one-time login code only. `realms` is the ordered list of realms, each of a
 // realm type, on unless `enabled: false`; `local` (the login code) and `none` (no sign-in) are not realms.
@@ -12,9 +12,6 @@ import { FORM_REALM_TYPES, REDIRECT_REALM_TYPES, UI_ROLES, type RealmType, type 
 import type { RoleRules } from './roles.ts';
 
 interface RealmBase { name: string; label: string; enabled: boolean }
-/** One password account: an argon2id hash, made when an admin sets its password in Settings → Sign-in; never the password. */
-export interface PasswordUser { username: string; passwordHash: string; role: UiRole }
-export interface PasswordRealmConfig extends RealmBase { type: 'password'; users: PasswordUser[] }
 export interface LdapRealmConfig extends RealmBase {
   type: 'ldap';
   url: string;
@@ -88,7 +85,7 @@ export interface GatewayRealmConfig extends RealmBase {
   trustUnverifiedEmail: boolean;
   roles: RoleRules;
 }
-export type RealmConfig = PasswordRealmConfig | LdapRealmConfig | OidcRealmConfig | GithubRealmConfig | SamlRealmConfig | GatewayRealmConfig;
+export type RealmConfig = LdapRealmConfig | OidcRealmConfig | GithubRealmConfig | SamlRealmConfig | GatewayRealmConfig;
 /** No sign-in: everyone who reaches the UI gets a session with this role. */
 export interface NoSignInConfig { role: UiRole }
 /** Who the first person to sign in with GitHub was (issue #239): admin while their realm is a GitHub realm that is on. */
@@ -126,12 +123,6 @@ const base = {
   enabled: z.boolean().default(true),
 };
 const secret = { clientSecret: z.string().min(1).optional() };
-const passwordUser = z.strictObject({
-  username: z.string().min(1).max(128),
-  passwordHash: z.string().startsWith('$argon2id$', 'must be an argon2id hash'),
-  role: z.enum(UI_ROLES),
-});
-const password = z.strictObject({ ...base, type: z.literal('password'), users: z.array(passwordUser).default([]) });
 /** ldaps, or ldap with StartTLS, or ldap to loopback (a local test directory). */
 const ldapUrl = z.string().refine((u) => { try { return ['ldap:', 'ldaps:'].includes(new URL(u).protocol); } catch { return false; } }, 'must be an ldap:// or ldaps:// URL');
 const ldap = z.strictObject({
@@ -185,7 +176,7 @@ const gateway = z.strictObject({
   trustUnverifiedEmail: z.boolean().default(false),
   roles,
 });
-const realm = z.discriminatedUnion('type', [password, ldap, oidc, github, saml, gateway]);
+const realm = z.discriminatedUnion('type', [ldap, oidc, github, saml, gateway]);
 const schema = z.strictObject({
   version: z.literal(1),
   local: z.strictObject({ enabled: z.boolean().default(true) }).default({ enabled: true }),
@@ -207,13 +198,6 @@ const schema = z.strictObject({
       const u = new URL(r.url);
       if (u.protocol === 'ldap:' && !r.startTls && !LOOPBACK.includes(u.hostname)) ctx.addIssue({ code: 'custom', path: at('url'), message: 'must be ldaps://, or ldap:// with startTls: true (plain ldap only to 127.0.0.1 or localhost)' });
       if (r.enabled && r.bindDn !== undefined && r.bindPassword === undefined) ctx.addIssue({ code: 'custom', path: at('bindPassword'), message: 'a bindDn needs its bind password' });
-    }
-    if (r.type === 'password') {
-      r.users.forEach((u, j) => {
-        if (r.users.findIndex((v) => v.username.toLowerCase() === u.username.toLowerCase()) !== j) {
-          ctx.addIssue({ code: 'custom', path: at('users', j, 'username'), message: `${u.username} is named twice; usernames must be unique (case does not count)` });
-        }
-      });
     }
   });
 });
@@ -251,10 +235,10 @@ export function loadSignInConfig(raw: unknown): AuthConfig {
 export const isRedirectRealm = (r: { type: RealmType }): r is OidcRealmConfig | GithubRealmConfig | SamlRealmConfig => REDIRECT_REALM_TYPES.includes(r.type);
 export const isGatewayRealm = (r: { type: RealmType }): r is GatewayRealmConfig => r.type === 'gateway';
 
-/** The realm types whose people sign in through the username and password form. */
 /** The settings of each realm type that are secrets: stored, never answered back (issue #216). */
 export const SECRET_SETTINGS: Readonly<Record<RealmType, readonly string[]>> = {
-  password: [], saml: [], ldap: ['bindPassword'], oidc: ['clientSecret'], github: ['clientSecret'], gateway: ['clientSecret'],
+  saml: [], ldap: ['bindPassword'], oidc: ['clientSecret'], github: ['clientSecret'], gateway: ['clientSecret'],
 };
 
-export const isFormRealm = (r: { type: RealmType }): r is PasswordRealmConfig | LdapRealmConfig => FORM_REALM_TYPES.includes(r.type);
+/** The realm types whose people sign in through the username and password form. */
+export const isFormRealm = (r: { type: RealmType }): r is LdapRealmConfig => FORM_REALM_TYPES.includes(r.type);

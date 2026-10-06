@@ -11,7 +11,6 @@ import { describe, expect, it } from 'vitest';
 import { applySignInEnvironment, readSignInEnvironment } from '../../src/auth/environment.ts';
 import type { StoredSignIn } from '../../src/domain/ports.ts';
 
-const HASH = '$argon2id$v=19$m=65536,t=3,p=4$c2FsdHNhbHRzYWx0c2FsdA$9b3MzyRk2xr6m1nZQ1kq4cXf3A2c5o8gV7x0Lr0bq0s';
 
 const CORP = {
   HOPPER_SIGN_IN_REALM_CORP_TYPE: 'oidc',
@@ -55,11 +54,9 @@ describe('readSignInEnvironment', () => {
   it('every value may come from a mounted file: <variable>_FILE', () => {
     const dir = mkdtempSync(join(tmpdir(), 'sign-in-env-'));
     writeFileSync(join(dir, 'secret'), 'from-file\n');
-    writeFileSync(join(dir, 'admin'), 'a long password\n');
     const { HOPPER_SIGN_IN_REALM_CORP_CLIENT_SECRET: _s, ...rest } = CORP;
-    const e = readSignInEnvironment({ ...rest, HOPPER_SIGN_IN_REALM_CORP_CLIENT_SECRET_FILE: join(dir, 'secret'), HOPPER_SIGN_IN_ADMIN_PASSWORD_FILE: join(dir, 'admin') });
+    const e = readSignInEnvironment({ ...rest, HOPPER_SIGN_IN_REALM_CORP_CLIENT_SECRET_FILE: join(dir, 'secret') });
     expect(e.realms[0]).toMatchObject({ clientSecret: 'from-file' });
-    expect(e.adminPassword).toBe('a long password');
   });
 
   it('an ldap realm with its bind password and nested settings', () => {
@@ -84,9 +81,9 @@ describe('readSignInEnvironment', () => {
     expect(() => readSignInEnvironment({ HOPPER_SIGN_IN_REALM_DIR_TYPE: 'ldap', HOPPER_SIGN_IN_REALM_DIR_ROLES_ADMIN_GROUPS: '[1]' })).toThrow(/ROLES_ADMIN_GROUPS.*JSON array/);
   });
 
-  it('the login code, no sign-in and the first admin\'s password', () => {
-    expect(readSignInEnvironment({ HOPPER_SIGN_IN_LOCAL_ENABLED: 'false', HOPPER_SIGN_IN_NONE_ROLE: 'viewer', HOPPER_SIGN_IN_ADMIN_PASSWORD: 'correct horse' }))
-      .toEqual({ realms: [], local: false, none: 'viewer', adminPassword: 'correct horse' });
+  it('the login code and no sign-in', () => {
+    expect(readSignInEnvironment({ HOPPER_SIGN_IN_LOCAL_ENABLED: 'false', HOPPER_SIGN_IN_NONE_ROLE: 'viewer' }))
+      .toEqual({ realms: [], local: false, none: 'viewer' });
     expect(readSignInEnvironment({ HOPPER_SIGN_IN_NONE_ROLE: 'off' })).toEqual({ realms: [], none: null });
   });
 
@@ -99,7 +96,8 @@ describe('readSignInEnvironment', () => {
     ['a missing setting', { HOPPER_SIGN_IN_REALM_GH_TYPE: 'github', HOPPER_SIGN_IN_REALM_GH_CLIENT_SECRET: 's' }, /HOPPER_SIGN_IN_REALM_GH_CLIENT_ID/],
     ['a switch that is not true or false', { ...CORP, HOPPER_SIGN_IN_REALM_CORP_ENABLED: 'yes' }, /HOPPER_SIGN_IN_REALM_CORP_ENABLED.*true or false/],
     ['an unknown role', { HOPPER_SIGN_IN_NONE_ROLE: 'owner' }, /HOPPER_SIGN_IN_NONE_ROLE/],
-    ['a short admin password', { HOPPER_SIGN_IN_ADMIN_PASSWORD: 'short' }, /HOPPER_SIGN_IN_ADMIN_PASSWORD.*8/],
+    ['an admin password: there is no password user realm', { HOPPER_SIGN_IN_ADMIN_PASSWORD: 'long enough' }, /HOPPER_SIGN_IN_ADMIN_PASSWORD.*unknown/],
+    ['a password realm', { HOPPER_SIGN_IN_REALM_PW_TYPE: 'password' }, /HOPPER_SIGN_IN_REALM_PW_TYPE.*one of ldap/],
     ['an unknown variable', { HOPPER_SIGN_IN_PROVIDERS: 'x' }, /HOPPER_SIGN_IN_PROVIDERS/],
     ['a value and its file both', { ...CORP, HOPPER_SIGN_IN_REALM_CORP_CLIENT_SECRET_FILE: '/x' }, /HOPPER_SIGN_IN_REALM_CORP_CLIENT_SECRET.*both/],
   ])('refuses %s, naming the variable', (_what, env, msg) => {
@@ -111,7 +109,7 @@ describe('applySignInEnvironment', () => {
   const STORED: StoredSignIn = {
     version: 1,
     realms: [
-      { name: 'password', label: 'Password', type: 'password', users: [{ username: 'admin', passwordHash: HASH, role: 'admin' }] },
+      { name: 'staff', type: 'saml', entryPoint: 'https://idp.example.com/sso', idpCert: 'abc' },
       { name: 'corp', type: 'oidc', issuer: 'https://old.example.com', clientId: 'old', clientSecret: 'old', enabled: false },
       { name: 'dir', type: 'ldap', url: 'ldaps://l', userBase: 'b' },
     ],
@@ -126,11 +124,6 @@ describe('applySignInEnvironment', () => {
       STORED.realms[2],
       { name: 'gh', type: 'github', clientId: 'g', clientSecret: 's' },
     ]);
-  });
-
-  it('a password realm from the environment keeps its accounts', () => {
-    const after = applySignInEnvironment(STORED, readSignInEnvironment({ HOPPER_SIGN_IN_REALM_PASSWORD_TYPE: 'password', HOPPER_SIGN_IN_REALM_PASSWORD_LABEL: 'Accounts' }));
-    expect(after.realms[0]).toEqual({ name: 'password', label: 'Accounts', type: 'password', users: STORED.realms[0]!.users });
   });
 
   it('sets the login code and no sign-in; leaves them when the environment does not say', () => {

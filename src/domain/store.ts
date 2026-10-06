@@ -165,25 +165,21 @@ export interface IdentityLinks {
   userOf(realm: string, subject: string): string | undefined;
   /** Link the identity to the user; an existing link is kept. */
   link(realm: string, subject: string, userId: string): void;
-  /** Link the identity to the user, in place of any link it had (a new password account names its user). */
-  replace(realm: string, subject: string, userId: string): void;
   /** True when an identity of one of these realms is linked to a user: someone has signed in with it. */
   anyIn(realms: readonly string[]): boolean;
+  /** The realms the user has an identity linked in. */
+  realmsOf(userId: string): string[];
 }
-
-/** A password account as stored (`password_accounts`, issue #200): its argon2id hash, never the password. */
-export interface StoredAccount { username: string; passwordHash: string; role: UiRole }
 
 /**
  * One realm as stored: its name, type, label (absent: its name), `enabled: false` when off, and the
- * settings of its type (src/auth/config.ts checks them); a password realm's accounts in `users`.
+ * settings of its type (src/auth/config.ts checks them).
  */
-export type StoredRealm = { name: string; type: string; label?: string; enabled?: boolean; users?: StoredAccount[] } & { [setting: string]: unknown };
+export type StoredRealm = { name: string; type: string; label?: string; enabled?: boolean } & { [setting: string]: unknown };
 
 /**
- * The sign-in config as stored (design.md "Sign-in: realms", issues #198, #200): the config record
- * `sign-in` with each password realm's accounts from `password_accounts` in its `users` — the value
- * src/auth/config.ts loads.
+ * The sign-in config as stored (design.md "Sign-in: realms", issue #198): the config record `sign-in`
+ * — the value src/auth/config.ts loads.
  */
 export interface StoredSignIn {
   version: 1;
@@ -198,8 +194,8 @@ export interface StoredSignIn {
 }
 
 /**
- * The sign-in config: the config record `sign-in` and the `password_accounts` rows, read and replaced
- * together against `version` — the sha-256 of what `read` answers.
+ * The sign-in config: the config record `sign-in`, read and replaced against `version` — the sha-256
+ * of what `read` answers.
  */
 export interface SignInConfigRepository {
   read(): StoredSignIn;

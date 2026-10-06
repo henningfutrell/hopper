@@ -11,11 +11,13 @@ const start = (auth: unknown, env?: Record<string, string>) => startWithAuth(h, 
 const oidc = (o?: Parameters<typeof oidcIdp>[1]) => oidcIdp(h, o);
 // Issue #183: every page the daemon serves shows the app's icon.
 const ICON = '<link rel="icon" type="image/svg+xml" href="/favicon.svg">';
+/** A realm that is on, so the login code may be off: a sign-in config with no way in turns it back on. */
+const GH = { name: 'gh', type: 'github', clientId: 'g', clientSecret: 's' };
 
-describe('a fresh hopper: the login code and the password fallback', () => {
-  it('the session view offers the login code, the password form and no redirect realms', async () => {
+describe('a fresh hopper: the login code', () => {
+  it('the session view offers the login code, no password form and no redirect realms', async () => {
     const { app, origin } = await start(undefined);
-    expect(await session(app)).toEqual({ authenticated: false, viewing: { id: 'admin', name: 'admin' }, signIn: { local: true, none: null, password: true, gateway: false, origin, realms: [], required: false } });
+    expect(await session(app)).toEqual({ authenticated: false, viewing: { id: 'admin', name: 'admin' }, signIn: { local: true, none: null, password: false, gateway: false, origin, realms: [], required: false } });
   });
 
   it('the login code signs in as admin, provider local', async () => {
@@ -29,12 +31,12 @@ describe('local sign-in turned off', () => {
   it('ends the login-code sessions made before, at the next start', async () => {
     const { app } = await start(undefined);
     const token = await app.login();
-    const after = await restartWithAuth(h, app, { version: 1, local: { enabled: false } });
+    const after = await restartWithAuth(h, app, { version: 1, local: { enabled: false }, realms: [GH] });
     expect((await session(after, token)).authenticated).toBe(false);
   });
 
   it('no login code file, POST /ui/login refused, no device link', async () => {
-    const { app } = await start({ version: 1, local: { enabled: false } });
+    const { app } = await start({ version: 1, local: { enabled: false }, realms: [GH] });
     expect((await session(app)).signIn.local).toBe(false);
     await expect(app.login()).rejects.toThrow();
     const res = await rawRequest(app.url, { method: 'POST', path: '/ui/login', body: 'code=x', headers: { 'content-type': 'application/x-www-form-urlencoded' } });

@@ -2,7 +2,7 @@
 // settings, kept apart. In Settings. An admin adds one (POST /ui/api/users) and is shown the one-time
 // login link the daemon answers, one per address the UI is reached at, to copy and hand over. Only an
 // admin lists the users, and reads the users' work only as totals across all of them (GET /api/instance,
-// issue #221). Everyone signed in with a password account changes their own password here.
+// issue #221).
 import { Copy, Plus, Users as UsersIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -15,7 +15,6 @@ import { clock } from '@/model/format';
 import type { InstanceTotals, UserAdded, UserView } from '@/model/wire';
 import { useHopper } from '@/store';
 import { useCanAdmin } from '@/store/selectors';
-import { OwnPassword } from '@/views/own-password';
 
 export function Users() {
   const canAdmin = useCanAdmin();
@@ -58,7 +57,6 @@ export function Users() {
       action={canAdmin && !adding ? <Button size="xs" variant="outline" className="gap-1" onClick={() => { setAdding(true); setAdded(null); }}><Plus />Add user</Button> : undefined}>
       <div className="space-y-3">
         <p className="text-sm text-muted-foreground">Each user has their own jobs, questions, machines, plugins and webhooks. Nobody sees another user's work, admins included: an admin sees only the totals across all users.</p>
-        <OwnPassword />
         {canAdmin && totals && <Totals totals={totals} />}
         {adding && (
           <form onSubmit={(e) => void add(e)} className="flex flex-wrap items-end gap-2">

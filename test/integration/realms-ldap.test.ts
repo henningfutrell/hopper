@@ -1,8 +1,7 @@
 // Realms (issue #185, design.md "Sign-in: realms"): an LDAP realm signs people in against a real
 // directory (OpenLDAP in a throwaway container, the planetexpress test directory), and the username
-// and password form tries every enabled password and LDAP realm in order — the first that accepts the
-// credentials signs in. Through the daemon's HTTP routes, with the sign-in config in the database.
-import argon2 from 'argon2';
+// and password form tries every enabled LDAP realm in order — the first that accepts the credentials
+// signs in. Through the daemon's HTTP routes, with the sign-in config in the database.
 import { GenericContainer, Wait, type StartedTestContainer } from 'testcontainers';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { rawRequest } from '../support/http.ts';
@@ -15,14 +14,9 @@ const ADMIN_STAFF = `cn=admin_staff,${PEOPLE}`;
 
 let ldap: StartedTestContainer;
 let url = '';
-let hermesHash = '';
-/** The professor's directory password, also held by a password realm account: both realms accept it. */
-let professorHash = '';
 beforeAll(async () => {
   ldap = await new GenericContainer(IMAGE).withExposedPorts(389).withWaitStrategy(Wait.forLogMessage('slapd starting')).start();
   url = `ldap://127.0.0.1:${ldap.getMappedPort(389)}`;
-  hermesHash = await argon2.hash('local pass', { type: argon2.argon2id });
-  professorHash = await argon2.hash('professor', { type: argon2.argon2id });
 }, 120_000);
 afterAll(async () => { await ldap?.stop(); });
 
@@ -84,28 +78,25 @@ describe('an LDAP realm', () => {
 });
 
 describe('the username and password form tries the realms in order', () => {
-  const local = (users: unknown[]) => ({ name: 'staff', type: 'password', users });
+  /** A second LDAP realm on the same directory: only the crew it names, each a viewer by default. */
+  const crew = (who: string[], role = 'viewer') => dir({
+    name: 'crew', label: 'Crew', userFilter: `(&(uid={username})(|${who.map((u) => `(uid=${u})`).join('')}))`,
+    roles: { defaultRole: role },
+  });
 
-  it('a password realm and an LDAP realm: each signs in its own people', async () => {
-    const o = await startWithAuth(h, { version: 1, realms: [local([{ username: 'hermes', passwordHash: hermesHash, role: 'operator' }]), dir()] });
-    const hermes = await signIn(o, 'hermes', 'local pass');
-    expect(await session(o.app, hermes.body.token)).toMatchObject({ user: { role: 'operator', realm: 'staff' } });
+  it('two LDAP realms: each signs in its own people; a realm that does not know the account passes it on', async () => {
+    const o = await startWithAuth(h, { version: 1, realms: [crew(['hermes'], 'operator'), dir()] });
+    const hermes = await signIn(o, 'hermes', 'hermes');
+    expect(await session(o.app, hermes.body.token)).toMatchObject({ user: { role: 'operator', realm: 'crew' } });
     const fry = await signIn(o, 'fry', 'fry');
     expect(await session(o.app, fry.body.token)).toMatchObject({ user: { realm: 'dir' } });
   });
 
-  it('the same username in both: a realm that refuses the password passes it on to the next', async () => {
-    const realms = [local([{ username: 'professor', passwordHash: hermesHash, role: 'viewer' }]), dir()];
-    const o = await startWithAuth(h, { version: 1, realms });
-    expect(await session(o.app, (await signIn(o, 'professor', 'local pass')).body.token)).toMatchObject({ user: { realm: 'staff', role: 'viewer' } });
-    expect(await session(o.app, (await signIn(o, 'professor', 'professor')).body.token)).toMatchObject({ user: { realm: 'dir', role: 'admin' } });
-  });
-
   it.each([
-    ['the password realm first', ['staff', 'dir'], { realm: 'staff', role: 'viewer' }],
-    ['the LDAP realm first', ['dir', 'staff'], { realm: 'dir', role: 'admin' }],
+    ['crew first', ['crew', 'dir'], { realm: 'crew', role: 'viewer' }],
+    ['dir first', ['dir', 'crew'], { realm: 'dir', role: 'admin' }],
   ])('both accept the password: the realm first in order signs in (%s)', async (_what, order, user) => {
-    const by: Record<string, unknown> = { staff: local([{ username: 'professor', passwordHash: professorHash, role: 'viewer' }]), dir: dir() };
+    const by: Record<string, unknown> = { crew: crew(['professor']), dir: dir() };
     const o = await startWithAuth(h, { version: 1, realms: order.map((n) => by[n]) });
     expect(await session(o.app, (await signIn(o, 'professor', 'professor')).body.token)).toMatchObject({ user });
   });

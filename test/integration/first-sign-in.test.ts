@@ -1,4 +1,4 @@
-// Bootstrap with the login key (issue #237, docs/sign-in.md "First sign-in"): there is no password
+// The first sign-in is the login code (issue #237, docs/sign-in.md "First sign-in: the login code"): there is no password
 // realm and no username-and-password account of the hopper's own. A start at which nobody can sign in
 // as the default admin account through a realm that is on logs a one-time login code for it, the way
 // Jenkins logs its first admin's key; the code signs in once as admin. A sign-in config that would leave
@@ -23,7 +23,7 @@ const realms = async (app: TestApp, token: string): Promise<any> => (await app.a
 const change = async (app: TestApp, token: string, body: Record<string, unknown>) =>
   app.ui<{ error?: string }>('/ui/api/realms', { ...body, version: (await realms(app, token)).version }, { token });
 
-describe('a fresh hopper bootstraps with the login key', () => {
+describe('a fresh hopper\'s first sign-in is the login code', () => {
   it('has no realm; the start logs a one-time login code that signs in once as admin', async () => {
     const lines = startLines();
     const o = await startWithAuth(h, undefined);
@@ -57,6 +57,13 @@ describe('a fresh hopper bootstraps with the login key', () => {
     lines = startLines();
     await restartWithAuth(h, h.t!, { version: 1, realms: [{ ...realm, enabled: false }] });
     expect(codeIn(lines())).toBeDefined();
+  });
+
+  it('no login code is logged once the first GitHub admin signs in through a realm that is on (issue #239)', async () => {
+    const gh = { name: 'gh', type: 'github', clientId: 'g', clientSecret: 's' };
+    const lines = startLines();
+    await startWithAuth(h, { version: 1, githubAdmin: { realm: 'gh', subject: '1' }, realms: [gh] });
+    expect(codeIn(lines())).toBeUndefined();
   });
 
   it('no login code is logged while the login code is off', async () => {

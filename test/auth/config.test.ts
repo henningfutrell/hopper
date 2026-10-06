@@ -5,16 +5,12 @@
 import { describe, expect, it } from 'vitest';
 import { loadSignInConfig } from '../../src/auth/config.ts';
 
-/** An argon2id PHC string (of "correct horse"). */
-const HASH = '$argon2id$v=19$m=65536,t=3,p=4$c2FsdHNhbHRzYWx0c2FsdA$9b3MzyRk2xr6m1nZQ1kq4cXf3A2c5o8gV7x0Lr0bq0s';
-
 const load = (value: unknown) => loadSignInConfig(value);
 /** A sign-in config of version 1 with these realms. */
 const realms = (...rs: Record<string, unknown>[]) => ({ version: 1, realms: rs });
 
 const LDAP = { name: 'dir', type: 'ldap', url: 'ldaps://ldap.example.com', userBase: 'ou=people,dc=example,dc=com' };
 const GH = { type: 'github', clientId: 'a', clientSecret: 'gh-secret' };
-const PW = (users: unknown[], more: Record<string, unknown> = {}) => realms({ name: 'p', type: 'password', users, ...more });
 
 describe('loadSignInConfig', () => {
   it('no config: local sign-in only', () => {
@@ -26,7 +22,6 @@ describe('loadSignInConfig', () => {
       version: 1,
       local: { enabled: false },
       realms: [
-        { name: 'staff', type: 'password', users: [{ username: 'ada', passwordHash: HASH, role: 'operator' }] },
         {
           name: 'dir', type: 'ldap', url: 'ldaps://ldap.example.com', bindDn: 'cn=hopper,dc=example,dc=com', bindPassword: 'bind-pw',
           userBase: 'ou=people,dc=example,dc=com', roles: { admin: { groups: ['cn=admins,dc=example,dc=com'] } },
@@ -44,10 +39,9 @@ describe('loadSignInConfig', () => {
     });
     expect(auth.local.enabled).toBe(false);
     expect(auth.realms.map((r) => [r.name, r.type, r.enabled])).toEqual([
-      ['staff', 'password', true], ['dir', 'ldap', true], ['google', 'oidc', true], ['github', 'github', false], ['corp', 'saml', true],
+      ['dir', 'ldap', true], ['google', 'oidc', true], ['github', 'github', false], ['corp', 'saml', true],
     ]);
-    const [pw, dir, g, gh, s] = auth.realms;
-    expect(pw).toMatchObject({ label: 'staff', users: [{ username: 'ada', passwordHash: HASH, role: 'operator' }] });
+    const [dir, g, gh, s] = auth.realms;
     expect(dir).toMatchObject({
       label: 'dir', url: 'ldaps://ldap.example.com', startTls: false, bindDn: 'cn=hopper,dc=example,dc=com', bindPassword: 'bind-pw',
       userBase: 'ou=people,dc=example,dc=com', userFilter: '(uid={username})',
@@ -119,14 +113,8 @@ describe('loadSignInConfig', () => {
     expect(() => load({ version: 1, none: {} })).toThrow(/none\.role/);
   });
 
-  it.each([
-    ['a plaintext password', PW([{ username: 'ada', passwordHash: 'hunter2', role: 'admin' }]), /realms\.0\.users\.0\.passwordHash/],
-    ['a bcrypt hash', PW([{ username: 'ada', passwordHash: '$2b$10$abcdefghijklmnopqrstuv', role: 'admin' }]), /passwordHash/],
-    ['a user named twice', PW([{ username: 'ada', passwordHash: HASH, role: 'admin' }, { username: 'ADA', passwordHash: HASH, role: 'viewer' }]), /ada.*twice|unique/i],
-    ['a user without a role', PW([{ username: 'ada', passwordHash: HASH }]), /role/],
-    ['role rules on a password realm', PW([], { roles: { defaultRole: 'admin' } }), /roles|unrecognized/i],
-  ])('a password realm refuses %s', (_what, value, msg) => {
-    expect(() => load(value)).toThrow(msg);
+  it('there is no password user realm (issue #237): one is refused, naming the field', () => {
+    expect(() => load(realms({ name: 'p', type: 'password' }))).toThrow(/realms\.0\.type/);
   });
 
   it.each([

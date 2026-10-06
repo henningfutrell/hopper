@@ -130,14 +130,15 @@ describe('hopper login-code', () => {
   });
 });
 
-describe('hopper config set sign-in (issue #200)', () => {
-  it('refuses password accounts in the record: Settings → Sign-in keeps them', () => {
+describe('hopper config set sign-in (issue #237)', () => {
+  it('refuses a password realm in the record: there is no password user realm', () => {
     const url = db();
     const version = cli(url, ['config', 'version', 'sign-in']).out.trim();
-    const record = { version: 1, realms: [{ name: 'staff', type: 'password', users: [{ username: 'ada', passwordHash: '$argon2id$x', role: 'admin' }] }] };
+    const record = { version: 1, realms: [{ name: 'staff', type: 'password' }] };
     expect(cli(url, ['config', 'set', 'sign-in', '--if-version', version], { stdin: JSON.stringify(record) }))
-      .toMatchObject({ code: 2, err: expect.stringMatching(/realms\.0\.users: password accounts are not part of the record/) });
-    expect(cli(url, ['config', 'set', 'sign-in', '--if-version', version], { stdin: JSON.stringify({ version: 1, local: { enabled: true }, realms: [{ name: 'staff', type: 'password' }] }) }).code).toBe(0);
+      .toMatchObject({ code: 2, err: expect.stringMatching(/realms\.0\.type/) });
+    const gh = { version: 1, local: { enabled: true }, realms: [{ name: 'gh', type: 'github', clientId: 'g', clientSecret: 's' }] };
+    expect(cli(url, ['config', 'set', 'sign-in', '--if-version', version], { stdin: JSON.stringify(gh) }).code).toBe(0);
   });
 });
 
@@ -201,12 +202,12 @@ describe('several users (issue #158)', () => {
 describe('hopper user transfer (issue #212)', () => {
   const instanceOf = (url: string) => openInstanceStore({ url, clock: { now: () => new Date() } });
 
-  /** admin with work (a job, its rules), and `bea`, signing in on the password realm, with none. */
+  /** admin with work (a job, its rules), and `bea`, signing in on the realm corp, with none. */
   function adminAndBea(): string {
     const url = db();
     cli(url, ['user', 'add', 'bea']);
     const s = instanceOf(url);
-    s.identities.link('password', 'bea', 'bea');
+    s.identities.link('corp', 'bea', 'bea');
     s.close();
     const admin = openAdminStore(url);
     admin.jobs.create({ executor: 'test', payload: {} }, 5);
@@ -221,7 +222,7 @@ describe('hopper user transfer (issue #212)', () => {
     expect(r).toMatchObject({ code: 0, err: expect.stringMatching(/bea now holds admin's work/) });
     expect(cli(url, ['users']).out).toMatch(/^admin\tbea\t\S+\n$/);
     const s = instanceOf(url);
-    expect(s.identities.userOf('password', 'bea')).toBe('admin');
+    expect(s.identities.userOf('corp', 'bea')).toBe('admin');
     const store = s.userStore(s.users.admin());
     expect(store.jobs.list()).toHaveLength(1);
     store.close();

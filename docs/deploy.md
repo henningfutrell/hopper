@@ -127,7 +127,7 @@ A managed Postgres works the same: put its URL (with `sslmode=require`) in `daem
 ## Sign-in set up at launch
 
 Who may use the UI is set by sign-in: the realms (an auth gateway in front, OIDC or SAML single
-sign-on, a directory, GitHub, password accounts), the login code and no sign-in (docs/sign-in.md). Every
+sign-on, a directory, GitHub), the login code and no sign-in (docs/sign-in.md). Every
 part of it can be set by the daemon's environment, with no click and no file: the `HOPPER_SIGN_IN_*`
 variables (the **sign-in environment**, docs/sign-in.md "Sign-in from the environment" lists every one).
 They are read at **every start** and written to the database: the environment wins over a change made
@@ -157,9 +157,9 @@ their own GitHub from the UI (issue #214, `README.md` "Connect GitHub"), whichev
 3. Give the realm a role rule that makes you admin (`ROLES_ADMIN_GROUPS`, `ROLES_ADMIN_EMAILS`, …) and
    a default role for everyone else it lets in (`ROLES_DEFAULT_ROLE`; without it, a person no rule
    matches gets no session). Rules and their matches: docs/sign-in.md "UI roles and role rules".
-4. Set the password fallback's password: `HOPPER_SIGN_IN_ADMIN_PASSWORD_FILE` naming a secret file (8
-   characters or more). The password fallback always exists (docs/sign-in.md "Password fallback");
-   without this variable a new hopper makes a random password and shows it once, in its start lines.
+4. The first sign-in needs nothing set: while nothing else signs the default admin account in, each
+   start logs a one-time login code for it with its link (`hopper: first sign-in: login code …`,
+   docs/sign-in.md "First sign-in: the login code"). There are no password accounts of the hopper's own.
 5. Start or restart the hopper. Its start lines say
    `hopper: sign-in from the environment: realms <name>`, and Settings → Sign-in marks the realm *set
    from the environment*. A line `invalid sign-in environment: <variable>: …` names what to fix.

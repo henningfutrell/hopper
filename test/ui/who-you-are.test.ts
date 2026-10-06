@@ -8,7 +8,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 type El = ReturnType<typeof createElement>;
-const offer = (required: boolean) => ({ local: true, none: null, password: true, origin: 'http://localhost:4790', realms: [], required });
+const offer = (required: boolean) => ({ local: true, none: null, password: false, origin: 'http://localhost:4790', realms: [], required });
 let reads: string[] = [];
 
 function fakeDaemon(session: unknown) {
@@ -51,7 +51,7 @@ afterEach(async () => {
 describe('the top bar says who you are', () => {
   it('signed in: the user and role, at every width', async () => {
     await render('../../ui/src/app/header.tsx', 'Header', {
-      authed: true, signIn: offer(true), user: { id: 'bea', name: 'Bea', role: 'operator', realm: 'password', identity: 'bea' },
+      authed: true, signIn: offer(true), user: { id: 'bea', name: 'Bea', role: 'operator', realm: 'corp', identity: 'bea' },
     });
     expect(who()?.textContent).toContain('Bea');
     expect(who()?.textContent).toContain('operator');
@@ -67,10 +67,10 @@ describe('sign in first', () => {
     expect(reads).toEqual(['/ui/api/session']);
   });
 
-  it('the landing page offers the ways to sign in, and shows no work', async () => {
+  it('the landing page offers the ways to sign in — the login code, no username and password form — and shows no work', async () => {
     await render('../../ui/src/app/landing.tsx', 'Landing', { authed: false, user: null, signIn: offer(true) });
     expect(document.querySelector('[data-slot="landing"]')).not.toBeNull();
-    expect(document.querySelector('input[aria-label="Username"]')).toBeTruthy();
+    expect(document.querySelector('input[aria-label="Username"]')).toBeNull();
     expect(document.querySelector('input[aria-label="Login code"]')).toBeTruthy();
   });
 });
@@ -78,7 +78,7 @@ describe('sign in first', () => {
 describe('the top bar has no router mode (issue #211)', () => {
   it('signed in as an admin: the router\'s name, and no shadow or active switch', async () => {
     await render('../../ui/src/app/header.tsx', 'Header', {
-      authed: true, signIn: offer(true), user: { id: 'owner', name: 'Owner', role: 'admin', realm: 'password', identity: 'owner' },
+      authed: true, signIn: offer(true), user: { id: 'owner', name: 'Owner', role: 'admin', realm: 'corp', identity: 'owner' },
       health: { ok: true, version: '0', router: 'gate-router', fallback: false, executors: [], uptimeS: 1 },
     });
     const text = document.body.textContent ?? '';

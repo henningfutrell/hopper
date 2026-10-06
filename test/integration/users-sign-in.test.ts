@@ -1,17 +1,13 @@
 // Sign-in maps an identity to a user (issue #158, design.md "Users: one hopper, separate users"): a
 // linked identity signs in as its user; an unlinked one a role rule grants a role gets a new user of its
 // own; no sign-in is admin.
-import argon2 from 'argon2';
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { rawRequest } from '../support/http.ts';
 import { signIn } from '../support/idp.ts';
 import { harness, oidcIdp, oidcRealm, session, startWithAuth, stopAll } from '../support/sign-in-app.ts';
 
 const h = harness();
 afterEach(() => stopAll(h));
-
-let adaHash = '';
-beforeAll(async () => { adaHash = await argon2.hash('correct horse', { type: argon2.argon2id }); });
 
 const json = (host: string, origin: string, body: unknown) => ({
   method: 'POST', body: JSON.stringify(body), headers: { host, origin, 'content-type': 'application/json' },
@@ -43,12 +39,6 @@ describe('an identity signs in as its user', () => {
     const { app, origin } = await startWithAuth(h, { version: 1, realms: [oidcRealm(idp, { admin: { usernames: ['someone-else'] } })] });
     expect((await signIn(app.url, origin, 'corp')).token).toBeUndefined();
     expect(app.app.users().map((u) => u.id)).toEqual(['admin']);
-  });
-
-  it('a password account gets a user named after it', async () => {
-    const { app, origin, host } = await startWithAuth(h, { version: 1, realms: [{ name: 'password', type: 'password', users: [{ username: 'ada', passwordHash: adaHash, role: 'admin' }] }] });
-    const res = await rawRequest(app.url, { path: '/ui/auth/password', ...json(host, origin, { username: 'ada', password: 'correct horse' }) });
-    expect((await session(app, tokenOf(res.text))).user).toEqual({ id: 'ada', name: 'ada', role: 'admin', realm: 'password', identity: 'ada' });
   });
 
   it('no sign-in is admin', async () => {

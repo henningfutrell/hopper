@@ -18,15 +18,12 @@ export interface SignInEnvironment {
   local?: boolean;
   /** No sign-in's role; null: off. */
   none?: UiRole | null;
-  /** The first admin's password on a fresh hopper, in place of a random one. */
-  adminPassword?: string;
 }
 
 const PREFIX = 'HOPPER_SIGN_IN_';
 const REALM = `${PREFIX}REALM_`;
 const LOCAL = `${PREFIX}LOCAL_ENABLED`;
 const NONE = `${PREFIX}NONE_ROLE`;
-const ADMIN_PASSWORD = `${PREFIX}ADMIN_PASSWORD`;
 
 /** text: as given; switch: true or false; words: split on spaces or commas; list: commas, or a JSON array (for values with commas, such as LDAP group DNs). */
 type Kind = 'text' | 'switch' | 'words' | 'list';
@@ -40,7 +37,6 @@ const text = (...paths: string[]): [string, Kind][] => paths.map((p) => [p, 'tex
 
 /** Every setting a realm type takes from the environment: the same fields as its form (docs/sign-in.md "Realm settings"). */
 const SETTINGS: Record<RealmType, [string, Kind][]> = {
-  password: COMMON,
   ldap: [
     ...COMMON, ...text('url'), ['startTls', 'switch'], ...text('bindDn', 'bindPassword', 'userBase', 'userFilter',
       'attributes.subject', 'attributes.username', 'attributes.email', 'attributes.name', 'attributes.groups',
@@ -130,15 +126,12 @@ export function readSignInEnvironment(env: Record<string, string | undefined>): 
     else if (variable === NONE) {
       if (v !== 'off' && !(UI_ROLES as readonly string[]).includes(v)) fail(variable, `must be one of ${UI_ROLES.join(', ')} or off`);
       out.none = v === 'off' ? null : v as UiRole;
-    } else if (variable === ADMIN_PASSWORD) {
-      if (v.length < 8) fail(variable, 'a password has at least 8 characters');
-      out.adminPassword = v;
     } else if (variable.startsWith(REALM)) {
       // The longest realm key it starts with: a realm named acme-gh is not acme's.
       const key = realmKeys.filter((k) => variable.startsWith(`${REALM}${k}_`)).sort((a, b) => b.length - a.length)[0];
       if (key === undefined) fail(variable, `no such realm: a realm is set up by ${REALM}<NAME>_TYPE`);
       byRealm.set(key!, [...byRealm.get(key!) ?? [], variable]);
-    } else fail(variable, `unknown: the sign-in variables are ${REALM}<NAME>_<SETTING>, ${LOCAL}, ${NONE} and ${ADMIN_PASSWORD}`);
+    } else fail(variable, `unknown: the sign-in variables are ${REALM}<NAME>_<SETTING>, ${LOCAL} and ${NONE}`);
   }
   out.realms = [...byRealm].map(([key, variables]) => realmOf(key, variables, read)).sort((a, b) => a.name.localeCompare(b.name));
   return out;
@@ -146,17 +139,15 @@ export function readSignInEnvironment(env: Record<string, string | undefined>): 
 
 /**
  * The stored sign-in config with what the environment sets: each of its realms in place of the stored
- * realm of that name (a password realm keeps its accounts), or added at the end; the login code and no
+ * realm of that name, or added at the end; the login code and no
  * sign-in where it says. A new copy; `stored` is left as it was.
  */
 export function applySignInEnvironment(stored: StoredSignIn, e: SignInEnvironment): StoredSignIn {
   const s = structuredClone(stored);
   for (const realm of e.realms) {
     const i = s.realms.findIndex((r) => r.name === realm.name);
-    const before = s.realms[i];
-    const next = realm.type === 'password' ? { ...realm, users: before?.type === 'password' ? before.users ?? [] : [] } : { ...realm };
-    if (i < 0) s.realms.push(next);
-    else s.realms[i] = next;
+    if (i < 0) s.realms.push({ ...realm });
+    else s.realms[i] = { ...realm };
   }
   if (e.local !== undefined) s.local = { enabled: e.local };
   if (e.none === null) delete s.none;

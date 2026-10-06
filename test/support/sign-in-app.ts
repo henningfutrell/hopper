@@ -19,8 +19,8 @@ export async function stopAll(h: Harness): Promise<void> {
 }
 
 /**
- * The app with this sign-in config (a fresh hopper's when undefined: the password realm, whose account admin
- * the start adds), and its sign-in origin (http://localhost:<port>). `env`: the daemon's HOPPER_* config;
+ * The app with this sign-in config (a fresh hopper's when undefined: no realm, the login code on), and
+ * its sign-in origin (http://localhost:<port>). `env`: the daemon's HOPPER_* config;
  * `runtime`: more of its environment over SECRETS (HOPPER_SIGN_IN_* variables).
  */
 export async function startWithAuth(h: Harness, auth: unknown, env: Record<string, string> = {}, runtime: Record<string, string> = {}): Promise<{ app: TestApp; origin: string; host: string }> {

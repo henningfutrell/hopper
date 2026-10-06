@@ -38,7 +38,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 |-----|------|-----------------|
 | `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts; `machines.ts` attached machines and their edit; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate), ports (`ports.ts`, re-exporting the store's from `store.ts`) | anything else in `src/` |
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock | everything but `domain/` |
-| `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations (the instance's `migrations.ts` with migration 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — the record and the password accounts, `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209) | engine, http, decider |
+| `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations (the instance's `migrations.ts` with migration 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209) | engine, http, decider |
 | `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), identity → user (`identities.ts`: link or provision) | http, decider |
 | `src/webhooks/` | signing, dispatcher, retry/backoff, the secret of a subscription from the runtime (`dispatcher.ts`), the UI edit of the subscriptions (`edit.ts`, rows in the store) | engine, http, decider |
 | `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, the plugins config (`plugins-config.ts`) + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt, `escalation-level/anthropic-api/` asks the Claude API with the same prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-gh/` and `job-source/github-app/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser); `usage-source/command-usage/` reads any agent framework's usage and account from a command that prints them as JSON; `usage-source/polled.ts` the background refresh both share, `usage-source/run.ts` their command runner; `notifier/grokbot-routine/` is the Grok Bot routine webhook — env-file reader and notifier; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
@@ -48,14 +48,14 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin) | engine, http, store, plugins |
 | `src/routing/` | routing rules: the plugins config's `routing` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
 | `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; routing at intake (`source-host.ts`); restart recovery | http |
-| `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the password fallback (`fallback.ts`, pure), the sign-in config at start — named secrets taken in, the environment applied, the fallback ensured (`start.ts`, issue #216) — and the `HOPPER_SIGN_IN_*` variables (`environment.ts`), the role rules (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm, gateway realm) and their adapters `password.ts` (argon2), `ldap.ts` (ldapts), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), `gateway.ts` (jose + openid-client), the sign-in service — form realms in order, gateway realms in order, flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
+| `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the sign-in config at start — named secrets taken in, the environment applied, a way in ensured, the first sign-in decided (`start.ts`, issues #216, #237) — and the `HOPPER_SIGN_IN_*` variables (`environment.ts`), the role rules (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm, gateway realm) and their adapters `ldap.ts` (ldapts), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), `gateway.ts` (jose + openid-client), the sign-in service — form realms in order, gateway realms in order, flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets") | everything |
 | `src/update/` | self-update ("Self-update"): install.json, the git mirror of the update repository, the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
 | `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `api-reference.ts` Scalar at `/docs/`); the plugin store's read side (`plugin-store.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
 | `site/` | the install page, published to GitHub Pages by `.github/workflows/pages.yml` with `scripts/get.sh` beside it as `install.sh`: one static `index.html`, no build step, nothing loaded from another site | everything in the repo at runtime; it links to the docs on GitHub |
 | `examples/plugins/` | one minimal runnable custom plugin per role, for authors (`docs/plugins.md`); imports only `hopper/plugin` types and `node:` builtins | everything in `src/` at runtime |
-| `src/main.ts` | composition root: config → instance store → sign-in config (`prepareSignIn`: the environment applied, the password fallback ensured) → plugin store → updater → server → one user runtime per user (`src/users/`) | — |
+| `src/main.ts` | composition root: config → instance store → sign-in config (`prepareSignIn`: the environment applied, a way in ensured; the first sign-in's login code logged once listening) → plugin store → updater → server → one user runtime per user (`src/users/`) | — |
 | `src/startup-log.ts` | the daemon's startup lines (listening, parts, sign-in) | — |
 | `src/cli.ts` | the operator CLI `hopper`: config records as JSON, login codes, users, `help` — against the daemon's database | engine, executors |
 
@@ -3407,7 +3407,43 @@ up/down, delete; one Save for the whole list). The machine select uses `/api/mac
 routing targets; the executor select uses the configured executors. Forms stack at 390 px width;
 there is no horizontal page scroll.
 
-## Sign-in: realms (issues #39, #53, #185, #200, #215, #216)
+## Sign-in: realms (issues #39, #53, #185, #200, #215, #216, #237)
+
+### No password user realm; the first sign-in is the login code (issue #237, 2026-10-06)
+
+Owner request: "Inside the hopper, sign-in is GitHub only. The password user realm is gone." Remove
+the password user realm (no username-and-password sign-in for users); bootstrap with the login key
+(the one-time login code), not a password realm account; edge realms (SSO, SAML and similar) stay as
+set up (#234, #185, #215); inside, users connect and sign in with GitHub (#214). What that settles,
+taken from the issue, not asked: the realm type `password`, its accounts and the password fallback
+(#219) go; the LDAP realm stays — a directory is an edge realm, its passwords are the directory's, not
+accounts the hopper keeps; the login code, already the operator's way in from the host, is the first
+sign-in. GitHub sign-in through the hopper's GitHub App is #214's.
+
+- **Gone**: realm type `password` (the schema refuses it, naming `realms.<i>.type`), its accounts
+  (`password_accounts`), the account actions of `POST /ui/api/realms`, `POST /ui/api/password`,
+  `HOPPER_SIGN_IN_ADMIN_PASSWORD`, `src/auth/password.ts`, `src/auth/fallback.ts` and the `argon2`
+  dependency; in the UI, a password realm's accounts and "Change your password". The username and
+  password form (`POST /ui/auth/password`) is the LDAP realms' only.
+- **Instance migration 22** (`migration-no-password-realm.ts`): every password realm leaves `sign-in`,
+  `password_accounts` is dropped, and the identity links of those realms are deleted — a realm added
+  later under the same name must not sign in as their users. Users and their work stay. A config left
+  with no way in (no realm on, the login code off, no sign-in off) gets the login code on. Sessions of
+  the removed realms end at the next start, as for any realm removed.
+- **First sign-in** (`prepareSignIn`, `src/auth/start.ts`; minted in `src/main.ts` once the port is
+  known): while the login code is on, no sign-in is off, the default admin account has no identity
+  linked in a realm that is on (`IdentityLinks.realmsOf`), and no first GitHub admin (#239) signs in
+  through one, each start mints a login code for `admin`
+  and logs it with its link on the sign-in origin. The Jenkins pattern, with the login code in place
+  of a stored key: nothing new is stored but the code's SHA-256, and it expires in 10 minutes.
+- **No way in** at start (no realm on, the login code off, no sign-in off) turns the login code on and
+  says so: the replacement of #219's invariant. Settings still refuses a change that would end the
+  acting admin's own session; the CLI is the way back from a lockout, as before.
+
+**Residual risk, stated.** A fresh code sits in the daemon's log at every start until `admin` signs in
+through a realm that is on: whoever reads the journal (or the container's log) within its 10 minutes
+can sign in as `admin` — the reach of `hopper login-code`, the host's operator. No password form is
+offered unless an LDAP realm is on, so a public URL answers no password attempts by default.
 
 ### Realm secrets stored, sign-in from the environment (issue #216, 2026-10-06)
 
@@ -3502,6 +3538,8 @@ per request.
 
 ### Password fallback (issue #219, 2026-10-06)
 
+Superseded by issue #237 (above): there is no password realm, and the first sign-in is the login code.
+
 Owner request: "Password sign-in is the fallback. Right now the password realm starts with no
 accounts, so the username and password form never appears, and the only ways in are a login code or a
 link from an already signed-in browser. Requirement: the password fallback always exists." Related:
@@ -3531,6 +3569,8 @@ rate limit bound them. The lockout guard for the acting session still applies; t
 everyone else.
 
 ### Password accounts and realm forms (issue #200, 2026-10-05)
+
+The password accounts are gone since issue #237 (above); the realm forms stay.
 
 Owner request: the default sign-in did not work — a password realm needed `hopper password-hash` on
 the host and its hash pasted into a realm's text (YAML, then JSON after #198). "There needs to be a

@@ -1,13 +1,9 @@
 // Changing the sign-in config from the UI (issues #185, #198, #200, design.md "Sign-in: realms"): add or
 // replace one realm from its fields, remove one, move one, turn one on or off, set the login code and
-// no sign-in, and add, change or remove a password realm's accounts. Whether the result loads is the
-// caller's check (loadSignInConfig), so one schema decides.
+// no sign-in. Whether the result loads is the caller's check (loadSignInConfig), so one schema decides.
 import { describe, expect, it } from 'vitest';
 import { AuthEditError, editSignIn, realmsView } from '../../src/auth/edit.ts';
 import type { StoredSignIn } from '../../src/domain/ports.ts';
-
-const HASH = '$argon2id$v=19$m=65536,t=3,p=4$c2FsdHNhbHRzYWx0c2FsdA$9b3MzyRk2xr6m1nZQ1kq4cXf3A2c5o8gV7x0Lr0bq0s';
-const HASH2 = '$argon2id$v=19$m=65536,t=3,p=4$b3RoZXJzYWx0b3RoZXI$9b3MzyRk2xr6m1nZQ1kq4cXf3A2c5o8gV7x0Lr0bq0s';
 
 const SIGN_IN: StoredSignIn = {
   version: 1,
@@ -15,12 +11,11 @@ const SIGN_IN: StoredSignIn = {
   realms: [
     { name: 'dir', type: 'ldap', url: 'ldaps://ldap.example.com', userBase: 'ou=people,dc=example,dc=com' },
     { name: 'google', label: 'Google', type: 'oidc', issuer: 'https://accounts.google.com', clientId: 'id-1', clientSecret: 'oidc-secret' },
-    { name: 'staff', type: 'password', users: [{ username: 'ada', passwordHash: HASH, role: 'viewer' }] },
+    { name: 'staff', type: 'saml', entryPoint: 'https://idp.example.com/sso', idpCert: 'abc' },
   ],
 };
 
 const names = (s: StoredSignIn): string[] => s.realms.map((r) => r.name);
-const staff = (s: StoredSignIn) => s.realms.find((r) => r.name === 'staff')!;
 
 function refused(edit: Parameters<typeof editSignIn>[1], status: number, msg: RegExp): void {
   try {
@@ -47,15 +42,8 @@ describe('editSignIn: realms', () => {
     expect(after.realms[0]).toEqual({ name: 'dir', type: 'ldap', enabled: false, url: 'ldaps://other.example.com', userBase: 'dc=x' });
   });
 
-  it('a password realm saved keeps its accounts; accounts are never set from the realm\'s fields', () => {
-    const after = editSignIn(SIGN_IN, { action: 'save', name: 'staff', realm: { name: 'staff', label: 'Staff', type: 'password', users: [] } });
-    expect(staff(after)).toEqual({ name: 'staff', label: 'Staff', type: 'password', users: [{ username: 'ada', passwordHash: HASH, role: 'viewer' }] });
-    const fresh = editSignIn(SIGN_IN, { action: 'save', realm: { name: 'more', type: 'password', users: [{ username: 'x', passwordHash: HASH, role: 'admin' }] } });
-    expect(fresh.realms[3]).toEqual({ name: 'more', type: 'password', users: [] });
-  });
-
   it.each([
-    ['a new realm under a taken name', { action: 'save', realm: { name: 'google', type: 'password' } }, 400, /google.*already/],
+    ['a new realm under a taken name', { action: 'save', realm: { name: 'google', type: 'saml' } }, 400, /google.*already/],
     ['a renamed realm', { action: 'save', name: 'dir', realm: { name: 'dir2', type: 'ldap' } }, 400, /name/],
     ['an unknown realm', { action: 'remove', name: 'nope' }, 404, /nope/],
   ] as const)('refuses %s', (_what, edit, status, msg) => refused(edit, status, msg));
@@ -85,34 +73,9 @@ describe('editSignIn: realms', () => {
   it('changes nothing it was given', () => {
     const before = structuredClone(SIGN_IN);
     editSignIn(SIGN_IN, { action: 'remove', name: 'dir' });
-    editSignIn(SIGN_IN, { action: 'account', realm: 'staff', username: 'bea', role: 'admin', passwordHash: HASH });
+    editSignIn(SIGN_IN, { action: 'enable', name: 'google', enabled: false });
     expect(SIGN_IN).toEqual(before);
   });
-});
-
-describe('editSignIn: password accounts', () => {
-  it('adds an account with its hash and role', () => {
-    const after = editSignIn(SIGN_IN, { action: 'account', realm: 'staff', username: 'bea', role: 'admin', passwordHash: HASH2 });
-    expect(staff(after).users).toEqual([{ username: 'ada', passwordHash: HASH, role: 'viewer' }, { username: 'bea', passwordHash: HASH2, role: 'admin' }]);
-  });
-
-  it('changes an account\'s role, its password, or both; the username matches whatever its case', () => {
-    const role = editSignIn(SIGN_IN, { action: 'account', realm: 'staff', username: 'ADA', role: 'operator' });
-    expect(staff(role).users).toEqual([{ username: 'ada', passwordHash: HASH, role: 'operator' }]);
-    const password = editSignIn(SIGN_IN, { action: 'account', realm: 'staff', username: 'ada', role: 'viewer', passwordHash: HASH2 });
-    expect(staff(password).users).toEqual([{ username: 'ada', passwordHash: HASH2, role: 'viewer' }]);
-  });
-
-  it('removes an account', () => {
-    expect(staff(editSignIn(SIGN_IN, { action: 'account-remove', realm: 'staff', username: 'Ada' })).users).toEqual([]);
-  });
-
-  it.each([
-    ['a new account without a password', { action: 'account', realm: 'staff', username: 'bea', role: 'admin' }, 400, /password/],
-    ['an account in a realm that is not a password realm', { action: 'account', realm: 'dir', username: 'bea', role: 'admin', passwordHash: HASH }, 400, /dir.*not a password realm/],
-    ['an account in no realm', { action: 'account', realm: 'nope', username: 'bea', role: 'admin', passwordHash: HASH }, 404, /nope/],
-    ['removing an account that is not there', { action: 'account-remove', realm: 'staff', username: 'bea' }, 404, /bea/],
-  ] as const)('refuses %s', (_what, edit, status, msg) => refused(edit, status, msg));
 });
 
 describe('editSignIn: a realm\'s secrets (issue #216)', () => {
@@ -150,14 +113,13 @@ describe('realmsView', () => {
     expect(JSON.stringify(v)).not.toContain('oidc-secret');
   });
 
-  it('each realm with its settings, in order, its type and whether it is on; a password realm its accounts, never a hash', () => {
+  it('each realm with its settings, in order, its type and whether it is on', () => {
     const v = realmsView(editSignIn(SIGN_IN, { action: 'enable', name: 'google', enabled: false }));
     expect(v.realms).toEqual([
       { name: 'dir', label: 'dir', type: 'ldap', enabled: true, settings: { url: 'ldaps://ldap.example.com', userBase: 'ou=people,dc=example,dc=com' }, secrets: [] },
       { name: 'google', label: 'Google', type: 'oidc', enabled: false, settings: { issuer: 'https://accounts.google.com', clientId: 'id-1' }, secrets: ['clientSecret'] },
-      { name: 'staff', label: 'staff', type: 'password', enabled: true, settings: {}, secrets: [], accounts: [{ username: 'ada', role: 'viewer' }] },
+      { name: 'staff', label: 'staff', type: 'saml', enabled: true, settings: { entryPoint: 'https://idp.example.com/sso', idpCert: 'abc' }, secrets: [] },
     ]);
     expect(v).toMatchObject({ local: true, none: null });
-    expect(JSON.stringify(v)).not.toContain('argon2');
   });
 });

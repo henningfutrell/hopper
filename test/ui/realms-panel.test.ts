@@ -1,8 +1,7 @@
 // @vitest-environment happy-dom
 // Settings → Sign-in (issues #185, #200): the realms in the order sign-in tries and shows them, each on
 // or off, moved up or down, edited in a form of its own fields or removed; a realm added from the form
-// of the chosen type; a password realm's accounts — username, role, the user each signs in as — added,
-// changed and given a new password; the login code and no sign-in. No YAML anywhere. Every change posts
+// of the chosen type; the login code and no sign-in. No password accounts (issue #237). No YAML anywhere. Every change posts
 // POST /ui/api/realms with the version it read; a refusal is shown where it was made. A session that is
 // not admin sees none of it. Rendered against a fake of the daemon's HTTP.
 import { createElement } from 'react';
@@ -16,7 +15,7 @@ let refuse: string | undefined;
 const VIEW = {
   version: 'v1', local: true, none: null, origin: 'http://localhost:4790',
   realms: [
-    { name: 'staff', label: 'Staff', type: 'password', enabled: true, settings: {}, secrets: [], accounts: [{ username: 'ada', role: 'viewer', user: { id: 'admin', name: 'admin' } }, { username: 'cy', role: 'viewer', user: { id: 'bea', name: 'Bea' } }] },
+    { name: 'staff', label: 'Staff', type: 'saml', enabled: true, settings: { entryPoint: 'https://idp.example.com/sso', idpCert: 'abc' }, secrets: [], callback: 'http://localhost:4790/ui/auth/staff/callback', metadata: 'http://localhost:4790/ui/auth/staff/metadata' },
     {
       name: 'corp', label: 'Corp SSO', type: 'oidc', enabled: false, callback: 'http://localhost:4790/ui/auth/corp/callback', secrets: ['clientSecret'],
       settings: { issuer: 'https://idp.example.com', clientId: 'c', roles: { admin: { emails: ['a@example.com'] }, defaultRole: 'viewer' } },
@@ -78,7 +77,7 @@ describe('Settings: Sign-in', () => {
     await render('admin');
     await vi.waitFor(() => expect(rows()).toEqual(['staff', 'corp']));
     expect(row('staff').textContent).toContain('Staff');
-    expect(row('staff').textContent).toContain('password');
+    expect(row('staff').textContent).toContain('saml');
     expect(row('staff').querySelector('[role="switch"]')!.getAttribute('aria-checked')).toBe('true');
     expect(row('corp').querySelector('[role="switch"]')!.getAttribute('aria-checked')).toBe('false');
     expect(row('corp').textContent).toContain('http://localhost:4790/ui/auth/corp/callback');
@@ -157,43 +156,13 @@ describe('Settings: Sign-in', () => {
     }
   });
 
-  it('a password realm lists its accounts and adds one, with its password, role and the admin\'s own user — never another user', async () => {
+  it('offers no password realm to add: the hopper keeps no password accounts (issue #237)', async () => {
     await render('admin');
     await vi.waitFor(() => expect(rows()).toHaveLength(2));
-    const ada = document.querySelector<HTMLElement>('[data-account="ada"]')!;
-    expect(ada.textContent).toContain('ada');
-    expect(ada.textContent).toContain('admin');
-    expect(ada.querySelector<HTMLSelectElement>('select[aria-label="ada role"]')!.value).toBe('viewer');
-    await act(async () => type(ada.querySelector<HTMLSelectElement>('select[aria-label="ada role"]')!, 'operator'));
-    await vi.waitFor(() => expect(posts).toContainEqual({ action: 'account', realm: 'staff', username: 'ada', role: 'operator', version: 'v1' }));
-    await click(buttonIn(row('staff'), 'Add account'));
-    await act(async () => type(field('Username'), 'bea'));
-    await act(async () => type(field('Password'), 'correct horse'));
-    await act(async () => type(field('Role'), 'admin'));
-    await vi.waitFor(() => expect(field('Signs in as').querySelectorAll('option').length).toBe(2));
-    expect([...field('Signs in as').querySelectorAll('option')].map((o) => (o as HTMLOptionElement).value)).toEqual(['', 'admin']);
-    await act(async () => type(field('Signs in as'), 'admin'));
-    await click(buttonIn(row('staff'), 'Add'));
-    await vi.waitFor(() => expect(posts).toContainEqual({ action: 'account', realm: 'staff', username: 'bea', password: 'correct horse', role: 'admin', user: 'admin', version: 'v2' }));
-  });
-
-  it('gives an account a new password', async () => {
-    await render('admin');
-    await vi.waitFor(() => expect(rows()).toHaveLength(2));
-    const ada = document.querySelector<HTMLElement>('[data-account="ada"]')!;
-    await click(buttonIn(ada, 'New password'));
-    await act(async () => type(field('New password for ada'), 'battery staple'));
-    await click(buttonIn(ada, 'Set'));
-    await vi.waitFor(() => expect(posts).toContainEqual({ action: 'account', realm: 'staff', username: 'ada', role: 'viewer', password: 'battery staple', version: 'v1' }));
-  });
-
-  it('offers no new password for an account that signs in as another user: only they change it', async () => {
-    await render('admin');
-    await vi.waitFor(() => expect(rows()).toHaveLength(2));
-    const cy = document.querySelector<HTMLElement>('[data-account="cy"]')!;
-    expect(cy.textContent).toContain('signs in as Bea');
-    expect(buttonIn(cy, 'New password')).toBeUndefined();
-    expect(cy.textContent).toContain('their password');
+    await click(buttonIn(document.body, 'Add realm'));
+    const types = [...field('Realm type').querySelectorAll('option')].map((o) => (o as HTMLOptionElement).value);
+    expect(types).toEqual(['ldap', 'oidc', 'github', 'saml', 'gateway']);
+    expect(document.querySelector('[data-account]')).toBeNull();
   });
 
   it('a session that is not admin sees no realms', async () => {

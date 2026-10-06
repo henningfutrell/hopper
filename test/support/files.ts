@@ -1,6 +1,6 @@
 // What a test app reads from its database, written before it starts or while it runs: config
-// records (design.md "Config in the database") — admin's plugins and rules, the instance's sign-in with
-// its password accounts (issue #200) — and admin's webhook subscriptions, which are rows (issue #78).
+// records (design.md "Config in the database") — admin's plugins and rules, the instance's sign-in — and
+// admin's webhook subscriptions, which are rows (issue #78).
 import type { ConfigName, InstanceStore, StoredSignIn, UserStore } from '../../src/domain/ports.ts';
 import { ADMIN_ID } from '../../src/domain/types.ts';
 import { openInstanceStore } from '../../src/store/index.ts';
@@ -25,7 +25,7 @@ export function withStores<T>(dbPath: string, fn: (instance: InstanceStore, user
 
 /**
  * Replace a config record in the database of `dbPath` (whatever version it is at): admin's plugins or
- * rules, or the instance's sign-in config — a password realm's `users` become its password accounts.
+ * rules, or the instance's sign-in config.
  */
 export function writeConfig(dbPath: string, name: ConfigName, value: unknown): void {
   withStores(dbPath, (instance, admin) => {
@@ -34,7 +34,7 @@ export function writeConfig(dbPath: string, name: ConfigName, value: unknown): v
   });
 }
 
-/** A config record in the database of `dbPath` (sign-in with its password accounts), or undefined. */
+/** A config record in the database of `dbPath`, or undefined. */
 export function readConfig(dbPath: string, name: ConfigName): unknown {
   return withStores(dbPath, (instance, admin) => (name === 'sign-in' ? instance.signInConfig.read() : admin.config.read(name)));
 }

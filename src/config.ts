@@ -162,11 +162,10 @@ settings [default]:
 ${lines.join('\n')}
 
 Sign-in set up at launch (each also NAME_FILE; written to the database at every start; docs/sign-in.md):
-  HOPPER_SIGN_IN_REALM_<NAME>_TYPE        a realm: password, ldap, oidc, github or saml
+  HOPPER_SIGN_IN_REALM_<NAME>_TYPE        a realm: ldap, oidc, github, saml or gateway
   HOPPER_SIGN_IN_REALM_<NAME>_<SETTING>   its settings: ISSUER, CLIENT_ID, CLIENT_SECRET, ROLES_ADMIN_GROUPS, …
   HOPPER_SIGN_IN_LOCAL_ENABLED            the login code: true or false
   HOPPER_SIGN_IN_NONE_ROLE                no sign-in: viewer, operator, admin or off
-  HOPPER_SIGN_IN_ADMIN_PASSWORD           the password fallback's password, when the start adds admin (else a random one, logged once)
 
 Once it runs (default port 4790):
   UI              http://127.0.0.1:4790/        sign in: hopper login-code --link http://127.0.0.1:4790

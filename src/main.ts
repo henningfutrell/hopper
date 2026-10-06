@@ -10,7 +10,8 @@ import type { User } from './domain/types.ts';
 import { daemonHelp, loadConfig, type Config } from './config.ts';
 import { logStartup } from './startup-log.ts';
 import { createServer } from './http/index.ts';
-import { claimGithubAdmin, createSignIn, prepareSignIn, type AuthConfig } from './auth/index.ts';
+import { claimGithubAdmin, createSignIn, firstSignInLine, prepareSignIn, type AuthConfig } from './auth/index.ts';
+import { LOGIN_CODE_MINUTES, mintLoginCode } from './http/ui/login-code.ts';
 import { readRelease } from './client/release.ts';
 import { BUILTIN_PLUGINS } from './plugins/builtin.ts';
 import { createPluginStore, installedDirOf } from './plugins/plugin-store.ts';
@@ -86,12 +87,13 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   // Held while the daemon runs: the operator CLI refuses `user transfer` against a running daemon (issue #212).
   if (!instance.holdDaemonLock()) logger.warn('hopper: another process holds this database\'s daemon lock (a second daemon?)');
   const env = seams.env ?? process.env;
-  // Before anything starts: the sign-in config with what the environment sets and, on a fresh hopper, the
-  // first admin; an invalid one stops the daemon (sign-in fails closed).
+  // Before anything starts: the sign-in config with what the environment sets; an invalid one stops the
+  // daemon (sign-in fails closed). `firstSignIn`: once listening, a login code for the default admin account.
   let auth: AuthConfig;
   let signInEnvironment: string[];
+  let firstSignIn: boolean;
   try {
-    ({ config: auth, environment: signInEnvironment } = await prepareSignIn({ instance, env, secret: runtimeSecrets(env), logger }));
+    ({ config: auth, environment: signInEnvironment, firstSignIn } = prepareSignIn({ instance, env, secret: runtimeSecrets(env), logger }));
   } catch (e) {
     instance.close();
     throw e;
@@ -168,6 +170,8 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   pluginStore.start();
   await server.listen({ host: config.host, port: config.port });
   port = (server.server.address() as { port: number }).port;
+  // The first sign-in is the login code (issue #237): nothing else signs the default admin account in.
+  if (firstSignIn) logger.warn(firstSignInLine(mintLoginCode(instance, clock, instance.users.admin().id), signIn.origin(), LOGIN_CODE_MINUTES));
   await runtimes.start();
   runtimes.watch(intervalMs);
 
