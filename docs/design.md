@@ -959,8 +959,8 @@ token and send any `Origin`. Cookies are no better here: they ignore ports, so a
    only the token's SHA-256 and the expiry, never the token. Expired rows are deleted on
    lookup. Logout deletes the row.
 4. **`GET /ui/api/session`** with header `x-hopper-session` → `{ authenticated,
-   expiresAt? }`. Without a valid session the page is the landing page and says how to log in:
-   `bash ~/.local/lib/hopper/scripts/open-ui.sh` ("Who you are, and sign-in first").
+   expiresAt? }`. Without a valid session the page is the landing page with the ways to sign in
+   ("Who you are, and sign-in first"); it names no command and takes no pasted code (issue #247).
 5. **Mutations** — `POST` only, JSON body, all of: header `x-hopper-session` = a live
    session token (constant-time); `Origin` exactly `http://127.0.0.1:<port>` or
    `http://localhost:<port>`; `Sec-Fetch-Site`, when present, `same-origin`;
@@ -2924,8 +2924,8 @@ stay open: a local process can read the store file anyway.
 **Mutations** accept `Origin: http://<LAN name>:<port>` beside the loopback origins; every other
 check in "UI session and mutations" 5 stands.
 
-**Logging a device in.** `open-ui.sh` works only on this machine. Two other ways, both through
-the same one-time login code (`POST /ui/login`; using it rotates it):
+**Logging a device in.** `open-ui.sh` works only on this machine. The other way is through the same
+one-time login code (`POST /ui/login`; using it rotates it):
 1. **Device link** — a logged-in browser's header button calls `POST /ui/api/device-link` and shows
    `http://<LAN name>:<port>/#login=<code>` per LAN name, each also as a QR code for a phone's camera
    (issue #95, `qrcode.react`). The code rides in the fragment, which the browser never sends; the
@@ -2933,7 +2933,9 @@ the same one-time login code (`POST /ui/login`; using it rotates it):
    dialog is open it posts `{ keep: <code> }` every 2 s; the daemon answers the same links while that
    code is live (`loginCodes.live`, which spends nothing), else mints a fresh code, and the dialog
    redraws. Closing the dialog stops it; a shown code still expires after 10 minutes.
-2. **Paste a login code** into the logged-out banner (from `ui-login-code` on this machine).
+
+The landing page takes no pasted code and names no command (issue #247): a code reaches the daemon
+only through a link.
 
 Sessions are already in the store (migration 6), so a daemon restart does not log a device out; a
 session still expires after `HOPPER_UI_SESSION_HOURS` (12).
@@ -4779,7 +4781,9 @@ read without a session reads (loopback on a one-user hopper: that user; absent w
 a LAN or public request) — and `signIn.required`, true while the instance has more than one user.
 **Logged out, the page is only the landing page (issue #213)**, however many users: `load` stops after
 the session read (no `/api/` read, no event stream) and the page shows the hopper's name and the ways to
-sign in (`ui/src/app/landing.tsx`) — no navigation, no view, no read-only notice, no top bar. Until the
+sign in (`ui/src/app/landing.tsx`) — a button per realm, the gateway, no sign-in; never `open-ui.sh` or a
+login code box (issue #247), and with none of those on, that sign-in with GitHub is not set up yet — no
+navigation, no view, no read-only notice, no top bar. Until the
 session is read the page renders nothing (`sessionRead` in the store), so the app never shows before the
 landing page; a daemon that cannot be reached shows the landing page with that error. A JSON sign-in
 (password, no sign-in, gateway) or a logout reloads the page; a 403 on a mutation drops it to the

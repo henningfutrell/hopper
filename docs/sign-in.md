@@ -218,8 +218,8 @@ signing in as the default admin account, `admin`.
   hopper: first sign-in: login code <code> signs in once as admin, for 10 minutes: http://localhost:4790/#login=<code> (another: hopper login-code)
   ```
 
-  Open the link (on another device: the hopper's address with `/#login=<code>`), or paste the code
-  into the sign-in page. Only its SHA-256 is kept. Expired or used: `hopper login-code` mints another
+  Open the link (on another device: the hopper's address with `/#login=<code>`); the sign-in page
+  takes no pasted code. Only its SHA-256 is kept. Expired or used: `hopper login-code` mints another
   where the hopper runs (`docker exec <container> hopper login-code` in a container).
 - **Then** sign in through a realm — inside the hopper, GitHub: the first person to do so becomes admin
   — and, to reach `admin`'s work from it, link it with [`hopper user transfer`](#who-signs-in-as-which-user).

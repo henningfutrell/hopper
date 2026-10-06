@@ -106,11 +106,11 @@ afterEach(async () => {
 });
 
 describe('question card', () => {
-  it('logged out: no card, only the landing page with the login code', async () => {
+  it('logged out: no card, only the landing page, with no login code box', async () => {
     await boot({ authed: false });
     await vi.waitFor(() => expect(landing()).not.toBeNull());
     expect(card()).toBeNull();
-    expect(document.querySelector('input[aria-label="Login code"]')).not.toBeNull();
+    expect(document.querySelector('input[aria-label="Login code"]')).toBeNull();
   });
 
   it('logged in: the answer box offers Send answer and Close', async () => {
