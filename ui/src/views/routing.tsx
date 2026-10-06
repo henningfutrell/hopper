@@ -98,6 +98,7 @@ function SorterPanel({ ctx }: { ctx: PluginCtx }) {
         </div>
         {q.reason && <div className="text-xs break-words text-warn">{q.reason}</div>}
         <div className="text-xs text-muted-foreground">Orders the waiting jobs each Decision. It never admits or holds one; lanes, usage and the router still decide that.</div>
+        <div className="text-xs text-muted-foreground">It is also the pre-sort: the order, and the rejections, of new jobs at the queue gate (<a className="underline underline-offset-4" href="#queue">Queue</a>).</div>
       </div>
       <Picker role="queue-sorter" ctx={ctx} />
       <InstanceForm role="queue-sorter" inst={q.instance} />

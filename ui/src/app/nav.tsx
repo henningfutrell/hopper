@@ -5,7 +5,7 @@ import { useState, useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { useHopper } from '@/store';
-import { useUnseenForOwner } from '@/store/selectors';
+import { useAwaitingSort, useUnseenForOwner } from '@/store/selectors';
 import { cn } from '@/lib/utils';
 
 export const VIEWS = ['overview', 'queue', 'questions', 'decisions', 'events', 'sources', 'machines', 'usage', 'settings'] as const;
@@ -32,7 +32,9 @@ export const useSection = (): string => useSyncExternalStore(subscribe, readSect
 function Links({ view, onPick }: { view: View; onPick?: () => void }) {
   const questions = useUnseenForOwner();
   const failedSources = useHopper((s) => s.sources.filter((x) => x.state === 'error').length);
-  const badge: Partial<Record<View, { n: number; cls: string }>> = {
+  const sorting = useAwaitingSort();
+  const badge: Partial<Record<View, { n: number; cls: string; title?: string }>> = {
+    queue: { n: sorting, cls: 'bg-warn text-background', title: `${sorting} ${sorting === 1 ? 'job waits' : 'jobs wait'} on the pre-sort` },
     questions: { n: questions, cls: 'bg-question text-background' }, sources: { n: failedSources, cls: 'bg-bad text-background' },
   };
   return (
@@ -45,7 +47,7 @@ function Links({ view, onPick }: { view: View; onPick?: () => void }) {
             className={cn('flex h-9 items-center gap-2.5 rounded-md px-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground',
               view === v && 'bg-muted text-foreground')}>
             <Icon className="size-4" />{label}
-            {b && b.n > 0 && <span data-slot="nav-badge" className={cn('num ml-auto grid h-5 min-w-5 place-items-center rounded-full px-1.5 text-[11px] font-semibold', b.cls)}>{b.n}</span>}
+            {b && b.n > 0 && <span data-slot="nav-badge" title={b.title} className={cn('num ml-auto grid h-5 min-w-5 place-items-center rounded-full px-1.5 text-[11px] font-semibold', b.cls)}>{b.n}</span>}
           </a>
         );
       })}

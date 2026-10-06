@@ -5,6 +5,7 @@ import { laneSpans, type LaneSpan } from '@/model/history';
 import { goalOf, issueRef } from '@/model/job';
 import { allows } from '@/model/roles';
 import { awaitsOwner } from '@/model/questions';
+import { awaitingSort } from '@/model/queue';
 import type { Job } from '@/model/wire';
 import { useHopper } from './index';
 
@@ -30,6 +31,9 @@ export function useLaneSpans(since: number): LaneSpan[] {
 
 /** How many open questions wait on the owner and are not yet seen: the nav badge. */
 export const useUnseenForOwner = (): number => useHopper((s) => s.questions.filter(awaitsOwner).length);
+
+/** How many waiting jobs wait on the pre-sort: the Queue nav badge. */
+export const useAwaitingSort = (): number => useHopper((s) => awaitingSort(Object.values(s.jobs)));
 
 /** A job's short name: `ref goal`, or its id prefix when the UI no longer holds the job. */
 export function useJobName(): (jobId: string) => string {

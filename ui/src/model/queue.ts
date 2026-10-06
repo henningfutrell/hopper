@@ -1,6 +1,8 @@
 // The Queue view (issue #159): the two columns — the pre-sort (waiting jobs not yet accepted, in the
 // pre-sort's order, each with the reason it would reject it) and the user order (accepted waiting
-// jobs, in queue order) — and the user orders a move posts (POST /ui/api/queue/order).
+// jobs, in queue order) — and the user orders a move posts (POST /ui/api/queue/order). Issue #201: how many
+// jobs wait on the pre-sort, the Queue nav badge.
+import { GROUP } from './board.ts';
 import type { Job, PreSort } from './wire.ts';
 
 export interface PreSortedRow { job: Job; reject?: string }
@@ -24,6 +26,9 @@ export function queueColumns(waiting: readonly Job[], presort: PreSort | null | 
     userOrder: waiting.filter((j) => j.accepted !== false),
   };
 }
+
+/** How many waiting jobs are not yet accepted: they wait on the pre-sort (or the user). */
+export const awaitingSort = (jobs: Iterable<Job>): number => [...jobs].filter((j) => GROUP[j.status] === 'waiting' && j.accepted === false).length;
 
 /** The user order once a pre-sorted job is accepted: it joins at the end. */
 export const accepting = (order: readonly string[], id: string): string[] => [...order.filter((x) => x !== id), id];
