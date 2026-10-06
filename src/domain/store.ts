@@ -161,6 +161,43 @@ export interface IdentityLinks {
   userOf(realm: string, subject: string): string | undefined;
   /** Link the identity to the user; an existing link is kept. */
   link(realm: string, subject: string, userId: string): void;
+  /** Link the identity to the user, in place of any link it had (a new password account names its user). */
+  replace(realm: string, subject: string, userId: string): void;
+}
+
+/** A password account as stored (`password_accounts`, issue #200): its argon2id hash, never the password. */
+export interface StoredAccount { username: string; passwordHash: string; role: UiRole }
+
+/**
+ * One realm as stored: its name, type, label (absent: its name), `enabled: false` when off, and the
+ * settings of its type (src/auth/config.ts checks them); a password realm's accounts in `users`.
+ */
+export type StoredRealm = { name: string; type: string; label?: string; enabled?: boolean; users?: StoredAccount[] } & { [setting: string]: unknown };
+
+/**
+ * The sign-in config as stored (design.md "Sign-in: realms", issues #198, #200): the config record
+ * `sign-in` with each password realm's accounts from `password_accounts` in its `users` — the value
+ * src/auth/config.ts loads.
+ */
+export interface StoredSignIn {
+  version: 1;
+  /** The one-time login code; absent: on. */
+  local?: { enabled: boolean };
+  /** No sign-in: the role everyone gets; absent: off. */
+  none?: { role: UiRole };
+  /** In order: the order the form tries them and the buttons show them. */
+  realms: StoredRealm[];
+}
+
+/**
+ * The sign-in config: the config record `sign-in` and the `password_accounts` rows, read and replaced
+ * together against `version` — the sha-256 of what `read` answers.
+ */
+export interface SignInConfigRepository {
+  read(): StoredSignIn;
+  version(): string;
+  /** Replace them all if still at `version`; false (nothing written) when they moved. */
+  write(next: StoredSignIn, version: string): boolean;
 }
 
 /** One user's store: the tables of their user schema. Repositories share one connection. */
@@ -185,8 +222,10 @@ export interface InstanceStore {
   identities: IdentityLinks;
   uiSessions: UiSessionRepository;
   loginCodes: LoginCodeRepository;
-  /** `sign-in`. */
+  /** `sign-in`, without the password accounts (the CLI's `hopper config … sign-in`). */
   config: ConfigRecords<InstanceConfigName>;
+  /** The sign-in config: the `sign-in` record with the password accounts. */
+  signInConfig: SignInConfigRepository;
   settings: InstanceSettingsRepository;
   /** Open the user's store: one more connection, its schema migrated on the tenant track. The caller closes it. */
   userStore(user: User): UserStore;

@@ -1,5 +1,6 @@
-// The password realm (design.md "Sign-in: realms"): the sign-in config holds argon2id hashes, made by
-// `hopper password-hash`, checked here through the argon2 library. An unknown username is checked
+// The password realm (design.md "Sign-in: realms"): its accounts (`password_accounts`) hold argon2id
+// hashes, made by `hashPassword` when an admin sets a password in Settings → Sign-in, checked here
+// through the argon2 library. An unknown username is checked
 // against a fixed hash of a random password, so it costs the same time as a wrong password.
 import argon2 from 'argon2';
 import type { UiRole } from '../domain/types.ts';

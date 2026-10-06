@@ -56,5 +56,8 @@ export function createIdentityLinks(c: StoreContext): IdentityLinks {
     link(realm, subject, userId) {
       c.db.run('INSERT INTO user_identities (realm, subject, user_id) VALUES (?, ?, ?) ON CONFLICT DO NOTHING', realm, subject, userId);
     },
+    replace(realm, subject, userId) {
+      c.db.run('INSERT INTO user_identities (realm, subject, user_id) VALUES (?, ?, ?) ON CONFLICT (realm, subject) DO UPDATE SET user_id = excluded.user_id', realm, subject, userId);
+    },
   };
 }

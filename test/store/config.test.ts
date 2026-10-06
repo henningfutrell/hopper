@@ -40,7 +40,8 @@ describe('config records', () => {
     s.config.write('plugins', { version: 1 }, 'missing');
     s.close();
     const instance = openInstanceStore({ url, clock: fixedClock() });
-    instance.config.write('sign-in', { version: 1, realms: [] }, 'missing');
+    // A fresh hopper starts with a sign-in config record (migration 20, issue #200): written against its version.
+    expect(instance.config.write('sign-in', { version: 1, realms: [] }, instance.config.version('sign-in'))).toBe(true);
     instance.close();
     const again = t.open(url);
     expect(again.config.read('plugins')).toEqual({ version: 1 });

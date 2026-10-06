@@ -48,21 +48,37 @@ export interface SignInRealmView {
   type: RealmType;
 }
 
-/** One realm as Settings → Sign-in shows it (GET /api/realms): its entry in the sign-in config, as JSON. */
+/** A password account as Settings → Sign-in shows it: never its hash. */
+export interface PasswordAccountView {
+  username: string;
+  role: UiRole;
+  /** The user it signs in as; absent: none yet — its first sign-in makes a user of its own. */
+  user?: { id: string; name: string };
+}
+
+/**
+ * A realm type's settings, by field (`issuer`, `clientId`, `attributes: { email }`, `roles`, …; every one:
+ * docs/sign-in.md). A secret is never here: a setting names the variable that holds it.
+ */
+export type RealmSettings = { [field: string]: unknown };
+
+/** One realm as Settings → Sign-in shows it (GET /api/realms). */
 export interface RealmView {
   name: string;
   label: string;
   type: RealmType;
   enabled: boolean;
-  /** The realm's entry in the sign-in config, as JSON: what the editor shows and saves. */
-  entry: string;
+  /** Its type's settings: what the realm's form shows and saves. */
+  settings: RealmSettings;
+  /** A password realm: its accounts, by username. */
+  accounts?: PasswordAccountView[];
   /** OIDC, GitHub, SAML: the callback URL to register with the identity provider. */
   callback?: string;
   /** SAML: the service provider metadata URL (also its entity id unless `entityId` is set). */
   metadata?: string;
 }
 
-/** GET /api/realms (admin): the sign-in config's realms in order, local sign-in and no sign-in, at `version`. */
+/** GET /api/realms (admin): the realms in order, the login code and no sign-in, at `version`. */
 export interface RealmsView {
   version: string;
   local: boolean;
@@ -74,14 +90,20 @@ export interface RealmsView {
 
 /** POST /ui/api/realms: one change to the sign-in config, made against the version it read. */
 export type RealmsEdit = { version: string } & (
-  /** Add a realm from its JSON entry, or replace the one named `name` (its name stays). */
-  | { action: 'save'; name?: string; entry: string }
+  /** Add a realm from its fields, or replace the one named `name` (its name stays; whether it is on, and a password realm's accounts, stay too). */
+  | { action: 'save'; name?: string; realm: { name: string; label?: string; type: RealmType } & RealmSettings }
   | { action: 'remove'; name: string }
   /** Move to position `to` (0 first). */
   | { action: 'move'; name: string; to: number }
   | { action: 'enable'; name: string; enabled: boolean }
   /** Local sign-in (the login code) on or off; the role of no sign-in, or null for off. */
   | { action: 'settings'; local?: boolean; none?: UiRole | null }
+  /**
+   * Add a password account (`password` needed), or change one's role and, when `password` is given, its
+   * password. `user`: the user a new account signs in as (absent: a user of its own at its first sign-in).
+   */
+  | { action: 'account'; realm: string; username: string; role: UiRole; password?: string; user?: string }
+  | { action: 'account-remove'; realm: string; username: string }
 );
 
 /** GET /ui/api/session. */

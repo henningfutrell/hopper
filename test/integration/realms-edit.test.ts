@@ -1,8 +1,9 @@
-// Realms are managed in the UI (issue #185, design.md "Sign-in: realms"): an admin reads them
-// (GET /api/realms) and adds, changes, removes, orders and turns them on and off (POST /ui/api/realms).
-// A change applies at once, without a restart: the sign-in on offer follows it, and stored sessions
-// follow it as they do at start. A change that would end the acting admin's own admin session is
-// refused, so nobody locks themselves out from the UI.
+// Sign-in is managed in the UI (issues #185, #198, #200, design.md "Sign-in: realms"): an admin reads the
+// realms (GET /api/realms) and adds, changes, removes, orders and turns them on and off from their
+// fields, and adds, changes and removes a password realm's accounts (POST /ui/api/realms). Everything
+// is in the database, every setting a field; no YAML or JSON to write. A change applies at once, without a restart: the sign-in
+// on offer follows it, and stored sessions follow it as they do at start. A change that would end the
+// acting admin's own admin session is refused, so nobody locks themselves out from the UI.
 import argon2 from 'argon2';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { rawRequest } from '../support/http.ts';
@@ -18,8 +19,10 @@ beforeAll(async () => { hash = await argon2.hash('correct horse', { type: argon2
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- tests read loose JSON
 const realms = async (app: TestApp, token: string): Promise<any> => (await app.api('GET', '/api/realms', undefined, { 'x-hopper-session': token })).body;
 const edit = (app: TestApp, token: string, body: Record<string, unknown>) => app.ui<{ error?: string; version?: string }>('/ui/api/realms', body, { token });
+/** One change against the version read now. */
+const change = async (app: TestApp, token: string, body: Record<string, unknown>) => edit(app, token, { ...body, version: (await realms(app, token)).version });
 
-const passwordRealm = (role = 'operator') => JSON.stringify({ name: 'staff', type: 'password', users: [{ username: 'ada', passwordHash: hash, role }] });
+const staff = (role = 'operator') => ({ version: 1, realms: [{ name: 'staff', type: 'password', users: [{ username: 'ada', passwordHash: hash, role }] }] });
 const passwordSignIn = async (o: { app: TestApp; origin: string; host: string }, username: string, password: string) => {
   const res = await rawRequest(o.app.url, {
     path: '/ui/auth/password', method: 'POST', body: JSON.stringify({ username, password }),
@@ -28,14 +31,32 @@ const passwordSignIn = async (o: { app: TestApp; origin: string; host: string },
   return { status: res.status, token: res.status === 200 ? (JSON.parse(res.text) as { token: string }).token : undefined };
 };
 
+describe('a fresh hopper', () => {
+  it('has a password realm with no accounts: no password form until the first account, which signs in at once', async () => {
+    const o = await startWithAuth(h, undefined);
+    const admin = await o.app.login();
+    const v = await realms(o.app, admin);
+    expect(v.realms).toEqual([{ name: 'password', label: 'Password', type: 'password', enabled: true, settings: {}, accounts: [] }]);
+    expect((await session(o.app)).signIn.password).toBe(false);
+    const r = await change(o.app, admin, { action: 'account', realm: 'password', username: 'ada', password: 'correct horse', role: 'operator' });
+    expect(r.status).toBe(200);
+    expect((await session(o.app)).signIn.password).toBe(true);
+    const ada = await passwordSignIn(o, 'ada', 'correct horse');
+    expect(await session(o.app, ada.token)).toMatchObject({ user: { realm: 'password', role: 'operator' } });
+    expect(o.app.app.instance.signInConfig.read().realms[0]!.users).toEqual([{ username: 'ada', passwordHash: expect.stringMatching(/^\$argon2id\$/), role: 'operator' }]);
+  });
+});
+
 describe('GET /api/realms', () => {
-  it('an admin reads every realm, in order, as its JSON, with the config version', async () => {
-    const o = await startWithAuth(h, { version: 1, realms: [{ name: 'staff', type: 'password', users: [] }, { name: 'gh', type: 'github', clientId: 'g', clientSecretEnv: 'GITHUB_CLIENT_SECRET', enabled: false }] });
+  it('an admin reads every realm, in order, with its settings, the accounts without their hashes, and the version', async () => {
+    const o = await startWithAuth(h, { version: 1, realms: [staff().realms[0], { name: 'gh', type: 'github', clientId: 'g', clientSecretEnv: 'GITHUB_CLIENT_SECRET', enabled: false }] });
     const v = await realms(o.app, await o.app.login());
     expect(v).toMatchObject({ local: true, none: null, origin: o.origin, version: expect.any(String) });
     expect(v.realms.map((r: { name: string; type: string; enabled: boolean }) => [r.name, r.type, r.enabled])).toEqual([['staff', 'password', true], ['gh', 'github', false]]);
-    expect(JSON.parse(v.realms[1].entry)).toEqual({ name: 'gh', type: 'github', clientId: 'g', clientSecretEnv: 'GITHUB_CLIENT_SECRET', enabled: false });
+    expect(v.realms[0].accounts).toEqual([{ username: 'ada', role: 'operator' }]);
+    expect(v.realms[1].settings).toEqual({ clientId: 'g', clientSecretEnv: 'GITHUB_CLIENT_SECRET' });
     expect(v.realms[1].callback).toBe(`${o.origin}/ui/auth/gh/callback`);
+    expect(JSON.stringify(v)).not.toContain('argon2');
   });
 
   it('a session that is not admin is refused', async () => {
@@ -46,112 +67,131 @@ describe('GET /api/realms', () => {
   });
 });
 
-describe('POST /ui/api/realms', () => {
-  it('a realm added applies at once: password sign-in works without a restart, and the change is stored', async () => {
-    const o = await startWithAuth(h, undefined);
-    const admin = await o.app.login();
-    expect((await session(o.app)).signIn.password).toBe(false);
-    const { version } = await realms(o.app, admin);
-    const r = await edit(o.app, admin, { action: 'save', entry: passwordRealm(), version });
-    expect(r.status).toBe(200);
-    expect((await session(o.app)).signIn.password).toBe(true);
-    const ada = await passwordSignIn(o, 'ada', 'correct horse');
-    expect(await session(o.app, ada.token)).toMatchObject({ user: { realm: 'staff', role: 'operator' } });
-    expect(o.app.app.instance.config.read('sign-in')).toMatchObject({ realms: [{ name: 'staff', type: 'password' }] });
-  });
-
-  it('an OIDC realm added is offered at once, in realm order', async () => {
+describe('POST /ui/api/realms: realms', () => {
+  it('an OIDC realm added from its fields is offered at once, in realm order', async () => {
     const idp = await oidcIdp(h);
-    const o = await startWithAuth(h, { version: 1, realms: [{ name: 'staff', type: 'password', users: [] }] });
+    const o = await startWithAuth(h, staff());
     const admin = await o.app.login();
-    const entry = JSON.stringify(oidcRealm(idp, { defaultRole: 'viewer' }));
-    let { version } = await realms(o.app, admin);
-    expect((await edit(o.app, admin, { action: 'save', entry, version })).status).toBe(200);
-    ({ version } = await realms(o.app, admin));
-    expect((await edit(o.app, admin, { action: 'move', name: 'corp', to: 0, version })).status).toBe(200);
+    expect((await change(o.app, admin, { action: 'save', realm: oidcRealm(idp, { defaultRole: 'viewer' }) })).status).toBe(200);
+    expect((await change(o.app, admin, { action: 'move', name: 'corp', to: 0 })).status).toBe(200);
     expect((await session(o.app)).signIn.realms).toEqual([{ name: 'corp', label: 'Corp SSO', type: 'oidc' }]);
     expect((await realms(o.app, admin)).realms.map((r: { name: string }) => r.name)).toEqual(['corp', 'staff']);
+    expect(o.app.app.instance.signInConfig.read().realms[0]).toMatchObject({ name: 'corp', type: 'oidc', issuer: idp.issuer, clientSecretEnv: 'CORP_CLIENT_SECRET' });
   });
 
   it('a realm turned off ends its sessions at once; turned on, it signs people in again', async () => {
-    const o = await startWithAuth(h, { version: 1, realms: [{ name: 'staff', type: 'password', users: [{ username: 'ada', passwordHash: hash, role: 'viewer' }] }] });
+    const o = await startWithAuth(h, staff('viewer'));
     const admin = await o.app.login();
     const ada = (await passwordSignIn(o, 'ada', 'correct horse')).token;
-    let { version } = await realms(o.app, admin);
-    expect((await edit(o.app, admin, { action: 'enable', name: 'staff', enabled: false, version })).status).toBe(200);
+    expect((await change(o.app, admin, { action: 'enable', name: 'staff', enabled: false })).status).toBe(200);
     expect((await session(o.app, ada)).authenticated).toBe(false);
     expect((await passwordSignIn(o, 'ada', 'correct horse')).status).toBe(403);
-    ({ version } = await realms(o.app, admin));
-    expect((await edit(o.app, admin, { action: 'enable', name: 'staff', enabled: true, version })).status).toBe(200);
+    expect((await change(o.app, admin, { action: 'enable', name: 'staff', enabled: true })).status).toBe(200);
     expect((await passwordSignIn(o, 'ada', 'correct horse')).status).toBe(200);
   });
 
-  it('a changed role applies to the stored sessions at once', async () => {
-    const o = await startWithAuth(h, { version: 1, realms: [{ name: 'staff', type: 'password', users: [{ username: 'ada', passwordHash: hash, role: 'viewer' }] }] });
-    const admin = await o.app.login();
-    const ada = (await passwordSignIn(o, 'ada', 'correct horse')).token;
-    const { version } = await realms(o.app, admin);
-    expect((await edit(o.app, admin, { action: 'save', name: 'staff', entry: passwordRealm('operator'), version })).status).toBe(200);
-    expect((await session(o.app, ada)).user.role).toBe('operator');
-  });
-
   it('a realm that would not load is refused, naming the field; nothing is stored or applied', async () => {
-    const o = await startWithAuth(h, undefined);
+    const o = await startWithAuth(h, { version: 1 });
     const admin = await o.app.login();
-    const { version } = await realms(o.app, admin);
-    const bad = await edit(o.app, admin, { action: 'save', entry: JSON.stringify({ name: 'gh', type: 'github', clientId: 'g' }), version });
+    const bad = await change(o.app, admin, { action: 'save', realm: { name: 'gh', type: 'github', clientId: 'g' } });
     expect(bad.status).toBe(400);
     expect(bad.body.error).toMatch(/realms\.0\.clientSecretEnv/);
-    const unset = await edit(o.app, admin, { action: 'save', entry: JSON.stringify({ name: 'gh', type: 'github', clientId: 'g', clientSecretEnv: 'NOT_SET_ANYWHERE' }), version });
+    const unset = await change(o.app, admin, { action: 'save', realm: { name: 'gh', type: 'github', clientId: 'g', clientSecretEnv: 'NOT_SET_ANYWHERE' } });
     expect(unset.status).toBe(400);
     expect(unset.body.error).toMatch(/NOT_SET_ANYWHERE/);
-    expect(o.app.app.instance.config.read('sign-in')).toBeUndefined();
-  });
-
-  it('a realm in YAML, or not an object, is refused; nothing is stored', async () => {
-    const o = await startWithAuth(h, undefined);
-    const admin = await o.app.login();
-    const { version } = await realms(o.app, admin);
-    const yaml = await edit(o.app, admin, { action: 'save', entry: 'name: gh\ntype: github\nclientId: g\n', version });
-    expect(yaml.status).toBe(400);
-    expect(yaml.body.error).toMatch(/^the realm is not valid JSON: /);
-    const list = await edit(o.app, admin, { action: 'save', entry: '["gh"]', version });
-    expect(list.status).toBe(400);
-    expect(list.body.error).toBe('a realm is an object: name, type and its settings');
-    expect(o.app.app.instance.config.read('sign-in')).toBeUndefined();
+    expect(o.app.app.instance.signInConfig.read().realms).toEqual([]);
+    expect(o.app.app.instance.config.read('sign-in')).toEqual({ version: 1, realms: [] });
   });
 
   it('a stale version is refused', async () => {
-    const o = await startWithAuth(h, undefined);
+    const o = await startWithAuth(h, { version: 1 });
     const admin = await o.app.login();
     const { version } = await realms(o.app, admin);
-    expect((await edit(o.app, admin, { action: 'save', entry: passwordRealm(), version })).status).toBe(200);
+    expect((await edit(o.app, admin, { action: 'save', realm: { name: 'staff', type: 'password' }, version })).status).toBe(200);
     expect((await edit(o.app, admin, { action: 'remove', name: 'staff', version })).status).toBe(409);
   });
 
   it('a change that would end the acting admin\'s own session is refused', async () => {
-    const o = await startWithAuth(h, { version: 1, realms: [{ name: 'staff', type: 'password', users: [{ username: 'ada', passwordHash: hash, role: 'admin' }] }] });
+    const o = await startWithAuth(h, staff('admin'));
     const ada = (await passwordSignIn(o, 'ada', 'correct horse')).token!;
-    const { version } = await realms(o.app, ada);
     for (const body of [
-      { action: 'enable', name: 'staff', enabled: false, version },
-      { action: 'remove', name: 'staff', version },
-      { action: 'save', name: 'staff', entry: passwordRealm('operator'), version },
+      { action: 'enable', name: 'staff', enabled: false },
+      { action: 'remove', name: 'staff' },
+      { action: 'account', realm: 'staff', username: 'ada', role: 'operator' },
+      { action: 'account-remove', realm: 'staff', username: 'ada' },
     ]) {
-      const r = await edit(o.app, ada, body);
+      const r = await change(o.app, ada, body);
       expect(r.status).toBe(409);
       expect(r.body.error).toMatch(/your own/);
     }
     const loginCode = await o.app.login();
-    expect((await edit(o.app, loginCode, { action: 'settings', local: false, version })).status).toBe(409);
-    expect((await edit(o.app, ada, { action: 'settings', local: false, version })).status).toBe(200);
+    expect((await change(o.app, loginCode, { action: 'settings', local: false })).status).toBe(409);
+    expect((await change(o.app, ada, { action: 'settings', local: false })).status).toBe(200);
   });
 
-  it('an operator may not change the realms', async () => {
-    const o = await startWithAuth(h, { version: 1, realms: [{ name: 'staff', type: 'password', users: [{ username: 'ada', passwordHash: hash, role: 'operator' }] }] });
+  it('an operator may not change sign-in', async () => {
+    const o = await startWithAuth(h, staff('operator'));
     const ada = (await passwordSignIn(o, 'ada', 'correct horse')).token!;
     const r = await edit(o.app, ada, { action: 'remove', name: 'staff', version: 'x' });
     expect(r.status).toBe(403);
     expect(r.body).toMatchObject({ needs: 'admin' });
+  });
+});
+
+describe('POST /ui/api/realms: password accounts', () => {
+  it('a changed role applies to the stored sessions at once', async () => {
+    const o = await startWithAuth(h, staff('viewer'));
+    const admin = await o.app.login();
+    const ada = (await passwordSignIn(o, 'ada', 'correct horse')).token;
+    expect((await change(o.app, admin, { action: 'account', realm: 'staff', username: 'ada', role: 'operator' })).status).toBe(200);
+    expect((await session(o.app, ada)).user.role).toBe('operator');
+  });
+
+  it('a new password replaces the old one at once', async () => {
+    const o = await startWithAuth(h, staff());
+    const admin = await o.app.login();
+    expect((await change(o.app, admin, { action: 'account', realm: 'staff', username: 'ada', role: 'operator', password: 'battery staple' })).status).toBe(200);
+    expect((await passwordSignIn(o, 'ada', 'correct horse')).status).toBe(403);
+    expect((await passwordSignIn(o, 'ada', 'battery staple')).status).toBe(200);
+  });
+
+  it('an account removed signs out at once and signs in no more', async () => {
+    const o = await startWithAuth(h, staff());
+    const admin = await o.app.login();
+    const ada = (await passwordSignIn(o, 'ada', 'correct horse')).token;
+    expect((await change(o.app, admin, { action: 'account-remove', realm: 'staff', username: 'ada' })).status).toBe(200);
+    expect((await session(o.app, ada)).authenticated).toBe(false);
+    expect((await passwordSignIn(o, 'ada', 'correct horse')).status).toBe(403);
+    expect((await realms(o.app, admin)).realms[0].accounts).toEqual([]);
+  });
+
+  it('a new account signs in as the user it names; without one, as a new user of its own', async () => {
+    const o = await startWithAuth(h, { version: 1, realms: [{ name: 'staff', type: 'password', users: [] }] });
+    const admin = await o.app.login();
+    expect((await change(o.app, admin, { action: 'account', realm: 'staff', username: 'boss', password: 'correct horse', role: 'admin', user: 'owner' })).status).toBe(200);
+    expect((await change(o.app, admin, { action: 'account', realm: 'staff', username: 'bea', password: 'correct horse', role: 'viewer' })).status).toBe(200);
+    expect((await realms(o.app, admin)).realms[0].accounts).toEqual([
+      { username: 'bea', role: 'viewer' },
+      { username: 'boss', role: 'admin', user: { id: 'owner', name: 'owner' } },
+    ]);
+    const boss = (await passwordSignIn(o, 'boss', 'correct horse')).token;
+    expect((await session(o.app, boss)).user).toMatchObject({ id: 'owner', role: 'admin' });
+    const bea = (await passwordSignIn(o, 'bea', 'correct horse')).token;
+    expect((await session(o.app, bea)).user).toMatchObject({ name: 'bea', role: 'viewer' });
+    expect((await session(o.app, bea)).user.id).not.toBe('owner');
+  });
+
+  it.each([
+    ['a new account without a password', { username: 'bea', role: 'viewer' }, /password/],
+    ['a password shorter than 8 characters', { username: 'bea', role: 'viewer', password: 'short' }, /8 characters/],
+    ['a user that does not exist', { username: 'bea', role: 'viewer', password: 'correct horse', user: 'nobody' }, /nobody/],
+    ['moving an account that signed in to another user', { username: 'ada', role: 'viewer', user: 'owner' }, /ada.*signs in as/],
+  ])('refuses %s', async (_what, body, msg) => {
+    const o = await startWithAuth(h, staff());
+    const admin = await o.app.login();
+    expect((await passwordSignIn(o, 'ada', 'correct horse')).status).toBe(200);
+    const r = await change(o.app, admin, { action: 'account', realm: 'staff', ...body });
+    expect(r.status).toBe(400);
+    expect(r.body.error).toMatch(msg);
   });
 });

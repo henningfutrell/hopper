@@ -10,7 +10,7 @@ import type { User } from './domain/types.ts';
 import { daemonHelp, loadConfig, type Config } from './config.ts';
 import { logStartup } from './startup-log.ts';
 import { createServer } from './http/index.ts';
-import { SIGN_IN, createSignIn, loadSignInConfig, type AuthConfig } from './auth/index.ts';
+import { createSignIn, loadSignInConfig, type AuthConfig } from './auth/index.ts';
 import { readRelease } from './client/release.ts';
 import { BUILTIN_PLUGINS } from './plugins/builtin.ts';
 import { createPluginStore, installedDirOf } from './plugins/plugin-store.ts';
@@ -89,7 +89,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   // Before anything starts: an invalid sign-in config stops the daemon (sign-in fails closed).
   let auth: AuthConfig;
   try {
-    auth = loadSignInConfig(instance.config.read(SIGN_IN), secret);
+    auth = loadSignInConfig(instance.signInConfig.read(), secret);
   } catch (e) {
     instance.close();
     throw e;

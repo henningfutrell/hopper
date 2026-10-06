@@ -18,7 +18,7 @@ export async function stopAll(h: Harness): Promise<void> {
   h.cleanup?.();
 }
 
-/** The app with this sign-in config (none when undefined), and its sign-in origin (http://localhost:<port>). */
+/** The app with this sign-in config (a fresh hopper's when undefined: the password realm, no accounts), and its sign-in origin (http://localhost:<port>). */
 export async function startWithAuth(h: Harness, auth: unknown, env: Record<string, string> = {}): Promise<{ app: TestApp; origin: string; host: string }> {
   const db = tempDbPath();
   h.cleanup = db.cleanup;

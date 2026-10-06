@@ -2,7 +2,8 @@
 // once by `apply` when Settings → Sign-in changes it.
 //
 // Form realms (password, ldap): the username and password form is tried against each one that is on,
-// in order; the first that accepts the password decides.
+// in order; the first that accepts the password decides. A password realm with no account yet is not
+// tried, and alone it offers no form.
 //
 // Redirect realms (oidc, github, saml): three steps, no cookies (they ignore ports; see "UI session and
 // mutations"):
@@ -27,7 +28,7 @@ import { roleFor } from './roles.ts';
 import { createSamlRealm } from './saml.ts';
 
 export { SIGN_IN, loadSignInConfig, signInConfigProblem, type AuthConfig } from './config.ts';
-export { AuthEditError, editSignInConfig, realmsView } from './edit.ts';
+export { accountOf, AuthEditError, editSignIn, realmsView, type SignInEdit } from './edit.ts';
 export { hashPassword } from './password.ts';
 
 const FLOW_MS = 10 * 60_000;
@@ -57,7 +58,7 @@ export interface SignIn {
   readonly local: boolean;
   /** No sign-in: the role everyone gets; null when off. */
   readonly none: UiRole | null;
-  /** Password sign-in is on: a password or LDAP realm is. */
+  /** Password sign-in is on: an LDAP realm is, or a password realm with an account. */
   readonly password: boolean;
   /** The username and password tried against the form realms that are on, in order. */
   checkPassword(username: string, password: string): Promise<PasswordOutcome>;
@@ -116,7 +117,7 @@ export function createSignIn(o: { config: AuthConfig; origin: () => string; cloc
   let redirects: Map<string, RedirectRealm> | undefined;
   const on = (): RealmConfig[] => config.realms.filter((r) => r.enabled);
   const build = (): void => {
-    forms = on().filter(isFormRealm).map(buildForm);
+    forms = on().filter(isFormRealm).filter((r) => r.type !== 'password' || r.users.length > 0).map(buildForm);
     redirects = undefined;
   };
   build();

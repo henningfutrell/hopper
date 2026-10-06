@@ -115,7 +115,7 @@ function routes(app: FastifyInstance, o: Parameters<typeof registerSignInRoutes>
   });
 
   app.post('/ui/auth/password', async (req, reply) => {
-    if (!signIn.password) return o.refuse(req, reply, 'password sign-in is off: no password or LDAP realm is on in the sign-in config');
+    if (!signIn.password) return o.refuse(req, reply, 'password sign-in is off: no LDAP realm, and no password realm with an account, is on (Settings → Sign-in)');
     if (!fromUiOrigin(req)) return o.refuse(req, reply, `origin ${req.headers.origin ?? '(none)'} not allowed`);
     const { username, password } = parseWith(passwordBody, req.body);
     const r = await signIn.checkPassword(username, password);

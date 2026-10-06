@@ -1,5 +1,5 @@
 // Logged out: the ways to sign in — a button per OIDC, GitHub or SAML realm (the sign-in config), a username
-// and password form while a password or LDAP realm is on, continuing without sign-in while `none` is on, and,
+// and password form while an LDAP realm, or a password realm with an account, is on, continuing without sign-in while `none` is on, and,
 // while local sign-in is on, the login code (the command on this machine, a device link or a pasted
 // code across the LAN). Design: design.md "Sign-in: realms", "Reaching
 // the UI across the LAN". With several users (issue #167) a logged-out page shows only these, as the
@@ -68,7 +68,7 @@ function SignInOptions({ signIn, lead }: { signIn: SessionView['signIn']; lead: 
       {signIn.password && <PasswordSignIn />}
       {signIn.none && <Button size="xs" variant="outline" onClick={() => void signInWithoutCredential().then(finish)}><LogIn />Continue as {signIn.none}</Button>}
       {signIn.local && <LoginCode />}
-      {!signIn.local && !signIn.password && !signIn.none && signIn.realms.length === 0 && <>no way to sign in is configured (Settings → Sign-in).</>}
+      {!signIn.local && !signIn.password && !signIn.none && signIn.realms.length === 0 && <>no way to sign in is on: where the hopper runs, turn the login code on in its sign-in config (<code className="font-mono">hopper config get sign-in</code>, then <code className="font-mono">hopper config set sign-in</code>) and restart it.</>}
     </>
   );
 }

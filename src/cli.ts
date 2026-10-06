@@ -11,17 +11,16 @@
 //   hopper login-code [--user <id>] [--link <url>]    mint a one-time UI login code for a user (stdout)
 //   hopper users                                      list the users (issue #158)
 //   hopper user add <name>                            add a user
-//   hopper password-hash                              an argon2id hash of a password (stdin) for a password realm
 //   hopper help                                       what each command does
 //
-// <record>: plugins or rules (a user's: --user, default owner), or sign-in (the instance's). A
-// record that would not load is refused.
+// <record>: plugins or rules (a user's: --user, default owner), or sign-in (the instance's, without
+// the password accounts: Settings → Sign-in keeps them, issue #200). A record that would not load is
+// refused.
 import { readFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
-import { read } from 'read';
 import { CONFIG_NAMES, type ConfigName, type ConfigRecords, type InstanceStore } from './domain/ports.ts';
 import type { User } from './domain/types.ts';
-import { hashPassword, signInConfigProblem } from './auth/index.ts';
+import { signInConfigProblem } from './auth/config.ts';
 import { LOGIN_CODE_MINUTES, mintLoginCode } from './http/ui/login-code.ts';
 import { pluginsConfigProblem } from './plugins/plugins-config.ts';
 import { rulesProblem } from './questions/index.ts';
@@ -33,8 +32,6 @@ export interface CliIo {
   stdin(): string;
   out(text: string): void;
   err(text: string): void;
-  /** The password for password-hash. Default: the first line of stdin. */
-  password?(): Promise<string>;
 }
 
 const USAGE = `hopper: the operator command line. It works on the daemon's database directly.
@@ -46,13 +43,13 @@ usage:
   hopper login-code [--link <base url>]              a one-time UI login code (${LOGIN_CODE_MINUTES} minutes), or a link with it
   hopper users                                       the users of this hopper: id, name, when added
   hopper user add <name>                             add a user: their own jobs, questions and settings, kept apart
-  hopper password-hash                               an argon2id hash for a password realm's users (password on stdin, or typed)
   hopper help                                        this text
 
-records: ${CONFIG_NAMES.join(', ')}. plugins and rules are one user's; sign-in is shared. Every one is edited in the UI too.
+records: ${CONFIG_NAMES.join(', ')}. plugins and rules are one user's; sign-in is shared, and its password accounts are
+kept apart: Settings → Sign-in adds them. Every one is edited in the UI too.
 --user <id> on config and login-code names the user (default: owner, the first user).
 
-Every command but password-hash and help needs HOPPER_DATABASE_URL (or HOPPER_DATABASE_URL_FILE):
+Every command but help needs HOPPER_DATABASE_URL (or HOPPER_DATABASE_URL_FILE):
 the database the daemon uses, postgres://user:password@host:port/database.
 
 First sign-in:  hopper login-code --link http://127.0.0.1:4790   then open the link
@@ -67,10 +64,18 @@ function recordName(raw: string | undefined): ConfigName {
   throw new CliError(`unknown config record ${raw ?? '(none)'}; one of ${CONFIG_NAMES.join(', ')}`);
 }
 
+/** A password realm in `value` that holds accounts: they are rows of their own (issue #200), never part of the record. */
+function accountsInRecord(value: unknown): string | undefined {
+  const realms = (value as { realms?: unknown } | null)?.realms;
+  if (!Array.isArray(realms)) return undefined;
+  const i = realms.findIndex((r) => typeof r === 'object' && r !== null && 'users' in r);
+  return i < 0 ? undefined : `realms.${i}.users: password accounts are not part of the record; add them in Settings → Sign-in`;
+}
+
 /** Why `value` would not load as `name`, or undefined. */
 export function recordProblem(name: ConfigName, value: unknown): string | undefined {
   if (name === 'rules') return rulesProblem(value);
-  return name === 'sign-in' ? signInConfigProblem(value) : pluginsConfigProblem(value);
+  return name === 'sign-in' ? accountsInRecord(value) ?? signInConfigProblem(value) : pluginsConfigProblem(value);
 }
 
 /** One config record wherever it lives: a user's (plugins, rules) or the instance's (sign-in). */
@@ -154,31 +159,13 @@ function userCommand(instance: InstanceStore, args: string[], io: CliIo): void {
   io.err(`user ${user.id} added: hopper login-code --user ${user.id} gives a first sign-in\n`);
 }
 
-/** An argon2id hash of one password on stdout, for a password realm's `users` in the sign-in config (design.md "Sign-in: realms"). Needs no database. */
-async function passwordHash(io: CliIo): Promise<number> {
-  let password: string;
-  try {
-    password = io.password ? await io.password() : (io.stdin().split(/\r?\n/)[0] ?? '');
-  } catch (e) {
-    io.err(`hopper: ${(e as Error).message}\n`);
-    return 2;
-  }
-  if (password === '') {
-    io.err('hopper: the password is empty; nothing hashed\n');
-    return 2;
-  }
-  io.out(`${await hashPassword(password)}\n`);
-  return 0;
-}
-
-/** Run one command; the exit code (a promise for password-hash, the one command that hashes). */
-export function runCli(argv: string[], io: CliIo): number | Promise<number> {
+/** Run one command; the exit code. */
+export function runCli(argv: string[], io: CliIo): number {
   const [command, ...rest] = argv;
   if (command === 'help' || command === '--help' || command === '-h') {
     io.out(`${USAGE}\n`);
     return 0;
   }
-  if (command === 'password-hash') return passwordHash(io);
   if (command !== 'config' && command !== 'login-code' && command !== 'users' && command !== 'user') {
     io.err(`${USAGE}\n`);
     return 2;
@@ -210,21 +197,11 @@ export function runCli(argv: string[], io: CliIo): number | Promise<number> {
   }
 }
 
-/** A password typed on the terminal without echo, asked twice; from a pipe, its first line. */
-async function terminalPassword(): Promise<string> {
-  if (!process.stdin.isTTY) return readFileSync(0, 'utf8').split(/\r?\n/)[0] ?? '';
-  const first = await read({ prompt: 'password: ', silent: true, output: process.stderr });
-  const again = await read({ prompt: 'again: ', silent: true, output: process.stderr });
-  if (first !== again) throw new CliError('the two passwords differ; nothing hashed');
-  return first;
-}
-
 if (import.meta.main) {
-  process.exitCode = await runCli(process.argv.slice(2), {
+  process.exitCode = runCli(process.argv.slice(2), {
     env: process.env,
     stdin: () => readFileSync(0, 'utf8'),
     out: (t) => process.stdout.write(t),
     err: (t) => process.stderr.write(t),
-    password: terminalPassword,
   });
 }

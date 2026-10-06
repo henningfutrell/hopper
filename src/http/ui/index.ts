@@ -9,7 +9,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { SignIn } from '../../auth/index.ts';
 import type { Clock, InstanceStore, PluginStoreView, Updater } from '../../domain/ports.ts';
-import { LIST_ROLES, QUEUE_GATE_MODES, ROLES, SELECTABLE_ROLES, UI_ROLES, UPDATE_CHANNELS, type RealmsView, type SessionView, type UiRole, type UserAdded } from '../../domain/types.ts';
+import { LIST_ROLES, QUEUE_GATE_MODES, REALM_TYPES, ROLES, SELECTABLE_ROLES, UI_ROLES, UPDATE_CHANNELS, type RealmsEdit, type RealmsView, type SessionView, type UiRole, type UserAdded } from '../../domain/types.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { lanHosts, uiOrigins, type Lan } from '../reach.ts';
 import type { RealmsAdmin } from '../realms.ts';
@@ -66,16 +66,22 @@ export const usersEditBody = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('add'), name: z.string().trim().min(1, 'name must not be empty').max(64) }),
 ]);
 export const rulesBody = z.strictObject({ text: z.string(), version: z.string().min(1) });
-// Realms (issue #185): one change to the sign-in config against the version read. A realm's own settings are
-// checked by loading the changed config, so a refusal names the field as a start would.
+// Realms (issues #185, #200): one change to the sign-in config against the version read. A realm's own
+// settings are checked by loading the changed settings, so a refusal names the field as a start would.
 const realmName = z.string().min(1).max(64);
 const realmsVersion = { version: z.string().min(1) };
+const username = z.string().trim().min(1, 'username must not be empty').max(128);
 export const realmsEditBody = z.discriminatedUnion('action', [
-  z.strictObject({ action: z.literal('save'), name: realmName.optional(), entry: z.string().min(1).max(64_000), ...realmsVersion }),
+  z.strictObject({ action: z.literal('save'), name: realmName.optional(), realm: z.looseObject({ name: realmName, label: z.string().max(128).optional(), type: z.enum(REALM_TYPES) }), ...realmsVersion }),
   z.strictObject({ action: z.literal('remove'), name: realmName, ...realmsVersion }),
   z.strictObject({ action: z.literal('move'), name: realmName, to: z.number().int().min(0), ...realmsVersion }),
   z.strictObject({ action: z.literal('enable'), name: realmName, enabled: z.boolean(), ...realmsVersion }),
   z.strictObject({ action: z.literal('settings'), local: z.boolean().optional(), none: z.enum(UI_ROLES).nullable().optional(), ...realmsVersion }),
+  z.strictObject({
+    action: z.literal('account'), realm: realmName, username, role: z.enum(UI_ROLES),
+    password: z.string().min(8, 'a password has at least 8 characters').max(1024).optional(), user: z.string().min(1).max(64).optional(), ...realmsVersion,
+  }),
+  z.strictObject({ action: z.literal('account-remove'), realm: realmName, username, ...realmsVersion }),
 ]);
 // The content (url, events) is checked in the editor, so the UI shows one set of messages; here only
 // the shape. No secret (issue #56), no secretFile, no new name; secretEnv only on add, and only a
@@ -306,7 +312,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
 
   // Realms (issue #185, design.md "Sign-in: realms"): one change to the sign-in config, applied at once.
   // Answers the new GET /api/realms view.
-  app.post('/ui/api/realms', admin, async (req): Promise<RealmsView> => o.realms.edit(parseWith(realmsEditBody, req.body), sessionOf(req)!.identity));
+  app.post('/ui/api/realms', admin, async (req): Promise<RealmsView> => o.realms.edit(parseWith(realmsEditBody, req.body) as RealmsEdit, sessionOf(req)!.identity));
 
   app.post('/ui/api/logout', allow('viewer'), async (req) => {
     const s = sessions.find(String(req.headers[SESSION_HEADER]));

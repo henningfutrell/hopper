@@ -1,7 +1,6 @@
 // The operator CLI (src/cli.ts, design.md "Operator CLI"): config records read and replaced as JSON in
 // the daemon's own database, against their version.
 import { createHash } from 'node:crypto';
-import argon2 from 'argon2';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -131,23 +130,14 @@ describe('hopper login-code', () => {
   });
 });
 
-describe('hopper password-hash', () => {
-  it('prints an argon2id hash of the password on stdin that verifies; needs no database', async () => {
-    const out: string[] = [];
-    const err: string[] = [];
-    const code = await runCli(['password-hash'], { env: {}, stdin: () => 'correct horse\n', out: (t) => out.push(t), err: (t) => err.push(t) });
-    expect(code).toBe(0);
-    const hash = out.join('').trim();
-    expect(hash).toMatch(/^\$argon2id\$/);
-    expect(await argon2.verify(hash, 'correct horse')).toBe(true);
-    expect(await argon2.verify(hash, 'correct horse\n')).toBe(false);
-  });
-
-  it('refuses an empty password', async () => {
-    const err: string[] = [];
-    const code = await runCli(['password-hash'], { env: {}, stdin: () => '\n', out: () => {}, err: (t) => err.push(t) });
-    expect(code).toBe(2);
-    expect(err.join('')).toMatch(/empty/);
+describe('hopper config set sign-in (issue #200)', () => {
+  it('refuses password accounts in the record: Settings → Sign-in keeps them', () => {
+    const url = db();
+    const version = cli(url, ['config', 'version', 'sign-in']).out.trim();
+    const record = { version: 1, realms: [{ name: 'staff', type: 'password', users: [{ username: 'ada', passwordHash: '$argon2id$x', role: 'admin' }] }] };
+    expect(cli(url, ['config', 'set', 'sign-in', '--if-version', version], { stdin: JSON.stringify(record) }))
+      .toMatchObject({ code: 2, err: expect.stringMatching(/realms\.0\.users: password accounts are not part of the record/) });
+    expect(cli(url, ['config', 'set', 'sign-in', '--if-version', version], { stdin: JSON.stringify({ version: 1, local: { enabled: true }, realms: [{ name: 'staff', type: 'password' }] }) }).code).toBe(0);
   });
 });
 
@@ -156,7 +146,7 @@ describe('hopper help (issue #68)', () => {
     const r = cli(undefined, [arg]);
     expect(r.code).toBe(0);
     expect(r.err).toBe('');
-    for (const command of ['config get', 'config version', 'config set', 'login-code', 'users', 'user add', 'password-hash', 'help']) {
+    for (const command of ['config get', 'config version', 'config set', 'login-code', 'users', 'user add', 'help']) {
       expect(r.out).toContain(`hopper ${command}`);
     }
     expect(r.out).toMatch(/HOPPER_DATABASE_URL/);
