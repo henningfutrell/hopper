@@ -45,7 +45,7 @@ export interface Config {
   lanNames: string[];
   /** CIDR ranges a LAN request may come from. */
   lanPeers: string[];
-  /** How often the self-update checks the update repository; 0: only when asked (design.md "Self-update"). */
+  /** How often the self-update checks the update repository; not positive: every minute, never off (design.md "Self-update"). */
   updateCheckMs: number;
   /** Forces how the daemon starts again after an update: `exit` (a supervisor restarts it) or `respawn`; absent: detected. */
   restart?: 'exit' | 'respawn';
@@ -139,7 +139,7 @@ const SETTING_HELP: Record<keyof typeof schema.shape, string> = {
   HOPPER_KEEP_PANES: 'true: keep a job\'s pane open after it ends, for inspection',
   HOPPER_LOCAL_MACHINE: 'false: this host is not a machine (the container): the boot removes a `local` machine from the plugins config. A fresh plugins config lists none either way',
   HOPPER_UI_SESSION_HOURS: 'lifetime of a UI session',
-  HOPPER_UPDATE_CHECK_MS: 'how often self-update checks for a newer version; 0: only when asked',
+  HOPPER_UPDATE_CHECK_MS: 'how often self-update checks for a newer version; 0: the default, every minute (checks cannot be turned off)',
   HOPPER_RESTART: 'how the daemon starts again after an update: exit (a supervisor restarts it) or respawn. Unset: detected',
   HOPPER_GITHUB_URL: 'the GitHub people sign in with and connect (a GitHub Enterprise origin). Unset: https://github.com',
   HOPPER_GITHUB_CLIENT_ID: 'the client id of the GitHub App (device flow on) people sign in and connect through. Unset: the hopper\'s own',

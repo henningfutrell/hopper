@@ -8,6 +8,18 @@ export type ConnectedAccountProvider = (typeof CONNECTED_ACCOUNT_PROVIDERS)[numb
 export const CONNECTED_VIA = 'the hopper\'s app';
 
 /**
+ * GitHub: one installation of the hopper's app that the connected account can see — the account it is
+ * installed on and the repositories it reaches there that this account can see. `all`: every repository
+ * of that account; `selected`: only the chosen ones. `settingsUrl`: where to choose them on GitHub.
+ */
+export interface AppInstallation {
+  account: string;
+  repositorySelection: 'all' | 'selected';
+  repositories: string[];
+  settingsUrl?: string;
+}
+
+/**
  * A user's connected account at one provider, as GET /api/connected-accounts reports it: connected
  * (the account, when), not connected, waiting on the device code the user enters at
  * `verificationUri`, or failed. Facts only, never a token.
@@ -17,8 +29,8 @@ export type ConnectedAccountStatus = { provider: ConnectedAccountProvider; via: 
     state: 'connected'; account: string; connectedAt: string;
     /** GitHub: where to install the hopper's GitHub App — it reaches only the repositories it is installed on. */
     installUrl?: string;
-    /** GitHub: the accounts the app is installed on that this account can see; absent when GitHub could not be asked. */
-    installations?: string[];
+    /** GitHub: the installations of the app this account can see, each with the repositories it reaches; absent when GitHub could not be asked. */
+    installations?: AppInstallation[];
   }
   | { state: 'not-connected' }
   | { state: 'waiting'; userCode: string; verificationUri: string; expiresAt: string }

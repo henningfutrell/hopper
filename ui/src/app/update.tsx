@@ -34,7 +34,7 @@ function ApplyButton({ s }: { s: UpdateStatus }) {
   const authed = useCanAdminInstance();
   if (s.state !== 'available') return null;
   return (
-    <Button size="xs" disabled={!authed} title={authed ? 'Build the update beside the running hopper, then restart; running jobs keep running' : 'Only the hopper\'s admin can update'}
+    <Button size="xs" disabled={!authed} title={authed ? 'Build the update beside the running hopper, then restart; running jobs keep running' : 'Only the hopper\'s admins can update'}
       onClick={() => void updateAct({ action: 'apply' }, 'Updating: running jobs keep running')}>
       <ArrowUpCircle />Update now
     </Button>
@@ -118,7 +118,7 @@ export function VersionDetails({ className }: { className?: string }) {
       {s.whatsNew.length > 0 && <div className="space-y-1 border-t pt-3"><h3 className="text-xs font-medium">What's new in the update</h3><WhatsNew lines={s.whatsNew} /></div>}
       {s.installedWhatsNew.length > 0 && <div className="space-y-1 border-t pt-3"><h3 className="text-xs font-medium">In this version</h3><WhatsNew lines={s.installedWhatsNew} /></div>}
       <a href="#settings/version-history" className="block text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline">Every version and what it brought: Settings → Version history</a>
-      {!authed && <p className="text-xs text-muted-foreground">Read-only: only the hopper's admin can update or change these settings.</p>}
+      {!authed && <p className="text-xs text-muted-foreground">Read-only: only the hopper's admins can update or change these settings.</p>}
     </div>
   );
 }

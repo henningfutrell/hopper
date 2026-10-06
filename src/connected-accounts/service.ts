@@ -7,7 +7,7 @@
 // jobs it gives, ask here for the token; one that expired (an app that did not opt out of expiration)
 // asks the person to sign in again.
 import type { ConnectedAccount, ConnectedAccounts, ConnectedAccountTokens, Connection, UserStore } from '../domain/ports.ts';
-import { CONNECTED_ACCOUNT_PROVIDERS, CONNECTED_VIA, type ConnectedAccountProvider, type ConnectedAccountStatus } from '../domain/types.ts';
+import { CONNECTED_ACCOUNT_PROVIDERS, CONNECTED_VIA, type AppInstallation, type ConnectedAccountProvider, type ConnectedAccountStatus } from '../domain/types.ts';
 import { deviceFlow, deviceFlowFailure, type DeviceFlow, type Grant } from './device-flow.ts';
 import type { AccountIdentity } from './identity.ts';
 import { CLIENT_ID_VARIABLE, installUrl, type HopperApps } from './hopper-app.ts';
@@ -22,8 +22,8 @@ export interface ConnectedAccountsOptions {
   apps: HopperApps;
   /** Who a token belongs to. */
   whoIs(provider: ConnectedAccountProvider, token: string): Promise<AccountIdentity>;
-  /** GitHub: the accounts the hopper's GitHub App is installed on that the token's user sees. */
-  installations(token: string): Promise<string[]>;
+  /** GitHub: the installations of the hopper's GitHub App that the token's user sees, with the repositories each reaches. */
+  installations(token: string): Promise<AppInstallation[]>;
   /** Called once an account is connected from Sources: a later sign-in with it lands in this user. */
   link?(provider: ConnectedAccountProvider, subject: string): void;
   clock: { now(): Date };

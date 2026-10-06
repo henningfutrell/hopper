@@ -18,7 +18,7 @@
 import rateLimit from '@fastify/rate-limit';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { LOCAL_IDENTITY, NO_SIGN_IN_IDENTITY, SignInRefused, type SignIn } from '../../auth/index.ts';
+import { isSuperAdmin, LOCAL_IDENTITY, NO_SIGN_IN_IDENTITY, SignInRefused, type SignIn } from '../../auth/index.ts';
 import type { Clock, Connection, InstanceStore } from '../../domain/ports.ts';
 import type { Identity, UiRole, User } from '../../domain/types.ts';
 import { parseWith } from '../errors.ts';
@@ -112,7 +112,7 @@ function routes(app: FastifyInstance, o: Parameters<typeof registerSignInRoutes>
     const user = await o.userFor(who);
     if (connection) o.connect(user.id, connection);
     const s = sessions.create({ role, identity: who, userId: user.id });
-    const shown = sessionUser(s, user.name, o.instanceAdmin(s));
+    const shown = sessionUser(s, user.name, isSuperAdmin(signIn.config(), who), o.instanceAdmin(s));
     console.warn(`hopper: UI session started: ${who.realm} ${shown.identity} as user ${user.id}, role ${role}`);
     return reply.header('cache-control', 'no-store').send({ ...extra, token: s.token, expiresAt: s.expiresAt, user: shown });
   };

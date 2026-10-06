@@ -1,9 +1,10 @@
-// No special admin login (issue #240, docs/sign-in.md "The instance admin"): the hopper's admin is the
-// first person to sign in with GitHub (issue #239) — on a hopper with no first GitHub admin recorded,
-// the oldest user — and only their sessions do what the hopper does for everyone (issue #241): sign-in
-// realms, adding users and their login links, updates, the plugin store, the users and the totals across
-// them. A login code is no admin login: a new user's login link signs in as that user, who sets up their
-// own environment but never the instance's; a device link signs in as the session's own user, never more.
+// No special admin login (issue #240, docs/sign-in.md "The instance admin"): the hopper's admins are the
+// first person to sign in with GitHub (issue #239) and whoever a realm makes admin (issue #242) — on a
+// hopper with no super admin, also the oldest user — and only their sessions do what the hopper does for
+// everyone (issue #241): sign-in realms, adding users and their login links, updates, the plugin store,
+// the users and the totals across them. A login code is no admin login: a new user's login link signs in
+// as that user, who sets up their own environment but never the instance's; a device link signs in as the
+// session's own user, never more.
 // The daemon, store and HTTP edge are real; GitHub is a fake on loopback (test/support/fake-forges.ts).
 import { afterEach, describe, expect, it } from 'vitest';
 import type { TestApp } from '../support/app.ts';
@@ -110,13 +111,32 @@ describe('the instance admin is the first GitHub user; a login code is no admin 
     noneRefused(await instanceLevel(app, device));
   });
 
-  it('another GitHub user a rule makes admin is admin of their own user only', async () => {
+  it('another GitHub user a rule makes admin is an admin of the hopper (issue #242); their device link is not', async () => {
     const github = await forge();
     const { app, origin } = await startNewHopper(h, withRoles({ admin: { usernames: ['second'] } }), ENV(github));
     await signInAs(app.url, origin, github, 'octo-user');
     const second = await signInAs(app.url, origin, github, 'second');
-    expect((await session(app, second)).user).toMatchObject({ name: 'second', role: 'admin', instanceAdmin: false });
-    allRefused(await instanceLevel(app, second));
+    expect((await session(app, second)).user).toMatchObject({ name: 'second', role: 'admin', superAdmin: false, instanceAdmin: true });
+    noneRefused(await instanceLevel(app, second));
+    // Their device link signs in as their user, which no super admin signs in as: admin of that user only.
+    const link = await app.ui<{ links: string[] }>('/ui/api/device-link', {}, { token: second });
+    const device = await app.loginWith(codeOf(link.body.links[0]!));
+    expect((await session(app, device)).user).toMatchObject({ name: 'second', instanceAdmin: false });
+    allRefused(await instanceLevel(app, device));
+  });
+
+  it('someone a regular admin makes admin in Settings → Sign-in → Admins is an admin of the hopper (issue #242)', async () => {
+    const github = await forge();
+    const { app, origin } = await startNewHopper(h, withRoles({ admin: { usernames: ['second'] }, viewer: { usernames: ['third'] } }), ENV(github));
+    await signInAs(app.url, origin, github, 'octo-user');
+    const second = await signInAs(app.url, origin, github, 'second');
+    const third = await signInAs(app.url, origin, github, 'third');
+    const view = (await app.api('GET', '/api/realms', undefined, { 'x-hopper-session': second })).body;
+    const who = view.people.find((p: { user: string }) => p.user === 'third');
+    expect((await app.ui('/ui/api/realms', { action: 'admin', who: { realm: who.realm, subject: who.subject }, version: view.version }, { token: second })).status).toBe(200);
+    const again = await signInAs(app.url, origin, github, 'third');
+    expect((await session(app, again)).user).toMatchObject({ name: 'third', role: 'admin', instanceAdmin: true });
+    expect(third).not.toBe(again);
   });
 
   it('a hopper with no first GitHub admin recorded: the oldest user is the instance admin, a user added later is not', async () => {

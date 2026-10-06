@@ -22,14 +22,3 @@ export function claimGithubAdmin(instance: Instance, who: Identity): AuthConfig 
     return store.write(next, version) ? config : undefined;
   });
 }
-
-/**
- * The hopper's admin (issue #240, docs/sign-in.md "The instance admin"): the user the first GitHub admin
- * signs in as while that realm is on; with none recorded, the oldest user. Undefined: nobody yet. Only
- * their admin sessions do what is the instance's (issue #241); a login code makes nobody this admin.
- */
-export function instanceAdminUser(config: AuthConfig, userOf: (realm: string, subject: string) => string | undefined, oldest: string | undefined): string | undefined {
-  const first = config.githubAdmin;
-  if (first && config.realms.some((r) => r.name === first.realm && r.type === 'github' && r.enabled)) return userOf(first.realm, first.subject);
-  return oldest;
-}

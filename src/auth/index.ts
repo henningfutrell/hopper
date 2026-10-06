@@ -46,7 +46,7 @@ import { createSamlRealm } from './saml.ts';
 
 export { SIGN_IN, loadSignInConfig, signInConfigProblem, type AuthConfig } from './config.ts';
 export { AuthEditError, editSignIn, realmsView, type SignInEdit } from './edit.ts';
-export { claimGithubAdmin, instanceAdminUser } from './github-admin.ts';
+export { claimGithubAdmin } from './github-admin.ts';
 export { prepareSignIn } from './start.ts';
 
 const FLOW_MS = 10 * 60_000;
@@ -140,7 +140,14 @@ export function roleIn(config: AuthConfig, who: Identity): UiRole | null {
   if (!r?.enabled) return null;
   const first = config.githubAdmin;
   if (r.type === 'github' && first?.realm === who.realm && first.subject === who.subject) return 'admin';
+  if (isSuperAdmin(config, who)) return 'admin';
   return roleFor(who, r.roles);
+}
+
+/** `who` is a super admin (issue #242): named in the super admins, and its realm is there and on. Never the login code or no sign-in. */
+export function isSuperAdmin(config: AuthConfig, who: Pick<Identity, 'realm' | 'subject'>): boolean {
+  return config.superAdmins.some((a) => a.realm === who.realm && a.subject === who.subject)
+    && config.realms.some((r) => r.name === who.realm && r.enabled);
 }
 
 function buildRedirect(r: Extract<RealmConfig, { type: 'oidc' | 'saml' }>, origin: string): RedirectRealm {

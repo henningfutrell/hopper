@@ -19,7 +19,7 @@ describe('an identity signs in as its user', () => {
     const idp = await oidcIdp(h, { claims: { sub: 'sub-ada', preferred_username: 'ada', name: 'Ada Lovelace', email: 'ada@example.com', email_verified: true }, userinfo: { sub: 'sub-ada' } });
     const { app, origin } = await startWithAuth(h, { version: 1, realms: [oidcRealm(idp, { defaultRole: 'operator' })] });
     const first = (await signIn(app.url, origin, 'corp')).token!;
-    expect((await session(app, first)).user).toEqual({ id: 'ada', name: 'ada', role: 'operator', instanceAdmin: false, realm: 'corp', identity: 'Ada Lovelace' });
+    expect((await session(app, first)).user).toEqual({ id: 'ada', name: 'ada', role: 'operator', realm: 'corp', identity: 'Ada Lovelace', superAdmin: false, instanceAdmin: false });
     const again = (await signIn(app.url, origin, 'corp')).token!;
     expect((await session(app, again)).user.id).toBe('ada');
     expect(app.app.users().map((u) => u.id)).toEqual(['admin', 'ada']);
@@ -44,7 +44,7 @@ describe('an identity signs in as its user', () => {
   it('no sign-in is admin', async () => {
     const { app, origin, host } = await startWithAuth(h, { version: 1, none: { role: 'viewer' } });
     const res = await rawRequest(app.url, { path: '/ui/auth/none', ...json(host, origin, {}) });
-    expect((await session(app, tokenOf(res.text))).user).toEqual({ id: 'admin', name: 'admin', role: 'viewer', instanceAdmin: false, realm: 'none', identity: 'no sign-in' });
+    expect((await session(app, tokenOf(res.text))).user).toEqual({ id: 'admin', name: 'admin', role: 'viewer', realm: 'none', identity: 'no sign-in', superAdmin: false, instanceAdmin: false });
   });
 
   it('a session outside admin may not add users: users are an instance mutation', async () => {

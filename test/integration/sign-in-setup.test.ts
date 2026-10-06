@@ -66,9 +66,7 @@ describe('sign-in from the environment', () => {
     expect(stored(o.app).realms[1]).toMatchObject({ clientSecret: 'from-the-env', roles: { admin: { emails: ['ada@example.com'] } } });
     const run = await signIn(o.app.url, o.origin, 'corp');
     expect(await session(o.app, run.token)).toMatchObject({ user: { realm: 'corp', role: 'admin' } });
-    // Admin of her own user; the realms are the instance admin's (issue #240): read here from loopback.
-    expect((await o.app.api('GET', '/api/realms', undefined, { 'x-hopper-session': run.token! })).status).toBe(403);
-    const v = (await o.app.api('GET', '/api/realms')).body;
+    const v = await realms(o.app, run.token!);
     expect(v.realms.map((r: { name: string; environment?: boolean }) => [r.name, r.environment === true])).toEqual([['github', false], ['corp', true]]);
   });
 

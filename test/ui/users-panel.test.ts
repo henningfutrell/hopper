@@ -82,7 +82,7 @@ describe('Settings: Users', () => {
 
   it('a session that is not admin neither lists nor adds users', async () => {
     await render('operator');
-    await vi.waitFor(() => expect(document.body.textContent).toContain("Only the hopper's admin sees and adds users."));
+    await vi.waitFor(() => expect(document.body.textContent).toContain("Only the hopper's admins see and add users."));
     expect(rows()).toEqual([]);
     expect(button('Add user')).toBeUndefined();
   });
@@ -100,9 +100,9 @@ describe('Settings: Users', () => {
     expect(totals()).toContain('2 readings');
   });
 
-  it('an admin of their own user who is not the hopper\'s admin (issue #240) neither lists nor adds users, nor sees the totals', async () => {
+  it('an admin of their own user who is not an instance admin (issue #240) neither lists nor adds users, nor sees the totals', async () => {
     await render('admin', 'local', false);
-    await vi.waitFor(() => expect(document.body.textContent).toContain('Only the hopper\'s admin sees and adds users.'));
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Only the hopper\'s admins see and add users.'));
     expect(rows()).toEqual([]);
     expect(button('Add user')).toBeUndefined();
     expect(document.querySelector('[data-instance-totals]')).toBeNull();
@@ -110,7 +110,7 @@ describe('Settings: Users', () => {
 
   it('a session that is not admin sees no totals', async () => {
     await render('operator');
-    await vi.waitFor(() => expect(document.body.textContent).toContain("Only the hopper's admin sees and adds users."));
+    await vi.waitFor(() => expect(document.body.textContent).toContain("Only the hopper's admins see and add users."));
     expect(document.querySelector('[data-instance-totals]')).toBeNull();
   });
 
