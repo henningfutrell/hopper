@@ -9,7 +9,7 @@ Every way of signing in ends the same: a **UI session** with a **UI role**, acti
 (issue #158). Sessions, roles and logout behave the same whichever realm signed the user in.
 
 - [Pick a setup](#pick-a-setup)
-- [Managing realms in Settings](#managing-realms-in-settings) · [The sign-in config](#the-sign-in-config)
+- [Managing sign-in in Settings](#managing-sign-in-in-settings) · [Realm settings](#realm-settings) · [The sign-in config from the CLI](#the-sign-in-config-from-the-cli)
 - [No sign-in](#no-sign-in) · [Password realm](#password-realm) · [LDAP realm](#ldap-realm)
 - [UI roles and role rules](#ui-roles-and-role-rules)
 - [Who signs in as which user](#who-signs-in-as-which-user)
@@ -25,29 +25,34 @@ Every way of signing in ends the same: a **UI session** with a **UI role**, acti
 
 | setup | what to do |
 |---|---|
-| One person, one machine | Nothing. With no realm, the one-time login code is the only way in: `hopper login-code` mints one (good once, 10 minutes); on the host install `bash ~/.local/lib/hopper/scripts/open-ui.sh` opens the UI already logged in. It signs in as `admin`. |
-| One person, a few devices on a home LAN | `HOPPER_LAN_NAMES` / `HOPPER_LAN_PEERS` (`docs/design.md` "Reaching the UI across the LAN") and device links. Add a realm if you prefer signing in with an account. |
-| Behind a proxy or network that already decides who gets in | [No sign-in](#no-sign-in): `"none": { "role": … }`. Everyone who reaches the UI acts with that role. |
-| A few people, no directory or identity provider | A [password realm](#password-realm): accounts with argon2id hashes in the realm. Each account gets a [user of its own](#who-signs-in-as-which-user). |
+| One person, one machine | Nothing. The one-time login code works: `hopper login-code` mints one (good once, 10 minutes); on the host install `bash ~/.local/lib/hopper/scripts/open-ui.sh` opens the UI already logged in. It signs in as `admin`. To sign in with a username and password instead, add an account to the **Password** realm. |
+| One person, a few devices on a home LAN | `HOPPER_LAN_NAMES` / `HOPPER_LAN_PEERS` (`docs/design.md` "Reaching the UI across the LAN") and device links, or a password account. |
+| Behind a proxy or network that already decides who gets in | [No sign-in](#no-sign-in), with a role. Everyone who reaches the UI acts with that role. |
+| A few people, no directory or identity provider | The [password realm](#password-realm): an account per person, added in Settings → Sign-in. |
 | A company directory (OpenLDAP, Active Directory, FreeIPA) | An [LDAP realm](#ldap-realm): people sign in with their directory username and password; directory groups grant roles. |
-| A team, or anyone reaching it over the internet | A reverse proxy with TLS, `HOPPER_PUBLIC_URL`, one or more realms, role rules, and usually the login code off (`"local": { "enabled": false }`). |
+| A team, or anyone reaching it over the internet | A reverse proxy with TLS, `HOPPER_PUBLIC_URL`, one or more realms, role rules, and usually the login code off. |
 
-## Managing realms in Settings
+## Managing sign-in in Settings
 
-An admin opens **Settings → Sign-in**. It lists the realms in order, each with its type, a switch to
-turn it on or off, and — for OIDC, GitHub and SAML — the callback URL (and SAML metadata URL) to
-register with the identity provider, ready to copy.
+Sign-in is not a file. Everything about it — the realms, their settings, the password accounts, the
+login code and no sign-in — is kept in the daemon's database and changed in **Settings → Sign-in**,
+by an admin. Every setting is a field of a form; nothing is written as YAML or JSON.
 
-- **Add realm**: pick a type; the editor starts with that type's settings and example values. Replace
-  them (every setting: [The sign-in config](#the-sign-in-config) below) and **Save**.
-- **Edit** (pencil): the realm's entry, one JSON object. Its `name` stays: sign-ins are linked to
-  users by it, and the identity provider holds it in the callback URL. To rename, remove it and add
-  a new one.
+The page lists the realms in order, each with its type, a switch to turn it on or off, and — for
+OIDC, GitHub and SAML — the callback URL (and SAML metadata URL) to register with the identity
+provider, ready to copy. A new hopper starts with one realm, **Password**, with no accounts.
+
+- **Add realm**: pick a type, fill in its fields (every one: [Realm settings](#realm-settings)) and
+  **Save**. A field left empty takes its default, shown greyed in the field.
+- **Edit** (pencil): the same form, filled in. The name stays: sign-ins are linked to users by it,
+  and the identity provider holds it in the callback URL. To rename, remove the realm and add a new one.
 - **Move up / down**: the order. The username and password form tries the password and LDAP realms
   that are on in this order, and the first that accepts the password signs in. The OIDC, GitHub and
   SAML realms that are on are sign-in buttons, in this order.
 - **On / off**: a realm that is off signs nobody in, and the sessions it made end at once. Its secret
   variable need not be set while it is off.
+- **Accounts** (under a password realm): add, change the role of, give a new password to, or remove
+  an account: [Password realm](#password-realm).
 - **Without a realm**: the login code on or off, and no sign-in with its role.
 
 A change **works at once**, without a restart: the sign-in page follows it, and sessions follow it as
@@ -56,157 +61,113 @@ sessions; a changed role applies). A change that would not load is refused with 
 the field (a missing secret variable is named too) — nothing is saved. A change that would end **your
 own** admin session (turning off or removing the realm you signed in with, lowering your own role,
 turning off the login code you signed in with) is refused: sign in as an admin another way first.
+Invalid sign-in config stop the daemon at start, with a message naming the field (`journalctl
+--user -u hopper`): sign-in fails closed, never open.
 
-Secrets are never written into a realm: it names the variable that holds one (`clientSecretEnv`,
-`bindPasswordEnv`). Set the variable in the daemon's environment — `daemon.env` on the host install,
-the container's env file otherwise — and restart once; after that the realm can be changed in
-Settings without a restart.
+**Locked out.** If nobody can sign in as admin any more, turn the login code back on in
+[the sign-in config from the CLI](#the-sign-in-config-from-the-cli) where the hopper runs, restart it, and sign in with a code.
 
-## The sign-in config
+Secrets are never entered into a realm: it names the variable that holds one (**Client secret
+variable**, **Bind password variable**). Set the variable in the daemon's environment — `daemon.env`
+on the host install, the container's env file otherwise — or mount the secret as a file and set
+`<variable>_FILE` to its path (design.md "Secrets"), and restart once; after that the realm can be
+changed in Settings without a restart. The SAML certificate is not a secret: it is pasted into its
+field (PEM or bare base64).
 
-The realms live in the **sign-in config**, a config record in the daemon's database, not a file. It
-is shared by every user. Settings → Sign-in edits it: each realm as a JSON object, the login code and
-no sign-in under **Without a realm**. A change that does not load is refused with the reason.
+## Realm settings
 
-For scripts, and to mend a sign-in config that locks everyone out, the operator CLI reads and
-replaces it whole, as JSON: `hopper config get sign-in` prints it, `hopper config version sign-in`
-prints its version, and `hopper config set sign-in --if-version <version>` replaces it with the JSON
-on stdin. A config that does not load, or that changed since you read its version, is refused and
-nothing is written. A change made with the CLI applies at the next start (`systemctl --user restart
-hopper` on the host install). An invalid sign-in config stops the daemon with a message naming the
-field (`journalctl --user -u hopper`): sign-in fails closed, never open.
+Every type has a **Name** (lowercase letters, digits, dashes; part of the callback URL), a **Label**
+(shown in Settings and on the sign-in button; default: the name), and is on or off. Every type but
+password has **role rules** and a **default role** ([UI roles and role rules](#ui-roles-and-role-rules)).
+The setting's name in error messages is in brackets.
 
-The whole sign-in config, as `hopper config get sign-in` prints it:
+| type | field | default | |
+|---|---|---|---|
+| `password` | — | | Its accounts, under the realm: [Password realm](#password-realm). |
+| `ldap` | Directory URL (`url`) | — | `ldaps://host[:port]`, or `ldap://` with StartTLS on; plain `ldap://` only to `127.0.0.1`/`localhost`. |
+| | StartTLS (`startTls`) | off | Upgrade an `ldap://` connection with StartTLS. |
+| | Bind DN, Bind password variable (`bindDn`, `bindPasswordEnv`) | none (anonymous search) | The account that searches for the user, and the variable holding its password. |
+| | User base (`userBase`) | — | Where people are: `ou=people,dc=example,dc=com`. |
+| | User filter (`userFilter`) | `(uid={username})` | `{username}` is the typed username, escaped. Active Directory: `(sAMAccountName={username})`. |
+| | Subject attribute (`attributes.subject`) | the entry's DN | A stable id: `entryUUID` (OpenLDAP), `objectGUID` (AD). |
+| | Username / Email / Name / Group attribute (`attributes.…`) | `uid` / `mail` / `cn` / `memberOf` | Attribute names. Group values are group DNs. |
+| | Group search base, filter, name attribute (`groupSearch.…`) | none; `(member={dn})`; `cn` | Groups found by search, for a directory without `memberOf`; the group is known by its name attribute. |
+| `oidc` | Issuer URL (`issuer`) | — | Discovery reads `<issuer>/.well-known/openid-configuration`. https (http only to `127.0.0.1`/`localhost`). |
+| | Client ID (`clientId`) | — | |
+| | Client secret variable (`clientSecretEnv`) | none | The environment variable holding the secret. Empty for a public client (PKCE only). |
+| | Scopes (`scopes`) | `openid email profile` | Space-separated. Add what your groups claim needs (`groups` at Okta). |
+| | Email / Username / Name / Groups claim (`claims.…`) | `email` / `preferred_username` / `name` / `groups` | Claim names, read from the ID token, then userinfo. Groups may be a list or one string. |
+| | Trust unverified email (`trustUnverifiedEmail`) | off | Count the email even without `email_verified: true`. Only for an issuer whose emails you control. |
+| `github` | Client ID, Client secret variable (`clientId`, `clientSecretEnv`) | — | An OAuth app (not a GitHub App). Both are required. |
+| | GitHub URL / API URL (`webUrl` / `apiUrl`) | `https://github.com` / `https://api.github.com` | GitHub Enterprise Server: `https://ghe.example.com` and `https://ghe.example.com/api/v3`. |
+| `saml` | Sign-on URL (`entryPoint`) | — | The IdP's single sign-on URL (HTTP-Redirect binding). |
+| | Identity provider certificate (`idpCert`) | — | The IdP's signing certificate: PEM or bare base64. |
+| | Identity provider issuer (`idpIssuer`) | none | The IdP's entity id. Set it: a response from another issuer is then refused. |
+| | Entity ID (`entityId`) | `<sign-in origin>/ui/auth/<name>/metadata` | This service's entity id (the IdP calls it Identifier or Audience). |
+| | Email / Name / Groups / Username attribute (`attributes.…`) | `email` / `displayName` / `groups` / NameID | Attribute names in the assertion. |
+| | Require a signed response (`requireSignedResponse`) | off | Also require the whole response signed. The assertion must be signed either way. |
 
-```json
-{
-  "version": 1,
-  "local": { "enabled": true },
-  "none": { "role": "viewer" },
-  "realms": [
-    {
-      "name": "staff",
-      "label": "Staff",
-      "type": "password",
-      "users": [
-        { "username": "ada", "passwordHash": "$argon2id$v=19$…", "role": "operator" }
-      ]
-    },
-    {
-      "name": "google",
-      "label": "Google",
-      "type": "oidc",
-      "enabled": false,
-      "issuer": "https://accounts.google.com",
-      "clientId": "1234-abc.apps.googleusercontent.com",
-      "clientSecretEnv": "GOOGLE_CLIENT_SECRET",
-      "roles": {
-        "admin": { "emails": ["ada@example.com"] },
-        "operator": { "emailDomains": ["example.com"] },
-        "defaultRole": null
-      }
-    }
-  ]
-}
+## The sign-in config from the CLI
+
+For scripts, and to mend sign-in that locks everyone out, the operator CLI reads and replaces the
+**sign-in config** — the realms with their settings, the login code and no sign-in, the config record
+`sign-in`, as one JSON value — on the daemon's host. It does not hold the password accounts: those are only changed in
+Settings → Sign-in, and a record that carries them is refused. `hopper config get sign-in` prints it,
+`hopper config version sign-in` prints its version, and `hopper config set sign-in --if-version
+<version>` replaces it with the JSON on stdin. A record that does not load, or that changed since you
+read its version, is refused and nothing is written. A change made with the CLI applies at the next
+start (`systemctl --user restart hopper` on the host install).
+
+To turn the login code back on after a lockout:
+
+```sh
+hopper config get sign-in > sign-in.json      # set "local": { "enabled": true } in it
+hopper config version sign-in
+hopper config set sign-in --if-version <version> < sign-in.json
+systemctl --user restart hopper
+hopper login-code --link http://127.0.0.1:4790
 ```
 
-| field | |
-|---|---|
-| `version` | `1`. |
-| `local.enabled` | The one-time login code (signs in as admin). Default `true`. |
-| `none` | No sign-in: everyone gets `none.role`. Absent: off. |
-| `realms` | The realms, in order. |
-| `name` | Lowercase letters, digits, dashes: it is part of the callback URL. |
-| `label` | Shown in Settings, and on the button of an OIDC, GitHub or SAML realm: `Google` makes the button "Sign in with Google". Default: the name. |
-| `type` | `password`, `ldap`, `oidc`, `github` or `saml`. The type's settings follow it (table below). |
-| `enabled` | `false` turns the realm off. Default `true`. |
-| `roles` | Who gets which UI role ([role rules](#ui-roles-and-role-rules)); nobody, if left out. |
-| `roles.defaultRole` | The role of a signed-in account no rule matches; `null`: no session. |
+In the record each field has the name in brackets in [Realm settings](#realm-settings); `version` is
+`1`, `local.enabled` the login code (default on), `none.role` no sign-in (absent: off), and `realms`
+the realms in order, each with `name`, `label`, `type`, `enabled` (absent: on) and `roles`.
 
-A secret comes **only** from the runtime: `clientSecretEnv` and `bindPasswordEnv` name the variable.
-Put it in the daemon's environment, or mount the secret as a file and set `<variable>_FILE` to its
-path (design.md "Secrets"). Inline `clientSecret`, `clientSecretFile` and `bindPassword` are refused.
-The SAML certificate is not a secret: `idpCert`, inline only (PEM or bare base64; in JSON a PEM's
-line breaks are written `\n`). `idpCertFile` is refused.
-
-**Per type:**
-
-| type | setting | default | |
-|---|---|---|---|
-| every type | `name`, `type` | — | |
-| | `label` | the name | |
-| | `enabled` | `true` | |
-| `password` | `users` | — | `{ username, passwordHash, role }` each; no `roles`: each account carries its role. |
-| `ldap` | `url` | — | `ldaps://host[:port]`, or `ldap://` with `startTls: true`; plain `ldap://` only to `127.0.0.1`/`localhost`. |
-| | `startTls` | `false` | Upgrade an `ldap://` connection with StartTLS. |
-| | `bindDn`, `bindPasswordEnv` | none (anonymous search) | The account that searches for the user. `bindPasswordEnv` names the variable holding its password. |
-| | `userBase` | — | Where people are: `ou=people,dc=example,dc=com`. |
-| | `userFilter` | `(uid={username})` | `{username}` is the typed username, escaped. Active Directory: `(sAMAccountName={username})`. |
-| | `attributes.subject` | the entry's DN | A stable id: `entryUUID` (OpenLDAP), `objectGUID` (AD). |
-| | `attributes.username` / `.email` / `.name` / `.groups` | `uid` / `mail` / `cn` / `memberOf` | Attribute names. `groups` values are group DNs. |
-| | `groupSearch` | none | `{ base, filter, name }`: groups found by search, for a directory without `memberOf`. `filter` default `(member={dn})`, `name` default `cn` (the group is known by that value). |
-| `oidc` | `issuer` | — | The issuer URL; discovery reads `<issuer>/.well-known/openid-configuration`. https (http only to `127.0.0.1`/`localhost`). |
-| | `clientId` | — | |
-| | `clientSecretEnv` | none | Name of the environment variable holding the secret. Omit for a public client (PKCE only). |
-| | `scopes` | `[openid, email, profile]` | Add what your groups claim needs (`groups` at Okta). |
-| | `claims.email` / `.username` / `.name` / `.groups` | `email` / `preferred_username` / `name` / `groups` | Claim names, read from the ID token, then userinfo. `groups` may be a list or one string. |
-| | `trustUnverifiedEmail` | `false` | Count `email` even without `email_verified: true`. Only for an issuer whose emails you control. |
-| `github` | `clientId`, `clientSecretEnv` | — | An OAuth app (not a GitHub App). `clientSecretEnv` is required. |
-| | `webUrl` / `apiUrl` | `https://github.com` / `https://api.github.com` | GitHub Enterprise Server: `https://ghe.example.com` and `https://ghe.example.com/api/v3`. |
-| `saml` | `entryPoint` | — | The IdP's single sign-on URL (HTTP-Redirect binding). |
-| | `idpCert` | — | The IdP's signing certificate, inline: PEM or bare base64. |
-| | `idpIssuer` | none | The IdP's entity id. Set it: a response from another issuer is then refused. |
-| | `entityId` | `<sign-in origin>/ui/auth/<name>/metadata` | This service's entity id (the IdP calls it Identifier or Audience). |
-| | `attributes.email` / `.name` / `.groups` / `.username` | `email` / `displayName` / `groups` / NameID | Attribute names in the assertion. |
-| | `requireSignedResponse` | `false` | Also require the whole response signed. The assertion must be signed either way. |
-
-**From before realms.** Older installs were migrated when the daemon updated. First to realms
-(issue #185): the sign-in document of an earlier version — `password:` and `providers:` — became
-realms; the password accounts became the first realm, `password`, and the providers followed in their
-order, under the same names. Then to a JSON config record (issue #198): the YAML document became the
-sign-in config, every value kept; its YAML comments were not (JSON has none). Nothing to do; sign-ins
-and sessions carry on.
+**From before.** Older installs were migrated when the daemon updated: the sign-in document of an
+earlier version became realms (issue #185), then the JSON record (issue #198), then its password
+accounts moved out of it into a table of their own (issue #200), each with its username, hash and
+role. Nothing to do; sign-ins and sessions carry on. `hopper password-hash` is gone: an admin sets a
+password in Settings → Sign-in.
 
 ## No sign-in
 
-```json
-{ "version": 1, "none": { "role": "viewer" } }
-```
+Settings → Sign-in → **Without a realm** → **No sign-in**: pick the role (viewer, operator or admin).
 
-`role` is `viewer`, `operator` or `admin`. In Settings → Sign-in it is set under **Without a realm**.
 Anyone who reaches the UI gets a session with that role, without a credential: the UI takes it by
 itself (`POST /ui/auth/none`; the exact UI origin is required, so another site cannot mint one in a
 visitor's browser). The daemon logs `NO SIGN-IN is on` at every start. It combines with the rest:
-no sign-in as `viewer` plus a realm or the login code means everyone may look and those who sign
+no sign-in as viewer plus a realm or the login code means everyone may look and those who sign
 in may act. Use it only where something in front — a VPN, a proxy with its own login, a network only
-you reach — already decides who gets in. With `role: admin`, anyone who reaches the UI can change
-every setting.
+you reach — already decides who gets in. As admin, anyone who reaches the UI can change every setting.
 
 ## Password realm
 
-```json
-{
-  "name": "staff",
-  "type": "password",
-  "users": [
-    { "username": "ada", "passwordHash": "$argon2id$v=19$m=65536,p=4,t=3$…", "role": "operator" }
-  ]
-}
-```
+Its **accounts** are listed under it in Settings → Sign-in: username, role, and the user each signs
+in as.
 
-Each account's `role` is `viewer`, `operator` or `admin`. The realm holds an **argon2id hash**, never
-a password. Make one with the operator CLI (it asks
-twice without echo on a terminal; from a pipe it reads the first line):
+- **Add account**: a username, a password (8 characters or more), a role (viewer, operator or admin),
+  and **Signs in as**: an existing user (Settings → Users), or "a new user of its own", made at its
+  first sign-in ([Who signs in as which user](#who-signs-in-as-which-user)). To sign in to your own
+  work with a password, pick your user — `owner` on a hopper with one user.
+- **Role**: change it in the account's row; it applies at once, also to its open sessions.
+- **New password** (key): sets a new one; the old one stops working at once.
+- **Remove** (bin): its sessions end at once. The user it signed in as, and their work, stay.
 
-```sh
-hopper password-hash
-```
-
-then paste it into the realm in Settings → Sign-in. Usernames are unique within the realm, case
-ignored. A wrong password, an unknown username and an empty password get the same 403, and an
-unknown username costs the same time as a wrong password. To change a password, replace the hash;
-to remove an account, delete its entry — its sessions end when the change is saved. The UI shows a
-username and password form; the form works on every UI origin (loopback, a LAN name, the public URL).
+The hopper keeps only an **argon2id hash** of each password, never the password. Usernames are
+unique within the realm, case ignored. The user an account signs in as is fixed once it has signed
+in; to change it, remove the account and add it again. A wrong password, an unknown username and an
+empty password get the same 403, and an unknown username costs the same time as a wrong password.
+A password realm with no account offers no username and password form. The form works on every UI
+origin (loopback, a LAN name, the public URL).
 
 **Rate limit.** Every sign-in route (`/ui/login`, `/ui/auth/…`) together accepts 20 attempts a
 minute per client address; past that, 429 until the minute is over. Behind a reverse proxy every
@@ -222,55 +183,48 @@ never sees a hash.
 
 OpenLDAP or FreeIPA:
 
-```json
-{
-  "name": "directory",
-  "label": "Directory",
-  "type": "ldap",
-  "url": "ldaps://ldap.example.com",
-  "bindDn": "cn=hopper,ou=services,dc=example,dc=com",
-  "bindPasswordEnv": "LDAP_BIND_PASSWORD",
-  "userBase": "ou=people,dc=example,dc=com",
-  "attributes": { "subject": "entryUUID" },
-  "roles": {
-    "admin": { "groups": ["cn=hopper-admins,ou=groups,dc=example,dc=com"] },
-    "operator": { "groups": ["cn=hopper-operators,ou=groups,dc=example,dc=com"] }
-  }
-}
-```
+| field | value |
+|---|---|
+| Type | LDAP or Active Directory |
+| Name | `directory` |
+| Label | Directory |
+| Directory URL | `ldaps://ldap.example.com` |
+| Bind DN | `cn=hopper,ou=services,dc=example,dc=com` |
+| Bind password variable | `LDAP_BIND_PASSWORD` |
+| User base | `ou=people,dc=example,dc=com` |
+| Subject attribute | `entryUUID` |
+| Role rules | admin for these groups: `cn=hopper-admins,ou=groups,dc=example,dc=com`; operator for these groups: `cn=hopper-operators,ou=groups,dc=example,dc=com` |
 
 Active Directory:
 
-```json
-{
-  "name": "ad",
-  "label": "Company account",
-  "type": "ldap",
-  "url": "ldaps://dc1.corp.example.com",
-  "bindDn": "CN=hopper,OU=Service Accounts,DC=corp,DC=example,DC=com",
-  "bindPasswordEnv": "AD_BIND_PASSWORD",
-  "userBase": "DC=corp,DC=example,DC=com",
-  "userFilter": "(sAMAccountName={username})",
-  "attributes": { "subject": "objectGUID", "username": "sAMAccountName", "name": "displayName" },
-  "roles": {
-    "admin": { "groups": ["CN=Hopper Admins,OU=Groups,DC=corp,DC=example,DC=com"] }
-  }
-}
-```
+| field | value |
+|---|---|
+| Type | LDAP or Active Directory |
+| Name | `ad` |
+| Label | Company account |
+| Directory URL | `ldaps://dc1.corp.example.com` |
+| Bind DN | `CN=hopper,OU=Service Accounts,DC=corp,DC=example,DC=com` |
+| Bind password variable | `AD_BIND_PASSWORD` |
+| User base | `DC=corp,DC=example,DC=com` |
+| User filter | `(sAMAccountName={username})` |
+| Subject attribute | `objectGUID` |
+| Username attribute | `sAMAccountName` |
+| Name attribute | `displayName` |
+| Role rules | admin for these groups: `CN=Hopper Admins,OU=Groups,DC=corp,DC=example,DC=com` |
 
 In the daemon's environment: `LDAP_BIND_PASSWORD=<password>` (or `AD_BIND_PASSWORD`), then restart
 once.
 
-- **Groups** are the values of `attributes.groups` (default `memberOf`): full group DNs, compared
+- **Groups** are the values of the **Group attribute** (default `memberOf`): full group DNs, compared
   exactly as the directory gives them. A directory without `memberOf` (an OpenLDAP without the
-  memberof overlay): set `"groupSearch": { "base": "ou=groups,dc=example,dc=com" }` and match on
-  the group's `cn` (`"groups": ["hopper-admins"]`).
-- **Subject**: set `attributes.subject` to an id that survives a rename (`entryUUID`, `objectGUID`).
+  memberof overlay): set **Group search base** to `ou=groups,dc=example,dc=com` and match on the
+  group's `cn` (a rule for the group `hopper-admins`).
+- **Subject**: set **Subject attribute** to an id that survives a rename (`entryUUID`, `objectGUID`).
   Left out, it is the entry's DN, which changes when the person is moved or renamed — and then signs
   in as a new user.
 - The **email** (`mail`) counts as verified: the directory vouches for it, so `emails` and
   `emailDomains` rules apply.
-- **TLS**: `ldaps://`, or `ldap://` with `"startTls": true`; the server's certificate must be trusted by
+- **TLS**: `ldaps://`, or `ldap://` with **StartTLS** on; the server's certificate must be trusted by
   Node (a private CA: `NODE_EXTRA_CA_CERTS=/path/ca.pem` in the daemon's environment).
 - With a password realm and an LDAP realm both on, the form tries them in their order; the first that
   accepts the password signs in. When none accepts and a directory could not be reached, the answer
@@ -284,18 +238,19 @@ once.
 | `operator` | + cancel and approve jobs; answer, close, dismiss questions and mark them seen |
 | `admin` | + change configuration: plugins, machines, routing rules, webhooks, the rules, router mode, sign-in realms; apply updates; hand out device links |
 
-The login code always signs in as `admin`, a password realm account as its own `role`. For every
-other realm, `roles` decides, the same way for every type:
+The login code always signs in as `admin`, a password account as its own role. For every other
+realm, its **role rules** decide, the same way for every type:
 
-- `admin`, `operator`, `viewer` each take any of `subjects`, `usernames`, `emails`, `emailDomains`,
-  `groups`. Any one match grants the role; **the highest matching role wins**.
+- A rule grants a role — `admin`, `operator` or `viewer` — to the subjects, usernames, emails, email
+  domains or groups it lists, one per line. Any one match grants the role; **the highest matching
+  role wins**.
 - `emails`, `emailDomains`, `usernames` ignore case; `subjects` and `groups` compare exactly.
 - Prefer identifiers the user cannot change: `subjects`, groups, verified emails. `usernames` is only
   as stable as the realm makes it — a GitHub login can be renamed and taken by someone else; an
   OIDC `preferred_username` is user-editable at some issuers.
-  `"emailDomains": ["example.com"]` matches `a@example.com`, not `a@sub.example.com`.
-- Nothing matches → `defaultRole`; absent or `null` → **no session** ("signed in, but the
-  sign-in config grants this account no role"). Leaving `roles` out lets nobody in — on purpose.
+  The email domain `example.com` matches `a@example.com`, not `a@sub.example.com`.
+- Nothing matches → the **default role**; none → **no session** ("signed in, but the sign-in config
+  grants this account no role"). A realm with no rules and no default role lets nobody in — on purpose.
 - Only an email the realm vouches for counts: OIDC `email_verified: true` (or
   `trustUnverifiedEmail`), GitHub's primary verified email, SAML's asserted email, LDAP's `mail`.
 
@@ -425,9 +380,10 @@ without a session by any process on the host — keep the daemon on a machine on
 
 ## Identity providers
 
-Each section: what to create at the identity provider, then the realm's entry, one JSON object —
-paste it into **Settings → Sign-in → Add realm**. Replace `<origin>` with the sign-in origin. Put each `clientSecretEnv` variable, as `NAME=<secret>`, in the daemon's environment
-(`daemon.env` on the host install), and restart once so the daemon has it.
+Each section: what to create at the identity provider, then the realm's fields — fill them in at
+**Settings → Sign-in → Add realm**; a field not listed stays empty (its default). Replace `<origin>`
+with the sign-in origin. Put each client secret variable, as `NAME=<secret>`, in the daemon's
+environment (`daemon.env` on the host install), and restart once so the daemon has it.
 
 ### Google
 
@@ -436,25 +392,21 @@ paste it into **Settings → Sign-in → Add realm**. Replace `<origin>` with th
 2. Authorized redirect URI: `<origin>/ui/auth/google/callback`.
 3. Copy the client id and secret.
 
-```json
-{
-  "name": "google",
-  "label": "Google",
-  "type": "oidc",
-  "issuer": "https://accounts.google.com",
-  "clientId": "1234-abc.apps.googleusercontent.com",
-  "clientSecretEnv": "GOOGLE_CLIENT_SECRET",
-  "roles": {
-    "admin": { "emails": ["ada@example.com"] }
-  }
-}
-```
+| field | value |
+|---|---|
+| Type | OpenID Connect |
+| Name | `google` |
+| Label | Google |
+| Issuer URL | `https://accounts.google.com` |
+| Client ID | `1234-abc.apps.googleusercontent.com` |
+| Client secret variable | `GOOGLE_CLIENT_SECRET` |
+| Role rules | admin for these emails: `ada@example.com` |
 
 In the daemon's environment: `GOOGLE_CLIENT_SECRET=<secret>`.
 
 Google sends no groups. For "everyone in our Google Workspace", match the hosted-domain claim
 rather than the email domain (a personal Google account can carry a verified address at any domain):
-set `"claims": { "groups": "hd" }` and grant `"groups": ["example.com"]`.
+set **Groups claim** to `hd` and add the rule "groups: `example.com`".
 
 ### Microsoft Entra ID (OIDC)
 
@@ -464,24 +416,19 @@ set `"claims": { "groups": "hd" }` and grant `"groups": ["example.com"]`.
 3. For group rules: **Token configuration → Add groups claim** (security groups; the ID token then
    carries group object ids), or define **App roles** and assign them (claim `roles`).
 
-```json
-{
-  "name": "entra",
-  "label": "Microsoft",
-  "type": "oidc",
-  "issuer": "https://login.microsoftonline.com/<tenant-id>/v2.0",
-  "clientId": "<application (client) id>",
-  "clientSecretEnv": "ENTRA_CLIENT_SECRET",
-  "claims": { "groups": "roles" },
-  "roles": {
-    "admin": { "groups": ["Hopper.Admin"] },
-    "operator": { "groups": ["Hopper.Operator"] }
-  }
-}
-```
+| field | value |
+|---|---|
+| Type | OpenID Connect |
+| Name | `entra` |
+| Label | Microsoft |
+| Issuer URL | `https://login.microsoftonline.com/<tenant-id>/v2.0` |
+| Client ID | `<application (client) id>` |
+| Client secret variable | `ENTRA_CLIENT_SECRET` |
+| Groups claim | `roles` |
+| Role rules | admin for these groups: `Hopper.Admin`; operator for these groups: `Hopper.Operator` |
 
-`"claims": { "groups": "roles" }` matches on app roles. Leave it out to match on the groups claim
-(group object ids).
+**Groups claim** `roles` matches on app roles. Leave it empty to match on the groups claim (group
+object ids).
 Use the tenant-specific issuer, not `common`/`organizations`. Entra does not send `email_verified`:
 match on groups, app roles or `usernames` (the UPN in `preferred_username`), not on `emails`.
 
@@ -492,21 +439,16 @@ match on groups, app roles or `usernames` (the UPN in `preferred_username`), not
 2. For group rules: in the app's **Sign On** tab, *OpenID Connect ID Token* → Groups claim type
    *Filter*, name `groups`, e.g. *Starts with* `hopper-`.
 
-```json
-{
-  "name": "okta",
-  "label": "Okta",
-  "type": "oidc",
-  "issuer": "https://<your-org>.okta.com",
-  "clientId": "<client id>",
-  "clientSecretEnv": "OKTA_CLIENT_SECRET",
-  "scopes": ["openid", "email", "profile", "groups"],
-  "roles": {
-    "admin": { "groups": ["hopper-admins"] },
-    "operator": { "groups": ["hopper-operators"] }
-  }
-}
-```
+| field | value |
+|---|---|
+| Type | OpenID Connect |
+| Name | `okta` |
+| Label | Okta |
+| Issuer URL | `https://<your-org>.okta.com` |
+| Client ID | `<client id>` |
+| Client secret variable | `OKTA_CLIENT_SECRET` |
+| Scopes | `openid email profile groups` |
+| Role rules | admin for these groups: `hopper-admins`; operator for these groups: `hopper-operators` |
 
 With a custom authorization server the issuer is `https://<your-org>.okta.com/oauth2/default`.
 
@@ -517,21 +459,17 @@ With a custom authorization server the issuer is `https://<your-org>.okta.com/oa
 2. For role rules: an Action on *Login* that adds the user's roles as a namespaced claim:
    `api.idToken.setCustomClaim('https://hopper.example.com/roles', event.authorization?.roles ?? [])`.
 
-```json
-{
-  "name": "auth0",
-  "label": "Auth0",
-  "type": "oidc",
-  "issuer": "https://<tenant>.auth0.com/",
-  "clientId": "<client id>",
-  "clientSecretEnv": "AUTH0_CLIENT_SECRET",
-  "claims": { "groups": "https://hopper.example.com/roles" },
-  "roles": {
-    "admin": { "groups": ["hopper-admin"] },
-    "defaultRole": "viewer"
-  }
-}
-```
+| field | value |
+|---|---|
+| Type | OpenID Connect |
+| Name | `auth0` |
+| Label | Auth0 |
+| Issuer URL | `https://<tenant>.auth0.com/` |
+| Client ID | `<client id>` |
+| Client secret variable | `AUTH0_CLIENT_SECRET` |
+| Groups claim | `https://hopper.example.com/roles` |
+| Role rules | admin for these groups: `hopper-admin` |
+| Default role | viewer |
 
 Keep the trailing slash of `issuer`: it is part of Auth0's issuer.
 
@@ -542,20 +480,15 @@ Keep the trailing slash of `issuer`: it is part of Auth0's issuer.
 2. For group rules: the client's dedicated scope → **Add mapper → Group Membership**, token claim
    name `groups`, *Full group path* off, *Add to ID token* on.
 
-```json
-{
-  "name": "keycloak",
-  "label": "Keycloak",
-  "type": "oidc",
-  "issuer": "https://keycloak.example.com/realms/<realm>",
-  "clientId": "hopper",
-  "clientSecretEnv": "KEYCLOAK_CLIENT_SECRET",
-  "roles": {
-    "admin": { "groups": ["hopper-admins"] },
-    "operator": { "groups": ["hopper-operators"] }
-  }
-}
-```
+| field | value |
+|---|---|
+| Type | OpenID Connect |
+| Name | `keycloak` |
+| Label | Keycloak |
+| Issuer URL | `https://keycloak.example.com/realms/<realm>` |
+| Client ID | `hopper` |
+| Client secret variable | `KEYCLOAK_CLIENT_SECRET` |
+| Role rules | admin for these groups: `hopper-admins`; operator for these groups: `hopper-operators` |
 
 ### GitHub
 
@@ -568,26 +501,21 @@ verified email and (when a rule names groups) their teams from the API.
 2. **Generate a new client secret**.
 3. Team rules need the organization to allow the app (*Third-party access* policy).
 
-```json
-{
-  "name": "github",
-  "label": "GitHub",
-  "type": "github",
-  "clientId": "<client id>",
-  "clientSecretEnv": "GITHUB_OAUTH_CLIENT_SECRET",
-  "roles": {
-    "admin": { "subjects": ["583231"] },
-    "operator": { "groups": ["acme/platform"] }
-  }
-}
-```
+| field | value |
+|---|---|
+| Type | GitHub |
+| Name | `github` |
+| Label | GitHub |
+| Client ID | `<client id>` |
+| Client secret variable | `GITHUB_OAUTH_CLIENT_SECRET` |
+| Role rules | admin for these subjects: `583231`; operator for these groups: `acme/platform` |
 
 A subject is the numeric user id: `id` in `https://api.github.com/users/<login>`. A group is a team,
 as `org/team-slug`. Grant by `subjects` (the numeric id) or teams, not `usernames`: a GitHub login can be renamed, and
 the old name registered by someone else.
 
-GitHub Enterprise Server: add `"webUrl": "https://ghe.example.com"` and
-`"apiUrl": "https://ghe.example.com/api/v3"`. Teams are read from the first page (100).
+GitHub Enterprise Server: set **GitHub URL** `https://ghe.example.com` and **API URL**
+`https://ghe.example.com/api/v3`. Teams are read from the first page (100).
 
 ### SAML (any identity provider)
 
@@ -603,21 +531,19 @@ HTTP-POST for the response. Unsolicited (IdP-initiated) responses are refused.
 3. From the IdP take: its SSO URL (`entryPoint`), signing certificate (`idpCert`) and entity id
    (`idpIssuer`).
 
-```json
-{
-  "name": "corp",
-  "label": "Corp SSO",
-  "type": "saml",
-  "entryPoint": "https://idp.example.com/sso/saml",
-  "idpCert": "-----BEGIN CERTIFICATE-----\n<base64 certificate>\n-----END CERTIFICATE-----",
-  "idpIssuer": "https://idp.example.com/metadata",
-  "attributes": { "email": "email", "name": "displayName", "groups": "groups" },
-  "roles": {
-    "admin": { "groups": ["hopper-admins"] },
-    "defaultRole": "viewer"
-  }
-}
-```
+| field | value |
+|---|---|
+| Type | SAML |
+| Name | `corp` |
+| Label | Corp SSO |
+| Sign-on URL | `https://idp.example.com/sso/saml` |
+| Identity provider certificate | the certificate, PEM (`-----BEGIN CERTIFICATE-----` …) |
+| Identity provider issuer | `https://idp.example.com/metadata` |
+| Email attribute | `email` |
+| Name attribute | `displayName` |
+| Groups attribute | `groups` |
+| Role rules | admin for these groups: `hopper-admins` |
+| Default role | viewer |
 
 `idpCert` is the PEM on one line, its line breaks written `\n`; the bare base64 alone works too.
 
@@ -628,24 +554,18 @@ sign-on → SAML**. Identifier: `<origin>/ui/auth/entra-saml/metadata`; Reply UR
 `<origin>/ui/auth/entra-saml/callback`. Under *Attributes & Claims* add a group claim. Download
 *Certificate (Base64)*; *Login URL* is the entry point, *Microsoft Entra Identifier* the issuer.
 
-```json
-{
-  "name": "entra-saml",
-  "label": "Microsoft",
-  "type": "saml",
-  "entryPoint": "https://login.microsoftonline.com/<tenant-id>/saml2",
-  "idpCert": "-----BEGIN CERTIFICATE-----\n<base64 certificate>\n-----END CERTIFICATE-----",
-  "idpIssuer": "https://sts.windows.net/<tenant-id>/",
-  "attributes": {
-    "email": "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress",
-    "name": "http://schemas.microsoft.com/identity/claims/displayname",
-    "groups": "http://schemas.microsoft.com/ws/2008/06/identity/claims/groups"
-  },
-  "roles": {
-    "admin": { "groups": ["<group object id>"] }
-  }
-}
-```
+| field | value |
+|---|---|
+| Type | SAML |
+| Name | `entra-saml` |
+| Label | Microsoft |
+| Sign-on URL | `https://login.microsoftonline.com/<tenant-id>/saml2` |
+| Identity provider certificate | the certificate, PEM (`-----BEGIN CERTIFICATE-----` …) |
+| Identity provider issuer | `https://sts.windows.net/<tenant-id>/` |
+| Email attribute | `http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress` |
+| Name attribute | `http://schemas.microsoft.com/identity/claims/displayname` |
+| Groups attribute | `http://schemas.microsoft.com/ws/2008/06/identity/claims/groups` |
+| Role rules | admin for these groups: `<group object id>` |
 
 ### Okta (SAML)
 
@@ -655,19 +575,15 @@ Attribute statements `email` → `user.email`, `displayName` → `user.displayNa
 statement `groups`, filter e.g. *Starts with* `hopper-`. From *View SAML setup instructions* take
 the SSO URL, issuer and certificate.
 
-```json
-{
-  "name": "okta-saml",
-  "label": "Okta",
-  "type": "saml",
-  "entryPoint": "https://<your-org>.okta.com/app/<app>/<id>/sso/saml",
-  "idpCert": "-----BEGIN CERTIFICATE-----\n<base64 certificate>\n-----END CERTIFICATE-----",
-  "idpIssuer": "http://www.okta.com/<id>",
-  "roles": {
-    "operator": { "groups": ["hopper-operators"] }
-  }
-}
-```
+| field | value |
+|---|---|
+| Type | SAML |
+| Name | `okta-saml` |
+| Label | Okta |
+| Sign-on URL | `https://<your-org>.okta.com/app/<app>/<id>/sso/saml` |
+| Identity provider certificate | the certificate, PEM (`-----BEGIN CERTIFICATE-----` …) |
+| Identity provider issuer | `http://www.okta.com/<id>` |
+| Role rules | operator for these groups: `hopper-operators` |
 
 ### Keycloak (SAML)
 
@@ -677,19 +593,15 @@ Valid redirect URI and *Assertion Consumer Service POST Binding URL*:
 → attribute `email`; *Group list* → attribute `groups`, full path off. The realm's certificate is
 in `https://keycloak.example.com/realms/<realm>/protocol/saml/descriptor`.
 
-```json
-{
-  "name": "keycloak-saml",
-  "label": "Keycloak",
-  "type": "saml",
-  "entryPoint": "https://keycloak.example.com/realms/<realm>/protocol/saml",
-  "idpCert": "-----BEGIN CERTIFICATE-----\n<base64 certificate>\n-----END CERTIFICATE-----",
-  "idpIssuer": "https://keycloak.example.com/realms/<realm>",
-  "roles": {
-    "admin": { "groups": ["hopper-admins"] }
-  }
-}
-```
+| field | value |
+|---|---|
+| Type | SAML |
+| Name | `keycloak-saml` |
+| Label | Keycloak |
+| Sign-on URL | `https://keycloak.example.com/realms/<realm>/protocol/saml` |
+| Identity provider certificate | the certificate, PEM (`-----BEGIN CERTIFICATE-----` …) |
+| Identity provider issuer | `https://keycloak.example.com/realms/<realm>` |
+| Role rules | admin for these groups: `hopper-admins` |
 
 ## Sessions and logout
 
@@ -712,14 +624,13 @@ The same for every realm, no sign-in and the login code:
 
 | symptom | cause |
 |---|---|
-| Daemon will not start, or Settings refuses a change: `invalid sign-in config: realms.0.…` | The named field is wrong; the message says how. |
-| `invalid sign-in config: realms.0.users.0.passwordHash: must be an argon2id hash` | The entry holds a password or another hash kind. Run `hopper password-hash`. |
+| Daemon will not start, or Settings refuses a change: `invalid sign-in config: realms.0.…` | The named field of the first realm (`realms.1` the second, …) is wrong; the message says how. |
 | `realms.0.bindPasswordEnv: environment variable … is not set` | Put the variable in the daemon's environment and restart, or save the realm turned off until then. |
 | "this change would end your own admin session" | You signed in with the realm (or the login code) the change turns off, or the change lowers your own role. Sign in as an admin another way, then make the change. |
-| Nobody can sign in as an admin any more | Mend the sign-in config on the daemon's host: `hopper config get sign-in > sign-in.json`, fix it (turn the login code on: `"local": { "enabled": true }`), `hopper config version sign-in`, then `hopper config set sign-in --if-version <version> < sign-in.json` and restart the daemon. Then `hopper login-code`. |
+| Nobody can sign in as an admin any more | Turn the login code back on in [the sign-in config from the CLI](#the-sign-in-config-from-the-cli) on the daemon's host, restart it, then `hopper login-code`. |
 | LDAP: "sign-in could not be checked: <realm>: …" | The directory did not answer, or the search account's bind failed: check `url`, the certificate (`NODE_EXTRA_CA_CERTS`), `bindDn` and its variable. |
 | LDAP: "wrong username or password" for a real account | `userFilter` under `userBase` finds no entry, or finds two. Try the filter with `ldapsearch -H <url> -D <bindDn> -W -b <userBase> '<filter>'`. |
-| LDAP: groups do not match | Group values are full DNs, compared exactly. No `memberOf` on the entry: use `groupSearch`. |
+| LDAP: groups do not match | Group values are full DNs, compared exactly, one per line in the rule. No `memberOf` on the entry: set a group search base. |
 | 429 "too many sign-in attempts" | Over 20 sign-in attempts a minute from one address. Wait a minute. |
 | "Sign in on the sign-in address" | The page is open on another address than the sign-in origin. Open the origin shown. |
 | The identity provider says the redirect URI does not match | Register exactly `<origin>/ui/auth/<name>/callback`; check `HOPPER_PUBLIC_URL`. |

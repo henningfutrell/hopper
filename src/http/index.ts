@@ -29,8 +29,8 @@ import { webhookRoutes } from './webhooks.ts';
 export type { TenantParts, Tenants } from './tenants.ts';
 
 export interface ServerOptions {
-  /** The instance store: UI sessions, login codes, the users, the sign-in config. */
-  instance: Pick<InstanceStore, 'uiSessions' | 'loginCodes' | 'users' | 'config'>;
+  /** The instance store: UI sessions, login codes, the users and their identity links, the sign-in config. */
+  instance: Pick<InstanceStore, 'uiSessions' | 'loginCodes' | 'users' | 'identities' | 'signInConfig' | 'tx'>;
   /** Every user's running parts (issue #158): a tenant route reads and changes the request's user's. */
   tenants: Tenants;
   /** The plugin store (the instance's): GET /api/plugin-store, POST /ui/api/plugin-store. */
@@ -77,7 +77,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   updateRoutes(app, o);
   pluginStoreRoutes(app, o);
   userRoutes(app, { tenants: o.tenants, sessions });
-  const realms = createRealmsAdmin({ config: o.instance.config, secret: o.secret, signIn: o.signIn, sessions });
+  const realms = createRealmsAdmin({ instance: o.instance, secret: o.secret, signIn: o.signIn, sessions });
   realmRoutes(app, { realms, sessions });
   staticRoutes(app, o.uiDir);
   registerUiRoutes(app, {

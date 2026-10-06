@@ -8,6 +8,7 @@ import { createConfigRecords } from './config.ts';
 import { createLoginCodeRepository } from './login-codes.ts';
 import { migrateInstance } from './migrations.ts';
 import { createInstanceSettingsRepository } from './settings.ts';
+import { createSignInConfigRepository } from './sign-in-config.ts';
 import { userSchemaName } from './tenant-migrations.ts';
 import { createUiSessionRepository } from './ui-sessions.ts';
 import { openUserStore, schemaUrl } from './user-store.ts';
@@ -30,12 +31,14 @@ export function openInstanceStore(o: { url: string; clock: Clock; idGen?: IdGen 
   const ctx = createContext({ db, clock: o.clock, idGen });
   const userStore: InstanceStore['userStore'] = (user) =>
     openUserStore({ url: schemaUrl(o.url, userSchemaName(instanceSchema, user.id)), clock: o.clock, idGen });
+  const config = createConfigRecords(ctx, INSTANCE_CONFIG);
   return {
     users: createUserRepository(ctx, (user) => userStore(user).close()),
     identities: createIdentityLinks(ctx),
     uiSessions: createUiSessionRepository(ctx),
     loginCodes: createLoginCodeRepository(ctx),
-    config: createConfigRecords(ctx, INSTANCE_CONFIG),
+    config,
+    signInConfig: createSignInConfigRepository(ctx, config),
     settings: createInstanceSettingsRepository(ctx),
     userStore,
     tx: ctx.tx,

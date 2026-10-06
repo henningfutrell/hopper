@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- Sign-in is set up in Settings → Sign-in with plain form fields, and people get a username and password there: add an account, pick its role and who it signs in as, and it works at once — nothing to type in as code.
 - Every setting is now edited in the app and kept in its database — there are no config files to edit any more. Settings that name a program, its arguments or a folder (such as the program an advice level runs, or the ssh client it uses) can be changed on the Plugins page like any other setting.
 - The Queue menu entry now shows how many new jobs are waiting to be sorted, and the Queue page has a "Set up the sorter" button that opens the setting that chooses how new jobs are sorted.
 - A new Queue page lets you decide what runs: new jobs can wait for you instead of starting by themselves. Move each into your own order, take the automatic sort as it is, or reject a job — a rejected job is kept and marked, never run. You can also cap how many jobs are let in by themselves each hour, and give an issue a label naming one hopper so only that hopper takes it.

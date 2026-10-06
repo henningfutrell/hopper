@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { YAMLSeq, isMap, isScalar, isSeq, parse, parseDocument, type Document, type Node, type YAMLMap } from 'yaml';
 import type { Db } from './db.ts';
+import { passwordAccountsTable } from './migration-accounts.ts';
 import { documentsToRecords } from './migration-config.ts';
 import { signInRealms } from './migration-realms.ts';
 import { usersAndOwner } from './migration-users.ts';
@@ -133,6 +134,9 @@ const MIGRATIONS: readonly Migration[] = [
   signInRealms,
   // 19: no config files and no YAML (issue #198): auth.yaml becomes the config record `sign-in`.
   (db) => documentsToRecords(db, { 'auth.yaml': 'sign-in' }),
+  // 20: the password accounts are a table (issue #200): `password_accounts` takes each password realm's
+  // `users` out of `sign-in`; a hopper with no `sign-in` gets the realm `password`, no accounts yet.
+  passwordAccountsTable,
 ];
 
 /**

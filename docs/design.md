@@ -38,7 +38,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 |-----|------|-----------------|
 | `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts; `machines.ts` attached machines and their edit; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate), ports (`ports.ts`, re-exporting the store's from `store.ts`) | anything else in `src/` |
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock | everything but `domain/` |
-| `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations (the instance's `migrations.ts` with migration 17 in `migration-users.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198) | engine, http, decider |
+| `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations (the instance's `migrations.ts` with migration 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — the record and the password accounts, `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198) | engine, http, decider |
 | `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), identity → user (`identities.ts`: link or provision) | http, decider |
 | `src/webhooks/` | signing, dispatcher, retry/backoff, the secret of a subscription from the runtime (`dispatcher.ts`), the UI edit of the subscriptions (`edit.ts`, rows in the store) | engine, http, decider |
 | `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, the plugins config (`plugins-config.ts`) + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt, `escalation-level/anthropic-api/` asks the Claude API with the same prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-gh/` and `job-source/github-app/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser); `usage-source/command-usage/` reads any agent framework's usage and account from a command that prints them as JSON; `usage-source/polled.ts` the background refresh both share, `usage-source/run.ts` their command runner; `notifier/grokbot-routine/` is the Grok Bot routine webhook — env-file reader and notifier; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
@@ -3367,7 +3367,45 @@ up/down, delete; one Save for the whole list). The machine select uses `/api/mac
 routing targets; the executor select uses the configured executors. Forms stack at 390 px width;
 there is no horizontal page scroll.
 
-## Sign-in: realms (issues #39, #53, #185)
+## Sign-in: realms (issues #39, #53, #185, #200)
+
+### Password accounts and realm forms (issue #200, 2026-10-05)
+
+Owner request: the default sign-in did not work — a password realm needed `hopper password-hash` on
+the host and its hash pasted into a realm's text (YAML, then JSON after #198). "There needs to be a
+users table. Auth configs should not be YAML files. They need actual fields to fill out." Related:
+#198 (no config files), #185, #167. What that settles, taken from the issue, not asked: a password
+realm's accounts become a table an admin fills in the UI, with passwords the daemon hashes, and every
+realm setting is a form field; nobody writes YAML or JSON to sign people in.
+
+- **A table of accounts** (`password_accounts`: `realm`, `username`, `password_hash`, `role`). The
+  config record `sign-in` keeps the realms, the login code and no sign-in, never an account.
+  `InstanceStore.signInConfig` (`src/store/sign-in-config.ts`, port `SignInConfigRepository`) reads
+  both as one value — each password realm with its accounts in `users`, the shape
+  `loadSignInConfig` checks, so one zod schema still decides — and writes both in one transaction
+  under `LOCK TABLE password_accounts`, the record by compare-and-swap, against one `version` (the
+  sha-256 of what it reads).
+- **Accounts in the UI.** `POST /ui/api/realms` gains `account` (add: username, password, role, and
+  optionally `user` — the existing user it signs in as, linked in `user_identities` at once
+  (`IdentityLinks.replace`); change: role and, when given, a new password) and `account-remove`. The
+  password (8 characters or more) is hashed at the HTTP edge (`hashPassword`, argon2id); only the
+  hash is stored or loaded. `GET /api/realms` shows each account's username, role and linked user,
+  never a hash. An account's user is fixed once linked (a sign-in links it, as before): naming
+  another is refused (400). A password realm with no account is not tried, and alone offers no form.
+- **Fields, not JSON.** `save` takes the realm as an object (`realm: { name, label?, type, …settings }`),
+  not a text entry; `GET /api/realms` answers each realm's `settings` (`RealmView.entry` is gone). The
+  UI renders one form per realm type from a field list (`ui/src/model/realms.ts`: label, path, kind,
+  the default as placeholder) and role rules as rows (role, what it matches, one value per line) with
+  a default role. An empty field is left out, so the daemon's default applies.
+- **Starts working.** Migration 20 (`src/store/migration-accounts.ts`) moves each password realm's
+  `users` out of `sign-in` into rows; a hopper with no `sign-in` record gets one with the realm
+  `password` ("Password") and no accounts, so an admin adds the first account in Settings → Sign-in
+  and the username and password form appears.
+- **The CLI** keeps `hopper config … sign-in` for the record (the way back from a lockout) and refuses
+  a record that carries accounts. `hopper password-hash` is gone, and with it the `read` dependency.
+
+Where "Config in the database: no config files" says Settings edits a realm as JSON, this section holds.
+
 
 ### Realms (issue #185, 2026-10-05)
 
@@ -3929,7 +3967,7 @@ redirect a credential:
 | gate-router | `TYPESAFE_API_KEY` (Jev, through TypeSafe) | `typesafeKeyFile` |
 | anthropic-api escalation level | `apiKeyEnv` (`ANTHROPIC_API_KEY`) | — |
 | webhook subscription | `secretEnv`, always (from the UI: `WEBHOOK_SECRET_*` only) | inline `secret` (sealed), `secretFile` |
-| realm (auth.yaml) | `clientSecretEnv` (oidc, github), `bindPasswordEnv` (ldap) only, read only while the realm is on; a SAML `idpCert` is public and inline | `clientSecret`, `clientSecretFile`, `bindPassword`, `idpCertFile` |
+| realm (sign-in config) | `clientSecretEnv` (oidc, github), `bindPasswordEnv` (ldap) only, read only while the realm is on; a SAML `idpCert` is public and inline | `clientSecret`, `clientSecretFile`, `bindPassword`, `idpCertFile` |
 
 The App's bot is `<slug>[bot]`, its page `https://github.com/apps/<slug>`. `create-github-app.sh`
 writes the key (and webhook secret) as lines of an env file (`--secrets-file`, default the host
@@ -3943,7 +3981,7 @@ themselves, so no `_FILE` form for them.
 |------|-----|
 | a webhook subscription | its `secretEnv`, a variable's name — in the `webhooks` table (`secret_env`, migration 11, which dropped the sealed `secret` column; the only place since migration 14, issue #78) |
 | UI session tokens, login codes | SHA-256 only (32 random bytes: no dictionary to try) — the hopper's own short-lived state; a hash is not a usable credential |
-| password sign-in passwords | argon2id hashes in `auth.yaml` ("Sign-in") — a verifier the operator writes, not a credential |
+| password sign-in passwords | argon2id hashes in `password_accounts` ("Sign-in: realms", issue #200) — a verifier the daemon makes from the password an admin sets, never the password |
 
 `HOPPER_SECRET_KEY`, the secret box (`src/secrets/box.ts`) and the UI's rotate-secret are gone:
 with no secret to keep there is nothing to seal. A leftover `HOPPER_SECRET_KEY` is a leftover
@@ -3992,7 +4030,7 @@ about the daemon's surface; the CLI is beside it, like editing a file was.
 - `login-code [--link <base url>]`.
 - Since issue #158: `users`, `user add <name>`, and `--user <id>` on `config` and `login-code`
   ("Users: one hopper, separate users").
-- `password-hash`; `help` (also `--help`, `-h`): every command, exit 0. No command or an unknown
+- `help` (also `--help`, `-h`): every command, exit 0 (`password-hash` went with issue #200). No command or an unknown
   one prints the same text on stderr, exit 2.
 
 Residual risk, unchanged in kind: a job on the hopper host runs as the daemon's user and can read

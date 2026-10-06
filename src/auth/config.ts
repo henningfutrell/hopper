@@ -1,5 +1,6 @@
 // The sign-in config (design.md "Sign-in: realms"): how people sign in, the instance's config record
-// `sign-in` (design.md "Config in the database"). Loaded at start and after every change from Settings →
+// `sign-in` (design.md "Config in the database") with the password accounts (`password_accounts`, issue
+// #200) in each password realm's `users`. Loaded at start and after every change from Settings →
 // Sign-in; an invalid one stops the daemon at start, naming the field, and is refused by the UI (sign-in
 // fails closed). None → the one-time login code only. `realms` is the ordered list of realms, each of a
 // realm type, on unless `enabled: false`; `local` (the login code) and `none` (no sign-in) are not realms.
@@ -10,7 +11,7 @@ import { FORM_REALM_TYPES, UI_ROLES, type RealmType, type UiRole } from '../doma
 import type { RoleRules } from './roles.ts';
 
 interface RealmBase { name: string; label: string; enabled: boolean }
-/** One password realm account: an argon2id hash (`hopper password-hash`), never the password. */
+/** One password account: an argon2id hash, made when an admin sets its password in Settings → Sign-in; never the password. */
 export interface PasswordUser { username: string; passwordHash: string; role: UiRole }
 export interface PasswordRealmConfig extends RealmBase { type: 'password'; users: PasswordUser[] }
 export interface LdapRealmConfig extends RealmBase {
@@ -100,10 +101,10 @@ const base = {
 const secret = { clientSecretEnv: envName.optional() };
 const passwordUser = z.strictObject({
   username: z.string().min(1).max(128),
-  passwordHash: z.string().startsWith('$argon2id$', 'must be an argon2id hash: hopper password-hash'),
+  passwordHash: z.string().startsWith('$argon2id$', 'must be an argon2id hash'),
   role: z.enum(UI_ROLES),
 });
-const password = z.strictObject({ ...base, type: z.literal('password'), users: z.array(passwordUser) });
+const password = z.strictObject({ ...base, type: z.literal('password'), users: z.array(passwordUser).default([]) });
 /** ldaps, or ldap with StartTLS, or ldap to loopback (a local test directory). */
 const ldapUrl = z.string().refine((u) => { try { return ['ldap:', 'ldaps:'].includes(new URL(u).protocol); } catch { return false; } }, 'must be an ldap:// or ldaps:// URL');
 const ldap = z.strictObject({
