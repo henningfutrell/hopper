@@ -43,7 +43,7 @@ const id = (what: string) => ({ name: 'id', in: 'path', required: true, descript
 const name = { name: 'name', in: 'path', required: true, description: 'the realm, as the sign-in config names it', schema: { type: 'string' } };
 
 const OPERATIONS: Operation[] = [
-  { method: 'get', path: '/api/health', tag: 'State', summary: 'Health and version', returns: '`{ ok, version, routerMode, router, fallback, executors, uptimeS }`' },
+  { method: 'get', path: '/api/health', tag: 'State', summary: 'Health and version', description: 'A loopback read without a session on a hopper with several users reads the instance\'s part only: `{ ok, version, uptimeS }`.', returns: '`{ ok, version, routerMode, router, fallback, executors, uptimeS }`' },
   { method: 'get', path: '/api/queue', tag: 'State', summary: 'The queue', returns: '`{ waiting, running, waitingAnswer, ended, gate, presort }`: each list a `Job[]`, `waiting` in queue order (the user order first), `ended` the last 24 h; `gate` the `QueueGate`; `presort` the `PreSort` of the waiting jobs not yet accepted' },
   { method: 'get', path: '/api/decisions', tag: 'State', summary: 'Recent decisions', query: decisionsQuery, returns: '`{ decisions: Decision[] }`, newest first' },
   { method: 'get', path: '/api/decisions/:id', tag: 'State', summary: 'One decision', returns: '`Decision`', errors: [404] },

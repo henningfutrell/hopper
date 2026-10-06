@@ -4694,7 +4694,8 @@ never the jobs (they named `job <id> (executor <name>)` of any user before).
 
 - **Whose request it is** (`src/http/tenants.ts`). A session reads its own user. A loopback request
   without a session reads the one user only while the hopper has one user — a one-user install reads
-  as before — and no user's work once there are more: 401. No header names a user.
+  as before — and no user's work once there are more: 401. No header names a user. `GET /api/health`
+  then answers the instance's part only (`ok`, `version`, `uptimeS`): install and self-update probe it.
 - **Sign-in is the instance's, and gives an admin no way in** (`src/http/realms.ts`). An admin changes
   realms, accounts and roles, but no change made from an admin's session may hand that admin a
   credential that signs in as another user (409, never 403: the UI reads a 403 as a dead session):
