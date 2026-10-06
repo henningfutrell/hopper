@@ -18,7 +18,7 @@ import { AuthEditError, editSignIn, isSuperAdmin, loadSignInConfig, realmsView, 
 import type { InstanceStore } from '../domain/store.ts';
 import { roleAllows, type Identity, type PersonView, type RealmsEdit, type RealmsView } from '../domain/types.ts';
 import { HttpError } from './errors.ts';
-import { roleOfRequest } from './tenants.ts';
+import { assertInstanceRead, type InstanceAdmin } from './instance-admin.ts';
 import type { UiSessions } from './ui/sessions.ts';
 
 export interface RealmsAdmin {
@@ -123,10 +123,9 @@ export function createRealmsAdmin(o: {
   };
 }
 
-export function realmRoutes(app: FastifyInstance, o: { realms: RealmsAdmin }): void {
+export function realmRoutes(app: FastifyInstance, o: { realms: RealmsAdmin; instanceAdmin: InstanceAdmin }): void {
   app.get('/api/realms', async (req): Promise<RealmsView> => {
-    const role = roleOfRequest(req);
-    if (role && !roleAllows(role, 'admin')) throw new HttpError(403, `role ${role} may not read the realms; it needs admin`);
+    assertInstanceRead(req, o.instanceAdmin, 'read the realms');
     return o.realms.view();
   });
 }

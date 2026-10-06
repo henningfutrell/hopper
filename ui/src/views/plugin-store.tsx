@@ -13,10 +13,10 @@ import { storeEntryView } from '@/model/plugin-store';
 import { ROLE_TITLES } from '@/model/plugins';
 import type { PluginStoreEdit, PluginStoreEntry, PluginStoreReport } from '@/model/wire';
 import { refreshPlugins, useHopper } from '@/store';
-import { useCanAdmin } from '@/store/selectors';
+import { useCanAdminInstance } from '@/store/selectors';
 
 function Entry({ e, busy, act }: { e: PluginStoreEntry; busy: boolean; act: (edit: PluginStoreEdit, done: string) => void }) {
-  const authed = useCanAdmin();
+  const authed = useCanAdminInstance();
   const v = storeEntryView(e);
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-md border p-2 text-sm">
@@ -40,7 +40,7 @@ function Entry({ e, busy, act }: { e: PluginStoreEntry; busy: boolean; act: (edi
 }
 
 export function PluginStore() {
-  const authed = useCanAdmin();
+  const authed = useCanAdminInstance();
   const [report, setReport] = useState<PluginStoreReport | null>(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => { get<PluginStoreReport>('/api/plugin-store').then(setReport, (e: Error) => toast.error(e.message)); }, []);

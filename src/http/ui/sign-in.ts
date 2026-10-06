@@ -24,6 +24,7 @@ import type { Identity, UiRole, User } from '../../domain/types.ts';
 import { parseWith } from '../errors.ts';
 import { FAVICON_LINK } from '../static.ts';
 import { useLoginCode } from './login-code.ts';
+import type { InstanceAdmin } from '../instance-admin.ts';
 import { sessionUser, type UiSessions } from './sessions.ts';
 
 /** Sign-in attempts a minute from one address, every sign-in route together. */
@@ -88,6 +89,8 @@ export function registerSignInRoutes(parent: FastifyInstance, o: {
   connect: (userId: string, connection: Connection) => void;
   /** A user's name by id (a login code names its user by id). */
   userName: (id: string) => string;
+  /** Whether a session is the hopper's admin's (issue #240). */
+  instanceAdmin: InstanceAdmin;
   /** An origin UI mutations come from (loopback, a LAN name, the public URL): no sign-in and password sign-in answer there. */
   isUiOrigin: (origin: string) => boolean;
   refuse: (req: FastifyRequest, reply: FastifyReply, why: string, needs?: UiRole) => unknown;
@@ -109,7 +112,7 @@ function routes(app: FastifyInstance, o: Parameters<typeof registerSignInRoutes>
     const user = await o.userFor(who);
     if (connection) o.connect(user.id, connection);
     const s = sessions.create({ role, identity: who, userId: user.id });
-    const shown = sessionUser(s, user.name, isSuperAdmin(signIn.config(), who));
+    const shown = sessionUser(s, user.name, isSuperAdmin(signIn.config(), who), o.instanceAdmin(s));
     console.warn(`hopper: UI session started: ${who.realm} ${shown.identity} as user ${user.id}, role ${role}`);
     return reply.header('cache-control', 'no-store').send({ ...extra, token: s.token, expiresAt: s.expiresAt, user: shown });
   };

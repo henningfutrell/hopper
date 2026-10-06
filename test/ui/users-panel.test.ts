@@ -32,7 +32,7 @@ function fakeDaemon() {
 
 let root: Root | undefined;
 
-async function render(role: 'admin' | 'operator', realm = 'local') {
+async function render(role: 'admin' | 'operator', realm = 'local', instanceAdmin = role === 'admin') {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
   posts = [];
@@ -40,7 +40,7 @@ async function render(role: 'admin' | 'operator', realm = 'local') {
   vi.stubGlobal('fetch', fakeDaemon());
   const store = '../../ui/src/store/index.ts'; // browser code, type-checked by ui/tsconfig.json: imported by path
   const { useHopper } = (await import(store)) as { useHopper: { setState(s: Record<string, unknown>): void } };
-  useHopper.setState({ authed: true, user: { id: 'admin', name: 'admin', role, realm, identity: 'login code' }, signIn: { password: true } });
+  useHopper.setState({ authed: true, user: { id: 'admin', name: 'admin', role, instanceAdmin, realm, identity: 'login code' }, signIn: { password: true } });
   const mod = '../../ui/src/views/users.tsx';
   const { Users } = (await import(mod)) as { Users: () => ReturnType<typeof createElement> };
   await act(async () => {
@@ -82,7 +82,7 @@ describe('Settings: Users', () => {
 
   it('a session that is not admin neither lists nor adds users', async () => {
     await render('operator');
-    await vi.waitFor(() => expect(document.body.textContent).toContain('Only an admin sees and adds users.'));
+    await vi.waitFor(() => expect(document.body.textContent).toContain("Only the hopper's admins see and add users."));
     expect(rows()).toEqual([]);
     expect(button('Add user')).toBeUndefined();
   });
@@ -100,9 +100,17 @@ describe('Settings: Users', () => {
     expect(totals()).toContain('2 readings');
   });
 
+  it('an admin of their own user who is not an instance admin (issue #240) neither lists nor adds users, nor sees the totals', async () => {
+    await render('admin', 'local', false);
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Only the hopper\'s admins see and add users.'));
+    expect(rows()).toEqual([]);
+    expect(button('Add user')).toBeUndefined();
+    expect(document.querySelector('[data-instance-totals]')).toBeNull();
+  });
+
   it('a session that is not admin sees no totals', async () => {
     await render('operator');
-    await vi.waitFor(() => expect(document.body.textContent).toContain('Only an admin sees and adds users.'));
+    await vi.waitFor(() => expect(document.body.textContent).toContain("Only the hopper's admins see and add users."));
     expect(document.querySelector('[data-instance-totals]')).toBeNull();
   });
 

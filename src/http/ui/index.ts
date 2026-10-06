@@ -18,6 +18,7 @@ import { userIdOf, type TenantParts, type Tenants } from '../tenants.ts';
 import { webhooksView } from '../webhooks.ts';
 import { SESSION_HEADER, mutationRefusal } from './guard.ts';
 import { loginCodeLive, mintLoginCode } from './login-code.ts';
+import { INSTANCE_ADMIN_ONLY, type InstanceAdmin } from '../instance-admin.ts';
 import { identityName, sessionUser, type UiSession, type UiSessions } from './sessions.ts';
 import { registerSignInRoutes } from './sign-in.ts';
 
@@ -37,6 +38,8 @@ export interface UiRouteOptions {
   lan: Lan;
   clock: Clock;
   updater: Updater;
+  /** Whether a session may do what is the instance's (issue #240). */
+  instanceAdmin: InstanceAdmin;
 }
 
 const idParams = z.object({ id: z.string() });
@@ -143,7 +146,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     const offer = {
       local: signIn.local, none: signIn.none, password: signIn.password, gateway: signIn.gateway, origin: signIn.origin(), realms: signIn.realms(), devices: signIn.devices(), required: o.instance.users.list().length > 1,
     };
-    if (s) return { authenticated: true, expiresAt: s.expiresAt, user: sessionUser(s, userName(s), isSuperAdmin(signIn.config(), s.identity)), signIn: offer };
+    if (s) return { authenticated: true, expiresAt: s.expiresAt, user: sessionUser(s, userName(s), isSuperAdmin(signIn.config(), s.identity), o.instanceAdmin(s)), signIn: offer };
     const id = userIdOf(req);
     const viewing = id === undefined ? undefined : o.instance.users.get(id);
     return viewing ? { authenticated: false, viewing: { id: viewing.id, name: viewing.name }, signIn: offer } : { authenticated: false, signIn: offer };
@@ -154,6 +157,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     userFor: (who) => o.tenants.signInAs(who),
     connect: (userId, connection) => o.tenants.user(userId)?.connectedAccounts.adopt(connection),
     userName: (id) => o.instance.users.get(id)?.name ?? id,
+    instanceAdmin: o.instanceAdmin,
   });
 
   // Each mutation names the least role that may make it (design.md "Sign-in" Roles).
@@ -163,6 +167,13 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   } });
   const operator = allow('operator');
   const admin = allow('admin');
+  // What is the instance's (issue #240): an admin session of the hopper's admin, not any admin session.
+  const instance = { onRequest: async (req: FastifyRequest, reply: FastifyReply) => {
+    const r = mutationRefusal(req.headers, o.port(), o.lan, sessions, 'admin');
+    if (r) return refuse(req, reply, r.why, r.needs);
+    // `needs` keeps the session: the UI reads a bare 403 as a dead one.
+    if (!o.instanceAdmin(sessionOf(req)!)) return refuse(req, reply, INSTANCE_ADMIN_ONLY, 'admin');
+  } };
 
   app.post('/ui/api/jobs/:id/cancel', operator, async (req) => o.tenant(req).engine.cancel(parseWith(idParams, req.params).id, 'cancelled in UI'));
   app.post('/ui/api/jobs/:id/approve', operator, async (req) => o.tenant(req).engine.approve(parseWith(idParams, req.params).id));
@@ -213,7 +224,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
 
   // design.md "Plugin store": read the store again, install (or update) a plugin it lists into the
   // plugin dir, or remove a store install. Answers the new GET /api/plugin-store report.
-  app.post('/ui/api/plugin-store', admin, async (req) => {
+  app.post('/ui/api/plugin-store', instance, async (req) => {
     const r = await o.pluginStore.edit(parseWith(pluginStoreBody, req.body));
     if (!r.ok) throw new HttpError(EDIT_STATUS[r.code], r.error);
     return r.report;
@@ -262,7 +273,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
 
   // design.md "Self-update": answers the new GET /api/update status. `apply` answers at once (the
   // build runs in the background; the daemon then restarts), or 409 when nothing can be applied.
-  app.post('/ui/api/update', admin, async (req) => {
+  app.post('/ui/api/update', instance, async (req) => {
     const body = parseWith(updateBody, req.body);
     if (body.action === 'check') return o.updater.check();
     if (body.action === 'settings') {
@@ -308,7 +319,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
 
   // Users (issue #158, design.md "Users: one hopper, separate users"): add a user — its schema, its
   // the plugins config, its runtime — and answer with a one-time login link for it per UI origin, to hand over.
-  app.post('/ui/api/users', admin, async (req): Promise<UserAdded> => {
+  app.post('/ui/api/users', instance, async (req): Promise<UserAdded> => {
     const { name } = parseWith(usersEditBody, req.body);
     if (o.tenants.list().some((u) => u.name.toLowerCase() === name.toLowerCase())) throw new HttpError(409, `the name ${name} is taken`);
     if (signIn.none !== null) throw new HttpError(409, 'no sign-in is on, and it signs everyone in as admin: turn it off (Settings → Sign-in) before adding a user');
@@ -323,7 +334,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
 
   // Realms (issue #185, design.md "Sign-in: realms"): one change to the sign-in config, applied at once.
   // Answers the new GET /api/realms view.
-  app.post('/ui/api/realms', admin, async (req): Promise<RealmsView> => {
+  app.post('/ui/api/realms', instance, async (req): Promise<RealmsView> => {
     const s = sessionOf(req)!;
     return o.realms.edit(parseWith(realmsEditBody, req.body) as RealmsEdit, s.identity);
   });
