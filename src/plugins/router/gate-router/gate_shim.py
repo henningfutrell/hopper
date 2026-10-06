@@ -1,6 +1,6 @@
 """Run grok-bot-jev's router once, for job-hopper's gate router.
 
-Reads {"grokBotJevSrc", "mode", "logPath", "state", "jevGates", "claude": {"argv", "cwd"}} as JSON
+Reads {"jevPath", "mode", "logPath", "state", "jevGates", "claude": {"argv", "cwd"}} as JSON
 on stdin and prints one JSON line: {"ok": true, "route": ...} or {"ok": false, "error":
 "<Type>: <message>"}. Always exits 0.
 
@@ -11,7 +11,7 @@ other gate, and every gate Jev fails on, goes to the Claude model through `claud
 locked-down claude CLI, prompt on stdin, structured output). The route's details gain `gatesBy`
 (gate -> "jev" | "claude") and, when Jev was wanted but could not answer, `jevError`.
 
-Nothing is written under grokBotJevSrc: bytecode is off, and the router's log path is redirected
+Nothing is written under jevPath: bytecode is off, and the router's log path is redirected
 to logPath. grok-bot-jev's own config.yaml is still loaded, so its kill switch is honoured;
 only `mode` and `logging.path` are overridden.
 """
@@ -150,7 +150,7 @@ def make_system_one(request: dict, sdk_real: bool, jev_system_one, report: dict)
 
 
 def route(request: dict) -> dict:
-    sys.path.insert(0, request["grokBotJevSrc"])
+    sys.path.insert(0, request["jevPath"])
     sdk_real = install_sdk_stub_if_missing()
     import src.router as router
     log_path = Path(request["logPath"])

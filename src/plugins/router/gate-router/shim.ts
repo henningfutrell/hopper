@@ -12,6 +12,12 @@ const ACTIONS: readonly string[] = [
   'proceed_full', 'reuse_cache', 'stop_retry', 'run_deterministic',
   'chat_only', 'ask_human', 'allow_subagent', 'research_capped',
 ] satisfies AdviceAction[];
+/**
+ * The gates Jev answers, through TypeSafe, once its key is set: crisp classifications of the job state,
+ * where TypeSafe's calibrated probabilities feed Jev's thresholds (owner decision, 2026-10-03, issue #19).
+ * The Claude model answers the rest. Fixed: which gate goes where is the router's, not a setting (issue #217).
+ */
+export const JEV_GATES: readonly string[] = ['intent', 'reuse_cache', 'stop_retry'];
 const META_KEYS = ['cached_artifact', 'cached_note', 'prior_error', 'same_error_count', 'sources_found', 'constraints'];
 /**
  * The Claude model's answers to the gates, keyed by gate name and grouped by gate type (Jev's own
@@ -36,13 +42,10 @@ const GATE_ANSWERS_SCHEMA = {
 
 export interface GateRouterShimOptions {
   /** The grok-bot-jev checkout (absolute). */
-  grokBotJevSrc: string;
+  jevPath: string;
   python: string;
-  claudeBin: string;
-  /** The Claude model, for the claude CLI. */
-  claudeModel: string;
-  /** The gates Jev answers, through TypeSafe, once its key is set; the Claude model answers the rest. */
-  jevGates: string[];
+  /** The Claude model, for the `claude` on PATH. */
+  model: string;
   /** The TypeSafe key (TYPESAFE_API_KEY), asked on every call; undefined: Jev off. */
   typesafeKey(): string | undefined;
   dataDir: string;
@@ -123,12 +126,12 @@ export function createGateRouter(o: GateRouterShimOptions): Router {
     async advise(job: Job): Promise<Advice> {
       try {
         const stdout = await runShim(o, o.typesafeKey() || undefined, {
-          grokBotJevSrc: o.grokBotJevSrc,
+          jevPath: o.jevPath,
           mode: o.mode(),
           logPath: join(o.dataDir, 'gate-router-runs.jsonl'),
           state: routerState(job),
-          jevGates: o.jevGates,
-          claude: { argv: [o.claudeBin, ...claudeArgv({ model: o.claudeModel, jsonSchema: GATE_ANSWERS_SCHEMA })], cwd: o.dataDir },
+          jevGates: JEV_GATES,
+          claude: { argv: ['claude', ...claudeArgv({ model: o.model, jsonSchema: GATE_ANSWERS_SCHEMA })], cwd: o.dataDir },
         });
         const route = parseRoute(stdout);
         return {

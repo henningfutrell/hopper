@@ -192,39 +192,41 @@ what it is: the **admission and prioritization layer** per job. Usage budgets co
 `UsageSource`. `fake` is a test double at the `Router` seam (`test/support/fake-router.ts`), never
 configured. Mode is the **router mode** (`settings.routerMode`, `POST /ui/api/router-mode`).
 
-- `jev-router`: spawns `<python> src/plugins/router/jev-router/jev_shim.py` with JSON on stdin, in its
-  own process group (a timeout kills the group, so no `claude` outlives it) and with the Claude Code
-  markers scrubbed from the environment. The shim puts the Jev repo on `sys.path`, loads Jev's
-  **own** `config.yaml` (its kill switch is honoured), overrides only `mode` (hopper's) and
-  `logging.path` (hopper's data dir), sets `PYTHONDONTWRITEBYTECODE=1`, calls
-  `route_task(state)`, prints the result. Nothing is written under the Jev repo. `router.py`
-  imports `typesafe_sdk` at module load (via `src.jev_client`); when that package is absent the
-  shim installs a stub whose `Choice`/`Noul`/`Score` only record their instructions and criteria.
-- **Jev gates: TypeSafe where it is set up, Haiku for the rest** (owner decision, 2026-10-03, issue #19:
-  keep Jev and TypeSafe; TypeSafe is better at some things; Haiku through the existing Claude
-  login, no new paid key). Jev's router runs unchanged; the shim replaces only the
-  `system_one` it imported. Each gate in `typesafeGates` (default `intent`, `reuse_cache`,
-  `stop_retry`: crisp classifications of the job state, where TypeSafe's calibrated probabilities
-  feed Jev's thresholds) goes to TypeSafe through Jev's own `jev_client.system_one` — when
-  a key is set and `python` imports `typesafe_sdk`. The key is `TYPESAFE_API_KEY` from the daemon's
-  environment, else the trimmed contents of `typesafeKeyFile` (`~/.config/hopper/typesafe-api-key`,
-  mode 600), read on **every** call: writing the file switches TypeSafe on for the next job with
-  no restart (issue #28); an absent or empty file leaves it off. The key reaches only the shim's
-  environment, where Jev's own `secrets.py` reads it. Every other gate (`needs_subagent`, `complexity`: judgement
-  of how much work a goal implies), and every gate TypeSafe fails on, goes to Haiku: one
-  locked-down `claude -p --model <model>` run (`claudeArgv`, `claude-print.ts`), prompt on stdin,
-  output bound to a schema of TypeSafe's answer shapes, cwd = the data dir. The shim checks every
-  gate is answered and every choice is a label Jev offered. Advice details gain `gatesBy`
-  (gate → `typesafe` | `haiku`) and, when TypeSafe was wanted but could not answer,
-  `typesafeError` (no key is not an error: TypeSafe is simply off).
-- Options: `jevSrc`, `python`, `claudeBin` (`claude`), `model` (`haiku`), `typesafeGates`,
-  `typesafeKeyFile` (command-bearing: its contents go to TypeSafe),
-  `timeoutMs` (60000: one Haiku run over all five gates took about 20 s on the hopper host, the CLI start included). `detect` needs
-  `python`, `<jevSrc>/src/router.py` and `claudeBin`; its detail says whether TypeSafe is on.
-- Advice from a real router run has `source: "jev-router"`; `details.jevUsed` mirrors the
-  router's own `jev_used`. Any failure (Haiku failing or leaving a gate unanswered, timeout, bad
-  JSON) → advice `{ action: proceed_full, source: fallback, details: { jevUsed: false }, reason:
-  "jev unavailable: …" }` — the router's own documented safe fallback.
+- `gate-router`: spawns `<python> src/plugins/router/gate-router/gate_shim.py` with JSON on stdin, in
+  its own process group (a timeout kills the group, so no `claude` outlives it) and with the Claude Code
+  markers scrubbed from the environment. The shim puts the grok-bot-jev checkout (`jevPath`) on
+  `sys.path`, loads Jev's **own** `config.yaml` (its kill switch is honoured), overrides only `mode`
+  (hopper's) and `logging.path` (hopper's data dir), sets `PYTHONDONTWRITEBYTECODE=1`, calls
+  `route_task(state)`, prints the result. Nothing is written under the checkout. `router.py` imports
+  `typesafe_sdk` at module load (via `src.jev_client`); when that package is absent the shim installs
+  a stub whose `Choice`/`Noul`/`Score` only record their instructions and criteria.
+- **Jev gates: TypeSafe where it is set up, a Claude model for the rest** (owner decision, 2026-10-03,
+  issue #19: keep Jev and TypeSafe; TypeSafe is better at some things; the Claude model through the
+  existing Claude login, no new paid key). Jev's router runs unchanged; the shim replaces only the
+  `system_one` it imported. The gates `JEV_GATES` (`shim.ts`: `intent`, `reuse_cache`, `stop_retry`:
+  crisp classifications of the job state, where TypeSafe's calibrated probabilities feed Jev's
+  thresholds) go to TypeSafe through Jev's own `jev_client.system_one` — when `TYPESAFE_API_KEY` is in
+  the daemon's environment (read on **every** call) and `python` imports `typesafe_sdk`. Fixed, not a
+  setting (issue #217): which gate goes where is the router's judgement, not something a person setting
+  up the hopper knows. The key reaches only the shim's environment, where Jev's own `secrets.py` reads
+  it. Every other gate (`needs_subagent`, `complexity`: judgement of how much work a goal implies), and
+  every gate TypeSafe fails on, goes to the Claude model: one locked-down `claude -p --model <model>`
+  run of the `claude` on PATH (`claudeArgv`, `claude-print.ts`; the same `claude` whose models the
+  `model` select lists), prompt on stdin, output bound to a schema of TypeSafe's answer shapes, cwd =
+  the data dir. The shim checks every gate is answered and every choice is a label Jev offered. Advice
+  details gain `gatesBy` (gate → `jev` | `claude`) and, when Jev was wanted but could not answer,
+  `jevError` (no key is not an error: Jev is simply off).
+- Settings (issue #217: each a concept someone setting up the hopper knows): `jevPath` (where
+  grok-bot-jev is checked out; no default), `python` (`python3`, the Python that runs Jev), `model`
+  (`haiku`, the Claude model), `timeoutSeconds` (60: one Haiku run over all five gates took about 20 s
+  on the hopper host, the CLI start included). `jevPath` and `python` are command-bearing. Tenant
+  migration 6 moved the stored `grokBotJevSrc`, `claudeModel` and `timeoutMs` to these names and
+  dropped the leftovers `claudeBin` and `jevGates`. `detect` needs `python`,
+  `<jevPath>/src/router.py` and `claude` on PATH; its detail says whether Jev is on.
+- Advice from a real router run has `source: "gate-router"`; `details.gatesAsked` mirrors the
+  router's own `jev_used`. Any failure (the Claude model failing or leaving a gate unanswered,
+  timeout, bad JSON) → advice `{ action: proceed_full, source: fallback, details: { gatesAsked: false },
+  reason: "gate router unavailable: …" }` — the router's own documented safe fallback.
 - Job → Jev state: `goal` ← `spec.goal`, `kind` ← `spec.kind`, plus `spec.meta` keys
   `cached_artifact`, `cached_note`, `prior_error`, `same_error_count`, `sources_found`,
   `constraints`.
@@ -1825,7 +1827,7 @@ export default {
   at start and on rescan; reported per plugin in `GET /api/plugins` `plugins[].choices`; the UI offers
   them as a select instead of a typed value, and a configured value not listed stays shown as
   "not listed here". Absent, empty or throwing → the option is typed. `claude-cli` (`model`) and
-  `gate-router` (`claudeModel`) list the models of the `claude` on PATH (`claudeModels`,
+  `gate-router` (`model`) list the models of the `claude` on PATH (`claudeModels`,
   `src/plugins/claude-print.ts`): one stream-json `initialize` control request on stdin, answered
   with the models the account can use (alias, name, description); no prompt, so no model call. Only
   the default `claude` is asked, not an instance's own `bin`: the list is per plugin.
@@ -1857,7 +1859,7 @@ Live roles (router, queue sorter, escalation levels) swap between calls; restart
 
 ```yaml
 version: 1
-router:    { name: gate-router, plugin: gate-router, options: { grokBotJevSrc: ~/workbench/jev-src/grok-bot-jev, python: python3, claudeBin: claude, claudeModel: haiku } }
+router:    { name: gate-router, plugin: gate-router, options: { jevPath: ~/workbench/jev-src/grok-bot-jev, python: python3, model: haiku } }
 escalationLevels:   # lowest first; above the top level is the owner
   - { name: opus, plugin: claude-cli, options: { model: opus } }
   - { name: fable, plugin: claude-cli, options: { model: fable } }
@@ -1904,7 +1906,7 @@ like any option (admin only); the 409 below is gone. "Config in the database: no
 
 **Command-bearing options** (owner decision, 2026-10-03, issue #6 option (a)): an
 option that names a program, its arguments, a working directory, an interpreter, or a file
-that is sourced or executed — `bin`, `args`, `cwd`, `python`, `grokBotJevSrc`, `claudeBin`, `envFile` and their
+that is sourced or executed — `bin`, `args`, `cwd`, `python`, `jevPath`, `claudeBin`, `envFile` and their
 kind. A plugin marks each in its schema with `.meta({ commandBearing: true })`; zod 4 carries
 the mark into `z.toJSONSchema()`, so `/api/plugins` and the UI see it. The UI shows these
 read-only; they are edited only in `plugins.yaml`. Why: a UI session is readable by jobs
@@ -1984,7 +1986,7 @@ stored old events are not rewritten (read raw by version; v1 schemas stay in doc
 - **Roles are what exists.** `Role` is `'router'` only; each later slice adds its role to
   `ROLES` (`src/domain/plugins.ts`) with its port. No role is declared before its code.
 - **`detect(sys, options)`.** Detection gets the validated options: whether gate-router can run
-  depends on its `grokBotJevSrc` and `python`. The catalogue in `/api/plugins` detects each plugin
+  depends on its `jevPath` and `python`. The catalogue in `/api/plugins` detects each plugin
   with its default options (`{}` parsed); a plugin whose options have no defaults shows
   `needs-setup`. The configured instance is detected with its own options.
 - **Router context carries the router mode.** `create(ctx, options)` gets
@@ -2151,7 +2153,7 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
   runnable names only; `/api/plugins` `executors.instances[]` = `{ instance, detection, active,
   reason? }`, `active: null` for one that cannot run.
 - **Command-bearing marks** (`.meta({ commandBearing: true })`): herdr-claude `bin`, `claudeBin`,
-  `args`, `cwd`; claude-cli `bin`; gate-router `grokBotJevSrc`, `python`, `claudeBin`. zod
+  `args`, `cwd`; claude-cli `bin`; gate-router `jevPath`, `python`. zod
   carries the mark into `z.toJSONSchema()`; `/api/plugins` shows it. `session` is not marked (it
   names a herdr session, not a program).
 - **Tests:** `AppSeams.herdr` swaps the herdr-claude built-in for `herdrClaudePlugin(seam)`
@@ -3001,7 +3003,7 @@ Usage stay their own views: each is mostly live state, with its configuration be
 of a hash is the part before the slash (`useView`, `useSection` in `ui/src/app/nav.tsx`).
 
 Every option a plugin lists **option choices** for (design.md "Plugin contract") is a select in
-every options form — a level's `model` and the gate router's `claudeModel` among them.
+every options form — a level's `model` and the gate router's `model` among them.
 
 ### Webhook subscriptions in the UI (issue #18)
 
