@@ -1,5 +1,5 @@
 // The UI session and the only mutations left (design.md "UI session and mutations"): a one-time
-// login code (when auth.yaml leaves local sign-in on), no sign-in or a realm (sign-in.ts) → a page
+// login code (when the sign-in config leaves local sign-in on), no sign-in or a realm (sign-in.ts) → a page
 // that keeps the session token in localStorage → POST /ui/api/* with that token in
 // x-hopper-session, exact Origin, same-origin, JSON, and a role that allows it (design.md
 // "Sign-in: realms"). Every refusal is a logged 403. A logged-in admin hands another
@@ -30,7 +30,7 @@ export interface UiRouteOptions {
   instance: Pick<InstanceStore, 'loginCodes' | 'users'>;
   sessions: UiSessions;
   signIn: SignIn;
-  /** Settings → Sign-in: auth.yaml's realms (issue #185). */
+  /** Settings → Sign-in: the sign-in config's realms (issue #185). */
   realms: RealmsAdmin;
   pluginStore: PluginStoreView;
   /** The bound port (known only after listen). */
@@ -66,8 +66,8 @@ export const usersEditBody = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('add'), name: z.string().trim().min(1, 'name must not be empty').max(64) }),
 ]);
 export const rulesBody = z.strictObject({ text: z.string(), version: z.string().min(1) });
-// Realms (issue #185): one change to auth.yaml against the version read. A realm's own settings are
-// checked by loading the changed document, so a refusal names the field as a start would.
+// Realms (issue #185): one change to the sign-in config against the version read. A realm's own settings are
+// checked by loading the changed config, so a refusal names the field as a start would.
 const realmName = z.string().min(1).max(64);
 const realmsVersion = { version: z.string().min(1) };
 export const realmsEditBody = z.discriminatedUnion('action', [
@@ -110,7 +110,7 @@ export const queueGateBody = z.strictObject({ mode: z.enum(QUEUE_GATE_MODES), au
 // gh login (issue #138): start gh's device flow, or end a waiting one.
 export const ghLoginBody = z.strictObject({ action: z.enum(['start', 'cancel']) });
 const EDIT_STATUS = { invalid: 400, not_found: 404, conflict: 409 } as const;
-/** The rules themselves are validated by the plugin host (the plugins.yaml schema), so a refusal names the field. */
+/** The rules themselves are validated by the plugin host (the plugins config schema), so a refusal names the field. */
 export const routingEditBody = z.strictObject({ rules: z.array(z.any()), version: z.string().min(1) });
 
 const refuse = (req: FastifyRequest, reply: FastifyReply, why: string, needs?: UiRole) => {
@@ -196,8 +196,8 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     return routerView(t.engine, t.plugins);
   });
 
-  // design.md "UI and mutation": one instance's options (never a command-bearing one), the plugin
-  // filling a one-instance role, or a rescan. Answers the new GET /api/plugins report.
+  // design.md "UI and mutation": one instance's options (command-bearing ones too, issue #198), the
+  // plugin filling a one-instance role, or a rescan. Answers the new GET /api/plugins report.
   app.post('/ui/api/plugins', admin, async (req) => {
     const r = await o.tenant(req).plugins.edit(parseWith(pluginsEditBody, req.body));
     if (!r.ok) throw new HttpError(EDIT_STATUS[r.code], r.error);
@@ -216,7 +216,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   // the next question reads them. Answers the new GET /api/question-gates rules.
   app.post('/ui/api/rules', admin, async (req) => {
     const { text, version } = parseWith(rulesBody, req.body);
-    const r = writeRules(o.tenant(req).store.documents, text, version);
+    const r = writeRules(o.tenant(req).store.config, text, version);
     if (!r.ok) throw new HttpError(EDIT_STATUS[r.code], r.error);
     return r.view;
   });
@@ -231,21 +231,21 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   });
 
   // design.md "Machines from the UI" (issues #18, #74): attach an ssh target as a new `ssh` instance
-  // in plugins.yaml `machines:`; applies without a restart. Answers the new GET /api/machines/config.
+  // in the plugins config `machines:`; applies without a restart. Answers the new GET /api/machines/config.
   app.post('/ui/api/machines', admin, async (req) => {
     const r = await o.tenant(req).plugins.editMachines(parseWith(machinesEditBody, req.body));
     if (!r.ok) throw new HttpError(EDIT_STATUS[r.code], r.error);
     return r.config;
   });
 
-  // Issue #142: plugins.yaml `machineDefaults:`, what a machine attached here starts with. Answers the new GET /api/machines/config.
+  // Issue #142: the plugins config `machineDefaults:`, what a machine attached here starts with. Answers the new GET /api/machines/config.
   app.post('/ui/api/machines/defaults', admin, async (req) => {
     const r = await o.tenant(req).plugins.editMachineDefaults(parseWith(machineDefaultsBody, req.body));
     if (!r.ok) throw new HttpError(EDIT_STATUS[r.code], r.error);
     return r.config;
   });
 
-  // design.md "Routing rules (issue #18)": the whole ordered list into plugins.yaml `routing:`.
+  // design.md "Routing rules (issue #18)": the whole ordered list into the plugins config `routing:`.
   // Answers the new GET /api/routing report. A rule change applies to new jobs only.
   app.post('/ui/api/routing', admin, async (req) => {
     const r = await o.tenant(req).plugins.editRouting(parseWith(routingEditBody, req.body));
@@ -281,7 +281,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   // share one code: it works once, and expires like any other. `keep` (issue #95): the code the
   // dialog shows comes back while it is live; once used or expired, a fresh one is minted.
   app.post('/ui/api/device-link', admin, async (req) => {
-    if (!signIn.local) throw new HttpError(409, 'local sign-in is off in auth.yaml: no login code to hand on');
+    if (!signIn.local) throw new HttpError(409, 'local sign-in is off in the sign-in config: no login code to hand on');
     if (o.lan.names.length === 0) throw new HttpError(409, 'no LAN names: set HOPPER_LAN_NAMES and HOPPER_LAN_PEERS to reach the UI from another device');
     const { keep } = parseWith(deviceLinkBody, req.body ?? {});
     // The device signs in as the session's own user (issue #158).
@@ -291,7 +291,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   });
 
   // Users (issue #158, design.md "Users: one hopper, separate users"): add a user — its schema, its
-  // plugins.yaml, its runtime — and answer with a one-time login link for it per UI origin, to hand over.
+  // the plugins config, its runtime — and answer with a one-time login link for it per UI origin, to hand over.
   app.post('/ui/api/users', admin, async (req): Promise<UserAdded> => {
     const { name } = parseWith(usersEditBody, req.body);
     if (o.tenants.list().some((u) => u.name.toLowerCase() === name.toLowerCase())) throw new HttpError(409, `the name ${name} is taken`);
@@ -304,7 +304,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     };
   });
 
-  // Realms (issue #185, design.md "Sign-in: realms"): one change to auth.yaml, applied at once.
+  // Realms (issue #185, design.md "Sign-in: realms"): one change to the sign-in config, applied at once.
   // Answers the new GET /api/realms view.
   app.post('/ui/api/realms', admin, async (req): Promise<RealmsView> => o.realms.edit(parseWith(realmsEditBody, req.body), sessionOf(req)!.identity));
 

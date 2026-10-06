@@ -7,7 +7,7 @@ import type { GitHubApi } from '../../../sources/index.ts';
 import { appProblem, createAppSource, githubAppOptions, loadGitHubApp, type GitHubAppOptions } from '../../../sources/index.ts';
 import type { PluginDefinition } from '../../sdk.ts';
 
-const CREATE_APP = 'scripts/create-github-app.sh (from the hopper checkout), then set appId and slug with hopper config edit plugins.yaml and the key in the environment';
+const CREATE_APP = 'scripts/create-github-app.sh (from the hopper checkout), then set appId and slug on this instance in Plugins and the key in the environment';
 
 /** The plugin. `seam` (tests, `AppSeams.githubApp`) replaces the App adapter; detection then says available. */
 export function githubAppPlugin(seam?: GitHubApi): PluginDefinition<'job-source', GitHubAppOptions> {

@@ -1,11 +1,10 @@
-// auth.yaml (design.md "Sign-in: realms"): how people sign in, a config document in the store
-// (design.md "Config documents"). Loaded at start and after every change from Settings → Sign-in; an
-// invalid document stops the daemon at start, naming the field, and is refused by the UI (sign-in
+// The sign-in config (design.md "Sign-in: realms"): how people sign in, the instance's config record
+// `sign-in` (design.md "Config in the database"). Loaded at start and after every change from Settings →
+// Sign-in; an invalid one stops the daemon at start, naming the field, and is refused by the UI (sign-in
 // fails closed). None → the one-time login code only. `realms` is the ordered list of realms, each of a
 // realm type, on unless `enabled: false`; `local` (the login code) and `none` (no sign-in) are not realms.
 // A secret comes from the environment only (`clientSecretEnv`, `bindPasswordEnv`, design.md "Secrets"),
 // read only for a realm that is on; a SAML IdP certificate is public and sits inline.
-import { parse } from 'yaml';
 import { z } from 'zod';
 import { FORM_REALM_TYPES, UI_ROLES, type RealmType, type UiRole } from '../domain/types.ts';
 import type { RoleRules } from './roles.ts';
@@ -76,7 +75,8 @@ export interface AuthConfig {
   realms: RealmConfig[];
 }
 
-export const AUTH = 'auth.yaml';
+/** The config record that holds it. */
+export const SIGN_IN = 'sign-in';
 /** Identities of the login code and no sign-in carry these as their realm; `complete` is a sign-in route. */
 const RESERVED = ['local', 'complete', 'none'];
 
@@ -177,7 +177,7 @@ type ParsedRealm = z.output<typeof realm>;
 
 function readSecretEnv(env: Env, name: string, field: string): string {
   const v = env(name);
-  if (v === undefined || v === '') throw new Error(`invalid auth.yaml: ${field}: environment variable ${name} is not set`);
+  if (v === undefined || v === '') throw new Error(`invalid sign-in config: ${field}: environment variable ${name} is not set`);
   return v;
 }
 
@@ -197,20 +197,18 @@ function resolve(r: ParsedRealm, i: number, env: Env): RealmConfig {
   return rest.type === 'github' ? { ...rest, label, clientSecret: s! } : { ...rest, label, ...(s === undefined ? {} : { clientSecret: s }) };
 }
 
-/** Why `raw` (parsed YAML) is not a valid auth.yaml, or undefined; the variables it names are not checked. */
-export function authDocumentProblem(raw: unknown): string | undefined {
+/** Why `raw` is not a valid sign-in config, or undefined; the variables it names are not checked. */
+export function signInConfigProblem(raw: unknown): string | undefined {
   const r = schema.safeParse(raw ?? {});
-  return r.success ? undefined : r.error.issues.map((x) => `${x.path.join('.') || '(document)'}: ${x.message}`).join('; ');
+  return r.success ? undefined : r.error.issues.map((x) => `${x.path.join('.') || '(config)'}: ${x.message}`).join('; ');
 }
 
-/** auth.yaml's text (undefined: none yet → local sign-in only), its secrets from `env`. Throws on anything invalid. */
-export function loadAuthDocument(text: string | undefined, env: Env): AuthConfig {
-  if (text === undefined) return { local: { enabled: true }, none: null, realms: [] };
-  let doc: unknown;
-  try { doc = parse(text); } catch (e) { throw new Error(`invalid auth.yaml: ${(e as Error).message}`, { cause: e }); }
-  const problem = authDocumentProblem(doc);
-  if (problem) throw new Error(`invalid auth.yaml: ${problem}`);
-  const r = schema.parse(doc ?? {});
+/** The sign-in config (undefined: none yet → local sign-in only), its secrets from `env`. Throws on anything invalid. */
+export function loadSignInConfig(raw: unknown, env: Env): AuthConfig {
+  if (raw === undefined) return { local: { enabled: true }, none: null, realms: [] };
+  const problem = signInConfigProblem(raw);
+  if (problem) throw new Error(`invalid sign-in config: ${problem}`);
+  const r = schema.parse(raw ?? {});
   return { local: r.local, none: r.none ?? null, realms: r.realms.map((x, i) => resolve(x, i, env)) };
 }
 

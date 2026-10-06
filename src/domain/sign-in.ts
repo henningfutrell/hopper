@@ -8,7 +8,7 @@ export const UI_ROLES: readonly UiRole[] = ['viewer', 'operator', 'admin'];
 /** True when `role` includes `needs`. */
 export const roleAllows = (role: UiRole, needs: UiRole): boolean => UI_ROLES.indexOf(role) >= UI_ROLES.indexOf(needs);
 
-/** The realm types auth.yaml offers. `local` (the login code) and `none` (no sign-in) are not realms. */
+/** The realm types the sign-in config offers. `local` (the login code) and `none` (no sign-in) are not realms. */
 export type RealmType = 'password' | 'ldap' | 'oidc' | 'github' | 'saml';
 export const REALM_TYPES: readonly RealmType[] = ['password', 'ldap', 'oidc', 'github', 'saml'];
 /** Realm types the username and password form signs in with; the others send the browser to an identity provider. */
@@ -16,7 +16,7 @@ export const FORM_REALM_TYPES: readonly RealmType[] = ['password', 'ldap'];
 
 /** Who signed in, as every realm reports it. */
 export interface Identity {
-  /** The realm's name in auth.yaml (`local` the login code, `none` no sign-in). */
+  /** The realm's name in the sign-in config (`local` the login code, `none` no sign-in). */
   realm: string;
   /** The realm's stable id for the user (account username, LDAP DN or the configured attribute, OIDC `sub`, GitHub user id, SAML NameID). */
   subject: string;
@@ -48,13 +48,13 @@ export interface SignInRealmView {
   type: RealmType;
 }
 
-/** One realm as Settings → Sign-in shows it (GET /api/realms): its auth.yaml entry as YAML. */
+/** One realm as Settings → Sign-in shows it (GET /api/realms): its entry in the sign-in config, as JSON. */
 export interface RealmView {
   name: string;
   label: string;
   type: RealmType;
   enabled: boolean;
-  /** The realm's entry in auth.yaml, as YAML: what the editor shows and saves. */
+  /** The realm's entry in the sign-in config, as JSON: what the editor shows and saves. */
   entry: string;
   /** OIDC, GitHub, SAML: the callback URL to register with the identity provider. */
   callback?: string;
@@ -62,7 +62,7 @@ export interface RealmView {
   metadata?: string;
 }
 
-/** GET /api/realms (admin): auth.yaml's realms in order, local sign-in and no sign-in, at `version`. */
+/** GET /api/realms (admin): the sign-in config's realms in order, local sign-in and no sign-in, at `version`. */
 export interface RealmsView {
   version: string;
   local: boolean;
@@ -72,9 +72,9 @@ export interface RealmsView {
   realms: RealmView[];
 }
 
-/** POST /ui/api/realms: one change to auth.yaml, made against the version it read. */
+/** POST /ui/api/realms: one change to the sign-in config, made against the version it read. */
 export type RealmsEdit = { version: string } & (
-  /** Add a realm from its YAML entry, or replace the one named `name` (its name stays). */
+  /** Add a realm from its JSON entry, or replace the one named `name` (its name stays). */
   | { action: 'save'; name?: string; entry: string }
   | { action: 'remove'; name: string }
   /** Move to position `to` (0 first). */

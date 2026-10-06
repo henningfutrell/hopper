@@ -98,7 +98,7 @@ function routes(app: FastifyInstance, o: Parameters<typeof registerSignInRoutes>
   // Origin may be null (a local file posts it); the code is the credential.
   app.post('/ui/login', async (req, reply) => {
     const parsed = loginBody.safeParse(req.body);
-    if (!signIn.local) return o.refuse(req, reply, 'local sign-in is off in auth.yaml');
+    if (!signIn.local) return o.refuse(req, reply, 'local sign-in is off in the sign-in config');
     const userId = parsed.success ? useLoginCode(o.instance, o.clock, parsed.data.code) : undefined;
     if (userId === undefined) return o.refuse(req, reply, 'wrong, used, expired or missing login code');
     const s = sessions.create({ role: 'admin', identity: LOCAL_IDENTITY, userId });
@@ -109,13 +109,13 @@ function routes(app: FastifyInstance, o: Parameters<typeof registerSignInRoutes>
 
   // No credential: the exact Origin keeps another site from minting sessions in a visitor's browser.
   app.post('/ui/auth/none', async (req, reply) => {
-    if (signIn.none === null) return o.refuse(req, reply, 'no sign-in is off in auth.yaml');
+    if (signIn.none === null) return o.refuse(req, reply, 'no sign-in is off in the sign-in config');
     if (!fromUiOrigin(req)) return o.refuse(req, reply, `origin ${req.headers.origin ?? '(none)'} not allowed`);
     return started(reply, NO_SIGN_IN_IDENTITY, signIn.none);
   });
 
   app.post('/ui/auth/password', async (req, reply) => {
-    if (!signIn.password) return o.refuse(req, reply, 'password sign-in is off: no password or LDAP realm is on in auth.yaml');
+    if (!signIn.password) return o.refuse(req, reply, 'password sign-in is off: no password or LDAP realm is on in the sign-in config');
     if (!fromUiOrigin(req)) return o.refuse(req, reply, `origin ${req.headers.origin ?? '(none)'} not allowed`);
     const { username, password } = parseWith(passwordBody, req.body);
     const r = await signIn.checkPassword(username, password);

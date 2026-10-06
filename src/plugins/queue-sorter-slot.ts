@@ -1,4 +1,4 @@
-// The queue-sorter role's one slot (design.md "Queue sorter (issue #18)"): the instance plugins.yaml
+// The queue-sorter role's one slot (design.md "Queue sorter (issue #18)"): the instance the plugins config
 // names (absent: the built-in `priority`), answered through a live QueueSorter swapped between
 // calls. A sorter that cannot run, throws, or returns anything but distinct ids of the jobs it was
 // given → `priority`'s order for that call, the reason kept for /api/plugins. Its rejections of jobs

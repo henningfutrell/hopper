@@ -2,7 +2,7 @@
 // "Attached machines", "Target authentication"; issue #74), or with `herdr: false` none: then only
 // executors that need no herdr run there (issue #142). Named after the instance. `ssh`, `herdr`, `session`,
 // `herdrBin` and the pinned `hostKey` are command-bearing: the Machines view writes them when it
-// attaches the machine, the operator by hand.
+// attaches the machine; Plugins edits them.
 import type { SshMachine } from '../../../domain/types.ts';
 import { HOST_KEY } from '../../../executors/ssh.ts';
 import type { PluginDefinition } from '../../sdk.ts';

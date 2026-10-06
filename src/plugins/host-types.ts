@@ -1,6 +1,6 @@
 // The plugin host's contract (index.ts builds it): what it is given, and what it offers the
 // composition root and the HTTP edge.
-import type { ConfigDocuments } from '../domain/ports.ts';
+import type { ConfigRecords } from '../domain/ports.ts';
 import type { Clock, EscalationLevel, MachineSource, Notifier, NotifierEvents, UsageSource } from '../domain/ports.ts';
 import type {
   AttachedMachine, InstanceSpec, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit, PluginsEditOutcome, PluginsReport, RouterMode, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule,
@@ -15,13 +15,13 @@ export interface PluginHostOptions {
   pluginDir?: string;
   /** Store installs, unpacked into the work dir (the plugin store's `installedDir`); undefined: none. */
   installedDir?: string;
-  /** Where plugins.yaml is kept: the store's config documents. */
-  documents: ConfigDocuments;
-  /** The escalation levels when plugins.yaml has no `escalationLevels` section. Default: the built-in ones. */
+  /** Where the plugins config is kept: the store's config records. */
+  config: ConfigRecords;
+  /** The escalation levels when the plugins config has no `escalationLevels` section. Default: the built-in ones. */
   defaultLevels?: InstanceSpec[];
-  /** The executor instances when plugins.yaml has no `executors` section. Default: the built-in ones. */
+  /** The executor instances when the plugins config has no `executors` section. Default: the built-in ones. */
   defaultExecutors?: InstanceSpec[];
-  /** The machine instances when plugins.yaml has no `machines` section. Default: the built-in ones. */
+  /** The machine instances when the plugins config has no `machines` section. Default: the built-in ones. */
   defaultMachines?: InstanceSpec[];
   /** What job sources are told. Default (tests): no key known, nothing re-runnable. */
   jobSourceContext?: JobSourceContext;
@@ -40,7 +40,7 @@ export interface PluginHostOptions {
   kit?: DetectionKit;
   /** Default: BUILTIN_PLUGINS. */
   builtins?: readonly PluginDefinition[];
-  /** How often plugins.yaml's version is checked; default 5000. */
+  /** How often the plugins config's version is checked; default 5000. */
   intervalMs?: number;
   /** Jobs that need executor `name` (not ended): its removal is refused while any do (issue #142). Default: none. */
   executorInUse?(name: string): string[];
@@ -49,11 +49,11 @@ export interface PluginHostOptions {
 }
 
 export interface PluginHost {
-  /** Load plugins, read plugins.yaml, build the router, detect every plugin, start the watch. */
+  /** Load plugins, read the plugins config, build the router, detect every plugin, start the watch. */
   start(): Promise<void>;
-  /** Stop the plugins.yaml watch and every usage source's background work. */
+  /** Stop the plugins config watch and every usage source's background work. */
   stop(): void;
-  /** Live: swaps between calls when plugins.yaml changes. Valid after start(). With no router in plugins.yaml, the first router that can run here. */
+  /** Live: swaps between calls when the plugins config changes. Valid after start(). With no router in the plugins config, the first router that can run here. */
   readonly router: Router;
   routerStatus(): RouterStatus;
   /** Live: the queue-sorter instance now (priority answering for one that cannot run or misbehaves). Valid after start(). */
@@ -64,7 +64,7 @@ export interface PluginHost {
   executors(): BuiltExecutor[];
   /** The job source instances built at start, running, disabled or not. Fixed until restart. Valid after start(). */
   jobSources(): BuiltJobSource[];
-  /** Every machine of every machine source, in plugins.yaml order; follows plugins.yaml live. One that cannot run lists none. Valid after start(). */
+  /** Every machine of every machine source, in the plugins config order; follows the plugins config live. One that cannot run lists none. Valid after start(). */
   machines(): MachineSource;
   /** The usage sources built at start that run. Valid after start(). */
   usageSources(): UsageSource[];
@@ -78,12 +78,12 @@ export interface PluginHost {
   targets(): AttachedMachine[];
   /** GET /api/machines/config. Valid after start(). */
   machinesConfig(): MachinesConfig;
-  /** POST /ui/api/machines: attach an ssh target; resolves once plugins.yaml is reloaded. */
+  /** POST /ui/api/machines: attach an ssh target; resolves once the plugins config is reloaded. */
   editMachines(e: MachineEdit): Promise<MachineEditOutcome>;
-  /** POST /ui/api/machines/defaults (issue #142): plugins.yaml `machineDefaults:`. */
+  /** POST /ui/api/machines/defaults (issue #142): the plugins config `machineDefaults:`. */
   editMachineDefaults(e: MachineDefaultsEdit): Promise<MachineEditOutcome>;
   report(): PluginsReport;
-  /** plugins.yaml `routing:` now (none when absent; the last good list on an invalid file). */
+  /** the plugins config `routing:` now (none when absent; the last good list on an invalid config). */
   routingRules(): RoutingRule[];
   /** The machine ids running now (every machine-source instance that runs): what intake routes to. */
   machineIds(): string[];
@@ -91,8 +91,8 @@ export interface PluginHost {
   routing(): RoutingReport;
   /** POST /ui/api/routing: the whole list; applied (re-read) before it resolves. */
   editRouting(e: RoutingEdit): Promise<RoutingEditOutcome>;
-  /** Re-read plugins.yaml now, whatever the mtime; resolves when the router is in place. */
+  /** Re-read the plugins config now, whatever its version; resolves when the router is in place. */
   reload(): Promise<void>;
-  /** A UI edit of plugins.yaml, or a rescan; resolves once the change is in place. */
+  /** A UI edit of the plugins config, or a rescan; resolves once the change is in place. */
   edit(e: PluginsEdit): Promise<PluginsEditOutcome>;
 }

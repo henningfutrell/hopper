@@ -1,4 +1,4 @@
-// Routing rules (design.md "Routing rules (issue #18)"): the plugins.yaml `routing:` schema and the
+// Routing rules (design.md "Routing rules (issue #18)"): the plugins config `routing:` schema and the
 // pure matching applied at intake. The first rule that matches a source item, and whose machine
 // and executor are configured, routes it; a rule naming one that is not is skipped, never failing
 // intake. No I/O.
@@ -19,7 +19,7 @@ const set = z.strictObject({
 
 const rule = z.strictObject({ name: text, match: match.default({}), set });
 
-/** plugins.yaml `routing:`: an ordered list, names unique. Strict: a `lane` anywhere is refused. */
+/** the plugins config `routing:`: an ordered list, names unique. Strict: a `lane` anywhere is refused. */
 export const ROUTING_RULES = z.array(rule).superRefine((rules, ctx) => {
   const seen = new Set<string>();
   for (const r of rules) {

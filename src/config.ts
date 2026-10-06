@@ -1,5 +1,5 @@
 // Configuration from env: process settings only (docs/design.md "Settled in slice 4"); every part is
-// configured in plugins.yaml, a config document in the store; secrets come from the runtime (design.md
+// configured in the plugins config, a config record in the store; secrets come from the runtime (design.md
 // "Secrets", src/secrets/runtime.ts), read by the parts that use them — the database URL, which
 // carries a password, among them. No default names a path on this machine. Invalid values fail loudly.
 import { tmpdir } from 'node:os';
@@ -52,7 +52,7 @@ export interface Config {
   restart?: 'exit' | 'respawn';
   /**
    * Every set HOPPER_* variable this config does not read, raw: the part-choosing ones removed
-   * in phase 5 slices 4 and 5 (read once more by the plugins.yaml migration) and any unknown one. The
+   * in phase 5 slices 4 and 5 (read once more by the plugins config migration) and any unknown one. The
    * daemon warns about them at boot.
    */
   leftoverEnv: Record<string, string>;
@@ -135,7 +135,7 @@ const SETTING_HELP: Record<keyof typeof schema.shape, string> = {
   HOPPER_RESUME_BOOST: 'priority boost for a job resumed after a question',
   HOPPER_MAX_QUESTIONS: 'questions one job may ask; the next one fails it',
   HOPPER_KEEP_PANES: 'true: keep a job\'s pane open after it ends, for inspection',
-  HOPPER_LOCAL_MACHINE: 'false: this host is not a machine (the container): no `local` machine, and the boot removes one from plugins.yaml',
+  HOPPER_LOCAL_MACHINE: 'false: this host is not a machine (the container): no `local` machine, and the boot removes one from the plugins config',
   HOPPER_UI_SESSION_HOURS: 'lifetime of a UI session',
   HOPPER_UPDATE_CHECK_MS: 'how often self-update checks for a newer version; 0: only when asked',
   HOPPER_RESTART: 'how the daemon starts again after an update: exit (a supervisor restarts it) or respawn. Unset: detected',
@@ -158,9 +158,8 @@ export function daemonHelp(): string {
 usage: node src/main.ts            (in the hopper directory; the container and the systemd unit run this)
        node src/main.ts --help
 
-It is configured by environment variables; everything else is in its database: config documents
-(plugins.yaml, rules.md, auth.yaml), edited in the UI or with hopper config edit, and webhook
-subscriptions, edited in the UI.
+It is configured by environment variables; everything else is in its database and edited in the UI:
+the plugins, the rules, sign-in and the webhook subscriptions. No config file.
 Secrets come from the environment too: NAME, or NAME_FILE naming a file holding it (docs/deploy.md).
 
 settings [default]:

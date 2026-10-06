@@ -4,7 +4,7 @@
 // the owner whatever level answered. The levels are looked up per question (a live role), and every
 // reply is validated here: a level that breaks its contract, fails or times out escalates, it never
 // answers.
-import type { AnswerByHumanResult, AnswerRequest, Clock, ConfigDocuments, EscalationLevel, QuestionService, UserStore } from '../domain/ports.ts';
+import type { AnswerByHumanResult, AnswerRequest, Clock, ConfigRecords, EscalationLevel, QuestionService, UserStore } from '../domain/ports.ts';
 import type { Question, QuestionAttempt } from '../domain/types.ts';
 import { REPLY, check } from './results.ts';
 import { riskRules } from './risk.ts';
@@ -17,8 +17,8 @@ export interface QuestionServiceOptions {
   levels(): readonly EscalationLevel[];
   /** Ceiling on one level's call. Past it the call is aborted and counts as an error. */
   stageTimeoutMs: number;
-  /** Where rules.md is read, on every ask. */
-  documents: ConfigDocuments;
+  /** Where the rules are read, on every ask. */
+  config: ConfigRecords;
   renotifyMs: number;
   humanTimeoutMs: number;
   answerUrl: (questionId: string) => string;
@@ -166,7 +166,7 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
   }
 
   function requestFor(q: Question, number: number, of: number): { req: AnswerRequest; rulesNote: string } {
-    const rules = readRules(o.documents);
+    const rules = readRules(o.config);
     const job = store.jobs.get(q.jobId);
     return {
       req: {
@@ -177,7 +177,7 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
         previous: q.attempts,
         level: { number, of },
       },
-      rulesNote: rules.missing ? ' (no rules.md yet)' : '',
+      rulesNote: rules.missing ? ' (no rules yet)' : '',
     };
   }
 

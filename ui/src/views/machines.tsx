@@ -51,7 +51,7 @@ function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
     <>
       <Button size="sm" variant="outline" disabled={ctx.busy} onClick={() => ctx.setEditing(m.id)} aria-label={`Edit ${m.id}`}><Pencil />Edit</Button>
       <Confirm title={`Remove ${m.id}?`} action="Remove"
-        description={<>It leaves plugins.yaml and stops taking jobs at once. Refused while a job runs there or waits for an answer in a pane there.</>}
+        description={<>It is removed and stops taking jobs at once. Refused while a job runs there or waits for an answer in a pane there.</>}
         onConfirm={() => void ctx.edit({ action: 'remove', role: 'machine-source', name: m.id, version: ctx.config!.version }, `Removed ${m.id}`)}>
         <Button size="sm" variant="outline" disabled={ctx.busy} aria-label={`Remove ${m.id}`}><Trash2 />Remove</Button>
       </Confirm>

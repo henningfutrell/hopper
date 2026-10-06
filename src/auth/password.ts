@@ -1,4 +1,4 @@
-// The password realm (design.md "Sign-in: realms"): auth.yaml holds argon2id hashes, made by
+// The password realm (design.md "Sign-in: realms"): the sign-in config holds argon2id hashes, made by
 // `hopper password-hash`, checked here through the argon2 library. An unknown username is checked
 // against a fixed hash of a random password, so it costs the same time as a wrong password.
 import argon2 from 'argon2';

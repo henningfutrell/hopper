@@ -1,7 +1,7 @@
-// The executor role's slots (design.md "Failure"): 1..n instances, following plugins.yaml live (issue
+// The executor role's slots (design.md "Failure"): 1..n instances, following the plugins config live (issue
 // #142): an unchanged instance is kept, a new or changed one built, a removed one dropped. An instance that cannot run (unknown plugin, invalid options, not detected, create threw)
 // has no executor and a reason: the engine holds the jobs naming it. The instance is named after
-// plugins.yaml whatever the plugin calls itself: jobs name the instance (`spec.executor`).
+// the plugins config whatever the plugin calls itself: jobs name the instance (`spec.executor`).
 import type { Executor } from '../domain/ports.ts';
 import type { Detection, InstanceStatus, ExecutorUnavailable, InstanceSpec } from '../domain/types.ts';
 import { instantiate, type SlotDeps } from './router-slot.ts';
@@ -24,7 +24,7 @@ export async function buildExecutors(specs: InstanceSpec[], deps: SlotDeps): Pro
   }));
 }
 
-/** Follow plugins.yaml: keep each unchanged instance (same spec), build the others; log what changed after the first build. */
+/** Follow the plugins config: keep each unchanged instance (same spec), build the others; log what changed after the first build. */
 export async function applyExecutorSpecs(slot: { built?: BuiltExecutor[] }, specs: InstanceSpec[], deps: SlotDeps): Promise<void> {
   const before = slot.built;
   const same = (b: BuiltExecutor, spec: InstanceSpec) => JSON.stringify(b.spec) === JSON.stringify(spec);

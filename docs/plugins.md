@@ -10,18 +10,20 @@ Short guide for authors. The contract is `docs/design.md` "Plugin contract"; the
   e.g. `/srv/hopper/plugins`) to use custom plugins; unset, there are none.
 - Loaded at daemon start. A broken plugin is refused with its error in `/api/plugins`; the daemon
   still starts. A custom id equal to a built-in id is refused.
-- It runs only once `plugins.yaml` names it. `plugins.yaml` is a config document in the database:
-  edit it from the UI, or by hand with `hopper config edit plugins.yaml`. Command-bearing
-  options are set only the second way. The entry is `{ name: <instance>, plugin: <id>, options: { … } }`
-  in the role's section (`router`, `queueSorter`, `escalationLevels`, `executors`, `jobSources`, `machines`,
-  `usageSources`, `notifiers`). Executors, sources and notifiers apply at the next restart; the escalation levels are a list in order, lowest first.
+- It runs only once the plugins config names it. The plugins config is a config record in the
+  database, edited in the UI: Settings → Plugins → the role → **Add** an instance of it (a list role)
+  or select it (a one-instance role), then set its options in the instance form. Every option is
+  edited there, command-bearing ones too. An instance is `{ "name": <instance>, "plugin": <id>,
+  "options": { … } }` in the role's section (`router`, `queueSorter`, `escalationLevels`,
+  `executors`, `jobSources`, `machines`, `usageSources`, `notifiers`). Job sources, usage sources and
+  notifiers apply at the next restart; the escalation levels are a list in order, lowest first.
 
 ## From the plugin store
 
 With `HOPPER_PLUGIN_STORE` set to a git repository holding `plugin-store.yaml` (design.md "Plugin
 store"), the UI's Plugins view lists what that plugin store offers and installs it:
-Install, Update (the store's directory changed), Remove (refused while plugins.yaml names it). An
-installed plugin is a custom plugin like any other; it runs once plugins.yaml names it. It needs no
+Install, Update (the store's directory changed), Remove (refused while the plugins config names it).
+An installed plugin is a custom plugin like any other; it runs once the plugins config names it. It needs no
 plugin dir: what is installed is kept in the database and its code is unpacked into the work dir,
 restored from the plugin store at start, so an ephemeral container keeps its plugins. A plugin in the
 plugin dir is never replaced or removed from the UI.
@@ -72,14 +74,15 @@ the directory into the plugin dir and change it.
 A plugin reads a secret from the runtime: `ctx.env(name)` in `create` (call it at each use, not once,
 so a rotated secret applies), `sys.env(name)` in `detect`. It answers the variable `name`, or the
 mounted file the variable `<name>_FILE` names (design.md "Secrets"); it throws when both are set or
-the file cannot be read. Name the variable with a command-bearing option (a UI session then cannot
-redirect a credential). Never read a secret file of your own, and never store a secret.
+the file cannot be read. Name the variable with a command-bearing option, so the UI marks it and
+only an admin changes it. Never read a secret file of your own, and never store a secret.
 
 ## Command-bearing options
 
 Mark every option that names a program, its arguments, a working directory, an interpreter, a
-sourced file, or where a credential is read or sent, with `.meta({ commandBearing: true })`.
-The UI shows those read-only; they are edited only with `hopper config edit plugins.yaml` (design.md "UI and mutation").
+sourced file, or where a credential is read or sent, with `.meta({ commandBearing: true })`. The
+UI edits it like any option, admin only, and marks it "runs a command" (design.md "UI and
+mutation").
 
 ## Machine options
 

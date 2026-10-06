@@ -1,6 +1,6 @@
 // command: runs a job's body as a shell script on its lane's machine (issue #58, design.md
 // "Container targets") — this machine, an ssh target, or a container target over docker exec. For a
-// machine that runs no agent. Not in the built-in instances: plugins.yaml names it to use it.
+// machine that runs no agent. Not in the built-in instances: the plugins config names it to use it.
 import { join } from 'node:path';
 import { createCommandExecutor } from '../../../executors/index.ts';
 import { dockerHost } from '../../../executors/docker.ts';

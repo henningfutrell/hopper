@@ -4,7 +4,7 @@
 export type Role = 'router' | 'queue-sorter' | 'escalation-level' | 'executor' | 'job-source' | 'machine-source' | 'usage-source' | 'notifier';
 export const ROLES: readonly Role[] = ['router', 'queue-sorter', 'escalation-level', 'executor', 'job-source', 'machine-source', 'usage-source', 'notifier'];
 
-/** The roles built once at start; a later plugins.yaml change applies at the next restart. */
+/** The roles built once at start; a later the plugins config change applies at the next restart. */
 export type RestartRole = 'executor' | 'job-source' | 'machine-source' | 'usage-source' | 'notifier';
 
 /** A plugin's cheap check of whether it can run on this machine. */
@@ -20,14 +20,14 @@ export interface OptionChoice {
   description?: string;
 }
 
-/** A plugin plus options, under a name (plugins.yaml). */
+/** A plugin plus options, under a name (the plugins config). */
 export interface InstanceSpec {
   name: string;
   plugin: string;
   options?: Record<string, unknown>;
 }
 
-/** How the router instance was chosen: named in plugins.yaml, or the first router that can run here. */
+/** How the router instance was chosen: named in the plugins config, or the first router that can run here. */
 export type RouterSelection = 'file' | 'detected';
 
 /** The router as /api/health and /api/router report it. */
@@ -60,7 +60,7 @@ export interface InstanceStatus {
 }
 
 /**
- * A restart role in GET /api/plugins: the instances running since start. `pending`: plugins.yaml
+ * A restart role in GET /api/plugins: the instances running since start. `pending`: the plugins config
  * now names other instances (or, with the section removed, the built-in ones differ); they apply
  * at the next restart.
  */
@@ -69,7 +69,7 @@ export interface RestartRoleStatus {
   pending?: { status: 'changed — restart pending'; instances: InstanceSpec[] };
 }
 
-/** One instance as plugins.yaml (or, with no section, the built-in instances) names it now: what an options edit acts on. */
+/** One instance as the plugins config (or, with no section, the built-in instances) names it now: what an options edit acts on. */
 export interface ConfiguredInstance {
   role: Role;
   instance: InstanceSpec;
@@ -106,10 +106,10 @@ export interface QueueSorterStatus {
 
 /**
  * POST /ui/api/plugins (design.md "UI and mutation"). `version` is GET /api/plugins
- * `config.version`, read with the form: a file changed since is refused.
+ * `config.version`, read with the form: a config changed since is refused.
  */
 export type PluginsEdit =
-  /** One instance's whole options object; command-bearing values must equal the file's. */
+  /** One instance's whole options object, command-bearing options too (issue #198). */
   | { action: 'options'; role: Role; name: string; options: Record<string, unknown>; version: string }
   /** A plugin, detected available, fills the role under its own id. */
   | { action: 'select'; role: SelectableRole; plugin: string; version: string }
@@ -118,7 +118,7 @@ export type PluginsEdit =
    * and `options`. A plugin with a machine option needs it named here (issue #174).
    */
   | { action: 'add'; role: ListRole; plugin: string; name: string; options?: Record<string, unknown>; version: string }
-  /** Instance `name` of a list role leaves plugins.yaml; an executor still named elsewhere is refused. */
+  /** Instance `name` of a list role leaves the plugins config; an executor still named elsewhere is refused. */
   | { action: 'remove'; role: ListRole; name: string; version: string }
   /** Escalation level `name` moves to position `to` (0 is the lowest level); the others keep their order. */
   | { action: 'move'; role: 'escalation-level'; name: string; to: number; version: string }
@@ -133,21 +133,21 @@ export type PluginsEditOutcome =
 export interface PluginsReport {
   roles: Role[];
   /**
-   * `source: defaults`: plugins.yaml could not be read at start, so the built-in instances run.
-   * `version`: sha-256 of plugins.yaml, or `missing`; an edit carries it back.
+   * `source: defaults`: the plugins config could not be read at start, so the built-in instances run.
+   * `version`: sha-256 of the plugins config, or `missing`; an edit carries it back.
    */
-  config: { document: string; source: 'document' | 'defaults'; version: string; loadedAt?: string; error?: string; warnings: string[] };
+  config: { source: 'stored' | 'defaults'; version: string; loadedAt?: string; error?: string; warnings: string[] };
   /** Every configured instance, by role — each one's options are its own. */
   instances: ConfiguredInstance[];
   router: { instance: InstanceSpec; selection: RouterSelection; detection: Detection; active: string; fallback: boolean; reason?: string };
   queueSorter: QueueSorterStatus;
   /** The escalation levels now, lowest first (a live role). `active` null: that level cannot run, and escalates every question it gets. */
   escalationLevels: InstanceStatus[];
-  /** The executors as plugins.yaml names them now: live since issue #142, never pending. */
+  /** The executors as the plugins config names them now: live since issue #142, never pending. */
   executors: { instances: InstanceStatus[] };
   /** The restart roles, as built at start. */
   jobSources: RestartRoleStatus;
-  /** The machine sources — this machine and the attached ones (issue #74) — as plugins.yaml names them now: live, never pending. */
+  /** The machine sources — this machine and the attached ones (issue #74) — as the plugins config names them now: live, never pending. */
   machines: { instances: InstanceStatus[] };
   usageSources: RestartRoleStatus;
   notifiers: RestartRoleStatus;

@@ -7,5 +7,5 @@ import { RISK_RULES, rulesView } from '../questions/index.ts';
 import type { TenantParts } from './tenants.ts';
 
 export function questionGatesRoutes(app: FastifyInstance, o: { tenant: (req: FastifyRequest) => TenantParts }): void {
-  app.get('/api/question-gates', async (req): Promise<QuestionGatesView> => ({ rules: rulesView(o.tenant(req).store.documents), riskRules: [...RISK_RULES] }));
+  app.get('/api/question-gates', async (req): Promise<QuestionGatesView> => ({ rules: rulesView(o.tenant(req).store.config), riskRules: [...RISK_RULES] }));
 }

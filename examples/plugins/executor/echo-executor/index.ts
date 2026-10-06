@@ -1,4 +1,4 @@
-// An executor: runs one job on one lane. Jobs name the executor INSTANCE (plugins.yaml), so:
+// An executor: runs one job on one lane. Jobs name the executor INSTANCE (Plugins), so:
 //   executors: [ { name: echo, plugin: echo-executor, options: { prefix: "heard: " } } ]
 // and a job source item with `executor: echo` runs here. This one finishes at once, echoing the prompt.
 import type { PluginDefinition } from 'hopper/plugin';

@@ -1,4 +1,4 @@
-// The GitHub App's identity: its id and slug from the github-app instance's options (plugins.yaml),
+// The GitHub App's identity: its id and slug from the github-app instance's options (the plugins config),
 // its private key from the daemon's environment (design.md "Secrets"). A PEM given with literal
 // `\n` escapes (one line, as most env files and secret stores want it) is read as the PEM it spells.
 import { createPrivateKey } from 'node:crypto';

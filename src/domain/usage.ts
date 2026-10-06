@@ -36,7 +36,7 @@ export interface Account {
 /** An account and the part that uses it: one entry of `GET /api/accounts`. */
 export interface PartAccount extends Account {
   role: 'usage-source' | 'job-source';
-  /** The instance name in plugins.yaml. */
+  /** The instance name in the plugins config. */
   instance: string;
 }
 

@@ -1,5 +1,5 @@
 // Which user an identity signs in as (issue #158, design.md "Users: one hopper, separate users"): a
-// linked identity is its user; an unlinked one — already granted a role by auth.yaml — gets a new
+// linked identity is its user; an unlinked one — already granted a role by the sign-in config — gets a new
 // user of its own, linked. No sign-in is owner; a login code names its user itself.
 import type { InstanceStore } from '../domain/ports.ts';
 import type { Identity, User } from '../domain/types.ts';

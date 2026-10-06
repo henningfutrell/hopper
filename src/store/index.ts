@@ -1,10 +1,10 @@
 // The store (design.md "Database", "Users: one hopper, separate users"): the instance store over
 // the schema HOPPER_DATABASE_URL names, and a user store per user over that user's schema.
 import { randomUUID } from 'node:crypto';
-import { INSTANCE_DOCUMENTS, type Clock, type IdGen, type InstanceStore } from '../domain/ports.ts';
+import { INSTANCE_CONFIG, type Clock, type IdGen, type InstanceStore } from '../domain/ports.ts';
 import { createContext } from './context.ts';
 import { openDb } from './db.ts';
-import { createConfigDocuments } from './documents.ts';
+import { createConfigRecords } from './config.ts';
 import { createLoginCodeRepository } from './login-codes.ts';
 import { migrateInstance } from './migrations.ts';
 import { createInstanceSettingsRepository } from './settings.ts';
@@ -35,7 +35,7 @@ export function openInstanceStore(o: { url: string; clock: Clock; idGen?: IdGen 
     identities: createIdentityLinks(ctx),
     uiSessions: createUiSessionRepository(ctx),
     loginCodes: createLoginCodeRepository(ctx),
-    documents: createConfigDocuments(ctx, INSTANCE_DOCUMENTS),
+    config: createConfigRecords(ctx, INSTANCE_CONFIG),
     settings: createInstanceSettingsRepository(ctx),
     userStore,
     tx: ctx.tx,

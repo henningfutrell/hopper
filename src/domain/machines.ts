@@ -56,7 +56,7 @@ export interface ClientMachine extends AttachedBase {
 
 /**
  * POST /ui/api/machines (design.md "Machines from the UI", issues #18, #74): attach an ssh target as
- * a new `ssh` instance in plugins.yaml `machines:`. `ssh` must be a detected ssh target; `herdrBin`
+ * a new `ssh` instance in the plugins config `machines:`. `ssh` must be a detected ssh target; `herdrBin`
  * and `hostKey` are resolved by the daemon and `session` stays the default — none is ever sent; it
  * runs herdr only when one of its executors needs it (issue #142). `lanes` and `executors` left out
  * are the machine defaults. A machine is edited and removed like any plugin instance (POST
@@ -65,7 +65,7 @@ export interface ClientMachine extends AttachedBase {
 export interface MachineEdit { name: string; ssh: string; lanes?: number; executors?: string[]; label?: string; version: string }
 
 /**
- * The **machine defaults** (issue #142): what a machine attached from the UI starts with — plugins.yaml
+ * The **machine defaults** (issue #142): what a machine attached from the UI starts with — the plugins config
  * `machineDefaults:`; a field left out is the `ssh` plugin's own default (one lane, herdr-claude).
  */
 export interface MachineDefaults { lanes: number; executors: string[] }
@@ -75,11 +75,9 @@ export interface MachineDefaultsEdit extends MachineDefaults { version: string }
 
 /** GET /api/machines/config: what the Machines view edits. */
 export interface MachinesConfig {
-  /** The config document it is written to: `plugins.yaml`. */
-  document: string;
-  /** sha-256 of plugins.yaml, or `missing`: a machine edit or a lanes edit carries it back. */
+  /** sha-256 of the plugins config, or `missing`: a machine edit or a lanes edit carries it back. */
   version: string;
-  /** plugins.yaml could not be used; the last good configuration runs. */
+  /** the plugins config could not be used; the last good configuration runs. */
   error?: string;
   /** Every machine-source instance as it applies now: this machine (`local`) and each attached one. */
   machines: InstanceSpec[];

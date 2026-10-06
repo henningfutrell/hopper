@@ -6,9 +6,8 @@
 # Everything the daemon keeps is in its database: HOPPER_DATABASE_URL in
 # ~/.config/hopper/daemon.env (the unit's EnvironmentFile, mode 600) says which. The first
 # install needs it: set it there, or run with HOPPER_DATABASE_URL set and it is written there.
-# Config is config documents in that database (plugins.yaml, rules.md, auth.yaml), edited from the
-# UI or with `hopper config edit <document>`, and webhook subscriptions there, edited from the
-# UI; secrets are daemon.env lines.
+# Config is in that database — the plugins, the rules, sign-in and the webhook subscriptions — and
+# edited from the UI; there is no config file. Secrets are daemon.env lines.
 #
 # Build-only mode (HOPPER_INSTALL_INTO=<dir>, used by the daemon's self-update, design.md
 # "Self-update"): build the install into <dir> and stop there — no service, unit or config is
@@ -165,9 +164,10 @@ for i in $(seq 1 20); do
     printf 'health (try %s): %s\n' "$i" "$health"
     printf 'executors: %s\n' "$(printf '%s' "$health" | node -e 'let s="";process.stdin.on("data",(c)=>s+=c).on("end",()=>console.log((JSON.parse(s).executors??[]).join(", ")))')"
     printf 'UI: %s/ (read-only until you log in)\n' "$URL"
-    if cli config version rules.md 2>/dev/null | grep -qx missing; then
-      step "no rules.md in the database yet: write the starter (edit it in the UI, Questions → Question gates)"
-      cli config set rules.md --if-version missing < "$APP_DIR/scripts/starter-rules.md"
+    if cli config version rules 2>/dev/null | grep -qx missing; then
+      step "no rules in the database yet: write the starter (edit them in the UI, Settings → Question gates)"
+      node -e 'process.stdout.write(JSON.stringify(require("fs").readFileSync(0, "utf8")))' < "$APP_DIR/scripts/starter-rules.md" \
+        | cli config set rules --if-version missing
     fi
     node "$DEST/src/update/rename.ts" cleanup
     echo "open the UI: bash $DEST/scripts/open-ui.sh (or mint a code: hopper login-code)"

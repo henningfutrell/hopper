@@ -1,7 +1,7 @@
 // Plugins (design.md "UI and mutation"): per role, the configured instances, each with its own
-// options form (components/plugin-form.tsx), and for a list role Add and Remove; command-bearing options are shown, never edited
-// (plugins.yaml only). Refreshes every 15 s unless a form holds unsaved edits. Every shipped plugin of a
-// list role has a switch that enables or disables it (issue #142: users never edit plugins.yaml).
+// options form (components/plugin-form.tsx) for every option, command-bearing ones too (issue #198), and
+// for a list role Add and Remove. Refreshes every 15 s unless a form holds unsaved edits. Every shipped
+// plugin of a list role has a switch that enables or disables it (issue #142).
 import { Package, Puzzle, RefreshCw } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -83,11 +83,10 @@ export function Plugins() {
   const c = report.config;
   return (
     <div className="space-y-3">
-      <Panel title="plugins.yaml" icon={Puzzle} bodyClassName="space-y-1.5 text-xs"
+      <Panel title="Plugins config" icon={Puzzle} bodyClassName="space-y-1.5 text-xs"
         action={authed && <Button size="sm" variant="outline" disabled={busy} onClick={() => void rescan()}><RefreshCw />Rescan</Button>}>
         <div className="flex flex-wrap items-center gap-2">
-          <code className="font-mono break-all">{c.document}</code>
-          <StatusBadge status={c.source === 'document' ? 'in the database' : 'built-in defaults'} tone={c.source === 'document' ? 'ok' : 'muted'} />
+          <StatusBadge status={c.source === 'stored' ? 'in the database' : 'built-in defaults'} tone={c.source === 'stored' ? 'ok' : 'muted'} />
           {c.loadedAt && <span className="text-muted-foreground">loaded {new Date(c.loadedAt).toLocaleTimeString()}</span>}
         </div>
         {c.error && <div className="text-bad">{c.error}</div>}

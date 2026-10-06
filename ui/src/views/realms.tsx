@@ -1,6 +1,6 @@
 // Sign-in (issue #185, design.md "Sign-in: realms"): the realms, in the order the username and password
-// form tries them and the sign-in buttons show them, each on or off, moved, edited as its auth.yaml
-// entry or removed; a realm added from a starting entry of its type; the login code and no sign-in. In
+// form tries them and the sign-in buttons show them, each on or off, moved, edited as its JSON entry in
+// the sign-in config or removed; a realm added from a starting entry of its type; the login code and no sign-in. In
 // Settings, admin only (GET /api/realms). Every change is POST /ui/api/realms against the version read,
 // and applies at once; the daemon refuses one that would not load, or that would end your own admin
 // session, and the refusal is shown where the change was made.
@@ -20,35 +20,37 @@ import { useCanAdmin } from '@/store/selectors';
 
 const SELECT = 'h-9 rounded-lg border border-input bg-transparent px-2.5 text-base md:text-sm dark:bg-input/30';
 const TYPES: { type: RealmType; label: string }[] = [
-  { type: 'password', label: 'Password (accounts in auth.yaml)' },
+  { type: 'password', label: 'Password (accounts listed here)' },
   { type: 'ldap', label: 'LDAP or Active Directory' },
   { type: 'oidc', label: 'OpenID Connect' },
   { type: 'github', label: 'GitHub' },
   { type: 'saml', label: 'SAML' },
 ];
 
+const entry = (value: Record<string, unknown>): string => `${JSON.stringify(value, null, 2)}\n`;
+
 /** A starting entry per realm type: the settings each needs, with example values to replace. docs/sign-in.md has them all. */
 const STARTER: Record<RealmType, string> = {
-  password: 'name: staff\nlabel: Password\ntype: password\nusers: []\n',
-  ldap: [
-    'name: directory', 'label: Directory', 'type: ldap', 'url: ldaps://ldap.example.com',
-    'bindDn: cn=hopper,ou=services,dc=example,dc=com', 'bindPasswordEnv: LDAP_BIND_PASSWORD',
-    'userBase: ou=people,dc=example,dc=com', 'userFilter: (uid={username})',
-    'roles:', '  admin: { groups: ["cn=hopper-admins,ou=groups,dc=example,dc=com"] }  # quote a DN: a comma splits a [ ] list', '  defaultRole: viewer', '',
-  ].join('\n'),
-  oidc: [
-    'name: sso', 'label: Company SSO', 'type: oidc', 'issuer: https://idp.example.com', 'clientId: hopper', 'clientSecretEnv: SSO_CLIENT_SECRET',
-    'roles:', '  admin: { emails: [someone@example.com] }', '  defaultRole: null', '',
-  ].join('\n'),
-  github: [
-    'name: github', 'label: GitHub', 'type: github', 'clientId: <client id>', 'clientSecretEnv: GITHUB_OAUTH_CLIENT_SECRET',
-    'roles:', '  admin: { subjects: ["<numeric user id>"] }', '',
-  ].join('\n'),
-  saml: [
-    'name: corp', 'label: Corp SSO', 'type: saml', 'entryPoint: https://idp.example.com/sso/saml',
-    'idpCert: |', '  -----BEGIN CERTIFICATE-----', '  <base64 certificate>', '  -----END CERTIFICATE-----', 'idpIssuer: https://idp.example.com/metadata',
-    'roles:', '  admin: { groups: [hopper-admins] }', '',
-  ].join('\n'),
+  password: entry({ name: 'staff', label: 'Password', type: 'password', users: [] }),
+  ldap: entry({
+    name: 'directory', label: 'Directory', type: 'ldap', url: 'ldaps://ldap.example.com',
+    bindDn: 'cn=hopper,ou=services,dc=example,dc=com', bindPasswordEnv: 'LDAP_BIND_PASSWORD',
+    userBase: 'ou=people,dc=example,dc=com', userFilter: '(uid={username})',
+    roles: { admin: { groups: ['cn=hopper-admins,ou=groups,dc=example,dc=com'] }, defaultRole: 'viewer' },
+  }),
+  oidc: entry({
+    name: 'sso', label: 'Company SSO', type: 'oidc', issuer: 'https://idp.example.com', clientId: 'hopper', clientSecretEnv: 'SSO_CLIENT_SECRET',
+    roles: { admin: { emails: ['someone@example.com'] }, defaultRole: null },
+  }),
+  github: entry({
+    name: 'github', label: 'GitHub', type: 'github', clientId: '<client id>', clientSecretEnv: 'GITHUB_OAUTH_CLIENT_SECRET',
+    roles: { admin: { subjects: ['<numeric user id>'] } },
+  }),
+  saml: entry({
+    name: 'corp', label: 'Corp SSO', type: 'saml', entryPoint: 'https://idp.example.com/sso/saml',
+    idpCert: '-----BEGIN CERTIFICATE-----\n<base64 certificate>\n-----END CERTIFICATE-----', idpIssuer: 'https://idp.example.com/metadata',
+    roles: { admin: { groups: ['hopper-admins'] } },
+  }),
 };
 
 /** The editor: a realm being added (no name) or changed (its name). */
@@ -197,7 +199,7 @@ function Editor({ editing, setEditing, error, busy, onSave, onCancel }: {
         )}
       </div>
       <p className="text-xs text-muted-foreground">
-        The realm's entry in auth.yaml. Secrets are never written here: name the variable that holds one (<code className="font-mono">clientSecretEnv</code>, <code className="font-mono">bindPasswordEnv</code>) and set it in the daemon's environment. Every setting: docs/sign-in.md in the hopper's install.
+        The realm's entry, as JSON. Secrets are never written here: name the variable that holds one (<code className="font-mono">clientSecretEnv</code>, <code className="font-mono">bindPasswordEnv</code>) and set it in the daemon's environment. Every setting: docs/sign-in.md in the hopper's install.
       </p>
       <Textarea aria-label="Realm" rows={12} spellCheck={false} className="font-mono text-xs" value={editing.entry} disabled={busy}
         onChange={(e) => setEditing({ ...editing, entry: e.target.value })} />

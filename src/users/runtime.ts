@@ -1,5 +1,5 @@
 // One user's runtime (issue #158, design.md "Users: one hopper, separate users"): every part of theirs
-// composed over their user store — plugins.yaml (written on the first start without one), plugin
+// composed over their user store — the plugins config (written on the first start without one), plugin
 // host, target pool, executors, question service, engine, job source sync, webhook dispatcher,
 // notifiers, failure log. Nothing in it reads or writes another user's: their secrets under their
 // secret prefix, their processes with their CLI config dirs, their herdr session.
@@ -22,7 +22,7 @@ import { hopperSshAuth, pinHostKeys } from '../executors/ssh.ts';
 import { createClientReleaseKeeper, createTargetPool, probeContainer, probeHerdrOverSsh, probeSsh, type MachineProbe, type ResolvedTarget } from '../machines/index.ts';
 import type { ClientRelease } from '../client/release.ts';
 import { BUILTIN_PLUGINS } from '../plugins/builtin.ts';
-import { builtinInstances, ensurePluginsDocument } from '../plugins/builtin-instances.ts';
+import { builtinInstances, ensurePluginsConfig } from '../plugins/builtin-instances.ts';
 import { createDetectionKit } from '../plugins/detect.ts';
 import { unavailableExecutors } from '../plugins/executor-slot.ts';
 import { herdrClaudePlugin } from '../plugins/executor/herdr-claude/index.ts';
@@ -80,8 +80,8 @@ export interface UserRuntimeOptions {
   clientRelease: ClientRelease;
   /** Where the store installs are unpacked (the instance's). */
   installedDir: string;
-  /** How often plugins.yaml's version is checked. */
-  pluginsFileIntervalMs: number;
+  /** How often the plugins config's version is checked. */
+  pluginsConfigIntervalMs: number;
   /** The UI link to one question (notifications carry it). */
   answerUrl(questionId: string): string;
 }
@@ -151,9 +151,9 @@ function seamPlugins(router: Router, host: PluginsView): PluginsView {
 export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRuntime> {
   const { user, store, config, seams, clock, logger } = o;
   const session = userHerdrSession(user);
-  // plugins.yaml is the one truth: the built-in instances are written on the start that finds none.
-  ensurePluginsDocument({
-    documents: store.documents, answerTimeoutMs: config.answerTimeoutMs, localMachine: config.localMachine, logger,
+  // The plugins config is the one truth: the built-in instances are written on the start that finds none.
+  ensurePluginsConfig({
+    config: store.config, answerTimeoutMs: config.answerTimeoutMs, localMachine: config.localMachine, logger,
     ...(user.id === OWNER_ID ? {} : { herdrSession: session }),
   });
   // Every secret comes from the runtime, under the user's prefix (issue #56, #158).
@@ -190,7 +190,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const builtin = builtinInstances(config.answerTimeoutMs, config.localMachine, user.id === OWNER_ID ? undefined : session);
   const host = createPluginHost({
     ...(config.pluginDir ? { pluginDir: config.pluginDir } : {}), installedDir: o.installedDir,
-    documents: store.documents, dataDir, clock, routerMode, logger, userEnv: cliEnv,
+    config: store.config, dataDir, clock, routerMode, logger, userEnv: cliEnv,
     defaultMachines: builtin.machines, defaultExecutors: builtin.executors,
     kit: createDetectionKit({ env: { ...o.env, ...cliEnv }, secret }),
     builtins: withSeams(seams, session),
@@ -199,19 +199,19 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
       rerunnable: (keys) => new Set(keys.filter((k) => { const j = store.jobs.getBySourceKey(k); return j !== undefined && isRerunnable(j); })),
     },
     machineContext: { executors: () => executorNames(), target },
-    intervalMs: o.pluginsFileIntervalMs,
+    intervalMs: o.pluginsConfigIntervalMs,
     executorInUse: (name) => store.jobs.list({ status: ['queued', 'held', 'claimed', 'running', 'waiting_answer'] }).filter((j) => j.spec.executor === name).map((j) => j.id),
     attached: { inUse: (name) => jobsOnMachine(name), sshAuth, ...(seams.resolveTarget ? { resolveTarget: seams.resolveTarget } : {}) },
   });
   await host.start();
-  // The pinned host keys follow plugins.yaml: rewritten when it changes, each problem logged once.
+  // The pinned host keys follow the plugins config: rewritten when it changes, each problem logged once.
   const pinProblems = new Set<string>();
   const pinned = (machines: AttachedMachine[]): AttachedMachine[] => {
     for (const p of pinHostKeys(dataDir, machines)) if (!pinProblems.has(p)) { pinProblems.add(p); logger.warn(`hopper: ${p}`); }
     return machines;
   };
   pinned(host.targets());
-  // Executors follow plugins.yaml live (issue #142): every lookup reads the host's instances now.
+  // Executors follow the plugins config live (issue #142): every lookup reads the host's instances now.
   const currentExecutors = (): ExecutorRegistry => {
     const built = host.executors();
     return createExecutorRegistry([...built.flatMap((b): Executor[] => (b.executor ? [b.executor] : [])), ...(seams.executors ?? [])], unavailableExecutors(built));
@@ -231,7 +231,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   // reached through closures that run only after `engine` exists (design.md "Construction
   // contract added").
   const questions = createQuestionService({
-    store, clock, levels, stageTimeoutMs: config.answerTimeoutMs, documents: store.documents,
+    store, clock, levels, stageTimeoutMs: config.answerTimeoutMs, config: store.config,
     renotifyMs: config.humanRenotifyMs, humanTimeoutMs: config.humanTimeoutMs,
     answerUrl: o.answerUrl,
     onAnswered: (q: Question) => engine.onAnswered(q),
@@ -244,7 +244,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     store, clock, executors, router, questions, queueSorter: host.queueSorter,
     routing: { rules: () => host.routingRules(), machines: () => host.machineIds() },
     ...(seams.fakeUsage ? { fakeUsage: seams.fakeUsage } : {}),
-    // Every machine follows plugins.yaml without a restart (issues #18, #74); the pinned host keys with it.
+    // Every machine follows the plugins config without a restart (issues #18, #74); the pinned host keys with it.
     machines: { list: () => { pinned(host.targets()); return host.machines().list(); } },
     usage: [...host.usageSources(), ...(seams.fakeUsage ? [seams.fakeUsage] : [])],
     policy: {

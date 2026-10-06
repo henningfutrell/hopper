@@ -57,7 +57,7 @@ function RulesEditorPanel({ server, onSaved }: { server: RulesView; onSaved: (v:
   const [busy, setBusy] = useState(false);
   const ed = rulesEditor(server, stored);
   const change = (text: string) => {
-    const d = { document: server.document, text, base: ed.base };
+    const d = { text, base: ed.base };
     setStored(d);
     keepStored(d);
   };
@@ -79,7 +79,6 @@ function RulesEditorPanel({ server, onSaved }: { server: RulesView; onSaved: (v:
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2 text-xs">
-        <code className="font-mono break-all">{server.document}</code>
         {server.missing && <StatusBadge status="missing — no standing rules" tone="warn" />}
         {ed.dirty && <StatusBadge status="unsaved" tone="warn" />}
       </div>
@@ -114,7 +113,7 @@ export function QuestionGates() {
         {report && gates ? <Chain gates={gateChain(report, gates.riskRules.length)} /> : <Empty>{error ?? pluginsError ?? 'loading…'}</Empty>}
         <div className="space-y-5 pt-3">
           {gates && (
-            <Stage title="Standing rules" what="rules.md, given to every escalation level; read with every question">
+            <Stage title="Standing rules" what="given to every escalation level; read with every question">
               <RulesEditorPanel server={gates.rules} onSaved={(rules) => setGates({ ...gates, rules })} />
             </Stage>
           )}

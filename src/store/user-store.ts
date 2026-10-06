@@ -1,10 +1,10 @@
 // One user's store (issue #158): the tables of their user schema, over a connection of its own whose
 // search_path is that schema (the `?schema=` of the database URL, db.ts).
-import { USER_DOCUMENTS, type Clock, type IdGen, type UserStore } from '../domain/ports.ts';
+import { USER_CONFIG, type Clock, type IdGen, type UserStore } from '../domain/ports.ts';
 import { createContext } from './context.ts';
 import { openDb } from './db.ts';
 import { createDecisionRepository } from './decisions.ts';
-import { createConfigDocuments } from './documents.ts';
+import { createConfigRecords } from './config.ts';
 import { createEventLog } from './events.ts';
 import { createJobRepository } from './jobs.ts';
 import { createLaneRepository } from './lanes.ts';
@@ -41,7 +41,7 @@ export function openUserStore(o: { url: string; clock: Clock; idGen: IdGen }): U
     webhooks: createWebhookRepository(ctx),
     questions: createQuestionRepository(ctx),
     settings: createUserSettingsRepository(ctx),
-    documents: createConfigDocuments(ctx, USER_DOCUMENTS),
+    config: createConfigRecords(ctx, USER_CONFIG),
     tx: ctx.tx,
     close: () => db.close(),
   };

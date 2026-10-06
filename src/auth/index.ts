@@ -1,4 +1,4 @@
-// Signing in through the realms (design.md "Sign-in: realms"). auth.yaml as it applies now, swapped at
+// Signing in through the realms (design.md "Sign-in: realms"). The sign-in config as it applies now, swapped at
 // once by `apply` when Settings → Sign-in changes it.
 //
 // Form realms (password, ldap): the username and password form is tried against each one that is on,
@@ -26,8 +26,8 @@ import type { FlowSecrets, FormRealm, RealmCallback, RedirectRealm } from './rea
 import { roleFor } from './roles.ts';
 import { createSamlRealm } from './saml.ts';
 
-export { AUTH, authDocumentProblem, loadAuthDocument, type AuthConfig } from './config.ts';
-export { AuthEditError, editAuthDocument, realmsView } from './edit.ts';
+export { SIGN_IN, loadSignInConfig, signInConfigProblem, type AuthConfig } from './config.ts';
+export { AuthEditError, editSignInConfig, realmsView } from './edit.ts';
 export { hashPassword } from './password.ts';
 
 const FLOW_MS = 10 * 60_000;
@@ -71,11 +71,11 @@ export interface SignIn {
   callback(name: string, cb: RealmCallback): Promise<CallbackOutcome>;
   /** The identity and role behind a ticket, once, for the browser holding the binding. */
   complete(ticket: string, binding: string): { who: Identity; role: UiRole } | undefined;
-  /** The role auth.yaml grants this identity now; null: none, or its realm is gone or off. */
+  /** The role the sign-in config grants this identity now; null: none, or its realm is gone or off. */
   roleOf(who: Identity): UiRole | null;
-  /** auth.yaml as it applies now. */
+  /** The sign-in config as it applies now. */
   config(): AuthConfig;
-  /** Apply a changed auth.yaml at once: the realms, local sign-in and no sign-in. Flows in progress stay. */
+  /** Apply a changed sign-in config at once: the realms, local sign-in and no sign-in. Flows in progress stay. */
   apply(config: AuthConfig): void;
 }
 
@@ -141,7 +141,7 @@ export function createSignIn(o: { config: AuthConfig; origin: () => string; cloc
         const r = await realm.check(username, password);
         if (r.ok) {
           // The first realm that accepts the password decides, even when it grants no role.
-          return r.role === null ? { ok: false, status: 403, error: 'signed in, but auth.yaml grants this account no role', who: r.who } : { ok: true, who: r.who, role: r.role };
+          return r.role === null ? { ok: false, status: 403, error: 'signed in, but the sign-in config grants this account no role', who: r.who } : { ok: true, who: r.who, role: r.role };
         }
         if ('error' in r) errors.push(r.error);
       }
@@ -183,7 +183,7 @@ export function createSignIn(o: { config: AuthConfig; origin: () => string; cloc
         return { ok: false, status: 502, error: `${r.label} sign-in failed: ${(e as Error).message}` };
       }
       const role = roleOf(who);
-      if (role === null) return { ok: false, status: 403, error: 'signed in, but auth.yaml grants this account no role', who };
+      if (role === null) return { ok: false, status: 403, error: 'signed in, but the sign-in config grants this account no role', who };
       const ticket = random();
       tickets.set(ticket, { who, role, binding: flow.binding, expires: now() + TICKET_MS });
       return { ok: true, ticket, who, role };

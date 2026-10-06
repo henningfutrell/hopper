@@ -1,8 +1,8 @@
 // A queue sorter: orders the waiting jobs once per Decision. This one runs jobs whose goal
 // mentions a word first, then the rest by effective priority; as the queue gate's pre-sort, it
 // rejects jobs whose goal mentions a word to avoid (`avoid`, none by default). Copy the directory into
-// ~/.config/hopper/plugins/, then name it in plugins.yaml:
-//   queueSorter: { name: urgent, plugin: word-first, options: { word: urgent } }
+// ~/.config/hopper/plugins/, then pick it in the UI (Plugins → Queue sorter) and set its option
+// `word` (for example `urgent`).
 import type { PluginDefinition, QueueEntry } from 'hopper/plugin'; // type-only: erased when Node runs it
 
 export default {

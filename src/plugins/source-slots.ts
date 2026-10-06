@@ -1,7 +1,7 @@
 // The source roles' slots (design.md "Failure", "Settled in slice 4"), all restart roles built
 // once at start: job sources (0..n; one that cannot run is dropped with its reason; one whose
 // detection says needs-setup still runs, since it can wait for its setup) and usage sources (0..n;
-// dropped with the reason). The machine sources (0..n, issue #74) follow plugins.yaml live; one that
+// dropped with the reason). The machine sources (0..n, issue #74) follow the plugins config live; one that
 // cannot run lists no machine — never a guessed one. Each is known by its instance name.
 import type { MachineSource, UsageSource } from '../domain/ports.ts';
 import type { Detection, InstanceSpec, InstanceStatus, Role } from '../domain/types.ts';
@@ -33,7 +33,7 @@ export function buildJobSources(specs: InstanceSpec[], deps: SlotDeps): Promise<
 }
 
 /**
- * The machine sources as plugins.yaml names them now (issues #18, #74): this machine and the attached
+ * The machine sources as the plugins config names them now (issues #18, #74): this machine and the attached
  * ones, followed live. An unchanged instance is kept; a new or changed one is built; a removed one goes.
  */
 export async function applyMachineSpecs(slot: { built?: Built<MachineSource>[] }, specs: InstanceSpec[], deps: SlotDeps): Promise<void> {

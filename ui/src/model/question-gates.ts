@@ -36,8 +36,8 @@ export function gateChain(report: PluginsReport, riskRuleCount: number): Gate[] 
 /** Matches RULES_MAX_BYTES in src/questions/rules.ts; the daemon refuses more (400). */
 export const RULES_MAX_BYTES = 64 * 1024;
 
-/** An unsaved rules edit as the browser keeps it: for which document, over which version. */
-export interface StoredDraft { document: string; text: string; base: string }
+/** An unsaved rules edit as the browser keeps it, over which version. */
+export interface StoredDraft { text: string; base: string }
 
 export const DRAFT_KEY = 'jh_rules_draft';
 
@@ -45,7 +45,7 @@ export function readDraft(raw: string | null): StoredDraft | undefined {
   if (!raw) return undefined;
   try {
     const d = JSON.parse(raw) as Partial<StoredDraft>;
-    return typeof d.document === 'string' && typeof d.text === 'string' && typeof d.base === 'string' ? { document: d.document, text: d.text, base: d.base } : undefined;
+    return typeof d.text === 'string' && typeof d.base === 'string' ? { text: d.text, base: d.base } : undefined;
   } catch {
     return undefined;
   }
@@ -63,7 +63,7 @@ export interface RulesEditor {
 }
 
 export function rulesEditor(server: RulesView, stored: StoredDraft | undefined): RulesEditor {
-  const d = stored && stored.document === server.document ? stored : undefined;
+  const d = stored;
   const text = d ? d.text : server.text;
   const base = d ? d.base : server.version;
   const bytes = new TextEncoder().encode(text).length;

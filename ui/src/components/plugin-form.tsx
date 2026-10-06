@@ -1,6 +1,6 @@
 // One plugin instance's options form (Remove for a list role's instance; an escalation level also
 // moves earlier or later), a one-instance role's plugin selector and a list role's Add form (design.md "UI and mutation"), shared by the Plugins view, the Routing view and the Question gates panel. Each form keeps its own
-// unsaved edits; command-bearing options are shown, never edited (plugins.yaml only); an option the plugin lists
+// unsaved edits; every option is edited here, a command-bearing one marked as such (issue #198); an option the plugin lists
 // choices for (a model) is picked from them, not typed (issue #151); a machine option from the configured
 // machines, and never left empty — Add asks for it too (issue #174). One Save sends
 // one instance's whole options object through POST /ui/api/plugins against GET /api/plugins'
@@ -46,17 +46,13 @@ function Field({ name, p, choices, current, draft, disabled, set }: {
   name: string; p: OptionSchema; choices?: OptionChoice[]; current: Record<string, unknown>; draft: Draft; disabled: boolean; set: (v: string | boolean) => void;
 }) {
   const kind = fieldKind(p, choices);
-  const label = <div className="text-xs break-words"><span className="font-mono">{name}</span>{p.description && <span className="text-muted-foreground"> — {p.description}</span>}</div>;
-  if (kind === 'readonly') {
-    const v = name in current ? current[name] : p.default;
-    return (
-      <>{label}<div className="flex flex-wrap items-center gap-1.5 text-xs">
-        <code className="font-mono break-all">{shown(p, v) || '—'}</code>
-        {!(name in current) && <span className="text-muted-foreground">default</span>}
-        <span className="rounded border px-1 text-[10px] text-muted-foreground" title="names a program, its arguments, a directory or an executed file">plugins.yaml only</span>
-      </div></>
-    );
-  }
+  const label = (
+    <div className="text-xs break-words">
+      <span className="font-mono">{name}</span>
+      {p.commandBearing && <span className="ml-1.5 rounded border px-1 text-[10px] text-muted-foreground" title="names a program, its arguments, a directory, an executed file or where a credential goes">runs a command</span>}
+      {p.description && <span className="text-muted-foreground"> — {p.description}</span>}
+    </div>
+  );
   const value = name in draft ? draft[name] : current[name];
   let input: React.ReactNode;
   if (kind === 'boolean') {
@@ -129,10 +125,10 @@ export function InstanceForm({ role, inst }: { role: Role; inst: InstanceSpec })
     setBusy(false);
   };
   const removeWhat = role === 'escalation-level'
-    ? `${inst.name} leaves plugins.yaml; the next question skips it.`
+    ? `${inst.name} is removed; the next question skips it.`
     : role === 'machine-source'
-      ? `${inst.name} leaves plugins.yaml and stops taking jobs at once. Refused while a job runs there or waits for an answer in a pane there.`
-      : `${inst.name} leaves plugins.yaml; ${ROLE_TITLES[role].toLowerCase()} change at the next restart.`;
+      ? `${inst.name} is removed and stops taking jobs at once. Refused while a job runs there or waits for an answer in a pane there.`
+      : `${inst.name} is removed; ${ROLE_TITLES[role].toLowerCase()} change at the next restart.`;
   return (
     <div data-slot="instance-form" data-instance={inst.name} className="space-y-2 rounded-md border p-3">
       <div className="flex flex-wrap items-center gap-2">
