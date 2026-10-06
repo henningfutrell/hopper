@@ -538,14 +538,16 @@ anchor. The default names no comment path: jobs never write to issues.
 **Monitor** every `HOPPER_HERDR_POLL_MS` (1000): `agent get` (status, `state_change_seq`)
 and `agent read --source recent-unwrapped --lines 200`.
 
-**Turn anchor (B1).** At every send record `{ seq: state_change_seq, anchor }` (saved in
+**Turn anchor (B1).** At every send record `{ seq: state_change_seq, anchor, text }` (saved in
 `job.executorState.turn` with `blockedAtSend`, before the prompt, so a restarted daemon can
 watch the same turn) where
 `anchor` is the last line of what was sent as Claude echoes it — the footer's last line
 (`If the job cannot be done, …`) on the first turn, the answer's last line on a resume.
 Only output lines **after the last occurrence of the anchor** count. **Every** outcome
 below except `blocked`, agent gone and timeout requires status `idle`/`done` **and**
-`state_change_seq` greater than at send. Marker normalisation: strip the Claude Code gutter
+`state_change_seq` greater than at send — or, **stalled** (issue #278), Claude waiting (`idle`, `done`
+or `blocked`) with `state_change_seq` unmoved since the send for `idleNudgeMs`: herdr never said the
+turn moved, yet nothing works on it, and a job must never stay running on a waiting Claude. Marker normalisation: strip the Claude Code gutter
 (`●`, `⎿`), whitespace, and surrounding `` ` `` / `*`; `HOPPER_DONE` and
 `HOPPER_QUESTION` must then equal the whole line; `HOPPER_FAILED` is a prefix match
 (after the anchor only). Parser tests cover: a wrapped echoed footer, the previous turn's
@@ -558,6 +560,8 @@ marker still on screen, a marker in backticks or bold. Then:
 | last marker `HOPPER_QUESTION` | `question`, `detectedBy: marker`, text = the assistant message before the marker |
 | status `blocked` (question/approval UI) | `question`, `detectedBy: blocked`, text = the visible dialog |
 | idle/done with no marker after the anchor for `idleNudgeMs` (20000) | **status note** (issue #163): no question, no outcome. The executor types `STATUS_NOTE_NUDGE` into the pane as the next turn of the same job (anchor = the nudge, same `timeoutMs` clock) and watches again; each further status note in a row waits twice as long before its nudge |
+| stalled, and the anchor nowhere on screen | **lost send** (issue #278): what was sent never reached Claude (seen live: Claude sat idle at an empty prompt, the job running, across daemon restarts). The executor sends the same text again (`turn.text`, saved with the turn), progress `the prompt never reached claude: sent it again`; after 3 sends in all, or for a turn saved without its text, `failed` `the prompt never reached claude …` with the screen |
+| stalled at a dialog (a picked option that never landed) | `question`, `detectedBy: blocked`, as above |
 | agent gone (`agent get` error / pane closed) | `failed`, `claude exited` + last output |
 | `timeoutMs` (default 3600000) exceeded | interrupt, `failed` `timed out` |
 
@@ -725,7 +729,8 @@ so a running job's pane and Claude outlive a restart.
   `laneId`, its lane is kept (not closed), `job.reattached { reason: "daemon restart" }`.
   After it: `executor.reattach(ctx)` runs the monitor from the saved turn anchor (`seq`,
   `anchor`, `blockedAtSend`) — a turn that ended while the daemon was down is detected on the
-  first poll (status idle/done, seq past the send), one in progress is watched; `timeoutMs` and
+  first poll (status idle/done, seq past the send), one in progress is watched, one never sent is
+  a lost send after `idleNudgeMs` and sent again; `timeoutMs` and
   the progress clock restart at reattach. No `job.started`; the outcome is recorded as any
   other run's. The decider is unchanged: the kept lane is an ordinary busy lane.
 - Same job, work gone (no `turn`, agent gone, pane differs, or the lane row lost) →

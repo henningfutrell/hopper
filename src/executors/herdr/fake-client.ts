@@ -37,6 +37,13 @@ export interface FakeHerdrOptions {
   shellDropsRuns?: number;
   /** The first N `startAgent` calls answer `paneBusy`, as herdr does for a pane spawned a moment ago. */
   shellNotReadyStarts?: number;
+  /**
+   * The first N prompts never reach Claude (issue #278, seen live): herdr takes them, but Claude stays
+   * idle at an empty prompt, nothing echoed and its state never changes.
+   */
+  dropsPrompts?: number;
+  /** The first N option picks at a dialog are lost: Claude stays at the dialog, its state unchanged. */
+  dropsDialogPicks?: number;
   session?: string;
   /** Column width the prompt echo is wrapped at. Default 100. */
   width?: number;
@@ -65,6 +72,8 @@ export interface FakeHerdrClient extends HerdrClient {
   readonly closed: string[];
   readonly agentStarts: { name: string; paneId: string; args: string[]; timeoutMs: number }[];
   addTurns(...turns: FakeTurn[]): void;
+  /** The next N prompts never reach Claude, as `dropsPrompts`. */
+  dropPrompts(n: number): void;
   /** Claude disappears from its pane (crashed, closed by hand). */
   killAgent(name: string): void;
   /** The next call of `method` rejects with a HerdrError of this code. */
@@ -116,6 +125,8 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
   let n = 0;
   let busyStarts = o.shellNotReadyStarts ?? 0;
   let droppedRuns = o.shellDropsRuns ?? 0;
+  let droppedPrompts = o.dropsPrompts ?? 0;
+  let droppedPicks = o.dropsDialogPicks ?? 0;
   let workspaceId: string | undefined;
 
   const record = (method: keyof HerdrClient, ...args: unknown[]): void => {
@@ -154,6 +165,7 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
     session: o.session,
     calls: [], prompts: [], keys: [], texts: [], closed: [], agentStarts: [],
     addTurns: (...more) => { turns.push(...more); },
+    dropPrompts: (count) => { droppedPrompts = count; },
     killAgent(name) { const p = byAgent(name); if (p) exit(p); },
     failNext(method, code) { failures.set(method, code); },
     screen: (id) => {
@@ -215,6 +227,7 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
       if (!p) throw new HerdrError('agent_not_found', `agent target ${name} not found`);
       if (p.status === 'blocked') throw new HerdrError('agent_blocked', `agent ${name} is blocked`);
       fake.prompts.push({ name, text });
+      if (droppedPrompts-- > 0) return;
       p.lines.push(...wrap(text, width));
       p.turn = turns.shift() ?? { output: [] };
       p.step = 0;
@@ -226,7 +239,7 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
       fake.texts.push({ paneId, text });
       if (text === CTRL_END && p.hidden) { p.lines.push(...p.hidden); p.hidden = undefined; }
       // A digit at a dialog picks that option: Claude goes on with the next scripted turn.
-      if (/^\d$/.test(text) && p.agent && p.status === 'blocked' && p.mode === 'none') {
+      if (/^\d$/.test(text) && p.agent && p.status === 'blocked' && p.mode === 'none' && droppedPicks-- <= 0) {
         p.turn = turns.shift() ?? { output: [] };
         p.step = 0;
         settle(p, 'working');

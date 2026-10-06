@@ -9,6 +9,7 @@ numbers, no commit hashes, no file names, no code words. Never edit a line once 
 update notice would show it again as new.
 
 - You can now edit the rules every job is told, in Settings → Job rules: change them, clear them, or go back to the default. Where a job works and how it reports back stay fixed.
+- A job no longer sits running while Claude waits idle: when its instructions never reach Claude, the hopper sends them again, and fails the job if they still do not arrive.
 - Sources no longer asks you to install the hopper's GitHub app when it may already be installed: if GitHub cannot say where the app is installed, it says why and links to where you can see its installs.
 - The lane timeline now shows when a job is sitting on a question: a hatched strip on its lane from the moment it asked until it is answered.
 - The old built-in user from before GitHub sign-in is gone: everything it held now belongs to you, the admin who signed in with GitHub, and Settings → Users lists only real people.

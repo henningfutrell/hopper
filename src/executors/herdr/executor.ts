@@ -4,7 +4,7 @@
 import type { Clock, ExecutionContext, ExecutionOutcome, Executor } from '../../domain/ports.ts';
 import type { Job, LaneId } from '../../domain/types.ts';
 import type { HerdrClient } from './client.ts';
-import { RECENT_LINES, abortReason, watchTurn } from './monitor.ts';
+import { RECENT_LINES, abortReason, tail, watchTurn } from './monitor.ts';
 import type { Interrupt, Sleep } from './monitor.ts';
 import { resolvePayload, validatePayload } from './payload.ts';
 import type { ClaudeJobPayload } from './payload.ts';
@@ -13,6 +13,8 @@ import { openPane, startClaude } from './start.ts';
 import type { PaneState, StartDeps, TurnAnchor } from './start.ts';
 
 const UNBLOCK_POLLS = 10;
+/** Sends of one text that never reach Claude (lost sends, issue #278) before the job fails. */
+const MAX_SENDS = 3;
 
 export interface HerdrClaudeExecutorOptions {
   /** This machine's herdr. */
@@ -129,8 +131,8 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
     return { kind: 'failed', error: result.interrupt === 'timeout' ? 'timed out' : 'aborted' };
   }
 
-  /** Status notes so far in a row, and when the turn they belong to began. */
-  interface Notes { count: number; startedAt: number }
+  /** Status notes so far in a row, and when the turn they belong to began; lost sends of the text in flight. */
+  interface Notes { count: number; startedAt: number; lost?: number }
 
   async function send(ctx: ExecutionContext, s: PaneState, p: ClaudeJobPayload, text: string, anchor: string, notes?: Notes): Promise<ExecutionOutcome | Interrupt> {
     const herdr = herdrOn(s);
@@ -142,9 +144,9 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       agent = await herdr.getAgent(s.agentName);
     }
     if (!agent) return { kind: 'failed', error: 'pane lost' };
-    const turn: TurnAnchor = { seq: agent.stateChangeSeq, anchor, blockedAtSend: agent.status === 'blocked' };
+    const turn: TurnAnchor = { seq: agent.stateChangeSeq, anchor, blockedAtSend: agent.status === 'blocked', text };
     // Saved before the prompt: a restart in between watches a turn never sent, which ends as a
-    // status note and a nudge, never as a lost job.
+    // lost send and is sent again, never as a lost job.
     ctx.saveState({ ...s, turn, parkedSeq: undefined });
     await herdr.prompt(s.agentName, text);
     return watch(ctx, s, p, turn, notes);
@@ -152,7 +154,8 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
 
   /**
    * Watches the turn to its outcome. A status note (issue #163) opens no question: the agent is
-   * nudged and the same turn goes on, under the same timeout.
+   * nudged and the same turn goes on, under the same timeout. A lost send (issue #278) is sent again,
+   * at most MAX_SENDS times in all; then the job fails, so it never stays running on a waiting Claude.
    */
   async function watch(ctx: ExecutionContext, s: PaneState, p: ClaudeJobPayload, turn: TurnAnchor, notes: Notes = { count: 0, startedAt: clock.now().getTime() }): Promise<ExecutionOutcome | Interrupt> {
     const result = await watchTurn({
@@ -161,8 +164,17 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       timeoutMs: p.timeoutMs, expectedMs: p.expectedMs, startedAt: notes.startedAt,
       parked: (seq) => ctx.saveState({ ...s, turn, parkedSeq: seq }),
     });
+    if ('lostSend' in result) {
+      const sends = (notes.lost ?? 0) + 1;
+      if (turn.text === undefined || sends >= MAX_SENDS) {
+        const screen = await herdrOn(s).read(s.paneId, { source: 'visible', lines: 40 }).catch(() => '');
+        return { kind: 'failed', error: `the prompt never reached claude${turn.text === undefined ? '' : ` after ${sends} sends`}: ${tail(screen, 20)}` };
+      }
+      ctx.progress(0, 'the prompt never reached claude: sent it again');
+      return send(ctx, s, p, turn.text, turn.anchor, { ...notes, lost: sends });
+    }
     if (!('statusNote' in result)) return result;
-    return send(ctx, s, p, STATUS_NOTE_NUDGE, STATUS_NOTE_NUDGE, { ...notes, count: notes.count + 1 });
+    return send(ctx, s, p, STATUS_NOTE_NUDGE, STATUS_NOTE_NUDGE, { count: notes.count + 1, startedAt: notes.startedAt });
   }
 
   /** The saved pane, with its turn, when Claude still runs in that pane. */
@@ -244,7 +256,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
         const option = agent.status === 'blocked' && s.turn
           ? dialogOption(await herdr.read(s.paneId, { source: 'visible', lines: 60 }), answer) : undefined;
         if (!option || !s.turn) return send(ctx, s, p, answer, lastLineOf(answer));
-        const turn: TurnAnchor = { seq: agent.stateChangeSeq, anchor: s.turn.anchor, blockedAtSend: true };
+        const turn: TurnAnchor = { ...s.turn, seq: agent.stateChangeSeq, blockedAtSend: true };
         ctx.saveState({ ...s, turn, parkedSeq: undefined });
         await herdr.sendText(s.paneId, option);
         ctx.progress(0, `picked option ${option} of the dialog`);

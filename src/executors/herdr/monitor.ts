@@ -18,12 +18,21 @@ export type Interrupt = { interrupt: 'cancel' | 'shutdown' | 'timeout' };
 /** The turn ended without a marker (issue #163): progress, never a question. The executor nudges. */
 export type StatusNote = { statusNote: string };
 
+/**
+ * A lost send (issue #278): Claude has sat ready since the send, its state never moved, and the turn
+ * anchor is nowhere on screen. What was sent never reached Claude; the executor sends it again.
+ */
+export type LostSend = { lostSend: true };
+
 export interface TurnWatch {
   herdr: HerdrClient;
   clock: Clock;
   sleep: Sleep;
   pollMs: number;
-  /** How long the turn sits idle without a marker before it counts as a status note. */
+  /**
+   * How long the turn sits idle without a marker before it counts as a status note; also how long Claude
+   * may sit waiting with its state unmoved since the send before the turn counts as over all the same.
+   */
   idleNudgeMs: number;
   ctx: ExecutionContext;
   agentName: string;
@@ -62,11 +71,12 @@ async function blockedQuestion(w: TurnWatch, recent: string): Promise<ExecutionO
   return { kind: 'question', question: { text: tail(visible, 30), recentOutput: tail(recent, OUTPUT_LINES), detectedBy: 'blocked' } };
 }
 
-export async function watchTurn(w: TurnWatch): Promise<ExecutionOutcome | Interrupt | StatusNote> {
+export async function watchTurn(w: TurnWatch): Promise<ExecutionOutcome | Interrupt | StatusNote | LostSend> {
   const { herdr, clock, ctx } = w;
   const started = w.startedAt ?? clock.now().getTime();
   let lastLine = '';
   let idleSince: number | null = null;
+  let waitingSince: number | null = null;
   let errors = 0;
   for (;;) {
     if (ctx.signal.aborted) return { interrupt: abortReason(ctx.signal) };
@@ -88,10 +98,17 @@ export async function watchTurn(w: TurnWatch): Promise<ExecutionOutcome | Interr
         ctx.progress(Math.min(0.9, (now - started) / w.expectedMs), lastLine);
       }
       const moved = agent.stateChangeSeq > w.seqAtSend;
+      const ready = agent.status === 'idle' || agent.status === 'done';
+      // A job must never stay running on a Claude that waits (issue #278): ready or at a dialog, its
+      // state unmoved since the send for idleNudgeMs, the turn is over though herdr never said so.
+      if (ready || agent.status === 'blocked') waitingSince ??= now;
+      else waitingSince = null;
+      const stalled = !moved && waitingSince !== null && now - waitingSince >= w.idleNudgeMs;
       const park = (o: ExecutionOutcome): ExecutionOutcome => { w.parked?.(agent.stateChangeSeq); return o; };
-      if (agent.status === 'blocked' && (moved || !w.blockedAtSend)) return park(await blockedQuestion(w, recent));
-      const ended = (agent.status === 'idle' || agent.status === 'done') && moved;
+      if (agent.status === 'blocked' && (moved || !w.blockedAtSend || stalled)) return park(await blockedQuestion(w, recent));
+      const ended = ready && (moved || stalled);
       if (!ended) idleSince = null;
+      else if (!moved && !turn.anchorFound) return { lostSend: true };
       else if (turn.lastMarker === 'done') {
         return { kind: 'finished', result: { summary: turn.assistantText.slice(0, SUMMARY_CHARS), paneId: w.paneId } };
       } else if (turn.lastMarker === 'failed') {
@@ -100,7 +117,7 @@ export async function watchTurn(w: TurnWatch): Promise<ExecutionOutcome | Interr
         return park({ kind: 'question', question: { text: turn.assistantText, recentOutput: tail(recent, OUTPUT_LINES), detectedBy: 'marker' } });
       } else {
         idleSince ??= now;
-        if (now - idleSince >= w.idleNudgeMs) return { statusNote: turn.assistantText };
+        if (stalled || now - idleSince >= w.idleNudgeMs) return { statusNote: turn.assistantText };
       }
       errors = 0;
     } catch (err) {

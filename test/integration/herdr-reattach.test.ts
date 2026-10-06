@@ -91,6 +91,20 @@ describe('herdr-claude job across a daemon restart', () => {
     expect(herdr.prompts).toHaveLength(1);
   });
 
+  // Issue #278: the prompt never reached Claude, which sat idle at an empty prompt across restarts.
+  it('a prompt that never reached Claude is sent again after the restart: the job never stays running on an idle Claude', async () => {
+    freshDb();
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [LONG], dropsPrompts: 1 });
+    const { job } = await runThenStop(herdr);
+
+    const second = await boot(herdr);
+    const done = await second.waitForStatus(job.id, 'finished', 15000);
+    expect(done.result).toMatchObject({ summary: expect.stringContaining('Painted the shed.') });
+    expect(herdr.prompts).toHaveLength(2);
+    expect(herdr.prompts[1]!.text).toBe(herdr.prompts[0]!.text);
+    expect(herdr.agentStarts).toHaveLength(1);
+  });
+
   it('Claude gone from the pane → failed "interrupted by daemon restart" and the pane closed', async () => {
     freshDb();
     const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [LONG] });
