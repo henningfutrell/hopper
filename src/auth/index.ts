@@ -27,6 +27,11 @@
 //
 // Gateway realms (issue #215): an auth gateway in front of the hopper signed the person in and forwards
 // their token; each gateway realm that is on checks it, in order, and the first that accepts it decides.
+//
+// The API door (issue #255): a token in `Authorization: Bearer …` on a read of /api/ is checked here too,
+// by the same checks as the UI door: a JWT by the gateway realms (`checkGateway`), any other token by
+// GitHub, as a GitHub sign-in asks who its token belongs to. The same role rules grant the role. It signs
+// nobody in: the HTTP edge reads as the user the identity is already linked to (src/http/tenants.ts).
 // Flows and tickets live in memory: a restart mid-sign-in means signing in again.
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { Clock } from '../domain/ports.ts';
@@ -37,6 +42,7 @@ import { whoIs } from '../connected-accounts/identity.ts';
 import { CLIENT_ID_VARIABLE, hopperApps, type HopperApps } from '../connected-accounts/hopper-app.ts';
 import { webFlow, type WebFlow } from '../connected-accounts/web-flow.ts';
 import { isDeviceRealm, isFormRealm, isGatewayRealm, isRedirectRealm, type AuthConfig, type DeviceRealmConfig, type RealmConfig } from './config.ts';
+import { createTokenCheck, githubIdentity, type TokenCheckOutcome } from './api-door.ts';
 import { createGatewayRealm } from './gateway.ts';
 import { createLdapRealm } from './ldap.ts';
 import { createOidcRealm } from './oidc.ts';
@@ -46,6 +52,7 @@ import { createSamlRealm } from './saml.ts';
 
 export { SIGN_IN, loadSignInConfig, signInConfigProblem, type AuthConfig } from './config.ts';
 export { AuthEditError, editSignIn, realmsView, type SignInEdit } from './edit.ts';
+export type { TokenCheckOutcome } from './api-door.ts';
 export { claimGithubAdmin } from './github-admin.ts';
 export { prepareSignIn } from './start.ts';
 
@@ -97,6 +104,12 @@ export interface SignIn {
   readonly gateway: boolean;
   /** The token an auth gateway forwarded on this request, checked by the gateway realms that are on, in order. */
   checkGateway(headers: Record<string, string | string[] | undefined>): Promise<GatewayCheckOutcome>;
+  /**
+   * The token in `Authorization: Bearer …` (the API door, issue #255): a JWT checked by the gateway realms
+   * that are on (`checkGateway`), any other token by GitHub for the first GitHub realm that is on. 401: no
+   * token, or none of them accepts it; 403: accepted, but no role; 502: the issuer or GitHub did not answer.
+   */
+  checkToken(headers: Record<string, string | string[] | undefined>): Promise<TokenCheckOutcome>;
   /** Where an OIDC, GitHub or SAML sign-in starts and ends (known once the daemon listens). */
   origin(): string;
   /** The OIDC and SAML realms that are on, in order. */
@@ -200,10 +213,7 @@ export function createSignIn(o: {
   /** Who a GitHub grant belongs to, their role (null: none), and the connection it becomes. */
   async function grantedTo(r: DeviceRealmConfig, g: Grant): Promise<{ who: Identity; role: UiRole | null; connection: Connection }> {
     const id = await whoIs(apps.github, g.accessToken);
-    const who: Identity = {
-      realm: r.name, subject: id.subject, username: id.account, groups: [],
-      ...(id.email ? { email: id.email } : {}), ...(id.name ? { name: id.name } : {}),
-    };
+    const who = githubIdentity(r, id);
     // The first person to sign in with GitHub becomes admin (issue #239).
     if (r.type === 'github' && config.githubAdmin === null) {
       const claimed = o.claimGithubAdmin?.(who);
@@ -232,6 +242,27 @@ export function createSignIn(o: {
     }
   }
   const roleOf = (who: Identity): UiRole | null => roleIn(config, who);
+
+  async function checkGateway(headers: Record<string, string | string[] | undefined>): Promise<GatewayCheckOutcome> {
+    const refusals: string[] = [];
+    const errors: string[] = [];
+    for (const realm of gateways) {
+      const r = await realm.check(headers);
+      if (r.ok) {
+        // The first realm that accepts the token decides, even when it grants no role.
+        const role = roleOf(r.who);
+        return role === null ? { ok: false, status: 403, error: 'signed in at the gateway, but the sign-in config grants this account no role', who: r.who } : { ok: true, who: r.who, role };
+      }
+      if ('error' in r) errors.push(`${realm.label}: ${r.error}`); else refusals.push(`${realm.label}: ${r.refused}`);
+    }
+    return errors.length ? { ok: false, status: 502, error: `the gateway's token could not be checked: ${errors.join('; ')}` } : { ok: false, status: 403, error: refusals.join('; ') || 'no gateway realm is on' };
+  }
+
+  const tokens = createTokenCheck({
+    checkGateway, gatewayOn: () => gateways.length > 0, githubRealm: () => on().filter(isDeviceRealm)[0],
+    whoIs: (token) => whoIs(apps.github, token), roleOf, now,
+  });
+
 
   /** The GitHub web flow for this realm, when the app has a client id and the runtime its client secret. */
   const web = (name: string): WebFlow | undefined => {
@@ -278,20 +309,8 @@ export function createSignIn(o: {
       return errors.length ? { ok: false, status: 502, error: `sign-in could not be checked: ${errors.join('; ')}` } : { ok: false, status: 403, error: 'wrong username or password' };
     },
     get gateway() { return gateways.length > 0; },
-    async checkGateway(headers) {
-      const refusals: string[] = [];
-      const errors: string[] = [];
-      for (const realm of gateways) {
-        const r = await realm.check(headers);
-        if (r.ok) {
-          // The first realm that accepts the token decides, even when it grants no role.
-          const role = roleOf(r.who);
-          return role === null ? { ok: false, status: 403, error: 'signed in at the gateway, but the sign-in config grants this account no role', who: r.who } : { ok: true, who: r.who, role };
-        }
-        if ('error' in r) errors.push(`${realm.label}: ${r.error}`); else refusals.push(`${realm.label}: ${r.refused}`);
-      }
-      return errors.length ? { ok: false, status: 502, error: `the gateway's token could not be checked: ${errors.join('; ')}` } : { ok: false, status: 403, error: refusals.join('; ') || 'no gateway realm is on' };
-    },
+    checkGateway,
+    checkToken: tokens.check,
     origin: o.origin,
     realms: () => on().filter(isRedirectRealm).map((r) => ({ name: r.name, label: r.label, type: r.type })),
     devices: () => {
@@ -327,6 +346,7 @@ export function createSignIn(o: {
     apply(next) {
       config = next;
       build();
+      tokens.forget();
     },
     async begin(name, binding) {
       const r = redirect().get(name);

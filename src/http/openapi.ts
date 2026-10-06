@@ -180,8 +180,8 @@ function operation(op: Operation): Record<string, unknown> {
     operationId: `${op.method}${op.path.replace(/[/:-](\w)/g, (_m, c: string) => c.toUpperCase())}`,
     parameters: parameters(op),
     ...(op.body ? { requestBody: { required: true, content: { [op.form ? 'application/x-www-form-urlencoded' : 'application/json']: { schema: schemaOf(op.body) } } } } : {}),
-    // A read needs nothing on loopback and a session beyond it; a mutation always needs one.
-    security: op.role ? [{ uiSession: [] }] : op.path.startsWith('/api/') ? [{}, { uiSession: [] }] : [],
+    // A read needs nothing on loopback and a session or a token beyond it (the API door); a mutation always needs a session.
+    security: op.role ? [{ uiSession: [] }] : op.path.startsWith('/api/') ? [{}, { uiSession: [] }, { apiToken: [] }] : [],
     responses: responses(op),
   };
 }
@@ -196,7 +196,10 @@ export function openApiDocument(version: string): Record<string, unknown> {
     tags: Object.entries(TAGS).map(([n, d]) => ({ name: n, description: d })),
     paths,
     components: {
-      securitySchemes: { uiSession: { type: 'apiKey', in: 'header', name: SESSION_HEADER, description: 'A UI session token (localStorage `jh_session` in a signed-in UI).' } },
+      securitySchemes: {
+        uiSession: { type: 'apiKey', in: 'header', name: SESSION_HEADER, description: 'A UI session token (localStorage `jh_session` in a signed-in UI).' },
+        apiToken: { type: 'http', scheme: 'bearer', description: 'Reads only (the API door): a gateway realm\'s JWT, or a GitHub token of an account that is a user\'s connected GitHub account. It reads as the user that identity signed in as in the UI; it signs nobody in.' },
+      },
       schemas: {
         Error: { type: 'object', properties: { error: { type: 'string' } }, required: ['error'] },
         Event: schemaOf(ENVELOPE_SCHEMA),

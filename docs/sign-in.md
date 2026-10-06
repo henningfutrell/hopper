@@ -358,6 +358,28 @@ in. `HOPPER_PUBLIC_URL` is the address people reach through the gateway.
 - The gateway realm composes with the others: with an LDAP realm also on, the sign-in page shows
   both, and **Sign in through the gateway** tries the token again.
 
+## Reading the API with a token
+
+A script, a CLI or another service reads `/api/` with the same sign-in a person uses in the browser:
+the token goes in `Authorization: Bearer <token>`, and the request reads as the user that sign-in
+lands in — that user's work, with that user's role.
+
+```sh
+# The GitHub account you sign in with (any token GitHub grants it: here the gh CLI's)
+curl -H "Authorization: Bearer $(gh auth token)" https://hopper.example.com/api/jobs
+# Behind an auth gateway: the JWT it forwards, checked against the issuer's keys
+curl -H "Authorization: Bearer $ACCESS_TOKEN" https://hopper.example.com/api/queue
+```
+
+- **Sign in through the UI first.** The token reads only as a user its identity already signed in as;
+  it makes no new user. A GitHub token reads only as the user whose connected GitHub account it is:
+  after **Disconnect** in Sources it no longer does.
+- **Reads only.** Every change (`POST /ui/api/*`) still needs a UI session.
+- The same realms and role rules decide: turning the realm off, or a rule that grants no role, closes
+  this door as it closes the sign-in page. A refused token is 401 with the reason, no role is 403, an
+  issuer or GitHub that could not be asked is 502.
+- A GitHub token revoked at GitHub may still read for up to a minute.
+
 ## UI roles and role rules
 
 | UI role | may |

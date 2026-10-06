@@ -13,7 +13,7 @@ import { AuthEditError, editSignIn, loadSignInConfig, realmsView, roleIn, type S
 import type { InstanceStore } from '../domain/store.ts';
 import { roleAllows, type Identity, type RealmsEdit, type RealmsView } from '../domain/types.ts';
 import { HttpError } from './errors.ts';
-import { sessionToken } from './host-guard.ts';
+import { roleOfRequest } from './tenants.ts';
 import type { UiSessions } from './ui/sessions.ts';
 
 export interface RealmsAdmin {
@@ -89,10 +89,10 @@ export function createRealmsAdmin(o: {
   };
 }
 
-export function realmRoutes(app: FastifyInstance, o: { realms: RealmsAdmin; sessions: UiSessions }): void {
+export function realmRoutes(app: FastifyInstance, o: { realms: RealmsAdmin }): void {
   app.get('/api/realms', async (req): Promise<RealmsView> => {
-    const s = o.sessions.find(sessionToken(req));
-    if (s && !roleAllows(s.role, 'admin')) throw new HttpError(403, `role ${s.role} may not read the realms; it needs admin`);
+    const role = roleOfRequest(req);
+    if (role && !roleAllows(role, 'admin')) throw new HttpError(403, `role ${role} may not read the realms; it needs admin`);
     return o.realms.view();
   });
 }
