@@ -47,6 +47,8 @@ export interface SessionUser {
   realm: string;
   /** Who signed in: name, username, email or subject, the first the realm gave. */
   identity: string;
+  /** The session's identity is a super admin (issue #242): it may make others super admin or hand the privilege over. */
+  superAdmin: boolean;
 }
 
 /** A realm the logged-out UI offers a button for (an OIDC, GitHub or SAML realm that is on). */
@@ -93,6 +95,21 @@ export interface RealmsView {
   /** The sign-in origin the callbacks are on. */
   origin: string;
   realms: RealmView[];
+  /** Everyone who has signed in through a realm, each identity with its role now and whether it is a super admin (issue #242). */
+  people: PersonView[];
+}
+
+/**
+ * One identity that has signed in through a realm (issue #242): its realm and subject (what an `admin` or
+ * `super-admin` change names), the user it signs in as, the role the sign-in config grants it now (by its
+ * last sign-in's details while a session of it lasts, else by its subject), and whether it is a super admin.
+ */
+export interface PersonView {
+  realm: string;
+  subject: string;
+  user: string;
+  role: UiRole | null;
+  superAdmin: boolean;
 }
 
 /** POST /ui/api/realms: one change to the sign-in config, made against the version it read. */
@@ -105,6 +122,10 @@ export type RealmsEdit = { version: string } & (
   | { action: 'enable'; name: string; enabled: boolean }
   /** Local sign-in (the login code) on or off; the role of no sign-in, or null for off. */
   | { action: 'settings'; local?: boolean; none?: UiRole | null }
+  /** Make this identity admin (issue #242): any admin. */
+  | { action: 'admin'; who: { realm: string; subject: string } }
+  /** Make this identity a super admin, or with `transfer` hand your own super admin over to it (you stay admin): a super admin only (issue #242). */
+  | { action: 'super-admin'; who: { realm: string; subject: string }; transfer?: boolean }
 );
 
 /** GET /ui/api/session. */

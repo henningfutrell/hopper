@@ -3818,6 +3818,18 @@ condition is the update path: a hopper with earlier GitHub sign-ins records nobo
 promotes no one. It sits in the record, not in a realm's `roles`, because realms from the environment
 replace the stored realm at every start; the top-level field survives that.
 
+**Super admins** (issue #242): two tiers of admin. `superAdmins` in the record (realm and subject each;
+absent: `[githubAdmin]`, so the first GitHub admin is the first super admin with no migration) lists
+identities that are `admin` whatever their realm's rules, while that realm is on (`isSuperAdmin`,
+`src/auth/index.ts`); not a UI role, a mark on an admin, answered as `SessionUser.superAdmin`. Two
+changes ride `POST /ui/api/realms` (least role `admin`): `admin` adds an identity's subject to its realm's
+`roles.admin.subjects` — any admin; `super-admin` adds it to `superAdmins`, with `transfer` taking the
+acting identity out — only a super admin (403 otherwise). Both name someone who has signed in
+(`IdentityLinks`, else 404). A regular admin's change that would change the super admins in effect —
+turning off or removing their realm — is refused (403). The login code and no sign-in are never super
+admin. `GET /api/realms` lists `people`: every linked identity with the role the config grants it now (by
+a live session's identity when there is one, else by subject alone) and whether it is a super admin.
+
 ### The flow (no cookies)
 
 Cookies ignore ports ("UI session and mutations"), and a SAML response is a cross-site POST that a

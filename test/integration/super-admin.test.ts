@@ -126,7 +126,7 @@ describe('two admin tiers (issue #242)', () => {
     const idp = await oidcIdp(h, { claims: { email: 'ada@example.com', email_verified: true, name: 'Ada', preferred_username: 'ada' } });
     const { app, origin } = await startWithAuth(h, { version: 1, realms: [GITHUB, oidcRealm(idp, { admin: { emails: ['ada@example.com'] } })] }, ENV(github));
     const first = await signInAs(app, origin, github, 'octo');
-    const ada = (await signIn(app.url, origin, 'corp')).token;
+    const ada = (await signIn(app.url, origin, 'corp')).token!;
     expect(await me(app, ada)).toMatchObject({ role: 'admin', superAdmin: false });
     expect((await change(app, ada, { action: 'enable', name: 'github', enabled: false })).status).toBe(403);
     expect((await change(app, ada, { action: 'remove', name: 'github' })).status).toBe(403);
