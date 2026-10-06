@@ -4,7 +4,7 @@
 import type {
   Advice, DomainEvent, PreSortReject, ExecutorUnavailable, Job, JobId, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit,
   PluginsEditOutcome, PluginsReport, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule, LaneId, MachineSnapshot,
-  Question, QuestionAttempt, SourceStatus, UsageReading, UsageSourceState, WebhookDelivery, InstallInfo, UpdateSettings, UpdateStatus,
+  Question, QuestionAttempt, SourceStatus, UsageReading, UsageSourceState, WebhookDelivery, InstallInfo, UpdateSettings, UpdateStatus, VersionHistory,
   GhLoginStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport,
 } from './types.ts';
 import type { UserStore } from './store.ts';
@@ -442,6 +442,8 @@ export interface Updater {
   /** Start applying the target; answers at once with `apply` set. Refuses (`error`) when nothing is available or an apply runs. */
   apply(): { ok: true; status: UpdateStatus } | { ok: false; error: string };
   settings(patch: Partial<UpdateSettings>): UpdateStatus;
+  /** The version history of the installed commit; checks first when the update repository lacks it. */
+  history(): Promise<VersionHistory>;
 }
 
 /** gh login from the UI (issue #138): GET /api/gh-login, POST /ui/api/gh-login. */

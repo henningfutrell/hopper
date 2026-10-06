@@ -1,7 +1,7 @@
 // Self-update (issue #44): the notice when an update is available, applying or failed — with
 // what's new in plain words (issue #104) — and the panel behind the header's version (version, installed commit, what that
 // version brought, channel, auto-update, check now), open at any time and on any screen (issue #165), and the same
-// details as Settings → Version. Applying keeps running jobs running; the page reloads once the daemon runs the new commit.
+// details as Settings → Version, which links to Settings → Version history (issue #246). Applying keeps running jobs running; the page reloads once the daemon runs the new commit.
 import { ArrowUpCircle, ChevronDown, Info, RefreshCw, X } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -117,6 +117,7 @@ export function VersionDetails({ className }: { className?: string }) {
       </div>
       {s.whatsNew.length > 0 && <div className="space-y-1 border-t pt-3"><h3 className="text-xs font-medium">What's new in the update</h3><WhatsNew lines={s.whatsNew} /></div>}
       {s.installedWhatsNew.length > 0 && <div className="space-y-1 border-t pt-3"><h3 className="text-xs font-medium">In this version</h3><WhatsNew lines={s.installedWhatsNew} /></div>}
+      <a href="#settings/version-history" className="block text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline">Every version and what it brought: Settings → Version history</a>
       {!authed && <p className="text-xs text-muted-foreground">Read-only: an admin can update or change these settings.</p>}
     </div>
   );

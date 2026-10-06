@@ -40,6 +40,22 @@ export interface UpdateSettings {
   autoUpdate: boolean;
 }
 
+/** One version in the version history: a commit of the tracked branch that brought What's new lines. */
+export interface VersionEntry {
+  commit: string;
+  /** When it landed on the tracked branch (its commit date). */
+  at: string;
+  /** The What's new lines it added, in plain words, newest first. */
+  changes: string[];
+}
+
+/** The version history (issue #246): the versions the installed commit is made of, newest first. */
+export interface VersionHistory {
+  versions: VersionEntry[];
+  /** Why there is none: no install.json, or the update repository cannot be read. */
+  reason?: string;
+}
+
 export interface UpdateStatus extends UpdateSettings {
   state: UpdateState;
   /** Why updates are unavailable, or the last check's or apply's error. */

@@ -3863,6 +3863,12 @@ not what changed for its users. The newest release is reported on either channel
 version** (issue #165): the newest 5 bullets of the install's own `WHATS-NEW.md` (`installedWhatsNew`;
 `install.sh` and the image copy the file), read once at start — shown whether or not an update
 exists, and when self-update is unavailable.
+**Version history** (issue #246): `GET /api/update/history`, Settings → Version history — the versions
+the installed commit is made of, newest first: each commit on the tracked branch's first-parent line
+that added `WHATS-NEW.md` bullets (a merged pull request is one version), with its commit date and
+those bullets (`GitMirror.added`). Read from the mirror, so it needs no state of its own and counts an
+install by `install.sh` the same as an applied update; a mirror without the installed commit is
+checked first. Computed once per installed commit. No install.json → none, with the reason.
 `update.available` is appended once per target, with `changes`: how many commits it adds (the log
 line too; never the UI).
 

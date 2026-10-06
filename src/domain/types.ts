@@ -443,7 +443,7 @@ export { ENDED_STATUSES, IN_FLIGHT_STATUSES, ADMIN_ID } from './users.ts';
 
 // ---- Self-update (issue #44) ------------------------------------------------------------
 
-export type { InstallInfo, UpdateApply, UpdateChannel, UpdateRelease, UpdateSettings, UpdateState, UpdateStatus } from './update.ts';
+export type { InstallInfo, UpdateApply, UpdateChannel, UpdateRelease, UpdateSettings, UpdateState, UpdateStatus, VersionEntry, VersionHistory } from './update.ts';
 export { UPDATE_CHANNELS } from './update.ts';
 
 // ---- gh login (issue #138) -------------------------------------------------------------

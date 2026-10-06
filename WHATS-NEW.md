@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- Settings now has a Version history page: every version of the hopper you run, newest first, with the day it came out and what it brought.
 - Admins see, under Settings → Users, how many jobs every user together finished, failed, cancelled or turned away in the last day, and their usage added up, without seeing any one person's work or account.
 - A new hopper's first sign-in is a one-time login code, shown with its link when the hopper starts. Username-and-password accounts kept by the hopper itself are gone: people sign in with GitHub or the sign-in your organisation already uses, and Settings no longer offers password accounts.
 - The first person to sign in with GitHub becomes an admin, so a new hopper can be set up by whoever signs in first.
