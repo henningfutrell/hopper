@@ -49,6 +49,8 @@ export function createHerdrTerminal(o: HerdrTerminalOptions): HerdrTerminal {
   const dir = join(o.dataDir, 'herdr-terminal');
   const herdr = o.herdr ?? 'herdr';
   let synced = new Map<string, HerdrMachineSync>();
+  // One sync at a time: two pages opening at once must not both add the same machine.
+  let syncing: Promise<void> = Promise.resolve();
 
   const plan = () => {
     try {
@@ -94,7 +96,7 @@ export function createHerdrTerminal(o: HerdrTerminalOptions): HerdrTerminal {
         const knownHostsFile = join(dir, 'known_hosts');
         writeAtomic(knownHostsFile, knownHostsLines(p.profiles), 0o600);
         writeAtomic(join(dir, 'bin', 'ssh'), sshWrapper({ ssh: o.ssh?.() ?? realSsh(e.PATH ?? '', dir), identityFile: p.auth.identityFile, knownHostsFile }), 0o700);
-        void o.sync({ herdr, env: e, profiles: p.profiles }).then((r) => {
+        syncing = syncing.then(() => o.sync({ herdr, env: e, profiles: p.profiles })).then((r) => {
           synced = new Map(r.map((x) => [x.machine, x]));
           for (const x of r) if (x.state === 'failed') o.logger.warn(`hopper: herdr terminal: the root herdr could not save machine ${x.machine}: ${x.error}`);
         }, (err: unknown) => o.logger.warn(`hopper: herdr terminal: saved machines not synced: ${(err as Error).message}`));
