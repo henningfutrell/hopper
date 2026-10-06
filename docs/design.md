@@ -4563,4 +4563,7 @@ the engine.
 (unaccepted jobs in the pre-sort's order, each marked with the pre-sort's rejection if any; Accept moves
 a job to the end of the user order, Accept pre-sort takes them all, Reject) and **Your order** (accepted
 waiting jobs in queue order; up, down, to the top, Reject). Columns stack below `lg`. The Overview's
-Waiting panel links an unaccepted job to it.
+Waiting panel links an unaccepted job to it. Since issue #201 the gate names the queue sorter that makes the pre-sort, with a **Set up the
+sorter** link to Settings → Routing, and the Queue nav entry carries a badge counting the jobs waiting on
+the pre-sort (`awaitingSort`, `ui/src/model/queue.ts`); the Routing view's Queue sorter panel says it is
+the pre-sort and links back.

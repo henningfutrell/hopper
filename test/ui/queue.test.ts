@@ -1,9 +1,9 @@
 // Issue #159: the Queue view's two columns — the pre-sort (jobs not yet accepted, in the pre-sort's
 // order, with what it would reject) and the user order (accepted waiting jobs, in queue order) — and
-// the orders a move posts.
+// the orders a move posts. Issue #201: the count of jobs waiting on the pre-sort (the nav badge).
 import { describe, expect, it } from 'vitest';
 import type { Job } from '../../src/domain/types.ts';
-import { accepting, moved, queueColumns } from '../../ui/src/model/queue.ts';
+import { accepting, awaitingSort, moved, queueColumns } from '../../ui/src/model/queue.ts';
 
 const job = (id: string, o: Partial<Job> = {}): Job => ({
   id, spec: { executor: 'test', payload: {} }, priority: 50, status: 'queued', approved: false,
@@ -33,5 +33,13 @@ describe('the orders a move posts', () => {
     expect(moved(['a', 'b', 'c'], 'c', 'top')).toEqual(['c', 'a', 'b']);
     expect(moved(['a', 'b', 'c'], 'a', -1)).toEqual(['a', 'b', 'c']);
     expect(moved(['a', 'b', 'c'], 'c', 1)).toEqual(['a', 'b', 'c']);
+  });
+});
+
+describe('awaitingSort', () => {
+  it('counts the waiting jobs not yet accepted: the Queue nav badge', () => {
+    const jobs = [job('a1'), job('n1', { accepted: false }), job('n2', { status: 'held', accepted: false }), job('r1', { status: 'running', accepted: false }), job('x1', { status: 'rejected', accepted: false })];
+    expect(awaitingSort(jobs)).toBe(2);
+    expect(awaitingSort([])).toBe(0);
   });
 });

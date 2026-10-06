@@ -1,8 +1,9 @@
 // The Queue view (issue #159): the queue gate, the pre-sort (jobs not yet accepted, in the queue
 // sorter's order) and the user order (accepted waiting jobs, first to run at the top). A job moves from
 // the pre-sort into the user order to be accepted; any waiting job can be rejected — it ends
-// `rejected` and is kept, never deleted.
-import { ArrowDown, ArrowUp, ArrowUpToLine, Check, ChevronsRight, ListOrdered, ShieldCheck, Sparkles, X } from 'lucide-react';
+// `rejected` and is kept, never deleted. The gate names the queue sorter that makes the pre-sort and links to
+// where it is set up, Settings → Routing (issue #201).
+import { ArrowDown, ArrowUp, ArrowUpToLine, Check, ChevronsRight, ListOrdered, ShieldCheck, SlidersHorizontal, Sparkles, X } from 'lucide-react';
 import { useState } from 'react';
 import { JobTitle, Since } from '@/components/job';
 import { Empty, Panel } from '@/components/panel';
@@ -10,7 +11,7 @@ import { StatusBadge } from '@/components/status';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { accepting, moved, queueColumns } from '@/model/queue';
-import type { Job, QueueGate, QueueGateMode } from '@/model/wire';
+import type { Job, PreSort, QueueGate, QueueGateMode } from '@/model/wire';
 import { act, useHopper } from '@/store';
 import { useCanAdmin, useCanOperate, useJobBoard } from '@/store/selectors';
 
@@ -19,7 +20,7 @@ const MODE_TEXT: Record<QueueGateMode, string> = {
   review: 'Review — every new job waits here until you move it into your order, or reject it.',
 };
 
-function GatePanel({ gate }: { gate: QueueGate }) {
+function GatePanel({ gate, presort }: { gate: QueueGate; presort: PreSort | null }) {
   const admin = useCanAdmin();
   const [limit, setLimit] = useState(gate.autoAcceptPerHour?.toString() ?? '');
   const parsed = limit.trim() === '' ? null : Number(limit);
@@ -27,6 +28,13 @@ function GatePanel({ gate }: { gate: QueueGate }) {
   const save = (next: QueueGate) => act('/ui/api/queue-gate', next, 'Queue gate saved');
   return (
     <Panel title="Queue gate" icon={ShieldCheck} bodyClassName="space-y-3">
+      <div data-slot="queue-sorter" className="flex flex-wrap items-center gap-2 text-sm">
+        <span>Pre-sorted by the queue sorter</span>
+        {presort && <span className="font-mono">{presort.sorter}</span>}
+        <Button asChild size="sm" variant="outline" className="sm:ml-auto">
+          <a data-slot="queue-sorter-link" href="#settings/routing"><SlidersHorizontal />Set up the sorter</a>
+        </Button>
+      </div>
       <div className="flex flex-wrap gap-2" role="group" aria-label="Queue gate">
         {(['auto-accept', 'review'] as const).map((m) => (
           <Button key={m} size="lg" className="flex-1 sm:flex-none" variant={gate.mode === m ? 'default' : 'outline'} aria-pressed={gate.mode === m}
@@ -82,7 +90,7 @@ export function Queue() {
   return (
     <div className="space-y-3">
       {/* Keyed by the saved limit: a new one resets the field. */}
-      {gate && <GatePanel key={String(gate.autoAcceptPerHour)} gate={gate} />}
+      {gate && <GatePanel key={String(gate.autoAcceptPerHour)} gate={gate} presort={presort} />}
       <div className="grid gap-3 lg:grid-cols-2">
         <Panel title="Pre-sorted" icon={Sparkles} count={presorted.length || ''} list bodyClassName="divide-y p-0"
           action={operate && presorted.length > 0 && (
