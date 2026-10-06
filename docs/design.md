@@ -4813,7 +4813,7 @@ shares one database login.
 |------|------|--------------|
 | **A user's own — sensitive** | jobs (payload, prompt, title, source item, result, failure), questions and answers, events, decisions, lanes and what runs in them, job sources, machines and their ssh names, executors, escalation levels, the rules record, routing, the queue gate and order, usage sources and their accounts (email, plan, usage), webhook subscriptions and deliveries, the `plugins` record and every option in it, gh login and every CLI's config in the user work dir, the user's secret variables, the event stream, the user schema | that user's own sessions only — never an admin of the instance, never a request without a session once there is more than one user |
 | **The instance's** | the users list (id, name, when added), the sign-in config (realms, password accounts and the user each signs in as, role rules — never a hash), the plugin store and its installs, self-update and its status, the instance schema | an admin (`GET /api/users`, `/api/realms`, `/api/plugin-store`, `/api/update`); loopback without a session reads them as before |
-| **Instance totals** | users; jobs not ended by status (`queued`, `held`, `claimed`, `running`, `waiting_answer`); open questions; lanes open and busy — summed over every user | an admin (`GET /api/instance`, Settings → Users); never one user's share, nothing named |
+| **Instance totals** | users; jobs not ended by status (`queued`, `held`, `claimed`, `running`, `waiting_answer`); open questions; lanes open and busy; jobs ended in the last 24 hours by how they ended (issue #241); usage readings summed per unit and usage window, with how many readings each sum holds (issue #241) — summed over every user | an admin (`GET /api/instance`, Settings → Users); never one user's share, nothing named — no account, source or machine |
 
 What crosses from a user's side to the instance's is a **count**, never a name or an id. The instance's
 own events (`update.*`, `plugin.installed`, `plugin.removed`) go to every user's event log, so they
@@ -4844,6 +4844,19 @@ never the jobs (they named `job <id> (executor <name>)` of any user before).
 - **The instance totals** (`src/http/instance.ts`, `GET /api/instance`): admin, or loopback without a
   session.
 
+### What an admin does (issue #241)
+
+The admin's job, stated once: **the admin manages the instance's settings, reads usage across users as
+totals, and never reads another user's sensitive data.** Each part maps to the table above:
+
+- **Instance settings** — the rows of "The instance's": users (add), the sign-in config, the plugin store,
+  self-update. Every instance mutation needs the UI role `admin`.
+- **Usage across users** — the instance totals. Usage is two things here: the jobs the users ran (in
+  flight now, ended in the last 24 hours by how they ended) and the usage readings of every user's usage
+  sources, summed per unit and usage window. A sum of `%` readings is read as a share of the summed limit
+  (two accounts at 40% and 50% of 100 read 45%). Nothing names a reading's account, source or machine.
+- **No other user's sensitive data** — "A user's own" above, enforced by the seams above.
+
 ### Residual risk, stated
 
 - **The operator of the host is not an admin.** Whoever holds the database credentials (the operator
@@ -4861,6 +4874,9 @@ never the jobs (they named `job <id> (executor <name>)` of any user before).
   who uses it leaves the user without it, which the user notices; the session the admin opened lasts
   until it expires.
 - **A password the admin set** stays known to the admin until its user changes it.
+- **A total over few users is close to one user's share.** With two users, an admin who is one of them
+  reads the other's in-flight and ended jobs and usage by subtraction. Totals carry no names, ids or
+  accounts; the counts themselves are what an admin is meant to read (issue #241).
 
 ## Queue gate (issue #159, 2026-10-05)
 

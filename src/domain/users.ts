@@ -38,9 +38,23 @@ export interface UserAdded {
 /** The jobs the instance totals count: every one not ended. */
 export const IN_FLIGHT_STATUSES = ['queued', 'held', 'claimed', 'running', 'waiting_answer'] as const;
 
+/** How a job ends, as the instance totals count jobs ended in the last day. */
+export const ENDED_STATUSES = ['finished', 'failed', 'cancelled', 'rejected'] as const;
+
+/** Usage readings of one unit and usage window, summed over every user's usage sources (issue #241). */
+export interface UsageTotal {
+  unit: string;
+  /** The usage window, as the sources name it; absent: a source's one budget. */
+  window?: string;
+  used: number;
+  limit: number;
+  /** How many readings the sums hold. */
+  readings: number;
+}
+
 /**
- * GET /api/instance (issue #221): what an admin reads of the users' work — totals across every user,
- * never one user's share, never a job, question, lane or user named.
+ * GET /api/instance (issues #221, #241): what an admin reads of the users' work — totals across every
+ * user, never one user's share, never a job, question, lane, account or user named.
  */
 export interface InstanceTotals {
   users: number;
@@ -49,4 +63,8 @@ export interface InstanceTotals {
   questions: { open: number };
   /** Open lanes, and those holding a job. */
   lanes: { busy: number; total: number };
+  /** Jobs that ended in the last 24 hours, by how they ended (issue #241). */
+  endedLastDay: Record<(typeof ENDED_STATUSES)[number], number>;
+  /** Every user's usage readings summed per unit and usage window: no account, source or machine (issue #241). */
+  usage: UsageTotal[];
 }

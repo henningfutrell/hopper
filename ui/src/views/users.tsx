@@ -12,7 +12,7 @@ import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
 import { get, post, SessionRejected } from '@/lib/api';
 import { clock } from '@/model/format';
-import type { InstanceTotals, UserAdded, UserView } from '@/model/wire';
+import type { InstanceTotals, UsageTotal, UserAdded, UserView } from '@/model/wire';
 import { useHopper } from '@/store';
 import { useCanAdmin } from '@/store/selectors';
 
@@ -104,6 +104,8 @@ function Totals({ totals: t }: { totals: InstanceTotals }) {
   const items: [string, number][] = [
     ['waiting', t.jobs.queued + t.jobs.held + t.jobs.claimed], ['running', t.jobs.running], ['waiting for an answer', t.jobs.waiting_answer],
     ['open questions', t.questions.open], ['lanes busy', t.lanes.busy], ['lanes open', t.lanes.total],
+    ['finished, last 24 h', t.endedLastDay.finished], ['failed, last 24 h', t.endedLastDay.failed],
+    ['cancelled, last 24 h', t.endedLastDay.cancelled], ['rejected, last 24 h', t.endedLastDay.rejected],
   ];
   return (
     <div data-instance-totals className="space-y-1.5 rounded-lg border p-3">
@@ -116,6 +118,24 @@ function Totals({ totals: t }: { totals: InstanceTotals }) {
           </div>
         ))}
       </dl>
+      {t.usage.length > 0 && (
+        <dl data-instance-usage className="grid grid-cols-1 gap-x-4 gap-y-1 border-t pt-1.5 text-sm sm:grid-cols-2">
+          {t.usage.map((u) => (
+            <div key={`${u.unit} ${u.window ?? ''}`} className="flex items-baseline justify-between gap-2">
+              <dt className="text-muted-foreground">usage{u.window ? `, ${u.window}` : ''}</dt>
+              <dd className="num font-medium">
+                {usageText(u)} <span className="text-xs font-normal text-muted-foreground">{u.readings} {u.readings === 1 ? 'reading' : 'readings'}</span>
+              </dd>
+            </div>
+          ))}
+        </dl>
+      )}
     </div>
   );
+}
+
+/** A usage total as people read it: a share of the summed limit for `%`, else used of limit in the unit. */
+function usageText(u: UsageTotal): string {
+  if (u.unit === '%') return u.limit > 0 ? `${Math.round((u.used / u.limit) * 100)}%` : '—';
+  return `${u.used} of ${u.limit} ${u.unit}`;
 }

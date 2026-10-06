@@ -78,7 +78,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   updateRoutes(app, o);
   pluginStoreRoutes(app, o);
   userRoutes(app, { tenants: o.tenants, sessions });
-  instanceRoutes(app, { tenants: o.tenants, sessions });
+  instanceRoutes(app, { tenants: o.tenants, sessions, clock: o.clock });
   const realms = createRealmsAdmin({ instance: o.instance, environment: o.signInEnvironment, signIn: o.signIn, sessions });
   realmRoutes(app, { realms, sessions });
   staticRoutes(app, o.uiDir);
