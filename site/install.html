@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Install hopper</title>
+<meta name="description" content="Run hopper with Podman from its published image, connect GitHub, and watch it finish its first job.">
+<link rel="icon" type="image/svg+xml" href="hopper-logo.svg">
+<style>
+:root {
+  --bg: #ffffff; --text: #1c1f23; --muted: #5b6370; --line: #d9dde3;
+  --code-bg: #f4f5f7; --accent: #0b5cad; --ok: #1d7a3e; --warn-bg: #fff6e0; --warn-line: #e3b341;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #111317; --text: #e6e8eb; --muted: #9aa2ad; --line: #2c3139; --code-bg: #1b1e24; --accent: #6cb0f5; --ok: #6fcf8f; --warn-bg: #2a2416; --warn-line: #9e7a1f; }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+main { max-width: 760px; margin: 0 auto; padding: 32px 16px 64px; }
+h1 { font-size: 28px; line-height: 1.25; margin: 0 0 8px; }
+h2 { font-size: 20px; margin: 40px 0 8px; padding-top: 16px; border-top: 1px solid var(--line); scroll-margin-top: 8px; }
+h3 { font-size: 16px; margin: 24px 0 4px; }
+p, ul, ol { margin: 8px 0; }
+li { margin: 4px 0; }
+a { color: var(--accent); }
+.lead { margin: 0 0 16px; }
+code, pre { font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+:not(pre) > code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+pre.out {
+  margin: 8px 0 12px; padding: 10px 14px; border-left: 3px solid var(--line);
+  color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.cmd { position: relative; margin: 8px 0 12px; }
+.cmd pre {
+  margin: 0; padding: 12px 84px 12px 14px; background: var(--code-bg);
+  border: 1px solid var(--line); border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.cmd button {
+  position: absolute; top: 8px; right: 8px; font: inherit; font-size: 13px;
+  padding: 3px 10px; border: 1px solid var(--line); border-radius: 4px;
+  background: var(--bg); color: var(--text); cursor: pointer;
+}
+.cmd button.done { color: var(--ok); border-color: var(--ok); }
+.cmd.yaml pre { white-space: pre; overflow-x: auto; overflow-wrap: normal; }
+.main-cmd pre { font-size: 15px; padding-top: 16px; padding-bottom: 16px; }
+table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 15px; }
+th, td { text-align: left; vertical-align: top; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+th { font-weight: 600; }
+.table-wrap { overflow-x: auto; }
+@media (max-width: 600px) {
+  table.stack, table.stack tbody, table.stack tr, table.stack td { display: block; width: 100%; }
+  table.stack tr:first-child { display: none; }
+  table.stack tr { padding: 8px 0; border-bottom: 1px solid var(--line); }
+  table.stack td { border: 0; padding: 2px 0; }
+  table.stack td:first-child { font-weight: 600; }
+}
+.steps { padding-left: 22px; }
+.toc { margin: 16px 0 8px; padding: 12px 16px 12px 36px; border: 1px solid var(--line); border-radius: 6px; }
+.toc li { margin: 2px 0; }
+.note { color: var(--muted); font-size: 15px; }
+.ok { color: var(--ok); font-weight: 600; }
+.warn { margin: 12px 0; padding: 10px 14px; background: var(--warn-bg); border-left: 3px solid var(--warn-line); border-radius: 4px; }
+details { margin: 8px 0; }
+summary { cursor: pointer; font-weight: 600; }
+details[open] summary { margin-bottom: 4px; }
+h1 .logo { height: 1.1em; width: auto; margin-right: 10px; vertical-align: -0.12em; }
+footer { margin-top: 48px; color: var(--muted); font-size: 14px; }
+</style>
+</head>
+<body>
+<main>
+<h1><img class="logo" src="hopper-logo.svg" alt="" width="26" height="40">Install hopper</h1>
+<p class="lead">hopper turns GitHub issues into finished work. You label an issue <code>hopper</code>;
+hopper starts a Claude Code session with the issue as its instructions, answers the questions it can,
+asks you the rest, and labels and closes the issue when the work is done.</p>
+<p>This page takes you from nothing to a first finished job. It takes about 10 minutes. You need a terminal
+on the machine that will run it and a GitHub account.</p>
+<p><strong>Recommended: run it with Podman</strong>, from the published container image. Nothing is installed on
+the machine but Podman. It works on any Linux, and on Windows inside WSL (<a href="#windows">On Windows</a>).
+The other way, <a href="#host">installing it on the machine itself</a>, is below.</p>
+
+<ol class="toc">
+<li><a href="#podman">Run it with Podman</a></li>
+<li><a href="#first-job">Give it its first job</a></li>
+</ol>
+<p class="note">Then: <a href="#sign-in">sign-in for a team</a> · <a href="#upgrade">upgrade</a> · <a href="#remove">uninstall</a> · <a href="#windows">on Windows</a> · <a href="#host">install on the machine itself</a> · <a href="#trouble">when something goes wrong</a> · <a href="#more">more</a></p>
+
+<h2 id="podman">Run it with Podman (recommended)</h2>
+<p>hopper and its database, in containers from the published image
+<code>ghcr.io/henningfutrell/hopper</code>. Nothing is installed on the machine but Podman, nothing is built,
+and the containers run as your user, not as root. Jobs run on the machines you add, not in the container. Run every command as your own user, in one folder.</p>
+<ol class="steps">
+<li><p><strong>Get Podman</strong>, version 4.7 or later, with <code>podman-compose</code>, from your package manager:</p>
+<div class="cmd"><pre>sudo apt-get install -y podman podman-compose</pre><button type="button" data-copy="sudo apt-get install -y podman podman-compose">Copy</button></div>
+<p class="note">That is Debian and Ubuntu. Fedora: <code>sudo dnf install podman podman-compose</code>. Arch:
+<code>sudo pacman -S podman podman-compose</code>. Others: <a href="https://podman.io/docs/installation">podman.io/docs/installation</a>.
+Check with <code>podman --version</code>.</p></li>
+<li><p><strong>Get the compose file and start it</strong>, in a folder of its own. The first start downloads
+the image, which takes a minute or two:</p>
+<div class="cmd"><pre>mkdir hopper &amp;&amp; cd hopper</pre><button type="button" data-copy="mkdir hopper &amp;&amp; cd hopper">Copy</button></div>
+<div class="cmd main-cmd"><pre>curl -fsSLO https://henningfutrell.github.io/hopper/compose.yaml</pre><button type="button" data-copy="curl -fsSLO https://henningfutrell.github.io/hopper/compose.yaml">Copy</button></div>
+<div class="cmd main-cmd"><pre>podman compose up -d</pre><button type="button" data-copy="podman compose up -d">Copy</button></div>
+<p>Run the later commands in this folder too. You can read the file first: <a href="compose.yaml">compose.yaml</a>.
+Docker works the same: <code>docker compose</code> in place of <code>podman compose</code>.</p></li>
+<li><p><strong>Open the UI and sign in with GitHub.</strong> Open <code>http://localhost:4790/</code> and press
+<strong>Sign in with GitHub</strong>. The first person to sign in with GitHub is the admin, so sign in yourself
+before anyone else can reach the UI. There is no starting account or password to look up. The UI listens on
+this machine only. From another computer, connect with <code>ssh -L 4790:127.0.0.1:4790 you@your-server</code>
+first, then open <code>http://localhost:4790/</code> there.</p></li>
+<li><p><strong>Sign in to GitHub and to Claude Code.</strong> Once is enough: both are kept when the hopper
+restarts or upgrades.</p>
+<p>GitHub: in the UI, open <strong>Sources</strong> and press <strong>Log in to GitHub</strong>. It shows a
+code and a web address; open the address on any device, sign in to GitHub, and enter the code. The panel
+says <strong>logged-in</strong> when it is done.</p>
+<p>Claude Code, inside the hopper's container:</p>
+<div class="cmd"><pre>podman compose exec hopper claude</pre><button type="button" data-copy="podman compose exec hopper claude">Copy</button></div>
+<p>In Claude Code, type <code>/login</code>, follow it, then <code>/exit</code>. Then say who jobs commit as:</p>
+<div class="cmd"><pre>podman compose exec hopper git config --global user.name "Your Name"</pre><button type="button" data-copy="podman compose exec hopper git config --global user.name &quot;Your Name&quot;">Copy</button></div>
+<div class="cmd"><pre>podman compose exec hopper git config --global user.email you@example.com</pre><button type="button" data-copy="podman compose exec hopper git config --global user.email you@example.com">Copy</button></div></li>
+<li><p><strong>Keep it running after a reboot.</strong> The containers restart by themselves while Podman runs;
+these two make your user's containers start when the machine does. Once:</p>
+<div class="cmd"><pre>systemctl --user enable podman-restart.service</pre><button type="button" data-copy="systemctl --user enable podman-restart.service">Copy</button></div>
+<div class="cmd"><pre>sudo loginctl enable-linger "$USER"</pre><button type="button" data-copy="sudo loginctl enable-linger &quot;$USER&quot;">Copy</button></div></li>
+</ol>
+<p>Then <a href="#first-job">give it its first job</a>. Upgrade, stop and remove: <a href="#upgrade">Upgrade</a>,
+<a href="#remove">Uninstall</a>. Settings, a reverse proxy and secrets:
+<a href="https://github.com/henningfutrell/hopper/blob/main/docs/deploy.md#in-containers-with-podman-recommended">docs/deploy.md</a>.</p>
+
+<h2 id="first-job">Give it its first job</h2>
+<div class="warn">A job runs Claude Code with every permission, without asking you, in the folder you
+give it. It can change files and run commands there. Start with a test repository, and only
+let issues written by you become jobs.</div>
+<ol class="steps">
+<li><p><strong>Pick a repository and clone it for its jobs.</strong> Use a repository on GitHub you can
+write to. Its clone goes in the hopper's home, inside the container:</p>
+<div class="cmd"><pre>podman compose exec hopper git clone https://github.com/your-login/your-repo /home/node/your-repo</pre><button type="button" data-copy="podman compose exec hopper git clone https://github.com/your-login/your-repo /home/node/your-repo">Copy</button></div></li>
+<li><p><strong>Tell hopper whose issues to take, and from where.</strong> Open its settings in a terminal
+editor:</p>
+<div class="cmd"><pre>podman compose exec hopper hopper config edit plugins.yaml</pre><button type="button" data-copy="podman compose exec hopper hopper config edit plugins.yaml">Copy</button></div>
+<p>Under <code>jobSources:</code>, find the entry with <code>name: github</code> and replace it with this,
+using your GitHub login and your repository:</p>
+<div class="cmd yaml"><pre>  - name: github
+    plugin: github-gh
+    options:
+      enabled: auto
+      authors: [your-login]
+      repos: [your-login/your-repo]
+      repoPaths: { your-login/your-repo: /home/node/your-repo }</pre><button type="button" data-copy="  - name: github
+    plugin: github-gh
+    options:
+      enabled: auto
+      authors: [your-login]
+      repos: [your-login/your-repo]
+      repoPaths: { your-login/your-repo: /home/node/your-repo }">Copy</button></div>
+<p>Save and close the editor (in nano: <code>Ctrl+O</code>, <code>Enter</code>, <code>Ctrl+X</code>).
+<code>authors</code> is required: issues opened by anyone else are never taken. <code>repos</code> limits
+which repositories it looks at; without it, it looks at every repository you own. A job from a repository
+not in <code>repoPaths</code> runs in the hopper's home folder.</p></li>
+<li><p><strong>Restart hopper</strong> so it reads the change:</p>
+<div class="cmd"><pre>podman compose restart hopper</pre><button type="button" data-copy="podman compose restart hopper">Copy</button></div></li>
+<li><p><strong>Create the <code>hopper</code> label</strong> in the repository, once:</p>
+<div class="cmd"><pre>podman compose exec hopper gh label create hopper -R your-login/your-repo</pre><button type="button" data-copy="podman compose exec hopper gh label create hopper -R your-login/your-repo">Copy</button></div>
+<p class="note">Installed on the machine itself: <code>gh label create hopper -R your-login/your-repo</code>.</p></li>
+<li><p><strong>Open an issue with the label <code>hopper</code>.</strong> The issue text is the job's
+instructions. A small first job works best, for example <em>"Add a line to README.md saying this repository
+is a test."</em></p></li>
+<li><p><strong>Watch it.</strong> hopper checks GitHub every minute, so the job starts within a minute.
+The issue's labels show where it is:</p>
+<div class="table-wrap"><table class="stack">
+<tr><th>Label</th><th>Means</th></tr>
+<tr><td><code>hopper:claimed</code></td><td>it is running; the UI's board shows it</td></tr>
+<tr><td><code>hopper:done</code></td><td>it finished, and the issue is closed</td></tr>
+<tr><td><code>hopper:failed</code></td><td>it failed; remove this label to run it again</td></tr>
+</table></div>
+<p>When a job asks something it cannot answer for itself, the question waits for you in the UI's
+<strong>Questions</strong> view.</p></li>
+</ol>
+<details>
+<summary>Installed on the machine itself? Its first three steps</summary>
+<ol class="steps">
+<li><p><strong>Pick a repository and a folder for its jobs.</strong> Use a repository on GitHub you can
+write to, and a clone of it on this machine — for example:</p>
+<div class="cmd"><pre>git clone https://github.com/your-login/your-repo ~/your-repo</pre><button type="button" data-copy="git clone https://github.com/your-login/your-repo ~/your-repo">Copy</button></div></li>
+<li><p><strong>Tell hopper whose issues to take, and from where.</strong> Open its settings in your
+terminal editor:</p>
+<div class="cmd"><pre>hopper config edit plugins.yaml</pre><button type="button" data-copy="hopper config edit plugins.yaml">Copy</button></div>
+<p>Under <code>jobSources:</code>, find the entry with <code>name: github</code> and replace it with this,
+using your GitHub login, your repository and the folder from step 1:</p>
+<div class="cmd yaml"><pre>  - name: github
+    plugin: github-gh
+    options:
+      enabled: auto
+      authors: [your-login]
+      repos: [your-login/your-repo]
+      repoPaths: { your-login/your-repo: ~/your-repo }</pre><button type="button" data-copy="  - name: github
+    plugin: github-gh
+    options:
+      enabled: auto
+      authors: [your-login]
+      repos: [your-login/your-repo]
+      repoPaths: { your-login/your-repo: ~/your-repo }">Copy</button></div>
+<p>Save and close the editor. <code>authors</code> is required: issues opened by anyone else are never
+taken. <code>repos</code> limits which repositories it looks at; without it, it looks at every repository
+you own. A job from a repository not in <code>repoPaths</code> runs in your home folder. The editor is
+<code>$EDITOR</code>, or <code>vi</code> if that is not set: run <code>EDITOR=nano hopper config edit plugins.yaml</code>
+for a simpler one.</p></li>
+<li><p><strong>Restart hopper</strong> so it reads the change:</p>
+<div class="cmd"><pre>systemctl --user restart hopper</pre><button type="button" data-copy="systemctl --user restart hopper">Copy</button></div></li>
+</ol>
+</details>
+<p>That is the whole loop. From here, label any issue <code>hopper</code> to hand it over. <code>hopper:high</code>
+and <code>hopper:low</code> change its priority; <code>hopper:backburner</code> keeps it waiting.</p>
+
+<h2 id="host">Or: install it on the machine itself</h2>
+<p>hopper as two background services for your user, with its database in Docker, and jobs running
+directly on this machine. Linux with systemd (Ubuntu, Debian, Fedora, Arch and most others), or WSL. Not
+yet macOS. It takes about 15 minutes, most of it the install building itself. Then
+<a href="#first-job">give it its first job</a>, with the commands for the machine itself.</p>
+<h3 id="before">1. Get what it needs</h3>
+<p>Do this on the machine that will run hopper, as the user it will run as (not root).
+First see what is there already:</p>
+<div class="cmd"><pre>for c in git /usr/bin/node npm curl systemctl gh claude docker ~/.local/bin/herdr; do command -v $c &gt;/dev/null &amp;&amp; echo found: $c || echo MISSING: $c; done; /usr/bin/node --version</pre><button type="button" data-copy="for c in git /usr/bin/node npm curl systemctl gh claude docker ~/.local/bin/herdr; do command -v $c &gt;/dev/null &amp;&amp; echo found: $c || echo MISSING: $c; done; /usr/bin/node --version">Copy</button></div>
+<p>Then install whatever it says is missing:</p>
+<div class="table-wrap"><table class="stack">
+<tr><th>Program</th><th>What it is for</th><th>How to get it</th></tr>
+<tr><td>git, curl</td><td>fetching the source</td><td>your package manager, for example <code>sudo apt install git curl</code></td></tr>
+<tr><td>Node.js 24 or later, with npm, at <code>/usr/bin/node</code></td><td>runs hopper</td><td>A system-wide install: the service runs <code>/usr/bin/node</code>, so a Node.js from nvm or fnm will not do. Your package manager if it has version 24, else the <a href="https://github.com/nodesource/distributions">NodeSource packages</a> (other ways: <a href="https://nodejs.org/en/download">nodejs.org/en/download</a>). <code>/usr/bin/node --version</code> must print <code>v24</code> or higher</td></tr>
+<tr><td>systemd</td><td>keeps hopper running in the background</td><td>already there on most Linux systems. <code>systemctl --user status</code> must not print an error</td></tr>
+<tr><td>Docker, with compose</td><td>runs the database for you</td><td><a href="https://docs.docker.com/engine/install/">docs.docker.com/engine/install</a>, then let your user use it without sudo (<a href="https://docs.docker.com/engine/install/linux-postinstall/">post-install steps</a>). Not needed if you have a Postgres database of your own (<a href="#own-postgres">see below</a>)</td></tr>
+<tr><td>herdr</td><td>the terminal panes jobs run in</td><td><code>curl -fsSL https://herdr.dev/install.sh | sh</code> — installs to <code>~/.local/bin/herdr</code>, where hopper looks for it. About herdr: <a href="https://herdr.dev">herdr.dev</a></td></tr>
+<tr><td>Claude Code (<code>claude</code>)</td><td>does the work of each job</td><td><code>curl -fsSL https://claude.ai/install.sh | bash</code>, then run <code>claude</code> once and sign in. Details: <a href="https://code.claude.com/docs/en/setup">Claude Code setup</a></td></tr>
+<tr><td>GitHub CLI (<code>gh</code>)</td><td>reads your issues and sets their labels</td><td><a href="https://cli.github.com/">cli.github.com</a>. You sign it in at <a href="#github">step 5</a></td></tr>
+</table></div>
+<p>Run the check again until everything says <code>found</code> (docker may stay missing if you use your own Postgres).</p>
+
+<h3 id="install">2. Install</h3>
+<div class="cmd"><pre>curl -fsSL https://henningfutrell.github.io/hopper/install.sh | bash</pre><button type="button" data-copy="curl -fsSL https://henningfutrell.github.io/hopper/install.sh | bash">Copy</button></div>
+<p>It prints each step as <code>==&gt; …</code> and takes a few minutes. It worked when the last lines show a
+<code>health</code> line and <code>UI: http://127.0.0.1:4790/</code>. If it stops with a message instead, find
+the message under <a href="#trouble">When something goes wrong</a>.</p>
+<p class="note">You can read the script first: <a href="install.sh">install.sh</a> (the same file as
+<a href="https://github.com/henningfutrell/hopper/blob/main/scripts/get.sh"><code>scripts/get.sh</code></a> in the source).</p>
+
+<details>
+<summary>What the install does</summary>
+<ul>
+<li>checks for git, Node.js 24 or later, npm and systemctl, and stops with a reason if one is missing;</li>
+<li>downloads the source to <code>~/.local/share/hopper/source</code>;</li>
+<li>starts a Postgres database in docker on <code>127.0.0.1:5433</code>, with a new random password;</li>
+<li>installs hopper to <code>~/.local/lib/hopper</code> and the <code>hopper</code> command to <code>~/.local/bin</code>;</li>
+<li>writes the settings file <code>~/.config/hopper/daemon.env</code>, readable only by you (it holds the database password);</li>
+<li>starts two background services for your user: <code>hopper</code> and <code>hopper-herdr</code>.</li>
+</ul>
+<p>Nothing is installed system-wide and nothing runs as root. The web UI listens on this machine only
+(<code>127.0.0.1:4790</code>).</p>
+</details>
+
+<details id="own-postgres">
+<summary>Use your own Postgres instead of docker</summary>
+<p>Give its address in front of <code>bash</code>. The database must exist and be empty or the hopper's own:</p>
+<div class="cmd"><pre>curl -fsSL https://henningfutrell.github.io/hopper/install.sh | HOPPER_DATABASE_URL=postgres://user:password@host:5432/hopper bash</pre><button type="button" data-copy="curl -fsSL https://henningfutrell.github.io/hopper/install.sh | HOPPER_DATABASE_URL=postgres://user:password@host:5432/hopper bash">Copy</button></div>
+</details>
+
+<details>
+<summary>Other install settings</summary>
+<p>Set them in front of <code>bash</code>, the same way:</p>
+<div class="table-wrap"><table class="stack">
+<tr><th>Variable</th><th>Default</th><th>What it sets</th></tr>
+<tr><td><code>HOPPER_SOURCE_REF</code></td><td><code>main</code></td><td>the branch to install and to update from</td></tr>
+<tr><td><code>HOPPER_SOURCE_REPO</code></td><td>this repository</td><td>where to download the source from (your fork, for example)</td></tr>
+<tr><td><code>HOPPER_SRC</code></td><td><code>~/.local/share/hopper/source</code></td><td>where the source is kept</td></tr>
+<tr><td><code>POSTGRES_PORT</code></td><td><code>5433</code></td><td>the port of the docker Postgres, on this machine only</td></tr>
+</table></div>
+</details>
+
+<h3 id="running">3. Keep it running</h3>
+<p>Services for your user stop when you log out, unless you allow them to stay. Allow it once:</p>
+<div class="cmd"><pre>sudo loginctl enable-linger "$USER"</pre><button type="button" data-copy="sudo loginctl enable-linger &quot;$USER&quot;">Copy</button></div>
+<p>Then check both services:</p>
+<div class="cmd"><pre>systemctl --user status hopper hopper-herdr</pre><button type="button" data-copy="systemctl --user status hopper hopper-herdr">Copy</button></div>
+<p>Both must say <span class="ok">active (running)</span>. Press <code>q</code> to leave. If one does not,
+see <a href="#trouble">When something goes wrong</a>.</p>
+
+<h3 id="ui">4. Open the UI</h3>
+<p>On the machine itself, open <code>http://localhost:4790/</code> and press <strong>Sign in with GitHub</strong>.
+The first person to sign in with GitHub is the admin, so sign in yourself before anyone else can reach the
+UI. There is no starting account or password to look up.</p>
+
+<p><strong>From another computer (a server with no browser).</strong></p>
+<p>The UI listens on the server only, so reach it through ssh. On your own computer, connect with a tunnel
+and leave this terminal open:</p>
+<div class="cmd"><pre>ssh -L 4790:127.0.0.1:4790 you@your-server</pre><button type="button" data-copy="ssh -L 4790:127.0.0.1:4790 you@your-server">Copy</button></div>
+<p>Then open <code>http://localhost:4790/</code> in the browser on your own computer and sign in with GitHub. Passwords, other people and other devices:
+<a href="https://github.com/henningfutrell/hopper/blob/main/docs/sign-in.md">docs/sign-in.md</a>.</p>
+
+<h3 id="github">5. Connect GitHub</h3>
+<p>hopper uses the GitHub CLI, signed in as you, to read issues and set their labels. On the same
+machine, as the same user:</p>
+<div class="cmd"><pre>gh auth login</pre><button type="button" data-copy="gh auth login">Copy</button></div>
+<p>Answer <strong>GitHub.com</strong>, <strong>HTTPS</strong>, and <strong>Login with a web browser</strong>.
+On a server with no browser, it prints a one-time code and a web address: open the address on any device and
+enter the code. Then check:</p>
+<div class="cmd"><pre>gh auth status</pre><button type="button" data-copy="gh auth status">Copy</button></div>
+<p>It must say <span class="ok">Logged in to github.com</span>. hopper notices on its own; there is
+nothing to restart.</p>
+
+<h2 id="windows">On Windows</h2>
+<p>hopper runs inside WSL (the Linux that comes with Windows 10 and 11).</p>
+<ol class="steps">
+<li><p>Open PowerShell as administrator and install Ubuntu in WSL:</p>
+<div class="cmd"><pre>wsl --install -d Ubuntu-24.04</pre><button type="button" data-copy="wsl --install -d Ubuntu-24.04">Copy</button></div>
+<p>Restart Windows if it asks. Then open <strong>Ubuntu</strong> from the Start menu and choose a user name
+and password. Every command below runs in that Ubuntu window, not in PowerShell, unless it says so.</p></li>
+<li><p>Install Podman in Ubuntu:</p>
+<div class="cmd"><pre>sudo apt-get update &amp;&amp; sudo apt-get install -y podman podman-compose</pre><button type="button" data-copy="sudo apt-get update &amp;&amp; sudo apt-get install -y podman podman-compose">Copy</button></div></li>
+<li><p>Continue with <a href="#podman">Run it with Podman</a> from step 2, in Ubuntu. The sign-in link opens in
+your Windows browser: WSL passes <code>127.0.0.1</code> through to Windows.</p></li>
+</ol>
+<p class="note">WSL stops Ubuntu, and hopper with it, soon after you close the last Ubuntu window.
+Keep one Ubuntu window open while jobs run, and run <code>podman compose up -d</code> in the hopper's folder
+after you open it again.</p>
+
+<details>
+<summary>Install it on the machine itself in WSL instead</summary>
+<ol class="steps">
+<li><p>Check that systemd runs:</p>
+<div class="cmd"><pre>systemctl --user status</pre><button type="button" data-copy="systemctl --user status">Copy</button></div>
+<p>If it says <code>System has not been booted with systemd</code>, turn systemd on:</p>
+<div class="cmd"><pre>printf '[boot]\nsystemd=true\n' | sudo tee -a /etc/wsl.conf</pre><button type="button" data-copy="printf &#x27;[boot]\nsystemd=true\n&#x27; | sudo tee -a /etc/wsl.conf">Copy</button></div>
+<p>Then run <code>wsl --shutdown</code> in PowerShell, open Ubuntu again, and check again.</p></li>
+<li><p>Install git, Node.js 24, Docker and the GitHub CLI in Ubuntu. Node.js comes from NodeSource, so it
+is at <code>/usr/bin/node</code>:</p>
+<div class="cmd"><pre>curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
+sudo apt-get install -y git nodejs docker.io docker-compose-v2 gh
+sudo usermod -aG docker "$USER"</pre><button type="button" data-copy="curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash - &amp;&amp; sudo apt-get install -y git nodejs docker.io docker-compose-v2 gh &amp;&amp; sudo usermod -aG docker &quot;$USER&quot;">Copy</button></div>
+<p>Close Ubuntu and open it again, so that you can use docker. Then install herdr and Claude Code
+as <a href="#before">step 1</a> says, sign in to <code>claude</code>, and run the check from step 1.</p></li>
+<li><p>Install hopper with the same command as on Linux:</p>
+<div class="cmd"><pre>curl -fsSL https://henningfutrell.github.io/hopper/install.sh | bash</pre><button type="button" data-copy="curl -fsSL https://henningfutrell.github.io/hopper/install.sh | bash">Copy</button></div></li>
+<li><p>Open <code>http://localhost:4790/</code> in your Windows browser and sign in with GitHub. WSL passes
+<code>localhost</code> through to Windows.</p></li>
+<li><p>Continue with <a href="#github">step 5, Connect GitHub</a>, in Ubuntu, and then step 6.</p></li>
+</ol>
+<p class="note">Keep the repositories jobs work in inside Ubuntu (for example <code>~/src</code>), not under
+<code>/mnt/c</code>: it is much faster.</p>
+</details>
+
+<h2 id="sign-in">Sign-in for a team</h2>
+<p>Alone on one machine, signing in with GitHub is enough. For a team, or a hopper reached over the internet, people
+sign in through your own sign-in service, set up from the hopper's environment: no clicks and no files. Put the
+variables in <code>.env</code> beside <code>compose.yaml</code> (with Podman) or in
+<code>~/.config/hopper/daemon.env</code> (on the machine itself), and restart the hopper.</p>
+<div class="table-wrap"><table class="stack">
+<tr><th>You have</th><th>People sign in</th></tr>
+<tr><td>An auth gateway in front (Envoy Gateway with OIDC, oauth2-proxy)</td><td>through the gateway; the hopper only checks the token it forwards</td></tr>
+<tr><td>OIDC single sign-on (Google, Microsoft Entra ID, Okta, Auth0, Keycloak)</td><td>with a button that sends them to your provider</td></tr>
+<tr><td>SAML (Entra ID, Okta, Keycloak, ADFS)</td><td>with a button that sends them to your provider</td></tr>
+<tr><td>A directory: LDAP or Active Directory</td><td>with their directory username and password</td></tr>
+<tr><td>GitHub accounts</td><td>with a button that sends them to GitHub</td></tr>
+</table></div>
+<p>Each one is a few <code>HOPPER_SIGN_IN_</code> variables. What to register at your provider, the variables to
+copy, and how to check it works:
+<a href="https://github.com/henningfutrell/hopper/blob/main/docs/deploy.md#sign-in-set-up-at-launch">docs/deploy.md, Sign-in set up at launch</a>.</p>
+<p>However they sign in, each person then connects their own GitHub inside the hopper, from the UI.</p>
+
+<h2 id="upgrade">Upgrade</h2>
+<p><strong>With Podman:</strong> in the hopper's folder, download the newest image and restart on it. It keeps your
+settings, database and sign-ins. It ends the jobs running at the time, so upgrade when none runs.</p>
+<div class="cmd"><pre>podman compose pull &amp;&amp; podman compose up -d</pre><button type="button" data-copy="podman compose pull &amp;&amp; podman compose up -d">Copy</button></div>
+<p><strong>On the machine itself:</strong> run the install command again. It updates hopper and keeps your
+settings, database and running jobs. The UI also tells you when an update is out, says what is new, and can
+apply it for you.</p>
+
+<h2 id="remove">Uninstall</h2>
+<p><strong>With Podman:</strong> in the hopper's folder, stop and remove the containers. Your database and
+sign-ins are kept:</p>
+<div class="cmd"><pre>podman compose down</pre><button type="button" data-copy="podman compose down">Copy</button></div>
+<p>To delete them too: <code>podman compose down -v</code>.</p>
+<p><strong>On the machine itself:</strong></p>
+<div class="cmd"><pre>bash ~/.local/share/hopper/source/scripts/uninstall.sh</pre><button type="button" data-copy="bash ~/.local/share/hopper/source/scripts/uninstall.sh">Copy</button></div>
+<p>This stops the services, closes running jobs, and removes the installed program. It keeps your data: the database,
+<code>~/.config/hopper</code> and the source in <code>~/.local/share/hopper</code>.
+Delete those yourself if you want them gone. The docker database also stays; to delete it and its data:
+<code>docker rm -f hopper-postgres-1 &amp;&amp; docker volume rm job-hopper_postgres</code>.</p>
+
+<h2 id="trouble">When something goes wrong</h2>
+<h3>With Podman</h3>
+<div class="table-wrap"><table class="stack">
+<tr><th>It says</th><th>Do this</th></tr>
+<tr><td><code>unrecognized command "podman compose"</code></td><td>Your Podman is older than 4.7. Run <code>podman-compose</code> (with a hyphen) in place of <code>podman compose</code>, or install a newer Podman.</td></tr>
+<tr><td><code>looking up compose provider failed</code></td><td>Install <code>podman-compose</code> (<a href="#podman">step 1</a>).</td></tr>
+<tr><td><code>failed to connect to the docker API at unix:///run/user/…/podman/podman.sock</code></td><td>Podman found Docker's compose program and uses it, which talks to Podman through its socket. Turn the socket on: <code>systemctl --user enable --now podman.socket</code>. Or use the other one: <code>PODMAN_COMPOSE_PROVIDER=podman-compose podman compose up -d</code>.</td></tr>
+<tr><td>The UI does not open</td><td>See whether both containers run: <code>podman compose ps</code>. Read why the hopper stopped: <code>podman compose logs hopper</code>.</td></tr>
+<tr><td>A job is <code>hopper:failed</code> at once</td><td>Its folder in <code>repoPaths</code> may not exist in the container, or <code>claude</code> is not signed in: <a href="#podman">step 4</a>. The job in the UI says why it failed.</td></tr>
+</table></div>
+<p>Everything else is the same as on the machine itself, below, with <code>podman compose exec hopper</code> in front of
+<code>hopper</code> and <code>gh</code> commands.</p>
+
+<h3>The install on the machine itself stops</h3>
+<div class="table-wrap"><table class="stack">
+<tr><th>It says</th><th>Do this</th></tr>
+<tr><td><code>needs node on PATH</code> (or git, npm, systemctl)</td><td>Install it (<a href="#before">step 1</a>), open a new terminal, run the install again.</td></tr>
+<tr><td><code>needs Node.js &gt;= 24</code></td><td>Your Node.js is too old. Install a newer one from <a href="https://nodejs.org/en/download">nodejs.org</a>, open a new terminal, check <code>node --version</code>.</td></tr>
+<tr><td><code>needs systemd running for this user</code></td><td>On Windows, turn systemd on in WSL: <a href="#windows">On Windows</a>, step 2. On Linux, log in to a normal session (not <code>su</code> or a bare container shell).</td></tr>
+<tr><td><code>no database</code></td><td>Install docker, or give a Postgres address as in <a href="#own-postgres">Use your own Postgres</a>.</td></tr>
+<tr><td><code>permission denied</code> … <code>docker.sock</code></td><td>Your user may not use docker yet. Follow docker's <a href="https://docs.docker.com/engine/install/linux-postinstall/">post-install steps</a>, log out and back in, run the install again.</td></tr>
+<tr><td><code>the docker volume job-hopper_postgres exists</code></td><td>An earlier install left its database. Give its address with <code>HOPPER_DATABASE_URL</code>, or delete it with <code>docker volume rm job-hopper_postgres</code> (this deletes its data) and run the install again.</td></tr>
+<tr><td><code>… has local changes</code></td><td>Someone edited the downloaded source. Undo the changes there, or set <code>HOPPER_SRC</code> to another folder.</td></tr>
+<tr><td><code>did not answer /api/health</code></td><td>hopper did not start. Read why with <code>journalctl --user -u hopper -n 50</code>.</td></tr>
+</table></div>
+
+<h3>After the install on the machine itself</h3>
+<div class="table-wrap"><table class="stack">
+<tr><th>What you see</th><th>Do this</th></tr>
+<tr><td><code>hopper: command not found</code></td><td>Add <code>~/.local/bin</code> to your <code>PATH</code> (open a new terminal; many systems add it when it exists), or run <code>~/.local/bin/hopper</code>.</td></tr>
+<tr><td><code>hopper-herdr</code> is <code>failed</code></td><td>herdr is missing from <code>~/.local/bin/herdr</code>. Install it (<a href="#before">step 1</a>), then <code>systemctl --user restart hopper-herdr</code>.</td></tr>
+<tr><td><code>hopper</code> is not running</td><td>Read why: <code>journalctl --user -u hopper -n 50</code>. If it says <code>/usr/bin/node</code> is missing or too old, install Node.js system-wide (<a href="#before">step 1</a>), then <code>systemctl --user restart hopper</code>.</td></tr>
+<tr><td>The services are gone after you log out</td><td>Do <a href="#running">step 3</a>, then <code>systemctl --user start hopper-herdr hopper</code>.</td></tr>
+<tr><td>The UI does not open, or asks you to sign in</td><td>Open <code>http://localhost:4790/</code> and sign in with GitHub. From another computer, use the <a href="#ui">ssh tunnel</a>.</td></tr>
+<tr><td>A labelled issue is not picked up after a few minutes</td><td>Check: you opened it, and your login is in <code>authors</code>; its repository is in <code>repos</code>; the label is exactly <code>hopper</code>; <code>gh auth status</code> says logged in; you restarted hopper after editing. The UI's <strong>Sources</strong> view shows whether the GitHub source is running or paused.</td></tr>
+<tr><td>A job is <code>hopper:failed</code> at once</td><td>Its folder in <code>repoPaths</code> may not exist, or <code>claude</code> is not signed in: run <code>claude</code> once. The job in the UI says why it failed.</td></tr>
+</table></div>
+<p>Still stuck? <a href="https://github.com/henningfutrell/hopper/issues">Open an issue</a> with the message you see.</p>
+
+<h2 id="more">More</h2>
+<ul>
+<li><a href="https://github.com/henningfutrell/hopper#add-machines">Add machines</a>: run jobs on other computers too, or in a sandbox container.</li>
+<li><a href="https://github.com/henningfutrell/hopper#send-jobs-to-one-machine">Routing rules</a>: send some jobs to one machine.</li>
+<li><a href="https://github.com/henningfutrell/hopper/blob/main/docs/deploy.md">docs/deploy.md</a>: every install path in detail.</li>
+<li><a href="./">The README</a>: everything else.</li>
+</ul>
+
+<footer>hopper · <a href="./">home</a> · <a href="https://github.com/henningfutrell/hopper">source on GitHub</a></footer>
+</main>
+<script>
+document.querySelectorAll('[data-copy]').forEach((button) => {
+  button.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(button.dataset.copy);
+      button.textContent = 'Copied';
+      button.classList.add('done');
+    } catch {
+      button.textContent = 'Select and copy';
+    }
+    setTimeout(() => { button.textContent = 'Copy'; button.classList.remove('done'); }, 2000);
+  });
+});
+</script>
+</body>
+</html>

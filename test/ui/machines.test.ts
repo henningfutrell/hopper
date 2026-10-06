@@ -174,7 +174,7 @@ describe('adding this machine', () => {
   });
 
   it('refused as the daemon would: no name, a taken name, no session, the default session, a session that is not a plain name, lanes not ≥ 1', () => {
-    const d = { name: 'archbox', session: 'jobs', lanes: '2', label: '' };
+    const d = { name: 'workstation', session: 'jobs', lanes: '2', label: '' };
     expect(thisProblem(d, NONE)).toBeNull();
     expect(thisProblem({ ...d, name: ' ' }, NONE)).toMatch(/name/);
     expect(thisProblem({ ...d, name: 'desk' }, NONE)).toMatch(/desk/);
@@ -185,8 +185,8 @@ describe('adding this machine', () => {
   });
 
   it('the body: name, session, lanes as a number, label when given; never an ssh target', () => {
-    expect(thisBody({ name: ' archbox ', session: ' jobs ', lanes: '2', label: ' main ' }, 'v1')).toEqual({ name: 'archbox', session: 'jobs', lanes: 2, label: 'main', version: 'v1' });
-    expect(thisBody({ name: 'archbox', session: 'jobs', lanes: '2', label: '' }, 'v1')).not.toHaveProperty('label');
+    expect(thisBody({ name: ' workstation ', session: ' jobs ', lanes: '2', label: ' main ' }, 'v1')).toEqual({ name: 'workstation', session: 'jobs', lanes: 2, label: 'main', version: 'v1' });
+    expect(thisBody({ name: 'workstation', session: 'jobs', lanes: '2', label: '' }, 'v1')).not.toHaveProperty('label');
   });
 
   it('its Edit form changes its herdr session too; an emptied session goes back to the default', () => {
@@ -205,13 +205,13 @@ describe('an ssh target that is this machine', () => {
   it('is marked, and the Add form may send it while no machine is this one', () => {
     expect(isThisMachineTarget(HERE, 'self')).toBe(true);
     expect(isThisMachineTarget(HERE, 'laptop')).toBe(false);
-    expect(addProblem(draft({ name: 'archbox', ssh: 'self' }), HERE)).toBeNull();
-    expect(addBody(draft({ name: 'archbox', ssh: 'self' }), 'v1')).toMatchObject({ name: 'archbox', ssh: 'self' });
+    expect(addProblem(draft({ name: 'workstation', ssh: 'self' }), HERE)).toBeNull();
+    expect(addBody(draft({ name: 'workstation', ssh: 'self' }), 'v1')).toMatchObject({ name: 'workstation', ssh: 'self' });
   });
 
   it('refused in the form once this machine is added, naming it', () => {
     const added: MachinesConfig = { ...HERE, machines: CONFIG.machines };
-    expect(addProblem(draft({ name: 'archbox', ssh: 'self' }), added)).toMatch(/self is this machine, already added as local/);
+    expect(addProblem(draft({ name: 'workstation', ssh: 'self' }), added)).toMatch(/self is this machine, already added as local/);
   });
 
   it('this machine may be added unless it is one already or the hopper runs in a container', () => {

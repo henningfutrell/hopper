@@ -18,7 +18,7 @@ describe('the hopper logo', () => {
   });
 
   it('is the install page favicon and heading mark', () => {
-    const page = read('site', 'index.html');
+    const page = read('site', 'install.html');
     expect(page).toMatch(/<link rel="icon" type="image\/svg\+xml" href="hopper-logo\.svg">/);
     expect(page).toMatch(/<img[^>]*src="hopper-logo\.svg"/);
     expect(page).not.toContain('data:image/svg+xml');
