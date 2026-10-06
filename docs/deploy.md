@@ -57,7 +57,14 @@ There is no bootstrap login: a new hopper creates no user, no password and no lo
 
 - **The container is not a machine** (issue #141). The image sets `HOPPER_LOCAL_MACHINE=false`: no
   `local` machine, and the boot removes one an earlier version wrote into the plugins config. Jobs run on
-  attached machines (`README.md` "Add machines"); the image carries herdr's CLI for them.
+  attached machines (`README.md` "Add machines"); the image carries herdr's CLI for them. The Machines
+  view offers no **Add this machine** here. To run jobs on the computer the container runs on, attach
+  it over ssh like any other: on the computer, sshd running and herdr installed; in the container
+  (`podman compose exec hopper sh`), a key (`ssh-keygen -t ed25519`, kept in the home volume) whose
+  public half goes into the computer's `~/.ssh/authorized_keys`, and a Host in `~/.ssh/config` with
+  `HostName host.containers.internal` (Podman; Docker: `host.docker.internal`, which on Linux needs
+  `extra_hosts: ["host.docker.internal:host-gateway"]` on the hopper service), then `ssh <that Host>`
+  once to accept its host key. Then **Add machine over ssh** picks it.
 - **Sign-ins.** GitHub: the UI's Sources view → **Log in to GitHub**, once (gh's device flow, run by the
   hopper; no terminal). Claude Code: `podman compose exec hopper claude` (`/login`), once. Both are kept
   in the home volume. No `-it`: `podman compose exec` is interactive with a terminal by default, and

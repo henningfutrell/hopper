@@ -223,6 +223,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
       inUse: (name) => jobsOnMachine(name), pinned: (name) => notEnded().filter((j) => j.spec.machineId === name).map((j) => j.id),
       sshAuth, ...(seams.resolveTarget ? { resolveTarget: seams.resolveTarget } : {}),
       startSession: seams.herdrSession ?? ((s) => startHerdrSession(s, cliEnv)),
+      localMachine: config.localMachine,
     },
   });
   await host.start();

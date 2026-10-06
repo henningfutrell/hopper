@@ -43,6 +43,12 @@ export interface SessionUser {
   /** The user's name. */
   name: string;
   role: UiRole;
+  /**
+   * The session is an instance admin's (issue #240): an admin who signed in through a realm or no sign-in,
+   * or a device link of a super admin's user (else, with no super admin, of the oldest user's). Only they
+   * change what is the instance's; role admin alone acts inside the session's user.
+   */
+  instanceAdmin: boolean;
   /** The realm the session's identity signed in with. */
   realm: string;
   /** Who signed in: name, username, email or subject, the first the realm gave. */

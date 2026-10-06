@@ -240,7 +240,8 @@ accounts of its own (issue #237). The way in is a realm:
   [the sign-in config from the CLI](#the-sign-in-config-from-the-cli) or the environment.
 
 A login code still exists, minted only from a signed-in session: a device link (for the session's own
-user) and a new user's login link. It signs in with role `admin`.
+user) and a new user's login link. It is no admin login (issue #240): it signs in with role `admin`
+inside its own user ([the instance admin](#the-instance-admin)).
 
 **Rate limit.** Every sign-in route (`/ui/login`, `/ui/auth/…`) together accepts 20 attempts a
 minute per client address; past that, 429 until the minute is over. Behind a reverse proxy every
@@ -387,11 +388,14 @@ curl -H "Authorization: Bearer $ACCESS_TOKEN" https://hopper.example.com/api/que
 |---|---|
 | `viewer` | read everything the UI shows |
 | `operator` | + cancel and approve jobs; answer, close, dismiss questions and mark them seen |
-| `admin` | + change configuration: plugins, machines, routing rules, webhooks, the rules, the queue gate, sign-in realms; apply updates; hand out device links; make others admin |
+| `admin` | + change their own user's configuration: plugins, machines, routing rules, webhooks, the rules, the queue gate; hand out device links; as [the instance admin](#the-instance-admin), also sign-in realms, users, updates, the plugin store, making others admin |
 
 A **super admin** is an admin who may also make others super admin or hand that over ([Super admins](#super-admins)).
 
-A login code signs in with role `admin`, to the user it was minted for. For every realm, its **role rules** decide, the same way for every type:
+What is the instance's — sign-in realms, users, updates, the plugin store, the totals across users —
+is [the instance admin](#the-instance-admin)'s alone, not every `admin`'s.
+
+A login code signs in with role `admin`, to the user it was minted for ([the instance admin](#the-instance-admin)). For every realm, its **role rules** decide, the same way for every type:
 
 - A rule grants a role — `admin`, `operator` or `viewer` — to the subjects, usernames, emails, email
   domains or groups it lists, one per line. Any one match grants the role; **the highest matching
@@ -444,8 +448,31 @@ What fills each field:
 A UI role is not a plugin role: see `docs/glossary.md`.
 
 A role acts only inside the session's own user: an admin changes their own plugins, machines,
-routing, webhooks, rules and the queue gate, never another user's. What all users share — adding users,
-the plugin store, updates, sign-in realms — needs `admin`.
+routing, webhooks, rules and the queue gate, never another user's. What all users share is the
+instance admin's (below).
+
+### The instance admin
+
+There is no special admin login (issue #240). What all users share is the **instance admin**'s: a
+session with role `admin` that signed in through a realm (or no sign-in) — the first person to sign in
+with GitHub, any [super admin](#super-admins), anyone made admin in Settings → Sign-in → Admins or by a
+role rule. A login code is no admin login: it signs in with role `admin` inside its own user, and is the
+instance admin's only when that user is a super admin's — their own device link — or, while no super
+admin's realm is on, the oldest user's (a hopper from before: its default admin account `admin`).
+
+Only the instance admin:
+
+- changes sign-in realms and the admins, and reads them (`GET /api/realms`, Settings → Sign-in);
+- adds users and hands out their login links, and lists the users (`GET /api/users`, Settings → Users);
+- reads the totals across users (`GET /api/instance`, issue #241) — counts and sums, never one user's work;
+- applies updates and changes their settings;
+- installs and removes plugins from the plugin store.
+
+Everyone else with role `admin` — a user added by login link, a device link of anyone but a super admin —
+sets up their own user (plugins, machines, routing, webhooks, the rules, the queue gate, their GitHub
+connection, device links) and is refused (403) the rest. Nobody, the instance admin included, reads
+another user's work ([What an admin sees](design.md#what-an-admin-sees-issue-221-2026-10-06)). A loopback
+request without a session reads the instance's reads as before.
 
 ## Who signs in as which user
 

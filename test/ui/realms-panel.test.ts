@@ -50,7 +50,7 @@ function fakeDaemon() {
 
 let root: Root | undefined;
 
-async function render(role: 'admin' | 'operator', superAdmin = false) {
+async function render(role: 'admin' | 'operator', superAdmin = false, instanceAdmin = role === 'admin') {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
   posts = [];
@@ -59,7 +59,7 @@ async function render(role: 'admin' | 'operator', superAdmin = false) {
   vi.stubGlobal('fetch', fakeDaemon());
   const store = '../../ui/src/store/index.ts'; // browser code, type-checked by ui/tsconfig.json: imported by path
   const { useHopper } = (await import(store)) as { useHopper: { setState(s: Record<string, unknown>): void } };
-  useHopper.setState({ authed: true, user: { id: 'admin', name: 'admin', role, realm: 'local', identity: 'login code', superAdmin } });
+  useHopper.setState({ authed: true, user: { id: 'admin', name: 'admin', role, realm: 'local', identity: 'login code', superAdmin, instanceAdmin } });
   const mod = '../../ui/src/views/realms.tsx';
   const { Realms } = (await import(mod)) as { Realms: () => ReturnType<typeof createElement> };
   await act(async () => {
@@ -253,6 +253,12 @@ describe('Settings: Sign-in', () => {
     await vi.waitFor(() => expect(posts).toContainEqual({ action: 'settings', none: 'viewer', version: 'v1' }));
   });
 
+  it('an admin of their own user who is not an instance admin (issue #240) sees no realms', async () => {
+    await render('admin', false, false);
+    expect(document.body.textContent).toContain('Only the hopper\'s admins manage sign-in.');
+    expect(document.querySelectorAll('[data-realm]')).toHaveLength(0);
+  });
+
   it('lists everyone who signed in with their role; a super admin makes them admin or super admin, or hands it over (issue #242)', async () => {
     await render('admin', true);
     const person = (name: string) => section('admins').querySelector<HTMLElement>(`[data-person="${name}"]`)!;
@@ -287,7 +293,7 @@ describe('Settings: Sign-in', () => {
 
   it('a session that is not admin sees no realms', async () => {
     await render('operator');
-    expect(document.body.textContent).toContain('Only an admin manages sign-in.');
+    expect(document.body.textContent).toContain("Only the hopper's admins manage sign-in.");
     expect(document.querySelectorAll('[data-realm]')).toHaveLength(0);
     expect(buttonIn(document, 'Add realm')).toBeUndefined();
   });

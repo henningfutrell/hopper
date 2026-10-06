@@ -11,6 +11,7 @@ RUN npm ci --no-audit --no-fund
 COPY ui ./ui
 COPY site/hopper-logo.svg ./site/hopper-logo.svg
 COPY src ./src
+COPY scripts/check-ui-bundle.ts ./scripts/check-ui-bundle.ts
 RUN npm run build:ui && test -s ui/dist/index.html
 
 # ---- the daemon --------------------------------------------------------------------------------
@@ -40,6 +41,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
 COPY src ./src
+COPY scripts/check-ui-bundle.ts ./scripts/check-ui-bundle.ts
 COPY scripts ./scripts
 COPY WHATS-NEW.md ./
 COPY --from=ui /build/ui/dist ./ui/dist

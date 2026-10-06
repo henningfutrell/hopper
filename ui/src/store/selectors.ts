@@ -50,3 +50,5 @@ export function useJobName(): (jobId: string) => string {
 export const useCanOperate = (): boolean => useHopper((s) => s.authed && allows(s.user, 'operator'));
 /** The session may change configuration (plugins, machines, routing, webhooks, rules). */
 export const useCanAdmin = (): boolean => useHopper((s) => s.authed && allows(s.user, 'admin'));
+/** The session is an instance admin's (issue #240): sign-in, users, updates, the plugin store. */
+export const useCanAdminInstance = (): boolean => useHopper((s) => s.authed && allows(s.user, 'admin') && s.user?.instanceAdmin === true);

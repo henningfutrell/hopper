@@ -6,7 +6,7 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { addBody, addProblem, defaultsBody, DETAILS, editBody, editDraft, editProblem, localBody, newDraft, newThisDraft, thisBody, thisProblem, type LocalDraft, type MachineDefaultsDraft, type MachineDraft, type MachineEditDraft, type MachineKind, type ThisDraft } from '@/model/machines';
+import { addBody, addProblem, defaultsBody, isThisMachineTarget, DETAILS, editBody, editDraft, editProblem, localBody, newDraft, newThisDraft, thisBody, thisProblem, type LocalDraft, type MachineDefaultsDraft, type MachineDraft, type MachineEditDraft, type MachineKind, type ThisDraft } from '@/model/machines';
 import type { MachineDefaultsEdit, MachineEdit, MachinesConfig, PluginsEdit } from '@/model/wire';
 
 const SELECT = 'h-9 w-full rounded-lg border border-input bg-transparent px-2.5 text-base md:text-sm dark:bg-input/30';
@@ -79,17 +79,21 @@ export function AddMachineForm({ config, busy, send, onDone }: {
   const [d, setD] = useState<MachineDraft>(() => newDraft(config));
   const set = (over: Partial<MachineDraft>) => setD((x) => ({ ...x, ...over }));
   const problem = addProblem(d, config);
-  const submit = async () => { if (await send(addBody(d, config.version), `Attached ${d.name.trim()}`)) onDone(); };
+  // An ssh target that is this machine (issue #275) is added as this machine: no ssh, its herdr session started here.
+  const here = isThisMachineTarget(config, d.ssh);
+  const submit = async () => { if (await send(addBody(d, config.version), here ? `Added this machine as ${d.name.trim()}, without ssh` : `Attached ${d.name.trim()}`)) onDone(); };
   return (
     <form className="grid gap-3" onSubmit={(e) => { e.preventDefault(); void submit(); }}>
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="name" hint="the machine id; lanes and jobs are stored under it">
           <Input className="h-9" value={d.name} disabled={busy} autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder="laptop" onChange={(e) => set({ name: e.target.value })} />
         </Field>
-        <Field label="ssh target" hint={config.ssh.targets.length ? 'a Host alias from ~/.ssh/config' : 'no Host aliases in ~/.ssh/config: add one there first'}>
+        <Field label="ssh target" hint={here
+          ? 'this machine: added as this machine, with no ssh; its jobs run in the herdr session hopper, which the hopper starts'
+          : config.ssh.targets.length ? 'a Host alias from ~/.ssh/config' : 'no Host aliases in ~/.ssh/config: add one there first'}>
           <select className={SELECT} value={d.ssh} disabled={busy || !config.ssh.targets.length} onChange={(e) => set({ ssh: e.target.value })}>
             <option value="">choose…</option>
-            {config.ssh.targets.map((t) => <option key={t} value={t}>{t}</option>)}
+            {config.ssh.targets.map((t) => <option key={t} value={t}>{isThisMachineTarget(config, t) ? `${t} (this machine)` : t}</option>)}
           </select>
         </Field>
         <Field label="lanes" hint="jobs it runs at once">
@@ -101,13 +105,16 @@ export function AddMachineForm({ config, busy, send, onDone }: {
       </div>
       <ExecutorChecks all={config.executors} picked={d.executors} disabled={busy} onChange={(executors) => set({ executors })} />
       {config.ssh.notes.map((n) => <div key={n} className="text-xs text-warn">{n}</div>)}
-      <p className="text-xs text-muted-foreground">
+      {config.thisMachineRefused && <p className="text-xs text-muted-foreground">{config.thisMachineRefused}.</p>}
+      {!here && <p className="text-xs text-muted-foreground">
         When an executor it runs needs herdr (herdr-claude), the daemon finds herdr there over ssh and writes its path; otherwise it
         only checks the machine answers over ssh. Prepare the machine first:
         {' '}<code className="font-mono break-all">bash scripts/attach-machine.sh {d.ssh || '<ssh-target>'}</code>
-      </p>
+      </p>}
       <div className="flex flex-wrap items-center gap-2">
-        <Button type="submit" size="lg" disabled={busy || problem !== null}>{busy ? 'Reaching it over ssh…' : 'Attach machine'}</Button>
+        <Button type="submit" size="lg" disabled={busy || problem !== null}>
+          {busy ? (here ? 'Starting its herdr session…' : 'Reaching it over ssh…') : here ? 'Add as this machine' : 'Attach machine'}
+        </Button>
         <Button type="button" size="lg" variant="ghost" disabled={busy} onClick={onDone}>Cancel</Button>
         {problem && d.name.trim() !== '' && <span className="text-xs text-muted-foreground">{problem}</span>}
       </div>

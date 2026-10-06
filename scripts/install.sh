@@ -50,12 +50,17 @@ fi
 
 # The UI is the one built part (ui/ -> ui/dist). It is built in a throwaway copy so the checkout's
 # node_modules (possibly a symlink shared by worktrees) and ui/dist are never touched, and a clean
-# clone with no node_modules installs the same way.
+# clone with no node_modules installs the same way. The copy is a git root of its own: Tailwind skips
+# source files any .gitignore covers, a parent dir's too, and TMPDIR may sit under one that ignores
+# everything (a job's scratch dir does) — a build there once shipped a stylesheet with no utilities.
+# build:ui then checks the bundle (scripts/check-ui-bundle.ts) and fails the install on a hollow one.
 BUILD="$(mktemp -d "${TMPDIR:-/tmp}/hopper-ui.XXXXXX")"
 trap 'rm -rf "$BUILD"' EXIT
-step "build the UI bundle in $BUILD (copy ui/, src/, site/hopper-logo.svg, package*.json; npm ci with dev dependencies; npm run build:ui)"
+step "build the UI bundle in $BUILD (copy ui/, src/, site/hopper-logo.svg, package*.json, the bundle check; git init; npm ci with dev dependencies; npm run build:ui, which checks it)"
 cp -r "$APP_DIR/ui" "$APP_DIR/src" "$APP_DIR/package.json" "$APP_DIR/package-lock.json" "$BUILD/"
 mkdir -p "$BUILD/site" && cp "$APP_DIR/site/hopper-logo.svg" "$BUILD/site/"
+mkdir -p "$BUILD/scripts" && cp "$APP_DIR/scripts/check-ui-bundle.ts" "$BUILD/scripts/"
+git init -q "$BUILD"
 rm -rf "$BUILD/ui/dist" "$BUILD/ui/node_modules"
 npm ci --prefix "$BUILD" --no-audit --no-fund
 npm run build:ui --prefix "$BUILD"

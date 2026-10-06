@@ -14,10 +14,10 @@ import { get, post, SessionRejected } from '@/lib/api';
 import { clock } from '@/model/format';
 import type { InstanceTotals, UsageTotal, UserAdded, UserView } from '@/model/wire';
 import { useHopper } from '@/store';
-import { useCanAdmin } from '@/store/selectors';
+import { useCanAdminInstance } from '@/store/selectors';
 
 export function Users() {
-  const canAdmin = useCanAdmin();
+  const canAdmin = useCanAdminInstance();
   const me = useHopper((s) => s.user?.id);
   const [users, setUsers] = useState<UserView[] | null>(null);
   const [adding, setAdding] = useState(false);
@@ -83,7 +83,7 @@ export function Users() {
             ))}
           </div>
         )}
-        {!canAdmin ? <Empty>Only an admin sees and adds users.</Empty> : users === null ? <Empty>Loading…</Empty> : (
+        {!canAdmin ? <Empty>Only the hopper's admins see and add users.</Empty> : users === null ? <Empty>Loading…</Empty> : (
           <ul className="divide-y rounded-lg border">
             {users.map((u) => (
               <li key={u.id} data-user={u.id} className="flex min-w-0 items-center gap-2 px-3 py-2 text-sm">

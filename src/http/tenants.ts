@@ -55,22 +55,24 @@ export interface Tenants {
 const users = new WeakMap<FastifyRequest, string>();
 /** The role of the request's session or token; absent: neither (loopback reads without). */
 const roles = new WeakMap<FastifyRequest, UiRole>();
+/** Who signed in, for the request's session or token: what the instance admin check reads (issue #240). */
+const identities = new WeakMap<FastifyRequest, Identity>();
 
 export function installTenancy(app: FastifyInstance, o: { tenants: Tenants; sessions: UiSessions; signIn: Pick<SignIn, 'checkToken'>; port: () => number; lan: Lan }): void {
   const peers = peerList(o.lan.peers);
   /** The API door: the user and role the token reads as, or why not. */
-  const throughApiDoor = async (req: FastifyRequest): Promise<{ userId: string; role: UiRole } | { status: number; error: string }> => {
+  const throughApiDoor = async (req: FastifyRequest): Promise<{ userId: string; role: UiRole; who: Identity } | { status: number; error: string }> => {
     const r = await o.signIn.checkToken(req.headers);
     if (!r.ok) return r;
     const user = o.tenants.linked(r.who);
     // A GitHub identity reads only as the user whose connected GitHub account it is.
     const connected = r.via !== 'github' || (user !== undefined && o.tenants.user(user.id)?.store.connectedAccounts.get('github')?.subject === r.who.subject);
     if (!user || !connected) return { status: 401, error: notLinked(r.who, r.via) };
-    return { userId: user.id, role: r.role };
+    return { userId: user.id, role: r.role, who: r.who };
   };
   app.addHook('onRequest', async (req, reply) => {
     const session = o.sessions.find(sessionToken(req));
-    if (session) { users.set(req, session.userId); roles.set(req, session.role); return; }
+    if (session) { users.set(req, session.userId); roles.set(req, session.role); identities.set(req, session.identity); return; }
     if (atApiDoor(req)) {
       const at = await throughApiDoor(req);
       if ('error' in at) {
@@ -79,6 +81,7 @@ export function installTenancy(app: FastifyInstance, o: { tenants: Tenants; sess
       }
       users.set(req, at.userId);
       roles.set(req, at.role);
+      identities.set(req, at.who);
       return;
     }
     const r = classifyRequest({ host: req.headers.host, peer: req.socket.remoteAddress }, o.port(), o.lan, peers);
@@ -102,6 +105,14 @@ export const userIdOf = (req: FastifyRequest): string | undefined => users.get(r
 
 /** The role of the request's session or token (after `installTenancy`); undefined: neither. */
 export const roleOfRequest = (req: FastifyRequest): UiRole | undefined => roles.get(req);
+
+/** The request's session or token as the instance admin check reads it (issue #240); undefined: neither. */
+export function signedInOf(req: FastifyRequest): { role: UiRole; identity: Identity; userId: string } | undefined {
+  const role = roles.get(req);
+  const identity = identities.get(req);
+  const userId = users.get(req);
+  return role === undefined || identity === undefined || userId === undefined ? undefined : { role, identity, userId };
+}
 
 const notLinked = (who: Identity, via: 'gateway' | 'github'): string => via === 'github'
   ? `the GitHub account ${who.username ?? who.subject} is no hopper user's connected GitHub account: sign in with GitHub in the UI first`

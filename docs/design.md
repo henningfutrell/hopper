@@ -44,7 +44,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, the plugins config (`plugins-config.ts`) + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt, `escalation-level/anthropic-api/` asks the Claude API with the same prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-gh/`, `job-source/github-app/` and `job-source/github-account/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser); `usage-source/command-usage/` reads any agent framework's usage and account from a command that prints them as JSON; `usage-source/polled.ts` the background refresh both share, `usage-source/run.ts` their command runner; `notifier/grokbot-routine/` is the Grok Bot routine webhook — env-file reader and notifier; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
 | `src/executors/` | `Executor` adapters (`test`, `herdr/`, `command.ts` — a job's body run on its machine through its connection, `cursor.ts` — Cursor's CLI agent there, issue #142) and the registry; reached through the executor plugins. The connections and their target authentication ("Target authentication"): `ssh.ts` (key-only ssh to pinned host keys), `docker.ts` (the docker socket check, the proxy's allowlist), `client.ts` (a client target's tunnel, signed calls); `env.ts` the scrubbed child environment | engine, http, store, plugins |
 | `src/client/` | the hopper client ("Client targets"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load` over HTTP/2 on the tunnel), `tunnel.ts` (its ssh to the hopper), `release.ts` (the client release: its files, its id, checking and installing one — "Client releases"), `main.ts`; `relay.ts`, the forced command of its key on the hopper's machine; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`); `ssh-options.ts` (the hardened ssh options, shared with `src/executors/ssh.ts`) | everything in `src/` outside `src/client/` |
-| `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following the plugins config; ssh probe and herdr path resolution through the herdr CLI client's ssh argv; the container probe, `docker container inspect`), the detected ssh targets (`ssh-config.ts`), keeping each client target on the hopper's client release (`client-release.ts`), `combineMachineSources` | engine, http, store, plugins |
+| `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following the plugins config; ssh probe and herdr path resolution through the herdr CLI client's ssh argv; the container probe, `docker container inspect`), the detected ssh targets (`ssh-config.ts`) and which of them is this machine (`this-machine.ts`, issue #275), keeping each client target on the hopper's client release (`client-release.ts`), `combineMachineSources` | engine, http, store, plugins |
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin) | engine, http, store, plugins |
 | `src/routing/` | routing rules: the plugins config's `routing` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
 | `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; routing at intake (`source-host.ts`); restart recovery | http |
@@ -52,7 +52,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`) | engine, http, store, plugins, decider |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets") | everything |
 | `src/update/` | self-update ("Self-update"): install.json, the git mirror of the update repository, the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
-| `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `api-reference.ts` Scalar at `/docs/`); the plugin store's read side (`plugin-store.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
+| `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); whether a session is an instance admin (`instance-admin.ts`, issue #240); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `api-reference.ts` Scalar at `/docs/`); the plugin store's read side (`plugin-store.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
 | `site/` | the install page, published to GitHub Pages by `.github/workflows/pages.yml` with `scripts/get.sh` beside it as `install.sh`: one static `index.html`, no build step, nothing loaded from another site | everything in the repo at runtime; it links to the docs on GitHub |
 | `examples/plugins/` | one minimal runnable custom plugin per role, for authors (`docs/plugins.md`); imports only `hopper/plugin` types and `node:` builtins | everything in `src/` at runtime |
@@ -2858,6 +2858,14 @@ responsive and fast. Builds on the at-a-glance board (issue #5).
   `/ui/assets/<hashed file>` → `public, max-age=31536000, immutable`. Only files listed at startup
   are served, so no request path reaches the filesystem. No bundle → `/` is 503 naming
   `npm run build:ui`; the API is unaffected. `scripts/install.sh` builds before it copies.
+- **The UI bundle check (issue #274).** `npm run build:ui` ends with `scripts/check-ui-bundle.ts`: the
+  stylesheet `index.html` links must be at least 40 KB (a real one is ~90 KB) and hold a rule for each of a
+  few layout utilities (`.flex`, `.h-8`, `.w-full`, …), or the build fails. Tailwind generates only the
+  classes it finds by scanning the source files, and skips files any `.gitignore` covers, a parent dir's
+  too: `install.sh` once built in a temp dir under a job's scratch dir (`.gitignore` of `*`), and the
+  ~15 KB stylesheet it shipped left the sign-in page as logo shards with no controls (#272). So
+  `install.sh` makes its build copy a git root of its own (`git init`), and the check fails the install —
+  and a self-update's build of the next install, before the swap — on a hollow bundle whatever the cause.
 - **One icon (issue #183).** The asset `index.html` names as its icon (`site/hopper-logo.svg`, built)
   is also served at `/favicon.svg` and `/favicon.ico`. Every other page the daemon serves — the API
   reference (Scalar's `favicon`), the sign-in pages — links `/favicon.svg`; `/favicon.ico` covers a
@@ -3408,6 +3416,35 @@ again without editing anything by hand.
   with ssh-keygen and install it on the target. A failed add reads `could not add <name>: <reason>`.
   No error a person sees points at a document.
 
+### Knowing this machine, and the container (issue #275, 2026-10-06)
+
+Owner request: detect when the hopper is on the machine, so adding it needs no ssh; containers stay
+tricky and need a path of their own, which the detection does not give them.
+
+- **An ssh target that is this machine is detected** (`isThisMachine`, `src/machines/this-machine.ts`):
+  what `ssh -G <target>` makes of it — the user's own ssh config, nothing reached — is this host when its
+  User is the user the hopper runs as, its Port is 22, and its HostName is `localhost`, this host's own
+  name, a loopback or interface address of this host, or a name that resolves (within 2 s) to one.
+  Another user is another account; another port is another machine (a container's published sshd); a
+  target that cannot be resolved, or goes through a ProxyJump or ProxyCommand, is not this machine.
+- **`GET /api/machines/config`** lists them as `ssh.here`. The Add form marks such a target "(this
+  machine)", says it is added with no ssh, and sends it as before.
+- **`POST /ui/api/machines` with such a target adds this machine** (issue #260's path): a `local` instance
+  under the name given, its lanes and executors as sent, the herdr session `hopper`, started first;
+  nothing is reached over ssh and no host key is pinned. While a machine is this one already it is
+  refused: `ssh target <t> is this machine, already added as <name>`.
+- **In a container** (`HOPPER_LOCAL_MACHINE=false`, issue #141) this machine is the container, which is
+  not a machine. Nothing is detected as this machine there: with host networking the container would
+  share the computer's addresses and pass for it. Adding this machine is refused (409) and
+  `thisMachineRefused` says why and what works: attach the computer the container runs on over ssh — a
+  Host in the container's `~/.ssh/config` whose HostName is `host.containers.internal` (Podman) or
+  `host.docker.internal` (Docker), with a key of the container's the computer accepts — or as a client
+  target. The Machines view shows that in place of **Add this machine**.
+- **Still open.** The container path is still set up by hand (deploy.md "In containers, with Podman":
+  the computer's sshd, a key in the home volume, the Host alias, `host.docker.internal` needing
+  `--add-host host.docker.internal:host-gateway` under Docker on Linux). The hopper detects that it
+  cannot be the machine there; it does not yet reach the computer by itself.
+
 ### Router, queue sorter and routing rules (issue #18)
 
 Owner request: the router, queue sorter and routing rules can be set in the UI; lane rules are out of
@@ -3482,6 +3519,46 @@ routing targets; the executor select uses the configured executors. Forms stack 
 there is no horizontal page scroll.
 
 ## Sign-in: realms (issues #39, #53, #185, #200, #215, #216, #237, #238)
+
+### No special admin login; the instance admin (issue #240, 2026-10-06)
+
+Issue #240: there is no special admin login. Requirements: remove the special admin login; the
+admin is the first user to sign in with GitHub (issue #239); what the admin can do is issue #241's —
+manage instance settings, see aggregated usage across users, not see other users' sensitive data. It
+supersedes the special-login part of issue #238.
+
+Inputs, from `main` at `4520f86`: #238 had removed `hopper login-code` and `scripts/open-ui.sh`; #239
+recorded the first GitHub admin and granted their identity role `admin`; #241 added the totals across
+users, behind role `admin`. What was left: a login code signed in with role `admin`, and role `admin` was
+both the user's own configuration and the instance's. So a new user's login link (Settings → Users) made
+its holder an admin of the instance — able to change sign-in, add users, apply updates and read the
+totals across users — without being the first GitHub user. Lowering the login link's role instead would
+take from added users the setup of their own environment, which #238 gives each user.
+
+Decision (on the issue): keep the roles; gate what is the instance's on how the session signed in and
+whose user it is. Issue #242, merged alongside, made admins many — the first GitHub admin is the first
+super admin, and any admin makes others admin through their realm's admin rule — so "the admin" of #240
+and #241 is every admin a realm grants, and the login code alone is narrowed.
+
+- **The instance admin** (`src/http/instance-admin.ts`): a session whose role allows `admin` and that
+  signed in through a realm or no sign-in (its identity is not the login code's) — the first GitHub admin,
+  a super admin, an admin of a role rule or of Settings → Sign-in → Admins; or a login-code session whose
+  user a super admin (whose realm is on) signs in as — their device link; or, while no super admin's realm
+  is on, a login-code session of the oldest user (the default admin account on a hopper from before). A new
+  user's login link names a user nobody signed in to through a realm, added after the oldest, so it never
+  is; a device link gives at most what its maker's user had.
+- **Gated on it**: `POST /ui/api/realms`, `/ui/api/users`, `/ui/api/update`, `/ui/api/plugin-store`, and
+  the reads `GET /api/realms`, `/api/users`, `/api/instance` (403; a mutation's refusal carries `needs`
+  so the UI keeps the session). Loopback without a session reads them as before.
+- **Unchanged**: every other `admin` mutation acts inside the session's own user and stays `admin` —
+  plugins, machines, routing, webhooks, the rules, the queue gate, gh login, connected accounts, device
+  links. No stored role, session or login code changes; there is no migration. `SessionUser.instanceAdmin`
+  tells the UI which of Settings → Sign-in, Users, Updates and the plugin store's actions to offer.
+
+**Residual risk, stated.** A device link of a regular admin reaches only their own user. A hopper from
+before whose GitHub admin is recorded no longer lets its default admin account in by login code as an
+instance admin: sign in with GitHub. The read-only reports `GET /api/plugin-store` and `GET /api/update`
+stay readable by any session, as before.
 
 ### No bootstrap login (issue #238, 2026-10-06)
 
@@ -4052,7 +4129,7 @@ line too; never the UI).
 1. The target's tree (`git archive`) is unpacked to `<data dir>/update/source`.
 2. The **next install** `<install>.next` is built by the target's own `scripts/install.sh` in
    **build-only mode** (`HOPPER_INSTALL_INTO=<dir>` + `_REPO`, `_BRANCH`, `_COMMIT`): UI bundle,
-   production dependencies, install.json — no service, unit or config touched. Log:
+   production dependencies, install.json — no service, unit or config touched; a UI bundle that fails the UI bundle check ("UI rework") fails the build. Log:
    `<data dir>/update/build.log`. The running daemon is not touched: jobs keep running.
 3. Proof it loads: a child `node` imports the next install's `src/main.ts`. A module that fails to
    load fails here.
@@ -5008,8 +5085,8 @@ shares one database login.
 | Side | What | Who reads it |
 |------|------|--------------|
 | **A user's own — sensitive** | jobs (payload, prompt, title, source item, result, failure), questions and answers, events, decisions, lanes and what runs in them, job sources, machines and their ssh names, executors, escalation levels, the rules record, routing, the queue gate and order, usage sources and their accounts (email, plan, usage), webhook subscriptions and deliveries, the `plugins` record and every option in it, gh login and every CLI's config in the user work dir, the user's secret variables, the event stream, the user schema | that user's own sessions only — never an admin of the instance, never a request without a session once there is more than one user |
-| **The instance's** | the users list (id, name, when added), the sign-in config (realms, password accounts and the user each signs in as, role rules — never a hash), the plugin store and its installs, self-update and its status, the instance schema | an admin (`GET /api/users`, `/api/realms`, `/api/plugin-store`, `/api/update`); loopback without a session reads them as before |
-| **Instance totals** | users; jobs not ended by status (`queued`, `held`, `claimed`, `running`, `waiting_answer`); open questions; lanes open and busy; jobs ended in the last 24 hours by how they ended (issue #241); usage readings summed per unit and usage window, with how many readings each sum holds (issue #241) — summed over every user | an admin (`GET /api/instance`, Settings → Users); never one user's share, nothing named — no account, source or machine |
+| **The instance's** | the users list (id, name, when added), the sign-in config (realms, password accounts and the user each signs in as, role rules — never a hash), the plugin store and its installs, self-update and its status, the instance schema | an admin (`GET /api/users`, `/api/realms`: the instance admin only since issue #240; `/api/plugin-store`, `/api/update`); loopback without a session reads them as before |
+| **Instance totals** | users; jobs not ended by status (`queued`, `held`, `claimed`, `running`, `waiting_answer`); open questions; lanes open and busy; jobs ended in the last 24 hours by how they ended (issue #241); usage readings summed per unit and usage window, with how many readings each sum holds (issue #241) — summed over every user | the instance admin (`GET /api/instance`, Settings → Users; issue #240); never one user's share, nothing named — no account, source or machine |
 
 What crosses from a user's side to the instance's is a **count**, never a name or an id. The instance's
 own events (`update.*`, `plugin.installed`, `plugin.removed`) go to every user's event log, so they
@@ -5335,7 +5412,7 @@ wildcards). So "when possible" is: the runtime gives the app's client secret, an
 sign-in origin (whose callback the operator registers); a LAN name, a phone or a hopper without the secret
 gets the device code. Not this issue: whether a new hopper registers itself (#259).
 
-- **The page** (`ui/src/app/landing.tsx`, `index.css` "landing"): one centred card over a backdrop in the
+- **The page** (`ui/src/app/landing.tsx`, `index.css` "landing"; its layout since issue #266, below): one centred card over a backdrop in the
   logo's teal — slow aurora light, a dot grid fading toward the edges, the logo's silhouette, grain and a
   vignette; pure CSS, nothing fetched, still for reduced motion; always dark. The card: the logo, the name,
   one line of what the hopper is, then the ways to sign in in groups — GitHub first as one large button,
@@ -5369,6 +5446,31 @@ without it no redirect and the device code; a denial; another browser's binding 
 `test/ui/sign-in-device.test.ts` (the redirect button, Use a code instead, the centred code panel with copy
 and Open GitHub, Cancel), `test/integration/unit-file.test.ts` (the secret is read without a warning and kept
 in no config).
+
+## The sign-in page as a page, not a lone card (issue #266, 2026-10-06)
+
+Owner request, after issue #258: make the sign-in page pleasing to look at, with a better layout and a
+compelling background; centre the device code; browser redirect when possible, the device code as
+fallback. The last two shipped with #258 (the code panel centred; GitHub's web flow with PKCE on the
+sign-in origin when the runtime gives the app's client secret, the device code otherwise, a LAN name or a
+phone always the code) and stay as they are. This change is the layout and the backdrop.
+
+- **Two columns on a wide screen** (`ui/src/app/landing.tsx`, `lg` and up): on the left a panel
+  (`data-landing-showcase`) says what the hopper does — a line naming it, the headline "Your GitHub
+  issues, worked on your machines." in white fading to the logo's teal, one sentence, and three steps
+  joined by a line: **Label an issue**, **It runs on your machine**, **Review the pull request**. On the
+  right the sign-in card (`data-landing-card`), unchanged inside, its subtitle "Sign in to see your
+  jobs." since the panel carries the headline. Narrower, the panel is not shown and the card stands alone,
+  centred, with the headline as its subtitle as before.
+- **The backdrop** (`index.css` "landing"): the aurora, dot grid, grain and vignette stay; the logo's
+  silhouette is gone, and in its place lanes: six faint lines across the page, tilted a little, each with a
+  job — a short bright streak in teal or violet — going along it at its own pace. Still for reduced motion
+  (each streak stops part way along); pure CSS, nothing fetched.
+
+**Verification:** `test/ui/signed-out-landing.test.ts` (the card beside the panel, its headline and the
+three steps, the lanes; the card not inside the panel), `test/ui/sign-in-device.test.ts` (unchanged: the
+redirect button, the centred code panel), and the built page drawn in a headless browser against a fake
+daemon at desktop and phone width: GitHub alone, every way to sign in, and the device code.
 
 ## Sources: signed in with GitHub, one GitHub piece (issue #254, 2026-10-06)
 
