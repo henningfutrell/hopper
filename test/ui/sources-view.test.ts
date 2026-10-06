@@ -2,7 +2,8 @@
 // The Sources view (issue #160) rendered in the whole app against a fake of the daemon's HTTP surface:
 // gh and the GitHub App are one GitHub section, the one in use first, the paused one saying why, and
 // gh login beside them under its own name. The GitHub account is connected from there
-// (issue #214): the panel says how the hopper connects, and shows the device code to enter.
+// (issue #214): the panel says how the hopper connects, and shows the device code to enter. Signed in
+// with GitHub, that connection is the one GitHub piece (issue #254).
 import { createElement } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -15,7 +16,7 @@ const SOURCES = [
   source('github-app', 'github-app', 'ok', { mode: 'app', slug: 'hopper-app' }),
 ];
 
-function fakeDaemon() {
+function fakeDaemon(over: Record<string, unknown> = {}) {
   const routes: Record<string, unknown> = {
     '/api/health': { ok: true, version: '0', router: 'pass-through', fallback: false, executors: [], uptimeS: 1 },
     '/api/queue': { waiting: [], running: [], waitingAnswer: [], ended: [] },
@@ -28,6 +29,7 @@ function fakeDaemon() {
       { provider: 'github', via: 'the hopper\'s app', state: 'not-connected' },
     ] },
     '/ui/api/connected-accounts': { provider: 'github', via: 'the hopper\'s app', state: 'waiting', userCode: 'WDJB-MJHT', verificationUri: 'https://github.com/login/device', expiresAt: '2099-01-01T00:00:00.000Z' },
+    ...over,
   };
   const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
   return vi.fn(async (input: string, init?: RequestInit) => {
@@ -52,13 +54,13 @@ class FakeEventSource {
 
 let root: Root | undefined;
 
-async function boot() {
+async function boot(over?: Record<string, unknown>) {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
   window.location.hash = '#sources';
   localStorage.clear();
   localStorage.setItem('jh_session', 'a'.repeat(64));
-  vi.stubGlobal('fetch', fakeDaemon());
+  vi.stubGlobal('fetch', fakeDaemon(over));
   vi.stubGlobal('EventSource', FakeEventSource);
   vi.resetModules();
   const app = '../../ui/src/app/app.tsx'; // browser code, type-checked by ui/tsconfig.json: imported by path
@@ -98,5 +100,26 @@ describe('Sources view: GitHub', () => {
     await act(async () => { button.click(); });
     await vi.waitFor(() => expect(panel()!.querySelector('[data-device-code]')?.textContent).toBe('WDJB-MJHT'));
     expect(document.querySelector('[aria-labelledby="sources-gitlab"]')).toBeNull();
+  });
+
+  it('signed in with GitHub: the connection is the one GitHub piece, with its sync; no gh, gh login or unset GitHub App (#254)', async () => {
+    await boot({
+      '/api/sources': { sources: [
+        source('github-account', 'github-account', 'ok', { mode: 'account', login: 'octo-user', authors: ['octo-user'], label: 'hopper' }),
+        source('github', 'github', 'disabled', { mode: 'gh', enabledSetting: 'auto', paused: 'GitHub account connected' }),
+        source('github-app', 'github-app', 'ok', { mode: 'app', paused: 'no GitHub App configured' }),
+      ] },
+      '/api/gh-login': { state: 'logged-out' },
+      '/api/connected-accounts': { accounts: [{ provider: 'github', via: 'the hopper\'s app', state: 'connected', account: 'octo-user', installations: ['octo-user'] }] },
+    });
+    const panel = () => document.querySelector('[data-connected-account="github"]');
+    await vi.waitFor(() => expect(panel()?.querySelector('[data-source-sync="github-account"]')).not.toBeNull());
+    expect(titles()).toEqual(['GitHub', 'GitHub account']);
+    expect(document.querySelector('[data-github-summary]')?.textContent).toBe('Issues are read, and jobs work, through your GitHub connection, octo-user.');
+    expect(panel()!.textContent).toContain('Connected as octo-user.');
+    expect(document.querySelectorAll('[data-source-use]')).toHaveLength(0);
+    expect(document.body.textContent).not.toContain('gh login');
+    expect(document.body.textContent).not.toContain('gh is not logged in');
+    expect(document.body.textContent).not.toContain('github-app');
   });
 });

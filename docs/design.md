@@ -5278,3 +5278,30 @@ without it no redirect and the device code; a denial; another browser's binding 
 `test/ui/sign-in-device.test.ts` (the redirect button, Use a code instead, the centred code panel with copy
 and Open GitHub, Cancel), `test/integration/unit-file.test.ts` (the secret is read without a warning and kept
 in no config).
+
+## Sources: signed in with GitHub, one GitHub piece (issue #254, 2026-10-06)
+
+Owner request: after signing in with GitHub through the hopper's app (#214), Sources still showed the
+overlapping GitHub pieces — the **gh login** panel (logged out), the `github` card (gh, paused because a
+GitHub account is connected) and the `github-account` card beside the **GitHub account** panel. Signing in
+with GitHub is the connection, and jobs work through it; the app-as-itself source (`github-app`) is only for
+an admin's own GitHub App in particular environments, not a built-in beside the user's connection.
+
+**As built** (`ui/src/model/sources.ts`, `ui/src/views/sources.tsx`, `ui/src/views/connected-account.tsx`,
+`ui/src/views/source-sync.tsx`; no wire or daemon change):
+- The connected account's source (`github-account`) is the connection itself: its sync (seen, created,
+  active, last and next sync, errors, authors and label) is shown inside the **GitHub account** panel while
+  connected, never as a card of its own.
+- **Connected** (that source neither paused nor switched off): the gh source and the **gh login** panel are
+  not shown, and the summary says issues are read, and jobs work, through the GitHub connection. A job gets
+  the account's token as `GH_TOKEN` (#214), so gh login on the host is not what jobs push as.
+- The `github-app` source is shown only where an admin set up an app: not while it is paused with `no GitHub
+  App configured`; a set-up app that is broken (another pause reason) or in use stays, connected or not.
+- Not connected: gh and gh login show as before (#160), with the summary pointing at Connect GitHub.
+The instances stay in the plugins config (Settings → Plugins shows and edits them); only Sources stops
+listing what is not a connection.
+
+**Verification:** `test/ui/sources.test.ts` (the model: connected shows no gh, gh login or unset app; an
+admin's app in use stays; a broken app stays; not connected) and `test/ui/sources-view.test.ts` (the whole
+app against a fake daemon, signed in with GitHub: the section holds only the GitHub account panel with its
+source's sync; no gh login, gh card or github-app).

@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- Once you sign in with GitHub, Sources shows that one GitHub connection, with what it reads and when, instead of leftover pieces for the command-line GitHub tool and its login.
 - The hopper always looks for a newer version on its own, every minute, and offers it once one is ready: a setting can no longer quietly stop it from checking.
 - The Sign-in settings page now shows sign-in as it works: GitHub first, with who the admin is and who else gets in, then any other ways to sign in, device links and no sign-in, each switch saying On or Off in words.
 - The sign-in page has a new look: one clear card over a calm night-sky background, with a big Sign in with GitHub button. Where the hopper is set up for it, that button takes you to GitHub and straight back signed in, with no code to type; otherwise the code it shows is large and centred, with a copy button and a button that opens GitHub. Connecting GitHub from Sources shows the code the same way.
