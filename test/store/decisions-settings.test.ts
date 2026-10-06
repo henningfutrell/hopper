@@ -6,10 +6,10 @@ const t = useTempStore();
 
 function decision(id: string, at: string): Decision {
   return {
-    id, at, trigger: 'tick', routerMode: 'shadow', lanes: [], start: [], hold: [], advice: [],
+    id, at, trigger: 'tick', lanes: [], start: [], hold: [], advice: [],
     reasons: ['r'],
     inputs: {
-      at, trigger: 'tick', routerMode: 'shadow', machines: [], lanes: [], usage: [], waiting: [], running: [], unavailableExecutors: [],
+      at, trigger: 'tick', machines: [], lanes: [], usage: [], waiting: [], running: [], unavailableExecutors: [],
       policy: { softLimit: 0.7, hardLimit: 0.95, routerCheapBoost: 10, laneIdleGraceMs: 1000, resumeBoost: 20 },
     },
   };
@@ -28,21 +28,6 @@ describe('decisions', () => {
     s.close();
     const s2 = t.open(path);
     expect(s2.decisions.list()).toEqual([d3, d2, d1]);
-    s2.close();
-  });
-});
-
-describe('settings', () => {
-  it('router mode is undefined until set, then survives reopen', () => {
-    const path = t.url();
-    const s = t.open(path);
-    expect(s.settings.getRouterMode()).toBeUndefined();
-    s.settings.setRouterMode('active');
-    s.settings.setRouterMode('shadow');
-    s.settings.setRouterMode('active');
-    s.close();
-    const s2 = t.open(path);
-    expect(s2.settings.getRouterMode()).toBe('active');
     s2.close();
   });
 });

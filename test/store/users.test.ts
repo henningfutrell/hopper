@@ -79,14 +79,14 @@ describe('a fresh store', () => {
     a.questions.create({ jobId: job.id, text: 'q?', recentOutput: '', detectedBy: 'marker', tier: 'human' });
     a.events.append({ type: 'job.queued', jobId: job.id, data: {} });
     a.config.write('rules', 'a rules', 'missing');
-    a.settings.setRouterMode('active');
+    a.settings.setQueueGate({ mode: 'review', autoAcceptPerHour: null });
     a.webhooks.add({ name: 'w', url: 'http://127.0.0.1:1/', events: ['job.*'], secretEnv: 'S', active: true });
     expect(b.jobs.list()).toEqual([]);
     expect(b.jobs.get(job.id)).toBeUndefined();
     expect(b.questions.list()).toEqual([]);
     expect(b.events.since(0)).toEqual([]);
     expect(b.config.read('rules')).toBeUndefined();
-    expect(b.settings.getRouterMode()).toBeUndefined();
+    expect(b.settings.getQueueGate()).toBeUndefined();
     expect(b.webhooks.list()).toEqual([]);
     a.close();
     b.close();
@@ -140,7 +140,7 @@ describe('migrations 17 and 21: an install from before becomes the default admin
     v16.run("INSERT INTO lanes (id, machine_id, number, body) VALUES ('l1', 'local', 1, ?)", JSON.stringify({ id: 'l1', machineId: 'local', number: 1, state: 'idle' }));
     v16.run("INSERT INTO decisions (id, body) VALUES ('dec1', ?)", JSON.stringify({ id: 'dec1' }));
     v16.run("INSERT INTO config_documents (name, text, updated_at) VALUES ('plugins.yaml', 'version: 1\n', ?), ('rules.md', 'be kind', ?), ('auth.yaml', 'version: 1\n', ?)", at, at, at);
-    v16.run("INSERT INTO settings (key, value) VALUES ('routerMode', 'active'), ('updateChannel', 'main'), ('autoUpdate', 'true'), ('pluginInstalls', '[]')");
+    v16.run("INSERT INTO settings (key, value) VALUES ('queueGate', '{\"mode\":\"review\",\"autoAcceptPerHour\":null}'), ('updateChannel', 'main'), ('autoUpdate', 'true'), ('pluginInstalls', '[]')");
     v16.run("INSERT INTO ui_sessions (token_hash, expires_at, role, identity) VALUES ('t1', '2099-01-01T00:00:00.000Z', 'operator', ?)",
       JSON.stringify({ provider: 'corp', subject: 'sub-9', name: 'Ada', groups: [] }));
     v16.run("INSERT INTO login_codes (code_hash, expires_at) VALUES ('c1', '2099-01-01T00:00:00.000Z')");
@@ -159,7 +159,7 @@ describe('migrations 17 and 21: an install from before becomes the default admin
     expect(admin.decisions.list().length).toBe(1);
     expect(admin.config.read('plugins')).toEqual({ version: 1 });
     expect(admin.config.read('rules')).toBe('be kind');
-    expect(admin.settings.getRouterMode()).toBe('active');
+    expect(admin.settings.getQueueGate()).toEqual({ mode: 'review', autoAcceptPerHour: null });
     // The sequence moved with its table: the next event follows the last one.
     const next = admin.events.append({ type: 'job.started', jobId: 'j1', data: {} });
     expect(next.seq).toBeGreaterThan(admin.events.since(0)[1]!.seq);

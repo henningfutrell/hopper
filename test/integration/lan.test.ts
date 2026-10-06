@@ -74,7 +74,7 @@ describe('the UI across the LAN', () => {
   it('mutations accept the LAN Origin with a session; another Origin is still 403', async () => {
     const token = await t.login();
     const mutate = (origin: string) => rawRequest(t.url, {
-      method: 'POST', path: '/ui/api/router-mode', body: JSON.stringify({ mode: 'active' }),
+      method: 'POST', path: '/ui/api/queue-gate', body: JSON.stringify({ mode: 'review', autoAcceptPerHour: null }),
       headers: { host: lanHost, origin, 'content-type': 'application/json', 'x-hopper-session': token, 'sec-fetch-site': 'same-origin' },
     });
     expect((await mutate(lanOrigin)).status).toBe(200);

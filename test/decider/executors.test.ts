@@ -35,9 +35,9 @@ describe('unavailable executors', () => {
     expect(d.hold[0]).toMatchObject({ jobId: 'r', reason: expect.stringMatching(/^executor herdr-claude unavailable: /) });
   });
 
-  it('active router mode admitting the job does not start it', () => {
+  it('the router admitting the job does not start it', () => {
     const d = decide(inputs({
-      routerMode: 'active', unavailableExecutors,
+      unavailableExecutors,
       machines: [machine({ executors: ['test', 'herdr-claude'] })],
       waiting: [job('h', { executor: 'herdr-claude', advice: advice('proceed_full') })],
     }), 'd1');

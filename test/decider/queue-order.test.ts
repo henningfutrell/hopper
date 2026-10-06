@@ -43,7 +43,6 @@ describe('step 6 with a queue order', () => {
 
   it('the order never admits a job: a held job stays held', () => {
     const d = decide(inputs({
-      routerMode: 'active',
       waiting: [job('asks', { advice: advice('ask_human') }), job('ok', { advice: advice('proceed_full') })],
       queueOrder: { sorter: 's', jobIds: ['asks', 'ok'] },
     }), 'd1');
@@ -65,19 +64,16 @@ describe('step 6 with a queue order', () => {
 });
 
 describe('effectivePriority (the decider\'s notion, exported for the engine)', () => {
-  it('shadow: the job\'s priority', () => {
-    expect(effectivePriority(job('a', { priority: 40, advice: advice('chat_only') }), 'shadow', policy)).toBe(40);
+  it('the job\'s priority, plus the cheap boost for cheap advice', () => {
+    expect(effectivePriority(job('a', { priority: 40, advice: advice('chat_only') }), policy)).toBe(40 + policy.routerCheapBoost);
+    expect(effectivePriority(job('a', { priority: 40, advice: advice('proceed_full') }), policy)).toBe(40);
   });
-  it('active: plus the cheap boost for cheap advice', () => {
-    expect(effectivePriority(job('a', { priority: 40, advice: advice('chat_only') }), 'active', policy)).toBe(40 + policy.routerCheapBoost);
-    expect(effectivePriority(job('a', { priority: 40, advice: advice('proceed_full') }), 'active', policy)).toBe(40);
-  });
-  it('a resuming job: plus the resume boost, either mode', () => {
-    expect(effectivePriority(job('a', { priority: 40, pendingAnswer: 'yes' }), 'shadow', policy)).toBe(40 + policy.resumeBoost);
-    expect(effectivePriority(job('a', { priority: 40, pendingAnswer: 'yes', advice: advice('chat_only') }), 'active', policy)).toBe(40 + policy.resumeBoost);
+  it('a resuming job: plus the resume boost, never the cheap boost', () => {
+    expect(effectivePriority(job('a', { priority: 40, pendingAnswer: 'yes' }), policy)).toBe(40 + policy.resumeBoost);
+    expect(effectivePriority(job('a', { priority: 40, pendingAnswer: 'yes', advice: advice('chat_only') }), policy)).toBe(40 + policy.resumeBoost);
   });
   it('the decider starts jobs with that effective priority', () => {
-    const d = decide(inputs({ routerMode: 'active', waiting: [job('a', { priority: 40, advice: advice('chat_only') })] }), 'd1');
+    const d = decide(inputs({ waiting: [job('a', { priority: 40, advice: advice('chat_only') })] }), 'd1');
     expect(d.start[0]!.effectivePriority).toBe(50);
   });
 });

@@ -15,7 +15,7 @@ const job = (id: string, accepted: boolean) => ({
 function fakeDaemon(waiting: ReturnType<typeof job>[]) {
   const unaccepted = waiting.filter((j) => !j.accepted).map((j) => j.id);
   const routes: Record<string, unknown> = {
-    '/api/health': { ok: true, version: '0', routerMode: 'shadow', router: 'pass-through', fallback: false, executors: [], uptimeS: 1 },
+    '/api/health': { ok: true, version: '0', router: 'pass-through', fallback: false, executors: [], uptimeS: 1 },
     '/api/queue': {
       waiting, running: [], waitingAnswer: [], ended: [],
       gate: { mode: 'review', autoAcceptPerHour: null }, presort: { sorter: 'oldest-first', jobIds: unaccepted, reject: [] },

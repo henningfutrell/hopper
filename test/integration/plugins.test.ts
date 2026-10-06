@@ -32,15 +32,15 @@ describe('router chosen from what is detected, no grok-bot-jev checkout', () => 
   it('no router in the plugins config → pass-through, chosen, not a fallback; /api/health and /api/router say so', async () => {
     const a = await start();
     const health = (await a.api('GET', '/api/health')).body;
-    expect(health).toMatchObject({ ok: true, routerMode: 'shadow', router: 'pass-through', fallback: false });
-    expect((await a.api('GET', '/api/router')).body).toEqual({ mode: 'shadow', router: 'pass-through', plugin: 'pass-through', fallback: false });
+    expect(health).toMatchObject({ ok: true, router: 'pass-through', fallback: false });
+    expect((await a.api('GET', '/api/router')).body).toEqual({ router: 'pass-through', plugin: 'pass-through', fallback: false });
 
     const job = await a.pull({ op: 'echo' });
     const advised = await waitFor(async () => (await a.job(job.id)).advice, { what: 'advice' });
     expect(advised).toMatchObject({ action: 'proceed_full', source: 'pass-through' });
     const prioritized = (await a.events('types=job.prioritized')).find((e) => e.jobId === job.id)!;
-    expect(prioritized.schemaVersion).toBe(2);
-    expect(prioritized.data).toMatchObject({ advice: { source: 'pass-through' }, mode: 'shadow' });
+    expect(prioritized.schemaVersion).toBe(3);
+    expect(prioritized.data).toEqual({ advice: expect.objectContaining({ source: 'pass-through' }), statusAtAdvice: expect.any(String) });
   });
 
   it('GET /api/plugins: roles, the detected instance, and every plugin; a custom router that can run is chosen', async () => {
@@ -67,7 +67,7 @@ describe('router chosen from what is detected, no grok-bot-jev checkout', () => 
   it('a router named in the plugins config that cannot run → pass-through as fallback', async () => {
     const a = await start({ before: (d) => writePlugins(d, { version: 1, router: { name: 'gate-router', plugin: 'gate-router', options: { jevPath: '/nonexistent/grok-bot-jev' } } }) });
     expect((await a.api('GET', '/api/router')).body).toEqual({
-      mode: 'shadow', router: 'gate-router', plugin: 'pass-through', fallback: true, reason: expect.stringContaining('/nonexistent/grok-bot-jev/src/router.py'),
+      router: 'gate-router', plugin: 'pass-through', fallback: true, reason: expect.stringContaining('/nonexistent/grok-bot-jev/src/router.py'),
     });
     const job = await a.pull({ op: 'echo' });
     expect(await waitFor(async () => (await a.job(job.id)).advice, { what: 'advice' })).toMatchObject({ source: 'fallback', reason: expect.stringMatching(/^router gate-router unavailable: /) });

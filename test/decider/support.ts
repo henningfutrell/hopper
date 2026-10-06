@@ -16,12 +16,13 @@ export function advice(action: AdviceAction): Advice {
   return { action, reason: `because ${action}`, details: {}, source: 'fake', at: NOW };
 }
 
+/** A waiting job, already advised `proceed_full`; `advice: undefined` makes one the router has not seen. */
 export function job(id: string, over: Partial<Job> & { executor?: string; machineId?: string } = {}): Job {
   const { executor, machineId, ...rest } = over;
   return {
     id,
     spec: { executor: executor ?? 'test', payload: {}, ...(machineId ? { machineId } : {}) },
-    priority: 50, status: 'queued', approved: false, attempts: 0,
+    priority: 50, status: 'queued', approved: false, attempts: 0, advice: advice('proceed_full'),
     createdAt: '2026-10-02T11:00:00.000Z', updatedAt: '2026-10-02T11:00:00.000Z',
     ...rest,
   };
@@ -45,7 +46,7 @@ export function reading(used: number, limit = 100, over: Partial<UsageReading> =
 
 export function inputs(over: Partial<DecisionInputs> = {}): DecisionInputs {
   return {
-    at: NOW, trigger: 'tick', routerMode: 'shadow', machines: [machine()], lanes: [], usage: [],
+    at: NOW, trigger: 'tick', machines: [machine()], lanes: [], usage: [],
     waiting: [], running: [], unavailableExecutors: [], policy, ...over,
   };
 }

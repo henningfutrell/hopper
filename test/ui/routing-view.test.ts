@@ -34,7 +34,7 @@ interface Call { path: string; method: string; body?: Record<string, unknown> }
 function fakeDaemon() {
   const calls: Call[] = [];
   const routes: Record<string, unknown> = {
-    '/api/health': { ok: true, version: '0', routerMode: 'shadow', router: 'pass-through', fallback: false, executors: [], uptimeS: 1 },
+    '/api/health': { ok: true, version: '0', router: 'pass-through', fallback: false, executors: [], uptimeS: 1 },
     '/api/queue': { waiting: [], running: [], waitingAnswer: [], ended: [] },
     '/api/machines': { machines: [] }, '/api/decisions': { decisions: [] }, '/api/events': { events: [] },
     '/api/webhooks': { subscriptions: [] }, '/api/webhooks/deliveries': { deliveries: [] },
@@ -108,6 +108,14 @@ describe('Routing view', () => {
     await vi.waitFor(() => expect(item('oldest-first')).toBeDefined());
     const text = document.body.textContent!;
     for (const s of ['pass-through', 'gate-router', 'no grok-bot-jev checkout', 'priority', 'oldest-first']) expect(text).toContain(s);
+  });
+
+  it('the router panel has no mode: no shadow or active buttons (issue #211)', async () => {
+    await boot();
+    await vi.waitFor(() => expect(item('oldest-first')).toBeDefined());
+    expect(document.querySelector('[aria-label="Router mode"]')).toBeNull();
+    expect([...document.querySelectorAll('button')].map((b) => b.textContent?.trim())).not.toEqual(expect.arrayContaining(['shadow']));
+    expect(document.body.textContent).not.toContain('shadow');
   });
 
   it('Use on a queue sorter posts a select against the report version', async () => {

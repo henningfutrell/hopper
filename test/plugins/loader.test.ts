@@ -38,7 +38,7 @@ describe('custom plugin loader', () => {
       ['js-router', join(dir, 'js-router', 'index.js')],
     ]);
     const def = r.plugins.find((p) => p.definition.id === 'always-proceed')!.definition as PluginDefinition<'router'>;
-    const router = await def.create({ clock: fixedClock, logger: { info() {}, warn() {} }, dataDir: dir, userEnv: {}, scratchDir: dir, instanceName: 'r', env: () => undefined, routerMode: () => 'shadow' }, { note: 'hi' });
+    const router = await def.create({ clock: fixedClock, logger: { info() {}, warn() {} }, dataDir: dir, userEnv: {}, scratchDir: dir, instanceName: 'r', env: () => undefined }, { note: 'hi' });
     expect(await router.advise({} as never)).toMatchObject({ action: 'proceed_full', reason: 'hi', source: 'always-proceed' });
   });
 

@@ -9,7 +9,7 @@ export { VALID_DATA };
 /** A payload that must fail for the type (wrong type of a required field, or a required field missing). */
 export const INVALID_DATA: Partial<Record<EventType, Record<string, unknown>>> = {
   'job.queued': { priority: 60 },
-  'job.prioritized': { advice, mode: 'sideways', statusAtAdvice: 'queued' },
+  'job.prioritized': { advice, statusAtAdvice: 'sideways' },
   'job.held': {},
   'job.claimed': { attempts: '1' },
   'job.started': {},
@@ -21,7 +21,6 @@ export const INVALID_DATA: Partial<Record<EventType, Record<string, unknown>>> =
   'job.reprioritized': { from: 50, to: 'high', reason: 'r' },
   'lane.closed': {},
   'decision.made': { decisionId: 'd1' },
-  'router.mode_changed': { from: 'shadow', to: 'loud' },
   'question.asked': { questionId: 'q1' },
   'question.escalated': { questionId: 'q1', target: 7, reason: 'r', text: 't', jobId: 'j' },
   'question.answered': { questionId: 'q1', by: '', answer: 'a' },

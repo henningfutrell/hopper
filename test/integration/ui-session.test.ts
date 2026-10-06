@@ -86,16 +86,16 @@ describe('login', () => {
     const token = await t.login();
     expect((await t.ui('/ui/api/logout', {}, { token })).status).toBe(200);
     expect(JSON.parse((await session(token)).text)).toMatchObject({ authenticated: false });
-    expect((await t.ui('/ui/api/router-mode', { mode: 'active' }, { token })).status).toBe(403);
+    expect((await t.ui('/ui/api/queue-gate', { mode: 'review', autoAcceptPerHour: null }, { token })).status).toBe(403);
   });
 });
 
 describe('UI mutations', () => {
   it('succeed with a session, exact Origin (127.0.0.1 or localhost), same-origin fetch and JSON', async () => {
     const token = await t.login();
-    expect((await t.ui('/ui/api/router-mode', { mode: 'active' }, { token, headers: { 'sec-fetch-site': 'same-origin' } })).status).toBe(200);
+    expect((await t.ui('/ui/api/queue-gate', { mode: 'review', autoAcceptPerHour: null }, { token, headers: { 'sec-fetch-site': 'same-origin' } })).status).toBe(200);
     const port = new URL(t.url).port;
-    expect((await t.ui('/ui/api/router-mode', { mode: 'shadow' }, { token, headers: { origin: `http://localhost:${port}`, host: `localhost:${port}` } })).status).toBe(200);
+    expect((await t.ui('/ui/api/queue-gate', { mode: 'auto-accept', autoAcceptPerHour: null }, { token, headers: { origin: `http://localhost:${port}`, host: `localhost:${port}` } })).status).toBe(200);
   });
 
   it.each([
@@ -107,18 +107,18 @@ describe('UI mutations', () => {
     ['Origin null', { headers: { origin: 'null' } }, true],
     ['Sec-Fetch-Site cross-site', { headers: { 'sec-fetch-site': 'cross-site' } }, true],
     ['Sec-Fetch-Site same-site', { headers: { 'sec-fetch-site': 'same-site' } }, true],
-    ['a text/plain body', { headers: { 'content-type': 'text/plain' }, rawBody: '{"mode":"active"}' }, true],
-    ['a form body', { headers: { 'content-type': 'application/x-www-form-urlencoded' }, rawBody: 'mode=active' }, true],
+    ['a text/plain body', { headers: { 'content-type': 'text/plain' }, rawBody: '{"mode":"review","autoAcceptPerHour":null}' }, true],
+    ['a form body', { headers: { 'content-type': 'application/x-www-form-urlencoded' }, rawBody: 'mode=review' }, true],
   ])('are 403 with %s, and change nothing', async (_name, o, withToken) => {
     const token = await t.login();
-    const res = await t.ui('/ui/api/router-mode', { mode: 'active' }, { ...(withToken ? { token } : {}), ...o });
+    const res = await t.ui('/ui/api/queue-gate', { mode: 'review', autoAcceptPerHour: null }, { ...(withToken ? { token } : {}), ...o });
     expect(res.status).toBe(403);
     expect((res.body as { error: string }).error).toEqual(expect.any(String));
-    expect((await t.api('GET', '/api/router')).body.mode).toBe('shadow');
+    expect((await t.api('GET', '/api/queue')).body.gate.mode).toBe('auto-accept');
   });
 
   it('every mutation route refuses a request without a session', async () => {
-    for (const path of ['/ui/api/jobs/x/cancel', '/ui/api/jobs/x/approve', '/ui/api/questions/x/answer', '/ui/api/questions/x/close', '/ui/api/router-mode', '/ui/api/logout']) {
+    for (const path of ['/ui/api/jobs/x/cancel', '/ui/api/jobs/x/approve', '/ui/api/questions/x/answer', '/ui/api/questions/x/close', '/ui/api/queue-gate', '/ui/api/logout']) {
       expect((await t.ui(path, {})).status, path).toBe(403);
     }
   });
@@ -130,7 +130,7 @@ describe('UI mutations', () => {
     t = await startTestApp({ dbPath: t.dbPath });
     const after = JSON.parse((await session(token)).text);
     expect({ ...after, signIn: undefined }).toEqual({ ...before, signIn: undefined });
-    expect((await t.ui('/ui/api/router-mode', { mode: 'active' }, { token })).status).toBe(200);
+    expect((await t.ui('/ui/api/queue-gate', { mode: 'review', autoAcceptPerHour: null }, { token })).status).toBe(200);
   });
 
   it('the store keeps only a hash of the session token, never the token', async () => {
@@ -163,6 +163,6 @@ describe('UI mutations', () => {
     expect(JSON.parse((await session(token)).text).authenticated).toBe(true);
     await new Promise((r) => setTimeout(r, 300));
     expect(JSON.parse((await session(token)).text)).toMatchObject({ authenticated: false });
-    expect((await t.ui('/ui/api/router-mode', { mode: 'active' }, { token })).status).toBe(403);
+    expect((await t.ui('/ui/api/queue-gate', { mode: 'review', autoAcceptPerHour: null }, { token })).status).toBe(403);
   });
 });

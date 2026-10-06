@@ -66,14 +66,27 @@ describe('superseded payload versions (stored events are never rewritten)', () =
   const v1Advice = { action: 'proceed_full', reason: 'ok', jevUsed: true, details: {}, source: 'fake', at: '2026-10-02T00:00:00.000Z' };
   const old = (type: string, data: Record<string, unknown>) => ({ ...event('job.held', data), type: type as EventType, schemaVersion: 1 });
 
-  it('the renamed router payloads are v2 and router.mode_changed is v1', () => {
-    expect(EVENT_SCHEMA_VERSIONS['job.prioritized']).toBe(2);
-    expect(EVENT_SCHEMA_VERSIONS['decision.made']).toBe(2);
-    expect(EVENT_SCHEMA_VERSIONS['router.mode_changed']).toBe(1);
+  it('no router mode: job.prioritized and decision.made are v3, router.mode_changed is retired', () => {
+    expect(EVENT_SCHEMA_VERSIONS['job.prioritized']).toBe(3);
+    expect(EVENT_SCHEMA_VERSIONS['decision.made']).toBe(3);
+    expect(EVENT_TYPES).not.toContain('router.mode_changed');
     expect(EVENT_TYPES).not.toContain('jev.mode_changed');
     expect(Object.keys(LEGACY_EVENT_SCHEMAS).sort()).toEqual([
-      'decision.made.v1', 'jev.mode_changed.v1', 'job.prioritized.v1', 'question.answered.v1', 'question.escalated.v1',
+      'decision.made.v1', 'decision.made.v2', 'jev.mode_changed.v1', 'job.prioritized.v1', 'job.prioritized.v2',
+      'question.answered.v1', 'question.escalated.v1', 'router.mode_changed.v1',
     ]);
+  });
+
+  it('a stored v2 job.prioritized, v2 decision.made and router.mode_changed still validate; v3 carries no mode', () => {
+    const advice = { action: 'proceed_full', reason: 'ok', details: {}, source: 'fake', at: '2026-10-02T00:00:00.000Z' };
+    const v2 = (type: string, data: Record<string, unknown>) => ({ ...old(type, data), schemaVersion: 2 });
+    expect(validateEvent(v2('job.prioritized', { advice, mode: 'shadow', statusAtAdvice: 'queued' }))).toEqual({ ok: true });
+    expect(validateEvent(v2('decision.made', {
+      decisionId: 'd', trigger: 't', routerMode: 'active', starts: [], holds: [], lanes: [], divergences: [],
+    }))).toEqual({ ok: true });
+    expect(validateEvent(old('router.mode_changed', { from: 'shadow', to: 'active' }))).toEqual({ ok: true });
+    expect(validateEvent({ ...old('job.prioritized', { advice, mode: 'active', statusAtAdvice: 'queued' }), schemaVersion: 3 }).ok).toBe(false);
+    expect(validateEvent({ ...old('job.prioritized', { advice, statusAtAdvice: 'queued' }), schemaVersion: 3 })).toEqual({ ok: true });
   });
 
   it('a stored v1 job.prioritized, decision.made and jev.mode_changed validate against their v1 schemas', () => {

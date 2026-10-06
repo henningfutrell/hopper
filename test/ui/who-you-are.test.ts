@@ -74,3 +74,16 @@ describe('sign in first', () => {
     expect(document.querySelector('input[aria-label="Login code"]')).toBeTruthy();
   });
 });
+
+describe('the top bar has no router mode (issue #211)', () => {
+  it('signed in as an admin: the router\'s name, and no shadow or active switch', async () => {
+    await render('../../ui/src/app/header.tsx', 'Header', {
+      authed: true, signIn: offer(true), user: { id: 'owner', name: 'Owner', role: 'admin', realm: 'password', identity: 'owner' },
+      health: { ok: true, version: '0', router: 'gate-router', fallback: false, executors: [], uptimeS: 1 },
+    });
+    const text = document.body.textContent ?? '';
+    expect(text).toContain('gate-router');
+    expect(text).not.toMatch(/shadow|active/);
+    expect(document.body.innerHTML).not.toMatch(/router mode/i);
+  });
+});

@@ -40,7 +40,7 @@ describe('removed inbound routes', () => {
     const res = await a.api(method, path, body);
     expect(res.status).toBe(404);
     expect((await a.api('GET', '/api/jobs')).body.jobs).toEqual([]);
-    expect((await a.api('GET', '/api/router')).body.mode).toBe('shadow');
+    expect((await a.api('GET', '/api/queue')).body.gate.mode).toBe('auto-accept');
   });
 });
 

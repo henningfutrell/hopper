@@ -39,7 +39,6 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
       databaseUrl: 'postgres://u:p@db:5432/jh',
       workDir: join(tmpdir(), 'hopper'),
       tickMs: 2000,
-      routerMode: 'shadow',
       softLimit: 0.7,
       hardLimit: 0.95,
       routerCheapBoost: 10,
@@ -64,7 +63,7 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
   it('reads every process setting; paths are taken as given', () => {
     const c = loadConfig({
       HOPPER_PORT: '0', HOPPER_DATABASE_URL: 'postgres://jh:pw@db:5432/jh', HOPPER_WORK_DIR: '/var/tmp/jh', HOPPER_TICK_MS: '50',
-      HOPPER_ROUTER_MODE: 'active', HOPPER_SOFT_LIMIT: '0.5', HOPPER_HARD_LIMIT: '0.9', HOPPER_ROUTER_CHEAP_BOOST: '5',
+      HOPPER_SOFT_LIMIT: '0.5', HOPPER_HARD_LIMIT: '0.9', HOPPER_ROUTER_CHEAP_BOOST: '5',
       HOPPER_WEBHOOK_BASE_MS: '20', HOPPER_LANE_IDLE_GRACE_MS: '100', HOPPER_ANSWER_TIMEOUT_MS: '1000',
       HOPPER_HUMAN_RENOTIFY_MS: '10', HOPPER_HUMAN_TIMEOUT_MS: '20',
       HOPPER_RESUME_BOOST: '7', HOPPER_MAX_QUESTIONS: '1', HOPPER_KEEP_PANES: 'true', HOPPER_LOCAL_MACHINE: 'false',
@@ -73,7 +72,7 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
       HOPPER_UPDATE_CHECK_MS: '0', HOPPER_RESTART: 'respawn',
     });
     expect(c).toEqual({
-      host: '::', port: 0, databaseUrl: 'postgres://jh:pw@db:5432/jh', workDir: '/var/tmp/jh', tickMs: 50, routerMode: 'active',
+      host: '::', port: 0, databaseUrl: 'postgres://jh:pw@db:5432/jh', workDir: '/var/tmp/jh', tickMs: 50,
       softLimit: 0.5, hardLimit: 0.9, routerCheapBoost: 5, webhookBaseMs: 20, laneIdleGraceMs: 100, answerTimeoutMs: 1000,
       humanRenotifyMs: 10, humanTimeoutMs: 20, resumeBoost: 7, maxQuestions: 1, keepPanes: true, localMachine: false,
       uiSessionHours: 1.5, pluginDir: '/srv/p', publicUrl: 'https://hopper.example.com',
@@ -105,16 +104,16 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
   it('a part-choosing variable is no longer read: it lands in leftoverEnv with every other unread HOPPER_* variable, unvalidated', () => {
     const c = loadConfig({
       HOPPER_EXECUTORS: 'Not A Name', HOPPER_LOCAL_LANES: '-1', HOPPER_CLAUDE_CWD: '~/w', HOPPER_SOURCES_FILE: '~/s.yaml',
-      HOPPER_JEV_MODE: 'active', HOPPER_JEV_ADVISOR: 'router', HOPPER_GITHUB_API: 'not a url', HOPPER_ANSWERER: 'fake',
+      HOPPER_JEV_MODE: 'active', HOPPER_ROUTER_MODE: 'shadow', HOPPER_JEV_ADVISOR: 'router', HOPPER_GITHUB_API: 'not a url', HOPPER_ANSWERER: 'fake',
       HOPPER_GROKBOT_WEBHOOK_FILE: '~/g.env', HOPPER_HOST: '0.0.0.0', HOPPER_PORT: '0', OTHER: 'x', HOPPER_EMPTY: '',
       ...DB,
     });
     expect(c.leftoverEnv).toEqual({
       HOPPER_EXECUTORS: 'Not A Name', HOPPER_LOCAL_LANES: '-1', HOPPER_CLAUDE_CWD: '~/w', HOPPER_SOURCES_FILE: '~/s.yaml',
-      HOPPER_JEV_MODE: 'active', HOPPER_JEV_ADVISOR: 'router', HOPPER_GITHUB_API: 'not a url', HOPPER_ANSWERER: 'fake',
+      HOPPER_JEV_MODE: 'active', HOPPER_ROUTER_MODE: 'shadow', HOPPER_JEV_ADVISOR: 'router', HOPPER_GITHUB_API: 'not a url', HOPPER_ANSWERER: 'fake',
       HOPPER_GROKBOT_WEBHOOK_FILE: '~/g.env', HOPPER_HOST: '0.0.0.0',
     });
-    expect(c.routerMode).toBe('shadow');
+    expect(c).not.toHaveProperty('routerMode');
     expect(c).not.toHaveProperty('executors');
     expect(c).not.toHaveProperty('localLanes');
     expect(c).not.toHaveProperty('sourcesFile');
@@ -125,7 +124,6 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
     ['HOPPER_PORT', 'abc'],
     ['HOPPER_PORT', '70000'],
     ['HOPPER_TICK_MS', '0'],
-    ['HOPPER_ROUTER_MODE', 'loud'],
     ['HOPPER_RESTART', 'reboot'],
     ['HOPPER_UPDATE_CHECK_MS', '-1'],
     ['HOPPER_SOFT_LIMIT', '1.5'],

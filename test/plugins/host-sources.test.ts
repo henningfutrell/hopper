@@ -63,7 +63,7 @@ function start(o: { file?: object; kit?: DetectionKit; executors?: () => string[
   if (o.file !== undefined) config.set(PLUGINS, o.file);
   host = createPluginHost({
     pluginDir: join(dir, 'plugins'), config, dataDir: dir, clock: fixedClock,
-    logger: { info() {}, warn() {} }, routerMode: () => 'shadow', kit: o.kit ?? fakeKit({ exists: async () => false }),
+    logger: { info() {}, warn() {} }, kit: o.kit ?? fakeKit({ exists: async () => false }),
     builtins: [...BUILTIN_PLUGINS, fixedUsage, machineUsage],
     defaultLevels: [],
     defaultExecutors: [{ name: 'test', plugin: 'test' }],

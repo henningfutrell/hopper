@@ -71,17 +71,13 @@ describe('machines, lanes and decisions', () => {
   });
 });
 
-describe('router mode and approval through the UI session', () => {
-  it('the UI switches router mode (router.mode_changed) and refuses an unknown mode', async () => {
+describe('the router and approval through the UI session', () => {
+  it('there is no router mode: the router reads its status only, and no route switches a mode', async () => {
     const token = await t.login();
-    expect((await t.api('GET', '/api/router')).body).toEqual({ mode: 'shadow', router: 'fake', plugin: 'fake', fallback: false });
-    const res = await t.ui('/ui/api/router-mode', { mode: 'active' }, { token });
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual({ mode: 'active', router: 'fake', plugin: 'fake', fallback: false });
-    expect((await t.ui('/ui/api/router-mode', { mode: 'loud' }, { token })).status).toBe(400);
+    expect((await t.api('GET', '/api/router')).body).toEqual({ router: 'fake', plugin: 'fake', fallback: false });
+    expect((await t.ui('/ui/api/router-mode', { mode: 'active' }, { token })).status).toBe(404);
     expect((await t.ui('/ui/api/jev', { mode: 'shadow' }, { token })).status).toBe(404);
-    expect((await t.events()).filter((e) => e.type === 'router.mode_changed')).toEqual([expect.objectContaining({ data: { from: 'shadow', to: 'active' } })]);
-    expect((await t.api('GET', '/api/health')).body.routerMode).toBe('active');
+    expect((await t.api('GET', '/api/health')).body).not.toHaveProperty('routerMode');
   });
 
   it('the UI approves a waiting job (job.approved); terminal and unknown jobs are refused', async () => {
