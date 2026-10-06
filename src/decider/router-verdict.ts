@@ -2,13 +2,13 @@ import type { Divergence, Job } from '../domain/types.ts';
 
 export interface RouterVerdict {
   admit: boolean;
-  /** Priority added to the job in active mode. */
+  /** Priority added to the job. */
   boost: number;
   /** Hold reason when `admit` is false. */
   reason: string;
 }
 
-/** Step 3: what the router's advice says about one waiting job. Computed in both modes. */
+/** Step 3: what the router's advice says about one waiting job. */
 export function routerVerdict(job: Job, cheapBoost: number): RouterVerdict {
   const advice = job.advice;
   if (job.approved) return { admit: true, boost: 0, reason: '' };

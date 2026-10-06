@@ -92,7 +92,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
   const find = (id: string): PluginDefinition | undefined => entries.find((e) => e.definition.id === id)?.definition;
   const runnableExecutors = () => (executors.built ?? []).flatMap((b) => (b.executor ? [b.executor.name] : []));
   const deps: SlotDeps = {
-    kit, clock: o.clock, logger: o.logger, dataDir: o.dataDir, userEnv: o.userEnv ?? {}, routerMode: o.routerMode, find,
+    kit, clock: o.clock, logger: o.logger, dataDir: o.dataDir, userEnv: o.userEnv ?? {}, find,
     jobSource: o.jobSourceContext ?? NO_SOURCE_CONTEXT, executors: o.machineContext?.executors ?? runnableExecutors,
     target: o.machineContext?.target ?? createTargetPool({ probe: async () => ({ online: false }) }),
     machine: async (id) => (await liveMachines.list()).find((m) => m.id === id),

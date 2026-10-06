@@ -11,7 +11,7 @@ describe('the queue gate in the decider', () => {
   });
 
   it('an approval does not pass the gate: approving overrides router holds, not acceptance', () => {
-    const d = decide(inputs({ routerMode: 'active', waiting: [job('new', { accepted: false, approved: true })] }), 'd1');
+    const d = decide(inputs({ waiting: [job('new', { accepted: false, approved: true })] }), 'd1');
     expect(d.hold).toEqual([{ jobId: 'new', reason: 'awaiting acceptance' }]);
   });
 });

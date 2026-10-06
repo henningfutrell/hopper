@@ -27,13 +27,17 @@ async function boot(plugins: Record<string, unknown> = {}, before?: (dataDir: st
 
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** One busy lane, then an older low-priority job and a newer high-priority one waiting behind it. */
+/**
+ * One busy lane, then an older low-priority job and a newer high-priority one waiting behind it, both
+ * advised: a job waits for the router's advice (issue #211), so only advised jobs compete for the lane.
+ */
 async function queueBehindBlocker(a: TestApp): Promise<{ blocker: Job; older: Job; newer: Job }> {
   const blocker = await a.pull({ op: 'sleep', ms: 30000 });
   await a.waitForStatus(blocker.id, 'running');
   const older = await a.pull({ op: 'echo' }, { priority: 10 });
   await pause(5);
   const newer = await a.pull({ op: 'echo' }, { priority: 90 });
+  await waitFor(async () => (await a.job(older.id)).advice !== undefined && (await a.job(newer.id)).advice !== undefined, { what: 'both advised' });
   return { blocker, older, newer };
 }
 

@@ -32,10 +32,10 @@ describe('no sign-in (the sign-in config\'s none)', () => {
     expect(await session(app, tokenOf(res.text))).toMatchObject({ authenticated: true, user: { id: 'admin', name: 'admin', role: 'operator', realm: 'none', identity: 'no sign-in' } });
   });
 
-  it('the session acts within its role: an operator may not switch the router mode', async () => {
+  it('the session acts within its role: an operator may not set the queue gate', async () => {
     const { app, origin, host } = await start({ version: 1, none: { role: 'operator' } });
     const token = tokenOf((await rawRequest(app.url, { path: '/ui/auth/none', ...json(host, origin, {}) })).text);
-    const r = await app.ui('/ui/api/router-mode', { mode: 'active' }, { token });
+    const r = await app.ui('/ui/api/queue-gate', { mode: 'review', autoAcceptPerHour: null }, { token });
     expect(r.status).toBe(403);
     expect(r.body).toMatchObject({ needs: 'admin' });
   });

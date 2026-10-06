@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import type { SourceStatus } from '../../src/domain/types.ts';
 import { DISMISSED_CAP, dismiss, forgetCleared, noticeKey, parseDismissed } from '../../ui/src/model/dismissed.ts';
 
-const health = (fallback: boolean) => ({ ok: true, version: '0', routerMode: 'active' as const, router: 'jev', fallback, executors: [], uptimeS: 1 });
+const health = (fallback: boolean) => ({ ok: true, version: '0', router: 'jev', fallback, executors: [], uptimeS: 1 });
 const source = (name: string, state: 'ok' | 'error', lastError?: string): SourceStatus =>
   ({ name, kind: 'github', state, itemsSeen: 0, jobsCreated: 0, activeJobs: 0, detail: {}, ...(lastError ? { lastError } : {}) });
 

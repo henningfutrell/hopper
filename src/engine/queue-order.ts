@@ -3,11 +3,11 @@
 // accepted jobs the user ranked come first, by rank. Read for every Decision and for /api/queue, so
 // the queue the UI shows is the order the decider uses.
 import { effectivePriority } from '../decider/assign.ts';
-import type { Job, QueueOrder, RouterMode } from '../domain/types.ts';
+import type { Job, QueueOrder } from '../domain/types.ts';
 import type { EngineContext } from './context.ts';
 
-export function queueOrder(c: EngineContext, waiting: readonly Job[], mode: RouterMode): QueueOrder {
-  const entries = waiting.map((job) => ({ job, effectivePriority: effectivePriority(job, mode, c.policy) }));
+export function queueOrder(c: EngineContext, waiting: readonly Job[]): QueueOrder {
+  const entries = waiting.map((job) => ({ job, effectivePriority: effectivePriority(job, c.policy) }));
   const sorted = entries.length ? c.queueSorter.sort(entries) : [];
   const ranked = waiting.filter((j) => j.accepted !== false && j.userRank !== undefined)
     .sort((a, b) => a.userRank! - b.userRank!).map((j) => j.id);

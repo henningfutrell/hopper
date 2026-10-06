@@ -57,16 +57,17 @@ function heldLevel() {
 }
 
 describe('everything runs in parallel', () => {
-  it('N free lanes and N queued jobs: one Decision claims all N, and all N run at once', async () => {
+  it('N free lanes and N queued jobs: all N are claimed and run at once, each as soon as the router advised it', async () => {
     const a = await start(4);
     const jobs = await pullAll(a, [1, 2, 3, 4].map(() => ({ op: 'sleep', ms: 3000 })));
     await waitFor(() => a.scripted.payloads.length === 4, { what: '4 executors started' });
     expect((await ofType(a, 'job.started')).map((e) => e.jobId).sort()).toEqual(jobs.map((j) => j.id).sort());
     const claimed = await ofType(a, 'job.claimed');
     expect(claimed.map((e) => e.jobId).sort()).toEqual(jobs.map((j) => j.id).sort());
-    expect(new Set(claimed.map((e) => e.decisionId)).size).toBe(1);
-    const [d] = (await decisions(a)).filter((x) => x.start.length > 0);
-    expect(d!.start).toHaveLength(4);
+    // The router's advice is applied (issue #211): a Decision claims every job advised by then, so the
+    // claims may span Decisions as the advice arrives — but no Decision with room holds an advised job.
+    for (const d of await decisions(a)) expect(d.hold.filter((h) => h.reason.startsWith('all lanes busy'))).toEqual([]);
+    expect((await a.api<{ running: Job[] }>('GET', '/api/queue')).body.running).toHaveLength(4);
   });
 
   it('more queued than lanes: every lane fills; the rest are held for lanes alone', async () => {

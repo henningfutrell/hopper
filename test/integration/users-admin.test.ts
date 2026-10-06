@@ -126,6 +126,6 @@ describe('an admin reads the totals, never a user\'s work', () => {
     expect(r.status).toBe(200);
     expect(r.body).toEqual({ ok: true, version: expect.any(String), uptimeS: expect.any(Number) });
     const full = await a.api('GET', '/api/health', undefined, session(await a.login()));
-    expect(full.body).toMatchObject({ ok: true, routerMode: 'shadow', executors: expect.any(Array) });
+    expect(full.body).toMatchObject({ ok: true, router: expect.any(String), executors: expect.any(Array) });
   });
 });

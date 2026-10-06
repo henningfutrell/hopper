@@ -1,7 +1,7 @@
 import type {
   Clock, ExecutorRegistry, IdGen, MachineSource, QuestionService, QueueSorter, Router, RoutingView, SettableUsageSource, UserStore, UsageSource,
 } from '../domain/ports.ts';
-import type { DeciderPolicy, Job, RouterMode } from '../domain/types.ts';
+import type { DeciderPolicy, Job } from '../domain/types.ts';
 
 export interface EngineOptions {
   store: UserStore;
@@ -22,8 +22,6 @@ export interface EngineOptions {
   routing: RoutingView;
   policy: DeciderPolicy;
   tickMs: number;
-  /** Router mode used only when the store has none yet. */
-  initialRouterMode: RouterMode;
   /** The answer chain. Its onAnswered/onExpired/onDismissed must call the engine's (see main.ts). */
   questions: QuestionService;
   /** At most this many questions per job; the next one fails it (design.md B6). */
@@ -35,9 +33,8 @@ export interface EngineOptions {
 }
 
 /** What the engine's modules share. */
-export interface EngineContext extends Required<Omit<EngineOptions, 'fakeUsage' | 'initialRouterMode' | 'tickMs'>> {
+export interface EngineContext extends Required<Omit<EngineOptions, 'fakeUsage' | 'tickMs'>> {
   fakeUsage?: SettableUsageSource;
-  routerMode(): RouterMode;
   /** Ask for a Decision; coalesces with one already running. */
   trigger(reason: string): void;
   /** True once stop() began: nothing may write to the store after this. */

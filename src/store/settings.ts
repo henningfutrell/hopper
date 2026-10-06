@@ -1,5 +1,5 @@
 import type { InstanceSettingsRepository, UserSettingsRepository } from '../domain/ports.ts';
-import type { PluginInstall, QueueGate, RouterMode, UpdateChannel, UpdateSettings } from '../domain/types.ts';
+import type { PluginInstall, QueueGate, UpdateChannel, UpdateSettings } from '../domain/types.ts';
 import { UPDATE_CHANNELS } from '../domain/types.ts';
 import type { StoreContext } from './context.ts';
 
@@ -16,16 +16,10 @@ function keyValues(c: StoreContext) {
   };
 }
 
-/** A user's settings: the router mode, the queue gate. */
+/** A user's settings: the queue gate. */
 export function createUserSettingsRepository(c: StoreContext): UserSettingsRepository {
   const { read, write } = keyValues(c);
   return {
-    getRouterMode() {
-      return read('routerMode') as RouterMode | undefined;
-    },
-    setRouterMode(mode) {
-      write('routerMode', mode);
-    },
     getQueueGate() {
       const text = read('queueGate');
       return text === undefined ? undefined : JSON.parse(text) as QueueGate;

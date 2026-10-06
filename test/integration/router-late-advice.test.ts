@@ -1,5 +1,5 @@
-// Shadow mode exists to measure the router. A job that starts before the router answers must
-// still have its advice recorded, or shadow mode measures only the jobs that happened to wait.
+// The router's advice is always applied (issue #211): a job waits for it, so no job starts before the
+// router answers, however slow the router is next to the job.
 // These run the real gate-router (spawning the shim), so they need a grok-bot-jev checkout; without one
 // they skip cleanly.
 import { existsSync } from 'node:fs';
@@ -13,7 +13,7 @@ import { waitFor } from '../support/wait.ts';
 
 const HAVE_GROK_BOT_JEV = existsSync(join(homedir(), 'workbench/jev-src/grok-bot-jev', 'src', 'router.py'));
 
-describe.skipIf(!HAVE_GROK_BOT_JEV)('advice that arrives after the job left the queue (real gate-router)', () => {
+describe.skipIf(!HAVE_GROK_BOT_JEV)('a slow router (real gate-router)', () => {
   let t: TestApp | undefined;
   let cleanup: (() => void) | undefined;
 
@@ -22,23 +22,20 @@ describe.skipIf(!HAVE_GROK_BOT_JEV)('advice that arrives after the job left the 
     cleanup?.();
   });
 
-  it('is still recorded on the job and emitted as job.prioritized (shadow)', async () => {
+  it('a fast job waits for the advice, then runs: job.prioritized names it still waiting', async () => {
     const tmp = tempDbPath();
     cleanup = tmp.cleanup;
     t = await startTestApp({ dbPath: tmp.dbPath, realRouter: true });
 
     const job = await t.pull({ op: 'echo', message: 'fast' }, { title: 'say hi' });
-    const done = await t.waitForStatus(job.id, 'finished');
-    expect(done.advice).toBeUndefined(); // the python spawn is slower than an echo job
-
-    const advised = await waitFor(async () => (await t!.job(job.id)).advice, { timeoutMs: 10000, what: 'late advice' });
-    expect(advised).toMatchObject({ action: 'proceed_full', source: 'gate-router', details: { gatesAsked: false } });
+    const done = await t.waitForStatus(job.id, 'finished', 15000);
+    expect(done.advice).toMatchObject({ action: 'proceed_full', source: 'gate-router', details: { gatesAsked: false } });
     const prioritized = (await t.events('types=job.prioritized')).filter((e) => e.jobId === job.id);
     expect(prioritized).toHaveLength(1);
-    expect(prioritized[0]!.data).toMatchObject({ mode: 'shadow', statusAtAdvice: 'finished' });
+    expect(prioritized[0]!.data).toEqual({ advice: expect.any(Object), statusAtAdvice: expect.stringMatching(/^(queued|held)$/) });
   });
 
-  it('reaches every job pulled in a burst, even ones a Decision claimed before any sweep', async () => {
+  it('reaches every job pulled in a burst before any of them starts', async () => {
     const tmp = tempDbPath();
     cleanup = tmp.cleanup;
     t = await startTestApp({ dbPath: tmp.dbPath, realRouter: true });
@@ -47,7 +44,7 @@ describe.skipIf(!HAVE_GROK_BOT_JEV)('advice that arrives after the job left the 
     await t.sync();
     const jobs = (await t.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=100')).body.jobs;
     expect(jobs).toHaveLength(8);
-    for (const job of jobs) await t.waitForStatus(job.id, 'finished');
+    for (const job of jobs) await t.waitForStatus(job.id, 'finished', 20000);
 
     await waitFor(async () => {
       const all = await Promise.all(jobs.map((j) => t!.job(j.id)));

@@ -20,7 +20,7 @@ const ONE = { ...TWO, readings: TWO.readings.filter((r) => r.source === 'work'),
 
 function fakeDaemon(usage: unknown) {
   const routes: Record<string, unknown> = {
-    '/api/health': { ok: true, version: '0', routerMode: 'active', router: 'pass-through', fallback: false, executors: [], uptimeS: 1 },
+    '/api/health': { ok: true, version: '0', router: 'pass-through', fallback: false, executors: [], uptimeS: 1 },
     '/api/queue': { waiting: [], running: [], waitingAnswer: [], ended: [] },
     '/api/machines': { machines: [] },
     '/api/decisions': { decisions: [] }, '/api/events': { events: [] },

@@ -24,7 +24,6 @@ function DecisionRow({ d }: { d: Decision }) {
         <ChevronRight className="size-3.5 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
         <span className="num font-mono text-muted-foreground">{clock(d.at)}</span>
         <StatusBadge status={d.trigger} />
-        <StatusBadge status={d.routerMode} tone={d.routerMode === 'active' ? 'warn' : 'muted'} />
         <span className="num">{d.start.length} start · {d.hold.length} hold</span>
         {d.advice.length > 0 && <StatusBadge status="divergence" tone="warn" label={`${d.advice.length} divergence`} />}
         <span className="ml-auto hidden truncate font-mono text-muted-foreground/60 sm:block">{d.id.slice(0, 8)}</span>

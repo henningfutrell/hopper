@@ -55,8 +55,8 @@ the directory into the plugin dir and change it.
   the catalogue and `plugin:check` parse `{}`.
 - `create(ctx, options)`: `ctx` has `clock`, `logger`, `env(name)`, `dataDir`, `scratchDir`, `instanceName`, plus
   the role's own fields (a job source's `knownKeys`/`rerunnable`, a machine source's `executors()` and
-  `target(machine)` — the hopper's own way to reach an attached machine (issue #74) —
-  the router's `routerMode()`). A usage source's `poll` must answer at once from what it already has (every Decision polls it); it may add `state()` (when it last read, why it has no readings, its account) and `stop()`. A reading limits every job unless it names `executors`: the executor instances whose jobs its budget limits — one agent framework's, so another framework's jobs run on. A job source and a machine source must call themselves
+  `target(machine)` — the hopper's own way to reach an attached machine (issue #74)). The router
+  gets nothing more: its advice is always applied (issue #211). A usage source's `poll` must answer at once from what it already has (every Decision polls it); it may add `state()` (when it last read, why it has no readings, its account) and `stop()`. A reading limits every job unless it names `executors`: the executor instances whose jobs its budget limits — one agent framework's, so another framework's jobs run on. A job source and a machine source must call themselves
   `ctx.instanceName`.
 - A **queue sorter** (`examples/plugins/queue-sorter/word-first/`) gets every waiting job with its
   effective priority and returns job ids, synchronously, once per Decision. Ids it leaves out run

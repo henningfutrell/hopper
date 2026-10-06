@@ -19,8 +19,7 @@ export const gateOf = (c: EngineContext): QueueGate => c.store.settings.getQueue
 
 /** The queue sorter over the jobs not yet accepted: their order and the ones it rejects. */
 export function preSort(c: EngineContext, unaccepted: readonly Job[]): PreSort {
-  const mode = c.routerMode();
-  const entries = unaccepted.map((job) => ({ job, effectivePriority: effectivePriority(job, mode, c.policy) }));
+  const entries = unaccepted.map((job) => ({ job, effectivePriority: effectivePriority(job, c.policy) }));
   return { sorter: c.queueSorter.name, jobIds: entries.length ? c.queueSorter.sort(entries) : [], reject: c.queueSorter.reject?.(entries) ?? [] };
 }
 

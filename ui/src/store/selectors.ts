@@ -48,5 +48,5 @@ export function useJobName(): (jobId: string) => string {
 
 /** The session may cancel and approve jobs, and answer and close questions. */
 export const useCanOperate = (): boolean => useHopper((s) => s.authed && allows(s.user, 'operator'));
-/** The session may change configuration (plugins, machines, routing, webhooks, rules, router mode). */
+/** The session may change configuration (plugins, machines, routing, webhooks, rules). */
 export const useCanAdmin = (): boolean => useHopper((s) => s.authed && allows(s.user, 'admin'));

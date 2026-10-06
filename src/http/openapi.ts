@@ -11,7 +11,7 @@ import { streamQuery } from './sse.ts';
 import { decisionsQuery, eventsQuery } from './state.ts';
 import { SESSION_HEADER } from './ui/guard.ts';
 import {
-  answerBody, deviceLinkBody, ghLoginBody, queueGateBody, queueOrderBody, machineDefaultsBody, machinesEditBody, pluginStoreBody, pluginsEditBody, passwordChangeBody, realmsEditBody, routerModeBody, routingEditBody, rulesBody, updateBody, usersEditBody, webhooksEditBody,
+  answerBody, deviceLinkBody, ghLoginBody, queueGateBody, queueOrderBody, machineDefaultsBody, machinesEditBody, pluginStoreBody, pluginsEditBody, passwordChangeBody, realmsEditBody, routingEditBody, rulesBody, updateBody, usersEditBody, webhooksEditBody,
 } from './ui/index.ts';
 import { completeBody, loginBody, passwordBody, startQuery } from './ui/sign-in.ts';
 import { deliveriesQuery } from './webhooks.ts';
@@ -43,11 +43,11 @@ const id = (what: string) => ({ name: 'id', in: 'path', required: true, descript
 const name = { name: 'name', in: 'path', required: true, description: 'the realm, as the sign-in config names it', schema: { type: 'string' } };
 
 const OPERATIONS: Operation[] = [
-  { method: 'get', path: '/api/health', tag: 'State', summary: 'Health and version', description: 'A loopback read without a session on a hopper with several users reads the instance\'s part only: `{ ok, version, uptimeS }`.', returns: '`{ ok, version, routerMode, router, fallback, executors, uptimeS }`' },
+  { method: 'get', path: '/api/health', tag: 'State', summary: 'Health and version', description: 'A loopback read without a session on a hopper with several users reads the instance\'s part only: `{ ok, version, uptimeS }`.', returns: '`{ ok, version, router, fallback, executors, uptimeS }`' },
   { method: 'get', path: '/api/queue', tag: 'State', summary: 'The queue', returns: '`{ waiting, running, waitingAnswer, ended, gate, presort }`: each list a `Job[]`, `waiting` in queue order (the user order first), `ended` the last 24 h; `gate` the `QueueGate`; `presort` the `PreSort` of the waiting jobs not yet accepted' },
   { method: 'get', path: '/api/decisions', tag: 'State', summary: 'Recent decisions', query: decisionsQuery, returns: '`{ decisions: Decision[] }`, newest first' },
   { method: 'get', path: '/api/decisions/:id', tag: 'State', summary: 'One decision', returns: '`Decision`', errors: [404] },
-  { method: 'get', path: '/api/router', tag: 'State', summary: 'Router mode and status', returns: '`{ mode, router, plugin, fallback, reason? }`' },
+  { method: 'get', path: '/api/router', tag: 'State', summary: 'Router status', returns: '`{ router, plugin, fallback, reason? }`' },
   { method: 'get', path: '/api/accounts', tag: 'State', summary: 'Who each part acts as', description: 'Each usage source\'s and job source\'s account on an outside service. Never a token.', returns: '`{ accounts: PartAccount[] }`' },
   { method: 'get', path: '/api/sources', tag: 'Jobs', summary: 'Job sources and their sync status', returns: '`{ sources: SourceStatus[] }`' },
   { method: 'get', path: '/api/gh-login', tag: 'Jobs', summary: 'The gh CLI\'s login', description: 'Logged in (with the account), logged out, failed, or waiting with the device code to approve at github.com/login/device.', returns: '`GhLoginStatus`' },
@@ -79,7 +79,6 @@ const OPERATIONS: Operation[] = [
   { method: 'post', path: '/ui/api/plugins', tag: 'Plugins and routing', summary: 'Edit plugin instances', description: 'Set an instance\'s options (every one, command-bearing ones too; a machine also takes a new name, `rename`), select the plugin of a one-instance role, add or remove an instance, or rescan.', role: 'admin', body: pluginsEditBody, returns: 'the new `PluginsReport`', errors: [404, 409] },
   { method: 'get', path: '/api/routing', tag: 'Plugins and routing', summary: 'Routing rules', returns: 'the rules as configured and their report' },
   { method: 'post', path: '/ui/api/routing', tag: 'Plugins and routing', summary: 'Replace the routing rules', description: 'Applies to new jobs only.', role: 'admin', body: routingEditBody, returns: 'the new routing report', errors: [409] },
-  { method: 'post', path: '/ui/api/router-mode', tag: 'Plugins and routing', summary: 'Switch the router mode', role: 'admin', body: routerModeBody, returns: 'the router view, as GET /api/router' },
   { method: 'get', path: '/api/webhooks', tag: 'Webhooks', summary: 'Webhook subscriptions', description: 'Each with the variable its secret is in, and why the runtime gives none if so. Never a secret.', returns: '`{ subscriptions }`' },
   { method: 'get', path: '/api/webhooks/deliveries', tag: 'Webhooks', summary: 'Webhook deliveries', query: deliveriesQuery, returns: '`{ deliveries }`, newest first' },
   { method: 'post', path: '/ui/api/webhooks', tag: 'Webhooks', summary: 'Add, edit or remove a subscription', role: 'admin', body: webhooksEditBody, returns: 'the new view, as GET /api/webhooks', errors: [404, 409] },

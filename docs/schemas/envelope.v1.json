@@ -36,7 +36,6 @@
         "lane.opened",
         "lane.closed",
         "decision.made",
-        "router.mode_changed",
         "question.asked",
         "question.escalated",
         "question.answered",
@@ -53,7 +52,8 @@
         "job.rejected",
         "queue.ordered",
         "queue.gate_changed",
-        "jev.mode_changed"
+        "jev.mode_changed",
+        "router.mode_changed"
       ]
     },
     "at": {

@@ -100,12 +100,12 @@ describe('two users of one hopper', () => {
     expect((await a.api('GET', '/api/plugins', undefined, session(admin))).body.queueSorter.instance.plugin).toBe('priority');
   });
 
-  it('the router mode is each user\'s own', async () => {
+  it('the queue gate is each user\'s own', async () => {
     const a = await start();
     const { admin, bea } = await twoUsers(a);
-    expect((await a.ui('/ui/api/router-mode', { mode: 'active' }, { token: bea })).status).toBe(200);
-    expect((await a.api('GET', '/api/router', undefined, session(bea))).body.mode).toBe('active');
-    expect((await a.api('GET', '/api/router', undefined, session(admin))).body.mode).toBe('shadow');
+    expect((await a.ui('/ui/api/queue-gate', { mode: 'review', autoAcceptPerHour: null }, { token: bea })).status).toBe(200);
+    expect((await a.api('GET', '/api/queue', undefined, session(bea))).body.gate.mode).toBe('review');
+    expect((await a.api('GET', '/api/queue', undefined, session(admin))).body.gate.mode).toBe('auto-accept');
   });
 
   it('the event stream carries the session user\'s events only', async () => {

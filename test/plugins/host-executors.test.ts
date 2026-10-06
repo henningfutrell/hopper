@@ -45,7 +45,7 @@ function start(o: { file?: object; kit?: DetectionKit; defaultExecutors?: Instan
   if (o.file !== undefined) config.set(PLUGINS, o.file);
   host = createPluginHost({
     pluginDir: join(dir, 'plugins'), config, dataDir: dir, clock: fixedClock,
-    logger: { info() {}, warn() {} }, routerMode: () => 'shadow', kit: o.kit ?? fakeKit(),
+    logger: { info() {}, warn() {} }, kit: o.kit ?? fakeKit(),
     builtins: [...BUILTIN_PLUGINS, brokenExecutor, selfNamed],
     defaultLevels: [],
     defaultExecutors: o.defaultExecutors ?? ENV_EXECUTORS,

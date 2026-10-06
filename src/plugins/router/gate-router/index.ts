@@ -41,7 +41,7 @@ const gateRouter: PluginDefinition<'router', GateRouterOptions> = {
     return createGateRouter({
       jevPath: expandHome(o.jevPath), python: o.python, model: o.model,
       typesafeKey: () => ctx.env('TYPESAFE_API_KEY'), timeoutMs: o.timeoutSeconds * 1000,
-      dataDir: ctx.dataDir, mode: ctx.routerMode, clock: ctx.clock, userEnv: ctx.userEnv,
+      dataDir: ctx.dataDir, clock: ctx.clock, userEnv: ctx.userEnv,
     });
   },
 };

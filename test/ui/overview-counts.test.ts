@@ -23,7 +23,7 @@ function queueOf(jobs: Job[]) {
 function fakeDaemon(initial: Job[]) {
   let jobs = initial;
   const routes = (): Record<string, unknown> => ({
-    '/api/health': { ok: true, version: '0', routerMode: 'active', router: 'pass-through', fallback: false, executors: [], uptimeS: 1 },
+    '/api/health': { ok: true, version: '0', router: 'pass-through', fallback: false, executors: [], uptimeS: 1 },
     '/api/queue': queueOf(jobs),
     '/api/machines': { machines: [{ id: 'm1', label: 'm1', maxLanes: 2, online: true, executors: ['test'], usage: [],
       lanes: [{ id: 'm1/lane-1', machineId: 'm1', state: 'busy', jobId: 'r1', openedAt: hoursAgo(1) }] }] },

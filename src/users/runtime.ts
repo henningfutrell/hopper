@@ -104,7 +104,6 @@ export interface UserRuntime {
   webhooksEditor: WebhooksEditor;
   /** Why the user's runtime gives no secret for a webhook subscription's variable; undefined when it does. */
   secretProblem: (secretEnv: string) => string | undefined;
-  routerMode(): string;
   /** Start the loops: engine and source sync (the dispatcher and notifiers run from creation). Once. */
   start(): Promise<void>;
   /** Stop every loop and part; close the user's store. Once. */
@@ -171,7 +170,6 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     machine, socket: clientSocket(dataDir, machine), token: () => secret(tokenEnv) ?? '',
   });
   const keepClient = createClientReleaseKeeper({ release: o.clientRelease, logger });
-  const routerMode = () => store.settings.getRouterMode() ?? config.routerMode;
   let executorNames = (): string[] => [];
   let jobsOnMachine = (_name: string): string[] => [];
   // How the hopper reaches each attached machine (issue #74: the machine-source context's `target`).
@@ -191,7 +189,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const builtin = builtinInstances(config.answerTimeoutMs, config.localMachine, user.id === ADMIN_ID ? undefined : session);
   const host = createPluginHost({
     ...(config.pluginDir ? { pluginDir: config.pluginDir } : {}), installedDir: o.installedDir,
-    config: store.config, dataDir, clock, routerMode, logger, userEnv: cliEnv,
+    config: store.config, dataDir, clock, logger, userEnv: cliEnv,
     defaultMachines: builtin.machines, defaultExecutors: builtin.executors,
     kit: createDetectionKit({ env: { ...o.env, ...cliEnv }, secret }),
     builtins: withSeams(seams, session),
@@ -256,7 +254,6 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
       laneIdleGraceMs: config.laneIdleGraceMs, resumeBoost: config.resumeBoost,
     },
     tickMs: config.tickMs,
-    initialRouterMode: config.routerMode,
     maxQuestions: config.maxQuestions,
     keepPanes: config.keepPanes,
     // Completion is the job's source's to judge (issues #171, #187); a job of no source, or of one that does not judge, is complete.
@@ -281,7 +278,6 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     webhooksEditor: createWebhooksEditor({ store }),
     // The variable the user's runtime reads: the subscription's, under the user's prefix.
     secretProblem: (secretEnv) => secretProblem(raw, `${user.secretPrefix}${secretEnv}`),
-    routerMode,
     async start() {
       if (started) return;
       started = true;

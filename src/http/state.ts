@@ -1,11 +1,10 @@
-// Read routes over engine state. Nothing here changes anything (router mode is a UI mutation).
+// Read routes over engine state. Nothing here changes anything.
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { Clock, PluginsView, UserStore } from '../domain/ports.ts';
 import { userIdOf, type TenantParts } from './tenants.ts';
 import { EVENT_TYPES } from '../domain/types.ts';
 import type { DomainEvent, EventType } from '../domain/types.ts';
-import type { Engine } from '../engine/index.ts';
 import { HttpError, parseWith } from './errors.ts';
 
 export const eventTypeList = z.string().optional().transform((s, ctx) => {
@@ -40,10 +39,10 @@ function eventsAfter(store: UserStore, after: number, limit: number, types?: Eve
   }
 }
 
-/** GET /api/router and the UI's POST /ui/api/router-mode answer: mode plus the router's status. */
-export function routerView(engine: Engine, plugins: PluginsView) {
+/** GET /api/router: the router's status. */
+export function routerView(plugins: PluginsView) {
   const s = plugins.routerStatus();
-  return { mode: engine.routerMode(), router: s.name, plugin: s.plugin, fallback: s.fallback, ...(s.reason === undefined ? {} : { reason: s.reason }) };
+  return { router: s.name, plugin: s.plugin, fallback: s.fallback, ...(s.reason === undefined ? {} : { reason: s.reason }) };
 }
 
 /** The request's user's engine state (issue #158); `/api/health`'s version and uptime are the instance's. */
@@ -57,7 +56,7 @@ export function stateRoutes(app: FastifyInstance, o: { tenant: (req: FastifyRequ
     if (userIdOf(req) === undefined) return { ok: true, version: o.version, uptimeS };
     const { engine, plugins } = o.tenant(req);
     const r = plugins.routerStatus();
-    return { ok: true, version: o.version, routerMode: engine.routerMode(), router: r.name, fallback: r.fallback, executors: engine.executorNames, uptimeS };
+    return { ok: true, version: o.version, router: r.name, fallback: r.fallback, executors: engine.executorNames, uptimeS };
   });
   app.get('/api/queue', async (req) => o.tenant(req).engine.getQueue());
   app.get('/api/machines', async (req) => ({ machines: await o.tenant(req).engine.getMachines() }));
@@ -83,7 +82,7 @@ export function stateRoutes(app: FastifyInstance, o: { tenant: (req: FastifyRequ
     return { events: eventsAfter(store, q.after, q.limit, q.types) };
   });
 
-  app.get('/api/router', async (req) => { const t = o.tenant(req); return routerView(t.engine, t.plugins); });
+  app.get('/api/router', async (req) => routerView(o.tenant(req).plugins));
   app.get('/api/plugins', async (req) => o.tenant(req).plugins.report());
   app.get('/api/routing', async (req) => o.tenant(req).plugins.routing());
 

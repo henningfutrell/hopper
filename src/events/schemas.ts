@@ -9,7 +9,6 @@ import { LEGACY_EVENT_SCHEMAS, LEGACY_EVENT_TYPES } from './legacy.ts';
 import { advice, adviceAction, holdPlan, jobSourceRef, jobSpec, jobStatus, lanePlan, startPlan } from './parts.ts';
 
 const strict = z.strictObject;
-const routerMode = z.enum(['shadow', 'active']);
 const gateActor = z.enum(['user', 'pre-sort']);
 const queueGate = strict({ mode: z.enum(QUEUE_GATE_MODES), autoAcceptPerHour: z.number().int().min(1).nullable() });
 /** A question stage: an escalation level's instance name, or `human`. */
@@ -23,8 +22,8 @@ const divergence = strict({
 export const EVENT_SCHEMAS = {
   // `source`: the item the job was pulled from (phase 3; additive, so still v1).
   'job.queued': strict({ spec: jobSpec, priority: z.number(), source: jobSourceRef.optional() }),
-  // v2: advice without top-level `jevUsed` (jev-router puts it in `details`).
-  'job.prioritized': strict({ advice, mode: routerMode, statusAtAdvice: jobStatus }),
+  // v3: no `mode` (issue #211: the advice is always applied). v2: advice without top-level `jevUsed`.
+  'job.prioritized': strict({ advice, statusAtAdvice: jobStatus }),
   'job.held': strict({ reason: z.string() }),
   'job.approved': strict({}),
   'job.claimed': strict({ attempts: z.number().int(), effectivePriority: z.number(), reason: z.string() }),
@@ -39,11 +38,10 @@ export const EVENT_SCHEMAS = {
   'lane.opened': strict({}),
   'lane.closed': strict({ reason: z.string() }),
   'decision.made': strict({
-    // v2: `routerMode` (was jevMode), divergences carry `withAdvice` (was withJev).
-    decisionId: z.string(), trigger: z.string(), routerMode,
+    // v3: no `routerMode` (issue #211). v2: divergences carry `withAdvice` (was withJev).
+    decisionId: z.string(), trigger: z.string(),
     starts: z.array(startPlan), holds: z.array(holdPlan), lanes: z.array(lanePlan), divergences: z.array(divergence),
   }),
-  'router.mode_changed': strict({ from: routerMode, to: routerMode }),
   'question.asked': strict({ questionId: z.string(), text: z.string(), detectedBy: z.string() }),
   // v2: `target` is the stage entered (an instance name or `human`), no longer opus | fable | human.
   'question.escalated': strict({
@@ -78,7 +76,7 @@ export const ENVELOPE_SCHEMA = strict({
   schemaVersion: z.number().int().min(1),
   seq: z.number().int(),
   id: z.uuid(),
-  // Stored events of retired types (jev.mode_changed) still read; nothing emits them.
+  // Stored events of retired types (jev.mode_changed, router.mode_changed) still read; nothing emits them.
   type: z.enum([...EVENT_TYPES, ...LEGACY_EVENT_TYPES] as unknown as [string, ...string[]]),
   at: z.iso.datetime(),
   jobId: z.string().optional(),

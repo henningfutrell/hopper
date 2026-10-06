@@ -138,9 +138,6 @@ export interface Advice {
   at: string;
 }
 
-/** shadow: advice is recorded, never changes a Decision. active: advice shapes admission and order. */
-export type RouterMode = 'shadow' | 'active';
-
 export interface Lane {
   id: LaneId;
   machineId: MachineId;
@@ -175,7 +172,6 @@ export interface MachineSnapshot {
 export interface DecisionInputs {
   at: string;
   trigger: string; // "tick" | "job.queued" | "job.finished" | ... — what woke the engine
-  routerMode: RouterMode;
   machines: MachineSnapshot[];
   lanes: Lane[];
   usage: UsageReading[];
@@ -195,11 +191,11 @@ export interface DeciderPolicy {
   softLimit: number;
   /** Fraction used at which every idle lane closes and no job starts (0..1). */
   hardLimit: number;
-  /** Priority added in active mode for cheap advice (chat_only, run_deterministic). */
+  /** Priority added for cheap advice (chat_only, run_deterministic). */
   routerCheapBoost: number;
   /** An idle lane with no work for it closes only after being idle this long (ms). */
   laneIdleGraceMs: number;
-  /** Priority added to a job resuming with an answer — it is part done. Both modes. */
+  /** Priority added to a job resuming with an answer — it is part done. */
   resumeBoost: number;
 }
 
@@ -227,7 +223,7 @@ export interface HoldPlan {
   reason: string;
 }
 
-/** What the router's advice would have changed. Always computed; only applied in active mode. */
+/** What the router's advice changed against the native verdict: a hold, or an order. */
 export interface Divergence {
   jobId: JobId;
   advice: AdviceAction;
@@ -240,7 +236,6 @@ export interface Decision {
   id: string;
   at: string;
   trigger: string;
-  routerMode: RouterMode;
   lanes: LanePlan[];
   start: StartPlan[];
   hold: HoldPlan[];
@@ -257,7 +252,7 @@ export interface Decision {
 export const EVENT_TYPES = [
   'job.queued', 'job.prioritized', 'job.held', 'job.approved', 'job.claimed', 'job.started',
   'job.progressed', 'job.finished', 'job.failed', 'job.cancelled', 'job.requeued', 'job.reattached', 'job.reprioritized',
-  'lane.opened', 'lane.closed', 'decision.made', 'router.mode_changed',
+  'lane.opened', 'lane.closed', 'decision.made',
   'question.asked', 'question.escalated', 'question.answered', 'question.closed', 'question.dismissed', 'question.expired',
   'update.available', 'update.started', 'update.applied', 'update.failed',
   'plugin.installed', 'plugin.removed',
@@ -270,10 +265,10 @@ export type EventType = typeof EVENT_TYPES[number];
  * same version; removed/renamed/retyped field → bump. The store stamps it on append.
  */
 export const EVENT_SCHEMA_VERSIONS: Readonly<Record<EventType, number>> = {
-  'job.queued': 1, 'job.prioritized': 2, 'job.held': 1, 'job.approved': 1, 'job.claimed': 1,
+  'job.queued': 1, 'job.prioritized': 3, 'job.held': 1, 'job.approved': 1, 'job.claimed': 1,
   'job.started': 1, 'job.progressed': 1, 'job.finished': 1, 'job.failed': 1, 'job.cancelled': 1,
   'job.requeued': 1, 'job.reattached': 1, 'job.reprioritized': 1, 'lane.opened': 1, 'lane.closed': 1,
-  'decision.made': 2, 'router.mode_changed': 1, 'question.asked': 1, 'question.escalated': 2,
+  'decision.made': 3, 'question.asked': 1, 'question.escalated': 2,
   'question.answered': 2, 'question.closed': 1, 'question.dismissed': 1, 'question.expired': 1,
   'update.available': 1, 'update.started': 1, 'update.applied': 1, 'update.failed': 1,
   'plugin.installed': 1, 'plugin.removed': 1,

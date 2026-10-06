@@ -15,19 +15,17 @@ async function gather(c: EngineContext, trigger: string): Promise<() => Decision
   const [machines, ...readings] = await Promise.all([c.machines.list(), ...c.usage.map((u) => u.poll())]);
   // Store reads happen after the awaits, synchronously with decide and apply: no interleaving.
   return () => {
-    const routerMode = c.routerMode();
     const waiting = oldestFirst(c.store.jobs.list({ status: [...WAITING] }));
     return {
       at: nowIso(c),
       trigger,
-      routerMode,
       machines,
       lanes: c.store.lanes.list(),
       usage: readings.flat(),
       waiting,
       running: oldestFirst(c.store.jobs.list({ status: [...RUNNING] })),
       unavailableExecutors: c.executors.unavailable(),
-      queueOrder: queueOrder(c, waiting, routerMode),
+      queueOrder: queueOrder(c, waiting),
       policy: c.policy,
     };
   };
@@ -48,7 +46,7 @@ function apply(c: EngineContext, d: Decision): Claim[] {
   store.decisions.save(d);
   store.events.append({
     type: 'decision.made', decisionId: d.id,
-    data: { decisionId: d.id, trigger: d.trigger, routerMode: d.routerMode, starts: d.start, holds: d.hold, lanes: d.lanes, divergences: d.advice },
+    data: { decisionId: d.id, trigger: d.trigger, starts: d.start, holds: d.hold, lanes: d.lanes, divergences: d.advice },
   });
   for (const plan of d.lanes) {
     for (const laneId of plan.close) {

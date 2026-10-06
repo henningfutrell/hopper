@@ -9,9 +9,11 @@ An additive (optional) field keeps the version; a removed, renamed or retyped fi
 
 Events stored before phase 3 read as v1 and are not re-validated.
 
-Stored events are never rewritten. Superseded versions stay readable and documented: `job.prioritized.v1`, `decision.made.v1`, `jev.mode_changed.v1`, `question.escalated.v1`, `question.answered.v1`
-(phase 5 renamed Jev → router: `jev.mode_changed` is now `router.mode_changed`; slice 2 made question
-stages instance names: `question.escalated.target` and `question.answered.by` were `opus | fable | human` in v1).
+Stored events are never rewritten. Superseded versions stay readable and documented: `job.prioritized.v1`, `decision.made.v1`, `jev.mode_changed.v1`, `job.prioritized.v2`, `decision.made.v2`, `router.mode_changed.v1`, `question.escalated.v1`, `question.answered.v1`
+(phase 5 renamed Jev → router: `jev.mode_changed` became `router.mode_changed`; slice 2 made question
+stages instance names: `question.escalated.target` and `question.answered.by` were `opus | fable | human` in v1;
+issue #211 removed the router mode: `router.mode_changed` is retired, and v3 of `job.prioritized` and
+`decision.made` carry no `mode` / `routerMode`).
 
 ```json
 { "schemaVersion": 1, "seq": 1, "id": "uuid", "type": "job.queued", "at": "ISO",
@@ -52,12 +54,11 @@ Version 1 (`docs/schemas/job.queued.v1.json`). A job was created from a source i
 
 ## `job.prioritized`
 
-Version 2 (`docs/schemas/job.prioritized.v2.json`). The router's advice arrived for a job; once per job, whatever its status then.
+Version 3 (`docs/schemas/job.prioritized.v3.json`). The router's advice arrived for a job; once per job, whatever its status then.
 
 | field | type | required |
 |---|---|---|
 | `advice` | object | yes |
-| `mode` | `shadow` \| `active` | yes |
 | `statusAtAdvice` | `queued` \| `held` \| `claimed` \| `running` \| `waiting_answer` \| `finished` \| `failed` \| `cancelled` \| `rejected` | yes |
 
 ```json
@@ -72,7 +73,6 @@ Version 2 (`docs/schemas/job.prioritized.v2.json`). The router's advice arrived 
     "source": "fake",
     "at": "2026-10-02T00:00:00.000Z"
   },
-  "mode": "shadow",
   "statusAtAdvice": "queued"
 }
 ```
@@ -267,13 +267,12 @@ Version 1 (`docs/schemas/lane.closed.v1.json`). A lane closed (decision reason, 
 
 ## `decision.made`
 
-Version 2 (`docs/schemas/decision.made.v2.json`). The engine recorded a Decision.
+Version 3 (`docs/schemas/decision.made.v3.json`). The engine recorded a Decision.
 
 | field | type | required |
 |---|---|---|
 | `decisionId` | string | yes |
 | `trigger` | string | yes |
-| `routerMode` | `shadow` \| `active` | yes |
 | `starts` | object[] | yes |
 | `holds` | object[] | yes |
 | `lanes` | object[] | yes |
@@ -283,7 +282,6 @@ Version 2 (`docs/schemas/decision.made.v2.json`). The engine recorded a Decision
 {
   "decisionId": "d1",
   "trigger": "tick",
-  "routerMode": "shadow",
   "starts": [
     {
       "jobId": "j1",
@@ -319,22 +317,6 @@ Version 2 (`docs/schemas/decision.made.v2.json`). The engine recorded a Decision
       "note": "n"
     }
   ]
-}
-```
-
-## `router.mode_changed`
-
-Version 1 (`docs/schemas/router.mode_changed.v1.json`). The router mode was switched.
-
-| field | type | required |
-|---|---|---|
-| `from` | `shadow` \| `active` | yes |
-| `to` | `shadow` \| `active` | yes |
-
-```json
-{
-  "from": "shadow",
-  "to": "active"
 }
 ```
 

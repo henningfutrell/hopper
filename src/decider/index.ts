@@ -52,7 +52,7 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
     if (!native && job.pendingAnswer !== undefined) {
       // Admitted once already: the router neither holds nor reorders it.
       candidates.push({
-        job, effectivePriority: effectivePriority(job, inputs.routerMode, policy), note: `resume boost +${policy.resumeBoost}`,
+        job, effectivePriority: effectivePriority(job, policy), note: `resume boost +${policy.resumeBoost}`,
       });
       continue;
     }
@@ -63,8 +63,8 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
     }
     const d = divergence(job, verdict);
     if (d) advice.push(d);
-    if (inputs.routerMode === 'active' && !verdict.admit) hold.push({ jobId: job.id, reason: verdict.reason });
-    else candidates.push({ job, effectivePriority: effectivePriority(job, inputs.routerMode, policy) });
+    if (!verdict.admit) hold.push({ jobId: job.id, reason: verdict.reason });
+    else candidates.push({ job, effectivePriority: effectivePriority(job, policy) });
   }
 
   if (inputs.queueOrder) reasons.push(`queue order by ${inputs.queueOrder.sorter}`);
@@ -81,11 +81,11 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
   plans.push(...gone.map((id) => planGoneLanes(id, lanes)));
 
   reasons.push(
-    `${inputs.routerMode} mode: ${waiting.length} waiting, ${placed.start.length} start, ${hold.length} held`,
+    `${waiting.length} waiting, ${placed.start.length} start, ${hold.length} held`,
     ...advice.map((d) => `advice ${d.advice} on ${d.jobId}: native ${d.native}, with advice ${d.withAdvice}`),
   );
   return {
-    id: decisionId, at: inputs.at, trigger: inputs.trigger, routerMode: inputs.routerMode,
+    id: decisionId, at: inputs.at, trigger: inputs.trigger,
     lanes: plans, start: placed.start, hold, advice, reasons, inputs,
   };
 }

@@ -6,12 +6,12 @@ import type {
   AnswerRequest, Clock, EscalationLevel, ExecutionContext, ExecutionOutcome, Executor, JobSource, LevelReply,
   MachineSource, Notifier, NotifierEvents, QueueEntry, QueueSorter, Router, SourceItem, SourceReport, SourceSignal, UsageSource,
 } from '../domain/ports.ts';
-import type { Advice, AdviceAction, AttachedMachine, Detection, OptionChoice, DomainEvent, Job, MachineSnapshot, PreSortReject, Question, QuestionAttempt, Role, RouterMode, UsageReading } from '../domain/types.ts';
+import type { Advice, AdviceAction, AttachedMachine, Detection, OptionChoice, DomainEvent, Job, MachineSnapshot, PreSortReject, Question, QuestionAttempt, Role, UsageReading } from '../domain/types.ts';
 
 export type {
   Advice, AdviceAction, AnswerRequest, AttachedMachine, Clock, Detection, DomainEvent, EscalationLevel, ExecutionContext, LevelReply,
   ExecutionOutcome, Executor, Job, JobSource, MachineSnapshot, MachineSource, Notifier, NotifierEvents, PreSortReject, Question, QuestionAttempt, QueueEntry,
-  QueueSorter, Role, Router, RouterMode, SourceItem, SourceReport, SourceSignal, UsageReading, UsageSource,
+  QueueSorter, Role, Router, SourceItem, SourceReport, SourceSignal, UsageReading, UsageSource,
 };
 
 /** What `detect` may use. Cheap; never a paid model call; never runs a GUI binary. */
@@ -87,12 +87,11 @@ export interface RoleInstance {
 }
 
 /**
- * What each role adds to the context. The router passes hopper's router mode on (Jev reads it);
- * a job source learns which source keys already have jobs; a machine
+ * What each role adds to the context. A job source learns which source keys already have jobs; a machine
  * source learns the executors registered when it is asked; a usage source and an escalation level find a machine.
  */
 export interface RoleContext {
-  router: { routerMode(): RouterMode };
+  router: object;
   'queue-sorter': object;
   'escalation-level': MachineLookup;
   executor: object;

@@ -37,14 +37,14 @@ describe('roles, sessions and logout: the same for every realm', () => {
     const { app, token } = await as('operator');
     const j = await job(app, token);
     expect((await app.ui(`/ui/api/jobs/${j.id}/cancel`, {}, { token })).status).toBe(200);
-    const res = await app.ui('/ui/api/router-mode', { mode: 'active' }, { token });
+    const res = await app.ui('/ui/api/queue-gate', { mode: 'review', autoAcceptPerHour: null }, { token });
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ needs: 'admin' });
   });
 
   it('an admin changes configuration', async () => {
     const { app, token } = await as('admin');
-    expect((await app.ui('/ui/api/router-mode', { mode: 'active' }, { token })).status).toBe(200);
+    expect((await app.ui('/ui/api/queue-gate', { mode: 'review', autoAcceptPerHour: null }, { token })).status).toBe(200);
   });
 
   it('logout ends a provider session like a local one', async () => {
@@ -87,7 +87,7 @@ describe('a public URL (behind a reverse proxy)', () => {
     const idp = await oidc();
     const { app } = await start({ version: 1, realms: [oidcRealm(idp, { defaultRole: 'admin' })] }, env);
     const run = await signIn(app.url, 'https://hopper.example.com', 'corp');
-    const res = await app.ui('/ui/api/router-mode', { mode: 'active' }, { token: run.token!, headers: { host: 'hopper.example.com', origin: 'https://hopper.example.com' } });
+    const res = await app.ui('/ui/api/queue-gate', { mode: 'review', autoAcceptPerHour: null }, { token: run.token!, headers: { host: 'hopper.example.com', origin: 'https://hopper.example.com' } });
     expect(res.status).toBe(200);
   });
 });

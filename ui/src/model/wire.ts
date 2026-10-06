@@ -31,7 +31,6 @@ export type MachineView = MachineSnapshot & { lanes: Lane[]; usage: UsageReading
 export interface Health {
   ok: boolean;
   version: string;
-  routerMode: 'shadow' | 'active';
   router: string;
   fallback: boolean;
   executors: string[];
