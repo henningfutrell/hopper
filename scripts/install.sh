@@ -170,7 +170,7 @@ for i in $(seq 1 20); do
         | cli config set rules --if-version missing
     fi
     node "$DEST/src/update/rename.ts" cleanup
-    echo "open the UI: bash $DEST/scripts/open-ui.sh (or mint a code: hopper login-code)"
+    echo "open the UI: $URL/ and sign in with GitHub; the first person to sign in with GitHub is the admin (docs/sign-in.md)"
     if [ -n "$(env_line HOPPER_LAN_NAMES)" ]; then
       printf 'LAN: %s (another device: log in with the device-link button in a logged-in UI)\n' "$(env_line HOPPER_LAN_NAMES)"
     else

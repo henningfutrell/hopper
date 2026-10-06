@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
-import type { Clock, EventLog, InstanceSettingsRepository, Restarter, UpdateBuilder, Updater } from '../domain/ports.ts';
+import type { Clock, InstanceEvents, InstanceSettingsRepository, Restarter, UpdateBuilder, Updater } from '../domain/ports.ts';
 import type { InstallInfo, UpdateApply, UpdateRelease, UpdateSettings, UpdateStatus, VersionHistory } from '../domain/types.ts';
 import { createGitMirror, type GitMirror } from './git.ts';
 import { bullets, newSince, WHATS_NEW_FILE } from './whats-new.ts';
@@ -29,7 +29,7 @@ export interface UpdaterOptions {
   /** The instance's update settings. */
   settings: Pick<InstanceSettingsRepository, 'getUpdateSettings' | 'setUpdateSettings'>;
   /** Where update.* events go (every user's event log, issue #158), and the last one announced is read. */
-  events: Pick<EventLog, 'append' | 'recent'>;
+  events: InstanceEvents;
   clock: Clock;
   logger: { info(line: string): void; warn(line: string): void };
   builder: UpdateBuilder;

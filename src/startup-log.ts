@@ -23,7 +23,7 @@ export function logStartup(app: App): void {
   const auth = app.auth();
   if (app.config.publicUrl) console.log(`hopper: public URL ${app.config.publicUrl} (sign-in origin)`);
   if (auth.realms.length) console.log(`hopper: realms, in order: ${auth.realms.map((r) => `${r.name} (${r.type}${r.enabled ? '' : ', off'})`).join(', ')}`);
-  if (auth.local.enabled) console.log('hopper: local sign-in on; a login code: hopper login-code');
+  if (auth.local.enabled) console.log('hopper: local sign-in on: device links and new users\' login links sign in');
   else console.log('hopper: local sign-in is off (the sign-in config)');
   if (auth.none) console.warn(`hopper: NO SIGN-IN is on (the sign-in config none): anyone who reaches the UI acts as ${auth.none.role}`);
 }

@@ -1,6 +1,7 @@
 // Which user an identity signs in as (issue #158, design.md "Users: one hopper, separate users"): a
 // linked identity is its user; an unlinked one — already granted a role by the sign-in config — gets a new
-// user of its own, linked. No sign-in is the default admin account; a login code names its user itself.
+// user of its own, linked. No sign-in is one identity like the others: its first visitor makes its user,
+// everyone after signs in as that user (issue #238); a login code names its user itself.
 import type { InstanceStore } from '../domain/ports.ts';
 import type { Identity, User } from '../domain/types.ts';
 
@@ -14,9 +15,8 @@ export function uniqueName(taken: readonly string[], base: string): string {
   for (let n = 2; ; n++) if (!lower.has(`${base} ${n}`.toLowerCase())) return `${base} ${n}`;
 }
 
-/** The user `who` signs in as: its linked user, admin for no sign-in, else a new user, linked. */
+/** The user `who` signs in as: its linked user, else a new user, linked. */
 export function userForIdentity(instance: Pick<InstanceStore, 'users' | 'identities'>, who: Identity): { user: User; added: boolean } {
-  if (who.realm === 'none') return { user: instance.users.admin(), added: false };
   const linked = instance.identities.userOf(who.realm, who.subject);
   const user = linked === undefined ? undefined : instance.users.get(linked);
   if (user) return { user, added: false };

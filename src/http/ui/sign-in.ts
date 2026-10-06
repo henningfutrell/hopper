@@ -70,7 +70,7 @@ const html = (reply: FastifyReply, status: number, body: string) =>
 
 export function registerSignInRoutes(parent: FastifyInstance, o: {
   sessions: UiSessions; signIn: SignIn; instance: Pick<InstanceStore, 'loginCodes'>; clock: Clock;
-  /** The user an identity signs in as (issue #158): linked, admin for no sign-in, or a new one. */
+  /** The user an identity signs in as (issue #158): linked, or a new one. */
   userFor: (who: Identity) => Promise<User>;
   /** A GitHub sign-in's connection, handed to the session's user (issue #214). */
   connect: (userId: string, connection: Connection) => void;

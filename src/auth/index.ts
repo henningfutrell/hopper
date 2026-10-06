@@ -3,7 +3,7 @@
 //
 // Form realms (ldap): the username and password form is tried against each one that is on, in order;
 // the first that accepts the password decides. The hopper keeps no password accounts of its own (issue
-// #237): a fresh hopper's first sign-in is the login code (`start.ts`).
+// #237), and there is no bootstrap login (issue #238): the way in is a realm.
 //
 // Device realms (github; issue #214): the person signs in with a device code entered at GitHub, through
 // the hopper's GitHub App (its public client id, no secret). The browser keeps a random
@@ -43,7 +43,7 @@ import { createSamlRealm } from './saml.ts';
 export { SIGN_IN, loadSignInConfig, signInConfigProblem, type AuthConfig } from './config.ts';
 export { AuthEditError, editSignIn, realmsView, type SignInEdit } from './edit.ts';
 export { claimGithubAdmin } from './github-admin.ts';
-export { firstSignInLine, prepareSignIn } from './start.ts';
+export { prepareSignIn } from './start.ts';
 
 const FLOW_MS = 10 * 60_000;
 const TICKET_MS = 2 * 60_000;

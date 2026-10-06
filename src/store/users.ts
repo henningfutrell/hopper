@@ -1,6 +1,6 @@
 // The users of one hopper and their identity links (issue #158), in the instance schema.
 import type { IdentityLinks, UserRepository } from '../domain/ports.ts';
-import { ADMIN_ID, type User } from '../domain/types.ts';
+import type { User } from '../domain/types.ts';
 import type { StoreContext } from './context.ts';
 import { quoteIdent } from './tenant-migrations.ts';
 
@@ -30,11 +30,6 @@ export function createUserRepository(c: StoreContext, onAdded: (user: User) => v
     get(id) {
       const r = c.db.get('SELECT * FROM users WHERE id = ?', id);
       return r ? rowOf(r) : undefined;
-    },
-    admin() {
-      const r = c.db.get('SELECT * FROM users WHERE id = ?', ADMIN_ID);
-      if (!r) throw new Error('the store has no default admin account (migration 21 makes it)');
-      return rowOf(r);
     },
     add(name) {
       const trimmed = name.trim();
@@ -82,9 +77,6 @@ export function createIdentityLinks(c: StoreContext): IdentityLinks {
     },
     link(realm, subject, userId) {
       c.db.run('INSERT INTO user_identities (realm, subject, user_id) VALUES (?, ?, ?) ON CONFLICT DO NOTHING', realm, subject, userId);
-    },
-    realmsOf(userId) {
-      return c.db.all('SELECT DISTINCT realm FROM user_identities WHERE user_id = ? ORDER BY realm', userId).map((r) => String(r.realm));
     },
     anyIn(realms) {
       return realms.some((realm) => c.db.get('SELECT 1 FROM user_identities WHERE realm = ? LIMIT 1', realm) !== undefined);

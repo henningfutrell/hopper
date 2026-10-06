@@ -94,7 +94,7 @@ export function Realms() {
         <div className="space-y-3 text-sm">
           <label className="flex items-center gap-2">
             <Switch checked={view.local} disabled={busy} aria-label="Login code" onCheckedChange={(local) => void change({ action: 'settings', local, version })} />
-            <span><span className="font-medium">Login code</span> <span className="text-muted-foreground">— a one-time code from <code className="font-mono text-xs">hopper login-code</code> or a device link; signs in as admin.</span></span>
+            <span><span className="font-medium">Login code</span> <span className="text-muted-foreground">— a one-time code in a device link or a new user's login link; it signs in to that user, role admin.</span></span>
           </label>
           <label className="flex flex-wrap items-center gap-2">
             <span className="font-medium">No sign-in</span>

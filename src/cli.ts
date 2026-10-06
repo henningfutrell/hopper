@@ -8,20 +8,20 @@
 //   hopper config get <record> [--user <id>]         print it as JSON (stdout)
 //   hopper config version <record> [--user <id>]     print its version
 //   hopper config set <record> --if-version <v>       replace it with the JSON on stdin, if still at <v>
-//   hopper login-code [--user <id>] [--link <url>]    mint a one-time UI login code for a user (stdout)
 //   hopper users                                      list the users (issue #158)
 //   hopper user add <name>                            add a user
 //   hopper user transfer <from> <to>                  <to> takes over <from>'s work (issue #212)
 //   hopper help                                       what each command does
 //
-// <record>: plugins or rules (a user's: --user, default admin), or sign-in (the instance's). A record
-// that would not load is refused.
+// There is no login from here (issue #238: no bootstrap login): people sign in through a realm.
+//
+// <record>: plugins or rules (a user's: --user, default the one user), or sign-in (the instance's). A
+// record that would not load is refused.
 import { readFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { CONFIG_NAMES, type ConfigName, type ConfigRecords, type InstanceStore } from './domain/ports.ts';
 import type { User } from './domain/types.ts';
 import { signInConfigProblem } from './auth/config.ts';
-import { LOGIN_CODE_MINUTES, mintLoginCode } from './http/ui/login-code.ts';
 import { pluginsConfigProblem } from './plugins/plugins-config.ts';
 import { rulesProblem } from './questions/index.ts';
 import { openInstanceStore } from './store/index.ts';
@@ -40,7 +40,6 @@ usage:
   hopper config get <record>                         print a config record as JSON
   hopper config version <record>                     print its version
   hopper config set <record> --if-version <v>        replace it with the JSON on stdin, if still at <v> ("missing" for a new one)
-  hopper login-code [--link <base url>]              a one-time UI login code (${LOGIN_CODE_MINUTES} minutes), or a link with it
   hopper users                                       the users of this hopper: id, name, when added
   hopper user add <name>                             add a user: their own jobs, questions and settings, kept apart
   hopper user transfer <from> <to>                   <to> takes over everything <from> holds: <to>'s sign-ins land on
@@ -50,12 +49,12 @@ usage:
 
 records: ${CONFIG_NAMES.join(', ')}. plugins and rules are one user's; sign-in is shared. Every one is edited
 in the UI too.
---user <id> on config and login-code names the user (default: admin, the default admin account).
+--user <id> on config names the user (default: the one user, while there is one).
 
 Every command but help needs HOPPER_DATABASE_URL (or HOPPER_DATABASE_URL_FILE):
 the database the daemon uses, postgres://user:password@host:port/database.
 
-First sign-in:  hopper login-code --link http://127.0.0.1:4790   then open the link
+First sign-in:  sign in with GitHub in the UI; the first person to sign in with GitHub is the admin (docs/sign-in.md)
 The daemon:     node src/main.ts --help   (its settings)
 API reference:  http://127.0.0.1:4790/docs/ on a running daemon
 Read on:        README.md, docs/deploy.md, docs/sign-in.md`;
@@ -86,15 +85,20 @@ function put(records: Records, name: ConfigName, json: string, version: string):
   }
 }
 
-/** The user `--user` names, or the default admin account. */
+/** The user `--user` names, or the one user. */
 function userOf(instance: InstanceStore, id: string | undefined): User {
-  if (id === undefined) return instance.users.admin();
+  if (id === undefined) {
+    const all = instance.users.list();
+    if (all.length === 0) throw new CliError('no user yet: the first sign-in makes one');
+    if (all.length > 1) throw new CliError(`several users: name one with --user (${all.map((u) => u.id).join(', ')})`);
+    return all[0]!;
+  }
   const user = instance.users.get(id);
   if (!user) throw new CliError(`no user ${id}; hopper users lists them`);
   return user;
 }
 
-/** Run `fn` with the records `name` lives in: sign-in the instance's, the others the user's (default admin). */
+/** Run `fn` with the records `name` lives in: sign-in the instance's, the others the user's (default the one user). */
 function withRecords<T>(instance: InstanceStore, name: ConfigName, userId: string | undefined, fn: (records: Records) => T): T {
   if (name === 'sign-in') {
     if (userId !== undefined) throw new CliError('sign-in is the instance\'s (sign-in is shared): no --user');
@@ -129,14 +133,6 @@ function configVerb(records: Records, name: ConfigName, verb: string | undefined
   } else {
     throw new CliError(USAGE);
   }
-}
-
-/** One fresh login code on stdout (or the device link with it); its expiry on stderr. */
-function loginCode(instance: InstanceStore, args: string[], io: CliIo): void {
-  const { values } = parseArgs({ args, options: { link: { type: 'string' }, user: { type: 'string' } } });
-  const code = mintLoginCode(instance, { now: () => new Date() }, userOf(instance, values.user).id);
-  io.out(values.link ? `${values.link.replace(/\/+$/, '')}/#login=${code}\n` : `${code}\n`);
-  io.err(`login code minted: works once, for ${LOGIN_CODE_MINUTES} minutes\n`);
 }
 
 /** `hopper users`: one line per user, oldest first: id, name, when added (tab-separated). */
@@ -174,7 +170,7 @@ function userCommand(instance: InstanceStore, args: string[], io: CliIo): void {
   if (instance.users.list().some((u) => u.name.toLowerCase() === name.trim().toLowerCase())) throw new CliError(`the name ${name.trim()} is taken`);
   const user = instance.users.add(name);
   io.out(`${user.id}\n`);
-  io.err(`user ${user.id} added: hopper login-code --user ${user.id} gives a first sign-in\n`);
+  io.err(`user ${user.id} added: link a sign-in to it with hopper user transfer ${user.id} <the user a sign-in made>\n`);
 }
 
 /** Run one command; the exit code. */
@@ -184,7 +180,7 @@ export function runCli(argv: string[], io: CliIo): number {
     io.out(`${USAGE}\n`);
     return 0;
   }
-  if (command !== 'config' && command !== 'login-code' && command !== 'users' && command !== 'user') {
+  if (command !== 'config' && command !== 'users' && command !== 'user') {
     io.err(`${USAGE}\n`);
     return 2;
   }
@@ -202,8 +198,7 @@ export function runCli(argv: string[], io: CliIo): number {
   let store: InstanceStore | undefined;
   try {
     store = openInstanceStore({ url, clock: { now: () => new Date() } });
-    if (command === 'login-code') loginCode(store, rest, io);
-    else if (command === 'users') users(store, io);
+    if (command === 'users') users(store, io);
     else if (command === 'user') userCommand(store, rest, io);
     else config(store, rest, io);
     return 0;

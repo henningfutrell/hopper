@@ -1,5 +1,5 @@
 // One-time UI login codes (design.md "UI session and mutations" 1): minted into the store for one
-// user (issue #158) — by the operator's `hopper login-code`, for a device link, or for a new user's
+// user (issue #158) — for a device link, or for a new user's
 // login link — and taken once by POST /ui/login. Only the code's SHA-256 is stored; a code expires
 // LOGIN_CODE_MINUTES after it is minted.
 import { createHash } from 'node:crypto';
