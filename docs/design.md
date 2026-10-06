@@ -5347,7 +5347,7 @@ wildcards). So "when possible" is: the runtime gives the app's client secret, an
 sign-in origin (whose callback the operator registers); a LAN name, a phone or a hopper without the secret
 gets the device code. Not this issue: whether a new hopper registers itself (#259).
 
-- **The page** (`ui/src/app/landing.tsx`, `index.css` "landing"): one centred card over a backdrop in the
+- **The page** (`ui/src/app/landing.tsx`, `index.css` "landing"; its layout since issue #266, below): one centred card over a backdrop in the
   logo's teal — slow aurora light, a dot grid fading toward the edges, the logo's silhouette, grain and a
   vignette; pure CSS, nothing fetched, still for reduced motion; always dark. The card: the logo, the name,
   one line of what the hopper is, then the ways to sign in in groups — GitHub first as one large button,
@@ -5381,6 +5381,31 @@ without it no redirect and the device code; a denial; another browser's binding 
 `test/ui/sign-in-device.test.ts` (the redirect button, Use a code instead, the centred code panel with copy
 and Open GitHub, Cancel), `test/integration/unit-file.test.ts` (the secret is read without a warning and kept
 in no config).
+
+## The sign-in page as a page, not a lone card (issue #266, 2026-10-06)
+
+Owner request, after issue #258: make the sign-in page pleasing to look at, with a better layout and a
+compelling background; centre the device code; browser redirect when possible, the device code as
+fallback. The last two shipped with #258 (the code panel centred; GitHub's web flow with PKCE on the
+sign-in origin when the runtime gives the app's client secret, the device code otherwise, a LAN name or a
+phone always the code) and stay as they are. This change is the layout and the backdrop.
+
+- **Two columns on a wide screen** (`ui/src/app/landing.tsx`, `lg` and up): on the left a panel
+  (`data-landing-showcase`) says what the hopper does — a line naming it, the headline "Your GitHub
+  issues, worked on your machines." in white fading to the logo's teal, one sentence, and three steps
+  joined by a line: **Label an issue**, **It runs on your machine**, **Review the pull request**. On the
+  right the sign-in card (`data-landing-card`), unchanged inside, its subtitle "Sign in to see your
+  jobs." since the panel carries the headline. Narrower, the panel is not shown and the card stands alone,
+  centred, with the headline as its subtitle as before.
+- **The backdrop** (`index.css` "landing"): the aurora, dot grid, grain and vignette stay; the logo's
+  silhouette is gone, and in its place lanes: six faint lines across the page, tilted a little, each with a
+  job — a short bright streak in teal or violet — going along it at its own pace. Still for reduced motion
+  (each streak stops part way along); pure CSS, nothing fetched.
+
+**Verification:** `test/ui/signed-out-landing.test.ts` (the card beside the panel, its headline and the
+three steps, the lanes; the card not inside the panel), `test/ui/sign-in-device.test.ts` (unchanged: the
+redirect button, the centred code panel), and the built page drawn in a headless browser against a fake
+daemon at desktop and phone width: GitHub alone, every way to sign in, and the device code.
 
 ## Sources: signed in with GitHub, one GitHub piece (issue #254, 2026-10-06)
 

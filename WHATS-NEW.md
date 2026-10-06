@@ -9,6 +9,7 @@ numbers, no commit hashes, no file names, no code words. Never edit a line once 
 update notice would show it again as new.
 
 - An install or update can no longer leave the hopper's pages unstyled: a version whose look did not build properly is refused, and the running one stays.
+- The sign-in page has a fresh look: on a wide screen it shows what the hopper does in three steps beside the sign-in, over a backdrop of jobs moving along their lanes.
 - Someone you add with a login link sets up everything of their own, but only the hopper's admins manage sign-in, users, updates and the plugin store.
 - Scripts and tools can read the hopper with the same GitHub or gateway sign-in you use in the browser: send the token, and they see your work and nothing else.
 - Sources now lists the repositories the hopper's GitHub app reaches on each account it is installed on, with a link to change them, and asks you to install the app only when it is not installed yet.
