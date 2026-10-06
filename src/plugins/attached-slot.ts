@@ -40,7 +40,7 @@ export function createMachinesEditor(o: AttachedEditOptions & {
     const error = o.error();
     return {
       version: o.version(), ...(error ? { error } : {}),
-      machines: c.machines, executors: c.executors.map((x) => x.name), defaults: machineDefaults(c.machineDefaults), ssh: readSshTargets(sshConfig),
+      machines: c.machines.map(({ name, plugin, options }) => ({ name, connection: plugin, ...(options ? { options } : {}) })), executors: c.executors.map((x) => x.name), defaults: machineDefaults(c.machineDefaults), ssh: readSshTargets(sshConfig),
     };
   }
 

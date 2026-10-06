@@ -87,7 +87,7 @@ export function EditMachineForm({ machine, config, busy, send, onDone }: {
   machine: Extract<MachineKind, { kind: 'attached' }>; config: MachinesConfig; busy: boolean;
   send: (e: Extract<PluginsEdit, { action: 'options' }>, done: string) => Promise<boolean>; onDone: () => void;
 }) {
-  const name = machine.instance.name;
+  const name = machine.machine.name;
   const [d, setD] = useState<MachineEditDraft>({ lanes: String(machine.lanes), executors: [...machine.executors], label: machine.label ?? '' });
   const set = (over: Partial<MachineEditDraft>) => setD((x) => ({ ...x, ...over }));
   const body = editBody(machine, d, config.version);

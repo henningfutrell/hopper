@@ -67,7 +67,6 @@ function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
       </div>
       <dl className="grid gap-1.5">
         <Fact label="id">{m.id}{kind.kind === 'local' && <span className="ml-1.5 font-sans text-muted-foreground">this machine</span>}</Fact>
-        {kind.kind !== 'unknown' && <Fact label="plugin">{kind.instance.plugin}</Fact>}
         <Fact label="runs">{m.executors.length ? m.executors.join(', ') : '—'}</Fact>
         {m.ssh && <Fact label="ssh target">{m.ssh}</Fact>}
         {m.docker && <Fact label="container (docker exec)">{m.docker}</Fact>}
@@ -83,8 +82,8 @@ function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
       {editing && kind.kind === 'local' && ctx.config && (
         <LocalLanesForm lanes={kind.lanes} busy={ctx.busy} onDone={() => ctx.setEditing(null)}
           save={(lanes) => ctx.edit({
-            action: 'options', role: 'machine-source', name: kind.instance.name, options: { ...kind.instance.options, lanes }, version: ctx.config!.version,
-          }, `${kind.instance.name} runs ${lanes} lane${lanes === 1 ? '' : 's'}`)} />
+            action: 'options', role: 'machine-source', name: kind.machine.name, options: { ...kind.machine.options, lanes }, version: ctx.config!.version,
+          }, `${kind.machine.name} runs ${lanes} lane${lanes === 1 ? '' : 's'}`)} />
       )}
       <div className="flex flex-wrap gap-x-2 gap-y-4">
         {orderReadings(m.usage).map((r) => <ReadingGauge key={readingKey(r)} r={r} now={now} showSource />)}

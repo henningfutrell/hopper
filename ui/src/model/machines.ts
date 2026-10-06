@@ -1,30 +1,30 @@
-// The Machines view's model (design.md "Machines from the UI", issues #18, #74): which machine is a
-// `local` instance and which an attached one (an instance of `ssh`, `docker` or `client`), why an Add
+// The Machines view's model (design.md "Machines from the UI", issues #18, #74): which machine is
+// this one (connection `local`) and which an attached one (connection `ssh`, `docker` or `client`), why an Add
 // form may not be sent yet, the body POST /ui/api/machines takes, and the options edit an Edit form
 // sends to POST /ui/api/plugins. herdrBin, session and hostKey are never part of a body. A new machine
 // starts from the machine defaults (issue #142), edited through POST /ui/api/machines/defaults.
-import type { InstanceSpec, MachineDefaultsEdit, MachineEdit, MachineSnapshot, MachinesConfig, PluginsEdit } from '../../../src/domain/types.ts';
+import type { ConfiguredMachine, MachineDefaultsEdit, MachineEdit, MachineSnapshot, MachinesConfig, PluginsEdit } from '../../../src/domain/types.ts';
 
-/** The local plugin's default lane count. */
+/** This machine's default lane count. */
 const DEFAULT_LANES = 4;
 
-/** The attached-machine plugins, and the executors each runs when its instance names none. */
+/** The connections of an attached machine, and the executors each runs when the machine names none. */
 const ATTACHED: Record<string, string[]> = { ssh: ['herdr-claude'], docker: ['command'], client: ['herdr-claude'] };
 
 export type MachineKind =
-  | { kind: 'local'; instance: InstanceSpec; lanes: number }
-  | { kind: 'attached'; instance: InstanceSpec; lanes: number; executors: string[]; label?: string }
+  | { kind: 'local'; machine: ConfiguredMachine; lanes: number }
+  | { kind: 'attached'; machine: ConfiguredMachine; lanes: number; executors: string[]; label?: string }
   | { kind: 'unknown' };
 
 export function kindOf(config: MachinesConfig | null, id: string): MachineKind {
-  const instance = config?.machines.find((m) => m.name === id);
-  if (!instance) return { kind: 'unknown' };
-  const o = instance.options ?? {};
-  if (instance.plugin === 'local') return { kind: 'local', instance, lanes: typeof o.lanes === 'number' ? o.lanes : DEFAULT_LANES };
-  const executors = ATTACHED[instance.plugin];
+  const machine = config?.machines.find((m) => m.name === id);
+  if (!machine) return { kind: 'unknown' };
+  const o = machine.options ?? {};
+  if (machine.connection === 'local') return { kind: 'local', machine, lanes: typeof o.lanes === 'number' ? o.lanes : DEFAULT_LANES };
+  const executors = ATTACHED[machine.connection];
   if (!executors) return { kind: 'unknown' };
   return {
-    kind: 'attached', instance, lanes: typeof o.lanes === 'number' ? o.lanes : 1,
+    kind: 'attached', machine, lanes: typeof o.lanes === 'number' ? o.lanes : 1,
     executors: Array.isArray(o.executors) ? (o.executors as string[]) : executors,
     ...(typeof o.label === 'string' ? { label: o.label } : {}),
   };
@@ -66,15 +66,15 @@ export function addBody(d: MachineDraft, version: string): MachineEdit {
   return { name: d.name.trim(), ssh: d.ssh, lanes: lanesOf(d.lanes) ?? 0, executors: [...d.executors], ...(label ? { label } : {}), version };
 }
 
-/** The instance's whole options with lanes, executors and label as typed (a cleared label goes); null when nothing changed. */
+/** The machine's whole options with lanes, executors and label as typed (a cleared label goes); null when nothing changed. */
 export function editBody(m: Extract<MachineKind, { kind: 'attached' }>, d: MachineEditDraft, version: string): Extract<PluginsEdit, { action: 'options' }> | null {
   const lanes = lanesOf(d.lanes) ?? 0;
   const label = d.label.trim();
   const sameExecutors = d.executors.length === m.executors.length && d.executors.every((x) => m.executors.includes(x));
   if (lanes === m.lanes && sameExecutors && label === (m.label ?? '')) return null;
-  const { label: _old, ...rest } = m.instance.options ?? {};
+  const { label: _old, ...rest } = m.machine.options ?? {};
   return {
-    action: 'options', role: 'machine-source', name: m.instance.name, version,
+    action: 'options', role: 'machine-source', name: m.machine.name, version,
     options: { ...rest, lanes, executors: [...d.executors], ...(label ? { label } : {}) },
   };
 }
