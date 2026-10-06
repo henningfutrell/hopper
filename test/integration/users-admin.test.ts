@@ -40,7 +40,7 @@ async function twoUsers(a: TestApp): Promise<{ admin: string; bea: string }> {
 describe('an admin reads the totals, never a user\'s work', () => {
   const version = async (a: TestApp, token: string): Promise<string> => (await a.api('GET', '/api/realms', undefined, session(token))).body.version;
 
-  it('GET /api/instance: the totals across users, no job, question or user of anyone; only an admin', async () => {
+  it('GET /api/instance: the totals across users, no job, question or user of anyone; only the instance admin (issue #240)', async () => {
     const a = await start();
     const { admin, bea } = await twoUsers(a);
     const adminJob = await a.pull(hard);
@@ -58,7 +58,8 @@ describe('an admin reads the totals, never a user\'s work', () => {
       usage: [{ unit: '%', used: 0, limit: 200, readings: 2 }],
     });
     expect(JSON.stringify(r.body)).not.toMatch(new RegExp(`${adminJob.id}|${beaJob.id}|bea|Bea`));
-    expect((await a.api('GET', '/api/instance', undefined, session(bea))).status).toBe(200);
+    // Bea, added by login link, is admin of her own user only, not the instance admin (issue #240).
+    expect((await a.api('GET', '/api/instance', undefined, session(bea))).status).toBe(403);
   });
 
   it('GET /api/instance: the jobs every user ended in the last day, by how they ended, and the usage readings summed per unit and usage window (issue #241)', async () => {
@@ -83,7 +84,8 @@ describe('an admin reads the totals, never a user\'s work', () => {
       { unit: '%', used: 0, limit: 200, readings: 2 },
     ]));
     expect(JSON.stringify(r.body)).not.toMatch(new RegExp(`${done.id}|${failed.id}|someone@example|plan|bea|Bea`));
-    expect((await a.api('GET', '/api/instance', undefined, session(bea))).status).toBe(200);
+    // Bea, added by login link, is admin of her own user only, not the instance admin (issue #240).
+    expect((await a.api('GET', '/api/instance', undefined, session(bea))).status).toBe(403);
   });
 
   it('the totals need admin: a viewer session is refused', async () => {

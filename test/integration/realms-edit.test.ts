@@ -7,7 +7,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { rawRequest } from '../support/http.ts';
 import { signIn } from '../support/idp.ts';
-import { harness, oidcIdp, oidcRealm, session, startWithAuth, stopAll } from '../support/sign-in-app.ts';
+import { harness, oidcIdp, oidcRealm, session, startNewHopper, startWithAuth, stopAll } from '../support/sign-in-app.ts';
 import type { TestApp } from '../support/app.ts';
 
 const h = harness();
@@ -20,10 +20,11 @@ const edit = (app: TestApp, token: string, body: Record<string, unknown>) => app
 const change = async (app: TestApp, token: string, body: Record<string, unknown>) => edit(app, token, { ...body, version: (await realms(app, token)).version });
 
 /** A hopper with the OIDC realm `corp`, where ada signs in with `role`. */
-async function withCorp(role: string) {
+/** `fresh`: a new hopper, where ada's sign-in makes the first user — the instance admin (issue #240). */
+async function withCorp(role: string, fresh = false) {
   const idp = await oidcIdp(h, { claims: { email: 'ada@example.com', email_verified: true } });
   const realm = oidcRealm(idp, { [role]: { emails: ['ada@example.com'] } });
-  const o = await startWithAuth(h, { version: 1, realms: [realm] });
+  const o = await (fresh ? startNewHopper : startWithAuth)(h, { version: 1, realms: [realm] });
   const ada = async () => (await signIn(o.app.url, o.origin, 'corp')).token;
   return { ...o, idp, realm, ada };
 }
@@ -104,7 +105,7 @@ describe('POST /ui/api/realms: realms', () => {
   });
 
   it('a change that would end the acting admin\'s own session is refused', async () => {
-    const o = await withCorp('admin');
+    const o = await withCorp('admin', true);
     const ada = (await o.ada())!;
     for (const body of [
       { action: 'enable', name: 'corp', enabled: false },
@@ -115,7 +116,8 @@ describe('POST /ui/api/realms: realms', () => {
       expect(r.status).toBe(409);
       expect(r.body.error).toMatch(/your own/);
     }
-    const loginCode = await o.app.login();
+    // ada's device link: her own user, so the instance admin's too.
+    const loginCode = await o.app.login((await session(o.app, ada)).user.id);
     expect((await change(o.app, loginCode, { action: 'settings', local: false })).status).toBe(409);
     expect((await change(o.app, ada, { action: 'settings', local: false })).status).toBe(200);
   });
