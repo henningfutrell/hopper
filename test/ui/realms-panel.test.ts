@@ -1,9 +1,12 @@
 // @vitest-environment happy-dom
-// Settings → Sign-in (issues #185, #200): the realms in the order sign-in tries and shows them, each on
-// or off, moved up or down, edited in a form of its own fields or removed; a realm added from the form
-// of the chosen type; the login code and no sign-in. No password accounts (issue #237). No YAML anywhere. Every change posts
-// POST /ui/api/realms with the version it read; a refusal is shown where it was made. A session that is
-// not admin sees none of it. Rendered against a fake of the daemon's HTTP.
+// Settings → Sign-in (issues #185, #200, #256), as sign-in works: people sign in with GitHub through the
+// hopper's app, and the first of them is admin (issues #214, #239) — the page says so and names them,
+// with who else gets in. Other ways to sign in (a directory, an identity provider, an auth gateway) are
+// optional, each on or off, moved up or down among themselves, edited in a form of its own fields or
+// removed; one added from the form of the chosen type. Device links and no sign-in come last, each saying
+// what it does. Every switch says On or Off in words. No password accounts (issue #237). No YAML anywhere.
+// Every change posts POST /ui/api/realms with the version it read; a refusal is shown where it was made.
+// A session that is not admin sees none of it. Rendered against a fake of the daemon's HTTP.
 import { createElement } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -12,9 +15,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 let posts: Record<string, unknown>[] = [];
 let refuse: string | undefined;
 
-const VIEW = {
-  version: 'v1', local: true, none: null, origin: 'http://localhost:4790',
+const GITHUB = { name: 'github', label: 'GitHub', type: 'github', enabled: true, settings: { roles: { operator: { usernames: ['bea'] }, defaultRole: 'viewer' } }, secrets: [] };
+let VIEW: Record<string, unknown> & { realms: Record<string, unknown>[] };
+const BASE = {
+  version: 'v1', local: true, none: null, origin: 'http://localhost:4790', githubAdmin: { realm: 'github', user: 'octo' },
   realms: [
+    GITHUB,
     { name: 'staff', label: 'Staff', type: 'saml', enabled: true, settings: { entryPoint: 'https://idp.example.com/sso', idpCert: 'abc' }, secrets: [], callback: 'http://localhost:4790/ui/auth/staff/callback', metadata: 'http://localhost:4790/ui/auth/staff/metadata' },
     {
       name: 'corp', label: 'Corp SSO', type: 'oidc', enabled: false, callback: 'http://localhost:4790/ui/auth/corp/callback', secrets: ['clientSecret'],
@@ -43,6 +49,7 @@ async function render(role: 'admin' | 'operator') {
   document.body.innerHTML = '<div id="root"></div>';
   posts = [];
   refuse = undefined;
+  VIEW ??= structuredClone(BASE);
   vi.stubGlobal('fetch', fakeDaemon());
   const store = '../../ui/src/store/index.ts'; // browser code, type-checked by ui/tsconfig.json: imported by path
   const { useHopper } = (await import(store)) as { useHopper: { setState(s: Record<string, unknown>): void } };
@@ -55,8 +62,10 @@ async function render(role: 'admin' | 'operator') {
   });
 }
 
+const section = (title: string) => document.querySelector<HTMLElement>(`[data-section="${title}"]`)!;
+const switchIn = (el: ParentNode) => el.querySelector<HTMLElement>('[role="switch"]')!;
 const row = (name: string) => document.querySelector<HTMLElement>(`[data-realm="${name}"]`)!;
-const rows = () => [...document.querySelectorAll<HTMLElement>('[data-realm]')].map((e) => e.dataset.realm);
+const rows = (el: ParentNode = section('other')) => [...el.querySelectorAll<HTMLElement>('[data-realm]')].map((e) => e.dataset.realm);
 const buttonIn = (el: ParentNode, label: string) => [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent?.trim() === label || b.getAttribute('aria-label') === label);
 const click = async (b: HTMLElement | undefined) => { expect(b).toBeDefined(); await act(async () => { b!.click(); }); };
 const field = (label: string) => document.querySelector<HTMLInputElement & HTMLSelectElement & HTMLTextAreaElement>(`[aria-label="${label}"]`)!;
@@ -69,6 +78,7 @@ function type(el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement, va
 afterEach(async () => {
   await act(async () => root?.unmount());
   root = undefined;
+  VIEW = undefined!;
   vi.unstubAllGlobals();
 });
 
@@ -89,7 +99,8 @@ describe('Settings: Sign-in', () => {
     await click(row('corp').querySelector<HTMLElement>('[role="switch"]')!);
     await vi.waitFor(() => expect(posts).toContainEqual({ action: 'enable', name: 'corp', enabled: true, version: 'v1' }));
     await click(buttonIn(row('corp'), 'Move up'));
-    await vi.waitFor(() => expect(posts).toContainEqual({ action: 'move', name: 'corp', to: 0, version: 'v2' }));
+    // Up past staff: the place staff holds in the whole list, after GitHub.
+    await vi.waitFor(() => expect(posts).toContainEqual({ action: 'move', name: 'corp', to: 1, version: 'v2' }));
   });
 
   it('adds a realm from the fields of the chosen type: no YAML', async () => {
@@ -145,30 +156,99 @@ describe('Settings: Sign-in', () => {
   });
 
   it('a realm set up by the environment says so: the next start sets it again', async () => {
-    (VIEW.realms[1] as { environment?: boolean }).environment = true;
-    try {
-      await render('admin');
-      await vi.waitFor(() => expect(rows()).toHaveLength(2));
-      expect(row('corp').textContent).toContain('from the environment');
-      expect(row('staff').textContent).not.toContain('from the environment');
-    } finally {
-      delete (VIEW.realms[1] as { environment?: boolean }).environment;
-    }
+    VIEW = structuredClone(BASE);
+    VIEW.realms[2]!.environment = true;
+    await render('admin');
+    await vi.waitFor(() => expect(rows()).toHaveLength(2));
+    expect(row('corp').textContent).toContain('from the environment');
+    expect(row('staff').textContent).not.toContain('from the environment');
   });
 
-  it('offers no password realm to add: the hopper keeps no password accounts (issue #237)', async () => {
+  it('offers no password realm to add, and GitHub only where GitHub is: the hopper keeps no password accounts (issue #237)', async () => {
     await render('admin');
     await vi.waitFor(() => expect(rows()).toHaveLength(2));
     await click(buttonIn(document.body, 'Add realm'));
     const types = [...field('Realm type').querySelectorAll('option')].map((o) => (o as HTMLOptionElement).value);
-    expect(types).toEqual(['ldap', 'oidc', 'github', 'saml', 'gateway']);
+    expect(types).toEqual(['ldap', 'oidc', 'saml', 'gateway']);
     expect(document.querySelector('[data-account]')).toBeNull();
+  });
+
+  it('says people sign in with GitHub and names the admin, the first of them, with who else gets in (issue #256)', async () => {
+    await render('admin');
+    await vi.waitFor(() => expect(rows(section('github'))).toEqual(['github']));
+    const github = section('github');
+    expect(github.textContent).toMatch(/sign in with GitHub/);
+    expect(github.textContent).toMatch(/octo.*admin.*first to sign in with GitHub/);
+    expect(github.textContent).toMatch(/operator.*bea/);
+    expect(github.textContent).toMatch(/anyone else.*viewer/i);
+    // On in words, and none of the realm's inner names: no "github" badge, no "github" name beside "GitHub".
+    expect(row('github').textContent).toContain('On');
+    expect(row('github').textContent).not.toContain('github');
+    // GitHub is not one of the others, and the help no longer speaks of a password form or LDAP order there.
+    expect(rows()).toEqual(['staff', 'corp']);
+    expect(github.textContent).not.toMatch(/password|LDAP/);
+    expect(document.body.textContent).not.toContain('Without a realm');
+  });
+
+  it('before anyone signs in with GitHub, says the first who does becomes admin', async () => {
+    VIEW = { ...structuredClone(BASE), githubAdmin: null };
+    await render('admin');
+    await vi.waitFor(() => expect(rows(section('github'))).toEqual(['github']));
+    expect(section('github').textContent).toMatch(/Nobody has signed in with GitHub yet.*first.*becomes admin/);
+  });
+
+  it('a GitHub realm turned off says Off, and turning it on posts enable', async () => {
+    VIEW = structuredClone(BASE);
+    VIEW.realms[0]!.enabled = false;
+    await render('admin');
+    await vi.waitFor(() => expect(rows(section('github'))).toEqual(['github']));
+    expect(row('github').textContent).toContain('Off');
+    await click(switchIn(row('github')));
+    await vi.waitFor(() => expect(posts).toContainEqual({ action: 'enable', name: 'github', enabled: true, version: 'v1' }));
+  });
+
+  it('with no GitHub realm, offers to add GitHub sign-in back', async () => {
+    VIEW = { ...structuredClone(BASE), githubAdmin: null, realms: structuredClone(BASE.realms.slice(1)) };
+    await render('admin');
+    await vi.waitFor(() => expect(rows()).toHaveLength(2));
+    await click(buttonIn(section('github'), 'Add GitHub sign-in'));
+    await vi.waitFor(() => expect(posts).toContainEqual({ action: 'save', version: 'v1', realm: { name: 'github', label: 'GitHub', type: 'github' } }));
+  });
+
+  it('with no other way to sign in, says GitHub is the only one', async () => {
+    VIEW = { ...structuredClone(BASE), realms: [structuredClone(GITHUB)] };
+    await render('admin');
+    await vi.waitFor(() => expect(rows(section('github'))).toEqual(['github']));
+    expect(rows()).toEqual([]);
+    expect(section('other').textContent).toMatch(/GitHub is the only way to sign in/);
+  });
+
+  it('device links: what they are, On or Off in words, and the switch posts the login code setting', async () => {
+    await render('admin');
+    await vi.waitFor(() => expect(rows()).toHaveLength(2));
+    const links = section('device-links');
+    expect(links.textContent).toMatch(/another device/);
+    expect(links.textContent).toMatch(/new user/);
+    expect(links.textContent).toContain('On');
+    await click(switchIn(links));
+    await vi.waitFor(() => expect(posts).toContainEqual({ action: 'settings', local: false, version: 'v1' }));
+  });
+
+  it('no sign-in: off, and only for a hopper behind something that decides who gets in', async () => {
+    await render('admin');
+    await vi.waitFor(() => expect(rows()).toHaveLength(2));
+    const none = section('no-sign-in');
+    expect(field('No sign-in').value).toBe('');
+    expect(none.textContent).toMatch(/Off/);
+    expect(none.textContent).toMatch(/proxy or network that already decides who gets in/);
+    await act(async () => type(field('No sign-in'), 'viewer'));
+    await vi.waitFor(() => expect(posts).toContainEqual({ action: 'settings', none: 'viewer', version: 'v1' }));
   });
 
   it('a session that is not admin sees no realms', async () => {
     await render('operator');
     expect(document.body.textContent).toContain('Only an admin manages sign-in.');
-    expect(rows()).toEqual([]);
+    expect(document.querySelectorAll('[data-realm]')).toHaveLength(0);
     expect(buttonIn(document, 'Add realm')).toBeUndefined();
   });
 });
