@@ -10,7 +10,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const LINK = `http://127.0.0.1:4790/#login=${'c'.repeat(64)}`;
-const TOTALS = { users: 2, jobs: { queued: 1, held: 1, claimed: 0, running: 3, waiting_answer: 2 }, questions: { open: 4 }, lanes: { busy: 3, total: 5 } };
+const TOTALS = { users: 2, jobs: { queued: 1, held: 1, claimed: 0, running: 3, waiting_answer: 2 }, questions: { open: 4 }, lanes: { busy: 3, total: 5 }, endedLastDay: { finished: 7, failed: 2, cancelled: 1, rejected: 0 }, usage: [{ unit: '%', window: 'session', used: 90, limit: 200, readings: 2 }] };
 let posts: unknown[] = [];
 let users = [{ id: 'admin', name: 'admin', createdAt: '2026-10-05T10:00:00.000Z' }];
 
@@ -94,6 +94,10 @@ describe('Settings: Users', () => {
     expect(totals()).toMatch(/waiting\s*2/);
     expect(totals()).toMatch(/running\s*3/);
     expect(totals()).toMatch(/open questions\s*4/);
+    expect(totals()).toMatch(/finished, last 24 h\s*7/);
+    expect(totals()).toMatch(/failed, last 24 h\s*2/);
+    expect(totals()).toMatch(/usage, session\s*45%/);
+    expect(totals()).toContain('2 readings');
   });
 
   it('a session that is not admin sees no totals', async () => {
