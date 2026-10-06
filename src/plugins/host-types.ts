@@ -76,7 +76,7 @@ export interface PluginHost {
   /** The attached machines the machine-source instances name now, those whose options are valid (design.md "Attached machines", issue #74). */
   targets(): AttachedMachine[];
   /** GET /api/machines/config. Valid after start(). */
-  machinesConfig(): MachinesConfig;
+  machinesConfig(): Promise<MachinesConfig>;
   /** POST /ui/api/machines: attach an ssh target; resolves once the plugins config is reloaded. */
   editMachines(e: MachineEdit): Promise<MachineEditOutcome>;
   /** POST /ui/api/machines/defaults (issue #142): the plugins config `machineDefaults:`. */

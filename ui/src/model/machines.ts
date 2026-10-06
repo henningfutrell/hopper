@@ -3,8 +3,9 @@
 // form may not be sent yet, the body POST /ui/api/machines takes, and the options edit an Edit form
 // sends to POST /ui/api/plugins — its name and every detail of how it is reached too (issue #205). An
 // Add body over ssh never carries herdrBin, session or hostKey; this machine is added with no ssh target,
-// its name and its herdr session (issue #260). A new machine starts from the machine defaults
-// (issue #142), edited through POST /ui/api/machines/defaults.
+// its name and its herdr session (issue #260), and so is an ssh target the daemon found is this machine
+// (issue #275); in a container this machine cannot be added. A new machine starts from the machine
+// defaults (issue #142), edited through POST /ui/api/machines/defaults.
 import type { ConfiguredMachine, MachineDefaultsEdit, MachineEdit, MachineSnapshot, MachinesConfig, PluginsEdit } from '../../../src/domain/types.ts';
 
 /** This machine's default lane count. */
@@ -91,6 +92,8 @@ export function addProblem(d: MachineDraft, config: MachinesConfig): string | nu
   if (!name) return 'give the machine a name';
   if (config.machines.some((m) => m.name === name)) return `a machine is already named ${name}; pick another name`;
   if (!config.ssh.targets.includes(d.ssh)) return 'pick an ssh target from ~/.ssh/config';
+  const here = isThisMachineTarget(config, d.ssh) && config.machines.find((m) => m.connection === 'local');
+  if (here) return `${d.ssh} is this machine, already added as ${here.name}; edit that one`;
   if (lanesOf(d.lanes) === undefined) return 'lanes must be a whole number, at least 1';
   return null;
 }
@@ -158,6 +161,12 @@ function sessionProblem(session: string): string | null {
 
 /** Whether a machine is this one already: then there is no adding it (issue #260). */
 export const hasThisMachine = (config: MachinesConfig): boolean => config.machines.some((m) => m.connection === 'local');
+
+/** Whether this machine may be added now: none is it yet, and the hopper does not run in a container (issue #275). */
+export const mayAddThisMachine = (config: MachinesConfig): boolean => !hasThisMachine(config) && !config.thisMachineRefused;
+
+/** Whether the daemon found an ssh target is this machine (issue #275): it is added as this machine, with no ssh. */
+export const isThisMachineTarget = (config: MachinesConfig, target: string): boolean => config.ssh.here.includes(target);
 
 /** The Add form for this machine as typed (issue #260): no ssh target — a name, its herdr session, lanes, a label. */
 export interface ThisDraft { name: string; session: string; lanes: string; label: string }
