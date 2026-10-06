@@ -2822,6 +2822,14 @@ responsive and fast. Builds on the at-a-glance board (issue #5).
   `/ui/assets/<hashed file>` → `public, max-age=31536000, immutable`. Only files listed at startup
   are served, so no request path reaches the filesystem. No bundle → `/` is 503 naming
   `npm run build:ui`; the API is unaffected. `scripts/install.sh` builds before it copies.
+- **The UI bundle check (issue #274).** `npm run build:ui` ends with `scripts/check-ui-bundle.ts`: the
+  stylesheet `index.html` links must be at least 40 KB (a real one is ~90 KB) and hold a rule for each of a
+  few layout utilities (`.flex`, `.h-8`, `.w-full`, …), or the build fails. Tailwind generates only the
+  classes it finds by scanning the source files, and skips files any `.gitignore` covers, a parent dir's
+  too: `install.sh` once built in a temp dir under a job's scratch dir (`.gitignore` of `*`), and the
+  ~15 KB stylesheet it shipped left the sign-in page as logo shards with no controls (#272). So
+  `install.sh` makes its build copy a git root of its own (`git init`), and the check fails the install —
+  and a self-update's build of the next install, before the swap — on a hollow bundle whatever the cause.
 - **One icon (issue #183).** The asset `index.html` names as its icon (`site/hopper-logo.svg`, built)
   is also served at `/favicon.svg` and `/favicon.ico`. Every other page the daemon serves — the API
   reference (Scalar's `favicon`), the sign-in pages — links `/favicon.svg`; `/favicon.ico` covers a
@@ -4056,7 +4064,7 @@ line too; never the UI).
 1. The target's tree (`git archive`) is unpacked to `<data dir>/update/source`.
 2. The **next install** `<install>.next` is built by the target's own `scripts/install.sh` in
    **build-only mode** (`HOPPER_INSTALL_INTO=<dir>` + `_REPO`, `_BRANCH`, `_COMMIT`): UI bundle,
-   production dependencies, install.json — no service, unit or config touched. Log:
+   production dependencies, install.json — no service, unit or config touched; a UI bundle that fails the UI bundle check ("UI rework") fails the build. Log:
    `<data dir>/update/build.log`. The running daemon is not touched: jobs keep running.
 3. Proof it loads: a child `node` imports the next install's `src/main.ts`. A module that fails to
    load fails here.
