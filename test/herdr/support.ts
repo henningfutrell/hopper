@@ -43,14 +43,20 @@ export function contextFor(job: Job, laneId = LANE, machine: MachineSnapshot = L
 
 export function setup(
   fakeOptions: FakeHerdrOptions = {},
-  overrides: { trustWorkdir?: boolean; idleNudgeMs?: number; claudeArgs?: string[]; remote?: Record<string, FakeHerdrOptions> } = {},
+  overrides: { trustWorkdir?: boolean; idleNudgeMs?: number; claudeArgs?: string[]; remote?: Record<string, FakeHerdrOptions>; local?: Record<string, FakeHerdrOptions> } = {},
 ) {
   const herdr = createFakeHerdrClient({ session: 'jh-test', ...fakeOptions });
   const remotes = new Map(Object.entries(overrides.remote ?? {}).map(([target, fo]) => [target, createFakeHerdrClient({ session: 'jh-there', ...fo })]));
+  const locals = new Map(Object.entries(overrides.local ?? {}).map(([session, fo]) => [session, createFakeHerdrClient({ session, ...fo })]));
   const reached: unknown[] = [];
   const { clock, sleep } = fakeClock();
   const executor = createHerdrClaudeExecutor({
     herdr, clock, sleep,
+    local: (session) => {
+      const l = locals.get(session);
+      if (!l) throw new Error(`no fake herdr session ${session}`);
+      return l;
+    },
     remote: (there) => {
       reached.push(there);
       const key = 'client' in there ? there.client.machine : there.ssh;
@@ -61,7 +67,7 @@ export function setup(
     defaultCwd: CWD, claudeArgs: overrides.claudeArgs ?? ['--dangerously-skip-permissions'],
     trustWorkdir: overrides.trustWorkdir ?? true, pollMs: 1000, idleNudgeMs: overrides.idleNudgeMs ?? 20000,
   });
-  return { herdr, remotes, reached, clock, executor };
+  return { herdr, remotes, locals, reached, clock, executor };
 }
 
 /** Yield macrotasks until cond holds (the executor loop advances one poll per yield). */
