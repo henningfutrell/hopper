@@ -36,6 +36,8 @@ export interface FakeForge {
   webLogin?: string;
   /** GitHub: the accounts the app is installed on (GET /user/installations); default: the token's own login. */
   installedOn?: string[];
+  /** GitHub: an install that reaches only chosen repositories, by account → its repos (owner/name); an account not named here reaches all of its repos (those its issues are in). */
+  chosenRepos?: Record<string, string[]>;
   close(): Promise<void>;
 }
 
@@ -82,6 +84,13 @@ async function serve(handler: (base: string) => Handler, extra: { issues: FakeIs
     close: () => new Promise<void>((resolve) => { server.close(() => resolve()); server.closeAllConnections(); }),
   };
 }
+
+/** One page of a GitHub list (`per_page`, `page`). */
+const pageOf = <T>(all: T[], q: Record<string, string>): T[] => {
+  const per = Number(q.per_page ?? 30);
+  const page = Number(q.page ?? 1);
+  return all.slice((page - 1) * per, page * per);
+};
 
 const issueKey = (repo: string, n: number) => `${repo}#${n}`;
 /** A stable numeric id per login, as GitHub gives one. */
@@ -151,7 +160,18 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
       if (r.method === 'GET' && path === '/user/emails') return { status: 200, body: [{ email: `${login}@example.com`, primary: true, verified: true }] };
       if (r.method === 'GET' && path === '/user/installations') {
         const on = forge?.installedOn ?? [login];
-        return { status: 200, body: { total_count: on.length, installations: on.map((a, i) => ({ id: i + 1, account: { login: a } })) } };
+        const page = pageOf(on.map((a, i) => ({
+          id: i + 1, account: { login: a }, html_url: `${base}/settings/installations/${i + 1}`,
+          repository_selection: forge?.chosenRepos?.[a] ? 'selected' : 'all',
+        })), r.query);
+        return { status: 200, body: { total_count: on.length, installations: page } };
+      }
+      const ir = /^\/user\/installations\/(\d+)\/repositories$/.exec(path);
+      if (r.method === 'GET' && ir) {
+        const account = (forge?.installedOn ?? [login])[Number(ir[1]) - 1];
+        if (!account) return { status: 404, body: { message: 'Not Found' } };
+        const repos = forge?.chosenRepos?.[account] ?? [...new Set(issues.map((i) => i.repo).filter((repo) => repo.split('/')[0] === account))];
+        return { status: 200, body: { total_count: repos.length, repositories: pageOf(repos.map((full_name) => ({ full_name })), r.query) } };
       }
       if (r.method === 'GET' && path === '/search/issues') {
         const q = r.query.q ?? '';

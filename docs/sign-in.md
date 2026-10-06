@@ -701,7 +701,8 @@ anything that matters: a GitHub login can be renamed and the old name registered
 are not read: a group rule matches nothing here.
 
 The hopper's GitHub App reaches only the repositories it is **installed** on. After signing in, the
-Sources page says where it is installed and links to install it or choose its repositories.
+Sources page lists, for each account it is installed on, the repositories it reaches there, with a link
+to choose them; only where it is installed nowhere does it link to install it.
 
 Someone signed in at the edge (SSO, SAML, an auth gateway) connects their GitHub from **Sources → GitHub
 account → Connect GitHub**, the same code at the same address. That account is then linked to their

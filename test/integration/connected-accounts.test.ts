@@ -12,8 +12,9 @@
 //     When an admin connects GitHub
 //     Then the answer is the device code and where to enter it, asked for with the client id alone
 //     When the GitHub user approves the code
-//     Then GitHub reads as connected, as that account, through the hopper's app, and where the app is installed
+//     Then GitHub reads as connected, as that account, through the hopper's app, where the app is installed and the repositories it reaches there
 //     And an issue labelled hopper by that account becomes a job, claimed through the account's token
+//   Scenario: the app installed on two accounts, one with chosen repositories: each with the repositories it reaches, every page of them
 //   Scenario: a job of the connected account runs with its token (GH_TOKEN), never stored on the job
 //   Scenario: disconnect
 //     Then GitHub reads as not connected, its source says so, and no issue becomes a job
@@ -99,8 +100,9 @@ describe('a user connects their own GitHub', () => {
     const connected = await account(app, 'github');
     expect(connected).toMatchObject({
       provider: 'github', state: 'connected', account: 'octo-user', via: 'the hopper\'s app',
-      // The app reaches only the repositories it is installed on: where, and where to install it.
-      installUrl: `${f.github.url}/apps/hopper-test/installations/new`, installations: ['octo-user'],
+      // The app reaches only the repositories it is installed on: where, and which repositories there.
+      installUrl: `${f.github.url}/apps/hopper-test/installations/new`,
+      installations: [{ account: 'octo-user', repositorySelection: 'all', repositories: ['octo-user/tools'], settingsUrl: `${f.github.url}/settings/installations/1` }],
     });
     expect(JSON.stringify(await accounts(app))).not.toMatch(/gho_/); // facts only, never the token
 
@@ -113,6 +115,20 @@ describe('a user connects their own GitHub', () => {
     for (const w of writes) expect(w.auth).toMatch(/^token gho_octo-user_/);
     const s = await sourceOf(app, 'github-account');
     expect(s?.detail.account).toMatchObject({ service: 'github', identity: 'octo-user', detail: { via: 'the hopper\'s app' } });
+  });
+
+  it('says, for each account the app is installed on, the repositories it reaches there — every page of them (#253)', async () => {
+    const f = await forges({ github: [{ repo: 'octo-user/tools', number: 7, title: 'x', body: SLEEP, author: 'octo-user', labels: [] }] });
+    const chosen = Array.from({ length: 130 }, (_, i) => `octo-org/repo-${String(i).padStart(3, '0')}`);
+    f.github.installedOn = ['octo-user', 'octo-org'];
+    f.github.chosenRepos = { 'octo-org': chosen };
+    const app = await start(f);
+    await connect(app, f.github, 'github', 'octo-user', await app.login());
+    const connected = await account(app, 'github');
+    expect(connected.state === 'connected' && connected.installations).toEqual([
+      { account: 'octo-user', repositorySelection: 'all', repositories: ['octo-user/tools'], settingsUrl: `${f.github.url}/settings/installations/1` },
+      { account: 'octo-org', repositorySelection: 'selected', repositories: chosen, settingsUrl: `${f.github.url}/settings/installations/2` },
+    ]);
   });
 
   it('runs a job of the connected account with its token as GH_TOKEN, and never stores it on the job', async () => {
