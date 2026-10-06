@@ -125,7 +125,8 @@ describe('Sources view: GitHub', () => {
 
   const connected = (installations?: unknown[]) => ({
     provider: 'github', via: 'the hopper\'s app', state: 'connected', account: 'octo-user', connectedAt: '2026-10-01T00:00:00.000Z',
-    installUrl: 'https://github.com/apps/hopper-qm/installations/new', ...(installations ? { installations } : {}),
+    installUrl: 'https://github.com/apps/hopper-qm/installations/new', configUrl: 'https://github.com/settings/installations',
+    ...(installations ? { installations } : { installationsError: 'GitHub could not say where the app is installed: Service Unavailable' }),
   });
   const withAccount = (github: unknown) => ({ '/api/connected-accounts': { accounts: [github] } });
   const panel = () => document.querySelector('[data-connected-account="github"]');
@@ -161,5 +162,13 @@ describe('Sources view: GitHub', () => {
     await boot(withAccount(connected([{ account: 'octo-user', repositorySelection: 'selected', repositories: [], settingsUrl: 'https://github.com/settings/installations/1' }])));
     await vi.waitFor(() => expect(panel()?.querySelector('[data-installation="octo-user"]')?.textContent).toContain('no repository'));
     expect(links()).toEqual([['Choose its repositories', 'https://github.com/settings/installations/1']]);
+  });
+
+  it('GitHub could not say where it is installed: says why, links to see the installs, and never asks to install it (#263)', async () => {
+    await boot(withAccount(connected()));
+    await vi.waitFor(() => expect(panel()?.textContent).toContain('Connected as octo-user.'));
+    expect(panel()!.querySelector('[data-installations-error]')?.textContent).toContain('GitHub could not say where the app is installed: Service Unavailable');
+    expect(links()).toEqual([['See where the app is installed', 'https://github.com/settings/installations']]);
+    expect(panel()!.textContent).not.toMatch(/install the app/i);
   });
 });

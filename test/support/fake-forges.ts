@@ -38,6 +38,8 @@ export interface FakeForge {
   installedOn?: string[];
   /** GitHub: an install that reaches only chosen repositories, by account → its repos (owner/name); an account not named here reaches all of its repos (those its issues are in). */
   chosenRepos?: Record<string, string[]>;
+  /** GitHub: where the app is installed cannot be read (GET /user/installations answers 503). */
+  installationsDown?: boolean;
   close(): Promise<void>;
 }
 
@@ -159,6 +161,7 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
       if (r.method === 'GET' && path === '/user') return { status: 200, body: { id: idOf(login), login, name: `${login} name` } };
       if (r.method === 'GET' && path === '/user/emails') return { status: 200, body: [{ email: `${login}@example.com`, primary: true, verified: true }] };
       if (r.method === 'GET' && path === '/user/installations') {
+        if (forge?.installationsDown) return { status: 503, body: { message: 'Service Unavailable' } };
         const on = forge?.installedOn ?? [login];
         const page = pageOf(on.map((a, i) => ({
           id: i + 1, account: { login: a }, html_url: `${base}/settings/installations/${i + 1}`,
