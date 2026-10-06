@@ -48,14 +48,14 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin) | engine, http, store, plugins |
 | `src/routing/` | routing rules: the plugins config's `routing` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
 | `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; routing at intake (`source-host.ts`); restart recovery | http |
-| `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the password fallback (`fallback.ts`, pure), the role rules (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm, gateway realm) and their adapters `password.ts` (argon2), `ldap.ts` (ldapts), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), `gateway.ts` (jose + openid-client), the sign-in service — form realms in order, gateway realms in order, flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
+| `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the password fallback (`fallback.ts`, pure), the sign-in config at start — named secrets taken in, the environment applied, the fallback ensured (`start.ts`, issue #216) — and the `HOPPER_SIGN_IN_*` variables (`environment.ts`), the role rules (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm, gateway realm) and their adapters `password.ts` (argon2), `ldap.ts` (ldapts), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), `gateway.ts` (jose + openid-client), the sign-in service — form realms in order, gateway realms in order, flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets") | everything |
 | `src/update/` | self-update ("Self-update"): install.json, the git mirror of the update repository, the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
 | `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `api-reference.ts` Scalar at `/docs/`); the plugin store's read side (`plugin-store.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
 | `site/` | the install page, published to GitHub Pages by `.github/workflows/pages.yml` with `scripts/get.sh` beside it as `install.sh`: one static `index.html`, no build step, nothing loaded from another site | everything in the repo at runtime; it links to the docs on GitHub |
 | `examples/plugins/` | one minimal runnable custom plugin per role, for authors (`docs/plugins.md`); imports only `hopper/plugin` types and `node:` builtins | everything in `src/` at runtime |
-| `src/main.ts` | composition root: config → instance store → sign-in config (the password fallback ensured) → plugin store → updater → server → one user runtime per user (`src/users/`) | — |
+| `src/main.ts` | composition root: config → instance store → sign-in config (`prepareSignIn`: the environment applied, the password fallback ensured) → plugin store → updater → server → one user runtime per user (`src/users/`) | — |
 | `src/startup-log.ts` | the daemon's startup lines (listening, parts, sign-in) | — |
 | `src/cli.ts` | the operator CLI `hopper`: config records as JSON, login codes, users, `help` — against the daemon's database | engine, executors |
 
@@ -3410,7 +3410,56 @@ up/down, delete; one Save for the whole list). The machine select uses `/api/mac
 routing targets; the executor select uses the configured executors. Forms stack at 390 px width;
 there is no horizontal page scroll.
 
-## Sign-in: realms (issues #39, #53, #185, #200, #215)
+## Sign-in: realms (issues #39, #53, #185, #200, #215, #216)
+
+### Realm secrets stored, sign-in from the environment (issue #216, 2026-10-06)
+
+Owner request: "Secrets for outside things the hopper runs against still come from the runtime it's
+deployed in. Setting up a realm is different." Every realm setting, the client secret included, is set
+in the UI and stored in the database; realms and similar launch settings can also be injected through
+the environment, the way Grafana takes many of its settings (environment injection, not config files,
+no persistent volume assumed); and the first start works like Nexus, Jenkins and Argo, with a random
+password for the first admin. Related: #185, #198, #212, #215. The third requirement is the password
+fallback of issue #219 ("Password fallback" below), which landed while this was in progress; this adds
+only `HOPPER_SIGN_IN_ADMIN_PASSWORD` to it. What the issue left open was taken from those products and
+the hopper's existing shapes, not asked:
+
+- **A realm's secrets are its settings** (`clientSecret` for oidc, github and an introspecting gateway,
+  `bindPassword` for ldap; `SECRET_SETTINGS`), in the config record `sign-in` like the rest.
+  `clientSecretEnv` and `bindPasswordEnv` are gone: the schema refuses them. A realm that is on needs
+  its secret (GitHub's always, LDAP's with a bind DN, a gateway's when it introspects); one that is off
+  may wait for it, as before. **Write-only:** `GET /api/realms` answers each realm's `settings` without
+  them and `secrets: [names set]`; a `save` that leaves one out keeps the stored one, `null` removes it
+  (`editSignIn`), and the UI shows a password field that is empty, says whether one is set, and has a
+  remove button. A bind password goes with its bind DN. The CLI's `config get sign-in` prints them:
+  whoever runs it holds the database's credentials, which open them anyway.
+- **Taken in once.** A realm stored before named its secret's variable; at the next start
+  (`prepareSignIn`, `src/auth/start.ts`) the daemon reads the variable and stores the secret in its
+  place. Not a schema migration: those also run in the CLI, whose environment lacks the daemon's
+  variables. A realm that is on with the variable unset stops the daemon, naming it, as it did; one
+  that is off drops the name.
+- **Sign-in from the environment** (`src/auth/environment.ts`). `HOPPER_SIGN_IN_REALM_<NAME>_TYPE`
+  sets up a realm; `HOPPER_SIGN_IN_REALM_<NAME>_<SETTING>` each of its settings, the field path in upper
+  snake case (`claims.groups` → `CLAIMS_GROUPS`), so the variables follow the form's fields with no
+  second list of names (the table of fields and their kinds — text, switch, words, list — is the one
+  place a new setting is added); `HOPPER_SIGN_IN_LOCAL_ENABLED`, `HOPPER_SIGN_IN_NONE_ROLE` (`off` turns
+  it off), `HOPPER_SIGN_IN_ADMIN_PASSWORD` (the password fallback's password when a start adds the
+  account; neither logged nor stored but as its hash). Every value through `runtimeSecrets`, so
+  `<variable>_FILE` works for each. Read at every start and **applied to the stored config** before the
+  fallback and the load: each environment realm replaces the stored realm of its name in place (a
+  password realm keeps its accounts) or is added at the end, in name order. Grafana's rule, the
+  environment wins, so a deploy's manifests stay the truth; Settings marks those realms
+  (`RealmView.environment`), and a change there lasts until the next start. Writing them into the
+  database rather than overlaying them in memory keeps one sign-in config with one `version`, and
+  leaves the realm in place if the variables go. Each environment realm is checked alone first, so a
+  refusal names the variable, not `realms.3.issuer`; a refusal stops the daemon and writes nothing.
+  `loadConfig` leaves `HOPPER_SIGN_IN_*` out of the leftover-variable warning.
+
+**Residual risk, stated.** The database and its backups now hold the realms' secrets in clear: whoever
+reads the database can use those realms' client registrations and the LDAP search account. Sealing
+them would need a key from the runtime, which is the dependency the owner asked to drop for realms;
+database access is already the instance's highest trust (the CLI holds it). No route answers a stored
+secret: `GET /api/realms` names which are set, never their values.
 
 ### Behind an auth gateway (issue #215, 2026-10-06)
 
@@ -3426,7 +3475,7 @@ both checks the issue names (validate a JWT, introspect a token).
   it has no form, no flow, no callback. Settings: `issuer` (https, or http to loopback), `check`
   (`jwt` default, or `introspection`), `audience` (required for `jwt`; checked for `introspection`
   when set), `header` (default `authorization`, carrying `Bearer <token>`; any other header carries the
-  token alone — oauth2-proxy's `x-forwarded-access-token`), `clientId` and `clientSecretEnv`
+  token alone — oauth2-proxy's `x-forwarded-access-token`), `clientId` and `clientSecret` (stored since issue #216)
   (introspection only, both required), `claims` and `trustUnverifiedEmail` as for `oidc`, `roles`.
 - **Libraries.** The issuer's discovery document through `openid-client` (on first use, retried after
   a failure, as for `oidc`). `jwt`: `jose` `jwtVerify` against `createRemoteJWKSet(jwks_uri)` — the
@@ -4083,7 +4132,7 @@ redirect a credential:
 | gate-router | `TYPESAFE_API_KEY` (Jev, through TypeSafe) | `typesafeKeyFile` |
 | anthropic-api escalation level | `apiKeyEnv` (`ANTHROPIC_API_KEY`) | — |
 | webhook subscription | `secretEnv`, always (from the UI: `WEBHOOK_SECRET_*` only) | inline `secret` (sealed), `secretFile` |
-| realm (sign-in config) | `clientSecretEnv` (oidc, github), `bindPasswordEnv` (ldap) only, read only while the realm is on; a SAML `idpCert` is public and inline | `clientSecret`, `clientSecretFile`, `bindPassword`, `idpCertFile` |
+| realm (sign-in config) | none since issue #216: `clientSecret` (oidc, github, gateway) and `bindPassword` (ldap) are stored with the realm, set in the UI or by `HOPPER_SIGN_IN_REALM_<NAME>_*` (each also `_FILE`); a SAML `idpCert` is public and inline | `clientSecretEnv`, `bindPasswordEnv` (taken into the database once), `clientSecretFile`, `idpCertFile` |
 
 The App's bot is `<slug>[bot]`, its page `https://github.com/apps/<slug>`. `create-github-app.sh`
 writes the key (and webhook secret) as lines of an env file (`--secrets-file`, default the host
@@ -4091,13 +4140,14 @@ unit's `daemon.env`) and prints the `appId` and `slug` to set. The gh and claude
 `CLAUDE_CODE_OAUTH_TOKEN`) where their login state is not on the machine; they read those
 themselves, so no `_FILE` form for them.
 
-**What the hopper keeps is no secret** (issue #56 replaces issue #53's sealing):
+**What the hopper keeps is no secret** (issue #56 replaces issue #53's sealing), but for the realms' own (issue #216):
 
 | kept | how |
 |------|-----|
 | a webhook subscription | its `secretEnv`, a variable's name — in the `webhooks` table (`secret_env`, migration 11, which dropped the sealed `secret` column; the only place since migration 14, issue #78) |
 | UI session tokens, login codes | SHA-256 only (32 random bytes: no dictionary to try) — the hopper's own short-lived state; a hash is not a usable credential |
 | password sign-in passwords | argon2id hashes in `password_accounts` ("Sign-in: realms", issue #200) — a verifier the daemon makes from the password an admin sets, never the password |
+| **the exception (issue #216)**: a realm's own secrets | in clear, in the config record `sign-in` — owner direction: setting up a realm does not go through the runtime ("Realm secrets stored, sign-in from the environment") |
 
 `HOPPER_SECRET_KEY`, the secret box (`src/secrets/box.ts`) and the UI's rotate-secret are gone:
 with no secret to keep there is nothing to seal. A leftover `HOPPER_SECRET_KEY` is a leftover
@@ -4112,7 +4162,7 @@ for `hopper.service`, with `Environment=<NAME>_FILE=%d/<name>`: the secret never
 
 **Residual risk, stated.** Whoever holds the hopper's runtime holds its secrets, and a job on the
 hopper host runs as the daemon's user (it can read `daemon.env` or a readable mounted file). The
-database and its backups hold no secret; the database URL is the one credential that opens it.
+database and its backups hold no secret but the realms' own (issue #216); the database URL is the one credential that opens it.
 
 ### Login codes
 

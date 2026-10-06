@@ -31,7 +31,7 @@ export type { TenantParts, Tenants } from './tenants.ts';
 
 export interface ServerOptions {
   /** The instance store: UI sessions, login codes, the users and their identity links, the sign-in config. */
-  instance: Pick<InstanceStore, 'uiSessions' | 'loginCodes' | 'users' | 'identities' | 'signInConfig' | 'tx'>;
+  instance: Pick<InstanceStore, 'uiSessions' | 'loginCodes' | 'users' | 'identities' | 'signInConfig' | 'settings' | 'tx'>;
   /** Every user's running parts (issue #158): a tenant route reads and changes the request's user's. */
   tenants: Tenants;
   /** The plugin store (the instance's): GET /api/plugin-store, POST /ui/api/plugin-store. */
@@ -45,8 +45,8 @@ export interface ServerOptions {
   sessionHours: number;
   /** The sign-in config as it applies: local sign-in, no sign-in and the realms. */
   signIn: SignIn;
-  /** The instance's own secrets (a realm's clientSecretEnv, bindPasswordEnv): read when the sign-in config changes in the UI. */
-  secret: (name: string) => string | undefined;
+  /** The realms HOPPER_SIGN_IN_* variables set up (issue #216): Settings → Sign-in says so. */
+  signInEnvironment: string[];
   /** The LAN names and peers (design.md "Reaching the UI across the LAN"); empty: loopback only. */
   lan: Lan;
   /** The built UI bundle (ui/dist). */
@@ -79,7 +79,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   pluginStoreRoutes(app, o);
   userRoutes(app, { tenants: o.tenants, sessions });
   instanceRoutes(app, { tenants: o.tenants, sessions });
-  const realms = createRealmsAdmin({ instance: o.instance, secret: o.secret, signIn: o.signIn, sessions });
+  const realms = createRealmsAdmin({ instance: o.instance, environment: o.signInEnvironment, signIn: o.signIn, sessions });
   realmRoutes(app, { realms, sessions });
   staticRoutes(app, o.uiDir);
   registerUiRoutes(app, {
