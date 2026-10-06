@@ -63,14 +63,15 @@ const read = (a: TestApp) => readConfig(a.dbPath, 'plugins') as any;
 const plugins = (a: TestApp, token: string, edit: Record<string, unknown>) => a.ui<PluginsReply>('/ui/api/plugins', edit, { token });
 
 describe('GET /api/machines/config', () => {
-  it('every machine-source instance as configured, the executors a machine may run, the detected ssh targets and the config version', async () => {
+  it('every machine as configured, by its connection (never "plugin"), the executors a machine may run, the detected ssh targets and the config version', async () => {
     const { a } = await start();
     const c = await config(a);
     expect(c.version).toMatch(/^[0-9a-f]{64}$/);
     expect(c.machines).toEqual([
-      { name: 'local', plugin: 'local', options: {} },
-      { name: 'desk', plugin: 'ssh', options: { ssh: 'desk', lanes: 1, executors: ['test'], herdrBin: '/usr/bin/herdr' } },
+      { name: 'local', connection: 'local', options: {} },
+      { name: 'desk', connection: 'ssh', options: { ssh: 'desk', lanes: 1, executors: ['test'], herdrBin: '/usr/bin/herdr' } },
     ]);
+    expect(c.machines.every((m) => !('plugin' in m))).toBe(true);
     expect(c.executors).toEqual(['test', 'herdr-claude']);
     expect(c.ssh.targets).toEqual(['laptop', 'desk', 'unreachable']);
   });
