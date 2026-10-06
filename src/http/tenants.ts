@@ -3,7 +3,7 @@
 // request without a session, the user the `x-hopper-user` header names, else owner. A LAN or public
 // request without a session never gets this far for /api/ (the Host guard answers 401).
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import type { GhLogin, HerdrTerminal, PluginsView, QuestionService, SourceRegistry, UserStore, WebhookDispatcher } from '../domain/ports.ts';
+import type { GhLogin, PluginsView, QuestionService, SourceRegistry, UserStore, WebhookDispatcher } from '../domain/ports.ts';
 import type { Identity, User } from '../domain/types.ts';
 import type { Engine } from '../engine/index.ts';
 import type { WebhooksEditor } from '../webhooks/edit.ts';
@@ -26,8 +26,6 @@ export interface TenantParts {
   dispatcher: WebhookDispatcher;
   ghLogin: GhLogin;
   webhooksEditor: WebhooksEditor;
-  /** The herdr terminal (issue #189). */
-  herdrTerminal: HerdrTerminal;
   /** Why the user's runtime gives no secret for a webhook subscription's variable. */
   secretProblem: SecretProblem;
 }

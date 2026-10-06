@@ -39,7 +39,6 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts; `machines.ts` attached machines and their edit; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate), ports (`ports.ts`, re-exporting the store's from `store.ts`) | anything else in `src/` |
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock | everything but `domain/` |
 | `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations (the instance's `migrations.ts` with migration 17 in `migration-users.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, `auth.yaml`, instance settings) and each user store (`user-store.ts`: repositories, event log, config documents) | engine, http, decider |
-| `src/herdr-terminal/` | the herdr terminal (issue #189, "The herdr terminal"): which attached machines the root herdr lists, their pins and the ssh wrapper (`plan.ts`, pure), syncing the root herdr's saved machines through herdr's CLI (`machines.ts`), the pseudo-terminal (`pty.ts`, node-pty), one user's terminal composed (`index.ts`) | engine, http, store, plugins, decider |
 | `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), identity → user (`identities.ts`: link or provision) | http, decider |
 | `src/webhooks/` | signing, dispatcher, retry/backoff, the secret of a subscription from the runtime (`dispatcher.ts`), the UI edit of the subscriptions (`edit.ts`, rows in the store) | engine, http, decider |
 | `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, `plugins.yaml` + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt, `escalation-level/anthropic-api/` asks the Claude API with the same prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-gh/` and `job-source/github-app/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser); `usage-source/command-usage/` reads any agent framework's usage and account from a command that prints them as JSON; `usage-source/polled.ts` the background refresh both share, `usage-source/run.ts` their command runner; `notifier/grokbot-routine/` is the Grok Bot routine webhook — env-file reader and notifier; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
@@ -52,7 +51,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/auth/` | sign-in through realms (issues #39, #185): `auth.yaml` load (`config.ts`) and edits that keep its comments (`edit.ts`), the role rules (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm) and their adapters `password.ts` (argon2), `ldap.ts` (ldapts), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), the sign-in service — form realms in order, flows, tickets, bindings, no sign-in, a changed auth.yaml applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets") | everything |
 | `src/update/` | self-update ("Self-update"): install.json, the git mirror of the update repository, the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
-| `src/http/` | Fastify routes, SSE, static UI; the herdr terminal's tickets and WebSocket (`herdr-terminal.ts`, @fastify/websocket); whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `api-reference.ts` Scalar at `/docs/`); the plugin store's read side (`plugin-store.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
+| `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `api-reference.ts` Scalar at `/docs/`); the plugin store's read side (`plugin-store.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
 | `site/` | the install page, published to GitHub Pages by `.github/workflows/pages.yml` with `scripts/get.sh` beside it as `install.sh`: one static `index.html`, no build step, nothing loaded from another site | everything in the repo at runtime; it links to the docs on GitHub |
 | `examples/plugins/` | one minimal runnable custom plugin per role, for authors (`docs/plugins.md`); imports only `hopper/plugin` types and `node:` builtins | everything in `src/` at runtime |
@@ -2747,9 +2746,6 @@ webhook-only screen.
 
 ### 6c. Own herdr session visible and attachable
 
-**Built as option 4, by issue #189** ("The herdr terminal" below): a terminal in the page, onto a root
-herdr that lists the herdr of every machine. The options below are kept as they were weighed.
-
 Owner request: the hopper's own herdr session should be visible in the UI and attachable in a single click.
 
 Meaning: the UI shows the herdr session (herdr-claude option `session`, default `hopper`; unit
@@ -4568,71 +4564,3 @@ the engine.
 a job to the end of the user order, Accept pre-sort takes them all, Reject) and **Your order** (accepted
 waiting jobs in queue order; up, down, to the top, Reject). Columns stack below `lg`. The Overview's
 Waiting panel links an unaccepted job to it.
-## The herdr terminal (issue #189, 2026-10-05)
-
-Owner request: build herdr into the hopper so there is a pane that is herdr. A root herdr runs on the
-machine (the container) the hopper runs in; from it, herdr reaches the herdr on each machine over ssh;
-it is used in the browser, and it must be an actual terminal in the browser, nothing less.
-
-**What it is.** The UI's **herdr** view is xterm.js on a WebSocket; the daemon runs `herdr --session
-<root herdr>` on a pseudo-terminal (node-pty, the library VS Code's terminal runs on) and pipes it both
-ways. herdr draws its own TUI, mouse and keys included; nothing of herdr is re-implemented. The **root
-herdr** is the user's herdr session with `-root` (`hopper-root` for owner, `hopper-<id>-root`): its
-server starts with the first client and keeps running, with its panes, when the page closes (the
-client ends; the server does not). Its Local panes are shells on the hopper's machine.
-
-**Every machine in its sidebar.** herdr's own saved machines (`herdr machine add <target> --label
---remote-session`) are what the root herdr lists; on every open the hopper brings them to the plan
-(`src/herdr-terminal/plan.ts`): one per attached machine that is an ssh target, runs herdr and has a
-pinned host key — exactly the machines the hopper itself reaches over ssh. Its target is the destination
-resolved once from the user's ssh config (`ssh://<user>@<host>:<port>`, a jump host or proxy refused as
-everywhere), its label `<label> (<id>)`, its session the machine's herdr session. A saved machine that
-differs or is no longer listed is removed; `machine add` never installs or restarts anything there (it
-runs without a terminal), and a failure is shown per machine (`GET /api/herdr-terminal`, the view's
-strip) and logged. Not listed, with the reason: a container target (no herdr), a client target (it dials
-the hopper; the hopper has no ssh to it), `herdr: false`, no pinned host key. The saved machines live in
-the terminal's own herdr state, `XDG_STATE_HOME=<user work dir>/herdr-terminal/state`, so a user's own
-saved machines on a non-container install are never touched.
-
-**ssh is the hopper's, unchanged** ("Target authentication"). herdr runs plain `ssh` (with its own `-F`
-config and control socket); the terminal's PATH starts with `<user work dir>/herdr-terminal/bin`, whose
-`ssh` execs the real ssh with `HARDENED_SSH_OPTIONS`, `ProxyJump=none`, `ProxyCommand=none`, the
-hopper's key (`HOPPER_SSH_KEY_FILE`) and `UserKnownHostsFile=<…>/herdr-terminal/known_hosts` on its
-command line — ahead of anything herdr or a config gives, so they win. `known_hosts` pins each
-destination (`host` or `[host]:port`) by its machine's `hostKey`. herdr's bridge is a remote command over
-stdin and stdout (`herdr --session <s> remote-client-bridge`), no tty and no forwarding, so the key's
-`restrict` line on the machine (attach-machine.sh) stays as it is. Verified against a real OpenSSH with a
-`restrict` key: `test/integration/herdr-terminal-real.test.ts`.
-
-**The environment** of the root herdr: the machine's variables of the daemon's (`machineEnv`, as a user
-added later gets) and `XDG_CONFIG_HOME`, the user's CLI config dirs, then `PATH` (wrapper first),
-`XDG_STATE_HOME`, `TERM=xterm-256color`, `COLORTERM=truecolor`. No `HOPPER_*` secret and no `HERDR_*`
-marker (herdr refuses to nest). herdr's sockets live under its config dir and must fit a unix socket path
-(108 bytes): `/home/node/.config/herdr/sessions/hopper-root/…` does.
-
-**Opening it** (`src/http/herdr-terminal.ts`). A browser's WebSocket sends no session header, so an admin's
-UI session mints a **terminal ticket**, `POST /ui/api/herdr-terminal/ticket` (a UI mutation like any
-other: session, exact Origin, JSON) — 32 random bytes, kept only as its SHA-256, in memory, good for
-30 s and for one presentation, refused or not. `GET /ui/api/herdr-terminal/socket?ticket&cols&rows`
-passes the Host guard, then needs a live ticket (else 401) and the Origin of a UI page (else 403); it
-opens the terminal of the ticket's user at that size. Text frames out are the screen; frames in are
-JSON, `{type:'input',data}` or `{type:'resize',cols,rows}` (2..1000), 1 MB at most; anything else is
-dropped. The socket closing kills the client; the client ending closes the socket.
-
-**Who.** admin: the terminal is a shell on the hopper's machine, and the root herdr reaches every machine
-with the hopper's key. **Residual risk:** an admin in the terminal can read the hopper's ssh key (the
-wrapper names its file) and run anything the daemon's user can; that is what the role means here.
-
-**Not a plugin.** The terminal is a view onto herdr, not a role in the job pipeline (North star): no job,
-decision or event passes through it. It reads the attached machines the plugin host already holds.
-
-**Install.** node-pty is a native module, built by node-gyp on `npm ci`: the image builds it in a `deps`
-stage with `make`, `g++`, `python3`; `scripts/install.sh` checks for them and stops with what to install.
-xterm.js is loaded with the herdr view only (its own chunk).
-
-**Verification.** `test/herdr-terminal/` (the plan, the real pseudo-terminal, the saved-machine sync over a
-stand-in herdr), `test/integration/herdr-terminal.test.ts` (the HTTP edge with the pseudo-terminal and
-herdr's CLI at their seams), `test/integration/herdr-terminal-real.test.ts` (nothing doubled: an alpine
-container with OpenSSH and a herdr session, the hopper's key `restrict`ed; the real root herdr saves it
-through the wrapper, `herdr --machine` reaches it, and the browser side — headless xterm.js — renders the
-sidebar with Local and the machine). Skipped where herdr is not installed.

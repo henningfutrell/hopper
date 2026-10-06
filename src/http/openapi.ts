@@ -5,7 +5,6 @@
 import { z } from 'zod';
 import { ENVELOPE_SCHEMA } from '../events/index.ts';
 import type { UiRole } from '../domain/types.ts';
-import { socketQuery } from './herdr-terminal.ts';
 import { jobsQuery } from './jobs.ts';
 import { questionsQuery } from './questions.ts';
 import { streamQuery } from './sse.ts';
@@ -33,7 +32,7 @@ interface Operation {
   /** What a 200 carries. */
   returns: string;
   /** Answer media type; default JSON. */
-  answers?: 'html' | 'sse' | 'xml' | 'redirect' | 'websocket';
+  answers?: 'html' | 'sse' | 'xml' | 'redirect';
   /** A UI mutation: the least UI role that may make it. */
   role?: UiRole;
   /** Error statuses beyond the guards'. */
@@ -73,9 +72,6 @@ const OPERATIONS: Operation[] = [
   { method: 'get', path: '/api/machines/config', tag: 'Machines and usage', summary: 'What the Machines view edits', returns: 'the machine source, the attached machines, the detected ssh targets, the plugins.yaml version' },
   { method: 'post', path: '/ui/api/machines', tag: 'Machines and usage', summary: 'Attach a machine over ssh (edit or remove it through /ui/api/plugins)', role: 'admin', body: machinesEditBody, returns: 'the new machines config', errors: [409] },
   { method: 'post', path: '/ui/api/machines/defaults', tag: 'Machines and usage', summary: 'Set what a machine attached here starts with: its lanes and executors', role: 'admin', body: machineDefaultsBody, returns: 'the new machines config', errors: [409] },
-  { method: 'get', path: '/api/herdr-terminal', tag: 'Machines and usage', summary: 'The herdr terminal: the root herdr session and the machines it lists', description: 'Each attached machine, listed by the root herdr (a saved herdr machine on its herdr session) or not, with why; once the terminal has opened, whether herdr saved it.', returns: '`HerdrTerminalStatus`' },
-  { method: 'post', path: '/ui/api/herdr-terminal/ticket', tag: 'Machines and usage', summary: 'A one-time ticket for the herdr terminal\'s socket', description: 'Good for 30 seconds and one presentation. A browser\'s WebSocket sends no session header, so the session mints this first.', role: 'admin', returns: '`{ ticket }`' },
-  { method: 'get', path: '/ui/api/herdr-terminal/socket', tag: 'Machines and usage', summary: 'The herdr terminal: a WebSocket onto a client of the root herdr on a pseudo-terminal', description: 'Opens with a ticket from POST /ui/api/herdr-terminal/ticket and the Origin of a UI page; else 401 or 403. Text frames out are the screen; frames in are JSON: `{ "type": "input", "data" }` or `{ "type": "resize", "cols", "rows" }`. Closing it ends that client; the root herdr keeps running.', query: socketQuery, answers: 'websocket', returns: 'the WebSocket (101 Switching Protocols)', errors: [401, 403, 404] },
   { method: 'get', path: '/api/usage', tag: 'Machines and usage', summary: 'Usage readings', returns: '`UsageReport`' },
   { method: 'get', path: '/api/plugins', tag: 'Plugins and routing', summary: 'Every role, instance and plugin', returns: '`PluginsReport`' },
   { method: 'get', path: '/api/plugin-store', tag: 'Plugins and routing', summary: 'The plugin store: its catalogue and the store installs', returns: '`PluginStoreReport`' },
@@ -135,7 +131,7 @@ const DESCRIPTION = `The hopper daemon's HTTP API.
 
 **Errors.** \`{ "error": string }\` with the status: 400 a malformed request, 401 no session for a LAN or public read, 403 a refused change, 404 nothing by that id, 409 not possible in the current state, 421 a misdirected Host.`;
 
-const ERROR_TEXT: Record<number, string> = { 400: 'malformed request', 401: 'no session for a LAN or public read, or no live ticket', 403: 'refused: no session, role too low, wrong Origin, or not JSON', 404: 'not found', 409: 'not possible in the current state' };
+const ERROR_TEXT: Record<number, string> = { 400: 'malformed request', 401: 'no session for a LAN or public read', 403: 'refused: no session, role too low, wrong Origin, or not JSON', 404: 'not found', 409: 'not possible in the current state' };
 
 /** JSON Schema for a request part, as the route parses its input. */
 const schemaOf = (s: z.ZodType): Record<string, unknown> => {
@@ -165,7 +161,7 @@ function responses(op: Operation): Record<string, unknown> {
   const statuses = [...(op.query || op.body ? [400] : []), ...(op.role ? [403] : []), ...(op.path.startsWith('/api/') ? [401] : []), ...(op.errors ?? [])];
   const ok = op.answers === 'redirect'
     ? { 302: { description: op.returns } }
-    : op.answers === 'websocket' ? { 101: { description: op.returns } } : { 200: { description: op.returns, content: { [op.answers ? MEDIA[op.answers] : 'application/json']: op.path === '/api/events' ? { schema: { type: 'object', properties: { events: { type: 'array', items: { $ref: '#/components/schemas/Event' } } } } } : {} } } };
+    : { 200: { description: op.returns, content: { [op.answers ? MEDIA[op.answers] : 'application/json']: op.path === '/api/events' ? { schema: { type: 'object', properties: { events: { type: 'array', items: { $ref: '#/components/schemas/Event' } } } } } : {} } } };
   return { ...ok, ...Object.fromEntries([...new Set(statuses)].sort().map((s) => [s, { ...ERROR, description: ERROR_TEXT[s] ?? '' }])) };
 }
 

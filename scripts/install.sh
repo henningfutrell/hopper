@@ -58,8 +58,7 @@ step "build the UI bundle in $BUILD (copy ui/, src/, site/hopper-logo.svg, packa
 cp -r "$APP_DIR/ui" "$APP_DIR/src" "$APP_DIR/package.json" "$APP_DIR/package-lock.json" "$BUILD/"
 mkdir -p "$BUILD/site" && cp "$APP_DIR/site/hopper-logo.svg" "$BUILD/site/"
 rm -rf "$BUILD/ui/dist" "$BUILD/ui/node_modules"
-# --ignore-scripts: the UI build needs no native module (node-pty is built below, in the install).
-npm ci --prefix "$BUILD" --no-audit --no-fund --ignore-scripts
+npm ci --prefix "$BUILD" --no-audit --no-fund
 npm run build:ui --prefix "$BUILD"
 [ -s "$BUILD/ui/dist/index.html" ] || { echo "UI build wrote no $BUILD/ui/dist/index.html" >&2; exit 1; }
 
@@ -77,10 +76,6 @@ assemble() {
   cp "$APP_DIR/package.json" "$APP_DIR/package-lock.json" "$target/"
   cp "$APP_DIR/WHATS-NEW.md" "$target/"
 
-  # node-pty (the herdr terminal's pseudo-terminal) is a native module: npm builds it with node-gyp.
-  for tool in make c++ python3; do
-    command -v "$tool" >/dev/null 2>&1 || { echo "error: $tool not found: the herdr terminal's node-pty is built on install (Debian/Ubuntu: apt install build-essential python3)" >&2; exit 1; }
-  done
   step "npm ci --omit=dev --prefix $target"
   npm ci --omit=dev --prefix "$target"
 
