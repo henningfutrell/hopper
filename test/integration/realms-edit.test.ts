@@ -53,11 +53,12 @@ describe('GET /api/realms', () => {
 describe('POST /ui/api/realms: realms', () => {
   it('an OIDC realm added from its fields is offered at once, in realm order', async () => {
     const idp = await oidcIdp(h);
-    const o = await startWithAuth(h, { version: 1, realms: [{ name: 'gh', type: 'github', clientId: 'g', clientSecret: 's' }] });
+    const o = await startWithAuth(h, { version: 1, realms: [{ name: 'gh', type: 'github' }] });
     const admin = await o.app.login();
     expect((await change(o.app, admin, { action: 'save', realm: oidcRealm(idp, { defaultRole: 'viewer' }) })).status).toBe(200);
     expect((await change(o.app, admin, { action: 'move', name: 'corp', to: 0 })).status).toBe(200);
-    expect((await session(o.app)).signIn.realms).toEqual([{ name: 'corp', label: 'Corp SSO', type: 'oidc' }, { name: 'gh', label: 'gh', type: 'github' }]);
+    expect((await session(o.app)).signIn.realms).toEqual([{ name: 'corp', label: 'Corp SSO', type: 'oidc' }]);
+    expect((await session(o.app)).signIn.devices).toEqual([{ name: 'gh', label: 'gh', type: 'github' }]);
     expect((await realms(o.app, admin)).realms.map((r: { name: string }) => r.name)).toEqual(['corp', 'gh']);
     expect(o.app.app.instance.signInConfig.read().realms[0]).toMatchObject({ name: 'corp', type: 'oidc', issuer: idp.issuer, clientSecret: 'shh' });
   });
@@ -98,7 +99,7 @@ describe('POST /ui/api/realms: realms', () => {
     const o = await startWithAuth(h, { version: 1 });
     const admin = await o.app.login();
     const { version } = await realms(o.app, admin);
-    expect((await edit(o.app, admin, { action: 'save', realm: { name: 'gh', type: 'github', clientId: 'g', clientSecret: 's' }, version })).status).toBe(200);
+    expect((await edit(o.app, admin, { action: 'save', realm: { name: 'gh', type: 'github' }, version })).status).toBe(200);
     expect((await edit(o.app, admin, { action: 'remove', name: 'gh', version })).status).toBe(409);
   });
 

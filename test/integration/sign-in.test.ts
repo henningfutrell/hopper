@@ -12,7 +12,7 @@ const oidc = (o?: Parameters<typeof oidcIdp>[1]) => oidcIdp(h, o);
 // Issue #183: every page the daemon serves shows the app's icon.
 const ICON = '<link rel="icon" type="image/svg+xml" href="/favicon.svg">';
 /** A realm that is on, so the login code may be off: a sign-in config with no way in turns it back on. */
-const GH = { name: 'gh', type: 'github', clientId: 'g', clientSecret: 's' };
+const GH = { name: 'gh', type: 'github' };
 
 describe('a fresh hopper: the login code', () => {
   it('the session view offers the login code, no password form and no redirect realms', async () => {

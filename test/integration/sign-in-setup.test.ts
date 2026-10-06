@@ -41,7 +41,7 @@ describe('a realm\'s secret is set in the UI and stored with it', () => {
     const r = await change(o.app, admin, { action: 'save', realm: { name: 'gh', type: 'github', clientId: 'g' } });
     expect(r.status).toBe(400);
     expect(r.body.error).toMatch(/clientId/);
-    expect(stored(o.app).realms.map((x) => x.name)).toEqual(['password']);
+    expect(stored(o.app).realms).toEqual([]);
   });
 
   it('a stored realm that named its secret\'s variable takes the secret into the database at the next start', async () => {

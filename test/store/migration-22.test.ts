@@ -16,6 +16,9 @@ const signInRecord = (url: string): unknown => {
   return JSON.parse(String(row!.value));
 };
 
+/** The realm migration 23 gives every hopper (issue #214). */
+const GITHUB = { name: 'github', label: 'GitHub', type: 'github' };
+
 describe('migration 22: no password user realm', () => {
   it('removes the password realms, their accounts and their links; other realms, users and links stay', () => {
     const url = t.url();
@@ -35,7 +38,8 @@ describe('migration 22: no password user realm', () => {
     expect(instance.identities.userOf('password', 'ada')).toBeUndefined();
     expect(instance.identities.userOf('corp', 'sub-1')).toBe('admin');
     instance.close();
-    expect(signInRecord(url)).toEqual({ version: 1, local: { enabled: true }, realms: [record.realms[1]] });
+    // Migration 23 (issue #214) then gives every hopper the github realm.
+    expect(signInRecord(url)).toEqual({ version: 1, local: { enabled: true }, realms: [record.realms[1], GITHUB] });
     const db = openDb(url);
     expect(db.get("SELECT 1 FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = 'password_accounts'")).toBeUndefined();
     db.close();
@@ -48,7 +52,7 @@ describe('migration 22: no password user realm', () => {
     raw.run("UPDATE config SET value = ? WHERE name = 'sign-in'", JSON.stringify({ version: 1, local: { enabled: false }, realms: [{ name: 'password', type: 'password' }] }));
     raw.close();
     openInstanceStore({ url, clock: fixedClock() }).close();
-    expect(signInRecord(url)).toEqual({ version: 1, local: { enabled: true }, realms: [] });
+    expect(signInRecord(url)).toEqual({ version: 1, local: { enabled: true }, realms: [GITHUB] });
   });
 
   it('leaves the login code off when another realm that is on is a way in', () => {
@@ -59,6 +63,6 @@ describe('migration 22: no password user realm', () => {
     raw.run("UPDATE config SET value = ? WHERE name = 'sign-in'", JSON.stringify({ version: 1, local: { enabled: false }, realms: [{ name: 'password', type: 'password' }, corp] }));
     raw.close();
     openInstanceStore({ url, clock: fixedClock() }).close();
-    expect(signInRecord(url)).toEqual({ version: 1, local: { enabled: false }, realms: [corp] });
+    expect(signInRecord(url)).toEqual({ version: 1, local: { enabled: false }, realms: [corp, GITHUB] });
   });
 });

@@ -24,10 +24,10 @@ const change = async (app: TestApp, token: string, body: Record<string, unknown>
   app.ui<{ error?: string }>('/ui/api/realms', { ...body, version: (await realms(app, token)).version }, { token });
 
 describe('a fresh hopper\'s first sign-in is the login code', () => {
-  it('has no realm; the start logs a one-time login code that signs in once as admin', async () => {
+  it('has only the github realm (issue #214); the start logs a one-time login code that signs in once as admin', async () => {
     const lines = startLines();
     const o = await startWithAuth(h, undefined);
-    expect(stored(o.app).realms).toEqual([]);
+    expect(stored(o.app).realms).toEqual([{ name: 'github', label: 'GitHub', type: 'github' }]);
     const code = codeIn(lines());
     expect(code).toBeDefined();
     const token = await o.app.loginWith(code!);
@@ -60,7 +60,7 @@ describe('a fresh hopper\'s first sign-in is the login code', () => {
   });
 
   it('no login code is logged once the first GitHub admin signs in through a realm that is on (issue #239)', async () => {
-    const gh = { name: 'gh', type: 'github', clientId: 'g', clientSecret: 's' };
+    const gh = { name: 'gh', type: 'github' };
     const lines = startLines();
     await startWithAuth(h, { version: 1, githubAdmin: { realm: 'gh', subject: '1' }, realms: [gh] });
     expect(codeIn(lines())).toBeUndefined();
@@ -88,7 +88,7 @@ describe('the password user realm is gone', () => {
     const admin = await o.app.login();
     const r = await change(o.app, admin, { action: 'save', realm: { name: 'password', type: 'password' } });
     expect(r.status).toBe(400);
-    expect(stored(o.app).realms).toEqual([]);
+    expect(stored(o.app).realms.map((x) => x.type)).toEqual(['github']);
   });
 
   it('a stored password realm stops the daemon at start, naming the field', async () => {
