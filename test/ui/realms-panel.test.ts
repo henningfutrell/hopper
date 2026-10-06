@@ -16,7 +16,7 @@ let refuse: string | undefined;
 const VIEW = {
   version: 'v1', local: true, none: null, origin: 'http://localhost:4790',
   realms: [
-    { name: 'staff', label: 'Staff', type: 'password', enabled: true, settings: {}, secrets: [], accounts: [{ username: 'ada', role: 'viewer', user: { id: 'owner', name: 'owner' } }, { username: 'cy', role: 'viewer', user: { id: 'bea', name: 'Bea' } }] },
+    { name: 'staff', label: 'Staff', type: 'password', enabled: true, settings: {}, secrets: [], accounts: [{ username: 'ada', role: 'viewer', user: { id: 'admin', name: 'admin' } }, { username: 'cy', role: 'viewer', user: { id: 'bea', name: 'Bea' } }] },
     {
       name: 'corp', label: 'Corp SSO', type: 'oidc', enabled: false, callback: 'http://localhost:4790/ui/auth/corp/callback', secrets: ['clientSecret'],
       settings: { issuer: 'https://idp.example.com', clientId: 'c', roles: { admin: { emails: ['a@example.com'] }, defaultRole: 'viewer' } },
@@ -28,7 +28,7 @@ function fakeDaemon() {
   return vi.fn(async (input: string, init: RequestInit = {}) => {
     const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
     if (String(input) === '/api/realms') return json(VIEW);
-    if (String(input) === '/api/users') return json({ users: [{ id: 'owner', name: 'owner', createdAt: '2026-10-01T00:00:00.000Z' }, { id: 'bea', name: 'Bea', createdAt: '2026-10-02T00:00:00.000Z' }] });
+    if (String(input) === '/api/users') return json({ users: [{ id: 'admin', name: 'admin', createdAt: '2026-10-01T00:00:00.000Z' }, { id: 'bea', name: 'Bea', createdAt: '2026-10-02T00:00:00.000Z' }] });
     if (String(input) === '/ui/api/realms') {
       posts.push(JSON.parse(String(init.body)) as Record<string, unknown>);
       return refuse ? json({ error: refuse }, 400) : json({ ...VIEW, version: 'v2' });
@@ -47,7 +47,7 @@ async function render(role: 'admin' | 'operator') {
   vi.stubGlobal('fetch', fakeDaemon());
   const store = '../../ui/src/store/index.ts'; // browser code, type-checked by ui/tsconfig.json: imported by path
   const { useHopper } = (await import(store)) as { useHopper: { setState(s: Record<string, unknown>): void } };
-  useHopper.setState({ authed: true, user: { id: 'owner', name: 'owner', role, realm: 'local', identity: 'login code' } });
+  useHopper.setState({ authed: true, user: { id: 'admin', name: 'admin', role, realm: 'local', identity: 'login code' } });
   const mod = '../../ui/src/views/realms.tsx';
   const { Realms } = (await import(mod)) as { Realms: () => ReturnType<typeof createElement> };
   await act(async () => {
@@ -162,7 +162,7 @@ describe('Settings: Sign-in', () => {
     await vi.waitFor(() => expect(rows()).toHaveLength(2));
     const ada = document.querySelector<HTMLElement>('[data-account="ada"]')!;
     expect(ada.textContent).toContain('ada');
-    expect(ada.textContent).toContain('owner');
+    expect(ada.textContent).toContain('admin');
     expect(ada.querySelector<HTMLSelectElement>('select[aria-label="ada role"]')!.value).toBe('viewer');
     await act(async () => type(ada.querySelector<HTMLSelectElement>('select[aria-label="ada role"]')!, 'operator'));
     await vi.waitFor(() => expect(posts).toContainEqual({ action: 'account', realm: 'staff', username: 'ada', role: 'operator', version: 'v1' }));
@@ -171,10 +171,10 @@ describe('Settings: Sign-in', () => {
     await act(async () => type(field('Password'), 'correct horse'));
     await act(async () => type(field('Role'), 'admin'));
     await vi.waitFor(() => expect(field('Signs in as').querySelectorAll('option').length).toBe(2));
-    expect([...field('Signs in as').querySelectorAll('option')].map((o) => (o as HTMLOptionElement).value)).toEqual(['', 'owner']);
-    await act(async () => type(field('Signs in as'), 'owner'));
+    expect([...field('Signs in as').querySelectorAll('option')].map((o) => (o as HTMLOptionElement).value)).toEqual(['', 'admin']);
+    await act(async () => type(field('Signs in as'), 'admin'));
     await click(buttonIn(row('staff'), 'Add'));
-    await vi.waitFor(() => expect(posts).toContainEqual({ action: 'account', realm: 'staff', username: 'bea', password: 'correct horse', role: 'admin', user: 'owner', version: 'v2' }));
+    await vi.waitFor(() => expect(posts).toContainEqual({ action: 'account', realm: 'staff', username: 'bea', password: 'correct horse', role: 'admin', user: 'admin', version: 'v2' }));
   });
 
   it('gives an account a new password', async () => {

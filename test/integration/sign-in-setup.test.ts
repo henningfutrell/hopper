@@ -111,7 +111,7 @@ describe('the password fallback\'s password from the environment', () => {
     expect(logged.some((l) => l.includes('added account admin') && l.includes('HOPPER_SIGN_IN_ADMIN_PASSWORD'))).toBe(true);
     const admin = await passwordSignIn(o, 'admin', 'chosen at deploy');
     expect(admin.status).toBe(200);
-    expect(await session(o.app, admin.token)).toMatchObject({ user: { id: 'owner', role: 'admin', realm: 'password' } });
+    expect(await session(o.app, admin.token)).toMatchObject({ user: { id: 'admin', role: 'admin', realm: 'password' } });
   });
 
   it('a start that adds no account leaves the password realm as it is', async () => {

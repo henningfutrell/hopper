@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
 import { runCli, type CliIo } from '../src/cli.ts';
 import { openInstanceStore } from '../src/store/index.ts';
-import { openOwnerStore } from './support/files.ts';
+import { openAdminStore } from './support/files.ts';
 import { testDatabaseUrl } from './support/database.ts';
 
 const dirs: string[] = [];
@@ -27,7 +27,7 @@ function cli(url: string | undefined, argv: string[], o: { stdin?: string } = {}
 }
 
 function recordIn(url: string, name: 'plugins' | 'rules'): unknown {
-  const s = openOwnerStore(url);
+  const s = openAdminStore(url);
   try { return s.config.read(name); } finally { s.close(); }
 }
 
@@ -124,7 +124,7 @@ describe('hopper login-code', () => {
     expect(b.out).toMatch(/^https:\/\/hopper\.example\.com\/#login=[0-9a-f]{64}\n$/);
     const s = openInstanceStore({ url, clock: { now: () => new Date() } });
     const hash = (c: string) => createHash('sha256').update(c).digest('hex');
-    expect(s.loginCodes.take(hash(a.out.trim()), new Date().toISOString())).toBe('owner');
+    expect(s.loginCodes.take(hash(a.out.trim()), new Date().toISOString())).toBe('admin');
     expect(s.loginCodes.take(hash(a.out.trim()), new Date().toISOString())).toBeUndefined();
     s.close();
   });
@@ -170,11 +170,11 @@ describe('several users (issue #158)', () => {
 
   it('hopper users lists every user; hopper user add adds one under a free name', () => {
     const url = db();
-    expect(cli(url, ['users'])).toMatchObject({ code: 0, out: expect.stringMatching(/^owner\towner\t\S+\n$/) });
+    expect(cli(url, ['users'])).toMatchObject({ code: 0, out: expect.stringMatching(/^admin\tadmin\t\S+\n$/) });
     expect(cli(url, ['user', 'add', 'Bea Smith'])).toMatchObject({ code: 0, out: 'bea_smith\n' });
     expect(cli(url, ['user', 'add', 'bea smith'])).toMatchObject({ code: 2, err: expect.stringMatching(/name bea smith is taken/) });
     expect(cli(url, ['user', 'add'])).toMatchObject({ code: 2, err: expect.stringMatching(/user add <name>/) });
-    expect(cli(url, ['users']).out.split('\n').filter(Boolean).map((l) => l.split('\t').slice(0, 2))).toEqual([['owner', 'owner'], ['bea_smith', 'Bea Smith']]);
+    expect(cli(url, ['users']).out.split('\n').filter(Boolean).map((l) => l.split('\t').slice(0, 2))).toEqual([['admin', 'admin'], ['bea_smith', 'Bea Smith']]);
   });
 
   it('login-code --user mints a code for that user; an unknown user is refused', () => {

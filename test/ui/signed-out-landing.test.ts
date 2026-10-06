@@ -61,7 +61,7 @@ afterEach(async () => {
 describe('logged out: only the landing page', () => {
   for (const required of [false, true]) {
     it(`${required ? 'several users' : 'one user'}: the ways to sign in and nothing of the app, and no read but the session`, async () => {
-      await boot(async () => json({ authenticated: false, viewing: { id: 'owner', name: 'owner' }, signIn: offer(required) }));
+      await boot(async () => json({ authenticated: false, viewing: { id: 'admin', name: 'admin' }, signIn: offer(required) }));
       await vi.waitFor(() => expect(landing()).not.toBeNull());
       expect(document.querySelector('input[aria-label="Username"]')).not.toBeNull();
       expect(document.querySelector('input[aria-label="Login code"]')).not.toBeNull();

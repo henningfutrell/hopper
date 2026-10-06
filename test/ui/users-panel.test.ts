@@ -12,7 +12,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 const LINK = `http://127.0.0.1:4790/#login=${'c'.repeat(64)}`;
 const TOTALS = { users: 2, jobs: { queued: 1, held: 1, claimed: 0, running: 3, waiting_answer: 2 }, questions: { open: 4 }, lanes: { busy: 3, total: 5 } };
 let posts: unknown[] = [];
-let users = [{ id: 'owner', name: 'owner', createdAt: '2026-10-05T10:00:00.000Z' }];
+let users = [{ id: 'admin', name: 'admin', createdAt: '2026-10-05T10:00:00.000Z' }];
 
 function fakeDaemon() {
   return vi.fn(async (input: string, init: RequestInit = {}) => {
@@ -40,11 +40,11 @@ async function render(role: 'admin' | 'operator', realm = 'local') {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
   posts = [];
-  users = [{ id: 'owner', name: 'owner', createdAt: '2026-10-05T10:00:00.000Z' }];
+  users = [{ id: 'admin', name: 'admin', createdAt: '2026-10-05T10:00:00.000Z' }];
   vi.stubGlobal('fetch', fakeDaemon());
   const store = '../../ui/src/store/index.ts'; // browser code, type-checked by ui/tsconfig.json: imported by path
   const { useHopper } = (await import(store)) as { useHopper: { setState(s: Record<string, unknown>): void } };
-  useHopper.setState({ authed: true, user: { id: 'owner', name: 'owner', role, realm, identity: 'login code' }, signIn: { password: true } });
+  useHopper.setState({ authed: true, user: { id: 'admin', name: 'admin', role, realm, identity: 'login code' }, signIn: { password: true } });
   const mod = '../../ui/src/views/users.tsx';
   const { Users } = (await import(mod)) as { Users: () => ReturnType<typeof createElement> };
   await act(async () => {
@@ -65,7 +65,7 @@ afterEach(async () => {
 describe('Settings: Users', () => {
   it('lists the users', async () => {
     await render('admin');
-    await vi.waitFor(() => expect(rows()).toEqual(['owner']));
+    await vi.waitFor(() => expect(rows()).toEqual(['admin']));
   });
 
   it('an admin adds a user and is shown its login link to hand over; the list follows', async () => {
@@ -81,7 +81,7 @@ describe('Settings: Users', () => {
     await act(async () => { button('Add')!.click(); });
     await vi.waitFor(() => expect(posts).toEqual([{ action: 'add', name: 'Bea' }]));
     await vi.waitFor(() => expect(document.querySelector('[data-login-link]')?.textContent).toContain(LINK));
-    await vi.waitFor(() => expect(rows()).toEqual(['owner', 'bea']));
+    await vi.waitFor(() => expect(rows()).toEqual(['admin', 'bea']));
   });
 
   it('a session that is not admin neither lists nor adds users', async () => {
@@ -121,7 +121,7 @@ describe('Settings: Users', () => {
 
   it('a session signed in with the login code has no password to change', async () => {
     await render('admin');
-    await vi.waitFor(() => expect(rows()).toEqual(['owner']));
+    await vi.waitFor(() => expect(rows()).toEqual(['admin']));
     expect(button('Change your password')).toBeUndefined();
   });
 });
