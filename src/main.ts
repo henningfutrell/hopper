@@ -83,6 +83,8 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   const logger = { info: (l: string) => console.log(l), warn: (l: string) => console.warn(l) };
   warnLeftoverEnv(config);
   const instance = openInstanceStore({ url: config.databaseUrl, clock });
+  // Held while the daemon runs: the operator CLI refuses `user transfer` against a running daemon (issue #212).
+  if (!instance.holdDaemonLock()) logger.warn('hopper: another process holds this database\'s daemon lock (a second daemon?)');
   const env = seams.env ?? process.env;
   // Before anything starts: the sign-in config with what the environment sets and, on a fresh hopper, the
   // first admin; an invalid one stops the daemon (sign-in fails closed).

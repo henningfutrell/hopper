@@ -2,6 +2,7 @@
 import type { IdentityLinks, UserRepository } from '../domain/ports.ts';
 import type { User } from '../domain/types.ts';
 import type { StoreContext } from './context.ts';
+import { quoteIdent } from './tenant-migrations.ts';
 
 const MAX_ID = 24;
 
@@ -15,8 +16,14 @@ export function idFromName(name: string): string {
   return /^[a-z]/.test(slug) ? slug : `u${slug}`.slice(0, MAX_ID);
 }
 
-/** `onAdded(user)` creates the user's schema (the instance store opens and migrates it), once the row is in. */
-export function createUserRepository(c: StoreContext, onAdded: (user: User) => void): UserRepository {
+/** A user's work: what `transfer` will not discard. Their config, settings and events go with their schema. */
+const WORK = [['jobs', 'job'], ['questions', 'question'], ['decisions', 'decision'], ['webhooks', 'webhook']] as const;
+
+/**
+ * `onAdded(user)` creates the user's schema (the instance store opens and migrates it), once the row is in;
+ * `schemaOf(id)` names it.
+ */
+export function createUserRepository(c: StoreContext, onAdded: (user: User) => void, schemaOf: (id: string) => string): UserRepository {
   const list = (): User[] => c.db.all('SELECT * FROM users ORDER BY seq').map(rowOf);
   return {
     list,
@@ -43,6 +50,26 @@ export function createUserRepository(c: StoreContext, onAdded: (user: User) => v
       });
       onAdded(user);
       return user;
+    },
+    transfer(fromId, toId) {
+      if (fromId === toId) throw new Error('a transfer needs two different users');
+      return c.tx(() => {
+        const from = c.db.get('SELECT * FROM users WHERE id = ?', fromId);
+        const to = c.db.get('SELECT * FROM users WHERE id = ?', toId);
+        if (!from) throw new Error(`no user ${fromId}; hopper users lists them`);
+        if (!to) throw new Error(`no user ${toId}; hopper users lists them`);
+        const schema = quoteIdent(schemaOf(toId));
+        const held = WORK.map(([table, noun]) => {
+          const n = Number(c.db.get(`SELECT count(*) AS n FROM ${schema}.${table}`)!.n);
+          return n > 0 ? `${n} ${noun}${n === 1 ? '' : 's'}` : '';
+        }).filter(Boolean);
+        if (held.length > 0) throw new Error(`${toId} holds work of its own (${held.join(', ')}); nothing changed`);
+        for (const table of ['user_identities', 'ui_sessions', 'login_codes']) c.db.run(`UPDATE ${table} SET user_id = ? WHERE user_id = ?`, fromId, toId);
+        c.db.run('DELETE FROM users WHERE id = ?', toId);
+        c.db.run('UPDATE users SET name = ? WHERE id = ?', String(to.name), fromId);
+        c.db.exec(`DROP SCHEMA ${schema} CASCADE`);
+        return rowOf(c.db.get('SELECT * FROM users WHERE id = ?', fromId)!);
+      });
     },
   };
 }

@@ -432,6 +432,21 @@ webhooks and credentials; nobody sees or touches another user's. Every hopper st
 - An identity that signed in before there were several users is linked to `owner` when its session
   was still stored; one whose sessions had all expired gets a new user at its next sign-in.
   `hopper login-code` always reaches `owner`.
+- **Moving work to the user a person signs in as** (issue #212): `hopper user transfer <from> <to>`,
+  with the daemon stopped. `<to>` takes over everything `<from>` holds: `<to>`'s sign-ins (realm
+  links), sessions and login codes move onto `<from>`'s record, which takes `<to>`'s name; `<to>`'s
+  own record and schema are removed. The record keeps its id, schema, work dir, secret prefix and
+  herdr session, so running jobs and their panes are untouched. Refused while a daemon holds the
+  database, and when `<to>` has jobs, questions, decisions or webhooks of its own; its config,
+  settings and events go with its schema. Typical use: `owner` signed in by login code only, and a
+  password account added later for the same person — after the transfer, signing in with the
+  password (from any device) reaches the work.
+
+  ```sh
+  systemctl --user stop hopper
+  hopper user transfer owner <user id>
+  systemctl --user start hopper
+  ```
 
 ## The sign-in origin and a public URL
 

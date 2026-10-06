@@ -4196,6 +4196,9 @@ about the daemon's surface; the CLI is beside it, like editing a file was.
 - `login-code [--link <base url>]`.
 - Since issue #158: `users`, `user add <name>`, and `--user <id>` on `config` and `login-code`
   ("Users: one hopper, separate users").
+- Since issue #212: `user transfer <from> <to>` — `<to>` takes over `<from>`'s work (docs/sign-in.md).
+  The daemon holds a session-level advisory lock per instance schema while it runs; the command
+  takes it or refuses, because the daemon keeps a runtime per user and the command removes one.
 - `help` (also `--help`, `-h`): every command, exit 0 (`password-hash` went with issue #200). No command or an unknown
   one prints the same text on stderr, exit 2.
 
