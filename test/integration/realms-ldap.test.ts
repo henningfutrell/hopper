@@ -1,7 +1,7 @@
 // Realms (issue #185, design.md "Sign-in: realms"): an LDAP realm signs people in against a real
 // directory (OpenLDAP in a throwaway container, the planetexpress test directory), and the username
 // and password form tries every enabled password and LDAP realm in order — the first that accepts the
-// credentials signs in. Through the daemon's HTTP routes, with auth.yaml in the database.
+// credentials signs in. Through the daemon's HTTP routes, with the sign-in config in the database.
 import argon2 from 'argon2';
 import { GenericContainer, Wait, type StartedTestContainer } from 'testcontainers';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';

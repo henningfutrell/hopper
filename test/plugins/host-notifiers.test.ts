@@ -1,5 +1,5 @@
 // Phase 5 slice 5: the notifier role in the plugin host. 0..n instances, a restart role: built once
-// at start from plugins.yaml (an absent section → the built-in grok-bot instance; `notifiers: []` → none), started with the event feed, stopped with the daemon. A
+// at start from the plugins config (an absent section → the built-in grok-bot instance; `notifiers: []` → none), started with the event feed, stopped with the daemon. A
 // notifier that cannot run — unknown plugin, invalid options, unavailable, create or start throwing —
 // is dropped with its reason in the report; never a boot failure. grokbot-routine's detection looks
 // at its two environment variables only (never runs the Grok Bot GUI); needs-setup still runs,
@@ -11,12 +11,12 @@ import type { DomainEvent } from '../../src/domain/types.ts';
 import { BUILTIN_PLUGINS } from '../../src/plugins/builtin.ts';
 import { createPluginHost, type PluginHost } from '../../src/plugins/index.ts';
 import type { DetectionKit, PluginDefinition } from '../../src/plugins/sdk.ts';
-import { PLUGINS } from '../../src/plugins/plugins-file.ts';
-import { useTempDocuments } from '../support/documents.ts';
+import { PLUGINS } from '../../src/plugins/plugins-config.ts';
+import { useTempConfig } from '../support/config.ts';
 import { fakeKit, fixedClock, useTempDirs } from './support.ts';
 
 const temp = useTempDirs();
-const docs = useTempDocuments();
+const records = useTempConfig();
 let host: PluginHost | undefined;
 afterEach(async () => { await host?.stopNotifiers(); host?.stop(); host = undefined; });
 
@@ -57,26 +57,26 @@ const feed = (): NotifierEvents & { listeners: ((e: DomainEvent) => void)[] } =>
   };
 };
 
-function start(o: { file?: string; kit?: DetectionKit } = {}) {
+function start(o: { file?: object; kit?: DetectionKit } = {}) {
   const dir = temp();
-  const documents = docs();
-  if (o.file !== undefined) documents.set(PLUGINS, o.file);
+  const config = records();
+  if (o.file !== undefined) config.set(PLUGINS, o.file);
   host = createPluginHost({
-    pluginDir: join(dir, 'plugins'), documents, dataDir: dir, clock: fixedClock,
+    pluginDir: join(dir, 'plugins'), config, dataDir: dir, clock: fixedClock,
     logger: { info() {}, warn() {} }, routerMode: () => 'shadow', kit: o.kit ?? fakeKit({ exists: async () => false, readable: async () => false }),
     builtins: [...BUILTIN_PLUGINS, recorder, unavailable],
     defaultLevels: [],
     defaultExecutors: [{ name: 'test', plugin: 'test' }],
     intervalMs: 30,
   });
-  return { host, documents, dir };
+  return { host, config, dir };
 }
 
 const catalogue = (h: PluginHost, id: string) => h.report().plugins.find((p) => p.id === id);
 
 describe('the notifier role', () => {
   it('is a role; grokbot-routine is its built-in plugin, urlEnv and keyEnv marked command-bearing', async () => {
-    const { host } = start({ file: 'version: 1\n' });
+    const { host } = start({ file: { version: 1 } });
     await host.start();
     expect(host.report().roles).toContain('notifier');
     const g = catalogue(host, 'grokbot-routine');
@@ -86,8 +86,8 @@ describe('the notifier role', () => {
     expect(props.keyEnv).toMatchObject({ commandBearing: true });
   });
 
-  it('no notifiers section: the built-in grok-bot instance — the Grok Bot routine survives a plugins.yaml written before slice 5', async () => {
-    const { host } = start({ file: 'version: 1\njobSources: []\n' });
+  it('no notifiers section: the built-in grok-bot instance — the Grok Bot routine survives a plugins config written before slice 5', async () => {
+    const { host } = start({ file: { version: 1, jobSources: [] } });
     await host.start();
     expect(host.report().notifiers.instances).toEqual([{
       instance: { name: 'grok-bot', plugin: 'grokbot-routine' },
@@ -97,14 +97,14 @@ describe('the notifier role', () => {
   });
 
   it('notifiers: [] → none', async () => {
-    const { host } = start({ file: 'version: 1\nnotifiers: []\n' });
+    const { host } = start({ file: { version: 1, notifiers: [] } });
     await host.start();
     expect(host.report().notifiers.instances).toEqual([]);
     expect(host.notifiers()).toEqual([]);
   });
 
-  it('built from plugins.yaml, started with the event feed under their instance names, stopped once', async () => {
-    const { host } = start({ file: 'version: 1\nnotifiers: [ { name: one, plugin: recorder }, { name: two, plugin: recorder } ]\n' });
+  it('built from the plugins config, started with the event feed under their instance names, stopped once', async () => {
+    const { host } = start({ file: { version: 1, notifiers: [{ name: 'one', plugin: 'recorder' }, { name: 'two', plugin: 'recorder' }] } });
     started.length = 0;
     stopped.length = 0;
     await host.start();
@@ -119,14 +119,14 @@ describe('the notifier role', () => {
   });
 
   it.each([
-    ['unknown plugin', '{ name: x, plugin: no-such-notifier }', /unknown notifier plugin no-such-notifier/],
-    ['invalid options', '{ name: x, plugin: recorder, options: { fail: maybe } }', /fail/],
-    ['a router plugin named as a notifier', '{ name: x, plugin: pass-through }', /unknown notifier plugin pass-through/],
-    ['unavailable', '{ name: x, plugin: never-here }', /not on this machine/],
-    ['create throws', '{ name: x, plugin: recorder, options: { fail: create } }', /cannot create: create boom/],
-    ['start throws', '{ name: x, plugin: recorder, options: { fail: start } }', /cannot start: start boom/],
+    ['unknown plugin', { name: 'x', plugin: 'no-such-notifier' }, /unknown notifier plugin no-such-notifier/],
+    ['invalid options', { name: 'x', plugin: 'recorder', options: { fail: 'maybe' } }, /fail/],
+    ['a router plugin named as a notifier', { name: 'x', plugin: 'pass-through' }, /unknown notifier plugin pass-through/],
+    ['unavailable', { name: 'x', plugin: 'never-here' }, /not on this machine/],
+    ['create throws', { name: 'x', plugin: 'recorder', options: { fail: 'create' } }, /cannot create: create boom/],
+    ['start throws', { name: 'x', plugin: 'recorder', options: { fail: 'start' } }, /cannot start: start boom/],
   ])('%s: dropped with the reason in the report; the others still run; never a boot failure', async (_n, entry, why) => {
-    const { host } = start({ file: `version: 1\nnotifiers: [ ${entry}, { name: ok, plugin: recorder } ]\n` });
+    const { host } = start({ file: { version: 1, notifiers: [entry, { name: 'ok', plugin: 'recorder' }] } });
     await host.start();
     host.startNotifiers(feed());
     expect(host.notifiers().map((n) => n.name)).toEqual(['ok']);
@@ -135,15 +135,15 @@ describe('the notifier role', () => {
   });
 
   it('two notifiers with one name are refused', async () => {
-    const { host } = start({ file: 'version: 1\nnotifiers: [ { name: n, plugin: recorder }, { name: n, plugin: recorder } ]\n' });
+    const { host } = start({ file: { version: 1, notifiers: [{ name: 'n', plugin: 'recorder' }, { name: 'n', plugin: 'recorder' }] } });
     await host.start();
     expect(host.report().config.error).toMatch(/notifiers.*twice/);
   });
 
   it('a restart role: an edit shows changed — restart pending; the running notifiers stay', async () => {
-    const { host, documents } = start({ file: 'version: 1\nnotifiers: []\n' });
+    const { host, config } = start({ file: { version: 1, notifiers: [] } });
     await host.start();
-    documents.set(PLUGINS, 'version: 1\nnotifiers: [ { name: one, plugin: recorder } ]\n');
+    config.set(PLUGINS, { version: 1, notifiers: [{ name: 'one', plugin: 'recorder' }] });
     await host.reload();
     expect(host.report().notifiers.pending).toEqual({ status: 'changed — restart pending', instances: [{ name: 'one', plugin: 'recorder', options: {} }] });
     expect(host.notifiers()).toEqual([]);
@@ -151,7 +151,7 @@ describe('the notifier role', () => {
 });
 
 describe('grokbot-routine detection: its environment variables only, never the Grok Bot binary', () => {
-  const entry = (options = '') => `version: 1\nnotifiers: [ { name: grok-bot, plugin: grokbot-routine${options} } ]\n`;
+  const entry = (options?: Record<string, string>) => ({ version: 1, notifiers: [{ name: 'grok-bot', plugin: 'grokbot-routine', ...(options ? { options } : {}) }] });
   const set = (vars: Record<string, string>) => (n: string) => vars[n];
 
   it('both variables set → available; nothing is run', async () => {
@@ -179,7 +179,7 @@ describe('grokbot-routine detection: its environment variables only, never the G
   });
 
   it('urlEnv and keyEnv rename the variables detection reads', async () => {
-    const { host } = start({ file: entry(', options: { urlEnv: MY_URL, keyEnv: MY_KEY }'), kit: fakeKit({ env: set({ MY_URL: 'http://x/hook', MY_KEY: 'k' }) }) });
+    const { host } = start({ file: entry({ urlEnv: 'MY_URL', keyEnv: 'MY_KEY' }), kit: fakeKit({ env: set({ MY_URL: 'http://x/hook', MY_KEY: 'k' }) }) });
     await host.start();
     expect(host.report().notifiers.instances[0]).toMatchObject({ detection: { status: 'available' } });
   });

@@ -1,4 +1,4 @@
-// The plugin host: built-in + custom plugins, plugins.yaml (router, escalationLevels sections) with
+// The plugin host: built-in + custom plugins, the plugins config (router, escalationLevels sections) with
 // a version watch, detection, the live router with its fallback to pass-through, and the live
 // escalation levels: a level that cannot run stays in its place and escalates every question.
 import { cpSync } from 'node:fs';
@@ -11,12 +11,12 @@ import passThrough from '../../src/plugins/router/pass-through/index.ts';
 import { createPluginHost, type PluginHost, type PluginHostOptions } from '../../src/plugins/index.ts';
 import type { DetectionKit, PluginDefinition } from '../../src/plugins/sdk.ts';
 import { waitFor } from '../support/wait.ts';
-import { PLUGINS } from '../../src/plugins/plugins-file.ts';
-import { useTempDocuments } from '../support/documents.ts';
+import { PLUGINS } from '../../src/plugins/plugins-config.ts';
+import { useTempConfig } from '../support/config.ts';
 import { ALWAYS_PROCEED_DIR, fakeKit, fixedClock, useTempDirs, writePlugin } from './support.ts';
 
 const temp = useTempDirs();
-const docs = useTempDocuments();
+const records = useTempConfig();
 const job = { id: 'j1', spec: { executor: 'test', payload: {} } } as Job;
 let host: PluginHost | undefined;
 afterEach(() => { host?.stop(); host = undefined; });
@@ -65,24 +65,24 @@ const selfFallingBack: PluginDefinition<'router'> = {
 };
 
 function start(o: {
-  file?: string; kit?: DetectionKit; pluginDir?: string; builtins?: readonly PluginDefinition[];
+  file?: object; kit?: DetectionKit; pluginDir?: string; builtins?: readonly PluginDefinition[];
   defaultLevels?: PluginHostOptions['defaultLevels'];
 } = {}) {
   const dir = temp();
-  const documents = docs();
-  if (o.file !== undefined) documents.set(PLUGINS, o.file);
+  const config = records();
+  if (o.file !== undefined) config.set(PLUGINS, o.file);
   host = createPluginHost({
-    pluginDir: o.pluginDir ?? join(dir, 'plugins'), documents, dataDir: dir, clock: fixedClock,
+    pluginDir: o.pluginDir ?? join(dir, 'plugins'), config, dataDir: dir, clock: fixedClock,
     logger: { info() {}, warn() {} }, routerMode: () => 'shadow', kit: o.kit ?? fakeKit(),
     builtins: o.builtins ?? [...BUILTIN_PLUGINS, tagging, brokenCreate, throwingAdvise, selfFallingBack, cannedLevel],
     defaultLevels: o.defaultLevels ?? DEFAULT_LEVELS,
     defaultExecutors: [{ name: 'test', plugin: 'test' }],
     intervalMs: 30,
   });
-  return { host, documents };
+  return { host, config };
 }
 
-describe('router chosen from what is detected (no router in plugins.yaml)', () => {
+describe('router chosen from what is detected (no router in the plugins config)', () => {
   it('gate-router has no default grok-bot-jev checkout, so detection never picks it: pass-through, not a fallback', async () => {
     const { host } = start({ builtins: [...BUILTIN_PLUGINS] });
     await host.start();
@@ -90,8 +90,8 @@ describe('router chosen from what is detected (no router in plugins.yaml)', () =
     expect(host.report().router).toMatchObject({ instance: { name: 'pass-through' }, selection: 'detected', fallback: false });
   });
 
-  it('gate-router named in plugins.yaml with its grokBotJevSrc is the router, not a fallback', async () => {
-    const { host } = start({ builtins: [...BUILTIN_PLUGINS], file: 'version: 1\nrouter: { name: gate-router, plugin: gate-router, options: { grokBotJevSrc: /j/grok-bot-jev } }\n' });
+  it('gate-router named in the plugins config with its grokBotJevSrc is the router, not a fallback', async () => {
+    const { host } = start({ builtins: [...BUILTIN_PLUGINS], file: { version: 1, router: { name: 'gate-router', plugin: 'gate-router', options: { grokBotJevSrc: '/j/grok-bot-jev' } } } });
     await host.start();
     expect(host.routerStatus()).toEqual({ name: 'gate-router', plugin: 'gate-router', fallback: false });
     expect(host.report().router).toMatchObject({ instance: { name: 'gate-router', plugin: 'gate-router' }, selection: 'file', fallback: false });
@@ -120,8 +120,8 @@ describe('router chosen from what is detected (no router in plugins.yaml)', () =
     expect(host.routerStatus()).toEqual({ name: 'second', plugin: 'second', fallback: false });
   });
 
-  it('a router named in plugins.yaml wins over detection; selection says file', async () => {
-    const { host } = start({ file: 'version: 1\nrouter: { name: one, plugin: tagging, options: { tag: t } }\n' });
+  it('a router named in the plugins config wins over detection; selection says file', async () => {
+    const { host } = start({ file: { version: 1, router: { name: 'one', plugin: 'tagging', options: { tag: 't' } } } });
     await host.start();
     expect(host.report().router).toMatchObject({ instance: { name: 'one' }, selection: 'file' });
   });
@@ -129,18 +129,18 @@ describe('router chosen from what is detected (no router in plugins.yaml)', () =
 
 describe('fallback to pass-through', () => {
   it.each([
-    ['create throws', 'router: { name: b, plugin: broken-create }', /cannot start/],
-    ['unknown plugin', 'router: { name: u, plugin: no-such-plugin }', /unknown router plugin no-such-plugin/],
-    ['invalid options', 'router: { name: t, plugin: tagging, options: { tag: 3 } }', /options.*tag/],
-  ])('%s', async (_name, section, why) => {
-    const { host } = start({ file: `version: 1\n${section}\n` });
+    ['create throws', { name: 'b', plugin: 'broken-create' }, /cannot start/],
+    ['unknown plugin', { name: 'u', plugin: 'no-such-plugin' }, /unknown router plugin no-such-plugin/],
+    ['invalid options', { name: 't', plugin: 'tagging', options: { tag: 3 } }, /options.*tag/],
+  ])('%s', async (_name, router, why) => {
+    const { host } = start({ file: { version: 1, router } });
     await host.start();
     expect(host.routerStatus()).toMatchObject({ plugin: 'pass-through', fallback: true, reason: expect.stringMatching(why) });
     expect(await host.router.advise(job)).toMatchObject({ action: 'proceed_full', source: 'fallback' });
   });
 
   it('a router whose advise throws gives fallback advice, never a rejection', async () => {
-    const { host } = start({ file: 'version: 1\nrouter: { name: x, plugin: throwing }\n' });
+    const { host } = start({ file: { version: 1, router: { name: 'x', plugin: 'throwing' } } });
     await host.start();
     const advice = await host.router.advise(job);
     expect(advice).toMatchObject({ action: 'proceed_full', source: 'fallback', reason: expect.stringContaining('advise blew up') });
@@ -149,7 +149,7 @@ describe('fallback to pass-through', () => {
 
   it('advice the router itself marks fallback shows as fallback until it recovers', async () => {
     selfFallback = true;
-    const { host } = start({ file: 'version: 1\nrouter: { name: s, plugin: self-fallback }\n' });
+    const { host } = start({ file: { version: 1, router: { name: 's', plugin: 'self-fallback' } } });
     await host.start();
     expect(host.routerStatus()).toEqual({ name: 's', plugin: 'self-fallback', fallback: false });
     await host.router.advise(job);
@@ -160,25 +160,25 @@ describe('fallback to pass-through', () => {
   });
 });
 
-describe('plugins.yaml live reload (router swaps between calls)', () => {
-  it('a changed router section swaps the router; a broken edit keeps the last good one; emptying the document returns to the detected one', async () => {
-    const { host, documents } = start({
-      file: 'version: 1\nrouter: { name: one, plugin: tagging, options: { tag: first } }\n',
+describe('the plugins config live reload (router swaps between calls)', () => {
+  it('a changed router section swaps the router; an invalid edit keeps the last good one; emptying the config returns to the detected one', async () => {
+    const { host, config } = start({
+      file: { version: 1, router: { name: 'one', plugin: 'tagging', options: { tag: 'first' } } },
       builtins: [passThrough, tagging],
     });
     await host.start();
-    expect(host.report().config).toMatchObject({ document: 'plugins.yaml', source: 'document' });
+    expect(host.report().config).toMatchObject({ source: 'stored' });
     expect((await host.router.advise(job)).reason).toBe('first');
 
-    documents.set(PLUGINS, 'version: 1\nrouter: { name: two, plugin: tagging, options: { tag: second-one } }\n');
+    config.set(PLUGINS, { version: 1, router: { name: 'two', plugin: 'tagging', options: { tag: 'second-one' } } });
     await waitFor(async () => (await host.router.advise(job)).reason === 'second-one', { what: 'the swapped router' });
     expect(host.routerStatus()).toEqual({ name: 'two', plugin: 'tagging', fallback: false });
 
-    documents.set(PLUGINS, 'version: 1\nrouter: [broken\n');
+    config.set(PLUGINS, { version: 1, router: 'broken' });
     await waitFor(() => host.report().config.error, { what: 'the config error' });
     expect((await host.router.advise(job)).reason).toBe('second-one');
 
-    documents.set(PLUGINS, 'version: 1\n');
+    config.set(PLUGINS, { version: 1 });
     await waitFor(() => host.routerStatus().name === 'pass-through', { what: 'the detected router' });
     expect(host.report().router).toMatchObject({ selection: 'detected' });
     expect(host.report().config.error).toBeUndefined();
@@ -186,20 +186,20 @@ describe('plugins.yaml live reload (router swaps between calls)', () => {
   });
 
   it('reload() re-reads now', async () => {
-    const { host, documents } = start({ file: 'version: 1\nrouter: { name: one, plugin: tagging, options: { tag: a } }\n' });
+    const { host, config } = start({ file: { version: 1, router: { name: 'one', plugin: 'tagging', options: { tag: 'a' } } } });
     await host.start();
     host.stop();
-    documents.set(PLUGINS, 'version: 1\nrouter: { name: one, plugin: tagging, options: { tag: bb } }\n');
+    config.set(PLUGINS, { version: 1, router: { name: 'one', plugin: 'tagging', options: { tag: 'bb' } } });
     await host.reload();
     expect((await host.router.advise(job)).reason).toBe('bb');
   });
 });
 
 describe('custom plugins through the host', () => {
-  it('a custom router named in plugins.yaml advises', async () => {
+  it('a custom router named in the plugins config advises', async () => {
     const pluginDir = temp();
     cpSync(ALWAYS_PROCEED_DIR, join(pluginDir, 'always-proceed'), { recursive: true });
-    const { host } = start({ pluginDir, file: 'version: 1\nrouter: { name: mine, plugin: always-proceed, options: { note: custom } }\n' });
+    const { host } = start({ pluginDir, file: { version: 1, router: { name: 'mine', plugin: 'always-proceed', options: { note: 'custom' } } } });
     await host.start();
     expect(host.routerStatus()).toEqual({ name: 'mine', plugin: 'always-proceed', fallback: false });
     expect(await host.router.advise(job)).toMatchObject({ reason: 'custom', source: 'always-proceed' });
@@ -265,7 +265,7 @@ describe('escalation levels (0..n, lowest first, live)', () => {
   });
 
   it('a level that names no machine stays in its place, cannot run, and escalates every question; shown in the report (#174)', async () => {
-    const { host } = start({ file: 'version: 1\nescalationLevels: [{ name: opus, plugin: claude-cli }, { name: fable, plugin: claude-cli, options: { machine: local } }]\n' });
+    const { host } = start({ file: { version: 1, escalationLevels: [{ name: 'opus', plugin: 'claude-cli' }, { name: 'fable', plugin: 'claude-cli', options: { machine: 'local' } }] } });
     await host.start();
     expect(host.levels().map((l) => l.name)).toEqual(['opus', 'fable']);
     expect(host.report().escalationLevels[0]).toMatchObject({
@@ -277,25 +277,25 @@ describe('escalation levels (0..n, lowest first, live)', () => {
   });
 
   it.each([
-    ['an unknown plugin', '{ name: x, plugin: no-such }', /unknown escalation-level plugin no-such/],
-    ['a plugin of another role', '{ name: x, plugin: pass-through }', /unknown escalation-level plugin pass-through/],
+    ['an unknown plugin', { name: 'x', plugin: 'no-such' }, /unknown escalation-level plugin no-such/],
+    ['a plugin of another role', { name: 'x', plugin: 'pass-through' }, /unknown escalation-level plugin pass-through/],
   ])('a level with %s cannot run', async (_n, entry, why) => {
-    const { host } = start({ file: `version: 1\nescalationLevels: [${entry}]\n` });
+    const { host } = start({ file: { version: 1, escalationLevels: [entry] } });
     await host.start();
     expect(host.report().escalationLevels).toEqual([expect.objectContaining({ active: null, reason: expect.stringMatching(why) })]);
   });
 
   it('escalationLevels: [] → no levels: questions go straight to the owner', async () => {
-    const { host } = start({ file: 'version: 1\nescalationLevels: []\n' });
+    const { host } = start({ file: { version: 1, escalationLevels: [] } });
     await host.start();
     expect(host.levels()).toEqual([]);
     expect(host.report().escalationLevels).toEqual([]);
   });
 
-  it('plugins.yaml swaps the levels between calls', async () => {
-    const { host, documents } = start();
+  it('the plugins config swaps the levels between calls', async () => {
+    const { host, config } = start();
     await host.start();
-    documents.set(PLUGINS, 'version: 1\nescalationLevels: [{ name: quick, plugin: canned-level, options: { answer: yes } }, { name: opus, plugin: claude-cli }]\n');
+    config.set(PLUGINS, { version: 1, escalationLevels: [{ name: 'quick', plugin: 'canned-level', options: { answer: 'yes' } }, { name: 'opus', plugin: 'claude-cli' }] });
     await waitFor(() => host.levels()[0]?.name === 'quick', { what: 'the swapped levels' });
     expect(host.levels().map((l) => l.name)).toEqual(['quick', 'opus']);
     expect(await host.levels()[0]!.answer(request, new AbortController().signal)).toEqual({ answer: 'yes', escalate: false, reason: 'canned' });
@@ -303,10 +303,10 @@ describe('escalation levels (0..n, lowest first, live)', () => {
   });
 
   it.each([
-    ['two levels of one name', 'escalationLevels: [{ name: a, plugin: canned-level }, { name: a, plugin: claude-cli }]', /named twice/],
-    ['a level named human', 'escalationLevels: [{ name: human, plugin: canned-level }]', /human is the human stage/],
-  ])('%s is a config error; the built-in levels run', async (_n, section, why) => {
-    const { host } = start({ file: `version: 1\n${section}\n` });
+    ['two levels of one name', [{ name: 'a', plugin: 'canned-level' }, { name: 'a', plugin: 'claude-cli' }], /named twice/],
+    ['a level named human', [{ name: 'human', plugin: 'canned-level' }], /human is the human stage/],
+  ])('%s is a config error; the built-in levels run', async (_n, escalationLevels, why) => {
+    const { host } = start({ file: { version: 1, escalationLevels } });
     await host.start();
     expect(host.report().config.error).toMatch(why);
     expect(host.levels().map((l) => l.name)).toEqual(['opus', 'fable']);

@@ -1,15 +1,14 @@
 // The Grok Bot routine webhook: a real loopback receiver, the webhook url and key read from the
 // environment (seams.env: the test's `secrets`, mutable while the app runs), the real composition root.
-// It is the built-in notifier plugin grokbot-routine; a plugins.yaml without a `notifiers` section
-// means the built-in grok-bot instance, and a database with no plugins.yaml gets the built-in instances.
+// It is the built-in notifier plugin grokbot-routine; a plugins config without a `notifiers` section
+// means the built-in grok-bot instance, and a database with no plugins config gets the built-in instances.
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { createServer, type IncomingHttpHeaders, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { parse } from 'yaml';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
-import { readDocument } from '../support/files.ts';
+import { readConfig } from '../support/files.ts';
 import { waitFor } from '../support/wait.ts';
 
 interface Hit { headers: IncomingHttpHeaders; body: Record<string, unknown> }
@@ -173,10 +172,10 @@ describe('Grok Bot routine webhook', () => {
 });
 
 describe('Grok Bot as the grokbot-routine notifier plugin (phase 5, slice 5)', () => {
-  it('a plugins.yaml without a notifiers section: the built-in grok-bot instance posts; /api/plugins lists it', async () => {
+  it('a plugins config without a notifiers section: the built-in grok-bot instance posts; /api/plugins lists it', async () => {
     const r = await receiver();
     const { a, secrets } = await start();
-    expect(parse(readDocument(a.dbPath, 'plugins.yaml')!)).not.toHaveProperty('notifiers');
+    expect(readConfig(a.dbPath, 'plugins')).not.toHaveProperty('notifiers');
     expect((await a.api('GET', '/api/plugins')).body.notifiers.instances).toEqual([{
       instance: { name: 'grok-bot', plugin: 'grokbot-routine' },
       detection: expect.objectContaining({ status: 'needs-setup' }), active: 'grokbot-routine',
@@ -186,10 +185,10 @@ describe('Grok Bot as the grokbot-routine notifier plugin (phase 5, slice 5)', (
     await waitFor(() => r.hits.length === 1, { what: 'escalation post' });
   });
 
-  it('no plugins.yaml in the database: the built-in instances are written, grok-bot among them, and it posts', async () => {
+  it('no plugins config in the database: the built-in instances are written, grok-bot among them, and it posts', async () => {
     const r = await receiver();
     const { a, secrets } = await start({}, false);
-    expect(parse(readDocument(a.dbPath, 'plugins.yaml')!).notifiers).toEqual([{ name: 'grok-bot', plugin: 'grokbot-routine' }]);
+    expect((readConfig(a.dbPath, 'plugins') as { notifiers?: unknown }).notifiers).toEqual([{ name: 'grok-bot', plugin: 'grokbot-routine' }]);
     setHook(secrets, r.url);
     await humanQuestion(a);
     await waitFor(() => r.hits.length === 1, { what: 'escalation post' });

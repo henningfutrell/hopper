@@ -6,7 +6,6 @@ import type { MachinesConfig } from '../../src/domain/types.ts';
 import { addBody, addProblem, clientReleaseText, defaultsBody, editBody, kindOf, newDraft, type MachineDraft } from '../../ui/src/model/machines.ts';
 
 const CONFIG: MachinesConfig = {
-  document: 'plugins.yaml',
   version: 'v1',
   machines: [
     { name: 'local', plugin: 'local', options: { lanes: 4 } },

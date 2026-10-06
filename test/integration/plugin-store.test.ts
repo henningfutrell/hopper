@@ -8,7 +8,7 @@ import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, write
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { PluginStoreReport, PluginsReport } from '../../src/domain/types.ts';
-import { startTestApp, tempDbPath, writePluginsYaml, TEST_PLUGINS, type TestApp } from '../support/app.ts';
+import { startTestApp, tempDbPath, writePlugins, TEST_PLUGINS, type TestApp } from '../support/app.ts';
 import { waitFor } from '../support/wait.ts';
 import { git, tempDir } from '../update/support.ts';
 import { createStoreRepo, entry } from '../plugin-store/support.ts';
@@ -148,7 +148,7 @@ describe('the plugin store over HTTP', () => {
     expect(plugin(r, 'word-first')).toMatchObject({ installed: { commit: changed, current: true }, restartPending: true });
   });
 
-  it('refuses to remove a plugin plugins.yaml names, and to touch a plugin the operator put there by hand', async () => {
+  it('refuses to remove a plugin the plugins config names, and to touch a plugin the operator put there by hand', async () => {
     const w = world();
     mkdirSync(join(w.pluginDir, 'word-first'), { recursive: true });
     writeFileSync(join(w.pluginDir, 'word-first', 'index.ts'), "export default { id: 'word-first', role: 'queue-sorter', describe: 'mine', detect: async () => ({ status: 'available' }), create: () => ({ name: 'w', sort: () => [] }) };\n");
@@ -163,7 +163,7 @@ describe('the plugin store over HTTP', () => {
     expect(readFileSync(join(w.pluginDir, 'word-first', 'index.ts'), 'utf8')).toMatch(/describe: 'mine'/);
 
     await app.ui('/ui/api/plugin-store', { action: 'install', id: 'echo-executor' }, { token });
-    writePluginsYaml(w.db.dbPath, { ...TEST_PLUGINS, executors: [{ name: 'test', plugin: 'test' }, { name: 'echo', plugin: 'echo-executor' }] });
+    writePlugins(w.db.dbPath, { ...TEST_PLUGINS, executors: [{ name: 'test', plugin: 'test' }, { name: 'echo', plugin: 'echo-executor' }] });
     const named = await app.ui<{ error: string }>('/ui/api/plugin-store', { action: 'remove', id: 'echo-executor' }, { token });
     expect(named.status).toBe(409);
     expect(named.body.error).toMatch(/echo/);

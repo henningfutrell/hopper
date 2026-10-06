@@ -1,7 +1,7 @@
 // Phase 5 slice 4: the job-source, machine-source and usage-source roles in the plugin host, built
-// at start from plugins.yaml (or the built-in instances when a section is absent). Job and usage
+// at start from the plugins config (or the built-in instances when a section is absent). Job and usage
 // sources are restart roles: a later edit shows `changed — restart pending`. The machine sources —
-// this machine and every attached one (issue #74) — follow plugins.yaml live (issue #18). Detection
+// this machine and every attached one (issue #74) — follow the plugins config live (issue #18). Detection
 // never makes a paid call: github-gh asks `gh auth status`, github-app looks for the app's identity and key in the environment,
 // claude-plan `which`es claude.
 import { join } from 'node:path';
@@ -11,13 +11,13 @@ import type { AttachedMachine } from '../../src/domain/types.ts';
 import { BUILTIN_PLUGINS } from '../../src/plugins/builtin.ts';
 import { createPluginHost, type PluginHost } from '../../src/plugins/index.ts';
 import type { DetectionKit, PluginDefinition } from '../../src/plugins/sdk.ts';
-import { PLUGINS } from '../../src/plugins/plugins-file.ts';
-import { useTempDocuments } from '../support/documents.ts';
+import { PLUGINS } from '../../src/plugins/plugins-config.ts';
+import { useTempConfig } from '../support/config.ts';
 import { KEYS } from '../support/github-app.ts';
 import { fakeKit, fixedClock, useTempDirs } from './support.ts';
 
 const temp = useTempDirs();
-const docs = useTempDocuments();
+const records = useTempConfig();
 let host: PluginHost | undefined;
 afterEach(() => { host?.stop(); host = undefined; });
 
@@ -57,12 +57,12 @@ function targets() {
   return { asked, target };
 }
 
-function start(o: { file?: string; kit?: DetectionKit; executors?: () => string[]; target?: (m: AttachedMachine) => MachineSource } = {}) {
+function start(o: { file?: object; kit?: DetectionKit; executors?: () => string[]; target?: (m: AttachedMachine) => MachineSource } = {}) {
   const dir = temp();
-  const documents = docs();
-  if (o.file !== undefined) documents.set(PLUGINS, o.file);
+  const config = records();
+  if (o.file !== undefined) config.set(PLUGINS, o.file);
   host = createPluginHost({
-    pluginDir: join(dir, 'plugins'), documents, dataDir: dir, clock: fixedClock,
+    pluginDir: join(dir, 'plugins'), config, dataDir: dir, clock: fixedClock,
     logger: { info() {}, warn() {} }, routerMode: () => 'shadow', kit: o.kit ?? fakeKit({ exists: async () => false }),
     builtins: [...BUILTIN_PLUGINS, fixedUsage, machineUsage],
     defaultLevels: [],
@@ -70,14 +70,14 @@ function start(o: { file?: string; kit?: DetectionKit; executors?: () => string[
     machineContext: { ...(o.executors ? { executors: o.executors } : {}), ...(o.target ? { target: o.target } : {}) },
     intervalMs: 30,
   });
-  return { host, documents, dir };
+  return { host, config, dir };
 }
 
 const catalogue = (h: PluginHost, id: string) => h.report().plugins.find((p) => p.id === id);
 
 describe('detection of the job-source plugins', () => {
-  const ghFile = 'version: 1\njobSources: [ { name: github, plugin: github-gh, options: { authors: [owner] } } ]\n';
-  const appFile = 'version: 1\njobSources: [ { name: github-app, plugin: github-app, options: { appId: 4242, slug: hopper-test, authors: [owner] } } ]\n';
+  const ghFile = { version: 1, jobSources: [{ name: 'github', plugin: 'github-gh', options: { authors: ['owner'] } }] };
+  const appFile = { version: 1, jobSources: [{ name: 'github-app', plugin: 'github-app', options: { appId: 4242, slug: 'hopper-test', authors: ['owner'] } }] };
   const detection = (h: PluginHost) => h.report().jobSources.instances[0]!.detection;
 
   it('github-gh: needs-setup with the command when `gh auth status` fails; unavailable without gh; available when logged in', async () => {
@@ -111,7 +111,7 @@ describe('detection of the job-source plugins', () => {
     expect(detection(b)).toMatchObject({ status: 'available' });
   });
 
-  it.each(['github-gh', 'github-app'])('%s in the catalogue: needs-setup until plugins.yaml names its authors (no default allowlist)', async (id) => {
+  it.each(['github-gh', 'github-app'])('%s in the catalogue: needs-setup until the plugins config names its authors (no default allowlist)', async (id) => {
     const { host } = start({ kit: fakeKit() });
     await host.start();
     expect(catalogue(host, id)!.detection).toMatchObject({ status: 'needs-setup', reason: expect.stringMatching(/authors/) });
@@ -119,13 +119,14 @@ describe('detection of the job-source plugins', () => {
 });
 
 describe('job-source instances', () => {
-  it('built from plugins.yaml under their instance names; a source that needs setup is still built (it waits), and says so', async () => {
-    const { host } = start({ file: [
-      'version: 1',
-      'jobSources:',
-      '  - { name: github, plugin: github-gh, options: { enabled: true, repos: [o/r], authors: [owner] } }',
-      '  - { name: github-app, plugin: github-app, options: { authors: [owner] } }',
-    ].join('\n') });
+  it('built from the plugins config under their instance names; a source that needs setup is still built (it waits), and says so', async () => {
+    const { host } = start({ file: {
+      version: 1,
+      jobSources: [
+        { name: 'github', plugin: 'github-gh', options: { enabled: true, repos: ['o/r'], authors: ['owner'] } },
+        { name: 'github-app', plugin: 'github-app', options: { authors: ['owner'] } },
+      ],
+    } });
     await host.start();
     const built = host.jobSources();
     expect(built.map((b) => b.spec.name)).toEqual(['github', 'github-app']);
@@ -141,17 +142,17 @@ describe('job-source instances', () => {
   });
 
   it('enabled: false is a disabled instance (listed, never run)', async () => {
-    const { host } = start({ file: 'version: 1\njobSources: [ { name: github, plugin: github-gh, options: { enabled: false, authors: [owner] } } ]\n' });
+    const { host } = start({ file: { version: 1, jobSources: [{ name: 'github', plugin: 'github-gh', options: { enabled: false, authors: ['owner'] } }] } });
     await host.start();
     expect(host.jobSources()[0]!.instance).toMatchObject({ disabled: { kind: 'github' } });
   });
 
   it.each([
-    ['unknown plugin', '{ name: x, plugin: no-such-source }', /unknown job-source plugin no-such-source/],
-    ['invalid options', '{ name: x, plugin: github-gh, options: { pollSeconds: -5 } }', /pollSeconds/],
-    ['an executor plugin named as a source', '{ name: x, plugin: test }', /unknown job-source plugin test/],
+    ['unknown plugin', { name: 'x', plugin: 'no-such-source' }, /unknown job-source plugin no-such-source/],
+    ['invalid options', { name: 'x', plugin: 'github-gh', options: { pollSeconds: -5 } }, /pollSeconds/],
+    ['an executor plugin named as a source', { name: 'x', plugin: 'test' }, /unknown job-source plugin test/],
   ])('%s: dropped with the reason', async (_n, entry, why) => {
-    const { host } = start({ file: `version: 1\njobSources: [ ${entry} ]\n` });
+    const { host } = start({ file: { version: 1, jobSources: [entry] } });
     await host.start();
     const [x] = host.jobSources();
     expect(x!.instance).toBeUndefined();
@@ -160,19 +161,19 @@ describe('job-source instances', () => {
   });
 
   it('gh not installed: dropped (unavailable is not needs-setup)', async () => {
-    const { host } = start({ file: 'version: 1\njobSources: [ { name: github, plugin: github-gh, options: { bin: /nonexistent/gh, authors: [owner] } } ]\n', kit: fakeKit({ which: async () => undefined }) });
+    const { host } = start({ file: { version: 1, jobSources: [{ name: 'github', plugin: 'github-gh', options: { bin: '/nonexistent/gh', authors: ['owner'] } }] }, kit: fakeKit({ which: async () => undefined }) });
     await host.start();
     expect(host.jobSources()[0]).toMatchObject({ plugin: null, reason: 'gh not found: /nonexistent/gh' });
   });
 
   it('two sources with one name are refused (sync state is keyed by the name)', async () => {
-    const { host } = start({ file: 'version: 1\njobSources: [ { name: g, plugin: github-gh }, { name: g, plugin: github-app } ]\n' });
+    const { host } = start({ file: { version: 1, jobSources: [{ name: 'g', plugin: 'github-gh' }, { name: 'g', plugin: 'github-app' }] } });
     await host.start();
     expect(host.report().config.error).toMatch(/jobSources.*twice|twice/);
   });
 
   it('no jobSources section: the built-in instances — github on auto (the gh CLI, #108), github-app with no identity or key; neither runs until authors are set', async () => {
-    const { host } = start({ file: 'version: 1\n' });
+    const { host } = start({ file: { version: 1 } });
     await host.start();
     expect(host.report().jobSources.instances.map((i) => i.instance)).toEqual([
       { name: 'github', plugin: 'github-gh', options: { enabled: 'auto' } },
@@ -182,9 +183,9 @@ describe('job-source instances', () => {
   });
 
   it('a restart role: an edit shows changed — restart pending; the built sources stay', async () => {
-    const { host, documents } = start({ file: 'version: 1\njobSources: []\n' });
+    const { host, config } = start({ file: { version: 1, jobSources: [] } });
     await host.start();
-    documents.set(PLUGINS, 'version: 1\njobSources: [ { name: github, plugin: github-gh } ]\n');
+    config.set(PLUGINS, { version: 1, jobSources: [{ name: 'github', plugin: 'github-gh' }] });
     await host.reload();
     expect(host.report().jobSources.pending).toEqual({ status: 'changed — restart pending', instances: [{ name: 'github', plugin: 'github-gh', options: {} }] });
     expect(host.jobSources()).toEqual([]);
@@ -193,7 +194,7 @@ describe('job-source instances', () => {
 
 describe('the machine-source role', () => {
   it('local: one machine named after the instance, lanes from its option, the executors the context names', async () => {
-    const { host } = start({ file: 'version: 1\nmachines: [ { name: local, plugin: local, options: { lanes: 2 } } ]\n', executors: () => ['test', 'scripted'] });
+    const { host } = start({ file: { version: 1, machines: [{ name: 'local', plugin: 'local', options: { lanes: 2 } }] }, executors: () => ['test', 'scripted'] });
     await host.start();
     expect(await host.machines().list()).toEqual([expect.objectContaining({ id: 'local', maxLanes: 2, online: true, executors: ['test', 'scripted'] })]);
     expect(host.report().machines.instances).toEqual([
@@ -202,7 +203,7 @@ describe('the machine-source role', () => {
   });
 
   it('no machines section: local with 4 lanes', async () => {
-    const { host } = start({ file: 'version: 1\n' });
+    const { host } = start({ file: { version: 1 } });
     await host.start();
     expect(await host.machines().list()).toEqual([expect.objectContaining({ id: 'local', maxLanes: 4 })]);
   });
@@ -210,7 +211,7 @@ describe('the machine-source role', () => {
   it('a machine source that cannot run lists no machine, never a guessed one — with the reason; the others still run', async () => {
     const t = targets();
     const { host } = start({
-      file: 'version: 1\nmachines:\n  - { name: local, plugin: local, options: { lanes: -1 } }\n  - { name: laptop, plugin: ssh, options: { ssh: laptop, lanes: 1 } }\n',
+      file: { version: 1, machines: [{ name: 'local', plugin: 'local', options: { lanes: -1 } }, { name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop', lanes: 1 } }] },
       target: t.target,
     });
     await host.start();
@@ -219,19 +220,19 @@ describe('the machine-source role', () => {
   });
 
   it('a lanes edit applies live (issue #18): same instance, new options, no restart pending', async () => {
-    const { host, documents } = start({ file: 'version: 1\nmachines: [ { name: local, plugin: local, options: { lanes: 2 } } ]\n' });
+    const { host, config } = start({ file: { version: 1, machines: [{ name: 'local', plugin: 'local', options: { lanes: 2 } }] } });
     await host.start();
     const machines = host.machines();
-    documents.set(PLUGINS, 'version: 1\nmachines: [ { name: local, plugin: local, options: { lanes: 3 } } ]\n');
+    config.set(PLUGINS, { version: 1, machines: [{ name: 'local', plugin: 'local', options: { lanes: 3 } }] });
     await host.reload();
     expect(host.report().machines.instances[0]!.instance.options).toEqual({ lanes: 3 });
     expect((await machines.list())[0]!.maxLanes).toBe(3);
   });
 
-  it('another instance name applies live too: the machines are what plugins.yaml names now', async () => {
-    const { host, documents } = start({ file: 'version: 1\nmachines: [ { name: local, plugin: local, options: { lanes: 2 } } ]\n' });
+  it('another instance name applies live too: the machines are what the plugins config names now', async () => {
+    const { host, config } = start({ file: { version: 1, machines: [{ name: 'local', plugin: 'local', options: { lanes: 2 } }] } });
     await host.start();
-    documents.set(PLUGINS, 'version: 1\nmachines: [ { name: server, plugin: local, options: { lanes: 3 } } ]\n');
+    config.set(PLUGINS, { version: 1, machines: [{ name: 'server', plugin: 'local', options: { lanes: 3 } }] });
     await host.reload();
     expect(await host.machines().list()).toEqual([expect.objectContaining({ id: 'server', maxLanes: 3 })]);
   });
@@ -240,17 +241,17 @@ describe('the machine-source role', () => {
 describe('attached machines in the host (issues #18, #74)', () => {
   it('an attached machine is a machine-source instance: added, changed and removed without a restart', async () => {
     const t = targets();
-    const { host, documents } = start({ file: 'version: 1\n', target: t.target });
+    const { host, config } = start({ file: { version: 1 }, target: t.target });
     await host.start();
     expect(host.targets()).toEqual([]);
-    documents.set(PLUGINS, 'version: 1\nmachines:\n  - { name: local, plugin: local }\n  - { name: laptop, plugin: ssh, options: { ssh: laptop, lanes: 2, herdrBin: /h/herdr } }\n');
+    config.set(PLUGINS, { version: 1, machines: [{ name: 'local', plugin: 'local' }, { name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop', lanes: 2, herdrBin: '/h/herdr' } }] });
     await host.reload();
     const laptop = { name: 'laptop', ssh: 'laptop', lanes: 2, herdr: true, herdrBin: '/h/herdr', session: 'hopper', executors: ['herdr-claude'] };
     expect(host.targets()).toEqual([laptop]);
     expect(t.asked).toEqual([laptop]);
     expect((await host.machines().list()).map((m) => `${m.id}:${m.maxLanes}`)).toEqual(['local:4', 'laptop:2']);
     expect(host.machineIds()).toEqual(['local', 'laptop']);
-    documents.set(PLUGINS, 'version: 1\nmachines:\n  - { name: local, plugin: local }\n');
+    config.set(PLUGINS, { version: 1, machines: [{ name: 'local', plugin: 'local' }] });
     await host.reload();
     expect(host.targets()).toEqual([]);
     expect((await host.machines().list()).map((m) => m.id)).toEqual(['local']);
@@ -258,18 +259,18 @@ describe('attached machines in the host (issues #18, #74)', () => {
 
   it('an attached machine whose options are invalid cannot run, with the reason; it is no target', async () => {
     const t = targets();
-    const { host } = start({ file: 'version: 1\nmachines:\n  - { name: local, plugin: local }\n  - { name: laptop, plugin: ssh, options: { ssh: -oProxy, lanes: 2 } }\n', target: t.target });
+    const { host } = start({ file: { version: 1, machines: [{ name: 'local', plugin: 'local' }, { name: 'laptop', plugin: 'ssh', options: { ssh: '-oProxy', lanes: 2 } }] }, target: t.target });
     await host.start();
     expect(host.targets()).toEqual([]);
     expect(t.asked).toEqual([]);
     expect(host.report().machines.instances[1]).toMatchObject({ active: null, reason: expect.stringMatching(/ssh must be a destination/) });
   });
 
-  it('an invalid plugins.yaml keeps the last good machines', async () => {
+  it('an invalid plugins config keeps the last good machines', async () => {
     const t = targets();
-    const { host, documents } = start({ file: 'version: 1\nmachines:\n  - { name: local, plugin: local }\n  - { name: laptop, plugin: ssh, options: { ssh: laptop, lanes: 2 } }\n', target: t.target });
+    const { host, config } = start({ file: { version: 1, machines: [{ name: 'local', plugin: 'local' }, { name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop', lanes: 2 } }] }, target: t.target });
     await host.start();
-    documents.set(PLUGINS, 'version: 1\nmachines: { name: laptop }\n');
+    config.set(PLUGINS, { version: 1, machines: { name: 'laptop' } });
     await host.reload();
     expect(host.targets().map((m) => m.name)).toEqual(['laptop']);
     expect((await host.machines().list()).map((m) => m.id)).toEqual(['local', 'laptop']);
@@ -279,18 +280,18 @@ describe('attached machines in the host (issues #18, #74)', () => {
 describe('the usage-source role', () => {
   it('built in: claude-plan and command-usage; no section means the built-in claude instance, `usageSources: []` means none', async () => {
     expect(BUILTIN_PLUGINS.filter((p) => p.role === 'usage-source').map((p) => p.id)).toEqual(['claude-plan', 'command-usage']);
-    const absent = start({ file: 'version: 1\n' }).host;
+    const absent = start({ file: { version: 1 } }).host;
     await absent.start();
     expect(absent.report().usageSources.instances.map((i) => [i.instance.name, i.instance.plugin, i.active]))
       .toEqual([['claude', 'claude-plan', 'claude-plan']]);
     absent.stop();
-    const none = start({ file: 'version: 1\nusageSources: []\n' }).host;
+    const none = start({ file: { version: 1, usageSources: [] } }).host;
     await none.start();
     expect(none.usageSources()).toEqual([]);
   });
 
-  it('a usage plugin named in plugins.yaml is polled under its instance name; an unknown one is dropped with the reason', async () => {
-    const { host } = start({ file: 'version: 1\nusageSources: [ { name: budget, plugin: fixed-usage, options: { used: 42 } }, { name: nope, plugin: no-such-usage } ]\n' });
+  it('a usage plugin named in the plugins config is polled under its instance name; an unknown one is dropped with the reason', async () => {
+    const { host } = start({ file: { version: 1, usageSources: [{ name: 'budget', plugin: 'fixed-usage', options: { used: 42 } }, { name: 'nope', plugin: 'no-such-usage' }] } });
     await host.start();
     const [u] = host.usageSources();
     expect(u!.name).toBe('budget');
@@ -300,14 +301,14 @@ describe('the usage-source role', () => {
 
   it('a usage source finds a machine by its id, as the machine sources list it now (issue #139)', async () => {
     const t = targets();
-    const { host, documents } = start({
-      file: 'version: 1\nmachines:\n  - { name: local, plugin: local }\n  - { name: laptop, plugin: ssh, options: { ssh: laptop, lanes: 1, herdrBin: /h/herdr } }\nusageSources: [ { name: on-laptop, plugin: machine-usage, options: { machine: laptop } } ]\n',
+    const { host, config } = start({
+      file: { version: 1, machines: [{ name: 'local', plugin: 'local' }, { name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop', lanes: 1, herdrBin: '/h/herdr' } }], usageSources: [{ name: 'on-laptop', plugin: 'machine-usage', options: { machine: 'laptop' } }] },
       target: (m) => ({ list: async () => [{ ...(await t.target(m).list())[0]!, ssh: 'laptop' }] }),
     });
     await host.start();
     const [u] = host.usageSources();
     expect((await u!.poll())[0]!.window).toBe('laptop laptop true');
-    documents.set(PLUGINS, 'version: 1\nmachines:\n  - { name: local, plugin: local }\nusageSources: [ { name: on-laptop, plugin: machine-usage, options: { machine: laptop } } ]\n');
+    config.set(PLUGINS, { version: 1, machines: [{ name: 'local', plugin: 'local' }], usageSources: [{ name: 'on-laptop', plugin: 'machine-usage', options: { machine: 'laptop' } }] });
     await host.reload();
     expect((await u!.poll())[0]!.window).toBe('none');
   });

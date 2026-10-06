@@ -1,5 +1,5 @@
 // Phase 5 slice 3 through the real composition root: executors are plugin instances from
-// plugins.yaml `executors:`; one that cannot run holds the jobs naming it — never
+// the plugins config's `executors`; one that cannot run holds the jobs naming it — never
 // fails or re-routes them — and they run once a restart brings it up. /api/plugins shows the
 // executor role, detection per plugin and per instance, a pending change, and the
 // command-bearing marks.
@@ -7,7 +7,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Job } from '../../src/domain/types.ts';
-import { startTestApp, tempDbPath, writePluginsYaml, type TestApp } from '../support/app.ts';
+import { startTestApp, tempDbPath, writePlugins, type TestApp } from '../support/app.ts';
 import { waitFor } from '../support/wait.ts';
 
 const apps: TestApp[] = [];
@@ -56,13 +56,14 @@ async function stillHeld(a: TestApp, id: string): Promise<Job> {
 describe('an executor that cannot run holds its jobs', () => {
   it('unknown plugin and herdr not installed: jobs held with the reason, never failed; a runnable job runs', async () => {
     const dbPath = newDb();
-    writePluginsYaml(dbPath, [
-      'version: 1',
-      'executors:',
-      '  - { name: test, plugin: test }',
-      '  - { name: broken, plugin: no-such-executor }',
-      '  - { name: herdr-claude, plugin: herdr-claude, options: { bin: /nonexistent/herdr } }',
-    ].join('\n'));
+    writePlugins(dbPath, {
+      version: 1,
+      executors: [
+        { name: 'test', plugin: 'test' },
+        { name: 'broken', plugin: 'no-such-executor' },
+        { name: 'herdr-claude', plugin: 'herdr-claude', options: { bin: '/nonexistent/herdr' } },
+      ],
+    });
     const a = await boot(dbPath);
 
     const broken = await a.pull({}, { executor: 'broken' });
@@ -87,7 +88,7 @@ describe('an executor that cannot run holds its jobs', () => {
 
   it('held across a restart, then run by the same instance name once its plugin is installed', async () => {
     const dbPath = newDb();
-    writePluginsYaml(dbPath, 'version: 1\nexecutors: [ { name: test, plugin: test }, { name: later, plugin: echo-executor } ]\n');
+    writePlugins(dbPath, { version: 1, executors: [{ name: 'test', plugin: 'test' }, { name: 'later', plugin: 'echo-executor' }] });
     const first = await boot(dbPath);
     const job = await first.pull({}, { executor: 'later', prompt: 'ping' });
     expect((await stillHeld(first, job.id)).holdReason).toBe('executor later unavailable: unknown executor plugin echo-executor');
@@ -103,7 +104,7 @@ describe('an executor that cannot run holds its jobs', () => {
 });
 
 describe('GET /api/plugins: the executor role', () => {
-  it('the instances plugins.yaml names, detection per plugin and per instance', async () => {
+  it('the instances the plugins config names, detection per plugin and per instance', async () => {
     const a = await boot(newDb());
     const body = (await a.api('GET', '/api/plugins')).body;
     expect(body.roles).toEqual(['router', 'queue-sorter', 'escalation-level', 'executor', 'job-source', 'machine-source', 'usage-source', 'notifier']);
@@ -131,11 +132,11 @@ describe('GET /api/plugins: the executor role', () => {
     expect(marked('local')).toEqual([]);
   });
 
-  it('an executor added to plugins.yaml runs without a restart (issue #142)', async () => {
+  it('an executor added to the plugins config runs without a restart (issue #142)', async () => {
     const dbPath = newDb();
-    writePluginsYaml(dbPath, 'version: 1\nexecutors: [ { name: test, plugin: test } ]\n');
+    writePlugins(dbPath, { version: 1, executors: [{ name: 'test', plugin: 'test' }] });
     const a = await boot(dbPath);
-    writePluginsYaml(dbPath, 'version: 1\nexecutors: [ { name: test, plugin: test }, { name: t2, plugin: test } ]\n');
+    writePlugins(dbPath, { version: 1, executors: [{ name: 'test', plugin: 'test' }, { name: 't2', plugin: 'test' }] });
     await waitFor(async () => ((await a.api('GET', '/api/health')).body.executors as string[]).includes('t2'), { what: 't2 running' });
     const report = (await a.api('GET', '/api/plugins')).body;
     expect(report.executors.pending).toBeUndefined();

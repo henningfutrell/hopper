@@ -10,7 +10,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const RULES = { document: 'rules.md', text: '- prefer small PRs\n', version: 'v1', missing: false };
+const RULES = { text: '- prefer small PRs\n', version: 'v1', missing: false };
 const GATES = {
   rules: RULES,
   riskRules: [
@@ -40,7 +40,7 @@ const MODELS = [
 ];
 const PLUGINS = {
   roles: ['router', 'escalation-level'],
-  config: { document: 'plugins.yaml', source: 'document', version: 'p1', warnings: [] },
+  config: { source: 'stored', version: 'p1', warnings: [] },
   instances: LEVELS.map((instance) => ({ role: 'escalation-level', instance })),
   router: { instance: { name: 'pass-through', plugin: 'pass-through' }, selection: 'detected', detection: { status: 'available' }, active: 'pass-through', fallback: false },
   escalationLevels: LEVELS.map((instance) => ({ instance, detection: { status: 'available' }, active: 'claude-cli' })),
@@ -130,7 +130,7 @@ describe('question gates panel', () => {
   it('shows the chain, the risk rules read-only, and the rules', async () => {
     await boot();
     const text = panel()!.textContent!;
-    for (const s of ['Escalation levels', 'Risk rules', 'Owner', 'opus', 'fable', 'delete', 'deploying or publishing', RULES.document]) expect(text).toContain(s);
+    for (const s of ['Escalation levels', 'Risk rules', 'Owner', 'opus', 'fable', 'delete', 'deploying or publishing', 'Standing rules']) expect(text).toContain(s);
     expect(rulesBox()!.value).toBe(RULES.text);
   });
 

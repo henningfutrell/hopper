@@ -85,7 +85,7 @@ describe('attach-client.sh', () => {
     expect(herdrUnit).not.toMatch(/--session hopper /);
     expect(log()).toMatch(/systemctl --user restart hopper-client/);
     expect(r.stdout).toContain(`CLIENT_TOKEN_STUDIO_FILE=${home}/.config/hopper/clients/studio.token`);
-    expect(r.stdout).toContain('  - { name: studio, plugin: client, options: { tokenEnv: CLIENT_TOKEN_STUDIO, lanes: 2 } }');
+    expect(r.stdout).toContain('Plugins → Machine sources, add a client instance named studio, then set its options:\n  tokenEnv: CLIENT_TOKEN_STUDIO\n  lanes: 2');
   });
 
   it('the client\'s key may open its one tunnel here and nothing else; re-running keeps the token and the key', () => {

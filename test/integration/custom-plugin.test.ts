@@ -1,10 +1,10 @@
 // An author's custom plugin end to end (design.md "Settled in slice 6"): an example copied into the
 // plugin dir of an ad-hoc daemon (real HTTP server, temp dirs) loads, shows in /api/plugins as a
-// custom plugin, and runs once plugins.yaml selects it. Nothing leaves the machine.
+// custom plugin, and runs once the plugins config selects it. Nothing leaves the machine.
 import { cpSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { startTestApp, tempDbPath, writePluginsYaml, type TestApp } from '../support/app.ts';
+import { startTestApp, tempDbPath, writePlugins, type TestApp } from '../support/app.ts';
 
 const EXAMPLES = join(import.meta.dirname, '..', '..', 'examples', 'plugins');
 let t: TestApp | undefined;
@@ -17,12 +17,12 @@ afterEach(async () => {
 });
 
 describe('a custom plugin copied from examples/plugins', () => {
-  it('loads from the plugin dir, appears in /api/plugins, and runs a job once plugins.yaml names it as an executor', async () => {
+  it('loads from the plugin dir, appears in /api/plugins, and runs a job once the plugins config names it as an executor', async () => {
     const db = tempDbPath();
     cleanup = db.cleanup;
     const dataDir = join(db.dbPath, '..');
     cpSync(join(EXAMPLES, 'executor', 'echo-executor'), join(dataDir, 'plugins', 'echo-executor'), { recursive: true });
-    writePluginsYaml(db.dbPath, { version: 1, executors: [{ name: 'test', plugin: 'test' }, { name: 'echo', plugin: 'echo-executor', options: { prefix: 'heard: ' } }], jobSources: [] });
+    writePlugins(db.dbPath, { version: 1, executors: [{ name: 'test', plugin: 'test' }, { name: 'echo', plugin: 'echo-executor', options: { prefix: 'heard: ' } }], jobSources: [] });
     t = await startTestApp({ dbPath: db.dbPath });
 
     const report = (await t.api('GET', '/api/plugins')).body;

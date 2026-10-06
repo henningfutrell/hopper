@@ -2,7 +2,7 @@
 // (an ssh target with its own herdr), `docker` (a container target, commands only) and `client` (a
 // client target). Each instance is one attached machine, named after the instance; its options are
 // what an `attachedMachines:` entry held. What reaches a machine — ssh, herdr, the container, the
-// variable the client token is in, the pinned host key — is command-bearing: plugins.yaml only.
+// variable the client token is in, the pinned host key — is command-bearing (marked in the UI, edited there like any option).
 import { describe, expect, it } from 'vitest';
 import { BUILTIN_PLUGINS } from '../../src/plugins/builtin.ts';
 import { optionsJsonSchema } from '../../src/plugins/options.ts';

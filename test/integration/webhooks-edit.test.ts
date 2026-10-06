@@ -1,6 +1,6 @@
 // Issue #18: webhook subscriptions are edited from the UI. Issue #78: the subscriptions are rows in the
 // database and nothing else — POST /ui/api/webhooks adds, changes or removes one row, and the answer
-// shows it. No config document holds them.
+// shows it. No config record holds them.
 // Issue #56: every secret comes from the runtime. A subscription names the variable its secret is in
 // (`secretEnv`); the hopper makes, stores and hands out no secret — not in the store, not in an
 // answer. A UI session may name only a `WEBHOOK_SECRET_*` variable, so it can never point a
@@ -10,7 +10,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { CONFIG_DOCUMENTS } from '../../src/domain/ports.ts';
+import { CONFIG_NAMES } from '../../src/domain/ports.ts';
 import { openDb } from '../../src/store/db.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { ownerSchemaUrlFor } from '../support/database.ts';
@@ -62,7 +62,7 @@ const signatureOf = (secret: string, got: { headers: Record<string, unknown>; bo
 const BEFORE = TWO.map((w) => ({ ...w, active: w.active ?? true }));
 
 describe('GET /api/webhooks: what the UI edits', () => {
-  it('carries each subscription\'s variable and whether the runtime provides it; never a secret, no document', async () => {
+  it('carries each subscription\'s variable and whether the runtime provides it; never a secret, no config record', async () => {
     const { a } = await start(TWO, { WEBHOOK_SECRET_GROK: 's-grok' });
     const body = await list(a);
     expect(JSON.stringify(body)).not.toContain('s-grok');
@@ -74,8 +74,8 @@ describe('GET /api/webhooks: what the UI edits', () => {
     expect(body).not.toHaveProperty('config');
   });
 
-  it('no config document holds them', () => {
-    expect(CONFIG_DOCUMENTS).not.toContain('webhooks.yaml');
+  it('no config record holds them', () => {
+    expect(CONFIG_NAMES).not.toContain('webhooks');
   });
 });
 
