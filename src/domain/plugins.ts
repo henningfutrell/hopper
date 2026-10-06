@@ -4,6 +4,15 @@
 export type Role = 'router' | 'queue-sorter' | 'escalation-level' | 'executor' | 'job-source' | 'machine-source' | 'usage-source' | 'notifier';
 export const ROLES: readonly Role[] = ['router', 'queue-sorter', 'escalation-level', 'executor', 'job-source', 'machine-source', 'usage-source', 'notifier'];
 
+/** A Claude model alias (`opus`, `sonnet[1m]`) or model id (`claude-opus-4-5`). */
+const MODEL_NAME = /^(claude-)?(haiku|sonnet|opus|fable|opusplan)(-[0-9][0-9a-z.-]*)?(\[1m\])?$/i;
+
+/**
+ * Whether `name` is a model name (issue #209): a Claude model, or `model`, the model the instance
+ * itself names. An escalation level is named as a level; the model it uses is only its `model` option.
+ */
+export const isModelName = (name: string, model?: unknown): boolean => MODEL_NAME.test(name) || name === model;
+
 /** The roles built once at start; a later the plugins config change applies at the next restart. */
 export type RestartRole = 'executor' | 'job-source' | 'machine-source' | 'usage-source' | 'notifier';
 

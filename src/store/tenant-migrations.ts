@@ -6,6 +6,7 @@
 import { isMap, isScalar, isSeq, parseDocument } from 'yaml';
 import type { Db } from './db.ts';
 import { documentsToRecords } from './migration-config.ts';
+import { levelsNamedAsLevels } from './migration-level-names.ts';
 
 type Migration = string | ((db: Db) => void);
 
@@ -150,6 +151,8 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
   // 4: no config files and no YAML (issue #198): plugins.yaml and rules.md become the config records
   // `plugins` and `rules`.
   (db) => documentsToRecords(db, { 'plugins.yaml': 'plugins', 'rules.md': 'rules' }),
+  // 5: an escalation level is named as a level, never after a model (issue #209).
+  levelsNamedAsLevels,
 ];
 
 /** A user schema's version once migrated. */

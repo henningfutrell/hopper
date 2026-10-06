@@ -29,10 +29,11 @@ export function builtinInstances(answerTimeoutMs = 180_000, localMachine = true,
   const question = { ...here, bin: 'claude', timeoutMs: answerTimeoutMs };
   return {
     queueSorter: { name: 'priority', plugin: 'priority' },
-    // Lowest first: Opus answers what it can settle, Fable what Opus escalates; then the owner.
+    // Lowest first: level 1 (Opus) answers what it can settle, level 2 (Fable) what level 1
+    // escalates; then the owner. Named as levels, never after a model (issue #209).
     escalationLevels: [
-      { name: 'opus', plugin: 'claude-cli', options: { ...question, model: 'opus' } },
-      { name: 'fable', plugin: 'claude-cli', options: { ...question, model: 'fable' } },
+      { name: 'level-1', plugin: 'claude-cli', options: { ...question, model: 'opus' } },
+      { name: 'level-2', plugin: 'claude-cli', options: { ...question, model: 'fable' } },
     ],
     executors: [
       { name: 'test', plugin: 'test' },

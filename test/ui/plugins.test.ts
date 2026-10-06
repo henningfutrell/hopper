@@ -64,8 +64,8 @@ describe('instanceState', () => {
   const report = {
     router: { instance: { name: 'gate-router', plugin: 'gate-router' }, active: 'pass-through', fallback: true, reason: 'no python' },
     escalationLevels: [
-      { instance: { name: 'opus', plugin: 'claude-cli' }, detection: { status: 'available' }, active: 'claude-cli' },
-      { instance: { name: 'fable', plugin: 'claude-cli' }, detection: { status: 'unavailable', reason: 'no claude' }, active: null, reason: 'no claude' },
+      { instance: { name: 'level-1', plugin: 'claude-cli' }, detection: { status: 'available' }, active: 'claude-cli' },
+      { instance: { name: 'level-2', plugin: 'claude-cli' }, detection: { status: 'unavailable', reason: 'no claude' }, active: null, reason: 'no claude' },
     ],
     executors: { instances: [{ instance: { name: 'test', plugin: 'test' }, detection: { status: 'available' }, active: 'test' }] },
     jobSources: { instances: [{ instance: { name: 'github', plugin: 'github-gh' }, detection: { status: 'unavailable', reason: 'no gh' }, active: null, reason: 'no gh' }] },
@@ -79,8 +79,8 @@ describe('instanceState', () => {
   });
 
   it('an escalation level: active, or cannot run (it escalates every question), never restart pending', () => {
-    expect(instanceState(report, 'escalation-level', 'opus')).toMatchObject({ tone: 'ok', label: 'active', rolePending: false });
-    expect(instanceState(report, 'escalation-level', 'fable')).toMatchObject({ tone: 'bad', label: 'cannot run', reason: 'no claude' });
+    expect(instanceState(report, 'escalation-level', 'level-1')).toMatchObject({ tone: 'ok', label: 'active', rolePending: false });
+    expect(instanceState(report, 'escalation-level', 'level-2')).toMatchObject({ tone: 'bad', label: 'cannot run', reason: 'no claude' });
     expect(instanceState(report, 'escalation-level', 'new-one')).toMatchObject({ tone: 'warn', label: 'loading' });
   });
 

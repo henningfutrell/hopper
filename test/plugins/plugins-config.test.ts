@@ -25,7 +25,7 @@ describe('the plugins config (router, escalationLevels, executors, jobSources, m
     const r = loadPluginsConfig({
       version: 1,
       router: { name: 'gate-router', plugin: 'gate-router' },
-      escalationLevels: [{ name: 'opus', plugin: 'claude-cli', options: { model: 'opus' } }, { name: 'fable', plugin: 'claude-cli' }],
+      escalationLevels: [{ name: 'level-1', plugin: 'claude-cli', options: { model: 'opus' } }, { name: 'level-2', plugin: 'claude-cli' }],
       executors: [{ name: 'test', plugin: 'test' }],
       jobSources: [],
       machines: [{ name: 'local', plugin: 'local' }],
@@ -35,8 +35,8 @@ describe('the plugins config (router, escalationLevels, executors, jobSources, m
     expect(r).toEqual({
       router: { name: 'gate-router', plugin: 'gate-router', options: {} },
       escalationLevels: [
-        { name: 'opus', plugin: 'claude-cli', options: { model: 'opus' } },
-        { name: 'fable', plugin: 'claude-cli', options: {} },
+        { name: 'level-1', plugin: 'claude-cli', options: { model: 'opus' } },
+        { name: 'level-2', plugin: 'claude-cli', options: {} },
       ],
       executors: [{ name: 'test', plugin: 'test', options: {} }],
       jobSources: [],

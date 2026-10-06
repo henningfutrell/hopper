@@ -35,7 +35,7 @@ const plugins = (a: TestApp, token: string, edit: Record<string, unknown>) => a.
 describe('POST /ui/api/plugins — rename a machine', () => {
   const NAMED = {
     ...FILE,
-    escalationLevels: [{ name: 'opus', plugin: 'claude-cli', options: { machine: 'desk' } }],
+    escalationLevels: [{ name: 'level-1', plugin: 'claude-cli', options: { machine: 'desk' } }],
     routing: [{ name: 'to-desk', match: { label: 'desk' }, set: { machine: 'desk' } }, { name: 'other', match: { label: 'x' }, set: { priority: 70 } }],
   };
   const desk = { ssh: 'desk', herdrBin: '/usr/bin/herdr', lanes: 1, executors: ['test'] };
@@ -49,7 +49,7 @@ describe('POST /ui/api/plugins — rename a machine', () => {
     expect(r.status).toBe(200);
     const doc = read(a);
     expect(doc.machines).toEqual([FILE.machines[0], { name: 'study', plugin: 'ssh', options: { ...desk, session: 'work', label: 'the study' } }]);
-    expect(doc.escalationLevels).toEqual([{ name: 'opus', plugin: 'claude-cli', options: { machine: 'study' } }]);
+    expect(doc.escalationLevels).toEqual([{ name: 'level-1', plugin: 'claude-cli', options: { machine: 'study' } }]);
     expect(doc.routing).toEqual([{ name: 'to-desk', match: { label: 'desk' }, set: { machine: 'study' } }, NAMED.routing[1]]);
     await waitFor(async () => (await machineIds(a)).includes('study'));
     expect(await machineIds(a)).toEqual(['local', 'study']);
@@ -69,7 +69,7 @@ describe('POST /ui/api/plugins — rename a machine', () => {
     const taken = await plugins(a, token, { action: 'options', role: 'machine-source', name: 'desk', rename: 'local', options: desk, version });
     expect(taken.status).toBe(409);
     expect(taken.body.error).toMatch(/local/);
-    const level = await plugins(a, token, { action: 'options', role: 'escalation-level', name: 'opus', rename: 'top', options: { machine: 'desk' }, version });
+    const level = await plugins(a, token, { action: 'options', role: 'escalation-level', name: 'level-1', rename: 'top', options: { machine: 'desk' }, version });
     expect(level.status).toBe(400);
     expect((await plugins(a, token, { action: 'options', role: 'machine-source', name: 'desk', rename: ' ', options: desk, version })).status).toBe(400);
     expect(read(a)).toEqual(before);

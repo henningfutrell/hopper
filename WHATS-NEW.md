@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- Escalation levels are named as levels, not after a model: the two that came with the hopper are now "level-1" and "level-2", whatever model each uses. The model a level uses is shown only as its model. A level can no longer be given a model's name.
 - A machine can be edited after it is added: change its name, its ssh target, its herdr session and every other detail from its Edit button on the Machines page. A new name is refused while a job runs there or waits for it.
 - The Machines page no longer shows a "plugin" line on each machine: the line that says how a machine is reached is enough.
 - Sign-in is set up in Settings → Sign-in with plain form fields, and people get a username and password there: add an account, pick its role and who it signs in as, and it works at once — nothing to type in as code.

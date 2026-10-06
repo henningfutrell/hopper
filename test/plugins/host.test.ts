@@ -47,12 +47,12 @@ const cannedLevel: PluginDefinition<'escalation-level'> = {
   },
 };
 const request = {
-  question: { id: 'q', jobId: 'j', text: 't', recentOutput: '', detectedBy: 'marker', status: 'open', tier: 'opus', attempts: [], notifyCount: 0, createdAt: '', updatedAt: '' } as Question,
+  question: { id: 'q', jobId: 'j', text: 't', recentOutput: '', detectedBy: 'marker', status: 'open', tier: 'level-1', attempts: [], notifyCount: 0, createdAt: '', updatedAt: '' } as Question,
   jobPrompt: '', rules: '', previous: [], level: { number: 1, of: 2 },
 } satisfies AnswerRequest;
 const DEFAULT_LEVELS = [
-  { name: 'opus', plugin: 'claude-cli', options: { model: 'opus', machine: 'local' } },
-  { name: 'fable', plugin: 'claude-cli', options: { model: 'fable', machine: 'local' } },
+  { name: 'level-1', plugin: 'claude-cli', options: { model: 'opus', machine: 'local' } },
+  { name: 'level-2', plugin: 'claude-cli', options: { model: 'fable', machine: 'local' } },
 ];
 let selfFallback = true;
 const selfFallingBack: PluginDefinition<'router'> = {
@@ -250,26 +250,26 @@ describe('custom plugins through the host', () => {
 });
 
 describe('escalation levels (0..n, lowest first, live)', () => {
-  it('the built-in levels: opus, then fable, both claude-cli, both detected', async () => {
+  it('the built-in levels: level-1, then level-2, both claude-cli, both detected', async () => {
     const { host } = start();
     await host.start();
-    expect(host.levels().map((l) => l.name)).toEqual(['opus', 'fable']);
+    expect(host.levels().map((l) => l.name)).toEqual(['level-1', 'level-2']);
     const r = host.report();
     expect(r.escalationLevels).toEqual([
       { instance: DEFAULT_LEVELS[0], detection: { status: 'available', detail: 'claude on machine local' }, active: 'claude-cli' },
       { instance: DEFAULT_LEVELS[1], detection: { status: 'available', detail: 'claude on machine local' }, active: 'claude-cli' },
     ]);
-    expect(r.instances.filter((i) => i.role === 'escalation-level').map((i) => i.instance.name)).toEqual(['opus', 'fable']);
+    expect(r.instances.filter((i) => i.role === 'escalation-level').map((i) => i.instance.name)).toEqual(['level-1', 'level-2']);
     const byId = new Map(r.plugins.map((p) => [p.id, p]));
     expect(byId.get('claude-cli')).toMatchObject({ role: 'escalation-level', builtin: true, options: { properties: { bin: {}, model: {}, timeoutMs: {}, effort: {} } } });
   });
 
   it('a level that names no machine stays in its place, cannot run, and escalates every question; shown in the report (#174)', async () => {
-    const { host } = start({ file: { version: 1, escalationLevels: [{ name: 'opus', plugin: 'claude-cli' }, { name: 'fable', plugin: 'claude-cli', options: { machine: 'local' } }] } });
+    const { host } = start({ file: { version: 1, escalationLevels: [{ name: 'level-1', plugin: 'claude-cli' }, { name: 'level-2', plugin: 'claude-cli', options: { machine: 'local' } }] } });
     await host.start();
-    expect(host.levels().map((l) => l.name)).toEqual(['opus', 'fable']);
+    expect(host.levels().map((l) => l.name)).toEqual(['level-1', 'level-2']);
     expect(host.report().escalationLevels[0]).toMatchObject({
-      instance: { name: 'opus', plugin: 'claude-cli' }, detection: { status: 'unavailable' }, active: null, reason: expect.stringContaining('machine'),
+      instance: { name: 'level-1', plugin: 'claude-cli' }, detection: { status: 'unavailable' }, active: null, reason: expect.stringContaining('machine'),
     });
     expect(await host.levels()[0]!.answer(request, new AbortController().signal)).toEqual({
       escalate: true, reason: expect.stringMatching(/^unavailable: /),
@@ -295,9 +295,9 @@ describe('escalation levels (0..n, lowest first, live)', () => {
   it('the plugins config swaps the levels between calls', async () => {
     const { host, config } = start();
     await host.start();
-    config.set(PLUGINS, { version: 1, escalationLevels: [{ name: 'quick', plugin: 'canned-level', options: { answer: 'yes' } }, { name: 'opus', plugin: 'claude-cli' }] });
+    config.set(PLUGINS, { version: 1, escalationLevels: [{ name: 'quick', plugin: 'canned-level', options: { answer: 'yes' } }, { name: 'level-1', plugin: 'claude-cli' }] });
     await waitFor(() => host.levels()[0]?.name === 'quick', { what: 'the swapped levels' });
-    expect(host.levels().map((l) => l.name)).toEqual(['quick', 'opus']);
+    expect(host.levels().map((l) => l.name)).toEqual(['quick', 'level-1']);
     expect(await host.levels()[0]!.answer(request, new AbortController().signal)).toEqual({ answer: 'yes', escalate: false, reason: 'canned' });
     expect(host.report().escalationLevels[0]).toMatchObject({ instance: { name: 'quick' }, active: 'canned-level' });
   });
@@ -309,6 +309,6 @@ describe('escalation levels (0..n, lowest first, live)', () => {
     const { host } = start({ file: { version: 1, escalationLevels } });
     await host.start();
     expect(host.report().config.error).toMatch(why);
-    expect(host.levels().map((l) => l.name)).toEqual(['opus', 'fable']);
+    expect(host.levels().map((l) => l.name)).toEqual(['level-1', 'level-2']);
   });
 });
