@@ -2,7 +2,10 @@
 // flow (the client id only, never a secret), who a token belongs to, where the app is installed, and the
 // issue API a connected account reads through.
 // node:http on 127.0.0.1; every request is recorded. The user at the device page is the test:
-// `approve(login)` or `deny()` settles the pending device code.
+// `approve(login)` or `deny()` settles the pending device code. The browser redirect (issue #258) is
+// GitHub's web flow, which takes the app's client secret: GitHub signs `webLogin` in at
+// `/login/oauth/authorize` and sends the browser back with a code, exchanged with the secret and the PKCE verifier.
+import { createHash } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
@@ -29,6 +32,8 @@ export interface FakeForge {
   deny(): void;
   /** Tokens the forge accepts now, by token → login. */
   tokens: Map<string, string>;
+  /** GitHub: who is signed in at GitHub when a browser reaches `/login/oauth/authorize`; unset: nobody, the person denies it. */
+  webLogin?: string;
   /** GitHub: the accounts the app is installed on (GET /user/installations); default: the token's own login. */
   installedOn?: string[];
   close(): Promise<void>;
@@ -48,7 +53,7 @@ const send = (res: ServerResponse, status: number, body: unknown) => {
   res.end(body === undefined ? '' : JSON.stringify(body));
 };
 
-type Handler = (r: ForgeRequest, login: string | undefined) => { status: number; body?: unknown };
+type Handler = (r: ForgeRequest, login: string | undefined) => { status: number; body?: unknown; location?: string };
 
 async function serve(handler: (base: string) => Handler, extra: { issues: FakeIssue[]; tokens: Map<string, string>; devices: Device[] }): Promise<FakeForge> {
   const requests: ForgeRequest[] = [];
@@ -62,6 +67,7 @@ async function serve(handler: (base: string) => Handler, extra: { issues: FakeIs
       requests.push(r);
       const token = /^(?:token|bearer)\s+(\S+)$/i.exec(auth)?.[1];
       const out = handle(r, token ? extra.tokens.get(token) : undefined);
+      if (out.location) { res.writeHead(out.status, { location: out.location }); res.end(); return; }
       send(res, out.status, out.body);
     })().catch((err: unknown) => send(res, 500, { message: String(err) }));
   });
@@ -82,10 +88,12 @@ const issueKey = (repo: string, n: number) => `${repo}#${n}`;
 const idOf = (login: string) => [...login].reduce((n, c) => (n * 31 + c.charCodeAt(0)) % 1_000_000, 7);
 
 /** GitHub: OAuth at the root (`/login/device/code`, `/login/oauth/access_token`), REST under `/api/v3`. */
-export function createFakeGitHub(o: { clientId: string; issues?: FakeIssue[] }): Promise<FakeForge> {
+export function createFakeGitHub(o: { clientId: string; clientSecret?: string; issues?: FakeIssue[] }): Promise<FakeForge> {
   const issues = o.issues ?? [];
   const tokens = new Map<string, string>();
   const devices: Device[] = [];
+  /** Web flow codes GitHub handed back to the browser: code → who, and what it was asked with. */
+  const codes = new Map<string, { login: string; redirectUri: string; challenge: string }>();
   let n = 0;
   let forge: FakeForge | undefined;
   return serve((base) => {
@@ -101,6 +109,29 @@ export function createFakeGitHub(o: { clientId: string; issues?: FakeIssue[] }):
         const d: Device = { code: `dc-${++n}`, userCode: `GH${n}-CODE`, state: 'pending' };
         devices.push(d);
         return { status: 200, body: { device_code: d.code, user_code: d.userCode, verification_uri: `${base}/login/device`, expires_in: 900, interval: 1 } };
+      }
+      if (r.method === 'GET' && r.path === '/login/oauth/authorize') {
+        const q = r.query;
+        if (q.client_id !== o.clientId || !q.redirect_uri || !q.state) return { status: 400, body: { message: 'bad authorize request' } };
+        const back = new URL(q.redirect_uri);
+        back.searchParams.set('state', q.state);
+        const who = forge?.webLogin;
+        if (!who) { back.searchParams.set('error', 'access_denied'); return { status: 302, location: back.href }; }
+        const code = `wc-${++n}`;
+        codes.set(code, { login: who, redirectUri: q.redirect_uri, challenge: q.code_challenge ?? '' });
+        back.searchParams.set('code', code);
+        return { status: 302, location: back.href };
+      }
+      if (r.method === 'POST' && r.path === '/login/oauth/access_token' && 'code' in r.body) {
+        const c = codes.get(String(r.body.code));
+        codes.delete(String(r.body.code));
+        if (r.body.client_id !== o.clientId || !o.clientSecret || r.body.client_secret !== o.clientSecret) return { status: 200, body: { error: 'incorrect_client_credentials' } };
+        if (!c || r.body.redirect_uri !== c.redirectUri) return { status: 200, body: { error: 'bad_verification_code' } };
+        const verifier = String(r.body.code_verifier ?? '');
+        if (createHash('sha256').update(verifier).digest('base64url') !== c.challenge) return { status: 200, body: { error: 'bad_verification_code' } };
+        const token = `gho_${c.login}_${++n}`;
+        tokens.set(token, c.login);
+        return { status: 200, body: { access_token: token, token_type: 'bearer', scope: '' } };
       }
       if (r.method === 'POST' && r.path === '/login/oauth/access_token') {
         if (r.body.client_id !== o.clientId || 'client_secret' in r.body) return { status: 200, body: { error: 'incorrect_client_credentials' } };
