@@ -5,8 +5,9 @@
 #   - the image `<prefix>-<agent>` from deploy/agent-box/Dockerfile, with this machine's herdr in it;
 #   - the container, restarted with docker, its sshd published on 127.0.0.1 only (a free port), its
 #     home the volume `<prefix>-<agent>-home` (the agent's sign-in lives there, and outlives the box);
-#   - authorized there: the hopper's key (HOPPER_SSH_KEY_FILE) with `restrict`, and your own public
-#     keys (~/.ssh/id_*.pub), so you can open a terminal there and sign the agent in;
+#   - authorized there: the hopper's key (HOPPER_SSH_KEY_FILE, or its public line HOPPER_SSH_PUBLIC_KEY)
+#     with `restrict`, and your own public keys (~/.ssh/id_*.pub), so you can open a terminal there and
+#     sign the agent in;
 #   - an ssh Host `<prefix>-<agent>` in ~/.ssh/<prefix>.config (Included from ~/.ssh/config), and its
 #     host key in ~/.ssh/known_hosts — read from the container itself through docker, never learned
 #     from a connection — so the Machines view's Add form takes it like any ssh target.
@@ -99,13 +100,20 @@ if [ "$REMOVE" = 1 ]; then
   exit 0
 fi
 
+# The hopper's key: the file its runtime mounts (made when missing), or, for a hopper that keeps its own
+# key (issue #293), its public line as the Machines view's Add form shows it.
 KEY="${HOPPER_SSH_KEY_FILE:-}"
-[ -n "$KEY" ] || die "HOPPER_SSH_KEY_FILE must name the hopper's ssh key, as in its environment (made when missing)"
-if [ ! -e "$KEY" ]; then
-  mkdir -p "$(dirname "$KEY")"
-  ssh-keygen -q -t ed25519 -N '' -C hopper -f "$KEY"
+if [ -n "$KEY" ]; then
+  if [ ! -e "$KEY" ]; then
+    mkdir -p "$(dirname "$KEY")"
+    ssh-keygen -q -t ed25519 -N '' -C hopper -f "$KEY"
+  fi
+  HOPPER_PUB="$(ssh-keygen -y -f "$KEY" | awk '{ print $1, $2 }')"
+else
+  [ -n "${HOPPER_SSH_PUBLIC_KEY:-}" ] || die "name the hopper's ssh key: HOPPER_SSH_KEY_FILE (its file), or HOPPER_SSH_PUBLIC_KEY (its public line, as Machines → Add shows it)"
+  HOPPER_PUB="$(printf '%s\n' "$HOPPER_SSH_PUBLIC_KEY" | awk '{ print $1, $2 }')"
 fi
-HOPPER_PUB="$(ssh-keygen -y -f "$KEY" | awk '{ print $1, $2 }')"
+[[ "$HOPPER_PUB" =~ ^ssh-[a-z0-9-]+\ [A-Za-z0-9+/=]+$ ]] || die "the hopper's ssh key is not a public key line: $HOPPER_PUB"
 HERDR="${HOPPER_BOX_HERDR:-$(command -v herdr || true)}"
 [ -x "$HERDR" ] || die "herdr not found here: the boxes run this machine's herdr (or set HOPPER_BOX_HERDR)"
 
@@ -164,15 +172,21 @@ for agent in "${AGENTS[@]}"; do
   chmod 600 "$KNOWN"
   write_ssh_config
 
-  step "check $name over ssh, as the hopper"
+  # As the hopper reaches it — its key alone, the pinned host key — when its key file is here; else in the box.
+  if [ -n "$KEY" ]; then
+    step "check $name over ssh, as the hopper"
+    check() { ssh -F "$SSH_DIR/config" -o UserKnownHostsFile="$KNOWN" -o BatchMode=yes -o IdentitiesOnly=yes -o IdentityAgent=none \
+      -o StrictHostKeyChecking=yes -o ConnectTimeout=5 -i "$KEY" -- "$name" "/usr/local/bin/herdr --session hopper status server" 2>/dev/null; }
+  else
+    step "check $name's herdr session"
+    check() { docker exec -u agent -- "$name" /usr/local/bin/herdr --session hopper status server 2>/dev/null; }
+  fi
   ok=''
   for _ in $(seq 1 20); do
-    if ssh -F "$SSH_DIR/config" -o UserKnownHostsFile="$KNOWN" -o BatchMode=yes -o IdentitiesOnly=yes -o IdentityAgent=none \
-        -o StrictHostKeyChecking=yes -o ConnectTimeout=5 -i "$KEY" -- "$name" "/usr/local/bin/herdr --session hopper status server" 2>/dev/null \
-        | grep -q '^status: running$'; then ok=1; break; fi
+    if check | grep -q '^status: running$'; then ok=1; break; fi
     sleep 1
   done
-  [ -n "$ok" ] || die "$name: its herdr session does not answer over ssh (docker logs $name)"
+  [ -n "$ok" ] || die "$name: its herdr session does not answer (docker logs $name)"
   [ "$ATTACHED" = '[' ] || ATTACHED+=','
   ATTACHED+="{\"name\":\"$name\",\"ssh\":\"$name\",\"hostKey\":\"$HOST_KEY\"}"
 done

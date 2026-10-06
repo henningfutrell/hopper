@@ -2737,8 +2737,10 @@ image, and they reach the hopper through the plugins config.
   the volume `hopper-box-<agent>-home` — the agent's sign-in lives there and outlives the box. Its main
   process is the herdr session; a box whose image changed is started again from the new one, a running
   box is kept.
-- **Who gets in**: written into the box through docker — the hopper's key (`HOPPER_SSH_KEY_FILE`, made
-  when missing) with `restrict`, as `scripts/attach-machine.sh` installs it; the user's own public keys
+- **Who gets in**: written into the box through docker — the hopper's key with `restrict`, as
+  `scripts/attach-machine.sh` installs it: the file its runtime mounts (`HOPPER_SSH_KEY_FILE`, made when
+  missing), or, for a hopper that keeps its own key (issue #293), its public line as the Add form shows it
+  (`HOPPER_SSH_PUBLIC_KEY`); the user's own public keys
   (`~/.ssh/id_*.pub`) unrestricted, for a terminal there (`ssh -t hopper-box-<agent>`, `herdr --remote
   hopper-box-<agent> --session hopper`) and to sign the agent in.
 - **ssh**: a `Host hopper-box-<agent>` (HostName `127.0.0.1`, its Port, User `agent`) in
@@ -2747,8 +2749,9 @@ image, and they reach the hopper through the plugins config.
   itself through docker — the source, never a connection ("Target authentication"). So the Machines
   view's Add form offers and pins it like any ssh target, and the port is not 22, so it is never taken
   for this machine (issue #275).
-- **Checked** over ssh as the hopper would reach it: the hopper's key alone, the pinned host key,
-  `herdr --session hopper status server` answering `running`.
+- **Checked** over ssh as the hopper would reach it — the hopper's key alone, the pinned host key —
+  `herdr --session hopper status server` answering `running`; with only the public line, the same
+  check runs in the box through docker.
 - **`--attach`**: each box becomes an `ssh` machine instance named after it (`ssh`, `herdr: true`,
   `herdrBin: /usr/local/bin/herdr`, its `hostKey`) through the operator CLI (`hopper config get|set
   plugins`, against its version; the daemon's 5 s watch follows it, no restart), filtered by
@@ -2764,6 +2767,10 @@ already run on ssh targets). codex, omp and opencode have no executor yet ("6d. 
 configuration"): their boxes are attached, online while their herdr session answers, and the owner
 works in them by hand until an executor drives their CLI. A job's work tree is a path of the box: a job
 whose `cwd` exists only on this machine does not run there.
+
+**This host only.** The boxes are on this machine's docker and the Hosts in its `~/.ssh`: they serve a
+hopper installed here. A hopper in a container (issue #293) reaches them by neither; it would attach each
+as a typed `agent@<this computer>` with the box's port, which a typed target cannot carry.
 
 **Residual risk.** The boxes reach the network (the agents need their APIs) and run whatever a job or
 the owner tells their agent; they are not the container target's locked-down sandbox. sshd listens on
