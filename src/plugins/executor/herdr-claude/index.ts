@@ -25,10 +25,10 @@ export interface HerdrClaudeOptions {
 
 /**
  * The plugin. `seam` (tests, `UserSeams.herdr`) replaces the herdr CLI client; detection then
- * says available, since nothing is run. `defaultSession`: the user's herdr session (issue #158) —
- * `hopper` for admin, `hopper-<id>` for a user added later.
+ * says available, since nothing is run. The session defaults to the supervised `hopper` for every
+ * user; no user gets a session of its own (issue #261).
  */
-export function herdrClaudePlugin(seam?: HerdrClient, defaultSession = 'hopper'): PluginDefinition<'executor', HerdrClaudeOptions> {
+export function herdrClaudePlugin(seam?: HerdrClient): PluginDefinition<'executor', HerdrClaudeOptions> {
   return {
     id: 'herdr-claude',
     role: 'executor',
@@ -38,7 +38,7 @@ export function herdrClaudePlugin(seam?: HerdrClient, defaultSession = 'hopper')
       claudeBin: z.string().min(1).default('claude')
         .meta({ commandBearing: true, description: 'the claude CLI herdr starts (detection checks it is on PATH)' }),
       // Never the user's default herdr session (herdr's own doctrine; design.md "herdr session").
-      session: z.string().min(1).refine((s) => s !== 'default', 'must not be the default herdr session').default(defaultSession),
+      session: z.string().min(1).refine((s) => s !== 'default', 'must not be the default herdr session').default('hopper'),
       args: z.array(z.string()).default(['--dangerously-skip-permissions'])
         .meta({ commandBearing: true, description: "Claude Code's arguments: permissions, allowed tools, MCP config" }),
       cwd: z.string().min(1).default('~').transform(expandHome)

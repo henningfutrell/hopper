@@ -2,7 +2,7 @@
 // dir, the secrets the runtime gives under the user's secret prefix, and the CLI config dirs every
 // process of theirs starts with.
 import { join } from 'node:path';
-import { ADMIN_ID, type User } from '../domain/types.ts';
+import type { User } from '../domain/types.ts';
 import { runtimeSecrets, type RuntimeSecrets } from '../secrets/runtime.ts';
 
 /** The user work dir: HOPPER_WORK_DIR itself for admin, `<work dir>/users/<id>` for a user added later. */
@@ -24,6 +24,3 @@ export function userCliEnv(workDir: string, user: User): Record<string, string> 
   const dir = userWorkDir(workDir, user);
   return { GH_CONFIG_DIR: join(dir, 'gh'), CLAUDE_CONFIG_DIR: join(dir, 'claude') };
 }
-
-/** The herdr session the user's jobs run in on this machine: `hopper` for admin, `hopper-<id>` for a user added later. */
-export const userHerdrSession = (user: User): string => (user.id === ADMIN_ID ? 'hopper' : `hopper-${user.id}`);

@@ -20,9 +20,9 @@ export interface PluginsDoc {
 /**
  * The built-in instances. A connected account's source reads its own issues once the user connects it
  * (issue #214). The gh source does not run until the plugins config names its `authors` (no default). Secrets come from the environment, named by the options (design.md "Secrets").
- * `herdrSession`: a user's own herdr session (issue #158), named on the herdr-claude instance; absent: the plugin's default.
+ * The herdr-claude instance names no session: every user's jobs run in the supervised `hopper` session (issue #261).
  */
-export function builtinInstances(answerTimeoutMs = 180_000, localMachine = true, herdrSession?: string): PluginsDoc {
+export function builtinInstances(answerTimeoutMs = 180_000, localMachine = true): PluginsDoc {
   // A part that runs on a machine names it (issue #174): this one, as the `local` machine; none where
   // this host is no machine, until one is picked.
   const here = localMachine ? { machine: 'local' } : {};
@@ -37,7 +37,7 @@ export function builtinInstances(answerTimeoutMs = 180_000, localMachine = true,
     ],
     executors: [
       { name: 'test', plugin: 'test' },
-      { name: 'herdr-claude', plugin: 'herdr-claude', ...(herdrSession ? { options: { session: herdrSession } } : {}) },
+      { name: 'herdr-claude', plugin: 'herdr-claude' },
     ],
     // The GitHub account the user signs in with or connects (issue #214), paused until it is connected. The gh CLI (issue #108), named `github` (jobs and sync state are keyed by it), is
     // paused by `auto` while a GitHub account is connected. The app-as-itself source (`github-app`, an
@@ -55,19 +55,24 @@ export function builtinInstances(answerTimeoutMs = 180_000, localMachine = true,
   };
 }
 
-export type EnsureResult = { action: 'kept' | 'default' | 'removed-local' };
+export type EnsureResult = { action: 'kept' | 'default' | 'removed-local' | 'removed-user-session' };
 
 /**
  * Make sure the store holds the plugins config: on the boot that finds none, write the built-in
  * instances. Where this host is not a machine (`localMachine` false), remove every `local` instance
- * from `machines` — one an earlier boot of the container wrote (issue #141); everything else is kept.
+ * from `machines` — one an earlier boot of the container wrote (issue #141). For `userId`, remove the
+ * `hopper-<userId>` session an earlier boot wrote on a herdr-claude instance (issue #261); everything else is kept.
  */
-export function ensurePluginsConfig(o: { config: ConfigRecords; answerTimeoutMs: number; localMachine?: boolean; herdrSession?: string; logger: PluginLogger }): EnsureResult {
+export function ensurePluginsConfig(o: { config: ConfigRecords; answerTimeoutMs: number; localMachine?: boolean; userId?: string; logger: PluginLogger }): EnsureResult {
   const localMachine = o.localMachine ?? true;
-  const version = o.config.version(PLUGINS);
   const value = o.config.read(PLUGINS);
-  if (value !== undefined) return localMachine ? { action: 'kept' } : removeLocalMachines(o.config, value, version, o.logger);
-  if (!o.config.write(PLUGINS, { version: 1, ...builtinInstances(o.answerTimeoutMs, localMachine, o.herdrSession) }, 'missing')) return { action: 'kept' };
+  if (value !== undefined) {
+    const session = o.userId === undefined ? { action: 'kept' as const } : removeUserSession(o.config, value, o.config.version(PLUGINS), o.userId, o.logger);
+    if (localMachine) return session;
+    const local = removeLocalMachines(o.config, o.config.read(PLUGINS), o.config.version(PLUGINS), o.logger);
+    return local.action === 'kept' ? session : local;
+  }
+  if (!o.config.write(PLUGINS, { version: 1, ...builtinInstances(o.answerTimeoutMs, localMachine) }, 'missing')) return { action: 'kept' };
   o.logger.info('hopper: wrote the plugins config from the built-in instances. It is the only configuration of every part; edit it in the UI.');
   return { action: 'default' };
 }
@@ -81,4 +86,24 @@ function removeLocalMachines(config: ConfigRecords, value: unknown, version: str
   if (!config.write(PLUGINS, { ...(value as object), machines: machines.filter((m) => !isLocal(m)) }, version)) return { action: 'kept' };
   for (const name of removed) logger.info(`hopper: removed the machine \`${name}\` from the plugins config: this host is not a machine (HOPPER_LOCAL_MACHINE=false).`);
   return { action: 'removed-local' };
+}
+
+/** The per-user session an earlier boot wrote (`hopper-<id>`, issue #158) is dropped: the instance runs in the plugin's default, `hopper` (issue #261). */
+function removeUserSession(config: ConfigRecords, value: unknown, version: string, userId: string, logger: PluginLogger): EnsureResult {
+  const executors = (value as { executors?: unknown } | null)?.executors;
+  if (!Array.isArray(executors)) return { action: 'kept' };
+  const written = `hopper-${userId}`;
+  const isWritten = (e: unknown): e is { name: unknown; options: Record<string, unknown> } => typeof e === 'object' && e !== null
+    && (e as { plugin?: unknown }).plugin === 'herdr-claude' && (e as { options?: { session?: unknown } }).options?.session === written;
+  const fixed = executors.filter(isWritten).map((e) => String(e.name));
+  if (fixed.length === 0) return { action: 'kept' };
+  const next = executors.map((e) => {
+    if (!isWritten(e)) return e;
+    const { session: _session, ...options } = e.options;
+    const { options: _options, ...rest } = e;
+    return Object.keys(options).length > 0 ? { ...rest, options } : rest;
+  });
+  if (!config.write(PLUGINS, { ...(value as object), executors: next }, version)) return { action: 'kept' };
+  for (const name of fixed) logger.info(`hopper: the executor \`${name}\` no longer names the session \`${written}\`; its jobs run in the supervised herdr session \`hopper\`.`);
+  return { action: 'removed-user-session' };
 }
