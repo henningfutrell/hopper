@@ -138,6 +138,14 @@ describe('herdr-claude executor: run', () => {
     expect(sent).not.toMatch(/comment/i);
   });
 
+  it('every job prompt carries the job rules it starts with in place of the default (issue #172)', async () => {
+    const { herdr, executor } = setup({ turns: [DONE] });
+    const { ctx } = contextFor(jobWith({ prompt: 'Write hello.txt', cwd: CWD }));
+    await executor.run({ ...ctx, jobRules: 'Always write in French.' });
+    expect(herdr.prompts[0]!.text).toBe(`Write hello.txt\n\n${protocolFooter(CWD, 'Always write in French.')}`);
+    expect(herdr.prompts[0]!.text).not.toContain('[hopper publishing rule]');
+  });
+
   it('sends the prompt exactly once, with the protocol footer', async () => {
     const { herdr, executor } = setup({ turns: [{ steps: ['● a', '● b', '● c'], ...DONE }] });
     await executor.run(contextFor(jobWith({ prompt: 'Write hello.txt' })).ctx);

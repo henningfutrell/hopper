@@ -67,6 +67,13 @@ describe('cursor-agent executor', () => {
     expect(readFileSync(join(work, '.hopper-scratch', '.gitignore'), 'utf8')).toBe('*\n');
   });
 
+  it('carries the job rules it starts with in place of the default (issue #172)', async () => {
+    reply('Done.\n\nHOPPER_DONE');
+    const { ctx } = ctxFor({ prompt: 'go', cwd: work }, HERE);
+    await ex.run({ ...ctx, jobRules: 'Always write in French.' });
+    expect(calls().at(-1)!.argv.at(-1)).toMatch(/^go\n\nAlways write in French\.\n\[hopper work tree\][\s\S]*HOPPER_FAILED followed by the reason\.$/);
+  });
+
   it('reports the job\'s work tree, so the lane running it shows where it works (issue #166)', async () => {
     reply('Done.\n\nHOPPER_DONE');
     const { ctx, workTrees } = ctxFor({ prompt: 'go', cwd: work }, HERE);
