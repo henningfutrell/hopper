@@ -29,6 +29,7 @@
     "@scalar/fastify-api-reference": "^1.72.4",
     "argon2": "^0.45.1",
     "fastify": "^5.12.5",
+    "jose": "^6.2.12",
     "ldapts": "^9.2.0",
     "openid-client": "^6.8.8",
     "pg": "^8.23.1",

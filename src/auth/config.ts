@@ -7,7 +7,7 @@
 // A secret comes from the environment only (`clientSecretEnv`, `bindPasswordEnv`, design.md "Secrets"),
 // read only for a realm that is on; a SAML IdP certificate is public and sits inline.
 import { z } from 'zod';
-import { FORM_REALM_TYPES, UI_ROLES, type RealmType, type UiRole } from '../domain/types.ts';
+import { FORM_REALM_TYPES, REDIRECT_REALM_TYPES, UI_ROLES, type RealmType, type UiRole } from '../domain/types.ts';
 import type { RoleRules } from './roles.ts';
 
 interface RealmBase { name: string; label: string; enabled: boolean }
@@ -65,7 +65,29 @@ export interface SamlRealmConfig extends RealmBase {
   requireSignedResponse: boolean;
   roles: RoleRules;
 }
-export type RealmConfig = PasswordRealmConfig | LdapRealmConfig | OidcRealmConfig | GithubRealmConfig | SamlRealmConfig;
+/**
+ * A gateway realm (issue #215): an auth gateway in front of the hopper (Envoy Gateway with OIDC,
+ * oauth2-proxy, …) signs people in and forwards their token in `header`; the hopper only checks it.
+ */
+export interface GatewayRealmConfig extends RealmBase {
+  type: 'gateway';
+  /** The token's issuer; its discovery document names the keys (`jwt`) or the introspection endpoint. */
+  issuer: string;
+  /** `jwt`: verify the signature against the issuer's keys; `introspection`: ask the issuer (RFC 7662). */
+  check: 'jwt' | 'introspection';
+  /** The token must name one of these in `aud`. Required for `jwt`; for `introspection`, checked when set. */
+  audience?: string[];
+  /** The request header the gateway forwards the token in, lowercase; `authorization` carries `Bearer <token>`. */
+  header: string;
+  /** `introspection`: the hopper's client at the issuer. */
+  clientId?: string;
+  clientSecret?: string;
+  /** Claim names, in the token or the introspection answer. */
+  claims: { email: string; username: string; name: string; groups: string };
+  trustUnverifiedEmail: boolean;
+  roles: RoleRules;
+}
+export type RealmConfig = PasswordRealmConfig | LdapRealmConfig | OidcRealmConfig | GithubRealmConfig | SamlRealmConfig | GatewayRealmConfig;
 /** No sign-in: everyone who reaches the UI gets a session with this role. */
 export interface NoSignInConfig { role: UiRole }
 export interface AuthConfig {
@@ -121,13 +143,14 @@ const ldap = z.strictObject({
   }).optional(),
   roles,
 });
+const oidcClaims = z.strictObject({
+  email: z.string().default('email'), username: z.string().default('preferred_username'),
+  name: z.string().default('name'), groups: z.string().default('groups'),
+}).default({ email: 'email', username: 'preferred_username', name: 'name', groups: 'groups' });
 const oidc = z.strictObject({
   ...base, ...secret, type: z.literal('oidc'), issuer: endpoint, clientId: z.string().min(1),
   scopes: z.array(z.string().min(1)).default(['openid', 'email', 'profile']),
-  claims: z.strictObject({
-    email: z.string().default('email'), username: z.string().default('preferred_username'),
-    name: z.string().default('name'), groups: z.string().default('groups'),
-  }).default({ email: 'email', username: 'preferred_username', name: 'name', groups: 'groups' }),
+  claims: oidcClaims,
   trustUnverifiedEmail: z.boolean().default(false),
   roles,
 });
@@ -147,7 +170,17 @@ const saml = z.strictObject({
   requireSignedResponse: z.boolean().default(false),
   roles,
 });
-const realm = z.discriminatedUnion('type', [password, ldap, oidc, github, saml]);
+const gateway = z.strictObject({
+  ...base, ...secret, type: z.literal('gateway'), issuer: endpoint,
+  check: z.enum(['jwt', 'introspection']).default('jwt'),
+  audience: z.array(z.string().min(1)).optional(),
+  header: z.string().regex(/^[A-Za-z0-9-]+$/, 'must be an HTTP header name').transform((x) => x.toLowerCase()).default('authorization'),
+  clientId: z.string().min(1).optional(),
+  claims: oidcClaims,
+  trustUnverifiedEmail: z.boolean().default(false),
+  roles,
+});
+const realm = z.discriminatedUnion('type', [password, ldap, oidc, github, saml, gateway]);
 const schema = z.strictObject({
   version: z.literal(1),
   local: z.strictObject({ enabled: z.boolean().default(true) }).default({ enabled: true }),
@@ -157,6 +190,11 @@ const schema = z.strictObject({
   doc.realms.forEach((r, i) => {
     const at = (...path: (string | number)[]) => ['realms', i, ...path];
     if (doc.realms.findIndex((q) => q.name === r.name) !== i) ctx.addIssue({ code: 'custom', path: at('name'), message: `${r.name} is named twice; names must be unique` });
+    if (r.type === 'gateway') {
+      if (r.check === 'jwt' && !r.audience?.length) ctx.addIssue({ code: 'custom', path: at('audience'), message: 'checking JWTs needs audience: the aud values a token for the hopper carries' });
+      if (r.check === 'introspection' && r.clientId === undefined) ctx.addIssue({ code: 'custom', path: at('clientId'), message: 'introspection needs clientId: the hopper\'s client at the issuer' });
+      if (r.check === 'introspection' && r.clientSecretEnv === undefined) ctx.addIssue({ code: 'custom', path: at('clientSecretEnv'), message: 'introspection needs clientSecretEnv: the variable holding the client secret' });
+    }
     if (r.type === 'github' && r.clientSecretEnv === undefined) ctx.addIssue({ code: 'custom', path: at('clientSecretEnv'), message: 'GitHub needs clientSecretEnv: the variable holding its client secret' });
     if (r.type === 'ldap') {
       const u = new URL(r.url);
@@ -195,6 +233,7 @@ function resolve(r: ParsedRealm, i: number, env: Env): RealmConfig {
   }
   const { clientSecretEnv, ...rest } = r;
   const s = secretOf(clientSecretEnv, 'clientSecretEnv');
+  if (rest.type === 'gateway') return { ...rest, label, ...(s === undefined ? {} : { clientSecret: s }) };
   return rest.type === 'github' ? { ...rest, label, clientSecret: s! } : { ...rest, label, ...(s === undefined ? {} : { clientSecret: s }) };
 }
 
@@ -212,6 +251,10 @@ export function loadSignInConfig(raw: unknown, env: Env): AuthConfig {
   const r = schema.parse(raw ?? {});
   return { local: r.local, none: r.none ?? null, realms: r.realms.map((x, i) => resolve(x, i, env)) };
 }
+
+/** The realm types that send the browser to an identity provider. */
+export const isRedirectRealm = (r: { type: RealmType }): r is OidcRealmConfig | GithubRealmConfig | SamlRealmConfig => REDIRECT_REALM_TYPES.includes(r.type);
+export const isGatewayRealm = (r: { type: RealmType }): r is GatewayRealmConfig => r.type === 'gateway';
 
 /** The realm types whose people sign in through the username and password form. */
 export const isFormRealm = (r: { type: RealmType }): r is PasswordRealmConfig | LdapRealmConfig => FORM_REALM_TYPES.includes(r.type);

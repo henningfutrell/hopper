@@ -136,7 +136,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   app.get('/ui/api/session', async (req): Promise<SessionView> => {
     const s = sessionOf(req);
     const offer = {
-      local: signIn.local, none: signIn.none, password: signIn.password, origin: signIn.origin(), realms: signIn.realms(), required: o.instance.users.list().length > 1,
+      local: signIn.local, none: signIn.none, password: signIn.password, gateway: signIn.gateway, origin: signIn.origin(), realms: signIn.realms(), required: o.instance.users.list().length > 1,
     };
     if (s) return { authenticated: true, expiresAt: s.expiresAt, user: sessionUser(s, userName(s)), signIn: offer };
     const id = userIdOf(req);

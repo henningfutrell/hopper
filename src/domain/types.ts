@@ -439,7 +439,7 @@ export type { QuestionGatesView, RiskRuleView, RulesView } from './question-gate
 // ---- Sign-in: src/domain/sign-in.ts (re-exported here) ------------------------------------
 
 export type { Identity, PasswordAccountView, RealmSettings, RealmType, RealmView, RealmsEdit, RealmsView, SessionUser, SessionView, SignInRealmView, UiRole } from './sign-in.ts';
-export { FORM_REALM_TYPES, REALM_TYPES, UI_ROLES, roleAllows } from './sign-in.ts';
+export { FORM_REALM_TYPES, REALM_TYPES, REDIRECT_REALM_TYPES, UI_ROLES, roleAllows } from './sign-in.ts';
 
 // ---- Users (issue #158): src/domain/users.ts (re-exported here) ---------------------------
 

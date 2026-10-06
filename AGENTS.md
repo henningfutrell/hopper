@@ -1,6 +1,6 @@
 # hopper — repo law
 
-Local job-queue daemon that pulls its jobs. Loopback plus an opt-in LAN or public URL behind a reverse proxy, sign-in through the login code, no sign-in, or realms (password, LDAP, OIDC, GitHub, SAML). TypeScript run directly by Node ≥ 24.
+Local job-queue daemon that pulls its jobs. Loopback plus an opt-in LAN or public URL behind a reverse proxy, sign-in through the login code, no sign-in, or realms (password, LDAP, OIDC, GitHub, SAML, or an auth gateway in front that signed people in). TypeScript run directly by Node ≥ 24.
 
 North star (owner decision): an extendable and plugin architecture; every part must serve it. `docs/design.md` "North star".
 
@@ -39,7 +39,7 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   "Sign-in: realms" state the residual risk.
 - **Sign-in fails closed.** An invalid sign-in config stops the daemon; an identity no role rule
   matches gets no session; sign-in is never a plugin (`docs/design.md` "Sign-in"). Every sign-in
-  kind uses an established library for its protocol or hash (openid-client, @node-saml/node-saml,
+  kind uses an established library for its protocol or hash (openid-client, jose, @node-saml/node-saml,
   ldapts, argon2); no hand-rolled protocol or password code. A realm change from the UI is loaded
   before it is stored and never ends the acting admin's own admin session. No sign-in (`none`) is only ever explicit.
 - **GitHub text is neutral.** Text the hopper or a job writes to GitHub names no person and

@@ -14,16 +14,20 @@
 //      role, held under a one-time ticket.
 //   3. complete: the callback page posts the ticket with the binding from localStorage. Only the
 //      browser that began the flow has it, so a callback link handed to someone else signs nobody in.
+//
+// Gateway realms (issue #215): an auth gateway in front of the hopper signed the person in and forwards
+// their token; each gateway realm that is on checks it, in order, and the first that accepts it decides.
 // Flows and tickets live in memory: a restart mid-sign-in means signing in again.
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { Clock } from '../domain/ports.ts';
 import type { Identity, SignInRealmView, UiRole } from '../domain/types.ts';
-import { isFormRealm, type AuthConfig, type RealmConfig } from './config.ts';
+import { isFormRealm, isGatewayRealm, isRedirectRealm, type AuthConfig, type RealmConfig } from './config.ts';
+import { createGatewayRealm } from './gateway.ts';
 import { createGithubRealm } from './github.ts';
 import { createLdapRealm } from './ldap.ts';
 import { createOidcRealm } from './oidc.ts';
 import { createPasswordRealm, passwordRoleOf } from './password.ts';
-import type { FlowSecrets, FormRealm, RealmCallback, RedirectRealm } from './realm.ts';
+import type { FlowSecrets, FormRealm, GatewayRealm, RealmCallback, RedirectRealm } from './realm.ts';
 import { roleFor } from './roles.ts';
 import { createSamlRealm } from './saml.ts';
 
@@ -49,6 +53,10 @@ export type CallbackOutcome =
   | { ok: true; ticket: string; who: Identity; role: UiRole }
   | { ok: false; status: 400 | 403 | 502; error: string; who?: Identity };
 
+export type GatewayCheckOutcome =
+  | { ok: true; who: Identity; role: UiRole }
+  | { ok: false; status: 403 | 502; error: string; who?: Identity };
+
 export type PasswordOutcome =
   | { ok: true; who: Identity; role: UiRole }
   | { ok: false; status: 403 | 502; error: string; who?: Identity };
@@ -62,6 +70,10 @@ export interface SignIn {
   readonly password: boolean;
   /** The username and password tried against the form realms that are on, in order. */
   checkPassword(username: string, password: string): Promise<PasswordOutcome>;
+  /** A gateway realm is on. */
+  readonly gateway: boolean;
+  /** The token an auth gateway forwarded on this request, checked by the gateway realms that are on, in order. */
+  checkGateway(headers: Record<string, string | string[] | undefined>): Promise<GatewayCheckOutcome>;
   /** Where an OIDC, GitHub or SAML sign-in starts and ends (known once the daemon listens). */
   origin(): string;
   /** The OIDC, GitHub and SAML realms that are on, in order. */
@@ -100,7 +112,7 @@ export function roleIn(config: AuthConfig, who: Identity): UiRole | null {
   return r.type === 'password' ? passwordRoleOf(r, who.subject) : roleFor(who, r.roles);
 }
 
-function buildRedirect(r: Exclude<RealmConfig, { type: 'password' | 'ldap' }>, origin: string): RedirectRealm {
+function buildRedirect(r: Extract<RealmConfig, { type: 'oidc' | 'github' | 'saml' }>, origin: string): RedirectRealm {
   const callback = `${origin}/ui/auth/${r.name}/callback`;
   if (r.type === 'oidc') return createOidcRealm(r, callback);
   if (r.type === 'github') return createGithubRealm(r, callback);
@@ -113,16 +125,18 @@ export function createSignIn(o: { config: AuthConfig; origin: () => string; cloc
   const maxFlows = o.maxFlows ?? MAX_FLOWS;
   let config = o.config;
   let forms: FormRealm[] = [];
+  let gateways: GatewayRealm[] = [];
   // Built on first use: the redirect URIs need the bound port.
   let redirects: Map<string, RedirectRealm> | undefined;
   const on = (): RealmConfig[] => config.realms.filter((r) => r.enabled);
   const build = (): void => {
     forms = on().filter(isFormRealm).filter((r) => r.type !== 'password' || r.users.length > 0).map(buildForm);
+    gateways = on().filter(isGatewayRealm).map(createGatewayRealm);
     redirects = undefined;
   };
   build();
   const redirect = (): Map<string, RedirectRealm> =>
-    (redirects ??= new Map(on().flatMap((r) => (isFormRealm(r) ? [] : [[r.name, buildRedirect(r, o.origin())] as const]))));
+    (redirects ??= new Map(on().filter(isRedirectRealm).map((r) => [r.name, buildRedirect(r, o.origin())] as const)));
   const flows = new Map<string, Flow>();
   const tickets = new Map<string, Ticket>();
   const now = (): number => o.clock.now().getTime();
@@ -148,8 +162,23 @@ export function createSignIn(o: { config: AuthConfig; origin: () => string; cloc
       }
       return errors.length ? { ok: false, status: 502, error: `sign-in could not be checked: ${errors.join('; ')}` } : { ok: false, status: 403, error: 'wrong username or password' };
     },
+    get gateway() { return gateways.length > 0; },
+    async checkGateway(headers) {
+      const refusals: string[] = [];
+      const errors: string[] = [];
+      for (const realm of gateways) {
+        const r = await realm.check(headers);
+        if (r.ok) {
+          // The first realm that accepts the token decides, even when it grants no role.
+          const role = roleOf(r.who);
+          return role === null ? { ok: false, status: 403, error: 'signed in at the gateway, but the sign-in config grants this account no role', who: r.who } : { ok: true, who: r.who, role };
+        }
+        if ('error' in r) errors.push(`${realm.label}: ${r.error}`); else refusals.push(`${realm.label}: ${r.refused}`);
+      }
+      return errors.length ? { ok: false, status: 502, error: `the gateway's token could not be checked: ${errors.join('; ')}` } : { ok: false, status: 403, error: refusals.join('; ') || 'no gateway realm is on' };
+    },
     origin: o.origin,
-    realms: () => on().filter((r) => !isFormRealm(r)).map((r) => ({ name: r.name, label: r.label, type: r.type })),
+    realms: () => on().filter(isRedirectRealm).map((r) => ({ name: r.name, label: r.label, type: r.type })),
     redirectRealm: (name) => redirect().get(name),
     roleOf,
     config: () => config,
