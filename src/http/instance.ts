@@ -6,9 +6,7 @@ import type { FastifyInstance } from 'fastify';
 import type { Clock } from '../domain/ports.ts';
 import { ENDED_STATUSES, IN_FLIGHT_STATUSES, roleAllows, type InstanceTotals, type UsageReading, type UsageTotal } from '../domain/types.ts';
 import { HttpError } from './errors.ts';
-import { sessionToken } from './host-guard.ts';
-import type { Tenants } from './tenants.ts';
-import type { UiSessions } from './ui/sessions.ts';
+import { roleOfRequest, type Tenants } from './tenants.ts';
 
 const DAY_MS = 86_400_000;
 
@@ -56,10 +54,10 @@ export async function instanceTotals(tenants: Pick<Tenants, 'list' | 'user'>, no
   return totals;
 }
 
-export function instanceRoutes(app: FastifyInstance, o: { tenants: Pick<Tenants, 'list' | 'user'>; sessions: UiSessions; clock: Clock }): void {
+export function instanceRoutes(app: FastifyInstance, o: { tenants: Pick<Tenants, 'list' | 'user'>; clock: Clock }): void {
   app.get('/api/instance', async (req): Promise<InstanceTotals> => {
-    const s = o.sessions.find(sessionToken(req));
-    if (s && !roleAllows(s.role, 'admin')) throw new HttpError(403, `role ${s.role} may not read the instance totals; it needs admin`);
+    const role = roleOfRequest(req);
+    if (role && !roleAllows(role, 'admin')) throw new HttpError(403, `role ${role} may not read the instance totals; it needs admin`);
     return instanceTotals(o.tenants, o.clock.now());
   });
 }

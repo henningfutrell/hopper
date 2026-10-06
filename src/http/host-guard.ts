@@ -3,7 +3,8 @@
 // localhost from loopback, a LAN name, or the public URL's host. Another Host is 421, so a page on
 // another name that resolves here reads nothing; a peer outside loopback and the LAN peers is 403.
 // A LAN or public request reads /api/ only with a live UI session: the x-hopper-session header,
-// or for the event stream (EventSource sends no headers) the `session` query parameter.
+// or for the event stream (EventSource sends no headers) the `session` query parameter — or with a token
+// in `Authorization` (the API door, issue #255), which the tenancy hook checks next (src/http/tenants.ts).
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { classifyRequest, peerList, type Lan } from './reach.ts';
 import { SESSION_HEADER } from './ui/guard.ts';
@@ -20,6 +21,9 @@ export function sessionToken(req: FastifyRequest): string | undefined {
   return typeof q === 'string' ? q : undefined;
 }
 
+/** A read of /api/ carrying `Authorization`: the API door (issue #255), checked by the tenancy hook. */
+export const atApiDoor = (req: FastifyRequest): boolean => req.url.startsWith('/api/') && typeof req.headers.authorization === 'string';
+
 export function installHostGuard(app: FastifyInstance, o: { port: () => number; lan: Lan; sessions: UiSessions }): void {
   const peers = peerList(o.lan.peers);
   app.addHook('onRequest', async (req, reply) => {
@@ -28,7 +32,7 @@ export function installHostGuard(app: FastifyInstance, o: { port: () => number; 
       console.warn(`hopper: refused ${req.method} ${req.url.split('?')[0]} from ${req.socket.remoteAddress} Host ${JSON.stringify(req.headers.host ?? '')} (${r.refuse}): ${r.why}`);
       return reply.code(r.refuse).send({ error: r.why });
     }
-    if (r.reach !== 'local' && req.url.startsWith('/api/') && !o.sessions.find(sessionToken(req))) {
+    if (r.reach !== 'local' && req.url.startsWith('/api/') && !atApiDoor(req) && !o.sessions.find(sessionToken(req))) {
       return reply.code(401).send({ error: r.reach === 'lan' ? 'log in to read across the LAN: sign in, or open a device link from a logged-in browser' : 'sign in to read' });
     }
   });

@@ -179,6 +179,11 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
         await runtimes.ensure(user);
         return user;
       },
+      // The API door (issue #255): only a linked identity's user.
+      linked(who) {
+        const id = instance.identities.userOf(who.realm, who.subject);
+        return id === undefined ? undefined : instance.users.get(id);
+      },
     },
     port: () => port, sessionHours: config.uiSessionHours, signIn, signInEnvironment,
     lan: { names: config.lanNames, peers: config.lanPeers, publicUrl: config.publicUrl }, uiDir: seams.uiDir ?? UI_DIR,
