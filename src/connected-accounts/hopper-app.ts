@@ -9,7 +9,7 @@ import type { ConnectedAccountProvider } from '../domain/types.ts';
 
 /** What the hopper ships. Public by design: a client id names the app, it authorizes nothing. */
 export const SHIPPED_APPS: Record<ConnectedAccountProvider, { clientId: string; slug?: string }> = {
-  github: { clientId: '' },
+  github: { clientId: 'Iv23liKJ2NjhKAsv0JxL', slug: 'hopper-qm' },
 };
 
 export const DEFAULT_URLS: Record<ConnectedAccountProvider, string> = { github: 'https://github.com' };

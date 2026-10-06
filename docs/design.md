@@ -5051,7 +5051,8 @@ shared GitHub App job source was removed in the UI.
 
 **The hopper's app** (`src/connected-accounts/hopper-app.ts`): one GitHub App (device flow on, user-token
 expiration off), registered once. `SHIPPED_APPS` holds its public client id and slug (for its install
-link). The device flow (RFC 8628) needs no secret, so none is distributed. The environment may name
+link): the `hopper-qm` app, device flow on. While it is private to the account that registered it, it
+installs only there; it is made public for other accounts' repositories. The device flow (RFC 8628) needs no secret, so none is distributed. The environment may name
 another app or a GitHub Enterprise: `HOPPER_GITHUB_URL` (API at `<url>/api/v3`), `HOPPER_GITHUB_CLIENT_ID`,
 `HOPPER_GITHUB_APP_SLUG`. A GitHub App asks for no scopes: what its user tokens may do is the app's
 permissions (repository Issues read/write, Pull requests read/write, Contents read/write, Metadata read;
