@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- When a job's instructions were pasted into Claude but never submitted, the hopper now submits them instead of pasting them a second time.
 - You can now edit the rules every job is told, in Settings → Job rules: change them, clear them, or go back to the default. Where a job works and how it reports back stay fixed.
 - A job no longer sits running while Claude waits idle: when its instructions never reach Claude, the hopper sends them again, and fails the job if they still do not arrive.
 - Sources no longer asks you to install the hopper's GitHub app when it may already be installed: if GitHub cannot say where the app is installed, it says why and links to where you can see its installs.

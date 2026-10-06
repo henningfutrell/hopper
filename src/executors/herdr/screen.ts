@@ -163,6 +163,25 @@ export function readTurn(text: string, anchor: string): TurnView {
   return view;
 }
 
+/** Claude Code's suggestion in an empty input box, e.g. `Try "refactor <filepath>"`: not input. */
+const PLACEHOLDER = /^Try "/;
+
+/**
+ * What sits unsent in Claude's input box: the ❯ line and its continuation between the last two
+ * separators, ❯ removed, lines trimmed. Empty when the box is empty, shows a suggestion, or no box is on
+ * screen. Seen live (issue #278): a pasted prompt left as "[Pasted text #1 +29 lines]", never submitted.
+ */
+export function inputBoxText(text: string): string {
+  const lines = text.split('\n');
+  let end = -1;
+  for (let i = lines.length - 1; i >= 0 && end < 0; i--) if (SEPARATOR.test(lines[i]!)) end = i;
+  let start = -1;
+  for (let i = end - 1; i >= 0 && start < 0; i--) if (SEPARATOR.test(lines[i]!)) start = i;
+  if (start < 0 || !USER_ECHO.test(lines[start + 1] ?? '')) return '';
+  const typed = lines.slice(start + 1, end).map((l, i) => (i === 0 ? l.replace(USER_ECHO, '') : l).trim()).filter(Boolean).join('\n');
+  return PLACEHOLDER.test(typed) ? '' : typed;
+}
+
 /**
  * Claude's folder-trust dialog naming exactly `cwd`: the path printed between
  * "Accessing workspace:" and "Quick safety check", compared with all whitespace removed.

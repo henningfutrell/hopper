@@ -62,4 +62,29 @@ describe('herdr-claude executor: lost sends', () => {
     expect(await executor.reattach!(contextFor(job).ctx)).toMatchObject({ kind: 'failed', error: expect.stringMatching(/^the prompt never reached claude/) });
     expect(herdr.prompts).toHaveLength(1);
   });
+
+  // Seen live: the prompt was pasted into Claude's input box, but its Enter never landed.
+  it('a prompt left unsent in Claude\'s input box is submitted with Enter, never pasted twice', async () => {
+    const { herdr, clock, executor } = setup({ turns: [DONE], promptsLeftInInput: 1 }, { idleNudgeMs: 20000 });
+    const { ctx, progress } = contextFor(jobWith({ prompt: 'Write hello.txt' }));
+    expect(await executor.run(ctx)).toEqual({ kind: 'finished', result: { summary: 'Wrote hello.txt.', paneId: 'w1:p1' } });
+    expect(herdr.prompts).toHaveLength(1);
+    expect(herdr.keys.map((k) => k.keys)).toContainEqual(['enter']);
+    expect(clock.elapsed()).toBeLessThan(40000);
+    expect(progress.map((p) => p.message)).toContain('the prompt sat unsent in claude\'s input: submitted it');
+  });
+
+  it('a turn saved before the hopper kept what it sent is submitted on reattach when its prompt sits in the input box', async () => {
+    const { herdr, executor } = setup({ turns: [DONE], promptsLeftInInput: 1 });
+    const first = contextFor(jobWith({ prompt: 'go' }));
+    const running = executor.run(first.ctx);
+    await until(() => herdr.prompts.length === 1);
+    first.ac.abort('shutdown');
+    await running;
+    const { turn, ...rest } = first.saved.at(-1) as { turn: { text?: string } };
+    const { text: _text, ...older } = turn;
+    const job = jobWith({ prompt: 'go' }, { executorState: { ...rest, turn: older } });
+    expect(await executor.reattach!(contextFor(job).ctx)).toMatchObject({ kind: 'finished' });
+    expect(herdr.prompts).toHaveLength(1);
+  });
 });

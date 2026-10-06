@@ -8,7 +8,7 @@ import { RECENT_LINES, abortReason, tail, watchTurn } from './monitor.ts';
 import type { Interrupt, Sleep } from './monitor.ts';
 import { resolvePayload, validatePayload } from './payload.ts';
 import type { ClaudeJobPayload } from './payload.ts';
-import { FOOTER_ANCHOR, STATUS_NOTE_NUDGE, dialogOption, protocolFooter, typedAfterQuestion } from './screen.ts';
+import { FOOTER_ANCHOR, STATUS_NOTE_NUDGE, dialogOption, inputBoxText, protocolFooter, typedAfterQuestion } from './screen.ts';
 import { openPane, startClaude } from './start.ts';
 import type { PaneState, StartDeps, TurnAnchor } from './start.ts';
 
@@ -154,8 +154,9 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
 
   /**
    * Watches the turn to its outcome. A status note (issue #163) opens no question: the agent is
-   * nudged and the same turn goes on, under the same timeout. A lost send (issue #278) is sent again,
-   * at most MAX_SENDS times in all; then the job fails, so it never stays running on a waiting Claude.
+   * nudged and the same turn goes on, under the same timeout. A lost send (issue #278) is submitted
+   * with Enter when it sits in the input box, else sent again, at most MAX_SENDS times in all; then the
+   * job fails, so it never stays running on a waiting Claude.
    */
   async function watch(ctx: ExecutionContext, s: PaneState, p: ClaudeJobPayload, turn: TurnAnchor, notes: Notes = { count: 0, startedAt: clock.now().getTime() }): Promise<ExecutionOutcome | Interrupt> {
     const result = await watchTurn({
@@ -165,13 +166,26 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       parked: (seq) => ctx.saveState({ ...s, turn, parkedSeq: seq }),
     });
     if ('lostSend' in result) {
+      const herdr = herdrOn(s);
       const sends = (notes.lost ?? 0) + 1;
-      if (turn.text === undefined || sends >= MAX_SENDS) {
-        const screen = await herdrOn(s).read(s.paneId, { source: 'visible', lines: 40 }).catch(() => '');
-        return { kind: 'failed', error: `the prompt never reached claude${turn.text === undefined ? '' : ` after ${sends} sends`}: ${tail(screen, 20)}` };
+      const screen = await herdr.read(s.paneId, { source: 'visible', lines: 40 }).catch(() => '');
+      const unsent = inputBoxText(screen) !== '';
+      if (sends >= MAX_SENDS || (!unsent && turn.text === undefined)) {
+        return { kind: 'failed', error: `the prompt never reached claude${turn.text === undefined && !unsent ? '' : ` after ${sends} sends`}: ${tail(screen, 20)}` };
       }
-      ctx.progress(0, 'the prompt never reached claude: sent it again');
-      return send(ctx, s, p, turn.text, turn.anchor, { ...notes, lost: sends });
+      const again = { ...notes, lost: sends };
+      if (!unsent) {
+        ctx.progress(0, 'the prompt never reached claude: sent it again');
+        return send(ctx, s, p, turn.text!, turn.anchor, again);
+      }
+      // Pasted but never submitted (seen live): Enter submits it; sending it again would paste it twice.
+      const agent = await herdr.getAgent(s.agentName);
+      if (!agent) return { kind: 'failed', error: 'pane lost' };
+      const next: TurnAnchor = { ...turn, seq: agent.stateChangeSeq };
+      ctx.saveState({ ...s, turn: next, parkedSeq: undefined });
+      await herdr.sendKeys(s.paneId, ['enter']);
+      ctx.progress(0, "the prompt sat unsent in claude's input: submitted it");
+      return watch(ctx, s, p, next, again);
     }
     if (!('statusNote' in result)) return result;
     return send(ctx, s, p, STATUS_NOTE_NUDGE, STATUS_NOTE_NUDGE, { count: notes.count + 1, startedAt: notes.startedAt });

@@ -3,7 +3,7 @@
 
 import type { Clock, ExecutionContext, ExecutionOutcome } from '../../domain/ports.ts';
 import type { HerdrClient } from './client.ts';
-import { CTRL_END, isScrolledUp, readTurn } from './screen.ts';
+import { CTRL_END, inputBoxText, isScrolledUp, readTurn } from './screen.ts';
 
 export const RECENT_LINES = 200;
 const OUTPUT_LINES = 120;
@@ -20,7 +20,8 @@ export type StatusNote = { statusNote: string };
 
 /**
  * A lost send (issue #278): Claude has sat ready since the send, its state never moved, and the turn
- * anchor is nowhere on screen. What was sent never reached Claude; the executor sends it again.
+ * anchor is nowhere on screen or the text sits unsent in its input box. What was sent never reached
+ * Claude; the executor submits the input box, or sends it again.
  */
 export type LostSend = { lostSend: true };
 
@@ -108,7 +109,7 @@ export async function watchTurn(w: TurnWatch): Promise<ExecutionOutcome | Interr
       if (agent.status === 'blocked' && (moved || !w.blockedAtSend || stalled)) return park(await blockedQuestion(w, recent));
       const ended = ready && (moved || stalled);
       if (!ended) idleSince = null;
-      else if (!moved && !turn.anchorFound) return { lostSend: true };
+      else if (!moved && (!turn.anchorFound || inputBoxText(recent) !== '')) return { lostSend: true };
       else if (turn.lastMarker === 'done') {
         return { kind: 'finished', result: { summary: turn.assistantText.slice(0, SUMMARY_CHARS), paneId: w.paneId } };
       } else if (turn.lastMarker === 'failed') {
