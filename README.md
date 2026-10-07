@@ -395,13 +395,22 @@ them all; running it again puts every box back as it should be.
 
 ### Send jobs to one machine
 
-A routing rule sets a job's machine, executor or priority when the job comes in; the first rule that
-matches wins. Edit them in the UI's Settings → Routing. Two examples:
+A routing rule sets a job's machine, executor, priority or work tree when the job comes in; the first
+rule that matches wins. Edit them in the UI's Settings → Routing. Three examples:
 
 | rule | matches | sets |
 |---|---|---|
 | app work on the desktop | repo `your-org/app-*` | machine `my-desktop` |
 | by label | label `on-laptop` | machine `laptop` |
+| app in its tree | repo `your-org/app` | machine `my-desktop`, work tree `~/code/app` |
+
+### Where jobs work
+
+A job works in its **work tree**, on the machine that runs it; `~` is that machine's home, never the
+hopper's. The first that is set applies: a routing rule's work tree, the repository's path in its
+source's `repoPaths`, the machine's own `workTree` (Settings → Plugins → Machine sources, on that
+machine), the source's `defaultCwd`, the executor's `cwd`. The default is `~/hopper-jobs`, made when
+missing. A work tree that is the machine's home, above it, or missing there fails the job at once.
 
 A job pinned to a machine that is offline waits for it. How each kind works and why:
 `docs/design.md` "Attached machines", "Container targets", "Client targets", "Target

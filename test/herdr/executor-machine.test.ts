@@ -171,7 +171,7 @@ describe('herdr-claude executor: a work tree the machine cannot use fails the jo
 describe('herdr-claude executor: never the home as the work tree', () => {
   const FAR = { ...LAPTOP, home: '/home/far' };
   const refused = (cwd: string, machine: string) =>
-    `the work tree ${cwd} on ${machine} is its home or above it: a job runs only in a directory below the home; give its job source or executor a work tree such as ~/hopper-jobs`;
+    `the work tree ${cwd} on ${machine} is its home or above it: a job runs only in a directory below the home; give its job source, machine or executor a work tree such as ~/hopper-jobs`;
 
   it.each([
     ['~', '~'],
@@ -217,5 +217,43 @@ describe('herdr-claude executor: never the home as the work tree', () => {
     const out = await executor.run(contextFor(jobWith({ prompt: 'go', cwd: '/home/far/code' }, { id: 'ffffffff-0000-0000-0000-000000000002' }), 'laptop/lane-1', FAR).ctx);
     expect((out as { error: string }).error).toMatch(/^the work tree \/home\/far\/code is not usable on laptop: /);
     expect(runs().at(-1)).toMatch(/^cd '\/home\/far\/code' && /);
+  });
+});
+
+// Issue #324: the work tree comes from the most specific default that applies — the job's own (its
+// repository's path or a routing rule's), then the machine's, then its source's, then the executor's —
+// and resolves on the lane's machine.
+describe('herdr-claude executor: the work tree from the job, its machine, its source or the executor', () => {
+  const FAR = { ...LAPTOP, home: '/home/far' };
+  const run = async (payload: Record<string, unknown>, machine: typeof FAR & { workTree?: string }) => {
+    const { remotes, executor } = setup({}, { defaultCwd: '~/executor-jobs', remote: { laptop: { turns: [DONE] } } });
+    const { ctx, workTrees } = contextFor(jobWith({ prompt: 'go', ...payload }), 'laptop/lane-1', machine);
+    const out = await executor.run(ctx);
+    return { out, workTrees, tab: remotes.get('laptop')!.calls.find((c) => c.method === 'createTab')?.args[0] };
+  };
+
+  it('the machine\'s work tree, resolved there, when the job names none: never the executor\'s', async () => {
+    const r = await run({}, { ...FAR, workTree: '~/trees' });
+    expect(r.out).toMatchObject({ kind: 'finished' });
+    expect(r.workTrees).toEqual(['/home/far/trees']);
+  });
+
+  it('the machine\'s work tree beats its source\'s default', async () => {
+    expect((await run({ defaultCwd: '~/source-jobs' }, { ...FAR, workTree: '/srv/trees' })).workTrees).toEqual(['/srv/trees']);
+  });
+
+  it('the job\'s own work tree beats the machine\'s', async () => {
+    expect((await run({ cwd: '~/code/app', defaultCwd: '~/source-jobs' }, { ...FAR, workTree: '/srv/trees' })).workTrees).toEqual(['/home/far/code/app']);
+  });
+
+  it('a machine with no work tree: the source\'s default, then the executor\'s', async () => {
+    expect((await run({ defaultCwd: '~/source-jobs' }, FAR)).workTrees).toEqual(['/home/far/source-jobs']);
+    expect((await run({}, FAR)).workTrees).toEqual(['/home/far/executor-jobs']);
+  });
+
+  it('a machine\'s work tree that is its home fails the job at once, before any tab opens', async () => {
+    const r = await run({}, { ...FAR, workTree: '~' });
+    expect(r.out).toMatchObject({ kind: 'failed', error: expect.stringMatching(/the work tree ~ on laptop is its home or above it/) });
+    expect(r.tab).toBeUndefined();
   });
 });

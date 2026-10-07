@@ -62,6 +62,23 @@ describe('routing rules at intake', () => {
     await a.waitForStatus(ju.id, 'finished');
   });
 
+  // Issue #324: a rule routes a repository to a machine and a work tree there.
+  it('a rule sets the work tree: the job\'s own, over its source\'s default; a job no rule routes keeps only the default', async () => {
+    const gh = createFakeGitHub();
+    const a = await boot({ jobSources: github, routing: [{ name: 'app tree', match: { label: 'app' }, set: { machine: 'local', workTree: '~/code/app' } }] }, gh);
+    a.scripted.ships(mergesPullRequest(gh));
+    a.setUsage(100);
+    const routed = gh.createIssue({ repo: REPO, body: body({ op: 'echo' }), labels: ['hopper', 'app'] });
+    const plain = gh.createIssue({ repo: REPO, body: body({ op: 'echo' }), labels: ['hopper'] });
+    await a.sync();
+    const jr = await jobFor(a, routed.url);
+    expect(jr.spec).toMatchObject({ machineId: 'local', payload: { cwd: '~/code/app', defaultCwd: '/tmp' }, routedBy: { rule: 'app tree', set: { machine: 'local', workTree: '~/code/app' } } });
+    const jp = await jobFor(a, plain.url);
+    expect(jp.spec.payload).toMatchObject({ defaultCwd: '/tmp' });
+    expect(jp.spec.payload).not.toHaveProperty('cwd');
+    a.setUsage(0);
+  });
+
   it('a rule sets the executor: the item\'s own executor is replaced', async () => {
     const a = await boot({ routing: [{ name: 'scripted for manual', match: { source: 'manual', title: 'paint' }, set: { executor: 'scripted' } }] });
     const job = await a.pull({ op: 'echo', message: 'hi' }, { executor: 'test', title: 'Paint the shed' });

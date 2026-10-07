@@ -6,6 +6,15 @@ import type { z as Z } from 'zod';
 import type { AttachedMachine } from '../../domain/types.ts';
 import type { MachineSource, MachineSourceContext } from '../sdk.ts';
 
+/**
+ * A machine's default work tree (issue #324): an absolute path or one under `~`, which resolves on that
+ * machine. Command-bearing: it is where its jobs' commands run. Not on a container target, whose
+ * command jobs take no work tree.
+ */
+export const workTreeOption = (z: typeof Z) => z.string().min(1)
+  .refine((s) => s.startsWith('/') || s === '~' || s.startsWith('~/'), 'workTree must be an absolute path or start with ~')
+  .optional().meta({ commandBearing: true, description: 'the default work tree of jobs here that name none of their own; ~ is this machine\'s home' });
+
 /** The options every attached machine has; `executors` defaults to what its connection runs. */
 export function attachedShape(z: typeof Z, executors: readonly string[]) {
   return {
@@ -15,10 +24,12 @@ export function attachedShape(z: typeof Z, executors: readonly string[]) {
   };
 }
 
-export interface AttachedOptions { label?: string; lanes: number; executors: string[] }
+export interface AttachedOptions { label?: string; lanes: number; executors: string[]; workTree?: string }
 
 /** The plain fields of an attached machine named `name`. */
-export const attachedBase = (name: string, o: AttachedOptions) => ({ name, ...(o.label !== undefined ? { label: o.label } : {}), lanes: o.lanes, executors: [...o.executors] });
+export const attachedBase = (name: string, o: AttachedOptions) => ({
+  name, ...(o.label !== undefined ? { label: o.label } : {}), lanes: o.lanes, executors: [...o.executors], ...(o.workTree !== undefined ? { workTree: o.workTree } : {}),
+});
 
 /** An attached machine's source: the host reaches it. */
 export const reach = (ctx: MachineSourceContext, machine: AttachedMachine): MachineSource => ctx.target(machine);

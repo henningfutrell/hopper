@@ -538,8 +538,9 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   sources' `defaultCwd` default to it, and tenant migration 11 moves a stored `~` (executor `cwd`,
   source `defaultCwd`, a `repoPaths` value) to it. The jobs directory, and a work tree under it, is
   made when missing — the scratch command starts `mkdir -p <cwd> &&` — so a fresh machine runs a
-  default job; any other missing work tree still fails as above (#323). Per-machine and per-repository
-  defaults are #324's. This is direction plus refusal, not a sandbox: an agent can still write where
+  default job; any other missing work tree still fails as above (#323). Which work tree applies —
+  the job's own, its machine's, its source's, the executor's — is "Default work trees per machine and
+  per repository". This is direction plus refusal, not a sandbox: an agent can still write where
   its OS user can ("Sandboxing jobs: mechanisms compared").
 - **The prompt says so.** The footer's work-tree line names the cwd and the scratch dir, and
   tells the job to ask rather than work in a tree outside it.
@@ -4295,14 +4296,15 @@ are no rules.
 routing:
   - name: urgent sandbox
     match: { repo: "owner/*", label: urgent }   # any of: source, repo, label, author, title
-    set: { priority: 90, machine: laptop }               # any of: machine, executor, priority
+    set: { priority: 90, machine: laptop }               # any of: machine, executor, priority, workTree
 ```
 
 - `match` fields are case-insensitive, and every field given must match. `source` is the
   job-source instance name. In `repo`, `*` matches any run of characters, the slash included.
   `label` means the item has that label. `title` is a substring match. An empty `match` matches
   every item. `set` needs at least one field: `machine` (a configured machine id, which becomes the
-  `spec.machineId` pin), `executor` (a configured executor instance), or `priority` (0..100). The
+  `spec.machineId` pin), `executor` (a configured executor instance), `priority` (0..100), or
+  `workTree` (an absolute path or one under `~`: the job's own work tree, issue #324). The
   schema is strict, so a `lane` anywhere is refused.
 - **The first matching rule wins.** Rules are applied at intake (`SourceHost.ingest`,
   `src/engine/source-host.ts`), when a source item becomes a job. The item's source, repo, labels,
@@ -6466,3 +6468,44 @@ how many are available.
 search; chosen: only those repositories' issues become jobs; changed while connected; kept across a
 disconnect; refusals), `test/store/tenant-migration-10.test.ts`, `test/ui/sources-view.test.ts` (count,
 filter, Choose shown, Save sends the whole list, an unreached chosen repository).
+
+## Default work trees per machine and per repository (issue #324, 2026-10-07)
+
+Owner request: default job directories set per machine and per repository, with a fallback, resolved on
+the machine that runs the job, never in the hopper's own home; a repository routed to the right machine
+and tree; the chosen machine and directory shown on the job's lane; a misconfigured directory failing at
+once. Resolving on the target (#323), refusing the home (#314) and failing an unusable work tree at once
+(#323) were already built; this adds the per-machine default and routing a repository to a path.
+
+**As built:**
+- **A machine's work tree.** The machine-source plugins `local`, `ssh` and `client` take an optional
+  `workTree` (an absolute path or one under `~`, which is that machine's home): the default work tree of
+  jobs there that name none of their own. Command-bearing, edited in the Plugins view's options form like
+  any machine option. Not on `docker`: a container target runs only `command` jobs, which take no work
+  tree. It reaches the executor on the lane's `MachineSnapshot.workTree`.
+- **A routing rule's work tree.** `set.workTree` on a routing rule is the job's own work tree, so a rule
+  routes a repository (or any match) to a machine and a path there:
+  `{ match: { repo: owner/app }, set: { machine: laptop, workTree: ~/code/app } }`. It is recorded in
+  `spec.routedBy.set` (additive in `job.queued`, still v1) and shown on the job ("routed by …: machine
+  laptop, work tree ~/code/app"). Edited in the Routing view.
+- **The order.** The executor (`resolvePayload`, `src/executors/herdr/payload.ts`; herdr-claude and
+  the print agents — cursor-agent, codex, opencode, omp) takes the first that is set: the job's own `cwd` — a routing rule's `workTree`, else its
+  repository's `repoPaths` entry, else one the item came with —, then the lane's machine's `workTree`,
+  then the payload's `defaultCwd` (its source's), then the executor's own `cwd`. Then `workTreeOn`
+  resolves `~` on that machine and refuses its home, as before.
+- **The source's default is a default.** A GitHub source puts `cwd` in the payload only for a repository
+  in `repoPaths`, and its `defaultCwd` as the payload's `defaultCwd`; before, it put `defaultCwd` in
+  `cwd`, which no machine could override. `SourceItem.cwd` and `SourceItem.defaultCwd` are both optional
+  for a plugin's job source. Jobs queued before keep the `cwd` they were given; no migration.
+- **Choosing the machine** stays the decider's: a routing rule's machine pin, the machine's executors,
+  lanes, budgets and online state. The work tree follows the machine chosen; it never picks one.
+- **Shown.** The lane running the job shows its resolved work tree (`job.workTree`, issue #166) beside
+  the machine; a refusal names the work tree and the machine.
+
+**Verification:** `test/herdr/executor-machine.test.ts` (the order: the machine's over the source's and
+the executor's, the job's own over the machine's, the machine's resolved on it, a machine work tree that
+is its home failing before any tab), `test/herdr/payload-default-cwd.test.ts`,
+`test/sources/github-discover.test.ts` (`cwd` only from `repoPaths`), `test/routing/rules.test.ts`,
+`test/integration/routing.test.ts` (a rule's work tree on the job and in `routedBy`),
+`test/plugins/machine-targets.test.ts`, `test/adapters/ssh-machine.test.ts`,
+`test/adapters/machine-usage.test.ts`, `test/ui/routing.test.ts`.

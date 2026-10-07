@@ -54,6 +54,9 @@
                 },
                 "priority": {
                   "type": "number"
+                },
+                "workTree": {
+                  "type": "string"
                 }
               },
               "additionalProperties": false

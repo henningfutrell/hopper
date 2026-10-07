@@ -40,7 +40,7 @@ describe('rule drafts', () => {
   it('round-trip: every field a string in the form; empty fields left out when sent', () => {
     const d: RuleDraft = toDraft(RULE);
     expect(d).toEqual({
-      name: 'urgent', match: { source: '', repo: 'owner/*', label: 'urgent', author: '', title: '' }, set: { machine: 'laptop', executor: '', priority: '90' },
+      name: 'urgent', match: { source: '', repo: 'owner/*', label: 'urgent', author: '', title: '' }, set: { machine: 'laptop', executor: '', priority: '90', workTree: '' },
     });
     expect(fromDraft(d)).toEqual(RULE);
     expect(fromDraft({ ...d, name: ' spaced ', match: { ...d.match, title: '  ' } }).name).toBe('spaced');
@@ -56,7 +56,9 @@ describe('rule drafts', () => {
     expect(draftsProblem([ok])).toBeUndefined();
     expect(draftsProblem([{ ...ok, name: ' ' }])).toMatch(/rule 1: name it/);
     expect(draftsProblem([ok, ok])).toMatch(/urgent: named twice/);
-    expect(draftsProblem([{ ...ok, set: { machine: '', executor: '', priority: '' } }])).toMatch(/urgent: set a machine, an executor or a priority/);
+    expect(draftsProblem([{ ...ok, set: { machine: '', executor: '', priority: '', workTree: '' } }])).toMatch(/urgent: set a machine, an executor, a priority or a work tree/);
+    expect(draftsProblem([{ ...ok, set: { machine: '', executor: '', priority: '', workTree: '~/code/app' } }])).toBeUndefined();
+    expect(draftsProblem([{ ...ok, set: { ...ok.set, workTree: 'code/app' } }])).toMatch(/urgent: the work tree is an absolute path or starts with ~/);
     expect(draftsProblem([{ ...ok, set: { ...ok.set, priority: '101' } }])).toMatch(/urgent: priority is a whole number 0..100/);
     expect(draftsProblem([{ ...ok, set: { ...ok.set, priority: '2.5' } }])).toMatch(/priority/);
   });
@@ -86,5 +88,7 @@ describe('routedByLabel', () => {
     expect(routedByLabel({ spec: { executor: 'test', payload: {} } } as unknown as Job)).toBeNull();
     const all = { spec: { executor: 'x', payload: {}, routedBy: { rule: 'r', set: { machine: 'laptop', executor: 'x', priority: 5 } } } } as unknown as Job;
     expect(routedByLabel(all)).toBe('routed by r: machine laptop, executor x, priority 5');
+    const tree = { spec: { executor: 'x', payload: {}, routedBy: { rule: 'app', set: { machine: 'laptop', workTree: '~/code/app' } } } } as unknown as Job;
+    expect(routedByLabel(tree)).toBe('routed by app: machine laptop, work tree ~/code/app');
   });
 });

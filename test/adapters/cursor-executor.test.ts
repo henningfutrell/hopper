@@ -163,7 +163,7 @@ describe('cursor-agent executor', () => {
 
   it('refuses the machine\'s home as the work tree: Cursor never starts (issue #314)', async () => {
     expect(await ex.run(ctxFor({ prompt: 'p', cwd: '~' }, { ...HERE, id: 'laptop', ssh: 'laptop', home: dir }).ctx)).toEqual({
-      kind: 'failed', error: 'the work tree ~ on laptop is its home or above it: a job runs only in a directory below the home; give its job source or executor a work tree such as ~/hopper-jobs',
+      kind: 'failed', error: 'the work tree ~ on laptop is its home or above it: a job runs only in a directory below the home; give its job source, machine or executor a work tree such as ~/hopper-jobs',
     });
   });
 

@@ -10,18 +10,21 @@ describe('GitHub source discover', () => {
     expect(item).toMatchObject({
       key: `https://github.com/${REPO}/issues/1`, url: `https://github.com/${REPO}/issues/1`, title: 'Add a README', body: 'Write it.',
       author: 'owner', labels: ['hopper'], repo: REPO, number: 1, executor: 'herdr-claude', model: 'claude-sonnet-5',
-      cwd: '/work/default', priority: 50, priorityReason: 'default',
+      defaultCwd: '/work/default', priority: 50, priorityReason: 'default',
     });
+    expect(item.cwd).toBeUndefined();
     expect(item.invalid).toBeUndefined();
     expect(gh.calls.filter((c) => c.method === 'listOpenIssues').map((c) => c.args)).toEqual([[REPO, 'hopper']]);
   });
 
-  it('maps cwd from repoPaths, else defaultCwd', async () => {
+  // Issue #324: only a repository's own path is the job's work tree; the source's default stays a
+  // default, so the machine's work tree comes before it.
+  it('maps cwd from repoPaths; every item carries defaultCwd as its fallback', async () => {
     const { gh, source } = setup({ repos: [REPO, 'owner/other'], repoPaths: { [REPO]: '/code/sandbox' } });
     gh.createIssue({ repo: REPO, labels: ['hopper'] });
     gh.createIssue({ repo: 'owner/other', labels: ['hopper'] });
     const items = await source.discover();
-    expect(items.map((i) => [i.repo, i.cwd])).toEqual([[REPO, '/code/sandbox'], ['owner/other', '/work/default']]);
+    expect(items.map((i) => [i.repo, i.cwd, i.defaultCwd])).toEqual([[REPO, '/code/sandbox', '/work/default'], ['owner/other', undefined, '/work/default']]);
   });
 
   it('never acts on an issue by an author outside the allowlist', async () => {

@@ -1,6 +1,6 @@
 // Routing (design.md "UI manages everything (issue #18)"): which router advises, in which mode;
 // which queue sorter orders the waiting jobs; and the routing rules that set a new job's machine,
-// executor or priority at intake. Pickers list every plugin of the role — one that cannot run here
+// executor, priority or work tree at intake. Pickers list every plugin of the role — one that cannot run here
 // is shown with why, never offered. Phone width first: everything stacks.
 import { ArrowDown, ArrowUp, ListOrdered, Plus, Route, Trash2, Waypoints } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
@@ -132,7 +132,7 @@ function RuleCard({ d, i, n, sources, machines, executors, disabled, set, moveBy
           </Labeled>
         ))}
       </fieldset>
-      <fieldset className="grid gap-2 sm:grid-cols-3">
+      <fieldset className="grid gap-2 sm:grid-cols-2">
         <legend className="mb-1 text-[11px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">Set on the new job</legend>
         <Labeled label="machine (pin)">
           <select className={select} value={d.set.machine} disabled={disabled} onChange={(e) => set({ ...d, set: { ...d.set, machine: e.target.value } })}>
@@ -149,6 +149,10 @@ function RuleCard({ d, i, n, sources, machines, executors, disabled, set, moveBy
         <Labeled label="priority 0..100">
           <Input className={input} type="number" inputMode="numeric" min={0} max={100} step={1} placeholder="the source's" value={d.set.priority} disabled={disabled}
             onChange={(e) => set({ ...d, set: { ...d.set, priority: e.target.value } })} />
+        </Labeled>
+        <Labeled label="work tree (on the job's machine)">
+          <Input className={input} placeholder="the machine's, else the source's" value={d.set.workTree} disabled={disabled}
+            onChange={(e) => set({ ...d, set: { ...d.set, workTree: e.target.value } })} />
         </Labeled>
       </fieldset>
     </li>
@@ -195,7 +199,7 @@ function RulesPanel({ ctx }: { ctx: PluginCtx }) {
   return (
     <Panel title="Routing rules" icon={Route} count={list.length} bodyClassName="space-y-3">
       <p className="text-xs text-muted-foreground">
-        When a source item becomes a job, the rules are tried in order and the <b>first</b> match sets the job's machine, executor or priority.
+        When a source item becomes a job, the rules are tried in order and the <b>first</b> match sets the job's machine, executor, priority or work tree.
         A change applies to new jobs only; jobs already queued keep how they were routed.
       </p>
       {report.error && <div className="text-xs text-bad">{report.error}</div>}

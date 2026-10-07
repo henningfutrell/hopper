@@ -104,7 +104,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       key: issue.url, url: issue.url, title: issue.title, body: issue.body,
       prompt: issuePrompt(issue, context), env: issueEnv(issue),
       author: issue.author, priority: p.priority, priorityReason: p.reason,
-      cwd: config.repoPaths[issue.repo] ?? config.defaultCwd,
+      ...(config.repoPaths[issue.repo] !== undefined ? { cwd: config.repoPaths[issue.repo]! } : {}), defaultCwd: config.defaultCwd,
       labels: issue.labels, repo: issue.repo, number: issue.number,
       executor: config.executor,
       ...(config.model ? { model: config.model } : {}),

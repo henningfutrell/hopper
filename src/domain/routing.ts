@@ -1,6 +1,6 @@
 // Routing rules (design.md "Routing rules (issue #18)"; docs/glossary.md "Routing rule"): the plugins config
 // `routing:`, an ordered list applied at intake. The first matching rule sets a job's machine pin,
-// executor and/or priority. Never a lane.
+// executor, priority and/or work tree. Never a lane.
 
 /** What a rule matches; every field given must match (case-insensitive). None given: every item. */
 export interface RoutingMatch {
@@ -23,6 +23,8 @@ export interface RoutingSet {
   executor?: string;
   /** 0..100. */
   priority?: number;
+  /** The job's work tree (issue #324): an absolute path or one under `~`, resolved on the job's machine. */
+  workTree?: string;
 }
 
 export interface RoutingRule {

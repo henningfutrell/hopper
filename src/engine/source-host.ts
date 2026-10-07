@@ -21,7 +21,12 @@ function refFor(item: SourceItem, source: { name: string; kind: string }): JobSo
 
 function specFor(item: SourceItem, source: { name: string }, priority: number, routedBy: RoutedBy | undefined): JobSpec {
   // `body` is the item's own text, without the context block: what the command executor runs.
-  const payload = { prompt: item.prompt, body: item.body, cwd: item.cwd, ...(item.model ? { model: item.model } : {}), env: item.env };
+  // The work tree (issue #324): a routing rule's, else the item's own (its repository's path); the
+  // source's default stays a default, so the lane's machine's work tree comes before it.
+  const cwd = routedBy?.set.workTree ?? item.cwd;
+  const payload = {
+    prompt: item.prompt, body: item.body, ...(cwd !== undefined ? { cwd } : {}), ...(item.defaultCwd !== undefined ? { defaultCwd: item.defaultCwd } : {}), ...(item.model ? { model: item.model } : {}), env: item.env,
+  };
   return {
     executor: routedBy?.set.executor ?? item.executor, payload, priority, goal: item.title, submittedBy: `${source.name}:${item.author}`, kind: 'coding',
     ...(routedBy?.set.machine !== undefined ? { machineId: routedBy.set.machine } : {}),

@@ -15,6 +15,8 @@ export function createLocalMachineSource(o: {
   label?: string;
   /** The herdr session jobs here run in (issue #260); absent: the herdr-claude instance's own. */
   session?: string;
+  /** Its jobs' default work tree (issue #324). */
+  workTree?: string;
   /** Starts that session when it is not running. Called in the background, at most once per 30 s; list() never waits for it. */
   ensureSession?: () => Promise<unknown>;
   logger?: { info(line: string): void; warn(line: string): void };
@@ -50,6 +52,7 @@ export function createLocalMachineSource(o: {
           online: true,
           executors: [...o.executors()],
           ...(o.session ? { herdr: { session: o.session } } : {}),
+          ...(o.workTree !== undefined ? { workTree: o.workTree } : {}),
         },
       ];
     },

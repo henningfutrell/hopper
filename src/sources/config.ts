@@ -29,7 +29,7 @@ const sharedKeys = {
   repoPaths: z.record(z.string(), z.string()).default({})
     .meta({ commandBearing: true, description: 'owner/repo → the working directory of its jobs' }),
   defaultCwd: z.string().min(1).default(JOBS_DIR)
-    .meta({ commandBearing: true, description: 'working directory of jobs from repos not in repoPaths' }),
+    .meta({ commandBearing: true, description: 'working directory of jobs from repos not in repoPaths, on a machine with no work tree of its own' }),
   executor: z.string().min(1).default('herdr-claude'),
   model: z.string().min(1).nullable().default(null),
   recentComments: z.number().int().min(0).default(10),

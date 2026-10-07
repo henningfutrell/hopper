@@ -29,9 +29,10 @@ describe('the attached-machine plugins', () => {
   });
 
   it('what reaches the machine is command-bearing; lanes, executors and label are not', () => {
-    expect(commandBearing('ssh')).toEqual(['herdr', 'hostKey', 'session', 'ssh']);
+    expect(commandBearing('ssh')).toEqual(['herdr', 'hostKey', 'session', 'ssh', 'workTree']);
     expect(commandBearing('docker')).toEqual(['docker']);
-    expect(commandBearing('client')).toEqual(['key']);
+    expect(commandBearing('client')).toEqual(['key', 'workTree']);
+    expect(commandBearing('local')).toEqual(['workTree']);
   });
 });
 
@@ -57,6 +58,14 @@ describe('targetOf: an instance as the attached machine it names', () => {
     expect(targetOf({ name: 'studio', plugin: 'client', options: { key: KEY, lanes: 2 } })).toEqual({
       name: 'studio', client: { key: KEY }, lanes: 2, executors: ['herdr-claude'],
     });
+  });
+
+  // Issue #324: a machine's own default work tree, resolved there.
+  it('an ssh or client instance carries its work tree; a relative one is refused', () => {
+    expect(targetOf({ name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop', workTree: '~/trees' } })).toMatchObject({ workTree: '~/trees' });
+    expect(targetOf({ name: 'studio', plugin: 'client', options: { key: KEY, workTree: '/srv/trees' } })).toMatchObject({ workTree: '/srv/trees' });
+    expect(targetOf({ name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop' } })).not.toHaveProperty('workTree');
+    expect(why(() => targetOf({ name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop', workTree: 'trees' } }))).toMatch(/workTree must be an absolute path or start with ~/);
   });
 
   it('any other plugin is not an attached machine', () => {
