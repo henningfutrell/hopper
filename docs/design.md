@@ -2888,6 +2888,49 @@ that makes it a part of the hopper:
 **Not built, on purpose.** No daemon change, no event, no migration: the spike's job was the protocol and
 seeing it run. The reader is a script, as the boxes are.
 
+## Work by hand in an IDE: how it checks in (issue #317, 2026-10-06 — research)
+
+Owner direction (#316): containers are the primary, enforced job shape, and some jobs are still done by
+hand in Cursor or a like IDE. The questions: how such work checks back in; whether that needs a hopper
+plugin or another product surface, or git and GitHub alone; how it lives beside sandboxed container
+jobs. Related: #314, #308, #315; the claim and its timeline designation are #318, the protocol #319.
+
+**What already counts as check-in.** For a GitHub-sourced job, done is git and GitHub: the job's own
+closing pull request reaching its completion ("Done means complete"). Labels carry claim, done and
+failed; a local commit, a branch or a draft is never done. The `cursor-agent` executor is Cursor's CLI
+in print mode on a machine's work tree, not the IDE. A client target serves herdr only; a container
+target runs the command executor only.
+
+**Options weighed.**
+
+| Option | Check-in | Needs a hopper IDE plugin |
+|--------|----------|---------------------------|
+| Git and GitHub alone | the same closing pull request as an agent's job | no |
+| Operator-led claim | the issue claimed; the job waits on the source's completion | no — a claim mode, no executor |
+| Watched branch | the hopper watches pushes, may open the pull request | no; still ends at the pull request |
+| IDE workspace watcher | an extension binds a workspace to a job | yes — a new surface to build and keep |
+| Attach the IDE's machine | a machine for dispatched agents | no — it does not define check-in |
+| Container to IDE handoff | the branch (or volume) carried on; ends at the pull request | no — a workflow, plus the claim |
+
+**Settled (owner direction, #316 and #318; the protocol, #319).**
+
+1. **One check-in: the closing pull request.** Work by hand is done exactly when an agent's is; the
+   completion gate does not change.
+2. **No IDE plugin is required.** The hopper needs only to know the issue was claimed as operator-led
+   work, and to show that on the job's timeline: an IDE gives none of the pane feedback herdr does, so
+   the designation stands in for it. Formal names only (operator-led, interactive, external session).
+3. **Progress, when wanted, is a file the hopper reads**, not a push and not an extension: the pickup
+   record of #319. An IDE extension, an agent's hook or a shell alias that writes the same record is a
+   conforming writer; none is needed for check-in.
+4. **Beside containers.** An operator-led claim has no lane and no executor, so the decider never
+   dispatches the same issue to a container; `hopper:claimed` holds it. Released, the issue is the
+   queue's again. A machine attached for an IDE is a
+   machine for dispatched agents, nothing more.
+
+**Not built here.** Research only: no daemon change. The claim mode, its event and timeline
+designation are #318's; reading pickups in the machine source is #319's "What the daemon would do with
+it".
+
 ## Client releases (issue #70, 2026-10-05)
 
 The hopper client is released from the hopper and loaded onto its client targets by the hopper: no
