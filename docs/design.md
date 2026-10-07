@@ -2931,6 +2931,77 @@ target runs the command executor only.
 designation are #318's; reading pickups in the machine source is #319's "What the daemon would do with
 it".
 
+## Sandboxing jobs: mechanisms compared (issue #315, 2026-10-06 — research)
+
+The questions: which mechanism keeps a job to specific directories and never runs an agent with the
+user's home as its workspace root (#314), and which keeps adding a machine easy while allowing a
+sandbox (#308). Owner direction (#316): containers (Podman or Docker) are the primary enforced path,
+and some jobs are still done by hand in Cursor or a like IDE (#317). Related: #310, #312, #319.
+
+**What ships today.**
+
+- **Work trees** ("Work tree", #121, #323): the pane opens in the job's cwd, `TMPDIR` and the scratch
+  dir point inside it, the footer tells the job to stay in it. Direction, not enforcement: the
+  process can still write anywhere its OS user can. `herdr-claude`'s and `cursor-agent`'s `cwd`
+  default is `~`, so a job whose payload names no work tree runs with the home as its root — #314
+  is not met by the defaults.
+- **Container targets** ("Container targets", #58): `docker exec` through a socket proxy, no network,
+  no agent, no herdr. A real sandbox, for the `command` executor only.
+- **Agent boxes** ("Agent boxes", #295; "Pickups on agent boxes", #319): one container per agent CLI,
+  sshd plus its own herdr session, attached as an ssh target. Home is a named volume (the agent's
+  sign-in survives the box); the host's home is not mounted; the network is open. The nearest thing
+  shipped to a sandboxed agent machine.
+- **ssh and client targets** (#59): full herdr and agent UX; the boundary is the OS user, which
+  in practice means the whole home.
+
+**Compared.**
+
+| Option | Isolation | UX cost | Fit: hopper in a container, ssh / client attach | What breaks |
+|--------|-----------|---------|--------------------------------------------------|-------------|
+| Work trees only (directory jail by convention) | low: a prompt and an env, the OS user's full reach | none | as today; every target | nothing — and nothing is enforced |
+| Landlock (kernel LSM, self-applied by an unprivileged process) | medium, files only (network from Landlock ABI 4, kernel 6.7); no PID or mount isolation | low: a wrapper around the agent start, no root, no daemon | works nested in an unprivileged container and on any Linux ssh / client host; not on macOS | git, `~/.claude`, `~/.ssh`, the agent's own install and caches need explicit read or write grants; a missing grant fails late and obscurely |
+| bubblewrap (user namespaces; what Claude Code's Linux sandbox uses) | medium-high: own mount, PID and optional net namespace | medium: a bind list per job; Claude Code's built-in sandbox covers only the commands Claude runs, not the whole agent | good on ssh / client hosts; inside an unprivileged container it needs user namespaces, which Docker's default seccomp profile refuses | sign-in and git credentials must be bound in; ssh agent socket; herdr must start the agent inside it (the pane shell itself stays outside) |
+| Podman / Docker, one box per machine (agent boxes, grown) | high, shared kernel; rootless Podman adds a user namespace | low once built: one script, one Add | best: the box is an ordinary ssh target; herdr, panes and the pickup record already work there | sign-in once per box (home volume); git needs a token or key put in per job; a work tree must be a path of the box; a containerized hopper does not reach the box's loopback sshd (#293) |
+| Podman / Docker, one container per job | high, and nothing outlives the job | high: image pull and start per job, a herdr session per job | poor: herdr attach and the box's machine identity are per machine, not per job | sign-in per job unless a home volume is shared (which shares the state the per-job box was meant to drop); the timeline's machine identity |
+| Firecracker (microVM) | highest: own kernel | highest: KVM, a kernel and rootfs pipeline, networking per VM | poor: no ssh / herdr attach model today; a laptop or IDE host rarely runs it | replaces the machine model; every credential and tool path re-plumbed |
+
+**Recommendation.**
+
+1. **#314 first, everywhere, in the executor.** A work tree that resolves to the machine's home (or
+   `/`) fails the job at start, as an unusable work tree does (#323); the `~` default goes, and a job
+   with no work tree takes a directory of its own below the home (per repository), never
+   the home itself. Cheap, needs no new mechanism, and applies to IDE and ssh hosts too, where no
+   container runs.
+2. **The enforced sandbox is the agent box (#316: containers primary), grown — not a per-job
+   container.** Per machine, one box; per job, a work tree inside the box's work volume. It already
+   carries herdr, the sign-in and the pickup record; what it lacks for jobs: the job's git
+   credential put in per job (the connected account's `GH_TOKEN`, as the hopper already sets it),
+   a fixed sshd port per box (#319's finding), and a way for a containerized hopper to reach it
+   (#293, #312). That is also #308's easy machine add: "add a sandbox machine" = build and attach a
+   box, one action.
+3. **Landlock as the optional layer on hosts that are not boxes** — ssh and client targets, and the
+   IDE machines of #317. It needs no root and nests anywhere, so a wrapper can restrict writes to
+   the work tree, its scratch dir and the agent's own state dirs. Prefer an established tool
+   (`landrun`, or the Landlock support in an agent CLI's own sandbox) to a custom wrapper. bubblewrap
+   stays the choice where namespaces are wanted and the host allows them; it is the weaker fit
+   inside containers.
+4. **No per-job containers, no Firecracker, for now.** Both pay a per-job start and break the herdr
+   attach model; neither is needed for the threat model #316 implies (mistakes on trusted personal
+   machines, not hostile tenants). Firecracker is the tier to revisit if the hopper ever runs other
+   people's jobs.
+
+**What each step breaks, and how it is kept.** Git: credentials go in per job (token in env, never
+in the image); a mounted ssh key is the fallback. Claude sign-in: the box's home volume holds it,
+signed in once over `ssh -t`; a Landlock grant for `~/.claude` on hosts. herdr panes: unchanged on a
+box (herdr runs inside it); on a Landlock host the wrapper starts the agent, not the pane shell.
+
+**Open for the owner.** Whether a box's network should be narrowed (an egress allowlist for the
+agent's API and GitHub) or stay open; whether the sandbox is default on machine add or opt-in per
+machine.
+
+**Not built here.** Research only: no daemon change. Step 1 is #314's; steps 2 and 3 are #308's and
+#310's.
+
 ## Client releases (issue #70, 2026-10-05)
 
 The hopper client is released from the hopper and loaded onto its client targets by the hopper: no
