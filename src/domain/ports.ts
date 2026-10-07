@@ -338,8 +338,10 @@ export interface SourceItem {
   priority: number;
   /** Where `priority` came from, e.g. "project:Priority=P1", "label:hopper:high", "default". */
   priorityReason: string;
-  /** Working directory for the job (absolute). */
-  cwd: string;
+  /** The job's own work tree: its repository's path (`repoPaths`). Absent: the machine's, then `defaultCwd` (issue #324). */
+  cwd?: string;
+  /** The source's default work tree: the job's when neither it nor its machine names one (issue #324). Absent: the executor's. */
+  defaultCwd?: string;
   labels: string[];
   repo?: string;
   number?: number;

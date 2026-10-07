@@ -35,9 +35,10 @@ function validateEnv(env: unknown): string | null {
 const pathLike = (v: unknown): v is string => typeof v === 'string' && (v.startsWith('/') || v === '~' || v.startsWith('~/'));
 
 export function validatePayload(payload: Record<string, unknown>): string | null {
-  const { prompt, cwd, model, env, expectedMs, timeoutMs } = payload;
+  const { prompt, cwd, defaultCwd, model, env, expectedMs, timeoutMs } = payload;
   if (typeof prompt !== 'string' || prompt.trim() === '') return 'prompt must be a non-empty string';
   if (cwd !== undefined && !pathLike(cwd)) return 'cwd must be an absolute path or start with ~';
+  if (defaultCwd !== undefined && !pathLike(defaultCwd)) return 'defaultCwd must be an absolute path or start with ~';
   if (model !== undefined && typeof model !== 'string') return 'model must be a string';
   if (expectedMs !== undefined && !positive(expectedMs)) return 'expectedMs must be a positive number';
   if (timeoutMs !== undefined && !positive(timeoutMs)) return 'timeoutMs must be a positive number';
@@ -60,19 +61,24 @@ export function workTreeOn(machine: MachineSnapshot, cwd: string): { cwd: string
   const resolved = normal(tilde ? posix.join(home!, cwd.slice(1)) : cwd);
   const ownHome = home ? normal(home) : undefined;
   if (resolved === '/' || (ownHome && (resolved === ownHome || ownHome.startsWith(`${resolved}/`)))) {
-    return { error: `the work tree ${cwd} on ${machine.id} is its home or above it: a job runs only in a directory below the home; give its job source or executor a work tree such as ${JOBS_DIR}` };
+    return { error: `the work tree ${cwd} on ${machine.id} is its home or above it: a job runs only in a directory below the home; give its job source, machine or executor a work tree such as ${JOBS_DIR}` };
   }
   const jobs = ownHome ? posix.join(ownHome, JOBS_DIR.slice(2)) : undefined;
   const make = jobs !== undefined && (resolved === jobs || resolved.startsWith(`${jobs}/`));
   return { cwd: tilde ? resolved : cwd, make };
 }
 
-/** Assumes a validated payload. `cwd` keeps its `~`: workTreeOn resolves it on the lane's machine. */
-export function resolvePayload(payload: Record<string, unknown>, defaultCwd: string): ClaudeJobPayload {
-  const p = payload as { prompt: string; cwd?: string; model?: string; env?: Record<string, string>; expectedMs?: number; timeoutMs?: number };
+/**
+ * Assumes a validated payload. The work tree is the most specific that applies (issue #324): the job's
+ * own `cwd` (its repository's path, a routing rule's, or one it was pushed with), then the lane's
+ * machine's `workTree`, then the payload's `defaultCwd` (its source's), then the executor's. It keeps
+ * its `~`: workTreeOn resolves it on the lane's machine.
+ */
+export function resolvePayload(payload: Record<string, unknown>, machine: Pick<MachineSnapshot, 'workTree'>, executorCwd: string): ClaudeJobPayload {
+  const p = payload as { prompt: string; cwd?: string; defaultCwd?: string; model?: string; env?: Record<string, string>; expectedMs?: number; timeoutMs?: number };
   return {
     prompt: p.prompt,
-    cwd: p.cwd ?? defaultCwd,
+    cwd: p.cwd ?? machine.workTree ?? p.defaultCwd ?? executorCwd,
     model: p.model,
     env: { ...(p.env ?? {}) },
     expectedMs: p.expectedMs ?? DEFAULT_EXPECTED_MS,

@@ -172,6 +172,8 @@ export interface MachineSnapshot {
   herdr?: { session: string };
   /** A container target: the container its executors reach it in, through `docker exec`. */
   docker?: string;
+  /** Its default work tree (issue #324): a job's when the job names none of its own; `~` resolves on it. Absent: its source's or executor's. */
+  workTree?: string;
   /** An attached machine's home, as its probe found it: where `~` in a job's work tree resolves there (issue #323). Absent: not found yet, or this machine. */
   home?: string;
   /** A client target: once probed online, the client release it runs (absent: it predates releases) and whether that is the hopper's (issue #70). */

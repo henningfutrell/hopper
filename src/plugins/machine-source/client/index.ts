@@ -4,7 +4,7 @@
 // machine key — the public half of its link key, recorded when it joined: who it is, never a secret.
 import type { ClientMachine } from '../../../domain/types.ts';
 import type { PluginDefinition } from '../../sdk.ts';
-import { attachedBase, attachedShape, reach, type AttachedOptions } from '../attached.ts';
+import { attachedBase, attachedShape, reach, workTreeOption, type AttachedOptions } from '../attached.ts';
 
 export interface ClientOptions extends AttachedOptions { key: string }
 
@@ -18,6 +18,7 @@ const client: PluginDefinition<'machine-source', ClientOptions> = {
     key: z.string().regex(/^[A-Za-z0-9_-]{43}$/, 'key must be a machine key: the public half of its link key, 43 base64url characters')
       .meta({ commandBearing: true, description: 'its machine key, recorded when it joined: the public half of its link key — the one machine its jobs go to' }),
     ...attachedShape(z, ['herdr-claude']),
+    workTree: workTreeOption(z),
   }),
   async detect() { return { status: 'available' }; },
   create: (ctx, o) => reach(ctx, clientMachine(ctx.instanceName, o)),

@@ -171,7 +171,7 @@ describe('herdr-claude executor: a work tree the machine cannot use fails the jo
 describe('herdr-claude executor: never the home as the work tree', () => {
   const FAR = { ...LAPTOP, home: '/home/far' };
   const refused = (cwd: string, machine: string) =>
-    `the work tree ${cwd} on ${machine} is its home or above it: a job runs only in a directory below the home; give its job source or executor a work tree such as ~/hopper-jobs`;
+    `the work tree ${cwd} on ${machine} is its home or above it: a job runs only in a directory below the home; give its job source, machine or executor a work tree such as ~/hopper-jobs`;
 
   it.each([
     ['~', '~'],

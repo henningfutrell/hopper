@@ -2,12 +2,13 @@
 // lanes are stored under it). `lanes` is the lane count — a lane has no options of its own.
 // `executors`, when given, narrows what runs here (issue #58: a `command` job goes to its target only).
 // `session`, when given, is the herdr session its jobs run in, which the hopper starts when it is not
-// running (issue #260); absent, the herdr-claude instance's own.
+// running (issue #260); absent, the herdr-claude instance's own. `workTree`: its jobs' default work tree (issue #324).
 import { createLocalMachineSource } from '../../../machines/index.ts';
 import { ensureHerdrSession, sessionProblem } from '../../../executors/herdr/index.ts';
 import type { PluginDefinition } from '../../sdk.ts';
+import { workTreeOption } from '../attached.ts';
 
-export interface LocalOptions { lanes: number; executors?: string[]; session?: string }
+export interface LocalOptions { lanes: number; executors?: string[]; session?: string; workTree?: string }
 
 /** Starts this machine's herdr session when it is not running; rejects with the reason. */
 export type StartSession = (session: string, userEnv: Readonly<Record<string, string>>) => Promise<unknown>;
@@ -25,10 +26,11 @@ export function localPlugin(start: StartSession = startHerdrSession): PluginDefi
       executors: z.array(z.string().min(1)).optional().meta({ description: 'executor instances that run on this machine; absent: every registered one' }),
       session: z.string().min(1).superRefine((s, c) => { const p = sessionProblem(s); if (p) c.addIssue({ code: 'custom', message: p }); }).optional()
         .meta({ description: 'the herdr session jobs here run in, started by the hopper; absent: the herdr-claude instance\'s own' }),
+      workTree: workTreeOption(z),
     }),
     async detect() { return { status: 'available' }; },
     create: (ctx, o) => createLocalMachineSource({
-      id: ctx.instanceName, maxLanes: o.lanes,
+      id: ctx.instanceName, maxLanes: o.lanes, ...(o.workTree !== undefined ? { workTree: o.workTree } : {}),
       executors: o.executors ? () => ctx.executors().filter((x) => o.executors!.includes(x)) : ctx.executors,
       ...(o.session ? {
         session: o.session,

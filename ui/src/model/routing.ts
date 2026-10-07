@@ -34,7 +34,7 @@ export function choices(report: PluginsReport, role: 'router' | 'queue-sorter'):
 export interface RuleDraft {
   name: string;
   match: { source: string; repo: string; label: string; author: string; title: string };
-  set: { machine: string; executor: string; priority: string };
+  set: { machine: string; executor: string; priority: string; workTree: string };
 }
 
 export const MATCH_FIELDS = ['source', 'repo', 'label', 'author', 'title'] as const;
@@ -44,7 +44,9 @@ export function toDraft(r: RoutingRule): RuleDraft {
   return {
     name: r.name,
     match: { source: m.source ?? '', repo: m.repo ?? '', label: m.label ?? '', author: m.author ?? '', title: m.title ?? '' },
-    set: { machine: r.set.machine ?? '', executor: r.set.executor ?? '', priority: r.set.priority === undefined ? '' : String(r.set.priority) },
+    set: {
+      machine: r.set.machine ?? '', executor: r.set.executor ?? '', priority: r.set.priority === undefined ? '' : String(r.set.priority), workTree: r.set.workTree ?? '',
+    },
   };
 }
 
@@ -77,8 +79,10 @@ export function draftsProblem(drafts: readonly RuleDraft[]): string | undefined 
     if (!name) return `${label}: name it`;
     if (seen.has(name)) return `${label}: named twice`;
     seen.add(name);
-    const { machine, executor, priority } = d.set;
-    if (!machine.trim() && !executor.trim() && !priority.trim()) return `${label}: set a machine, an executor or a priority`;
+    const { machine, executor, priority, workTree } = d.set;
+    if (!machine.trim() && !executor.trim() && !priority.trim() && !workTree.trim()) return `${label}: set a machine, an executor, a priority or a work tree`;
+    const tree = workTree.trim();
+    if (tree !== '' && !(tree.startsWith('/') || tree === '~' || tree.startsWith('~/'))) return `${label}: the work tree is an absolute path or starts with ~`;
     if (priority.trim() !== '') {
       const p = Number(priority);
       if (!Number.isInteger(p) || p < 0 || p > 100) return `${label}: priority is a whole number 0..100`;
@@ -109,6 +113,7 @@ export function routedByLabel(job: Job): string | null {
     ...(r.set.machine !== undefined ? [`machine ${r.set.machine}`] : []),
     ...(r.set.executor !== undefined ? [`executor ${r.set.executor}`] : []),
     ...(r.set.priority !== undefined ? [`priority ${r.set.priority}`] : []),
+    ...(r.set.workTree !== undefined ? [`work tree ${r.set.workTree}`] : []),
   ];
   return `routed by ${r.rule}: ${parts.join(', ')}`;
 }

@@ -15,7 +15,9 @@ const set = z.strictObject({
   machine: text.optional(),
   executor: text.optional(),
   priority: z.number().int().min(0).max(100).optional(),
-}).refine((s) => s.machine !== undefined || s.executor !== undefined || s.priority !== undefined, 'set at least one of machine, executor, priority');
+  workTree: text.refine((s) => s.startsWith('/') || s === '~' || s.startsWith('~/'), 'workTree must be an absolute path or start with ~').optional(),
+}).refine((s) => s.machine !== undefined || s.executor !== undefined || s.priority !== undefined || s.workTree !== undefined,
+  'set at least one of machine, executor, priority, workTree');
 
 const rule = z.strictObject({ name: text, match: match.default({}), set });
 

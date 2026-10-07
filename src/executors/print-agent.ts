@@ -71,7 +71,7 @@ export function createPrintAgentExecutor(o: PrintAgentExecutorOptions): Executor
   async function turn(ctx: ExecutionContext, cwd: string, text: string, chatId?: string, notes = 0): Promise<ExecutionOutcome> {
     const refused = refusal(label, ctx);
     if (refused) return { kind: 'failed', error: refused };
-    const p = resolvePayload(ctx.job.spec.payload, o.defaultCwd);
+    const p = resolvePayload(ctx.job.spec.payload, ctx.machine, o.defaultCwd);
     const scratch = scratchDirOf(cwd);
     // The job's credentials (GH_TOKEN, issue #214), HOPPER_JOB_ID and the scratch dir come from the hopper; a payload cannot move them.
     const vars = Object.entries({ ...p.env, ...ctx.credentials, TMPDIR: scratch, HOPPER_JOB_ID: ctx.job.id }).map(([k, v]) => shellQuote(`${k}=${v}`));
@@ -110,7 +110,7 @@ export function createPrintAgentExecutor(o: PrintAgentExecutorOptions): Executor
     idempotent: false,
     validate: validatePayload,
     run(ctx) {
-      const p = resolvePayload(ctx.job.spec.payload, o.defaultCwd);
+      const p = resolvePayload(ctx.job.spec.payload, ctx.machine, o.defaultCwd);
       // Issue #323: `~` is the lane's machine's home, never this process's when the job runs elsewhere.
       const tree = workTreeOn(ctx.machine, p.cwd);
       if ('error' in tree) return Promise.resolve({ kind: 'failed', error: tree.error });
