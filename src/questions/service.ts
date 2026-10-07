@@ -48,7 +48,7 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
   let stopped = false;
   const iso = () => clock.now().toISOString();
 
-  function emit(q: Question, type: 'question.escalated' | 'question.answered' | 'question.closed' | 'question.dismissed' | 'question.expired', data: Record<string, unknown>) {
+  function emit(q: Question, type: 'question.escalated' | 'question.escalated_to_human' | 'question.answered' | 'question.closed' | 'question.dismissed' | 'question.expired', data: Record<string, unknown>) {
     store.events.append({ type, jobId: q.jobId, questionId: q.id, data: { questionId: q.id, ...data } });
   }
 
@@ -119,7 +119,10 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
       tier: HUMAN, escalatedToHumanAt: now.toISOString(), lastNotifiedAt: now.toISOString(),
       expiresAt: new Date(now.getTime() + o.humanTimeoutMs).toISOString(), notifyCount: 1,
     });
-    emit(updated, 'question.escalated', escalationData(updated, HUMAN, reason));
+    const data = escalationData(updated, HUMAN, reason);
+    emit(updated, 'question.escalated', data);
+    const { target: _target, ...toHumanData } = data;
+    emit(updated, 'question.escalated_to_human', toHumanData);
     queueMicrotask(() => armHuman(q.id));
   }
 

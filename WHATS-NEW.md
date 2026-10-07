@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- A webhook can now listen only for questions that need you: pick "escalated to human" in its events and it fires once per question, not at every model's turn.
 - A job whose work already shipped is now marked done, not failed, even when its window ends later, and a job may close its issue itself with no pull request when no code change was needed.
 - Run again on a failed job whose issue is closed now says so and asks you to reopen the issue, instead of seeming to work while nothing ran.
 - Jobs in Codex and opencode now start instead of waiting forever.

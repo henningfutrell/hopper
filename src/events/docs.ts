@@ -23,6 +23,7 @@ const WHEN: Record<EventType, string> = {
   'decision.made': 'The engine recorded a Decision.',
   'question.asked': 'A running job paused on a question.',
   'question.escalated': 'A question entered a stage — `target` is an escalation level\'s instance name, or `human` — or the human was re-notified. `reason` says why it climbed: the reply or the failure of the level below, or a risk rule hit.',
+  'question.escalated_to_human': 'A question reached the human stage: every level escalated, there are no levels, or a risk rule hit. Once per question, right after its `question.escalated` with `target` `human`; never on a level hop or a re-notification. Subscribe to it to hear only the questions the owner must answer.',
   'question.answered': 'An answer was accepted: an escalation level\'s (`by` = the level instance), or the human\'s (`via: "pane"` when they typed it into the job\'s pane: the job already runs again, nothing is typed for them).',
   'question.closed': 'The owner closed an open question without answering (UI Close). The job resumes with `answer`, the fixed close text, typed in; any escalation level call in flight is aborted.',
   'question.dismissed': 'The owner dismissed an open question (UI Dismiss): it needs no action any more. Nothing is typed into the job; a job still waiting on it is cancelled (`job.cancelled`, reason `question dismissed`); any escalation level call in flight is aborted.',

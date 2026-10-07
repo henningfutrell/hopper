@@ -368,6 +368,32 @@ Version 2 (`docs/schemas/question.escalated.v2.json`). A question entered a stag
 }
 ```
 
+## `question.escalated_to_human`
+
+Version 1 (`docs/schemas/question.escalated_to_human.v1.json`). A question reached the human stage: every level escalated, there are no levels, or a risk rule hit. Once per question, right after its `question.escalated` with `target` `human`; never on a level hop or a re-notification. Subscribe to it to hear only the questions the owner must answer.
+
+| field | type | required |
+|---|---|---|
+| `questionId` | string | yes |
+| `reason` | string | yes |
+| `text` | string | yes |
+| `jobId` | string | yes |
+| `goal` | string | no |
+| `answerUrl` | string | yes |
+| `notifyCount` | integer | yes |
+
+```json
+{
+  "questionId": "q1",
+  "reason": "fable: the owner's call",
+  "text": "which?",
+  "jobId": "j1",
+  "goal": "g",
+  "answerUrl": "http://127.0.0.1/q",
+  "notifyCount": 1
+}
+```
+
 ## `question.answered`
 
 Version 2 (`docs/schemas/question.answered.v2.json`). An answer was accepted: an escalation level's (`by` = the level instance), or the human's (`via: "pane"` when they typed it into the job's pane: the job already runs again, nothing is typed for them).

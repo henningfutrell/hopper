@@ -38,6 +38,7 @@
         "decision.made",
         "question.asked",
         "question.escalated",
+        "question.escalated_to_human",
         "question.answered",
         "question.closed",
         "question.dismissed",
