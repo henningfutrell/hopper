@@ -145,7 +145,7 @@ signed_in() {
     claude) docker exec -u agent -- "$name" claude auth status 2>/dev/null | grep -q '"loggedIn": true' ;;
     codex) docker exec -u agent -- "$name" codex login status >/dev/null 2>&1 ;;
     cursor) said="$(docker exec -u agent -- "$name" cursor-agent status 2>&1)" && ! grep -qi 'not logged in' <<<"$said" ;;
-    omp) said="$(docker exec -u agent -- "$name" omp models 2>&1)" && ! grep -q 'models.yml' <<<"$said" ;;
+    omp) said="$(docker exec -u agent -- "$name" omp models 2>&1)" && ! grep -qE 'No models available|models\.yml' <<<"$said" ;;
     opencode) true ;;
   esac
 }

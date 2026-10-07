@@ -2908,6 +2908,15 @@ npm) a real codex box on the real docker, reached over real ssh with the hopper'
 herdr session running, attached to a test database through the operator CLI with its executor, kept on a
 second run, then removed.
 
+**Seen run (2026-10-07, this machine's compose hopper).** `bash scripts/agent-boxes.sh`, no flag and no key:
+all five boxes rebuilt and made again on the hopper's network, attached, and online in the hopper's
+Machines with their executors (`herdr-claude`, `codex`, `cursor-agent`, `omp`, `opencode`); `--check` ok for
+each. A turn of each print-mode executor, run in the hopper's container over its own connection: opencode
+(no sign-in) finished with its marker and wrote its file in `~/hopper-jobs`; codex, cursor and omp, not
+signed in, failed at once with their CLI's own reason. A box made again gets a new host key (sshd's keys
+live in the container, not the home): the same run pins it, and the hopper reaches the box again once the
+plugins config is applied.
+
 ## Print-mode agent executors (issue #307, 2026-10-07)
 
 Owner requirement (#307): every agent box runs jobs. Only Claude Code (`herdr-claude`) and Cursor's agent
@@ -2934,7 +2943,10 @@ Only the call and the reading differ (`src/executors/print-agents.ts`), taken fr
 | `opencode` | `opencode run --format json <args> [--model m] -- <text>` | `--session <id>` | JSON lines: `sessionID`; the `text` parts of the last message | an `error` event: `error.name`, `error.data.message` |
 | `omp` | `omp -p --mode json --no-title <args> [--model m] -- <text>` | `--resume <id>` | JSON lines: `session` `id`; `agent_end`'s last assistant message, its `text` parts | `stopReason` `error`: `errorMessage` |
 
-A non-zero exit fails the job with the CLI's own error when it printed one, else its stderr.
+A non-zero exit fails the job with the CLI's own error when it printed one, else its stderr. The CLI's stdin
+is `/dev/null`: codex and opencode read a stdin that is not a terminal to its end before the turn, and the
+pipe a run hands its child is never closed, so without it the turn never started (found on the agent
+boxes).
 
 Plugins `codex`, `opencode`, `omp` (`src/plugins/executor/<id>/`, each defined by
 `src/plugins/executor/print-agent.ts`, as `cursor-agent` now is): options `bin` (the CLI's name, on
@@ -2946,7 +2958,8 @@ box that runs it. Detection is `which` only and always `available`. Each agent s
 runs on; the hopper holds no credential of theirs. opencode runs its own free models with no sign-in.
 
 **Verification:** `test/adapters/print-agent-executors.test.ts` (each CLI a stand-in printing the real
-CLI's events: done, question and resume, failed, status notes, the CLI's error, cancel, refusals),
+CLI's events and reading its stdin to the end as the real ones do: done, question and resume, failed,
+status notes, the CLI's error, cancel, refusals),
 `test/adapters/cursor-executor.test.ts`, `test/plugins/executor-plugins.test.ts`.
 
 ## Pickups on agent boxes (issue #319, 2026-10-06 — a spike)
