@@ -23,7 +23,9 @@ export interface SourcesView {
 }
 
 const ACCOUNT = 'github-account';
-const GITHUB: Record<string, Via> = { github: 'gh', 'github-app': 'app' };
+// A source that cannot run (unknown plugin, invalid options) is reported under its plugin's id
+// (src/users/runtime.ts splitSources): gh's is `github-gh`. It is gh all the same (issue #320).
+const GITHUB: Record<string, Via> = { github: 'gh', 'github-gh': 'gh', 'github-app': 'app' };
 const ORDER: Record<SourceUse, number> = { 'in-use': 0, paused: 1, disabled: 2 };
 const VIA_ORDER: Record<Via, number> = { gh: 0, app: 1 };
 /** The app source's pause while no app is set up (src/sources/compose.ts APP_MISSING): then it is not shown. */
