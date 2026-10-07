@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SourceError } from '../../src/domain/ports.ts';
+import { SourceError, SourceRefused } from '../../src/domain/ports.ts';
 import { GitHubApiError } from '../../src/sources/github/index.ts';
 import { REPO, jobForIssue, setup } from './fixtures/github-support.ts';
 
@@ -73,7 +73,19 @@ describe('GitHub source report', () => {
     expect(gh.issue(REPO, 1).labels).toEqual(['hopper']);
     expect(gh.issue(REPO, 1).state).toBe('open');
     expect(gh.commentsOn(REPO, 1)).toEqual([]);
-    expect(gh.calls.map((c) => c.method)).toEqual(['removeLabels']);
+    expect(gh.calls.map((c) => c.method)).toEqual(['getIssue', 'removeLabels']);
+  });
+
+  it('rerun on a closed issue: refused, labels left as they are, the issue not reopened (issue #348)', async () => {
+    const { gh, source } = withIssue();
+    const job = jobForIssue(1, { status: 'failed', error: 'scratch dir timed out' });
+    await source.report({ kind: 'claimed', job });
+    await source.report({ kind: 'failed', job });
+    gh.closeIssue(REPO, 1);
+    const err = await source.report({ kind: 'rerun', job }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(SourceRefused);
+    expect((err as Error).message).toMatch(/its issue is closed/);
+    expect(gh.issue(REPO, 1)).toMatchObject({ state: 'closed', labels: ['hopper', 'hopper:failed'] });
   });
 
   it('cancelled: claimed removed, no comment', async () => {

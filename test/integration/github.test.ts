@@ -207,6 +207,26 @@ describe('GitHub issue → job → issue', () => {
     expect((await a.job(second.id)).status).toBe('failed');
   });
 
+  it('Run again on a failed job whose issue is closed is refused with 409 and records nothing (issue #348)', async () => {
+    const gh = createFakeGitHub();
+    const a = await boot(gh);
+    const token = await a.login();
+    const issue = gh.createIssue({ repo: REPO, body: '', labels: ['hopper'] });
+    const jobsFor = async () => (await a.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=1000')).body.jobs.filter((j) => j.source?.key === issue.url);
+    await a.sync();
+    await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:failed'), { what: 'hopper:failed' });
+    const [first] = await jobsFor();
+    gh.closeIssue(REPO, issue.number);
+
+    const r = await a.ui<{ error: string }>(`/ui/api/jobs/${first!.id}/rerun`, {}, { token });
+    expect(r.status).toBe(409);
+    expect(r.body.error).toMatch(/cannot run again: its issue is closed/);
+    expect(gh.issue(REPO, issue.number)).toMatchObject({ state: 'closed', labels: expect.arrayContaining(['hopper:failed']) });
+    expect(await a.events('types=job.rerun')).toEqual([]);
+    await a.sync();
+    expect(await jobsFor()).toHaveLength(1);
+  });
+
   it('reopening a finished issue and removing hopper:done runs it again (issue #186)', async () => {
     const gh = createFakeGitHub();
     const a = await boot(gh);
