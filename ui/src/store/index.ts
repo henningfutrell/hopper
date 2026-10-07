@@ -200,7 +200,11 @@ export function onDomainEvent(e: DomainEvent) {
   }
 }
 export const onDelivery = (d: WebhookDelivery) => set({ deliveries: upsert(state().deliveries, d, (x) => x.id === d.id, CAP.deliveries) });
-export const onSource = (src: SourceStatus) => set({ sources: upsert(state().sources, src, (x) => x.name === src.name, Infinity) });
+/** A source synced: its jobs may have changed with no event — a failed job's issue closed or reopened (issue #362). */
+export const onSource = (src: SourceStatus) => {
+  set({ sources: upsert(state().sources, src, (x) => x.name === src.name, Infinity) });
+  refreshLiveSoon();
+};
 export const setConn = (conn: Conn) => set({ conn });
 
 /** True when the page must show only the landing page, with the ways to sign in: logged out (issues #167, #213). */
