@@ -191,6 +191,15 @@ describe('readTurn', () => {
     expect(t.lastLine).toBe('Writing hello.txt');
   });
 
+  it.each([
+    ['* Crafting… (18m 43s · ↓ 41.8k tokens)'],
+    ['· Hashing… (1h 2m · ↓ 86.3k tokens)'],
+  ])('does not report the tip under the plain-glyph spinner %j as progress (seen live)', (spinner) => {
+    const lines = ['❯ go', '● Bash(git show)', '  ⎿  grep "^+" | head -20', '', spinner, ...UNDER_SPINNER.slice(1)];
+    const t = readTurn(screen(lines, CHROME), 'go');
+    expect(t.lastLine).toBe('grep "^+" | head -20');
+  });
+
   it('reads the marker of a turn that ends above the update notice', () => {
     const t = readTurn(screen(['❯ go', '● All done.', '  HOPPER_DONE', '', '             ✔ Update installed · Restart to update'], CHROME), 'go');
     expect(t.lastMarker).toBe('done');
