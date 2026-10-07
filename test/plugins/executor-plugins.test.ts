@@ -38,7 +38,7 @@ describe('built-in executor plugins are listed', () => {
 
 describe('cursor-agent (issue #142)', () => {
   it('options: Cursor\'s CLI agent, allowed to run its tools and trusting the work tree; every option command-bearing', () => {
-    expect(options(cursorAgent)).toEqual({ bin: 'cursor-agent', args: ['--force', '--trust'], cwd: '~', sshBin: 'ssh' });
+    expect(options(cursorAgent)).toEqual({ bin: 'cursor-agent', args: ['--force', '--trust'], cwd: '~/hopper-jobs', sshBin: 'ssh' });
     // ~ resolves on the job's machine, not here (issue #323).
     expect(options(cursorAgent, { cwd: '~/w' }).cwd).toBe('~/w');
     const p = props(cursorAgent);
@@ -67,7 +67,7 @@ describe('herdr-claude', () => {
   it('options default to what the env defaulted to before plugins', () => {
     expect(options(herdrClaude)).toEqual({
       bin: 'herdr', claudeBin: 'claude', session: 'hopper', yolo: true, args: [],
-      cwd: '~', trustWorkdir: true, pollMs: 1000, idleNudgeMs: 20000,
+      cwd: '~/hopper-jobs', trustWorkdir: true, pollMs: 1000, idleNudgeMs: 20000,
     });
   });
 

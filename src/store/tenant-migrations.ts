@@ -11,6 +11,7 @@ import { connectedAccounts } from './migration-connected-accounts.ts';
 import { levelsNamedAsLevels } from './migration-level-names.ts';
 import { yoloOption } from './migration-yolo.ts';
 import { jobRepositoriesSetting } from './migration-job-repositories.ts';
+import { jobsDirWorkTrees } from './migration-jobs-dir.ts';
 
 type Migration = string | ((db: Db) => void);
 
@@ -167,6 +168,8 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
   yoloOption,
   // 10: a connected account's job repositories are the user's setting, out of its source's options (issue #321).
   jobRepositoriesSetting,
+  // 11: a work tree stored as the home is the jobs directory (issue #314).
+  jobsDirWorkTrees,
 ];
 
 /** A user schema's version once migrated. */

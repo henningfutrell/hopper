@@ -290,11 +290,12 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
       record('runInPane', paneId, command);
       const p = livePane(paneId);
       if (droppedRuns-- > 0) return;
-      // `cd 'dir' && … && printf 'a%s\n' b || printf 'a%s\n' c`: c when the shell cannot enter dir, else b.
-      const entered = /^cd '([^']*)' && .*printf '([^']*)%s\\n' (\S+) \|\| printf '[^']*%s\\n' (\S+)$/.exec(command);
+      // `[mkdir -p 'dir' && ]cd 'dir' && … && printf 'a%s\n' b || printf 'a%s\n' c`: c when the shell
+      // cannot enter dir (and did not make it), else b.
+      const entered = /^(mkdir -p '[^']*' && )?cd '([^']*)' && .*printf '([^']*)%s\\n' (\S+) \|\| printf '[^']*%s\\n' (\S+)$/.exec(command);
       if (entered) {
-        const [, dir, prefix, ok, bad] = entered;
-        const unusable = (o.unusableDirs ?? []).includes(dir!);
+        const [, made, dir, prefix, ok, bad] = entered;
+        const unusable = !made && (o.unusableDirs ?? []).includes(dir!);
         p.lines.push(`$ ${command}`, ...(unusable ? [`cd: no such file or directory: ${dir}`, `${prefix}${bad}`] : [`${prefix}${ok}`]), '$ ');
         return;
       }

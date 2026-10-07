@@ -6,6 +6,7 @@
 // own herdr (binary and session from its `ssh` machine instance), reached over ssh (design.md "Attached machines"),
 // or a client target's herdr, through its reverse tunnel (design.md "Client targets").
 import { join } from 'node:path';
+import { JOBS_DIR } from '../../../domain/types.ts';
 import type { HerdrClient, RemoteHerdr } from '../../../executors/herdr/index.ts';
 import { claudeArgsFor, createHerdrClaudeExecutor, createHerdrCliClient } from '../../../executors/herdr/index.ts';
 import { clientSocket } from '../../../executors/client.ts';
@@ -46,7 +47,7 @@ export function herdrClaudePlugin(seam?: HerdrClient): PluginDefinition<'executo
       }),
       args: z.array(z.string()).default([])
         .meta({ commandBearing: true, description: "Claude Code's other arguments: allowed tools, MCP config (yolo decides the permissions)" }),
-      cwd: z.string().min(1).default('~')
+      cwd: z.string().min(1).default(JOBS_DIR)
         .meta({ commandBearing: true, description: 'working directory of a job whose payload names none' }),
       trustWorkdir: z.boolean().default(true),
       pollMs: z.number().int().positive().default(1000),

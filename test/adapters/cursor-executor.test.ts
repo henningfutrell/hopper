@@ -152,6 +152,12 @@ describe('cursor-agent executor', () => {
     });
   });
 
+  it('refuses the machine\'s home as the work tree: Cursor never starts (issue #314)', async () => {
+    expect(await ex.run(ctxFor({ prompt: 'p', cwd: '~' }, { ...HERE, id: 'laptop', ssh: 'laptop', home: dir }).ctx)).toEqual({
+      kind: 'failed', error: 'the work tree ~ on laptop is its home or above it: a job runs only in a directory below the home; give its job source or executor a work tree such as ~/hopper-jobs',
+    });
+  });
+
   it('refuses a container target and a client target: Cursor runs only here or over ssh', async () => {
     expect(await ex.run(ctxFor({ prompt: 'p' }, { ...HERE, id: 'box', docker: 'c' }).ctx)).toEqual({ kind: 'failed', error: 'cursor-agent does not run on container target box: it has no agent' });
     expect(await ex.run(ctxFor({ prompt: 'p' }, { ...HERE, id: 'studio', client: { tokenEnv: 'T' } }).ctx)).toEqual({ kind: 'failed', error: 'cursor-agent does not run on client target studio: a client serves herdr only' });

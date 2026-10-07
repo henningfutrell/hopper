@@ -1,8 +1,8 @@
 // The herdr-claude job payload: validation at push time, resolution at run time.
 
 import { homedir } from 'node:os';
-import { join } from 'node:path';
-import type { MachineSnapshot } from '../../domain/types.ts';
+import { posix } from 'node:path';
+import { JOBS_DIR, type MachineSnapshot } from '../../domain/types.ts';
 
 export const DEFAULT_EXPECTED_MS = 600000;
 export const DEFAULT_TIMEOUT_MS = 3600000;
@@ -11,6 +11,8 @@ export interface ClaudeJobPayload {
   prompt: string;
   cwd: string;
   model?: string;
+  /** The work tree is the jobs directory or under it: the pane's shell makes it when missing (issue #314). */
+  makeWorkTree?: boolean;
   /** Extra environment for the job's tab (the executor adds HOPPER_JOB_ID). */
   env: Record<string, string>;
   expectedMs: number;
@@ -42,16 +44,27 @@ export function validatePayload(payload: Record<string, unknown>): string | null
   return env === undefined ? null : validateEnv(env);
 }
 
+const normal = (path: string): string => posix.normalize(path).replace(/(.)\/+$/, '$1');
+
 /**
  * The work tree on the lane's machine (issue #323): `~` is that machine's home, this process's only
- * for this machine; an attached machine's is the one its probe found. An error when it is not known yet.
+ * for this machine; an attached machine's is the one its probe found. An error when it is not known yet,
+ * and when the work tree is that home, above it, or the root (issue #314): a job never runs with the home
+ * as its root. `make`: it is the jobs directory or under it, so the pane's shell makes it when missing.
  */
-export function workTreeOn(machine: MachineSnapshot, cwd: string): { cwd: string } | { error: string } {
-  if (cwd !== '~' && !cwd.startsWith('~/')) return { cwd };
+export function workTreeOn(machine: MachineSnapshot, cwd: string): { cwd: string; make: boolean } | { error: string } {
   const attached = machine.ssh !== undefined || machine.client !== undefined || machine.docker !== undefined;
   const home = attached ? machine.home : homedir();
-  if (!home) return { error: `cannot resolve the work tree ${cwd} on ${machine.id}: its home is not known yet (the machine has not answered a probe)` };
-  return { cwd: cwd === '~' ? home : join(home, cwd.slice(2)) };
+  const tilde = cwd === '~' || cwd.startsWith('~/');
+  if (tilde && !home) return { error: `cannot resolve the work tree ${cwd} on ${machine.id}: its home is not known yet (the machine has not answered a probe)` };
+  const resolved = normal(tilde ? posix.join(home!, cwd.slice(1)) : cwd);
+  const ownHome = home ? normal(home) : undefined;
+  if (resolved === '/' || (ownHome && (resolved === ownHome || ownHome.startsWith(`${resolved}/`)))) {
+    return { error: `the work tree ${cwd} on ${machine.id} is its home or above it: a job runs only in a directory below the home; give its job source or executor a work tree such as ${JOBS_DIR}` };
+  }
+  const jobs = ownHome ? posix.join(ownHome, JOBS_DIR.slice(2)) : undefined;
+  const make = jobs !== undefined && (resolved === jobs || resolved.startsWith(`${jobs}/`));
+  return { cwd: tilde ? resolved : cwd, make };
 }
 
 /** Assumes a validated payload. `cwd` keeps its `~`: workTreeOn resolves it on the lane's machine. */

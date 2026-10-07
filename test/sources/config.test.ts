@@ -19,7 +19,7 @@ const SHARED_DEFAULTS = {
   priorityLabels: { 'hopper:high': 75, 'hopper:low': 25 },
   defaultPriority: 50,
   repoPaths: {},
-  defaultCwd: '~',
+  defaultCwd: '~/hopper-jobs',
   executor: 'herdr-claude',
   model: null,
   recentComments: 10,

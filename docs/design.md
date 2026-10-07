@@ -38,7 +38,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 |-----|------|-----------------|
 | `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts; `machines.ts` attached machines and their edit; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate), ports (`ports.ts`, re-exporting the store's from `store.ts`) | anything else in `src/` |
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock | everything but `domain/` |
-| `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations (the instance's `migrations.ts` with migration 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265) | engine, http, decider |
+| `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations (the instance's `migrations.ts` with migration 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-jobs-dir.ts` (tenant 11) moves a work tree stored as `~` to the jobs directory (issue #314); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265) | engine, http, decider |
 | `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), identity → user (`identities.ts`: link or provision), the leftover default admin account folded into the first GitHub admin's user at start (`leftover-admin.ts`, issue #265) | http, decider |
 | `src/webhooks/` | signing, dispatcher, retry/backoff, the secret of a subscription from the runtime (`dispatcher.ts`), the UI edit of the subscriptions (`edit.ts`, rows in the store) | engine, http, decider |
 | `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, the plugins config (`plugins-config.ts`) + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt, `escalation-level/anthropic-api/` asks the Claude API with the same prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-gh/`, `job-source/github-app/` and `job-source/github-account/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser); `usage-source/command-usage/` reads any agent framework's usage and account from a command that prints them as JSON; `usage-source/polled.ts` the background refresh both share, `usage-source/run.ts` their command runner; `notifier/grokbot-routine/` is the Grok Bot routine webhook — env-file reader and notifier; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
@@ -527,6 +527,19 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   in a container has a home of its own that does not exist on the host; resolving `~` there sent
   every job to it. An attached machine whose home is not known yet (no probe answered, or a client
   release older than this) fails a job under `~` at once; an absolute work tree needs no home.
+- **Never the home** (issue #314). A job never runs with its machine's home as its work tree. The
+  executor (herdr-claude and cursor-agent, in `workTreeOn`) resolves the work tree on the lane's
+  machine, normalised (`~/..`, a trailing slash), and fails the job at once, before any tab or agent
+  starts, when it is that home, above it, or `/`
+  (`the work tree <cwd> on <machine> is its home or above it: …`). A machine whose home is not known
+  yet still refuses `/`. The default work tree is the **jobs directory** `~/hopper-jobs`
+  (`JOBS_DIR`, `src/domain/types.ts`): the herdr-claude and cursor-agent `cwd` and the GitHub
+  sources' `defaultCwd` default to it, and tenant migration 11 moves a stored `~` (executor `cwd`,
+  source `defaultCwd`, a `repoPaths` value) to it. The jobs directory, and a work tree under it, is
+  made when missing — the scratch command starts `mkdir -p <cwd> &&` — so a fresh machine runs a
+  default job; any other missing work tree still fails as above (#323). Per-machine and per-repository
+  defaults are #324's. This is direction plus refusal, not a sandbox: an agent can still write where
+  its OS user can ("Sandboxing jobs: mechanisms compared").
 - **The prompt says so.** The footer's work-tree line names the cwd and the scratch dir, and
   tells the job to ask rather than work in a tree outside it.
 
@@ -2765,7 +2778,7 @@ hopper supports both. A container is never taken to be the only shape a job has.
 | Part | Stands | Carried by |
 |------|--------|------------|
 | Container sandbox for agent jobs | not built: a **container target** runs commands only, and an **agent box** is a test machine reached over ssh, not locked down ("Agent boxes", residual risk) | #314, #308; mechanisms compared in #315 |
-| Work tree never the home root | not enforced: a job's default `cwd` is the home | #314 |
+| Work tree never the home root | enforced at job start: a work tree that is the machine's home, above it, or `/` fails the job; the default is the jobs directory `~/hopper-jobs` ("Work tree" → "Never the home") | #314 |
 | Operator-led claim and its timeline designation | not built | #318 |
 | Operator-led progress | protocol settled and seen end to end (the pickup record), not read by the daemon | #319 ("Pickups on agent boxes") |
 | Operator-led check-in | built: the closing pull request, as for any job | — |
@@ -2983,9 +2996,9 @@ and some jobs are still done by hand in Cursor or a like IDE (#317). Related: #3
 
 - **Work trees** ("Work tree", #121, #323): the pane opens in the job's cwd, `TMPDIR` and the scratch
   dir point inside it, the footer tells the job to stay in it. Direction, not enforcement: the
-  process can still write anywhere its OS user can. `herdr-claude`'s and `cursor-agent`'s `cwd`
-  default is `~`, so a job whose payload names no work tree runs with the home as its root — #314
-  is not met by the defaults.
+  process can still write anywhere its OS user can. At the time of this research `herdr-claude`'s
+  and `cursor-agent`'s `cwd` default was `~`, so a job whose payload named no work tree ran with the
+  home as its root. Step 1 below has since shipped (#314, "Work tree" → "Never the home").
 - **Container targets** ("Container targets", #58): `docker exec` through a socket proxy, no network,
   no agent, no herdr. A real sandbox, for the `command` executor only.
 - **Agent boxes** ("Agent boxes", #295; "Pickups on agent boxes", #319): one container per agent CLI,

@@ -4,6 +4,7 @@
 // on each machine it runs on (`cursor-agent login`, or CURSOR_API_KEY in that machine's environment):
 // the hopper holds no Cursor credential.
 import { join } from 'node:path';
+import { JOBS_DIR } from '../../../domain/types.ts';
 import { createCursorExecutor } from '../../../executors/index.ts';
 import { hopperSshAuth } from '../../../executors/ssh.ts';
 import type { PluginDefinition } from '../../sdk.ts';
@@ -18,7 +19,7 @@ const cursorAgent: PluginDefinition<'executor', CursorAgentOptions> = {
     bin: z.string().min(1).default('cursor-agent').meta({ commandBearing: true, description: "Cursor's CLI agent on the job's machine" }),
     args: z.array(z.string()).default(['--force', '--trust'])
       .meta({ commandBearing: true, description: "its own arguments: --force runs its tools without asking, --trust trusts the work tree" }),
-    cwd: z.string().min(1).default('~')
+    cwd: z.string().min(1).default(JOBS_DIR)
       .meta({ commandBearing: true, description: 'working directory of a job whose payload names none' }),
     sshBin: z.string().min(1).default('ssh').meta({ commandBearing: true, description: 'the ssh client, for ssh targets' }),
   }),

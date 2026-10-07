@@ -19,6 +19,13 @@ export type JobStatus =
   | 'cancelled'
   | 'rejected'; // turned away at the queue gate: kept, never run
 
+/**
+ * The jobs directory (issue #314): the default work tree, below the home of the job's machine. A job never
+ * runs with that home, or anything above it, as its work tree; this directory, and a work tree under it,
+ * is made when missing.
+ */
+export const JOBS_DIR = '~/hopper-jobs';
+
 export const TERMINAL_STATUSES: readonly JobStatus[] = ['finished', 'failed', 'cancelled', 'rejected'];
 
 /**
