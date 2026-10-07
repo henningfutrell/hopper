@@ -14,6 +14,7 @@ import { jobRepositoriesSetting } from './migration-job-repositories.ts';
 import { jobsDirWorkTrees } from './migration-jobs-dir.ts';
 import { herdrByName } from './migration-herdr-by-name.ts';
 import { clientTargetsDialIn } from './migration-client-key.ts';
+import { noGhSource } from './migration-no-gh-source.ts';
 
 type Migration = string | ((db: Db) => void);
 
@@ -176,6 +177,8 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
   herdrByName,
   // 13: a client target dials in with its machine key (issue #308): one holding a token variable leaves `machines`.
   clientTargetsDialIn,
+  // 14: the gh CLI job source is gone (issue #359): its instances leave `jobSources`, its repos become the job repositories.
+  noGhSource,
 ];
 
 /** A user schema's version once migrated. */

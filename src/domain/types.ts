@@ -467,20 +467,6 @@ export { ENDED_STATUSES, IN_FLIGHT_STATUSES, ADMIN_ID } from './users.ts';
 export type { BranchChannel, InstallInfo, UpdateApply, UpdateChannel, UpdateRelease, UpdateSettings, UpdateState, UpdateStatus, VersionEntry, VersionHistory } from './update.ts';
 export { BRANCH_CHANNELS, isBranchChannel, UPDATE_CHANNELS } from './update.ts';
 
-// ---- gh login (issue #138) -------------------------------------------------------------
-
-/**
- * The gh CLI's login, as GET /api/gh-login reports it: gh's device flow run by the hopper, its
- * device code shown in the UI until the GitHub user approves it at `verificationUri`. gh keeps the
- * token in its own config; the hopper keeps none.
- */
-export type GhLoginStatus =
-  | { state: 'logged-in'; account?: string }
-  | { state: 'logged-out' }
-  | { state: 'waiting'; userCode: string; verificationUri: string }
-  | { state: 'failed'; error: string }
-  | { state: 'unavailable'; reason: string };
-
 // ---- Connected accounts (issue #214): src/domain/connected-accounts.ts --------------------------
 
 export { CONNECTED_ACCOUNT_PROVIDERS, CONNECTED_VIA } from './connected-accounts.ts';

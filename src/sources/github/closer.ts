@@ -1,4 +1,4 @@
-// The pull requests of an issue, over GraphQL, shared by the gh CLI and the App adapters: what
+// The pull requests of an issue, over GraphQL, shared by the App and the connected account adapters: what
 // closed it (the last ClosedEvent's closer — only a merged pull request counts; a person, a commit
 // or a project closing it is undefined), and the open pull requests whose merge will close it
 // (`closedByPullRequestsReferences`: a closing keyword, on a pull request to the default branch).

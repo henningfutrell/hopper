@@ -6,7 +6,7 @@
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type {
-  Clock, EscalationLevel, Executor, ExecutorRegistry, GhLogin, JobSource, PluginsView, QuestionService, Router, SettableUsageSource, SourceRegistry,
+  Clock, EscalationLevel, Executor, ExecutorRegistry, JobSource, PluginsView, QuestionService, Router, SettableUsageSource, SourceRegistry,
   UserStore, WebhookDispatcher,
 } from '../domain/ports.ts';
 import type { AttachedMachine, ConnectedAccountProvider, HostKeyOffer, Job, Question, User } from '../domain/types.ts';
@@ -34,11 +34,11 @@ import { localPlugin, startHerdrSession } from '../plugins/machine-source/local/
 import { createPluginHost, type BuiltJobSource, type PluginHost } from '../plugins/index.ts';
 import { splitSources } from './job-sources.ts';
 import { githubAppPlugin } from '../plugins/job-source/github-app/index.ts';
-import { githubGhPlugin } from '../plugins/job-source/github-gh/index.ts';
+import { githubAccountPlugin } from '../plugins/job-source/github-account/index.ts';
 import { grokbotRoutinePlugin } from '../plugins/notifier/grokbot-routine/index.ts';
 import { createQuestionService } from '../questions/index.ts';
 import { runtimeSecrets } from '../secrets/runtime.ts';
-import { createGhLogin, createSourceSync, withFixedStatuses, type GitHubApi, type SourceSync } from '../sources/index.ts';
+import { createSourceSync, withFixedStatuses, type GitHubApi, type SourceSync } from '../sources/index.ts';
 import { createConnectedAccounts, type ConnectedAccountsService } from '../connected-accounts/service.ts';
 import { installations, whoIs } from '../connected-accounts/identity.ts';
 import { renewal } from '../connected-accounts/renewal.ts';
@@ -46,7 +46,6 @@ import { CLIENT_SECRET_VARIABLE } from '../connected-accounts/web-flow.ts';
 import { createWebhooksEditor, type WebhooksEditor } from '../webhooks/edit.ts';
 import { createWebhookDispatcher, secretProblem } from '../webhooks/index.ts';
 import { userCliEnv, userSecrets, userWorkDir } from './env.ts';
-import { userProcessEnv } from '../executors/env.ts';
 
 /** Doubles at ports.ts seams for one user's parts, for integration tests. Production passes none. */
 export interface UserSeams {
@@ -54,7 +53,7 @@ export interface UserSeams {
   herdr?: HerdrClient;
   /** Registered after the configured executor instances. */
   executors?: Executor[];
-  /** Replaces the `gh` CLI adapter of every github-gh job source (detection then says available). */
+  /** Replaces the connected account's adapter of every github-account job source; the account still has to be connected. */
   github?: GitHubApi;
   /** Replaces the App adapter of every github-app job source (detection says available; paused() still follows the app file). */
   githubApp?: GitHubApi;
@@ -127,7 +126,6 @@ export interface UserRuntime {
   questions: QuestionService;
   dispatcher: WebhookDispatcher;
   executors: ExecutorRegistry;
-  ghLogin: GhLogin;
   /** The user's connected GitHub account (issue #214). */
   connectedAccounts: ConnectedAccountsService;
   webhooksEditor: WebhooksEditor;
@@ -148,7 +146,7 @@ function withSeams(seams: UserSeams) {
   return BUILTIN_PLUGINS.map((p) => {
     if (p.id === 'herdr-claude') return herdrClaudePlugin(seams.herdr);
     if (p.id === 'local' && seams.herdrSession) return localPlugin(seams.herdrSession);
-    if (p.id === 'github-gh' && seams.github) return githubGhPlugin(seams.github);
+    if (p.id === 'github-account' && seams.github) return githubAccountPlugin(seams.github);
     if (p.id === 'github-app' && seams.githubApp) return githubAppPlugin(seams.githubApp);
     if (p.id === 'grokbot-routine' && seams.grokbotBaseMs) return grokbotRoutinePlugin({ baseMs: seams.grokbotBaseMs });
     return p;
@@ -343,8 +341,6 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   let stopped: Promise<void> | undefined;
   return {
     user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed), plugins, host, questions, dispatcher, executors,
-    // gh login (issue #138): the gh on the daemon's PATH, the github-gh source's default `bin`, with the user's gh config.
-    ghLogin: createGhLogin({ bin: 'gh', env: Object.keys(cliEnv).length === 0 ? o.env : userProcessEnv(cliEnv, o.env) }),
     connectedAccounts,
     webhooksEditor: createWebhooksEditor({ store }),
     // The variable the user's runtime reads: the subscription's, under the user's prefix.

@@ -11,7 +11,7 @@
 // mutation stays behind a UI session (src/http/ui/guard.ts).
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { SignIn } from '../auth/index.ts';
-import type { ConnectedAccounts, GhLogin, PluginsView, QuestionService, SourceRegistry, UserStore, WebhookDispatcher } from '../domain/ports.ts';
+import type { ConnectedAccounts, PluginsView, QuestionService, SourceRegistry, UserStore, WebhookDispatcher } from '../domain/ports.ts';
 import type { Identity, UiRole, User } from '../domain/types.ts';
 import type { Engine } from '../engine/index.ts';
 import type { WebhooksEditor } from '../webhooks/edit.ts';
@@ -31,7 +31,6 @@ export interface TenantParts {
   registry: SourceRegistry;
   plugins: PluginsView;
   dispatcher: WebhookDispatcher;
-  ghLogin: GhLogin;
   /** The user's connected GitHub account (issue #214). */
   connectedAccounts: ConnectedAccounts;
   webhooksEditor: WebhooksEditor;

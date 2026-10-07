@@ -5,7 +5,7 @@ import type {
   Advice, DomainEvent, HostKeyOfferOutcome, PreSortReject, ExecutorUnavailable, Job, JobId, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit,
   PluginsEditOutcome, PluginsReport, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule, LaneId, MachineSnapshot,
   Question, QuestionAttempt, SourceStatus, UsageReading, UsageSourceState, WebhookDelivery, InstallInfo, UpdateSettings, UpdateStatus, VersionHistory,
-  GhLoginStatus, ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport,
+  ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport,
 } from './types.ts';
 import type { UserStore } from './store.ts';
 
@@ -380,8 +380,8 @@ export interface JobSource {
   /** Facts for SourceStatus.detail. */
   describe(): Record<string, unknown>;
   /**
-   * A reason the source must not discover new items right now (e.g. the gh source while a
-   * GitHub App is configured, or the app source while none is). While paused the sync loop
+   * A reason the source must not discover new items right now (e.g. a connected account's source
+   * while none is connected, or the app source while no app is configured). While paused the sync loop
    * skips `discover` but still runs `check` and reports for the source's own active jobs;
    * status `disabled` when it has none, with `detail.paused` = the reason. Absent → never paused.
    */
@@ -508,15 +508,6 @@ export interface Updater {
   settings(patch: Partial<UpdateSettings>): UpdateStatus;
   /** The version history of the installed commit; checks first when the update repository lacks it. */
   history(): Promise<VersionHistory>;
-}
-
-/** gh login from the UI (issue #138): GET /api/gh-login, POST /ui/api/gh-login. */
-export interface GhLogin {
-  status(): Promise<GhLoginStatus>;
-  /** Start gh's device flow and answer once it shows its device code; a waiting login answers its own code. */
-  start(): Promise<GhLoginStatus>;
-  /** End a waiting login; answers the new status. */
-  cancel(): Promise<GhLoginStatus>;
 }
 
 /** A token GitHub granted the hopper's app, with who it belongs to (issue #214): a GitHub sign-in hands it to the session's user. */

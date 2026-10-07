@@ -9,7 +9,6 @@ import type { Clock, InstanceStore, PluginStoreView, Updater } from '../domain/p
 import { accountRoutes } from './accounts.ts';
 import { installErrorHandling } from './errors.ts';
 import { connectedAccountsRoutes } from './connected-accounts.ts';
-import { ghLoginRoutes } from './gh-login.ts';
 import { installHostGuard } from './host-guard.ts';
 import type { Lan } from './reach.ts';
 import { jobRoutes } from './jobs.ts';
@@ -80,7 +79,6 @@ export function createServer(o: ServerOptions): FastifyInstance {
   webhookRoutes(app, tenant);
   sourceRoutes(app, tenant);
   accountRoutes(app, tenant);
-  ghLoginRoutes(app, tenant);
   connectedAccountsRoutes(app, tenant);
   sseRoutes(app, tenant);
   updateRoutes(app, o);
