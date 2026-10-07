@@ -1,9 +1,10 @@
-// Sign-in (issues #185, #200, #237, #256), as sign-in works: people sign in with GitHub through the
+// Sign-in (issues #185, #200, #237, #256, #264), as sign-in works: people sign in with GitHub through the
 // hopper's app, signing in also connects the GitHub their jobs work through, and the first of them is
 // the admin (issues #214, #239) — the page says so, names them, and says who else gets in. Then the other
 // ways to sign in, optional (a directory, an identity provider, an auth gateway): each on or off, moved
 // among themselves, edited in a form of its type's fields or removed; one added from the form of the
-// chosen type. Then device links (the login code) and no sign-in, each saying what it does. Every switch
+// chosen type; whoever signs in one of those ways connects their GitHub in Sources for their jobs.
+// Then device links (the login code) and no sign-in, each saying what it does. Every switch
 // says On or Off in words. The hopper keeps no password accounts of its own. No YAML: every setting is a
 // field. In Settings, admin only (GET /api/realms). Every change is POST /ui/api/realms against the
 // version read, and applies at once; the daemon refuses one that would not load, or that would end your
@@ -126,7 +127,7 @@ export function Realms() {
         action={!editing ? <Button size="xs" variant="outline" className="gap-1" onClick={() => { setError(null); setEditing({ draft: emptyDraft('oidc') }); }}><Plus />Add realm</Button> : undefined}>
         <div data-section="other" className="space-y-3 text-sm">
           <p className="text-muted-foreground">
-            Optional, for company accounts: a directory (LDAP or Active Directory: the directory username and password), an identity provider (OpenID Connect or SAML: a sign-in button each), or an auth gateway in front of the hopper that already signed people in. Directories are tried, and buttons shown, in this order.
+            Optional, for company accounts: an identity provider (OpenID Connect or SAML: a sign-in button each), a company directory (LDAP or Active Directory), or an auth gateway in front of the hopper that already signed people in. Whoever signs in one of these ways still connects their GitHub in Sources: it is what their jobs work through. Buttons are shown, and directories tried, in this order.
           </p>
           {editor('other')}
           {others.length === 0 ? <Empty>None: GitHub is the only way to sign in.</Empty> : list(others)}

@@ -55,7 +55,9 @@ The page is laid out the way sign-in works (issue #256), in four parts. Every sw
 2. **Other ways to sign in**: optional — a directory (LDAP or Active Directory), an identity provider
    (OpenID Connect or SAML), or an auth gateway in front of the hopper. Each row has its type, its
    switch, who gets in, and — for OIDC and SAML — the callback URL (and SAML metadata URL) to register
-   with the identity provider, ready to copy. None: GitHub is the only way to sign in.
+   with the identity provider, ready to copy. The part says that whoever signs in one of these ways
+   still connects their GitHub in **Sources** for their jobs ([GitHub](#github)); it names no username
+   and password form, since the hopper keeps no passwords of its own. None: GitHub is the only way to sign in.
 3. **Device links**: the login code on or off. On, someone signed in can open the hopper on another
    device by a one-time link or QR code, and an admin can give a new user a link that signs them in.
    Off, neither works.

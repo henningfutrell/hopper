@@ -9,6 +9,7 @@ numbers, no commit hashes, no file names, no code words. Never edit a line once 
 update notice would show it again as new.
 
 - In Sources, under your GitHub account, you now choose which repositories jobs may come from: filter the list, tick the ones you want, and save; it shows how many you chose of how many there are, and you can change it any time without disconnecting. Until you choose at least one, no new jobs come in.
+- The Sign-in settings no longer mention a username and password: they say that people who sign in with a company account still connect their GitHub in Sources, which is what their jobs work through.
 - Signed in with GitHub, Sources now offers Sign out for your GitHub account instead of a misleading Disconnect; signed in another way, the button says it stops working through GitHub and keeps you signed in.
 - Once you are signed in with GitHub, Sources no longer shows an older GitHub source in error beside your GitHub connection.
 - Machines attached over ssh now come online for people signed in to the hopper; before, every one stayed offline with a "too long" error.

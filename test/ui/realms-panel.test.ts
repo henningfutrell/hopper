@@ -228,7 +228,7 @@ describe('Settings: Sign-in', () => {
     await vi.waitFor(() => expect(rows()).toHaveLength(2));
     const other = section('other').querySelector('p')!.textContent;
     expect(other).toMatch(/company/);
-    expect(other).toMatch(/connect their GitHub.*Sources/);
+    expect(other).toMatch(/connects their GitHub in Sources/);
     expect(other).not.toMatch(/username|password/i);
   });
 
