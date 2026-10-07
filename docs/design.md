@@ -2732,6 +2732,47 @@ and the key.
 **Residual risk.** The client's key logs in as the daemon's user, restricted to the relay; the relay is
 the only thing it can run. The daemon trusts nothing from a client but the herdr answers it signed.
 
+## Job shapes: sandboxed and operator-led (issue #316, 2026-10-06 — owner direction)
+
+Owner direction, for the sandbox work (#314, #308, #315): container sandboxes (Podman or Docker) are the
+primary, enforced path; and some jobs are done by hand in Cursor or a like IDE, not in a container. The
+hopper supports both. A container is never taken to be the only shape a job has.
+
+| Job shape | Who does the work | Where | Isolation | Check-in |
+|-----------|-------------------|-------|-----------|----------|
+| **Sandboxed** (primary) | an executor the hopper runs | a **container sandbox**, Podman or Docker | enforced by the container | the closing pull request |
+| **Operator-led** | a person, or an IDE agent they drive | the operator's own IDE and work tree | the operator's; the hopper enforces none | the closing pull request |
+
+**What follows, for every change after this one.**
+
+1. **Both shapes are first-class.** A change that makes a container the only way a job is claimed, run
+   or completed breaks this direction. So does one that makes operator-led work a hack beside it.
+2. **Enforcement belongs to what the hopper runs.** The sandbox confines the jobs the hopper dispatches
+   to an executor; it never reaches into an operator's IDE. An operator-led job runs nothing of the
+   hopper's, so there is nothing to confine — and nothing to wait for but its source.
+3. **One check-in for both.** The closing pull request reaching its completion ("Done means complete").
+   No shape has its own gate, and none needs a hopper IDE plugin ("Work by hand in an IDE: how it checks
+   in", settled there).
+4. **One claim per issue, either shape.** `hopper:claimed` holds an issue against dispatch whichever shape
+   claimed it: an operator-led claim has no lane and no executor, so the decider never sends the same
+   issue to a container. Released, the issue is the queue's again (#318).
+5. **Podman and Docker alike.** A container sandbox names a container engine by its socket, as a container
+   target names its docker socket ("Target authentication"); nothing may assume one engine's CLI only.
+   The deploy already runs on either (`docs/deploy.md`).
+
+**Today, against the direction.**
+
+| Part | Stands | Carried by |
+|------|--------|------------|
+| Container sandbox for agent jobs | not built: a **container target** runs commands only, and an **agent box** is a test machine reached over ssh, not locked down ("Agent boxes", residual risk) | #314, #308; mechanisms compared in #315 |
+| Work tree never the home root | not enforced: a job's default `cwd` is the home | #314 |
+| Operator-led claim and its timeline designation | not built | #318 |
+| Operator-led progress | protocol settled and seen end to end (the pickup record), not read by the daemon | #319 ("Pickups on agent boxes") |
+| Operator-led check-in | built: the closing pull request, as for any job | — |
+
+**Not built here.** This section records the direction and what it binds; no daemon change. Each row above
+lands with its own issue, test first.
+
 ## Agent boxes (issue #295, 2026-10-06)
 
 Owner request: for testing, containers that run codex, cursor, omp, opencode and the like, all attached
