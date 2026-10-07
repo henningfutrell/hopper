@@ -39,8 +39,8 @@ export interface TurnView {
 
 const GUTTER = /^[\s●⎿▎]+/;
 const STATUS_LINE = /^\s*[✻✶✳✢✽]\s/; // Claude Code spinner / "Cooked for 5s" line
-/** Spinner frames drawn with plain glyphs: "· Symbioting… (20s · ↓ 121 tokens)". */
-const SPINNER_VARIANT = /^\s*[·*•∗]\s+\S.*…\s*\(\d+s\b/;
+/** Spinner frames drawn with plain glyphs: "· Symbioting… (20s · ↓ 121 tokens)", "* Crafting… (18m 43s · …)". */
+const SPINNER_VARIANT = /^\s*[·*•∗]\s+\S.*…\s*\(\d+[hms]\b/;
 /** The hint under a running Bash call. */
 const BACKGROUND_HINT = /^\s*\(ctrl\+b to run in background\)\s*$/;
 const SEPARATOR = /^\s*─{3,}/;
@@ -167,7 +167,8 @@ export function readTurn(text: string, anchor: string): TurnView {
   const lines = turnLines(all, at);
   let markerIndex = -1;
   lines.forEach((l, i) => { if (markerOf(l)) markerIndex = i; });
-  const nonEmpty = lines.filter((l) => markerOf(l) === null).map(stripGutter).filter((l) => l !== '');
+  // A bare "…" is where the CLI truncated a long command: not activity.
+  const nonEmpty = lines.filter((l) => markerOf(l) === null).map(stripGutter).filter((l) => l !== '' && l !== '…');
   const view: TurnView = {
     lastMarker: markerIndex >= 0 ? markerOf(lines[markerIndex]!) : null,
     assistantText: lines.length ? blockText(lines, markerIndex >= 0 ? markerIndex : lines.length - 1) : '',
