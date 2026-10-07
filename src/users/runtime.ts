@@ -9,7 +9,7 @@ import type {
   Clock, EscalationLevel, Executor, ExecutorRegistry, GhLogin, JobSource, PluginsView, QuestionService, Router, SettableUsageSource, SourceRegistry,
   UserStore, WebhookDispatcher,
 } from '../domain/ports.ts';
-import type { AttachedMachine, ConnectedAccountProvider, HostKeyOffer, Question, SourceStatus, User } from '../domain/types.ts';
+import type { AttachedMachine, ConnectedAccountProvider, HostKeyOffer, Job, Question, User } from '../domain/types.ts';
 import { IN_FLIGHT_STATUSES, isRerunnable } from '../domain/types.ts';
 import type { Config } from '../config.ts';
 import { createEngine, type Engine } from '../engine/index.ts';
@@ -32,13 +32,13 @@ import { unavailableExecutors } from '../plugins/executor-slot.ts';
 import { herdrClaudePlugin } from '../plugins/executor/herdr-claude/index.ts';
 import { localPlugin, startHerdrSession } from '../plugins/machine-source/local/index.ts';
 import { createPluginHost, type BuiltJobSource, type PluginHost } from '../plugins/index.ts';
+import { splitSources } from './job-sources.ts';
 import { githubAppPlugin } from '../plugins/job-source/github-app/index.ts';
 import { githubGhPlugin } from '../plugins/job-source/github-gh/index.ts';
 import { grokbotRoutinePlugin } from '../plugins/notifier/grokbot-routine/index.ts';
-import type { JobSourceInstance } from '../plugins/sdk.ts';
 import { createQuestionService } from '../questions/index.ts';
 import { runtimeSecrets } from '../secrets/runtime.ts';
-import { createGhLogin, createSourceSync, idleStatus, withFixedStatuses, type GitHubApi, type SourceSync } from '../sources/index.ts';
+import { createGhLogin, createSourceSync, withFixedStatuses, type GitHubApi, type SourceSync } from '../sources/index.ts';
 import { createConnectedAccounts, type ConnectedAccountsService } from '../connected-accounts/service.ts';
 import { installations, whoIs } from '../connected-accounts/identity.ts';
 import { renewal } from '../connected-accounts/renewal.ts';
@@ -155,20 +155,6 @@ function withSeams(seams: UserSeams) {
   });
 }
 
-/** The job sources the sync loop runs, and fixed /api/sources entries for the ones that do not. */
-type RunningSource = Extract<JobSourceInstance, { source: JobSource }>;
-
-function splitSources(built: BuiltJobSource[]): { running: RunningSource[]; fixed: SourceStatus[] } {
-  const running: RunningSource[] = [];
-  const fixed: SourceStatus[] = [];
-  for (const b of built) {
-    if (!b.instance) fixed.push(idleStatus(b.spec.name, b.spec.plugin, 'error', { error: b.reason }));
-    else if ('disabled' in b.instance) fixed.push(idleStatus(b.spec.name, b.instance.disabled.kind, 'disabled', { detail: b.instance.disabled.detail }));
-    else running.push(b.instance);
-  }
-  return { running, fixed };
-}
-
 /** A seam router (tests) answers as itself; the report stays the host's. */
 function seamPlugins(router: Router, host: PluginsView): PluginsView {
   return {
@@ -220,6 +206,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const keepClient = createClientReleaseKeeper({ release: o.clientRelease, logger });
   let executorNames = (): string[] => [];
   let jobsOnMachine = (_name: string): string[] => [];
+  let applyJobSources = (_built: BuiltJobSource[]): void => {};
   // How the hopper reaches each attached machine (issue #74: the machine-source context's `target`).
   const target = createTargetPool({
     clock, logger,
@@ -251,7 +238,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     ...(o.linkIdentity ? { link: o.linkIdentity } : {}),
     // Reached only after `sync` exists: a connection is made long after the runtime starts.
     onChange: (provider) => {
-      for (const s of jobSources.filter((j) => j.kind === `${provider}-account`)) void sync.syncNow(s.name).catch(() => undefined);
+      for (const s of sync.statuses().filter((j) => j.kind === `${provider}-account`)) void sync.syncNow(s.name).catch(() => undefined);
     },
   });
   const notEnded = () => store.jobs.list({ status: [...IN_FLIGHT_STATUSES] });
@@ -270,6 +257,8 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     machineContext: { executors: () => executorNames(), target },
     executorContext: { client: clientNamed },
     intervalMs: o.pluginsConfigIntervalMs,
+    // The job sources follow the plugins config live (issue #356); reached only after `sync` exists.
+    jobSourcesChanged: (built) => applyJobSources(built),
     executorInUse: (name) => notEnded().filter((j) => j.spec.executor === name).map((j) => j.id),
     attached: {
       inUse: (name) => jobsOnMachine(name), pinned: (name) => notEnded().filter((j) => j.spec.machineId === name).map((j) => j.id),
@@ -315,15 +304,18 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     onExpired: (q: Question) => engine.onExpired(q),
     onDismissed: (q: Question) => engine.onDismissed(q),
   });
-  const { running, fixed } = splitSources(host.jobSources());
-  const jobSources = [...running.map((r) => r.source), ...(seams.sources ?? [])];
+  let { running, fixed } = splitSources(host.jobSources());
+  const jobSources = () => [...running.map((r) => r.source), ...(seams.sources ?? [])];
+  // A job's source as the sync loop has it now: a removed one still answers for its own jobs (issue #356).
+  const sourceOf = (job: Job) => sync.source(job.source?.source ?? '');
   const engine: Engine = createEngine({
     store, clock, executors, router, questions, queueSorter: host.queueSorter,
     routing: { rules: () => host.routingRules(), machines: () => host.machineIds() },
     ...(seams.fakeUsage ? { fakeUsage: seams.fakeUsage } : {}),
     // Every machine follows the plugins config without a restart (issues #18, #74); the pinned host keys with it.
     machines: { list: () => { pinned(host.targets()); return host.machines().list(); } },
-    usage: [...host.usageSources(), ...(seams.fakeUsage ? [seams.fakeUsage] : [])],
+    // The usage sources follow the plugins config live (issue #356).
+    usage: () => [...host.usageSources(), ...(seams.fakeUsage ? [seams.fakeUsage] : [])],
     policy: {
       softLimit: config.softLimit, hardLimit: config.hardLimit, routerCheapBoost: config.routerCheapBoost,
       laneIdleGraceMs: config.laneIdleGraceMs, resumeBoost: config.resumeBoost,
@@ -332,15 +324,16 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     maxQuestions: config.maxQuestions,
     keepPanes: config.keepPanes,
     // Completion is the job's source's to judge (issues #171, #187); a job of no source, or of one that does not judge, is complete.
-    notComplete: async (job) => jobSources.find((s) => s.name === job.source?.source)?.notComplete?.(job),
+    notComplete: async (job) => sourceOf(job)?.notComplete?.(job),
     // A job of a connected account acts through it (issue #214); any other job runs with nothing added.
-    credentials: async (job) => (await jobSources.find((s) => s.name === job.source?.source)?.credentials?.(job)) ?? {},
+    credentials: async (job) => (await sourceOf(job)?.credentials?.(job)) ?? {},
   });
   jobsOnMachine = (name) => engine.jobsOnMachine(name);
   const sync = createSourceSync({
-    sources: jobSources, host: engine.sourceHost, clock,
+    sources: jobSources(), host: engine.sourceHost, clock,
     pollMs: (name) => running.find((r) => r.source.name === name)?.pollMs ?? SEAM_SOURCE_POLL_MS,
   });
+  applyJobSources = (built) => { ({ running, fixed } = splitSources(built)); sync.setSources(jobSources()); };
   const raw = runtimeSecrets(o.env);
   // Deliveries and notifiers from now on, so an instance event (update.applied at boot) reaches them.
   const stopFailureLog = logFailures(store);
@@ -349,7 +342,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   let started = false;
   let stopped: Promise<void> | undefined;
   return {
-    user, store, engine, sources: sync, registry: withFixedStatuses(sync, fixed), plugins, host, questions, dispatcher, executors,
+    user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed), plugins, host, questions, dispatcher, executors,
     // gh login (issue #138): the gh on the daemon's PATH, the github-gh source's default `bin`, with the user's gh config.
     ghLogin: createGhLogin({ bin: 'gh', env: Object.keys(cliEnv).length === 0 ? o.env : userProcessEnv(cliEnv, o.env) }),
     connectedAccounts,

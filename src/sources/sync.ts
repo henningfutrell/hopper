@@ -3,12 +3,18 @@
 // `sourceState.source`. Knows only the narrow SourceHost, never engine internals.
 // A failing source is never silent (issue #358): its error is logged once when it changes (and once when
 // it is ok again), and a source in error past the stall threshold records `source.stalled`, once per run
-// of failures, which the notifiers send.
+// of failures, which the notifiers send. The sources follow the
+// plugins config live (issue #356, `setSources`): a new one is synced at once; a changed one (same name)
+// is used from its next sync, for its jobs too; a removed one pulls nothing more, is paused as REMOVED,
+// and goes once each of its jobs ended and its end is reported — a running job is never ended for it.
 
 import { SourceError, SourceRefused } from '../domain/ports.ts';
 import type { Clock, JobSource, RerunResult, SourceHost, SourceRegistry, SourceReport } from '../domain/ports.ts';
 import { TERMINAL_STATUSES, isRerunnable } from '../domain/types.ts';
+import { REMOVED, followSources, newSlot, type NotRerun, type Slot } from './sync-slots.ts';
 import type { DomainEvent, Job, SourceStatus } from '../domain/types.ts';
+
+export { REMOVED } from './sync-slots.ts';
 
 export interface SourceSyncOptions {
   sources: JobSource[];
@@ -26,7 +32,12 @@ export type SourceSync = SourceRegistry & {
   start(): void;
   stop(): Promise<void>;
   syncNow(name?: string): Promise<void>;
+  /** The sources as the plugins config names them now (issue #356). */
+  setSources(sources: JobSource[]): void;
+  /** The source synced under `name` now, a removed one still reporting its jobs included. */
+  source(name: string): JobSource | undefined;
 };
+
 
 // Stored rows written before 2026-10-03 may also carry reportedQuestions, answeredQuestions and
 // lastProgressAt; nothing reads them.
@@ -39,22 +50,6 @@ interface SyncFlags {
 
 interface Hint { cancelReason?: string }
 
-interface Slot {
-  source: JobSource;
-  status: SourceStatus;
-  chain: Promise<void>;
-  timer?: NodeJS.Timeout;
-  /** Last transient report error per job, shown as detail.reportRetries. */
-  retrying: Map<string, string>;
-  /** Offered items whose newest job ended but cannot run again yet, shown as detail.notRerun. */
-  notRerun: NotRerun[];
-  /** Keys already logged as not run again, so each is logged once. */
-  loggedNotRerun: Set<string>;
-  /** Since when the source has been in error (this run of failures), and whether source.stalled was recorded for it. */
-  failing?: { since: string; stalled: boolean };
-}
-
-interface NotRerun { key: string; job: string; status: string; reason: string }
 const NOT_REPORTED = 'its end is not reported to the source yet';
 
 const TRIGGERS = new Set(['job.finished', 'job.failed', 'job.cancelled', 'job.rejected']);
@@ -75,12 +70,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
   let unsubscribe: (() => void) | undefined;
   let running = false;
 
-  for (const source of o.sources) {
-    slots.set(source.name, {
-      source, chain: Promise.resolve(), retrying: new Map(), notRerun: [], loggedNotRerun: new Set(),
-      status: { name: source.name, kind: source.kind, state: 'starting', itemsSeen: 0, jobsCreated: 0, activeJobs: 0, detail: source.describe() },
-    });
-  }
+  for (const source of o.sources) slots.set(source.name, newSlot(source));
 
   function track<T>(p: Promise<T>): Promise<T> {
     pending.add(p);
@@ -249,7 +239,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     const st = slot.status;
     const previous = st.state === 'error' ? st.lastError : undefined;
     // Paused: nothing new is pulled, but the source's own active jobs are still checked and reported.
-    const paused = slot.source.paused?.();
+    const paused = slot.removed ? REMOVED : slot.source.paused?.();
     try {
       if (paused === undefined) {
         const { seen, created } = await pull(slot);
@@ -284,6 +274,13 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
       reportRetries: slot.retrying.size,
       ...(slot.notRerun.length ? { notRerun: slot.notRerun } : {}),
     };
+    if (slot.removed && st.state !== 'error' && jobs.every((j) => isTerminal(j) && flagsOf(j).claimReported && flagsOf(j).finalReported)) {
+      // Nothing of its own is left to report: the removed source goes.
+      if (slots.get(slot.source.name) === slot) slots.delete(slot.source.name);
+      delete st.nextSyncAt;
+      emit(slot);
+      return;
+    }
     schedule(slot);
     emit(slot);
   }
@@ -362,5 +359,9 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
       const targets = [...slots.values()].filter((s) => !name || s.source.name === name);
       await Promise.all(targets.map((s) => runSync(s)));
     },
+    setSources(sources) {
+      for (const slot of followSources(slots, sources)) if (running) void runSync(slot);
+    },
+    source: (name) => slots.get(name)?.source,
   };
 }

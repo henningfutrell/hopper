@@ -44,6 +44,8 @@ export interface PluginHostOptions {
   builtins?: readonly PluginDefinition[];
   /** How often the plugins config's version is checked; default 5000. */
   intervalMs?: number;
+  /** Hears of each change of the job sources after start (issue #356): the instances built now, in the plugins config order. */
+  jobSourcesChanged?(built: BuiltJobSource[]): void;
   /** Jobs that need executor `name` (not ended): its removal is refused while any do (issue #142). Default: none. */
   executorInUse?(name: string): string[];
   /** What attaching a machine, or removing one, needs (issues #18, #74). */
@@ -62,19 +64,19 @@ export interface PluginHost {
   readonly queueSorter: QueueSorter;
   /** The escalation levels now, lowest first; one that cannot run escalates every question it gets. Valid after start(). */
   levels(): EscalationLevel[];
-  /** The executor instances built at start, runnable or not. Fixed until restart. Valid after start(). */
+  /** The executor instances now, runnable or not; follows the plugins config live (issue #142). Valid after start(). */
   executors(): BuiltExecutor[];
-  /** The job source instances built at start, running, disabled or not. Fixed until restart. Valid after start(). */
+  /** The job source instances now, running, disabled or not; follows the plugins config live (issue #356). Valid after start(). */
   jobSources(): BuiltJobSource[];
   /** Every machine of every machine source, in the plugins config order; follows the plugins config live. One that cannot run lists none. Valid after start(). */
   machines(): MachineSource;
-  /** The usage sources built at start that run. Valid after start(). */
+  /** The usage sources now that run; follows the plugins config live (issue #356). Valid after start(). */
   usageSources(): UsageSource[];
-  /** The notifiers built at start that run (and, once started, did not throw). Valid after start(). */
+  /** The notifiers now that run (and, once started, did not throw); follows the plugins config live (issue #356). Valid after start(). */
   notifiers(): Notifier[];
-  /** Start every notifier with the event feed; one whose start throws is dropped with its reason. Once. */
+  /** Start every notifier with the event feed; one whose start throws is dropped with its reason. Once; a notifier built later starts with this feed. */
   startNotifiers(events: NotifierEvents): void;
-  /** Stop every started notifier, awaiting in-flight work. Once; never throws. */
+  /** Stop every started notifier, awaiting in-flight work; none is started after. Once; never throws. */
   stopNotifiers(): Promise<void>;
   /** The attached machines the machine-source instances name now, those whose options are valid (design.md "Attached machines", issue #74). */
   targets(): AttachedMachine[];

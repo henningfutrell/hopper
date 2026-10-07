@@ -1,14 +1,16 @@
 // The plugin host (design.md "Phase 5"): built-in + custom plugins, the plugins config watched by version,
-// detection of every plugin and the option choices it lists, the live roles (the router — from the plugins config, else chosen from what
-// is detected — the queue sorter and the escalation levels, each swapped between calls) and the restart roles
-// (job sources, usage sources, notifiers): built once at start; a later change is reported as pending.
-// The machine sources — this machine and the attached ones, each an instance (issue #74) — follow
-// the plugins config live (issue #18), and so do the executors (issue #142: a shipped plugin is enabled in the
-// UI and runs at once). Notifiers are started with the event feed by the caller. A section the plugins config leaves out means the built-in instances.
+// detection of every plugin and the option choices it lists. Every role follows the plugins config live:
+// the router — from the plugins config, else chosen from what is detected — the queue sorter and the
+// escalation levels, each swapped between calls; the machine sources — this machine and the attached ones,
+// each an instance (issue #74, live since issue #18); the executors (issue #142: a shipped plugin is enabled
+// in the UI and runs at once); and the job sources, usage sources and notifiers (issue #356: no restart
+// role is left). An unchanged instance is kept, a new or changed one built, a removed one retired.
+// Notifiers are started with the event feed by the caller; one built later starts with that feed. A
+// section the plugins config leaves out means the built-in instances.
 // UI edits (edit.ts, attached-edit.ts) replace the plugins config in the store and apply like any other change.
-import type { MachineSource, Notifier, UsageSource } from '../domain/ports.ts';
+import type { MachineSource, Notifier, NotifierEvents, UsageSource } from '../domain/ports.ts';
 import {
-  ROLES, type AttachedMachine, type ConfiguredInstance, type Detection, type InstanceSpec, type OptionChoice, type PluginsReport, type RestartRoleStatus, type RouterSelection, type RoutingRule,
+  ROLES, type AttachedMachine, type ConfiguredInstance, type Detection, type InstanceSpec, type OptionChoice, type PluginsReport, type RouterSelection, type RoutingRule,
 } from '../domain/types.ts';
 import { createMachinesEditor } from './attached-slot.ts';
 import { createRoutingConfig } from './routing-config.ts';
@@ -20,8 +22,8 @@ import { applyEdit, configuredInstances, type Configured } from './edit.ts';
 import { PLUGINS, loadPluginsConfig } from './plugins-config.ts';
 import { applyExecutorSpecs, executorStatus, type BuiltExecutor } from './executor-slot.ts';
 import { builtinInstances } from './builtin-instances.ts';
-import { buildNotifiers, startNotifiers, stopNotifiers } from './notifier-slot.ts';
-import { NO_SOURCE_CONTEXT, applyMachineSpecs, buildJobSources, buildUsageSources, instanceStatus, type Built, type BuiltJobSource } from './source-slots.ts';
+import { buildNotifier, startNotifier, stopNotifiers } from './notifier-slot.ts';
+import { NO_SOURCE_CONTEXT, applyJobSourceSpecs, applyMachineSpecs, applyUsageSpecs, followSpecs, instanceStatus, type Built, type BuiltJobSource } from './source-slots.ts';
 import { targetOf } from './machine-source/targets.ts';
 import { createTargetPool } from '../machines/index.ts';
 import { buildQueueSorter, createLiveQueueSorter, type LiveQueueSorter } from './queue-sorter-slot.ts';
@@ -40,17 +42,7 @@ export type { PluginDefinition } from './sdk.ts';
 
 interface Entry { definition: PluginDefinition; builtin: boolean; path?: string; detection: Detection; choices?: Record<string, OptionChoice[]> }
 
-/** A restart role: what was built at start, and what the plugins config names now when that differs. */
-interface RestartSlot<B extends { spec: InstanceSpec }> { built?: B[]; pending?: InstanceSpec[] }
-
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
-
-function restartStatus<B extends { spec: InstanceSpec }>(slot: RestartSlot<B>, status: (b: B) => RestartRoleStatus['instances'][number]): RestartRoleStatus {
-  return {
-    instances: (slot.built ?? []).map(status),
-    ...(slot.pending ? { pending: { status: 'changed — restart pending' as const, instances: slot.pending } } : {}),
-  };
-}
 
 
 export function createPluginHost(o: PluginHostOptions): PluginHost {
@@ -75,10 +67,12 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
     notifiers: builtin.notifiers,
   };
   const executors: { built?: BuiltExecutor[] } = {};
-  const jobSources: RestartSlot<BuiltJobSource> = {};
+  const jobSources: { built?: BuiltJobSource[] } = {};
   const machines: { built?: Built<MachineSource>[] } = {};
-  const usageSources: RestartSlot<Built<UsageSource>> = {};
-  const notifiers: RestartSlot<Built<Notifier>> = {};
+  const usageSources: { built?: Built<UsageSource>[] } = {};
+  const notifiers: { built?: Built<Notifier>[] } = {};
+  /** The event feed the notifiers run with, from startNotifiers until stopNotifiers. */
+  let feed: NotifierEvents | undefined;
   let notifiersStarted = false;
   let notifiersStopped: Promise<void> | undefined;
   let timer: NodeJS.Timeout | undefined;
@@ -98,16 +92,6 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
     client: o.executorContext?.client ?? (() => undefined),
   };
 
-  /** Build a restart role once; afterwards only record whether the plugins config now names something else. */
-  async function restart<B extends { spec: InstanceSpec }>(slot: RestartSlot<B>, label: string, specs: InstanceSpec[], build: () => Promise<B[]>): Promise<void> {
-    if (!slot.built) {
-      slot.built = await build();
-      return;
-    }
-    const changed = !same(slot.built.map((b) => b.spec), specs);
-    if (changed && !same(slot.pending, specs)) o.logger.info(`hopper: ${label} changed — restart pending`);
-    slot.pending = changed ? specs : undefined;
-  }
   const sign = (): string => o.config.version(PLUGINS);
 
   async function catalogueDetection(def: PluginDefinition): Promise<Detection> {
@@ -185,10 +169,17 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
       o.logger.info(`hopper: escalation levels ${names.length ? names.join(' → ') : 'none'} → owner`);
     }
     await applyExecutorSpecs(executors, spec.executors, deps);
-    await restart(jobSources, 'job sources', spec.jobSources, () => buildJobSources(spec.jobSources, deps));
+    await applyJobSourceSpecs(jobSources, spec.jobSources, deps, o.jobSourcesChanged);
     await applyMachineSpecs(machines, spec.machines, deps);
-    await restart(usageSources, 'usage sources', spec.usageSources, () => buildUsageSources(spec.usageSources, deps));
-    await restart(notifiers, 'notifiers', spec.notifiers, () => buildNotifiers(spec.notifiers, deps));
+    await applyUsageSpecs(usageSources, spec.usageSources, deps);
+    await followSpecs(notifiers, spec.notifiers, {
+      label: 'notifier', logger: o.logger,
+      build: async (s) => {
+        const b = await buildNotifier(s, deps);
+        return feed ? startNotifier(b, feed, o.logger) : b;
+      },
+      retire: (gone) => (feed ? stopNotifiers(gone, o.logger) : undefined),
+    });
   }
 
   const liveMachines: MachineSource = {
@@ -275,10 +266,12 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
     startNotifiers(events) {
       if (notifiersStarted) return;
       notifiersStarted = true;
-      startNotifiers(started(notifiers.built), events, o.logger);
+      feed = events;
+      notifiers.built = started(notifiers.built).map((b) => startNotifier(b, events, o.logger));
     },
     stopNotifiers() {
       if (!notifiersStarted) return Promise.resolve();
+      feed = undefined;
       notifiersStopped ??= stopNotifiers(started(notifiers.built), o.logger);
       return notifiersStopped;
     },
@@ -323,10 +316,10 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
         queueSorter: started(sorter).status(),
         escalationLevels: started(levels).map(levelStatus),
         executors: { instances: (executors.built ?? []).map(executorStatus) },
-        jobSources: restartStatus(jobSources, instanceStatus),
+        jobSources: { instances: (jobSources.built ?? []).map(instanceStatus) },
         machines: { instances: (machines.built ?? []).map(instanceStatus) },
-        usageSources: restartStatus(usageSources, instanceStatus),
-        notifiers: restartStatus(notifiers, instanceStatus),
+        usageSources: { instances: (usageSources.built ?? []).map(instanceStatus) },
+        notifiers: { instances: (notifiers.built ?? []).map(instanceStatus) },
         plugins: entries.map((e) => ({
           id: e.definition.id, role: e.definition.role, describe: e.definition.describe, builtin: e.builtin,
           ...(e.path ? { path: e.path } : {}), detection: e.detection, options: optionsJsonSchema(e.definition),

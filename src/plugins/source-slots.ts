@@ -1,8 +1,9 @@
-// The source roles' slots (design.md "Failure", "Settled in slice 4"), all restart roles built
-// once at start: job sources (0..n; one that cannot run is dropped with its reason; one whose
-// detection says needs-setup still runs, since it can wait for its setup) and usage sources (0..n;
-// dropped with the reason). The machine sources (0..n, issue #74) follow the plugins config live; one that
-// cannot run lists no machine — never a guessed one. Each is known by its instance name.
+// The source roles' slots (design.md "Failure", "Settled in slice 4"), each following the plugins config
+// live (`followSpecs`): job sources (0..n, live since issue #356; one that cannot run is dropped with its
+// reason; one whose detection says needs-setup still runs, since it can wait for its setup), usage
+// sources (0..n, live since issue #356; dropped with the reason) and machine sources (0..n, issue #74,
+// live since issue #18; one that cannot run lists no machine — never a guessed one). Each is known by
+// its instance name.
 import type { MachineSource, UsageSource } from '../domain/ports.ts';
 import type { Detection, InstanceSpec, InstanceStatus, Role } from '../domain/types.ts';
 import { instantiate, type SlotDeps } from './router-slot.ts';
@@ -14,7 +15,7 @@ export const NO_SOURCE_CONTEXT: JobSourceContext = {
   connectedAccounts: { account: () => undefined, ended: () => undefined, token: () => Promise.reject(new Error('no connected accounts')), renew: () => Promise.reject(new Error('no connected accounts')), endpoints: () => ({ url: '', apiUrl: '' }), jobRepositories: () => [] },
 };
 
-/** One instance of a restart role: running (`instance`, `plugin`), or not (`reason`). */
+/** One instance of a list role: running (`instance`, `plugin`), or not (`reason`). */
 export type Built<T> = { spec: InstanceSpec; detection: Detection } & (
   | { instance: T; plugin: string; reason?: undefined }
   | { instance?: undefined; plugin: null; reason: string }
@@ -34,28 +35,53 @@ export async function buildOne<R extends Role>(role: R, spec: InstanceSpec, deps
 const namedAsInstance = (spec: InstanceSpec) => (i: JobSourceInstance): string | undefined =>
   ('source' in i && i.source.name !== spec.name ? `the source calls itself ${i.source.name}, not ${spec.name}; it must use ctx.instanceName` : undefined);
 
-export function buildJobSources(specs: InstanceSpec[], deps: SlotDeps): Promise<BuiltJobSource[]> {
-  return Promise.all(specs.map((spec) => buildOne('job-source', spec, deps, { needsSetupRuns: true, check: namedAsInstance(spec) })));
+function buildJobSource(spec: InstanceSpec, deps: SlotDeps): Promise<BuiltJobSource> {
+  return buildOne('job-source', spec, deps, { needsSetupRuns: true, check: namedAsInstance(spec) });
 }
 
 /**
- * The machine sources as the plugins config names them now (issues #18, #74): this machine and the attached
- * ones, followed live. An unchanged instance is kept; a new or changed one is built; a removed one goes.
+ * Follow the plugins config (issues #18, #142, #356): keep each unchanged instance (same spec), build the
+ * new and changed ones, drop the rest; what is no longer built goes to `retire` (a changed instance's old
+ * build too). The first call builds all and logs nothing. True when a later call changed what is built.
  */
-export async function applyMachineSpecs(slot: { built?: Built<MachineSource>[] }, specs: InstanceSpec[], deps: SlotDeps): Promise<void> {
+export async function followSpecs<B extends { spec: InstanceSpec }>(
+  slot: { built?: B[] }, specs: InstanceSpec[],
+  o: { label: string; logger: SlotDeps['logger']; build: (spec: InstanceSpec) => Promise<B>; retire?: (gone: B[]) => Promise<void> | void },
+): Promise<boolean> {
   const before = slot.built;
-  const same = (b: Built<MachineSource>, spec: InstanceSpec) => JSON.stringify(b.spec) === JSON.stringify(spec);
-  slot.built = await Promise.all(specs.map((spec) => before?.find((b) => same(b, spec)) ?? buildOne('machine-source', spec, deps)));
-  if (!before) return;
-  for (const spec of specs) if (!before.some((b) => same(b, spec))) deps.logger.info(`hopper: machine ${spec.name} (${spec.plugin}) applied`);
-  for (const b of before) if (!specs.some((s) => s.name === b.spec.name)) deps.logger.info(`hopper: machine ${b.spec.name} removed`);
+  const same = (b: B, spec: InstanceSpec) => JSON.stringify(b.spec) === JSON.stringify(spec);
+  const next: B[] = await Promise.all(specs.map((spec) => before?.find((b) => same(b, spec)) ?? o.build(spec)));
+  slot.built = next;
+  if (!before) return false;
+  for (const b of next) if (!before.includes(b)) o.logger.info(`hopper: ${o.label} ${b.spec.name} (${b.spec.plugin}) applied`);
+  for (const b of before) if (!specs.some((s) => s.name === b.spec.name)) o.logger.info(`hopper: ${o.label} ${b.spec.name} removed`);
+  const gone = before.filter((b) => !next.includes(b));
+  if (gone.length) await o.retire?.(gone);
+  return gone.length > 0 || next.some((b) => !before.includes(b));
 }
 
+/** The machine sources as the plugins config names them now (issues #18, #74): this machine and the attached ones. */
+export function applyMachineSpecs(slot: { built?: Built<MachineSource>[] }, specs: InstanceSpec[], deps: SlotDeps): Promise<boolean> {
+  return followSpecs(slot, specs, { label: 'machine', logger: deps.logger, build: (spec) => buildOne('machine-source', spec, deps) });
+}
 
-export async function buildUsageSources(specs: InstanceSpec[], deps: SlotDeps): Promise<Built<UsageSource>[]> {
-  const built = await Promise.all(specs.map((spec) => buildOne('usage-source', spec, deps)));
+/** The job sources as the plugins config names them now (issue #356); `changed` hears of each change after the first build. */
+export async function applyJobSourceSpecs(slot: { built?: BuiltJobSource[] }, specs: InstanceSpec[], deps: SlotDeps, changed?: (built: BuiltJobSource[]) => void): Promise<void> {
+  if (await followSpecs(slot, specs, { label: 'job source', logger: deps.logger, build: (spec) => buildJobSource(spec, deps) })) changed?.(slot.built!);
+}
+
+/** The usage sources as the plugins config names them now (issue #356); one no longer named is stopped. */
+export function applyUsageSpecs(slot: { built?: Built<UsageSource>[] }, specs: InstanceSpec[], deps: SlotDeps): Promise<boolean> {
+  return followSpecs(slot, specs, {
+    label: 'usage source', logger: deps.logger, build: (spec) => buildUsageSource(spec, deps),
+    retire: (gone) => { for (const b of gone) b.instance?.stop?.(); },
+  });
+}
+
+async function buildUsageSource(spec: InstanceSpec, deps: SlotDeps): Promise<Built<UsageSource>> {
+  const b = await buildOne('usage-source', spec, deps);
   // The instance name wins over the plugin's own; every other member is the plugin's.
-  return built.map((b) => (b.instance ? { ...b, instance: Object.create(b.instance, { name: { value: b.spec.name, enumerable: true } }) as UsageSource } : b));
+  return b.instance ? { ...b, instance: Object.create(b.instance, { name: { value: b.spec.name, enumerable: true } }) as UsageSource } : b;
 }
 
 export function instanceStatus<T>(b: Built<T>): InstanceStatus {

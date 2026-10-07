@@ -15,8 +15,8 @@ Short guide for authors. The contract is `docs/design.md` "Plugin contract"; the
   or select it (a one-instance role), then set its options in the instance form. Every option is
   edited there, command-bearing ones too. An instance is `{ "name": <instance>, "plugin": <id>,
   "options": { … } }` in the role's section (`router`, `queueSorter`, `escalationLevels`,
-  `executors`, `jobSources`, `machines`, `usageSources`, `notifiers`). Job sources, usage sources and
-  notifiers apply at the next restart; the escalation levels are a list in order, lowest first.
+  `executors`, `jobSources`, `machines`, `usageSources`, `notifiers`). Every change applies when it is
+  saved, without a restart; the escalation levels are a list in order, lowest first.
 
 ## From the plugin store
 

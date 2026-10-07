@@ -39,7 +39,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts; `machines.ts` attached machines and their edit; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate), ports (`ports.ts`, re-exporting the store's from `store.ts`) | anything else in `src/` |
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock | everything but `domain/` |
 | `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations (the instance's `migrations.ts` with migration 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-jobs-dir.ts` (tenant 11) moves a work tree stored as `~` to the jobs directory (issue #314); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); 25 the join codes (issue #308) and `migration-client-key.ts` (tenant 12) the client targets that held a token variable; `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265) | engine, http, decider |
-| `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), identity → user (`identities.ts`: link or provision), the leftover default admin account folded into the first GitHub admin's user at start (`leftover-admin.ts`, issue #265) | http, decider |
+| `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), identity → user (`identities.ts`: link or provision), the leftover default admin account folded into the first GitHub admin's user at start (`leftover-admin.ts`, issue #265), a user's job sources split for the sync loop at start and on each change (`job-sources.ts`, issue #356) | http, decider |
 | `src/webhooks/` | signing, dispatcher, retry/backoff, the secret of a subscription from the runtime (`dispatcher.ts`), the UI edit of the subscriptions (`edit.ts`, rows in the store) | engine, http, decider |
 | `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, the plugins config (`plugins-config.ts`) + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt, `escalation-level/anthropic-api/` asks the Claude API with the same prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-gh/`, `job-source/github-app/` and `job-source/github-account/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser); `usage-source/command-usage/` reads any agent framework's usage and account from a command that prints them as JSON; `usage-source/polled.ts` the background refresh both share, `usage-source/run.ts` their command runner; `notifier/grokbot-routine/` is the Grok Bot routine webhook — env-file reader and notifier; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
 | `src/executors/` | `Executor` adapters (`test`, `herdr/`, `command.ts` — a job's body run on its machine through its connection, `print-agent.ts` — an agent CLI in print mode there, Cursor's agent (issue #142), codex, opencode and omp (issue #307), each CLI's call and reading in `print-agents.ts`) and the registry; reached through the executor plugins. The connections and their target authentication ("Target authentication"): `ssh.ts` (key-only ssh to pinned host keys), `ssh-key.ts` (the hopper's own ssh key, kept in the user's store, issue #293), `docker.ts` (the docker socket check, the proxy's allowlist), `client.ts` (a client target's tunnel, signed calls); `env.ts` the scrubbed child environment | engine, http, store, plugins |
@@ -986,7 +986,7 @@ remains. The only mutations are the owner's actions in the local UI, behind a UI
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/sources/` | `JobSource` adapters (`github`), the GitHub API port + `gh` CLI adapter + in-memory fake, the sync loop; since slice 4 the GitHub sources' option schemas (`config.ts`, was the `sources.yaml` loader) and their factories (`compose.ts`), reached through the job-source plugins | engine internals (uses the narrow `SourceHost` it is given), http, plugins |
+| `src/sources/` | `JobSource` adapters (`github`), the GitHub API port + `gh` CLI adapter + in-memory fake, the sync loop and its slots (`sync-slots.ts`, the sources followed live, issue #356); since slice 4 the GitHub sources' option schemas (`config.ts`, was the `sources.yaml` loader) and their factories (`compose.ts`), reached through the job-source plugins | engine internals (uses the narrow `SourceHost` it is given), http, plugins |
 | `src/events/` | versioned payload schemas (zod) per event type, the envelope, JSON Schema export | everything but `domain/` and `zod` |
 | `src/http/ui/` | UI session: login codes, session cookie, CSRF, origin/host guard, the UI-only mutation routes | engine internals beyond the engine's public commands |
 
@@ -1841,11 +1841,11 @@ A **role** is a slot the engine calls through one port. A **plugin** implements 
 |---|---|---|---|---|
 | `router` | `Router { name; advise(job) → Advice }` (was `JevAdvisor`) | 1 | `gate-router`, `pass-through` | live |
 | `escalation-level` | `EscalationLevel { name; answer(req, signal) → { answer?, escalate, reason } }` | 0..n, in order | `claude-cli` | live |
-| `executor` | `Executor` (unchanged) | 1..n | `herdr-claude`, `test` | restart |
-| `job-source` | `JobSource` (unchanged) | 0..n | `github-gh`, `github-app` | restart |
-| `machine-source` | `MachineSource` (unchanged) | 1 | `local` | restart (an options change is live since issue #18) |
-| `usage-source` | `UsageSource` (unchanged) | 0..n | none in production; `fake` stays a test fake at the `ports.ts` seam | restart |
-| `notifier` | `Notifier { name; start(events); stop() }` (new) | 0..n | `grokbot-routine` | restart |
+| `executor` | `Executor` (unchanged) | 1..n | `herdr-claude`, `test` | live (since issue #142) |
+| `job-source` | `JobSource` (unchanged) | 0..n | `github-gh`, `github-app` | live (since issue #356) |
+| `machine-source` | `MachineSource` (unchanged) | 1 | `local` | live (since issue #18) |
+| `usage-source` | `UsageSource` (unchanged) | 0..n | none in production; `fake` stays a test fake at the `ports.ts` seam | live (since issue #356) |
+| `notifier` | `Notifier { name; start(events); stop() }` (new) | 0..n | `grokbot-routine` | live (since issue #356) |
 
 A new agent CLI (codex, cursor-agent, opencode, hermes — all present on the hopper host) is a new
 `executor` plugin; nothing is generic over CLIs.
@@ -1965,8 +1965,9 @@ export default {
 config record `plugins`, a JSON value in the database, edited in the UI. The shape below is unchanged.
 
 The truth for which instance fills which role. Mode 600, owner-editable, mtime-watched (5 s).
-Live roles (router, queue sorter, escalation levels) swap between calls; restart roles show
-`changed — restart pending` in `/api/plugins`.
+Every role is live since issue #356 ("Every setting applies without a restart"): the router, queue
+sorter and escalation levels swap between calls; the list roles keep an unchanged instance and build a new
+or changed one. No role shows `changed — restart pending` any more.
 
 ```yaml
 version: 1
@@ -2031,8 +2032,7 @@ An options edit:
   form was read (`mtime` round-tripped as `version`);
 - is validated with the plugin's own schema before the write; invalid → 400 with zod's issues,
   nothing written;
-- applies like a file edit: live roles swap between calls, restart roles show `changed —
-  restart pending`.
+- applies like a file edit: every role is live (issue #356), in place before the answer.
 
 Per piece, in the words of issue #6: "task" is an **executor** instance ("task" is not a
 glossary word); "connector" is a **job source** or **notifier** instance; a **lane** has no
@@ -5752,7 +5752,7 @@ plugins from a store URL is a separate issue.
   extended (`inUse(role, name)`). The other refusals (named by a job source, routing rule or machine;
   the last executor) stand.
 - **Still restart roles**: job sources, usage sources, notifiers. Switching one shows `changed —
-  restart pending`, and the UI has no restart. Making them live too belongs with the store issue.
+  restart pending`, and the UI has no restart. *Superseded by issue #356: they are live too.*
 - **Docs** give the UI path (README "Cursor's agent"); no user step says `hopper config edit`.
 
 
@@ -6562,3 +6562,63 @@ is its home failing before any tab), `test/herdr/payload-default-cwd.test.ts`,
 `test/integration/routing.test.ts` (a rule's work tree on the job and in `routedBy`),
 `test/plugins/machine-targets.test.ts`, `test/adapters/ssh-machine.test.ts`,
 `test/adapters/machine-usage.test.ts`, `test/ui/routing.test.ts`.
+
+
+## Every setting applies without a restart (issue #356, 2026-10-07)
+
+Owner request: every setting saved in the UI applies without restarting the hopper; a running job is
+never ended by a config save; `restart pending` goes, or stays only for what truly cannot change in a
+running process, listed here. In a container deployment a restart recreates the process and can end
+running jobs' panes (issue #350), so a restart is no way to apply a setting.
+
+**As built:**
+- **No restart role is left.** The job sources, usage sources and notifiers follow the plugins config
+  live, as the executors (issue #142) and machine sources (issue #18) already did: `followSpecs`
+  (`src/plugins/source-slots.ts`) keeps each unchanged instance (same spec), builds a new or changed one,
+  and retires what the config no longer names. `RestartRoleStatus` and its `pending` are gone:
+  `/api/plugins` `jobSources`, `usageSources` and `notifiers` are `{ instances }`, like `executors`.
+- **Job sources.** The host tells the user runtime of each change (`jobSourcesChanged`); the sync loop
+  takes the sources as they are now (`SourceSync.setSources`, `src/sources/sync-slots.ts`). A new source
+  is synced at once. A changed one (same name, new instance — its `defaultCwd`, `repoPaths`,
+  `completion`, authors, …) takes over the slot: its counts and its jobs are kept, and from its next sync
+  it pulls, checks and reports through the new instance. Options read at intake (`defaultCwd`,
+  `repoPaths`, priority) apply to the next job; a job already queued keeps what it was given. Completion
+  is judged when a job ends, so a running job is judged by the source as it is then. A removed source
+  pulls nothing more: it stays, paused as `removed from the plugins config`, checks and reports its own
+  jobs until each has ended and its end is reported, then goes. No job is cancelled or failed for it.
+  The engine asks the sync loop for a job's source (`notComplete`, `credentials`), so a removed source
+  still answers for its own running jobs.
+- **Usage sources.** The engine reads the host's usage sources at each Decision and each usage read
+  (`EngineContext.usage` is a function). A removed or replaced instance is stopped (its `stop()`).
+- **Notifiers.** One built after the event feed started is started with that feed at once; one no
+  longer named, or replaced, is stopped (its `stop()` settles in-flight work). After the notifiers are
+  stopped at shutdown, a change starts none.
+- **Running jobs are not interrupted.** No plugins edit ends a job: executors and machines already
+  refused removal while a job needs them (issues #142, #18); a job source, usage source or notifier change
+  never touches a job.
+- **The UI says when.** A save answers once the change is in place; the toast says `applied at <time>`,
+  and Settings → Plugins shows `applied <time>` (`config.loadedAt`). The `changed — restart pending` badge
+  and the per-instance `restart pending` state are gone; an instance not built yet shows `applying`.
+
+**What is live elsewhere** (each with its own test): escalation levels, the router and the queue sorter
+(swapped between calls), executors (issue #142), machines (issue #18), routing rules (read at each
+intake), job rules (read at each job start), the rules file of the question gates (read per question),
+webhook subscriptions (rows read per delivery), sign-in and realms (loaded before they are stored).
+
+**What still needs a restart** — none of it is a setting saved in the UI:
+- the process environment: `HOPPER_PORT` and the listen address, `HOPPER_LAN_PEERS`, the public URL,
+  `HOPPER_DATABASE_URL`, `HOPPER_WORK_DIR`, `HOPPER_PLUGIN_DIR` and every other `HOPPER_*` variable
+  (`src/config.ts`), and secrets a deployment mounts at start;
+- new code: a plugin from the plugin store reinstalled over one already loaded keeps its first code
+  until restart (`restartPending` in the plugin store's report; Node caches imports), and an update of
+  the hopper itself ("Self-update"). An update that keeps running jobs running in a container deployment
+  is out of scope here.
+
+**Verification:** `test/integration/live-settings.test.ts` (a job source switched on in the UI pulls the
+next job; an options change applies to the next one; a usage source changed and removed; a notifier added
+tells of the next human question; job sources, usage sources and notifiers changed around a running job,
+which keeps running), `test/sources/sync-live.test.ts`, `test/plugins/host-sources.test.ts`,
+`test/plugins/host-usage-live.test.ts`, `test/plugins/host-notifiers.test.ts`, `test/ui/plugins.test.ts`;
+the other settings: `test/integration/escalation-levels-edit.test.ts`, `executors.test.ts`,
+`machines-edit.test.ts`, `routing.test.ts`, `job-rules.test.ts`, `question-gates.test.ts`,
+`webhooks-edit.test.ts`, `realms-edit.test.ts`.

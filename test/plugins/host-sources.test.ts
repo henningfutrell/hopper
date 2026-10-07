@@ -1,7 +1,7 @@
 // Phase 5 slice 4: the job-source, machine-source and usage-source roles in the plugin host, built
-// at start from the plugins config (or the built-in instances when a section is absent). Job and usage
-// sources are restart roles: a later edit shows `changed — restart pending`. The machine sources —
-// this machine and every attached one (issue #74) — follow the plugins config live (issue #18). Detection
+// at start from the plugins config (or the built-in instances when a section is absent). All three
+// follow the plugins config live: the machine sources — this machine and every attached one (issue
+// #74) — since issue #18, the job and usage sources since issue #356. Detection
 // never makes a paid call: github-gh asks `gh auth status`, github-app looks for the app's identity and key in the environment,
 // claude-plan `which`es claude.
 import { join } from 'node:path';
@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { MachineSource, UsageSource } from '../../src/domain/ports.ts';
 import type { AttachedMachine } from '../../src/domain/types.ts';
 import { BUILTIN_PLUGINS } from '../../src/plugins/builtin.ts';
-import { createPluginHost, type PluginHost } from '../../src/plugins/index.ts';
+import { createPluginHost, type BuiltJobSource, type PluginHost } from '../../src/plugins/index.ts';
 import type { DetectionKit, PluginDefinition } from '../../src/plugins/sdk.ts';
 import { PLUGINS } from '../../src/plugins/plugins-config.ts';
 import { useTempConfig } from '../support/config.ts';
@@ -57,7 +57,7 @@ function targets() {
   return { asked, target };
 }
 
-function start(o: { file?: object; kit?: DetectionKit; executors?: () => string[]; target?: (m: AttachedMachine) => MachineSource } = {}) {
+function start(o: { file?: object; kit?: DetectionKit; executors?: () => string[]; target?: (m: AttachedMachine) => MachineSource; jobSourcesChanged?: (built: BuiltJobSource[]) => void } = {}) {
   const dir = temp();
   const config = records();
   if (o.file !== undefined) config.set(PLUGINS, o.file);
@@ -69,6 +69,7 @@ function start(o: { file?: object; kit?: DetectionKit; executors?: () => string[
     defaultExecutors: [{ name: 'test', plugin: 'test' }],
     machineContext: { ...(o.executors ? { executors: o.executors } : {}), ...(o.target ? { target: o.target } : {}) },
     intervalMs: 30,
+    ...(o.jobSourcesChanged ? { jobSourcesChanged: o.jobSourcesChanged } : {}),
   });
   return { host, config, dir };
 }
@@ -184,13 +185,21 @@ describe('job-source instances', () => {
     for (const i of others) expect(i).toMatchObject({ active: null, reason: expect.stringMatching(/authors/) });
   });
 
-  it('a restart role: an edit shows changed — restart pending; the built sources stay', async () => {
-    const { host, config } = start({ file: { version: 1, jobSources: [] } });
+  it('live (issue #356): an added source is built at once, an unchanged one kept, a changed one rebuilt, a removed one goes; the host says so', async () => {
+    const seen: string[][] = [];
+    const { host, config } = start({ file: { version: 1, jobSources: [{ name: 'one', plugin: 'github-gh', options: { authors: ['owner'] } }] }, kit: fakeKit(), jobSourcesChanged: (b) => seen.push(b.map((x) => x.spec.name)) });
     await host.start();
-    config.set(PLUGINS, { version: 1, jobSources: [{ name: 'github', plugin: 'github-gh' }] });
+    const [one] = host.jobSources();
+    config.set(PLUGINS, { version: 1, jobSources: [{ name: 'one', plugin: 'github-gh', options: { authors: ['owner'] } }, { name: 'two', plugin: 'github-gh', options: { authors: ['owner'] } }] });
     await host.reload();
-    expect(host.report().jobSources.pending).toEqual({ status: 'changed — restart pending', instances: [{ name: 'github', plugin: 'github-gh', options: {} }] });
-    expect(host.jobSources()).toEqual([]);
+    expect(host.jobSources().map((b) => b.spec.name)).toEqual(['one', 'two']);
+    expect(host.jobSources()[0]).toBe(one);
+    expect(host.report().jobSources).toEqual({ instances: [expect.objectContaining({ active: 'github-gh' }), expect.objectContaining({ active: 'github-gh' })] });
+    config.set(PLUGINS, { version: 1, jobSources: [{ name: 'one', plugin: 'github-gh', options: { authors: ['someone'] } }] });
+    await host.reload();
+    expect(host.jobSources().map((b) => b.spec.options)).toEqual([{ authors: ['someone'] }]);
+    expect(host.jobSources()[0]).not.toBe(one);
+    expect(seen).toEqual([['one', 'two'], ['one']]);
   });
 });
 
