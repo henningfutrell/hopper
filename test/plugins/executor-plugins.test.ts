@@ -6,8 +6,11 @@ import { describe, expect, it, vi } from 'vitest';
 import anthropicApi from '../../src/plugins/escalation-level/anthropic-api/index.ts';
 import claudeCli from '../../src/plugins/escalation-level/claude-cli/index.ts';
 import { BUILTIN_PLUGINS } from '../../src/plugins/builtin.ts';
+import codex from '../../src/plugins/executor/codex/index.ts';
 import cursorAgent from '../../src/plugins/executor/cursor-agent/index.ts';
 import herdrClaude, { herdrClaudePlugin } from '../../src/plugins/executor/herdr-claude/index.ts';
+import omp from '../../src/plugins/executor/omp/index.ts';
+import opencode from '../../src/plugins/executor/opencode/index.ts';
 import testExecutor from '../../src/plugins/executor/test/index.ts';
 import { optionsJsonSchema, parseOptions } from '../../src/plugins/options.ts';
 import gateRouter from '../../src/plugins/router/gate-router/index.ts';
@@ -30,9 +33,9 @@ function options<O>(def: PluginDefinition<Role, O>, raw: unknown = {}): O {
 const props = (def: PluginDefinition) => (optionsJsonSchema(def) as { properties: Record<string, Record<string, unknown>> }).properties;
 
 describe('built-in executor plugins are listed', () => {
-  it('herdr-claude, cursor-agent, command and test, role executor', () => {
+  it('herdr-claude, cursor-agent, codex, opencode, omp, command and test, role executor', () => {
     const executors = BUILTIN_PLUGINS.filter((p) => p.role === 'executor').map((p) => p.id).sort();
-    expect(executors).toEqual(['command', 'cursor-agent', 'herdr-claude', 'test']);
+    expect(executors).toEqual(['codex', 'command', 'cursor-agent', 'herdr-claude', 'omp', 'opencode', 'test']);
   });
 });
 
@@ -59,6 +62,30 @@ describe('cursor-agent (issue #142)', () => {
     const ex = await cursorAgent.create({ ...ctx(dir), instanceName: 'cursor' }, options(cursorAgent));
     expect(ex.name).toBe('cursor');
     expect(ex.idempotent).toBe(false);
+    expect(typeof ex.resume).toBe('function');
+  });
+});
+
+// Issue #307: an executor per agent box's CLI, each one print-mode run per turn, as cursor-agent.
+describe.each([
+  { def: codex, bin: 'codex', args: ['--dangerously-bypass-approvals-and-sandbox', '--skip-git-repo-check'] },
+  { def: opencode, bin: 'opencode', args: ['--auto'] },
+  { def: omp, bin: 'omp', args: ['--auto-approve'] },
+])('$bin (issue #307)', ({ def, bin, args }) => {
+  it('options: the CLI on PATH, running its tools without asking, in the jobs directory; every option command-bearing', () => {
+    expect(options(def)).toEqual({ bin, args, cwd: '~/hopper-jobs', sshBin: 'ssh' });
+    const p = props(def);
+    for (const key of ['bin', 'args', 'cwd', 'sshBin']) expect(p[key]!.commandBearing, key).toBe(true);
+  });
+
+  it('detect: available either way, `which` only — its jobs run on the machines that have it', async () => {
+    expect(await def.detect(fakeKit({ which: async () => undefined }), options(def)))
+      .toEqual({ status: 'available', detail: `${bin} is not on this machine: its jobs run only on machines that have it` });
+  });
+
+  it('create: the executor under the instance name, never idempotent, resumable', async () => {
+    const ex = await def.create({ ...ctx(temp()), instanceName: bin }, options(def));
+    expect(ex).toMatchObject({ name: bin, idempotent: false });
     expect(typeof ex.resume).toBe('function');
   });
 });
