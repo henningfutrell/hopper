@@ -3,6 +3,7 @@
 // source config they turn into: `model: null` dropped; a `~` stays, for the job's machine (issue #323). The plugin host validates
 // them with these schemas; an invalid instance is dropped with the error shown.
 import { z } from 'zod';
+import { JOBS_DIR } from '../domain/types.ts';
 
 const projectSchema = z.object({
   owner: z.string().min(1),
@@ -27,7 +28,7 @@ const sharedKeys = {
   defaultPriority: z.number().min(0).max(100).default(50),
   repoPaths: z.record(z.string(), z.string()).default({})
     .meta({ commandBearing: true, description: 'owner/repo → the working directory of its jobs' }),
-  defaultCwd: z.string().min(1).default('~')
+  defaultCwd: z.string().min(1).default(JOBS_DIR)
     .meta({ commandBearing: true, description: 'working directory of jobs from repos not in repoPaths' }),
   executor: z.string().min(1).default('herdr-claude'),
   model: z.string().min(1).nullable().default(null),

@@ -196,7 +196,7 @@ describe('herdr-claude executor: never the home as the work tree', () => {
   });
 
   it('a machine whose home is not known yet still refuses the root, and takes an absolute work tree below it', async () => {
-    const { remotes, executor } = setup({}, { remote: { laptop: { turns: [DONE] } } });
+    const { executor } = setup({}, { remote: { laptop: { turns: [DONE] } } });
     expect(await executor.run(contextFor(jobWith({ prompt: 'go', cwd: '/' }), 'laptop/lane-1', LAPTOP).ctx)).toEqual({ kind: 'failed', error: refused('/', 'laptop') });
     expect(await executor.run(contextFor(jobWith({ prompt: 'go', cwd: '/srv/jobs' }), 'laptop/lane-1', LAPTOP).ctx)).toMatchObject({ kind: 'finished' });
   });

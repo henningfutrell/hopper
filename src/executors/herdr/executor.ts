@@ -231,7 +231,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       // Issue #323: `~` is the lane's machine's home, never this process's when the job runs elsewhere.
       const tree = workTreeOn(ctx.machine, asked.cwd);
       if ('error' in tree) return { kind: 'failed', error: tree.error };
-      const p = { ...asked, cwd: tree.cwd };
+      const p = { ...asked, cwd: tree.cwd, makeWorkTree: tree.make };
       ctx.workTree(p.cwd);
       let state: PaneState | undefined;
       return onLane(ctx, () => state, async () => {
