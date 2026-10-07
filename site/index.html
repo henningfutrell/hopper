@@ -375,6 +375,18 @@ that is online, runs the job&#39;s executor, and has the most room left — unle
 </tr>
 </thead>
 <tbody><tr>
+<td><a href="#a-computer-or-a-sandbox-box-one-line">a computer, with one line</a></td>
+<td>the computer the hopper&#39;s container runs on, a laptop, a desktop: it dials in</td>
+<td>its own connection to the hopper&#39;s URL</td>
+<td>Node.js ≥ 24, herdr, <code>claude</code></td>
+</tr>
+<tr>
+<td><a href="#a-computer-or-a-sandbox-box-one-line">a sandbox box, with one line</a></td>
+<td>jobs that must reach nothing of your computer</td>
+<td>its own connection to the hopper&#39;s URL</td>
+<td>Podman or Docker beside the hopper</td>
+</tr>
+<tr>
 <td><a href="#this-host">this host</a></td>
 <td>the start: jobs on the hopper&#39;s own machine</td>
 <td>nothing to reach</td>
@@ -382,15 +394,9 @@ that is online, runs the job&#39;s executor, and has the most room left — unle
 </tr>
 <tr>
 <td><a href="#an-ssh-target">ssh target</a></td>
-<td>another computer the hopper can always ssh to (a desktop, a server, WSL)</td>
+<td>a computer that cannot run the client (no Node.js 24)</td>
 <td>ssh, with its own key</td>
 <td>sshd, and herdr with <code>claude</code> or <a href="#cursors-agent">Cursor&#39;s agent</a></td>
-</tr>
-<tr>
-<td><a href="#a-client-target">client target</a></td>
-<td>a computer the hopper cannot always reach (a laptop that moves networks): it dials in</td>
-<td>the client&#39;s tunnel to the hopper</td>
-<td>Node.js ≥ 24, herdr, <code>claude</code>; sshd on the hopper&#39;s host</td>
 </tr>
 <tr>
 <td><a href="#a-container-target">container target</a></td>
@@ -406,6 +412,27 @@ machine online or offline; the daemon&#39;s log says why one is offline
 <p><strong>Machine defaults.</strong> A machine added in the Machines view starts with the machine defaults: its
 lanes and the executors it runs (one lane and <code>herdr-claude</code> until you change them). Change them
 there with <strong>Defaults</strong>; they apply to machines added afterwards, never to ones already there.</p>
+<h3 id="a-computer-or-a-sandbox-box-one-line">A computer or a sandbox box: one line</h3>
+<p>Machines → <strong>Add machine</strong>, pick one, <strong>Show the line</strong>, run it where it says. The machine joins, and
+shows in the Machines view, online, a few seconds later. Nothing is typed into the hopper; nothing
+listens on the machine (it dials in to the hopper&#39;s own URL); no ssh, no keys to copy, no restart. The
+line carries a one-time join code: it works once, for 10 minutes.</p>
+<ul>
+<li><strong>A computer</strong>: run the line in a terminal there. It checks Node.js ≥ 24 and herdr, installs the
+hopper&#39;s client, joins, and runs it as the user units <code>hopper-client</code> and <code>hopper-client-herdr</code>. Its
+jobs run as you there. Sign <code>claude</code> in there once, and keep it running after you log out:
+<code>loginctl enable-linger</code>. For the computer a hopper container runs on, open the UI at
+<code>http://localhost:4790</code> there first: the line names the URL the page is open at.</li>
+<li><strong>A sandbox box</strong> (Podman or Docker): run the line on the computer the hopper runs on. It starts the
+container <code>hopper-box-claude</code> from <code>ghcr.io/henningfutrell/hopper:box-claude</code> on the hopper&#39;s network,
+locked down — every capability dropped, no new privileges, a read-only root, its own home volume,
+nothing of the computer mounted. Sign its agent in once:
+<code>podman exec -it hopper-box-claude claude</code>; the sign-in stays in its home volume, as does its identity,
+so a recreated box is the same machine.</li>
+</ul>
+<p>A machine is removed in the Machines view; its next dial-in is refused. A script that adds machines
+mints a code with <code>hopper join-code</code> (the operator CLI) and runs the same line. Make the jobs&#39; working
+directories exist on the machine: a job whose directory is missing there fails.</p>
 <h3 id="this-host">This host</h3>
 <p>Set up by <a href="#run-it">Run it</a>: <code>install.sh</code> starts its herdr session (<code>hopper-herdr</code>). A new hopper
 does not list its own host as a machine: add it in Settings → Plugins → Machine sources (the <code>local</code>
@@ -441,31 +468,6 @@ a job whose directory is missing fails.</p>
 </li>
 </ol>
 <p>Within 30 s the Machines view shows it online.</p>
-<h3 id="a-client-target">A client target</h3>
-<p>The target runs the hopper client, which dials the hopper over ssh and keeps the tunnel up; the
-hopper never connects to it after setup. The hopper loads each new client release onto it by itself.</p>
-<ol>
-<li><p><strong>On the target</strong>: Node.js ≥ 24, herdr, the <code>claude</code> CLI signed in, and
-<code>sudo loginctl enable-linger &quot;$USER&quot;</code>.</p>
-</li>
-<li><p><strong>On the hopper&#39;s host</strong>: sshd runs, and the target can reach it (<code>&lt;user&gt;@&lt;hopper-host&gt;</code>, port 22,
-or <code>HOPPER_CLIENT_HOPPER_PORT</code>). You can ssh to the target now, as in step 2 of the ssh target.</p>
-</li>
-<li><p>Install the client there. <code>laptop</code> is the machine&#39;s name in the hopper, <code>my-laptop</code> how you reach
-it now, <code>me@hopper-host</code> how it reaches the hopper:</p>
-<pre><code class="language-sh">bash ~/.local/lib/hopper/scripts/attach-client.sh laptop my-laptop me@hopper-host 1
-</code></pre>
-</li>
-<li><p>Add the line it prints to <code>~/.config/hopper/daemon.env</code> (<code>CLIENT_TOKEN_LAPTOP_FILE=…</code>), then
-<code>systemctl --user restart hopper</code>.</p>
-</li>
-<li><p>Attach it: in the UI, Settings → Plugins → Machine sources, add a <code>client</code> instance named
-<code>laptop</code> and set the printed options (<code>tokenEnv</code>, <code>lanes</code>). The Machines view&#39;s Add machine
-attaches ssh targets only. No restart.</p>
-</li>
-<li><p>Make the jobs&#39; working directories exist there, as for an ssh target.</p>
-</li>
-</ol>
 <h3 id="a-container-target">A container target</h3>
 <p>A container on the hopper&#39;s host with no network, a read-only root and no capabilities. No agent
 runs in it: the <code>command</code> executor runs an issue&#39;s first fenced code block (else its whole body) with

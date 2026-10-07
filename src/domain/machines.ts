@@ -43,13 +43,13 @@ export interface ContainerMachine extends AttachedBase {
 }
 
 /**
- * A client target (issue #59): a machine running the hopper client, connected back to this one over
- * a reverse tunnel; herdr calls go to it over HTTP, signed with its token. Its herdr binary and
- * session are the client's own.
+ * A client target (issues #59, #308): a machine running the hopper client, dialled in to this hopper;
+ * herdr calls go down its link, signed with the client token both ends derive from their link keys.
+ * Its herdr binary and session are the client's own.
  */
 export interface ClientMachine extends AttachedBase {
-  /** `tokenEnv`: the variable (or `<name>_FILE`) the client's token is in, in the hopper's runtime. */
-  client: { tokenEnv: string };
+  /** `key`: its machine key, the public half of its link key — who it is when it dials in. */
+  client: { key: string };
 }
 
 /**
@@ -123,6 +123,8 @@ export interface MachinesConfig {
    * runtime mounts the hopper's key, or none could be minted.
    */
   ssh: { targets: string[]; notes: string[]; here: string[]; publicKey?: string };
+  /** The daemon's own port (issue #308): where a sandbox box on its network dials in. Absent: not said. */
+  port?: number;
   /**
    * Why this machine cannot be added (issue #275), and how to run jobs on the computer the hopper runs
    * on instead: the hopper runs in a container, which is not a machine. Absent: it can be.

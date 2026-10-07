@@ -11,6 +11,7 @@
 //   hopper users                                      list the users (issue #158)
 //   hopper user add <name>                            add a user
 //   hopper user transfer <from> <to>                  <to> takes over <from>'s work (issue #212)
+//   hopper join-code [--user <id>]                    a one-time join code: a machine joins with <hopper URL>#<code> (issue #308)
 //   hopper help                                       what each command does
 //
 // There is no login from here (issue #238: no bootstrap login): people sign in through a realm.
@@ -26,6 +27,7 @@ import { jobRulesProblem } from './job-rules/index.ts';
 import { pluginsConfigProblem } from './plugins/plugins-config.ts';
 import { rulesProblem } from './questions/index.ts';
 import { openInstanceStore } from './store/index.ts';
+import { mintJoinCode } from './machines/join-code.ts';
 import { runtimeSecrets } from './secrets/runtime.ts';
 
 export interface CliIo {
@@ -46,6 +48,8 @@ usage:
   hopper user transfer <from> <to>                   <to> takes over everything <from> holds: <to>'s sign-ins land on
                                                      <from>'s work, under <to>'s name; <to>'s own empty record goes.
                                                      The daemon must be stopped; refused when <to> holds work of its own
+  hopper join-code                                   a one-time join code (10 minutes) for a script that adds machines:
+                                                     the machine joins with <hopper URL>#<code>, as Add machine's line does
   hopper help                                        this text
 
 records: ${CONFIG_NAMES.join(', ')}. plugins, rules and job-rules are one user's; sign-in is shared. Every one is edited
@@ -175,6 +179,15 @@ function userCommand(instance: InstanceStore, args: string[], io: CliIo): void {
   io.err(`user ${user.id} added: link a sign-in to it with hopper user transfer ${user.id} <the user a sign-in made>\n`);
 }
 
+/** `hopper join-code [--user <id>]` (issue #308): a one-time join code for that user (default the one user) on stdout. */
+function joinCode(instance: InstanceStore, args: string[], io: CliIo): void {
+  const { values } = parseArgs({ args, options: { user: { type: 'string' } } });
+  const user = userOf(instance, values.user);
+  const { code, expiresAt } = mintJoinCode(instance, { now: () => new Date() }, user.id);
+  io.out(`${code}\n`);
+  io.err(`a join code for ${user.name}, once, until ${expiresAt}: the machine joins with <hopper URL>#<code>\n`);
+}
+
 /** Run one command; the exit code. */
 export function runCli(argv: string[], io: CliIo): number {
   const [command, ...rest] = argv;
@@ -182,7 +195,7 @@ export function runCli(argv: string[], io: CliIo): number {
     io.out(`${USAGE}\n`);
     return 0;
   }
-  if (command !== 'config' && command !== 'users' && command !== 'user') {
+  if (command !== 'config' && command !== 'users' && command !== 'user' && command !== 'join-code') {
     io.err(`${USAGE}\n`);
     return 2;
   }
@@ -202,6 +215,7 @@ export function runCli(argv: string[], io: CliIo): number {
     store = openInstanceStore({ url, clock: { now: () => new Date() } });
     if (command === 'users') users(store, io);
     else if (command === 'user') userCommand(store, rest, io);
+    else if (command === 'join-code') joinCode(store, rest, io);
     else config(store, rest, io);
     return 0;
   } catch (e) {

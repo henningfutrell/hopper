@@ -15,6 +15,7 @@ import type { ConfiguredInstance, InstanceSpec, MachineDefaults, MachineDefaults
 import { isPlainTarget } from '../executors/ssh.ts';
 import type { ResolvedTarget } from '../machines/index.ts';
 import { list, writePlugins, type EditRefusal, type EditResult } from './edit.ts';
+import client from './machine-source/client/index.ts';
 import local from './machine-source/local/index.ts';
 import ssh from './machine-source/ssh/index.ts';
 import { parseOptions } from './options.ts';
@@ -45,7 +46,7 @@ export interface MachineEditContext {
  * Why this machine cannot be added in a container (issue #275), and the way that works there: the
  * container is not a machine (issue #141), so the computer it runs on is attached like any other.
  */
-export const IN_A_CONTAINER = 'the hopper runs in a container, and the container is not a machine. To run jobs on the computer it runs on, attach that computer over ssh: type its ssh target as you@host.containers.internal (Podman) or you@host.docker.internal (Docker), add the hopper\'s public key shown in the Add machine form to ~/.ssh/authorized_keys there, and confirm the host key it presents. Or attach it as a client target';
+export const IN_A_CONTAINER = 'the hopper runs in a container, and the container is not a machine. To run jobs on the computer it runs on, add it with Add machine → A computer: run the line it shows there';
 
 /** The sections whose parts run on a machine they name (issue #174). */
 const ON_A_MACHINE = ['escalationLevels', 'usageSources'] as const;
@@ -149,4 +150,30 @@ async function addThisMachine(e: MachineEdit, ctx: MachineEditContext, target?: 
       }
     }
   });
+}
+
+/** A machine joining (issue #308): its machine key, and the name it asks for. */
+export interface MachineJoin { key: string; name: string }
+
+/** A machine name as the plugins config takes it: letters, digits, `_` and `-`. */
+const NAME = /^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$/;
+
+/**
+ * POST /client/join (design.md "Joining a machine", issue #308): a new `client` instance holding the
+ * machine key, under the name asked for — `<name>-2`, `-3`, … when a machine already has it — with the
+ * machine defaults' lanes and executors. A key a client target already holds joins as that one, unchanged.
+ */
+export function applyMachineJoin(j: MachineJoin, ctx: Pick<MachineEditContext, 'config' | 'configured' | 'defaults'>): EditRefusal | { ok: true; machine: string } {
+  const machines = ctx.configured.filter((c) => c.role === 'machine-source').map((c) => c.instance);
+  const same = machines.find((m) => m.plugin === client.id && m.options?.key === j.key);
+  if (same) return { ok: true, machine: same.name };
+  if (!NAME.test(j.name)) return refuse('invalid', `a machine name is letters, digits, _ and -, at most 63: ${JSON.stringify(j.name)}`);
+  const taken = new Set(machines.map((m) => m.name));
+  let name = j.name;
+  for (let n = 2; taken.has(name); n++) name = `${j.name}-${n}`;
+  const options = { key: j.key, lanes: ctx.defaults.lanes, executors: [...ctx.defaults.executors] };
+  const parsed = parseOptions(client, options);
+  if (!parsed.ok) return refuse('invalid', parsed.error);
+  const r = writePlugins(ctx.config, ctx.config.version(PLUGINS), (doc) => list(doc, 'machine-source', name, { name, plugin: client.id, options }, ctx.configured));
+  return r.ok ? { ok: true, machine: name } : r;
 }

@@ -174,8 +174,8 @@ export interface MachineSnapshot {
   docker?: string;
   /** An attached machine's home, as its probe found it: where `~` in a job's work tree resolves there (issue #323). Absent: not found yet, or this machine. */
   home?: string;
-  /** A client target: the variable its token is in (its tunnel's socket is named after the machine id); once probed online, the client release it runs (absent: it predates releases) and whether that is the hopper's (issue #70). */
-  client?: { tokenEnv: string; release?: string; current?: boolean };
+  /** A client target: once probed online, the client release it runs (absent: it predates releases) and whether that is the hopper's (issue #70). */
+  client?: { release?: string; current?: boolean };
 }
 
 /** Everything one Decision is made over. Recorded verbatim on the Decision. */

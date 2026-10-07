@@ -5,7 +5,7 @@ import { INSTANCE_CONFIG, type Clock, type IdGen, type InstanceStore } from '../
 import { createContext } from './context.ts';
 import { openDb } from './db.ts';
 import { createConfigRecords } from './config.ts';
-import { createLoginCodeRepository } from './login-codes.ts';
+import { createJoinCodeRepository, createLoginCodeRepository } from './login-codes.ts';
 import { migrateInstance } from './migrations.ts';
 import { createInstanceSettingsRepository } from './settings.ts';
 import { createSignInConfigRepository } from './sign-in-config.ts';
@@ -39,6 +39,7 @@ export function openInstanceStore(o: { url: string; clock: Clock; idGen?: IdGen;
     identities: createIdentityLinks(ctx),
     uiSessions: createUiSessionRepository(ctx),
     loginCodes: createLoginCodeRepository(ctx),
+    joinCodes: createJoinCodeRepository(ctx),
     config,
     signInConfig: createSignInConfigRepository(ctx, config),
     settings: createInstanceSettingsRepository(ctx),

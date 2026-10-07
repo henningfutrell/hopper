@@ -3,6 +3,7 @@
 // passes the Host guard (AGENTS.md).
 import Fastify, { type FastifyInstance } from 'fastify';
 import { apiReferenceRoutes } from './api-reference.ts';
+import { clientLinkRoutes, type ClientLinkOptions } from './client-link.ts';
 import type { SignIn } from '../auth/index.ts';
 import type { Clock, InstanceStore, PluginStoreView, Updater } from '../domain/ports.ts';
 import { accountRoutes } from './accounts.ts';
@@ -34,7 +35,7 @@ export type { TenantParts, Tenants } from './tenants.ts';
 
 export interface ServerOptions {
   /** The instance store: UI sessions, login codes, the users and their identity links, the sign-in config. */
-  instance: Pick<InstanceStore, 'uiSessions' | 'loginCodes' | 'users' | 'identities' | 'signInConfig' | 'settings' | 'tx'>;
+  instance: Pick<InstanceStore, 'uiSessions' | 'loginCodes' | 'joinCodes' | 'users' | 'identities' | 'signInConfig' | 'settings' | 'tx'>;
   /** Every user's running parts (issue #158): a tenant route reads and changes the request's user's. */
   tenants: Tenants;
   /** The plugin store (the instance's): GET /api/plugin-store, POST /ui/api/plugin-store. */
@@ -54,6 +55,8 @@ export interface ServerOptions {
   lan: Lan;
   /** The built UI bundle (ui/dist). */
   uiDir: string;
+  /** Machines joining and dialling in (issue #308): their links, the client release, the install script. */
+  client: Pick<ClientLinkOptions, 'links' | 'release' | 'installScript'>;
   /** Fastify logger; off by default. */
   logger?: boolean;
 }
@@ -70,7 +73,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   const tenant = { tenant: (req: Parameters<typeof tenantOf>[1]) => tenantOf(o.tenants, req) };
   apiReferenceRoutes(app, o.version);
   jobRoutes(app, tenant);
-  stateRoutes(app, { ...tenant, clock: o.clock, version: o.version });
+  stateRoutes(app, { ...tenant, clock: o.clock, version: o.version, port: o.port });
   questionRoutes(app, tenant);
   questionGatesRoutes(app, tenant);
   jobRulesRoutes(app, tenant);
@@ -88,6 +91,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   instanceRoutes(app, { tenants: o.tenants, clock: o.clock, instanceAdmin });
   const realms = createRealmsAdmin({ instance: o.instance, environment: o.signInEnvironment, signIn: o.signIn, sessions });
   realmRoutes(app, { realms, instanceAdmin });
+  clientLinkRoutes(app, { ...o.client, tenants: o.tenants, instance: o.instance, clock: o.clock, port: o.port, lan: o.lan });
   staticRoutes(app, o.uiDir);
   registerUiRoutes(app, {
     ...tenant, tenants: o.tenants, instance: o.instance, sessions, signIn: o.signIn, realms, pluginStore: o.pluginStore, port: o.port, lan: o.lan, clock: o.clock,

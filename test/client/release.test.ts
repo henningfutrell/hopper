@@ -34,7 +34,7 @@ describe('the client release', () => {
     const good = readRelease(SRC);
     expect(checkRelease(good)).toEqual(good);
     expect(checkRelease({ ...good, id: '0123456789abcdef' })).toMatch(/id/);
-    const { ['tunnel.ts']: _gone, ...missing } = good.files;
+    const { ['dial.ts']: _gone, ...missing } = good.files;
     expect(checkRelease({ id: releaseId(missing as Record<string, string>), files: missing })).toMatch(/files/);
     const extra = { ...good.files, '../../.bashrc': 'x' };
     expect(checkRelease({ id: releaseId(extra), files: extra })).toMatch(/files/);

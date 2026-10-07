@@ -19,7 +19,7 @@ function keyValues(c: StoreContext) {
 /** The settings key of a connected account's job repositories (issue #321). */
 export const jobRepositoriesKey = (provider: ConnectedAccountProvider): string => `jobRepositories:${provider}`;
 
-/** A user's settings: the queue gate, the hopper's own ssh key (issue #293), the job repositories (issue #321). */
+/** A user's settings: the queue gate, the hopper's own ssh key (issue #293), its link key (issue #308), the job repositories (issue #321). */
 export function createUserSettingsRepository(c: StoreContext): UserSettingsRepository {
   const { read, write } = keyValues(c);
   return {
@@ -36,6 +36,13 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
     },
     setSshKey(key) {
       write('sshKey', JSON.stringify({ privateKey: key.privateKey, publicKey: key.publicKey }));
+    },
+    getLinkKey() {
+      const text = read('linkKey');
+      return text === undefined ? undefined : JSON.parse(text) as { privateKey: string; publicKey: string };
+    },
+    setLinkKey(key) {
+      write('linkKey', JSON.stringify({ privateKey: key.privateKey, publicKey: key.publicKey }));
     },
     getJobRepositories(provider) {
       const text = read(jobRepositoriesKey(provider));

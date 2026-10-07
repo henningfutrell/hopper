@@ -32,7 +32,10 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   (`docs/design.md` "Reaching the UI across the LAN", issue #16). No route creates or changes a job, question, webhook or setting except
   through the UI session below: jobs come only from job sources; webhook subscriptions are rows in the
   database and nothing else (issue #78), which the UI session may edit (`POST /ui/api/webhooks`, issue #18). Every request passes the Host guard
-  (`127.0.0.1:<port>` / `localhost:<port>` / a LAN name with the port / the public URL's host, else 421). The only mutations are the UI's
+  (`127.0.0.1:<port>` / `localhost:<port>` / a LAN name with the port / the public URL's host, else 421). One exception, a
+  machine's (issue #308, `docs/design.md` "Joining a machine"): `POST /client/join` adds the one client target a join
+  code names — the code minted through an admin's UI session or the operator CLI, kept hashed, spent by the join — and
+  a machine's dial-in (`GET /client/connect`, signed with its client token) changes nothing. Every other mutation is the UI's
   `POST /ui/api/*`, behind a UI session (`x-hopper-session`,
   exact Origin, same-origin, JSON — else 403) whose UI role allows it; a new mutation goes there and
   nowhere else, and names its least UI role. `docs/design.md` "UI session and mutations" and
@@ -57,7 +60,9 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   provider grants the hopper's app and no runtime holds — kept in that user's schema, never answered
   by any route. A third (issue #293: the hopper runs in ephemeral containers with no durable `~/.ssh`): the
   **hopper's ssh key**, minted by the hopper when the runtime mounts none, kept in that user's schema,
-  written to the work dir for ssh at each start, and never answered by any route but its public half. No default names a path on one
+  written to the work dir for ssh at each start, and never answered by any route but its public half. A fourth, for the
+  same reason (issue #308): the hopper's **link key** for each user, the private half of the key a machine's client token is
+  derived from, kept in that user's schema and never answered by any route but its public half. No default names a path on one
   machine; the work dir (`HOPPER_WORK_DIR`) is scratch only. The operator CLI (`src/cli.ts`,
   `hopper`) writes the database directly: whoever runs it holds its credentials.
 - **Never write into the Jev repo.** The shim reads it; logs go to hopper's work dir.

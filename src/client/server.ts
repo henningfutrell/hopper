@@ -1,18 +1,18 @@
-// The hopper client (design.md "Client targets", issue #59): what a client target runs. It dials the
-// hopper over ssh (tunnel.ts) and serves HTTP/2 on that session's stdin and stdout: the reverse
-// tunnel. The hopper end is relay.ts, the forced command of the client's key there. Three routes:
+// The hopper client (design.md "Client targets", issue #59): what a client target runs. It dials in to
+// the hopper's own URL (dial.ts, issue #308) and serves HTTP/2 on that link's socket: the hopper sends
+// its calls down it. Three routes:
 // `POST /herdr {args, timeoutMs?}` runs `<herdrBin> --session <session> <args>` with no shell and
 // answers `{code, stdout, stderr}` — the binary and the session are the client's own, never the
 // request's; `POST /release` answers `{release, home}`, the id of the release this process runs
 // (release.ts, issue #70) and this user's home, where `~` in a job's work tree resolves (issue #323); `POST /load {release}` writes the hopper's release into the install dir
 // and then asks to be restarted (`onLoaded`; main.ts exits and the unit starts the new files).
 // A request runs only when the hopper signed it with the client's token (signature.ts); every answer
-// is signed back. When the tunnel ends the client dials again, backing off to 30 s.
+// is signed back. When the link ends, or a dial fails, the client dials again, backing off to 30 s.
 // Imports nothing of hopper but its own directory: it is installed on the target as plain files.
-import { execFile, type ChildProcess } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { homedir } from 'node:os';
 import { performServerHandshake, type IncomingHttpHeaders, type ServerHttp2Stream } from 'node:http2';
-import { Duplex, Transform, type Readable } from 'node:stream';
+import type { Duplex } from 'node:stream';
 import { checkRelease, installRelease, readRelease } from './release.ts';
 import { REQUEST_HEADER, RESPONSE_HEADER, checkToken, createNonceCache, signResponse, verifyRequest } from './signature.ts';
 
@@ -20,7 +20,7 @@ const MAX_BODY = 1024 * 1024;
 const MAX_TIMEOUT_MS = 15 * 60 * 1000;
 const DEFAULT_TIMEOUT_MS = 15000;
 const BACKOFF_MS = [1000, 2000, 5000, 10000, 30000];
-/** A tunnel that stayed up this long starts the backoff over. */
+/** A link that stayed up this long starts the backoff over. */
 const STABLE_MS = 60000;
 
 export interface ClientOptions {
@@ -29,8 +29,8 @@ export interface ClientOptions {
   /** This machine's herdr binary (absolute) and the session the hopper's jobs run in (never `default`). */
   herdrBin: string;
   session: string;
-  /** Dials the hopper: a process whose stdin and stdout are the tunnel (ssh, in tunnel.ts). */
-  tunnel: () => ChildProcess;
+  /** Dials the hopper once: resolves the link's socket (dial.ts), or rejects. */
+  dial: () => Promise<Duplex>;
   log?: (line: string) => void;
   /** Delays between dials; default 1 s, 2 s, 5 s, 10 s, then 30 s. */
   backoffMs?: readonly number[];
@@ -105,7 +105,7 @@ async function serve(o: ClientOptions, nonces: ReturnType<typeof createNonceCach
   answer(200, await herdr(o, parsed.args, timeoutMs));
 }
 
-/** After the load's answer leaves this end, how long the tunnel stays up for it to reach the hopper before the restart. */
+/** After the load's answer leaves this end, how long the link stays up for it to reach the hopper before the restart. */
 const RESTART_GRACE_MS = 1000;
 
 /** A signed load: the release checked whole, written into the install dir, then — once the answer is on its way — a restart asked for. */
@@ -123,29 +123,6 @@ function load(o: ClientOptions, releases: Releases, stream: ServerHttp2Stream, b
   answer(200, { release: release.id });
 }
 
-/**
- * What the relay sends first; anything before it is the hopper machine's login shell talking. Unchanged by
- * the rename (issue #112): a hopper's relay must still reach clients that run a release from before it.
- */
-const MARKER = Buffer.from('JOB-HOPPER-RELAY/1\n');
-const MAX_NOISE = 64 * 1024;
-
-/** The tunnel's stream from the relay's marker on. */
-function afterMarker(input: Readable): Readable {
-  let seen = Buffer.alloc(0);
-  let found = false;
-  return input.pipe(new Transform({
-    transform(chunk: Buffer, _enc, next) {
-      if (found) return next(null, chunk);
-      seen = Buffer.concat([seen, chunk]);
-      const at = seen.indexOf(MARKER);
-      if (at < 0) return seen.length > MAX_NOISE ? next(new Error('the tunnel did not reach the relay')) : next();
-      found = true;
-      next(null, seen.subarray(at + MARKER.length));
-    },
-  }));
-}
-
 export function startClient(o: ClientOptions): Client {
   if (o.session === 'default' || !o.session) throw new Error('the client\'s herdr session must be named and never `default`');
   checkToken(o.token());
@@ -156,46 +133,53 @@ export function startClient(o: ClientOptions): Client {
   const backoff = o.backoffMs ?? BACKOFF_MS;
   let stopped = false;
   let attempt = 0;
-  let child: ChildProcess | undefined;
+  let link: Duplex | undefined;
   let timer: NodeJS.Timeout | undefined;
   let exited: Promise<void> = Promise.resolve();
+
+  const again = (why: string, started: number): void => {
+    if (stopped) return;
+    if (Date.now() - started > STABLE_MS) attempt = 0;
+    const wait = backoff[Math.min(attempt++, backoff.length - 1)]!;
+    log(`hopper-client: ${why}; dialing again in ${wait} ms`);
+    timer = setTimeout(dial, wait);
+  };
 
   function dial(): void {
     if (stopped) return;
     const started = Date.now();
-    const c = o.tunnel();
-    child = c;
     let close!: () => void;
     exited = new Promise((r) => { close = r; });
-    const duplex = Duplex.from({ readable: afterMarker(c.stdout!), writable: c.stdin! } as unknown as Parameters<typeof Duplex.from>[0]);
-    const session = performServerHandshake(duplex);
-    session.on('stream', (stream, headers) => {
-      serve(o, nonces, releases, stream, headers).catch((e: unknown) => {
-        log(`hopper-client: ${(e as Error).message}`);
-        if (!stream.destroyed) stream.close();
+    o.dial().then((socket) => {
+      if (stopped) { socket.destroy(); close(); return; }
+      link = socket;
+      const session = performServerHandshake(socket);
+      session.on('stream', (stream, headers) => {
+        serve(o, nonces, releases, stream, headers).catch((e: unknown) => {
+          log(`hopper-client: ${(e as Error).message}`);
+          if (!stream.destroyed) stream.close();
+        });
       });
-    });
-    session.on('error', (e) => log(`hopper-client: tunnel session: ${e.message}`));
-    c.stderr?.on('data', (d: Buffer) => log(`hopper-client: tunnel: ${d.toString().trim()}`));
-    c.on('exit', (code) => {
-      // The pipe is gone: ending the stream ends the session (destroying the session would write to it).
-      duplex.destroy();
+      session.on('error', (e) => log(`hopper-client: link session: ${e.message}`));
+      socket.on('error', (e) => log(`hopper-client: link: ${e.message}`));
+      socket.once('close', () => {
+        link = undefined;
+        close();
+        again('the link ended', started);
+      });
+    }, (e: unknown) => {
       close();
-      if (stopped) return;
-      if (Date.now() - started > STABLE_MS) attempt = 0;
-      const wait = backoff[Math.min(attempt++, backoff.length - 1)]!;
-      log(`hopper-client: tunnel ended (exit ${code ?? 'signal'}); dialing again in ${wait} ms`);
-      timer = setTimeout(dial, wait);
+      again(`dialing the hopper failed: ${(e as Error).message}`, started);
     });
   }
 
   dial();
-  log(`hopper-client: release ${running}, serving herdr session ${o.session} over the tunnel`);
+  log(`hopper-client: release ${running}, serving herdr session ${o.session} over its link`);
   return {
     async stop() {
       stopped = true;
       clearTimeout(timer);
-      child?.kill('SIGTERM');
+      link?.destroy();
       await exited;
     },
   };

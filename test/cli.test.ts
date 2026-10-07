@@ -276,8 +276,8 @@ describe('hopper join-code (issue #308)', () => {
   it('mints a one-time join code for the one user: what a script puts after # in a join line', () => {
     const url = db();
     const r = cli(url, ['join-code']);
-    expect(r.err).toBe('');
     expect(r.code).toBe(0);
+    expect(r.err).toMatch(/a join code for admin, once, until /);
     const code = r.out.trim();
     expect(code).toMatch(/^[0-9a-f]{64}$/);
     // Kept only hashed, for that user, and taken once.

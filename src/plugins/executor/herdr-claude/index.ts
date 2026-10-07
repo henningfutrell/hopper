@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { JOBS_DIR } from '../../../domain/types.ts';
 import type { HerdrClient, RemoteHerdr } from '../../../executors/herdr/index.ts';
 import { claudeArgsFor, createHerdrClaudeExecutor, createHerdrCliClient } from '../../../executors/herdr/index.ts';
-import { clientSocket } from '../../../executors/client.ts';
+import type { ClientTransport } from '../../../executors/client.ts';
 import { hopperSshAuth } from '../../../executors/ssh.ts';
 import type { PluginDefinition } from '../../sdk.ts';
 
@@ -65,14 +65,18 @@ export function herdrClaudePlugin(seam?: HerdrClient): PluginDefinition<'executo
       // One client per attached machine's herdr; their ssh connections share sockets under the data
       // dir (a unix socket path is capped at 108 bytes: keep the data dir short).
       const remotes = new Map<string, HerdrClient>();
+      // A client target is looked up at each call: it may join, be renamed or dial in again while the executor runs.
+      const clientOf = (machine: string): ClientTransport => ({
+        machine,
+        link: () => ctx.client(machine)?.link(),
+        token: () => ctx.client(machine)?.token() ?? '',
+      });
       const remote = (there: RemoteHerdr): HerdrClient => {
         const key = JSON.stringify(there);
         let client = remotes.get(key);
         if (!client) {
           client = seam ?? ('client' in there
-            ? createHerdrCliClient({
-              client: { machine: there.client.machine, socket: clientSocket(ctx.dataDir, there.client.machine), token: () => ctx.env(there.client.tokenEnv) ?? '' },
-            })
+            ? createHerdrCliClient({ client: clientOf(there.client.machine) })
             : createHerdrCliClient({
               bin: there.bin, session: there.session,
               ssh: { target: there.ssh, controlDir: join(ctx.dataDir, 'ssh'), auth: () => hopperSshAuth({ env: ctx.env, dataDir: ctx.dataDir }) },

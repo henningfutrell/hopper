@@ -1,18 +1,17 @@
 // The hopper keeps its client targets on its own client release (issue #70): each probe asks the client
 // which release it runs and loads the hopper's when it differs — never while a job runs on that
 // machine, so no herdr call of a running job meets a client restarting. An old client, one that
-// predates releases, stays online and is reported once: it is installed again by attach-client.sh.
-import { chmodSync, cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+// predates releases, stays online and is reported once: it is added again with Add machine.
+import { chmodSync, cpSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { Client } from '../../src/client/server.ts';
 import { readRelease } from '../../src/client/release.ts';
 import { mintToken } from '../../src/client/signature.ts';
-import { clientSocket } from '../../src/executors/client.ts';
+import type { ClientTransport } from '../../src/executors/client.ts';
 import { createClientReleaseKeeper } from '../../src/machines/client-release.ts';
-import { startTestClient } from '../support/client.ts';
+import { startTestClient, type TestClient } from '../support/client.ts';
 import { waitFor } from '../support/wait.ts';
 
 const HERDR = fileURLToPath(new URL('../herdr/fake-herdr-bin.mjs', import.meta.url));
@@ -22,21 +21,19 @@ const HOPPERS = readRelease(SRC);
 const TOKEN = mintToken();
 
 let dir: string;
-let client: Client | undefined;
+let client: TestClient | undefined;
 afterEach(async () => { await client?.stop(); client = undefined; rmSync(dir, { recursive: true, force: true }); });
 
-async function olderClient(restartOnLoad = false): Promise<{ install: string; loaded: string[]; transport: { machine: string; socket: string; token: () => string } }> {
+async function olderClient(restartOnLoad = false): Promise<{ install: string; loaded: string[]; transport: ClientTransport }> {
   dir = mkdtempSync(join(tmpdir(), 'jh-keeper-'));
   process.env.FAKE_HERDR_DIR = dir;
   process.env.FAKE_HERDR_RUNNING = '1';
   const install = join(dir, 'hopper-client');
-  cpSync(SRC, install, { recursive: true, filter: (p) => !p.endsWith('relay.ts') });
+  cpSync(SRC, install, { recursive: true });
   writeFileSync(join(install, 'main.ts'), `${HOPPERS.files['main.ts']}// an older client\n`);
-  mkdirSync(join(dir, 'clients'), { mode: 0o700 });
-  const socket = clientSocket(dir, 'studio');
   const loaded: string[] = [];
-  client = await startTestClient(socket, { token: () => TOKEN, herdrBin: HERDR, session: 'hopper', installDir: install, onLoaded: (id) => { loaded.push(id); if (restartOnLoad) void client?.stop(); } });
-  return { install, loaded, transport: { machine: 'studio', socket, token: () => TOKEN } };
+  client = await startTestClient({ token: () => TOKEN, herdrBin: HERDR, session: 'hopper', installDir: install, onLoaded: (id) => { loaded.push(id); if (restartOnLoad) void client?.client.stop(); } });
+  return { install, loaded, transport: client.transport(TOKEN) };
 }
 
 describe('keeping a client target on the hopper\'s release', () => {
@@ -61,7 +58,7 @@ describe('keeping a client target on the hopper\'s release', () => {
     expect(lines.join('\n')).toMatch(new RegExp(`client studio: loaded release ${HOPPERS.id}`));
   });
 
-  it('a client that stops its tunnel to restart, as main.ts does, still gets its answer to the hopper first', async () => {
+  it('a client that ends its link to restart, as main.ts does, still gets its answer to the hopper first', async () => {
     const { loaded, transport } = await olderClient(true);
     const lines: string[] = [];
     const keep = createClientReleaseKeeper({ release: HOPPERS, logger: { info: (l) => lines.push(l), warn: (l) => lines.push(l) } });
@@ -78,9 +75,9 @@ describe('keeping a client target on the hopper\'s release', () => {
     expect(await keep(transport, () => true)).toMatchObject({ online: true, home: homedir() });
   });
 
-  it('a client with no tunnel is offline, and nothing is tried', async () => {
+  it('a client not dialled in is offline, and nothing is tried', async () => {
     dir = mkdtempSync(join(tmpdir(), 'jh-keeper-'));
     const keep = createClientReleaseKeeper({ release: HOPPERS, logger: { info: () => {}, warn: () => {} } });
-    await expect(keep({ machine: 'studio', socket: join(dir, 'none.sock'), token: () => TOKEN }, () => false)).rejects.toThrow(/not connected/);
+    await expect(keep({ machine: 'studio', link: () => undefined, token: () => TOKEN }, () => false)).rejects.toThrow(/not dialled in/);
   });
 });

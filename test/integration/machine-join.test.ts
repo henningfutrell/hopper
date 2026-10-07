@@ -113,7 +113,7 @@ describe('adding a machine with one line', () => {
 
   it('a join code is minted only through an admin\'s UI session', async () => {
     const { a } = await boot();
-    expect((await a.ui('/ui/api/machines/join', {})).status).toBe(401);
+    expect((await a.ui('/ui/api/machines/join', {})).status).toBe(403);
   });
 
   it('a second machine of the same name is given another', async () => {

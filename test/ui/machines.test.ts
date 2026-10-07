@@ -3,7 +3,7 @@
 // POST /ui/api/machines and an Edit form to POST /ui/api/plugins, and why it may not yet.
 import { describe, expect, it } from 'vitest';
 import type { MachinesConfig } from '../../src/domain/types.ts';
-import { addBody, addProblem, authorizedKeysLine, BOX_AGENTS, joinLine, hostKeyCheck, clientReleaseText, defaultsBody, DETAILS, editBody, editDraft, editProblem, hasThisMachine, isThisMachineTarget, kindOf, mayAddThisMachine, localBody, newDraft, newThisDraft, thisBody, thisProblem, type MachineDraft } from '../../ui/src/model/machines.ts';
+import { addBody, addProblem, authorizedKeysLine, BOX_AGENTS, boxPlace, joinLine, hostKeyCheck, clientReleaseText, defaultsBody, DETAILS, editBody, editDraft, editProblem, hasThisMachine, isThisMachineTarget, kindOf, mayAddThisMachine, localBody, newDraft, newThisDraft, thisBody, thisProblem, type MachineDraft } from '../../ui/src/model/machines.ts';
 
 const CONFIG: MachinesConfig = {
   version: 'v1',
@@ -257,7 +257,10 @@ describe('the Add machine line (issue #308)', () => {
 
   it('a sandbox box: a locked-down container on the hopper\'s network, its home a volume of its own, joined with the code', () => {
     const line = joinLine({ kind: 'box', agent: 'claude', engine: 'podman' }, { origin: 'http://localhost:4790', code, join });
-    expect(line.startsWith('podman run -d --name hopper-box-claude --hostname hopper-box-claude ')).toBe(true);
+    expect(line.startsWith('podman run -d --name hopper-box-claude ')).toBe(true);
+    // Named by the client's own setting: Docker refuses a host name on the host network.
+    expect(line).toContain('-e HOPPER_CLIENT_NAME=hopper-box-claude');
+    expect(line).not.toContain('--hostname');
     for (const flag of ['--network hopper_default', '--cap-drop ALL', '--security-opt no-new-privileges', '--read-only', '-v hopper-box-claude-home:/home/agent']) {
       expect(line).toContain(flag);
     }
@@ -265,10 +268,16 @@ describe('the Add machine line (issue #308)', () => {
     expect(line.endsWith(' ghcr.io/henningfutrell/hopper:box-claude')).toBe(true);
     // Nothing of the computer is mounted into it.
     expect(line).not.toMatch(/-v \/|--privileged|docker\.sock/);
-    expect(joinLine({ kind: 'box', agent: 'cursor', engine: 'docker' }, { origin: 'x', code, join })).toMatch(/^docker run -d --name hopper-box-cursor .* ghcr\.io\/henningfutrell\/hopper:box-cursor$/);
+    expect(joinLine({ kind: 'box', agent: 'claude', engine: 'docker' }, { origin: 'x', code, join })).toMatch(/^docker run -d --name hopper-box-claude .* --tmpfs \/tmp .* ghcr\.io\/henningfutrell\/hopper:box-claude$/);
   });
 
-  it('the agents a box is offered with are those an executor drives', () => {
-    expect(BOX_AGENTS).toEqual(['claude', 'cursor']);
+  it('the agents a box is offered with are those an executor drives on a client target', () => {
+    expect(BOX_AGENTS).toEqual(['claude']);
+  });
+
+  it('where a box reaches the hopper: by name on its compose network in a container, else this computer\'s loopback', () => {
+    const inContainer = { ...CONFIG, thisMachineRefused: 'in a container' };
+    expect(boxPlace(inContainer, '4790')).toEqual({ boxUrl: 'http://hopper:4790', boxNetwork: 'hopper_default', boxImage: 'ghcr.io/henningfutrell/hopper' });
+    expect(boxPlace(CONFIG, '4791')).toEqual({ boxUrl: 'http://127.0.0.1:4791', boxNetwork: 'host', boxImage: 'ghcr.io/henningfutrell/hopper' });
   });
 });

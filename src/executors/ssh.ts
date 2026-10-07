@@ -14,7 +14,7 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, renameSync, writeFileSy
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { AttachedMachine } from '../domain/types.ts';
-import { HARDENED_SSH_OPTIONS } from '../client/ssh-options.ts';
+import { HARDENED_SSH_OPTIONS } from './ssh-options.ts';
 import { scrubbedEnv } from './env.ts';
 import { ownKeyFile } from './ssh-key.ts';
 

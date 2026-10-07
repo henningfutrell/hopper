@@ -99,6 +99,9 @@ export interface UserSettingsRepository {
   /** The hopper's own ssh key for this user's machines (issue #293): a secret, never answered by any route but its public half. */
   getSshKey(): { privateKey: string; publicKey: string } | undefined;
   setSshKey(key: { privateKey: string; publicKey: string }): void;
+  /** The hopper's link key for this user's machines that dial in (issue #308): a secret, never answered by any route but its public half. */
+  getLinkKey(): { privateKey: string; publicKey: string } | undefined;
+  setLinkKey(key: { privateKey: string; publicKey: string }): void;
   /** The repositories a connected account's jobs may use (issue #321); empty: none chosen. */
   getJobRepositories(provider: ConnectedAccountProvider): string[];
   setJobRepositories(provider: ConnectedAccountProvider, repositories: readonly string[]): void;
@@ -135,6 +138,13 @@ export interface LoginCodeRepository {
   take(codeHash: string, now: string): string | undefined;
   /** The code's user when it exists and `expiresAt > now`; the code stays. */
   live(codeHash: string, now: string): string | undefined;
+}
+
+/** One-time join codes (issue #308): only each code's SHA-256 is kept, with its user and expiry. */
+export interface JoinCodeRepository {
+  create(codeHash: string, expiresAt: string, userId: string): void;
+  /** The code's user, and the code is gone, when it exists and `expiresAt > now`; else undefined. Expired codes are deleted first. */
+  take(codeHash: string, now: string): string | undefined;
 }
 
 /**
@@ -274,6 +284,7 @@ export interface InstanceStore {
   identities: IdentityLinks;
   uiSessions: UiSessionRepository;
   loginCodes: LoginCodeRepository;
+  joinCodes: JoinCodeRepository;
   /** `sign-in`, without the password accounts (the CLI's `hopper config … sign-in`). */
   config: ConfigRecords<InstanceConfigName>;
   /** The sign-in config: the `sign-in` record with the password accounts. */

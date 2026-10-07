@@ -19,6 +19,7 @@ import { userIdOf, type TenantParts, type Tenants } from '../tenants.ts';
 import { webhooksView } from '../webhooks.ts';
 import { SESSION_HEADER, mutationRefusal } from './guard.ts';
 import { loginCodeLive, mintLoginCode } from './login-code.ts';
+import { mintJoinCode } from '../../machines/join-code.ts';
 import { INSTANCE_ADMIN_ONLY, type InstanceAdmin } from '../instance-admin.ts';
 import { identityName, sessionUser, type UiSession, type UiSessions } from './sessions.ts';
 import { registerSignInRoutes } from './sign-in.ts';
@@ -28,7 +29,7 @@ export interface UiRouteOptions {
   /** The request's user's parts (the session's user). */
   tenant: (req: FastifyRequest) => TenantParts;
   tenants: Tenants;
-  instance: Pick<InstanceStore, 'loginCodes' | 'users'>;
+  instance: Pick<InstanceStore, 'loginCodes' | 'joinCodes' | 'users'>;
   sessions: UiSessions;
   signIn: SignIn;
   /** Settings → Sign-in: the sign-in config's realms (issue #185). */
@@ -288,6 +289,14 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     const r = await o.tenant(req).plugins.machineHostKey(parseWith(machineHostKeyBody, req.body).ssh);
     if (!r.ok) throw new HttpError(EDIT_STATUS[r.code], r.error);
     return r.offer;
+  });
+
+  // Issue #308: Add machine's one-time join code, for the session's user: the line the machine runs carries it
+  // (design.md "Joining a machine"). Writes only the code's hash; the machine's join adds it.
+  app.post('/ui/api/machines/join', admin, async (req) => {
+    const id = userIdOf(req);
+    if (id === undefined) throw new HttpError(401, 'sign in to add a machine');
+    return mintJoinCode(o.instance, o.clock, id);
   });
 
   // Issue #142: the plugins config `machineDefaults:`, what a machine attached here starts with. Answers the new GET /api/machines/config.

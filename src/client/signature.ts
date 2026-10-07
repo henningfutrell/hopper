@@ -1,5 +1,6 @@
 // How the hopper and a hopper client prove themselves to each other over HTTP (design.md "Target
-// authentication", issue #59), with the client's token — a shared secret both get from their runtime.
+// authentication", issue #59), with the client's token — which each end derives from its own link key
+// and the other's public half (link.ts, issue #308).
 // The token never crosses the wire. A request carries `x-hopper-signature: ts=<ms>,nonce=<hex>,sig=<b64url>`,
 // sig = HMAC-SHA256(token, "hopper-request" ‖ method ‖ path ‖ ts ‖ nonce ‖ sha256(body)); the client
 // accepts it within 30 s of its own clock and once (the nonce). The answer carries
@@ -19,7 +20,7 @@ export const mintToken = (): string => randomBytes(32).toString('base64url');
 
 /** The token, or a throw when it is too short to be safe. */
 export function checkToken(token: string): string {
-  if (token.length < MIN_TOKEN) throw new Error(`a client token must be at least ${MIN_TOKEN} characters (256 bits, base64url); scripts/attach-client.sh mints one`);
+  if (token.length < MIN_TOKEN) throw new Error(`a client token must be at least ${MIN_TOKEN} characters (256 bits, base64url); link.ts derives one`);
   return token;
 }
 
@@ -62,6 +63,26 @@ export function verifyRequest(token: string, header: string | undefined, method:
   const [, ts, nonce, sig] = m as unknown as [string, string, string, string];
   if (Math.abs(now - Number(ts)) > WINDOW_MS) return { ok: false, why: 'stale' };
   if (!same(sig, mac(token, ['hopper-request', method, path, ts, nonce, sha256(body)]))) return { ok: false, why: 'bad signature' };
+  if (nonces.seen(nonce, now)) return { ok: false, why: 'replayed' };
+  return { ok: true, nonce };
+}
+
+/**
+ * A machine dialling in (design.md "Joining a machine", issue #308): the client signs which user's machine
+ * it is and its machine key, fresh and once, with the client token — so only the holder of the machine's
+ * link key can open its connection. Its own label: never mistaken for a request or an answer.
+ */
+export function signConnect(token: string, user: string, machineKey: string, now = Date.now()): string {
+  const nonce = randomBytes(16).toString('hex');
+  return `ts=${now},nonce=${nonce},sig=${mac(token, ['hopper-connect', user, machineKey, String(now), nonce])}`;
+}
+
+export function verifyConnect(token: string, header: string | undefined, user: string, machineKey: string, nonces: NonceCache, now = Date.now()): Verdict {
+  const m = header ? HEADER.exec(header) : null;
+  if (!m) return { ok: false, why: 'unsigned' };
+  const [, ts, nonce, sig] = m as unknown as [string, string, string, string];
+  if (Math.abs(now - Number(ts)) > WINDOW_MS) return { ok: false, why: 'stale' };
+  if (!same(sig, mac(token, ['hopper-connect', user, machineKey, ts, nonce]))) return { ok: false, why: 'bad signature' };
   if (nonces.seen(nonce, now)) return { ok: false, why: 'replayed' };
   return { ok: true, nonce };
 }

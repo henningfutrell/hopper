@@ -1,8 +1,7 @@
 // The ssh options every connection between the hopper and a target carries (design.md "Target
 // authentication", issue #59), on the command line so they beat any config: public-key
-// authentication only, the one key given only, pinned host keys only, nothing forwarded. One owner:
-// the hopper's connections to ssh targets (src/executors/ssh.ts) and a client's tunnel to the hopper
-// (tunnel.ts) both use this list. Imports nothing: it is installed on client targets as a plain file.
+// authentication only, the one key given only, pinned host keys only, nothing forwarded: the hopper's
+// connections to ssh targets (ssh.ts).
 export const HARDENED_SSH_OPTIONS: readonly string[] = [
   'BatchMode=yes', 'ConnectTimeout=10',
   // Public-key authentication only.

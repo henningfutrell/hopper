@@ -16,7 +16,10 @@ import { createEngine, type Engine } from '../engine/index.ts';
 import { logFailures } from '../engine/failure-log.ts';
 import { createExecutorRegistry } from '../executors/index.ts';
 import type { HerdrClient } from '../executors/herdr/index.ts';
-import { clientSocket, type ClientTransport } from '../executors/client.ts';
+import type { ClientTransport } from '../executors/client.ts';
+import { linkToken, mintLinkKey } from '../client/link.ts';
+import type { MachineLinks } from '../machines/links.ts';
+import type { MachineJoin } from '../plugins/attached-edit.ts';
 import { dockerHost } from '../executors/docker.ts';
 import { hopperSshAuth, pinHostKeys } from '../executors/ssh.ts';
 import { ensureOwnSshKey, type StoredSshKey } from '../executors/ssh-key.ts';
@@ -73,6 +76,16 @@ export interface UserSeams {
   herdrSession?: (session: string) => Promise<void>;
 }
 
+/** A user's side of the machines that dial in (design.md "Joining a machine", issue #308). */
+export interface UserMachineLink {
+  /** The public half of the hopper's link key for this user: a joining machine derives its client token from it. */
+  hopperKey: string;
+  /** A machine joining with its machine key, under the name it asks for: the client target it is now. */
+  join(j: MachineJoin): Promise<{ ok: true; machine: string } | { ok: false; error: string }>;
+  /** The client token of the client target holding this machine key; undefined when none does. */
+  tokenFor(key: string): string | undefined;
+}
+
 /** What the instance gives each user runtime. */
 export interface UserRuntimeOptions {
   user: User;
@@ -86,6 +99,8 @@ export interface UserRuntimeOptions {
   logger: { info(line: string): void; warn(line: string): void };
   /** The client release this hopper loads onto client targets (the install it runs from). */
   clientRelease: ClientRelease;
+  /** The links of the machines dialled in to this hopper (the instance's; issue #308). */
+  links: MachineLinks;
   /** Where the store installs are unpacked (the instance's). */
   installedDir: string;
   /** How often the plugins config's version is checked. */
@@ -116,6 +131,8 @@ export interface UserRuntime {
   webhooksEditor: WebhooksEditor;
   /** Why the user's runtime gives no secret for a webhook subscription's variable; undefined when it does. */
   secretProblem: (secretEnv: string) => string | undefined;
+  /** The user's machines dialling in (issue #308): the hopper's public half, a machine joining, a dial-in's token. */
+  machineLink: UserMachineLink;
   /** Start the loops: engine and source sync (the dispatcher and notifiers run from creation). Once. */
   start(): Promise<void>;
   /** Stop every loop and part; close the user's store. Once. */
@@ -183,20 +200,32 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   }
   // How the hopper proves itself to an ssh target, asked at every connection (design.md "Target authentication").
   const sshAuth = () => hopperSshAuth({ env: secret, dataDir });
-  // Where client targets' reverse tunnels open their sockets: this user's alone (design.md "Client targets").
-  mkdirSync(join(dataDir, 'clients'), { recursive: true, mode: 0o700 });
-  const clientTransport = (machine: string, tokenEnv: string): ClientTransport => ({
-    machine, socket: clientSocket(dataDir, machine), token: () => secret(tokenEnv) ?? '',
+  // The hopper's link key for this user (issue #308): minted once and kept in the user's store, like the
+  // hopper's own ssh key; its public half is what a joining machine is given. A client target's token is
+  // derived from it and the machine key, at each call.
+  let linkKey = store.settings.getLinkKey();
+  if (!linkKey) { linkKey = mintLinkKey(); store.settings.setLinkKey(linkKey); }
+  const hopperLink = linkKey;
+  const clientTransport = (machine: string, key: string): ClientTransport => ({
+    machine, link: () => o.links.link(user.id, key), token: () => linkToken(hopperLink.privateKey, key),
   });
+  let clientTargets = (): AttachedMachine[] => [];
+  /** The client target named `machine` now, reached down its link; undefined when none is. */
+  const clientNamed = (machine: string): ClientTransport | undefined => {
+    const m = clientTargets().find((t) => t.name === machine);
+    return m && 'client' in m ? clientTransport(m.name, m.client.key) : undefined;
+  };
   const keepClient = createClientReleaseKeeper({ release: o.clientRelease, logger });
   let executorNames = (): string[] => [];
   let jobsOnMachine = (_name: string): string[] => [];
   // How the hopper reaches each attached machine (issue #74: the machine-source context's `target`).
   const target = createTargetPool({
     clock, logger,
+    // A client target that dials in is probed at once, not at the next 30 s.
+    reachedAt: (m) => ('client' in m ? o.links.dialledAt(user.id, m.client.key) : 0),
     probe: seams.machineProbe
       ?? ((m) => ('client' in m
-        ? keepClient(clientTransport(m.name, m.client.tokenEnv), () => jobsOnMachine(m.name).length > 0)
+        ? keepClient(clientTransport(m.name, m.client.key), () => jobsOnMachine(m.name).length > 0)
         : 'docker' in m
           ? probeContainer({ container: m.docker, dockerHost: () => dockerHost(secret) }).then((online) => ({ online }))
           // An ssh target's home comes with every probe: `~` in a job's work tree resolves there (issue #323).
@@ -232,6 +261,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
       connectedAccounts,
     },
     machineContext: { executors: () => executorNames(), target },
+    executorContext: { client: clientNamed },
     intervalMs: o.pluginsConfigIntervalMs,
     executorInUse: (name) => notEnded().filter((j) => j.spec.executor === name).map((j) => j.id),
     attached: {
@@ -250,6 +280,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     return machines;
   };
   pinned(host.targets());
+  clientTargets = () => host.targets();
   // Executors follow the plugins config live (issue #142): every lookup reads the host's instances now.
   const currentExecutors = (): ExecutorRegistry => {
     const built = host.executors();
@@ -318,6 +349,11 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     webhooksEditor: createWebhooksEditor({ store }),
     // The variable the user's runtime reads: the subscription's, under the user's prefix.
     secretProblem: (secretEnv) => secretProblem(raw, `${user.secretPrefix}${secretEnv}`),
+    machineLink: {
+      hopperKey: hopperLink.publicKey,
+      join: (j) => host.joinMachine(j),
+      tokenFor: (key) => (host.targets().some((m) => 'client' in m && m.client.key === key) ? linkToken(hopperLink.privateKey, key) : undefined),
+    },
     async start() {
       if (started) return;
       started = true;

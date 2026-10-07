@@ -10,8 +10,8 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-/** Every file of the hopper client, and nothing else: relay.ts runs on the hopper's machine. */
-export const CLIENT_FILES = ['main.ts', 'release.ts', 'server.ts', 'signature.ts', 'ssh-options.ts', 'tunnel.ts'] as const;
+/** Every file of the hopper client, and nothing else. */
+export const CLIENT_FILES = ['dial.ts', 'join.ts', 'link.ts', 'main.ts', 'release.ts', 'server.ts', 'signature.ts'] as const;
 
 export interface ClientRelease {
   /** 16 hex: the files' content. */

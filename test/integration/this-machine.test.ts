@@ -176,8 +176,7 @@ describe('POST /ui/api/machines — the hopper in a container', () => {
     const { a } = await start(NONE, CONTAINER);
     const c = await config(a);
     expect(c.thisMachineRefused).toMatch(/container/);
-    expect(c.thisMachineRefused).toMatch(/host\.containers\.internal/);
-    expect(c.thisMachineRefused).toMatch(/host\.docker\.internal/);
+    expect(c.thisMachineRefused).toMatch(/Add machine → A computer/);
     expect(c.ssh.here).toEqual([]);
   });
 

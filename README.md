@@ -259,9 +259,10 @@ that is online, runs the job's executor, and has the most room left — unless a
 
 | Kind | Use it for | The hopper reaches it by | It needs |
 |---|---|---|---|
+| [a computer, with one line](#a-computer-or-a-sandbox-box-one-line) | the computer the hopper's container runs on, a laptop, a desktop: it dials in | its own connection to the hopper's URL | Node.js ≥ 24, herdr, `claude` |
+| [a sandbox box, with one line](#a-computer-or-a-sandbox-box-one-line) | jobs that must reach nothing of your computer | its own connection to the hopper's URL | Podman or Docker beside the hopper |
 | [this host](#this-host) | the start: jobs on the hopper's own machine | nothing to reach | herdr and `claude`; set up by the install |
-| [ssh target](#an-ssh-target) | another computer the hopper can always ssh to (a desktop, a server, WSL) | ssh, with its own key | sshd, and herdr with `claude` or [Cursor's agent](#cursors-agent) |
-| [client target](#a-client-target) | a computer the hopper cannot always reach (a laptop that moves networks): it dials in | the client's tunnel to the hopper | Node.js ≥ 24, herdr, `claude`; sshd on the hopper's host |
+| [ssh target](#an-ssh-target) | a computer that cannot run the client (no Node.js 24) | ssh, with its own key | sshd, and herdr with `claude` or [Cursor's agent](#cursors-agent) |
 | [container target](#a-container-target) | plain shell commands, sandboxed: no network, no agent | `docker exec`, through a socket proxy | docker on the hopper's host |
 
 Every command below runs on the hopper's host, as the user the daemon runs as, from the install
@@ -272,6 +273,29 @@ machine online or offline; the daemon's log says why one is offline
 **Machine defaults.** A machine added in the Machines view starts with the machine defaults: its
 lanes and the executors it runs (one lane and `herdr-claude` until you change them). Change them
 there with **Defaults**; they apply to machines added afterwards, never to ones already there.
+
+### A computer or a sandbox box: one line
+
+Machines → **Add machine**, pick one, **Show the line**, run it where it says. The machine joins, and
+shows in the Machines view, online, a few seconds later. Nothing is typed into the hopper; nothing
+listens on the machine (it dials in to the hopper's own URL); no ssh, no keys to copy, no restart. The
+line carries a one-time join code: it works once, for 10 minutes.
+
+- **A computer**: run the line in a terminal there. It checks Node.js ≥ 24 and herdr, installs the
+  hopper's client, joins, and runs it as the user units `hopper-client` and `hopper-client-herdr`. Its
+  jobs run as you there. Sign `claude` in there once, and keep it running after you log out:
+  `loginctl enable-linger`. For the computer a hopper container runs on, open the UI at
+  `http://localhost:4790` there first: the line names the URL the page is open at.
+- **A sandbox box** (Podman or Docker): run the line on the computer the hopper runs on. It starts the
+  container `hopper-box-claude` from `ghcr.io/henningfutrell/hopper:box-claude` on the hopper's network,
+  locked down — every capability dropped, no new privileges, a read-only root, its own home volume,
+  nothing of the computer mounted. Sign its agent in once:
+  `podman exec -it hopper-box-claude claude`; the sign-in stays in its home volume, as does its identity,
+  so a recreated box is the same machine.
+
+A machine is removed in the Machines view; its next dial-in is refused. A script that adds machines
+mints a code with `hopper join-code` (the operator CLI) and runs the same line. Make the jobs' working
+directories exist on the machine: a job whose directory is missing there fails.
 
 ### This host
 
@@ -307,29 +331,6 @@ machine (`HOPPER_LOCAL_MACHINE=false`), and jobs run on the machines attached be
    a job whose directory is missing fails.
 
 Within 30 s the Machines view shows it online.
-
-### A client target
-
-The target runs the hopper client, which dials the hopper over ssh and keeps the tunnel up; the
-hopper never connects to it after setup. The hopper loads each new client release onto it by itself.
-
-1. **On the target**: Node.js ≥ 24, herdr, the `claude` CLI signed in, and
-   `sudo loginctl enable-linger "$USER"`.
-2. **On the hopper's host**: sshd runs, and the target can reach it (`<user>@<hopper-host>`, port 22,
-   or `HOPPER_CLIENT_HOPPER_PORT`). You can ssh to the target now, as in step 2 of the ssh target.
-3. Install the client there. `laptop` is the machine's name in the hopper, `my-laptop` how you reach
-   it now, `me@hopper-host` how it reaches the hopper:
-
-   ```sh
-   bash ~/.local/lib/hopper/scripts/attach-client.sh laptop my-laptop me@hopper-host 1
-   ```
-
-4. Add the line it prints to `~/.config/hopper/daemon.env` (`CLIENT_TOKEN_LAPTOP_FILE=…`), then
-   `systemctl --user restart hopper`.
-5. Attach it: in the UI, Settings → Plugins → Machine sources, add a `client` instance named
-   `laptop` and set the printed options (`tokenEnv`, `lanes`). The Machines view's Add machine
-   attaches ssh targets only. No restart.
-6. Make the jobs' working directories exist there, as for an ssh target.
 
 ### A container target
 
