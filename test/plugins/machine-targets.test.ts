@@ -29,7 +29,7 @@ describe('the attached-machine plugins', () => {
   });
 
   it('what reaches the machine is command-bearing; lanes, executors and label are not', () => {
-    expect(commandBearing('ssh')).toEqual(['herdr', 'herdrBin', 'hostKey', 'session', 'ssh']);
+    expect(commandBearing('ssh')).toEqual(['herdr', 'hostKey', 'session', 'ssh']);
     expect(commandBearing('docker')).toEqual(['docker']);
     expect(commandBearing('client')).toEqual(['key']);
   });
@@ -38,10 +38,10 @@ describe('the attached-machine plugins', () => {
 describe('targetOf: an instance as the attached machine it names', () => {
   it('an ssh instance, with its defaults', () => {
     expect(targetOf({ name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop', lanes: 2 } })).toEqual({
-      name: 'laptop', ssh: 'laptop', lanes: 2, executors: ['herdr-claude'], herdr: true, session: 'hopper', herdrBin: 'herdr',
+      name: 'laptop', ssh: 'laptop', lanes: 2, executors: ['herdr-claude'], herdr: true, session: 'hopper',
     });
-    expect(targetOf({ name: 'pi', plugin: 'ssh', options: { ssh: 'user@pi.example', label: 'Pi', lanes: 1, executors: ['herdr-claude', 'other'], session: 'jh', herdrBin: '/opt/herdr', hostKey: TEST_HOST_KEY } })).toEqual({
-      name: 'pi', ssh: 'user@pi.example', label: 'Pi', lanes: 1, executors: ['herdr-claude', 'other'], herdr: true, session: 'jh', herdrBin: '/opt/herdr', hostKey: TEST_HOST_KEY,
+    expect(targetOf({ name: 'pi', plugin: 'ssh', options: { ssh: 'user@pi.example', label: 'Pi', lanes: 1, executors: ['herdr-claude', 'other'], session: 'jh', hostKey: TEST_HOST_KEY } })).toEqual({
+      name: 'pi', ssh: 'user@pi.example', label: 'Pi', lanes: 1, executors: ['herdr-claude', 'other'], herdr: true, session: 'jh', hostKey: TEST_HOST_KEY,
     });
   });
 
@@ -70,6 +70,8 @@ describe('targetOf: an instance as the attached machine it names', () => {
     ['ssh', { ssh: 'laptop', lanes: 1, session: 'default' }, /default herdr session/],
     ['ssh', { ssh: 'laptop', lanes: 1, hostKey: 'ssh-ed25519' }, /hostKey must be a public host key/],
     ['ssh', { ssh: 'laptop', lanes: 1, docker: 'box' }, /docker/],
+    // herdr is called by name there, from its PATH: no option names a binary (issue #311).
+    ['ssh', { ssh: 'laptop', lanes: 1, herdrBin: '/opt/herdr' }, /herdrBin/],
     ['docker', { docker: '-H=tcp://x', lanes: 1 }, /docker must be a container/],
     ['docker', { docker: 'box', lanes: 1, herdrBin: '/opt/herdr' }, /herdrBin/],
     ['client', { lanes: 1 }, /key/],

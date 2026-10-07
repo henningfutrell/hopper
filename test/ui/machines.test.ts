@@ -9,7 +9,7 @@ const CONFIG: MachinesConfig = {
   version: 'v1',
   machines: [
     { name: 'local', connection: 'local', options: { lanes: 4 } },
-    { name: 'desk', connection: 'ssh', options: { ssh: 'desk', lanes: 1, executors: ['test'], herdrBin: '/usr/bin/herdr' } },
+    { name: 'desk', connection: 'ssh', options: { ssh: 'desk', lanes: 1, executors: ['test'] } },
     { name: 'box', connection: 'docker', options: { docker: 'box', lanes: 2 } },
     { name: 'odd', connection: 'custom-machines' },
   ],
@@ -53,6 +53,18 @@ describe('addProblem', () => {
   });
 });
 
+// Issue #309: there is no ssh config, ever; nothing says one is missing or needed.
+describe('no ssh config', () => {
+  const NONE = { ...CONFIG, ssh: { ...CONFIG.ssh, targets: [] } };
+  it('a refused target names only a plain you@host', () => {
+    expect(addProblem(draft({ ssh: '' }), NONE)).not.toMatch(/ssh\/config|Host alias/);
+    expect(addProblem(draft({ ssh: 'two words' }), NONE)).not.toMatch(/ssh\/config|Host alias/);
+  });
+  it('the ssh target detail names no ssh config', () => {
+    expect(DETAILS.ssh!.find((f) => f.key === 'ssh')!.hint).not.toMatch(/ssh\/config/);
+  });
+});
+
 // Issue #293: in an ephemeral container there is no ~/.ssh/config to pick from, so a target is typed too.
 describe('a typed ssh target', () => {
   it('a plain [user@]host may be sent, as a detected alias may', () => {
@@ -78,7 +90,7 @@ describe('a typed ssh target', () => {
 });
 
 describe('the bodies sent', () => {
-  it('add: trimmed name and label, lanes as a number; an empty label is left out; never herdrBin or session', () => {
+  it('add: trimmed name and label, lanes as a number; an empty label is left out; never session', () => {
     expect(addBody(draft({ name: ' laptop ', label: ' arch ' }), 'v1')).toEqual({
       name: 'laptop', ssh: 'laptop', lanes: 2, executors: ['herdr-claude'], label: 'arch', version: 'v1',
     });
@@ -91,11 +103,11 @@ describe('the bodies sent', () => {
     const d = editDraft(desk);
     expect(editBody(desk, { ...d, lanes: '3' }, 'v1')).toEqual({
       action: 'options', role: 'machine-source', name: 'desk', version: 'v1',
-      options: { ssh: 'desk', herdrBin: '/usr/bin/herdr', lanes: 3, executors: ['test'], label: 'old' },
+      options: { ssh: 'desk', lanes: 3, executors: ['test'], label: 'old' },
     });
     expect(editBody(desk, { ...d, executors: ['herdr-claude', 'test'], label: '' }, 'v1')).toEqual({
       action: 'options', role: 'machine-source', name: 'desk', version: 'v1',
-      options: { ssh: 'desk', herdrBin: '/usr/bin/herdr', lanes: 1, executors: ['herdr-claude', 'test'] },
+      options: { ssh: 'desk', lanes: 1, executors: ['herdr-claude', 'test'] },
     });
     expect(editBody(desk, d, 'v1')).toBeNull();
   });
@@ -110,17 +122,20 @@ describe('editing a machine\'s name and details', () => {
   it('the Edit form starts from the instance: its name, and the details of its connection as set (empty when unset)', () => {
     expect(editDraft(desk)).toEqual({
       name: 'desk', lanes: '1', executors: ['test'], label: '', herdr: true,
-      details: { ssh: 'desk', session: '', herdrBin: '/usr/bin/herdr', hostKey: '' },
+      details: { ssh: 'desk', session: '', hostKey: '' },
     });
     expect(editDraft(box)).toEqual({ name: 'box', lanes: '2', executors: ['command'], label: '', herdr: true, details: { docker: 'box' } });
-    expect(DETAILS.ssh!.map((f) => f.key)).toEqual(['ssh', 'session', 'herdrBin', 'hostKey']);
+    // No herdr binary to name (issue #311): herdr is called by name there, from its PATH.
+    expect(DETAILS.ssh!.map((f) => f.key)).toEqual(['ssh', 'session', 'hostKey']);
+    // There is never an ssh config (issue #309): no hint names one.
+    expect(DETAILS.ssh!.map((f) => f.hint).join(' ')).not.toMatch(/ssh\/config/);
     expect(DETAILS.docker!.map((f) => f.key)).toEqual(['docker']);
     expect(DETAILS.client).toEqual([]);
   });
 
   it('a new name is sent as rename, trimmed; the details as typed, trimmed; an emptied optional detail goes', () => {
     const d = editDraft(desk);
-    expect(editBody(desk, { ...d, name: ' study ', details: { ssh: ' laptop ', session: 'work', herdrBin: '', hostKey: '' } }, 'v1')).toEqual({
+    expect(editBody(desk, { ...d, name: ' study ', details: { ssh: ' laptop ', session: 'work', hostKey: '' } }, 'v1')).toEqual({
       action: 'options', role: 'machine-source', name: 'desk', rename: 'study', version: 'v1',
       options: { ssh: 'laptop', session: 'work', lanes: 1, executors: ['test'] },
     });
@@ -131,7 +146,7 @@ describe('editing a machine\'s name and details', () => {
 
   it('herdr switched off is written as herdr: false; switched back on, the option goes', () => {
     const d = editDraft(desk);
-    expect(editBody(desk, { ...d, herdr: false }, 'v1')?.options).toEqual({ ssh: 'desk', herdrBin: '/usr/bin/herdr', lanes: 1, executors: ['test'], herdr: false });
+    expect(editBody(desk, { ...d, herdr: false }, 'v1')?.options).toEqual({ ssh: 'desk', lanes: 1, executors: ['test'], herdr: false });
     const off = kindOf({ ...CONFIG, machines: [{ name: 'desk', connection: 'ssh', options: { ssh: 'desk', herdr: false } }] }, 'desk');
     if (off.kind !== 'attached') throw new Error('attached');
     expect(editDraft(off).herdr).toBe(false);

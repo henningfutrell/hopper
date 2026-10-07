@@ -34,7 +34,7 @@ afterEach(async () => {
   cleanup?.();
 });
 
-const DESK = { name: 'desk', plugin: 'ssh', options: { ssh: 'desk', lanes: 1, executors: ['test'], herdrBin: '/usr/bin/herdr' } };
+const DESK = { name: 'desk', plugin: 'ssh', options: { ssh: 'desk', lanes: 1, executors: ['test'] } };
 const FILE = { version: 1, executors: [{ name: 'test', plugin: 'test' }, { name: 'herdr-claude', plugin: 'herdr-claude' }], jobSources: [], machines: [{ name: 'local', plugin: 'local' }, DESK] };
 
 async function start(file: object = FILE, env: Record<string, string> = {}): Promise<{ a: TestApp; token: string }> {

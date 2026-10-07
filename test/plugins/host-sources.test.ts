@@ -246,9 +246,9 @@ describe('attached machines in the host (issues #18, #74)', () => {
     const { host, config } = start({ file: { version: 1 }, target: t.target });
     await host.start();
     expect(host.targets()).toEqual([]);
-    config.set(PLUGINS, { version: 1, machines: [{ name: 'local', plugin: 'local' }, { name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop', lanes: 2, herdrBin: '/h/herdr' } }] });
+    config.set(PLUGINS, { version: 1, machines: [{ name: 'local', plugin: 'local' }, { name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop', lanes: 2 } }] });
     await host.reload();
-    const laptop = { name: 'laptop', ssh: 'laptop', lanes: 2, herdr: true, herdrBin: '/h/herdr', session: 'hopper', executors: ['herdr-claude'] };
+    const laptop = { name: 'laptop', ssh: 'laptop', lanes: 2, herdr: true, session: 'hopper', executors: ['herdr-claude'] };
     expect(host.targets()).toEqual([laptop]);
     expect(t.asked).toEqual([laptop]);
     expect((await host.machines().list()).map((m) => `${m.id}:${m.maxLanes}`)).toEqual(['local:4', 'laptop:2']);
@@ -304,7 +304,7 @@ describe('the usage-source role', () => {
   it('a usage source finds a machine by its id, as the machine sources list it now (issue #139)', async () => {
     const t = targets();
     const { host, config } = start({
-      file: { version: 1, machines: [{ name: 'local', plugin: 'local' }, { name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop', lanes: 1, herdrBin: '/h/herdr' } }], usageSources: [{ name: 'on-laptop', plugin: 'machine-usage', options: { machine: 'laptop' } }] },
+      file: { version: 1, machines: [{ name: 'local', plugin: 'local' }, { name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop', lanes: 1 } }], usageSources: [{ name: 'on-laptop', plugin: 'machine-usage', options: { machine: 'laptop' } }] },
       target: (m) => ({ list: async () => [{ ...(await t.target(m).list())[0]!, ssh: 'laptop' }] }),
     });
     await host.start();

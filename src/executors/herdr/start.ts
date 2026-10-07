@@ -49,8 +49,6 @@ export interface PaneState {
   session?: string;
   /** The attached machine's ssh destination; absent → this machine's herdr. */
   ssh?: string;
-  /** The attached machine's herdr binary (with `ssh`), so cleanup reaches the same herdr. */
-  herdrBin?: string;
   /** A client target's: which machine (design.md "Client targets"). */
   client?: { machine: string };
   workspaceId: string;
@@ -107,7 +105,7 @@ export async function openPane(d: StartDeps, ctx: ExecutionContext, cwd: string,
   });
   const state: PaneState = {
     ...(d.herdr.session ? { session: d.herdr.session } : {}),
-    ...(ctx.machine.ssh && ctx.machine.herdr ? { ssh: ctx.machine.ssh, herdrBin: ctx.machine.herdr.bin } : {}),
+    ...(ctx.machine.ssh && ctx.machine.herdr ? { ssh: ctx.machine.ssh } : {}),
     ...(ctx.machine.client ? { client: { machine: ctx.machine.id } } : {}),
     workspaceId, tabId, paneId, agentName: agentNameFor(ctx.job.id), cwd, laneId: ctx.laneId,
   };

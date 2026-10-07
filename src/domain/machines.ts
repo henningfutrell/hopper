@@ -26,9 +26,8 @@ export interface SshMachine extends AttachedBase {
    * #142): online while it answers over ssh; only executors that need no herdr run there (cursor-agent, command).
    */
   herdr: boolean;
-  /** Its herdr session (never `default`) and herdr binary, as the remote login shell finds it. Unused without `herdr`. */
+  /** Its herdr session (never `default`). Unused without `herdr`. herdr itself is called by name there, from its PATH (issue #311). */
   session: string;
-  herdrBin: string;
   /**
    * Its pinned host key, `<type> <base64>` (design.md "Target authentication", issue #59): the only
    * key the hopper accepts from it. Absent → the hopper does not connect to it.
@@ -54,8 +53,8 @@ export interface ClientMachine extends AttachedBase {
 
 /**
  * POST /ui/api/machines (design.md "Machines from the UI", issues #18, #74): attach an ssh target as
- * a new `ssh` instance in the plugins config `machines:`. `ssh` must be a detected ssh target; `herdrBin`
- * and `hostKey` are resolved by the daemon and `session` stays the default — none is ever sent; it
+ * a new `ssh` instance in the plugins config `machines:`. `ssh` must be a detected ssh target; `hostKey`
+ * is resolved by the daemon and `session` stays the default — neither is ever sent; it
  * runs herdr only when one of its executors needs it (issue #142). `lanes` and `executors` left out
  * are the machine defaults. A machine is edited and removed like any plugin instance (POST
  * /ui/api/plugins). `version` is `MachinesConfig.version`.

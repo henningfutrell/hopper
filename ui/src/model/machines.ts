@@ -2,7 +2,7 @@
 // this one (connection `local`) and which an attached one (connection `ssh`, `docker` or `client`), why an Add
 // form may not be sent yet, the body POST /ui/api/machines takes, and the options edit an Edit form
 // sends to POST /ui/api/plugins — its name and every detail of how it is reached too (issue #205). An
-// Add body over ssh never carries herdrBin or session; its ssh target is a detected one or a typed plain
+// Add body over ssh never carries session; its ssh target is a detected one or a typed plain
 // [user@]host, and its hostKey only the one the person confirmed (issue #293: an ephemeral container has
 // no durable ~/.ssh); this machine is added with no ssh target,
 // its name and its herdr session (issue #260), and so is an ssh target the daemon found is this machine
@@ -43,9 +43,8 @@ export interface DetailField { key: string; label: string; hint: string; require
 /** The details each connection's Edit form shows, in order (issue #205); `herdr` is a switch beside them. */
 export const DETAILS: Record<string, DetailField[]> = {
   ssh: [
-    { key: 'ssh', label: 'ssh target', hint: 'a Host alias from ~/.ssh/config, or user@host', required: true },
+    { key: 'ssh', label: 'ssh target', hint: 'user@host, or a Host alias', required: true },
     { key: 'session', label: 'herdr session', hint: 'empty: hopper', required: false },
-    { key: 'herdrBin', label: 'herdr binary', hint: 'empty: herdr, as its login shell finds it', required: false },
     { key: 'hostKey', label: 'host key', hint: '<type> <base64>, the only key accepted from it; empty: not connected. Another ssh target has its own', required: false },
   ],
   docker: [{ key: 'docker', label: 'container', hint: 'its name or id; commands run in it through docker exec', required: true }],
@@ -94,8 +93,9 @@ export function addProblem(d: MachineDraft, config: MachinesConfig): string | nu
   const name = d.name.trim();
   if (!name) return 'give the machine a name';
   if (config.machines.some((m) => m.name === name)) return `a machine is already named ${name}; pick another name`;
-  if (!d.ssh) return 'give its ssh target: you@host, or a Host alias from ~/.ssh/config';
-  if (!config.ssh.targets.includes(d.ssh) && !PLAIN_TARGET.test(d.ssh)) return 'an ssh target is a plain you@host (letters, digits, dot, dash, underscore), or a Host alias from ~/.ssh/config';
+  const alias = config.ssh.targets.length ? ', or a Host alias from ~/.ssh/config' : '';
+  if (!d.ssh) return `give its ssh target: you@host${alias}`;
+  if (!config.ssh.targets.includes(d.ssh) && !PLAIN_TARGET.test(d.ssh)) return `an ssh target is a plain you@host (letters, digits, dot, dash, underscore)${alias}`;
   const here = isThisMachineTarget(config, d.ssh) && config.machines.find((m) => m.connection === 'local');
   if (here) return `${d.ssh} is this machine, already added as ${here.name}; edit that one`;
   if (lanesOf(d.lanes) === undefined) return 'lanes must be a whole number, at least 1';

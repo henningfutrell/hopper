@@ -43,13 +43,12 @@ HOST_KEY="$(printf '%s\n' "$KNOWN" | awk '$2 == "ssh-ed25519" { print $2, $3; ex
 [ -n "$HOST_KEY" ] || die "no host key for $TARGET in ~/.ssh/known_hosts: connect once by hand (ssh $TARGET), check its fingerprint, then run this again"
 
 step "check herdr and claude on $TARGET"
+# The hopper calls herdr there by name, from its PATH and then ~/.local/bin (issue #311): look it up
+# the same way.
+HERDR_PATH='PATH="$PATH:$HOME/.local/bin"'
 for bin in herdr claude; do
-  remote "command -v $bin >/dev/null" || die "$bin not found on $TARGET (on the PATH of its non-interactive login shell)"
+  remote "$HERDR_PATH; command -v $bin >/dev/null" || die "$bin not found on $TARGET (not on its PATH, not in ~/.local/bin)"
 done
-# Jobs call herdr there by this absolute path: a login shell's PATH can be briefly incomplete there
-# (shell startup files that update themselves), and a missed lookup fails the job.
-HERDR_BIN="$(remote 'command -v herdr' | tr -d '\r')"
-HERDR_BIN="${HERDR_BIN//\/\//\/}"
 
 step "let the hopper in on $TARGET with its own key, restricted"
 if [ ! -e "$KEY" ]; then
@@ -71,7 +70,7 @@ fi
 
 step "verify the herdr session on $TARGET"
 for _ in 1 2 3 4 5 6 7 8 9 10; do
-  if remote "$HERDR_BIN --session $SESSION status server" | grep -q '^status: running$'; then
+  if remote "$HERDR_PATH; herdr --session $SESSION status server" | grep -q '^status: running$'; then
     echo "herdr session $SESSION is running on $TARGET"
     cat <<EOF
 
@@ -79,7 +78,6 @@ Attach it in the UI: Plugins → Machine sources, add an ssh instance named $TAR
 options (the daemon follows them without a restart):
   ssh: $TARGET
   lanes: $LANES
-  herdrBin: $HERDR_BIN
   hostKey: $HOST_KEY
 The daemon needs HOPPER_SSH_KEY_FILE=$KEY in its environment (daemon.env).
 

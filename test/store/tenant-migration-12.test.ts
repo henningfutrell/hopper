@@ -1,7 +1,6 @@
-// Tenant migration 12 (issue #308): a client target dials in to the hopper's own URL and proves itself
-// with its machine key, so the client token its runtime held (`tokenEnv`) is gone. A client target
-// stored with one cannot be reached any more — its client still dials over ssh — so it leaves
-// `machines`; it is added again with Add machine. Every other machine stays as it was.
+// Tenant migration 12 (issue #311): herdr is called by name on an ssh machine, from its PATH, so no
+// option names its binary. Every `ssh` machine instance's `herdrBin` goes; every other option and
+// instance stays.
 import { describe, expect, it } from 'vitest';
 import type { Db } from '../../src/store/db.ts';
 import { migrateTenant } from '../../src/store/tenant-migrations.ts';
@@ -17,25 +16,42 @@ function at11(plugins?: unknown): Db {
 
 const plugins = (raw: Db) => JSON.parse(String(raw.get("SELECT value FROM config WHERE name = 'plugins'")!.value)) as Record<string, unknown>;
 
-describe('tenant migration 12: a client target holding a token variable leaves the machines', () => {
-  it('drops each client instance that names tokenEnv; keeps every other machine', () => {
-    const local = { name: 'local', plugin: 'local', options: { lanes: 2 } };
-    const desk = { name: 'desk', plugin: 'ssh', options: { ssh: 'desk', hostKey: 'ssh-ed25519 AAAA' } };
-    const joined = { name: 'box', plugin: 'client', options: { key: 'k'.repeat(43) } };
-    const raw = at11({ version: 1, machines: [local, { name: 'studio', plugin: 'client', options: { tokenEnv: 'STUDIO', lanes: 1 } }, desk, joined] });
+describe('tenant migration 12: no herdr binary on an ssh machine', () => {
+  it('drops herdrBin from every ssh machine; every other option and instance stays', () => {
+    const raw = at11({
+      version: 1,
+      executors: [{ name: 'herdr-claude', plugin: 'herdr-claude', options: { bin: '/opt/herdr' } }],
+      machines: [
+        { name: 'local', plugin: 'local', options: { lanes: 4 } },
+        { name: 'laptop', plugin: 'ssh', options: { ssh: 'me@laptop', lanes: 2, herdrBin: '/home/me/.local/bin/herdr', hostKey: 'ssh-ed25519 AAAA' } },
+        { name: 'only-bin', plugin: 'ssh', options: { ssh: 'only', herdrBin: 'herdr' } },
+        { name: 'plain', plugin: 'ssh', options: { ssh: 'plain', herdr: false } },
+        { name: 'box', plugin: 'docker', options: { docker: 'box' } },
+      ],
+    });
     migrateTenant(raw, 12);
-    expect(plugins(raw)).toEqual({ version: 1, machines: [local, desk, joined] });
+    expect(plugins(raw)).toEqual({
+      version: 1,
+      executors: [{ name: 'herdr-claude', plugin: 'herdr-claude', options: { bin: '/opt/herdr' } }],
+      machines: [
+        { name: 'local', plugin: 'local', options: { lanes: 4 } },
+        { name: 'laptop', plugin: 'ssh', options: { ssh: 'me@laptop', lanes: 2, hostKey: 'ssh-ed25519 AAAA' } },
+        { name: 'only-bin', plugin: 'ssh', options: { ssh: 'only' } },
+        { name: 'plain', plugin: 'ssh', options: { ssh: 'plain', herdr: false } },
+        { name: 'box', plugin: 'docker', options: { docker: 'box' } },
+      ],
+    });
     raw.close();
   });
 
-  it('a user with no plugins config, or no client target: nothing changes', () => {
+  it('a user with no plugins config, or none naming machines: nothing changes', () => {
     const none = at11();
     migrateTenant(none, 12);
     expect(none.get("SELECT value FROM config WHERE name = 'plugins'")).toBeUndefined();
     none.close();
-    const raw = at11({ version: 1, machines: [{ name: 'local', plugin: 'local' }] });
+    const raw = at11({ version: 1, jobSources: [] });
     migrateTenant(raw, 12);
-    expect(plugins(raw)).toEqual({ version: 1, machines: [{ name: 'local', plugin: 'local' }] });
+    expect(plugins(raw)).toEqual({ version: 1, jobSources: [] });
     raw.close();
   });
 });

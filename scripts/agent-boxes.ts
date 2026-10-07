@@ -13,9 +13,6 @@ export interface Box { name: string; ssh: string; hostKey: string }
 interface Instance { name: string; plugin: string; options?: Record<string, unknown> }
 type Config = Record<string, unknown> & { machines?: Instance[] };
 
-/** Where herdr is in every agent box (scripts/agent-box/Dockerfile). */
-export const BOX_HERDR = '/usr/local/bin/herdr';
-
 /** `config` with each box an `ssh` machine instance. Throws when a box's name is another kind of machine. */
 export function attachBoxes(config: Config, boxes: readonly Box[]): Config {
   const machines = [...(config.machines ?? [])];
@@ -25,7 +22,7 @@ export function attachBoxes(config: Config, boxes: readonly Box[]): Config {
     if (old && old.plugin !== 'ssh') throw new Error(`machine ${box.name} is a ${old.plugin} machine, not an agent box: rename it first`);
     const kept = old?.options ?? {};
     const options = {
-      ...kept, ssh: box.ssh, herdr: true, herdrBin: BOX_HERDR, hostKey: box.hostKey,
+      ...kept, ssh: box.ssh, herdr: true, hostKey: box.hostKey,
       lanes: kept.lanes ?? 1, executors: kept.executors ?? [],
     };
     delete (options as Record<string, unknown>).session;

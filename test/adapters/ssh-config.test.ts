@@ -44,10 +44,13 @@ describe('readSshTargets', () => {
     expect(readSshTargets(config).targets).toEqual(['gamma', 'laptop', 'alpha', 'beta']);
   });
 
-  it('an Include that matches nothing, and a missing config, are notes', () => {
+  it('an Include that matches nothing is a note', () => {
     const config = write('config', 'Include missing.conf\nHost laptop\n');
     expect(readSshTargets(config)).toEqual({ targets: ['laptop'], notes: [expect.stringContaining('missing.conf')] });
-    expect(readSshTargets(join(dir, 'nope'))).toEqual({ targets: [], notes: [expect.stringContaining('no ssh config')] });
+  });
+
+  it('no ssh config is the usual case, not a note (issue #309)', () => {
+    expect(readSshTargets(join(dir, 'nope'))).toEqual({ targets: [], notes: [] });
   });
 
   it('an Include loop stops', () => {

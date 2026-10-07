@@ -147,7 +147,7 @@ describe('the hopper\'s ssh key comes from the runtime, as a mounted file', () =
 
 describe('pinned host keys', () => {
   const ssh = (name: string, target: string, hostKey?: string): AttachedMachine => ({
-    name, ssh: target, lanes: 1, executors: ['herdr-claude'], herdr: true, session: 'hopper', herdrBin: 'herdr', ...(hostKey ? { hostKey } : {}),
+    name, ssh: target, lanes: 1, executors: ['herdr-claude'], herdr: true, session: 'hopper', ...(hostKey ? { hostKey } : {}),
   });
 
   it('one known_hosts line per ssh target, under the target\'s name; container targets and unpinned ones have none', () => {

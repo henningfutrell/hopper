@@ -52,6 +52,15 @@ export interface SshTransport {
 /** POSIX single quoting: the remote login shell (sh, bash, zsh) reads it back as one word. */
 export const shellQuote = (arg: string): string => `'${arg.replaceAll("'", "'\\''")}'`;
 
+/**
+ * How a command finds herdr on an ssh target (issue #311): by name, from the PATH its shell has, then
+ * `~/.local/bin`, where herdr installs. Never a path the person names. The shell that runs an ssh command
+ * is not a login shell, so `~/.local/bin` is often not on its PATH; and it is named here, not read
+ * from a shell's env file, which a new pane's shell may be rewriting at that moment (seen live: `zsh:1:
+ * command not found: herdr`).
+ */
+export const REMOTE_PATH = 'PATH="$PATH:$HOME/.local/bin"';
+
 /** The user's ssh config, or none: never /etc/ssh (under the unit those files look foreign-owned). */
 export function userSshConfig(home = homedir()): string {
   const config = join(home, '.ssh', 'config');

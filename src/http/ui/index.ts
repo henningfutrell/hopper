@@ -98,7 +98,7 @@ const machineName = z.string().trim().min(1).max(64);
 const machineLanes = z.number().int().min(1, 'lanes must be at least 1');
 const machineExecutors = z.array(z.string().min(1));
 // Attach an ssh target (issue #74: editing and removing a machine is a plugins edit). ssh is a detected
-// ssh target or a typed plain [user@]host (issue #293); herdrBin and session are never accepted (strict);
+// ssh target or a typed plain [user@]host (issue #293); session is never accepted (strict), nor any herdr binary (issue #311);
 // hostKey is the one the person confirmed from POST /ui/api/machines/host-key (issue #293).
 export const machinesEditBody = z.union([
   z.strictObject({

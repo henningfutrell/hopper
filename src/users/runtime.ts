@@ -68,7 +68,7 @@ export interface UserSeams {
   levels?: EscalationLevel[];
   /** Replaces the probe of every attached machine: online = its herdr session (ssh) or its container (docker) is running. */
   machineProbe?: (machine: AttachedMachine) => Promise<MachineProbe>;
-  /** Replaces resolving a new ssh target when the UI adds a machine (issues #18, #59): its herdr path and pinned host key, or a rejection with the reason. */
+  /** Replaces resolving a new ssh target when the UI adds a machine (issues #18, #59): its pinned host key once herdr is found there, or a rejection with the reason. */
   resolveTarget?: (ssh: string, o: { herdr: boolean; hostKey?: string }) => Promise<ResolvedTarget>;
   /** Replaces reading the host key a new ssh target would be pinned to (issue #293): known_hosts, else what it presents. */
   hostKeyOffer?: (ssh: string) => Promise<HostKeyOffer>;
@@ -231,7 +231,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
           // An ssh target's home comes with every probe: `~` in a job's work tree resolves there (issue #323).
           // One after the other, over the one shared ssh connection.
           : probeSsh({ target: m.ssh, controlDir: join(dataDir, 'ssh'), auth: sshAuth }).then(async (home) => ({
-            online: m.herdr ? await probeHerdrOverSsh({ target: m.ssh, herdrBin: m.herdrBin, session: m.session, controlDir: join(dataDir, 'ssh'), auth: sshAuth }) : true,
+            online: m.herdr ? await probeHerdrOverSsh({ target: m.ssh, session: m.session, controlDir: join(dataDir, 'ssh'), auth: sshAuth }) : true,
             home,
           })))),
   });

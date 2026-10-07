@@ -12,6 +12,7 @@ import { levelsNamedAsLevels } from './migration-level-names.ts';
 import { yoloOption } from './migration-yolo.ts';
 import { jobRepositoriesSetting } from './migration-job-repositories.ts';
 import { jobsDirWorkTrees } from './migration-jobs-dir.ts';
+import { herdrByName } from './migration-herdr-by-name.ts';
 import { clientTargetsDialIn } from './migration-client-key.ts';
 
 type Migration = string | ((db: Db) => void);
@@ -171,7 +172,9 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
   jobRepositoriesSetting,
   // 11: a work tree stored as the home is the jobs directory (issue #314).
   jobsDirWorkTrees,
-  // 12: a client target dials in with its machine key (issue #308): one holding a token variable leaves `machines`.
+  // 12: herdr is called by name on an ssh machine: its `herdrBin` goes (issue #311).
+  herdrByName,
+  // 13: a client target dials in with its machine key (issue #308): one holding a token variable leaves `machines`.
   clientTargetsDialIn,
 ];
 

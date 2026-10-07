@@ -168,8 +168,8 @@ export interface MachineSnapshot {
   executors: string[];
   /** An attached machine: the ssh destination its executors reach it by. Absent → this machine. */
   ssh?: string;
-  /** An attached machine's herdr: its binary (absolute, so never its PATH) and hopper's session there; this machine's, the herdr session it was added with (issue #260). */
-  herdr?: { bin: string; session: string };
+  /** An attached machine's herdr: hopper's session there, herdr found by name (issue #311); this machine's, the herdr session it was added with (issue #260). */
+  herdr?: { session: string };
   /** A container target: the container its executors reach it in, through `docker exec`. */
   docker?: string;
   /** An attached machine's home, as its probe found it: where `~` in a job's work tree resolves there (issue #323). Absent: not found yet, or this machine. */
