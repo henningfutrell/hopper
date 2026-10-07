@@ -101,6 +101,14 @@ describe('escalated to the owner', () => {
       questionId: q.id, target: 'human', reason: expect.stringMatching(/no escalation levels/), text: 'Which database?',
       jobId: q.jobId, goal: 'ship it', answerUrl: `http://localhost/q/${q.id}`, notifyCount: 1,
     });
+    const toHuman = r.eventsOf('question.escalated_to_human');
+    expect(toHuman).toHaveLength(1);
+    expect(toHuman[0]).toMatchObject({ jobId: q.jobId, questionId: q.id });
+    expect(toHuman[0]!.data).toEqual({
+      questionId: q.id, reason: expect.stringMatching(/no escalation levels/), text: 'Which database?',
+      jobId: q.jobId, goal: 'ship it', answerUrl: `http://localhost/q/${q.id}`, notifyCount: 1,
+    });
+    expect(r.mem.events.findIndex((e) => e.type === 'question.escalated_to_human')).toBe(r.mem.events.findIndex((e) => e.type === 'question.escalated') + 1);
   });
 
   it('every level escalates: the owner gets it, with the top level\'s reason and every recommendation on the trail', async () => {
@@ -112,6 +120,7 @@ describe('escalated to the owner', () => {
     expect(got.attempts.map((a) => [a.tier, a.answer, a.outcome])).toEqual([['opus', 'maybe postgres', 'escalated'], ['fable', 'pick option 1', 'escalated']]);
     expect(r.eventsOf('question.escalated').map((e) => e.data.target)).toEqual(['opus', 'fable', 'human']);
     expect(r.eventsOf('question.escalated').at(-1)!.data.reason).toBe("fable: the owner's call");
+    expect(r.eventsOf('question.escalated_to_human').map((e) => e.data.reason)).toEqual(["fable: the owner's call"]);
   });
 
   describe('a level that fails escalates (fails closed)', () => {
@@ -181,6 +190,7 @@ describe('escalated to the owner', () => {
     expect(r.asked.map((a) => a.level)).toEqual(['opus']);
     expect(got.attempts[0]).toMatchObject({ role: 'level', escalate: false, riskRules: rules, outcome: 'escalated' });
     expect(r.eventsOf('question.escalated').at(-1)!.data.reason).toMatch(/risk rules/);
+    expect(r.eventsOf('question.escalated_to_human').map((e) => e.data.reason)).toEqual([expect.stringMatching(/risk rules/)]);
   });
 
   it('an escalating level\'s recommendation is not checked by the risk rules (nothing is typed)', async () => {

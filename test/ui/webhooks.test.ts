@@ -19,6 +19,7 @@ describe('toggleEvent', () => {
   it('offers "*" first, then every event type', () => {
     expect(EVENT_CHOICES[0]).toBe('*');
     expect(EVENT_CHOICES).toContain('question.escalated');
+    expect(EVENT_CHOICES).toContain('question.escalated_to_human');
   });
 });
 
