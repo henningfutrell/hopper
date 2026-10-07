@@ -10,7 +10,6 @@ import type { HerdrClient, RemoteHerdr } from '../../../executors/herdr/index.ts
 import { claudeArgsFor, createHerdrClaudeExecutor, createHerdrCliClient } from '../../../executors/herdr/index.ts';
 import { clientSocket } from '../../../executors/client.ts';
 import { hopperSshAuth } from '../../../executors/ssh.ts';
-import { expandHome } from '../../expand-home.ts';
 import type { PluginDefinition } from '../../sdk.ts';
 
 export interface HerdrClaudeOptions {
@@ -47,7 +46,7 @@ export function herdrClaudePlugin(seam?: HerdrClient): PluginDefinition<'executo
       }),
       args: z.array(z.string()).default([])
         .meta({ commandBearing: true, description: "Claude Code's other arguments: allowed tools, MCP config (yolo decides the permissions)" }),
-      cwd: z.string().min(1).default('~').transform(expandHome)
+      cwd: z.string().min(1).default('~')
         .meta({ commandBearing: true, description: 'working directory of a job whose payload names none' }),
       trustWorkdir: z.boolean().default(true),
       pollMs: z.number().int().positive().default(1000),

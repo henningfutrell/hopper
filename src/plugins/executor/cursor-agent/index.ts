@@ -6,7 +6,6 @@
 import { join } from 'node:path';
 import { createCursorExecutor } from '../../../executors/index.ts';
 import { hopperSshAuth } from '../../../executors/ssh.ts';
-import { expandHome } from '../../expand-home.ts';
 import type { PluginDefinition } from '../../sdk.ts';
 
 export interface CursorAgentOptions { bin: string; args: string[]; cwd: string; sshBin: string }
@@ -19,7 +18,7 @@ const cursorAgent: PluginDefinition<'executor', CursorAgentOptions> = {
     bin: z.string().min(1).default('cursor-agent').meta({ commandBearing: true, description: "Cursor's CLI agent on the job's machine" }),
     args: z.array(z.string()).default(['--force', '--trust'])
       .meta({ commandBearing: true, description: "its own arguments: --force runs its tools without asking, --trust trusts the work tree" }),
-    cwd: z.string().min(1).default('~').transform(expandHome)
+    cwd: z.string().min(1).default('~')
       .meta({ commandBearing: true, description: 'working directory of a job whose payload names none' }),
     sshBin: z.string().min(1).default('ssh').meta({ commandBearing: true, description: 'the ssh client, for ssh targets' }),
   }),

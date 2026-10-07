@@ -140,6 +140,18 @@ describe('cursor-agent executor', () => {
     expect(ssh.argv.slice(ssh.argv.indexOf('--') + 1, -1)).toEqual(['laptop.example']);
   });
 
+  it('resolves ~ in the work tree against the ssh target\'s home, never this process\'s (issue #323)', async () => {
+    const overSsh = createCursorExecutor({ name: 'cursor', bin: FAKE_CURSOR, args: [], defaultCwd: '~/work', sshBin: FAKE_SSH, sshAuth: testSshAuth(join(dir, 'auth')) });
+    reply('Done.\nHOPPER_DONE');
+    const { ctx, workTrees } = ctxFor({ prompt: 'p' }, { ...LAPTOP, home: dir });
+    expect(await overSsh.run(ctx)).toMatchObject({ kind: 'finished' });
+    expect(workTrees).toEqual([work]);
+    expect(calls().at(-1)).toMatchObject({ cwd: work });
+    expect(await overSsh.run(ctxFor({ prompt: 'p' }, LAPTOP).ctx)).toEqual({
+      kind: 'failed', error: 'cannot resolve the work tree ~/work on laptop: its home is not known yet (the machine has not answered a probe)',
+    });
+  });
+
   it('refuses a container target and a client target: Cursor runs only here or over ssh', async () => {
     expect(await ex.run(ctxFor({ prompt: 'p' }, { ...HERE, id: 'box', docker: 'c' }).ctx)).toEqual({ kind: 'failed', error: 'cursor-agent does not run on container target box: it has no agent' });
     expect(await ex.run(ctxFor({ prompt: 'p' }, { ...HERE, id: 'studio', client: { tokenEnv: 'T' } }).ctx)).toEqual({ kind: 'failed', error: 'cursor-agent does not run on client target studio: a client serves herdr only' });

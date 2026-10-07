@@ -507,12 +507,26 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   the job's **scratch dir**: Claude's scratchpad and every tool's temp files land inside the
   tree. The payload cannot move them.
 - **The scratch dir ignores itself.** Before `agent start`, the pane's own shell runs
-  `mkdir -p <scratch> && printf '*\n' > <scratch>/.gitignore && printf 'hopper-scratch-%s\n' ready`
+  `cd <cwd> && mkdir -p <scratch> && printf '*\n' > <scratch>/.gitignore && printf 'hopper-scratch-%s\n' ready || printf 'hopper-scratch-%s\n' unusable`
   (`pane run`) — in the pane, so on whichever machine the work tree is. A fresh shell drops what
   is typed before its prompt (seen live), so the executor waits up to 1000 ms for
   `hopper-scratch-ready` in the pane's output (`pane wait-output`) and runs the command again,
   until the 60000 ms start deadline, then fails the job (`pane … never ran the scratch dir
   command`). Nothing is written to a repository's own `.gitignore`.
+- **A work tree the machine cannot use fails the job at once** (issue #323). herdr opens a tab
+  whose cwd does not exist in the user's home instead, silently (herdr 0.8.2), so `tab create` says
+  nothing; the `cd` does. When the shell cannot enter the work tree or make the scratch dir, it
+  prints `hopper-scratch-unusable`; the executor reads the pane after each wait, and fails the job
+  with what the shell said (`the work tree <cwd> is not usable on <machine>: …`), the pane closed,
+  instead of retrying for 60000 ms.
+- **`~` is the job's machine's home** (issue #323). Config keeps `~` as written (herdr-claude and
+  cursor-agent `cwd`, the GitHub sources' `defaultCwd` and `repoPaths`), and the executor resolves it
+  when the job starts, against the home of the lane's machine: this process's for this machine, and
+  for an attached one the home its probe found (`MachineSnapshot.home`: an ssh target's
+  `printf '%s\n' "$HOME"` over ssh, a client target's `homedir()` in its `/release` answer). A hopper
+  in a container has a home of its own that does not exist on the host; resolving `~` there sent
+  every job to it. An attached machine whose home is not known yet (no probe answered, or a client
+  release older than this) fails a job under `~` at once; an absolute work tree needs no home.
 - **The prompt says so.** The footer's work-tree line names the cwd and the scratch dir, and
   tells the job to ask rather than work in a tree outside it.
 
@@ -2520,9 +2534,9 @@ the runner keeps it on the job (`job.workTree`); the lane running the job shows 
 command executor has none and reports none. Every place that names a lane uses `laneName` — the lane board, the lane
 timeline, a Decision's starts, the event lines — and a machine, `machineName`.
 
-**Working directories are the same paths there.** A job's `cwd` (payload, or the instance's `cwd`) is
-resolved on this machine (`~` expanded here) and must exist on the attached one; the laptop has
-`~/workbench/app-workflows` with its own checkouts. A missing cwd fails the job at `tab create`.
+**Working directories resolve there.** A job's `cwd` (payload, or the instance's `cwd`) must exist on
+the attached machine; a `~` in it is that machine's home, never this one's (issue #323, "Work tree"). A
+cwd the machine cannot use fails the job at its scratch command, at once.
 
 **Preparing a machine:** `bash scripts/attach-machine.sh <ssh-target> [lanes]` — checks herdr and
 claude there, installs `systemd/hopper-herdr.service` there, `enable --now`s it, warns without
@@ -2795,8 +2809,9 @@ client target runs a client the hopper did not release.
   here — and an id, the first 16 hex of a SHA-256 over every name and content. Same files, same id. The
   hopper's release is the client files of the install it runs from (`<app>/src/client`), read at boot:
   `scripts/install.sh` and a self-update ("Self-update") release a new client whenever its files change.
-- **The calls**, signed like `POST /herdr`: `POST /release {}` → `{release}`, the id of the release the
-  client process runs (read from its install dir at start); `POST /load {release: {id, files}}` → the
+- **The calls**, signed like `POST /herdr`: `POST /release {}` → `{release, home}`, the id of the release the
+  client process runs (read from its install dir at start) and its user's home, where `~` in a job's
+  work tree resolves (issue #323; a client before it answers no home); `POST /load {release: {id, files}}` → the
   client checks the release whole (exactly `CLIENT_FILES`, all text, the id its files') before writing a
   byte, writes it to `<install>.next`, swaps it in (the one before kept as `<install>.prev`), answers
   `{release}`, and 1 s after that answer has left (time for it to cross the tunnel) exits 75; its unit
@@ -4634,7 +4649,7 @@ directory for escalation level calls, each plugin's scratch dir, ssh control soc
 install. Losing it loses nothing the hopper needs; the host unit points it at the user's cache dir
 (`%C/hopper`) so the update mirror survives restarts. Defaults that named one machine's layout are
 gone: `jevSrc` has no default, and a job's working directory defaults to `~` (herdr-claude `cwd`,
-the GitHub sources' `defaultCwd`).
+the GitHub sources' `defaultCwd`), resolved on the job's machine (issue #323).
 
 ### Operator CLI
 

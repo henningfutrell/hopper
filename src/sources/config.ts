@@ -1,9 +1,7 @@
 // The GitHub job sources' options (the plugins config `jobSources[].options` of `github-gh` and
 // `github-app`; until phase 5 slice 4 the `github:` / `githubApp:` blocks of sources.yaml), and the
-// source config they turn into: `~` expanded, `model: null` dropped. The plugin host validates
+// source config they turn into: `model: null` dropped; a `~` stays, for the job's machine (issue #323). The plugin host validates
 // them with these schemas; an invalid instance is dropped with the error shown.
-import { homedir } from 'node:os';
-import { join } from 'node:path';
 import { z } from 'zod';
 
 const projectSchema = z.object({
@@ -87,17 +85,10 @@ export type GitHubAccountOptions = z.output<typeof githubAccountOptions>;
 export type GitHubGhOptions = z.output<typeof githubGhOptions>;
 export type GitHubAppOptions = z.output<typeof githubAppOptions>;
 
-/** What the source logic reads: either plugin's options, `~` expanded, no `model: null`. */
+/** What the source logic reads: either plugin's options, no `model: null`. A `~` stays: it resolves on the job's machine (issue #323). */
 export type GitHubSourceConfig = Omit<GitHubGhOptions, 'model' | 'bin' | 'appKeyEnv'> & { model?: string };
-
-export const expandHome = (p: string): string => (p === '~' ? homedir() : p.startsWith('~/') ? join(homedir(), p.slice(2)) : p);
 
 export function sourceConfig<T extends { model: string | null; defaultCwd: string; repoPaths: Record<string, string> }>(raw: T): Omit<T, 'model'> & { model?: string } {
   const { model, ...rest } = raw;
-  return {
-    ...rest,
-    defaultCwd: expandHome(rest.defaultCwd),
-    repoPaths: Object.fromEntries(Object.entries(rest.repoPaths).map(([k, v]) => [k, expandHome(v)])),
-    ...(model ? { model } : {}),
-  };
+  return { ...rest, ...(model ? { model } : {}) };
 }

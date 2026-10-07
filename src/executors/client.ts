@@ -62,11 +62,11 @@ export function clientHerdr(t: ClientTransport, args: string[], timeoutMs: numbe
   return clientCall<ClientAnswer>(t, '/herdr', { args, timeoutMs }, timeoutMs);
 }
 
-/** The id of the client release the client target runs. */
-export async function clientRunningRelease(t: ClientTransport): Promise<string> {
-  const { release } = await clientCall<{ release?: unknown }>(t, '/release', {}, 15000);
+/** The id of the client release the client target runs, and its home when it says (a client before issue #323 does not). */
+export async function clientRunningRelease(t: ClientTransport): Promise<{ release: string; home?: string }> {
+  const { release, home } = await clientCall<{ release?: unknown; home?: unknown }>(t, '/release', {}, 15000);
   if (typeof release !== 'string') throw new ClientError(`client ${t.machine}: no release in its answer`);
-  return release;
+  return { release, ...(typeof home === 'string' && home.startsWith('/') ? { home } : {}) };
 }
 
 /** Loads a client release onto the client target; it restarts to run it. */

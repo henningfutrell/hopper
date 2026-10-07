@@ -35,6 +35,8 @@ export interface FakeHerdrOptions {
   startupBlockedBy?: string[];
   /** The first N `runInPane` commands are lost, as a shell not at its prompt yet drops what is typed. */
   shellDropsRuns?: number;
+  /** Directories the pane's shell cannot enter on this machine: a `cd` into one fails, as for a path that is not there (issue #323). */
+  unusableDirs?: string[];
   /** The first N `startAgent` calls answer `paneBusy`, as herdr does for a pane spawned a moment ago. */
   shellNotReadyStarts?: number;
   /**
@@ -288,6 +290,14 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
       record('runInPane', paneId, command);
       const p = livePane(paneId);
       if (droppedRuns-- > 0) return;
+      // `cd 'dir' && … && printf 'a%s\n' b || printf 'a%s\n' c`: c when the shell cannot enter dir, else b.
+      const entered = /^cd '([^']*)' && .*printf '([^']*)%s\\n' (\S+) \|\| printf '[^']*%s\\n' (\S+)$/.exec(command);
+      if (entered) {
+        const [, dir, prefix, ok, bad] = entered;
+        const unusable = (o.unusableDirs ?? []).includes(dir!);
+        p.lines.push(`$ ${command}`, ...(unusable ? [`cd: no such file or directory: ${dir}`, `${prefix}${bad}`] : [`${prefix}${ok}`]), '$ ');
+        return;
+      }
       // What a trailing `printf 'a%s\n' b` prints: the shell ran the command.
       const printed = /printf '([^']*)%s\\n' (\S+)$/.exec(command);
       p.lines.push(`$ ${command}`, ...(printed ? [`${printed[1]}${printed[2]}`] : []), '$ ');

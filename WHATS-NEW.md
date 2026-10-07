@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- Jobs on another machine now start in that machine's home folder when no folder is set, even when the hopper runs in a container; a folder that machine cannot use now stops the job straight away with the reason, instead of after a minute's wait.
 - In Sources, under your GitHub account, you now choose which repositories jobs may come from: filter the list, tick the ones you want, and save; it shows how many you chose of how many there are, and you can change it any time without disconnecting. Until you choose at least one, no new jobs come in.
 - The Sign-in settings no longer mention a username and password: they say that people who sign in with a company account still connect their GitHub in Sources, which is what their jobs work through.
 - Signed in with GitHub, Sources now offers Sign out for your GitHub account instead of a misleading Disconnect; signed in another way, the button says it stops working through GitHub and keeps you signed in.

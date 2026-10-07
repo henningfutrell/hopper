@@ -26,6 +26,8 @@ export interface MachineProbe {
   online: boolean;
   /** A client target: the release its client runs (absent when it predates releases), and whether it is the hopper's. */
   client?: { release?: string; current: boolean };
+  /** The machine's home, where `~` in a job's work tree resolves there (issue #323). Absent: it did not say. */
+  home?: string;
 }
 
 interface AttachedOptions {
@@ -52,6 +54,8 @@ export function createAttachedMachineSource(o: AttachedOptions & {
   const every = o.probeEveryMs ?? PROBE_EVERY_MS;
   let online = false;
   let clientRelease: MachineProbe['client'];
+  // Kept across probes that do not say: a machine's home does not move while it is the same machine.
+  let home: string | undefined;
   let lastProbe = -Infinity;
   let inFlight = false;
   let said: string | undefined;
@@ -68,7 +72,7 @@ export function createAttachedMachineSource(o: AttachedOptions & {
     inFlight = true;
     lastProbe = now();
     o.probe().then(
-      (p) => { online = p.online; clientRelease = p.online ? p.client : undefined; const up = p.online; say(up ? `hopper: attached machine ${name} online (${reached()})` : `hopper: attached machine ${name} offline: ${down()}`); },
+      (p) => { online = p.online; clientRelease = p.online ? p.client : undefined; home = p.home ?? home; const up = p.online; say(up ? `hopper: attached machine ${name} online (${reached()})` : `hopper: attached machine ${name} offline: ${down()}`); },
       (e: unknown) => { online = false; clientRelease = undefined; say(`hopper: attached machine ${name} offline: ${e instanceof Error ? e.message : String(e)}`); },
     ).finally(() => { inFlight = false; });
   }
@@ -77,7 +81,7 @@ export function createAttachedMachineSource(o: AttachedOptions & {
     async list() {
       probe();
       const m = o.machine();
-      const base: MachineSnapshot = { id: m.name, label: m.label ?? m.name, maxLanes: m.lanes, online, executors: [...m.executors] };
+      const base: MachineSnapshot = { id: m.name, label: m.label ?? m.name, maxLanes: m.lanes, online, executors: [...m.executors], ...(home ? { home } : {}) };
       if ('docker' in m) return [{ ...base, docker: m.docker }];
       if ('client' in m) return [{ ...base, client: { tokenEnv: m.client.tokenEnv, ...clientRelease } }];
       return [{ ...base, ssh: m.ssh, ...(m.herdr ? { herdr: { bin: m.herdrBin, session: m.session } } : {}) }];
@@ -94,19 +98,26 @@ export async function probeHerdrOverSsh(o: { target: string; herdrBin: string; s
   return /^status: running$/m.test(await herdr.exec(['status', 'server']));
 }
 
-/** Whether an ssh target that runs no herdr answers over ssh (issue #142): `true` there, with the hopper's key. Rejects when ssh fails. */
-export function probeSsh(o: { target: string; controlDir: string; sshBin?: string; auth: () => SshAuth; timeoutMs?: number }): Promise<boolean> {
+/**
+ * An ssh target's home, asked over ssh with the hopper's key: it answers, so it is online (issue #142),
+ * and `~` in a job's work tree resolves there, never in the hopper's own home (issue #323). Rejects when
+ * ssh fails or the answer is not an absolute path.
+ */
+export function probeSsh(o: { target: string; controlDir: string; sshBin?: string; auth: () => SshAuth; timeoutMs?: number }): Promise<string> {
   return new Promise((resolve, reject) => {
     let argv: string[];
     try {
       mkdirSync(o.controlDir, { recursive: true, mode: 0o700 });
-      argv = sshArgv({ target: o.target, controlDir: o.controlDir, auth: o.auth, ...(o.sshBin ? { bin: o.sshBin } : {}) }, 'true');
+      argv = sshArgv({ target: o.target, controlDir: o.controlDir, auth: o.auth, ...(o.sshBin ? { bin: o.sshBin } : {}) }, `printf '%s\\n' "$HOME"`);
     } catch (e) {
       return reject(e instanceof Error ? e : new Error(String(e)));
     }
-    execFile(o.sshBin ?? 'ssh', argv, { env: scrubbedEnv(), timeout: o.timeoutMs ?? 15000, killSignal: 'SIGKILL', encoding: 'utf8' }, (err, _stdout, stderr) => {
+    execFile(o.sshBin ?? 'ssh', argv, { env: scrubbedEnv(), timeout: o.timeoutMs ?? 15000, killSignal: 'SIGKILL', encoding: 'utf8' }, (err, stdout, stderr) => {
       const e = err as (Error & { killed?: boolean; code?: number | string }) | null;
-      if (!e) return resolve(true);
+      if (!e) {
+        const home = stdout.trim().split('\n').at(-1) ?? '';
+        return home.startsWith('/') ? resolve(home) : reject(new Error(`${o.target}: its home is not an absolute path: ${JSON.stringify(home)}`));
+      }
       if (e.killed) return reject(new Error(`ssh ${o.target}: no answer within ${o.timeoutMs ?? 15000} ms`));
       reject(new Error(`ssh ${o.target}: ${stderr.trim() || e.message}`));
     });
