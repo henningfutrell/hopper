@@ -1,14 +1,20 @@
 // Usage: who each part acts as (accounts), every usage reading by source, and what usage does to
-// each machine's lanes now (design.md "Usage and accounts (issue #18)"). Read-only.
-import { Gauge as GaugeIcon, Layers, UserRound } from 'lucide-react';
+// each machine's lanes now (design.md "Usage and accounts (issue #18)"); and how long the usage history
+// is kept (issue #385), the one setting here, an admin's.
+import { useEffect, useState } from 'react';
+import { Gauge as GaugeIcon, History, Layers, UserRound } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { get } from '@/lib/api';
+import { allows } from '@/model/roles';
 import { Empty, Panel } from '@/components/panel';
 import { ReadingGauge } from '@/components/reading';
 import { StatusBadge, type Tone } from '@/components/status';
 import { useNow } from '@/hooks/use-now';
 import { usePoll } from '@/hooks/use-poll';
 import { accountFacts, executorEffectLines, laneEffectText, orderReadings, serviceLabel, sourceLine } from '@/model/usage';
-import type { MachineLaneEffect, PartAccount, UsageReport } from '@/model/wire';
-import { refreshUsage, useHopper } from '@/store';
+import type { MachineLaneEffect, PartAccount, UsageHistory, UsageReport } from '@/model/wire';
+import { act, refreshUsage, useHopper } from '@/store';
 
 const pct = (f: number) => `${Math.round(f * 100)}%`;
 const BAND_TONE: Record<MachineLaneEffect['band'], Tone> = { free: 'ok', soft: 'warn', hard: 'bad', offline: 'muted' };
@@ -91,6 +97,38 @@ function Sources({ usage }: { usage: UsageReport }) {
   );
 }
 
+/** How many days the usage graph's samples are kept; older ones are deleted, at once when it is lowered. */
+function HistoryRetention() {
+  const canSet = useHopper((s) => allows(s.user, 'admin'));
+  const [days, setDays] = useState<number | null>(null);
+  const [draft, setDraft] = useState('');
+  useEffect(() => {
+    get<UsageHistory>('/api/usage/history?range=24h&step=1d').then((h) => { setDays(h.retentionDays); setDraft(String(h.retentionDays)); }, () => {});
+  }, []);
+  const n = Number(draft);
+  const valid = Number.isInteger(n) && n >= 1;
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (valid && await act('/ui/api/usage-history/retention', { days: n }, `Usage history kept for ${n} ${n === 1 ? 'day' : 'days'}`)) setDays(n);
+  };
+  return (
+    <Panel title="Usage history" icon={History} bodyClassName="space-y-2">
+      <p className="text-xs text-muted-foreground">
+        Every reading of every usage source is kept, for the Overview's usage graph. Readings older than this are deleted.
+      </p>
+      {days === null ? <Empty>loading</Empty> : (
+        <form className="flex items-center gap-2 text-sm" onSubmit={save}>
+          <label htmlFor="history-retention">Keep for</label>
+          <Input id="history-retention" type="number" min={1} step={1} inputMode="numeric" className="h-8 w-24" value={draft} disabled={!canSet}
+            onChange={(e) => setDraft(e.target.value)} />
+          <span>days</span>
+          {canSet && <Button type="submit" size="sm" variant="secondary" disabled={!valid || n === days}>Save</Button>}
+        </form>
+      )}
+    </Panel>
+  );
+}
+
 export function Usage() {
   const usage = useHopper((s) => s.usage);
   const accounts = useHopper((s) => s.accounts);
@@ -100,6 +138,7 @@ export function Usage() {
       <div className="space-y-3">
         <Accounts accounts={accounts} />
         {usage && <LaneEffect usage={usage} />}
+        <HistoryRetention />
       </div>
       <div className="space-y-3">{usage ? <Sources usage={usage} /> : <Panel title="Usage" icon={GaugeIcon}><Empty>loading</Empty></Panel>}</div>
     </div>

@@ -16,6 +16,7 @@ import { Customize } from './customize';
 import { KpiRow } from './kpis';
 import { LanesPanel } from './lanes';
 import { EndedPanel, WaitingPanel } from './queue';
+import { UsageHistoryPanel } from './usage-history';
 
 // Literal class names, so Tailwind finds them.
 const SPAN: Record<PanelWidth, string> = { 1: 'lg:col-span-1', 2: 'lg:col-span-2', 3: 'lg:col-span-3' };
@@ -31,6 +32,7 @@ function OverviewPanel({ id, layout }: { id: PanelId; layout: OverviewLayout }) 
     case 'ended': return <EndedPanel />;
     case 'throughput': return <ThroughputPanel hours={s.throughputHours} />;
     case 'usage': return <UsagePanel source={s.usageSource} onSource={(n) => setOverviewLayout(setSetting(layout, 'usageSource', n))} />;
+    case 'usageHistory': return <UsageHistoryPanel />;
     case 'live': return <LivePanel count={s.liveEvents} />;
   }
 }

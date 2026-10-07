@@ -179,6 +179,22 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
   clientTargetsDialIn,
   // 14: the gh CLI job source is gone (issue #359): its instances leave `jobSources`, its repos become the job repositories.
   noGhSource,
+  // 15: the usage history (issue #385): every usage reading kept as a usage sample, once per source, machine, usage window and time.
+  `CREATE TABLE usage_samples (
+    seq BIGSERIAL PRIMARY KEY,
+    at TIMESTAMPTZ NOT NULL,
+    source TEXT NOT NULL,
+    machine_id TEXT NOT NULL DEFAULT '',
+    usage_window TEXT NOT NULL DEFAULT '',
+    used DOUBLE PRECISION NOT NULL,
+    limit_value DOUBLE PRECISION NOT NULL,
+    unit TEXT NOT NULL,
+    resets_at TIMESTAMPTZ,
+    informational BOOLEAN NOT NULL DEFAULT FALSE,
+    account TEXT,
+    UNIQUE (source, machine_id, usage_window, at)
+  );
+  CREATE INDEX usage_samples_at ON usage_samples (at)`,
 ];
 
 /** A user schema's version once migrated. */
