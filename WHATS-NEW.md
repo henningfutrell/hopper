@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- The throwaway machines for each coding agent now come online when the hopper runs in a container on the same computer, and stay online when you start them again.
 - Editing a machine no longer asks where herdr is installed: the hopper finds herdr on that machine by itself.
 - A job that failed now has a Run again button in the Ended list: its issue is picked up again and a new job starts, with no labels to remove by hand.
 - A waiting job can now be claimed as operator-led from the Overview, when you work it by hand in your editor or a terminal: the hopper runs nothing for it, shows it under Operator-led and on its own row of the lane timeline, and marks it finished once your pull request closing its issue is done.

@@ -11,9 +11,13 @@
 #   - an ssh Host `<prefix>-<agent>` in ~/.ssh/<prefix>.config (Included from ~/.ssh/config), and its
 #     host key in ~/.ssh/known_hosts — read from the container itself through docker, never learned
 #     from a connection — so the Machines view's Add form takes it like any ssh target.
+# The hopper they serve (issue #306): a host install, when its database is named (HOPPER_DATABASE_URL or
+# HOPPER_DATABASE_URL_FILE); else the hopper container of the compose project HOPPER_COMPOSE_PROJECT
+# (default `hopper`, compose.yaml's name). With that container, each box also joins its network, where
+# the hopper reaches it as `agent@<box>`, on every run: a box made again keeps it.
 # With --attach, each box is also attached to the hopper as an ssh machine (through the operator CLI,
-# `hopper config`: needs the daemon's HOPPER_DATABASE_URL or HOPPER_DATABASE_URL_FILE). A box is
-# attached with no executors, so no queued job lands on it by chance; list them in Plugins.
+# `hopper config`: the host install's, or the one in the hopper's container). A box is attached with no
+# executors, so no queued job lands on it by chance; list them in Plugins.
 # --remove removes the boxes (their containers, Hosts and known_hosts lines; with --attach, their
 # machines too); their home volumes stay. Re-running keeps a running box and refreshes the rest.
 #   usage: agent-boxes.sh [--attach] [--remove] [agent...]    (no agent: all of them)
@@ -22,6 +26,7 @@ set -euo pipefail
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP="${HOPPER_APP_DIR:-$HOME/.local/lib/hopper}"
 PREFIX="${HOPPER_BOX_PREFIX:-hopper-box}"
+PROJECT="${HOPPER_COMPOSE_PROJECT:-hopper}"
 ALL_AGENTS=(claude codex cursor omp opencode)
 SSH_DIR="$HOME/.ssh"
 BOXES_CONFIG="$SSH_DIR/$PREFIX.config"
@@ -30,6 +35,7 @@ KNOWN="$SSH_DIR/known_hosts"
 usage() { echo "usage: $0 [--attach] [--remove] [agent...]   agents: ${ALL_AGENTS[*]} (default: all)" >&2; exit 2; }
 step() { printf '==> %s\n' "$*" >&2; }
 die() { printf 'agent-boxes: %s\n' "$*" >&2; exit 1; }
+networks() { docker container inspect --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}}{{"\n"}}{{end}}' -- "$1" | grep -v '^$'; }
 
 ATTACH=0; REMOVE=0; AGENTS=()
 for a in "$@"; do
@@ -47,15 +53,30 @@ done
 command -v docker >/dev/null || die "docker not found"
 docker info >/dev/null 2>&1 || die "docker does not answer (docker info failed)"
 
-# The plugins config through the operator CLI: get it, change it with scripts/agent-boxes.ts, set it.
-hopper_cli() { node "$APP/src/cli.ts" "$@"; }
-edit_plugins() {
+# The hopper's container and its network, when the hopper runs in its compose container.
+HOPPER_CTR=''; HOPPER_NET=''
+if [ -z "${HOPPER_DATABASE_URL:-}${HOPPER_DATABASE_URL_FILE:-}" ]; then
+  HOPPER_CTR="$(docker ps --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.service=hopper \
+    --format '{{.Names}}' 2>/dev/null | head -n 1 || true)"
+  if [ -n "$HOPPER_CTR" ]; then
+    HOPPER_NET="$(networks "$HOPPER_CTR" | head -n 1)"
+    [ -n "$HOPPER_NET" ] || die "the hopper's container $HOPPER_CTR is on no network"
+  fi
+fi
+if [ "$ATTACH" = 1 ] && [ -z "$HOPPER_CTR" ]; then
   [ -n "${HOPPER_DATABASE_URL:-}${HOPPER_DATABASE_URL_FILE:-}" ] \
-    || die "--attach needs the daemon's database: HOPPER_DATABASE_URL or HOPPER_DATABASE_URL_FILE, as in its environment"
+    || die "--attach needs the hopper: its compose container running, or a host install's database (HOPPER_DATABASE_URL or HOPPER_DATABASE_URL_FILE)"
   [ -f "$APP/src/cli.ts" ] || die "no hopper install at $APP (HOPPER_APP_DIR)"
+fi
+
+# The plugins config through the operator CLI: get it, change it with scripts/agent-boxes.ts, set it.
+hopper_cli() {
+  if [ -n "$HOPPER_CTR" ]; then docker exec -i -- "$HOPPER_CTR" hopper "$@"; else node "$APP/src/cli.ts" "$@"; fi
+}
+edit_plugins() {
   local version config
-  version="$(hopper_cli config version plugins)" || die "cannot read the plugins config"
-  config="$(hopper_cli config get plugins)" || die "cannot read the plugins config"
+  version="$(hopper_cli config version plugins </dev/null)" || die "cannot read the plugins config"
+  config="$(hopper_cli config get plugins </dev/null)" || die "cannot read the plugins config"
   printf '%s' "$config" | node "$SRC/scripts/agent-boxes.ts" "$@" | hopper_cli config set plugins --if-version "$version" >/dev/null \
     || die "the plugins config was not changed"
 }
@@ -150,8 +171,12 @@ for agent in "${AGENTS[@]}"; do
     step "start $name"; docker start -- "$name" >/dev/null
   else
     step "create $name"
-    docker run -d --name "$name" --hostname "$name" --restart unless-stopped --init \
+    docker run -d --name "$name" --hostname "$name" --restart unless-stopped --init ${HOPPER_NET:+--network "$HOPPER_NET"} \
       --label hopper.agent-box="$agent" -p 127.0.0.1::22 -v "$name-home:/home/agent" "$name" >/dev/null
+  fi
+  if [ -n "$HOPPER_NET" ] && ! networks "$name" | grep -qxF "$HOPPER_NET"; then
+    step "join $name to the hopper's network $HOPPER_NET"
+    docker network connect "$HOPPER_NET" "$name"
   fi
 
   port=''
@@ -187,8 +212,21 @@ for agent in "${AGENTS[@]}"; do
     sleep 1
   done
   [ -n "$ok" ] || die "$name: its herdr session does not answer (docker logs $name)"
+
+  # The hopper in its container reaches the box by name on its network, port 22: the box's own host key answers there.
+  target="$name"
+  if [ -n "$HOPPER_CTR" ]; then
+    target="agent@$name"
+    step "check the hopper reaches $name"
+    ok=''
+    for _ in $(seq 1 10); do
+      if docker exec -- "$HOPPER_CTR" ssh-keyscan -T 5 -t ed25519 "$name" 2>/dev/null | awk '{ print $2, $3 }' | grep -qxF "$HOST_KEY"; then ok=1; break; fi
+      sleep 1
+    done
+    [ -n "$ok" ] || die "the hopper ($HOPPER_CTR) does not reach $name on $HOPPER_NET"
+  fi
   [ "$ATTACHED" = '[' ] || ATTACHED+=','
-  ATTACHED+="{\"name\":\"$name\",\"ssh\":\"$name\",\"hostKey\":\"$HOST_KEY\"}"
+  ATTACHED+="{\"name\":\"$name\",\"ssh\":\"$target\",\"hostKey\":\"$HOST_KEY\"}"
 done
 ATTACHED+=']'
 
