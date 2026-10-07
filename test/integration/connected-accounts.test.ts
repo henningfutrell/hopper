@@ -13,7 +13,14 @@
 //     Then the answer is the device code and where to enter it, asked for with the client id alone
 //     When the GitHub user approves the code
 //     Then GitHub reads as connected, as that account, through the hopper's app, where the app is installed and the repositories it reaches there
-//     And an issue labelled hopper by that account becomes a job, claimed through the account's token
+//     When the admin chooses the repository jobs may use
+//     Then an issue labelled hopper by that account there becomes a job, claimed through the account's token
+//   Scenario: job repositories (issue #321)
+//     Given GitHub connected, and no repository chosen
+//     Then its source says no repository is chosen, and no issue becomes a job
+//     When one repository is chosen
+//     Then its issues become jobs, and an issue of a repository not chosen does not
+//     And the choice is changed without disconnecting, and outlives a disconnect
 //   Scenario: the app installed on two accounts, one with chosen repositories: each with the repositories it reaches, every page of them
 //   Scenario: GitHub cannot say where the app is installed: the status says why and where to see it, never that it is not installed
 //   Scenario: a job of the connected account runs with its token (GH_TOKEN), never stored on the job
@@ -64,6 +71,9 @@ const accounts = async (app: TestApp) => (await app.api<{ accounts: ConnectedAcc
 const account = async (app: TestApp, provider: Provider) => (await accounts(app)).find((a) => a.provider === provider)!;
 const act = (app: TestApp, token: string, action: 'connect' | 'cancel' | 'disconnect', provider: Provider) =>
   app.ui<ConnectedAccountStatus>('/ui/api/connected-accounts', { action, provider }, { token });
+const choose = (app: TestApp, token: string, repositories: string[]) =>
+  app.ui<ConnectedAccountStatus>('/ui/api/connected-accounts', { action: 'choose', provider: 'github', repositories }, { token });
+const NO_REPOSITORIES = 'no repositories chosen for jobs: Sources → GitHub account → choose them';
 const sourceOf = async (app: TestApp, name: string) => (await app.api<{ sources: SourceStatus[] }>('GET', '/api/sources')).body.sources.find((s) => s.name === name);
 const jobs = async (app: TestApp) => (await app.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=1000')).body.jobs;
 
@@ -107,6 +117,7 @@ describe('a user connects their own GitHub', () => {
       installations: [{ account: 'octo-user', repositorySelection: 'all', repositories: ['octo-user/tools'], settingsUrl: `${f.github.url}/settings/installations/1` }],
     });
     expect(JSON.stringify(await accounts(app))).not.toMatch(/gho_/); // facts only, never the token
+    expect((await choose(app, token, ['octo-user/tools'])).body).toMatchObject({ state: 'connected', jobRepositories: ['octo-user/tools'] });
 
     const job = await waitFor(async () => (await jobs(app)).find((j) => j.source?.key === `${f.github.url}/octo-user/tools/issues/7`), { what: 'the issue to become a job' });
     expect(job.source).toMatchObject({ source: 'github-account', repo: 'octo-user/tools', number: 7 });
@@ -148,6 +159,42 @@ describe('a user connects their own GitHub', () => {
     expect(again.state === 'connected' && again.installations).toHaveLength(1);
   });
 
+  it('takes no job until repositories are chosen, then only from the chosen ones, changed without disconnecting (#321)', async () => {
+    const f = await forges({ github: [
+      { repo: 'octo-user/tools', number: 7, title: 'x', body: SLEEP, author: 'octo-user', labels: ['hopper'] },
+      { repo: 'octo-user/other', number: 3, title: 'y', body: SLEEP, author: 'octo-user', labels: ['hopper'] },
+    ] });
+    const app = await start(f);
+    const token = await app.login();
+    await connect(app, f.github, 'github', 'octo-user', token);
+    expect(await account(app, 'github')).toMatchObject({ state: 'connected', jobRepositories: [] });
+    await waitFor(async () => (await sourceOf(app, 'github-account'))?.detail.paused === NO_REPOSITORIES, { what: 'the source to say no repository is chosen' });
+    await app.user().sources.syncNow('github-account');
+    expect(await jobs(app)).toEqual([]);
+    expect(f.github.requests.some((r) => r.path.endsWith('/search/issues'))).toBe(false);
+
+    // A mutation: a UI session, never a bare request; each one an owner/repo.
+    expect((await app.ui('/ui/api/connected-accounts', { action: 'choose', provider: 'github', repositories: ['octo-user/tools'] })).status).toBe(403);
+    expect((await choose(app, token, ['not a repo'])).status).toBe(400);
+
+    const chosen = await choose(app, token, ['octo-user/tools', 'octo-user/tools']);
+    expect(chosen.status).toBe(200);
+    expect(chosen.body).toMatchObject({ state: 'connected', jobRepositories: ['octo-user/tools'] });
+    await waitFor(async () => (await jobs(app)).some((j) => j.source?.repo === 'octo-user/tools'), { what: 'the chosen repository\'s issue to become a job' });
+    await waitFor(async () => (await sourceOf(app, 'github-account'))?.detail.paused === undefined, { what: 'the source to resume' });
+    await app.user().sources.syncNow('github-account');
+    expect((await jobs(app)).map((j) => j.source?.repo)).toEqual(['octo-user/tools']);
+
+    // Changed later, still connected: the next sync lists the new choice.
+    await choose(app, token, ['octo-user/tools', 'octo-user/other']);
+    await waitFor(async () => (await jobs(app)).some((j) => j.source?.repo === 'octo-user/other'), { what: 'the newly chosen repository\'s issue to become a job' });
+
+    // The choice is the user's, not the connection's: a disconnect keeps it.
+    await act(app, token, 'disconnect', 'github');
+    await connect(app, f.github, 'github', 'octo-user', token);
+    expect(await account(app, 'github')).toMatchObject({ jobRepositories: ['octo-user/tools', 'octo-user/other'] });
+  });
+
   it('runs a job of the connected account with its token as GH_TOKEN, and never stores it on the job', async () => {
     const f = await forges({ github: [{ repo: 'octo-user/tools', number: 9, title: 'x', body: 'Do it.', author: 'octo-user', labels: ['hopper'] }] });
     const seen: Record<string, string>[] = [];
@@ -159,6 +206,7 @@ describe('a user connects their own GitHub', () => {
     const app = await start(f, { executor: 'recorder', seams: { executors: [recorder] } });
     const token = await app.login();
     await connect(app, f.github, 'github', 'octo-user', token);
+    await choose(app, token, ['octo-user/tools']);
     await waitFor(async () => seen.length > 0, { what: 'the job to run' });
     expect(seen[0]).toEqual({ GH_TOKEN: expect.stringMatching(/^gho_octo-user_/) });
     const job = (await jobs(app))[0]!;
@@ -170,6 +218,7 @@ describe('a user connects their own GitHub', () => {
     const app = await start(f);
     const token = await app.login();
     await connect(app, f.github, 'github', 'octo-user', token);
+    await choose(app, token, ['octo-user/tools']);
     await waitFor(async () => (await sourceOf(app, 'github-account'))?.state === 'ok', { what: 'the source to sync' });
 
     f.github.issues.push({ repo: 'octo-user/tools', number: 8, title: 'x', body: SLEEP, author: 'octo-user', labels: ['hopper'] });

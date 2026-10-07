@@ -150,9 +150,10 @@ GitHub becomes admin** — sign in yourself before anyone else reaches the UI. E
 GitHub realm's role rules grant (Settings → Sign-in: usernames, or numeric ids;
 [docs/sign-in.md](docs/sign-in.md#github)).
 
-Signing in connects your GitHub: your issues labelled `hopper` become your jobs — the ones you opened,
-wherever the app can see them (set `authors`, `owners` or `repos` on the `github-account` source in
-**Plugins** to change that) — and your jobs act as you on GitHub, with the app marked on what they do.
+Signing in connects your GitHub: your issues labelled `hopper` become your jobs — the ones you opened
+(set `authors` on the `github-account` source in **Plugins** to change that), in the repositories you
+choose under **Sources → GitHub account** — and your jobs act as you on GitHub, with the app marked on
+what they do. Until you choose at least one repository, no job comes in.
 
 The hopper's app reaches only the repositories it is **installed** on: **Sources → GitHub account** says
 where it is installed and links to install it or choose repositories. That account is your sign-in, so

@@ -5,7 +5,8 @@
 // at GitHub — then asks GitHub who the token belongs to, keeps the account in the user's store and links
 // it, so a later sign-in with it lands here. One device code at a time. The account's job source, and the
 // jobs it gives, ask here for the token; one that expired (an app that did not opt out of expiration)
-// asks the person to sign in again.
+// asks the person to sign in again. Which repositories its jobs may use is the user's choice (issue #321),
+// a setting that outlives a disconnect; none chosen, no job.
 import type { ConnectedAccount, ConnectedAccounts, ConnectedAccountTokens, Connection, UserStore } from '../domain/ports.ts';
 import { CONNECTED_ACCOUNT_PROVIDERS, CONNECTED_VIA, type AppInstallation, type ConnectedAccountProvider, type ConnectedAccountStatus } from '../domain/types.ts';
 import { deviceFlow, deviceFlowFailure, type DeviceFlow, type Grant } from './device-flow.ts';
@@ -18,7 +19,7 @@ export const notConnected = (provider: ConnectedAccountProvider) => `${PROVIDER_
 interface Waiting { userCode: string; verificationUri: string; expiresAt: string; abort: AbortController }
 
 export interface ConnectedAccountsOptions {
-  store: Pick<UserStore, 'connectedAccounts'>;
+  store: Pick<UserStore, 'connectedAccounts' | 'settings'>;
   apps: HopperApps;
   /** Who a token belongs to. */
   whoIs(provider: ConnectedAccountProvider, token: string): Promise<AccountIdentity>;
@@ -50,7 +51,8 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
     if (a) {
       const install = installUrl(o.apps[provider]);
       return {
-        ...base, state: 'connected', account: a.account, connectedAt: a.connectedAt, configUrl: configUrl(o.apps[provider]),
+        ...base, state: 'connected', account: a.account, connectedAt: a.connectedAt, jobRepositories: o.store.settings.getJobRepositories(provider),
+        configUrl: configUrl(o.apps[provider]),
         ...(install ? { installUrl: install } : {}),
       };
     }
@@ -168,7 +170,15 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
       }
       return status(provider);
     },
+    async choose(provider, repositories) {
+      const chosen = [...new Set(repositories)];
+      o.store.settings.setJobRepositories(provider, chosen);
+      o.logger.info(`hopper: ${PROVIDER_NAME[provider]} job repositories chosen: ${chosen.length}`);
+      o.onChange?.(provider);
+      return withInstallations(status(provider));
+    },
     account: (provider) => o.store.connectedAccounts.get(provider)?.account,
+    jobRepositories: (provider) => o.store.settings.getJobRepositories(provider),
     token,
     endpoints: (provider) => ({ url: o.apps[provider].url, apiUrl: o.apps[provider].apiUrl }),
     stop() {

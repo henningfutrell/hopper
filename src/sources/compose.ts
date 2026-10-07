@@ -17,6 +17,8 @@ import { sourceConfig, type GitHubAccountOptions, type GitHubAppOptions, type Gi
 export const GH_PAUSED = 'GitHub App configured';
 export const GH_PAUSED_ACCOUNT = 'GitHub account connected';
 export const APP_MISSING = 'no GitHub App configured';
+/** A connected account's source lists only its job repositories (issue #321): none chosen, none listed. */
+export const NO_REPOSITORIES = 'no repositories chosen for jobs: Sources → GitHub account → choose them';
 
 /** Why the app cannot be used right now, or undefined when its identity is complete. */
 export function appProblem(load: GitHubAppLoad): string | undefined {
@@ -74,8 +76,10 @@ export function createAppSource(o: GitHubSourceDeps, options: GitHubAppOptions):
 
 /**
  * A connected account's source (issue #214): the GitHub source logic over the account the user
- * connected, rebuilt when the account changes — its login is the default author. Paused, and saying
- * why, while none is connected; a report then waits for a connection (transient).
+ * connected, rebuilt when the account or its job repositories change — its login is the default author.
+ * It lists only the job repositories (issue #321), read at each call, never a search over all the account
+ * can reach. Paused, and saying why, while none is connected or no repository is chosen; a report then
+ * waits for a connection (transient).
  */
 export function createAccountSource(o: GitHubSourceDeps & { provider: ConnectedAccountProvider; accounts: ConnectedAccountTokens },
   options: GitHubAccountOptions): JobSource {
@@ -86,27 +90,29 @@ export function createAccountSource(o: GitHubSourceDeps & { provider: ConnectedA
     try { return await accounts.token(provider); } catch (err) { throw new GitHubApiError((err as Error).message, false); }
   };
   const api = o.api ?? createAccountGitHubApi({ apiUrl: accounts.endpoints(provider).apiUrl, token });
-  let built: { login: string; source: JobSource } | undefined;
+  let built: { key: string; source: JobSource } | undefined;
   const current = (): JobSource | undefined => {
     const login = accounts.account(provider);
     if (!login) return undefined;
-    if (built?.login !== login) {
-      const config = { ...sourceConfig(options), authors: options.authors.length > 0 ? options.authors : [login] };
+    const repos = accounts.jobRepositories(provider);
+    const key = JSON.stringify([login, repos]);
+    if (built?.key !== key) {
+      const config = { ...sourceConfig(options), repos, authors: options.authors.length > 0 ? options.authors : [login] };
       built = {
-        login,
+        key,
         source: createGitHubSource({ name: o.name, kind, mode: 'account', whoami: login, config, api, clock: o.clock, knownKeys: o.knownKeys, rerunnable: o.rerunnable }),
       };
     }
     return built.source;
   };
   const unconnected = () => ({
-    mode: 'account', owners: options.owners, repos: options.repos, authors: options.authors, label: options.label,
+    mode: 'account', repos: accounts.jobRepositories(provider), authors: options.authors, label: options.label,
     account: { service: provider, detail: { via: CONNECTED_VIA }, problem: notConnected(provider) },
   });
   return {
     name: o.name,
     kind,
-    paused: () => (current() ? undefined : notConnected(provider)),
+    paused: () => (!current() ? notConnected(provider) : accounts.jobRepositories(provider).length === 0 ? NO_REPOSITORIES : undefined),
     describe: () => current()?.describe() ?? unconnected(),
     discover: () => current()?.discover() ?? Promise.resolve([]),
     check: (active) => current()?.check(active) ?? Promise.resolve([]),

@@ -7,6 +7,8 @@
 // repositories the app reaches on each account it is installed on, and asks to install it only where it is
 // installed nowhere (issue #253). Signed in with GitHub, that account is the sign-in: the panel offers
 // Sign out, never Disconnect; signed in another way, forgetting it says it keeps the sign-in (issue #322).
+// Of the repositories the app reaches the person chooses which ones jobs may use, filtering a long list,
+// with a count of chosen against available (issue #321).
 import { createElement } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -114,7 +116,7 @@ describe('Sources view: GitHub', () => {
         source('github-app', 'github-app', 'ok', { mode: 'app', paused: 'no GitHub App configured' }),
       ] },
       '/api/gh-login': { state: 'logged-out' },
-      '/api/connected-accounts': { accounts: [{ provider: 'github', via: 'the hopper\'s app', state: 'connected', account: 'octo-user', installations: [{ account: 'octo-user', repositorySelection: 'all', repositories: ['octo-user/hopper'], settingsUrl: 'https://github.com/settings/installations/1' }] }] },
+      '/api/connected-accounts': { accounts: [{ provider: 'github', via: 'the hopper\'s app', state: 'connected', account: 'octo-user', jobRepositories: ['octo-user/hopper'], installations: [{ account: 'octo-user', repositorySelection: 'all', repositories: ['octo-user/hopper'], settingsUrl: 'https://github.com/settings/installations/1' }] }] },
     });
     const panel = () => document.querySelector('[data-connected-account="github"]');
     await vi.waitFor(() => expect(panel()?.querySelector('[data-source-sync="github-account"]')).not.toBeNull());
@@ -128,7 +130,7 @@ describe('Sources view: GitHub', () => {
   });
 
   const connected = (installations?: unknown[]) => ({
-    provider: 'github', via: 'the hopper\'s app', state: 'connected', account: 'octo-user', connectedAt: '2026-10-01T00:00:00.000Z',
+    provider: 'github', via: 'the hopper\'s app', state: 'connected', account: 'octo-user', connectedAt: '2026-10-01T00:00:00.000Z', jobRepositories: [],
     installUrl: 'https://github.com/apps/hopper-qm/installations/new', configUrl: 'https://github.com/settings/installations',
     ...(installations ? { installations } : { installationsError: 'GitHub could not say where the app is installed: Service Unavailable' }),
   });
@@ -146,6 +148,7 @@ describe('Sources view: GitHub', () => {
     expect(installs.map((e) => e.getAttribute('data-installation'))).toEqual(['octo-user', 'octo-org']);
     expect([...installs[0]!.querySelectorAll('[data-repository]')].map((e) => e.textContent)).toEqual(['octo-user/hopper', 'octo-user/tools']);
     expect(installs[0]!.textContent).toContain('all repositories');
+    expect([...installs[0]!.querySelectorAll('[data-repository] input[type="checkbox"]')]).toHaveLength(2);
     expect([...installs[1]!.querySelectorAll('[data-repository]')].map((e) => e.textContent)).toEqual(['octo-org/site']);
     expect(installs[1]!.textContent).toContain('chosen repositories');
     expect(links()).toEqual([
@@ -204,5 +207,60 @@ describe('Sources view: GitHub', () => {
     await vi.waitFor(() => expect(posts(f, '/ui/api/connected-accounts')).toHaveLength(1));
     expect(JSON.parse(String((posts(f, '/ui/api/connected-accounts')[0]![1] as RequestInit).body))).toEqual({ action: 'disconnect', provider: 'github' });
     expect(posts(f, '/ui/api/logout')).toHaveLength(0);
+  });
+
+  describe('job repositories (#321)', () => {
+    const three = [
+      { account: 'octo-user', repositorySelection: 'all', repositories: ['octo-user/hopper', 'octo-user/tools'], settingsUrl: 'https://github.com/settings/installations/1' },
+      { account: 'octo-org', repositorySelection: 'selected', repositories: ['octo-org/site'], settingsUrl: 'https://github.com/organizations/octo-org/settings/installations/2' },
+    ];
+    const summary = () => panel()!.querySelector('[data-job-repositories-summary]')?.textContent;
+    const box = (repo: string) => panel()!.querySelector<HTMLInputElement>(`[data-repository="${repo}"] input[type="checkbox"]`)!;
+    const shown = () => [...panel()!.querySelectorAll('[data-repository]')].filter((e) => !(e as HTMLElement).hidden).map((e) => e.getAttribute('data-repository'));
+    const button = (text: string) => [...panel()!.querySelectorAll('button')].find((b) => b.textContent === text)!;
+    const typeInto = async (input: HTMLInputElement, value: string) => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+      await act(async () => { setter.call(input, value); input.dispatchEvent(new Event('input', { bubbles: true })); });
+    };
+
+    it('none chosen: says no job comes in until some are, and counts chosen against available', async () => {
+      await boot(withAccount({ ...connected(three), jobRepositories: [] }));
+      await vi.waitFor(() => expect(summary()).toBe('0 of 3 repositories chosen for jobs'));
+      expect(panel()!.querySelector('[data-job-repositories-none]')?.textContent).toContain('No new jobs come in until you choose');
+      expect(['octo-user/hopper', 'octo-user/tools', 'octo-org/site'].map((r) => box(r).checked)).toEqual([false, false, false]);
+    });
+
+    it('filters the list, chooses repositories, and saves the choice without disconnecting', async () => {
+      await boot({ ...withAccount({ ...connected(three), jobRepositories: ['octo-org/site'] }), '/ui/api/connected-accounts': { ...connected(three), jobRepositories: ['octo-user/tools'] } });
+      await vi.waitFor(() => expect(summary()).toBe('1 of 3 repositories chosen for jobs'));
+      expect(box('octo-org/site').checked).toBe(true);
+      expect(button('Save').disabled).toBe(true);
+
+      await typeInto(panel()!.querySelector<HTMLInputElement>('[data-repository-filter]')!, 'TOO');
+      expect(shown()).toEqual(['octo-user/tools']);
+      await act(async () => { button('Choose shown').click(); });
+      await typeInto(panel()!.querySelector<HTMLInputElement>('[data-repository-filter]')!, '');
+      expect(shown()).toEqual(['octo-user/hopper', 'octo-user/tools', 'octo-org/site']);
+      expect(summary()).toBe('2 of 3 repositories chosen for jobs');
+      await act(async () => { box('octo-org/site').click(); });
+      expect(summary()).toBe('1 of 3 repositories chosen for jobs');
+
+      const fetch = globalThis.fetch as ReturnType<typeof vi.fn>;
+      await act(async () => { button('Save').click(); });
+      const sent = fetch.mock.calls.filter(([url, init]) => String(url) === '/ui/api/connected-accounts' && (init as RequestInit | undefined)?.method === 'POST');
+      expect(sent.map(([, init]) => JSON.parse(String((init as RequestInit).body)))).toEqual([{ action: 'choose', provider: 'github', repositories: ['octo-user/tools'] }]);
+      await vi.waitFor(() => expect(summary()).toBe('1 of 3 repositories chosen for jobs'));
+      expect(box('octo-user/tools').checked).toBe(true);
+      expect(button('Save').disabled).toBe(true);
+      expect(panel()!.textContent).toContain('Stop working through GitHub');
+    });
+
+    it('a chosen repository the app no longer reaches is shown, to be cleared', async () => {
+      await boot(withAccount({ ...connected(three), jobRepositories: ['octo-user/gone'] }));
+      await vi.waitFor(() => expect(summary()).toBe('1 of 3 repositories chosen for jobs'));
+      const gone = panel()!.querySelector('[data-repository="octo-user/gone"]')!;
+      expect(gone.textContent).toContain('the app does not reach it');
+      expect(box('octo-user/gone').checked).toBe(true);
+    });
   });
 });
