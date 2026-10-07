@@ -66,16 +66,18 @@ describe('everything runs in parallel', () => {
     expect(claimed.map((e) => e.jobId).sort()).toEqual(jobs.map((j) => j.id).sort());
     // The router's advice is applied (issue #211): a Decision claims every job advised by then, so the
     // claims may span Decisions as the advice arrives — but no Decision with room holds an advised job.
-    for (const d of await decisions(a)) expect(d.hold.filter((h) => h.reason.startsWith('all lanes busy'))).toEqual([]);
+    for (const d of await decisions(a)) expect(d.wait ?? []).toEqual([]);
     expect((await a.api<{ running: Job[] }>('GET', '/api/queue')).body.running).toHaveLength(4);
   });
 
-  it('more queued than lanes: every lane fills; the rest are held for lanes alone', async () => {
+  it('more queued than lanes: every lane fills; the rest stay queued, waiting for a lane, never held (issue #381)', async () => {
     const a = await start(2);
     const jobs = await pullAll(a, [1, 2, 3].map(() => ({ op: 'sleep', ms: 3000 })));
     await waitFor(async () => (await a.api<{ running: Job[] }>('GET', '/api/queue')).body.running.length === 2, { what: '2 running' });
-    const third = await waitFor(async () => { const j = await a.job(jobs[2]!.id); return j.status === 'held' ? j : undefined; });
-    expect(third.holdReason).toBe('all lanes busy (cap 2)');
+    const third = await waitFor(async () => { const j = await a.job(jobs[2]!.id); return j.waitReason ? j : undefined; });
+    expect(third).toMatchObject({ status: 'queued', waitReason: 'waiting for a lane: machine local\'s lane cap is 2, all 2 in use' });
+    expect(third.holdReason).toBeUndefined();
+    expect((await ofType(a, 'job.held')).filter((e) => e.jobId === third.id)).toEqual([]);
   });
 });
 

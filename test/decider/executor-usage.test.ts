@@ -11,13 +11,13 @@ const mixed = machine({ executors: ['claude', 'codex'] });
 const claudeAt = (used: number) => reading(used, 100, { source: 'claude', executors: ['claude'] });
 
 describe('usage per executor', () => {
-  it('one framework at its hard limit: its jobs are held, the other framework\'s jobs start on the same machine', () => {
+  it('one framework at its hard limit: its jobs wait, the other framework\'s jobs start on the same machine', () => {
     const d = decide(inputs({
       machines: [mixed], usage: [claudeAt(96)],
       waiting: [job('c1', { executor: 'claude' }), job('x1', { executor: 'codex' })],
     }), 'd1');
     expect(d.start.map((s) => s.jobId)).toEqual(['x1']);
-    expect(d.hold).toEqual([{ jobId: 'c1', reason: expect.stringContaining('usage hard limit') }]);
+    expect(d.wait).toEqual([{ jobId: 'c1', reason: expect.stringContaining('usage hard limit') }]);
     expect(plan(d)).toMatchObject({ target: 1, open: 1, drain: [] });
   });
 
@@ -26,7 +26,7 @@ describe('usage per executor', () => {
     const waiting = [job('c1', { executor: 'claude' }), job('c2', { executor: 'claude' }), job('c3', { executor: 'claude' }), job('x1', { executor: 'codex' }), job('x2', { executor: 'codex' })];
     const d = decide(inputs({ machines: [mixed], usage: [claudeAt(82.5)], waiting }), 'd1');
     expect(d.start.map((s) => s.jobId)).toEqual(['c1', 'c2', 'x1', 'x2']);
-    expect(d.hold).toEqual([{ jobId: 'c3', reason: expect.stringContaining('usage soft limit caps lanes at 2') }]);
+    expect(d.wait).toEqual([{ jobId: 'c3', reason: expect.stringContaining('executor claude\'s lane cap on local is 2 (usage soft limit') }]);
   });
 
   it('a budget of an executor a machine does not run leaves that machine free', () => {
@@ -52,7 +52,7 @@ describe('usage per executor', () => {
     const d = decide(inputs({ machines: [mixed], usage: [claudeAt(82.5)], lanes, running, waiting }), 'd1');
     // 4 lanes, 2 busy: room for 2, and claude may run 2.
     expect(d.start.map((s) => s.jobId)).toEqual(['c1', 'c2']);
-    expect(d.hold).toEqual([{ jobId: 'c3', reason: expect.stringContaining('usage soft limit caps lanes at 2') }]);
+    expect(d.wait).toEqual([{ jobId: 'c3', reason: expect.stringContaining('executor claude\'s lane cap on local is 2 (usage soft limit') }]);
   });
 
   it('an executor at its hard limit has its busy lanes drained; another executor\'s lanes on the machine run on', () => {
