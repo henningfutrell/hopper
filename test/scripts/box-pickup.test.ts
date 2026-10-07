@@ -145,6 +145,14 @@ describe('the reader: what changed on the boxes, as timeline lines', () => {
     expect(pickupTimeline(seen, [box([finished])], Date.parse(T2) + 999_000, 120_000)).toEqual([]);
   });
 
+  it('a stale pickup that ends shows how it ended, not that it was heard from again', () => {
+    const seen: Seen = new Map();
+    pickupTimeline(seen, [box([working])], Date.parse(T1) + 121_000, 120_000);
+    const finished = applyPickup(working, { kind: 'status', state: 'finished' }, T2);
+    expect(pickupTimeline(seen, [box([finished])], Date.parse(T2) + 121_000, 120_000).map((l) => l.text))
+      .toEqual([`hopper-box-claude ${ISSUE} finished`]);
+  });
+
   it('a box that cannot be read says so once, and once more when it answers again', () => {
     const seen: Seen = new Map();
     expect(pickupTimeline(seen, [{ box: 'hopper-box-codex', error: 'ssh: connect refused' }], 0, 120_000).map((l) => l.text))
