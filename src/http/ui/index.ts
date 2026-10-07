@@ -194,6 +194,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     if (r.ok) return r.job;
     throw new HttpError(RERUN_STATUS[r.reason], r.message);
   });
+  app.post('/ui/api/jobs/:id/dismiss', operator, async (req) => o.tenant(req).engine.dismiss(parseWith(idParams, req.params).id));
   app.post('/ui/api/queue/order', operator, async (req) => ({ jobs: o.tenant(req).engine.orderQueue(parseWith(queueOrderBody, req.body).jobIds) }));
   app.post('/ui/api/queue/accept-presort', operator, async (req) => ({ presort: o.tenant(req).engine.acceptPreSort() }));
   app.post('/ui/api/queue-gate', admin, async (req) => ({ gate: o.tenant(req).engine.setQueueGate(parseWith(queueGateBody, req.body)) }));

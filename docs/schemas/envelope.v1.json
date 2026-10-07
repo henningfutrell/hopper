@@ -55,6 +55,7 @@
         "queue.gate_changed",
         "job.claimed_by_operator",
         "job.rerun",
+        "job.dismissed",
         "source.stalled",
         "connected_account.expired",
         "jev.mode_changed",

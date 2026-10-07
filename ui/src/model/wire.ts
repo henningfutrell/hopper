@@ -18,6 +18,8 @@ export interface Queue {
   waiting: Job[];
   running: Job[];
   waitingAnswer: Job[];
+  /** The locked entries (issue #355): failed jobs kept in the queue until run again or dismissed, highest priority first. */
+  locked: Job[];
   /** Jobs ended in the last 24 hours, newest end first. */
   ended: Job[];
   /** The queue gate (issue #159). */

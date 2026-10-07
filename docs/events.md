@@ -644,7 +644,21 @@ Version 1 (`docs/schemas/job.claimed_by_operator.v1.json`). An operator claimed 
 
 ## `job.rerun`
 
-Version 1 (`docs/schemas/job.rerun.v1.json`). The user asked for an ended job's item to run again (UI Run again, a re-run): its source gave the item back (on GitHub: a closed issue reopened, the end labels gone) and the new job was queued in the same step, its `job.queued` just before this event and its `rerunOf` this job. The ended job is kept as it ended.
+Version 1 (`docs/schemas/job.rerun.v1.json`). The user asked for an ended job's item to run again (UI Run again, a re-run): its source gave the item back (on GitHub: a closed issue reopened, the end labels gone) and the new job was queued in the same step, its `job.queued` just before this event and its `rerunOf` this job. The ended job is kept as it ended; a failed one is no longer a locked entry.
+
+| field | type | required |
+|---|---|---|
+| `by` | `user` | yes |
+
+```json
+{
+  "by": "user"
+}
+```
+
+## `job.dismissed`
+
+Version 1 (`docs/schemas/job.dismissed.v1.json`). The user dismissed a locked entry (issue #355): the failed job stays failed and leaves the queue. It can still be run again. Its issue keeps `hopper:failed`.
 
 | field | type | required |
 |---|---|---|

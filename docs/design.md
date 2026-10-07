@@ -36,7 +36,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts; `machines.ts` attached machines and their edit; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate), ports (`ports.ts`, re-exporting the store's from `store.ts`) | anything else in `src/` |
+| `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts; `machines.ts` attached machines and their edit; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry), ports (`ports.ts`, re-exporting the store's from `store.ts`) | anything else in `src/` |
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock | everything but `domain/` |
 | `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations (the instance's `migrations.ts` with migration 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-jobs-dir.ts` (tenant 11) moves a work tree stored as `~` to the jobs directory (issue #314); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); 25 the join codes (issue #308) and `migration-client-key.ts` (tenant 12) the client targets that held a token variable; `migration-no-gh-source.ts` (tenant 14) takes out the gh CLI job source (issue #359); `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265) | engine, http, decider |
 | `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), identity → user (`identities.ts`: link or provision), the leftover default admin account folded into the first GitHub admin's user at start (`leftover-admin.ts`, issue #265), a user's job sources split for the sync loop at start and on each change (`job-sources.ts`, issue #356) | http, decider |
@@ -1145,6 +1145,21 @@ ended. A source that cannot give the item back → 502 with its error, and nothi
 issue #354 Run again only cleared the labels and waited for a sync, and a closed issue was refused (409,
 issue #348); neither is so now. Any job made for a key that already had one carries `rerunOf`, whether
 Run again or a human clearing the marker made it.
+
+**Locked entries** (issue #355). A failed job does not drop out of the queue: the newest job of its
+item, failed and not dismissed, is a **locked entry** (`isLocked`, `src/domain/locked.ts`), listed in
+`/api/queue` `locked`, highest priority first, then oldest — under the Overview's Waiting jobs and in the
+Queue view's Locked panel, with its failure, the job it runs again (`rerunOf`), Run again and Dismiss.
+Its status stays `failed`: the decider never sees it, so it takes no lane and no budget, and nothing
+else that reads `failed` (the Ended list, the cards, the webhooks, the source's `hopper:failed`)
+changes. The queue is the truth; the issue's labels mirror it. Run again (above) unlocks it: its new
+job is the item's newest, so the failed one leaves `locked`, and a new failure is the locked entry in its
+place. **Dismiss** (`POST /ui/api/jobs/:id/dismiss`, operator) sets `dismissedAt` and appends
+`job.dismissed { by: "user" }`: the job leaves the locked entries, stays failed, keeps its issue's
+`hopper:failed`, and can still be run again. A job that is not failed, or already dismissed → 409. A job
+of no source (from before phase 3) is never a locked entry: it cannot run again. The UI keeps the locked
+entries apart from its other jobs (`locked` in the store), since they are of any age while the rest
+reach back 24 hours.
 
 **Run again offered only where it is taken** (issues #362, #354). The UI never offers an action the
 daemon refuses: the Ended panel's Run again (`canRerun`) needs a failed or finished job, the newest of its
