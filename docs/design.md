@@ -1471,7 +1471,7 @@ decision TRIGGERS; `src/ui/app.js` learns `job.reprioritized`.
   before judging. Found live: it had produced false `idle` questions whose text was the
   indicator, posted to the issue.
 - **Screen chrome, full list:** status/spinner line (`✻ ✶ ✳ ✢ ✽`), plain-glyph spinner frames
-  (`· Symbioting… (20s …)`), `(ctrl+b to run in background)`, the new-message indicator, user
+  (`· Symbioting… (20s …)`, `* Crafting… (18m 43s …)`), `(ctrl+b to run in background)`, the new-message indicator, user
   echo, `⏵` mode line, effort indicator, spinner tips, the CLI's update notice (`✔ Update installed ·
   Restart to update`, `✗ Auto-update failed …`, issue #360), and every line under a spinner up to the
   next `●` or `❯` line (a tip wraps). Each was found live; expect more after a Claude Code upgrade.
