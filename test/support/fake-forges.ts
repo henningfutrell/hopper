@@ -5,6 +5,9 @@
 // `approve(login)` or `deny()` settles the pending device code. The browser redirect (issue #258) is
 // GitHub's web flow, which takes the app's client secret: GitHub signs `webLogin` in at
 // `/login/oauth/authorize` and sends the browser back with a code, exchanged with the secret and the PKCE verifier.
+// With `tokenLifetimeS`, GitHub grants as an app with token expiration on does (issue #358): every access
+// token comes with `expires_in` and a refresh token, which the refresh grant trades for a new pair once
+// (with the client secret for a web flow grant; without it for a device flow grant, as GitHub allows).
 import { createHash } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -30,8 +33,10 @@ export interface FakeForge {
   /** Approve the newest pending device code as `login`. */
   approve(login: string): void;
   deny(): void;
-  /** Tokens the forge accepts now, by token → login. */
+  /** Tokens the forge accepts now, by token → login. Delete one to have GitHub refuse it (401). */
   tokens: Map<string, string>;
+  /** Refresh tokens the forge accepts now (with `tokenLifetimeS`), by refresh token → whose, and whether the web flow granted it. Delete one to revoke it. */
+  refreshTokens: Map<string, { login: string; web: boolean }>;
   /** GitHub: who is signed in at GitHub when a browser reaches `/login/oauth/authorize`; unset: nobody, the person denies it. */
   webLogin?: string;
   /** GitHub: the accounts the app is installed on (GET /user/installations); default: the token's own login. */
@@ -59,7 +64,7 @@ const send = (res: ServerResponse, status: number, body: unknown) => {
 
 type Handler = (r: ForgeRequest, login: string | undefined) => { status: number; body?: unknown; location?: string };
 
-async function serve(handler: (base: string) => Handler, extra: { issues: FakeIssue[]; tokens: Map<string, string>; devices: Device[] }): Promise<FakeForge> {
+async function serve(handler: (base: string) => Handler, extra: { issues: FakeIssue[]; tokens: Map<string, string>; refreshTokens: Map<string, { login: string; web: boolean }>; devices: Device[] }): Promise<FakeForge> {
   const requests: ForgeRequest[] = [];
   let base = '';
   let handle: Handler = () => ({ status: 500 });
@@ -80,7 +85,7 @@ async function serve(handler: (base: string) => Handler, extra: { issues: FakeIs
   handle = handler(base);
   const pending = () => extra.devices.filter((d) => d.state === 'pending').at(-1);
   return {
-    url: base, requests, issues: extra.issues, tokens: extra.tokens,
+    url: base, requests, issues: extra.issues, tokens: extra.tokens, refreshTokens: extra.refreshTokens,
     approve(login) { const d = pending(); if (!d) throw new Error('no pending device code'); d.state = 'approved'; d.login = login; },
     deny() { const d = pending(); if (!d) throw new Error('no pending device code'); d.state = 'denied'; },
     close: () => new Promise<void>((resolve) => { server.close(() => resolve()); server.closeAllConnections(); }),
@@ -99,14 +104,24 @@ const issueKey = (repo: string, n: number) => `${repo}#${n}`;
 const idOf = (login: string) => [...login].reduce((n, c) => (n * 31 + c.charCodeAt(0)) % 1_000_000, 7);
 
 /** GitHub: OAuth at the root (`/login/device/code`, `/login/oauth/access_token`), REST under `/api/v3`. */
-export function createFakeGitHub(o: { clientId: string; clientSecret?: string; issues?: FakeIssue[] }): Promise<FakeForge> {
+export function createFakeGitHub(o: { clientId: string; clientSecret?: string; issues?: FakeIssue[]; tokenLifetimeS?: number }): Promise<FakeForge> {
   const issues = o.issues ?? [];
   const tokens = new Map<string, string>();
+  const refreshTokens = new Map<string, { login: string; web: boolean }>();
   const devices: Device[] = [];
   /** Web flow codes GitHub handed back to the browser: code → who, and what it was asked with. */
   const codes = new Map<string, { login: string; redirectUri: string; challenge: string }>();
   let n = 0;
   let forge: FakeForge | undefined;
+  /** A new access token for `login`, with its refresh token when tokens expire. */
+  const grant = (login: string, web: boolean, scope: string) => {
+    const token = `gho_${login}_${++n}`;
+    tokens.set(token, login);
+    if (o.tokenLifetimeS === undefined) return { access_token: token, token_type: 'bearer', scope };
+    const refresh = `ghr_${login}_${n}`;
+    refreshTokens.set(refresh, { login, web });
+    return { access_token: token, token_type: 'bearer', scope, expires_in: o.tokenLifetimeS, refresh_token: refresh, refresh_token_expires_in: 15_897_600 };
+  };
   return serve((base) => {
     const restIssue = (i: FakeIssue) => ({
       number: i.number, title: i.title, body: i.body, state: i.state ?? 'open', html_url: `${base}/${i.repo}/issues/${i.number}`,
@@ -140,9 +155,15 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
         if (!c || r.body.redirect_uri !== c.redirectUri) return { status: 200, body: { error: 'bad_verification_code' } };
         const verifier = String(r.body.code_verifier ?? '');
         if (createHash('sha256').update(verifier).digest('base64url') !== c.challenge) return { status: 200, body: { error: 'bad_verification_code' } };
-        const token = `gho_${c.login}_${++n}`;
-        tokens.set(token, c.login);
-        return { status: 200, body: { access_token: token, token_type: 'bearer', scope: '' } };
+        return { status: 200, body: grant(c.login, true, '') };
+      }
+      if (r.method === 'POST' && r.path === '/login/oauth/access_token' && r.body.grant_type === 'refresh_token') {
+        const g = refreshTokens.get(String(r.body.refresh_token));
+        if (r.body.client_id !== o.clientId) return { status: 200, body: { error: 'incorrect_client_credentials' } };
+        if (g?.web && (!o.clientSecret || r.body.client_secret !== o.clientSecret)) return { status: 200, body: { error: 'incorrect_client_credentials' } };
+        if (!g) return { status: 200, body: { error: 'bad_refresh_token', error_description: 'The refresh token passed is incorrect or expired.' } };
+        refreshTokens.delete(String(r.body.refresh_token)); // a refresh token is used once
+        return { status: 200, body: grant(g.login, g.web, '') };
       }
       if (r.method === 'POST' && r.path === '/login/oauth/access_token') {
         if (r.body.client_id !== o.clientId || 'client_secret' in r.body) return { status: 200, body: { error: 'incorrect_client_credentials' } };
@@ -150,10 +171,8 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
         if (!d) return { status: 200, body: { error: 'expired_token', error_description: 'The device code has expired.' } };
         if (d.state === 'pending') return { status: 200, body: { error: 'authorization_pending', error_description: 'The authorization request is still pending.' } };
         if (d.state === 'denied') return { status: 200, body: { error: 'access_denied', error_description: 'The authorization request was denied.' } };
-        const token = `gho_${d.login}_${++n}`;
-        tokens.set(token, d.login!);
         d.state = 'denied'; // a device code is used once
-        return { status: 200, body: { access_token: token, token_type: 'bearer', scope: 'repo,read:project' } };
+        return { status: 200, body: grant(d.login!, false, 'repo,read:project') };
       }
       if (!r.path.startsWith('/api/v3/')) return { status: 404, body: { message: 'Not Found' } };
       if (!login) return { status: 401, body: { message: 'Bad credentials' } };
@@ -209,5 +228,5 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
       }
       return { status: 404, body: { message: 'Not Found' } };
     };
-  }, { issues, tokens, devices }).then((f) => (forge = f));
+  }, { issues, tokens, refreshTokens, devices }).then((f) => (forge = f));
 }
