@@ -2808,7 +2808,7 @@ own herdr session `hopper`, so the hopper attaches it like any machine over ssh 
 target, which runs no agent and no herdr). Nothing in the daemon is new: the boxes are a script and an
 image, and they reach the hopper through the plugins config.
 
-`bash scripts/agent-boxes.sh [--attach] [--remove] [agent...]` (no agent: all five), per box
+`bash scripts/agent-boxes.sh [--attach] [--remove] [--check] [agent...]` (no agent: all five), per box
 `hopper-box-<agent>` (`HOPPER_BOX_PREFIX` changes the prefix):
 
 - **Image** `hopper-box-<agent>` from `scripts/agent-box/Dockerfile` (`node:24-bookworm-slim`, build argument
@@ -2844,6 +2844,11 @@ image, and they reach the hopper through the plugins config.
   A machine of another plugin under a box's name is refused.
 - **`--remove`**: the containers, their Hosts and known_hosts lines; with `--attach` their machines too.
   The home volumes stay.
+- **`--check`** (issue #305): the proof that the hopper in its compose container and every box interoperate,
+  changing nothing. In the hopper's container, ssh connects as the hopper does (`sshArgv`): its own key and
+  the host key it pins for `agent@<box>`, both in its work dir; the box's herdr session `hopper` must answer
+  `status: running` and its agent CLI (`cursor-agent` for cursor) its version. One line per box, exit 1 when
+  any fails. It needs the compose container: a host install is checked by its Machines view.
 
 **What runs there.** herdr-claude runs on the claude box, `cursor-agent` on the cursor box (both
 already run on ssh targets). codex, omp and opencode have no executor yet ("6d. Backends are

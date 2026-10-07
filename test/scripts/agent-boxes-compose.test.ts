@@ -49,7 +49,7 @@ case "$1" in
       'hopper config get plugins') echo '{"version":1}' ;;
       'hopper config set plugins'*) cat > "${d}/set.json" ;;
       'ssh-keyscan'*) echo "hopper-box-codex ${BOX_KEY}" ;;
-      'sh -s'*) cat >/dev/null; ${opts.answers === false ? `echo 'Connection refused' >&2; exit 255` : `echo 'status: running'; echo 'codex-cli 0.1.0'`} ;;
+      'sh -s'*) cat >/dev/null; ${opts.answers === false ? `echo 'Connection refused' >&2; exit 255` : `echo 'status: running'; echo 'cli: codex-cli 0.1.0'`} ;;
       *) echo "unexpected exec: $*" >&2; exit 1 ;;
     esac; exit 0 ;;
 esac

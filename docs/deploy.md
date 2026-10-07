@@ -323,4 +323,6 @@ Machines → Add shows it>' bash scripts/agent-boxes.sh --attach` starts one con
 each an ssh target with its own herdr session, and attaches them all: to the hopper in its compose
 container on this machine (the boxes join its network), or, with `HOPPER_DATABASE_URL` set, to a host
 install; `ssh -t hopper-box-<agent>` opens a terminal there to sign the agent in.
+`bash scripts/agent-boxes.sh --check` proves the hopper in its container reaches every box: ssh as the
+hopper, the box's herdr session running, its agent CLI answering — one line per box, exit 1 on any failure.
 `--remove` takes them away again.
