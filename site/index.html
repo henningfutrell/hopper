@@ -527,8 +527,8 @@ or a code to enter on any device). Once per box: its home keeps it. opencode nee
 <li>Send jobs to a box with a routing rule in the Routing view: set its machine (<code>hopper-box-&lt;agent&gt;</code>).</li>
 </ol>
 <h3 id="send-jobs-to-one-machine">Send jobs to one machine</h3>
-<p>A routing rule sets a job&#39;s machine, executor or priority when the job comes in; the first rule that
-matches wins. Edit them in the UI&#39;s Settings → Routing. Two examples:</p>
+<p>A routing rule sets a job&#39;s machine, executor, priority or work tree when the job comes in; the first
+rule that matches wins. Edit them in the UI&#39;s Settings → Routing. Three examples:</p>
 <table>
 <thead>
 <tr>
@@ -547,7 +547,18 @@ matches wins. Edit them in the UI&#39;s Settings → Routing. Two examples:</p>
 <td>label <code>on-laptop</code></td>
 <td>machine <code>laptop</code></td>
 </tr>
+<tr>
+<td>app in its tree</td>
+<td>repo <code>your-org/app</code></td>
+<td>machine <code>my-desktop</code>, work tree <code>~/code/app</code></td>
+</tr>
 </tbody></table>
+<h3 id="where-jobs-work">Where jobs work</h3>
+<p>A job works in its <strong>work tree</strong>, on the machine that runs it; <code>~</code> is that machine&#39;s home, never the
+hopper&#39;s. The first that is set applies: a routing rule&#39;s work tree, the repository&#39;s path in its
+source&#39;s <code>repoPaths</code>, the machine&#39;s own <code>workTree</code> (Settings → Plugins → Machine sources, on that
+machine), the source&#39;s <code>defaultCwd</code>, the executor&#39;s <code>cwd</code>. The default is <code>~/hopper-jobs</code>, made when
+missing. A work tree that is the machine&#39;s home, above it, or missing there fails the job at once.</p>
 <p>A job pinned to a machine that is offline waits for it. How each kind works and why:
 <code>docs/design.md</code> &quot;Attached machines&quot;, &quot;Container targets&quot;, &quot;Client targets&quot;, &quot;Target
 authentication&quot;.</p>
