@@ -6,7 +6,7 @@ import type { Job, LaneId } from '../../domain/types.ts';
 import type { HerdrClient } from './client.ts';
 import { RECENT_LINES, abortReason, tail, watchTurn } from './monitor.ts';
 import type { Interrupt, Sleep } from './monitor.ts';
-import { resolvePayload, validatePayload } from './payload.ts';
+import { resolvePayload, validatePayload, workTreeOn } from './payload.ts';
 import type { ClaudeJobPayload } from './payload.ts';
 import { FOOTER_ANCHOR, STATUS_NOTE_NUDGE, dialogOption, inputBoxText, protocolFooter, typedAfterQuestion } from './screen.ts';
 import { openPane, startClaude } from './start.ts';
@@ -227,7 +227,11 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       if (ctx.machine.docker) return { kind: 'failed', error: `herdr-claude does not run on container target ${ctx.machine.id}: it has no herdr; give it the command executor` };
       // An ssh target that runs no herdr (issue #142): without this the job would run in this machine's herdr.
       if (ctx.machine.ssh && !ctx.machine.herdr) return { kind: 'failed', error: `herdr-claude does not run on ${ctx.machine.id}: it runs no herdr; give it another executor` };
-      const p = resolvePayload(ctx.job.spec.payload, o.defaultCwd);
+      const asked = resolvePayload(ctx.job.spec.payload, o.defaultCwd);
+      // Issue #323: `~` is the lane's machine's home, never this process's when the job runs elsewhere.
+      const tree = workTreeOn(ctx.machine, asked.cwd);
+      if ('error' in tree) return { kind: 'failed', error: tree.error };
+      const p = { ...asked, cwd: tree.cwd };
       ctx.workTree(p.cwd);
       let state: PaneState | undefined;
       return onLane(ctx, () => state, async () => {
@@ -285,8 +289,9 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
     reattach(ctx) {
       const saved = paneStateOf(ctx.job);
       const p = resolvePayload(ctx.job.spec.payload, o.defaultCwd);
-      // A job started before an install that reported work trees has none on it yet.
-      ctx.workTree(p.cwd);
+      // A job started before an install that reported work trees has none on it yet: the one its pane opened in.
+      const tree = saved ? { cwd: saved.cwd } : workTreeOn(ctx.machine, p.cwd);
+      if ('cwd' in tree) ctx.workTree(tree.cwd);
       return onLane(ctx, () => saved, async () => {
         const state = await liveTurn(ctx.job);
         if (!state) return { kind: 'failed', error: 'interrupted by daemon restart' };

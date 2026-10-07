@@ -197,12 +197,14 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     probe: seams.machineProbe
       ?? ((m) => ('client' in m
         ? keepClient(clientTransport(m.name, m.client.tokenEnv), () => jobsOnMachine(m.name).length > 0)
-        : ('docker' in m
-          ? probeContainer({ container: m.docker, dockerHost: () => dockerHost(secret) })
-          : m.herdr
-            ? probeHerdrOverSsh({ target: m.ssh, herdrBin: m.herdrBin, session: m.session, controlDir: join(dataDir, 'ssh'), auth: sshAuth })
-            : probeSsh({ target: m.ssh, controlDir: join(dataDir, 'ssh'), auth: sshAuth })
-        ).then((online) => ({ online })))),
+        : 'docker' in m
+          ? probeContainer({ container: m.docker, dockerHost: () => dockerHost(secret) }).then((online) => ({ online }))
+          // An ssh target's home comes with every probe: `~` in a job's work tree resolves there (issue #323).
+          // One after the other, over the one shared ssh connection.
+          : probeSsh({ target: m.ssh, controlDir: join(dataDir, 'ssh'), auth: sshAuth }).then(async (home) => ({
+            online: m.herdr ? await probeHerdrOverSsh({ target: m.ssh, herdrBin: m.herdrBin, session: m.session, controlDir: join(dataDir, 'ssh'), auth: sshAuth }) : true,
+            home,
+          })))),
   });
   // The GitHub account the user's work comes through (issue #214): from signing in with it, or
   // connected from Sources, through the hopper's app; their job sources and jobs ask here for tokens.

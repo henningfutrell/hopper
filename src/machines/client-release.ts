@@ -24,15 +24,18 @@ export function createClientReleaseKeeper(o: { release: ClientRelease; logger: L
   return async (t, busy) => {
     if (!(await probeClient(t))) return { online: false };
     let running: string;
+    let home: { home?: string };
     try {
-      running = await clientRunningRelease(t);
+      const answer = await clientRunningRelease(t);
+      running = answer.release;
+      home = answer.home ? { home: answer.home } : {};
     } catch (e) {
       say(t.machine, `hopper: client ${t.machine} runs no client release (${(e as Error).message}): install it again with scripts/attach-client.sh`, true);
       return { online: true, client: { current: false } };
     }
     if (running === ours) {
       say(t.machine, `hopper: client ${t.machine}: runs the hopper's release ${ours}`);
-      return { online: true, client: { release: running, current: true } };
+      return { online: true, client: { release: running, current: true }, ...home };
     }
     if (busy()) {
       say(t.machine, `hopper: client ${t.machine}: runs release ${running}, the hopper's is ${ours}; loading it once no job runs there`);
@@ -44,6 +47,6 @@ export function createClientReleaseKeeper(o: { release: ClientRelease; logger: L
         say(t.machine, `hopper: client ${t.machine}: loading release ${ours} failed: ${(e as Error).message}`, true);
       }
     }
-    return { online: true, client: { release: running, current: false } };
+    return { online: true, client: { release: running, current: false }, ...home };
   };
 }

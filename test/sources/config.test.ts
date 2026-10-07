@@ -1,7 +1,6 @@
 // The GitHub job sources' plugin options (what sources.yaml's `github:` / `githubApp:` blocks
 // became in plugins.yaml `jobSources[].options`), validated by the plugin host with each plugin's
 // schema, and the source config they turn into.
-import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import githubApp from '../../src/plugins/job-source/github-app/index.ts';
 import githubGh from '../../src/plugins/job-source/github-gh/index.ts';

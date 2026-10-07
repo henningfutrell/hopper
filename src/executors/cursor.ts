@@ -7,7 +7,7 @@
 import { mkdirSync } from 'node:fs';
 import type { ExecutionContext, ExecutionOutcome, Executor } from '../domain/ports.ts';
 import { commandOn, run } from './command.ts';
-import { resolvePayload, validatePayload } from './herdr/payload.ts';
+import { resolvePayload, validatePayload, workTreeOn } from './herdr/payload.ts';
 import { STATUS_NOTE_NUDGE, normaliseMarkerLine, protocolFooter } from './herdr/screen.ts';
 import { scratchDirOf } from './herdr/start.ts';
 import { shellQuote, type SshAuth } from './ssh.ts';
@@ -109,8 +109,11 @@ export function createCursorExecutor(o: CursorExecutorOptions): Executor {
     validate: validatePayload,
     run(ctx) {
       const p = resolvePayload(ctx.job.spec.payload, o.defaultCwd);
-      ctx.workTree(p.cwd);
-      return turn(ctx, p.cwd, `${p.prompt}\n\n${protocolFooter(p.cwd, ctx.jobRules)}`);
+      // Issue #323: `~` is the lane's machine's home, never this process's when the job runs elsewhere.
+      const tree = workTreeOn(ctx.machine, p.cwd);
+      if ('error' in tree) return Promise.resolve({ kind: 'failed', error: tree.error });
+      ctx.workTree(tree.cwd);
+      return turn(ctx, tree.cwd, `${p.prompt}\n\n${protocolFooter(tree.cwd, ctx.jobRules)}`);
     },
     resume(ctx, answer) {
       const s = ctx.job.executorState as Partial<CursorState> | undefined;

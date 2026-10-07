@@ -96,7 +96,7 @@ describe('herdr-claude executor: run', () => {
   it('quotes a work tree path for the shell', async () => {
     const { herdr, executor } = setup({ turns: [DONE] });
     await executor.run(contextFor(jobWith({ prompt: 'go', cwd: "/w/it's here" })).ctx);
-    expect(herdr.calls.find((c) => c.method === 'runInPane')!.args[1]).toBe(`mkdir -p '/w/it'\\''s here/.hopper-scratch' && printf '*\\n' > '/w/it'\\''s here/.hopper-scratch/.gitignore' && printf 'hopper-scratch-%s\\n' ready`);
+    expect(herdr.calls.find((c) => c.method === 'runInPane')!.args[1]).toBe(`cd '/w/it'\\''s here' && mkdir -p '/w/it'\\''s here/.hopper-scratch' && printf '*\\n' > '/w/it'\\''s here/.hopper-scratch/.gitignore' && printf 'hopper-scratch-%s\\n' ready || printf 'hopper-scratch-%s\\n' unusable`);
   });
 
   it('every job prompt names its work tree and keeps the work in it', async () => {

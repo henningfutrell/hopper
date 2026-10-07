@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- Jobs on another machine now start in that machine's home folder when no folder is set, even when the hopper runs in a container; a folder that machine cannot use now stops the job straight away with the reason, instead of after a minute's wait.
 - Machines attached over ssh now come online for people signed in to the hopper; before, every one stayed offline with a "too long" error.
 - For testing, you can start a set of throwaway machines, one per coding agent (Claude, Codex, Cursor, Oh My Pi, OpenCode), and attach all of them to the hopper at once; you can open a terminal in each to sign its agent in.
 - You can attach a machine over ssh even when the hopper runs in a container that keeps nothing: type you@host, add the hopper's key it shows you to that machine, and confirm the machine's fingerprint.

@@ -14,6 +14,8 @@ const START_TIMEOUT_MS = 60000;
 const SHELL_RETRY_MS = 100;
 /** What the scratch command prints last, so the hopper knows the shell ran it. */
 const SCRATCH_READY = 'hopper-scratch-ready';
+/** What it prints instead when the shell cannot enter the work tree or make the scratch dir (issue #323). */
+const SCRATCH_UNUSABLE = 'hopper-scratch-unusable';
 const SCRATCH_WAIT_MS = 1000;
 /** Startup dialogs answered at most: folder trust and the bypass permissions warning, with room to spare. */
 const MAX_STARTUP_DIALOGS = 4;
@@ -150,16 +152,23 @@ async function settleStartup(d: StartDeps, ctx: ExecutionContext, s: PaneState, 
 
 /**
  * Make the scratch dir in the pane's own shell, so on whichever machine the work tree is; its
- * `.gitignore` hides it from git. A fresh shell drops what is typed before its prompt, so the
- * command runs again until its output shows. Null when made, else the failure.
+ * `.gitignore` hides it from git. The shell enters the work tree first: herdr opens a tab whose cwd
+ * does not exist there in the home instead, so only the shell can say the work tree is not usable,
+ * and then the job fails at once with what it said (issue #323). A fresh shell drops what is typed
+ * before its prompt, so the command runs again until its output shows. Null when made, else the failure.
  */
 async function makeScratch(d: StartDeps, ctx: ExecutionContext, s: PaneState): Promise<ExecutionOutcome | null> {
   const scratch = scratchDirOf(s.cwd);
-  const command = `mkdir -p ${shellQuote(scratch)} && printf '*\\n' > ${shellQuote(`${scratch}/.gitignore`)} && printf 'hopper-scratch-%s\\n' ready`;
+  const command = `cd ${shellQuote(s.cwd)} && mkdir -p ${shellQuote(scratch)} && printf '*\\n' > ${shellQuote(`${scratch}/.gitignore`)}`
+    + ` && printf 'hopper-scratch-%s\\n' ready || printf 'hopper-scratch-%s\\n' unusable`;
   for (let waited = 0; waited < START_TIMEOUT_MS; waited += SCRATCH_WAIT_MS) {
     if (ctx.signal.aborted) return null;
     await d.herdr.runInPane(s.paneId, command);
     if (await d.herdr.waitOutput(s.paneId, SCRATCH_READY, SCRATCH_WAIT_MS)) return null;
+    const screen = await d.herdr.read(s.paneId, { source: 'recent-unwrapped', lines: 40 });
+    if (screen.split('\n').some((l) => l.trim() === SCRATCH_UNUSABLE)) {
+      return { kind: 'failed', error: `the work tree ${s.cwd} is not usable on ${ctx.machine.id}: ${tail(screen, 10)}` };
+    }
   }
   return { kind: 'failed', error: `pane ${s.paneId} never ran the scratch dir command within ${START_TIMEOUT_MS} ms` };
 }
