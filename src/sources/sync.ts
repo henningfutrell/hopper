@@ -45,6 +45,8 @@ interface SyncFlags {
   claimReported?: boolean;
   finalReported?: boolean;
   cancelReason?: string;
+  /** The failed job's item is closed: Run again is refused (issue #362). Set by closedItems or a refused re-run. */
+  itemClosed?: boolean;
   permanentErrors?: Array<{ kind: string; message: string }>;
 }
 
@@ -200,6 +202,24 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     }
   }
 
+  /** The newest failed job of each item, its failure reported: the ones Run again may be asked of. */
+  const rerunCandidates = (slot: Slot) => jobsOf(slot).filter((j) =>
+    j.status === 'failed' && flagsOf(j).finalReported && store.jobs.getBySourceKey(j.source!.key)?.id === j.id);
+
+  /** Each candidate's item closed or open, as its source tells it, kept on the job (issue #362). */
+  async function markClosedItems(slot: Slot) {
+    if (!slot.source.closedItems) return;
+    const jobs = rerunCandidates(slot);
+    if (jobs.length === 0) return;
+    const answers = await slot.source.closedItems(jobs, new Set(jobs.filter((j) => flagsOf(j).itemClosed).map((j) => j.id)));
+    for (const [jobId, closed] of answers) setItemClosed(jobId, closed);
+  }
+
+  function setItemClosed(jobId: string, closed: boolean) {
+    const job = store.jobs.get(jobId);
+    if (job && flagsOf(job).itemClosed !== closed) write(jobId, { ...flagsOf(job), itemClosed: closed });
+  }
+
   async function pull(slot: Slot): Promise<{ seen: number; created: number }> {
     const items = await slot.source.discover();
     let created = 0;
@@ -255,6 +275,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
         .filter((j) => !isTerminal(j) || !flagsOf(j).finalReported || !flagsOf(j).claimReported)
         .map((j) => queueReport(slot, j.id)));
       await drain();
+      if (paused === undefined) await markClosedItems(slot);
       st.state = 'ok';
       st.lastOkAt = clock.now().toISOString();
       delete st.lastError;
@@ -329,7 +350,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
         await slot.source.report({ kind: 'rerun', job: store.jobs.get(jobId)! });
         result = { ok: true, job: host.rerun(jobId) };
       } catch (e) {
-        if (e instanceof SourceRefused) { result = conflict(jobId, e.message); return; }
+        if (e instanceof SourceRefused) { setItemClosed(jobId, true); result = conflict(jobId, e.message); return; }
         result = { ok: false, reason: 'source', message: `its source could not take the re-run: ${message(e)}` };
       }
     });

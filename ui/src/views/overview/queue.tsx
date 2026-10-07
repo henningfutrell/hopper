@@ -6,7 +6,8 @@ import { JobTitle, Since } from '@/components/job';
 import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
 import { useNow } from '@/hooks/use-now';
-import { canRerun, waitingRows } from '@/model/board';
+import { canRerun, rerunBlocked, waitingRows } from '@/model/board';
+import type { Job } from '@/model/wire';
 import { ago, between } from '@/model/format';
 import { act, useHopper } from '@/store';
 import { useCanOperate, useJobBoard } from '@/store/selectors';
@@ -96,8 +97,15 @@ export function EndedPanel() {
             {job.startedAt && <span>took {between(job.startedAt, job.finishedAt)}</span>}
           </div>
           {job.error && <div className="line-clamp-2 text-xs text-bad/90" title={job.error}>{job.error}</div>}
+          {operate && <RerunBlocked job={job} jobs={jobs} />}
         </div>
       )) : <Empty>nothing ended in 24 h</Empty>}
     </Panel>
   );
+}
+
+/** Why a failed job is not offered Run again, and what to do instead (issue #362). */
+function RerunBlocked({ job, jobs }: { job: Job; jobs: Record<string, Job> }) {
+  const why = rerunBlocked(job, Object.values(jobs));
+  return why ? <div data-rerun-blocked className="text-xs text-muted-foreground">Not run again: {why}</div> : null;
 }

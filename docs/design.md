@@ -1138,7 +1138,19 @@ kept as it ended. A source that cannot take it → 502 with its error, and nothi
 that refuses it as its item stands throws `SourceRefused` → 409 with its reason, nothing recorded, the
 marker left (issue #348): GitHub refuses a closed issue — discovery offers only open ones, and the hopper
 never reopens an issue — so the UI's toast says to reopen it first, instead of an accepted re-run that
-never runs.
+never runs. The refused job is marked `itemClosed` at once.
+
+**Run again offered only where it is taken** (issue #362). The UI never offers an action the daemon
+refuses: after each discover the sync loop asks the source (`JobSource.closedItems`) about the jobs Run
+again may be asked of — the newest failed job of each item, its failure reported — and keeps the answer
+on each as `sourceState.sync.itemClosed`. GitHub answers from the discover listing at no cost while the
+issue is open (a failed issue keeps its `hopper` label, so the listing shows it), reads only an issue the
+listing did not show, and does not read one known closed again until the listing shows it reopened. A
+paused source is not asked; a refused re-run sets the mark as well. The Ended panel's Run again
+(`canRerun`) needs the failure reported and the issue not closed; a closed one shows *Not run again: its
+issue is closed: reopen it to run it again* instead (`rerunBlocked`). A sync changes the mark without an
+event, so the UI re-reads the jobs on each `source.updated`. Residual: an issue closed between two syncs
+still shows the button until the next one; the click gets the 409 above with what to do, and the mark.
 
 **Not run again, said out loud** (issue #186). An offered item whose newest job ended but cannot
 re-run yet (its end is not reported to the source) is not dropped silently: it is listed in the

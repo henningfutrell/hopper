@@ -412,6 +412,15 @@ export interface JobSource {
    * every failed job stays failed.
    */
   closedAsComplete?(job: Job): Promise<boolean>;
+  /**
+   * Of these failed jobs — each the newest of its item, its failure reported — those whose item is
+   * closed, where a `rerun` would be refused (issue #362). `known` holds the ones last answered closed:
+   * the source may keep that answer without asking again until it sees the item open. Asked by the sync
+   * loop after each discover; the answer is kept on each job as `sourceState.sync.itemClosed`, which the
+   * UI reads to offer Run again. True: closed; false: open; a job the source cannot tell about now is
+   * left out. Absent: no item is ever closed.
+   */
+  closedItems?(jobs: Job[], known: Set<JobId>): Promise<Map<JobId, boolean>>;
   /** The variables the job's processes run with to act through the source's connection (ExecutionContext.credentials); absent: none. */
   credentials?(job: Job): Promise<Record<string, string>>;
 }
