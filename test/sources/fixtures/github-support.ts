@@ -23,7 +23,7 @@ export function setup(over: Record<string, unknown> = {}, o: Partial<Pick<GitHub
   const gh = createFakeGitHub();
   const config = githubConfig(over);
   const clock = { now: () => new Date('2026-10-02T10:00:00.000Z') };
-  const source = createGitHubSource({ name: 'github', kind: 'github-account', mode: 'account', whoami: 'owner', config, api: gh, clock, ...o });
+  const source = createGitHubSource({ name: 'github', kind: 'github-account', mode: 'account', whoami: 'owner', assignee: () => 'owner', config, api: gh, clock, ...o });
   return { gh, config, source };
 }
 
@@ -43,7 +43,7 @@ export function setupApp(over: Record<string, unknown> = {}, o: AppSetupOptions 
   const config = githubConfig({ repos: [], ...over });
   const clock = { now: () => new Date('2026-10-02T10:00:00.000Z') };
   const source = createGitHubSource({
-    name: 'github-app', kind: 'github-app', mode: 'app', assignee: 'owner', config, api: gh, clock,
+    name: 'github-app', kind: 'github-app', mode: 'app', assignee: () => 'owner', config, api: gh, clock,
     appInfo: o.appInfo ?? (() => APP_INFO),
     ...(o.knownKeys ? { knownKeys: o.knownKeys } : {}),
     ...(o.paused ? { paused: o.paused } : {}),

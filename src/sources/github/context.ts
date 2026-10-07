@@ -1,6 +1,6 @@
 // The job's prompt (issue body + issue context block) and environment: the issue, read-only.
-// Only comments by allowlisted authors that are not hopper comments reach the job: anyone else's
-// text would be a prompt-injection path into a skip-permissions agent. The job never writes to
+// Only the assignee's comments that are not hopper comments reach the job (issue #387; the app bot's never):
+// anyone else's text would be a prompt-injection path into a skip-permissions agent. The job never writes to
 // its issue, and its prompt says nothing about commenting (its pane is still logged in to gh as
 // the owner: the prompt is the only lever, and silence about issues is the instruction).
 
@@ -22,14 +22,16 @@ export type SourceMode = 'app' | 'account';
 
 
 const COMMENTS_HEADER: Record<SourceMode, string> = {
-  app: 'only allowlisted authors, no hopper comments',
-  account: 'only allowlisted authors, no hopper-marked comments',
+  app: "only the assignee's, no hopper comments",
+  account: "only the assignee's, no hopper-marked comments",
 };
 
-export function contextComments(comments: GitHubComment[], authors: string[], limit: number, botLogin?: BotLogin): GitHubComment[] {
-  if (limit === 0) return [];
+/** The assignee's own comments, newest `limit`, oldest first; none without an assignee. */
+export function contextComments(comments: GitHubComment[], assignee: string | undefined, limit: number, botLogin?: BotLogin): GitHubComment[] {
+  if (limit === 0 || assignee === undefined) return [];
+  const login = assignee.toLowerCase();
   return comments
-    .filter((c) => authors.includes(c.author) && !isHopperComment(c, botLogin) && c.body.trim() !== '')
+    .filter((c) => c.author.toLowerCase() === login && !isHopperComment(c, botLogin) && c.body.trim() !== '')
     .sort((a, b) => a.id - b.id)
     .slice(-limit);
 }

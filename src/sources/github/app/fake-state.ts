@@ -8,6 +8,8 @@ export interface FakeIssueInput {
   title?: string;
   body?: string;
   author?: string;
+  /** Default: the author (issue #387: intake is by label and assignee). */
+  assignees?: string[];
   labels?: string[];
   state?: 'open' | 'closed';
   /** A pull request: the issues list returns it (with `pull_request`), the adapter skips it. */
@@ -56,6 +58,7 @@ export interface FakeIssue {
   title: string;
   body: string;
   author: string;
+  assignees: string[];
   labels: string[];
   state: 'open' | 'closed';
   pullRequest: boolean;
@@ -113,7 +116,7 @@ export function buildState(o: FakeGitHubOptions, now: string): FakeState {
       for (const i of r.issues ?? []) {
         const comments = (i.comments ?? []).map((c) => ({ id: state.nextCommentId++, author: c.author, body: c.body, createdAt: now }));
         issues.set(i.number, {
-          number: i.number, title: i.title ?? `Issue ${i.number}`, body: i.body ?? '', author: i.author ?? 'owner',
+          number: i.number, title: i.title ?? `Issue ${i.number}`, body: i.body ?? '', author: i.author ?? 'owner', assignees: [...(i.assignees ?? [i.author ?? 'owner'])],
           labels: [...(i.labels ?? [])], state: i.state ?? 'open', pullRequest: i.pullRequest ?? false,
           ...(i.closedBy ? { closedBy: i.closedBy } : {}),
           ...(i.closedAt ? { closedAt: i.closedAt } : {}),

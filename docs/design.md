@@ -1265,7 +1265,7 @@ title: …
 labels: a, b · author: owner
 priority: 75 (label:hopper:high) · project item: <project title> · Priority=P1 (or "none")
 done (completion: merge|pull-request): what done means for this issue's completion ("Done means complete" below)
-recent comments (oldest first, up to recentComments; only allowlisted authors, no hopper-marked comments — anyone else's text never reaches the job):
+recent comments (oldest first, up to recentComments; only the assignee's, no hopper-marked comments — anyone else's text never reaches the job; issue #387):
 - <author> at <ISO>: <body, ≤ 1000 chars>
 ...
 ```
@@ -1299,7 +1299,7 @@ timeouts, typed errors; env passes through (gh's keyring auth). Fake: an in-memo
 **Discovery:** `repos` non-empty → `listOpenIssues` per repo (no search lag). Else
 `searchOpenIssues` over `owners` (or `whoami()`), restricted to repos owned by them —
 GitHub search can lag new issues by up to about a minute. Eligible: open, has `label`,
-author in `authors`, no `hopper:done` / `hopper:failed` / `hopper:rejected` / `hopper:backburner`, repo allowed,
+author in `authors` (issue #387: assigned to the user's connected account instead), no `hopper:done` / `hopper:failed` / `hopper:rejected` / `hopper:backburner`, repo allowed,
 not addressed to another hopper (`hopper@<name>`, "Queue gate"). Already-claimed
 issues with no job here (another machine, a wiped database) are **not** re-run: an issue
 labelled `hopper:claimed` with no local job is skipped and shown in status detail.
@@ -1407,7 +1407,8 @@ A failure never goes to the issue as text. It is one stderr line in the daemon l
   not read the app key, and every active job — running, and waiting on a question — was cancelled
   as `issue gone`. A restart or an update cancels no job.
 
-**Authors outside the allowlist are never acted on** — not as issues, not as answers.
+**Authors outside the allowlist are never acted on** — not as issues, not as answers. *Superseded by
+issue #387: intake is by label and assignee, whoever filed the issue ("Intake by label and assignee").*
 
 ## Webhooks from a file
 
@@ -2087,8 +2088,7 @@ glossary word); "connector" is a **job source** or **notifier** instance; a **la
 options of its own — lane count is the **machine** instance's `lanes` option.
 
 Residual risk: a session holder can still change non-command options — a router's
-thresholds, an escalation level's model or the levels' order, a source's labels or authors
-allowlist. Each can change which jobs are pulled or how a question is answered; none can run a
+thresholds, an escalation level's model or the levels' order, a source's labels. Each can change which jobs are pulled or how a question is answered; none can run a
 command, and the levels' fail-closed contract and the risk rules (code, not options) still stand.
 
 ### Failure
@@ -2350,7 +2350,7 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
   `pollSeconds`) or `{ disabled: { kind, detail } }` (options
   `enabled: false`) — listed `disabled` in `/api/sources`, never run. A source that cannot run is a
   fixed `error` status with the reason (kind = plugin id). `RoleContext['job-source']` = `knownKeys`,
-  `rerunnable`; `RoleContext['machine-source']` = `executors()` (asked on every list, so
+  `rerunnable`, `rejections` (issue #387); `RoleContext['machine-source']` = `executors()` (asked on every list, so
   seam executors registered after the host count); `RoleContext['usage-source']` = `machine(id)`
   (issue #139).
 - **The gh source's pause** no longer reads the app source's config: github-gh has its own `appFile`
@@ -2707,7 +2707,7 @@ with the exit code and the output's tail. `timeoutMs` (default 600000) and a can
 process; a `docker exec` already started in the container may outlive it. Not idempotent, no
 questions, nothing to reattach: a restart fails a running command job, never re-runs it.
 
-**Where commands may run.** The command executor runs anything an allowlisted issue author writes,
+**Where commands may run.** The command executor runs anything written in an issue assigned to the user (issue #387),
 like herdr-claude with `--dangerously-skip-permissions`. To keep command jobs on the container,
 this machine's `local` instance takes an `executors` option that narrows what runs here (absent:
 every registered executor); with `command` left out, an unpinned command job can only go to a target
@@ -6297,7 +6297,7 @@ its expiry if any, when. Every answer carries facts only, never a token.
 tenant migration 8, since job sources are a restart role): the GitHub source logic (`createGitHubSource`,
 mode `account`) over the account's token — `src/sources/github/account/api.ts` (the App adapter's REST and
 GraphQL calls; its issue search is gone since issue #359) — rebuilt when the account changes (`createAccountSource`,
-`src/sources/compose.ts`). Defaults: `authors` empty means the connected account alone. Which repositories
+`src/sources/compose.ts`). It takes the issues assigned to the connected account (issue #387). Which repositories
 it lists are the user's **job repositories**, chosen in Sources ("Job repositories", issue #321); none
 chosen, none listed. A connect or disconnect syncs the source at once. **Not connected is said out loud**: the source is paused with `GitHub is not
 connected: Sources → Connect GitHub`, and `GET /api/accounts` carries the same problem. (The gh source
@@ -6475,7 +6475,7 @@ an admin's own GitHub App in particular environments, not a built-in beside the 
 **As built** (`ui/src/model/sources.ts`, `ui/src/views/sources.tsx`, `ui/src/views/connected-account.tsx`,
 `ui/src/views/source-sync.tsx`; no wire or daemon change):
 - The connected account's source (`github-account`) is the connection itself: its sync (seen, created,
-  active, last and next sync, errors, authors and label) is shown inside the **GitHub account** panel while
+  active, last and next sync, errors, assignee and label) is shown inside the **GitHub account** panel while
   connected, never as a card of its own.
 - **Connected** (that source neither paused nor switched off): the gh source and the **gh login** panel are
   not shown, and the summary says issues are read, and jobs work, through the GitHub connection. A job gets
@@ -6733,3 +6733,63 @@ runtime"); gh on machines and agent boxes for a job's own use.
 the message, no job, no other credential), `test/store/tenant-migration-14.test.ts`,
 `test/plugins/builtin-instances.test.ts`, `test/sources/github-discover.test.ts` (no search),
 `test/ui/sources.test.ts`, `test/ui/sources-view.test.ts`.
+
+## Intake by label and assignee; reject as the user's own record (issue #387, 2026-10-07)
+
+Owner direction: anyone can file an issue, and filing it must not decide whether it runs. Supersedes every
+statement above that an issue's **author** decides intake ("Authors outside the allowlist are never acted
+on", the eligibility line of "Discovery", the `authors` option in every config example). The design study
+behind it, with the owner decisions it leaves open, is `docs/assignment.md` (issue #388).
+
+**Intake.** A user's GitHub source takes an issue when it is open, carries the source label, and is
+**assigned** to the user's connected GitHub account (`isAssignedTo`, logins compared without case) — every
+other rule of "Discovery" stands (`hopper:done` / `hopper:failed` / `hopper:backburner` / `hopper:rejected`,
+`hopper@<name>`, claimed without a local job). Who filed it does not matter. `github-account` matches the
+login it acts as; `github-app` matches the user's connected GitHub account too (a bot cannot be assigned),
+and is paused while none is connected (`NO_ASSIGNEE`). The assignee is read at every sync, so connecting
+or changing the account applies at once (#356). A job records the login it was taken for
+(`JobSourceRef.assignee`); jobs taken before have none.
+
+**`authors` is gone** from both GitHub sources: the schema, the Plugins form, `describe()` (it shows
+`assignee` instead), and the bot check. An instance still carrying `authors` loads with it dropped
+(`withoutAuthors`); tenant migration 15 (`src/store/migration-no-authors.ts`) removes it from the stored
+plugins config.
+
+**Comments in the job's context** are the assignee's own, never the app bot's or a hopper-marked one
+(`contextComments`; header `only the assignee's, …`). Nothing on an issue answers a question — questions
+are answered in the UI — so no allowlist decides answers.
+
+**Reject.** `POST /ui/api/jobs/:id/reject` takes an optional `{ reason }` (≤ 500 characters): the job ends
+`rejected` with it as its error and in `job.rejected` (none: `rejected by the user`). Offered on every
+waiting job in the Queue view and in the Overview's Waiting list, in a dialog with the reason field. On
+GitHub the rejection writes nothing: the claim label goes, no `hopper:rejected`, no comment, never a close
+and no unassignment (D1 and D9 of `docs/assignment.md` are open). A shared label would turn the issue away
+for every user and every hopper on the repo. Instead the source asks the host which items' newest job was
+rejected (`JobSourceContext.rejections`: when, and for which assignee) and skips such an issue until its
+newest `assigned` event for that login is later than the rejection (`GitHubApi.assignedAt`, one events
+read per rejected issue per sync); skipped issues are listed in the source status (`skippedRejected`).
+**Run again** now takes a rejected job too: the issue is queued at once. A rejection recorded before this
+change (no assignee) leaves the issue to its `hopper:rejected` label, as before: removing it offers the
+issue again.
+
+**Unassignment** (`check()`, `assignmentDrift`), for jobs with an assignee only:
+
+| the issue is no longer assigned to the job's account | |
+|---|---|
+| job waiting (queued, held, awaiting acceptance) | cancelled, reason `unassigned`: it leaves the queue |
+| job started (claimed, running, on a question, operator-led) | runs on, **flagged**: signal `unassigned` → `sourceState.sync.unassignedAt`, `job.unassigned { assignee }` once. The UI shows "No longer assigned to you on GitHub. Stop it, or let it finish." on the job's lane or row, beside its stop button |
+| a flagged job's issue assigned to it again | signal `reassigned` → the flag is cleared, `job.reassigned { assignee }` |
+
+A job taken before this change (no assignee) is never cancelled or flagged for having none: in-flight
+work survives the update. The label rules are unchanged (label removed still cancels, D3 open).
+
+**Not built here** (follow-ups of `docs/assignment.md`): the author trust gate, comment context by repo
+permission, one claim per issue across users of one hopper, unassign on reject, dismissing a locked entry on
+unassignment, intake reasons for every skipped issue, `job.needs_decision`.
+
+**Verification:** `test/integration/github-assignment.test.ts` (the acceptance: any author, assigned →
+a job on the next sync; unassigned or unlabelled → none; reject with and without a reason, not taken again
+until reassigned, Run again; unassigned while waiting and while running), `test/sources/github-discover.test.ts`,
+`test/sources/github-check.test.ts`, `test/sources/github-context.test.ts`, `test/sources/github-app.test.ts`,
+`test/sources/config.test.ts`, `test/store/tenant-migration-15.test.ts`, `test/ui/assignment.test.ts`,
+`test/ui/ended-rerun.test.ts`.

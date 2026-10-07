@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- The hopper now takes an issue when it is labelled for the hopper and assigned to you, whoever opened it. Unassign it and a waiting job leaves the queue; a running one is flagged for you to stop or let finish. You can reject a waiting job with a reason: the issue is left alone and is not taken again until it is assigned to you again or you run it again.
 - The Overview no longer makes healthy jobs look stuck: a lane about to close shows its job running and says it closes after this job, a progress bar appears only when the job reports real progress, and jobs waiting for a free lane say so and name the limit they wait on instead of showing as held. Hover any state to see what it means.
 - Anyone can install the hopper's GitHub app on their own account or organization and sign in with it; Sources shows what the app may do on each account and links to add it to another one.
 - A failed job no longer drops out of the queue: it stays there, locked, with its failure, until you run it again or dismiss it. Locked jobs never start by themselves.

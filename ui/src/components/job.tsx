@@ -1,5 +1,5 @@
 // How a job names itself everywhere: its goal, the issue it came from, and ticking times.
-import { ExternalLink } from 'lucide-react';
+import { ExternalLink, UserX } from 'lucide-react';
 import { useNow } from '@/hooks/use-now';
 import { countdown, elapsed } from '@/model/format';
 import { goalOf, issueRef } from '@/model/job';
@@ -45,4 +45,19 @@ export function Since({ iso, className }: { iso: string; className?: string }) {
 export function Countdown({ iso, className }: { iso: string; className?: string }) {
   const now = useNow();
   return <span className={cn('num', className)} title={iso}>{countdown(iso, now)}</span>;
+}
+
+/**
+ * A started job whose issue is no longer assigned to the account it was taken for (issue #387): it runs on
+ * until the user stops it (the row's cancel), or the issue is assigned to them again.
+ */
+export function UnassignedFlag({ job }: { job: Job }) {
+  const at = job.sourceState?.sync?.unassignedAt;
+  if (typeof at !== 'string') return null;
+  return (
+    <div data-unassigned className="flex items-center gap-1.5 text-xs text-warn" title={`unassigned since ${at}`}>
+      <UserX className="size-3.5 shrink-0" />
+      <span>No longer assigned to you on GitHub. Stop it, or let it finish.</span>
+    </div>
+  );
 }

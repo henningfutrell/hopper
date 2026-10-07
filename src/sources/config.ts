@@ -1,7 +1,9 @@
 // The GitHub job sources' options (the plugins config `jobSources[].options` of `github-account` and
 // `github-app`), and the
 // source config they turn into: `model: null` dropped; a `~` stays, for the job's machine (issue #323). The plugin host validates
-// them with these schemas; an invalid instance is dropped with the error shown.
+// them with these schemas; an invalid instance is dropped with the error shown. There is no `authors`
+// option (issue #387): a source takes an issue by its label and its assignee, never by who filed it. An
+// instance still carrying one loads with it dropped; tenant migration 15 removes it from the stored config.
 import { z } from 'zod';
 import { JOBS_DIR } from '../domain/types.ts';
 
@@ -20,7 +22,6 @@ export const DEFAULT_APP_KEY_ENV = 'GITHUB_APP_PRIVATE_KEY';
 const sharedKeys = {
   pollSeconds: z.number().int().positive().default(60),
   repos: z.array(z.string().regex(/^[^/\s]+\/[^/\s]+$/, 'owner/repo')).default([]),
-  authors: z.array(z.string().min(1)).min(1).meta({ description: 'GitHub logins whose issues and comments the source accepts; no default' }),
   label: z.string().min(1).default('hopper'),
   hopperName: z.string().regex(/^[a-z0-9][a-z0-9._-]*$/, 'lowercase letters, digits, . _ -').nullable().default(null)
     .meta({ description: 'this hopper\'s name: an issue labelled hopper@<name> is taken only by the hopper of that name; null takes only issues addressed to no hopper' }),
@@ -38,8 +39,15 @@ const sharedKeys = {
     .meta({ description: "when a job's work is done: merge — its pull request merged; pull-request — its pull request open for review. Issue labels hopper:complete-at-merge and hopper:complete-at-pr override it" }),
 };
 
-/** github-app: the App source, posting as the app's bot. */
-export const githubAppOptions = z.object({
+/** Options as stored before issue #387 may carry `authors`: dropped, not refused. */
+function withoutAuthors(raw: unknown): unknown {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw) || !('authors' in raw)) return raw;
+  const { authors: _authors, ...rest } = raw as Record<string, unknown>;
+  return rest;
+}
+
+/** github-app: the App source, posting as the app's bot, taking issues assigned to the user's connected account. */
+export const githubAppOptions = z.preprocess(withoutAuthors, z.object({
   enabled: z.boolean().default(true),
   // The identity the source acts as, and where its key comes from: command-bearing.
   appId: z.number().int().positive().optional().meta({ commandBearing: true, description: "the GitHub App's id" }),
@@ -50,11 +58,11 @@ export const githubAppOptions = z.object({
   apiUrl: z.url({ protocol: /^https?$/ }).transform((u) => u.replace(/\/+$/, '')).optional()
     .meta({ commandBearing: true, description: 'GitHub API base; unset: https://api.github.com' }),
   ...sharedKeys,
-}).strict();
+}).strict());
 
 /**
  * A connected account's source (issue #214): who it acts as is the account the user connected, so
- * nothing names an identity or a credential. `authors` empty: the connected account alone. Which
+ * nothing names an identity or a credential, and it takes the issues assigned to that account. Which
  * repositories it lists is no option: they are the user's **job repositories**, chosen in Sources and
  * read at each sync (issue #321).
  */
@@ -62,12 +70,10 @@ const { repos: _repos, ...accountShared } = sharedKeys;
 const accountKeys = {
   enabled: z.boolean().default(true),
   ...accountShared,
-  authors: z.array(z.string().min(1)).default([])
-    .meta({ description: 'logins whose issues and comments the source accepts; empty: the connected account alone' }),
 };
 
 /** github-account: the GitHub account the user connected. */
-export const githubAccountOptions = z.object(accountKeys).strict();
+export const githubAccountOptions = z.preprocess(withoutAuthors, z.object(accountKeys).strict());
 
 
 export type GitHubProjectConfig = z.infer<typeof projectSchema>;

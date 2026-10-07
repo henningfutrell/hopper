@@ -15,6 +15,7 @@ import { jobsDirWorkTrees } from './migration-jobs-dir.ts';
 import { herdrByName } from './migration-herdr-by-name.ts';
 import { clientTargetsDialIn } from './migration-client-key.ts';
 import { noGhSource } from './migration-no-gh-source.ts';
+import { noAuthors } from './migration-no-authors.ts';
 
 type Migration = string | ((db: Db) => void);
 
@@ -179,6 +180,8 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
   clientTargetsDialIn,
   // 14: the gh CLI job source is gone (issue #359): its instances leave `jobSources`, its repos become the job repositories.
   noGhSource,
+  // 15: intake is by label and assignee (issue #387): the GitHub sources' `authors` option goes.
+  noAuthors,
 ];
 
 /** A user schema's version once migrated. */

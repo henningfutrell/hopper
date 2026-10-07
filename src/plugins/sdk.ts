@@ -134,6 +134,11 @@ export interface JobSourceContext {
   knownKeys(keys: string[]): Set<string>;
   /** Of these source keys, those whose newest job may be re-run. */
   rerunnable(keys: string[]): Set<string>;
+  /**
+   * Of these source keys, those whose newest job was rejected (issue #387): when, and the assignee it was
+   * taken for — so a source does not take a rejected item again until it is handed to the user again.
+   */
+  rejections(keys: string[]): Map<string, { at: string; assignee?: string }>;
   /** The user's connected GitHub account (issue #214): who it is, and a token for a call. */
   connectedAccounts: ConnectedAccountTokens;
 }

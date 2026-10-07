@@ -77,8 +77,8 @@ export interface QueueGateCommands {
    * a waiting job ranked before and not listed loses its rank.
    */
   orderQueue(jobIds: readonly string[]): Job[];
-  /** Reject a waiting job: it ends `rejected`, its source is told. */
-  reject(id: string): Job;
+  /** Reject a waiting job, with the user's reason if given: it ends `rejected`, its source is told. */
+  reject(id: string, reason?: string): Job;
   /** Apply the pre-sort now, whatever the gate: reject what it rejects, accept the rest. */
   acceptPreSort(): PreSort;
 }
@@ -119,11 +119,11 @@ export function createQueueGateCommands(c: EngineContext, cleanup: (jobId: strin
       });
     },
 
-    reject(id) {
+    reject(id, reason) {
       const job = store.jobs.get(id);
       if (!job) throw new EngineError('not_found', `job ${id} not found`);
       if (!isWaiting(job)) throw new EngineError('conflict', `job ${id} is ${job.status}: only a waiting job can be rejected`);
-      const next = store.tx(() => rejectJob(c, job, 'user', USER_REJECTED));
+      const next = store.tx(() => rejectJob(c, job, 'user', reason?.trim() || USER_REJECTED));
       // A waiting job resuming with an answer holds a pane.
       if (job.resumeOn !== undefined) cleanup(id);
       return next;

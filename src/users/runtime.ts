@@ -250,6 +250,11 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     jobSourceContext: {
       knownKeys: (keys) => new Set(keys.filter((k) => store.jobs.getBySourceKey(k))),
       rerunnable: (keys) => new Set(keys.filter((k) => { const j = store.jobs.getBySourceKey(k); return j !== undefined && isRerunnable(j); })),
+      rejections: (keys) => new Map(keys.flatMap((k) => {
+        const j = store.jobs.getBySourceKey(k);
+        if (j?.status !== 'rejected') return [];
+        return [[k, { at: j.finishedAt ?? j.updatedAt, ...(j.source?.assignee ? { assignee: j.source.assignee } : {}) }] as const];
+      })),
       connectedAccounts,
     },
     machineContext: { executors: () => executorNames(), target },

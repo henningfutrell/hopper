@@ -46,6 +46,7 @@ export function createAccountGitHubApi(o: { apiUrl: string; token(): Promise<str
     ensureLabel: (repo, name, color, description) => call(`label ${repo} ${name}`, (t) => rest.ensureLabel(req, t, repo, name, color, description)),
     addLabels: (repo, number, labels) => call(`add labels ${repo}#${number}`, (t) => rest.addLabels(req, t, repo, number, labels)),
     removeLabels: (repo, number, labels) => call(`remove labels ${repo}#${number}`, (t) => rest.removeLabels(req, t, repo, number, labels)),
+    assignedAt: (repo, number, login) => call(`events of ${repo}#${number}`, (t) => rest.assignedAt(req, t, repo, number, login)),
     reopenIssue: (repo, number) => call(`reopen ${repo}#${number}`, (t) => rest.reopenIssue(req, t, repo, number)),
     closingPullRequest: (repo, number) => call(`closer of ${repo}#${number}`, (t) => closingPullRequest(req, t, repo, number)),
     openClosingPullRequests: (repo, number) => call(`pull requests of ${repo}#${number}`, (t) => openClosingPullRequests(req, t, repo, number)),

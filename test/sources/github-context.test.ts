@@ -43,7 +43,7 @@ describe('GitHub source: full issue context and job environment', () => {
       'labels: hopper, hopper:high · author: owner',
       'priority: 75 (label:hopper:high) · project item: none',
       DONE_AT_MERGE,
-      'recent comments (oldest first, up to 10; only the assignee's, no hopper-marked comments):',
+      "recent comments (oldest first, up to 10; only the assignee's, no hopper-marked comments):",
       `- owner at ${c.createdAt}: Keep it short.`,
     ].join('\n'));
   });

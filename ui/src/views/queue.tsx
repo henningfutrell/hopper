@@ -1,12 +1,13 @@
 // The Queue view (issue #159): the queue gate, the pre-sort (jobs not yet accepted, in the queue
 // sorter's order) and the user order (accepted waiting jobs, first to run at the top). A job moves from
-// the pre-sort into the user order to be accepted; any waiting job can be rejected — it ends
+// the pre-sort into the user order to be accepted; any waiting job can be rejected, with a reason — it ends
 // `rejected` and is kept, never deleted. The gate names the queue sorter that makes the pre-sort and links to
 // where it is set up, Settings → Routing (issue #201). Below, the locked entries: failed jobs kept in the
 // queue until run again or dismissed (issue #355).
-import { ArrowDown, ArrowUp, ArrowUpToLine, Check, ChevronsRight, ListOrdered, Lock, ShieldCheck, SlidersHorizontal, Sparkles, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpToLine, Check, ChevronsRight, ListOrdered, Lock, ShieldCheck, SlidersHorizontal, Sparkles } from 'lucide-react';
 import { useState } from 'react';
 import { JobTitle, Since } from '@/components/job';
+import { RejectButton } from '@/components/reject';
 import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
 import { Button } from '@/components/ui/button';
@@ -53,13 +54,6 @@ function GatePanel({ gate, presort }: { gate: QueueGate; presort: PreSort | null
       </form>
       <div className="text-xs text-muted-foreground">Past the limit, new jobs wait here for you. Leave it empty for no limit.</div>
     </Panel>
-  );
-}
-
-function RejectButton({ job }: { job: Job }) {
-  return (
-    <Button size="xs" variant="outline" aria-label={`Reject ${job.spec.goal ?? job.id}`} title="Reject: the job is kept, never run"
-      onClick={() => act(`/ui/api/jobs/${job.id}/reject`, {}, 'Job rejected')}><X />Reject</Button>
   );
 }
 
