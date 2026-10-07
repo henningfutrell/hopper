@@ -20,7 +20,11 @@
 # executors, so no queued job lands on it by chance; list them in Plugins.
 # --remove removes the boxes (their containers, Hosts and known_hosts lines; with --attach, their
 # machines too); their home volumes stay. Re-running keeps a running box and refreshes the rest.
-#   usage: agent-boxes.sh [--attach] [--remove] [agent...]    (no agent: all of them)
+# --check proves each box answers the hopper in its compose container (issue #305), and changes nothing:
+# from that container, ssh as the hopper connects — its own key, the host key it pins, the box by name on
+# its network — then the box's herdr session must be running and its agent CLI must answer. One line per
+# box; exit 1 when any fails.
+#   usage: agent-boxes.sh [--attach] [--remove] [--check] [agent...]    (no agent: all of them)
 set -euo pipefail
 
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -32,16 +36,17 @@ SSH_DIR="$HOME/.ssh"
 BOXES_CONFIG="$SSH_DIR/$PREFIX.config"
 KNOWN="$SSH_DIR/known_hosts"
 
-usage() { echo "usage: $0 [--attach] [--remove] [agent...]   agents: ${ALL_AGENTS[*]} (default: all)" >&2; exit 2; }
+usage() { echo "usage: $0 [--attach] [--remove] [--check] [agent...]   agents: ${ALL_AGENTS[*]} (default: all)" >&2; exit 2; }
 step() { printf '==> %s\n' "$*" >&2; }
 die() { printf 'agent-boxes: %s\n' "$*" >&2; exit 1; }
 networks() { docker container inspect --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}}{{"\n"}}{{end}}' -- "$1" | grep -v '^$'; }
 
-ATTACH=0; REMOVE=0; AGENTS=()
+ATTACH=0; REMOVE=0; CHECK=0; AGENTS=()
 for a in "$@"; do
   case "$a" in
     --attach) ATTACH=1 ;;
     --remove) REMOVE=1 ;;
+    --check) CHECK=1 ;;
     -h|--help) usage ;;
     claude|codex|cursor|omp|opencode) AGENTS+=("$a") ;;
     *) usage ;;
@@ -119,6 +124,35 @@ if [ "$REMOVE" = 1 ]; then
   if [ "$ATTACH" = 1 ]; then step "detach ${NAMES[*]} from the hopper"; edit_plugins detach "${NAMES[@]}"; fi
   step "removed; their homes stay (docker volume rm ${NAMES[*]/%/-home})"
   exit 0
+fi
+
+# --check: run in the hopper's container, as the hopper (src/executors/ssh.ts sshArgv): its own key and
+# the host key it pins for `agent@<box>`, both in its work dir. Prints the herdr status line, then `cli: `
+# and the agent CLI's version, or what failed.
+CHECK_SH='box=$1; cli=$2; [ "$cli" = cursor ] && cli=cursor-agent
+for d in "${HOPPER_WORK_DIR:?the hopper container sets no HOPPER_WORK_DIR}"/users/*/ssh; do
+  grep -q "^agent@$box " "$d/known_hosts" 2>/dev/null || continue
+  exec ssh -F /dev/null -o BatchMode=yes -o IdentitiesOnly=yes -o IdentityAgent=none -o StrictHostKeyChecking=yes \
+    -o ConnectTimeout=5 -o UserKnownHostsFile="$d/known_hosts" -o HostKeyAlias="agent@$box" -i "$d/hopper_ed25519" \
+    -l agent -- "$box" "herdr --session hopper status server 2>&1 | head -n 1
+      if v=\$($cli --version 2>/dev/null | head -n 1) && [ -n \"\$v\" ]; then echo \"cli: \$v\"; else echo \"no $cli on the box\"; fi"
+done
+echo "the hopper pins no host key for agent@$box: attach it (agent-boxes.sh --attach)"; exit 1'
+
+if [ "$CHECK" = 1 ]; then
+  [ -n "$HOPPER_CTR" ] || die "--check needs the hopper's compose container running (project $PROJECT): it checks each box as that hopper reaches it"
+  failed=0
+  for agent in "${AGENTS[@]}"; do
+    name="$PREFIX-$agent"
+    out="$(printf '%s\n' "$CHECK_SH" | docker exec -i -- "$HOPPER_CTR" sh -s -- "$name" "$agent" 2>&1 || true)"
+    status_line="$(sed -n 1p <<<"$out")"; cli_line="$(sed -n 2p <<<"$out")"
+    if [ "$status_line" = 'status: running' ] && [[ "$cli_line" == 'cli: '* ]]; then
+      printf '%s: ok — herdr session running, %s\n' "$name" "${cli_line#cli: }"
+    else
+      printf '%s: FAILED — %s\n' "$name" "$(tr '\n' ' ' <<<"$out" | sed 's/ *$//')"; failed=1
+    fi
+  done
+  exit "$failed"
 fi
 
 # The hopper's key: the file its runtime mounts (made when missing), or its public line as the Machines
