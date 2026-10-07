@@ -54,12 +54,6 @@ export interface GitHubProjectItem {
 }
 
 export interface GitHubApi {
-  whoami(): Promise<string>;
-  /**
-   * Open issues with the label over the owners' repos. `authors`: the allowlisted authors, for an
-   * search by author (a connected account's) and leave the owners to the caller.
-   */
-  searchOpenIssues(q: { owners: string[]; label: string; authors?: string[] }): Promise<GitHubIssue[]>;
   listOpenIssues(repo: string, label: string): Promise<GitHubIssue[]>;
   getIssue(repo: string, number: number): Promise<GitHubIssue>;
   /** Every comment, all pages, oldest first. */

@@ -15,6 +15,9 @@ import { CLIENT_ID_VARIABLE, configUrl, installUrl, type HopperApps } from './ho
 
 export const PROVIDER_NAME: Record<ConnectedAccountProvider, string> = { github: 'GitHub' };
 export const notConnected = (provider: ConnectedAccountProvider) => `${PROVIDER_NAME[provider]} is not connected: Sources → Connect ${PROVIDER_NAME[provider]}`;
+/** A token that expired (issue #359): nothing falls back to another credential; the person signs in again. */
+export const expired = (provider: ConnectedAccountProvider) =>
+  `${PROVIDER_NAME[provider]}'s sign-in expired: sign in with ${PROVIDER_NAME[provider]} again, or Sources → Connect ${PROVIDER_NAME[provider]}`;
 
 interface Waiting { userCode: string; verificationUri: string; expiresAt: string; abort: AbortController }
 
@@ -43,11 +46,15 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
   const failed = new Map<ConnectedAccountProvider, string>();
   const starting = new Map<ConnectedAccountProvider, Promise<ConnectedAccountStatus>>();
 
+  // GitHub renews a GitHub App's user token only with the app's client secret, which no hopper holds.
+  const isExpired = (a: ConnectedAccount) => a.expiresAt !== undefined && Date.parse(a.expiresAt) <= o.clock.now().getTime();
+
   const status = (provider: ConnectedAccountProvider): ConnectedAccountStatus => {
     const base = { provider, via: CONNECTED_VIA } as const;
     const w = waiting.get(provider);
     if (w) return { ...base, state: 'waiting', userCode: w.userCode, verificationUri: w.verificationUri, expiresAt: w.expiresAt };
     const a = o.store.connectedAccounts.get(provider);
+    if (a && isExpired(a)) return { ...base, state: 'expired', account: a.account, error: expired(provider) };
     if (a) {
       const install = installUrl(o.apps[provider]);
       return {
@@ -130,11 +137,13 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
   async function token(provider: ConnectedAccountProvider): Promise<string> {
     const a = o.store.connectedAccounts.get(provider);
     if (!a) throw new Error(notConnected(provider));
-    // GitHub renews a GitHub App's user token only with the app's client secret, which no hopper holds.
-    if (a.expiresAt !== undefined && Date.parse(a.expiresAt) <= o.clock.now().getTime()) {
-      throw new Error(`${PROVIDER_NAME[provider]}'s token expired: sign in with ${PROVIDER_NAME[provider]}, or connect it, again`);
-    }
+    if (isExpired(a)) throw new Error(expired(provider));
     return a.accessToken;
+  }
+
+  function problem(provider: ConnectedAccountProvider): string | undefined {
+    const a = o.store.connectedAccounts.get(provider);
+    return !a ? notConnected(provider) : isExpired(a) ? expired(provider) : undefined;
   }
 
   return {
@@ -180,6 +189,7 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
     account: (provider) => o.store.connectedAccounts.get(provider)?.account,
     jobRepositories: (provider) => o.store.settings.getJobRepositories(provider),
     token,
+    problem,
     endpoints: (provider) => ({ url: o.apps[provider].url, apiUrl: o.apps[provider].apiUrl }),
     stop() {
       for (const p of CONNECTED_ACCOUNT_PROVIDERS) end(p);

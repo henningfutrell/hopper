@@ -181,14 +181,8 @@ for i in $(seq 1 20); do
     else
       echo "LAN: off. To reach the UI from other machines, set HOPPER_LAN_NAMES and HOPPER_LAN_PEERS in $ENV_FILE (docs/design.md \"Reaching the UI across the LAN\")"
     fi
-    # GitHub: the gh CLI by default; this hopper's own App when its key is set (README "Connect GitHub").
-    if [ -n "$(env_line GITHUB_APP_PRIVATE_KEY)$(env_line GITHUB_APP_PRIVATE_KEY_FILE)" ]; then
-      echo "GitHub: this hopper's own GitHub App (GITHUB_APP_PRIVATE_KEY in $ENV_FILE); the gh CLI source is paused"
-    elif command -v gh >/dev/null && gh auth status >/dev/null 2>&1; then
-      echo "GitHub: the gh CLI, signed in (the default). Next: say whose issues it takes (README \"Give it jobs\")"
-    else
-      echo "next: connect GitHub. Default: gh auth login (as this user). Or create a GitHub App of your own: bash $DEST/scripts/create-github-app.sh. Never use another hopper's App key. README \"Connect GitHub\""
-    fi
+    # GitHub: the account each person signs in with (README "Connect GitHub"); no other credential is read.
+    echo "GitHub: issues are read through the GitHub account you sign in with; choose its job repositories in Sources (README \"Connect GitHub\")"
     exit 0
   fi
   printf '  try %s/20: not up yet\n' "$i"

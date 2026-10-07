@@ -17,12 +17,11 @@ export const COMMENT_CAP = 1000;
 
 const oneLine = (s: string) => s.replace(/\s*[\r\n]+\s*/g, ' ').trim();
 
-/** Who the source acts as: the gh CLI's user, the App's bot, or a connected account (issue #214). */
-export type SourceMode = 'gh' | 'app' | 'account';
+/** Who the source acts as: the App's bot, or a connected account (issue #214). */
+export type SourceMode = 'app' | 'account';
 
 
 const COMMENTS_HEADER: Record<SourceMode, string> = {
-  gh: 'only allowlisted authors, no hopper-marked comments',
   app: 'only allowlisted authors, no hopper comments',
   account: 'only allowlisted authors, no hopper-marked comments',
 };
@@ -51,7 +50,7 @@ function commentLine(c: GitHubComment): string {
   return `- ${c.author} at ${c.createdAt}: ${body}`;
 }
 
-export function contextBlock(issue: GitHubIssue, p: Priority, completion: Completion, comments: GitHubComment[], limit: number, mode: SourceMode = 'gh'): string {
+export function contextBlock(issue: GitHubIssue, p: Priority, completion: Completion, comments: GitHubComment[], limit: number, mode: SourceMode = 'account'): string {
   const head = [
     '[hopper issue context]',
     `repo: ${issue.repo} · issue: #${issue.number} · url: ${issue.url}`,

@@ -1,16 +1,12 @@
 // The GitHubApi port over a connected account's token (issue #214): the user's own GitHub, reached
 // through the hopper's GitHub App: what it does acts as that user, with the app marked on it. The same REST and GraphQL calls as the App adapter, each with the
-// account's token instead of an installation token, plus issue search over the account's owners.
+// account's token instead of an installation token.
 // `token()` is asked at every call: a disconnect or a new connection applies at once.
 import { GitHubApiError, isPermanent } from '../api.ts';
 import type { GitHubApi } from '../api.ts';
 import { closingPullRequest, openClosingPullRequests, projectItems } from '../app/graphql.ts';
-import { makeRequest, paginate } from '../app/http.ts';
-import { issueFrom } from '../app/rest.ts';
+import { makeRequest } from '../app/http.ts';
 import * as rest from '../app/rest.ts';
-
-/** Search answers at most 1000 results; ten pages of 100. */
-const SEARCH_PAGES = 10;
 
 /** What GitHub said, as the port's error: a 401 is the token refused (revoked, or the app's access removed). */
 export function accountError(err: unknown, what: string): GitHubApiError {
@@ -33,16 +29,6 @@ export function createAccountGitHubApi(o: { apiUrl: string; token(): Promise<str
     }
   };
   return {
-    whoami: () => call('who am I', async (t) => String(((await req('GET /user', { headers: { authorization: `token ${t}` } })).data as { login: string }).login)),
-    searchOpenIssues: ({ owners, label, authors }) => call('search issues', async (t) => {
-      const q = ['is:issue', 'is:open', `label:"${label}"`, ...owners.map((w) => `user:${w}`), ...(authors ?? []).map((a) => `author:${a}`)].join(' ');
-      let pages = 0;
-      const items = await paginate(req, 'GET /search/issues', { q, per_page: 100 }, `token ${t}`, (d) => {
-        pages += 1;
-        return pages > SEARCH_PAGES ? [] : (d as { items: (Parameters<typeof issueFrom>[0] & { repository_url: string })[] }).items;
-      });
-      return items.map((i) => issueFrom(i, i.repository_url.split('/').slice(-2).join('/')));
-    }),
     listOpenIssues: (repo, label) => call(`list issues ${repo}`, (t) => rest.listOpenIssues(req, t, repo, label)),
     getIssue: (repo, number) => call(`get ${repo}#${number}`, (t) => rest.getIssue(req, t, repo, number)),
     listComments: (repo, number) => call(`comments ${repo}#${number}`, (t) => rest.listComments(req, t, repo, number)),

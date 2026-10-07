@@ -39,6 +39,8 @@ export type ConnectedAccountStatus = { provider: ConnectedAccountProvider; via: 
     installationsError?: string;
   }
   | { state: 'not-connected' }
+  /** Its token expired (issue #359): no job reads or acts through it until the person signs in again. */
+  | { state: 'expired'; account: string; error: string }
   | { state: 'waiting'; userCode: string; verificationUri: string; expiresAt: string }
   | { state: 'failed'; error: string }
 );

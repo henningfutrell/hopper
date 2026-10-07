@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- GitHub issues are now read only through the GitHub account you signed in with. The separate GitHub login in Sources is gone, and when your sign-in expires, Sources says so and offers to sign in again.
 - A job whose work already shipped is now marked done, not failed, even when its window ends later, and a job may close its issue itself with no pull request when no code change was needed.
 - Run again on a failed job whose issue is closed now says so and asks you to reopen the issue, instead of seeming to work while nothing ran.
 - Jobs in Codex and opencode now start instead of waiting forever.

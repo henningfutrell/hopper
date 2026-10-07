@@ -126,8 +126,6 @@ export const queueOrderBody = z.strictObject({
   jobIds: z.array(z.string().min(1)).refine((ids) => new Set(ids).size === ids.length, 'a job is named twice'),
 });
 export const queueGateBody = z.strictObject({ mode: z.enum(QUEUE_GATE_MODES), autoAcceptPerHour: z.number().int().min(1).nullable() });
-// gh login (issue #138): start gh's device flow, or end a waiting one.
-export const ghLoginBody = z.strictObject({ action: z.enum(['start', 'cancel']) });
 // Connected accounts (issue #214): connect (start the device flow), cancel a waiting code, disconnect.
 export const connectedAccountsBody = z.discriminatedUnion('action', [
   z.strictObject({ action: z.enum(['connect', 'cancel', 'disconnect']), provider: z.enum(CONNECTED_ACCOUNT_PROVIDERS) }),
@@ -326,16 +324,6 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     const r = o.updater.apply();
     if (!r.ok) throw new HttpError(409, r.error);
     return r.status;
-  });
-
-  // design.md "gh login": answers the new GET /api/gh-login status — the device code once gh shows it.
-  // 409 when there is no gh to log in, or it cannot log in here (a token variable set).
-  app.post('/ui/api/gh-login', admin, async (req) => {
-    const { action } = parseWith(ghLoginBody, req.body);
-    const { ghLogin } = o.tenant(req);
-    const s = action === 'start' ? await ghLogin.start() : await ghLogin.cancel();
-    if (s.state === 'unavailable') throw new HttpError(409, s.reason);
-    return s;
   });
 
   // design.md "Connected accounts": answers the provider's new GET /api/connected-accounts status — the

@@ -5,7 +5,7 @@ import type {
   Advice, DomainEvent, HostKeyOfferOutcome, PreSortReject, ExecutorUnavailable, Job, JobId, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit,
   PluginsEditOutcome, PluginsReport, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule, LaneId, MachineSnapshot,
   Question, QuestionAttempt, SourceStatus, UsageReading, UsageSourceState, WebhookDelivery, InstallInfo, UpdateSettings, UpdateStatus, VersionHistory,
-  GhLoginStatus, ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport,
+  ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport,
 } from './types.ts';
 import type { UserStore } from './store.ts';
 
@@ -501,15 +501,6 @@ export interface Updater {
   history(): Promise<VersionHistory>;
 }
 
-/** gh login from the UI (issue #138): GET /api/gh-login, POST /ui/api/gh-login. */
-export interface GhLogin {
-  status(): Promise<GhLoginStatus>;
-  /** Start gh's device flow and answer once it shows its device code; a waiting login answers its own code. */
-  start(): Promise<GhLoginStatus>;
-  /** End a waiting login; answers the new status. */
-  cancel(): Promise<GhLoginStatus>;
-}
-
 /** A token GitHub granted the hopper's app, with who it belongs to (issue #214): a GitHub sign-in hands it to the session's user. */
 export interface Connection {
   provider: ConnectedAccountProvider;
@@ -542,6 +533,8 @@ export interface ConnectedAccountTokens {
   account(provider: ConnectedAccountProvider): string | undefined;
   /** Its access token now; throws while none is connected, or once it expired. */
   token(provider: ConnectedAccountProvider): Promise<string>;
+  /** Why no token can be had now — none connected, or its token expired — asking for a sign-in again; undefined when one can. */
+  problem(provider: ConnectedAccountProvider): string | undefined;
   /** The provider's web origin and REST API base. */
   endpoints(provider: ConnectedAccountProvider): { url: string; apiUrl: string };
   /** The repositories the account's jobs may use, as chosen now (issue #321); empty: none. */

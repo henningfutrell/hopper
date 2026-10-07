@@ -1,7 +1,7 @@
 // Job sources: where jobs come from, when each last synced, and what is wrong with it. The GitHub
 // sources are one section (issue #160): the GitHub connection first (issue #214), with its source's
-// sync inside it. Once it is connected it is the one piece (issue #254); before that, which other
-// connection reads issues, why the others are paused, and gh login beside them.
+// sync inside it: the one way the hopper reads GitHub as the user (issue #359). Beside it, a GitHub App
+// an admin set up, and why it is paused.
 import { Inbox } from 'lucide-react';
 import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
@@ -10,13 +10,9 @@ import type { SourceStatus } from '@/model/wire';
 import { useHopper } from '@/store';
 import { ConnectedAccountPanel } from './connected-account';
 import { SourceSync } from './source-sync';
-import { GhLoginPanel } from './gh-login';
 
 const USE: Record<SourceUse, { label: string; tone: 'ok' | 'warn' | 'muted' }> = {
   'in-use': { label: 'in use', tone: 'ok' }, paused: { label: 'paused', tone: 'warn' }, disabled: { label: 'disabled', tone: 'muted' },
-};
-const VIA_LABEL: Record<GitHubConnection['via'], string> = {
-  gh: 'through gh, as the logged-in GitHub user', app: 'through the GitHub App, as its bot',
 };
 
 function SourceCard({ s, c }: { s: SourceStatus; c?: GitHubConnection }) {
@@ -26,7 +22,7 @@ function SourceCard({ s, c }: { s: SourceStatus; c?: GitHubConnection }) {
     : <StatusBadge status={s.state} tone={s.state === 'ok' ? 'ok' : undefined} />;
   return (
     <Panel title={s.name} icon={Inbox} action={badges} className={c && c.use !== 'in-use' ? 'opacity-80' : undefined} bodyClassName="space-y-3">
-      {c && <div data-source-use={c.use} className="text-xs">{VIA_LABEL[c.via]}{c.why && <span className="text-muted-foreground"> · not in use: {c.why}</span>}</div>}
+      {c && <div data-source-use={c.use} className="text-xs">through the GitHub App, as its bot{c.why && <span className="text-muted-foreground"> · not in use: {c.why}</span>}</div>}
       <SourceSync s={s} />
     </Panel>
   );
@@ -40,12 +36,11 @@ export function Sources() {
       <section className="space-y-2" aria-labelledby="sources-github">
         <div>
           <h2 id="sources-github" className="text-sm font-semibold">GitHub</h2>
-          <p data-github-summary className="text-xs text-muted-foreground">{v.summary}{v.ghLogin && ' gh login is separate: it is who jobs push as, whichever connection reads issues.'}</p>
+          <p data-github-summary className="text-xs text-muted-foreground">{v.summary}</p>
         </div>
         <div className="grid gap-3 lg:grid-cols-2">
           <ConnectedAccountPanel provider="github" source={v.account} />
           {v.github.map((c) => <SourceCard key={c.source.name} s={c.source} c={c} />)}
-          {v.ghLogin && <GhLoginPanel />}
         </div>
       </section>
       {v.others.length > 0 && (
