@@ -16,6 +16,7 @@ describe('human timers', () => {
     await vi.advanceTimersByTimeAsync(3600);
     const human = r.eventsOf('question.escalated').filter((e) => e.data.target === 'human');
     expect(human.map((e) => [e.data.notifyCount, e.data.renotify])).toEqual([[1, undefined], [2, true], [3, true], [4, true]]);
+    expect(r.eventsOf('question.escalated_to_human').map((e) => e.data.notifyCount)).toEqual([1]);
     expect(r.mem.store.questions.get(q.id)).toMatchObject({ status: 'expired', notifyCount: 4 });
     expect(r.eventsOf('question.expired')[0]).toMatchObject({ questionId: q.id, data: { questionId: q.id, after_ms: 3500 } });
     expect(r.expired.map((e) => e.depth)).toEqual([1]);

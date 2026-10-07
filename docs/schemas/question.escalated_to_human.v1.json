@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "questionId": {
+      "type": "string"
+    },
+    "reason": {
+      "type": "string"
+    },
+    "text": {
+      "type": "string"
+    },
+    "jobId": {
+      "type": "string"
+    },
+    "goal": {
+      "type": "string"
+    },
+    "answerUrl": {
+      "type": "string"
+    },
+    "notifyCount": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    }
+  },
+  "required": [
+    "questionId",
+    "reason",
+    "text",
+    "jobId",
+    "answerUrl",
+    "notifyCount"
+  ],
+  "additionalProperties": false
+}

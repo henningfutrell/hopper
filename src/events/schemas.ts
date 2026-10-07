@@ -49,6 +49,11 @@ export const EVENT_SCHEMAS = {
     goal: z.string().optional(), answerUrl: z.string().optional(),
     notifyCount: z.number().int().optional(), renotify: z.boolean().optional(),
   }),
+  // Only the human stage, once per question reaching it; never a level hop or a re-notification.
+  'question.escalated_to_human': strict({
+    questionId: z.string(), reason: z.string(), text: z.string(), jobId: z.string(),
+    goal: z.string().optional(), answerUrl: z.string(), notifyCount: z.number().int(),
+  }),
   // v2: `by` is whose answer was typed: the escalation level instance that answered, or `human`.
   // `via: "pane"`: the owner typed it into the job's pane, not the UI (additive, still v2).
   'question.answered': strict({ questionId: z.string(), by: stage, answer: z.string(), via: z.literal('pane').optional() }),

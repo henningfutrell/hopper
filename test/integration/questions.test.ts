@@ -270,6 +270,26 @@ describe('a question escalated to the human', () => {
       goal: 'tidy up', answerUrl: `${a.url}/#question-${q.id}`, notifyCount: 1,
     });
   });
+
+  it('delivers question.escalated_to_human once to a webhook subscribed to it by name, and no level hop', async () => {
+    receiver = await startReceiver();
+    const url = receiver.url;
+    const a = await start({}, { secrets: { WEBHOOK_SECRET_R: 's' }, before: (db) => writeWebhooks(db, [{ name: 'r', url, events: ['question.escalated_to_human'], secretEnv: 'WEBHOOK_SECRET_R' }]) });
+    const job = await a.pull(ask('Is this risky?'), { title: 'tidy up' });
+    const q = await a.waitForQuestion(job.id, (x) => x.tier === 'human');
+    const got = await waitFor(() => receiver!.received[0], { what: 'delivery' });
+    expect(got.headers['x-hopper-event']).toBe('question.escalated_to_human');
+    const body = JSON.parse(got.body) as DomainEvent;
+    expect(body).toMatchObject({ type: 'question.escalated_to_human', jobId: job.id, questionId: q.id, schemaVersion: 1 });
+    expect(body.data).toEqual({
+      questionId: q.id, reason: expect.any(String), text: 'Is this risky?', jobId: job.id,
+      goal: 'tidy up', answerUrl: `${a.url}/#question-${q.id}`, notifyCount: 1,
+    });
+    const events = ofJob(await a.events(), job.id);
+    expect(events.filter((e) => e.type === 'question.escalated').map((e) => e.data.target)).toEqual(['opus', 'fable', 'human']);
+    expect(events.filter((e) => e.type === 'question.escalated_to_human')).toHaveLength(1);
+    expect(receiver.received.map((r) => r.headers['x-hopper-event'])).toEqual(['question.escalated_to_human']);
+  });
 });
 
 describe('question budget', () => {

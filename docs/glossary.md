@@ -130,7 +130,7 @@ synonyms. Rename here first, in the same commit as everything else.
 | **User work dir** | A user's scratch: `HOPPER_WORK_DIR` joined with the user's `work_dir` — the work dir itself for `admin`, `users/<id>` for a user added later. Holds the user's ssh sockets, plugin scratch, and the `gh` and `claude` config dirs of the CLIs their parts run (`GH_CONFIG_DIR`, `CLAUDE_CONFIG_DIR`). | home |
 | **Secret prefix** | What a user's secret names start with (issue #158): the user's runtime reads secret `NAME` as `<prefix>NAME` (and `<prefix>NAME_FILE`). Empty for `admin`; `HOPPER_USER_<ID>_` for a user added later, so one user can never name another's variable. | |
 | **Identity link** | A row of `user_identities`: an identity (provider, subject) and the user it signs in as. An identity with none that a role rule grants a role gets a new user, linked. | |
-| **Escalation** | A question going up: from one escalation level to the next, or past the top level to the owner. It reaches the owner when every level escalates, when there are no levels, or when a risk rule matches an answer. `question.escalated` announces each stage entered. | |
+| **Escalation** | A question going up: from one escalation level to the next, or past the top level to the owner. It reaches the owner when every level escalates, when there are no levels, or when a risk rule matches an answer. `question.escalated` announces each stage entered; `question.escalated_to_human` announces only the human stage, once. | |
 | **Closed** (question) | Status `closed`: the owner ended an open question without answering (UI Close). The **close text** ("The owner closed this question without answering. Continue on your own judgement; if you cannot, end with HOPPER_FAILED and say why.") is typed into the job in place of an answer; any stage in flight is aborted. `question.closed`. | skipped (*dismissed* is something else) |
 | **Dismissed** (question) | Status `dismissed`: the owner dropped an open question that needs no action any more (UI Dismiss). Nothing is typed into the job; a job still waiting on it is cancelled (`question dismissed`), a job that moved on is left alone. `question.dismissed`. | closed (Close lets the job go on), archived, hidden |
 | **Seen** (question) | The owner had the question in front of them in the Questions view: `seenAt`, set once. The nav badge counts open questions at the human stage not yet seen. | read, acknowledged |
@@ -248,6 +248,7 @@ synonyms. Rename here first, in the same commit as everything else.
 | RouterModeChanged (retired, issue #211) | `router.mode_changed` (was `jev.mode_changed`); nothing emits it, stored ones still read |
 | QuestionAsked | `question.asked` |
 | QuestionEscalated (to a stage) | `question.escalated` |
+| QuestionEscalatedToHuman (reached the human stage, once per question) | `question.escalated_to_human` |
 | QuestionAnswered (by an escalation level, or the human) | `question.answered` |
 | QuestionClosed (by the human, without an answer) | `question.closed` |
 | QuestionDismissed (by the human; needs no action) | `question.dismissed` |

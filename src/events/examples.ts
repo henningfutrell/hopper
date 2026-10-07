@@ -25,6 +25,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'decision.made': { decisionId: 'd1', trigger: 'tick', starts: [start], holds: [{ jobId: 'j2', reason: 'full' }], lanes: [lanePlan], divergences: [{ jobId: 'j1', advice: 'ask_human', native: 'start', withAdvice: 'hold', note: 'n' }] },
   'question.asked': { questionId: 'q1', text: 'which?', detectedBy: 'marker' },
   'question.escalated': { questionId: 'q1', target: 'human', reason: 'asked', text: 'which?', jobId: 'j1', goal: 'g', answerUrl: 'http://127.0.0.1/q', notifyCount: 0, renotify: true },
+  'question.escalated_to_human': { questionId: 'q1', reason: 'fable: the owner\'s call', text: 'which?', jobId: 'j1', goal: 'g', answerUrl: 'http://127.0.0.1/q', notifyCount: 1 },
   'question.answered': { questionId: 'q1', by: 'human', answer: 'yes' },
   'question.closed': { questionId: 'q1', answer: 'The owner closed this question without answering. Continue on your own judgement; if you cannot, end with HOPPER_FAILED and say why.' },
   'question.dismissed': { questionId: 'q1' },

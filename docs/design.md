@@ -645,8 +645,11 @@ Phase 5):
 3. **accepted** → that answer is typed in, by that level. **human** (past the top level, no levels,
    or a risk rule hit): question `tier: human`,
    `escalatedToHumanAt`, `expiresAt = now + HOPPER_HUMAN_TIMEOUT_MS`,
-   `question.escalated {target: "human", reason, text, jobId, goal, answerUrl, notifyCount: 1}`.
-   Every `HOPPER_HUMAN_RENOTIFY_MS` while open: same event, `renotify: true`,
+   `question.escalated {target: "human", reason, text, jobId, goal, answerUrl, notifyCount: 1}`,
+   then `question.escalated_to_human {reason, text, jobId, goal, answerUrl, notifyCount: 1}` — once
+   per question, so a subscriber that wants only the owner's questions names that type and hears
+   no level hop, however many levels there are (issue #357).
+   Every `HOPPER_HUMAN_RENOTIFY_MS` while open: `question.escalated` again, `renotify: true`,
    `notifyCount` +1. At `expiresAt`: question `expired`, `question.expired`, job `failed`
    (`question unanswered`), executor `cleanup`. An expiry beyond the timer limit (~24.8 days)
    re-arms instead of firing early.
@@ -882,6 +885,7 @@ The events table gains a `question_id` column (migration 2).
 |------|--------|
 | `question.asked` | `{ questionId, text, detectedBy }` (event `jobId`, `questionId` set) |
 | `question.escalated` | `{ questionId, target: <stage>, reason, text, jobId, goal?, answerUrl?, notifyCount?, renotify? }` — v2: `target` is an escalation level's instance name, or `human` (v1: `"opus"\|"fable"\|"human"`) |
+| `question.escalated_to_human` | `{ questionId, reason, text, jobId, goal?, answerUrl, notifyCount }` — the human stage only, once per question; never a level hop or a re-notification |
 | `question.answered` | `{ questionId, by: <level instance>\|"human", answer }` — v2 (v1: `by` from `opus\|fable\|human`) |
 | `question.expired` | `{ questionId, after_ms }` |
 
