@@ -55,7 +55,7 @@ const lastLineOf = (text: string): string => text.split('\n').map((l) => l.trim(
 
 const heldOf = (s: PaneState): HeldPane => ({
   paneId: s.paneId, ...(s.ssh ? { ssh: s.ssh } : {}), ...(s.session ? { session: s.session } : {}),
-  ...(s.client ? { client: s.client } : {}),
+  ...(s.client ? { client: { machine: s.client.machine } } : {}),
 });
 
 function paneStateOf(job: Job): PaneState | undefined {
@@ -63,8 +63,8 @@ function paneStateOf(job: Job): PaneState | undefined {
   return s?.paneId && s.agentName ? (s as PaneState) : undefined;
 }
 
-/** A client target (design.md "Client targets"): which machine, and the variable its token is in. */
-export interface ClientTarget { machine: string; tokenEnv: string }
+/** A client target (design.md "Client targets"): which machine. Its link and token are the runtime's (issue #308). */
+export interface ClientTarget { machine: string }
 
 /** An attached machine's herdr: an ssh target's (where, which session; herdr by name there, issue #311), or a client target's. */
 export type RemoteHerdr = { ssh: string; session: string } | { client: ClientTarget };
@@ -96,7 +96,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
 
   /** Where a job on the lane's machine runs. */
   const whereOn = (m: ExecutionContext['machine']): Where => {
-    if (m.client) return { client: { machine: m.id, tokenEnv: m.client.tokenEnv } };
+    if (m.client) return { client: { machine: m.id } };
     if (m.ssh) return { ssh: m.ssh, ...(m.herdr ? { session: m.herdr.session } : {}) };
     return m.herdr ? { session: m.herdr.session } : {};
   };

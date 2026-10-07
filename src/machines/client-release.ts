@@ -1,9 +1,9 @@
 // The hopper keeps every client target on its own client release (design.md "Client releases",
 // issue #70). Each probe of a client target asks the client which release it runs; when it is not the
-// hopper's, the hopper loads its release onto it through the signed tunnel and the client restarts to
+// hopper's, the hopper loads its release onto it down its signed link and the client restarts to
 // run it. Never while a job runs on that machine: a running job's herdr calls must not meet a client
 // that is restarting. A client older than releases answers no release: it stays online and is
-// reported once, for attach-client.sh to install again. Each line is logged once per machine.
+// reported once, to be added again with Add machine. Each line is logged once per machine.
 import type { ClientRelease } from '../client/release.ts';
 import { clientRunningRelease, loadClientRelease, type ClientTransport } from '../executors/client.ts';
 import { probeClient, type MachineProbe } from './attached.ts';
@@ -30,7 +30,7 @@ export function createClientReleaseKeeper(o: { release: ClientRelease; logger: L
       running = answer.release;
       home = answer.home ? { home: answer.home } : {};
     } catch (e) {
-      say(t.machine, `hopper: client ${t.machine} runs no client release (${(e as Error).message}): install it again with scripts/attach-client.sh`, true);
+      say(t.machine, `hopper: client ${t.machine} runs no client release (${(e as Error).message}): add it again with Add machine`, true);
       return { online: true, client: { current: false } };
     }
     if (running === ours) {

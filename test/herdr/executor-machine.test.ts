@@ -5,7 +5,7 @@ import { homedir } from 'node:os';
 import type { FakeTurn } from '../../src/executors/herdr/index.ts';
 import { LAPTOP, contextFor, jobWith, setup } from './support.ts';
 
-const STUDIO = { id: 'studio', label: 'studio', maxLanes: 1, online: true, executors: ['herdr-claude'], client: { tokenEnv: 'STUDIO_CLIENT_TOKEN' } };
+const STUDIO = { id: 'studio', label: 'studio', maxLanes: 1, online: true, executors: ['herdr-claude'], client: {} };
 
 const DONE: FakeTurn = { output: ['● Done on the laptop.', '  HOPPER_DONE'] };
 const ASK: FakeTurn = { output: ['● Which branch?', '  HOPPER_QUESTION'] };
@@ -70,14 +70,14 @@ describe('herdr-claude executor on an attached machine', () => {
     const { herdr, remotes, reached, executor } = setup({}, { remote: { studio: { turns: [ASK, DONE] } } });
     const first = contextFor(jobWith({ prompt: 'go' }), 'studio/lane-1', STUDIO);
     expect((await executor.run(first.ctx)).kind).toBe('question');
-    expect(first.saved[0]).toMatchObject({ client: { machine: 'studio', tokenEnv: 'STUDIO_CLIENT_TOKEN' }, paneId: 'w1:p1' });
+    expect(first.saved[0]).toMatchObject({ client: { machine: 'studio' }, paneId: 'w1:p1' });
     expect(first.saved[0]).not.toHaveProperty('ssh');
     const job = jobWith({ prompt: 'go' }, { executorState: first.saved.at(-1) });
     expect((await executor.resume!(contextFor(job, 'studio/lane-1', STUDIO).ctx, 'main')).kind).toBe('finished');
     await executor.cleanup!(job);
     expect(remotes.get('studio')!.calls.some((c) => c.method === 'closePane')).toBe(true);
     expect(herdr.calls).toEqual([]);
-    expect(new Set(reached.map((r) => JSON.stringify(r)))).toEqual(new Set([JSON.stringify({ client: { machine: 'studio', tokenEnv: 'STUDIO_CLIENT_TOKEN' } })]));
+    expect(new Set(reached.map((r) => JSON.stringify(r)))).toEqual(new Set([JSON.stringify({ client: { machine: 'studio' } })]));
   });
 
   it('a job on this machine records no ssh target', async () => {

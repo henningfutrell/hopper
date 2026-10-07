@@ -1,4 +1,5 @@
-// Machines: what each can run, its lanes, and the usage budgets that cap them. Logged in, add this
+// Machines: what each can run, its lanes, and the usage budgets that cap them. Logged in, Add machine shows
+// one line that joins a computer or a sandbox box (issue #308, machine-join.tsx); or add this
 // machine — no ssh target, its name and herdr session (issue #260); an ssh target that is this machine is
 // added so too, and in a container there is no adding it (issue #275) — or attach a machine over ssh (POST /ui/api/machines), edit (its name and how it is reached too, issue #205) or remove
 // any machine — each a machine-source instance, edited like every plugin instance (POST /ui/api/plugins,
@@ -21,6 +22,7 @@ import type { MachineDefaultsEdit, MachineEdit, MachinesConfig, MachineView, Plu
 import { refreshLive, useHopper } from '@/store';
 import { AddMachineForm, AddThisMachineForm, EditMachineForm, LocalMachineForm, MachineDefaultsForm } from './machine-forms';
 import { useCanAdmin } from '@/store/selectors';
+import { JoinMachineForm } from './machine-join';
 
 const REFRESH_MS = 15000;
 const fetchConfig = () => get<MachinesConfig>('/api/machines/config');
@@ -73,7 +75,7 @@ function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
         {m.ssh && <Fact label="ssh target">{m.ssh}</Fact>}
         {m.docker && <Fact label="container (docker exec)">{m.docker}</Fact>}
         {m.herdr && <Fact label="herdr session">{m.herdr.session}</Fact>}
-        {m.client && <Fact label="connection">client, over its reverse tunnel</Fact>}
+        {m.client && <Fact label="connection">client, dialled in</Fact>}
         {clientReleaseText(m.client) && <Fact label="client release">{clientReleaseText(m.client)}</Fact>}
       </dl>
       {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
@@ -97,7 +99,7 @@ export function Machines() {
   const [config, setConfig] = useState<MachinesConfig | null>(null);
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
-  const [adding, setAdding] = useState<false | 'this' | 'ssh'>(false);
+  const [adding, setAdding] = useState<false | 'join' | 'this' | 'ssh'>(false);
   const [defaulting, setDefaulting] = useState(false);
   const open = useRef(false);
   useEffect(() => { open.current = adding !== false || defaulting || editing !== null; }, [adding, defaulting, editing]);
@@ -143,10 +145,13 @@ export function Machines() {
               a new machine: {d.lanes} lane{d.lanes === 1 ? '' : 's'}, runs {d.executors.length ? d.executors.join(', ') : 'nothing'}
             </span>
             <Button size="lg" variant="outline" onClick={() => setDefaulting(true)}><SlidersHorizontal />Defaults</Button>
-            {mayAddThisMachine(config) && <Button size="lg" onClick={() => setAdding('this')}><Plus />Add this machine</Button>}
-            <Button size="lg" variant={mayAddThisMachine(config) ? 'outline' : 'default'} onClick={() => setAdding('ssh')}><Plus />Add machine over ssh</Button>
+            {mayAddThisMachine(config) && <Button size="lg" variant="outline" onClick={() => setAdding('this')}><Plus />Add this machine</Button>}
+            <Button size="lg" onClick={() => setAdding('join')}><Plus />Add machine</Button>
           </div>
         ))}
+      {authed && config && adding === 'join' && !defaulting && (
+        <Panel title="Add machine" icon={Plus}><JoinMachineForm config={config} onDone={() => setAdding(false)} onSsh={() => setAdding('ssh')} /></Panel>
+      )}
       {authed && config && adding === 'this' && !defaulting && (
         <Panel title="Add this machine" icon={Plus}><AddThisMachineForm config={config} busy={busy} send={ctx.attach} onDone={() => setAdding(false)} /></Panel>
       )}
@@ -156,7 +161,7 @@ export function Machines() {
       {config?.error && <div className="rounded-md border border-bad/40 p-3 text-xs break-words text-bad">{config.error}</div>}
       {machines.length
         ? <div className="grid gap-3 lg:grid-cols-2">{machines.map((m) => <MachineCard key={m.id} m={m} ctx={ctx} />)}</div>
-        : <Panel title="Machines" icon={Server}><Empty>no machines: every job is held. {config?.thisMachineRefused ? `Attach one: ${config.thisMachineRefused}.` : 'Add this machine to run them here.'}</Empty></Panel>}
+        : <Panel title="Machines" icon={Server}><Empty>no machines: every job is held. Add machine shows one line that joins a computer or a sandbox box.</Empty></Panel>}
     </div>
   );
 }

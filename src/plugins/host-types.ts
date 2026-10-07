@@ -5,10 +5,11 @@ import type { Clock, EscalationLevel, MachineSource, Notifier, NotifierEvents, U
 import type {
   AttachedMachine, HostKeyOfferOutcome, InstanceSpec, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit, PluginsEditOutcome, PluginsReport, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule,
 } from '../domain/types.ts';
+import type { MachineJoin } from './attached-edit.ts';
 import type { AttachedEditOptions } from './attached-slot.ts';
 import type { BuiltExecutor } from './executor-slot.ts';
 import type { BuiltJobSource } from './source-slots.ts';
-import type { DetectionKit, JobSourceContext, MachineSourceContext, PluginDefinition, PluginLogger, QueueSorter, Router } from './sdk.ts';
+import type { DetectionKit, ExecutorContext, JobSourceContext, MachineSourceContext, PluginDefinition, PluginLogger, QueueSorter, Router } from './sdk.ts';
 
 export interface PluginHostOptions {
   /** Custom plugins, one directory each; undefined: none (design.md "Where plugins live"). */
@@ -30,6 +31,8 @@ export interface PluginHostOptions {
    * target: the attached machine, never probed, so offline.
    */
   machineContext?: Partial<MachineSourceContext>;
+  /** What every executor is told (RoleContext['executor']): a client target's link (issue #308). Default: none is reached. */
+  executorContext?: ExecutorContext;
   dataDir: string;
   /** PluginContext.userEnv: what the user's processes add to the daemon's environment; default none. */
   userEnv?: Readonly<Record<string, string>>;
@@ -83,6 +86,8 @@ export interface PluginHost {
   machineHostKey(ssh: string): Promise<HostKeyOfferOutcome>;
   /** POST /ui/api/machines/defaults (issue #142): the plugins config `machineDefaults:`. */
   editMachineDefaults(e: MachineDefaultsEdit): Promise<MachineEditOutcome>;
+  /** POST /client/join (issue #308): a machine joining as a client target; resolves once the plugins config is reloaded. */
+  joinMachine(j: MachineJoin): Promise<{ ok: true; machine: string } | { ok: false; error: string }>;
   report(): PluginsReport;
   /** the plugins config `routing:` now (none when absent; the last good list on an invalid config). */
   routingRules(): RoutingRule[];

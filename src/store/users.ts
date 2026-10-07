@@ -60,7 +60,7 @@ export function createUserRepository(c: StoreContext, onAdded: (user: User) => v
           return n > 0 ? `${n} ${noun}${n === 1 ? '' : 's'}` : '';
         }).filter(Boolean);
         if (held.length > 0) throw new Error(`${toId} holds work of its own (${held.join(', ')}); nothing changed`);
-        for (const table of ['user_identities', 'ui_sessions', 'login_codes']) c.db.run(`UPDATE ${table} SET user_id = ? WHERE user_id = ?`, fromId, toId);
+        for (const table of ['user_identities', 'ui_sessions', 'login_codes', 'join_codes']) c.db.run(`UPDATE ${table} SET user_id = ? WHERE user_id = ?`, fromId, toId);
         c.db.run('DELETE FROM users WHERE id = ?', toId);
         c.db.run('UPDATE users SET name = ? WHERE id = ?', String(to.name), fromId);
         c.db.exec(`DROP SCHEMA ${schema} CASCADE`);
@@ -79,7 +79,7 @@ export function createUserRepository(c: StoreContext, onAdded: (user: User) => v
         const gone = schemaOf(intoId);
         foldUserSchema(c.db, kept, gone);
         c.db.exec('ALTER TABLE user_identities DROP CONSTRAINT user_identities_user_id_fkey');
-        for (const table of ['user_identities', 'ui_sessions', 'login_codes']) c.db.run(`UPDATE ${table} SET user_id = ? WHERE user_id = ?`, intoId, fromId);
+        for (const table of ['user_identities', 'ui_sessions', 'login_codes', 'join_codes']) c.db.run(`UPDATE ${table} SET user_id = ? WHERE user_id = ?`, intoId, fromId);
         c.db.run('DELETE FROM users WHERE id = ?', intoId);
         c.db.exec(`DROP SCHEMA ${quoteIdent(gone)} CASCADE`);
         c.db.run('UPDATE users SET id = ?, name = ? WHERE id = ?', intoId, String(into.name), fromId);

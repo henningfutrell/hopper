@@ -3,7 +3,7 @@
 // POST /ui/api/machines and an Edit form to POST /ui/api/plugins, and why it may not yet.
 import { describe, expect, it } from 'vitest';
 import type { MachinesConfig } from '../../src/domain/types.ts';
-import { addBody, addProblem, authorizedKeysLine, hostKeyCheck, clientReleaseText, defaultsBody, DETAILS, editBody, editDraft, editProblem, hasThisMachine, isThisMachineTarget, kindOf, mayAddThisMachine, localBody, newDraft, newThisDraft, thisBody, thisProblem, type MachineDraft } from '../../ui/src/model/machines.ts';
+import { addBody, addProblem, authorizedKeysLine, BOX_AGENTS, boxPlace, joinLine, hostKeyCheck, clientReleaseText, defaultsBody, DETAILS, editBody, editDraft, editProblem, hasThisMachine, isThisMachineTarget, kindOf, mayAddThisMachine, localBody, newDraft, newThisDraft, thisBody, thisProblem, type MachineDraft } from '../../ui/src/model/machines.ts';
 
 const CONFIG: MachinesConfig = {
   version: 'v1',
@@ -130,7 +130,7 @@ describe('editing a machine\'s name and details', () => {
     // There is never an ssh config (issue #309): no hint names one.
     expect(DETAILS.ssh!.map((f) => f.hint).join(' ')).not.toMatch(/ssh\/config/);
     expect(DETAILS.docker!.map((f) => f.key)).toEqual(['docker']);
-    expect(DETAILS.client!.map((f) => f.key)).toEqual(['tokenEnv']);
+    expect(DETAILS.client).toEqual([]);
   });
 
   it('a new name is sent as rename, trimmed; the details as typed, trimmed; an emptied optional detail goes', () => {
@@ -192,10 +192,10 @@ describe('machine defaults', () => {
 
 describe('clientReleaseText (issue #70)', () => {
   it('a client target\'s release, and whether it is the hopper\'s; nothing for any other machine or before a probe', () => {
-    expect(clientReleaseText({ tokenEnv: 'T', release: '0123456789abcdef', current: true })).toBe('0123456789abcdef (the hopper\'s)');
-    expect(clientReleaseText({ tokenEnv: 'T', release: '0123456789abcdef', current: false })).toBe('0123456789abcdef (not the hopper\'s: loaded once no job runs there)');
-    expect(clientReleaseText({ tokenEnv: 'T', current: false })).toBe('none: older than releases, install it again (scripts/attach-client.sh)');
-    expect(clientReleaseText({ tokenEnv: 'T' })).toBeNull();
+    expect(clientReleaseText({ release: '0123456789abcdef', current: true })).toBe('0123456789abcdef (the hopper\'s)');
+    expect(clientReleaseText({ release: '0123456789abcdef', current: false })).toBe('0123456789abcdef (not the hopper\'s: loaded once no job runs there)');
+    expect(clientReleaseText({ current: false })).toBe('none: older than releases, add it again: Add machine');
+    expect(clientReleaseText({})).toBeNull();
     expect(clientReleaseText(undefined)).toBeNull();
   });
 });
@@ -258,5 +258,41 @@ describe('an ssh target that is this machine', () => {
     expect(mayAddThisMachine(HERE)).toBe(true);
     expect(mayAddThisMachine(CONFIG)).toBe(false);
     expect(mayAddThisMachine({ ...HERE, thisMachineRefused: 'the hopper runs in a container' })).toBe(false);
+  });
+});
+
+describe('the Add machine line (issue #308)', () => {
+  const code = 'c'.repeat(64);
+  const join = { boxUrl: 'http://hopper:4790', boxNetwork: 'hopper_default', boxImage: 'ghcr.io/henningfutrell/hopper' };
+
+  it('a computer: the hopper\'s install script, from the URL this page is open at, joined with the code', () => {
+    expect(joinLine({ kind: 'computer' }, { origin: 'http://localhost:4790', code, join }))
+      .toBe(`curl -fsSL 'http://localhost:4790/client/install' | sh -s -- 'http://localhost:4790#${code}'`);
+  });
+
+  it('a sandbox box: a locked-down container on the hopper\'s network, its home a volume of its own, joined with the code', () => {
+    const line = joinLine({ kind: 'box', agent: 'claude', engine: 'podman' }, { origin: 'http://localhost:4790', code, join });
+    expect(line.startsWith('podman run -d --name hopper-box-claude ')).toBe(true);
+    // Named by the client's own setting: Docker refuses a host name on the host network.
+    expect(line).toContain('-e HOPPER_CLIENT_NAME=hopper-box-claude');
+    expect(line).not.toContain('--hostname');
+    for (const flag of ['--network hopper_default', '--cap-drop ALL', '--security-opt no-new-privileges', '--read-only', '-v hopper-box-claude-home:/home/agent']) {
+      expect(line).toContain(flag);
+    }
+    expect(line).toContain(`-e HOPPER_JOIN='http://hopper:4790#${code}'`);
+    expect(line.endsWith(' ghcr.io/henningfutrell/hopper:box-claude')).toBe(true);
+    // Nothing of the computer is mounted into it.
+    expect(line).not.toMatch(/-v \/|--privileged|docker\.sock/);
+    expect(joinLine({ kind: 'box', agent: 'claude', engine: 'docker' }, { origin: 'x', code, join })).toMatch(/^docker run -d --name hopper-box-claude .* --tmpfs \/tmp .* ghcr\.io\/henningfutrell\/hopper:box-claude$/);
+  });
+
+  it('the agents a box is offered with are those an executor drives on a client target', () => {
+    expect(BOX_AGENTS).toEqual(['claude']);
+  });
+
+  it('where a box reaches the hopper: by name on its compose network in a container, else this computer\'s loopback', () => {
+    const inContainer = { ...CONFIG, thisMachineRefused: 'in a container' };
+    expect(boxPlace(inContainer, '4790')).toEqual({ boxUrl: 'http://hopper:4790', boxNetwork: 'hopper_default', boxImage: 'ghcr.io/henningfutrell/hopper' });
+    expect(boxPlace(CONFIG, '4791')).toEqual({ boxUrl: 'http://127.0.0.1:4791', boxNetwork: 'host', boxImage: 'ghcr.io/henningfutrell/hopper' });
   });
 });

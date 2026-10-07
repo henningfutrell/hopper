@@ -181,7 +181,7 @@ describe('migrations 17 and 21: an install from before becomes the default admin
     instance.close();
     const raw = openDb(testPostgres());
     const left = raw.all("SELECT table_name FROM information_schema.tables WHERE table_schema = ? ORDER BY table_name", schemaOf(url)).map((r) => r.table_name);
-    expect(left).toEqual(['config', 'login_codes', 'schema_version', 'settings', 'ui_sessions', 'user_identities', 'users']);
+    expect(left).toEqual(['config', 'join_codes', 'login_codes', 'schema_version', 'settings', 'ui_sessions', 'user_identities', 'users']);
     expect(raw.all(`SELECT name FROM "${schemaOf(url)}".config`)).toEqual([{ name: 'sign-in' }]);
     expect(raw.all(`SELECT key FROM "${schemaOf(url)}".settings ORDER BY key`).map((r) => r.key)).toEqual(['autoUpdate', 'pluginInstalls', 'updateChannel']);
     raw.close();

@@ -8,7 +8,7 @@ import type { Advice, Detection, InstanceSpec, RouterStatus } from '../domain/ty
 import { parseOptions } from './options.ts';
 import passThrough from './router/pass-through/index.ts';
 import type {
-  Clock, DetectionKit, JobSourceContext, MachineSourceContext, PluginContext, PluginDefinition, Role, RoleContext, RoleInstance, Router, UsageSourceContext,
+  Clock, DetectionKit, ExecutorContext, JobSourceContext, MachineSourceContext, PluginContext, PluginDefinition, Role, RoleContext, RoleInstance, Router, UsageSourceContext,
 } from './sdk.ts';
 
 export interface SlotDeps {
@@ -26,6 +26,8 @@ export interface SlotDeps {
   target: MachineSourceContext['target'];
   /** A machine by its id, as the machine sources list it now (RoleContext['usage-source'], RoleContext['escalation-level']). */
   machine: UsageSourceContext['machine'];
+  /** A client target's link (RoleContext['executor'], issue #308). */
+  client: ExecutorContext['client'];
   find(id: string): PluginDefinition | undefined;
 }
 
@@ -63,7 +65,7 @@ function contextFor(deps: SlotDeps, id: string, instanceName: string) {
   mkdirSync(scratchDir, { recursive: true, mode: 0o700 });
   return {
     clock: deps.clock, logger: deps.logger, dataDir: deps.dataDir, scratchDir, instanceName, env: deps.kit.env, userEnv: deps.userEnv,
-    ...deps.jobSource, executors: deps.executors, target: deps.target, machine: deps.machine,
+    ...deps.jobSource, executors: deps.executors, target: deps.target, machine: deps.machine, client: deps.client,
   };
 }
 

@@ -6,6 +6,7 @@ import type {
   AnswerRequest, Clock, ConnectedAccountTokens, EscalationLevel, ExecutionContext, ExecutionOutcome, Executor, JobSource, LevelReply,
   MachineSource, Notifier, NotifierEvents, QueueEntry, QueueSorter, Router, SourceItem, SourceReport, SourceSignal, UsageSource,
 } from '../domain/ports.ts';
+import type { ClientTransport } from '../executors/client.ts';
 import type { Advice, AdviceAction, AttachedMachine, Detection, OptionChoice, DomainEvent, Job, MachineSnapshot, PreSortReject, Question, QuestionAttempt, Role, UsageReading } from '../domain/types.ts';
 
 export type {
@@ -94,7 +95,7 @@ export interface RoleContext {
   router: object;
   'queue-sorter': object;
   'escalation-level': MachineLookup;
-  executor: object;
+  executor: ExecutorContext;
   'job-source': JobSourceContext;
   'machine-source': MachineSourceContext;
   'usage-source': UsageSourceContext;
@@ -118,6 +119,11 @@ export type UsageSourceContext = MachineLookup;
  * its probe says so, probed in the background. One machine keeps its probe while only its lanes,
  * executors or label change.
  */
+/** What an executor learns (issue #308): how to reach a client target, by its machine id; undefined when no client target has it. */
+export interface ExecutorContext {
+  client(machine: string): ClientTransport | undefined;
+}
+
 export interface MachineSourceContext {
   executors(): string[];
   target(machine: AttachedMachine): MachineSource;

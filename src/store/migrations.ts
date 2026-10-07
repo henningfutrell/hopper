@@ -154,6 +154,10 @@ const MIGRATIONS: readonly Migration[] = [
   // 24: no bootstrap user (issue #238): a new store ends with no user; an install from before keeps admin,
   // and no sign-in is linked to it.
   noBootstrapUser,
+  // 25: one-time join codes (issue #308): a machine's, as a login code is a browser's. Only the code's SHA-256 is kept.
+  `
+  CREATE TABLE IF NOT EXISTS join_codes (code_hash TEXT PRIMARY KEY, expires_at TEXT NOT NULL, user_id TEXT NOT NULL);
+  `,
 ];
 
 /**

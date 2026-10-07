@@ -20,6 +20,7 @@ import { atApiDoor, sessionToken } from './host-guard.ts';
 import { classifyRequest, peerList, type Lan } from './reach.ts';
 import type { UiSessions } from './ui/sessions.ts';
 import type { SecretProblem } from './webhooks.ts';
+import type { UserMachineLink } from '../users/runtime.ts';
 
 /** One user's parts, as the HTTP edge reads and changes them. */
 export interface TenantParts {
@@ -36,6 +37,8 @@ export interface TenantParts {
   webhooksEditor: WebhooksEditor;
   /** Why the user's runtime gives no secret for a webhook subscription's variable. */
   secretProblem: SecretProblem;
+  /** The user's machines that dial in (issue #308). */
+  machineLink: UserMachineLink;
 }
 
 /** The users and their running parts. */

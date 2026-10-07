@@ -95,6 +95,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
     jobSource: o.jobSourceContext ?? NO_SOURCE_CONTEXT, executors: o.machineContext?.executors ?? runnableExecutors,
     target: o.machineContext?.target ?? createTargetPool({ probe: async () => ({ online: false }) }),
     machine: async (id) => (await liveMachines.list()).find((m) => m.id === id),
+    client: o.executorContext?.client ?? (() => undefined),
   };
 
   /** Build a restart role once; afterwards only record whether the plugins config now names something else. */
@@ -283,7 +284,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
     },
     targets,
     machinesConfig: () => machinesEditor.config(), editMachines: (e) => machinesEditor.edit(e),
-    machineHostKey: (ssh) => machinesEditor.hostKey(ssh), editMachineDefaults: (e) => machinesEditor.editDefaults(e),
+    machineHostKey: (ssh) => machinesEditor.hostKey(ssh), editMachineDefaults: (e) => machinesEditor.editDefaults(e), joinMachine: (j) => machinesEditor.joinMachine(j),
     reload: enqueue,
     routingRules: () => [...(configured?.routing ?? [])],
     machineIds,

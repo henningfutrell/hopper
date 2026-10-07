@@ -48,7 +48,8 @@ export const DETAILS: Record<string, DetailField[]> = {
     { key: 'hostKey', label: 'host key', hint: '<type> <base64>, the only key accepted from it; empty: not connected. Another ssh target has its own', required: false },
   ],
   docker: [{ key: 'docker', label: 'container', hint: 'its name or id; commands run in it through docker exec', required: true }],
-  client: [{ key: 'tokenEnv', label: 'token variable', hint: 'the variable (or <name>_FILE) holding its client token', required: true }],
+  // A client target dials in with its machine key (issue #308): nothing to type.
+  client: [],
 };
 
 /** An Edit form as typed: its name, lanes, executors, label, the details of its connection, and (ssh) whether it runs herdr. */
@@ -209,6 +210,45 @@ export function thisBody(d: ThisDraft, version: string): MachineEdit {
 /** A client target's client release, as the Machines view says it (issue #70); null before a probe found it online, or for any other machine. */
 export function clientReleaseText(client: MachineSnapshot['client']): string | null {
   if (client?.current === undefined) return null;
-  if (!client.release) return 'none: older than releases, install it again (scripts/attach-client.sh)';
+  if (!client.release) return 'none: older than releases, add it again: Add machine';
   return client.current ? `${client.release} (the hopper's)` : `${client.release} (not the hopper's: loaded once no job runs there)`;
+}
+
+/** The agents a sandbox box is offered with (issue #308): those an executor drives on a client target. */
+export const BOX_AGENTS = ['claude'] as const;
+export type BoxAgent = (typeof BOX_AGENTS)[number];
+
+/** What Add machine adds: a computer, or a sandbox box on the computer the hopper runs on, in Podman or Docker. */
+export type JoinChoice = { kind: 'computer' } | { kind: 'box'; agent: BoxAgent; engine: 'podman' | 'docker' };
+
+/** Where a box reaches the hopper from, and the image it runs. */
+export interface BoxPlace { boxUrl: string; boxNetwork: string; boxImage: string }
+
+/** The published image: a box is its `box-<agent>` tag. */
+const BOX_IMAGE = 'ghcr.io/henningfutrell/hopper';
+
+/**
+ * A hopper in its compose container is reached by name on the compose network (`hopper`, on
+ * `hopper_default`); one installed on this computer, through its loopback on the host network. `port`:
+ * the daemon's own (a reverse proxy in front may serve the page on another).
+ */
+export function boxPlace(config: MachinesConfig, port: string): BoxPlace {
+  return config.thisMachineRefused
+    ? { boxUrl: `http://hopper:${port}`, boxNetwork: 'hopper_default', boxImage: BOX_IMAGE }
+    : { boxUrl: `http://127.0.0.1:${port}`, boxNetwork: 'host', boxImage: BOX_IMAGE };
+}
+
+/**
+ * The one line Add machine shows (design.md "Joining a machine"). A computer runs the install the hopper
+ * serves, from the URL this page is open at. A box is a locked-down container: every capability dropped,
+ * no new privileges, a read-only root, its own home volume, nothing of the computer mounted.
+ */
+export function joinLine(choice: JoinChoice, o: { origin: string; code: string; join: BoxPlace }): string {
+  if (choice.kind === 'computer') return `curl -fsSL '${o.origin}/client/install' | sh -s -- '${o.origin}#${o.code}'`;
+  const box = `hopper-box-${choice.agent}`;
+  return [
+    `${choice.engine} run -d --name ${box} --restart unless-stopped --network ${o.join.boxNetwork}`,
+    '--cap-drop ALL --security-opt no-new-privileges --read-only --tmpfs /tmp',
+    `-v ${box}-home:/home/agent -e HOPPER_CLIENT_NAME=${box} -e HOPPER_JOIN='${o.join.boxUrl}#${o.code}' ${o.join.boxImage}:box-${choice.agent}`,
+  ].join(' ');
 }

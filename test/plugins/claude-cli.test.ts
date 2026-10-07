@@ -214,7 +214,7 @@ describe('claude-cli on a designated machine (issue #150)', () => {
   it.each([
     ['not configured', [] as MachineSnapshot[], /machine laptop is not configured/],
     ['offline', [{ ...LAPTOP, online: false }], /machine laptop is offline/],
-    ['a client target', [{ id: 'laptop', label: 'laptop', maxLanes: 1, online: true, executors: [], client: { tokenEnv: 'T' } }], /client target/],
+    ['a client target', [{ id: 'laptop', label: 'laptop', maxLanes: 1, online: true, executors: [], client: {} }], /client target/],
     ['a container target', [{ id: 'laptop', label: 'laptop', maxLanes: 1, online: true, executors: [], docker: 'box' }], /container target/],
   ])('a machine %s returns { error }: the question escalates', async (_n, machines, why) => {
     expect(await (await onMachine(machines)).answer(req(), signal())).toEqual({ error: expect.stringMatching(why) });

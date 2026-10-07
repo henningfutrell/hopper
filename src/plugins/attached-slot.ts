@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import type { HostKeyOffer, HostKeyOfferOutcome, InstanceSpec, MachineDefaults, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig } from '../domain/types.ts';
 import { isPlainTarget, type SshAuth } from '../executors/ssh.ts';
 import { hostKeyOffer, isThisMachine, readSshTargets, resolveSshTarget, type ResolvedTarget } from '../machines/index.ts';
-import { applyMachineDefaultsEdit, applyMachineEdit, IN_A_CONTAINER, machineDefaults } from './attached-edit.ts';
+import { applyMachineDefaultsEdit, applyMachineEdit, applyMachineJoin, IN_A_CONTAINER, machineDefaults, type MachineJoin } from './attached-edit.ts';
 import type { PluginLogger } from './sdk.ts';
 
 /** What attaching or removing a machine needs. Defaults: ~/.ssh/config, the target resolved over ssh, no job in use. */
@@ -119,5 +119,17 @@ export function createMachinesEditor(o: AttachedEditOptions & {
     return { ok: true, config: await config() };
   }
 
-  return { config, edit, editDefaults, hostKey };
+  /** POST /client/join (issue #308): the machine added as a client target, or the one already holding its key. */
+  async function joinMachine(j: MachineJoin): Promise<{ ok: true; machine: string } | { ok: false; error: string }> {
+    const c = o.configured();
+    const r = applyMachineJoin(j, {
+      config: o.config, configured: c.machines.map((instance) => ({ role: 'machine-source' as const, instance })), defaults: machineDefaults(c.machineDefaults),
+    });
+    if (!r.ok) return { ok: false, error: r.error };
+    await o.reload();
+    o.logger.info(`hopper: machine ${r.machine} joined with a join code (client target)`);
+    return r;
+  }
+
+  return { config, edit, editDefaults, hostKey, joinMachine };
 }

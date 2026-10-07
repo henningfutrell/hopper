@@ -38,13 +38,13 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 |-----|------|-----------------|
 | `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts; `machines.ts` attached machines and their edit; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate), ports (`ports.ts`, re-exporting the store's from `store.ts`) | anything else in `src/` |
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock | everything but `domain/` |
-| `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations (the instance's `migrations.ts` with migration 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-jobs-dir.ts` (tenant 11) moves a work tree stored as `~` to the jobs directory (issue #314); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265) | engine, http, decider |
+| `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations (the instance's `migrations.ts` with migration 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-jobs-dir.ts` (tenant 11) moves a work tree stored as `~` to the jobs directory (issue #314); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); 25 the join codes (issue #308) and `migration-client-key.ts` (tenant 12) the client targets that held a token variable; `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265) | engine, http, decider |
 | `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), identity → user (`identities.ts`: link or provision), the leftover default admin account folded into the first GitHub admin's user at start (`leftover-admin.ts`, issue #265) | http, decider |
 | `src/webhooks/` | signing, dispatcher, retry/backoff, the secret of a subscription from the runtime (`dispatcher.ts`), the UI edit of the subscriptions (`edit.ts`, rows in the store) | engine, http, decider |
 | `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, the plugins config (`plugins-config.ts`) + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt, `escalation-level/anthropic-api/` asks the Claude API with the same prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-gh/`, `job-source/github-app/` and `job-source/github-account/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser); `usage-source/command-usage/` reads any agent framework's usage and account from a command that prints them as JSON; `usage-source/polled.ts` the background refresh both share, `usage-source/run.ts` their command runner; `notifier/grokbot-routine/` is the Grok Bot routine webhook — env-file reader and notifier; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
-| `src/executors/` | `Executor` adapters (`test`, `herdr/`, `command.ts` — a job's body run on its machine through its connection, `cursor.ts` — Cursor's CLI agent there, issue #142) and the registry; reached through the executor plugins. The connections and their target authentication ("Target authentication"): `ssh.ts` (key-only ssh to pinned host keys), `ssh-key.ts` (the hopper's own ssh key, kept in the user's store, issue #293), `docker.ts` (the docker socket check, the proxy's allowlist), `client.ts` (a client target's tunnel, signed calls); `env.ts` the scrubbed child environment | engine, http, store, plugins |
-| `src/client/` | the hopper client ("Client targets"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load` over HTTP/2 on the tunnel), `tunnel.ts` (its ssh to the hopper), `release.ts` (the client release: its files, its id, checking and installing one — "Client releases"), `main.ts`; `relay.ts`, the forced command of its key on the hopper's machine; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`); `ssh-options.ts` (the hardened ssh options, shared with `src/executors/ssh.ts`) | everything in `src/` outside `src/client/` |
-| `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following the plugins config; ssh probe and the check that herdr is found there by name (`REMOTE_PATH`, issue #311) through the herdr CLI client's ssh argv; the container probe, `docker container inspect`), the detected ssh targets (`ssh-config.ts`) and which of them is this machine (`this-machine.ts`, issue #275), keeping each client target on the hopper's client release (`client-release.ts`), `combineMachineSources` | engine, http, store, plugins |
+| `src/executors/` | `Executor` adapters (`test`, `herdr/`, `command.ts` — a job's body run on its machine through its connection, `cursor.ts` — Cursor's CLI agent there, issue #142) and the registry; reached through the executor plugins. The connections and their target authentication ("Target authentication"): `ssh.ts` (key-only ssh to pinned host keys), `ssh-key.ts` (the hopper's own ssh key, kept in the user's store, issue #293), `docker.ts` (the docker socket check, the proxy's allowlist), `client.ts` (a client target's signed calls down its link); `ssh-options.ts` (the hardened ssh options); `env.ts` the scrubbed child environment | engine, http, store, plugins |
+| `src/client/` | the hopper client ("Client targets", "Joining a machine"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load` over HTTP/2 on its link), `dial.ts` (its dial-in to the hopper's URL), `join.ts` (joining with a join line), `link.ts` (the link keys and the client token they give; shared with the hopper), `release.ts` (the client release: its files, its id, checking and installing one — "Client releases"), `main.ts`; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`) | everything in `src/` outside `src/client/` |
+| `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following the plugins config; ssh probe and the check that herdr is found there by name (`REMOTE_PATH`, issue #311) through the herdr CLI client's ssh argv; the container probe, `docker container inspect`), the detected ssh targets (`ssh-config.ts`) and which of them is this machine (`this-machine.ts`, issue #275), keeping each client target on the hopper's client release (`client-release.ts`), the links of the machines dialled in (`links.ts`) and their join codes (`join-code.ts`, issue #308), `combineMachineSources` | engine, http, store, plugins |
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin) | engine, http, store, plugins |
 | `src/job-rules/` | the job rules (issue #172): the config record `job-rules`, the default job rules, the fixed lines of the footer (work tree, protocol), their read, view and edit — no I/O but the config records port | everything but `domain/` |
 | `src/routing/` | routing rules: the plugins config's `routing` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
@@ -53,9 +53,10 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`) | engine, http, store, plugins, decider |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets") | everything |
 | `src/update/` | self-update ("Self-update"): install.json, the git mirror of the update repository, the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
-| `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); whether a session is an instance admin (`instance-admin.ts`, issue #240); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `api-reference.ts` Scalar at `/docs/`); the plugin store's read side (`plugin-store.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
+| `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); whether a session is an instance admin (`instance-admin.ts`, issue #240); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `api-reference.ts` Scalar at `/docs/`); the plugin store's read side (`plugin-store.ts`); machines joining and dialling in (`client-link.ts`, issue #308) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
 | `scripts/agent-box/` | the agent box's image (issue #295, "Agent boxes"; under `scripts/` because the install and the image carry `scripts/`, not `deploy/`): `Dockerfile` (one agent CLI per build, sshd, the herdr binary put beside it by `scripts/agent-boxes.sh`) `entrypoint.sh` (sshd, then the box's herdr session) and `pickup.ts` (the box side of the pickup protocol, `hopper-pickup`, issue #319: node's own modules only, the box runs it with no install); `scripts/agent-boxes.ts` is the script's plugins-config filter, `scripts/box-pickups.ts` the pickup protocol's reader | everything in `src/` |
+| `scripts/box/` | the sandbox box's image (issue #308, "Joining a machine"; built from the repo root, it carries `src/client`): `Dockerfile` (one agent CLI, herdr, the client) and `entrypoint.sh` (herdr's session, then the client, again after each release load); `scripts/client-install.sh` is the install a computer's line runs, served at `/client/install` | everything in `src/` but the client files it copies |
 | `site/` | the GitHub Pages site, published by `.github/workflows/pages.yml` with `scripts/get.sh` beside it as `install.sh`: `index.html`, the README rendered by `scripts/build-pages.ts` and committed (issue #88), and `install.html`, the install page; static, nothing loaded from another site | everything in the repo at runtime; it links to the docs on GitHub |
 | `examples/plugins/` | one minimal runnable custom plugin per role, for authors (`docs/plugins.md`); imports only `hopper/plugin` types and `node:` builtins | everything in `src/` at runtime |
 | `src/main.ts` | composition root: config → instance store → sign-in config (`prepareSignIn`: the environment applied) → plugin store → updater → server → one user runtime per user (`src/users/`) | — |
@@ -2654,7 +2655,7 @@ hopper, and connect back to it over a reverse tunnel ("Client targets" below).
 |---|---|---|---|
 | ssh target | the **hopper's ssh key**, alone | its **pinned host key** | passwords, keyboard-interactive, GSSAPI, host-based, the user's agent and other keys, an unpinned or changed host key, jump hosts, forwarding |
 | container target | holding a **docker socket** only its user may open, which lets through only its targets | — (this machine's docker) | the root daemon's socket, a group- or world-openable socket, a TCP daemon, any `DOCKER_*` variable |
-| client target | an HMAC of the **client token** on every request | an HMAC of the token on every answer; its tunnel key | an unsigned, stale (30 s), replayed or altered request; an answer it did not sign |
+| client target | an HMAC of the **client token** on every request — the token derived from the link keys (issue #308) | an HMAC of the token on every answer; the same token on its dial-in | an unsigned, stale (30 s), replayed or altered request; an answer it did not sign; a dial-in no client target's key signs |
 
 **ssh** (`src/executors/ssh.ts`; every ssh call: herdr over ssh, the probe, the command executor, adding
 a machine). The destination is resolved once with `ssh -G -F <the user's config>` (host, user, port;
@@ -2704,6 +2705,10 @@ construction is a few lines over node's own primitives.
 `HOPPER_DOCKER_HOST`, and each client target's token (`<tokenEnv>` or `<tokenEnv>_FILE`).
 
 ## Client targets (issue #59, 2026-10-04)
+
+**Since issue #308 the client dials in to the hopper's own URL and joins with a join code ("Joining a
+machine"):** the tunnel, the relay, `tokenEnv` and `scripts/attach-client.sh` below are gone. The signed
+calls are as described here.
 
 A **client target** is an attached machine that runs the **hopper client** and dials this machine;
 the hopper never connects to it directly.
@@ -3322,7 +3327,92 @@ about where a machine can reach the hopper from, so both were run, not assumed:
 whether the box line names Podman or Docker first (the view can detect neither: it runs in a container).
 
 **Not built here.** Research only: no daemon change. The build is #308's (the add action) and #307's (the
-boxes), on #312's protocol.
+boxes), on #312's protocol. Built for #308: "Joining a machine" below.
+
+## Joining a machine (issue #308, 2026-10-07)
+
+Owner request, on the hopper in its container: adding a machine must be as easy as possible, and allow
+sandboxing. Built on #312's protocol and #310's add flow (above): **one Add machine action, one copied
+line**, and the machine dials in. This replaces the client target's ssh tunnel; ssh targets stay, for a
+machine that cannot run the client.
+
+**What the person does.** Machines → **Add machine** → *A computer* or *A sandbox box* → **Show the
+line** → run it there. The machine shows in the view, online, when it joins. Nothing is typed into the
+hopper; the machine is named after its host name (a box: `hopper-box-<agent>`), renamed in the view like
+any machine.
+
+| Choice | The line | Where it runs |
+|--------|----------|---------------|
+| A computer | `curl -fsSL '<origin>/client/install' \| sh -s -- '<origin>#<code>'` — `<origin>` the URL the page is open at | the computer: the computer the container runs on (the UI open at `http://localhost:<port>`), a laptop, a desktop |
+| A sandbox box | `<podman\|docker> run -d --name hopper-box-claude --restart unless-stopped --network hopper_default --cap-drop ALL --security-opt no-new-privileges --read-only --tmpfs /tmp -v hopper-box-claude-home:/home/agent -e HOPPER_CLIENT_NAME=hopper-box-claude -e HOPPER_JOIN='http://hopper:<port>#<code>' ghcr.io/henningfutrell/hopper:box-claude` | the computer the hopper runs on; a hopper installed on the host gives `--network host` and `http://127.0.0.1:<port>` |
+
+**Join code.** `POST /ui/api/machines/join` (admin) mints one for the session's user: 32 random bytes,
+hex, kept only as its SHA-256 in the instance's `join_codes` (migration 25), for 10 minutes, taken once
+— the login code's shape (`src/machines/join-code.ts`). `hopper join-code [--user <id>]` mints one for a
+script (the bulk form, #310's option C). Owner question #312 left open — one code for many machines — is
+answered *one*: a script asks for one per machine.
+
+**Join.** The client (`src/client/join.ts`) makes its **link key** — X25519, node:crypto — in its client
+dir (`~/.config/hopper-client/link-key.pem`, 600; a box's home volume), and posts once to `POST
+/client/join` `{code, key, name}`: `key` its public half, the **machine key**. The hopper takes the code
+(403 when it was used, expired or never minted), adds a `client` instance `{key, lanes, executors}` with
+the machine defaults under `name` (`-2`, `-3`, … when taken; a key already joined answers that machine,
+unchanged), and answers `{user, machine, hopperKey}`: the public half of the user's link key, minted once
+and kept in the user's schema like the hopper's ssh key. The client keeps it in `link.json`.
+
+**Client token.** Derived on each end: HKDF-SHA256 over X25519(own private half, other public half).
+The same on both ends; neither stores it; it never crosses the wire. Every request and answer is signed
+with it exactly as before ("Target authentication"). The hopper stores the machine key — who the machine
+is, not a secret — and its own link key, a secret by the same exception as its ssh key (AGENTS.md).
+
+**Dial-in.** The client opens `GET /client/connect` with `Upgrade: hopper-client/1`, `x-hopper-user`,
+`x-hopper-machine-key`, and `x-hopper-signature` over the user, the key, a timestamp and a nonce (label
+`hopper-connect`, 30 s, once). The hopper applies the Host guard's rule itself (the upgrade bypasses
+Fastify's hooks), finds the client target holding that key, checks the signature with its token, answers
+101, and keeps the socket as the machine's **link** (`src/machines/links.ts`; a second dial-in replaces
+the first). The hopper is the HTTP/2 client on it, the client the server: `POST /herdr`, `/release`,
+`/load` unchanged. A link that ends is dialled again (1 s … 30 s); a fresh dial-in is probed at once, not
+at the next 30 s. A removed machine's key finds no client target: refused, 401.
+
+**Reach.** Whatever reaches the UI reaches the dial-in: a box on the compose network as `hopper:<port>`
+(the compose file's `HOPPER_LAN_NAMES` and `HOPPER_LAN_PEERS` defaults), the computer through the
+published loopback port, a laptop through a LAN name or the public URL. A reverse proxy in front must pass
+the upgrade. Nothing listens on the machine.
+
+**Install** (`GET /client/install`, `scripts/client-install.sh`; `GET /client/release`, the release as
+JSON). Checks node ≥ 24 and herdr on `PATH`, writes the release to `~/.local/lib/hopper-client`, joins,
+writes the units `hopper-client` and `hopper-client-herdr` (session `hopper-client`) with `PATH` holding
+herdr's dir — herdr is called from `PATH`, never a configured path (#311) — and starts them. Without a
+systemd user session it prints the two commands to run. Re-running keeps the link key: the same machine.
+
+**Sandbox box** (`scripts/box/`, published by the image workflow as tags `box-<agent>` and
+`box-<agent>-sha-<commit>` of the public `hopper` package). One agent CLI (claude: the agent an executor
+drives on a client target; cursor-agent runs only here and on ssh targets), herdr from its installer, the
+client from `src/client`, user `agent`, Claude's first-run screens seeded, its auto-updater off (the root
+is read-only). Its entrypoint copies the client into the home volume once (a loaded release must persist),
+starts the herdr session, and runs the client — joining with `HOPPER_JOIN` the first time — again after
+each release load (exit 75). Its agent is signed in once, `<engine> exec -it hopper-box-claude claude`,
+and stays signed in in the volume. What the line confines: every capability dropped, no new privileges, a
+read-only root, nothing of the computer mounted, the compose network only (no published port). What it
+does not: its network reaches the internet (the agent's API, GitHub) — #315's open egress question.
+
+**Removed, no shim** (owner law: no backwards compatibility). The client's ssh tunnel (`tunnel.ts`),
+the relay (`relay.ts`), `scripts/attach-client.sh`, the client token variable (`tokenEnv`, `<dataDir>/
+clients/<name>.sock`) and the job-hopper rename's client step. Tenant migration 12 drops a `client`
+instance that names `tokenEnv`: its client still dials over ssh and can reach nothing; it is added again
+with one line. `src/client/ssh-options.ts` moved to `src/executors/` — only ssh targets use it now.
+
+**Residual risk.** The join code crosses the wire as the UI's session token does: over plain HTTP on a
+LAN an on-path attacker who sees it could join a machine of its own first (the real one is then refused,
+and the person sees a stranger in the view). Use the public URL over HTTPS beyond a trusted LAN. After
+joining, the link key exchange protects every call as the ssh tunnel did.
+
+**Verification.** `test/integration/machine-join.test.ts`: join with the line through the real daemon,
+online under its name, herdr calls in its session, a code used once, minted only behind an admin
+session, a taken name, a restart and a rename keeping the machine, a forged key and a removed machine
+refused, the install served. `test/client/link.test.ts` (the token), `test/adapters/client-transport.test.ts`
+(the link), `test/integration/client-release.test.ts` (releases over the link), `test/ui/machines.test.ts`
+(the lines), `test/store/tenant-migration-12.test.ts`.
 
 ## Client releases (issue #70, 2026-10-05)
 

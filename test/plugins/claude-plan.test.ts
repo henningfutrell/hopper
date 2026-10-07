@@ -279,7 +279,7 @@ describe('claude-plan on an attached machine (issue #139)', () => {
     await waitFor(() => (offline.state!().problem !== 'not read yet' ? true : undefined), { what: 'the first read' });
     expect(offline.state!().problem).toBe('machine laptop is offline');
 
-    const client = await create([{ id: 'laptop', label: 'laptop', maxLanes: 1, online: true, executors: [], client: { tokenEnv: 'T' } }]);
+    const client = await create([{ id: 'laptop', label: 'laptop', maxLanes: 1, online: true, executors: [], client: {} }]);
     await waitFor(() => (client.state!().problem !== 'not read yet' ? true : undefined), { what: 'the first read' });
     expect(client.state!().problem).toMatch(/client target/);
   });

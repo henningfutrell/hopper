@@ -4,6 +4,7 @@
 // through each user's host (integration tests call startApp, with doubles at the seams).
 import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { createMachineLinks } from './machines/links.ts';
 import { fileURLToPath } from 'node:url';
 import type { InstanceStore, Restarter, UpdateBuilder, Updater } from './domain/ports.ts';
 import type { User } from './domain/types.ts';
@@ -113,10 +114,12 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   const intervalMs = seams.pluginsConfigIntervalMs ?? PLUGINS_CONFIG_CHECK_MS;
   // The client release this hopper loads onto its client targets: the client files of the install it runs from (issue #70).
   const clientRelease = readRelease(join(APP_DIR, 'src', 'client'));
+  // The links of the machines dialled in (issue #308): the instance's, each keyed by user and machine key.
+  const links = createMachineLinks();
   const runtimes = createRuntimes({
     instance, logger,
     options: (user) => ({
-      config, seams: seamsOf(seams, user.id), env, clock, logger, clientRelease,
+      config, seams: seamsOf(seams, user.id), env, clock, logger, clientRelease, links,
       installedDir: installedDirOf(workDir), pluginsConfigIntervalMs: intervalMs, answerUrl,
       // A GitHub account connected from Sources is linked to its user under each realm of that
       // type (issue #214): signing in with it later lands in the same user. A link to another user stays.
@@ -196,6 +199,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     },
     port: () => port, sessionHours: config.uiSessionHours, signIn, signInEnvironment,
     lan: { names: config.lanNames, peers: config.lanPeers, publicUrl: config.publicUrl }, uiDir: seams.uiDir ?? UI_DIR,
+    client: { links, release: clientRelease, installScript: readFileSync(join(APP_DIR, 'scripts', 'client-install.sh'), 'utf8') },
   });
 
   // Before listening: the boot after an update records update.applied before anything is answered.
@@ -224,6 +228,8 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     stop() {
       stopped ??= (async () => {
         updater.stop();
+        // A link is an upgraded socket: the server does not track it, so it would hold the close open.
+        links.closeAll();
         await server.close();
         await runtimes.stop();
         instance.close();

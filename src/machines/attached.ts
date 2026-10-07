@@ -40,11 +40,13 @@ interface AttachedOptions {
 export function createAttachedMachineSource(o: AttachedOptions & {
   machine: () => AttachedMachine;
   probe: () => Promise<MachineProbe>;
+  /** When the machine last reached the hopper itself (a client target dialling in, issue #308): a later one is probed at once. */
+  reachedAt?: () => number;
 }): MachineSource {
   const name = o.machine().name;
   const reached = (): string => {
     const m = o.machine();
-    return 'docker' in m ? `docker ${m.docker}` : 'client' in m ? 'client, over its reverse tunnel' : `ssh ${m.ssh}`;
+    return 'docker' in m ? `docker ${m.docker}` : 'client' in m ? 'client, dialled in' : `ssh ${m.ssh}`;
   };
   const down = (): string => {
     const m = o.machine();
@@ -68,7 +70,7 @@ export function createAttachedMachineSource(o: AttachedOptions & {
   };
 
   function probe(): void {
-    if (inFlight || now() - lastProbe < every) return;
+    if (inFlight || (now() - lastProbe < every && !((o.reachedAt?.() ?? 0) > lastProbe))) return;
     inFlight = true;
     lastProbe = now();
     o.probe().then(
@@ -83,7 +85,7 @@ export function createAttachedMachineSource(o: AttachedOptions & {
       const m = o.machine();
       const base: MachineSnapshot = { id: m.name, label: m.label ?? m.name, maxLanes: m.lanes, online, executors: [...m.executors], ...(home ? { home } : {}) };
       if ('docker' in m) return [{ ...base, docker: m.docker }];
-      if ('client' in m) return [{ ...base, client: { tokenEnv: m.client.tokenEnv, ...clientRelease } }];
+      if ('client' in m) return [{ ...base, client: { ...clientRelease } }];
       return [{ ...base, ssh: m.ssh, ...(m.herdr ? { herdr: { session: m.session } } : {}) }];
     },
   };
@@ -156,19 +158,26 @@ export function probeContainer(o: { container: string; dockerHost: () => string;
 /**
  * How the hopper reaches its attached machines (issue #74: the machine-source context's `target`): one
  * source per machine. A machine keeps its source — and what its probe knows — while only its lanes,
- * executors or label change; another ssh target, session, container or token variable is
+ * executors or label change; another ssh target, session, container or machine key is
  * another machine, probed afresh.
  */
-export function createTargetPool(o: AttachedOptions & { probe: (machine: AttachedMachine) => Promise<MachineProbe> }): (machine: AttachedMachine) => MachineSource {
+export function createTargetPool(o: AttachedOptions & {
+  probe: (machine: AttachedMachine) => Promise<MachineProbe>;
+  /** When a machine last reached the hopper itself (createAttachedMachineSource's `reachedAt`). */
+  reachedAt?: (machine: AttachedMachine) => number;
+}): (machine: AttachedMachine) => MachineSource {
   const known = new Map<string, { source: MachineSource; current: AttachedMachine }>();
   const identity = (m: AttachedMachine): string => JSON.stringify('docker' in m ? [m.name, 'docker', m.docker]
-    : 'client' in m ? [m.name, 'client', m.client.tokenEnv] : [m.name, m.ssh, m.herdr, m.session]);
+    : 'client' in m ? [m.name, 'client', m.client.key] : [m.name, m.ssh, m.herdr, m.session]);
   return (m) => {
     const key = identity(m);
     let e = known.get(key);
     if (!e) {
       const fresh = { current: m } as { source: MachineSource; current: AttachedMachine };
-      fresh.source = createAttachedMachineSource({ ...o, machine: () => fresh.current, probe: () => o.probe(fresh.current) });
+      const { reachedAt, ...rest } = o;
+      fresh.source = createAttachedMachineSource({
+        ...rest, machine: () => fresh.current, probe: () => o.probe(fresh.current), ...(reachedAt ? { reachedAt: () => reachedAt(fresh.current) } : {}),
+      });
       known.set(key, (e = fresh));
     }
     e.current = m;

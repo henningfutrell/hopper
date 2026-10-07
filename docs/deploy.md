@@ -18,7 +18,7 @@ with Podman** ("In containers, with Podman"); the host install is the other way.
 | Plugins | Optional. `HOPPER_PLUGIN_DIR` (plugins put there by hand; a container mounts it read-only) and `HOPPER_PLUGIN_STORE` (a git repository the UI installs plugins from — this repository is one: docs/plugins.md). Store installs are kept in the database and restored into the work dir at start: they need no plugin dir and no volume. |
 | Config | the plugins, rules and sign-in configs and the webhook subscriptions, all in the database, all edited in the UI (Settings → Plugins, Settings → Question gates, Settings → Sign-in, Settings → Webhooks); no config file. The first boot writes the built-in plugins config. |
 | GitHub | the gh CLI logged in as the owner (default; from the UI, Sources → Log in to GitHub — design.md "gh login"), or a GitHub App the owner creates for this hopper with `scripts/create-github-app.sh` (its key in `GITHUB_APP_PRIVATE_KEY`). Each hopper has its own App and key; there is no shared one. Setting up either: `README.md` "Connect GitHub". |
-| Where jobs run | machines: this host's herdr session (`hopper-herdr`; not in a container, issue #141), and attached machines, instances in the plugins config's machine sources (Settings → Plugins → Machine sources, or the Machines view) — `ssh` targets, `client` targets, `docker` container targets. Setting each one up, step by step: `README.md` "Add machines". |
+| Where jobs run | machines: this host's herdr session (`hopper-herdr`; not in a container, issue #141), and attached machines, instances in the plugins config's machine sources (Settings → Plugins → Machine sources, or the Machines view) — `client` targets (a computer or a sandbox box, joined with one line), `ssh` targets, `docker` container targets. Setting each one up, step by step: `README.md` "Add machines". |
 
 `hopper` is the operator CLI (`hopper config …`, `hopper users`, `hopper user add`, `hopper user transfer`); it needs `HOPPER_DATABASE_URL` (or `_FILE`) and nothing else. `hopper help` lists its commands; `node src/main.ts --help` lists every daemon setting with its default.
 
@@ -58,15 +58,15 @@ There is no bootstrap login: a new hopper creates no user, no password and no lo
 - **The container is not a machine** (issue #141). The image sets `HOPPER_LOCAL_MACHINE=false`: no
   `local` machine, and the boot removes one an earlier version wrote into the plugins config. Jobs run on
   attached machines (`README.md` "Add machines"); the image carries herdr's CLI for them. The Machines
-  view offers no **Add this machine** here. To run jobs on the computer the container runs on, attach
-  it over ssh like any other, with nothing set up inside the container (issue #293: the container may
-  be ephemeral, so nothing leans on a `~/.ssh` there): on the computer, sshd running and herdr
-  installed. In **Attach a machine over ssh**, type the ssh target `you@host.containers.internal`
-  (Podman; Docker: `you@host.docker.internal`, which on Linux needs
-  `extra_hosts: ["host.docker.internal:host-gateway"]` on the hopper service), add the line the form
-  shows — the hopper's own key, kept in the database — to `~/.ssh/authorized_keys` on the computer,
-  and confirm the host key fingerprint the form shows after checking it there
-  (`ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`).
+  view offers no **Add this machine** here. To run jobs on the computer the container runs on, use
+  **Add machine** → *A computer*, and run the line it shows there (issue #308, `README.md` "A computer
+  or a sandbox box: one line"): the computer dials in to the published port, so nothing is set up
+  inside the container and nothing leans on a `~/.ssh` (issue #293). *A sandbox box* starts a
+  locked-down container on the compose network `hopper_default`, which reaches the hopper as
+  `http://hopper:<port>` — the compose file's `HOPPER_LAN_NAMES` and `HOPPER_LAN_PEERS` defaults let it
+  through. Attaching over ssh (`you@host.containers.internal`, Docker `you@host.docker.internal`) stays
+  for a computer that cannot run the client. A reverse proxy in front of a public hopper must pass the
+  dial-in's HTTP upgrade (`Upgrade: hopper-client/1`) to `/client/connect`.
 - **Sign-ins.** GitHub: the UI's Sources view → **Log in to GitHub**, once (gh's device flow, run by the
   hopper; no terminal). Claude Code: `podman compose exec hopper claude` (`/login`), once. Both are kept
   in the home volume. No `-it`: `podman compose exec` is interactive with a terminal by default, and

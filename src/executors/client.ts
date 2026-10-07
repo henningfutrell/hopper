@@ -1,13 +1,11 @@
-// The hopper's side of a client target (design.md "Client targets", "Target authentication", issue
-// #59). The client dials this machine over ssh; its key's forced command (src/client/relay.ts) opens
-// <dataDir>/clients/<machine>.sock and pipes the daemon's one connection to the client, which serves
-// HTTP/2 on it: the reverse tunnel. A herdr call is `POST /herdr` on that HTTP/2 session, signed with
-// the client's token (src/client/signature.ts); an answer the client did not sign is not believed.
-// `POST /release` and `POST /load` are the client release's calls (src/client/release.ts, issue #70).
-// One session per socket in this process: the relay takes one connection per tunnel.
+// The hopper's side of a client target (design.md "Client targets", "Target authentication", "Joining a
+// machine", issues #59, #308). The client dials in to the hopper's own URL; the upgraded socket is its
+// link (src/machines/links.ts), and the client serves HTTP/2 on it. A herdr call is `POST /herdr` on that
+// HTTP/2 session, signed with the client token (src/client/signature.ts); an answer the client did not
+// sign is not believed. `POST /release` and `POST /load` are the client release's calls (src/client/
+// release.ts, issue #70). One session per link: a client that dials in again is a new link.
 import { connect, type ClientHttp2Session } from 'node:http2';
-import { connect as connectSocket } from 'node:net';
-import { join } from 'node:path';
+import type { Duplex } from 'node:stream';
 import type { ClientRelease } from '../client/release.ts';
 import { REQUEST_HEADER, RESPONSE_HEADER, checkToken, nonceOf, signRequest, verifyResponse } from '../client/signature.ts';
 
@@ -15,45 +13,32 @@ import { REQUEST_HEADER, RESPONSE_HEADER, checkToken, nonceOf, signRequest, veri
 export interface ClientTransport {
   /** The machine's name in the plugins config. */
   machine: string;
-  /** The tunnel's socket on this machine. */
-  socket: string;
-  /** The client's token, from the runtime; read at each call. */
+  /** Its link now: the socket it dialled in on; undefined while it is not dialled in. */
+  link: () => Duplex | undefined;
+  /** The client token, derived from the hopper's link key and the machine key; read at each call. */
   token: () => string;
 }
 
 export interface ClientAnswer { code: number; stdout: string; stderr: string }
 
-const NAME = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
-
-/** Where a client target's tunnel opens its socket: `<dataDir>/clients/<machine>.sock`. */
-export function clientSocket(dataDir: string, machine: string): string {
-  if (!NAME.test(machine)) throw new Error(`bad client target name: ${JSON.stringify(machine)}`);
-  return join(dataDir, 'clients', `${machine}.sock`);
-}
-
 /** Thrown for anything but an answer the client signed: not connected, refused, or not the client. */
 export class ClientError extends Error {}
 
-const sessions = new Map<string, Promise<ClientHttp2Session>>();
+const sessions = new WeakMap<Duplex, Promise<ClientHttp2Session>>();
 
-/** The HTTP/2 session through the tunnel's socket, opened once and dropped when it ends. */
+/** The HTTP/2 session on the machine's link, opened once per link. */
 function sessionOn(t: ClientTransport): Promise<ClientHttp2Session> {
-  const open = sessions.get(t.socket);
+  const link = t.link();
+  if (!link || link.destroyed) return Promise.reject(new ClientError(`client ${t.machine} is not dialled in`));
+  const open = sessions.get(link);
   if (open) return open;
   const opened = new Promise<ClientHttp2Session>((resolve, reject) => {
-    const s = connect('http://hopper-client', { createConnection: () => connectSocket(t.socket) });
-    const drop = (): void => { if (sessions.get(t.socket) === opened) sessions.delete(t.socket); };
+    const s = connect('http://hopper-client', { createConnection: () => link });
     s.once('connect', () => resolve(s));
-    s.once('error', (e: NodeJS.ErrnoException) => {
-      drop();
-      reject(e.code === 'ENOENT' || e.code === 'ECONNREFUSED'
-        ? new ClientError(`client ${t.machine} is not connected (no tunnel at ${t.socket})`)
-        : new ClientError(`client ${t.machine}: ${e.message}`));
-    });
-    s.once('close', drop);
-    s.once('goaway', drop);
+    s.once('error', (e) => reject(new ClientError(`client ${t.machine}: ${e.message}`)));
+    s.once('close', () => sessions.delete(link));
   });
-  sessions.set(t.socket, opened);
+  sessions.set(link, opened);
   return opened;
 }
 
@@ -95,14 +80,15 @@ async function clientCall<T>(t: ClientTransport, path: string, payload: unknown,
     req.setEncoding('utf8');
     req.on('data', (c: string) => { text += c; });
     req.on('end', () => {
+      if (status === 0) return reject(new ClientError(`client ${t.machine}: no answer: its link closed`));
       if (status === 401) return reject(new ClientError(`client ${t.machine} refused the hopper (401): ${text.slice(0, 200)}`));
       if (!verifyResponse(token, sig, nonceOf(auth), status, text)) {
-        return reject(new ClientError(`client ${t.machine}: the answer at its tunnel did not prove itself (no valid client signature)`));
+        return reject(new ClientError(`client ${t.machine}: the answer on its link did not prove itself (no valid client signature)`));
       }
       if (status !== 200) return reject(new ClientError(`client ${t.machine}: ${status} ${text.slice(0, 200)}`));
       try { resolve(JSON.parse(text) as T); } catch { reject(new ClientError(`client ${t.machine}: answer is not JSON`)); }
     });
-    req.on('close', () => { if (!status) reject(new ClientError(`client ${t.machine}: no answer within ${timeoutMs + 5000} ms, or the tunnel closed`)); });
+    req.on('close', () => { if (!status) reject(new ClientError(`client ${t.machine}: no answer within ${timeoutMs + 5000} ms, or its link closed`)); });
     req.on('error', (e) => reject(new ClientError(`client ${t.machine}: ${e.message}`)));
     req.end(body);
   });

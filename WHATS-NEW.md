@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- Adding a machine is now one copied line: Machines, then Add machine, then pick a computer or a locked-down sandbox box, and run the line it shows there. The machine joins by itself and shows up online, with no ssh setup and nothing to type into the hopper.
 - The throwaway machines for each coding agent now come online when the hopper runs in a container on the same computer, and stay online when you start them again.
 - Editing a machine no longer asks where herdr is installed: the hopper finds herdr on that machine by itself.
 - A job that failed now has a Run again button in the Ended list: its issue is picked up again and a new job starts, with no labels to remove by hand.
