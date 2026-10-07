@@ -8,11 +8,12 @@
 // is used from its next sync, for its jobs too; a removed one pulls nothing more, is paused as REMOVED,
 // and goes once each of its jobs ended and its end is reported — a running job is never ended for it.
 
-import { SourceError, SourceRefused } from '../domain/ports.ts';
-import type { Clock, JobSource, RerunResult, SourceHost, SourceRegistry, SourceReport } from '../domain/ports.ts';
+import { SourceError } from '../domain/ports.ts';
+import type { Clock, JobSource, SourceHost, SourceRegistry, SourceReport } from '../domain/ports.ts';
 import { TERMINAL_STATUSES, isRerunnable } from '../domain/types.ts';
 import { REMOVED, followSources, newSlot, type NotRerun, type Slot } from './sync-slots.ts';
 import type { DomainEvent, Job, SourceStatus } from '../domain/types.ts';
+import { createRerun } from './rerun.ts';
 
 export { REMOVED } from './sync-slots.ts';
 
@@ -202,24 +203,6 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     }
   }
 
-  /** The newest failed job of each item, its failure reported: the ones Run again may be asked of. */
-  const rerunCandidates = (slot: Slot) => jobsOf(slot).filter((j) =>
-    j.status === 'failed' && flagsOf(j).finalReported && store.jobs.getBySourceKey(j.source!.key)?.id === j.id);
-
-  /** Each candidate's item closed or open, as its source tells it, kept on the job (issue #362). */
-  async function markClosedItems(slot: Slot) {
-    if (!slot.source.closedItems) return;
-    const jobs = rerunCandidates(slot);
-    if (jobs.length === 0) return;
-    const answers = await slot.source.closedItems(jobs, new Set(jobs.filter((j) => flagsOf(j).itemClosed).map((j) => j.id)));
-    for (const [jobId, closed] of answers) setItemClosed(jobId, closed);
-  }
-
-  function setItemClosed(jobId: string, closed: boolean) {
-    const job = store.jobs.get(jobId);
-    if (job && flagsOf(job).itemClosed !== closed) write(jobId, { ...flagsOf(job), itemClosed: closed });
-  }
-
   async function pull(slot: Slot): Promise<{ seen: number; created: number }> {
     const items = await slot.source.discover();
     let created = 0;
@@ -275,7 +258,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
         .filter((j) => !isTerminal(j) || !flagsOf(j).finalReported || !flagsOf(j).claimReported)
         .map((j) => queueReport(slot, j.id)));
       await drain();
-      if (paused === undefined) await markClosedItems(slot);
+      if (paused === undefined) await rerunning.markClosedItems(slot.source, jobsOf(slot));
       st.state = 'ok';
       st.lastOkAt = clock.now().toISOString();
       delete st.lastError;
@@ -323,45 +306,17 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
 
   const emit = (slot: Slot) => { for (const l of listeners) l({ ...slot.status }); };
 
-  const conflict = (jobId: string, why: string): RerunResult => ({ ok: false, reason: 'conflict', message: `job ${jobId} cannot run again: ${why}` });
-
-  /** Why a failed job's item cannot run again now, or its source's slot (issue #313). */
-  function rerunCheck(jobId: string): RerunResult | Slot {
-    const job = store.jobs.get(jobId);
-    if (!job) return { ok: false, reason: 'not_found', message: `job ${jobId} not found` };
-    if (job.status !== 'failed') return conflict(jobId, `it is ${job.status}, not failed`);
-    const slot = slots.get(job.source?.source ?? '');
-    if (!slot || !running) return conflict(jobId, 'its source is not running');
-    if (store.jobs.getBySourceKey(job.source!.key)?.id !== jobId) return conflict(jobId, 'a newer job of its item exists');
-    if (!flagsOf(job).finalReported) return conflict(jobId, 'its failure is not reported to its source yet');
-    return slot;
-  }
-
-  async function rerun(jobId: string): Promise<RerunResult> {
-    const checked = rerunCheck(jobId);
-    if (!('source' in checked)) return checked;
-    const slot = checked;
-    let result: RerunResult = { ok: false, reason: 'source', message: 'not sent' };
-    // On the job's report chain, so it never overlaps the job's own reports.
-    await enqueue(jobId, async () => {
-      const again = rerunCheck(jobId);
-      if (!('source' in again)) { result = again; return; }
-      try {
-        await slot.source.report({ kind: 'rerun', job: store.jobs.get(jobId)! });
-        result = { ok: true, job: host.rerun(jobId) };
-      } catch (e) {
-        if (e instanceof SourceRefused) { setItemClosed(jobId, true); result = conflict(jobId, e.message); return; }
-        result = { ok: false, reason: 'source', message: `its source could not take the re-run: ${message(e)}` };
-      }
-    });
-    if (result.ok) void runSync(slot);
-    return result;
-  }
+  const rerunning = createRerun({
+    host, flagsOf, enqueue,
+    sourceOf: (job) => (running ? slots.get(job.source?.source ?? '')?.source : undefined),
+    writeFlags: (jobId, flags) => write(jobId, { ...flagsOf(store.jobs.get(jobId)!), ...flags }),
+    syncSoon: (source) => { const slot = slots.get(source.name); if (slot) void runSync(slot); },
+  });
 
   return {
     statuses: () => [...slots.values()].map((s) => ({ ...s.status })),
     onStatus(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; },
-    rerun,
+    rerun: rerunning.rerun,
     start() {
       if (running) return;
       running = true;
