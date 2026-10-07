@@ -14,7 +14,7 @@ const ON = process.env.HOPPER_TEST_SANDBOX_BOX === '1';
 const ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const ENGINE = process.env.HOPPER_TEST_ENGINE ?? 'docker';
 const IMAGE = 'localhost/hopper-test';
-const BOX = 'hopper-box-claude';
+const BOX = 'hopper-sandbox-claude';
 const docker = (args: string[]): string => execFileSync(ENGINE, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 
 let t: TestApp | undefined;
