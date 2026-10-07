@@ -6489,7 +6489,7 @@ once. Resolving on the target (#323), refusing the home (#314) and failing an un
   `spec.routedBy.set` (additive in `job.queued`, still v1) and shown on the job ("routed by …: machine
   laptop, work tree ~/code/app"). Edited in the Routing view.
 - **The order.** The executor (`resolvePayload`, `src/executors/herdr/payload.ts`; herdr-claude and
-  cursor-agent) takes the first that is set: the job's own `cwd` — a routing rule's `workTree`, else its
+  the print agents — cursor-agent, codex, opencode, omp) takes the first that is set: the job's own `cwd` — a routing rule's `workTree`, else its
   repository's `repoPaths` entry, else one the item came with —, then the lane's machine's `workTree`,
   then the payload's `defaultCwd` (its source's), then the executor's own `cwd`. Then `workTreeOn`
   resolves `~` on that machine and refuses its home, as before.
