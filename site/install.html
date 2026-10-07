@@ -139,7 +139,10 @@ UI's <strong>Machines</strong> view, and keep a clone of the repository there.</
 <li><p><strong>Choose it for jobs.</strong> In the UI, open <strong>Sources</strong>, and under
 <strong>GitHub account</strong> tick the repository and press <strong>Save</strong>. The hopper takes jobs only
 from the repositories chosen there, and only from issues you opened. Nothing to restart. If the repository is
-not listed, the hopper's app is not installed on it: the panel links to install it.</p>
+not listed, the hopper's app is not installed on it: the panel links to install it on your account or an
+organization (<a href="https://github.com/apps/hopper-qm/installations/new">github.com/apps/hopper-qm</a>),
+where you pick the repositories it may reach. It asks to read and write issues, pull requests and
+contents, and to read metadata; nothing else.</p>
 <p class="note">Where a job runs: the machine's work tree, unless you set <code>repoPaths</code> on the
 <code>github-account</code> source (Settings → Plugins → Job sources), for example
 <code>{ your-login/your-repo: ~/your-repo }</code>.</p></li>

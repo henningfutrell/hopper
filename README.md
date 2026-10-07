@@ -156,8 +156,13 @@ Signing in connects your GitHub: your issues labelled `hopper` become your jobs 
 choose under **Sources → GitHub account** — and your jobs act as you on GitHub, with the app marked on
 what they do. Until you choose at least one repository, no job comes in.
 
-The hopper's app reaches only the repositories it is **installed** on: **Sources → GitHub account** says
-where it is installed and links to install it or choose repositories. That account is your sign-in, so
+The hopper's app reaches only the repositories it is **installed** on. It is public: install it on your
+account or any organization you administer at https://github.com/apps/hopper-qm/installations/new, and
+pick *All repositories* or *Only select repositories*. It asks to read and write issues (the jobs and their
+labels), pull requests (a job's pull request) and contents (a job's branch), and to read metadata —
+nothing else, and no webhook. **Sources → GitHub account** says where it is installed, what it may do
+there, and links to choose its repositories or add it to another account or organization; then tick the
+repositories jobs may use. That account is your sign-in, so
 the panel offers **Sign out**, not a disconnect; to stop taking jobs from GitHub and stay signed in,
 switch off the `github-account` source in **Plugins**. Revoke the app for good at
 https://github.com/settings/applications.
@@ -174,7 +179,8 @@ through GitHub** there forgets the account and its token and keeps you signed in
 *GitHub is not connected* and takes nothing.
 
 The app ships with the hopper as a public client id — no secret: the device flow needs none. GitHub
-Enterprise, or an app of your own, is set in the environment: `HOPPER_GITHUB_URL`,
+Enterprise, or an app of your own instead of the hopper's (an organization that wants its own, a
+fork), is set in the environment: `HOPPER_GITHUB_URL`,
 `HOPPER_GITHUB_CLIENT_ID`, `HOPPER_GITHUB_APP_SLUG` (how to register one: [docs/sign-in.md](docs/sign-in.md#github)).
 
 ### A GitHub App of your own

@@ -31,7 +31,7 @@ async function all<T>(get: (page: number) => Promise<unknown>, pick: (data: unkn
   }
 }
 
-interface Installation { id: number; account?: { login?: string } | null; html_url?: string; repository_selection?: string }
+interface Installation { id: number; account?: { login?: string } | null; html_url?: string; repository_selection?: string; permissions?: Record<string, string> }
 
 /** The installations of the app the token's user can see, each with the repositories it reaches there that the user can see. */
 export async function installations(app: HopperApp, token: string): Promise<AppInstallation[]> {
@@ -44,6 +44,7 @@ export async function installations(app: HopperApp, token: string): Promise<AppI
     return {
       account: i.account!.login!, repositorySelection: i.repository_selection === 'selected' ? 'selected' : 'all', repositories,
       ...(i.html_url ? { settingsUrl: i.html_url } : {}),
+      ...(i.permissions ? { permissions: i.permissions } : {}),
     } satisfies AppInstallation;
   }));
 }

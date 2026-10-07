@@ -253,8 +253,13 @@ GitHub realm&#39;s role rules grant (Settings → Sign-in: usernames, or numeric
 (set <code>authors</code> on the <code>github-account</code> source in <strong>Plugins</strong> to change that), in the repositories you
 choose under <strong>Sources → GitHub account</strong> — and your jobs act as you on GitHub, with the app marked on
 what they do. Until you choose at least one repository, no job comes in.</p>
-<p>The hopper&#39;s app reaches only the repositories it is <strong>installed</strong> on: <strong>Sources → GitHub account</strong> says
-where it is installed and links to install it or choose repositories. That account is your sign-in, so
+<p>The hopper&#39;s app reaches only the repositories it is <strong>installed</strong> on. It is public: install it on your
+account or any organization you administer at <a href="https://github.com/apps/hopper-qm/installations/new">https://github.com/apps/hopper-qm/installations/new</a>, and
+pick <em>All repositories</em> or <em>Only select repositories</em>. It asks to read and write issues (the jobs and their
+labels), pull requests (a job&#39;s pull request) and contents (a job&#39;s branch), and to read metadata —
+nothing else, and no webhook. <strong>Sources → GitHub account</strong> says where it is installed, what it may do
+there, and links to choose its repositories or add it to another account or organization; then tick the
+repositories jobs may use. That account is your sign-in, so
 the panel offers <strong>Sign out</strong>, not a disconnect; to stop taking jobs from GitHub and stay signed in,
 switch off the <code>github-account</code> source in <strong>Plugins</strong>. Revoke the app for good at
 <a href="https://github.com/settings/applications">https://github.com/settings/applications</a>.</p>
@@ -268,7 +273,8 @@ GitHub</strong>, the same code at the same address. That account is then linked 
 through GitHub</strong> there forgets the account and its token and keeps you signed in; the source then says
 <em>GitHub is not connected</em> and takes nothing.</p>
 <p>The app ships with the hopper as a public client id — no secret: the device flow needs none. GitHub
-Enterprise, or an app of your own, is set in the environment: <code>HOPPER_GITHUB_URL</code>,
+Enterprise, or an app of your own instead of the hopper&#39;s (an organization that wants its own, a
+fork), is set in the environment: <code>HOPPER_GITHUB_URL</code>,
 <code>HOPPER_GITHUB_CLIENT_ID</code>, <code>HOPPER_GITHUB_APP_SLUG</code> (how to register one: <a href="https://github.com/henningfutrell/hopper/blob/main/docs/sign-in.md#github">docs/sign-in.md</a>).</p>
 <h3 id="a-github-app-of-your-own">A GitHub App of your own</h3>
 <p>You create the App; it lives on your GitHub account (or your organization), and its key on your
