@@ -9,7 +9,7 @@ import type {
   Clock, EscalationLevel, Executor, ExecutorRegistry, GhLogin, JobSource, PluginsView, QuestionService, Router, SettableUsageSource, SourceRegistry,
   UserStore, WebhookDispatcher,
 } from '../domain/ports.ts';
-import type { AttachedMachine, ConnectedAccountProvider, HostKeyOffer, Job, Question, SourceStatus, User } from '../domain/types.ts';
+import type { AttachedMachine, ConnectedAccountProvider, HostKeyOffer, Job, Question, User } from '../domain/types.ts';
 import { IN_FLIGHT_STATUSES, isRerunnable } from '../domain/types.ts';
 import type { Config } from '../config.ts';
 import { createEngine, type Engine } from '../engine/index.ts';
@@ -32,13 +32,13 @@ import { unavailableExecutors } from '../plugins/executor-slot.ts';
 import { herdrClaudePlugin } from '../plugins/executor/herdr-claude/index.ts';
 import { localPlugin, startHerdrSession } from '../plugins/machine-source/local/index.ts';
 import { createPluginHost, type BuiltJobSource, type PluginHost } from '../plugins/index.ts';
+import { splitSources } from './job-sources.ts';
 import { githubAppPlugin } from '../plugins/job-source/github-app/index.ts';
 import { githubGhPlugin } from '../plugins/job-source/github-gh/index.ts';
 import { grokbotRoutinePlugin } from '../plugins/notifier/grokbot-routine/index.ts';
-import type { JobSourceInstance } from '../plugins/sdk.ts';
 import { createQuestionService } from '../questions/index.ts';
 import { runtimeSecrets } from '../secrets/runtime.ts';
-import { createGhLogin, createSourceSync, idleStatus, withFixedStatuses, type GitHubApi, type SourceSync } from '../sources/index.ts';
+import { createGhLogin, createSourceSync, withFixedStatuses, type GitHubApi, type SourceSync } from '../sources/index.ts';
 import { createConnectedAccounts, type ConnectedAccountsService } from '../connected-accounts/service.ts';
 import { installations, whoIs } from '../connected-accounts/identity.ts';
 import { renewal } from '../connected-accounts/renewal.ts';
@@ -153,20 +153,6 @@ function withSeams(seams: UserSeams) {
     if (p.id === 'grokbot-routine' && seams.grokbotBaseMs) return grokbotRoutinePlugin({ baseMs: seams.grokbotBaseMs });
     return p;
   });
-}
-
-/** The job sources the sync loop runs, and fixed /api/sources entries for the ones that do not. */
-type RunningSource = Extract<JobSourceInstance, { source: JobSource }>;
-
-function splitSources(built: BuiltJobSource[]): { running: RunningSource[]; fixed: SourceStatus[] } {
-  const running: RunningSource[] = [];
-  const fixed: SourceStatus[] = [];
-  for (const b of built) {
-    if (!b.instance) fixed.push(idleStatus(b.spec.name, b.spec.plugin, 'error', { error: b.reason }));
-    else if ('disabled' in b.instance) fixed.push(idleStatus(b.spec.name, b.instance.disabled.kind, 'disabled', { detail: b.instance.disabled.detail }));
-    else running.push(b.instance);
-  }
-  return { running, fixed };
 }
 
 /** A seam router (tests) answers as itself; the report stays the host's. */
