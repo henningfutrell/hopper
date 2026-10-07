@@ -18,6 +18,7 @@ describe('jobBoard', () => {
     const b = jobBoard(jobs, []);
     expect(b.waiting.map((j) => j.status).sort()).toEqual(['held', 'queued']);
     expect(b.waitingAnswer.map((j) => j.status)).toEqual(['waiting_answer']);
+    expect(b.operatorLed.map((j) => j.status)).toEqual(['operator_led']);
     expect(b.running.map((j) => j.status).sort()).toEqual(['claimed', 'running']);
     expect(b.ended.map((j) => j.status).sort()).toEqual(['cancelled', 'failed', 'finished', 'rejected']);
     expect(Object.values(b).flat()).toHaveLength(STATUSES.length);
