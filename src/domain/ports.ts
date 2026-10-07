@@ -361,18 +361,15 @@ export interface SourceItem {
 export type SourceSignal = { kind: 'cancel'; jobId: JobId; reason: string };
 
 /**
- * What happened to a job, reported back to its source: the claim and the end — and a re-run, the
- * user giving a failed job's item back to run again (issue #313): the source clears the job's end
- * (its marker) so it offers the item again. Progress and questions are not reported (a source is
- * not where the owner is asked).
+ * What happened to a job, reported back to its source: the claim and the end. Progress and questions
+ * are not reported (a source is not where the owner is asked). A re-run is not a report: `JobSource.rerun`.
  */
 export type SourceReport =
   | { kind: 'claimed'; job: Job }
   | { kind: 'finished'; job: Job }
   | { kind: 'failed'; job: Job }
   | { kind: 'cancelled'; job: Job }
-  | { kind: 'rejected'; job: Job }
-  | { kind: 'rerun'; job: Job };
+  | { kind: 'rejected'; job: Job };
 
 export interface JobSource {
   readonly name: string;
@@ -393,11 +390,17 @@ export interface JobSource {
   /**
    * Tell the source what happened. Returns the WHOLE new `job.sourceState.source` object
    * (it replaces the old one). Idempotent: a retry after a crash never writes twice (label
-   * writes are idempotent). A `rerun` the item cannot take (a closed issue) throws SourceRefused. Throws
-   * SourceError; `permanent: true` means never retry (404/410/403 on the item, oversized
+   * writes are idempotent). Throws SourceError; `permanent: true` means never retry (404/410/403 on the item, oversized
    * body), `false` means retry on a later sync.
    */
   report(report: SourceReport): Promise<Record<string, unknown>>;
+  /**
+   * Take an ended job's item back to run again (Run again, issues #313, #354): clear the job's end at
+   * the source so the new job can run and finish against the item — on GitHub, reopen a closed issue,
+   * drop the end labels, put the source label back — and answer the item as it stands now, for the new
+   * job. Throws SourceError. Absent: the source cannot run an item again on request.
+   */
+  rerun?(job: Job): Promise<SourceItem>;
   /**
    * Why a job that ended done is not complete (its work did not reach the item's completion, e.g. a
    * merged or an open pull request), or undefined when it is (issues #171, #187). Asked before the
@@ -412,15 +415,6 @@ export interface JobSource {
    * every failed job stays failed.
    */
   closedAsComplete?(job: Job): Promise<boolean>;
-  /**
-   * Of these failed jobs — each the newest of its item, its failure reported — those whose item is
-   * closed, where a `rerun` would be refused (issue #362). `known` holds the ones last answered closed:
-   * the source may keep that answer without asking again until it sees the item open. Asked by the sync
-   * loop after each discover; the answer is kept on each job as `sourceState.sync.itemClosed`, which the
-   * UI reads to offer Run again. True: closed; false: open; a job the source cannot tell about now is
-   * left out. Absent: no item is ever closed.
-   */
-  closedItems?(jobs: Job[], known: Set<JobId>): Promise<Map<JobId, boolean>>;
   /** The variables the job's processes run with to act through the source's connection (ExecutionContext.credentials); absent: none. */
   credentials?(job: Job): Promise<Record<string, string>>;
 }
@@ -433,17 +427,6 @@ export class SourceError extends Error {
     this.name = 'SourceError';
     this.permanent = permanent;
     if (status !== undefined) this.status = status;
-  }
-}
-
-/**
- * The source will not take this report as its item stands, and says why (issue #348: a re-run of a
- * closed issue). The user's to change at the source; never retried.
- */
-export class SourceRefused extends SourceError {
-  constructor(message: string) {
-    super(message, true, 409);
-    this.name = 'SourceRefused';
   }
 }
 
@@ -464,8 +447,13 @@ export interface SourceHost {
   finishClosedAsComplete(jobId: JobId): boolean;
   /** Replace sourceState in one tx that re-reads the job. */
   setSourceState(jobId: JobId, state: { sync?: Record<string, unknown>; source?: Record<string, unknown> }): void;
-  /** Its source took a re-run of this failed job (issue #313): emits job.rerun. The job stays as it ended. */
-  rerun(jobId: JobId): Job;
+  /**
+   * Its source gave this ended job's item back (issues #313, #354): the new job for `item`, created as
+   * `ingest` does (routing rules, the queue gate) with `rerunOf` the ended job, and job.rerun on the
+   * ended job, in one tx. The ended job stays as it ended. A newer job of the key that already exists
+   * is answered instead of a second one.
+   */
+  rerun(jobId: JobId, item: SourceItem, source: { name: string; kind: string }): Job;
 }
 
 /**
@@ -477,9 +465,9 @@ export interface SourceRegistry {
   statuses(): SourceStatus[];
   onStatus(listener: (status: SourceStatus) => void): () => void;
   /**
-   * Run a failed job's item again (a re-run, issue #313): its source is told (`rerun`) and syncs at once, so it offers
-   * the item again and a new job runs; the failed job is kept. Only the newest job of its item, once
-   * its failure was reported to the source.
+   * Run an ended job's item again (Run again, issues #313, #354): its source gives the item back
+   * (`JobSource.rerun`) and the new job is queued at once; it answers the new job. The ended job is kept.
+   * Only a failed or finished job, the newest of its item, once its end was reported to the source.
    */
   rerun(jobId: JobId): Promise<RerunResult>;
 }

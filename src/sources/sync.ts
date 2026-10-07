@@ -46,8 +46,6 @@ interface SyncFlags {
   claimReported?: boolean;
   finalReported?: boolean;
   cancelReason?: string;
-  /** The failed job's item is closed: Run again is refused (issue #362). Set by closedItems or a refused re-run. */
-  itemClosed?: boolean;
   permanentErrors?: Array<{ kind: string; message: string }>;
 }
 
@@ -258,7 +256,6 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
         .filter((j) => !isTerminal(j) || !flagsOf(j).finalReported || !flagsOf(j).claimReported)
         .map((j) => queueReport(slot, j.id)));
       await drain();
-      if (paused === undefined) await rerunning.markClosedItems(slot.source, jobsOf(slot));
       st.state = 'ok';
       st.lastOkAt = clock.now().toISOString();
       delete st.lastError;
@@ -309,7 +306,6 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
   const rerunning = createRerun({
     host, flagsOf, enqueue,
     sourceOf: (job) => (running ? slots.get(job.source?.source ?? '')?.source : undefined),
-    writeFlags: (jobId, flags) => write(jobId, { ...flagsOf(store.jobs.get(jobId)!), ...flags }),
     syncSoon: (source) => { const slot = slots.get(source.name); if (slot) void runSync(slot); },
   });
 

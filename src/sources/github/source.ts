@@ -8,7 +8,6 @@
 // installed on, and tells hopper comments by the bot author (marker secondary). Neither searches.
 
 import type { Clock, JobSource, SourceItem } from '../../domain/ports.ts';
-import type { JobId } from '../../domain/types.ts';
 import { CONNECTED_VIA, TERMINAL_STATUSES, type Account } from '../../domain/types.ts';
 import type { GitHubApi, GitHubIssue } from './api.ts';
 import type { GitHubSourceConfig } from '../config.ts';
@@ -19,7 +18,7 @@ import type { SourceMode } from './context.ts';
 import { discoverIssues } from './discover.ts';
 import type { BotLogin } from './identity.ts';
 import { priorityOf, readProjects } from './priority.ts';
-import { reportToGitHub } from './report.ts';
+import { reportToGitHub, takeBack } from './report.ts';
 
 /** What the source reads of its config. */
 export type GitHubSourceSettings = Pick<GitHubSourceConfig,
@@ -65,8 +64,6 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   let installedRepos: string[] = [];
   let nothingToScan = false;
   const labelledRepos = new Set<string>();
-  /** Every open labelled issue the last discover listed (issue #362). */
-  let listed = new Set<string>();
 
   /** App mode: the bot, once known (the app file, or the first sync). */
   let knownBot: string | undefined;
@@ -160,14 +157,12 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
         repoErrors = {};
         skippedClaimedWithoutJob = [];
         projectErrors = {};
-        listed = new Set();
         lastDiscoverAt = o.clock.now().toISOString();
         return [];
       }
       const found = await discoverIssues(api, config, repos, o.knownKeys);
       repoErrors = found.repoErrors;
       skippedClaimedWithoutJob = found.skippedClaimedWithoutJob;
-      listed = new Set(found.listed);
       const projects = await readProjects(api, config, found.issues);
       projectErrors = projects.errors;
       const urls = found.issues.map((i) => i.url);
@@ -188,29 +183,17 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     report(r) {
       return reportToGitHub({ api, labelledRepos }, r);
     },
+    async rerun(job) {
+      const issue = await takeBack({ api, labelledRepos }, config.label, job);
+      const bot = await botLogin();
+      const projects = await readProjects(api, config, [issue]);
+      return toItem(issue, new Set(), new Set(), priorityOf(issue, config, projects.views.get(issue.repo)), bot);
+    },
     notComplete(job) {
       return notComplete(api, job, config.completion);
     },
     closedAsComplete(job) {
       return closedAsComplete(api, job);
-    },
-    // A failed job's issue keeps its `hopper` label, so the discover listing shows it while it is open;
-    // only one it did not show is read, and one known closed is not read again until listed (issue #362).
-    async closedItems(jobs, known) {
-      const answers = new Map<JobId, boolean>();
-      for (const job of jobs) {
-        const { key, repo, number } = job.source!;
-        if (listed.has(key)) answers.set(job.id, false);
-        else if (known.has(job.id)) answers.set(job.id, true);
-        else if (repo && number) {
-          try {
-            answers.set(job.id, (await api.getIssue(repo, number)).state === 'closed');
-          } catch (err) {
-            checkErrors[job.id] = (err as Error).message; // cannot tell now: asked again next sync
-          }
-        }
-      }
-      return answers;
     },
   };
 }

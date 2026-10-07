@@ -10,8 +10,6 @@ import { ADDRESS_PREFIX, LABEL_BACKBURNER, LABEL_CLAIMED, LABEL_DONE, LABEL_FAIL
 
 export interface DiscoverResult {
   issues: GitHubIssue[];
-  /** Every open labelled issue listed, eligible or not: one listed is open (issue #362). */
-  listed: string[];
   repoErrors: Record<string, string>;
   skippedClaimedWithoutJob: string[];
 }
@@ -66,7 +64,6 @@ export async function discoverIssues(
   const skipped = claimed.filter((url) => !known.has(url));
   return {
     issues: candidates.filter((i) => !skipped.includes(i.url)),
-    listed: issues.map((i) => i.url),
     repoErrors,
     skippedClaimedWithoutJob: skipped,
   };

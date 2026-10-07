@@ -64,26 +64,32 @@ function problemWith(c: EngineContext, item: SourceItem, spec: JobSpec): string 
 
 export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'cancel'>): SourceHost {
   const { store } = c;
+
+  /** The new job for an item, or null when its key's newest job is not re-runnable. A key's earlier job is its `rerunOf`. */
+  function ingest(item: SourceItem, source: { name: string; kind: string }): Job | null {
+    const routedBy = route(c, item, source);
+    const priority = clamp(routedBy?.set.priority ?? item.priority);
+    const ref = refFor(item, source);
+    const spec = specFor(item, source, priority, routedBy);
+    const invalid = problemWith(c, item, spec);
+    return store.tx((): Job | null => {
+      const known = store.jobs.getBySourceKey(item.key);
+      if (known && !isRerunnable(known)) return null;
+      const job = store.jobs.create(spec, priority, ref);
+      store.events.append({ type: 'job.queued', jobId: job.id, data: { spec, priority, source: ref } });
+      // Every new job waits at the queue gate (issue #159) until the pre-sort or the user accepts it.
+      if (invalid === undefined) return store.jobs.update(job.id, { accepted: false, ...(known ? { rerunOf: known.id } : {}) });
+      // Created and failed together: the source reports claimed, then failed — once.
+      store.events.append({ type: 'job.failed', jobId: job.id, data: { error: invalid } });
+      return store.jobs.update(job.id, { status: 'failed', error: invalid, finishedAt: nowIso(c), ...(known ? { rerunOf: known.id } : {}) });
+    });
+  }
+
   return {
     store,
 
     ingest(item, source) {
-      const known = store.jobs.getBySourceKey(item.key);
-      if (known && !isRerunnable(known)) return null;
-      const routedBy = route(c, item, source);
-      const priority = clamp(routedBy?.set.priority ?? item.priority);
-      const ref = refFor(item, source);
-      const spec = specFor(item, source, priority, routedBy);
-      const invalid = problemWith(c, item, spec);
-      return store.tx((): Job => {
-        const job = store.jobs.create(spec, priority, ref);
-        store.events.append({ type: 'job.queued', jobId: job.id, data: { spec, priority, source: ref } });
-        // Every new job waits at the queue gate (issue #159) until the pre-sort or the user accepts it.
-        if (invalid === undefined) return store.jobs.update(job.id, { accepted: false });
-        // Created and failed together: the source reports claimed, then failed — once.
-        store.events.append({ type: 'job.failed', jobId: job.id, data: { error: invalid } });
-        return store.jobs.update(job.id, { status: 'failed', error: invalid, finishedAt: nowIso(c) });
-      });
+      return ingest(item, source);
     },
 
     cancel(jobId, reason) {
@@ -132,10 +138,11 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
       });
     },
 
-    rerun(jobId) {
+    rerun(jobId, item, source) {
       return store.tx(() => {
-        const job = store.jobs.get(jobId);
-        if (!job) throw new EngineError('not_found', `job ${jobId} not found`);
+        if (!store.jobs.get(jobId)) throw new EngineError('not_found', `job ${jobId} not found`);
+        // A sync that offered the item between the source giving it back and now made the new job already.
+        const job = ingest(item, source) ?? store.jobs.getBySourceKey(item.key)!;
         store.events.append({ type: 'job.rerun', jobId, data: { by: 'user' } });
         return job;
       });
