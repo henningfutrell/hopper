@@ -5,7 +5,8 @@
 // (issue #214): the panel says how the hopper connects, and shows the device code to enter. Signed in
 // with GitHub, that connection is the one GitHub piece (issue #254). Once connected it shows the
 // repositories the app reaches on each account it is installed on, and asks to install it only where it is
-// installed nowhere (issue #253).
+// installed nowhere (issue #253). Signed in with GitHub, that account is the sign-in: the panel offers
+// Sign out, never Disconnect; signed in another way, forgetting it says it keeps the sign-in (issue #322).
 import { createElement } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -17,6 +18,9 @@ const SOURCES = [
   source('github', 'github', 'disabled', { mode: 'gh', enabledSetting: 'auto', paused: 'GitHub App configured' }),
   source('github-app', 'github-app', 'ok', { mode: 'app', slug: 'hopper-app' }),
 ];
+
+const LOGIN_CODE_SESSION = { authenticated: true, expiresAt: '2099-01-01T00:00:00.000Z', user: { role: 'admin', realm: 'local', name: 'login code' }, signIn: { local: true, origin: 'http://localhost', realms: [] } };
+const GITHUB_SESSION = { ...LOGIN_CODE_SESSION, user: { role: 'admin', realm: 'github', name: 'octo-user', identity: 'octo-user' }, signIn: { ...LOGIN_CODE_SESSION.signIn, devices: [{ name: 'github', label: 'GitHub', type: 'github' }] } };
 
 function fakeDaemon(over: Record<string, unknown> = {}) {
   const routes: Record<string, unknown> = {
@@ -39,7 +43,7 @@ function fakeDaemon(over: Record<string, unknown> = {}) {
       const accounts = (routes['/api/connected-accounts'] as { accounts: { provider: string }[] }).accounts;
       routes['/api/connected-accounts'] = { accounts: accounts.map((a) => (a.provider === 'github' ? routes[path] : a)) };
     }
-    if (path === '/ui/api/session') return json(200, { authenticated: true, expiresAt: '2099-01-01T00:00:00.000Z', user: { role: 'admin', realm: 'local', name: 'login code' }, signIn: { local: true, origin: location.origin, realms: [] } });
+    if (path === '/ui/api/session') return json(200, routes[path] ?? LOGIN_CODE_SESSION);
     if (path in routes) return json(200, routes[path]);
     return json(404, { error: 'not found' });
   });
@@ -170,5 +174,35 @@ describe('Sources view: GitHub', () => {
     expect(panel()!.querySelector('[data-installations-error]')?.textContent).toContain('GitHub could not say where the app is installed: Service Unavailable');
     expect(links()).toEqual([['See where the app is installed', 'https://github.com/settings/installations']]);
     expect(panel()!.textContent).not.toMatch(/install the app/i);
+  });
+
+  const posts = (f: ReturnType<typeof vi.fn>, path: string) => f.mock.calls.filter(([u, i]) => String(u) === path && (i as RequestInit | undefined)?.method === 'POST');
+  const buttons = () => [...panel()!.querySelectorAll('button')].map((b) => b.textContent);
+
+  it('signed in with GitHub: the account is the sign-in — Sign out, never Disconnect (#322)', async () => {
+    await boot({ ...withAccount(connected([])), '/ui/api/session': GITHUB_SESSION });
+    await vi.waitFor(() => expect(panel()?.textContent).toContain('Signed in with GitHub as octo-user.'));
+    expect(panel()!.textContent).not.toContain('Connected as');
+    expect(panel()!.textContent).not.toMatch(/disconnect/i);
+    expect(panel()!.textContent).toContain('Settings → Plugins');
+    expect(buttons()).toEqual(['Sign out']);
+    const f = fetch as unknown as ReturnType<typeof vi.fn>;
+    await act(async () => { [...panel()!.querySelectorAll('button')].find((b) => b.textContent === 'Sign out')!.click(); });
+    await vi.waitFor(() => expect(posts(f, '/ui/api/logout')).toHaveLength(1));
+    expect(posts(f, '/ui/api/connected-accounts')).toHaveLength(0);
+  });
+
+  it('signed in another way: forgetting the account is its own action, and the sign-in stays (#322)', async () => {
+    await boot(withAccount(connected([])));
+    await vi.waitFor(() => expect(panel()?.textContent).toContain('Connected as octo-user.'));
+    expect(panel()!.textContent).not.toMatch(/disconnect/i);
+    expect(buttons()).toEqual(['Stop working through GitHub']);
+    const button = [...panel()!.querySelectorAll('button')].find((b) => b.textContent === 'Stop working through GitHub')!;
+    expect(button.title).toContain('you stay signed in');
+    const f = fetch as unknown as ReturnType<typeof vi.fn>;
+    await act(async () => { button.click(); });
+    await vi.waitFor(() => expect(posts(f, '/ui/api/connected-accounts')).toHaveLength(1));
+    expect(JSON.parse(String((posts(f, '/ui/api/connected-accounts')[0]![1] as RequestInit).body))).toEqual({ action: 'disconnect', provider: 'github' });
+    expect(posts(f, '/ui/api/logout')).toHaveLength(0);
   });
 });
