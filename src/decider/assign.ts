@@ -47,16 +47,25 @@ export function nativeHold(job: Job, machines: MachineSnapshot[], unavailable: E
   const down = unavailable.find((u) => u.name === executor);
   if (down) return `executor ${executor} unavailable: ${down.reason}`;
   const pin = pinOf(job);
-  if (!machines.some((m) => m.online && m.executors.includes(executor))) {
-    return `no online machine runs executor ${executor}`;
+  const running = machines.filter((m) => m.online && m.executors.includes(executor));
+  if (running.length === 0) return `no online machine runs executor ${executor}`;
+  if (pin === undefined) {
+    // Issue #361: a machine whose work tree cannot be made takes no job; the job waits for one that can.
+    if (running.every((m) => m.workTreeProblem !== undefined)) {
+      return `no machine running executor ${executor} has a usable work tree: ${running.map((m) => `${m.id}: ${m.workTreeProblem}`).join('; ')}`;
+    }
+    return undefined;
   }
-  if (pin === undefined) return undefined;
   const pinned = machines.find((m) => m.id === pin);
   if (!pinned) return `pinned machine ${pin} unknown`;
   if (!pinned.online) return `pinned machine ${pin} offline`;
   if (!pinned.executors.includes(executor)) return `pinned machine ${pin} does not run executor ${executor}`;
+  if (pinned.workTreeProblem !== undefined) return `pinned machine ${pin}: ${pinned.workTreeProblem}`;
   return undefined;
 }
+
+/** A machine that may take a new job of `executor`: online, running it, its work tree usable (issue #361). */
+const takes = (m: MachineSnapshot, executor: string): boolean => m.online && m.executors.includes(executor) && m.workTreeProblem === undefined;
 
 /**
  * A waiting job's effective priority: a resuming job's priority plus the resume boost; any other
@@ -102,8 +111,7 @@ function roomFor(s: MachineState, executor: string): number {
 
 function fits(s: MachineState, job: Job): boolean {
   const pin = pinOf(job);
-  return s.machine.online && s.machine.executors.includes(job.spec.executor)
-    && (pin === undefined || pin === s.machine.id) && roomFor(s, job.spec.executor) > 0;
+  return takes(s.machine, job.spec.executor) && (pin === undefined || pin === s.machine.id) && roomFor(s, job.spec.executor) > 0;
 }
 
 const percent = (frac: number): string => `${Math.round(frac * 100)}%`;
@@ -116,8 +124,7 @@ const usageNote = (band: CapBand, usedFrac: number): string => (band === 'soft' 
  */
 function waitReason(job: Job, states: MachineState[]): string {
   const ex = job.spec.executor;
-  const eligible = states.filter((s) => s.machine.online && s.machine.executors.includes(ex)
-    && (pinOf(job) === undefined || pinOf(job) === s.machine.id));
+  const eligible = states.filter((s) => takes(s.machine, ex) && (pinOf(job) === undefined || pinOf(job) === s.machine.id));
   const s = eligible.reduce((a, b) => (b.executors.get(ex)!.cap > a.executors.get(ex)!.cap ? b : a));
   const e = s.executors.get(ex)!;
   const id = s.machine.id;

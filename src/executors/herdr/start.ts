@@ -8,6 +8,7 @@ import { tail } from './monitor.ts';
 import type { ClaudeJobPayload } from './payload.ts';
 import { SCRATCH_DIR, isBypassDialog, isTrustDialog } from './screen.ts';
 import { shellQuote } from '../ssh.ts';
+import { checkoutCommand } from '../work-tree.ts';
 
 export const WORKSPACE_LABEL = 'hopper';
 const START_TIMEOUT_MS = 60000;
@@ -149,16 +150,16 @@ async function settleStartup(d: StartDeps, ctx: ExecutionContext, s: PaneState, 
 }
 
 /**
- * Make the scratch dir in the pane's own shell, so on whichever machine the work tree is; its
- * `.gitignore` hides it from git. The shell enters the work tree first: herdr opens a tab whose cwd
- * does not exist there in the home instead, so only the shell can say the work tree is not usable,
- * and then the job fails at once with what it said (issue #323). The jobs directory, and a work tree
- * under it, the shell makes first (`make`, issue #314). A fresh shell drops what is typed before its
- * prompt, so the command runs again until its output shows. Null when made, else the failure.
+ * Make the work tree ready in the pane's own shell, so on whichever machine it is (issue #361): the shell
+ * makes the work tree and enters it, fetches or clones the job's repository there, then makes the scratch
+ * dir, which its `.gitignore` hides from git. herdr opens a tab whose cwd does not exist there in the home
+ * instead, so only the shell can say the work tree is not usable, and then the job fails at once with
+ * what it said (issue #323). A fresh shell drops what is typed before its prompt, so the command runs
+ * again until its output shows. Null when made, else the failure.
  */
-async function makeScratch(d: StartDeps, ctx: ExecutionContext, s: PaneState, make: boolean): Promise<ExecutionOutcome | null> {
+async function makeScratch(d: StartDeps, ctx: ExecutionContext, s: PaneState, repo: string | undefined): Promise<ExecutionOutcome | null> {
   const scratch = scratchDirOf(s.cwd);
-  const command = `${make ? `mkdir -p ${shellQuote(s.cwd)} && ` : ''}cd ${shellQuote(s.cwd)} && mkdir -p ${shellQuote(scratch)} && printf '*\\n' > ${shellQuote(`${scratch}/.gitignore`)}`
+  const command = `mkdir -p ${shellQuote(s.cwd)} && cd ${shellQuote(s.cwd)} && ${repo ? `${checkoutCommand(repo)} && ` : ''}mkdir -p ${shellQuote(scratch)} && printf '*\\n' > ${shellQuote(`${scratch}/.gitignore`)}`
     + ` && printf 'hopper-scratch-%s\\n' ready || printf 'hopper-scratch-%s\\n' unusable`;
   for (let waited = 0; waited < START_TIMEOUT_MS; waited += SCRATCH_WAIT_MS) {
     if (ctx.signal.aborted) return null;
@@ -177,7 +178,7 @@ async function makeScratch(d: StartDeps, ctx: ExecutionContext, s: PaneState, ma
  * fired — the caller checks), else the failure to report; the caller closes the pane.
  */
 export async function startClaude(d: StartDeps, ctx: ExecutionContext, s: PaneState, p: ClaudeJobPayload): Promise<ExecutionOutcome | null> {
-  const unmade = await makeScratch(d, ctx, s, p.makeWorkTree === true);
+  const unmade = await makeScratch(d, ctx, s, p.repo);
   if (unmade || ctx.signal.aborted) return unmade;
   const args = [...d.claudeArgs, ...(p.model ? ['--model', p.model] : [])];
   const until = d.clock.now().getTime() + START_TIMEOUT_MS;

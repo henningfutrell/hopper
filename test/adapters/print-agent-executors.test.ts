@@ -38,7 +38,7 @@ const reply = (text: string) => { process.env.FAKE_AGENT_REPLY = text; };
 function ctxFor(payload: Record<string, unknown>, o: { state?: Record<string, unknown>; signal?: AbortSignal; credentials?: Record<string, string> } = {}) {
   const saved: Record<string, unknown>[] = [];
   const job: Job = {
-    id: 'job-1234', spec: { executor: 'agent', payload }, priority: 50, status: 'running', approved: false,
+    id: 'job-1234', spec: { executor: 'agent', payload, machineId: HERE.id }, priority: 50, status: 'running', approved: false,
     createdAt: '', updatedAt: '', attempts: 1, ...(o.state ? { executorState: o.state } : {}),
   };
   const ctx: ExecutionContext = {
@@ -72,7 +72,7 @@ const AGENTS: { agent: PrintAgent; args: string[]; first: (model: string) => str
 
 describe.each(AGENTS)('the $agent executor', ({ agent, args, first, resumed, session, error }) => {
   const noSsh = () => { throw new Error('no ssh in this test'); };
-  const ex = createPrintAgentExecutor({ agent, name: agent, bin: FAKE, args, defaultCwd: '/nowhere', sshAuth: noSsh });
+  const ex = createPrintAgentExecutor({ agent, name: agent, bin: FAKE, args, sshAuth: noSsh });
   beforeEach(() => { process.env.FAKE_AGENT_KIND = agent; });
 
   it('runs the CLI in print mode in the job\'s work tree, with the protocol after the prompt and the job\'s GitHub credential, and finishes on HOPPER_DONE', async () => {

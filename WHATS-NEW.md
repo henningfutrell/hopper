@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- Each machine now has its own work folder, set in the Machines view. The hopper creates it and fetches or clones each job's repository into it, so a new machine needs no setup by hand, and a job never goes to a machine whose folder cannot be used: it waits, and the Machines view says why.
 - The Overview no longer makes healthy jobs look stuck: a lane about to close shows its job running and says it closes after this job, a progress bar appears only when the job reports real progress, and jobs waiting for a free lane say so and name the limit they wait on instead of showing as held. Hover any state to see what it means.
 - Anyone can install the hopper's GitHub app on their own account or organization and sign in with it; Sources shows what the app may do on each account and links to add it to another one.
 - A failed job no longer drops out of the queue: it stays there, locked, with its failure, until you run it again or dismiss it. Locked jobs never start by themselves.

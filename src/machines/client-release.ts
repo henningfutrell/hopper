@@ -5,7 +5,8 @@
 // that is restarting. A client older than releases answers no release: it stays online and is
 // reported once, to be added again with Add machine. Each line is logged once per machine.
 import type { ClientRelease } from '../client/release.ts';
-import { clientRunningRelease, loadClientRelease, type ClientTransport } from '../executors/client.ts';
+import { clientRunningRelease, clientWorkTree, loadClientRelease, type ClientTransport } from '../executors/client.ts';
+import { DEFAULT_WORK_TREE } from '../client/work-tree.ts';
 import { probeClient, type MachineProbe } from './attached.ts';
 
 interface Logger { info(line: string): void; warn(line: string): void }
@@ -49,4 +50,15 @@ export function createClientReleaseKeeper(o: { release: ClientRelease; logger: L
     }
     return { online: true, client: { release: running, current: false }, ...home };
   };
+}
+
+/**
+ * A client target online on the hopper's release makes its work tree there (issue #361); one on another
+ * release is not asked: the keeper loads the hopper's onto it first. A check that fails is what is wrong.
+ */
+export async function withClientWorkTree(t: ClientTransport, workTree: string | undefined, p: MachineProbe): Promise<MachineProbe> {
+  if (!p.online || p.client?.current !== true) return p;
+  const found = await clientWorkTree(t, workTree ?? DEFAULT_WORK_TREE)
+    .catch((e: unknown) => ({ workTreeProblem: `its work tree could not be checked: ${e instanceof Error ? e.message : String(e)}` }));
+  return { ...p, ...found };
 }

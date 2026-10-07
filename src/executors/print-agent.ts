@@ -9,6 +9,7 @@ import { mkdirSync } from 'node:fs';
 import type { ExecutionContext, ExecutionOutcome, Executor } from '../domain/ports.ts';
 import { commandOn, run } from './command.ts';
 import { resolvePayload, validatePayload, workTreeOn } from './herdr/payload.ts';
+import { checkoutCommand } from './work-tree.ts';
 import { STATUS_NOTE_NUDGE, normaliseMarkerLine, protocolFooter } from './herdr/screen.ts';
 import { scratchDirOf } from './herdr/start.ts';
 import { DIALECTS, type PrintAgent } from './print-agents.ts';
@@ -28,8 +29,6 @@ export interface PrintAgentExecutorOptions {
   bin: string;
   /** Its own arguments: permissions, sandbox, workspace trust. */
   args: string[];
-  /** The work tree of a job whose payload names none. */
-  defaultCwd: string;
   sshBin?: string;
   sshControlDir?: string;
   sshAuth: () => SshAuth;
@@ -71,14 +70,16 @@ export function createPrintAgentExecutor(o: PrintAgentExecutorOptions): Executor
   async function turn(ctx: ExecutionContext, cwd: string, text: string, chatId?: string, notes = 0): Promise<ExecutionOutcome> {
     const refused = refusal(label, ctx);
     if (refused) return { kind: 'failed', error: refused };
-    const p = resolvePayload(ctx.job.spec.payload, ctx.machine, o.defaultCwd);
+    const p = resolvePayload(ctx.job, ctx.machine);
     const scratch = scratchDirOf(cwd);
     // Stdin is /dev/null: codex and opencode read a stdin that is not a terminal to its end before the turn,
     // and the one a run would hand them is never closed (issue #307).
     // The job's credentials (GH_TOKEN, issue #214), HOPPER_JOB_ID and the scratch dir come from the hopper; a payload cannot move them.
     const vars = Object.entries({ ...p.env, ...ctx.credentials, TMPDIR: scratch, HOPPER_JOB_ID: ctx.job.id }).map(([k, v]) => shellQuote(`${k}=${v}`));
     const argv = dialect.argv({ bin: o.bin, args: o.args, cwd, ...(p.model ? { model: p.model } : {}), ...(chatId ? { session: chatId } : {}), text }).map(shellQuote);
-    const script = `mkdir -p ${shellQuote(scratch)} && printf '*\\n' > ${shellQuote(`${scratch}/.gitignore`)} && cd ${shellQuote(cwd)} && exec env ${vars.join(' ')} ${argv.join(' ')} </dev/null`;
+    // The work tree made and the job's repository fetched or cloned in it first, on the first turn (issue #361).
+    const checkout = !chatId && p.repo ? `env ${vars.join(' ')} ${checkoutCommand(p.repo)} && ` : '';
+    const script = `mkdir -p ${shellQuote(cwd)} && cd ${shellQuote(cwd)} && mkdir -p ${shellQuote(scratch)} && printf '*\\n' > ${shellQuote(`${scratch}/.gitignore`)} && ${checkout}exec env ${vars.join(' ')} ${argv.join(' ')} </dev/null`;
     const where = ctx.machine.id;
     try {
       const [file, args] = commandOn(ctx.machine, ['sh', '-c', script], { ...o, dockerHost: () => { throw new Error('no docker'); } });
@@ -112,7 +113,9 @@ export function createPrintAgentExecutor(o: PrintAgentExecutorOptions): Executor
     idempotent: false,
     validate: validatePayload,
     run(ctx) {
-      const p = resolvePayload(ctx.job.spec.payload, ctx.machine, o.defaultCwd);
+      const refused = refusal(label, ctx);
+      if (refused) return Promise.resolve({ kind: 'failed', error: refused });
+      const p = resolvePayload(ctx.job, ctx.machine);
       // Issue #323: `~` is the lane's machine's home, never this process's when the job runs elsewhere.
       const tree = workTreeOn(ctx.machine, p.cwd);
       if ('error' in tree) return Promise.resolve({ kind: 'failed', error: tree.error });

@@ -1,9 +1,9 @@
 // The GitHub job sources' options (the plugins config `jobSources[].options` of `github-account` and
 // `github-app`), and the
-// source config they turn into: `model: null` dropped; a `~` stays, for the job's machine (issue #323). The plugin host validates
-// them with these schemas; an invalid instance is dropped with the error shown.
+// source config they turn into: `model: null` dropped. No path: a job's work tree is its machine's
+// (issue #361). The plugin host validates them with these schemas; an invalid instance is dropped with
+// the error shown.
 import { z } from 'zod';
-import { JOBS_DIR } from '../domain/types.ts';
 
 const projectSchema = z.object({
   owner: z.string().min(1),
@@ -26,10 +26,6 @@ const sharedKeys = {
     .meta({ description: 'this hopper\'s name: an issue labelled hopper@<name> is taken only by the hopper of that name; null takes only issues addressed to no hopper' }),
   priorityLabels: z.record(z.string(), z.number()).default({ 'hopper:high': 75, 'hopper:low': 25 }),
   defaultPriority: z.number().min(0).max(100).default(50),
-  repoPaths: z.record(z.string(), z.string()).default({})
-    .meta({ commandBearing: true, description: 'owner/repo → the working directory of its jobs' }),
-  defaultCwd: z.string().min(1).default(JOBS_DIR)
-    .meta({ commandBearing: true, description: 'working directory of jobs from repos not in repoPaths, on a machine with no work tree of its own' }),
   executor: z.string().min(1).default('herdr-claude'),
   model: z.string().min(1).nullable().default(null),
   recentComments: z.number().int().min(0).default(10),
@@ -74,10 +70,10 @@ export type GitHubProjectConfig = z.infer<typeof projectSchema>;
 export type GitHubAccountOptions = z.output<typeof githubAccountOptions>;
 export type GitHubAppOptions = z.output<typeof githubAppOptions>;
 
-/** What the source logic reads: the shared keys, no `model: null`. A `~` stays: it resolves on the job's machine (issue #323). */
+/** What the source logic reads: the shared keys, no `model: null`. */
 export type GitHubSourceConfig = Omit<z.output<z.ZodObject<typeof sharedKeys>>, 'model'> & { model?: string };
 
-export function sourceConfig<T extends { model: string | null; defaultCwd: string; repoPaths: Record<string, string> }>(raw: T): Omit<T, 'model'> & { model?: string } {
+export function sourceConfig<T extends { model: string | null }>(raw: T): Omit<T, 'model'> & { model?: string } {
   const { model, ...rest } = raw;
   return { ...rest, ...(model ? { model } : {}) };
 }

@@ -22,7 +22,7 @@ import { reportToGitHub, takeBack } from './report.ts';
 
 /** What the source reads of its config. */
 export type GitHubSourceSettings = Pick<GitHubSourceConfig,
-  'repos' | 'authors' | 'label' | 'hopperName' | 'priorityLabels' | 'defaultPriority' | 'repoPaths' | 'defaultCwd' | 'executor' | 'model' | 'recentComments' | 'projects' | 'completion'
+  'repos' | 'authors' | 'label' | 'hopperName' | 'priorityLabels' | 'defaultPriority' | 'executor' | 'model' | 'recentComments' | 'projects' | 'completion'
 >;
 
 /** The app's identity as the adapter knows it (its `appStatus()` fits), or undefined. */
@@ -91,7 +91,6 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       key: issue.url, url: issue.url, title: issue.title, body: issue.body,
       prompt: issuePrompt(issue, context), env: issueEnv(issue),
       author: issue.author, priority: p.priority, priorityReason: p.reason,
-      ...(config.repoPaths[issue.repo] !== undefined ? { cwd: config.repoPaths[issue.repo]! } : {}), defaultCwd: config.defaultCwd,
       labels: issue.labels, repo: issue.repo, number: issue.number,
       executor: config.executor,
       ...(config.model ? { model: config.model } : {}),

@@ -2,7 +2,7 @@
 // lanes are stored under it). `lanes` is the lane count — a lane has no options of its own.
 // `executors`, when given, narrows what runs here (issue #58: a `command` job goes to its target only).
 // `session`, when given, is the herdr session its jobs run in, which the hopper starts when it is not
-// running (issue #260); absent, the herdr-claude instance's own. `workTree`: its jobs' default work tree (issue #324).
+// running (issue #260); absent, the herdr-claude instance's own. `workTree`: its jobs' work tree (issues #324, #361).
 import { createLocalMachineSource } from '../../../machines/index.ts';
 import { ensureHerdrSession, sessionProblem } from '../../../executors/herdr/index.ts';
 import type { PluginDefinition } from '../../sdk.ts';
@@ -30,12 +30,11 @@ export function localPlugin(start: StartSession = startHerdrSession): PluginDefi
     }),
     async detect() { return { status: 'available' }; },
     create: (ctx, o) => createLocalMachineSource({
-      id: ctx.instanceName, maxLanes: o.lanes, ...(o.workTree !== undefined ? { workTree: o.workTree } : {}),
+      id: ctx.instanceName, maxLanes: o.lanes, ...(o.workTree !== undefined ? { workTree: o.workTree } : {}), logger: ctx.logger,
       executors: o.executors ? () => ctx.executors().filter((x) => o.executors!.includes(x)) : ctx.executors,
       ...(o.session ? {
         session: o.session,
         ensureSession: () => start(o.session!, ctx.userEnv),
-        logger: ctx.logger,
       } : {}),
     }),
   };

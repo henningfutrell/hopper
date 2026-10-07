@@ -150,8 +150,8 @@ function RuleCard({ d, i, n, sources, machines, executors, disabled, set, moveBy
           <Input className={input} type="number" inputMode="numeric" min={0} max={100} step={1} placeholder="the source's" value={d.set.priority} disabled={disabled}
             onChange={(e) => set({ ...d, set: { ...d.set, priority: e.target.value } })} />
         </Labeled>
-        <Labeled label="work tree (on the job's machine)">
-          <Input className={input} placeholder="the machine's, else the source's" value={d.set.workTree} disabled={disabled}
+        <Labeled label="work tree (on the machine set here)">
+          <Input className={input} placeholder="the machine's" value={d.set.workTree} disabled={disabled}
             onChange={(e) => set({ ...d, set: { ...d.set, workTree: e.target.value } })} />
         </Labeled>
       </fieldset>

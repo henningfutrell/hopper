@@ -58,12 +58,11 @@ async function edit(a: TestApp, token: string, e: Record<string, unknown>): Prom
 }
 
 const ghOptions = (extra: Record<string, unknown> = {}) => ({
-  enabled: true, pollSeconds: 3600, authors: ['owner'], executor: 'scripted', defaultCwd: '/tmp', ...extra,
+  enabled: true, pollSeconds: 3600, authors: ['owner'], executor: 'scripted', ...extra,
 });
 const issueBody = (op: Record<string, unknown>) => `${JSON.stringify(op)}\n\nPlease do the thing.`;
 const jobFor = async (a: TestApp, url: string): Promise<Job | undefined> =>
   (await a.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=1000')).body.jobs.find((j) => j.source?.key === url);
-const cwdOf = (j: Job) => (j.spec.payload as { defaultCwd?: string }).defaultCwd;
 
 describe('every setting applies without a restart (issue #356)', () => {
   it('a job source switched on in the UI pulls the next job; an options change applies to the next one; no restart pending', async () => {
@@ -75,14 +74,14 @@ describe('every setting applies without a restart (issue #356)', () => {
     await edit(a, token, { action: 'options', role: 'job-source', name: 'github', options: ghOptions() });
     await a.sync();
     const job1 = await waitFor(() => jobFor(a, first.url), { what: 'the job of the first issue' });
-    expect(cwdOf(job1)).toBe('/tmp');
+    expect(job1.priority).toBe(50);
     expect((await a.api('GET', '/api/sources')).body.sources).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'github', state: 'ok' })]));
 
-    await edit(a, token, { action: 'options', role: 'job-source', name: 'github', options: ghOptions({ defaultCwd: '/var/tmp' }) });
+    await edit(a, token, { action: 'options', role: 'job-source', name: 'github', options: ghOptions({ defaultPriority: 80 }) });
     const second = gh.createIssue({ repo: REPO, author: 'owner', body: issueBody({ op: 'echo' }), labels: ['hopper'] });
     await a.sync();
     const job2 = await waitFor(() => jobFor(a, second.url), { what: 'the job of the second issue' });
-    expect(cwdOf(job2)).toBe('/var/tmp');
+    expect(job2.priority).toBe(80);
     expect(JSON.stringify((await a.api('GET', '/api/plugins')).body)).not.toMatch(/restart pending/);
   });
 
@@ -125,7 +124,7 @@ describe('every setting applies without a restart (issue #356)', () => {
     await a.sync();
     const job = await waitFor(() => jobFor(a, issue.url), { what: 'the job' });
     await a.waitForStatus(job.id, 'running');
-    await edit(a, token, { action: 'options', role: 'job-source', name: 'github', options: ghOptions({ defaultCwd: '/var/tmp' }) });
+    await edit(a, token, { action: 'options', role: 'job-source', name: 'github', options: ghOptions({ defaultPriority: 80 }) });
     await edit(a, token, { action: 'options', role: 'notifier', name: 'grok-bot', options: { urlEnv: 'OTHER_WEBHOOK_URL' } });
     await edit(a, token, { action: 'remove', role: 'usage-source', name: 'budget' });
     await edit(a, token, { action: 'remove', role: 'job-source', name: 'github' });

@@ -41,16 +41,32 @@ export interface MachineDraft { name: string; ssh: string; lanes: string; execut
 export interface DetailField { key: string; label: string; hint: string; required: boolean }
 
 /** The details each connection's Edit form shows, in order (issue #205); `herdr` is a switch beside them. */
+/** The jobs directory: a machine's work tree when it names none (mirrors `JOBS_DIR`). */
+const JOBS_DIR = '~/hopper-jobs';
+
+/** A machine's work tree (issue #361): where its jobs run, made there by the hopper. */
+const WORK_TREE: DetailField = { key: 'workTree', label: 'work tree', hint: `where its jobs run; the hopper makes it and fetches or clones each job's repository in it. ~ is its home. Empty: ${JOBS_DIR}`, required: false };
+
 export const DETAILS: Record<string, DetailField[]> = {
   ssh: [
     { key: 'ssh', label: 'ssh target', hint: 'user@host, or a Host alias', required: true },
     { key: 'session', label: 'herdr session', hint: 'empty: hopper', required: false },
     { key: 'hostKey', label: 'host key', hint: '<type> <base64>, the only key accepted from it; empty: not connected. Another ssh target has its own', required: false },
+    WORK_TREE,
   ],
   docker: [{ key: 'docker', label: 'container', hint: 'its name or id; commands run in it through docker exec', required: true }],
-  // A client target dials in with its machine key (issue #308): nothing to type.
-  client: [],
+  // A client target dials in with its machine key (issue #308): nothing of how it is reached to type.
+  client: [WORK_TREE],
 };
+
+/** An absolute path, or one under `~` (the machine's home), as the daemon takes a work tree. */
+const pathLike = (s: string): boolean => s.startsWith('/') || s === '~' || s.startsWith('~/');
+
+/** The work tree the Machines view shows (issue #361): the machine's, else the jobs directory; null for a container target, which has none. */
+export function workTreeText(m: MachineSnapshot): string | null {
+  if (m.docker) return null;
+  return m.workTree ?? `${JOBS_DIR} (the jobs directory)`;
+}
 
 /** An Edit form as typed: its name, lanes, executors, label, the details of its connection, and (ssh) whether it runs herdr. */
 export type MachineEditDraft = Pick<MachineDraft, 'name' | 'lanes' | 'executors' | 'label'> & { details: Record<string, string>; herdr: boolean };
@@ -69,7 +85,9 @@ export function editProblem(m: Extract<MachineKind, { kind: 'attached' }>, d: Ma
   if (name !== m.machine.name && config.machines.some((x) => x.name === name)) return `a machine is already named ${name}; pick another name`;
   if (lanesOf(d.lanes) === undefined) return 'lanes must be a whole number, at least 1';
   const missing = (DETAILS[m.machine.connection] ?? []).find((f) => f.required && !(d.details[f.key] ?? '').trim());
-  return missing ? `give the ${missing.label}` : null;
+  if (missing) return `give the ${missing.label}`;
+  const tree = (d.details.workTree ?? '').trim();
+  return tree && !pathLike(tree) ? 'the work tree is an absolute path or starts with ~' : null;
 }
 
 const lanesOf = (s: string): number | undefined => (/^\d+$/.test(s.trim()) && Number(s) >= 1 ? Number(s) : undefined);
@@ -149,8 +167,8 @@ export function editBody(m: Extract<MachineKind, { kind: 'attached' }>, d: Machi
   }, version);
 }
 
-/** A local machine's Edit form as typed: its name, lane count and (issue #260) its herdr session; empty: the herdr-claude instance's own. */
-export interface LocalDraft { name: string; lanes: string; session?: string }
+/** A local machine's Edit form as typed: its name, lane count, (issue #260) its herdr session — empty: the herdr-claude instance's own — and (issue #361) its work tree — empty: the jobs directory. */
+export interface LocalDraft { name: string; lanes: string; session?: string; workTree?: string }
 
 /** Its whole options with the lane count and session as typed (0 lanes runs none here), and its new name; null when nothing changed or while any is invalid. */
 export function localBody(m: Extract<MachineKind, { kind: 'local' }>, d: LocalDraft, version: string): Extract<PluginsEdit, { action: 'options' }> | null {
@@ -162,6 +180,12 @@ export function localBody(m: Extract<MachineKind, { kind: 'local' }>, d: LocalDr
     if (session && sessionProblem(session)) return null;
     if (session) options.session = session;
     else delete options.session;
+  }
+  if (d.workTree !== undefined) {
+    const tree = d.workTree.trim();
+    if (tree && !pathLike(tree)) return null;
+    if (tree) options.workTree = tree;
+    else delete options.workTree;
   }
   return optionsEdit(m, name, options, version);
 }

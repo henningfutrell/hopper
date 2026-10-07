@@ -16,7 +16,7 @@ import { StatusBadge } from '@/components/status';
 import { Button } from '@/components/ui/button';
 import { useNow } from '@/hooks/use-now';
 import { get, post, SessionRejected } from '@/lib/api';
-import { clientReleaseText, kindOf, mayAddThisMachine, type MachineKind } from '@/model/machines';
+import { clientReleaseText, kindOf, mayAddThisMachine, workTreeText, type MachineKind } from '@/model/machines';
 import { orderReadings, readingKey } from '@/model/usage';
 import type { MachineDefaultsEdit, MachineEdit, MachinesConfig, MachineView, PluginsEdit } from '@/model/wire';
 import { refreshLive, useHopper } from '@/store';
@@ -77,7 +77,11 @@ function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
         {m.herdr && <Fact label="herdr session">{m.herdr.session}</Fact>}
         {m.client && <Fact label="connection">client, dialled in</Fact>}
         {clientReleaseText(m.client) && <Fact label="client release">{clientReleaseText(m.client)}</Fact>}
+        {workTreeText(m) && <Fact label="work tree">{workTreeText(m)}</Fact>}
       </dl>
+      {m.workTreeProblem && (
+        <p role="alert" className="text-sm text-destructive">Takes no job: {m.workTreeProblem}. Its jobs wait for another machine; set its work tree with Edit.</p>
+      )}
       {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
       {editing && kind.kind === 'attached' && ctx.config && (
         <EditMachineForm machine={kind} config={ctx.config} busy={ctx.busy} send={ctx.edit} onDone={() => ctx.setEditing(null)} />

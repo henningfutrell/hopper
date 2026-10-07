@@ -35,7 +35,7 @@ afterEach(async () => {
   cleanup?.();
 });
 
-const item = (over: Partial<SourceItem> = {}) => ({ executor: 'herdr-claude', prompt: 'Paint the shed', cwd: '/tmp', env: { HOPPER_REPO: 'o/r' }, ...over });
+const item = (over: Partial<SourceItem> = {}) => ({ executor: 'herdr-claude', prompt: 'Paint the shed', env: { HOPPER_REPO: 'o/r' }, ...over });
 
 describe('herdr-claude job through the daemon', () => {
   it('asks, gets the opus answer typed into its pane, finishes, and its pane is closed', async () => {
@@ -47,7 +47,8 @@ describe('herdr-claude job through the daemon', () => {
     expect(q).toMatchObject({ status: 'answered', answeredBy: 'opus', detectedBy: 'marker' });
     expect(herdr.prompts.map((p) => p.text)).toEqual([expect.stringContaining('Paint the shed'), 'fake opus answer']);
     expect(done.result).toMatchObject({ summary: expect.stringContaining('Painted the shed.') });
-    expect(done.workTree).toBe('/tmp');
+    // Its machine's work tree: this machine names none, so the jobs directory (issue #361).
+    expect(done.workTree).toMatch(/\/hopper-jobs$/);
     const paneId = (done.executorState as { paneId: string }).paneId;
     await waitFor(() => herdr.closed.includes(paneId));
   });
@@ -86,7 +87,6 @@ describe('herdr-claude job through the daemon', () => {
   it('an item with a payload herdr-claude rejects is created failed; health lists the executors', async () => {
     const a = await start(createFakeHerdrClient({ session: 'jh-test' }));
     expect((await a.pull({}, item({ prompt: '' }))).error).toContain('prompt');
-    expect((await a.pull({}, item({ cwd: 'rel' }))).error).toContain('cwd');
     expect((await a.pull({}, item({ env: { 'bad-key': 'x' } }))).error).toContain('env key bad-key');
     expect((await a.api('GET', '/api/health')).body.executors).toEqual(['test', 'herdr-claude', 'scripted']);
   });

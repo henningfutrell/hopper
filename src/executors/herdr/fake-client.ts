@@ -35,7 +35,7 @@ export interface FakeHerdrOptions {
   startupBlockedBy?: string[];
   /** The first N `runInPane` commands are lost, as a shell not at its prompt yet drops what is typed. */
   shellDropsRuns?: number;
-  /** Directories the pane's shell cannot enter on this machine: a `cd` into one fails, as for a path that is not there (issue #323). */
+  /** Directories the pane's shell can neither make nor enter on this machine (issues #323, #361). */
   unusableDirs?: string[];
   /** The first N `startAgent` calls answer `paneBusy`, as herdr does for a pane spawned a moment ago. */
   shellNotReadyStarts?: number;
@@ -290,13 +290,13 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
       record('runInPane', paneId, command);
       const p = livePane(paneId);
       if (droppedRuns-- > 0) return;
-      // `[mkdir -p 'dir' && ]cd 'dir' && … && printf 'a%s\n' b || printf 'a%s\n' c`: c when the shell
-      // cannot enter dir (and did not make it), else b.
-      const entered = /^(mkdir -p '[^']*' && )?cd '([^']*)' && .*printf '([^']*)%s\\n' (\S+) \|\| printf '[^']*%s\\n' (\S+)$/.exec(command);
+      // `mkdir -p 'dir' && cd 'dir' && … && printf 'a%s\n' b || printf 'a%s\n' c`: c when dir is one
+      // the shell can neither make nor enter, else b.
+      const entered = /^mkdir -p '[^']*' && cd '([^']*)' && .*printf '([^']*)%s\\n' (\S+) \|\| printf '[^']*%s\\n' (\S+)$/s.exec(command);
       if (entered) {
-        const [, made, dir, prefix, ok, bad] = entered;
-        const unusable = !made && (o.unusableDirs ?? []).includes(dir!);
-        p.lines.push(`$ ${command}`, ...(unusable ? [`cd: no such file or directory: ${dir}`, `${prefix}${bad}`] : [`${prefix}${ok}`]), '$ ');
+        const [, dir, prefix, ok, bad] = entered;
+        const unusable = (o.unusableDirs ?? []).includes(dir!);
+        p.lines.push(`$ ${command}`, ...(unusable ? [`mkdir: cannot create directory '${dir}': Permission denied`, `${prefix}${bad}`] : [`${prefix}${ok}`]), '$ ');
         return;
       }
       // What a trailing `printf 'a%s\n' b` prints: the shell ran the command.

@@ -10,7 +10,7 @@ import { TERMINAL_STATUSES, isRerunnable } from '../../src/domain/types.ts';
 export function item(key: string, over: Partial<SourceItem> = {}): SourceItem {
   return {
     key, url: key, title: `title ${key}`, body: 'body', prompt: 'prompt', env: {}, author: 'me',
-    priority: 50, priorityReason: 'default', cwd: '/tmp', labels: [], executor: 'test', ...over,
+    priority: 50, priorityReason: 'default', labels: [], executor: 'test', ...over,
   };
 }
 

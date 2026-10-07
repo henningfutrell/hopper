@@ -6,8 +6,9 @@ import type { FakeHerdrOptions } from '../../src/executors/herdr/index.ts';
 export const JOB_ID = 'abcdef12-3456-7890-abcd-ef1234567890';
 export const CWD = '/tmp/jh-work';
 export const LANE = 'local/lane-1';
-export const LOCAL: MachineSnapshot = { id: 'local', label: 'server', maxLanes: 4, online: true, executors: ['herdr-claude'] };
-export const LAPTOP: MachineSnapshot = { id: 'laptop', label: 'laptop', maxLanes: 2, online: true, executors: ['herdr-claude'], ssh: 'laptop', herdr: { session: 'jh-there' } };
+/** Each with its work tree (issue #361): where every job there runs, but one pinned to it with its own. */
+export const LOCAL: MachineSnapshot = { id: 'local', label: 'server', maxLanes: 4, online: true, executors: ['herdr-claude'], workTree: CWD };
+export const LAPTOP: MachineSnapshot = { id: 'laptop', label: 'laptop', maxLanes: 2, online: true, executors: ['herdr-claude'], ssh: 'laptop', herdr: { session: 'jh-there' }, workTree: CWD };
 
 /** A clock that only moves when the executor sleeps; each sleep yields one macrotask. */
 export function fakeClock(start = Date.parse('2026-10-02T12:00:00Z')) {
@@ -27,7 +28,12 @@ export function jobWith(payload: Record<string, unknown>, extra: Partial<Job> = 
   };
 }
 
-export function contextFor(job: Job, laneId = LANE, machine: MachineSnapshot = LOCAL) {
+/**
+ * A job with a work tree of its own runs pinned to the lane's machine, as the routing rule that gives it
+ * one pins it (issue #361); a spec that names `machineId` at all, even undefined, is left as it is.
+ */
+export function contextFor(given: Job, laneId = LANE, machine: MachineSnapshot = LOCAL) {
+  const job = given.spec.payload.cwd !== undefined && !('machineId' in given.spec) ? { ...given, spec: { ...given.spec, machineId: machine.id } } : given;
   const ac = new AbortController();
   const progress: { fraction: number; message?: string }[] = [];
   const saved: Record<string, unknown>[] = [];
@@ -43,7 +49,7 @@ export function contextFor(job: Job, laneId = LANE, machine: MachineSnapshot = L
 
 export function setup(
   fakeOptions: FakeHerdrOptions = {},
-  overrides: { defaultCwd?: string; trustWorkdir?: boolean; yolo?: boolean; idleNudgeMs?: number; claudeArgs?: string[]; remote?: Record<string, FakeHerdrOptions>; local?: Record<string, FakeHerdrOptions> } = {},
+  overrides: { trustWorkdir?: boolean; yolo?: boolean; idleNudgeMs?: number; claudeArgs?: string[]; remote?: Record<string, FakeHerdrOptions>; local?: Record<string, FakeHerdrOptions> } = {},
 ) {
   const herdr = createFakeHerdrClient({ session: 'jh-test', ...fakeOptions });
   const remotes = new Map(Object.entries(overrides.remote ?? {}).map(([target, fo]) => [target, createFakeHerdrClient({ session: 'jh-there', ...fo })]));
@@ -64,7 +70,7 @@ export function setup(
       if (!r) throw new Error(`no fake herdr for ${key}`);
       return r;
     },
-    defaultCwd: overrides.defaultCwd ?? CWD, claudeArgs: overrides.claudeArgs ?? ['--dangerously-skip-permissions'],
+    claudeArgs: overrides.claudeArgs ?? ['--dangerously-skip-permissions'],
     trustWorkdir: overrides.trustWorkdir ?? true, yolo: overrides.yolo ?? true, pollMs: 1000, idleNudgeMs: overrides.idleNudgeMs ?? 20000,
   });
   return { herdr, remotes, locals, reached, clock, executor };

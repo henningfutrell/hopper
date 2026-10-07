@@ -1,11 +1,13 @@
 // The hopper client (design.md "Client targets", issue #59): what a client target runs. It dials in to
 // the hopper's own URL (dial.ts, issue #308) and serves HTTP/2 on that link's socket: the hopper sends
-// its calls down it. Three routes:
+// its calls down it. Four routes:
 // `POST /herdr {args, timeoutMs?}` runs `<herdrBin> --session <session> <args>` with no shell and
 // answers `{code, stdout, stderr}` — the binary and the session are the client's own, never the
 // request's; `POST /release` answers `{release, home}`, the id of the release this process runs
 // (release.ts, issue #70) and this user's home, where `~` in a job's work tree resolves (issue #323); `POST /load {release}` writes the hopper's release into the install dir
-// and then asks to be restarted (`onLoaded`; main.ts exits and the unit starts the new files).
+// and then asks to be restarted (`onLoaded`; main.ts exits and the unit starts the new files);
+// `POST /work-tree {workTree}` makes the machine's work tree under this user's home and answers
+// `{workTreeProblem}` when it cannot be (work-tree.ts, issue #361).
 // A request runs only when the hopper signed it with the client's token (signature.ts); every answer
 // is signed back. When the link ends, or a dial fails, the client dials again, backing off to 30 s.
 // Imports nothing of hopper but its own directory: it is installed on the target as plain files.
@@ -14,6 +16,7 @@ import { homedir } from 'node:os';
 import { performServerHandshake, type IncomingHttpHeaders, type ServerHttp2Stream } from 'node:http2';
 import type { Duplex } from 'node:stream';
 import { checkRelease, installRelease, readRelease } from './release.ts';
+import { makeWorkTree } from './work-tree.ts';
 import { REQUEST_HEADER, RESPONSE_HEADER, checkToken, createNonceCache, signResponse, verifyRequest } from './signature.ts';
 
 const MAX_BODY = 1024 * 1024;
@@ -71,7 +74,7 @@ function readBody(stream: ServerHttp2Stream): Promise<string | 'too large'> {
 }
 
 /** One request on the tunnel: verified, then run; the answer signed. */
-const ROUTES = new Set(['/herdr', '/release', '/load']);
+const ROUTES = new Set(['/herdr', '/release', '/load', '/work-tree']);
 
 /** What a client knows of its releases: the one it runs, and the one a load put in its install dir. */
 interface Releases { running: string; installed: string }
@@ -98,11 +101,22 @@ async function serve(o: ClientOptions, nonces: ReturnType<typeof createNonceCach
   nonce = v.nonce;
   if (path === '/release') return answer(200, { release: releases.running, home: homedir() });
   if (path === '/load') return load(o, releases, stream, body, answer);
+  if (path === '/work-tree') return workTree(body, answer);
   let parsed: { args?: unknown; timeoutMs?: unknown };
   try { parsed = JSON.parse(body) as typeof parsed; } catch { return answer(400, { error: 'body must be JSON' }); }
   if (!validArgs(parsed.args)) return answer(400, { error: 'args must be a non-empty list of strings, without --session' });
   const timeoutMs = typeof parsed.timeoutMs === 'number' && parsed.timeoutMs > 0 ? Math.min(parsed.timeoutMs, MAX_TIMEOUT_MS) : DEFAULT_TIMEOUT_MS;
   answer(200, await herdr(o, parsed.args, timeoutMs));
+}
+
+/** A signed work tree check: the machine's work tree made, or what is wrong with it (issue #361). */
+function workTree(body: string, answer: (status: number, payload: unknown) => void): void {
+  let parsed: { workTree?: unknown };
+  try { parsed = JSON.parse(body) as typeof parsed; } catch { return answer(400, { error: 'body must be JSON' }); }
+  const tree = parsed.workTree;
+  if (typeof tree !== 'string' || !(tree.startsWith('/') || tree === '~' || tree.startsWith('~/'))) return answer(400, { error: 'workTree must be an absolute path or start with ~' });
+  const problem = makeWorkTree(tree, homedir());
+  answer(200, problem ? { workTreeProblem: problem } : {});
 }
 
 /** After the load's answer leaves this end, how long the link stays up for it to reach the hopper before the restart. */

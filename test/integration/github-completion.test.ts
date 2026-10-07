@@ -23,7 +23,7 @@ async function boot(gh: FakeGitHub, o: { config?: Record<string, unknown> } = {}
   const db = tempDbPath();
   cleanup = db.cleanup;
   const plugins = { jobSources: [{ name: 'github', plugin: 'github-account', options: {
-    enabled: true, pollSeconds: 3600, authors: ['owner'], executor: 'scripted', defaultCwd: '/tmp', ...o.config,
+    enabled: true, pollSeconds: 3600, authors: ['owner'], executor: 'scripted', ...o.config,
   } }] };
   const a = await startTestApp({ dbPath: db.dbPath, env: {}, seams: { github: gh }, plugins });
   apps.push(a);

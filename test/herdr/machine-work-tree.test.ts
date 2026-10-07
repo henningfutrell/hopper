@@ -7,7 +7,8 @@ import type { FakeTurn } from '../../src/executors/herdr/index.ts';
 import { LAPTOP, contextFor, jobWith, setup } from './support.ts';
 
 const DONE: FakeTurn = { output: ['● Done.', '  HOPPER_DONE'] };
-const FAR = { ...LAPTOP, home: '/home/far' };
+const { workTree: _none, ...BARE } = LAPTOP;
+const FAR = { ...BARE, home: '/home/far' };
 
 const run = async (payload: Record<string, unknown>, machine: typeof FAR & { workTree?: string }, extra: Parameters<typeof jobWith>[1] = {}) => {
   const { remotes, executor } = setup({}, { remote: { laptop: { turns: [DONE] } } });
@@ -39,7 +40,8 @@ describe('herdr-claude executor: the work tree is the machine\'s (issue #361)', 
     const elsewhere = { spec: { executor: 'herdr-claude', machineId: 'other', payload: { prompt: 'go', cwd: '/home/owner/work' } } };
     expect((await run({ cwd: '/home/owner/work' }, { ...FAR, workTree: '/srv/trees' }, elsewhere)).workTrees).toEqual(['/srv/trees']);
     // A job pinned nowhere that carries a path (queued before) runs in the machine's work tree too.
-    expect((await run({ cwd: '/home/owner/work' }, FAR)).workTrees).toEqual(['/home/far/hopper-jobs']);
+    const nowhere = { spec: { executor: 'herdr-claude', machineId: undefined, payload: { prompt: 'go', cwd: '/home/owner/work' } } };
+    expect((await run({ cwd: '/home/owner/work' }, FAR, nowhere)).workTrees).toEqual(['/home/far/hopper-jobs']);
   });
 
   it('the work tree is made when missing, wherever it is', async () => {
@@ -52,7 +54,7 @@ describe('herdr-claude executor: the work tree is the machine\'s (issue #361)', 
     const r = await run({}, { ...FAR, workTree: '/srv/trees' }, fromRepo);
     expect(r.out).toMatchObject({ kind: 'finished' });
     const command = r.runs.at(-1)!;
-    expect(command).toMatch(/^mkdir -p '\/srv\/trees' && cd '\/srv\/trees' && sh -c '.*' hopper-checkout 'acme\/app' 'https:\/\/github\.com\/acme\/app\.git' && mkdir -p /);
+    expect(command).toMatch(/^mkdir -p '\/srv\/trees' && cd '\/srv\/trees' && sh -c '.*' hopper-checkout 'acme\/app' 'https:\/\/github\.com\/acme\/app\.git' && mkdir -p /s);
     // The token stays in the pane's environment: the command names the variable, never a value.
     expect(command).toContain('$GH_TOKEN');
     expect(command).toContain('clone');

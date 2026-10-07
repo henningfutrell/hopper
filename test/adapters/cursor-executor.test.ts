@@ -43,7 +43,7 @@ function ctxFor(payload: Record<string, unknown>, machine: MachineSnapshot, o: {
   const saved: Record<string, unknown>[] = [];
   const workTrees: string[] = [];
   const job: Job = {
-    id: 'job-1234', spec: { executor: 'cursor', payload }, priority: 50, status: 'running', approved: false,
+    id: 'job-1234', spec: { executor: 'cursor', payload, machineId: machine.id }, priority: 50, status: 'running', approved: false,
     createdAt: '', updatedAt: '', attempts: 1, ...(o.state ? { executorState: o.state } : {}),
   };
   const ctx: ExecutionContext = {
@@ -55,7 +55,7 @@ function ctxFor(payload: Record<string, unknown>, machine: MachineSnapshot, o: {
 
 describe('cursor-agent executor', () => {
   const noSsh = () => { throw new Error('no ssh in this test'); };
-  const ex = createPrintAgentExecutor({ agent: 'cursor-agent', name: 'cursor', bin: FAKE_CURSOR, args: ['--force', '--trust'], defaultCwd: '/nowhere', sshAuth: noSsh });
+  const ex = createPrintAgentExecutor({ agent: 'cursor-agent', name: 'cursor', bin: FAKE_CURSOR, args: ['--force', '--trust'], sshAuth: noSsh });
 
   it('runs Cursor in print mode in the job\'s work tree, with the hopper protocol after the prompt, and finishes on HOPPER_DONE', async () => {
     reply('I wrote greeting.txt.\n\nHOPPER_DONE');
@@ -141,29 +141,29 @@ describe('cursor-agent executor', () => {
   });
 
   it('runs over ssh on an ssh target, in the same work tree path there', async () => {
-    const overSsh = createPrintAgentExecutor({ agent: 'cursor-agent', name: 'cursor', bin: FAKE_CURSOR, args: [], defaultCwd: work, sshBin: FAKE_SSH, sshAuth: testSshAuth(join(dir, 'auth')) });
+    const overSsh = createPrintAgentExecutor({ agent: 'cursor-agent', name: 'cursor', bin: FAKE_CURSOR, args: [], sshBin: FAKE_SSH, sshAuth: testSshAuth(join(dir, 'auth')) });
     reply("It's done.\nHOPPER_DONE");
-    expect(await overSsh.run(ctxFor({ prompt: "it's a test" }, LAPTOP).ctx)).toEqual({ kind: 'finished', result: { machine: 'laptop', summary: "It's done.", chatId: 'chat-1' } });
+    expect(await overSsh.run(ctxFor({ prompt: "it's a test" }, { ...LAPTOP, workTree: work }).ctx)).toEqual({ kind: 'finished', result: { machine: 'laptop', summary: "It's done.", chatId: 'chat-1' } });
     expect(calls().at(-1)).toMatchObject({ cwd: work, argv: ['-p', '--output-format', 'json', '--workspace', work, '--', expect.stringMatching(/^it's a test\n/)] });
     const ssh = JSON.parse(readFileSync(join(dir, 'ssh-calls.jsonl'), 'utf8').trim().split('\n').at(-1)!) as { argv: string[] };
     expect(ssh.argv.slice(ssh.argv.indexOf('--') + 1, -1)).toEqual(['laptop.example']);
   });
 
   it('resolves ~ in the work tree against the ssh target\'s home, never this process\'s (issue #323)', async () => {
-    const overSsh = createPrintAgentExecutor({ agent: 'cursor-agent', name: 'cursor', bin: FAKE_CURSOR, args: [], defaultCwd: '~/work', sshBin: FAKE_SSH, sshAuth: testSshAuth(join(dir, 'auth')) });
+    const overSsh = createPrintAgentExecutor({ agent: 'cursor-agent', name: 'cursor', bin: FAKE_CURSOR, args: [], sshBin: FAKE_SSH, sshAuth: testSshAuth(join(dir, 'auth')) });
     reply('Done.\nHOPPER_DONE');
-    const { ctx, workTrees } = ctxFor({ prompt: 'p' }, { ...LAPTOP, home: dir });
+    const { ctx, workTrees } = ctxFor({ prompt: 'p' }, { ...LAPTOP, home: dir, workTree: '~/work' });
     expect(await overSsh.run(ctx)).toMatchObject({ kind: 'finished' });
     expect(workTrees).toEqual([work]);
     expect(calls().at(-1)).toMatchObject({ cwd: work });
-    expect(await overSsh.run(ctxFor({ prompt: 'p' }, LAPTOP).ctx)).toEqual({
+    expect(await overSsh.run(ctxFor({ prompt: 'p' }, { ...LAPTOP, workTree: '~/work' }).ctx)).toEqual({
       kind: 'failed', error: 'cannot resolve the work tree ~/work on laptop: its home is not known yet (the machine has not answered a probe)',
     });
   });
 
   it('refuses the machine\'s home as the work tree: Cursor never starts (issue #314)', async () => {
     expect(await ex.run(ctxFor({ prompt: 'p', cwd: '~' }, { ...HERE, id: 'laptop', ssh: 'laptop', home: dir }).ctx)).toEqual({
-      kind: 'failed', error: 'the work tree ~ on laptop is its home or above it: a job runs only in a directory below the home; give its job source, machine or executor a work tree such as ~/hopper-jobs',
+      kind: 'failed', error: 'the work tree ~ on laptop is its home or above it: a job runs only in a directory below the home; give the machine a work tree such as ~/hopper-jobs',
     });
   });
 

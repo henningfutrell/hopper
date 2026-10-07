@@ -16,7 +16,7 @@ export const KEYS = generateKeyPairSync('rsa', {
 /** The App's key as the daemon's environment holds it (design.md "Secrets"): give it as `secrets`. */
 export const appSecrets = (): Record<string, string | undefined> => ({ GITHUB_APP_PRIVATE_KEY: KEYS.privateKey });
 
-const JOB_KEYS = { authors: ['owner'], executor: 'scripted', defaultCwd: '/tmp', pollSeconds: 3600 };
+const JOB_KEYS = { authors: ['owner'], executor: 'scripted', pollSeconds: 3600 };
 
 /**
  * The plugins config `jobSources` for both GitHub sources: `github` (the connected account's,

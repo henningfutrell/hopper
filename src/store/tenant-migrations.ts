@@ -12,6 +12,7 @@ import { levelsNamedAsLevels } from './migration-level-names.ts';
 import { yoloOption } from './migration-yolo.ts';
 import { jobRepositoriesSetting } from './migration-job-repositories.ts';
 import { jobsDirWorkTrees } from './migration-jobs-dir.ts';
+import { machineWorkTrees } from './migration-machine-work-trees.ts';
 import { herdrByName } from './migration-herdr-by-name.ts';
 import { clientTargetsDialIn } from './migration-client-key.ts';
 import { noGhSource } from './migration-no-gh-source.ts';
@@ -179,6 +180,8 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
   clientTargetsDialIn,
   // 14: the gh CLI job source is gone (issue #359): its instances leave `jobSources`, its repos become the job repositories.
   noGhSource,
+  // 15: a work tree is set per machine (issue #361): paths that named no machine move onto one.
+  machineWorkTrees,
 ];
 
 /** A user schema's version once migrated. */
