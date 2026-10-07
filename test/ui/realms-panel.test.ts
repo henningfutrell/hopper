@@ -223,6 +223,15 @@ describe('Settings: Sign-in', () => {
     await vi.waitFor(() => expect(posts).toContainEqual({ action: 'save', version: 'v1', realm: { name: 'github', label: 'GitHub', type: 'github' } }));
   });
 
+  it('the other ways are company sign-ins at the edge: their people still connect GitHub for their jobs, and the hopper asks for no password of its own (issues #214, #237, #264)', async () => {
+    await render('admin');
+    await vi.waitFor(() => expect(rows()).toHaveLength(2));
+    const other = section('other').querySelector('p')!.textContent;
+    expect(other).toMatch(/company/);
+    expect(other).toMatch(/connects their GitHub in Sources/);
+    expect(other).not.toMatch(/username|password/i);
+  });
+
   it('with no other way to sign in, says GitHub is the only one', async () => {
     VIEW = { ...structuredClone(BASE), realms: [structuredClone(GITHUB)] };
     await render('admin');
