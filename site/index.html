@@ -119,9 +119,9 @@ admin (<code>docs/sign-in.md</code> &quot;Who signs in as which user&quot;).</li
 or one line installs the daemon, its database and its herdr session on this host.</li>
 <li><strong><a href="#sign-in">Sign in</a></strong> — one command opens the UI, signed in.</li>
 <li><strong><a href="#connect-github">Connect GitHub</a></strong> — sign in with GitHub and enter the code it shows; the first
-person to do so becomes admin, and that connection is what your jobs work through. gh, and a GitHub
-App an admin sets up, are the other paths.</li>
-<li><strong><a href="#give-it-jobs">Give it jobs</a></strong> — say whose GitHub issues it takes, then label an issue
+person to do so becomes admin, and that connection is what your jobs work through. A GitHub App an
+admin sets up is the one other path.</li>
+<li><strong><a href="#give-it-jobs">Give it jobs</a></strong> — choose the job repositories in Sources, then label an issue
 <code>hopper</code>.</li>
 <li><strong><a href="#add-machines">Add machines</a></strong> — optional: jobs run on this host from step 1; add other
 computers, or a sandbox container, when you want more room.</li>
@@ -158,7 +158,7 @@ install page has the steps: <a href="https://henningfutrell.github.io/hopper/ins
 <td>jobs (on each machine that runs them), the escalation levels (here, or on the machine each designates; or none, with an API key), usage readings</td>
 </tr>
 <tr>
-<td>your GitHub, signed in with in the UI (default), the <code>gh</code> CLI signed in as you, or a GitHub App an admin creates</td>
+<td>your GitHub, signed in with in the UI (default), or a GitHub App an admin creates</td>
 <td>reading and labelling the issues that are jobs (<a href="#connect-github">Connect GitHub</a>)</td>
 </tr>
 </tbody></table>
@@ -173,7 +173,7 @@ curl -fsSLO https://henningfutrell.github.io/hopper/compose.yaml      # compose.
 podman compose up -d
 # open http://localhost:4790/ and sign in with GitHub: the first person to do so is the admin
 podman compose exec hopper claude                                    # once: /login, then /exit
-# GitHub: the UI&#39;s Sources view → Log in to GitHub (once; kept in the home volume)
+# then Sources → GitHub account: choose the repositories jobs may come from
 systemctl --user enable podman-restart.service                        # once: start it again after a reboot
 </code></pre>
 <p>The container is not a machine: jobs run on attached machines (&quot;Add machines&quot;). Settings and secrets: a
@@ -213,7 +213,7 @@ launch (<code>docs/deploy.md</code> &quot;Sign-in set up at launch&quot;) — an
 <h2 id="connect-github">Connect GitHub</h2>
 <p>GitHub is how people sign in to the hopper and how it works for them: each user&#39;s issues come from
 their GitHub, and what their jobs do there acts as them, with GitHub showing the hopper&#39;s app on it.
-Pick the path; a new hopper is on the first one.</p>
+There are two paths; a new hopper is on the first one.</p>
 <table>
 <thead>
 <tr>
@@ -230,12 +230,6 @@ Pick the path; a new hopper is on the first one.</p>
 <td><code>github-account</code></td>
 </tr>
 <tr>
-<td><a href="#the-gh-cli"><strong>The gh CLI</strong></a></td>
-<td>a personal hopper on a host where gh is already signed in</td>
-<td>you</td>
-<td><code>github</code></td>
-</tr>
-<tr>
 <td><a href="#a-github-app-of-your-own"><strong>A GitHub App of your own</strong></a></td>
 <td>an admin&#39;s choice for particular environments: labels from a bot, repos chosen by where the App is installed. Not for local deployments in general</td>
 <td>the App&#39;s bot, <code>&lt;slug&gt;[bot]</code></td>
@@ -246,7 +240,9 @@ Pick the path; a new hopper is on the first one.</p>
 private key acts on every repository its App is installed on. The hopper&#39;s app is different: it ships
 only its public client id, which authorizes nothing by itself.</p>
 <p>Which path you are on: the UI&#39;s <strong>Sources</strong> view. The source that is not <code>paused</code> is the one taking
-jobs, and the sentence above the cards says which. <code>GET /api/accounts</code> names the account it acts as.</p>
+jobs, and the sentence in the GitHub section says which. <code>GET /api/accounts</code> names the account it acts as.
+(The gh CLI source and <strong>Log in to GitHub</strong> were removed by issue #359: the hopper reads GitHub as a
+user only through that user&#39;s GitHub sign-in.)</p>
 <h3 id="sign-in-with-github-default">Sign in with GitHub (default)</h3>
 <p>Every hopper offers it, a new one too. On the sign-in page, <strong>Sign in with GitHub</strong> shows a code; enter
 it at <code>https://github.com/login/device</code> and approve the hopper&#39;s app. <strong>The first person to sign in with
@@ -262,6 +258,11 @@ where it is installed and links to install it or choose repositories. That accou
 the panel offers <strong>Sign out</strong>, not a disconnect; to stop taking jobs from GitHub and stay signed in,
 switch off the <code>github-account</code> source in <strong>Plugins</strong>. Revoke the app for good at
 <a href="https://github.com/settings/applications">https://github.com/settings/applications</a>.</p>
+<p>A job that needs GitHub for its own git or <code>gh</code> gets your token from this same connection (<code>GH_TOKEN</code>).
+The token renews itself before it expires. Nothing falls back to another credential: while GitHub is
+not connected, or its sign-in ended, the source is paused, says why, and takes nothing. An ended sign-in
+shows <strong>sign-in expired</strong> in <strong>Sources → GitHub account</strong>; press <strong>Connect GitHub again</strong> (or sign in
+with GitHub again).</p>
 <p>Signed in at the edge instead (SSO, SAML, an auth gateway): <strong>Sources → GitHub account → Connect
 GitHub</strong>, the same code at the same address. That account is then linked to your user. <strong>Stop working
 through GitHub</strong> there forgets the account and its token and keeps you signed in; the source then says
@@ -269,19 +270,6 @@ through GitHub</strong> there forgets the account and its token and keeps you si
 <p>The app ships with the hopper as a public client id — no secret: the device flow needs none. GitHub
 Enterprise, or an app of your own, is set in the environment: <code>HOPPER_GITHUB_URL</code>,
 <code>HOPPER_GITHUB_CLIENT_ID</code>, <code>HOPPER_GITHUB_APP_SLUG</code> (how to register one: <a href="https://github.com/henningfutrell/hopper/blob/main/docs/sign-in.md#github">docs/sign-in.md</a>).</p>
-<h3 id="the-gh-cli">The gh CLI</h3>
-<p>On the hopper&#39;s host, as the user the daemon runs as:</p>
-<pre><code class="language-sh">gh auth login          # GitHub.com → HTTPS → log in with a web browser
-gh auth status         # must say &quot;Logged in to github.com account &lt;you&gt;&quot;
-</code></pre>
-<p>Or, on any install, from the UI: <strong>Sources</strong> → <strong>Log in to GitHub</strong> (an admin). The hopper runs gh&#39;s
-own device flow and shows its code and <code>https://github.com/login/device</code>; enter the code there as the
-GitHub user the hopper should act as. gh keeps the login in its own config — with Podman, in the
-container&#39;s home volume, so it outlives restarts and upgrades. This is the way in a container: no
-terminal, no token in <code>.env</code>. A <code>GH_TOKEN</code> in the environment overrides gh&#39;s login; the panel says
-so, and asks you to remove it.</p>
-<p>That is all: the <code>github</code> source starts on its own once gh is logged in (no restart), and pauses
-while a GitHub account is connected or a GitHub App key is set (<code>enabled: auto</code>).</p>
 <h3 id="a-github-app-of-your-own">A GitHub App of your own</h3>
 <p>You create the App; it lives on your GitHub account (or your organization), and its key on your
 hopper only. One App, one key, one hopper.</p>
@@ -301,7 +289,7 @@ only repositories it takes jobs from.</p>
 <a href="#give-it-jobs">Give it jobs</a>.</p>
 </li>
 <li><p><code>systemctl --user restart hopper</code> (or the container), so the daemon reads the key. The
-<code>github</code> source now pauses and <code>github-app</code> takes the jobs.</p>
+<code>github-app</code> source then takes the jobs of the repositories the App is installed on.</p>
 </li>
 </ol>
 <h3 id="not-built-other-ways-in">Not built: other ways in</h3>
@@ -313,9 +301,10 @@ built way: the hopper keeps the token GitHub grants its app.</li>
 </ul>
 <h2 id="give-it-jobs">Give it jobs</h2>
 <ol>
-<li><p>Signed in with GitHub, nothing to do: your own issues are taken. To take other people&#39;s, or
-to use another <a href="#connect-github">path</a>, open the instance in Settings → Plugins → Job sources —
-<code>github-account</code>, <code>github</code> (the gh CLI) or <code>github-app</code> (your App) — and set its options:</p>
+<li><p>Sign in with GitHub (or <strong>Sources → GitHub account → Connect GitHub</strong>), then choose the job
+repositories in <strong>Sources → GitHub account</strong>: your own issues in them are taken. To take other
+people&#39;s, or to use <a href="#a-github-app-of-your-own">your own App</a>, open the instance in Settings →
+Plugins → Job sources — <code>github-account</code> or <code>github-app</code> (your App) — and set its options:</p>
 <table>
 <thead>
 <tr>
@@ -325,19 +314,15 @@ to use another <a href="#connect-github">path</a>, open the instance in Settings
 </thead>
 <tbody><tr>
 <td><code>authors</code></td>
-<td>whose issues are accepted (<code>your-github-login</code>); required for <code>github</code> and <code>github-app</code>, the connected account alone when empty on <code>github-account</code></td>
+<td>whose issues are accepted (<code>your-github-login</code>); required for <code>github-app</code>, the connected account alone when empty on <code>github-account</code></td>
 </tr>
 <tr>
 <td><code>repos</code></td>
-<td>optional allowlist (<code>your-org/your-repo</code>)</td>
+<td>on <code>github-app</code>, an optional allowlist inside the App&#39;s installations (<code>your-org/your-repo</code>); <code>github-account</code> takes the job repositories chosen in Sources</td>
 </tr>
 <tr>
 <td><code>repoPaths</code></td>
 <td>where each repo&#39;s jobs run (<code>your-org/your-repo</code> → <code>/srv/checkouts/your-repo</code>)</td>
-</tr>
-<tr>
-<td><code>enabled</code></td>
-<td>on <code>github</code>, <code>auto</code>: on until a GitHub account is connected or a GitHub App key is set</td>
 </tr>
 </tbody></table>
 <p>A job runs in <code>repoPaths[&lt;repo&gt;]</code> (a checkout of that repo), else in <code>defaultCwd</code> (default: the

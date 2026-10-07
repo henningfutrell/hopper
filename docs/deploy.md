@@ -13,11 +13,11 @@ with Podman** ("In containers, with Podman"); the host install is the other way.
 | | where |
 |---|---|
 | `HOPPER_DATABASE_URL` | `postgres://user:password@host:port/database[?schema=<name>][&sslmode=require]`, or `HOPPER_DATABASE_URL_FILE` naming a mounted file holding it. Required. Put Postgres near the hopper: every store call waits one round trip. |
-| Secrets | from the runtime (docs/design.md "Secrets"): each one the variable `NAME`, or the mounted file the variable `NAME_FILE` names (never both) — `GITHUB_APP_PRIVATE_KEY`, `GROKBOT_WEBHOOK_URL`, `GROKBOT_WEBHOOK_KEY`, `TYPESAFE_API_KEY`, each webhook's `secretEnv` (`WEBHOOK_SECRET_<NAME>` from the UI; `openssl rand -hex 32`, given to the subscriber too), a realm's secrets only when the realm is set up from the environment (`HOPPER_SIGN_IN_REALM_<NAME>_CLIENT_SECRET`, docs/sign-in.md "Sign-in from the environment"; typed in Settings otherwise, and stored); `GH_TOKEN` for the gh CLI, `CLAUDE_CODE_OAUTH_TOKEN` for the claude CLI where their own login is not on the machine (variables only: those CLIs read them). The hopper stores no secret but a realm's own (docs/design.md "Secrets"). A leftover `HOPPER_SECRET_KEY` line: delete it. |
+| Secrets | from the runtime (docs/design.md "Secrets"): each one the variable `NAME`, or the mounted file the variable `NAME_FILE` names (never both) — `GITHUB_APP_PRIVATE_KEY`, `GROKBOT_WEBHOOK_URL`, `GROKBOT_WEBHOOK_KEY`, `TYPESAFE_API_KEY`, each webhook's `secretEnv` (`WEBHOOK_SECRET_<NAME>` from the UI; `openssl rand -hex 32`, given to the subscriber too), a realm's secrets only when the realm is set up from the environment (`HOPPER_SIGN_IN_REALM_<NAME>_CLIENT_SECRET`, docs/sign-in.md "Sign-in from the environment"; typed in Settings otherwise, and stored); `CLAUDE_CODE_OAUTH_TOKEN` for the claude CLI where its own login is not on the machine (a variable only: the CLI reads it). A job's `GH_TOKEN` is no runtime secret: the hopper hands each job the connected account's token. The hopper stores no secret but a realm's own (docs/design.md "Secrets"). A leftover `HOPPER_SECRET_KEY` line: delete it. |
 | Process settings | `HOPPER_*` variables: port, LAN names and peers, public URL, tick, limits (`src/config.ts`). |
 | Plugins | Optional. `HOPPER_PLUGIN_DIR` (plugins put there by hand; a container mounts it read-only) and `HOPPER_PLUGIN_STORE` (a git repository the UI installs plugins from — this repository is one: docs/plugins.md). Store installs are kept in the database and restored into the work dir at start: they need no plugin dir and no volume. |
 | Config | the plugins, rules and sign-in configs and the webhook subscriptions, all in the database, all edited in the UI (Settings → Plugins, Settings → Question gates, Settings → Sign-in, Settings → Webhooks); no config file. The first boot writes the built-in plugins config. |
-| GitHub | the gh CLI logged in as the owner (default; from the UI, Sources → Log in to GitHub — design.md "gh login"), or a GitHub App the owner creates for this hopper with `scripts/create-github-app.sh` (its key in `GITHUB_APP_PRIVATE_KEY`). Each hopper has its own App and key; there is no shared one. Setting up either: `README.md` "Connect GitHub". |
+| GitHub | each user's GitHub sign-in, the **connected account** (default; sign in with GitHub, or Sources → Connect GitHub, then choose the job repositories in Sources), or a GitHub App an admin creates for this hopper with `scripts/create-github-app.sh` (its key in `GITHUB_APP_PRIVATE_KEY`). Each hopper has its own App and key; there is no shared one. No gh CLI source and no gh login since issue #359. Setting up either: `README.md` "Connect GitHub". |
 | Where jobs run | machines: this host's herdr session (`hopper-herdr`; not in a container, issue #141), and attached machines, instances in the plugins config's machine sources (Settings → Plugins → Machine sources, or the Machines view) — `client` targets (a computer or a sandbox box, joined with one line), `ssh` targets, `docker` container targets. Setting each one up, step by step: `README.md` "Add machines". |
 
 `hopper` is the operator CLI (`hopper config …`, `hopper users`, `hopper user add`, `hopper user transfer`); it needs `HOPPER_DATABASE_URL` (or `_FILE`) and nothing else. `hopper help` lists its commands; `node src/main.ts --help` lists every daemon setting with its default.
@@ -53,7 +53,7 @@ There is no bootstrap login: a new hopper creates no user, no password and no lo
 |---|---|
 | `secrets` | runs once per start: makes a random database password on the first one, in the `secrets` volume, and writes the database URL from it. Each file is readable only by the one service that uses it. Nobody types or keeps the password. |
 | `postgres` | the database (`POSTGRES_PASSWORD_FILE`), on no host port; data in the `postgres` volume. |
-| `hopper` | the image `HOPPER_IMAGE` names (default `ghcr.io/henningfutrell/hopper:latest`). `HOPPER_DATABASE_URL_FILE` from `secrets`. Its home, `/home/node`, is the `home` volume: the gh and claude sign-ins and git's identity. |
+| `hopper` | the image `HOPPER_IMAGE` names (default `ghcr.io/henningfutrell/hopper:latest`). `HOPPER_DATABASE_URL_FILE` from `secrets`. Its home, `/home/node`, is the `home` volume: the claude sign-in and git's identity. |
 
 - **The container is not a machine** (issue #141). The image sets `HOPPER_LOCAL_MACHINE=false`: no
   `local` machine, and the boot removes one an earlier version wrote into the plugins config. Jobs run on
@@ -67,11 +67,12 @@ There is no bootstrap login: a new hopper creates no user, no password and no lo
   through. Attaching over ssh (`you@host.containers.internal`, Docker `you@host.docker.internal`) stays
   for a computer that cannot run the client. A reverse proxy in front of a public hopper must pass the
   dial-in's HTTP upgrade (`Upgrade: hopper-client/1`) to `/client/connect`.
-- **Sign-ins.** GitHub: the UI's Sources view → **Log in to GitHub**, once (gh's device flow, run by the
-  hopper; no terminal). Claude Code: `podman compose exec hopper claude` (`/login`), once. Both are kept
-  in the home volume. No `-it`: `podman compose exec` is interactive with a terminal by default, and
-  podman-compose refuses the flag. Or, for Claude Code, `CLAUDE_CODE_OAUTH_TOKEN` in `.env`. Jobs reach GitHub over HTTPS through gh (git's credential helper is
-  `gh auth git-credential`). Who jobs commit as: `git config --global` in the container, or the
+- **Sign-ins.** GitHub: sign in with GitHub in the UI (or Sources → Connect GitHub); the hopper keeps
+  that connection, and nothing in the container signs in to GitHub (the image has no gh since issue
+  #359). Claude Code: `podman compose exec hopper claude` (`/login`), once, kept in the home volume. No
+  `-it`: `podman compose exec` is interactive with a terminal by default, and podman-compose refuses the
+  flag. Or, for Claude Code, `CLAUDE_CODE_OAUTH_TOKEN` in `.env`. A job gets its GitHub token from the
+  connected account (`GH_TOKEN`) on the machine that runs it. Who jobs commit as: `git config --global` in the container, or the
   `GIT_AUTHOR_*`/`GIT_COMMITTER_*` variables in `.env`.
 - **Settings and secrets: `.env` beside `compose.yaml`**, optional (`.env.example`, mode 600). Compose
   reads it for the file's own variables and passes all of it to the hopper.
