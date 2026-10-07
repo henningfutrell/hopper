@@ -1,7 +1,7 @@
 // A JobSource a test scripts by hand: items it offers, signals it raises, reports it receives.
 // Integration tests pull every non-GitHub job through it (nothing pushes jobs to the hopper).
 // Like the GitHub source's markers (hopper:done, hopper:failed, hopper:rejected), a reported finished, failed or rejected end
-// stops the item being offered; add it again to re-run it, or retry its job (a `retried` report offers it again).
+// stops the item being offered; add it again to re-run it, or run its failed job again (a `rerun` report offers it again).
 import type { JobSource, SourceItem, SourceReport, SourceSignal } from '../../src/domain/ports.ts';
 
 export interface ManualSource extends JobSource {
@@ -52,7 +52,7 @@ export function createManualSource(name = 'manual'): ManualSource {
         if (item) ended.set(key, item);
         items.delete(key);
       }
-      if (r.kind === 'retried') {
+      if (r.kind === 'rerun') {
         const item = ended.get(key);
         if (item) items.set(key, item);
       }

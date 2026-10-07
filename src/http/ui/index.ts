@@ -134,6 +134,7 @@ export const connectedAccountsBody = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('choose'), provider: z.enum(CONNECTED_ACCOUNT_PROVIDERS), repositories: z.array(z.string().regex(/^[^/\s]+\/[^/\s]+$/, 'owner/repo')).max(5000) }),
 ]);
 const EDIT_STATUS = { invalid: 400, not_found: 404, conflict: 409 } as const;
+const RERUN_STATUS = { not_found: 404, conflict: 409, source: 502 } as const;
 /** The rules themselves are validated by the plugin host (the plugins config schema), so a refusal names the field. */
 export const routingEditBody = z.strictObject({ rules: z.array(z.any()), version: z.string().min(1) });
 
@@ -189,6 +190,11 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   app.post('/ui/api/jobs/:id/approve', operator, async (req) => o.tenant(req).engine.approve(parseWith(idParams, req.params).id));
   app.post('/ui/api/jobs/:id/operator-led', operator, async (req) => o.tenant(req).engine.claimByOperator(parseWith(idParams, req.params).id));
   app.post('/ui/api/jobs/:id/reject', operator, async (req) => o.tenant(req).engine.reject(parseWith(idParams, req.params).id));
+  app.post('/ui/api/jobs/:id/rerun', operator, async (req) => {
+    const r = await o.tenant(req).registry.rerun(parseWith(idParams, req.params).id);
+    if (r.ok) return r.job;
+    throw new HttpError(RERUN_STATUS[r.reason], r.message);
+  });
   app.post('/ui/api/queue/order', operator, async (req) => ({ jobs: o.tenant(req).engine.orderQueue(parseWith(queueOrderBody, req.body).jobIds) }));
   app.post('/ui/api/queue/accept-presort', operator, async (req) => ({ presort: o.tenant(req).engine.acceptPreSort() }));
   app.post('/ui/api/queue-gate', admin, async (req) => ({ gate: o.tenant(req).engine.setQueueGate(parseWith(queueGateBody, req.body)) }));

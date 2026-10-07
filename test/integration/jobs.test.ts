@@ -102,7 +102,7 @@ describe('jobs pulled from a source', () => {
     expect((await t.waitForStatus(job.id, 'failed')).error).toBe('boom');
   });
 
-  it('Retry gives a failed job back to its source: the item is offered again and a new job runs (issue #313)', async () => {
+  it('Run again gives a failed job back to its source: the item is offered again and a new job runs (issue #313)', async () => {
     const token = await t.login();
     const failed = await t.pull({ op: 'fail', message: 'scratch dir timed out' });
     await t.waitForStatus(failed.id, 'failed');
@@ -111,20 +111,20 @@ describe('jobs pulled from a source', () => {
     const jobsFor = async () => (await t.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=1000')).body.jobs.filter((j) => j.source?.key === failed.source?.key);
     expect(await jobsFor()).toHaveLength(1); // ended and reported: not offered again on its own
 
-    const r = await t.ui<Job>(`/ui/api/jobs/${failed.id}/retry`, {}, { token });
+    const r = await t.ui<Job>(`/ui/api/jobs/${failed.id}/rerun`, {}, { token });
     expect(r.status).toBe(200);
-    expect(t.source.reports.filter((x) => x.job.id === failed.id).map((x) => x.kind)).toEqual(['claimed', 'failed', 'retried']);
-    expect((await t.events('types=job.retried')).find((e) => e.jobId === failed.id)?.data).toEqual({ by: 'user' });
+    expect(t.source.reports.filter((x) => x.job.id === failed.id).map((x) => x.kind)).toEqual(['claimed', 'failed', 'rerun']);
+    expect((await t.events('types=job.rerun')).find((e) => e.jobId === failed.id)?.data).toEqual({ by: 'user' });
     await waitFor(async () => (await jobsFor()).length === 2, { what: 'the new job' });
   });
 
-  it('Retry refuses a job that has not failed (409) and an unknown one (404)', async () => {
+  it('Run again refuses a job that has not failed (409) and an unknown one (404)', async () => {
     const token = await t.login();
     const long = await t.pull({ op: 'sleep', ms: 10000 });
     await t.waitForStatus(long.id, 'running');
-    expect((await t.ui(`/ui/api/jobs/${long.id}/retry`, {}, { token })).status).toBe(409);
-    expect((await t.ui('/ui/api/jobs/nope/retry', {}, { token })).status).toBe(404);
-    expect(await t.events('types=job.retried')).toEqual([]);
+    expect((await t.ui(`/ui/api/jobs/${long.id}/rerun`, {}, { token })).status).toBe(409);
+    expect((await t.ui('/ui/api/jobs/nope/rerun', {}, { token })).status).toBe(404);
+    expect(await t.events('types=job.rerun')).toEqual([]);
   });
 
   it('a cancel signal from the source cancels a running job with the source reason', async () => {

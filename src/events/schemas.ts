@@ -72,6 +72,8 @@ export const EVENT_SCHEMAS = {
   'queue.gate_changed': strict({ from: queueGate, to: queueGate }),
   // Operator-led work (issue #318): an operator took the waiting job by hand; it holds no lane and is never run.
   'job.claimed_by_operator': strict({}),
+  // Run again (a re-run, issue #313): the user gave a failed job's item back to its source to run again.
+  'job.rerun': strict({ by: z.enum(['user']) }),
 } satisfies Record<EventType, z.ZodType>;
 
 export const ENVELOPE_SCHEMA = strict({

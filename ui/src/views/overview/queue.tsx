@@ -1,12 +1,12 @@
 // Waiting (queue order), the jobs on a question and the operator-led jobs below it, and Ended (the last 24 hours, newest first).
 // Each row names its job group, as the cards count them (tested: test/ui/overview-counts.test.ts).
-import { Archive, Check, Hourglass } from 'lucide-react';
+import { Archive, Check, Hourglass, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { JobTitle, Since } from '@/components/job';
 import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
 import { useNow } from '@/hooks/use-now';
-import { waitingRows } from '@/model/board';
+import { canRerun, waitingRows } from '@/model/board';
 import { ago, between } from '@/model/format';
 import { act, useHopper } from '@/store';
 import { useCanOperate, useJobBoard } from '@/store/selectors';
@@ -76,6 +76,8 @@ export function WaitingPanel() {
 
 export function EndedPanel() {
   const { ended } = useJobBoard();
+  const jobs = useHopper((s) => s.jobs);
+  const operate = useCanOperate();
   const now = useNow();
   return (
     <Panel title="Ended" icon={Archive} count={ended.length ? `${ended.length} in 24 h` : ''} list bodyClassName="divide-y p-0">
@@ -83,6 +85,10 @@ export function EndedPanel() {
         <div key={job.id} data-job-group="ended" data-job-id={job.id} data-status={job.status} className="space-y-1.5 px-4 py-3">
           <div className="flex items-start gap-2">
             <JobTitle job={job} className="flex-1" />
+            {operate && canRerun(job, Object.values(jobs)) && (
+              <Button size="xs" variant="outline" title="Run again: its source offers it again and a new job runs"
+                onClick={() => act(`/ui/api/jobs/${job.id}/rerun`, {}, 'Job offered again')}><RotateCcw />Run again</Button>
+            )}
             <StatusBadge status={job.status} />
           </div>
           <div className="num flex gap-3 text-xs text-muted-foreground">

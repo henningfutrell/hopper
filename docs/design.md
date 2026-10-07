@@ -1116,6 +1116,16 @@ Unreported, the item stays one attempt, so a failing label write cannot loop. Pr
 `github-app` re-run share it. Before issue #186 a finished job was never re-run, so an issue reopened
 after a job that finished without shipping stayed stuck, skipped without a word.
 
+**Run again** (issue #313). A failed job need not wait for a human to clear its marker at the
+source: `POST /ui/api/jobs/:id/rerun` (operator; the Ended panel's Run again button) asks the sync loop
+(`SourceRegistry.rerun`) to give the item back. Only the newest job of its key, status `failed`, whose
+failure was reported (`finalReported`), of a running source — else 409; unknown → 404. On the job's
+report chain the source gets report kind `rerun` and clears the job's end — on GitHub `hopper:failed`
+and `hopper:claimed` are removed —, then `SourceHost.rerun` appends `job.rerun { by: "user" }` and the
+source syncs at once, so it offers the item again and `isRerunnable` makes a new job. The failed job is
+kept as it ended. A source that cannot take it → 502 with its error, and nothing is recorded. Residual:
+an issue closed meanwhile is not offered again; nothing runs.
+
 **Not run again, said out loud** (issue #186). An offered item whose newest job ended but cannot
 re-run yet (its end is not reported to the source) is not dropped silently: it is listed in the
 source status `detail.notRerun` (`{ key, job, status, reason }`, shown on the Sources view) and

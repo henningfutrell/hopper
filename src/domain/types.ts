@@ -267,6 +267,7 @@ export const EVENT_TYPES = [
   'update.available', 'update.started', 'update.applied', 'update.failed',
   'plugin.installed', 'plugin.removed',
   'job.accepted', 'job.rejected', 'queue.ordered', 'queue.gate_changed', 'job.claimed_by_operator',
+  'job.rerun',
 ] as const;
 export type EventType = typeof EVENT_TYPES[number];
 
@@ -283,6 +284,7 @@ export const EVENT_SCHEMA_VERSIONS: Readonly<Record<EventType, number>> = {
   'update.available': 1, 'update.started': 1, 'update.applied': 1, 'update.failed': 1,
   'plugin.installed': 1, 'plugin.removed': 1,
   'job.accepted': 1, 'job.rejected': 1, 'queue.ordered': 1, 'queue.gate_changed': 1, 'job.claimed_by_operator': 1,
+  'job.rerun': 1,
 };
 
 export interface DomainEvent<T = Record<string, unknown>> {

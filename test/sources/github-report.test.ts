@@ -63,13 +63,13 @@ describe('GitHub source report', () => {
     expect(state).toEqual(claimed);
   });
 
-  it('retried: the failed and claimed labels go, so the issue is offered again; no comment', async () => {
+  it('rerun: the failed and claimed labels go, so the issue is offered again; no comment', async () => {
     const { gh, source } = withIssue();
     const job = jobForIssue(1, { status: 'failed', error: 'scratch dir timed out' });
     await source.report({ kind: 'claimed', job });
     await source.report({ kind: 'failed', job });
     gh.calls.length = 0;
-    await source.report({ kind: 'retried', job });
+    await source.report({ kind: 'rerun', job });
     expect(gh.issue(REPO, 1).labels).toEqual(['hopper']);
     expect(gh.issue(REPO, 1).state).toBe('open');
     expect(gh.commentsOn(REPO, 1)).toEqual([]);

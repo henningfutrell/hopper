@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- A job that failed now has a Run again button in the Ended list: its issue is picked up again and a new job starts, with no labels to remove by hand.
 - A waiting job can now be claimed as operator-led from the Overview, when you work it by hand in your editor or a terminal: the hopper runs nothing for it, shows it under Operator-led and on its own row of the lane timeline, and marks it finished once your pull request closing its issue is done.
 - Jobs never run in the home folder of their machine any more: with no folder set they run in a hopper-jobs folder inside it, made for them when missing, and a job pointed at the home folder itself stops straight away with the reason.
 - Jobs on another machine now start in that machine's home folder when no folder is set, even when the hopper runs in a container; a folder that machine cannot use now stops the job straight away with the reason, instead of after a minute's wait.
