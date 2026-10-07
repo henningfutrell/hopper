@@ -320,6 +320,7 @@ existing database instead.
 
 **Agent boxes for testing** (`docs/design.md` "Agent boxes"): `HOPPER_SSH_PUBLIC_KEY='<the hopper's key, as
 Machines → Add shows it>' bash scripts/agent-boxes.sh --attach` starts one container per agent CLI (claude, codex, cursor, omp, opencode),
-each an ssh target with its own herdr session, and attaches them all (`--attach` needs the daemon's
-`HOPPER_DATABASE_URL`); `ssh -t hopper-box-<agent>` opens a terminal there to sign the agent in.
+each an ssh target with its own herdr session, and attaches them all: to the hopper in its compose
+container on this machine (the boxes join its network), or, with `HOPPER_DATABASE_URL` set, to a host
+install; `ssh -t hopper-box-<agent>` opens a terminal there to sign the agent in.
 `--remove` takes them away again.

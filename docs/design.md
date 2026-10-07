@@ -2851,15 +2851,37 @@ configuration"): their boxes are attached, online while their herdr session answ
 works in them by hand until an executor drives their CLI. A job's work tree is a path of the box: a job
 whose `cwd` exists only on this machine does not run there.
 
-**This host only.** The boxes are on this machine's docker and the Hosts in its `~/.ssh`: they serve a
-hopper installed here. A hopper in a container (issue #293) reaches them by neither; it would attach each
-as a typed `agent@<this computer>` with the box's port, which a typed target cannot carry.
+**The hopper they serve (issue #306).** A host install, when its database is named
+(`HOPPER_DATABASE_URL` or `HOPPER_DATABASE_URL_FILE`): its CLI from `HOPPER_APP_DIR`, the box attached as
+the Host `hopper-box-<agent>` in `~/.ssh`. Else the hopper in its compose container — the running
+container labelled with the compose project `HOPPER_COMPOSE_PROJECT` (default `hopper`, `compose.yaml`'s
+`name:`) and the service `hopper`, found with `docker ps`; with neither, `--attach` stops before it builds.
+With that container, which resolves no Host of `~/.ssh` and reaches no port on the host's loopback:
+
+- each box is on the hopper's network (`hopper_default`): a new box is made with `--network`, a running
+  one not on it is joined (`docker network connect`), on every run — so a box made again, for a new image,
+  is on it from its start, and a re-run never drops it;
+- it is attached as `agent@hopper-box-<agent>`: the box's name on that network, port 22, its pinned host key
+  the same one;
+- the plugins config is changed by the hopper's own CLI in its container (`docker exec -i <container>
+  hopper config …`, which reads `HOPPER_DATABASE_URL_FILE` there): no host install, no database port;
+- the script checks the hopper reaches each box: `ssh-keyscan` from the hopper's container, by the box's
+  name, answers the box's host key.
+
+The loopback port and the Host stay, for the owner's terminal. A `compose down` that removes the network
+takes the boxes off it: run the script again. The hopper in a container on another computer is not served:
+the boxes are on this machine's docker.
 
 **Residual risk.** The boxes reach the network (the agents need their APIs) and run whatever a job or
 the owner tells their agent; they are not the container target's locked-down sandbox. sshd listens on
 loopback only. The hopper's key is restricted there; the owner's keys are not.
 
-**Verification.** `test/scripts/agent-boxes.test.ts`: the plugins-config filter; opt-in
+**Verification.** `test/scripts/agent-boxes-compose.test.ts`: against a stand-in docker that answers as a
+compose deploy, a new box made on the hopper's network, a running one joined to it, the box attached as
+`agent@<box>` through the CLI in the hopper's container, `--attach` with no hopper refused before a build;
+and the fix run by hand on a compose deploy: all five boxes taken off the network and attached by bare
+name (offline, name not resolved), then one run of the script — all five online, again after a second run.
+`test/scripts/agent-boxes.test.ts`: the plugins-config filter; opt-in
 (`HOPPER_TEST_AGENT_BOX=1`: it builds an image with an agent CLI from npm) a real codex box on the real docker, reached over real ssh with the hopper's key alone (no pty), its herdr session running,
 attached to a test database through the operator CLI, kept on a second run, then removed. Each of the
 five images was built and its CLI run over ssh by hand.
@@ -3104,7 +3126,7 @@ across re-runs and rebuilds (#307, #306); no herdr binary path to type (#311). R
 |------|-----------|--------------|-------|
 | ssh target (#10, #59, #293) | the hopper dials the machine | the container reaches the machine's sshd: `you@host.docker.internal` / `host.containers.internal` for the computer it runs on | a key to install by hand in `authorized_keys`, a host key fingerprint to check, sshd on the target, `herdrBin` because each call is a fresh login shell (#311) |
 | client target (#59) | the machine dials the hopper | the client reaches the hopper's **host** sshd; its key goes in that host's `authorized_keys` with a forced relay command | leans on the hopper's host — exactly what a container hopper does not have (#293, "Not changed"); the token is a runtime variable, so adding one means a restart and a file; the install is a script run over the user's ssh |
-| agent box (#295) | the hopper dials the box | the box's sshd on the computer's loopback, a random port | a containerized hopper reaches neither the loopback nor the Hosts in `~/.ssh` ("This host only"); a restarted box gets a new port (#319's finding); joining the boxes to the compose network was a hand fix a re-run undoes (#306) |
+| agent box (#295) | the hopper dials the box | the box's sshd on the computer's loopback, a random port; with the hopper in its compose container, the box's name on the compose network (#306) | the hopper must run on the boxes' computer; a restarted box gets a new loopback port (#319's finding), which only the owner's terminal uses |
 | container target (#58) | the hopper runs `docker exec` | the hopper's docker socket (proxied) | runs commands only, no agent, no herdr |
 
 Every catch in the table comes from one thing: **the hopper dials in**. Dialling in needs a reachable
@@ -3223,7 +3245,7 @@ again. This section depends on them, not the other way round.
 |---------|-----------------|----------------------|-----------------------|
 | the computer the container runs on | ssh target typed as `you@host.containers.internal` / `you@host.docker.internal` (#293) | start sshd there; install herdr; paste the form's `restrict <key>` line into `authorized_keys`; check a fingerprint by hand; (Docker on Linux) add `extra_hosts: host-gateway` to the compose file | five steps, two of them on the host's security config; a herdr path (#311); the computer's whole account is the boundary |
 | a laptop | ssh target typed as `user@host` | the same, minus the gateway name | the same; the laptop must be reachable from the hopper (same LAN or a tailnet) |
-| a sandboxed agent box | `scripts/agent-boxes.sh --attach` (#295) | from a checkout on the host, with a host install of the CLI and a database reachable from the host | offline in a container deploy (#306): the box's name resolves only through the host's `~/.ssh`, its sshd is on the host's loopback, a restart moves its port (#319) |
+| a sandboxed agent box | `scripts/agent-boxes.sh --attach` (#295) | from a checkout on the host; with the hopper in its compose container, the hopper's own CLI there (#306) | an ssh box: sshd, a host key, a key line; boxes on this computer's engine only |
 | a sandboxed command box | `scripts/container-target.sh` + `scripts/docker-proxy.sh` (#58) | from a checkout on the host; a docker socket handed to the hopper | runs commands only, no agent; the hopper container gets no engine socket in the compose deploy |
 | a client target | `scripts/attach-client.sh` (#59) | from the hopper's host, over the user's ssh | dials the hopper's host sshd, which a container hopper does not have (#293, "Not changed"); a token variable and a restart per machine |
 
