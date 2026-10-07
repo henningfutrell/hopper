@@ -4,7 +4,8 @@
 // slug (for the install link): the device flow (RFC 8628) needs no secret, so no private key or client
 // secret is distributed. An install may name another app, or a GitHub Enterprise, through the environment
 // (HOPPER_GITHUB_URL, HOPPER_GITHUB_CLIENT_ID, HOPPER_GITHUB_APP_SLUG). Not an admin's own GitHub App,
-// which acts as itself with its private key (the github-app job source).
+// which acts as itself with its private key (the github-app job source). The shipped app is public: any
+// GitHub account or organization installs it (issue #352).
 import type { ConnectedAccountProvider } from '../domain/types.ts';
 
 /** What the hopper ships. Public by design: a client id names the app, it authorizes nothing. */

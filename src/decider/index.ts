@@ -69,7 +69,6 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
 
   if (inputs.queueOrder) reasons.push(`queue order by ${inputs.queueOrder.sorter}`);
   const placed = assign(order(candidates, inputs.queueOrder?.jobIds), states);
-  hold.push(...placed.hold);
 
   const taken = new Set(placed.start.map((s) => s.laneId));
   const plans = states.map((s) => {
@@ -81,11 +80,11 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
   plans.push(...gone.map((id) => planGoneLanes(id, lanes)));
 
   reasons.push(
-    `${waiting.length} waiting, ${placed.start.length} start, ${hold.length} held`,
+    `${waiting.length} waiting, ${placed.start.length} start, ${hold.length} held, ${placed.wait.length} waiting for a lane`,
     ...advice.map((d) => `advice ${d.advice} on ${d.jobId}: native ${d.native}, with advice ${d.withAdvice}`),
   );
   return {
     id: decisionId, at: inputs.at, trigger: inputs.trigger,
-    lanes: plans, start: placed.start, hold, advice, reasons, inputs,
+    lanes: plans, start: placed.start, hold, wait: placed.wait, advice, reasons, inputs,
   };
 }

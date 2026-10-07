@@ -26,7 +26,7 @@ export function createAnswerHandlers(c: EngineContext, cleanup: Cleanup): Answer
   return {
     onAnswered(q) {
       if (!waitingOn(q)) return;
-      store.jobs.update(q.jobId, { status: 'queued', pendingAnswer: q.answer ?? '', holdReason: undefined });
+      store.jobs.update(q.jobId, { status: 'queued', pendingAnswer: q.answer ?? '', holdReason: undefined, waitReason: undefined });
       store.events.append({ type: 'job.requeued', jobId: q.jobId, questionId: q.id, data: { from: 'waiting_answer', reason: q.status === 'closed' ? 'closed' : 'answered' } });
     },
     onExpired(q) {

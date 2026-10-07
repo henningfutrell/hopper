@@ -38,10 +38,11 @@ export function Dot({ tone, pulse, className }: { tone: Tone; pulse?: boolean; c
   );
 }
 
-export function StatusBadge({ status, label, tone, className }: { status: string; label?: string; tone?: Tone; className?: string }) {
+/** `title`: what the state means, shown on hover. */
+export function StatusBadge({ status, label, tone, title, className }: { status: string; label?: string; tone?: Tone; title?: string; className?: string }) {
   const t = tone ?? toneOf(status);
   return (
-    <span className={cn('inline-flex h-5 shrink-0 items-center gap-1.5 rounded-md border px-1.5 text-[11px] font-medium whitespace-nowrap', BADGE[t], className)}>
+    <span data-slot="status-badge" title={title} className={cn('inline-flex h-5 shrink-0 items-center gap-1.5 rounded-md border px-1.5 text-[11px] font-medium whitespace-nowrap', BADGE[t], className)}>
       {label ?? status.replace('_', ' ')}
     </span>
   );

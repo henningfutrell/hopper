@@ -185,6 +185,8 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
         const page = pageOf(on.map((a, i) => ({
           id: i + 1, account: { login: a }, html_url: `${base}/settings/installations/${i + 1}`,
           repository_selection: forge?.chosenRepos?.[a] ? 'selected' : 'all',
+          // What the installation grants, as GitHub answers it: the shipped app's permissions.
+          permissions: { contents: 'write', issues: 'write', metadata: 'read', pull_requests: 'write' },
         })), r.query);
         return { status: 200, body: { total_count: on.length, installations: page } };
       }

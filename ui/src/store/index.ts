@@ -31,6 +31,8 @@ export interface HopperState {
   jobs: Record<string, Job>;
   /** The queue order of the waiting jobs, as /api/queue gave it. */
   waitingOrder: string[];
+  /** The locked entries, as /api/queue gave them (issue #355): failed jobs of any age, so kept apart from `jobs`. */
+  locked: Job[];
   /** The queue gate and the pre-sort of the jobs not yet accepted, as /api/queue gave them (issue #159). */
   gate: QueueGate | null;
   presort: PreSort | null;
@@ -64,7 +66,7 @@ export interface HopperState {
 }
 
 export const useHopper = create<HopperState>(() => ({
-  loaded: false, loadError: null, conn: 'connecting', sessionRead: false, authed: false, user: null, signIn: null, health: null, jobs: {}, waitingOrder: [], gate: null, presort: null, machines: [],
+  loaded: false, loadError: null, conn: 'connecting', sessionRead: false, authed: false, user: null, signIn: null, health: null, jobs: {}, waitingOrder: [], locked: [], gate: null, presort: null, machines: [],
   decisions: [], questions: [], handled: [], events: [], history: [], sources: [], deliveries: [], subscriptions: [],
   plugins: null, pluginsError: null, usage: null, accounts: [], routing: null, routingError: null, update: null, loadedCommit: undefined,
 }));
@@ -76,9 +78,10 @@ const upsert = <T,>(list: T[], item: T, same: (x: T) => boolean, cap: number) =>
   list.some(same) ? list.map((x) => (same(x) ? item : x)) : capped([item, ...list], cap);
 
 /** The one way jobs enter the store: an /api/queue answer replaces them all, with the queue gate and its pre-sort. */
-const jobsOf = (q: Queue): Pick<HopperState, 'jobs' | 'waitingOrder' | 'gate' | 'presort'> => ({
+const jobsOf = (q: Queue): Pick<HopperState, 'jobs' | 'waitingOrder' | 'locked' | 'gate' | 'presort'> => ({
   jobs: Object.fromEntries([...q.waiting, ...q.waitingAnswer, ...q.running, ...q.ended].map((j) => [j.id, j])),
   waitingOrder: q.waiting.map((j) => j.id),
+  locked: q.locked,
   gate: q.gate,
   presort: q.presort,
 });

@@ -12,11 +12,11 @@ describe('lane scaling', () => {
     expect(plan(d)).toMatchObject({ current: 0, target: 3, open: 3 });
   });
 
-  it('caps starts at maxLanes and holds the rest with a busy reason', () => {
+  it('caps starts at maxLanes; the rest wait for a lane', () => {
     const waiting = ['a', 'b', 'c', 'd', 'e'].map((id) => job(id));
     const d = decide(inputs({ waiting }), 'd1');
     expect(d.start).toHaveLength(4);
-    expect(d.hold).toEqual([{ jobId: 'e', reason: expect.stringContaining('all lanes busy (cap 4)') }]);
+    expect(d.wait).toEqual([{ jobId: 'e', reason: expect.stringContaining('lane cap is 4') }]);
   });
 
   it('closes an idle lane past the grace period', () => {
@@ -66,7 +66,7 @@ describe('usage limits', () => {
     const d = decide(inputs({ usage: [reading(82.5)], waiting: ['a', 'b', 'c'].map((i) => job(i)) }), 'd1');
     expect(d.start).toHaveLength(2);
     expect(plan(d).target).toBe(2);
-    expect(d.hold[0]!.reason).toContain('usage soft limit caps lanes at 2');
+    expect(d.wait[0]!.reason).toContain('lane cap is 2 (usage soft limit');
   });
 
   it('below soft keeps maxLanes; max over readings applies; machine-scoped readings only hit that machine', () => {
@@ -89,12 +89,12 @@ describe('usage limits', () => {
     expect(d.start[0]!.machineId).toBe('laptop');
   });
 
-  it('hard limit: cap 0, idle closed, busy drained, nothing starts, hold mentions usage', () => {
+  it('hard limit: cap 0, idle closed, busy drained, nothing starts, the wait names usage', () => {
     const lanes = [lane(1), busy(2, 'r1'), busy(3, 'r2')];
     const running = [job('r1', { status: 'running' }), job('r2', { status: 'running' })];
     const d = decide(inputs({ usage: [reading(96)], lanes, running, waiting: [job('a')] }), 'd1');
     expect(d.start).toEqual([]);
-    expect(d.hold[0]!.reason).toMatch(/usage hard limit/);
+    expect(d.wait[0]!.reason).toMatch(/usage hard limit/);
     expect(plan(d)).toMatchObject({ target: 0, open: 0, close: ['local/lane-1'], drain: ['local/lane-3', 'local/lane-2'] });
   });
 
@@ -115,7 +115,7 @@ describe('usage limits', () => {
     const d = decide(inputs({ usage, waiting: ['a', 'b', 'c', 'd'].map((i) => job(i)) }), 'd1');
     expect(d.start).toHaveLength(2);
     expect(plan(d).target).toBe(2);
-    expect(d.hold[0]!.reason).toContain('usage soft limit caps lanes at 2');
+    expect(d.wait[0]!.reason).toContain('lane cap is 2 (usage soft limit');
   });
 
   it('ignores readings with limit <= 0 and says so', () => {
@@ -142,6 +142,6 @@ describe('draining', () => {
     const lanes = [busy(1, 'r1', { state: 'draining' })];
     const d = decide(inputs({ machines: [machine({ maxLanes: 1 })], lanes, running: [job('r1', { status: 'running' })], waiting: [job('a')] }), 'd1');
     expect(d.start).toEqual([]);
-    expect(d.hold[0]!.reason).toContain('all lanes busy (cap 1)');
+    expect(d.wait[0]!.reason).toContain('lane cap is 1, all 1 in use');
   });
 });

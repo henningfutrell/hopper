@@ -34,7 +34,7 @@ export function acceptJob(c: EngineContext, job: Job, by: GateActor, userRank?: 
 
 /** End one waiting job `rejected`, in the caller's transaction. Its reason is its error. */
 export function rejectJob(c: EngineContext, job: Job, by: GateActor, reason: string): Job {
-  const next = c.store.jobs.update(job.id, { status: 'rejected', error: reason, holdReason: undefined, finishedAt: nowIso(c), pendingAnswer: undefined });
+  const next = c.store.jobs.update(job.id, { status: 'rejected', error: reason, holdReason: undefined, waitReason: undefined, finishedAt: nowIso(c), pendingAnswer: undefined });
   c.store.events.append({ type: 'job.rejected', jobId: job.id, data: { by, reason } });
   return next;
 }

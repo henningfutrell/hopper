@@ -26,7 +26,7 @@ describe('persistence across restart', () => {
     const running = await first.pull({ op: 'sleep', ms: 1500 });
     await first.waitForStatus(running.id, 'running');
     const queued = await first.pull({ op: 'echo' });
-    await first.waitForStatus(queued.id, 'held');
+    await waitFor(async () => (await first.job(queued.id)).waitReason !== undefined, { what: 'the second job waiting for a lane' });
     await first.stop();
 
     const second = await startTestApp({ dbPath: db.dbPath, source });

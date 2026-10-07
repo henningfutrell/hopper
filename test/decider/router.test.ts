@@ -58,7 +58,7 @@ it('proceed_full / allow_subagent / research_capped: no divergence, no boost', (
 
 it('the reasons name no mode', () => {
   const d = decide(inputs({ waiting: [adv('a', 'proceed_full')] }), 'd1');
-  expect(d.reasons).toContain('1 waiting, 1 start, 0 held');
+  expect(d.reasons).toContain('1 waiting, 1 start, 0 held, 0 waiting for a lane');
   expect(d).not.toHaveProperty('routerMode');
   expect(d.inputs).not.toHaveProperty('routerMode');
 });

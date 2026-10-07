@@ -38,7 +38,8 @@ export function isNoOp(d: Decision): boolean {
   if (d.start.length > 0) return false;
   if (d.lanes.some((p) => p.open > 0 || p.close.length > 0 || p.drain.length > 0)) return false;
   const byId = new Map(d.inputs.waiting.map((j) => [j.id, j]));
-  return d.hold.every((h) => byId.get(h.jobId)?.holdReason === h.reason);
+  return d.hold.every((h) => byId.get(h.jobId)?.holdReason === h.reason)
+    && d.wait.every((w) => { const j = byId.get(w.jobId); return j?.status === 'queued' && j.waitReason === w.reason; });
 }
 
 function apply(c: EngineContext, d: Decision): Claim[] {
@@ -46,7 +47,7 @@ function apply(c: EngineContext, d: Decision): Claim[] {
   store.decisions.save(d);
   store.events.append({
     type: 'decision.made', decisionId: d.id,
-    data: { decisionId: d.id, trigger: d.trigger, starts: d.start, holds: d.hold, lanes: d.lanes, divergences: d.advice },
+    data: { decisionId: d.id, trigger: d.trigger, starts: d.start, holds: d.hold, waits: d.wait, lanes: d.lanes, divergences: d.advice },
   });
   for (const plan of d.lanes) {
     for (const laneId of plan.close) {
@@ -63,7 +64,7 @@ function apply(c: EngineContext, d: Decision): Claim[] {
     }
     const job = store.jobs.get(s.jobId);
     if (!job) continue;
-    store.jobs.update(s.jobId, { status: 'claimed', laneId, attempts: job.attempts + 1, holdReason: undefined });
+    store.jobs.update(s.jobId, { status: 'claimed', laneId, attempts: job.attempts + 1, holdReason: undefined, waitReason: undefined });
     store.lanes.update(laneId, { state: 'busy', jobId: s.jobId, idleSince: undefined });
     store.events.append({
       type: 'job.claimed', jobId: s.jobId, laneId, machineId: s.machineId, decisionId: d.id,
@@ -74,8 +75,15 @@ function apply(c: EngineContext, d: Decision): Claim[] {
   for (const h of d.hold) {
     const job = store.jobs.get(h.jobId);
     if (!job || job.holdReason === h.reason) continue;
-    store.jobs.update(h.jobId, { status: 'held', holdReason: h.reason });
+    store.jobs.update(h.jobId, { status: 'held', holdReason: h.reason, waitReason: undefined });
     store.events.append({ type: 'job.held', jobId: h.jobId, decisionId: d.id, data: { reason: h.reason } });
+  }
+  // Waiting for a lane is not a hold (issue #381): the job stays queued, or returns to queued from a
+  // hold — a job held before it for lanes alone, too — and no `job.held` is emitted.
+  for (const w of d.wait) {
+    const job = store.jobs.get(w.jobId);
+    if (!job || (job.status === 'queued' && job.waitReason === w.reason)) continue;
+    store.jobs.update(w.jobId, { status: 'queued', holdReason: undefined, waitReason: w.reason });
   }
   return claims;
 }

@@ -49,7 +49,7 @@ describe('resume pin', () => {
       waiting: [resuming('r', { resumeOn: 'b' })],
     }), 'd1');
     expect(d.start).toEqual([]);
-    expect(d.hold[0]!.jobId).toBe('r');
+    expect(d.wait[0]!.jobId).toBe('r');
   });
 });
 

@@ -13,6 +13,7 @@ const ALL: Record<EventType, true> = {
   'job.accepted': true, 'job.rejected': true, 'queue.ordered': true, 'queue.gate_changed': true,
   'job.claimed_by_operator': true,
   'job.rerun': true,
+  'job.dismissed': true,
   'source.stalled': true, 'connected_account.expired': true,
 };
 export const EVENT_TYPES = Object.keys(ALL) as EventType[];

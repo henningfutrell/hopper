@@ -8,6 +8,9 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- The Overview no longer makes healthy jobs look stuck: a lane about to close shows its job running and says it closes after this job, a progress bar appears only when the job reports real progress, and jobs waiting for a free lane say so and name the limit they wait on instead of showing as held. Hover any state to see what it means.
+- Anyone can install the hopper's GitHub app on their own account or organization and sign in with it; Sources shows what the app may do on each account and links to add it to another one.
+- A failed job no longer drops out of the queue: it stays there, locked, with its failure, until you run it again or dismiss it. Locked jobs never start by themselves.
 - Run again now puts the job straight back in the queue, where you can see it right away. It also works on a finished job you want redone, and on an issue that was closed: the issue is reopened for the new job.
 - GitHub issues are now read only through the GitHub account you signed in with. The separate GitHub login in Sources is gone.
 - Run again no longer shows on a failed job whose issue is closed: the job says to reopen the issue instead, and the button comes back once it is open.

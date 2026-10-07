@@ -1,4 +1,4 @@
-import type { DeciderPolicy, ExecutorUnavailable, Job, JobId, Lane, MachineSnapshot, StartPlan, HoldPlan } from '../domain/types.ts';
+import type { DeciderPolicy, ExecutorUnavailable, Job, JobId, Lane, MachineSnapshot, StartPlan, WaitPlan } from '../domain/types.ts';
 import { routerVerdict } from './router-verdict.ts';
 import type { CapBand } from './usage.ts';
 
@@ -106,23 +106,38 @@ function fits(s: MachineState, job: Job): boolean {
     && (pin === undefined || pin === s.machine.id) && roomFor(s, job.spec.executor) > 0;
 }
 
-function noRoomReason(job: Job, states: MachineState[]): string {
-  const eligible = states.filter((s) => s.machine.online && s.machine.executors.includes(job.spec.executor)
+const percent = (frac: number): string => `${Math.round(frac * 100)}%`;
+const usageNote = (band: CapBand, usedFrac: number): string => (band === 'soft' ? ` (usage soft limit, used ${percent(usedFrac)})` : '');
+
+/**
+ * Why a job waits for a lane (issue #381): the lane cap that binds on the machine with the most of
+ * them — its executor's when that leaves less room than the machine's, else the machine's — with its
+ * real number and how many lanes it counts in use.
+ */
+function waitReason(job: Job, states: MachineState[]): string {
+  const ex = job.spec.executor;
+  const eligible = states.filter((s) => s.machine.online && s.machine.executors.includes(ex)
     && (pinOf(job) === undefined || pinOf(job) === s.machine.id));
-  const best = eligible.map((s) => s.executors.get(job.spec.executor)!).reduce((a, b) => (b.cap > a.cap ? b : a));
-  if (best.band === 'hard') return `usage hard limit: no lanes (used ${Math.round(best.usedFrac * 100)}%)`;
-  if (best.band === 'soft') return `usage soft limit caps lanes at ${best.cap} (used ${Math.round(best.usedFrac * 100)}%)`;
-  return `all lanes busy (cap ${best.cap})`;
+  const s = eligible.reduce((a, b) => (b.executors.get(ex)!.cap > a.executors.get(ex)!.cap ? b : a));
+  const e = s.executors.get(ex)!;
+  const id = s.machine.id;
+  if (e.band === 'hard') return `waiting for a lane: usage hard limit stops executor ${ex} on ${id} (used ${percent(e.usedFrac)})`;
+  const executorInUse = e.occupied.length + e.assigned;
+  const executorBinds = e.cap - executorInUse < room(s) || (e.cap - executorInUse === room(s) && e.cap < s.cap);
+  if (executorBinds) {
+    return `waiting for a lane: executor ${ex}'s lane cap on ${id} is ${e.cap}${usageNote(e.band, e.usedFrac)}, all ${executorInUse} in use`;
+  }
+  return `waiting for a lane: machine ${id}'s lane cap is ${s.cap}${usageNote(s.band, s.usedFrac)}, all ${s.occupied + s.assigned} in use`;
 }
 
-/** Step 7: give each ordered job a machine and an idle lane, or a hold. */
-export function assign(ordered: Candidate[], states: MachineState[]): { start: StartPlan[]; hold: HoldPlan[] } {
+/** Step 7: give each ordered job a machine and an idle lane, or leave it waiting for one. */
+export function assign(ordered: Candidate[], states: MachineState[]): { start: StartPlan[]; wait: WaitPlan[] } {
   const start: StartPlan[] = [];
-  const hold: HoldPlan[] = [];
+  const wait: WaitPlan[] = [];
   for (const { job, effectivePriority, note } of ordered) {
     const options = states.filter((s) => fits(s, job));
     if (options.length === 0) {
-      hold.push({ jobId: job.id, reason: noRoomReason(job, states) });
+      wait.push({ jobId: job.id, reason: waitReason(job, states) });
       continue;
     }
     const ex = job.spec.executor;
@@ -135,5 +150,5 @@ export function assign(ordered: Candidate[], states: MachineState[]): { start: S
       reason: `${lane ? `idle lane ${lane.id}` : 'new lane'} on ${pick.machine.id}, ${room(pick)} room left (cap ${pick.cap})${note ? `, ${note}` : ''}`,
     });
   }
-  return { start, hold };
+  return { start, wait };
 }

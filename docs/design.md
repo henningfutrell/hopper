@@ -36,7 +36,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts; `machines.ts` attached machines and their edit; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate), ports (`ports.ts`, re-exporting the store's from `store.ts`) | anything else in `src/` |
+| `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts; `machines.ts` attached machines and their edit; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry), ports (`ports.ts`, re-exporting the store's from `store.ts`) | anything else in `src/` |
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock | everything but `domain/` |
 | `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations (the instance's `migrations.ts` with migration 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-jobs-dir.ts` (tenant 11) moves a work tree stored as `~` to the jobs directory (issue #314); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); 25 the join codes (issue #308) and `migration-client-key.ts` (tenant 12) the client targets that held a token variable; `migration-no-gh-source.ts` (tenant 14) takes out the gh CLI job source (issue #359); `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265) | engine, http, decider |
 | `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), identity → user (`identities.ts`: link or provision), the leftover default admin account folded into the first GitHub admin's user at start (`leftover-admin.ts`, issue #265), a user's job sources split for the sync loop at start and on each change (`job-sources.ts`, issue #356) | http, decider |
@@ -100,8 +100,12 @@ same Decision. Algorithm, in order:
 7. **Assign.** For each job in order: candidate machines = online, run its executor, match
    its pin, `busy(m) + assigned(m) < cap(m)`. Pick the one with the most remaining room
    (tie: machine id). Use an existing idle, non-draining lane if one is unassigned, else
-   `laneId: null` (a lane this Decision opens). No candidate → hold with the reason
-   (`all lanes busy (cap N)` / `usage hard limit` / `usage soft limit caps lanes at N`).
+   `laneId: null` (a lane this Decision opens). No candidate → a **wait**, not a hold (issue
+   #381): the job stays `queued` with a reason naming the lane cap that binds on the eligible
+   machine with the highest cap for its executor — the executor's when it leaves less room than
+   the machine's (or ties and is lower), else the machine's — with its number and lanes in use
+   (`waiting for a lane: machine m's lane cap is N[ (usage soft limit, used P%)], all K in use` /
+   `… executor e's lane cap on m is N …` / `… usage hard limit stops executor e on m (used P%)`).
 8. **Lane plan per machine.** `occupied` = lanes `busy` or `draining`. `target =
    min(cap, occupied + assigned)`. `open` = number of this machine's starts with
    `laneId: null` — **invariant**, the engine opens lanes only for those starts.
@@ -114,9 +118,11 @@ same Decision. Algorithm, in order:
    verbatim.
 
 **A no-op decision is not recorded.** The engine discards a Decision with no lane change,
-no start, and no hold whose reason differs from the job's current `holdReason`. Otherwise
+no start, no hold whose reason differs from the job's current `holdReason`, and no wait on a job
+not already `queued` with that `waitReason`. Otherwise
 an idle tick every 2 s would bury the decision log. Every recorded Decision emits
-`decision.made` with `{ decisionId, trigger, starts, holds, lanes, divergences }` (v3).
+`decision.made` with `{ decisionId, trigger, starts, holds, lanes, divergences, waits? }` (v3;
+`waits` additive, issue #381).
 
 ## The engine
 
@@ -141,7 +147,7 @@ an idle tick every 2 s would bury the decision log. Every recorded Decision emit
   parks the job; `question.asked` wakes the Decision that hands the lane to the next waiting job,
   while the answer pipeline runs. The only things that keep an admissible job waiting:
   - the **lane cap** — `maxLanes` per machine (the machine instance's `lanes` option, default 4), scaled down
-    past the usage soft limit, 0 at the hard limit (hold `all lanes busy (cap N)` / `usage …`);
+    past the usage soft limit, 0 at the hard limit (a wait, `waiting for a lane: …`, not a hold);
   - the **router**: no advice yet, or advice that holds (`ask_human`, `stop_retry`,
     `reuse_cache`) — the router speaks first; an approval ends a router hold;
   - a **native hold** (no online machine runs the executor; pinned machine unknown/offline);
@@ -166,7 +172,8 @@ an idle tick every 2 s would bury the decision log. Every recorded Decision emit
   then for each start: claim (`job.claimed`, lane busy), run executor (`job.started`),
   progress (`job.progressed`), outcome (`job.finished` / `job.failed`). Lane returns idle, or
   closes if draining. Holds: set `status: held`, `holdReason`, emit `job.held` only when the
-  reason changed.
+  reason changed. Waits: set `status: queued`, `waitReason` (clearing `holdReason`), no event —
+  a job held for lanes before issue #381 returns to `queued` on the first Decision after it.
 - **Approve:** `POST /api/jobs/:id/approve` sets `approved: true` on a waiting job; it overrides
   every router hold (not only `ask_human`).
 - **Cancel:** waiting → `cancelled` at once. Claimed/running → abort the executor's signal;
@@ -372,7 +379,7 @@ Every event: `{ seq, id, type, at, jobId?, laneId?, machineId?, decisionId?, dat
 | `job.reprioritized` | `{ from, to, reason }` — phase 3, source re-sort |
 | `lane.opened` | `{}` |
 | `lane.closed` | `{ reason }` — the lane plan's reason, `drained`, or `daemon restart` |
-| `decision.made` | v3 `{ decisionId, trigger, starts, holds, lanes, divergences }` |
+| `decision.made` | v3 `{ decisionId, trigger, starts, holds, lanes, divergences, waits? }` |
 | `router.mode_changed` | retired (issue #211): nothing emits it; stored ones still read |
 
 The usage-change trigger is named `usage.changed`; it is a trigger, not an event.
@@ -1145,6 +1152,21 @@ ended. A source that cannot give the item back → 502 with its error, and nothi
 issue #354 Run again only cleared the labels and waited for a sync, and a closed issue was refused (409,
 issue #348); neither is so now. Any job made for a key that already had one carries `rerunOf`, whether
 Run again or a human clearing the marker made it.
+
+**Locked entries** (issue #355). A failed job does not drop out of the queue: the newest job of its
+item, failed and not dismissed, is a **locked entry** (`isLocked`, `src/domain/locked.ts`), listed in
+`/api/queue` `locked`, highest priority first, then oldest — under the Overview's Waiting jobs and in the
+Queue view's Locked panel, with its failure, the job it runs again (`rerunOf`), Run again and Dismiss.
+Its status stays `failed`: the decider never sees it, so it takes no lane and no budget, and nothing
+else that reads `failed` (the Ended list, the cards, the webhooks, the source's `hopper:failed`)
+changes. The queue is the truth; the issue's labels mirror it. Run again (above) unlocks it: its new
+job is the item's newest, so the failed one leaves `locked`, and a new failure is the locked entry in its
+place. **Dismiss** (`POST /ui/api/jobs/:id/dismiss`, operator) sets `dismissedAt` and appends
+`job.dismissed { by: "user" }`: the job leaves the locked entries, stays failed, keeps its issue's
+`hopper:failed`, and can still be run again. A job that is not failed, or already dismissed → 409. A job
+of no source (from before phase 3) is never a locked entry: it cannot run again. The UI keeps the locked
+entries apart from its other jobs (`locked` in the store), since they are of any age while the rest
+reach back 24 hours.
 
 **Run again offered only where it is taken** (issues #362, #354). The UI never offers an action the
 daemon refuses: the Ended panel's Run again (`canRerun`) needs a failed or finished job, the newest of its
@@ -6208,13 +6230,12 @@ shared GitHub App job source was removed in the UI.
 
 **The hopper's app** (`src/connected-accounts/hopper-app.ts`): one GitHub App (device flow on, user-token
 expiration off), registered once. `SHIPPED_APPS` holds its public client id and slug (for its install
-link): the `hopper-qm` app, device flow on. While it is private to the account that registered it, it
-installs only there; it is made public for other accounts' repositories. The device flow (RFC 8628) needs no secret, so none is distributed. The environment may name
+link): the `hopper-qm` app, device flow on, **public** since issue #352 — any GitHub account or
+organization installs it and signs in through it. The device flow (RFC 8628) needs no secret, so none is distributed. The environment may name
 another app or a GitHub Enterprise: `HOPPER_GITHUB_URL` (API at `<url>/api/v3`), `HOPPER_GITHUB_CLIENT_ID`,
 `HOPPER_GITHUB_APP_SLUG`. A GitHub App asks for no scopes: what its user tokens may do is the app's
-permissions (repository Issues read/write, Pull requests read/write, Contents read/write, Metadata read;
-organization Projects read; account Email addresses read) cut down to what the user may do, on the
-repositories it is installed on.
+permissions cut down to what the user may do, on the repositories it is installed on. See "The hopper's
+app, for everyone" for the permissions and why each.
 
 **The github realm is a device realm** (`src/auth/index.ts`, `src/auth/config.ts`): neither a form nor a
 redirect realm. Settings: label, on/off, role rules; nothing of an app, no secret (the app is the
@@ -6316,6 +6337,58 @@ earlier GitHub sign-ins makes nobody admin; another browser or site refused),
 and labels through the account's token, a job running with `GH_TOKEN` that is never stored, disconnect, a
 denied code, users apart), `test/store/migration-23.test.ts`, `test/store/tenant-migration-8.test.ts`,
 `test/ui/sign-in-device.test.ts`, `test/ui/sources.test.ts`, `test/ui/sources-view.test.ts`.
+
+## The hopper's app, for everyone (issue #352, 2026-10-07)
+
+Owner request: the hopper's app could be used only by the account that registered it; other people
+installing the hopper need it too. Make it public, keep its permissions to the least the hopper needs (an
+outside person sees and grants them), give a clear install path from the UI and the install docs, make a
+hopper work for an account that is not the app's owner (job repositories, #321), and document an admin's
+own app as the alternative (#214).
+
+**Public.** The app's *Advanced → Make public* is done on GitHub, not in code: `GET
+https://api.github.com/apps/hopper-qm` answers without authentication, which GitHub does only for a public
+app, and its install page (`https://github.com/apps/hopper-qm/installations/new`) lets any account or
+organization install it. Nothing in the hopper names the owner: the client id and the slug are the app's,
+and installations, repositories and the identity come from the signed-in person's own token
+(`GET /user/installations`, `GET /user/installations/<id>/repositories`, `GET /user`).
+
+**Permissions, the least the hopper needs** (as GitHub reports them for the app; no events, no webhook —
+the hopper pulls):
+
+| permission | level | why |
+|---|---|---|
+| Issues | read and write | issues are the jobs: read them, set the `hopper:*` labels, reopen one for Run again (#354) |
+| Pull requests | read and write | a job opens its pull request; completion checks read the pull request that closes an issue |
+| Contents | read and write | a job pushes its branch with its token (`GH_TOKEN`) where its git uses gh's credential helper (else the machine's own git credentials push) |
+| Metadata | read | required by GitHub for any repository permission |
+
+Not asked for, and what that costs: **Workflows** (a job cannot push a change to `.github/workflows/`;
+GitHub refuses that push), **organization Projects** (a `projects` priority on an organization board
+reads nothing through the hopper's app; user Projects are not readable by any GitHub App), **Email
+addresses** (the identity has no email; role rules match subjects and usernames). An admin who needs any
+of these runs their own app (below). The design section above listed Projects and Email addresses as the
+app's: it never had them.
+
+**Install path.** Before an installation: Sources says the app reaches no repository and links to its
+install page (#253). With installations: each says the repositories it reaches, **what it may do there**
+(`AppInstallation.permissions`, GitHub's installation answer, in words: "It may: read and write contents,
+issues, pull requests; read metadata."), and a link to choose its repositories; under them a quiet link
+**Add the app to another account or organization** (the install page, where GitHub asks which account and
+which repositories) — not a nudge to install it again. On GitHub's install page the person picks *All
+repositories* or *Only select repositories*; the hopper then lists those, and the person ticks the job
+repositories (#321). An organization owner installs it for the organization (or approves a member's
+request); the member then sees that installation too.
+
+**An admin's own app instead** (#214): `docs/sign-in.md` "Running your own GitHub App instead of the
+hopper's" — the same permissions, *Any account* or *Only on this account* as the admin wants, and
+`HOPPER_GITHUB_CLIENT_ID` / `HOPPER_GITHUB_APP_SLUG`. The `github-app` job source (an app acting as its
+own bot) is a different thing (README "A GitHub App of your own").
+
+**Verification:** `test/integration/connected-accounts.test.ts` (a connected account — not the app's
+owner — sees each installation with its repositories and permissions, on its own account and an
+organization's), `test/ui/sources-view.test.ts` (what it may do, the link to add it to another account).
+Live: the app answers unauthenticated as public, with the four permissions above and no events.
 
 ## A pleasing sign-in page; GitHub by browser redirect when possible (issue #258, 2026-10-06)
 
