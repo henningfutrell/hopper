@@ -236,7 +236,7 @@ describe('POST /ui/api/plugins — rescan', () => {
 });
 
 // Issue #4: an instance of a many-instance role (executor, job source, usage source, notifier) is
-// added or removed from the UI. Executors are a restart role: the change waits for a restart.
+// added or removed from the UI. Every role is live (issues #142, #356): the change applies when saved.
 describe('POST /ui/api/plugins — add an instance', () => {
   it('an executor: appended under its name with the plugin\'s defaults; other entries stay; it runs at once (issue #142)', async () => {
     const { a, token } = await start(TWO_EXECUTORS);

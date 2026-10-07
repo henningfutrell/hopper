@@ -13,9 +13,6 @@ const MODEL_NAME = /^(claude-)?(haiku|sonnet|opus|fable|opusplan)(-[0-9][0-9a-z.
  */
 export const isModelName = (name: string, model?: unknown): boolean => MODEL_NAME.test(name) || name === model;
 
-/** The roles built once at start; a later the plugins config change applies at the next restart. */
-export type RestartRole = 'executor' | 'job-source' | 'machine-source' | 'usage-source' | 'notifier';
-
 /** A plugin's cheap check of whether it can run on this machine. */
 export type Detection =
   | { status: 'available'; detail?: string }
@@ -58,7 +55,7 @@ export interface ExecutorUnavailable {
 }
 
 /**
- * One instance of a restart role in GET /api/plugins. `active` null: it cannot run (`reason`) — an
+ * One instance of a list role in GET /api/plugins. `active` null: it cannot run (`reason`) — an
  * executor's jobs are held, a job or usage source or a notifier is dropped, a machine source leaves no machine.
  */
 export interface InstanceStatus {
@@ -66,16 +63,6 @@ export interface InstanceStatus {
   detection: Detection;
   active: string | null;
   reason?: string;
-}
-
-/**
- * A restart role in GET /api/plugins: the instances running since start. `pending`: the plugins config
- * now names other instances (or, with the section removed, the built-in ones differ); they apply
- * at the next restart.
- */
-export interface RestartRoleStatus {
-  instances: InstanceStatus[];
-  pending?: { status: 'changed — restart pending'; instances: InstanceSpec[] };
 }
 
 /** One instance as the plugins config (or, with no section, the built-in instances) names it now: what an options edit acts on. */
@@ -155,14 +142,12 @@ export interface PluginsReport {
   queueSorter: QueueSorterStatus;
   /** The escalation levels now, lowest first (a live role). `active` null: that level cannot run, and escalates every question it gets. */
   escalationLevels: InstanceStatus[];
-  /** The executors as the plugins config names them now: live since issue #142, never pending. */
+  /** The list roles as the plugins config names them now: each follows it live (executors since issue #142, the machine sources — this machine and the attached ones, issue #74 — since issue #18, the rest since issue #356). */
   executors: { instances: InstanceStatus[] };
-  /** The restart roles, as built at start. */
-  jobSources: RestartRoleStatus;
-  /** The machine sources — this machine and the attached ones (issue #74) — as the plugins config names them now: live, never pending. */
+  jobSources: { instances: InstanceStatus[] };
   machines: { instances: InstanceStatus[] };
-  usageSources: RestartRoleStatus;
-  notifiers: RestartRoleStatus;
+  usageSources: { instances: InstanceStatus[] };
+  notifiers: { instances: InstanceStatus[] };
   plugins: {
     id: string; role: Role; describe: string; builtin: boolean; path?: string;
     detection: Detection;

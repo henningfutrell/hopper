@@ -10,7 +10,7 @@ import { Empty, Panel } from '@/components/panel';
 import { AddInstance, InstanceForm, PluginSelector, pluginEditsUnsaved, sendPluginsEdit } from '@/components/plugin-form';
 import { StatusBadge } from '@/components/status';
 import { PluginStore } from '@/views/plugin-store';
-import { instanceState, isListRole, isSelectable, ROLE_TITLES, shippedPlugins, toggleEdit } from '@/model/plugins';
+import { isListRole, isSelectable, ROLE_TITLES, shippedPlugins, toggleEdit } from '@/model/plugins';
 import type { PluginsReport, Role } from '@/model/wire';
 import { refreshPlugins, useHopper } from '@/store';
 import { useCanAdmin } from '@/store/selectors';
@@ -19,12 +19,9 @@ const REFRESH_MS = 15000;
 
 function RoleBlock({ role, report }: { role: Role; report: PluginsReport }) {
   const instances = report.instances.filter((i) => i.role === role);
-  const first = instances[0];
-  const rolePending = first ? instanceState(report, role, first.instance.name).rolePending : false;
   return (
     <Panel title={ROLE_TITLES[role]} icon={Puzzle} count={instances.length || ''} bodyClassName="space-y-3"
-      action={<>{role === 'router' && <span className="text-xs text-muted-foreground">{report.router.selection}</span>}
-        {rolePending && <StatusBadge status="changed — restart pending" tone="warn" />}</>}>
+      action={role === 'router' ? <span className="text-xs text-muted-foreground">{report.router.selection}</span> : undefined}>
       {isSelectable(role) && <PluginSelector role={role} />}
       {isListRole(role) && <AddInstance role={role} />}
       {role === 'machine-source' && <div className="text-xs text-muted-foreground">attach an ssh machine from the Machines view; a container or client target with its script</div>}
@@ -35,7 +32,7 @@ function RoleBlock({ role, report }: { role: Role; report: PluginsReport }) {
   );
 }
 
-/** The shipped plugins, each with its switch (issue #142). A job source, usage source or notifier applies after a restart. */
+/** The shipped plugins, each with its switch (issue #142); a switch applies at once (issue #356). */
 function ShippedPlugins({ report }: { report: PluginsReport }) {
   const authed = useCanAdmin();
   const [busy, setBusy] = useState<string | null>(null);
@@ -87,7 +84,7 @@ export function Plugins() {
         action={authed && <Button size="sm" variant="outline" disabled={busy} onClick={() => void rescan()}><RefreshCw />Rescan</Button>}>
         <div className="flex flex-wrap items-center gap-2">
           <StatusBadge status={c.source === 'stored' ? 'in the database' : 'built-in defaults'} tone={c.source === 'stored' ? 'ok' : 'muted'} />
-          {c.loadedAt && <span className="text-muted-foreground">loaded {new Date(c.loadedAt).toLocaleTimeString()}</span>}
+          {c.loadedAt && <span className="text-muted-foreground" title="Every change applies when it is saved, without a restart; running jobs keep running">applied {new Date(c.loadedAt).toLocaleTimeString()}</span>}
         </div>
         {c.error && <div className="text-bad">{c.error}</div>}
         {[...c.warnings, ...report.warnings].map((w) => <div key={w} className="text-warn">{w}</div>)}

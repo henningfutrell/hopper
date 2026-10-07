@@ -14,7 +14,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Confirm } from '@/components/confirm';
 import { StatusBadge } from '@/components/status';
 import { post, SessionRejected } from '@/lib/api';
-import { collectOptions, fieldKind, instanceState, isListRole, machineOptions, newInstance, ROLE_TITLES, shown, type Draft, type OptionSchema, type OptionsSchema } from '@/model/plugins';
+import { appliedMessage, collectOptions, fieldKind, instanceState, isListRole, machineOptions, newInstance, ROLE_TITLES, shown, type Draft, type OptionSchema, type OptionsSchema } from '@/model/plugins';
 import type { InstanceSpec, ListRole, OptionChoice, PluginsEdit, PluginsReport, Role, SelectableRole } from '@/model/wire';
 import { refreshHealth, refreshPlugins, setPlugins, useHopper } from '@/store';
 import { useCanAdmin } from '@/store/selectors';
@@ -28,8 +28,9 @@ export const pluginEditsUnsaved = (): boolean => unsaved.size > 0;
 /** POST /ui/api/plugins; the answer is the new report. Failures toast; a stale version reloads the report. */
 export async function sendPluginsEdit(edit: PluginsEdit, done: string): Promise<boolean> {
   try {
-    setPlugins(await post<PluginsReport>('/ui/api/plugins', edit));
-    toast.success(done);
+    const report = await post<PluginsReport>('/ui/api/plugins', edit);
+    setPlugins(report);
+    toast.success(appliedMessage(done, report.config.loadedAt));
     refreshHealth().catch(() => {});
     return true;
   } catch (e) {
@@ -128,7 +129,7 @@ export function InstanceForm({ role, inst }: { role: Role; inst: InstanceSpec })
     ? `${inst.name} is removed; the next question skips it.`
     : role === 'machine-source'
       ? `${inst.name} is removed and stops taking jobs at once. Refused while a job runs there or waits for an answer in a pane there.`
-      : `${inst.name} is removed; ${ROLE_TITLES[role].toLowerCase()} change at the next restart.`;
+      : `${inst.name} is removed at once; a job it already started keeps running.`;
   return (
     <div data-slot="instance-form" data-instance={inst.name} className="space-y-2 rounded-md border p-3">
       <div className="flex flex-wrap items-center gap-2">

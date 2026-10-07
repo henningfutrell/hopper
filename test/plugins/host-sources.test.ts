@@ -21,16 +21,13 @@ const records = useTempConfig();
 let host: PluginHost | undefined;
 afterEach(() => { host?.stop(); host = undefined; });
 
-const stoppedUsage: string[] = [];
-afterEach(() => { stoppedUsage.length = 0; });
-
 /** A usage source reporting one fixed reading. */
 const fixedUsage: PluginDefinition<'usage-source'> = {
   id: 'fixed-usage', role: 'usage-source', describe: 'one fixed reading',
   options: (z) => z.object({ used: z.number().default(10) }),
   async detect() { return { status: 'available' }; },
   create(ctx, o): UsageSource {
-    return { name: 'fixed-usage', stop: () => { stoppedUsage.push(ctx.instanceName); }, poll: async () => [{ source: 'fixed-usage', used: o.used, limit: 100, unit: '%', at: ctx.clock.now().toISOString() }] };
+    return { name: 'fixed-usage', poll: async () => [{ source: 'fixed-usage', used: o.used, limit: 100, unit: '%', at: ctx.clock.now().toISOString() }] };
   },
 };
 
@@ -203,24 +200,6 @@ describe('job-source instances', () => {
     expect(host.jobSources().map((b) => b.spec.options)).toEqual([{ authors: ['someone'] }]);
     expect(host.jobSources()[0]).not.toBe(one);
     expect(seen).toEqual([['one', 'two'], ['one']]);
-  });
-});
-
-describe('the usage-source role, live (issue #356)', () => {
-  it('an added usage source is read at once; a removed one is stopped and goes; an unchanged one is kept', async () => {
-    const { host, config } = start({ file: { version: 1, usageSources: [{ name: 'a', plugin: 'fixed-usage', options: { used: 10 } }] } });
-    await host.start();
-    const [a] = host.usageSources();
-    config.set(PLUGINS, { version: 1, usageSources: [{ name: 'a', plugin: 'fixed-usage', options: { used: 10 } }, { name: 'b', plugin: 'fixed-usage', options: { used: 30 } }] });
-    await host.reload();
-    expect(host.usageSources().map((u) => u.name)).toEqual(['a', 'b']);
-    expect(host.usageSources()[0]).toBe(a);
-    expect((await host.usageSources()[1]!.poll())[0]).toMatchObject({ used: 30 });
-    config.set(PLUGINS, { version: 1, usageSources: [{ name: 'b', plugin: 'fixed-usage', options: { used: 30 } }] });
-    await host.reload();
-    expect(host.usageSources().map((u) => u.name)).toEqual(['b']);
-    expect(stoppedUsage).toEqual(['a']);
-    expect(host.report().usageSources.pending).toBeUndefined();
   });
 });
 

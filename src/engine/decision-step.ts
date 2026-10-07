@@ -12,7 +12,7 @@ const WAITING = ['queued', 'held'] as const;
 const RUNNING = ['claimed', 'running'] as const;
 
 async function gather(c: EngineContext, trigger: string): Promise<() => DecisionInputs> {
-  const [machines, ...readings] = await Promise.all([c.machines.list(), ...c.usage.map((u) => u.poll())]);
+  const [machines, ...readings] = await Promise.all([c.machines.list(), ...c.usage().map((u) => u.poll())]);
   // Store reads happen after the awaits, synchronously with decide and apply: no interleaving.
   return () => {
     const waiting = oldestFirst(c.store.jobs.list({ status: [...WAITING] }));

@@ -22,10 +22,10 @@ export function idleStatus(name: string, kind: string, state: 'disabled' | 'erro
   };
 }
 
-/** The running sources' registry plus fixed statuses for the ones that do not run. */
-export function withFixedStatuses(running: SourceRegistry, fixed: SourceStatus[]): SourceRegistry {
+/** The running sources' registry plus fixed statuses for the ones that do not run, as they are now. */
+export function withFixedStatuses(running: SourceRegistry, fixed: () => SourceStatus[]): SourceRegistry {
   return {
-    statuses: () => [...fixed.map((s) => ({ ...s })), ...running.statuses()],
+    statuses: () => [...fixed().map((s) => ({ ...s })), ...running.statuses()],
     onStatus: (listener) => running.onStatus(listener),
     rerun: (jobId) => running.rerun(jobId),
   };

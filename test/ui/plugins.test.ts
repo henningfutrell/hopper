@@ -2,7 +2,7 @@
 // the whole options object one Save sends — drafts over what is configured, command-bearing options
 // like any other (issue #198: a command-bearing option is edited from the UI).
 import { describe, expect, it } from 'vitest';
-import { collectOptions, fieldKind, instanceState, isListRole, newInstance, shippedPlugins, toggleEdit, type OptionsSchema } from '../../ui/src/model/plugins.ts';
+import { appliedMessage, collectOptions, fieldKind, instanceState, isListRole, newInstance, shippedPlugins, toggleEdit, type OptionsSchema } from '../../ui/src/model/plugins.ts';
 import type { PluginsReport, Role } from '../../src/domain/types.ts';
 
 const SCHEMA: OptionsSchema = {
@@ -69,7 +69,7 @@ describe('instanceState', () => {
     ],
     executors: { instances: [{ instance: { name: 'test', plugin: 'test' }, detection: { status: 'available' }, active: 'test' }] },
     jobSources: { instances: [{ instance: { name: 'github', plugin: 'github-gh' }, detection: { status: 'unavailable', reason: 'no gh' }, active: null, reason: 'no gh' }] },
-    machines: { instances: [{ instance: { name: 'local', plugin: 'local' }, detection: { status: 'available' }, active: 'local' }], pending: { status: 'changed — restart pending', instances: [] } },
+    machines: { instances: [{ instance: { name: 'local', plugin: 'local' }, detection: { status: 'available' }, active: 'local' }] },
     usageSources: { instances: [] },
     notifiers: { instances: [] },
   } as unknown as PluginsReport;
@@ -78,21 +78,24 @@ describe('instanceState', () => {
     expect(instanceState(report, 'router', 'gate-router')).toMatchObject({ tone: 'warn', label: 'fallback: pass-through', reason: 'no python' });
   });
 
-  it('an escalation level: active, or cannot run (it escalates every question), never restart pending', () => {
-    expect(instanceState(report, 'escalation-level', 'level-1')).toMatchObject({ tone: 'ok', label: 'active', rolePending: false });
+  it('an escalation level: active, or cannot run (it escalates every question)', () => {
+    expect(instanceState(report, 'escalation-level', 'level-1')).toMatchObject({ tone: 'ok', label: 'active' });
     expect(instanceState(report, 'escalation-level', 'level-2')).toMatchObject({ tone: 'bad', label: 'cannot run', reason: 'no claude' });
     expect(instanceState(report, 'escalation-level', 'new-one')).toMatchObject({ tone: 'warn', label: 'loading' });
   });
 
-  it('a restart role: active, cannot run (with the reason), or not built yet (restart pending)', () => {
+  it('every list role is live (issues #74, #142, #356): active, cannot run (with the reason), or applying; never restart pending', () => {
     expect(instanceState(report, 'job-source', 'github')).toMatchObject({ tone: 'bad', label: 'cannot run', reason: 'no gh' });
-    expect(instanceState(report, 'notifier', 'new-one')).toMatchObject({ tone: 'warn', label: 'restart pending' });
+    expect(instanceState(report, 'notifier', 'new-one')).toEqual({ tone: 'warn', label: 'applying' });
+    expect(instanceState(report, 'usage-source', 'new-one')).toEqual({ tone: 'warn', label: 'applying' });
+    expect(instanceState(report, 'machine-source', 'local')).toMatchObject({ tone: 'ok', label: 'active' });
+    expect(instanceState(report, 'executor', 'test')).toMatchObject({ tone: 'ok', label: 'active' });
+    expect(instanceState(report, 'executor', 'just-added')).toEqual({ tone: 'warn', label: 'applying' });
   });
 
-  it('the machine sources (issue #74) and the executors (issue #142) are live: never restart pending', () => {
-    expect(instanceState(report, 'machine-source', 'local')).toMatchObject({ tone: 'ok', label: 'active', rolePending: false });
-    expect(instanceState(report, 'executor', 'test')).toMatchObject({ tone: 'ok', label: 'active', rolePending: false });
-    expect(instanceState(report, 'executor', 'just-added')).toMatchObject({ tone: 'warn', label: 'applying', rolePending: false });
+  it('a saved edit says it applied, and when', () => {
+    expect(appliedMessage('Removed github', undefined)).toBe('Removed github — applied');
+    expect(appliedMessage('Removed github', '2026-10-07T10:00:00.000Z')).toMatch(/^Removed github — applied at \S/);
   });
 });
 

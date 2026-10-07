@@ -61,7 +61,7 @@ const ghOptions = (extra: Record<string, unknown> = {}) => ({
 const issueBody = (op: Record<string, unknown>) => `${JSON.stringify(op)}\n\nPlease do the thing.`;
 const jobFor = async (a: TestApp, url: string): Promise<Job | undefined> =>
   (await a.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=1000')).body.jobs.find((j) => j.source?.key === url);
-const cwdOf = (j: Job) => (j.spec.payload as { cwd?: string }).cwd;
+const cwdOf = (j: Job) => (j.spec.payload as { defaultCwd?: string }).defaultCwd;
 
 describe('every setting applies without a restart (issue #356)', () => {
   it('a job source switched on in the UI pulls the next job; an options change applies to the next one; no restart pending', async () => {

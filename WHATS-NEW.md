@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- Every setting you save applies straight away: job sources, usage sources and notifiers no longer wait for a restart, and jobs that are running keep running.
 - Settings now opens on Version, so what is running and any available update are the first thing you see, with the version history right after.
 - A connected GitHub account now stays signed in past eight hours. If its sign-in does end, Sources says so and asks you to connect again, and you are told — as you are when a source keeps failing.
 - A webhook can now listen only for questions that need you: pick "escalated to human" in its events and it fires once per question, not at every model's turn.

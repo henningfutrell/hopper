@@ -5,6 +5,7 @@
 import type { Executor } from '../domain/ports.ts';
 import type { Detection, InstanceStatus, ExecutorUnavailable, InstanceSpec } from '../domain/types.ts';
 import { instantiate, type SlotDeps } from './router-slot.ts';
+import { followSpecs } from './source-slots.ts';
 
 /** One executor instance: running (`executor`, `plugin`), or not (`reason`). */
 export type BuiltExecutor = { spec: InstanceSpec; detection: Detection } & (
@@ -24,16 +25,9 @@ export async function buildExecutors(specs: InstanceSpec[], deps: SlotDeps): Pro
   }));
 }
 
-/** Follow the plugins config: keep each unchanged instance (same spec), build the others; log what changed after the first build. */
+/** Follow the plugins config (issue #142, `followSpecs`): keep each unchanged instance (same spec), build the others. */
 export async function applyExecutorSpecs(slot: { built?: BuiltExecutor[] }, specs: InstanceSpec[], deps: SlotDeps): Promise<void> {
-  const before = slot.built;
-  const same = (b: BuiltExecutor, spec: InstanceSpec) => JSON.stringify(b.spec) === JSON.stringify(spec);
-  const kept = (spec: InstanceSpec) => before?.find((b) => same(b, spec));
-  const fresh = await buildExecutors(specs.filter((s) => !kept(s)), deps);
-  slot.built = specs.map((spec) => kept(spec) ?? fresh.find((b) => b.spec === spec)!);
-  if (!before) return;
-  for (const b of fresh) deps.logger.info(`hopper: executor ${b.spec.name} (${b.spec.plugin}) applied`);
-  for (const b of before) if (!specs.some((s) => s.name === b.spec.name)) deps.logger.info(`hopper: executor ${b.spec.name} removed`);
+  await followSpecs(slot, specs, { label: 'executor', logger: deps.logger, build: async (spec) => (await buildExecutors([spec], deps))[0]! });
 }
 
 export function executorStatus(b: BuiltExecutor): InstanceStatus {

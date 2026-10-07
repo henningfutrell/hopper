@@ -39,8 +39,8 @@ export interface Queries {
 }
 
 export function createQueries(c: EngineContext): Queries {
-  const getUsage = async (): Promise<UsageReading[]> => (await Promise.all(c.usage.map((u) => u.poll()))).flat();
-  const getUsageSources = (): UsageSourceReport[] => c.usage.map((u) => ({ name: u.name, ...u.state?.() }));
+  const getUsage = async (): Promise<UsageReading[]> => (await Promise.all(c.usage().map((u) => u.poll()))).flat();
+  const getUsageSources = (): UsageSourceReport[] => c.usage().map((u) => ({ name: u.name, ...u.state?.() }));
   return {
     getQueue() {
       const all = c.store.jobs.list();

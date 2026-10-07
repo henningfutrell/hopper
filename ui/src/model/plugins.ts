@@ -69,9 +69,9 @@ export function machineOptions(schema: OptionsSchema | undefined): string[] {
   return Object.entries(schema?.properties ?? {}).filter(([, p]) => p.machine === true).map(([k]) => k);
 }
 
-/** The restart roles, by their key in GET /api/plugins. */
-const RESTART = {
-  'job-source': 'jobSources', 'usage-source': 'usageSources', notifier: 'notifiers',
+/** The list roles' instances, by their key in GET /api/plugins: every one follows the plugins config live (issue #356). */
+const LIVE = {
+  executor: 'executors', 'job-source': 'jobSources', 'machine-source': 'machines', 'usage-source': 'usageSources', notifier: 'notifiers',
 } as const satisfies Partial<Record<Role, keyof PluginsReport>>;
 
 export const SELECTABLE: readonly SelectableRole[] = ['router', 'queue-sorter'];
@@ -94,40 +94,34 @@ export interface InstanceState {
   label: string;
   reason?: string;
   detection?: { status: string; reason?: string };
-  /** A restart role whose section of the plugins config differs from what runs. */
-  rolePending: boolean;
 }
 
 export function instanceState(report: PluginsReport, role: Role, name: string): InstanceState {
-  const key = (RESTART as Partial<Record<Role, (typeof RESTART)[keyof typeof RESTART]>>)[role];
-  const pending = { tone: 'warn' as const, label: 'restart pending' };
-  if (role === 'machine-source' || role === 'executor') {
-    // Live (issues #74, #142): what the plugins config names is what runs, once the reload after an edit is done.
-    const s = (role === 'executor' ? report.executors : report.machines).instances.find((i) => i.instance.name === name);
-    if (!s) return { tone: 'warn', label: 'applying', rolePending: false };
-    const base = { ...(s.reason ? { reason: s.reason } : {}), detection: s.detection, rolePending: false };
-    return s.active === null ? { tone: 'bad', label: 'cannot run', ...base } : { tone: 'ok', label: 'active', ...base };
-  }
+  const key = (LIVE as Partial<Record<Role, (typeof LIVE)[keyof typeof LIVE]>>)[role];
   if (key) {
-    const slot = report[key];
-    const rolePending = slot.pending !== undefined;
-    const s = slot.instances.find((i) => i.instance.name === name);
-    if (!s) return { ...pending, rolePending };
-    const base = { ...(s.reason ? { reason: s.reason } : {}), detection: s.detection, rolePending };
+    // Live (issues #74, #142, #356): what the plugins config names is what runs, once the reload after an edit is done.
+    const s = report[key].instances.find((i) => i.instance.name === name);
+    if (!s) return { tone: 'warn', label: 'applying' };
+    const base = { ...(s.reason ? { reason: s.reason } : {}), detection: s.detection };
     return s.active === null ? { tone: 'bad', label: 'cannot run', ...base } : { tone: 'ok', label: 'active', ...base };
   }
   if (role === 'escalation-level') {
     // A live role: an edit applies before the report comes back, so a level not in it is still loading.
     const l = report.escalationLevels.find((x) => x.instance.name === name);
-    if (!l) return { tone: 'warn', label: 'loading', rolePending: false };
-    const base = { ...(l.reason ? { reason: l.reason } : {}), detection: l.detection, rolePending: false };
+    if (!l) return { tone: 'warn', label: 'loading' };
+    const base = { ...(l.reason ? { reason: l.reason } : {}), detection: l.detection };
     return l.active === null ? { tone: 'bad', label: 'cannot run', ...base } : { tone: 'ok', label: 'active', ...base };
   }
   const s = role === 'router' ? report.router : report.queueSorter;
-  if (s.instance.name !== name) return { ...pending, rolePending: false };
-  const base = { ...(s.reason ? { reason: s.reason } : {}), ...(s.detection ? { detection: s.detection } : {}), rolePending: false };
+  if (s.instance.name !== name) return { tone: 'warn', label: 'applying' };
+  const base = { ...(s.reason ? { reason: s.reason } : {}), ...(s.detection ? { detection: s.detection } : {}) };
   if (s.active === null) return { tone: 'bad', label: 'cannot run', ...base };
   return s.fallback ? { tone: 'warn', label: `fallback: ${s.active}`, ...base } : { tone: 'ok', label: 'active', ...base };
+}
+
+/** What a saved plugins edit says (issue #356): it applied when saved, no restart; when, if the hopper says. */
+export function appliedMessage(done: string, loadedAt: string | undefined): string {
+  return loadedAt ? `${done} — applied at ${new Date(loadedAt).toLocaleTimeString()}` : `${done} — applied`;
 }
 
 export const ROLE_TITLES: Record<Role, string> = {

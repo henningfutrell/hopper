@@ -10,8 +10,8 @@ export interface EngineOptions {
   idGen?: IdGen;
   executors: ExecutorRegistry;
   machines: MachineSource;
-  /** Every usage source the decider reads. Include `fakeUsage` here too when present. */
-  usage: UsageSource[];
+  /** Every usage source the decider reads now: they follow the plugins config live (issue #356). Include `fakeUsage` here too when present. */
+  usage: () => UsageSource[];
   /** The hand-settable source tests drive through `setFakeUsage`, when one is composed. */
   fakeUsage?: SettableUsageSource;
   /** The router role (live: the plugin host may swap its instance between calls). */

@@ -46,6 +46,7 @@ describe('sync loop: the sources follow the plugins config live (issue #356)', (
     world.patchJob('job-1', { status: 'finished' });
     world.emit('job.finished', 'job-1');
     await settle();
+    next.items = [item('k2')];
     await sync.syncNow();
     expect(next.reports.map((r) => `${r.kind} ${r.job.id}`)).toEqual(expect.arrayContaining(['claimed job-2', 'finished job-1']));
     expect(first.reports.map((r) => r.kind)).toEqual(['claimed']);
