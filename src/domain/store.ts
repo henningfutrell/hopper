@@ -4,6 +4,7 @@
 import type {
   DomainEvent, Decision, EventType, Job, JobId, JobSpec, JobStatus, Lane, JobSourceRef, LaneId, MachineId, NewEvent, Question, QuestionAttempt, QuestionStatus,
   Identity, QueueGate, UiRole, WebhookDelivery, WebhookSubscription, UpdateSettings, PluginInstall, User,
+  UsageGraphView, UsageSample, UsageSeries, UsageTotalSeries,
 } from './types.ts';
 import type { ConnectedAccountProvider } from './types.ts';
 
@@ -105,6 +106,37 @@ export interface UserSettingsRepository {
   /** The repositories a connected account's jobs may use (issue #321); empty: none chosen. */
   getJobRepositories(provider: ConnectedAccountProvider): string[];
   setJobRepositories(provider: ConnectedAccountProvider, repositories: readonly string[]): void;
+  /** The usage graph's range and step the user chose (issue #385); absent: never chosen. */
+  getUsageGraphView(): UsageGraphView | undefined;
+  setUsageGraphView(view: UsageGraphView): void;
+  /** How many days usage samples are kept (issue #385); absent: never chosen. */
+  getHistoryRetentionDays(): number | undefined;
+  setHistoryRetentionDays(days: number): void;
+}
+
+/** What the usage graph reads: a stretch, its graph step, and the time steps are counted from (a local midnight, a Monday). */
+export interface UsageHistoryQuery {
+  from: Date;
+  to: Date;
+  stepMs: number;
+  originMs: number;
+}
+
+/** One user's lines of one unit and usage window, summed per graph step: summed again over every user for the instance usage totals. */
+export interface UsageTotalSum extends Omit<UsageTotalSeries, 'points'> {
+  points: { at: string; used: number; limit: number; series: number }[];
+}
+
+/** The usage history (issue #385): usage samples in the user schema. */
+export interface UsageHistoryRepository {
+  /** Keep readings as usage samples; one already kept (same source, machine, usage window and time) is kept once. How many were new. */
+  record(samples: readonly UsageSample[]): number;
+  /** The usage graph's lines over [from, to), ordered by source, machine and usage window. */
+  series(q: UsageHistoryQuery): UsageSeries[];
+  /** The lines summed per unit and usage window, nothing named: this user's share of the instance usage totals. */
+  totals(q: UsageHistoryQuery): UsageTotalSum[];
+  /** Delete the samples older than `before`; how many. */
+  prune(before: Date): number;
 }
 
 /** The instance's settings (in the instance schema): self-update and the store installs. */
@@ -276,6 +308,7 @@ export interface UserStore {
   questions: QuestionRepository;
   settings: UserSettingsRepository;
   connectedAccounts: ConnectedAccountRepository;
+  usageHistory: UsageHistoryRepository;
   /** `plugins`, `rules` and `job-rules`. */
   config: ConfigRecords<UserConfigName>;
   /** Run fn in one transaction. Re-entrant: a nested tx joins the outer one. Throw = rollback. */

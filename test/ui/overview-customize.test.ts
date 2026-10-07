@@ -9,7 +9,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const KEY = 'jh_overview';
-const DEFAULT_ORDER = ['kpis', 'timeline', 'attention', 'lanes', 'waiting', 'ended', 'throughput', 'usage', 'live'];
+const DEFAULT_ORDER = ['kpis', 'timeline', 'attention', 'lanes', 'waiting', 'ended', 'throughput', 'usage', 'usageHistory', 'live'];
 
 function fakeDaemon() {
   const routes: Record<string, unknown> = {
@@ -118,11 +118,11 @@ describe('Overview layout', () => {
     await click(row('ended').querySelector('[role="switch"]'));
     await click(button(row('usage'), 'Move up'));
     await click(button(row('waiting'), 'Full width'));
-    expect(shown()).toEqual(['kpis', 'timeline', 'attention', 'lanes', 'waiting', 'usage', 'throughput', 'live']);
+    expect(shown()).toEqual(['kpis', 'timeline', 'attention', 'lanes', 'waiting', 'usage', 'throughput', 'usageHistory', 'live']);
     expect(stored()?.panels.find((p) => p.id === 'ended')?.shown).toBe(false);
 
     await reload();
-    expect(shown()).toEqual(['kpis', 'timeline', 'attention', 'lanes', 'waiting', 'usage', 'throughput', 'live']);
+    expect(shown()).toEqual(['kpis', 'timeline', 'attention', 'lanes', 'waiting', 'usage', 'throughput', 'usageHistory', 'live']);
     expect(panel('waiting')!.className).toContain('col-span-3');
   });
 
@@ -160,7 +160,7 @@ describe('Rearranging the overview', () => {
     expect(panel('live')!.getAttribute('draggable')).toBe('true');
     await drag(panel('live'), panel('kpis'));
     await drag(panel('kpis'), panel('lanes'));
-    const order = ['live', 'timeline', 'attention', 'lanes', 'kpis', 'waiting', 'ended', 'throughput', 'usage'];
+    const order = ['live', 'timeline', 'attention', 'lanes', 'kpis', 'waiting', 'ended', 'throughput', 'usage', 'usageHistory'];
     expect(shown()).toEqual(order);
 
     await click(button(document, 'Done'));
@@ -173,9 +173,9 @@ describe('Rearranging the overview', () => {
     await boot(JSON.stringify({ panels: DEFAULT_ORDER.map((id) => ({ id, shown: id !== 'ended', width: 1 })), settings: {} }));
     await click(button(document, 'Arrange'));
     await click(button(panel('throughput')!, 'Move earlier'));
-    expect(shown()).toEqual(['kpis', 'timeline', 'attention', 'lanes', 'throughput', 'waiting', 'usage', 'live']);
+    expect(shown()).toEqual(['kpis', 'timeline', 'attention', 'lanes', 'throughput', 'waiting', 'usage', 'usageHistory', 'live']);
     await click(button(panel('waiting')!, 'Move later'));
-    expect(shown()).toEqual(['kpis', 'timeline', 'attention', 'lanes', 'throughput', 'usage', 'waiting', 'live']);
+    expect(shown()).toEqual(['kpis', 'timeline', 'attention', 'lanes', 'throughput', 'usage', 'waiting', 'usageHistory', 'live']);
     expect(button(panel('kpis')!, 'Move earlier')!.hasAttribute('disabled')).toBe(true);
     expect(button(panel('live')!, 'Move later')!.hasAttribute('disabled')).toBe(true);
   });
@@ -190,7 +190,7 @@ describe('Rearranging the overview', () => {
     await boot();
     await openCustomize();
     await drag(row('usage'), row('attention'));
-    expect(shown()).toEqual(['kpis', 'timeline', 'usage', 'attention', 'lanes', 'waiting', 'ended', 'throughput', 'live']);
-    expect(stored()?.panels.map((p) => p.id)).toEqual(['kpis', 'timeline', 'usage', 'attention', 'lanes', 'waiting', 'ended', 'throughput', 'live']);
+    expect(shown()).toEqual(['kpis', 'timeline', 'usage', 'attention', 'lanes', 'waiting', 'ended', 'throughput', 'usageHistory', 'live']);
+    expect(stored()?.panels.map((p) => p.id)).toEqual(['kpis', 'timeline', 'usage', 'attention', 'lanes', 'waiting', 'ended', 'throughput', 'usageHistory', 'live']);
   });
 });

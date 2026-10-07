@@ -1,5 +1,5 @@
 import type { InstanceSettingsRepository, UserSettingsRepository } from '../domain/ports.ts';
-import type { ConnectedAccountProvider, PluginInstall, QueueGate, UpdateChannel, UpdateSettings } from '../domain/types.ts';
+import type { ConnectedAccountProvider, PluginInstall, QueueGate, UpdateChannel, UpdateSettings, UsageGraphView } from '../domain/types.ts';
 import { UPDATE_CHANNELS } from '../domain/types.ts';
 import type { StoreContext } from './context.ts';
 
@@ -19,7 +19,7 @@ function keyValues(c: StoreContext) {
 /** The settings key of a connected account's job repositories (issue #321). */
 export const jobRepositoriesKey = (provider: ConnectedAccountProvider): string => `jobRepositories:${provider}`;
 
-/** A user's settings: the queue gate, the hopper's own ssh key (issue #293), its link key (issue #308), the job repositories (issue #321). */
+/** A user's settings: the queue gate, the hopper's own ssh key (issue #293), its link key (issue #308), the job repositories (issue #321), the usage graph view and history retention (issue #385). */
 export function createUserSettingsRepository(c: StoreContext): UserSettingsRepository {
   const { read, write } = keyValues(c);
   return {
@@ -50,6 +50,20 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
     },
     setJobRepositories(provider, repositories) {
       write(jobRepositoriesKey(provider), JSON.stringify(repositories));
+    },
+    getUsageGraphView() {
+      const text = read('usageGraphView');
+      return text === undefined ? undefined : JSON.parse(text) as UsageGraphView;
+    },
+    setUsageGraphView(view) {
+      write('usageGraphView', JSON.stringify({ range: 'preset' in view.range ? { preset: view.range.preset } : { from: view.range.from, to: view.range.to }, step: view.step }));
+    },
+    getHistoryRetentionDays() {
+      const text = read('historyRetentionDays');
+      return text === undefined ? undefined : Number(text);
+    },
+    setHistoryRetentionDays(days) {
+      write('historyRetentionDays', String(days));
     },
   };
 }

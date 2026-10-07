@@ -11,8 +11,10 @@ import { Input } from '@/components/ui/input';
 import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
 import { get, post, SessionRejected } from '@/lib/api';
+import { UsageGraphCard } from '@/components/usage-graph-card';
 import { clock } from '@/model/format';
-import type { InstanceTotals, UsageTotal, UserAdded, UserView } from '@/model/wire';
+import { totalsAsSeries } from '@/model/usage-history';
+import type { InstanceTotals, InstanceUsageHistory, UsageTotal, UserAdded, UserView } from '@/model/wire';
 import { useHopper } from '@/store';
 import { useCanAdminInstance } from '@/store/selectors';
 
@@ -58,6 +60,8 @@ export function Users() {
       <div className="space-y-3">
         <p className="text-sm text-muted-foreground">Each user has their own jobs, questions, machines, plugins and webhooks. Nobody sees another user's work, admins included: an admin sees only the totals across all users.</p>
         {canAdmin && totals && <Totals totals={totals} />}
+        {canAdmin && <UsageGraphCard<InstanceUsageHistory> path="/api/instance/usage-history" seriesOf={totalsOf} title="Usage over time, all users"
+          empty="No usage history in this range yet: each user's usage sources are kept from now on, each time they read." />}
         {adding && (
           <form onSubmit={(e) => void add(e)} className="flex flex-wrap items-end gap-2">
             <label className="block min-w-48 flex-1 space-y-1">
@@ -98,6 +102,9 @@ export function Users() {
     </Panel>
   );
 }
+
+/** The usage graph summed over every user (issue #385): a line per usage window, nobody's share. */
+const totalsOf = (h: InstanceUsageHistory) => totalsAsSeries(h.totals);
 
 /** The users' work as an admin reads it: totals across every user, nobody's share. */
 function Totals({ totals: t }: { totals: InstanceTotals }) {

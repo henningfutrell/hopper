@@ -116,16 +116,17 @@ describe('usage history', () => {
     a.user().store.usageHistory.record([{ ...old(now - HOUR, 40), account: 'owner@example.test' }]);
     a.user('bea').store.usageHistory.record([{ ...old(now - HOUR, 50), source: 'bea-plan', account: 'bea@example.test' }]);
 
+    // Each test user also has the harness's fake source, recorded as the runtime starts.
     const mine = await history(a, '', session(admin));
-    expect(mine.body.series.map((s) => s.source)).toEqual(['plan']);
+    expect(mine.body.series.map((s) => s.source)).toEqual(['fake', 'plan']);
     const hers = await history(a, '', session(bea));
-    expect(hers.body.series.map((s) => s.source)).toEqual(['bea-plan']);
+    expect(hers.body.series.map((s) => s.source)).toEqual(['bea-plan', 'fake']);
     expect(JSON.stringify(hers.body)).not.toContain('owner@example');
 
     const totals = await a.api<InstanceUsageHistory>('GET', '/api/instance/usage-history', undefined, session(admin));
     expect(totals.status).toBe(200);
-    expect(totals.body.totals).toEqual([{ unit: '%', window: 'session', informational: false, points: [{ at: expect.any(String), usedFrac: 0.45, series: 2 }] }]);
-    expect(JSON.stringify(totals.body)).not.toMatch(/plan|example\.test|bea|Bea/);
+    expect(totals.body.totals.find((s) => s.window === 'session')).toEqual({ unit: '%', window: 'session', informational: false, points: [{ at: expect.any(String), usedFrac: 0.45, series: 2 }] });
+    expect(JSON.stringify(totals.body)).not.toMatch(/plan|fake|example\.test|bea|Bea/);
     expect((await a.api('GET', '/api/instance/usage-history', undefined, session(bea))).status).toBe(403);
   });
 });

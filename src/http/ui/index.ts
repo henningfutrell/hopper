@@ -9,13 +9,14 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { isSuperAdmin, type SignIn } from '../../auth/index.ts';
 import type { Clock, InstanceStore, PluginStoreView, Updater } from '../../domain/ports.ts';
-import { CONNECTED_ACCOUNT_PROVIDERS, HERDR_SESSION, HOST_KEY, LIST_ROLES, QUEUE_GATE_MODES, REALM_TYPES, ROLES, SELECTABLE_ROLES, UI_ROLES, UPDATE_CHANNELS, type RealmsEdit, type RealmsView, type SessionView, type UiRole, type UserAdded } from '../../domain/types.ts';
+import { CONNECTED_ACCOUNT_PROVIDERS, MAX_HISTORY_RETENTION_DAYS, HERDR_SESSION, HOST_KEY, LIST_ROLES, QUEUE_GATE_MODES, REALM_TYPES, ROLES, SELECTABLE_ROLES, UI_ROLES, UPDATE_CHANNELS, type RealmsEdit, type RealmsView, type SessionView, type UiRole, type UserAdded } from '../../domain/types.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { lanHosts, uiOrigins, type Lan } from '../reach.ts';
 import type { RealmsAdmin } from '../realms.ts';
 import { writeJobRules } from '../../job-rules/index.ts';
 import { writeRules } from '../../questions/index.ts';
 import { userIdOf, type TenantParts, type Tenants } from '../tenants.ts';
+import { usageGraphViewBody } from '../usage-history.ts';
 import { webhooksView } from '../webhooks.ts';
 import { SESSION_HEADER, mutationRefusal } from './guard.ts';
 import { loginCodeLive, mintLoginCode } from './login-code.ts';
@@ -125,6 +126,9 @@ export const updateBody = z.discriminatedUnion('action', [
 export const queueOrderBody = z.strictObject({
   jobIds: z.array(z.string().min(1)).refine((ids) => new Set(ids).size === ids.length, 'a job is named twice'),
 });
+// The usage graph (issue #385): the history retention, whole days.
+export const historyRetentionBody = z.strictObject({ days: z.number().int().min(1, 'keep at least 1 day').max(MAX_HISTORY_RETENTION_DAYS) });
+export { usageGraphViewBody };
 export const queueGateBody = z.strictObject({ mode: z.enum(QUEUE_GATE_MODES), autoAcceptPerHour: z.number().int().min(1).nullable() });
 // Connected accounts (issue #214): connect (start the device flow), cancel a waiting code, disconnect.
 export const connectedAccountsBody = z.discriminatedUnion('action', [
@@ -197,6 +201,20 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   app.post('/ui/api/jobs/:id/dismiss', operator, async (req) => o.tenant(req).engine.dismiss(parseWith(idParams, req.params).id));
   app.post('/ui/api/queue/order', operator, async (req) => ({ jobs: o.tenant(req).engine.orderQueue(parseWith(queueOrderBody, req.body).jobIds) }));
   app.post('/ui/api/queue/accept-presort', operator, async (req) => ({ presort: o.tenant(req).engine.acceptPreSort() }));
+  // The usage graph's range and step are the user's own choice, a viewer's too; the history retention deletes samples: admin.
+  app.post('/ui/api/usage-history/view', allow('viewer'), async (req) => {
+    const view = parseWith(usageGraphViewBody, req.body);
+    o.tenant(req).store.settings.setUsageGraphView(view);
+    return { view };
+  });
+  app.post('/ui/api/usage-history/retention', admin, async (req) => {
+    const { days } = parseWith(historyRetentionBody, req.body);
+    const { store } = o.tenant(req);
+    store.settings.setHistoryRetentionDays(days);
+    // Applied at once (issue #356): what is now past it goes.
+    const pruned = store.usageHistory.prune(new Date(o.clock.now().getTime() - days * 86_400_000));
+    return { retentionDays: days, pruned };
+  });
   app.post('/ui/api/queue-gate', admin, async (req) => ({ gate: o.tenant(req).engine.setQueueGate(parseWith(queueGateBody, req.body)) }));
 
   app.post('/ui/api/questions/:id/answer', operator, async (req) => {

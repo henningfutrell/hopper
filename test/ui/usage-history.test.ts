@@ -4,7 +4,7 @@
 // that time.
 import { describe, expect, it } from 'vitest';
 import type { UsageSeries } from '../../src/domain/types.ts';
-import { graphLines, lineSegments, valuesAt } from '../../ui/src/model/usage-history.ts';
+import { graphLines, hiddenLines, lineSegments, totalsAsSeries, valuesAt } from '../../ui/src/model/usage-history.ts';
 
 const H = 3_600_000;
 const T0 = Date.parse('2026-10-01T00:00:00.000Z');
@@ -53,5 +53,24 @@ describe('hovering', () => {
     const lines = graphLines([series('a', 'session', { points: pts([0, 0.1], [1, 0.25]) }), series('a', 'week', { points: pts([0, 0.5]) })]);
     expect(valuesAt(lines, T0 + 1.5 * H, H, new Set())).toEqual([{ key: 'a||session', v: 0.25 }]);
     expect(valuesAt(lines, T0 + 0.5 * H, H, new Set(['a||week']))).toEqual([{ key: 'a||session', v: 0.1 }]);
+  });
+});
+
+describe('the legend', () => {
+  it('hides what it toggled off and the informational lines it did not toggle on', () => {
+    const lines = graphLines([series('a', 'session'), series('a', 'week'), series('a', 'week (Fable)', { informational: true })]);
+    expect([...hiddenLines(lines, new Map())]).toEqual(['a||week (Fable)']);
+    expect([...hiddenLines(lines, new Map([['a||session', true], ['a||week (Fable)', false]]))]).toEqual(['a||session']);
+  });
+});
+
+describe('the instance usage totals as lines', () => {
+  it('one colour for all users, a dash per window; nothing named', () => {
+    const lines = graphLines(totalsAsSeries([
+      { unit: '%', window: 'session', informational: false, points: [{ at: iso(T0), usedFrac: 0.45, series: 2 }] },
+      { unit: '%', window: 'week', informational: false, points: [] },
+    ]));
+    expect(lines.map((l) => [l.label, l.dash])).toEqual([['all users · session', 'solid'], ['all users · week', 'dashed']]);
+    expect(new Set(lines.map((l) => l.color)).size).toBe(1);
   });
 });
