@@ -200,6 +200,12 @@ describe('readTurn', () => {
     expect(t.lastLine).toBe('grep "^+" | head -20');
   });
 
+  it('does not report the truncation mark of a long command as progress (seen live)', () => {
+    const lines = ['❯ go', "● Bash(python3 - <<'EOF'", "  ⎿  $ python3 - <<'EOF'", "     p='a.ts'", '     …', ''];
+    const t = readTurn(screen(lines, CHROME), 'go');
+    expect(t.lastLine).toBe("p='a.ts'");
+  });
+
   it('reads the marker of a turn that ends above the update notice', () => {
     const t = readTurn(screen(['❯ go', '● All done.', '  HOPPER_DONE', '', '             ✔ Update installed · Restart to update'], CHROME), 'go');
     expect(t.lastMarker).toBe('done');
