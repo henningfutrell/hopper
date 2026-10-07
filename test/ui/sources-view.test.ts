@@ -163,8 +163,19 @@ describe('Sources view: GitHub', () => {
     expect(links()).toEqual([
       ['Choose its repositories', 'https://github.com/settings/installations/1'],
       ['Choose its repositories', 'https://github.com/organizations/octo-org/settings/installations/2'],
+      ['Add the app to another account or organization', 'https://github.com/apps/hopper-qm/installations/new'],
     ]);
     expect(panel()!.textContent).not.toMatch(/install the app/i);
+  });
+
+  it('installed: says what the app may do on each account, as GitHub granted it (#352)', async () => {
+    await boot(withAccount(connected([
+      { account: 'octo-org', repositorySelection: 'selected', repositories: ['octo-org/site'], settingsUrl: 'https://github.com/organizations/octo-org/settings/installations/2',
+        permissions: { pull_requests: 'write', metadata: 'read', issues: 'write', contents: 'write' } },
+    ])));
+    await vi.waitFor(() => expect(panel()?.querySelector('[data-installation="octo-org"]')).not.toBeNull());
+    expect(panel()!.querySelector('[data-installation="octo-org"] [data-installation-access]')?.textContent)
+      .toBe('It may: read and write contents, issues, pull requests; read metadata.');
   });
 
   it('installed nowhere: says so, and links to install it (#253)', async () => {
@@ -177,7 +188,10 @@ describe('Sources view: GitHub', () => {
   it('an install that reaches no repository says so, with the link to choose them', async () => {
     await boot(withAccount(connected([{ account: 'octo-user', repositorySelection: 'selected', repositories: [], settingsUrl: 'https://github.com/settings/installations/1' }])));
     await vi.waitFor(() => expect(panel()?.querySelector('[data-installation="octo-user"]')?.textContent).toContain('no repository'));
-    expect(links()).toEqual([['Choose its repositories', 'https://github.com/settings/installations/1']]);
+    expect(links()).toEqual([
+      ['Choose its repositories', 'https://github.com/settings/installations/1'],
+      ['Add the app to another account or organization', 'https://github.com/apps/hopper-qm/installations/new'],
+    ]);
   });
 
   it('GitHub could not say where it is installed: says why, links to see the installs, and never asks to install it (#263)', async () => {
