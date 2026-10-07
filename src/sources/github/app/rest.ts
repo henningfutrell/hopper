@@ -62,6 +62,10 @@ export async function addLabels(req: Request, token: string, repo: string, numbe
   await req('POST /repos/{owner}/{repo}/issues/{issue_number}/labels', { ...splitRepo(repo), issue_number: number, labels, headers: auth(token) });
 }
 
+export async function reopenIssue(req: Request, token: string, repo: string, number: number): Promise<void> {
+  await req('PATCH /repos/{owner}/{repo}/issues/{issue_number}', { ...splitRepo(repo), issue_number: number, state: 'open', headers: auth(token) });
+}
+
 /** Removes each label; one the issue does not carry (404) is fine. */
 export async function removeLabels(req: Request, token: string, repo: string, number: number, labels: string[]): Promise<void> {
   for (const name of labels) {

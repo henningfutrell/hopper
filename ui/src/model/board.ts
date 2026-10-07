@@ -33,24 +33,24 @@ export function jobBoard(jobs: Iterable<Job>, waitingOrder: readonly string[]): 
   return board;
 }
 
-/** The newest failed job of its item, its failure reported to its source: what the daemon may run again (issue #313). */
-function newestReportedFailure(job: Job, jobs: Iterable<Job>): boolean {
+/**
+ * Whether Run again is offered for a job — one the daemon takes (issues #313, #354, #362): it failed or
+ * finished, has a source, its end is reported to the source, and no newer job of its item exists. A
+ * closed issue does not stop it: Run again reopens it. The daemon decides.
+ */
+export function canRerun(job: Job, jobs: Iterable<Job>): boolean {
   const key = job.source?.key;
-  if (job.status !== 'failed' || key === undefined || job.sourceState?.sync?.finalReported !== true) return false;
+  if ((job.status !== 'failed' && job.status !== 'finished') || key === undefined || job.sourceState?.sync?.finalReported !== true) return false;
   for (const j of jobs) if (j.id !== job.id && j.source?.key === key && j.createdAt > job.createdAt) return false;
   return true;
 }
 
-const itemClosed = (job: Job) => job.sourceState?.sync?.itemClosed === true;
-
-/** Whether Run again is offered for a job: one the daemon takes — never while its issue is closed (issue #362). The daemon decides. */
-export function canRerun(job: Job, jobs: Iterable<Job>): boolean {
-  return newestReportedFailure(job, jobs) && !itemClosed(job);
-}
-
-/** Why Run again is not offered for a job that could otherwise run again, and what to do, or undefined (issue #362). */
-export function rerunBlocked(job: Job, jobs: Iterable<Job>): string | undefined {
-  return newestReportedFailure(job, jobs) && itemClosed(job) ? 'its issue is closed: reopen it to run it again' : undefined;
+/** What Run again made, as its toast says it (issue #354): the new job queued — waiting for acceptance, or held and why — or failed at once. */
+export function rerunOutcome(job: Job): { ok: boolean; message: string } {
+  if (job.status === 'failed') return { ok: false, message: `Run again: the new job failed at once: ${job.error ?? 'no reason given'}` };
+  if (job.accepted === false) return { ok: true, message: 'Queued again: waiting for acceptance in Queue' };
+  if (job.holdReason) return { ok: true, message: `Queued again, held: ${job.holdReason}` };
+  return { ok: true, message: 'Queued again' };
 }
 
 /** A machine as people read it: its label, and its id too where they differ, since two machines can share a label (issue #166). */

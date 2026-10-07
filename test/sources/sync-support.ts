@@ -106,9 +106,10 @@ export function createWorld(): World {
       const cur = jobs.get(id)!.sourceState ?? {};
       patchJob(id, { sourceState: { ...cur, ...state } });
     },
-    rerun(id) {
+    rerun(id, it, source) {
+      const job = host.ingest(it, source) ?? store.jobs.getBySourceKey(it.key)!;
       emit('job.rerun', id, { by: 'user' });
-      return jobs.get(id)!;
+      return job;
     },
   };
 

@@ -63,6 +63,8 @@ export interface GitHubApi {
   ensureLabel(repo: string, name: string, color: string, description: string): Promise<void>;
   addLabels(repo: string, number: number, labels: string[]): Promise<void>;
   removeLabels(repo: string, number: number, labels: string[]): Promise<void>;
+  /** Reopen a closed issue (Run again, issue #354); an open one stays open. */
+  reopenIssue(repo: string, number: number): Promise<void>;
   /** The merged pull request that closed the issue last; undefined when a person or a commit closed it. */
   closingPullRequest(repo: string, number: number): Promise<ClosingPullRequest | undefined>;
   /** The open pull requests whose merge will close the issue, drafts included; none is []. */

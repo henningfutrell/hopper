@@ -15,8 +15,7 @@ export type JobStatus =
   | 'running'
   | 'waiting_answer' // paused on a question; holds no lane; its pane stays open
   | 'operator_led' // claimed by an operator, worked by hand outside the hopper; holds no lane, never run (issue #318)
-  | 'finished'
-  | 'failed'
+  | 'finished' | 'failed'
   | 'cancelled'
   | 'rejected'; // turned away at the queue gate: kept, never run
 
@@ -101,6 +100,8 @@ export interface Job {
   resumeOn?: MachineId;
   /** Where the job was pulled from. Absent only for jobs created before phase 3. */
   source?: JobSourceRef;
+  /** The job this one runs again (a re-run, issue #354): the newest job of its source key when it was created. */
+  rerunOf?: JobId;
   /**
    * `sync`: owned by the sync loop (claimReported, reportedQuestions, finalReported,
    * cancelReason). `source`: owned by the adapter; `report()` returns its whole new value,

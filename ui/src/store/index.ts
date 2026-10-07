@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { create } from 'zustand';
 import { get, post, SessionRejected, clearToken, readSession } from '@/lib/api';
 import { signInThroughGateway, signInWithoutCredential, wantsGatewaySignIn, wantsNoSignIn } from '@/lib/login';
+import { rerunOutcome } from '@/model/board';
 import { HISTORY_TYPES } from '@/model/event-types';
 import { reloadNeeded } from '@/model/update';
 import type { SessionUser, SessionView } from '@/model/wire';
@@ -173,6 +174,18 @@ export async function act(path: string, body: unknown = {}, done?: string): Prom
   }
 }
 
+/** Run again (issue #354): the answer is the new job, already queued; its toast says where it is. Failures toast their reason. */
+export async function rerun(jobId: string): Promise<void> {
+  try {
+    const out = rerunOutcome(await post<Job>(`/ui/api/jobs/${jobId}/rerun`, {}));
+    if (out.ok) toast.success(out.message); else toast.error(out.message);
+    refreshLiveSoon();
+  } catch (e) {
+    if (e instanceof SessionRejected) set({ authed: false, user: null });
+    toast.error((e as Error).message);
+  }
+}
+
 export async function logout() {
   try { await post('/ui/api/logout'); } catch { /* already gone */ }
   clearToken();
@@ -200,11 +213,7 @@ export function onDomainEvent(e: DomainEvent) {
   }
 }
 export const onDelivery = (d: WebhookDelivery) => set({ deliveries: upsert(state().deliveries, d, (x) => x.id === d.id, CAP.deliveries) });
-/** A source synced: its jobs may have changed with no event — a failed job's issue closed or reopened (issue #362). */
-export const onSource = (src: SourceStatus) => {
-  set({ sources: upsert(state().sources, src, (x) => x.name === src.name, Infinity) });
-  refreshLiveSoon();
-};
+export const onSource = (src: SourceStatus) => set({ sources: upsert(state().sources, src, (x) => x.name === src.name, Infinity) });
 export const setConn = (conn: Conn) => set({ conn });
 
 /** True when the page must show only the landing page, with the ways to sign in: logged out (issues #167, #213). */

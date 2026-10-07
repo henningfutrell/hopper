@@ -644,7 +644,7 @@ Version 1 (`docs/schemas/job.claimed_by_operator.v1.json`). An operator claimed 
 
 ## `job.rerun`
 
-Version 1 (`docs/schemas/job.rerun.v1.json`). The user asked for a failed job's item to run again (UI Run again, a re-run): its source cleared the job's end (on GitHub: the `hopper:failed` and `hopper:claimed` labels went), so the item is offered again and its next sync starts a new job. The failed job is kept as it ended.
+Version 1 (`docs/schemas/job.rerun.v1.json`). The user asked for an ended job's item to run again (UI Run again, a re-run): its source gave the item back (on GitHub: a closed issue reopened, the end labels gone) and the new job was queued in the same step, its `job.queued` just before this event and its `rerunOf` this job. The ended job is kept as it ended.
 
 | field | type | required |
 |---|---|---|

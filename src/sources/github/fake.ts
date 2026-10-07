@@ -18,7 +18,6 @@ export interface FakeGitHub extends GitHubApi {
    * fake's clock, 2026-10-02T09:00, before any test job is created).
    */
   closeIssue(repo: string, number: number, closedBy?: string, o?: { at?: string; reason?: 'completed' | 'not_planned' }): void;
-  reopenIssue(repo: string, number: number): void;
   /** A pull request (opened at createdAt) whose merge will close the issue; the issue stays open. */
   openPullRequest(repo: string, number: number, pr: { createdAt: string; isDraft?: boolean }): OpenPullRequest;
   /** The merge of a pull request (opened at createdAt) closes the issue; no open one is left. */
@@ -106,6 +105,12 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
       const i = find(repo, n);
       i.labels = i.labels.filter((l) => !names.includes(l));
     },
+    async reopenIssue(repo, n) {
+      enter('reopenIssue', [repo, n]);
+      const i = find(repo, n);
+      i.state = 'open';
+      delete i.closedBy; delete i.closedAt; delete i.stateReason;
+    },
     async closingPullRequest(repo, n) {
       enter('closingPullRequest', [repo, n]);
       find(repo, n);
@@ -150,7 +155,6 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
       Object.assign(i, { state: 'closed', closedBy: closedBy ?? human, closedAt: c.at ?? stamp(), stateReason: c.reason ?? 'completed' });
       closers.delete(key(repo, n));
     },
-    reopenIssue(repo, n) { const i = find(repo, n); i.state = 'open'; delete i.closedBy; delete i.closedAt; delete i.stateReason; },
     openPullRequest(repo, n, { createdAt, isDraft }) {
       find(repo, n);
       const pr = { url: `https://github.com/${repo}/pull/${++pullNumber}`, createdAt, isDraft: isDraft ?? false };

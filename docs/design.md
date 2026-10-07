@@ -987,7 +987,7 @@ remains. The only mutations are the owner's actions in the local UI, behind a UI
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/sources/` | `JobSource` adapters (`github`), the GitHub API port + `gh` CLI adapter + in-memory fake, the sync loop, its slots (`sync-slots.ts`, the sources followed live, issue #356) and its Run again half (`rerun.ts`, issue #362); since slice 4 the GitHub sources' option schemas (`config.ts`, was the `sources.yaml` loader) and their factories (`compose.ts`), reached through the job-source plugins | engine internals (uses the narrow `SourceHost` it is given), http, plugins |
+| `src/sources/` | `JobSource` adapters (`github`), the GitHub API port + `gh` CLI adapter + in-memory fake, the sync loop, its slots (`sync-slots.ts`, the sources followed live, issue #356) and its Run again half (`rerun.ts`, issues #362, #354); since slice 4 the GitHub sources' option schemas (`config.ts`, was the `sources.yaml` loader) and their factories (`compose.ts`), reached through the job-source plugins | engine internals (uses the narrow `SourceHost` it is given), http, plugins |
 | `src/events/` | versioned payload schemas (zod) per event type, the envelope, JSON Schema export | everything but `domain/` and `zod` |
 | `src/http/ui/` | UI session: login codes, session cookie, CSRF, origin/host guard, the UI-only mutation routes | engine internals beyond the engine's public commands |
 
@@ -1127,30 +1127,30 @@ Unreported, the item stays one attempt, so a failing label write cannot loop. Pr
 `github-app` re-run share it. Before issue #186 a finished job was never re-run, so an issue reopened
 after a job that finished without shipping stayed stuck, skipped without a word.
 
-**Run again** (issue #313). A failed job need not wait for a human to clear its marker at the
-source: `POST /ui/api/jobs/:id/rerun` (operator; the Ended panel's Run again button) asks the sync loop
-(`SourceRegistry.rerun`) to give the item back. Only the newest job of its key, status `failed`, whose
-failure was reported (`finalReported`), of a running source — else 409; unknown → 404. On the job's
-report chain the source gets report kind `rerun` and clears the job's end — on GitHub `hopper:failed`
-and `hopper:claimed` are removed —, then `SourceHost.rerun` appends `job.rerun { by: "user" }` and the
-source syncs at once, so it offers the item again and `isRerunnable` makes a new job. The failed job is
-kept as it ended. A source that cannot take it → 502 with its error, and nothing is recorded. A source
-that refuses it as its item stands throws `SourceRefused` → 409 with its reason, nothing recorded, the
-marker left (issue #348): GitHub refuses a closed issue — discovery offers only open ones, and the hopper
-never reopens an issue — so the UI's toast says to reopen it first, instead of an accepted re-run that
-never runs. The refused job is marked `itemClosed` at once.
+**Run again** (issues #313, #354). An ended job need not wait for a human to clear its marker at the
+source, nor for a sync to offer its item again: `POST /ui/api/jobs/:id/rerun` (operator; the Ended
+panel's Run again button) asks the sync loop (`SourceRegistry.rerun`) to queue the item again now. Only
+the newest job of its key, status `failed` or `finished` (a result that is not wanted), whose end was
+reported (`finalReported`), of a running source that implements `JobSource.rerun` — else 409; unknown →
+404. On the job's report chain the source gives the item back (`JobSource.rerun`) — on GitHub
+(`takeBack`) a closed issue is **reopened** (the new job is cancelled while its issue is closed, and its
+own pull request's merge closes it again), `hopper:failed`, `hopper:done`, `hopper:rejected` and
+`hopper:claimed` go, and the source label comes back if it was taken off — and answers the item as it
+stands now. `SourceHost.rerun` then, in one tx, creates the new job as `ingest` does (routing rules, the
+queue gate; priority and lane caps apply as to any job), with `rerunOf` the ended job, and appends
+`job.rerun { by: "user" }` on the ended job; the route answers the new job, and the UI's toast says where
+it is (waiting for acceptance, held and why, queued, or failed at intake with its reason). A sync that
+offered the item in between already made the job: that one is answered. The ended job is kept as it
+ended. A source that cannot give the item back → 502 with its error, and nothing is recorded. Before
+issue #354 Run again only cleared the labels and waited for a sync, and a closed issue was refused (409,
+issue #348); neither is so now. Any job made for a key that already had one carries `rerunOf`, whether
+Run again or a human clearing the marker made it.
 
-**Run again offered only where it is taken** (issue #362). The UI never offers an action the daemon
-refuses: after each discover the sync loop asks the source (`JobSource.closedItems`) about the jobs Run
-again may be asked of — the newest failed job of each item, its failure reported — and keeps the answer
-on each as `sourceState.sync.itemClosed`. GitHub answers from the discover listing at no cost while the
-issue is open (a failed issue keeps its `hopper` label, so the listing shows it), reads only an issue the
-listing did not show, and does not read one known closed again until the listing shows it reopened. A
-paused source is not asked; a refused re-run sets the mark as well. The Ended panel's Run again
-(`canRerun`) needs the failure reported and the issue not closed; a closed one shows *Not run again: its
-issue is closed: reopen it to run it again* instead (`rerunBlocked`). A sync changes the mark without an
-event, so the UI re-reads the jobs on each `source.updated`. Residual: an issue closed between two syncs
-still shows the button until the next one; the click gets the 409 above with what to do, and the mark.
+**Run again offered only where it is taken** (issues #362, #354). The UI never offers an action the
+daemon refuses: the Ended panel's Run again (`canRerun`) needs a failed or finished job, the newest of its
+item, its end reported. A closed issue no longer blocks it (Run again reopens it), so the per-sync
+`JobSource.closedItems` check and its `sourceState.sync.itemClosed` mark that #362 added are gone; rows
+that still carry `itemClosed` keep it, and nothing reads it.
 
 **Not run again, said out loud** (issue #186). An offered item whose newest job ended but cannot
 re-run yet (its end is not reported to the source) is not dropped silently: it is listed in the
@@ -1291,7 +1291,8 @@ above; empty body → claimed, then failed with error "empty issue body"; priori
 #187): the merge of the job's own pull request does, which is what completion `merge` requires
 before the job is finished, and with completion `pull-request` the issue stays open, labelled
 `hopper:done`, until a person merges. (Issue #38 had the hopper close a finished job's issue; once
-done meant merged, that close only ever met a closed issue.) A failed or cancelled job's issue stays open. No claim, progress,
+done meant merged, that close only ever met a closed issue.) A failed or cancelled job's issue stays open.
+The one write that is not a label: the user's **Run again** reopens the job's closed issue (issue #354, above). No claim, progress,
 question, answered, failure, cancel or completion comment; no reactions, other issue edits, or PR
 comments. Jobs get no way to write to their issue (no token, no helper), and their prompt says
 nothing about commenting (owner decision, 2026-10-04: a job has no reason to talk on its issue): the

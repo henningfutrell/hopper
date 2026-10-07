@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SourceError, SourceRefused } from '../../src/domain/ports.ts';
+import { SourceError } from '../../src/domain/ports.ts';
 import { GitHubApiError } from '../../src/sources/github/index.ts';
 import { REPO, jobForIssue, setup } from './fixtures/github-support.ts';
 
@@ -63,29 +63,49 @@ describe('GitHub source report', () => {
     expect(state).toEqual(claimed);
   });
 
-  it('rerun: the failed and claimed labels go, so the issue is offered again; no comment', async () => {
+  it('rerun: the end labels go and the issue comes back as an item for the new job, at once; no comment (issues #313, #354)', async () => {
     const { gh, source } = withIssue();
     const job = jobForIssue(1, { status: 'failed', error: 'scratch dir timed out' });
     await source.report({ kind: 'claimed', job });
     await source.report({ kind: 'failed', job });
     gh.calls.length = 0;
-    await source.report({ kind: 'rerun', job });
-    expect(gh.issue(REPO, 1).labels).toEqual(['hopper']);
-    expect(gh.issue(REPO, 1).state).toBe('open');
+    const item = await source.rerun!(job);
+    expect(gh.issue(REPO, 1)).toMatchObject({ state: 'open', labels: ['hopper'] });
     expect(gh.commentsOn(REPO, 1)).toEqual([]);
-    expect(gh.calls.map((c) => c.method)).toEqual(['getIssue', 'removeLabels']);
+    expect(gh.calls.map((c) => c.method)).not.toContain('reopenIssue');
+    expect(item).toMatchObject({ key: job.source!.key, repo: REPO, number: 1, labels: ['hopper'] });
   });
 
-  it('rerun on a closed issue: refused, labels left as they are, the issue not reopened (issue #348)', async () => {
+  it('rerun of a closed issue reopens it, so the new job can finish against it (issue #354)', async () => {
     const { gh, source } = withIssue();
-    const job = jobForIssue(1, { status: 'failed', error: 'scratch dir timed out' });
+    const job = jobForIssue(1, { status: 'finished' });
+    await source.report({ kind: 'claimed', job });
+    await source.report({ kind: 'finished', job });
+    gh.closeByPullRequest(REPO, 1, { createdAt: '2026-10-02T09:30:00Z', mergedAt: '2026-10-02T09:40:00Z' });
+    const item = await source.rerun!(job);
+    expect(gh.issue(REPO, 1)).toMatchObject({ state: 'open', labels: ['hopper'] });
+    expect(gh.calls.filter((c) => c.method === 'reopenIssue').map((c) => c.args)).toEqual([[REPO, 1]]);
+    expect(item.key).toBe(job.source!.key);
+  });
+
+  it('rerun puts the source label back when it was taken off, so the new job is not cancelled for it (issue #354)', async () => {
+    const { gh, source } = withIssue();
+    const job = jobForIssue(1, { status: 'failed' });
     await source.report({ kind: 'claimed', job });
     await source.report({ kind: 'failed', job });
-    gh.closeIssue(REPO, 1);
-    const err = await source.report({ kind: 'rerun', job }).catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(SourceRefused);
-    expect((err as Error).message).toMatch(/its issue is closed/);
-    expect(gh.issue(REPO, 1)).toMatchObject({ state: 'closed', labels: ['hopper', 'hopper:failed'] });
+    gh.removeLabel(REPO, 1, 'hopper');
+    gh.addLabel(REPO, 1, 'hopper:rejected');
+    await source.rerun!(job);
+    expect(gh.issue(REPO, 1).labels).toEqual(['hopper']);
+  });
+
+  it('rerun that GitHub refuses throws a SourceError with its reason', async () => {
+    const { gh, source } = withIssue();
+    const job = jobForIssue(1, { status: 'failed' });
+    gh.failNext('removeLabels', new GitHubApiError('gh: Resource not accessible (HTTP 403)', true, 403));
+    const err = await source.rerun!(job).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(SourceError);
+    expect((err as SourceError).permanent).toBe(true);
   });
 
   it('cancelled: claimed removed, no comment', async () => {
