@@ -272,18 +272,20 @@ describe('the Add machine line (issue #308)', () => {
 
   it('a sandbox box: a locked-down container on the hopper\'s network, its home a volume of its own, joined with the code', () => {
     const line = joinLine({ kind: 'box', agent: 'claude', engine: 'podman' }, { origin: 'http://localhost:4790', code, join });
-    expect(line.startsWith('podman run -d --name hopper-box-claude ')).toBe(true);
+    expect(line.startsWith('podman run -d --name hopper-sandbox-claude ')).toBe(true);
     // Named by the client's own setting: Docker refuses a host name on the host network.
-    expect(line).toContain('-e HOPPER_CLIENT_NAME=hopper-box-claude');
+    expect(line).toContain('-e HOPPER_CLIENT_NAME=hopper-sandbox-claude');
     expect(line).not.toContain('--hostname');
-    for (const flag of ['--network hopper_default', '--cap-drop ALL', '--security-opt no-new-privileges', '--read-only', '-v hopper-box-claude-home:/home/agent']) {
+    // Never an agent box's name or volume (`hopper-box-<agent>`, scripts/agent-boxes.sh): the line must not meet one.
+    expect(line).not.toMatch(/hopper-box-/);
+    for (const flag of ['--network hopper_default', '--cap-drop ALL', '--security-opt no-new-privileges', '--read-only', '-v hopper-sandbox-claude-home:/home/agent']) {
       expect(line).toContain(flag);
     }
     expect(line).toContain(`-e HOPPER_JOIN='http://hopper:4790#${code}'`);
     expect(line.endsWith(' ghcr.io/henningfutrell/hopper:box-claude')).toBe(true);
     // Nothing of the computer is mounted into it.
     expect(line).not.toMatch(/-v \/|--privileged|docker\.sock/);
-    expect(joinLine({ kind: 'box', agent: 'claude', engine: 'docker' }, { origin: 'x', code, join })).toMatch(/^docker run -d --name hopper-box-claude .* --tmpfs \/tmp .* ghcr\.io\/henningfutrell\/hopper:box-claude$/);
+    expect(joinLine({ kind: 'box', agent: 'claude', engine: 'docker' }, { origin: 'x', code, join })).toMatch(/^docker run -d --name hopper-sandbox-claude .* --tmpfs \/tmp .* ghcr\.io\/henningfutrell\/hopper:box-claude$/);
   });
 
   it('the agents a box is offered with are those an executor drives on a client target', () => {

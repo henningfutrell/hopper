@@ -91,7 +91,7 @@ export function JoinMachineForm({ config, onDone, onSsh }: { config: MachinesCon
           </div>
           <span className="text-muted-foreground">
             The code in it works once, until {time(minted.expiresAt)}. The machine shows here, online, when it joins.
-            {kind === 'box' && <> Then sign its agent in once: <code className="font-mono">{engine} exec -it hopper-box-{agent} {agent}</code> — the sign-in stays in the box&apos;s home volume.</>}
+            {kind === 'box' && <> Then sign its agent in once: <code className="font-mono">{engine} exec -it hopper-sandbox-{agent} {agent}</code> — the sign-in stays in the box&apos;s home volume.</>}
           </span>
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-muted-foreground">Waiting for it to join…</span>

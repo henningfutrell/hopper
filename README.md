@@ -287,10 +287,10 @@ line carries a one-time join code: it works once, for 10 minutes.
   `loginctl enable-linger`. For the computer a hopper container runs on, open the UI at
   `http://localhost:4790` there first: the line names the URL the page is open at.
 - **A sandbox box** (Podman or Docker): run the line on the computer the hopper runs on. It starts the
-  container `hopper-box-claude` from `ghcr.io/henningfutrell/hopper:box-claude` on the hopper's network,
+  container `hopper-sandbox-claude` from `ghcr.io/henningfutrell/hopper:box-claude` on the hopper's network,
   locked down — every capability dropped, no new privileges, a read-only root, its own home volume,
   nothing of the computer mounted. Sign its agent in once:
-  `podman exec -it hopper-box-claude claude`; the sign-in stays in its home volume, as does its identity,
+  `podman exec -it hopper-sandbox-claude claude`; the sign-in stays in its home volume, as does its identity,
   so a recreated box is the same machine.
 
 A machine is removed in the Machines view; its next dial-in is refused. A script that adds machines
