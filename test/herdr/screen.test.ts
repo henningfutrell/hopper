@@ -168,6 +168,36 @@ describe('readTurn', () => {
     expect(t.lastLine).toBe('Bash(sleep 90)');
   });
 
+  // Real capture (issue #360): under the spinner sit a wrapped tip and the CLI's own update notice,
+  // right-aligned above the input box. None of it is the agent's activity.
+  const UNDER_SPINNER = [
+    '✻ Actualizing… (22m 22s · ↓ 69.9k tokens)',
+    '  ⎿  Tip: Use /btw to ask a quick side question',
+    "     without interrupting Claude's current work",
+    '             ✔ Update installed · Restart to update',
+  ];
+
+  it('does not report the update notice or a wrapped tip under the spinner as progress', () => {
+    const lines = ['❯ go', '● Running 1 shell command · 5s…', '  ⎿  $ npx vitest run', '     (ctrl+b to run in background)', '', ...UNDER_SPINNER];
+    const t = readTurn(screen(lines, CHROME), 'go');
+    expect(t.lastLine).toBe('$ npx vitest run');
+  });
+
+  it.each([
+    ['             ✔ Update installed · Restart to update'],
+    ['  ✗ Auto-update failed · Try claude doctor or npm i -g @anthropic-ai/claude-code'],
+  ])('does not report the CLI notice %j as progress when no spinner shows', (notice) => {
+    const t = readTurn(screen(['❯ go', '● Writing hello.txt', '', notice], CHROME), 'go');
+    expect(t.lastLine).toBe('Writing hello.txt');
+  });
+
+  it('reads the marker of a turn that ends above the update notice', () => {
+    const t = readTurn(screen(['❯ go', '● All done.', '  HOPPER_DONE', '', '             ✔ Update installed · Restart to update'], CHROME), 'go');
+    expect(t.lastMarker).toBe('done');
+    expect(t.assistantText).toBe('All done.');
+    expect(t.lastLine).toBe('All done.');
+  });
+
   it('counts every line when the anchor scrolled out', () => {
     const t = readTurn(screen(['● Done all.', '  HOPPER_DONE'], CHROME), 'gone anchor');
     expect(t.anchorFound).toBe(false);

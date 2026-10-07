@@ -965,7 +965,8 @@ Op `ask`: `{ op: "ask", message?: string }` → outcome `question` (text = `mess
   exits 1 and every question reaches the human. Found live; the unit tests' fake `claude`
   could not see it.
 - **Screen chrome** that is never progress: the status/spinner line, user echo, `⏵` mode
-  line, the effort indicator (`… · /effort`), and spinner tips (`⎿  Tip: …`).
+  line, the effort indicator (`… · /effort`), spinner tips (`⎿  Tip: …`), and the CLI's update
+  notice (issue #360).
 - **The fake levels** (`test/support/fake-questions.ts`, tests only; issue #134 policy): level
   `opus` answers `fake opus answer`, and escalates when the question says "unsure", "risky" or
   "hard"; level `fable` answers `fake fable answer`, and escalates when it says "risky" or "hard";
@@ -1471,8 +1472,11 @@ decision TRIGGERS; `src/ui/app.js` learns `job.reprioritized`.
   indicator, posted to the issue.
 - **Screen chrome, full list:** status/spinner line (`✻ ✶ ✳ ✢ ✽`), plain-glyph spinner frames
   (`· Symbioting… (20s …)`), `(ctrl+b to run in background)`, the new-message indicator, user
-  echo, `⏵` mode line, effort indicator, spinner tips. Each was found live; expect more after
-  a Claude Code upgrade.
+  echo, `⏵` mode line, effort indicator, spinner tips, the CLI's update notice (`✔ Update installed ·
+  Restart to update`, `✗ Auto-update failed …`, issue #360), and every line under a spinner up to the
+  next `●` or `❯` line (a tip wraps). Each was found live; expect more after a Claude Code upgrade.
+  The update notice never blocks a job: a running job keeps its Claude, and the next job starts on
+  the new one.
 - **`job.queued.data.source`** carries the job's `JobSourceRef` (top level of `data`).
 - **Tests drive jobs through sources**: a test-only manual `JobSource` plus a `scripted`
   executor that reads `{"op": …}` from the first prompt line (so a fake GitHub issue body
