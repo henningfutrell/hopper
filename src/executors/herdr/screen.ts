@@ -105,6 +105,13 @@ const TIP_LINE = /^\s*(⎿\s*)?Tip:\s/;
 /** Claude Code's transcript is scrolled up: "1 new message (ctrl+End) ↓". */
 const NEW_MESSAGES_LINE = /\d+ new messages? \(ctrl\+End\)/;
 
+/**
+ * The CLI's own update notice, right-aligned above the input box: "✔ Update installed · Restart to update",
+ * "✗ Auto-update failed · …". Never the agent's activity and never a blocker (issue #360): a running job
+ * keeps its version, and the next job starts on the new one.
+ */
+const UPDATE_NOTICE = /^\s*[✔✓✗✘⚠]?\s*(Update installed|Update available|Auto-update failed)\b/;
+
 /** The xterm sequence for Ctrl+End: scrolls Claude Code's transcript to the end. */
 export const CTRL_END = '\x1b[1;5F';
 
@@ -115,15 +122,23 @@ export function isScrolledUp(text: string): boolean {
 
 function isChrome(line: string): boolean {
   return STATUS_LINE.test(line) || USER_ECHO.test(line) || /^\s*⏵/.test(line) || EFFORT_LINE.test(line) || TIP_LINE.test(line) || NEW_MESSAGES_LINE.test(line)
-    || SPINNER_VARIANT.test(line) || BACKGROUND_HINT.test(line);
+    || SPINNER_VARIANT.test(line) || BACKGROUND_HINT.test(line) || UPDATE_NOTICE.test(line);
 }
 
-/** Output lines of the turn: after the anchor, up to the input box. */
+const isSpinner = (line: string): boolean => STATUS_LINE.test(line) || SPINNER_VARIANT.test(line);
+
+/**
+ * Output lines of the turn: after the anchor, up to the input box. What hangs under a spinner — tips and
+ * their wrapped lines, notices (issue #360) — is the CLI's chrome, up to the next ● or ❯ line.
+ */
 function turnLines(lines: string[], from: number): string[] {
   const out: string[] = [];
+  let underSpinner = false;
   for (const l of lines.slice(from + 1)) {
     if (SEPARATOR.test(l)) break;
-    if (!isChrome(l)) out.push(l);
+    if (isSpinner(l)) underSpinner = true;
+    else if (ASSISTANT_START.test(l) || USER_ECHO.test(l)) underSpinner = false;
+    if (!underSpinner && !isChrome(l)) out.push(l);
   }
   return out;
 }
