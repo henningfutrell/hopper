@@ -3,7 +3,7 @@ import { GitHubApiError } from '../../src/sources/github/index.ts';
 import { REPO, discoverOne, setup } from './fixtures/github-support.ts';
 
 describe('GitHub source discover', () => {
-  it('turns an open labelled issue by an allowlisted author into one item keyed by its URL', async () => {
+  it('turns an open labelled issue assigned to the account into one item keyed by its URL', async () => {
     const { gh, source } = setup({ model: 'claude-sonnet-5' });
     gh.createIssue({ repo: REPO, title: 'Add a README', body: 'Write it.', labels: ['hopper'] });
     const item = await discoverOne(source);
@@ -27,17 +27,34 @@ describe('GitHub source discover', () => {
     expect(items.map((i) => [i.repo, i.cwd, i.defaultCwd])).toEqual([[REPO, '/code/sandbox', '/work/default'], ['owner/other', undefined, '/work/default']]);
   });
 
-  it('never acts on an issue by an author outside the allowlist', async () => {
+  it('takes an issue filed by anyone when it is assigned to the account (issue #387)', async () => {
     const { gh, source } = setup();
-    gh.createIssue({ repo: REPO, author: 'stranger', labels: ['hopper'] });
+    gh.createIssue({ repo: REPO, author: 'stranger', assignees: ['someone', 'Owner'], labels: ['hopper'] });
+    expect((await source.discover()).map((i) => [i.author, i.assignee])).toEqual([['stranger', 'owner']]);
+  });
+
+  it('never takes an issue not assigned to the account, whoever filed it', async () => {
+    const { gh, source } = setup();
+    gh.createIssue({ repo: REPO, author: 'owner', assignees: [], labels: ['hopper'] });
+    gh.createIssue({ repo: REPO, author: 'owner', assignees: ['someone'], labels: ['hopper'] });
     expect(await source.discover()).toEqual([]);
   });
 
-  it('honours a configured author allowlist', async () => {
-    const { gh, source } = setup({ authors: ['alice'] });
-    gh.createIssue({ repo: REPO, author: 'alice', labels: ['hopper'] });
-    gh.createIssue({ repo: REPO, author: 'owner', labels: ['hopper'] });
-    expect((await source.discover()).map((i) => i.author)).toEqual(['alice']);
+  it('a rejected issue is not taken again until it is assigned to the account after the rejection (issue #387)', async () => {
+    const rejectedAt = '2026-10-02T09:30:00.000Z';
+    const rejections = (keys: string[]) => new Map(keys.map((k) => [k, { at: rejectedAt, assignee: 'owner' }]));
+    const { gh, source } = setup({}, { rejections });
+    gh.createIssue({ repo: REPO, labels: ['hopper'] });
+    gh.createIssue({ repo: REPO, assignees: [], labels: ['hopper'] });
+    gh.assign(REPO, 2, 'owner', '2026-10-02T09:45:00.000Z');
+    expect((await source.discover()).map((i) => i.number)).toEqual([2]);
+  });
+
+  it('a rejection recorded before assignment intake (no assignee) leaves the issue to its labels', async () => {
+    const rejections = (keys: string[]) => new Map(keys.map((k) => [k, { at: '2026-10-02T09:30:00.000Z' }]));
+    const { gh, source } = setup({}, { rejections });
+    gh.createIssue({ repo: REPO, labels: ['hopper'] });
+    expect((await source.discover()).map((i) => i.number)).toEqual([1]);
   });
 
   it('skips issues already done or failed, closed, or without the label', async () => {
@@ -119,8 +136,9 @@ describe('GitHub source discover', () => {
   });
 
   it('describe reports the configured scope', () => {
-    const { source } = setup({ authors: ['owner', 'alice'] });
-    expect(source.describe()).toMatchObject({ repos: [REPO], authors: ['owner', 'alice'], label: 'hopper', projectErrors: {} });
+    const { source } = setup();
+    expect(source.describe()).toMatchObject({ repos: [REPO], assignee: 'owner', label: 'hopper', projectErrors: {} });
+    expect(source.describe()).not.toHaveProperty('authors');
     expect(source.name).toBe('github');
     expect(source.kind).toBe('github-account');
   });

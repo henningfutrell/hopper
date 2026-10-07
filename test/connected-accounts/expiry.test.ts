@@ -43,7 +43,7 @@ describe('an expired connected account', () => {
     await expect(s.token('github')).rejects.toThrow('GitHub\'s sign-in expired: Sources → Connect GitHub again');
     expect(told).toHaveLength(1);
     const source = createAccountSource({ name: 'github-account', clock: { now: () => new Date(NOW) }, knownKeys: () => new Set(), rerunnable: () => new Set(), env: () => undefined, provider: 'github', accounts: s },
-      { enabled: true, authors: [] } as never);
+      { enabled: true } as never);
     expect(source.paused?.()).toBe('GitHub\'s sign-in expired: Sources → Connect GitHub again');
   });
 

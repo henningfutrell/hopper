@@ -124,7 +124,7 @@ describe('Sources view: GitHub', () => {
   it('signed in with GitHub: the connection is the one GitHub piece, with its sync; no unset GitHub App (#254)', async () => {
     await boot({
       '/api/sources': { sources: [
-        source('github-account', 'github-account', 'ok', { mode: 'account', login: 'octo-user', authors: ['octo-user'], label: 'hopper' }),
+        source('github-account', 'github-account', 'ok', { mode: 'account', login: 'octo-user', assignee: 'octo-user', label: 'hopper' }),
         source('github-app', 'github-app', 'ok', { mode: 'app', paused: 'no GitHub App configured' }),
       ] },
       '/api/connected-accounts': { accounts: [{ provider: 'github', via: 'the hopper\'s app', state: 'connected', account: 'octo-user', jobRepositories: ['octo-user/hopper'], installations: [{ account: 'octo-user', repositorySelection: 'all', repositories: ['octo-user/hopper'], settingsUrl: 'https://github.com/settings/installations/1' }] }] },

@@ -30,7 +30,7 @@ async function boot(plugins: Record<string, unknown>, gh?: FakeGitHub, file?: ob
 }
 
 const github = [{
-  name: 'github', plugin: 'github-account', options: { enabled: true, pollSeconds: 3600, authors: ['owner'], executor: 'scripted', defaultCwd: '/tmp' },
+  name: 'github', plugin: 'github-account', options: { enabled: true, pollSeconds: 3600, executor: 'scripted', defaultCwd: '/tmp' },
 }];
 const body = (op: Record<string, unknown>) => `${JSON.stringify(op)}\n\nPlease do the thing.`;
 const jobFor = async (a: TestApp, key: string): Promise<Job> =>

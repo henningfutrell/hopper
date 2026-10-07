@@ -58,7 +58,7 @@ async function edit(a: TestApp, token: string, e: Record<string, unknown>): Prom
 }
 
 const ghOptions = (extra: Record<string, unknown> = {}) => ({
-  enabled: true, pollSeconds: 3600, authors: ['owner'], executor: 'scripted', defaultCwd: '/tmp', ...extra,
+  enabled: true, pollSeconds: 3600, executor: 'scripted', defaultCwd: '/tmp', ...extra,
 });
 const issueBody = (op: Record<string, unknown>) => `${JSON.stringify(op)}\n\nPlease do the thing.`;
 const jobFor = async (a: TestApp, url: string): Promise<Job | undefined> =>
