@@ -1,6 +1,9 @@
 // The sync loop: per source, pull (discover → ingest/re-sort), check (cancel signals), and push
 // (the claim and the end of each job, event-driven with a retry scan). One writer of `sourceState.sync`; the adapter owns
 // `sourceState.source`. Knows only the narrow SourceHost, never engine internals.
+// A failing source is never silent (issue #358): its error is logged once when it changes (and once when
+// it is ok again), and a source in error past the stall threshold records `source.stalled`, once per run
+// of failures, which the notifiers send.
 
 import { SourceError, SourceRefused } from '../domain/ports.ts';
 import type { Clock, JobSource, RerunResult, SourceHost, SourceRegistry, SourceReport } from '../domain/ports.ts';
@@ -12,7 +15,12 @@ export interface SourceSyncOptions {
   host: SourceHost;
   clock: Clock;
   pollMs: (sourceName: string) => number;
+  /** How long a source may stay in error before `source.stalled` is recorded. Default STALL_AFTER_MS. */
+  stallAfterMs?: number;
 }
+
+/** A source in error this long has stopped intake: the owner is told. */
+export const STALL_AFTER_MS = 30 * 60_000;
 
 export type SourceSync = SourceRegistry & {
   start(): void;
@@ -42,6 +50,8 @@ interface Slot {
   notRerun: NotRerun[];
   /** Keys already logged as not run again, so each is logged once. */
   loggedNotRerun: Set<string>;
+  /** Since when the source has been in error (this run of failures), and whether source.stalled was recorded for it. */
+  failing?: { since: string; stalled: boolean };
 }
 
 interface NotRerun { key: string; job: string; status: string; reason: string }
@@ -54,6 +64,7 @@ const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 export function createSourceSync(o: SourceSyncOptions): SourceSync {
   const { host, clock } = o;
+  const stallAfterMs = o.stallAfterMs ?? STALL_AFTER_MS;
   const store = host.store;
   const slots = new Map<string, Slot>();
   const jobQueues = new Map<string, Promise<void>>();
@@ -218,8 +229,25 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     return { seen: items.length, created };
   }
 
+  /** Log a changed error, or the end of one; record source.stalled once a run of failures passes the threshold. */
+  function told(slot: Slot, previous: string | undefined) {
+    const st = slot.status;
+    const name = slot.source.name;
+    if (st.state !== 'error') {
+      if (slot.failing) console.warn(`hopper: source ${name} is ok again`);
+      delete slot.failing;
+      return;
+    }
+    if (st.lastError !== previous) console.warn(`hopper: source ${name} failed: ${st.lastError}`);
+    slot.failing ??= { since: clock.now().toISOString(), stalled: false };
+    if (slot.failing.stalled || clock.now().getTime() - Date.parse(slot.failing.since) < stallAfterMs) return;
+    slot.failing.stalled = true;
+    store.events.append({ type: 'source.stalled', data: { source: name, kind: slot.source.kind, error: st.lastError ?? '', since: slot.failing.since } });
+  }
+
   async function syncOnce(slot: Slot) {
     const st = slot.status;
+    const previous = st.state === 'error' ? st.lastError : undefined;
     // Paused: nothing new is pulled, but the source's own active jobs are still checked and reported.
     const paused = slot.source.paused?.();
     try {
@@ -244,6 +272,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
       st.state = 'error';
       st.lastError = message(e);
     }
+    told(slot, previous);
     const jobs = jobsOf(slot);
     st.lastSyncAt = clock.now().toISOString();
     st.activeJobs = jobs.filter((j) => !isTerminal(j)).length;

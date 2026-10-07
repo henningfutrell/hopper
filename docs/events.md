@@ -655,3 +655,41 @@ Version 1 (`docs/schemas/job.rerun.v1.json`). The user asked for a failed job's 
   "by": "user"
 }
 ```
+
+## `source.stalled`
+
+Version 1 (`docs/schemas/source.stalled.v1.json`). A job source has been in error since `since` for longer than the stall threshold (30 minutes): nothing new is pulled from it. Recorded once per run of failures; `error` is its last error. The notifiers send it.
+
+| field | type | required |
+|---|---|---|
+| `source` | string | yes |
+| `kind` | string | yes |
+| `error` | string | yes |
+| `since` | string | yes |
+
+```json
+{
+  "source": "github-account",
+  "kind": "github-account",
+  "error": "GitHub is down",
+  "since": "2026-10-07T20:14:00.000Z"
+}
+```
+
+## `connected_account.expired`
+
+Version 1 (`docs/schemas/connected_account.expired.v1.json`). The sign-in of the user's connected account ended: GitHub refused its token and the renewal, or the token expired with nothing to renew it (`reason`). The account reads as expired until connected again; its source pauses, and a gh source paused for it runs again. Recorded once. The notifiers send it.
+
+| field | type | required |
+|---|---|---|
+| `provider` | `github` | yes |
+| `account` | string | yes |
+| `reason` | string | yes |
+
+```json
+{
+  "provider": "github",
+  "account": "octocat",
+  "reason": "GitHub refused the refresh token (bad_refresh_token)"
+}
+```

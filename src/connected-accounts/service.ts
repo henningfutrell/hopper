@@ -4,17 +4,26 @@
 // GitHub's device flow with the hopper's app — the UI shows the device code until the person approves it
 // at GitHub — then asks GitHub who the token belongs to, keeps the account in the user's store and links
 // it, so a later sign-in with it lands here. One device code at a time. The account's job source, and the
-// jobs it gives, ask here for the token; one that expired (an app that did not opt out of expiration)
-// asks the person to sign in again. Which repositories its jobs may use is the user's choice (issue #321),
+// jobs it gives, ask here for the token. GitHub App user tokens expire after 8 hours: the token is renewed
+// with its refresh token an hour before it expires, and when GitHub refuses it (a 401), and the new pair is
+// kept (issue #358). When GitHub refuses the renewal too, or the token expired with nothing to renew it, the
+// sign-in has ended: the account reads as expired — never as connected — offers no login (so the gh source
+// runs again), its source says to connect again, and the owner is told once (`onExpired`). Which repositories its jobs may use is the user's choice (issue #321),
 // a setting that outlives a disconnect; none chosen, no job.
 import type { ConnectedAccount, ConnectedAccounts, ConnectedAccountTokens, Connection, UserStore } from '../domain/ports.ts';
 import { CONNECTED_ACCOUNT_PROVIDERS, CONNECTED_VIA, type AppInstallation, type ConnectedAccountProvider, type ConnectedAccountStatus } from '../domain/types.ts';
-import { deviceFlow, deviceFlowFailure, type DeviceFlow, type Grant } from './device-flow.ts';
+import { deviceFlow, deviceFlowFailure, oauthError, type DeviceFlow, type Grant } from './device-flow.ts';
 import type { AccountIdentity } from './identity.ts';
 import { CLIENT_ID_VARIABLE, configUrl, installUrl, type HopperApps } from './hopper-app.ts';
+import type { Renewal } from './renewal.ts';
 
 export const PROVIDER_NAME: Record<ConnectedAccountProvider, string> = { github: 'GitHub' };
 export const notConnected = (provider: ConnectedAccountProvider) => `${PROVIDER_NAME[provider]} is not connected: Sources → Connect ${PROVIDER_NAME[provider]}`;
+/** What an account whose sign-in ended says, on its source and where its token is asked for (issue #358). */
+export const expired = (provider: ConnectedAccountProvider) => `${PROVIDER_NAME[provider]}'s sign-in expired: Sources → Connect ${PROVIDER_NAME[provider]} again`;
+
+/** A token is renewed once this little of its life is left: a job given it then has an hour of it at least. */
+export const RENEW_AHEAD_MS = 60 * 60_000;
 
 interface Waiting { userCode: string; verificationUri: string; expiresAt: string; abort: AbortController }
 
@@ -33,7 +42,13 @@ export interface ConnectedAccountsOptions {
   flows?: Partial<Record<ConnectedAccountProvider, DeviceFlow>>;
   /** Called once an account is connected or disconnected: its job source syncs now rather than at its next poll. */
   onChange?(provider: ConnectedAccountProvider): void;
+  /** Renews a token with its refresh token (renewal.ts), per provider. */
+  refresh(provider: ConnectedAccountProvider, refreshToken: string): Promise<Grant>;
+  /** Called once when an account's sign-in ends (issue #358): the owner is told. */
+  onExpired?(provider: ConnectedAccountProvider, account: string, reason: string): void;
 }
+
+export type { Renewal };
 
 export type ConnectedAccountsService = ConnectedAccounts & ConnectedAccountTokens & { stop(): void };
 
@@ -42,12 +57,43 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
   const waiting = new Map<ConnectedAccountProvider, Waiting>();
   const failed = new Map<ConnectedAccountProvider, string>();
   const starting = new Map<ConnectedAccountProvider, Promise<ConnectedAccountStatus>>();
+  const renewing = new Map<ConnectedAccountProvider, Promise<string>>();
+  const now = () => o.clock.now().getTime();
+  const past = (iso: string | undefined) => iso !== undefined && Date.parse(iso) <= now();
+
+  /** Why the account's sign-in ended, or undefined while it lives: GitHub refused it, or it expired with nothing to renew it. */
+  const endOf = (a: ConnectedAccount): string | undefined => {
+    if (a.ended) return a.ended;
+    if (!past(a.expiresAt)) return undefined;
+    if (!a.refreshToken) return `${PROVIDER_NAME[a.provider]}'s token expired at ${a.expiresAt} and there is no refresh token to renew it`;
+    return past(a.refreshTokenExpiresAt) ? `${PROVIDER_NAME[a.provider]}'s refresh token expired at ${a.refreshTokenExpiresAt}` : undefined;
+  };
+
+  /** Record that the sign-in ended, and tell the owner — once. */
+  const end = (a: ConnectedAccount, reason: string): void => {
+    if (o.store.connectedAccounts.get(a.provider)?.ended) return;
+    o.store.connectedAccounts.put({ ...a, ended: reason });
+    o.logger.warn(`hopper: ${PROVIDER_NAME[a.provider]} sign-in of ${a.account} expired: ${reason}`);
+    o.onExpired?.(a.provider, a.account, reason);
+    o.onChange?.(a.provider);
+  };
+
+  /** The account, its sign-in ended recorded (and told) the first time it is seen to have. */
+  const current = (provider: ConnectedAccountProvider): { account: ConnectedAccount; ended?: string } | undefined => {
+    const a = o.store.connectedAccounts.get(provider);
+    if (!a) return undefined;
+    const ended = endOf(a);
+    if (ended && !a.ended) end(a, ended);
+    return ended ? { account: a, ended } : { account: a };
+  };
 
   const status = (provider: ConnectedAccountProvider): ConnectedAccountStatus => {
     const base = { provider, via: CONNECTED_VIA } as const;
     const w = waiting.get(provider);
     if (w) return { ...base, state: 'waiting', userCode: w.userCode, verificationUri: w.verificationUri, expiresAt: w.expiresAt };
-    const a = o.store.connectedAccounts.get(provider);
+    const c = current(provider);
+    if (c?.ended) return { ...base, state: 'expired', account: c.account.account, connectedAt: c.account.connectedAt, error: c.ended };
+    const a = c?.account;
     if (a) {
       const install = installUrl(o.apps[provider]);
       return {
@@ -76,6 +122,8 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
     const record: ConnectedAccount = {
       provider, account: who.account, subject: who.subject, accessToken: g.accessToken, connectedAt,
       ...(g.expiresAt ? { expiresAt: g.expiresAt.toISOString() } : {}),
+      ...(g.refreshToken ? { refreshToken: g.refreshToken } : {}),
+      ...(g.refreshTokenExpiresAt ? { refreshTokenExpiresAt: g.refreshTokenExpiresAt.toISOString() } : {}),
     };
     o.store.connectedAccounts.put(record);
     return record;
@@ -122,27 +170,76 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
     return status(provider);
   }
 
-  const end = (provider: ConnectedAccountProvider) => {
+  const stopWaiting = (provider: ConnectedAccountProvider) => {
     waiting.get(provider)?.abort.abort('cancel');
     waiting.delete(provider);
   };
 
+  /** The account while its sign-in lives; throws what to do when none is connected or it ended. */
+  const live = (provider: ConnectedAccountProvider): ConnectedAccount => {
+    const c = current(provider);
+    if (!c) throw new Error(notConnected(provider));
+    if (c.ended) throw new Error(expired(provider));
+    return c.account;
+  };
+
+  /**
+   * Trade the refresh token for a new pair and keep it; one renewal at a time per provider. GitHub refusing it
+   * ends the sign-in. GitHub not answering ends nothing: the token still valid (and not `refused`) is answered,
+   * else the error, and the next ask renews again.
+   */
+  function renewNow(provider: ConnectedAccountProvider, refused?: string): Promise<string> {
+    let r = renewing.get(provider);
+    if (r) return r;
+    r = (async () => {
+      const a = live(provider);
+      if (refused !== undefined && a.accessToken !== refused) return a.accessToken; // already renewed
+      if (!a.refreshToken) {
+        end(a, `${PROVIDER_NAME[provider]} refused the token and there is no refresh token to renew it`);
+        throw new Error(expired(provider));
+      }
+      let g: Grant;
+      try {
+        g = await o.refresh(provider, a.refreshToken);
+      } catch (err) {
+        const code = oauthError(err);
+        if (code) {
+          end(o.store.connectedAccounts.get(provider) ?? a, `${PROVIDER_NAME[provider]} refused the refresh token (${code})`);
+          throw new Error(expired(provider), { cause: err });
+        }
+        if (refused === undefined && !past(a.expiresAt)) {
+          o.logger.warn(`hopper: renewing the ${PROVIDER_NAME[provider]} token failed, kept the current one: ${(err as Error).message}`);
+          return a.accessToken;
+        }
+        throw new Error(`${PROVIDER_NAME[provider]}: could not renew the token: ${(err as Error).message}`, { cause: err });
+      }
+      // The account may have been disconnected or connected again meanwhile: renew only the one asked about.
+      const still = o.store.connectedAccounts.get(provider);
+      if (still?.accessToken !== a.accessToken) return live(provider).accessToken;
+      keep(provider, a, g, a.connectedAt);
+      o.logger.info(`hopper: ${PROVIDER_NAME[provider]} token of ${a.account} renewed`);
+      return g.accessToken;
+    })().finally(() => renewing.delete(provider));
+    renewing.set(provider, r);
+    return r;
+  }
+
   async function token(provider: ConnectedAccountProvider): Promise<string> {
-    const a = o.store.connectedAccounts.get(provider);
-    if (!a) throw new Error(notConnected(provider));
-    // GitHub renews a GitHub App's user token only with the app's client secret, which no hopper holds.
-    if (a.expiresAt !== undefined && Date.parse(a.expiresAt) <= o.clock.now().getTime()) {
-      throw new Error(`${PROVIDER_NAME[provider]}'s token expired: sign in with ${PROVIDER_NAME[provider]}, or connect it, again`);
-    }
-    return a.accessToken;
+    const a = live(provider);
+    const due = a.expiresAt !== undefined && Date.parse(a.expiresAt) - now() <= RENEW_AHEAD_MS;
+    return due && a.refreshToken ? renewNow(provider) : a.accessToken;
   }
 
   return {
     status: () => Promise.all(CONNECTED_ACCOUNT_PROVIDERS.map((p) => withInstallations(status(p)))),
     adopt(c: Connection) {
-      end(c.provider);
+      stopWaiting(c.provider);
       failed.delete(c.provider);
-      const g: Grant = { accessToken: c.accessToken, ...(c.expiresAt ? { expiresAt: new Date(c.expiresAt) } : {}) };
+      const g: Grant = {
+        accessToken: c.accessToken, ...(c.expiresAt ? { expiresAt: new Date(c.expiresAt) } : {}),
+        ...(c.refreshToken ? { refreshToken: c.refreshToken } : {}),
+        ...(c.refreshTokenExpiresAt ? { refreshTokenExpiresAt: new Date(c.refreshTokenExpiresAt) } : {}),
+      };
       keep(c.provider, c, g, o.clock.now().toISOString());
       o.logger.info(`hopper: ${PROVIDER_NAME[c.provider]} connected as ${c.account} (signed in with it)`);
       o.onChange?.(c.provider);
@@ -157,12 +254,12 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
       return s;
     },
     cancel(provider) {
-      end(provider);
+      stopWaiting(provider);
       failed.delete(provider);
       return status(provider);
     },
     disconnect(provider) {
-      end(provider);
+      stopWaiting(provider);
       failed.delete(provider);
       if (o.store.connectedAccounts.delete(provider)) {
         o.logger.info(`hopper: ${PROVIDER_NAME[provider]} disconnected`);
@@ -177,12 +274,14 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
       o.onChange?.(provider);
       return withInstallations(status(provider));
     },
-    account: (provider) => o.store.connectedAccounts.get(provider)?.account,
+    account: (provider) => { const c = current(provider); return c && !c.ended ? c.account.account : undefined; },
+    ended: (provider) => (current(provider)?.ended ? expired(provider) : undefined),
+    renew: (provider, refused) => renewNow(provider, refused),
     jobRepositories: (provider) => o.store.settings.getJobRepositories(provider),
     token,
     endpoints: (provider) => ({ url: o.apps[provider].url, apiUrl: o.apps[provider].apiUrl }),
     stop() {
-      for (const p of CONNECTED_ACCOUNT_PROVIDERS) end(p);
+      for (const p of CONNECTED_ACCOUNT_PROVIDERS) stopWaiting(p);
     },
   };
 }

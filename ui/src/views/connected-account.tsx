@@ -31,7 +31,7 @@ import { SourceSync } from './source-sync';
 const POLL_MS = 2000;
 type Provider = ConnectedAccountStatus['provider'];
 const NAME: Record<Provider, string> = { github: 'GitHub' };
-const LABEL: Record<ConnectedAccountStatus['state'], string> = { connected: 'connected', 'not-connected': 'not connected', waiting: 'waiting', failed: 'failed' };
+const LABEL: Record<ConnectedAccountStatus['state'], string> = { connected: 'connected', 'not-connected': 'not connected', waiting: 'waiting', failed: 'failed', expired: 'sign-in expired' };
 
 export function ConnectedAccountPanel({ provider, source }: { provider: Provider; source?: SourceStatus | undefined }) {
   const [s, setS] = useState<ConnectedAccountStatus | null>(null);
@@ -57,7 +57,7 @@ export function ConnectedAccountPanel({ provider, source }: { provider: Provider
     }
   };
   const act = (action: 'connect' | 'cancel' | 'disconnect') => send({ action });
-  const tone = s.state === 'connected' ? 'ok' : s.state === 'failed' ? 'bad' : 'warn';
+  const tone = s.state === 'connected' ? 'ok' : s.state === 'failed' || s.state === 'expired' ? 'bad' : 'warn';
   const adminOnly = canAdmin ? undefined : `An admin can connect ${name}: sign in as one`;
   return (
     <Panel title={`${name} account`} icon={Link2} action={<StatusBadge status={s.state} label={LABEL[s.state]} tone={tone} />} bodyClassName="space-y-2 text-xs">
@@ -96,6 +96,12 @@ export function ConnectedAccountPanel({ provider, source }: { provider: Provider
             note={<>Sign in to {name} as the account to work from. This panel changes once the code is approved.</>}
             onCancel={() => void act('cancel')} cancelDisabled={!canAdmin} />
         )}
+        {s.state === 'expired' && <>
+          <div data-expired className="rounded-md border border-bad/30 bg-bad/5 p-2 break-words text-bad">
+            The sign-in of <span className="font-mono">{s.account}</span> expired: {s.error}. No jobs come from {name} until you connect it again.
+          </div>
+          <Button size="xs" disabled={!canAdmin} title={adminOnly ?? `Shows a code to enter on ${name}`} onClick={() => void act('connect')}><Link2 />Connect {name} again</Button>
+        </>}
         {(s.state === 'not-connected' || s.state === 'failed') && <>
           {s.state === 'failed' && <div className="rounded-md border border-bad/30 bg-bad/5 p-2 break-words text-bad">{s.error}</div>}
           <div>Not connected.</div>

@@ -518,6 +518,9 @@ export interface Connection {
   accessToken: string;
   /** ISO time; absent: the token does not expire. */
   expiresAt?: string;
+  /** What renews the token, and when it expires itself (issue #358); absent: nothing renews it. */
+  refreshToken?: string;
+  refreshTokenExpiresAt?: string;
 }
 
 /** A user's connected accounts (issue #214): GET /api/connected-accounts, POST /ui/api/connected-accounts. */
@@ -538,10 +541,14 @@ export interface ConnectedAccounts {
 
 /** What a connected account's job source asks (issue #214): who the account is, a token for a call, where its provider is. */
 export interface ConnectedAccountTokens {
-  /** The connected account's login, or undefined while none is connected. */
+  /** The connected account's login, or undefined while none is connected or its sign-in expired. */
   account(provider: ConnectedAccountProvider): string | undefined;
-  /** Its access token now; throws while none is connected, or once it expired. */
+  /** What to do now that the account's sign-in expired (issue #358); undefined while it has not, or none is connected. */
+  ended(provider: ConnectedAccountProvider): string | undefined;
+  /** Its access token now, renewed first when it is near its expiry (issue #358); throws while none is connected, or once its sign-in expired. */
   token(provider: ConnectedAccountProvider): Promise<string>;
+  /** A token GitHub refused (a 401): renewed, unless it was already; throws once the sign-in expired. */
+  renew(provider: ConnectedAccountProvider, refused: string): Promise<string>;
   /** The provider's web origin and REST API base. */
   endpoints(provider: ConnectedAccountProvider): { url: string; apiUrl: string };
   /** The repositories the account's jobs may use, as chosen now (issue #321); empty: none. */

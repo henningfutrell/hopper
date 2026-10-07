@@ -43,7 +43,13 @@ export function webFlow(app: HopperApp, clientSecret: string, redirectUri: strin
       if (denied) throw new Error(denied === 'access_denied' ? 'the sign-in was denied at GitHub' : denied);
       const tokens = await client.authorizationCodeGrant(config, callback, { pkceCodeVerifier: o.verifier, expectedState: o.state }, { redirect_uri: redirectUri });
       const ends = typeof tokens.expires_in === 'number' ? new Date(Date.now() + tokens.expires_in * 1000) : undefined;
-      return { accessToken: tokens.access_token, ...(ends ? { expiresAt: ends } : {}) };
+      // With the refresh token, which renews it (issue #358): GitHub answers its lifetime as refresh_token_expires_in.
+      const refreshLife = tokens.refresh_token_expires_in;
+      return {
+        accessToken: tokens.access_token, ...(ends ? { expiresAt: ends } : {}),
+        ...(tokens.refresh_token ? { refreshToken: tokens.refresh_token } : {}),
+        ...(typeof refreshLife === 'number' ? { refreshTokenExpiresAt: new Date(Date.now() + refreshLife * 1000) } : {}),
+      };
     },
   };
 }

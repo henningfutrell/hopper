@@ -2,19 +2,30 @@
 // #214), through @octokit/oauth-methods: GitHub answers a pending code with 200 and an `error`, which a
 // plain RFC client reads as a failure. No hand-rolled protocol.
 //
-// A GitHub App's user tokens expire after 8 hours unless the app opts out of token expiration; GitHub
-// renews one only with the app's client secret, which the hopper never has. So the hopper's GitHub App
-// opts out (docs/sign-in.md), and a token that does expire asks the person to sign in again.
+// A GitHub App's user tokens expire after 8 hours unless the app opts out of token expiration, and come
+// with a refresh token (6 months) that renews them (issue #358, renewal.ts): a token the device flow granted
+// renews without the app's client secret. Both are kept.
 import { request as octokitRequest } from '@octokit/request';
 import { createDeviceCode, exchangeDeviceCode } from '@octokit/oauth-methods';
 import type { HopperApp } from './hopper-app.ts';
 
-/** What GitHub granted: the hopper's token for the account, and when it expires. */
+/** What GitHub granted: the hopper's token for the account, and when it expires; with what renews it. */
 export interface Grant {
   accessToken: string;
   /** Absent: the token does not expire (the app opted out). */
   expiresAt?: Date;
+  /** Trades for a new pair once (issue #358); absent: the token does not expire. */
+  refreshToken?: string;
+  refreshTokenExpiresAt?: Date;
 }
+
+/** A grant from what @octokit/oauth-methods answers for a GitHub App's user token. */
+export const grantOf = (a: { token: string; expiresAt?: string; refreshToken?: string; refreshTokenExpiresAt?: string }): Grant => ({
+  accessToken: a.token,
+  ...(a.expiresAt ? { expiresAt: new Date(a.expiresAt) } : {}),
+  ...(a.refreshToken ? { refreshToken: a.refreshToken } : {}),
+  ...(a.refreshTokenExpiresAt ? { refreshTokenExpiresAt: new Date(a.refreshTokenExpiresAt) } : {}),
+});
 
 /** A device code waiting for the person: shown until they approve it at `verificationUri`. */
 export interface PendingGrant {
@@ -35,8 +46,8 @@ const sleep = (ms: number, signal: AbortSignal) => new Promise<void>((resolve, r
   signal.addEventListener('abort', () => { clearTimeout(t); reject(signal.reason); }, { once: true });
 });
 
-/** GitHub's OAuth error code (`authorization_pending`, `access_denied`, …) of a refused request. */
-const oauthError = (err: unknown): string | undefined => {
+/** GitHub's OAuth error code (`authorization_pending`, `access_denied`, `bad_refresh_token`, …) of a refused request. */
+export const oauthError = (err: unknown): string | undefined => {
   const e = err as { error?: unknown; response?: { data?: { error?: unknown } } };
   const code = e.error ?? e.response?.data?.error;
   return typeof code === 'string' ? code : undefined;
@@ -68,8 +79,7 @@ export function deviceFlow(app: HopperApp): DeviceFlow {
             await sleep(intervalMs, signal);
             try {
               const { authentication } = await exchangeDeviceCode({ clientType: 'github-app', clientId: app.clientId, code: data.device_code, request });
-              const ends = 'expiresAt' in authentication && authentication.expiresAt ? new Date(authentication.expiresAt) : undefined;
-              return { accessToken: authentication.token, ...(ends ? { expiresAt: ends } : {}) };
+              return grantOf(authentication);
             } catch (err) {
               const code = oauthError(err);
               if (code === 'authorization_pending') continue;

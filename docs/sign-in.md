@@ -775,8 +775,8 @@ user: signing in with it later lands in the same user.
 **Running your own GitHub App instead of the hopper's** (a fork, GitHub Enterprise):
 https://github.com/settings/apps/new (or the organization's *Developer settings → GitHub Apps*). Homepage
 URL: anything. Callback URL: required by the form, never used. Webhook: off. **Enable Device Flow**: on.
-Optional features: **opt out of user-to-server token expiration** — GitHub renews an expiring token only
-with the app's client secret, which the hopper never has. Repository permissions: Issues read/write, Pull
+Optional features: leave **user-to-server token expiration** on — the hopper renews the 8-hour tokens
+with their refresh token (a device flow grant needs no client secret for it). Repository permissions: Issues read/write, Pull
 requests read/write, Contents read/write, Metadata read; organization Projects read; account Email
 addresses read. Where can it be installed: any account. Generate no private key and no client secret.
 Set `HOPPER_GITHUB_CLIENT_ID` (the app's client id) and `HOPPER_GITHUB_APP_SLUG`.

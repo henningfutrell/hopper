@@ -41,5 +41,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'queue.ordered': { jobIds: ['j2', 'j1'] },
   'job.claimed_by_operator': {},
   'job.rerun': { by: 'user' },
+  'source.stalled': { source: 'github-account', kind: 'github-account', error: 'GitHub is down', since: '2026-10-07T20:14:00.000Z' },
+  'connected_account.expired': { provider: 'github', account: 'octocat', reason: 'GitHub refused the refresh token (bad_refresh_token)' },
   'queue.gate_changed': { from: { mode: 'auto-accept', autoAcceptPerHour: null }, to: { mode: 'review', autoAcceptPerHour: null } },
 };

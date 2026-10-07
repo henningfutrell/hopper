@@ -232,6 +232,8 @@ export function createSignIn(o: {
     const connection: Connection = {
       provider: 'github', subject: id.subject, account: id.account, accessToken: g.accessToken,
       ...(g.expiresAt ? { expiresAt: g.expiresAt.toISOString() } : {}),
+      ...(g.refreshToken ? { refreshToken: g.refreshToken } : {}),
+      ...(g.refreshTokenExpiresAt ? { refreshTokenExpiresAt: g.refreshTokenExpiresAt.toISOString() } : {}),
     };
     return { who, role: roleOf(who), connection };
   }
