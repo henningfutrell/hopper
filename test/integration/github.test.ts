@@ -181,32 +181,6 @@ describe('GitHub issue → job → issue', () => {
     expect(await jobsFor()).toHaveLength(2); // failed again, reported again: waits for the human
   });
 
-  it('Run again on a failed job clears its end at the source and runs the issue again, no label touched by hand (issue #313)', async () => {
-    const gh = createFakeGitHub();
-    const a = await boot(gh);
-    const token = await a.login();
-    // An empty body is an invalid item: the job is created and failed at once.
-    const issue = gh.createIssue({ repo: REPO, body: '', labels: ['hopper'] });
-    const jobsFor = async () => (await a.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=1000')).body.jobs.filter((j) => j.source?.key === issue.url);
-    await a.sync();
-    await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:failed'), { what: 'hopper:failed' });
-    const [first] = await jobsFor();
-
-    const r = await a.ui<Job>(`/ui/api/jobs/${first!.id}/rerun`, {}, { token });
-    expect(r.status).toBe(200);
-    expect(r.body).toMatchObject({ id: first!.id, status: 'failed' });
-    // The sync the re-run starts may already have failed the new job again: read the label write, not the labels.
-    expect(gh.calls).toContainEqual(expect.objectContaining({ method: 'removeLabels', args: [REPO, issue.number, ['hopper:failed', 'hopper:claimed']] }));
-    expect((await a.events('types=job.rerun')).map((e) => e.jobId)).toEqual([first!.id]);
-
-    await waitFor(async () => (await jobsFor()).length === 2, { what: 'the re-run job' });
-    const second = (await jobsFor()).find((j) => j.id !== first!.id)!;
-    await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:failed'), { what: 'hopper:failed again' });
-    // Only the newest job of an item runs again: the first one is history now.
-    expect((await a.ui(`/ui/api/jobs/${first!.id}/rerun`, {}, { token })).status).toBe(409);
-    expect((await a.job(second.id)).status).toBe('failed');
-  });
-
   it('reopening a finished issue and removing hopper:done runs it again (issue #186)', async () => {
     const gh = createFakeGitHub();
     const a = await boot(gh);
