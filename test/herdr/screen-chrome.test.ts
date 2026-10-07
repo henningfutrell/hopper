@@ -51,6 +51,12 @@ describe('readTurn progress under the CLI chrome', () => {
     expect(t.lastLine).toBe("p='a.ts'");
   });
 
+  it.each([['     (12s)'], ['     (1m 5s)']])('does not report the elapsed timer %j of a running command as progress (seen live)', (timer) => {
+    const lines = ['❯ go', '● Running 1 shell command…', '  ⎿  $ npm test', timer, '     (ctrl+b to run in background)', ''];
+    const t = readTurn(screen(lines, CHROME), 'go');
+    expect(t.lastLine).toBe('$ npm test');
+  });
+
   it('reads the marker of a turn that ends above the update notice', () => {
     const t = readTurn(screen(['❯ go', '● All done.', '  HOPPER_DONE', '', '             ✔ Update installed · Restart to update'], CHROME), 'go');
     expect(t.lastMarker).toBe('done');
