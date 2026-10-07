@@ -1,7 +1,6 @@
 // The GitHub job sources' plugin options (what sources.yaml's `github:` / `githubApp:` blocks
 // became in plugins.yaml `jobSources[].options`), validated by the plugin host with each plugin's
 // schema, and the source config they turn into.
-import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import githubApp from '../../src/plugins/job-source/github-app/index.ts';
@@ -41,13 +40,13 @@ describe('github-gh options', () => {
     });
   });
 
-  it('the source config expands ~ in defaultCwd and repoPaths and keeps a configured model', () => {
+  it('the source config keeps ~ in defaultCwd and repoPaths for the job\'s machine to resolve (issue #323) and keeps a configured model', () => {
     const o = ok(parseOptions(githubGh, {
       ...AUTHORS, defaultCwd: '~/work', repoPaths: { 'owner/sandbox': '~/code/sandbox', 'o/abs': '/srv/abs' }, model: 'claude-sonnet-5', enabled: false,
     }));
     const c = sourceConfig(o as never);
     expect(c).toMatchObject({
-      defaultCwd: join(homedir(), 'work'), repoPaths: { 'owner/sandbox': join(homedir(), 'code/sandbox'), 'o/abs': '/srv/abs' },
+      defaultCwd: '~/work', repoPaths: { 'owner/sandbox': '~/code/sandbox', 'o/abs': '/srv/abs' },
       model: 'claude-sonnet-5', enabled: false,
     });
     expect(sourceConfig(ok(parseOptions(githubGh, AUTHORS)) as never)).not.toHaveProperty('model');

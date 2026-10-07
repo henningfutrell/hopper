@@ -3,7 +3,7 @@
 // machine, so no herdr call of a running job meets a client restarting. An old client, one that
 // predates releases, stays online and is reported once: it is installed again by attach-client.sh.
 import { chmodSync, cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -70,6 +70,12 @@ describe('keeping a client target on the hopper\'s release', () => {
     expect(loaded).toEqual([HOPPERS.id]);
     expect(lines.join('\n')).toMatch(new RegExp(`client studio: loaded release ${HOPPERS.id}`));
     expect(lines.join('\n')).not.toMatch(/failed/);
+  });
+
+  it('the probe carries the home the client answered, so ~ in a work tree resolves there (issue #323)', async () => {
+    const { transport } = await olderClient();
+    const keep = createClientReleaseKeeper({ release: HOPPERS, logger: { info: () => {}, warn: () => {} } });
+    expect(await keep(transport, () => true)).toMatchObject({ online: true, home: homedir() });
   });
 
   it('a client with no tunnel is offline, and nothing is tried', async () => {

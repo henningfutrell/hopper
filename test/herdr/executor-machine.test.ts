@@ -1,6 +1,7 @@
 // A herdr-claude job on an attached machine drives that machine's herdr, and its pane state says
 // which machine, so resume, reattach and cleanup reach the same pane (design.md "Attached machines").
 import { describe, expect, it } from 'vitest';
+import { homedir } from 'node:os';
 import type { FakeTurn } from '../../src/executors/herdr/index.ts';
 import { LAPTOP, contextFor, jobWith, setup } from './support.ts';
 
@@ -107,5 +108,60 @@ describe('herdr-claude executor on an attached machine', () => {
     const here = await executor.run(contextFor(jobWith({ prompt: 'go' }), 'local/lane-1').ctx);
     const there = await executor.run(contextFor(jobWith({ prompt: 'go' }, { id: 'ffffffff-0000-0000-0000-000000000000' }), 'laptop/lane-1', LAPTOP).ctx);
     expect([here.kind, there.kind]).toEqual(['question', 'question']);
+  });
+});
+
+// Issue #323: a hopper in a container runs jobs on an attached machine, where its own home means nothing.
+describe('herdr-claude executor: ~ in a work tree resolves on the lane\'s machine', () => {
+  const FAR = { ...LAPTOP, home: '/home/far' };
+
+  it.each([
+    ['the default work tree ~', undefined, '/home/far'],
+    ['a payload work tree under ~', '~/jobs', '/home/far/jobs'],
+  ])('%s: against the attached machine\'s home, never this process\'s', async (_name, cwd, expected) => {
+    const { remotes, executor } = setup({}, { defaultCwd: '~', remote: { laptop: { turns: [DONE] } } });
+    const { ctx, workTrees } = contextFor(jobWith({ prompt: 'go', ...(cwd ? { cwd } : {}) }), 'laptop/lane-1', FAR);
+    expect(await executor.run(ctx)).toMatchObject({ kind: 'finished' });
+    expect(remotes.get('laptop')!.calls.find((c) => c.method === 'createTab')!.args[0]).toMatchObject({ cwd: expected, env: { TMPDIR: `${expected}/.hopper-scratch` } });
+    expect(workTrees).toEqual([expected]);
+  });
+
+  it('a client target: against the home its client reported', async () => {
+    const { remotes, executor } = setup({}, { defaultCwd: '~/hopper-jobs', remote: { studio: { turns: [DONE] } } });
+    expect(await executor.run(contextFor(jobWith({ prompt: 'go' }), 'studio/lane-1', { ...STUDIO, home: '/Users/far' }).ctx)).toMatchObject({ kind: 'finished' });
+    expect(remotes.get('studio')!.calls.find((c) => c.method === 'createTab')!.args[0]).toMatchObject({ cwd: '/Users/far/hopper-jobs' });
+  });
+
+  it('an attached machine whose home is not known yet: the job fails at once and no tab opens there', async () => {
+    const { remotes, executor } = setup({}, { defaultCwd: '~', remote: { laptop: { turns: [DONE] } } });
+    expect(await executor.run(contextFor(jobWith({ prompt: 'go' }), 'laptop/lane-1', LAPTOP).ctx)).toEqual({
+      kind: 'failed', error: 'cannot resolve the work tree ~ on laptop: its home is not known yet (the machine has not answered a probe)',
+    });
+    expect(remotes.get('laptop')!.calls).toEqual([]);
+  });
+
+  it('an absolute work tree needs no home', async () => {
+    const { remotes, executor } = setup({}, { defaultCwd: '/srv/jobs', remote: { laptop: { turns: [DONE] } } });
+    expect(await executor.run(contextFor(jobWith({ prompt: 'go' }), 'laptop/lane-1', LAPTOP).ctx)).toMatchObject({ kind: 'finished' });
+    expect(remotes.get('laptop')!.calls.find((c) => c.method === 'createTab')!.args[0]).toMatchObject({ cwd: '/srv/jobs' });
+  });
+
+  it('this machine: against this process\'s home', async () => {
+    const { herdr, executor } = setup({ turns: [DONE] }, { defaultCwd: '~/jobs' });
+    expect(await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx)).toMatchObject({ kind: 'finished' });
+    expect(herdr.calls.find((c) => c.method === 'createTab')!.args[0]).toMatchObject({ cwd: `${homedir()}/jobs` });
+  });
+});
+
+describe('herdr-claude executor: a work tree the machine cannot use fails the job at once', () => {
+  it('the shell cannot enter the work tree: failed with what the shell said, pane closed, no 60 s wait and no Claude', async () => {
+    const { remotes, executor } = setup({}, { defaultCwd: '/home/node', remote: { laptop: { turns: [DONE], unusableDirs: ['/home/node'] } } });
+    const out = await executor.run(contextFor(jobWith({ prompt: 'go' }), 'laptop/lane-1', LAPTOP).ctx);
+    expect(out).toMatchObject({ kind: 'failed' });
+    expect((out as { error: string }).error).toMatch(/^the work tree \/home\/node is not usable on laptop: /);
+    const there = remotes.get('laptop')!;
+    expect(there.calls.filter((c) => c.method === 'runInPane')).toHaveLength(1);
+    expect(there.agentStarts).toEqual([]);
+    expect(there.calls.some((c) => c.method === 'closePane')).toBe(true);
   });
 });

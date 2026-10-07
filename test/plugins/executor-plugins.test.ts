@@ -1,7 +1,6 @@
 // Phase 5 slice 3: the built-in executor plugins (herdr-claude, test) — options, detection (cheap:
 // `which` only, never a model call, never a GUI), create — and the command-bearing mark on every
 // option that names a program, its arguments, a working directory or an interpreter.
-import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import anthropicApi from '../../src/plugins/escalation-level/anthropic-api/index.ts';
@@ -39,8 +38,9 @@ describe('built-in executor plugins are listed', () => {
 
 describe('cursor-agent (issue #142)', () => {
   it('options: Cursor\'s CLI agent, allowed to run its tools and trusting the work tree; every option command-bearing', () => {
-    expect(options(cursorAgent)).toEqual({ bin: 'cursor-agent', args: ['--force', '--trust'], cwd: homedir(), sshBin: 'ssh' });
-    expect(options(cursorAgent, { cwd: '~/w' }).cwd).toBe(join(homedir(), 'w'));
+    expect(options(cursorAgent)).toEqual({ bin: 'cursor-agent', args: ['--force', '--trust'], cwd: '~', sshBin: 'ssh' });
+    // ~ resolves on the job's machine, not here (issue #323).
+    expect(options(cursorAgent, { cwd: '~/w' }).cwd).toBe('~/w');
     const p = props(cursorAgent);
     for (const key of ['bin', 'args', 'cwd', 'sshBin']) expect(p[key]!.commandBearing, key).toBe(true);
   });
@@ -67,12 +67,12 @@ describe('herdr-claude', () => {
   it('options default to what the env defaulted to before plugins', () => {
     expect(options(herdrClaude)).toEqual({
       bin: 'herdr', claudeBin: 'claude', session: 'hopper', yolo: true, args: [],
-      cwd: homedir(), trustWorkdir: true, pollMs: 1000, idleNudgeMs: 20000,
+      cwd: '~', trustWorkdir: true, pollMs: 1000, idleNudgeMs: 20000,
     });
   });
 
-  it('expands ~ in cwd and refuses the default herdr session', () => {
-    expect(options(herdrClaude, { cwd: '~/w' }).cwd).toBe(join(homedir(), 'w'));
+  it('keeps ~ in cwd for the job\'s machine to resolve (issue #323) and refuses the default herdr session', () => {
+    expect(options(herdrClaude, { cwd: '~/w' }).cwd).toBe('~/w');
     expect(parseOptions(herdrClaude, { session: 'default' })).toEqual({ ok: false, error: expect.stringMatching(/session/) });
   });
 

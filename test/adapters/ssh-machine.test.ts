@@ -76,6 +76,21 @@ describe('attached machine source', () => {
     ]);
   });
 
+  it('carries the home its probe found, so ~ in a work tree resolves there (issue #323); a probe without one keeps it', async () => {
+    let answer: { online: boolean; home?: string } = { online: true, home: '/home/far' };
+    let t = 0;
+    const src = createAttachedMachineSource({
+      machine: () => ({ name: 'laptop', ssh: 'laptop', lanes: 1, executors: [], herdr: true, session: 'hopper', herdrBin: 'herdr' }),
+      clock: { now: () => new Date(t) }, probeEveryMs: 30000, probe: async () => answer,
+    });
+    expect((await src.list())[0]).not.toHaveProperty('home');
+    await flush();
+    expect((await src.list())[0]).toMatchObject({ online: true, home: '/home/far' });
+    answer = { online: false };
+    t += 30000; await src.list(); await flush();
+    expect((await src.list())[0]).toMatchObject({ online: false, home: '/home/far' });
+  });
+
   it('honours a label', async () => {
     const h = createAttachedMachineSource({
       machine: () => ({ name: 'laptop', label: 'arch-laptop', ssh: 'laptop', lanes: 1, executors: [], herdr: true, session: 'hopper', herdrBin: 'herdr' }), probe: async () => ({ online: true }),
@@ -115,6 +130,7 @@ describe('probeHerdrOverSsh', () => {
 // it answers over ssh.
 describe('probeSsh', () => {
   let dir: string;
+  const home = process.env.HOME;
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'jh-ssh-plain-'));
     process.env.FAKE_HERDR_DIR = dir;
@@ -122,10 +138,20 @@ describe('probeSsh', () => {
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
   const probe = (target: string) => probeSsh({ target, sshBin: SSH, controlDir: join(dir, 's'), auth: testSshAuth(join(dir, 'auth')) });
 
-  it('true when the machine answers over ssh, with the hopper\'s key; nothing of herdr asked', async () => {
-    expect(await probe('laptop')).toBe(true);
+  it('answers with the machine\'s home when it answers over ssh, with the hopper\'s key; nothing of herdr asked (issue #323)', async () => {
+    // The fake ssh runs the command in a local shell: the home is this test's own HOME.
+    expect(await probe('laptop')).toBe(process.env.HOME);
     const argv = (JSON.parse(readFileSync(join(dir, 'ssh-calls.jsonl'), 'utf8').trim()) as { argv: string[] }).argv;
-    expect(argv.at(-1)).toBe('true');
+    expect(argv.at(-1)).toBe(`printf '%s\\n' "$HOME"`);
+  });
+
+  it('rejects when the machine answers with no absolute home', async () => {
+    process.env.HOME = 'nowhere';
+    try {
+      await expect(probe('laptop')).rejects.toThrow('laptop: its home is not an absolute path: "nowhere"');
+    } finally {
+      process.env.HOME = home;
+    }
   });
 
   it('rejects with the ssh failure when the machine cannot be reached', async () => {

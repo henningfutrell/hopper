@@ -69,10 +69,10 @@ describe('herdr-claude executor: run', () => {
     expect(herdr.calls.find((c) => c.method === 'createTab')!.args[0]).toMatchObject({ env: { CLAUDE_CODE_TMPDIR: SCRATCH, TMPDIR: SCRATCH } });
   });
 
-  it('prepares the scratch dir in the pane before Claude starts, git-ignored by its own .gitignore', async () => {
+  it('prepares the scratch dir in the pane before Claude starts, inside the work tree the shell enters, git-ignored by its own .gitignore', async () => {
     const { herdr, executor } = setup({ turns: [DONE] });
     await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx);
-    expect(herdr.calls.find((c) => c.method === 'runInPane')!.args).toEqual(['w1:p1', `mkdir -p '${SCRATCH}' && printf '*\\n' > '${SCRATCH}/.gitignore' && printf 'hopper-scratch-%s\\n' ready`]);
+    expect(herdr.calls.find((c) => c.method === 'runInPane')!.args).toEqual(['w1:p1', `cd '${CWD}' && mkdir -p '${SCRATCH}' && printf '*\\n' > '${SCRATCH}/.gitignore' && printf 'hopper-scratch-%s\\n' ready || printf 'hopper-scratch-%s\\n' unusable`]);
     const order = herdr.calls.map((c) => c.method);
     expect(order.indexOf('runInPane')).toBeGreaterThan(order.indexOf('createTab'));
     expect(order.indexOf('runInPane')).toBeLessThan(order.indexOf('startAgent'));
