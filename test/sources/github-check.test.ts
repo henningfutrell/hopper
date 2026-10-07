@@ -19,6 +19,22 @@ describe('GitHub source check', () => {
     expect(await source.check([running, waiting])).toEqual([]);
   });
 
+  it('an issue closed as completed after the job was created — a commit, or no code — gives a started job no signal; a waiting one is cancelled (issue #350)', async () => {
+    const { gh, source } = setup();
+    gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:claimed'] });
+    gh.closeIssue(REPO, 1, 'owner', { at: '2026-10-02T11:00:00.000Z' });
+    const [running, asking, queued] = [jobForIssue(1), jobForIssue(1, { status: 'waiting_answer', questionId: 'q-1' }), jobForIssue(1, { status: 'queued' })];
+    expect(await source.check([running, asking, queued])).toEqual([{ kind: 'cancel', jobId: queued.id, reason: 'issue closed' }]);
+  });
+
+  it('an issue closed as not planned cancels a started job', async () => {
+    const { gh, source } = setup();
+    gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:claimed'] });
+    gh.closeIssue(REPO, 1, 'owner', { at: '2026-10-02T11:00:00.000Z', reason: 'not_planned' });
+    const job = jobForIssue(1);
+    expect(await source.check([job])).toEqual([{ kind: 'cancel', jobId: job.id, reason: 'issue closed' }]);
+  });
+
   it('an issue closed by the merge of a pull request opened before the job was created cancels the job', async () => {
     const { gh, source } = setup();
     gh.createIssue({ repo: REPO, labels: ['hopper'] });

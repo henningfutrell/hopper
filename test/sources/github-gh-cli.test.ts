@@ -67,10 +67,11 @@ describe('gh CLI GitHubApi', () => {
     expect(issues).toEqual([expect.objectContaining({ repo: 'h/sandbox', number: 3, author: 'owner', labels: ['hopper'], state: 'open' })]);
   });
 
-  it('getIssue reads the REST issue: state, labels, author, null body as empty, closedBy', async () => {
+  it('getIssue reads the REST issue: state, labels, author, null body as empty, closedBy, closedAt, stateReason', async () => {
     expect(await gh().getIssue('o/r', 5)).toEqual({
       repo: 'o/r', number: 5, url: 'https://github.com/o/r/issues/5', title: 'T', body: '', author: 'owner',
       labels: ['hopper', 'hopper:claimed'], state: 'closed', updatedAt: '2026-10-02T09:30:00Z', closedBy: 'someone',
+      closedAt: '2026-10-02T09:30:00Z', stateReason: 'completed',
     });
     expect(calls()[0]!.argv).toEqual(['api', 'repos/o/r/issues/5']);
   });
