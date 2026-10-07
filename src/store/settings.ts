@@ -1,5 +1,5 @@
 import type { InstanceSettingsRepository, UserSettingsRepository } from '../domain/ports.ts';
-import type { PluginInstall, QueueGate, UpdateChannel, UpdateSettings } from '../domain/types.ts';
+import type { ConnectedAccountProvider, PluginInstall, QueueGate, UpdateChannel, UpdateSettings } from '../domain/types.ts';
 import { UPDATE_CHANNELS } from '../domain/types.ts';
 import type { StoreContext } from './context.ts';
 
@@ -16,7 +16,10 @@ function keyValues(c: StoreContext) {
   };
 }
 
-/** A user's settings: the queue gate, and the hopper's own ssh key (issue #293). */
+/** The settings key of a connected account's job repositories (issue #321). */
+export const jobRepositoriesKey = (provider: ConnectedAccountProvider): string => `jobRepositories:${provider}`;
+
+/** A user's settings: the queue gate, the hopper's own ssh key (issue #293), the job repositories (issue #321). */
 export function createUserSettingsRepository(c: StoreContext): UserSettingsRepository {
   const { read, write } = keyValues(c);
   return {
@@ -33,6 +36,13 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
     },
     setSshKey(key) {
       write('sshKey', JSON.stringify({ privateKey: key.privateKey, publicKey: key.publicKey }));
+    },
+    getJobRepositories(provider) {
+      const text = read(jobRepositoriesKey(provider));
+      return text === undefined ? [] : JSON.parse(text) as string[];
+    },
+    setJobRepositories(provider, repositories) {
+      write(jobRepositoriesKey(provider), JSON.stringify(repositories));
     },
   };
 }

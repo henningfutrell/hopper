@@ -116,7 +116,7 @@ describe('Sources view: GitHub', () => {
         source('github-app', 'github-app', 'ok', { mode: 'app', paused: 'no GitHub App configured' }),
       ] },
       '/api/gh-login': { state: 'logged-out' },
-      '/api/connected-accounts': { accounts: [{ provider: 'github', via: 'the hopper\'s app', state: 'connected', account: 'octo-user', installations: [{ account: 'octo-user', repositorySelection: 'all', repositories: ['octo-user/hopper'], settingsUrl: 'https://github.com/settings/installations/1' }] }] },
+      '/api/connected-accounts': { accounts: [{ provider: 'github', via: 'the hopper\'s app', state: 'connected', account: 'octo-user', jobRepositories: ['octo-user/hopper'], installations: [{ account: 'octo-user', repositorySelection: 'all', repositories: ['octo-user/hopper'], settingsUrl: 'https://github.com/settings/installations/1' }] }] },
     });
     const panel = () => document.querySelector('[data-connected-account="github"]');
     await vi.waitFor(() => expect(panel()?.querySelector('[data-source-sync="github-account"]')).not.toBeNull());
@@ -130,7 +130,7 @@ describe('Sources view: GitHub', () => {
   });
 
   const connected = (installations?: unknown[]) => ({
-    provider: 'github', via: 'the hopper\'s app', state: 'connected', account: 'octo-user', connectedAt: '2026-10-01T00:00:00.000Z',
+    provider: 'github', via: 'the hopper\'s app', state: 'connected', account: 'octo-user', connectedAt: '2026-10-01T00:00:00.000Z', jobRepositories: [],
     installUrl: 'https://github.com/apps/hopper-qm/installations/new', configUrl: 'https://github.com/settings/installations',
     ...(installations ? { installations } : { installationsError: 'GitHub could not say where the app is installed: Service Unavailable' }),
   });
@@ -231,7 +231,7 @@ describe('Sources view: GitHub', () => {
     });
 
     it('filters the list, chooses repositories, and saves the choice without disconnecting', async () => {
-      await boot(withAccount({ ...connected(three), jobRepositories: ['octo-org/site'] }));
+      await boot({ ...withAccount({ ...connected(three), jobRepositories: ['octo-org/site'] }), '/ui/api/connected-accounts': { ...connected(three), jobRepositories: ['octo-user/tools'] } });
       await vi.waitFor(() => expect(summary()).toBe('1 of 3 repositories chosen for jobs'));
       expect(box('octo-org/site').checked).toBe(true);
       expect(button('Save').disabled).toBe(true);
@@ -249,7 +249,10 @@ describe('Sources view: GitHub', () => {
       await act(async () => { button('Save').click(); });
       const sent = fetch.mock.calls.filter(([url, init]) => String(url) === '/ui/api/connected-accounts' && (init as RequestInit | undefined)?.method === 'POST');
       expect(sent.map(([, init]) => JSON.parse(String((init as RequestInit).body)))).toEqual([{ action: 'choose', provider: 'github', repositories: ['octo-user/tools'] }]);
-      expect(panel()!.textContent).toContain('Disconnect');
+      await vi.waitFor(() => expect(summary()).toBe('1 of 3 repositories chosen for jobs'));
+      expect(box('octo-user/tools').checked).toBe(true);
+      expect(button('Save').disabled).toBe(true);
+      expect(panel()!.textContent).toContain('Stop working through GitHub');
     });
 
     it('a chosen repository the app no longer reaches is shown, to be cleared', async () => {

@@ -128,7 +128,11 @@ export const queueGateBody = z.strictObject({ mode: z.enum(QUEUE_GATE_MODES), au
 // gh login (issue #138): start gh's device flow, or end a waiting one.
 export const ghLoginBody = z.strictObject({ action: z.enum(['start', 'cancel']) });
 // Connected accounts (issue #214): connect (start the device flow), cancel a waiting code, disconnect.
-export const connectedAccountsBody = z.strictObject({ action: z.enum(['connect', 'cancel', 'disconnect']), provider: z.enum(CONNECTED_ACCOUNT_PROVIDERS) });
+export const connectedAccountsBody = z.discriminatedUnion('action', [
+  z.strictObject({ action: z.enum(['connect', 'cancel', 'disconnect']), provider: z.enum(CONNECTED_ACCOUNT_PROVIDERS) }),
+  // Issue #321: the job repositories, the whole list.
+  z.strictObject({ action: z.literal('choose'), provider: z.enum(CONNECTED_ACCOUNT_PROVIDERS), repositories: z.array(z.string().regex(/^[^/\s]+\/[^/\s]+$/, 'owner/repo')).max(5000) }),
+]);
 const EDIT_STATUS = { invalid: 400, not_found: 404, conflict: 409 } as const;
 /** The rules themselves are validated by the plugin host (the plugins config schema), so a refusal names the field. */
 export const routingEditBody = z.strictObject({ rules: z.array(z.any()), version: z.string().min(1) });
@@ -321,10 +325,11 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   // design.md "Connected accounts": answers the provider's new GET /api/connected-accounts status — the
   // device code once the provider shows it. The user's own accounts: their session's user alone.
   app.post('/ui/api/connected-accounts', admin, async (req) => {
-    const { action, provider } = parseWith(connectedAccountsBody, req.body);
+    const body = parseWith(connectedAccountsBody, req.body);
     const { connectedAccounts } = o.tenant(req);
-    if (action === 'connect') return connectedAccounts.connect(provider);
-    return action === 'cancel' ? connectedAccounts.cancel(provider) : connectedAccounts.disconnect(provider);
+    if (body.action === 'choose') return connectedAccounts.choose(body.provider, body.repositories);
+    if (body.action === 'connect') return connectedAccounts.connect(body.provider);
+    return body.action === 'cancel' ? connectedAccounts.cancel(body.provider) : connectedAccounts.disconnect(body.provider);
   });
 
   // A login code as a link per LAN name, in the fragment (never sent to a server). The links

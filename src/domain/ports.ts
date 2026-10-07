@@ -491,8 +491,10 @@ export interface ConnectedAccounts {
   connect(provider: ConnectedAccountProvider): Promise<ConnectedAccountStatus>;
   /** End a waiting device code. */
   cancel(provider: ConnectedAccountProvider): ConnectedAccountStatus;
-  /** Forget the account and its token. */
+  /** Forget the account and its token; its job repositories stay chosen. */
   disconnect(provider: ConnectedAccountProvider): ConnectedAccountStatus;
+  /** Choose the repositories the account's jobs may use (issue #321), the whole list; the source syncs now. */
+  choose(provider: ConnectedAccountProvider, repositories: readonly string[]): Promise<ConnectedAccountStatus>;
 }
 
 /** What a connected account's job source asks (issue #214): who the account is, a token for a call, where its provider is. */
@@ -503,6 +505,8 @@ export interface ConnectedAccountTokens {
   token(provider: ConnectedAccountProvider): Promise<string>;
   /** The provider's web origin and REST API base. */
   endpoints(provider: ConnectedAccountProvider): { url: string; apiUrl: string };
+  /** The repositories the account's jobs may use, as chosen now (issue #321); empty: none. */
+  jobRepositories(provider: ConnectedAccountProvider): string[];
 }
 
 // ---- Persistence: src/domain/store.ts (re-exported here, one vocabulary) ----------------

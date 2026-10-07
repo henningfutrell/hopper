@@ -181,7 +181,7 @@ describe('a user connects their own GitHub', () => {
     expect(chosen.status).toBe(200);
     expect(chosen.body).toMatchObject({ state: 'connected', jobRepositories: ['octo-user/tools'] });
     await waitFor(async () => (await jobs(app)).some((j) => j.source?.repo === 'octo-user/tools'), { what: 'the chosen repository\'s issue to become a job' });
-    expect((await sourceOf(app, 'github-account'))?.detail.paused).toBeUndefined();
+    await waitFor(async () => (await sourceOf(app, 'github-account'))?.detail.paused === undefined, { what: 'the source to resume' });
     await app.user().sources.syncNow('github-account');
     expect((await jobs(app)).map((j) => j.source?.repo)).toEqual(['octo-user/tools']);
 
