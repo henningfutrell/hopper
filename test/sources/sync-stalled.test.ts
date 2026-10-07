@@ -54,7 +54,6 @@ describe('sync loop: a failing source', () => {
 
   it('logs the error once when it changes, and once when the source is ok again', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    const info = vi.spyOn(console, 'info').mockImplementation(() => undefined);
     const { source, sync } = setup();
     source.discoverError = new Error('GitHub refused the token');
     await sync.syncNow();
@@ -68,6 +67,6 @@ describe('sync loop: a failing source', () => {
     delete source.discoverError;
     await sync.syncNow();
     await sync.syncNow();
-    expect(info.mock.calls.map((c) => String(c[0])).filter((l) => l.includes('source github-account'))).toEqual(['hopper: source github-account is ok again']);
+    expect(lines().slice(2)).toEqual(['hopper: source github-account is ok again']);
   });
 });

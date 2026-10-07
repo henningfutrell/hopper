@@ -251,6 +251,11 @@ export interface ConnectedAccount {
   accessToken: string;
   /** When the access token expires; absent: it does not (a GitHub App that opts out of token expiration). */
   expiresAt?: string;
+  /** What renews the access token (issue #358), and when it expires itself; absent: nothing renews it (a record kept before #358, or a token that does not expire). */
+  refreshToken?: string;
+  refreshTokenExpiresAt?: string;
+  /** Why the sign-in ended — GitHub refused the token and its renewal (issue #358): the account is expired, until connected again. */
+  ended?: string;
   connectedAt: string;
 }
 

@@ -1,5 +1,5 @@
 // The Grok Bot routine webhook (design.md "Grok Bot routine webhook"): one POST per question that
-// reaches the human, the URL and key read from the environment at each event. In memory only: no
+// reaches the human, and per stop of intake (issue #358: `source.stalled`, `connected_account.expired`), the URL and key read from the environment at each event. In memory only: no
 // store row, no event.
 import type { DomainEvent, Notifier, NotifierEvents, PluginLogger } from '../../sdk.ts';
 
@@ -18,6 +18,7 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const retriable = (status: number) => status === 429 || status >= 500;
 
 function wanted(e: DomainEvent): boolean {
+  if (e.type === 'source.stalled' || e.type === 'connected_account.expired') return true;
   return e.type === 'question.escalated' && e.data.target === 'human' && !e.data.renotify;
 }
 
@@ -35,6 +36,9 @@ export function createGrokBotNotifier(o: GrokBotNotifierOptions): Notifier {
     if (e.type === 'question.escalated') {
       return { ...base, question: e.data.text, questionId: e.data.questionId, ...(e.data.answerUrl ? { answerUrl: e.data.answerUrl } : {}) };
     }
+    // `source` is the sender (the hopper): the job source's name goes as `sourceName`.
+    if (e.type === 'source.stalled') return { ...base, sourceName: e.data.source, error: e.data.error, since: e.data.since };
+    if (e.type === 'connected_account.expired') return { ...base, provider: e.data.provider, account: e.data.account, reason: e.data.reason };
     return base;
   }
 

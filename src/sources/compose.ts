@@ -3,7 +3,7 @@
 // `github-account` (issue #214), through the account the user signed in with or connected. Each
 // pauses itself (JobSource.paused): gh while `enabled: auto` and a GitHub account is connected or the
 // App's key variable is set, the app while its identity (appId, slug, key) is incomplete, an account's
-// while it is not connected.
+// while it is not connected or its sign-in expired (issue #358) — an expired account pauses no gh source.
 import { SourceError, type Clock, type ConnectedAccountTokens, type JobSource } from '../domain/ports.ts';
 import { CONNECTED_VIA, type ConnectedAccountProvider } from '../domain/types.ts';
 import { notConnected } from '../connected-accounts/service.ts';
@@ -89,7 +89,7 @@ export function createAccountSource(o: GitHubSourceDeps & { provider: ConnectedA
   const token = async (): Promise<string> => {
     try { return await accounts.token(provider); } catch (err) { throw new GitHubApiError((err as Error).message, false); }
   };
-  const api = o.api ?? createAccountGitHubApi({ apiUrl: accounts.endpoints(provider).apiUrl, token });
+  const api = o.api ?? createAccountGitHubApi({ apiUrl: accounts.endpoints(provider).apiUrl, token, renew: (refused) => accounts.renew(provider, refused) });
   let built: { key: string; source: JobSource } | undefined;
   const current = (): JobSource | undefined => {
     const login = accounts.account(provider);
@@ -107,12 +107,12 @@ export function createAccountSource(o: GitHubSourceDeps & { provider: ConnectedA
   };
   const unconnected = () => ({
     mode: 'account', repos: accounts.jobRepositories(provider), authors: options.authors, label: options.label,
-    account: { service: provider, detail: { via: CONNECTED_VIA }, problem: notConnected(provider) },
+    account: { service: provider, detail: { via: CONNECTED_VIA }, problem: accounts.ended(provider) ?? notConnected(provider) },
   });
   return {
     name: o.name,
     kind,
-    paused: () => (!current() ? notConnected(provider) : accounts.jobRepositories(provider).length === 0 ? NO_REPOSITORIES : undefined),
+    paused: () => (!current() ? accounts.ended(provider) ?? notConnected(provider) : accounts.jobRepositories(provider).length === 0 ? NO_REPOSITORIES : undefined),
     describe: () => current()?.describe() ?? unconnected(),
     discover: () => current()?.discover() ?? Promise.resolve([]),
     check: (active) => current()?.check(active) ?? Promise.resolve([]),

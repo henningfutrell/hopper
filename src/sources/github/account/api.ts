@@ -1,7 +1,8 @@
 // The GitHubApi port over a connected account's token (issue #214): the user's own GitHub, reached
 // through the hopper's GitHub App: what it does acts as that user, with the app marked on it. The same REST and GraphQL calls as the App adapter, each with the
 // account's token instead of an installation token, plus issue search over the account's owners.
-// `token()` is asked at every call: a disconnect or a new connection applies at once.
+// `token()` is asked at every call: a disconnect or a new connection applies at once. A token GitHub refuses
+// (401) is renewed (`renew`, issue #358) and the call made once more with the new one.
 import { GitHubApiError, isPermanent } from '../api.ts';
 import type { GitHubApi } from '../api.ts';
 import { closingPullRequest, openClosingPullRequests, projectItems } from '../app/graphql.ts';
@@ -22,12 +23,21 @@ export function accountError(err: unknown, what: string): GitHubApiError {
   return new GitHubApiError(`${what}: ${message}`, isPermanent(status, message), status);
 }
 
-export function createAccountGitHubApi(o: { apiUrl: string; token(): Promise<string> }): GitHubApi {
+const refused = (err: unknown) => (err as { status?: unknown }).status === 401;
+
+export function createAccountGitHubApi(o: { apiUrl: string; token(): Promise<string>; renew?(refused: string): Promise<string> }): GitHubApi {
   const req = makeRequest(o.apiUrl);
   const call = async <T>(what: string, fn: (token: string) => Promise<T>): Promise<T> => {
     const token = await o.token();
     try {
       return await fn(token);
+    } catch (err) {
+      if (!refused(err) || !o.renew) throw accountError(err, what);
+    }
+    let renewed: string;
+    try { renewed = await o.renew(token); } catch (err) { throw new GitHubApiError(`${what}: ${(err as Error).message}`, false); }
+    try {
+      return await fn(renewed);
     } catch (err) {
       throw accountError(err, what);
     }

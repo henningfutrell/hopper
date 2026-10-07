@@ -21,7 +21,7 @@ export interface AppInstallation {
 
 /**
  * A user's connected account at one provider, as GET /api/connected-accounts reports it: connected
- * (the account, when), not connected, waiting on the device code the user enters at
+ * (the account, when), not connected, expired, waiting on the device code the user enters at
  * `verificationUri`, or failed. Facts only, never a token.
  */
 export type ConnectedAccountStatus = { provider: ConnectedAccountProvider; via: typeof CONNECTED_VIA } & (
@@ -39,6 +39,8 @@ export type ConnectedAccountStatus = { provider: ConnectedAccountProvider; via: 
     installationsError?: string;
   }
   | { state: 'not-connected' }
+  /** Its sign-in ended (issue #358): GitHub refused its token and the renewal, or the token expired with nothing to renew it. Connect again. `error`: why. */
+  | { state: 'expired'; account: string; connectedAt: string; error: string }
   | { state: 'waiting'; userCode: string; verificationUri: string; expiresAt: string }
   | { state: 'failed'; error: string }
 );

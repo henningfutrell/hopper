@@ -4,7 +4,7 @@
 // EVENT_SCHEMA_VERSIONS in src/domain/types.ts and move the old schema to legacy.ts (its
 // docs/schemas file stays, re-exported from there).
 import { z } from 'zod';
-import { EVENT_SCHEMA_VERSIONS, EVENT_TYPES, QUEUE_GATE_MODES, ROLES, type EventType } from '../domain/types.ts';
+import { CONNECTED_ACCOUNT_PROVIDERS, EVENT_SCHEMA_VERSIONS, EVENT_TYPES, QUEUE_GATE_MODES, ROLES, type EventType } from '../domain/types.ts';
 import { LEGACY_EVENT_SCHEMAS, LEGACY_EVENT_TYPES } from './legacy.ts';
 import { advice, adviceAction, holdPlan, jobSourceRef, jobSpec, jobStatus, lanePlan, startPlan } from './parts.ts';
 
@@ -79,6 +79,9 @@ export const EVENT_SCHEMAS = {
   'job.claimed_by_operator': strict({}),
   // Run again (a re-run, issue #313): the user gave a failed job's item back to its source to run again.
   'job.rerun': strict({ by: z.enum(['user']) }),
+  // Intake stopped (issue #358): a job source in error past the stall threshold, and a connected account whose sign-in ended.
+  'source.stalled': strict({ source: z.string(), kind: z.string(), error: z.string(), since: z.iso.datetime() }),
+  'connected_account.expired': strict({ provider: z.enum(CONNECTED_ACCOUNT_PROVIDERS), account: z.string(), reason: z.string() }),
 } satisfies Record<EventType, z.ZodType>;
 
 export const ENVELOPE_SCHEMA = strict({

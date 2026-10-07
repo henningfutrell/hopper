@@ -11,7 +11,7 @@ import type { JobSourceContext, JobSourceInstance, RoleInstance } from './sdk.ts
 /** A job source's context where the host is given none (tests of the host alone): no jobs, no connected accounts. */
 export const NO_SOURCE_CONTEXT: JobSourceContext = {
   knownKeys: () => new Set(), rerunnable: () => new Set(),
-  connectedAccounts: { account: () => undefined, token: () => Promise.reject(new Error('no connected accounts')), endpoints: () => ({ url: '', apiUrl: '' }), jobRepositories: () => [] },
+  connectedAccounts: { account: () => undefined, ended: () => undefined, token: () => Promise.reject(new Error('no connected accounts')), renew: () => Promise.reject(new Error('no connected accounts')), endpoints: () => ({ url: '', apiUrl: '' }), jobRepositories: () => [] },
 };
 
 /** One instance of a restart role: running (`instance`, `plugin`), or not (`reason`). */

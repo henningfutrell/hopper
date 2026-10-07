@@ -1108,6 +1108,10 @@ source every `pollSeconds`:
    report done-with-error (status `detail.permanentErrors`) and is never retried.
 4. Status → `SourceStatus` (state, last sync, last error, counts, detail) → `/api/sources`,
    SSE `source.updated`.
+5. **A failing source is never silent** (issue #358): its error is logged once when it changes, and
+   once when the source is ok again; a source in error longer than the **stall threshold**
+   (`STALL_AFTER_MS`, 30 min) records `source.stalled { source, kind, error, since }` once per run of
+   failures, which the notifiers send.
 
 **Re-run.** A source key may have many jobs; `jobs.source_key` is an index, not unique, and
 `getBySourceKey` returns the **newest** (`created_at`, then `seq`, descending). An item whose
@@ -1793,11 +1797,12 @@ main.ts seams                    AppSeams.githubApp?: GitHubApi (tests) beside .
 
 The built-in notifier plugin `grokbot-routine` (`src/plugins/notifier/grokbot-routine/`, since
 phase 5 slice 5) POSTs to a Grok Bot routine (https://cursor.com/help/grok-bot/routines) when a
-question reaches the owner (questions never go onto the issue). Not a **Webhook subscription**: no store row, no
-schema change, no domain event; in-memory only.
+question reaches the owner (questions never go onto the issue), and when intake stops (issue #358). Not a
+**Webhook subscription**: no store row, no schema change, no domain event; in-memory only.
 
-- Events: questions only — `question.escalated` with `data.target === 'human'` and not
-  `data.renotify`. Never `job.finished` or `job.failed`.
+- Events: `question.escalated` with `data.target === 'human'` and not `data.renotify`; `source.stalled`
+  (body adds `sourceName`, `error`, `since`) and `connected_account.expired` (body adds `provider`,
+  `account`, `reason`). Never `job.finished` or `job.failed`.
 - Config: the instance's `envFile` option (plugins.yaml `notifiers:`; the built-in `grok-bot`
   instance's is `grokbot-webhook.env` beside plugins.yaml), `GROKBOT_WEBHOOK_URL=` and `GROKBOT_WEBHOOK_KEY=`, parsed with `util.parseEnv`. Read at
   each matching event, so a file created later applies without a restart.
@@ -6260,9 +6265,20 @@ its expiry if any, when. Every answer carries facts only, never a token.
 - **Install status**: `GET /api/connected-accounts` gives `installUrl` (the app's install page) and
   `installations` (`GET /user/installations`: the accounts the app is installed on that the user sees).
   The Sources panel says where and links to install.
-- **Tokens**: a GitHub App's user tokens expire after 8 h unless the app opts out; GitHub renews one only
-  with the app's client secret, so the hopper's app opts out, and a token that does expire says to sign in
-  or connect again. No renewal is built.
+- **Tokens** (issue #358): a GitHub App's user tokens expire after 8 h, with a refresh token (6 months).
+  Both are kept with the account (`refreshToken`, `refreshTokenExpiresAt`), from the device flow, the web
+  flow and a GitHub sign-in alike. `token()` renews the pair (`src/connected-accounts/renewal.ts`,
+  `@octokit/oauth-methods` `refreshToken`) once an hour or less is left (`RENEW_AHEAD_MS`, so a job given
+  it has an hour at least), and `renew()` does on a 401 (the account API makes the call once more with the
+  new token); one renewal at a time, the new pair kept at once. A device flow grant renews without the
+  client secret; the secret goes when the runtime gives one (`HOPPER_GITHUB_CLIENT_SECRET`, which a web flow
+  grant needs). GitHub not answering ends nothing: a still-valid token is used and the next ask renews.
+  **Expired**: GitHub refusing the renewal (an OAuth error), a 401 with no refresh token, or a token past
+  its expiry with no live refresh token ends the sign-in: kept on the record (`ended`), the account reads
+  `state: 'expired'` with why — never `connected` — offers no login (so a gh source with `enabled: auto`
+  runs again), its source pauses with `GitHub's sign-in expired: Sources → Connect GitHub again`, and
+  `connected_account.expired { provider, account, reason }` is recorded once, which the notifiers send.
+  Connecting again replaces the record.
 
 **Intake** (`job-source/github-account`; a built-in instance, added to every existing plugins config by
 tenant migration 8, since job sources are a restart role): the GitHub source logic (`createGitHubSource`,

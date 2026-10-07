@@ -41,6 +41,8 @@ import { runtimeSecrets } from '../secrets/runtime.ts';
 import { createGhLogin, createSourceSync, idleStatus, withFixedStatuses, type GitHubApi, type SourceSync } from '../sources/index.ts';
 import { createConnectedAccounts, type ConnectedAccountsService } from '../connected-accounts/service.ts';
 import { installations, whoIs } from '../connected-accounts/identity.ts';
+import { renewal } from '../connected-accounts/renewal.ts';
+import { CLIENT_SECRET_VARIABLE } from '../connected-accounts/web-flow.ts';
 import { createWebhooksEditor, type WebhooksEditor } from '../webhooks/edit.ts';
 import { createWebhookDispatcher, secretProblem } from '../webhooks/index.ts';
 import { userCliEnv, userSecrets, userWorkDir } from './env.ts';
@@ -237,10 +239,15 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   });
   // The GitHub account the user's work comes through (issue #214): from signing in with it, or
   // connected from Sources, through the hopper's app; their job sources and jobs ask here for tokens.
+  const appClientSecret = (): string | undefined => { try { return runtimeSecrets(o.env)(CLIENT_SECRET_VARIABLE); } catch { return undefined; } };
   const connectedAccounts = createConnectedAccounts({
     store, apps: config.hopperApps, clock, logger,
     whoIs: (provider, token) => whoIs(config.hopperApps[provider], token),
     installations: (token) => installations(config.hopperApps.github, token),
+    // GitHub App user tokens expire after 8 h (issue #358): renewed with the refresh token, with the app's
+    // client secret when the runtime gives one (read at each renewal, so a rotated one counts).
+    refresh: (provider, refresh) => renewal(config.hopperApps[provider], appClientSecret)(refresh),
+    onExpired: (provider, account, reason) => { store.events.append({ type: 'connected_account.expired', data: { provider, account, reason } }); },
     ...(o.linkIdentity ? { link: o.linkIdentity } : {}),
     // Reached only after `sync` exists: a connection is made long after the runtime starts.
     onChange: (provider) => {

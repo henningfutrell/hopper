@@ -270,6 +270,7 @@ export const EVENT_TYPES = [
   'plugin.installed', 'plugin.removed',
   'job.accepted', 'job.rejected', 'queue.ordered', 'queue.gate_changed', 'job.claimed_by_operator',
   'job.rerun',
+  'source.stalled', 'connected_account.expired',
 ] as const;
 export type EventType = typeof EVENT_TYPES[number];
 
@@ -287,6 +288,7 @@ export const EVENT_SCHEMA_VERSIONS: Readonly<Record<EventType, number>> = {
   'plugin.installed': 1, 'plugin.removed': 1,
   'job.accepted': 1, 'job.rejected': 1, 'queue.ordered': 1, 'queue.gate_changed': 1, 'job.claimed_by_operator': 1,
   'job.rerun': 1,
+  'source.stalled': 1, 'connected_account.expired': 1,
 };
 
 export interface DomainEvent<T = Record<string, unknown>> {
