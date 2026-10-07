@@ -5,9 +5,14 @@
 // cwd and the environment the hopper sets to agent-calls.jsonl in $FAKE_AGENT_DIR, then answers as that
 // CLI does — JSON events, one per line, in the shapes each prints (taken from the real CLIs, 2026-10-07).
 // The reply is $FAKE_AGENT_REPLY; $FAKE_AGENT_REPLIES (a JSON array) gives the reply of each call in
-// turn. $FAKE_AGENT_MODE `error` answers the CLI's own error, `hang` never answers.
+// turn. $FAKE_AGENT_MODE `error` answers the CLI's own error, `hang` never answers. Like the real CLIs, it
+// reads stdin to its end first.
 import { appendFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+
+// As the real codex and opencode do when stdin is not a terminal: read it to its end before the turn.
+// A turn that hands the CLI an open stdin never starts (found on the agent boxes, issue #307).
+if (!process.stdin.isTTY) readFileSync(0);
 
 const argv = process.argv.slice(2);
 const log = join(process.env.FAKE_AGENT_DIR, 'agent-calls.jsonl');
