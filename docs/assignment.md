@@ -249,8 +249,7 @@ Within one user's schema the same issue cannot be ingested twice: the store is s
 (`src/store/db.ts:1-3`), `ingest` re-reads by key inside its transaction, and syncs of a slot are
 chained (`src/sources/sync.ts:296-302`); Run again falls back to an existing job
 (`source-host.ts:141-148`). So the double pickup seen on 2026-10-07 came from two schemas (two users
-of one hopper — for example a user and the account folded into them before a transfer) or two
-hoppers. The events of both jobs (`job.queued` source and user) will say which. The claim table (§2)
+of one hopper) or two hoppers. The events of both jobs (`job.queued` source and user) will say which. The claim table (§2)
 fixes the first; the accept-after-claim rule narrows the second.
 
 ---
