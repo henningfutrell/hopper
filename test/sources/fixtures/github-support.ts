@@ -13,7 +13,7 @@ export const REPO = 'owner/sandbox';
 
 /** The source logic's config: the shared keys of the GitHub sources (parsed as the app's options, which carry `repos`). */
 export function githubConfig(over: Record<string, unknown> = {}): GitHubSourceConfig {
-  const r = parseOptions(githubApp, { repos: [REPO], authors: ['owner'], defaultCwd: '/work/default', ...over });
+  const r = parseOptions(githubApp, { repos: [REPO], authors: ['owner'], ...over });
   if (!r.ok) throw new Error(r.error);
   const { enabled: _e, appId: _i, slug: _s, privateKeyEnv: _k, apiUrl: _u, ...shared } = r.options as GitHubAppOptions;
   return sourceConfig(shared);

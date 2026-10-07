@@ -30,7 +30,7 @@ async function boot(plugins: Record<string, unknown>, gh?: FakeGitHub, file?: ob
 }
 
 const github = [{
-  name: 'github', plugin: 'github-account', options: { enabled: true, pollSeconds: 3600, authors: ['owner'], executor: 'scripted', defaultCwd: '/tmp' },
+  name: 'github', plugin: 'github-account', options: { enabled: true, pollSeconds: 3600, authors: ['owner'], executor: 'scripted' },
 }];
 const body = (op: Record<string, unknown>) => `${JSON.stringify(op)}\n\nPlease do the thing.`;
 const jobFor = async (a: TestApp, key: string): Promise<Job> =>
@@ -64,8 +64,9 @@ describe('routing rules at intake', () => {
     await a.waitForStatus(ju.id, 'finished');
   });
 
-  // Issue #324: a rule routes a repository to a machine and a work tree there.
-  it('a rule sets the work tree: the job\'s own, over its source\'s default; a job no rule routes keeps only the default', async () => {
+  // Issue #324: a rule routes a repository to a machine and a work tree there. Issue #361: no source
+  // names a path; a job no rule routes carries none, and runs in its machine's work tree.
+  it('a rule sets the work tree with its machine; a job no rule routes carries no path', async () => {
     const gh = createFakeGitHub();
     const a = await boot({ jobSources: github, routing: [{ name: 'app tree', match: { label: 'app' }, set: { machine: 'local', workTree: '~/code/app' } }] }, gh);
     a.scripted.ships(mergesPullRequest(gh));
@@ -74,10 +75,10 @@ describe('routing rules at intake', () => {
     const plain = gh.createIssue({ repo: REPO, body: body({ op: 'echo' }), labels: ['hopper'] });
     await a.sync();
     const jr = await jobFor(a, routed.url);
-    expect(jr.spec).toMatchObject({ machineId: 'local', payload: { cwd: '~/code/app', defaultCwd: '/tmp' }, routedBy: { rule: 'app tree', set: { machine: 'local', workTree: '~/code/app' } } });
+    expect(jr.spec).toMatchObject({ machineId: 'local', payload: { cwd: '~/code/app' }, routedBy: { rule: 'app tree', set: { machine: 'local', workTree: '~/code/app' } } });
     const jp = await jobFor(a, plain.url);
-    expect(jp.spec.payload).toMatchObject({ defaultCwd: '/tmp' });
     expect(jp.spec.payload).not.toHaveProperty('cwd');
+    expect(jp.spec.payload).not.toHaveProperty('defaultCwd');
     a.setUsage(0);
   });
 

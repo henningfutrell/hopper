@@ -1,5 +1,7 @@
-import { hostname } from 'node:os';
-import { describe, expect, it } from 'vitest';
+import { existsSync } from 'node:fs';
+import { homedir, hostname } from 'node:os';
+import { join } from 'node:path';
+import { describe, expect, it, vi } from 'vitest';
 import { createLocalMachineSource } from '../../src/machines/index.ts';
 import { createFakeUsageSource } from '../../src/usage/index.ts';
 
@@ -19,6 +21,20 @@ describe('local machine source', () => {
   it('carries this machine\'s work tree (issue #324)', async () => {
     const src = createLocalMachineSource({ maxLanes: 1, executors: () => [], workTree: '~/trees' });
     expect((await src.list())[0]).toMatchObject({ workTree: '~/trees' });
+  });
+  // Issue #361: this machine's work tree (the jobs directory when it names none) is made and checked in
+  // the background; one that cannot be made is a problem on the snapshot, so no job is routed here.
+  it('makes its work tree in the background and finds nothing wrong', async () => {
+    const tree = join(homedir(), 'trees-361');
+    const src = createLocalMachineSource({ maxLanes: 1, executors: () => [], workTree: '~/trees-361' });
+    await src.list();
+    await vi.waitFor(() => expect(existsSync(tree)).toBe(true));
+    expect((await src.list())[0]).not.toHaveProperty('workTreeProblem');
+  });
+  it('a work tree that cannot be made is its problem', async () => {
+    const src = createLocalMachineSource({ maxLanes: 1, executors: () => [], workTree: '/proc/hopper-no-such/tree' });
+    await src.list();
+    await vi.waitFor(async () => expect((await src.list())[0]!.workTreeProblem).toMatch(/^its work tree \/proc\/hopper-no-such\/tree cannot be made: /));
   });
   it('honours id and label', async () => {
     const src = createLocalMachineSource({ maxLanes: 2, executors: () => [], id: 'm1', label: 'M one' });
