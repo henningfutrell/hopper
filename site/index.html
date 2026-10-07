@@ -3,630 +3,101 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>hopper</title>
-<meta name="description" content="A self-hosted job queue for coding agents: it turns GitHub issues into finished work.">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#121a26">
+<title>hopper — a job queue for coding agents</title>
+<meta name="description" content="A self-hosted job queue for coding agents: label a GitHub issue, it runs on a machine of yours, and the work comes back as a pull request.">
 <link rel="icon" type="image/svg+xml" href="hopper-logo.svg">
 <script>
 // The install page used to be this page: send its old addresses there.
 if (['podman', 'first-job', 'host', 'before', 'install', 'own-postgres', 'running', 'ui', 'github', 'windows', 'upgrade', 'remove', 'trouble', 'more'].includes(location.hash.slice(1))) location.replace('install.html' + location.hash);
+// Light or dark as the reader's system says, before the first paint.
+(() => { const m = matchMedia('(prefers-color-scheme: dark)'); const set = () => document.documentElement.classList.toggle('dark', m.matches); set(); m.addEventListener('change', set); })();
 </script>
-<style>
-:root {
-  --bg: #ffffff; --text: #1c1f23; --muted: #5b6370; --line: #d9dde3;
-  --code-bg: #f4f5f7; --accent: #0b5cad; --ok: #1d7a3e; --warn-bg: #fff6e0; --warn-line: #e3b341;
-}
-@media (prefers-color-scheme: dark) {
-  :root { --bg: #111317; --text: #e6e8eb; --muted: #9aa2ad; --line: #2c3139; --code-bg: #1b1e24; --accent: #6cb0f5; --ok: #6fcf8f; --warn-bg: #2a2416; --warn-line: #9e7a1f; }
-}
-* { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
-body {
-  margin: 0; background: var(--bg); color: var(--text);
-  font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-}
-main { max-width: 760px; margin: 0 auto; padding: 32px 16px 64px; }
-h1 { font-size: 28px; line-height: 1.25; margin: 0 0 8px; }
-h2 { font-size: 20px; margin: 40px 0 8px; padding-top: 16px; border-top: 1px solid var(--line); scroll-margin-top: 8px; }
-h3 { font-size: 16px; margin: 24px 0 4px; }
-p, ul, ol { margin: 8px 0; }
-li { margin: 4px 0; }
-a { color: var(--accent); }
-.lead { margin: 0 0 16px; }
-code, pre { font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-:not(pre) > code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
-pre.out {
-  margin: 8px 0 12px; padding: 10px 14px; border-left: 3px solid var(--line);
-  color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere;
-}
-.cmd { position: relative; margin: 8px 0 12px; }
-.cmd pre {
-  margin: 0; padding: 12px 84px 12px 14px; background: var(--code-bg);
-  border: 1px solid var(--line); border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere;
-}
-.cmd button {
-  position: absolute; top: 8px; right: 8px; font: inherit; font-size: 13px;
-  padding: 3px 10px; border: 1px solid var(--line); border-radius: 4px;
-  background: var(--bg); color: var(--text); cursor: pointer;
-}
-.cmd button.done { color: var(--ok); border-color: var(--ok); }
-.cmd.yaml pre { white-space: pre; overflow-x: auto; overflow-wrap: normal; }
-.main-cmd pre { font-size: 15px; padding-top: 16px; padding-bottom: 16px; }
-table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 15px; }
-th, td { text-align: left; vertical-align: top; padding: 6px 8px; border-bottom: 1px solid var(--line); }
-th { font-weight: 600; }
-.table-wrap { overflow-x: auto; }
-@media (max-width: 600px) {
-  table.stack, table.stack tbody, table.stack tr, table.stack td { display: block; width: 100%; }
-  table.stack tr:first-child { display: none; }
-  table.stack tr { padding: 8px 0; border-bottom: 1px solid var(--line); }
-  table.stack td { border: 0; padding: 2px 0; }
-  table.stack td:first-child { font-weight: 600; }
-}
-.steps { padding-left: 22px; }
-.toc { margin: 16px 0 8px; padding: 12px 16px 12px 36px; border: 1px solid var(--line); border-radius: 6px; }
-.toc li { margin: 2px 0; }
-.note { color: var(--muted); font-size: 15px; }
-.ok { color: var(--ok); font-weight: 600; }
-.warn { margin: 12px 0; padding: 10px 14px; background: var(--warn-bg); border-left: 3px solid var(--warn-line); border-radius: 4px; }
-details { margin: 8px 0; }
-summary { cursor: pointer; font-weight: 600; }
-details[open] summary { margin-bottom: 4px; }
-h1 .logo { height: 1.1em; width: auto; margin-right: 10px; vertical-align: -0.12em; }
-footer { margin-top: 48px; color: var(--muted); font-size: 14px; }
-.readme img { max-width: 100%; height: auto; }
-.readme a { overflow-wrap: anywhere; }
-.readme table { display: block; overflow-x: auto; }
-.readme pre { background: var(--code-bg); border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; overflow-x: auto; }
-.readme h1 { margin-top: 16px; }
-nav.top { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 15px; }
-.install { margin: 16px 0 8px; padding: 12px 16px; border: 1px solid var(--line); border-radius: 6px; }
-.install p { margin: 0 0 8px; }
-</style>
+<script type="module" src="./site.ts"></script>
 </head>
-<body>
-<main>
-<nav class="top"><a href="install.html">Install, step by step</a><a href="https://github.com/henningfutrell/hopper">Source on GitHub</a><a href="https://github.com/henningfutrell/hopper/issues">Issues</a></nav>
-<section class="install">
-<p><strong>Install.</strong> Recommended: run the published image with Podman. <a href="install.html">The install
-page</a> walks from nothing to a first finished job, on Linux or on Windows inside WSL. Or install it on this
-machine with one line:</p>
-<div class="cmd main-cmd"><pre>curl -fsSL https://henningfutrell.github.io/hopper/install.sh | bash</pre><button type="button" data-copy="curl -fsSL https://henningfutrell.github.io/hopper/install.sh | bash">Copy</button></div>
-</section>
-<article class="readme">
-<img src="hopper-logo.svg" alt="" width="64"><h1 id="hopper">hopper</h1>
-<p>A self-hosted job queue for coding agents. It pulls jobs from GitHub issues, runs each one as a
-Claude Code session in a herdr pane on a machine it manages, answers or escalates the questions a
-job asks, and keeps every machine inside its usage budget. One daemon, one Postgres database, a
-web UI, and an HTTP API with its reference at <code>/docs/</code>.
-Install page, step by step: <a href="https://henningfutrell.github.io/hopper/install.html">https://henningfutrell.github.io/hopper/install.html</a> (<code>site/install.html</code>).</p>
-<ul>
-<li><strong>Jobs are pulled, never pushed.</strong> A job is an issue with the <code>hopper</code> label, by an author you
-allow. No route creates a job.</li>
-<li><strong>Everything it keeps is in its database.</strong> Config is the plugins, rules and sign-in configs and
-the webhook subscriptions, all in that database and all edited in the UI; there is no config file.
-Secrets come from its environment.</li>
-<li><strong>Every part is a plugin</strong>: router, queue sorter, escalation levels, executors, job sources,
-machines, usage sources, notifiers (<code>docs/plugins.md</code>); the UI installs more from a plugin store.</li>
-<li><strong>Several people, kept apart.</strong> One hopper can work for several users: each has their own jobs,
-questions, machines, plugins, webhooks and logins, and sees nobody else&#39;s. A new hopper starts with
-none: each person&#39;s first sign-in makes their user, and the first person to sign in with GitHub is the
-admin (<code>docs/sign-in.md</code> &quot;Who signs in as which user&quot;).</li>
-</ul>
-<h2 id="getting-started">Getting started</h2>
-<p>Five steps, in this order. Each links to its section below.</p>
-<ol>
-<li><strong><a href="#run-it">Run it</a></strong> — recommended: the published image with Podman, from one compose file;
-or one line installs the daemon, its database and its herdr session on this host.</li>
-<li><strong><a href="#sign-in">Sign in</a></strong> — one command opens the UI, signed in.</li>
-<li><strong><a href="#connect-github">Connect GitHub</a></strong> — sign in with GitHub and enter the code it shows; the first
-person to do so becomes admin, and that connection is what your jobs work through. A GitHub App an
-admin sets up is the one other path.</li>
-<li><strong><a href="#give-it-jobs">Give it jobs</a></strong> — choose the job repositories in Sources, then label an issue
-<code>hopper</code>.</li>
-<li><strong><a href="#add-machines">Add machines</a></strong> — optional: jobs run on this host from step 1; add other
-computers, or a sandbox container, when you want more room.</li>
-</ol>
-<h2 id="what-you-need">What you need</h2>
-<p>With Podman (<a href="#with-podman-recommended">recommended</a>): only Podman with a compose provider; the image
-carries the rest. The table is for the install on this host. On Windows, either goes inside WSL; the
-install page has the steps: <a href="https://henningfutrell.github.io/hopper/install.html#windows">https://henningfutrell.github.io/hopper/install.html#windows</a></p>
-<table>
-<thead>
-<tr>
-<th></th>
-<th>for</th>
-</tr>
-</thead>
-<tbody><tr>
-<td>Node.js ≥ 24</td>
-<td>the daemon (TypeScript, run directly)</td>
-</tr>
-<tr>
-<td>Postgres (any; <code>deploy/compose.yaml</code> has one)</td>
-<td>everything the daemon keeps</td>
-</tr>
-<tr>
-<td>Docker</td>
-<td>the bundled Postgres of the host install, <code>npm test</code></td>
-</tr>
-<tr>
-<td>herdr (<a href="https://herdr.dev">herdr.dev</a>), at <code>~/.local/bin/herdr</code></td>
-<td>the panes jobs run in (<code>herdr-claude</code> executor), on each machine that runs Claude jobs</td>
-</tr>
-<tr>
-<td>the <code>claude</code> CLI, signed in</td>
-<td>jobs (on each machine that runs them), the escalation levels (here, or on the machine each designates; or none, with an API key), usage readings</td>
-</tr>
-<tr>
-<td>your GitHub, signed in with in the UI (default), or a GitHub App an admin creates</td>
-<td>reading and labelling the issues that are jobs (<a href="#connect-github">Connect GitHub</a>)</td>
-</tr>
-</tbody></table>
-<h2 id="run-it">Run it</h2>
-<p>Pick one. Recommended: the published image with Podman.</p>
-<h3 id="with-podman-recommended">With Podman (recommended)</h3>
-<p>The daemon and its Postgres, in containers from the public image
-<code>ghcr.io/henningfutrell/hopper</code> (<code>latest</code> follows <code>main</code>; Intel/AMD and ARM): no host install, nothing to
-build, nothing to set first. Needs Podman ≥ 4.7 with <code>podman-compose</code> (or Docker&#39;s compose; <code>docker compose</code> works the same everywhere below).</p>
-<pre><code class="language-sh">mkdir hopper &amp;&amp; cd hopper
-curl -fsSLO https://henningfutrell.github.io/hopper/compose.yaml      # compose.yaml in this repository
-podman compose up -d
-# open http://localhost:4790/ and sign in with GitHub: the first person to do so is the admin
-podman compose exec hopper claude                                    # once: /login, then /exit
-# then Sources → GitHub account: choose the repositories jobs may come from
-systemctl --user enable podman-restart.service                        # once: start it again after a reboot
-</code></pre>
-<p>The container is not a machine: jobs run on attached machines (&quot;Add machines&quot;). Settings and secrets: a
-<code>.env</code> beside <code>compose.yaml</code> (<code>.env.example</code>). Upgrade: <code>podman compose pull &amp;&amp; podman compose up -d</code>.
-Details: <code>docs/deploy.md</code> &quot;In containers, with Podman&quot;.</p>
-<p>The other ways each need a Postgres URL; the bundled one is <code>deploy/compose.yaml</code>.</p>
-<h3 id="on-this-host-with-one-line">On this host, with one line</h3>
-<p>The daemon and its own herdr session as user services, and Postgres in docker. Jobs run on this host.</p>
-<pre><code class="language-sh">curl -fsSL https://henningfutrell.github.io/hopper/install.sh | bash
-</code></pre>
-<p>It clones the source into <code>~/.local/share/hopper/source</code> and runs its <code>scripts/install.sh</code>.
-Without docker, give it a database: <code>curl … | HOPPER_DATABASE_URL=postgres://… bash</code>. Run the
-same line again to upgrade. Settings: the head of <code>scripts/get.sh</code>.</p>
-<h3 id="on-this-host-systemd---user-from-a-clone">On this host (systemd --user), from a clone</h3>
-<p>The same install, step by step.</p>
-<pre><code class="language-sh">git clone &lt;this repository&gt; hopper &amp;&amp; cd hopper
-export POSTGRES_PASSWORD=&quot;$(openssl rand -hex 24)&quot;
-docker compose -f deploy/compose.yaml up -d postgres
-HOPPER_DATABASE_URL=&quot;postgres://hopper:$POSTGRES_PASSWORD@127.0.0.1:5433/hopper&quot; bash scripts/install.sh
-</code></pre>
-<p><code>install.sh</code> writes the database URL to <code>~/.config/hopper/daemon.env</code> (mode 600); put secrets
-there too. Run it again to upgrade. Remove with <code>scripts/uninstall.sh</code>.</p>
-<h3 id="from-a-checkout-in-the-foreground">From a checkout, in the foreground</h3>
-<p>For a try-out or development:</p>
-<pre><code class="language-sh">npm ci &amp;&amp; npm run build:ui
-docker compose -f deploy/compose.yaml up -d postgres          # POSTGRES_PASSWORD set as above
-export HOPPER_DATABASE_URL=&quot;postgres://hopper:$POSTGRES_PASSWORD@127.0.0.1:5433/hopper&quot;
-node src/main.ts                                              # node src/main.ts --help: every setting
-</code></pre>
-<h2 id="sign-in">Sign in</h2>
-<p>The UI is at <code>http://localhost:4790/</code> on the daemon&#39;s host: sign in with GitHub, which every hopper
-offers. The first person to sign in with GitHub is the admin. There is no bootstrap login: a new hopper
-creates no user, no password and no login code, and no command on the host signs anyone in. For other
-people and other devices: sign-in realms — GitHub, LDAP, OIDC, SAML or an auth gateway in front (the hopper
-keeps no password accounts of its own), set up in Settings → Sign-in or from the environment at
-launch (<code>docs/deploy.md</code> &quot;Sign-in set up at launch&quot;) — and the LAN or a public URL — <code>docs/sign-in.md</code>.</p>
-<h2 id="connect-github">Connect GitHub</h2>
-<p>GitHub is how people sign in to the hopper and how it works for them: each user&#39;s issues come from
-their GitHub, and what their jobs do there acts as them, with GitHub showing the hopper&#39;s app on it.
-There are two paths; a new hopper is on the first one.</p>
-<table>
-<thead>
-<tr>
-<th>Path</th>
-<th>Use it when</th>
-<th>The hopper acts as</th>
-<th>Job source</th>
-</tr>
-</thead>
-<tbody><tr>
-<td><a href="#sign-in-with-github-default"><strong>Sign in with GitHub</strong></a> (default)</td>
-<td>each user works from their own GitHub</td>
-<td>that user, through the hopper&#39;s app</td>
-<td><code>github-account</code></td>
-</tr>
-<tr>
-<td><a href="#a-github-app-of-your-own"><strong>A GitHub App of your own</strong></a></td>
-<td>an admin&#39;s choice for particular environments: labels from a bot, repos chosen by where the App is installed. Not for local deployments in general</td>
-<td>the App&#39;s bot, <code>&lt;slug&gt;[bot]</code></td>
-<td><code>github-app</code> (added in Plugins)</td>
-</tr>
-</tbody></table>
-<p><strong>Never use a GitHub App private key from somebody else&#39;s hopper</strong>, and never give yours to anyone. A
-private key acts on every repository its App is installed on. The hopper&#39;s app is different: it ships
-only its public client id, which authorizes nothing by itself.</p>
-<p>Which path you are on: the UI&#39;s <strong>Sources</strong> view. The source that is not <code>paused</code> is the one taking
-jobs, and the sentence in the GitHub section says which. <code>GET /api/accounts</code> names the account it acts as.
-(The gh CLI source and <strong>Log in to GitHub</strong> were removed by issue #359: the hopper reads GitHub as a
-user only through that user&#39;s GitHub sign-in.)</p>
-<h3 id="sign-in-with-github-default">Sign in with GitHub (default)</h3>
-<p>Every hopper offers it, a new one too. On the sign-in page, <strong>Sign in with GitHub</strong> shows a code; enter
-it at <code>https://github.com/login/device</code> and approve the hopper&#39;s app. <strong>The first person to sign in with
-GitHub becomes admin</strong> — sign in yourself before anyone else reaches the UI. Everyone after gets what the
-GitHub realm&#39;s role rules grant (Settings → Sign-in: usernames, or numeric ids;
-<a href="https://github.com/henningfutrell/hopper/blob/main/docs/sign-in.md#github">docs/sign-in.md</a>).</p>
-<p>Signing in connects your GitHub: your issues labelled <code>hopper</code> become your jobs — the ones you opened
-(set <code>authors</code> on the <code>github-account</code> source in <strong>Plugins</strong> to change that), in the repositories you
-choose under <strong>Sources → GitHub account</strong> — and your jobs act as you on GitHub, with the app marked on
-what they do. Until you choose at least one repository, no job comes in.</p>
-<p>The hopper&#39;s app reaches only the repositories it is <strong>installed</strong> on: <strong>Sources → GitHub account</strong> says
-where it is installed and links to install it or choose repositories. That account is your sign-in, so
-the panel offers <strong>Sign out</strong>, not a disconnect; to stop taking jobs from GitHub and stay signed in,
-switch off the <code>github-account</code> source in <strong>Plugins</strong>. Revoke the app for good at
-<a href="https://github.com/settings/applications">https://github.com/settings/applications</a>.</p>
-<p>A job that needs GitHub for its own git or <code>gh</code> gets your token from this same connection (<code>GH_TOKEN</code>).
-The token renews itself before it expires. Nothing falls back to another credential: while GitHub is
-not connected, or its sign-in ended, the source is paused, says why, and takes nothing. An ended sign-in
-shows <strong>sign-in expired</strong> in <strong>Sources → GitHub account</strong>; press <strong>Connect GitHub again</strong> (or sign in
-with GitHub again).</p>
-<p>Signed in at the edge instead (SSO, SAML, an auth gateway): <strong>Sources → GitHub account → Connect
-GitHub</strong>, the same code at the same address. That account is then linked to your user. <strong>Stop working
-through GitHub</strong> there forgets the account and its token and keeps you signed in; the source then says
-<em>GitHub is not connected</em> and takes nothing.</p>
-<p>The app ships with the hopper as a public client id — no secret: the device flow needs none. GitHub
-Enterprise, or an app of your own, is set in the environment: <code>HOPPER_GITHUB_URL</code>,
-<code>HOPPER_GITHUB_CLIENT_ID</code>, <code>HOPPER_GITHUB_APP_SLUG</code> (how to register one: <a href="https://github.com/henningfutrell/hopper/blob/main/docs/sign-in.md#github">docs/sign-in.md</a>).</p>
-<h3 id="a-github-app-of-your-own">A GitHub App of your own</h3>
-<p>You create the App; it lives on your GitHub account (or your organization), and its key on your
-hopper only. One App, one key, one hopper.</p>
-<ol>
-<li><p>Create it. On the hopper&#39;s host, with a browser:</p>
-<pre><code class="language-sh">bash ~/.local/lib/hopper/scripts/create-github-app.sh            # --org &lt;org&gt; for an organization
-</code></pre>
-<p>GitHub shows a prefilled &quot;Create GitHub App&quot; page; click create. The script writes the key into
-<code>~/.config/hopper/daemon.env</code> as <code>GITHUB_APP_PRIVATE_KEY</code> and prints the App&#39;s <code>appId</code>, <code>slug</code>
-and install link. In containers, add <code>--secrets-file .env</code> (in the folder of <code>compose.yaml</code>).</p>
-</li>
-<li><p>Install it: open the printed install link and pick the repositories it may read. Those are the
-only repositories it takes jobs from.</p>
-</li>
-<li><p>In the UI, Settings → Plugins → Job sources, open the <code>github-app</code> instance and set <code>appId</code> and
-<code>slug</code> (marked &quot;runs a command&quot;; an admin edits them), with <code>authors</code> as in
-<a href="#give-it-jobs">Give it jobs</a>.</p>
-</li>
-<li><p><code>systemctl --user restart hopper</code> (or the container), so the daemon reads the key. The
-<code>github-app</code> source then takes the jobs of the repositories the App is installed on.</p>
-</li>
-</ol>
-<h3 id="not-built-other-ways-in">Not built: other ways in</h3>
-<p>Named so you know they are not missing steps. None is the path for a self-hosted hopper today:</p>
-<ul>
-<li><strong>A fine-grained personal access token pasted into the UI.</strong> Signing in with GitHub (above) is the
-built way: the hopper keeps the token GitHub grants its app.</li>
-<li><strong>A hosted relay</strong>: one App that somebody else runs, which forwards issues to many hoppers.</li>
-</ul>
-<h2 id="give-it-jobs">Give it jobs</h2>
-<ol>
-<li><p>Sign in with GitHub (or <strong>Sources → GitHub account → Connect GitHub</strong>), then choose the job
-repositories in <strong>Sources → GitHub account</strong>: your own issues in them are taken. To take other
-people&#39;s, or to use <a href="#a-github-app-of-your-own">your own App</a>, open the instance in Settings →
-Plugins → Job sources — <code>github-account</code> or <code>github-app</code> (your App) — and set its options:</p>
-<table>
-<thead>
-<tr>
-<th>option</th>
-<th></th>
-</tr>
-</thead>
-<tbody><tr>
-<td><code>authors</code></td>
-<td>whose issues are accepted (<code>your-github-login</code>); required for <code>github-app</code>, the connected account alone when empty on <code>github-account</code></td>
-</tr>
-<tr>
-<td><code>repos</code></td>
-<td>on <code>github-app</code>, an optional allowlist inside the App&#39;s installations (<code>your-org/your-repo</code>); <code>github-account</code> takes the job repositories chosen in Sources</td>
-</tr>
-<tr>
-<td><code>repoPaths</code></td>
-<td>where each repo&#39;s jobs run (<code>your-org/your-repo</code> → <code>/srv/checkouts/your-repo</code>)</td>
-</tr>
-</tbody></table>
-<p>A job runs in <code>repoPaths[&lt;repo&gt;]</code> (a checkout of that repo), else in <code>defaultCwd</code> (default: the
-home directory). That path must exist on whichever machine runs the job (<a href="#add-machines">Add machines</a>). Restart the daemon
-(<code>systemctl --user restart hopper</code>, or the container).</p>
-</li>
-<li><p>Label an issue <code>hopper</code>. The issue body is the job&#39;s prompt.</p>
-</li>
-<li><p>Watch it in the UI. The labels say where it is: <code>hopper:claimed</code> (running), <code>hopper:done</code>,
-<code>hopper:failed</code>. Remove <code>hopper:failed</code> to run it again. <code>hopper:high</code> and
-<code>hopper:low</code> set the priority; <code>hopper:backburner</code> parks an issue.
-A job is done when its pull request is merged — the merge closes the issue. To have jobs stop at
-an open pull request for you to review and merge, set the source&#39;s <code>completion</code> to
-<code>pull-request</code> in the Plugins view; <code>hopper:complete-at-pr</code> or <code>hopper:complete-at-merge</code> on an
-issue sets it for that issue alone.</p>
-</li>
-</ol>
-<p>When a job asks a question, it climbs the escalation levels: Opus answers what it can settle,
-Fable takes what Opus escalates, and what neither should decide waits for you in the UI&#39;s
-Questions view. The levels, their order and each one&#39;s model (picked from the models your <code>claude</code>
-offers) are yours to change in Settings → Question gates, and so is where each one runs: on this
-machine, on an attached machine you designate (<code>machine</code>), or through the Claude API with a key the
-runtime gives (<code>anthropic-api</code>, <code>ANTHROPIC_API_KEY</code>) — the way a hopper in a container answers.</p>
-<h2 id="add-machines">Add machines</h2>
-<p>A <strong>machine</strong> runs jobs. Each has <strong>lanes</strong>: how many jobs it runs at once. A job goes to a machine
-that is online, runs the job&#39;s executor, and has the most room left — unless a
-<a href="#send-jobs-to-one-machine">routing rule</a> pins it to one. Pick the kind you need:</p>
-<table>
-<thead>
-<tr>
-<th>Kind</th>
-<th>Use it for</th>
-<th>The hopper reaches it by</th>
-<th>It needs</th>
-</tr>
-</thead>
-<tbody><tr>
-<td><a href="#a-computer-or-a-sandbox-box-one-line">a computer, with one line</a></td>
-<td>the computer the hopper&#39;s container runs on, a laptop, a desktop: it dials in</td>
-<td>its own connection to the hopper&#39;s URL</td>
-<td>Node.js ≥ 24, herdr, <code>claude</code></td>
-</tr>
-<tr>
-<td><a href="#a-computer-or-a-sandbox-box-one-line">a sandbox box, with one line</a></td>
-<td>jobs that must reach nothing of your computer</td>
-<td>its own connection to the hopper&#39;s URL</td>
-<td>Podman or Docker beside the hopper</td>
-</tr>
-<tr>
-<td><a href="#this-host">this host</a></td>
-<td>the start: jobs on the hopper&#39;s own machine</td>
-<td>nothing to reach</td>
-<td>herdr and <code>claude</code>; set up by the install</td>
-</tr>
-<tr>
-<td><a href="#an-ssh-target">ssh target</a></td>
-<td>a computer that cannot run the client (no Node.js 24)</td>
-<td>ssh, with its own key</td>
-<td>sshd, and herdr with <code>claude</code> or <a href="#cursors-agent">Cursor&#39;s agent</a></td>
-</tr>
-<tr>
-<td><a href="#a-container-target">container target</a></td>
-<td>plain shell commands, sandboxed: no network, no agent</td>
-<td><code>docker exec</code>, through a socket proxy</td>
-<td>docker on the hopper&#39;s host</td>
-</tr>
-</tbody></table>
-<p>Every command below runs on the hopper&#39;s host, as the user the daemon runs as, from the install
-(<code>~/.local/lib/hopper</code>). Each script prints what to add next. The UI&#39;s Machines view shows each
-machine online or offline; the daemon&#39;s log says why one is offline
-(<code>journalctl --user -u hopper</code>).</p>
-<p><strong>Machine defaults.</strong> A machine added in the Machines view starts with the machine defaults: its
-lanes and the executors it runs (one lane and <code>herdr-claude</code> until you change them). Change them
-there with <strong>Defaults</strong>; they apply to machines added afterwards, never to ones already there.</p>
-<h3 id="a-computer-or-a-sandbox-box-one-line">A computer or a sandbox box: one line</h3>
-<p>Machines → <strong>Add machine</strong>, pick one, <strong>Show the line</strong>, run it where it says. The machine joins, and
-shows in the Machines view, online, a few seconds later. Nothing is typed into the hopper; nothing
-listens on the machine (it dials in to the hopper&#39;s own URL); no ssh, no keys to copy, no restart. The
-line carries a one-time join code: it works once, for 10 minutes.</p>
-<ul>
-<li><strong>A computer</strong>: run the line in a terminal there. It checks Node.js ≥ 24 and herdr, installs the
-hopper&#39;s client, joins, and runs it as the user units <code>hopper-client</code> and <code>hopper-client-herdr</code>. Its
-jobs run as you there. Sign <code>claude</code> in there once, and keep it running after you log out:
-<code>loginctl enable-linger</code>. For the computer a hopper container runs on, open the UI at
-<code>http://localhost:4790</code> there first: the line names the URL the page is open at.</li>
-<li><strong>A sandbox box</strong> (Podman or Docker): run the line on the computer the hopper runs on. It starts the
-container <code>hopper-sandbox-claude</code> from <code>ghcr.io/henningfutrell/hopper:box-claude</code> on the hopper&#39;s network,
-locked down — every capability dropped, no new privileges, a read-only root, its own home volume,
-nothing of the computer mounted. Sign its agent in once:
-<code>podman exec -it hopper-sandbox-claude claude</code>; the sign-in stays in its home volume, as does its identity,
-so a recreated box is the same machine.</li>
-</ul>
-<p>A machine is removed in the Machines view; its next dial-in is refused. A script that adds machines
-mints a code with <code>hopper join-code</code> (the operator CLI) and runs the same line. Make the jobs&#39; working
-directories exist on the machine: a job whose directory is missing there fails.</p>
-<h3 id="this-host">This host</h3>
-<p>Set up by <a href="#run-it">Run it</a>: <code>install.sh</code> starts its herdr session (<code>hopper-herdr</code>). A new hopper
-does not list its own host as a machine: add it in Settings → Plugins → Machine sources (the <code>local</code>
-plugin), and pick it as the machine of the escalation levels and the usage source. It runs 4
-lanes. To change that: the UI&#39;s Machines view, Edit on this machine. To keep some executors off this
-host, set the <code>executors</code> option of the <code>local</code> instance in Settings → Plugins → Machine sources
-(for example <code>test</code> and <code>herdr-claude</code>).</p>
-<p>With <a href="#with-podman-recommended">Podman</a> the hopper&#39;s container is not a machine: it lists no <code>local</code>
-machine (<code>HOPPER_LOCAL_MACHINE=false</code>), and jobs run on the machines attached below.</p>
-<h3 id="an-ssh-target">An ssh target</h3>
-<ol>
-<li><p><strong>On the target</strong>: install herdr at <code>~/.local/bin/herdr</code> and the <code>claude</code> CLI, and sign <code>claude</code>
-in (run <code>claude</code> once). Keep its services running after you log out:
-<code>sudo loginctl enable-linger &quot;$USER&quot;</code>.</p>
-</li>
-<li><p><strong>In the UI</strong>: Machines → Add machine → <strong>Attach a machine over ssh</strong>. Type the ssh target as
-<code>you@my-desktop</code> (or pick a <code>Host</code> alias from <code>~/.ssh/config</code>, when the hopper&#39;s host has one).
-Nothing on the hopper&#39;s host needs a <code>~/.ssh</code>: the hopper has its own key, kept in its database, so
-it works the same when the hopper runs in a container that keeps nothing.</p>
-</li>
-<li><p><strong>On the target</strong>: add the line the form shows (<code>restrict ssh-ed25519 … hopper</code>) to
-<code>~/.ssh/authorized_keys</code>.</p>
-</li>
-<li><p><strong>Attach machine</strong>. When the hopper has not seen the target&#39;s host key, the form shows its
-fingerprint: check it on the target (<code>ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub</code>), then
-<strong>Trust this key and attach</strong>. The hopper then talks to it only while it presents that key. No restart.</p>
-<p>A key of your own instead (optional): mount it as the secret <code>HOPPER_SSH_KEY_FILE</code> and prepare the
-target with <code>bash ~/.local/lib/hopper/scripts/attach-machine.sh my-desktop 2</code>, which lets that key in
-and prints the options to set in Settings → Plugins → Machine sources.</p>
-</li>
-<li><p>Make the jobs&#39; working directories exist there, at the same paths (<code>repoPaths</code>, <code>defaultCwd</code>):
-a job whose directory is missing fails.</p>
-</li>
-</ol>
-<p>Within 30 s the Machines view shows it online.</p>
-<h3 id="a-container-target">A container target</h3>
-<p>A container on the hopper&#39;s host with no network, a read-only root and no capabilities. No agent
-runs in it: the <code>command</code> executor runs an issue&#39;s first fenced code block (else its whole body) with
-<code>sh -c</code> and reports the exit code and output.</p>
-<ol>
-<li><p>Start the container (<code>alpine:latest</code>; another image: <code>HOPPER_TARGET_IMAGE</code>):</p>
-<pre><code class="language-sh">bash ~/.local/lib/hopper/scripts/container-target.sh box 1      # 1 lane
-</code></pre>
-</li>
-<li><p>Start the docker socket proxy, naming every container target (run it again when you add one):</p>
-<pre><code class="language-sh">bash ~/.local/lib/hopper/scripts/docker-proxy.sh box
-</code></pre>
-</li>
-<li><p>Add the line it prints (<code>HOPPER_DOCKER_HOST=unix://…</code>) to <code>~/.config/hopper/daemon.env</code>.</p>
-</li>
-<li><p>Attach it in the UI, as the script prints:</p>
-<ul>
-<li>Settings → Plugins → Executors: <strong>Add</strong> a <code>command</code> instance named <code>command</code>.</li>
-<li>Settings → Plugins → Machine sources: <strong>Add</strong> a <code>docker</code> instance named <code>box</code>, and set its
-options <code>docker: box</code>, <code>lanes: 1</code>, <code>executors: command</code>.</li>
-<li>Keep commands off this host: on the <code>local</code> instance there, set <code>executors</code> to the others
-(<code>test</code>, <code>herdr-claude</code>).</li>
-</ul>
-</li>
-<li><p>Send labelled issues to the container: a routing rule in Settings → Routing, named
-<code>commands to the box</code>, matching the label <code>on-box</code>, setting machine <code>box</code> and executor
-<code>command</code>. No restart: executors and machines follow the plugins config.</p>
-</li>
-</ol>
-<p>An issue labelled <code>hopper</code> and <code>on-box</code> now runs its script in the container.</p>
-<h3 id="cursors-agent">Cursor&#39;s agent</h3>
-<p>The <code>cursor-agent</code> executor runs a job in Cursor&#39;s agent (the Cursor CLI, <code>cursor-agent</code>) instead of
-Claude Code: one print-mode run per turn, in the job&#39;s working directory, on this host or an ssh
-target. A question it asks is answered in the same Cursor chat. It needs no herdr, and nothing
-of it shows in a herdr pane.</p>
-<ol>
-<li><strong>On each machine that runs it</strong>: install the Cursor CLI
-(<a href="https://cursor.com/docs/cli/installation">https://cursor.com/docs/cli/installation</a>) and sign it in once: <code>cursor-agent login</code>, or set
-<code>CURSOR_API_KEY</code> in that machine&#39;s environment. The hopper holds no Cursor credential.</li>
-<li>In the UI&#39;s Plugins view, under <strong>Shipped plugins</strong>, switch <code>cursor-agent</code> on. It runs at once; no
-restart.</li>
-<li>Attach the machine in the Machines view with only <code>cursor-agent</code> ticked: a machine whose executors
-need no herdr is checked over ssh alone, so it needs no herdr. To make it the usual choice, tick
-<code>cursor-agent</code> under <strong>Defaults</strong>.</li>
-<li>Send jobs to it with a routing rule in the Routing view: set its machine and the executor
-<code>cursor-agent</code>.</li>
-</ol>
-<h3 id="agent-boxes-claude-codex-cursor-omp-and-opencode">Agent boxes: claude, codex, cursor, omp and opencode</h3>
-<p>On a computer with docker, <code>bash scripts/agent-boxes.sh</code> (from a checkout) starts one container per agent
-CLI, each a machine of its own that runs its agent&#39;s jobs: claude in Claude Code, cursor in Cursor&#39;s agent,
-codex, opencode and omp each in its own CLI. It finds the hopper in its container by itself and attaches
-them all; running it again puts every box back as it should be.</p>
-<ol>
-<li><code>bash scripts/agent-boxes.sh</code></li>
-<li><code>bash scripts/agent-boxes.sh --sign-in</code>: each agent not signed in yet opens its own sign-in here (a link
-or a code to enter on any device). Once per box: its home keeps it. opencode needs none.</li>
-<li>Send jobs to a box with a routing rule in the Routing view: set its machine (<code>hopper-box-&lt;agent&gt;</code>).</li>
-</ol>
-<h3 id="send-jobs-to-one-machine">Send jobs to one machine</h3>
-<p>A routing rule sets a job&#39;s machine, executor, priority or work tree when the job comes in; the first
-rule that matches wins. Edit them in the UI&#39;s Settings → Routing. Three examples:</p>
-<table>
-<thead>
-<tr>
-<th>rule</th>
-<th>matches</th>
-<th>sets</th>
-</tr>
-</thead>
-<tbody><tr>
-<td>app work on the desktop</td>
-<td>repo <code>your-org/app-*</code></td>
-<td>machine <code>my-desktop</code></td>
-</tr>
-<tr>
-<td>by label</td>
-<td>label <code>on-laptop</code></td>
-<td>machine <code>laptop</code></td>
-</tr>
-<tr>
-<td>app in its tree</td>
-<td>repo <code>your-org/app</code></td>
-<td>machine <code>my-desktop</code>, work tree <code>~/code/app</code></td>
-</tr>
-</tbody></table>
-<h3 id="where-jobs-work">Where jobs work</h3>
-<p>A job works in its <strong>work tree</strong>, on the machine that runs it; <code>~</code> is that machine&#39;s home, never the
-hopper&#39;s. The first that is set applies: a routing rule&#39;s work tree, the repository&#39;s path in its
-source&#39;s <code>repoPaths</code>, the machine&#39;s own <code>workTree</code> (Settings → Plugins → Machine sources, on that
-machine), the source&#39;s <code>defaultCwd</code>, the executor&#39;s <code>cwd</code>. The default is <code>~/hopper-jobs</code>, made when
-missing. A work tree that is the machine&#39;s home, above it, or missing there fails the job at once.</p>
-<p>A job pinned to a machine that is offline waits for it. How each kind works and why:
-<code>docs/design.md</code> &quot;Attached machines&quot;, &quot;Container targets&quot;, &quot;Client targets&quot;, &quot;Target
-authentication&quot;.</p>
-<h2 id="use-it">Use it</h2>
-<table>
-<thead>
-<tr>
-<th>Where</th>
-<th>What</th>
-</tr>
-</thead>
-<tbody><tr>
-<td>UI, <code>/</code></td>
-<td>the board, questions, machines, usage, plugins, routing, webhooks, events, decisions</td>
-</tr>
-<tr>
-<td>API reference, <code>/docs/</code></td>
-<td>every route, with parameters and bodies; try them from the page. The book icon in the UI&#39;s top bar opens it</td>
-</tr>
-<tr>
-<td><code>hopper help</code></td>
-<td>the operator CLI: config records as JSON, login codes, users, password hashes</td>
-</tr>
-<tr>
-<td><code>node src/main.ts --help</code></td>
-<td>the daemon&#39;s settings, with defaults</td>
-</tr>
-</tbody></table>
-<p>The API: <code>GET /api/*</code> reads, free on loopback and with a UI session (<code>x-hopper-session</code>) from
-anywhere else; the only changes are <code>POST /ui/api/*</code>, behind a UI session whose role allows them.
-The OpenAPI document is <code>/docs/openapi.json</code> (or <code>.yaml</code>).</p>
-<h2 id="read-on">Read on</h2>
-<table>
-<thead>
-<tr>
-<th></th>
-<th></th>
-</tr>
-</thead>
-<tbody><tr>
-<td><code>docs/deploy.md</code></td>
-<td>deploy recipes, secrets, mounted secret files</td>
-</tr>
-<tr>
-<td><code>docs/sign-in.md</code></td>
-<td>sign-in, roles, reaching the UI across the LAN or a public URL</td>
-</tr>
-<tr>
-<td><code>docs/plugins.md</code></td>
-<td>writing a plugin; the plugin store</td>
-</tr>
-<tr>
-<td><code>docs/events.md</code></td>
-<td>the event log and webhooks</td>
-</tr>
-<tr>
-<td><code>docs/design.md</code></td>
-<td>how it works, and why</td>
-</tr>
-<tr>
-<td><code>docs/glossary.md</code></td>
-<td>the words</td>
-</tr>
-</tbody></table>
-<h2 id="develop">Develop</h2>
-<p><code>npm run check</code> runs every gate: typecheck, lint, tests (a throwaway Postgres container; needs
-Docker), and the UI build. The repo&#39;s rules are <code>AGENTS.md</code>.</p>
-</article>
-<footer>hopper · <a href="https://github.com/henningfutrell/hopper">source on GitHub</a> · <a href="install.html">install</a></footer>
+<body class="min-h-dvh bg-background text-foreground">
+<a href="#main" class="sr-only z-50 rounded-md bg-background px-3 py-2 text-sm font-medium focus:not-sr-only focus:fixed focus:top-3 focus:left-3">Skip to content</a>
+
+<header class="dark absolute inset-x-0 top-0 z-10 text-foreground">
+  <nav aria-label="Site" class="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-5 sm:px-8">
+    <a href="./" class="flex items-center gap-2.5 text-lg font-semibold tracking-tight">
+      <img src="hopper-logo.svg" alt="" width="21" height="32" class="h-8 w-auto drop-shadow-[0_0_14px_rgb(30_202_212/0.45)]">hopper
+    </a>
+    <ul class="flex items-center gap-1 text-sm font-medium text-muted-foreground sm:gap-2">
+      <li><a href="install.html" class="rounded-md px-2.5 py-1.5 transition-colors hover:text-foreground">Install</a></li>
+      <li><a href="#docs" class="rounded-md px-2.5 py-1.5 transition-colors hover:text-foreground">Docs</a></li>
+      <li><a href="https://github.com/henningfutrell/hopper" class="rounded-md px-2.5 py-1.5 transition-colors hover:text-foreground">GitHub</a></li>
+    </ul>
+  </nav>
+</header>
+
+<main id="main">
+  <section aria-labelledby="hero-title" class="dark relative isolate overflow-hidden text-foreground">
+    <!--story:backdrop-->
+    <div class="mx-auto grid max-w-6xl grid-cols-[minmax(0,1fr)] gap-12 px-4 pt-28 pb-20 sm:px-8 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] lg:items-center lg:gap-16 lg:pt-36 lg:pb-28">
+      <div>
+        <p class="text-xs font-semibold tracking-[0.2em] text-brand uppercase"><!--story:kicker--></p>
+        <h1 id="hero-title" class="landing-headline mt-4 text-4xl leading-[1.05] font-semibold tracking-tight text-balance sm:text-5xl xl:text-6xl"><!--story:headline--></h1>
+        <p class="mt-5 max-w-lg text-base leading-relaxed text-muted-foreground text-pretty sm:text-lg"><!--story:lead--></p>
+
+        <div class="mt-9 max-w-2xl">
+          <p class="mb-2 text-sm font-medium text-foreground" id="one-line">Install it on Linux, or on Windows inside WSL, with one line:</p>
+          <div class="cmd main-cmd" role="group" aria-labelledby="one-line">
+            <pre class="!border-white/10 !bg-card/70 shadow-2xl shadow-black/50 backdrop-blur-xl">curl -fsSL https://henningfutrell.github.io/hopper/install.sh | bash</pre><button type="button" data-copy="curl -fsSL https://henningfutrell.github.io/hopper/install.sh | bash" aria-label="Copy the install command">Copy</button>
+          </div>
+          <p class="mt-2 text-sm text-muted-foreground">Recommended: the published image with Podman. The install guide takes you from nothing to a first finished job.</p>
+        </div>
+
+        <div class="mt-7 flex flex-wrap gap-3">
+          <a href="install.html" class="inline-flex h-11 items-center gap-2 rounded-xl bg-white px-5 text-[0.95rem] font-semibold text-neutral-900 shadow-lg shadow-black/30 transition-colors hover:bg-white/90">Read the install guide<svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg></a>
+          <a href="https://github.com/henningfutrell/hopper" class="inline-flex h-11 items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-5 text-[0.95rem] font-semibold text-foreground backdrop-blur transition-colors hover:bg-white/10">Source on GitHub</a>
+        </div>
+      </div>
+
+      <div class="relative rounded-2xl border border-white/10 bg-card/60 px-7 pt-8 pb-8 shadow-2xl shadow-black/60 backdrop-blur-xl">
+        <div class="landing-glow"></div>
+        <div class="mb-7 flex items-center gap-4">
+          <img src="hopper-logo.svg" alt="" width="31" height="48" class="h-12 w-auto drop-shadow-[0_0_24px_rgb(30_202_212/0.45)]">
+          <div>
+            <h2 class="text-xl font-semibold tracking-tight">How it works</h2>
+            <p class="text-sm text-muted-foreground">Three steps, and you only do two.</p>
+          </div>
+        </div>
+        <!--story:steps-->
+      </div>
+    </div>
+  </section>
+
+  <section id="tour" aria-labelledby="tour-title" class="mx-auto max-w-6xl px-4 py-20 sm:px-8 lg:py-24">
+    <p class="text-xs font-semibold tracking-[0.2em] text-brand uppercase">A look around</p>
+    <h2 id="tour-title" class="mt-3 max-w-2xl text-3xl font-semibold tracking-tight text-balance sm:text-4xl">One daemon, one database, and a UI that works from your phone.</h2>
+    <p class="mt-4 max-w-2xl text-base leading-relaxed text-muted-foreground text-pretty">Everything the hopper keeps is in its Postgres database, and every setting is edited in the UI. No config files, and secrets only from its environment.</p>
+    <div class="mt-10">
+      <!--tour-->
+    </div>
+  </section>
+
+  <section id="docs" aria-labelledby="docs-title" class="border-t border-border bg-muted/40">
+    <div class="mx-auto max-w-6xl px-4 py-20 sm:px-8">
+      <h2 id="docs-title" class="text-3xl font-semibold tracking-tight">Read more</h2>
+      <ul class="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <li><a href="install.html" class="group flex h-full flex-col gap-1 rounded-xl border border-border bg-card p-5 transition-colors hover:border-brand/60"><span class="font-semibold">Install guide</span><span class="text-sm text-muted-foreground">From nothing to a first finished job, with Podman or on the machine itself.</span></a></li>
+        <li><a href="https://github.com/henningfutrell/hopper/blob/main/README.md" class="group flex h-full flex-col gap-1 rounded-xl border border-border bg-card p-5 transition-colors hover:border-brand/60"><span class="font-semibold">README</span><span class="text-sm text-muted-foreground">What the hopper is, getting started, machines, routing and the API.</span></a></li>
+        <li><a href="https://github.com/henningfutrell/hopper/blob/main/docs/deploy.md" class="group flex h-full flex-col gap-1 rounded-xl border border-border bg-card p-5 transition-colors hover:border-brand/60"><span class="font-semibold">Deploying</span><span class="text-sm text-muted-foreground">Every install path in detail: containers, reverse proxy, secrets.</span></a></li>
+        <li><a href="https://github.com/henningfutrell/hopper/blob/main/docs/sign-in.md" class="group flex h-full flex-col gap-1 rounded-xl border border-border bg-card p-5 transition-colors hover:border-brand/60"><span class="font-semibold">Sign-in</span><span class="text-sm text-muted-foreground">GitHub, OIDC, SAML, LDAP or a gateway, and who signs in as whom.</span></a></li>
+        <li><a href="https://github.com/henningfutrell/hopper/blob/main/docs/plugins.md" class="group flex h-full flex-col gap-1 rounded-xl border border-border bg-card p-5 transition-colors hover:border-brand/60"><span class="font-semibold">Plugins</span><span class="text-sm text-muted-foreground">Every part is a plugin: write your own, or install one from the store.</span></a></li>
+        <li><a href="https://github.com/henningfutrell/hopper/blob/main/WHATS-NEW.md" class="group flex h-full flex-col gap-1 rounded-xl border border-border bg-card p-5 transition-colors hover:border-brand/60"><span class="font-semibold">What's new</span><span class="text-sm text-muted-foreground">What changed, in plain words.</span></a></li>
+      </ul>
+    </div>
+  </section>
 </main>
-<script>
-document.querySelectorAll('[data-copy]').forEach((button) => {
-  button.addEventListener('click', async () => {
-    try {
-      await navigator.clipboard.writeText(button.dataset.copy);
-      button.textContent = 'Copied';
-      button.classList.add('done');
-    } catch {
-      button.textContent = 'Select and copy';
-    }
-    setTimeout(() => { button.textContent = 'Copy'; button.classList.remove('done'); }, 2000);
-  });
-});
-</script>
+
+<footer class="border-t border-border">
+  <div class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-8 text-sm text-muted-foreground sm:px-8">
+    <span class="flex items-center gap-2"><img src="hopper-logo.svg" alt="" width="13" height="20" class="h-5 w-auto">hopper</span>
+    <span class="flex gap-4"><a href="install.html" class="hover:text-foreground">Install</a><a href="https://github.com/henningfutrell/hopper" class="hover:text-foreground">Source</a><a href="https://github.com/henningfutrell/hopper/issues" class="hover:text-foreground">Issues</a></span>
+  </div>
+</footer>
 </body>
 </html>

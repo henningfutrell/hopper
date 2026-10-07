@@ -4,11 +4,12 @@
 // GitHub (issues #214, #258): to GitHub and back in this browser when the hopper can (`redirect`, on the
 // sign-in origin), else the device code; the code stays a link away. The sign-in card over a backdrop
 // in the logo's teal — lanes of jobs going by (index.css "landing"); on a wide screen, beside it, a panel
-// says what the hopper does in three steps (issue #266). A phone gets the card alone.
+// says what the hopper does in three steps (issue #266). Backdrop and story are story.ts, which the
+// GitHub Pages front page renders too (issue #382). A phone gets the card alone.
 // Design: design.md "Sign-in: realms", "Reaching
 // the UI across the LAN". Nothing of the app — navigation, views, notices — and no read but the
 // session's until someone signs in (issues #167, #213).
-import { AlertTriangle, ArrowRight, Cpu, GitPullRequest, KeyRound, LogIn, Tag, type LucideIcon } from 'lucide-react';
+import { AlertTriangle, ArrowRight, KeyRound, LogIn } from 'lucide-react';
 import logo from '../../../site/hopper-logo.svg';
 import { useEffect, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
@@ -18,6 +19,7 @@ import { Input } from '@/components/ui/input';
 import { beginDeviceSignIn, beginSignIn, pollDeviceSignIn, signInThroughGateway, signInWithPassword, signInWithoutCredential, type DeviceSignIn } from '@/lib/login';
 import type { SessionView } from '@/model/wire';
 import { useHopper } from '@/store';
+import { Backdrop, HEADLINE, KICKER, LEAD, StorySteps } from './story.ts';
 
 type Offer = SessionView['signIn'];
 type DeviceRealm = Offer['devices'][number];
@@ -138,47 +140,14 @@ function SignInOptions({ signIn, onCode }: { signIn: Offer; onCode: (realm: Devi
   return <>{groups[0]}<Or /><div className="flex w-full flex-col gap-3">{groups.slice(1)}</div></>;
 }
 
-/** The night sky behind the page: aurora light, a dot grid, and lanes with jobs going along them. index.css "landing". */
-const Backdrop = () => (
-  <div className="landing-backdrop" aria-hidden="true">
-    <div className="landing-aurora a" />
-    <div className="landing-aurora b" />
-    <div className="landing-aurora c" />
-    <div className="landing-grid" />
-    <div className="landing-lanes">{[0, 1, 2, 3, 4, 5].map((i) => <div key={i} className="landing-lane" />)}</div>
-    <div className="landing-grain" />
-    <div className="landing-vignette" />
-  </div>
-);
-
-const STEPS: { icon: LucideIcon; title: string; text: string }[] = [
-  { icon: Tag, title: 'Label an issue', text: 'Give a GitHub issue the hopper label: it is a job now.' },
-  { icon: Cpu, title: 'It runs on your machine', text: 'A coding agent works on it, on a machine of yours, inside its usage budget.' },
-  { icon: GitPullRequest, title: 'Review the pull request', text: 'The work comes back as a pull request. A question it cannot answer comes to you.' },
-];
-
 /** Beside the card on a wide screen: what the hopper does, in three steps joined by a lane. */
 const Showcase = () => (
   <section data-landing-showcase className="relative hidden flex-col justify-center px-12 py-16 lg:flex xl:px-20">
     <div className="max-w-xl animate-in duration-700 fade-in-0 slide-in-from-left-4 motion-reduce:animate-none">
-      <p className="text-xs font-semibold tracking-[0.2em] text-[#1ecad4] uppercase">A job queue for coding agents</p>
-      <h2 className="landing-headline mt-4 text-5xl leading-[1.05] font-semibold tracking-tight text-balance xl:text-6xl">Your GitHub issues, worked on your machines.</h2>
-      <p className="mt-5 max-w-lg text-base leading-relaxed text-muted-foreground text-pretty">
-        hopper takes the issues you choose, runs each one on a computer you trust, and keeps you in the loop.
-      </p>
-      <ol className="landing-steps relative mt-10 flex flex-col gap-6">
-        {STEPS.map(({ icon: Icon, title, text }) => (
-          <li key={title} data-landing-step className="relative flex items-start gap-4">
-            <span className="relative z-10 grid size-10 shrink-0 place-items-center rounded-xl border border-white/10 bg-card/80 text-[#1ecad4] shadow-lg shadow-black/40 backdrop-blur">
-              <Icon className="size-[1.1rem]" />
-            </span>
-            <div className="pt-1">
-              <h3 className="text-sm font-semibold text-foreground">{title}</h3>
-              <p className="mt-0.5 text-sm leading-relaxed text-muted-foreground">{text}</p>
-            </div>
-          </li>
-        ))}
-      </ol>
+      <p className="text-xs font-semibold tracking-[0.2em] text-[#1ecad4] uppercase">{KICKER}</p>
+      <h2 className="landing-headline mt-4 text-5xl leading-[1.05] font-semibold tracking-tight text-balance xl:text-6xl">{HEADLINE}</h2>
+      <p className="mt-5 max-w-lg text-base leading-relaxed text-muted-foreground text-pretty">{LEAD}</p>
+      <div className="mt-10"><StorySteps /></div>
     </div>
   </section>
 );
@@ -199,7 +168,7 @@ export function Landing() {
             <div className="mb-7 flex flex-col items-center text-center">
               <img src={logo} alt="" className="h-16 w-auto drop-shadow-[0_0_24px_rgb(30_202_212/0.45)]" />
               <h1 className="mt-3 text-3xl font-semibold tracking-tight">hopper</h1>
-              <p className="mt-1.5 text-sm text-muted-foreground lg:hidden">Your GitHub issues, worked on your machines.</p>
+              <p className="mt-1.5 text-sm text-muted-foreground lg:hidden">{HEADLINE}</p>
               <p className="mt-1.5 hidden text-sm text-muted-foreground lg:block">Sign in to see your jobs.</p>
             </div>
             <div className="flex flex-col items-center gap-4">

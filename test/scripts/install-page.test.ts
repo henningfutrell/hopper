@@ -1,7 +1,7 @@
 // The install page on GitHub Pages (issue #113): site/install.html (the front page is the README, issue
 // #88) gives one install command, which
-// fetches install.sh from the same site; .github/workflows/pages.yml publishes scripts/get.sh as that
-// install.sh. Every hopper script the page tells you to run must exist in scripts/. Windows installs
+// fetches install.sh from the same site; the site's build (site/vite.config.ts) serves scripts/get.sh as
+// that install.sh. Every hopper script the page tells you to run must exist in scripts/. Windows installs
 // the same way, inside WSL (issue #116).
 // Issue #115: the page is the main install path for someone new, so it says where to get every
 // prerequisite, checks them in one command, and walks through to a first finished job (gh CLI only).
@@ -23,9 +23,9 @@ describe('the install page', () => {
     expect(page).toContain(`data-copy="${INSTALL}"`);
   });
 
-  it('is published with scripts/get.sh as its install.sh, and republished when get.sh changes', () => {
-    expect(workflow).toMatch(/cp scripts\/get\.sh site\/install\.sh/);
-    expect(workflow).toMatch(/paths:.*scripts\/get\.sh/);
+  // The build serves scripts/get.sh as install.sh beside the page (test/scripts/pages-site.test.ts).
+  it('is republished when get.sh changes', () => {
+    expect(workflow).toMatch(/paths:[\s\S]*- scripts\/get\.sh/);
   });
 
   it('names only hopper scripts that exist', () => {

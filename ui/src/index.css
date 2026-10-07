@@ -10,6 +10,7 @@
     --font-heading: var(--font-sans);
     --font-sans: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
     --font-mono: 'Geist Mono Variable', ui-monospace, monospace;
+    --color-brand: var(--brand);
     --color-ok: var(--ok);
     --color-busy: var(--busy);
     --color-warn: var(--warn);
@@ -76,6 +77,8 @@
     --border: oklch(0.922 0 0);
     --input: oklch(0.922 0 0);
     --ring: oklch(0.708 0 0);
+    /* The logo's teal as text and focus colour: darker on light, the logo's own on dark. */
+    --brand: oklch(0.5 0.1 200);
     --ok: oklch(0.596 0.145 163.225);
     --busy: oklch(0.588 0.158 241.966);
     --warn: oklch(0.666 0.179 58.318);
@@ -118,6 +121,7 @@
     --border: oklch(1 0 0 / 10%);
     --input: oklch(1 0 0 / 15%);
     --ring: oklch(0.556 0 0);
+    --brand: oklch(0.77 0.13 199);
     --ok: oklch(0.765 0.177 163.223);
     --busy: oklch(0.746 0.16 232.661);
     --warn: oklch(0.828 0.189 84.429);

@@ -14,10 +14,11 @@
     "start": "node src/main.ts",
     "test": "vitest run",
     "lint": "eslint .",
-    "typecheck": "tsc -p tsconfig.json && tsc -p ui/tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json && tsc -p ui/tsconfig.json && tsc -p site/tsconfig.json",
     "schemas": "node scripts/export-schemas.ts",
     "plugin:check": "node scripts/plugin-check.ts",
     "check": "npm run typecheck && npm run lint && npm test && npm run build:ui",
+    "build:site": "vite build --config site/vite.config.ts",
     "build:ui": "vite build --config ui/vite.config.ts && node scripts/check-ui-bundle.ts ui/dist"
   },
   "dependencies": {
@@ -55,6 +56,7 @@
     "eslint": "^10.12.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "happy-dom": "^20.14.5",
+    "image-size": "^2.0.4",
     "lucide-react": "^1.51.0",
     "marked": "^18.1.0",
     "oauth2-mock-server": "^9.2.0",

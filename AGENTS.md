@@ -71,8 +71,10 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   `src/store/migrations.ts` (`SHARED`, in SQL both databases mean the same way); it never drops a
   queue. A change to persisted state inside a config record (its value's shape) migrates the
   records too.
-- **The UI is the one built part.** `ui/` → `npm run build:ui` → `ui/dist` (gitignored), served
+- **The UI is the daemon's one built part.** `ui/` → `npm run build:ui` → `ui/dist` (gitignored), served
   by the daemon. It imports nothing of `src/` at runtime; types only, from `src/domain/types.ts`.
+  The GitHub Pages site is built too (`npm run build:site` → `site/dist`, gitignored), for Pages only,
+  never served by the daemon; it takes its look from `ui/src/index.css` and nothing of `src/`.
 - **What's new.** A change people who use the hopper would notice adds one line at the top of
   `WHATS-NEW.md`, in the same change: plain words for a non-technical reader, what they can now do
   or what now works. No issue or PR numbers, hashes, file names or code words; never edit a

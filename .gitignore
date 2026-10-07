@@ -5,4 +5,5 @@ data/
 *.db-shm
 coverage/
 ui/dist/
+site/dist/
 .env
