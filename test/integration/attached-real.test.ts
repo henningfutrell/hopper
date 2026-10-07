@@ -35,7 +35,7 @@ describe.skipIf(!TARGET)('a real job on an attached machine (opt-in)', () => {
       executors: [{ name: 'herdr-claude', plugin: 'herdr-claude', options: { cwd: '/tmp' } }],
       machines: [
         { name: 'local', plugin: 'local' },
-        { name: 'remote', plugin: 'ssh', options: { ssh: TARGET, lanes: 8, session: SESSION, herdrBin, hostKey } },
+        { name: 'remote', plugin: 'ssh', options: { ssh: TARGET, lanes: 8, session: SESSION, hostKey } },
       ],
     });
     a = await startTestApp({ dbPath: db.dbPath, secrets: { HOPPER_SSH_KEY_FILE: process.env.HOPPER_SSH_KEY_FILE } });
@@ -63,7 +63,7 @@ describe.skipIf(!TARGET)('a real job on an attached machine (opt-in)', () => {
     expect(done, JSON.stringify(done)).toMatchObject({ status: 'finished' });
     const claimed = (await a.events('types=job.claimed&limit=100')).find((e) => e.jobId === job.id)!;
     expect(claimed.machineId).toBe('remote');
-    expect(done.executorState).toMatchObject({ ssh: TARGET, session: SESSION, herdrBin: expect.stringMatching(/^\/.*herdr$/) });
+    expect(done.executorState).toMatchObject({ ssh: TARGET, session: SESSION });
     expect(JSON.stringify(done.result)).toContain(hostname);
   }, 300000);
 });

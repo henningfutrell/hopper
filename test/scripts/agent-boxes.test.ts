@@ -10,7 +10,7 @@ import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, wr
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { attachBoxes, BOX_HERDR, detachBoxes } from '../../scripts/agent-boxes.ts';
+import { attachBoxes, detachBoxes } from '../../scripts/agent-boxes.ts';
 import { pluginsConfigProblem } from '../../src/plugins/plugins-config.ts';
 import { openAdminStore } from '../support/files.ts';
 import { installFromBefore, testDatabaseUrl } from '../support/database.ts';
@@ -27,7 +27,7 @@ describe('the plugins config with agent boxes', () => {
     const out = attachBoxes(base, [{ name: 'hopper-box-codex', ssh: 'hopper-box-codex', hostKey: KEY_A }]);
     expect(out.machines).toEqual([
       base.machines[0],
-      { name: 'hopper-box-codex', plugin: 'ssh', options: { ssh: 'hopper-box-codex', herdr: true, herdrBin: BOX_HERDR, hostKey: KEY_A, lanes: 1, executors: [] } },
+      { name: 'hopper-box-codex', plugin: 'ssh', options: { ssh: 'hopper-box-codex', herdr: true, hostKey: KEY_A, lanes: 1, executors: [] } },
     ]);
     expect(pluginsConfigProblem(out)).toBeUndefined();
   });
@@ -36,7 +36,7 @@ describe('the plugins config with agent boxes', () => {
     const once = attachBoxes(base, [{ name: 'b', ssh: 'b', hostKey: KEY_A }]);
     const edited = { ...once, machines: once.machines!.map((m) => (m.name === 'b' ? { ...m, options: { ...m.options, lanes: 3, executors: ['herdr-claude'], label: 'Claude box' } } : m)) };
     const again = attachBoxes(edited, [{ name: 'b', ssh: 'b', hostKey: KEY_B }]);
-    expect(again.machines!.find((m) => m.name === 'b')!.options).toEqual({ ssh: 'b', herdr: true, herdrBin: BOX_HERDR, hostKey: KEY_B, lanes: 3, executors: ['herdr-claude'], label: 'Claude box' });
+    expect(again.machines!.find((m) => m.name === 'b')!.options).toEqual({ ssh: 'b', herdr: true, hostKey: KEY_B, lanes: 3, executors: ['herdr-claude'], label: 'Claude box' });
   });
 
   it('never turns another kind of machine into a box', () => {
@@ -124,7 +124,9 @@ describe.skipIf(process.env.HOPPER_TEST_AGENT_BOX !== '1')('a real agent box (op
     expect(asHopper('codex --version')).toMatch(/codex/i);
     expect(r.stdout).toContain(`ssh -t ${name}`);
     const box = plugins().machines.find((m) => m.name === name)!;
-    expect(box).toMatchObject({ plugin: 'ssh', options: { ssh: name, herdr: true, herdrBin: BOX_HERDR, executors: [] } });
+    expect(box).toMatchObject({ plugin: 'ssh', options: { ssh: name, herdr: true, executors: [] } });
+    // herdr is on the box's PATH (/usr/local/bin): no binary is named (issue #311).
+    expect(box.options).not.toHaveProperty('herdrBin');
     const pinned = execFileSync('docker', ['exec', name, 'cat', '/etc/ssh/ssh_host_ed25519_key.pub'], { encoding: 'utf8' }).split(' ').slice(0, 2).join(' ');
     expect(box.options.hostKey).toBe(pinned);
   }, 900_000);

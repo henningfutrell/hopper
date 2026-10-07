@@ -7,7 +7,7 @@ export const JOB_ID = 'abcdef12-3456-7890-abcd-ef1234567890';
 export const CWD = '/tmp/jh-work';
 export const LANE = 'local/lane-1';
 export const LOCAL: MachineSnapshot = { id: 'local', label: 'server', maxLanes: 4, online: true, executors: ['herdr-claude'] };
-export const LAPTOP: MachineSnapshot = { id: 'laptop', label: 'laptop', maxLanes: 2, online: true, executors: ['herdr-claude'], ssh: 'laptop', herdr: { bin: '/home/user/.local/bin/herdr', session: 'jh-there' } };
+export const LAPTOP: MachineSnapshot = { id: 'laptop', label: 'laptop', maxLanes: 2, online: true, executors: ['herdr-claude'], ssh: 'laptop', herdr: { session: 'jh-there' } };
 
 /** A clock that only moves when the executor sleeps; each sleep yields one macrotask. */
 export function fakeClock(start = Date.parse('2026-10-02T12:00:00Z')) {

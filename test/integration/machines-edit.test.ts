@@ -1,7 +1,7 @@
 // Issues #18 and #74: an attached machine is a machine-source instance (the plugins config's `machines`).
 // The Machines view attaches one over ssh through POST /ui/api/machines — the ssh target chosen from
-// ~/.ssh/config's Host aliases, never typed; herdrBin and the host key resolved by the daemon (the
-// seam here), never sent by the UI — and edits or removes any machine through POST /ui/api/plugins,
+// ~/.ssh/config's Host aliases, never typed; the host key resolved by the daemon (the
+// seam here), never sent by the UI, and herdr called by name there (issue #311) — and edits or removes any machine through POST /ui/api/plugins,
 // like every other plugin instance. Each applies without a restart. Real HTTP server, the
 // plugins config in the database, the sealed HOME.
 import { globSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -38,7 +38,7 @@ afterEach(async () => {
   cleanup?.();
 });
 
-const FILE = { version: 1, executors: [{ name: 'test', plugin: 'test' }, { name: 'herdr-claude', plugin: 'herdr-claude' }], jobSources: [], machines: [{ name: 'local', plugin: 'local' }, { name: 'desk', plugin: 'ssh', options: { ssh: 'desk', lanes: 1, executors: ['test'], herdrBin: '/usr/bin/herdr' } }] };
+const FILE = { version: 1, executors: [{ name: 'test', plugin: 'test' }, { name: 'herdr-claude', plugin: 'herdr-claude' }], jobSources: [], machines: [{ name: 'local', plugin: 'local' }, { name: 'desk', plugin: 'ssh', options: { ssh: 'desk', lanes: 1, executors: ['test'] } }] };
 
 async function start(file: object = FILE): Promise<{ a: TestApp; token: string }> {
   const db = tempDbPath();
@@ -54,7 +54,7 @@ async function start(file: object = FILE): Promise<{ a: TestApp; token: string }
         pins.push(o.hostKey);
         if (ssh === 'unreachable') throw new Error('ssh unreachable: No route to host');
         const hostKey = o.hostKey ?? TEST_HOST_KEY;
-        return o.herdr ? { herdrBin: `/home/user/.local/bin/herdr`, hostKey } : { hostKey };
+        return { hostKey };
       },
       hostKeyOffer: async (ssh) => {
         if (ssh === 'unreachable') throw new Error('ssh unreachable: No route to host');
@@ -78,7 +78,7 @@ describe('GET /api/machines/config', () => {
     expect(c.version).toMatch(/^[0-9a-f]{64}$/);
     expect(c.machines).toEqual([
       { name: 'local', connection: 'local', options: {} },
-      { name: 'desk', connection: 'ssh', options: { ssh: 'desk', lanes: 1, executors: ['test'], herdrBin: '/usr/bin/herdr' } },
+      { name: 'desk', connection: 'ssh', options: { ssh: 'desk', lanes: 1, executors: ['test'] } },
     ]);
     expect(c.machines.every((m) => !('plugin' in m))).toBe(true);
     expect(c.executors).toEqual(['test', 'herdr-claude']);
@@ -90,7 +90,7 @@ describe('GET /api/machines/config', () => {
     const report = (await a.api('GET', '/api/plugins')).body as PluginsReport;
     expect(report.instances.filter((i) => i.role === 'machine-source').map((i) => `${i.instance.name}:${i.instance.plugin}`)).toEqual(['local:local', 'desk:ssh']);
     const ssh = report.plugins.find((p) => p.id === 'ssh')!.options as { properties: Record<string, { commandBearing?: boolean }> };
-    expect(Object.entries(ssh.properties).filter(([, p]) => p.commandBearing).map(([k]) => k).sort()).toEqual(['herdr', 'herdrBin', 'hostKey', 'session', 'ssh']);
+    expect(Object.entries(ssh.properties).filter(([, p]) => p.commandBearing).map(([k]) => k).sort()).toEqual(['herdr', 'hostKey', 'session', 'ssh']);
   });
 });
 
@@ -103,7 +103,7 @@ describe('POST /ui/api/machines — attach over ssh', () => {
     expect(read(a)).toEqual(before);
   });
 
-  it('adds an ssh instance with the resolved herdrBin and the pinned host key, other machines stay; /api/machines lists it without a restart', async () => {
+  it('adds an ssh instance with the pinned host key and no herdr binary (issue #311), other machines stay; /api/machines lists it without a restart', async () => {
     const { a, token } = await start();
     const r = await a.ui<Reply>('/ui/api/machines', {
       name: 'laptop', ssh: 'laptop', lanes: 2, executors: ['herdr-claude', 'test'], label: 'spare laptop', version: (await config(a)).version,
@@ -114,7 +114,7 @@ describe('POST /ui/api/machines — attach over ssh', () => {
     expect(doc.machines.slice(0, 2)).toEqual(FILE.machines);
     expect(doc.machines[2]).toEqual({
       name: 'laptop', plugin: 'ssh',
-      options: { label: 'spare laptop', ssh: 'laptop', lanes: 2, executors: ['herdr-claude', 'test'], herdrBin: '/home/user/.local/bin/herdr', hostKey: TEST_HOST_KEY },
+      options: { label: 'spare laptop', ssh: 'laptop', lanes: 2, executors: ['herdr-claude', 'test'], hostKey: TEST_HOST_KEY },
     });
     expect(r.body.machines.map((m) => m.name)).toEqual(['local', 'desk', 'laptop']);
     expect(await machineIds(a)).toEqual(['local', 'desk', 'laptop']);
@@ -127,7 +127,7 @@ describe('POST /ui/api/machines — attach over ssh', () => {
     expect(r.status).toBe(200);
     expect(read(a).machines).toEqual([
       { name: 'local', plugin: 'local', options: { lanes: 4 } },
-      { name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop', lanes: 1, executors: ['herdr-claude'], herdrBin: '/home/user/.local/bin/herdr', hostKey: TEST_HOST_KEY } },
+      { name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop', lanes: 1, executors: ['herdr-claude'], hostKey: TEST_HOST_KEY } },
     ]);
   });
 
@@ -160,7 +160,7 @@ describe('POST /ui/api/machines — attach over ssh', () => {
     expect(read(a)).toEqual(before);
   });
 
-  it('herdrBin and session are never taken from the UI: 400; a host key the person confirmed is the pin (issue #293)', async () => {
+  it('herdrBin (no such option, issue #311) and session are never taken from the UI: 400; a host key the person confirmed is the pin (issue #293)', async () => {
     const { a, token } = await start();
     const version = (await config(a)).version;
     expect((await a.ui('/ui/api/machines', { name: 'laptop', ssh: 'laptop', lanes: 1, herdrBin: '/tmp/evil', version }, { token })).status).toBe(400);
@@ -275,24 +275,24 @@ describe('machine defaults', () => {
 });
 
 describe('POST /ui/api/plugins — an attached machine\'s options', () => {
-  it('lanes, executors and label change in place; ssh and herdrBin stay; applies without a restart', async () => {
+  it('lanes, executors and label change in place; ssh stays; applies without a restart', async () => {
     const { a, token } = await start();
     const version = (await config(a)).version;
     const r = await plugins(a, token, {
       action: 'options', role: 'machine-source', name: 'desk', version,
-      options: { ssh: 'desk', herdrBin: '/usr/bin/herdr', lanes: 3, executors: ['test', 'herdr-claude'], label: 'the desk' },
+      options: { ssh: 'desk', lanes: 3, executors: ['test', 'herdr-claude'], label: 'the desk' },
     });
     expect(r.status).toBe(200);
-    expect(read(a).machines[1]).toEqual({ name: 'desk', plugin: 'ssh', options: { ssh: 'desk', herdrBin: '/usr/bin/herdr', lanes: 3, executors: ['test', 'herdr-claude'], label: 'the desk' } });
+    expect(read(a).machines[1]).toEqual({ name: 'desk', plugin: 'ssh', options: { ssh: 'desk', lanes: 3, executors: ['test', 'herdr-claude'], label: 'the desk' } });
     await waitFor(async () => (await a.api('GET', '/api/machines')).body.machines.find((m: { id: string; maxLanes: number }) => m.id === 'desk' && m.maxLanes === 3));
     const live = (await a.api('GET', '/api/machines')).body.machines.find((m: { id: string }) => m.id === 'desk');
     expect(live).toMatchObject({ maxLanes: 3, label: 'the desk', executors: ['test', 'herdr-claude'], online: true });
   });
 
-  it('ssh, herdrBin, session and the host key are edited from the UI like any other option (issue #198)', async () => {
+  it('ssh, session and the host key are edited from the UI like any other option (issue #198)', async () => {
     const { a, token } = await start();
-    const base = { ssh: 'desk', herdrBin: '/usr/bin/herdr', lanes: 1, executors: ['test'] };
-    for (const over of [{ ssh: 'laptop' }, { herdrBin: '/tmp/x' }, { session: 'other' }, { hostKey: TEST_HOST_KEY }]) {
+    const base = { ssh: 'desk', lanes: 1, executors: ['test'] };
+    for (const over of [{ ssh: 'laptop' }, { session: 'other' }, { hostKey: TEST_HOST_KEY }]) {
       const version = (await config(a)).version;
       const r = await plugins(a, token, { action: 'options', role: 'machine-source', name: 'desk', version, options: { ...base, ...over } });
       expect(r.status).toBe(200);

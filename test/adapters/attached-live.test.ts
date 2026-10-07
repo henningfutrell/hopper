@@ -6,8 +6,8 @@ import type { AttachedMachine } from '../../src/domain/types.ts';
 import { createTargetPool } from '../../src/machines/index.ts';
 
 const flush = () => new Promise((r) => setImmediate(r));
-const laptop: AttachedMachine = { name: 'laptop', ssh: 'laptop', lanes: 2, executors: ['herdr-claude'], herdr: true, session: 'hopper', herdrBin: '/h/herdr' };
-const desk: AttachedMachine = { name: 'desk', ssh: 'desk', lanes: 1, executors: ['herdr-claude'], herdr: true, session: 'hopper', herdrBin: '/h/herdr' };
+const laptop: AttachedMachine = { name: 'laptop', ssh: 'laptop', lanes: 2, executors: ['herdr-claude'], herdr: true, session: 'hopper' };
+const desk: AttachedMachine = { name: 'desk', ssh: 'desk', lanes: 1, executors: ['herdr-claude'], herdr: true, session: 'hopper' };
 
 function harness() {
   const probed: string[] = [];

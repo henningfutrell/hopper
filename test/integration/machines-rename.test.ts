@@ -16,7 +16,7 @@ afterEach(async () => {
   cleanup?.();
 });
 
-const FILE = { version: 1, executors: [{ name: 'test', plugin: 'test' }], jobSources: [], machines: [{ name: 'local', plugin: 'local' }, { name: 'desk', plugin: 'ssh', options: { ssh: 'desk', lanes: 1, executors: ['test'], herdrBin: '/usr/bin/herdr' } }] };
+const FILE = { version: 1, executors: [{ name: 'test', plugin: 'test' }], jobSources: [], machines: [{ name: 'local', plugin: 'local' }, { name: 'desk', plugin: 'ssh', options: { ssh: 'desk', lanes: 1, executors: ['test'] } }] };
 
 async function start(file: object = FILE): Promise<{ a: TestApp; token: string }> {
   const db = tempDbPath();
@@ -38,7 +38,7 @@ describe('POST /ui/api/plugins — rename a machine', () => {
     escalationLevels: [{ name: 'level-1', plugin: 'claude-cli', options: { machine: 'desk' } }],
     routing: [{ name: 'to-desk', match: { label: 'desk' }, set: { machine: 'desk' } }, { name: 'other', match: { label: 'x' }, set: { priority: 70 } }],
   };
-  const desk = { ssh: 'desk', herdrBin: '/usr/bin/herdr', lanes: 1, executors: ['test'] };
+  const desk = { ssh: 'desk', lanes: 1, executors: ['test'] };
 
   it('renames the instance with its options in the same write; machine options and routing rules naming it follow; /api/machines lists the new id', async () => {
     const { a, token } = await start(NAMED);
