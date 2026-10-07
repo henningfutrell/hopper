@@ -3,9 +3,9 @@
 // back as cancel signals. `knownKeys` (wired by the sync loop) tells discover which claimed issues already have
 // a local job; without it every claimed issue is skipped, so nothing is ever re-run blind.
 //
-// One source, two identities (`mode`): `gh` writes as the owner and tells hopper comments by their
-// marker; `app` writes as the app bot, scans only the repos the app is installed on (never a
-// search), and tells hopper comments by the bot author (marker secondary).
+// One source, two identities (`mode`): `account` writes as the connected account's user and tells
+// hopper comments by their marker; `app` writes as the app bot, scans only the repos the app is
+// installed on, and tells hopper comments by the bot author (marker secondary). Neither searches.
 
 import type { Clock, JobSource, SourceItem } from '../../domain/ports.ts';
 import type { JobId } from '../../domain/types.ts';
@@ -17,29 +17,27 @@ import { closedAsComplete, completionOf, notComplete } from './completion.ts';
 import { contextBlock, contextComments, issueEnv, issuePrompt } from './context.ts';
 import type { SourceMode } from './context.ts';
 import { discoverIssues } from './discover.ts';
-import type { DiscoverScope } from './discover.ts';
 import type { BotLogin } from './identity.ts';
 import { priorityOf, readProjects } from './priority.ts';
 import { reportToGitHub } from './report.ts';
 
-/** What the source reads of its config: the `github:` keys, or `githubApp:` (no owners). */
+/** What the source reads of its config. */
 export type GitHubSourceSettings = Pick<GitHubSourceConfig,
   'repos' | 'authors' | 'label' | 'hopperName' | 'priorityLabels' | 'defaultPriority' | 'repoPaths' | 'defaultCwd' | 'executor' | 'model' | 'recentComments' | 'projects' | 'completion'
-> & { owners?: string[]; enabled?: boolean | 'auto' };
+>;
 
 /** The app's identity as the adapter knows it (its `appStatus()` fits), or undefined. */
 export type GitHubAppInfo = { ok?: true; slug: string; htmlUrl: string; botLogin?: string } | { ok: false; reason: string };
 
 export interface GitHubSourceOptions {
   name: string;
-  /** Defaults to `name` (`github` / `github-app`). */
+  /** Defaults to `name`. */
   kind?: string;
-  /** Defaults to `gh`. */
-  mode?: SourceMode;
+  mode: SourceMode;
   config: GitHubSourceSettings;
   api: GitHubApi;
   clock: Clock;
-  /** The gh user, when already known (skips `whoami`). */
+  /** The connected account's login. */
   whoami?: string;
   /** Which of these source keys already have a local job. */
   knownKeys?: (keys: string[]) => Set<string>;
@@ -56,10 +54,9 @@ export const CREATE_APP_HINT = 'create the app (scripts/create-github-app.sh), s
 
 export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   const { config, api } = o;
-  const mode: SourceMode = o.mode ?? 'gh';
+  const { mode } = o;
   const app = mode === 'app';
-  let login = o.whoami;
-  let owners = config.owners ?? [];
+  const login = o.whoami;
   let repoErrors: Record<string, string> = {};
   let projectErrors: Record<string, string> = {};
   let checkErrors: Record<string, string> = {};
@@ -80,23 +77,13 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     return knownBot;
   };
 
-  /** gh: no owners and no repos means the gh user's own repos. A connected account's: anywhere, by its authors. */
-  const ghScope = async (): Promise<DiscoverScope> => {
-    if (mode === 'gh' && owners.length === 0 && config.repos.length === 0) {
-      login ??= await api.whoami();
-      owners = [login];
-    }
-    return { repos: config.repos, owners };
-  };
-
   /** The installation is the allowlist; config `repos`, when set, narrows it further. */
-  const appScope = async (bot: string): Promise<DiscoverScope> => {
+  const appScope = async (bot: string): Promise<string[]> => {
     if (config.authors.includes(bot)) throw new Error(`authors must not contain the app bot ${bot}: the app's own writes must never count as the owner's`);
     if (!api.listInstalledRepos) throw new Error('app mode needs the GitHub App adapter (no listInstalledRepos)');
     installedRepos = (await api.listInstalledRepos()).map((r) => r.repo);
     const wanted = new Set(config.repos.map((r) => r.toLowerCase()));
-    const repos = config.repos.length === 0 ? installedRepos : installedRepos.filter((r) => wanted.has(r.toLowerCase()));
-    return { repos, owners: [] };
+    return config.repos.length === 0 ? installedRepos : installedRepos.filter((r) => wanted.has(r.toLowerCase()));
   };
 
   const toItem = async (issue: GitHubIssue, known: Set<string>, rerun: Set<string>, p: ReturnType<typeof priorityOf>, bot: BotLogin): Promise<SourceItem> => {
@@ -132,8 +119,8 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   };
 
   /**
-   * Who this source acts as on GitHub (glossary "Account"): the gh user — known once gh was asked,
-   * which it is not while owners or repos are configured — or the app's bot and its installation repos.
+   * Who this source acts as on GitHub (glossary "Account"): the connected account's user, or the app's
+   * bot and its installation repos.
    */
   const account = (paused: string | undefined, detail: Record<string, unknown>): Account => {
     const info = o.appInfo?.();
@@ -142,7 +129,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     const problem = paused ?? (typeof detail.appError === 'string' ? detail.appError : undefined);
     return {
       service: 'github', ...(identity ? { identity } : {}),
-      detail: app ? { via: 'GitHub App', ...(typeof detail.slug === 'string' ? { app: detail.slug } : {}), installedRepos } : { via: mode === 'account' ? CONNECTED_VIA : 'gh CLI' },
+      detail: app ? { via: 'GitHub App', ...(typeof detail.slug === 'string' ? { app: detail.slug } : {}), installedRepos } : { via: CONNECTED_VIA },
       ...(problem ? { problem } : {}),
     };
   };
@@ -153,7 +140,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     ...(o.paused ? { paused: o.paused } : {}),
     describe() {
       const paused = o.paused?.();
-      const detail = app ? appDetail() : mode === 'account' ? { mode, owners, ...(login ? { login } : {}) } : { mode: 'gh', enabledSetting: String(config.enabled ?? true), owners, ...(login ? { login } : {}) };
+      const detail = app ? appDetail() : { mode, ...(login ? { login } : {}) };
       return {
         ...detail,
         account: account(paused, detail),
@@ -167,9 +154,9 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     },
     async discover() {
       const bot = await botLogin();
-      const scope = bot === undefined ? await ghScope() : await appScope(bot);
-      nothingToScan = app && scope.repos.length === 0;
-      if (nothingToScan) { // never a search in app mode (B7)
+      const repos = bot === undefined ? config.repos : await appScope(bot);
+      nothingToScan = app && repos.length === 0;
+      if (nothingToScan) {
         repoErrors = {};
         skippedClaimedWithoutJob = [];
         projectErrors = {};
@@ -177,7 +164,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
         lastDiscoverAt = o.clock.now().toISOString();
         return [];
       }
-      const found = await discoverIssues(api, config, scope, o.knownKeys);
+      const found = await discoverIssues(api, config, repos, o.knownKeys);
       repoErrors = found.repoErrors;
       skippedClaimedWithoutJob = found.skippedClaimedWithoutJob;
       listed = new Set(found.listed);

@@ -751,6 +751,7 @@ The flow is the authorization code with PKCE (S256) and the state, through openi
 grants becomes the person's connected account, as the code's does. The hopper's own app ships without a
 secret, so a hopper on it signs in by code until its operator holds one. The same sign-in **connects** their GitHub: their issues labelled `hopper` become
 their jobs, and their jobs act as them on GitHub, with GitHub showing the hopper's app on what they do.
+It is the one way the hopper reads GitHub as a person (the gh CLI source is removed, issue #359).
 
 | field | value |
 |---|---|

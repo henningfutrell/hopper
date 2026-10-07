@@ -17,12 +17,11 @@ RUN npm run build:ui && test -s ui/dist/index.html
 # ---- the daemon --------------------------------------------------------------------------------
 FROM node:26-bookworm-slim
 # git: self-update's mirror and Jev; openssh-client: attached machines; python3 + PyYAML: the Jev
-# shim; gh: the github-gh job source, and git's GitHub sign-in for jobs; ca-certificates: TLS to GitHub
-# and the identity providers; curl: herdr's installer.
+# shim; ca-certificates: TLS to GitHub and the identity providers; curl: herdr's installer. No gh: GitHub
+# is read through the signed-in user's connected account (issue #359), and jobs run on attached machines.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates curl git openssh-client python3 python3-yaml gh \
- && rm -rf /var/lib/apt/lists/* \
- && git config --system credential.https://github.com.helper '!gh auth git-credential'
+ && apt-get install -y --no-install-recommends ca-certificates curl git openssh-client python3 python3-yaml \
+ && rm -rf /var/lib/apt/lists/*
 # herdr's CLI (herdr.dev; the installer checks the release's SHA-256): the herdr-claude executor
 # detects it before it runs jobs on attached machines.
 RUN curl -fsSL https://herdr.dev/install.sh | HERDR_INSTALL_DIR=/usr/local/bin sh && herdr --version

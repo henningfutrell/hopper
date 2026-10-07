@@ -1,8 +1,8 @@
 // Which issues are eligible: open, labelled, by an allowlisted author, not done/failed/rejected/on the
 // backburner, in an allowed repo, and not addressed to another hopper (`hopper@<name>`, issue #159). Claimed issues without a local job are skipped (never re-run blind). The scope
-// is given: a repo list (gh `repos`, the app's installed repos, a connected account's chosen repos) is
-// listed repo by repo; an empty one searches over `owners` — gh only: app mode never passes an empty
-// list, and a connected account's source with none chosen is paused (issue #321).
+// is given: a repo list (the app's installed repos, a connected account's chosen repos), listed repo by
+// repo. Never a search: the app never passes an empty list, and a connected account's source with none
+// chosen is paused (issue #321).
 
 import type { GitHubApi, GitHubIssue } from './api.ts';
 import type { GitHubSourceConfig } from '../config.ts';
@@ -12,24 +12,15 @@ export interface DiscoverResult {
   issues: GitHubIssue[];
   /** Every open labelled issue listed, eligible or not: one listed is open (issue #362). */
   listed: string[];
-  owners: string[];
   repoErrors: Record<string, string>;
   skippedClaimedWithoutJob: string[];
 }
 
 type DiscoverConfig = Pick<GitHubSourceConfig, 'label' | 'authors' | 'hopperName'>;
 
-export interface DiscoverScope {
-  repos: string[];
-  owners: string[];
-}
-
-async function fetchIssues(api: GitHubApi, config: DiscoverConfig, { repos, owners }: DiscoverScope):
+async function fetchIssues(api: GitHubApi, config: DiscoverConfig, repos: string[]):
 Promise<{ issues: GitHubIssue[]; repoErrors: Record<string, string> }> {
-  if (repos.length === 0) {
-    const found = await api.searchOpenIssues({ owners, label: config.label, authors: config.authors });
-    return { issues: found.filter((i) => owners.includes(i.repo.split('/')[0]!)), repoErrors: {} };
-  }
+  if (repos.length === 0) return { issues: [], repoErrors: {} };
   const issues: GitHubIssue[] = [];
   const repoErrors: Record<string, string> = {};
   let firstError: unknown;
@@ -65,10 +56,10 @@ function forThisHopper(i: GitHubIssue, name: string | null): boolean {
 export async function discoverIssues(
   api: GitHubApi,
   config: DiscoverConfig,
-  scope: DiscoverScope,
+  repos: string[],
   knownKeys: ((keys: string[]) => Set<string>) | undefined,
 ): Promise<DiscoverResult> {
-  const { issues, repoErrors } = await fetchIssues(api, config, scope);
+  const { issues, repoErrors } = await fetchIssues(api, config, repos);
   const candidates = issues.filter((i) => eligible(i, config));
   const claimed = candidates.filter((i) => i.labels.includes(LABEL_CLAIMED)).map((i) => i.url);
   const known = knownKeys && claimed.length > 0 ? knownKeys(claimed) : new Set<string>();
@@ -76,7 +67,6 @@ export async function discoverIssues(
   return {
     issues: candidates.filter((i) => !skipped.includes(i.url)),
     listed: issues.map((i) => i.url),
-    owners: scope.owners,
     repoErrors,
     skippedClaimedWithoutJob: skipped,
   };

@@ -1,6 +1,6 @@
 // Which comments are the hopper's own. With the app the hopper posts as its bot, so the author
-// decides; the marker stays a secondary check (and is the only one with the gh adapter, which
-// posts as the owner).
+// decides; the marker stays a secondary check (and is the only one with a connected account, which
+// acts as its user).
 
 import type { GitHubComment } from './api.ts';
 import { hasMarker } from './markers.ts';

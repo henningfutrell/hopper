@@ -2,7 +2,7 @@
 // stranger) on the other side: create issues, reply, open a pull request that closes one on merge,
 // close (by hand or by merging a pull request),
 // unlabel, delete, set project items.
-// Default identity: gh (writes appear as `login`). With `app`, writes appear as the bot and the
+// Default identity: a connected account (writes appear as `login`). With `app`, writes appear as the bot and the
 // app-only methods exist: the bot login and the installed repos.
 
 import { GitHubApiError } from './api.ts';
@@ -46,7 +46,6 @@ const notFound = (what: string) => new GitHubApiError(`gh: Not Found (HTTP 404):
 
 export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = {}): FakeGitHub {
   const human = o.login ?? 'owner';
-  const login = o.app?.botLogin ?? human;
   let installed = [...(o.app?.installedRepos ?? [])];
   const issues = new Map<string, GitHubIssue>();
   const comments = new Map<string, GitHubComment[]>();
@@ -77,11 +76,6 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
   const open = (label: string) => [...issues.values()].filter((i) => i.state === 'open' && i.labels.includes(label));
 
   const api: GitHubApi = {
-    async whoami() { enter('whoami', []); return login; },
-    async searchOpenIssues(q) {
-      enter('searchOpenIssues', [q]);
-      return open(q.label).filter((i) => q.owners.includes(i.repo.split('/')[0]!)).map(copy);
-    },
     async listOpenIssues(repo, label) {
       enter('listOpenIssues', [repo, label]);
       return open(label).filter((i) => i.repo === repo).map(copy);

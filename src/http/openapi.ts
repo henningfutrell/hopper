@@ -11,7 +11,7 @@ import { streamQuery } from './sse.ts';
 import { decisionsQuery, eventsQuery } from './state.ts';
 import { SESSION_HEADER } from './ui/guard.ts';
 import {
-  answerBody, connectedAccountsBody, deviceLinkBody, ghLoginBody, queueGateBody, queueOrderBody, machineDefaultsBody, machineHostKeyBody, machinesEditBody, pluginStoreBody, pluginsEditBody, realmsEditBody, routingEditBody, rulesBody, jobRulesBody, updateBody, usersEditBody, webhooksEditBody,
+  answerBody, connectedAccountsBody, deviceLinkBody, queueGateBody, queueOrderBody, machineDefaultsBody, machineHostKeyBody, machinesEditBody, pluginStoreBody, pluginsEditBody, realmsEditBody, routingEditBody, rulesBody, jobRulesBody, updateBody, usersEditBody, webhooksEditBody,
 } from './ui/index.ts';
 import { completeBody, devicePollBody, deviceStartBody, loginBody, passwordBody, startQuery } from './ui/sign-in.ts';
 import { deliveriesQuery } from './webhooks.ts';
@@ -50,8 +50,6 @@ const OPERATIONS: Operation[] = [
   { method: 'get', path: '/api/router', tag: 'State', summary: 'Router status', returns: '`{ router, plugin, fallback, reason? }`' },
   { method: 'get', path: '/api/accounts', tag: 'State', summary: 'Who each part acts as', description: 'Each usage source\'s and job source\'s account on an outside service. Never a token.', returns: '`{ accounts: PartAccount[] }`' },
   { method: 'get', path: '/api/sources', tag: 'Jobs', summary: 'Job sources and their sync status', returns: '`{ sources: SourceStatus[] }`' },
-  { method: 'get', path: '/api/gh-login', tag: 'Jobs', summary: 'The gh CLI\'s login', description: 'Logged in (with the account), logged out, failed, or waiting with the device code to approve at github.com/login/device.', returns: '`GhLoginStatus`' },
-  { method: 'post', path: '/ui/api/gh-login', tag: 'Jobs', summary: 'Log the gh CLI in to GitHub, or cancel', description: '`start` runs gh\'s device flow and answers once it shows the device code; a waiting login answers its own code. gh keeps the token; the hopper keeps none.', role: 'admin', body: ghLoginBody, returns: '`GhLoginStatus`', errors: [409] },
   { method: 'get', path: '/api/connected-accounts', tag: 'Jobs', summary: 'The GitHub account you connected', description: 'Per provider: connected (the account, when, its scopes, the job repositories), not connected, failed, or waiting with the device code to approve. Facts only, never a token.', returns: '`{ accounts: ConnectedAccountStatus[] }`' },
   { method: 'post', path: '/ui/api/connected-accounts', tag: 'Jobs', summary: 'Connect GitHub, cancel, disconnect, or choose its job repositories', description: '`connect` runs the provider\'s device flow through the hopper\'s app (its public client id, no secret) and answers once it shows the device code; a waiting one answers its own code. Once approved, the account\'s issues in its job repositories become jobs, and the jobs act through it. Signing in with GitHub connects it too. `choose` sets the job repositories, the whole list (none: no job); the source syncs at once. `disconnect` forgets the account and its token, and keeps the job repositories.', role: 'admin', body: connectedAccountsBody, returns: '`ConnectedAccountStatus`' },
   { method: 'get', path: '/api/jobs', tag: 'Jobs', summary: 'List jobs', description: 'Jobs come only from job sources; no route creates one.', query: jobsQuery, returns: '`{ jobs: Job[] }`, newest first' },

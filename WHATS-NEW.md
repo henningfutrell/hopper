@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- GitHub issues are now read only through the GitHub account you signed in with. The separate GitHub login in Sources is gone.
 - Run again no longer shows on a failed job whose issue is closed: the job says to reopen the issue instead, and the button comes back once it is open.
 - A running job's progress now shows what the agent is actually doing, not the agent program's own update notice or tips, so a job no longer looks stuck waiting for a restart.
 - Every setting you save applies straight away: job sources, usage sources and notifiers no longer wait for a restart, and jobs that are running keep running.

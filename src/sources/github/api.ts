@@ -54,12 +54,6 @@ export interface GitHubProjectItem {
 }
 
 export interface GitHubApi {
-  whoami(): Promise<string>;
-  /**
-   * Open issues with the label over the owners' repos. `authors`: the allowlisted authors, for an
-   * search by author (a connected account's) and leave the owners to the caller.
-   */
-  searchOpenIssues(q: { owners: string[]; label: string; authors?: string[] }): Promise<GitHubIssue[]>;
   listOpenIssues(repo: string, label: string): Promise<GitHubIssue[]>;
   getIssue(repo: string, number: number): Promise<GitHubIssue>;
   /** Every comment, all pages, oldest first. */
@@ -74,7 +68,7 @@ export interface GitHubApi {
   /** The open pull requests whose merge will close the issue, drafts included; none is []. */
   openClosingPullRequests(repo: string, number: number): Promise<OpenPullRequest[]>;
 
-  // ---- GitHub App mode only (absent on the gh-CLI adapter) ----------------------------
+  // ---- GitHub App mode only (absent on the connected account's adapter) ----------------------------
 
   /**
    * The login the adapter's writes appear under — the app bot, e.g. "hopper-owner[bot]".

@@ -86,7 +86,7 @@ describe('compose.yaml, downloaded alone and started with no settings', () => {
     expect(postgres.ports ?? []).toEqual([]);
   });
 
-  it('keeps the hopper\'s home in a volume: herdr, claude and gh sign-ins and job checkouts survive a rebuild', () => {
+  it('keeps the hopper\'s home in a volume: herdr and claude sign-ins and job checkouts survive a rebuild', () => {
     expect(hopper.volumes).toContainEqual(expect.objectContaining({ source: 'home', target: '/home/node' }));
     expect(Object.keys(r.volumes).sort()).toEqual(['home', 'postgres', 'secrets']);
   });
@@ -94,9 +94,9 @@ describe('compose.yaml, downloaded alone and started with no settings', () => {
 
 describe('compose.yaml with a .env beside it', () => {
   it('passes its settings and secrets to the hopper', () => {
-    const hopper = svc(render('HOPPER_PUBLIC_URL=https://hopper.example.com\nGH_TOKEN=t0\n'), 'hopper');
+    const hopper = svc(render('HOPPER_PUBLIC_URL=https://hopper.example.com\nCLAUDE_CODE_OAUTH_TOKEN=t0\n'), 'hopper');
     expect(hopper.environment?.HOPPER_PUBLIC_URL).toBe('https://hopper.example.com');
-    expect(hopper.environment?.GH_TOKEN).toBe('t0');
+    expect(hopper.environment?.CLAUDE_CODE_OAUTH_TOKEN).toBe('t0');
   });
 
   it('moves the UI port on both sides, so the Host the browser sends names the daemon\'s port; runs another image', () => {

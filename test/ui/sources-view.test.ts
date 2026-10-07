@@ -1,14 +1,15 @@
 // @vitest-environment happy-dom
 // The Sources view (issue #160) rendered in the whole app against a fake of the daemon's HTTP surface:
-// gh and the GitHub App are one GitHub section, the one in use first, the paused one saying why, and
-// gh login beside them under its own name. The GitHub account is connected from there
+// the connected GitHub account is how the hopper reads GitHub as the user (issue #359), with an admin's
+// GitHub App beside it in one GitHub section. The GitHub account is connected from there
 // (issue #214): the panel says how the hopper connects, and shows the device code to enter. Signed in
 // with GitHub, that connection is the one GitHub piece (issue #254). Once connected it shows the
 // repositories the app reaches on each account it is installed on, and asks to install it only where it is
 // installed nowhere (issue #253). Signed in with GitHub, that account is the sign-in: the panel offers
 // Sign out, never Disconnect; signed in another way, forgetting it says it keeps the sign-in (issue #322).
 // Of the repositories the app reaches the person chooses which ones jobs may use, filtering a long list,
-// with a count of chosen against available (issue #321).
+// with a count of chosen against available (issue #321). A sign-in that expired says so and asks for a
+// new one (issue #359).
 import { createElement } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -17,7 +18,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 const source = (name: string, kind: string, state: string, detail: Record<string, unknown>) =>
   ({ name, kind, state, itemsSeen: 0, jobsCreated: 0, activeJobs: 0, detail });
 const SOURCES = [
-  source('github', 'github', 'disabled', { mode: 'gh', enabledSetting: 'auto', paused: 'GitHub App configured' }),
+  source('github-account', 'github-account', 'disabled', { mode: 'account', paused: 'GitHub is not connected: Sources → Connect GitHub' }),
   source('github-app', 'github-app', 'ok', { mode: 'app', slug: 'hopper-app' }),
 ];
 
@@ -32,7 +33,6 @@ function fakeDaemon(over: Record<string, unknown> = {}) {
     '/api/webhooks': { subscriptions: [] }, '/api/webhooks/deliveries': { deliveries: [] },
     '/api/questions': { questions: [] }, '/api/sources': { sources: SOURCES },
     '/api/usage': { readings: [], sources: [], limits: { soft: 0.7, hard: 0.95 }, machines: [] }, '/api/accounts': { accounts: [] },
-    '/api/gh-login': { state: 'logged-in', account: 'someone' },
     '/api/connected-accounts': { accounts: [{ provider: 'github', via: 'the hopper\'s app', state: 'not-connected' }] },
     '/ui/api/connected-accounts': { provider: 'github', via: 'the hopper\'s app', state: 'waiting', userCode: 'WDJB-MJHT', verificationUri: 'https://github.com/login/device', expiresAt: '2099-01-01T00:00:00.000Z' },
     ...over,
@@ -83,17 +83,30 @@ afterEach(async () => {
 const titles = () => [...document.querySelectorAll('[aria-labelledby="sources-github"] h2')].map((h) => h.textContent);
 
 describe('Sources view: GitHub', () => {
-  it('one GitHub section: the App in use first, gh paused with the reason, gh login last', async () => {
+  it('one GitHub section: the GitHub account, then the App in use; no gh and no gh login (#359)', async () => {
     await boot();
-    await vi.waitFor(() => expect(titles()).toEqual(['GitHub', 'GitHub account', 'github-app', 'github', 'gh login']));
-    expect(document.querySelector('[data-github-summary]')?.textContent).toContain('Issues are read through the GitHub App, as its bot. gh is paused while the GitHub App is set up.');
+    await vi.waitFor(() => expect(titles()).toEqual(['GitHub', 'GitHub account', 'github-app']));
+    expect(document.querySelector('[data-github-summary]')?.textContent).toBe('Issues are read through the GitHub App, as its bot. Connect GitHub to read your own issues too.');
     const uses = [...document.querySelectorAll('[data-source-use]')].map((e) => [e.getAttribute('data-source-use'), e.textContent]);
-    expect(uses).toEqual([
-      ['in-use', 'through the GitHub App, as its bot'],
-      ['paused', 'through gh, as the logged-in GitHub user · not in use: the GitHub App is set up, so issues are read through it instead'],
-    ]);
-    expect(document.body.textContent).not.toContain('paused: GitHub App configured');
-    expect(document.body.textContent).not.toContain('GitHub (gh)');
+    expect(uses).toEqual([['in-use', 'through the GitHub App, as its bot']]);
+    expect(document.body.textContent).not.toContain('gh login');
+    expect(document.body.textContent).not.toContain('Log in to GitHub');
+  });
+
+  it('a sign-in that expired says so, names the account, and asks to sign in again (#359)', async () => {
+    const paused = "GitHub's sign-in expired: Sources → Connect GitHub again";
+    await boot({
+      '/api/sources': { sources: [source('github-account', 'github-account', 'disabled', { mode: 'account', paused })] },
+      '/api/connected-accounts': { accounts: [{ provider: 'github', via: 'the hopper\'s app', state: 'expired', account: 'octo-user', connectedAt: '2026-10-07T00:00:00.000Z', error: 'GitHub refused the refresh token (bad_refresh_token)' }] },
+    });
+    const panel = () => document.querySelector('[data-connected-account="github"]');
+    await vi.waitFor(() => expect(panel()?.querySelector('[data-expired]')).not.toBeNull());
+    expect(panel()!.textContent).toContain('The sign-in of octo-user expired');
+    expect(document.body.textContent).toContain('sign-in expired');
+    expect(document.querySelector('[data-github-summary]')?.textContent).toBe(`No issue is read through your GitHub connection: ${paused}.`);
+    const button = [...panel()!.querySelectorAll('button')].find((b) => b.textContent === 'Connect GitHub again')!;
+    await act(async () => { button.click(); });
+    await vi.waitFor(() => expect(panel()!.querySelector('[data-device-code]')?.textContent).toBe('WDJB-MJHT'));
   });
 
   it('connects GitHub from the GitHub account panel: how the hopper connects, then the code to enter (#214)', async () => {
@@ -108,14 +121,12 @@ describe('Sources view: GitHub', () => {
     expect(document.querySelector('[aria-labelledby="sources-gitlab"]')).toBeNull();
   });
 
-  it('signed in with GitHub: the connection is the one GitHub piece, with its sync; no gh, gh login or unset GitHub App (#254)', async () => {
+  it('signed in with GitHub: the connection is the one GitHub piece, with its sync; no unset GitHub App (#254)', async () => {
     await boot({
       '/api/sources': { sources: [
         source('github-account', 'github-account', 'ok', { mode: 'account', login: 'octo-user', authors: ['octo-user'], label: 'hopper' }),
-        source('github', 'github', 'disabled', { mode: 'gh', enabledSetting: 'auto', paused: 'GitHub account connected' }),
         source('github-app', 'github-app', 'ok', { mode: 'app', paused: 'no GitHub App configured' }),
       ] },
-      '/api/gh-login': { state: 'logged-out' },
       '/api/connected-accounts': { accounts: [{ provider: 'github', via: 'the hopper\'s app', state: 'connected', account: 'octo-user', jobRepositories: ['octo-user/hopper'], installations: [{ account: 'octo-user', repositorySelection: 'all', repositories: ['octo-user/hopper'], settingsUrl: 'https://github.com/settings/installations/1' }] }] },
     });
     const panel = () => document.querySelector('[data-connected-account="github"]');
@@ -124,8 +135,6 @@ describe('Sources view: GitHub', () => {
     expect(document.querySelector('[data-github-summary]')?.textContent).toBe('Issues are read, and jobs work, through your GitHub connection, octo-user.');
     expect(panel()!.textContent).toContain('Connected as octo-user.');
     expect(document.querySelectorAll('[data-source-use]')).toHaveLength(0);
-    expect(document.body.textContent).not.toContain('gh login');
-    expect(document.body.textContent).not.toContain('gh is not logged in');
     expect(document.body.textContent).not.toContain('github-app');
   });
 

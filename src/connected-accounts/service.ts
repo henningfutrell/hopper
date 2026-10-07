@@ -7,8 +7,8 @@
 // jobs it gives, ask here for the token. GitHub App user tokens expire after 8 hours: the token is renewed
 // with its refresh token an hour before it expires, and when GitHub refuses it (a 401), and the new pair is
 // kept (issue #358). When GitHub refuses the renewal too, or the token expired with nothing to renew it, the
-// sign-in has ended: the account reads as expired — never as connected — offers no login (so the gh source
-// runs again), its source says to connect again, and the owner is told once (`onExpired`). Which repositories its jobs may use is the user's choice (issue #321),
+// sign-in has ended: the account reads as expired — never as connected — offers no login, its
+// source says to connect again — nothing reads GitHub in its place (issue #359) — and the owner is told once (`onExpired`). Which repositories its jobs may use is the user's choice (issue #321),
 // a setting that outlives a disconnect; none chosen, no job.
 import type { ConnectedAccount, ConnectedAccounts, ConnectedAccountTokens, Connection, UserStore } from '../domain/ports.ts';
 import { CONNECTED_ACCOUNT_PROVIDERS, CONNECTED_VIA, type AppInstallation, type ConnectedAccountProvider, type ConnectedAccountStatus } from '../domain/types.ts';

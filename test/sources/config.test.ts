@@ -1,9 +1,7 @@
-// The GitHub job sources' plugin options (what sources.yaml's `github:` / `githubApp:` blocks
-// became in plugins.yaml `jobSources[].options`), validated by the plugin host with each plugin's
-// schema, and the source config they turn into.
+// The GitHub job sources' plugin options (the plugins config `jobSources[].options`), validated by the
+// plugin host with each plugin's schema, and the source config they turn into.
 import { describe, expect, it } from 'vitest';
 import githubApp from '../../src/plugins/job-source/github-app/index.ts';
-import githubGh from '../../src/plugins/job-source/github-gh/index.ts';
 import { parseOptions } from '../../src/plugins/options.ts';
 import { sourceConfig } from '../../src/sources/config.ts';
 
@@ -32,15 +30,9 @@ const ok = (r: ReturnType<typeof parseOptions>) => {
   return r.options;
 };
 
-describe('github-gh options', () => {
-  it('authors alone gets every other default from the design, plus the gh bin and the key variable it pauses for', () => {
-    expect(ok(parseOptions(githubGh, AUTHORS))).toEqual({
-      enabled: 'auto', owners: [], bin: 'gh', appKeyEnv: 'GITHUB_APP_PRIVATE_KEY', ...SHARED_DEFAULTS,
-    });
-  });
-
+describe('the GitHub sources\' shared options', () => {
   it('the source config keeps ~ in defaultCwd and repoPaths for the job\'s machine to resolve (issue #323) and keeps a configured model', () => {
-    const o = ok(parseOptions(githubGh, {
+    const o = ok(parseOptions(githubApp, {
       ...AUTHORS, defaultCwd: '~/work', repoPaths: { 'owner/sandbox': '~/code/sandbox', 'o/abs': '/srv/abs' }, model: 'claude-sonnet-5', enabled: false,
     }));
     const c = sourceConfig(o as never);
@@ -48,11 +40,11 @@ describe('github-gh options', () => {
       defaultCwd: '~/work', repoPaths: { 'owner/sandbox': '~/code/sandbox', 'o/abs': '/srv/abs' },
       model: 'claude-sonnet-5', enabled: false,
     });
-    expect(sourceConfig(ok(parseOptions(githubGh, AUTHORS)) as never)).not.toHaveProperty('model');
+    expect(sourceConfig(ok(parseOptions(githubApp, AUTHORS)) as never)).not.toHaveProperty('model');
   });
 
   it('parses project priority config in both modes', () => {
-    const o = ok(parseOptions(githubGh, { ...AUTHORS, projects: {
+    const o = ok(parseOptions(githubApp, { ...AUTHORS, projects: {
       'owner/a': { owner: 'owner', number: 3, mode: 'field', field: 'Priority', map: { P0: 100, P1: 75 } },
       'owner/b': { owner: 'owner', number: 4, mode: 'rank' },
     } }));
@@ -62,16 +54,8 @@ describe('github-gh options', () => {
     });
   });
 
-  it.each([['auto', 'auto'], [true, true], [false, false]] as const)('enabled: %s is accepted', (v, want) => {
-    expect(ok(parseOptions(githubGh, { ...AUTHORS, enabled: v })).enabled).toBe(want);
-  });
-
   it.each(['merge', 'pull-request'] as const)('completion: %s is accepted (issue #187)', (v) => {
-    expect(ok(parseOptions(githubGh, { ...AUTHORS, completion: v })).completion).toBe(v);
-  });
-
-  it('appKeyEnv: null — never pauses for an app', () => {
-    expect(ok(parseOptions(githubGh, { ...AUTHORS, appKeyEnv: null })).appKeyEnv).toBeNull();
+    expect(ok(parseOptions(githubApp, { ...AUTHORS, completion: v })).completion).toBe(v);
   });
 
   it.each([
@@ -81,7 +65,7 @@ describe('github-gh options', () => {
     ['enabled: maybe', { enabled: 'maybe' }, /enabled/],
     ['completion: commit (a local commit is never complete)', { completion: 'commit' }, /completion/],
   ])('%s is an error naming the path', (_n, raw, why) => {
-    const r = parseOptions(githubGh, { ...AUTHORS, ...raw });
+    const r = parseOptions(githubApp, { ...AUTHORS, ...raw });
     expect(r.ok).toBe(false);
     expect(!r.ok && r.error).toMatch(why);
   });
@@ -100,20 +84,20 @@ describe('github-app options', () => {
   it.each([
     ['owners (the installations are the allowlist)', { owners: ['x'] }],
     ['an unknown key', { lable: 'hopper' }],
-    ['enabled: auto (only github-gh has auto)', { enabled: 'auto' }],
+    ['enabled: auto', { enabled: 'auto' }],
   ])('%s is an error', (_n, raw) => {
     expect(parseOptions(githubApp, { ...AUTHORS, ...raw }).ok).toBe(false);
   });
 });
 
 describe('authors: the allowlist is always explicit', () => {
-  it.each([['github-gh', githubGh], ['github-app', githubApp]] as const)('%s without authors is an error naming authors', (_n, plugin) => {
-    const r = parseOptions(plugin, {});
+  it('github-app without authors is an error naming authors', () => {
+    const r = parseOptions(githubApp, {});
     expect(r.ok).toBe(false);
     expect(!r.ok && r.error).toMatch(/authors/);
   });
 
-  it.each([['github-gh', githubGh], ['github-app', githubApp]] as const)('%s with authors: [] is an error', (_n, plugin) => {
-    expect(parseOptions(plugin, { authors: [] }).ok).toBe(false);
+  it('github-app with authors: [] is an error', () => {
+    expect(parseOptions(githubApp, { authors: [] }).ok).toBe(false);
   });
 });

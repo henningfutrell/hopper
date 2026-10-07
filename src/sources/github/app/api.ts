@@ -106,12 +106,6 @@ export function createGitHubAppApi(o: { app(): GitHubAppLoad; keyEnv: string; ba
     async botLogin() {
       return need().app.botLogin;
     },
-    async whoami() {
-      return need().app.botLogin;
-    },
-    async searchOpenIssues() {
-      throw new GitHubApiError('searchOpenIssues: not used in app mode (the installations are the allowlist)', true);
-    },
     listInstalledRepos: () => call('list installed repos', async (l) => {
       const out: { repo: string; installationId: number }[] = [];
       for (const inst of await listInstallations(l)) {

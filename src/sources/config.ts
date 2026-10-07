@@ -1,5 +1,5 @@
-// The GitHub job sources' options (the plugins config `jobSources[].options` of `github-gh` and
-// `github-app`; until phase 5 slice 4 the `github:` / `githubApp:` blocks of sources.yaml), and the
+// The GitHub job sources' options (the plugins config `jobSources[].options` of `github-account` and
+// `github-app`), and the
 // source config they turn into: `model: null` dropped; a `~` stays, for the job's machine (issue #323). The plugin host validates
 // them with these schemas; an invalid instance is dropped with the error shown.
 import { z } from 'zod';
@@ -38,17 +38,6 @@ const sharedKeys = {
     .meta({ description: "when a job's work is done: merge — its pull request merged; pull-request — its pull request open for review. Issue labels hopper:complete-at-merge and hopper:complete-at-pr override it" }),
 };
 
-/** github-gh: the gh source, acting as the owner through the gh CLI. */
-export const githubGhOptions = z.object({
-  // auto: on exactly while `appKeyEnv` is unset (checked every sync).
-  enabled: z.union([z.literal('auto'), z.boolean()]).default('auto'),
-  owners: z.array(z.string().min(1)).default([]),
-  bin: z.string().min(1).default('gh').meta({ commandBearing: true, description: 'the gh CLI' }),
-  appKeyEnv: z.string().min(1).nullable().default(DEFAULT_APP_KEY_ENV)
-    .meta({ commandBearing: true, description: 'with enabled: auto, this source pauses while this variable (the GitHub App key) is set; null: never' }),
-  ...sharedKeys,
-}).strict();
-
 /** github-app: the App source, posting as the app's bot. */
 export const githubAppOptions = z.object({
   enabled: z.boolean().default(true),
@@ -83,11 +72,10 @@ export const githubAccountOptions = z.object(accountKeys).strict();
 
 export type GitHubProjectConfig = z.infer<typeof projectSchema>;
 export type GitHubAccountOptions = z.output<typeof githubAccountOptions>;
-export type GitHubGhOptions = z.output<typeof githubGhOptions>;
 export type GitHubAppOptions = z.output<typeof githubAppOptions>;
 
-/** What the source logic reads: either plugin's options, no `model: null`. A `~` stays: it resolves on the job's machine (issue #323). */
-export type GitHubSourceConfig = Omit<GitHubGhOptions, 'model' | 'bin' | 'appKeyEnv'> & { model?: string };
+/** What the source logic reads: the shared keys, no `model: null`. A `~` stays: it resolves on the job's machine (issue #323). */
+export type GitHubSourceConfig = Omit<z.output<z.ZodObject<typeof sharedKeys>>, 'model'> & { model?: string };
 
 export function sourceConfig<T extends { model: string | null; defaultCwd: string; repoPaths: Record<string, string> }>(raw: T): Omit<T, 'model'> & { model?: string } {
   const { model, ...rest } = raw;

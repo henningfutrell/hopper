@@ -28,9 +28,9 @@ Five steps, in this order. Each links to its section below.
    or one line installs the daemon, its database and its herdr session on this host.
 2. **[Sign in](#sign-in)** — one command opens the UI, signed in.
 3. **[Connect GitHub](#connect-github)** — sign in with GitHub and enter the code it shows; the first
-   person to do so becomes admin, and that connection is what your jobs work through. gh, and a GitHub
-   App an admin sets up, are the other paths.
-4. **[Give it jobs](#give-it-jobs)** — say whose GitHub issues it takes, then label an issue
+   person to do so becomes admin, and that connection is what your jobs work through. A GitHub App an
+   admin sets up is the one other path.
+4. **[Give it jobs](#give-it-jobs)** — choose the job repositories in Sources, then label an issue
    `hopper`.
 5. **[Add machines](#add-machines)** — optional: jobs run on this host from step 1; add other
    computers, or a sandbox container, when you want more room.
@@ -48,7 +48,7 @@ install page has the steps: https://henningfutrell.github.io/hopper/install.html
 | Docker | the bundled Postgres of the host install, `npm test` |
 | herdr ([herdr.dev](https://herdr.dev)), at `~/.local/bin/herdr` | the panes jobs run in (`herdr-claude` executor), on each machine that runs Claude jobs |
 | the `claude` CLI, signed in | jobs (on each machine that runs them), the escalation levels (here, or on the machine each designates; or none, with an API key), usage readings |
-| your GitHub, signed in with in the UI (default), the `gh` CLI signed in as you, or a GitHub App an admin creates | reading and labelling the issues that are jobs ([Connect GitHub](#connect-github)) |
+| your GitHub, signed in with in the UI (default), or a GitHub App an admin creates | reading and labelling the issues that are jobs ([Connect GitHub](#connect-github)) |
 
 ## Run it
 
@@ -67,7 +67,7 @@ curl -fsSLO https://henningfutrell.github.io/hopper/compose.yaml      # compose.
 podman compose up -d
 # open http://localhost:4790/ and sign in with GitHub: the first person to do so is the admin
 podman compose exec hopper claude                                    # once: /login, then /exit
-# GitHub: the UI's Sources view → Log in to GitHub (once; kept in the home volume)
+# then Sources → GitHub account: choose the repositories jobs may come from
 systemctl --user enable podman-restart.service                        # once: start it again after a reboot
 ```
 
@@ -127,12 +127,11 @@ launch (`docs/deploy.md` "Sign-in set up at launch") — and the LAN or a public
 
 GitHub is how people sign in to the hopper and how it works for them: each user's issues come from
 their GitHub, and what their jobs do there acts as them, with GitHub showing the hopper's app on it.
-Pick the path; a new hopper is on the first one.
+There are two paths; a new hopper is on the first one.
 
 | Path | Use it when | The hopper acts as | Job source |
 |---|---|---|---|
 | [**Sign in with GitHub**](#sign-in-with-github-default) (default) | each user works from their own GitHub | that user, through the hopper's app | `github-account` |
-| [**The gh CLI**](#the-gh-cli) | a personal hopper on a host where gh is already signed in | you | `github` |
 | [**A GitHub App of your own**](#a-github-app-of-your-own) | an admin's choice for particular environments: labels from a bot, repos chosen by where the App is installed. Not for local deployments in general | the App's bot, `<slug>[bot]` | `github-app` (added in Plugins) |
 
 **Never use a GitHub App private key from somebody else's hopper**, and never give yours to anyone. A
@@ -140,7 +139,9 @@ private key acts on every repository its App is installed on. The hopper's app i
 only its public client id, which authorizes nothing by itself.
 
 Which path you are on: the UI's **Sources** view. The source that is not `paused` is the one taking
-jobs, and the sentence above the cards says which. `GET /api/accounts` names the account it acts as.
+jobs, and the sentence in the GitHub section says which. `GET /api/accounts` names the account it acts as.
+(The gh CLI source and **Log in to GitHub** were removed by issue #359: the hopper reads GitHub as a
+user only through that user's GitHub sign-in.)
 
 ### Sign in with GitHub (default)
 
@@ -161,6 +162,12 @@ the panel offers **Sign out**, not a disconnect; to stop taking jobs from GitHub
 switch off the `github-account` source in **Plugins**. Revoke the app for good at
 https://github.com/settings/applications.
 
+A job that needs GitHub for its own git or `gh` gets your token from this same connection (`GH_TOKEN`).
+The token renews itself before it expires. Nothing falls back to another credential: while GitHub is
+not connected, or its sign-in ended, the source is paused, says why, and takes nothing. An ended sign-in
+shows **sign-in expired** in **Sources → GitHub account**; press **Connect GitHub again** (or sign in
+with GitHub again).
+
 Signed in at the edge instead (SSO, SAML, an auth gateway): **Sources → GitHub account → Connect
 GitHub**, the same code at the same address. That account is then linked to your user. **Stop working
 through GitHub** there forgets the account and its token and keeps you signed in; the source then says
@@ -169,25 +176,6 @@ through GitHub** there forgets the account and its token and keeps you signed in
 The app ships with the hopper as a public client id — no secret: the device flow needs none. GitHub
 Enterprise, or an app of your own, is set in the environment: `HOPPER_GITHUB_URL`,
 `HOPPER_GITHUB_CLIENT_ID`, `HOPPER_GITHUB_APP_SLUG` (how to register one: [docs/sign-in.md](docs/sign-in.md#github)).
-
-### The gh CLI
-
-On the hopper's host, as the user the daemon runs as:
-
-```sh
-gh auth login          # GitHub.com → HTTPS → log in with a web browser
-gh auth status         # must say "Logged in to github.com account <you>"
-```
-
-Or, on any install, from the UI: **Sources** → **Log in to GitHub** (an admin). The hopper runs gh's
-own device flow and shows its code and `https://github.com/login/device`; enter the code there as the
-GitHub user the hopper should act as. gh keeps the login in its own config — with Podman, in the
-container's home volume, so it outlives restarts and upgrades. This is the way in a container: no
-terminal, no token in `.env`. A `GH_TOKEN` in the environment overrides gh's login; the panel says
-so, and asks you to remove it.
-
-That is all: the `github` source starts on its own once gh is logged in (no restart), and pauses
-while a GitHub account is connected or a GitHub App key is set (`enabled: auto`).
 
 ### A GitHub App of your own
 
@@ -209,7 +197,7 @@ hopper only. One App, one key, one hopper.
    `slug` (marked "runs a command"; an admin edits them), with `authors` as in
    [Give it jobs](#give-it-jobs).
 4. `systemctl --user restart hopper` (or the container), so the daemon reads the key. The
-   `github` source now pauses and `github-app` takes the jobs.
+   `github-app` source then takes the jobs of the repositories the App is installed on.
 
 ### Not built: other ways in
 
@@ -221,16 +209,16 @@ Named so you know they are not missing steps. None is the path for a self-hosted
 
 ## Give it jobs
 
-1. Signed in with GitHub, nothing to do: your own issues are taken. To take other people's, or
-   to use another [path](#connect-github), open the instance in Settings → Plugins → Job sources —
-   `github-account`, `github` (the gh CLI) or `github-app` (your App) — and set its options:
+1. Sign in with GitHub (or **Sources → GitHub account → Connect GitHub**), then choose the job
+   repositories in **Sources → GitHub account**: your own issues in them are taken. To take other
+   people's, or to use [your own App](#a-github-app-of-your-own), open the instance in Settings →
+   Plugins → Job sources — `github-account` or `github-app` (your App) — and set its options:
 
    | option | |
    |---|---|
-   | `authors` | whose issues are accepted (`your-github-login`); required for `github` and `github-app`, the connected account alone when empty on `github-account` |
-   | `repos` | optional allowlist (`your-org/your-repo`) |
+   | `authors` | whose issues are accepted (`your-github-login`); required for `github-app`, the connected account alone when empty on `github-account` |
+   | `repos` | on `github-app`, an optional allowlist inside the App's installations (`your-org/your-repo`); `github-account` takes the job repositories chosen in Sources |
    | `repoPaths` | where each repo's jobs run (`your-org/your-repo` → `/srv/checkouts/your-repo`) |
-   | `enabled` | on `github`, `auto`: on until a GitHub account is connected or a GitHub App key is set |
 
    A job runs in `repoPaths[<repo>]` (a checkout of that repo), else in `defaultCwd` (default: the
    home directory). That path must exist on whichever machine runs the job ([Add machines](#add-machines)). Restart the daemon
