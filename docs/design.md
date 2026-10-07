@@ -3811,8 +3811,8 @@ phone across the LAN.
 Owner request: the question gates can be set in the UI.
 
 The **question gates** are the chain an open question goes through: the escalation levels,
-lowest first → risk rules → owner (issue #134; before it, answerer → assessor). One panel, the
-first section of Settings (issue #151; before it, below the open questions in the Questions view), shows the chain with
+lowest first → risk rules → owner (issue #134; before it, answerer → assessor). One panel, a
+section of Settings (issue #151; the first until issue #363 put the version first; before it, below the open questions in the Questions view), shows the chain with
 each level's instance and state, and edits what is configuration:
 
 - **Escalation levels** — added (on top, under the name typed, else the plugin id), removed,
@@ -3847,8 +3847,9 @@ question page; one configuration plane organizes them, and models are chosen fro
 available, not typed.
 
 **Settings** (`ui/src/views/settings.tsx`) is one entry in the main navigation with a section per
-part, each routed by hash so a link and the back button work: `#settings/questions` the question
-gates (the default for `#settings`), `#settings/history` the question history,
+part, each routed by hash so a link and the back button work: `#settings/version` what is running,
+its update channel and an available update — the first section and the default for `#settings` (issue
+#363) —, `#settings/version-history` next, `#settings/questions` the question gates, `#settings/history` the question history,
 `#settings/routing`, `#settings/plugins`, `#settings/webhooks` — the views that were their own
 navigation entries before. The Questions view holds the open questions only. Machines, Sources and
 Usage stay their own views: each is mostly live state, with its configuration beside it. The view
