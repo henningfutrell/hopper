@@ -1,8 +1,7 @@
-// A connected account's source answers closedItems through its GitHub source (issue #362): the sync loop
-// asks it which failed jobs' issues are closed, and the live hopper's jobs come from this source. Fake at
-// the GitHubApi seam.
+// A connected account's source runs an item again through its GitHub source (issue #354): Run again asks
+// it for the item back, and the live hopper's jobs come from this source. Fake at the GitHubApi seam.
 import { describe, expect, it } from 'vitest';
-import type { ConnectedAccountTokens } from '../../src/domain/ports.ts';
+import { SourceError, type ConnectedAccountTokens } from '../../src/domain/ports.ts';
 import type { Job } from '../../src/domain/types.ts';
 import { createAccountSource } from '../../src/sources/compose.ts';
 import { githubAccountOptions } from '../../src/sources/config.ts';
@@ -32,20 +31,21 @@ function source(login: string | undefined) {
   return { gh, s };
 }
 
-describe('a connected account\'s source tells which failed jobs\' issues are closed (issue #362)', () => {
-  it('closed and open, as its GitHub source reads them', async () => {
+describe('a connected account\'s source runs an item again (issue #354)', () => {
+  it('gives a closed issue back reopened, its end labels gone, as an item for the new job', async () => {
     const { gh, s } = source('owner');
-    const open = gh.createIssue({ repo: REPO, body: 'x', labels: ['hopper', 'hopper:failed'] });
-    const closed = gh.createIssue({ repo: REPO, body: 'x', labels: ['hopper', 'hopper:failed'] });
-    gh.closeIssue(REPO, closed.number);
-    await s.discover();
-    const answers = await s.closedItems!([failedJob('a', open.url, open.number), failedJob('b', closed.url, closed.number)], new Set());
-    expect(Object.fromEntries(answers)).toEqual({ a: false, b: true });
+    const issue = gh.createIssue({ repo: REPO, body: 'x', labels: ['hopper', 'hopper:failed'] });
+    gh.closeIssue(REPO, issue.number);
+    const item = await s.rerun!(failedJob('a', issue.url, issue.number));
+    expect(gh.issue(REPO, issue.number)).toMatchObject({ state: 'open', labels: ['hopper'] });
+    expect(item).toMatchObject({ key: issue.url, repo: REPO, number: issue.number });
   });
 
-  it('not connected, it cannot tell: no answer', async () => {
+  it('not connected, it cannot: a SourceError, and the issue is left as it is', async () => {
     const { gh, s } = source(undefined);
-    const issue = gh.createIssue({ repo: REPO, body: 'x', labels: ['hopper'] });
-    expect((await s.closedItems!([failedJob('a', issue.url, issue.number)], new Set())).size).toBe(0);
+    const issue = gh.createIssue({ repo: REPO, body: 'x', labels: ['hopper', 'hopper:failed'] });
+    const err = await s.rerun!(failedJob('a', issue.url, issue.number)).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(SourceError);
+    expect(gh.issue(REPO, issue.number).labels).toEqual(['hopper', 'hopper:failed']);
   });
 });
