@@ -5683,6 +5683,14 @@ admin's app in use stays; a broken app stays; not connected) and `test/ui/source
 app against a fake daemon, signed in with GitHub: the section holds only the GitHub account panel with its
 source's sync; no gh login, gh card or github-app).
 
+**A gh source that cannot run (issue #320, 2026-10-06).** A source the host cannot build (unknown plugin,
+invalid options — e.g. an older plugins config whose `github` instance names no `authors`) is reported
+with its plugin's id as its kind (`src/users/runtime.ts` `splitSources`): `github-gh`, not `github`. The
+model counted only kind `github` as gh, so that source fell through to the other sources and showed as a
+card in error beside the GitHub connection. The model now counts kind `github-gh` as gh too: connected, it
+is not shown and neither is its error; not connected, it is the gh connection, with its error, not a card
+of its own. The instance stays in the plugins config. Verification: `test/ui/sources.test.ts` (#320 cases).
+
 ## Job rules (issue #172, 2026-10-06)
 
 Owner direction: the hopper's rules must be editable, not baked in; what the hopper relies on to read a
