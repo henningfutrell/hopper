@@ -6,7 +6,7 @@
 #   docker build -f scripts/box/Dockerfile --build-arg AGENT=claude -t localhost/hopper:box-claude .
 #
 # The line runs it locked down: every capability dropped, no new privileges, a read-only root, /tmp a
-# tmpfs, its home the volume hopper-box-<agent>-home — where its link key, the agent's sign-in and the
+# tmpfs, its home the volume hopper-sandbox-<agent>-home — where its link key, the agent's sign-in and the
 # jobs' work trees live, so a rebuilt or recreated box is the same machine.
 FROM node:24-bookworm-slim
 

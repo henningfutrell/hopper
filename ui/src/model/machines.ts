@@ -245,7 +245,7 @@ export function boxPlace(config: MachinesConfig, port: string): BoxPlace {
  */
 export function joinLine(choice: JoinChoice, o: { origin: string; code: string; join: BoxPlace }): string {
   if (choice.kind === 'computer') return `curl -fsSL '${o.origin}/client/install' | sh -s -- '${o.origin}#${o.code}'`;
-  const box = `hopper-box-${choice.agent}`;
+  const box = `hopper-sandbox-${choice.agent}`;
   return [
     `${choice.engine} run -d --name ${box} --restart unless-stopped --network ${o.join.boxNetwork}`,
     '--cap-drop ALL --security-opt no-new-privileges --read-only --tmpfs /tmp',

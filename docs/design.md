@@ -3338,13 +3338,13 @@ machine that cannot run the client.
 
 **What the person does.** Machines → **Add machine** → *A computer* or *A sandbox box* → **Show the
 line** → run it there. The machine shows in the view, online, when it joins. Nothing is typed into the
-hopper; the machine is named after its host name (a box: `hopper-box-<agent>`), renamed in the view like
-any machine.
+hopper; the machine is named after its host name (a box: `hopper-sandbox-<agent>`), renamed in the view like
+any machine. Never an agent box's name (`hopper-box-<agent>`): the line must not meet one.
 
 | Choice | The line | Where it runs |
 |--------|----------|---------------|
 | A computer | `curl -fsSL '<origin>/client/install' \| sh -s -- '<origin>#<code>'` — `<origin>` the URL the page is open at | the computer: the computer the container runs on (the UI open at `http://localhost:<port>`), a laptop, a desktop |
-| A sandbox box | `<podman\|docker> run -d --name hopper-box-claude --restart unless-stopped --network hopper_default --cap-drop ALL --security-opt no-new-privileges --read-only --tmpfs /tmp -v hopper-box-claude-home:/home/agent -e HOPPER_CLIENT_NAME=hopper-box-claude -e HOPPER_JOIN='http://hopper:<port>#<code>' ghcr.io/henningfutrell/hopper:box-claude` | the computer the hopper runs on; a hopper installed on the host gives `--network host` and `http://127.0.0.1:<port>` |
+| A sandbox box | `<podman\|docker> run -d --name hopper-sandbox-claude --restart unless-stopped --network hopper_default --cap-drop ALL --security-opt no-new-privileges --read-only --tmpfs /tmp -v hopper-sandbox-claude-home:/home/agent -e HOPPER_CLIENT_NAME=hopper-sandbox-claude -e HOPPER_JOIN='http://hopper:<port>#<code>' ghcr.io/henningfutrell/hopper:box-claude` | the computer the hopper runs on; a hopper installed on the host gives `--network host` and `http://127.0.0.1:<port>` |
 
 **Join code.** `POST /ui/api/machines/join` (admin) mints one for the session's user: 32 random bytes,
 hex, kept only as its SHA-256 in the instance's `join_codes` (migration 25), for 10 minutes, taken once
@@ -3391,7 +3391,7 @@ drives on a client target; cursor-agent runs only here and on ssh targets), herd
 client from `src/client`, user `agent`, Claude's first-run screens seeded, its auto-updater off (the root
 is read-only). Its entrypoint copies the client into the home volume once (a loaded release must persist),
 starts the herdr session, and runs the client — joining with `HOPPER_JOIN` the first time — again after
-each release load (exit 75). Its agent is signed in once, `<engine> exec -it hopper-box-claude claude`,
+each release load (exit 75). Its agent is signed in once, `<engine> exec -it hopper-sandbox-claude claude`,
 and stays signed in in the volume. What the line confines: every capability dropped, no new privileges, a
 read-only root, nothing of the computer mounted, the compose network only (no published port). What it
 does not: its network reaches the internet (the agent's API, GitHub) — #315's open egress question.
