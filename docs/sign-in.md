@@ -751,6 +751,7 @@ The flow is the authorization code with PKCE (S256) and the state, through openi
 grants becomes the person's connected account, as the code's does. The hopper's own app ships without a
 secret, so a hopper on it signs in by code until its operator holds one. The same sign-in **connects** their GitHub: their issues labelled `hopper` become
 their jobs, and their jobs act as them on GitHub, with GitHub showing the hopper's app on what they do.
+It is the one way the hopper reads GitHub as a person (the gh CLI source is removed, issue #359).
 
 | field | value |
 |---|---|
@@ -776,7 +777,9 @@ user: signing in with it later lands in the same user.
 https://github.com/settings/apps/new (or the organization's *Developer settings → GitHub Apps*). Homepage
 URL: anything. Callback URL: required by the form, never used. Webhook: off. **Enable Device Flow**: on.
 Optional features: **opt out of user-to-server token expiration** — GitHub renews an expiring token only
-with the app's client secret, which the hopper never has. Repository permissions: Issues read/write, Pull
+with the app's client secret, which the hopper never has. Left on, a token expires after 8 h: the person's
+source is then paused with *GitHub's sign-in expired*, Sources shows **sign-in expired** and **Sign in to
+GitHub again**, and nothing falls back to another credential. Repository permissions: Issues read/write, Pull
 requests read/write, Contents read/write, Metadata read; organization Projects read; account Email
 addresses read. Where can it be installed: any account. Generate no private key and no client secret.
 Set `HOPPER_GITHUB_CLIENT_ID` (the app's client id) and `HOPPER_GITHUB_APP_SLUG`.

@@ -38,10 +38,10 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 |-----|------|-----------------|
 | `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts; `machines.ts` attached machines and their edit; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate), ports (`ports.ts`, re-exporting the store's from `store.ts`) | anything else in `src/` |
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock | everything but `domain/` |
-| `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations (the instance's `migrations.ts` with migration 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-jobs-dir.ts` (tenant 11) moves a work tree stored as `~` to the jobs directory (issue #314); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); 25 the join codes (issue #308) and `migration-client-key.ts` (tenant 12) the client targets that held a token variable; `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265) | engine, http, decider |
+| `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations (the instance's `migrations.ts` with migration 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-jobs-dir.ts` (tenant 11) moves a work tree stored as `~` to the jobs directory (issue #314); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); 25 the join codes (issue #308) and `migration-client-key.ts` (tenant 12) the client targets that held a token variable; `migration-no-gh-source.ts` (tenant 14) takes out the gh CLI job source (issue #359); `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265) | engine, http, decider |
 | `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), identity → user (`identities.ts`: link or provision), the leftover default admin account folded into the first GitHub admin's user at start (`leftover-admin.ts`, issue #265) | http, decider |
 | `src/webhooks/` | signing, dispatcher, retry/backoff, the secret of a subscription from the runtime (`dispatcher.ts`), the UI edit of the subscriptions (`edit.ts`, rows in the store) | engine, http, decider |
-| `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, the plugins config (`plugins-config.ts`) + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt, `escalation-level/anthropic-api/` asks the Claude API with the same prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-gh/`, `job-source/github-app/` and `job-source/github-account/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser); `usage-source/command-usage/` reads any agent framework's usage and account from a command that prints them as JSON; `usage-source/polled.ts` the background refresh both share, `usage-source/run.ts` their command runner; `notifier/grokbot-routine/` is the Grok Bot routine webhook — env-file reader and notifier; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
+| `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, the plugins config (`plugins-config.ts`) + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt, `escalation-level/anthropic-api/` asks the Claude API with the same prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-app/` and `job-source/github-account/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser); `usage-source/command-usage/` reads any agent framework's usage and account from a command that prints them as JSON; `usage-source/polled.ts` the background refresh both share, `usage-source/run.ts` their command runner; `notifier/grokbot-routine/` is the Grok Bot routine webhook — env-file reader and notifier; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
 | `src/executors/` | `Executor` adapters (`test`, `herdr/`, `command.ts` — a job's body run on its machine through its connection, `print-agent.ts` — an agent CLI in print mode there, Cursor's agent (issue #142), codex, opencode and omp (issue #307), each CLI's call and reading in `print-agents.ts`) and the registry; reached through the executor plugins. The connections and their target authentication ("Target authentication"): `ssh.ts` (key-only ssh to pinned host keys), `ssh-key.ts` (the hopper's own ssh key, kept in the user's store, issue #293), `docker.ts` (the docker socket check, the proxy's allowlist), `client.ts` (a client target's tunnel, signed calls); `env.ts` the scrubbed child environment | engine, http, store, plugins |
 | `src/client/` | the hopper client ("Client targets", "Joining a machine"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load` over HTTP/2 on its link), `dial.ts` (its dial-in to the hopper's URL), `join.ts` (joining with a join line), `link.ts` (the link keys and the client token they give; shared with the hopper), `release.ts` (the client release: its files, its id, checking and installing one — "Client releases"), `main.ts`; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`) | everything in `src/` outside `src/client/` |
 | `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following the plugins config; ssh probe and the check that herdr is found there by name (`REMOTE_PATH`, issue #311) through the herdr CLI client's ssh argv; the container probe, `docker container inspect`), the detected ssh targets (`ssh-config.ts`) and which of them is this machine (`this-machine.ts`, issue #275), keeping each client target on the hopper's client release (`client-release.ts`), the links of the machines dialled in (`links.ts`) and their join codes (`join-code.ts`, issue #308), `combineMachineSources` | engine, http, store, plugins |
@@ -1143,6 +1143,11 @@ A source error never stops the daemon or other sources; it is shown in status an
 
 ## GitHub source
 
+> **Since issue #359** the gh CLI adapter is gone, and with it `owners`, `whoami()`,
+> `searchOpenIssues` and every search: discovery lists the app's installed repos or a connected
+> account's job repositories, repo by repo. The GitHub sources are `github-account` and `github-app`
+> ("One way to GitHub as the user", at the end). The rest of this section is the phase-3 design.
+
 Config `~/.config/hopper/sources.yaml` (`HOPPER_SOURCES_FILE`), validated with zod;
 invalid → the source is `error` with the message, nothing is pulled.
 
@@ -1419,7 +1424,7 @@ validates every event a test emits.
 ## Configuration added (env)
 
 `HOPPER_SOURCES_FILE` and `HOPPER_GH_BIN` were removed in phase 5 slice 4 (sources.yaml
-folded into plugins.yaml `jobSources`; the gh bin is github-gh's `bin` option).
+folded into plugins.yaml `jobSources`; the gh bin became github-gh's `bin` option, gone with that source in issue #359).
 
 | var | default |
 |-----|---------|
@@ -1479,6 +1484,9 @@ decision TRIGGERS; `src/ui/app.js` learns `job.reprioritized`.
 ---
 
 # Phase 4 — a GitHub App instead of gh-as-owner (2026-10-03)
+
+> **The gh side of this phase is removed (issue #359):** no gh source, no `enabled: auto`, no gh→app
+> switch. The App adapter stays as the `github-app` source.
 
 The `gh` source acts as the owner: its comments are theirs, so a hidden marker was the only way to
 tell them from their replies, and it sees every repo they can see. A GitHub App fixes both: it
@@ -1833,7 +1841,7 @@ A **role** is a slot the engine calls through one port. A **plugin** implements 
 | `router` | `Router { name; advise(job) → Advice }` (was `JevAdvisor`) | 1 | `gate-router`, `pass-through` | live |
 | `escalation-level` | `EscalationLevel { name; answer(req, signal) → { answer?, escalate, reason } }` | 0..n, in order | `claude-cli` | live |
 | `executor` | `Executor` (unchanged) | 1..n | `herdr-claude`, `test` | restart |
-| `job-source` | `JobSource` (unchanged) | 0..n | `github-gh`, `github-app` | restart |
+| `job-source` | `JobSource` (unchanged) | 0..n | `github-account`, `github-app` (`github-gh` removed by issue #359) | restart |
 | `machine-source` | `MachineSource` (unchanged) | 1 | `local` | restart (an options change is live since issue #18) |
 | `usage-source` | `UsageSource` (unchanged) | 0..n | none in production; `fake` stays a test fake at the `ports.ts` seam | restart |
 | `notifier` | `Notifier { name; start(events); stop() }` (new) | 0..n | `grokbot-routine` | restart |
@@ -1922,8 +1930,8 @@ export default {
   command to run. Cheap; never a paid model call; **never executes a GUI binary** (`grokbot`
   is Electron: `which` only). Kit: `which(bin)`, `version(bin, args)` (5 s timeout, CLIs
   only), `output(bin, args, input)` (all of stdout, `input` on stdin, same timeout), `exists(path)`,
-  `pythonImports(python, module)`, `env(name)`. `github-gh` reports `needs-setup` when `gh auth
-  status` fails.
+  `pythonImports(python, module)`, `env(name)`. (`github-gh` reported `needs-setup` when `gh auth
+  status` failed; that source is removed, issue #359.)
 - **Option choices** (issue #151) `choices(sys)` → `{ [option]: { value, label?, description? }[] }`:
   the values an option may take, read from the system with the same kit and limits as `detect`. Run
   at start and on rescan; reported per plugin in `GET /api/plugins` `plugins[].choices`; the UI offers
@@ -1953,7 +1961,8 @@ export default {
 ### Configuration — `~/.config/hopper/plugins.yaml`
 
 **Superseded by issue #198** ("Config in the database: no config files"): the plugins config is the
-config record `plugins`, a JSON value in the database, edited in the UI. The shape below is unchanged.
+config record `plugins`, a JSON value in the database, edited in the UI. The shape below is unchanged,
+but for its `github` (github-gh) instance: removed by issue #359, tenant migration 14.
 
 The truth for which instance fills which role. Mode 600, owner-editable, mtime-watched (5 s).
 Live roles (router, queue sorter, escalation levels) swap between calls; restart roles show
@@ -2266,6 +2275,9 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
   new: Decisions stored before this slice lack it (read-only history; nothing replays them).
 
 ### Settled in slice 4 (2026-10-03)
+
+> Everything below about github-gh (its detection, pause, `bin`, `appFile`) is history: the source is
+> removed by issue #359.
 
 - **Roles:** `ROLES` adds `job-source` (0..n; built-ins `github-gh`, `github-app`), `machine-source` (1;
   built-in `local`, option `lanes`, default 4) and `usage-source` (0..n; none built in — the fake usage
@@ -3955,8 +3967,8 @@ installer adds `- { name: claude, plugin: claude-plan }`. A restart role, as bef
 - `GET /api/accounts` → `{ accounts: PartAccount[] }`, `PartAccount` = `{ role: usage-source |
   job-source, instance, service, identity?, detail, problem? }`. Each part describes its own
   account: a usage source through `state().account`, a job source as `detail.account` in its
-  status — so a custom plugin's appears the same way. GitHub: the gh source names the gh user once
-  it has asked (`whoami`; not asked while owners or repos are configured), and its pause reason; the
+  status — so a custom plugin's appears the same way. GitHub: the connected account's source names
+  the account, and its pause reason (issue #359: the gh source and its `whoami` are gone); the
   app source names its bot (app file or first sync), the app slug and its installation repos.
   Never a token: accounts carry facts only, and nothing else is read.
   A separate route, not part of `/api/usage`: an account is not a budget (GitHub's have no usage).
@@ -4395,8 +4407,8 @@ and #241 is every admin a realm grants, and the login code alone is narrowed.
   the reads `GET /api/realms`, `/api/users`, `/api/instance` (403; a mutation's refusal carries `needs`
   so the UI keeps the session). Loopback without a session reads them as before.
 - **Unchanged**: every other `admin` mutation acts inside the session's own user and stays `admin` —
-  plugins, machines, routing, webhooks, the rules, the queue gate, gh login, connected accounts, device
-  links. No stored role, session or login code changes; there is no migration. `SessionUser.instanceAdmin`
+  plugins, machines, routing, webhooks, the rules, the queue gate, connected accounts, device
+  links (gh login, once here, is removed by issue #359). No stored role, session or login code changes; there is no migration. `SessionUser.instanceAdmin`
   tells the UI which of Settings → Sign-in, Users, Updates and the plugin store's actions to offer.
 
 **Residual risk, stated.** A device link of a regular admin reaches only their own user. A hopper from
@@ -5073,7 +5085,9 @@ as the `local` machine. The image now sets `HOPPER_LOCAL_MACHINE=false`: the bui
 no machine, and the boot removes every `local` instance from plugins.yaml `machines:` (one an earlier
 boot of the container wrote), keeping every other line. The entrypoint that started the container's
 herdr session is gone. The image keeps herdr's CLI: `herdr-claude` detects it before it runs jobs on
-attached machines. A container install runs jobs on attached machines only.
+attached machines. A container install runs jobs on attached machines only. Since issue #359 the image
+has no gh and no git credential helper for GitHub either: the container reads GitHub only through the
+connected account, and a job gets its GitHub token from that connection (`GH_TOKEN`) on its machine.
 
 **Built-in instances: no machine of its own (issue #259).** The hopper no longer registers its own
 host as a machine by default. The plugins config the boot writes for a store that has none (a new
@@ -5298,7 +5312,6 @@ redirect a credential:
 |------|------------------|-----|
 | database | `HOPPER_DATABASE_URL` (it carries the password; also `_FILE`) | — |
 | github-app source | `privateKeyEnv` (`GITHUB_APP_PRIVATE_KEY`; a PEM, real newlines or `\n` escapes) + `appId`, `slug` options | `appFile` → github-app.json + .pem |
-| github-gh source | `appKeyEnv` (`GITHUB_APP_PRIVATE_KEY`; null: never pause): `enabled: auto` pauses while it is set | `appFile` readable |
 | grokbot-routine notifier | `urlEnv`, `keyEnv` (`GROKBOT_WEBHOOK_URL`, `GROKBOT_WEBHOOK_KEY`) | `envFile` |
 | gate-router | `TYPESAFE_API_KEY` (Jev, through TypeSafe) | `typesafeKeyFile` |
 | anthropic-api escalation level | `apiKeyEnv` (`ANTHROPIC_API_KEY`) | — |
@@ -5307,9 +5320,11 @@ redirect a credential:
 
 The App's bot is `<slug>[bot]`, its page `https://github.com/apps/<slug>`. `create-github-app.sh`
 writes the key (and webhook secret) as lines of an env file (`--secrets-file`, default the host
-unit's `daemon.env`) and prints the `appId` and `slug` to set. The gh and claude CLIs sign in from their own variables (`GH_TOKEN`,
-`CLAUDE_CODE_OAUTH_TOKEN`) where their login state is not on the machine; they read those
-themselves, so no `_FILE` form for them.
+unit's `daemon.env`) and prints the `appId` and `slug` to set. The claude CLI signs in from its own
+variable (`CLAUDE_CODE_OAUTH_TOKEN`) where its login state is not on the machine; it reads it itself, so
+no `_FILE` form. A job's `GH_TOKEN` is not a runtime secret: the hopper hands it the connected account's
+token (issue #214; the only GitHub credential of a job since issue #359). The github-gh source and its
+`appKeyEnv` are removed (issue #359).
 
 **What the hopper keeps is no secret** (issue #56 replaces issue #53's sealing), but for the realms' own (issue #216):
 
@@ -5446,6 +5461,10 @@ Owner direction: someone who is not the owner can run the hopper and use it from
 
 ## Connecting GitHub: the gh CLI by default, an App of one's own (issue #108, 2026-10-05)
 
+> **Superseded.** Since issue #214 the default is the connected account; since issue #359 the gh CLI
+> path (the `github` instance, `enabled: auto`, gh login) is removed. The App of one's own stays
+> (`github-app`). See "One way to GitHub as the user" at the end.
+
 Owner direction: a self-hoster leaves the install knowing which GitHub path they are on and how to
 set it up, and is never steered toward a shared App private key.
 
@@ -5464,8 +5483,8 @@ set it up, and is never steered toward a shared App private key.
   and a hosted relay App forwarding to many hoppers. Since issue #214 people sign in with GitHub
   through the hopper's GitHub App, and that connection is the default path ("Sign in with GitHub, and work
   through that connection"). Either would put a credential, or another party, where the hopper now has neither;
-  neither is the path for a self-hosted hopper. Logging gh in from the UI is built ("gh login", issue
-  #138): the login stays gh's own, as with `gh auth login`.
+  neither is the path for a self-hosted hopper. Logging gh in from the UI was built in issue #138 and
+  removed with the gh source in issue #359.
 
 ## Plugin store (issue #75, 2026-10-05)
 
@@ -5585,55 +5604,10 @@ in the database.
   document by hand) stays as it is: an edit never changes `secretEnv`. A new one names a
   `WEBHOOK_SECRET_*` variable; renaming the variable is remove + add.
 
-## gh login (issue #138, 2026-10-05)
-
-Owner request: the GitHub path for a hopper in Podman was bad; replace it with one that works there.
-
-**What was bad.** The container docs said `podman compose exec -it hopper gh auth login`, or
-`GH_TOKEN` in `.env`. podman-compose refuses `exec -it` (`unrecognized arguments: -it`; its exec is
-interactive with a terminal by default), so the recommended runtime failed at the first GitHub step.
-`gh auth login` then asked three questions in a terminal to reach the one thing that matters, the
-device code. `GH_TOKEN` meant copying a token out of another machine's gh into a plain file, where it
-also overrides any login and is read only when the container is created.
-
-**The replacement: gh's own device flow, run by the hopper.** The Sources view has a **GitHub (gh)**
-panel; **Log in to GitHub** (admin) posts `POST /ui/api/gh-login` `{ action: 'start' }`. The hopper runs
-`gh auth login --web --hostname github.com --git-protocol https` with no terminal (stdin closed): on
-that path gh asks nothing, prints its device code and `https://github.com/login/device` on stderr, and
-polls GitHub until the code is approved or expires. The hopper reads the two from gh's output and
-answers them (`GhLoginStatus` `waiting`); the panel shows them and reads `GET /api/gh-login` every 2 s
-until gh exits. Exit 0 → `logged-in` (with the account from `gh auth status`); otherwise `failed` with
-gh's last line. `{ action: 'cancel' }` ends a waiting gh. One login at a time: a start while one waits
-answers the same code. No terminal, no compose provider differences, no token to copy, the same on a
-host install as in a container.
-
-- **The hopper keeps nothing.** gh stores the login in its own config, exactly as `gh auth login`
-  does: in a container, `/home/node/.config/gh` on the `home` volume, so it outlives restarts and
-  upgrades. git already reaches GitHub through `gh auth git-credential` (the image's system git
-  config). The device code is GitHub's and useless without the user's approval on github.com; it is
-  never logged.
-- **A token variable wins over a login.** With `GH_TOKEN` or `GITHUB_TOKEN` set, gh uses it and refuses
-  to log in; a start then answers `failed` with the variable's name and what to do (remove it, restart),
-  and runs no gh. A valid one shows as `logged-in`.
-- **No gh** → `unavailable` (the panel is hidden; a start is 409). The gh is the one on the daemon's
-  `PATH`, the github-gh source's default `bin`.
-- **Seams.** `GhLogin` port (`ports.ts`); adapter `src/sources/github/gh-login.ts` (gh CLI through
-  `child_process`, no shell); routes `src/http/gh-login.ts` (read) and `/ui/api/gh-login` (admin).
-  The github-gh source's needs-setup command now names the panel first:
-  `Sources → Log in to GitHub, or gh auth login`.
-- **Claude Code** keeps its sign-in in the container (`podman compose exec hopper claude`, `/login`),
-  now without `-it`.
-- **Not built.** A newer gh in the image (Debian bookworm's is 2.23.0; its device flow and
-  `auth git-credential` are all the hopper uses). Logging gh out from the UI (`gh auth logout` in the
-  container, or `down -v`).
-
-**Verification:** `test/integration/gh-login.test.ts` (a stand-in gh on `PATH`, the real daemon and
-HTTP edge: the device code, one flow at a time, approve → logged in with the account, deny → failed
-and a new start, cancel, a token variable, no gh) and `test/scripts/install-page.test.ts` (no
-`exec -it`; GitHub from the UI). Live: the published image's gh 2.23.0 with stdin closed printed the
-code and URL and waited.
-
 ## Sources view: one GitHub section (issue #160, 2026-10-05)
+
+> **Superseded** by issues #254 and #359: the gh card and the gh login panel are gone; the section is the
+> connected account's panel, plus an admin's `github-app` where one is set up.
 
 Owner request: the Sources view showed three overlapping GitHub cards — gh logged in, a github source
 that read `disabled` and `paused: GitHub App configured`, and the github-app source — with nothing
@@ -5873,7 +5847,7 @@ stops every runtime, then the instance.
   so one user's plugins.yaml can never name another user's variable. The instance's own secrets
   (`HOPPER_DATABASE_URL`, `auth.yaml`'s `clientSecretEnv`) keep their names.
 - **Credentials of the CLIs** — for a user with a work dir of their own, every process their parts
-  start on this machine (`gh` in the github-gh source and gh login, `claude` in herdr-claude panes,
+  start on this machine (`gh` in a job's pane, `claude` in herdr-claude panes,
   in claude-cli escalation levels, in the usage sources, `cursor-agent`, a command job, the herdr CLI)
   starts with `GH_CONFIG_DIR=<user work dir>/gh` and `CLAUDE_CONFIG_DIR=<user work dir>/claude`
   added. The runtime builds that environment once (`userProcessEnv`) and hands it to the parts as
@@ -5988,7 +5962,7 @@ shares one database login.
 
 | Side | What | Who reads it |
 |------|------|--------------|
-| **A user's own — sensitive** | jobs (payload, prompt, title, source item, result, failure), questions and answers, events, decisions, lanes and what runs in them, job sources, machines and their ssh names, executors, escalation levels, the rules record, routing, the queue gate and order, usage sources and their accounts (email, plan, usage), webhook subscriptions and deliveries, the `plugins` record and every option in it, gh login and every CLI's config in the user work dir, the user's secret variables, the event stream, the user schema | that user's own sessions only — never an admin of the instance, never a request without a session once there is more than one user |
+| **A user's own — sensitive** | jobs (payload, prompt, title, source item, result, failure), questions and answers, events, decisions, lanes and what runs in them, job sources, machines and their ssh names, executors, escalation levels, the rules record, routing, the queue gate and order, usage sources and their accounts (email, plan, usage), webhook subscriptions and deliveries, the `plugins` record and every option in it, every CLI's config in the user work dir, the user's secret variables, the event stream, the user schema | that user's own sessions only — never an admin of the instance, never a request without a session once there is more than one user |
 | **The instance's** | the users list (id, name, when added), the sign-in config (realms, password accounts and the user each signs in as, role rules — never a hash), the plugin store and its installs, self-update and its status, the instance schema | an admin (`GET /api/users`, `/api/realms`: the instance admin only since issue #240; `/api/plugin-store`, `/api/update`); loopback without a session reads them as before |
 | **Instance totals** | users; jobs not ended by status (`queued`, `held`, `claimed`, `running`, `waiting_answer`); open questions; lanes open and busy; jobs ended in the last 24 hours by how they ended (issue #241); usage readings summed per unit and usage window, with how many readings each sum holds (issue #241) — summed over every user | the instance admin (`GET /api/instance`, Settings → Users; issue #240); never one user's share, nothing named — no account, source or machine |
 
@@ -6263,12 +6237,12 @@ its expiry if any, when. Every answer carries facts only, never a token.
 **Intake** (`job-source/github-account`; a built-in instance, added to every existing plugins config by
 tenant migration 8, since job sources are a restart role): the GitHub source logic (`createGitHubSource`,
 mode `account`) over the account's token — `src/sources/github/account/api.ts` (the App adapter's REST and
-GraphQL calls, plus issue search) — rebuilt when the account changes (`createAccountSource`,
+GraphQL calls; its issue search is gone since issue #359) — rebuilt when the account changes (`createAccountSource`,
 `src/sources/compose.ts`). Defaults: `authors` empty means the connected account alone. Which repositories
 it lists are the user's **job repositories**, chosen in Sources ("Job repositories", issue #321); none
 chosen, none listed. A connect or disconnect syncs the source at once. **Not connected is said out loud**: the source is paused with `GitHub is not
-connected: Sources → Connect GitHub`, and `GET /api/accounts` carries the same problem. The gh source on
-`enabled: auto` pauses while a GitHub account is connected.
+connected: Sources → Connect GitHub`, and `GET /api/accounts` carries the same problem. (The gh source
+paused while an account was connected; it is removed by issue #359.)
 
 **Jobs act through it** (`JobSource.credentials`, `ExecutionContext.credentials`): when a job of the
 connected account starts, the engine asks its source for `GH_TOKEN` (the account's token now), and the
@@ -6378,6 +6352,9 @@ daemon at desktop and phone width: GitHub alone, every way to sign in, and the d
 
 ## Sources: signed in with GitHub, one GitHub piece (issue #254, 2026-10-06)
 
+> Since issue #359 there is no gh source or gh login panel to hide: the connected account's panel is the
+> GitHub section whether connected or not. The text below is what #254 built.
+
 Owner request: after signing in with GitHub through the hopper's app (#214), Sources still showed the
 overlapping GitHub pieces — the **gh login** panel (logged out), the `github` card (gh, paused because a
 GitHub account is connected) and the `github-account` card beside the **GitHub account** panel. Signing in
@@ -6403,7 +6380,8 @@ admin's app in use stays; a broken app stays; not connected) and `test/ui/source
 app against a fake daemon, signed in with GitHub: the section holds only the GitHub account panel with its
 source's sync; no gh login, gh card or github-app).
 
-**A gh source that cannot run (issue #320, 2026-10-06).** A source the host cannot build (unknown plugin,
+**A gh source that cannot run (issue #320, 2026-10-06; moot since issue #359, which removed the gh source
+and every `github-gh` instance).** A source the host cannot build (unknown plugin,
 invalid options — e.g. an older plugins config whose `github` instance names no `authors`) is reported
 with its plugin's id as its kind (`src/users/runtime.ts` `splitSources`): `github-gh`, not `github`. The
 model counted only kind `github` as gh, so that source fell through to the other sources and showed as a
@@ -6541,3 +6519,46 @@ is its home failing before any tab), `test/herdr/payload-default-cwd.test.ts`,
 `test/integration/routing.test.ts` (a rule's work tree on the job and in `routedBy`),
 `test/plugins/machine-targets.test.ts`, `test/adapters/ssh-machine.test.ts`,
 `test/adapters/machine-usage.test.ts`, `test/ui/routing.test.ts`.
+
+## One way to GitHub as the user: the connected account (issue #359, 2026-10-07)
+
+Owner decision: the hopper reads GitHub as the user only through the GitHub account of the signed-in
+user, the **connected account** (#214) — connected at GitHub sign-in or from Sources → Connect GitHub.
+Two ways to GitHub stay: that connection, and an admin's own GitHub App (`github-app`, posting as its
+bot, unchanged).
+
+**Removed, no compatibility path:**
+- the `github-gh` job source (the gh CLI as the owner; the built-in instance `github` with `enabled: auto`;
+  its options `owners`, `bin`, `appKeyEnv`; its pause while a GitHub account was connected or a GitHub App
+  key was set; its search over `owners`);
+- gh login from the UI (#138: the Sources panel, `GET /api/gh-login`, `POST /ui/api/gh-login`, the
+  `GhLogin` port);
+- gh and its git credential helper in the image: the container is not a machine (#141), jobs run on
+  attached machines, which may still have gh for a job's own use;
+- `whoami` and `searchOpenIssues` on the `GitHubApi` port: discovery never searches. It lists the app's
+  installed repos or the account's job repositories (#321), repo by repo.
+
+**As built:**
+- **Built-in job sources** of a fresh hopper: `{ name: 'github-account', plugin: 'github-account' }` only
+  (`builtinInstances`).
+- **A job's GitHub token** for its own git or gh use comes from that same connection (`GH_TOKEN`, as jobs
+  of the connected account already got it, #214).
+- **No connection, no fallback.** Not connected: the `github-account` source is paused with `GitHub is
+  not connected: Sources → Connect GitHub`. Its token expired: `ConnectedAccountStatus` has the state
+  `expired` (with `account` and `error`), the source is paused with `GitHub's sign-in expired: sign in
+  with GitHub again, or Sources → Connect GitHub` (`ConnectedAccountTokens.problem`), and the Sources
+  GitHub panel shows the badge **sign-in expired**, that message and **Sign in to GitHub again** (the
+  device flow). Nothing falls back to another credential.
+- **Sources** has one GitHub section: the connected account's panel with its source's sync, and beside
+  it an admin's `github-app` where one is set up. No gh card, no gh login panel.
+- **Migration** (tenant 14, `src/store/migration-no-gh-source.ts`): every `github-gh` instance leaves the
+  plugins config's `jobSources`; the `repos` of the first one become the user's job repositories when none
+  are chosen yet; a config left without a `github-account` instance gets one. Every other instance stays.
+
+**Kept:** per-user CLI config dirs (`GH_CONFIG_DIR`, `CLAUDE_CONFIG_DIR` for a user added later, "User
+runtime"); gh on machines and agent boxes for a job's own use.
+
+**Verification:** `test/integration/github-connection.test.ts` (not connected and expired: paused with
+the message, no job, no other credential), `test/store/tenant-migration-14.test.ts`,
+`test/plugins/builtin-instances.test.ts`, `test/sources/github-discover.test.ts` (no search),
+`test/ui/sources.test.ts`, `test/ui/sources-view.test.ts`.
