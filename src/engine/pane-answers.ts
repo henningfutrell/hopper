@@ -40,7 +40,7 @@ export function createPaneAnswers(c: EngineContext, reattach: (claim: Claim) => 
       if (!c.questions.answeredInPane(questionId, answer)) return undefined;
       const laneId = laneFor(job);
       store.lanes.update(laneId, { state: 'busy', jobId, idleSince: undefined });
-      store.jobs.update(jobId, { status: 'running', laneId, executorState, pendingAnswer: undefined, holdReason: undefined, startedAt: job.startedAt ?? nowIso(c) });
+      store.jobs.update(jobId, { status: 'running', laneId, executorState, pendingAnswer: undefined, holdReason: undefined, waitReason: undefined, startedAt: job.startedAt ?? nowIso(c) });
       store.events.append({ type: 'job.reattached', jobId, laneId, questionId, data: { reason: REATTACH_REASON } });
       return { jobId, laneId };
     });

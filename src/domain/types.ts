@@ -68,6 +68,8 @@ export interface Job {
   advice?: Advice;
   /** Set while held: the reason from the last Decision. */
   holdReason?: string;
+  /** Set while queued for want of a lane (issue #381): the lane cap that binds, with its number. Not a hold. */
+  waitReason?: string;
   /** True once a human approved a job the router held (`ask_human` and the other router holds). */
   approved: boolean;
   /**
@@ -238,6 +240,9 @@ export interface HoldPlan {
   reason: string;
 }
 
+/** An admitted job left queued for want of a lane (issue #381), with the lane cap that binds. */
+export interface WaitPlan { jobId: JobId; reason: string }
+
 /** What the router's advice changed against the native verdict: a hold, or an order. */
 export interface Divergence {
   jobId: JobId;
@@ -254,6 +259,8 @@ export interface Decision {
   lanes: LanePlan[];
   start: StartPlan[];
   hold: HoldPlan[];
+  /** Admitted jobs no lane is free for: they stay queued (issue #381). Decisions recorded before it lack it. */
+  wait: WaitPlan[];
   /** Divergences: jobs where the advice differs from the native verdict. */
   advice: Divergence[];
   /** Plain-language reasons, in the order the decider reached them. */

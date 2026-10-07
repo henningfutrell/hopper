@@ -38,7 +38,7 @@ export async function recover(c: EngineContext): Promise<Recovered> {
   };
   const requeue = (job: Job, from: string, reason: string, patch: Partial<Job> = {}): void => {
     store.jobs.update(job.id, {
-      status: 'queued', laneId: undefined, holdReason: undefined, progress: undefined, progressMessage: undefined, ...patch,
+      status: 'queued', laneId: undefined, holdReason: undefined, waitReason: undefined, progress: undefined, progressMessage: undefined, ...patch,
     });
     store.events.append({ type: 'job.requeued', jobId: job.id, data: { from, reason } });
   };

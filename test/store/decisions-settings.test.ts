@@ -6,7 +6,7 @@ const t = useTempStore();
 
 function decision(id: string, at: string): Decision {
   return {
-    id, at, trigger: 'tick', lanes: [], start: [], hold: [], advice: [],
+    id, at, trigger: 'tick', lanes: [], start: [], hold: [], wait: [], advice: [],
     reasons: ['r'],
     inputs: {
       at, trigger: 'tick', machines: [], lanes: [], usage: [], waiting: [], running: [], unavailableExecutors: [],

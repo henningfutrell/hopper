@@ -6,7 +6,7 @@
 import { z } from 'zod';
 import { CONNECTED_ACCOUNT_PROVIDERS, EVENT_SCHEMA_VERSIONS, EVENT_TYPES, QUEUE_GATE_MODES, ROLES, type EventType } from '../domain/types.ts';
 import { LEGACY_EVENT_SCHEMAS, LEGACY_EVENT_TYPES } from './legacy.ts';
-import { advice, adviceAction, holdPlan, jobSourceRef, jobSpec, jobStatus, lanePlan, startPlan } from './parts.ts';
+import { advice, adviceAction, holdPlan, waitPlan, jobSourceRef, jobSpec, jobStatus, lanePlan, startPlan } from './parts.ts';
 
 const strict = z.strictObject;
 const gateActor = z.enum(['user', 'pre-sort']);
@@ -41,6 +41,8 @@ export const EVENT_SCHEMAS = {
     // v3: no `routerMode` (issue #211). v2: divergences carry `withAdvice` (was withJev).
     decisionId: z.string(), trigger: z.string(),
     starts: z.array(startPlan), holds: z.array(holdPlan), lanes: z.array(lanePlan), divergences: z.array(divergence),
+    // Additive (issue #381): the jobs left queued for want of a lane, with the lane cap that binds.
+    waits: z.array(waitPlan).optional(),
   }),
   'question.asked': strict({ questionId: z.string(), text: z.string(), detectedBy: z.string() }),
   // v2: `target` is the stage entered (an instance name or `human`), no longer opus | fable | human.

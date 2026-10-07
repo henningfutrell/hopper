@@ -41,6 +41,7 @@ export const startPlan = strict({
   effectivePriority: z.number(), reason: z.string(),
 });
 export const holdPlan = strict({ jobId: z.string(), reason: z.string() });
+export const waitPlan = strict({ jobId: z.string(), reason: z.string() });
 export const lanePlan = strict({
   machineId: z.string(), current: z.number(), target: z.number(), open: z.number(),
   close: z.array(z.string()), drain: z.array(z.string()), reason: z.string(),

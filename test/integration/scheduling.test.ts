@@ -45,17 +45,17 @@ describe('machines, lanes and decisions', () => {
     expect([...ats].sort().reverse()).toEqual(ats);
   });
 
-  it('a usage hard limit closes lanes and holds work; lowering usage resumes it', async () => {
+  it('a usage hard limit closes lanes and work waits for a lane; lowering usage resumes it', async () => {
     const first = await t.pull({ op: 'echo' });
     await t.waitForStatus(first.id, 'finished');
     t.setUsage(97);
     expect((await t.api('GET', '/api/usage')).body.readings[0].used).toBe(97);
     await waitFor(async () => (await lanes()).length === 0, { what: 'lanes to close' });
     const held = await t.pull({ op: 'echo' });
-    const h = await t.waitForStatus(held.id, 'held');
-    expect(h.holdReason).toMatch(/usage hard limit/);
-    const heldEvents = (await t.events()).filter((e) => e.type === 'job.held' && e.jobId === held.id);
-    expect(heldEvents).toHaveLength(1);
+    const h = await waitFor(async () => { const j = await t.job(held.id); return j.waitReason ? j : undefined; });
+    expect(h.status).toBe('queued');
+    expect(h.waitReason).toMatch(/usage hard limit/);
+    expect((await t.events()).filter((e) => e.type === 'job.held' && e.jobId === held.id)).toEqual([]);
     t.setUsage(10);
     const done = await t.waitForStatus(held.id, 'finished');
     expect(done.holdReason).toBeUndefined();

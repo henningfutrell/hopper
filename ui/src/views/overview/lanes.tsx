@@ -1,4 +1,4 @@
-// The lane board: every lane on every machine, what it runs, for how long, how far along.
+// The lane board: every lane on every machine, what it runs, for how long, how far along (when the job says), and its latest activity.
 import { FolderOpen, Hand, Layers, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Confirm } from '@/components/confirm';
@@ -36,26 +36,43 @@ export function OperatorLedButton({ job }: { job: Job }) {
   );
 }
 
+/** What each lane state means, on hover (issue #381). */
+const LANE_MEANING = {
+  busy: 'Running a job.',
+  idle: 'Open, with no job: the next waiting job takes it.',
+  unopened: 'Room for a lane this machine may open; none is open there now.',
+} as const;
+const CLOSES_AFTER = 'The job runs to the end; this lane then closes, because the machine has more lanes open than its lane cap allows now (a usage limit or an executor\'s lane cap).';
+
 function LaneCard({ row, machine }: { row: LaneRow; machine: string }) {
   const { job, lane } = row;
   const name = lane ? lane.id.slice(lane.id.lastIndexOf('/') + 1) : 'unopened';
+  // A draining lane still runs its job (issue #381): it shows busy, and says it closes after the job.
+  const state = row.state === 'draining' ? 'busy' : row.state;
   return (
-    <div className={cn('rounded-lg border bg-background/40 p-3 transition-colors',
-      row.state === 'busy' && 'border-busy/30 bg-busy/[0.04]', row.state === 'draining' && 'border-warn/30', row.state === 'unopened' && 'border-dashed opacity-60')}>
+    <div data-lane-job={job?.id} className={cn('rounded-lg border bg-background/40 p-3 transition-colors',
+      state === 'busy' && 'border-busy/30 bg-busy/[0.04]', state === 'unopened' && 'border-dashed opacity-60')}>
       <div className="mb-2 flex items-center gap-2 text-xs">
         <span className="min-w-0 truncate font-medium" title={`machine ${machine}`}>{machine}</span>
         <span className="shrink-0 font-mono text-muted-foreground">{name}</span>
-        <StatusBadge className="ml-auto" status={row.state === 'unopened' ? 'not open' : row.state} tone={row.state === 'unopened' ? 'muted' : undefined} />
+        {row.state === 'draining' && <span className="ml-auto truncate text-muted-foreground" title={CLOSES_AFTER}>closes after this job</span>}
+        <StatusBadge className={row.state === 'draining' ? undefined : 'ml-auto'} status={state === 'unopened' ? 'not open' : state}
+          tone={state === 'unopened' ? 'muted' : undefined} title={LANE_MEANING[state]} />
       </div>
       {job ? (
         <div data-job-group="running" data-job-id={job.id} data-status={job.status} className="space-y-2">
           <div className="flex items-start gap-2"><JobTitle job={job} className="flex-1" /><CancelButton job={job} /></div>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            {job.startedAt && <Since iso={job.startedAt} className="w-14 shrink-0" />}
-            <div className="h-1 flex-1 overflow-hidden rounded-full bg-muted">
-              <div className="h-full rounded-full bg-busy transition-[width] duration-700" style={{ width: `${Math.round((job.progress ?? 0) * 100)}%` }} />
-            </div>
-            <span className="num w-8 text-right">{Math.round((job.progress ?? 0) * 100)}%</span>
+            {job.startedAt && <span title="Running for">for <Since iso={job.startedAt} /></span>}
+            {/* A bar only for a percentage the job reported (issue #381): none reads as stuck at 0%. */}
+            {job.progress !== undefined && (
+              <div data-slot="progress" className="flex flex-1 items-center gap-2">
+                <div className="h-1 flex-1 overflow-hidden rounded-full bg-muted">
+                  <div className="h-full rounded-full bg-busy transition-[width] duration-700" style={{ width: `${Math.round(job.progress * 100)}%` }} />
+                </div>
+                <span className="num w-8 text-right">{Math.round(job.progress * 100)}%</span>
+              </div>
+            )}
           </div>
           {row.workTree && (
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground" title={`work tree ${row.workTree}`}>

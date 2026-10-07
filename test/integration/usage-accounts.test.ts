@@ -81,8 +81,8 @@ describe('claude-plan through the composition root', () => {
     const jobs: Job[] = [];
     for (let i = 0; i < 4; i++) jobs.push(await a.pull({ op: 'sleep', ms: 3000 }));
     await waitFor(async () => (await a.api('GET', '/api/queue')).body.running.length === 2, { what: 'two running' });
-    const held = await a.waitForStatus(jobs[3]!.id, 'held');
-    expect(held.holdReason).toContain('usage soft limit caps lanes at 2');
+    const held = await waitFor(async () => { const j = await a.job(jobs[3]!.id); return j.waitReason ? j : undefined; });
+    expect(held).toMatchObject({ status: 'queued', waitReason: expect.stringContaining('executor scripted\'s lane cap on local is 2 (usage soft limit') });
     expect((await a.api('GET', '/api/queue')).body.running).toHaveLength(2);
 
     const plugins = (await a.api('GET', '/api/plugins')).body;

@@ -22,7 +22,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'job.reprioritized': { from: 50, to: 80, reason: 'project:Priority=P1' },
   'lane.opened': {},
   'lane.closed': { reason: 'drained' },
-  'decision.made': { decisionId: 'd1', trigger: 'tick', starts: [start], holds: [{ jobId: 'j2', reason: 'full' }], lanes: [lanePlan], divergences: [{ jobId: 'j1', advice: 'ask_human', native: 'start', withAdvice: 'hold', note: 'n' }] },
+  'decision.made': { decisionId: 'd1', trigger: 'tick', starts: [start], holds: [{ jobId: 'j2', reason: 'full' }], waits: [{ jobId: 'j3', reason: 'waiting for a lane: machine local\'s lane cap is 4, all 4 in use' }], lanes: [lanePlan], divergences: [{ jobId: 'j1', advice: 'ask_human', native: 'start', withAdvice: 'hold', note: 'n' }] },
   'question.asked': { questionId: 'q1', text: 'which?', detectedBy: 'marker' },
   'question.escalated': { questionId: 'q1', target: 'human', reason: 'asked', text: 'which?', jobId: 'j1', goal: 'g', answerUrl: 'http://127.0.0.1/q', notifyCount: 0, renotify: true },
   'question.escalated_to_human': { questionId: 'q1', reason: 'fable: the owner\'s call', text: 'which?', jobId: 'j1', goal: 'g', answerUrl: 'http://127.0.0.1/q', notifyCount: 1 },
