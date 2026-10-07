@@ -377,7 +377,8 @@ curl -H "Authorization: Bearer $ACCESS_TOKEN" https://hopper.example.com/api/que
 
 - **Sign in through the UI first.** The token reads only as a user its identity already signed in as;
   it makes no new user. A GitHub token reads only as the user whose connected GitHub account it is:
-  after **Disconnect** in Sources it no longer does.
+  once it is forgotten (Sources → **Stop working through GitHub**, offered to a user signed in another
+  way) it no longer does.
 - **Reads only.** Every change (`POST /ui/api/*`) still needs a UI session.
 - The same realms and role rules decide: turning the realm off, or a rule that grants no role, closes
   this door as it closes the sign-in page. A refused token is 401 with the reason, no role is 403, an

@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- Signed in with GitHub, Sources now offers Sign out for your GitHub account instead of a misleading Disconnect; signed in another way, the button says it stops working through GitHub and keeps you signed in.
 - Once you are signed in with GitHub, Sources no longer shows an older GitHub source in error beside your GitHub connection.
 - Machines attached over ssh now come online for people signed in to the hopper; before, every one stayed offline with a "too long" error.
 - For testing, you can start a set of throwaway machines, one per coding agent (Claude, Codex, Cursor, Oh My Pi, OpenCode), and attach all of them to the hopper at once; you can open a terminal in each to sign its agent in.

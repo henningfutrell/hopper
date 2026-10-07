@@ -6,10 +6,12 @@
 // jobs, and the jobs act as them with the app marked on what they do. GitHub: the app reaches only the
 // repositories it is installed on — the panel lists them for each account it is installed on, with a link
 // to choose them; only where it is installed nowhere does it link to install it (issue #253). When GitHub
-// cannot say where it is installed, the panel says why and links to see the installs, never to install (#263). Disconnect
-// forgets the account and its token. The connection's job source is shown in it, its sync under the
+// cannot say where it is installed, the panel says why and links to see the installs, never to install (#263). Signed in
+// with GitHub, the account is the sign-in: the panel offers Sign out, never a Disconnect, and points at Settings → Plugins
+// to stop taking jobs from it while signed in. Signed in another way, Stop working through GitHub forgets the account and
+// its token and keeps the sign-in (issue #322). The connection's job source is shown in it, its sync under the
 // account (issue #254): one GitHub piece, not a card beside it.
-import { Link2, Unlink } from 'lucide-react';
+import { Link2, LogOut, Unlink } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { DeviceCode } from '@/components/device-code';
@@ -18,8 +20,8 @@ import { Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
 import { get, post, SessionRejected } from '@/lib/api';
 import type { AppInstallation, ConnectedAccountStatus, SourceStatus } from '@/model/wire';
-import { useHopper } from '@/store';
-import { useCanAdmin } from '@/store/selectors';
+import { logout, useHopper } from '@/store';
+import { useCanAdmin, useSignedInWith } from '@/store/selectors';
 import { SourceSync } from './source-sync';
 
 const POLL_MS = 2000;
@@ -30,6 +32,7 @@ const LABEL: Record<ConnectedAccountStatus['state'], string> = { connected: 'con
 export function ConnectedAccountPanel({ provider, source }: { provider: Provider; source?: SourceStatus | undefined }) {
   const [s, setS] = useState<ConnectedAccountStatus | null>(null);
   const canAdmin = useCanAdmin();
+  const signedInWith = useSignedInWith(provider);
   const waiting = s?.state === 'waiting';
   useEffect(() => {
     let live = true;
@@ -58,7 +61,9 @@ export function ConnectedAccountPanel({ provider, source }: { provider: Provider
           as you on {name}, with the hopper&apos;s app marked on what they do. Signing in with {name} connects it too.
         </div>
         {s.state === 'connected' && <>
-          <div>Connected as <span className="font-mono">{s.account}</span>.</div>
+          {signedInWith
+            ? <div>Signed in with {name} as <span className="font-mono">{s.account}</span>. Signing out ends your hopper session.</div>
+            : <div>Connected as <span className="font-mono">{s.account}</span>.</div>}
           {s.installations === undefined
             ? <div data-installations className="space-y-1">
               <div data-installations-error className="text-warn break-words">{s.installationsError ?? `${name} could not say where the app is installed.`}</div>
@@ -71,7 +76,12 @@ export function ConnectedAccountPanel({ provider, source }: { provider: Provider
                 {s.installUrl && <div><a className="underline" href={s.installUrl} target="_blank" rel="noreferrer">Install the app</a></div>}
               </div>}
           {source && <SourceSync s={source} />}
-          <Button size="xs" variant="outline" disabled={!canAdmin} title={adminOnly} onClick={() => void act('disconnect')}><Unlink />Disconnect</Button>
+          {signedInWith
+            ? <>
+              <div className="text-muted-foreground">To stop taking jobs from {name} and stay signed in, switch off its job source in <a className="underline" href="#settings/plugins">Settings → Plugins</a>.</div>
+              <Button size="xs" variant="outline" onClick={() => void logout()}><LogOut />Sign out</Button>
+            </>
+            : <Button size="xs" variant="outline" disabled={!canAdmin} title={adminOnly ?? `Forgets the ${name} account and its token: its issues stop becoming jobs, and you stay signed in`} onClick={() => void act('disconnect')}><Unlink />Stop working through {name}</Button>}
         </>}
         {s.state === 'waiting' && (
           <DeviceCode className="rounded-lg border bg-muted/30 px-4 py-5" provider={name} userCode={s.userCode} verificationUri={s.verificationUri} expiresAt={s.expiresAt}

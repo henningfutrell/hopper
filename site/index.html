@@ -257,11 +257,14 @@ GitHub realm&#39;s role rules grant (Settings → Sign-in: usernames, or numeric
 wherever the app can see them (set <code>authors</code>, <code>owners</code> or <code>repos</code> on the <code>github-account</code> source in
 <strong>Plugins</strong> to change that) — and your jobs act as you on GitHub, with the app marked on what they do.</p>
 <p>The hopper&#39;s app reaches only the repositories it is <strong>installed</strong> on: <strong>Sources → GitHub account</strong> says
-where it is installed and links to install it or choose repositories. <strong>Disconnect</strong> there forgets the
-account and its token; the source then says <em>GitHub is not connected</em> and takes nothing. Revoke the app
-for good at <a href="https://github.com/settings/applications">https://github.com/settings/applications</a>.</p>
+where it is installed and links to install it or choose repositories. That account is your sign-in, so
+the panel offers <strong>Sign out</strong>, not a disconnect; to stop taking jobs from GitHub and stay signed in,
+switch off the <code>github-account</code> source in <strong>Plugins</strong>. Revoke the app for good at
+<a href="https://github.com/settings/applications">https://github.com/settings/applications</a>.</p>
 <p>Signed in at the edge instead (SSO, SAML, an auth gateway): <strong>Sources → GitHub account → Connect
-GitHub</strong>, the same code at the same address. That account is then linked to your user.</p>
+GitHub</strong>, the same code at the same address. That account is then linked to your user. <strong>Stop working
+through GitHub</strong> there forgets the account and its token and keeps you signed in; the source then says
+<em>GitHub is not connected</em> and takes nothing.</p>
 <p>The app ships with the hopper as a public client id — no secret: the device flow needs none. GitHub
 Enterprise, or an app of your own, is set in the environment: <code>HOPPER_GITHUB_URL</code>,
 <code>HOPPER_GITHUB_CLIENT_ID</code>, <code>HOPPER_GITHUB_APP_SLUG</code> (how to register one: <a href="https://github.com/henningfutrell/hopper/blob/main/docs/sign-in.md#github">docs/sign-in.md</a>).</p>
