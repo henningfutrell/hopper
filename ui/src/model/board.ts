@@ -33,6 +33,14 @@ export function jobBoard(jobs: Iterable<Job>, waitingOrder: readonly string[]): 
   return board;
 }
 
+/** Whether Run again is offered for a job (issue #313): it failed, has a source, and no newer job of its item exists. The daemon decides. */
+export function canRerun(job: Job, jobs: Iterable<Job>): boolean {
+  const key = job.source?.key;
+  if (job.status !== 'failed' || key === undefined) return false;
+  for (const j of jobs) if (j.id !== job.id && j.source?.key === key && j.createdAt > job.createdAt) return false;
+  return true;
+}
+
 /** A machine as people read it: its label, and its id too where they differ, since two machines can share a label (issue #166). */
 export function machineName(id: string, machines: readonly Pick<MachineView, 'id' | 'label'>[]): string {
   const label = machines.find((m) => m.id === id)?.label;

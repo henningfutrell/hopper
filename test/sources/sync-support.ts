@@ -100,6 +100,10 @@ export function createWorld(): World {
       const cur = jobs.get(id)!.sourceState ?? {};
       patchJob(id, { sourceState: { ...cur, ...state } });
     },
+    rerun(id) {
+      emit('job.rerun', id, { by: 'user' });
+      return jobs.get(id)!;
+    },
   };
 
   function addQuestion(jobId: string, over: Partial<Question> = {}): Question {

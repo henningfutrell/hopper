@@ -359,15 +359,18 @@ export interface SourceItem {
 export type SourceSignal = { kind: 'cancel'; jobId: JobId; reason: string };
 
 /**
- * What happened to a job, reported back to its source: the claim and the end. Progress and
- * questions are not reported (a source is not where the owner is asked).
+ * What happened to a job, reported back to its source: the claim and the end — and a re-run, the
+ * user giving a failed job's item back to run again (issue #313): the source clears the job's end
+ * (its marker) so it offers the item again. Progress and questions are not reported (a source is
+ * not where the owner is asked).
  */
 export type SourceReport =
   | { kind: 'claimed'; job: Job }
   | { kind: 'finished'; job: Job }
   | { kind: 'failed'; job: Job }
   | { kind: 'cancelled'; job: Job }
-  | { kind: 'rejected'; job: Job };
+  | { kind: 'rejected'; job: Job }
+  | { kind: 'rerun'; job: Job };
 
 export interface JobSource {
   readonly name: string;
@@ -430,6 +433,8 @@ export interface SourceHost {
   finishOperatorLed(jobId: JobId): boolean;
   /** Replace sourceState in one tx that re-reads the job. */
   setSourceState(jobId: JobId, state: { sync?: Record<string, unknown>; source?: Record<string, unknown> }): void;
+  /** Its source took a re-run of this failed job (issue #313): emits job.rerun. The job stays as it ended. */
+  rerun(jobId: JobId): Job;
 }
 
 /**
@@ -440,7 +445,17 @@ export interface SourceHost {
 export interface SourceRegistry {
   statuses(): SourceStatus[];
   onStatus(listener: (status: SourceStatus) => void): () => void;
+  /**
+   * Run a failed job's item again (a re-run, issue #313): its source is told (`rerun`) and syncs at once, so it offers
+   * the item again and a new job runs; the failed job is kept. Only the newest job of its item, once
+   * its failure was reported to the source.
+   */
+  rerun(jobId: JobId): Promise<RerunResult>;
 }
+
+export type RerunResult =
+  | { ok: true; job: Job }
+  | { ok: false; reason: 'not_found' | 'conflict' | 'source'; message: string };
 
 // ---- Self-update (issue #44) ------------------------------------------------------------
 

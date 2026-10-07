@@ -117,5 +117,14 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
         if (store.jobs.get(jobId)) store.jobs.update(jobId, { sourceState: state });
       });
     },
+
+    rerun(jobId) {
+      return store.tx(() => {
+        const job = store.jobs.get(jobId);
+        if (!job) throw new EngineError('not_found', `job ${jobId} not found`);
+        store.events.append({ type: 'job.rerun', jobId, data: { by: 'user' } });
+        return job;
+      });
+    },
   };
 }

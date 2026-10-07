@@ -1,7 +1,7 @@
 // A JobSource a test scripts by hand: items it offers, signals it raises, reports it receives.
 // Integration tests pull every non-GitHub job through it (nothing pushes jobs to the hopper).
 // Like the GitHub source's markers (hopper:done, hopper:failed, hopper:rejected), a reported finished, failed or rejected end
-// stops the item being offered; add it again to re-run it.
+// stops the item being offered; add it again to re-run it, or run its failed job again (a `rerun` report offers it again).
 import type { JobSource, SourceItem, SourceReport, SourceSignal } from '../../src/domain/ports.ts';
 
 export interface ManualSource extends JobSource {
@@ -26,6 +26,7 @@ export function manualItem(o: Partial<SourceItem> = {}): SourceItem {
 
 export function createManualSource(name = 'manual'): ManualSource {
   const items = new Map<string, SourceItem>();
+  const ended = new Map<string, SourceItem>();
   let signals: SourceSignal[] = [];
   const reports: SourceReport[] = [];
   return {
@@ -45,7 +46,16 @@ export function createManualSource(name = 'manual'): ManualSource {
     },
     async report(r) {
       reports.push(r);
-      if (r.kind === 'finished' || r.kind === 'failed' || r.kind === 'rejected') items.delete(r.job.source!.key);
+      const key = r.job.source!.key;
+      if (r.kind === 'finished' || r.kind === 'failed' || r.kind === 'rejected') {
+        const item = items.get(key);
+        if (item) ended.set(key, item);
+        items.delete(key);
+      }
+      if (r.kind === 'rerun') {
+        const item = ended.get(key);
+        if (item) items.set(key, item);
+      }
       const prev = (r.job.sourceState?.source?.reported as string[] | undefined) ?? [];
       return { ...(r.job.sourceState?.source ?? {}), reported: [...prev, r.kind] };
     },

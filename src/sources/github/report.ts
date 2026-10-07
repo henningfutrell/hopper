@@ -4,7 +4,8 @@
 // its completion is finished (completion.ts, issues #171, #187), and the merge of its pull request
 // closes the issue, never the hopper (with completion `pull-request` the issue stays open until a
 // person merges); failed → `hopper:failed`; rejected at the queue gate → `hopper:rejected` (issue
-// #159), the issue left open; cancelled → the claim label goes. Returns the source state unchanged. Rows written under
+// #159), the issue left open; cancelled → the claim label goes; rerun (a failed job, by the user,
+// issue #313) → `hopper:failed` and `hopper:claimed` go, so the issue is offered again. Returns the source state unchanged. Rows written under
 // earlier rules may still carry finalCommentId, claimCommentId, progressCommentId,
 // questionComments and answeredComments; they are kept as stored and never read.
 
@@ -63,6 +64,10 @@ async function apply(ctx: ReportContext, r: SourceReport, state: State): Promise
       return state;
     case 'rejected':
       await settle(ctx, repo, number, [LABEL_REJECTED]);
+      return state;
+    case 'rerun':
+      // The job's end goes, so discovery offers the issue again (issue #313).
+      await ctx.api.removeLabels(repo, number, [LABEL_FAILED, LABEL_CLAIMED]);
       return state;
   }
 }

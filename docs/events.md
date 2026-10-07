@@ -615,3 +615,17 @@ Version 1 (`docs/schemas/job.claimed_by_operator.v1.json`). An operator claimed 
 ```json
 {}
 ```
+
+## `job.rerun`
+
+Version 1 (`docs/schemas/job.rerun.v1.json`). The user asked for a failed job's item to run again (UI Run again, a re-run): its source cleared the job's end (on GitHub: the `hopper:failed` and `hopper:claimed` labels went), so the item is offered again and its next sync starts a new job. The failed job is kept as it ended.
+
+| field | type | required |
+|---|---|---|
+| `by` | `user` | yes |
+
+```json
+{
+  "by": "user"
+}
+```

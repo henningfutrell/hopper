@@ -53,6 +53,7 @@
         "queue.ordered",
         "queue.gate_changed",
         "job.claimed_by_operator",
+        "job.rerun",
         "jev.mode_changed",
         "router.mode_changed"
       ]

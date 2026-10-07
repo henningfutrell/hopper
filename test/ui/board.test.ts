@@ -1,7 +1,7 @@
 // The overview's numbers, lists and lane board, all derived from the one job store (issue #45).
 import { describe, expect, it } from 'vitest';
 import type { Job, JobStatus, Lane } from '../../src/domain/types.ts';
-import { GROUP, jobBoard, kpis, laneName, laneRows, waitingRows } from '../../ui/src/model/board.ts';
+import { GROUP, canRerun, jobBoard, kpis, laneName, laneRows, waitingRows } from '../../ui/src/model/board.ts';
 import type { MachineView } from '../../ui/src/model/wire.ts';
 
 const job = (id: string, o: Partial<Job> = {}): Job => ({
@@ -93,5 +93,19 @@ describe('waitingRows', () => {
     const b = jobBoard([job('w1', { status: 'queued' }), job('w2', { status: 'held' })], ['w1', 'w2']);
     const rows = waitingRows(b, { start: [{ jobId: 'w2', effectivePriority: 70, laneId: null, machineId: 'm1', reason: 'r' }] });
     expect(rows.map((r) => [r.job.id, r.position, r.effectivePriority])).toEqual([['w1', 1, null], ['w2', 2, 70]]);
+  });
+});
+
+describe('canRerun (issue #313)', () => {
+  const src = (key: string) => ({ source: { source: 'github', kind: 'github', key } }) as Partial<Job>;
+  it('a failed job of a source, the newest of its item, can run again', () => {
+    const failed = job('f', { status: 'failed', ...src('k') });
+    expect(canRerun(failed, [failed, job('other', { status: 'failed', ...src('k2'), createdAt: '2026-10-03T11:00:00Z' })])).toBe(true);
+  });
+  it('not once a newer job of its item exists, nor a job that did not fail, nor one of no source', () => {
+    const failed = job('f', { status: 'failed', ...src('k') });
+    expect(canRerun(failed, [failed, job('n', { status: 'queued', ...src('k'), createdAt: '2026-10-03T11:00:00Z' })])).toBe(false);
+    expect(canRerun(job('c', { status: 'cancelled', ...src('k') }), [])).toBe(false);
+    expect(canRerun(job('s', { status: 'failed' }), [])).toBe(false);
   });
 });

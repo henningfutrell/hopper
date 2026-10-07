@@ -3,7 +3,7 @@
 // `sourceState.source`. Knows only the narrow SourceHost, never engine internals.
 
 import { SourceError } from '../domain/ports.ts';
-import type { Clock, JobSource, SourceHost, SourceRegistry, SourceReport } from '../domain/ports.ts';
+import type { Clock, JobSource, RerunResult, SourceHost, SourceRegistry, SourceReport } from '../domain/ports.ts';
 import { TERMINAL_STATUSES, isRerunnable } from '../domain/types.ts';
 import type { DomainEvent, Job, SourceStatus } from '../domain/types.ts';
 
@@ -259,9 +259,43 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
 
   const emit = (slot: Slot) => { for (const l of listeners) l({ ...slot.status }); };
 
+  /** Why a failed job's item cannot run again now, or its source's slot (issue #313). */
+  function rerunCheck(jobId: string): RerunResult | Slot {
+    const job = store.jobs.get(jobId);
+    if (!job) return { ok: false, reason: 'not_found', message: `job ${jobId} not found` };
+    const conflict = (why: string): RerunResult => ({ ok: false, reason: 'conflict', message: `job ${jobId} cannot run again: ${why}` });
+    if (job.status !== 'failed') return conflict(`it is ${job.status}, not failed`);
+    const slot = slots.get(job.source?.source ?? '');
+    if (!slot || !running) return conflict('its source is not running');
+    if (store.jobs.getBySourceKey(job.source!.key)?.id !== jobId) return conflict('a newer job of its item exists');
+    if (!flagsOf(job).finalReported) return conflict('its failure is not reported to its source yet');
+    return slot;
+  }
+
+  async function rerun(jobId: string): Promise<RerunResult> {
+    const checked = rerunCheck(jobId);
+    if (!('source' in checked)) return checked;
+    const slot = checked;
+    let result: RerunResult = { ok: false, reason: 'source', message: 'not sent' };
+    // On the job's report chain, so it never overlaps the job's own reports.
+    await enqueue(jobId, async () => {
+      const again = rerunCheck(jobId);
+      if (!('source' in again)) { result = again; return; }
+      try {
+        await slot.source.report({ kind: 'rerun', job: store.jobs.get(jobId)! });
+        result = { ok: true, job: host.rerun(jobId) };
+      } catch (e) {
+        result = { ok: false, reason: 'source', message: `its source could not take the re-run: ${message(e)}` };
+      }
+    });
+    if (result.ok) void runSync(slot);
+    return result;
+  }
+
   return {
     statuses: () => [...slots.values()].map((s) => ({ ...s.status })),
     onStatus(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; },
+    rerun,
     start() {
       if (running) return;
       running = true;
