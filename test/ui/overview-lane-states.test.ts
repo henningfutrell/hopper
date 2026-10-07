@@ -25,7 +25,7 @@ function fakeDaemon() {
   const of = (...s: JobStatus[]) => jobs.filter((j) => s.includes(j.status));
   const routes: Record<string, unknown> = {
     '/api/health': { ok: true, version: '0', router: 'pass-through', fallback: false, executors: [], uptimeS: 1 },
-    '/api/queue': { waiting: of('queued', 'held'), running: of('claimed', 'running'), waitingAnswer: [], ended: [] },
+    '/api/queue': { waiting: of('queued', 'held'), running: of('claimed', 'running'), waitingAnswer: [], ended: [], locked: [] },
     '/api/machines': { machines: [{ id: 'm1', label: 'm1', maxLanes: 2, online: true, executors: ['test'], usage: [], lanes: [
       { id: 'm1/lane-1', machineId: 'm1', state: 'draining', jobId: 'r1', openedAt: minutesAgo(25) },
       { id: 'm1/lane-2', machineId: 'm1', state: 'busy', jobId: 'r2', openedAt: minutesAgo(5) },

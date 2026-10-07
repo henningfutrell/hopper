@@ -277,6 +277,7 @@ Version 3 (`docs/schemas/decision.made.v3.json`). The engine recorded a Decision
 | `holds` | object[] | yes |
 | `lanes` | object[] | yes |
 | `divergences` | object[] | yes |
+| `waits` | object[] | no |
 
 ```json
 {
@@ -295,6 +296,12 @@ Version 3 (`docs/schemas/decision.made.v3.json`). The engine recorded a Decision
     {
       "jobId": "j2",
       "reason": "full"
+    }
+  ],
+  "waits": [
+    {
+      "jobId": "j3",
+      "reason": "waiting for a lane: machine local's lane cap is 4, all 4 in use"
     }
   ],
   "lanes": [

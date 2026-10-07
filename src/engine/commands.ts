@@ -66,7 +66,7 @@ export function createCommands(c: EngineContext, runner: Runner, cleanup: Cleanu
       return store.tx(() => {
         const job = existing(c, id);
         if (job.status !== 'queued' && job.status !== 'held') throw new EngineError('conflict', `job ${id} is ${job.status}: only a waiting job can be claimed as operator-led`);
-        const next = store.jobs.update(id, { status: 'operator_led', accepted: true, holdReason: undefined, startedAt: nowIso(c) });
+        const next = store.jobs.update(id, { status: 'operator_led', accepted: true, holdReason: undefined, waitReason: undefined, startedAt: nowIso(c) });
         store.events.append({ type: 'job.claimed_by_operator', jobId: id, data: {} });
         return next;
       });

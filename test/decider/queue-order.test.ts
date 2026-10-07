@@ -30,7 +30,7 @@ describe('step 6 with a queue order', () => {
       queueOrder: { sorter: 'oldest', jobIds: ['low-old', 'mid', 'high-new'] },
     }), 'd1');
     expect(started(d)).toEqual(['low-old']);
-    expect(d.hold.map((h) => h.jobId).sort()).toEqual(['high-new', 'mid']);
+    expect(d.wait.map((w) => w.jobId).sort()).toEqual(['high-new', 'mid']);
   });
 
   it('jobs the order leaves out come after the ordered ones, by today\'s rule; unknown ids are ignored', () => {

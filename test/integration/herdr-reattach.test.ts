@@ -137,7 +137,7 @@ describe('herdr-claude job across a daemon restart', () => {
     const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [{ output: ['● Done.', '  HOPPER_DONE'] }] });
     const first = await boot(herdr, 0);
     const pulled = await first.pull({}, item);
-    await first.waitForStatus(pulled.id, 'held');
+    await waitFor(async () => (await first.job(pulled.id)).waitReason !== undefined, { what: 'the job waiting for a lane' });
     await first.stop();
     // The crash window between claim and start, which no API can produce.
     const store = openAdminStore(databaseUrlFor(dbPath));

@@ -100,8 +100,12 @@ same Decision. Algorithm, in order:
 7. **Assign.** For each job in order: candidate machines = online, run its executor, match
    its pin, `busy(m) + assigned(m) < cap(m)`. Pick the one with the most remaining room
    (tie: machine id). Use an existing idle, non-draining lane if one is unassigned, else
-   `laneId: null` (a lane this Decision opens). No candidate → hold with the reason
-   (`all lanes busy (cap N)` / `usage hard limit` / `usage soft limit caps lanes at N`).
+   `laneId: null` (a lane this Decision opens). No candidate → a **wait**, not a hold (issue
+   #381): the job stays `queued` with a reason naming the lane cap that binds on the eligible
+   machine with the highest cap for its executor — the executor's when it leaves less room than
+   the machine's (or ties and is lower), else the machine's — with its number and lanes in use
+   (`waiting for a lane: machine m's lane cap is N[ (usage soft limit, used P%)], all K in use` /
+   `… executor e's lane cap on m is N …` / `… usage hard limit stops executor e on m (used P%)`).
 8. **Lane plan per machine.** `occupied` = lanes `busy` or `draining`. `target =
    min(cap, occupied + assigned)`. `open` = number of this machine's starts with
    `laneId: null` — **invariant**, the engine opens lanes only for those starts.
@@ -114,9 +118,11 @@ same Decision. Algorithm, in order:
    verbatim.
 
 **A no-op decision is not recorded.** The engine discards a Decision with no lane change,
-no start, and no hold whose reason differs from the job's current `holdReason`. Otherwise
+no start, no hold whose reason differs from the job's current `holdReason`, and no wait on a job
+not already `queued` with that `waitReason`. Otherwise
 an idle tick every 2 s would bury the decision log. Every recorded Decision emits
-`decision.made` with `{ decisionId, trigger, starts, holds, lanes, divergences }` (v3).
+`decision.made` with `{ decisionId, trigger, starts, holds, lanes, divergences, waits? }` (v3;
+`waits` additive, issue #381).
 
 ## The engine
 
@@ -141,7 +147,7 @@ an idle tick every 2 s would bury the decision log. Every recorded Decision emit
   parks the job; `question.asked` wakes the Decision that hands the lane to the next waiting job,
   while the answer pipeline runs. The only things that keep an admissible job waiting:
   - the **lane cap** — `maxLanes` per machine (the machine instance's `lanes` option, default 4), scaled down
-    past the usage soft limit, 0 at the hard limit (hold `all lanes busy (cap N)` / `usage …`);
+    past the usage soft limit, 0 at the hard limit (a wait, `waiting for a lane: …`, not a hold);
   - the **router**: no advice yet, or advice that holds (`ask_human`, `stop_retry`,
     `reuse_cache`) — the router speaks first; an approval ends a router hold;
   - a **native hold** (no online machine runs the executor; pinned machine unknown/offline);
@@ -166,7 +172,8 @@ an idle tick every 2 s would bury the decision log. Every recorded Decision emit
   then for each start: claim (`job.claimed`, lane busy), run executor (`job.started`),
   progress (`job.progressed`), outcome (`job.finished` / `job.failed`). Lane returns idle, or
   closes if draining. Holds: set `status: held`, `holdReason`, emit `job.held` only when the
-  reason changed.
+  reason changed. Waits: set `status: queued`, `waitReason` (clearing `holdReason`), no event —
+  a job held for lanes before issue #381 returns to `queued` on the first Decision after it.
 - **Approve:** `POST /api/jobs/:id/approve` sets `approved: true` on a waiting job; it overrides
   every router hold (not only `ask_human`).
 - **Cancel:** waiting → `cancelled` at once. Claimed/running → abort the executor's signal;
@@ -372,7 +379,7 @@ Every event: `{ seq, id, type, at, jobId?, laneId?, machineId?, decisionId?, dat
 | `job.reprioritized` | `{ from, to, reason }` — phase 3, source re-sort |
 | `lane.opened` | `{}` |
 | `lane.closed` | `{ reason }` — the lane plan's reason, `drained`, or `daemon restart` |
-| `decision.made` | v3 `{ decisionId, trigger, starts, holds, lanes, divergences }` |
+| `decision.made` | v3 `{ decisionId, trigger, starts, holds, lanes, divergences, waits? }` |
 | `router.mode_changed` | retired (issue #211): nothing emits it; stored ones still read |
 
 The usage-change trigger is named `usage.changed`; it is a trigger, not an event.

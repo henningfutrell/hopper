@@ -77,7 +77,7 @@ describe('everything runs in parallel', () => {
     const third = await waitFor(async () => { const j = await a.job(jobs[2]!.id); return j.waitReason ? j : undefined; });
     expect(third).toMatchObject({ status: 'queued', waitReason: 'waiting for a lane: machine local\'s lane cap is 2, all 2 in use' });
     expect(third.holdReason).toBeUndefined();
-    expect((await ofType(a, 'job.held')).filter((e) => e.jobId === third.id)).toEqual([]);
+    expect((await ofType(a, 'job.held')).filter((e) => e.jobId === third.id && (e.data as { reason: string }).reason !== 'awaiting router advice')).toEqual([]);
   });
 });
 
