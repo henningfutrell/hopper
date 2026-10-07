@@ -43,6 +43,8 @@ const STATUS_LINE = /^\s*[✻✶✳✢✽]\s/; // Claude Code spinner / "Cooked 
 const SPINNER_VARIANT = /^\s*[·*•∗]\s+\S.*…\s*\(\d+[hms]\b/;
 /** The hint under a running Bash call. */
 const BACKGROUND_HINT = /^\s*\(ctrl\+b to run in background\)\s*$/;
+/** The elapsed timer under a running Bash call: "(12s)", "(1m 5s)". */
+const ELAPSED_TIMER = /^\s*\((\d+[hms]\s*)+\)\s*$/;
 const SEPARATOR = /^\s*─{3,}/;
 const USER_ECHO = /^\s*❯/;
 const ASSISTANT_START = /^\s*●/;
@@ -122,7 +124,7 @@ export function isScrolledUp(text: string): boolean {
 
 function isChrome(line: string): boolean {
   return STATUS_LINE.test(line) || USER_ECHO.test(line) || /^\s*⏵/.test(line) || EFFORT_LINE.test(line) || TIP_LINE.test(line) || NEW_MESSAGES_LINE.test(line)
-    || SPINNER_VARIANT.test(line) || BACKGROUND_HINT.test(line) || UPDATE_NOTICE.test(line);
+    || SPINNER_VARIANT.test(line) || BACKGROUND_HINT.test(line) || ELAPSED_TIMER.test(line) || UPDATE_NOTICE.test(line);
 }
 
 const isSpinner = (line: string): boolean => STATUS_LINE.test(line) || SPINNER_VARIANT.test(line);
