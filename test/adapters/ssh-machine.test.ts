@@ -35,6 +35,14 @@ function harness(results: (boolean | Error)[], herdr = true) {
 }
 
 describe('attached machine source', () => {
+  it('its snapshot carries the machine\'s work tree (issue #324)', async () => {
+    const src = createAttachedMachineSource({
+      machine: () => ({ name: 'laptop', ssh: 'laptop', lanes: 1, executors: ['herdr-claude'], herdr: true, session: 'hopper', workTree: '~/trees' }),
+      probe: async () => ({ online: true }),
+    });
+    expect((await src.list())[0]).toMatchObject({ workTree: '~/trees' });
+  });
+
   it('is offline until the first probe answers, then online with its lanes, executors and ssh target', async () => {
     const h = harness([true]);
     expect(await h.src.list()).toEqual([{

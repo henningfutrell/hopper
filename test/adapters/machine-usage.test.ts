@@ -16,6 +16,10 @@ describe('local machine source', () => {
     names.push('scripted');
     expect((await src.list())[0]!.executors).toEqual(['test', 'scripted']);
   });
+  it('carries this machine\'s work tree (issue #324)', async () => {
+    const src = createLocalMachineSource({ maxLanes: 1, executors: () => [], workTree: '~/trees' });
+    expect((await src.list())[0]).toMatchObject({ workTree: '~/trees' });
+  });
   it('honours id and label', async () => {
     const src = createLocalMachineSource({ maxLanes: 2, executors: () => [], id: 'm1', label: 'M one' });
     expect(await src.list()).toEqual([{ id: 'm1', label: 'M one', maxLanes: 2, online: true, executors: [] }]);
