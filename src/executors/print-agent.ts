@@ -1,15 +1,17 @@
-// The cursor-agent executor (issue #142, design.md "Cursor executor"): one job is Cursor's CLI agent
-// in print mode, run on the job's machine through its connection — this machine or an ssh target —
-// in the job's work tree. Each turn is one `cursor-agent -p` run; its answer ends with the hopper
-// protocol's marker. A question parks the job with the Cursor chat id, and the answer resumes that
-// chat (`--resume`). Nothing outlives a turn, so there is nothing to reattach or clean up: not
-// idempotent, a restart fails a running job and never runs the agent twice.
+// The print-mode agent executors (design.md "Print-mode agent executors"; issue #142 for Cursor's agent,
+// #307 for codex, opencode and omp): one job is an agent CLI in print mode, run on the job's machine
+// through its connection — this machine or an ssh target — in the job's work tree. Each turn is one run;
+// its last message ends with the hopper protocol's marker. A question parks the job with the agent's
+// session id, and the answer resumes that session. Nothing outlives a turn, so there is nothing to
+// reattach or clean up: not idempotent, a restart fails a running job and never runs the agent twice.
+// How each CLI is called and read is print-agents.ts's.
 import { mkdirSync } from 'node:fs';
 import type { ExecutionContext, ExecutionOutcome, Executor } from '../domain/ports.ts';
 import { commandOn, run } from './command.ts';
 import { resolvePayload, validatePayload, workTreeOn } from './herdr/payload.ts';
 import { STATUS_NOTE_NUDGE, normaliseMarkerLine, protocolFooter } from './herdr/screen.ts';
 import { scratchDirOf } from './herdr/start.ts';
+import { DIALECTS, type PrintAgent } from './print-agents.ts';
 import { shellQuote, type SshAuth } from './ssh.ts';
 
 /** The answer's tail kept for whoever answers a question. */
@@ -18,11 +20,13 @@ const SUMMARY_CHARS = 2000;
 /** Nudges after status notes in a row before the job fails: a print-mode turn never waits on background work. */
 const NUDGES = 3;
 
-export interface CursorExecutorOptions {
+export interface PrintAgentExecutorOptions {
+  /** Which CLI: the id of its executor plugin. */
+  agent: PrintAgent;
   name: string;
-  /** Cursor's CLI agent on the job's machine. */
+  /** The agent's CLI on the job's machine. */
   bin: string;
-  /** Its own arguments: permissions (`--force`), workspace trust (`--trust`), sandbox. */
+  /** Its own arguments: permissions, sandbox, workspace trust. */
   args: string[];
   /** The work tree of a job whose payload names none. */
   defaultCwd: string;
@@ -33,10 +37,8 @@ export interface CursorExecutorOptions {
   userEnv?: Readonly<Record<string, string>>;
 }
 
-/** What a parked job keeps: the chat to resume, in the work tree it ran in. */
-interface CursorState { chatId: string; cwd: string }
-
-interface CursorResult { is_error?: boolean; result?: unknown; session_id?: unknown }
+/** What a parked job keeps: the agent's session (its chat) to resume, in the work tree it ran in. */
+interface PrintAgentState { chatId: string; cwd: string }
 
 const tail = (s: string): string => (s.length > OUTPUT_CAP ? s.slice(-OUTPUT_CAP) : s);
 
@@ -54,52 +56,52 @@ export function outcomeOf(text: string, machine: string, chatId: string): Execut
   return { statusNote: text.trim() };
 }
 
-function refusal(ctx: ExecutionContext): string | undefined {
+function refusal(agent: PrintAgent, ctx: ExecutionContext): string | undefined {
   const m = ctx.machine;
-  if (m.docker) return `cursor-agent does not run on container target ${m.id}: it has no agent`;
-  if (m.client) return `cursor-agent does not run on client target ${m.id}: a client serves herdr only`;
+  if (m.docker) return `${agent} does not run on container target ${m.id}: it has no agent`;
+  if (m.client) return `${agent} does not run on client target ${m.id}: a client serves herdr only`;
   return undefined;
 }
 
-export function createCursorExecutor(o: CursorExecutorOptions): Executor {
+export function createPrintAgentExecutor(o: PrintAgentExecutorOptions): Executor {
+  const dialect = DIALECTS[o.agent];
+  const label = o.agent;
   if (o.sshControlDir) mkdirSync(o.sshControlDir, { recursive: true, mode: 0o700 });
   /** One turn; `notes` is how many answers in a row before it carried no marker. */
   async function turn(ctx: ExecutionContext, cwd: string, text: string, chatId?: string, notes = 0): Promise<ExecutionOutcome> {
-    const refused = refusal(ctx);
+    const refused = refusal(label, ctx);
     if (refused) return { kind: 'failed', error: refused };
     const p = resolvePayload(ctx.job.spec.payload, o.defaultCwd);
     const scratch = scratchDirOf(cwd);
-    // HOPPER_JOB_ID and the scratch dir come from the hopper; a payload cannot move them.
-    const vars = Object.entries({ ...p.env, TMPDIR: scratch, HOPPER_JOB_ID: ctx.job.id }).map(([k, v]) => shellQuote(`${k}=${v}`));
-    const argv = [
-      o.bin, '-p', '--output-format', 'json', '--workspace', cwd, ...o.args,
-      ...(p.model ? ['--model', p.model] : []), ...(chatId ? ['--resume', chatId] : []), '--', text,
-    ].map(shellQuote);
+    // The job's credentials (GH_TOKEN, issue #214), HOPPER_JOB_ID and the scratch dir come from the hopper; a payload cannot move them.
+    const vars = Object.entries({ ...p.env, ...ctx.credentials, TMPDIR: scratch, HOPPER_JOB_ID: ctx.job.id }).map(([k, v]) => shellQuote(`${k}=${v}`));
+    const argv = dialect.argv({ bin: o.bin, args: o.args, cwd, ...(p.model ? { model: p.model } : {}), ...(chatId ? { session: chatId } : {}), text }).map(shellQuote);
     const script = `mkdir -p ${shellQuote(scratch)} && printf '*\\n' > ${shellQuote(`${scratch}/.gitignore`)} && cd ${shellQuote(cwd)} && exec env ${vars.join(' ')} ${argv.join(' ')}`;
     const where = ctx.machine.id;
     try {
       const [file, args] = commandOn(ctx.machine, ['sh', '-c', script], { ...o, dockerHost: () => { throw new Error('no docker'); } });
-      ctx.progress(0, `cursor-agent ${chatId ? 'resumed' : 'started'} on ${where}`);
+      ctx.progress(0, `${label} ${chatId ? 'resumed' : 'started'} on ${where}`);
       const r = await run(file, args, p.timeoutMs, ctx.signal, o.userEnv);
       if (r === 'aborted') return { kind: 'failed', error: 'aborted' };
-      if (r === 'timeout') return { kind: 'failed', error: `cursor-agent on ${where} timed out after ${p.timeoutMs} ms` };
-      if (r.exitCode !== 0) return { kind: 'failed', error: `cursor-agent exited ${r.exitCode} on ${where}: ${tail(r.stderr.trim() || r.stdout.trim())}` };
-      let answer: CursorResult;
-      try { answer = JSON.parse(r.stdout.trim()) as CursorResult; } catch { return { kind: 'failed', error: `cursor-agent on ${where} printed no JSON result: ${tail(r.stdout.trim())}` }; }
-      const said = typeof answer.result === 'string' ? answer.result : '';
-      if (answer.is_error) return { kind: 'failed', error: `cursor-agent on ${where}: ${tail(said.trim()) || 'error without a message'}` };
-      if (typeof answer.session_id !== 'string' || answer.session_id === '') return { kind: 'failed', error: `cursor-agent on ${where} answered without a chat id` };
-      const out = outcomeOf(said, where, answer.session_id);
-      if ('statusNote' in out) {
-        // A status note opens no question (issue #163): the agent is nudged in the same chat.
-        ctx.progress(0, out.statusNote);
-        if (notes >= NUDGES) return { kind: 'failed', error: `cursor-agent answered ${notes + 1} times in a row without a marker: ${tail(out.statusNote)}` };
-        return await turn(ctx, cwd, STATUS_NOTE_NUDGE, answer.session_id, notes + 1);
+      if (r === 'timeout') return { kind: 'failed', error: `${label} on ${where} timed out after ${p.timeoutMs} ms` };
+      const answer = dialect.read(r.stdout);
+      if (r.exitCode !== 0) {
+        const said = 'error' in answer ? answer.error : r.stderr.trim() || r.stdout.trim();
+        return { kind: 'failed', error: `${label} exited ${r.exitCode} on ${where}: ${tail(said)}` };
       }
-      if (out.kind === 'question') ctx.saveState({ chatId: answer.session_id, cwd } satisfies CursorState);
+      if ('error' in answer) return { kind: 'failed', error: `${label} on ${where}: ${tail(answer.error)}` };
+      if ('unreadable' in answer) return { kind: 'failed', error: `${label} on ${where} ${tail(answer.unreadable)}` };
+      const out = outcomeOf(answer.text, where, answer.session);
+      if ('statusNote' in out) {
+        // A status note opens no question (issue #163): the agent is nudged in the same session.
+        ctx.progress(0, out.statusNote);
+        if (notes >= NUDGES) return { kind: 'failed', error: `${label} answered ${notes + 1} times in a row without a marker: ${tail(out.statusNote)}` };
+        return await turn(ctx, cwd, STATUS_NOTE_NUDGE, answer.session, notes + 1);
+      }
+      if (out.kind === 'question') ctx.saveState({ chatId: answer.session, cwd } satisfies PrintAgentState);
       return out;
     } catch (e) {
-      return { kind: 'failed', error: `cursor-agent on ${where}: ${(e as Error).message}` };
+      return { kind: 'failed', error: `${label} on ${where}: ${(e as Error).message}` };
     }
   }
 
@@ -116,8 +118,8 @@ export function createCursorExecutor(o: CursorExecutorOptions): Executor {
       return turn(ctx, tree.cwd, `${p.prompt}\n\n${protocolFooter(tree.cwd, ctx.jobRules)}`);
     },
     resume(ctx, answer) {
-      const s = ctx.job.executorState as Partial<CursorState> | undefined;
-      if (!s?.chatId || !s.cwd) return Promise.resolve({ kind: 'failed', error: 'cursor-agent: no chat to resume' });
+      const s = ctx.job.executorState as Partial<PrintAgentState> | undefined;
+      if (!s?.chatId || !s.cwd) return Promise.resolve({ kind: 'failed', error: `${label}: no session to resume` });
       return turn(ctx, s.cwd, answer, s.chatId);
     },
   };

@@ -55,8 +55,8 @@ describe('router chosen from what is detected, no grok-bot-jev checkout', () => 
     });
     const ids = body.plugins.map((p: { id: string; builtin: boolean }) => [p.id, p.builtin]).sort();
     expect(ids).toEqual([
-      ['always-proceed', false], ['anthropic-api', true], ['claude-cli', true], ['claude-plan', true], ['client', true], ['command', true], ['command-usage', true], ['cursor-agent', true], ['docker', true], ['gate-router', true], ['github-account', true], ['github-app', true], ['github-gh', true],
-      ['grokbot-routine', true], ['herdr-claude', true], ['local', true], ['newest-first', true], ['oldest-first', true], ['pass-through', true], ['priority', true], ['ssh', true],
+      ['always-proceed', false], ['anthropic-api', true], ['claude-cli', true], ['claude-plan', true], ['client', true], ['codex', true], ['command', true], ['command-usage', true], ['cursor-agent', true], ['docker', true], ['gate-router', true], ['github-account', true], ['github-app', true], ['github-gh', true],
+      ['grokbot-routine', true], ['herdr-claude', true], ['local', true], ['newest-first', true], ['oldest-first', true], ['omp', true], ['opencode', true], ['pass-through', true], ['priority', true], ['ssh', true],
       ['test', true],
     ]);
     const gates = body.plugins.find((p: { id: string }) => p.id === 'gate-router');

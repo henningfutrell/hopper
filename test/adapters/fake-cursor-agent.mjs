@@ -11,7 +11,7 @@ import { join } from 'node:path';
 
 const argv = process.argv.slice(2);
 appendFileSync(join(process.env.FAKE_CURSOR_DIR, 'cursor-calls.jsonl'), JSON.stringify({
-  argv, cwd: process.cwd(), env: { TMPDIR: process.env.TMPDIR, HOPPER_JOB_ID: process.env.HOPPER_JOB_ID, HOPPER_REPO: process.env.HOPPER_REPO },
+  argv, cwd: process.cwd(), env: { TMPDIR: process.env.TMPDIR, HOPPER_JOB_ID: process.env.HOPPER_JOB_ID, HOPPER_REPO: process.env.HOPPER_REPO, GH_TOKEN: process.env.GH_TOKEN },
 }) + '\n');
 const mode = process.env.FAKE_CURSOR_MODE ?? 'ok';
 if (mode === 'hang') setInterval(() => {}, 1000);

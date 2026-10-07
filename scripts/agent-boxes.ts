@@ -1,21 +1,41 @@
 // The plugins-config side of scripts/agent-boxes.sh (design.md "Agent boxes", issue #295): attaching the
 // agent boxes as ssh machines, and detaching them. A filter: the plugins config as JSON on stdin (what
 // `hopper config get plugins` prints), the changed one on stdout (for `hopper config set plugins`).
-//   node scripts/agent-boxes.ts attach '[{"name":…,"ssh":…,"hostKey":…}, …]'
+//   node scripts/agent-boxes.ts attach '[{"name":…,"agent":…,"ssh":…,"hostKey":…}, …]'
 //   node scripts/agent-boxes.ts detach <name>...
-// A box is attached with no executors: it runs no job until one is listed for it in Plugins, so the
-// queue's jobs never land on a test box by chance. Attached again, it keeps its lanes, executors and
-// label; its connection (ssh, herdr, hostKey) is the box's as it runs now.
+// A box is attached running its agent's executor (issue #307: every box runs jobs, no step left to a
+// person), which is switched on when the config has no instance of it yet. Attached again, it keeps its
+// lanes, executors and label — one left with none takes its agent's again —; its connection (ssh, herdr,
+// hostKey) is the box's as it runs now.
 import { readFileSync } from 'node:fs';
 
-export interface Box { name: string; ssh: string; hostKey: string }
+export interface Box { name: string; agent: string; ssh: string; hostKey: string }
 
 interface Instance { name: string; plugin: string; options?: Record<string, unknown> }
-type Config = Record<string, unknown> & { machines?: Instance[] };
+type Config = Record<string, unknown> & { machines?: Instance[]; executors?: Instance[] };
+
+/** The executor plugin each box's agent CLI runs as (design.md "Print-mode agent executors"). */
+const EXECUTORS: Readonly<Record<string, string>> = { claude: 'herdr-claude', cursor: 'cursor-agent', codex: 'codex', opencode: 'opencode', omp: 'omp' };
+
+/** The executor plugin of a box's agent. Throws for an agent with none. */
+export function executorOf(agent: string): string {
+  const plugin = EXECUTORS[agent];
+  if (!plugin) throw new Error(`no executor for agent ${agent}`);
+  return plugin;
+}
 
 /** `config` with each box an `ssh` machine instance. Throws when a box's name is another kind of machine. */
 export function attachBoxes(config: Config, boxes: readonly Box[]): Config {
   const machines = [...(config.machines ?? [])];
+  const executors = [...(config.executors ?? [])];
+  /** The name of the instance of `plugin`, the one there is or one added now. */
+  const instanceOf = (plugin: string): string => {
+    const found = executors.find((e) => e.plugin === plugin);
+    if (found) return found.name;
+    if (executors.some((e) => e.name === plugin)) throw new Error(`executor ${plugin} is another plugin's instance: rename it first`);
+    executors.push({ name: plugin, plugin });
+    return plugin;
+  };
   for (const box of boxes) {
     const at = machines.findIndex((m) => m.name === box.name);
     const old = at >= 0 ? machines[at]! : undefined;
@@ -23,13 +43,14 @@ export function attachBoxes(config: Config, boxes: readonly Box[]): Config {
     const kept = old?.options ?? {};
     const options = {
       ...kept, ssh: box.ssh, herdr: true, hostKey: box.hostKey,
-      lanes: kept.lanes ?? 1, executors: kept.executors ?? [],
+      lanes: kept.lanes ?? 1,
+      executors: Array.isArray(kept.executors) && kept.executors.length > 0 ? kept.executors : [instanceOf(executorOf(box.agent))],
     };
     delete (options as Record<string, unknown>).session;
     const entry: Instance = { name: box.name, plugin: 'ssh', options };
     if (at >= 0) machines[at] = entry; else machines.push(entry);
   }
-  return { ...config, machines };
+  return { ...config, executors, machines };
 }
 
 /** `config` without the `ssh` machines named. */

@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { ExecutionContext } from '../../src/domain/ports.ts';
 import type { Job, MachineSnapshot } from '../../src/domain/types.ts';
-import { createCursorExecutor } from '../../src/executors/index.ts';
+import { createPrintAgentExecutor } from '../../src/executors/index.ts';
 import { STATUS_NOTE_NUDGE } from '../../src/executors/herdr/index.ts';
 import { testSshAuth } from '../support/ssh.ts';
 
@@ -25,6 +25,8 @@ beforeAll(() => {
   work = join(dir, 'work');
   process.env.FAKE_CURSOR_DIR = dir;
   process.env.FAKE_HERDR_DIR = dir;
+  // A job's credential reaches the agent only from the hopper, never from the environment the tests run in.
+  delete process.env.GH_TOKEN;
 });
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 beforeEach(() => {
@@ -53,7 +55,7 @@ function ctxFor(payload: Record<string, unknown>, machine: MachineSnapshot, o: {
 
 describe('cursor-agent executor', () => {
   const noSsh = () => { throw new Error('no ssh in this test'); };
-  const ex = createCursorExecutor({ name: 'cursor', bin: FAKE_CURSOR, args: ['--force', '--trust'], defaultCwd: '/nowhere', sshAuth: noSsh });
+  const ex = createPrintAgentExecutor({ agent: 'cursor-agent', name: 'cursor', bin: FAKE_CURSOR, args: ['--force', '--trust'], defaultCwd: '/nowhere', sshAuth: noSsh });
 
   it('runs Cursor in print mode in the job\'s work tree, with the hopper protocol after the prompt, and finishes on HOPPER_DONE', async () => {
     reply('I wrote greeting.txt.\n\nHOPPER_DONE');
@@ -65,6 +67,13 @@ describe('cursor-agent executor', () => {
     expect(call!.argv.slice(0, -1)).toEqual(['-p', '--output-format', 'json', '--workspace', work, '--force', '--trust', '--model', 'sonnet-4', '--']);
     expect(call!.argv.at(-1)).toMatch(/^Write a greeting\n\n\[hopper publishing rule\][\s\S]*HOPPER_FAILED followed by the reason\.$/);
     expect(readFileSync(join(work, '.hopper-scratch', '.gitignore'), 'utf8')).toBe('*\n');
+  });
+
+  it('runs with the job\'s GitHub credential, as herdr-claude does (issue #214)', async () => {
+    reply('Done.\n\nHOPPER_DONE');
+    const { ctx } = ctxFor({ prompt: 'go', cwd: work }, HERE);
+    await ex.run({ ...ctx, credentials: { GH_TOKEN: 'gho_job' } });
+    expect(calls().at(-1)!.env.GH_TOKEN).toBe('gho_job');
   });
 
   it('carries the job rules it starts with in place of the default (issue #172)', async () => {
@@ -132,7 +141,7 @@ describe('cursor-agent executor', () => {
   });
 
   it('runs over ssh on an ssh target, in the same work tree path there', async () => {
-    const overSsh = createCursorExecutor({ name: 'cursor', bin: FAKE_CURSOR, args: [], defaultCwd: work, sshBin: FAKE_SSH, sshAuth: testSshAuth(join(dir, 'auth')) });
+    const overSsh = createPrintAgentExecutor({ agent: 'cursor-agent', name: 'cursor', bin: FAKE_CURSOR, args: [], defaultCwd: work, sshBin: FAKE_SSH, sshAuth: testSshAuth(join(dir, 'auth')) });
     reply("It's done.\nHOPPER_DONE");
     expect(await overSsh.run(ctxFor({ prompt: "it's a test" }, LAPTOP).ctx)).toEqual({ kind: 'finished', result: { machine: 'laptop', summary: "It's done.", chatId: 'chat-1' } });
     expect(calls().at(-1)).toMatchObject({ cwd: work, argv: ['-p', '--output-format', 'json', '--workspace', work, '--', expect.stringMatching(/^it's a test\n/)] });
@@ -141,7 +150,7 @@ describe('cursor-agent executor', () => {
   });
 
   it('resolves ~ in the work tree against the ssh target\'s home, never this process\'s (issue #323)', async () => {
-    const overSsh = createCursorExecutor({ name: 'cursor', bin: FAKE_CURSOR, args: [], defaultCwd: '~/work', sshBin: FAKE_SSH, sshAuth: testSshAuth(join(dir, 'auth')) });
+    const overSsh = createPrintAgentExecutor({ agent: 'cursor-agent', name: 'cursor', bin: FAKE_CURSOR, args: [], defaultCwd: '~/work', sshBin: FAKE_SSH, sshAuth: testSshAuth(join(dir, 'auth')) });
     reply('Done.\nHOPPER_DONE');
     const { ctx, workTrees } = ctxFor({ prompt: 'p' }, { ...LAPTOP, home: dir });
     expect(await overSsh.run(ctx)).toMatchObject({ kind: 'finished' });

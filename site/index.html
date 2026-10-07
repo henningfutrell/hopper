@@ -424,10 +424,10 @@ jobs run as you there. Sign <code>claude</code> in there once, and keep it runni
 <code>loginctl enable-linger</code>. For the computer a hopper container runs on, open the UI at
 <code>http://localhost:4790</code> there first: the line names the URL the page is open at.</li>
 <li><strong>A sandbox box</strong> (Podman or Docker): run the line on the computer the hopper runs on. It starts the
-container <code>hopper-box-claude</code> from <code>ghcr.io/henningfutrell/hopper:box-claude</code> on the hopper&#39;s network,
+container <code>hopper-sandbox-claude</code> from <code>ghcr.io/henningfutrell/hopper:box-claude</code> on the hopper&#39;s network,
 locked down — every capability dropped, no new privileges, a read-only root, its own home volume,
 nothing of the computer mounted. Sign its agent in once:
-<code>podman exec -it hopper-box-claude claude</code>; the sign-in stays in its home volume, as does its identity,
+<code>podman exec -it hopper-sandbox-claude claude</code>; the sign-in stays in its home volume, as does its identity,
 so a recreated box is the same machine.</li>
 </ul>
 <p>A machine is removed in the Machines view; its next dial-in is refused. A script that adds machines
@@ -514,6 +514,17 @@ need no herdr is checked over ssh alone, so it needs no herdr. To make it the us
 <code>cursor-agent</code> under <strong>Defaults</strong>.</li>
 <li>Send jobs to it with a routing rule in the Routing view: set its machine and the executor
 <code>cursor-agent</code>.</li>
+</ol>
+<h3 id="agent-boxes-claude-codex-cursor-omp-and-opencode">Agent boxes: claude, codex, cursor, omp and opencode</h3>
+<p>On a computer with docker, <code>bash scripts/agent-boxes.sh</code> (from a checkout) starts one container per agent
+CLI, each a machine of its own that runs its agent&#39;s jobs: claude in Claude Code, cursor in Cursor&#39;s agent,
+codex, opencode and omp each in its own CLI. It finds the hopper in its container by itself and attaches
+them all; running it again puts every box back as it should be.</p>
+<ol>
+<li><code>bash scripts/agent-boxes.sh</code></li>
+<li><code>bash scripts/agent-boxes.sh --sign-in</code>: each agent not signed in yet opens its own sign-in here (a link
+or a code to enter on any device). Once per box: its home keeps it. opencode needs none.</li>
+<li>Send jobs to a box with a routing rule in the Routing view: set its machine (<code>hopper-box-&lt;agent&gt;</code>).</li>
 </ol>
 <h3 id="send-jobs-to-one-machine">Send jobs to one machine</h3>
 <p>A routing rule sets a job&#39;s machine, executor or priority when the job comes in; the first rule that

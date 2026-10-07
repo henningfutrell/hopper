@@ -12,6 +12,7 @@
 //   hopper user add <name>                            add a user
 //   hopper user transfer <from> <to>                  <to> takes over <from>'s work (issue #212)
 //   hopper join-code [--user <id>]                    a one-time join code: a machine joins with <hopper URL>#<code> (issue #308)
+//   hopper ssh-key [--user <id>]                      the public half of the hopper's ssh key (issue #307)
 //   hopper help                                       what each command does
 //
 // There is no login from here (issue #238: no bootstrap login): people sign in through a realm.
@@ -50,11 +51,13 @@ usage:
                                                      The daemon must be stopped; refused when <to> holds work of its own
   hopper join-code                                   a one-time join code (10 minutes) for a script that adds machines:
                                                      the machine joins with <hopper URL>#<code>, as Add machine's line does
+  hopper ssh-key                                     the public half of the hopper's ssh key, the line a machine's
+                                                     authorized_keys takes (scripts/agent-boxes.sh asks it)
   hopper help                                        this text
 
 records: ${CONFIG_NAMES.join(', ')}. plugins, rules and job-rules are one user's; sign-in is shared. Every one is edited
 in the UI too.
---user <id> on config names the user (default: the one user, while there is one).
+--user <id> on config and ssh-key names the user (default: the one user, while there is one).
 
 Every command but help needs HOPPER_DATABASE_URL (or HOPPER_DATABASE_URL_FILE):
 the database the daemon uses, postgres://user:password@host:port/database.
@@ -188,6 +191,19 @@ function joinCode(instance: InstanceStore, args: string[], io: CliIo): void {
   io.err(`a join code for ${user.name}, once, until ${expiresAt}: the machine joins with <hopper URL>#<code>\n`);
 }
 
+/** `hopper ssh-key`: the public half of the user's ssh key (issue #293), never its private half. */
+function sshKey(instance: InstanceStore, args: string[], io: CliIo): void {
+  const { values } = parseArgs({ args, options: { user: { type: 'string' } } });
+  const store = instance.userStore(userOf(instance, values.user));
+  try {
+    const key = store.settings.getSshKey();
+    if (!key) throw new CliError('no ssh key yet: the daemon makes one when it starts; start it, then ask again');
+    io.out(`${key.publicKey}\n`);
+  } finally {
+    store.close();
+  }
+}
+
 /** Run one command; the exit code. */
 export function runCli(argv: string[], io: CliIo): number {
   const [command, ...rest] = argv;
@@ -195,7 +211,7 @@ export function runCli(argv: string[], io: CliIo): number {
     io.out(`${USAGE}\n`);
     return 0;
   }
-  if (command !== 'config' && command !== 'users' && command !== 'user' && command !== 'join-code') {
+  if (command !== 'config' && command !== 'users' && command !== 'user' && command !== 'join-code' && command !== 'ssh-key') {
     io.err(`${USAGE}\n`);
     return 2;
   }
@@ -216,6 +232,7 @@ export function runCli(argv: string[], io: CliIo): number {
     if (command === 'users') users(store, io);
     else if (command === 'user') userCommand(store, rest, io);
     else if (command === 'join-code') joinCode(store, rest, io);
+    else if (command === 'ssh-key') sshKey(store, rest, io);
     else config(store, rest, io);
     return 0;
   } catch (e) {

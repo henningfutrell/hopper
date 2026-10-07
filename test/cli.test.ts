@@ -145,6 +145,24 @@ describe('no bootstrap login (issue #238)', () => {
   });
 });
 
+// Issue #307: a script that lets the hopper into a machine (scripts/agent-boxes.sh) asks the hopper for
+// its key's public half, where the hopper runs, instead of a person copying it out of the Add form.
+describe('hopper ssh-key', () => {
+  it('prints the public half of the user\'s ssh key, never the private one', () => {
+    const url = db();
+    const s = openAdminStore(url);
+    try { s.settings.setSshKey({ privateKey: 'PRIVATE KEY TEXT', publicKey: 'ssh-ed25519 AAAAC3Nza hopper' }); } finally { s.close(); }
+    const r = cli(url, ['ssh-key']);
+    expect(r).toMatchObject({ code: 0, out: 'ssh-ed25519 AAAAC3Nza hopper\n' });
+    expect(r.out + r.err).not.toContain('PRIVATE');
+    expect(cli(url, ['ssh-key', '--user', 'admin']).out).toBe('ssh-ed25519 AAAAC3Nza hopper\n');
+  });
+
+  it('none yet: the daemon mints it at its first start, and says so', () => {
+    expect(cli(db(), ['ssh-key'])).toMatchObject({ code: 2, err: expect.stringMatching(/no ssh key yet: the daemon makes one when it starts/) });
+  });
+});
+
 describe('hopper config set sign-in (issue #237)', () => {
   it('refuses a password realm in the record: there is no password user realm', () => {
     const url = db();
