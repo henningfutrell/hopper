@@ -53,6 +53,18 @@ describe('addProblem', () => {
   });
 });
 
+// Issue #309: there is no ssh config, ever; nothing says one is missing or needed.
+describe('no ssh config', () => {
+  const NONE = { ...CONFIG, ssh: { ...CONFIG.ssh, targets: [] } };
+  it('a refused target names only a plain you@host', () => {
+    expect(addProblem(draft({ ssh: '' }), NONE)).not.toMatch(/ssh\/config|Host alias/);
+    expect(addProblem(draft({ ssh: 'two words' }), NONE)).not.toMatch(/ssh\/config|Host alias/);
+  });
+  it('the ssh target detail names no ssh config', () => {
+    expect(DETAILS.ssh!.find((f) => f.key === 'ssh')!.hint).not.toMatch(/ssh\/config/);
+  });
+});
+
 // Issue #293: in an ephemeral container there is no ~/.ssh/config to pick from, so a target is typed too.
 describe('a typed ssh target', () => {
   it('a plain [user@]host may be sent, as a detected alias may', () => {
