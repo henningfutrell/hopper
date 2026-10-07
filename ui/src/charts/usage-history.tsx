@@ -1,6 +1,6 @@
 // The usage graph (issue #385): every shown line drawn as the dashboard cards draw theirs (sparkline.tsx) —
 // a thin monotone line over a soft fill fading down — on a 0-100% axis over the graph range. A gap breaks
-// a line; a reset of a usage window is a thin rule in the line's colour; hovering reads every shown line at
+// a line; a reset of a usage window is a short tick at the axis foot in the line's colour; hovering reads every shown line at
 // that step. d3 does the maths; React draws the SVG.
 import { area, curveMonotoneX, line, scaleLinear, scaleTime, timeFormat } from 'd3';
 import { Fragment, useId, useMemo, useState } from 'react';
@@ -50,7 +50,7 @@ export function UsageGraph({ lines, hidden, from, to, stepMs, height = 240 }: {
                 {l.series.resets.map((r) => {
                   const rx = x(Date.parse(r));
                   return rx >= 0 && rx <= iw ? (
-                    <line key={r} data-usage-reset={r} x1={rx} x2={rx} y1={0} y2={ih} stroke={l.color} strokeOpacity={0.45} strokeWidth={1} strokeDasharray="1 2">
+                    <line key={r} data-usage-reset={r} x1={rx} x2={rx} y1={ih - 7} y2={ih} stroke={l.color} strokeOpacity={0.85} strokeWidth={1.5}>
                       <title>{`${l.label} reset ${dayClock(new Date(r))}`}</title>
                     </line>
                   ) : null;
