@@ -73,10 +73,12 @@ export function createPrintAgentExecutor(o: PrintAgentExecutorOptions): Executor
     if (refused) return { kind: 'failed', error: refused };
     const p = resolvePayload(ctx.job.spec.payload, ctx.machine, o.defaultCwd);
     const scratch = scratchDirOf(cwd);
+    // Stdin is /dev/null: codex and opencode read a stdin that is not a terminal to its end before the turn,
+    // and the one a run would hand them is never closed (issue #307).
     // The job's credentials (GH_TOKEN, issue #214), HOPPER_JOB_ID and the scratch dir come from the hopper; a payload cannot move them.
     const vars = Object.entries({ ...p.env, ...ctx.credentials, TMPDIR: scratch, HOPPER_JOB_ID: ctx.job.id }).map(([k, v]) => shellQuote(`${k}=${v}`));
     const argv = dialect.argv({ bin: o.bin, args: o.args, cwd, ...(p.model ? { model: p.model } : {}), ...(chatId ? { session: chatId } : {}), text }).map(shellQuote);
-    const script = `mkdir -p ${shellQuote(scratch)} && printf '*\\n' > ${shellQuote(`${scratch}/.gitignore`)} && cd ${shellQuote(cwd)} && exec env ${vars.join(' ')} ${argv.join(' ')}`;
+    const script = `mkdir -p ${shellQuote(scratch)} && printf '*\\n' > ${shellQuote(`${scratch}/.gitignore`)} && cd ${shellQuote(cwd)} && exec env ${vars.join(' ')} ${argv.join(' ')} </dev/null`;
     const where = ctx.machine.id;
     try {
       const [file, args] = commandOn(ctx.machine, ['sh', '-c', script], { ...o, dockerHost: () => { throw new Error('no docker'); } });
