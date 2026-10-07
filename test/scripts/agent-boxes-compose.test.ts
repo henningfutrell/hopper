@@ -15,7 +15,7 @@ const BOX_KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGv8n9cYc0bTqgYk2m0h3iN1wqX
 
 /** A docker that answers as a host with the compose hopper running (unless `hopper` is false). `box`:
  *  no box yet, or one running on the default bridge only. */
-function standIn(opts: { hopper: boolean; box: 'none' | 'running' }) {
+function standIn(opts: { hopper: boolean; box: 'none' | 'running'; answers?: boolean }) {
   const d = mkdtempSync(join(tmpdir(), 'jh-boxes-compose-'));
   mkdirSync(join(d, 'bin'));
   writeFileSync(join(d, 'bin', 'docker'), `#!/usr/bin/env bash
@@ -49,6 +49,7 @@ case "$1" in
       'hopper config get plugins') echo '{"version":1}' ;;
       'hopper config set plugins'*) cat > "${d}/set.json" ;;
       'ssh-keyscan'*) echo "hopper-box-codex ${BOX_KEY}" ;;
+      'sh -s'*) cat >/dev/null; ${opts.answers === false ? `echo 'Connection refused' >&2; exit 255` : `echo 'status: running'; echo 'codex-cli 0.1.0'`} ;;
       *) echo "unexpected exec: $*" >&2; exit 1 ;;
     esac; exit 0 ;;
 esac
@@ -98,5 +99,28 @@ describe('agent-boxes.sh with the hopper in its compose container', () => {
     expect(r.status).toBe(1);
     expect(r.stderr).toContain('--attach needs the hopper: its compose container running, or a host install\'s database (HOPPER_DATABASE_URL or HOPPER_DATABASE_URL_FILE)');
     expect(r.calls.some((c) => c.startsWith('build '))).toBe(false);
+  });
+
+  it('--check proves each box answers the hopper: over ssh from its container, its herdr session running and its agent CLI there', () => {
+    const { run } = standIn({ hopper: true, box: 'running' });
+    const r = run(['--check', 'codex']);
+    expect(r.status, r.stderr).toBe(0);
+    expect(r.calls).toContain('exec -i -- hopper-hopper-1 sh -s -- hopper-box-codex codex');
+    expect(r.stdout).toContain('hopper-box-codex: ok — herdr session running, codex-cli 0.1.0');
+    expect(r.calls.some((c) => /^(build|run|rm|network) /.test(c))).toBe(false);
+  });
+
+  it('--check fails, naming the box and what ssh said, when a box does not answer the hopper', () => {
+    const { run } = standIn({ hopper: true, box: 'running', answers: false });
+    const r = run(['--check', 'codex']);
+    expect(r.status).toBe(1);
+    expect(r.stdout).toContain('hopper-box-codex: FAILED — Connection refused');
+  });
+
+  it('--check with no hopper container says how to start one', () => {
+    const { run } = standIn({ hopper: false, box: 'running' });
+    const r = run(['--check', 'codex']);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain('--check needs the hopper\'s compose container running');
   });
 });
