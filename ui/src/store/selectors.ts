@@ -56,6 +56,9 @@ export function useJobName(): (jobId: string) => string {
 /** The session may cancel and approve jobs, and answer and close questions. */
 export const useCanOperate = (): boolean => useHopper((s) => s.authed && allows(s.user, 'operator'));
 /** The session may change configuration (plugins, machines, routing, webhooks, rules). */
+/** The session signed in with that provider's realm (issue #322): its connected account is the sign-in, not an extra. */
+export const useSignedInWith = (provider: 'github'): boolean =>
+  useHopper((s) => s.authed && (s.signIn?.devices ?? []).some((r) => r.type === provider && r.name === s.user?.realm));
 export const useCanAdmin = (): boolean => useHopper((s) => s.authed && allows(s.user, 'admin'));
 /** The session is an instance admin's (issue #240): sign-in, users, updates, the plugin store. */
 export const useCanAdminInstance = (): boolean => useHopper((s) => s.authed && allows(s.user, 'admin') && s.user?.instanceAdmin === true);

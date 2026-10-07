@@ -155,12 +155,15 @@ wherever the app can see them (set `authors`, `owners` or `repos` on the `github
 **Plugins** to change that) — and your jobs act as you on GitHub, with the app marked on what they do.
 
 The hopper's app reaches only the repositories it is **installed** on: **Sources → GitHub account** says
-where it is installed and links to install it or choose repositories. **Disconnect** there forgets the
-account and its token; the source then says *GitHub is not connected* and takes nothing. Revoke the app
-for good at https://github.com/settings/applications.
+where it is installed and links to install it or choose repositories. That account is your sign-in, so
+the panel offers **Sign out**, not a disconnect; to stop taking jobs from GitHub and stay signed in,
+switch off the `github-account` source in **Plugins**. Revoke the app for good at
+https://github.com/settings/applications.
 
 Signed in at the edge instead (SSO, SAML, an auth gateway): **Sources → GitHub account → Connect
-GitHub**, the same code at the same address. That account is then linked to your user.
+GitHub**, the same code at the same address. That account is then linked to your user. **Stop working
+through GitHub** there forgets the account and its token and keeps you signed in; the source then says
+*GitHub is not connected* and takes nothing.
 
 The app ships with the hopper as a public client id — no secret: the device flow needs none. GitHub
 Enterprise, or an app of your own, is set in the environment: `HOPPER_GITHUB_URL`,

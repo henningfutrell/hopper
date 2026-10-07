@@ -63,6 +63,23 @@ describe('sourcesView', () => {
     expect(v.summary).toBe('Issues are read, and jobs work, through your GitHub connection, octo-user.');
   });
 
+  // A job source that cannot run is reported under its plugin's id (src/users/runtime.ts splitSources):
+  // a gh source with invalid options is kind `github-gh`, not `github`. It is gh all the same.
+  const brokenGh = () => source('github', 'github-gh', 'error');
+
+  it('signed in with GitHub: a gh source that cannot run is gone too, its error with it (#320)', () => {
+    const v = sourcesView([{ ...brokenGh(), lastError: 'invalid options for github-gh: authors: Invalid input: expected array, received undefined' }, account('github-account', 'octo-user')]);
+    expect(v.connected).toBe(true);
+    expect(v.github).toEqual([]);
+    expect(v.others).toEqual([]);
+  });
+
+  it('not signed in with GitHub: a gh source that cannot run is the gh connection, not a card of its own (#320)', () => {
+    const v = sourcesView([brokenGh(), account('github-account')]);
+    expect(v.github.map((c) => [c.source.name, c.via])).toEqual([['github', 'gh']]);
+    expect(v.others).toEqual([]);
+  });
+
   it('signed in with GitHub and an admin set up their own GitHub App: it stays beside the connection (#254)', () => {
     const v = sourcesView([gh('disabled', 'GitHub account connected'), app(), account('github-account', 'octo-user')]);
     expect(v.github.map((c) => [c.source.name, c.via, c.use])).toEqual([['github-app', 'app', 'in-use']]);

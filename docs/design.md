@@ -5698,6 +5698,14 @@ admin's app in use stays; a broken app stays; not connected) and `test/ui/source
 app against a fake daemon, signed in with GitHub: the section holds only the GitHub account panel with its
 source's sync; no gh login, gh card or github-app).
 
+**A gh source that cannot run (issue #320, 2026-10-06).** A source the host cannot build (unknown plugin,
+invalid options — e.g. an older plugins config whose `github` instance names no `authors`) is reported
+with its plugin's id as its kind (`src/users/runtime.ts` `splitSources`): `github-gh`, not `github`. The
+model counted only kind `github` as gh, so that source fell through to the other sources and showed as a
+card in error beside the GitHub connection. The model now counts kind `github-gh` as gh too: connected, it
+is not shown and neither is its error; not connected, it is the gh connection, with its error, not a card
+of its own. The instance stays in the plugins config. Verification: `test/ui/sources.test.ts` (#320 cases).
+
 ## Job rules (issue #172, 2026-10-06)
 
 Owner direction: the hopper's rules must be editable, not baked in; what the hopper relies on to read a
@@ -5726,3 +5734,27 @@ tree, parallel work, the protocol.
 `test/herdr/executor-run.test.ts`, `test/adapters/cursor-executor.test.ts`,
 `test/integration/job-rules.test.ts` (a saved edit reaches the next job), `test/cli.test.ts`,
 `test/ui/job-rules-panel.test.ts`.
+
+## Sources: Sign out for a GitHub sign-in, not Disconnect (issue #322, 2026-10-06)
+
+Owner request: the **GitHub account** panel in Sources offered **Disconnect** on the connected account,
+which for a person signed in with GitHub is their hopper sign-in, so the label read like an optional
+integration. The sign-in must not be shown as something to disconnect; a way to stop using GitHub for jobs
+without ending the session, if kept, must be its own, explicitly labelled action.
+
+**As built** (`ui/src/views/connected-account.tsx`, `useSignedInWith` in `ui/src/store/selectors.ts`; no
+wire or daemon change):
+- **Signed in with GitHub** — the session's realm (`SessionUser.realm`) is one of the GitHub realms on
+  (`signIn.devices`): the panel says *Signed in with GitHub as …* and offers **Sign out** (the header's
+  logout, `POST /ui/api/logout`). No disconnect. To stop taking jobs from GitHub while signed in, it points
+  at Settings → Plugins, where the `github-account` job source is switched off — what already exists, so no
+  second control.
+- **Signed in another way** (the login code, SSO, SAML, a gateway), where the account was connected from
+  Sources: **Stop working through GitHub** (`disconnect`, unchanged) forgets the account and its token; its
+  title says the sign-in stays.
+- `POST /ui/api/connected-accounts` keeps `disconnect` as before; only the panel stops offering it to a
+  GitHub sign-in.
+
+**Verification:** `test/ui/sources-view.test.ts` (signed in with GitHub: *Signed in with GitHub as*, the one
+button **Sign out**, which posts `/ui/api/logout` and never `connected-accounts`; signed in with the login
+code: the one button **Stop working through GitHub**, which posts `disconnect` and keeps the session).
