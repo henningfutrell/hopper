@@ -27,7 +27,7 @@ function restIssue(r: FakeRepo, i: FakeIssue) {
   return {
     number: i.number, title: i.title, body: i.body, state: i.state, html_url: issueUrl(r, i.number), updated_at: i.updatedAt,
     user: { login: i.author }, labels: i.labels.map((name) => ({ name })),
-    closed_by: i.closedBy ? { login: i.closedBy } : null, ...(i.pullRequest ? { pull_request: {} } : {}),
+    closed_by: i.closedBy ? { login: i.closedBy } : null, closed_at: i.closedAt ?? null, state_reason: i.stateReason ?? null, ...(i.pullRequest ? { pull_request: {} } : {}),
   };
 }
 

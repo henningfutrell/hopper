@@ -42,7 +42,7 @@ export function contextComments(comments: GitHubComment[], authors: string[], li
  */
 export function doneLine(n: number, completion: Completion): string {
   return completion === 'merge'
-    ? `done (completion: merge): only once the change ships — the repo's own checks pass, the change is pushed, a pull request this job opens with "Closes #${n}" in its body is merged to the default branch, and the merged change is verified where the product runs. A local commit, an unpushed branch or an open pull request is not done; a job that ends done without the merge ends failed`
+    ? `done (completion: merge): only once the change ships — the repo's own checks pass, the change is pushed, a pull request this job opens with "Closes #${n}" in its body is merged to the default branch, and the merged change is verified where the product runs. A local commit, an unpushed branch or an open pull request is not done; a job that ends done without the merge ends failed. One exception: when the issue needs no code change, close it as completed and end done`
     : `done (completion: pull-request): once the change is ready for review — the repo's own checks pass, the change is pushed, and a pull request this job opens with "Closes #${n}" in its body is open and not a draft. Do not merge it: a person reviews and merges it. A local commit, an unpushed branch or a draft is not done; a job that ends done without the pull request ends failed`;
 }
 

@@ -12,7 +12,7 @@ import { CONNECTED_VIA, TERMINAL_STATUSES, type Account } from '../../domain/typ
 import type { GitHubApi, GitHubIssue } from './api.ts';
 import type { GitHubSourceConfig } from '../config.ts';
 import { checkJobs } from './check.ts';
-import { completionOf, notComplete } from './completion.ts';
+import { closedAsComplete, completionOf, notComplete } from './completion.ts';
 import { contextBlock, contextComments, issueEnv, issuePrompt } from './context.ts';
 import type { SourceMode } from './context.ts';
 import { discoverIssues } from './discover.ts';
@@ -198,6 +198,9 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     },
     notComplete(job) {
       return notComplete(api, job, config.completion);
+    },
+    closedAsComplete(job) {
+      return closedAsComplete(api, job);
     },
   };
 }

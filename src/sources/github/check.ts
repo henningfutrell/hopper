@@ -6,29 +6,31 @@
 // install could not read its app key, and every active job was cancelled).
 // An issue closed by the merge of a pull request opened after the job was created is the job's own
 // work landing, not a cancel: the job runs on to its own end (a job merges before it installs and
-// verifies). A pull request opened earlier is somebody else's, and cancels as any close does.
+// verifies). A pull request opened earlier is somebody else's, and cancels as any close does. So is
+// an issue closed with no pull request as completed after the job was created — by a commit, or with
+// no code (issue #350) — once the job has started; a job still waiting to run is cancelled.
 // Nothing on the issue answers a question: questions are answered in the UI.
 
 import type { SourceSignal } from '../../domain/ports.ts';
 import type { Job } from '../../domain/types.ts';
 import { GitHubApiError } from './api.ts';
-import type { GitHubApi } from './api.ts';
+import type { GitHubApi, GitHubIssue } from './api.ts';
 import type { GitHubSourceConfig } from '../config.ts';
 import { LABEL_BACKBURNER } from './labels.ts';
-import { isOwnPullRequest } from './completion.ts';
+import { isClosedAsComplete, isOwnPullRequest } from './completion.ts';
 
 type CheckConfig = Pick<GitHubSourceConfig, 'label'>;
 
 /** A permanent error asking GitHub counts as "not its own": the close cancels, as before. */
-async function closedByOwnPullRequest(api: GitHubApi, job: Job, repo: string, number: number): Promise<boolean> {
+async function closedByOwnWork(api: GitHubApi, job: Job, issue: GitHubIssue, started: boolean): Promise<boolean> {
   let pr;
   try {
-    pr = await api.closingPullRequest(repo, number);
+    pr = await api.closingPullRequest(issue.repo, issue.number);
   } catch (err) {
     if (err instanceof GitHubApiError && err.permanent) return false;
     throw err;
   }
-  return isOwnPullRequest(pr, job);
+  return isOwnPullRequest(pr, job) || (started && isClosedAsComplete(issue, pr, job));
 }
 
 async function checkJob(api: GitHubApi, config: CheckConfig, job: Job): Promise<SourceSignal | undefined> {
@@ -41,9 +43,9 @@ async function checkJob(api: GitHubApi, config: CheckConfig, job: Job): Promise<
     if (err instanceof GitHubApiError && (err.status === 404 || err.status === 410)) return { kind: 'cancel', jobId: job.id, reason: 'issue gone' };
     throw err;
   }
-  if (issue.state === 'closed') return await closedByOwnPullRequest(api, job, repo, number) ? undefined : { kind: 'cancel', jobId: job.id, reason: 'issue closed' };
-  if (!issue.labels.includes(config.label)) return { kind: 'cancel', jobId: job.id, reason: 'label removed' };
   const waiting = job.status === 'queued' || job.status === 'held';
+  if (issue.state === 'closed') return await closedByOwnWork(api, job, issue, !waiting) ? undefined : { kind: 'cancel', jobId: job.id, reason: 'issue closed' };
+  if (!issue.labels.includes(config.label)) return { kind: 'cancel', jobId: job.id, reason: 'label removed' };
   if (waiting && issue.labels.includes(LABEL_BACKBURNER)) return { kind: 'cancel', jobId: job.id, reason: 'backburner' };
   return undefined;
 }

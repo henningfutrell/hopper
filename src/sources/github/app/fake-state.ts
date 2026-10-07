@@ -13,6 +13,8 @@ export interface FakeIssueInput {
   /** A pull request: the issues list returns it (with `pull_request`), the adapter skips it. */
   pullRequest?: boolean;
   closedBy?: string;
+  closedAt?: string;
+  stateReason?: string;
   /** The merged pull request that closed it (GraphQL ClosedEvent closer). */
   closedByPullRequest?: { url: string; createdAt: string; mergedAt: string };
   /** Open pull requests whose merge will close it (GraphQL closedByPullRequestsReferences). */
@@ -58,6 +60,8 @@ export interface FakeIssue {
   state: 'open' | 'closed';
   pullRequest: boolean;
   closedBy?: string;
+  closedAt?: string;
+  stateReason?: string;
   closedByPullRequest?: { url: string; createdAt: string; mergedAt: string };
   openPullRequests: { url: string; createdAt: string; isDraft: boolean }[];
   updatedAt: string;
@@ -112,6 +116,8 @@ export function buildState(o: FakeGitHubOptions, now: string): FakeState {
           number: i.number, title: i.title ?? `Issue ${i.number}`, body: i.body ?? '', author: i.author ?? 'owner',
           labels: [...(i.labels ?? [])], state: i.state ?? 'open', pullRequest: i.pullRequest ?? false,
           ...(i.closedBy ? { closedBy: i.closedBy } : {}),
+          ...(i.closedAt ? { closedAt: i.closedAt } : {}),
+          ...(i.stateReason ? { stateReason: i.stateReason } : {}),
           ...(i.closedByPullRequest ? { closedByPullRequest: { ...i.closedByPullRequest } } : {}),
           openPullRequests: (i.openPullRequests ?? []).map((pr) => ({ ...pr })), updatedAt: now, comments,
         });

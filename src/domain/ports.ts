@@ -405,6 +405,13 @@ export interface JobSource {
    * tell). Absent: the source does not judge completion.
    */
   notComplete?(job: Job): Promise<string | undefined>;
+  /**
+   * Whether a failed job's item is closed as complete: its work landed though the job ended failed —
+   * its pane ended after its own pull request merged, say (issue #350). Asked by the sync loop before it
+   * reports the failure: true finishes the job instead. A throw is asked again on a later sync. Absent:
+   * every failed job stays failed.
+   */
+  closedAsComplete?(job: Job): Promise<boolean>;
   /** The variables the job's processes run with to act through the source's connection (ExecutionContext.credentials); absent: none. */
   credentials?(job: Job): Promise<Record<string, string>>;
 }
@@ -444,6 +451,8 @@ export interface SourceHost {
   reprioritize(jobId: JobId, to: number, reason: string): boolean;
   /** An operator-led job whose work its source found complete (issue #318): finished. false: it is no longer operator-led. */
   finishOperatorLed(jobId: JobId): boolean;
+  /** A failed job whose item its source found closed as complete (issue #350): finished. false: it is no longer failed. */
+  finishClosedAsComplete(jobId: JobId): boolean;
   /** Replace sourceState in one tx that re-reads the job. */
   setSourceState(jobId: JobId, state: { sync?: Record<string, unknown>; source?: Record<string, unknown> }): void;
   /** Its source took a re-run of this failed job (issue #313): emits job.rerun. The job stays as it ended. */

@@ -1,6 +1,8 @@
 // The GitHub source's definition of done (issues #171, #187): a job that ended done is complete
 // only when its own pull request reached the issue's completion — merged (`merge`), or open and
-// ready for review (`pull-request`). Its own: opened at or after the job's createdAt.
+// ready for review (`pull-request`). Its own: opened at or after the job's createdAt. Or, no pull
+// request closing it, the issue closed as completed at or after the job's createdAt, by a commit or
+// with no code at all (issue #350).
 import { describe, expect, it } from 'vitest';
 import { GitHubApiError } from '../../src/sources/github/index.ts';
 import { REPO, jobForIssue, setup } from './fixtures/github-support.ts';
@@ -74,5 +76,46 @@ describe('completion: pull-request', () => {
     const { gh, source, job } = withIssue({ completion: 'pull-request' });
     gh.failNext('openClosingPullRequests', new GitHubApiError('gh: timeout', false));
     await expect(source.notComplete!(job)).rejects.toThrow('gh: timeout');
+  });
+});
+
+describe('closed as complete (issue #350)', () => {
+  it.each(['merge', 'pull-request'] as const)('completion %s: the issue closed as completed after the job was created, with no pull request, is complete', async (completion) => {
+    const { gh, source, job } = withIssue({ completion });
+    gh.closeIssue(REPO, 1, 'owner', { at: AFTER });
+    expect(await source.notComplete!(job)).toBeUndefined();
+  });
+
+  it('closed as not planned is not complete', async () => {
+    const { gh, source, job } = withIssue();
+    gh.closeIssue(REPO, 1, 'owner', { at: AFTER, reason: 'not_planned' });
+    expect(await source.notComplete!(job)).toBe(`no merged pull request opened by this job closes ${URL1}`);
+  });
+
+  it('closed as completed before the job was created is not the job\'s', async () => {
+    const { gh, source, job } = withIssue();
+    gh.closeIssue(REPO, 1, 'owner', { at: BEFORE });
+    expect(await source.notComplete!(job)).toBe(`no merged pull request opened by this job closes ${URL1}`);
+  });
+
+  it('closedAsComplete: a failed job whose issue was closed as complete after it was created; an open issue, one closed as not planned, or by an older pull request, is not', async () => {
+    const { gh, source } = setup();
+    for (let n = 1; n <= 5; n++) gh.createIssue({ repo: REPO, labels: ['hopper'] });
+    gh.closeByPullRequest(REPO, 1, { createdAt: AFTER, mergedAt: AFTER });
+    gh.closeIssue(REPO, 2, 'owner', { at: AFTER });
+    gh.closeIssue(REPO, 3, 'owner', { at: AFTER, reason: 'not_planned' });
+    gh.closeByPullRequest(REPO, 5, { createdAt: BEFORE, mergedAt: AFTER });
+    const failed = (n: number) => jobForIssue(n, { status: 'failed' });
+    expect(await Promise.all([1, 2, 3, 4, 5].map((n) => source.closedAsComplete!(failed(n))))).toEqual([true, true, false, false, false]);
+  });
+
+  it('closedAsComplete: a permanent error (an issue gone) is not; a transient error throws, to be asked again', async () => {
+    const { gh, source } = setup();
+    gh.createIssue({ repo: REPO, labels: ['hopper'] });
+    gh.deleteIssue(REPO, 1);
+    expect(await source.closedAsComplete!(jobForIssue(1, { status: 'failed' }))).toBe(false);
+    gh.createIssue({ repo: REPO, labels: ['hopper'] });
+    gh.failNext('getIssue', new GitHubApiError('gh: Bad Gateway (HTTP 502)', false, 502));
+    await expect(source.closedAsComplete!(jobForIssue(1, { status: 'failed' }))).rejects.toThrow('Bad Gateway');
   });
 });

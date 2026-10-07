@@ -31,6 +31,7 @@ else if (cmd.startsWith('issue list')) {
 else if (cmd === 'api repos/o/r/issues/5') out({
   number: 5, title: 'T', body: null, state: 'closed', html_url: 'https://github.com/o/r/issues/5', updated_at: '2026-10-02T09:30:00Z',
   user: { login: 'owner' }, labels: [{ name: 'hopper' }, { name: 'hopper:claimed' }], closed_by: { login: 'someone' },
+  closed_at: '2026-10-02T09:30:00Z', state_reason: 'completed',
 });
 else if (cmd === 'api repos/o/r/issues/404') fail('gh: Not Found (HTTP 404)\n');
 else if (cmd === 'api repos/o/r/issues/410') fail('gh: This issue was deleted (HTTP 410)\n');

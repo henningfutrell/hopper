@@ -117,6 +117,15 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
       });
     },
 
+    finishClosedAsComplete(jobId) {
+      return store.tx(() => {
+        if (store.jobs.get(jobId)?.status !== 'failed') return false;
+        store.jobs.update(jobId, { status: 'finished', error: undefined, finishedAt: nowIso(c) });
+        store.events.append({ type: 'job.finished', jobId, data: { result: 'issue closed as complete' } });
+        return true;
+      });
+    },
+
     setSourceState(jobId, state) {
       store.tx(() => {
         if (store.jobs.get(jobId)) store.jobs.update(jobId, { sourceState: state });

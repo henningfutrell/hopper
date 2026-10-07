@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- A job whose work already shipped is now marked done, not failed, even when its window ends later, and a job may close its issue itself with no pull request when no code change was needed.
 - Run again on a failed job whose issue is closed now says so and asks you to reopen the issue, instead of seeming to work while nothing ran.
 - Jobs in Codex and opencode now start instead of waiting forever.
 - Each machine can now have its own folder where jobs work, and a routing rule can send a repository's jobs to a chosen folder on a chosen machine.

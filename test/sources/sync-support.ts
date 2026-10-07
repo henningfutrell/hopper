@@ -96,6 +96,12 @@ export function createWorld(): World {
       emit('job.finished', id, { result: 'operator-led work complete' });
       return true;
     },
+    finishClosedAsComplete(id) {
+      if (jobs.get(id)?.status !== 'failed') return false;
+      patchJob(id, { status: 'finished', error: undefined });
+      emit('job.finished', id, { result: 'issue closed as complete' });
+      return true;
+    },
     setSourceState(id, state) {
       const cur = jobs.get(id)!.sourceState ?? {};
       patchJob(id, { sourceState: { ...cur, ...state } });

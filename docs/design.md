@@ -1287,13 +1287,13 @@ job is judged, and when its prompt is built):
 
 | completion | complete when | the job's prompt says |
 |------------|---------------|-----------------------|
-| `merge` | the issue's last close event's closer is a merged pull request opened at or after the job's `createdAt` (a merge closes an issue only on the default branch, so this is the change on main) | checks pass, pushed, a pull request with `Closes #N` merged, the merged change verified where the product runs |
+| `merge` | the issue is **closed as complete**: its last close event's closer is a merged pull request opened at or after the job's `createdAt` (a merge closes an issue only on the default branch, so this is the change on main), or, no pull request closing it, it was closed as completed (`state_reason`) at or after the job's `createdAt` — by a commit, or with no code (issue #350) | checks pass, pushed, a pull request with `Closes #N` merged, the merged change verified where the product runs; an issue that needs no code change: closed as completed |
 | `pull-request` | as `merge`, or an open pull request, not a draft, opened at or after the job's `createdAt`, whose merge will close the issue (GraphQL `closedByPullRequestsReferences`: a closing keyword, on a pull request to the default branch) | checks pass, pushed, a pull request with `Closes #N` open and not a draft; do not merge it |
 
 The prompt's `done (completion: …)` line carries the parts the hopper cannot see — the repo's own
 checks, verifying where the product runs — so a job is told everything done means, and the gate
 holds it to the part GitHub can show. Anything short of the completion — a local commit, a branch,
-a draft, the issue closed by a person, a commit or an older pull request — fails the job with
+a draft, the issue closed as not planned, closed before the job, or closed by an older pull request — fails the job with
 `not complete: no merged pull request opened by this job closes <issue url>` (`merge`) or `not
 complete: no pull request opened by this job, ready for review, closes <issue url>`
 (`pull-request`); an error asking GitHub (transient or not) fails it with `could not confirm the
@@ -1301,6 +1301,18 @@ work is complete: <error>`. Fail closed: a failed job's issue stays open with `h
 `hopper:done`, and removing that label re-runs it. A source without `notComplete`, and a job of no
 source, take every done job as complete. Before issue #171, a job that said it was done was closed
 as completed with nothing on main.
+
+**A failed job whose issue is closed as complete is finished** (issue #350). A job can end failed
+after its work landed: its pane ends on a restart after its own pull request merged, a credential
+expires while it waits on a question, or it closes its issue with a commit and then trips. Before
+the sync loop reports a failed job, it asks the source `closedAsComplete(job)` (GitHub: the rule in
+the `merge` row above, `src/sources/github/completion.ts`); true → `SourceHost.finishClosedAsComplete`
+ends the job `finished` (its `error` cleared; `job.finished` with result `issue closed as complete`,
+after the `job.failed` already logged), and the report labels the issue `hopper:done`, never
+`hopper:failed`. Any failure path is covered — the runner's outcome, restart recovery, an expired
+question — because the report is the one place every failure passes. A transient error asking is a
+report retry; a permanent one reports the failure. A source without `closedAsComplete` leaves every
+failed job failed.
 
 | report | on GitHub |
 |--------|-----------|
@@ -1329,8 +1341,12 @@ A failure never goes to the issue as text. It is one stderr line in the daemon l
   is a merged pull request opened at or after the job's `createdAt` gives no signal — that is the
   job's work landing, and the job still has to install and verify. It runs on and ends as it
   reports (`finished` on `HOPPER_DONE`). `closingPullRequest` asks GraphQL
-  (`src/sources/github/closer.ts`); a pull request opened before the job, a person, or a commit
-  closing the issue cancels as above; a permanent error asking counts as "not its own".
+  (`src/sources/github/closer.ts`); a pull request opened before the job closing the issue cancels
+  as above; a permanent error asking counts as "not its own".
+- **And a started job's issue closed as complete with no pull request** (issue #350): closed as
+  completed (`state_reason`) at or after the job's `createdAt` — a commit's `Closes #N`, or a close
+  with no code — gives a job that has started (not `queued`/`held`) no signal: a job may end its
+  issue itself. A waiting job is cancelled; a close as not planned, or before the job, cancels.
 - `hopper:backburner` on the issue of a waiting (`queued`/`held`) job → `cancel` (`backburner`);
   a running job is not touched.
 - **Error classes:** `GitHubApi` errors carry `permanent` (404/410/403/422) vs transient
@@ -3296,7 +3312,7 @@ pull request. Names are formal (#318's naming note): **operator-led**, never the
   `SourceHost.finishOperatorLed` ends it `finished` (`job.finished`), and the report labels the issue
   `hopper:done`. An error asking is a report retry; the job stays operator-led. The pull request must be the
   job's own (opened at or after the job was created), as for any job.
-- **Not done.** An issue closed by a person, the label removed, or the issue gone cancels it, as for any job
+- **Not done.** An issue closed by a person as not planned (closed as completed is done, "Done means complete"), the label removed, or the issue gone cancels it, as for any job
   (`check()`); so does Cancel in the UI, which takes the claim off the issue.
 - **Where it shows.** `/api/queue` `operatorLed`; the Overview's Waiting panel lists them under
   *Operator-led*, with the button *Operator-led* on each waiting job; the lane timeline draws each one on a

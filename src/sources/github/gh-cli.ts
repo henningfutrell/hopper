@@ -21,6 +21,7 @@ interface CliIssue {
 interface RestIssue {
   number: number; title: string; body?: string | null; state: string; html_url: string; updated_at: string;
   user?: { login?: string } | null; labels?: ({ name: string } | string)[]; closed_by?: { login?: string } | null;
+  closed_at?: string | null; state_reason?: string | null;
 }
 interface RestComment { id: number; body?: string | null; user?: { login?: string } | null; created_at: string; html_url: string }
 
@@ -48,6 +49,8 @@ function fromRest(i: RestIssue, repo: string): GitHubIssue {
     repo, number: i.number, url: i.html_url, title: i.title, body: i.body ?? '', author: i.user?.login ?? '',
     labels: (i.labels ?? []).map((l) => (typeof l === 'string' ? l : l.name)), state: state(i.state), updatedAt: i.updated_at,
     ...(i.closed_by?.login ? { closedBy: i.closed_by.login } : {}),
+    ...(i.closed_at ? { closedAt: i.closed_at } : {}),
+    ...(i.state_reason ? { stateReason: i.state_reason } : {}),
   };
 }
 

@@ -13,7 +13,11 @@ type Method = keyof GitHubApi;
 export interface FakeGitHub extends GitHubApi {
   createIssue(o: { repo: string; title?: string; body?: string; author?: string; labels?: string[] }): GitHubIssue;
   addComment(repo: string, number: number, author: string, body: string): GitHubComment;
-  closeIssue(repo: string, number: number, closedBy?: string): void;
+  /**
+   * Closed by hand or by a commit, no pull request: as `reason` (default completed), at `at` (default the
+   * fake's clock, 2026-10-02T09:00, before any test job is created).
+   */
+  closeIssue(repo: string, number: number, closedBy?: string, o?: { at?: string; reason?: 'completed' | 'not_planned' }): void;
   reopenIssue(repo: string, number: number): void;
   /** A pull request (opened at createdAt) whose merge will close the issue; the issue stays open. */
   openPullRequest(repo: string, number: number, pr: { createdAt: string; isDraft?: boolean }): OpenPullRequest;
@@ -147,8 +151,12 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
       comments.set(key(repo, n), [...(comments.get(key(repo, n)) ?? []), c]);
       return { ...c };
     },
-    closeIssue(repo, n, closedBy) { const i = find(repo, n); i.state = 'closed'; i.closedBy = closedBy ?? human; closers.delete(key(repo, n)); },
-    reopenIssue(repo, n) { const i = find(repo, n); i.state = 'open'; delete i.closedBy; },
+    closeIssue(repo, n, closedBy, c = {}) {
+      const i = find(repo, n);
+      Object.assign(i, { state: 'closed', closedBy: closedBy ?? human, closedAt: c.at ?? stamp(), stateReason: c.reason ?? 'completed' });
+      closers.delete(key(repo, n));
+    },
+    reopenIssue(repo, n) { const i = find(repo, n); i.state = 'open'; delete i.closedBy; delete i.closedAt; delete i.stateReason; },
     openPullRequest(repo, n, { createdAt, isDraft }) {
       find(repo, n);
       const pr = { url: `https://github.com/${repo}/pull/${++pullNumber}`, createdAt, isDraft: isDraft ?? false };
@@ -158,8 +166,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
     closeByPullRequest(repo, n, { createdAt, mergedAt }) {
       const i = find(repo, n);
       opened.delete(key(repo, n));
-      i.state = 'closed';
-      i.closedBy = human;
+      Object.assign(i, { state: 'closed', closedBy: human, closedAt: mergedAt, stateReason: 'completed' });
       const pr = { url: `https://github.com/${repo}/pull/${++pullNumber}`, createdAt, mergedAt };
       closers.set(key(repo, n), pr);
       return { ...pr };

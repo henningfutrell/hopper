@@ -46,8 +46,10 @@ describe('App adapter: issues and comments', () => {
   });
 
   it('getIssue reads one issue, closed ones included', async () => {
-    h = await startApp({ installations: [{ id: 11, account: 'owner', repos: [{ owner: 'owner', name: 'a', issues: [issue(7, { state: 'closed', closedBy: 'owner', body: 'b' })] }] }] });
-    expect(await h.api.getIssue('owner/a', 7)).toMatchObject({ number: 7, state: 'closed', closedBy: 'owner', body: 'b' });
+    h = await startApp({ installations: [{ id: 11, account: 'owner', repos: [{ owner: 'owner', name: 'a', issues: [issue(7, { state: 'closed', closedBy: 'owner', closedAt: '2026-10-02T11:00:00Z', stateReason: 'completed', body: 'b' })] }] }] });
+    expect(await h.api.getIssue('owner/a', 7)).toMatchObject({
+      number: 7, state: 'closed', closedBy: 'owner', closedAt: '2026-10-02T11:00:00Z', stateReason: 'completed', body: 'b',
+    });
     await expect(h.api.getIssue('owner/a', 99)).rejects.toMatchObject({ permanent: true, status: 404 });
   });
 
