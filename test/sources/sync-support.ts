@@ -90,6 +90,12 @@ export function createWorld(): World {
       emit('job.cancelled', id, { reason });
     },
     reprioritize(id, to, reason) { calls.reprioritize.push([id, to, reason]); return true; },
+    finishOperatorLed(id) {
+      if (jobs.get(id)?.status !== 'operator_led') return false;
+      patchJob(id, { status: 'finished' });
+      emit('job.finished', id, { result: 'operator-led work complete' });
+      return true;
+    },
     setSourceState(id, state) {
       const cur = jobs.get(id)!.sourceState ?? {};
       patchJob(id, { sourceState: { ...cur, ...state } });

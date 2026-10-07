@@ -10,7 +10,7 @@ import type {
   UserStore, WebhookDispatcher,
 } from '../domain/ports.ts';
 import type { AttachedMachine, ConnectedAccountProvider, HostKeyOffer, Question, SourceStatus, User } from '../domain/types.ts';
-import { isRerunnable } from '../domain/types.ts';
+import { IN_FLIGHT_STATUSES, isRerunnable } from '../domain/types.ts';
 import type { Config } from '../config.ts';
 import { createEngine, type Engine } from '../engine/index.ts';
 import { logFailures } from '../engine/failure-log.ts';
@@ -218,7 +218,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
       for (const s of jobSources.filter((j) => j.kind === `${provider}-account`)) void sync.syncNow(s.name).catch(() => undefined);
     },
   });
-  const notEnded = () => store.jobs.list({ status: ['queued', 'held', 'claimed', 'running', 'waiting_answer'] });
+  const notEnded = () => store.jobs.list({ status: [...IN_FLIGHT_STATUSES] });
   const builtin = builtinInstances(config.answerTimeoutMs, config.localMachine);
   const host = createPluginHost({
     ...(config.pluginDir ? { pluginDir: config.pluginDir } : {}), installedDir: o.installedDir,

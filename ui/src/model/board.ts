@@ -3,10 +3,11 @@
 // a machine or an event's subject is named.
 import type { Decision, DomainEvent, Job, JobStatus, Lane, MachineView } from './wire.ts';
 
-/** The one definition of each status's group (docs/glossary.md: Waiting, Waiting answer, Running, Ended). */
+/** The one definition of each status's group (docs/glossary.md: Waiting, Waiting answer, Operator-led, Running, Ended). */
 export const GROUP = {
   queued: 'waiting', held: 'waiting',
   waiting_answer: 'waitingAnswer',
+  operator_led: 'operatorLed',
   claimed: 'running', running: 'running',
   finished: 'ended', failed: 'ended', cancelled: 'ended', rejected: 'ended',
 } as const satisfies Record<JobStatus, string>;
@@ -19,13 +20,14 @@ const endOf = (j: Job) => j.finishedAt ?? j.updatedAt;
 
 /** `waitingOrder`: the queue order of the waiting jobs as /api/queue gave it; a job it lacks follows, oldest first. */
 export function jobBoard(jobs: Iterable<Job>, waitingOrder: readonly string[]): JobBoard {
-  const board: JobBoard = { waiting: [], waitingAnswer: [], running: [], ended: [] };
+  const board: JobBoard = { waiting: [], waitingAnswer: [], operatorLed: [], running: [], ended: [] };
   for (const j of jobs) board[GROUP[j.status]].push(j);
   const place = new Map(waitingOrder.map((id, i) => [id, i]));
   const at = (j: Job) => place.get(j.id) ?? Infinity;
   const oldest = (a: Job, b: Job) => a.createdAt.localeCompare(b.createdAt);
   board.waiting.sort((a, b) => at(a) - at(b) || oldest(a, b));
   board.waitingAnswer.sort(oldest);
+  board.operatorLed.sort(oldest);
   board.running.sort(oldest);
   board.ended.sort((a, b) => endOf(b).localeCompare(endOf(a)));
   return board;

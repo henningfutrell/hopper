@@ -1,4 +1,4 @@
-// Waiting (queue order), the jobs on a question below it, and Ended (the last 24 hours, newest first).
+// Waiting (queue order), the jobs on a question and the operator-led jobs below it, and Ended (the last 24 hours, newest first).
 // Each row names its job group, as the cards count them (tested: test/ui/overview-counts.test.ts).
 import { Archive, Check, Hourglass } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -10,7 +10,7 @@ import { waitingRows } from '@/model/board';
 import { ago, between } from '@/model/format';
 import { act, useHopper } from '@/store';
 import { useCanOperate, useJobBoard } from '@/store/selectors';
-import { CancelButton } from './lanes';
+import { CancelButton, OperatorLedButton } from './lanes';
 
 export function WaitingPanel() {
   const board = useJobBoard();
@@ -28,6 +28,7 @@ export function WaitingPanel() {
             {authed && job.status === 'held' && !job.approved && job.accepted !== false && (
               <Button size="xs" variant="outline" onClick={() => act(`/ui/api/jobs/${job.id}/approve`, {}, 'Job approved')}><Check />Approve</Button>
             )}
+            <OperatorLedButton job={job} />
             <CancelButton job={job} />
           </div>
           <div className="flex flex-wrap items-center gap-1.5 pl-7 text-xs text-muted-foreground">
@@ -50,6 +51,21 @@ export function WaitingPanel() {
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <a href="#questions"><StatusBadge status="waiting_answer" label="on a question →" /></a>
               <span className="ml-auto">for <Since iso={job.updatedAt} /></span>
+            </div>
+          </div>
+        ))}
+      </>}
+      {board.operatorLed.length > 0 && <>
+        <div className="flex items-center gap-2 bg-muted/30 px-4 py-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+          Operator-led<span className="num font-normal text-muted-foreground/70">{board.operatorLed.length}</span>
+        </div>
+        {board.operatorLed.map((job) => (
+          <div key={job.id} data-job-group="operatorLed" data-job-id={job.id} data-status={job.status} className="space-y-1.5 px-4 py-3">
+            <div className="flex items-start gap-2"><JobTitle job={job} className="flex-1" /><CancelButton job={job} /></div>
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <StatusBadge status="operator_led" label="operator-led" />
+              <span>worked by hand, done at its pull request</span>
+              <span className="ml-auto">for <Since iso={job.startedAt ?? job.updatedAt} /></span>
             </div>
           </div>
         ))}

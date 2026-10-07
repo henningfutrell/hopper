@@ -11,6 +11,7 @@ const TYPE_TONE: Record<string, Tone> = {
   'question.answered': 'ok', 'question.closed': 'warn', 'question.dismissed': 'muted', 'question.expired': 'bad', 'lane.opened': 'busy',
   'update.available': 'warn', 'update.started': 'busy', 'update.applied': 'ok', 'update.failed': 'bad',
   'plugin.installed': 'ok', 'job.accepted': 'ok', 'job.rejected': 'muted', 'queue.gate_changed': 'warn',
+  'job.claimed_by_operator': 'operator',
 };
 export const eventTone = (type: string): Tone => TYPE_TONE[type] ?? 'muted';
 

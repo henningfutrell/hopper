@@ -163,6 +163,25 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     }
   }
 
+  /**
+   * Operator-led jobs (issue #318) have no executor to end them: each sync asks the source whether
+   * the work is complete — its closing pull request reached the completion — and finishes the job when it is.
+   * An error asking is kept as a retry, as a failing report is; the job stays operator-led.
+   */
+  async function finishCompleteOperatorLed(slot: Slot, active: Job[]) {
+    const notComplete = slot.source.notComplete?.bind(slot.source);
+    if (!notComplete) return;
+    for (const job of active.filter((j) => j.status === 'operator_led')) {
+      await enqueue(job.id, async () => {
+        try {
+          if (await notComplete(job) === undefined) host.finishOperatorLed(job.id);
+        } catch (e) {
+          slot.retrying.set(job.id, message(e));
+        }
+      });
+    }
+  }
+
   async function pull(slot: Slot): Promise<{ seen: number; created: number }> {
     const items = await slot.source.discover();
     let created = 0;
@@ -196,6 +215,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
         slot.notRerun = [];
       }
       await applySignals(slot, jobsOf(slot).filter((j) => !isTerminal(j)));
+      await finishCompleteOperatorLed(slot, jobsOf(slot).filter((j) => !isTerminal(j)));
       await Promise.all(jobsOf(slot)
         .filter((j) => !isTerminal(j) || !flagsOf(j).finalReported || !flagsOf(j).claimReported)
         .map((j) => queueReport(slot, j.id)));

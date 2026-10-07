@@ -11,6 +11,8 @@ export interface QueueView {
   running: Job[];
   /** Jobs paused on a question, oldest first. They hold no lane. */
   waitingAnswer: Job[];
+  /** Jobs claimed as operator-led (issue #318), oldest first: worked by hand, on no lane. */
+  operatorLed: Job[];
   /** Jobs that ended (finished, failed, cancelled, rejected) in the last `ENDED_WINDOW_MS`, newest end first. */
   ended: Job[];
   /** The user's queue gate (issue #159). */
@@ -48,12 +50,13 @@ export function createQueries(c: EngineContext): Queries {
       const waiting = order(queued.map((job) => ({ job, effectivePriority: effectivePriority(job, c.policy) })), ids).map((x) => x.job);
       const running = all.filter((j) => j.status === 'claimed' || j.status === 'running').reverse();
       const waitingAnswer = all.filter((j) => j.status === 'waiting_answer').reverse();
+      const operatorLed = all.filter((j) => j.status === 'operator_led').reverse();
       const end = (j: Job) => j.finishedAt ?? j.updatedAt;
       const since = new Date(c.clock.now().getTime() - ENDED_WINDOW_MS).toISOString();
       const ended = all.filter((j) => TERMINAL_STATUSES.includes(j.status) && end(j) >= since)
         .sort((a, b) => end(b).localeCompare(end(a)));
       const presort = preSort(c, [...queued].reverse().filter(isUnaccepted));
-      return { waiting, running, waitingAnswer, ended, gate: gateOf(c), presort };
+      return { waiting, running, waitingAnswer, operatorLed, ended, gate: gateOf(c), presort };
     },
     async getMachines() {
       const [machines, usage] = await Promise.all([c.machines.list(), getUsage()]);

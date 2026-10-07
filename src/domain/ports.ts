@@ -426,6 +426,8 @@ export interface SourceHost {
   cancel(jobId: JobId, reason: string): void;
   /** Apply only if the job is queued/held and the priority differs; emits job.reprioritized. */
   reprioritize(jobId: JobId, to: number, reason: string): boolean;
+  /** An operator-led job whose work its source found complete (issue #318): finished. false: it is no longer operator-led. */
+  finishOperatorLed(jobId: JobId): boolean;
   /** Replace sourceState in one tx that re-reads the job. */
   setSourceState(jobId: JobId, state: { sync?: Record<string, unknown>; source?: Record<string, unknown> }): void;
 }
