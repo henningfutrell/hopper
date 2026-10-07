@@ -117,6 +117,21 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     }
   }
 
+  /**
+   * A failed job whose item its source finds closed as complete is finished instead (issue #350), before
+   * its end is reported. false: asking failed; the job's pass stops and the next sync asks again.
+   */
+  async function finishedIfClosedAsComplete(slot: Slot, job: Job): Promise<boolean> {
+    if (!slot.source.closedAsComplete) return true;
+    try {
+      if (await slot.source.closedAsComplete(job)) host.finishClosedAsComplete(job.id);
+      return true;
+    } catch (e) {
+      slot.retrying.set(job.id, message(e));
+      return false;
+    }
+  }
+
   async function reportJob(slot: Slot, jobId: string, hint: Hint): Promise<void> {
     let job = store.jobs.get(jobId);
     if (!job || job.source?.source !== slot.source.name) return;
@@ -124,8 +139,10 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
       if (!await send(slot, jobId, 'claimed', (j) => ({ kind: 'claimed', job: j }), (f) => ({ ...f, claimReported: true }))) return;
     }
     job = store.jobs.get(jobId)!;
+    if (!isTerminal(job) || flagsOf(job).finalReported) return;
+    if (job.status === 'failed' && !await finishedIfClosedAsComplete(slot, job)) return;
+    job = store.jobs.get(jobId)!;
     const flags = flagsOf(job);
-    if (!isTerminal(job) || flags.finalReported) return;
     if (job.status === 'cancelled' && !flags.cancelReason && hint.cancelReason) write(jobId, { ...flags, cancelReason: hint.cancelReason });
     const kind = job.status === 'finished' || job.status === 'failed' || job.status === 'rejected' ? job.status : 'cancelled';
     await send(slot, jobId, kind, (j) => ({ kind, job: j }), (f) => ({ ...f, finalReported: true }));

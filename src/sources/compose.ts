@@ -124,6 +124,10 @@ export function createAccountSource(o: GitHubSourceDeps & { provider: ConnectedA
       const s = current();
       return s?.notComplete ? s.notComplete(job) : Promise.reject(new Error(notConnected(provider)));
     },
+    closedAsComplete(job) {
+      const s = current();
+      return s?.closedAsComplete ? s.closedAsComplete(job) : Promise.reject(new Error(notConnected(provider)));
+    },
     // The job acts as the account's user, with the hopper's app marked on what it does: gh reads GH_TOKEN.
     // A job of an account no longer connected runs with none.
     async credentials(): Promise<Record<string, string>> {

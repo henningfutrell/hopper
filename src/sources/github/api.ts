@@ -15,6 +15,10 @@ export interface GitHubIssue {
   state: 'open' | 'closed';
   updatedAt: string;
   closedBy?: string;
+  /** When a closed issue was closed last. */
+  closedAt?: string;
+  /** Why it was closed: `completed`, `not_planned`, `duplicate` (GitHub's state_reason). */
+  stateReason?: string;
 }
 
 /** The pull request whose merge closed an issue (GitHub's ClosedEvent closer). */
