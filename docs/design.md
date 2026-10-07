@@ -3183,6 +3183,96 @@ pull request. Names are formal (#318's naming note): **operator-led**, never the
 issue whose job waits would call the same claim, and `released` the same cancel. That is the remaining step
 of "What the daemon would do with it"; it depends on this claim, not the other way round.
 
+## Adding a machine to a hopper in a container: the add flow (issue #310, 2026-10-06 — research)
+
+The question: how a person adds a machine — the computer the hopper's container runs on, a laptop, a
+sandboxed box — to a hopper in a container, with no durable host and no ssh config ever (#309), as easily
+as possible and with a sandbox allowed (#308); every box interoperates with no catch across re-runs and
+rebuilds (#307, #306). This section is the add flow, what the person does and sees. Its protocol half —
+dial-in, the join code, the machine's key — is #312's ("Linking machines to a hopper in a container"),
+and the sandbox mechanisms are #315's ("Sandboxing jobs"); both are taken as settled here, not argued
+again. This section depends on them, not the other way round.
+
+**What the person does today, per machine.**
+
+| Machine | Path that ships | Steps for the person | Catch against the bar |
+|---------|-----------------|----------------------|-----------------------|
+| the computer the container runs on | ssh target typed as `you@host.containers.internal` / `you@host.docker.internal` (#293) | start sshd there; install herdr; paste the form's `restrict <key>` line into `authorized_keys`; check a fingerprint by hand; (Docker on Linux) add `extra_hosts: host-gateway` to the compose file | five steps, two of them on the host's security config; a herdr path (#311); the computer's whole account is the boundary |
+| a laptop | ssh target typed as `user@host` | the same, minus the gateway name | the same; the laptop must be reachable from the hopper (same LAN or a tailnet) |
+| a sandboxed agent box | `scripts/agent-boxes.sh --attach` (#295) | from a checkout on the host, with a host install of the CLI and a database reachable from the host | offline in a container deploy (#306): the box's name resolves only through the host's `~/.ssh`, its sshd is on the host's loopback, a restart moves its port (#319) |
+| a sandboxed command box | `scripts/container-target.sh` + `scripts/docker-proxy.sh` (#58) | from a checkout on the host; a docker socket handed to the hopper | runs commands only, no agent; the hopper container gets no engine socket in the compose deploy |
+| a client target | `scripts/attach-client.sh` (#59) | from the hopper's host, over the user's ssh | dials the hopper's host sshd, which a container hopper does not have (#293, "Not changed"); a token variable and a restart per machine |
+
+No path is a single action, and every catch is the hopper reaching *in* (#312's finding). The add flow
+below has none of them because the machine reaches *out*.
+
+**Reach, checked (rootless Podman 6.1, netavark, pasta; 2026-10-06).** The add flow rests on two facts
+about where a machine can reach the hopper from, so both were run, not assumed:
+
+- A container on a user-defined network resolves another container on it by name (`getent hosts
+  <name>` answered the peer's address; an HTTP fetch by name answered). The compose file's `name:
+  hopper` makes its network `hopper_default` on every run: a box started with `--network
+  hopper_default` reaches the hopper as `http://hopper:<port>`, and a re-run or rebuild changes nothing.
+- `host.containers.internal` from a container reaches a host service that listens on every interface
+  (an HTTP fetch answered) and **not** one bound to the host's loopback (connection refused). The compose
+  file publishes the UI on `127.0.0.1` only, so a box outside the compose network cannot dial the hopper
+  through the host gateway; the computer itself can, through the published loopback port. And the ssh
+  path to the computer works only because sshd listens on every interface.
+
+**Options for the add action.**
+
+| Option | What the person does | Ease | Sandbox | Cost and risk |
+|--------|----------------------|------|---------|---------------|
+| **A. Copy one line from Add machine** (join code in it, #312) | **Add machine** → pick *a computer* or *a sandbox box (agent: claude, codex, …)* → the UI shows one command with a fresh join code; run it there; the machine appears in the view, online, when it joins | high: one paste, nothing inbound, no ssh, no path | the box line is the sandbox: rootless container, every capability dropped, `no-new-privileges`, read-only root, its own home and work volumes, nothing of the host mounted, the compose network only (egress narrowed later, #315's open question) | a published box image per agent; a client installer the hopper serves; the join route ("What it costs") |
+| **B. The hopper creates the box itself** (one click, through an engine socket mounted into the hopper) | **Add sandbox box** → click | highest: no terminal | as A once created | the engine socket is the user's whole account (rootless) or root (rootful); the docker socket proxy checks paths, not bodies ("Target authentication"), so a create it lets through could mount `/`. An admin UI session would hold code execution on the host. A mount and a compose change a container-only deploy does not have |
+| **C. Boxes as compose services** (a `boxes` profile in `compose.yaml`) | `podman compose --profile boxes up -d` | high for the set the file names; another agent is a file edit | as A | one join code reused by every box (#312's open question); the set is fixed by the file, not by the view |
+| **D. Keep ssh attach, polish it** (gateway name filled in, `host-gateway` in compose, herdr from `PATH`) | as today, fewer fields | medium: sshd, a key line, a fingerprint stay | none: the computer's account | fixes #309 and #311, not #306/#307 for boxes |
+
+**Recommendation.**
+
+1. **A: one Add machine action, one copied line, two choices.** *A computer* shows
+   `curl -fsSL <hopper URL>/client/install | sh -s -- <join code>`, for the computer the container runs on
+   (the URL is the published loopback one, `http://localhost:<port>`) and for a laptop (the LAN or public
+   URL). The installer is served by the hopper, so the computer gets the hopper's own client release, as
+   client targets already do ("Client releases"); it checks node ≥ 24 and herdr, installs the client as
+   a user unit, and joins. *A sandbox box* shows `podman run -d --name hopper-box-<agent> --network
+   hopper_default -e HOPPER_JOIN=http://hopper:<port>#<code> -v hopper-box-<agent>-home:/home/agent
+   <box image>` with the sandbox flags above (`docker run` the same, the view offers either). The machine
+   appears in the view live as it joins; the person names it there, or takes the default
+   (`hopper-box-<agent>`, the computer's host name). Nothing is typed into the hopper but a name.
+2. **Not B, for now.** One click instead of one paste is not worth handing an admin session the host's
+   account. Revisit only with an engine API filter that checks request bodies (a create's binds, devices,
+   privileges), and then as an opt-in mount, never in the default compose file.
+3. **C as the bulk form of A, later.** When a set of boxes is wanted at once, a compose profile with a
+   reusable join code is the same box line in a file; it needs nothing A does not build.
+4. **D's two cheap parts land anyway, on the ssh path #312 demotes:** no ssh-config warning (#309), herdr
+   from `PATH` (#311), and `extra_hosts: host-gateway` in `compose.yaml` so the Docker form of the gateway
+   name works as documented.
+5. **The computer's own sandbox is opt-in.** A computer added with A runs jobs as its user, as an ssh
+   target does today. #315's Landlock wrapper is the layer for it; a person who wants jobs confined on that
+   computer adds a sandbox box on it instead — the box line runs there too, joined to the hopper's network.
+
+**What A needs, and what breaks.** No catch for #307 means the box joins and also runs jobs:
+
+- **A published box image per agent** (`scripts/agent-box/Dockerfile`, built by the image workflow beside
+  the hopper's image) with the client in it, and no sshd. Today the image is built from a checkout.
+- **A box signs nothing in by hand.** The box's home volume keeps the agent's sign-in once made; the
+  hopper may instead hand the agent its runtime credential per job through the job's environment, as it
+  already sets `GH_TOKEN`, so a fresh box runs its first job with no `ssh -t` sign-in. Which credentials
+  the hopper may hand to which box is a decision for the build.
+- **Executors for codex, omp and opencode** ("6d. Backends are configuration"): until they exist those
+  boxes join and stay idle, which #307 counts as a catch.
+- **The join route** and its reach rule, the machine key in place of the token, and the removal of the
+  ssh tunnel, relay and `scripts/attach-client.sh` with no shim — #312's "What it costs and breaks".
+- **`scripts/agent-boxes.sh` goes** with its ssh Hosts, known_hosts lines and `--attach`: the box line
+  replaces it. The pickup record (#319) is read over the client connection.
+
+**Open for the owner.** Whether the first choice Add machine offers is the sandbox box or the computer;
+whether the box line names Podman or Docker first (the view can detect neither: it runs in a container).
+
+**Not built here.** Research only: no daemon change. The build is #308's (the add action) and #307's (the
+boxes), on #312's protocol.
+
 ## Client releases (issue #70, 2026-10-05)
 
 The hopper client is released from the hopper and loaded onto its client targets by the hopper: no
