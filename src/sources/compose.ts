@@ -111,10 +111,9 @@ export function createAccountSource(o: GitHubSourceDeps & { provider: ConnectedA
       const s = current();
       return s?.closedAsComplete ? s.closedAsComplete(job) : Promise.reject(new Error(notConnected(provider)));
     },
-    // Not connected, it cannot tell: no answer, and the jobs keep their last one (issue #362).
-    closedItems(jobs, known) {
+    rerun(job) {
       const s = current();
-      return s?.closedItems ? s.closedItems(jobs, known) : Promise.resolve(new Map());
+      return s?.rerun ? s.rerun(job) : Promise.reject(new SourceError(notConnected(provider), false));
     },
     // The job acts as the account's user, with the hopper's app marked on what it does: gh reads GH_TOKEN.
     // A job of an account no longer connected runs with none.
