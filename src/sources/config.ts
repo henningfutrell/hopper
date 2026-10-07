@@ -64,16 +64,16 @@ export const githubAppOptions = z.object({
 
 /**
  * A connected account's source (issue #214): who it acts as is the account the user connected, so
- * nothing names an identity or a credential. `authors` empty: the connected account alone. `owners`
- * and `repos` empty: wherever the authors' issues are.
+ * nothing names an identity or a credential. `authors` empty: the connected account alone. Which
+ * repositories it lists is no option: they are the user's **job repositories**, chosen in Sources and
+ * read at each sync (issue #321).
  */
+const { repos: _repos, ...accountShared } = sharedKeys;
 const accountKeys = {
   enabled: z.boolean().default(true),
-  ...sharedKeys,
+  ...accountShared,
   authors: z.array(z.string().min(1)).default([])
     .meta({ description: 'logins whose issues and comments the source accepts; empty: the connected account alone' }),
-  owners: z.array(z.string().min(1)).default([])
-    .meta({ description: 'only issues in repos of these owners ; empty: any' }),
 };
 
 /** github-account: the GitHub account the user connected. */

@@ -10,12 +10,16 @@
 // with GitHub, the account is the sign-in: the panel offers Sign out, never a Disconnect, and points at Settings → Plugins
 // to stop taking jobs from it while signed in. Signed in another way, Stop working through GitHub forgets the account and
 // its token and keeps the sign-in (issue #322). The connection's job source is shown in it, its sync under the
-// account (issue #254): one GitHub piece, not a card beside it.
+// account (issue #254): one GitHub piece, not a card beside it. Of the repositories the app reaches the
+// person ticks the job repositories — the only ones jobs come from — filtering a long list, with how many
+// are chosen of how many reached, saved without disconnecting (issue #321). A chosen one the app no longer
+// reaches stays listed, to be cleared.
 import { Link2, LogOut, Unlink } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { DeviceCode } from '@/components/device-code';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
 import { get, post, SessionRejected } from '@/lib/api';
@@ -45,12 +49,14 @@ export function ConnectedAccountPanel({ provider, source }: { provider: Provider
   if (!s) return null;
 
   const name = NAME[provider];
-  const act = async (action: 'connect' | 'cancel' | 'disconnect') => {
-    try { setS(await post<ConnectedAccountStatus>('/ui/api/connected-accounts', { action, provider })); } catch (e) {
+  const send = async (body: Record<string, unknown>): Promise<boolean> => {
+    try { setS(await post<ConnectedAccountStatus>('/ui/api/connected-accounts', { ...body, provider })); return true; } catch (e) {
       if (e instanceof SessionRejected) useHopper.setState({ authed: false });
       toast.error((e as Error).message);
+      return false;
     }
   };
+  const act = (action: 'connect' | 'cancel' | 'disconnect') => send({ action });
   const tone = s.state === 'connected' ? 'ok' : s.state === 'failed' ? 'bad' : 'warn';
   const adminOnly = canAdmin ? undefined : `An admin can connect ${name}: sign in as one`;
   return (
@@ -70,7 +76,8 @@ export function ConnectedAccountPanel({ provider, source }: { provider: Provider
               {s.configUrl && <div><a className="underline" href={s.configUrl} target="_blank" rel="noreferrer">See where the app is installed</a></div>}
             </div>
             : s.installations.length > 0
-              ? <div data-installations className="space-y-2">{s.installations.map((i) => <Installation key={i.account} installation={i} />)}</div>
+              ? <JobRepositories key={s.jobRepositories.join('\n')} installations={s.installations} saved={s.jobRepositories} canAdmin={canAdmin}
+                save={(repositories) => send({ action: 'choose', repositories })} />
               : <div data-installations className="space-y-1">
                 <div className="text-warn">The app is not installed on any account you can see: it reaches no repository yet.</div>
                 {s.installUrl && <div><a className="underline" href={s.installUrl} target="_blank" rel="noreferrer">Install the app</a></div>}
@@ -99,8 +106,59 @@ export function ConnectedAccountPanel({ provider, source }: { provider: Provider
   );
 }
 
-/** One installation of the app: the account, the repositories it reaches there, and where to choose them. */
-function Installation({ installation: i }: { installation: AppInstallation }) {
+/**
+ * The job repositories (issue #321): every repository the app reaches, by installation, each ticked when
+ * jobs may use it; a filter narrows what is shown, and Choose shown / Clear shown act on what is shown.
+ * Save sends the whole list; a new saved list remounts it (its key).
+ */
+function JobRepositories({ installations, saved, canAdmin, save }: {
+  installations: AppInstallation[]; saved: string[]; canAdmin: boolean; save: (repositories: string[]) => Promise<boolean>;
+}) {
+  const [chosen, setChosen] = useState(() => new Set(saved));
+  const [filter, setFilter] = useState('');
+  const [busy, setBusy] = useState(false);
+  const savedKey = saved.join('\n');
+  const reached = useMemo(() => [...new Set(installations.flatMap((i) => i.repositories))], [installations]);
+  const unreached = saved.filter((r) => !reached.includes(r));
+  const needle = filter.trim().toLowerCase();
+  const matches = (r: string) => needle === '' || r.toLowerCase().includes(needle);
+  const all = [...reached, ...unreached];
+  const list = all.filter((r) => chosen.has(r));
+  const dirty = list.join('\n') !== savedKey || list.length !== saved.length;
+  const toggle = (r: string, on: boolean) => setChosen((c) => { const n = new Set(c); if (on) n.add(r); else n.delete(r); return n; });
+  const shown = (on: boolean) => setChosen((c) => { const n = new Set(c); for (const r of all.filter(matches)) { if (on) n.add(r); else n.delete(r); } return n; });
+  const box = (r: string) => (
+    <label className="flex items-center gap-2">
+      <input type="checkbox" className="size-4" checked={chosen.has(r)} disabled={!canAdmin || busy} onChange={(e) => toggle(r, e.target.checked)} />{r}
+    </label>
+  );
+  const adminOnly = canAdmin ? undefined : 'An admin can choose the job repositories: sign in as one';
+  return (
+    <div data-job-repositories className="space-y-2">
+      <div className="font-medium">Repositories jobs may use</div>
+      <div data-job-repositories-summary>{list.length} of {reached.length} {reached.length === 1 ? 'repository' : 'repositories'} chosen for jobs</div>
+      {list.length === 0 && <div data-job-repositories-none className="text-warn">None chosen. No new jobs come in until you choose the repositories they may use.</div>}
+      <div className="flex flex-wrap items-center gap-2">
+        <Input data-repository-filter className="h-7 max-w-64 text-xs" placeholder="Filter repositories" value={filter} onChange={(e) => setFilter(e.target.value)} />
+        <Button size="xs" variant="outline" disabled={!canAdmin || busy} title={adminOnly} onClick={() => shown(true)}>Choose shown</Button>
+        <Button size="xs" variant="outline" disabled={!canAdmin || busy} title={adminOnly} onClick={() => shown(false)}>Clear shown</Button>
+      </div>
+      <div data-installations className="space-y-2">
+        {installations.map((i) => <Installation key={i.account} installation={i} matches={matches} box={box} />)}
+        {unreached.length > 0 && (
+          <ul className="rounded-md border bg-muted/30 px-2 py-1">
+            {unreached.map((r) => <li key={r} data-repository={r} hidden={!matches(r)} className="font-mono break-all">{box(r)}<span className="text-warn"> — the app does not reach it</span></li>)}
+          </ul>
+        )}
+      </div>
+      <Button size="xs" disabled={!canAdmin || busy || !dirty} title={adminOnly}
+        onClick={() => { setBusy(true); void save(list).then((ok) => { setBusy(false); if (ok) toast.success('Job repositories saved'); }); }}>Save</Button>
+    </div>
+  );
+}
+
+/** One installation of the app: the account, the repositories it reaches there (each with its box), and where to choose them. */
+function Installation({ installation: i, matches, box }: { installation: AppInstallation; matches: (r: string) => boolean; box: (r: string) => React.ReactNode }) {
   const n = i.repositories.length;
   return (
     <div data-installation={i.account} className="space-y-1">
@@ -110,7 +168,7 @@ function Installation({ installation: i }: { installation: AppInstallation }) {
       </div>
       {n > 0 && (
         <ul className="max-h-48 overflow-y-auto rounded-md border bg-muted/30 px-2 py-1">
-          {i.repositories.map((r) => <li key={r} data-repository className="font-mono break-all">{r}</li>)}
+          {i.repositories.map((r) => <li key={r} data-repository={r} hidden={!matches(r)} className="font-mono break-all">{box(r)}</li>)}
         </ul>
       )}
       {i.settingsUrl && <div><a className="underline" href={i.settingsUrl} target="_blank" rel="noreferrer">Choose its repositories</a></div>}

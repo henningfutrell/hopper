@@ -27,6 +27,8 @@ export interface AppInstallation {
 export type ConnectedAccountStatus = { provider: ConnectedAccountProvider; via: typeof CONNECTED_VIA } & (
   | {
     state: 'connected'; account: string; connectedAt: string;
+    /** The repositories this account's jobs may use, chosen in Sources (issue #321); empty: none, so no job. */
+    jobRepositories: string[];
     /** GitHub: where to install the hopper's GitHub App — it reaches only the repositories it is installed on. */
     installUrl?: string;
     /** GitHub: where the app's installations are seen and their repositories chosen. */

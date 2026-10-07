@@ -5559,9 +5559,9 @@ its expiry if any, when. Every answer carries facts only, never a token.
 tenant migration 8, since job sources are a restart role): the GitHub source logic (`createGitHubSource`,
 mode `account`) over the account's token — `src/sources/github/account/api.ts` (the App adapter's REST and
 GraphQL calls, plus issue search) — rebuilt when the account changes (`createAccountSource`,
-`src/sources/compose.ts`). Defaults: `authors` empty means the connected account alone; `owners` and
-`repos` empty mean wherever the authors' issues are (search by `author:`). A connect or disconnect syncs
-the source at once. **Not connected is said out loud**: the source is paused with `GitHub is not
+`src/sources/compose.ts`). Defaults: `authors` empty means the connected account alone. Which repositories
+it lists are the user's **job repositories**, chosen in Sources ("Job repositories", issue #321); none
+chosen, none listed. A connect or disconnect syncs the source at once. **Not connected is said out loud**: the source is paused with `GitHub is not
 connected: Sources → Connect GitHub`, and `GET /api/accounts` carries the same problem. The gh source on
 `enabled: auto` pauses while a GitHub account is connected.
 
@@ -5758,3 +5758,40 @@ wire or daemon change):
 **Verification:** `test/ui/sources-view.test.ts` (signed in with GitHub: *Signed in with GitHub as*, the one
 button **Sign out**, which posts `/ui/api/logout` and never `connected-accounts`; signed in with the login
 code: the one button **Stop working through GitHub**, which posts `disconnect` and keeps the session).
+
+## Job repositories (issue #321, 2026-10-06)
+
+Owner request: once GitHub is connected, Sources lists every repository the account reaches (dozens) and
+treated all of them as in scope for jobs, with no way to narrow it. The person must choose which
+repositories jobs may use, change the choice later without disconnecting, and see how many are chosen of
+how many are available.
+
+**As built:**
+- **The choice is the user's setting**, `jobRepositories:<provider>` in the user schema's `settings`
+  (`UserSettingsRepository.getJobRepositories`/`setJobRepositories`), not an option of the
+  `github-account` source: job sources are a restart role, so an option would apply only at the next
+  restart. It outlives a disconnect (the token is the connection's; the choice is the person's).
+- **None chosen, no job.** The connected account's source lists only the job repositories, repo by repo
+  (`listOpenIssues`), never a search over all the account reaches; with none chosen it is paused with `no
+  repositories chosen for jobs: Sources → GitHub account → choose them`, and still checks and reports its
+  own active jobs. It reads the choice at each sync (`ConnectedAccountTokens.jobRepositories`) and is
+  rebuilt when the choice changes, as when the account does.
+- **Choosing.** `POST /ui/api/connected-accounts` `{ action: 'choose', provider, repositories }` (admin;
+  each an `owner/repo`, the whole list, duplicates dropped) stores it and syncs the source at once; the
+  answer and `GET /api/connected-accounts` carry `jobRepositories` on a connected account.
+- **Sources** (`ui/src/views/connected-account.tsx`): every repository the app reaches, under its
+  installation (#253), with a box each; a filter, **Choose shown** / **Clear shown** for what the filter
+  shows, `N of M repositories chosen for jobs`, a warning while none is chosen, and **Save**. A chosen
+  repository the app no longer reaches stays listed, marked so, to be cleared.
+- **What a job acts on.** A job comes only from an issue in a job repository. Its `GH_TOKEN` is the
+  account's token, which GitHub bounds by the repositories the hopper's app is installed on; the hopper
+  does not narrow a token further.
+- **Migration** (tenant 10, `src/store/migration-job-repositories.ts`): `repos` a `github-account`
+  instance named become the job repositories; `repos` and `owners` leave its options. Owners name no
+  repository, so they choose none. A hopper whose account source named neither takes no new job until
+  repositories are chosen — the request: never every repository by default.
+
+**Verification:** `test/integration/connected-accounts.test.ts` (none chosen: paused and no job, no
+search; chosen: only those repositories' issues become jobs; changed while connected; kept across a
+disconnect; refusals), `test/store/tenant-migration-10.test.ts`, `test/ui/sources-view.test.ts` (count,
+filter, Choose shown, Save sends the whole list, an unreached chosen repository).

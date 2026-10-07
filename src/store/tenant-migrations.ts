@@ -10,6 +10,7 @@ import { gateRouterSettingsAsConcepts } from './migration-gate-router-settings.t
 import { connectedAccounts } from './migration-connected-accounts.ts';
 import { levelsNamedAsLevels } from './migration-level-names.ts';
 import { yoloOption } from './migration-yolo.ts';
+import { jobRepositoriesSetting } from './migration-job-repositories.ts';
 
 type Migration = string | ((db: Db) => void);
 
@@ -164,6 +165,8 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
   connectedAccounts,
   // 9: yolo is a herdr-claude executor's own option, out of its args (issue #267).
   yoloOption,
+  // 10: a connected account's job repositories are the user's setting, out of its source's options (issue #321).
+  jobRepositoriesSetting,
 ];
 
 /** A user schema's version once migrated. */

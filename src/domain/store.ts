@@ -99,6 +99,9 @@ export interface UserSettingsRepository {
   /** The hopper's own ssh key for this user's machines (issue #293): a secret, never answered by any route but its public half. */
   getSshKey(): { privateKey: string; publicKey: string } | undefined;
   setSshKey(key: { privateKey: string; publicKey: string }): void;
+  /** The repositories a connected account's jobs may use (issue #321); empty: none chosen. */
+  getJobRepositories(provider: ConnectedAccountProvider): string[];
+  setJobRepositories(provider: ConnectedAccountProvider, repositories: readonly string[]): void;
 }
 
 /** The instance's settings (in the instance schema): self-update and the store installs. */
