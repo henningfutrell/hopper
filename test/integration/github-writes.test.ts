@@ -12,6 +12,7 @@ import { createFakeGitHubServer, type FakeGitHubServer } from '../../src/sources
 import { createFakeGitHub, type FakeGitHub } from '../../src/sources/index.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { APP_ID, BOT, KEYS, SLUG, appSecrets, jobSourcesDoc } from '../support/github-app.ts';
+import { connectGitHub } from '../support/github-account.ts';
 import { mergesPullRequest } from '../support/scripted-executor.ts';
 import { waitFor } from '../support/wait.ts';
 
@@ -30,28 +31,29 @@ afterEach(async () => {
   for (const c of cleanups.splice(0)) c();
 });
 
-type Mode = 'gh' | 'app';
+type Mode = 'account' | 'app';
 
 async function boot(mode: Mode, gh: FakeGitHub | undefined, app: Record<string, unknown> = {}) {
   const db = tempDbPath();
   cleanups.push(db.cleanup);
-  const jobSources = mode === 'gh'
-    ? jobSourcesDoc({ github: { enabled: true, repos: [REPO], appKeyEnv: null }, githubApp: { enabled: false } })
+  const jobSources = mode === 'account'
+    ? jobSourcesDoc({ github: {}, githubApp: { enabled: false } })
     : jobSourcesDoc({ github: false, githubApp: app });
-  const seams = gh === undefined ? {} : mode === 'gh' ? { github: gh } : { githubApp: gh };
+  const seams = gh === undefined ? {} : mode === 'account' ? { github: gh } : { githubApp: gh };
   const a = await startTestApp({ dbPath: db.dbPath, plugins: { jobSources }, seams, secrets: mode === 'app' ? appSecrets() : {} });
   if (gh !== undefined) a.scripted.ships(mergesPullRequest(gh));
   apps.push(a);
+  if (mode === 'account') connectGitHub(a, [REPO]);
   return a;
 }
 
-const fakeFor = (mode: Mode) => (mode === 'gh' ? createFakeGitHub() : createFakeGitHub({ app: { botLogin: BOT, installedRepos: [REPO] } }));
+const fakeFor = (mode: Mode) => (mode === 'account' ? createFakeGitHub() : createFakeGitHub({ app: { botLogin: BOT, installedRepos: [REPO] } }));
 const body = (op: Record<string, unknown>) => `${JSON.stringify(op)}\n\nPlease do the thing.`;
 const jobFor = async (a: TestApp, url: string): Promise<Job | undefined> =>
   (await a.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=1000')).body.jobs.find((j) => j.source?.key === url);
 const writesTo = (gh: FakeGitHub) => gh.calls.filter((c) => WRITES.has(c.method));
 
-describe.each<Mode>(['gh', 'app'])('issue writes (%s source)', (mode) => {
+describe.each<Mode>(['account', 'app'])('issue writes (%s source)', (mode) => {
   it('claim → progress → question → answer in the UI → finished: labels only, zero comments', async () => {
     const gh = fakeFor(mode);
     const a = await boot(mode, gh);

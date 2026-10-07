@@ -3,25 +3,27 @@
 
 import type { Job, JobStatus } from '../../../src/domain/types.ts';
 import type { JobSource, SourceItem } from '../../../src/domain/ports.ts';
-import githubGh from '../../../src/plugins/job-source/github-gh/index.ts';
+import githubApp from '../../../src/plugins/job-source/github-app/index.ts';
 import { parseOptions } from '../../../src/plugins/options.ts';
-import { sourceConfig, type GitHubGhOptions, type GitHubSourceConfig } from '../../../src/sources/config.ts';
+import { sourceConfig, type GitHubAppOptions, type GitHubSourceConfig } from '../../../src/sources/config.ts';
 import { createFakeGitHub, createGitHubSource } from '../../../src/sources/github/index.ts';
 import type { FakeGitHub, GitHubSourceOptions } from '../../../src/sources/github/index.ts';
 
 export const REPO = 'owner/sandbox';
 
+/** The source logic's config: the shared keys of the GitHub sources (parsed as the app's options, which carry `repos`). */
 export function githubConfig(over: Record<string, unknown> = {}): GitHubSourceConfig {
-  const r = parseOptions(githubGh, { repos: [REPO], authors: ['owner'], defaultCwd: '/work/default', ...over });
+  const r = parseOptions(githubApp, { repos: [REPO], authors: ['owner'], defaultCwd: '/work/default', ...over });
   if (!r.ok) throw new Error(r.error);
-  return sourceConfig(r.options as GitHubGhOptions);
+  const { enabled: _e, appId: _i, slug: _s, privateKeyEnv: _k, apiUrl: _u, ...shared } = r.options as GitHubAppOptions;
+  return sourceConfig(shared);
 }
 
 export function setup(over: Record<string, unknown> = {}, o: { knownKeys?: (keys: string[]) => Set<string>; rerunnable?: (keys: string[]) => Set<string>; whoami?: string } = {}) {
   const gh = createFakeGitHub();
   const config = githubConfig(over);
   const clock = { now: () => new Date('2026-10-02T10:00:00.000Z') };
-  const source = createGitHubSource({ name: 'github', kind: 'github', mode: 'gh', config, api: gh, clock, ...o });
+  const source = createGitHubSource({ name: 'github', kind: 'github-account', mode: 'account', whoami: 'owner', config, api: gh, clock, ...o });
   return { gh, config, source };
 }
 

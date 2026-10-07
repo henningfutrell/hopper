@@ -16,7 +16,6 @@ describe('app mode discovery', () => {
     gh.createIssue({ repo: OTHER, labels: ['hopper'] });
     const items = await source.discover();
     expect(items.map((i) => i.repo)).toEqual([REPO]);
-    expect(methods(gh.calls)).not.toContain('searchOpenIssues');
     expect(source.describe()).toMatchObject({ mode: 'app', installedRepos: [REPO] });
   });
 
@@ -32,8 +31,7 @@ describe('app mode discovery', () => {
     const { gh, source } = setupApp({}, { installed: [] });
     gh.createIssue({ repo: REPO, labels: ['hopper'] });
     expect(await source.discover()).toEqual([]);
-    expect(methods(gh.calls)).not.toContain('searchOpenIssues');
-    expect(methods(gh.calls)).not.toContain('whoami');
+    expect(methods(gh.calls)).not.toContain('listOpenIssues');
     expect(source.describe()).toMatchObject({
       setup: `install the app: ${APP_INFO.htmlUrl}/installations/new`, installedRepos: [],
     });
@@ -102,9 +100,9 @@ describe('describe (B4 fields)', () => {
     expect(source.describe().paused).toBe('no GitHub App configured');
   });
 
-  it('gh source: mode gh and the enabled setting', () => {
+  it('a connected account\'s source: mode account and its login', () => {
     const { source } = setup();
-    expect(source.kind).toBe('github');
-    expect(source.describe()).toMatchObject({ mode: 'gh', enabledSetting: 'auto' }); // sources.yaml default (phase 4)
+    expect(source.kind).toBe('github-account');
+    expect(source.describe()).toMatchObject({ mode: 'account', login: 'owner' });
   });
 });

@@ -7,6 +7,7 @@ import type { Job } from '../../src/domain/types.ts';
 import { createFakeGitHub, type FakeGitHub } from '../../src/sources/index.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { waitFor } from '../support/wait.ts';
+import { connectGitHub } from '../support/github-account.ts';
 
 const REPO = 'owner/hopper-sandbox';
 const apps: TestApp[] = [];
@@ -22,12 +23,13 @@ async function boot(gh: FakeGitHub) {
   cleanup = db.cleanup;
   const plugins = {
     machines: lanes(1),
-    jobSources: [{ name: 'github', plugin: 'github-gh', options: {
-      enabled: true, pollSeconds: 3600, repos: [REPO], authors: ['owner'], executor: 'scripted', defaultCwd: '/tmp',
+    jobSources: [{ name: 'github', plugin: 'github-account', options: {
+      enabled: true, pollSeconds: 3600, authors: ['owner'], executor: 'scripted', defaultCwd: '/tmp',
     } }],
   };
   const a = await startTestApp({ dbPath: db.dbPath, env: {}, seams: { github: gh }, plugins });
   apps.push(a);
+  connectGitHub(a, [REPO]);
   const token = await a.login();
   // Review: a new job waits for the user, so it is still waiting when the operator takes it.
   expect((await a.ui('/ui/api/queue-gate', { mode: 'review', autoAcceptPerHour: null }, { token })).status).toBe(200);

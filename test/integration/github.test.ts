@@ -6,6 +6,7 @@ import type { Job } from '../../src/domain/types.ts';
 import { createFakeGitHub, type FakeGitHub } from '../../src/sources/index.ts';
 import { GitHubApiError } from '../../src/sources/github/index.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
+import { connectGitHub } from '../support/github-account.ts';
 import { mergesPullRequest } from '../support/scripted-executor.ts';
 import { waitFor } from '../support/wait.ts';
 
@@ -20,8 +21,8 @@ afterEach(async () => {
 
 function github(extra: Record<string, unknown> = {}) {
   return [{
-    name: 'github', plugin: 'github-gh', options: {
-      enabled: true, pollSeconds: 3600, repos: [REPO], authors: ['owner'], executor: 'scripted',
+    name: 'github', plugin: 'github-account', options: {
+      enabled: true, pollSeconds: 3600, authors: ['owner'], executor: 'scripted',
       defaultCwd: '/tmp', ...extra,
     },
   }];
@@ -38,6 +39,7 @@ async function boot(gh: FakeGitHub, o: { dbPath?: string; config?: Record<string
   }
   const a = await startTestApp({ dbPath, env: o.env ?? {}, seams: { github: gh }, ...(plugins ? { plugins } : {}) });
   apps.push(a);
+  connectGitHub(a, [REPO]);
   return a;
 }
 
@@ -274,7 +276,7 @@ describe('GitHub issue → job → issue', () => {
     await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:done'), { what: 'hopper:done' });
     expect(gh.commentsOn(REPO, issue.number)).toEqual([]);
     const gh2 = (await second.api('GET', '/api/sources')).body.sources.find((s: { name: string }) => s.name === 'github');
-    expect(gh2).toMatchObject({ state: 'ok', kind: 'github' });
+    expect(gh2).toMatchObject({ state: 'ok', kind: 'github-account' });
     expect(gh2.detail.skippedClaimedWithoutJob).toBeUndefined();
   });
 

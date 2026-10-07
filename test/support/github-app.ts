@@ -19,13 +19,12 @@ export const appSecrets = (): Record<string, string | undefined> => ({ GITHUB_AP
 const JOB_KEYS = { authors: ['owner'], executor: 'scripted', defaultCwd: '/tmp', pollSeconds: 3600 };
 
 /**
- * plugins.yaml `jobSources:` for both GitHub sources: `github` (github-gh, pausing while
- * GITHUB_APP_PRIVATE_KEY is set) omitted when false; `github-app` with this app's id and slug. Both
- * sync only on syncNow.
+ * The plugins config `jobSources` for both GitHub sources: `github` (the connected account's,
+ * github-account) omitted when false; `github-app` with this app's id and slug. Both sync only on syncNow.
  */
 export function jobSourcesDoc(o: { github?: Record<string, unknown> | false; githubApp?: Record<string, unknown> } = {}) {
   return [
-    ...(o.github === false ? [] : [{ name: 'github', plugin: 'github-gh', options: { enabled: 'auto', ...JOB_KEYS, ...o.github } }]),
+    ...(o.github === false ? [] : [{ name: 'github', plugin: 'github-account', options: { ...JOB_KEYS, ...o.github } }]),
     { name: 'github-app', plugin: 'github-app', options: { appId: APP_ID, slug: SLUG, ...JOB_KEYS, ...o.githubApp } },
   ];
 }

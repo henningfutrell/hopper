@@ -9,6 +9,7 @@ import { lanes, startTestApp, tempDbPath, TEST_PLUGINS, writePlugins, type TestA
 import { readConfig } from '../support/files.ts';
 import { mergesPullRequest } from '../support/scripted-executor.ts';
 import { waitFor } from '../support/wait.ts';
+import { connectGitHub } from '../support/github-account.ts';
 
 const REPO = 'owner/hopper-sandbox';
 let t: TestApp | undefined;
@@ -24,11 +25,12 @@ async function boot(plugins: Record<string, unknown>, gh?: FakeGitHub, file?: ob
   cleanup = db.cleanup;
   if (file !== undefined) writePlugins(db.dbPath, file);
   t = await startTestApp({ dbPath: db.dbPath, ...(file === undefined ? { plugins } : {}), ...(gh ? { seams: { github: gh } } : {}) });
+  if (gh) connectGitHub(t, [REPO]);
   return t;
 }
 
 const github = [{
-  name: 'github', plugin: 'github-gh', options: { enabled: true, pollSeconds: 3600, repos: [REPO], authors: ['owner'], executor: 'scripted', defaultCwd: '/tmp' },
+  name: 'github', plugin: 'github-account', options: { enabled: true, pollSeconds: 3600, authors: ['owner'], executor: 'scripted', defaultCwd: '/tmp' },
 }];
 const body = (op: Record<string, unknown>) => `${JSON.stringify(op)}\n\nPlease do the thing.`;
 const jobFor = async (a: TestApp, key: string): Promise<Job> =>

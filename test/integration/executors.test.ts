@@ -127,7 +127,7 @@ describe('GET /api/plugins: the executor role', () => {
     expect(marked('claude-cli')).toEqual(['bin', 'sshBin']);
     expect(marked('anthropic-api')).toEqual(['apiKeyEnv', 'baseUrl']);
     expect(marked('gate-router')).toEqual(['jevPath', 'python']);
-    expect(marked('github-gh')).toEqual(['appKeyEnv', 'bin', 'defaultCwd', 'repoPaths']);
+    expect(marked('github-account')).toEqual(['defaultCwd', 'repoPaths']);
     expect(marked('github-app')).toEqual(['apiUrl', 'appId', 'defaultCwd', 'privateKeyEnv', 'repoPaths', 'slug']);
     expect(marked('local')).toEqual(['workTree']);
   });
