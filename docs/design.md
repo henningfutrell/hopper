@@ -2778,7 +2778,7 @@ hopper supports both. A container is never taken to be the only shape a job has.
 | Part | Stands | Carried by |
 |------|--------|------------|
 | Container sandbox for agent jobs | not built: a **container target** runs commands only, and an **agent box** is a test machine reached over ssh, not locked down ("Agent boxes", residual risk) | #314, #308; mechanisms compared in #315 |
-| Work tree never the home root | not enforced: a job's default `cwd` is the home | #314 |
+| Work tree never the home root | enforced at job start: a work tree that is the machine's home, above it, or `/` fails the job; the default is the jobs directory `~/hopper-jobs` ("Work tree" → "Never the home") | #314 |
 | Operator-led claim and its timeline designation | not built | #318 |
 | Operator-led progress | protocol settled and seen end to end (the pickup record), not read by the daemon | #319 ("Pickups on agent boxes") |
 | Operator-led check-in | built: the closing pull request, as for any job | — |
