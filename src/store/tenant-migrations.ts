@@ -12,6 +12,7 @@ import { levelsNamedAsLevels } from './migration-level-names.ts';
 import { yoloOption } from './migration-yolo.ts';
 import { jobRepositoriesSetting } from './migration-job-repositories.ts';
 import { jobsDirWorkTrees } from './migration-jobs-dir.ts';
+import { herdrByName } from './migration-herdr-by-name.ts';
 
 type Migration = string | ((db: Db) => void);
 
@@ -170,6 +171,8 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
   jobRepositoriesSetting,
   // 11: a work tree stored as the home is the jobs directory (issue #314).
   jobsDirWorkTrees,
+  // 12: herdr is called by name on an ssh machine: its `herdrBin` goes (issue #311).
+  herdrByName,
 ];
 
 /** A user schema's version once migrated. */

@@ -3,7 +3,7 @@
 // lane count, edit the machine defaults a new machine starts from. On attach the ssh target is a Host alias
 // from ~/.ssh/config or a typed plain you@host (issue #293: an ephemeral container has no durable ~/.ssh), the
 // hopper's own key is shown to install there, and a host key known_hosts lacks is confirmed from its
-// fingerprint; herdr's path is resolved by the daemon over ssh when one of the machine's executors needs herdr. Phone width first: every field stacks, every control is at least 36 px tall.
+// fingerprint; herdr is called by name there, from its PATH (issue #311): the daemon checks it is found when one of the machine's executors needs herdr. Phone width first: every field stacks, every control is at least 36 px tall.
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -143,7 +143,7 @@ export function AddMachineForm({ config, busy, send, onDone }: {
         </div>
       )}
       {!here && <p className="text-xs text-muted-foreground">
-        When an executor it runs needs herdr (herdr-claude), the daemon finds herdr there over ssh and writes its path; otherwise it
+        When an executor it runs needs herdr (herdr-claude), the daemon checks herdr is on its PATH there (or in ~/.local/bin); otherwise it
         only checks the machine answers over ssh. Prepare the machine first:
         {' '}<code className="font-mono break-all">bash scripts/attach-machine.sh {d.ssh || '<ssh-target>'}</code>
       </p>}

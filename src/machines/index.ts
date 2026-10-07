@@ -49,7 +49,7 @@ export function createLocalMachineSource(o: {
           maxLanes: o.maxLanes,
           online: true,
           executors: [...o.executors()],
-          ...(o.session ? { herdr: { bin: 'herdr', session: o.session } } : {}),
+          ...(o.session ? { herdr: { session: o.session } } : {}),
         },
       ];
     },

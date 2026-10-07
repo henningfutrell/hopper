@@ -72,7 +72,6 @@ function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
         <Fact label="runs">{m.executors.length ? m.executors.join(', ') : '—'}</Fact>
         {m.ssh && <Fact label="ssh target">{m.ssh}</Fact>}
         {m.docker && <Fact label="container (docker exec)">{m.docker}</Fact>}
-        {m.herdr && <Fact label="herdr">{m.herdr.bin}</Fact>}
         {m.herdr && <Fact label="herdr session">{m.herdr.session}</Fact>}
         {m.client && <Fact label="connection">client, over its reverse tunnel</Fact>}
         {clientReleaseText(m.client) && <Fact label="client release">{clientReleaseText(m.client)}</Fact>}

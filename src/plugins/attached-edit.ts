@@ -1,7 +1,7 @@
 // Attaching an ssh target from the UI (design.md "Machines from the UI", issues #18, #74): a new
 // `ssh` instance appended to the plugins config's `machines`, every other entry kept. The ssh
 // target is a detected one or a typed plain `[user@]host` (issue #293: an ephemeral container has no
-// ~/.ssh/config); herdrBin is resolved over ssh here, never sent, and its host key is the one the person
+// ~/.ssh/config); herdr is checked over ssh here, by name as every call finds it (issue #311), and its host key is the one the person
 // confirmed (issue #293) or the user's known_hosts holds (design.md "Target authentication"). The result is checked
 // against the plugins config's schema and the ssh plugin's options before it replaces the record,
 // against the version the edit was read at. Editing and removing a machine is a plugins edit (edit.ts).
@@ -97,12 +97,11 @@ export async function applyMachineEdit(e: MachineEdit, ctx: MachineEditContext):
   let resolved: ResolvedTarget;
   try {
     resolved = await ctx.resolveTarget(e.ssh, { herdr, ...(e.hostKey !== undefined ? { hostKey: e.hostKey } : {}) });
-    if (herdr && !resolved.herdrBin) throw new Error('herdr not found there');
   } catch (err) {
     return refuse('conflict', `could not add ${e.name}: ${err instanceof Error ? err.message : String(err)}`);
   }
   // The probe takes seconds: writePlugins refuses a config that changed meanwhile.
-  const there = herdr ? { herdrBin: resolved.herdrBin } : { herdr: false };
+  const there = herdr ? {} : { herdr: false };
   const next: InstanceSpec = { name: e.name, plugin: ssh.id, options: { ...options, ...there, hostKey: resolved.hostKey } };
   return writePlugins(ctx.config, e.version, (doc) => list(doc, 'machine-source', e.name, next, ctx.configured));
 }

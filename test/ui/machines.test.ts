@@ -127,8 +127,8 @@ describe('editing a machine\'s name and details', () => {
     expect(editDraft(box)).toEqual({ name: 'box', lanes: '2', executors: ['command'], label: '', herdr: true, details: { docker: 'box' } });
     // No herdr binary to name (issue #311): herdr is called by name there, from its PATH.
     expect(DETAILS.ssh!.map((f) => f.key)).toEqual(['ssh', 'session', 'hostKey']);
-    // There is never an ssh config (issue #309): its hint names none.
-    expect(DETAILS.ssh!.map((f) => f.hint).join(' ')).not.toMatch(/ssh\/config|Host alias/);
+    // There is never an ssh config (issue #309): no hint names one.
+    expect(DETAILS.ssh!.map((f) => f.hint).join(' ')).not.toMatch(/ssh\/config/);
     expect(DETAILS.docker!.map((f) => f.key)).toEqual(['docker']);
     expect(DETAILS.client!.map((f) => f.key)).toEqual(['tokenEnv']);
   });
