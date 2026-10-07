@@ -271,3 +271,26 @@ describe('hopper user transfer (issue #212)', () => {
     expect(cli(url, ['user', 'transfer', 'admin'])).toMatchObject({ code: 2, err: expect.stringMatching(/user transfer <from> <to>/) });
   });
 });
+
+describe('hopper join-code (issue #308)', () => {
+  it('mints a one-time join code for the one user: what a script puts after # in a join line', () => {
+    const url = db();
+    const r = cli(url, ['join-code']);
+    expect(r.err).toBe('');
+    expect(r.code).toBe(0);
+    const code = r.out.trim();
+    expect(code).toMatch(/^[0-9a-f]{64}$/);
+    // Kept only hashed, for that user, and taken once.
+    const s = openInstanceStore({ url, clock: { now: () => new Date() } });
+    try {
+      const hash = createHash('sha256').update(code).digest('hex');
+      const now = new Date().toISOString();
+      expect(s.joinCodes.take(hash, now)).toBeDefined();
+      expect(s.joinCodes.take(hash, now)).toBeUndefined();
+    } finally { s.close(); }
+  });
+
+  it('is listed in help', () => {
+    expect(cli(undefined, ['help']).out).toContain('hopper join-code');
+  });
+});
