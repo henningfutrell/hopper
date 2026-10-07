@@ -1,7 +1,8 @@
 // The detected ssh targets (design.md "Machines from the UI", issue #18): the Host aliases of
 // ~/.ssh/config, the only ssh destinations the UI may attach. A pattern (`*`, `?`, `!`) is not a
 // host. `Include` is followed like ssh does: a relative path is relative to the config's directory,
-// `~` is the home directory, globs expand. What cannot be read is a note, never an error.
+// `~` is the home directory, globs expand. What cannot be read is a note, never an error; no config at
+// all is the usual case (issue #309: a hopper in a container has none) and says nothing.
 // Hand-written (about 50 lines): the `ssh-config` package parses the same but does not follow
 // Include, which is the part that needs care.
 import { globSync, readFileSync } from 'node:fs';
@@ -36,7 +37,7 @@ export function readSshTargets(path: string): SshTargets {
       text = readFileSync(file, 'utf8');
     } catch (e) {
       const code = (e as NodeJS.ErrnoException).code;
-      notes.push(code === 'ENOENT' && depth === 0 ? `no ssh config at ${file}` : `${file}: ${(e as Error).message}`);
+      if (!(code === 'ENOENT' && depth === 0)) notes.push(`${file}: ${(e as Error).message}`);
       return;
     }
     for (const line of text.split('\n')) {
