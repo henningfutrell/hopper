@@ -134,9 +134,9 @@ describe('the install page', () => {
   const page = readFileSync(join(ROOT, 'site', 'install.html'), 'utf8');
   const workflow = readFileSync(join(ROOT, '.github', 'workflows', 'pages.yml'), 'utf8');
 
-  it('publishes compose.yaml beside install.sh, and again when it changes', () => {
-    expect(workflow).toMatch(/cp compose\.yaml site\/compose\.yaml/);
-    expect(workflow).toMatch(/paths:.*compose\.yaml/);
+  // The site's build serves compose.yaml beside install.sh (test/scripts/pages-site.test.ts).
+  it('is republished when compose.yaml changes', () => {
+    expect(workflow).toMatch(/paths:[\s\S]*- compose\.yaml/);
   });
 
   it('names the renamed command and settings, never the old ones (issue #112)', () => {

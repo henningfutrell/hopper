@@ -3,80 +3,42 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#121a26">
 <title>Install hopper</title>
 <meta name="description" content="Run hopper with Podman from its published image, connect GitHub, and watch it finish its first job.">
 <link rel="icon" type="image/svg+xml" href="hopper-logo.svg">
-<style>
-:root {
-  --bg: #ffffff; --text: #1c1f23; --muted: #5b6370; --line: #d9dde3;
-  --code-bg: #f4f5f7; --accent: #0b5cad; --ok: #1d7a3e; --warn-bg: #fff6e0; --warn-line: #e3b341;
-}
-@media (prefers-color-scheme: dark) {
-  :root { --bg: #111317; --text: #e6e8eb; --muted: #9aa2ad; --line: #2c3139; --code-bg: #1b1e24; --accent: #6cb0f5; --ok: #6fcf8f; --warn-bg: #2a2416; --warn-line: #9e7a1f; }
-}
-* { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
-body {
-  margin: 0; background: var(--bg); color: var(--text);
-  font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-}
-main { max-width: 760px; margin: 0 auto; padding: 32px 16px 64px; }
-h1 { font-size: 28px; line-height: 1.25; margin: 0 0 8px; }
-h2 { font-size: 20px; margin: 40px 0 8px; padding-top: 16px; border-top: 1px solid var(--line); scroll-margin-top: 8px; }
-h3 { font-size: 16px; margin: 24px 0 4px; }
-p, ul, ol { margin: 8px 0; }
-li { margin: 4px 0; }
-a { color: var(--accent); }
-.lead { margin: 0 0 16px; }
-code, pre { font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-:not(pre) > code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
-pre.out {
-  margin: 8px 0 12px; padding: 10px 14px; border-left: 3px solid var(--line);
-  color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere;
-}
-.cmd { position: relative; margin: 8px 0 12px; }
-.cmd pre {
-  margin: 0; padding: 12px 84px 12px 14px; background: var(--code-bg);
-  border: 1px solid var(--line); border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere;
-}
-.cmd button {
-  position: absolute; top: 8px; right: 8px; font: inherit; font-size: 13px;
-  padding: 3px 10px; border: 1px solid var(--line); border-radius: 4px;
-  background: var(--bg); color: var(--text); cursor: pointer;
-}
-.cmd button.done { color: var(--ok); border-color: var(--ok); }
-.cmd.yaml pre { white-space: pre; overflow-x: auto; overflow-wrap: normal; }
-.main-cmd pre { font-size: 15px; padding-top: 16px; padding-bottom: 16px; }
-table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 15px; }
-th, td { text-align: left; vertical-align: top; padding: 6px 8px; border-bottom: 1px solid var(--line); }
-th { font-weight: 600; }
-.table-wrap { overflow-x: auto; }
-@media (max-width: 600px) {
-  table.stack, table.stack tbody, table.stack tr, table.stack td { display: block; width: 100%; }
-  table.stack tr:first-child { display: none; }
-  table.stack tr { padding: 8px 0; border-bottom: 1px solid var(--line); }
-  table.stack td { border: 0; padding: 2px 0; }
-  table.stack td:first-child { font-weight: 600; }
-}
-.steps { padding-left: 22px; }
-.toc { margin: 16px 0 8px; padding: 12px 16px 12px 36px; border: 1px solid var(--line); border-radius: 6px; }
-.toc li { margin: 2px 0; }
-.note { color: var(--muted); font-size: 15px; }
-.ok { color: var(--ok); font-weight: 600; }
-.warn { margin: 12px 0; padding: 10px 14px; background: var(--warn-bg); border-left: 3px solid var(--warn-line); border-radius: 4px; }
-details { margin: 8px 0; }
-summary { cursor: pointer; font-weight: 600; }
-details[open] summary { margin-bottom: 4px; }
-h1 .logo { height: 1.1em; width: auto; margin-right: 10px; vertical-align: -0.12em; }
-footer { margin-top: 48px; color: var(--muted); font-size: 14px; }
-</style>
+<script>
+// Light or dark as the reader's system says, before the first paint.
+(() => { const m = matchMedia('(prefers-color-scheme: dark)'); const set = () => document.documentElement.classList.toggle('dark', m.matches); set(); m.addEventListener('change', set); })();
+</script>
+<script type="module" src="./site.ts"></script>
 </head>
-<body>
-<main>
-<h1><img class="logo" src="hopper-logo.svg" alt="" width="26" height="40">Install hopper</h1>
-<p class="lead">hopper turns GitHub issues into finished work. You label an issue <code>hopper</code>;
+<body class="min-h-dvh bg-background text-foreground">
+<a href="#main" class="sr-only z-50 rounded-md bg-background px-3 py-2 text-sm font-medium focus:not-sr-only focus:fixed focus:top-3 focus:left-3">Skip to content</a>
+
+<header class="dark relative isolate overflow-hidden text-foreground">
+  <!--story:backdrop-->
+  <nav aria-label="Site" class="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-5 sm:px-8">
+    <a href="./" class="flex items-center gap-2.5 text-lg font-semibold tracking-tight">
+      <img src="hopper-logo.svg" alt="" width="21" height="32" class="h-8 w-auto drop-shadow-[0_0_14px_rgb(30_202_212/0.45)]">hopper
+    </a>
+    <ul class="flex items-center gap-1 text-sm font-medium text-muted-foreground sm:gap-2">
+      <li><a href="./" class="rounded-md px-2.5 py-1.5 transition-colors hover:text-foreground">Home</a></li>
+      <li><a href="https://github.com/henningfutrell/hopper/blob/main/README.md" class="rounded-md px-2.5 py-1.5 transition-colors hover:text-foreground">Docs</a></li>
+      <li><a href="https://github.com/henningfutrell/hopper" class="rounded-md px-2.5 py-1.5 transition-colors hover:text-foreground">GitHub</a></li>
+    </ul>
+  </nav>
+  <div class="mx-auto max-w-3xl px-4 pt-8 pb-14 sm:px-8 sm:pt-12 sm:pb-16">
+    <p class="text-xs font-semibold tracking-[0.2em] text-brand uppercase">Install guide</p>
+    <h1 class="landing-headline mt-3 text-4xl leading-[1.1] font-semibold tracking-tight sm:text-5xl">Install hopper</h1>
+    <p class="mt-4 text-base leading-relaxed text-muted-foreground text-pretty sm:text-lg">hopper turns GitHub issues into finished work. You label an issue <code>hopper</code>;
 hopper starts a Claude Code session with the issue as its instructions, answers the questions it can,
-asks you the rest, and labels and closes the issue when the work is done.</p>
+asks you the rest, and brings the work back as a pull request.</p>
+  </div>
+</header>
+
+<main id="main" class="doc mx-auto max-w-3xl px-4 pt-10 pb-20 sm:px-8">
 <p>This page takes you from nothing to a first finished job. It takes about 10 minutes. You need a terminal
 on the machine that will run it and a GitHub account.</p>
 <p><strong>Recommended: run it with Podman</strong>, from the published container image. Nothing is installed on
@@ -385,24 +347,15 @@ Delete those yourself if you want them gone. The docker database also stays; to 
 <li><a href="https://github.com/henningfutrell/hopper#add-machines">Add machines</a>: run jobs on other computers too, or in a sandbox container.</li>
 <li><a href="https://github.com/henningfutrell/hopper#send-jobs-to-one-machine">Routing rules</a>: send some jobs to one machine.</li>
 <li><a href="https://github.com/henningfutrell/hopper/blob/main/docs/deploy.md">docs/deploy.md</a>: every install path in detail.</li>
-<li><a href="./">The README</a>: everything else.</li>
+<li><a href="https://github.com/henningfutrell/hopper/blob/main/README.md">The README</a>: everything else.</li>
 </ul>
-
-<footer>hopper · <a href="./">home</a> · <a href="https://github.com/henningfutrell/hopper">source on GitHub</a></footer>
 </main>
-<script>
-document.querySelectorAll('[data-copy]').forEach((button) => {
-  button.addEventListener('click', async () => {
-    try {
-      await navigator.clipboard.writeText(button.dataset.copy);
-      button.textContent = 'Copied';
-      button.classList.add('done');
-    } catch {
-      button.textContent = 'Select and copy';
-    }
-    setTimeout(() => { button.textContent = 'Copy'; button.classList.remove('done'); }, 2000);
-  });
-});
-</script>
+
+<footer class="border-t border-border">
+  <div class="mx-auto flex max-w-3xl flex-wrap items-center justify-between gap-3 px-4 py-8 text-sm text-muted-foreground sm:px-8">
+    <span class="flex items-center gap-2"><img src="hopper-logo.svg" alt="" width="13" height="20" class="h-5 w-auto">hopper</span>
+    <span class="flex gap-4"><a href="./" class="hover:text-foreground">Home</a><a href="https://github.com/henningfutrell/hopper" class="hover:text-foreground">Source</a><a href="https://github.com/henningfutrell/hopper/issues" class="hover:text-foreground">Issues</a></span>
+  </div>
+</footer>
 </body>
 </html>
