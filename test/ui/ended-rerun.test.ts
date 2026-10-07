@@ -1,23 +1,21 @@
 // @vitest-environment happy-dom
-// Issue #362: the Ended panel offers Run again only where the daemon takes it. A failed job whose
-// issue is closed shows why instead of the button, and a source's sync — which tells a job its issue
-// closed or reopened — refreshes the jobs. The overview renders inside the whole app against a fake of
-// the daemon's HTTP surface and a fake SSE.
+// Issues #362, #354: the Ended panel offers Run again only where the daemon takes it — a failed or
+// finished job, its end reported, whether or not its issue is closed (Run again reopens it). The overview
+// renders inside the whole app against a fake of the daemon's HTTP surface and a fake SSE.
 import { createElement } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Job } from '../../src/domain/types.ts';
 
-const failed = (id: string, sync: Record<string, unknown>): Job => ({
-  id, spec: { executor: 'test', payload: {} }, priority: 50, status: 'failed', approved: false, attempts: 1,
+const failed = (id: string, sync: Record<string, unknown>, status: Job['status'] = 'failed'): Job => ({
+  id, spec: { executor: 'test', payload: {} }, priority: 50, status, approved: false, attempts: 1,
   createdAt: new Date(Date.now() - 600_000).toISOString(), updatedAt: new Date().toISOString(), finishedAt: new Date().toISOString(),
   source: { source: 'github', kind: 'github', key: `https://github.com/owner/repo/issues/${id}` },
   sourceState: { sync: { claimReported: true, finalReported: true, ...sync } },
 } as Job);
 
 let ended: Job[] = [];
-let sources: ((m: MessageEvent) => void) | undefined;
 
 function fakeDaemon() {
   const routes: Record<string, () => unknown> = {
@@ -40,7 +38,7 @@ function fakeDaemon() {
 class FakeEventSource {
   onopen: (() => void) | null = null;
   onerror: (() => void) | null = null;
-  addEventListener(type: string, fn: (m: MessageEvent) => void): void { if (type === 'source.updated') sources = fn; }
+  addEventListener(): void {}
   close(): void {}
 }
 
@@ -66,33 +64,20 @@ const runAgain = (id: string) => [...row(id).querySelectorAll('button')].find((b
 afterEach(async () => {
   await act(async () => root?.unmount());
   root = undefined;
-  sources = undefined;
   vi.unstubAllGlobals();
 });
 
-describe('Run again in the Ended panel (issue #362)', () => {
-  it('is offered on a failed job whose issue is open, and not on one whose issue is closed: that one says to reopen it', async () => {
-    ended = [failed('1', { itemClosed: false }), failed('2', { itemClosed: true })];
+describe('Run again in the Ended panel (issues #362, #354)', () => {
+  it('is offered on a failed job and on a finished one, its end reported', async () => {
+    ended = [failed('1', {}), failed('2', {}, 'finished')];
     await boot();
     expect(runAgain('1')).toBeDefined();
-    expect(row('1').querySelector('[data-rerun-blocked]')).toBeNull();
-    expect(runAgain('2')).toBeUndefined();
-    expect(row('2').querySelector('[data-rerun-blocked]')?.textContent).toMatch(/issue is closed: reopen it to run it again/);
+    expect(runAgain('2')).toBeDefined();
   });
 
-  it('is not offered while the job\'s failure is not reported to its source yet', async () => {
+  it('is not offered while the job\'s end is not reported to its source yet', async () => {
     ended = [failed('1', { finalReported: false })];
     await boot();
     expect(runAgain('1')).toBeUndefined();
-  });
-
-  it('follows the issue after a source syncs: closed after the page loaded, the button goes', async () => {
-    ended = [failed('1', { itemClosed: false })];
-    await boot();
-    expect(runAgain('1')).toBeDefined();
-    ended = [failed('1', { itemClosed: true })];
-    await act(async () => sources?.(new MessageEvent('source.updated', { data: JSON.stringify({ name: 'github', kind: 'github', state: 'ok', itemsSeen: 0, jobsCreated: 0, activeJobs: 0, detail: {} }) })));
-    await vi.waitFor(() => expect(runAgain('1')).toBeUndefined());
-    expect(row('1').querySelector('[data-rerun-blocked]')).not.toBeNull();
   });
 });

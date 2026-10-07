@@ -1,7 +1,7 @@
 // The overview's numbers, lists and lane board, all derived from the one job store (issue #45).
 import { describe, expect, it } from 'vitest';
 import type { Job, JobStatus, Lane } from '../../src/domain/types.ts';
-import { GROUP, canRerun, jobBoard, rerunBlocked, kpis, laneName, laneRows, waitingRows } from '../../ui/src/model/board.ts';
+import { GROUP, canRerun, jobBoard, kpis, rerunOutcome, laneName, laneRows, waitingRows } from '../../ui/src/model/board.ts';
 import type { MachineView } from '../../ui/src/model/wire.ts';
 
 const job = (id: string, o: Partial<Job> = {}): Job => ({
@@ -96,35 +96,34 @@ describe('waitingRows', () => {
   });
 });
 
-describe('canRerun (issues #313, #362)', () => {
+describe('canRerun (issues #313, #354, #362)', () => {
   const src = (key: string) => ({ source: { source: 'github', kind: 'github', key } }) as Partial<Job>;
   const reported = (o: Record<string, unknown> = {}) => ({ sourceState: { sync: { claimReported: true, finalReported: true, ...o } } }) as Partial<Job>;
   it('a failed job of a source, the newest of its item, its failure reported, can run again', () => {
     const failed = job('f', { status: 'failed', ...src('k'), ...reported() });
     expect(canRerun(failed, [failed, job('other', { status: 'failed', ...src('k2'), createdAt: '2026-10-03T11:00:00Z' })])).toBe(true);
-    expect(rerunBlocked(failed, [failed])).toBeUndefined();
   });
-  it('not once a newer job of its item exists, nor a job that did not fail, nor one of no source', () => {
+  it('a finished job whose result is not wanted can run again too (issue #354)', () => {
+    const done = job('d', { status: 'finished', ...src('k'), ...reported() });
+    expect(canRerun(done, [done])).toBe(true);
+  });
+  it('not once a newer job of its item exists, nor a job that did not end failed or finished, nor one of no source', () => {
     const failed = job('f', { status: 'failed', ...src('k'), ...reported() });
     expect(canRerun(failed, [failed, job('n', { status: 'queued', ...src('k'), createdAt: '2026-10-03T11:00:00Z' })])).toBe(false);
     expect(canRerun(job('c', { status: 'cancelled', ...src('k'), ...reported() }), [])).toBe(false);
     expect(canRerun(job('s', { status: 'failed', ...reported() }), [])).toBe(false);
   });
-  it('not while its failure is not reported to its source yet: the daemon refuses that', () => {
+  it('not while its end is not reported to its source yet: the daemon refuses that', () => {
     expect(canRerun(job('f', { status: 'failed', ...src('k') }), [])).toBe(false);
     expect(canRerun(job('f', { status: 'failed', ...src('k'), ...reported({ finalReported: false }) }), [])).toBe(false);
   });
-  it('not while its issue is closed: the reason says to reopen it (issue #362)', () => {
-    const closed = job('f', { status: 'failed', ...src('k'), ...reported({ itemClosed: true }) });
-    expect(canRerun(closed, [closed])).toBe(false);
-    expect(rerunBlocked(closed, [closed])).toBe('its issue is closed: reopen it to run it again');
-    const reopened = job('f', { status: 'failed', ...src('k'), ...reported({ itemClosed: false }) });
-    expect(canRerun(reopened, [reopened])).toBe(true);
-  });
-  it('no reason for a job that could not run again anyway', () => {
-    const closed = (o: Partial<Job>) => job('f', { status: 'failed', ...src('k'), ...reported({ itemClosed: true }), ...o });
-    expect(rerunBlocked(closed({ status: 'finished' }), [])).toBeUndefined();
-    const old = closed({});
-    expect(rerunBlocked(old, [old, job('n', { status: 'failed', ...src('k'), createdAt: '2026-10-03T11:00:00Z' })])).toBeUndefined();
+});
+
+describe('rerunOutcome (issue #354)', () => {
+  it('says where the new job is: waiting for acceptance, held and why, queued, or failed at once with its reason', () => {
+    expect(rerunOutcome(job('n', { status: 'queued', accepted: false }))).toEqual({ ok: true, message: 'Queued again: waiting for acceptance in Queue' });
+    expect(rerunOutcome(job('n', { status: 'held', holdReason: 'lane cap reached' }))).toEqual({ ok: true, message: 'Queued again, held: lane cap reached' });
+    expect(rerunOutcome(job('n', { status: 'queued' }))).toEqual({ ok: true, message: 'Queued again' });
+    expect(rerunOutcome(job('n', { status: 'failed', error: 'empty issue body' }))).toEqual({ ok: false, message: 'Run again: the new job failed at once: empty issue body' });
   });
 });

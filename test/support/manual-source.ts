@@ -1,7 +1,7 @@
 // A JobSource a test scripts by hand: items it offers, signals it raises, reports it receives.
 // Integration tests pull every non-GitHub job through it (nothing pushes jobs to the hopper).
 // Like the GitHub source's markers (hopper:done, hopper:failed, hopper:rejected), a reported finished, failed or rejected end
-// stops the item being offered; add it again to re-run it, or run its failed job again (a `rerun` report offers it again).
+// stops the item being offered; add it again to re-run it, or run its job again (`rerun` offers it again and answers it).
 import type { JobSource, SourceItem, SourceReport, SourceSignal } from '../../src/domain/ports.ts';
 
 export interface ManualSource extends JobSource {
@@ -44,6 +44,13 @@ export function createManualSource(name = 'manual'): ManualSource {
       signals = signals.filter((s) => !ids.has(s.jobId));
       return mine;
     },
+    async rerun(job) {
+      const key = job.source!.key;
+      const item = ended.get(key) ?? items.get(key);
+      if (!item) throw new Error(`no item ${key}`);
+      items.set(key, item);
+      return item;
+    },
     async report(r) {
       reports.push(r);
       const key = r.job.source!.key;
@@ -51,10 +58,6 @@ export function createManualSource(name = 'manual'): ManualSource {
         const item = items.get(key);
         if (item) ended.set(key, item);
         items.delete(key);
-      }
-      if (r.kind === 'rerun') {
-        const item = ended.get(key);
-        if (item) items.set(key, item);
       }
       const prev = (r.job.sourceState?.source?.reported as string[] | undefined) ?? [];
       return { ...(r.job.sourceState?.source ?? {}), reported: [...prev, r.kind] };

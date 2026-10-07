@@ -195,7 +195,7 @@ describe('GitHub issue → job → issue', () => {
     await waitFor(async () => (await a.job(first!.id)).sourceState?.sync?.finalReported === true, { what: 'finish reported' });
     expect(gh.issue(REPO, issue.number)).toMatchObject({ state: 'closed', labels: expect.arrayContaining(['hopper:done']) });
 
-    gh.reopenIssue(REPO, issue.number);
+    await gh.reopenIssue(REPO, issue.number);
     await a.sync();
     expect(await jobsFor()).toHaveLength(1); // hopper:done still there: no new job
 

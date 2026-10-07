@@ -102,7 +102,7 @@ describe('jobs pulled from a source', () => {
     expect((await t.waitForStatus(job.id, 'failed')).error).toBe('boom');
   });
 
-  it('Run again gives a failed job back to its source: the item is offered again and a new job runs (issue #313)', async () => {
+  it('Run again gives a failed job back to its source and queues a new job at once, linked to it (issues #313, #354)', async () => {
     const token = await t.login();
     const failed = await t.pull({ op: 'fail', message: 'scratch dir timed out' });
     await t.waitForStatus(failed.id, 'failed');
@@ -113,9 +113,24 @@ describe('jobs pulled from a source', () => {
 
     const r = await t.ui<Job>(`/ui/api/jobs/${failed.id}/rerun`, {}, { token });
     expect(r.status).toBe(200);
-    expect(t.source.reports.filter((x) => x.job.id === failed.id).map((x) => x.kind)).toEqual(['claimed', 'failed', 'rerun']);
+    expect(r.body).toMatchObject({ rerunOf: failed.id, source: { key: failed.source!.key } });
+    expect((await jobsFor()).map((j) => j.id)).toEqual([r.body.id, failed.id]);
+    expect(t.source.reports.filter((x) => x.job.id === failed.id).map((x) => x.kind)).toEqual(['claimed', 'failed']);
     expect((await t.events('types=job.rerun')).find((e) => e.jobId === failed.id)?.data).toEqual({ by: 'user' });
-    await waitFor(async () => (await jobsFor()).length === 2, { what: 'the new job' });
+    await t.sync();
+    expect(await jobsFor()).toHaveLength(2);
+  });
+
+  it('Run again on a finished job whose result is not wanted queues a new job for its item (issue #354)', async () => {
+    const token = await t.login();
+    const done = await t.pull({ op: 'echo', message: 'not what I wanted' });
+    await t.waitForStatus(done.id, 'finished');
+    await waitFor(async () => (await t.job(done.id)).sourceState?.sync?.finalReported === true, { what: 'the end reported' });
+
+    const r = await t.ui<Job>(`/ui/api/jobs/${done.id}/rerun`, {}, { token });
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ rerunOf: done.id, source: { key: done.source!.key } });
+    await t.waitForStatus(r.body.id, 'finished');
   });
 
   it('Run again refuses a job that has not failed (409) and an unknown one (404)', async () => {
