@@ -3056,6 +3056,93 @@ machine.
 **Not built here.** Research only: no daemon change. Step 1 is #314's; steps 2 and 3 are #308's and
 #310's.
 
+## Linking machines to a hopper in a container: protocols compared (issue #312, 2026-10-06 — research)
+
+The question: how a computer or an agent box links to a hopper that runs in a container — no durable
+host, no `~/.ssh` of its own, no ssh config ever (#309) — without today's ssh attach. The bar: adding a
+machine is as easy as possible and allows a sandbox (#308, #310); every box interoperates with no catch,
+across re-runs and rebuilds (#307, #306); no herdr binary path to type (#311). Related: #293, #315, #316,
+#319, #262.
+
+**What ships today, and where it misses the bar.**
+
+| Path | Who dials | Reach needed | Catch |
+|------|-----------|--------------|-------|
+| ssh target (#10, #59, #293) | the hopper dials the machine | the container reaches the machine's sshd: `you@host.docker.internal` / `host.containers.internal` for the computer it runs on | a key to install by hand in `authorized_keys`, a host key fingerprint to check, sshd on the target, `herdrBin` because each call is a fresh login shell (#311) |
+| client target (#59) | the machine dials the hopper | the client reaches the hopper's **host** sshd; its key goes in that host's `authorized_keys` with a forced relay command | leans on the hopper's host — exactly what a container hopper does not have (#293, "Not changed"); the token is a runtime variable, so adding one means a restart and a file; the install is a script run over the user's ssh |
+| agent box (#295) | the hopper dials the box | the box's sshd on the computer's loopback, a random port | a containerized hopper reaches neither the loopback nor the Hosts in `~/.ssh` ("This host only"); a restarted box gets a new port (#319's finding); joining the boxes to the compose network was a hand fix a re-run undoes (#306) |
+| container target (#58) | the hopper runs `docker exec` | the hopper's docker socket (proxied) | runs commands only, no agent, no herdr |
+
+Every catch in the table comes from one thing: **the hopper dials in**. Dialling in needs a reachable
+address, an sshd, keys placed on both sides and a host key pinned, and a container that is recreated
+keeps none of it. The client target already turns the direction round; only its transport — an ssh
+login into the hopper's host — is wrong for a container.
+
+**Compared.**
+
+| Option | What it is, and who uses it | Ease | Fit: hopper in a container, boxes, sandbox | Cost |
+|--------|-----------------------------|------|---------------------------------------------|------|
+| **Client dial-in over the hopper's own URL** | the machine opens an outbound, long-lived connection (WebSocket or HTTP/2) to the hopper's URL and the hopper sends its calls down it. GitHub Actions self-hosted runners, Buildkite agents, GitLab runners, Coder workspace agents, Teleport nodes in reverse-tunnel mode, VS Code Remote Tunnels | high: nothing inbound on the machine, no sshd, no port | best: whatever reaches the UI reaches it — the compose network for boxes, `host.containers.internal` / the LAN / the public URL for the computer and laptops. A box needs no sshd and no published port, so its network can be cut to the hopper and the agent's API | a route outside the UI session (it changes nothing: the hopper still pulls, through the pipe); a reverse proxy in front must pass WebSocket upgrades |
+| **Pairing by a one-time join code** (mint in the UI, give to the machine) | the admin's **Add machine** mints a short-lived, single-use code; the machine presents it once and gets enrolled. Tailscale auth keys, GitHub runner registration tokens (`config.sh --url … --token …`), Teleport join tokens, Buildkite agent tokens | high: one copied line, or an environment variable for a box | good: a box script passes it as an env var at create, no person needed; the code is hashed and expires, as the device link's login code already is ("Login codes") | none new: it is the device link's own mechanism, for a machine instead of a browser |
+| **Pairing by device code** (RFC 8628 shape: the machine shows a code, a person approves it) | `hopper-client join <url>` prints a short code; the admin types or approves it in the Machines view. GitHub CLI and VS Code tunnels sign-in, Tailscale's login URL, TV apps | high for a person at the machine | weak for boxes: someone must be at each one; fine for laptops | a pending-approval list in the UI; the hopper already does this flow as a client (GitHub, `@octokit/oauth-methods`) |
+| **Per-machine keypair as the credential** (after pairing) | the machine makes an ed25519 key and keeps the private half; the hopper keeps the public half and checks a signature on every connection. SSH keys, Teleport and Tailscale node keys, HTTP Message Signatures (RFC 9421) | invisible after pairing | good: the hopper stores a public key, not a secret ("Nothing leans on the machine"), and needs no runtime variable or restart per machine; the box keeps its key in its home volume, so a rebuild keeps its identity | replaces the client token's shared HMAC secret; node:crypto has ed25519, as it had HMAC |
+| **Mutual TLS** | each side holds a certificate from a CA the other trusts. Kubernetes kubelets, service meshes, step-ca | invisible after enrolment | medium: TLS ends at the reverse proxy in front of a public hopper, so the hopper never sees the client certificate unless the proxy forwards it; plain-HTTP LAN installs have no TLS at all | a CA to run and rotate; an enrolment protocol (ACME, SCEP) on top — more than this needs |
+| **SSH certificates** | a CA signs host and user keys, so no `authorized_keys` and no fingerprint check per machine. Teleport, smallstep, Netflix BLESS | medium: still sshd on every target | poor: still the hopper dialling in, still sshd in every box, and trusting the CA takes root on each target (`TrustedUserCAKeys`) | a CA, short-lived certs to renew; fixes trust, not reach |
+| **WireGuard / a tailnet** | an overlay network: every node reachable by name. Tailscale, Headscale, NetBird, plain WireGuard | high once every node is in it | gives reach, not pairing or identity to the hopper: the hopper still needs a credential per machine on top. A container joins only with `NET_ADMIN` or a userspace sidecar | a second service and its keys to keep per machine; a fine **transport** for dial-in across networks when the owner already runs one — never a requirement |
+| **Reverse tunnel as a service** | Cloudflare Tunnel, ngrok, frp: expose a local port through a relay | — | answers "reach the hopper from outside", which the public URL already does; it does not link a machine | a third party in the path |
+| **mDNS / DNS-SD** (RFC 6762, 6763) | a service announces `_hopper._tcp` on the LAN; clients browse. Printers, AirPlay, Home Assistant | removes typing a URL on the LAN | poor: multicast does not cross into a bridge or rootless network, so a container hopper is not found unless it runs with host networking; discovery only, it proves nothing | worth at most a convenience in the join command later |
+
+**Recommendation.**
+
+1. **One way to add a machine: dial-in plus a join code.** Grow the client target, do not add a new
+   kind. The client connects out to the hopper's own URL (WebSocket upgrade on one route; the existing
+   HTTP/2 session and the signed `POST /herdr` calls ride on that stream unchanged, so `server.ts` and
+   `src/executors/client.ts` keep their protocol and lose the ssh relay). **Add machine** in the UI mints
+   a one-time join code (hashed, 10 minutes, as a device link) and shows one line to run there:
+   `hopper-client join <hopper URL>#<code>`. The client makes its keypair, presents the code and its
+   public key once, and is a machine. Device-code approval (the machine shows the code) is the second
+   form for a person at a laptop; build it only when a real case asks.
+2. **The credential is the machine's public key**, not a shared token: the hopper records it on the
+   machine instance, so adding a machine needs no runtime variable, no restart, and no stored secret.
+   Sign each connection (and keep the per-request signatures and the 30 s replay window that ship) with
+   the key; prefer an established library for the signature format (RFC 9421) if one fits the client's
+   no-`node_modules` install, else node:crypto's ed25519, as the HMAC is today. Removing a machine
+   deletes its key; the next connect is refused.
+3. **Agent boxes become clients.** The box image carries the hopper client; `scripts/agent-boxes.sh`
+   (or a **Add sandbox machine** action, #308) creates the box on the hopper's own network with a join
+   code in its environment. No sshd, no published port, no `~/.ssh` Host, no known_hosts line, no
+   `--attach` through a host-installed CLI. A rebuilt box finds its key in its home volume and reconnects
+   as the same machine; a re-run changes nothing. That is #307's "no catches", #306's fix, and #319's
+   port finding gone. The pickup record (#319) is read over the same connection, as a signed call. A box
+   that dials out only can have its network cut to the hopper and the agent's API (#315's open question).
+4. **The computer the container runs on is a client too**, joined the same way, so the container never
+   reaches into its host. `host.containers.internal` / `host.docker.internal` stays only as the address
+   the client dials when the UI is published on the host's loopback.
+5. **herdr from `PATH` (#311).** The client is one long-lived process that runs `herdr` with its own
+   environment, not a fresh login shell per call, so the race that made `herdrBin` necessary does not
+   happen there; the field goes for clients, and the client starts its own herdr session as it does now.
+6. **ssh stays, demoted.** For a machine that cannot run the client (no node ≥ 24), the ssh target as
+   #293 left it remains, behind an "attach over ssh instead" link, with no ssh config named anywhere
+   (#309). No SSH certificates, no mTLS, no required tailnet, no mDNS: each fixes a part this path
+   does not have.
+
+**What it costs and breaks.** A route outside the UI session, authenticated by the machine's key;
+"Loopback plus the LAN names and the public URL" must let a client's peer through (a box on the
+compose network arrives from a container address, which `HOPPER_LAN_PEERS` refuses today), so the route
+needs its own reach rule, decided with the repo law it amends. A reverse proxy in front must pass
+WebSocket upgrades (every common one does, with a line of config). The client's ssh tunnel, its relay
+and `scripts/attach-client.sh`'s host-side steps go, with no shim (the client token's runtime variable
+and the existing client's pane state need a migration to the key and the new connection). Windows
+(#262) gets a path with no sshd, since the client is node.
+
+**Open for the owner.** Whether a join code may enrol more than one machine (one code for all boxes of an
+`agent-boxes.sh` run, as a reusable Tailscale key) or exactly one; whether **Add machine** defaults to a
+sandbox box or to the computer.
+
+**Not built here.** Research only: no daemon change. The build is #308's and #307's; #310 asks the
+same question from the add flow's side, and this section is its protocol half — #310 depends on it,
+not the other way round.
+
 ## Client releases (issue #70, 2026-10-05)
 
 The hopper client is released from the hopper and loaded onto its client targets by the hopper: no
