@@ -44,7 +44,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, the plugins config (`plugins-config.ts`) + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt, `escalation-level/anthropic-api/` asks the Claude API with the same prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-gh/`, `job-source/github-app/` and `job-source/github-account/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser); `usage-source/command-usage/` reads any agent framework's usage and account from a command that prints them as JSON; `usage-source/polled.ts` the background refresh both share, `usage-source/run.ts` their command runner; `notifier/grokbot-routine/` is the Grok Bot routine webhook — env-file reader and notifier; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
 | `src/executors/` | `Executor` adapters (`test`, `herdr/`, `command.ts` — a job's body run on its machine through its connection, `cursor.ts` — Cursor's CLI agent there, issue #142) and the registry; reached through the executor plugins. The connections and their target authentication ("Target authentication"): `ssh.ts` (key-only ssh to pinned host keys), `ssh-key.ts` (the hopper's own ssh key, kept in the user's store, issue #293), `docker.ts` (the docker socket check, the proxy's allowlist), `client.ts` (a client target's tunnel, signed calls); `env.ts` the scrubbed child environment | engine, http, store, plugins |
 | `src/client/` | the hopper client ("Client targets"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load` over HTTP/2 on the tunnel), `tunnel.ts` (its ssh to the hopper), `release.ts` (the client release: its files, its id, checking and installing one — "Client releases"), `main.ts`; `relay.ts`, the forced command of its key on the hopper's machine; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`); `ssh-options.ts` (the hardened ssh options, shared with `src/executors/ssh.ts`) | everything in `src/` outside `src/client/` |
-| `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following the plugins config; ssh probe and herdr path resolution through the herdr CLI client's ssh argv; the container probe, `docker container inspect`), the detected ssh targets (`ssh-config.ts`) and which of them is this machine (`this-machine.ts`, issue #275), keeping each client target on the hopper's client release (`client-release.ts`), `combineMachineSources` | engine, http, store, plugins |
+| `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following the plugins config; ssh probe and the check that herdr is found there by name (`REMOTE_PATH`, issue #311) through the herdr CLI client's ssh argv; the container probe, `docker container inspect`), the detected ssh targets (`ssh-config.ts`) and which of them is this machine (`this-machine.ts`, issue #275), keeping each client target on the hopper's client release (`client-release.ts`), `combineMachineSources` | engine, http, store, plugins |
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin) | engine, http, store, plugins |
 | `src/job-rules/` | the job rules (issue #172): the config record `job-rules`, the default job rules, the fixed lines of the footer (work tree, protocol), their read, view and edit — no I/O but the config records port | everything but `domain/` |
 | `src/routing/` | routing rules: the plugins config's `routing` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
@@ -2506,7 +2506,7 @@ instances"); the fields below are its options, its instance name the machine id:
 ```yaml
 machines:
   - { name: local, plugin: local }
-  - { name: laptop, plugin: ssh, options: { ssh: laptop, lanes: 2, herdrBin: /home/user/.local/bin/herdr } }
+  - { name: laptop, plugin: ssh, options: { ssh: user@laptop, lanes: 2 } }
 ```
 
 | field | default | |
@@ -2518,8 +2518,8 @@ machines:
 | `label` | `name` | |
 | `session` | `hopper` | hopper's herdr session there; never `default` |
 | `hostKey` | — | the **pinned host key**, `<type> <base64>`; absent → the hopper does not connect ("Target authentication") |
-| `herdr` | `true` | it runs herdr. `false` (issue #142, "Cursor executor and machine defaults"): online while it answers over ssh (`true` there), herdr-claude refuses it; `session` and `herdrBin` unused |
-| `herdrBin` | `herdr` | **give the absolute path.** Each call is a fresh login shell there; on the laptop the shell env file is a symlink that every new pane's shell updates, and a call racing that update lost its PATH (`zsh:1: command not found: herdr`, exit 127, seen live) |
+| `herdr` | `true` | it runs herdr. `false` (issue #142, "Cursor executor and machine defaults"): online while it answers over ssh (`true` there), herdr-claude refuses it; `session` unused |
+| — | — | **no herdr binary** (issue #311): every call runs `PATH="$PATH:$HOME/.local/bin" exec herdr …` there (`REMOTE_PATH`, `src/executors/ssh.ts`). An ssh command's shell is not a login shell, so `~/.local/bin` (where herdr installs) is often not on its PATH; naming it in the command also survives the race that once lost a call its PATH (the shell env file a new pane's shell rewrites; `zsh:1: command not found: herdr`, exit 127, seen live). `herdrBin` is refused |
 
 **Reaching it** (authentication: "Target authentication" below; the argv here predates it). `createHerdrCliClient({ ssh: { target, controlDir } })` runs the same herdr argv as
 `ssh -F ~/.ssh/config -o BatchMode=yes -o ConnectTimeout=10 -o ControlMaster=auto -o ControlPath=<dataDir>/ssh/<16 hex>
@@ -2544,7 +2544,7 @@ waiting-answer job whose pane is there stays pinned (`resumeOn`) and waits.
 
 **Executors are told the machine.** `ExecutionContext.machine` is the lane's `MachineSnapshot`
 (`ssh` and `herdr { bin, session }` on an attached one); the runner looks it up per run. herdr-claude
-drives that machine's herdr and records `ssh`, `herdrBin`, `session` in its pane state, so resume,
+drives that machine's herdr and records `ssh` and `session` in its pane state, so resume,
 reattach and cleanup (which have only the job) reach the same herdr. Pane ids are per herdr server:
 held panes are keyed by machine and pane. An executor that cannot run elsewhere is simply not listed
 in the machine's `executors`.
@@ -2563,7 +2563,8 @@ cwd the machine cannot use fails the job at its scratch command, at once.
 
 **Preparing a machine:** `bash scripts/attach-machine.sh <ssh-target> [lanes]` — checks herdr and
 claude there, installs `systemd/hopper-herdr.service` there, `enable --now`s it, warns without
-linger, confirms the session runs, and prints the plugins.yaml lines with the resolved `herdrBin`.
+linger, confirms the session runs, and prints the plugins.yaml lines to set (no herdr path: herdr is
+looked up there by name, as every call finds it, issue #311).
 
 **Verification:** `HOPPER_REAL_SSH=<target> npm test -- test/integration/attached-real.test.ts`
 runs a real Claude job there (throwaway session) through the composition root. Passed against
@@ -2603,7 +2604,7 @@ routing:
 |---|---|---|
 | `docker` | — | the container's name or id; must not start with `-` (plugin `docker`) |
 | `executors` | `[command]` | `[herdr-claude]` for an ssh target |
-| `session`, `herdrBin`, `hostKey` | — | refused (unknown options of `docker`): it has no herdr |
+| `session`, `hostKey` | — | refused (unknown options of `docker`): it has no herdr |
 
 **Reached** only through the hopper's **docker socket** (`HOPPER_DOCKER_HOST`, "Target authentication"):
 `docker --host <it> exec …`; without it a container target stays offline.
@@ -2716,7 +2717,7 @@ machines:
 |---|---|---|
 | `tokenEnv` | — | the variable holding the client token in the daemon's runtime (or `<it>_FILE`); `[A-Z_][A-Z0-9_]*` (plugin `client`) |
 | `name` | — | letters, digits, `_`, `-`: it names the tunnel's socket (else the instance cannot run) |
-| `session`, `herdrBin`, `hostKey` | — | refused (unknown options of `client`): the client names its herdr itself, and its tunnel pins the keys |
+| `session`, `hostKey` | — | refused (unknown options of `client`): the client names its herdr itself, and its tunnel pins the keys |
 
 **The tunnel.** The client (`src/client/tunnel.ts`) runs `ssh -T` to this machine with the hardened
 options, its own key (made on the client; the private half never leaves it) and this machine's pinned
@@ -2835,7 +2836,7 @@ image, and they reach the hopper through the plugins config.
   `herdr --session hopper status server` answering `running`; with only the public line, the same
   check runs in the box through docker.
 - **`--attach`**: each box becomes an `ssh` machine instance named after it (`ssh`, `herdr: true`,
-  `herdrBin: /usr/local/bin/herdr`, its `hostKey`) through the operator CLI (`hopper config get|set
+  its `hostKey`; herdr is on the box's PATH, issue #311) through the operator CLI (`hopper config get|set
   plugins`, against its version; the daemon's 5 s watch follows it, no restart), filtered by
   `scripts/agent-boxes.ts`. A new box is attached with **no executors**: an unpinned job never lands on a
   test box by chance; the owner lists executors per box in Plugins, and routes test jobs there with a
@@ -3065,6 +3066,29 @@ machine.
 
 **Not built here.** Research only: no daemon change. Step 1 is #314's; steps 2 and 3 are #308's and
 #310's.
+
+## herdr by name on an ssh machine (issue #311, 2026-10-06)
+
+Owner, on the Machines view's Edit form, which asked for a "herdr binary" holding an absolute path:
+the person should not set a path; use `PATH`, just call the tool.
+
+- **No `herdrBin`.** The `ssh` machine-source plugin has no such option (its schema refuses it); the Edit
+  form and the machine card show no herdr path. `MachineSnapshot.herdr` is `{ session }`; a herdr-claude
+  pane state records `ssh` and `session` only (an older one's `herdrBin` is read past, not used).
+- **How a call finds herdr there**: `PATH="$PATH:$HOME/.local/bin" exec 'herdr' '--session' …`
+  (`REMOTE_PATH` in `src/executors/ssh.ts`, used by the herdr CLI client over ssh). The machine's own
+  PATH first, then `~/.local/bin`, where herdr installs and where `systemd/hopper-herdr.service` runs it
+  from. This replaces the absolute path that was resolved once at attach because each call's shell could
+  lose its PATH (row `herdr` above); the fallback is named in the command, so that race cannot hide it.
+- **Adding a machine** checks, over the same connection, that `command -v herdr` answers with that PATH
+  (else 409, "herdr not found: not on its PATH, not in ~/.local/bin"), and stores nothing of where.
+  `scripts/attach-machine.sh` checks the same way and prints no `herdrBin`; `scripts/agent-boxes.ts`
+  writes none (herdr is `/usr/local/bin/herdr` in a box, on its PATH).
+- **Persisted state**: tenant migration 12 (`src/store/migration-herdr-by-name.ts`) drops `herdrBin`
+  from every stored `ssh` machine; every other option stays.
+- **Not changed**: a client target's `HOPPER_CLIENT_HERDR_BIN` (written by `scripts/attach-client.sh`,
+  never typed in the UI; the dial-in client of issue #312 replaces it), and the herdr-claude executor's
+  own `bin` for this machine's herdr (default `herdr`, from the daemon's PATH).
 
 ## Linking machines to a hopper in a container: protocols compared (issue #312, 2026-10-06 — research)
 
@@ -3836,7 +3860,8 @@ answer in a pane there (`resumeOn`) — the error names the jobs.
   `[user@]host` may be typed, which can carry no option). The add form offers only detected ssh targets, and the route
   refuses any other value: an ssh destination is command-bearing-adjacent (`-oProxyCommand=…`, a
   host that runs whatever it likes). Adding a Host alias stays a `~/.ssh/config` edit.
-- **`herdrBin` is never taken from the UI.** On add the daemon resolves it over ssh, with the same
+- **`herdrBin` is never taken from the UI** (amended by issue #311: there is no `herdrBin`; the add
+  checks herdr is found by name, as every call finds it, and stores no path). On add the daemon resolves it over ssh, with the same
   `BatchMode`/`ControlPath` argv as every herdr call (`resolveHerdrBinOverSsh`): `command -v herdr`
   in a login shell there (`"$SHELL" -lc`, the last line, must be absolute), else `~/.local/bin/herdr`
   if executable. Failure → 409 with the reason. `session` is left out (the default `hopper`). The
@@ -3950,7 +3975,7 @@ view's Edit form showed lanes, executors and label only, and nothing renamed an 
   written with. No migration: nothing stored changes shape.
 - **UI**: the Edit form (`EditMachineForm`) shows the name, label, lanes, executors and the plugin's
   details (`DETAILS` in `ui/src/model/machines.ts`): ssh — ssh target (detected targets offered, any
-  destination typed), herdr session, herdr binary, host key, a "runs herdr" switch; docker — container;
+  destination typed), herdr session, host key, a "runs herdr" switch (no herdr binary since issue #311); docker — container;
   client — token variable. An emptied optional detail goes (its default). The local machine's form
   (`LocalMachineForm`) edits its name and lane count. A changed ssh target is not re-probed: its host
   key is edited beside it, and without the right one the hopper does not connect.

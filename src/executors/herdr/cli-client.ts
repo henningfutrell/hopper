@@ -1,14 +1,15 @@
 // HerdrClient over the herdr CLI. Every call is `<bin> --session <session> …` with no shell,
 // JSON on stdout, server errors as JSON on stderr with exit 1, usage errors with exit 2.
 // Never the default session: the session is required. On an attached machine (`ssh`) the same
-// argv runs there through `ssh`, quoted for the remote login shell (design.md "Attached machines"),
-// authenticated as `../ssh.ts` says (design.md "Target authentication").
+// argv runs there through `ssh`, quoted for the remote shell, `herdr` found by name from its PATH
+// (`REMOTE_PATH`, issue #311; design.md "Attached machines"), authenticated as `../ssh.ts` says
+// (design.md "Target authentication").
 
 import { execFile } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { scrubbedEnv, userProcessEnv } from '../env.ts';
 import { clientHerdr, type ClientTransport } from '../client.ts';
-import { SSH_FAILED, shellQuote, sshArgv, type SshTransport } from '../ssh.ts';
+import { REMOTE_PATH, SSH_FAILED, shellQuote, sshArgv, type SshTransport } from '../ssh.ts';
 import { HerdrError } from './client.ts';
 import type { AgentInfo, AgentStatus, HerdrClient } from './client.ts';
 
@@ -30,12 +31,15 @@ export interface HerdrCliClient extends HerdrClient {
   run(args: string[], timeoutMs?: number): Promise<Record<string, unknown>>;
 }
 
-/** This machine's herdr or an ssh target's: the binary and session are the hopper's to name. */
-interface CliOptions {
-  bin: string; session: string; timeoutMs?: number; ssh?: SshTransport;
-  /** Over the daemon's environment for this machine's herdr: the user's CLI config dirs (issue #158). Not sent over ssh. */
+/** This machine's herdr: its binary and session are the hopper's to name. */
+interface LocalOptions {
+  bin: string; session: string; timeoutMs?: number; ssh?: never;
+  /** Over the daemon's environment for this machine's herdr: the user's CLI config dirs (issue #158). */
   userEnv?: Readonly<Record<string, string>>;
 }
+/** An ssh target's herdr: `herdr` as its PATH finds it (issue #311), in the session the hopper names. */
+interface SshOptions { session: string; timeoutMs?: number; ssh: SshTransport }
+type CliOptions = LocalOptions | SshOptions;
 /** A client target's herdr: its binary and session are the client's own (design.md "Client targets"). */
 interface ClientOptions { client: ClientTransport; timeoutMs?: number }
 
@@ -70,10 +74,10 @@ function viaCli(o: CliOptions): Exec {
   const ssh = o.ssh;
   if (ssh?.controlDir) mkdirSync(ssh.controlDir, { recursive: true, mode: 0o700 });
   return (args, timeoutMs) => new Promise((resolve, reject) => {
-    const argv = [o.bin, '--session', o.session, ...args];
+    const argv = ['--session', o.session, ...args];
     let file: string, fileArgs: string[];
     try {
-      [file, fileArgs] = ssh ? [ssh.bin ?? 'ssh', sshArgv(ssh, argv.map(shellQuote).join(' '))] : [o.bin, argv.slice(1)];
+      [file, fileArgs] = ssh ? [ssh.bin ?? 'ssh', sshArgv(ssh, `${REMOTE_PATH} exec ${['herdr', ...argv].map(shellQuote).join(' ')}`)] : [o.bin, argv];
     } catch (e) {
       // Not authenticated as the hopper must be (no key, unpinned, a jump host): never connected.
       return reject(new HerdrError('ssh', `ssh ${ssh!.target}: ${(e as Error).message}`));

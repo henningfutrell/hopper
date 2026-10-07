@@ -3,7 +3,7 @@
 // fixed: another agent CLI is another executor plugin. `yolo` is the instance's choice whether Claude
 // has every permission (design.md "Yolo", issue #267); `args` are the agent's other arguments —
 // where its tools are chosen (design.md "6d"). A job on an attached machine runs in that machine's
-// own herdr (binary and session from its `ssh` machine instance), reached over ssh (design.md "Attached machines"),
+// own herdr (its session from its `ssh` machine instance, herdr by name there), reached over ssh (design.md "Attached machines"),
 // or a client target's herdr, through its reverse tunnel (design.md "Client targets").
 import { join } from 'node:path';
 import { JOBS_DIR } from '../../../domain/types.ts';
@@ -74,7 +74,7 @@ export function herdrClaudePlugin(seam?: HerdrClient): PluginDefinition<'executo
               client: { machine: there.client.machine, socket: clientSocket(ctx.dataDir, there.client.machine), token: () => ctx.env(there.client.tokenEnv) ?? '' },
             })
             : createHerdrCliClient({
-              bin: there.bin, session: there.session,
+              session: there.session,
               ssh: { target: there.ssh, controlDir: join(ctx.dataDir, 'ssh'), auth: () => hopperSshAuth({ env: ctx.env, dataDir: ctx.dataDir }) },
             }));
           remotes.set(key, client);

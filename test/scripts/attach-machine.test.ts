@@ -68,7 +68,8 @@ describe('attach-machine.sh', () => {
     expect(r.stdout).toContain('herdr session hopper is running on laptop');
     // How to attach it in the UI, with the options to set.
     expect(r.stdout).toContain('Plugins → Machine sources, add an ssh instance named laptop');
-    expect(r.stdout).toContain(`  ssh: laptop\n  lanes: 2\n  herdrBin: ${bin}/herdr\n  hostKey: ${HOST_KEY}\n`);
+    // No herdr binary to set: the hopper calls herdr by name there (issue #311).
+    expect(r.stdout).toContain(`  ssh: laptop\n  lanes: 2\n  hostKey: ${HOST_KEY}\n`);
   });
 
   it('lets the hopper in with its own key only, restricted, once however often it runs (issue #59)', () => {

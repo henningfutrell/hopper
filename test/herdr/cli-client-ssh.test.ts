@@ -1,7 +1,7 @@
 // The herdr CLI client on an attached machine: every call goes through `ssh`, and the remote
 // shell must hand herdr exactly the argv the local client would (design.md "Attached machines").
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -22,6 +22,12 @@ const lines = (f: string): { argv: string[] }[] =>
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'jh-herdr-ssh-'));
   process.env.FAKE_HERDR_DIR = dir;
+  // The fake ssh runs the command here: the machine's home is this test's, herdr in its ~/.local/bin.
+  process.env.HOME = join(dir, 'there');
+  mkdirSync(join(dir, 'there', '.local', 'bin'), { recursive: true });
+  symlinkSync(HERDR, join(dir, 'there', '.local', 'bin', 'herdr'));
+  // Never this computer's own herdr, wherever its PATH has it.
+  process.env.PATH = '/usr/bin:/bin';
 });
 
 afterEach(() => {
@@ -30,7 +36,7 @@ afterEach(() => {
 });
 
 const remote = (target = 'laptop') => createHerdrCliClient({
-  bin: HERDR, session: 'jh-test-x', ssh: { target, bin: SSH, controlDir: join(dir, 'ssh'), auth: testSshAuth(join(dir, 'auth')) },
+  session: 'jh-test-x', ssh: { target, bin: SSH, controlDir: join(dir, 'ssh'), auth: testSshAuth(join(dir, 'auth')) },
 });
 
 describe('herdr CLI client over ssh', () => {
@@ -38,6 +44,20 @@ describe('herdr CLI client over ssh', () => {
     const text = `it's "quoted" $HOME \`date\` \\ ; | & * ~\nsecond line\n`;
     await remote().prompt('jh-a', text);
     expect(lines('calls.jsonl')[0]!.argv).toEqual(['--session', 'jh-test-x', 'agent', 'prompt', 'jh-a', text]);
+  });
+
+  it('calls herdr by name, from the machine\'s PATH and then ~/.local/bin: no binary path to name (issue #311)', async () => {
+    await remote().getAgent('jh-a');
+    const argv = lines('ssh-calls.jsonl')[0]!.argv;
+    expect(argv.at(-1)).toBe(`PATH="$PATH:$HOME/.local/bin" exec 'herdr' '--session' 'jh-test-x' 'agent' 'get' 'jh-a'`);
+  });
+
+  it('herdr on the machine\'s PATH wins over ~/.local/bin', async () => {
+    const bin = join(dir, 'path-bin');
+    mkdirSync(bin);
+    writeFileSync(join(bin, 'herdr'), `#!/bin/sh\necho "{\\"result\\":{\\"from\\":\\"path\\"}}"\n`, { mode: 0o755 });
+    process.env.PATH = `${bin}:/usr/bin:/bin`;
+    expect(await remote().run(['status'])).toEqual({ from: 'path' });
   });
 
   it('calls ssh in batch mode over one shared connection, the resolved host after --', async () => {
@@ -79,12 +99,12 @@ describe('herdr CLI client over ssh', () => {
   });
 
   it('refuses a target that ssh would read as an option, before running ssh', async () => {
-    const client = createHerdrCliClient({ bin: HERDR, session: 's', ssh: { target: '-oProxyCommand=x', bin: SSH, auth: testSshAuth(join(dir, 'auth')) } });
+    const client = createHerdrCliClient({ session: 's', ssh: { target: '-oProxyCommand=x', bin: SSH, auth: testSshAuth(join(dir, 'auth')) } });
     await expect(client.getAgent('jh-a')).rejects.toMatchObject({ code: 'ssh', message: expect.stringMatching(/bad ssh target/) });
   });
 
   it('without the hopper\'s ssh key: code ssh, and ssh is never run', async () => {
-    const client = createHerdrCliClient({ bin: HERDR, session: 's', ssh: { target: 'laptop', bin: SSH, auth: () => { throw new Error('no ssh key for the hopper'); } } });
+    const client = createHerdrCliClient({ session: 's', ssh: { target: 'laptop', bin: SSH, auth: () => { throw new Error('no ssh key for the hopper'); } } });
     await expect(client.getAgent('jh-a')).rejects.toMatchObject({ code: 'ssh', message: expect.stringMatching(/no ssh key for the hopper/) });
     expect(() => lines('ssh-calls.jsonl')).toThrow();
   });
