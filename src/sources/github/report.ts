@@ -5,11 +5,11 @@
 // closes the issue, never the hopper (with completion `pull-request` the issue stays open until a
 // person merges); failed → `hopper:failed`; rejected at the queue gate → `hopper:rejected` (issue
 // #159), the issue left open; cancelled → the claim label goes; rerun (a failed job, by the user,
-// issue #313) → `hopper:failed` and `hopper:claimed` go, so the issue is offered again. Returns the source state unchanged. Rows written under
+// issue #313) → `hopper:failed` and `hopper:claimed` go, so the issue is offered again — refused while the issue is closed (issue #348). Returns the source state unchanged. Rows written under
 // earlier rules may still carry finalCommentId, claimCommentId, progressCommentId,
 // questionComments and answeredComments; they are kept as stored and never read.
 
-import { SourceError } from '../../domain/ports.ts';
+import { SourceError, SourceRefused } from '../../domain/ports.ts';
 import type { SourceReport } from '../../domain/ports.ts';
 import type { Job } from '../../domain/types.ts';
 import { GitHubApiError } from './api.ts';
@@ -66,6 +66,8 @@ async function apply(ctx: ReportContext, r: SourceReport, state: State): Promise
       await settle(ctx, repo, number, [LABEL_REJECTED]);
       return state;
     case 'rerun':
+      // Discovery offers only open issues, and the hopper never reopens one (issue #348).
+      if ((await ctx.api.getIssue(repo, number)).state === 'closed') throw new SourceRefused('its issue is closed; reopen it to run it again');
       // The job's end goes, so discovery offers the issue again (issue #313).
       await ctx.api.removeLabels(repo, number, [LABEL_FAILED, LABEL_CLAIMED]);
       return state;

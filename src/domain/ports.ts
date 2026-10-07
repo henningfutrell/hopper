@@ -393,7 +393,7 @@ export interface JobSource {
   /**
    * Tell the source what happened. Returns the WHOLE new `job.sourceState.source` object
    * (it replaces the old one). Idempotent: a retry after a crash never writes twice (label
-   * writes are idempotent). Throws
+   * writes are idempotent). A `rerun` the item cannot take (a closed issue) throws SourceRefused. Throws
    * SourceError; `permanent: true` means never retry (404/410/403 on the item, oversized
    * body), `false` means retry on a later sync.
    */
@@ -417,6 +417,17 @@ export class SourceError extends Error {
     this.name = 'SourceError';
     this.permanent = permanent;
     if (status !== undefined) this.status = status;
+  }
+}
+
+/**
+ * The source will not take this report as its item stands, and says why (issue #348: a re-run of a
+ * closed issue). The user's to change at the source; never retried.
+ */
+export class SourceRefused extends SourceError {
+  constructor(message: string) {
+    super(message, true, 409);
+    this.name = 'SourceRefused';
   }
 }
 

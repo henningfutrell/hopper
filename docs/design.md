@@ -1125,8 +1125,11 @@ failure was reported (`finalReported`), of a running source — else 409; unknow
 report chain the source gets report kind `rerun` and clears the job's end — on GitHub `hopper:failed`
 and `hopper:claimed` are removed —, then `SourceHost.rerun` appends `job.rerun { by: "user" }` and the
 source syncs at once, so it offers the item again and `isRerunnable` makes a new job. The failed job is
-kept as it ended. A source that cannot take it → 502 with its error, and nothing is recorded. Residual:
-an issue closed meanwhile is not offered again; nothing runs.
+kept as it ended. A source that cannot take it → 502 with its error, and nothing is recorded. A source
+that refuses it as its item stands throws `SourceRefused` → 409 with its reason, nothing recorded, the
+marker left (issue #348): GitHub refuses a closed issue — discovery offers only open ones, and the hopper
+never reopens an issue — so the UI's toast says to reopen it first, instead of an accepted re-run that
+never runs.
 
 **Not run again, said out loud** (issue #186). An offered item whose newest job ended but cannot
 re-run yet (its end is not reported to the source) is not dropped silently: it is listed in the

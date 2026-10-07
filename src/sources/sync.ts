@@ -2,7 +2,7 @@
 // (the claim and the end of each job, event-driven with a retry scan). One writer of `sourceState.sync`; the adapter owns
 // `sourceState.source`. Knows only the narrow SourceHost, never engine internals.
 
-import { SourceError } from '../domain/ports.ts';
+import { SourceError, SourceRefused } from '../domain/ports.ts';
 import type { Clock, JobSource, RerunResult, SourceHost, SourceRegistry, SourceReport } from '../domain/ports.ts';
 import { TERMINAL_STATUSES, isRerunnable } from '../domain/types.ts';
 import type { DomainEvent, Job, SourceStatus } from '../domain/types.ts';
@@ -259,16 +259,17 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
 
   const emit = (slot: Slot) => { for (const l of listeners) l({ ...slot.status }); };
 
+  const conflict = (jobId: string, why: string): RerunResult => ({ ok: false, reason: 'conflict', message: `job ${jobId} cannot run again: ${why}` });
+
   /** Why a failed job's item cannot run again now, or its source's slot (issue #313). */
   function rerunCheck(jobId: string): RerunResult | Slot {
     const job = store.jobs.get(jobId);
     if (!job) return { ok: false, reason: 'not_found', message: `job ${jobId} not found` };
-    const conflict = (why: string): RerunResult => ({ ok: false, reason: 'conflict', message: `job ${jobId} cannot run again: ${why}` });
-    if (job.status !== 'failed') return conflict(`it is ${job.status}, not failed`);
+    if (job.status !== 'failed') return conflict(jobId, `it is ${job.status}, not failed`);
     const slot = slots.get(job.source?.source ?? '');
-    if (!slot || !running) return conflict('its source is not running');
-    if (store.jobs.getBySourceKey(job.source!.key)?.id !== jobId) return conflict('a newer job of its item exists');
-    if (!flagsOf(job).finalReported) return conflict('its failure is not reported to its source yet');
+    if (!slot || !running) return conflict(jobId, 'its source is not running');
+    if (store.jobs.getBySourceKey(job.source!.key)?.id !== jobId) return conflict(jobId, 'a newer job of its item exists');
+    if (!flagsOf(job).finalReported) return conflict(jobId, 'its failure is not reported to its source yet');
     return slot;
   }
 
@@ -285,6 +286,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
         await slot.source.report({ kind: 'rerun', job: store.jobs.get(jobId)! });
         result = { ok: true, job: host.rerun(jobId) };
       } catch (e) {
+        if (e instanceof SourceRefused) { result = conflict(jobId, e.message); return; }
         result = { ok: false, reason: 'source', message: `its source could not take the re-run: ${message(e)}` };
       }
     });
