@@ -59,7 +59,7 @@ Version 3 (`docs/schemas/job.prioritized.v3.json`). The router's advice arrived 
 | field | type | required |
 |---|---|---|
 | `advice` | object | yes |
-| `statusAtAdvice` | `queued` \| `held` \| `claimed` \| `running` \| `waiting_answer` \| `finished` \| `failed` \| `cancelled` \| `rejected` | yes |
+| `statusAtAdvice` | `queued` \| `held` \| `claimed` \| `running` \| `waiting_answer` \| `operator_led` \| `finished` \| `failed` \| `cancelled` \| `rejected` | yes |
 
 ```json
 {
@@ -604,4 +604,14 @@ Version 1 (`docs/schemas/queue.gate_changed.v1.json`). The queue gate was change
     "autoAcceptPerHour": null
   }
 }
+```
+
+## `job.claimed_by_operator`
+
+Version 1 (`docs/schemas/job.claimed_by_operator.v1.json`). An operator claimed the waiting job as operator-led (issue #318): the work is done by hand — at a terminal, or in an IDE the hopper has no pane in — not by an executor. The job holds no lane and is never run; it is finished when its closing pull request reaches the completion, as any job is, and cancelled as any job is.
+
+`data` is `{}`.
+
+```json
+{}
 ```

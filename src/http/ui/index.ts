@@ -187,6 +187,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
 
   app.post('/ui/api/jobs/:id/cancel', operator, async (req) => o.tenant(req).engine.cancel(parseWith(idParams, req.params).id, 'cancelled in UI'));
   app.post('/ui/api/jobs/:id/approve', operator, async (req) => o.tenant(req).engine.approve(parseWith(idParams, req.params).id));
+  app.post('/ui/api/jobs/:id/operator-led', operator, async (req) => o.tenant(req).engine.claimByOperator(parseWith(idParams, req.params).id));
   app.post('/ui/api/jobs/:id/reject', operator, async (req) => o.tenant(req).engine.reject(parseWith(idParams, req.params).id));
   app.post('/ui/api/queue/order', operator, async (req) => ({ jobs: o.tenant(req).engine.orderQueue(parseWith(queueOrderBody, req.body).jobIds) }));
   app.post('/ui/api/queue/accept-presort', operator, async (req) => ({ presort: o.tenant(req).engine.acceptPreSort() }));

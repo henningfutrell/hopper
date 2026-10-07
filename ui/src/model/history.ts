@@ -23,7 +23,10 @@ export function throughput(ended: Job[], now: number, bucketMs: number, buckets:
   return out;
 }
 
-export type SpanOutcome = 'running' | 'finished' | 'failed' | 'cancelled' | 'requeued' | 'question';
+export type SpanOutcome = 'running' | 'operator-led' | 'finished' | 'failed' | 'cancelled' | 'requeued' | 'question';
+/** The lane timeline's row for jobs claimed as operator-led (issue #318): worked by hand, on no lane. */
+export const OPERATOR_LED_ROW = 'operator-led';
+
 export interface LaneSpan { laneId: string; jobId: string; start: number; end: number | null; outcome: SpanOutcome }
 
 const ENDS: Partial<Record<DomainEvent['type'], SpanOutcome>> = {
@@ -33,8 +36,11 @@ const ENDS: Partial<Record<DomainEvent['type'], SpanOutcome>> = {
 /** How a span ends when the job store says its job no longer runs. */
 const LEFT: Record<JobStatus, SpanOutcome> = {
   finished: 'finished', failed: 'failed', cancelled: 'cancelled', rejected: 'cancelled', waiting_answer: 'question', queued: 'requeued', held: 'requeued',
-  claimed: 'running', running: 'running',
+  claimed: 'running', running: 'running', operator_led: 'operator-led',
 };
+
+/** Whether the job store says the job still works: on a lane, or by hand. */
+const stillWorks = (job: Job): boolean => GROUP[job.status] === 'running' || job.status === 'operator_led';
 
 /**
  * One span per job run on a lane, in start order; spans that ended before `since` are dropped.
@@ -53,11 +59,14 @@ function allSpans(events: DomainEvent[], jobs: ReadonlyMap<string, Job>): LaneSp
   for (const e of [...events].sort((a, b) => a.seq - b.seq)) {
     if (!e.jobId) continue;
     const starting = e.type === 'job.started' || (e.type === 'job.reattached' && !open.has(e.jobId));
-    if (starting && e.laneId) {
+    const byOperator = e.type === 'job.claimed_by_operator';
+    if ((starting && e.laneId) || byOperator) {
       // Started again with no end logged for the earlier run (a daemon restart): that run ended here.
       const earlier = open.get(e.jobId);
       if (earlier) { earlier.end = Date.parse(e.at); earlier.outcome = 'requeued'; }
-      const span: LaneSpan = { laneId: e.laneId, jobId: e.jobId, start: Date.parse(e.at), end: null, outcome: 'running' };
+      const span: LaneSpan = byOperator
+        ? { laneId: OPERATOR_LED_ROW, jobId: e.jobId, start: Date.parse(e.at), end: null, outcome: 'operator-led' }
+        : { laneId: e.laneId!, jobId: e.jobId, start: Date.parse(e.at), end: null, outcome: 'running' };
       open.set(e.jobId, span);
       spans.push(span);
       continue;
@@ -71,14 +80,15 @@ function allSpans(events: DomainEvent[], jobs: ReadonlyMap<string, Job>): LaneSp
   }
   for (const [jobId, span] of open) {
     const job = jobs.get(jobId);
-    if (job && GROUP[job.status] === 'running') continue;
+    if (job && stillWorks(job)) continue;
     if (!job) { spans.splice(spans.indexOf(span), 1); continue; }
     span.end = Date.parse(job.finishedAt ?? job.updatedAt);
     span.outcome = LEFT[job.status];
   }
   for (const job of jobs.values()) {
-    if (GROUP[job.status] !== 'running' || open.has(job.id) || !job.laneId || !job.startedAt) continue;
-    spans.push({ laneId: job.laneId, jobId: job.id, start: Date.parse(job.startedAt), end: null, outcome: 'running' });
+    if (open.has(job.id) || !job.startedAt) continue;
+    if (job.status === 'operator_led') spans.push({ laneId: OPERATOR_LED_ROW, jobId: job.id, start: Date.parse(job.startedAt), end: null, outcome: 'operator-led' });
+    else if (GROUP[job.status] === 'running' && job.laneId) spans.push({ laneId: job.laneId, jobId: job.id, start: Date.parse(job.startedAt), end: null, outcome: 'running' });
   }
   return spans.sort((a, b) => a.start - b.start);
 }
@@ -118,8 +128,9 @@ export function questionWaits(events: DomainEvent[], since: number, jobs: Readon
   return waits.filter((w) => w.end === null || w.end >= since);
 }
 
-/** How many spans overlap each bucket; buckets aligned as in `throughput`. */
+/** How many lane spans overlap each bucket (operator-led work holds no lane); buckets aligned as in `throughput`. */
 export function concurrency(spans: LaneSpan[], now: number, bucketMs: number, buckets: number): number[] {
+  const onLanes = spans.filter((s) => s.laneId !== OPERATOR_LED_ROW);
   return starts(now, bucketMs, buckets).map((start) =>
-    spans.filter((s) => s.start < start + bucketMs && (s.end === null || s.end > start)).length);
+    onLanes.filter((s) => s.start < start + bucketMs && (s.end === null || s.end > start)).length);
 }

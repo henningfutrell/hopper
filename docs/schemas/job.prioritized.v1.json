@@ -63,6 +63,7 @@
         "claimed",
         "running",
         "waiting_answer",
+        "operator_led",
         "finished",
         "failed",
         "cancelled",

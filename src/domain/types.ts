@@ -14,6 +14,7 @@ export type JobStatus =
   | 'claimed' // a Decision assigned it to a Lane; executor not yet running
   | 'running'
   | 'waiting_answer' // paused on a question; holds no lane; its pane stays open
+  | 'operator_led' // claimed by an operator, worked by hand outside the hopper; holds no lane, never run (issue #318)
   | 'finished'
   | 'failed'
   | 'cancelled'
@@ -265,7 +266,7 @@ export const EVENT_TYPES = [
   'question.asked', 'question.escalated', 'question.answered', 'question.closed', 'question.dismissed', 'question.expired',
   'update.available', 'update.started', 'update.applied', 'update.failed',
   'plugin.installed', 'plugin.removed',
-  'job.accepted', 'job.rejected', 'queue.ordered', 'queue.gate_changed',
+  'job.accepted', 'job.rejected', 'queue.ordered', 'queue.gate_changed', 'job.claimed_by_operator',
 ] as const;
 export type EventType = typeof EVENT_TYPES[number];
 
@@ -281,7 +282,7 @@ export const EVENT_SCHEMA_VERSIONS: Readonly<Record<EventType, number>> = {
   'question.answered': 2, 'question.closed': 1, 'question.dismissed': 1, 'question.expired': 1,
   'update.available': 1, 'update.started': 1, 'update.applied': 1, 'update.failed': 1,
   'plugin.installed': 1, 'plugin.removed': 1,
-  'job.accepted': 1, 'job.rejected': 1, 'queue.ordered': 1, 'queue.gate_changed': 1,
+  'job.accepted': 1, 'job.rejected': 1, 'queue.ordered': 1, 'queue.gate_changed': 1, 'job.claimed_by_operator': 1,
 };
 
 export interface DomainEvent<T = Record<string, unknown>> {

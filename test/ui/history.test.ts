@@ -1,7 +1,7 @@
 // The charts' data: ended jobs per time bucket, and what each lane ran when.
 import { describe, expect, it } from 'vitest';
 import type { DomainEvent, EventType, Job } from '../../src/domain/types.ts';
-import { concurrency, laneSpans, questionWaits, throughput } from '../../ui/src/model/history.ts';
+import { OPERATOR_LED_ROW, concurrency, laneSpans, questionWaits, throughput } from '../../ui/src/model/history.ts';
 
 const T0 = Date.parse('2026-10-03T12:00:00Z');
 const at = (min: number) => new Date(T0 + min * 60_000).toISOString();
@@ -73,6 +73,28 @@ describe('laneSpans', () => {
   it('a running job the event log holds no start for still gets its running span', () => {
     const spans = laneSpans([], T0 - 60 * 60_000, store(job('r', { laneId: 'm/lane-3', startedAt: at(-15) }), job('w', { status: 'queued' })));
     expect(spans).toEqual([{ laneId: 'm/lane-3', jobId: 'r', start: T0 - 15 * 60_000, end: null, outcome: 'running' }]);
+  });
+});
+
+describe('operator-led spans (issue #318)', () => {
+  it('a job claimed as operator-led is a span on the operator-led row, designated operator-led until it ends', () => {
+    const events = [
+      ev('job.claimed_by_operator', -50, { jobId: 'o' }),
+      ev('job.claimed_by_operator', -40, { jobId: 'p' }),
+      ev('job.finished', -10, { jobId: 'o' }),
+    ];
+    expect(laneSpans(events, T0 - 60 * 60_000, store(job('o', { status: 'finished' }), job('p', { status: 'operator_led' })))).toEqual([
+      { laneId: OPERATOR_LED_ROW, jobId: 'o', start: T0 - 50 * 60_000, end: T0 - 10 * 60_000, outcome: 'finished' },
+      { laneId: OPERATOR_LED_ROW, jobId: 'p', start: T0 - 40 * 60_000, end: null, outcome: 'operator-led' },
+    ]);
+  });
+  it('an operator-led job the log has no claim for gets its span from startedAt; one the store saw end, ends with it', () => {
+    const events = [ev('job.claimed_by_operator', -30, { jobId: 'gone' })];
+    const jobs = store(job('q', { status: 'operator_led', startedAt: at(-20) }), job('gone', { status: 'cancelled', updatedAt: at(-5) }));
+    expect(laneSpans(events, T0 - 60 * 60_000, jobs)).toEqual([
+      { laneId: OPERATOR_LED_ROW, jobId: 'gone', start: T0 - 30 * 60_000, end: T0 - 5 * 60_000, outcome: 'cancelled' },
+      { laneId: OPERATOR_LED_ROW, jobId: 'q', start: T0 - 20 * 60_000, end: null, outcome: 'operator-led' },
+    ]);
   });
 });
 

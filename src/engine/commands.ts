@@ -21,6 +21,11 @@ export interface Commands {
   /** Cancel a non-terminal job; `reason` is recorded on job.cancelled (and told to its source). */
   cancel(id: string, reason: string): Job;
   approve(id: string): Job;
+  /**
+   * Claim a waiting job as operator-led (issue #318): an operator does its work by hand, outside the
+   * hopper. It holds no lane and the decider never runs it; its source finishes it once its work is complete.
+   */
+  claimByOperator(id: string): Job;
   /** Tests only: the fake usage source has no HTTP route. */
   setFakeUsage(reading: Omit<UsageReading, 'source' | 'at'>): UsageReading[];
 }
@@ -51,6 +56,16 @@ export function createCommands(c: EngineContext, runner: Runner, cleanup: Cleanu
       return store.tx(() => {
         const next = store.jobs.update(id, { approved: true });
         store.events.append({ type: 'job.approved', jobId: id, data: {} });
+        return next;
+      });
+    },
+
+    claimByOperator(id) {
+      return store.tx(() => {
+        const job = existing(c, id);
+        if (job.status !== 'queued' && job.status !== 'held') throw new EngineError('conflict', `job ${id} is ${job.status}: only a waiting job can be claimed as operator-led`);
+        const next = store.jobs.update(id, { status: 'operator_led', accepted: true, holdReason: undefined, startedAt: nowIso(c) });
+        store.events.append({ type: 'job.claimed_by_operator', jobId: id, data: {} });
         return next;
       });
     },

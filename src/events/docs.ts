@@ -36,6 +36,7 @@ const WHEN: Record<EventType, string> = {
   'job.accepted': 'A job passed the queue gate and may run: `by` `pre-sort` (the gate auto-accepts, or the user took the pre-sort with Accept pre-sort), or `user` (moved into the user order).',
   'job.rejected': 'A waiting job was turned away at the queue gate: it ends `rejected`, is kept, and never runs. `by` `user` (UI Reject) or `pre-sort` (the queue sorter rejected it); `reason` is also the job\'s `error`. Its source is told (on GitHub: the `hopper:rejected` label).',
   'queue.ordered': 'The user ordered the queue: `jobIds`, first to last, run before every job not in it.',
+  'job.claimed_by_operator': 'An operator claimed the waiting job as operator-led (issue #318): the work is done by hand — at a terminal, or in an IDE the hopper has no pane in — not by an executor. The job holds no lane and is never run; it is finished when its closing pull request reaches the completion, as any job is, and cancelled as any job is.',
   'queue.gate_changed': 'The queue gate was changed: its mode (`auto-accept` or `review`) or its throttle (`autoAcceptPerHour`, null for none).',
 };
 

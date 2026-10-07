@@ -70,6 +70,8 @@ export const EVENT_SCHEMAS = {
   'job.rejected': strict({ by: gateActor, reason: z.string().min(1) }),
   'queue.ordered': strict({ jobIds: z.array(z.string()) }),
   'queue.gate_changed': strict({ from: queueGate, to: queueGate }),
+  // Operator-led work (issue #318): an operator took the waiting job by hand; it holds no lane and is never run.
+  'job.claimed_by_operator': strict({}),
 } satisfies Record<EventType, z.ZodType>;
 
 export const ENVELOPE_SCHEMA = strict({

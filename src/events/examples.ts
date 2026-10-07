@@ -38,5 +38,6 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'job.accepted': { by: 'pre-sort' },
   'job.rejected': { by: 'user', reason: 'rejected by the user' },
   'queue.ordered': { jobIds: ['j2', 'j1'] },
+  'job.claimed_by_operator': {},
   'queue.gate_changed': { from: { mode: 'auto-accept', autoAcceptPerHour: null }, to: { mode: 'review', autoAcceptPerHour: null } },
 };

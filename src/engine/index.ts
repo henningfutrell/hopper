@@ -27,7 +27,7 @@ const SHUTDOWN_WAIT_MS = 5000;
 const TRIGGERS: ReadonlySet<EventType> = new Set<EventType>([
   'job.queued', 'job.prioritized', 'job.reprioritized', 'job.approved', 'job.finished', 'job.failed', 'job.cancelled',
   'question.asked', 'question.answered', 'question.closed', 'question.dismissed', 'question.expired',
-  'job.accepted', 'job.rejected', 'queue.ordered', 'queue.gate_changed',
+  'job.accepted', 'job.rejected', 'queue.ordered', 'queue.gate_changed', 'job.claimed_by_operator',
 ]);
 
 export interface Engine extends Commands, QueueGateCommands, Queries, AnswerHandlers {

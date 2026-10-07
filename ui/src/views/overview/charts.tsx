@@ -9,6 +9,7 @@ import { useNow } from '@/hooks/use-now';
 import { usePoll } from '@/hooks/use-poll';
 import { ReadingGauge } from '@/components/reading';
 import { laneName } from '@/model/board';
+import { OPERATOR_LED_ROW } from '@/model/history';
 import { orderReadings, readingKey, shownSource } from '@/model/usage';
 import type { UsageSourceReport } from '@/model/wire';
 import { TIMELINE_WINDOWS, type TimelineWindow } from '@/model/overview-layout';
@@ -53,7 +54,7 @@ export function TimelinePanel({ window: win, onWindow }: { window: TimelineWindo
         <TabsList className="h-7">{TIMELINE_WINDOWS.map((w) => <TabsTrigger key={w} value={w} className="px-2 text-xs">{w}</TabsTrigger>)}</TabsList>
       </Tabs>
     </>}>
-      <LaneTimeline spans={spans} waits={waits} now={now} windowMs={WINDOWS[win]} lanes={lanes} nameOf={nameOf} laneNameOf={(id) => laneName(id, machines)} />
+      <LaneTimeline spans={spans} waits={waits} now={now} windowMs={WINDOWS[win]} lanes={lanes} nameOf={nameOf} laneNameOf={(id) => (id === OPERATOR_LED_ROW ? 'operator-led' : laneName(id, machines))} />
     </Panel>
   );
 }

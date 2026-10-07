@@ -2779,7 +2779,7 @@ hopper supports both. A container is never taken to be the only shape a job has.
 |------|--------|------------|
 | Container sandbox for agent jobs | not built: a **container target** runs commands only, and an **agent box** is a test machine reached over ssh, not locked down ("Agent boxes", residual risk) | #314, #308; mechanisms compared in #315 |
 | Work tree never the home root | enforced at job start: a work tree that is the machine's home, above it, or `/` fails the job; the default is the jobs directory `~/hopper-jobs` ("Work tree" → "Never the home") | #314 |
-| Operator-led claim and its timeline designation | not built | #318 |
+| Operator-led claim and its timeline designation | built: claimed in the UI (status `operator_led`, event `job.claimed_by_operator`), its own `operator-led` row on the lane timeline ("Operator-led work") | #318 |
 | Operator-led progress | protocol settled and seen end to end (the pickup record), not read by the daemon | #319 ("Pickups on agent boxes") |
 | Operator-led check-in | built: the closing pull request, as for any job | — |
 
@@ -2926,8 +2926,8 @@ that makes it a part of the hopper:
    (or takes over, when it is waiting) that job as **operator-led** on that machine: the issue labelled
    `hopper:claimed` as for any claim, the job on the machine's timeline with no lane and no executor,
    so the decider never runs it a second time. The claim mode, its event and its timeline designation are
-   #318's to name; this spike uses `operator-led`, from #318's naming note, and #318 depends on this
-   protocol, not the other way round.
+   #318's, now built ("Operator-led work" below): status `operator_led`, event `job.claimed_by_operator`;
+   the pickup reader calls that claim.
 3. **States are events.** Each new history entry becomes an event on the job (a state, its note, its
    time from the box); `stale` is the hopper's own reading, an event too, never a state the box writes;
    `waiting` could raise a question for the owner the way a pane's question does.
@@ -3142,6 +3142,36 @@ sandbox box or to the computer.
 **Not built here.** Research only: no daemon change. The build is #308's and #307's; #310 asks the
 same question from the add flow's side, and this section is its protocol half — #310 depends on it,
 not the other way round.
+
+## Operator-led work (issue #318, 2026-10-07)
+
+Owner direction (#316, #317, #318): the hopper only needs to know that someone claimed an issue's job to
+work it by hand, and its timeline must show that kind of work. A job in a herdr pane reports itself; work in
+an IDE does not, so the claim is the one thing the hopper is told. No IDE plugin: done stays the closing
+pull request. Names are formal (#318's naming note): **operator-led**, never the informal word.
+
+- **The claim.** `POST /ui/api/jobs/:id/operator-led` (least role `operator`) on a waiting job — `queued`
+  or `held`, accepted or not (claiming it accepts it) — sets status `operator_led`, `startedAt`, and appends
+  `job.claimed_by_operator` (data `{}`). Any other status: 409. The issue already carries `hopper:claimed`
+  (the source reports the claim of every job it makes); nothing more is written to GitHub.
+- **Never run.** `operator_led` is neither waiting nor running to the decider (`WAITING`/`RUNNING` in
+  `src/engine/decision-step.ts`), holds no lane, and restart recovery leaves it as it is.
+- **Done.** The sync loop, after the cancel signals, asks the source of each operator-led job
+  `notComplete(job)` (the same check an agent's `HOPPER_DONE` gets, "Done means complete"); complete →
+  `SourceHost.finishOperatorLed` ends it `finished` (`job.finished`), and the report labels the issue
+  `hopper:done`. An error asking is a report retry; the job stays operator-led. The pull request must be the
+  job's own (opened at or after the job was created), as for any job.
+- **Not done.** An issue closed by a person, the label removed, or the issue gone cancels it, as for any job
+  (`check()`); so does Cancel in the UI, which takes the claim off the issue.
+- **Where it shows.** `/api/queue` `operatorLed`; the Overview's Waiting panel lists them under
+  *Operator-led*, with the button *Operator-led* on each waiting job; the lane timeline draws each one on a
+  row of its own, `operator-led`, from the claim to its end, in the operator tone while it lasts, and the
+  "lanes in use" spark leaves it out; the event lines show `job.claimed_by_operator` in the same tone; the
+  instance totals count `operator_led`.
+
+**Not built.** The pickup reader (above) does not yet make the claim: a pickup on an agent box naming an
+issue whose job waits would call the same claim, and `released` the same cancel. That is the remaining step
+of "What the daemon would do with it"; it depends on this claim, not the other way round.
 
 ## Client releases (issue #70, 2026-10-05)
 

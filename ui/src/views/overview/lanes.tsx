@@ -1,5 +1,5 @@
 // The lane board: every lane on every machine, what it runs, for how long, how far along.
-import { FolderOpen, Layers, X } from 'lucide-react';
+import { FolderOpen, Hand, Layers, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Confirm } from '@/components/confirm';
 import { JobTitle, Since } from '@/components/job';
@@ -20,6 +20,18 @@ export function CancelButton({ job }: { job: Job }) {
     <Confirm title="Cancel this job?" action="Cancel job" onConfirm={() => act(`/ui/api/jobs/${job.id}/cancel`, {}, 'Job cancelled')}
       description={<>“{goalOf(job)}” stops now and its source is told it was cancelled.</>}>
       <Button variant="ghost" size="icon-xs" aria-label="Cancel job" className="text-muted-foreground hover:text-bad"><X /></Button>
+    </Confirm>
+  );
+}
+
+/** Claim a waiting job as operator-led (issue #318): its work is done by hand, and the hopper runs nothing for it. */
+export function OperatorLedButton({ job }: { job: Job }) {
+  const authed = useCanOperate();
+  if (!authed) return null;
+  return (
+    <Confirm title="Claim this job as operator-led?" action="Claim as operator-led" onConfirm={() => act(`/ui/api/jobs/${job.id}/operator-led`, {}, 'Job claimed as operator-led')}
+      description={<>“{goalOf(job)}” is worked by hand — in an IDE or a terminal. The hopper runs nothing for it and shows it as operator-led until its pull request closing the issue is done.</>}>
+      <Button size="xs" variant="outline" aria-label={`Claim ${goalOf(job)} as operator-led`} title="Claim as operator-led: work it by hand"><Hand />Operator-led</Button>
     </Confirm>
   );
 }
