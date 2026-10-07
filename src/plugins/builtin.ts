@@ -1,9 +1,12 @@
 // The built-in plugins. A new built-in lives at src/plugins/<role>/<id>/index.ts and is listed here.
 import anthropicApi from './escalation-level/anthropic-api/index.ts';
 import claudeCli from './escalation-level/claude-cli/index.ts';
+import codex from './executor/codex/index.ts';
 import command from './executor/command/index.ts';
 import cursorAgent from './executor/cursor-agent/index.ts';
 import herdrClaude from './executor/herdr-claude/index.ts';
+import omp from './executor/omp/index.ts';
+import opencode from './executor/opencode/index.ts';
 import testExecutor from './executor/test/index.ts';
 import githubAccount from './job-source/github-account/index.ts';
 import githubApp from './job-source/github-app/index.ts';
@@ -23,5 +26,5 @@ import commandUsage from './usage-source/command-usage/index.ts';
 import type { PluginDefinition } from './sdk.ts';
 
 export const BUILTIN_PLUGINS: readonly PluginDefinition[] = [
-  gateRouter, passThrough, priority, oldestFirst, newestFirst, claudeCli, anthropicApi, herdrClaude, cursorAgent, testExecutor, command, githubAccount, githubGh, githubApp, local, ssh, docker, client, claudePlan, commandUsage, grokbotRoutine,
+  gateRouter, passThrough, priority, oldestFirst, newestFirst, claudeCli, anthropicApi, herdrClaude, cursorAgent, codex, opencode, omp, testExecutor, command, githubAccount, githubGh, githubApp, local, ssh, docker, client, claudePlan, commandUsage, grokbotRoutine,
 ];

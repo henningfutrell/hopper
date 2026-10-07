@@ -42,7 +42,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), identity → user (`identities.ts`: link or provision), the leftover default admin account folded into the first GitHub admin's user at start (`leftover-admin.ts`, issue #265) | http, decider |
 | `src/webhooks/` | signing, dispatcher, retry/backoff, the secret of a subscription from the runtime (`dispatcher.ts`), the UI edit of the subscriptions (`edit.ts`, rows in the store) | engine, http, decider |
 | `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, the plugins config (`plugins-config.ts`) + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt, `escalation-level/anthropic-api/` asks the Claude API with the same prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-gh/`, `job-source/github-app/` and `job-source/github-account/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser); `usage-source/command-usage/` reads any agent framework's usage and account from a command that prints them as JSON; `usage-source/polled.ts` the background refresh both share, `usage-source/run.ts` their command runner; `notifier/grokbot-routine/` is the Grok Bot routine webhook — env-file reader and notifier; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
-| `src/executors/` | `Executor` adapters (`test`, `herdr/`, `command.ts` — a job's body run on its machine through its connection, `cursor.ts` — Cursor's CLI agent there, issue #142) and the registry; reached through the executor plugins. The connections and their target authentication ("Target authentication"): `ssh.ts` (key-only ssh to pinned host keys), `ssh-key.ts` (the hopper's own ssh key, kept in the user's store, issue #293), `docker.ts` (the docker socket check, the proxy's allowlist), `client.ts` (a client target's signed calls down its link); `ssh-options.ts` (the hardened ssh options); `env.ts` the scrubbed child environment | engine, http, store, plugins |
+| `src/executors/` | `Executor` adapters (`test`, `herdr/`, `command.ts` — a job's body run on its machine through its connection, `print-agent.ts` — an agent CLI in print mode there, Cursor's agent (issue #142), codex, opencode and omp (issue #307), each CLI's call and reading in `print-agents.ts`) and the registry; reached through the executor plugins. The connections and their target authentication ("Target authentication"): `ssh.ts` (key-only ssh to pinned host keys), `ssh-key.ts` (the hopper's own ssh key, kept in the user's store, issue #293), `docker.ts` (the docker socket check, the proxy's allowlist), `client.ts` (a client target's tunnel, signed calls); `env.ts` the scrubbed child environment | engine, http, store, plugins |
 | `src/client/` | the hopper client ("Client targets", "Joining a machine"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load` over HTTP/2 on its link), `dial.ts` (its dial-in to the hopper's URL), `join.ts` (joining with a join line), `link.ts` (the link keys and the client token they give; shared with the hopper), `release.ts` (the client release: its files, its id, checking and installing one — "Client releases"), `main.ts`; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`) | everything in `src/` outside `src/client/` |
 | `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following the plugins config; ssh probe and the check that herdr is found there by name (`REMOTE_PATH`, issue #311) through the herdr CLI client's ssh argv; the container probe, `docker container inspect`), the detected ssh targets (`ssh-config.ts`) and which of them is this machine (`this-machine.ts`, issue #275), keeping each client target on the hopper's client release (`client-release.ts`), the links of the machines dialled in (`links.ts`) and their join codes (`join-code.ts`, issue #308), `combineMachineSources` | engine, http, store, plugins |
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin) | engine, http, store, plugins |
@@ -2802,99 +2802,151 @@ hopper supports both. A container is never taken to be the only shape a job has.
 **Not built here.** This section records the direction and what it binds; no daemon change. Each row above
 lands with its own issue, test first.
 
-## Agent boxes (issue #295, 2026-10-06)
+## Agent boxes (issue #295, 2026-10-06; no catches since issue #307)
 
-Owner request: for testing, containers that run codex, cursor, omp, opencode and the like, all attached
-— the hopper attached to every one of them, and the owner able to open a terminal in each.
+Owner request (#295): for testing, containers that run codex, cursor, omp, opencode and the like, all
+attached — the hopper attached to every one of them, and the owner able to open a terminal in each.
+Owner, on the first container deploy (#307): "No catches. All boxes must interop seamlessly and easily":
+every box attaches to the hopper in its container and runs jobs, with no step by hand, and stays so across
+re-runs and rebuilds.
 
 An **agent box** is a container on this machine's docker with one agent CLI in it — `claude`, `codex`,
 `cursor` (`cursor-agent`), `omp`, `opencode` — that is an ordinary **ssh target**: it runs sshd and its
 own herdr session `hopper`, so the hopper attaches it like any machine over ssh (not as a container
-target, which runs no agent and no herdr). Nothing in the daemon is new: the boxes are a script and an
-image, and they reach the hopper through the plugins config.
+target, which runs no agent and no herdr), and it runs the jobs of its agent's executor. The boxes are a
+script and an image; they reach the hopper through the plugins config.
 
-`bash scripts/agent-boxes.sh [--attach] [--remove] [--check] [agent...]` (no agent: all five), per box
-`hopper-box-<agent>` (`HOPPER_BOX_PREFIX` changes the prefix):
+`bash scripts/agent-boxes.sh [--sign-in] [--remove] [--check] [agent...]` (no agent: all five). One command, safe to
+run again: each run puts every box back as it should be. Per box `hopper-box-<agent>`
+(`HOPPER_BOX_PREFIX` changes the prefix):
 
+- **The hopper is found, not described.** In order: a hopper installed on this host when its database is
+  named (`HOPPER_DATABASE_URL` or `HOPPER_DATABASE_URL_FILE`, and its install, `HOPPER_APP_DIR`); else the
+  running container of the compose service `hopper` (`compose.yaml`; `HOPPER_CONTAINER` names another,
+  `HOPPER_CONTAINER=` none); else none, and the boxes are made alone. For the container the script uses
+  `docker exec <hopper> hopper …`: the operator CLI where the hopper runs, with the database it already
+  holds — no database reachable from the host, no host install, no ssh config. `HOPPER_USER` names the
+  hopper's user when it has several.
 - **Image** `hopper-box-<agent>` from `scripts/agent-box/Dockerfile` (`node:24-bookworm-slim`, build argument
-  `AGENT`): the agent CLI outside the home (npm, bun for omp, Cursor's installer for cursor), and this
-  machine's herdr binary (`HOPPER_BOX_HERDR`, else `command -v herdr`) at `/usr/local/bin/herdr`. The
-  login user `agent` has no password and is not locked; sshd takes keys only, `agent` only, no root.
-- **Container**: `--restart unless-stopped`, sshd published on `127.0.0.1` only (a free port), the home
-  the volume `hopper-box-<agent>-home` — the agent's sign-in lives there and outlives the box. Its main
-  process is the herdr session; a box whose image changed is started again from the new one, a running
-  box is kept.
+  `AGENT`): the agent CLI outside the home (npm, bun for omp, Cursor's installer for cursor), GitHub's CLI
+  `gh` with git asking it for github.com credentials (so a job's `GH_TOKEN` clones and pushes) and a box
+  identity for commits (`hopper agent box`), and this machine's herdr binary (`HOPPER_BOX_HERDR`, else
+  `command -v herdr`) at `/usr/local/bin/herdr`. The login user `agent` has no password and is not
+  locked; sshd takes keys only, `agent` only, no root.
+- **Container**: `--restart unless-stopped`; with a hopper in a container, on **the hopper's network**
+  (its compose network, `hopper_default`), where the hopper reaches it by name, `agent@hopper-box-<agent>`,
+  port 22; sshd also published on `127.0.0.1` at a **fixed port** (`HOPPER_BOX_PORT_BASE`, default 2220,
+  + 1 claude, + 2 codex, + 3 cursor, + 4 omp, + 5 opencode), so its Host and known_hosts line hold across
+  restarts (#319's finding: an ephemeral port moved at each start). The home is the volume
+  `hopper-box-<agent>-home` — the agent's sign-in lives there and outlives the box. Its main process is the
+  herdr session. A box whose image changed, or not published at its port, is started again; one that left
+  the hopper's network is joined to it again; a running one is kept.
 - **Who gets in**: written into the box through docker — the hopper's key with `restrict`, as
-  `scripts/attach-machine.sh` installs it: its public line as the Add form shows it
-  (`HOPPER_SSH_PUBLIC_KEY`) — the key a signed-in user's runtime offers (issue #293; a user's secrets
-  carry their prefix, so the daemon's own `HOPPER_SSH_KEY_FILE` is not theirs) — or the file a runtime
-  mounts (`HOPPER_SSH_KEY_FILE`, made when missing); the user's own public keys
-  (`~/.ssh/id_*.pub`) unrestricted, for a terminal there (`ssh -t hopper-box-<agent>`, `herdr --remote
-  hopper-box-<agent> --session hopper`) and to sign the agent in.
-- **ssh**: a `Host hopper-box-<agent>` (HostName `127.0.0.1`, its Port, User `agent`) in
+  `scripts/attach-machine.sh` installs it. The key is the hopper's own, asked of it (`hopper ssh-key`,
+  "Operator CLI"); with no hopper found, its file (`HOPPER_SSH_KEY_FILE`, made when missing) or its public
+  line (`HOPPER_SSH_PUBLIC_KEY`, as the Add form shows it). The user's own public keys (`~/.ssh/id_*.pub`)
+  unrestricted, for a terminal there (`ssh -t hopper-box-<agent>`, `herdr --remote hopper-box-<agent>
+  --session hopper`).
+- **ssh, for the person**: a `Host hopper-box-<agent>` (HostName `127.0.0.1`, its Port, User `agent`) in
   `~/.ssh/hopper-box.config`, rewritten from the running boxes on every run and Included first in
   `~/.ssh/config`; the box's host key in `~/.ssh/known_hosts` for `[127.0.0.1]:<port>`, read from the box
-  itself through docker — the source, never a connection ("Target authentication"). So the Machines
-  view's Add form offers and pins it like any ssh target, and the port is not 22, so it is never taken
-  for this machine (issue #275).
-- **Checked** over ssh as the hopper would reach it — the hopper's key alone, the pinned host key —
-  `herdr --session hopper status server` answering `running`; with only the public line, the same
-  check runs in the box through docker.
-- **`--attach`**: each box becomes an `ssh` machine instance named after it (`ssh`, `herdr: true`,
+  itself through docker — the source, never a connection ("Target authentication"). A hopper installed on
+  this host reaches the box through that Host; a hopper in a container never reads it.
+- **Checked**: its herdr session answering `running` — over ssh as the hopper would reach it when the
+  hopper's key file is here, else in the box through docker; and, for a hopper in a container, the box's
+  port 22 reached from the hopper's container by the box's name.
+- **Attached** on every run when a hopper is found: each box an `ssh` machine instance named after it
+  (`ssh`: `agent@<box>` for a hopper in a container, the Host for one on this host; `herdr: true`,
   its `hostKey`; herdr is on the box's PATH, issue #311) through the operator CLI (`hopper config get|set
   plugins`, against its version; the daemon's 5 s watch follows it, no restart), filtered by
-  `scripts/agent-boxes.ts`. A new box is attached with **no executors**: an unpinned job never lands on a
-  test box by chance; the owner lists executors per box in Plugins, and routes test jobs there with a
-  routing rule. Attached again, a box keeps its lanes, executors and label and takes its new connection.
-  A machine of another plugin under a box's name is refused.
-- **`--remove`**: the containers, their Hosts and known_hosts lines; with `--attach` their machines too.
-  The home volumes stay.
+  `scripts/agent-boxes.ts`. A box runs **its agent's executor** — claude `herdr-claude`, cursor
+  `cursor-agent`, codex `codex`, opencode `opencode`, omp `omp` ("Print-mode agent executors") — the
+  config's instance of that plugin, switched on (an instance named after the plugin) when there is none.
+  Attached again, a box keeps its lanes, executors and label and takes its new connection; one left with
+  no executors takes its agent's again. A machine of another plugin under a box's name is refused.
+- **Sign-in**: the summary says which agents are signed in. `--sign-in` runs, at this terminal, each
+  unsigned agent's own sign-in in its box — `claude auth login`, `codex login --device-auth`,
+  `cursor-agent login`, `omp login` (a link or device code, opened on any device) — kept in the box's home,
+  so a rebuilt box stays signed in. opencode needs none: it runs its own free models unsigned. The
+  hopper holds none of these credentials.
+- **`--remove`**: the containers, their Hosts and known_hosts lines, and (with a hopper found) their
+  machines. The home volumes stay.
 - **`--check`** (issue #305): the proof that the hopper in its compose container and every box interoperate,
   changing nothing. In the hopper's container, ssh connects as the hopper does (`sshArgv`): its own key and
   the host key it pins for `agent@<box>`, both in its work dir; the box's herdr session `hopper` must answer
   `status: running` and its agent CLI (`cursor-agent` for cursor) its version. One line per box, exit 1 when
   any fails. It needs the compose container: a host install is checked by its Machines view.
 
-**What runs there.** herdr-claude runs on the claude box, `cursor-agent` on the cursor box (both
-already run on ssh targets). codex, omp and opencode have no executor yet ("6d. Backends are
-configuration"): their boxes are attached, online while their herdr session answers, and the owner
-works in them by hand until an executor drives their CLI. A job's work tree is a path of the box: a job
-whose `cwd` exists only on this machine does not run there.
+**Why no sign-in is copied from this computer.** A CLI's sign-in is an OAuth refresh token; a copy
+refreshed in a box can invalidate the original (Claude Code's own issue tracker reports a copied
+credentials file failing instead of refreshing), and this machine's codex sign-in may route through a
+local proxy a box cannot reach. Each box signs in once, in its own home, through the CLI's own flow.
 
-**The hopper they serve (issue #306).** A host install, when its database is named
-(`HOPPER_DATABASE_URL` or `HOPPER_DATABASE_URL_FILE`): its CLI from `HOPPER_APP_DIR`, the box attached as
-the Host `hopper-box-<agent>` in `~/.ssh`. Else the hopper in its compose container — the running
-container labelled with the compose project `HOPPER_COMPOSE_PROJECT` (default `hopper`, `compose.yaml`'s
-`name:`) and the service `hopper`, found with `docker ps`; with neither, `--attach` stops before it builds.
-With that container, which resolves no Host of `~/.ssh` and reaches no port on the host's loopback:
+**What runs there.** Each box its agent's executor; the job's GitHub credential (`GH_TOKEN`, issue #214)
+reaches the agent's process, and gh hands it to git. A job's work tree is a path of the box: the jobs
+directory `~/hopper-jobs` there by default. An executor instance whose `cwd` names a directory of
+another machine (herdr-claude's, set for this computer) sends a job there that does not run; per-machine
+work trees are #324's.
 
-- each box is on the hopper's network (`hopper_default`): a new box is made with `--network`, a running
-  one not on it is joined (`docker network connect`), on every run — so a box made again, for a new image,
-  is on it from its start, and a re-run never drops it;
-- it is attached as `agent@hopper-box-<agent>`: the box's name on that network, port 22, its pinned host key
-  the same one;
-- the plugins config is changed by the hopper's own CLI in its container (`docker exec -i <container>
-  hopper config …`, which reads `HOPPER_DATABASE_URL_FILE` there): no host install, no database port;
-- the script checks the hopper reaches each box: `ssh-keyscan` from the hopper's container, by the box's
-  name, answers the box's host key.
-
-The loopback port and the Host stay, for the owner's terminal. A `compose down` that removes the network
-takes the boxes off it: run the script again. The hopper in a container on another computer is not served:
-the boxes are on this machine's docker.
+A `compose down` that removes the hopper's network takes the boxes off it: run the script again. A hopper
+in a container on another computer is not served: the boxes are on this machine's docker.
 
 **Residual risk.** The boxes reach the network (the agents need their APIs) and run whatever a job or
-the owner tells their agent; they are not the container target's locked-down sandbox. sshd listens on
-loopback only. The hopper's key is restricted there; the owner's keys are not.
+the owner tells their agent; they are not the container target's locked-down sandbox. sshd is published
+on loopback only; on the hopper's network any container of it reaches the box's sshd, which takes keys
+only. The hopper's key is restricted there; the owner's keys are not. codex runs with its own sandbox
+off (`--dangerously-bypass-approvals-and-sandbox`): the box is the sandbox.
 
 **Verification.** `test/scripts/agent-boxes-compose.test.ts`: against a stand-in docker that answers as a
-compose deploy, a new box made on the hopper's network, a running one joined to it, the box attached as
-`agent@<box>` through the CLI in the hopper's container, `--attach` with no hopper refused before a build;
-and the fix run by hand on a compose deploy: all five boxes taken off the network and attached by bare
-name (offline, name not resolved), then one run of the script — all five online, again after a second run.
-`test/scripts/agent-boxes.test.ts`: the plugins-config filter; opt-in
-(`HOPPER_TEST_AGENT_BOX=1`: it builds an image with an agent CLI from npm) a real codex box on the real docker, reached over real ssh with the hopper's key alone (no pty), its herdr session running,
-attached to a test database through the operator CLI, kept on a second run, then removed. Each of the
-five images was built and its CLI run over ssh by hand.
+compose deploy, a new box made on the hopper's network at its fixed port, a running one joined to it and a
+moved one started again at its port, the box attached as `agent@<box>` running its executor through the CLI
+in the hopper's container, the hopper's key asked of it, no hopper: the boxes alone; `--check` passing and
+failing. `test/scripts/agent-boxes.test.ts`: the plugins-config filter (each agent's executor, switched on
+when missing, kept when set); opt-in (`HOPPER_TEST_AGENT_BOX=1`: it builds an image with an agent CLI from
+npm) a real codex box on the real docker, reached over real ssh with the hopper's key alone (no pty), its
+herdr session running, attached to a test database through the operator CLI with its executor, kept on a
+second run, then removed.
+
+## Print-mode agent executors (issue #307, 2026-10-07)
+
+Owner requirement (#307): every agent box runs jobs. Only Claude Code (`herdr-claude`) and Cursor's agent
+(`cursor-agent`, issue #142) had executors; codex, opencode and omp had none. All three CLIs have a print
+mode that answers in JSON, as Cursor's does, so they are built the way `cursor-agent` is, not in a herdr
+pane (whose screen protocol parses Claude Code's TUI, "6d. Backends are configuration").
+
+A **print-mode agent executor** runs an agent CLI in print mode on the job's machine — this one or an ssh
+target, never a container or client target — in the job's work tree, one run per turn
+(`src/executors/print-agent.ts`): the payload is herdr-claude's (`prompt`, `cwd`, `model`, `env`,
+`timeoutMs`), the first turn's text the prompt and `protocolFooter(cwd)`, the job's credentials
+(`GH_TOKEN`, issue #214 — which `cursor-agent` did not pass before) and `HOPPER_JOB_ID` and `TMPDIR` in
+its environment. The last message's marker decides: `HOPPER_DONE` finished `{ machine, summary, chatId }`,
+`HOPPER_FAILED <reason>` failed, `HOPPER_QUESTION` a question that parks the job with `{ chatId, cwd }`
+(the agent's session id, under the name `cursor-agent` already stored), no marker a status note nudged in
+the same session at most three times in a row (issue #163). Not idempotent, nothing to reattach.
+
+Only the call and the reading differ (`src/executors/print-agents.ts`), taken from the real CLIs:
+
+| executor | first turn | resumed | answer | its own error |
+|----------|-----------|---------|--------|---------------|
+| `cursor-agent` | `cursor-agent -p --output-format json --workspace <cwd> <args> [--model m] -- <text>` | `--resume <chat>` | one JSON result: `result`, `session_id` | `is_error` |
+| `codex` | `codex exec --json <args> [--model m] -- <text>` | `codex exec resume --json <args> [--model m] -- <thread> <text>` | JSON lines: `thread.started` `thread_id`; the last `item.completed` `agent_message` `text` | `turn.failed` `error.message` |
+| `opencode` | `opencode run --format json <args> [--model m] -- <text>` | `--session <id>` | JSON lines: `sessionID`; the `text` parts of the last message | an `error` event: `error.name`, `error.data.message` |
+| `omp` | `omp -p --mode json --no-title <args> [--model m] -- <text>` | `--resume <id>` | JSON lines: `session` `id`; `agent_end`'s last assistant message, its `text` parts | `stopReason` `error`: `errorMessage` |
+
+A non-zero exit fails the job with the CLI's own error when it printed one, else its stderr.
+
+Plugins `codex`, `opencode`, `omp` (`src/plugins/executor/<id>/`, each defined by
+`src/plugins/executor/print-agent.ts`, as `cursor-agent` now is): options `bin` (the CLI's name, on
+`PATH`), `args`, `cwd` (the jobs directory) and `sshBin`, every one command-bearing. Default `args` run the
+agent's tools without asking: codex `--dangerously-bypass-approvals-and-sandbox --skip-git-repo-check`
+(its sandbox would refuse the network a push needs; the machine is the sandbox), opencode `--auto`, omp
+`--auto-approve`. Opt-in, as `cursor-agent`: switched on in Plugins, or by `scripts/agent-boxes.sh` for the
+box that runs it. Detection is `which` only and always `available`. Each agent signs in on the machine it
+runs on; the hopper holds no credential of theirs. opencode runs its own free models with no sign-in.
+
+**Verification:** `test/adapters/print-agent-executors.test.ts` (each CLI a stand-in printing the real
+CLI's events: done, question and resume, failed, status notes, the CLI's error, cancel, refusals),
+`test/adapters/cursor-executor.test.ts`, `test/plugins/executor-plugins.test.ts`.
 
 ## Pickups on agent boxes (issue #319, 2026-10-06 — a spike)
 
@@ -5284,6 +5336,9 @@ about the daemon's surface; the CLI is beside it, like editing a file was.
 - Since issue #212: `user transfer <from> <to>` — `<to>` takes over `<from>`'s work (docs/sign-in.md).
   The daemon holds a session-level advisory lock per instance schema while it runs; the command
   takes it or refuses, because the daemon keeps a runtime per user and the command removes one.
+- Since issue #307: `ssh-key [--user <id>]` — the public half of the user's ssh key (issue #293), the line a
+  machine's `authorized_keys` takes; never the private half. None yet (the daemon mints it at its start):
+  refused, saying so. `scripts/agent-boxes.sh` asks it where the hopper runs.
 - `help` (also `--help`, `-h`): every command, exit 0 (`password-hash` went with issue #200). No command or an unknown
   one prints the same text on stderr, exit 2.
 
@@ -5576,7 +5631,7 @@ defaults were not configurable; attaching assumed ssh with herdr and Claude Code
 supported; defaults must be configurable. Read as three changes; none breaks a document.
 
 **The Cursor executor** — built-in executor plugin `cursor-agent` (`src/plugins/executor/cursor-agent/`,
-`src/executors/cursor.ts`); opt-in, not in the built-in instances.
+`src/executors/print-agent.ts`, since issue #307 one of the print-mode agent executors); opt-in, not in the built-in instances.
 
 | option | default | |
 |---|---|---|

@@ -318,11 +318,12 @@ any Postgres will do). `npm test` starts its own throwaway Postgres container (t
 needs docker), each test in its own schema; `HOPPER_TEST_POSTGRES_URL=postgres://…` uses an
 existing database instead.
 
-**Agent boxes for testing** (`docs/design.md` "Agent boxes"): `HOPPER_SSH_PUBLIC_KEY='<the hopper's key, as
-Machines → Add shows it>' bash scripts/agent-boxes.sh --attach` starts one container per agent CLI (claude, codex, cursor, omp, opencode),
-each an ssh target with its own herdr session, and attaches them all: to the hopper in its compose
-container on this machine (the boxes join its network), or, with `HOPPER_DATABASE_URL` set, to a host
-install; `ssh -t hopper-box-<agent>` opens a terminal there to sign the agent in.
-`bash scripts/agent-boxes.sh --check` proves the hopper in its container reaches every box: ssh as the
-hopper, the box's herdr session running, its agent CLI answering — one line per box, exit 1 on any failure.
+**Agent boxes** (`docs/design.md` "Agent boxes"): `bash scripts/agent-boxes.sh` starts one container per
+agent CLI (claude, codex, cursor, omp, opencode), each an ssh target with its own herdr session, and
+attaches every one to the hopper, running its agent's executor. It finds the hopper itself: the compose
+container (the boxes join its network; nothing to copy, no database to reach) or, with
+`HOPPER_DATABASE_URL`, one installed here. Run it again any time: it puts every box back as it should be.
+`--sign-in` signs in the agents not signed in yet (opencode needs none); `ssh -t hopper-box-<agent>` opens
+a terminal there. `--check` proves the hopper in its container reaches every box: ssh as the hopper,
+the box's herdr session running, its agent CLI answering — one line per box, exit 1 on any failure.
 `--remove` takes them away again.

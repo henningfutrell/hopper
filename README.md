@@ -381,6 +381,18 @@ of it shows in a herdr pane.
 4. Send jobs to it with a routing rule in the Routing view: set its machine and the executor
    `cursor-agent`.
 
+### Agent boxes: claude, codex, cursor, omp and opencode
+
+On a computer with docker, `bash scripts/agent-boxes.sh` (from a checkout) starts one container per agent
+CLI, each a machine of its own that runs its agent's jobs: claude in Claude Code, cursor in Cursor's agent,
+codex, opencode and omp each in its own CLI. It finds the hopper in its container by itself and attaches
+them all; running it again puts every box back as it should be.
+
+1. `bash scripts/agent-boxes.sh`
+2. `bash scripts/agent-boxes.sh --sign-in`: each agent not signed in yet opens its own sign-in here (a link
+   or a code to enter on any device). Once per box: its home keeps it. opencode needs none.
+3. Send jobs to a box with a routing rule in the Routing view: set its machine (`hopper-box-<agent>`).
+
 ### Send jobs to one machine
 
 A routing rule sets a job's machine, executor or priority when the job comes in; the first rule that

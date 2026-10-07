@@ -120,7 +120,7 @@ case "$1" in
   info) exit 0 ;;
   ps) case "$*" in *com.docker.compose.service=hopper*) echo hopper-hopper-1 ;; esac; exit 0 ;;
   exec) case "$*" in *"hopper ssh-key"*) echo '${KEY_A} hopper'; exit 0 ;; esac; exit 1 ;;
-  container) case "$*" in *hopper-hopper-1*) echo 'hopper_default ' ; exit 0 ;; esac; exit 1 ;;
+  container) case "$*" in *hopper-hopper-1*) echo 'hopper_default' ; exit 0 ;; esac; exit 1 ;;
   build) exit 1 ;;
 esac
 exit 1
@@ -138,7 +138,7 @@ exit 1
     const r = spawnSync('bash', [SCRIPT, 'codex'], { encoding: 'utf8', env });
     expect(r.stderr).toContain('the hopper runs in container hopper-hopper-1 (network hopper_default)');
     expect(r.stderr).toContain('building hopper-box-codex failed');
-    expect(readFileSync(join(d, 'calls'), 'utf8')).toContain('exec hopper-hopper-1 hopper ssh-key');
+    expect(readFileSync(join(d, 'calls'), 'utf8')).toContain('exec -- hopper-hopper-1 hopper ssh-key');
   });
 });
 

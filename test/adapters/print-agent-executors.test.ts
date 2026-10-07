@@ -21,6 +21,8 @@ beforeAll(() => {
   dir = mkdtempSync(join(tmpdir(), 'jh-print-agent-'));
   work = join(dir, 'work');
   process.env.FAKE_AGENT_DIR = dir;
+  // A job's credential reaches the agent only from the hopper, never from the environment the tests run in.
+  delete process.env.GH_TOKEN;
 });
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 beforeEach(() => {

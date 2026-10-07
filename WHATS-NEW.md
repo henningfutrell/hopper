@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- Agent boxes for Claude, Codex, Cursor, omp and opencode join a hopper running in a container by themselves, each runs its own agent's jobs, and they stay attached after a restart or rebuild. Codex, opencode and omp can now run jobs anywhere they are installed.
 - Adding a machine is now one copied line: Machines, then Add machine, then pick a computer or a locked-down sandbox box, and run the line it shows there. The machine joins by itself and shows up online, with no ssh setup and nothing to type into the hopper.
 - The throwaway machines for each coding agent now come online when the hopper runs in a container on the same computer, and stay online when you start them again.
 - Editing a machine no longer asks where herdr is installed: the hopper finds herdr on that machine by itself.
