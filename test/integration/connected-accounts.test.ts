@@ -114,7 +114,11 @@ describe('a user connects their own GitHub', () => {
       // The app reaches only the repositories it is installed on: where, and which repositories there.
       installUrl: `${f.github.url}/apps/hopper-test/installations/new`,
       configUrl: `${f.github.url}/settings/installations`,
-      installations: [{ account: 'octo-user', repositorySelection: 'all', repositories: ['octo-user/tools'], settingsUrl: `${f.github.url}/settings/installations/1` }],
+      installations: [{
+        account: 'octo-user', repositorySelection: 'all', repositories: ['octo-user/tools'], settingsUrl: `${f.github.url}/settings/installations/1`,
+        // What the installation grants there, as GitHub says it (issue #352).
+        permissions: { contents: 'write', issues: 'write', metadata: 'read', pull_requests: 'write' },
+      }],
     });
     expect(JSON.stringify(await accounts(app))).not.toMatch(/gho_/); // facts only, never the token
     expect((await choose(app, token, ['octo-user/tools'])).body).toMatchObject({ state: 'connected', jobRepositories: ['octo-user/tools'] });
@@ -138,9 +142,10 @@ describe('a user connects their own GitHub', () => {
     const app = await start(f);
     await connect(app, f.github, 'github', 'octo-user', await app.login());
     const connected = await account(app, 'github');
+    const permissions = { contents: 'write', issues: 'write', metadata: 'read', pull_requests: 'write' };
     expect(connected.state === 'connected' && connected.installations).toEqual([
-      { account: 'octo-user', repositorySelection: 'all', repositories: ['octo-user/tools'], settingsUrl: `${f.github.url}/settings/installations/1` },
-      { account: 'octo-org', repositorySelection: 'selected', repositories: chosen, settingsUrl: `${f.github.url}/settings/installations/2` },
+      { account: 'octo-user', repositorySelection: 'all', repositories: ['octo-user/tools'], settingsUrl: `${f.github.url}/settings/installations/1`, permissions },
+      { account: 'octo-org', repositorySelection: 'selected', repositories: chosen, settingsUrl: `${f.github.url}/settings/installations/2`, permissions },
     ]);
   });
 

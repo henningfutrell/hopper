@@ -13,7 +13,8 @@
 // account (issue #254): one GitHub piece, not a card beside it. Of the repositories the app reaches the
 // person ticks the job repositories — the only ones jobs come from — filtering a long list, with how many
 // are chosen of how many reached, saved without disconnecting (issue #321). A chosen one the app no longer
-// reaches stays listed, to be cleared.
+// reaches stays listed, to be cleared. Each installation says what GitHub granted the app there, and a link adds the app to
+// another account or organization — quiet, under the installations, never a nudge to install it again (issue #352).
 import { Link2, LogOut, Unlink } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
@@ -76,7 +77,7 @@ export function ConnectedAccountPanel({ provider, source }: { provider: Provider
               {s.configUrl && <div><a className="underline" href={s.configUrl} target="_blank" rel="noreferrer">See where the app is installed</a></div>}
             </div>
             : s.installations.length > 0
-              ? <JobRepositories key={s.jobRepositories.join('\n')} installations={s.installations} saved={s.jobRepositories} canAdmin={canAdmin}
+              ? <JobRepositories key={s.jobRepositories.join('\n')} installations={s.installations} installUrl={s.installUrl} saved={s.jobRepositories} canAdmin={canAdmin}
                 save={(repositories) => send({ action: 'choose', repositories })} />
               : <div data-installations className="space-y-1">
                 <div className="text-warn">The app is not installed on any account you can see: it reaches no repository yet.</div>
@@ -117,8 +118,8 @@ export function ConnectedAccountPanel({ provider, source }: { provider: Provider
  * jobs may use it; a filter narrows what is shown, and Choose shown / Clear shown act on what is shown.
  * Save sends the whole list; a new saved list remounts it (its key).
  */
-function JobRepositories({ installations, saved, canAdmin, save }: {
-  installations: AppInstallation[]; saved: string[]; canAdmin: boolean; save: (repositories: string[]) => Promise<boolean>;
+function JobRepositories({ installations, installUrl, saved, canAdmin, save }: {
+  installations: AppInstallation[]; installUrl: string | undefined; saved: string[]; canAdmin: boolean; save: (repositories: string[]) => Promise<boolean>;
 }) {
   const [chosen, setChosen] = useState(() => new Set(saved));
   const [filter, setFilter] = useState('');
@@ -151,6 +152,7 @@ function JobRepositories({ installations, saved, canAdmin, save }: {
       </div>
       <div data-installations className="space-y-2">
         {installations.map((i) => <Installation key={i.account} installation={i} matches={matches} box={box} />)}
+        {installUrl && <div><a className="underline" href={installUrl} target="_blank" rel="noreferrer">Add the app to another account or organization</a></div>}
         {unreached.length > 0 && (
           <ul className="rounded-md border bg-muted/30 px-2 py-1">
             {unreached.map((r) => <li key={r} data-repository={r} hidden={!matches(r)} className="font-mono break-all">{box(r)}<span className="text-warn"> — the app does not reach it</span></li>)}
@@ -177,7 +179,15 @@ function Installation({ installation: i, matches, box }: { installation: AppInst
           {i.repositories.map((r) => <li key={r} data-repository={r} hidden={!matches(r)} className="font-mono break-all">{box(r)}</li>)}
         </ul>
       )}
+      {i.permissions && <div data-installation-access className="text-muted-foreground">{access(i.permissions)}</div>}
       {i.settingsUrl && <div><a className="underline" href={i.settingsUrl} target="_blank" rel="noreferrer">Choose its repositories</a></div>}
     </div>
   );
+}
+
+/** What an installation grants, in words: `{ issues: 'write', metadata: 'read' }` → "It may: read and write issues; read metadata." */
+function access(permissions: Record<string, string>): string {
+  const by = (level: string) => Object.entries(permissions).filter(([, l]) => l === level).map(([p]) => p.replaceAll('_', ' ')).sort();
+  const parts = [['read and write', by('write')], ['administer', by('admin')], ['read', by('read')]] as const;
+  return `It may: ${parts.filter(([, ps]) => ps.length > 0).map(([verb, ps]) => `${verb} ${ps.join(', ')}`).join('; ')}.`;
 }

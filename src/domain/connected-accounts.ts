@@ -11,12 +11,14 @@ export const CONNECTED_VIA = 'the hopper\'s app';
  * GitHub: one installation of the hopper's app that the connected account can see — the account it is
  * installed on and the repositories it reaches there that this account can see. `all`: every repository
  * of that account; `selected`: only the chosen ones. `settingsUrl`: where to choose them on GitHub.
+ * `permissions`: what the installation grants there, as GitHub says it (`issues: 'write'`, …; issue #352).
  */
 export interface AppInstallation {
   account: string;
   repositorySelection: 'all' | 'selected';
   repositories: string[];
   settingsUrl?: string;
+  permissions?: Record<string, string>;
 }
 
 /**

@@ -6223,13 +6223,12 @@ shared GitHub App job source was removed in the UI.
 
 **The hopper's app** (`src/connected-accounts/hopper-app.ts`): one GitHub App (device flow on, user-token
 expiration off), registered once. `SHIPPED_APPS` holds its public client id and slug (for its install
-link): the `hopper-qm` app, device flow on. While it is private to the account that registered it, it
-installs only there; it is made public for other accounts' repositories. The device flow (RFC 8628) needs no secret, so none is distributed. The environment may name
+link): the `hopper-qm` app, device flow on, **public** since issue #352 — any GitHub account or
+organization installs it and signs in through it. The device flow (RFC 8628) needs no secret, so none is distributed. The environment may name
 another app or a GitHub Enterprise: `HOPPER_GITHUB_URL` (API at `<url>/api/v3`), `HOPPER_GITHUB_CLIENT_ID`,
 `HOPPER_GITHUB_APP_SLUG`. A GitHub App asks for no scopes: what its user tokens may do is the app's
-permissions (repository Issues read/write, Pull requests read/write, Contents read/write, Metadata read;
-organization Projects read; account Email addresses read) cut down to what the user may do, on the
-repositories it is installed on.
+permissions cut down to what the user may do, on the repositories it is installed on. See "The hopper's
+app, for everyone" for the permissions and why each.
 
 **The github realm is a device realm** (`src/auth/index.ts`, `src/auth/config.ts`): neither a form nor a
 redirect realm. Settings: label, on/off, role rules; nothing of an app, no secret (the app is the
@@ -6331,6 +6330,58 @@ earlier GitHub sign-ins makes nobody admin; another browser or site refused),
 and labels through the account's token, a job running with `GH_TOKEN` that is never stored, disconnect, a
 denied code, users apart), `test/store/migration-23.test.ts`, `test/store/tenant-migration-8.test.ts`,
 `test/ui/sign-in-device.test.ts`, `test/ui/sources.test.ts`, `test/ui/sources-view.test.ts`.
+
+## The hopper's app, for everyone (issue #352, 2026-10-07)
+
+Owner request: the hopper's app could be used only by the account that registered it; other people
+installing the hopper need it too. Make it public, keep its permissions to the least the hopper needs (an
+outside person sees and grants them), give a clear install path from the UI and the install docs, make a
+hopper work for an account that is not the app's owner (job repositories, #321), and document an admin's
+own app as the alternative (#214).
+
+**Public.** The app's *Advanced → Make public* is done on GitHub, not in code: `GET
+https://api.github.com/apps/hopper-qm` answers without authentication, which GitHub does only for a public
+app, and its install page (`https://github.com/apps/hopper-qm/installations/new`) lets any account or
+organization install it. Nothing in the hopper names the owner: the client id and the slug are the app's,
+and installations, repositories and the identity come from the signed-in person's own token
+(`GET /user/installations`, `GET /user/installations/<id>/repositories`, `GET /user`).
+
+**Permissions, the least the hopper needs** (as GitHub reports them for the app; no events, no webhook —
+the hopper pulls):
+
+| permission | level | why |
+|---|---|---|
+| Issues | read and write | issues are the jobs: read them, set the `hopper:*` labels, reopen one for Run again (#354) |
+| Pull requests | read and write | a job opens its pull request; completion checks read the pull request that closes an issue |
+| Contents | read and write | a job pushes its branch with its token (`GH_TOKEN`) where its git uses gh's credential helper (else the machine's own git credentials push) |
+| Metadata | read | required by GitHub for any repository permission |
+
+Not asked for, and what that costs: **Workflows** (a job cannot push a change to `.github/workflows/`;
+GitHub refuses that push), **organization Projects** (a `projects` priority on an organization board
+reads nothing through the hopper's app; user Projects are not readable by any GitHub App), **Email
+addresses** (the identity has no email; role rules match subjects and usernames). An admin who needs any
+of these runs their own app (below). The design section above listed Projects and Email addresses as the
+app's: it never had them.
+
+**Install path.** Before an installation: Sources says the app reaches no repository and links to its
+install page (#253). With installations: each says the repositories it reaches, **what it may do there**
+(`AppInstallation.permissions`, GitHub's installation answer, in words: "It may: read and write contents,
+issues, pull requests; read metadata."), and a link to choose its repositories; under them a quiet link
+**Add the app to another account or organization** (the install page, where GitHub asks which account and
+which repositories) — not a nudge to install it again. On GitHub's install page the person picks *All
+repositories* or *Only select repositories*; the hopper then lists those, and the person ticks the job
+repositories (#321). An organization owner installs it for the organization (or approves a member's
+request); the member then sees that installation too.
+
+**An admin's own app instead** (#214): `docs/sign-in.md` "Running your own GitHub App instead of the
+hopper's" — the same permissions, *Any account* or *Only on this account* as the admin wants, and
+`HOPPER_GITHUB_CLIENT_ID` / `HOPPER_GITHUB_APP_SLUG`. The `github-app` job source (an app acting as its
+own bot) is a different thing (README "A GitHub App of your own").
+
+**Verification:** `test/integration/connected-accounts.test.ts` (a connected account — not the app's
+owner — sees each installation with its repositories and permissions, on its own account and an
+organization's), `test/ui/sources-view.test.ts` (what it may do, the link to add it to another account).
+Live: the app answers unauthenticated as public, with the four permissions above and no events.
 
 ## A pleasing sign-in page; GitHub by browser redirect when possible (issue #258, 2026-10-06)
 
