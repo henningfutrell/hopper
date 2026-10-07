@@ -102,6 +102,8 @@ export interface Job {
   source?: JobSourceRef;
   /** The job this one runs again (a re-run, issue #354): the newest job of its source key when it was created. */
   rerunOf?: JobId;
+  /** When the user dismissed this failed job (issue #355): it is no longer a locked entry. */
+  dismissedAt?: string;
   /**
    * `sync`: owned by the sync loop (claimReported, reportedQuestions, finalReported,
    * cancelReason). `source`: owned by the adapter; `report()` returns its whole new value,
@@ -270,7 +272,7 @@ export const EVENT_TYPES = [
   'update.available', 'update.started', 'update.applied', 'update.failed',
   'plugin.installed', 'plugin.removed',
   'job.accepted', 'job.rejected', 'queue.ordered', 'queue.gate_changed', 'job.claimed_by_operator',
-  'job.rerun',
+  'job.rerun', 'job.dismissed',
   'source.stalled', 'connected_account.expired',
 ] as const;
 export type EventType = typeof EVENT_TYPES[number];
@@ -288,7 +290,7 @@ export const EVENT_SCHEMA_VERSIONS: Readonly<Record<EventType, number>> = {
   'update.available': 1, 'update.started': 1, 'update.applied': 1, 'update.failed': 1,
   'plugin.installed': 1, 'plugin.removed': 1,
   'job.accepted': 1, 'job.rejected': 1, 'queue.ordered': 1, 'queue.gate_changed': 1, 'job.claimed_by_operator': 1,
-  'job.rerun': 1,
+  'job.rerun': 1, 'job.dismissed': 1,
   'source.stalled': 1, 'connected_account.expired': 1,
 };
 

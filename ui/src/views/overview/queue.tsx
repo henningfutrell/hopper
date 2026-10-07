@@ -1,6 +1,6 @@
-// Waiting (queue order), the jobs on a question and the operator-led jobs below it, and Ended (the last 24 hours, newest first).
+// Waiting (queue order), the jobs on a question, the operator-led jobs and the locked entries below it, and Ended (the last 24 hours, newest first).
 // Each row names its job group, as the cards count them (tested: test/ui/overview-counts.test.ts).
-import { Archive, Check, Hourglass, RotateCcw } from 'lucide-react';
+import { Archive, Check, Hourglass, Lock, RotateCcw, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { JobTitle, Since } from '@/components/job';
 import { Empty, Panel } from '@/components/panel';
@@ -10,7 +10,52 @@ import { canRerun, waitingRows } from '@/model/board';
 import { ago, between } from '@/model/format';
 import { act, rerun, useHopper } from '@/store';
 import { useCanOperate, useJobBoard } from '@/store/selectors';
+import type { Job } from '@/model/wire';
 import { CancelButton, OperatorLedButton } from './lanes';
+
+/** Run again: a new job for the item joins the queue now (issue #354). */
+function RerunButton({ job }: { job: Job }) {
+  return (
+    <Button size="xs" variant="outline" title="Run again: a new job for its item joins the queue now"
+      onClick={() => void rerun(job.id)}><RotateCcw />Run again</Button>
+  );
+}
+
+/**
+ * The locked entries (issue #355): failed jobs kept in the queue, never run by themselves, until run again
+ * or dismissed. Under the Overview's Waiting jobs, and in the Queue view's own panel (`heading` false).
+ */
+export function LockedRows({ heading = true }: { heading?: boolean }) {
+  const locked = useHopper((s) => s.locked);
+  const operate = useCanOperate();
+  const now = useNow();
+  if (locked.length === 0) return null;
+  return <>
+    {heading && <div className="flex items-center gap-2 bg-muted/30 px-4 py-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+      Locked<span className="num font-normal text-muted-foreground/70">{locked.length}</span>
+    </div>}
+    {locked.map((job) => (
+      <div key={job.id} data-job-group="locked" data-job-id={job.id} data-status={job.status} className="space-y-1.5 px-4 py-3">
+        <div className="flex items-start gap-2">
+          <Lock className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+          <JobTitle job={job} className="flex-1" />
+          {operate && <>
+            {canRerun(job, [job]) && <RerunButton job={job} />}
+            <Button size="xs" variant="ghost" title="Dismiss: it leaves the queue and stays failed"
+              onClick={() => act(`/ui/api/jobs/${job.id}/dismiss`, {}, 'Dismissed')}><X />Dismiss</Button>
+          </>}
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5 pl-5.5 text-xs text-muted-foreground">
+          <StatusBadge status="failed" label="locked" />
+          <span className="num">prio {job.priority}</span>
+          {job.rerunOf && <span title={job.rerunOf}>runs {job.rerunOf.slice(0, 8)} again</span>}
+          <span className="ml-auto" title={job.finishedAt}>failed {ago(job.finishedAt ?? job.updatedAt, now)}</span>
+        </div>
+        {job.error && <div className="line-clamp-2 pl-5.5 text-xs text-bad/90" title={job.error}>{job.error}</div>}
+      </div>
+    ))}
+  </>;
+}
 
 export function WaitingPanel() {
   const board = useJobBoard();
@@ -70,6 +115,7 @@ export function WaitingPanel() {
           </div>
         ))}
       </>}
+      <LockedRows />
     </Panel>
   );
 }
@@ -85,10 +131,7 @@ export function EndedPanel() {
         <div key={job.id} data-job-group="ended" data-job-id={job.id} data-status={job.status} className="space-y-1.5 px-4 py-3">
           <div className="flex items-start gap-2">
             <JobTitle job={job} className="flex-1" />
-            {operate && canRerun(job, Object.values(jobs)) && (
-              <Button size="xs" variant="outline" title="Run again: a new job for its item joins the queue now"
-                onClick={() => void rerun(job.id)}><RotateCcw />Run again</Button>
-            )}
+            {operate && canRerun(job, Object.values(jobs)) && <RerunButton job={job} />}
             <StatusBadge status={job.status} />
           </div>
           <div className="num flex gap-3 text-xs text-muted-foreground">

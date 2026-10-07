@@ -2,8 +2,9 @@
 // sorter's order) and the user order (accepted waiting jobs, first to run at the top). A job moves from
 // the pre-sort into the user order to be accepted; any waiting job can be rejected — it ends
 // `rejected` and is kept, never deleted. The gate names the queue sorter that makes the pre-sort and links to
-// where it is set up, Settings → Routing (issue #201).
-import { ArrowDown, ArrowUp, ArrowUpToLine, Check, ChevronsRight, ListOrdered, ShieldCheck, SlidersHorizontal, Sparkles, X } from 'lucide-react';
+// where it is set up, Settings → Routing (issue #201). Below, the locked entries: failed jobs kept in the
+// queue until run again or dismissed (issue #355).
+import { ArrowDown, ArrowUp, ArrowUpToLine, Check, ChevronsRight, ListOrdered, Lock, ShieldCheck, SlidersHorizontal, Sparkles, X } from 'lucide-react';
 import { useState } from 'react';
 import { JobTitle, Since } from '@/components/job';
 import { Empty, Panel } from '@/components/panel';
@@ -13,6 +14,7 @@ import { Input } from '@/components/ui/input';
 import { accepting, moved, queueColumns } from '@/model/queue';
 import type { Job, PreSort, QueueGate, QueueGateMode } from '@/model/wire';
 import { act, useHopper } from '@/store';
+import { LockedRows } from './overview/queue';
 import { useCanAdmin, useCanOperate, useJobBoard } from '@/store/selectors';
 
 const MODE_TEXT: Record<QueueGateMode, string> = {
@@ -83,6 +85,7 @@ export function Queue() {
   const board = useJobBoard();
   const gate = useHopper((s) => s.gate);
   const presort = useHopper((s) => s.presort);
+  const locked = useHopper((s) => s.locked);
   const operate = useCanOperate();
   const { presorted, userOrder } = queueColumns(board.waiting, presort);
   const order = userOrder.map((j) => j.id);
@@ -120,6 +123,11 @@ export function Queue() {
           )) : <Empty>no accepted job waits</Empty>}
         </Panel>
       </div>
+      {locked.length > 0 && (
+        <Panel title="Locked" icon={Lock} count={locked.length} list bodyClassName="divide-y p-0">
+          <LockedRows heading={false} />
+        </Panel>
+      )}
     </div>
   );
 }

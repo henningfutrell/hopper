@@ -17,7 +17,7 @@ const job = (id: string, status: JobStatus, o: Partial<Job> = {}): Job => ({
 /** What /api/queue answers: the daemon's partition of the jobs it holds. */
 function queueOf(jobs: Job[]) {
   const of = (...s: JobStatus[]) => jobs.filter((j) => s.includes(j.status));
-  return { waiting: of('queued', 'held'), running: of('claimed', 'running'), waitingAnswer: of('waiting_answer'), ended: of('finished', 'failed', 'cancelled') };
+  return { waiting: of('queued', 'held'), running: of('claimed', 'running'), waitingAnswer: of('waiting_answer'), ended: of('finished', 'failed', 'cancelled'), locked: [] };
 }
 
 function fakeDaemon(initial: Job[]) {

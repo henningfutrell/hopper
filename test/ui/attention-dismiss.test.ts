@@ -25,7 +25,7 @@ let calls: { path: string; method: string }[] = [];
 function fakeDaemon() {
   const routes: Record<string, unknown> = {
     '/api/health': { ok: true, version: '0', router: 'jev', fallback: true, executors: [], uptimeS: 1 },
-    '/api/queue': { waiting: [], running: [], waitingAnswer: [], ended: [failed] },
+    '/api/queue': { waiting: [], running: [], waitingAnswer: [], ended: [failed], locked: [] },
     '/api/machines': { machines: [] },
     '/api/decisions': { decisions: [] }, '/api/events': { events: [] },
     '/api/webhooks': { subscriptions: [] }, '/api/webhooks/deliveries': { deliveries: [] },
