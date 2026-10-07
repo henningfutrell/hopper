@@ -56,6 +56,22 @@ describe('the version, without an update notice', () => {
     expect(link?.textContent).toBe('Version');
   });
 
+  it('Settings opens on Version, its first section, with Version history next (issue #363)', async () => {
+    window.location.hash = '#settings';
+    await render('../../ui/src/views/settings.tsx', 'Settings');
+    const hrefs = [...document.querySelectorAll<HTMLAnchorElement>('[data-slot="settings-nav"] a')].map((a) => a.getAttribute('href'));
+    expect(hrefs.slice(0, 2)).toEqual(['#settings/version', '#settings/version-history']);
+    expect(document.querySelector('[data-slot="settings-nav"] a[aria-current="page"]')?.getAttribute('href')).toBe('#settings/version');
+    expect(document.querySelector('[data-slot="version-details"]')).not.toBeNull();
+  });
+
+  it('a deep link to another section still opens that section (issue #363)', async () => {
+    window.location.hash = '#settings/routing';
+    await render('../../ui/src/views/settings.tsx', 'Settings');
+    expect(document.querySelector('[data-slot="settings-nav"] a[aria-current="page"]')?.getAttribute('href')).toBe('#settings/routing');
+    expect(document.querySelector('[data-slot="version-details"]')).toBeNull();
+  });
+
   it('Settings → Version shows the version, the installed commit and what this version brought', async () => {
     window.location.hash = '#settings/version';
     await render('../../ui/src/views/settings.tsx', 'Settings');

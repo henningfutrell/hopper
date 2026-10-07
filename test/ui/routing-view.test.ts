@@ -89,7 +89,7 @@ afterEach(async () => {
 });
 
 describe('Settings', () => {
-  it('one navigation entry holds the configuration: question gates, question history, job rules, routing, plugins, webhooks, users, sign-in, version, version history', async () => {
+  it('one navigation entry holds the configuration: version, version history, question gates, question history, job rules, routing, plugins, webhooks, users, sign-in', async () => {
     await boot();
     const main = document.querySelector('aside nav')!;
     const hrefs = [...main.querySelectorAll('a')].map((a) => a.getAttribute('href'));
@@ -97,7 +97,7 @@ describe('Settings', () => {
     for (const gone of ['#routing', '#plugins', '#webhooks']) expect(hrefs).not.toContain(gone);
     const sections = await vi.waitFor(() => { const n = document.querySelector('[data-slot="settings-nav"]'); expect(n).not.toBeNull(); return n!; });
     expect([...sections.querySelectorAll('a')].map((a) => a.getAttribute('href')))
-      .toEqual(['#settings/questions', '#settings/history', '#settings/job-rules', '#settings/routing', '#settings/plugins', '#settings/webhooks', '#settings/users', '#settings/sign-in', '#settings/version', '#settings/version-history']);
+      .toEqual(['#settings/version', '#settings/version-history', '#settings/questions', '#settings/history', '#settings/job-rules', '#settings/routing', '#settings/plugins', '#settings/webhooks', '#settings/users', '#settings/sign-in']);
     expect(sections.querySelector('a[aria-current="page"]')!.getAttribute('href')).toBe('#settings/routing');
   });
 });
