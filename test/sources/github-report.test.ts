@@ -63,6 +63,19 @@ describe('GitHub source report', () => {
     expect(state).toEqual(claimed);
   });
 
+  it('retried: the failed and claimed labels go, so the issue is offered again; no comment', async () => {
+    const { gh, source } = withIssue();
+    const job = jobForIssue(1, { status: 'failed', error: 'scratch dir timed out' });
+    await source.report({ kind: 'claimed', job });
+    await source.report({ kind: 'failed', job });
+    gh.calls.length = 0;
+    await source.report({ kind: 'retried', job });
+    expect(gh.issue(REPO, 1).labels).toEqual(['hopper']);
+    expect(gh.issue(REPO, 1).state).toBe('open');
+    expect(gh.commentsOn(REPO, 1)).toEqual([]);
+    expect(gh.calls.map((c) => c.method)).toEqual(['removeLabels']);
+  });
+
   it('cancelled: claimed removed, no comment', async () => {
     const { gh, source } = withIssue();
     const job = jobForIssue(1, { status: 'cancelled', sourceState: { sync: { cancelReason: 'cancelled in UI' } } });
