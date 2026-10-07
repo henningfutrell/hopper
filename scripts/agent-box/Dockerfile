@@ -29,7 +29,11 @@ RUN set -eu; case "$AGENT" in \
 
 COPY herdr /usr/local/bin/herdr
 COPY entrypoint.sh /usr/local/sbin/agent-box
-RUN chmod 755 /usr/local/bin/herdr /usr/local/sbin/agent-box
+# The pickup protocol's box side (design.md "Pickups on agent boxes"): run by the box's node, no install.
+COPY pickup.ts /usr/local/lib/hopper/pickup.ts
+RUN chmod 755 /usr/local/bin/herdr /usr/local/sbin/agent-box \
+ && printf '#!/bin/sh\nexec node /usr/local/lib/hopper/pickup.ts "$@"\n' > /usr/local/bin/hopper-pickup \
+ && chmod 755 /usr/local/bin/hopper-pickup
 
 LABEL org.opencontainers.image.title="hopper agent box" hopper.agent-box="$AGENT"
 EXPOSE 22

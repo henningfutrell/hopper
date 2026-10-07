@@ -55,7 +55,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/update/` | self-update ("Self-update"): install.json, the git mirror of the update repository, the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
 | `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); whether a session is an instance admin (`instance-admin.ts`, issue #240); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `api-reference.ts` Scalar at `/docs/`); the plugin store's read side (`plugin-store.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
-| `scripts/agent-box/` | the agent box's image (issue #295, "Agent boxes"; under `scripts/` because the install and the image carry `scripts/`, not `deploy/`): `Dockerfile` (one agent CLI per build, sshd, the herdr binary put beside it by `scripts/agent-boxes.sh`) and `entrypoint.sh` (sshd, then the box's herdr session); `scripts/agent-boxes.ts` is the script's plugins-config filter | everything in `src/` |
+| `scripts/agent-box/` | the agent box's image (issue #295, "Agent boxes"; under `scripts/` because the install and the image carry `scripts/`, not `deploy/`): `Dockerfile` (one agent CLI per build, sshd, the herdr binary put beside it by `scripts/agent-boxes.sh`) `entrypoint.sh` (sshd, then the box's herdr session) and `pickup.ts` (the box side of the pickup protocol, `hopper-pickup`, issue #319: node's own modules only, the box runs it with no install); `scripts/agent-boxes.ts` is the script's plugins-config filter, `scripts/box-pickups.ts` the pickup protocol's reader | everything in `src/` |
 | `site/` | the GitHub Pages site, published by `.github/workflows/pages.yml` with `scripts/get.sh` beside it as `install.sh`: `index.html`, the README rendered by `scripts/build-pages.ts` and committed (issue #88), and `install.html`, the install page; static, nothing loaded from another site | everything in the repo at runtime; it links to the docs on GitHub |
 | `examples/plugins/` | one minimal runnable custom plugin per role, for authors (`docs/plugins.md`); imports only `hopper/plugin` types and `node:` builtins | everything in `src/` at runtime |
 | `src/main.ts` | composition root: config → instance store → sign-in config (`prepareSignIn`: the environment applied) → plugin store → updater → server → one user runtime per user (`src/users/`) | — |
@@ -2798,6 +2798,95 @@ loopback only. The hopper's key is restricted there; the owner's keys are not.
 (`HOPPER_TEST_AGENT_BOX=1`: it builds an image with an agent CLI from npm) a real codex box on the real docker, reached over real ssh with the hopper's key alone (no pty), its herdr session running,
 attached to a test database through the operator CLI, kept on a second run, then removed. Each of the
 five images was built and its CLI run over ssh by hand.
+
+## Pickups on agent boxes (issue #319, 2026-10-06 — a spike)
+
+Owner request: the agent boxes, against a test repo, fulfil a manual, interactive pickup session, and
+report the pickup and how it stands, so the flow is seen end to end. Related: #318 (the claim of
+operator-led work and its timeline designation), #316 (containers primary, plus work by hand in an IDE).
+
+**The problem.** A job the hopper runs in herdr reports itself: herdr answers pane status, and the
+executor turns it into `job.started`, `job.progressed`, a question, an outcome. Work a person (or an IDE
+agent) does at a box by hand has no executor: nothing tells the hopper it was picked up, whether it is
+moving, or that it stopped. GitHub sees only the end — the closing pull request.
+
+**The protocol: the box keeps a pickup record, the hopper reads it.** The hopper pulls (repo law): a box
+sends nothing and no route accepts a report. The box writes; the hopper reads over the ssh connection it
+already holds to the box, as it reads herdr.
+
+- **Pickup record** — one JSON file per issue in the box's pickup dir (`HOPPER_PICKUP_DIR`, else
+  `~/.hopper/pickups/`, in the box's home volume, so it outlives the box), named
+  `<owner>_<repo>_<number>.json`, written whole (temp file, then rename), so a read never sees half of
+  one. Version 1:
+
+  ```json
+  { "v": 1, "issue": "https://github.com/<owner>/<repo>/issues/<n>", "mode": "operator-led",
+    "state": "working", "pickedUpAt": "ISO", "updatedAt": "ISO",
+    "workTree": "/home/agent/<repo>", "branch": "…", "pullRequest": "…",
+    "history": [ { "seq": 1, "state": "picked-up", "at": "ISO", "note": "…" }, … ] }
+  ```
+
+- **States.** `picked-up` (the pickup), then any of `working`, `waiting` (on an answer), `blocked`,
+  `pull-request` (names its pull request), and the two that end it: `finished` (the operator says the work
+  is done) and `released` (handed back, not done). A status with nothing picked up, or after the pickup
+  ended, is refused; an ended pickup is picked up again as a new pickup of the same record, its history
+  going on. **`history`** keeps every state change with a `seq` that only grows (the last 50 kept): the
+  reader polls, and a change between two reads is still seen, in order, once.
+- **Heartbeat.** `updatedAt` is the box's last word — a change or a `beat`. A pickup not ended and not
+  heard from past the stale time (the reader's `--stale`, 120 s by default) is **stale**: shown once, and
+  once more when it is heard from again. An ended pickup is never stale.
+- **The box's CLI**: `hopper-pickup pickup <issue url> [--work-tree] [--branch] [--note]`, `hopper-pickup
+  status <issue url> <state> [--pull-request] [--branch] [--note]`, `hopper-pickup beat <issue url>`,
+  `hopper-pickup list` (each record as one JSON line — what the hopper reads). In the box image
+  (`/usr/local/bin/hopper-pickup` runs `scripts/agent-box/pickup.ts` with the box's node). The file is the
+  protocol, not the CLI: an IDE extension, an agent's hook or a shell alias that writes the same record is a
+  conforming writer.
+- **The reader**, `node scripts/box-pickups.ts [--watch <s>] [--stale <s>] [box...]` (no box: the running
+  `hopper-box-*`): `ssh <box> hopper-pickup list` per box, then one timeline line per change since its last
+  read — `picked up (operator-led)`, each state with its note, `pull request <url>`, `stale`, `heard from
+  again`, and a box `unreadable` (once) and `readable again`. It runs on this machine with the Hosts of
+  `~/.ssh/hopper-box.config`; the hopper's key reaches the command too (`restrict` forbids a pty and
+  forwarding, not a command).
+
+**Seen end to end (2026-10-06).** The five boxes running, `hopper-pickup` put in each as the image puts it,
+the test repo cloned into the claude and cursor boxes from a bundle (the boxes hold no GitHub
+credential), the reader watching every 3 s with a 20 s stale time. On the claude box a pickup of one test
+issue, a commit on a branch, `working`, `pull-request`, `finished`; on the cursor box a pickup of another,
+`waiting`, `working`, `blocked`, silence until `stale`, a `beat` (`heard from again`), `released`, and a
+status after that refused (`ended (released): pick it up again`, exit 1); the omp box stopped (`unreadable:
+… Connection refused`). Every line came out once, in order, a burst of three changes between two reads
+included.
+
+**Found:** a box started again gets a new sshd port (published as `127.0.0.1::22`, any free port), so its
+Host in `~/.ssh/hopper-box.config` and its known_hosts line are stale until `scripts/agent-boxes.sh` runs
+again — the box stays unreadable, here as for the hopper. The same family as #306/#307 (boxes that do not
+interop without a catch); the fix belongs there: a fixed port per box, or the Host rewritten at start.
+
+**What the daemon would do with it (not built; for #318).** The concept the spike settles, for the work
+that makes it a part of the hopper:
+
+1. **Read in the machine source.** The `ssh` machine source already probes each machine every 30 s; the
+   probe reads `hopper-pickup list` beside `herdr status server` (a box with no `hopper-pickup` has no
+   pickups, not an error). A machine snapshot gains its pickups. No new route, no push.
+2. **A pickup is a claim of operator-led work.** A pickup of an issue the GitHub source would take makes
+   (or takes over, when it is waiting) that job as **operator-led** on that machine: the issue labelled
+   `hopper:claimed` as for any claim, the job on the machine's timeline with no lane and no executor,
+   so the decider never runs it a second time. The claim mode, its event and its timeline designation are
+   #318's to name; this spike uses `operator-led`, from #318's naming note, and #318 depends on this
+   protocol, not the other way round.
+3. **States are events.** Each new history entry becomes an event on the job (a state, its note, its
+   time from the box); `stale` is the hopper's own reading, an event too, never a state the box writes;
+   `waiting` could raise a question for the owner the way a pane's question does.
+4. **Done stays the closing pull request** (#316's recommendation, "Done means complete"). `finished` is
+   the operator's word, as `HOPPER_DONE` is an agent's: the job is finished only when the source says the
+   work reached its completion, else it fails as any job does. `released` cancels the job and takes the
+   claim off, so the issue is the queue's again.
+5. **Trust.** A box writes what it likes into its own records; the hopper reads them only from a machine it
+   attached, with its pinned host key, and acts only on issues its sources already allow. A record names an
+   issue; it never names a command.
+
+**Not built, on purpose.** No daemon change, no event, no migration: the spike's job was the protocol and
+seeing it run. The reader is a script, as the boxes are.
 
 ## Client releases (issue #70, 2026-10-05)
 

@@ -76,7 +76,7 @@ describe('agent-boxes.sh', () => {
       encoding: 'utf8', env: { ...process.env, PATH: `${join(d, 'bin')}:${process.env.PATH ?? ''}`, HOPPER_SSH_PUBLIC_KEY: KEY_A },
     });
     expect(r.stderr).toContain('building hopper-box-codex failed');
-    expect(readFileSync(join(d, 'context'), 'utf8').split('\n').filter(Boolean).sort()).toEqual(['Dockerfile', 'entrypoint.sh', 'herdr']);
+    expect(readFileSync(join(d, 'context'), 'utf8').split('\n').filter(Boolean).sort()).toEqual(['Dockerfile', 'entrypoint.sh', 'herdr', 'pickup.ts']);
   });
 
   it('needs the hopper\'s key: its file, or its public line', () => {

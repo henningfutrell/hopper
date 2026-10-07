@@ -119,7 +119,7 @@ HERDR="${HOPPER_BOX_HERDR:-$(command -v herdr || true)}"
 
 CONTEXT="$(mktemp -d)"
 trap 'rm -rf "$CONTEXT"' EXIT
-cp "$SRC/scripts/agent-box/Dockerfile" "$SRC/scripts/agent-box/entrypoint.sh" "$CONTEXT/"
+cp "$SRC/scripts/agent-box/Dockerfile" "$SRC/scripts/agent-box/entrypoint.sh" "$SRC/scripts/agent-box/pickup.ts" "$CONTEXT/"
 cp "$HERDR" "$CONTEXT/herdr"
 
 # Who may log in to a box: the hopper's key restricted, then each of your own keys that is not it.
