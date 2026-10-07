@@ -1,5 +1,5 @@
-// Phase 5 slice 5: the notifier role in the plugin host. 0..n instances, a restart role: built once
-// at start from the plugins config (an absent section → the built-in grok-bot instance; `notifiers: []` → none), started with the event feed, stopped with the daemon. A
+// Phase 5 slice 5: the notifier role in the plugin host. 0..n instances, following the plugins config
+// live since issue #356: built from the plugins config (an absent section → the built-in grok-bot instance; `notifiers: []` → none), started with the event feed, stopped with the daemon. A
 // notifier that cannot run — unknown plugin, invalid options, unavailable, create or start throwing —
 // is dropped with its reason in the report; never a boot failure. grokbot-routine's detection looks
 // at its two environment variables only (never runs the Grok Bot GUI); needs-setup still runs,
@@ -140,13 +140,47 @@ describe('the notifier role', () => {
     expect(host.report().config.error).toMatch(/notifiers.*twice/);
   });
 
-  it('a restart role: an edit shows changed — restart pending; the running notifiers stay', async () => {
+  it('live (issue #356): an added notifier starts with the feed, a removed one stops, a changed one is stopped and its new one started', async () => {
+    started.length = 0;
+    stopped.length = 0;
+    const { host, config } = start({ file: { version: 1, notifiers: [{ name: 'one', plugin: 'recorder' }] } });
+    await host.start();
+    const events = feed();
+    host.startNotifiers(events);
+    expect(started).toEqual(['one']);
+    config.set(PLUGINS, { version: 1, notifiers: [{ name: 'one', plugin: 'recorder' }, { name: 'two', plugin: 'recorder' }] });
+    await host.reload();
+    expect(started).toEqual(['one', 'two']);
+    expect(host.notifiers().map((n) => n.name)).toEqual(['one', 'two']);
+    expect(events.listeners).toHaveLength(2);
+    config.set(PLUGINS, { version: 1, notifiers: [{ name: 'two', plugin: 'recorder', options: { fail: 'no' } }] });
+    await host.reload();
+    expect(stopped.sort()).toEqual(['one', 'two']);
+    expect(started).toEqual(['one', 'two', 'two']);
+    expect(host.notifiers().map((n) => n.name)).toEqual(['two']);
+    expect(host.report().notifiers).toEqual({ instances: [expect.objectContaining({ active: 'recorder' })] });
+  });
+
+  it('a notifier added before the feed starts is started with the others, once', async () => {
+    started.length = 0;
     const { host, config } = start({ file: { version: 1, notifiers: [] } });
     await host.start();
     config.set(PLUGINS, { version: 1, notifiers: [{ name: 'one', plugin: 'recorder' }] });
     await host.reload();
-    expect(host.report().notifiers.pending).toEqual({ status: 'changed — restart pending', instances: [{ name: 'one', plugin: 'recorder', options: {} }] });
-    expect(host.notifiers()).toEqual([]);
+    expect(started).toEqual([]);
+    host.startNotifiers(feed());
+    expect(started).toEqual(['one']);
+  });
+
+  it('after the notifiers stopped, a change starts none', async () => {
+    started.length = 0;
+    const { host, config } = start({ file: { version: 1, notifiers: [] } });
+    await host.start();
+    host.startNotifiers(feed());
+    await host.stopNotifiers();
+    config.set(PLUGINS, { version: 1, notifiers: [{ name: 'one', plugin: 'recorder' }] });
+    await host.reload();
+    expect(started).toEqual([]);
   });
 });
 
