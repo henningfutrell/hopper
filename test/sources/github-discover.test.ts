@@ -58,21 +58,11 @@ describe('GitHub source discover', () => {
     expect((await source.discover()).map((i) => i.number)).toEqual([1]);
   });
 
-  it('without explicit repos searches over the gh user and keeps only repos they own', async () => {
+  it('with no repositories it reads nothing: never a search', async () => {
     const { gh, source } = setup({ repos: [] });
     gh.createIssue({ repo: 'owner/a', labels: ['hopper'] });
-    gh.createIssue({ repo: 'someone/b', labels: ['hopper'] });
-    const items = await source.discover();
-    expect(items.map((i) => i.repo)).toEqual(['owner/a']);
-    expect(gh.calls.find((c) => c.method === 'searchOpenIssues')?.args).toEqual([{ owners: ['owner'], label: 'hopper', authors: ['owner'] }]);
-    expect(source.describe()).toMatchObject({ owners: ['owner'], repos: [], authors: ['owner'], label: 'hopper' });
-  });
-
-  it('searches over configured owners without asking who the gh user is', async () => {
-    const { gh, source } = setup({ repos: [], owners: ['someone'] });
-    gh.createIssue({ repo: 'someone/b', labels: ['hopper'] });
-    expect((await source.discover()).map((i) => i.repo)).toEqual(['someone/b']);
-    expect(gh.calls.some((c) => c.method === 'whoami')).toBe(false);
+    expect(await source.discover()).toEqual([]);
+    expect(gh.calls).toEqual([]);
   });
 
   it('a claimed issue with no local job is skipped and shown in status; one with a job is returned', async () => {
@@ -132,6 +122,6 @@ describe('GitHub source discover', () => {
     const { source } = setup({ authors: ['owner', 'alice'] });
     expect(source.describe()).toMatchObject({ repos: [REPO], authors: ['owner', 'alice'], label: 'hopper', projectErrors: {} });
     expect(source.name).toBe('github');
-    expect(source.kind).toBe('github');
+    expect(source.kind).toBe('github-account');
   });
 });

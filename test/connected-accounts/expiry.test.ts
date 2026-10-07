@@ -1,12 +1,12 @@
 // A connected account whose sign-in ended reads as expired, never as connected (issue #358): its login is
-// no longer offered (`account()` is undefined), so the gh source that pauses for a connected account runs
-// again, and the account's source says to connect again. A record kept before refresh tokens were stored
+// no longer offered (`account()` is undefined), and the account's source says to connect again: nothing
+// else reads GitHub in its place (issue #359). A record kept before refresh tokens were stored
 // (an expired token, no refresh token) reads as expired too, and is told once.
 import { describe, expect, it } from 'vitest';
 import type { ConnectedAccount } from '../../src/domain/ports.ts';
 import { createConnectedAccounts } from '../../src/connected-accounts/service.ts';
 import { hopperApps } from '../../src/connected-accounts/hopper-app.ts';
-import { createGhSource } from '../../src/sources/compose.ts';
+import { createAccountSource } from '../../src/sources/compose.ts';
 
 const NOW = Date.parse('2026-10-07T21:00:00Z');
 
@@ -34,7 +34,7 @@ const legacy: ConnectedAccount = {
 };
 
 describe('an expired connected account', () => {
-  it('reads as expired, offers no login, and lets the gh source run', async () => {
+  it('reads as expired, offers no login, and its source asks to connect again', async () => {
     const { s, told } = service(legacy);
     const [status] = await s.status();
     expect(status).toMatchObject({ provider: 'github', state: 'expired', account: 'octo-user', error: expect.stringMatching(/no refresh token/) });
@@ -42,9 +42,9 @@ describe('an expired connected account', () => {
     expect(s.ended('github')).toBe('GitHub\'s sign-in expired: Sources → Connect GitHub again');
     await expect(s.token('github')).rejects.toThrow('GitHub\'s sign-in expired: Sources → Connect GitHub again');
     expect(told).toHaveLength(1);
-    const gh = createGhSource({ name: 'github', clock: { now: () => new Date(NOW) }, knownKeys: () => new Set(), rerunnable: () => new Set(), env: () => undefined, accounts: s },
-      { enabled: 'auto', bin: 'gh', appKeyEnv: null } as never);
-    expect(gh.paused?.()).toBeUndefined();
+    const source = createAccountSource({ name: 'github-account', clock: { now: () => new Date(NOW) }, knownKeys: () => new Set(), rerunnable: () => new Set(), env: () => undefined, provider: 'github', accounts: s },
+      { enabled: true, authors: [] } as never);
+    expect(source.paused?.()).toBe('GitHub\'s sign-in expired: Sources → Connect GitHub again');
   });
 
   it('a refresh token GitHub refuses ends the sign-in, told once', async () => {

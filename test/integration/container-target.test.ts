@@ -10,6 +10,7 @@ import { createFakeGitHub } from '../../src/sources/index.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { startDockerProxy, type DockerProxy } from '../support/docker-proxy.ts';
 import { waitFor } from '../support/wait.ts';
+import { connectGitHub } from '../support/github-account.ts';
 
 const CONTAINER = `jh-it-target-${process.pid}`;
 const REPO = 'owner/hopper-sandbox';
@@ -44,12 +45,13 @@ async function boot(container: string): Promise<{ a: TestApp; gh: ReturnType<typ
         { name: 'local', plugin: 'local', options: { lanes: 2, executors: ['test'] } },
         { name: 'box', plugin: 'docker', options: { docker: container, lanes: 1 } },
       ],
-      jobSources: [{ name: 'github', plugin: 'github-gh', options: { enabled: true, pollSeconds: 3600, repos: [REPO], authors: ['owner'], executor: 'test', defaultCwd: '/tmp' } }],
+      jobSources: [{ name: 'github', plugin: 'github-account', options: { enabled: true, pollSeconds: 3600, authors: ['owner'], executor: 'test', defaultCwd: '/tmp' } }],
       routing: [{ name: 'commands to the box', match: { label: 'on-box' }, set: { machine: 'box', executor: 'command' } }],
     },
     seams: { github: gh },
     secrets: { HOPPER_DOCKER_HOST: proxy.host },
   });
+  connectGitHub(t, [REPO]);
   return { a: t, gh };
 }
 

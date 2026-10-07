@@ -2,15 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { GitHubApiError, createFakeGitHub } from '../../src/sources/github/index.ts';
 
 describe('in-memory fake GitHub', () => {
-  it('creates issues with their labels, and lists open labelled ones per repo and per owner', async () => {
+  it('creates issues with their labels, and lists open labelled ones per repo', async () => {
     const gh = createFakeGitHub();
     const a = gh.createIssue({ repo: 'h/a', title: 'A', body: 'do a', labels: ['hopper'] });
     gh.createIssue({ repo: 'h/a', title: 'B', labels: [] });
     gh.createIssue({ repo: 'x/b', title: 'C', labels: ['hopper'] });
     expect(a).toMatchObject({ repo: 'h/a', number: 1, url: 'https://github.com/h/a/issues/1', author: 'owner', state: 'open' });
     expect((await gh.listOpenIssues('h/a', 'hopper')).map((i) => i.title)).toEqual(['A']);
-    expect((await gh.searchOpenIssues({ owners: ['h'], label: 'hopper' })).map((i) => i.title)).toEqual(['A']);
-    expect(await gh.whoami()).toBe('owner');
   });
 
   it('comment ids are numeric and increasing; addComment is by anyone', async () => {
@@ -68,9 +66,10 @@ describe('in-memory fake GitHub', () => {
 
   it('failNext fails exactly the next call of that method', async () => {
     const gh = createFakeGitHub();
-    gh.failNext('whoami', new GitHubApiError('boom', false, 502));
-    await expect(gh.whoami()).rejects.toThrow('boom');
-    expect(await gh.whoami()).toBe('owner');
+    gh.createIssue({ repo: 'h/a', labels: ['hopper'] });
+    gh.failNext('listOpenIssues', new GitHubApiError('boom', false, 502));
+    await expect(gh.listOpenIssues('h/a', 'hopper')).rejects.toThrow('boom');
+    expect(await gh.listOpenIssues('h/a', 'hopper')).toHaveLength(1);
   });
 
   it('project items keep their order as index; a project can be set to fail', async () => {

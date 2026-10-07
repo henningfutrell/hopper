@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { Job, PluginsReport } from '../../src/domain/types.ts';
 import { createFakeGitHub, type FakeGitHub } from '../../src/sources/index.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
+import { connectGitHub } from '../support/github-account.ts';
 import { waitFor } from '../support/wait.ts';
 
 const REPO = 'owner/hopper-sandbox';
@@ -31,6 +32,7 @@ async function start(gh: FakeGitHub, plugins: Record<string, unknown> = {}, secr
   const db = tempDbPath();
   cleanup = db.cleanup;
   t = await startTestApp({ dbPath: db.dbPath, secrets, seams: { github: gh, grokbotBaseMs: 20 }, plugins: { jobSources: [], usageSources: [], notifiers: [], ...plugins } });
+  connectGitHub(t, [REPO]);
   return { a: t, token: await t.login() };
 }
 
@@ -56,7 +58,7 @@ async function edit(a: TestApp, token: string, e: Record<string, unknown>): Prom
 }
 
 const ghOptions = (extra: Record<string, unknown> = {}) => ({
-  enabled: true, pollSeconds: 3600, repos: [REPO], authors: ['owner'], executor: 'scripted', defaultCwd: '/tmp', ...extra,
+  enabled: true, pollSeconds: 3600, authors: ['owner'], executor: 'scripted', defaultCwd: '/tmp', ...extra,
 });
 const issueBody = (op: Record<string, unknown>) => `${JSON.stringify(op)}\n\nPlease do the thing.`;
 const jobFor = async (a: TestApp, url: string): Promise<Job | undefined> =>
@@ -66,7 +68,7 @@ const cwdOf = (j: Job) => (j.spec.payload as { defaultCwd?: string }).defaultCwd
 describe('every setting applies without a restart (issue #356)', () => {
   it('a job source switched on in the UI pulls the next job; an options change applies to the next one; no restart pending', async () => {
     const gh = createFakeGitHub();
-    const { a, token } = await start(gh, { jobSources: [{ name: 'github', plugin: 'github-gh', options: ghOptions({ enabled: false }) }] });
+    const { a, token } = await start(gh, { jobSources: [{ name: 'github', plugin: 'github-account', options: ghOptions({ enabled: false }) }] });
     const first = gh.createIssue({ repo: REPO, author: 'owner', body: issueBody({ op: 'echo' }), labels: ['hopper'] });
     await a.sync();
     expect(await jobFor(a, first.url)).toBeUndefined();
@@ -115,7 +117,7 @@ describe('every setting applies without a restart (issue #356)', () => {
   it('no running job is ended by a save: job sources, usage sources and notifiers changed around it', async () => {
     const gh = createFakeGitHub();
     const { a, token } = await start(gh, {
-      jobSources: [{ name: 'github', plugin: 'github-gh', options: ghOptions() }],
+      jobSources: [{ name: 'github', plugin: 'github-account', options: ghOptions() }],
       notifiers: [{ name: 'grok-bot', plugin: 'grokbot-routine' }],
       usageSources: [{ name: 'budget', plugin: 'command-usage', options: { command: [process.execPath, '-e', '0'] } }],
     });

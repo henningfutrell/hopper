@@ -7,9 +7,10 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { Job, PartAccount, UsageReport } from '../../src/domain/types.ts';
+import { CONNECTED_VIA, type Job, type PartAccount, type UsageReport } from '../../src/domain/types.ts';
 import { createFakeGitHub } from '../../src/sources/index.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
+import { connectGitHub } from '../support/github-account.ts';
 import { appSecrets, BOT, jobSourcesDoc } from '../support/github-app.ts';
 import { waitFor } from '../support/wait.ts';
 
@@ -108,20 +109,21 @@ describe('claude-plan through the composition root', () => {
 });
 
 describe('GitHub accounts of the job sources', () => {
-  it('the app source acts as its bot on its installation repos; the gh source paused by the app says so', async () => {
+  it('the app source acts as its bot on its installation repos; the connected account\'s source, not connected, says so', async () => {
     const gh = createFakeGitHub();
     const app = createFakeGitHub({ app: { botLogin: BOT, installedRepos: [REPO] } });
     const a = await boot({ plugins: { jobSources: jobSourcesDoc() }, secrets: appSecrets(), seams: { github: gh, githubApp: app } });
     await a.sync();
     const list = await accounts(a);
     expect(list).toContainEqual({ role: 'job-source', instance: 'github-app', service: 'github', identity: BOT, detail: { via: 'GitHub App', installedRepos: [REPO] } });
-    expect(list).toContainEqual({ role: 'job-source', instance: 'github', service: 'github', detail: { via: 'gh CLI' }, problem: 'GitHub App configured' });
+    expect(list).toContainEqual({ role: 'job-source', instance: 'github', service: 'github', detail: { via: CONNECTED_VIA }, problem: 'GitHub is not connected: Sources → Connect GitHub' });
   });
 
-  it('the gh source names the gh user once it has asked who that is', async () => {
+  it('the connected account\'s source names the account it acts as', async () => {
     const gh = createFakeGitHub({ login: 'owner' });
-    const a = await boot({ plugins: { jobSources: jobSourcesDoc({ github: { enabled: true } }) }, seams: { github: gh } });
+    const a = await boot({ plugins: { jobSources: jobSourcesDoc({ github: {} }) }, seams: { github: gh } });
+    connectGitHub(a, [REPO]);
     await a.sync();
-    expect(await accounts(a)).toContainEqual({ role: 'job-source', instance: 'github', service: 'github', identity: 'owner', detail: { via: 'gh CLI' } });
+    expect(await accounts(a)).toContainEqual({ role: 'job-source', instance: 'github', service: 'github', identity: 'owner', detail: { via: CONNECTED_VIA } });
   });
 });

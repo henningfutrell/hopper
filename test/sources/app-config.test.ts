@@ -67,10 +67,9 @@ describe('createGitHubAppApi: lazy, identity from the app getter', () => {
     expect((err as GitHubApiError).message).toMatch(/no app configured/);
   });
 
-  it('botLogin and whoami are the configured bot; appStatus reports slug and htmlUrl', async () => {
+  it('botLogin is the configured bot; appStatus reports slug and htmlUrl', async () => {
     const a = api(() => loadGitHubApp(complete));
     expect(await a.botLogin!()).toBe(BOT);
-    expect(await a.whoami()).toBe(BOT);
     expect(a.appStatus()).toEqual({ ok: true, slug: SLUG, botLogin: BOT, htmlUrl: `https://github.com/apps/${SLUG}` });
   });
 
@@ -82,11 +81,5 @@ describe('createGitHubAppApi: lazy, identity from the app getter', () => {
     expect(await a.botLogin!()).toBe(BOT);
     now = loadGitHubApp({ ...complete, slug: 'renamed' });
     expect(await a.botLogin!()).toBe('renamed[bot]');
-  });
-
-  it('searchOpenIssues is never used in app mode: permanent error', async () => {
-    const a = api(() => loadGitHubApp(complete));
-    await expect(a.searchOpenIssues({ owners: ['h'], label: 'hopper' }))
-      .rejects.toMatchObject({ permanent: true, message: expect.stringMatching(/not used in app mode/) });
   });
 });
