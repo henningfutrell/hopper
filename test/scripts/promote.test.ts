@@ -47,8 +47,11 @@ beforeEach(() => {
   mkdirSync(bin);
   execFileSync('/usr/bin/git', ['init', '-q', '--bare', '-b', 'dev', origin]);
   git(dir, 'clone', '-q', origin, work);
-  git(work, 'checkout', '-q', '-b', 'dev');
-  const first = onDev('first');
+  writeFileSync(join(work, 'first'), 'first');
+  git(work, 'add', '-A');
+  git(work, 'commit', '-q', '-m', 'first');
+  git(work, 'push', '-q', 'origin', 'HEAD:dev');
+  const first = git(work, 'rev-parse', 'HEAD');
   git(work, 'push', '-q', 'origin', `${first}:refs/heads/beta`, `${first}:refs/heads/stable`);
   imageRun('success');
 });

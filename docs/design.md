@@ -5319,14 +5319,15 @@ to `stable`'s head, though the `dev` install contains it (its What's new is then
 
 **Channels and promotion (issues #282, #423).** `dev` is the repository's default branch: every pull
 request, a job's included, merges there. `beta` is promoted from `dev`, and `stable` from `beta`, each by
-a maintainer, as a fast-forward to a commit the less steady branch already ran
-(`git push origin <commit>:beta`, then `git push origin <commit>:stable`; `docs/deploy.md` "Update channels
-and promotion" says when). A hopper on `dev` gets every change first; one on `stable` gets only what ran on
+a maintainer with `scripts/promote.sh beta|stable [commit]`: a fast-forward to a commit the less steady
+branch already has, whose image built there (`docs/deploy.md` "Update channels and promotion" says when). A
+hopper moved to a steadier channel can run an older build on a store a newer one migrated, so a store
+migration leaves a store the build before it still runs on (AGENTS.md "Persisted state is the user's"). A hopper on `dev` gets every change first; one on `stable` gets only what ran on
 `beta`, so a change that breaks is caught before it reaches every hopper. Each of the three branches has
 the image tag of its name; the Pages site is published from `stable`. Until issue #423 the channels were
 `dev`, `beta`, `main` and `release` (the newest `v<semver>` tag, of which none was published): store
-migration 26 sets a hopper on `main` or `release` to `stable`, and the `main` branch stays at the commit
-that brought it, so a hopper on an older version reaches it by following `main` once. **What's new** (issue #104): the bullets of `WHATS-NEW.md`
+migration 26 sets a hopper on `main` or `release` to `stable`, and `main` was moved once to the commit that
+brought it to `stable`, so a hopper on an older version reaches it by following `main` once. **What's new** (issue #104): the bullets of `WHATS-NEW.md`
 at the target that `WHATS-NEW.md` at the installed commit lacks, newest first (`whatsNew`; all of
 them when the installed commit has no such file) — plain words for people who use the hopper,
 written by hand in the change that makes them true (AGENTS.md "What's new"); `src/update/whats-new.ts`.

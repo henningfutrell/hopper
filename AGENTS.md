@@ -72,7 +72,11 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
 - **Persisted state is the user's.** A schema change ships a migration in
   `src/store/migrations.ts` (`SHARED`, in SQL both databases mean the same way); it never drops a
   queue. A change to persisted state inside a config record (its value's shape) migrates the
-  records too.
+  records too. A migration leaves a store the build before it still runs on: a hopper moved to a
+  steadier update channel runs that channel's older build on the migrated store (`docs/deploy.md`
+  "Update channels and promotion").
+- **Changes reach people dev → beta → stable.** Pull requests merge to `dev`, the default branch;
+  `beta` and `stable` move only by `scripts/promote.sh`, one step at a time.
 - **The UI is the daemon's one built part.** `ui/` → `npm run build:ui` → `ui/dist` (gitignored), served
   by the daemon. It imports nothing of `src/` at runtime; types only, from `src/domain/types.ts`.
   The GitHub Pages site is built too (`npm run build:site` → `site/dist`, gitignored), for Pages only,

@@ -308,18 +308,27 @@ first:
 | `beta` | changes that ran on `dev` | a maintainer promotes, once a `dev` hopper has run the change without trouble |
 | `stable` | changes that ran on `beta` | a maintainer promotes, once a `beta` hopper has run the change without trouble |
 
-A **promotion** is a fast-forward push of a commit the less stable branch already has, never a merge or a
-commit of its own:
+A **promotion** moves a commit up one step, and only through `scripts/promote.sh`, run by a maintainer in a
+clone whose `origin` is this repository:
 
 ```sh
-git fetch origin
-git push origin <commit>:beta     # a commit on dev
-git push origin <commit>:stable   # a commit on beta
+bash scripts/promote.sh beta [commit]     # a commit of dev (default: its head)
+bash scripts/promote.sh stable [commit]   # a commit of beta (default: its head)
 ```
 
-Git refuses a push that is not a fast-forward, so `beta` and `stable` only ever hold what ran one step
-below. A fix for something found on `beta` or `stable` lands on `dev` like any change and is promoted
-from there. There is no schedule and nothing promotes on its own: the maintainer decides.
+It refuses unless the commit is on the branch one step below (`stable` never takes a commit straight from
+`dev`), the move is a fast-forward of the steadier branch, and the commit's image built on the branch below
+(the `image` run, asked of `gh`). Then it pushes, as the maintainer, so the steadier branch's image build
+starts. `beta` and `stable` therefore only ever hold what ran one step below; nothing is merged or committed
+on them. A fix for something found on `beta` or `stable` lands on `dev` like any change and is promoted from
+there. There is no schedule and nothing promotes on its own: the maintainer decides.
+
+**A change with a store migration.** Moving a hopper to a steadier channel installs that channel's head,
+which can be older than the build that already migrated its database. So a migration must leave a store
+the build before it still runs on: add tables, columns and values; never drop, rename or reshape what the
+older build reads, until that older build is on no channel any more (it has been promoted past `stable`).
+A value an older build does not know is skipped by it, as an unknown update channel is. Promote such a
+change one step at a time, and check each step's hopper starts and runs a job before the next.
 
 What each push publishes: `.github/workflows/image.yml` builds the image tag of the branch's name
 (`stable` also moves `latest`); `.github/workflows/pages.yml` publishes the Pages site, its `install.sh` and
@@ -330,10 +339,9 @@ An install from `scripts/install.sh` or the curl install starts on the branch it
 (`HOPPER_SOURCE_REF`, default `stable`). An image is replaced by pulling the tag of its channel.
 
 **From before.** The channels were `dev`, `beta`, `main` and `release`. A hopper set to `main` or `release`
-is set to `stable` when it starts on a version with these channels (store migration 26). The `main` branch
-stays where the change to three channels landed, so a hopper still on an older version, which follows
-`main`, updates once to that version and from then on follows `stable`. Nothing is promoted to `main`
-after that. No release tag was ever published, so a hopper on `release` had nothing to update to: choose
+is set to `stable` when it starts on a version with these channels (store migration 26). Once that version
+reached `stable`, `main` was moved to it one last time, so a hopper still on an older version, which follows
+`main`, updates once to it and from then on follows `stable`. Nothing is promoted to `main` after that. No release tag was ever published, so a hopper on `release` had nothing to update to: choose
 a channel in its Settings, or install again.
 
 ## Rename from job-hopper
