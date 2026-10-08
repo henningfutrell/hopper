@@ -43,9 +43,15 @@ async function render(mod: string, name: string, o: { history?: unknown; update?
   });
 }
 
+const button = (scope: ParentNode, name: string) => [...scope.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent?.trim() === name);
+const pick = (tool: string) => document.querySelector<HTMLButtonElement>(`[data-slot="container-tool"] button[data-tool="${tool}"]`);
+
 afterEach(async () => {
   await act(async () => root?.unmount());
   root = undefined;
+  localStorage.clear();
+  const { reloadContainerTool } = (await import('../../ui/src/hooks/use-container-tool.ts')) as { reloadContainerTool(): void };
+  reloadContainerTool();
   window.location.hash = '';
   vi.unstubAllGlobals();
 });
@@ -192,20 +198,62 @@ describe('a container install is updated by its user (issue #494)', () => {
     const text = block.textContent ?? '';
     expect(text).toContain('HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:dev');
     expect(text).toContain('podman compose pull hopper && podman compose up -d --force-recreate --no-deps hopper');
-    expect(text).toContain('docker compose pull hopper && docker compose up -d --force-recreate --no-deps hopper');
     expect(text).toContain('podman image prune -f --filter label=org.opencontainers.image.title=hopper');
     expect(text).toContain('this container runs the stable image; the selected channel is dev: switch the image tag');
     expect(text).toContain('2 running jobs would be lost');
-    expect([...block.querySelectorAll('button')].filter((b) => b.textContent === 'Copy').length).toBeGreaterThanOrEqual(3);
+    expect([...block.querySelectorAll('button')].filter((b) => b.textContent === 'Copy').length).toBe(3);
   });
 
-  it('the update notice gives the same commands and the restart-blocker count', async () => {
+  // Issue #521: one container tool's commands at a time, the one this browser chose last (Podman until one is chosen).
+  it('Version shows one container tool\'s commands, and switching shows the other\'s', async () => {
+    window.location.hash = '#settings/version';
+    await render('../../ui/src/views/settings.tsx', 'Settings', { update: image });
+    const block = () => document.querySelector('[data-slot="image-update"]')!;
+    expect(block().textContent).not.toContain('docker compose');
+    expect(pick('Podman')?.getAttribute('aria-pressed')).toBe('true');
+    await act(async () => pick('Docker')!.click());
+    expect(block().textContent).toContain('docker compose pull hopper && docker compose up -d --force-recreate --no-deps hopper');
+    expect(block().textContent).toContain('docker image prune -f --filter label=org.opencontainers.image.title=hopper');
+    expect(block().textContent).not.toContain('podman compose');
+    expect(localStorage.getItem('jh_container_tool')).toBe('Docker');
+  });
+
+  // Issue #521: the notice is one line until asked; the commands and the restart-blocker count wait behind How to update.
+  it('the update notice is one line: no commands, no restart-blocker note, until How to update', async () => {
     await render('../../ui/src/app/update.tsx', 'UpdateNotice', { update: image });
     const notice = document.querySelector('[data-update-notice]')!;
+    expect(notice.querySelector('[data-slot="image-update"]')).toBeNull();
+    expect(notice.textContent).not.toContain('compose pull');
+    expect(notice.textContent).not.toContain('running jobs would be lost');
+    expect([...notice.querySelectorAll('button')].map((b) => b.textContent)).not.toContain('Update now');
+    await act(async () => button(notice, 'How to update')!.click());
     expect(notice.textContent).toContain('podman compose pull hopper && podman compose up -d --force-recreate --no-deps hopper');
+    expect(notice.textContent).not.toContain('docker compose');
     expect(notice.textContent).toContain('HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:dev');
     expect(notice.textContent).toContain('2 running jobs would be lost');
-    expect([...notice.querySelectorAll('button')].map((b) => b.textContent)).not.toContain('Update now');
+  });
+
+  it('the notice remembers the container tool chosen in this browser', async () => {
+    localStorage.setItem('jh_container_tool', 'Docker');
+    const tool = '../../ui/src/hooks/use-container-tool.ts';
+    const { reloadContainerTool } = (await import(tool)) as { reloadContainerTool(): void };
+    reloadContainerTool();
+    await render('../../ui/src/app/update.tsx', 'UpdateNotice', { update: image });
+    const notice = document.querySelector('[data-update-notice]')!;
+    await act(async () => button(notice, 'How to update')!.click());
+    expect(notice.textContent).toContain('docker compose pull hopper');
+    expect(notice.textContent).not.toContain('podman compose');
+  });
+
+  it('What\'s new and How to update open one at a time', async () => {
+    await render('../../ui/src/app/update.tsx', 'UpdateNotice', { update: { ...image, whatsNew: ['You can now do a new thing.'] } });
+    const notice = document.querySelector('[data-update-notice]')!;
+    expect(notice.textContent).not.toContain('You can now do a new thing.');
+    await act(async () => button(notice, 'How to update')!.click());
+    expect(notice.querySelector('[data-slot="image-update"]')).not.toBeNull();
+    await act(async () => button(notice, "What's new")!.click());
+    expect(notice.textContent).toContain('You can now do a new thing.');
+    expect(notice.querySelector('[data-slot="image-update"]')).toBeNull();
   });
 });
 
