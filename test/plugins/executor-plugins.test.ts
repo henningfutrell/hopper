@@ -94,7 +94,7 @@ describe('herdr-claude', () => {
   it('options default to what the env defaulted to before plugins', () => {
     expect(options(herdrClaude)).toEqual({
       bin: 'herdr', claudeBin: 'claude', session: 'hopper', yolo: true, args: [],
-      cwd: '~/hopper-jobs', trustWorkdir: true, pollMs: 1000, idleNudgeMs: 20000,
+      cwd: '~/hopper-jobs', trustWorkdir: true, jobWorktrees: true, pollMs: 1000, idleNudgeMs: 20000,
     });
   });
 
@@ -150,6 +150,24 @@ describe('herdr-claude', () => {
       progress() {}, saveState() {}, workTree() {},
     });
     expect(herdr.agentStarts.map((s) => s.args)).toEqual([args]);
+  });
+
+  // Issue #379: each job its own git worktree of a checkout, on by default; off, jobs share the work tree.
+  it.each([
+    [{}, true],
+    [{ jobWorktrees: false }, false],
+  ])('makes each job its own worktree of a checkout work tree, on by default (%j)', async (raw, made) => {
+    const cwd = temp();
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [{ output: ['● ok', 'HOPPER_DONE'] }], checkouts: [cwd] });
+    const seamed = herdrClaudePlugin(herdr);
+    const ex = await seamed.create(ctx(temp()), options(seamed, { ...raw, cwd, pollMs: 1 }));
+    const trees: string[] = [];
+    await ex.run({
+      job: { id: 'abcdef12-0000', spec: { executor: 'herdr-claude', payload: { prompt: 'go' } }, priority: 50, status: 'running', approved: false, createdAt: '', updatedAt: '', attempts: 1 },
+      laneId: 'local/lane-1', machine: { id: 'local', label: 'l', maxLanes: 1, online: true, executors: ['herdr-claude'] }, signal: new AbortController().signal,
+      progress() {}, saveState() {}, workTree(path) { trees.push(path); },
+    });
+    expect(trees.at(-1)).toBe(made ? `${cwd}/.hopper-jobs/abcdef12-0000` : cwd);
   });
 });
 
