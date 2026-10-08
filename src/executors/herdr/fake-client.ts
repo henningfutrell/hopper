@@ -4,6 +4,7 @@
 
 import type { Survey } from '../../domain/ports.ts';
 import { HerdrError } from './client.ts';
+import { shellSays } from './fake-shell.ts';
 import { CTRL_END } from './screen.ts';
 import type { AgentInfo, AgentStatus, HerdrClient } from './client.ts';
 
@@ -331,40 +332,9 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
       record('runInPane', paneId, command);
       const p = livePane(paneId);
       if (droppedRuns-- > 0) return;
-      // The job's scope (issue #410, job-scope.ts): with systemd the shell is replaced by one in the scope and
-      // prints nothing; without, it says none. Asked where it runs, it says whether that is the scope.
-      if (command.includes('exec systemd-run --user --scope')) {
-        if (o.scopes) { p.lines.push(`$ ${command}`, '$ '); p.scoped = true; } else p.lines.push(`$ ${command}`, 'hopper-scope-none', '$ ');
-        return;
-      }
-      if (command.startsWith('case "$(cat /proc/self/cgroup')) {
-        p.lines.push(`$ ${command}`, `hopper-scope-${p.scoped ? 'entered' : 'outside'}`, '$ ');
-        return;
-      }
-      // Sharing dependencies (issue #410, shared-deps.ts): its outcome.
-      if (command.startsWith("sh -c '") && command.includes('.hopper-scratch/deps')) {
-        p.lines.push(`$ ${command}`, `hopper-deps-${o.deps ?? 'none'}`, '$ ');
-        return;
-      }
-      // A job worktree command (issue #379): `cd 'work tree' && if …`, its outcome two printf words.
-      const worktree = /^cd '([^']*)' && if .*printf 'hopper-job-%s-%s\\n' worktree/.exec(command);
-      if (worktree) {
-        const outcome = !(o.repositories ?? []).includes(worktree[1]!) ? 'none' : o.worktreeFails ? 'unmade' : 'made';
-        p.lines.push(`$ ${command}`, ...(outcome === 'unmade' ? ['fatal: could not create work tree dir: Permission denied'] : []), `hopper-job-worktree-${outcome}`, '$ ');
-        return;
-      }
-      // `[mkdir -p 'dir' && ]cd 'dir' && … && printf 'a%s\n' b || printf 'a%s\n' c`: c when the shell
-      // cannot enter dir (and did not make it), else b.
-      const entered = /^(mkdir -p '[^']*' && )?cd '([^']*)' && .*printf '([^']*)%s\\n' (\S+) \|\| printf '[^']*%s\\n' (\S+)$/.exec(command);
-      if (entered) {
-        const [, made, dir, prefix, ok, bad] = entered;
-        const unusable = !made && (o.unusableDirs ?? []).includes(dir!);
-        p.lines.push(`$ ${command}`, ...(unusable ? [`cd: no such file or directory: ${dir}`, `${prefix}${bad}`] : [`${prefix}${ok}`]), '$ ');
-        return;
-      }
-      // What a trailing `printf 'a%s\n' b` prints: the shell ran the command.
-      const printed = /printf '([^']*)%s\\n' (\S+)$/.exec(command);
-      p.lines.push(`$ ${command}`, ...(printed ? [`${printed[1]}${printed[2]}`] : []), '$ ');
+      const said = shellSays(command, o, p.scoped === true);
+      if (said.scoped) p.scoped = true;
+      p.lines.push(`$ ${command}`, ...said.lines, '$ ');
     },
     async waitOutput(paneId, text, timeoutMs) {
       record('waitOutput', paneId, text, timeoutMs);
@@ -380,8 +350,7 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
     async survey(roots) {
       record('survey', roots);
       if (o.machineUnreachable) throw new Error('the machine cannot be reached');
-      const s = o.survey ?? { scopes: [], processes: [], scratch: [] };
-      return { scopes: [...s.scopes], processes: [...s.processes], scratch: s.scratch.filter((d) => roots.some((r) => d.path.startsWith(`${r}/`))) };
+      return o.survey ?? { scopes: [], processes: [], scratch: [] };
     },
     async closePane(paneId) {
       record('closePane', paneId);

@@ -289,8 +289,7 @@ export const EVENT_TYPES = [
   'question.asked', 'question.escalated', 'question.escalated_to_human', 'question.answered', 'question.closed', 'question.dismissed', 'question.expired', 'question.lapsed',
   'update.available', 'update.started', 'update.applied', 'update.failed', 'plugin.installed', 'plugin.removed',
   'job.accepted', 'job.rejected', 'queue.ordered', 'queue.gate_changed', 'job.claimed_by_operator',
-  'job.rerun', 'job.dismissed', 'job.unassigned', 'job.reassigned', 'job.work_kept', 'job.work_removed',
-  'source.stalled', 'connected_account.expired',
+  'job.rerun', 'job.dismissed', 'job.unassigned', 'job.reassigned', 'job.work_kept', 'job.work_removed', 'source.stalled', 'connected_account.expired',
 ] as const;
 export type EventType = typeof EVENT_TYPES[number];
 

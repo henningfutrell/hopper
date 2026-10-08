@@ -51,7 +51,7 @@ export interface Sweep {
   run(all?: boolean): Promise<void>;
 }
 
-export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'machines' | 'clock' | 'stopping'>, log: (line: string) => void = (l) => console.info(l)): Sweep {
+export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'machines' | 'clock' | 'stopping'>, log: (line: string) => void = (l) => console.warn(l)): Sweep {
   const last = new Map<string, number>();
   let busy = false;
 
