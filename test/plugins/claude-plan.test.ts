@@ -102,7 +102,7 @@ describe('claude-plan plugin', () => {
 
   /** This machine, the hopper's own: in the machine list like any other, named `local` (issue #174). */
   const LOCAL: MachineSnapshot = { id: 'local', label: 'local', maxLanes: 4, online: true, executors: ['herdr-claude'] };
-  const ctx = () => ({ clock: { now: () => now }, logger: { info() {}, warn() {} }, dataDir: scratch, userEnv: {}, secretName: (n: string) => n, scratchDir: scratch, instanceName: 'claude', env: () => undefined, machine: async (id: string) => (id === 'local' ? LOCAL : undefined) });
+  const ctx = () => ({ clock: { now: () => now }, logger: { info() {}, warn() {} }, dataDir: scratch, userEnv: {}, secretName: (n: string) => n, scratchDir: scratch, instanceName: 'claude', env: () => undefined, machine: async (id: string) => (id === 'local' ? LOCAL : undefined), client: () => undefined });
   async function create(raw: Record<string, unknown> = {}): Promise<UsageSource> {
     const p = parseOptions(claudePlan, { bin: BIN, machine: 'local', ...raw });
     if (!p.ok) throw new Error(p.error);
@@ -229,7 +229,7 @@ describe('claude-plan on an attached machine (issue #139)', () => {
     const ctx = {
       clock: { now: () => now }, logger: { info() {}, warn() {} }, dataDir: scratch, userEnv: {}, secretName: (n: string) => n, scratchDir: scratch, instanceName: 'laptop-claude',
       env: (n: string) => (n === 'HOPPER_SSH_KEY_FILE' ? auth.identityFile : undefined),
-      machine: async (id: string) => machines.find((m) => m.id === id),
+      machine: async (id: string) => machines.find((m) => m.id === id), client: () => undefined,
     };
     const p = parseOptions(claudePlan, { bin: BIN, machine: 'laptop', sshBin: FAKE_SSH });
     if (!p.ok) throw new Error(p.error);
@@ -269,7 +269,7 @@ describe('claude-plan on an attached machine (issue #139)', () => {
     expect(readings[0]).toMatchObject({ machineId: 'laptop', window: 'session' });
   });
 
-  it('a machine not configured, offline, or a client target: no readings, and the reason', async () => {
+  it('a machine not configured or offline: no readings, and the reason', async () => {
     const gone = await create([]);
     await waitFor(() => (gone.state!().problem !== 'not read yet' ? true : undefined), { what: 'the first read' });
     expect(await gone.poll()).toEqual([]);
@@ -278,9 +278,5 @@ describe('claude-plan on an attached machine (issue #139)', () => {
     const offline = await create([{ ...LAPTOP, online: false }]);
     await waitFor(() => (offline.state!().problem !== 'not read yet' ? true : undefined), { what: 'the first read' });
     expect(offline.state!().problem).toBe('machine laptop is offline');
-
-    const client = await create([{ id: 'laptop', label: 'laptop', maxLanes: 1, online: true, executors: [], client: {} }]);
-    await waitFor(() => (client.state!().problem !== 'not read yet' ? true : undefined), { what: 'the first read' });
-    expect(client.state!().problem).toMatch(/client target/);
   });
 });

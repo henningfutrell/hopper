@@ -296,6 +296,19 @@ line carries a one-time join code: it works once, for 10 minutes.
 
   Name `usr\bin\bash.exe`, not Git's `bin\bash.exe`: that one is a launcher that starts a second
   bash, and herdr then sees the pane as busy.
+
+  With no systemd there, start that herdr session (`herdr --session hopper-client server`) and the
+  client yourself, from your home directory, never from the client's own directory: Windows cannot
+  replace a directory a process is in, and that breaks a release load. Start the client again when it
+  exits 75, as it does after each new client release:
+
+  ```powershell
+  Set-Location $HOME
+  do { node "$HOME\.local\lib\hopper-client\main.ts"; $code = $LASTEXITCODE } while ($code -eq 75)
+  ```
+
+  For the machine's Claude usage, `claude` must be on the client's PATH as `claude.exe` (the native
+  installer's): the client runs it with no shell.
 - **A sandbox box** (Podman or Docker): run the line on the computer the hopper runs on. It starts the
   container `hopper-sandbox-claude` from `ghcr.io/henningfutrell/hopper:box-claude` on the hopper's network,
   locked down — every capability dropped, no new privileges, a read-only root, its own home volume,
