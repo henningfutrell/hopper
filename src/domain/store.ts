@@ -82,7 +82,7 @@ export interface WebhookRepository {
 
 export interface QuestionRepository {
   /** `tier`: the stage it starts at (the first escalation level's instance name, or `human`). */
-  create(input: { jobId: JobId; text: string; recentOutput: string; detectedBy: string; tier: string }): Question;
+  create(input: { jobId: JobId; text: string; recentOutput: string; detectedBy: string; tier: string; lapsesAt?: string }): Question;
   get(id: string): Question | undefined;
   /** Newest first. */
   list(filter?: { status?: QuestionStatus[]; jobId?: JobId; limit?: number }): Question[];

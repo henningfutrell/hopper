@@ -360,6 +360,7 @@ Version 2 (`docs/schemas/question.escalated.v2.json`). A question entered a stag
 | `answerUrl` | string | no |
 | `notifyCount` | integer | no |
 | `renotify` | boolean | no |
+| `lapsesAt` | string | no |
 
 ```json
 {
@@ -388,6 +389,7 @@ Version 1 (`docs/schemas/question.escalated_to_human.v1.json`). A question reach
 | `goal` | string | no |
 | `answerUrl` | string | yes |
 | `notifyCount` | integer | yes |
+| `lapsesAt` | string | no |
 
 ```json
 {
@@ -463,6 +465,22 @@ Version 1 (`docs/schemas/question.expired.v1.json`). The human stage timed out a
 {
   "questionId": "q1",
   "after_ms": 1000
+}
+```
+
+## `question.lapsed`
+
+Version 1 (`docs/schemas/question.lapsed.v1.json`). Nobody answered a dialog in time: the agent denied it by itself when its countdown ran out (Claude Code's auto-deny), and the job went on (`job.reattached`, reason `the dialog lapsed`). `lapsesAt` is when the countdown ended. Not an answer: nothing is typed, and no stage answered; any escalation level call in flight is aborted.
+
+| field | type | required |
+|---|---|---|
+| `questionId` | string | yes |
+| `lapsesAt` | string | yes |
+
+```json
+{
+  "questionId": "q1",
+  "lapsesAt": "2026-10-07T21:43:59.000Z"
 }
 ```
 

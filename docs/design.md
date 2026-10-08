@@ -515,7 +515,9 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   the job's **scratch dir**: Claude's scratchpad and every tool's temp files land inside the
   tree, in a directory that is the job's alone (issue #401), so the reap can remove it. The payload
   cannot move them. (cursor-agent and the other print agents keep the shared `<cwd>/.hopper-scratch`;
-  they have no reap.)
+  they have no reap.) It also gets `CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT=1` (issue #376): Claude
+  Code would deny a dangerous-rm dialog by itself after two minutes, before the question can climb to
+  the owner. A payload cannot turn the countdown back on.
 - **The scratch dirs ignore themselves.** Before `agent start`, the pane's own shell runs
   `cd <cwd> && mkdir -p <scratch> && printf '*\n' > <cwd>/.hopper-scratch/.gitignore && printf 'hopper-scratch-%s\n' ready || printf 'hopper-scratch-%s\n' unusable`
   (`pane run`) — in the pane, so on whichever machine the work tree is. A fresh shell drops what
@@ -852,6 +854,16 @@ trail, answer and status; nothing prunes it. Settings' Question history (issue #
 line each — time, outcome, first line of the question — that opens to the question, the answer
 and who gave it, and the job. The history is local to the hopper's SQLite file: no route sends it
 anywhere, and the hopper writes nothing of a question to GitHub (it writes only labels).
+
+**Lapsed** (issue #376). Claude Code may deny a dialog by itself when its countdown runs out ("Claude
+Code will automatically deny this request in 1:59, …"; `autoDenyMs` in `screen.ts`). The monitor reads
+the countdown when the job parks: the question gets `lapsesAt`, the pane state too, the human stage's
+`question.escalated`/`question.escalated_to_human` carry it, and the UI shows it on the open question.
+When the job's work runs again (below) with nothing typed, at or after `lapsesAt` (less 5 s: the
+countdown is read in whole seconds, up to a poll late), nobody answered: one tx, question `lapsed`,
+`question.lapsed { questionId, lapsesAt }`, no `question.answered`, any stage aborted, and the job
+reattached as below with `reason: "the dialog lapsed"`. A key pressed in the pane before the countdown
+ends is still the owner's answer.
 
 **Answered in the pane.** The owner may type the answer straight into a parked pane instead of
 the UI. On every engine tick, `src/engine/pane-answers.ts` asks the executor of each

@@ -21,7 +21,7 @@ function ask(c: EngineContext, job: Job, lane: Lane | undefined, laneId: LaneId,
   if (store.questions.list({ jobId: job.id }).length >= c.maxQuestions) return fail(c, job, laneId, 'too many questions', at);
   const q = store.questions.create({
     jobId: job.id, text: question.text, recentOutput: question.recentOutput, detectedBy: question.detectedBy,
-    tier: c.questions.firstStage(),
+    tier: c.questions.firstStage(), ...(question.lapsesAt ? { lapsesAt: question.lapsesAt } : {}),
   });
   store.jobs.update(job.id, {
     status: 'waiting_answer', questionId: q.id, laneId: undefined, pendingAnswer: undefined,

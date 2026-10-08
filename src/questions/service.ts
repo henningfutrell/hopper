@@ -48,7 +48,7 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
   let stopped = false;
   const iso = () => clock.now().toISOString();
 
-  function emit(q: Question, type: 'question.escalated' | 'question.escalated_to_human' | 'question.answered' | 'question.closed' | 'question.dismissed' | 'question.expired', data: Record<string, unknown>) {
+  function emit(q: Question, type: 'question.escalated' | 'question.escalated_to_human' | 'question.answered' | 'question.closed' | 'question.dismissed' | 'question.expired' | 'question.lapsed', data: Record<string, unknown>) {
     store.events.append({ type, jobId: q.jobId, questionId: q.id, data: { questionId: q.id, ...data } });
   }
 
@@ -64,7 +64,7 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
   }
 
   function escalationData(q: Question, target: string, reason: string): Record<string, unknown> {
-    const base = { target, reason, text: q.text, jobId: q.jobId };
+    const base = { target, reason, text: q.text, jobId: q.jobId, ...(q.lapsesAt ? { lapsesAt: q.lapsesAt } : {}) };
     if (target !== HUMAN) return base;
     return { ...base, goal: store.jobs.get(q.jobId)?.spec.goal, answerUrl: o.answerUrl(q.id), notifyCount: q.notifyCount };
   }
@@ -312,6 +312,18 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
       return store.tx(() => {
         const q = store.questions.get(id);
         return q?.status === 'open' ? settle(q, answer, 'answered', 'pane') : undefined;
+      });
+    },
+
+    lapsedInPane(id) {
+      return store.tx(() => {
+        const q = store.questions.get(id);
+        if (q?.status !== 'open' || !q.lapsesAt) return undefined;
+        abortStage(id, 'superseded');
+        clearTimers(id);
+        const updated = store.questions.update(id, { status: 'lapsed' });
+        emit(updated, 'question.lapsed', { lapsesAt: q.lapsesAt });
+        return updated;
       });
     },
 

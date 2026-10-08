@@ -50,11 +50,14 @@ export const EVENT_SCHEMAS = {
     questionId: z.string(), target: stage, reason: z.string(), text: z.string(), jobId: z.string(),
     goal: z.string().optional(), answerUrl: z.string().optional(),
     notifyCount: z.number().int().optional(), renotify: z.boolean().optional(),
+    // Additive (issue #376): the question is a dialog the agent denies by itself at this time.
+    lapsesAt: z.string().optional(),
   }),
   // Only the human stage, once per question reaching it; never a level hop or a re-notification.
   'question.escalated_to_human': strict({
     questionId: z.string(), reason: z.string(), text: z.string(), jobId: z.string(),
     goal: z.string().optional(), answerUrl: z.string(), notifyCount: z.number().int(),
+    lapsesAt: z.string().optional(),
   }),
   // v2: `by` is whose answer was typed: the escalation level instance that answered, or `human`.
   // `via: "pane"`: the owner typed it into the job's pane, not the UI (additive, still v2).
@@ -64,6 +67,8 @@ export const EVENT_SCHEMAS = {
   // Nothing is typed into the job; a job still waiting on it is cancelled (job.cancelled, reason `question dismissed`).
   'question.dismissed': strict({ questionId: z.string() }),
   'question.expired': strict({ questionId: z.string(), after_ms: z.number() }),
+  // Issue #376: nobody answered; the agent denied its dialog by itself when the countdown ran out.
+  'question.lapsed': strict({ questionId: z.string(), lapsesAt: z.string() }),
   // Self-update (issue #44): commits are full shas; `ref` is the branch or the release tag.
   'update.available': strict({ from: z.string(), to: z.string(), ref: z.string(), changes: z.number().int() }),
   'update.started': strict({ from: z.string(), to: z.string(), ref: z.string() }),
