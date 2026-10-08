@@ -216,7 +216,7 @@ Version 1 (`docs/schemas/job.requeued.v1.json`). A job went back to the queue (r
 
 ## `job.reattached`
 
-Version 1 (`docs/schemas/job.reattached.v1.json`). The executor watches a job's live external work again (the herdr pane and Claude) without sending anything. `reason` `daemon restart`: restart recovery kept a running job running on its lane. `reason` `answered in the pane`: the owner typed the answer into a parked job's pane; the job runs again on a lane.
+Version 1 (`docs/schemas/job.reattached.v1.json`). The executor watches a job's live external work again (the herdr pane and Claude) without sending anything. `reason` `daemon restart`: restart recovery kept a running job running on its lane. `reason` `answered in the pane`: the owner typed the answer into a waiting job's pane; the job runs again on a lane.
 
 | field | type | required |
 |---|---|---|
