@@ -681,16 +681,16 @@ export interface Connection {
 export interface ConnectedAccounts {
   /** Every provider's, in CONNECTED_ACCOUNT_PROVIDERS order; GitHub's with where the app is installed. */
   status(): Promise<ConnectedAccountStatus[]>;
-  /** Keep the connection a GitHub sign-in made (it replaces the account there was). */
-  adopt(connection: Connection): void;
+  /** Keep the connection a GitHub sign-in made (it replaces the account there was, whose grant is revoked at GitHub first; issue #514). */
+  adopt(connection: Connection): Promise<void>;
   /** Start the provider's device flow and answer once it shows the device code; a waiting one answers its own code. */
   connect(provider: ConnectedAccountProvider): Promise<ConnectedAccountStatus>;
   /** End a waiting device code. */
   cancel(provider: ConnectedAccountProvider): ConnectedAccountStatus;
   /** Whether the account's sign-in ended (issue #513): GitHub refused it, or it expired with nothing to renew it. Not while it cannot be read. */
   expired(provider: ConnectedAccountProvider): boolean;
-  /** Forget the account and its token; its job repositories stay chosen. */
-  disconnect(provider: ConnectedAccountProvider): ConnectedAccountStatus;
+  /** Revoke the account's grant at GitHub (best effort; issue #514), then forget the account and its token; its job repositories stay chosen. */
+  disconnect(provider: ConnectedAccountProvider): Promise<ConnectedAccountStatus>;
   /** Choose the repositories the account's jobs may use (issue #321), the whole list; the source syncs now. */
   choose(provider: ConnectedAccountProvider, repositories: readonly string[]): Promise<ConnectedAccountStatus>;
 }
@@ -699,8 +699,10 @@ export interface ConnectedAccounts {
 export interface ConnectedAccountTokens {
   /** The connected account's login, or undefined while none is connected or its sign-in expired. */
   account(provider: ConnectedAccountProvider): string | undefined;
-  /** What to do now that the account's sign-in expired (issue #358); undefined while it has not, or none is connected. */
+  /** What to do now that the account's sign-in expired (issue #358), or its tokens cannot be opened (issue #514); undefined while it lives, or none is connected. */
   ended(provider: ConnectedAccountProvider): string | undefined;
+  /** Whether the account's sign-in ended (issues #513, #514): GitHub refused it, or it expired with nothing to renew it. Not while it cannot be read. */
+  expired(provider: ConnectedAccountProvider): boolean;
   /** Its access token now, renewed first when it is near its expiry (issue #358); throws while none is connected, or once its sign-in expired. */
   token(provider: ConnectedAccountProvider): Promise<string>;
   /** A token GitHub refused (a 401): renewed, unless it was already; throws once the sign-in expired. */

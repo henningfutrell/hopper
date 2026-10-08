@@ -15,7 +15,7 @@ export function accountError(err: unknown, what: string): GitHubApiError {
   const e = err as { status?: unknown; message?: unknown };
   const status = typeof e.status === 'number' ? e.status : undefined;
   const message = typeof e.message === 'string' ? e.message : String(err);
-  if (status === 401) return new GitHubApiError(`${what}: GitHub refused the connected account's token (401: ${message}); connect GitHub again`, true, 401);
+  if (status === 401) return new GitHubApiError(`${what}: GitHub refused the connected account's token (401: ${message})`, true, 401);
   return new GitHubApiError(`${what}: ${message}`, isPermanent(status, message), status);
 }
 

@@ -50,12 +50,13 @@ function store(url: string, clock: ReturnType<typeof fixedClock>): UserStore {
 }
 
 /** A device flow the person approves at once: GitHub mints a new grant for `login`, as the real one would. */
-const approvedAs = (github: FakeForge, login: string): DeviceFlow => ({
+const approvedAs = (github: FakeForge, login: string, clock: ReturnType<typeof fixedClock>): DeviceFlow => ({
   start: async () => ({
     userCode: 'WDJB-MJHT', verificationUri: `${github.url}/login/device`, expiresAt: new Date(Date.now() + 900_000),
     grant: async (): Promise<Grant> => {
       const pair = github.mint(login);
-      return { ...pair, grantedBy: 'device', expiresAt: new Date(Date.now() + EIGHT_HOURS_S * 1000), refreshTokenExpiresAt: new Date(Date.now() + 180 * 24 * H) };
+      const now = clock.now().getTime();
+      return { ...pair, grantedBy: 'device', expiresAt: new Date(now + EIGHT_HOURS_S * 1000), refreshTokenExpiresAt: new Date(now + 180 * 24 * H) };
     },
   }),
 });
@@ -72,7 +73,7 @@ function hopper(github: FakeForge, s: UserStore, clock: ReturnType<typeof fixedC
     installations: async () => [],
     refresh: (p, refresh, grantedBy) => renewal(apps[p], () => undefined)(refresh, grantedBy),
     revoke: (p, credentials) => revocation(apps[p])(credentials),
-    flows: { github: approvedAs(github, 'octo-user') },
+    flows: { github: approvedAs(github, 'octo-user', clock) },
     onExpired: (_p, account, reason) => { told.push(`${account}: ${reason}`); },
     ...o,
   });

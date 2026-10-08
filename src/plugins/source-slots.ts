@@ -13,7 +13,7 @@ import type { JobSourceContext, JobSourceInstance, RoleInstance } from './sdk.ts
 export const NO_SOURCE_CONTEXT: JobSourceContext = {
   knownKeys: () => new Set(), rerunnable: () => new Set(), rejections: () => new Map(),
   intake: () => undefined,
-  connectedAccounts: { account: () => undefined, ended: () => undefined, token: () => Promise.reject(new Error('no connected accounts')), renew: () => Promise.reject(new Error('no connected accounts')), endpoints: () => ({ url: '', apiUrl: '' }), jobRepositories: () => [] },
+  connectedAccounts: { account: () => undefined, ended: () => undefined, expired: () => false, token: () => Promise.reject(new Error('no connected accounts')), renew: () => Promise.reject(new Error('no connected accounts')), endpoints: () => ({ url: '', apiUrl: '' }), jobRepositories: () => [] },
 };
 
 /** One instance of a list role: running (`instance`, `plugin`), or not (`reason`). */
