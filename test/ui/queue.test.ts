@@ -27,12 +27,20 @@ describe('the orders a move posts', () => {
   it('accepting a pre-sorted job appends it to the user order', () => {
     expect(accepting(['a', 'b'], 'n')).toEqual(['a', 'b', 'n']);
   });
+  const abc = [job('a'), job('b'), job('c')];
   it('moving a job up, down, to the top; at an edge nothing moves', () => {
-    expect(moved(['a', 'b', 'c'], 'b', -1)).toEqual(['b', 'a', 'c']);
-    expect(moved(['a', 'b', 'c'], 'b', 1)).toEqual(['a', 'c', 'b']);
-    expect(moved(['a', 'b', 'c'], 'c', 'top')).toEqual(['c', 'a', 'b']);
-    expect(moved(['a', 'b', 'c'], 'a', -1)).toEqual(['a', 'b', 'c']);
-    expect(moved(['a', 'b', 'c'], 'c', 1)).toEqual(['a', 'b', 'c']);
+    expect(moved(abc, 'b', -1)).toEqual(['b', 'a', 'c']);
+    expect(moved(abc, 'b', 1)).toEqual(['a', 'c', 'b']);
+    expect(moved(abc, 'c', 'top')).toEqual(['c', 'a', 'b']);
+    expect(moved(abc, 'a', -1)).toEqual(['a', 'b', 'c']);
+    expect(moved(abc, 'c', 1)).toEqual(['a', 'b', 'c']);
+  });
+  it('a job moves among jobs of its own priority only (issue #461): the top is the top of its priority', () => {
+    const mixed = [job('h', { priority: 75 }), job('a'), job('b'), job('l', { priority: 25 })];
+    expect(moved(mixed, 'a', -1)).toEqual(['h', 'a', 'b', 'l']);
+    expect(moved(mixed, 'b', 'top')).toEqual(['h', 'b', 'a', 'l']);
+    expect(moved(mixed, 'b', 1)).toEqual(['h', 'a', 'b', 'l']);
+    expect(moved(mixed, 'l', -1)).toEqual(['h', 'a', 'b', 'l']);
   });
 });
 
