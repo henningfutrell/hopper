@@ -371,6 +371,7 @@ export interface QuestionService {
   firstStage(): string;
   /** Start the pipeline for a newly asked question (created at `firstStage()`). */
   handle(questionId: string): void;
+  /** The owner answers an open question. Idempotent per question: the owner's same answer again returns the question unchanged; another answer is `not_open`. */
   answerByHuman(questionId: string, answer: string): AnswerByHumanResult;
   /** The owner ends an open question without answering: status `closed`, the close text becomes its answer, `question.closed`, then onAnswered resumes the job. */
   closeByHuman(questionId: string): AnswerByHumanResult;

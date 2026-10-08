@@ -75,6 +75,12 @@ function Row({ job, position, children, note }: { job: Job; position: number; ch
   );
 }
 
+/** A move in the user order; disabled when it moves nothing (an edge of the job's priority). */
+function MoveButton({ label, icon, order, next, post }: { label: string; icon: React.ReactNode; order: readonly string[]; next: string[]; post: (ids: string[], done: string) => unknown }) {
+  const still = next.every((id, i) => id === order[i]);
+  return <Button size="xs" variant="outline" aria-label={label} disabled={still} onClick={() => post(next, 'Queue ordered')}>{icon}</Button>;
+}
+
 export function Queue() {
   const board = useJobBoard();
   const gate = useHopper((s) => s.gate);
@@ -108,9 +114,9 @@ export function Queue() {
             <Row key={job.id} job={job} position={i + 1}
               note={<>{job.userRank === undefined && <span>by the sorter</span>}{job.status === 'held' && <StatusBadge status="held" />}</>}>
               {operate && <>
-                <Button size="xs" variant="outline" aria-label="Move up" disabled={i === 0} onClick={() => post(moved(order, job.id, -1), 'Queue ordered')}><ArrowUp /></Button>
-                <Button size="xs" variant="outline" aria-label="Move down" disabled={i === userOrder.length - 1} onClick={() => post(moved(order, job.id, 1), 'Queue ordered')}><ArrowDown /></Button>
-                <Button size="xs" variant="outline" aria-label="Move to the top" disabled={i === 0} onClick={() => post(moved(order, job.id, 'top'), 'Queue ordered')}><ArrowUpToLine /></Button>
+                <MoveButton label="Move up" icon={<ArrowUp />} order={order} next={moved(userOrder, job.id, -1)} post={post} />
+                <MoveButton label="Move down" icon={<ArrowDown />} order={order} next={moved(userOrder, job.id, 1)} post={post} />
+                <MoveButton label="Move to the top" icon={<ArrowUpToLine />} order={order} next={moved(userOrder, job.id, 'top')} post={post} />
                 <RejectButton job={job} />
               </>}
             </Row>

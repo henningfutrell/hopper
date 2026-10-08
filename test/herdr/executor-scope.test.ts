@@ -36,14 +36,14 @@ describe('herdr-claude executor: the job\'s scope (issue #410)', () => {
     expect(saved.at(-1)).not.toHaveProperty('scope');
   });
 
-  it('a shell that never answers fails the job before Claude starts, pane closed', async () => {
+  it('a shell that never answers fails the job before Claude starts, after 3 starts (issue #462), panes closed', async () => {
     const { herdr, executor } = setup({ turns: [DONE], scopes: true });
     // After the scope command the new shell drops every check typed into it.
     const run = herdr.runInPane.bind(herdr);
     herdr.runInPane = async (paneId, command) => { if (!command.startsWith('case ')) await run(paneId, command); };
     const out = await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx);
-    expect(out).toMatchObject({ kind: 'failed', error: expect.stringMatching(/^pane w1:p1 never answered where its shell runs within 60000 ms/) });
+    expect(out).toMatchObject({ kind: 'failed', error: expect.stringMatching(/^claude did not start in 3 attempts: pane w1:p3 never answered where its shell runs within 60000 ms/) });
     expect(herdr.agentStarts).toEqual([]);
-    expect(herdr.closed).toEqual(['w1:p1']);
+    expect(herdr.closed).toEqual(['w1:p1', 'w1:p2', 'w1:p3']);
   });
 });

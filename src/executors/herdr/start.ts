@@ -2,7 +2,7 @@
 // startup dialogs (folder trust; the bypass permissions warning when yolo). docs/design.md "Phase 2" → "Start".
 
 import type { Clock, ExecutionContext, ExecutionOutcome } from '../../domain/ports.ts';
-import type { HerdrClient } from './client.ts';
+import { HerdrError, type HerdrClient } from './client.ts';
 import type { Sleep } from './monitor.ts';
 import { tail } from './monitor.ts';
 import type { ClaudeJobPayload } from './payload.ts';
@@ -110,6 +110,12 @@ export interface StartDeps {
   sharedDependencies: boolean;
 }
 
+/**
+ * A start that did not finish in time (issue #462): the pane's shell or Claude never came up. Nothing of
+ * the job has run yet, so the executor may try it again in a new pane. `error` carries the pane's last output.
+ */
+export interface StartTimedOut { startTimedOut: string }
+
 export const agentNameFor = (jobId: string): string => `jh-${jobId.slice(0, 8)}`;
 
 /** The work tree's scratch dirs, git-ignored as one (design.md "Work tree"). */
@@ -153,7 +159,7 @@ export async function openPane(d: StartDeps, ctx: ExecutionContext, cwd: string,
  * ready, so anything but a dialog is; else herdr found it held at one. Null when ready (or aborted),
  * else the failure.
  */
-async function settleStartup(d: StartDeps, ctx: ExecutionContext, s: PaneState, started: boolean): Promise<ExecutionOutcome | null> {
+async function settleStartup(d: StartDeps, ctx: ExecutionContext, s: PaneState, started: boolean): Promise<ExecutionOutcome | StartTimedOut | null> {
   const until = d.clock.now().getTime() + START_TIMEOUT_MS;
   let answeredAt = -1;
   let answered = 0;
@@ -178,7 +184,7 @@ async function settleStartup(d: StartDeps, ctx: ExecutionContext, s: PaneState, 
     await d.sleep(d.pollMs, ctx.signal);
   }
   const screen = await d.herdr.read(s.paneId, { source: 'visible', lines: 60 });
-  return { kind: 'failed', error: `claude not ready at startup: ${tail(screen, 30)}` };
+  return { startTimedOut: `claude not ready at startup: ${tail(screen, 30)}` };
 }
 
 /**
@@ -190,7 +196,7 @@ async function settleStartup(d: StartDeps, ctx: ExecutionContext, s: PaneState, 
  * prompt, so the command runs again until its output shows. The command is POSIX shell: a pane whose
  * shell is PowerShell or cmd fails the job at once, naming it (issue #367). Null when made, else the failure.
  */
-async function makeScratch(d: StartDeps, ctx: ExecutionContext, s: PaneState, make: boolean): Promise<ExecutionOutcome | null> {
+async function makeScratch(d: StartDeps, ctx: ExecutionContext, s: PaneState, make: boolean): Promise<ExecutionOutcome | StartTimedOut | null> {
   const scratch = jobScratchOf(s.cwd, ctx.job.id);
   const command = `${make ? `mkdir -p ${shellQuote(s.cwd)} && ` : ''}cd ${shellQuote(s.cwd)} && mkdir -p ${shellQuote(scratch)} && printf '*\\n' > ${shellQuote(`${scratchDirOf(s.cwd)}/.gitignore`)}`
     + ` && printf 'hopper-scratch-%s\\n' ready || printf 'hopper-scratch-%s\\n' unusable`;
@@ -207,7 +213,7 @@ async function makeScratch(d: StartDeps, ctx: ExecutionContext, s: PaneState, ma
       return { kind: 'failed', error: `the shell of pane ${s.paneId} on ${ctx.machine.id} is ${shell}, and the hopper needs a POSIX shell (sh, bash, zsh) there: make one herdr's default shell for the hopper's herdr session on that machine (README "A Windows computer")` };
     }
   }
-  return { kind: 'failed', error: `pane ${s.paneId} never ran the scratch dir command within ${START_TIMEOUT_MS} ms` };
+  return { startTimedOut: `pane ${s.paneId} never ran the scratch dir command within ${START_TIMEOUT_MS} ms` };
 }
 
 /**
@@ -217,7 +223,7 @@ async function makeScratch(d: StartDeps, ctx: ExecutionContext, s: PaneState, ma
  * A machine without systemd, or a shell that did not land in the scope, goes on without one. Null when
  * done, else the failure (the shell never answered: the pane is gone or hung).
  */
-async function enterScope(d: StartDeps, ctx: ExecutionContext, s: PaneState): Promise<ExecutionOutcome | null> {
+async function enterScope(d: StartDeps, ctx: ExecutionContext, s: PaneState): Promise<StartTimedOut | null> {
   await d.herdr.runInPane(s.paneId, enterScopeCommand(ctx.job.id));
   for (let waited = 0; waited < START_TIMEOUT_MS; waited += SCRATCH_WAIT_MS) {
     if (ctx.signal.aborted) return null;
@@ -232,7 +238,7 @@ async function enterScope(d: StartDeps, ctx: ExecutionContext, s: PaneState): Pr
     }
     await d.herdr.runInPane(s.paneId, scopeCheckCommand(ctx.job.id));
   }
-  return { kind: 'failed', error: `pane ${s.paneId} never answered where its shell runs within ${START_TIMEOUT_MS} ms` };
+  return { startTimedOut: `pane ${s.paneId} never answered where its shell runs within ${START_TIMEOUT_MS} ms` };
 }
 
 /**
@@ -284,11 +290,25 @@ async function shareDependencies(d: StartDeps, ctx: ExecutionContext, s: PaneSta
 }
 
 /**
- * Start Claude in the pane, in the job's own worktree when it gets one (`s` moves there). Resolves null
- * when Claude is ready for the prompt (or the signal fired — the caller checks), else the failure to
- * report; the caller closes the pane.
+ * herdr's agent start, its timeout (`timeout`: Claude never came up while herdr waited, issue #462) answered
+ * as a start that timed out, with the pane's last output.
  */
-export async function startClaude(d: StartDeps, ctx: ExecutionContext, s: PaneState, p: ClaudeJobPayload): Promise<ExecutionOutcome | null> {
+async function startAgent(d: StartDeps, s: PaneState, args: string[]): Promise<Awaited<ReturnType<HerdrClient['startAgent']>> | StartTimedOut> {
+  try {
+    return await d.herdr.startAgent({ name: s.agentName, paneId: s.paneId, args, timeoutMs: START_TIMEOUT_MS });
+  } catch (err) {
+    if (!(err instanceof HerdrError) || err.code !== 'timeout') throw err;
+    const screen = await d.herdr.read(s.paneId, { source: 'visible', lines: 60 }).catch((e: unknown) => `(the pane could not be read: ${(e as Error).message})`);
+    return { startTimedOut: `herdr: ${err.message}: ${tail(screen, 30)}` };
+  }
+}
+
+/**
+ * Start Claude in the pane, in the job's own worktree when it gets one (`s` moves there). Resolves null
+ * when Claude is ready for the prompt (or the signal fired — the caller checks), a start that timed out
+ * (issue #462), else the failure to report; the caller closes the pane.
+ */
+export async function startClaude(d: StartDeps, ctx: ExecutionContext, s: PaneState, p: ClaudeJobPayload): Promise<ExecutionOutcome | StartTimedOut | null> {
   const unmade = await makeScratch(d, ctx, s, p.makeWorkTree === true);
   if (unmade || ctx.signal.aborted) return unmade;
   const unscoped = await enterScope(d, ctx, s);
@@ -303,14 +323,15 @@ export async function startClaude(d: StartDeps, ctx: ExecutionContext, s: PaneSt
   }
   const args = [...d.claudeArgs, ...(p.model ? ['--model', p.model] : [])];
   const until = d.clock.now().getTime() + START_TIMEOUT_MS;
-  let started = await d.herdr.startAgent({ name: s.agentName, paneId: s.paneId, args, timeoutMs: START_TIMEOUT_MS });
+  let started = await startAgent(d, s, args);
   // A pane spawned a moment ago is not at its shell prompt yet; herdr refuses `agent start` until it is.
-  while (!started.ok && 'paneBusy' in started) {
+  while ('ok' in started && !started.ok && 'paneBusy' in started) {
     if (ctx.signal.aborted) return null;
-    if (d.clock.now().getTime() >= until) return { kind: 'failed', error: `pane ${s.paneId} never reached its shell prompt within ${START_TIMEOUT_MS} ms` };
+    if (d.clock.now().getTime() >= until) return { startTimedOut: `pane ${s.paneId} never reached its shell prompt within ${START_TIMEOUT_MS} ms` };
     await d.sleep(SHELL_RETRY_MS, ctx.signal);
-    started = await d.herdr.startAgent({ name: s.agentName, paneId: s.paneId, args, timeoutMs: START_TIMEOUT_MS });
+    started = await startAgent(d, s, args);
   }
+  if ('startTimedOut' in started) return started;
   // Started, or held at a dialog (herdr's agent_not_ready): either way, a dialog may stand before the prompt.
   return settleStartup(d, ctx, s, started.ok);
 }

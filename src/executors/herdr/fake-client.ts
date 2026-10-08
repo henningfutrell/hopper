@@ -63,6 +63,14 @@ export interface FakeHerdrOptions {
   /** The first N `startAgent` calls answer `paneBusy`, as herdr does for a pane spawned a moment ago. */
   shellNotReadyStarts?: number;
   /**
+   * The first N agent starts time out (issue #462, seen live with 16 lanes filling at once): Claude never
+   * comes up as herdr waits, and `agent start` fails `timeout`, "timed out waiting for agent startup", with
+   * `startupTimeoutScreen` on the pane.
+   */
+  startupTimeouts?: number;
+  /** What the pane shows when its agent start times out. */
+  startupTimeoutScreen?: string[];
+  /**
    * The first N prompts never reach Claude (issue #278, seen live): herdr takes them, but Claude stays
    * idle at an empty prompt, nothing echoed and its state never changes.
    */
@@ -133,6 +141,7 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
   /** setUnreachable: every call rejects. */
   let n = 0, unreachable = false;
   let busyStarts = o.shellNotReadyStarts ?? 0;
+  let timedOutStarts = o.startupTimeouts ?? 0;
   let droppedRuns = o.shellDropsRuns ?? 0;
   let droppedPrompts = o.dropsPrompts ?? 0;
   let droppedPicks = o.dropsDialogPicks ?? 0;
@@ -226,6 +235,11 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
       const p = livePane(args.paneId);
       p.agent = args.name;
       p.lines.push(`claude ${args.args.join(' ')}`);
+      if (timedOutStarts-- > 0) {
+        p.lines.push(...(o.startupTimeoutScreen ?? []));
+        settle(p, 'unknown');
+        throw new HerdrError('timeout', 'timed out waiting for agent startup');
+      }
       if (o.trustDialogFor === undefined && o.bypassDialog) {
         p.mode = 'bypass';
         p.lines.push(...bypassDialog());

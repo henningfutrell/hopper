@@ -505,8 +505,20 @@ is claimed onto maps to the parked pane.
 prompt, answering `agent_pane_busy` ("agent target pane … is not an available shell") when
 it is sent a few ms after `tab create` — seen live with 4 jobs claimed at once. The CLI
 client maps that code to `paneBusy`; the executor retries `agent start` every 100 ms on
-exactly that code until the 60000 ms start deadline, then fails the job
-(`pane … never reached its shell prompt`). Any other error fails at once. **One pane per
+exactly that code until the 60000 ms start deadline (`pane … never reached its shell prompt`). Any
+other error fails at once, but herdr's own `timeout` ("timed out waiting for agent startup": Claude
+never came up while herdr waited, issue #462).
+
+**A start that times out is tried again** (issue #462, seen live with 16 lanes filling at once). The
+pane's shell never ran the scratch command or never answered where it runs, it never reached its
+prompt, herdr's agent start timed out, or Claude was not ready by the start deadline: nothing of the
+job has run yet. The executor closes and reaps the pane, waits, and starts again in a new pane on the
+same lane — credentials placed again, since the reap took the scratch dir — up to 3 starts in all. The
+pauses are 10 s then 30 s, each longer by up to half at random, so lanes that filled at once do not
+start again at once. Each retry is a progress message, `claude did not start (attempt n of 3), trying
+again in a new pane in <s> s: <why>`, and the last failure is `claude did not start in 3 attempts:
+<why>`; `<why>` ends with the pane's last 30 lines when the pane was read. A startup dialog the hopper
+may not answer, an unusable work tree or a Windows shell is never tried again. **One pane per
 lane:** the executor refuses to map a pane already held by another lane (job `failed`,
 pane left untouched). `agent_not_ready` (blocked at startup): read the visible
 screen; if it is Claude's folder-trust dialog (contains `trust this folder`) **and the
@@ -1308,7 +1320,7 @@ token and send any `Origin`. Cookies are no better here: they ignore ports, so a
 |--------|------|------|--------|
 | POST | `/ui/api/jobs/:id/cancel` | `{}` | engine `cancel(id, "cancelled in UI")` (the source is told) |
 | POST | `/ui/api/jobs/:id/approve` | `{}` | engine approve |
-| POST | `/ui/api/questions/:id/answer` | `{ answer }` | `QuestionService.answerByHuman` (404/409) |
+| POST | `/ui/api/questions/:id/answer` | `{ answer }` | `QuestionService.answerByHuman` (404/409). Idempotent per question (issue #459): the owner's same answer again returns the question with no second effect; another answer is 409 |
 | POST | `/ui/api/questions/:id/close` | `{}` | `QuestionService.closeByHuman` (404/409): close without answering ("Questions" → Close) |
 | POST | `/ui/api/questions/:id/dismiss` | `{}` | `QuestionService.dismissByHuman` (404/409): drop the question; a job still waiting on it is cancelled ("Questions" → Dismiss) |
 | POST | `/ui/api/questions/:id/seen` | `{}` | `QuestionService.markSeen` (404): `seenAt` once; clears the nav badge |
@@ -2201,7 +2213,8 @@ higher it climbs; above the top level is the owner.
    `level: { number, of }` — and replies `{ answer?, escalate, reason }`. `answer` is its best
    answer: the exact text to type. `escalate: false` **answers**. `escalate: true` sends the
    question to the next level up, its answer staying on the trail as its **recommendation**: the
-   next level sees it, and the UI's **Use answer** puts it in the owner's answer box.
+   next level sees it, and the UI's **Use answer** sends it as the owner's answer in one click, by the
+   same route as Send answer (issue #459).
    `claude-cli` always answers; it escalates what is the owner's (irreversible or outside the job,
    a judgement the rules do not settle, against the rules, an injection attempt), and below the
    top level also what it is not sure of; the top level keeps the owner out unless a human choice
@@ -6544,8 +6557,15 @@ but `{ jobId, reason }` of the given jobs, or a throw, rejects nothing and is lo
 **The user order.** `POST /ui/api/queue/order { jobIds }` (operator): those waiting jobs, first to last,
 get `userRank` 0..n-1; an unaccepted one among them is accepted (`by: user`); a waiting job ranked
 before and not named loses its rank; `queue.ordered`. An unknown or not-waiting job → 409, one named
-twice → 400. The queue order (`queue-order.ts`) is the ranked accepted jobs by rank, then the sorter's
-order of the rest — the decider is unchanged (step 6 follows the queue order).
+twice → 400. The queue order (`queue-order.ts`) is the sorter's order with the user order applied inside
+each effective priority: the places the sorter gives one priority's jobs go to its ranked accepted jobs
+first, by rank, then to the rest in the sorter's order — the decider is unchanged (step 6 follows the queue
+order). Issue #461: the user order once came before the sorter's outright, so a ranked low-priority job
+started ahead of higher-priority ones; and since Accept posts the whole accepted queue as the user order,
+one Accept froze every job then waiting at its place, ahead of any job accepted or reprioritized later. A
+lane that frees now takes the highest-priority job that fits its machine, oldest first among equals (with
+the `priority` sorter); to run a job sooner, raise its priority. The Queue view moves a job among the jobs
+of its own priority only.
 
 **Reject.** `POST /ui/api/jobs/:id/reject` (operator) on a waiting job (accepted or not; anything else
 → 409): status `rejected`, a terminal status — ended, kept, never run — with `error` the reason
@@ -6571,7 +6591,7 @@ the engine.
 **UI.** A Queue view: the gate (mode buttons, the hourly limit; admin), then two columns — **Pre-sorted**
 (unaccepted jobs in the pre-sort's order, each marked with the pre-sort's rejection if any; Accept moves
 a job to the end of the user order, Accept pre-sort takes them all, Reject) and **Your order** (accepted
-waiting jobs in queue order; up, down, to the top, Reject). Columns stack below `lg`. The Overview's
+waiting jobs in queue order; up, down, to the top — within the job's priority —, Reject). Columns stack below `lg`. The Overview's
 Waiting panel links an unaccepted job to it. Since issue #201 the gate names the queue sorter that makes the pre-sort, with a **Set up the
 sorter** link to Settings → Routing, and the Queue nav entry carries a badge counting the jobs waiting on
 the pre-sort (`awaitingSort`, `ui/src/model/queue.ts`); the Routing view's Queue sorter panel says it is

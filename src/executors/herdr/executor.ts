@@ -22,6 +22,13 @@ const EXIT_WAIT_MS = 5000;
  * seconds and up to a poll after the dialog showed, so Claude Code's own deadline can come a little sooner.
  */
 const LAPSE_SLACK_MS = 5000;
+/**
+ * Starts of one run (issue #462): a start that times out is tried again in a new pane, after a pause
+ * that grows and is spread at random, so lanes that filled at once do not start again at once.
+ */
+const START_ATTEMPTS = 3;
+const START_PAUSES_MS = [10000, 30000];
+const START_PAUSE_SPREAD = 0.5;
 
 export interface HerdrClaudeExecutorOptions {
   /** This machine's herdr. */
@@ -47,6 +54,8 @@ export interface HerdrClaudeExecutorOptions {
   paneEnv?: Readonly<Record<string, string>>;
   /** Injectable for tests; default an abortable setTimeout. */
   sleep?: Sleep;
+  /** Spreads the pause before a start is tried again; default Math.random. */
+  random?: () => number;
 }
 
 export interface HerdrClaudeExecutor extends Executor {
@@ -95,6 +104,7 @@ const samePane = (a: PaneOn, b: PaneOn): boolean => a.paneId === b.paneId && a.s
 export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrClaudeExecutor {
   const { clock } = o;
   const sleep = o.sleep ?? realSleep;
+  const random = o.random ?? Math.random;
   const lanes = new Map<LaneId, HeldPane>();
   /** What the reap kept, by job, until cleanup answers it: a pane closed on cancel or timeout is reaped then. */
   const reaped = new Map<string, Reaped>();
@@ -275,19 +285,28 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
         const where = whereOn(ctx.machine);
         const deps = depsOn(where);
         const local = !where.ssh && !where.client;
-        // The job acts through its source's connection (issue #214), never through its payload: its token kept
-        // current in the job's credentials dir on the machine, the pane's environment pointing there (issue #441).
-        const env = { ...p.env, ...(await ctx.credentials?.(jobScratchOf(p.cwd, ctx.job.id), p.makeWorkTree)) };
-        const opened = await openPane(deps, ctx, p.cwd, local ? { ...env, ...o.paneEnv } : env);
-        const refused = heldElsewhere(ctx.laneId, opened);
-        if (refused) return refused;
-        state = opened;
-        lanes.set(ctx.laneId, heldOf(state, ctx.job.id));
-        if (ctx.signal.aborted) return { interrupt: abortReason(ctx.signal) };
-        const failed = await startClaude(deps, ctx, state, p);
-        if (failed) {
+        // A start that times out is tried again in a new pane (issue #462): nothing of the job has run yet.
+        // The pane's close reaped its scratch dir, credentials too, so each start places them again.
+        for (let attempt = 1; ; attempt++) {
+          // The job acts through its source's connection (issue #214), never through its payload: its token kept
+          // current in the job's credentials dir on the machine, the pane's environment pointing there (issue #441).
+          const env = { ...p.env, ...(await ctx.credentials?.(jobScratchOf(p.cwd, ctx.job.id), p.makeWorkTree)) };
+          const opened = await openPane(deps, ctx, p.cwd, local ? { ...env, ...o.paneEnv } : env);
+          const refused = heldElsewhere(ctx.laneId, opened);
+          if (refused) return refused;
+          state = opened;
+          lanes.set(ctx.laneId, heldOf(state, ctx.job.id));
+          if (ctx.signal.aborted) return { interrupt: abortReason(ctx.signal) };
+          const failed = await startClaude(deps, ctx, state, p);
+          if (!failed) break;
           await exitAndClose(heldOf(state, ctx.job.id));
-          return failed;
+          state = undefined;
+          if (!('startTimedOut' in failed)) return failed;
+          if (attempt >= START_ATTEMPTS) return { kind: 'failed', error: `claude did not start in ${attempt} attempts: ${failed.startTimedOut}` };
+          const pause = Math.round(START_PAUSES_MS[attempt - 1]! * (1 + START_PAUSE_SPREAD * random()));
+          ctx.progress(0, `claude did not start (attempt ${attempt} of ${START_ATTEMPTS}), trying again in a new pane in ${Math.round(pause / 1000)} s: ${failed.startTimedOut}`);
+          await sleep(pause, ctx.signal);
+          if (ctx.signal.aborted) return { interrupt: abortReason(ctx.signal) };
         }
         if (ctx.signal.aborted) return { interrupt: abortReason(ctx.signal) };
         return send(ctx, state, p, `${p.prompt}\n\n${protocolFooter(p.cwd, ctx.jobRules, jobScratchOf(p.cwd, ctx.job.id), state.jobWorktree, state.sharedDependencies === true, state.checkout)}`, FOOTER_ANCHOR);
