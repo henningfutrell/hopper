@@ -22,6 +22,24 @@ export const REDIRECT_REALM_TYPES: readonly RealmType[] = ['oidc', 'saml'];
  */
 export const DEVICE_REALM_TYPES: readonly RealmType[] = ['github'];
 
+/**
+ * How long a UI session lasts (issue #439), the sign-in config's `sessions`: it ends after `idleHours` without
+ * a request, and `maxHours` after it started however much it is used. Read at each lookup, so a change applies
+ * to the sessions there are.
+ */
+export interface SessionLengths { idleHours: number; maxHours: number }
+export const DEFAULT_SESSION_LENGTHS: SessionLengths = { idleHours: 168, maxHours: 720 };
+/** The longest a session may last: a year. */
+export const MAX_SESSION_HOURS = 8760;
+
+/**
+ * Why a UI session ended (issue #439, the `ui_session.ended` event): its idle timeout or its maximum passed;
+ * the gateway's token for it was refused, or its issuer stayed out of reach past the grace period; the sign-in
+ * config changed under it (its realm gone or off, or no rule grants it a role); or it logged out.
+ */
+export type SessionEndReason = 'expired-idle' | 'expired-absolute' | 'refresh-refused' | 'provider-unreachable' | 'realm-changed' | 'logout';
+export const SESSION_END_REASONS: readonly SessionEndReason[] = ['expired-idle', 'expired-absolute', 'refresh-refused', 'provider-unreachable', 'realm-changed', 'logout'];
+
 /** Who signed in, as every realm reports it. */
 export interface Identity {
   /** The realm's name in the sign-in config (`local` the login code, `none` no sign-in). */
@@ -100,6 +118,8 @@ export interface RealmsView {
   githubAdmin: { realm: string; user?: string } | null;
   /** The sign-in origin the callbacks are on. */
   origin: string;
+  /** How long a UI session lasts (issue #439). */
+  sessions: SessionLengths;
   realms: RealmView[];
   /** Everyone who has signed in through a realm, each identity with its role now and whether it is a super admin (issue #242). */
   people: PersonView[];
@@ -126,8 +146,8 @@ export type RealmsEdit = { version: string } & (
   /** Move to position `to` (0 first). */
   | { action: 'move'; name: string; to: number }
   | { action: 'enable'; name: string; enabled: boolean }
-  /** Local sign-in (the login code) on or off; the role of no sign-in, or null for off. */
-  | { action: 'settings'; local?: boolean; none?: UiRole | null }
+  /** Local sign-in (the login code) on or off; the role of no sign-in, or null for off; how long a session lasts. */
+  | { action: 'settings'; local?: boolean; none?: UiRole | null; sessions?: SessionLengths }
   /** Make this identity admin (issue #242): any admin. */
   | { action: 'admin'; who: { realm: string; subject: string } }
   /** Make this identity a super admin, or with `transfer` hand your own super admin over to it (you stay admin): a super admin only (issue #242). */

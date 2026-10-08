@@ -9,6 +9,7 @@ import { QUEUE_GATE_MODES, type QueueGate, type UiRole, type User } from './doma
 import type { InstanceStore } from './domain/ports.ts';
 import { SESSION_HEADER } from './http/ui/guard.ts';
 import { createUiSessions } from './http/ui/sessions.ts';
+import { loadSignInConfig } from './auth/index.ts';
 
 export const OPERATOR_COMMANDS = ['job', 'queue', 'question'] as const;
 
@@ -32,8 +33,8 @@ export interface OperatorIo {
 interface Call { role: UiRole; path: string; body: (get: Getter) => Promise<unknown> }
 type Getter = (path: string) => Promise<unknown>;
 
-/** A session lives this long at most: one call, then it is dropped. */
-const SESSION_HOURS = 5 / 60;
+/** A session lives this long at most, whatever the sign-in config's session lengths: one call, then it is dropped. */
+const SESSION_MS = 5 * 60_000;
 /** Who a CLI session is: no realm the sign-in config names, so a reconcile drops it. */
 const CLI_IDENTITY = { realm: 'cli', subject: 'operator-cli', name: 'operator CLI', groups: [] };
 
@@ -139,8 +140,10 @@ export async function runOperatorAction(
   const call = callOf(command, rest);
   const url = daemonUrl(rawUrl, io.env);
   const user = userOf(userId);
-  const sessions = createUiSessions({ repo: instance.uiSessions, clock: { now: () => new Date() }, hours: SESSION_HOURS });
-  const session = sessions.create({ role: call.role, identity: CLI_IDENTITY, userId: user.id });
+  // A CLI session is no gateway realm's: no token of one is ever checked for it.
+  const signIn = { config: () => loadSignInConfig(instance.signInConfig.read()), checkGateway: async () => ({ ok: false as const, status: 403 as const, error: 'the operator CLI checks no gateway token' }) };
+  const sessions = createUiSessions({ repo: instance.uiSessions, clock: { now: () => new Date() }, signIn });
+  const session = sessions.create({ role: call.role, identity: CLI_IDENTITY, userId: user.id, lastsMs: SESSION_MS });
   const send = async (path: string, body?: unknown): Promise<unknown> => {
     let res: Response;
     try {
@@ -163,6 +166,6 @@ export async function runOperatorAction(
   try {
     io.out(`${JSON.stringify(await send(call.path, await call.body(send)), null, 2)}\n`);
   } finally {
-    sessions.drop(session.token);
+    sessions.drop(session.token, 'logout');
   }
 }

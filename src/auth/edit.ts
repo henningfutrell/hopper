@@ -6,7 +6,7 @@
 // leaves one out keeps the stored one, `null` removes it, and the view names which are set.
 import { SECRET_SETTINGS } from './config.ts';
 import type { StoredRealm, StoredSignIn } from '../domain/store.ts';
-import type { RealmType, RealmView, UiRole } from '../domain/types.ts';
+import { DEFAULT_SESSION_LENGTHS, type RealmType, type RealmView, type SessionLengths, type UiRole } from '../domain/types.ts';
 
 export class AuthEditError extends Error {
   readonly status: 400 | 404;
@@ -21,8 +21,8 @@ export type SignInEdit =
   /** Move to position `to` (0 first). */
   | { action: 'move'; name: string; to: number }
   | { action: 'enable'; name: string; enabled: boolean }
-  /** The login code on or off; the role of no sign-in, or null for off. */
-  | { action: 'settings'; local?: boolean; none?: UiRole | null }
+  /** The login code on or off; the role of no sign-in, or null for off; how long a UI session lasts (issue #439). */
+  | { action: 'settings'; local?: boolean; none?: UiRole | null; sessions?: SessionLengths }
   /** Add the identity to its realm's admin rule, by subject (issue #242). */
   | { action: 'admin'; who: { realm: string; subject: string } }
   /** Add the identity to the super admins; with `transfer`, take `from` out of them (issue #242). Who may is the caller's check. */
@@ -56,6 +56,7 @@ export function editSignIn(current: StoredSignIn, edit: SignInEdit): StoredSignI
     if (edit.local !== undefined) s.local = { enabled: edit.local };
     if (edit.none === null) delete s.none;
     else if (edit.none !== undefined) s.none = { role: edit.none };
+    if (edit.sessions !== undefined) s.sessions = { idleHours: edit.sessions.idleHours, maxHours: edit.sessions.maxHours };
   } else if (edit.action === 'save') {
     const { enabled: _enabled, ...fields } = edit.realm;
     if (edit.name === undefined) {
@@ -104,10 +105,11 @@ export function editSignIn(current: StoredSignIn, edit: SignInEdit): StoredSignI
 type RealmRow = Omit<RealmView, 'callback' | 'metadata' | 'environment'>;
 
 /** The realms in order, each with its settings — never a secret: the names of those that are set — the login code and no sign-in. */
-export function realmsView(s: StoredSignIn): { local: boolean; none: UiRole | null; realms: RealmRow[] } {
+export function realmsView(s: StoredSignIn): { local: boolean; none: UiRole | null; sessions: SessionLengths; realms: RealmRow[] } {
   return {
     local: s.local?.enabled !== false,
     none: s.none?.role ?? null,
+    sessions: s.sessions ?? { ...DEFAULT_SESSION_LENGTHS },
     realms: s.realms.map(({ name, type, label, enabled, ...all }) => {
       const settings = Object.fromEntries(Object.entries(all).filter(([k]) => !secretsOf(type).includes(k)));
       return {

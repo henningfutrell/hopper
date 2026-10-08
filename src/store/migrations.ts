@@ -9,6 +9,7 @@ import { signInRealms } from './migration-realms.ts';
 import { usersAndOwner } from './migration-users.ts';
 import { ownerToAdmin } from './migration-admin.ts';
 import { noBootstrapUser } from './migration-no-bootstrap.ts';
+import { sessionsRenew } from './migration-session-lifetime.ts';
 
 // Schema changes never drop a queue (persisted state is the user's). A migration is SQL, or a
 // function for a rewrite SQL cannot say plainly (JSON bodies); each runs in one transaction.
@@ -161,6 +162,9 @@ const MIGRATIONS: readonly Migration[] = [
   // 26: the update channels are dev, beta and stable (issue #423). main and release, the two stable channels
   // from before, are stable; dev and beta stay.
   "UPDATE settings SET value = 'stable' WHERE key = 'updateChannel' AND value IN ('main', 'release');",
+  // 27: sessions renew (issue #439): no fixed expiry; when a session started, was last used and its gateway
+  // token last checked out, and the sign-in config's session lengths decide when it ends.
+  sessionsRenew,
 ];
 
 /**
