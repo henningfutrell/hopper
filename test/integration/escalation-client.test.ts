@@ -10,7 +10,7 @@
 //     Then the first level answers it through the client, and the job finishes with that answer
 //   Scenario: the level names no machine
 //     Then the client is picked, and the trail says which machine and why
-//   Scenario: the client goes offline
+//   Scenario: the client is offline
 //     Then Settings shows the level as unable to run, with the reason and how to fix it
 import { chmodSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -44,8 +44,8 @@ afterEach(async () => {
 
 const level = (name: string, model: string, machine?: string) => ({ name, plugin: 'claude-cli', options: { model, timeoutMs: 10_000, ...(machine ? { machine } : {}) } });
 
-/** A container hopper with the levels given, and one machine joined to it as a client target, online. */
-async function containerWithClient(levels: unknown[]): Promise<{ a: TestApp; client: Client }> {
+/** A container hopper with the levels given, and one machine joined to it as a client target: online, unless its client is not started. */
+async function containerWithClient(levels: unknown[], o: { start?: boolean } = {}): Promise<{ a: TestApp }> {
   const db = tempDbPath();
   cleanups.push(db.cleanup);
   const scratch = mkdtempSync(join(tmpdir(), 'jh-esc-client-'));
@@ -56,18 +56,18 @@ async function containerWithClient(levels: unknown[]): Promise<{ a: TestApp; cli
   process.env.FAKE_CLAUDE_STRUCTURED = JSON.stringify({ answer: 'use sqlite', escalate: false, reason: 'routine' });
   t = await startTestApp({
     dbPath: db.dbPath, env: { HOPPER_LOCAL_MACHINE: 'false' }, realLevels: true,
-    plugins: { executors: [{ name: 'test', plugin: 'test' }], machines: [], machineDefaults: { lanes: 2, executors: ['test'] }, escalationLevels: levels },
+    plugins: { executors: [{ name: 'test', plugin: 'test' }], machines: [], machineDefaults: { lanes: 2, executors: ['scripted'] }, escalationLevels: levels },
   });
   const session = await t.login();
   const code = (await t.ui<{ code: string }>('/ui/api/machines/join', {}, { token: session })).body.code;
   const dir = mkdtempSync(join(tmpdir(), 'hopper-machine-'));
   cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
   await joinHopper({ line: `${t.url}#${code}`, name: 'studio', dir });
-  const client = startLinkedClient({ dir, herdrBin: HERDR, claudeBin: CLAUDE, session: 'hopper', installDir: testInstallDir(), backoffMs: [50] });
-  clients.push(client);
   const a = t;
+  if (o.start === false) return { a };
+  clients.push(startLinkedClient({ dir, herdrBin: HERDR, claudeBin: CLAUDE, session: 'hopper', installDir: testInstallDir(), backoffMs: [50] }));
   await waitFor(async () => ((await a.api('GET', '/api/machines')).body.machines as { id: string; online: boolean }[]).find((m) => m.id === 'studio' && m.online), { timeoutMs: 10000, what: 'studio online' });
-  return { a, client };
+  return { a };
 }
 
 const report = async (a: TestApp): Promise<PluginsReport> => (await a.api<PluginsReport>('GET', '/api/plugins')).body;
@@ -96,9 +96,7 @@ describe('escalation on a client target, in a container hopper (#482)', () => {
   });
 
   it('the client offline: Settings shows the level as unable to run, with the reason and how to fix it', async () => {
-    const { a, client } = await containerWithClient([level('level-1', 'opus', 'studio')]);
-    await client.stop();
-    clients.splice(clients.indexOf(client), 1);
+    const { a } = await containerWithClient([level('level-1', 'opus', 'studio')], { start: false });
     const st = await waitFor(async () => {
       const l = (await report(a)).escalationLevels[0]!;
       return l.machine?.cannotRun ? l : undefined;

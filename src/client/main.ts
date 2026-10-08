@@ -6,7 +6,7 @@
 //   HOPPER_CLIENT_SESSION  the herdr session the hopper's jobs run in (default hopper-client; never `default`)
 //   HOPPER_JOIN            a join line: a machine that has not joined yet joins with it first (a sandbox box)
 //   HOPPER_CLIENT_NAME     the name it joins under (default its host name)
-// herdr and claude (a usage read, issue #366) are the ones on its PATH: the client is one long-lived process,
+// herdr and claude (a usage read, issue #366; a level's run, issue #482) are the ones on its PATH: the client is one long-lived process,
 // never a fresh login shell per call.
 // The client's install dir is this file's directory: the hopper loads its release there (release.ts,
 // issue #70), and the client exits 75 so whatever runs it (the unit, a box's entrypoint) starts the new files.
@@ -23,7 +23,7 @@ import { startClient, type Client, type ClientOptions } from './server.ts';
 export const machineName = (name: string): string => name.replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^[-_]+|-+$/g, '') || 'machine';
 
 /** The client of a joined machine: its link from its client dir, its token derived from its link key and the hopper's public half. */
-export function startLinkedClient(o: { dir: string } & Pick<ClientOptions, 'herdrBin' | 'session' | 'installDir' | 'backoffMs' | 'log' | 'onLoaded'>): Client {
+export function startLinkedClient(o: { dir: string } & Pick<ClientOptions, 'herdrBin' | 'claudeBin' | 'session' | 'installDir' | 'backoffMs' | 'log' | 'onLoaded'>): Client {
   const link = readLink(o.dir);
   const token = linkToken(readFileSync(linkKeyFile(o.dir), 'utf8'), link.hopperKey);
   const { dir: _dir, ...rest } = o;

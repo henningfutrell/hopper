@@ -118,8 +118,8 @@ export interface MachineLookup {
   machines(): Promise<MachineSnapshot[]>;
 }
 
-/** What an escalation level learns: the machines, and the default escalation machine of the plugins config (issue #442), read at each call. */
-export interface EscalationLevelContext extends MachineLookup {
+/** What an escalation level learns: the machines, the default escalation machine of the plugins config (issue #442), read at each call, and how to reach a client target (issue #482). */
+export interface EscalationLevelContext extends MachineLookup, Pick<ExecutorContext, 'client'> {
   escalationMachine(): string | undefined;
 }
 

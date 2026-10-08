@@ -1,27 +1,43 @@
 // The machine a part that runs claude uses when it names none (issue #442): a claude-cli escalation level
 // or the claude-plan usage source in a plugins config written with no machine (issue #259, the container,
 // issue #141). Picked as it runs, in a set order, or none — said in plain words, with how to fix it; how
-// Settings shows such a part; and the stored plugins config filled where exactly one machine can run it.
-// Pure: no I/O.
+// Settings shows such a part, and a level whose named machine cannot run it (issue #482); and the stored
+// plugins config filled where exactly one machine can run it. Pure: no I/O.
 import type { InstanceSpec, InstanceStatus, MachineSnapshot } from './types.ts';
 
 /**
- * Where a part can run claude. `here-or-ssh`: this machine or an ssh target (claude-cli: a client target
- * serves herdr only, and `docker exec` passes no stdin). `any`: every machine, through its connection (claude-plan).
+ * Where a part can run claude. `no-container`: this machine, an ssh target or a client target (claude-cli:
+ * a client runs it through its `/level` call, issue #482; `docker exec` passes no stdin). `any`: every
+ * machine, through its connection (claude-plan).
  */
-export type MachineReach = 'here-or-ssh' | 'any';
+export type MachineReach = 'no-container' | 'any';
 
 /** The built-in plugins whose `machine` option names where claude runs, and where each can run it. */
-export const RUNS_CLAUDE: Readonly<Record<string, MachineReach>> = { 'claude-cli': 'here-or-ssh', 'claude-plan': 'any' };
+export const RUNS_CLAUDE: Readonly<Record<string, MachineReach>> = { 'claude-cli': 'no-container', 'claude-plan': 'any' };
 
 /** The machine-source plugins each reach can run claude on. */
 const REACHED: Record<MachineReach, ReadonlySet<string>> = {
-  'here-or-ssh': new Set(['local', 'ssh']),
+  'no-container': new Set(['local', 'ssh', 'client']),
   any: new Set(['local', 'ssh', 'docker', 'client']),
 };
 
 export const NO_MACHINE_FOR_LEVEL = 'No machine can run claude for this level. Pick a machine for it in Settings → Question gates, '
-  + 'attach a machine claude can run on (this one, or one the hopper reaches over ssh), or use an anthropic-api level instead.';
+  + 'attach a machine claude can run on (this one, one the hopper reaches over ssh, or one joined with Add machine), or use an anthropic-api level instead.';
+
+const PICK_ANOTHER = 'Pick another machine for this level in Settings → Question gates (this one, an ssh machine or a joined one), or use an anthropic-api level instead.';
+
+/** A level's named machine that is a container target (issue #482): why it cannot run there, and how to fix it. */
+export const containerRefusal = (id: string): string => `machine ${id} is a container target: claude-cli cannot run there. ${PICK_ANOTHER}`;
+
+/** A level's named machine that is not configured: why, and how to fix it. */
+export const notConfigured = (id: string): string => `machine ${id} is not configured. ${PICK_ANOTHER}`;
+
+/** A level's named machine that is offline now: why, and how to bring it back, by its connection. */
+export function offlineNote(id: string, connection: 'client' | 'ssh' | 'other'): string {
+  const back = connection === 'client' ? 'Start the hopper client on it (the hopper-client service), '
+    : connection === 'ssh' ? 'Check that it is on and the hopper reaches it over ssh, ' : 'Bring it back, ';
+  return `machine ${id} is offline: questions skip this level until it is back. ${back}or pick another machine for this level in Settings → Question gates.`;
+}
 
 export const NO_MACHINE_FOR_USAGE = 'No machine can run claude for this usage source. Attach a machine, or pick one for it in Settings → Plugins.';
 
@@ -31,18 +47,18 @@ export const WHY_DEFAULT = 'the default escalation machine';
 
 /** Whether claude can run on `m` now. */
 export function canRunClaude(reach: MachineReach, m: MachineSnapshot): boolean {
-  return m.online && (reach === 'any' || (!m.client && !m.docker));
+  return m.online && (reach === 'any' || !m.docker);
 }
 
 export type MachinePick = { machine: string; why: string } | { none: string };
 
 /** Several machines can, and nothing says which: none is guessed. */
-const several = (reach: MachineReach, names: string[]): string => (reach === 'here-or-ssh'
+const several = (reach: MachineReach, names: string[]): string => (reach === 'no-container'
   ? `This level names no machine, and ${names.join(', ')} can run claude: the job's machine cannot, and no default escalation machine is set. `
     + 'Pick a machine for this level, or set the default escalation machine, in Settings → Question gates.'
   : `This usage source names no machine, and ${names.join(', ')} can run claude. Pick one for it in Settings → Plugins.`);
 
-const nothing = (reach: MachineReach): string => (reach === 'here-or-ssh' ? NO_MACHINE_FOR_LEVEL : NO_MACHINE_FOR_USAGE);
+const nothing = (reach: MachineReach): string => (reach === 'no-container' ? NO_MACHINE_FOR_LEVEL : NO_MACHINE_FOR_USAGE);
 
 /**
  * The machine a part that names none runs on now, and why: the job's machine where claude can run
@@ -57,8 +73,11 @@ export function pickMachine(o: { reach: MachineReach; jobMachine?: string; machi
   return { none: able.length ? several(o.reach, able.map((m) => m.id)) : nothing(o.reach) };
 }
 
-/** How Settings shows a part that names no machine: the one it runs on, if one is certain; flagged when it needs one picked. */
-export interface MachineNote { machine?: string; needsMachine: boolean; note: string }
+/**
+ * How Settings shows a part that runs claude: the one it runs on, if one is certain; flagged when it needs
+ * one picked; `cannotRun` while the machine it names cannot run it now (offline, issue #482).
+ */
+export interface MachineNote { machine?: string; needsMachine: boolean; cannotRun?: boolean; note: string }
 
 /** From the configured machines, not their state: what the part will do, said in plain words. */
 export function machineNote(o: { reach: MachineReach; machines: readonly InstanceSpec[]; fallback?: string }): MachineNote {
@@ -70,11 +89,35 @@ export function machineNote(o: { reach: MachineReach; machines: readonly Instanc
   return { needsMachine: true, note: able.length ? several(o.reach, able) : nothing(o.reach) };
 }
 
-/** An instance's status with its note (issue #442): only a built-in part that runs claude and names no machine has one. `escalationMachine`: a level's fallback. */
-export function withMachineNote(st: InstanceStatus, machines: readonly InstanceSpec[], escalationMachine?: string): InstanceStatus {
+/**
+ * How Settings shows a level that names its machine (issue #482): flagged when that machine can never run
+ * it (not configured, a container target), unable to run while it is offline now (`live`: the machines as
+ * last listed); else nothing. Only a level (`no-container`): a usage source reaches every machine.
+ */
+export function namedMachineNote(o: { reach: MachineReach; machine: string; machines: readonly InstanceSpec[]; live?: readonly MachineSnapshot[] }): MachineNote | undefined {
+  if (o.reach === 'any') return undefined;
+  const spec = o.machines.find((m) => m.name === o.machine);
+  if (!spec) return o.machines.length ? { needsMachine: true, note: notConfigured(o.machine) } : undefined;
+  if (!REACHED[o.reach].has(spec.plugin)) return { needsMachine: true, note: containerRefusal(o.machine) };
+  const now = o.live?.find((m) => m.id === o.machine);
+  if (!now || now.online) return undefined;
+  return { needsMachine: false, cannotRun: true, note: offlineNote(o.machine, now.client ? 'client' : now.ssh ? 'ssh' : 'other') };
+}
+
+/**
+ * An instance's status with its note: a built-in part that runs claude and names no machine (issue #442),
+ * or a level whose named machine cannot run it (issue #482). `escalationMachine`: a level's fallback;
+ * `live`: the machines as last listed.
+ */
+export function withMachineNote(st: InstanceStatus, machines: readonly InstanceSpec[], escalationMachine?: string, live?: readonly MachineSnapshot[]): InstanceStatus {
   const reach = RUNS_CLAUDE[st.instance.plugin];
-  if (!reach || st.instance.options?.machine) return st;
-  const fallback = reach === 'here-or-ssh' ? escalationMachine : undefined;
+  if (!reach) return st;
+  const named = st.instance.options?.machine;
+  if (typeof named === 'string' && named) {
+    const note = namedMachineNote({ reach, machine: named, machines, ...(live ? { live } : {}) });
+    return note ? { ...st, machine: note } : st;
+  }
+  const fallback = reach === 'no-container' ? escalationMachine : undefined;
   return { ...st, machine: machineNote({ reach, machines, ...(fallback ? { fallback } : {}) }) };
 }
 

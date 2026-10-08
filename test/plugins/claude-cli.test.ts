@@ -47,7 +47,7 @@ const LOCAL: MachineSnapshot = { id: 'local', label: 'local', maxLanes: 4, onlin
 const ctx = (machines: MachineSnapshot[] = [LOCAL], escalationMachine?: string) => ({
   clock: fixedClock, logger: { info() {}, warn() {} }, dataDir: dir, userEnv: {}, secretName: (n: string) => n, scratchDir: join(dir, 'scratch'), instanceName: 'opus',
   env: (_n: string): string | undefined => undefined, machine: async (id: string): Promise<MachineSnapshot | undefined> => machines.find((m) => m.id === id),
-  machines: async () => machines, escalationMachine: () => escalationMachine,
+  machines: async () => machines, escalationMachine: () => escalationMachine, client: () => undefined,
 });
 const signal = () => new AbortController().signal;
 const rec = () => JSON.parse(readFileSync(out, 'utf8')) as { argv: string[]; stdin: string; env: Record<string, string>; cwd: string };
@@ -79,8 +79,8 @@ describe('claude-cli (escalation level)', () => {
   });
 
   it('this machine is no default: one not configured or offline returns { error } and claude never runs here (#174)', async () => {
-    expect(await (await level({}, [])).answer(req(), signal())).toEqual({ error: 'machine local is not configured' });
-    expect(await (await level({}, [{ ...LOCAL, online: false }])).answer(req(), signal())).toEqual({ error: 'machine local is offline' });
+    expect(await (await level({}, [])).answer(req(), signal())).toEqual({ error: expect.stringMatching(/^machine local is not configured\. Pick another machine/) });
+    expect(await (await level({}, [{ ...LOCAL, online: false }])).answer(req(), signal())).toEqual({ error: expect.stringMatching(/^machine local is offline: questions skip this level until it is back/) });
     expect(existsSync(out)).toBe(false);
   });
 
