@@ -135,6 +135,25 @@ describe('herdr-claude executor: ~ in a work tree resolves on the lane\'s machin
     expect(remotes.get('studio')!.calls.find((c) => c.method === 'createTab')!.args[0]).toMatchObject({ cwd: '/Users/far/hopper-jobs' });
   });
 
+  // Issue #365: a Windows client reports a drive-letter home; ~ resolves to a forward-slash Windows path.
+  it.each([
+    ['backslashes', 'C:\\Users\\far'],
+    ['forward slashes', 'C:/Users/far'],
+  ])('a Windows client target, its home with %s: against that home, as a forward-slash path', async (_name, home) => {
+    const { remotes, executor } = setup({}, { defaultCwd: '~/hopper-jobs', remote: { studio: { turns: [DONE] } } });
+    expect(await executor.run(contextFor(jobWith({ prompt: 'go' }), 'studio/lane-1', { ...STUDIO, home }).ctx)).toMatchObject({ kind: 'finished' });
+    expect(remotes.get('studio')!.calls.find((c) => c.method === 'createTab')!.args[0]).toMatchObject({ cwd: 'C:/Users/far/hopper-jobs' });
+  });
+
+  it('a Windows client target: its home, or its drive root, is refused as the work tree', async () => {
+    const { executor } = setup({}, { remote: { studio: { turns: [DONE, DONE] } } });
+    const at = { ...STUDIO, home: 'C:\\Users\\far' };
+    for (const cwd of ['~', '~/..', '~/../..']) {
+      const out = await executor.run(contextFor(jobWith({ prompt: 'go', cwd }), 'studio/lane-1', at).ctx);
+      expect((out as { error: string }).error).toMatch(/is its home or above it/);
+    }
+  });
+
   it('an attached machine whose home is not known yet: the job fails at once and no tab opens there', async () => {
     const { remotes, executor } = setup({}, { defaultCwd: '~/hopper-jobs', remote: { laptop: { turns: [DONE] } } });
     expect(await executor.run(contextFor(jobWith({ prompt: 'go' }), 'laptop/lane-1', LAPTOP).ctx)).toEqual({

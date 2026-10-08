@@ -63,21 +63,30 @@ export function nativeHold(job: Job, machines: MachineSnapshot[], unavailable: E
   const down = unavailable.find((u) => u.name === executor);
   if (down) return `executor ${executor} unavailable: ${down.reason}`;
   const pin = pinOf(job);
-  const runs = machines.filter((m) => m.online && m.executors.includes(executor));
-  if (runs.length === 0) {
-    return `no online machine runs executor ${executor}`;
-  }
+  const running = machines.filter((m) => m.online && m.executors.includes(executor));
+  if (running.length === 0) return `no online machine runs executor ${executor}`;
   if (pin === undefined) {
-    if (runs.every((m) => diskHolds(m, job))) return `disk low on ${runs.map((m) => `${m.id} (${freeOf(m)})`).join(', ')}: ${NO_NEW_JOB}`;
+    const known = running.filter((m) => !homeless(m));
+    if (known.length === 0) {
+      return `no machine that runs executor ${executor} has its home known yet: ${running.map((m) => m.id).join(', ')} ${running.length > 1 ? 'have' : 'has'} not answered a probe`;
+    }
+    if (known.every((m) => diskHolds(m, job))) return `disk low on ${known.map((m) => `${m.id} (${freeOf(m)})`).join(', ')}: ${NO_NEW_JOB}`;
     return undefined;
   }
   const pinned = machines.find((m) => m.id === pin);
   if (!pinned) return `pinned machine ${pin} unknown`;
   if (!pinned.online) return `pinned machine ${pin} offline`;
   if (!pinned.executors.includes(executor)) return `pinned machine ${pin} does not run executor ${executor}`;
+  if (homeless(pinned)) return `pinned machine ${pin}: its home is not known yet (it has not answered a probe)`;
   if (diskHolds(pinned, job)) return `pinned machine ${pin} disk low (${freeOf(pinned)}): ${NO_NEW_JOB}`;
   return undefined;
 }
+
+/**
+ * Issue #365: an ssh or client target whose probe has not found its home yet. `~` in a work tree cannot
+ * resolve there, so no job is placed on it until it has; this machine's and a container target's need none.
+ */
+const homeless = (m: MachineSnapshot): boolean => (m.ssh !== undefined || m.client !== undefined) && m.home === undefined;
 
 /**
  * Issue #371: an ended job of the same item whose cleanup has not gone through may still run in its pane;
@@ -145,7 +154,7 @@ function roomForJob(s: MachineState, job: Job): number {
 
 function eligible(s: MachineState, job: Job): boolean {
   const pin = pinOf(job);
-  return s.machine.online && s.machine.executors.includes(job.spec.executor) && !diskHolds(s.machine, job)
+  return s.machine.online && !homeless(s.machine) && s.machine.executors.includes(job.spec.executor) && !diskHolds(s.machine, job)
     && (pin === undefined || pin === s.machine.id);
 }
 

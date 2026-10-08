@@ -43,7 +43,8 @@ function configure(laptopLanes: number): string {
 
 async function boot(dbPath: string, online: boolean): Promise<TestApp & { probed: AttachedMachine[] }> {
   const probed: AttachedMachine[] = [];
-  const a = await startTestApp({ dbPath, seams: { machineProbe: (m) => { probed.push(m); return Promise.resolve({ online }); } } });
+  // An ssh target that answers has a home: its probe prints it (issue #365: none known, no job goes there).
+  const a = await startTestApp({ dbPath, seams: { machineProbe: (m) => { probed.push(m); return Promise.resolve(online ? { online, home: '/home/far' } : { online }); } } });
   apps.push(a);
   return Object.assign(a, { probed });
 }
