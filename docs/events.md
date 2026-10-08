@@ -1165,3 +1165,47 @@ Version 1 (`docs/schemas/failure.resolved.v1.json`). A problem was resolved (iss
   "released": 2
 }
 ```
+
+## `handoff.opened`
+
+Version 1 (`docs/schemas/handoff.opened.v1.json`). A failed job was handed off to a person (issue #516): automatic handling has ended for it, and it waits in Failures, Needs a person, until a person runs it again or clears it — never dropped by age or a restart. `reason`: `retry_limit` (its retries used up), `person` (a job-specific failure), `auto_off` (its decision's automatic action is off in the failures settings), `not_retried` (a run again the assessor decided was refused), or `dismissed` (its locked entry dismissed with nothing else to end it). `summary` and `recordId`: its assessment. `notify: false`: the failures setting says not to tell anyone, and no webhook delivers it. Once per hand-off.
+
+| field | type | required |
+|---|---|---|
+| `handoffId` | string | yes |
+| `reason` | `retry_limit` \| `person` \| `auto_off` \| `not_retried` \| `dismissed` | yes |
+| `summary` | string | yes |
+| `notify` | boolean | yes |
+| `recordId` | string | no |
+| `decision` | `retry` \| `hold` \| `redirect` \| `person` | no |
+| `class` | `transient` \| `shared` \| `job` | no |
+
+```json
+{
+  "handoffId": "h1",
+  "reason": "retry_limit",
+  "summary": "Needs a person. Ran 4 times on desk, the last for 2 min. Failed: read ECONNRESET.",
+  "notify": true,
+  "recordId": "f1",
+  "decision": "person",
+  "class": "transient"
+}
+```
+
+## `handoff.closed`
+
+Version 1 (`docs/schemas/handoff.closed.v1.json`). A hand-off ended (issue #516): `end` `run_again` (its item ran again, from Needs a person, the Queue, the failure's Retry or its source; `nextJobId` the new job), `cleared` (a person acknowledged it: no more work, its locked entry dismissed too), or `finished` (its job ended finished: its issue closed as complete).
+
+| field | type | required |
+|---|---|---|
+| `handoffId` | string | yes |
+| `end` | `run_again` \| `cleared` \| `finished` | yes |
+| `nextJobId` | string | no |
+
+```json
+{
+  "handoffId": "h1",
+  "end": "run_again",
+  "nextJobId": "j2"
+}
+```

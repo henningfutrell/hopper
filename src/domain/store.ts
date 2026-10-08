@@ -5,7 +5,7 @@ import type { IntakeMigration } from './intake.ts';
 import type {
   DomainEvent, Decision, EventType, Job, JobId, JobSpec, JobStatus, Lane, JobSourceRef, LaneId, MachineId, NewEvent, Question, QuestionAttempt, QuestionStatus, RaisedBy,
   Identity, Login, LoginExpiryAction, LoginStatus, QueueGate, SessionLengths, UiRole, WebhookDelivery, WebhookSubscription, UpdateSettings, PluginInstall, PluginStoreSource, User,
-  UsageGraphView, UsageSample, UsageSeries, UsageTotalSeries, FailureRecord, FailureSettings, NamedCause, Problem,
+  UsageGraphView, UsageSample, UsageSeries, UsageTotalSeries, FailureRecord, FailureSettings, Handoff, NamedCause, Problem,
 } from './types.ts';
 import type { ConnectedAccountProvider } from './types.ts';
 
@@ -126,6 +126,20 @@ export interface FailureRepository {
   /** Shallow-merge; `undefined` clears. */
   update(id: string, patch: Partial<Omit<FailureRecord, 'id' | 'jobId'>>): FailureRecord;
   /** Delete the records older than `before` with no pending run; how many. */
+  prune(before: string): number;
+}
+
+/** The hand-offs (issue #516): failed jobs waiting on a person. */
+export interface HandoffRepository {
+  create(input: Omit<Handoff, 'id'>): Handoff;
+  get(id: string): Handoff | undefined;
+  /** The job's newest hand-off. */
+  forJob(jobId: JobId): Handoff | undefined;
+  /** Open ones oldest first; closed ones newest closed first; at most `limit` (default 500). */
+  list(filter: { status: Handoff['status']; closedSince?: string; limit?: number }): Handoff[];
+  /** Shallow-merge; `undefined` clears. */
+  update(id: string, patch: Partial<Omit<Handoff, 'id' | 'jobId'>>): Handoff;
+  /** Delete the hand-offs closed before `before`, never an open one; how many. */
   prune(before: string): number;
 }
 
@@ -407,6 +421,7 @@ export interface UserStore {
   logins: LoginRepository;
   failures: FailureRepository;
   problems: ProblemRepository;
+  handoffs: HandoffRepository;
   settings: UserSettingsRepository;
   connectedAccounts: ConnectedAccountRepository;
   usageHistory: UsageHistoryRepository;

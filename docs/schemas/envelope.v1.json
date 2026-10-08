@@ -80,6 +80,8 @@
         "job.assessed",
         "failure.grouped",
         "failure.resolved",
+        "handoff.opened",
+        "handoff.closed",
         "jev.mode_changed",
         "router.mode_changed"
       ]

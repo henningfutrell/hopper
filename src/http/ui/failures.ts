@@ -1,5 +1,5 @@
 // The UI session's actions on failures (issue #509): resolve a problem, release its held jobs, run a surfaced
-// failure's job again (operator); the failures settings and the known causes a person names (admin). Each refuses
+// failure's job again, run a hand-off's job again or clear it (issue #516) (operator); the failures settings and the known causes a person names (admin). Each refuses
 // with the reason the Failures view reads from `actions`, so the view offers only what is taken.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
@@ -17,6 +17,7 @@ export const failureSettingsBody = z.strictObject({
   maxAttempts: int('maxAttempts'), backoffSec: int('backoffSec'),
   backoffFactor: z.number().min(FAILURE_SETTING_BOUNDS.backoffFactor.min).max(FAILURE_SETTING_BOUNDS.backoffFactor.max).optional(),
   backoffMaxSec: int('backoffMaxSec'), groupThreshold: int('groupThreshold'), groupWindowMin: int('groupWindowMin'), retentionDays: int('retentionDays'),
+  handoffRetentionDays: int('handoffRetentionDays'), handoffNotify: z.boolean().optional(),
   auto: z.strictObject({ retry: z.boolean().optional(), hold: z.boolean().optional(), redirect: z.boolean().optional() }).optional(),
 }).refine((b) => Object.values(b).some((v) => v !== undefined), { message: 'name at least one setting' });
 const signature = z.string().regex(/^[0-9a-f]{12}$/, 'signature must be 12 hex digits');
@@ -35,6 +36,8 @@ function answer<T>(r: FailureAction<T>): T {
 export function registerFailureRoutes(app: FastifyInstance, o: { operator: Guard; admin: Guard; tenant: (req: FastifyRequest) => TenantParts }): void {
   app.post('/ui/api/failures/problems/:id/resolve', o.operator, async (req) => answer(o.tenant(req).failures.resolve(parseWith(idParams, req.params).id)));
   app.post('/ui/api/failures/problems/:id/release', o.operator, async (req) => answer(o.tenant(req).failures.release(parseWith(idParams, req.params).id)));
+  app.post('/ui/api/failures/handoffs/:id/run-again', o.operator, async (req) => answer(await o.tenant(req).failures.runAgain(parseWith(idParams, req.params).id)));
+  app.post('/ui/api/failures/handoffs/:id/clear', o.operator, async (req) => answer(o.tenant(req).failures.clear(parseWith(idParams, req.params).id)));
   app.post('/ui/api/failures/:id/retry', o.operator, async (req) => answer(await o.tenant(req).failures.retry(parseWith(idParams, req.params).id)));
   // Read at each assessment and sweep: applies without a restart.
   app.post('/ui/api/failures/settings', o.admin, async (req) => {

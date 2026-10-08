@@ -48,7 +48,7 @@ export interface HopperState {
   logins: LoginView[];
   /** The logins settings, as GET /api/logins answered them; null until read. */
   loginSettings: LoginSettings | null;
-  /** GET /api/failures (issue #509): problems, assessed failures, the profile, the settings; null until read. */
+  /** GET /api/failures (issue #509): hand-offs (issue #516), problems, assessed failures, the profile, the settings; null until read. */
   failures: FailuresView | null;
   /** Server time less the browser's when the logins were read: countdowns run on server time. */
   serverOffsetMs: number;
@@ -141,7 +141,7 @@ export async function saveLoginSettings(body: Partial<LoginSettings>): Promise<v
 /** GET /api/failures (issue #509). An answer without its parts is refused, never read as none. */
 export async function refreshFailures() {
   const r = await get<FailuresView>('/api/failures');
-  if (!Array.isArray(r.problems) || !Array.isArray(r.recent) || !r.settings || !r.profile) throw new Error('GET /api/failures: the answer holds no failures');
+  if (!Array.isArray(r.handoffs) || !Array.isArray(r.problems) || !Array.isArray(r.recent) || !r.settings || !r.profile) throw new Error('GET /api/failures: the answer holds no failures');
   set({ failures: r });
 }
 /** A Failures action (issue #509): the daemon's answer, then the failures read again. Failures toast, as `act`. */
@@ -209,7 +209,7 @@ const refreshQuestionsSoon = debounced(refreshQuestions);
 const refreshLoginsSoon = debounced(refreshLogins);
 const refreshFailuresSoon = debounced(refreshFailures);
 /** What the assessor writes, and what changes what it shows (a job run again, a job failed). */
-const FAILURE_EVENTS = new Set(['job.assessed', 'failure.grouped', 'failure.resolved', 'job.rerun', 'job.failed', 'job.dismissed']);
+const FAILURE_EVENTS = new Set(['job.assessed', 'failure.grouped', 'failure.resolved', 'handoff.opened', 'handoff.closed', 'job.rerun', 'job.failed', 'job.dismissed']);
 
 export async function checkSession() {
   try {

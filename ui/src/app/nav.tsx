@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { useHopper } from '@/store';
 import { useAwaitingOwner, useAwaitingSort, useLoginsBadge } from '@/store/selectors';
-import { openProblems } from '@/model/failures';
+import { openHandoffs, openProblems, plural } from '@/model/failures';
 import { cn } from '@/lib/utils';
 
 export const VIEWS = ['overview', 'queue', 'questions', 'logins', 'failures', 'decisions', 'events', 'sources', 'machines', 'usage', 'settings'] as const;
@@ -38,11 +38,12 @@ function Links({ view, onPick }: { view: View; onPick?: () => void }) {
   const sorting = useAwaitingSort();
   const logins = useLoginsBadge();
   const problems = useHopper((s) => openProblems(s.failures));
+  const handoffs = useHopper((s) => openHandoffs(s.failures));
   const badge: Partial<Record<View, { n: number; cls: string; title?: string }>> = {
     queue: { n: sorting, cls: 'bg-warn text-background', title: `${sorting} ${sorting === 1 ? 'job waits' : 'jobs wait'} on the pre-sort` },
     questions: { n: questions, cls: 'bg-question text-background' },
     logins: { n: logins.n, cls: logins.warn ? 'bg-warn text-background' : 'bg-foreground text-background', title: `${logins.n} ${logins.n === 1 ? 'login waits' : 'logins wait'} on you${logins.warn ? '; one expires soon' : ''}` },
-    failures: { n: problems, cls: 'bg-bad text-background', title: `${problems} open ${problems === 1 ? 'problem' : 'problems'}` },
+    failures: { n: problems + handoffs, cls: 'bg-bad text-background', title: `${plural(problems, 'open problem')}, ${plural(handoffs, 'job needs', 'jobs need')} a person` },
     sources: { n: failedSources, cls: 'bg-bad text-background' },
   };
   return (

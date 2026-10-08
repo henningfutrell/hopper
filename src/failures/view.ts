@@ -1,8 +1,9 @@
-// What the Failures view reads (issue #509): the open problems and those resolved in the last day, the newest
+// What the Failures view reads (issue #509): the hand-offs waiting on a person and those closed in the last day
+// (issue #516), the open problems and those resolved in the last day, the newest
 // assessed failures, the profile — and, on each problem and failure, whether the daemon takes each action now and
 // why not. The routes refuse with the same reasons, so the view offers only what is taken.
 import type { UserStore } from '../domain/ports.ts';
-import type { Allowed, FailureRecord, FailureSettings, FailuresView, Problem, ProblemView } from '../domain/types.ts';
+import type { Allowed, FailureRecord, FailureSettings, FailuresView, Handoff, HandoffView, Problem, ProblemView } from '../domain/types.ts';
 import { knownCauses } from './causes.ts';
 import { profileOf } from './profile.ts';
 
@@ -15,7 +16,7 @@ const no = (why: string): Allowed => ({ ok: false, why });
 type Reads = Pick<UserStore, 'failures' | 'problems' | 'jobs'>;
 
 /** Whether the job can run again: it exists, has a source, and is the newest job of its item. */
-function newestOfItem(store: Reads, jobId: string): Allowed {
+export function newestOfItem(store: Pick<UserStore, 'jobs'>, jobId: string): Allowed {
   const job = store.jobs.get(jobId);
   if (!job) return no('its job is gone');
   if (!job.source) return no('its job has no source to run it again');
@@ -36,6 +37,14 @@ export function recordRetry(store: Reads, r: FailureRecord): Allowed {
   return newestOfItem(store, r.jobId);
 }
 
+/** Whether a person may run a hand-off's job again, or clear it, now. */
+export function handoffView(store: Pick<UserStore, 'failures' | 'jobs'>, h: Handoff): HandoffView {
+  if (h.status === 'closed') return { ...h, actions: { runAgain: no('already closed'), clear: no('already closed') } };
+  const pending = h.recordId ? store.failures.get(h.recordId)?.pending : undefined;
+  const runAgain = pending ? no(pending === 'retry' ? 'it runs again by itself' : 'it is being run again') : newestOfItem(store, h.jobId);
+  return { ...h, actions: { runAgain, clear: OK } };
+}
+
 function problemView(store: Reads, p: Problem): ProblemView {
   const held = releasable(store, p.id);
   return {
@@ -44,13 +53,15 @@ function problemView(store: Reads, p: Problem): ProblemView {
   };
 }
 
-export function viewOf(store: Reads & Pick<UserStore, 'settings'>, settings: FailureSettings, now: Date): FailuresView {
+export function viewOf(store: Reads & Pick<UserStore, 'settings' | 'handoffs'>, settings: FailureSettings, now: Date): FailuresView {
   const dayAgo = new Date(now.getTime() - DAY_MS).toISOString();
+  const handoffs = [...store.handoffs.list({ status: 'open' }), ...store.handoffs.list({ status: 'closed', closedSince: dayAgo, limit: 50 })];
   const resolved = store.problems.list({ status: 'resolved', limit: 50 }).filter((p) => (p.resolvedAt ?? '') >= dayAgo);
   const since = new Date(now.getTime() - PROFILE_DAYS * DAY_MS).toISOString();
   return {
     now: now.toISOString(),
     settings,
+    handoffs: handoffs.map((h) => handoffView(store, h)),
     causes: knownCauses(store.settings.getNamedCauses()),
     problems: [...store.problems.list({ status: 'open' }), ...resolved].map((p) => problemView(store, p)),
     recent: store.failures.list({ limit: RECENT }).map((r) => ({ ...r, actions: { retry: recordRetry(store, r) } })),

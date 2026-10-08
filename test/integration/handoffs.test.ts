@@ -73,7 +73,7 @@ describe('a failed job is handed off to a person when automatic handling ends', 
   it('automatic retry off: the decision waits on a person, so it is handed off', async () => {
     const a = await boot();
     const token = await a.login();
-    await settings(a, token, { auto: { retry: false } });
+    await settings(a, token, { auto: { retry: false, hold: true, redirect: true } });
     const job = await a.pull(fail('read ECONNRESET'));
     expect(await handoffOf(a, job.id)).toMatchObject({ reason: 'auto_off', decision: 'retry' });
   });
@@ -115,7 +115,8 @@ describe('a person acts on a hand-off', () => {
     const closed = (await failuresOf(a)).handoffs.find((x) => x.id === h.id)!;
     expect(closed).toMatchObject({ status: 'closed', end: 'run_again', nextJobId: r.body.id });
     expect(closed.actions.runAgain.ok).toBe(false);
-    expect(await openCount(a)).toBe(0);
+    // The new job fails the same way: it is handed off on its own; the first one is not again.
+    expect((await failuresOf(a)).handoffs.filter((x) => x.jobId === job.id && x.status === 'open')).toEqual([]);
   });
 
   it('Run again from the Queue also takes it out of Needs a person', async () => {
