@@ -5,7 +5,7 @@ import type { IntakeMigration } from './intake.ts';
 import type {
   DomainEvent, Decision, EventType, Job, JobId, JobSpec, JobStatus, Lane, JobSourceRef, LaneId, MachineId, NewEvent, Question, QuestionAttempt, QuestionStatus, RaisedBy,
   Identity, Login, LoginExpiryAction, LoginStatus, QueueGate, SessionLengths, UiRole, WebhookDelivery, WebhookSubscription, UpdateSettings, PluginInstall, PluginStoreSource, User,
-  UsageGraphView, UsageSample, UsageSeries, UsageTotalSeries, FailureRecord, FailureSettings, Handoff, NamedCause, Problem,
+  UsageGraphView, UsageSample, UsageSeries, UsageTotalSeries, FailureOutcome, FailureRecord, FailureSettings, Handoff, NamedCause, Problem,
 } from './types.ts';
 import type { ConnectedAccountProvider, UsageLimitPair } from './types.ts';
 
@@ -13,6 +13,8 @@ import type { ConnectedAccountProvider, UsageLimitPair } from './types.ts';
 
 export interface JobFilter {
   status?: JobStatus[];
+  /** Only the jobs with no failure assessment (issue #517). */
+  unassessed?: boolean;
   limit?: number;
 }
 
@@ -119,8 +121,8 @@ export interface FailureRepository {
   get(id: string): FailureRecord | undefined;
   /** The job's newest record. */
   forJob(jobId: JobId): FailureRecord | undefined;
-  /** Newest first: since a time, of a signature, of a problem; at most `limit` (default 1000). */
-  list(filter?: { since?: string; signature?: string; problemId?: string; limit?: number }): FailureRecord[];
+  /** Newest first: since a time, of a signature, of a problem, with one of the outcomes; at most `limit` (default 1000). */
+  list(filter?: { since?: string; signature?: string; problemId?: string; outcome?: FailureOutcome[]; limit?: number }): FailureRecord[];
   /** The records whose pending run is due at `at`, the earliest first. */
   due(at: string): FailureRecord[];
   /** Shallow-merge; `undefined` clears. */

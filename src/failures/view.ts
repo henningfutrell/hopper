@@ -1,9 +1,9 @@
-// What the Failures view reads (issue #509): the hand-offs waiting on a person and those closed in the last day
-// (issue #516), the open problems and those resolved in the last day, the newest
-// assessed failures, the profile — and, on each problem and failure, whether the daemon takes each action now and
-// why not. The routes refuse with the same reasons, so the view offers only what is taken.
+// What the Failures view reads (issue #509): how many failed jobs are left (issue #517), the hand-offs waiting on a
+// person and those closed in the last day (issue #516), the open problems and those resolved in the last day, the
+// newest assessed failures, the profile — and, on each problem and failure, whether the daemon takes each action now
+// and why not. The routes refuse with the same reasons, so the view offers only what is taken.
 import type { UserStore } from '../domain/ports.ts';
-import type { Allowed, FailureRecord, FailureSettings, FailuresView, Handoff, HandoffView, Problem, ProblemView } from '../domain/types.ts';
+import type { Allowed, FailureCounts, FailureRecord, FailureSettings, FailuresView, Handoff, HandoffView, Job, Problem, ProblemView } from '../domain/types.ts';
 import { knownCauses } from './causes.ts';
 import { profileOf } from './profile.ts';
 
@@ -14,6 +14,20 @@ const OK: Allowed = { ok: true };
 const no = (why: string): Allowed => ({ ok: false, why });
 
 type Reads = Pick<UserStore, 'failures' | 'problems' | 'jobs'>;
+
+/** The newer job of its item, when the job is not its item's newest. */
+export function newerOf(store: Pick<UserStore, 'jobs'>, job: Job): string | undefined {
+  const newest = job.source ? store.jobs.getBySourceKey(job.source.key) : undefined;
+  return newest && newest.id !== job.id ? newest.id : undefined;
+}
+
+/** How many failed jobs are left (issue #517): not assessed yet, and handed off to a person (open hand-offs). */
+export function countsOf(store: Pick<UserStore, 'jobs' | 'handoffs'>): FailureCounts {
+  return {
+    unassessed: store.jobs.list({ status: ['failed'], unassessed: true }).length,
+    needsPerson: store.handoffs.list({ status: 'open', limit: 1_000_000 }).length,
+  };
+}
 
 /** Whether the job can run again: it exists, has a source, and is the newest job of its item. */
 export function newestOfItem(store: Pick<UserStore, 'jobs'>, jobId: string): Allowed {
@@ -32,7 +46,7 @@ export function releasable(store: Reads, problemId: string): FailureRecord[] {
 /** Whether a person may run a failure's job again now. */
 export function recordRetry(store: Reads, r: FailureRecord): Allowed {
   if (r.pending) return no(r.pending === 'retry' ? 'it runs again by itself' : 'it is being run again');
-  if (r.outcome === 'retried' || r.outcome === 'redirected' || r.outcome === 'released') return no('already run again');
+  if (r.outcome === 'retried' || r.outcome === 'redirected' || r.outcome === 'released' || r.outcome === 'superseded') return no('already run again');
   if (r.outcome === 'held') return no('it waits on its problem: resolve or release it');
   return newestOfItem(store, r.jobId);
 }
@@ -60,6 +74,7 @@ export function viewOf(store: Reads & Pick<UserStore, 'settings' | 'handoffs'>, 
   const since = new Date(now.getTime() - PROFILE_DAYS * DAY_MS).toISOString();
   return {
     now: now.toISOString(),
+    counts: countsOf(store),
     settings,
     handoffs: handoffs.map((h) => handoffView(store, h)),
     causes: knownCauses(store.settings.getNamedCauses()),

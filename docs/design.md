@@ -47,7 +47,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following the plugins config; ssh probe and the check that herdr is found there by name (`REMOTE_PATH`, issue #311) through the herdr CLI client's ssh argv; the container probe, `docker container inspect`), the detected ssh targets (`ssh-config.ts`) and which of them is this machine (`this-machine.ts`, issue #275), keeping each client target on the hopper's client release (`client-release.ts`), the links of the machines dialled in (`links.ts`) and their join codes (`join-code.ts`, issue #308), `combineMachineSources` | engine, http, store, plugins |
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin); the usage history's recorder (`history.ts`, issue #385), over the `UsageHistoryRepository` port | engine, http, store, plugins |
 | `src/logins/` | logins (issue #476, "Logins"): the logins a job or run waits on (`service.ts`: report, check, complete, fail, cancel, new code, the sweep, the view), the login kinds (`kinds.ts`), each CLI's device-code prompt and hiding its code (`recognise.ts`, pure), a print-mode run's output watched for one (`run-output.ts`). Its URL and code are kept in memory only. Executors and plugins use `recognise.ts` and `run-output.ts`, never the service: they report through the `RunLogins` port | engine, http, store, plugins, executors, decider, questions |
-| `src/failures/` | the failure assessor (issue #509, "Failure assessment"): the signature (`signature.ts`, pure), the known causes (`causes.ts`, pure), the judgement of one failed job (`assess.ts`, pure), the profile (`profile.ts`, pure), the service — assessing on `job.failed`, the pending runs again through the sync loop's Run again, the checks, the prune (`service.ts`) —, the hand-offs to a person (issue #516: when one opens, `handoff.ts`, pure; opening, closing and the person's actions, `handoffs.ts`) and what the Failures view reads, with each action's refusal (`view.ts`). Its records, problems and hand-offs through the `FailureRepository`, `ProblemRepository` and `HandoffRepository` ports | engine, http, store, plugins, executors, decider, questions |
+| `src/failures/` | the failure assessor (issue #509, "Failure assessment"): the signature (`signature.ts`, pure), the known causes (`causes.ts`, pure), the judgement of one failed job (`assess.ts`, pure), the machine it ran on and its evidence (`evidence.ts`, pure), the profile (`profile.ts`, pure), the service — assessing on `job.failed`, the pending runs again through the sync loop's Run again, the checks, the prune (`service.ts`) —, the hand-offs to a person (issue #516: when one opens, `handoff.ts`, pure; opening, closing and the person's actions, `handoffs.ts`) and what the Failures view reads, with each action's refusal (`view.ts`). Its records, problems and hand-offs through the `FailureRepository`, `ProblemRepository` and `HandoffRepository` ports | engine, http, store, plugins, executors, decider, questions |
 | `src/job-rules/` | the job rules (issue #172): the config record `job-rules`, the default job rules, the fixed lines of the footer (work tree, protocol), their read, view and edit — no I/O but the config records port | everything but `domain/` |
 | `src/routing/` | routing rules: the plugins config's `routing` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
 | `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; routing at intake (`source-host.ts`); restart recovery; a job's credential files on its machine, kept current at each renewal (`credentials.ts`, issue #441) | http |
@@ -8017,7 +8017,9 @@ Open decisions taken conservatively, each one entry to change: the kinds after `
 A failed job stayed failed until someone looked at it, and a cause that hit many jobs showed as many failures.
 The **failure assessor** (`src/failures/`, one per user runtime) judges every failed job once, from its
 `job.failed` — whatever failed it: an executor's outcome, restart recovery, a question's end, an invalid item at
-intake. A failed job a restart left unassessed (finished in the last day, no `assessment`) is assessed at start.
+intake. A failed job left unassessed (no `assessment`) — by a restart, or by a build before the assessor — is
+assessed at start and by the sweep, whatever its age (issue #517); the sweep leaves a job that failed in the last
+minute to its own `job.failed`.
 
 **Rules first, no model.** The error is normalised and hashed to a **signature**; a **known cause** is matched —
 a cause a person named for that signature first, then the built-in ones by their text (`causes.ts`). In order
@@ -8034,6 +8036,23 @@ a cause a person named for that signature first, then the built-in ones by their
    a person, saying so.
 5. Anything else: a person, with a summary — what was tried (runs, machine, how long), what failed (the error's
    first line), the last line of output.
+
+Two cases come before the rules and act on nothing (issue #517):
+
+- **Superseded.** A failed job that is not its item's newest job — a person ran it again, or anything else did —
+  is recorded `superseded`, `nextJobId` the newer job: its class and decision kept for the profile, no problem
+  opened or joined, no retry, not for a person. The sweep does the same to a record that was `surfaced`,
+  `not_retried` or `held` once its item runs again, so it leaves the person's list.
+- **Older than a day** (`STALE_AFTER_MS`) when assessed — an upgraded install's backlog. Its decision stands, as a
+  recommendation (`auto: false`, `Retry recommended`, `Redirect recommended: <cause>`), and it waits on a person:
+  its work may be stale, and a failure that old neither retries by itself nor opens or joins a problem that would
+  hold other jobs.
+
+**hopper's own client errors** match known causes: `client <machine> is not dialled in` is `machine offline` (a
+problem, redirected or held, resolved by its online check); `no answer: its link closed` and `no answer within <n>
+ms, or its link closed` are `link closed`, transient — a link that drops for good fails the next run with `is not
+dialled in`. `test/failures/client-link.test.ts` checks every `ClientError` template in `src/executors/client.ts`,
+so a reworded or new one fails there instead of falling through to a person.
 
 **Hold or redirect.** A problem planned `redirect` (socket path, disk full, machine offline) redirects a failed
 job that may run elsewhere — not pinned, its machine known, the problem on one machine, automatic redirect on:
@@ -8066,7 +8085,9 @@ backoff, the grouping threshold and window, `auto.retry` / `auto.hold` / `auto.r
 decision is recorded and waits for a person), `retentionDays` (default 90: records and resolved problems older
 are deleted, a pending one never). Read at each assessment and sweep: no restart. Named causes: `failureCauses`.
 
-**Failures view** (its own nav entry, after Logins; the badge counts open problems and open hand-offs, "Needs a person"): open problems with their
+**Failures view** (its own nav entry, after Logins; the badge counts open problems and open hand-offs, "Needs a person"): first
+what is left (issue #517) — the failed jobs not assessed yet and the open hand-offs, `counts` in `GET /api/failures`,
+both zero once everything is processed; open problems with their
 jobs, the held ones, Resolve and Release held; the recent assessed failures with their decision, summary and
 Retry; the profile and the known causes (an admin names a signature, or forgets one); the settings. `GET
 /api/failures` gives each problem and failure its `actions`, `{ ok }` or `{ ok: false, why }`, and the routes
@@ -8087,7 +8108,8 @@ stays open until a person acts.
 
 **It opens** in the transaction that ends automatic handling (`handoffReason`, `handoff.ts`, pure): the assessor's
 record surfaced to a person (`person`; `retry_limit` when a transient cause used its retries), its decision's
-automatic action off (`auto_off`: a recommended retry, or a hold with automatic hold off), or a run again the
+automatic action off (`auto_off`: a recommended retry, or a hold with automatic hold off, or a failure assessed more
+than a day after it failed, issue #517), or a run again the
 assessor decided refused (`not_retried`). A dismissed locked entry with no hand-off, no pending run, not run again
 and not held by its problem opens one (`dismissed`). At start, records left waiting with no hand-off (a restart
 between the two, or a store from the build before) whose job is still failed, not dismissed and the newest of its
@@ -8096,7 +8118,10 @@ its assessment's summary, reasons and error, so it outlives the record's retenti
 
 **It closes** when its item runs again — a new job whose `rerunOf` is its job, from Needs a person, the Queue, the
 failure's Retry or the source (`run_again`) —, when a person clears it (`cleared`: acknowledged, no more work; its
-locked entry is dismissed), or when its job ends finished (`finished`: its issue closed as complete). Run again from
+locked entry is dismissed), or when its job ends finished (`finished`: its issue closed as complete). A failure whose
+item already ran again when it is assessed is **superseded** (issue #517) and opens none; one whose item runs again
+later, by a way that records no run again on it (the Queue's Run again, the source), turns `superseded` by the sweep,
+`nextJobId` the newer job. Run again from
 Needs a person runs the item again past the retry limit and past its problem's hold (Release / Retry with override:
 one action), and marks the record `retried`.
 

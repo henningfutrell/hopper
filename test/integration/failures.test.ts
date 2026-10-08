@@ -222,3 +222,85 @@ describe('settings and known causes', () => {
     expect((await failuresOf(a)).causes.some((c) => c.id === `named:${record.signature}`)).toBe(false);
   });
 });
+
+// Issue #517: every failed job is processed — one already run again is superseded, not handed off to a person; one
+// handed off leaves Needs a person once its item runs again, by any way; one left unassessed is assessed whatever its
+// age; and the view counts what is unassessed and what needs a person, so a person can see that nothing is left.
+describe('every failed job is processed', () => {
+  /** Take a failed job back to unassessed, as an install upgraded to the assessor finds it: no assessment, no record. */
+  function unassess(a: TestApp, jobId: string, finishedAt?: string): void {
+    const { store } = a.user();
+    store.tx(() => {
+      store.jobs.update(jobId, { assessment: undefined, ...(finishedAt ? { finishedAt } : {}) });
+      store.failures.prune(new Date(Date.now() + 86_400_000).toISOString());
+    });
+  }
+  const recordOf = async (a: TestApp, jobId: string) => (await failuresOf(a)).recent.find((r) => r.jobId === jobId);
+
+  it('a failed job whose item already ran again is superseded: not for a person, counted as nothing left', async () => {
+    const a = await boot();
+    const token = await a.login();
+    const job = await a.pull(fail('HOPPER_FAILED the tests do not pass', 3000));
+    await a.waitForStatus(job.id, 'failed');
+    await waitFor(async () => (await recordOf(a, job.id))?.outcome === 'surfaced', { what: 'the failure surfaced' });
+    const r = await a.ui<Job>(`/ui/api/jobs/${job.id}/rerun`, {}, { token });
+    expect(r.status).toBe(200);
+    unassess(a, job.id, new Date(Date.now() - 5 * 60_000).toISOString());
+    const record = await waitFor(async () => { const x = await recordOf(a, job.id); return x?.outcome === 'superseded' ? x : undefined; }, { what: 'assessed as superseded' });
+    expect(record).toMatchObject({ nextJobId: r.body.id });
+    expect(record.summary).toMatch(/^Already run again/);
+    expect(record.actions.retry).toEqual({ ok: false, why: 'already run again' });
+    const v = await failuresOf(a);
+    expect(v.counts).toEqual({ unassessed: 0, needsPerson: 0 });
+    expect(v.handoffs.filter((h) => h.jobId === job.id && h.status === 'open')).toEqual([]);
+  });
+
+  it('a surfaced failure whose item a person runs again leaves the person\'s list', async () => {
+    const a = await boot();
+    const token = await a.login();
+    const job = await a.pull(fail('HOPPER_FAILED the tests do not pass', 3000));
+    await a.waitForStatus(job.id, 'failed');
+    await waitFor(async () => (await recordOf(a, job.id))?.outcome === 'surfaced', { what: 'the failure surfaced' });
+    expect((await failuresOf(a)).counts).toEqual({ unassessed: 0, needsPerson: 1 });
+    const r = await a.ui<Job>(`/ui/api/jobs/${job.id}/rerun`, {}, { token });
+    expect(r.status).toBe(200);
+    const record = await waitFor(async () => { const x = await recordOf(a, job.id); return x?.outcome === 'superseded' ? x : undefined; }, { what: 'superseded' });
+    expect(record.nextJobId).toBe(r.body.id);
+    expect((await failuresOf(a)).counts).toEqual({ unassessed: 0, needsPerson: 0 });
+  });
+
+  it('an unassessed failed job older than a day is assessed, with no automatic action: it waits on a person', async () => {
+    const a = await boot();
+    // No retry of its first assessment races the test: automatic retry is off until it is taken back.
+    const token = await a.login();
+    await settings(a, token, { auto: { retry: false, hold: true, redirect: true } });
+    const job = await a.pull(fail('read ECONNRESET'));
+    await a.waitForStatus(job.id, 'failed');
+    await waitFor(async () => (await recordOf(a, job.id))?.outcome === 'surfaced', { what: 'first assessed' });
+    await settings(a, token, { auto: { retry: true, hold: true, redirect: true } });
+    unassess(a, job.id, new Date(Date.now() - 3 * 86_400_000).toISOString());
+    const record = await waitFor(async () => recordOf(a, job.id), { what: 'the old failure assessed' });
+    expect(record).toMatchObject({ decision: 'retry', auto: false, outcome: 'surfaced' });
+    expect(record.reasons.join(' ')).toMatch(/failed 3 d before it was assessed/);
+    expect(record.actions.retry).toEqual({ ok: true });
+    expect((await failuresOf(a)).counts).toEqual({ unassessed: 0, needsPerson: 1 });
+    await new Promise((r) => setTimeout(r, 1500));
+    expect(await chain(a, job.source!.key)).toHaveLength(1);
+  });
+
+  it('the source offers a handed-off item again: its hand-off closes, its failure is superseded', async () => {
+    const a = await boot();
+    const job = await a.pull(fail('HOPPER_FAILED the tests do not pass'));
+    await a.waitForStatus(job.id, 'failed');
+    await waitFor(async () => (await failuresOf(a)).handoffs.find((h) => h.jobId === job.id && h.status === 'open'), { what: 'handed off' });
+    expect((await failuresOf(a)).counts).toEqual({ unassessed: 0, needsPerson: 1 });
+    // The source offers the item again: a new job of it, not one a person or the assessor ran again.
+    const next = await a.pull({ op: 'echo' }, { key: job.source!.key });
+    expect(next.id).not.toBe(job.id);
+    const closed = await waitFor(async () => (await failuresOf(a)).handoffs.find((h) => h.jobId === job.id && h.status === 'closed'), { what: 'the hand-off closed' });
+    expect(closed).toMatchObject({ end: 'run_again', nextJobId: next.id });
+    const record = await waitFor(async () => { const x = await recordOf(a, job.id); return x?.outcome === 'superseded' ? x : undefined; }, { what: 'superseded' });
+    expect(record.nextJobId).toBe(next.id);
+    expect((await failuresOf(a)).counts).toEqual({ unassessed: 0, needsPerson: 0 });
+  });
+});

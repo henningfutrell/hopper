@@ -2,12 +2,13 @@
 // to a person, and the hand-off stays open until a person acts — never dropped by age, a restart, or the recent
 // failures' window. It opens when the assessor's record waits on a person (`handoffReason`), when a run again the
 // assessor decided is refused, or when a failed job's locked entry is dismissed with nothing else to end it. It
-// closes when its item runs again — from here, the Queue, the failure's Retry or the source —, when a person clears
-// it (its locked entry dismissed too: no more work), or when its job ends finished. Each is an event.
+// closes when its item runs again — from here, the Queue, the failure's Retry or the source; its record then turns
+// `superseded` unless a run again is recorded on it (issue #517) —, when a person clears it (its locked entry
+// dismissed too: no more work), or when its job ends finished. Each is an event.
 import type { Clock, RerunBy, RerunResult, UserStore } from '../domain/ports.ts';
-import type { DomainEvent, FailureRecord, FailureSettings, Handoff, HandoffEnd, HandoffReason, Job } from '../domain/types.ts';
+import type { DomainEvent, FailureOutcome, FailureRecord, FailureSettings, Handoff, HandoffEnd, HandoffReason, Job } from '../domain/types.ts';
 import { handoffReason, RAN_AGAIN } from './handoff.ts';
-import { handoffView, newestOfItem } from './view.ts';
+import { handoffView, newerOf, newestOfItem } from './view.ts';
 
 export type HandoffAction<T> = { ok: true; value: T } | { ok: false; reason: 'not_found' | 'conflict'; message: string };
 
@@ -28,6 +29,11 @@ export interface Handoffs {
   afterRecord(record: FailureRecord): void;
   /** The records a restart (or the build before) left waiting on a person with no hand-off: handed off now. */
   catchUp(): void;
+  /**
+   * A failure nothing ran again, whose item ran again since by any way (issue #517): its record `superseded`. Its
+   * hand-off closed already, on the new job's `job.queued`.
+   */
+  supersede(): void;
   /** Follow the job events that open or close a hand-off. */
   onEvent(e: DomainEvent): void;
   runAgain(id: string): Promise<HandoffAction<Job>>;
@@ -36,6 +42,8 @@ export interface Handoffs {
 }
 
 const CATCH_UP = 1000;
+/** The outcomes a newer job of the item supersedes (issue #517): nothing ran it again yet. */
+const SUPERSEDABLE: FailureOutcome[] = ['surfaced', 'not_retried', 'held'];
 
 export function createHandoffs(o: HandoffsOptions): Handoffs {
   const { store } = o;
@@ -114,6 +122,13 @@ export function createHandoffs(o: HandoffsOptions): Handoffs {
           if (!cur || cur.handoffId || job?.status !== 'failed' || job.dismissedAt || !newestOfItem(store, job.id).ok) return;
           open(job.id, handoffReason(cur)!, cur);
         });
+      }
+    },
+    supersede() {
+      for (const r of store.failures.list({ outcome: SUPERSEDABLE, limit: 1_000_000 })) {
+        const job = r.pending ? undefined : store.jobs.get(r.jobId);
+        const newer = job ? newerOf(store, job) : undefined;
+        if (newer) store.failures.update(r.id, { outcome: 'superseded', outcomeAt: nowIso(), nextJobId: newer, note: 'a newer job of its item exists' });
       }
     },
     onEvent(e) {

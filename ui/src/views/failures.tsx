@@ -1,4 +1,5 @@
-// Failures (issue #509): what the failure assessor made of the failed jobs. Needs a person first (issue #516) —
+// Failures (issue #509): what the failure assessor made of the failed jobs. What is left first (issue #517): how
+// many failed jobs are not assessed yet and how many need a person. Then Needs a person (issue #516) —
 // every failed job automatic handling ended for, open until a person runs it again or clears it, with its own
 // count —; then open problems — one shared cause,
 // shown once with the jobs it hit and the ones held for it, with Resolve and Release held —; then the newest
@@ -13,7 +14,7 @@ import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
 import { useNow } from '@/hooks/use-now';
 import { ago } from '@/model/format';
-import { DECISION_LABEL, DECISION_TONE, HANDOFF_REASON_LABEL, handoffEndText, offered, outcomeText, plural } from '@/model/failures';
+import { DECISION_LABEL, DECISION_TONE, HANDOFF_REASON_LABEL, countsText, handoffEndText, offered, outcomeText, plural } from '@/model/failures';
 import type { FailureRecordView, HandoffView, ProblemView } from '@/model/wire';
 import { failureAct, useHopper } from '@/store';
 import { useCanAdmin, useCanOperate, useJobIndex } from '@/store/selectors';
@@ -151,8 +152,10 @@ export function Failures() {
   if (!failures) return <Panel title="Failures" icon={OctagonAlert}><Empty>failures not read yet</Empty></Panel>;
   const open = failures.problems.filter((p) => p.status === 'open');
   const resolved = failures.problems.filter((p) => p.status !== 'open');
+  const left = failures.counts.unassessed + failures.counts.needsPerson;
   return (
     <div className="space-y-3">
+      <div data-section="failure-counts" className={`text-sm ${left ? 'text-foreground' : 'text-muted-foreground'}`}>{countsText(failures.counts)}</div>
       <NeedsAPerson handoffs={failures.handoffs} />
       {open.length
         ? <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">{open.map((p) => <ProblemCard key={p.id} p={p} />)}</div>

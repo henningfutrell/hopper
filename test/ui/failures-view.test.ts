@@ -35,7 +35,7 @@ const handoff = (over: Record<string, unknown> = {}) => ({
   actions: { runAgain: { ok: true }, clear: { ok: true } }, ...over,
 });
 const view = (over: Record<string, unknown> = {}) => ({
-  now: at(0), settings, handoffs: [] as ReturnType<typeof handoff>[], causes: [{ id: 'disk-full', name: 'Disk full', description: 'The disk is full.', cls: 'shared', decision: 'redirect', builtin: true }],
+  now: at(0), counts: { unassessed: 0, needsPerson: 0 }, settings, handoffs: [] as ReturnType<typeof handoff>[], causes: [{ id: 'disk-full', name: 'Disk full', description: 'The disk is full.', cls: 'shared', decision: 'redirect', builtin: true }],
   problems: [problem()], recent: [record(), record({ id: 'f2', jobId: 'j9', cls: 'job', decision: 'person', outcome: 'surfaced', problemId: undefined, summary: 'Needs a person. Ran 1 time on desk. Failed: tests fail.', actions: { retry: { ok: true } } })],
   profile: {
     days: [{ day: '2026-10-07', count: 1 }, { day: '2026-10-08', count: 3 }],
@@ -240,5 +240,24 @@ describe('the Failures view', () => {
     await settle();
     expect(navBadge()).toBeUndefined();
     expect(buttonsIn(handoffRow())).not.toContain('Clear');
+  });
+
+  it('counts what is left (issue #517): failed jobs not assessed yet, and those that need a person', async () => {
+    await boot('#failures', { failures: view({ counts: { unassessed: 2, needsPerson: 1 } }) });
+    const counts = document.querySelector('[data-section="failure-counts"]')!;
+    expect(counts.textContent).toContain('2 failed jobs not assessed yet');
+    expect(counts.textContent).toContain('1 failed job needs a person');
+  });
+
+  it('nothing left: it says so', async () => {
+    await boot('#failures', { failures: view({ counts: { unassessed: 0, needsPerson: 0 } }) });
+    expect(document.querySelector('[data-section="failure-counts"]')!.textContent).toContain('Every failed job is assessed, and none needs a person');
+  });
+
+  it('a superseded failure says its item ran again, and offers no Retry', async () => {
+    await boot('#failures', { failures: view({ recent: [record({ id: 'f3', jobId: 'j3', outcome: 'superseded', nextJobId: 'j4', problemId: undefined, summary: 'Already run again (job j4).', actions: { retry: { ok: false, why: 'already run again' } } })] }) });
+    const f3 = document.querySelector('[data-failure="f3"]')!;
+    expect(f3.textContent).toContain('its item ran again');
+    expect(buttonsIn(f3)).not.toContain('Retry');
   });
 });

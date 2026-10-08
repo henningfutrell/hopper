@@ -28,7 +28,11 @@ export function createJobRepository(c: StoreContext): JobRepository {
       return r ? parse<Job>(r.body) : undefined;
     },
     list(filter?: JobFilter) {
-      const where = filter?.status?.length ? `WHERE status IN (${filter.status.map(() => '?').join(',')})` : '';
+      const conds = [
+        ...(filter?.status?.length ? [`status IN (${filter.status.map(() => '?').join(',')})`] : []),
+        ...(filter?.unassessed ? ["body::jsonb->'assessment' IS NULL"] : []),
+      ];
+      const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
       const limit = filter?.limit !== undefined ? 'LIMIT ?' : '';
       const args = [...(filter?.status ?? []), ...(filter?.limit !== undefined ? [filter.limit] : [])];
       return c.db.all(`SELECT body FROM jobs ${where} ORDER BY created_at DESC, seq DESC ${limit}`, ...args).map((r) => parse<Job>(r.body));
