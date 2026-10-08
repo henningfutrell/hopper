@@ -103,7 +103,7 @@ function HistoryRetention() {
   const [days, setDays] = useState<number | null>(null);
   const [draft, setDraft] = useState('');
   useEffect(() => {
-    get<UsageHistory>('/api/usage/history?range=24h&step=1d').then((h) => { setDays(h.retentionDays); setDraft(String(h.retentionDays)); }, () => {});
+    get<UsageHistory>('/api/usage/history?range=24h').then((h) => { setDays(h.retentionDays); setDraft(String(h.retentionDays)); }, () => {});
   }, []);
   const n = Number(draft);
   const valid = Number.isInteger(n) && n >= 1;
