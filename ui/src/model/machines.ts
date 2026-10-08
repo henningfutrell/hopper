@@ -67,12 +67,13 @@ export function editProblem(m: Extract<MachineKind, { kind: 'attached' }>, d: Ma
   const name = d.name.trim();
   if (!name) return 'give the machine a name';
   if (name !== m.machine.name && config.machines.some((x) => x.name === name)) return `a machine is already named ${name}; pick another name`;
-  if (lanesOf(d.lanes) === undefined) return 'lanes must be a whole number, at least 1';
+  if (lanesOf(d.lanes, 0) === undefined) return 'lanes must be a whole number; 0 parks it';
   const missing = (DETAILS[m.machine.connection] ?? []).find((f) => f.required && !(d.details[f.key] ?? '').trim());
   return missing ? `give the ${missing.label}` : null;
 }
 
-const lanesOf = (s: string): number | undefined => (/^\d+$/.test(s.trim()) && Number(s) >= 1 ? Number(s) : undefined);
+/** Lanes as typed, a whole number at least `min`: an attached machine being edited may be parked at 0 (issue #365). */
+const lanesOf = (s: string, min = 1): number | undefined => (/^\d+$/.test(s.trim()) && Number(s) >= min ? Number(s) : undefined);
 
 /** A fresh Add form: the machine defaults' lanes, and those of their executors that are configured. */
 export function newDraft(config: MachinesConfig): MachineDraft {
@@ -144,7 +145,7 @@ export function editBody(m: Extract<MachineKind, { kind: 'attached' }>, d: Machi
   const details = Object.fromEntries(fields.flatMap((f) => { const v = (d.details[f.key] ?? '').trim(); return v ? [[f.key, v]] : []; }));
   const label = d.label.trim();
   return optionsEdit(m, d.name.trim(), {
-    ...details, ...rest, lanes: lanesOf(d.lanes) ?? 0, executors: [...d.executors], ...(label ? { label } : {}),
+    ...details, ...rest, lanes: lanesOf(d.lanes, 0) ?? 0, executors: [...d.executors], ...(label ? { label } : {}),
     ...(m.machine.connection === 'ssh' && !d.herdr ? { herdr: false } : {}),
   }, version);
 }

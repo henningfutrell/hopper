@@ -56,7 +56,19 @@ export async function clientRunningRelease(t: ClientTransport): Promise<{ releas
   // The disk its home is on (issue #401): a client older than this says none.
   const d = disk as { freeBytes?: unknown; totalBytes?: unknown } | undefined;
   const read = d && typeof d.freeBytes === 'number' && typeof d.totalBytes === 'number' ? { disk: diskOf(d.freeBytes, d.totalBytes) } : {};
-  return { release, ...(typeof home === 'string' && home.startsWith('/') ? { home } : {}), ...read };
+  const at = clientHome(home);
+  return { release, ...(at ? { home: at } : {}), ...read };
+}
+
+/**
+ * The home a client answered, as `~` in a work tree resolves against it: an absolute POSIX path, or a
+ * Windows drive-letter path (issue #365), its `\` made `/` so a work tree under it is one Windows takes.
+ * Anything else is no home.
+ */
+function clientHome(home: unknown): string | undefined {
+  if (typeof home !== 'string') return undefined;
+  if (home.startsWith('/')) return home;
+  return /^[A-Za-z]:[\\/]/.test(home) ? home.replaceAll('\\', '/') : undefined;
 }
 
 /** Loads a client release onto the client target; it restarts to run it. */

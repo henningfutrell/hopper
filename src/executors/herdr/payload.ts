@@ -49,13 +49,14 @@ const normal = (path: string): string => posix.normalize(path).replace(/(.)\/+$/
 
 /**
  * The work tree on the lane's machine (issue #323): `~` is that machine's home, this process's only
- * for this machine; an attached machine's is the one its probe found. An error when it is not known yet,
+ * for this machine; an attached machine's is the one its probe found, a Windows one with `/` for `\` (issue
+ * #365). An error when it is not known yet,
  * and when the work tree is that home, above it, or the root (issue #314): a job never runs with the home
  * as its root. `make`: it is the jobs directory or under it, so the pane's shell makes it when missing.
  */
 export function workTreeOn(machine: MachineSnapshot, cwd: string): { cwd: string; make: boolean } | { error: string } {
   const attached = machine.ssh !== undefined || machine.client !== undefined || machine.docker !== undefined;
-  const home = attached ? machine.home : homedir();
+  const home = (attached ? machine.home : homedir())?.replaceAll('\\', '/');
   const tilde = cwd === '~' || cwd.startsWith('~/');
   if (tilde && !home) return { error: `cannot resolve the work tree ${cwd} on ${machine.id}: its home is not known yet (the machine has not answered a probe)` };
   const resolved = normal(tilde ? posix.join(home!, cwd.slice(1)) : cwd);
