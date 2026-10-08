@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- The plugin store works from the start, with example plugins to install. An admin can name another plugin store, go back to the default or set none on the Plugin store card, and the change applies at once.
 - The update channels are now dev, beta and stable. A hopper that followed main or release now follows stable, with nothing to do.
 - Jobs leave nothing running and nothing on disk behind them, also when the hopper stopped mid-job or a machine could not be reached at the end: what is left is cleaned up when the hopper starts and then every few minutes, and work not yet pushed is kept until it is. Jobs on the same project share one copy of its packages instead of installing their own. You choose per machine how often this runs and how long finished jobs' files stay.
 - A machine that is running out of disk space no longer takes new jobs: they go to another machine, or wait in the queue with the reason shown, until space is freed. Jobs already running there carry on. You choose per machine how little free space counts as running out.

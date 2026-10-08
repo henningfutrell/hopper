@@ -20,8 +20,11 @@ Short guide for authors. The contract is `docs/design.md` "Plugin contract"; the
 
 ## From the plugin store
 
-With `HOPPER_PLUGIN_STORE` set to a git repository holding `plugin-store.yaml` (design.md "Plugin
-store"), the UI's Plugins view lists what that plugin store offers and installs it:
+A new hopper reads the default plugin store, which the hopper's Pages site publishes
+(`https://henningfutrell.github.io/hopper/plugin-store.git`: the example plugins of this repository). An
+admin of the hopper names another git repository holding `plugin-store.yaml`, goes back to the default,
+or sets none, on the **Plugin store** card (Plugins view). The change is kept in the database and applies
+at once, without a restart (design.md "Plugin store"). The card lists what the plugin store offers and installs it:
 Install, Update (the store's directory changed), Remove (refused while the plugins config names it).
 An installed plugin is a custom plugin like any other; it runs once the plugins config names it. It needs no
 plugin dir: what is installed is kept in the database and its code is unpacked into the work dir,
@@ -29,7 +32,7 @@ restored from the plugin store at start, so an ephemeral container keeps its plu
 plugin dir is never replaced or removed from the UI.
 
 This repository is a plugin store: its `plugin-store.yaml` lists `examples/plugins/`. To publish your
-own, list each plugin in a repository's `plugin-store.yaml`:
+own, list each plugin in a repository's `plugin-store.yaml`, then name the repository on the card:
 
 ```yaml
 version: 1

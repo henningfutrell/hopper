@@ -58,8 +58,19 @@ export const pluginsEditBody = z.discriminatedUnion('action', [
 // The plugin store (issue #75): ids only — what is installed is what the store catalogue lists.
 // A plugin id, never a path: it names a directory under the plugin dir.
 const pluginId = z.string().regex(/^[a-z0-9][a-z0-9-]*$/, 'id must be a plugin id');
+// The plugin store setting (issue #445): the default plugin store, none, or a git repository — anything
+// `git fetch` takes, never read as an option.
+const pluginStoreSource = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('default') }),
+  z.strictObject({ kind: z.literal('none') }),
+  z.strictObject({
+    kind: z.literal('repo'),
+    repo: z.string().trim().min(1, 'repo must name a git repository').max(2048).refine((r) => !r.startsWith('-'), 'repo must not start with -'),
+  }),
+]);
 export const pluginStoreBody = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('refresh') }),
+  z.strictObject({ action: z.literal('source'), source: pluginStoreSource }),
   z.strictObject({ action: z.literal('install'), id: pluginId }),
   z.strictObject({ action: z.literal('remove'), id: pluginId }),
 ]);
@@ -249,8 +260,8 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     return r.report;
   });
 
-  // design.md "Plugin store": read the store again, install (or update) a plugin it lists into the
-  // plugin dir, or remove a store install. Answers the new GET /api/plugin-store report.
+  // design.md "Plugin store": read the store again, set the plugin store (issue #445), install (or update)
+  // a plugin it lists, or remove a store install. Answers the new GET /api/plugin-store report.
   app.post('/ui/api/plugin-store', instance, async (req) => {
     const r = await o.pluginStore.edit(parseWith(pluginStoreBody, req.body));
     if (!r.ok) throw new HttpError(EDIT_STATUS[r.code], r.error);

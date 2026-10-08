@@ -1,5 +1,5 @@
 import type { InstanceSettingsRepository, UserSettingsRepository } from '../domain/ports.ts';
-import type { ConnectedAccountProvider, PluginInstall, QueueGate, UpdateChannel, UpdateSettings, UsageGraphView } from '../domain/types.ts';
+import type { ConnectedAccountProvider, PluginInstall, PluginStoreSource, QueueGate, UpdateChannel, UpdateSettings, UsageGraphView } from '../domain/types.ts';
 import { UPDATE_CHANNELS } from '../domain/types.ts';
 import type { StoreContext } from './context.ts';
 
@@ -68,7 +68,7 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
   };
 }
 
-/** The instance's settings: self-update and the store installs. */
+/** The instance's settings: self-update, the plugin store (issue #445) and the store installs. */
 export function createInstanceSettingsRepository(c: StoreContext): InstanceSettingsRepository {
   const { read, write } = keyValues(c);
   return {
@@ -90,6 +90,13 @@ export function createInstanceSettingsRepository(c: StoreContext): InstanceSetti
     },
     setPluginInstalls(installs) {
       write('pluginInstalls', JSON.stringify([...installs].sort((a, b) => a.id.localeCompare(b.id))));
+    },
+    getPluginStoreSource() {
+      const text = read('pluginStore');
+      return text === undefined ? undefined : JSON.parse(text) as PluginStoreSource;
+    },
+    setPluginStoreSource(source) {
+      write('pluginStore', JSON.stringify(source.kind === 'repo' ? { kind: 'repo', repo: source.repo } : { kind: source.kind }));
     },
   };
 }

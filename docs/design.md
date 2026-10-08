@@ -5862,9 +5862,9 @@ Owner direction: there is a store to install plugins from. Code: `src/plugins/pl
 (the service), `src/plugins/plugin-store-catalogue.ts` (the catalogue, pure), `src/plugins/plugin-store-git.ts`
 (the git CLI); routes `GET /api/plugin-store`, `POST /ui/api/plugin-store`; the UI's Plugins view.
 
-**What a plugin store is.** A git repository, named by the process setting `HOPPER_PLUGIN_STORE`
-(anything `git fetch` takes: ssh or https URL, a local path; no default — unset, there is no plugin
-store). Its default branch's root holds the **store catalogue** `plugin-store.yaml`:
+**What a plugin store is.** A git repository (anything `git fetch` takes: ssh or https URL, a local
+path), named by the **plugin store setting** (below). Its default branch's root holds the **store
+catalogue** `plugin-store.yaml`:
 
 ```yaml
 version: 1
@@ -5876,19 +5876,41 @@ plugins:
 repository (no `..`, not absolute); ids are unique; unknown keys are refused. This repository is a
 plugin store: its `plugin-store.yaml` lists `examples/plugins/`.
 
-**Why the store is a process setting and not a UI choice.** Installing a plugin runs its code in
-the daemon (the import runs the module). A UI session is readable by jobs running with
-`--dangerously-skip-permissions` ("UI session and mutations"), which is why command-bearing options
-are never UI-editable. The same rule applies here: the UI chooses only among what the operator's
-plugin store lists; which repository that is, the operator sets where the UI cannot. It is the trust
-self-update already makes: the repository the operator named is trusted as the install itself is.
-No signature check.
+**The default plugin store (issue #445, 2026-10-08).** Owner decision: the default is the static
+Pages site. `scripts/build-plugin-store.sh` builds this repository's `plugin-store.yaml` and
+`examples/plugins/` into a bare git repository, and `pages.yml` publishes it beside the site as
+`https://henningfutrell.github.io/hopper/plugin-store.git` (`DEFAULT_PLUGIN_STORE`). `git fetch` reads a
+repository served as plain files (git's "dumb" HTTP), so the store needs no server and the daemon reads it
+as any other plugin store. Each build fetches the history already published and commits on top of it, and
+adds no commit when nothing changed. A store install's `tree` therefore stays in the plugin store after
+its plugin changes, and still restores on a fresh work dir. It is the stable version's, as the rest of
+the site is.
+
+**The plugin store setting (issue #445).** An instance setting, kept in the database beside the store
+installs (`settings` key `pluginStore`, `PluginStoreSource`): `{ kind: 'default' }`, `{ kind: 'none' }`
+or `{ kind: 'repo', repo }`. Never set means the default. An instance admin sets, changes or clears it
+on the Plugin store card (`{ action: 'source', source }`). Saving reads the new plugin store at once, so
+the catalogue, Install, Update and Restore follow it without a restart. A value starting with `-` is
+refused, and `git fetch` gets it after `--`, so it is never read as an option.
+`HOPPER_PLUGIN_STORE` is only a seed. While the setting was never set, it is copied in at start as
+`{ kind: 'repo' }` and logged. This is the upgrade path for a hopper that relied on it. Once anything is
+stored, a later start leaves the setting as it is, whatever the variable says.
+
+**Who may set it.** Installing a plugin runs its code in the daemon (the import runs the module). This
+was why the plugin store was once a process setting. Since issue #198, an admin edits command-bearing
+options in the UI, so the same trust applies here: an instance admin may name the plugin store, as they
+may name a command. The plugin store an admin names is trusted as the install itself is. No signature
+check.
 
 **Reading.** A bare mirror at `<work dir>/plugin-store/repo.git`; each read fetches the store's
 `HEAD` (its default branch) with the update mirror's git environment (never prompts, ssh batch
 mode). Read at start in the background (a slow or unreachable store never delays the boot), and on
 `refresh`. A catalogue that cannot be fetched or parsed → state `error` with the reason; the last
-good catalogue stays listed. No plugin store → state `unavailable`.
+good catalogue stays listed. When that catalogue was read from another plugin store (the setting
+changed and the new one could not be read), the report names it (`from`), and nothing installs from
+it: Install is refused (409) and the card offers none. No plugin store (set to none, or no default in
+this build) → state `unavailable` with a `reason` that names the setting, never an environment
+variable; the store installs are still listed (`listed: false`) so they can be removed.
 
 **Where store installs are kept (issue #93).** Nothing durable lives on the machine: an ephemeral
 container has no config directory to keep. A store install is a row of the database (`settings` key
@@ -5928,16 +5950,20 @@ first, as for an executor ("Settled in slice 7"). Then the database row and the 
 
 **Not built.** Installing dependencies: a store plugin imports `node:` builtins and its own files,
 or ships its `node_modules` in its directory (the plugin contract already says so) — no `npm install`
-runs. Several plugin stores. Pinning a store to a branch or tag other than its default branch.
+runs. Several plugin stores. Pinning a store to a branch or tag other than its default branch. A
+catalogue built into the release (no network).
 
 **Report** `GET /api/plugin-store` (`PluginStoreReport`): `state` (`unavailable` + `reason`,
-`ready`, `error` + `error`), the store's `repo`, `commit` and `checkedAt`, and per plugin the
+`ready`, `error` + `error`), the setting's `source`, the plugin store in use `repo`, `defaultRepo`,
+`from` (above), `commit` and `checkedAt`, and per plugin the
 catalogue entry with `installed` (`{ commit, installedAt, current }`) and `restartPending`. A store
 install the catalogue no longer lists is still listed (`listed: false`), so it can be removed.
-`POST /ui/api/plugin-store` (admin): `{ action: 'refresh' }`, `{ action: 'install', id }`,
+`POST /ui/api/plugin-store` (admin): `{ action: 'refresh' }`, `{ action: 'source', source }`, `{ action: 'install', id }`,
 `{ action: 'remove', id }`; answers the new report. Edits run one at a time.
 
-**UI.** The Plugins view's **Plugin store** card: the store, its commit and last read, Refresh; per
+**UI.** The Plugins view's **Plugin store** card: the plugin store and where it comes from (the default,
+set by an admin, or none), its commit and last read, Refresh; for an instance admin, a field to name a
+git repository (Save), **Use the default**, and **None** (confirmed); per
 plugin its role, description, and Install, Update (not current) or Remove (confirmed); `restart
 pending` where it applies. Installing does not configure: the plugin then shows under its role,
 selected or added as any custom plugin.
