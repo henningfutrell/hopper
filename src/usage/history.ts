@@ -2,7 +2,8 @@
 // source of the user — the live set, as the plugins config names it now — and keeps each reading as a usage
 // sample. A source answers from its last read until it reads again, so a sample is kept once per read: at
 // the source's own poll interval. A source with no readings (failing, offline, stale) adds nothing, which
-// the graph shows as a gap. Every hour, and when the retention changes, samples past it are pruned.
+// the graph shows as a gap. New samples are told to listeners (SSE `usage.recorded`, issue #502). Every hour,
+// and when the retention changes, samples past it are pruned.
 import type { Clock, UsageHistoryRepository } from '../domain/ports.ts';
 import type { UsageReading, UsageSample, UsageSourceReport } from '../domain/types.ts';
 
@@ -13,6 +14,8 @@ const DAY_MS = 86_400_000;
 export interface UsageRecorder {
   /** Keep the readings every usage source gives now; how many were new. */
   record(): Promise<number>;
+  /** Call `listener` with how many samples were new, each time a record keeps any; returns the unsubscribe. */
+  onRecorded(listener: (added: number) => void): () => void;
   /** Delete the samples past the history retention; how many. */
   prune(): number;
   start(): void;
@@ -29,6 +32,7 @@ export function createUsageRecorder(o: {
 }): UsageRecorder {
   let timers: NodeJS.Timeout[] = [];
   let failing = false;
+  const listeners = new Set<(added: number) => void>();
   const logger = o.logger ?? console;
 
   const record = async (): Promise<number> => {
@@ -38,7 +42,9 @@ export function createUsageRecorder(o: {
       const account = accounts.get(r.source);
       return account === undefined ? r : { ...r, account };
     });
-    return samples.length ? o.history.record(samples) : 0;
+    const added = samples.length ? o.history.record(samples) : 0;
+    if (added > 0) for (const l of listeners) l(added);
+    return added;
   };
   const prune = (): number => o.history.prune(new Date(o.clock.now().getTime() - o.retentionDays() * DAY_MS));
 
@@ -55,6 +61,10 @@ export function createUsageRecorder(o: {
 
   return {
     record,
+    onRecorded(listener) {
+      listeners.add(listener);
+      return () => { listeners.delete(listener); };
+    },
     prune,
     start() {
       if (timers.length) return;

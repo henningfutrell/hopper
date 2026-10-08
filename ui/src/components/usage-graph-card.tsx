@@ -1,34 +1,44 @@
-// A usage graph in a panel (issue #385): the lines over the graph range, the range (a preset or a custom
-// stretch) and the graph step to choose — a change redraws at once — and a legend that names each line and
-// toggles it. The Overview's shows the user's own lines and saves the choice for them; Settings → Users
+// A usage graph in a panel (issues #385, #502): the lines over the stretch shown — a range preset ending now, or
+// a stretch zoomed to — at the graph step the hopper picks for it, and a legend that names each line and
+// toggles it. Zoom in and out by the buttons, a pinch, Ctrl/⌘ + scroll, or a drag across; Reset goes back
+// to the preset. New samples redraw it as the stream tells of them (SSE usage.recorded), and once a minute
+// besides. The Overview's shows the user's own accounts and saves the preset for them; Settings → Users
 // shows the instance admin the lines summed over every user.
 import { useCallback, useMemo, useState } from 'react';
-import { LineChart } from 'lucide-react';
+import { LineChart, RotateCcw, ZoomIn, ZoomOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Empty, Panel } from '@/components/panel';
-import { FIELD } from '@/components/plugin-form';
 import { LineSwatch, UsageGraph } from '@/charts/usage-history';
 import { usePoll } from '@/hooks/use-poll';
 import { get } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { fromLocalInput, GRAPH_PRESETS, GRAPH_STEPS, graphLines, hiddenLines, toLocalInput } from '@/model/usage-history';
+import { GRAPH_PRESETS, graphLines, hiddenLines, zoomed, type Stretch } from '@/model/usage-history';
 import type { UsageGraphView, UsageSeries } from '@/model/wire';
+import { useHopper } from '@/store';
 
 const tz = () => -new Date().getTimezoneOffset();
+const DAY = 86_400_000;
+/** How far back zooming out goes when the read does not say how long the history is kept. */
+const DEFAULT_KEPT_DAYS = 90;
 
 /** What either usage graph read answers. */
-export interface GraphData { view: UsageGraphView; from: string; to: string; stepMs: number }
+export interface GraphData { view: UsageGraphView; from: string; to: string; stepMs: number; retentionDays?: number }
 
-function queryOf(path: string, view: UsageGraphView | undefined): string {
+function queryOf(path: string, view: UsageGraphView | undefined, zoom: Stretch | null): string {
   const q = new URLSearchParams({ tz: String(tz()) });
-  if (view) {
+  if (zoom) { q.set('from', new Date(zoom.from).toISOString()); q.set('to', new Date(zoom.to).toISOString()); }
+  else if (view) {
     if ('preset' in view.range) q.set('range', view.range.preset);
     else { q.set('from', view.range.from); q.set('to', view.range.to); }
-    q.set('step', view.step);
   }
   return `${path}?${q}`;
+}
+
+/** The graph step as people read it: `per hour`, `per 6 hours`, `per day`, `per week`. */
+function stepText(ms: number): string {
+  const h = ms / 3_600_000;
+  return h === 1 ? 'per hour' : h < 24 ? `per ${h} hours` : h === 24 ? 'per day' : h === 168 ? 'per week' : `per ${h / 24} days`;
 }
 
 export function UsageGraphCard<T extends GraphData>({ path, seriesOf, save, title, empty }: {
@@ -36,77 +46,63 @@ export function UsageGraphCard<T extends GraphData>({ path, seriesOf, save, titl
 }) {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // The view on screen: undefined until the saved one is read.
+  // The saved view: undefined until the first read answers it.
   const [view, setView] = useState<UsageGraphView | undefined>(undefined);
-  const [custom, setCustom] = useState<{ from: string; to: string } | null>(null);
+  // The stretch zoomed to; null: the view's range.
+  const [zoom, setZoom] = useState<Stretch | null>(null);
   // Lines the legend toggled: hidden (true) or shown (false); the rest as by default (informational ones hidden).
   const [toggled, setToggled] = useState<ReadonlyMap<string, boolean>>(new Map());
+  const recorded = useHopper((s) => s.usageRecorded);
 
   const load = useCallback(async () => {
     try {
-      const h = await get<T>(queryOf(path, view));
+      const h = await get<T>(queryOf(path, view, zoom));
       setData(h);
       setError(null);
       if (!view) setView(h.view);
     } catch (e) { setError((e as Error).message); }
-  }, [path, view]);
+    // A new sample told by the stream (`recorded`) reads again, as a new view does.
+  }, [path, view, zoom, recorded]); // eslint-disable-line react-hooks/exhaustive-deps
   usePoll(load, 60_000);
 
   const lines = useMemo(() => graphLines(data ? seriesOf(data) : []), [data, seriesOf]);
   const hidden = useMemo(() => hiddenLines(lines, toggled), [lines, toggled]);
-
-  const choose = (next: UsageGraphView) => {
-    setView(next);
-    save?.(next);
-  };
   const toggle = (key: string) => setToggled((t) => new Map(t).set(key, !hidden.has(key)));
 
   const current = view ?? data?.view;
-  const rangeTab = current ? ('preset' in current.range ? current.range.preset : 'custom') : '7d';
-  const applyCustom = () => {
-    const from = custom && fromLocalInput(custom.from);
-    const to = custom && fromLocalInput(custom.to);
-    if (current && from && to && Date.parse(from) < Date.parse(to)) choose({ ...current, range: { from, to } });
-  };
+  // The zoomed stretch at once, before its read answers; else the stretch the last read covered.
+  const shown = zoom ?? (data ? { from: Date.parse(data.from), to: Date.parse(data.to) } : null);
+  const maxMs = (data?.retentionDays ?? DEFAULT_KEPT_DAYS) * DAY;
+  const zoomBy = (factor: number) => { if (shown) setZoom(zoomed(shown, factor, (shown.from + shown.to) / 2, { now: Date.now(), maxMs })); };
+  const choose = (next: UsageGraphView) => { setZoom(null); setView(next); save?.(next); };
+  const rangeTab = zoom ? '' : current && 'preset' in current.range ? current.range.preset : '';
 
   return (
-    <Panel title={title} icon={LineChart} count={lines.length ? `${lines.length - hidden.size} of ${lines.length}` : ''} action={current && <>
-      <Tabs value={rangeTab} onValueChange={(v) => {
-        if (v === 'custom') {
-          const to = data?.to ?? new Date().toISOString();
-          const from = data?.from ?? new Date(Date.now() - 7 * 86_400_000).toISOString();
-          setCustom({ from: toLocalInput(from), to: toLocalInput(to) });
-        } else { setCustom(null); choose({ ...current, range: { preset: v as typeof GRAPH_PRESETS[number] } }); }
-      }}>
-        <TabsList className="h-7">
-          {GRAPH_PRESETS.map((p) => <TabsTrigger key={p} value={p} className="px-2 text-xs">{p}</TabsTrigger>)}
-          <TabsTrigger value="custom" className="px-2 text-xs">custom</TabsTrigger>
-        </TabsList>
-      </Tabs>
-      <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        per
-        <select aria-label="Graph step" className={cn(FIELD, 'h-7 w-auto font-sans')} value={current.step}
-          onChange={(e) => choose({ ...current, step: e.target.value as UsageGraphView['step'] })}>
-          {GRAPH_STEPS.map((s) => <option key={s.step} value={s.step}>{s.label}</option>)}
-        </select>
-      </label>
-    </>}>
-      {custom && (
-        <form className="mb-3 flex flex-wrap items-end gap-2 text-xs" onSubmit={(e) => { e.preventDefault(); applyCustom(); }}>
-          <label className="grid gap-1">from<Input type="datetime-local" className="h-8 w-auto text-xs" value={custom.from} onChange={(e) => setCustom({ ...custom, from: e.target.value })} /></label>
-          <label className="grid gap-1">to<Input type="datetime-local" className="h-8 w-auto text-xs" value={custom.to} onChange={(e) => setCustom({ ...custom, to: e.target.value })} /></label>
-          <Button type="submit" size="sm" variant="secondary">Show</Button>
-        </form>
+    <Panel title={title} icon={LineChart} count={lines.length ? `${lines.length - hidden.size} of ${lines.length}` : ''}>
+      {current && (
+        <div data-slot="usage-graph-controls" className="mb-3 flex flex-wrap items-center gap-2 text-xs">
+          <Tabs value={rangeTab} onValueChange={(v) => choose({ range: { preset: v as typeof GRAPH_PRESETS[number] } })}>
+            <TabsList className="h-7">
+              {GRAPH_PRESETS.map((p) => <TabsTrigger key={p} value={p} className="px-2 text-xs">{p}</TabsTrigger>)}
+            </TabsList>
+          </Tabs>
+          <div className="flex items-center gap-1">
+            <Button type="button" size="icon" variant="outline" className="size-7" aria-label="Zoom in" title="Zoom in" disabled={!shown} onClick={() => zoomBy(0.5)}><ZoomIn /></Button>
+            <Button type="button" size="icon" variant="outline" className="size-7" aria-label="Zoom out" title="Zoom out" disabled={!shown} onClick={() => zoomBy(2)}><ZoomOut /></Button>
+            <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs" disabled={!zoom} onClick={() => setZoom(null)}><RotateCcw /> Reset</Button>
+          </div>
+          {data && <span data-slot="usage-graph-step" className="text-muted-foreground">{stepText(data.stepMs)}</span>}
+        </div>
       )}
       {error && !data ? <Empty>usage history unavailable: {error}</Empty>
-        : !data ? <Empty>reading the usage history…</Empty>
+        : !data || !shown ? <Empty>reading the usage history…</Empty>
           : !lines.length ? <Empty>{empty}</Empty>
             : <>
-              <UsageGraph lines={lines} hidden={hidden} from={Date.parse(data.from)} to={Date.parse(data.to)} stepMs={data.stepMs} />
+              <UsageGraph lines={lines} hidden={hidden} from={shown.from} to={shown.to} stepMs={data.stepMs} maxMs={maxMs} onZoom={setZoom} />
               <div data-slot="usage-graph-legend" className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
                 {lines.map((l) => (
                   <button key={l.key} type="button" aria-pressed={!hidden.has(l.key)} onClick={() => toggle(l.key)}
-                    className={cn('flex items-center gap-1.5 rounded px-1 text-[11px] text-muted-foreground hover:text-foreground', hidden.has(l.key) && 'opacity-40 line-through')}>
+                    className={cn('flex min-w-0 items-center gap-1.5 rounded px-1 text-left text-[11px] break-all text-muted-foreground hover:text-foreground', hidden.has(l.key) && 'opacity-40 line-through')}>
                     <LineSwatch line={l} />{l.label}
                   </button>
                 ))}

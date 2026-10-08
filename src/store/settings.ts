@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import type { IntakeMigration } from '../domain/intake.ts';
 import type { InstanceSettingsRepository, UserSettingsRepository } from '../domain/ports.ts';
 import type { ConnectedAccountProvider, LoginExpiryAction, PluginInstall, PluginStoreSource, QueueGate, UpdateChannel, UpdateSettings, UsageGraphView } from '../domain/types.ts';
-import { LOGIN_EXPIRY_ACTIONS, UPDATE_CHANNELS } from '../domain/types.ts';
+import { graphStepFor, LOGIN_EXPIRY_ACTIONS, PRESET_MS, UPDATE_CHANNELS } from '../domain/types.ts';
 import type { StoreContext } from './context.ts';
 
 /** `settings` rows by key, in whichever schema the context's connection reads. */
@@ -55,10 +55,13 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
     },
     getUsageGraphView() {
       const text = read('usageGraphView');
-      return text === undefined ? undefined : JSON.parse(text) as UsageGraphView;
+      return text === undefined ? undefined : { range: (JSON.parse(text) as UsageGraphView).range };
     },
+    // The step the graph step follows (issue #502) is kept beside the range for the build before, which reads it.
     setUsageGraphView(view) {
-      write('usageGraphView', JSON.stringify({ range: 'preset' in view.range ? { preset: view.range.preset } : { from: view.range.from, to: view.range.to }, step: view.step }));
+      const r = view.range;
+      const span = 'preset' in r ? PRESET_MS[r.preset] : Date.parse(r.to) - Date.parse(r.from);
+      write('usageGraphView', JSON.stringify({ range: 'preset' in r ? { preset: r.preset } : { from: r.from, to: r.to }, step: graphStepFor(span) }));
     },
     getHistoryRetentionDays() {
       const text = read('historyRetentionDays');

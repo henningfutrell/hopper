@@ -9,6 +9,7 @@ numbers, no commit hashes, no file names, no code words. Never edit a line once 
 update notice would show it again as new.
 
 - A new Logins page shows every sign-in a job waits on, with the code to copy, a button to open the sign-in page, and how long the code has left, counting down. The menu and the top bar count them from any page and turn amber when a code is about to run out; a code that ran out is hidden, and the card says what happened to the job. Viewers see that a login waits, never its code.
+- The usage graph on the Overview now shows one line per account, even when several machines use the same account, and opens on the last week, day by day. Zoom in down to hour by hour with the buttons, a pinch, Ctrl or ⌘ and scroll, or by dragging across a stretch; Reset goes back. New readings appear on their own, without reloading.
 - A job that waits for you to sign in to a tool, with a code to enter on a web page, no longer turns it into a question: the hopper keeps it as a login and waits for you, the job goes on once you sign in, and it fails with a clear reason if the code runs out first. The code is never written to logs, events or GitHub.
 - The number on Questions in the menu now stays while any question waits on you, even after you have looked at it, and goes away only when none is left to answer.
 - The version at the top left now shows the update channel when it is dev or beta, so you can tell at a glance which builds you run. When the running build comes from another channel than the one you picked, it shows both.

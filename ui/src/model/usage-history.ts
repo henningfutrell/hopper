@@ -1,12 +1,10 @@
-// The usage graph's model (issue #385, design.md "Usage history"): its lines — one per usage source,
-// machine and usage window, named by account and window; one colour per account, a dash per window kind —
-// their segments (a gap breaks a line), and what hovering reads. Pure: tested from test/ui/usage-history.test.ts.
-import type { UsageGraphPreset, UsageGraphStep, UsageSeries, UsageTotalSeries } from '../../../src/domain/types.ts';
+// The usage graph's model (issues #385, #502, design.md "Usage history"): its lines — one per account and
+// usage window, however many machines read the account, named by account and window; one colour per account,
+// a dash per window kind — their segments (a gap breaks a line), what hovering reads, and zooming: the stretch
+// shown, narrowed or widened about a time or dragged across. Pure: tested from test/ui/usage-history.test.ts.
+import type { UsageGraphPreset, UsageSeries, UsageTotalSeries } from '../../../src/domain/types.ts';
 
 export const GRAPH_PRESETS: readonly UsageGraphPreset[] = ['24h', '3d', '7d', '30d'];
-export const GRAPH_STEPS: readonly { step: UsageGraphStep; label: string }[] = [
-  { step: '15m', label: '15 min' }, { step: '1h', label: 'hour' }, { step: '6h', label: '6 hours' }, { step: '1d', label: 'day' }, { step: '1w', label: 'week' },
-];
 
 /** session solid, week dashed, informational dotted. */
 export type LineDash = 'solid' | 'dashed' | 'dotted';
@@ -19,7 +17,7 @@ export interface GraphPoint { t: number; v: number }
 
 export interface GraphLine {
   key: string;
-  /** Account (else source, and machine) · window. */
+  /** Account · window. */
   label: string;
   color: string;
   dash: LineDash;
@@ -28,23 +26,18 @@ export interface GraphLine {
   series: UsageSeries;
 }
 
-export const lineKey = (s: Pick<UsageSeries, 'source' | 'machineId' | 'window'>): string => `${s.source}|${s.machineId ?? ''}|${s.window ?? ''}`;
-const accountKey = (s: UsageSeries): string => `${s.source}|${s.machineId ?? ''}`;
+export const lineKey = (s: Pick<UsageSeries, 'account' | 'window'>): string => `${s.account}|${s.window ?? ''}`;
 
 const dashOf = (s: UsageSeries): LineDash => (s.informational ? 'dotted' : /week/i.test(s.window ?? '') ? 'dashed' : 'solid');
 
-function nameOf(s: UsageSeries): string {
-  const who = s.account ?? (s.machineId ? `${s.source} (${s.machineId})` : s.source);
-  return s.window ? `${who} · ${s.window}` : who;
-}
+const nameOf = (s: UsageSeries): string => (s.window ? `${s.account} · ${s.window}` : s.account);
 
-/** The lines, in the order the series came (source, machine, window). */
+/** The lines, in the order the series came (account, window). */
 export function graphLines(series: readonly UsageSeries[]): GraphLine[] {
   const colors = new Map<string, string>();
   return series.map((s) => {
-    const account = accountKey(s);
-    if (!colors.has(account)) colors.set(account, ACCOUNT_COLORS[colors.size % ACCOUNT_COLORS.length]!);
-    return { key: lineKey(s), label: nameOf(s), color: colors.get(account)!, dash: dashOf(s), shownByDefault: !s.informational, series: s };
+    if (!colors.has(s.account)) colors.set(s.account, ACCOUNT_COLORS[colors.size % ACCOUNT_COLORS.length]!);
+    return { key: lineKey(s), label: nameOf(s), color: colors.get(s.account)!, dash: dashOf(s), shownByDefault: !s.informational, series: s };
   });
 }
 
@@ -80,16 +73,35 @@ export function valuesAt(lines: readonly GraphLine[], t: number, stepMs: number,
 export const hiddenLines = (lines: readonly GraphLine[], toggled: ReadonlyMap<string, boolean>): Set<string> =>
   new Set(lines.filter((l) => toggled.get(l.key) ?? !l.shownByDefault).map((l) => l.key));
 
-/** `2026-10-01T09:00` in the viewer's time, for a datetime-local input; and back to ISO. */
-export function toLocalInput(iso: string): string {
-  const d = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-export const fromLocalInput = (v: string): string | undefined => { const ms = Date.parse(v); return Number.isNaN(ms) ? undefined : new Date(ms).toISOString(); };
+/** A stretch of time shown, in ms. */
+export interface Stretch { from: number; to: number }
 
-/** The instance usage totals as graph lines: one account, `all users`, a line per unit and usage window. */
+/** The least stretch zooming in reaches: three hourly steps. */
+export const MIN_ZOOM_MS = 3 * 3_600_000;
+
+/** How far zooming may go: never past now, never wider than the history kept. */
+export interface ZoomLimits { now: number; maxMs: number }
+
+/** `s` as long as `span` (within the limits) with `at` where it was, moved back inside now and the history. */
+function placed(s: Stretch, span: number, at: number, l: ZoomLimits): Stretch {
+  const len = Math.min(Math.max(span, MIN_ZOOM_MS), l.maxMs);
+  const share = s.to > s.from ? (at - s.from) / (s.to - s.from) : 0.5;
+  let from = at - share * len;
+  from = Math.max(Math.min(from, l.now - len), l.now - l.maxMs);
+  return { from, to: from + len };
+}
+
+/** Zoomed by `factor` about `at` (below 1 in, above 1 out). */
+export const zoomed = (s: Stretch, factor: number, at: number, l: ZoomLimits): Stretch => placed(s, (s.to - s.from) * factor, at, l);
+
+/** The stretch dragged across from `a` to `b`, either way; a short one widens about its middle. */
+export function selected(a: number, b: number, l: ZoomLimits): Stretch {
+  const s = { from: Math.min(a, b), to: Math.max(a, b) };
+  return placed(s, s.to - s.from, (s.from + s.to) / 2, l);
+}
+
+/** The instance usage totals as graph lines: one account, `all users` (and the unit, but for `%`), a line per unit and usage window. */
 export const totalsAsSeries = (totals: readonly UsageTotalSeries[]): UsageSeries[] => totals.map((t) => ({
-  source: 'all users', ...(t.unit === '%' ? {} : { machineId: t.unit }), ...(t.window !== undefined ? { window: t.window } : {}),
+  account: t.unit === '%' ? 'all users' : `all users (${t.unit})`, ...(t.window !== undefined ? { window: t.window } : {}),
   informational: t.informational, unit: t.unit, points: t.points.map((p) => ({ at: p.at, usedFrac: p.usedFrac })), gaps: [], resets: [],
 }));
