@@ -6,109 +6,14 @@
 // no answer, log line or event carries it, except the one answer that shows a secret the hopper made.
 // Replace and Rotate apply from the next delivery. A subscription from before keeps reading the runtime
 // variable it names until a secret is stored for it.
-import { createHmac, randomBytes } from 'node:crypto';
-import { mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { CONFIG_NAMES } from '../../src/domain/ports.ts';
 import { createSealer } from '../../src/secrets/sealer.ts';
-import { openDb } from '../../src/store/db.ts';
-import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
-import { ownerSchemaUrlFor } from '../support/database.ts';
-import { writeWebhooks, type WebhookEntry } from '../support/files.ts';
-import { startReceiver, type Receiver } from '../support/receiver.ts';
-import { waitFor } from '../support/wait.ts';
+import {
+  BEFORE, edit, ENTERED, KEY, list, nextDelivery, REPLACED, rowOf, signatureOf, stored, storedRows, subOf, TWO, useWebhookApp, RUNTIME,
+} from '../support/webhooks.ts';
 
-let t: TestApp | undefined;
-let cleanup: (() => void) | undefined;
-const receivers: Receiver[] = [];
-let logged: string[] = [];
-
-beforeEach(() => {
-  logged = [];
-  for (const level of ['log', 'info', 'warn', 'error', 'debug'] as const) {
-    vi.spyOn(console, level).mockImplementation((...args: unknown[]) => { logged.push(args.map(String).join(' ')); });
-  }
-});
-
-afterEach(async () => {
-  await t?.stop();
-  t = undefined;
-  for (const r of receivers.splice(0)) await r.close();
-  cleanup?.();
-  vi.restoreAllMocks();
-});
-
-const KEY = randomBytes(32).toString('hex');
-const NEW_KEY = randomBytes(32).toString('hex');
-const ENTERED = 'entered-secret-0123456789abcdef0123456789';
-const REPLACED = 'replaced-secret-0123456789abcdef012345678';
-
-/** Two subscriptions from before issue #451: each names the runtime variable its secret is in. */
-const TWO: WebhookEntry[] = [
-  { name: 'grok-bot', url: 'http://127.0.0.1:4795/hook', events: ['question.escalated', 'job.finished'], secretEnv: 'WEBHOOK_SECRET_GROK', active: true },
-  { name: 'other', url: 'http://127.0.0.1:4796/other', events: ['*'], secretEnv: 'WEBHOOK_SECRET_OTHER' },
-];
-const RUNTIME = { HOPPER_TOKEN_KEY: KEY, WEBHOOK_SECRET_GROK: 's-grok', WEBHOOK_SECRET_OTHER: 's-other' };
-
-/** `webhooks` are the subscriptions in the database at start; `secrets` is the runtime's environment. */
-async function start(webhooks: WebhookEntry[] = [], secrets: Record<string, string> = { ...RUNTIME }): Promise<{ a: TestApp; token: string }> {
-  const db = tempDbPath();
-  cleanup = db.cleanup;
-  writeWebhooks(db.dbPath, webhooks);
-  t = await startTestApp({ dbPath: db.dbPath, secrets });
-  return { a: t, token: await t.login() };
-}
-
-/** The same database, the daemon started again with `secrets`. */
-async function restart(a: TestApp, secrets: Record<string, string>): Promise<{ a: TestApp; token: string }> {
-  const dbPath = a.dbPath;
-  await a.stop();
-  t = await startTestApp({ dbPath, secrets });
-  return { a: t, token: await t.login() };
-}
-
-/** Every row of the store's subscriptions, as stored. */
-const storedRows = (a: TestApp): Record<string, unknown>[] => {
-  const db = openDb(ownerSchemaUrlFor(a.dbPath));
-  try {
-    return db.all('SELECT * FROM webhooks ORDER BY seq');
-  } finally {
-    db.close();
-  }
-};
-const rowOf = (a: TestApp, name: string) => storedRows(a).find((r) => r.name === name)!;
-/** The subscriptions as the store holds them, without ids and timestamps. */
-const stored = (a: TestApp) => a.user().store.webhooks.list().map(({ name, url, events, active }) => ({ name, url, events, active }));
-const list = async (a: TestApp) => (await a.api('GET', '/api/webhooks')).body;
-const edit = (a: TestApp, token: string, body: Record<string, unknown>) => a.ui<Record<string, any>>('/ui/api/webhooks', body, { token }); // eslint-disable-line @typescript-eslint/no-explicit-any
-const subOf = (body: { subscriptions: { name: string }[] }, name: string) => body.subscriptions.find((s) => s.name === name) as Record<string, unknown>;
-const signatureOf = (secret: string, got: { headers: Record<string, unknown>; body: string }) =>
-  `sha256=${createHmac('sha256', secret).update(`${String(got.headers['x-hopper-timestamp'])}.${got.body}`).digest('hex')}`;
-const BEFORE = TWO.map(({ name, url, events, active }) => ({ name, url, events, active: active ?? true }));
-
-async function receiver(): Promise<Receiver> {
-  const r = await startReceiver();
-  receivers.push(r);
-  return r;
-}
-
-/** One job finished: the next `job.finished` delivery, as the receiver got it. */
-async function nextDelivery(a: TestApp, rx: Receiver): Promise<{ headers: Record<string, unknown>; body: string }> {
-  const before = rx.received.length;
-  const job = await a.pull({ op: 'echo' });
-  await a.waitForStatus(job.id, 'finished');
-  return waitFor(() => rx.received[before]);
-}
-
-/** Nothing the hopper answered, logged or appended to the event log carries `secret`. */
-async function nowhere(a: TestApp, secret: string): Promise<void> {
-  expect(JSON.stringify(await list(a))).not.toContain(secret);
-  expect(JSON.stringify(a.user().store.events.since(0, 100_000))).not.toContain(secret);
-  expect(JSON.stringify(a.user().store.webhooks.list())).not.toContain(secret);
-  expect(logged.join('\n')).not.toContain(secret);
-}
+const { start, restart, receiver, nowhere } = useWebhookApp();
 
 describe('GET /api/webhooks: what the UI edits', () => {
   it('a stored secret shows as set, with when it changed; never the secret; no config record', async () => {
@@ -268,91 +173,6 @@ describe('POST /ui/api/webhooks — replace and rotate', () => {
   });
 });
 
-describe('the encryption key (HOPPER_TOKEN_KEY)', () => {
-  it('none: a secret is not stored, and the answer says why; nothing written', async () => {
-    const { a, token } = await start([], { WEBHOOK_SECRET_X: 'x' });
-    for (const body of [
-      { action: 'add', name: 'hook', url: 'http://127.0.0.1:1/h', events: ['*'], secret: ENTERED },
-      { action: 'add', name: 'hook', url: 'http://127.0.0.1:1/h', events: ['*'] },
-    ]) {
-      const r = await edit(a, token, body);
-      expect(r.status).toBe(503);
-      expect(r.body.error).toContain('HOPPER_TOKEN_KEY is not set');
-    }
-    expect(storedRows(a)).toEqual([]);
-  });
-
-  it('gone after a secret was stored: unreadable, said plainly — never "no secret"; nothing sent', async () => {
-    const { a: first, token: t1 } = await start();
-    await edit(first, t1, { action: 'add', name: 'hook', url: 'http://127.0.0.1:1/h', events: ['*'], secret: ENTERED });
-    const { a, token } = await restart(first, {});
-    const problem = subOf(await list(a), 'hook').secretProblem as string;
-    expect(problem).toContain('HOPPER_TOKEN_KEY is not set');
-    expect(problem).toContain('cannot be opened');
-    const res = await a.ui<Record<string, unknown>>('/ui/api/webhooks/test', { name: 'hook' }, { token });
-    expect(res.body).toMatchObject({ ok: false, detail: problem });
-  });
-
-  it('another key: unreadable, naming the key id it was sealed under; a delivery retries with that reason', async () => {
-    const rx = await receiver();
-    const { a: first, token: t1 } = await start();
-    await edit(first, t1, { action: 'add', name: 'rx', url: rx.url, events: ['job.finished'], secret: ENTERED });
-    const { a } = await restart(first, { HOPPER_TOKEN_KEY: NEW_KEY });
-    const problem = subOf(await list(a), 'rx').secretProblem as string;
-    expect(problem).toContain(`sealed under key ${createSealer(KEY).keyId}`);
-    const job = await a.pull({ op: 'echo' });
-    await a.waitForStatus(job.id, 'finished');
-    const d = await waitFor(() => a.user().store.webhooks.listDeliveries({ limit: 10 }).find((x) => x.eventType === 'job.finished' && x.lastError));
-    expect(d.lastError).toContain('cannot be opened');
-    expect(rx.received).toHaveLength(0);
-  });
-
-  it('a new key with the old one as HOPPER_TOKEN_KEY_PREVIOUS: sealed again under the new key at start; deliveries keep signing', async () => {
-    const rx = await receiver();
-    const { a: first, token: t1 } = await start();
-    await edit(first, t1, { action: 'add', name: 'rx', url: rx.url, events: ['job.finished'], secret: ENTERED });
-    const { a } = await restart(first, { HOPPER_TOKEN_KEY: NEW_KEY, HOPPER_TOKEN_KEY_PREVIOUS: KEY });
-    expect(String(rowOf(a, 'rx').secret_sealed).split('.')[1]).toBe(createSealer(NEW_KEY).keyId);
-    const got = await nextDelivery(a, rx);
-    expect(got.headers['x-hopper-signature']).toBe(signatureOf(ENTERED, got));
-    await nowhere(a, ENTERED);
-  });
-});
-
-describe('a subscription from before issue #451: its secret from the runtime variable it names', () => {
-  it('keeps signing from the variable, and says so', async () => {
-    const { a } = await start(TWO, { HOPPER_TOKEN_KEY: KEY, WEBHOOK_SECRET_GROK: 's-grok' });
-    const body = await list(a);
-    expect(body.subscriptions.map((s: Record<string, unknown>) => [s.name, s.secretEnv, s.secretProblem, s.secretChangedAt])).toEqual([
-      ['grok-bot', 'WEBHOOK_SECRET_GROK', undefined, undefined],
-      ['other', 'WEBHOOK_SECRET_OTHER', 'WEBHOOK_SECRET_OTHER is not set', undefined],
-    ]);
-    expect(JSON.stringify(body)).not.toContain('s-grok');
-  });
-
-  it('a delivery signs with the secret from a mounted secret file (NAME_FILE)', async () => {
-    const rx = await receiver();
-    const file = join(mkdtempSync(join(tmpdir(), 'jh-mounted-')), 'hook');
-    writeFileSync(file, 'from-mounted-file\n', { mode: 0o600 });
-    const { a } = await start([{ name: 'rx', url: rx.url, events: ['job.finished'], secretEnv: 'WEBHOOK_SECRET_RX' }], { HOPPER_TOKEN_KEY: KEY, WEBHOOK_SECRET_RX_FILE: file });
-    const got = await nextDelivery(a, rx);
-    expect(got.headers['x-hopper-signature']).toBe(signatureOf('from-mounted-file', got));
-  });
-
-  it('replace stores the secret in the hopper: the variable is no longer named or read', async () => {
-    const rx = await receiver();
-    const secrets: Record<string, string> = { HOPPER_TOKEN_KEY: KEY, WEBHOOK_SECRET_RX: 'from-runtime' };
-    const { a, token } = await start([{ name: 'rx', url: rx.url, events: ['job.finished'], secretEnv: 'WEBHOOK_SECRET_RX' }], secrets);
-    const r = await edit(a, token, { action: 'replace', name: 'rx', secret: REPLACED });
-    expect(r.status).toBe(200);
-    expect(subOf(r.body, 'rx')).not.toHaveProperty('secretEnv');
-    expect(rowOf(a, 'rx').secret_env).toBe('');
-    delete secrets.WEBHOOK_SECRET_RX;
-    const got = await nextDelivery(a, rx);
-    expect(got.headers['x-hopper-signature']).toBe(signatureOf(REPLACED, got));
-  });
-});
-
 describe('POST /ui/api/webhooks — edit', () => {
   it('changes url, events and active of one row; the other row and its secret stay', async () => {
     const { a, token } = await start(TWO);
@@ -437,8 +257,7 @@ describe('POST /ui/api/webhooks/test — Send test event', () => {
   });
 
   it('a receiver refusing it: ok false with its status', async () => {
-    const r = await startReceiver(401);
-    receivers.push(r);
+    const r = await receiver(401);
     const { a, token } = await start();
     await edit(a, token, { action: 'add', name: 'hook', url: r.url, events: ['*'], secret: ENTERED });
     expect((await a.ui<Record<string, unknown>>('/ui/api/webhooks/test', { name: 'hook' }, { token })).body).toMatchObject({ ok: false, status: 401 });
