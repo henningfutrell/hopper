@@ -136,6 +136,20 @@ describe('attached machine source', () => {
     expect((await src.list())[0]).not.toHaveProperty('disk');
   });
 
+  it('carries what its probe found wrong with its work tree, and drops it once a probe finds it usable (issue #361)', async () => {
+    let answer: { online: boolean; home?: string; workTreeProblem?: string } = { online: true, home: '/home/far', workTreeProblem: 'its work tree /srv/x cannot be made: Permission denied' };
+    let t = 0;
+    const src = createAttachedMachineSource({
+      machine: () => ({ name: 'laptop', ssh: 'laptop', lanes: 1, executors: [], herdr: true, session: 'hopper', workTree: '/srv/x' }),
+      clock: { now: () => new Date(t) }, probeEveryMs: 30000, probe: async () => answer,
+    });
+    await src.list(); await flush();
+    expect((await src.list())[0]).toMatchObject({ workTree: '/srv/x', workTreeProblem: 'its work tree /srv/x cannot be made: Permission denied' });
+    answer = { online: true, home: '/home/far' };
+    t += 30000; await src.list(); await flush();
+    expect((await src.list())[0]).not.toHaveProperty('workTreeProblem');
+  });
+
   it('honours a label', async () => {
     const h = createAttachedMachineSource({
       machine: () => ({ name: 'laptop', label: 'arch-laptop', ssh: 'laptop', lanes: 1, executors: [], herdr: true, session: 'hopper' }), probe: async () => ({ online: true }),
@@ -193,13 +207,39 @@ describe('probeSsh', () => {
     // The fake ssh runs the command in a local shell: the home is this test's own HOME.
     expect(await probe('laptop')).toMatchObject({ home: process.env.HOME });
     const argv = (JSON.parse(readFileSync(join(dir, 'ssh-calls.jsonl'), 'utf8').trim()) as { argv: string[] }).argv;
-    expect(argv.at(-1)).toBe(`${DF_COMMAND}; printf '%s\\n' "$HOME"`);
+    expect(argv.at(-1)).toMatch(/^printf '%s\\n' "\$HOME"; /);
+    expect(argv.at(-1)).toContain(DF_COMMAND);
+    expect(argv.at(-1)).not.toContain('herdr');
   });
 
   it('answers the disk its home is on too, so the UI warns before it fills (issue #401)', async () => {
     const { disk } = await probe('laptop');
     expect(disk?.totalBytes).toBeGreaterThan(0);
     expect(disk?.freeBytes).toBeLessThanOrEqual(disk!.totalBytes);
+  });
+
+  // Issue #361: the probe also makes the machine's work tree there (the jobs directory when it names none),
+  // so a machine whose work tree cannot be made is known before any job is routed to it.
+  it('makes the machine\'s work tree there, under its home, and finds nothing wrong', async () => {
+    const r = await probeSsh({ target: 'laptop', sshBin: SSH, controlDir: join(dir, 's'), auth: testSshAuth(join(dir, 'auth')), workTree: '~/trees/a' });
+    expect(r).toEqual({ home: process.env.HOME });
+    expect(existsSync(join(process.env.HOME!, 'trees', 'a'))).toBe(true);
+  });
+
+  it('a machine naming no work tree: the jobs directory is made', async () => {
+    expect(await probeSsh({ target: 'laptop', sshBin: SSH, controlDir: join(dir, 's'), auth: testSshAuth(join(dir, 'auth')) })).toEqual({ home: process.env.HOME });
+    expect(existsSync(join(process.env.HOME!, 'hopper-jobs'))).toBe(true);
+  });
+
+  it('a work tree that cannot be made there: online, with what was wrong', async () => {
+    const r = await probeSsh({ target: 'laptop', sshBin: SSH, controlDir: join(dir, 's'), auth: testSshAuth(join(dir, 'auth')), workTree: '/proc/hopper-no-such/tree' });
+    expect(r.home).toBe(process.env.HOME);
+    expect(r.workTreeProblem).toMatch(/^its work tree \/proc\/hopper-no-such\/tree cannot be made: /);
+  });
+
+  it('a work tree that is the home is a problem, and nothing is made', async () => {
+    const r = await probeSsh({ target: 'laptop', sshBin: SSH, controlDir: join(dir, 's'), auth: testSshAuth(join(dir, 'auth')), workTree: '~' });
+    expect(r.workTreeProblem).toBe('its work tree ~ is its home or above it: a job runs only in a directory below the home');
   });
 
   it('rejects when the machine answers with no absolute home', async () => {
