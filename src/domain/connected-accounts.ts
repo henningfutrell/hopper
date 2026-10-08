@@ -39,9 +39,13 @@ export type ConnectedAccountStatus = { provider: ConnectedAccountProvider; via: 
     installations?: AppInstallation[];
     /** GitHub: why GitHub could not say where the app is installed (then `installations` is absent). */
     installationsError?: string;
+    /** When the token now kept expires; absent: it does not. The hopper renews it an hour before (issue #441). */
+    expiresAt?: string;
+    /** Why the last renewal failed, while it is tried again (issue #441): GitHub not answering, or this hopper set up so it cannot renew. The sign-in goes on. */
+    renewal?: string;
   }
   | { state: 'not-connected' }
-  /** Its sign-in ended (issue #358): GitHub refused its token and the renewal, or the token expired with nothing to renew it. Connect again. `error`: why. */
+  /** Its sign-in ended (issue #358): GitHub refused its refresh token (revoked, or the app's authorization removed), or it expired with nothing to renew it. Connect again. `error`: why. */
   | { state: 'expired'; account: string; connectedAt: string; error: string }
   | { state: 'waiting'; userCode: string; verificationUri: string; expiresAt: string }
   | { state: 'failed'; error: string }

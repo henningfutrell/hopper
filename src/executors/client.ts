@@ -78,7 +78,7 @@ function clientHome(home: unknown): string | undefined {
 }
 
 /** A reap or a survey on the client target (issue #410): the client runs its own fixed script; resolves what it printed and its exit code. */
-export function clientScript(t: ClientTransport, path: '/reap' | '/survey', body: Record<string, unknown>): Promise<ClientAnswer> {
+export function clientScript(t: ClientTransport, path: '/reap' | '/survey' | '/credential', body: Record<string, unknown>): Promise<ClientAnswer> {
   return clientCall<ClientAnswer>(t, path, body, 60000);
 }
 

@@ -72,7 +72,7 @@ describe('cursor-agent executor', () => {
   it('runs with the job\'s GitHub credential, as herdr-claude does (issue #214)', async () => {
     reply('Done.\n\nHOPPER_DONE');
     const { ctx } = ctxFor({ prompt: 'go', cwd: work }, HERE);
-    await ex.run({ ...ctx, credentials: { GH_TOKEN: 'gho_job' } });
+    await ex.run({ ...ctx, credentials: async () => ({ GH_TOKEN: 'gho_job' }) });
     expect(calls().at(-1)!.env.GH_TOKEN).toBe('gho_job');
   });
 

@@ -64,6 +64,12 @@ describe('systemd/hopper.service', () => {
     expect(readFileSync(fileURLToPath(new URL('../../.env.example', import.meta.url)), 'utf8')).not.toMatch(/HOPPER_SECRET_KEY/);
   });
 
+  it('install.sh gives the daemon a token key once, mode 600, unless daemon.env already names one (issue #441)', () => {
+    const text = readFileSync(INSTALL, 'utf8');
+    expect(text).toMatch(/if \[ -z "\$\(env_line HOPPER_TOKEN_KEY\)" \] && \[ -z "\$\(env_line HOPPER_TOKEN_KEY_FILE\)" \]; then/);
+    expect(text).toMatch(/\(umask 077; printf 'HOPPER_TOKEN_KEY=%s\\n' "\$\(od -An -tx1 -N32 \/dev\/urandom \| tr -d ' \\n'\)" >> "\$ENV_FILE"\)/);
+  });
+
   it('install.sh copies WHATS-NEW.md into the install: the Updates panel says what the installed version brought (issue #165)', () => {
     expect(readFileSync(INSTALL, 'utf8')).toMatch(/cp "\$APP_DIR\/WHATS-NEW\.md" "\$target\/"/);
   });

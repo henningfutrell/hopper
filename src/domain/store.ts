@@ -313,12 +313,27 @@ export interface ConnectedAccount {
   /** Why the sign-in ended — GitHub refused the token and its renewal (issue #358): the account is expired, until connected again. */
   ended?: string;
   connectedAt: string;
+  /** How GitHub granted it (issue #441): a browser (web flow) grant renews only with the app's client secret, a device flow grant without; absent: kept before #441. */
+  grantedBy?: 'device' | 'web';
 }
 
 export interface ConnectedAccountRepository {
+  /** The account as stored: its tokens sealed when the runtime gives a token key (issue #441). */
   get(provider: ConnectedAccountProvider): ConnectedAccount | undefined;
   /** Insert or replace the provider's account. */
   put(account: ConnectedAccount): void;
+  /**
+   * Replace the account only while its stored refresh token is still `refreshToken` (as stored): one
+   * transaction, the row locked (issue #441). False, nothing written, when another process rotated it
+   * first or it is gone.
+   */
+  swap(provider: ConnectedAccountProvider, refreshToken: string, next: ConnectedAccount): boolean;
+  /**
+   * Take the account's renewal lock, held by this connection until `unlock` or until the connection
+   * ends — a crashed process lets it go (issue #441). False when another connection holds it.
+   */
+  lock(provider: ConnectedAccountProvider): boolean;
+  unlock(provider: ConnectedAccountProvider): void;
   /** True when there was one. */
   delete(provider: ConnectedAccountProvider): boolean;
 }

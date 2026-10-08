@@ -16,7 +16,7 @@ name: hopper
 
 services:
   # Postgres makes the database password on its first start, kept in the secrets volume, before the
-  # database starts. Each file is readable only by the one service that needs it (postgres: uid 70;
+  # database starts, and the hopper's token key with it (issue #441). Each file is readable only by the one service that needs it (postgres: uid 70;
   # the hopper: uid 1000). No one-shot service for it: podman-compose cannot start a container whose
   # dependency has exited.
   postgres:
@@ -30,9 +30,10 @@ services:
           umask 077
           [ -s $$s/postgres_password ] || head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n' > $$s/postgres_password
           printf 'postgres://hopper:%s@postgres:5432/hopper' "$$(cat $$s/postgres_password)" > $$s/database_url
+          [ -s $$s/token_key ] || head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' > $$s/token_key
         )
         chown 70:70 $$s/postgres_password
-        chown 1000:1000 $$s/database_url
+        chown 1000:1000 $$s/database_url $$s/token_key
         exec docker-entrypoint.sh postgres
     environment:
       POSTGRES_USER: hopper
@@ -58,6 +59,8 @@ services:
         required: false
     environment:
       HOPPER_DATABASE_URL_FILE: /run/hopper-secrets/database_url
+      # The key the GitHub connection's tokens are sealed under in the database (issue #441), made beside it.
+      HOPPER_TOKEN_KEY_FILE: /run/hopper-secrets/token_key
       # The same port inside and out: the Host the browser sends must name the daemon's port.
       HOPPER_PORT: ${HOPPER_PORT:-4790}
       # The published port reaches the daemon from the compose network, not its loopback: those

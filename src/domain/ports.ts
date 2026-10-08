@@ -33,11 +33,14 @@ export interface ExecutionContext {
   /** Report the job's work tree (its cwd on the lane's machine) once resolved: `job.workTree`, shown on its lane. */
   workTree(path: string): void;
   /**
-   * Variables the job's own processes run with, from its source's connection (issue #214): GH_TOKEN of
-   * the GitHub account the job came from, so what the job does on GitHub acts as that user with the
-   * hopper's app marked on it. Asked when the job starts or resumes; never stored on the job.
+   * The variables the job's own processes run with, from its source's connection (issue #214): the GitHub
+   * account the job came from, so what the job does on GitHub acts as that user with the hopper's app marked
+   * on it. Its credential files are first kept under `<scratch>/credentials` on the job's machine, where every
+   * renewal rewrites them, so a running job keeps working across one (issue #441); the variables point
+   * there. Asked when the job starts, resumes, or takes a turn, with the job's own scratch dir, and whether
+   * its work tree may be made (the jobs dir); no token is stored on the job.
    */
-  credentials?: Readonly<Record<string, string>>;
+  credentials?: (scratch: string, makeWorkTree?: boolean) => Promise<Readonly<Record<string, string>>>;
   /**
    * The job rules (issue #172): the text a job's prompt carries before its work tree and the protocol —
    * the config record `job-rules` as it is when the job starts, or the default while none is saved.
@@ -150,6 +153,12 @@ export interface MachineShell {
   reap(jobId: string, scratch?: string): Promise<Reaped>;
   /** What jobs left there: scopes, processes, and the scratch dirs under `roots`. */
   survey(roots: string[]): Promise<Survey>;
+  /**
+   * Writes `content` to `file` under `dir`, the job's own credentials dir (`…/.hopper-scratch/<job id>/credentials`),
+   * mode 600, replacing it whole (issue #441): a running job reads its connection's current token there.
+   * `make`: the work tree may be made here (the jobs dir); else a work tree that is not there is refused.
+   */
+  keepCredential(jobId: string, dir: string, file: string, content: string, make?: boolean): Promise<void>;
 }
 
 // ---- Inputs the decider is made over ---------------------------------------------------
@@ -498,8 +507,8 @@ export interface JobSource {
    * every failed job stays failed.
    */
   closedAsComplete?(job: Job): Promise<boolean>;
-  /** The variables the job's processes run with to act through the source's connection (ExecutionContext.credentials); absent: none. */
-  credentials?(job: Job): Promise<Record<string, string>>;
+  /** What the job's processes act with through the source's connection (ExecutionContext.credentials); absent or undefined: nothing. */
+  credentials?(job: Job): Promise<JobCredentials | undefined>;
   /**
    * What became of every open item the last discover listed (issue #440): taken, or the one reason it was not.
    * The sync loop adds each taken item's job and puts the list in SourceStatus.detail.intake. Absent: the source does not say.
@@ -507,6 +516,19 @@ export interface JobSource {
   intake?(): IntakeOutcome[];
   /** The user's act on items the last discover listed (Assign to me, Release claim; issue #440). Throws SourceError. */
   intakeAction?(action: IntakeAction): Promise<IntakeActionResult>;
+}
+
+/**
+ * What a job acts with through its source's connection (issues #214, #441). `files` are kept in the job's
+ * credentials dir on its machine (by path under it) and rewritten at each renewal, so a running job reads
+ * the token as it is now; `paths` are the variables pointing into that dir (variable → path under it).
+ * Where the files cannot be kept — the machine's connection takes none — the job runs with `env`: the
+ * token as it is at the job's start.
+ */
+export interface JobCredentials {
+  files: Record<string, string>;
+  paths: Record<string, string>;
+  env: Record<string, string>;
 }
 
 export class SourceError extends Error {
@@ -613,6 +635,8 @@ export interface Connection {
   /** What renews the token, and when it expires itself (issue #358); absent: nothing renews it. */
   refreshToken?: string;
   refreshTokenExpiresAt?: string;
+  /** How GitHub granted it (issue #441): the browser's web flow or the device flow. */
+  grantedBy?: 'device' | 'web';
 }
 
 /** A user's connected accounts (issue #214): GET /api/connected-accounts, POST /ui/api/connected-accounts. */
