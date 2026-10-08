@@ -10,11 +10,10 @@
 //
 //   hs1.<key id>.<salt>.<nonce>.<ciphertext ‖ tag>     (base64url)
 import { createCipheriv, createDecipheriv, createHmac, hkdfSync, randomBytes } from 'node:crypto';
-import { decodeKey, TOKEN_KEY_VARIABLE } from './token-box.ts';
+import { decodeKey, PREVIOUS_KEYS_VARIABLE, TOKEN_KEY_VARIABLE } from './token-box.ts';
 import type { RuntimeSecrets } from './runtime.ts';
 
-/** The runtime's older master keys (also `_FILE`): one per line, or separated by commas or spaces. They only open. */
-export const PREVIOUS_KEYS_VARIABLE = `${TOKEN_KEY_VARIABLE}_PREVIOUS`;
+export { PREVIOUS_KEYS_VARIABLE };
 
 const VERSION = 'hs1';
 const SALT = 32;

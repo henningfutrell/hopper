@@ -16,6 +16,8 @@
 // are chosen of how many reached, saved without disconnecting (issue #321). A chosen one the app no longer
 // reaches stays listed, to be cleared. Each installation says what GitHub granted the app there, and a link adds the app to
 // another account or organization — quiet, under the installations, never a nudge to install it again (issue #352).
+// A connection whose tokens the hopper cannot open (another token key) says to give the key back, and offers
+// only to forget it: connecting again would mint another GitHub grant toward GitHub's ten (issue #514).
 import { Link2, LogOut, Unlink } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
@@ -33,7 +35,7 @@ import { SourceSync } from './source-sync';
 const POLL_MS = 2000;
 type Provider = ConnectedAccountStatus['provider'];
 const NAME: Record<Provider, string> = { github: 'GitHub' };
-const LABEL: Record<ConnectedAccountStatus['state'], string> = { connected: 'connected', 'not-connected': 'not connected', waiting: 'waiting', failed: 'failed', expired: 'sign-in expired' };
+const LABEL: Record<ConnectedAccountStatus['state'], string> = { connected: 'connected', 'not-connected': 'not connected', waiting: 'waiting', failed: 'failed', expired: 'sign-in expired', unreadable: 'cannot be read' };
 
 export function ConnectedAccountPanel({ provider, source }: { provider: Provider; source?: SourceStatus | undefined }) {
   const [s, setS] = useState<ConnectedAccountStatus | null>(null);
@@ -59,7 +61,7 @@ export function ConnectedAccountPanel({ provider, source }: { provider: Provider
     }
   };
   const act = (action: 'connect' | 'cancel' | 'disconnect') => send({ action });
-  const tone = s.state === 'connected' ? 'ok' : s.state === 'failed' || s.state === 'expired' ? 'bad' : 'warn';
+  const tone = s.state === 'connected' ? 'ok' : s.state === 'failed' || s.state === 'expired' || s.state === 'unreadable' ? 'bad' : 'warn';
   const adminOnly = canAdmin ? undefined : `An admin can connect ${name}: sign in as one`;
   return (
     <Panel title={`${name} account`} icon={Link2} action={<StatusBadge status={s.state} label={LABEL[s.state]} tone={tone} />} bodyClassName="space-y-2 text-xs">
@@ -108,6 +110,16 @@ export function ConnectedAccountPanel({ provider, source }: { provider: Provider
           {signedInWith
             ? <div>Your hopper session ended with it: sign in with {name} again to connect it.</div>
             : <Button size="xs" disabled={!canAdmin} title={adminOnly ?? `Shows a code to enter on ${name}`} onClick={() => void act('connect')}><Link2 />Connect {name} again</Button>}
+        </>}
+        {s.state === 'unreadable' && <>
+          <div data-unreadable className="rounded-md border border-bad/30 bg-bad/5 p-2 break-words text-bad">
+            The connection of <span className="font-mono">{s.account}</span> is kept, but this hopper cannot open it: {s.error}.
+          </div>
+          <div className="text-muted-foreground">
+            It has not ended: with the key back, it goes on as it was. No jobs come from {name} until then.
+            Connecting again instead would make another {name} sign-in, and GitHub keeps only ten per account for the app.
+          </div>
+          <Button size="xs" variant="outline" disabled={!canAdmin} title={adminOnly ?? `Forgets this ${name} connection here; then you can connect ${name} anew`} onClick={() => void act('disconnect')}><Unlink />Forget this connection</Button>
         </>}
         {(s.state === 'not-connected' || s.state === 'failed') && <>
           {s.state === 'failed' && <div className="rounded-md border border-bad/30 bg-bad/5 p-2 break-words text-bad">{s.error}</div>}

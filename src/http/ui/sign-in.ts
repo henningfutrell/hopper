@@ -86,7 +86,7 @@ export function registerSignInRoutes(parent: FastifyInstance, o: {
   /** The user an identity signs in as (issue #158): linked, or a new one. */
   userFor: (who: Identity) => Promise<User>;
   /** A GitHub sign-in's connection, handed to the session's user (issue #214). */
-  connect: (userId: string, connection: Connection) => void;
+  connect: (userId: string, connection: Connection) => Promise<void> | undefined;
   /** A user's name by id (a login code names its user by id). */
   userName: (id: string) => string;
   /** Whether a session is the hopper's admin's (issue #240). */
@@ -110,7 +110,7 @@ function routes(app: FastifyInstance, o: Parameters<typeof registerSignInRoutes>
   /** A session for `who`, as its user, answered as JSON: the UI stores the token. A GitHub sign-in's connection becomes the user's. */
   const started = async (reply: FastifyReply, who: Identity, role: UiRole, connection?: Connection, extra: Record<string, unknown> = {}) => {
     const user = await o.userFor(who);
-    if (connection) o.connect(user.id, connection);
+    if (connection) await o.connect(user.id, connection);
     const s = sessions.create({ role, identity: who, userId: user.id });
     const shown = sessionUser(s, user.name, isSuperAdmin(signIn.config(), who), o.instanceAdmin(s));
     console.warn(`hopper: UI session started: ${who.realm} ${shown.identity} as user ${user.id}, role ${role}`);
