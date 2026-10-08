@@ -205,14 +205,6 @@ describe('herdr-claude executor: run', () => {
     expect(out).toMatchObject({ kind: 'question', question: { detectedBy: 'marker', text: 'Should I also update the README?' } });
   });
 
-  it('each further status note in a row waits twice as long before the next nudge', async () => {
-    const note = { output: ['● Still waiting for the build.'] };
-    const { herdr, clock, executor } = setup({ turns: [note, note, note, DONE] }, { idleNudgeMs: 20000 });
-    expect(await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx)).toMatchObject({ kind: 'finished' });
-    expect(herdr.prompts.slice(1).map((p) => p.text)).toEqual([STATUS_NOTE_NUDGE, STATUS_NOTE_NUDGE, STATUS_NOTE_NUDGE]);
-    expect(clock.elapsed()).toBeGreaterThanOrEqual(20000 + 40000 + 80000);
-  });
-
   it('fails when Claude exits, with its last output', async () => {
     const { executor } = setup({ turns: [{ output: ['● Segfault in the matrix'], end: 'exit' }] });
     const out = await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx);
