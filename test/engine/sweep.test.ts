@@ -38,6 +38,13 @@ describe('what the sweep reaps (issue #410)', () => {
     ]);
   });
 
+  it('a parked job (issue #501): what still runs of it is stopped, its scratch dir — its worktree — is never removed, whatever its age', () => {
+    const parked = new Map([['park', job('park', 'parked')]]);
+    const scratch = [{ jobId: 'park', path: '/w/.hopper-scratch/park', ageMs: 999 * HOUR }];
+    expect(planSweep({ ...none, scopes: ['park'], scratch }, (id) => parked.get(id), new Set(['park']), 24 * HOUR)).toEqual([{ jobId: 'park' }]);
+    expect(planSweep({ ...none, scratch }, (id) => parked.get(id), new Set(), 24 * HOUR)).toEqual([]);
+  });
+
   it('one reap per job: its processes and its scratch dir together', () => {
     expect(plan({ processes: ['done'], scratch: [{ jobId: 'done', path: '/w/.hopper-scratch/done', ageMs: 30 * HOUR }] }))
       .toEqual([{ jobId: 'done', scratch: '/w/.hopper-scratch/done' }]);

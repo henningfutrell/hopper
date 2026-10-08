@@ -21,7 +21,7 @@ export interface AttachedEditOptions {
   hostKeyOffer?(ssh: string): Promise<HostKeyOffer>;
   /** The hopper's own public ssh key (issue #293), to add to a machine's authorized_keys; absent: none to show. */
   publicKey?(): string | undefined;
-  /** Jobs that need the machine (busy lanes there, panes parked there): a removal is refused while any do. */
+  /** Jobs that need the machine (busy lanes there, waiting panes there): a removal is refused while any do. */
   inUse?(name: string): string[];
   /** Jobs not ended that are pinned to the machine (`spec.machineId`): a rename is refused while any are (issue #205). */
   pinned?(name: string): string[];

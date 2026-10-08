@@ -37,6 +37,14 @@ describe('resume pin', () => {
     expect(d.hold).toEqual([{ jobId: 'r', reason: 'pinned machine b offline' }]);
   });
 
+  it('a re-queued parked job (issue #501) waits for its machine while it is offline, with the reason, and never starts elsewhere', () => {
+    const machines = [machine({ id: 'a' }), machine({ id: 'b', online: false })];
+    const back = resuming('p', { resumeOn: 'b', parked: { at: '2026-10-01T00:00:00Z', from: 'running' } });
+    const d = decide(inputs({ machines, waiting: [back] }), 'd1');
+    expect(d.start).toEqual([]);
+    expect(d.hold).toEqual([{ jobId: 'p', reason: 'pinned machine b offline' }]);
+  });
+
   it('holds natively when the resumeOn machine is unknown', () => {
     const d = decide(inputs({ waiting: [resuming('r', { resumeOn: 'ghost' })] }), 'd1');
     expect(d.hold).toEqual([{ jobId: 'r', reason: 'pinned machine ghost unknown' }]);
@@ -75,8 +83,8 @@ describe('the router never holds a resuming job', () => {
 
 describe('waiting_answer in inputs is ignored', () => {
   it('in waiting: not started, not held, not counted; reason notes it', () => {
-    const parked = job('p', { status: 'waiting_answer' });
-    const d = decide(inputs({ waiting: [parked, job('a')] }), 'd1');
+    const waiting = job('p', { status: 'waiting_answer' });
+    const d = decide(inputs({ waiting: [waiting, job('a')] }), 'd1');
     expect(d.start.map((s) => s.jobId)).toEqual(['a']);
     expect(d.hold).toEqual([]);
     expect(d.reasons).toContain('ignored p: status waiting_answer is not an input');
@@ -84,8 +92,8 @@ describe('waiting_answer in inputs is ignored', () => {
   });
 
   it('in running: does not count against anything; reason notes it', () => {
-    const parked = job('p', { status: 'waiting_answer' });
-    const d = decide(inputs({ running: [parked] }), 'd1');
+    const waiting = job('p', { status: 'waiting_answer' });
+    const d = decide(inputs({ running: [waiting] }), 'd1');
     expect(d.reasons).toContain('ignored p: status waiting_answer is not an input');
   });
 });

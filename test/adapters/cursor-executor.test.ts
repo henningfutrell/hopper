@@ -93,7 +93,7 @@ describe('cursor-agent executor', () => {
     expect(workTrees).toEqual([work]);
   });
 
-  it('a question parks the job with its chat; the answer resumes that chat', async () => {
+  it('a question pauses the job with its chat; the answer resumes that chat', async () => {
     reply('Which language should it be in?\nHOPPER_QUESTION');
     const first = ctxFor({ prompt: 'Write a greeting', cwd: work }, HERE);
     expect(await ex.run(first.ctx)).toEqual({

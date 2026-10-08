@@ -23,7 +23,8 @@ import { mintJoinCode } from '../../machines/join-code.ts';
 import { INSTANCE_ADMIN_ONLY, type InstanceAdmin } from '../instance-admin.ts';
 import { identityName, sessionUser, type UiSession, type UiSessions } from './sessions.ts';
 import { registerSignInRoutes } from './sign-in.ts';
-import { answerBody, rejectBody } from './job-bodies.ts';
+import { answerBody } from './job-bodies.ts';
+import { registerJobActionRoutes } from './job-actions.ts';
 import { registerLoginRoutes } from './logins.ts';
 import { registerSourceIntakeRoutes } from './source-intake.ts';
 import { registerWebhookAndNotifierRoutes } from './webhooks-notifiers.ts';
@@ -142,7 +143,6 @@ export const connectedAccountsBody = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('choose'), provider: z.enum(CONNECTED_ACCOUNT_PROVIDERS), repositories: z.array(z.string().regex(/^[^/\s]+\/[^/\s]+$/, 'owner/repo')).max(5000) }),
 ]);
 const EDIT_STATUS = { invalid: 400, not_found: 404, conflict: 409 } as const;
-const RERUN_STATUS = { not_found: 404, conflict: 409, source: 502 } as const;
 /** The rules themselves are validated by the plugin host (the plugins config schema), so a refusal names the field. */
 export const routingEditBody = z.strictObject({ rules: z.array(z.any()), version: z.string().min(1) });
 
@@ -194,17 +194,6 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     if (!o.instanceAdmin(sessionOf(req)!)) return refuse(req, reply, INSTANCE_ADMIN_ONLY, 'admin');
   } };
 
-  app.post('/ui/api/jobs/:id/cancel', operator, async (req) => o.tenant(req).engine.cancel(parseWith(idParams, req.params).id, 'cancelled in UI'));
-  app.post('/ui/api/jobs/:id/approve', operator, async (req) => o.tenant(req).engine.approve(parseWith(idParams, req.params).id));
-  app.post('/ui/api/jobs/:id/operator-led', operator, async (req) => o.tenant(req).engine.claimByOperator(parseWith(idParams, req.params).id));
-  app.post('/ui/api/jobs/:id/reject', operator, async (req) => o.tenant(req).engine.reject(parseWith(idParams, req.params).id, parseWith(rejectBody, req.body ?? {}).reason));
-  app.post('/ui/api/jobs/:id/rerun', operator, async (req) => {
-    const r = await o.tenant(req).registry.rerun(parseWith(idParams, req.params).id);
-    if (r.ok) return r.job;
-    throw new HttpError(RERUN_STATUS[r.reason], r.message);
-  });
-  app.post('/ui/api/jobs/:id/dismiss', operator, async (req) => o.tenant(req).engine.dismiss(parseWith(idParams, req.params).id));
-  app.post('/ui/api/jobs/:id/cleaned-up', operator, async (req) => o.tenant(req).engine.markCleanedUp(parseWith(idParams, req.params).id));
   app.post('/ui/api/queue/order', operator, async (req) => ({ jobs: o.tenant(req).engine.orderQueue(parseWith(queueOrderBody, req.body).jobIds) }));
   app.post('/ui/api/queue/accept-presort', operator, async (req) => ({ presort: o.tenant(req).engine.acceptPreSort() }));
   // The usage graph's range and step are the user's own choice, a viewer's too; the history retention deletes samples: admin.
@@ -291,7 +280,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
 
   registerWebhookAndNotifierRoutes(app, { admin, tenant: o.tenant });
   // A job source's intake actions (issue #440), and the logins' (issue #476).
-  for (const register of [registerSourceIntakeRoutes, registerLoginRoutes]) register(app, { operator, admin, tenant: o.tenant });
+  for (const register of [registerJobActionRoutes, registerSourceIntakeRoutes, registerLoginRoutes]) register(app, { operator, admin, tenant: o.tenant });
 
   // design.md "Machines from the UI" (issues #18, #74): attach an ssh target as a new `ssh` instance
   // in the plugins config `machines:`; applies without a restart. Answers the new GET /api/machines/config.

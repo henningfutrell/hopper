@@ -314,14 +314,14 @@ describe('POST /ui/api/plugins — remove a machine', () => {
     const { a, token } = await start();
     const before = read(a);
     const store = a.user().store;
-    const parked = store.jobs.create({ executor: 'test', payload: {} }, 50);
-    store.jobs.update(parked.id, { status: 'waiting_answer', resumeOn: 'desk' });
+    const waiting = store.jobs.create({ executor: 'test', payload: {} }, 50);
+    store.jobs.update(waiting.id, { status: 'waiting_answer', resumeOn: 'desk' });
     const r = await plugins(a, token, { action: 'remove', role: 'machine-source', name: 'desk', version: (await config(a)).version });
     expect(r.status).toBe(409);
-    expect(r.body.error).toContain(parked.id);
+    expect(r.body.error).toContain(waiting.id);
     expect(read(a)).toEqual(before);
 
-    store.jobs.update(parked.id, { status: 'cancelled', resumeOn: undefined });
+    store.jobs.update(waiting.id, { status: 'cancelled', resumeOn: undefined });
     const running = store.jobs.create({ executor: 'test', payload: {} }, 50);
     const lane = store.lanes.open('desk');
     store.jobs.update(running.id, { status: 'running', laneId: lane.id });

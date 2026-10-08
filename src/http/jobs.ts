@@ -6,7 +6,7 @@ import { HttpError, parseWith } from './errors.ts';
 import type { TenantParts } from './tenants.ts';
 
 const STATUSES = [
-  'queued', 'held', 'claimed', 'running', 'waiting_answer', 'operator_led', 'finished', 'failed', 'cancelled', 'rejected',
+  'queued', 'held', 'claimed', 'running', 'waiting_answer', 'operator_led', 'parked', 'finished', 'failed', 'cancelled', 'rejected',
 ] as const satisfies JobStatus[];
 
 export const jobsQuery = z.object({

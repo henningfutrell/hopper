@@ -159,7 +159,7 @@ describe('editing a machine\'s name and details', () => {
     expect(editProblem(desk, d, CONFIG)).toBeNull();
     expect(editProblem(desk, { ...d, name: ' ' }, CONFIG)).toMatch(/name/);
     expect(editProblem(desk, { ...d, name: 'local' }, CONFIG)).toMatch(/local/);
-    // Issue #365: 0 lanes parks a machine without removing it.
+    // Issue #365: 0 lanes rests a machine without removing it.
     expect(editProblem(desk, { ...d, lanes: '0' }, CONFIG)).toBeNull();
     expect(editProblem(desk, { ...d, lanes: 'x' }, CONFIG)).toMatch(/lanes/);
     expect(editProblem(desk, { ...d, details: { ...d.details, ssh: ' ' } }, CONFIG)).toMatch(/ssh target/);

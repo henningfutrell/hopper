@@ -64,7 +64,7 @@ Version 3 (`docs/schemas/job.prioritized.v3.json`). The router's advice arrived 
 | field | type | required |
 |---|---|---|
 | `advice` | object | yes |
-| `statusAtAdvice` | `queued` \| `held` \| `claimed` \| `running` \| `waiting_answer` \| `operator_led` \| `finished` \| `failed` \| `cancelled` \| `rejected` | yes |
+| `statusAtAdvice` | `queued` \| `held` \| `claimed` \| `running` \| `waiting_answer` \| `operator_led` \| `parked` \| `finished` \| `failed` \| `cancelled` \| `rejected` | yes |
 
 ```json
 {
@@ -216,7 +216,7 @@ Version 1 (`docs/schemas/job.requeued.v1.json`). A job went back to the queue (r
 
 ## `job.reattached`
 
-Version 1 (`docs/schemas/job.reattached.v1.json`). The executor watches a job's live external work again (the herdr pane and Claude) without sending anything. `reason` `daemon restart`: restart recovery kept a running job running on its lane. `reason` `answered in the pane`: the owner typed the answer into a parked job's pane; the job runs again on a lane.
+Version 1 (`docs/schemas/job.reattached.v1.json`). The executor watches a job's live external work again (the herdr pane and Claude) without sending anything. `reason` `daemon restart`: restart recovery kept a running job running on its lane. `reason` `answered in the pane`: the owner typed the answer into a waiting job's pane; the job runs again on a lane.
 
 | field | type | required |
 |---|---|---|
@@ -829,6 +829,36 @@ Version 1 (`docs/schemas/job.cleaned_up.v1.json`). A deferred cleanup went throu
 ```json
 {
   "deferredAt": "2026-10-07T21:31:00.000Z"
+}
+```
+
+## `job.parked`
+
+Version 1 (`docs/schemas/job.parked.v1.json`). A person parked a running job or one on a question (issue #501): its lane is free, its pane and agent ended, and its work tree, branch, agent session and open question are kept. `machineId`: the machine it returns to when re-queued. A parked job never runs, and its question never expires, until it is re-queued or cancelled.
+
+| field | type | required |
+|---|---|---|
+| `from` | `running` \| `waiting_answer` | yes |
+| `machineId` | string | no |
+
+```json
+{
+  "from": "running",
+  "machineId": "laptop"
+}
+```
+
+## `job.unparked`
+
+Version 1 (`docs/schemas/job.unparked.v1.json`). A person re-queued a parked job (issue #501). `to` `queued`: it waits, pinned to its machine, and its claim resumes its agent session there (`claude --resume`), with the answer kept while it was parked, if any. `to` `waiting_answer`: its question is still open; the answer resumes it, and the human timeout starts again.
+
+| field | type | required |
+|---|---|---|
+| `to` | `queued` \| `waiting_answer` | yes |
+
+```json
+{
+  "to": "queued"
 }
 ```
 

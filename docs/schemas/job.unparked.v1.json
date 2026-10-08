@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "to": {
+      "type": "string",
+      "enum": [
+        "queued",
+        "waiting_answer"
+      ]
+    }
+  },
+  "required": [
+    "to"
+  ],
+  "additionalProperties": false
+}

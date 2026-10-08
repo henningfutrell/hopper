@@ -389,7 +389,7 @@ export function autoDenyMs(text: string): number | undefined {
 }
 
 /**
- * What was typed into the pane after the turn that parked the job: the first user echo (❯ and
+ * What was typed into the pane after the turn that stopped on the question: the first user echo (❯ and
  * its continuation lines) after Claude's reply to `anchor`, above the input box. Undefined when
  * nothing was typed (text still in the input box does not count). Lines are trimmed, ❯ removed.
  */

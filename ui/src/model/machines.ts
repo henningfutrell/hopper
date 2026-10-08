@@ -83,14 +83,14 @@ export function editProblem(m: Extract<MachineKind, { kind: 'attached' }>, d: Ma
   const name = d.name.trim();
   if (!name) return 'give the machine a name';
   if (name !== m.machine.name && config.machines.some((x) => x.name === name)) return `a machine is already named ${name}; pick another name`;
-  if (lanesOf(d.lanes, 0) === undefined) return 'lanes must be a whole number; 0 parks it';
+  if (lanesOf(d.lanes, 0) === undefined) return 'lanes must be a whole number; 0 rests it';
   const missing = (DETAILS[m.machine.connection] ?? []).find((f) => f.required && !(d.details[f.key] ?? '').trim());
   if (missing) return `give the ${missing.label}`;
   const tree = (d.details.workTree ?? '').trim();
   return tree && !pathLike(tree) ? 'the work tree is an absolute path or starts with ~' : null;
 }
 
-/** Lanes as typed, a whole number at least `min`: an attached machine being edited may be parked at 0 (issue #365). */
+/** Lanes as typed, a whole number at least `min`: an attached machine being edited may rest at 0 (issue #365). */
 const lanesOf = (s: string, min = 1): number | undefined => (/^\d+$/.test(s.trim()) && Number(s) >= min ? Number(s) : undefined);
 
 /** A fresh Add form: the machine defaults' lanes, and those of their executors that are configured. */

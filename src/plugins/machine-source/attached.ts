@@ -64,8 +64,8 @@ export const sweepOf = (o: { reapEveryMinutes?: number; scratchMaxAgeHours?: num
 export function attachedShape(z: typeof Z, executors: readonly string[]) {
   return {
     label: z.string().min(1).optional().meta({ description: 'shown instead of the name' }),
-    // 0 parks it (issue #365): it stays a machine, online, and takes no job.
-    lanes: z.number().int().min(0, 'lanes must not be negative').default(1).meta({ description: 'jobs it runs at once; 0 parks it' }),
+    // 0 rests it (issue #365): it stays a machine, online, and takes no job.
+    lanes: z.number().int().min(0, 'lanes must not be negative').default(1).meta({ description: 'jobs it runs at once; 0 rests it' }),
     reservedLanes: reservedLanesOption(z),
     executors: z.array(z.string().min(1)).default([...executors]).meta({ description: 'executor instances that run there' }),
   };

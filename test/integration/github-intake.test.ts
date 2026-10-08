@@ -54,7 +54,7 @@ function fixture(gh: FakeGitHub) {
     unassigned: gh.createIssue({ repo: REPO, assignees: [], body: sleepy, labels: ['hopper'] }),
     stale: gh.createIssue({ repo: REPO, body: sleepy, labels: ['hopper', 'hopper:claimed'] }),
     theirs: gh.createIssue({ repo: REPO, body: sleepy, labels: ['hopper', 'hopper:claimed', THEIRS] }),
-    parked: gh.createIssue({ repo: REPO, body: sleepy, labels: ['hopper', 'hopper:backburner'] }),
+    backburner: gh.createIssue({ repo: REPO, body: sleepy, labels: ['hopper', 'hopper:backburner'] }),
   };
 }
 
@@ -77,7 +77,7 @@ describe('intake outcomes and the intake migration (issue #440)', () => {
     expect(outcomes[i.stale.url]).toMatchObject({ jobId: job!.id });
     expect(outcomes[i.stale.url]!.reason).toBeUndefined();
     expect(outcomes[i.theirs.url]).toMatchObject({ reason: 'claimed by another hopper', action: 'release' });
-    expect(outcomes[i.parked.url]).toMatchObject({ reason: 'on the backburner' });
+    expect(outcomes[i.backburner.url]).toMatchObject({ reason: 'on the backburner' });
     const changes = [
       { key: i.stale.url, change: 'released a claim with no holder recorded and no job in this hopper' },
       { key: i.unassigned.url, change: 'not assigned to you: assign it to you to take it' },
@@ -108,8 +108,8 @@ describe('intake outcomes and the intake migration (issue #440)', () => {
     await a.sync();
     const token = await a.login();
 
-    const assigned = await a.ui('/ui/api/sources/github/intake', { kind: 'assign', keys: [i.unassigned.url, i.parked.url] }, { token });
-    expect(assigned).toEqual({ status: 200, body: { done: [i.unassigned.url], failed: { [i.parked.url]: 'not offered: on the backburner' } } });
+    const assigned = await a.ui('/ui/api/sources/github/intake', { kind: 'assign', keys: [i.unassigned.url, i.backburner.url] }, { token });
+    expect(assigned).toEqual({ status: 200, body: { done: [i.unassigned.url], failed: { [i.backburner.url]: 'not offered: on the backburner' } } });
     expect(gh.issue(REPO, i.unassigned.number).assignees).toEqual(['owner']);
     expect(await jobsFor(a, i.unassigned.url)).toHaveLength(1);
 

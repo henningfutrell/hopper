@@ -10,6 +10,7 @@ const TONE: Record<string, Tone> = {
   held: 'warn', draining: 'warn', retrying: 'warn', pending: 'warn', starting: 'warn', escalated: 'warn', reconnecting: 'warn', drafted: 'warn',
   waiting_answer: 'question', question: 'question', human: 'question',
   operator_led: 'operator', 'operator-led': 'operator',
+  parked: 'muted',
 };
 export const toneOf = (status: string): Tone => TONE[status] ?? 'muted';
 

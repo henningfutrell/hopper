@@ -79,10 +79,12 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
 
   // ---- the human stage ------------------------------------------------------------------
 
+  // Its job parked (issue #501): the question stays open and answerable, never expires and is not renotified, until re-queued.
+
   function expire(id: string) {
     store.tx(() => {
       const q = store.questions.get(id);
-      if (!q || q.status !== 'open' || q.tier !== HUMAN) return;
+      if (!q || q.status !== 'open' || q.tier !== HUMAN || store.jobs.get(q.jobId)?.status === 'parked') return;
       const after = clock.now().getTime() - new Date(q.escalatedToHumanAt ?? q.createdAt).getTime();
       const updated = store.questions.update(id, { status: 'expired' });
       emit(updated, 'question.expired', { after_ms: Math.min(after, o.humanTimeoutMs) });
@@ -94,7 +96,7 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
   function renotify(id: string) {
     store.tx(() => {
       const q = store.questions.get(id);
-      if (!q || q.status !== 'open' || q.tier !== HUMAN) return;
+      if (!q || q.status !== 'open' || q.tier !== HUMAN || store.jobs.get(q.jobId)?.status === 'parked') return;
       const updated = store.questions.update(id, { notifyCount: q.notifyCount + 1, lastNotifiedAt: iso() });
       emit(updated, 'question.escalated', { ...escalationData(updated, HUMAN, 'still unanswered'), renotify: true });
     });
@@ -108,7 +110,7 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
   function armHuman(id: string) {
     clearTimers(id);
     const q = store.questions.get(id);
-    if (!q || q.status !== 'open' || q.tier !== HUMAN || !q.expiresAt) return;
+    if (!q || q.status !== 'open' || q.tier !== HUMAN || !q.expiresAt || store.jobs.get(q.jobId)?.status === 'parked') return;
     const now = clock.now().getTime();
     const expiresIn = new Date(q.expiresAt).getTime() - now;
     if (expiresIn <= 0) return expire(id);
@@ -351,6 +353,12 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
         clearTimers(id);
         store.questions.update(id, { status: 'cancelled' });
       });
+    },
+
+    // armHuman arms only an open question at the human stage; the expiry written to any other is never read.
+    unparked(id) {
+      if (store.questions.get(id)?.tier === HUMAN) store.questions.update(id, { expiresAt: new Date(clock.now().getTime() + o.humanTimeoutMs).toISOString(), lastNotifiedAt: iso() });
+      armHuman(id);
     },
 
     recover() {

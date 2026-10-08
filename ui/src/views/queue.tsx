@@ -3,8 +3,8 @@
 // the pre-sort into the user order to be accepted; any waiting job can be rejected, with a reason — it ends
 // `rejected` and is kept, never deleted. The gate names the queue sorter that makes the pre-sort and links to
 // where it is set up, Settings → Routing (issue #201). Below, the locked entries: failed jobs kept in the
-// queue until run again or dismissed (issue #355).
-import { ArrowDown, ArrowUp, ArrowUpToLine, Check, ChevronsRight, ListOrdered, Lock, ShieldCheck, SlidersHorizontal, Sparkles } from 'lucide-react';
+// queue until run again or dismissed (issue #355), and the parked jobs, out of their lanes until re-queued (issue #501).
+import { ArrowDown, ArrowUp, ArrowUpToLine, Check, ChevronsRight, ListOrdered, Lock, Pause, ShieldCheck, SlidersHorizontal, Sparkles } from 'lucide-react';
 import { useState } from 'react';
 import { JobTitle, Since } from '@/components/job';
 import { RejectButton } from '@/components/reject';
@@ -15,7 +15,7 @@ import { Input } from '@/components/ui/input';
 import { accepting, moved, queueColumns } from '@/model/queue';
 import type { Job, PreSort, QueueGate, QueueGateMode } from '@/model/wire';
 import { act, useHopper } from '@/store';
-import { LockedRows } from './overview/queue';
+import { LockedRows, ParkedRows } from './overview/queue';
 import { useCanAdmin, useCanOperate, useJobBoard } from '@/store/selectors';
 
 const MODE_TEXT: Record<QueueGateMode, string> = {
@@ -123,6 +123,11 @@ export function Queue() {
           )) : <Empty>no accepted job waits</Empty>}
         </Panel>
       </div>
+      {board.parked.length > 0 && (
+        <Panel title="Parked" icon={Pause} count={board.parked.length} list bodyClassName="divide-y p-0">
+          <ParkedRows heading={false} />
+        </Panel>
+      )}
       {locked.length > 0 && (
         <Panel title="Locked" icon={Lock} count={locked.length} list bodyClassName="divide-y p-0">
           <LockedRows heading={false} />

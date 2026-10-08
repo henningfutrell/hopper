@@ -64,6 +64,7 @@
         "running",
         "waiting_answer",
         "operator_led",
+        "parked",
         "finished",
         "failed",
         "cancelled",

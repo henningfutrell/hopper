@@ -95,7 +95,7 @@ describe('targetOf: an instance as the attached machine it names', () => {
     expect(targetOf({ name: 'box', plugin: 'docker', options: { docker: 'hopper-target', lanes: 1 } })).toEqual({ name: 'box', docker: 'hopper-target', lanes: 1, executors: ['command'] });
   });
 
-  // Issue #365: 0 lanes parks a machine; it stays one, so a client target still dials in and shows online.
+  // Issue #365: 0 lanes rests a machine; it stays one, so a client target still dials in and shows online.
   it('an attached instance with 0 lanes is still an attached machine', () => {
     expect(targetOf({ name: 'studio', plugin: 'client', options: { key: KEY, lanes: 0 } })).toMatchObject({ name: 'studio', client: { key: KEY }, lanes: 0 });
     expect(targetOf({ name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop', lanes: 0 } })).toMatchObject({ name: 'laptop', lanes: 0 });

@@ -4,11 +4,12 @@
 import { raisedByOf, raisedName } from './questions.ts';
 import type { Decision, DomainEvent, Job, JobStatus, Lane, MachineView } from './wire.ts';
 
-/** The one definition of each status's group (docs/glossary.md: Waiting, Waiting answer, Operator-led, Running, Ended). */
+/** The one definition of each status's group (docs/glossary.md: Waiting, Waiting answer, Operator-led, Parked, Running, Ended). */
 export const GROUP = {
   queued: 'waiting', held: 'waiting',
   waiting_answer: 'waitingAnswer',
   operator_led: 'operatorLed',
+  parked: 'parked',
   claimed: 'running', running: 'running',
   finished: 'ended', failed: 'ended', cancelled: 'ended', rejected: 'ended',
 } as const satisfies Record<JobStatus, string>;
@@ -21,7 +22,7 @@ const endOf = (j: Job) => j.finishedAt ?? j.updatedAt;
 
 /** `waitingOrder`: the queue order of the waiting jobs as /api/queue gave it; a job it lacks follows, oldest first. */
 export function jobBoard(jobs: Iterable<Job>, waitingOrder: readonly string[]): JobBoard {
-  const board: JobBoard = { waiting: [], waitingAnswer: [], operatorLed: [], running: [], ended: [] };
+  const board: JobBoard = { waiting: [], waitingAnswer: [], operatorLed: [], parked: [], running: [], ended: [] };
   for (const j of jobs) board[GROUP[j.status]].push(j);
   const place = new Map(waitingOrder.map((id, i) => [id, i]));
   const at = (j: Job) => place.get(j.id) ?? Infinity;
@@ -29,6 +30,7 @@ export function jobBoard(jobs: Iterable<Job>, waitingOrder: readonly string[]): 
   board.waiting.sort((a, b) => at(a) - at(b) || oldest(a, b));
   board.waitingAnswer.sort(oldest);
   board.operatorLed.sort(oldest);
+  board.parked.sort(oldest);
   board.running.sort(oldest);
   board.ended.sort((a, b) => endOf(b).localeCompare(endOf(a)));
   return board;
@@ -45,6 +47,15 @@ export function canRerun(job: Job, jobs: Iterable<Job>): boolean {
   for (const j of jobs) if (j.id !== job.id && j.source?.key === key && j.createdAt > job.createdAt) return false;
   return true;
 }
+
+/**
+ * Whether Park is offered (issue #501), as the daemon takes it: a running job or one on a question, whose executor
+ * recorded the agent session it resumes. The daemon decides.
+ */
+export const canPark = (job: Job): boolean => (job.status === 'running' || job.status === 'waiting_answer') && job.agentSession !== undefined;
+
+/** Whether Re-queue is offered (issue #501): a parked job. */
+export const canRequeue = (job: Job): boolean => job.status === 'parked';
 
 /** What Run again made, as its toast says it (issue #354): the new job queued — waiting for acceptance, or held and why — or failed at once. */
 export function rerunOutcome(job: Job): { ok: boolean; message: string } {
@@ -123,6 +134,7 @@ export interface Kpis {
   waiting: number;
   held: number;
   waitingAnswer: number;
+  parked: number;
   finished: number;
   failed: number;
   cancelled: number;
@@ -139,6 +151,7 @@ export function kpis(board: JobBoard, machines: MachineView[]): Kpis {
     waiting: board.waiting.length,
     held: board.waiting.filter((j) => j.status === 'held').length,
     waitingAnswer: board.waitingAnswer.length,
+    parked: board.parked.length,
     finished: ended('finished'),
     failed: ended('failed'),
     cancelled: ended('cancelled'),

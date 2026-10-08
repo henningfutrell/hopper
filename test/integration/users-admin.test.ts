@@ -51,7 +51,7 @@ describe('an admin reads the totals, never a user\'s work', () => {
     expect(r.status).toBe(200);
     expect(r.body).toEqual({
       users: 2,
-      jobs: { queued: 0, held: 0, claimed: 0, running: 1, waiting_answer: 1, operator_led: 0 },
+      jobs: { queued: 0, held: 0, claimed: 0, running: 1, waiting_answer: 1, operator_led: 0, parked: 0 },
       questions: { open: 1 },
       lanes: { busy: 1, total: expect.any(Number) },
       endedLastDay: { finished: 0, failed: 0, cancelled: 0, rejected: 0 },

@@ -38,13 +38,15 @@ export function contextFor(given: Job, laneId = LANE, machine: MachineSnapshot =
   const progress: { fraction: number; message?: string }[] = [];
   const saved: Record<string, unknown>[] = [];
   const workTrees: string[] = [];
+  const sessions: string[] = [];
   const ctx: ExecutionContext = {
     job, laneId, machine, signal: ac.signal,
     progress: (fraction, message) => progress.push({ fraction, message }),
     saveState: (s) => saved.push(s),
     workTree: (path) => workTrees.push(path),
+    agentSession: (id) => sessions.push(id),
   };
-  return { ctx, ac, progress, saved, workTrees };
+  return { ctx, ac, progress, saved, workTrees, sessions };
 }
 
 export function setup(

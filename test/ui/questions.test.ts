@@ -38,7 +38,7 @@ function fakeDaemon(o: Boot) {
   const json = (status: number, b: unknown) => new Response(JSON.stringify(b), { status, headers: { 'content-type': 'application/json' } });
   const routes: Record<string, unknown> = {
     '/api/health': { ok: true, version: '0', router: 'pass-through', fallback: false, executors: [], uptimeS: 1 },
-    '/api/queue': { waiting: [], running: [], waitingAnswer: [], ended: [], locked: [] },
+    '/api/queue': { waiting: [], running: [], operatorLed: [], parked: [], waitingAnswer: [], ended: [], locked: [] },
     '/api/machines': { machines: [] },
     '/api/decisions': { decisions: [] },
     '/api/events': { events: [] },

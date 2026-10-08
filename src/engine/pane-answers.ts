@@ -1,4 +1,4 @@
-// A parked job answered outside the hopper (design.md "Questions" → "Answered in the pane").
+// A job on a question answered outside the hopper (design.md "Questions" → "Answered in the pane").
 // The owner may type the answer straight into a waiting job's pane. On every tick the engine asks
 // each waiting job's executor (`answeredInPane`) whether its work runs again; when it does, one
 // tx: the question is answered by the human with the typed text (the answer chain aborts), the
