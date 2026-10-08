@@ -137,6 +137,21 @@ describe('Sources view: GitHub', () => {
     expect(localStorage.getItem('jh_return')).toBe('#sources');
   });
 
+  it('a connection sealed under another key says to give the key back: no connect offered, no ended banner (#514)', async () => {
+    const error = 'GitHub: a stored token cannot be opened: it was altered, or sealed under another HOPPER_TOKEN_KEY; give the hopper the key it was sealed under — as HOPPER_TOKEN_KEY, or as HOPPER_TOKEN_KEY_PREVIOUS beside a new one — and restart';
+    await boot({
+      '/api/sources': { sources: [source('github-account', 'github-account', 'disabled', { mode: 'account', paused: error })] },
+      '/api/connected-accounts': { accounts: [{ provider: 'github', via: 'the hopper\'s app', state: 'unreadable', account: 'octo-user', connectedAt: '2026-10-07T00:00:00.000Z', error }] },
+    });
+    const panel = () => document.querySelector('[data-connected-account="github"]');
+    await vi.waitFor(() => expect(panel()?.querySelector('[data-unreadable]')).not.toBeNull());
+    expect(panel()!.querySelector('[data-unreadable]')!.textContent).toContain('HOPPER_TOKEN_KEY_PREVIOUS');
+    const labels = [...panel()!.querySelectorAll('button')].map((b) => b.textContent);
+    expect(labels.some((l) => /^Connect GitHub/.test(l ?? ''))).toBe(false);
+    expect(labels).toContain('Forget this connection');
+    expect(document.querySelector('header [data-connection-ended]')).toBeNull();
+  });
+
   it('a renewal that failed shows on the panel; the connection reads as connected, and the header stays quiet (#441)', async () => {
     await boot({
       '/api/sources': { sources: [source('github-account', 'github-account', 'ok', { mode: 'account', login: 'octo-user', assignee: 'octo-user', label: 'hopper' })] },

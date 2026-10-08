@@ -33,4 +33,14 @@ describe('the token box', () => {
     expect(box.isSealed(box.seal('t'))).toBe(true);
     expect(box.isSealed('gho_clear')).toBe(false);
   });
+
+  it('opens with an older key given as HOPPER_TOKEN_KEY_PREVIOUS, and knows it was not sealed under the current one (#514)', () => {
+    const old = randomBytes(32).toString('hex');
+    const sealed = createTokenBox(old).seal('ghr_secret');
+    const box = createTokenBox(hex, [old]);
+    expect(box.open(sealed)).toBe('ghr_secret');
+    expect(box.current(sealed)).toBe(false);
+    expect(box.current(box.seal('t'))).toBe(true);
+    expect(() => createTokenBox(hex, ['short'])).toThrow(/HOPPER_TOKEN_KEY_PREVIOUS must be 32 bytes/);
+  });
 });
