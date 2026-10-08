@@ -36,6 +36,13 @@ export function createRuntimes(o: {
   let stopped = false;
   let timer: NodeJS.Timeout | undefined;
 
+  /** Of these source keys, those a job of another running user has (issue #440). */
+  const otherUsersKnow = (id: string, keys: string[]): Set<string> => {
+    const known = new Set<string>();
+    for (const [other, rt] of running) if (other !== id) for (const k of keys) if (rt.store.jobs.getBySourceKey(k)) known.add(k);
+    return known;
+  };
+
   const ensure = (user: User): Promise<UserRuntime> => {
     const there = pending.get(user.id);
     if (there) return there;
@@ -44,7 +51,7 @@ export function createRuntimes(o: {
       const store = o.instance.userStore(user);
       let rt: UserRuntime;
       try {
-        rt = await createUserRuntime({ ...o.options(user), user, store });
+        rt = await createUserRuntime({ ...o.options(user), user, store, otherUsersKnow: (keys) => otherUsersKnow(user.id, keys) });
       } catch (e) {
         store.close();
         throw e;

@@ -11,6 +11,7 @@ interface RestIssue {
   closed_at?: string | null; state_reason?: string | null;
   pull_request?: unknown;
 }
+interface RestIssueWithRepo extends RestIssue { repository?: { full_name?: string } | null }
 interface RestComment { id: number; body?: string | null; user?: { login?: string } | null; created_at: string; html_url: string }
 
 export function issueFrom(i: RestIssue, repo: string): GitHubIssue {
@@ -87,4 +88,15 @@ export async function removeLabels(req: Request, token: string, repo: string, nu
       if (statusOf(err) !== 404) throw err;
     }
   }
+}
+
+export async function addAssignees(req: Request, token: string, repo: string, number: number, assignees: string[]): Promise<void> {
+  await req('POST /repos/{owner}/{repo}/issues/{issue_number}/assignees', { ...splitRepo(repo), issue_number: number, assignees, headers: auth(token) });
+}
+
+/** `GET /issues?filter=assigned`: the user's open issues with `label`, across the repos the token reaches (issue #440). */
+export async function listAssignedIssues(req: Request, token: string, label: string): Promise<GitHubIssue[]> {
+  const issues = await paginate(req, 'GET /issues', { filter: 'assigned', labels: label, state: 'open', per_page: 100 },
+    `token ${token}`, (d) => d as RestIssueWithRepo[]);
+  return issues.filter((i) => i.pull_request === undefined && i.repository?.full_name).map((i) => issueFrom(i, i.repository!.full_name!));
 }

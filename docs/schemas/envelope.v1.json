@@ -66,6 +66,9 @@
         "job.cleaned_up",
         "source.stalled",
         "connected_account.expired",
+        "source.claim_released",
+        "source.intake_migrated",
+        "source.issues_assigned",
         "jev.mode_changed",
         "router.mode_changed"
       ]

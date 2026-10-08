@@ -846,3 +846,64 @@ Version 1 (`docs/schemas/connected_account.expired.v1.json`). The sign-in of the
   "reason": "GitHub refused the refresh token (bad_refresh_token)"
 }
 ```
+
+## `source.claim_released`
+
+Version 1 (`docs/schemas/source.claim_released.v1.json`). A `hopper:claimed` label (and its `hopper:held-by:<id>` holder label) was removed from an item no job here holds (issue #440). `by: "hopper"`: the claim was this user's own, its job gone — the item is taken again; `by: "migration"`: the intake migration released a claim written before claims named their holder, which no user of this hopper has a job for; `by: "user"`: released from Sources. `reason` says which.
+
+| field | type | required |
+|---|---|---|
+| `source` | string | yes |
+| `key` | string | yes |
+| `by` | `hopper` \| `migration` \| `user` | yes |
+| `reason` | string | yes |
+
+```json
+{
+  "source": "github-account",
+  "key": "https://github.com/octocat/hello/issues/7",
+  "by": "hopper",
+  "reason": "claimed by this user of this hopper, with no job here"
+}
+```
+
+## `source.intake_migrated`
+
+Version 1 (`docs/schemas/source.intake_migrated.v1.json`). A job source was moved to the current intake rules, once (issue #440). `changes` lists every item it changed or found needing the user: claims it released, and labelled issues not assigned to the user. Sources shows the same list.
+
+| field | type | required |
+|---|---|---|
+| `source` | string | yes |
+| `changes` | object[] | yes |
+
+```json
+{
+  "source": "github-account",
+  "changes": [
+    {
+      "key": "https://github.com/octocat/hello/issues/7",
+      "change": "not assigned to you: assign it to you to take it"
+    }
+  ]
+}
+```
+
+## `source.issues_assigned`
+
+Version 1 (`docs/schemas/source.issues_assigned.v1.json`). The user assigned these labelled items (`keys`) to their connected account from Sources (issue #440): the next sync takes them. `assignee` is the account.
+
+| field | type | required |
+|---|---|---|
+| `source` | string | yes |
+| `keys` | string[] | yes |
+| `assignee` | string | yes |
+
+```json
+{
+  "source": "github-account",
+  "keys": [
+    "https://github.com/octocat/hello/issues/7"
+  ],
+  "assignee": "octocat"
+}
+```

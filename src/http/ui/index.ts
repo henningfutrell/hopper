@@ -23,7 +23,7 @@ import { mintJoinCode } from '../../machines/join-code.ts';
 import { INSTANCE_ADMIN_ONLY, type InstanceAdmin } from '../instance-admin.ts';
 import { identityName, sessionUser, type UiSession, type UiSessions } from './sessions.ts';
 import { registerSignInRoutes } from './sign-in.ts';
-import { answerBody, rejectBody } from './job-bodies.ts';
+import { answerBody, intakeActionBody, rejectBody, sourceParams } from './job-bodies.ts';
 import { registerWebhookAndNotifierRoutes } from './webhooks-notifiers.ts';
 
 
@@ -188,6 +188,11 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     const r = await o.tenant(req).registry.rerun(parseWith(idParams, req.params).id);
     if (r.ok) return r.job;
     throw new HttpError(RERUN_STATUS[r.reason], r.message);
+  });
+  app.post('/ui/api/sources/:name/intake', operator, async (req) => {
+    const r = await o.tenant(req).registry.intakeAction(parseWith(sourceParams, req.params).name, parseWith(intakeActionBody, req.body));
+    if (r.ok) return r.result;
+    throw new HttpError(r.reason === 'not_found' ? 404 : 409, r.message);
   });
   app.post('/ui/api/jobs/:id/dismiss', operator, async (req) => o.tenant(req).engine.dismiss(parseWith(idParams, req.params).id));
   app.post('/ui/api/jobs/:id/cleaned-up', operator, async (req) => o.tenant(req).engine.markCleanedUp(parseWith(idParams, req.params).id));

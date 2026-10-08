@@ -2,6 +2,7 @@
 // Out-of-tree plugins import it type-only as `hopper/plugin` (package.json `exports`), which
 // type stripping erases, so a plugin needs nothing of hopper at runtime. Types only here.
 import type { z } from 'zod';
+import type { IntakeContext } from '../domain/intake.ts';
 import type {
   AnswerRequest, Clock, ConnectedAccountTokens, EscalationLevel, ExecutionContext, ExecutionOutcome, Executor, JobSource, LevelReply,
   MachineSource, Notifier, NotifierEvents, QueueEntry, QueueSorter, Router, SourceItem, SourceReport, SourceSignal, UsageSource,
@@ -150,6 +151,8 @@ export interface JobSourceContext {
   rejections(keys: string[]): Map<string, Rejection>;
   /** The user's connected GitHub account (issue #214): who it is, and a token for a call. */
   connectedAccounts: ConnectedAccountTokens;
+  /** For the source of this instance name: claim holders, the intake migration and intake events (issue #440); undefined: none kept. */
+  intake(sourceName: string): IntakeContext | undefined;
 }
 
 export type { OptionChoice };

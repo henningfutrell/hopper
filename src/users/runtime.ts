@@ -111,6 +111,8 @@ export interface UserRuntimeOptions {
   answerUrl(questionId: string): string;
   /** A GitHub account this user connected from Sources: link it, so signing in with it lands here (issue #214). */
   linkIdentity?(provider: ConnectedAccountProvider, subject: string): void;
+  /** Of these source keys, those another user of this hopper has a job for (issue #440): a claim may be theirs. */
+  otherUsersKnow?(keys: string[]): Set<string>;
 }
 
 /** One user's running parts: what the HTTP edge reads and changes for that user, and tests drive. */
@@ -255,6 +257,13 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
       rerunnable: (keys) => new Set(keys.filter((k) => { const j = store.jobs.getBySourceKey(k); return j !== undefined && isRerunnable(j); })),
       rejections: (keys) => new Map(keys.flatMap((k) => { const r = rejectionOf(store.jobs.getBySourceKey(k)); return r ? [[k, r] as const] : []; })),
       connectedAccounts,
+      intake: (name) => ({
+        holder: store.settings.claimHolder(),
+        othersKnown: (keys) => o.otherUsersKnow?.(keys) ?? new Set(),
+        migration: () => store.settings.getIntakeMigration(name),
+        migrated: (m) => store.settings.setIntakeMigration(name, m),
+        record: (type, data) => { store.events.append({ type, data }); },
+      }),
     },
     machineContext: { executors: () => executorNames(), target },
     executorContext: { client: clientNamed },
