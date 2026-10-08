@@ -222,12 +222,15 @@ describe('probeSsh', () => {
   // so a machine whose work tree cannot be made is known before any job is routed to it.
   it('makes the machine\'s work tree there, under its home, and finds nothing wrong', async () => {
     const r = await probeSsh({ target: 'laptop', sshBin: SSH, controlDir: join(dir, 's'), auth: testSshAuth(join(dir, 'auth')), workTree: '~/trees/a' });
-    expect(r).toEqual({ home: process.env.HOME });
+    expect(r).toMatchObject({ home: process.env.HOME });
+    expect(r).not.toHaveProperty('workTreeProblem');
     expect(existsSync(join(process.env.HOME!, 'trees', 'a'))).toBe(true);
   });
 
   it('a machine naming no work tree: the jobs directory is made', async () => {
-    expect(await probeSsh({ target: 'laptop', sshBin: SSH, controlDir: join(dir, 's'), auth: testSshAuth(join(dir, 'auth')) })).toEqual({ home: process.env.HOME });
+    const r = await probeSsh({ target: 'laptop', sshBin: SSH, controlDir: join(dir, 's'), auth: testSshAuth(join(dir, 'auth')) });
+    expect(r).toMatchObject({ home: process.env.HOME });
+    expect(r).not.toHaveProperty('workTreeProblem');
     expect(existsSync(join(process.env.HOME!, 'hopper-jobs'))).toBe(true);
   });
 

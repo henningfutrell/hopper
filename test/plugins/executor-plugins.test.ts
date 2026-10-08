@@ -159,11 +159,11 @@ describe('herdr-claude', () => {
     const cwd = temp();
     const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [{ output: ['● ok', 'HOPPER_DONE'] }], repositories: [cwd] });
     const seamed = herdrClaudePlugin(herdr);
-    const ex = await seamed.create(ctx(temp()), options(seamed, { ...raw, cwd, pollMs: 1 }));
+    const ex = await seamed.create(ctx(temp()), options(seamed, { ...raw, pollMs: 1 }));
     const trees: string[] = [];
     await ex.run({
       job: { id: 'abcdef12-0000', spec: { executor: 'herdr-claude', payload: { prompt: 'go' } }, priority: 50, status: 'running', approved: false, createdAt: '', updatedAt: '', attempts: 1 },
-      laneId: 'local/lane-1', machine: { id: 'local', label: 'l', maxLanes: 1, online: true, executors: ['herdr-claude'] }, signal: new AbortController().signal,
+      laneId: 'local/lane-1', machine: { id: 'local', label: 'l', maxLanes: 1, online: true, executors: ['herdr-claude'], workTree: cwd }, signal: new AbortController().signal,
       progress() {}, saveState() {}, workTree(path) { trees.push(path); },
     });
     expect(trees.at(-1)).toBe(made ? `${cwd}/.hopper-scratch/abcdef12-0000/${basename(cwd)}` : cwd);
