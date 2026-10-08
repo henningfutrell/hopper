@@ -7,13 +7,13 @@
 #   bash scripts/build-image.sh [engine build arguments ...]
 #
 # HOPPER_IMAGE: the tag (default localhost/hopper, the image compose.yaml runs with HOPPER_IMAGE=localhost/hopper).
-# HOPPER_UPDATE_BRANCH: the branch the build follows (default main, as scripts/install.sh).
+# HOPPER_UPDATE_BRANCH: the branch the build follows (default stable, as scripts/install.sh).
 # HOPPER_BUILDER: the engine (default docker when it answers, else podman).
 set -euo pipefail
 
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TAG="${HOPPER_IMAGE:-localhost/hopper}"
-BRANCH="${HOPPER_UPDATE_BRANCH:-main}"
+BRANCH="${HOPPER_UPDATE_BRANCH:-stable}"
 
 REPO="$(git -C "$APP_DIR" remote get-url origin 2>/dev/null)" || {
   echo "$APP_DIR has no origin: the image would not know its repository. Add one: git -C $APP_DIR remote add origin <url>" >&2

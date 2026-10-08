@@ -35,7 +35,7 @@ describe('self-update over HTTP', () => {
     const app = await startTestApp({ dbPath: db.dbPath });
     apps.push(app);
     const s = (await app.api<UpdateStatus>('GET', '/api/update')).body;
-    expect(s).toMatchObject({ state: 'unavailable', channel: 'main', autoUpdate: false });
+    expect(s).toMatchObject({ state: 'unavailable', channel: 'stable', autoUpdate: false });
   });
 
   it('checks, sets auto-update and the channel, and applies only with a UI session', async () => {
@@ -47,16 +47,17 @@ describe('self-update over HTTP', () => {
     const token = await app.login();
     const checked = await app.ui<UpdateStatus>('/ui/api/update', { action: 'check' }, { token });
     expect(checked.status).toBe(200);
-    expect(checked.body).toMatchObject({ state: 'available', target: { commit: w.c2, ref: 'main' }, installed: { commit: w.c1 } });
+    expect(checked.body).toMatchObject({ state: 'available', target: { commit: w.c2, ref: 'stable' }, installed: { commit: w.c1 } });
     expect(checked.body.whatsNew).toEqual(['Updates arrive on their own.']);
     expect((await app.api<UpdateStatus>('GET', '/api/update')).body.state).toBe('available');
 
-    const set = await app.ui<UpdateStatus>('/ui/api/update', { action: 'settings', channel: 'release' }, { token });
-    expect(set.body.channel).toBe('release');
-    expect((await app.ui('/ui/api/update', { action: 'settings', channel: 'nightly' }, { token })).status).toBe(400);
+    const set = await app.ui<UpdateStatus>('/ui/api/update', { action: 'settings', channel: 'beta' }, { token });
+    expect(set.body.channel).toBe('beta');
+    // The channels are dev, beta and stable (issue #423): main and release are not channels.
+    for (const channel of ['nightly', 'main', 'release']) expect((await app.ui('/ui/api/update', { action: 'settings', channel }, { token })).status).toBe(400);
     expect((await app.ui<UpdateStatus>('/ui/api/update', { action: 'settings', channel: 'dev' }, { token })).body.channel).toBe('dev');
-    await app.ui('/ui/api/update', { action: 'settings', channel: 'main' }, { token });
-    await waitFor(async () => (await app.api<UpdateStatus>('GET', '/api/update')).body.target?.ref === 'main');
+    await app.ui('/ui/api/update', { action: 'settings', channel: 'stable' }, { token });
+    await waitFor(async () => (await app.api<UpdateStatus>('GET', '/api/update')).body.target?.ref === 'stable');
 
     const applied = await app.ui<UpdateStatus>('/ui/api/update', { action: 'apply' }, { token });
     expect(applied.status).toBe(200);
@@ -94,7 +95,7 @@ describe('self-update over HTTP', () => {
     const second = await startTestApp({ dbPath: w.dbPath, seams });
     apps.push(second);
     const applied = await waitFor(async () => (await second.events()).find((e) => e.type === 'update.applied'));
-    expect(applied.data).toEqual({ from: w.c1, to: w.c2, ref: 'main' });
+    expect(applied.data).toEqual({ from: w.c1, to: w.c2, ref: 'stable' });
     const s = (await second.api<UpdateStatus>('GET', '/api/update')).body;
     expect(s).toMatchObject({ autoUpdate: true, installed: { commit: w.c2 } });
     expect((await second.job(queued.id)).id).toBe(queued.id);

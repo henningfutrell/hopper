@@ -14,13 +14,13 @@ describe('what a build knows of itself', () => {
     const c1 = w.up.commit('first');
     w.up.whatsNew(['Second.', 'First.']);
     const c2 = w.up.commit('second');
-    const { u } = updater(w, createInstall(w.root, w.up.dir, c1, 'main', 'image'));
+    const { u } = updater(w, createInstall(w.root, w.up.dir, c1, 'stable', 'image'));
     const s = await u.check();
     expect(s).toMatchObject({ state: 'available', installed: { kind: 'image', commit: c1 }, target: { commit: c2 } });
     expect(s.whatsNew).toEqual(['Second.']);
     const h = await u.history();
     expect(h.reason).toBeUndefined();
-    expect(h.build).toMatchObject({ kind: 'image', repo: w.up.dir, branch: 'main', commit: c1 });
+    expect(h.build).toMatchObject({ kind: 'image', repo: w.up.dir, branch: 'stable', commit: c1 });
     expect(h.versions.map((v) => v.commit)).toEqual([c1]);
   });
 
@@ -29,7 +29,7 @@ describe('what a build knows of itself', () => {
     const c1 = w.up.commit('first');
     w.up.commit('second');
     const calls: string[] = [];
-    const { u, restarts } = updater(w, createInstall(w.root, w.up.dir, c1, 'main', 'image'), { builder: copyBuilder({ calls }) });
+    const { u, restarts } = updater(w, createInstall(w.root, w.up.dir, c1, 'stable', 'image'), { builder: copyBuilder({ calls }) });
     w.instance.settings.setUpdateSettings({ autoUpdate: true });
     expect((await u.check()).state).toBe('available');
     const r = u.apply();
@@ -54,11 +54,11 @@ describe('what a build knows of itself', () => {
     const w = world();
     const appDir = join(w.root, 'partial');
     mkdirSync(appDir);
-    writeFileSync(join(appDir, 'install.json'), JSON.stringify({ kind: 'image', repo: w.up.dir, branch: 'main', installedAt: '2026-10-07T12:00:00.000Z' }));
+    writeFileSync(join(appDir, 'install.json'), JSON.stringify({ kind: 'image', repo: w.up.dir, branch: 'stable', installedAt: '2026-10-07T12:00:00.000Z' }));
     const { u } = updater(w, appDir);
     const h = await u.history();
     expect(h.versions).toEqual([]);
-    expect(h.build).toEqual({ kind: 'image', repo: w.up.dir, branch: 'main', installedAt: '2026-10-07T12:00:00.000Z' });
+    expect(h.build).toEqual({ kind: 'image', repo: w.up.dir, branch: 'stable', installedAt: '2026-10-07T12:00:00.000Z' });
     expect(h.reason).toMatch(/commit/);
     expect(h.reason).not.toMatch(/repository/);
     const s = await u.check();

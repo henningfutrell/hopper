@@ -97,6 +97,8 @@ export interface Job {
   attempts: number;
   /** The job's work tree on its machine, as its executor reported it (issue #166); absent for an executor with none. */
   workTree?: string;
+  /** Where its credential files are kept on its machine (issue #441): each renewal of its connection rewrites them there. Absent: none kept. */
+  credentialsDir?: string;
   /** Executor-owned state (e.g. herdr pane/agent ids), written via ExecutionContext.saveState. */
   executorState?: Record<string, unknown>;
   /** The open question this job waits on (status waiting_answer). */
@@ -359,6 +361,8 @@ export interface QuestionAttempt {
   role: AttemptRole;
   /** The model that ran, as the level reports it, else the configured one. */
   model?: string;
+  /** The machine the level ran on and why, when it named none and picked it (issue #442). */
+  machine?: { id: string; why: string };
   startedAt: string;
   finishedAt?: string;
   /** The level's answer (escalating: its recommendation), or the human's answer. */
@@ -455,8 +459,8 @@ export type { JobRulesView } from './job-rules.ts';
 
 // ---- Sign-in: src/domain/sign-in.ts (re-exported here) ------------------------------------
 
-export type { Identity, PersonView, RealmSettings, RealmType, RealmView, RealmsEdit, RealmsView, SessionUser, SessionView, SignInRealmView, UiRole } from './sign-in.ts';
-export { DEVICE_REALM_TYPES, FORM_REALM_TYPES, REALM_TYPES, REDIRECT_REALM_TYPES, UI_ROLES, roleAllows } from './sign-in.ts';
+export type { Identity, PersonView, RealmSettings, RealmType, RealmView, RealmsEdit, RealmsView, SessionEndReason, SessionLengths, SessionUser, SessionView, SignInRealmView, UiRole } from './sign-in.ts';
+export { DEFAULT_SESSION_LENGTHS, DEVICE_REALM_TYPES, FORM_REALM_TYPES, MAX_SESSION_HOURS, REALM_TYPES, REDIRECT_REALM_TYPES, SESSION_END_REASONS, UI_ROLES, roleAllows } from './sign-in.ts';
 
 // ---- Users (issue #158): src/domain/users.ts (re-exported here) ---------------------------
 
@@ -465,8 +469,8 @@ export { ENDED_STATUSES, IN_FLIGHT_STATUSES, ADMIN_ID } from './users.ts';
 
 // ---- Self-update (issue #44) ------------------------------------------------------------
 
-export type { BranchChannel, InstallInfo, InstallKind, UpdateApply, UpdateChannel, UpdateRelease, UpdateSettings, UpdateState, UpdateStatus, VersionEntry, VersionHistory } from './update.ts';
-export { BRANCH_CHANNELS, isBranchChannel, UPDATE_CHANNELS } from './update.ts';
+export type { InstallInfo, InstallKind, UpdateApply, UpdateChannel, UpdateSettings, UpdateState, UpdateStatus, VersionEntry, VersionHistory } from './update.ts';
+export { isUpdateChannel, UPDATE_CHANNELS } from './update.ts';
 
 // ---- Connected accounts (issue #214): src/domain/connected-accounts.ts --------------------------
 

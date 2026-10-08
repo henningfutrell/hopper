@@ -13,7 +13,7 @@ with Podman** ("In containers, with Podman"); the host install is the other way.
 | | where |
 |---|---|
 | `HOPPER_DATABASE_URL` | `postgres://user:password@host:port/database[?schema=<name>][&sslmode=require]`, or `HOPPER_DATABASE_URL_FILE` naming a mounted file holding it. Required. Put Postgres near the hopper: every store call waits one round trip. |
-| Secrets | from the runtime (docs/design.md "Secrets"): each one the variable `NAME`, or the mounted file the variable `NAME_FILE` names (never both) — `GITHUB_APP_PRIVATE_KEY`, `GROKBOT_WEBHOOK_URL`, `GROKBOT_WEBHOOK_KEY` (with the user's secret prefix, `HOPPER_USER_<ID>_`, as Settings → Plugins names them; as `_FILE` they can change without a restart), `TYPESAFE_API_KEY`, each webhook's `secretEnv` (`WEBHOOK_SECRET_<NAME>` from the UI; `openssl rand -hex 32`, given to the subscriber too), a realm's secrets only when the realm is set up from the environment (`HOPPER_SIGN_IN_REALM_<NAME>_CLIENT_SECRET`, docs/sign-in.md "Sign-in from the environment"; typed in Settings otherwise, and stored); `CLAUDE_CODE_OAUTH_TOKEN` for the claude CLI where its own login is not on the machine (a variable only: the CLI reads it). A job's `GH_TOKEN` is no runtime secret: the hopper hands each job the connected account's token. The hopper stores no secret but a realm's own (docs/design.md "Secrets"). A leftover `HOPPER_SECRET_KEY` line: delete it. |
+| Secrets | from the runtime (docs/design.md "Secrets"): each one the variable `NAME`, or the mounted file the variable `NAME_FILE` names (never both) — `GITHUB_APP_PRIVATE_KEY`, `GROKBOT_WEBHOOK_URL`, `GROKBOT_WEBHOOK_KEY` (with the user's secret prefix, `HOPPER_USER_<ID>_`, as Settings → Plugins names them; as `_FILE` they can change without a restart), `TYPESAFE_API_KEY`, each webhook's `secretEnv` (`WEBHOOK_SECRET_<NAME>` from the UI; `openssl rand -hex 32`, given to the subscriber too), a realm's secrets only when the realm is set up from the environment (`HOPPER_SIGN_IN_REALM_<NAME>_CLIENT_SECRET`, docs/sign-in.md "Sign-in from the environment"; typed in Settings otherwise, and stored); `CLAUDE_CODE_OAUTH_TOKEN` for the claude CLI where its own login is not on the machine (a variable only: the CLI reads it). A job's `GH_TOKEN` is no runtime secret: the hopper hands each job the connected account's token. The hopper stores no secret but a realm's own and the connected account's tokens, which it seals under `HOPPER_TOKEN_KEY` (docs/design.md "Keeping the connection": 32 bytes, `openssl rand -hex 32`; the compose install makes it in its secrets volume, `install.sh` writes one into `daemon.env`; keep it with the database's backups, since a database restored without it asks to connect GitHub again; without it the tokens are kept in clear). A leftover `HOPPER_SECRET_KEY` line: delete it. |
 | Process settings | `HOPPER_*` variables: port, LAN names and peers, public URL, tick, limits (`src/config.ts`). |
 | Plugins | Optional. `HOPPER_PLUGIN_DIR` (plugins put there by hand; a container mounts it read-only) and `HOPPER_PLUGIN_STORE` (a git repository the UI installs plugins from — this repository is one: docs/plugins.md). Store installs are kept in the database and restored into the work dir at start: they need no plugin dir and no volume. |
 | Config | the plugins, rules and sign-in configs and the webhook subscriptions, all in the database, all edited in the UI (Settings → Plugins, Settings → Question gates, Settings → Sign-in, Settings → Webhooks); no config file. The first boot writes the built-in plugins config. |
@@ -32,9 +32,10 @@ a drop-in with `Environment=<NAME>_FILE=%d/<name>`.
 
 `compose.yaml` (issues #119, #125): the whole hopper in containers, from that one file — no clone, no
 host install, no build, nothing to set before the first start. The hopper is the public image
-`ghcr.io/henningfutrell/hopper` (`latest` follows `main`; `sha-<commit>` pins one build; Intel/AMD and
-ARM), built and pushed by `.github/workflows/image.yml` on every change to `main`. The install page
-serves the compose file.
+`ghcr.io/henningfutrell/hopper` (`latest` follows `stable`; `dev`, `beta` and `stable` follow the branch of
+that name; `sha-<commit>` pins one build; Intel/AMD and ARM), built and pushed by `.github/workflows/image.yml`
+on every change to those three branches ("Update channels and promotion" below). The install page serves the
+compose file. To run another channel, set `HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:dev` (or `:beta`) in `.env`.
 
 Needs Podman 4.7 or later with a compose provider: `podman compose` runs `docker-compose` or
 `podman-compose`, whichever is installed (Debian/Ubuntu: `sudo apt install podman podman-compose`;
@@ -295,6 +296,53 @@ HOPPER_SIGN_IN_LOCAL_ENABLED=false
 
 A subject is the numeric user id (`id` in `https://api.github.com/users/<login>`). Another GitHub App or
 GitHub Enterprise: `HOPPER_GITHUB_URL`, `HOPPER_GITHUB_CLIENT_ID`, `HOPPER_GITHUB_APP_SLUG`.
+
+## Update channels and promotion
+
+The repository has three long-lived branches, and they are the update channels (issue #423), least stable
+first:
+
+| Branch | What is on it | Who moves it, and when |
+|---|---|---|
+| `dev` | the default branch: every pull request, a job's included, merges here | each merge |
+| `beta` | changes that ran on `dev` | a maintainer promotes, once a `dev` hopper has run the change without trouble |
+| `stable` | changes that ran on `beta` | a maintainer promotes, once a `beta` hopper has run the change without trouble |
+
+A **promotion** moves a commit up one step, and only through `scripts/promote.sh`, run by a maintainer in a
+clone whose `origin` is this repository:
+
+```sh
+bash scripts/promote.sh beta [commit]     # a commit of dev (default: its head)
+bash scripts/promote.sh stable [commit]   # a commit of beta (default: its head)
+```
+
+It refuses unless the commit is on the branch one step below (`stable` never takes a commit straight from
+`dev`), the move is a fast-forward of the steadier branch, and the commit's image built on the branch below
+(the `image` run, asked of `gh`). Then it pushes, as the maintainer, so the steadier branch's image build
+starts. `beta` and `stable` therefore only ever hold what ran one step below; nothing is merged or committed
+on them. A fix for something found on `beta` or `stable` lands on `dev` like any change and is promoted from
+there. There is no schedule and nothing promotes on its own: the maintainer decides.
+
+**A change with a store migration.** Moving a hopper to a steadier channel installs that channel's head,
+which can be older than the build that already migrated its database. So a migration must leave a store
+the build before it still runs on: add tables, columns and values; never drop, rename or reshape what the
+older build reads, until that older build is on no channel any more (it has been promoted past `stable`).
+A value an older build does not know is skipped by it, as an unknown update channel is. Promote such a
+change one step at a time, and check each step's hopper starts and runs a job before the next.
+
+What each push publishes: `.github/workflows/image.yml` builds the image tag of the branch's name
+(`stable` also moves `latest`); `.github/workflows/pages.yml` publishes the Pages site, its `install.sh` and
+its `compose.yaml` from `stable` only.
+
+A hopper picks its channel in Settings → Version (dev, beta, stable); it takes effect without a restart.
+An install from `scripts/install.sh` or the curl install starts on the branch it was installed from
+(`HOPPER_SOURCE_REF`, default `stable`). An image is replaced by pulling the tag of its channel.
+
+**From before.** The channels were `dev`, `beta`, `main` and `release`. A hopper set to `main` or `release`
+is set to `stable` when it starts on a version with these channels (store migration 26). Once that version
+reached `stable`, `main` was moved to it one last time, so a hopper still on an older version, which follows
+`main`, updates once to it and from then on follows `stable`. Nothing is promoted to `main` after that. No release tag was ever published, so a hopper on `release` had nothing to update to: choose
+a channel in its Settings, or install again.
 
 ## Rename from job-hopper
 

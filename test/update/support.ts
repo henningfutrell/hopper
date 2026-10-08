@@ -1,5 +1,5 @@
-// Real git repositories in temp dirs for the self-update tests: an upstream with commits and
-// tags, and an install directory (install.json + src/main.ts) built from one of its commits.
+// Real git repositories in temp dirs for the self-update tests: an upstream with commits on
+// branches, and an install directory (install.json + src/main.ts) built from one of its commits.
 import { execFileSync } from 'node:child_process';
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -19,7 +19,6 @@ export interface Upstream {
   commit(subject: string, content?: string): string;
   /** Write WHATS-NEW.md with these bullets, newest first, for the next commit. */
   whatsNew(bullets: string[]): void;
-  tag(name: string, commit: string): void;
 }
 
 export function tempDir(prefix: string): string {
@@ -29,7 +28,7 @@ export function tempDir(prefix: string): string {
 export function createUpstream(root: string): Upstream {
   const dir = join(root, 'upstream');
   mkdirSync(dir);
-  git(dir, 'init', '-q', '-b', 'main');
+  git(dir, 'init', '-q', '-b', 'stable');
   return {
     dir,
     commit(subject, content = subject) {
@@ -38,13 +37,12 @@ export function createUpstream(root: string): Upstream {
       git(dir, 'commit', '-q', '-m', subject);
       return git(dir, 'rev-parse', 'HEAD');
     },
-    tag(name, commit) { git(dir, 'tag', name, commit); },
     whatsNew(bullets) { writeFileSync(join(dir, 'WHATS-NEW.md'), `# What's new\n\n${bullets.map((b) => `- ${b}\n`).join('')}`); },
   };
 }
 
 /** An install dir: install.json naming `commit` of `repo`, and the app as built (app.txt, src/main.ts, WHATS-NEW.md when the commit has one). `kind` `image`: the copy an image build bakes in (issue #409). */
-export function createInstall(root: string, repo: string, commit: string, branch = 'main', kind: InstallInfo['kind'] = 'install'): string {
+export function createInstall(root: string, repo: string, commit: string, branch = 'stable', kind: InstallInfo['kind'] = 'install'): string {
   const appDir = join(root, 'app');
   mkdirSync(join(appDir, 'src'), { recursive: true });
   const info: InstallInfo = { kind, repo, branch, commit, installedAt: '2026-10-04T00:00:00.000Z' };

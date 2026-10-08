@@ -1,21 +1,24 @@
 // The update notice's words and links (issue #44): pure, from GET /api/update.
 import { describe, expect, it } from 'vitest';
 import type { UpdateStatus } from '../../src/domain/types.ts';
-import { headline, reloadNeeded, showNotice } from '../../ui/src/model/update.ts';
+import { CHANNELS, headline, reloadNeeded, showNotice } from '../../ui/src/model/update.ts';
 
 const A = 'a'.repeat(40);
 const B = 'b'.repeat(40);
-const installed = { kind: 'install' as const, repo: 'git@github.com:o/r.git', branch: 'main', commit: A, installedAt: '2026-10-04T00:00:00Z' };
-const status = (o: Partial<UpdateStatus>): UpdateStatus => ({ state: 'current', channel: 'main', autoUpdate: false, whatsNew: [], installedWhatsNew: [], installed, ...o });
+const installed = { kind: 'install' as const, repo: 'git@github.com:o/r.git', branch: 'stable', commit: A, installedAt: '2026-10-04T00:00:00Z' };
+const status = (o: Partial<UpdateStatus>): UpdateStatus => ({ state: 'current', channel: 'stable', autoUpdate: false, whatsNew: [], installedWhatsNew: [], installed, ...o });
 
 describe('update model', () => {
+  it('the channels are dev, beta and stable, least stable first (issue #423)', () => {
+    expect(CHANNELS.map((c) => c.channel)).toEqual(['dev', 'beta', 'stable']);
+  });
+
   it('headline: what is newer, what is happening, or why not; never commits', () => {
-    expect(headline(status({ state: 'available', target: { commit: B, ref: 'main' }, whatsNew: ['x', 'y'] }))).toBe('Update available');
-    expect(headline(status({ state: 'available', channel: 'release', target: { commit: B, ref: 'v1.2.0' } }))).toBe('Update available: release v1.2.0');
+    expect(headline(status({ state: 'available', target: { commit: B, ref: 'stable' }, whatsNew: ['x', 'y'] }))).toBe('Update available');
     expect(headline(status({ state: 'available', channel: 'beta', target: { commit: B, ref: 'beta' } }))).toBe('Update available: move to the beta channel');
     expect(headline(status({ state: 'available', channel: 'dev', installed: { ...installed, branch: 'dev' }, target: { commit: B, ref: 'dev' } }))).toBe('Update available');
     // An image is updated by pulling or rebuilding it, not in place (issue #409).
-    expect(headline(status({ state: 'available', installed: { ...installed, kind: 'image' }, target: { commit: B, ref: 'main' } }))).toBe('Update available: pull or rebuild the image');
+    expect(headline(status({ state: 'available', installed: { ...installed, kind: 'image' }, target: { commit: B, ref: 'stable' } }))).toBe('Update available: pull or rebuild the image');
     expect(headline(status({ state: 'applying', apply: { phase: 'waiting', detail: 'waiting for job j1', target: B, startedAt: '' } }))).toBe('Updating: waiting for job j1');
     expect(headline(status({ state: 'error', reason: 'fetch failed' }))).toBe('Update problem: fetch failed');
     expect(headline(status({}))).toBe('Up to date');

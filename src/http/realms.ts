@@ -59,7 +59,7 @@ export function createRealmsAdmin(o: {
     const firstUser = first && o.instance.identities.userOf(first.realm, first.subject);
     const name = firstUser ? o.instance.users.get(firstUser)?.name : undefined;
     return {
-      version: store.version(), local: v.local, none: v.none, origin,
+      version: store.version(), local: v.local, none: v.none, origin, sessions: v.sessions,
       githubAdmin: first ? { realm: first.realm, ...(name ? { user: name } : {}) } : null,
       realms: v.realms.map((row) => {
         const r = o.environment.includes(row.name) ? { ...row, environment: true } : row;

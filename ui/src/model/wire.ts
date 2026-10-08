@@ -3,7 +3,7 @@
 import type {
   AttachedMachine, Decision, DomainEvent, HostKeyOffer, InstanceSpec, Job, JobStatus, Lane, MachineDefaultsEdit, MachineEdit, MachineLaneEffect, MachineSnapshot, MachinesConfig, OptionChoice, PartAccount, PluginsEdit, PluginsReport,
   Question, QuestionAttempt, QuestionGatesView, JobRulesView, QuestionStatus, RiskRuleView, Role, RoutingReport, RulesView, SelectableRole, ListRole, SourceStatus, UsageReading, UsageReport, UsageSourceReport, WebhookDelivery,
-  WebhookSubscription, WebhooksEdit, SessionUser, SessionView, SignInRealmView, UiRole, UpdateStatus, UpdateChannel, VersionHistory, PluginStoreEdit, PluginStoreEntry, PluginStoreReport, ConnectedAccountStatus, AppInstallation,
+  WebhookSubscription, WebhooksEdit, SessionLengths, SessionUser, SessionView, SignInRealmView, UiRole, UpdateStatus, UpdateChannel, VersionHistory, PluginStoreEdit, PluginStoreEntry, PluginStoreReport, ConnectedAccountStatus, AppInstallation,
   InstanceTotals, UsageTotal, UserAdded, UserView, RealmSettings, RealmType, RealmView, RealmsEdit, RealmsView, PersonView, PreSort, QueueGate, QueueGateMode,
   InstanceUsageHistory, UsageGraphView, UsageHistory, UsageSeries, UsageTotalSeries, NotifierAction, NotifierActionResult,
 } from '../../../src/domain/types.ts';
@@ -11,7 +11,7 @@ import type {
 export type {
   AttachedMachine, Decision, DomainEvent, HostKeyOffer, InstanceSpec, Job, JobStatus, Lane, MachineDefaultsEdit, MachineEdit, MachineLaneEffect, MachinesConfig, OptionChoice, PartAccount, PluginsEdit, PluginsReport,
   Question, QuestionAttempt, QuestionGatesView, JobRulesView, QuestionStatus, RiskRuleView, Role, RoutingReport, RulesView, SelectableRole, ListRole, SourceStatus, UsageReading, UsageReport, UsageSourceReport, WebhookDelivery,
-  WebhookSubscription, WebhooksEdit, SessionUser, SessionView, SignInRealmView, UiRole, UpdateStatus, UpdateChannel, VersionHistory, PluginStoreEdit, PluginStoreEntry, PluginStoreReport, ConnectedAccountStatus, AppInstallation,
+  WebhookSubscription, WebhooksEdit, SessionLengths, SessionUser, SessionView, SignInRealmView, UiRole, UpdateStatus, UpdateChannel, VersionHistory, PluginStoreEdit, PluginStoreEntry, PluginStoreReport, ConnectedAccountStatus, AppInstallation,
   InstanceTotals, UsageTotal, UserAdded, UserView, RealmSettings, RealmType, RealmView, RealmsEdit, RealmsView, PersonView, PreSort, QueueGate, QueueGateMode,
   InstanceUsageHistory, UsageGraphView, UsageHistory, UsageSeries, UsageTotalSeries, NotifierAction, NotifierActionResult,
 };

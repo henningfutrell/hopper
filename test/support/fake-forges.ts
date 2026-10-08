@@ -7,7 +7,9 @@
 // `/login/oauth/authorize` and sends the browser back with a code, exchanged with the secret and the PKCE verifier.
 // With `tokenLifetimeS`, GitHub grants as an app with token expiration on does (issue #358): every access
 // token comes with `expires_in` and a refresh token, which the refresh grant trades for a new pair once
-// (with the client secret for a web flow grant; without it for a device flow grant, as GitHub allows).
+// (with the client secret for a web flow grant; without it for a device flow grant, as GitHub allows),
+// and then refuses the access token that refresh token came with, as GitHub does (issue #441).
+// `refreshDown` makes the refresh grant answer that status instead (a 5xx, a rate limit).
 import { createHash } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -47,6 +49,10 @@ export interface FakeForge {
   chosenRepos?: Record<string, string[]>;
   /** GitHub: where the app is installed cannot be read (GET /user/installations answers 503). */
   installationsDown?: boolean;
+  /** GitHub: the refresh grant answers this status, refusing nothing (issue #441: a 5xx, a rate limit). */
+  refreshDown?: number;
+  /** Mint a pair as the device flow grants it (issue #441), for tests that start with an account already connected. */
+  mint(login: string, web?: boolean): { accessToken: string; refreshToken: string };
   close(): Promise<void>;
 }
 
@@ -66,7 +72,7 @@ const send = (res: ServerResponse, status: number, body: unknown) => {
 
 type Handler = (r: ForgeRequest, login: string | undefined) => { status: number; body?: unknown; location?: string };
 
-async function serve(handler: (base: string) => Handler, extra: { issues: FakeIssue[]; tokens: Map<string, string>; refreshTokens: Map<string, { login: string; web: boolean }>; devices: Device[] }): Promise<FakeForge> {
+async function serve(handler: (base: string) => Handler, extra: { issues: FakeIssue[]; tokens: Map<string, string>; refreshTokens: Map<string, { login: string; web: boolean }>; devices: Device[]; mint: FakeForge['mint'] }): Promise<FakeForge> {
   const requests: ForgeRequest[] = [];
   let base = '';
   let handle: Handler = () => ({ status: 500 });
@@ -87,7 +93,7 @@ async function serve(handler: (base: string) => Handler, extra: { issues: FakeIs
   handle = handler(base);
   const pending = () => extra.devices.filter((d) => d.state === 'pending').at(-1);
   return {
-    url: base, requests, issues: extra.issues, tokens: extra.tokens, refreshTokens: extra.refreshTokens,
+    url: base, requests, issues: extra.issues, tokens: extra.tokens, refreshTokens: extra.refreshTokens, mint: extra.mint,
     approve(login) { const d = pending(); if (!d) throw new Error('no pending device code'); d.state = 'approved'; d.login = login; },
     deny() { const d = pending(); if (!d) throw new Error('no pending device code'); d.state = 'denied'; },
     close: () => new Promise<void>((resolve) => { server.close(() => resolve()); server.closeAllConnections(); }),
@@ -110,6 +116,8 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
   const issues = o.issues ?? [];
   const tokens = new Map<string, string>();
   const refreshTokens = new Map<string, { login: string; web: boolean }>();
+  /** The access token each refresh token came with: GitHub refuses it once the refresh token is used. */
+  const accessOf = new Map<string, string>();
   const devices: Device[] = [];
   /** Web flow codes GitHub handed back to the browser: code → who, and what it was asked with. */
   const codes = new Map<string, { login: string; redirectUri: string; challenge: string }>();
@@ -122,6 +130,7 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
     if (o.tokenLifetimeS === undefined) return { access_token: token, token_type: 'bearer', scope };
     const refresh = `ghr_${login}_${n}`;
     refreshTokens.set(refresh, { login, web });
+    accessOf.set(refresh, token);
     return { access_token: token, token_type: 'bearer', scope, expires_in: o.tokenLifetimeS, refresh_token: refresh, refresh_token_expires_in: 15_897_600 };
   };
   return serve((base) => {
@@ -160,11 +169,13 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
         return { status: 200, body: grant(c.login, true, '') };
       }
       if (r.method === 'POST' && r.path === '/login/oauth/access_token' && r.body.grant_type === 'refresh_token') {
+        if (forge?.refreshDown) return { status: forge.refreshDown, body: { message: 'Service Unavailable' } };
         const g = refreshTokens.get(String(r.body.refresh_token));
         if (r.body.client_id !== o.clientId) return { status: 200, body: { error: 'incorrect_client_credentials' } };
         if (g?.web && (!o.clientSecret || r.body.client_secret !== o.clientSecret)) return { status: 200, body: { error: 'incorrect_client_credentials' } };
         if (!g) return { status: 200, body: { error: 'bad_refresh_token', error_description: 'The refresh token passed is incorrect or expired.' } };
-        refreshTokens.delete(String(r.body.refresh_token)); // a refresh token is used once
+        refreshTokens.delete(String(r.body.refresh_token)); // a refresh token is used once,
+        tokens.delete(accessOf.get(String(r.body.refresh_token)) ?? ''); // and the access token it came with goes with it
         return { status: 200, body: grant(g.login, g.web, '') };
       }
       if (r.method === 'POST' && r.path === '/login/oauth/access_token') {
@@ -232,5 +243,8 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
       }
       return { status: 404, body: { message: 'Not Found' } };
     };
-  }, { issues, tokens, refreshTokens, devices }).then((f) => (forge = f));
+  }, {
+    issues, tokens, refreshTokens, devices,
+    mint: (login, web = false) => { const g = grant(login, web, ''); return { accessToken: g.access_token, refreshToken: g.refresh_token! }; },
+  }).then((f) => (forge = f));
 }

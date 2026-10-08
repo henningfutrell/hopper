@@ -25,7 +25,7 @@
     </a>
     <ul class="flex items-center gap-1 text-sm font-medium text-muted-foreground sm:gap-2">
       <li><a href="./" class="rounded-md px-2.5 py-1.5 transition-colors hover:text-foreground">Home</a></li>
-      <li><a href="https://github.com/henningfutrell/hopper/blob/main/README.md" class="rounded-md px-2.5 py-1.5 transition-colors hover:text-foreground">Docs</a></li>
+      <li><a href="https://github.com/henningfutrell/hopper/blob/stable/README.md" class="rounded-md px-2.5 py-1.5 transition-colors hover:text-foreground">Docs</a></li>
       <li><a href="https://github.com/henningfutrell/hopper" class="rounded-md px-2.5 py-1.5 transition-colors hover:text-foreground">GitHub</a></li>
     </ul>
   </nav>
@@ -89,7 +89,7 @@ these two make your user's containers start when the machine does. Once:</p>
 </ol>
 <p>Then <a href="#first-job">give it its first job</a>. Upgrade, stop and remove: <a href="#upgrade">Upgrade</a>,
 <a href="#remove">Uninstall</a>. Settings, a reverse proxy and secrets:
-<a href="https://github.com/henningfutrell/hopper/blob/main/docs/deploy.md#in-containers-with-podman-recommended">docs/deploy.md</a>.</p>
+<a href="https://github.com/henningfutrell/hopper/blob/stable/docs/deploy.md#in-containers-with-podman-recommended">docs/deploy.md</a>.</p>
 
 <h2 id="first-job">Give it its first job</h2>
 <div class="warn">A job runs Claude Code with every permission, without asking you, in the folder you
@@ -168,7 +168,7 @@ First see what is there already:</p>
 <code>health</code> line and <code>UI: http://127.0.0.1:4790/</code>. If it stops with a message instead, find
 the message under <a href="#trouble">When something goes wrong</a>.</p>
 <p class="note">You can read the script first: <a href="install.sh">install.sh</a> (the same file as
-<a href="https://github.com/henningfutrell/hopper/blob/main/scripts/get.sh"><code>scripts/get.sh</code></a> in the source).</p>
+<a href="https://github.com/henningfutrell/hopper/blob/stable/scripts/get.sh"><code>scripts/get.sh</code></a> in the source).</p>
 
 <details>
 <summary>What the install does</summary>
@@ -195,7 +195,7 @@ the message under <a href="#trouble">When something goes wrong</a>.</p>
 <p>Set them in front of <code>bash</code>, the same way:</p>
 <div class="table-wrap"><table class="stack">
 <tr><th>Variable</th><th>Default</th><th>What it sets</th></tr>
-<tr><td><code>HOPPER_SOURCE_REF</code></td><td><code>main</code></td><td>the branch to install and to update from</td></tr>
+<tr><td><code>HOPPER_SOURCE_REF</code></td><td><code>stable</code></td><td>the branch to install and to update from: <code>dev</code>, <code>beta</code> or <code>stable</code>, the update channels</td></tr>
 <tr><td><code>HOPPER_SOURCE_REPO</code></td><td>this repository</td><td>where to download the source from (your fork, for example)</td></tr>
 <tr><td><code>HOPPER_SRC</code></td><td><code>~/.local/share/hopper/source</code></td><td>where the source is kept</td></tr>
 <tr><td><code>POSTGRES_PORT</code></td><td><code>5433</code></td><td>the port of the docker Postgres, on this machine only</td></tr>
@@ -220,7 +220,7 @@ UI. There is no starting account or password to look up.</p>
 and leave this terminal open:</p>
 <div class="cmd"><pre>ssh -L 4790:127.0.0.1:4790 you@your-server</pre><button type="button" data-copy="ssh -L 4790:127.0.0.1:4790 you@your-server">Copy</button></div>
 <p>Then open <code>http://localhost:4790/</code> in the browser on your own computer and sign in with GitHub. Passwords, other people and other devices:
-<a href="https://github.com/henningfutrell/hopper/blob/main/docs/sign-in.md">docs/sign-in.md</a>.</p>
+<a href="https://github.com/henningfutrell/hopper/blob/stable/docs/sign-in.md">docs/sign-in.md</a>.</p>
 
 <h3 id="github">5. Connect GitHub</h3>
 <p>Signing in with GitHub at <a href="#ui">step 4</a> connected it: hopper reads your issues and sets their
@@ -284,7 +284,7 @@ variables in <code>.env</code> beside <code>compose.yaml</code> (with Podman) or
 </table></div>
 <p>Each one is a few <code>HOPPER_SIGN_IN_</code> variables. What to register at your provider, the variables to
 copy, and how to check it works:
-<a href="https://github.com/henningfutrell/hopper/blob/main/docs/deploy.md#sign-in-set-up-at-launch">docs/deploy.md, Sign-in set up at launch</a>.</p>
+<a href="https://github.com/henningfutrell/hopper/blob/stable/docs/deploy.md#sign-in-set-up-at-launch">docs/deploy.md, Sign-in set up at launch</a>.</p>
 <p>However they sign in, each person then connects their own GitHub inside the hopper, from the UI.</p>
 
 <h2 id="upgrade">Upgrade</h2>
@@ -351,8 +351,8 @@ Delete those yourself if you want them gone. The docker database also stays; to 
 <ul>
 <li><a href="https://github.com/henningfutrell/hopper#add-machines">Add machines</a>: run jobs on other computers too, or in a sandbox container.</li>
 <li><a href="https://github.com/henningfutrell/hopper#send-jobs-to-one-machine">Routing rules</a>: send some jobs to one machine.</li>
-<li><a href="https://github.com/henningfutrell/hopper/blob/main/docs/deploy.md">docs/deploy.md</a>: every install path in detail.</li>
-<li><a href="https://github.com/henningfutrell/hopper/blob/main/README.md">The README</a>: everything else.</li>
+<li><a href="https://github.com/henningfutrell/hopper/blob/stable/docs/deploy.md">docs/deploy.md</a>: every install path in detail.</li>
+<li><a href="https://github.com/henningfutrell/hopper/blob/stable/README.md">The README</a>: everything else.</li>
 </ul>
 </main>
 

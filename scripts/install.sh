@@ -41,7 +41,7 @@ if [ -n "$INTO" ]; then
   COMMIT="${HOPPER_INSTALL_COMMIT:?build-only mode needs HOPPER_INSTALL_COMMIT}"
 else
   REPO="$(git -C "$APP_DIR" remote get-url origin 2>/dev/null || true)"
-  BRANCH="${HOPPER_UPDATE_BRANCH:-main}"
+  BRANCH="${HOPPER_UPDATE_BRANCH:-stable}"
   COMMIT="$(git -C "$APP_DIR" rev-parse HEAD 2>/dev/null || true)"
   if [ -n "$COMMIT" ] && [ -n "$(git -C "$APP_DIR" status --porcelain --untracked-files=no 2>/dev/null)" ]; then
     echo "warning: $APP_DIR has uncommitted changes; install.json names $COMMIT, which they are not part of" >&2
@@ -119,6 +119,12 @@ if [ -z "$(env_line HOPPER_DATABASE_URL)" ] && [ -z "$(env_line HOPPER_DATABASE_
     echo "  HOPPER_DATABASE_URL=postgres://hopper:<password>@127.0.0.1:<port>/hopper bash $0" >&2
     exit 1
   fi
+fi
+# The key the GitHub connection's tokens are sealed under in the database (issue #441, docs/design.md
+# "Keeping the connection"): made once, kept in daemon.env; one given already (or its _FILE) is kept.
+if [ -z "$(env_line HOPPER_TOKEN_KEY)" ] && [ -z "$(env_line HOPPER_TOKEN_KEY_FILE)" ]; then
+  step "write a new HOPPER_TOKEN_KEY to $ENV_FILE (mode 600)"
+  (umask 077; printf 'HOPPER_TOKEN_KEY=%s\n' "$(od -An -tx1 -N32 /dev/urandom | tr -d ' \n')" >> "$ENV_FILE")
 fi
 chmod 600 "$ENV_FILE"
 

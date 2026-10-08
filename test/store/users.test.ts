@@ -115,8 +115,9 @@ describe('identity links, sessions and login codes belong to a user', () => {
     const instance = openInstanceStore({ url: t.url(), clock: fixedClock() });
     const bea = instance.users.add('bea');
     const identity = { realm: 'local', subject: 'local', groups: [] };
-    instance.uiSessions.create({ tokenHash: 'h', expiresAt: '2099-01-01T00:00:00.000Z', role: 'admin', identity, userId: bea.id });
-    expect(instance.uiSessions.find('h', '2026-10-02T10:00:00.000Z')).toEqual({ tokenHash: 'h', expiresAt: '2099-01-01T00:00:00.000Z', role: 'admin', identity, userId: 'bea' });
+    const at = '2026-10-02T10:00:00.000Z';
+    instance.uiSessions.create({ tokenHash: 'h', startedAt: at, lastSeenAt: at, checkedAt: at, role: 'admin', identity, userId: bea.id });
+    expect(instance.uiSessions.get('h')).toEqual({ tokenHash: 'h', startedAt: at, lastSeenAt: at, checkedAt: at, role: 'admin', identity, userId: 'bea' });
     instance.close();
   });
 
@@ -172,9 +173,10 @@ describe('migrations 17 and 21: an install from before becomes the default admin
     expect(next.seq).toBeGreaterThan(admin.events.since(0)[1]!.seq);
     // Migration 22 (issue #214): every hopper offers GitHub sign-in.
     expect(instance.config.read('sign-in')).toEqual({ version: 1, realms: [{ name: 'github', label: 'GitHub', type: 'github' }] });
-    expect(instance.settings.getUpdateSettings()).toEqual({ channel: 'main', autoUpdate: true });
+    // Migration 26 (issue #423): the channel main is stable.
+    expect(instance.settings.getUpdateSettings()).toEqual({ channel: 'stable', autoUpdate: true });
     expect(instance.settings.getPluginInstalls()).toEqual([]);
-    expect(instance.uiSessions.find('t1', '2026-10-02T10:00:00.000Z')?.userId).toBe('admin');
+    expect(instance.uiSessions.get('t1')?.userId).toBe('admin');
     expect(instance.loginCodes.take('c1', '2026-10-02T10:00:00.000Z')).toBe('admin');
     expect(instance.identities.userOf('corp', 'sub-9')).toBe('admin');
     admin.close();

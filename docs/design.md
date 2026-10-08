@@ -36,22 +36,22 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts, usage pacing; `decider-policy.ts` the decider's policy; `usage-history.ts` usage samples and the usage graph; `machines.ts` attached machines and their edit; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry), ports (`ports.ts`, re-exporting the store's from `store.ts`) | anything else in `src/` |
+| `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts, usage pacing; `decider-policy.ts` the decider's policy; `usage-history.ts` usage samples and the usage graph; `machines.ts` attached machines and their edit; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry; `machine-pick.ts` the machine a part that runs claude and names none uses, pure — issue #442), ports (`ports.ts`, re-exporting the store's from `store.ts`) | anything else in `src/` |
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock | everything but `domain/` |
-| `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations (the instance's `migrations.ts` with migration 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-jobs-dir.ts` (tenant 11) moves a work tree stored as `~` to the jobs directory (issue #314); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); 25 the join codes (issue #308) and `migration-client-key.ts` (tenant 12) the client targets that held a token variable; `migration-no-gh-source.ts` (tenant 14) takes out the gh CLI job source (issue #359); tenant 15 the usage history's `usage_samples`, `usage-history.ts` its repository and the usage graph's SQL (issue #385); `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265) | engine, http, decider |
+| `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations (the instance's `migrations.ts` with migration 15 in `migration-attached-machines.ts`, 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-jobs-dir.ts` (tenant 11) moves a work tree stored as `~` to the jobs directory (issue #314); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); 25 the join codes (issue #308); 26 the update channels (issue #423); `migration-session-lifetime.ts` (27) sessions that renew (issue #439) and `migration-client-key.ts` (tenant 12) the client targets that held a token variable; `migration-no-gh-source.ts` (tenant 14) takes out the gh CLI job source (issue #359); tenant 15 the usage history's `usage_samples`, `usage-history.ts` its repository and the usage graph's SQL (issue #385); `migration-name-the-machine.ts` (tenant 17) names the one machine that can run claude in a level or usage source that names none (issue #442); `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265) | engine, http, decider |
 | `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), identity → user (`identities.ts`: link or provision), the leftover default admin account folded into the first GitHub admin's user at start (`leftover-admin.ts`, issue #265), a user's job sources split for the sync loop at start and on each change (`job-sources.ts`, issue #356) | http, decider |
 | `src/webhooks/` | signing, dispatcher, retry/backoff, the secret of a subscription from the runtime (`dispatcher.ts`), the UI edit of the subscriptions (`edit.ts`, rows in the store) | engine, http, decider |
 | `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, the plugins config (`plugins-config.ts`) + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt, `escalation-level/anthropic-api/` asks the Claude API with the same prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-app/` and `job-source/github-account/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser); `usage-source/command-usage/` reads any agent framework's usage and account from a command that prints them as JSON; `usage-source/polled.ts` the background refresh both share, `usage-source/run.ts` their command runner; `notifier/grokbot-routine/` is the Grok Bot routine webhook — the routine from the runtime, the notifier, its payloads; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
 | `src/executors/` | `Executor` adapters (`test`, `herdr/`, `command.ts` — a job's body run on its machine through its connection, `print-agent.ts` — an agent CLI in print mode there, Cursor's agent (issue #142), codex, opencode and omp (issue #307), each CLI's call and reading in `print-agents.ts`) and the registry; reached through the executor plugins. The connections and their target authentication ("Target authentication"): `ssh.ts` (key-only ssh to pinned host keys), `ssh-key.ts` (the hopper's own ssh key, kept in the user's store, issue #293), `docker.ts` (the docker socket check, the proxy's allowlist), `client.ts` (a client target's tunnel, signed calls); `env.ts` the scrubbed child environment | engine, http, store, plugins |
-| `src/client/` | the hopper client ("Client targets", "Joining a machine"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load`, `/claude` over HTTP/2 on its link), `dial.ts` (its dial-in to the hopper's URL), `join.ts` (joining with a join line), `link.ts` (the link keys and the client token they give; shared with the hopper), `release.ts` (the client release: its files, its id, checking and installing one — "Client releases"), `main.ts`; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`) | everything in `src/` outside `src/client/` |
+| `src/client/` | the hopper client ("Client targets", "Joining a machine"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load`, `/claude`, `/reap`, `/survey`, `/credential` over HTTP/2 on its link), `credential.ts` (a running job's credential file, issue #441), `dial.ts` (its dial-in to the hopper's URL), `join.ts` (joining with a join line), `link.ts` (the link keys and the client token they give; shared with the hopper), `release.ts` (the client release: its files, its id, checking and installing one — "Client releases"), `main.ts`; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`) | everything in `src/` outside `src/client/` |
 | `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following the plugins config; ssh probe and the check that herdr is found there by name (`REMOTE_PATH`, issue #311) through the herdr CLI client's ssh argv; the container probe, `docker container inspect`), the detected ssh targets (`ssh-config.ts`) and which of them is this machine (`this-machine.ts`, issue #275), keeping each client target on the hopper's client release (`client-release.ts`), the links of the machines dialled in (`links.ts`) and their join codes (`join-code.ts`, issue #308), `combineMachineSources` | engine, http, store, plugins |
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin); the usage history's recorder (`history.ts`, issue #385), over the `UsageHistoryRepository` port | engine, http, store, plugins |
 | `src/job-rules/` | the job rules (issue #172): the config record `job-rules`, the default job rules, the fixed lines of the footer (work tree, protocol), their read, view and edit — no I/O but the config records port | everything but `domain/` |
 | `src/routing/` | routing rules: the plugins config's `routing` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
-| `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; routing at intake (`source-host.ts`); restart recovery | http |
+| `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; routing at intake (`source-host.ts`); restart recovery; a job's credential files on its machine, kept current at each renewal (`credentials.ts`, issue #441) | http |
 | `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the sign-in config at start — named secrets taken in, the environment applied (`start.ts`, issue #216; no bootstrap login, issue #238) — and the `HOPPER_SIGN_IN_*` variables (`environment.ts`), the role rules (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm, gateway realm) and their adapters `ldap.ts` (ldapts), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), `gateway.ts` (jose + openid-client), the sign-in service — form realms in order, gateway realms in order, the API door's token check (issue #255), flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
-| `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`) | engine, http, store, plugins, decider |
-| `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets") | everything |
+| `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`), its renewal (`renewal.ts`, `renewer.ts`) and its tokens at rest (`at-rest.ts`; issue #441, "Keeping the connection") | engine, http, store, plugins, decider |
+| `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that seals a connected account's tokens under `HOPPER_TOKEN_KEY` | everything |
 | `src/update/` | self-update ("Self-update"): install.json, the git mirror of the update repository, the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
 | `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the usage graph's reads (`usage-history.ts`, issue #385); whether a session is an instance admin (`instance-admin.ts`, issue #240); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `api-reference.ts` Scalar at `/docs/`); the plugin store's read side (`plugin-store.ts`); machines joining and dialling in (`client-link.ts`, issue #308) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
@@ -886,6 +886,37 @@ Tenant migration 3 names the `local` machine in every claude-cli level and claud
 that named none: they ran here. Detection runs nothing here: claude runs on the machine, and whether
 it does shows in each question's trail.
 
+**A level that names no machine** (issue #442; owner decision: both — fill it where it is certain, and
+pick it at run time as a safety net). The edits above still refuse a level or source without its
+machine, but a plugins config written with none (a fresh store, issue #259; the container) holds
+claude-cli levels and a claude-plan source that name none, and the option's schema made them
+unavailable: every question went to the owner with a zod message on its trail. The `machine` option
+is now optional in the schema, and `src/domain/machine-pick.ts` decides, pure:
+
+- **At run time** (`pickMachine`). A claude-cli level that names no machine picks one per question:
+  the job's machine (`AnswerRequest.jobMachine`: `resumeOn`, else its pin) where claude can run there
+  — online, and this machine or an ssh target, never a client or container target (`refusal`) —; else
+  the only machine that can; else the **default escalation machine** (the plugins config's
+  `escalationMachine`, `EscalationLevelContext.escalationMachine()`). The reply carries `machine:
+  { id, why }`, and the question service puts it on the attempt: the trail says on which machine the
+  level ran and why. None: the level does not run; it escalates with the plain reason
+  (`NO_MACHINE_FOR_LEVEL`, or that several can and nothing says which) and how to fix it. A claude-plan
+  source that names none reads the only machine there is (any connection), at each read, its readings
+  and account that machine's; none, or several: its state says so, and it reads again soon.
+- **In Settings** (`machineNote`, from the configured machines, not their state). Each such level and
+  source in `GET /api/plugins` carries `machine: { machine?, needsMachine, note }`: the machine it
+  runs on, or, when none can run it or several can with no default set, `needsMachine` and the plain
+  reason. The UI shows the level as *needs a machine*. No question action needs a level, so none is
+  hidden: an escalated question waits for the owner as before.
+- **In the store** (`fillMachines`, tenant migration 17, `migration-name-the-machine.ts`): a level or
+  source that names none names the one machine that can run it, where exactly one is configured
+  (claude-cli: `local` or `ssh`; claude-plan: any). Anywhere else it is left unnamed, and flagged. The
+  plugins config is re-read by version, so the parts follow it live.
+- **The default escalation machine** is set in the Question gates panel (`POST /ui/api/plugins`
+  `{ action: 'escalation-machine', machine | null }`): a configured machine, else refused. It is a
+  machine reference like a machine option: a rename follows it, and a removal of that machine is
+  refused while it names it.
+
 **Anthropic API plugin** (`anthropic-api`, an escalation level, not in the built-in instances). The
 other way a hopper without a claude CLI answers: one Messages request per question through
 `@anthropic-ai/sdk` (`messages.parse`, `output_config.format` = the level reply schema, optional
@@ -1242,7 +1273,7 @@ token and send any `Origin`. Cookies are no better here: they ignore ports, so a
    code, appears on any command line (`/proc` is readable by every user).
 3. **`POST /ui/login`** (form body `code`; Origin may be `null` — the code is the
    credential) — constant-time compare; on match: create a session (random 32-byte token,
-   expiry `HOPPER_UI_SESSION_HOURS`, default 12), rotate the code, and answer with a
+   expiry `HOPPER_UI_SESSION_HOURS`, default 12 — since issue #439 an idle timeout and a maximum from the sign-in config, "Session lifetime"), rotate the code, and answer with a
    same-origin HTML page whose inline script stores the token in `localStorage`
    (`jh_session`) and goes to `/`. Mismatch → 403. `localStorage` is scoped to the exact
    origin incl. port, so no other server on `127.0.0.1` can read it. Sessions live in the store
@@ -1561,7 +1592,7 @@ job is judged, and when its prompt is built):
 
 | completion | complete when | the job's prompt says |
 |------------|---------------|-----------------------|
-| `merge` | the issue is **closed as complete**: its last close event's closer is a merged pull request opened at or after the job's `createdAt` (a merge closes an issue only on the default branch, so this is the change on main), or, no pull request closing it, it was closed as completed (`state_reason`) at or after the job's `createdAt` — by a commit, or with no code (issue #350) | checks pass, pushed, a pull request with `Closes #N` merged, the merged change verified where the product runs; an issue that needs no code change: closed as completed |
+| `merge` | the issue is **closed as complete**: its last close event's closer is a merged pull request opened at or after the job's `createdAt` (a merge closes an issue only on the default branch, `dev`), or, no pull request closing it, it was closed as completed (`state_reason`) at or after the job's `createdAt` — by a commit, or with no code (issue #350) | checks pass, pushed, a pull request with `Closes #N` merged, the merged change verified where the product runs; an issue that needs no code change: closed as completed |
 | `pull-request` | as `merge`, or an open pull request, not a draft, opened at or after the job's `createdAt`, whose merge will close the issue (GraphQL `closedByPullRequestsReferences`: a closing keyword, on a pull request to the default branch) | checks pass, pushed, a pull request with `Closes #N` open and not a draft; do not merge it |
 
 The prompt's `done (completion: …)` line carries the parts the hopper cannot see — the repo's own
@@ -1574,7 +1605,7 @@ complete: no pull request opened by this job, ready for review, closes <issue ur
 work is complete: <error>`. Fail closed: a failed job's issue stays open with `hopper:failed`, never
 `hopper:done`, and removing that label re-runs it. A source without `notComplete`, and a job of no
 source, take every done job as complete. Before issue #171, a job that said it was done was closed
-as completed with nothing on main.
+as completed with nothing on the default branch.
 
 **A failed job whose issue is closed as complete is finished** (issue #350). A job can end failed
 after its work landed: its pane ends on a restart after its own pull request merged, a credential
@@ -1701,7 +1732,7 @@ folded into plugins.yaml `jobSources`; the gh bin became github-gh's `bin` optio
 | `HOPPER_SOURCES_FILE` | `~/.config/hopper/sources.yaml` |
 | `HOPPER_WEBHOOKS_FILE` | `~/.config/hopper/webhooks.yaml` |
 | `HOPPER_GH_BIN` | `gh` |
-| `HOPPER_UI_SESSION_HOURS` | `12` |
+| `HOPPER_UI_SESSION_HOURS` | `12` (no longer read since issue #439: "Session lifetime") |
 
 ## Construction contract added
 
@@ -2676,7 +2707,7 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
 | `HOPPER_RECONNECT_GRACE_MS` | `120000` — issue #368: after a restart, how long a running job waits for its machine to answer before it fails ("Recovery at startup") |
 | `HOPPER_LOCAL_MACHINE` | `true`: this host may be a machine, though a fresh plugins config lists none (issue #259); `false` in the image: the container is not a machine, and the boot removes a `local` one (issue #141) |
 | `HOPPER_WEBHOOKS_FILE` | `~/.config/hopper/webhooks.yaml` |
-| `HOPPER_UI_SESSION_HOURS` | `12` |
+| `HOPPER_UI_SESSION_HOURS` | `12` (no longer read since issue #439: "Session lifetime") |
 | `HOPPER_PLUGIN_DIR` | `~/.config/hopper/plugins` |
 | `HOPPER_PLUGINS_FILE` | `~/.config/hopper/plugins.yaml` |
 | `HOPPER_AUTH_FILE` | `~/.config/hopper/auth.yaml` (issue #39, "Sign-in: realms") |
@@ -4122,7 +4153,7 @@ The landing page takes no pasted code and names no command (issue #247): a code 
 only through a link.
 
 Sessions are already in the store (migration 6), so a daemon restart does not log a device out; a
-session still expires after `HOPPER_UI_SESSION_HOURS` (12).
+session still ends after its idle timeout or its maximum (issue #439, "Session lifetime").
 
 **Residual risk, stated.** Plain HTTP: a host on the LAN that can sniff traffic can take a session
 token or a device link in flight. Accepted for a home LAN; the peer list keeps the VPN and container
@@ -4922,6 +4953,43 @@ the next visit takes a new session. With `introspection`, the issuer is asked on
 per request.
 
 
+### Session lifetime (issue #439, 2026-10-08)
+
+Sessions ended too early: a fixed `HOPPER_UI_SESSION_HOURS` (12) set at creation, never extended, and only
+changeable by a restart. What is settled, of the issue's options: the hopper's own sliding session, plus a
+re-check of the gateway's token for a gateway realm's sessions:
+
+- **The session is the hopper's own.** No realm keeps the provider's access, ID or refresh token for it: an
+  OIDC realm reads who signed in and drops them, as before. Storing refresh tokens would be a fifth stored
+  secret ("Secrets"), and only OIDC has a refresh grant (not GitHub's device flow, LDAP or SAML). The cost,
+  accepted: a person revoked at an OIDC or SAML provider keeps a session until it is idle, reaches its
+  maximum, or the sign-in config changes under it.
+- **Sliding renewal plus an absolute maximum.** `ui_sessions` keeps `started_at`, `last_seen_at`,
+  `checked_at` and, for the operator CLI's alone, `ends_at` (migration 27 replaced `expires_at`; live
+  sessions stay, counted from the migration). A session ends at `last_seen_at + idleHours` or at
+  `min(started_at + maxHours, ends_at)`, whichever is first. The Host guard's hook renews every request's
+  session before anything reads it (`UiSessions.renew`), writing at most every `RENEW_EVERY_MS` (60 s, or a
+  tenth of the idle timeout when that is shorter).
+- **The lengths are a setting in the database**: the sign-in config's `sessions: { idleHours, maxHours }`
+  (defaults 168 and 720, at most 8760, idle ≤ max), one pair for the instance, edited in Settings → Sign-in
+  through the realms edit's `settings` action. They are read at each lookup, so a change applies to new and
+  existing sessions without a restart. Per-realm lengths waited for a case that needs them.
+  `HOPPER_UI_SESSION_HOURS` is not read (a leftover variable, warned at boot), and seeds nothing.
+- **A gateway realm stays the authority.** Its session renews only when the forwarded token checks out
+  again (`SignIn.checkGateway`) for the same realm and subject; refused → `refresh-refused`. An issuer out
+  of reach (the check's 502) leaves the session as it is, unrenewed, until `GATEWAY_GRACE_MS` (5 minutes)
+  after the last good check (`checked_at`) → `provider-unreachable`. A provider briefly down ends nothing.
+- **Every end has a reason**: `expired-idle`, `expired-absolute`, `refresh-refused`, `provider-unreachable`,
+  `realm-changed` (a reconcile), `logout` — logged, and the event `ui_session.ended { reason, realm }` in
+  the session user's event log. Expired sessions no request names end in a sweep on lookup, at most once
+  per renewal interval, so each still gets its event. A token no row holds is logged once per token; it has
+  no user to record an event for.
+- **The UI signs in again at once.** A refused call (a 403 without `needs`, or a 401 on a read that sent a
+  session), or its own check of `GET /ui/api/session` every minute and when the page is shown again, sends
+  it to sign-in with the session's realm (`ui/src/lib/reauth.ts`): the identity provider for an OIDC, SAML
+  or redirecting GitHub realm, a reload through the gateway, else the landing page. The page it was on is
+  kept in `localStorage` (`jh_return`) across the round trip and opened once signed in.
+
 ### The API door: a token reads as the user it signs in as (issue #255, 2026-10-06)
 
 Owner request: a GitHub OIDC token that signs a person in to the UI must authenticate them against the
@@ -5281,17 +5349,17 @@ build, `restart.ts` the restart, `blockers.ts`); routes `GET /api/update`, `POST
 **The install knows where it came from.** `install.json` in the install (beside `src/`):
 `{ kind, repo, branch, commit, installedAt }`, written by `scripts/write-install-json.ts`. `scripts/install.sh`
 writes it (`kind: install`) from the clone's `origin`
-and `HEAD`; the branch is `main` unless `HOPPER_UPDATE_BRANCH` names another. An update writes
-the new one, with the channel's branch on a branch channel. One without `kind` (from before issue #409) is an install.
+and `HEAD`; the branch is `stable` unless `HOPPER_UPDATE_BRANCH` names another. An update writes
+the new one, with the channel's branch. One without `kind` (from before issue #409) is an install.
 No install.json (a checkout run with `npm start`, a clone without `origin`) → state
 `unavailable` with the reason; nothing else changes.
 
 **So does an image (issue #409).** Every build knows its repository, branch and commit, however it was built:
 the `Dockerfile` takes them as build arguments (`HOPPER_REPO`, default the public repository; `HOPPER_BRANCH`,
-default `main`; `HOPPER_COMMIT`), writes `/app/install.json` (`kind: image`, `installedAt` the build time) and the
+default `stable`; `HOPPER_COMMIT`), writes `/app/install.json` (`kind: image`, `installedAt` the build time) and the
 OCI labels `org.opencontainers.image.source` and `.revision`. `.github/workflows/image.yml` passes GitHub's;
 `scripts/build-image.sh`, the local image build, passes the checkout's (`origin`, a GitHub ssh URL as https —
-the image holds no ssh key; `HEAD`; `HOPPER_UPDATE_BRANCH` or `main`) and tags `HOPPER_IMAGE` (default
+the image holds no ssh key; `HEAD`; `HOPPER_UPDATE_BRANCH` or `stable`) and tags `HOPPER_IMAGE` (default
 `localhost/hopper`). A bare `docker build .` cannot see the commit (`.dockerignore` leaves out `.git`): its
 install.json leaves the field out, never guessed. The check and the version history read an image's install.json as an
 install's. **Apply** refuses an image: its files are not the hopper's to swap, and it is replaced by pulling or
@@ -5308,27 +5376,31 @@ Check now. Checking cannot be turned off (issue #177): `0` used to mean "only wh
 hopper left with it set offered nothing merged after it; now `0` (or less) is the default minute, with a
 warning in the log. One minute, not fifteen (issue #177): a change merged to the
 tracked branch is not shipped until the running hopper offers it, and a 15-minute check left merged work
-unoffered for up to that long; a fetch that brings nothing is one round trip. The **update channel** decides the target: `dev`, `beta`, `main` → the head
-of the branch of that name (issue #282); `release` → the newest `v<major>.<minor>.<patch>` tag. With no
-channel set, it is the branch install.json names when that is a channel, else `main`. An update is
+unoffered for up to that long; a fetch that brings nothing is one round trip. The **update channel** decides the target: `dev`, `beta` or `stable`, the head
+of the branch of that name (issues #282, #423). With no channel set, it is the branch install.json names
+when that is a channel, else `stable`. An update is
 **available** when the installed commit does not contain the target (an install ahead of it, e.g.
-from a feature branch, is `current`) — or, on a branch channel, when install.json names another
-channel's branch and the target is not the installed commit: moving from `dev` to `main` goes back
-to `main`'s head, though the `dev` install contains it (its What's new is then empty; the notice says
-"move to the main channel").
+from a feature branch, is `current`) — or when install.json names another
+channel's branch and the target is not the installed commit: moving from `dev` to `stable` goes back
+to `stable`'s head, though the `dev` install contains it (its What's new is then empty; the notice says
+"move to the stable channel").
 
-**Channels and promotion (issue #282).** Changes land on `dev`; `beta` is promoted from `dev`, and
-`main` from `beta`, each a fast-forward to a commit the less steady branch already ran
-(`git push origin <commit>:beta`, then `git push origin <commit>:main`). A hopper on `dev` gets every
-change first; one on `main` gets only what ran on `beta`, so a change that breaks is caught before it
-reaches every hopper. Which branch pull requests merge to (the repository's default branch) is the
-owner's choice; while it is `main`, `dev` and `beta` are fast-forwarded to it after each merge, and
-the channels only differ once changes merge to `dev` first. **What's new** (issue #104): the bullets of `WHATS-NEW.md`
+**Channels and promotion (issues #282, #423).** `dev` is the repository's default branch: every pull
+request, a job's included, merges there. `beta` is promoted from `dev`, and `stable` from `beta`, each by
+a maintainer with `scripts/promote.sh beta|stable [commit]`: a fast-forward to a commit the less steady
+branch already has, whose image built there (`docs/deploy.md` "Update channels and promotion" says when). A
+hopper moved to a steadier channel can run an older build on a store a newer one migrated, so a store
+migration leaves a store the build before it still runs on (AGENTS.md "Persisted state is the user's"). A hopper on `dev` gets every change first; one on `stable` gets only what ran on
+`beta`, so a change that breaks is caught before it reaches every hopper. Each of the three branches has
+the image tag of its name; the Pages site is published from `stable`. Until issue #423 the channels were
+`dev`, `beta`, `main` and `release` (the newest `v<semver>` tag, of which none was published): store
+migration 26 sets a hopper on `main` or `release` to `stable`, and `main` was moved once to the commit that
+brought it to `stable`, so a hopper on an older version reaches it by following `main` once. **What's new** (issue #104): the bullets of `WHATS-NEW.md`
 at the target that `WHATS-NEW.md` at the installed commit lacks, newest first (`whatsNew`; all of
 them when the installed commit has no such file) — plain words for people who use the hopper,
 written by hand in the change that makes them true (AGENTS.md "What's new"); `src/update/whats-new.ts`.
 Commit subjects, hashes and issue numbers are never shown: a merge list is the change's plumbing,
-not what changed for its users. The newest release is reported on either channel (`release.newer`). **In this
+not what changed for its users. **In this
 version** (issue #165): the newest 5 bullets of the install's own `WHATS-NEW.md` (`installedWhatsNew`;
 `install.sh` and the image copy the file), read once at start — shown whether or not an update
 exists, and when self-update is unavailable.
@@ -5386,10 +5458,10 @@ migration): `POST /ui/api/update { action: "settings", channel?, autoUpdate? }`.
 an available update as soon as a check finds it, and at once when switched on with one available.
 
 **UI.** A notice above the views while an update is available, applying or failed — headline
-("Update available", or the release), "What's new" (the bullets), Update now. The header's
+("Update available", or the channel it moves to), "What's new" (the bullets), Update now. The header's
 version (a bordered button with an info icon, the installed commit from `sm` up) shows on every screen
 and opens the Version and updates panel at any time (issue #165): version, installed, installed on,
-newest, release, last check, Check now, Update now, auto-update, channel (`dev` / `beta` / `main` / `release`, each with what it pulls), the
+newest, last check, Check now, Update now, auto-update, channel (`dev` / `beta` / `stable`, each with what it pulls), the
 update's What's new, In this version. The same details are Settings → Version (`#settings/version`).
 
 **Any deployment.** The updater needs: install.json, git and network access to the repository,
@@ -5415,8 +5487,8 @@ with no host install path.
 
 `compose.yaml` at the root, served by the install page beside `install.sh`. Three services: `secrets`
 (once per start; the database password is made on the first one and kept in a volume, each file
-readable only by its one reader), `postgres` (no host port), `hopper` (built from the public repository's
-`main`, or `HOPPER_SOURCE`). Settings and secrets come from an optional `.env` beside it. Since issue
+readable only by its one reader), `postgres` (no host port), `hopper` (built from the public repository,
+or `HOPPER_SOURCE`). Settings and secrets come from an optional `.env` beside it. Since issue
 #125 the hopper is the published image, the `secrets` service is folded into `postgres`, and Podman is
 the recommended runtime ("The published image, with Podman" below). Operating detail: `docs/deploy.md`
 "In containers, with Podman".
@@ -5443,8 +5515,8 @@ connected account, and a job gets its GitHub token from that connection (`GH_TOK
 **Built-in instances: no machine of its own (issue #259).** The hopper no longer registers its own
 host as a machine by default. The plugins config the boot writes for a store that has none (a new
 hopper's users, a user added later) is the built-in instances with `machines: []`, and its claude-cli
-levels and claude-plan usage source name no machine: they are unavailable until one is picked
-(issue #174). This machine is added like any other, as a `local` instance (the Plugins view's add, or
+levels and claude-plan usage source name no machine: until one is picked they pick one as they run, or
+say plainly that none can (issue #442, "A level that names no machine"). This machine is added like any other, as a `local` instance (the Plugins view's add, or
 the Machines view). A config already written is never changed: an existing `local` instance stays,
 and a section left out keeps its meaning (`builtinInstances` with `HOPPER_LOCAL_MACHINE`: `local`,
 4 lanes, where this host may be a machine), which tenant migration 3 relied on.
@@ -5473,11 +5545,11 @@ Owner request: publish a public container image people can pull and run, so the 
 installed on the host; running from it is the recommended path, other installs stay but are
 secondary; install and run docs focus on Podman.
 
-**The image.** `.github/workflows/image.yml` builds the `Dockerfile` on every push to `main` (and by
-hand) and pushes `ghcr.io/henningfutrell/hopper`: `latest` follows `main`, `sha-<commit>` pins one
-build; `linux/amd64` and `linux/arm64` (QEMU; herdr ships both). A newer push never cancels a build
+**The image.** `.github/workflows/image.yml` builds the `Dockerfile` on every push to `dev`, `beta` or
+`stable` (and by hand) and pushes `ghcr.io/henningfutrell/hopper`: the tag of the branch's name follows that
+branch, `latest` follows `stable` (issue #423), `sha-<commit>` pins one build; `linux/amd64` and `linux/arm64` (QEMU; herdr ships both). A newer push never cancels a build
 in progress: runs queue, and GitHub keeps only the newest pending one, so the last commit of a merge
-stream is always published (issue #156: cancelling left `latest` hours behind `main`). It logs in with the workflow's own
+stream is always published (issue #156: cancelling left `latest` hours behind). Each branch queues on its own. It logs in with the workflow's own
 `GITHUB_TOKEN` (`packages: write`): no registry credential exists to keep or rotate. The package is
 public, so a pull needs no sign-in. Nothing in the image is specific to one install: everything the
 hopper keeps is in its database, its secrets come from the runtime ("Deployable", "Secrets").
@@ -5700,10 +5772,11 @@ token (issue #214; the only GitHub credential of a job since issue #359). The gi
 | UI session tokens, login codes | SHA-256 only (32 random bytes: no dictionary to try) — the hopper's own short-lived state; a hash is not a usable credential |
 | password sign-in passwords | argon2id hashes in `password_accounts` ("Sign-in: realms", issue #200) — a verifier the daemon makes from the password an admin sets, never the password |
 | **the exception (issue #216)**: a realm's own secrets | in clear, in the config record `sign-in` — owner direction: setting up a realm does not go through the runtime ("Realm secrets stored, sign-in from the environment") |
-| a connected account's token | **the second exception (issue #214)**: the access token GitHub granted the hopper's app, in the user schema's `connected_accounts` (tenant migration 8, issue #214) — read only by that user's sources and jobs, answered by no route ("Sign in with GitHub, and work through that connection") |
+| a connected account's token | **the second exception (issue #214)**: the access token GitHub granted the hopper's app and its refresh token, in the user schema's `connected_accounts` (tenant migration 8, issue #214) — sealed under the runtime's `HOPPER_TOKEN_KEY` since issue #441 ("Keeping the connection"), read only by that user's sources and jobs, answered by no route ("Sign in with GitHub, and work through that connection") |
 
 `HOPPER_SECRET_KEY`, the secret box (`src/secrets/box.ts`) and the UI's rotate-secret are gone:
-with no secret to keep there is nothing to seal. A leftover `HOPPER_SECRET_KEY` is a leftover
+with no secret to keep there is nothing to seal. (The connected account's tokens are the one thing sealed
+again, under `HOPPER_TOKEN_KEY`, issue #441: the token box is theirs alone.) A leftover `HOPPER_SECRET_KEY` is a leftover
 variable (boot warning; delete the line). A webhooks-document entry with an inline `secret` — sealed or
 clear, from before — was refused at load, and is left out by migration 14 (issue #78) for the same
 reason: the rows stay as the daemon last ran them. The one
@@ -6595,16 +6668,13 @@ its expiry if any, when. Every answer carries facts only, never a token.
 - **Install status**: `GET /api/connected-accounts` gives `installUrl` (the app's install page) and
   `installations` (`GET /user/installations`: the accounts the app is installed on that the user sees).
   The Sources panel says where and links to install.
-- **Tokens** (issue #358): a GitHub App's user tokens expire after 8 h, with a refresh token (6 months).
-  Both are kept with the account (`refreshToken`, `refreshTokenExpiresAt`), from the device flow, the web
-  flow and a GitHub sign-in alike. `token()` renews the pair (`src/connected-accounts/renewal.ts`,
-  `@octokit/oauth-methods` `refreshToken`) once an hour or less is left (`RENEW_AHEAD_MS`, so a job given
-  it has an hour at least), and `renew()` does on a 401 (the account API makes the call once more with the
-  new token); one renewal at a time, the new pair kept at once. A device flow grant renews without the
-  client secret; the secret goes when the runtime gives one (`HOPPER_GITHUB_CLIENT_SECRET`, which a web flow
-  grant needs). GitHub not answering ends nothing: a still-valid token is used and the next ask renews.
-  **Expired**: GitHub refusing the renewal (an OAuth error), a 401 with no refresh token, or a token past
-  its expiry with no live refresh token ends the sign-in: kept on the record (`ended`), the account reads
+- **Tokens** (issue #358; how they are kept alive since issue #441: "Keeping the connection"): a GitHub
+  App's user tokens expire after 8 h, with a refresh token (6 months). Both are kept with the account
+  (`refreshToken`, `refreshTokenExpiresAt`), from the device flow, the web flow and a GitHub sign-in alike,
+  with the flow that granted them (`grantedBy`). The renewer renews the pair ahead of expiry whether or
+  not anything asks, and on a 401 (the account API makes the call once more with the new token).
+  **Expired**: GitHub refusing the refresh token itself (`bad_refresh_token`) with no newer pair stored, a
+  401 with no refresh token, or a token past its expiry with no live refresh token ends the sign-in: kept on the record (`ended`), the account reads
   `state: 'expired'` with why — never `connected` — offers no login (so a gh source with `enabled: auto`
   runs again), its source pauses with `GitHub's sign-in expired: Sources → Connect GitHub again`, and
   `connected_account.expired { provider, account, reason }` is recorded once, which the notifiers send.
@@ -6621,23 +6691,25 @@ connected: Sources → Connect GitHub`, and `GET /api/accounts` carries the same
 paused while an account was connected; it is removed by issue #359.)
 
 **Jobs act through it** (`JobSource.credentials`, `ExecutionContext.credentials`): when a job of the
-connected account starts, the engine asks its source for `GH_TOKEN` (the account's token now), and the
-herdr-claude executor puts it in the job's pane environment. So `gh` in the job (pull requests, issue
-reads) acts as the user, and GitHub shows the hopper's app on it. Never stored on the job or its payload.
-A job resumed after a question keeps its pane, and the token it started with.
+connected account starts, the engine asks its source for its credentials and keeps them on the job's
+machine, where every renewal rewrites them ("Keeping the connection", issue #441): `gh` in the job (pull
+requests, issue reads) reads the account's token from its config dir there, acts as the user, and GitHub
+shows the hopper's app on it. Never stored on the job or its payload. A machine whose connection keeps no
+files runs the job with `GH_TOKEN`, the token as it is at its start.
 
 **The app-as-itself source** (`github-app`, an admin's own GitHub App and its private key) is no longer a
 built-in instance: an admin adds it in Plugins where it suits; existing configs keep theirs.
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/connected-accounts/` | the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`), the web flow (`web-flow.ts`, issue #258), who a token belongs to and where the app is installed (`identity.ts`), a user's connected account (`service.ts`) | engine, http, store, plugins, decider |
+| `src/connected-accounts/` | the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`), the web flow (`web-flow.ts`, issue #258), who a token belongs to and where the app is installed (`identity.ts`), a user's connected account (`service.ts`), its renewal (`renewal.ts`, `renewer.ts`) and its tokens at rest (`at-rest.ts`, issue #441) | engine, http, store, plugins, decider |
 | `src/sources/github/account/` | the issue port over a connected GitHub account's token | engine, http, store, plugins |
 
-**Residual risk, stated.** Tokens are in the database in clear, as the realm secrets are (#216): whoever
-holds its credentials or a dump (backups included) holds them. A token reaches what the user may do on
-the repositories the app is installed on. A job's token is in its pane's environment and, while the herdr
-CLI creates the tab, its argv; any process of the daemon's account on that machine can read it. The
+**Residual risk, stated.** Tokens are in the database sealed under `HOPPER_TOKEN_KEY` since issue #441, in
+clear where the runtime gives no key (as the realm secrets are, #216): then whoever holds its credentials
+or a dump (backups included) holds them. A token reaches what the user may do on the repositories the app
+is installed on. A job's token is in a file of its own on its machine (mode 600), and in its pane's
+environment only where that file cannot be kept; any process of the daemon's account on that machine can read it. The
 command and Cursor executors run without it (their variables would sit in a long-lived argv): not built.
 Until someone signs in with GitHub, whoever reaches the UI first and signs in with GitHub becomes admin:
 sign in yourself before you expose the hopper (#239). GitHub Enterprise's GraphQL (`<url>/api/graphql`)
@@ -6654,6 +6726,93 @@ earlier GitHub sign-ins makes nobody admin; another browser or site refused),
 and labels through the account's token, a job running with `GH_TOKEN` that is never stored, disconnect, a
 denied code, users apart), `test/store/migration-23.test.ts`, `test/store/tenant-migration-8.test.ts`,
 `test/ui/sign-in-device.test.ts`, `test/ui/sources.test.ts`, `test/ui/sources-view.test.ts`.
+
+## Keeping the connection (issue #441, 2026-10-08)
+
+A connection made through the hopper's GitHub App had to be made again within about a day. GitHub App user
+tokens last 8 hours and come with a refresh token good for about 6 months, so one connection can last
+months, renewed by the hopper alone. #358 renewed only when something asked for a token, not atomically
+across processes, and ended the connection on any refusal; and GitHub invalidates both the refresh token
+and the access token it came with the moment the refresh token is used, so every renewal cut off the jobs
+already running. (The live hopper had no `connected_account.expired` event when this was built: its
+connection then came from a GitHub sign-in that adopted a new grant.)
+
+**The renewer** (`src/connected-accounts/renewer.ts`). It looks at the account every `RENEW_EVERY_MS`
+(60 s) and at the runtime's start, and renews the token once `RENEW_AHEAD_MS` (an hour) or less of it is
+left, whether or not anything asked for one; a hopper that was down past the 8 hours renews at start with
+the stored refresh token. `token()` renews the same way when it is asked first, and `renew(refused)` after
+a 401. One renewal:
+1. in this process, one at a time per account (`renewing`);
+2. across processes on one database — an old and a new container overlapping, another runtime — the
+   account's **advisory lock** (`pg_try_advisory_lock(hashtext('hopper connected account ' ||
+   current_schema() || ' ' || provider))`, `ConnectedAccountRepository.lock`), session-level, so a crashed
+   process lets it go; waited for up to 30 s, polling, and given up for now when the stored refresh token
+   changes meanwhile (another process renewed: its pair is used);
+3. under the lock the row is read again: a pair another process rotated is used, and GitHub is not called;
+4. GitHub's answer is kept at once, before anything else awaits — `swap(provider, refreshToken, next)`: one
+   transaction, the row `FOR UPDATE`, written only while its refresh token is still the one used (a
+   compare-and-swap). A crash can only lose a rotation in the time between GitHub's answer reaching the
+   process and that synchronous write; tested by reading the row from another connection at the first
+   moment anything else could run.
+
+**What ends it, and what does not.** The sign-in ends only when GitHub refuses the refresh token itself
+(`bad_refresh_token`: used, revoked, expired, or the app's authorization removed) and the row, read again,
+holds no newer pair — an older hopper that takes no lock may have rotated it first, and then that pair is
+used, once — or when the refresh token is past its own expiry. Everything else is a **renewal trouble**,
+never an end: GitHub not answering, a 5xx, a rate limit, the lock held too long, GitHub refusing the app's
+own credentials (`incorrect_client_credentials`, `invalid_client`, `unauthorized_client`), or a grant this
+hopper cannot renew as it is set up. It is logged, shown on the account (`ConnectedAccountStatus.renewal`,
+the Sources panel's **could not be renewed yet**), and tried again after 30 s, 1, 2, 5, 10, then every 15
+minutes (`RETRY_MS`); an ask before then gets the current token while it is still good, else the trouble
+as an error. An ended connection reads `expired` (never `connected`), is told once
+(`connected_account.expired`, which the notifiers send), pauses its source, and asks to connect again in
+the Sources panel and in the header, on every screen (`detail.expired` on the source's status).
+
+**A browser grant** (the web flow, #258) renews only with the app's client secret; a device flow grant
+without it. The account keeps which flow granted it (`grantedBy`); a web flow grant in a runtime with no
+`HOPPER_GITHUB_CLIENT_SECRET` is not sent to GitHub at all (`RenewalBlocked`): a renewal trouble naming the
+variable, renewed once it is set. A grant kept before #441 has no `grantedBy` and renews as #358 did.
+
+**At rest** (`src/connected-accounts/at-rest.ts`, `src/secrets/token-box.ts`). The access and refresh
+tokens are sealed with AES-256-GCM (node:crypto) under the runtime's `HOPPER_TOKEN_KEY` (32 bytes, 64 hex
+digits or base64; also `_FILE`), `sealed:v1:` + base64url(nonce ‖ tag ‖ ciphertext). The compose install
+makes the key on Postgres's first start, beside the database password in the secrets volume
+(`/run/hopper-secrets/token_key`, `HOPPER_TOKEN_KEY_FILE`); `install.sh` writes one into `daemon.env`
+once. A key that is no key stops the runtime (fails closed); no key keeps the tokens in clear, said at start.
+A row kept in clear — from before, or before a key was given — is sealed by the renewer's next look. A
+sealed row the runtime cannot open (no key, another key) reads `failed` with what to do — never connected,
+never ended. Everything a renewal needs is in Postgres and the runtime's key, so a fresh container on the
+same database and secrets carries on without a new sign-in.
+
+**Running jobs** (`src/engine/credentials.ts`). A job's source answers its credentials as `files` (kept
+in the job's **credentials dir**, `<scratch>/credentials`, on its machine), `paths` (variables pointing
+there) and `env` (the token as it is now). The executor asks with the job's scratch dir
+(`ExecutionContext.credentials(scratch, makeWorkTree)`); the engine records the dir on the job
+(`credentialsDir`), writes the files through the machine's own connection — this machine's shell, ssh, or a
+client target's `POST /credential` (`src/client/credential.ts`: a fixed script, the content on stdin, the
+file replaced whole, mode 600, only under `…/.hopper-scratch/<job id>/credentials`, never making a work
+tree that is not there unless it is the jobs dir) — and answers the variables. For GitHub: `gh/hosts.yml`
+with the token under the host, and `GH_CONFIG_DIR` pointing at it; `gh` reads it at each run, and so does
+gh's git credential helper. After every renewal (`onRenewed` → `engine.renewCredentials()`), each job in
+flight with a `credentialsDir` has its files rewritten; a machine that cannot be reached is logged and
+keeps the files it has until the next renewal reaches it. A machine whose connection keeps no files (an
+executor with no machine shell) runs the job with `env` — `GH_TOKEN` as at its start — and says so in its
+progress. The reap removes the credentials dir whatever else it keeps.
+
+**Hopper sessions are not bound to the token.** A token expiring, renewing or failing to renew never ends a
+hopper UI session; its lifetime is #439's.
+
+**Verification:** `test/connected-accounts/rotation.test.ts` (real Postgres, two connections to one user
+schema as two processes, the real renewal over HTTP to the fake GitHub, a fake clock: renewed by the
+scheduler with nothing asking; renewed at start after 10 hours down; two processes at once, one GitHub
+call, both with the new pair; the pair stored before anything else runs; `bad_refresh_token` after an
+older process rotated, recovered; a revocation ends it, told once; 5xx and network errors end nothing and
+back off; a web flow grant with no secret is not sent; sealed at rest, a fresh process with the key carries
+on, another key reads unreadable), `test/integration/connected-account-renewal.test.ts` (a running job's
+credential file on its machine rewritten with the renewed token, GitHub refusing the one it started with),
+`test/client/machine-shell.test.ts` (the credential script on this machine and a client target),
+`test/secrets/token-box.test.ts`, `test/ui/sources-view.test.ts` (the header prompt, the renewal trouble),
+`test/scripts/compose.test.ts`, `test/integration/unit-file.test.ts`.
 
 ## The hopper's app, for everyone (issue #352, 2026-10-07)
 

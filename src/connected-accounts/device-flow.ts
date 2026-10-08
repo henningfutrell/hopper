@@ -17,11 +17,13 @@ export interface Grant {
   /** Trades for a new pair once (issue #358); absent: the token does not expire. */
   refreshToken?: string;
   refreshTokenExpiresAt?: Date;
+  /** Which flow granted it (issue #441): a web flow grant renews only with the app's client secret. A renewed grant keeps its first's; absent: one kept before #441. */
+  grantedBy?: 'device' | 'web';
 }
 
 /** A grant from what @octokit/oauth-methods answers for a GitHub App's user token. */
-export const grantOf = (a: { token: string; expiresAt?: string; refreshToken?: string; refreshTokenExpiresAt?: string }): Grant => ({
-  accessToken: a.token,
+export const grantOf = (a: { token: string; expiresAt?: string; refreshToken?: string; refreshTokenExpiresAt?: string }, grantedBy: Grant['grantedBy']): Grant => ({
+  accessToken: a.token, ...(grantedBy ? { grantedBy } : {}),
   ...(a.expiresAt ? { expiresAt: new Date(a.expiresAt) } : {}),
   ...(a.refreshToken ? { refreshToken: a.refreshToken } : {}),
   ...(a.refreshTokenExpiresAt ? { refreshTokenExpiresAt: new Date(a.refreshTokenExpiresAt) } : {}),
@@ -79,7 +81,7 @@ export function deviceFlow(app: HopperApp): DeviceFlow {
             await sleep(intervalMs, signal);
             try {
               const { authentication } = await exchangeDeviceCode({ clientType: 'github-app', clientId: app.clientId, code: data.device_code, request });
-              return grantOf(authentication);
+              return grantOf(authentication, 'device');
             } catch (err) {
               const code = oauthError(err);
               if (code === 'authorization_pending') continue;

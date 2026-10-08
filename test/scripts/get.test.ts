@@ -24,7 +24,7 @@ function commit(file: string, body: string): string {
   writeFileSync(join(work, file), body);
   git(work, 'add', '-A');
   git(work, 'commit', '-q', '-m', file);
-  git(work, 'push', '-q', 'origin', 'HEAD:main');
+  git(work, 'push', '-q', 'origin', 'HEAD:stable');
   return git(work, 'rev-parse', 'HEAD');
 }
 
@@ -53,8 +53,8 @@ beforeEach(() => {
   origin = join(dir, 'origin.git');
   work = join(dir, 'work');
   for (const d of [bin, home, work]) mkdirSync(d);
-  execFileSync('/usr/bin/git', ['init', '-q', '--bare', '-b', 'main', origin]);
-  git(work, 'init', '-q', '-b', 'main');
+  execFileSync('/usr/bin/git', ['init', '-q', '--bare', '-b', 'stable', origin]);
+  git(work, 'init', '-q', '-b', 'stable');
   git(work, 'remote', 'add', 'origin', origin);
   mkdirSync(join(work, 'scripts'));
   mkdirSync(join(work, 'deploy'));
@@ -74,7 +74,7 @@ describe('get.sh', () => {
     expect(r.status, r.stderr).toBe(0);
     expect(git(SRC(), 'rev-parse', 'HEAD')).toBe(head);
     expect(git(SRC(), 'remote', 'get-url', 'origin')).toBe(origin);
-    expect(installed()).toMatchObject({ commit: head, db: 'postgres://u:p@db:5432/hopper', branch: 'main' });
+    expect(installed()).toMatchObject({ commit: head, db: 'postgres://u:p@db:5432/hopper', branch: 'stable' });
     expect(log()).not.toContain('docker');
   });
 

@@ -27,7 +27,7 @@ export const INVALID_DATA: Partial<Record<EventType, Record<string, unknown>>> =
   'question.escalated_to_human': { questionId: 'q1', reason: 'r', text: 't', jobId: 'j', answerUrl: 'u' },
   'question.answered': { questionId: 'q1', by: '', answer: 'a' },
   'question.expired': { questionId: 'q1' },
-  'update.available': { from: 'a', to: 'b', ref: 'main' },
+  'update.available': { from: 'a', to: 'b', ref: 'stable' },
   'update.started': { from: 'a' },
   'update.applied': { to: 'b' },
   'update.failed': { error: 3 },

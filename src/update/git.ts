@@ -12,14 +12,11 @@ import { bullets } from './whats-new.ts';
 
 const exec = promisify(execFile);
 const TIMEOUT_MS = 120_000;
-const SEMVER_TAG = /^v\d+\.\d+\.\d+$/;
 
 export interface GitMirror {
   fetch(repo: string): Promise<void>;
   /** The commit a branch points at, or undefined. */
   branchHead(branch: string): Promise<string | undefined>;
-  /** The newest `v<major>.<minor>.<patch>` tag and its commit. */
-  newestRelease(): Promise<{ tag: string; commit: string } | undefined>;
   has(commit: string): Promise<boolean>;
   /** `ancestor` is reachable from `commit` (equal counts). */
   contains(commit: string, ancestor: string): Promise<boolean>;
@@ -54,14 +51,10 @@ export function createGitMirror(dir: string): GitMirror {
         mkdirSync(dir, { recursive: true });
         await git('init', '--bare', '--quiet');
       }
-      await git('fetch', '--quiet', '--prune', '--prune-tags', '--force', repo, '+refs/heads/*:refs/heads/*', '+refs/tags/*:refs/tags/*');
+      await git('fetch', '--quiet', '--prune', '--force', repo, '+refs/heads/*:refs/heads/*');
     },
     async branchHead(branch) {
       return git('rev-parse', '--verify', '--quiet', `refs/heads/${branch}^{commit}`).catch(() => undefined);
-    },
-    async newestRelease() {
-      const tag = (await git('tag', '--list', 'v*', '--sort=-v:refname')).split('\n').find((t) => SEMVER_TAG.test(t));
-      return tag === undefined ? undefined : { tag, commit: await git('rev-parse', `refs/tags/${tag}^{commit}`) };
     },
     has(commit) {
       return ok(git('cat-file', '-e', `${commit}^{commit}`));

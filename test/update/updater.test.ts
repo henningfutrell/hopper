@@ -1,4 +1,4 @@
-// Self-update (issue #44) against real git repositories: detecting newer commits and releases,
+// Self-update (issue #44) against real git repositories: detecting newer commits on the channel,
 // applying one beside the running install, waiting for jobs a restart would lose, and reporting
 // the result on the next boot. The build (scripts/install.sh build-only mode) and the restart are seams.
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
@@ -29,7 +29,7 @@ describe('detecting an update', () => {
     const c3 = w.up.commit('fix: pause (#13)');
     const { u } = updater(w, createInstall(w.root, w.up.dir, c1));
     const s = await u.check();
-    expect(s).toMatchObject({ state: 'available', channel: 'main', target: { commit: c3, ref: 'main' } });
+    expect(s).toMatchObject({ state: 'available', channel: 'stable', target: { commit: c3, ref: 'stable' } });
     expect(s.installed?.commit).toBe(c1);
     expect(s.whatsNew).toEqual(['You can pause the queue.', 'Jobs show their machine.']);
     expect(JSON.stringify(s)).not.toMatch(/#1[23]|feat:|fix:/);
@@ -44,7 +44,7 @@ describe('detecting an update', () => {
   it('checks on its own and offers a newer version even when the check interval is set to 0: checking cannot be turned off (issue #177)', async () => {
     const w = world();
     const c1 = w.up.commit('first');
-    const c2 = w.up.commit('merged to main');
+    const c2 = w.up.commit('merged to stable');
     const warned: string[] = [];
     const { u } = updater(w, createInstall(w.root, w.up.dir, c1), { checkMs: 0, logger: { info: () => {}, warn: (l) => { warned.push(l); } } });
     vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval', 'clearTimeout', 'clearInterval'] });
@@ -67,7 +67,7 @@ describe('detecting an update', () => {
     expect((await u.check()).state).toBe('current');
     git(w.up.dir, 'checkout', '-q', '-b', 'feature');
     const ahead = w.up.commit('ahead');
-    git(w.up.dir, 'checkout', '-q', 'main');
+    git(w.up.dir, 'checkout', '-q', 'stable');
     rmSync(join(w.root, 'app'), { recursive: true });
     const { u: u2 } = updater(w, createInstall(w.root, w.up.dir, ahead));
     const s = await u2.check();
@@ -104,7 +104,7 @@ describe('detecting an update', () => {
     git(w.up.dir, 'checkout', '-q', '-b', 'feature');
     w.up.whatsNew(['Second.', 'First.']);
     w.up.commit('feature work');
-    git(w.up.dir, 'checkout', '-q', 'main');
+    git(w.up.dir, 'checkout', '-q', 'stable');
     git(w.up.dir, 'merge', '-q', '--no-ff', '-m', 'Merge feature', 'feature');
     const merged = git(w.up.dir, 'rev-parse', 'HEAD');
     w.up.whatsNew(['Third.', 'Second.', 'First.']);
@@ -127,33 +127,12 @@ describe('detecting an update', () => {
     expect(h.reason).toMatch(/install\.json/);
   });
 
-  it('on the release channel targets the newest v<semver> tag, and reports the newest release on either channel', async () => {
-    const w = world();
-    const c1 = w.up.commit('first');
-    w.up.whatsNew(['Second news.']);
-    const c2 = w.up.commit('second');
-    w.up.tag('v0.9.0', c2);
-    w.up.whatsNew(['Third news.', 'Second news.']);
-    const c3 = w.up.commit('third');
-    w.up.tag('v0.10.0', c3);
-    w.up.tag('not-a-release', c3);
-    w.up.whatsNew(['Fourth news.', 'Third news.', 'Second news.']);
-    w.up.commit('fourth');
-    const { u } = updater(w, createInstall(w.root, w.up.dir, c1));
-    expect((await u.check()).release).toEqual({ tag: 'v0.10.0', commit: c3, newer: true });
-    const s = u.settings({ channel: 'release' });
-    expect(s.channel).toBe('release');
-    const r = await u.check();
-    expect(r).toMatchObject({ state: 'available', target: { commit: c3, ref: 'v0.10.0' } });
-    expect(r.whatsNew).toEqual(['Third news.', 'Second news.']);
-  });
-
   it('keeps the settings in the store', async () => {
     const w = world();
     const c1 = w.up.commit('first');
     const appDir = createInstall(w.root, w.up.dir, c1);
-    updater(w, appDir).u.settings({ channel: 'release', autoUpdate: true });
-    expect(updater(w, appDir).u.status()).toMatchObject({ channel: 'release', autoUpdate: true });
+    updater(w, appDir).u.settings({ channel: 'beta', autoUpdate: true });
+    expect(updater(w, appDir).u.status()).toMatchObject({ channel: 'beta', autoUpdate: true });
   });
 
   it('reports a failed fetch as an error with the reason', async () => {
@@ -185,7 +164,7 @@ describe('applying an update', () => {
     blockers = 0;
     await waitFor(async () => restarts.length === 1);
     expect(readFileSync(join(appDir, 'app.txt'), 'utf8')).toBe('v2');
-    expect(readInstall(appDir)).toMatchObject({ commit: c2, branch: 'main', repo: w.up.dir });
+    expect(readInstall(appDir)).toMatchObject({ commit: c2, branch: 'stable', repo: w.up.dir });
     expect(readFileSync(join(`${appDir}.prev`, 'app.txt'), 'utf8')).toBe('v1');
     expect(existsSync(`${appDir}.next`)).toBe(false);
     expect(u.status().apply?.phase).toBe('restarting');
@@ -251,7 +230,7 @@ describe('the boot after an update', () => {
     const s: UpdateStatus = await u.check();
     expect(s.state).toBe('current');
     const done = w.store.events.since(0).filter((e) => e.type === 'update.applied');
-    expect(done.map((e) => e.data)).toEqual([{ from: c1, to: c2, ref: 'main' }]);
+    expect(done.map((e) => e.data)).toEqual([{ from: c1, to: c2, ref: 'stable' }]);
     updater(w, appDir).u.start();
     expect(types(w).filter((t) => t === 'update.applied')).toHaveLength(1);
   });

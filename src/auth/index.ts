@@ -231,6 +231,7 @@ export function createSignIn(o: {
     }
     const connection: Connection = {
       provider: 'github', subject: id.subject, account: id.account, accessToken: g.accessToken,
+      ...(g.grantedBy ? { grantedBy: g.grantedBy } : {}),
       ...(g.expiresAt ? { expiresAt: g.expiresAt.toISOString() } : {}),
       ...(g.refreshToken ? { refreshToken: g.refreshToken } : {}),
       ...(g.refreshTokenExpiresAt ? { refreshTokenExpiresAt: g.refreshTokenExpiresAt.toISOString() } : {}),

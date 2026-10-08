@@ -1,7 +1,7 @@
 // The Plugins view's model (design.md "Settled in slice 7"): an instance's state as GET /api/plugins
 // reports it, the input each option gets (a choice where the plugin lists the values, issue #151), the whole options object one Save sends, and the name an
 // added instance gets.
-import type { ListRole, OptionChoice, PluginsEdit, PluginsReport, Role, SelectableRole } from '../../../src/domain/types.ts';
+import type { InstanceStatus, ListRole, OptionChoice, PluginsEdit, PluginsReport, Role, SelectableRole } from '../../../src/domain/types.ts';
 
 export interface OptionSchema {
   type?: string;
@@ -96,6 +96,16 @@ export interface InstanceState {
   detection?: { status: string; reason?: string };
 }
 
+/**
+ * A part that runs claude and names no machine (issue #442): needing one, it is flagged with the plain
+ * reason; else its state, with the machine it runs on said.
+ */
+function onMachine(st: InstanceState, machine: InstanceStatus['machine']): InstanceState {
+  if (!machine || st.label === 'cannot run') return st;
+  if (machine.needsMachine) return { ...st, tone: 'bad', label: 'needs a machine', reason: machine.note };
+  return st.reason ? st : { ...st, reason: machine.note };
+}
+
 export function instanceState(report: PluginsReport, role: Role, name: string): InstanceState {
   const key = (LIVE as Partial<Record<Role, (typeof LIVE)[keyof typeof LIVE]>>)[role];
   if (key) {
@@ -103,14 +113,14 @@ export function instanceState(report: PluginsReport, role: Role, name: string): 
     const s = report[key].instances.find((i) => i.instance.name === name);
     if (!s) return { tone: 'warn', label: 'applying' };
     const base = { ...(s.reason ? { reason: s.reason } : {}), detection: s.detection };
-    return s.active === null ? { tone: 'bad', label: 'cannot run', ...base } : { tone: 'ok', label: 'active', ...base };
+    return onMachine(s.active === null ? { tone: 'bad', label: 'cannot run', ...base } : { tone: 'ok', label: 'active', ...base }, s.machine);
   }
   if (role === 'escalation-level') {
     // A live role: an edit applies before the report comes back, so a level not in it is still loading.
     const l = report.escalationLevels.find((x) => x.instance.name === name);
     if (!l) return { tone: 'warn', label: 'loading' };
     const base = { ...(l.reason ? { reason: l.reason } : {}), detection: l.detection };
-    return l.active === null ? { tone: 'bad', label: 'cannot run', ...base } : { tone: 'ok', label: 'active', ...base };
+    return onMachine(l.active === null ? { tone: 'bad', label: 'cannot run', ...base } : { tone: 'ok', label: 'active', ...base }, l.machine);
   }
   const s = role === 'router' ? report.router : report.queueSorter;
   if (s.instance.name !== name) return { tone: 'warn', label: 'applying' };

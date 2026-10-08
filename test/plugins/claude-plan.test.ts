@@ -102,7 +102,7 @@ describe('claude-plan plugin', () => {
 
   /** This machine, the hopper's own: in the machine list like any other, named `local` (issue #174). */
   const LOCAL: MachineSnapshot = { id: 'local', label: 'local', maxLanes: 4, online: true, executors: ['herdr-claude'] };
-  const ctx = () => ({ clock: { now: () => now }, logger: { info() {}, warn() {} }, dataDir: scratch, userEnv: {}, secretName: (n: string) => n, scratchDir: scratch, instanceName: 'claude', env: () => undefined, machine: async (id: string) => (id === 'local' ? LOCAL : undefined), client: () => undefined });
+  const ctx = () => ({ clock: { now: () => now }, logger: { info() {}, warn() {} }, dataDir: scratch, userEnv: {}, secretName: (n: string) => n, scratchDir: scratch, instanceName: 'claude', env: () => undefined, machine: async (id: string) => (id === 'local' ? LOCAL : undefined), machines: async () => [LOCAL], client: () => undefined });
   async function create(raw: Record<string, unknown> = {}): Promise<UsageSource> {
     const p = parseOptions(claudePlan, { bin: BIN, machine: 'local', ...raw });
     if (!p.ok) throw new Error(p.error);
@@ -112,15 +112,14 @@ describe('claude-plan plugin', () => {
   }
   const calls = () => (existsSync(join(control, 'calls.jsonl')) ? readFileSync(join(control, 'calls.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as { argv: string[]; cwd: string }) : []);
 
-  it('is a usage source; options machine (required), bin (command-bearing, default claude), intervalSeconds (default 600, at least 120) and executors (default the built-in herdr-claude)', () => {
+  it('is a usage source; options machine (none: the only machine there is, #442), bin (command-bearing, default claude), intervalSeconds (default 600, at least 120) and executors (default the built-in herdr-claude)', () => {
     expect(claudePlan).toMatchObject({ id: 'claude-plan', role: 'usage-source' });
-    expect(parseOptions(claudePlan, {})).toEqual({ ok: false, error: expect.stringContaining('machine') });
+    expect(parseOptions(claudePlan, {})).toEqual({ ok: true, options: { bin: 'claude', intervalSeconds: 600, sshBin: 'ssh', dockerBin: 'docker', executors: ['herdr-claude'] } });
     expect(parseOptions(claudePlan, { machine: 'local' })).toEqual({ ok: true, options: { machine: 'local', bin: 'claude', intervalSeconds: 600, sshBin: 'ssh', dockerBin: 'docker', executors: ['herdr-claude'] } });
     expect(parseOptions(claudePlan, { machine: 'local', executors: ['claude-big'] })).toMatchObject({ ok: true, options: { executors: ['claude-big'] } });
     expect(parseOptions(claudePlan, { machine: 'local', intervalSeconds: 60 }).ok).toBe(false);
     const schema = optionsJsonSchema(claudePlan) as { properties: Record<string, { commandBearing?: boolean; machine?: boolean }>; required?: string[] };
     expect(schema.properties.machine!.machine).toBe(true);
-    expect(schema.required).toContain('machine');
     expect(schema.properties.bin!.commandBearing).toBe(true);
     expect(schema.properties.intervalSeconds!.commandBearing).toBeUndefined();
     expect(schema.properties.machine!.commandBearing).toBeUndefined();
@@ -154,6 +153,15 @@ describe('claude-plan plugin', () => {
       account: { service: 'claude', identity: 'user@example.com', detail: { plan: 'max', organization: 'Example Org', authMethod: 'claude.ai', machine: 'local' } },
     });
     expect(JSON.stringify(s.state!())).not.toContain('SECRET');
+  });
+
+  it('names no machine: reads the only machine there is, and its readings and account are that machine\'s (#442)', async () => {
+    writeFileSync(join(control, 'mode'), 'ok');
+    const s = await create({ machine: undefined });
+    const readings = await waitFor(async () => { const r = await s.poll(); return r.length ? r : undefined; }, { what: 'readings' });
+    expect(readings.map((r) => r.machineId)).toEqual(['local', 'local', 'local']);
+    await waitFor(() => s.state!().account, { what: 'account' });
+    expect(s.state!().account?.detail).toMatchObject({ machine: 'local' });
   });
 
   it('runs `-p /usage` (no session persistence) and `auth status --json` in a private 0700 probe dir, and removes the project dir claude leaves', async () => {
@@ -229,7 +237,7 @@ describe('claude-plan on an attached machine (issue #139)', () => {
     const ctx = {
       clock: { now: () => now }, logger: { info() {}, warn() {} }, dataDir: scratch, userEnv: {}, secretName: (n: string) => n, scratchDir: scratch, instanceName: 'laptop-claude',
       env: (n: string) => (n === 'HOPPER_SSH_KEY_FILE' ? auth.identityFile : undefined),
-      machine: async (id: string) => machines.find((m) => m.id === id), client: () => undefined,
+      machine: async (id: string) => machines.find((m) => m.id === id), machines: async () => machines, client: () => undefined,
     };
     const p = parseOptions(claudePlan, { bin: BIN, machine: 'laptop', sshBin: FAKE_SSH });
     if (!p.ok) throw new Error(p.error);

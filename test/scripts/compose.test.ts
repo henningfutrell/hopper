@@ -78,6 +78,14 @@ describe('compose.yaml, downloaded alone and started with no settings', () => {
     expect(hopper.depends_on?.postgres?.condition).toBe('service_healthy');
   });
 
+  it('gives the hopper a token key made on first start, kept with the database password (issue #441)', () => {
+    expect(hopper.environment?.HOPPER_TOKEN_KEY).toBeUndefined();
+    expect(hopper.environment?.HOPPER_TOKEN_KEY_FILE).toBe('/run/hopper-secrets/token_key');
+    const script = postgres.command!.join('\n');
+    expect(script).toMatch(/\[ -s \$\$?s\/token_key \] \|\| head -c 32 \/dev\/urandom/);
+    expect(script).toMatch(/chown 1000:1000 \$\$?s\/database_url \$\$?s\/token_key/);
+  });
+
   it('has no one-shot service: podman-compose cannot start a container whose dependency has exited (issue #125)', () => {
     expect(Object.keys(r.services).sort()).toEqual(['hopper', 'postgres']);
   });
@@ -177,15 +185,15 @@ describe('the published image (issue #125)', () => {
     expect(workflow).toMatch(/push: true/);
   });
 
-  it('is built on every change to main, for Intel/AMD and ARM machines', () => {
-    expect(workflow).toMatch(/branches: \[main\]/);
+  it('is built on every change to dev, beta and stable, the update channels, for Intel/AMD and ARM machines (issue #423)', () => {
+    expect(workflow).toMatch(/branches: \[dev, beta, stable\]/);
     expect(workflow).toContain('linux/amd64,linux/arm64');
   });
 
   it('publishes every merge stream\'s last commit: a newer push never cancels a build in progress (issue #156)', () => {
-    // Cancelling in progress meant merges a few minutes apart left `latest` hours behind main, without
-    // the UI's GitHub login. Runs queue instead; GitHub keeps only the newest pending one.
-    expect(workflow).toMatch(/concurrency:\s*\n\s*group: image\s*\n\s*cancel-in-progress: false/);
+    // Cancelling in progress meant merges a few minutes apart left `latest` hours behind, without
+    // the UI's GitHub login. Runs queue instead, one queue per branch; GitHub keeps only the newest pending one.
+    expect(workflow).toMatch(/concurrency:\s*\n\s*group: image-\$\{\{ github\.ref_name \}\}\s*\n\s*cancel-in-progress: false/);
   });
 
   it('pushes with the workflow\'s own token: no registry credential to keep', () => {

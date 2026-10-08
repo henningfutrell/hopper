@@ -69,7 +69,7 @@ Pick one. Recommended: the published image with Podman.
 ### With Podman (recommended)
 
 The daemon and its Postgres, in containers from the public image
-`ghcr.io/henningfutrell/hopper` (`latest` follows `main`; Intel/AMD and ARM): no host install, nothing to
+`ghcr.io/henningfutrell/hopper` (`latest` follows `stable`; Intel/AMD and ARM): no host install, nothing to
 build, nothing to set first. Needs Podman ≥ 4.7 with `podman-compose` (or Docker's compose; `docker
 compose` works the same everywhere below).
 

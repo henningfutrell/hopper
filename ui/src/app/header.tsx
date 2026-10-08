@@ -1,6 +1,7 @@
 // The top bar: version (opens the version and update panel, on every screen), connection,
 // router health, uptime, the API reference, who you are at every width (issue #167: the user the session
 // acts for with its role), logout, and a device link for another browser. Shown only signed in (issue #213).
+// A GitHub connection that ended asks to connect again here, on every screen (issue #441).
 import { BookOpen, LogOut, Moon, Sun } from 'lucide-react';
 import logo from '../../../site/hopper-logo.svg';
 import { setTheme, useTheme } from '@/hooks/use-theme';
@@ -8,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Dot, StatusBadge } from '@/components/status';
 import { duration } from '@/model/format';
+import { connectionEnded } from '@/model/sources';
 import { logout, useHopper } from '@/store';
 import { useCanAdmin } from '@/store/selectors';
 import { DeviceLink } from './device-link';
@@ -20,6 +22,7 @@ export function Header({ nav }: { nav?: React.ReactNode }) {
   const local = useHopper((s) => s.signIn?.local ?? false);
   const canAdmin = useCanAdmin();
   const theme = useTheme();
+  const ended = useHopper((s) => connectionEnded(s.sources));
   return (
     <header className="sticky top-0 z-30 border-b bg-background/80 backdrop-blur-md">
       <div className="flex h-14 items-center gap-3 px-4 lg:px-6">
@@ -30,6 +33,10 @@ export function Header({ nav }: { nav?: React.ReactNode }) {
         </div>
         <UpdateButton version={health?.version} />
         <div className="ml-auto flex items-center gap-2 text-xs sm:gap-3">
+          {ended && (
+            <a data-connection-ended href="#sources" title={ended}
+              className="rounded-md border border-bad/30 bg-bad/5 px-2 py-1 font-medium text-bad hover:bg-bad/10">GitHub sign-in expired: connect again</a>
+          )}
           <div className="hidden items-center gap-1.5 md:flex">
             <span className="text-muted-foreground">router</span>
             <span className="font-mono">{health?.router ?? '…'}</span>

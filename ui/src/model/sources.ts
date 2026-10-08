@@ -60,3 +60,13 @@ export function sourcesView(sources: SourceStatus[]): SourcesView {
     others: sources.filter((s) => s.kind !== ACCOUNT && s.kind !== APP),
   };
 }
+
+/**
+ * Why the GitHub connection ended (issue #441), while it has — its sign-in expired or its stored token
+ * cannot be read — for the header to ask to connect again on every screen. Undefined while it lives, or
+ * was never connected.
+ */
+export function connectionEnded(sources: SourceStatus[]): string | undefined {
+  const account = sources.find((s) => s.kind === ACCOUNT);
+  return account?.detail.expired === true && typeof account.detail.paused === 'string' ? account.detail.paused : undefined;
+}

@@ -71,6 +71,9 @@ export function ConnectedAccountPanel({ provider, source }: { provider: Provider
           {signedInWith
             ? <div>Signed in with {name} as <span className="font-mono">{s.account}</span>. Signing out ends your hopper session.</div>
             : <div>Connected as <span className="font-mono">{s.account}</span>.</div>}
+          {s.renewal && <div data-renewal className="break-words text-warn">
+            Its token could not be renewed yet: {s.renewal}. The hopper tries again by itself; the connection goes on.
+          </div>}
           {s.installations === undefined
             ? <div data-installations className="space-y-1">
               <div data-installations-error className="text-warn break-words">{s.installationsError ?? `${name} could not say where the app is installed.`}</div>
